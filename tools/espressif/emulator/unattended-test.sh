@@ -65,7 +65,7 @@ if [ -n "$from" ] && [ "$(cat "$SAVED/$from/flash-mode" 2>/dev/null)" = public ]
     public=1 stub=0
     emu_args+=("--plug-dir=$SAVED/$from")
     # Its MAC, so the kept flash is taken as this plug's (below).
-    plug_mac=$(python3 -I -c 'import sys; d=open(sys.argv[1],"rb").read(); print(":".join(f"{b:02x}" for b in (d[0x18:0x1C]+d[0x1C:0x1E])[::-1]))' \
+    plug_mac=$(PYTHONPATH=$ROOT python3 -c 'import sys; from tools.espressif.flashmap import mac_of_efuse; print(mac_of_efuse(open(sys.argv[1],"rb").read()))' \
                "$SAVED/$from/efuse.bin")
 fi
 # The stub is its own cloud and needs no account; otherwise the real cloud is
@@ -203,7 +203,10 @@ status=0
 # In stub mode the tool talks to the local stub and trusts its CA.
 stub_env=()
 [ "$stub" = 1 ] && stub_env=(-e AUTOFLASH_EWELINK_API_BASE=https://apia.autoflash-stub.test
-                             -e SSL_CERT_FILE=/run/autoflash-emu/stub-ca-bundle.pem)
+                             -e SSL_CERT_FILE=/run/autoflash-emu/stub-ca-bundle.pem
+                             -e OPENSSL_CONF=/stub-cloud/openssl.cnf)
+# A device not ready yet is taken only when this says so (tools/autoflash/kinds.py).
+[ -n "${AUTOFLASH_NOT_READY_YET:-}" ] && stub_env+=(-e AUTOFLASH_NOT_READY_YET=1)
 # The emulator's Wi-Fi, for a run from an ESPHome that cannot say what it is
 # (one older than this project's 1.1.0); and the emulated plug's passwords,
 # for one given one to test with, as this script's environment has them.

@@ -19,6 +19,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from tools.espressif import flashmap  # noqa: E402
 from tools.espressif.inspect_stock_nvs import parse  # noqa: E402
 
 NVS_OFFSET, NVS_SIZE = 0x9000, 0x10000
@@ -33,7 +34,12 @@ MEMORY_DUMP = re.compile(rb"^\s*(?:0x)?[0-9a-fA-F]{8}:\s+0x[0-9a-fA-F]{8}")
 
 def secrets(flash: bytes) -> dict[bytes, str]:
     """Every secret byte string in the dump's NVS, mapped to a label."""
-    names, values = parse(flash[NVS_OFFSET : NVS_OFFSET + NVS_SIZE])
+    try:
+        partition = flashmap.nvs(flash)
+        offset, size = partition.offset, partition.size
+    except ValueError:  # no table (a flash part way through a rewrite): where most keep it
+        offset, size = NVS_OFFSET, NVS_SIZE
+    names, values = parse(flash[offset : offset + size])
     found: dict[bytes, str] = {}
 
     def add(raw: bytes, label: str) -> None:

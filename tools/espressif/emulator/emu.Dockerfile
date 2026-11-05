@@ -1,7 +1,8 @@
-# A virtual Sonoff S60 and the computer that converts it, in one container.
+# A virtual Espressif plug and the computer that converts it, in one container.
 #
 # The container is "your computer on the home Wi-Fi": it runs the emulated plug
-# (lcgamboa's QEMU fork, which emulates the ESP32-C3's Wi-Fi), a small router
+# (lcgamboa's QEMU fork, which emulates the Wi-Fi of the ESP32-C3 and of the
+# classic ESP32), a small router
 # for the emulated home network, and the conversion tool. Start it with
 # tools/espressif/emulator/emu.sh, never by hand - that script prepares the private
 # state it needs under captures/emulation/.
@@ -23,11 +24,12 @@ RUN echo "$QEMU_SOURCE_SHA256  /tmp/qemu-source.tar.xz" | sha256sum -c - \
 COPY patches/ /patches/
 RUN --network=none cd /src && for p in /patches/*.patch; do git apply "$p"; done \
     && mkdir build && cd build \
-    && ../configure --target-list=riscv32-softmmu --enable-slirp --enable-gcrypt \
+    && ../configure --target-list=riscv32-softmmu,xtensa-softmmu --enable-slirp --enable-gcrypt \
          --disable-werror --disable-docs --disable-gtk --disable-sdl --disable-opengl --disable-vnc \
-    && ninja qemu-system-riscv32 \
+    && ninja qemu-system-riscv32 qemu-system-xtensa \
     && mkdir -p /opt/qemu/bin /opt/qemu/pc-bios \
-    && cp qemu-system-riscv32 /opt/qemu/bin/ && cp ../pc-bios/esp32c3-rom.bin /opt/qemu/pc-bios/
+    && cp qemu-system-riscv32 qemu-system-xtensa /opt/qemu/bin/ \
+    && cp ../pc-bios/esp32c3-rom.bin ../pc-bios/esp32-v3-rom.bin ../pc-bios/esp32-v3-rom-app.bin /opt/qemu/pc-bios/
 
 # -- runtime ---------------------------------------------------------------------
 FROM ubuntu:24.04

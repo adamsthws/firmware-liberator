@@ -1,14 +1,20 @@
-# The emulator: converting a virtual S60
+# The emulator: converting a virtual plug
 
-`tools/espressif/emulator/` runs the whole conversion against an emulated Sonoff S60, so
-changes can be tried end to end without converting, or risking, a real plug.
+`tools/espressif/emulator/` runs the whole conversion against an emulated
+Sonoff Espressif plug, so changes can be tried end to end without converting,
+or risking, a real plug. It runs the ESP32-C3 (the S60) and the classic ESP32
+(the POW Elite, POWCT, TH Elite, Dual R3, NSPanel and M5, among others): which
+of the two is read from the plug's flash ([Classic ESP32
+plugs](#classic-esp32-plugs)). The S61, a Beken plug, has an emulator of its
+own ([beken-s61-emulation.md](beken-s61-emulation.md)).
 
-The emulated plug boots a real flash dump of a stock S60, so it runs Sonoff's
+The emulated plug boots a real flash dump of a stock plug, so it runs Sonoff's
 own firmware, unmodified apart from the changes listed below. A full run has
 been completed this way from a UK S60TPG on stock 1.2.0, through every
-stage, to the official Tasmota on the official layout. It is a development
-tool: it says nothing about hardware the dump did not come from, such as
-another regional version's power meter.
+stage, to the official Tasmota on the official layout; how far each classic
+ESP32 device gets is in [device-research.md](device-research.md#espressif-devices).
+It is a development tool: it says nothing about hardware the dump did not come
+from, such as another regional version's power meter.
 
 ## What you need
 
@@ -30,7 +36,9 @@ another regional version's power meter.
   `--plug` asks for that is not there yet is made from it (`copy_plug.py`):
   given its key and a login that can read the package, a checkout with an empty
   `captures/` runs the emulator ([private-backup.md](private-backup.md)).
-  `AUTOFLASH_NO_RESTORE=1` says not to.
+  `AUTOFLASH_NO_RESTORE=1` says not to. For a device you do not own,
+  `public_dump.py` makes a test copy from a public dump or update file
+  ([adding-a-device.md](adding-a-device.md)).
 - **The NVS partition generator** (and `cryptography`, for the cloud stub)
   in the repository's `.venv`, as the workflows pin them:
 
@@ -43,14 +51,14 @@ another regional version's power meter.
 | | The emulator alone | With Windows beside it ("Windows from Linux") |
 |---|---|---|
 | Processor | any 64-bit one Docker runs on | x86-64 with hardware virtualisation (AMD-V/SVM or Intel VT-x) switched on in the firmware, so Linux has `/dev/kvm` |
-| Memory | 256 MB, the emulator's cap | 3.3 GB at most: Windows 2 GB, QEMU and the disk tools 1 GB, the emulator 256 MB. An 8 GB laptop with a desktop open manages it |
+| Memory | 256 MB for an ESP32-C3, 1 GB for a classic ESP32: the emulator's cap | 3.3 GB at most: Windows 2 GB, QEMU and the disk tools 1 GB, an ESP32-C3's emulator 256 MB. An 8 GB laptop with a desktop open manages it |
 | Processors | 2, the emulator's cap | 2 more for Windows (caps, shared with everything else, not set aside) |
 | Disk | about 0.5 GB: the image, and the plug's state under `captures/emulation/state/` | about 30 GB free while Windows installs; then about 21 GB: the ISO 8.2 GB, the layers 10.8, 0.9 and 0.4 GB, the images 0.8 GB |
 | Downloads | the QEMU fork's source, once | Microsoft's ISO (8.2 GB), Windows Terminal (12 MB) and virtio-win's guest tools (32 MB), once; Python (11 MB) and OpenVPN (6 MB) each time a layer that gets them is set up |
 | Time | see "How long it takes", below | |
 
 Measured on an AMD Ryzen 5 4500U (6 cores) with 8 GB: Windows peaked at
-2.1 GB, the emulator at 80 MB, and the layers took 7, 2 and 1 minutes to set
+2.1 GB, an S60's emulator at 80 MB, and the layers took 7, 2 and 1 minutes to set
 up. The caps can be changed (below), and a computer short of memory is warned
 before Windows starts.
 
@@ -85,7 +93,7 @@ running on its battery `windows-test.sh` says to plug it in.
 |---|---|
 | The emulator starting, until the plug is on its Wi-Fi | under 10 seconds |
 | Windows from Linux: starting, until the link says Connected | 30-60 seconds |
-| A conversion | about 7 minutes on a real plug, through all 15 stages; about 5 in the emulator (4m 35s for an unattended run from stock) |
+| A conversion | about 7 minutes on a real plug, through all 15 stages; about 5 for an S60 in the emulator (4m 35s for an unattended run from stock) |
 | Windows shutting down at the end | about 10 seconds |
 
 **After changing what Windows is set up with:** the layers whose scripts
@@ -142,8 +150,10 @@ They do meet in eWeLink, though: every clone has the same device id, the cloud
 keeps one connection per id, and the upgrade at C2 is sent through it - so it can
 reach another instance's plug. Run the eWeLink stages, up to C2, one instance at
 a time; after C2 nothing uses the cloud. A new instance has no plug yet, so name
-it with `--plug MAC` when there is more than one backup. Each takes about 0.6 of
-a CPU and 115 MB.
+it with `--plug MAC` when there is more than one backup. An S60's takes about
+0.6 of a CPU and 115 MB; a classic ESP32's runs two cores and is allowed 1 GB.
+Run no more at once than your computer has cores: more makes runs fail that
+would otherwise pass.
 
 Every instance, and the Windows container beside one, is on a Docker network of
 the emulator's own, `autoflash-emu`, which `emu.sh` makes the first time on
@@ -275,6 +285,45 @@ them (the `emulator-check` workflow). `unattended-test.sh
 --plug-dir=DIR` starts one with no backup at all. A public plug cannot go
 back to Sonoff: it has nothing of Sonoff's to go back to.
 
+### Classic ESP32 plugs
+
+A classic ESP32 plug runs as an S60 does, with the same commands. Nothing
+says which chip to emulate: `emu.sh` reads it from the bootloader's header in
+the plug's flash (at `0x0` on an ESP32-C3, `0x1000` on a classic ESP32), and
+picks the QEMU for it:
+
+| | ESP32-C3 | Classic ESP32 |
+|---|---|---|
+| QEMU | `qemu-system-riscv32`, machine `esp32c3-picsimlab` | `qemu-system-xtensa`, machine `esp32-picsimlab` |
+| eFuse file | 1024 bytes (a shorter one is padded) | 124 bytes, used as it is |
+| Container memory | 256 MB | 1 GB: under that, the kernel kills QEMU part way through a download, which looks like the plug restarting |
+
+The flash is the dump as it is, 4 MB on every plug so far. Some stock
+firmware stops at start-up without the external RAM (PSRAM) its plug has:
+the kind's `psram_mb` in [kinds.py](../tools/autoflash/kinds.py) gives it,
+as QEMU's `-m` (4 MB on the NSPanel, 2 on the MINIR4). The kind is found by
+the plug's eWeLink product model: a test copy's own (`plug.json`), the one an
+earlier run recorded, or `AUTOFLASH_STUB_PRODUCT_MODEL`.
+
+For a device you do not own, make a test copy from a public dump, or from
+eWeLink's update file on another plug's flash, and run it by the made-up MAC
+`public_dump.py` prints:
+
+```sh
+.venv/bin/python tools/espressif/emulator/public_dump.py sonoff-pow-elite
+tools/espressif/emulator/unattended-test.sh --stub-cloud --fresh --plug=12:34:56:e3:2d:01
+```
+
+[adding-a-device.md](adding-a-device.md) takes a new device through this, and
+says what to do when one does not boot.
+
+A device whose status in [`devices/status.json`](../devices/status.json) is
+`Not ready yet` is turned down, by the emulated run as by a real one, unless
+`AUTOFLASH_NOT_READY_YET=1` is set. `unattended-test.sh` passes it on to its
+run; in a run you start with `emu.sh`, set it in the conversion window
+(`AUTOFLASH_NOT_READY_YET=1 run`). Where each of those devices stops is in
+[devices/not-ready-yet/](../devices/not-ready-yet/README.md).
+
 ## On Windows
 
 To test the tool's Windows code paths (`arp -a`, `netsh` firewall rules
@@ -311,7 +360,8 @@ Technology" (VT-x) on Intel.
 Both containers are capped, so they cannot take over the computer. Windows
 gets 2 GB and 2 CPUs (`AUTOFLASH_WINDOWS_RAM=3G`, `AUTOFLASH_WINDOWS_CPUS=4` to change), and
 its container at most 1 GB more, for QEMU itself, without swap. The emulator
-gets 256 MB and 2 CPUs (`AUTOFLASH_EMU_MEMORY=512m`, `AUTOFLASH_EMU_CPUS`).
+gets 256 MB for an ESP32-C3, 1 GB for a classic ESP32, and 2 CPUs
+(`AUTOFLASH_EMU_MEMORY=512m`, `AUTOFLASH_EMU_CPUS`).
 
 ```sh
 tools/espressif/emulator/windows-test.sh --cloud                    # a conversion, in OpenConsole, as on Windows 11
@@ -501,8 +551,10 @@ WSL stops its VM, and Docker with it, soon after its last window closes: with
 
 - **QEMU.** Espressif's QEMU has no Wi-Fi; the emulator uses
   [lcgamboa's fork](https://github.com/lcgamboa/qemu) (branch `picsimlab-esp32`),
-  which emulates the ESP32-C3's Wi-Fi hardware and offers three open access
-  points. Its Wi-Fi is wired to a tap device in the container. The fork's
+  which emulates the Wi-Fi hardware of the ESP32-C3 and the classic ESP32, and
+  offers three open access points. The image holds both of its builds,
+  `qemu-system-riscv32` and `qemu-system-xtensa`. Its Wi-Fi is wired to a tap
+  device in the container. The fork's
   source at the pinned commit (`64aed50`), with the subprojects its build
   fetches, is an archive on a release of this repository named after that
   commit
@@ -518,7 +570,9 @@ WSL stops its VM, and Docker with it, soon after its last window closes: with
   GPL-2.0: the archive is its unmodified source, and this project's changes
   to it are the patches in `tools/espressif/emulator/patches/`, so a change to the
   emulator is a new patch, not a new release. The image is labelled with
-  a hash of what it is built from (`tools/espressif/emulator/image.sh tag`), and the
+  a hash of what it is built from (`tools/espressif/emulator/image.sh tag`):
+  `emu.Dockerfile`, `patches/` and `container/`, so any change to them, a
+  comment included, is a new image for everyone. The
   repository's `emulator-image` workflow publishes each one as
   `ghcr.io/adamsthws/autoflash-emu:<that hash>`: `emu.sh` pulls that, and
   builds only where it is not published (`AUTOFLASH_EMU_NO_PULL=1`, or
@@ -551,24 +605,62 @@ WSL stops its VM, and Docker with it, soon after its last window closes: with
 
 ### The dump (`patch_stock.py`, `rewrite_nvs.py`)
 
-Copies only; the original dump is never written.
+Copies only; the original dump is never written. `patch_stock.py` changes
+every app slot that holds Sonoff's firmware, after checking the app's
+checksum and SHA-256, and seals it again afterwards. It finds each place to
+change in that firmware itself, not at a fixed address, so the same code works
+on every device. A firmware whose Bluetooth start-up, or pinned CA with
+`--stub-cloud`, cannot be found stops with an error, rather than boot
+half-changed.
 
 - **Bluetooth start-up is skipped.** Neither QEMU emulates Bluetooth: the
-  controller's clock set-up fails and its ROM code faults. Sonoff's
-  Bluetooth set-up and a second controller start are stubbed to `return 0`,
-  checked against the original bytes first, and the app image is re-sealed
-  (checksum and SHA-256). Bluetooth is only used for first-time pairing in
-  the eWeLink app, which a plug being converted has already done.
+  controller's clock set-up fails and its ROM code faults. The functions that
+  call `esp_bt_controller_init` are made to `return 0` at once.
+  `esp_bt_controller_init` is found as the one function holding the address of
+  its own name, for its asserts: through an `l32r` from a literal pool on a
+  classic ESP32, a `lui` and `addi` on an ESP32-C3. Bluetooth is only used for
+  first-time pairing in the eWeLink app, which a plug being converted has
+  already done.
+- **The DPORT stall is skipped, on a classic ESP32.** An ESP32 before revision
+  3 has a bug in reading DPORT registers, so its firmware stops the other core
+  around each read and waits for its answer. QEMU has no such bug, and the
+  other core can be too slow to answer, which trips the interrupt watchdog at
+  start-up. `esp_dport_access_stall_other_cpu_start` is the one function that
+  holds the addresses of both cores' interrupt registers (`0x3FF000E4` and
+  `0x3FF000E8`); it, and the `_end` function straight after it, return at once.
+  Firmware on ESP-IDF 5 is left alone: its `esp_ipc_isr` uses the same
+  registers to stop a core it needs stopped.
+- **With `--stub-cloud`, the plug trusts the stub.** eWeLink's CA, pinned in
+  the firmware, is found by its issuer (the older RSA `coolkit` one, or the
+  newer `CoolKit Root CA ECC`) and replaced, in its fixed 1040-byte slot, with
+  the stub's own CA. That CA is EC P-256, as an RSA-2048 one would not fit.
+  Where a classic ESP32's firmware pins the RSA CA, the stub's is RSA-1024
+  instead (`make_ca.py --rsa`, kept in `captures/emulation/stub-cloud-rsa/`):
+  that firmware gives the task holding the connection only the stack an RSA
+  check takes, and on the POWCT an EC one overflowed it
+  (`A stack overflow in task colink task`). OpenSSL on Ubuntu refuses an
+  RSA-1024 CA by default, so the tool inside the emulator runs with
+  `OPENSSL_CONF` pointing at the `openssl.cnf` `make_ca.py` writes, which
+  lowers it to `SECLEVEL=1`; nothing outside the container is changed. See
+  [cloud-stub.md](cloud-stub.md).
 - **The home Wi-Fi becomes the emulator's.** Stock 1.2.0 keeps the network it
   joins in two places: ESP-IDF's `nvs.net80211` (`sta.ssid`, `sta.pswd`) and
   Sonoff's own `frame_params` (`ssid`, `passwd`). Both are rewritten to
   `PICSimLabWifi` with no password, so the real home Wi-Fi is not in the
   emulated plug at all. The partition is rebuilt with ESP-IDF's
   `nvs_partition_gen`, which adds `sta.apinfo`, `sta.pmk` and `sta.apsw` itself.
+  A dump taken after the plug was reset has no network or dispatch address in
+  `frame_params`, and would wait to be paired: they are added.
 - **The eFuse dump needs no conversion.** QEMU's ESP32-C3 eFuse file is the
   read registers `EFUSE_RD_WR_DIS_REG` to `EFUSE_RD_SYS_PART2_DATA7_REG` in
-  order, which is what `efuse.bin` holds; it is only padded to 1024 bytes. The
-  plug's MAC comes from it.
+  order, which is what `efuse.bin` holds; it is only padded to 1024 bytes. A
+  classic ESP32's is its four blocks' read registers, 124 bytes, used whole.
+  The plug's MAC comes from it.
+- **A test copy's eFuses hold its MAC and little else.** `public_dump.py`
+  writes them, as a public dump has none. An ESP32-C3's also carries the wafer
+  revision its app's header asks for (byte 14, the lowest chip revision it runs
+  on), or the bootloader stops at `This chip is revision 0`. A classic ESP32's
+  says revision 0, which its firmware accepts.
 
 ### The QEMU fork (`tools/espressif/emulator/patches/*.patch`)
 
@@ -594,6 +686,24 @@ change, and regenerate them. What they do:
   instead, block its traffic in the container
   (`iptables -I INPUT -s 192.168.60.50 -j DROP`). Offered upstream as
   [lcgamboa/qemu #19](https://github.com/lcgamboa/qemu/pull/19).
+- **`0003-esp32-cache-sync-only-what-differs.patch` - a classic ESP32 is
+  quick enough.** Each time a classic ESP32's flash cache came back on after a
+  flash operation, the fork threw away the translated code of both whole flash
+  windows, and changed the memory map each time it went off and on. Now a page
+  is copied, and its code thrown away, only if its bytes differ, and a window
+  stays mapped once on. Boot takes about 8 seconds instead of 26, and
+  the tool reads Tasmota's settings backup in about 6 seconds instead of 70.
+- **`0004-tcg-round-robin-kick-faster.patch` - no interrupt watchdog at
+  start-up.** One QEMU thread runs a classic ESP32's two cores in turn, each
+  for 100 ms of virtual time. Firmware reading flash on one core spins, with
+  interrupts off, until the other core has parked, which it does only on its
+  turn, so stock firmware tripped its interrupt watchdog at start-up and reset
+  over and over. The cores now take turns every millisecond. An ESP32-C3 has
+  one core and is not affected.
+
+Tried and dropped for the classic ESP32: QEMU's multi-threaded mode (MTTCG),
+which did not help and was slower, and stretching the firmware's watchdogs,
+which only hid real hangs for longer.
 
 What else the emulator needed from the fork is
 [upstream now](upstream-contributions.md#the-emulators-wi-fi): real addresses on
@@ -604,6 +714,10 @@ while the plug also tries the home one, on a link of its own with its own MAC
 
 ### How QEMU is run (`container/bin/plug-supervisor`)
 
+- **The chip's QEMU.** `emu.sh` passes the chip it read from the flash, and
+  the PSRAM the kind asks for, as `CHIP` and `PSRAM`; the supervisor picks the
+  binary, machine, eFuse device and Wi-Fi device from the first, and gives the
+  second as `-m` ([Classic ESP32 plugs](#classic-esp32-plugs)).
 - **`softap-status`: the plug's own network is visible.** QEMU's output passes
   through it, and it keeps the name of the network the plug broadcasts, from the
   fork's `guest SoftAP` lines, in a file the `nmcli` stand-in and `wifi join` read.
@@ -611,7 +725,9 @@ while the plug also tries the home one, on a link of its own with its own MAC
   input pins, so they all read low. The S60's button (GPIO9) is active low, so
   Tasmota saw it held, and after 40 seconds reset itself to its defaults,
   losing its Wi-Fi. `-global driver=esp32c3.gpio,property=gpio_in,value=0x3fffff`
-  makes inputs idle high, as with pull-ups.
+  makes inputs idle high, as with pull-ups. On a classic ESP32, `gpio_in` and
+  `gpio_in1` (the pins above 31) are set all high the same way, and
+  `strap_mode` is `0x12`, the strapping pins' value for booting from flash.
 - **`-no-reboot`.** The fork keeps its peripherals running across a software
   reset, so firmware restarting into a different image (stock into the
   bridge, the bridge into Tasmota) crashed at start-up on what the previous
@@ -642,26 +758,37 @@ gives each request its own connection.
   network has no password. Every setup network the conversion makes is open
   from the installer 4.4.3 on, so all can be joined (`wifi join NAME`, and
   `wifi home` to go back); an earlier release's installer, with WPA2, cannot.
-- **No power meter.** The CSE7766 is not emulated, so readings are absent and
-  the end-of-run check's log says the meter is unchanged; the checks still
-  pass, as the relay switches.
+- **No power meter, buttons or screen.** No plug's meter (the S60's CSE7766,
+  say) is emulated, so readings are absent and the end-of-run check's log says
+  the meter is unchanged; the checks still pass, as the relay switches. A
+  conversion passing says the firmware installs and starts, not that its
+  wiring is right.
 - **One plug, one region.** The emulator runs whatever the dump came from. A
-  dump of another model or region (with that owner's account) is needed to
-  emulate it.
+  dump of another model or region is needed to emulate it. A test copy made
+  from an update file runs on another plug's flash, so it tests the firmware,
+  not the device's own layout or factory data.
+- **No chip revision.** QEMU has no revision register, so a classic ESP32 says
+  revision 0.0, and the installer's pin levels are empty
+  ([device-research.md](device-research.md#what-a-backup-logs)).
 
 ## Debugging
 
-- **The serial log** is `captures/emulation/state/logs/uart.log`, redacted by
+- **The serial log** is `captures/emulation/state/logs/uart.log` (`state-N`
+  with `--instance N`), redacted by
   `tools/espressif/emulator/redact.py`, which masks the dump's secrets and drops panic
   memory dumps (they show RAM as words the masking cannot see into). Put any
   other log through it before reading it.
 - **A QEMU of your own build**: `AUTOFLASH_EMU_QEMU=path/to/qemu-system-riscv32
   tools/espressif/emulator/emu.sh ...` runs it in place of the image's, without
-  rebuilding the image (`qemu-build.Dockerfile` builds one from a fork
-  checkout with the patches applied). Patches in `tools/espressif/emulator/patches/` apply
-  in name order, each on top of those before it.
+  rebuilding the image; for a classic ESP32, give a `qemu-system-xtensa`.
+  `qemu-build.Dockerfile` builds the RISC-V one from a fork checkout with the
+  patches applied; for the Xtensa one, add `xtensa-softmmu` to its
+  `--target-list` and build `qemu-system-xtensa`. Patches in
+  `tools/espressif/emulator/patches/` apply in name order, each on top of those
+  before it.
 - **The QEMU monitor** is at `/run/autoflash-emu/monitor.sock` in the container.
-- **gdb** (PlatformIO's `riscv32-esp-elf-gdb`) against QEMU's `-s` needs a
+- **gdb** (PlatformIO's `riscv32-esp-elf-gdb`, or `xtensa-esp32-elf-gdb` for a
+  classic ESP32) against QEMU's `-s` needs a
   pseudo-terminal (run it under `script -qfc`), and hardware breakpoints
   (`hbreak`): the bootloader overwrites software breakpoints in IRAM when it
   loads the app. For the bridge's symbols, build its ELF with

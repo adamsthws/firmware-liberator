@@ -16,6 +16,23 @@ RUN=/run/autoflash-emu
 LOG=/state/logs/uart.log
 . "$RUN/env"
 
+# The chip the plug's flash is for (emu.sh). A classic ESP32 boots from flash by
+# its strapping pins, which the fork takes as a value; every input idles high,
+# as with pull-ups, so an active-low button does not read as held.
+case "${CHIP:-esp32c3}" in
+esp32)
+    qemu=qemu-system-xtensa machine=esp32-picsimlab efuse=nvram.esp32.efuse nic=esp32_wifi
+    pins=(-global "driver=esp32.gpio,property=strap_mode,value=0x12"
+          -global "driver=esp32.gpio,property=gpio_in,value=0xffffffff"
+          -global "driver=esp32.gpio,property=gpio_in1,value=0xff")
+    ;;
+*)
+    qemu=qemu-system-riscv32 machine=esp32c3-picsimlab efuse=nvram.esp32c3.efuse nic=esp32c3_wifi
+    pins=(-global "driver=esp32c3.gpio,property=gpio_in,value=0x3fffff")
+    ;;
+esac
+psram=()
+[ -n "${PSRAM:-}" ] && psram=(-m "${PSRAM}M")
 capture=()
 [ "$PCAP" = 1 ] && capture=(-object "filter-dump,id=d0,netdev=n0,file=/state/logs/wifi-$(date +%Y%m%d-%H%M%S).pcap")
 
@@ -27,15 +44,14 @@ while true; do
     echo "===== plug powered on $(date '+%F %T') =====" >> "$LOG"
     router=()
     [ -e "$RUN/router-off" ] && router=(-global "driver=esp32_wifi,property=access-points-off,value=on")
-        /opt/qemu/bin/qemu-system-riscv32 \
-        -L /opt/qemu/pc-bios -machine esp32c3-picsimlab -display none -no-reboot \
+        "/opt/qemu/bin/$qemu" \
+        -L /opt/qemu/pc-bios -machine "$machine" "${psram[@]}" -display none -no-reboot \
         -serial file:/dev/stdout -monitor "unix:$RUN/monitor.sock,server,nowait" -pidfile "$RUN/qemu.pid" \
         -drive file=/state/flash.bin,if=mtd,format=raw \
         -drive file=/state/efuse.bin,if=none,format=raw,id=efuse \
-        -global driver=nvram.esp32c3.efuse,property=drive,value=efuse \
-        -global driver=esp32c3.gpio,property=gpio_in,value=0x3fffff \
+        -global "driver=$efuse,property=drive,value=efuse" "${pins[@]}" \
         -netdev tap,id=n0,ifname=tap0,script=no,downscript=no \
-        -net nic,model=esp32c3_wifi,netdev=n0 "${capture[@]}" "${router[@]}" \
+        -net "nic,model=$nic,netdev=n0" "${capture[@]}" "${router[@]}" \
         </dev/null 2>&1 \
         | /opt/autoflash-emu/bin/softap-status "$RUN/softap" \
         | python3 -I /work/tools/espressif/emulator/redact.py /secrets/stock-flash.bin >> "$LOG"

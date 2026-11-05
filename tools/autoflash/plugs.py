@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from tools.espressif import flashmap
+
 from . import kinds, oslock
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,7 +39,6 @@ RUNS = "runs"
 PLUG_FILE = "plug.json"
 MAC_RE = re.compile(r"^(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}$", re.IGNORECASE)
 # The eFuse dump's base MAC: words 6 and 7 of EFUSE_RD_MAC_SPI_SYS, bytes reversed.
-EFUSE_MAC = slice(0x18, 0x1E)
 
 
 def folder_name(mac: str) -> str:
@@ -133,7 +134,7 @@ def mac_of_run(directory: Path) -> str | None:
 
 def mac_from_efuse(efuse: bytes) -> str:
     """The plug's MAC from its eFuse registers, as the chip itself reports it."""
-    return ":".join(f"{b:02x}" for b in efuse[EFUSE_MAC][::-1])
+    return flashmap.mac_of_efuse(efuse)
 
 
 def read_plug(mac: str) -> dict[str, Any]:
