@@ -18,6 +18,15 @@ GITIGNORED = {line.strip().strip("/") for line in (ROOT / ".gitignore").read_tex
               if line.strip() and not line.startswith("#")}
 
 
+def repository_files(*patterns):
+    """The files git tracks or would, from its own lists: walking the checkout
+    takes a minute under load, most of it in the ignored captures/."""
+    listed = subprocess.run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", *patterns],
+                            cwd=ROOT, capture_output=True, text=True, check=True).stdout
+    return [ROOT / name for name in sorted(set(listed.split("\0")))
+            if name and not name.startswith(".claude/") and (ROOT / name).is_file()]
+
+
 class RepositoryRootTests(unittest.TestCase):
     def test_every_parents_index_reaches_the_repository(self):
         wrong = []
@@ -60,13 +69,12 @@ class RepositoryRootTests(unittest.TestCase):
         from the checkout root (C:\\Autoflash\\repo in the emulator's VM)."""
         windows = re.compile(r"tools\\[A-Za-z0-9_\\.-]+\.(?:ps1|py|cmd)")
         wrong = []
-        for pattern in ("*.ps1", "*.cmd", "*.md"):
-            for file in sorted(ROOT.rglob(pattern)):
-                if any(part in ("archive", "captures", ".git", ".venv") for part in file.relative_to(ROOT).parts):
-                    continue
-                for path in set(windows.findall(file.read_text(encoding="utf-8"))):
-                    if not (ROOT / path.replace("\\", "/")).is_file():
-                        wrong.append("%s: %s" % (file.relative_to(ROOT), path))
+        for file in repository_files("*.ps1", "*.cmd", "*.md"):
+            if file.relative_to(ROOT).parts[0] == "archive":
+                continue
+            for path in set(windows.findall(file.read_text(encoding="utf-8"))):
+                if not (ROOT / path.replace("\\", "/")).is_file():
+                    wrong.append("%s: %s" % (file.relative_to(ROOT), path))
         self.assertEqual(wrong, [])
 
     def test_every_script_the_docs_run_as_a_command_can_be_run(self):
@@ -75,8 +83,8 @@ class RepositoryRootTests(unittest.TestCase):
         command = re.compile(r"^\s*(?:\\\s*)?(?:[A-Z_0-9]+=\S+\s+)*(tools/\S+\.(?:py|sh))\b", re.M)
         block = re.compile(r"^```(?:sh|bash)\n(.*?)^```", re.M | re.S)
         wrong = []
-        for file in sorted(ROOT.rglob("*.md")):
-            if any(part in ("archive", "captures", ".git", ".venv") for part in file.relative_to(ROOT).parts):
+        for file in repository_files("*.md"):
+            if file.relative_to(ROOT).parts[0] == "archive":
                 continue
             for code in block.findall(file.read_text(encoding="utf-8")):
                 for path in set(command.findall(code)):
