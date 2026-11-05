@@ -25,7 +25,9 @@ no firewall rule and no helper behind.
 
 How many at once, from the environment:
     AUTOFLASH_CLOUD_WORKERS  emulators for the scenarios that need eWeLink (from
-                       instance 1); they take turns at the cloud
+                       instance 1); each run and its plug use the cloud only in
+                       its turn, and are side by side otherwise. Six unless
+                       set, or one per core on a computer with fewer
     AUTOFLASH_CLOUD_MOST     try up to this many, one more at a time while they pass
     AUTOFLASH_CLOUD_BACK_OFF=1  start at AUTOFLASH_CLOUD_WORKERS and drop one at a time
                        whenever two of the last four fail
@@ -72,6 +74,17 @@ RESULTS = OUT / "results.jsonl"
 LOGS = OUT / "logs"
 # A machine whose plugs never get a turn at the cloud.
 NO_CLOUD = os.environ.get("AUTOFLASH_NO_CLOUD") == "1"
+
+
+def cloud_workers():
+    """How many emulators take the scenarios that need eWeLink: six, as their
+    turns at eWeLink come one at a time and 8 went no faster on 2026-11-07, and
+    no more than one per core, or they fail falsely. A computer whose memory is
+    mostly taken holds fewer (docs/testing.md)."""
+    default = 0 if NO_CLOUD else min(6, os.cpu_count() or 1)
+    return int(os.environ.get("AUTOFLASH_CLOUD_WORKERS", default))
+
+
 # Each emulator serves its own local eWeLink stub (emu.sh --stub-cloud): the
 # plugs never share a cloud, so nothing is serialised and every scenario can run
 # in parallel. Set by --stub-cloud; see docs/cloud-stub.md.
@@ -491,7 +504,7 @@ class Tuner:
                          r"turn given up after 2[34]\ds")
 
     def __init__(self):
-        self.workers = int(os.environ.get("AUTOFLASH_CLOUD_WORKERS", "0"))
+        self.workers = cloud_workers()
         self.most = int(os.environ.get("AUTOFLASH_CLOUD_MOST", str(self.workers)))
         self.cool_down = float(os.environ.get("AUTOFLASH_CLOUD_COOL_DOWN", "5"))
         self.phase = "workers" if self.most > self.workers else "cool-down"
@@ -577,6 +590,12 @@ BOOTS = re.compile(r"(?P<sonoff>\[BUILD TIME\]|colinkTcp|tmp ip = )|(?P<bridge>a
                    r"(?P<tasmota>Project tasmota)|(?P<esphome>\[I\]\[app)")
 INTENT = re.compile(r"\] (?:A1|A2|C2)  |Sending the installer again")
 HOLD_AT_MOST = 240.0
+# A step after C2 under way: its plug has left Sonoff's firmware, so the turn is free.
+PAST_THE_CLOUD = re.compile(r"\] (?!A\d|C2\b)[A-Z]\d\w*  ")
+# A sign-in with no plug needing the cloud: time for it and the list it asks for.
+SIGN_IN_TURN = 15.0
+# Where a run asks for a turn before it signs in (get_device_key.wait_for_turn).
+TURN_FILE = "captures/cloud-turn"
 
 
 def plug_busy(state, since):
@@ -630,7 +649,11 @@ class PlugMonitor:
         line = text[text.rfind("\n", 0, at) + 1:text.find("\n", at)]
         return line, text[at:]
 
+    def turn_file(self):
+        return self.state / "work" / TURN_FILE
+
     def watch(self):
+        self.turn_file().unlink(missing_ok=True)  # the last scenario's run, killed while it waited
         # Shut first, and kept shut whatever goes wrong below.
         plug_internet(self.n, False)
         while not self.stop.is_set():
@@ -677,6 +700,8 @@ class PlugMonitor:
                         seen = self.hold("finding" if finding else "fallen back" if again else "fresh", run=run)
                         if seen is not None:
                             handled[run] = seen
+                if self.turn_file().exists() and not NO_CLOUD and CLOUD.acquire(self.n, CLOUD.FINDING, self.stop.is_set):
+                    self.hold("a sign-in", limit=SIGN_IN_TURN)
             self.stop.wait(1.0)
 
     def intents(self, run):
@@ -692,12 +717,14 @@ class PlugMonitor:
         ended = self.run_text().count("=== run ended ===")
         # Asked for again while it waited: this turn is theirs too.
         asked = self.intents(run)
+        steps_from = len(self.run_text())
         plug_internet(self.n, True)
         self.sc.say(f"CLOUD: turn taken ({why})")
         since = time.time()
         opened = since
         try:
             while not self.stop.is_set() and time.time() - since < limit:
+                self.turn_file().unlink(missing_ok=True)
                 if time.time() - opened > 2:
                     # Again now and then: a plug's emulator started in the
                     # turn (a fresh one) starts with its way shut.
@@ -714,12 +741,14 @@ class PlugMonitor:
                 # Held through the download, not only to its start: Sonoff's
                 # firmware that loses eWeLink part way gives the download up.
                 # Its end is the installer starting, below.
-                now_ended = self.run_text().count("=== run ended ===")
+                text = self.run_text()
+                now_ended = text.count("=== run ended ===")
                 if now_ended < ended:
                     # A fresh plug's emulator wiped the last scenario's runs
                     # after this turn began: counted from here.
                     ended = now_ended
-                elif now_ended > ended:
+                    steps_from = 0
+                elif now_ended > ended or PAST_THE_CLOUD.search(text, steps_from):
                     break
                 with open(uart, encoding="utf-8", errors="replace") as f:
                     f.seek(pos); boots = f.read(); pos = f.tell()
@@ -832,6 +861,8 @@ class Scenario:
         legacy = code is not None and (Path(code) / LEGACY_TOOL).exists()
         args += ["--", *([] if legacy else ["--firmware", target]), *extra]
         env = dict(os.environ)
+        if not STUB_CLOUD and not NO_CLOUD:
+            env["AUTOFLASH_EMULATOR_CLOUD_TURN"] = f"/work/{TURN_FILE}"
         if (self.sc["fault"], self.sc["arg"]) == ("ctrlc", "countdown"):
             env["AUTOFLASH_EMULATOR_COUNTDOWN"] = "30"
         if self.sc["fault"] == "nohook":
@@ -1919,7 +1950,7 @@ def batch(ids_file=None):
         na = int(os.environ.get("AUTOFLASH_STUB_WORKERS", os.environ.get("AUTOFLASH_ANY_WORKERS", "3")))
         first = int(os.environ.get("AUTOFLASH_FIRST_INSTANCE", "1"))
     else:
-        nc = int(os.environ.get("AUTOFLASH_CLOUD_WORKERS", "0"))
+        nc = cloud_workers()
         na = int(os.environ.get("AUTOFLASH_ANY_WORKERS", "0"))
         first = int(os.environ.get("AUTOFLASH_FIRST_INSTANCE", nc + 1))  # clear of another batch's emulators
     print(f"batch: {cloud.qsize()} cloud on {nc}, {anywhere.qsize()} others on {na}", flush=True)
