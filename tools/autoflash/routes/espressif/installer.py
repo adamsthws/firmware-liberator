@@ -51,6 +51,9 @@ BRIDGE_OTA = Path("artifacts/autoflash-bridge-sonoff-s60-4.4.4.ota")
 # What the sender says when the upgrade command never went out
 # (serve_tasmota_ota.NOT_SENT).
 BRIDGE_NOT_SENT = "The upgrade command was not sent"
+# The run's input holding the address the plug has downloaded the installer
+# from, so a later send it never asks for is not put down to the firewall there.
+DOWNLOADED_FROM = "bridge_downloaded_from"
 
 
 def bridge_failure_advice(ctx: Context, reported: list[str], started: bool) -> list[str]:
@@ -79,6 +82,16 @@ def bridge_failure_advice(ctx: Context, reported: list[str], started: bool) -> l
             "to fetch the installer - eWeLink's servers, or this computer's",
             "internet, having trouble. Nothing was sent, so the device keeps its",
             "Sonoff firmware: run this again in a few minutes.",
+        ]
+    if ctx.state.input(DOWNLOADED_FROM) == ctx.listen_ip():
+        # Seen in the fault suite: told it was the firewall, three times over,
+        # with half the file already served to the same plug from here.
+        return [
+            "The device did not ask for the installer this time, though it downloaded",
+            "part of it from this computer earlier, so a firewall is not the cause.",
+            "eWeLink's message most likely did not reach it. It keeps its Sonoff",
+            "firmware, so nothing is lost: switch the device off and on, wait for it",
+            "to show online in the eWeLink app, and run this again.",
         ]
     return firewall.firewall_hint(ctx)
 
@@ -139,6 +152,8 @@ def step_bridge(ctx: Context) -> dict[str, Any]:
         # Some of it served means the plug reached this computer: not the
         # firewall, but its Wi-Fi going part way (a router restarting, say).
         started = output.tool_said("Served /user") or output.tool_said("did not request every")
+        if started:
+            ctx.state.set_input(DOWNLOADED_FROM, listen_ip)
         prompts.section("The bridge was not delivered", [
             *(["The sender reported:", *(f"  {line}" for line in reported), ""] if reported else []),
             *bridge_failure_advice(ctx, reported, started),
