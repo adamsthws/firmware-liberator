@@ -155,7 +155,7 @@ PLUG_BACK_WAIT = 300.0
 def execute_with_retries(ctx: Context, step: str) -> int:
     for attempt in range(1, ATTEMPTS + 1):
         code = execute(ctx, step)
-        if step != "E3":  # it counts its own tries (COMMIT_ATTEMPTS)
+        if step not in ("E3", "B4"):  # they count their own tries (COMMIT_ATTEMPTS, BACKUP_TRIES)
             ctx.state.capture(f"{step}.attempts", attempt)
         if code != 1 or step not in routes.FAMILY.RETRY_STEPS or attempt == ATTEMPTS:
             return code

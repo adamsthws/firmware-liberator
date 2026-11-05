@@ -31,6 +31,11 @@ ARRIVAL_WAIT = 180.0
 # How long eWeLink takes to show a plug back on Sonoff's firmware online,
 # before the same question.
 CLOUD_WAIT = 180.0
+# Tries at reading the plug's own data before going on without a backup: the
+# pause, then up to ARRIVAL_WAIT for the plug to answer, lets a dropped network
+# come back between them.
+BACKUP_TRIES = 3
+BACKUP_PAUSE = 10.0
 # The emulated plug's power switch, where the run has one: a file holding off or
 # on (tools/beken/emulator/bk-emu.sh computer), offered as a choice of its own.
 EMULATED_POWER = "AUTOFLASH_EMULATOR_POWER"
@@ -210,6 +215,25 @@ def _read_region(host: str) -> bytes:
     return openbeken.read_flash(host, start, size, progress=progress)
 
 
+def _read_region_with_retries(ctx: Context, host: str) -> bytes:
+    """_read_region, BACKUP_TRIES times before its OSError is let through."""
+    for attempt in range(1, BACKUP_TRIES):
+        ctx.state.capture("B4.attempts", attempt)
+        try:
+            return _read_region(host)
+        except OSError as exc:
+            output.progress_clear()
+            output.tell(f"    The device's own data could not be read ({exc}) - trying again in "
+                        f"{BACKUP_PAUSE:.0f}s (attempt {attempt + 1} of {BACKUP_TRIES}).")
+        time.sleep(BACKUP_PAUSE)
+        started = time.monotonic()
+        while (waited := time.monotonic() - started) < ARRIVAL_WAIT and not openbeken.info(host, timeout=3.0):
+            output.progress(f"waiting for the device to answer... {waited:.0f}s")
+            time.sleep(3)
+    ctx.state.capture("B4.attempts", BACKUP_TRIES)
+    return _read_region(host)
+
+
 def _back_up(ctx: Context, mac: str) -> str:
     if plugs.find_backup(mac):
         output.say("    The device's own data is backed up already.")
@@ -219,7 +243,7 @@ def _back_up(ctx: Context, mac: str) -> str:
     kind = kinds.of_run(ctx.state)
     host = ctx.state.input("plug_ip")
     try:
-        region = _read_region(host)
+        region = _read_region_with_retries(ctx, host)
     except OSError as exc:
         output.progress_clear()
         output.tell(f"    The device's own data could not be read ({exc}); carrying on without a backup. "
