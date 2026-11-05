@@ -2976,12 +2976,14 @@ class BackOnSonoffTests(unittest.TestCase):
         self.assertIs(address, failed)
         self.assertEqual(sent, installer.BRIDGE_SENDS)
 
-    def advice(self, said, reported=(), started=False):
+    def advice(self, said, reported=(), started=False, downloaded_from=None, listen_ip="192.0.2.10"):
         from types import SimpleNamespace
         from unittest import mock
+        state = SimpleNamespace(input=lambda key: downloaded_from if key == installer.DOWNLOADED_FROM else None)
+        ctx = SimpleNamespace(state=state, listen_ip=lambda: listen_ip)
         with mock.patch.object(output, "tool_said", side_effect=lambda text: any(text in s for s in said)), \
              mock.patch.object(firewall, "firewall_hint", return_value=["FIREWALL"]):
-            return " ".join(installer.bridge_failure_advice(SimpleNamespace(), list(reported), started))
+            return " ".join(installer.bridge_failure_advice(ctx, list(reported), started))
 
     def test_a_send_that_never_reached_ewelink_does_not_blame_the_firewall(self):
         # Seen against the real cloud: eWeLink's servers dropping connections
@@ -3002,6 +3004,19 @@ class BackOnSonoffTests(unittest.TestCase):
 
     def test_a_command_sent_and_never_fetched_is_the_firewall(self):
         self.assertEqual(self.advice(["Upgrade command sent with owner-controlled private-LAN URLs."]), "FIREWALL")
+
+    def test_a_plug_that_downloaded_from_here_earlier_does_not_blame_the_firewall(self):
+        # Seen in the fault suite: half the file served, then three sends the
+        # plug never asked for, each put down to the firewall.
+        sent = ["Upgrade command sent with owner-controlled private-LAN URLs."]
+        advice = self.advice(sent, downloaded_from="192.0.2.10")
+        self.assertNotIn("FIREWALL", advice)
+        self.assertIn("a firewall is not the cause", advice)
+        self.assertIn("switch the device off and on", advice)
+
+    def test_a_computer_on_a_new_address_since_the_download_may_still_be_the_firewall(self):
+        sent = ["Upgrade command sent with owner-controlled private-LAN URLs."]
+        self.assertEqual(self.advice(sent, downloaded_from="192.0.2.10", listen_ip="192.0.2.11"), "FIREWALL")
 
     def test_offline_and_cut_off_sends_keep_their_own_advice(self):
         self.assertIn("eWeLink does not see the device", self.advice(["Device is offline in eWeLink; refusing"]))
