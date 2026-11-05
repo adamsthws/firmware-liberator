@@ -1048,6 +1048,57 @@ class ArrivedTests(unittest.TestCase):
                 self.assertEqual(arrived.step_backup(ctx)["outcome"], "existing")
                 self.assertEqual(ctx.state.input("backup_outcome"), "existing")
 
+    def b4_reading(self, tmp, reads):
+        ctx = a_context(tmp, plug_ip=self.server.host, stock_version="1.0.2")
+        with mock.patch.object(plugs, "PLUGS", Path(tmp) / "plugs"), mock.patch.object(plugs, "CAPTURES", Path(tmp)), \
+                mock.patch.object(arrived, "_read_region", side_effect=reads) as read, \
+                mock.patch.object(arrived.openbeken, "info", return_value={"build": "x"}), \
+                mock.patch.object(arrived.backup, "factory_mac", return_value=MAC), \
+                mock.patch.object(images, "stock_rbl", return_value=(b"RBL stock", "1.0.2")), \
+                mock.patch.object(arrived.time, "sleep") as sleep:
+            return arrived.step_backup(ctx), read.call_count, sleep, ctx
+
+    def test_b4_tries_again_after_a_dropped_network(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            gone = OSError("short read of the device's flash")
+            result, reads, sleep, ctx = self.b4_reading(tmp, [gone, gone, b"\x01" * 0x100])
+            self.assertEqual(result["outcome"], "saved")
+            self.assertEqual(reads, 3)
+            self.assertEqual(sleep.call_args_list.count(mock.call(arrived.BACKUP_PAUSE)), 2)
+            self.assertEqual(ctx.state.data["captures"]["B4.attempts"], 3)
+
+    def test_b4_goes_on_without_a_backup_after_three_tries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result, reads, _, _ = self.b4_reading(tmp, OSError("short read of the device's flash"))
+            self.assertEqual(result["outcome"], "failed")
+            self.assertEqual(reads, 3)
+
+    def test_b4_waits_for_the_plug_to_answer_before_trying_again(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            answers = [None]
+
+            def read(_host):
+                if answers[0] is None and read.calls:
+                    self.fail("read again before the plug answered")
+                read.calls += 1
+                if read.calls == 1:
+                    raise OSError("gone")
+                return b"\x01" * 0x100
+            read.calls = 0
+
+            def sleeping(seconds):
+                if seconds != arrived.BACKUP_PAUSE:
+                    answers[0] = {"build": "x"}  # it answers after the first wait
+
+            ctx = a_context(tmp, plug_ip=self.server.host, stock_version="1.0.2")
+            with mock.patch.object(plugs, "PLUGS", Path(tmp) / "plugs"), mock.patch.object(plugs, "CAPTURES", Path(tmp)), \
+                    mock.patch.object(arrived, "_read_region", read), \
+                    mock.patch.object(arrived.openbeken, "info", side_effect=lambda *a, **k: answers[0]), \
+                    mock.patch.object(arrived.backup, "factory_mac", return_value=MAC), \
+                    mock.patch.object(images, "stock_rbl", return_value=(b"RBL stock", "1.0.2")), \
+                    mock.patch.object(arrived.time, "sleep", side_effect=sleeping):
+                self.assertEqual(arrived.step_backup(ctx)["outcome"], "saved")
+
     def test_b4_keeps_nothing_that_is_not_this_plugs(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp, plug_ip=self.server.host)
