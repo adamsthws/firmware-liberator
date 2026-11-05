@@ -5,7 +5,9 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from tools.ewelink import get_device_key
 from tools.ewelink.get_device_key import (
     APP_SECRET,
     EwelinkError,
@@ -14,6 +16,34 @@ from tools.ewelink.get_device_key import (
     target_id_from_mdns,
     write_secret,
 )
+
+
+class TurnTests(unittest.TestCase):
+    def test_a_sign_in_waits_for_the_suite_to_give_the_turn(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            turn = Path(tmp) / "captures" / "cloud-turn"
+            sleeps = []
+
+            def sleep(_seconds):
+                sleeps.append(turn.exists())
+                if len(sleeps) == 3:
+                    turn.unlink()
+
+            def api_json(*_args, **_kwargs):
+                self.assertFalse(turn.exists(), "signed in before its turn")
+                return {"error": 0, "data": {"at": "t"}}
+
+            with mock.patch.object(get_device_key, "_TURN_FILE", str(turn)), \
+                    mock.patch.object(get_device_key.time, "sleep", sleep), \
+                    mock.patch.object(get_device_key, "api_json", api_json):
+                get_device_key.login_session("owner@example.test", "pw", "+44", "eu")
+            self.assertEqual(sleeps, [True, True, True])
+
+    def test_a_normal_run_does_not_wait(self):
+        with mock.patch.object(get_device_key, "_TURN_FILE", ""), \
+                mock.patch.object(get_device_key.time, "sleep", side_effect=AssertionError), \
+                mock.patch.object(get_device_key, "api_json", return_value={"error": 0, "data": {"at": "t"}}):
+            self.assertEqual(get_device_key.login_session("owner@example.test", "pw", "+44", "eu")[0], "eu")
 
 
 class DeviceKeyTests(unittest.TestCase):

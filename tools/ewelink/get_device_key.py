@@ -11,6 +11,7 @@ import json
 import os
 import ssl
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -44,6 +45,8 @@ API = {
 _STUB_API_BASE = os.environ.get("AUTOFLASH_EWELINK_API_BASE", "").rstrip("/")
 if _STUB_API_BASE:
     API = {region: _STUB_API_BASE for region in API}
+# Set by the fault suite on the real cloud (wait_for_turn). Unset in a normal run.
+_TURN_FILE = os.environ.get("AUTOFLASH_EMULATOR_CLOUD_TURN", "")
 
 
 # A certificate this computer does not trust, from a site that has a good one -
@@ -88,7 +91,20 @@ def api_json(url: str, *, body: bytes | None = None, headers: dict[str, str] | N
         raise EwelinkError("eWeLink returned a non-JSON response") from None
 
 
+def wait_for_turn() -> None:
+    """In the fault suite, whose emulated plugs are all one eWeLink device, a
+    sign-in ends another run's and can reach another's plug: so a run leaves
+    this file and signs in once the suite has removed it, giving it the turn."""
+    if _TURN_FILE:
+        turn = Path(_TURN_FILE)
+        turn.parent.mkdir(parents=True, exist_ok=True)
+        turn.touch()
+        while turn.exists():
+            time.sleep(0.5)
+
+
 def login_session(email: str, password: str, country_code: str, region: str) -> tuple[str, dict[str, Any]]:
+    wait_for_turn()
     body, headers = signed_login_body(email, password, country_code)
     response = api_json(API[region] + "/v2/user/login", body=body, headers=headers)
     if response.get("error") == 10004:

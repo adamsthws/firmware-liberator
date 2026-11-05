@@ -351,7 +351,7 @@ python -I tools/espressif/emulator/copy_plug.py --remove 12:34:56:ab:cd:ef
 ```sh
 tools/espressif/emulator/fault_suite.py --plug=MAC prep           # the starting plugs (eWeLink)
 tools/espressif/emulator/fault_suite.py list > all.txt            # every scenario, cloud or not
-AUTOFLASH_CLOUD_WORKERS=1 AUTOFLASH_ANY_WORKERS=3 \
+AUTOFLASH_ANY_WORKERS=3 \
     tools/espressif/emulator/fault_suite.py --plug=MAC batch all.txt   # what has not passed yet
 tools/espressif/emulator/fault_suite.py report
 ```
@@ -364,11 +364,20 @@ the tool installs only the current release. `prep-update` makes it from the plug
 `prep` saved on Tasmota, with the previous release firmware.json pins in its app
 slot, fetched from Tasmota's releases.
 
-Against the real cloud, one cloud scenario at a time. The plugs take turns
-at eWeLink, but a run waiting for its turn still talks to it: it sees the
-plug whose turn it is as its own and sends it the installer, which that
-plug then gives up, and each run's login ends the one before. Three at once
-failed three in a row that way.
+Against the real cloud, the cloud scenarios run side by side on six emulators
+(`AUTOFLASH_CLOUD_WORKERS` for another number; one per core on a computer with
+fewer, and the rest of the scenarios' `AUTOFLASH_ANY_WORKERS` come on top). More
+go no faster: eight took as long as six over the 75 real-cloud scenarios, as
+their turns at eWeLink come one at a time. Fewer on a computer whose memory is
+mostly taken: there four had the plugs' memory swapped out, and their
+connections to eWeLink timed out where nothing was wrong. They
+take turns only at eWeLink, as their plugs are all one device there and each login ends the one
+before. A plug is shut off from eWeLink but in its turn, and a run waits for
+its turn before it logs in (`AUTOFLASH_EMULATOR_CLOUD_TURN`, set by the suite):
+without that, a waiting run saw the plug whose turn it was as its own and sent
+it the installer. The turn ends once the plug has left Sonoff's firmware. Runs
+from an old release (`legacy`) know no such wait, and hold a turn from the start
+of their first run instead.
 
 Add `--stub-cloud` to `prep` and `batch` to give each emulator its own local
 eWeLink stand-in instead of the shared real cloud: no cloud lock, so every

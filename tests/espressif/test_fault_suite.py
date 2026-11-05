@@ -508,6 +508,74 @@ class ScenarioTests(unittest.TestCase):
                 self.assertEqual("AUTOFLASH_EWELINK_API_BASE=https://apia.autoflash-stub.test" in command, expected)
                 self.assertEqual("SSL_CERT_FILE=/run/autoflash-emu/stub-ca-bundle.pem" in command, expected)
 
+    def monitor(self, tmp, text=""):
+        sc = self.scenario()
+        sc.state = Path(tmp)
+        (Path(tmp) / "logs").mkdir()
+        (Path(tmp) / "logs/uart.log").write_text("", encoding="utf-8")
+        (Path(tmp) / "work/captures").mkdir(parents=True)
+        monitor = fs.PlugMonitor(sc)
+        monitor.run_text = mock.Mock(return_value=text)
+        return monitor
+
+    def holding(self, monitor, **kwargs):
+        with mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                mock.patch.object(monitor.sc, "say"):
+            return monitor.hold("test", **kwargs)
+
+    def test_a_turn_lets_a_waiting_run_sign_in(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            monitor = self.monitor(tmp)
+            monitor.turn_file().touch()
+            monitor.stop = mock.Mock(is_set=mock.Mock(side_effect=[False, True]))
+            self.holding(monitor)
+            self.assertFalse(monitor.turn_file().exists())
+
+    def test_a_turn_ends_once_a_step_after_c2_is_under_way(self):
+        for step, ends in (("C3", True), ("C3fb", True), ("D1", True), ("A2", False), ("C2", False)):
+            with self.subTest(step=step), tempfile.TemporaryDirectory() as tmp:
+                monitor = self.monitor(tmp)
+                later = f"[12:00:00] {step}  Something\n"
+                monitor.run_text = mock.Mock(side_effect=["", "", later, later, later])
+                monitor.stop = mock.Mock(is_set=mock.Mock(side_effect=[False, True]))
+                monitor.intents = mock.Mock(return_value=None)
+                self.holding(monitor)
+                self.assertEqual(monitor.stop.wait.called, not ends)  # held on, waiting a moment
+
+    def test_a_sign_in_with_no_step_asking_gets_a_short_turn(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            monitor = self.monitor(tmp)
+            monitor.turn_file().touch()
+            monitor.live_run = mock.Mock(return_value=("=== run started 1", "=== run started 1"))
+            monitor.stop.wait = mock.Mock(side_effect=lambda _s: monitor.stop.set())
+            with mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "acquire", return_value=True), \
+                    mock.patch.object(monitor, "hold") as hold:
+                monitor.watching()
+            hold.assert_called_once_with("a sign-in", limit=fs.SIGN_IN_TURN)
+
+    def test_cloud_scenarios_are_side_by_side_unless_told_otherwise(self):
+        for env, cores, no_cloud, expected in (({}, 8, False, 6), ({}, 2, False, 2), ({}, None, False, 1),
+                                               ({}, 8, True, 0), ({"AUTOFLASH_CLOUD_WORKERS": "1"}, 8, False, 1),
+                                               ({"AUTOFLASH_CLOUD_WORKERS": "5"}, 2, True, 5)):
+            with self.subTest(env=env, cores=cores, no_cloud=no_cloud), mock.patch.dict(fs.os.environ, env), \
+                    mock.patch.object(fs.os, "cpu_count", return_value=cores), mock.patch.object(fs, "NO_CLOUD", no_cloud):
+                if not env:
+                    fs.os.environ.pop("AUTOFLASH_CLOUD_WORKERS", None)
+                self.assertEqual(fs.cloud_workers(), expected)
+                self.assertEqual(fs.Tuner().workers, expected)
+
+    def test_only_a_real_cloud_run_is_told_to_wait_for_a_turn(self):
+        for stub_cloud, no_cloud, expected in ((False, False, True), (True, False, False), (False, True, False)):
+            with self.subTest(stub_cloud=stub_cloud, no_cloud=no_cloud), mock.patch.object(fs, "STUB_CLOUD", stub_cloud), \
+                    mock.patch.object(fs, "NO_CLOUD", no_cloud), \
+                    mock.patch.object(fs.subprocess, "call", return_value=0) as call:
+                self.scenario().run_tool("tasmota")
+                self.assertEqual("AUTOFLASH_EMULATOR_CLOUD_TURN" in call.call_args.kwargs["env"], expected)
+
+    def test_the_wait_reaches_the_run_inside_the_emulator(self):
+        script = (fs.REPO / "tools/espressif/emulator/unattended-test.sh").read_text(encoding="utf-8")
+        self.assertIn('-e AUTOFLASH_EMULATOR_CLOUD_TURN="${AUTOFLASH_EMULATOR_CLOUD_TURN:-}"', script)
+
     def test_a_full_disk_is_the_tools_own_soft_limit(self):
         # Root in the emulator may not change another user's limits, and a
         # lowered hard limit could not be raised again.
