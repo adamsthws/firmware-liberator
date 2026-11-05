@@ -54,7 +54,7 @@ cannot connect:
 
 A problem not listed here may be new. Please post it in the
 [Test reports](https://github.com/adamsthws/firmware-liberator/discussions/1) thread - see
-[Reporting how it went](../README.md#reporting-how-it-went) - and the fix
+[How it went](../README.md#how-it-went) - and the fix
 will help everyone after you. To ask for help, start a
 [discussion](https://github.com/adamsthws/firmware-liberator/discussions)
 of your own or open an [issue](https://github.com/adamsthws/firmware-liberator/issues)
@@ -109,7 +109,7 @@ updates.
 ## A plug from another region
 
 The UK S60TPG and the European S60TPF have both been converted (see
-[What it supports](../README.md#what-it-supports)). A plug from
+[Supported Devices](../README.md#supported-devices)). A plug from
 another region is expected to work the same way, and the tool checks the plug
 at two points rather than assuming:
 
@@ -123,7 +123,7 @@ at two points rather than assuming:
 
 Either way, or if it converts cleanly, please post in the
 [Test reports](https://github.com/adamsthws/firmware-liberator/discussions/1) thread - see
-[Reporting how it went](../README.md#reporting-how-it-went) for what to
+[How it went](../README.md#how-it-went) for what to
 include. Reports from other regions are very welcome.
 
 ## The plug can't be found
