@@ -810,8 +810,10 @@ class Scenario:
         with open(self.log, "a", encoding="utf-8") as f:
             f.write(f"{time.strftime('%T')} {text}\n")
 
-    def ex(self, *args, timeout=60):
-        return sh("docker", "exec", name(self.n), *args, timeout=timeout)
+    def ex(self, *args, timeout=60, as_tool=False):
+        """A command in the emulator: as root, or as the user the tool runs as."""
+        user = ("-u", f"{os.getuid()}:{os.getgid()}") if as_tool else ()
+        return sh("docker", "exec", *user, name(self.n), *args, timeout=timeout)
 
     def run_tool(self, target, extra=(), source=None, fresh=False, code=None):
         """A run to `target`: of this checkout's tool, or of the one in `code`
@@ -896,10 +898,10 @@ class Scenario:
         self.say(f"FAULT: did not happen: {what}")
         self.notes.setdefault("not_applied", []).append(what)
 
-    def must(self, *args, timeout=60):
+    def must(self, *args, timeout=60, **options):
         """A command that starts a fault, or ends one the run needs ended. What
         only cleans up goes through ex: a restart may have taken what it undoes."""
-        result = self.ex(*args, timeout=timeout)
+        result = self.ex(*args, timeout=timeout, **options)
         if result.returncode:
             self.not_applied(" ".join(args[:4]))
         return result
@@ -1036,10 +1038,13 @@ class Scenario:
             self.say("SECOND RUN: " + said[-600:])
         elif fault == "diskfull":
             pid = self.ex("pgrep", "-f", "-o", TOOL).stdout.strip()
-            self.must("prlimit", f"--pid={pid}", "--fsize=1000000")
+            # As the tool's user: the emulator's root has no CAP_SYS_RESOURCE, so
+            # may not touch another user's limits. The soft limit only, or
+            # that user could not raise it again.
+            self.must("prlimit", f"--pid={pid}", "--fsize=1000000:", as_tool=True)
             self.notes["diskfull_pid"] = pid
             time.sleep(60)
-            self.ex("prlimit", f"--pid={pid}", "--fsize=unlimited")
+            self.ex("prlimit", f"--pid={pid}", "--fsize=unlimited:", as_tool=True)
         elif fault == "token":
             out = self.must("sh", "-c", "cd /work && set -a && . /tmp/autoflash-unattended.env && "
                             "/opt/venv/bin/python -c 'import os; from tools.ewelink.get_device_key import login; "
