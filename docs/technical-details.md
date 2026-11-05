@@ -3,8 +3,8 @@
 This page covers what the [README](../README.md) leaves out. You don't need it
 to convert a plug. It covers what the firmware bundle holds, how your Wi-Fi
 details and eWeLink account are handled, where the one-line start keeps the
-tool, the finished memory layout, and where the developer and research
-material lives.
+tool, the finished memory layout, the stock firmware versions it converts, and
+where the developer and research material lives.
 
 For a plain-English account of what happens to the plug, read
 [what-happens.md](what-happens.md) instead.
@@ -341,6 +341,12 @@ would get from flashing the plug over USB:
 
 That gives 2,880 KiB of room for firmware instead of the 1,984 KiB the Sonoff
 layout allowed, plus a filesystem the plug never had.
+
+## Stock firmware versions
+
+The tool converts every Sonoff firmware known for the S60: 1.1.1 and 1.2.0.
+[Blocking Sonoff updates](router-rules.md#blocking-sonoff-updates) is the
+insurance against a later one closing the way in.
 
 ## For developers
 
