@@ -43,6 +43,7 @@ import base64
 import datetime as dt
 import hashlib
 import json
+import secrets
 import socket
 import socketserver
 import ssl
@@ -60,6 +61,8 @@ SECRET_KEYS = {"apikey", "deviceid", "devicekey", "encrypt_key", "at", "rt",
                "staMac", "password", "token"}
 # A client that connects and then says nothing must not hold a thread for ever.
 REQUEST_TIMEOUT = 30.0
+# What eWeLink answers a token a later sign-in has ended.
+TOKEN_ENDED = {"error": 401, "msg": "Access token authentication error"}
 
 
 def log(*parts: object) -> None:
@@ -206,6 +209,7 @@ class Stub:
         # account API reports that, as the real cloud does, rather than
         # anything assumed about the dump.
         self.reported: dict[str, dict] = {}
+        self.access_token: str | None = None  # the last sign-in's, which ended the one before
 
     def silence_limit(self) -> float:
         """How long a device may say nothing, not even a ping, and be online."""
@@ -250,8 +254,12 @@ class Stub:
 
     def account_login(self) -> dict:
         apikey = (self.account_device() or {}).get("apikey", "stub-user-apikey")
-        return {"error": 0, "data": {"at": "stub-access-token", "rt": "stub-refresh-token",
+        self.access_token = f"stub-access-token-{secrets.token_hex(4)}"
+        return {"error": 0, "data": {"at": self.access_token, "rt": "stub-refresh-token",
                                      "region": "eu", "user": {"apikey": apikey}}}
+
+    def signed_in(self, token: str | None) -> bool:
+        return token is not None and token == self.access_token
 
     def account_device(self) -> dict | None:
         """This plug's account record: --device-json's, its identity filled in
@@ -360,9 +368,9 @@ class Handler(socketserver.BaseRequestHandler):
         elif path == "/v2/user/login":
             self._serve_json(sock, self.stub.account_login(), peer, "account login")
         elif path == "/v2/device/thing":
-            self._serve_json(sock, self.stub.device_thing(), peer, "device list")
+            self._serve_signed_in(sock, headers, self.stub.device_thing, peer, "device list")
         elif path == "/v2/device/ota/query":
-            self._serve_json(sock, self.stub.ota_query(), peer, "OTA query")
+            self._serve_signed_in(sock, headers, self.stub.ota_query, peer, "OTA query")
         else:
             self._send_http(sock, 404, b"", "text/plain")
 
@@ -403,6 +411,10 @@ class Handler(socketserver.BaseRequestHandler):
     def _serve_json(self, sock, response: dict, peer: str, what: str) -> None:
         log(peer, f"{what} ->", json.dumps(redacted(response)))
         self._send_http(sock, 200, json.dumps(response).encode(), "application/json")
+
+    def _serve_signed_in(self, sock, headers, answer, peer: str, what: str) -> None:
+        token = headers.get("authorization", "").removeprefix("Bearer ")
+        self._serve_json(sock, answer() if self.stub.signed_in(token) else TOKEN_ENDED, peer, what)
 
     def _serve_dispatch(self, sock, body: bytes, peer: str) -> None:
         try:
@@ -505,6 +517,10 @@ class Handler(socketserver.BaseRequestHandler):
                 log(conn.peer, "relay: no such device online")
                 conn.send(json.dumps({"error": 404, "deviceid": target_id,
                                       "sequence": msg.get("sequence")}).encode())
+            return
+        if msg.get("action") == "userOnline" and not self.stub.signed_in(msg.get("at")):
+            log(conn.peer, "ws -> refused: a token a later sign-in ended")
+            conn.send(json.dumps(TOKEN_ENDED).encode())
             return
         reply = self.stub.ws_reply(msg)   # userOnline handshake, keep-alives
         if reply is not None:

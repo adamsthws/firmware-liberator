@@ -494,6 +494,20 @@ class ScenarioTests(unittest.TestCase):
                     sc.fault(fault, arg, 0, None)
                 self.assertTrue(sc.notes.get("not_applied"))
 
+    def test_the_second_sign_in_goes_where_the_run_does(self):
+        for stub_cloud, expected in ((True, True), (False, False)):
+            with self.subTest(stub_cloud=stub_cloud):
+                sc = self.scenario("token", "login")
+                sc.step_length = 0
+                sc.current_run = mock.Mock(return_value="] D1 done")
+                with mock.patch.object(fs, "STUB_CLOUD", stub_cloud), \
+                        mock.patch.object(sc, "ex", return_value=mock.Mock(returncode=0, stdout="logged in again", stderr="")) as ex, \
+                        mock.patch.object(fs.time, "sleep"):
+                    sc.fault("token", "login", 0, None)
+                command = ex.call_args.args[-1]
+                self.assertEqual("AUTOFLASH_EWELINK_API_BASE=https://apia.autoflash-stub.test" in command, expected)
+                self.assertEqual("SSL_CERT_FILE=/run/autoflash-emu/stub-ca-bundle.pem" in command, expected)
+
     def test_a_full_disk_is_the_tools_own_soft_limit(self):
         # Root in the emulator may not change another user's limits, and a
         # lowered hard limit could not be raised again.

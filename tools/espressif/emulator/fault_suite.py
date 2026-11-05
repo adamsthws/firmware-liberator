@@ -1046,7 +1046,10 @@ class Scenario:
             time.sleep(60)
             self.ex("prlimit", f"--pid={pid}", "--fsize=unlimited:", as_tool=True)
         elif fault == "token":
-            out = self.must("sh", "-c", "cd /work && set -a && . /tmp/autoflash-unattended.env && "
+            # Beside the run, so not given the stub's address as the run is.
+            stub = ("AUTOFLASH_EWELINK_API_BASE=https://apia.autoflash-stub.test "
+                    "SSL_CERT_FILE=/run/autoflash-emu/stub-ca-bundle.pem && " if STUB_CLOUD else "")
+            out = self.must("sh", "-c", "cd /work && set -a && . /tmp/autoflash-unattended.env && " + stub +
                             "/opt/venv/bin/python -c 'import os; from tools.ewelink.get_device_key import login; "
                             "login(os.environ[\"EWELINK_EMAIL\"], os.environ[\"EWELINK_PASSWORD\"], \"+44\", \"eu\"); "
                             "print(\"logged in again\")'", timeout=60)

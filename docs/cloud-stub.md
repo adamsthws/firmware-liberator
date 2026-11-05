@@ -461,11 +461,11 @@ The plug never reports its MAC (`staMac`) on this channel.
 
 | message | the tool sends | the stub answers |
 |---------|----------------|------------------|
-| sign-in, `POST /v2/user/login` | `{"password": "stub", "countryCode": "+44", "email": "stub@autoflash-stub.test"}` (the placeholder account), signed: `Authorization: Sign <HMAC-SHA256 of the body>`, `X-CK-Appid: <app id>`. The stub checks none of it. | `{"error": 0, "data": {"at": "stub-access-token", "rt": "stub-refresh-token", "region": "eu", "user": {"apikey": "<apikey>"}}}` |
-| device list, `GET /v2/device/thing?num=0` | `Authorization: Bearer stub-access-token` | `{"error": 0, "data": {"thingList": [{"itemData": {"deviceid": "<device id>", "devicekey": "<LAN key>", "apikey": "<apikey>", "name": "S60 (stub)", "online": true, "extra": {"uiid": 190, "model": "SN-ESP32C3-S60-01"}, "params": {"only_device": {"ota": "success", "ota_fail_reason": 0}, "fwVersion": "1.2.0", "ssid": "<network name>", "bssid": "<access point MAC>", "model": "SN-ESP32C3-S60-01", "staMac": "<plug MAC>"}, "productModel": "S60TPG"}}]}}` |
+| sign-in, `POST /v2/user/login` | `{"password": "stub", "countryCode": "+44", "email": "stub@autoflash-stub.test"}` (the placeholder account), signed: `Authorization: Sign <HMAC-SHA256 of the body>`, `X-CK-Appid: <app id>`. The stub checks none of it. | `{"error": 0, "data": {"at": "stub-access-token-<hex>", "rt": "stub-refresh-token", "region": "eu", "user": {"apikey": "<apikey>"}}}` |
+| device list, `GET /v2/device/thing?num=0` | `Authorization: Bearer stub-access-token-<hex>` | `{"error": 0, "data": {"thingList": [{"itemData": {"deviceid": "<device id>", "devicekey": "<LAN key>", "apikey": "<apikey>", "name": "S60 (stub)", "online": true, "extra": {"uiid": 190, "model": "SN-ESP32C3-S60-01"}, "params": {"only_device": {"ota": "success", "ota_fail_reason": 0}, "fwVersion": "1.2.0", "ssid": "<network name>", "bssid": "<access point MAC>", "model": "SN-ESP32C3-S60-01", "staMac": "<plug MAC>"}, "productModel": "S60TPG"}}]}}` |
 | OTA query, `POST /v2/device/ota/query` | `{"deviceInfoList": [{"deviceid": "<device id>", "model": "SN-ESP32C3-S60-01", "version": "1.2.0"}]}` | `{"error": 0, "data": {"otaInfoList": []}}` |
-| app dispatch, `GET /dispatch/app` | `Authorization: Bearer stub-access-token` | `{"error": 0, "reason": "", "domain": "192.168.60.1", "IP": "192.168.60.1", "port": 443}` |
-| `userOnline`, first on `GET /api/ws` as the app | `{"action": "userOnline", "at": "stub-access-token", "apikey": "<apikey>", "appid": "<app id>", "nonce": "BucKkPAM", "ts": 1792443098, "userAgent": "app", "sequence": "1792443098404", "version": 8}` | `{"error": 0, "apikey": "<apikey>", "sequence": "1792443098404", "config": {"hb": 1, "hbInterval": 145}}` |
+| app dispatch, `GET /dispatch/app` | `Authorization: Bearer stub-access-token-<hex>` | `{"error": 0, "reason": "", "domain": "192.168.60.1", "IP": "192.168.60.1", "port": 443}` |
+| `userOnline`, first on `GET /api/ws` as the app | `{"action": "userOnline", "at": "stub-access-token-<hex>", "apikey": "<apikey>", "appid": "<app id>", "nonce": "BucKkPAM", "ts": 1792443098, "userAgent": "app", "sequence": "1792443098404", "version": 8}` | `{"error": 0, "apikey": "<apikey>", "sequence": "1792443098404", "config": {"hb": 1, "hbInterval": 145}}` |
 | `upgrade`, the installer | `{"action": "upgrade", "deviceid": "<device id>", "apikey": "<apikey>", "userAgent": "app", "sequence": "1792443098405", "params": {"model": "SN-ESP32C3-S60-01", "version": "4.4.3", "binList": [{"name": "user1.bin", "downloadUrl": "http://192.168.60.1:8088/user1.bin", "digest": "<SHA-256 of the image>"}, {"name": "user2.bin", "downloadUrl": "http://192.168.60.1:8088/user2.bin", "digest": "<SHA-256 of the image>"}]}}` | It passes this to the plug as it is. Within 0.1 s the plug sends `update` `{…, "d_seq": 153697133, "seq": 2, "params": {"only_device": {"ota": "start"}}}`, answered like any `update` and passed to the tool. Half a second later the plug drops its WebSocket, and the stub tells the tool `{"action": "sysmsg", "deviceid": "<device id>", "params": {"online": false}}`. The plug fetches the image from `downloadUrl` in ranges, each request carrying its device id, a `ts` and a `sign`. |
 
 What the values are:
@@ -850,10 +850,11 @@ X1 too, from its configuration dump: X1 -23, D4 -19, E1 -22, reported -23.
 - **`query` gets a bare `error:0`.** The plug comes online without timers or
   energy settings, and nothing in a conversion asks for them; testing those would
   need real answers.
-- **One fixed token.** The stub's sign-in always gives the same token and never
-  ends a session, so the fault suite's `token` fault (a second sign-in to the
-  account during C2) tests nothing against it; that one belongs to the real
-  cloud.
+- **A token ends only at the next sign-in.** Each sign-in gives a new token and
+  ends the one before, as at eWeLink: the account API and a new `userOnline`
+  refuse it, so the fault suite's `token` fault (a second sign-in to the account
+  during C2) tests the tool's answer to that. Tokens never expire with time, and
+  a WebSocket already signed in stays open.
 - **The plug has no clock.** It stays offline in stub mode, as in the plain
   emulator, so it gets no NTP time, which a plug on the real cloud does: Tasmota's
   `StartupUTC` stays empty. Nothing in the tool may lean on it;
