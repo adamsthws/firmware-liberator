@@ -67,6 +67,45 @@ class AccountDeviceTests(unittest.TestCase):
         self.assertEqual(item["deviceid"], "1000fedcba")
 
 
+class SignInTests(unittest.TestCase):
+    """Each sign-in ends the one before, as at eWeLink."""
+
+    def setUp(self):
+        self.stub = stub_server.Stub("192.0.2.1", 443, 10, {"deviceid": "1000abcdef", "devicekey": "k"})
+        self.handler = stub_server.Handler.__new__(stub_server.Handler)
+        self.handler.stub = self.stub
+        self.sent = []
+        patcher = mock.patch.object(stub_server.Handler, "_send_http",
+                                    lambda _self, sock, status, body, ctype: self.sent.append(json.loads(body)))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def asked_with(self, token):
+        self.handler._serve_signed_in(None, {"authorization": f"Bearer {token}"}, self.stub.device_thing, "peer", "list")
+        return self.sent[-1]["error"]
+
+    def test_a_later_sign_in_ends_the_earlier_token(self):
+        first = self.stub.account_login()["data"]["at"]
+        self.assertEqual(self.asked_with(first), 0)
+        second = self.stub.account_login()["data"]["at"]
+        self.assertNotEqual(first, second)
+        self.assertEqual(self.asked_with(first), 401)
+        self.assertEqual(self.asked_with(second), 0)
+
+    def test_nothing_is_answered_before_a_sign_in(self):
+        self.handler._serve_signed_in(None, {}, self.stub.device_thing, "peer", "list")
+        self.assertEqual(self.sent[-1]["error"], 401)
+
+    def test_an_ended_token_cannot_open_the_app_channel(self):
+        first = self.stub.account_login()["data"]["at"]
+        conn = mock.Mock(peer="peer")
+        self.handler._app_message(conn, {"action": "userOnline", "at": first})
+        self.assertEqual(json.loads(conn.send.call_args.args[0])["error"], 0)
+        self.stub.account_login()
+        self.handler._app_message(conn, {"action": "userOnline", "at": first})
+        self.assertEqual(json.loads(conn.send.call_args.args[0])["error"], 401)
+
+
 class TimeZoneTests(unittest.TestCase):
     def test_a_time_zone_query_is_answered_with_one(self):
         stub = stub_server.Stub("192.0.2.1", 443, 10)
