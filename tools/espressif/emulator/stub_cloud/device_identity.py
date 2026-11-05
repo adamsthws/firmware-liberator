@@ -22,16 +22,16 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
+from tools.autoflash import kinds  # noqa: E402
+from tools.espressif import flashmap  # noqa: E402
 from tools.espressif.inspect_stock_nvs import parse  # noqa: E402
 
-NVS_OFFSET, NVS_SIZE = 0x9000, 0x10000
-# eWeLink's names for the S60 (S60TPG UK, S60TPF Europe), as the tool accepts them.
-PRODUCT_MODEL = re.compile(r"S60TP[A-Z]")
 MAC = re.compile(r"[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}")
 
 
 def frame_params(flash: bytes) -> dict:
-    names, vals = parse(flash[NVS_OFFSET:NVS_OFFSET + NVS_SIZE])
+    partition = flashmap.nvs(flash)
+    names, vals = parse(flash[partition.offset:partition.offset + partition.size])
     for (ns, key), value in vals.items():
         if names[ns] == "frame_params" and key == "content":
             return json.loads(value.data.split(b"\x00", 1)[0])
@@ -40,6 +40,7 @@ def frame_params(flash: bytes) -> dict:
 
 def identity(flash: bytes, lan_key_field: str, product_model: str = "", sta_mac: str = "") -> dict:
     fp = frame_params(flash)
+    kind = kinds.for_account(product_model, fp.get("model"))
     lan_key = fp.get(lan_key_field)
     if not lan_key:
         raise SystemExit(f"frame_params has no `{lan_key_field}` for the LAN key")
@@ -51,17 +52,17 @@ def identity(flash: bytes, lan_key_field: str, product_model: str = "", sta_mac:
         # encrypt_key hold the same value, and either opens it; --lan-key-field
         # chooses for a plug where they differ.
         "devicekey": lan_key,
-        "model": fp.get("model", "SN-ESP32C3-S60-01"),
+        "model": fp.get("model", kinds.SONOFF_S60.stock_model),
         "uiid": fp.get("uiid", 190),
-        "name": "S60 (stub)",
+        "name": f"{kind.short if kind else 'Plug'} (stub)",
         # Not here: the firmware version, which the stub reports as the plug
         # gives it.
     }
     # The product model is eWeLink's name for the plug, given when it was
     # paired, and is not in the dump: only passed in, from what eWeLink said.
     if product_model:
-        if not PRODUCT_MODEL.fullmatch(product_model):
-            raise SystemExit(f"{product_model!r} is not an S60 product model (S60TPG or S60TPF)")
+        if not (kind and kind.product_of(product_model)):
+            raise SystemExit(f"{product_model!r} is not a product model of this plug")
         device["productModel"] = product_model
     # Its Wi-Fi MAC, which eWeLink's record of it carries (params.staMac) and
     # the tool first looks for it on the network by. The plug never says it to
@@ -79,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lan-key-field", choices=("apikey", "encrypt_key"),
                         default="apikey", help="NVS field holding the LAN key")
     parser.add_argument("--product-model", default="",
-                        help="eWeLink's product model for this plug (S60TPG or S60TPF), "
+                        help="eWeLink's product model for this plug (S60TPG, say), "
                              "which the dump does not record")
     parser.add_argument("--sta-mac", default="",
                         help="the plug's Wi-Fi MAC, which eWeLink's record of it carries")

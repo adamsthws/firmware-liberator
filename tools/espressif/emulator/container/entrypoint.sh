@@ -126,6 +126,8 @@ cat > "$RUN/env" <<EOF
 LAN=$LAN
 WINDOWS=$WINDOWS
 PLUG_MAC=$PLUG_MAC
+CHIP=${CHIP:-esp32c3}
+PSRAM=${PSRAM:-}
 CLOUD=$CLOUD
 PCAP=$PCAP
 EOF
@@ -183,6 +185,7 @@ if [ "$STUB_CLOUD" = 1 ] && ! grep -q autoflash-emu-stub "$home/.bashrc" 2>/dev/
 # autoflash-emu-stub
 export AUTOFLASH_EWELINK_API_BASE=https://apia.autoflash-stub.test
 export SSL_CERT_FILE=/run/autoflash-emu/stub-ca-bundle.pem
+export OPENSSL_CONF=/stub-cloud/openssl.cnf
 EOF
 fi
 chown "$HOST_UID:$HOST_GID" "$home/.tmux.conf" "$home/.bashrc"

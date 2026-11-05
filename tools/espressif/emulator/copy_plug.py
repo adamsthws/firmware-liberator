@@ -23,12 +23,17 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from tools.autoflash import plugs  # noqa: E402
+from tools.espressif import flashmap  # noqa: E402
 
-# Where the base MAC sits in the eFuse read registers, last byte first.
+# Where an ESP32-C3's base MAC sits in the eFuse read registers, last byte first.
 MAC_AT = slice(0x18, 0x1E)
 
 
 def with_mac(efuse: bytes, mac: str) -> bytes:
+    if len(efuse) == flashmap.ESP32_EFUSE_SIZE:
+        data = bytearray(efuse)
+        data[4:11] = flashmap.esp32_efuse(mac)[4:11]
+        return bytes(data)
     data = bytearray(efuse)
     data[MAC_AT] = bytes.fromhex(mac.replace(":", ""))[::-1]
     return bytes(data)

@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Adam Matthews <52178922+adamsthws@users.noreply.github.com>
+Date: Thu, 6 Nov 2026 01:30:00 +0000
+Subject: [PATCH] tcg: take turns between vCPUs every millisecond, not every 100
+
+One thread of QEMU runs an ESP32's two cores in turn, each until the next kick,
+100 ms of virtual time by default. Firmware on one core reading flash spins
+with its interrupts off until the other core has parked, which it does only
+when its turn comes: up to 100 ms for each flash read, where a real chip takes
+microseconds. So stock firmware spinning on a lock at start-up trips its
+interrupt watchdog and resets, over and over. A single-core guest, an
+ESP32-C3's, has no kick timer and is not affected.
+---
+diff --git a/accel/tcg/tcg-accel-ops-rr.h b/accel/tcg/tcg-accel-ops-rr.h
+--- a/accel/tcg/tcg-accel-ops-rr.h
++++ b/accel/tcg/tcg-accel-ops-rr.h
+@@ -10,7 +10,7 @@
+ #ifndef TCG_ACCEL_OPS_RR_H
+ #define TCG_ACCEL_OPS_RR_H
+
+-#define TCG_KICK_PERIOD (NANOSECONDS_PER_SECOND / 10)
++#define TCG_KICK_PERIOD (NANOSECONDS_PER_SECOND / 1000)
+
+ /* Kick all RR vCPUs. */
+ void rr_kick_vcpu_thread(CPUState *unused);

@@ -8,12 +8,16 @@ name, cert and CA private key are never used or forged.
 
 The root CA is **EC P-256** on purpose: its PEM (~650 bytes) fits the stock
 firmware's fixed 1040-byte trust-anchor slot, which an RSA-2048 CA PEM (~1200
-bytes) would overflow (see `patch_stock.py`).
+bytes) would overflow (see `patch_stock.py`). With --rsa it is **RSA-1024**, as
+eWeLink's own is: a classic ESP32's firmware gives the task holding the
+connection only the stack that takes, and overflows checking an EC signature.
 
 Written to `captures/emulation/stub-cloud/` (Git-ignored, private):
 
     ca.crt / ca.key         the root CA (ca.crt feeds the firmware trust swap)
     server.crt / server.key the stub's leaf, SAN-covering the stub hosts
+    openssl.cnf             lets the emulated computer's tool trust an RSA-1024
+                            CA, which OpenSSL's default on Ubuntu refuses
 
 Safe to run before every stub start, and from several at once: the CA is made
 once and kept (firmware already patched trusts it; --force makes a new one), and
@@ -36,7 +40,7 @@ from pathlib import Path
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import NameOID
 
 # The stub's private domain. `.test` is reserved (RFC 6761) and can never clash
@@ -58,10 +62,21 @@ NOT_AFTER = dt.datetime(2125, 1, 1, tzinfo=dt.timezone.utc)
 # The firmware trust-anchor slot is 1040 bytes and holds a null-terminated PEM;
 # the replacement CA PEM must leave room for at least one terminating null.
 SLOT_BYTES = 1040
+RSA_CA_BITS = 1024
+RSA_LEAF_BITS = 2048
+OPENSSL_CONF = """openssl_conf = init
+[init]
+ssl_conf = ssl
+[ssl]
+system_default = default
+[default]
+CipherString = DEFAULT:@SECLEVEL=1
+"""
 
 
-def _ec_key() -> ec.EllipticCurvePrivateKey:
-    return ec.generate_private_key(ec.SECP256R1())
+def _new_key(rsa_bits: int | None):
+    """An RSA key of that size, or an EC one."""
+    return rsa.generate_private_key(65537, rsa_bits) if rsa_bits else ec.generate_private_key(ec.SECP256R1())
 
 
 def _write(path: Path, data: bytes, mode: int) -> None:
@@ -75,7 +90,7 @@ def _write(path: Path, data: bytes, mode: int) -> None:
     os.replace(tmp, path)
 
 
-def _key_pem(key: ec.EllipticCurvePrivateKey) -> bytes:
+def _key_pem(key) -> bytes:
     return key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
                              serialization.NoEncryption())
 
@@ -97,8 +112,8 @@ def _locked(directory: Path):
         yield
 
 
-def make_ca() -> tuple[ec.EllipticCurvePrivateKey, x509.Certificate]:
-    key = _ec_key()
+def make_ca(rsa_bits: int | None = None) -> tuple:
+    key = _new_key(rsa_bits)
     name = x509.Name([
         x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Autoflash cloud stub (local)"),
         x509.NameAttribute(NameOID.COMMON_NAME, "Autoflash stub local root CA"),
@@ -126,9 +141,8 @@ def leaf_names(router_ip: str) -> list[x509.GeneralName]:
             x509.IPAddress(ipaddress.ip_address(router_ip))]
 
 
-def make_leaf(ca_key: ec.EllipticCurvePrivateKey, ca_cert: x509.Certificate, router_ip: str
-              ) -> tuple[ec.EllipticCurvePrivateKey, x509.Certificate]:
-    key = _ec_key()
+def make_leaf(ca_key, ca_cert: x509.Certificate, router_ip: str, rsa_bits: int | None = None) -> tuple:
+    key = _new_key(rsa_bits)
     cert = (
         x509.CertificateBuilder()
         .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, DISP_HOST)]))
@@ -144,7 +158,7 @@ def make_leaf(ca_key: ec.EllipticCurvePrivateKey, ca_cert: x509.Certificate, rou
     return key, cert
 
 
-def load_ca(ca_crt: Path, ca_key: Path) -> tuple[ec.EllipticCurvePrivateKey, x509.Certificate]:
+def load_ca(ca_crt: Path, ca_key: Path) -> tuple:
     cert = x509.load_pem_x509_certificate(ca_crt.read_bytes())
     key = serialization.load_pem_private_key(ca_key.read_bytes(), password=None)
     return key, cert  # type: ignore[return-value]
@@ -156,10 +170,9 @@ def leaf_fits(crt: Path, key: Path, ca_cert: x509.Certificate, router_ip: str) -
     try:
         cert = x509.load_pem_x509_certificate(crt.read_bytes())
         private = serialization.load_pem_private_key(key.read_bytes(), password=None)
-        ca_cert.public_key().verify(cert.signature, cert.tbs_certificate_bytes,
-                                    ec.ECDSA(cert.signature_hash_algorithm))
+        cert.verify_directly_issued_by(ca_cert)
         sans = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
-    except (OSError, ValueError, InvalidSignature, x509.ExtensionNotFound):
+    except (OSError, ValueError, TypeError, InvalidSignature, x509.ExtensionNotFound):
         return False
     spki = serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
     now = dt.datetime.now(dt.timezone.utc)
@@ -179,6 +192,7 @@ def main(argv: list[str] | None = None) -> int:
                              "must then be rebuilt: emu.sh --fresh)")
     parser.add_argument("--router-ip", default=ROUTER_IP,
                         help="IP SAN for the leaf (the stub's address the plug dials)")
+    parser.add_argument("--rsa", action="store_true", help="an RSA-1024 CA, as eWeLink's, not an EC one")
     args = parser.parse_args(argv)
 
     out = args.out_dir
@@ -194,10 +208,10 @@ def main(argv: list[str] | None = None) -> int:
             key, cert = load_ca(ca_crt, ca_key)
             ca_action = "kept"
         else:
-            key, cert = make_ca()
+            key, cert = make_ca(RSA_CA_BITS if args.rsa else None)
             if len(_cert_pem(cert)) >= SLOT_BYTES:
                 raise SystemExit(f"CA PEM is {len(_cert_pem(cert))} bytes; must be < {SLOT_BYTES} "
-                                 "to fit the firmware trust slot (use an EC key, not RSA)")
+                                 "to fit the firmware trust slot")
             _write(ca_key, _key_pem(key), 0o600)
             _write(ca_crt, _cert_pem(cert), 0o644)
             ca_action = "made"
@@ -207,10 +221,12 @@ def main(argv: list[str] | None = None) -> int:
         if leaf_fits(srv_crt, srv_key, cert, args.router_ip):
             leaf_action = "kept"
         else:
-            lkey, lcert = make_leaf(key, cert, args.router_ip)
+            lkey, lcert = make_leaf(key, cert, args.router_ip, RSA_LEAF_BITS if args.rsa else None)
             _write(srv_key, _key_pem(lkey), 0o600)
             _write(srv_crt, _cert_pem(lcert), 0o644)
             leaf_action = "issued"
+        if not (out / "openssl.cnf").exists():
+            _write(out / "openssl.cnf", OPENSSL_CONF.encode(), 0o644)
 
     print(f"CA {ca_action}, leaf {leaf_action}, in {out}.")
     print(f"  CA PEM {len(ca_crt.read_bytes())} bytes (fits the {SLOT_BYTES}-byte firmware slot).")

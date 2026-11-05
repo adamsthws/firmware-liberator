@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start the virtual Sonoff S60 and a "computer" to convert it from, in Docker.
+# Start a virtual Espressif plug and a "computer" to convert it from, in Docker.
 #
 #   tools/espressif/emulator/emu.sh            plug offline: nothing reaches the internet
 #   tools/espressif/emulator/emu.sh --cloud    plug and tool online (real plug must be unplugged)
@@ -98,7 +98,7 @@ fi
 # shellcheck disable=SC2174  # each folder named is made 0700; its parents need not be
 mkdir -p -m 0700 "$STATE" "$STATE/logs" "$STATE/plugs"
 efuse_mac() {
-    "$PY" -I -c 'import sys; d=open(sys.argv[1],"rb").read(); print(":".join(f"{b:02x}" for b in (d[0x18:0x1C]+d[0x1C:0x1E])[::-1]))' "$1"
+    PYTHONPATH=$ROOT "$PY" -c 'import sys; from tools.espressif.flashmap import mac_of_efuse; print(mac_of_efuse(open(sys.argv[1],"rb").read()))' "$1"
 }
 # The plug whose flash is in $STATE/flash.bin. From before plugs were chosen,
 # that flash came from the dump in captures/emulation/.
@@ -122,6 +122,8 @@ else
 fi
 SRC=$(sed -n 1p "$STATE/plug")
 mac=$(sed -n 2p "$STATE/plug")
+# The chip it is for, from its flash: which QEMU runs it.
+chip=$(PYTHONPATH=$ROOT "$PY" -c 'import sys; from tools.espressif.flashmap import chip_of; print(chip_of(open(sys.argv[1],"rb").read(0x2000)))' "$SRC/flash.bin")
 # Another plug than last time: its own flash, kept from its last run, comes
 # back, and the one that was running is put by for its next - each with the
 # mode its flash was built for (below).
@@ -149,7 +151,7 @@ if [ "$fresh" = 0 ] && [ -f "$STATE/flash.bin" ] && [ "$built_for" != "$mode" ];
     echo "not for $want. Add --fresh to put it back to its Sonoff backup, or use another --instance." >&2
     exit 1
 fi
-# The plug's product model (S60TPG UK, S60TPF Europe) is eWeLink's name for it,
+# The plug's product model (S60TPG UK, say) is eWeLink's name for it,
 # given when it was paired, and is not in its dump. The stub reports the one
 # eWeLink gave this plug in the tool's own records of earlier runs (a real
 # conversion's, a kept plug's, an instance's), or AUTOFLASH_STUB_PRODUCT_MODEL; with
@@ -159,6 +161,14 @@ product_seen() {
 import glob, json, os, re, sys
 captures, saved, states, plug = sys.argv[1:]
 seen = []
+# A test copy of a public dump says what it is a copy of (public_dump.py).
+try:
+    with open(f"{captures}/plugs/{plug}/plug.json") as f:
+        model = str(json.load(f).get("product_model") or "").strip().upper()
+    if model:
+        seen.append((float("inf"), model))
+except (OSError, ValueError):
+    pass
 for runs in (f"{captures}/plugs/{plug}/runs", f"{saved}/*/captures/plugs/{plug}/runs",
              f"{states}/state*/work/captures/plugs/{plug}/runs"):
     for path in glob.glob(f"{runs}/*/autoflash-state.json"):
@@ -167,7 +177,7 @@ for runs in (f"{captures}/plugs/{plug}/runs", f"{saved}/*/captures/plugs/{plug}/
                 model = str((json.load(f).get("inputs") or {}).get("product_model") or "").strip().upper()
         except (OSError, ValueError, AttributeError):
             continue
-        if re.fullmatch(r"S60TP[A-Z]", model):
+        if model:
             seen.append((os.path.getmtime(path), model))
 print(max(seen)[1] if seen else "")
 EOF
@@ -177,8 +187,8 @@ if [ "$stub" = 1 ]; then
     product=$(printf '%s' "${AUTOFLASH_STUB_PRODUCT_MODEL:-}" | tr '[:lower:]' '[:upper:]')
     [ -n "$product" ] || product=$(product_seen)
     case "$product" in
-    ""|S60TP[A-Z]) ;;
-    *) echo "AUTOFLASH_STUB_PRODUCT_MODEL is S60TPG or S60TPF, not '$product'" >&2; exit 2 ;;
+    ""|[A-Z0-9]*) ;;
+    *) echo "AUTOFLASH_STUB_PRODUCT_MODEL is a product model such as S60TPG, not '$product'" >&2; exit 2 ;;
     esac
 fi
 
@@ -199,7 +209,15 @@ if [ "$stub" = 1 ]; then
     # Our own CA + leaf for the stub domain (once; kept stable - it is flashed in).
     # The plug's own identity is read from its dump inside the container, so the
     # LAN key stays on that network (see entrypoint.sh).
-    "$PY" -I "$ROOT/tools/espressif/emulator/stub_cloud/make_ca.py" --out-dir "$STUB_CA" >/dev/null
+    # A classic ESP32's firmware trusting eWeLink's RSA CA has the stack only for that.
+    if [ "$chip" = esp32 ] && PYTHONPATH=$ROOT "$PY" -c 'import sys
+from tools.espressif.emulator.patch_stock import holds_rsa_ca
+sys.exit(not holds_rsa_ca(open(sys.argv[1], "rb").read()))' "$SRC/flash.bin"; then
+        STUB_CA=$EMU/stub-cloud-rsa
+        "$PY" -I "$ROOT/tools/espressif/emulator/stub_cloud/make_ca.py" --out-dir "$STUB_CA" --rsa >/dev/null
+    else
+        "$PY" -I "$ROOT/tools/espressif/emulator/stub_cloud/make_ca.py" --out-dir "$STUB_CA" >/dev/null
+    fi
 fi
 if [ ! -f "$STATE/flash.bin" ]; then
     # Home Wi-Fi rewritten to the emulator's open network, Bluetooth start-up
@@ -217,7 +235,9 @@ if [ ! -f "$STATE/flash.bin" ]; then
     echo "$mode" > "$STATE/.flash-mode"
 fi
 # Copied by content: the backup's files are read-only, and a copy would be too.
-rm -f "$STATE/efuse.bin" && cat "$SRC/efuse.bin" > "$STATE/efuse.bin" && truncate -s 1024 "$STATE/efuse.bin"
+# An ESP32-C3's file is padded to what the fork expects of it; an ESP32's is whole.
+rm -f "$STATE/efuse.bin" && cat "$SRC/efuse.bin" > "$STATE/efuse.bin"
+[ "$chip" = esp32 ] || truncate -s 1024 "$STATE/efuse.bin"
 chmod 0600 "$STATE"/*.bin
 
 # -- the "computer": a copy of this repository ---------------------------------
@@ -264,10 +284,12 @@ fi
 # Your browser, and with --windows the wire windows_link.py connects to.
 publish=(-p "127.0.0.1:$PORT:8080")
 [ "$windows" = 1 ] && publish+=(-p "127.0.0.1:$LINK_PORT:7860")
-# Developing the QEMU fork: AUTOFLASH_EMU_QEMU=path/to/qemu-system-riscv32 runs that
-# build in place of the image's (tools/espressif/emulator/qemu-build.Dockerfile builds one).
+# Developing the QEMU fork: AUTOFLASH_EMU_QEMU=path/to/qemu-system-riscv32 (or
+# -xtensa, for a classic ESP32) runs that build in place of the image's
+# (tools/espressif/emulator/qemu-build.Dockerfile builds one).
 dev=()
-[ -n "${AUTOFLASH_EMU_QEMU:-}" ] && dev=(-v "$(realpath "$AUTOFLASH_EMU_QEMU"):/opt/qemu/bin/qemu-system-riscv32:ro")
+qemu_binary=qemu-system-riscv32; [ "$chip" = esp32 ] && qemu_binary=qemu-system-xtensa
+[ -n "${AUTOFLASH_EMU_QEMU:-}" ] && dev=(-v "$(realpath "$AUTOFLASH_EMU_QEMU"):/opt/qemu/bin/$qemu_binary:ro")
 # The stub's CA and leaf cert, read-only, for the in-container stub server.
 stubvol=()
 [ "$stub" = 1 ] && stubvol=(-v "$STUB_CA:/stub-cloud:ro")
@@ -277,7 +299,8 @@ awake=()
 if [ "$tty" = -it ] && systemd-inhibit --what=sleep:idle true 2>/dev/null; then
     awake=(systemd-inhibit --what=sleep:idle --who="Autoflash emulator" --why="the emulated plug's conversion" --mode=block)
 fi
-# Capped: the plug, its router and the tool used about 80 MB between them.
+# Capped: the plug, its router and the tool used about 80 MB between them, on
+# an ESP32-C3.
 # The emulator's own Docker network, a /24 (AUTOFLASH_EMU_NETWORK names another).
 # The conversion tool in the container sweeps the network it is on at its real
 # size, and Docker's default bridge is a /16: a /22 swept, some 4 s, every run.
@@ -304,13 +327,21 @@ for candidate in ("198.18.60.0/24", "172.31.60.0/24", "10.231.60.0/24"):
     docker network create --subnet "$subnet" --label autoflash.emulator=1 "$NETWORK" >/dev/null 2>&1 ||
         docker network inspect "$NETWORK" >/dev/null
 fi
+# Some stock firmware stops at start-up without the external RAM its plug has.
+psram=$(PYTHONPATH=$ROOT "$PY" -c 'import sys
+from tools.autoflash import kinds
+print(next((k.psram_mb for k in kinds.EVERY if k.psram_mb and k.product_of(sys.argv[1])), ""))' "${product:-$(product_seen)}")
+# QEMU for the dual-core ESP32 takes more than the 256 MB the ESP32-C3's stays
+# in: over it, the kernel kills QEMU part way through a download, which looks
+# like the plug restarting.
+memory=256m; [ "$chip" = esp32 ] && memory=1g
 exec "${awake[@]}" docker run --rm $tty --name "$NAME" --hostname autoflash-emu-computer \
-    --memory "${AUTOFLASH_EMU_MEMORY:-256m}" --cpus "${AUTOFLASH_EMU_CPUS:-2}" \
+    --memory "${AUTOFLASH_EMU_MEMORY:-$memory}" --cpus "${AUTOFLASH_EMU_CPUS:-2}" \
     --network "$NETWORK" --cap-add NET_ADMIN --device /dev/net/tun \
     --sysctl net.ipv4.ip_forward="$(( cloud || windows ))" \
     "${publish[@]}" "${dev[@]}" \
     -v "$STATE:/state" -v "$SRC/flash.bin:/secrets/stock-flash.bin:ro" "${stubvol[@]}" \
-    -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e PLUG_MAC="$mac" \
+    -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e PLUG_MAC="$mac" -e CHIP="$chip" -e PSRAM="$psram" \
     -e CLOUD="$cloud" -e PCAP="$pcap" -e FIREWALL="$firewall" -e WINDOWS="$windows" \
     -e STUB_CLOUD="$stub" -e STUB_PRODUCT_MODEL="$product" \
     -e AUTOFLASH_EMULATOR_URL="http://localhost:$PORT" \
