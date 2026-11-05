@@ -4,6 +4,7 @@ it was cut off, and what is said when the run stops.
 
 from __future__ import annotations
 
+import errno
 import time
 import traceback
 from typing import TYPE_CHECKING
@@ -317,6 +318,10 @@ def connection_lost(exc: BaseException) -> str:
 def unexpected(exc: BaseException) -> str:
     """An error nothing here anticipated: in full in the log, in a line on screen."""
     output.log_only(traceback.format_exc().rstrip())
+    # No surprise, and only the person can put it right. Seen in the fault
+    # suite, writing the backup.
+    if isinstance(exc, OSError) and exc.errno in (errno.ENOSPC, errno.EDQUOT, errno.EFBIG):
+        return f"this computer has no room to save what the run needs ({exc}): free some disk space"
     return f"something unexpected went wrong: {type(exc).__name__}: {exc}"
 
 
