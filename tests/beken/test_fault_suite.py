@@ -167,7 +167,7 @@ class FaultAppliedTests(unittest.TestCase):
         return notes
 
     def test_each_docker_command_that_fails_is_noted(self):
-        for fault, arg, codes in (("outage", 0, [0, 1, 0]), ("outage", 0, [0, 0, 1]), ("crash", 1, [1]),
+        for fault, arg, codes in (("outage", 0, [0, 1, 0]), ("crash", 1, [1]),
                                   ("ctrlc", "once", [1]), ("readdress", None, [1])):
             with self.subTest(fault=fault, codes=codes):
                 self.assertTrue(self.docker(fault, arg, codes).get("not_applied"))
@@ -177,6 +177,23 @@ class FaultAppliedTests(unittest.TestCase):
                                   ("readdress", None, [0])):
             with self.subTest(fault=fault):
                 self.assertNotIn("not_applied", self.docker(fault, arg, codes))
+
+    def outage_ending(self, computer_running):
+        from unittest import mock
+        answers = [SimpleNamespace(returncode=0, stdout="198.18.62.2\n"), SimpleNamespace(returncode=0, stdout=""),
+                   SimpleNamespace(returncode=1, stdout=""),
+                   SimpleNamespace(returncode=0, stdout="true\n" if computer_running else "false\n")]
+        notes = {}
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fault_suite.time, "sleep"), \
+                mock.patch.object(fault_suite.subprocess, "run", side_effect=answers):
+            fault_suite.inject(self.instance(tmp), "outage", 0, notes)
+        return notes
+
+    def test_an_outage_outlasting_the_run_still_happened(self):
+        self.assertNotIn("not_applied", self.outage_ending(computer_running=False))
+
+    def test_a_computer_still_running_and_not_brought_back_is_noted(self):
+        self.assertTrue(self.outage_ending(computer_running=True)["not_applied"])
 
     def test_an_outage_with_no_address_to_come_back_to_is_not_started(self):
         from unittest import mock

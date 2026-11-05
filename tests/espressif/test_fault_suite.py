@@ -1,6 +1,7 @@
 """The fault suite's own logic: the names a plug may go by, the saved plugs
 each plug has, and the scenarios it lists."""
 
+import os
 import sys
 import tempfile
 import unittest
@@ -492,6 +493,23 @@ class ScenarioTests(unittest.TestCase):
                         mock.patch.object(fs.time, "sleep"):
                     sc.fault(fault, arg, 0, None)
                 self.assertTrue(sc.notes.get("not_applied"))
+
+    def test_a_full_disk_is_the_tools_own_soft_limit(self):
+        # Root in the emulator may not change another user's limits, and a
+        # lowered hard limit could not be raised again.
+        sc = self.scenario("diskfull", "once")
+        ran = []
+
+        def sh(*args, **_):
+            ran.append(args)
+            return mock.Mock(returncode=0, stdout="42\n", stderr="")
+        with mock.patch.object(fs, "sh", side_effect=sh), mock.patch.object(fs.time, "sleep"):
+            sc.fault("diskfull", "once", 0, None)
+        limits = [args for args in ran if "prlimit" in args]
+        self.assertEqual([args[-1] for args in limits], ["--fsize=1000000:", "--fsize=unlimited:"])
+        for args in limits:
+            self.assertEqual(args[2:4], ("-u", f"{os.getuid()}:{os.getgid()}"))
+        self.assertNotIn("not_applied", sc.notes)
 
     def test_a_signal_reaching_any_of_the_run_is_enough(self):
         sc = self.scenario("crash", "1")

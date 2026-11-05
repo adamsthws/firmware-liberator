@@ -317,6 +317,11 @@ def not_applied(notes: dict, what: str) -> None:
     notes.setdefault("not_applied", []).append(what)
 
 
+def running(container: str) -> bool:
+    return subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", container],
+                          capture_output=True, text=True).stdout.strip() == "true"
+
+
 def must(notes: dict, *command: str, **options) -> subprocess.CompletedProcess:
     """A command that starts a fault, or ends one the run needs ended."""
     done = subprocess.run(command, capture_output=True, text=True, **options)
@@ -366,7 +371,12 @@ def inject(instance: Instance, fault: str, arg, notes: dict) -> None:
             return
         must(notes, "docker", "network", "disconnect", instance.network, instance.computer)
         time.sleep(arg)
-        must(notes, "docker", "network", "connect", "--ip", address, instance.network, instance.computer)
+        # A run may end while the computer is off the Wi-Fi: then there is no
+        # computer to bring back, and the outage still happened.
+        back = subprocess.run(["docker", "network", "connect", "--ip", address, instance.network, instance.computer],
+                              capture_output=True, text=True)
+        if back.returncode and running(instance.computer):
+            not_applied(notes, "docker network connect")
     elif fault == "crash":
         must(notes, "docker", "kill", instance.computer)
     elif fault == "ctrlc":
