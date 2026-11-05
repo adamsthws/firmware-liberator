@@ -1,5 +1,6 @@
 import base64
 import contextlib
+import errno
 import sys
 import tempfile
 import unittest
@@ -312,6 +313,13 @@ class ConfirmSkipTests(unittest.TestCase):
 
 
 class RunStepsTests(unittest.TestCase):
+    def test_a_full_disk_is_said_plainly_and_any_other_error_is_unexpected(self):
+        for code in (errno.ENOSPC, errno.EDQUOT, errno.EFBIG):
+            with self.subTest(code=code):
+                self.assertIn("free some disk space", runner.unexpected(OSError(code, "no room")))
+        self.assertIn("something unexpected", runner.unexpected(OSError(errno.EACCES, "refused")))
+        self.assertIn("something unexpected", runner.unexpected(KeyError("x")))
+
     """The run's loop: what it skips, carries on, asks about and stops at."""
 
     STEPS = [("S1", "First", None), ("S2", "Second", None), ("S3", "Third", None)]
