@@ -11,7 +11,7 @@ import urllib.error
 from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING
 
-from tools.espressif import build_vendor_ota, chips, dump_stock_flash, layouts
+from tools.espressif import build_vendor_ota, chips, device_facts, dump_stock_flash, layouts
 from tools.autoflash import (
     detect,
     device,
@@ -339,6 +339,16 @@ def ask_to_join_bridge(bridge: str, *, tasmota: bool = False) -> None:
 AFTER_BACKUP = ("D1", "D4", "E1", "E2", "E3", "F2", "F4", "G1", "H1")
 
 
+def log_device_facts(ctx: Context, directory: Path, shown: bool) -> None:
+    """What the backup says about the plug, in the log, to add a device from a
+    report of one: on the screen too when the plug is one to report."""
+    efuse = directory / "efuse.bin"
+    facts = device_facts.lines((directory / "flash.bin").read_bytes(), efuse.read_bytes() if efuse.exists() else None)
+    product = ctx.state.input("product_model")
+    for line in ([f"eWeLink product: {product}"] if product else []) + facts:
+        (output.tell if shown else output.log_only)(f"    {line}")
+
+
 def require_known_layout(ctx: Context) -> None:
     """Stop before anything is written over Sonoff's firmware when the plug's
     partition table is not one this tool has a plan for. A plug of a kind known
@@ -355,7 +365,10 @@ def require_known_layout(ctx: Context) -> None:
     except OSError as exc:
         output.tell(f"    The device's memory layout could not be read here ({exc}); its checks later still stand.")
         return
-    if hashlib.sha256(table).hexdigest() != layouts.of(kinds.of_run(ctx.state).layout).table_sha256:
+    known = hashlib.sha256(table).hexdigest() == layouts.of(kinds.of_run(ctx.state).layout).table_sha256
+    if backup:
+        log_device_facts(ctx, backup.directory, shown=not known)
+    if not known:
         raise Abort("this device's memory is not laid out as this tool expects, so nothing has been written "
                     "over its Sonoff firmware: switch it off and on to go back to it. Please report this "
                     "with the device's model")
