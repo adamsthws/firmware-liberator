@@ -502,6 +502,17 @@ class CloudQueue:
 CLOUD = CloudQueue()
 
 
+def wait_for_turn(sc, priority, give_up):
+    """Whether `sc` got a turn, saying how long it waited: a run past its sign-in
+    keeps its own time limits meanwhile, and can fail for the queue alone."""
+    asked = time.time()
+    got = CLOUD.acquire(sc.n, priority, give_up)
+    waited = time.time() - asked
+    if got and waited >= 1:
+        sc.say(f"CLOUD: waited {waited:.0f}s for a turn")
+    return got
+
+
 class Tuner:
     """How many cloud scenarios at once, and the pause between turns: raised
     (then the pause lowered) a step after every WINDOW cloud scenarios with no
@@ -699,7 +710,7 @@ class PlugMonitor:
             # about a minute to show in eWeLink, less than a turn asked for
             # then and Sonoff's firmware reconnecting take. Held through C2.
             self.started_online = True
-            if getattr(self, "preheld", False) or CLOUD.acquire(self.n, CLOUD.FINDING, self.stop.is_set):
+            if getattr(self, "preheld", False) or wait_for_turn(self.sc, CLOUD.FINDING, self.stop.is_set):
                 # The first run only, as any turn: the next run asks again
                 # (A1, at the front of the queue), and the cloud is free for
                 # others while this one's fault plays out.
@@ -720,11 +731,11 @@ class PlugMonitor:
                     priority = (CLOUD.FINDING if finding else CLOUD.FALLEN if again else CLOUD.FRESH)
                     if NO_CLOUD:
                         self.sc.say("CLOUD: wanted, but this machine gives no turns")
-                    elif CLOUD.acquire(self.n, priority, self.stop.is_set):
+                    elif wait_for_turn(self.sc, priority, self.stop.is_set):
                         seen = self.hold("finding" if finding else "fallen back" if again else "fresh", run=run)
                         if seen is not None:
                             handled[run] = seen
-                if self.turn_file().exists() and not NO_CLOUD and CLOUD.acquire(self.n, CLOUD.FINDING, self.stop.is_set):
+                if self.turn_file().exists() and not NO_CLOUD and wait_for_turn(self.sc, CLOUD.FINDING, self.stop.is_set):
                     self.hold("a sign-in", limit=SIGN_IN_TURN)
             self.stop.wait(1.0)
 
@@ -1354,7 +1365,7 @@ class Scenario:
             self.say("CLOUD: waiting for a turn before starting")
             # Last in the queue: a run under way that needs the cloud cannot
             # wait as long as one not started yet can, and this turn lasts.
-            CLOUD.acquire(self.n, CLOUD.STARTING, lambda: False)
+            wait_for_turn(self, CLOUD.STARTING, lambda: False)
             monitor.preheld = True
         monitor.start()
         self.started = time.time()
