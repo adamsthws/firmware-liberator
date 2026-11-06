@@ -385,6 +385,18 @@ class RunStepsTests(unittest.TestCase):
         self.assertIn("Dry run complete: nothing was written", shown)
         self.assertNotIn("Conversion complete", shown)
 
+    def test_a_ctrl_c_just_before_the_first_stage_still_counts(self):
+        # Seen on the emulator: the first press forgotten here, so the second
+        # only asked, at the end of its stage, instead of stopping the run.
+        from tools.autoflash import interrupt
+
+        def press(*_):
+            interrupt._on_interrupt(None, None)
+            return "tasmota", "sonoff"
+        self.addCleanup(interrupt.clear)
+        with mock.patch.object(interrupt, "_say"), self.assertRaises(KeyboardInterrupt):
+            self.run_steps(settle_route=mock.Mock(side_effect=press), execute_with_retries=mock.Mock(side_effect=press))
+
     def test_a_route_refused_stops_before_anything_is_done(self):
         code, ran, stand_ins = self.run_steps(settle_route=mock.Mock(side_effect=errors.Abort("no plug")))
         self.assertEqual((code, ran), (2, []))
