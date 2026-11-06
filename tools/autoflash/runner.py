@@ -382,7 +382,6 @@ def run_steps(ctx: Context) -> int:
         output.tell(f"Stopped before anything was done: {refused}.")
         return 2
     routes.apply_target(firmware, source, routes.family_of(ctx.state))
-    interrupt.clear()
     ctx.state.set_input("stopped_by", None)
     resumed = any(ctx.state.is_done(step) for step, _, _ in routes.STEPS)
     ctx.run_started, ctx.run_resumed = started, resumed
