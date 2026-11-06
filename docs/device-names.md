@@ -230,11 +230,10 @@ name for a minute after, and the tool never takes it over the real one
 ## Old names
 
 A plug left part way through by a run of an older checkout goes by the name it
-had then, so the tool still looks for every one: `Sonoff-Setup-XXXX` (the
-installer 4.4.3, the mover 1.0.0 and ESPHome 1.1.0's own networks),
-`S60-OTA-Bridge-XXXX` with the password `s60-ota-bridge` (installers before
-4.4.3), `s60-ota-bridge` and `sonoff-s60-mover-xxxxxx` (hostnames),
-`sonoff-s60-xxxxxx` (ESPHome 1.1.0), the "S60 OTA Bridge" page, the
+had then, so the tool still looks for every one: `Sonoff-Setup-XXXX` (the own
+networks of the first installers, movers and ESPHome builds),
+`S60-OTA-Bridge-XXXX` with the password `s60-ota-bridge` (earlier installers), `s60-ota-bridge` and `sonoff-s60-mover-xxxxxx` (hostnames),
+`sonoff-s60-xxxxxx` (the first ESPHome builds), the "S60 OTA Bridge" page, the
 `S60-IMPRINT-` placeholders and the `s60_wifi` action. If you rename again,
 add today's names to these lists rather than replacing them.
 

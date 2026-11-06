@@ -807,10 +807,9 @@ is under way, and the report giving the lowest of the readings.
 opened with the LAN key from the account, before anything is written. From
 Tasmota it reads `Status 11` at L1, before anything is changed. From ESPHome
 it reads at X1, before anything is written: the plug's `WiFi Signal` sensor
-where its ESPHome has one (this project's from 1.1.0, which adds it), else
+where its ESPHome has one (this project's does), else
 the signal its native API prints in its configuration dump (`Signal strength:
--19 dB`), where the API has no encryption key - this project's has none,
-1.0.0 included. From an ESPHome that gives neither, the first reading is at
+-19 dB`), where the API has no encryption key - this project's has none. From an ESPHome that gives neither, the first reading is at
 D4, once the full Tasmota runs: the startup firmware between them, the
 recovery Safeboot, is Tasmota's minimal build and gives none either - it
 answers `Status 11`, `Status 0` and `WiFiScan` with `Unknown`, and neither its
@@ -827,12 +826,12 @@ to Tasmota: A2 -21, D4 -18, E1 -21 dBm, reported -21; Sonoff to ESPHome: A2
 -17, D4 -24, I1 -21, reported -24; ESPHome to Tasmota: D4 -21, E1 -23,
 reported -23; Tasmota to ESPHome: L1 -19. The A2 readings came from the stock
 firmware's own advert, opened with the LAN key the stub's account served. The
-ESPHome to Tasmota run started from a plug on ESPHome 1.0.0, which has no
-sensor, so its first reading was at D4. Then with 1.1.0: a plug converted to
-it (A2 -21, D4 -23, I1 -24, reported -24) answered `/sensor/WiFi%20Signal`
+ESPHome to Tasmota run started from a plug on a first build of ESPHome, which
+has no sensor, so its first reading was at D4. Then with the sensor: a plug
+converted to it (A2 -21, D4 -23, I1 -24, reported -24) answered `/sensor/WiFi%20Signal`
 with `{"id":"sensor/WiFi Signal","value":-18,"state":"-18 dBm"}`, and taken
 on to Tasmota it was read at X1 before anything was written: X1 -18, D4 -20,
-E1 -18, reported -20. With the API read added, the plug on 1.0.0 was read at
+E1 -18, reported -20. With the API read added, the plug with no sensor was read at
 X1 too, from its configuration dump: X1 -23, D4 -19, E1 -22, reported -23.
 
 ## Risks and limitations

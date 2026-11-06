@@ -10,12 +10,12 @@ directory, never here.
 | `tasmota32c3-bluetooth.bin` | Berry-capable Tasmota used temporarily on the original partition layout | `a92cfadaff5a3c824f790471ba31464acd2076a24ff1fcad2de28574c5641708` |
 | `autoflash-recovery-safeboot-imprintable.bin` | Credential-free recovery Safeboot template; saves the Wi-Fi for the official Tasmota installed after it | `ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd` |
 | `tasmota-settings-template-15.6.0.0.bin` | Tasmota's default settings with no Wi-Fi in them, for the bridge to fill in at D1 | `d63f03cb99540407037f36dc8155ec9b02d24425d3b02c52299713233e98f4a5` |
-| `esphome-sonoff-s60-bootloader-1.2.0.bin` | ESPHome's bootloader, from the build of 1.2.0: it replaces Sonoff's when ESPHome is installed, so ESPHome can roll back an update that fails to start | `3792bb665916d69c410c9fd10f69d1a6968e61f2a9e4969829a1c49f9ea6f433` |
-| `esphome-sonoff-s60-imprintable-1.6.0.bin` | ESPHome for the S60, installed instead of the final Tasmota when the run is asked for ESPHome; no Wi-Fi or passwords in it, for the run to imprint the plug's Wi-Fi | `ff4dbbccb202e9e663340f47b1797c027b0a3a1eb24462ad7460597a645f7875` |
+| `esphome-sonoff-s60-bootloader-1.2.0.bin` | ESPHome's bootloader: it replaces Sonoff's when ESPHome is installed, so ESPHome can roll back an update that fails to start | `3792bb665916d69c410c9fd10f69d1a6968e61f2a9e4969829a1c49f9ea6f433` |
+| `esphome-sonoff-s60-imprintable-2026.10.0-1.bin` | ESPHome for the S60, installed instead of the final Tasmota when the run is asked for ESPHome; no Wi-Fi or passwords in it, for the run to imprint the plug's Wi-Fi | `7793c32e3f2e77294d2a9f929875063d404d832e05d7fbe5ed54fb37cd0e7762` |
 | `autoflash-mover-1.1.0.bin` | A small ESPHome the run uses for a minute or two when leaving Tasmota: it fits in front of Tasmota in Sonoff's layout, and takes the next firmware as an ordinary ESPHome update; two minutes away from the home Wi-Fi, it raises its own network, whose page takes new Wi-Fi details. Wi-Fi placeholders, like the image above | `f6e131e1599c886d742c151c3ba3f84a285bba462b438c36b611d577e01ad243` |
 | `sonoff-s60-partition-table.bin` | Sonoff's partition table, read from a stock plug: the one every conversion starts from, which the Tasmota route's preflight requires byte for byte. Written back when a plug leaves Tasmota's layout. Holds no secrets | `f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf` |
-| `openbeken-sonoff-s61-1.1.0.rbl` | OpenBeken for the S61, with the 4 MB table, the hook before an OTA's restart, the tool's OpenBeken driver and the S61's table for it built in (a run to ESPHome sends it, with a marker for its app after it, as the interim firmware): the rt_ota image the plug's stock bootloader applies from its download slot, whether sent by the stock firmware's updater, by OpenBeken's own OTA or in a UF2 through ESPHome's | `07f45d62f32b8f89f782ae6460253c7dc17fdbaceb20b2521e6db2e59a254687` |
-| `esphome-sonoff-s61-1.2.0.rbl` | ESPHome for the S61, on LibreTiny: the same rt_ota image form, installed the same ways. Nothing is written into it: its first boot reads the plug's Wi-Fi and meter calibration from the stock store. The tool takes the plug's backup before it, through OpenBeken as the interim firmware | `2c61622bcbbc11b7ee1b1e9b082a73f4d35c19570471efb7b0e41a75ad181172` |
+| `openbeken-sonoff-s61-1.18.320-1.rbl` | OpenBeken for the S61, with the 4 MB table, the hook before an OTA's restart, the tool's OpenBeken driver and the S61's table for it built in (a run to ESPHome sends it, with a marker for its app after it, as the interim firmware): the rt_ota image the plug's stock bootloader applies from its download slot, whether sent by the stock firmware's updater, by OpenBeken's own OTA or in a UF2 through ESPHome's | `ec857a37db8511cfc6d8a437bf0e9127db89ca29a30fa9637d20aba669fb5add` |
+| `esphome-sonoff-s61-2026.10.0-1.rbl` | ESPHome for the S61, on LibreTiny: the same rt_ota image form, installed the same ways. Nothing is written into it: its first boot reads the plug's Wi-Fi and meter calibration from the stock store. The tool takes the plug's backup before it, through OpenBeken as the interim firmware | `b6591fde2e0ff5fba2ef3afc699c82437d7f151f9bd88b2c2a4ffdf069e332fb` |
 
 The Bluetooth image is the exact file used by the successful migrations. It
 was retrieved from Tasmota's official moving `install/firmware` branch at
@@ -100,21 +100,16 @@ installed, and a plug on 1.2.0 took bridge v5 wrapped as `9.9.9` - but a later
 Sonoff firmware might refuse anything older than itself, so it has to stay
 higher than Sonoff's. The version field holds at most seven characters.
 
-The earlier bridge v3, wrapped as `1.2.1`, is no longer published here. It
-is in the Git history: `git log --all -- artifacts/s60-ota-bridge-v3-1.2.1.ota`
-finds the last commit that has it.
-
 The ESPHome image is built from [`../devices/sonoff-s60/esphome.yaml`](../devices/sonoff-s60/esphome.yaml)
 (its `project` version is the one in the file name) with ESPHome 2026.10.0 and
 ESP-IDF 5.5.6, as `esphome compile sonoff_s60.yaml`, in ESPHome's own Docker
 image for that release (`firmware.json` pins it by digest);
 `firmware.ota.bin` is the file published. The bootloader is
-`bootloader/bootloader.bin` from the build of 1.2.0, with ESPHome 2026.9.1 and
+`bootloader/bootloader.bin` from an earlier build, with ESPHome 2026.9.1 and
 ESP-IDF 5.5.5. The mover is
 [`../devices/sonoff-s60/mover.yaml`](../devices/sonoff-s60/mover.yaml), built the same way, with ESPHome 2026.9.1: it drives no pins, so it
-is the same for any plug with an ESP32-C3 and 4 MB of flash, and from 1.1.0 it
-goes by `autoflash-recovery-XXXX` as the bridge does (1.0.0 was
-`sonoff-s60-mover-xxxxxx` on the home network, and raised `Sonoff-Setup-XXXX`).
+is the same for any plug with an ESP32-C3 and 4 MB of flash, and it
+goes by `autoflash-recovery-XXXX` as the bridge does.
 Like the imprintable Safeboot they hold placeholders instead of a
 network name and password, and the run writes the plug's Wi-Fi into them in
 memory (`tools/autoflash/imprint.py`). It has no OTA password, web login or API
@@ -124,86 +119,51 @@ publish a new one, change the config and build and publish it with
 `tools/repo/update_firmware.py esphome`, which [`../docs/updating-firmware.md`](../docs/updating-firmware.md)
 describes, as for a new ESPHome release; then update the files' rows above.
 
-ESPHome 1.1.0 adds a Wi-Fi signal sensor, which the run reads before it
-changes the firmware of a plug on ESPHome, and an `s60_wifi` action that gives
-the run the plug's Wi-Fi name and password, so that leaving ESPHome needs
-neither typed. It also saves its Wi-Fi where a build of the config with none
-written in looks for it, so a plug that Home Assistant's ESPHome builder
-rebuilds stays on the home Wi-Fi. Its bootloader is byte for byte
-1.0.0's, so no plug is given a new one. 1.0.0 is in the Git history:
-`git log --all -- artifacts/esphome-sonoff-s60-imprintable-1.0.0.bin` finds
-the last commit that has it.
+The ESPHome image has a Wi-Fi signal sensor, which the run reads before it
+changes the firmware of a plug on ESPHome, and an `autoflash_wifi` action that
+gives the run the plug's Wi-Fi name and password, so that leaving ESPHome needs
+neither typed. It saves its Wi-Fi where a build of the config with none written
+in looks for it, so a plug that Home Assistant's ESPHome builder rebuilds stays
+on the home Wi-Fi.
 
-ESPHome 1.2.0 is named as every ESPHome the conversion installs is, whatever
-the plug: `esphome-abcdef` (ESPHome's own MAC suffix), and its own network has
-that name too - 1.1.0 was `sonoff-s60-abcdef`, its network `Sonoff-Setup-CDEF`.
-Its friendly name, Sonoff S60, still says what plug it is. Its Wi-Fi action is
-`autoflash_wifi` and its placeholders `AUTOFLASH-IMPRINT-`; the run still knows
-1.1.0's `s60_wifi` and `S60-IMPRINT-`, on plugs converted with it. Its
-bootloader is 1.1.0's, byte for byte, as is its every other behaviour. 1.1.0
-is in the Git history:
-`git log --all -- artifacts/esphome-sonoff-s60-imprintable-1.1.0.bin`.
+It is named as every ESPHome the conversion installs is, whatever the plug:
+`esphome-abcdef` (ESPHome's own MAC suffix), and its own network has that name
+too. Its friendly name is `esphome abcdef`, and its comment, `Sonoff-S60`, says
+what plug it is. Its placeholders are `AUTOFLASH-IMPRINT-`; the run still knows
+`s60_wifi` and `S60-IMPRINT-`, on plugs converted with earlier builds.
 
-ESPHome 1.3.0 is 1.2.0's config built with ESPHome 2026.10.0 (ESP-IDF 5.5.6)
-where 1.2.0 was built with 2026.9.1 (ESP-IDF 5.5.5): the config is unchanged
-but for its version. The bootloader that build makes is ESP-IDF 5.5.6's,
-which differs from 5.5.5's in nothing an S60 uses (its changes are for other
-chips, secure boot and flash encryption), so the published one - 1.2.0's,
-which starts 1.3.0 - is kept, and no plug is given a new one. The ESP-IDF
-5.5.5 bootloader built again from 1.2.0's config with ESPHome 2026.9.1 came
-out the same, byte for byte. 1.2.0 is in the Git history:
-`git log --all -- artifacts/esphome-sonoff-s60-imprintable-1.2.0.bin`.
+It applies the 1.02 board factor and the plug's factory calibration, from
+Sonoff's NVS or, through its `autoflash_calibration` action, from the plug's
+Sonoff backup, as the stock firmware does; and counts energy from the meter's
+pulses, calibrated the same way.
 
-ESPHome 1.4.0 is a change to 1.3.0's config, built with ESPHome 2026.10.0
-(ESP-IDF 5.5.6) as 1.3.0 was. It applies the 1.02 board factor and the
-plug's factory calibration, from Sonoff's NVS or, through its
-`autoflash_calibration` action, from the plug's Sonoff backup, as the stock
-firmware does; and counts energy from the meter's pulses, calibrated the
-same way, its totals carrying on from what 1.3.0 saved. The bootloader that build makes (ESP-IDF 5.5.6)
-differs from the published one, which is kept: no plug is given a new one.
-1.3.0 is in the Git history:
-`git log --all -- artifacts/esphome-sonoff-s60-imprintable-1.3.0.bin`.
+Its apparent power, reactive power and power factor are worked out each second
+from the calibrated voltage, current and power of the same meter readings.
+Reactive power is 0 while power is within 1.5% of voltage times current, and it
+and the power factor change only in a second steady with the last: as a load
+switches, the meter's power follows its current a second or three behind.
+
+The published bootloader is kept when the image is rebuilt, so no plug is given
+a new one. A version such as `2026.10.0-1` is this project's first build on
+ESPHome 2026.10.0; OpenBeken's are numbered the same way
+([`../docs/updating-firmware.md`](../docs/updating-firmware.md)). Earlier images
+are in the Git history: `git log --all -- artifacts/` finds them.
 
 The S61's two images are rt_ota images (`.rbl`), as its stock bootloader
-applies them. OpenBeken 1.1.0 is OpenBK7231T_App at `ce1abad` with this
+applies them. The OpenBeken image is OpenBK7231T_App at `ce1abad`, one commit
+after its release 1.18.320, with this
 project's 4 MB-table patches and OpenBeken driver (`tools/beken/openbeken/`)
 and the S61's table for it, `devices/sonoff-s61/drv_autoflash_sonoff_s61.c`, built as `OpenBK7238` with
-`FLASH_SIZE=4M` in `tools/beken/openbeken/build.Dockerfile`; ESPHome 1.2.0 for
+`FLASH_SIZE=4M` in `tools/beken/openbeken/build.Dockerfile`; ESPHome for
 the S61 is [`../devices/sonoff-s61/esphome.yaml`](../devices/sonoff-s61/esphome.yaml)
 built with ESPHome 2026.10.0 on LibreTiny 1.13.0, `image_bk7238_app.ota.rbl`
 of its build. `firmware.json` pins both under `beken`, with the commits,
 hashes and build images that made them; `tools/repo/update_firmware.py
 openbeken` and `esphome --plug sonoff-s61` build and publish them
-([`../docs/updating-firmware.md`](../docs/updating-firmware.md)). In 1.1.0
-both name the plug as every firmware the tool installs does - OpenBeken
+([`../docs/updating-firmware.md`](../docs/updating-firmware.md)). Both name
+the plug as every firmware the tool installs does - OpenBeken
 `openbeken-abcdef`, its hostnames too; ESPHome `esphome-abcdef`, with
 `Sonoff-S61` as its comment - and ESPHome has no backup reader: the tool
 takes the backup through OpenBeken, installed first as the interim firmware,
-which knows itself by a marker sent after it that names its app. ESPHome
-1.2.0 is 1.1.0 adopted into Home Assistant as a package rather than a copy
-of its config. 1.0.0 and 1.1.0 are in the Git history.
-
-ESPHome 1.5.0 is a change to 1.4.0's config, built with ESPHome 2026.10.0
-(ESP-IDF 5.5.6) as 1.4.0 was. The bootloader that build makes (ESP-IDF 5.5.6)
-differs from the published one, which is kept: no plug is given a new one.
-It is the image built from the moved config (`devices/sonoff-s60/esphome.yaml`,
-so Home Assistant can adopt a plug on it again), and names the plug as every
-firmware the tool installs does: friendly name `esphome abcdef`, with
-`Sonoff-S60` as its comment.
-1.4.0 is in the Git history:
-`git log --all -- artifacts/esphome-sonoff-s60-imprintable-1.4.0.bin`.
-
-ESPHome 1.6.0 is a change to 1.5.0's config, built with ESPHome 2026.10.0
-(ESP-IDF 5.5.6) as 1.5.0 was. The bootloader that build makes (ESP-IDF 5.5.6)
-differs from the published one, which is kept: no plug is given a new one.
-Its apparent power, reactive power and power factor are worked out each
-second from the calibrated voltage, current and power of the same meter
-readings, where they were the CSE7766's
-own, from its raw readings, which logged each impossible power factor and
-reactive power, many a second under a load close to resistive. Reactive
-power is 0 while power is within 1.5% of voltage times current, and it
-and the power factor change only in a second steady with the last: as a
-load switches, the meter's power follows its current a second or three
-behind.
-1.5.0 is in the Git history:
-`git log --all -- artifacts/esphome-sonoff-s60-imprintable-1.5.0.bin`.
+which knows itself by a marker sent after it that names its app. ESPHome is
+adopted into Home Assistant as a package rather than a copy of its config.

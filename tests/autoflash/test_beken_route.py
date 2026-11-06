@@ -707,7 +707,8 @@ class OpenBekenUpdateTests(unittest.TestCase):
         self.assertEqual(routes.steps_of(ctx.state), routes.steps_for("esphome", "openbeken", beken))
 
     def test_any_other_openbeken_is_not_offered_it(self):
-        later = ".".join(str(int(part) + 1) for part in self.published.split("."))
+        release, build = self.published.split("-")
+        later = f"{release}-{int(build) + 1}"
         for why, version, kind in (("this release", self.published, "sonoff-s61"), ("a later one", later, "sonoff-s61"),
                                    ("not one of our releases", "1.18.320-dev", "sonoff-s61"),
                                    ("another kind's", "1.0.9", "sonoff-s99")):

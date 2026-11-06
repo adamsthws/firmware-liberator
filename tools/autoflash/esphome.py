@@ -324,7 +324,7 @@ def switch_relay(host: str, on: bool) -> bool:
     return relay(host) is on
 
 
-# The Wi-Fi signal sensor, by its name in devices/sonoff-s60/esphome.yaml (from 1.1.0).
+# The Wi-Fi signal sensor, by its name in devices/sonoff-s60/esphome.yaml.
 SIGNAL_SENSOR = "WiFi Signal"
 
 
@@ -338,7 +338,7 @@ def signal(host: str, key: bytes | None = None) -> int | None:
 
 def sensor_signal(host: str) -> int | None:
     """The plug's Wi-Fi signal in dBm, from its Wi-Fi signal sensor: None from
-    an ESPHome built without one (ours before 1.1.0), or before its first
+    an ESPHome built without one (ours at first), or before its first
     reading."""
     value = _state(host, "/sensor/" + urllib.parse.quote(SIGNAL_SENSOR))
     if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
@@ -629,7 +629,7 @@ def api_device_info(host: str, port: int = API_PORT, timeout: float = 8.0,
 
 
 # Our ESPHome's action that gives the Wi-Fi it is on (devices/sonoff-s60/esphome.yaml):
-# its name from 1.2.0, and 1.1.0's; and the API messages that list and call it.
+# its name, and the one it first had; and the API messages that list and call it.
 WIFI_ACTIONS = ("autoflash_wifi", "s60_wifi")
 _LIST, _LISTED, _ACTION, _CALL, _ANSWER = 11, 19, 41, 42, 131
 
@@ -637,7 +637,7 @@ _LIST, _LISTED, _ACTION, _CALL, _ANSWER = 11, 19, 41, 42, 131
 def api_wifi_details(host: str, port: int = API_PORT, timeout: float = 8.0,
                      key: bytes | None = None) -> tuple[str, str] | None:
     """The Wi-Fi the plug is on, name and password, from ESPHome itself - its
-    Wi-Fi action, which ours has from 1.1.0. None from an ESPHome without
+    Wi-Fi action, which ours has. None from an ESPHome without
     it; ApiLocked from one whose API is encrypted and `key` is not its key."""
     details = _action_answer(host, WIFI_ACTIONS, b"", port, timeout, key)
     ssid = details.get("ssid") if details else None
@@ -646,7 +646,7 @@ def api_wifi_details(host: str, port: int = API_PORT, timeout: float = 8.0,
     return None
 
 
-# Our ESPHome's action that takes the plug's factory calibration, from 1.4.0.
+# Our ESPHome's action that takes the plug's factory calibration.
 CALIBRATION_ACTION = "autoflash_calibration"
 
 
@@ -662,7 +662,7 @@ def api_give_calibration(host: str, coefficients: list[float], port: int = API_P
 
 
 def calibration_state(host: str) -> str | None:
-    """What our ESPHome's Calibration sensor says (from 1.4.0): where its
+    """What our ESPHome's Calibration sensor says: where its
     calibration came from, and the board's factor."""
     value = _state(host, "/text_sensor/Calibration")
     return value if isinstance(value, str) else None

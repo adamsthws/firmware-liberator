@@ -14,17 +14,16 @@
         app, Safeboot and factory image, from the release's page on GitHub -
         once each is shown to fit the layout the conversion builds
 
-    python3 tools/repo/update_firmware.py esphome [VERSION] [--image-version X.Y.Z]
-                                     [--mover] [--new-bootloader]
+    python3 tools/repo/update_firmware.py esphome [VERSION] [--mover] [--new-bootloader]
         build devices/sonoff-s60/esphome.yaml with that ESPHome release (default: the
         latest) in ESPHome's own Docker image, check it, and publish it in
         artifacts/; --mover builds the mover too
 
-    python3 tools/repo/update_firmware.py esphome [VERSION] --plug sonoff-s61 [--image-version X.Y.Z]
+    python3 tools/repo/update_firmware.py esphome [VERSION] --plug sonoff-s61
         the same for a Beken plug's ESPHome (devices/sonoff-s61/esphome.yaml, on
         LibreTiny): the rt_ota image its build makes, checked and published
 
-    python3 tools/repo/update_firmware.py esphome [VERSION] --plug KIND [--image-version X.Y.Z]
+    python3 tools/repo/update_firmware.py esphome [VERSION] --plug KIND
         the same for another Espressif plug's ESPHome (KIND's folder's esphome.yaml)
 
     python3 tools/repo/update_firmware.py esp32 [tasmota] [bridge] [recovery] [mover] [template] [tables]
@@ -34,7 +33,6 @@
         repository's sources, the mover and its bootloader with ESPHome
 
     python3 tools/repo/update_firmware.py openbeken [--plug sonoff-s61] [--commit SHA]
-                                     [--image-version X.Y.Z]
         build OpenBeken for a Beken plug - upstream at that commit (default: the
         one pinned, else main's head), this project's patches (the 4 MB
         table, the hook before an OTA's restart), its driver and the plug's
@@ -438,6 +436,14 @@ def next_minor(version: str) -> str:
     return f"{major}.{minor + 1}.0"
 
 
+def build_version(release: str, current: dict[str, Any]) -> str:
+    """This project's build on an upstream release, as a distribution numbers
+    its package of one: 2026.10.0-1, the number counting its builds on that
+    release. `current` is the pin it replaces."""
+    built = re.fullmatch(rf"{re.escape(release)}-(\d+)", current.get("version", ""))
+    return f"{release}-{int(built.group(1)) + 1 if built else 1}"
+
+
 PROJECT_VERSION = re.compile(r'(^  project:\n(?:    .*\n)*?    version: ")([^"]+)(")', re.MULTILINE)
 
 
@@ -574,7 +580,8 @@ def command_esphome(args: argparse.Namespace) -> int:
     BUILD_CACHE.mkdir(parents=True, exist_ok=True)
     built: dict[str, tuple[str, bytes, bytes, dict[str, str]]] = {}
     for key in ["image", *(["mover"] if args.mover else [])]:
-        version = (args.image_version if key == "image" else None) or next_minor(pins["esphome"][key]["version"])
+        version = build_version(release, pins["esphome"][key]) if key == "image" \
+            else next_minor(pins["esphome"][key]["version"])
         app, bootloader = build(builder, ROOT / ESPHOME_BUILDS[key][0], version, BUILD_CACHE)
         described = check_esphome_app(app, f"the {key} built", release)
         built[key] = (version, app, bootloader, described)
@@ -594,7 +601,7 @@ def command_esphome(args: argparse.Namespace) -> int:
     texts, release_version = ({}, None) if args.no_docs else esphome_doc_texts(
         old_image, {"file": ESPHOME_BUILDS["image"][1].format(version=version), "version": version,
                     "esphome": release, "esp_idf": described["esp_idf"], "sha256": sha256_bytes(app)},
-        not new_bootloader, replaced)
+        replaced)
 
     for key, (version, app, _bootloader, described) in built.items():
         config_path = ROOT / ESPHOME_BUILDS[key][0]
@@ -615,7 +622,7 @@ def command_esphome(args: argparse.Namespace) -> int:
           "files, and git rm the old.")
     by_hand = []
     if args.no_docs:
-        by_hand += ["artifacts/README.md: each changed file's row (name, SHA-256) and a paragraph on what changed",
+        by_hand += ["artifacts/README.md: each changed file's row (name, SHA-256)",
                     "NOTICES.md: the files' names, the ESPHome release and ESP-IDF version",
                     "devices/sonoff-s60/esphome.md: the ESPHome release that built the current image",
                     f"CHANGELOG.md: ESPHome is built with {release}"]
@@ -626,7 +633,7 @@ def command_esphome(args: argparse.Namespace) -> int:
         if args.mover or replaced:
             by_hand.append("the mover's or bootloader's own rows and paragraphs, which only the image's are written for")
         if old_image["esphome"] == release:
-            by_hand.append("what the change to the config does, in CHANGELOG.md and artifacts/README.md")
+            by_hand.append("what the change to the config does, in CHANGELOG.md and devices/sonoff-s60/esphome.md")
     left_to_do(by_hand + ["python3 -m unittest discover -s tests (tests/repo/test_firmware_pins.py checks the docs)",
                           "the emulator runs in docs/updating-firmware.md, then a real plug"])
     return 0
@@ -702,6 +709,11 @@ def openbeken_source(commit: str) -> Path:
     return source
 
 
+def openbeken_release(source: Path) -> str:
+    """The OpenBeken release a clone's commit is, or is the latest before it."""
+    return git("describe", "--tags", "--abbrev=0", "HEAD", cwd=source)
+
+
 def openbeken_builder() -> str:
     """This project's build image, built from build.Dockerfile: named by the
     base image's digest and the Dockerfile's hash, which is what pins a build."""
@@ -754,12 +766,13 @@ def command_openbeken(args: argparse.Namespace) -> int:
     section = beken_section(pins, args.plug)
     current = section.get("openbeken", {})
     commit = args.commit or current.get("app_commit") or github(f"repos/{OPENBEKEN_REPO}/commits/main")["sha"]
-    version = args.image_version or (next_minor(current["version"]) if current else "1.0.0")
     driver = (ROOT / sources[0]).read_text(encoding="utf-8")
     init, commands = module_init(driver), module_commands(driver)
     builder = openbeken_builder()
-    print(f"OpenBeken {version} for the {args.plug}: {OPENBEKEN_REPO} at {commit[:7]}, built in {builder}")
     source = openbeken_source(commit)
+    release = openbeken_release(source)
+    version = build_version(release, current)
+    print(f"OpenBeken {version} for the {args.plug}: {OPENBEKEN_REPO} at {commit[:7]}, built in {builder}")
     for path in sources:
         target = source / "src" / "driver" / Path(path).name
         if target.exists():
@@ -779,13 +792,13 @@ def command_openbeken(args: argparse.Namespace) -> int:
         print("\nBuilt and checked; nothing published (--dry-run).")
         return 0
     publish(section, "openbeken", file_pattern.format(version=version), image, {
-        "version": version, "app_commit": commit, "sdk_commit": sdk_commit,
+        "version": version, "release": release, "app_commit": commit, "sdk_commit": sdk_commit,
         "sources": {path: sha256_bytes((ROOT / path).read_bytes()) for path in sources},
         "patches": {patch: sha256_bytes((OPENBEKEN_DIR / patch).read_bytes()) for patch in OPENBEKEN_PATCHES},
         "builder": builder})
     save_pins(pins)
     print("\nfirmware.json, SHA256SUMS, .gitignore and artifacts/ updated: git add the new file, and git rm the old.")
-    left_to_do(["artifacts/README.md: the file's row (name, SHA-256) and what changed",
+    left_to_do(["artifacts/README.md: the file's row (name, SHA-256)",
                 "NOTICES.md: the file's name, the OpenBeken commit and the SDK's",
                 "CHANGELOG.md: the plug's OpenBeken is this version",
                 "python3 tests/run.py (tests/repo/test_firmware_pins.py checks the docs)",
@@ -815,7 +828,7 @@ def command_esphome_beken(args: argparse.Namespace) -> int:
     section = beken_section(pins, args.plug)
     current = section.get("esphome", {})
     config = (ROOT / config_path).read_text(encoding="utf-8")
-    version = args.image_version or (next_minor(current["version"]) if current else config_version(config))
+    version = build_version(release, current)
     builder = esphome_builder(release)
     print(f"ESPHome {release} for the {args.plug}: {builder}")
     BUILD_CACHE.mkdir(parents=True, exist_ok=True)
@@ -840,7 +853,7 @@ def command_esphome_beken(args: argparse.Namespace) -> int:
     save_pins(pins)
     print("\nfirmware.json, SHA256SUMS, .gitignore, the config's version and artifacts/ updated: "
           "git add the new file, and git rm the old.")
-    left_to_do(["artifacts/README.md: the file's row (name, SHA-256) and what changed",
+    left_to_do(["artifacts/README.md: the file's row (name, SHA-256)",
                 "NOTICES.md: the file's name, the ESPHome release and LibreTiny version",
                 f"devices/{args.plug}/esphome.md: the ESPHome release that built the current image",
                 "CHANGELOG.md: the plug's ESPHome is this version",
@@ -1007,7 +1020,7 @@ def command_esphome_kind(args: argparse.Namespace) -> int:
     config_path = ROOT / kind.folder / "esphome.yaml"
     config = config_path.read_text(encoding="utf-8")
     current = section.get("esphome", {})
-    version = args.image_version or (next_minor(current["version"]) if current else config_version(config))
+    version = build_version(release, current)
     builder = esphome_builder(release)
     print(f"ESPHome {release} for the {kind.name}: {builder}")
     check_esphome_internals(builder)
@@ -1098,7 +1111,7 @@ def tasmota_doc_texts(old: str, new: str) -> tuple[dict[Path, str], str]:
     return texts, version
 
 
-def esphome_doc_texts(old: dict[str, Any], new: dict[str, Any], bootloader_same: bool,
+def esphome_doc_texts(old: dict[str, Any], new: dict[str, Any],
                       replaced: bool = False) -> tuple[dict[Path, str], str]:
     """artifacts/README.md, NOTICES.md, devices/sonoff-s60/esphome.md and the
     changelog for a new image: the same config with a new ESPHome release, or,
@@ -1106,10 +1119,6 @@ def esphome_doc_texts(old: dict[str, Any], new: dict[str, Any], bootloader_same:
     worked out before anything is written, so a passage not found changes
     nothing."""
     old_name, new_name = Path(old["file"]).name, Path(new["file"]).name
-    kept = ("Its build's bootloader is the one it starts with now." if replaced else
-            "Its build's bootloader is byte for byte the published one." if bootloader_same else
-            f"The bootloader that build makes (ESP-IDF {new['esp_idf']}) differs from the published one, "
-            "which is kept: no plug is given a new one.")
     readme = ARTIFACTS_README.read_text(encoding="utf-8")
     readme = substituted(readme, rf"^\| `{re.escape(old_name)}` \|.*$",
                          lambda row: row.group(0).replace(old_name, new_name).replace(old["sha256"], new["sha256"]),
@@ -1117,17 +1126,9 @@ def esphome_doc_texts(old: dict[str, Any], new: dict[str, Any], bootloader_same:
     readme = substituted(readme, r"(\(its `project` version is the one in the file name\) with ESPHome )\S+( and\s+ESP-IDF )[\d.]+",
                          lambda m: f"{m.group(1)}{new['esphome']}{m.group(2)}{new['esp_idf']}",
                          "the ESPHome release that builds the image, in artifacts/README.md")
-    built = (f"a change to {old['version']}'s config, built with ESPHome {new['esphome']} "
-             f"(ESP-IDF {new['esp_idf']}) as {old['version']} was" if new["esphome"] == old["esphome"] else
-             f"{old['version']}'s config built with ESPHome {new['esphome']} (ESP-IDF {new['esp_idf']}), "
-             f"where {old['version']} was built with {old['esphome']} (ESP-IDF {old['esp_idf']}): the config "
-             "is unchanged but for its version")
-    paragraph = textwrap.fill(
-        f"ESPHome {new['version']} is {built}. {kept} {old['version']} is in the Git history:",
-        width=79, break_long_words=False, break_on_hyphens=False)
-    texts = {ARTIFACTS_README: readme.rstrip("\n") + f"\n\n{paragraph}\n`git log --all -- {old['file']}`.\n"}
+    texts = {ARTIFACTS_README: readme}
     notices = NOTICES.read_text(encoding="utf-8")
-    notices = substituted(notices, r"`artifacts/esphome-sonoff-s60-imprintable-[\d.]+\.bin` is built with ESPHome(\s+)\S+ and ESP-IDF [\d.]+",
+    notices = substituted(notices, r"`artifacts/esphome-sonoff-s60-imprintable-[\d.-]+\.bin` is built with ESPHome(\s+)\S+ and ESP-IDF [\d.]+",
                           lambda m: f"`{new['file']}` is built with ESPHome{m.group(1)}{new['esphome']} and ESP-IDF {new['esp_idf']}",
                           "the image's paragraph in NOTICES.md")
     texts[NOTICES] = substituted(notices, r"\[ESPHome \S+ release\]\(https://github.com/esphome/esphome/tree/\S+\)",
@@ -1166,7 +1167,6 @@ def main(argv: list[str] | None = None) -> int:
     tasmota.set_defaults(run=command_tasmota)
     build_parser = commands.add_parser("esphome", help="build and publish ESPHome with a release")
     build_parser.add_argument("version", nargs="?", help="e.g. 2026.10.0 (default: the latest)")
-    build_parser.add_argument("--image-version", help="the S60 image's own version (default: next minor)")
     build_parser.add_argument("--mover", action="store_true", help="build and publish the mover too")
     build_parser.add_argument("--new-bootloader", action="store_true",
                               help="publish this build's bootloader where it differs (see the docs first)")
@@ -1181,7 +1181,6 @@ def main(argv: list[str] | None = None) -> int:
     openbeken = commands.add_parser("openbeken", help="build and publish OpenBeken for a Beken plug")
     openbeken.add_argument("--plug", choices=sorted(BEKEN_BUILDS), default="sonoff-s61")
     openbeken.add_argument("--commit", help="OpenBK7231T_App's commit (default: the one pinned, else main's head)")
-    openbeken.add_argument("--image-version", help="the image's own version (default: next minor, or 1.0.0)")
     openbeken.add_argument("--dry-run", action="store_true", help="build and check, publish nothing")
     openbeken.set_defaults(run=command_openbeken)
     args = parser.parse_args(argv)

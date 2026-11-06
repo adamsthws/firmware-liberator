@@ -900,8 +900,8 @@ It agrees with the stock driver: the 6-byte parameter block its init passes to
 `bl0937b::open()` (`[0x13548c]+0x24` = `26 00 00 00 02 18`) ends in `0x18` =
 P24 for SEL (and `0x26` = `8<<2 | 6` looks like CF/CF1 packed). The template's
 `loglevel 0` worked around UART logging disturbing pulse counting on BK7238,
-fixed upstream in 1.18.235 (PR #1930); the 1.18.319 base this project builds on
-has the fix. The import
+fixed upstream in 1.18.235 (PR #1930); the release this project builds on has
+the fix. The import
 module applies this template on first boot, plus `SetStartValue 1 -1` so the
 relay restores its last state after a power cut (what the tool sets on the S60).
 The ESPHome config ([`devices/sonoff-s61/esphome.yaml`](../devices/sonoff-s61/esphome.yaml),

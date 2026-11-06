@@ -31,7 +31,7 @@ configuration, patch, documentation and helper are retained together under
 ESPHome's firmware code is distributed under the GNU General Public License
 v3.0.
 
-`artifacts/esphome-sonoff-s60-imprintable-1.6.0.bin` is built with ESPHome
+`artifacts/esphome-sonoff-s60-imprintable-2026.10.0-1.bin` is built with ESPHome
 2026.10.0 and ESP-IDF 5.5.6 from this project's config
 [`devices/sonoff-s60/esphome.yaml`](devices/sonoff-s60/esphome.yaml), with `esphome compile`.
 Its corresponding source is the
@@ -47,7 +47,7 @@ ESP-IDF. Their corresponding source is the
 [ESPHome 2026.9.1 release](https://github.com/esphome/esphome/tree/2026.9.1)
 and those configs (the S60's at 1.2.0 is in this repository's history).
 
-`artifacts/esphome-sonoff-s61-1.2.0.rbl` is built with ESPHome 2026.10.0 and
+`artifacts/esphome-sonoff-s61-2026.10.0-1.rbl` is built with ESPHome 2026.10.0 and
 LibreTiny 1.13.0 from this project's config
 [`devices/sonoff-s61/esphome.yaml`](devices/sonoff-s61/esphome.yaml), with
 `esphome compile`, the rt_ota image LibreTiny's build makes. Its corresponding
@@ -61,7 +61,7 @@ How they are built and published is in
 
 ## OpenBeken firmware
 
-`artifacts/openbeken-sonoff-s61-1.1.0.rbl` is OpenBeken
+`artifacts/openbeken-sonoff-s61-1.18.320-1.rbl` is OpenBeken
 ([openshwprojects/OpenBK7231T_App](https://github.com/openshwprojects/OpenBK7231T_App))
 at commit
 [`ce1abad8dc931720167a7628840adae30b92afaf`](https://github.com/openshwprojects/OpenBK7231T_App/tree/ce1abad8dc931720167a7628840adae30b92afaf)

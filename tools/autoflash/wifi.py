@@ -58,7 +58,7 @@ def backup_calibration(ctx: "Context") -> list[float] | None:
 
 def wifi_from_esphome(ctx: "Context") -> tuple[str, str] | None:
     """The Wi-Fi the plug is on, name and password, from ESPHome itself: our
-    ESPHome gives them from 1.1.0, through its native API - encrypted with
+    ESPHome gives them through its native API - encrypted with
     its key, where it has one.  None from one that does not, or whose key is
     not known (noted: it is offered before the Wi-Fi is asked for)."""
     host = ctx.state.input("plug_ip")

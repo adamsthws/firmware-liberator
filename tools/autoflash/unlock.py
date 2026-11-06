@@ -217,7 +217,7 @@ def ask_esphome_key(ctx: Context, host: str, *, wifi: bool = False) -> bool:
     if wifi:
         secret, value = secret_or_retry("ESPHome's API encryption key", [
             f"ESPHome on the device at {host} gives its Wi-Fi details through its API (ours",
-            "does from 1.1.0), but its API is encrypted (api: encryption: in its ESPHome",
+            "does), but its API is encrypted (api: encryption: in its ESPHome",
             "YAML config). Type its key - after key: there - and it gives them; or type",
             "the Wi-Fi details yourself instead.",
             "A key typed is held in memory for this run only, never written to disk.",

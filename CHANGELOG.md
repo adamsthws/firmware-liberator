@@ -14,6 +14,15 @@ on that commit, and carries the firmware files the tool installs with
 which `gh release verify vX.Y.Z` and `gh release verify-asset vX.Y.Z FILE`
 check.
 
+## 2.4.0
+
+- The firmware this project builds says in its version which upstream release
+  it is built on: OpenBeken 1.18.320-1 and ESPHome 2026.10.0-1, each this
+  project's first build on that release, with the same code as the 1.1.0, 1.6.0
+  and other builds they replace. A plug on one of those is offered it as an
+  update. The README's badge shows OpenBeken's release, read from
+  `artifacts/firmware.json`.
+
 ## 2.3.0
 
 - The tool's code is a package of modules, each for one thing - the command

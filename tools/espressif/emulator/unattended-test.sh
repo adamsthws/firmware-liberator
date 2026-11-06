@@ -208,7 +208,7 @@ stub_env=()
 # A device not ready yet is taken only when this says so (tools/autoflash/kinds.py).
 [ -n "${AUTOFLASH_NOT_READY_YET:-}" ] && stub_env+=(-e AUTOFLASH_NOT_READY_YET=1)
 # The emulator's Wi-Fi, for a run from an ESPHome that cannot say what it is
-# (one older than this project's 1.1.0); and the emulated plug's passwords,
+# (one of this project's first builds); and the emulated plug's passwords,
 # for one given one to test with, as this script's environment has them.
 "${as_you[@]}" -e AUTOFLASH_EMULATOR_URL="http://localhost:$PORT" -e AUTOFLASH_EMULATOR_SUDO_PASSWORD=autoflash \
     "${stub_env[@]}" "${legacy_env[@]}" -e AUTOFLASH_WIFI_SSID=PICSimLabWifi -e AUTOFLASH_EMULATOR_COUNTDOWN="${AUTOFLASH_EMULATOR_COUNTDOWN:-}" \

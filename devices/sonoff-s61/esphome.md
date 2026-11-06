@@ -158,7 +158,7 @@ interrupt watchdog from a 10 s channel of that group, and a first version
 that raised every channel on every tick ran that feed back to back and
 starved OpenBeken instead.
 
-ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-s61-1.2.0.rbl`,
+ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-s61-2026.10.0-1.rbl`,
 with `tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-s61`
 ([docs/updating-firmware.md](../../docs/updating-firmware.md)).
 

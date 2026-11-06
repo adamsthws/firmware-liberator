@@ -18,7 +18,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: adamsthws.sonoff-th-elite
-    version: "1.0.0"
+    version: "2026.10.0-1"
   on_boot:
     # Tasmota holds its output pins through a software restart, and the install
     # ends with one: release them before anything drives them.
