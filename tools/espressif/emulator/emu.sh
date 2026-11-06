@@ -30,6 +30,8 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
+# shellcheck source=/dev/null
+. "$ROOT/tools/repo/emulator-room.sh"
 EMU=$ROOT/captures/emulation
 STATE=$EMU/state
 # A Windows checkout under WSL (/mnt/c, reached through 9p) is far too slow for
@@ -251,15 +253,11 @@ chmod 0600 "$STATE"/*.bin
 # -- the "computer": a copy of this repository ---------------------------------
 # A copy, so a run's lock renames and captures never touch the real checkout.
 # The code is refreshed on every start, and the run's captures are kept.
-# Not .env: a run you sit through asks for the eWeLink account, as a real
-# one does. unattended-test.sh hands it to its run alone.
-# Excluded whatever they are: in a git worktree .git is a file, and captures or
-# .venv may be symlinks to the main checkout's - copied, a dangling link would
-# replace the run's own captures.
+# Only what git tracks or would (copy_checkout): never .env, which a run you sit
+# through asks for as a real one does (unattended-test.sh hands it to its run
+# alone), nor captures, .venv or anything else ignored.
 mkdir -p "$STATE/work/captures"
-rsync -a --delete --exclude /captures --exclude /.venv --exclude /.python --exclude /.git \
-      --exclude /.env --exclude __pycache__/ "$ROOT/" "$STATE/work/"
-rm -f "$STATE/work/.env"  # one copied before it was left out: --delete spares excluded files
+copy_checkout "$ROOT" "$STATE/work"
 # Not the firmware bundle in captures/safeboot-recovery-migration: a real
 # bundle is set up for the real home Wi-Fi. The run builds its own, as a new
 # user's would (it downloads the official files: --cloud or --stub-cloud).
@@ -343,6 +341,9 @@ print(next((k.psram_mb for k in kinds.EVERY if k.psram_mb and k.product_of(sys.a
 # in: over it, the kernel kills QEMU part way through a download, which looks
 # like the plug restarting.
 memory=256m; [ "$chip" = esp32 ] && memory=1g
+# What one was measured to use with its computer (C3 146 MB, classic ESP32 249 MB), plus 100.
+room=250; [ "$chip" = esp32 ] && room=350
+wait_for_room "$room"
 exec "${awake[@]}" docker run --rm $tty --name "$NAME" --hostname autoflash-emu-computer \
     --memory "${AUTOFLASH_EMU_MEMORY:-$memory}" --cpus "${AUTOFLASH_EMU_CPUS:-2}" \
     --network "$NETWORK" --cap-add NET_ADMIN --device /dev/net/tun \

@@ -165,7 +165,18 @@ a time; after C2 nothing uses the cloud. A new instance has no plug yet, so name
 it with `--plug MAC` when there is more than one backup. An S60's takes about
 0.6 of a CPU and 115 MB; a classic ESP32's runs two cores and is allowed 1 GB.
 Run no more at once than your computer has cores: more makes runs fail that
-would otherwise pass.
+would otherwise pass. Each emulator waits to start until the computer has what it
+needs free - 250 MB for an ESP32-C3, 350 MB for a classic ESP32 or the S61, each
+about 100 MB over what one was measured to use with its computer - and a load under
+twice its cores (`AUTOFLASH_EMU_MIN_FREE_MB` for another amount), for up to
+ten minutes (`AUTOFLASH_EMU_ROOM_WAIT`, in seconds), then starts anyway and says
+so: a failure then may be the computer's.
+
+Each instance's computer has its own copy of the checkout, of only what git tracks
+or would: what you ignore - `captures/`, `.env`, `.venv`, agents' worktrees - is
+never in it. Its plug's state stays between runs; `tools/repo/prune_captures.py`
+lists what of it and of the suites' logs and build caches has not been used for
+two weeks, and removes it with `--delete`, keeping any backup wherever it is.
 
 Every instance, and the Windows container beside one, is on a Docker network of
 the emulator's own, `autoflash-emu`, which `emu.sh` makes the first time on
