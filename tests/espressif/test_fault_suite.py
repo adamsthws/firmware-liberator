@@ -608,6 +608,28 @@ class ScenarioTests(unittest.TestCase):
         self.assertTrue(self.turn_file_after(fs.PLUG_BACK_AT_MOST - 1))
         self.assertFalse(self.turn_file_after(fs.PLUG_BACK_AT_MOST + 1))
 
+    def said_waiting(self, waited, got=True):
+        """What a run says when a turn takes `waited` seconds to come."""
+        clock = [1000.0]
+
+        def acquire(*_):
+            clock[0] += waited
+            return got
+        sc = mock.Mock(n=1)
+        with mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
+                mock.patch.object(fs.CLOUD, "acquire", side_effect=acquire):
+            self.assertEqual(fs.wait_for_turn(sc, fs.CLOUD.FRESH, lambda: False), got)
+        return [call.args[0] for call in sc.say.call_args_list]
+
+    def test_a_run_that_waited_for_its_turn_says_how_long(self):
+        # A run past its sign-in keeps its time limits while it waits, so a
+        # NOT-FIRED could be the queue's doing with nothing to show it.
+        self.assertEqual(self.said_waiting(95), ["CLOUD: waited 95s for a turn"])
+
+    def test_a_turn_with_no_queue_or_never_given_says_nothing(self):
+        self.assertEqual(self.said_waiting(0), [])
+        self.assertEqual(self.said_waiting(95, got=False), [])
+
     def said_in_a_turn(self, looks, limit=fs.HOLD_AT_MOST):
         """What a turn says, the plug's connections at each second being `looks`."""
         with tempfile.TemporaryDirectory() as tmp:
