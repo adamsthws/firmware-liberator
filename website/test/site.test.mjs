@@ -16,7 +16,6 @@ test("every Markdown file is a page, wherever it is; nothing else is", () => {
   for (const path of ["README.md", "docs/what-happens.md", "devices/sonoff-s61/README.md", "tools/beken/README.md"]) {
     assert.ok(onSite.has(path), path);
   }
-  assert.ok(!onSite.has("CLAUDE.md"));
   assert.ok([...onSite].every((path) => path.endsWith(".md") && !path.startsWith(".github/")));
 });
 

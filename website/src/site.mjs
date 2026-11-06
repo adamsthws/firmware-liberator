@@ -9,12 +9,11 @@ export const REPOSITORY = "adamsthws/firmware-liberator";
 export const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 // Every Markdown file git tracks, so a link to one never leaves the site
-// and nothing untracked is ever built in. Not CLAUDE.md, which only points
-// at AGENTS.md, nor GitHub's own templates. Everything else - the tool, a
-// config, LICENSE - is linked to on GitHub.
+// and nothing untracked is ever built in. Not GitHub's own templates.
+// Everything else - the tool, a config, LICENSE - is linked to on GitHub.
 export const PAGES = execFileSync("git", ["ls-files", "-z", "--", "*.md"], { cwd: ROOT, encoding: "utf-8" })
   .split("\0")
-  .filter((path) => path && path !== "CLAUDE.md" && !path.startsWith(".github/"));
+  .filter((path) => path && !path.startsWith(".github/"));
 
 // Pictures the pages show, copied beside them.
 export const PICTURES = ["docs/*.svg", "docs/*.png"];
