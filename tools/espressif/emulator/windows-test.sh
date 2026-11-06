@@ -25,6 +25,8 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
+# shellcheck source=/dev/null
+. "$ROOT/tools/repo/emulator-room.sh"
 CACHE=${AUTOFLASH_WINDOWS_CACHE:-$HOME/.cache/autoflash-emu/windows}
 VM_IMAGE=autoflash-win
 NETWORK=${AUTOFLASH_EMU_NETWORK:-autoflash-emu}   # the emulator's network (emu.sh), which Windows joins
@@ -260,6 +262,7 @@ vm() {  # vm DOCKER-RUN-OPTIONS... -- VM-RUN-COMMAND...: the Windows VM containe
     local options=()
     while [ "$1" != -- ]; do options+=("$1"); shift; done
     shift
+    checkout_files "$ROOT" > "$CACHE/repo-files"  # what vm-run copies of the checkout
     docker run "${options[@]}" --device /dev/kvm -e "KEYBOARD=${LANG:-}" -e "WINDOWS_PASSWORD=$PASSWORD" \
         -e "HOST_UID=$(id -u)" -e "HOST_GID=$(id -g)" \
         -e "RAM=$RAM" -e "CPUS=$CPUS" --memory "${cap_mb}m" --memory-swap "${cap_mb}m" --cpus "$CPUS" \

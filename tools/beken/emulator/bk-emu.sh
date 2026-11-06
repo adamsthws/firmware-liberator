@@ -75,6 +75,8 @@ set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
+# shellcheck source=/dev/null
+. "$ROOT/tools/repo/emulator-room.sh"
 EMU=$ROOT/captures/emulation
 FIRMWARES=$EMU/beken/firmwares
 PUBLIC_DUMP=Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin
@@ -242,6 +244,8 @@ case "${1:-}" in
         ensure; dump; network
         mkdir -p "$PLUG_STATE"
         starts_from=$(plug_dump)
+        # Measured: the plug 152 MB and its computer 97, plus 100.
+        wait_for_room 350
         docker run -d --rm --name "$PLUG" --network "$NETWORK" --cap-add NET_ADMIN --device /dev/net/tun \
             -v "$ROOT:/work:ro" -v "$FIRMWARES:/opt/beken-emulator/firmwares:ro" -v "$PLUG_STATE:/state" \
             -e AUTOFLASH_BEKEN_EMU_DUMP="$starts_from" \
@@ -281,13 +285,11 @@ case "${1:-}" in
         shift; ensure; network
         [ -f "$PLUG_STATE/ca.crt" ] || { echo "No plug yet: start it first (bk-emu.sh plug)" >&2; exit 1; }
         # The computer's own copy of this checkout, refreshed each time, its
-        # captures kept: a plug's runs are filed apart from every other's.
-        # Excluded whatever they are, as emu.sh's: in a git worktree .git is a
-        # file, and captures or .venv may be links to the main checkout's.
+        # captures kept: a plug's runs are filed apart from every other's. Only
+        # what git tracks or would, as emu.sh's (copy_checkout).
         WORK=$PLUG_STATE/work
         mkdir -p "$WORK/captures"
-        rsync -a --delete --exclude /captures --exclude /.venv --exclude /.python --exclude /.git \
-              --exclude /.env --exclude __pycache__/ "$ROOT/" "$WORK/"
+        copy_checkout "$ROOT" "$WORK"
         # The plug's power switch too, so a run can offer to switch it off and on;
         # and which terminal it is shown in (VS Code's: output.start_at_top).
         [ -f "$PLUG_STATE/power" ] || echo on > "$PLUG_STATE/power"
