@@ -5,15 +5,17 @@ uploaded through it - steps C2, C3 and D1.
 
 from __future__ import annotations
 
+import hashlib
 import time
 import urllib.error
 from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING
 
-from tools.espressif import dump_stock_flash
+from tools.espressif import build_vendor_ota, chips, dump_stock_flash, layouts
 from tools.autoflash import (
     detect,
     device,
+    esphome,
     firewall,
     hostsys,
     interrupt,
@@ -21,6 +23,7 @@ from tools.autoflash import (
     kinds,
     names,
     output,
+    plans,
     plugs,
     prompts,
     runs,
@@ -32,7 +35,7 @@ from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.runs import ROOT
 from tools.autoflash.state import ATTEMPTED, DONE, FAILED
-from tools.espressif.safeboot.safeboot_migration import PINNED_ARTIFACTS
+from tools.espressif.safeboot.safeboot_migration import pinned_artifacts
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -54,6 +57,27 @@ BRIDGE_NOT_SENT = "The upgrade command was not sent"
 # The run's input holding the address the plug has downloaded the installer
 # from, so a later send it never asks for is not put down to the firewall there.
 DOWNLOADED_FROM = "bridge_downloaded_from"
+
+
+def bridge_file(ctx: Context) -> Path:
+    """The installer as the plug's stock updater takes it: the S60's as it is
+    published (or another given by hand); any other kind's made from the app
+    for its chip, wrapped for its model. The wrapper holds nothing of the plug."""
+    kind = kinds.of_run(ctx.state)
+    if kind is kinds.SONOFF_S60 or ctx.research_bridge:
+        return ctx.bridge
+    chip = chips.of(kind.chip)
+    if chip is chips.ESP32C3:
+        app = (ROOT / BRIDGE_OTA).read_bytes()[build_vendor_ota.WRAPPER_SIZE:]
+    else:
+        pin = chip.pin("bridge")
+        app = (ROOT / pin["file"]).read_bytes()
+        if hashlib.sha256(app).hexdigest() != pin["sha256"]:
+            raise Abort(f"{pin['file']} is not the file firmware.json pins: refusing to send it")
+    wrapped = build_vendor_ota.build_wrapper(app, version=build_vendor_ota.app_version(app), model=kind.wrapper_model)
+    path = ctx.dir / f"autoflash-bridge-{kind.key}.ota"
+    path.write_bytes(wrapped)
+    return path
 
 
 def bridge_failure_advice(ctx: Context, reported: list[str], started: bool) -> list[str]:
@@ -133,7 +157,7 @@ def step_bridge(ctx: Context) -> dict[str, Any]:
                 "tools/espressif/serve_tasmota_ota.py",
                 "--listen-ip", listen_ip, "--listen-port", str(port),
                 "--device-ip", plug_ip,
-                "--firmware", str(ctx.bridge),
+                "--firmware", str(bridge_file(ctx)),
                 "--email", email, "--expected-current-version", version,
                 "--mdns-capture", str(ctx.dir / "mdns.json"),
                 "--i-understand-stock-has-no-automatic-rollback"),
@@ -315,6 +339,28 @@ def ask_to_join_bridge(bridge: str, *, tasmota: bool = False) -> None:
 AFTER_BACKUP = ("D1", "D4", "E1", "E2", "E3", "F2", "F4", "G1", "H1")
 
 
+def require_known_layout(ctx: Context) -> None:
+    """Stop before anything is written over Sonoff's firmware when the plug's
+    partition table is not one this tool has a plan for. A plug of a kind known
+    only from its firmware may be laid out differently from the one it was
+    tried on; until D1 the installer falls back to Sonoff's firmware on a power
+    cycle, so here that costs nothing."""
+    mac = ctx.state.input("plug_mac")
+    backup = plugs.find_backup(mac) if mac else None
+    try:
+        if backup:
+            table = (backup.directory / "flash.bin").read_bytes()[plans.TABLE_ADDRESS:plans.TABLE_ADDRESS + plans.SECTOR]
+        else:
+            table = dump_stock_flash.read_table(reach_bridge(ctx))
+    except OSError as exc:
+        output.tell(f"    The device's memory layout could not be read here ({exc}); its checks later still stand.")
+        return
+    if hashlib.sha256(table).hexdigest() != layouts.of(kinds.of_run(ctx.state).layout).table_sha256:
+        raise Abort("this device's memory is not laid out as this tool expects, so nothing has been written "
+                    "over its Sonoff firmware: switch it off and on to go back to it. Please report this "
+                    "with the device's model")
+
+
 def step_backup(ctx: Context) -> dict[str, Any]:
     """C3 - the plug's Sonoff firmware, kept whole, before D1 writes over it.
     Its stage is "skipped" when no backup could be taken, as the conversion
@@ -329,13 +375,14 @@ def step_backup(ctx: Context) -> dict[str, Any]:
             output.say(f"    {message}")
         else:
             outcome = back_up_stock(ctx, reach_bridge(ctx))
+        require_known_layout(ctx)
     ctx.state.set_input("backup_outcome", outcome)
     return {"outcome": outcome, "stage_outcome": plugs.BACKUP_OUTCOMES[outcome][0]}
 
 
 def step_berry_tasmota(ctx: Context) -> dict[str, Any]:
     """D1/D2 - Berry-capable Tasmota through the bridge."""
-    image = ROOT / "captures/safeboot-recovery-migration/tasmota32c3-bluetooth.bin"
+    image = esphome.interim_of(kinds.of_run(ctx.state))
     output.say("Looking for the device's Wi-Fi network...")
     bridge = prompts.find_ssid(names.bridge_networks(ctx))
     setup = None if bridge else prompts.find_ssid(names.setup_networks(ctx))
@@ -610,7 +657,8 @@ def give_tasmota_the_wifi(ctx: Context, address: str) -> bool:
     Wi-Fi: on its own network the bridge has joined none, and 4.4.4 saves them
     without (tasmota_named_alone) - Tasmota then makes its own network under
     that name, not its default (tasmota-ABCDEF-1234)."""
-    template, reason = tasmota_settings.load_template(ROOT, PINNED_ARTIFACTS["bluetooth"]["sha256"])
+    chip = chips.of(kinds.of_run(ctx.state).chip)
+    template, reason = tasmota_settings.load_template(ROOT, pinned_artifacts(chip)["bluetooth"]["sha256"], chip)
     alone = address == setup_network.SETUP_HOST
     if template is None:
         if not alone:

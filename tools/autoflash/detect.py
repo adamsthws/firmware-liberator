@@ -23,7 +23,9 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from . import esphome, esphome_ota, hostsys, kinds, openbeken, setup_network
-from .plans import INTERIM_TABLE_SHA256
+from tools.espressif import layouts
+
+from tools.espressif.safeboot.safeboot_migration import INTERIM_TABLE_SHA256
 from .device import Device
 
 NAMES = {
@@ -52,7 +54,8 @@ def _is_installer(host: str, timeout: float) -> bool:
             return setup_network.is_bridge_page(reply.read(4096).decode("utf-8", "replace"))
     except Exception:  # noqa: BLE001 - anything but the installer answering
         return False
-SONOFF_TABLE_SHA256 = "f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf"
+SONOFF_TABLE_SHA256 = layouts.SONOFF_DUAL_OTA.table_sha256
+KNOWN_STOCK_TABLES = tuple(table for layout in layouts.ALL for table in (layout.table_sha256, layout.interim_sha256))
 SONOFF_LAN_PORT = 8081
 
 
@@ -126,18 +129,19 @@ def _tasmota(host: str, timeout: float,
     try:
         # Or the interim layout a commit stopped part way leaves: the same
         # Tasmota, its settings moved aside, which the next step puts back.
-        sonoff_layout = device.sha_region(0x8000, 0x1000, timeout=20) in (SONOFF_TABLE_SHA256,
+        sonoff_layout = device.sha_region(0x8000, 0x1000, timeout=20) in (*KNOWN_STOCK_TABLES,
                                                                            INTERIM_TABLE_SHA256)
     except Exception:  # noqa: BLE001 - no Berry: not one of this tool's
-        if "bluetooth" in version:
+        if interim_build(version):
             # The routes' own, its Berry busy - with a phase whose server is
             # gone, say: not to be taken for official Tasmota on its layout.
             raise Unreadable(host) from None
         sonoff_layout = False
-    # The routes' own Tasmota is the bluetooth build.  Official Tasmota with
+    # The routes' own Tasmota is the bluetooth build, on an ESP32 the display
+    # build (chips.Chip.interim_build).  Official Tasmota with
     # Sonoff's table is one leaving Tasmota that has not restarted yet: still
     # Tasmota, so leaving it carries on (the plan finds its writes done).
-    if sonoff_layout and "bluetooth" in version:
+    if sonoff_layout and interim_build(version):
         return "hub", name, None
     template = _template_name(device)
     if template is None:
@@ -228,6 +232,11 @@ def answers_as_tasmota(host: str, timeout: float = 3.0) -> bool:
     except Exception:  # noqa: BLE001 - anything but Tasmota answering
         return False
     return isinstance(status, dict) and "Status" in status
+
+
+def interim_build(version: str) -> bool:
+    """Whether Tasmota's version says it is one of the builds a route runs part way."""
+    return "bluetooth" in version or "display" in version
 
 
 def tasmota(host: str, *, timeout: float = 3.0,

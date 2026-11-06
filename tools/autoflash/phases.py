@@ -246,7 +246,9 @@ class PhaseRunner:
         listen_port: int = 8089,
         log: Callable[[str], None] = print,
         recovery: bytes | None = None,
+        layout: str | None = None,
     ) -> None:
+        self.layout = layout
         self.repo_root = repo_root
         self.manifest = manifest
         self.evidence_dir = evidence_dir
@@ -286,6 +288,7 @@ class PhaseRunner:
         return hostsys.python_script(
             self.repo_root / "tools" / "espressif" / "safeboot" / "serve_safeboot_migration.py",
             phase,
+            *(["--layout", self.layout] if self.layout else []),
             "--manifest",
             str(self.manifest),
             "--evidence-dir",

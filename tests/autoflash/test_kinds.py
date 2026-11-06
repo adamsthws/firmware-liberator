@@ -1,6 +1,9 @@
 """The kinds of plug the tool converts, and what is each one's own."""
 import json
+import os
 import re
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,12 +20,27 @@ class KnownByTests(unittest.TestCase):
         self.assertIs(kinds.for_account("S60TPG", ""), S60)
         self.assertIs(kinds.for_account(" s60tpf ", None), S60)
         self.assertIs(kinds.for_account("", "SN-ESP32C3-S60-01"), S60)
-        self.assertIsNone(kinds.for_account("MINIR4", "SN-ESP32-MINIR4"))
+        self.assertIsNone(kinds.for_account("MINIR4M", "SN-ESP32-MINIR4M"))
         self.assertIsNone(kinds.for_account("S60ZBTPF", ""))  # the Zigbee S60
+
+    def test_a_stock_firmware_more_than_one_device_calls_itself_is_not_enough(self):
+        # The POWR320D's relay is a latching one on other pins, and the Matter
+        # M5's firmware is locked: neither is to be taken for its neighbour.
+        self.assertIs(kinds.for_account("POWR316D", "SN-ESP32D0-POWR3-01"), kinds.SONOFF_POW_ELITE)
+        self.assertIsNone(kinds.for_account("POWR320D", "SN-ESP32D0-POWR3-01"))
+        self.assertIsNone(kinds.for_account("", "SN-ESP32D0-POWR3-01"))
+        self.assertIsNone(kinds.for_account("THR316D", "SN-ESP32D0-THR3-01"))
+        self.assertIsNone(kinds.for_account("M5-3C-86W", ""))
+
+    def test_each_template_has_a_pin_for_each_of_its_chips(self):
+        counts = {"esp32": 36, "esp32c3": 22}
+        for kind in kinds.ALL:
+            if kind.family == "espressif":
+                self.assertEqual(len(kind.tasmota_gpio), counts[kind.chip], kind.key)
 
     def test_a_stock_firmware_by_what_it_calls_itself(self):
         self.assertIs(kinds.for_stock_model("SN-ESP32C3-S60-01"), S60)
-        self.assertIsNone(kinds.for_stock_model("SN-ESP32-MINIR4"))
+        self.assertIsNone(kinds.for_stock_model("SN-ESP32-MINIR4M"))
         self.assertIsNone(kinds.for_stock_model(None))
 
     def test_a_converted_tasmota_by_its_template(self):
@@ -42,7 +60,7 @@ class KnownByTests(unittest.TestCase):
 
     def test_by_its_key(self):
         self.assertIs(kinds.by_key("sonoff-s60"), S60)
-        self.assertIsNone(kinds.by_key("sonoff-minir4"))
+        self.assertIsNone(kinds.by_key("sonoff-minir4m"))
         self.assertIsNone(kinds.by_key(None))
 
 
@@ -97,9 +115,9 @@ class NamesTests(unittest.TestCase):
                 self.assertIn(kind, kinds.on_chip(kind.chip.upper()))
 
     def test_before_the_plug_is_known_every_kind_is_named(self):
-        self.assertEqual(kinds.names(), "Sonoff S60 or Sonoff S61")
-        self.assertEqual(kinds.names("short"), "S60 or S61")
-        self.assertEqual(kinds.name_words(), {"sonoff", "s60", "s61"})
+        self.assertIn("Sonoff S60, Sonoff S61", kinds.names())
+        self.assertRegex(kinds.names("short"), r"^S60, S61.* or \S+$")
+        self.assertLessEqual({"sonoff", "s60", "s61"}, kinds.name_words())
 
 
 class RunTests(unittest.TestCase):
@@ -116,6 +134,31 @@ class RunTests(unittest.TestCase):
     def test_one_that_recorded_none_the_first_the_tool_knows(self):
         # A run from before kinds were recorded: the S60's, the only kind then.
         self.assertIs(kinds.of_run(self.state()), kinds.ALL[0])
+
+
+class LayoutTests(unittest.TestCase):
+    def test_a_dual_r3_is_laid_out_as_a_real_ones_boot_log_shows(self):
+        self.assertEqual(kinds.SONOFF_DUALR3.layout, "sonoff-th-elite")
+
+
+class NotReadyYetTests(unittest.TestCase):
+    def test_the_tool_turns_them_down_as_any_device_it_does_not_know(self):
+        for kind in kinds.NOT_READY_YET:
+            self.assertNotIn(kind, kinds.ALL)
+            self.assertIsNone(kinds.by_key(kind.key))
+            self.assertIsNone(kinds.for_account(kind.example_product_model, kind.stock_model))
+
+    def test_the_tooling_that_works_on_them_still_finds_them(self):
+        for kind in kinds.NOT_READY_YET:
+            self.assertIs(kinds.find(kind.key), kind)
+            self.assertTrue((ROOT / kind.folder / "esphome.yaml").is_file(), kind.key)
+            self.assertFalse(kind.ready)
+
+    def test_the_emulator_can_ask_for_them(self):
+        code = "from tools.autoflash import kinds; print(kinds.for_account('M5-3C-120', '').key)"
+        done = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True,
+                              env={**os.environ, "AUTOFLASH_NOT_READY_YET": "1"}, check=True)
+        self.assertEqual(done.stdout.strip(), "sonoff-m5-3c")
 
 
 if __name__ == "__main__":

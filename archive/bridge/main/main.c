@@ -136,7 +136,7 @@ static const char INDEX_HTML[] =
     "button{padding:.7rem 1rem}code{background:#eee;padding:.1rem .3rem}</style>"
     "<h1>Autoflash bridge</h1>"
     "<p>The untouched stock slot is selected for the next power cycle.</p>"
-    "<p>Choose a native ESP32-C3 application image no larger than 0x1f0000 "
+    "<p>Choose a native " CONFIG_IDF_TARGET " application image no larger than 0x1f0000 "
     "bytes. The peer slot is erased only after you press Upload.</p>"
     "<input id=f type=file accept='.bin,application/octet-stream'> "
     "<button id=u>Upload</button><pre id=o></pre>"
@@ -255,17 +255,34 @@ static esp_err_t flash_sha256_handler(httpd_req_t *req)
     return httpd_resp_sendstr(req, text);
 }
 
-/* The eFuse read registers (EFUSE_RD_WR_DIS_REG to
- * EFUSE_RD_SYS_PART2_DATA7_REG), little-endian words in register order.
- * Reading them does not program anything. */
+/* The eFuse read registers, little-endian words in register order: on an
+ * ESP32-C3 EFUSE_RD_WR_DIS_REG to EFUSE_RD_SYS_PART2_DATA7_REG, on a classic
+ * ESP32 its four blocks' (flashmap.py reads either).  Reading them does not
+ * program anything. */
 static esp_err_t efuse_handler(httpd_req_t *req)
 {
     size_t length = 0;
+#if CONFIG_IDF_TARGET_ESP32
+    static const struct { uint32_t first, last; } blocks[] = {
+        {EFUSE_BLK0_RDATA0_REG, EFUSE_BLK0_RDATA6_REG},
+        {EFUSE_BLK1_RDATA0_REG, EFUSE_BLK1_RDATA7_REG},
+        {EFUSE_BLK2_RDATA0_REG, EFUSE_BLK2_RDATA7_REG},
+        {EFUSE_BLK3_RDATA0_REG, EFUSE_BLK3_RDATA7_REG},
+    };
+    for (size_t block = 0; block < sizeof(blocks) / sizeof(blocks[0]); block++) {
+        for (uint32_t reg = blocks[block].first; reg <= blocks[block].last; reg += 4) {
+            uint32_t word = REG_READ(reg);
+            memcpy(s_upload_buffer + length, &word, sizeof(word));
+            length += sizeof(word);
+        }
+    }
+#else
     for (uint32_t reg = EFUSE_RD_WR_DIS_REG; reg <= EFUSE_RD_SYS_PART2_DATA7_REG; reg += 4) {
         uint32_t word = REG_READ(reg);
         memcpy(s_upload_buffer + length, &word, sizeof(word));
         length += sizeof(word);
     }
+#endif
     httpd_resp_set_type(req, "application/octet-stream");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     return httpd_resp_send(req, s_upload_buffer, length);

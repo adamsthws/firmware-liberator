@@ -7,10 +7,10 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from tools.autoflash import calibration, errors, esphome, output, plugs, tasmota_settings
+from tools.autoflash import calibration, errors, esphome, kinds, output, plugs, tasmota_settings
 from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort
-from tools.espressif import inspect_stock_nvs
+from tools.espressif import chips, inspect_stock_nvs
 from tools.espressif.safeboot.prepare_imprinted_bundle import BundleError, bundle_ssid, recovery_image
 
 if TYPE_CHECKING:
@@ -145,7 +145,7 @@ def read_wifi_from_plug(ctx: "Context") -> tuple[str, str] | None:
             if not connected:
                 return unreadable("it did not say which network it is on")
             record = tasmota_settings.decode_backup(device.download_settings())
-            if tasmota_settings.problems(record):
+            if tasmota_settings.problems(record, chips.of(kinds.of_run(ctx.state).chip).config_version):
                 return unreadable("its settings backup is not in the expected format")
             ssid = tasmota_settings.text(record, tasmota_settings.SET_STASSID1)
             password = tasmota_settings.text(record, tasmota_settings.SET_STAPWD1)

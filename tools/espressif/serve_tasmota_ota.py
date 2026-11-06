@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve a validated wrapped ESP32-C3 app to one owned plug.
+"""Serve a validated wrapped ESP app to one owned plug.
 
 This is the live, state-changing end of the research workflow.  It remains
 blocked by ``RECOVERY_LOCK`` and also requires an explicit no-rollback
@@ -22,6 +22,7 @@ if __package__ in (None, ""):  # run as a script: the repository root, for `tool
 from tools.autoflash import kinds  # noqa: E402
 from tools.autoflash.prompts import ask_secret
 from tools.espressif.analyze_vendor_ota import analyze
+from tools.espressif import chips
 from tools.espressif.build_vendor_ota import ANNOUNCED_VERSION, DEFAULT_MAX_PAYLOAD_SIZE, announce
 from tools.ewelink.get_device_key import EwelinkError, target_id_from_mdns
 from tools.ewelink.ota_push import NOT_SENT, FirmwareServer, deliver, parse_single_range  # noqa: F401  (the server, for its tests)
@@ -86,7 +87,8 @@ def main():
         and wrapper["record_crc32_valid"] and wrapper["record_reserved_zero"]
         and wrapper["model"] in {kind.wrapper_model for kind in kinds.ALL}
         and wrapper["actual_payload_size"] <= DEFAULT_MAX_PAYLOAD_SIZE
-        and esp["chip_is_esp32_c3"] and esp["checksum_valid"]
+        and any(esp["chip_id"] == chips.of(kind.chip).chip_id and wrapper["model"] == kind.wrapper_model
+                for kind in kinds.ALL if kind.family == "espressif") and esp["checksum_valid"]
         and esp["sha256_valid"] is not False and esp["trailing_bytes"] == 0
     )
     if not valid:
@@ -101,7 +103,7 @@ def main():
     def check(device: dict[str, Any], model: str) -> None:
         # Only a plug of a kind this tool converts, and only a file wrapped
         # for it: another Sonoff on the same account must never be sent it.
-        kind = kinds.for_stock_model(model)
+        kind = kinds.for_account(device.get("productModel"), model)
         if kind is None:
             raise EwelinkError(
                 f"Device model is {model}, not one this tool converts; refusing"

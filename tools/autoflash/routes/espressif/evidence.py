@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Callable, TYPE_CHECKING
 
-from tools.autoflash import detect, esphome, names, prompts, unlock
+from tools.autoflash import detect, esphome, kinds, names, prompts, unlock
 from tools.autoflash.routes import update
 from tools.autoflash.routes.espressif import installer
 
@@ -146,9 +146,10 @@ def evidence_by_what_answers(finished: set[str], not_yet: set[str]):
 
 
 def evidence_bootloader(ctx: "Context") -> tuple[bool | None, str]:
-    image = esphome.published_bootloader()
+    chip = esphome.chip_of(kinds.of_run(ctx.state))
+    image = esphome.published_bootloader(chip)
     actual = ctx.device.sha_region(0, len(image))
-    if actual == esphome.BOOTLOADER_SHA256:
+    if actual == esphome.bootloader_file(chip)[2]:
         return True, "ESPHome's bootloader is in place, so this step did finish."
     return False, "The device still has its old bootloader, so this step has to be done again."
 

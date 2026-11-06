@@ -6,7 +6,7 @@ from __future__ import annotations
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import detect, join, output, plans, plugs
+from tools.autoflash import detect, esphome, join, kinds, output, plans, plugs
 from tools.autoflash.errors import Abort
 from tools.autoflash.routes.espressif import hub
 
@@ -31,7 +31,8 @@ def step_sonoff_restore(ctx: Context) -> dict[str, Any]:
     the Tasmota it runs; the boot selection set to it last, then a restart.
     Two plans, as Sonoff's firmware is more than one may write."""
     try:
-        first, second = plans.back_to_sonoff(sonoff_backup(ctx), running=1)
+        first, second = plans.back_to_sonoff(sonoff_backup(ctx), running=1,
+                                             layout=esphome.layout_of(kinds.of_run(ctx.state)))
     except plans.PlanError as exc:
         raise Abort(f"the backup cannot be written back: {exc}") from exc
     hub.run_plan(ctx, first)

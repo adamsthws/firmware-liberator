@@ -26,6 +26,8 @@ import zlib
 from collections.abc import Callable
 from pathlib import Path
 
+from tools.espressif import chips, layouts
+
 from . import imprint, kinds, noise
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -54,21 +56,20 @@ SLOT_SIZE = 0x1F0000
 # What makes a file an app rather than, say, a factory image (which starts with
 # the bootloader): the app description ESP-IDF puts first in every app.
 APP_DESC_MAGIC = 0xABCD5432
-ESP32_C3_CHIP_ID = 5
 
 
 class ImageError(ValueError):
     pass
 
 
-def check_app(image: bytes, label: str) -> None:
-    """Refuse anything but an ESP32-C3 app that fits Sonoff's slot."""
+def check_app(image: bytes, label: str, chip: chips.Chip = chips.ESP32C3) -> None:
+    """Refuse anything but an app for the plug's chip that fits Sonoff's slot."""
     if len(image) > SLOT_SIZE:
         raise ImageError(f"{label} is {len(image):,} bytes; the device's app slot holds {SLOT_SIZE:,}")
     if len(image) < 64 or image[0] != 0xE9:
         raise ImageError(f"{label} is not an ESP32 firmware image")
-    if struct.unpack_from("<H", image, 12)[0] != ESP32_C3_CHIP_ID:
-        raise ImageError(f"{label} is not built for the device's ESP32-C3")
+    if struct.unpack_from("<H", image, 12)[0] != chip.chip_id:
+        raise ImageError(f"{label} is not built for the device's {chip.label}")
     if struct.unpack_from("<I", image, 32)[0] != APP_DESC_MAGIC:
         raise ImageError(
             f"{label} is not an app image: use firmware.ota.bin, not firmware.factory.bin"
@@ -81,30 +82,61 @@ def check_app(image: bytes, label: str) -> None:
         raise ImageError(f"{label} fails its own integrity check")
 
 
-def published_image() -> bytes:
+def image_pin(kind: kinds.Kind) -> dict:
+    """What firmware.json pins for `kind`'s ESPHome."""
+    if kind is kinds.SONOFF_S60:
+        return PINS["image"]
+    if kind.family == "beken":
+        return FIRMWARE["beken"][kind.key]["esphome"]
+    try:
+        return FIRMWARE["espressif_kinds"][kind.key]["esphome"]
+    except KeyError:
+        raise ImageError(f"no ESPHome is published for the {kind.name}") from None
+
+
+def image_file(kind: kinds.Kind) -> Path:
+    return ROOT / image_pin(kind)["file"]
+
+
+def chip_of(kind: kinds.Kind) -> chips.Chip:
+    return chips.of(kind.chip)
+
+
+def published_image(kind: kinds.Kind = kinds.SONOFF_S60) -> bytes:
     """The pinned image, its placeholders untouched."""
-    image = IMAGE.read_bytes()
-    if len(image) != IMAGE_SIZE or hashlib.sha256(image).hexdigest() != IMAGE_SHA256:
-        raise ImageError(f"{IMAGE.name} differs from the pinned file")
-    check_app(image, IMAGE.name)
+    pin = image_pin(kind)
+    path = IMAGE if kind is kinds.SONOFF_S60 else ROOT / pin["file"]
+    image = path.read_bytes()
+    size, digest = (IMAGE_SIZE, IMAGE_SHA256) if kind is kinds.SONOFF_S60 else (pin["size"], pin["sha256"])
+    if len(image) != size or hashlib.sha256(image).hexdigest() != digest:
+        raise ImageError(f"{path.name} differs from the pinned file")
+    check_app(image, path.name, chip_of(kind))
     if not imprint.has_placeholders(image):
-        raise ImageError(f"{IMAGE.name} has no untouched Wi-Fi placeholders")
+        raise ImageError(f"{path.name} has no untouched Wi-Fi placeholders")
     return image
 
 
-def published_bootloader() -> bytes:
+def bootloader_file(chip: chips.Chip = chips.ESP32C3) -> tuple[Path, int, str]:
+    """The pinned bootloader for `chip`: its file, size and hash."""
+    if chip is chips.ESP32C3:
+        return BOOTLOADER, BOOTLOADER_SIZE, BOOTLOADER_SHA256
+    pin = chip.pin("bootloader")
+    return ROOT / pin["file"], pin["size"], pin["sha256"]
+
+
+def published_bootloader(chip: chips.Chip = chips.ESP32C3) -> bytes:
     """The pinned bootloader, checked to be one for this plug."""
-    bootloader = BOOTLOADER.read_bytes()
-    if (len(bootloader) != BOOTLOADER_SIZE
-            or hashlib.sha256(bootloader).hexdigest() != BOOTLOADER_SHA256):
-        raise ImageError(f"{BOOTLOADER.name} differs from the pinned file")
-    if len(bootloader) > BOOTLOADER_ROOM or bootloader[0] != 0xE9:
-        raise ImageError(f"{BOOTLOADER.name} is not an ESP32 bootloader that fits before 0x8000")
-    if struct.unpack_from("<H", bootloader, 12)[0] != ESP32_C3_CHIP_ID:
-        raise ImageError(f"{BOOTLOADER.name} is not built for the device's ESP32-C3")
+    path, size, digest = bootloader_file(chip)
+    bootloader = path.read_bytes()
+    if len(bootloader) != size or hashlib.sha256(bootloader).hexdigest() != digest:
+        raise ImageError(f"{path.name} differs from the pinned file")
+    if len(bootloader) > BOOTLOADER_ROOM - chip.bootloader_at or bootloader[0] != 0xE9:
+        raise ImageError(f"{path.name} is not an ESP32 bootloader that fits before 0x8000")
+    if struct.unpack_from("<H", bootloader, 12)[0] != chip.chip_id:
+        raise ImageError(f"{path.name} is not built for the device's {chip.label}")
     report = imprint.parse_esp_image(bootloader)
     if not report["checksum_valid"] or report["sha256_valid"] is not True:
-        raise ImageError(f"{BOOTLOADER.name} fails its own integrity check")
+        raise ImageError(f"{path.name} fails its own integrity check")
     return bootloader
 
 
@@ -118,30 +150,45 @@ MOVER_SIZE = PINS["mover"]["size"]
 SONOFF_TABLE = ROOT / "artifacts" / "sonoff-s60-partition-table.bin"
 
 
-def mover_for(ssid: str, password: str) -> bytes:
+def mover_for(ssid: str, password: str, chip: chips.Chip = chips.ESP32C3) -> bytes:
     """The pinned mover with this Wi-Fi written in."""
-    image = MOVER.read_bytes()
-    if len(image) != MOVER_SIZE or hashlib.sha256(image).hexdigest() != MOVER_SHA256:
-        raise ImageError(f"{MOVER.name} differs from the pinned file")
-    check_app(image, MOVER.name)
+    if chip is chips.ESP32C3:
+        path, size, digest = MOVER, MOVER_SIZE, MOVER_SHA256
+    else:
+        pin = chip.pin("mover")
+        path, size, digest = ROOT / pin["file"], pin["size"], pin["sha256"]
+    image = path.read_bytes()
+    if len(image) != size or hashlib.sha256(image).hexdigest() != digest:
+        raise ImageError(f"{path.name} differs from the pinned file")
+    check_app(image, path.name, chip)
     return imprint.imprint(image, ssid, password)
 
 
-def sonoff_table() -> bytes:
-    from .plans import SONOFF_TABLE_SHA256
-    table = SONOFF_TABLE.read_bytes()
-    if hashlib.sha256(table).hexdigest() != SONOFF_TABLE_SHA256:
-        raise ImageError(f"{SONOFF_TABLE.name} is not Sonoff's partition table")
+def interim_of(kind: kinds.Kind) -> Path:
+    """The bundle's Tasmota for a plug of `kind` to run part way through."""
+    chip = chip_of(kind)
+    return chip.bundle_file(chip.interim_name)
+
+
+def layout_of(kind: kinds.Kind) -> layouts.Layout:
+    return layouts.of(kind.layout)
+
+
+def sonoff_table(kind: kinds.Kind = kinds.SONOFF_S60) -> bytes:
+    layout = layout_of(kind)
+    table = layout.table
+    if hashlib.sha256(table).hexdigest() != layout.table_sha256:
+        raise ImageError(f"{layout.table_file} is not Sonoff's partition table")
     return table
 
 
-def image_for(ssid: str, password: str, own: Path | None = None) -> bytes:
+def image_for(ssid: str, password: str, own: Path | None = None, kind: kinds.Kind = kinds.SONOFF_S60) -> bytes:
     """The image to install: the published one with this Wi-Fi written in, or
     one built by hand (--esphome PATH), imprinted too if it has placeholders."""
     if own is None:
-        return imprint.imprint(published_image(), ssid, password)
+        return imprint.imprint(published_image(kind), ssid, password)
     image = own.read_bytes()
-    check_app(image, own.name)
+    check_app(image, own.name, chip_of(kind))
     if imprint.has_placeholders(image):
         return imprint.imprint(image, ssid, password)
     return image  # built with its own Wi-Fi
@@ -550,7 +597,7 @@ def published_builds(kind: kinds.Kind) -> set[str]:
     """When each image this project published for `kind` was built, as its API
     says.  Any other build is someone's own, whatever version it gives: the same
     config built by a dashboard says the same version, and need not have a key."""
-    pin = PINS["image"] if kind.family == "espressif" else FIRMWARE["beken"][kind.key]["esphome"]
+    pin = image_pin(kind)
     return {pin["built"], *pin.get("earlier_builds", ())}
 
 

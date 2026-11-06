@@ -11,6 +11,7 @@ from unittest import mock
 
 from tools.autoflash.phases import ARM_RE, LOADER_RE, PhaseRunner, PhaseError, short_loader
 from tools.autoflash.state import ATTEMPTED, DONE, FAILED, RunState
+from tools.espressif.safeboot.safeboot_migration import INTERIM_TABLE_SHA256
 from tools.autoflash import (
     handover,
     account,
@@ -1054,12 +1055,13 @@ class ConversionWifiTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         evidence = Path(directory.name)
-        image = lambda ssid, password: f"{ssid}/{password}".encode()  # noqa: E731
+        image = lambda ssid, password, chip=None: f"{ssid}/{password}".encode()  # noqa: E731
         (evidence / "commit-report.json").write_text(json.dumps({
             "phase": "commit", "status": "PASS",
             "safeboot_sha256": hashlib.sha256(image("Home", "right")).hexdigest(),
         }))
         self.ctx = SimpleNamespace(evidence=evidence, manifest_path=Path("unused"),
+                                   state=SimpleNamespace(input=lambda name: None),
                                    args=SimpleNamespace(wifi=False),
                                    remember_wifi=mock.Mock())
         self.pinned = ("Home", "right")
@@ -2001,11 +2003,11 @@ class CommitEvidenceTests(unittest.TestCase):
         from tools.autoflash import plans as plan_module
         from tools.autoflash.device import DeviceError
 
-        for table, planned in ((plan_module.INTERIM_TABLE_SHA256, True),
+        for table, planned in ((INTERIM_TABLE_SHA256, True),
                             (plan_module.SONOFF_TABLE_SHA256, False),
                             (DeviceError("no Berry"), False)):
             device = mock.Mock(sha_region=mock.Mock(side_effect=[table]))
-            ctx = SimpleNamespace(dry_run=False, device=device)
+            ctx = SimpleNamespace(dry_run=False, device=device, state=SimpleNamespace(input=lambda name: None))
             with mock.patch.object(hub, "run_plan") as run_plan, \
                  mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
                 hub.sonoff_layout_back(ctx)
@@ -3948,6 +3950,9 @@ class StockBackupTests(unittest.TestCase):
         state = SimpleNamespace(input=lambda key, default=None: self.inputs.get(key, default),
                                 set_input=self.inputs.__setitem__)
         self.ctx = SimpleNamespace(state=state, args=SimpleNamespace(no_backup=False))
+        unread = mock.patch.object(installer, "require_known_layout")  # its own tests: StockLayoutTests
+        unread.start()
+        self.addCleanup(unread.stop)
         self.dump = (b"F" * 8, efuse_with_mac(self.MAC), dict(self.REPORT))
         self.reached = "192.0.2.51"  # where reach_bridge finds the installer again
 
@@ -4098,6 +4103,28 @@ class StockBackupTests(unittest.TestCase):
         self.assertNotIn("stock_backup", self.inputs)
 
 
+class StockLayoutTests(unittest.TestCase):
+    """C3 - a plug laid out as no plan expects stops while it can still go back."""
+
+    def run_gate(self, table, backup=None):
+        from types import SimpleNamespace
+        from unittest import mock
+        from tools.autoflash.routes.espressif import installer
+        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda name: None))
+        with mock.patch.object(installer, "reach_bridge", return_value="192.0.2.51"), \
+                mock.patch.object(installer.dump_stock_flash, "read_table", return_value=table):
+            installer.require_known_layout(ctx)
+
+    def test_sonoffs_usual_table_goes_on(self):
+        from tools.espressif.safeboot.safeboot_migration import SOURCE_TABLE_FILE
+        self.run_gate(SOURCE_TABLE_FILE.read_bytes())
+
+    def test_any_other_stops_before_anything_is_written(self):
+        from tools.autoflash.errors import Abort
+        with self.assertRaisesRegex(Abort, "switch it off and on"):
+            self.run_gate(b"\xff" * 0x1000)
+
+
 class WifiFromPlugTests(unittest.TestCase):
     """The Wi-Fi details come off the plug, so nobody types them."""
 
@@ -4123,7 +4150,8 @@ class WifiFromPlugTests(unittest.TestCase):
             return ts.encode_backup(self.record if backup is None else backup)
 
         device = SimpleNamespace(command=command, download_settings=download_settings)
-        return SimpleNamespace(device=device, args=SimpleNamespace(wifi=forced))
+        return SimpleNamespace(device=device, args=SimpleNamespace(wifi=forced),
+                               state=SimpleNamespace(input=lambda name: None))
 
     def read(self, **kwargs):
         from unittest import mock
@@ -4884,6 +4912,7 @@ class BerryFromStartupTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest import mock
         ctx = SimpleNamespace(dry_run=False, device=SimpleNamespace(host="192.168.60.50"),
+                              state=SimpleNamespace(input=lambda name: None),
                               web_password=None, esphome_login=None)
         answers = iter(versions)
         seen = []

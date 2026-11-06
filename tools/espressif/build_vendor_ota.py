@@ -16,10 +16,12 @@ import zlib
 from pathlib import Path
 
 try:
-    from tools.espressif.analyze_vendor_ota import ESP32_C3_CHIP_ID, WRAPPER_SIZE, parse_esp_image
+    from tools.espressif import chips
+    from tools.espressif.analyze_vendor_ota import WRAPPER_SIZE, parse_esp_image
     from tools.autoflash import kinds
 except ModuleNotFoundError:
-    from analyze_vendor_ota import ESP32_C3_CHIP_ID, WRAPPER_SIZE, parse_esp_image
+    import chips  # type: ignore[no-redef]
+    from analyze_vendor_ota import WRAPPER_SIZE, parse_esp_image
     from autoflash import kinds
 
 
@@ -63,8 +65,10 @@ def build_wrapper(
         )
 
     esp = parse_esp_image(payload)
-    if not esp["chip_is_esp32_c3"]:
-        raise ValueError(f"ESP image chip id is not ESP32-C3 ({ESP32_C3_CHIP_ID})")
+    kind = next((k for k in kinds.EVERY if k.wrapper_model == model), kinds.SONOFF_S60)
+    chip = chips.of(kind.chip)
+    if esp["chip_id"] != chip.chip_id:
+        raise ValueError(f"ESP image chip id is not {chip.label} ({chip.chip_id})")
     if not esp["checksum_valid"] or esp["sha256_valid"] is False:
         raise ValueError("ESP image checksum or appended SHA-256 is invalid")
     if esp["trailing_bytes"]:
@@ -82,7 +86,8 @@ def build_wrapper(
     struct.pack_into(">I", wrapper, 0x14, zlib.crc32(wrapper[:0x14]) & 0xFFFFFFFF)
 
     # One 76-byte metadata record. Its final 12 bytes are reserved zeros.
-    wrapper[0x18:0x38] = _fixed_ascii(model, 32, "model")
+    # A model filling the field, as the NSPanel's does, has no NUL after it.
+    wrapper[0x18:0x38] = model.encode("ascii").ljust(32, b"\0") if len(model) == 32 else _fixed_ascii(model, 32, "model")
     wrapper[0x38:0x48] = _fixed_ascii(version, 16, "version")
     struct.pack_into(">I", wrapper, 0x48, WRAPPER_SIZE)
     struct.pack_into(">I", wrapper, 0x4C, len(payload))
@@ -128,7 +133,7 @@ def wrapper_version(payload: bytes, requested: str | None) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("payload", type=Path, help="ESP32-C3 application .bin")
+    parser.add_argument("payload", type=Path, help="ESP application .bin")
     parser.add_argument("output", type=Path, help="output .ota file")
     parser.add_argument("--version", help="version presented to stock updater "
                         "(default, and required to match: the image's own x.y.z version)")

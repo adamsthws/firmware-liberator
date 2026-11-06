@@ -16,6 +16,7 @@ from tools.autoflash import (
     handover,
     imprint,
     join,
+    kinds,
     names,
     output,
     plans,
@@ -28,7 +29,6 @@ from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes import update
 from tools.autoflash.routes.espressif import hub
-from tools.autoflash.runs import ROOT
 from tools.espressif.safeboot.prepare_imprinted_bundle import BundleError, startup_image
 
 if TYPE_CHECKING:
@@ -54,10 +54,10 @@ def step_esphome_install(ctx: Context) -> dict[str, Any]:
         "Once ESPHome is written, it has to join",
         "your Wi-Fi on its own, and a weak signal makes that less certain."])
     try:
-        image = esphome.image_for(ssid, password, own=ctx.esphome_firmware)
+        image = esphome.image_for(ssid, password, own=ctx.esphome_firmware, kind=kinds.of_run(ctx.state))
     except (esphome.ImageError, imprint.ImprintError, OSError) as exc:
         raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
-    name = ctx.esphome_firmware.name if ctx.esphome_firmware else esphome.IMAGE.name
+    name = ctx.esphome_firmware.name if ctx.esphome_firmware else esphome.image_file(kinds.of_run(ctx.state)).name
     prompts.section("Installing ESPHome", quiet=True, body=[
         f"{name}, with your Wi-Fi written in (in memory only), goes into the half",
         "of the device's memory Tasmota is not running from. Every block is read back",
@@ -67,7 +67,7 @@ def step_esphome_install(ctx: Context) -> dict[str, Any]:
     if ctx.dry_run:
         output.say(f"[dry-run] would install {name}")
         return {"dry_run": True, "image": name}
-    return hub.run_plan(ctx, plans.esphome(image)) | {"image": name, "size": len(image),
+    return hub.run_plan(ctx, plans.esphome(image, esphome.layout_of(kinds.of_run(ctx.state)))) | {"image": name, "size": len(image),
                                                    "signal_dbm": signal}
 
 
@@ -92,8 +92,10 @@ def step_leave_tasmota(ctx: Context) -> dict[str, Any]:
         "to join your Wi-Fi on its own, and a weak signal makes that less certain."])
     handover.consent_to_leave(ctx, "Tasmota")
     try:
-        plan = plans.leave_tasmota(esphome.mover_for(ssid, password), esphome.sonoff_table(),
-                                   esphome.published_bootloader())
+        kind = kinds.of_run(ctx.state)
+        chip = esphome.chip_of(kind)
+        plan = plans.leave_tasmota(esphome.mover_for(ssid, password, chip), esphome.sonoff_table(kind),
+                                   esphome.published_bootloader(chip), chip.bootloader_at, esphome.layout_of(kind))
     except (esphome.ImageError, imprint.ImprintError, plans.PlanError, OSError) as exc:
         raise Abort(f"the mover cannot be used: {exc}") from exc
     try:
@@ -159,7 +161,7 @@ def step_esphome_from_mover(ctx: Context) -> dict[str, Any]:
         return {"already": True}
     ssid, password = ctx.wifi()
     try:
-        image = esphome.image_for(ssid, password, own=ctx.esphome_firmware)
+        image = esphome.image_for(ssid, password, own=ctx.esphome_firmware, kind=kinds.of_run(ctx.state))
     except (esphome.ImageError, imprint.ImprintError, OSError) as exc:
         raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
     if ctx.dry_run:
@@ -168,7 +170,7 @@ def step_esphome_from_mover(ctx: Context) -> dict[str, Any]:
         # Given new Wi-Fi details on its own network: ESPHome gets those too.
         ssid, password = ctx.wifi()
         try:
-            image = esphome.image_for(ssid, password, own=ctx.esphome_firmware)
+            image = esphome.image_for(ssid, password, own=ctx.esphome_firmware, kind=kinds.of_run(ctx.state))
         except (esphome.ImageError, imprint.ImprintError, OSError) as exc:
             raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
     seconds = handover.send_as_esphome_update(ctx, image, "ESPHome")
@@ -188,7 +190,7 @@ def step_esphome_update(ctx: Context) -> dict[str, Any]:
         "written in, as every ESPHome image this tool installs does.",
     ])
     try:
-        image = esphome.image_for(ssid, password)
+        image = esphome.image_for(ssid, password, kind=kinds.of_run(ctx.state))
     except (esphome.ImageError, imprint.ImprintError, OSError) as exc:
         raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
     if ctx.dry_run:
@@ -235,7 +237,7 @@ def step_startup_from_esphome(ctx: Context, *, again: bool = False) -> dict[str,
         "goes on next needs it written in, to join your Wi-Fi by itself.",
     ])
     try:
-        image = startup_image(ssid, password)
+        image = startup_image(ssid, password, esphome.chip_of(kinds.of_run(ctx.state)))
     except BundleError as exc:
         raise Abort(f"the startup firmware cannot be prepared: {exc}") from exc
     if ctx.dry_run:
@@ -254,7 +256,7 @@ def step_startup_from_esphome(ctx: Context, *, again: bool = False) -> dict[str,
 def step_berry_from_startup(ctx: Context) -> dict[str, Any]:
     """X2 - the Berry Tasmota, uploaded to the startup firmware, which writes it
     into the other slot; it starts with the Wi-Fi the startup firmware saved."""
-    image = ROOT / "captures/safeboot-recovery-migration/tasmota32c3-bluetooth.bin"
+    image = esphome.interim_of(kinds.of_run(ctx.state))
     if ctx.dry_run:
         return {"dry_run": True}
     running = unlock.identify(ctx, ctx.device.host)
@@ -303,6 +305,8 @@ def calibrate_esphome_meter(ctx: Context) -> dict[str, Any]:
     """The plug's factory calibration, from its Sonoff backup, given to
     ESPHome, which uses it when Sonoff's NVS has none: on a plug converted
     through Tasmota.  ESPHome reads the board's factor itself."""
+    if not kinds.of_run(ctx.state).calibrated_as_s60:
+        return {"skipped": "this device's ESPHome takes no factory calibration"}
     coefficients = wifi.backup_calibration(ctx)
     if coefficients is None:
         return {"skipped": "no factory calibration in a backup of the device"}

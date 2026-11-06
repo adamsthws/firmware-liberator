@@ -44,6 +44,17 @@ __pycache__/
 !artifacts/sonoff-s60-partition-table.bin
 !artifacts/openbeken-sonoff-s61-1.1.0.rbl
 !artifacts/esphome-sonoff-s61-1.2.0.rbl
+!artifacts/esphome-sonoff-pow-elite-imprintable-1.0.0.bin
+!artifacts/autoflash-mover-esp32-1.0.0.bin
+!artifacts/esphome-esp32-bootloader-1.0.0.bin
+!artifacts/autoflash-bridge-esp32-4.4.4.bin
+!artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin
+!artifacts/tasmota-settings-template-esp32-15.6.0.0.bin
+!artifacts/sonoff-nspanel-partition-table.bin
+!artifacts/sonoff-th-elite-partition-table.bin
+!artifacts/esphome-sonoff-powct-imprintable-1.0.0.bin
+!artifacts/esphome-sonoff-th-elite-imprintable-1.0.0.bin
+!artifacts/esphome-sonoff-dualr3-imprintable-1.0.0.bin
 
 # Answers for unattended runs: the eWeLink password, perhaps sudo's (see .env.example).
 .env
