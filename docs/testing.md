@@ -420,7 +420,10 @@ gives up its turn too, and a later run has to ask for one again. Turns are given
 wait: finding the plug in eWeLink first, then a plug back on Sonoff's
 firmware part way, then the rest, and last a C2 scenario's plug, whose turn
 starts before its run does. Between two plugs' turns there is a short pause
-(5 s) while eWeLink lets go of the last one. The suite can feel out how many
+(5 s) while eWeLink lets go of the last one. A run signs in only once its plug
+has kept a connection to the internet open for 15 s, a minute at most, as eWeLink
+can still count the last turn's connection as the device and pass a command
+down it to no one. The suite can feel out how many
 at once the cloud allows - one more at a time while the cloud scenarios pass,
 or one fewer at each trouble - and lengthen the pause when eWeLink is the
 trouble (`AUTOFLASH_CLOUD_MOST`, `AUTOFLASH_CLOUD_BACK_OFF`, `AUTOFLASH_CLOUD_PAUSE_UP`).
