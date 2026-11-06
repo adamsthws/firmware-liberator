@@ -53,8 +53,8 @@ dump is ever committed. Tooling fetches it at run time.
    [layouts.py](../tools/espressif/layouts.py). A dump's table is in its flash at
    `0x8000`. The tool refuses a real device whose table it does not know, before
    overwriting anything, so an unknown layout stops safely. Tasmota needs the app
-   slot layout to leave room: the TH Elite's does not allow going from Tasmota to
-   ESPHome, for instance, and says so.
+   slot layout to leave room: the TH Elite's does not allow leaving Tasmota at all,
+   for instance, and says so.
 
 5. **Add its firmware.** Write `devices/<key>/esphome.yaml`, `esphome.md` and
    `README.md`, then build and pin the image. `artifacts/` changes only this way:
@@ -107,6 +107,14 @@ by address.
 Set `psram_mb` on the kind if its stock firmware stops at start-up without its
 external RAM. Run the emulated plug with up to one emulator per core: more gives
 false failures.
+
+## What a run tells you
+
+Every backup logs what it found, in the run's `run.log`, and on the screen when the
+partition table is not one the tool knows: the chip and its revision, whether
+secure boot and flash encryption are on, the flash size, the partition table, and
+each app's version, ESP-IDF and the firmware name its updater checks. None of it
+is secret, so a report of a device the tool stopped on is enough to start adding it.
 
 ## When it does not boot
 
