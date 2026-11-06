@@ -439,6 +439,17 @@ def plug_internet(n, on):
     sh("docker", "exec", name(n), "sh", "-c", script)
 
 
+ESTABLISHED = re.compile(r"\btcp\b.*\bESTABLISHED src=192\.168\.60\.50 "
+                         r"dst=(?!10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.)(\S+) sport=(\d+) dport=(\d+)")
+
+
+def cloud_connections(n):
+    """The plug's open connections to the internet, as its emulator's firewall
+    tracks them. Sonoff's firmware prints nothing when it signs on to eWeLink."""
+    out = sh("docker", "exec", name(n), "cat", "/proc/net/nf_conntrack").stdout
+    return {m.groups() for m in ESTABLISHED.finditer(out)}
+
+
 class CloudQueue:
     """Turns at the cloud, one plug at a time, by how long the run can wait:
     finding the plug in eWeLink (A1, A2: about a minute) first, then a plug
@@ -502,6 +513,9 @@ class Tuner:
     NOT_THE_CLOUD = re.compile(r"stopped part way|did not request every firmware byte")
     TROUBLE = re.compile(r"offline in eWeLink|eWeLink shows it offline|access token|"
                          r"turn given up after 2[34]\ds")
+    # A send the plug never asked for: the command went down the last turn's
+    # connection, whatever became of an earlier download in the scenario.
+    COMMAND_LOST = re.compile(r"no firmware bytes were transferred")
 
     def __init__(self):
         self.workers = cloud_workers()
@@ -543,7 +557,8 @@ class Tuner:
                 # would read as the cloud's fault.
                 try:
                     text = Path(log).read_text(encoding="utf-8", errors="replace")
-                    ok = not self.TROUBLE.search(text) or bool(self.NOT_THE_CLOUD.search(text))
+                    ok = not self.COMMAND_LOST.search(text) and (
+                        not self.TROUBLE.search(text) or bool(self.NOT_THE_CLOUD.search(text)))
                 except OSError:
                     pass
             self.recent.append((ok, row["id"], row["verdict"]))
@@ -577,8 +592,8 @@ class Tuner:
                     self.cool_down -= 5
                     self.note(f"{self.WINDOW} passed in a row: pause 5s shorter")
                 else:
-                    self.phase = "held"
-                    self.note("no pause left to take off; held")
+                    # Still watched: the pause may yet prove too short.
+                    self.note("no pause left to take off")
             else:
                 return
             self.recent = []
@@ -594,6 +609,15 @@ HOLD_AT_MOST = 240.0
 PAST_THE_CLOUD = re.compile(r"\] (?!A\d|C2\b)[A-Z]\d\w*  ")
 # A sign-in with no plug needing the cloud: time for it and the list it asks for.
 SIGN_IN_TURN = 15.0
+# A plug's turn lets its run sign in once the plug is back at eWeLink. Until
+# then eWeLink can still count the last turn's connection as the device, and
+# what the run sends goes down it to no one, seen failing two scenarios in turn.
+# Seen: the first connection, to find its server, lasts 2 s; the next is its
+# session, which may drop again within seconds - 12 of 91 did before 20 s, 4 of
+# them after 10 s - and a run let in on one finds its plug offline and stops. A
+# plug that does not get there leaves the run to find that out.
+SIGNED_ON_AFTER = 15.0
+PLUG_BACK_AT_MOST = 60.0
 # Where a run asks for a turn before it signs in (get_device_key.wait_for_turn).
 TURN_FILE = "captures/cloud-turn"
 
@@ -708,6 +732,16 @@ class PlugMonitor:
         live = self.live_run()
         return len(INTENT.findall(live[1])) if live and live[0] == run else None
 
+    def connections_seen(self, seen, before, now):
+        """The plug's connections begun in this turn, each with when it was
+        first seen, saying which came and went: nothing else shows them."""
+        live = cloud_connections(self.n) - before
+        for connection in sorted(live - seen.keys()):
+            self.sc.say(f"CLOUD: plug connected to {connection[0]}")
+        for connection in sorted(seen.keys() - live):
+            self.sc.say(f"CLOUD: plug's connection to {connection[0]} closed")
+        return {connection: seen.get(connection, now) for connection in live}
+
     def hold(self, why, limit=HOLD_AT_MOST, run=None):
         """Gives the plug its way out until the run ends, the plug leaves
         Sonoff's firmware or `limit` runs out; returns how many times `run`
@@ -718,13 +752,28 @@ class PlugMonitor:
         # Asked for again while it waited: this turn is theirs too.
         asked = self.intents(run)
         steps_from = len(self.run_text())
+        watched = plug_first = limit > SIGN_IN_TURN  # a short turn is a sign-in no plug needs
+        before = cloud_connections(self.n) if watched else set()
+        first_seen = {}
+        looked = 0.0
         plug_internet(self.n, True)
         self.sc.say(f"CLOUD: turn taken ({why})")
         since = time.time()
-        opened = since
+        opened = opened_at = since
         try:
             while not self.stop.is_set() and time.time() - since < limit:
-                self.turn_file().unlink(missing_ok=True)
+                now = time.time()
+                if watched and now - looked >= 1:
+                    looked = now
+                    first_seen = self.connections_seen(first_seen, before, now)
+                    if plug_first and any(now - seen >= SIGNED_ON_AFTER for seen in first_seen.values()):
+                        plug_first = False
+                        self.sc.say(f"CLOUD: plug back after {now - opened_at:.0f}s")
+                    elif plug_first and now - opened_at >= PLUG_BACK_AT_MOST:
+                        plug_first = False
+                        self.sc.say(f"CLOUD: plug not back after {now - opened_at:.0f}s; the run goes on")
+                if not plug_first:
+                    self.turn_file().unlink(missing_ok=True)
                 if time.time() - opened > 2:
                     # Again now and then: a plug's emulator started in the
                     # turn (a fresh one) starts with its way shut.

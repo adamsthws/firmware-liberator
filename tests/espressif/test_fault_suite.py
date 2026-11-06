@@ -43,6 +43,46 @@ class NameProblemTests(unittest.TestCase):
                          ([], None))
 
 
+class TunerTests(unittest.TestCase):
+    PART_WAY = "FAILED: bridge delivery stopped part way\n"
+    NEVER_ASKED = "Device did not connect; no firmware bytes were transferred.\n"
+
+    def finish(self, tuner, verdict, text=""):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "log"
+            log.write_text(text, encoding="utf-8")
+            with mock.patch.object(tuner, "note"):
+                tuner.finished({"id": "c2", "route": "sonoff>tasmota", "step": "C2", "fault": "outage",
+                                "verdict": verdict}, log, tuner.changed + 1)
+
+    def tuner_with_no_pause(self):
+        with mock.patch.dict(fs.os.environ, {"AUTOFLASH_CLOUD_COOL_DOWN": "0", "AUTOFLASH_CLOUD_WORKERS": "6"}):
+            return fs.Tuner()
+
+    def test_sends_the_plug_never_asked_for_put_the_pause_back(self):
+        # Seen against the real cloud, with no pause left: two scenarios failing
+        # each other's sends, each after a download given up on, and no trouble noted.
+        tuner = self.tuner_with_no_pause()
+        for _ in range(2):
+            self.finish(tuner, "FAIL", self.PART_WAY + self.NEVER_ASKED)
+        self.assertEqual(tuner.cool_down, 5)
+
+    def test_a_download_given_up_on_alone_is_not_the_cloud(self):
+        tuner = self.tuner_with_no_pause()
+        for _ in range(2):
+            self.finish(tuner, "FAIL", self.PART_WAY + "offline in eWeLink\n")
+        self.assertEqual(tuner.cool_down, 0)
+
+    def test_trouble_after_the_last_of_the_pause_is_still_noticed(self):
+        tuner = self.tuner_with_no_pause()
+        for _ in range(fs.Tuner.WINDOW):
+            self.finish(tuner, "PASS")
+        for _ in range(2):
+            tuner.changed = 0
+            self.finish(tuner, "FAIL", self.NEVER_ASKED)
+        self.assertEqual(tuner.cool_down, 5)
+
+
 class CloudTurnTests(unittest.TestCase):
     def turns_from_the_start(self, sc):
         monitor = fs.PlugMonitor(mock.Mock(n=24, state=Path("/nonexistent"), sc=sc, say=lambda _: None))
@@ -112,6 +152,7 @@ class CloudTurnTests(unittest.TestCase):
             with mock.patch.object(monitor, "live_run", side_effect=lambda: ("run", "".join(text))), \
                     mock.patch.object(monitor, "run_text", return_value=""), \
                     mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                    mock.patch.object(fs, "cloud_connections", return_value=set()), \
                     mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
                     mock.patch.object(monitor.stop, "wait", side_effect=wait):
                 seen = monitor.hold("fallen back", run="run")
@@ -518,18 +559,115 @@ class ScenarioTests(unittest.TestCase):
         monitor.run_text = mock.Mock(return_value=text)
         return monitor
 
-    def holding(self, monitor, **kwargs):
+    def holding(self, monitor, connections=(), **kwargs):
         with mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                mock.patch.object(fs, "cloud_connections", return_value=set(connections)), \
                 mock.patch.object(monitor.sc, "say"):
             return monitor.hold("test", **kwargs)
 
-    def test_a_turn_lets_a_waiting_run_sign_in(self):
+    def turn_file_after(self, seconds, connections=(), before=()):
+        """Whether a waiting run's turn file is there `seconds` into a plug's turn."""
+        with tempfile.TemporaryDirectory() as tmp:
+            monitor = self.monitor(tmp)
+            monitor.turn_file().touch()
+            clock = [1000.0]
+            monitor.stop = mock.Mock(is_set=mock.Mock(side_effect=lambda: clock[0] > 1000 + seconds))
+            monitor.stop.wait = mock.Mock(side_effect=lambda _: clock.__setitem__(0, clock[0] + 1))
+            looks = [set(before)]
+
+            def cloud_connections(_n):
+                return looks.pop() if looks else {*before, *connections}
+            with mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
+                    mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                    mock.patch.object(fs, "cloud_connections", side_effect=cloud_connections), \
+                    mock.patch.object(monitor.sc, "say"):
+                monitor.hold("test")
+            return monitor.turn_file().exists()
+
+    def test_a_run_signs_in_only_once_the_plug_is_back_at_ewelink(self):
+        # Seen against the real cloud: a run let in at the start of its turn sent
+        # its command down the last plug's connection, and its plug never asked.
+        session = ("192.0.2.80", "50280", "443")
+        self.assertTrue(self.turn_file_after(5))
+        self.assertTrue(self.turn_file_after(fs.SIGNED_ON_AFTER - 1, [session]))
+        self.assertFalse(self.turn_file_after(fs.SIGNED_ON_AFTER + 1, [session]))
+
+    def test_a_run_waits_out_a_session_that_may_drop_again(self):
+        # Seen on the real cloud: sessions dropped 12 s after they opened, and a
+        # run let in at 10 s found its plug offline at eWeLink and stopped.
+        self.assertTrue(self.turn_file_after(12, [("192.0.2.81", "2", "443")]))
+        # Nor does the first connection, to find its server, which lasts 2 s.
+        dispatch = ("192.0.2.80", "1", "443")
+        self.assertNotIn("plug back", " ".join(self.said_in_a_turn([{dispatch}, {dispatch}, set(), set(), set(), set()])))
+
+    def test_a_connection_from_before_the_turn_is_not_the_plug_back(self):
+        old = ("192.0.2.80", "50280", "443")
+        self.assertTrue(self.turn_file_after(fs.SIGNED_ON_AFTER + 1, before=[old]))
+
+    def test_a_plug_that_never_gets_back_does_not_keep_the_run_waiting(self):
+        self.assertTrue(self.turn_file_after(fs.PLUG_BACK_AT_MOST - 1))
+        self.assertFalse(self.turn_file_after(fs.PLUG_BACK_AT_MOST + 1))
+
+    def said_in_a_turn(self, looks, limit=fs.HOLD_AT_MOST):
+        """What a turn says, the plug's connections at each second being `looks`."""
+        with tempfile.TemporaryDirectory() as tmp:
+            monitor = self.monitor(tmp)
+            said = []
+            monitor.sc.say = said.append
+            clock = [1000.0]
+            monitor.stop = mock.Mock(is_set=mock.Mock(side_effect=lambda: clock[0] >= 1000 + len(looks)))
+            monitor.stop.wait = mock.Mock(side_effect=lambda _: clock.__setitem__(0, clock[0] + 1))
+            looked = iter([set(), *looks])  # the first, from before its way out opens
+            with mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
+                    mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                    mock.patch.object(fs, "cloud_connections", side_effect=lambda _n: next(looked)):
+                monitor.hold("test", limit=limit)
+        return [line.removeprefix("CLOUD: ") for line in said if "turn " not in line]
+
+    def test_a_plug_dropped_as_it_connects_can_be_told_from_one_that_never_tried(self):
+        server, session = ("192.0.2.80", "1", "443"), ("192.0.2.81", "2", "443")
+        looks = [set(), {server}, {server}, {session}, set(), set()]
+        self.assertEqual(self.said_in_a_turn(looks), [
+            "plug connected to 192.0.2.80", "plug connected to 192.0.2.81",
+            "plug's connection to 192.0.2.80 closed", "plug's connection to 192.0.2.81 closed"])
+
+    def test_a_turn_says_when_the_plug_is_back_and_when_it_never_was(self):
+        session = ("192.0.2.81", "2", "443")
+        back = self.said_in_a_turn([set(), *[{session}] * (int(fs.SIGNED_ON_AFTER) + 1)])
+        self.assertEqual(back, ["plug connected to 192.0.2.81", f"plug back after {int(fs.SIGNED_ON_AFTER) + 1}s"])
+        never = self.said_in_a_turn([set()] * (int(fs.PLUG_BACK_AT_MOST) + 2))
+        self.assertEqual(never, [f"plug not back after {int(fs.PLUG_BACK_AT_MOST)}s; the run goes on"])
+
+    def test_a_connection_after_the_plug_is_back_is_still_said(self):
+        session, later = ("192.0.2.81", "2", "443"), ("192.0.2.82", "3", "443")
+        looks = [*[{session}] * (int(fs.SIGNED_ON_AFTER) + 1), {later}]
+        said = self.said_in_a_turn(looks)
+        self.assertIn("plug connected to 192.0.2.82", said)
+        self.assertIn("plug's connection to 192.0.2.81 closed", said)
+
+    def test_a_sign_in_no_plug_needs_does_not_wait_for_the_plug(self):
         with tempfile.TemporaryDirectory() as tmp:
             monitor = self.monitor(tmp)
             monitor.turn_file().touch()
             monitor.stop = mock.Mock(is_set=mock.Mock(side_effect=[False, True]))
-            self.holding(monitor)
+            self.holding(monitor, limit=fs.SIGN_IN_TURN)
             self.assertFalse(monitor.turn_file().exists())
+
+    def test_only_the_plugs_own_way_to_the_internet_counts_as_a_connection(self):
+        table = "\n".join((
+            "ipv4 2 tcp 6 431947 ESTABLISHED src=192.168.60.50 dst=192.0.2.80 sport=1 dport=443 "
+            "src=192.0.2.80 dst=198.18.60.2 sport=443 dport=1 [ASSURED] mark=0 zone=0 use=2",
+            "ipv4 2 tcp 6 9 CLOSE src=192.168.60.50 dst=203.0.113.5 sport=2 dport=443 "
+            "src=203.0.113.5 dst=198.18.60.2 sport=443 dport=2 [ASSURED] mark=0 zone=0 use=2",
+            "ipv4 2 tcp 6 431947 ESTABLISHED src=198.18.60.2 dst=203.0.113.6 sport=3 dport=443 "
+            "src=203.0.113.6 dst=198.18.60.2 sport=443 dport=3 [ASSURED] mark=0 zone=0 use=2",
+            "ipv4 2 tcp 6 431947 ESTABLISHED src=192.168.60.50 dst=192.168.60.1 sport=4 dport=8088 "
+            "src=192.168.60.1 dst=192.168.60.50 sport=8088 dport=4 [ASSURED] mark=0 zone=0 use=2",
+            "ipv4 2 udp 17 29 src=192.168.60.50 dst=192.0.2.81 sport=5 dport=53",
+        ))
+        with mock.patch.object(fs, "sh", return_value=mock.Mock(stdout=table)):
+            connections = fs.cloud_connections(1)
+        self.assertEqual(connections, {("192.0.2.80", "1", "443")})
 
     def test_a_turn_ends_once_a_step_after_c2_is_under_way(self):
         for step, ends in (("C3", True), ("C3fb", True), ("D1", True), ("A2", False), ("C2", False)):
