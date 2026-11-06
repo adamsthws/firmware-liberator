@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from tools.autoflash import esphome, kinds, plans
-from tools.espressif import chips
+from tools.espressif import chips, layouts
 from tools.espressif.safeboot import safeboot_migration
 
 SECTOR = plans.SECTOR
@@ -54,11 +54,52 @@ class PlanTests(unittest.TestCase):
     def test_leaving_tasmota_leaves_the_bootloader_as_it_is(self):
         # The full Tasmota has too little memory to hold ESPHome's while it writes
         # it (a classic ESP32: BRY: MEMORY ALLOCATION FAILED). The hub writes it.
-        for kind, chip in ((kinds.SONOFF_S60, chips.ESP32C3), (kinds.SONOFF_POW_ELITE, chips.ESP32)):
-            plan = plans.leave_tasmota(esphome.mover_for("Home", "pw", chip), esphome.sonoff_table(kind),
+        for kind, chip in ((kinds.SONOFF_S60, chips.ESP32C3), (kinds.SONOFF_POW_ELITE, chips.ESP32),
+                           (kinds.SONOFF_TH_ELITE, chips.ESP32)):
+            plan = plans.leave_tasmota(esphome.mover_for("Home", "pw", chip), esphome.leaving_table(kind),
                                        esphome.layout_of(kind))
             self.assertGreater(min(start for start, _, _ in plan.regions()), plans.TABLE_ADDRESS - 1, kind.key)
             self.assertNotIn("bootloader", plan.blobs, kind.key)
+
+    def test_a_th_elite_leaves_tasmota_through_its_temporary_table(self):
+        layout = layouts.SONOFF_TH_ELITE
+        table = esphome.leaving_table(kinds.SONOFF_TH_ELITE)
+        plan = plans.leave_tasmota(esphome.mover_for("Home", "pw", chips.ESP32), table, layout)
+        self.assertEqual(plan.steps[0], plans.Write("mover", layouts.MOVER_AT))
+        self.assertEqual(plan.steps[1], plans.Erase(0x9000, layouts.MOVER_AT - 0x9000))
+        self.assertEqual(plan.steps[-1], plans.Write("table", plans.TABLE_ADDRESS, whole=True))
+        self.assertEqual(plan.final_table_sha256(), layout.temporary_sha256)
+        self.assertEqual((plan.table_sha256, plan.running), (plans.TASMOTA_TABLE_SHA256, 0))
+        self.assertLessEqual(max(end for _, end, _ in plan.regions()), plans.TASMOTA_APP0)
+        with self.assertRaisesRegex(plans.PlanError, "Sonoff's partition table"):
+            plans.leave_tasmota(esphome.mover_for("Home", "pw", chips.ESP32), layout.table, layout)
+
+    def test_from_the_temporary_table_each_step_leaves_a_plug_that_starts(self):
+        layout = layouts.SONOFF_TH_ELITE
+        plan = plans.own_table_from_temporary(esphome.sonoff_table(kinds.SONOFF_TH_ELITE), layout)
+        self.assertEqual((plan.table_sha256, plan.final_table_sha256(), plan.running, plan.restart),
+                         (layout.temporary_sha256, layout.table_sha256, 1, True))
+        self.assertEqual(plan.steps[0], plans.Write("otadata", layout.otadata, whole=True))
+        self.assertEqual(plan.blobs["otadata"], plans.otadata_selecting(1))
+        # The temporary selection goes only after the app it could start, and the
+        # table last: a cut before it leaves the temporary table, with ota_1 to start.
+        temporary_ota_0, selection = plan.steps[1], plan.steps[3]
+        self.assertEqual(temporary_ota_0.address, layouts.MOVER_AT)
+        self.assertEqual(selection, plans.Erase(layouts.TEMPORARY_OTADATA, layouts.MOVER_AT - layouts.TEMPORARY_OTADATA))
+        self.assertEqual(plan.steps[-1], plans.Write("table", plans.TABLE_ADDRESS, whole=True))
+        # Nothing of the settings Tasmota holds, and nothing of ota_1 it runs from.
+        for start, end, _ in plan.regions():
+            if start != plans.TABLE_ADDRESS:
+                self.assertGreaterEqual(start, layouts.TEMPORARY_OTADATA)
+                self.assertLessEqual(end, layout.ota[1])
+        # All the larger NVS's new room reads erased, or it would take it for pages.
+        cleared = sorted((step.address, step.address + step.length) for step in plan.steps
+                         if isinstance(step, plans.Erase))
+        self.assertEqual(cleared[0], (layouts.TEMPORARY_OTADATA, layouts.MOVER_AT))
+        self.assertEqual(cleared[1], (layouts.MOVER_AT, layout.otadata))
+        self.assertLessEqual(plan.busy_estimate(), plans.BUSY_LIMIT)
+        with self.assertRaisesRegex(plans.PlanError, "Sonoff's partition table"):
+            plans.own_table_from_temporary(b"\0" * SECTOR, layout)
 
     def test_putting_sonoffs_layout_back_copies_the_settings_home_then_the_table(self):
         plan = plans.sonoff_layout_back(esphome.sonoff_table())

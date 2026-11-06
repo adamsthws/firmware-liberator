@@ -33,9 +33,9 @@ import struct
 from dataclasses import dataclass, field
 
 try:
-    from tools.espressif.layouts import SONOFF_DUAL_OTA, Layout
+    from tools.espressif.layouts import MOVER_AT, SONOFF_DUAL_OTA, TEMPORARY_OTADATA, Layout
 except ModuleNotFoundError:  # run as a script from tools/
-    from layouts import SONOFF_DUAL_OTA, Layout  # type: ignore[no-redef]
+    from layouts import MOVER_AT, SONOFF_DUAL_OTA, TEMPORARY_OTADATA, Layout  # type: ignore[no-redef]
 
 SECTOR = 0x1000
 # The layouts: Sonoff's, which the ESPHome route keeps, and Tasmota's.
@@ -298,8 +298,9 @@ def esphome(image: bytes, layout: Layout = SONOFF_DUAL_OTA) -> Plan:
     ).check()
 
 
-def leave_tasmota(mover: bytes, sonoff_table: bytes, layout: Layout = SONOFF_DUAL_OTA) -> Plan:
-    """From official Tasmota on Tasmota's layout to the mover on Sonoff's.
+def leave_tasmota(mover: bytes, table: bytes, layout: Layout = SONOFF_DUAL_OTA) -> Plan:
+    """From official Tasmota on Tasmota's layout to the mover on Sonoff's, or on
+    the temporary table of a layout that needs one (Layout.temporary_table).
 
     The bootloader stays as it is: it may be a build of Tasmota's own, which
     starts the mover as well, and the full Tasmota has too little memory left
@@ -313,18 +314,45 @@ def leave_tasmota(mover: bytes, sonoff_table: bytes, layout: Layout = SONOFF_DUA
     ota_0.  The table is the one moment a power cut leaves a plug that cannot
     start; it is one sector, written in a few milliseconds.
     """
-    if layout.ota[0] + len(padded(mover)) > TASMOTA_APP0:
+    if MOVER_AT + len(padded(mover)) > TASMOTA_APP0:
         raise PlanError("the mover does not fit in front of Tasmota")
-    if sha256(sonoff_table) != layout.table_sha256:
+    if sha256(table) != layout.leaving_sha256:
         raise PlanError("that is not Sonoff's partition table")
     return Plan(
         name="leave_tasmota", title="the mover", table_sha256=TASMOTA_TABLE_SHA256, running=0,
         steps=[
-            Write("mover", layout.ota[0]),
-            Erase(layout.nvs, layout.low_size),
+            Write("mover", MOVER_AT),
+            Erase(layout.nvs, MOVER_AT - layout.nvs),
             Write("table", TABLE_ADDRESS, whole=True),
         ],
-        blobs={"mover": mover, "table": sonoff_table},
+        blobs={"mover": mover, "table": table},
+    ).check()
+
+
+def own_table_from_temporary(sonoff_table: bytes, layout: Layout) -> Plan:
+    """From the temporary table to the plug's own, the Berry Tasmota running from
+    ota_1, which both have in the same place.
+
+    The settings Tasmota has stay where they are, the start of the larger NVS. The
+    rest of that is cleared, or NVS would find the temporary ota_0 and boot
+    selection there. The boot selection for ota_1 goes in first. The temporary
+    one goes last of all but the table, after what it could start: a power cut
+    between the two finds no selection and no ota_0, and the bootloader starts
+    ota_1, the next valid slot. The table is written last, as ever.
+    """
+    if sha256(sonoff_table) != layout.table_sha256:
+        raise PlanError("that is not Sonoff's partition table")
+    return Plan(
+        name="own_table", title="the device's own memory layout", table_sha256=layout.temporary_sha256, running=1,
+        steps=[
+            Write("otadata", layout.otadata, whole=True),
+            Erase(MOVER_AT, layout.otadata - MOVER_AT),
+            # Its phy data, and the start of its ota_0, which would look like an app.
+            Erase(layout.phy, layout.ota[0] + SECTOR - layout.phy),
+            Erase(TEMPORARY_OTADATA, MOVER_AT - TEMPORARY_OTADATA),
+            Write("table", TABLE_ADDRESS, whole=True),
+        ],
+        blobs={"otadata": otadata_selecting(1), "table": sonoff_table},
     ).check()
 
 

@@ -10,8 +10,9 @@ shows. If yours is laid out differently, the run stops once the installer has re
 its partition table, before anything is written over Sonoff's firmware: switching
 it off and on goes back to Sonoff's. Please report that with its model. The
 emulator has none of its hardware to see, so the wiring below is what its sources
-say. Tasmota's layout leaves no room for the firmware that moves it on, as on the
-TH Elite, so a Dual R3 on Tasmota cannot go on to ESPHome.
+say. Leaving Tasmota, for ESPHome or for Sonoff's firmware, it spends a short time
+on a temporary layout table, as the TH Elite does, as its first app slot leaves no
+room in front of Tasmota for the firmware that moves it on.
 
 | | |
 |---|---|

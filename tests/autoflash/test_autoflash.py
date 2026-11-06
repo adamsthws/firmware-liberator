@@ -575,7 +575,7 @@ class EsphomeSignalTests(unittest.TestCase):
                       mock.patch.object(esphome, "is_esphome", return_value=False),
                       mock.patch.object(esphome, "image_for", return_value=b"\0" * 64),
                       mock.patch.object(esphome, "mover_for", return_value=b"\0" * 64),
-                      mock.patch.object(esphome, "sonoff_table", return_value=b""),
+                      mock.patch.object(esphome, "leaving_table", return_value=b""),
                       mock.patch.object(esphome_ota, "probe", return_value=None),
                       mock.patch.object(plans, "esphome", return_value="plan"),
                       mock.patch.object(plans, "leave_tasmota", return_value="plan")):
@@ -729,7 +729,7 @@ class LeaveTasmotaStoppedTests(unittest.TestCase):
                       mock.patch.object(mover, "table_written", return_value=True),
                       mock.patch.object(esphome_ota, "probe", return_value=None),
                       mock.patch.object(esphome, "mover_for", return_value=b""),
-                      mock.patch.object(esphome, "sonoff_table", return_value=b""),
+                      mock.patch.object(esphome, "leaving_table", return_value=b""),
                       mock.patch.object(plans, "leave_tasmota",
                                         return_value=SimpleNamespace(name="leave_tasmota", running=0))):
             patch.start()
@@ -2174,6 +2174,28 @@ class CommitEvidenceTests(unittest.TestCase):
         from tools.autoflash.phases import PhaseError
         result, tries, recoveries, _ = self.commit_tries([PhaseError("timed out")], recovered=True)
         self.assertEqual((result, tries, recoveries), ({"exit": 0, "finished_unseen": True}, 1, 1))
+
+    def test_a_temporary_table_gives_way_to_the_plugs_own_before_anything_else(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        from tools.autoflash import plans as plan_module
+        from tools.espressif import layouts
+
+        layout = layouts.SONOFF_TH_ELITE
+        for table, planned in ((layout.temporary_sha256, True), (layout.table_sha256, False)):
+            device = mock.Mock(sha_region=mock.Mock(side_effect=[table]))
+            ctx = SimpleNamespace(dry_run=False, device=device,
+                                  state=SimpleNamespace(input={"plug_kind": "sonoff-th-elite"}.get))
+            with mock.patch.object(hub, "run_plan") as run_plan, \
+                 mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
+                hub.sonoff_layout_back(ctx)
+            self.assertEqual(run_plan.called, planned, table)
+            self.assertEqual(device.wait_for_reboot.called, planned, table)
+            if planned:
+                plan = run_plan.call_args.args[1]
+                self.assertEqual(plan.name, "own_table")
+                self.assertEqual(plan.final_table_sha256(), layout.table_sha256)
+                self.assertIsInstance(plan.steps[0], plan_module.Write)
 
     def test_the_interim_layout_is_put_back_before_anything_else(self):
         # A commit stopped part way leaves the settings moved aside, which

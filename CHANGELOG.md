@@ -28,6 +28,8 @@ check.
   `artifacts/firmware.json`.
 - A plug whose Sonoff firmware ran from the second half of its memory can go back to
   it. The run used to stop before writing it, as Tasmota ran from there.
+- A TH Elite or Dual R3 on Tasmota can go to ESPHome or back to Sonoff's firmware,
+  through a temporary layout table.
 - Every plug ends with ESPHome's bootloader, however it got Tasmota: a plug on
   Tasmota with another one goes through the full Tasmota that installs it, even to
   ESPHome. On a classic ESP32 the run used to stop for lack of memory, writing

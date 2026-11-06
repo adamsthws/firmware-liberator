@@ -15,6 +15,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TABLE_ENTRY_SIZE = 32
+# Where a plug leaving Tasmota takes the mover: in front of Tasmota's app, over
+# its safeboot, which is all that has room. A layout whose ota_0 is not here
+# leaves through a temporary table with it here (Layout.temporary_table).
+MOVER_AT = 0x20000
+TEMPORARY_OTADATA = 0x1D000
+TEMPORARY_PHY = 0x1F000
 
 
 @dataclass(frozen=True)
@@ -28,6 +34,16 @@ class Layout:
     nvs: int
     otadata: int
     phy: int
+    temporary_sha256: str = ""  # temporary_table's, reviewed; for a layout that needs one
+
+    @property
+    def needs_temporary(self) -> bool:
+        return self.ota[0] != MOVER_AT
+
+    @property
+    def leaving_sha256(self) -> str:
+        """The table a plug on Tasmota leaves for (temporary_table says why)."""
+        return self.temporary_sha256 if self.needs_temporary else self.table_sha256
 
     @property
     def low_size(self) -> int:
@@ -70,8 +86,27 @@ class Layout:
 
     def interim_table(self) -> bytes:
         """The table with those entries, its MD5 made again."""
+        return self._table_of(self.interim_partitions())
+
+    def temporary_partitions(self) -> tuple[tuple[str, int, int, int, int, int], ...]:
+        """Its table with ota_0 where the mover goes, up to ota_1, which stays where
+        it is, and the settings and boot selection in what is left in front of it."""
+        where = {"nvs": (self.nvs, TEMPORARY_OTADATA - self.nvs),
+                 "otadata": (TEMPORARY_OTADATA, TEMPORARY_PHY - TEMPORARY_OTADATA),
+                 "phy_init": (TEMPORARY_PHY, MOVER_AT - TEMPORARY_PHY),
+                 "ota_0": (MOVER_AT, self.ota[1] - MOVER_AT)}
+        return tuple((label, kind, subtype, *where.get(label, (offset, size)), flags)
+                     for label, kind, subtype, offset, size, flags in self.partitions())
+
+    def temporary_table(self) -> bytes:
+        """What a plug leaving Tasmota has between Tasmota's table and its own, when
+        the mover does not fit at its own ota_0, as Tasmota's app starts too soon
+        after it: it then runs as a plug with its ota_0 at MOVER_AT, until the
+        Tasmota of the hub writes its own table (plans.own_table_from_temporary)."""
+        return self._table_of(self.temporary_partitions())
+
+    def _table_of(self, rows: tuple[tuple[str, int, int, int, int, int], ...]) -> bytes:
         table = bytearray(self.table)
-        rows = self.interim_partitions()
         for index, (_, _, _, offset, size, _) in enumerate(rows):
             struct.pack_into("<II", table, index * TABLE_ENTRY_SIZE + 4, offset, size)
         md5_at = len(rows) * TABLE_ENTRY_SIZE
@@ -92,12 +127,14 @@ SONOFF_NSPANEL = Layout(
     (0x20000, 0x210000), 0x1F0000, 0x9000, 0x1D000, 0x1F000)
 # A larger NVS, for its history of readings, and smaller app slots: an interim
 # Tasmota must be one that fits (the Layout's slot_size says), and the mover
-# does not fit in front of Tasmota, so a plug on Tasmota cannot leave it.
+# does not fit between its ota_0 and Tasmota's app, so a plug on Tasmota leaves
+# through a temporary table.
 SONOFF_TH_ELITE = Layout(
     "sonoff-th-elite", "artifacts/sonoff-th-elite-partition-table.bin",
     "36d7dc76c5d2459ea174e48aaa19ff93dcb8130c43b124bba409d78b9c01c1b6",
     "0fc13093b8e5ea70ffd09aa04af510dad5b1aa0dece1f56e16abf4e809398865",
-    (0x60000, 0x210000), 0x1A9000, 0x9000, 0x49000, 0x4B000)
+    (0x60000, 0x210000), 0x1A9000, 0x9000, 0x49000, 0x4B000,
+    "ae0503897ebe1598242f35c51938f76d5fce70e651a88d2d2db3097eabbf1b19")
 ALL = (SONOFF_DUAL_OTA, SONOFF_NSPANEL, SONOFF_TH_ELITE)
 
 

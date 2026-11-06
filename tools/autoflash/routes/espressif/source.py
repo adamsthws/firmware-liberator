@@ -217,8 +217,12 @@ def past_the_commit(ctx: Context, running: str) -> str:
 def leaves_tasmota_direct(ctx: Context) -> bool:
     """Whether a plug on Tasmota, going to ESPHome, can skip the hub: only with
     ESPHome's bootloader on it already, as the hub is where a plug gets it. One
-    that will not say goes through the hub, which is right for any plug."""
-    chip = esphome.chip_of(kinds.of_run(ctx.state))
+    that will not say goes through the hub, which is right for any plug; and so
+    does one with a temporary table, which only the hub's Tasmota can replace."""
+    kind = kinds.of_run(ctx.state)
+    if esphome.layout_of(kind).needs_temporary:
+        return False
+    chip = esphome.chip_of(kind)
     bootloader = esphome.published_bootloader(chip)
     try:
         found = ctx.device.sha_region(chip.bootloader_at, len(bootloader), timeout=30)

@@ -52,9 +52,11 @@ dump is ever committed. Tooling fetches it at run time.
 4. **Add its partition layout**, if new, to
    [layouts.py](../tools/espressif/layouts.py). A dump's table is in its flash at
    `0x8000`. The tool refuses a real device whose table it does not know, before
-   overwriting anything, so an unknown layout stops safely. Tasmota needs the app
-   slot layout to leave room: the TH Elite's does not allow leaving Tasmota at all,
-   for instance, and says so.
+   overwriting anything, so an unknown layout stops safely. To leave Tasmota, the
+   mover goes at `0x20000`. If your device's `ota_0` is elsewhere, as the TH Elite's
+   is, give the layout a `temporary_sha256`: its temporary table is built at run
+   time, with `ota_0` at `0x20000`, and `tests/espressif/test_layouts.py` holds it
+   to that hash. Its `ota_1` has to be where the device's own table has it.
 
 5. **Add its firmware.** Write `devices/<key>/esphome.yaml`, `esphome.md` and
    `README.md`, then build and pin the image. `artifacts/` changes only this way:

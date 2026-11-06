@@ -94,7 +94,7 @@ def step_leave_tasmota(ctx: Context) -> dict[str, Any]:
     try:
         kind = kinds.of_run(ctx.state)
         chip = esphome.chip_of(kind)
-        plan = plans.leave_tasmota(esphome.mover_for(ssid, password, chip), esphome.sonoff_table(kind),
+        plan = plans.leave_tasmota(esphome.mover_for(ssid, password, chip), esphome.leaving_table(kind),
                                    esphome.layout_of(kind))
     except (esphome.ImageError, imprint.ImprintError, plans.PlanError, OSError) as exc:
         raise Abort(f"the mover cannot be used: {exc}") from exc

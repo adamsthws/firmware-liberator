@@ -6,6 +6,7 @@ from unittest import mock
 
 from tests.autoflash.test_device_requests import LockedTasmota
 from tools.autoflash import detect
+from tools.espressif import layouts
 
 TASMOTA_TABLE = "1" * 64
 
@@ -120,6 +121,15 @@ class TasmotaTests(unittest.TestCase):
         # The table written, the restart into the mover not yet: leaving Tasmota
         # is done again, and finds its writes done - never taken as the hub.
         fake = FakeTasmota(version="15.6.0(release-tasmota32)", table=detect.SONOFF_TABLE_SHA256)
+        self.assertEqual(self.kind(fake), "tasmota")
+
+    def test_the_routes_own_tasmota_on_a_temporary_table_is_part_way(self):
+        # The hub, on the table a TH Elite leaves Tasmota through: D5 writes its own.
+        fake = FakeTasmota(version="15.6.0.1(f5b34a2-bluetooth)", table=layouts.SONOFF_TH_ELITE.temporary_sha256,
+                           module="Generic")
+        self.assertEqual(self.kind(fake), "hub")
+        # Official Tasmota there has only not restarted into the mover yet.
+        fake = FakeTasmota(version="15.6.0(release-tasmota32)", table=layouts.SONOFF_TH_ELITE.temporary_sha256)
         self.assertEqual(self.kind(fake), "tasmota")
 
     def test_official_tasmota_counts_only_with_the_s60s_template(self):

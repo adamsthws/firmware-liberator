@@ -906,6 +906,12 @@ class LeavingTasmotaForESPHomeTests(RouteTestCase):
             ctx.device = mock.Mock(sha_region=mock.Mock(side_effect=failure))
             self.assertFalse(source.leaves_tasmota_direct(ctx))
 
+    def test_a_layout_on_a_temporary_table_needs_the_hub_to_leave_it(self):
+        # M1 would leave it there for good, whatever bootloader it has.
+        ctx = self.ctx(plug_kind="sonoff-th-elite")
+        ctx.device = mock.Mock(sha_region=mock.Mock(return_value=self.ON_PLUG[True]))
+        self.assertFalse(source.leaves_tasmota_direct(ctx))
+
     def test_a_rerun_takes_the_way_it_began_and_does_not_ask_the_plug_again(self):
         for direct, next_step in ((True, "M1"), (False, "X1")):
             ctx = self.settle(direct=direct)
