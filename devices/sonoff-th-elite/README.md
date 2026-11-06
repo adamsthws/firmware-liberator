@@ -21,7 +21,7 @@ Pins from [ESPHome's page](https://devices.esphome.io/devices/sonoff-thr320d/) a
 - **Tasmota**: the official release, unchanged, given the template in
   [`tools/autoflash/kinds.py`](../../tools/autoflash/kinds.py).
 - **ESPHome**: [`esphome.yaml`](esphome.yaml); [`esphome.md`](esphome.md) says what it reports.
-- **Flash layout**: its own ([`artifacts/sonoff-th-elite-partition-table.bin`](../../artifacts/README.md)), with smaller app slots, so it runs a smaller Tasmota part way through. Tasmota's layout leaves no room in front of it for the small firmware that moves a plug off it, so **a TH Elite on Tasmota cannot be taken to ESPHome by this tool**. Choose before you convert.
+- **Flash layout**: its own ([`artifacts/sonoff-th-elite-partition-table.bin`](../../artifacts/README.md)), with smaller app slots, so it runs a smaller Tasmota part way through. Its first app slot leaves no room in front of Tasmota for the small firmware that moves a plug off it, so a TH Elite leaving Tasmota, for ESPHome or for Sonoff's firmware, spends a short time on a temporary layout table, and always goes through the full Tasmota that writes its own table back. A power cut then does no harm: run the tool again and it carries on.
 - **Calibration**: not carried over.
 - **How it is converted**: as the S60 is ([`docs/what-happens.md`](../../docs/what-happens.md)),
   with the firmware for its chip. [`docs/adding-a-device.md`](../../docs/adding-a-device.md)

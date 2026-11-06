@@ -182,6 +182,15 @@ def sonoff_table(kind: kinds.Kind = kinds.SONOFF_S60) -> bytes:
     return table
 
 
+def leaving_table(kind: kinds.Kind = kinds.SONOFF_S60) -> bytes:
+    """The table a plug of `kind` leaves Tasmota for: Sonoff's, or a temporary one."""
+    layout = layout_of(kind)
+    table = layout.temporary_table() if layout.needs_temporary else sonoff_table(kind)
+    if hashlib.sha256(table).hexdigest() != layout.leaving_sha256:
+        raise ImageError(f"the table a {kind.name} leaves Tasmota for is not the reviewed one")
+    return table
+
+
 def image_for(ssid: str, password: str, own: Path | None = None, kind: kinds.Kind = kinds.SONOFF_S60) -> bytes:
     """The image to install: the published one with this Wi-Fi written in, or
     one built by hand (--esphome PATH), imprinted too if it has placeholders."""

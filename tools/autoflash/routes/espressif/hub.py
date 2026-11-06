@@ -196,7 +196,8 @@ def plug_back_on_wifi(ctx: Context) -> None:
 
 def sonoff_layout_back(ctx: Context) -> None:
     """A commit stopped part way - by a power cut, say - leaves the plug on the
-    interim layout, its settings moved aside (safeboot_migration says why).
+    interim layout, its settings moved aside (safeboot_migration says why), and
+    a plug that left Tasmota may be on a temporary table (Layout.temporary_table).
     Every check and plan expects Sonoff's: put back first, then a restart."""
     if ctx.dry_run:
         return
@@ -207,12 +208,17 @@ def sonoff_layout_back(ctx: Context) -> None:
         return  # no Berry to ask: the step's own checks say what is wrong
     kind = kinds.of_run(ctx.state)
     layout = esphome.layout_of(kind)
-    if table != layout.interim_sha256:
+    if table == layout.temporary_sha256:
+        output.say("    The device is on the temporary layout it left Tasmota through; writing its own.")
+        plan = plans.own_table_from_temporary(esphome.sonoff_table(kind), layout)
+    elif table == layout.interim_sha256:
+        output.tell("    The last commit stopped part way, with the device's settings moved aside;")
+        output.tell("    putting them back first.")
+        plan = plans.sonoff_layout_back(esphome.sonoff_table(kind), layout)
+    else:
         return
-    output.tell("    The last commit stopped part way, with the device's settings moved aside;")
-    output.tell("    putting them back first.")
     booted, uptime = device.started_at(), device.uptime_seconds()
-    run_plan(ctx, plans.sonoff_layout_back(esphome.sonoff_table(kind), layout))
+    run_plan(ctx, plan)
     device.wait_for_reboot(timeout=300, started_at=booted, before=uptime)
     output.say("    The device is back on Sonoff's layout, with its settings.")
 

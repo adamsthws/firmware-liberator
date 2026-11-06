@@ -55,7 +55,9 @@ def _is_installer(host: str, timeout: float) -> bool:
     except Exception:  # noqa: BLE001 - anything but the installer answering
         return False
 SONOFF_TABLE_SHA256 = layouts.SONOFF_DUAL_OTA.table_sha256
-KNOWN_STOCK_TABLES = tuple(table for layout in layouts.ALL for table in (layout.table_sha256, layout.interim_sha256))
+KNOWN_STOCK_TABLES = tuple(table for layout in layouts.ALL
+                           for table in (layout.table_sha256, layout.interim_sha256, layout.temporary_sha256)
+                           if table)
 SONOFF_LAN_PORT = 8081
 
 

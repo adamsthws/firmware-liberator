@@ -305,6 +305,11 @@ first half, checks them, and switches to them.
   startup firmware as on the way from ESPHome, and the full Tasmota then
   installs ESPHome's bootloader, so that every plug the tool converts ends with
   the same one.
+- **A plug whose layout puts its first app slot too near Tasmota** (the TH Elite
+  and Dual R3) has no room for the mover there. Its mover goes where the S60's
+  does, under a temporary layout table with the first app slot moved there. The
+  second slot is in the same place in both, so the full Tasmota runs from that
+  and writes the plug's own layout table, last, as before.
 - **A plug left part way** - running the mover, the startup firmware or the
   full Tasmota on Sonoff's layout - is recognised when you run the tool again,
   and can go on to any of the three from where it is.
