@@ -20,12 +20,15 @@ run takes (tools/autoflash/routes).  Official Tasmota's template is named after 
 and ESPHome's comment by the image made for it; every firmware part way
 through a conversion is the tool's own, the same for every kind.
 
-Two kinds: the Sonoff S60, an Espressif plug, and the Sonoff S61, a Beken one.
+Espressif plugs have one route (tools/autoflash/routes/espressif), whichever
+chip they have (tools/espressif/chips.py). Beken plugs have another.
+docs/adding-a-device.md says how to add a kind.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 
@@ -76,6 +79,27 @@ class Kind:
     # goes through eWeLink alone, and the account's record of its hardware
     # address finds it on the network.
     uses_lan_control: bool = True
+    # Whether another plug's stock firmware calls itself the same, with other
+    # wiring (the POW Elite's 16 A and 20 A): only eWeLink's product model then
+    # says it is this kind, and a plug it does not name is not converted.
+    product_model_decides: bool = False
+    # Whether its meter is calibrated as the S60's (tools/autoflash/calibration.py).
+    calibrated_as_s60: bool = False
+    # Its stock partition table (tools/espressif/layouts.py), by key.
+    layout: str = "sonoff-dual-ota"
+    # eWeLink's name for one, for the emulator's cloud stub to give.
+    example_product_model: str = ""
+    # Whether it converts yet: devices/not-ready-yet/README.md says what holds
+    # the others up. The tool turns them down like any device it does not know.
+    ready: bool = True
+    # The external RAM (MB, as QEMU's -m takes it) its stock firmware stops
+    # without at start-up: only the emulator asks.
+    psram_mb: int = 0
+
+    @property
+    def folder(self) -> str:
+        """Its own folder, from the repository's root."""
+        return f"devices/{self.key}" if self.ready else f"devices/not-ready-yet/{self.key}"
 
     def product_of(self, product_model: str | None) -> str:
         """`product_model` as eWeLink gives it, if it is one of this kind's; else ""."""
@@ -144,6 +168,8 @@ SONOFF_S60 = Kind(
     esphome_legacy_setup_prefix="Sonoff-Setup-",
     esphome_legacy_prefix="sonoff-s60-",
     esphome_legacy_friendly_name="Sonoff S60",
+    calibrated_as_s60=True,
+    example_product_model="S60TPG",
 )
 
 SONOFF_S61 = Kind(
@@ -165,10 +191,215 @@ SONOFF_S61 = Kind(
     esphome_legacy_prefix="",
     openbeken_revert="AutoflashRevertToStock",
     uses_lan_control=False,
+    example_product_model="S61STPF",
 )
 
+SONOFF_POW_ELITE = Kind(
+    key="sonoff-pow-elite",
+    family="espressif",
+    chip="esp32",
+    ecosystem="ewelink",
+    name="Sonoff POW Elite 16A",
+    maker="Sonoff",
+    short="POWR316D",
+    # The 16 A alone: the POWR320D has the same stock firmware's name, and a
+    # latching relay on other pins, which this wiring would not drive.
+    product=re.compile(r"POWR316D"),
+    stock_model="SN-ESP32D0-POWR3-01",
+    wrapper_model="FWSW-E32POWP-POWPRO-ESP32D0WDV3",
+    # Blakadder's template: button GPIO0, Wi-Fi LED GPIO5, relay GPIO13, TM1621
+    # display GPIO14/25/26/27, CSE7766 GPIO16, status LED GPIO18.
+    tasmota_gpio=(32, 0, 0, 0, 0, 576, 0, 0, 0, 224, 9280, 0, 3104, 0, 320, 0, 0, 0, 0, 0, 0,
+                  9184, 9248, 9216, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+    esphome_legacy_setup_prefix="",
+    esphome_legacy_prefix="",
+    product_model_decides=True,
+    example_product_model="POWR316D",
+)
+
+SONOFF_POWCT = Kind(
+    key="sonoff-powct",
+    family="espressif",
+    chip="esp32",
+    ecosystem="ewelink",
+    name="Sonoff POW Ring",
+    maker="Sonoff",
+    short="POWCT",
+    product=re.compile(r"POWCT"),
+    stock_model="SN-ESP32D0-POWCT-01",
+    wrapper_model="FWSW-E32POWCT-POWCT-ESP32D0WDV3",
+    # From ESPHome's table: button GPIO0, TM1621 GPIO5/17/18/23, status LED
+    # GPIO13, Wi-Fi LED GPIO15, relay GPIO21, CSE7761 RX GPIO25 and TX GPIO26.
+    tasmota_gpio=(32, 0, 0, 0, 0, 9280, 0, 0, 0, 320, 0, 576, 0, 9184, 9216, 0, 0, 224, 0, 9248, 0,
+                  7328, 7296, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+    esphome_legacy_setup_prefix="",
+    esphome_legacy_prefix="",
+    example_product_model="POWCT",
+)
+
+SONOFF_NSPANEL = Kind(
+    key="sonoff-nspanel",
+    family="espressif",
+    chip="esp32",
+    ecosystem="ewelink",
+    name="Sonoff NSPanel",
+    maker="Sonoff",
+    short="NSPanel",
+    # NSPanel-EU, NSPanel-US and the like; not the NSPanel Pro, which is another device.
+    product=re.compile(r"NSPANEL(-[A-Z]+)?"),
+    stock_model="E32-MSW-NX",
+    wrapper_model="FWPNL-E32NSP-NSPANEL-ESP32D0WDV3",
+    psram_mb=4,
+    ready=False,
+    # Blakadder's template: screen power GPIO4, buttons GPIO14 and GPIO27, relays
+    # GPIO22 and GPIO19, buzzer GPIO21, thermistor GPIO38.
+    tasmota_gpio=(0, 0, 0, 0, 3872, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 225, 0, 480, 224, 1, 0, 0, 0, 33, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 4736, 0),
+    esphome_legacy_setup_prefix="",
+    esphome_legacy_prefix="",
+    layout="sonoff-nspanel",
+    example_product_model="NSPANEL",
+)
+
+SONOFF_TH_ELITE = Kind(
+    key="sonoff-th-elite",
+    family="espressif",
+    chip="esp32",
+    ecosystem="ewelink",
+    name="Sonoff TH Elite 20A",
+    maker="Sonoff",
+    short="THR320D",
+    # The 20 A alone: the THR316D's stock firmware has the same name, and its
+    # relay is wired otherwise.
+    product=re.compile(r"THR320D"),
+    stock_model="SN-ESP32D0-THR3-01",
+    wrapper_model="FWSW-E32THR3-THR3-ESP32D0WDV3",
+    # Blakadder's template: button GPIO0, dry contact GPIO4, TM1621 GPIO5/17/18/23,
+    # LEDs GPIO13/15/16, the main relay's latching pair GPIO19 and GPIO22,
+    # the sensor's data GPIO25 and power GPIO27.
+    tasmota_gpio=(32, 0, 0, 0, 226, 9280, 0, 0, 0, 321, 0, 576, 320, 9184, 9216, 9312, 0, 0, 9313, 9248, 0, 1, 0,
+                  3840, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+    esphome_legacy_setup_prefix="",
+    esphome_legacy_prefix="",
+    product_model_decides=True,
+    layout="sonoff-th-elite",
+    example_product_model="THR320D",
+)
+
+# Known from eWeLink's public firmware for them, not from a dump of one: what
+# their stock firmware calls itself is not known, so eWeLink's product model
+# says what they are, and a table not listed for them stops the run while they
+# can still go back (installer.require_known_layout).
+SONOFF_BASICR4 = Kind(
+    key="sonoff-basicr4",
+    family="espressif",
+    chip="esp32c3",
+    ecosystem="ewelink",
+    name="Sonoff BASICR4",
+    maker="Sonoff",
+    short="BASICR4",
+    product=re.compile(r"BASICR4"),
+    stock_model="",
+    wrapper_model="FWSW-E32R4-BASICR4-ESP32C3",
+    # Blakadder's template: relay GPIO4, LED GPIO6, button GPIO9.
+    tasmota_gpio=(0, 0, 0, 0, 224, 0, 544, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+    esphome_legacy_setup_prefix="",
+    esphome_legacy_prefix="",
+    product_model_decides=True,
+    example_product_model="BASICR4",
+    ready=False,
+)
+
+SONOFF_MINIR4 = Kind(
+    key="sonoff-minir4",
+    family="espressif",
+    chip="esp32",
+    ecosystem="ewelink",
+    name="Sonoff MINI Extreme",
+    maker="Sonoff",
+    short="MINIR4",
+    # Not the MINIR4M, the Matter one, which is locked.
+    product=re.compile(r"MINIR4"),
+    stock_model="",
+    wrapper_model="FWSW-E32R4-MINIR4-ESP32D0WDR2V3",
+    psram_mb=2,  # the R2 in its chip's name
+    ready=False,
+    # Blakadder's template: button GPIO0, LED GPIO19, relay GPIO26, wall switch GPIO27.
+    tasmota_gpio=(32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 576, 0, 0, 0, 0, 0, 0, 224, 160, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0),
+    esphome_legacy_setup_prefix="",
+    esphome_legacy_prefix="",
+    product_model_decides=True,
+    example_product_model="MINIR4",
+)
+
+SONOFF_DUALR3 = Kind(
+    key="sonoff-dualr3",
+    family="espressif",
+    chip="esp32",
+    ecosystem="ewelink",
+    name="Sonoff Dual R3",
+    maker="Sonoff",
+    short="DUALR3",
+    product=re.compile(r"DUALR3(LITE)?"),
+    stock_model="",
+    wrapper_model="FWSWES-E32DR3-DUALR3-ESP32D0WDV3",
+    # Blakadder's template: button GPIO0, LED GPIO13, relays GPIO27 and GPIO14,
+    # CSE7761 GPIO25 and GPIO26, wall switches GPIO32 and GPIO33.
+    tasmota_gpio=(32, 0, 0, 0, 0, 0, 0, 0, 0, 576, 225, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7296, 7328, 224, 0, 0, 0, 0,
+                  160, 161, 0, 0, 0, 0, 0, 0),
+    esphome_legacy_setup_prefix="",
+    esphome_legacy_prefix="",
+    product_model_decides=True,
+    # A real one's boot log: laid out as the TH Elite is, not as the POW Elite.
+    layout="sonoff-th-elite",
+    example_product_model="DUALR3",
+)
+
+
+def _sonoff_m5(gang: int, gpio: tuple[int, ...]) -> Kind:
+    """An M5 wall switch of so many gangs: one firmware, wired each its own way.
+    Not the Matter ones, whose part numbers end in W: those are locked."""
+    return Kind(
+        key=f"sonoff-m5-{gang}c",
+        family="espressif",
+        chip="esp32",
+        ecosystem="ewelink",
+        name=f"Sonoff M5 {gang}-gang",
+        maker="Sonoff",
+        short=f"M5-{gang}C",
+        product=re.compile(rf"M5-{gang}C-\d+"),
+        stock_model="",
+        wrapper_model="FWSWES-E32T5-T5-ESP32D0WDV3",
+        tasmota_gpio=gpio,
+        esphome_legacy_setup_prefix="",
+        esphome_legacy_prefix="",
+        product_model_decides=True,
+        example_product_model=f"M5-{gang}C-120",
+        ready=False,
+    )
+
+
+# From ESPHome's table: buttons, relays, status LED GPIO5.
+SONOFF_M5_1C = _sonoff_m5(1, (32, 0, 0, 0, 0, 576, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 224, 0, 0, 0, 0, 0, 0, 0,
+                              0, 0, 0, 0, 0, 0, 0, 0, 0))
+SONOFF_M5_2C = _sonoff_m5(2, (0, 0, 0, 0, 32, 576, 0, 0, 0, 0, 0, 33, 0, 0, 0, 225, 0, 0, 0, 224, 0, 0, 0, 0, 0, 0, 0,
+                              0, 0, 0, 0, 0, 0, 0, 0, 0))
+SONOFF_M5_3C = _sonoff_m5(3, (33, 0, 0, 0, 32, 576, 0, 0, 0, 0, 0, 34, 0, 0, 0, 225, 0, 0, 226, 224, 0, 0, 0, 0, 0, 0,
+                              0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+
 # Every kind the tool converts.
-ALL = (SONOFF_S60, SONOFF_S61)
+READY = (SONOFF_S60, SONOFF_S61, SONOFF_POW_ELITE, SONOFF_POWCT, SONOFF_TH_ELITE, SONOFF_DUALR3)
+# Being worked on, in devices/not-ready-yet/. For the emulator, this variable has
+# the tool take them as it does the others: never for a real plug.
+NOT_READY_YET = (SONOFF_NSPANEL, SONOFF_BASICR4, SONOFF_MINIR4, SONOFF_M5_1C, SONOFF_M5_2C, SONOFF_M5_3C)
+ALL = READY + (NOT_READY_YET if os.environ.get("AUTOFLASH_NOT_READY_YET") else ())
+EVERY = READY + NOT_READY_YET
+
+
+def find(key: str | None) -> Kind | None:
+    """The kind by its key, ready or not, for the tooling that works on them."""
+    return next((kind for kind in EVERY if kind.key == key), None)
 
 
 def by_key(key: str | None) -> Kind | None:
@@ -180,12 +411,13 @@ def for_account(product_model: str | None, stock_model: str | None) -> Kind | No
     what its firmware calls itself (the account's extra.model); None for one
     the tool does not convert."""
     return next((kind for kind in ALL
-                 if kind.product_of(product_model) or stock_model == kind.stock_model), None)
+                 if kind.product_of(product_model)
+                 or (stock_model and stock_model == kind.stock_model and not kind.product_model_decides)), None)
 
 
 def for_stock_model(stock_model: str | None) -> Kind | None:
     """The kind whose stock firmware calls itself `stock_model`."""
-    return next((kind for kind in ALL if stock_model == kind.stock_model), None)
+    return next((kind for kind in ALL if stock_model and stock_model == kind.stock_model), None)
 
 
 def for_tasmota(template_name: str | None) -> Kind | None:
@@ -207,7 +439,8 @@ def for_esphome(title: str | None, comment: str | None) -> Kind | None:
 
 def names(attribute: str = "name") -> str:
     """Every kind, as a person calls them (Sonoff S60): for before the plug is known."""
-    return " or ".join(getattr(kind, attribute) for kind in ALL)
+    all_of_them = [getattr(kind, attribute) for kind in ALL]
+    return ", ".join(all_of_them[:-1]) + " or " + all_of_them[-1]
 
 
 def name_words() -> set[str]:

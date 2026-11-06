@@ -467,7 +467,7 @@ def step_discover(ctx: Context) -> dict[str, Any]:
     finally:
         # Its download links may work as access tokens; what is needed is now read.
         meta.unlink(missing_ok=True)
-    kind = kinds.for_stock_model(model)
+    kind = kinds.for_account(product, model)
     if kind is None:
         raise Abort(
             f"{plug_ip} is a {model or 'device of unknown model'}, which this tool does not "

@@ -9,10 +9,9 @@ import time
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import device, errors, esphome, join, names, output, phases, plans, prompts
+from tools.autoflash import device, errors, esphome, join, kinds, names, output, phases, plans, prompts
 from tools.autoflash.device import DeviceError, UploadRefused
 from tools.autoflash.errors import Abort
-from tools.autoflash.runs import ROOT
 from tools.autoflash.state import FAILED, PENDING
 
 if TYPE_CHECKING:
@@ -118,7 +117,7 @@ def running_slot(device: device.Device, timeout: float = 60.0) -> int:
 def step_promote(ctx: Context) -> dict[str, Any]:
     """D4/D5 - move Tasmota to the high slot and freeze NVS."""
     device = ctx.device
-    image = ROOT / "captures/safeboot-recovery-migration/tasmota32c3-bluetooth.bin"
+    image = esphome.interim_of(kinds.of_run(ctx.state))
     device.wait_reachable(timeout=120)
     # The first reading of a run from an ESPHome that gives none (no signal
     # sensor, an encrypted API; the startup firmware gives none either), and
@@ -206,12 +205,14 @@ def sonoff_layout_back(ctx: Context) -> None:
         table = device.sha_region(plans.TABLE_ADDRESS, plans.SECTOR, timeout=30)
     except (DeviceError, OSError):
         return  # no Berry to ask: the step's own checks say what is wrong
-    if table != plans.INTERIM_TABLE_SHA256:
+    kind = kinds.of_run(ctx.state)
+    layout = esphome.layout_of(kind)
+    if table != layout.interim_sha256:
         return
     output.tell("    The last commit stopped part way, with the device's settings moved aside;")
     output.tell("    putting them back first.")
     booted, uptime = device.started_at(), device.uptime_seconds()
-    run_plan(ctx, plans.sonoff_layout_back(esphome.sonoff_table()))
+    run_plan(ctx, plans.sonoff_layout_back(esphome.sonoff_table(kind), layout))
     device.wait_for_reboot(timeout=300, started_at=booted, before=uptime)
     output.say("    The device is back on Sonoff's layout, with its settings.")
 
@@ -249,4 +250,6 @@ def step_bootloader(ctx: Context) -> dict[str, Any]:
         ctx.state.set_input("startup_unproven", True)
         return {"skipped": "begun before this step, and past the commit"}
     sonoff_layout_back(ctx)
-    return run_plan(ctx, plans.bootloader(esphome.published_bootloader()))
+    chip = esphome.chip_of(kinds.of_run(ctx.state))
+    return run_plan(ctx, plans.bootloader(esphome.published_bootloader(chip), address=chip.bootloader_at,
+                                          table_sha256=esphome.layout_of(kinds.of_run(ctx.state)).table_sha256))

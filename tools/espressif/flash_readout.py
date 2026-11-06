@@ -88,7 +88,7 @@ def check_bridge_image(path: Path, marker: bytes) -> None:
                    "Build it as archive/bridge/README.md describes") from exc
     wrapper, esp = report["wrapper"], report["esp_image"]
     if not (wrapper["payload_crc32_valid"] and wrapper["record_crc32_valid"]
-            and esp["chip_is_esp32_c3"] and esp["checksum_valid"] and esp["sha256_valid"] is not False):
+            and esp["chip_id"] in (0, 5) and esp["checksum_valid"] and esp["sha256_valid"] is not False):
         raise Stop(f"{path} failed its integrity checks; rebuild it")
     if not re.search(marker, data):
         raise Stop(f"{path} is not the expected bridge build")

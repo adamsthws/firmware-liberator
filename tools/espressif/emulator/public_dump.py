@@ -125,7 +125,7 @@ UPDATES = {
                             "sonoff-pow-elite", "SN-ESP32D0-MINIR4-01"),
     "sonoff-dualr3": Update("SONOFF_DUALR3-Family_(FWSWES-E32DR3-DUALR3-ESP32D0WDV3)_ESP32_v1.6.1_user1.bin",
                             "4f14b1298061ee6669fd5fcbfa89baf6c2ef3daafa8c575736f38088179240b2", 7,
-                            "sonoff-pow-elite", "E32-2SW-P0"),
+                            "sonoff-th-elite", "E32-2SW-P0"),
     **{f"sonoff-m5-{gang}c": Update("SONOFF_M5-1C-3C_(FWSWES-E32T5-T5-ESP32D0WDV3)_ESP32_v1.3.0_user1.bin",
                                     "f149baf000eb226c27babd1ea2a4bef6bcc3ca2973d9c57063106730112f4e6b", 7 + gang,
                                     "sonoff-pow-elite", "ESP32D0-MSW-T5", 159 + gang)

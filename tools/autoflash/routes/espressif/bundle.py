@@ -8,7 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import hostsys, output, prompts, safety_locks
+from tools.autoflash import hostsys, kinds, output, prompts, safety_locks
+from tools.espressif import chips
 from tools.autoflash.errors import Abort
 from tools.autoflash.runs import ROOT
 from tools.espressif.safeboot.prepare_imprinted_bundle import BundleError, build_bundle, validate_bundle
@@ -21,12 +22,17 @@ if TYPE_CHECKING:
 DEFAULT_MANIFEST = Path("captures/safeboot-recovery-migration/manifest.json")
 
 
+def default_manifest(ctx: Context) -> Path:
+    """Where the bundle for this run's plug's chip goes, unless --manifest said."""
+    return (ROOT / "captures" / chips.of(kinds.of_run(ctx.state).chip).bundle / "manifest.json").resolve()
+
+
 def step_check(ctx: Context) -> dict[str, Any]:
     """A5 - offline preconditions, building the bundle if there is none.  Touches no plug."""
     try:
         manifest = validate_bundle(ctx.manifest_path, current_only=True)
     except ValueError as exc:
-        if ctx.manifest_path != (ROOT / DEFAULT_MANIFEST).resolve():
+        if ctx.manifest_path != default_manifest(ctx):
             raise Abort(f"the bundle at {ctx.manifest_path} cannot be used: {exc}") from exc
         manifest = make_bundle(ctx, problem=None if not ctx.manifest_path.exists() else str(exc))
     else:
@@ -64,7 +70,8 @@ def make_bundle(ctx: Context, problem: str | None) -> dict[str, Any]:
         "temporary firmware, which has to rejoin your Wi-Fi by itself.",
     ])
     try:
-        build_bundle(output=ctx.manifest_path.parent, release=release_on_the_plug(ctx))
+        build_bundle(output=ctx.manifest_path.parent, release=release_on_the_plug(ctx),
+                     chip=chips.of(kinds.of_run(ctx.state).chip))
     except BundleError as exc:
         raise Abort(f"the bundle could not be prepared: {exc}") from exc
     output.say("Bundle ready.")
@@ -97,7 +104,7 @@ def bundle_of_this_version(ctx: Context) -> None:
     writes, and H1's check, must be that release's: a bundle of a release
     pinned before is kept, or built again of it (release_on_the_plug), and
     the plug ends on it."""
-    if not ctx.state.is_done("A5") or ctx.manifest_path != (ROOT / DEFAULT_MANIFEST).resolve():
+    if not ctx.state.is_done("A5") or ctx.manifest_path != default_manifest(ctx):
         return
     try:
         validate_bundle(ctx.manifest_path, current_only=not ctx.state.is_done("F2"))

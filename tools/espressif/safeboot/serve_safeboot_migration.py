@@ -29,26 +29,21 @@ from typing import Any
 if __package__ in (None, ""):  # run as a script: the repository root, for `tools.`
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from tools.espressif import layouts  # noqa: E402
 from tools.espressif.safeboot.safeboot_migration import (  # noqa: E402
     CANONICAL_NVS_SIZE,
     OTADATA_SIZE,
     RECOVERY_ARTIFACT,
     SAFEBOOT_SIZE,
     SECTOR_SIZE,
-    SOURCE_PARTITIONS,
-    SOURCE_TABLE_SHA256,
     TABLE_SIZE,
     TARGET_PARTITIONS,
     TARGET_TABLE_SHA256,
-    INTERIM_TABLE_SHA256,
-    LOW_REGIONS_OFFSET,
-    LOW_REGIONS_SIZE,
-    MOVED_LOW_OFFSET,
     analyze_canonical_nvs,
-    interim_table,
     artifact_bytes,
     load_evidence,
     load_manifest,
+    manifest_chip,
     parse_partition_sector,
     provide_in_memory,
     require_exact_partitions,
@@ -218,7 +213,9 @@ class MigrationState:
         max_evidence_age: int,
         plan: "Plan | None" = None,
         recovery_unproven: bool = False,
+        layout: layouts.Layout = layouts.SONOFF_DUAL_OTA,
     ) -> None:
+        self.layout = layout
         self.manifest_path = manifest_path
         self.manifest = manifest
         self.phase = phase
@@ -266,7 +263,7 @@ class MigrationState:
         if target_report["sha256"] != TARGET_TABLE_SHA256:
             raise ValueError("target table differs from the reviewed official sector")
         self.target_table_sha256 = target_report["sha256"]
-        self.interim_table = interim_table() if phase == "commit" else b""
+        self.interim_table = layout.interim_table() if phase == "commit" else b""
 
         self.live_preflight: dict[str, Any] | None = None
         self.stage_evidence: dict[str, Any] | None = None
@@ -276,7 +273,7 @@ class MigrationState:
             )
             if self.live_preflight.get("manifest_sha256") != self.manifest_sha256:
                 raise ValueError("preflight evidence belongs to a different manifest")
-            if self.live_preflight.get("table_sha256") != SOURCE_TABLE_SHA256:
+            if self.live_preflight.get("table_sha256") != layout.table_sha256:
                 raise ValueError("preflight evidence has the wrong source table")
         if phase == "commit":
             self.stage_evidence = load_evidence(
@@ -337,6 +334,7 @@ class MigrationState:
     def replacements(self) -> dict[str, str]:
         if self.phase == "plan":
             return {
+                "ARCH": manifest_chip(self.manifest).key,
                 "BASE_URL": self.base_url,
                 "SESSION": self.session,
                 "PLAN_NAME": self.plan.name,
@@ -356,15 +354,19 @@ class MigrationState:
             self.live_preflight["nvs_sha256"] if self.live_preflight is not None else ""
         )
         return {
+            "ARCH": manifest_chip(self.manifest).key,
             "BASE_URL": self.base_url,
             "SESSION": self.session,
             "ARM_TOKEN": self.arm_token,
-            "SOURCE_TABLE_SHA256": SOURCE_TABLE_SHA256,
+            "SOURCE_TABLE_SHA256": self.layout.table_sha256,
             "TARGET_TABLE_SHA256": self.target_table_sha256,
-            "INTERIM_TABLE_SHA256": INTERIM_TABLE_SHA256,
-            "LOW_REGIONS_OFFSET": str(LOW_REGIONS_OFFSET),
-            "LOW_REGIONS_SIZE": str(LOW_REGIONS_SIZE),
-            "MOVED_LOW_OFFSET": str(MOVED_LOW_OFFSET),
+            "INTERIM_TABLE_SHA256": self.layout.interim_sha256,
+            "LOW_REGIONS_OFFSET": str(self.layout.nvs),
+            "LOW_REGIONS_SIZE": str(self.layout.low_size),
+            "MOVED_LOW_OFFSET": str(self.layout.moved_low),
+            "OLD_OTADATA": str(self.layout.otadata),
+            "STAGE_ADDRESS": str(self.layout.ota[0]),
+            "STAGE_LIMIT": str(self.layout.ota[1]),
             "LIVE_NVS_SHA256": live_nvs,
             "SAFEBOOT_SHA256": sha256_bytes(self.safeboot),
             "SAFEBOOT_LENGTH": str(safeboot_length),
@@ -537,8 +539,8 @@ class MigrationState:
         nvs = self.assembled_capture("nvs", CANONICAL_NVS_SIZE)
         otadata = self.assembled_capture("otadata", OTADATA_SIZE)
         table_report = parse_partition_sector(table)
-        require_exact_partitions(table_report, SOURCE_PARTITIONS)
-        if table_report["sha256"] != SOURCE_TABLE_SHA256:
+        require_exact_partitions(table_report, self.layout.partitions())
+        if table_report["sha256"] != self.layout.table_sha256:
             raise ValueError("uploaded table is not the allow-listed source table")
         nvs_report = analyze_canonical_nvs(nvs)
         if not nvs_report["ready"] and not self.recovery_mode:
@@ -591,7 +593,7 @@ class MigrationState:
         expected = {
             "status": "PASS",
             "current_ota": "1",
-            "table_sha256": SOURCE_TABLE_SHA256,
+            "table_sha256": self.layout.table_sha256,
             "nvs_sha256": self.live_preflight["nvs_sha256"],
             "staged_sha256": sha256_bytes(self.safeboot),
             "staged_size": str(len(self.safeboot)),
@@ -831,6 +833,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("phase", choices=PHASES)
     parser.add_argument("--manifest", type=Path, default=Path("captures/safeboot-migration/manifest.json"))
+    parser.add_argument("--layout", default=layouts.SONOFF_DUAL_OTA.key, help="the plug's stock partition table")
     parser.add_argument("--listen-ip", required=True)
     parser.add_argument("--listen-port", type=int, default=8089)
     parser.add_argument("--device-ip", required=True)
@@ -919,7 +922,7 @@ def main() -> int:
     try:
         state = MigrationState(
             manifest_path, manifest, args.phase, base_url, evidence_dir, args.max_evidence_age,
-            plan=plan, recovery_unproven=args.recovery_unproven,
+            plan=plan, recovery_unproven=args.recovery_unproven, layout=layouts.of(args.layout),
         )
         state.sensitive_captures = not args.no_sensitive_captures
         rendered = state.render_berry()

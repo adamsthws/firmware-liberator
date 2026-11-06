@@ -299,7 +299,7 @@ end
 def run_restore(provided_token)
   guard(armed, "this restore closure has already been consumed")
   guard(provided_token == arm_token, "arming token differs")
-  guard(tasmota.arch() == "esp32c3", "device is not ESP32-C3")
+  guard(tasmota.arch() == "@ARCH@", "device is not @ARCH@")
   guard(flash.size() == 0x400000, "flash is not exactly 4 MiB")
   guard(flash.current_ota() == 0, "official app0 must be running")
   guard(sha_region(0x8000, 0x1000) == target_table_hash, "canonical partition table differs")

@@ -164,6 +164,15 @@ class IncompleteDump(OSError):
     """The flash arrived short, so nothing from it is worth keeping."""
 
 
+def read_table(host: str, timeout: float = 60.0) -> bytes:
+    """The plug's partition table, from the start of the bridge's `GET /flash`."""
+    with urllib.request.urlopen(f"http://{host}/flash", timeout=timeout) as response:
+        start = response.read(PARTITION_TABLE + OTA_SECTOR)
+    if len(start) != PARTITION_TABLE + OTA_SECTOR:
+        raise OSError("the flash stopped short of the partition table")
+    return start[PARTITION_TABLE:]
+
+
 def plug_sha256(host: str) -> str | None:
     """The SHA-256 of the whole flash as the bridge works it out on the plug;
     None from a bridge older than 4.4.2, which cannot."""

@@ -7,6 +7,7 @@ hand (docs/updating-firmware.md), and these say what was missed.
 import io
 import json
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -69,6 +70,7 @@ class ESPHomePinTests(unittest.TestCase):
 
     def test_no_older_build_is_left_in_artifacts(self):
         published = {Path(pin["file"]).name for pin in PINS["esphome"].values()}
+        published |= {Path(pin["file"]).name for pin in PINS.get("esp32", {}).values() if "file" in pin}
         for pattern in ("esphome-sonoff-s60-*.bin", "autoflash-mover-*.bin"):
             for path in (ROOT / "artifacts").glob(pattern):
                 self.assertIn(path.name, published)

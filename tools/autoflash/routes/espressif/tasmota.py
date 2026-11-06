@@ -328,15 +328,21 @@ def recovery_firmware_up(ctx: Context, started: float, *, within: float) -> bool
         time.sleep(5)
 
 
+def official_app(ctx: Context) -> Path:
+    """The bundle's official Tasmota, for the plug's chip."""
+    chip = esphome.chip_of(kinds.of_run(ctx.state))
+    return chip.bundle_file(f"{chip.tasmota_prefix}.bin")
+
+
 def step_canonical(ctx: Context) -> dict[str, Any]:
     """F - first canonical boot, then the official application."""
-    app = ROOT / "captures/safeboot-recovery-migration/tasmota32c3.bin"
+    app = official_app(ctx)
     if runs.run_source(ctx.state) == "committed" and ctx.finder.poll() and not ctx.device.is_safeboot():
         # A run stopped after official Tasmota went on, before it was set up.
         # Only on this route: after E3 the interim Tasmota still answers for a
         # moment, which this would take for the official one.
         version = ctx.device.firmware_version() or ""
-        if version and "bluetooth" not in version:
+        if version and not detect.interim_build(version):
             output.say(f"Official Tasmota is installed already ({version}).")
             return {"already": version}
     prompts.section("The device has restarted with its new layout", quiet=True, body=[
@@ -383,7 +389,7 @@ def step_tasmota_back(ctx: Context) -> dict[str, Any]:
     safeboot by hand, say - else official Tasmota uploaded as F2 does, which
     writes app0 only, so its settings stay.  It must then be a plug this tool
     converts."""
-    app = ROOT / "captures/safeboot-recovery-migration/tasmota32c3.bin"
+    app = official_app(ctx)
     how = outcome = None
     if ctx.finder.poll() and not ctx.device.is_safeboot():
         output.say("Tasmota is back on the device already.")
@@ -430,7 +436,7 @@ def step_tasmota_update(ctx: Context) -> dict[str, Any]:
     (Restart 3), which is given this release as F2 and T1 give it: app0
     alone, so its settings and template stay.  Asked again, on a plug left
     on the safeboot by a try cut off, it uploads from there."""
-    app = ROOT / "captures/safeboot-recovery-migration/tasmota32c3.bin"
+    app = official_app(ctx)
     _, new = update.versions(ctx)
     if ctx.dry_run:
         output.say(f"[dry-run] would switch Tasmota to its safeboot and upload Tasmota {new}")
@@ -602,6 +608,8 @@ def calibrate_tasmota_meter(ctx: Context, show: bool = False) -> dict[str, Any]:
     board's factor and, from the plug's Sonoff backup, its own factory
     calibration (calibration says what carries over).  Never fails the step:
     a plug left as Tasmota calibrates it still works."""
+    if not kinds.of_run(ctx.state).calibrated_as_s60:
+        return {"skipped": "this device's calibration is not read yet"}
     try:
         outcome = calibration.calibrate_tasmota(lambda text: ctx.device.command(text, timeout=SLOW_COMMAND),
                                                 wifi.backup_calibration(ctx))
@@ -640,7 +648,7 @@ def configure_tasmota(ctx: Context) -> dict[str, Any]:
         # F2 saw it as done, but official Tasmota did not take (a run from
         # before F2 checked for that): sent again, as F2 would.
         output.tell("    The device is still on its startup firmware: official Tasmota is sent again.")
-        install_official(ctx, ROOT / "captures/safeboot-recovery-migration/tasmota32c3.bin")
+        install_official(ctx, official_app(ctx))
         device = ctx.device
         device.wait_reachable(timeout=300)
     template = kinds.of_run(ctx.state).tasmota_template()
@@ -796,7 +804,7 @@ def conversion_wifi(ctx: Context) -> None:
 
     def proven(ssid: str, password: str) -> bytes | None:
         try:
-            image = startup_image(ssid, password)
+            image = startup_image(ssid, password, esphome.chip_of(kinds.of_run(ctx.state)))
         except BundleError:
             return None
         return image if sha256_bytes(image) == wanted else None
@@ -899,9 +907,11 @@ def step_verify(ctx: Context) -> dict[str, Any]:
     device = ctx.device
     device.wait_reachable(timeout=180)
 
+    chip = esphome.chip_of(kinds.of_run(ctx.state))
+    _, bootloader_size, bootloader_sha256 = esphome.bootloader_file(chip)
     expected = {
         # Written once at D5, for whichever firmware comes after.
-        "bootloader": (0, esphome.BOOTLOADER_SIZE, esphome.BOOTLOADER_SHA256),
+        "bootloader": (chip.bootloader_at, bootloader_size, bootloader_sha256),
         "table": (TABLE_OFFSET, TABLE_SIZE, artifacts["target_table"]["sha256"]),
         "safeboot": (SAFEBOOT_OFFSET, artifacts["safeboot"]["size"], artifacts["safeboot"]["sha256"]),
         "app0": (APP0_OFFSET, artifacts["app"]["size"], artifacts["app"]["sha256"]),

@@ -269,6 +269,20 @@ end
 def write_whole(step)
   var address = step["addr"]
   var total = step["len"]
+  # Already there: nothing to hold in memory, which a classic ESP32 on the full
+  # Tasmota has too little of for its bootloader.
+  if sha_region(address, total) == bytes(step["sha"])
+    var rest = (4096 - total % 4096) % 4096
+    var tail = rest > 0 ? flash.read(address + total, rest) : bytes()
+    var erased = true
+    for i: 0 .. size(tail) - 1
+      if tail[i] != 0xFF erased = false end
+    end
+    if erased
+      print("AUTOFLASH PLAN: " + step["blob"] + " already in place")
+      return
+    end
+  end
   var wanted = bytes()
   var index = step["first"]
   while size(wanted) < total
@@ -334,7 +348,7 @@ def copy_region(step)
 end
 
 def run_plan()
-  guard(tasmota.arch() == "esp32c3", "device is not ESP32-C3")
+  guard(tasmota.arch() == "@ARCH@", "device is not @ARCH@")
   guard(flash.size() == 0x400000, "flash is not exactly 4 MiB")
   var table = sha_region(0x8000, 0x1000)
   # A plan that writes the table, run again after it did, finds the new one.

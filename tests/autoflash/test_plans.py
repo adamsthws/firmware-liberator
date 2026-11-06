@@ -1,8 +1,10 @@
 """Plans: what the plug is to write, checked before anything is sent."""
 import struct
 import unittest
+from pathlib import Path
 
 from tools.autoflash import esphome, plans
+from tools.espressif.safeboot import safeboot_migration
 
 SECTOR = plans.SECTOR
 
@@ -54,9 +56,9 @@ class PlanTests(unittest.TestCase):
     def test_putting_sonoffs_layout_back_copies_the_settings_home_then_the_table(self):
         plan = plans.sonoff_layout_back(esphome.sonoff_table())
         self.assertEqual((plan.table_sha256, plan.running, plan.restart),
-                         (plans.INTERIM_TABLE_SHA256, 1, True))
-        self.assertEqual(plan.steps, [plans.Copy(plans.MOVED_LOW_OFFSET, plans.LOW_REGIONS_OFFSET,
-                                                 plans.LOW_REGIONS_SIZE),
+                         (safeboot_migration.INTERIM_TABLE_SHA256, 1, True))
+        self.assertEqual(plan.steps, [plans.Copy(safeboot_migration.MOVED_LOW_OFFSET, safeboot_migration.LOW_REGIONS_OFFSET,
+                                                 safeboot_migration.LOW_REGIONS_SIZE),
                                       plans.Write("table", plans.TABLE_ADDRESS, whole=True)])
         self.assertEqual(plan.final_table_sha256(), plans.SONOFF_TABLE_SHA256)
         # The settings are the plug's own: what was copied cannot be known here.
@@ -229,6 +231,16 @@ class PlanCheckTests(unittest.TestCase):
         with mock.patch.object(plans, "BUSY_LIMIT", plan.busy_estimate() - 0.01):
             with self.assertRaisesRegex(plans.PlanError, "keeps the device busy past .* s; split it"):
                 plan.check()
+
+
+
+class WholeWriteTests(unittest.TestCase):
+    def test_what_is_already_in_place_is_not_fetched_into_memory_first(self):
+        # A classic ESP32's bootloader, held whole, is more than the full Tasmota
+        # has free, and every conversion has already put it there.
+        program = Path(plans.__file__).parents[1] / "espressif/safeboot/repartition/berry/plan.be.tmpl"
+        body = program.read_text(encoding="utf-8").split("def write_whole(step)")[1]
+        self.assertLess(body.index('sha_region(address, total) == bytes(step["sha"])'), body.index("fetch_chunk"))
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ from tools.autoflash import (
     firewall,
     hostsys,
     join,
+    kinds,
     noise,
     output,
     phases,
@@ -31,6 +32,7 @@ from tools.autoflash import (
 from tools.autoflash.errors import Abort
 from tools.autoflash.phases import PhaseRunner
 from tools.autoflash.routes.espressif import bundle, installer
+from tools.espressif import chips
 from tools.autoflash.runs import ROOT
 from tools.autoflash.state import RunState
 from tools.espressif.safeboot.prepare_imprinted_bundle import (
@@ -51,7 +53,9 @@ class Context:
         self.dir = plugs.CAPTURES / self.plug
         self.evidence = self.dir / "live"
         self.state = RunState.open(self.dir)
-        self.manifest_path = (ROOT / args.manifest).resolve()
+        # Given by hand with --manifest; else the bundle for the plug's chip,
+        # known only once its kind is (bundle.default_manifest).
+        self._manifest = None if args.manifest == bundle.DEFAULT_MANIFEST else (ROOT / args.manifest).resolve()
         self.dry_run = args.dry_run
         # Research only: a different bridge, after which the run stops (see
         # archive/docs/reference/automatic-wifi.md).  The plug goes back to stock on a power cycle.
@@ -213,7 +217,7 @@ class Context:
                 # A bundle this checkout can no longer use: build it again.
                 output.say(f"    {first}; preparing the firmware bundle again...")
                 try:
-                    _, image = build_bundle(ssid, password, self.manifest_path.parent,
+                    _, image = build_bundle(ssid, password, self.manifest_path.parent, chip=chips.of(kinds.of_run(self.state).chip),
                                             release=bundle.release_on_the_plug(self))
                 except BundleError as exc:
                     raise Abort(f"the bundle could not be prepared: {exc}") from exc
@@ -393,6 +397,14 @@ class Context:
             password=self.web_password,
         )
 
+    @property
+    def manifest_path(self) -> Path:
+        return self._manifest or bundle.default_manifest(self)
+
+    @manifest_path.setter
+    def manifest_path(self, path: Path) -> None:
+        self._manifest = path
+
     def phase_runner(self, with_recovery: bool = True) -> PhaseRunner:
         """The migration server's runner, given the startup firmware - unless
         `with_recovery` is False: a restore with none to prove (step_restore)."""
@@ -408,5 +420,6 @@ class Context:
             listen_port=port,
             # Piped, never a file; and only hashes of captures that hold secrets.
             recovery=self.recovery_bytes() if with_recovery else None,
+            layout=kinds.of_run(self.state).layout,
         )
         return self.last_runner

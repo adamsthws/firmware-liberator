@@ -12,8 +12,8 @@ S60 = {"deviceid": "1001234abc", "name": "Kitchen", "productModel": "S60TPG", "o
        "params": {"staMac": "AA:BB:CC:12:34:56", "ssid": "Home-2G"}}
 S61 = {"deviceid": "1001234abd", "name": "Desk", "productModel": "S61STPF", "online": True,
        "extra": {"model": "SN-BK7238-S61-01"}, "params": {"staMac": "12:34:56:AB:CD:EF"}}
-SWITCH = {"deviceid": "1000aaaaaa", "name": "Hall light", "productModel": "MINIR4", "online": True,
-          "extra": {"model": "SN-ESP32-MINIR4"}, "params": {}}
+SWITCH = {"deviceid": "1000aaaaaa", "name": "Hall light", "productModel": "MINIR4M", "online": True,
+          "extra": {"model": "SN-ESP32-MINIR4M"}, "params": {}}
 
 
 class AccountPlugTests(unittest.TestCase):
@@ -231,7 +231,7 @@ class FindAccountPlugTests(unittest.TestCase):
              mock.patch.object(prompts, "section") as shown:
             self.assertEqual(account.find_account_plug(ctx, [SWITCH]), "192.0.2.50")
         self.assertIn("No supported device in the eWeLink account owner@example.com", shown.call_args.args[0])
-        self.assertIn("- 'Hall light' (MINIR4)", shown.call_args.args[1])
+        self.assertIn("- 'Hall light' (MINIR4M)", shown.call_args.args[1])
 
 
 if __name__ == "__main__":

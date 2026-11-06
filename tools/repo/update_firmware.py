@@ -24,6 +24,15 @@
         the same for a Beken plug's ESPHome (devices/sonoff-s61/esphome.yaml, on
         LibreTiny): the rt_ota image its build makes, checked and published
 
+    python3 tools/repo/update_firmware.py esphome [VERSION] --plug KIND [--image-version X.Y.Z]
+        the same for another Espressif plug's ESPHome (KIND's folder's esphome.yaml)
+
+    python3 tools/repo/update_firmware.py esp32 [tasmota] [bridge] [recovery] [mover] [template] [tables]
+        what the conversion of any plug with a classic ESP32 needs, each in a
+        Docker image: official Tasmota's ESP32 files pinned from the release the
+        ESP32-C3's are, the bridge and the recovery Safeboot built from this
+        repository's sources, the mover and its bootloader with ESPHome
+
     python3 tools/repo/update_firmware.py openbeken [--plug sonoff-s61] [--commit SHA]
                                      [--image-version X.Y.Z]
         build OpenBeken for a Beken plug - upstream at that commit (default: the
@@ -55,7 +64,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import esphome, imprint, tasmota_settings  # noqa: E402
+from tools.autoflash import esphome, imprint, kinds, tasmota_settings  # noqa: E402
+from tools.espressif import chips, layouts  # noqa: E402
 from tools.beken import rbl, uf2  # noqa: E402
 from tools.espressif.safeboot.safeboot_migration import (  # noqa: E402
     APP0_OFFSET,
@@ -291,8 +301,8 @@ def command_check(_args: argparse.Namespace) -> int:
 
 # -- Tasmota -------------------------------------------------------------------
 
-def check_tasmota_files(files: dict[str, bytes]) -> None:
-    """Refuse a release whose ESP32-C3 files would not fit the conversion.
+def check_tasmota_files(files: dict[str, bytes], chip: chips.Chip = chips.ESP32C3) -> None:
+    """Refuse a release whose files for `chip` would not fit the conversion.
 
     The conversion writes the partition table it was reviewed with (the
     factory image's, byte for byte), the Safeboot into its partition and the
@@ -312,8 +322,8 @@ def check_tasmota_files(files: dict[str, bytes]) -> None:
     if factory[APP0_OFFSET:APP0_OFFSET + len(app)] != app:
         raise UpdateError("the factory image holds another app than the release's")
     try:
-        validate_native_image(safeboot, SAFEBOOT_SIZE, "the Safeboot")
-        validate_native_image(app, APP0_SIZE, "the app")
+        validate_native_image(safeboot, SAFEBOOT_SIZE, "the Safeboot", chip)
+        validate_native_image(app, APP0_SIZE, "the app", chip)
     except ValueError as exc:
         raise UpdateError(str(exc)) from exc
 
@@ -475,9 +485,9 @@ def build(builder: str, config_path: Path, version: str, workdir: Path) -> tuple
     return (out / "firmware.ota.bin").read_bytes(), (out / "bootloader" / "bootloader.bin").read_bytes()
 
 
-def check_esphome_app(image: bytes, label: str, release: str) -> dict[str, str]:
+def check_esphome_app(image: bytes, label: str, release: str, chip: chips.Chip = chips.ESP32C3) -> dict[str, str]:
     try:
-        esphome.check_app(image, label)
+        esphome.check_app(image, label, chip)
         if not imprint.has_placeholders(image):
             raise UpdateError(f"{label} has no untouched Wi-Fi placeholders")
         imprint.imprint(image, "Autoflash-check", "a-password")  # each found once, and writable
@@ -839,6 +849,185 @@ def command_esphome_beken(args: argparse.Namespace) -> int:
     return 0
 
 
+# -- the other Espressif plugs' firmware -----------------------------------------
+# What a plug of each chip needs is the same but for its ESPHome. Pinned in
+# firmware.json under the chip's key, and each plug's ESPHome under
+# "espressif_kinds".
+ESP32_INTERIM_TAG = "v15.6.0"  # the release the settings template's layout is checked against
+ESP32_INTERIM = chips.ESP32.interim_name  # small enough for the smallest stock slot, a TH Elite's
+BRIDGE_SOURCE = ROOT / "archive" / "bridge"
+FIRMWARE_BUILDER = "autoflash-firmware-build"
+FIRMWARE_BUILD_CACHE = ROOT / "captures" / "firmware-build"
+SAFEBOOT_ENV = "tasmota32-safeboot"
+
+
+def firmware_builder() -> str:
+    docker("build", "-q", "-t", FIRMWARE_BUILDER, "-f",
+           str(ROOT / "tools/espressif/firmware-build.Dockerfile"), str(ROOT / "tools/espressif/safeboot/repartition"))
+    return FIRMWARE_BUILDER
+
+
+def in_builder(script: str, *volumes: str) -> None:
+    """Run `script` in the build image, its toolchains kept between builds."""
+    cache = FIRMWARE_BUILD_CACHE / "platformio"
+    cache.mkdir(parents=True, exist_ok=True)
+    mounts = [arg for volume in (f"{cache}:/root/.platformio", *volumes) for arg in ("-v", volume)]
+    docker("run", "--rm", *mounts, firmware_builder(), "sh", "-ec", script)
+
+
+def esp32_tasmota(pins: dict[str, Any]) -> None:
+    """Official Tasmota's ESP32 files, of the release the ESP32-C3's are pinned to."""
+    release = pins["tasmota"]
+    names = {"factory": "tasmota32.factory.bin", "safeboot": "tasmota32-safeboot.bin", "app": "tasmota32.bin"}
+    base = f"https://github.com/{TASMOTA_REPO}/releases/download"
+    files = {key: download(f"{base}/{release['tag']}/{name}") for key, name in names.items()}
+    check_tasmota_files(files, chips.ESP32)
+    section = pins.setdefault("esp32", {})
+    section["tasmota"] = {"version": release["version"], "tag": release["tag"], "commit": release["commit"],
+                          "files": {key: {"name": names[key], "size": len(data), "sha256": sha256_bytes(data)}
+                                    for key, data in files.items()}}
+    url = f"{base}/{ESP32_INTERIM_TAG}/{ESP32_INTERIM}"
+    interim = download(url)
+    try:
+        validate_native_image(interim, 0x1A9000, "the interim Tasmota", chips.ESP32)
+    except ValueError as exc:
+        raise UpdateError(str(exc)) from exc
+    section["interim"] = {"url": url, "size": len(interim), "sha256": sha256_bytes(interim)}
+    print(f"  Tasmota {release['version']}, and {ESP32_INTERIM} of {ESP32_INTERIM_TAG} for part way through: pinned")
+
+
+def esp32_bridge(pins: dict[str, Any]) -> None:
+    source = FIRMWARE_BUILD_CACHE / "bridge"
+    shutil.rmtree(source, ignore_errors=True)
+    shutil.copytree(BRIDGE_SOURCE, source)
+    in_builder("cd /src && pio run -e autoflash-bridge-esp32 && chmod -R a+rwX /src", f"{source}:/src")
+    app = (source / ".pio/build/autoflash-bridge-esp32/firmware.bin").read_bytes()
+    try:
+        validate_native_image(app, 0x1F0000, "the bridge", chips.ESP32)
+    except ValueError as exc:
+        raise UpdateError(str(exc)) from exc
+    version = app_description(app)["version"]
+    publish(pins.setdefault("esp32", {}), "bridge", f"artifacts/autoflash-bridge-esp32-{version}.bin", app,
+            {"version": version})
+
+
+def esp32_recovery(pins: dict[str, Any]) -> None:
+    from tools.espressif.safeboot import configure_imprintable_safeboot as configure
+    from tools.espressif.safeboot.safeboot_migration import INTERIM_TASMOTA_COMMIT
+    work = FIRMWARE_BUILD_CACHE / "safeboot"
+    work.mkdir(parents=True, exist_ok=True)
+    (work / "user_config_override.h").write_bytes(configure.render_header(persist_settings=True))
+    in_builder(
+        "cd /work && { [ -d t/.git ] || { git init -q t && git -C t remote add origin "
+        "https://github.com/arendst/Tasmota.git; }; } && cd t && "
+        f"git fetch -q --depth 1 origin {INTERIM_TASMOTA_COMMIT} && git reset -q --hard FETCH_HEAD && git clean -qfdx -e .pio && "
+        "git apply /patches/volatile-wifi-defaults.patch && git apply /patches/persist-settings.patch && "
+        f"cp /work/user_config_override.h tasmota/ && pio run -e {SAFEBOOT_ENV} && chmod -R a+rwX /work",
+        f"{work}:/work", f"{ROOT}/tools/espressif/safeboot/repartition/recovery-safeboot:/patches:ro")
+    image = imprint.redact_build_paths((work / "t/.pio/build" / SAFEBOOT_ENV / "firmware.bin").read_bytes())
+    check = work / "recovery.bin"
+    check.write_bytes(image)
+    code = subprocess.call([sys.executable, str(ROOT / "tools/espressif/safeboot/validate_imprintable_safeboot.py"),
+                            str(check), "--chip-id", str(chips.ESP32.chip_id)],
+                           env={**os.environ, "PYTHONPATH": str(ROOT)})
+    if code:
+        raise UpdateError("the recovery Safeboot is not publishable")
+    publish(pins.setdefault("esp32", {}), "recovery", "artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin",
+            image, {"tasmota_commit": INTERIM_TASMOTA_COMMIT})
+
+
+def esp32_mover(pins: dict[str, Any]) -> None:
+    release = pins["esphome"]["image"]["esphome"]
+    builder = esphome_builder(release)
+    BUILD_CACHE.mkdir(parents=True, exist_ok=True)
+    config = ROOT / "devices/esp32/mover.yaml"
+    version = config_version(config.read_text(encoding="utf-8"))
+    app, bootloader = build(builder, config, version, BUILD_CACHE)
+    described = check_esphome_app(app, "the mover built", release, chips.ESP32)
+    room = APP0_OFFSET - 0x20000
+    if len(app) > room:
+        raise UpdateError(f"the mover is {len(app):,} bytes: {room:,} fit in front of Tasmota")
+    section = pins.setdefault("esp32", {})
+    record = {"config": "devices/esp32/mover.yaml", "version": version, "esphome": release,
+              "esp_idf": described["esp_idf"], "builder": builder}
+    publish(section, "mover", f"artifacts/autoflash-mover-esp32-{version}.bin", app, record)
+    publish(section, "bootloader", f"artifacts/esphome-esp32-bootloader-{version}.bin", bootloader, record)
+
+
+def esp32_template(pins: dict[str, Any]) -> None:
+    """The settings template of the interim Tasmota: its record as it starts with
+    no settings, read from its /dl on an emulated plug into
+    captures/firmware-build/ (docs/adding-a-device.md), with nothing of any network."""
+    record = (FIRMWARE_BUILD_CACHE / "template-esp32.bin").read_bytes()
+    template = tasmota_settings.make_template(record)
+    found = tasmota_settings.problems(template, chips.ESP32.config_version)
+    if found:
+        raise UpdateError("the settings template is not usable: " + "; ".join(found))
+    name = tasmota_settings.template_path(ROOT, chips.ESP32).relative_to(ROOT).as_posix()
+    publish(pins.setdefault("esp32", {}), "settings_template", name, template, {})
+
+
+def esp32_tables(pins: dict[str, Any]) -> None:
+    """Sonoff's partition tables for the layouts that are not the S60's, from
+    the public dumps of plugs on them: they hold nothing of any one plug."""
+    from tools.espressif.emulator import public_dump
+    for key, dump in (("sonoff-nspanel", "sonoff-nspanel"), ("sonoff-th-elite", "sonoff-th-elite")):
+        layout = layouts.of(key)
+        table = public_dump.fetched(public_dump.DUMPS[dump])[TABLE_OFFSET:TABLE_OFFSET + TABLE_SIZE]
+        if sha256_bytes(table) != layout.table_sha256:
+            raise UpdateError(f"the public dump's table is not the {key} layout's")
+        publish(pins.setdefault("esp32", {}), f"table_{key}", layout.table_file, table, {})
+
+
+ESP32_PARTS = {"tables": esp32_tables, "template": esp32_template, "tasmota": esp32_tasmota, "bridge": esp32_bridge, "recovery": esp32_recovery, "mover": esp32_mover}
+
+
+def command_esp32(args: argparse.Namespace) -> int:
+    unknown = set(args.parts) - set(ESP32_PARTS)
+    if unknown:
+        raise UpdateError(f"no such part: {', '.join(sorted(unknown))}")
+    pins = load_pins()
+    for part in args.parts or ESP32_PARTS:
+        print(f"{part}:")
+        ESP32_PARTS[part](pins)
+        save_pins(pins)
+    left_to_do(["artifacts/README.md: each file's row (name, SHA-256)",
+                "NOTICES.md: the files' names and sources",
+                "python3 tests/run.py, then a conversion in the emulator"])
+    return 0
+
+
+def command_esphome_kind(args: argparse.Namespace) -> int:
+    """ESPHome for an Espressif plug other than the S60, from its folder."""
+    kind = kinds.find(args.plug)
+    chip = chips.of(kind.chip)
+    release = stable_release(ESPHOME_REPO, args.version)["tag_name"]
+    pins = load_pins()
+    section = pins.setdefault("espressif_kinds", {}).setdefault(kind.key, {})
+    config_path = ROOT / kind.folder / "esphome.yaml"
+    config = config_path.read_text(encoding="utf-8")
+    current = section.get("esphome", {})
+    version = args.image_version or (next_minor(current["version"]) if current else config_version(config))
+    builder = esphome_builder(release)
+    print(f"ESPHome {release} for the {kind.name}: {builder}")
+    check_esphome_internals(builder)
+    BUILD_CACHE.mkdir(parents=True, exist_ok=True)
+    app, _bootloader = build(builder, config_path, version, BUILD_CACHE)
+    described = check_esphome_app(app, "the ESPHome built", release, chip)
+    if args.dry_run:
+        print("\nBuilt and checked; nothing published (--dry-run).")
+        return 0
+    config_path.write_text(as_built(config, version), encoding="utf-8")
+    publish(section, "esphome", f"artifacts/esphome-{kind.key}-imprintable-{version}.bin", app,
+            {"config": f"{kind.folder}/esphome.yaml", "version": version, "esphome": release,
+             "esp_idf": described["esp_idf"], "builder": builder,
+             **builds_record(app, "the ESPHome built", current, version)})
+    save_pins(pins)
+    left_to_do([f"artifacts/README.md: the file's row, {kind.folder}/esphome.md: its release",
+                "python3 tests/run.py, then a conversion in the emulator"])
+    return 0
+
+
 # -- what is written about it ----------------------------------------------------
 #
 # Each update writes what it changes into the docs the tests hold to it
@@ -983,9 +1172,12 @@ def main(argv: list[str] | None = None) -> int:
                               help="publish this build's bootloader where it differs (see the docs first)")
     build_parser.add_argument("--dry-run", action="store_true", help="build and check, publish nothing")
     build_parser.add_argument("--no-docs", action="store_true", help="leave the docs to be written by hand")
-    build_parser.add_argument("--plug", choices=sorted(BEKEN_BUILDS),
-                              help="a Beken plug's ESPHome (on LibreTiny) instead of the S60's")
+    build_parser.add_argument("--plug", choices=sorted(kind.key for kind in kinds.EVERY if kind is not kinds.SONOFF_S60),
+                              help="another plug's ESPHome instead of the S60's")
     build_parser.set_defaults(run=command_esphome)
+    esp32 = commands.add_parser("esp32", help="what any plug with a classic ESP32 needs")
+    esp32.add_argument("parts", nargs="*", help=f"of {', '.join(ESP32_PARTS)} (default: all of them)")
+    esp32.set_defaults(run=command_esp32)
     openbeken = commands.add_parser("openbeken", help="build and publish OpenBeken for a Beken plug")
     openbeken.add_argument("--plug", choices=sorted(BEKEN_BUILDS), default="sonoff-s61")
     openbeken.add_argument("--commit", help="OpenBK7231T_App's commit (default: the one pinned, else main's head)")
@@ -994,8 +1186,8 @@ def main(argv: list[str] | None = None) -> int:
     openbeken.set_defaults(run=command_openbeken)
     args = parser.parse_args(argv)
     if args.command == "esphome" and args.plug:
-        args.run = command_esphome_beken
-    if shutil.which("docker") is None and args.command in ("esphome", "openbeken"):
+        args.run = command_esphome_beken if args.plug in BEKEN_BUILDS else command_esphome_kind
+    if shutil.which("docker") is None and args.command in ("esphome", "openbeken", "esp32"):
         print("Firmware is built in Docker images: Docker is needed.", file=sys.stderr)
         return 2
     try:

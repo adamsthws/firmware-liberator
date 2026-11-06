@@ -1,4 +1,4 @@
-"""The Espressif routes (the Sonoff S60): every step of every direction,
+"""The Espressif routes: every step of every direction,
 and what the runner needs to know of each - which write to the plug, which
 may be tried again, what each is called and what it leaves behind.
 """
@@ -27,8 +27,8 @@ POINT_OF_NO_RETURN = "C2"
 def published_version(kind: kinds.Kind, firmware: str) -> str | None:
     """The release of `firmware` this tool installs on a plug of `kind`: its
     own ESPHome's, and the official Tasmota it pins."""
-    return {"esphome": str(esphome.PINS["image"]["version"]),
-            "tasmota": tasmota.OFFICIAL_TASMOTA_VERSION}.get(firmware)
+    return {"esphome": str(esphome.image_pin(kind)["version"]),
+            "tasmota": str(esphome.chip_of(kind).pin("tasmota")["version"])}.get(firmware)
 
 
 def resume_check(ctx: Context) -> None:
