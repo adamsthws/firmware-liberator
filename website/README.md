@@ -22,8 +22,8 @@ them into a site.
 
 ## Addresses
 
-Every Markdown file git tracks is a page, but `CLAUDE.md` and `.github/`'s
-templates. A page's address is its path without `.md`: `docs/emulator.md` is
+Every Markdown file git tracks is a page, but `.github/`'s templates. A page's
+address is its path without `.md`: `docs/emulator.md` is
 `/docs/emulator`, a folder's `README.md` is the folder (`/devices/sonoff-s61`),
 and the README is `/`. A link to another page goes to its address; a link to
 anything else in the repository - the tool, a config, `LICENSE` - goes to it
