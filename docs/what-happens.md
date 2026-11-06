@@ -284,7 +284,7 @@ Sonoff writes the plug's own firmware and settings from its backup into the
 first half, checks them, and switches to them.
 
 - **From ESPHome**, the tool sends the startup firmware to ESPHome as an
-  ordinary ESPHome update, with your Wi-Fi written in. From 1.1.0, this project's
+  ordinary ESPHome update, with your Wi-Fi written in. This project's
   ESPHome gives its Wi-Fi name and password through its native API - encrypted,
   where the API has an encryption key, with that key. With an ESPHome that does
   not, the tool takes them from the plug's Sonoff backup on your computer - the
@@ -331,7 +331,7 @@ with `--esphome-web-password`, and `--esphome-api-key`.
 
 On a plug running Tasmota, the tool reads the Wi-Fi signal first, before anything
 is changed. On ESPHome it also reads it before anything is written: from its
-Wi-Fi signal sensor, which this project's ESPHome has from 1.1.0, or else from
+Wi-Fi signal sensor, which this project's ESPHome has, or else from
 what ESPHome prints of its configuration when asked through its native API -
 encrypted, with its key, where it has one. On an ESPHome that gives neither, the
 tool reads it once the full Tasmota is running, as the startup firmware cannot

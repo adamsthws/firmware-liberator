@@ -343,7 +343,7 @@ class ESPHomeTitleTests(unittest.TestCase):
 
 
 class SignalSensorTests(unittest.TestCase):
-    """An ESPHome built with the Wi-Fi signal sensor (ours from 1.1.0) gives the
+    """An ESPHome built with the Wi-Fi signal sensor (as ours is) gives the
     plug's signal; one without it gives nothing, and the run goes on."""
 
     def serve(self, pages):
@@ -505,7 +505,7 @@ class WifiActionTests(unittest.TestCase):
 
     def test_the_action_gives_the_name_and_password(self):
         # Answered only once it is called by the key it was listed with - by
-        # its name from 1.2.0, or 1.1.0's.
+        # its name, or the one it first had.
         for name in (b"autoflash_wifi", b"s60_wifi"):
             port = self.serve((self.LIST, self.listed((b"other", 7), (name, 0xCAFEF00D))),
                               (self.call(0xCAFEF00D), self.answer(True, b'{"ssid":"Home-2G","password":"pw"}')))
@@ -1205,6 +1205,13 @@ class ESPHomeUpdateTests(RouteTestCase):
         self.assertFalse(update.older("1.10.0", "1.9.0"))
         self.assertFalse(update.older("1.6.0", "1.6.0"))
         self.assertFalse(update.older("", "1.6.0"))
+
+    def test_openbekens_builds_of_a_release_are_compared_too(self):
+        self.assertTrue(update.older("1.1.0", "1.18.320-1"))
+        self.assertTrue(update.older("1.18.320-1", "1.18.320-2"))
+        self.assertTrue(update.older("1.18.320-2", "1.18.321-1"))
+        self.assertFalse(update.older("1.18.320-2", "1.18.320-2"))
+        self.assertFalse(update.older("16.0.0(release-tasmota32)", "16.0.0"))
 
     def check(self, versions, confirm=0.0):
         ctx = self.ctx(source="outdated", firmware="esphome", update_from="1.4.0", update_to="1.6.0",

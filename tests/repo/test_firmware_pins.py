@@ -133,6 +133,43 @@ class BekenPinTests(unittest.TestCase):
                 self.assertIn(pin["version"].encode("ascii"), firmware)
                 self.assertIn(pin["esphome"].encode("ascii"), firmware)
 
+    def test_openbekens_pin_says_its_upstream_release_and_the_readme_badge_shows_it(self):
+        pin = PINS["beken"]["sonoff-s61"]["openbeken"]
+        self.assertRegex(pin["release"], r"^\d+\.\d+\.\d+$")
+        self.assertRegex(pin["version"], rf"^{re.escape(pin['release'])}-[1-9]\d*$")
+        self.assertEqual(rbl.header((ROOT / pin["file"]).read_bytes()).version, pin["version"])
+        self.assertTrue(pin["file"].endswith(f"-{pin['version']}.rbl"), pin["file"])
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("query=%24.beken%5B%22sonoff-s61%22%5D.openbeken.release&label=Installs%20OpenBeken", readme)
+
+    def test_a_version_counts_this_projects_builds_on_a_release(self):
+        self.assertEqual(uf.build_version("1.18.320", {}), "1.18.320-1")
+        self.assertEqual(uf.build_version("1.18.320", {"version": "1.1.0"}), "1.18.320-1")
+        self.assertEqual(uf.build_version("1.18.320", {"version": "1.18.320-1"}), "1.18.320-2")
+        self.assertEqual(uf.build_version("1.18.321", {"version": "1.18.320-2"}), "1.18.321-1")
+
+    def test_each_esphome_version_says_the_release_it_is_built_on(self):
+        pins = [PINS["esphome"]["image"], *(section["esphome"] for section in PINS["beken"].values()),
+                *(section["esphome"] for section in PINS["espressif_kinds"].values())]
+        for pin in pins:
+            self.assertRegex(pin["version"], rf"^{re.escape(pin['esphome'])}-[1-9]\d*$", pin["file"])
+            self.assertTrue(pin["file"].endswith(f"-{pin['version']}{Path(pin['file']).suffix}"), pin["file"])
+
+    def test_openbekens_release_is_the_latest_at_or_before_the_commit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp)
+
+            def commit(message):
+                uf.git("-c", "user.name=test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false",
+                       "commit", "--quiet", "--allow-empty", "-m", message, cwd=source)
+
+            uf.git("init", "--quiet", cwd=source)
+            commit("a release")
+            uf.git("-c", "tag.gpgsign=false", "tag", "1.18.320", cwd=source)
+            self.assertEqual(uf.openbeken_release(source), "1.18.320")
+            commit("after it")
+            self.assertEqual(uf.openbeken_release(source), "1.18.320")
+
     def test_no_older_build_is_left_in_artifacts(self):
         published = {Path(pin["file"]).name for section in PINS.get("beken", {}).values() for pin in section.values()}
         for path in (ROOT / "artifacts").glob("*.rbl"):
@@ -306,21 +343,24 @@ class ESPHomeDocTests(unittest.TestCase):
         new = {"file": "artifacts/esphome-sonoff-s60-imprintable-9.9.0.bin", "version": "9.9.0",
                "esphome": esphome, "esp_idf": "5.5.9", "sha256": "0" * 64}
         with mock.patch.object(uf, "released", return_value=True):
-            texts, _version = uf.esphome_doc_texts(old, new, bootloader_same=True)
+            texts, _version = uf.esphome_doc_texts(old, new)
         return old, texts
 
     def test_a_new_release_builds_the_same_config(self):
-        old, texts = self.texts("2099.1.0")
+        _, texts = self.texts("2099.1.0")
         self.assertIn("ESPHome for the S60 is 9.9.0: the same config, built with ESPHome", texts[uf.CHANGELOG])
-        self.assertIn("the config is unchanged but for its version", " ".join(texts[uf.ARTIFACTS_README].split()))
 
     def test_the_same_release_builds_a_changed_config(self):
-        old, texts = self.texts(uf.load_pins()["esphome"]["image"]["esphome"])
+        _, texts = self.texts(uf.load_pins()["esphome"]["image"]["esphome"])
         self.assertIn("ESPHome for the S60 is 9.9.0: a change to its config, built with ESPHome", texts[uf.CHANGELOG])
         self.assertNotIn("the same config", texts[uf.CHANGELOG].split("## ")[1])
-        readme = " ".join(texts[uf.ARTIFACTS_README].split())
-        self.assertIn(f"ESPHome 9.9.0 is a change to {old['version']}'s config", readme)
-        self.assertNotIn("9.9.0 is " + old["version"] + "'s config built", readme)
+
+    def test_the_docs_say_what_it_is_and_not_how_it_got_there(self):
+        old, texts = self.texts("2099.1.0")
+        readme = texts[uf.ARTIFACTS_README]
+        self.assertIn("esphome-sonoff-s60-imprintable-9.9.0.bin", readme)
+        self.assertNotIn(old["file"], readme)
+        self.assertEqual(readme.count("\n\n"), uf.ARTIFACTS_README.read_text(encoding="utf-8").count("\n\n"))
 
 
 class SettledReleaseTests(unittest.TestCase):
@@ -572,14 +612,14 @@ class UpdateCommandTests(unittest.TestCase):
             code, errors = self.run_main("esphome", *argv)
         return code, errors, built
 
-    def test_esphome_publishes_the_image_at_the_next_minor_in_place_of_the_old(self):
+    def test_esphome_publishes_the_image_as_a_build_on_the_release_in_place_of_the_old(self):
         code, _, built = self.esphome("--no-docs")
         self.assertEqual(code, 0)
-        self.assertEqual(built, [("esphome.yaml", "1.5.0")])
-        new = "artifacts/esphome-sonoff-s60-imprintable-1.5.0.bin"
+        self.assertEqual(built, [("esphome.yaml", "2099.1.0-1")])
+        new = "artifacts/esphome-sonoff-s60-imprintable-2099.1.0-1.bin"
         pin = self.pins()["esphome"]["image"]
         self.assertEqual((pin["file"], pin["version"], pin["esphome"], pin["builder"]),
-                         (new, "1.5.0", "2099.1.0", "esphome:2099.1.0@sha256:d"))
+                         (new, "2099.1.0-1", "2099.1.0", "esphome:2099.1.0@sha256:d"))
         self.assertEqual(pin["sha256"], sha256_bytes((self.root / new).read_bytes()))
         self.assertEqual(pin["built"], "2099-01-01 12:00:00 +0000")
         self.assertFalse((self.root / "artifacts/esphome-sonoff-s60-imprintable-1.4.0.bin").exists())
@@ -587,15 +627,15 @@ class UpdateCommandTests(unittest.TestCase):
         self.assertIn(f"{pin['sha256']}  {Path(new).name}", sums)
         self.assertNotIn("imprintable-1.4.0", sums)
         self.assertIn(f"!{new}\n", (self.root / ".gitignore").read_text(encoding="utf-8"))
-        self.assertIn('version: "1.5.0"', (self.root / "devices/sonoff-s60/esphome.yaml").read_text(encoding="utf-8"))
+        self.assertIn('version: "2099.1.0-1"', (self.root / "devices/sonoff-s60/esphome.yaml").read_text(encoding="utf-8"))
         # Neither the mover nor the bootloader, byte for byte the same, is touched.
         self.assertEqual(self.pins()["esphome"]["mover"], self.before_pins()["mover"])
         self.assertEqual(self.pins()["esphome"]["bootloader"]["version"], "1.2.0")
 
-    def test_esphome_builds_the_mover_and_the_version_asked_for(self):
-        code, _, built = self.esphome("--no-docs", "--mover", "--image-version", "2.0.0")
+    def test_esphome_builds_the_mover_at_its_own_next_minor(self):
+        code, _, built = self.esphome("--no-docs", "--mover")
         self.assertEqual(code, 0)
-        self.assertEqual(built, [("esphome.yaml", "2.0.0"), ("mover.yaml", "1.2.0")])
+        self.assertEqual(built, [("esphome.yaml", "2099.1.0-1"), ("mover.yaml", "1.2.0")])
         self.assertEqual(self.pins()["esphome"]["mover"]["file"], "artifacts/autoflash-mover-1.2.0.bin")
 
     def test_esphome_keeps_the_published_bootloader_unless_told(self):
@@ -607,7 +647,7 @@ class UpdateCommandTests(unittest.TestCase):
         self.assertEqual(self.esphome("--no-docs", "--new-bootloader", bootloader=b"another")[0], 0)
         pin = self.pins()["esphome"]["bootloader"]
         self.assertEqual((pin["file"], pin["sha256"]),
-                         ("artifacts/esphome-sonoff-s60-bootloader-1.5.0.bin", sha256_bytes(b"another")))
+                         ("artifacts/esphome-sonoff-s60-bootloader-2099.1.0-1.bin", sha256_bytes(b"another")))
         self.assertFalse((self.root / "artifacts/esphome-sonoff-s60-bootloader-1.2.0.bin").exists())
 
     def test_esphome_dry_run_changes_nothing(self):

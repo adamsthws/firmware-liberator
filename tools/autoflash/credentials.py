@@ -25,7 +25,7 @@ KEYS = {
     "EWELINK_PASSWORD": "ewelink-password",
     "AUTOFLASH_SUDO_PASSWORD": "sudo-password",
     # Only for a plug on an ESPHome that cannot say its Wi-Fi password (one
-    # older than this project's 1.1.0, or whose API has an encryption key):
+    # of this project's first builds, or whose API has an encryption key):
     # no password given means an open network.
     "AUTOFLASH_WIFI_SSID": "wifi-name",
     "AUTOFLASH_WIFI_PASSWORD": "wifi-password",

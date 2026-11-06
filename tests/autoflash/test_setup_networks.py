@@ -35,7 +35,7 @@ class NamesTests(SetupNetworkTestCase):
         self.assertEqual(names.our_setup_network(self.ctx()), "autoflash-recovery-CDEF")
         self.assertEqual(names.mover_network_hint(self.ctx()), "autoflash-recovery-CDEF")
         # And by the names they had before: the installer before 4.4.4 and
-        # 4.4.3, the mover before 1.1.0.
+        # 4.4.3, the first movers.
         self.assertEqual(names.bridge_networks(self.ctx()),
                          ("autoflash-recovery-CDEF", "Sonoff-Setup-CDEF", "S60-OTA-Bridge"))
         self.assertEqual(names.mover_networks(self.ctx()),

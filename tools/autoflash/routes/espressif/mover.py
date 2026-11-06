@@ -202,7 +202,7 @@ def step_esphome_update(ctx: Context) -> dict[str, Any]:
 
 def step_esphome_updated(ctx: Context) -> dict[str, Any]:
     """U2 - the update started, joined the Wi-Fi and kept; then given the
-    plug's factory calibration, as I2 does, which a release before 1.4.0 did
+    plug's factory calibration, as I2 does, which its first builds did
     not take."""
     result = update.wait_for_update(ctx, confirm=ESPHOME_CONFIRMS_AFTER)
     if not result.get("dry_run"):
@@ -219,8 +219,8 @@ def step_startup_from_esphome(ctx: Context, *, again: bool = False) -> dict[str,
     if runs.run_source(ctx.state) in ("esphome", "midway") and not again:
         unlock.unlock_esphome(ctx)
         # The earliest reading of a run from ESPHome, before anything is
-        # written: from its Wi-Fi signal sensor (ours from 1.1.0), else from
-        # its native API - encrypted, given its key (ours, 1.0.0 too, has
+        # written: from its Wi-Fi signal sensor (ours has one), else from
+        # its native API - encrypted, given its key (ours has
         # none). From an ESPHome that gives neither, the first is at D4.
         ctx.state.capture("X1.signal_dbm", join.note_signal(
             ctx, esphome.signal(host, ctx.esphome_key) if host else None, [

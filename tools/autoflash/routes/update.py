@@ -32,10 +32,11 @@ if TYPE_CHECKING:
 
 
 def older(version: str, than: str) -> bool:
-    """Whether `version` (1.4.0) is an earlier release than `than`; False
-    where either is not one of ours, all numbers."""
+    """Whether `version` (1.4.0, or OpenBeken's 1.18.320-1: the release, then
+    this project's build of it) is an earlier release than `than`; False where
+    either is not one of ours, all numbers."""
     try:
-        return tuple(map(int, version.split("."))) < tuple(map(int, than.split(".")))
+        return tuple(map(int, re.split(r"[.-]", version))) < tuple(map(int, re.split(r"[.-]", than)))
     except ValueError:
         return False
 

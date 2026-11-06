@@ -138,7 +138,7 @@ class Context:
         From D1 the plug runs Tasmota connected to the home network, so the
         details are read from there rather than typed - and they are known to
         work, which typed ones are not until F2 tries them.  ESPHome gives
-        them too, from 1.1.0 (its Wi-Fi action); from an ESPHome or mover
+        them too (its Wi-Fi action); from an ESPHome or mover
         that does not, they come from the plug's Sonoff backup, when this
         computer has one and the plug is on that network still.  Asking is the
         fallback, with `why` saying what it is for; `--wifi` forces it.

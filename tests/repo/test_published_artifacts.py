@@ -94,7 +94,7 @@ class PublishedESPHomeTests(unittest.TestCase):
         # one's, kept when a later build's differed (docs/updating-firmware.md).
         built = esphome.PINS["bootloader"]["version"]
         self.assertTrue(esphome.BOOTLOADER.name.endswith(f"-{built}.bin"), "named for its build")
-        as_numbers = lambda version: tuple(int(part) for part in version.split("."))  # noqa: E731
+        as_numbers = lambda version: tuple(int(part) for part in re.split(r"[.-]", version))  # noqa: E731
         self.assertLessEqual(as_numbers(built), as_numbers(esphome.PINS["image"]["version"]))
 
     def test_the_esphome_image_can_have_the_wifi_written_in(self):

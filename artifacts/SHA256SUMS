@@ -5,10 +5,10 @@ d63f03cb99540407037f36dc8155ec9b02d24425d3b02c52299713233e98f4a5  tasmota-settin
 3792bb665916d69c410c9fd10f69d1a6968e61f2a9e4969829a1c49f9ea6f433  esphome-sonoff-s60-bootloader-1.2.0.bin
 f6e131e1599c886d742c151c3ba3f84a285bba462b438c36b611d577e01ad243  autoflash-mover-1.1.0.bin
 f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf  sonoff-s60-partition-table.bin
-07f45d62f32b8f89f782ae6460253c7dc17fdbaceb20b2521e6db2e59a254687  openbeken-sonoff-s61-1.1.0.rbl
-ff4dbbccb202e9e663340f47b1797c027b0a3a1eb24462ad7460597a645f7875  esphome-sonoff-s60-imprintable-1.6.0.bin
-2c61622bcbbc11b7ee1b1e9b082a73f4d35c19570471efb7b0e41a75ad181172  esphome-sonoff-s61-1.2.0.rbl
-417f65e91e569285568374fcb8ef5f47cbbd8e6d4d4f8dc9ad9f3ebf0b4da5d0  esphome-sonoff-pow-elite-imprintable-1.0.0.bin
+ec857a37db8511cfc6d8a437bf0e9127db89ca29a30fa9637d20aba669fb5add  openbeken-sonoff-s61-1.18.320-1.rbl
+7793c32e3f2e77294d2a9f929875063d404d832e05d7fbe5ed54fb37cd0e7762  esphome-sonoff-s60-imprintable-2026.10.0-1.bin
+b6591fde2e0ff5fba2ef3afc699c82437d7f151f9bd88b2c2a4ffdf069e332fb  esphome-sonoff-s61-2026.10.0-1.rbl
+be48fba7c873adeeb3c1dba401d57c4fc2be4d68f8d9928ca7a1bc9b28bc454d  esphome-sonoff-pow-elite-imprintable-2026.10.0-1.bin
 075fdc993d5004a747fd3cdc5705e3d464df80d2ab003aae66db17b2a98d1d42  autoflash-mover-esp32-1.0.0.bin
 b52ccf9f4602c83db673d44e84d391c44fed6d24329d4fefb9fc0d72a95a0d4f  esphome-esp32-bootloader-1.0.0.bin
 a1e735de9fc2c4dfefb44e24901a41ac0958e6da1a6db68892cb1dba9c60e19d  autoflash-bridge-esp32-4.4.4.bin
@@ -16,6 +16,6 @@ f1a25251f7756303e3d65061f9429d1f4da81968b89737d3d5d7364ea959860c  autoflash-reco
 7c790d6d445756cf7124841136a676741fbad33020706a8dd477e3dc51fbef49  tasmota-settings-template-esp32-15.6.0.0.bin
 3c6436bcbd529015fcb3fd98565b7753199910b3dba30c9d6ccce77d08e09d70  sonoff-nspanel-partition-table.bin
 36d7dc76c5d2459ea174e48aaa19ff93dcb8130c43b124bba409d78b9c01c1b6  sonoff-th-elite-partition-table.bin
-24a35177a35f76a8c6ca230c3377614ede3d0bddba1ff7b65c3d013f8ecbcd45  esphome-sonoff-powct-imprintable-1.0.0.bin
-0e5efeb987ceb8c9120e4d4fbe52e98171594a71e497dd9e503a1c2a4fb3b875  esphome-sonoff-th-elite-imprintable-1.0.0.bin
-f9c5d89c3eda90c00380d349b090f93ca992999e035e82476adddc4daa278e67  esphome-sonoff-dualr3-imprintable-1.0.0.bin
+00e34904e976bfe61230b7ef53f7e9c2331e8d7fbd9338e2122b85f7dd23f6c9  esphome-sonoff-powct-imprintable-2026.10.0-1.bin
+cbfba34d4314405a9dfb22a736455304c64cbeaa7ad02b4b9799867e1238e79c  esphome-sonoff-th-elite-imprintable-2026.10.0-1.bin
+76b94dbd480650acd4eb9b58099b81cc5ec1988b3d941a6ddcfa22ba49cf1d0b  esphome-sonoff-dualr3-imprintable-2026.10.0-1.bin

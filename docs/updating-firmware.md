@@ -14,7 +14,7 @@ by hand takes the same steps ([after that](#by-hand)).
 | ESPHome for the S60 (`artifacts/esphome-sonoff-s60-imprintable-*.bin`) | for good | every ESPHome release | `firmware.json` |
 | ESPHome's bootloader (`artifacts/esphome-sonoff-s60-bootloader-*.bin`) | for good | only when it has to change | `firmware.json` |
 | The mover (`artifacts/autoflash-mover-*.bin`) | a minute or two | only when its config changes | `firmware.json` |
-| OpenBeken for the S61 (`artifacts/openbeken-sonoff-s61-*.rbl`) | for good | by hand: OpenBeken has no releases to settle on | `firmware.json` |
+| OpenBeken for the S61 (`artifacts/openbeken-sonoff-s61-*.rbl`) | for good | by hand: the weekly update does not follow OpenBeken's releases | `firmware.json` |
 | ESPHome for the S61 (`artifacts/esphome-sonoff-s61-*.rbl`) | for good | every ESPHome release, by hand so far | `firmware.json` |
 | The Berry Tasmota, the recovery Safeboot, the settings template, the bridge | minutes | no | [`artifacts/README.md`](../artifacts/README.md) says where, and how each is changed |
 
@@ -139,7 +139,7 @@ Where it stops:
 
 ```sh
 python3 tools/repo/update_firmware.py esphome            # the latest release
-python3 tools/repo/update_firmware.py esphome 2026.10.0 --image-version 1.3.0
+python3 tools/repo/update_firmware.py esphome 2026.10.0
 ```
 
 A change to `devices/sonoff-s60/esphome.yaml` is published the same way, naming the
@@ -154,8 +154,9 @@ builds:
   options - the fixed key its last `on_boot` lambda saves the Wi-Fi under, and
   the layout of what it saves ([devices/sonoff-s60/esphome.md](../devices/sonoff-s60/esphome.md) says
   why) - are as they were; if not, the lambda must be checked first;
-- the config's `project` version is raised (the next minor version, or
-  `--image-version`), its `package_import_url` is set to the release it will
+- the config's `project` version is raised (`2026.10.0-2` is this project's
+  second build on ESPHome 2026.10.0, the number starting again at 1 on a new
+  release), its `package_import_url` is set to the release it will
   come out in, the top of `CHANGELOG.md` or the next after it, and it is built.
   A plug adopted into Home Assistant keeps to that release until its owner
   names a newer one, and the release workflow refuses a version whose configs
@@ -192,7 +193,7 @@ start ([openbeken.md](../devices/sonoff-s61/openbeken.md#updating)).
 
 ```sh
 python3 tools/repo/update_firmware.py openbeken                       # the pinned OpenBeken commit
-python3 tools/repo/update_firmware.py openbeken --commit <sha> --image-version 1.1.0
+python3 tools/repo/update_firmware.py openbeken --commit <sha>
 python3 tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-s61
 ```
 
@@ -210,11 +211,12 @@ image (`tools/beken/openbeken/build.Dockerfile`, Ubuntu 24.04: the SDK's own
 toolchain wants a newer GLIBC than OpenBeken's image has). It checks the
 image is an rt_ota app of the version asked, fits the download slot, and
 holds each command the driver registers; then it publishes it, recording the
-OpenBeken and SDK commits, the hashes of the driver, the table and the
-patches, and the build image. OpenBeken has no releases, so nothing takes it
-by itself: update it by hand, on a commit that has been out a while. The version is this
-project's for the image (`--image-version`, the next minor by default), not
-OpenBeken's.
+OpenBeken and SDK commits, the OpenBeken release the commit is (or the latest
+before it, which the README's badge shows), the hashes of the driver, the table
+and the patches, and the build image. Nothing takes OpenBeken by itself: update
+it by hand, on a commit that has been out a while. The version comes from the
+commit: `1.18.320-2` is this project's second build on OpenBeken's release
+1.18.320, the number starting again at 1 on a new release.
 
 `esphome --plug sonoff-s61` builds `devices/sonoff-s61/esphome.yaml` in
 ESPHome's image for the release, as the S60's is built, and takes
