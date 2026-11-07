@@ -101,9 +101,17 @@ function Start-Autoflash {
         }
     }
 
-    # What start.cmd does, run on this same PowerShell.
+    # What start.cmd does, run on this same PowerShell: the script as text, so
+    # no policy against script files stops it (start.cmd says how). The
+    # variable is this window's again afterwards.
     $powershell = (Get-Process -Id $PID).Path
-    & $powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path (Join-Path $folder "tools") "windows-start.ps1") @args
+    $before = $env:AUTOFLASH_START
+    $env:AUTOFLASH_START = Join-Path (Join-Path $folder "tools") "windows-start.ps1"
+    try {
+        & $powershell -NoProfile -ExecutionPolicy Bypass -Command '& ([scriptblock]::Create([IO.File]::ReadAllText($env:AUTOFLASH_START))) #' @args
+    } finally {
+        $env:AUTOFLASH_START = $before
+    }
 }
 
 Start-Autoflash @args

@@ -1,7 +1,8 @@
 """liberate.sh and liberate.ps1, the README's one line: the latest release is
 fetched, updated in place and started, and nothing of the user's - above
 all captures/, with the plugs' Sonoff backups - is ever touched. Against a
-GitHub of their own, on a port it picked."""
+GitHub of their own, on a port it picked. And start.cmd, which starts it on
+Windows as liberate.ps1 does."""
 
 import base64
 import http.server
@@ -11,6 +12,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import threading
@@ -22,9 +24,17 @@ ROOT = Path(__file__).resolve().parents[2]
 REPO = "adamsthws/firmware-liberator"
 # Windows PowerShell where there is no PowerShell 7: what every Windows runs the line on.
 POWERSHELL = shutil.which("pwsh") or (shutil.which("powershell") if os.name == "nt" else None)
-# The fake releases' start scripts: they write down how they were started.
+# The fake releases' start: on Windows the real windows-start.ps1, with a
+# windows-python.ps1 that gives it this Python. What the tool is started with
+# is written down, by the release's start.sh or its cli.py.
 START_SH = 'echo "$*" > "$(dirname "$0")/started"\n'
-START_PS1 = 'Set-Content (Join-Path (Split-Path $PSScriptRoot) "started") ($args -join " ")\n'
+START_PS1 = (ROOT / "tools" / "windows-start.ps1").read_text(encoding="utf-8")
+PYTHON_PS1 = ("function Get-ToolPython { '%s' }\nfunction Request-PythonRemoval { }\n"
+              % sys.executable.replace("'", "''"))
+CLI_PY = ("import pathlib, sys\n"
+          "pathlib.Path(__file__).resolve().parents[2].joinpath('started')"
+          ".write_text(' '.join(sys.argv[1:]), encoding='utf-8')\n"
+          "sys.exit(3 if 'fail' in sys.argv else 0)\n")
 
 
 class FakeGitHub:
@@ -100,8 +110,9 @@ class FakeGitHub:
 
 
 def release(extra=None):
-    return {"start.sh": START_SH, "tools/windows-start.ps1": START_PS1,
-            "tools/autoflash/__init__.py": "", "README.md": "readme", **(extra or {})}
+    return {"start.sh": START_SH, "tools/windows-start.ps1": START_PS1, "tools/windows-python.ps1": PYTHON_PS1,
+            "tools/autoflash/cli.py": CLI_PY, "tools/autoflash/__init__.py": "", "README.md": "readme",
+            **(extra or {})}
 
 
 class LiberateTests:
@@ -242,11 +253,71 @@ class LiberatePs1Tests(LiberateTests, unittest.TestCase):
         done = subprocess.run([POWERSHELL, "-NoProfile", "-EncodedCommand", encoded], env=self.env,
                               capture_output=True, text=True, timeout=120)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
-        self.assertEqual(self.started(), "")
+        self.assertEqual(self.started(), "run")
+
+    def test_the_start_is_run_as_text_and_gets_its_arguments(self):
+        # Not -File: a policy set for the whole computer stops a script file
+        # whatever -ExecutionPolicy says, and not text. (Setting one here would
+        # change the whole computer: tried by hand in the emulator's Windows.)
+        self.github.releases = {"v1.0.0": release()}
+        done = self.run_script("run", "--env-file", r"C:\my files\a.env")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(self.started(), r"run --env-file C:\my files\a.env")
+        self.assertNotIn("-File", (ROOT / "liberate.ps1").read_text(encoding="utf-8").split("What start.cmd does")[1])
+
+    def test_the_variable_naming_the_script_is_put_back(self):
+        self.github.releases = {"v1.0.0": release()}
+        done = subprocess.run([POWERSHELL, "-NoProfile", "-Command",
+                               f"$env:AUTOFLASH_START = 'mine'; . '{ROOT / 'liberate.ps1'}'; "
+                               "Write-Output \"after=$env:AUTOFLASH_START\""],
+                              env=self.env, capture_output=True, text=True, timeout=120)
+        self.assertIn("after=mine", done.stdout, done.stdout + done.stderr)
+        self.assertEqual(self.started(), "run")
 
     def run_script(self, *arguments):
         return subprocess.run([POWERSHELL, "-NoProfile", "-File", str(ROOT / "liberate.ps1"), *arguments], env=self.env,
                               capture_output=True, text=True, timeout=120)
+
+
+@unittest.skipIf(os.name != "nt", "start.cmd is Windows'")
+class StartCmdTests(unittest.TestCase):
+    """start.cmd starts windows-start.ps1 as text: its arguments reach the
+    tool as typed, and the tool's exit code is start.cmd's."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.folder = Path(tmp.name, "my checkout")   # a space, as a user's folder may have
+        for name, text in {**release(), "start.cmd": (ROOT / "start.cmd").read_text(encoding="utf-8")}.items():
+            (self.folder / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.folder / name).write_text(text, encoding="utf-8")
+
+    def start(self, *arguments):
+        # As typed in a terminal. /s: without it, cmd /c takes the first and
+        # last quote off a line with more than two.
+        line = subprocess.list2cmdline([str(self.folder / "start.cmd"), *arguments])
+        return subprocess.run(f'cmd /s /c "{line}"', capture_output=True, text=True, timeout=120)
+
+    def started(self):
+        return (self.folder / "started").read_text(encoding="utf-8")
+
+    def test_no_arguments_runs_a_conversion(self):
+        done = self.start()
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(self.started(), "run")
+
+    def test_arguments_reach_the_tool_as_typed(self):
+        done = self.start("run", "--env-file", r"C:\my files\a.env", "--verbose")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(self.started(), r"run --env-file C:\my files\a.env --verbose")
+
+    def test_the_tools_exit_code_is_start_cmds(self):
+        self.assertEqual(self.start("fail").returncode, 3)
+
+    def test_the_start_is_run_as_text(self):
+        # Not -File: a policy set for the whole computer stops a script file
+        # whatever -ExecutionPolicy says, and not text.
+        self.assertNotIn("-File", (ROOT / "start.cmd").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
