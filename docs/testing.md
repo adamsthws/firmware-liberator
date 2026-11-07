@@ -417,7 +417,9 @@ turn: when its run is about to need the cloud (the eWeLink steps, or the
 installer sent again), until the plug has downloaded the installer and
 started it - typically 30-60 s: Sonoff's firmware that loses eWeLink part way
 through the download gives it up. A run that ends
-gives up its turn too, and a later run has to ask for one again. Turns are given by how long the run can
+gives up its turn too, and a later run has to ask for one again. So does one
+whose plug has fetched nothing for a minute since its command went out: eWeLink
+does not pass a lost command on again, so the turn is of no more use. Turns are given by how long the run can
 wait: finding the plug in eWeLink first, then a plug back on Sonoff's
 firmware part way, then the rest, and last a C2 scenario's plug, whose turn
 starts before its run does. Between two plugs' turns there is a short pause
