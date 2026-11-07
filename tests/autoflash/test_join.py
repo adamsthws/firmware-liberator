@@ -1,10 +1,14 @@
 """The plug onto the Wi-Fi and found there (tools/autoflash/join.py)."""
+import contextlib
+import io
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
+from tests.autoflash.test_names import SetupNetworkTestCase
 from tools.autoflash import device, errors, hostsys, join, output, prompts, routes, setup_network
 from tools.autoflash.state import DONE, RunState
 
@@ -259,6 +263,39 @@ class SetupNetworkGoneTests(unittest.TestCase):
         hint = "tasmota-abcdef, tasmota-ABCDEF-NNNN, or ESP_ABCDF0"
         self.assertFalse(self.gone(False, ["ESP_ABCDF0"], network=hint))
         self.assertTrue(self.gone(False, ["Home"], network=hint))
+
+
+class LocateTests(SetupNetworkTestCase):
+    def test_a_plug_not_found_can_be_set_up_on_its_own_network_instead(self):
+        ctx = self.ctx()
+        ctx.state.set_input("plug_ip", "192.0.2.50")
+        ctx.finder = SimpleNamespace(poll=lambda: None)
+        ctx.set_plug_ip = lambda ip: ctx.state.set_input("plug_ip", ip)
+        offered = []
+
+        def choose(question, options, help_lines=()):
+            offered.extend(options)
+            return 2
+
+        with contextlib.redirect_stdout(io.StringIO()), \
+                mock.patch.object(time, "sleep"), \
+                mock.patch.object(time, "monotonic", side_effect=iter(range(0, 10_000, 100))), \
+                mock.patch.object(prompts, "wait_for_host", return_value=False), \
+                mock.patch.object(prompts, "ask_choice", side_effect=choose), \
+                mock.patch.object(join, "configure_plug_wifi", return_value="192.0.2.77") as setup:
+            self.assertEqual(join.locate_plug(ctx, setup=True), "192.0.2.77")
+        setup.assert_called_once_with(ctx, None)
+        self.assertIn("tasmota-ABCDEF-NNNN, or ESP_ABCDF0", offered[2])
+
+    def test_without_it_only_waiting_or_an_address_is_offered(self):
+        offered = []
+        with contextlib.redirect_stdout(io.StringIO()), \
+                mock.patch.object(prompts, "wait_for_host", return_value=False), \
+                mock.patch.object(prompts, "ask_choice",
+                                  side_effect=lambda q, options, help_lines=(): offered.extend(options) or 1), \
+                mock.patch.object(prompts, "ask_ipv4", return_value="192.0.2.9"):
+            self.assertEqual(prompts.wait_or_ask("192.0.2.50"), "192.0.2.9")
+        self.assertEqual(len(offered), 2)
 
 
 if __name__ == "__main__":

@@ -252,7 +252,7 @@ add today's names to these lists rather than replacing them.
    SHA-256 and size where the tool pins it (`BRIDGE_OTA`, `images.IMAGE`,
    `CONTROL_FILES` in `flash_readout.py`), and
    [`NOTICES.md`](../NOTICES.md).
-4. Update the tests that name them: `tests/autoflash/test_setup_networks.py`,
+4. Update the tests that name them: `tests/autoflash/test_names.py`,
    `tests/repo/test_published_artifacts.py`, `tests/autoflash/test_tasmota_settings.py`,
    `tests/autoflash/test_join.py`, `tests/autoflash/routes/espressif/test_installer.py`,
    `test_mover.py` and `test_tasmota.py` beside it, `tests/espressif/test_flash_readout.py`.

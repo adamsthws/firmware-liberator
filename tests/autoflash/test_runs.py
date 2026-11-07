@@ -1,5 +1,5 @@
 """A run's record on disk (tools/autoflash/runs.py): filed under its plug's
-MAC, and what it ran from."""
+MAC, what it ran from, and its secrets removed."""
 import base64
 import tempfile
 import unittest
@@ -115,6 +115,24 @@ class RunFilingTests(unittest.TestCase):
         self.assertTrue((self.captures / "conversion-unknown").is_dir())
         self.assertEqual(runs.read_current(), runs.run_name(moved))
         self.assertEqual(len(runs.run_directories()), 2)
+
+
+class RunSecretsTests(unittest.TestCase):
+    def test_only_the_secret_files_are_removed(self):
+        with tempfile.TemporaryDirectory(dir=runs.ROOT / "tests") as directory:
+            run = Path(directory)
+            (run / "live").mkdir()
+            for name in runs.SECRET_FILES:
+                (run / name).write_bytes(b"secret")
+            kept = [run / "autoflash-state.json", run / "live" / "stage-report.json"]
+            for path in kept:
+                path.write_text("{}")
+            removed = runs.forget_run_secrets(run)
+            self.assertEqual(len(removed), len(runs.SECRET_FILES))
+            for name in runs.SECRET_FILES:
+                self.assertFalse((run / name).exists(), name)
+            for path in kept:
+                self.assertTrue(path.exists(), path.name)
 
 
 if __name__ == "__main__":

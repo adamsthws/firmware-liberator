@@ -1,12 +1,16 @@
 """What the tool asks (tools/autoflash/prompts.py): a secret shown only as it
-is typed, keys typed ahead thrown away, and a way to quit at every question."""
+is typed, keys typed ahead thrown away, a way to quit at every question, the
+answers of an unattended run, and the plug's setup network looked for."""
+import io
+import os
 import sys
 import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.autoflash import prompts
+from tests.autoflash.test_names import SetupNetworkTestCase
+from tools.autoflash import names, output, prompts
 
 
 class TypedAheadTests(unittest.TestCase):
@@ -68,7 +72,6 @@ class SecretPromptTests(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == "win32", "needs a POSIX pseudo-terminal")
     def test_a_real_terminal_never_keeps_a_readable_character(self):
-        import os
         import pty
         import subprocess
         import sys
@@ -159,6 +162,88 @@ class QuitOptionTests(unittest.TestCase):
 
     def test_quitting_a_standalone_tool_is_a_clean_exit(self):
         self.assertTrue(issubclass(prompts.QuitRun, SystemExit))
+
+
+class SearchTests(SetupNetworkTestCase):
+    def find(self, visible, ctx, *later):
+        scans = iter([visible, *later])
+        with mock.patch.object(prompts, "scan_wifi_ssids", side_effect=lambda **_: next(scans, visible)), \
+             mock.patch.object(prompts.time, "sleep"):
+            return prompts.find_ssid(names.setup_networks(ctx))
+
+    def test_the_plugs_network_is_found_by_either_name(self):
+        self.assertEqual(self.find(["Home", "tasmota-ABCDEF-1234"], self.ctx()), "tasmota-ABCDEF-1234")
+        self.assertEqual(self.find(["Home", "ESP_ABCDF0"], self.ctx()), "ESP_ABCDF0")
+
+    def test_its_real_name_over_the_one_it_had_for_a_moment(self):
+        # Tasmota turns its setup network on, then names it: for that moment
+        # it is ESP-IDF's ESP_ABCDF0, which a computer lists for a while after,
+        # perhaps first. Asked to join it, a person would find it gone.
+        self.assertEqual(self.find(["ESP_ABCDF0", "Home", "tasmota-ABCDEF-1234"], self.ctx()),
+                         "tasmota-ABCDEF-1234")
+
+    def test_caught_in_that_moment_it_is_looked_at_again(self):
+        self.assertEqual(self.find(["Home", "ESP_ABCDF0"], self.ctx(), ["Home", "tasmota-abcdef"]),
+                         "tasmota-abcdef")
+
+    def test_the_name_asked_for_first_wins_over_scan_order(self):
+        self.assertEqual(self.find(["tasmota-ABCDEF-1234", "tasmota-abcdef"], self.ctx()), "tasmota-abcdef")
+
+    def test_a_neighbours_tasmota_or_esp_is_not(self):
+        self.assertIsNone(self.find(["tasmota-112233-0001", "ESP_112234", "ESP_ABCDEF"], self.ctx()))
+
+    def test_the_installers_network_is_not_taken_for_tasmotas(self):
+        # Seen in the fault suite: sent through the installer's own network,
+        # Tasmota went on, and the installer's network - still listed for a
+        # moment as it restarted - was taken for Tasmota's, never to be joined.
+        # A Tasmota the run named has the Wi-Fi, and raises no network by itself.
+        self.assertIsNone(self.find(["Home", "autoflash-recovery-CDEF"], self.ctx()))
+        # It is the installer's, and found as that.
+        with mock.patch.object(prompts, "scan_wifi_ssids", return_value=["Home", "autoflash-recovery-CDEF"]):
+            self.assertEqual(prompts.find_ssid(names.bridge_networks(self.ctx())), "autoflash-recovery-CDEF")
+
+    def test_only_tasmotas_own_name_is_kept_as_the_plugs(self):
+        ctx = self.ctx()
+        names.note_setup_network(ctx, "ESP_ABCDF0")  # not what its router shows
+        names.note_setup_network(ctx, "autoflash-recovery-CDEF")  # only until it is set up
+        self.assertIsNone(ctx.state.input("device_name"))
+        names.note_setup_network(ctx, "tasmota-ABCDEF-1234")
+        self.assertEqual(ctx.state.input("device_name"), "tasmota-ABCDEF-1234")
+
+
+class UnattendedPromptTests(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.object(prompts, "UNATTENDED", True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.screen = io.StringIO()
+        stdout = mock.patch("sys.stdout", self.screen)
+        stdout.start()
+        self.addCleanup(stdout.stop)
+        self.addCleanup(output.finish)
+
+    def test_no_key_is_waited_for(self):
+        with mock.patch("builtins.input", side_effect=AssertionError("read the keyboard")):
+            prompts.wait_for_key()
+
+    def test_a_yes_no_question_takes_its_cautious_default(self):
+        self.assertFalse(prompts.ask_yes_no("Carry on anyway", default=False))
+        self.assertTrue(prompts.ask_yes_no("Enter it now", default=True))
+        self.assertIn("Carry on anyway (y/N, q to quit): n   (unattended)", self.screen.getvalue())
+
+    def test_any_other_question_stops_the_run_and_names_it(self):
+        for ask in (lambda: prompts.ask_choice("Which plug", ["one", "two"]),
+                    lambda: prompts.ask_yes_no("No default"),
+                    lambda: prompts.ask_text("eWeLink account email"),
+                    lambda: prompts.ask_secret("Wi-Fi password: ")):
+            with self.assertRaises(prompts.NoOneToAnswer):  # a QuitRun: the run stops cleanly
+                ask()
+        self.assertIn("eWeLink account email", self.screen.getvalue())
+
+    def test_proceed_is_taken_as_typed(self):
+        with mock.patch("builtins.input", side_effect=AssertionError("read the keyboard")):
+            self.assertTrue(prompts.require_word("proceed"))
+        self.assertIn("PROCEED   (unattended)", self.screen.getvalue())
 
 
 if __name__ == "__main__":

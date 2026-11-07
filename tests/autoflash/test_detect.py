@@ -4,7 +4,7 @@ import threading
 import unittest
 from unittest import mock
 
-from tests.autoflash.test_device_requests import LockedTasmota
+from tests.autoflash.test_device import LockedTasmota
 from tests.autoflash.test_openbeken import FakeOpenBeken
 from tools.autoflash import detect, openbeken
 from tools.espressif import layouts
