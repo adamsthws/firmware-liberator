@@ -58,6 +58,14 @@ def find_current_firmware(ctx: Context) -> str:
             found.mac = mac
             adopt_plug(ctx, found)
             return running
+        if running is None and mac is None:
+            # Nothing there at all, not even on the network, so not a device on
+            # Sonoff's firmware to ask eWeLink about (seen on a real plug switched
+            # off: the run went on to eWeLink's discovery, and its report said it
+            # was converting from Sonoff). An S61 on Sonoff's answers nothing
+            # here but is on the network, so is still asked of eWeLink.
+            raise Abort(f"nothing answers at {given}: check the device is switched on and on your Wi-Fi, "
+                        "then run the same command again")
         if running in ("tasmota", "esphome", "midway", "installer", "untemplated"):
             adopt_plug(ctx, detect.Found(given, running, mac))
             if mover:
