@@ -48,7 +48,7 @@ version's power meter.
   `--plug` asks for that is not there yet is made from it (`copy_plug.py`):
   given its key and a login that can read the package, a checkout with an empty
   `captures/` runs the emulator ([private-backup.md](private-backup.md)).
-  `AUTOFLASH_NO_RESTORE=1` says not to. For a device you do not own,
+  `AUTOFLASH_EMU_NO_RESTORE=1` says not to. For a device you do not own,
   `public_dump.py` makes a test copy from a public dump or update file
   ([adding-a-device.md](adding-a-device.md)).
 - **The NVS partition generator** (and `cryptography`, for the cloud stub)
@@ -326,7 +326,7 @@ firmware stops at start-up without the external RAM (PSRAM) its plug has:
 the kind's `psram_mb` in [kinds.py](../tools/autoflash/kinds.py) gives it,
 as QEMU's `-m` (4 MB on the NSPanel, 2 on the MINIR4). The kind is found by
 the plug's eWeLink product model: a test copy's own (`plug.json`), the one an
-earlier run recorded, or `AUTOFLASH_STUB_PRODUCT_MODEL`.
+earlier run recorded, or `AUTOFLASH_EMU_STUB_PRODUCT_MODEL`.
 
 For a device you do not own, make a test copy from a public dump, or from
 eWeLink's update file on another plug's flash, and run it by the made-up MAC
@@ -383,8 +383,8 @@ off in the firmware set-up: "SVM Mode" on AMD, "Intel Virtualization
 Technology" (VT-x) on Intel.
 
 Both containers are capped, so they cannot take over the computer. Windows
-gets 2 GB and 2 CPUs (`AUTOFLASH_WINDOWS_RAM=3G`, `AUTOFLASH_WINDOWS_CPUS=4` to change), and
-its container at most 1 GB more, for QEMU itself, without swap. The emulator
+gets 2 GB and 2 CPUs (`AUTOFLASH_EMU_WINDOWS_RAM=3G`,
+`AUTOFLASH_EMU_WINDOWS_CPUS=4` to change), and its container at most 1 GB more, for QEMU itself, without swap. The emulator
 gets 256 MB for an ESP32-C3, 1 GB for a classic ESP32, and 2 CPUs
 (`AUTOFLASH_EMU_MEMORY=512m`, `AUTOFLASH_EMU_CPUS`).
 
@@ -452,8 +452,8 @@ can be resumed.
 ##### SSH, to drive a run from a terminal
 
 Windows runs OpenSSH's server (set up in the `rig` layer) with PowerShell as
-its shell, on `127.0.0.1:2222` (`AUTOFLASH_WINDOWS_SSH_PORT` to change), logged on
-to as `autoflash` with a key `windows-test.sh` makes once in
+its shell, on `127.0.0.1:2222` (`AUTOFLASH_EMU_WINDOWS_SSH_PORT` to change),
+logged on to as `autoflash` with a key `windows-test.sh` makes once in
 `~/.cache/autoflash-emu/windows/ssh`. `tools/espressif/emulator/windows-ssh.sh` wraps it:
 
 ```sh

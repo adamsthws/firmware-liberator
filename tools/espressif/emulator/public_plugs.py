@@ -132,7 +132,7 @@ def side_by_side(jobs: list) -> list:
 
 
 def command_make(args: argparse.Namespace) -> int:
-    os.environ["AUTOFLASH_STUB_CLOUD"] = "1"
+    os.environ["AUTOFLASH_EMU_STUB_CLOUD"] = "1"
     from tools.espressif.emulator import fault_suite as fs
     fs.STUB_CLOUD, fs.MAC = True, args.plug
     jobs, made = [], []

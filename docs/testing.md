@@ -367,7 +367,7 @@ python -I tools/espressif/emulator/copy_plug.py --remove 12:34:56:ab:cd:ef
 ```sh
 tools/espressif/emulator/fault_suite.py --plug=MAC prep           # the starting plugs (eWeLink)
 tools/espressif/emulator/fault_suite.py list > all.txt            # every scenario: cloud, stub or any
-AUTOFLASH_ANY_WORKERS=3 \
+AUTOFLASH_EMU_ANY_WORKERS=3 \
     tools/espressif/emulator/fault_suite.py --plug=MAC batch all.txt   # what has not passed yet
 tools/espressif/emulator/fault_suite.py report
 ```
@@ -382,9 +382,9 @@ firmware.json pins in its app slot, fetched from Tasmota's releases; for ESPHome
 by converting a plug with the tool as an earlier release of this project shipped.
 
 Against the real cloud, the cloud scenarios run side by side on six emulators
-(`AUTOFLASH_CLOUD_WORKERS` for another number; one per core on a computer with
-fewer, and the rest of the scenarios' `AUTOFLASH_ANY_WORKERS` come on top). More
-go no faster: eight took as long as six over the 75 real-cloud scenarios, as
+(`AUTOFLASH_EMU_CLOUD_WORKERS` for another number; one per core on a computer
+with fewer, and the rest of the scenarios' `AUTOFLASH_EMU_ANY_WORKERS` come on
+top). More go no faster: eight took as long as six over the 75 real-cloud scenarios, as
 their turns at eWeLink come one at a time. Fewer on a computer whose memory is
 mostly taken: there four had the plugs' memory swapped out, and their
 connections to eWeLink timed out where nothing was wrong. They
@@ -407,15 +407,15 @@ runs them.
 
 Add `--stub-cloud` to `prep` and `batch` to give each emulator its own local
 eWeLink stand-in instead of the shared real cloud: no cloud lock, so every
-scenario runs in parallel on `AUTOFLASH_STUB_WORKERS` emulators, and no eWeLink
+scenario runs in parallel on `AUTOFLASH_EMU_STUB_WORKERS` emulators, and no eWeLink
 account is needed. Its starting plugs (`stub-suite-*`) and results
 (`captures/emulation/suite-stub/`) are its own: a stub plug's flash is the
 other kind, and a stub run's passes are not the real cloud's. See
 [cloud-stub.md](cloud-stub.md).
 
 ```sh
-AUTOFLASH_STUB_WORKERS=3 tools/espressif/emulator/fault_suite.py --plug=MAC --stub-cloud prep
-AUTOFLASH_STUB_WORKERS=3 tools/espressif/emulator/fault_suite.py --plug=MAC --stub-cloud batch all.txt
+AUTOFLASH_EMU_STUB_WORKERS=3 tools/espressif/emulator/fault_suite.py --plug=MAC --stub-cloud prep
+AUTOFLASH_EMU_STUB_WORKERS=3 tools/espressif/emulator/fault_suite.py --plug=MAC --stub-cloud batch all.txt
 ```
 
 Results, a log per scenario and what each failure leaves (its run records and
@@ -423,19 +423,19 @@ the plug's serial output) are kept in `captures/emulation/suite/`. A scenario ru
 again keeps those of its earlier attempts beside them, numbered in order:
 `<scenario>.log.1` and `<scenario>-evidence.1` are its first. On the real cloud,
 `connections.log` has every plug's connections opening and closing, with times,
-looked at every 2 s (`AUTOFLASH_CONNECTION_LOG`, 0 for none): whether two plugs
+looked at every 2 s (`AUTOFLASH_EMU_CONNECTION_LOG`, 0 for none): whether two plugs
 were on eWeLink at once, or a session dropped with no other plug about.
 
 **Several machines.** The scenarios that do not need eWeLink (every step after
 D1) run on any machine with Docker: copy the repository and the saved plugs
 (`captures/emulation/saved/`), give each machine part of the list, and set
-`AUTOFLASH_NO_CLOUD=1` there - only one machine may let its plugs reach eWeLink.
+`AUTOFLASH_EMU_NO_CLOUD=1` there - only one machine may let its plugs reach eWeLink.
 
 **How many at once.** Each emulator converting takes about half a CPU core
 and 120 MB. Past one per core the plugs slow down enough for their timeouts to
 fail where nothing is wrong, so keep the load at or under the number of
 cores. A batch can be scaled while it runs: started with
-`AUTOFLASH_MOST_WORKERS` above its workers, only the number written in
+`AUTOFLASH_EMU_MOST_WORKERS` above its workers, only the number written in
 `workers` in its results directory take a scenario - raised, more start; lowered,
 the last ones stop once their scenario ends.
 
@@ -459,7 +459,8 @@ can still count the last turn's connection as the device and pass a command
 down it to no one. The suite can feel out how many
 at once the cloud allows - one more at a time while the cloud scenarios pass,
 or one fewer at each trouble - and lengthen the pause when eWeLink is the
-trouble (`AUTOFLASH_CLOUD_MOST`, `AUTOFLASH_CLOUD_BACK_OFF`, `AUTOFLASH_CLOUD_PAUSE_UP`).
+trouble (`AUTOFLASH_EMU_CLOUD_MOST`, `AUTOFLASH_EMU_CLOUD_BACK_OFF`,
+`AUTOFLASH_EMU_CLOUD_PAUSE_UP`).
 
 ### What it cannot show
 

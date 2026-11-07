@@ -12,8 +12,9 @@ plug, every fault - on emulators side by side, on one machine or several
 
 Add --stub-cloud to prep/batch to run against a local eWeLink stub per emulator
 (emu.sh --stub-cloud): fully offline, no cloud lock, every scenario in parallel
-on AUTOFLASH_STUB_WORKERS emulators (from AUTOFLASH_FIRST_INSTANCE, default 1). Without it
-the real cloud is used and the cloud scenarios take turns, as below.
+on AUTOFLASH_EMU_STUB_WORKERS emulators (from AUTOFLASH_EMU_FIRST_INSTANCE,
+default 1). Without it the real cloud is used and the cloud scenarios take
+turns, as below.
 
 Each scenario: a conversion from a saved plug; when the step under test has
 been going for a share of its usual time (40%, or 10% and 90% at the riskiest
@@ -24,26 +25,30 @@ landed while its step was under way (MISTIMED if not), and that the run left
 no firewall rule and no helper behind.
 
 How many at once, from the environment:
-    AUTOFLASH_CLOUD_WORKERS  emulators for the scenarios that need eWeLink (from
-                       instance 1); each run and its plug use the cloud only in
-                       its turn, and are side by side otherwise. Six unless
-                       set, or one per core on a computer with fewer
-    AUTOFLASH_CLOUD_MOST     try up to this many, one more at a time while they pass
-    AUTOFLASH_CLOUD_BACK_OFF=1  start at AUTOFLASH_CLOUD_WORKERS and drop one at a time
-                       whenever two of the last four fail
-    AUTOFLASH_CLOUD_PAUSE_UP=1  start at AUTOFLASH_CLOUD_COOL_DOWN and add 5 s whenever two
-                       of the last four fail with the cloud to blame
-    AUTOFLASH_CLOUD_COOL_DOWN  seconds between two plugs' turns at the cloud (5)
-    AUTOFLASH_ANY_WORKERS    emulators for the rest, after those
-    AUTOFLASH_CONNECTION_LOG  seconds between looks at every plug's connections,
-                       logged to connections.log on the real cloud (2; 0 for none)
-    AUTOFLASH_MOST_WORKERS   start up to this many of those instead, of which the
-                       number in <AUTOFLASH_SUITE_DIR>/workers take scenarios
-                       when that file is there: a batch scaled while it runs
-    AUTOFLASH_NO_CLOUD=1     a machine whose plugs never reach the internet: only
-                       the scenarios that do not need it
-    AUTOFLASH_SUITE_DIR      where results go (captures/emulation/suite; with
-                       --stub-cloud, captures/emulation/suite-stub)
+    AUTOFLASH_EMU_CLOUD_WORKERS     emulators for the scenarios that need eWeLink (from
+                                    instance 1); each run and its plug use the cloud only
+                                    in its turn, and are side by side otherwise. Six
+                                    unless set, or one per core on a computer with fewer
+    AUTOFLASH_EMU_CLOUD_MOST        try up to this many, one more at a time while they
+                                    pass
+    AUTOFLASH_EMU_CLOUD_BACK_OFF=1  start at AUTOFLASH_EMU_CLOUD_WORKERS and drop one at a
+                                    time whenever two of the last four fail
+    AUTOFLASH_EMU_CLOUD_PAUSE_UP=1  start at AUTOFLASH_EMU_CLOUD_COOL_DOWN and add 5 s
+                                    whenever two of the last four fail with the cloud to
+                                    blame
+    AUTOFLASH_EMU_CLOUD_COOL_DOWN   seconds between two plugs' turns at the cloud (5)
+    AUTOFLASH_EMU_ANY_WORKERS       emulators for the rest, after those
+    AUTOFLASH_EMU_CONNECTION_LOG    seconds between looks at every plug's connections,
+                                    logged to connections.log on the real cloud (2; 0 for
+                                    none)
+    AUTOFLASH_EMU_MOST_WORKERS      start up to this many of those instead, of which the
+                                    number in <AUTOFLASH_EMU_SUITE_DIR>/workers take
+                                    scenarios when that file is there: a batch scaled
+                                    while it runs
+    AUTOFLASH_EMU_NO_CLOUD=1        a machine whose plugs never reach the internet: only
+                                    the scenarios that do not need it
+    AUTOFLASH_EMU_SUITE_DIR         where results go (captures/emulation/suite; with
+                                    --stub-cloud, captures/emulation/suite-stub)
 
 Results: results.jsonl, a log per scenario, and what a failure leaves (its
 run records and the plug's serial output). A fault that never happened is
@@ -71,11 +76,11 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
 EMU = REPO / "captures/emulation"
-OUT = Path(os.environ.get("AUTOFLASH_SUITE_DIR", EMU / "suite"))
+OUT = Path(os.environ.get("AUTOFLASH_EMU_SUITE_DIR", EMU / "suite"))
 RESULTS = OUT / "results.jsonl"
 LOGS = OUT / "logs"
 # A machine whose plugs never get a turn at the cloud.
-NO_CLOUD = os.environ.get("AUTOFLASH_NO_CLOUD") == "1"
+NO_CLOUD = os.environ.get("AUTOFLASH_EMU_NO_CLOUD") == "1"
 
 
 def cloud_workers():
@@ -84,13 +89,13 @@ def cloud_workers():
     no more than one per core, or they fail falsely. A computer whose memory is
     mostly taken holds fewer (docs/testing.md)."""
     default = 0 if NO_CLOUD else min(6, os.cpu_count() or 1)
-    return int(os.environ.get("AUTOFLASH_CLOUD_WORKERS", default))
+    return int(os.environ.get("AUTOFLASH_EMU_CLOUD_WORKERS", default))
 
 
 # Each emulator serves its own local eWeLink stub (emu.sh --stub-cloud): the
 # plugs never share a cloud, so nothing is serialised and every scenario can run
 # in parallel. Set by --stub-cloud; see docs/cloud-stub.md.
-STUB_CLOUD = os.environ.get("AUTOFLASH_STUB_CLOUD") == "1"
+STUB_CLOUD = os.environ.get("AUTOFLASH_EMU_STUB_CLOUD") == "1"
 
 
 def saved(name):
@@ -543,7 +548,7 @@ class CloudQueue:
     # Every emulated plug is the same eWeLink device: the last one's connection,
     # cut on its side, stays open at eWeLink a while, and the next to connect
     # is not seen online. A pause between turns lets eWeLink let go of it.
-    COOL_DOWN = float(os.environ.get("AUTOFLASH_CLOUD_COOL_DOWN", "5"))
+    COOL_DOWN = float(os.environ.get("AUTOFLASH_EMU_CLOUD_COOL_DOWN", "5"))
 
     def __init__(self):
         self.cv = threading.Condition()
@@ -612,14 +617,14 @@ class Tuner:
 
     def __init__(self):
         self.workers = cloud_workers()
-        self.most = int(os.environ.get("AUTOFLASH_CLOUD_MOST", str(self.workers)))
-        self.cool_down = float(os.environ.get("AUTOFLASH_CLOUD_COOL_DOWN", "5"))
+        self.most = int(os.environ.get("AUTOFLASH_EMU_CLOUD_MOST", str(self.workers)))
+        self.cool_down = float(os.environ.get("AUTOFLASH_EMU_CLOUD_COOL_DOWN", "5"))
         self.phase = "workers" if self.most > self.workers else "cool-down"
-        if os.environ.get("AUTOFLASH_CLOUD_PAUSE_UP") == "1":
+        if os.environ.get("AUTOFLASH_EMU_CLOUD_PAUSE_UP") == "1":
             # From a short pause up: 5 s longer at each trouble the cloud is to
             # blame for, never shorter; how many at once left as it is.
             self.phase = "pause-up"
-        elif os.environ.get("AUTOFLASH_CLOUD_BACK_OFF") == "1":
+        elif os.environ.get("AUTOFLASH_EMU_CLOUD_BACK_OFF") == "1":
             # From many at once down: one fewer at each trouble, any failure
             # counting (a machine short of memory fails all sorts of ways),
             # until WINDOW pass in a row.
@@ -2117,8 +2122,8 @@ def read_ids(path) -> list[str]:
 
 def batch(ids_file=None):
     """The scenarios in ids_file (every one without) not yet passed here: the
-    cloud ones on AUTOFLASH_CLOUD_WORKERS emulators from instance 1, the rest on
-    AUTOFLASH_ANY_WORKERS after them."""
+    cloud ones on AUTOFLASH_EMU_CLOUD_WORKERS emulators from instance 1, the rest on
+    AUTOFLASH_EMU_ANY_WORKERS after them."""
     LOGS.mkdir(parents=True, exist_ok=True)
     known = {sc["id"]: sc for sc in scenarios()}
     done = {i for i, row in latest().items() if row["verdict"] in ("PASS", "EMULATOR-LIMIT", "NO-TRAFFIC")}
@@ -2142,12 +2147,12 @@ def batch(ids_file=None):
             (cloud if needs_cloud(known[i]) else anywhere).put(known[i])
     if STUB_CLOUD:
         nc = 0
-        na = int(os.environ.get("AUTOFLASH_STUB_WORKERS", os.environ.get("AUTOFLASH_ANY_WORKERS", "3")))
-        first = int(os.environ.get("AUTOFLASH_FIRST_INSTANCE", "1"))
+        na = int(os.environ.get("AUTOFLASH_EMU_STUB_WORKERS", os.environ.get("AUTOFLASH_EMU_ANY_WORKERS", "3")))
+        first = int(os.environ.get("AUTOFLASH_EMU_FIRST_INSTANCE", "1"))
     else:
         nc = cloud_workers()
-        na = int(os.environ.get("AUTOFLASH_ANY_WORKERS", "0"))
-        first = int(os.environ.get("AUTOFLASH_FIRST_INSTANCE", nc + 1))  # clear of another batch's emulators
+        na = int(os.environ.get("AUTOFLASH_EMU_ANY_WORKERS", "0"))
+        first = int(os.environ.get("AUTOFLASH_EMU_FIRST_INSTANCE", nc + 1))  # clear of another batch's emulators
     print(f"batch: {cloud.qsize()} cloud on {nc}, {anywhere.qsize()} others on {na}", flush=True)
     if stub_only:
         print(f"batch: {stub_only} left to the stub (--stub-cloud batch): their fault comes after eWeLink",
@@ -2155,11 +2160,11 @@ def batch(ids_file=None):
     lock = threading.Lock()
     threads = [] if STUB_CLOUD else [threading.Thread(target=worker, args=(n, cloud, lock, True))
                                      for n in range(1, max(nc, TUNER.most) + 1)]
-    most = max(na, int(os.environ.get("AUTOFLASH_MOST_WORKERS", na)))
+    most = max(na, int(os.environ.get("AUTOFLASH_EMU_MOST_WORKERS", na)))
     threads += [threading.Thread(target=worker, args=(n, anywhere, lock, False, lambda n: n - first < allowed(na)))
                 for n in range(first, first + most)]
     stop_log = threading.Event()
-    every = float(os.environ.get("AUTOFLASH_CONNECTION_LOG", "2"))
+    every = float(os.environ.get("AUTOFLASH_EMU_CONNECTION_LOG", "2"))
     if not STUB_CLOUD and every > 0:
         threading.Thread(target=log_connections, args=(OUT / "connections.log", every, stop_log),
                          daemon=True).start()
@@ -2209,11 +2214,11 @@ def prepared(said, stop_after, stopped):
 def make_start(save, args, stop_after=None):
     """One starting plug, saved as `save`: a run with `args`, stopped once
     `stop_after` is done, or else converted."""
-    n = int(os.environ.get("AUTOFLASH_PREP_INSTANCE", "1"))
+    n = int(os.environ.get("AUTOFLASH_EMU_PREP_INSTANCE", "1"))
     # A run that could not start would count as one that failed, and take the
     # plug saved before it away.
     if sh("docker", "ps", "-q", "--filter", f"name=^{name(n)}$").stdout.strip():
-        raise SystemExit(f"{name(n)} is running: stop it, or choose another with AUTOFLASH_PREP_INSTANCE")
+        raise SystemExit(f"{name(n)} is running: stop it, or choose another with AUTOFLASH_EMU_PREP_INSTANCE")
     unattended = str(REPO / "tools/espressif/emulator/unattended-test.sh")
 
     def stopped_after(step, sc, since, stopped):
@@ -2335,7 +2340,7 @@ def main():
     parser.add_argument("file", nargs="?", help="batch: the scenario ids to run (else all)")
     args = parser.parse_args()
     STUB_CLOUD = STUB_CLOUD or args.stub_cloud
-    if STUB_CLOUD and "AUTOFLASH_SUITE_DIR" not in os.environ:
+    if STUB_CLOUD and "AUTOFLASH_EMU_SUITE_DIR" not in os.environ:
         # Apart from the real cloud's results, whose batch would otherwise
         # take a stub run's passes for its own.
         OUT = EMU / "suite-stub"
