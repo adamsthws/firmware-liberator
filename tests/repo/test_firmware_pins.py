@@ -149,7 +149,8 @@ class BekenPinTests(unittest.TestCase):
         self.assertEqual(uf.build_version("1.18.321", {"version": "1.18.320-2"}), "1.18.321-1")
 
     def test_each_esphome_version_says_the_release_it_is_built_on(self):
-        pins = [PINS["esphome"]["image"], *(section["esphome"] for section in PINS["beken"].values()),
+        pins = [PINS["esphome"]["image"],
+                *(section["esphome"] for section in PINS["beken"].values() if "esphome" in section),
                 *(section["esphome"] for section in PINS["espressif_kinds"].values())]
         for pin in pins:
             self.assertRegex(pin["version"], rf"^{re.escape(pin['esphome'])}-[1-9]\d*$", pin["file"])

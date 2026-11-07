@@ -130,6 +130,7 @@ OPENBEKEN_PATCHES = {
 OPENBEKEN_DRIVER = ("drv_autoflash.c", "drv_autoflash.h")
 OPENBEKEN_BUILDER = "autoflash-openbeken-build"
 OPENBEKEN_BUILD_CACHE = ROOT / "captures" / "openbeken-build"
+READOUT_BUILD = "readout"
 BEKEN_BUILDS = {
     "sonoff-s61": {
         "openbeken": ("devices/sonoff-s61/drv_autoflash_sonoff_s61.c", "artifacts/openbeken-sonoff-s61-{version}.rbl"),
@@ -139,6 +140,12 @@ BEKEN_BUILDS = {
         "openbeken": ("devices/sonoff-basic-1gs/drv_autoflash_sonoff_basic_1gs.c",
                       "artifacts/openbeken-sonoff-basic-1gs-{version}.rbl"),
         "esphome": ("devices/sonoff-basic-1gs/esphome.yaml", "artifacts/esphome-sonoff-basic-1gs-{version}.rbl"),
+    },
+    # Not a device: the OpenBeken a readout of a Beken device the tool does not
+    # convert yet installs for a few minutes (tools/autoflash/readout.py). Its
+    # table sets no pins, so nothing is driven on hardware nobody has mapped.
+    READOUT_BUILD: {
+        "openbeken": ("tools/beken/openbeken/drv_autoflash_readout.c", "artifacts/openbeken-readout-{version}.rbl"),
     },
 }
 # What the S60's config reaches into ESPHome for, beyond its documented
@@ -897,7 +904,9 @@ def openbeken_doc_texts(plug: str, old: dict[str, Any], new: dict[str, Any],
     notices = notices.replace(old["app_commit"], new["app_commit"]).replace(old["sdk_commit"], new["sdk_commit"])
     texts = {ARTIFACTS_README: readme, NOTICES: notices}
     if changelog:
-        changelog_with(moved("OpenBeken", new["release"], openbeken_release_of(old), kinds.find(plug).name), texts)
+        found = kinds.find(plug)
+        changelog_with(moved("OpenBeken", new["release"], openbeken_release_of(old),
+                             found.name if found else "readout build"), texts)
     return texts
 
 
