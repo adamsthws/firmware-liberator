@@ -37,8 +37,7 @@ from tools.espressif.safeboot.safeboot_migration import (  # noqa: E402
     SAFEBOOT_SIZE,
     SECTOR_SIZE,
     TABLE_SIZE,
-    TARGET_PARTITIONS,
-    TARGET_TABLE_SHA256,
+    OFFICIAL_TABLE_SHA256,
     analyze_canonical_nvs,
     artifact_bytes,
     load_evidence,
@@ -47,6 +46,7 @@ from tools.espressif.safeboot.safeboot_migration import (  # noqa: E402
     parse_partition_sector,
     provide_in_memory,
     require_exact_partitions,
+    require_tasmota_table,
     require_pinned_artifacts,
     require_recovery_manifest,
     is_recovery_manifest,
@@ -259,9 +259,7 @@ class MigrationState:
         self.app = artifact_bytes(manifest_path, manifest, "app")
         self.target_table = artifact_bytes(manifest_path, manifest, "target_table")
         target_report = parse_partition_sector(self.target_table)
-        require_exact_partitions(target_report, TARGET_PARTITIONS)
-        if target_report["sha256"] != TARGET_TABLE_SHA256:
-            raise ValueError("target table differs from the reviewed official sector")
+        require_tasmota_table(target_report)
         self.target_table_sha256 = target_report["sha256"]
         self.interim_table = layout.interim_table() if phase == "commit" else b""
 
@@ -303,6 +301,11 @@ class MigrationState:
             #
             # Unproven, only the table is held to the commit's record, where
             # there is one: the image it names is not one this checkout has.
+            #
+            # The commit's table is this bundle's, or Tasmota's own: what a
+            # run begun before the identity's sector committed, its bundle
+            # since made again with the sector's table. The plug's own check
+            # takes either too.
             if recovery_unproven:
                 try:
                     self.commit_evidence = load_evidence(
@@ -311,7 +314,7 @@ class MigrationState:
                 except ValueError:
                     print("  No commit report; the device's own check of its table stands.")
                 else:
-                    if self.commit_evidence.get("target_table_sha256") != self.target_table_sha256:
+                    if self.commit_evidence.get("target_table_sha256") not in self.committable_tables():
                         raise ValueError("commit evidence names a different partition table")
                 print("  The startup firmware on the device is not one this checkout can rebuild:")
                 print("  whatever follows the official sectors is written over.")
@@ -326,10 +329,14 @@ class MigrationState:
                     raise ValueError("neither commit nor stage evidence matches recovery Safeboot") from None
                 print("  The commit's report was lost; going by the staging's record of the image.")
             else:
-                if self.commit_evidence.get("target_table_sha256") != self.target_table_sha256:
+                if self.commit_evidence.get("target_table_sha256") not in self.committable_tables():
                     raise ValueError("commit evidence names a different partition table")
                 if self.commit_evidence.get("safeboot_sha256") != sha256_bytes(self.safeboot):
                     raise ValueError("commit evidence does not match recovery Safeboot")
+
+    def committable_tables(self) -> tuple[str, str]:
+        """The tables a commit may have written: this bundle's, or Tasmota's own."""
+        return self.target_table_sha256, OFFICIAL_TABLE_SHA256
 
     def replacements(self) -> dict[str, str]:
         if self.phase == "plan":
@@ -360,6 +367,7 @@ class MigrationState:
             "ARM_TOKEN": self.arm_token,
             "SOURCE_TABLE_SHA256": self.layout.table_sha256,
             "TARGET_TABLE_SHA256": self.target_table_sha256,
+            "OFFICIAL_TABLE_SHA256": OFFICIAL_TABLE_SHA256,
             "INTERIM_TABLE_SHA256": self.layout.interim_sha256,
             "LOW_REGIONS_OFFSET": str(self.layout.nvs),
             "LOW_REGIONS_SIZE": str(self.layout.low_size),

@@ -155,8 +155,10 @@ over USB-serial (`esptool.py --chip esp32c3 write_flash 0x0 flash.bin`)
 returns the plug to the Sonoff version, settings and pairing it had - but
 that means opening the plug, which is what the over-the-air route avoids.
 One of the two app slots holds the installer rather than an older Sonoff
-version; the plug boots the other. Restoring it over the air, from Tasmota,
-is not built yet. **The emulator:** `tools/espressif/emulator/emu.sh` offers every
+version; the plug boots the other. Going back to Sonoff's firmware over the
+air writes this backup back when it is on the computer; without it, the tool
+uses the identity the plug keeps or your eWeLink account
+([The finished memory layout](#the-finished-memory-layout)). **The emulator:** `tools/espressif/emulator/emu.sh` offers every
 backed-up plug by its MAC and runs a copy of the one you choose
 ([docs/emulator.md](emulator.md)).
 
@@ -329,18 +331,47 @@ deliberately renamed before the underlying tools will run them on their own.
 ## The finished memory layout
 
 Official Tasmota on the official partition layout - the same arrangement you
-would get from flashing the plug over USB:
+would get from flashing the plug over USB - with one area more at the end:
 
-| Area | What's in it | Size |
-|---|---|---|
-| `nvs` | Settings | 20 KiB |
-| `otadata` | Which firmware to start | 8 KiB |
-| `safeboot` | Recovery firmware for future updates | 832 KiB |
-| `app0` | Tasmota itself | 2,880 KiB |
-| `spiffs` | File storage | 320 KiB |
+| Area | What's in it | Where | Size |
+|---|---|---|---|
+| `nvs` | Settings | `0x9000` | 20 KiB |
+| `otadata` | Which firmware to start | `0xE000` | 8 KiB |
+| `safeboot` | Recovery firmware for future updates | `0x10000` | 832 KiB |
+| `app0` | Tasmota itself | `0xE0000` | 2,880 KiB |
+| `spiffs` | File storage | `0x3B0000` | 316 KiB |
+| `sonoff` | The plug's Sonoff identity (data, subtype `0x40`) | `0x3FF000` | 4 KiB |
 
 That gives 2,880 KiB of room for firmware instead of the 1,984 KiB the Sonoff
 layout allowed, plus a filesystem the plug never had.
+
+The table is built at run time from the one in Tasmota's factory image: the
+filesystem's entry 4 KiB shorter, the `sonoff` entry added, the checksum made
+again, and the result checked against a reviewed hash
+(`safeboot_migration.target_table`); a new Tasmota release whose factory table
+differs stops the firmware update until the repartition is reviewed again. A
+plug converted before, on Tasmota's own table, keeps working as it is: it has no
+`sonoff` area, and going back to Sonoff's firmware without its backup uses your
+eWeLink account instead.
+
+The `sonoff` area is one sector that says what it holds: the magic `SonoffID`, a
+version, a length and a CRC-32, then the identity as JSON. The identity is
+Sonoff's NVS entries `frame_params`, `data_backups` and, where the plug has
+them, `productId`, `channel_params` and `PID` - 300 to 550 bytes, with
+`frame_params`' Wi-Fi name and password taken out. The tool finds it by that
+header, not by the table, so a table that lost the entry (Tasmota's factory
+image written over the plug) still yields it. Nothing Tasmota does writes it:
+its updates, `Reset 1`, `2`, `5` and `6`, and a filesystem formatted or full
+were each seen to leave it as it was. The Partition Wizard does not (see
+[What actually happens](what-happens.md#at-the-end)).
+
+Leaving Tasmota, the tool writes the identity into the settings the next
+layout keeps, as an NVS it builds (`tools/espressif/nvs_image.py`, the same
+bytes ESP-IDF's `nvs_partition_gen` makes). On Sonoff's layout the sector is the
+last of `ota_1`, past any firmware written there. The startup firmware wipes the
+settings on its way to the interim Tasmota, so the sector is where going back
+to Sonoff finds the identity then; its checksum shows whether it is whole, and
+only this plug's identity is ever written there.
 
 ## Stock firmware versions
 

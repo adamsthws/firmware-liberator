@@ -51,6 +51,43 @@ class PlanTests(unittest.TestCase):
         with self.assertRaisesRegex(plans.PlanError, "Sonoff's partition table"):
             plans.leave_tasmota(b"\xe9" * 1000, b"\0" * SECTOR)
 
+    def test_leaving_tasmota_carries_the_identity_into_sonoffs_settings(self):
+        settings = b"\x01" * (2 * SECTOR + 100)
+        for kind in (kinds.SONOFF_S60, kinds.SONOFF_TH_ELITE):
+            layout = esphome.layout_of(kind)
+            plan = plans.leave_tasmota(esphome.mover_for("Home", "pw", esphome.chip_of(kind)),
+                                       esphome.leaving_table(kind), layout, settings=settings)
+            self.assertEqual(plan.steps[1], plans.Write("settings", layout.nvs), kind.key)
+            # The rest of where Sonoff's layout keeps its settings and boot selection, cleared.
+            self.assertEqual(plan.steps[2], plans.Erase(layout.nvs + 3 * SECTOR, layouts.MOVER_AT - layout.nvs - 3 * SECTOR))
+            self.assertEqual(plan.steps[-1], plans.Write("table", plans.TABLE_ADDRESS, whole=True))
+            self.assertLessEqual(plan.busy_estimate(), plans.BUSY_LIMIT)
+        with self.assertRaisesRegex(plans.PlanError, "do not fit"):
+            plans.leave_tasmota(b"\xe9" * 1000, esphome.sonoff_table(), settings=b"\x01" * 0x15000)
+
+    def test_a_plug_on_tasmotas_own_table_leaves_it_too(self):
+        # Converted before the identity was kept: the plan checks for the table it has.
+        own = plans.leave_tasmota(b"\xe9" * 1000, esphome.sonoff_table(),
+                                  tasmota_table=safeboot_migration.OFFICIAL_TABLE_SHA256)
+        self.assertEqual(own.table_sha256, safeboot_migration.OFFICIAL_TABLE_SHA256)
+        self.assertEqual(plans.leave_tasmota(b"\xe9" * 1000, esphome.sonoff_table()).table_sha256,
+                         safeboot_migration.TARGET_TABLE_SHA256)
+        with self.assertRaisesRegex(plans.PlanError, "Tasmota layout"):
+            plans.leave_tasmota(b"\xe9" * 1000, esphome.sonoff_table(), tasmota_table=plans.SONOFF_TABLE_SHA256)
+
+    def test_the_identity_is_kept_at_the_top_of_the_flash_from_the_hub(self):
+        plan = plans.keep_identity(b"\x02" * SECTOR)
+        self.assertEqual(plan.steps, [plans.Write("identity", 0x3FF000, whole=True)])
+        self.assertEqual((plan.table_sha256, plan.running, plan.restart), (plans.SONOFF_TABLE_SHA256, 1, False))
+        # Past the Berry Tasmota in ota_1, and inside no partition of the TH Elite's.
+        for chip in chips.ALL:
+            self.assertGreater(0x3FF000, plans.SONOFF_OTA[1] + safeboot_migration.pinned_artifacts(chip)["bluetooth"]["size"])
+        th = plans.keep_identity(b"\x02" * SECTOR, layouts.SONOFF_TH_ELITE)
+        self.assertEqual(th.table_sha256, layouts.SONOFF_TH_ELITE.table_sha256)
+        self.assertGreaterEqual(0x3FF000, layouts.SONOFF_TH_ELITE.ota[1] + layouts.SONOFF_TH_ELITE.slot_size)
+        with self.assertRaisesRegex(plans.PlanError, "one sector"):
+            plans.keep_identity(b"\x02" * 10)
+
     def test_leaving_tasmota_leaves_the_bootloader_as_it_is(self):
         # The full Tasmota has too little memory to hold ESPHome's while it writes
         # it (a classic ESP32: BRY: MEMORY ALLOCATION FAILED). The hub writes it.

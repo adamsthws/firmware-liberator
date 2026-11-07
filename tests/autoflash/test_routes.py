@@ -7,7 +7,8 @@ from types import SimpleNamespace
 from unittest import mock
 
 from tools.autoflash import kinds, routes
-from tools.autoflash.routes import beken, espressif
+from tools.autoflash.routes import beken, espressif, update
+from tools.autoflash.routes.espressif import identity
 from tools.autoflash.state import RunState
 
 
@@ -107,6 +108,8 @@ class FamilyTests(unittest.TestCase):
                                   "STEP_VERIFIERS", "SONOFF_FROM_BACKUP", "RESUME_CHECK",
                                   "published_version"):
                     self.assertTrue(hasattr(family, attribute), attribute)
+                if family.SONOFF_FROM_BACKUP:
+                    self.assertTrue(callable(family.sonoff_without_backup))
                 # Every step of every route has a name for its stage line and a plain description:
                 # from an earlier release of this tool's firmware, only to this one's.
                 kind = next(kind for kind in kinds.ALL if routes.FAMILIES[kind.family] is family)
@@ -124,7 +127,8 @@ class FamilyTests(unittest.TestCase):
     def test_a_firmware_another_family_takes_is_refused_for_this_plug(self):
         other = a_kind("made-up", "madeup")
         family = SimpleNamespace(FIRMWARES={"openbeken": "OpenBeken", "sonoff": "Sonoff"}, SONOFF_FROM_BACKUP=True,
-                                 published_version=lambda kind, firmware: None)
+                                 published_version=lambda kind, firmware: None,
+                                 sonoff_without_backup=lambda ctx, source, asked: None)
         state = self.state(plug_kind="made-up")
         ctx = SimpleNamespace(state=state, replace_own_build=False, firmware_given="tasmota", esphome_firmware=None)
         with mock.patch.object(kinds, "ALL", (kinds.SONOFF_S60, other)), \
@@ -191,13 +195,36 @@ class BekenTargetTests(unittest.TestCase):
                 if running in ("midway", "committed", "installer"):
                     self.assertEqual(line, "Converting the device to ESPHome.")
 
-    def test_an_s60_still_needs_its_backup(self):
-        ctx = SimpleNamespace(state=self.state(plug_kind="sonoff-s60", plug_mac="12:34:56:ab:cd:ef"),
-                              replace_own_build=False, firmware_given="sonoff", esphome_firmware=None)
-        with mock.patch.object(routes.source, "find_current_firmware", return_value="esphome"), \
-                mock.patch.object(routes.plugs, "find_backup", return_value=None):
-            with self.assertRaisesRegex(routes.Abort, "no backup"):
-                routes.settle_route(ctx)
+    def test_an_s60_with_no_backup_needs_its_identity(self):
+        # On Tasmota, kept in its sector; failing that, or from ESPHome (whose
+        # settings only the hub can read), asked for: from the account too.
+        for running, kept, record, offered in (("tasmota", None, None, False), ("tasmota", "kept", None, True),
+                                               ("tasmota", None, {"deviceid": "x"}, True),
+                                               ("esphome", None, None, True)):
+            with self.subTest(running=running, kept=kept, record=record):
+                state = RunState.open(Path(self.tmp.name) / f"{running}-{kept}-{bool(record)}")
+                state.set_input("plug_kind", "sonoff-s60")
+                state.set_input("plug_mac", "12:34:56:ab:cd:ef")
+                ctx = SimpleNamespace(state=state,
+                                      replace_own_build=False, firmware_given="sonoff", esphome_firmware=None)
+                with mock.patch.object(routes.source, "find_current_firmware", return_value=running), \
+                        mock.patch.object(routes.plugs, "find_backup", return_value=None), \
+                        mock.patch.object(identity, "kept_in_sector", return_value=kept), \
+                        mock.patch.object(identity, "account_record", return_value=record), \
+                        mock.patch.object(update, "outdated", return_value=False), \
+                        mock.patch.object(routes.output, "say"):
+                    if offered:
+                        self.assertEqual(routes.settle_route(ctx), ("sonoff", running))
+                    else:
+                        with self.assertRaisesRegex(routes.Abort, "no backup"):
+                            routes.settle_route(ctx)
+
+    def test_unasked_sonoff_is_offered_without_a_backup_only_from_a_kept_identity(self):
+        ctx = SimpleNamespace()
+        with mock.patch.object(identity, "kept_in_sector", return_value="kept"), \
+                mock.patch.object(identity, "account_record", side_effect=AssertionError("not asked")):
+            self.assertIn("keeps", espressif.sonoff_without_backup(ctx, "tasmota"))
+            self.assertIsNone(espressif.sonoff_without_backup(ctx, "esphome"))
 
     def test_an_s61_run_with_no_firmware_chosen_has_the_start_alone(self):
         state = self.state(plug_kind="sonoff-s61", source="esphome")

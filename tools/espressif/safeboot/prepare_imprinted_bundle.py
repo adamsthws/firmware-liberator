@@ -49,7 +49,6 @@ try:
         TABLE_OFFSET,
         TABLE_SIZE,
         TARGET_PARTITIONS,
-        TARGET_TABLE_SHA256,
         artifact_bytes,
         is_imprinted_manifest,
         load_manifest,
@@ -64,6 +63,7 @@ try:
         require_pinned_artifacts,
         require_recovery_manifest,
         sha256_bytes,
+        target_table as target_table_of,
         validate_native_image,
         verify_manifest_files,
     )
@@ -86,7 +86,6 @@ except ModuleNotFoundError:  # running from inside tools/
         TABLE_OFFSET,
         TABLE_SIZE,
         TARGET_PARTITIONS,
-        TARGET_TABLE_SHA256,
         artifact_bytes,
         is_imprinted_manifest,
         load_manifest,
@@ -101,6 +100,7 @@ except ModuleNotFoundError:  # running from inside tools/
         require_pinned_artifacts,
         require_recovery_manifest,
         sha256_bytes,
+        target_table as target_table_of,
         validate_native_image,
         verify_manifest_files,
     )
@@ -235,12 +235,15 @@ def build_bundle(
     if len(factory_bytes) != APP0_OFFSET + len(app_bytes):
         raise BundleError("factory image has unexpected bytes before/after app0")
 
-    target_table = factory_bytes[TABLE_OFFSET : TABLE_OFFSET + TABLE_SIZE]
+    # Tasmota's own table, with the entry for the sector that keeps the
+    # plug's Sonoff identity (safeboot_migration.target_table).
+    try:
+        target_table = target_table_of(factory_bytes[TABLE_OFFSET : TABLE_OFFSET + TABLE_SIZE])
+    except ValueError as exc:
+        raise BundleError(f"the factory image's partition table: {exc}") from exc
     target_report = parse_partition_sector(target_table)
     require_exact_partitions(target_report, TARGET_PARTITIONS)
-    if target_report["sha256"] != TARGET_TABLE_SHA256:
-        raise BundleError("target table differs from the reviewed official table sector")
-    target_table_path = output / "target-official-partition-table.bin"
+    target_table_path = output / "target-partition-table.bin"
     target_table_path.write_bytes(target_table)
 
     # An image from before the password was kept only in memory.

@@ -170,7 +170,15 @@ run: [devices/sonoff-s61/](../devices/sonoff-s61/README.md)). Steps
    it is fetched and checked whole first, then written in under a second and
    read back; if it does not read back right, the old one is put back. A
    power cut in that second would leave a plug that has to be opened to
-   repair. Then **rebuild the plug's memory layout** to match the official Tasmota one. The
+   repair. Then **keep the plug's Sonoff identity** - its eWeLink id and key, model
+   and kind, a few hundred bytes of Sonoff's settings, never your Wi-Fi - in the
+   last 4 KB of its memory, taken from its backup on your computer, or from the
+   plug's own settings if there is none. With it the plug can go back to Sonoff's
+   firmware later even if your computer no longer has its backup
+   ([Changing firmware later](#changing-firmware-later)). Then **rebuild the plug's
+   memory layout** to match the official Tasmota one, with one change: the
+   filesystem ends 4 KB early, and that last 4 KB is an area of its own, holding
+   the identity. The
    tool counts down ten seconds first - Ctrl-C stops it. Before writing over
    anything, it copies the plug's settings, and the note that says which half
    to start, to where the rebuild does not reach, and points the plug at the
@@ -195,7 +203,10 @@ asks.
 
 For **ESPHome**, after the bootloader, steps 9 and 10 are instead:
 
-9. **Install ESPHome** into the half of the plug's memory Tasmota is not
+9. **Keep the plug's Sonoff identity** in the last 4 KB of its memory, as on the
+   way to Tasmota. ESPHome keeps Sonoff's settings, identity and all, but loses
+   them when you later move it to another firmware; this copy stays. Then
+   **install ESPHome** into the half of the plug's memory Tasmota is not
    running from - this project's ESPHome firmware for the S60, with your Wi-Fi
    written in, in your computer's memory only. Every block is read back and
    compared with that firmware, byte for byte. Only then does the plug switch to ESPHome, by clearing the
@@ -222,18 +233,44 @@ of each, and compares them against the files they came from:
 
 If all four match, the plug's Tasmota is byte-for-byte identical to a plug
 flashed over USB with the official release - not equivalent, identical - with
-ESPHome's bootloader starting it.
+ESPHome's bootloader starting it. The one difference is in the layout table,
+which has the area for the Sonoff identity after a filesystem 4 KB shorter.
 
 From then on it is an ordinary Tasmota device: normal updates through its own
 web page, normal integrations, and none of it touching Sonoff's servers.
+Tasmota's updates, its `Reset` commands and its filesystem leave the identity
+alone. Two things do not:
+
+- **Tasmota's Partition Wizard** offers to grow the filesystem by those 4 KB
+  ("Resize FS to max"). Doing it removes the identity's area from the table, and
+  the filesystem then writes over it once it fills up. Leave that button alone.
+- **Writing Tasmota's factory image over the plug**, with the web installer say,
+  puts Tasmota's own table back. The identity is still there, and the tool still
+  finds it, but the filesystem can now write over it in the same way.
+
+Either way your backup on the computer, or your eWeLink account, can still take
+the plug back to Sonoff's firmware.
 
 
 ## Changing firmware later
 
 A plug this tool converted can move to either of the other two, or back to
 Sonoff's firmware. The tool finds your plug on the network by how it answers,
-tells you what it runs, and offers the other two (Sonoff's only where the plug's
-backup is on the computer). Every route has the same checks as above.
+tells you what it runs, and offers the other two. Every route has the same
+checks as above.
+
+Going back to Sonoff's firmware writes the plug's own backup from your computer
+when it is there. Without it, the tool puts the same together: Sonoff's official
+firmware for your plug, which it downloads from eWeLink as the plug itself would
+(or else from the public copy of that file the FlashDumps project keeps), Sonoff's
+layout, and settings holding the plug's identity and the Wi-Fi it is on now. The
+identity is the one the plug keeps; failing that, the tool rebuilds it from your
+eWeLink account, which knows the plug's id, key, model and kind, as long as the
+plug is still in it. The run says which it used. A plug on Tasmota with its
+identity is offered Sonoff's firmware as usual; from ESPHome, or with only your
+account to go on, ask for it with `--firmware sonoff`. Sonoff's firmware then
+starts with its own settings: names, timers and energy history start afresh, and
+the meter's factory calibration comes back only with the backup.
 
 If your plug runs Tasmota, the tool also offers to keep Tasmota (`--firmware tasmota`
 chooses it in advance). That changes only the meter: the tool calibrates

@@ -1,4 +1,5 @@
-"""Back to Sonoff's own firmware, from the plug's backup (R1, R2).
+"""Back to Sonoff's own firmware, from the plug's backup - or, with none on
+this computer, from Sonoff's official firmware and the plug's identity (R1, R2).
 """
 
 from __future__ import annotations
@@ -6,9 +7,10 @@ from __future__ import annotations
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import detect, esphome, join, kinds, output, plans, plugs
-from tools.autoflash.errors import Abort
-from tools.autoflash.routes.espressif import hub
+from tools.autoflash import detect, esphome, join, kinds, output, plans, plugs, sonoff_firmware
+from tools.autoflash.errors import Abort, NothingWritten
+from tools.autoflash.routes.espressif import hub, identity
+from tools.espressif import sonoff_identity
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -26,20 +28,59 @@ def sonoff_backup(ctx: Context) -> bytes:
         raise Abort(f"the backup could not be read: {exc}") from exc
 
 
+def rebuilt(ctx: Context, kind: kinds.Kind) -> tuple[bytes, str]:
+    """For a plug with no backup on this computer, what its backup would have
+    held: Sonoff's firmware for it, its layout, and settings holding its Sonoff
+    identity and the Wi-Fi it is on now. The identity is the one the plug kept -
+    in its settings, or in the sector at the top of its flash, which outlasts
+    the startup firmware wiping the settings on the way here - else rebuilt
+    from its eWeLink account record. Says which."""
+    layout = esphome.layout_of(kind)
+    kept = identity.from_settings(ctx, layout) or identity.kept_in_sector(ctx)
+    found = kept or identity.from_account(ctx, kind)
+    if found is None:
+        raise NothingWritten(
+            "there is no backup of this device's Sonoff firmware on this computer, the device keeps "
+            "no Sonoff identity, and its eWeLink account has no record of it to rebuild one from")
+    where = ("the Sonoff identity the device kept" if kept else
+             "its eWeLink account's record of it (its id, key, model and kind)")
+    try:
+        app, source = sonoff_firmware.official_app(ctx, kind, found, layout)
+        settings = sonoff_identity.nvs(found, identity.nvs_size(layout), ctx.wifi())
+        flash = sonoff_firmware.flash_of(esphome.sonoff_table(kind), settings, app, layout)
+    except (sonoff_firmware.FirmwareError, sonoff_identity.IdentityError, esphome.ImageError) as exc:
+        raise NothingWritten(f"Sonoff's firmware cannot be put back without a backup: {exc}") from exc
+    output.say("There is no backup of the device's Sonoff firmware on this computer, so it is put")
+    output.say(f"together: Sonoff's firmware from {source}, and its identity from {where},")
+    output.say("with the Wi-Fi it is on now.")
+    ctx.state.capture("R1.rebuilt", {"firmware": source, "identity": "kept" if kept else "account"})
+    ctx.state.capture("R1.identity", "kept" if kept else "account")
+    return flash, where
+
+
 def step_sonoff_restore(ctx: Context) -> dict[str, Any]:
     """R1 - the plug's own Sonoff firmware and settings, from its backup, beside
     the Tasmota it runs; the boot selection set to it last, then a restart.
-    Two plans, as Sonoff's firmware is more than one may write."""
+    Two plans, as Sonoff's firmware is more than one may write. With no backup
+    on this computer, they write what it would have held (rebuilt)."""
     kind = kinds.of_run(ctx.state)
     layout = esphome.layout_of(kind)
-    backup = sonoff_backup(ctx)
+    mac = ctx.state.input("plug_mac")
+    if mac and plugs.find_backup(mac):
+        backup, source = sonoff_backup(ctx), "backup"
+        ctx.state.capture("R1.identity", "backup")
+    elif ctx.dry_run:
+        output.say("[dry-run] would put Sonoff's firmware together, as there is no backup of it")
+        return {"dry_run": True}
+    else:
+        backup, source = rebuilt(ctx, kind)
     try:
         running = out_of_sonoffs_slot(ctx, backup, kind)
         first, second = plans.back_to_sonoff(backup, running=running, layout=layout)
     except plans.PlanError as exc:
         raise Abort(f"the backup cannot be written back: {exc}") from exc
     hub.run_plan(ctx, first)
-    return hub.run_plan(ctx, second)
+    return hub.run_plan(ctx, second) | {"from": source}
 
 
 def out_of_sonoffs_slot(ctx: Context, backup: bytes, kind: kinds.Kind) -> int:

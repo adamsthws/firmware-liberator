@@ -27,7 +27,7 @@ from tools.autoflash import (
 from tools.autoflash.device import DeviceError
 from tools.autoflash.state import DONE, RunState
 from tools.autoflash.routes import espressif, update
-from tools.autoflash.routes.espressif import evidence, mover, source, tasmota
+from tools.autoflash.routes.espressif import evidence, identity, mover, source, tasmota
 from tools.espressif import chips
 
 
@@ -127,7 +127,7 @@ class RouteTests(RouteTestCase):
     def test_each_firmware_has_its_own_steps(self):
         esphome = [step for step, _, _ in espressif.steps_for("esphome")]
         tasmota = [step for step, _, _ in espressif.steps_for("tasmota")]
-        self.assertEqual(esphome[-4:], ["D4", "D5", "I1", "I2"])
+        self.assertEqual(esphome[-5:], ["D4", "D5", "K1", "I1", "I2"])
         self.assertNotIn("E3", esphome)  # the partition table is left as Sonoff made it
         self.assertEqual(tasmota[-1], "H1")
         self.assertEqual(esphome[:len(espressif.COMMON_STEPS)], tasmota[:len(espressif.COMMON_STEPS)])
@@ -189,6 +189,20 @@ class EndingTests(RouteTestCase):
         legacy = self.ctx(run="tasmota-run")
         legacy.state.mark("D1", DONE)
         self.assertEqual(dict(report.report_fields(legacy, 300, False))["Firmware"], "Tasmota")
+
+    def test_a_run_back_to_sonoff_says_where_the_identity_came_from(self):
+        for taken, said in (("backup", "From the backup on this computer"), ("kept", "From the device"),
+                            ("account", "Rebuilt from your eWeLink account"), (None, "Not read yet")):
+            with self.subTest(taken=taken):
+                ctx = self.ctx(firmware="sonoff", source="tasmota", run=f"sonoff-{taken}")
+                if taken:
+                    ctx.state.capture("R1.identity", taken)
+                self.assertEqual(dict(report.report_fields(ctx, 300, False))["Sonoff identity"], said)
+        # Left out of every other run's report, whatever it read.
+        for firmware in ("tasmota", "esphome"):
+            ctx = self.ctx(firmware=firmware, run=f"to-{firmware}")
+            ctx.state.capture("R1.identity", "backup")
+            self.assertNotIn("Sonoff identity", dict(report.report_fields(ctx, 300, False)))
 
     def test_the_hardware_check_switches_through_esphome(self):
         relay = {"on": True}
@@ -768,6 +782,8 @@ class FromAConvertedPlugTests(RouteTestCase):
         ctx = self.ctx(given=given, run=f"{running}-{given}-{backup}")
         with mock.patch.object(source, "find_current_firmware", return_value=running), \
                 mock.patch.object(routes, "sonoff_backup_exists", return_value=backup), \
+                mock.patch.object(identity, "kept_in_sector", return_value=None), \
+                mock.patch.object(identity, "account_record", return_value=None), \
                 mock.patch.object(prompts, "ask_choice", return_value=answer) as asked:
             route = routes.settle_route(ctx)
         return route, (asked.call_args.args[1] if asked.called else None)
@@ -898,7 +914,7 @@ class LeavingTasmotaForESPHomeTests(RouteTestCase):
 
     def test_any_other_goes_through_the_hub_which_writes_it(self):
         steps = self.names(self.settle(direct=False).state)
-        self.assertEqual(steps, ["A0", "A5", "L1", "X1", "X2", "D4", "D5", "I1", "I2"])
+        self.assertEqual(steps, ["A0", "A5", "L1", "X1", "X2", "D4", "D5", "K1", "I1", "I2"])
 
     def test_a_plug_that_will_not_say_goes_through_the_hub(self):
         ctx = self.ctx(plug_kind="sonoff-pow-elite")

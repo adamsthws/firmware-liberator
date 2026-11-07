@@ -16,6 +16,17 @@ check.
 
 ## 2.4.0
 
+- A plug can go back to Sonoff's firmware with no backup on your computer. On the
+  way to Tasmota or ESPHome the tool keeps the plug's Sonoff identity - its eWeLink
+  id and key, model and kind, never its Wi-Fi - in the last 4 KB of its memory, an
+  area of its own in the Tasmota layout, whose filesystem is 4 KB shorter for it.
+  Leaving Tasmota, the identity goes into the settings of the next firmware. Going
+  back without a backup, the tool fetches Sonoff's official firmware from eWeLink
+  (or the public copy FlashDumps keeps) and writes it with the kept identity, or one
+  rebuilt from your eWeLink account, and the Wi-Fi the plug is on now; the run and
+  its report say which. The backup comes first where it is there. Plugs converted
+  before keep Tasmota's own table, and go back from the account. Tasmota's
+  Partition Wizard's "Resize FS to max" takes that area back: leave it alone.
 - The tool converts plugs with a classic ESP32 and other partition layouts, not
   only an ESP32-C3 on the S60's: the Sonoff POW Elite, POWCT, TH Elite and
   DUALR3, to Tasmota and to ESPHome, with their firmware pinned. A plug whose partition

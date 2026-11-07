@@ -9,6 +9,9 @@ var session = "@SESSION@"
 var arm_token = "@ARM_TOKEN@"
 var armed = true
 var target_table_hash = bytes("@TARGET_TABLE_SHA256@")
+# Tasmota's own table, which a commit made by a version of the tool before the
+# Sonoff identity was kept wrote.
+var official_table_hash = bytes("@OFFICIAL_TABLE_SHA256@")
 var recovery_safeboot_hash = bytes("@SAFEBOOT_SHA256@")
 var official_safeboot_hash = bytes("@OFFICIAL_SAFEBOOT_SHA256@")
 var official_pad_hash = bytes("@OFFICIAL_STAGING_PAD_SHA256@")
@@ -302,7 +305,8 @@ def run_restore(provided_token)
   guard(tasmota.arch() == "@ARCH@", "device is not @ARCH@")
   guard(flash.size() == 0x400000, "flash is not exactly 4 MiB")
   guard(flash.current_ota() == 0, "official app0 must be running")
-  guard(sha_region(0x8000, 0x1000) == target_table_hash, "canonical partition table differs")
+  var table = sha_region(0x8000, 0x1000)
+  guard(table == target_table_hash || table == official_table_hash, "canonical partition table differs")
   guard(sha_region(0xE0000, app_length) == app_hash, "running app0 differs from pinned official image")
   armed = false
   var start = resume_point()

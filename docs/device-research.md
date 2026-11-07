@@ -77,6 +77,86 @@ takes the direct route only if it has that bootloader already, read by its hash,
 otherwise goes through the interim Tasmota. Tasmota's own bootloader starts the mover:
 seen in a POW Elite's boot log, in the emulator.
 
+## A plug's Sonoff identity
+
+What makes a plug the device its eWeLink account knows is a few entries of Sonoff's
+NVS, 300 to 550 bytes: `frame_params/content` and `data_backups/content` on every
+Espressif plug, `productId/productId` on the S60, `channel_params/content` and
+`PID/content` on the POWCT. The POW Elite also caches eWeLink's server
+certificates (`wss_ca1` to `wss_ca4`, about 5.9 KB), which are not identity. Neither
+is the Wi-Fi (`nvs.net80211`, `frame_params`' `ssid` and `passwd`), the histories,
+logs or radio calibration.
+
+On a real S60, against its account record: `frame_params.deviceid` is the record's
+`deviceid`; `frame_params.apikey`, `encrypt_key` (where there is one) and
+`data_backups.apikey` are its `devicekey`; `model` and `uiid` are `extra.model` and
+`extra.uiid`. Not in the record: `sha256` (64 hex digits), `init`, the dispatch
+server and port, and the Wi-Fi. So `sonoff_identity.from_account` rebuilds
+`frame_params` and `data_backups` from the record, with the account region's
+dispatch server (`eu-dispd.coolkit.cc`), `encrypt_key` and `is_encrypt` on a
+classic ESP32 plug as their dumps have them, and no `sha256`.
+
+In the emulator, against the stub, the S60's firmware 1.2.0 registers and reports
+its state the same with `sha256` as it was, without it, and as 64 zeros; and with
+`frame_params` cut to `init`, `uiid`, `deviceid`, `apikey` and `model`, no
+`productId`, `data_backups` or user settings. `sha256` is sent neither in dispatch
+nor in register, so nothing there checks it. Whether the real eWeLink accepts a
+plug rebuilt this way has not been tried.
+
+The ESPHome route keeps Sonoff's layout and NVS, identity included; the Tasmota
+route shrinks the NVS to 20 KB, which loses it. So the tool keeps it in a sector of
+its own at `0x3FF000` ([technical-details.md](technical-details.md#the-finished-memory-layout)).
+What was seen of it in the emulator:
+
+| What | S60 | POW Elite |
+|---|---|---|
+| Stock to Tasmota: the sector holds the identity, the table its entry, Tasmota boots, its filesystem (316 KB) takes a file | yes | yes |
+| A Tasmota OTA update through its safeboot (`Upgrade 1`) | kept | |
+| `Reset 1`, `Reset 2`, `Reset 5`, `Reset 6` | kept | |
+| The filesystem formatted (its first two blocks erased; Tasmota made it again) | kept | |
+| The filesystem filled up | kept | |
+| Tasmota's factory image written over it from `0x0` | kept; the table's entry gone, found by its magic | |
+| Partition Wizard (v16.0.0, loaded by hand) | offers "Resize FS to max" by 4 KB; doing it drops the entry, and the filesystem filled up wrote over the sector | |
+| Back to Sonoff, no backup, from the kept identity: Sonoff's firmware online on the stub with its own id and key | yes, after the factory image too | yes |
+| Back to Sonoff, no backup, identity from the account record alone | yes | yes |
+| Tasmota to ESPHome: the identity in ESPHome's settings, and the sector kept | yes | |
+| Stock to ESPHome: Sonoff's settings kept, and the sector written too | yes | |
+| From either ESPHome back to Sonoff, no backup: online with its own id and key | yes, from the sector | |
+| TH Elite stock to Tasmota (sector kept; at `0x3FF000` it is in no partition of its own layout) | yes | |
+
+The Partition Wizard looks for unallocated flash past the last *filesystem*
+partition, not past the last partition, so the `sonoff` area counts as free; and its
+"Resize FS to max" begins by removing every non-app partition after the filesystem
+(`remove_partition_after_last_fs`, in `resize_max_flash_size_k`), whatever the flash
+size. Its other resize, which needs the filesystem last, is not offered.
+
+Just in front of the filesystem, at `0x3AF000` (the last 4 KB of `app0`), was tried
+as well, and is not used. On Tasmota's layout it is the better place: the filesystem
+keeps its 320 KB, the Wizard's only offer there ("Resize FS") refuses every size
+("last `app` partition has no firmware"), and after a factory image it is reached only
+by an update of 0x2D0000 bytes, as Tasmota's page upload stops 4 KB short of `app0`'s
+end. But every plug passes through Sonoff's layout, where `0x3AF000` is inside the
+interim Tasmota the hub runs from `ota_1` on an ESP32-C3 (`tasmota32c3-bluetooth.bin`,
+ending at `0x3C92C0`; a classic ESP32's ends at `0x377230`). On the S60, writing it
+there damaged the running image, and every way back writes that image over it again,
+so going back fell back on the eWeLink account. Updates erase only as far as their
+image: Arduino's `Update` by the size it began with, ESP-IDF's `esp_ota_begin` the whole
+partition only for size 0 or unknown, and ESPHome 2026.10.0 to its next 64 KB past the
+image.
+
+The startup firmware wipes NVS when it finds no Tasmota settings there
+(`persist-settings.patch`), as on the way from the mover or from ESPHome to the
+interim Tasmota. So the identity L1 writes into the settings, or ESPHome kept, is
+gone by the time R1 runs; the sector at the end of `ota_1` is not, as every update on
+the way writes only as far as its image. R1 reads it there, and the tool keeps it
+on the way to ESPHome too.
+
+The emulator cannot run Sonoff's official update file as eWeLink serves it: every
+Sonoff app it runs has Bluetooth start-up skipped and the stub's CA swapped in. So
+the stub offers the plug's own app made so (`stub_cloud/firmware.py`), as eWeLink's
+latest, to `ota/query` with an older version, and serves it to the device's id;
+fetching, unwrapping and checking it is the same code as against eWeLink.
+
 ## Locked devices
 
 Reported locked, with secure boot and flash encryption:

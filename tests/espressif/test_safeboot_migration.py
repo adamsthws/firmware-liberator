@@ -21,13 +21,18 @@ from tools.espressif.safeboot.safeboot_migration import (
     SECTOR_SIZE,
     SOURCE_PARTITIONS,
     SOURCE_TABLE_SHA256,
+    OFFICIAL_PARTITIONS,
+    OFFICIAL_TABLE_SHA256,
     TARGET_PARTITIONS,
+    TARGET_TABLE_SHA256,
     analyze_canonical_nvs,
     official_release,
     parse_partition_sector,
     require_pinned_artifacts,
+    require_tasmota_table,
     sector_aligned_size,
     sha256_bytes,
+    target_table,
 )
 from tools.autoflash import esphome as esphome_files
 from tools.autoflash import plans
@@ -511,6 +516,33 @@ class MigrationValidationTests(unittest.TestCase):
         # same Tasmota, with its settings, where Sonoff's would start one without.
         self.assertIn("keep_interim_layout(interim)", commit)
 
+    def test_the_table_written_is_tasmotas_with_the_identitys_sector(self):
+        official = partition_sector(OFFICIAL_PARTITIONS)
+        self.assertEqual(sha256_bytes(official), OFFICIAL_TABLE_SHA256)  # as the factory image has it
+        table = target_table(official)
+        self.assertEqual(sha256_bytes(table), TARGET_TABLE_SHA256)
+        entries = {e["label"]: e for e in parse_partition_sector(table)["entries"]}
+        self.assertEqual((entries["spiffs"]["offset"], entries["spiffs"]["end"]), (0x3B0000, 0x3FF000))
+        self.assertEqual((entries["sonoff"]["type"], entries["sonoff"]["subtype"], entries["sonoff"]["offset"],
+                          entries["sonoff"]["end"]), (0x01, 0x40, 0x3FF000, 0x400000))
+        # Everything else as Tasmota has it.
+        self.assertEqual([e for e in parse_partition_sector(table)["entries"][:4]],
+                         parse_partition_sector(official)["entries"][:4])
+        for other in (partition_sector(TARGET_PARTITIONS), partition_sector(SOURCE_PARTITIONS)):
+            with self.assertRaisesRegex(ValueError, "partition entries differ|official"):
+                target_table(other)
+
+    def test_restore_accepts_a_commit_made_on_tasmotas_own_table(self):
+        # By a version of the tool before the identity was kept.
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = MigrationFixture(Path(directory))
+            recovery = fixture.enable_recovery()
+            fixture.evidence_dir.mkdir(parents=True, exist_ok=True)
+            fixture.write_commit_evidence(sha256_bytes(recovery))
+            rendered = fixture.state("restore").render_berry().decode()
+            self.assertIn(f'official_table_hash = bytes("{OFFICIAL_TABLE_SHA256}")', rendered)
+            self.assertIn("table == target_table_hash || table == official_table_hash", rendered)
+
     def test_restore_is_armed_and_requires_official_app_before_factory_write(self):
         with tempfile.TemporaryDirectory() as directory:
             fixture = MigrationFixture(Path(directory))
@@ -631,6 +663,12 @@ class MigrationValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "different partition table"):
             self.unproven_state(commit_table="00" * 32)
 
+    def test_unproven_takes_a_commit_of_tasmotas_own_table(self):
+        # sonoff>tasmota:F4:legacy-v1.2.0: 1.2.0 committed Tasmota's own table,
+        # and the bundle made again on resuming has the identity's.
+        state, _ = self.unproven_state(commit_table=OFFICIAL_TABLE_SHA256)
+        self.assertEqual(state.commit_evidence["target_table_sha256"], OFFICIAL_TABLE_SHA256)
+
     def test_unproven_is_for_the_restore_only(self):
         with tempfile.TemporaryDirectory() as directory:
             fixture = MigrationFixture(Path(directory))
@@ -712,6 +750,10 @@ class MigrationValidationTests(unittest.TestCase):
     def test_restore_refuses_a_commit_of_another_table(self):
         with self.assertRaisesRegex(ValueError, "different partition table"):
             self.restore_with_commit_evidence(target_table_sha256="0" * 64)
+
+    def test_restore_takes_a_commit_of_tasmotas_own_table_with_a_bundle_made_since(self):
+        state = self.restore_with_commit_evidence(target_table_sha256=OFFICIAL_TABLE_SHA256)
+        self.assertEqual(state.commit_evidence["target_table_sha256"], OFFICIAL_TABLE_SHA256)
 
     def test_restore_refuses_a_commit_of_another_recovery_safeboot(self):
         with self.assertRaisesRegex(ValueError, "does not match recovery Safeboot"):
@@ -975,6 +1017,36 @@ class MigrationValidationTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
                 thread.join(timeout=2)
+
+
+class TasmotaTableTests(unittest.TestCase):
+    """A run's bundle may name either Tasmota table this tool converts to: a run
+    begun before the identity's sector was added carries Tasmota's own, and G1
+    resumed by this version must still take it."""
+
+    def test_either_reviewed_table_is_taken(self):
+        for partitions in (TARGET_PARTITIONS, OFFICIAL_PARTITIONS):
+            with self.subTest(entries=len(partitions)):
+                require_tasmota_table(parse_partition_sector(partition_sector(partitions)))
+
+    def test_any_other_is_refused(self):
+        changed = tuple(entry if entry[0] != "spiffs" else (*entry[:4], 0x040000, 0) for entry in OFFICIAL_PARTITIONS)
+        with self.assertRaisesRegex(ValueError, "partition entries differ"):
+            require_tasmota_table(parse_partition_sector(partition_sector(changed)))
+
+    def test_a_restore_takes_a_bundle_made_with_tasmotas_own_table(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = MigrationFixture(Path(directory))
+            recovery = fixture.enable_recovery()
+            official = partition_sector(OFFICIAL_PARTITIONS)
+            (fixture.root / "target.bin").write_bytes(official)
+            fixture.manifest["artifacts"]["target_table"].update(size=len(official), sha256=sha256_bytes(official))
+            fixture.manifest_path.write_text(json.dumps(fixture.manifest), encoding="utf-8")
+            fixture.target_table = official
+            fixture.evidence_dir.mkdir(parents=True, exist_ok=True)
+            fixture.write_commit_evidence(sha256_bytes(recovery))
+            state = fixture.state("restore")
+        self.assertEqual(state.target_table_sha256, OFFICIAL_TABLE_SHA256)
 
 
 if __name__ == "__main__":
