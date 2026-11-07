@@ -231,7 +231,7 @@ docker run --rm -v "$(pwd)":/app ubuntu:24.04 bash -c '
 clone, patches, driver and table, build in [`build.Dockerfile`](build.Dockerfile) -
 and publishes the image as `artifacts/openbeken-<plug>-<version>.rbl`, the
 OpenBeken and SDK commits pinned in `firmware.json`
-([docs/updating-firmware.md](../../../docs/updating-firmware.md)).
+([docs/updating-firmware.md](../../../docs/updating-firmware.md#3-openbeken)).
 By hand, `output/s61/OpenBK7238_4M_s61.rbl` is the `rt_ota` image for the **OTA
 conversion**: wrap it in the CoolKit FOTA container with
 [`fota_wrap.py`](../fota_wrap.py) to push it to a stock plug.
