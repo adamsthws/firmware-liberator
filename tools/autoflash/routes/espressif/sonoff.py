@@ -30,13 +30,37 @@ def step_sonoff_restore(ctx: Context) -> dict[str, Any]:
     """R1 - the plug's own Sonoff firmware and settings, from its backup, beside
     the Tasmota it runs; the boot selection set to it last, then a restart.
     Two plans, as Sonoff's firmware is more than one may write."""
+    kind = kinds.of_run(ctx.state)
+    layout = esphome.layout_of(kind)
+    backup = sonoff_backup(ctx)
     try:
-        first, second = plans.back_to_sonoff(sonoff_backup(ctx), running=1,
-                                             layout=esphome.layout_of(kinds.of_run(ctx.state)))
+        running = out_of_sonoffs_slot(ctx, backup, kind)
+        first, second = plans.back_to_sonoff(backup, running=running, layout=layout)
     except plans.PlanError as exc:
         raise Abort(f"the backup cannot be written back: {exc}") from exc
     hub.run_plan(ctx, first)
     return hub.run_plan(ctx, second)
+
+
+def out_of_sonoffs_slot(ctx: Context, backup: bytes, kind: kinds.Kind) -> int:
+    """The slot Tasmota runs from, once it is not the one Sonoff's firmware goes
+    back in. A plug that ran Sonoff's firmware from its second slot has it there
+    in its backup, where the hub runs: Tasmota sent again goes in the other."""
+    if ctx.dry_run:
+        return 1 - plans.stock_slot(backup, esphome.layout_of(kind))
+    device = ctx.device
+    running = hub.running_slot(device)
+    if running != plans.stock_slot(backup, esphome.layout_of(kind)):
+        return running
+    output.say("The device's Sonoff firmware goes back in the half of its memory Tasmota runs from,")
+    output.say("so Tasmota moves to the other half first.")
+    booted, uptime = device.started_at(), device.uptime_seconds()
+    hub.upload_or_prompt(ctx, esphome.interim_of(kind), "Berry Tasmota")
+    device.wait_for_reboot(timeout=300, started_at=booted, before=uptime)
+    moved = hub.running_slot(device)
+    if moved == running:
+        raise Abort(f"the device is still running from slot {running} after being sent Tasmota again")
+    return moved
 
 
 def sonoff_answers(address: str) -> bool:
