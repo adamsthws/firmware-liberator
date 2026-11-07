@@ -10,12 +10,11 @@ by hand takes the same steps ([after that](#by-hand)).
 
 | Firmware | On the plug | Follows | Pinned in |
 |---|---|---|---|
-| Official Tasmota: `tasmota32c3.bin`, `tasmota32c3-safeboot.bin` (and `tasmota32c3.factory.bin`, for its partition table) | for good | every Tasmota release | [`firmware.json`](../artifacts/firmware.json) |
-| ESPHome for the S60 (`artifacts/esphome-sonoff-s60-imprintable-*.bin`) | for good | every ESPHome release | `firmware.json` |
+| Official Tasmota: `tasmota32c3.bin`, `tasmota32c3-safeboot.bin` (and `tasmota32c3.factory.bin`, for its partition table); the classic ESP32's `tasmota32*.bin`, at the same release | for good | every Tasmota release | [`firmware.json`](../artifacts/firmware.json) |
+| ESPHome for each device (`artifacts/esphome-*`) | for good | every ESPHome release, every device's built together (`esphome --every-device`) | `firmware.json` |
 | ESPHome's bootloader (`artifacts/esphome-sonoff-s60-bootloader-*.bin`) | for good | only when it has to change | `firmware.json` |
 | The mover (`artifacts/autoflash-mover-*.bin`) | a minute or two | only when its config changes | `firmware.json` |
-| OpenBeken for the S61 (`artifacts/openbeken-sonoff-s61-*.rbl`) | for good | by hand: the weekly update does not follow OpenBeken's releases | `firmware.json` |
-| ESPHome for the S61 (`artifacts/esphome-sonoff-s61-*.rbl`) | for good | every ESPHome release, by hand so far | `firmware.json` |
+| OpenBeken for each Beken device (`artifacts/openbeken-*.rbl`) | for good | every OpenBeken release, every Beken device's built together (`openbeken --every-device`), its six scenarios run | `firmware.json` |
 | The Berry Tasmota, the recovery Safeboot, the settings template, the bridge | minutes | no | [`artifacts/README.md`](../artifacts/README.md) says where, and how each is changed |
 
 A new pin reaches plugs already converted. Running the tool on a plug with an
@@ -60,11 +59,12 @@ the apps of later 5.x releases. Replacing it is a decision of its own:
 ## By itself
 
 Every Monday `.github/workflows/firmware-update.yml` asks which release of each
-project has **settled** (`python3 tools/repo/update_firmware.py due`). A release has
+project - Tasmota, ESPHome and OpenBeken - has **settled** (`python3 tools/repo/update_firmware.py due`). A release has
 settled when it is
 
 1. a stable release - never a beta, a pre-release or a development build;
-2. the newest of its series (Tasmota's `16.0.x`, ESPHome's month, `2026.10.x`):
+2. the newest of its series (Tasmota's `16.0.x`, ESPHome's month, `2026.10.x`;
+   OpenBeken has no point releases, so each of its releases is a series):
    no later point release; and
 3. at least 7 days old, and either a newer series has begun or it is at least
    14 days old (`SETTLE_MIN_DAYS`, `SETTLE_DAYS`).
@@ -79,7 +79,8 @@ behind, on a series that has had its fixes. A release listed under `hold` in
 
 The workflow makes what is due into a pull request: the update (steps 1 and 2
 below, its docs and changelog line written, the version raised a minor version),
-then the unit tests and the final-firmware emulator test (step 4). Nothing is
+for every device, a device added included - then the unit tests, and on the pull
+request the emulator check of every device (step 4), which main requires. Nothing is
 pushed if the leak scan finds anything in it. The pull request says which
 releases, what each check found, and the tests' results; the workflow then
 starts the lint, leak-scan and emulator-check workflows on its branch, as a
@@ -197,13 +198,13 @@ run again. A fix that updated plugs need goes in what the driver does on every
 start ([openbeken.md](../devices/sonoff-s61/openbeken.md#updating)).
 
 ```sh
-python3 tools/repo/update_firmware.py openbeken                       # the pinned OpenBeken commit
-python3 tools/repo/update_firmware.py openbeken --commit <sha>
+python3 tools/repo/update_firmware.py openbeken                       # again on what is pinned
+python3 tools/repo/update_firmware.py openbeken --release 1.18.321    # moved to a stable release
 python3 tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-s61
 ```
 
 `openbeken` clones [OpenBK7231T_App](https://github.com/openshwprojects/OpenBK7231T_App)
-at the commit pinned (or `--commit`; with none pinned, `main`'s head) and its
+at the commit pinned (or `--release`; with none pinned, its latest release) and its
 SDK, applies this project's patches
 ([`tools/beken/openbeken/`](../tools/beken/openbeken/): the 4 MB table,
 offered upstream, and the hook before an OTA's restart the driver uses),
@@ -218,9 +219,10 @@ image is an rt_ota app of the version asked, fits the download slot, and
 holds each command the driver registers; then it publishes it, recording the
 OpenBeken and SDK commits, the OpenBeken release the commit is (or the latest
 before it, which the README's badge shows), the hashes of the driver, the table
-and the patches, and the build image. Nothing takes OpenBeken by itself: update
-it by hand, on a commit that has been out a while. The version comes from the
-commit: `1.18.320-2` is this project's second build on OpenBeken's release
+and the patches, and the build image, and writes its row, `NOTICES.md` and the
+changelog. It moves only to a stable release (`--release`), as the weekly update does
+once one has settled, for every Beken device at once (`--every-device`). The
+version comes from what it builds: `1.18.320-2` is this project's second build on OpenBeken's release
 1.18.320, the number starting again at 1 on a new release.
 
 `esphome --plug sonoff-s61` builds `devices/sonoff-s61/esphome.yaml` in
@@ -230,8 +232,7 @@ its version, project and ESPHome release, and has the Wi-Fi action in it,
 with the build's download partition where the stock bootloader looks. Its
 first boot reads the plug's Wi-Fi and calibration from the stock store, so
 the image holds no placeholders and nothing is written into it. The config's
-version is raised and the image published as the S60's is. The docs for
-either are written by hand (below).
+version is raised and the image published as the S60's is, with its docs.
 
 ### 4. The docs
 
@@ -243,9 +244,10 @@ while any of it is missing:
 - `NOTICES.md`: the image's name, ESPHome release and ESP-IDF
   version;
 - `devices/sonoff-s60/esphome.md`: the ESPHome release that built the current image;
-- for the S61's images, the same by hand: their rows and paragraphs in
-  `artifacts/README.md`, `NOTICES.md` (the OpenBeken and SDK commits; the
-  ESPHome release and LibreTiny version), `devices/sonoff-s61/esphome.md`;
+- for the S61's ESPHome, the same, with its LibreTiny version, in
+  `devices/sonoff-s61/esphome.md`;
+- for its OpenBeken, by hand: its row in `artifacts/README.md` and its paragraph
+  in `NOTICES.md` (the OpenBeken and SDK commits);
 - `CHANGELOG.md`: a line for each firmware, with a link to its release notes,
   under the release to come - a new section, a minor version on, once the one
   above has been released, with `tools/autoflash/__init__.py` raised to it.
@@ -283,7 +285,8 @@ python -I tools/espressif/emulator/public_plugs.py test
 ```
 
 All four must convert. The repository's `emulator-check` workflow runs the
-same, with the unit tests, on GitHub's own runners, from the published public
+same for each device a change could affect (`tools/repo/emulator_check.py`, which
+has every device the tool converts), with the unit tests, on GitHub's own runners, from the published public
 plugs and emulator image, whenever the tool or its firmware changes. The faults are not put in their way: they test the
 tool's own recovery, which a new final firmware does not change. Where the
 recovery leans on the firmware's own behaviour, a major release (16 to 17,
@@ -291,8 +294,9 @@ say) or release notes touching its Wi-Fi, settings, updates or Berry, run
 those few scenarios of the fault suite too - F4's reset, G1, `seven-times`,
 and the network gone at L1 and X1 ([testing.md](testing.md#the-fault-suite)).
 
-**The S61's OpenBeken**, built anew - above all on a new OpenBeken commit -
-is run on the S61's emulator before it is published. This project's driver
+**The S61's OpenBeken**, built anew - above all on a new OpenBeken release -
+is run on the S61's emulator before it is published: the weekly update runs these
+six scenarios itself, and a pull request whose scenarios failed never merges itself. This project's driver
 and its hook before an OTA's restart lean on OpenBeken's own workings: where
 it keeps its settings and its Wi-Fi's (`0x3e1000`, and its flash variables
 at `0x1e5000`), how its HTTP OTA ends in a restart. A commit can move either

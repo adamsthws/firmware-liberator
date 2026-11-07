@@ -363,6 +363,231 @@ class ESPHomeDocTests(unittest.TestCase):
         self.assertEqual(readme.count("\n\n"), uf.ARTIFACTS_README.read_text(encoding="utf-8").count("\n\n"))
 
 
+class BekenESPHomeDocTests(unittest.TestCase):
+    """What an update of a Beken plug's ESPHome writes, to a made-up one."""
+
+    def setUp(self):
+        from unittest import mock
+        self.old = uf.load_pins()["beken"]["sonoff-s61"]["esphome"]
+        self.new = {"file": "artifacts/esphome-sonoff-s61-2099.1.0-1.rbl", "version": "2099.1.0-1",
+                    "esphome": "2099.1.0", "libretiny": "9.9.9", "sha256": "0" * 64}
+        with mock.patch.object(uf, "released", return_value=True):
+            self.texts, _version = uf.beken_esphome_doc_texts("sonoff-s61", self.old, self.new)
+
+    def test_each_doc_says_the_new_image(self):
+        readme = self.texts[uf.ARTIFACTS_README]
+        self.assertIn("| `esphome-sonoff-s61-2099.1.0-1.rbl` |", readme)
+        self.assertIn(f"`{self.new['sha256']}`", readme)
+        self.assertNotIn(Path(self.old["file"]).name, readme)
+        self.assertIn("built with ESPHome 2099.1.0 on LibreTiny 9.9.9", readme)
+        page = self.texts[uf.ROOT / "devices/sonoff-s61/esphome.md"]
+        self.assertIn(f"ESPHome 2099.1.0 built the current image, `{self.new['file']}`,", page)
+        self.assertIn("update_firmware.py esphome 2099.1.0 --plug sonoff-s61", page)
+        self.assertIn("ESPHome for the sonoff-s61 is 2099.1.0-1", self.texts[uf.CHANGELOG])
+
+    def test_the_notices_change_the_s61s_paragraph_and_not_the_s60s(self):
+        notices = self.texts[uf.NOTICES]
+        self.assertIn(f"`{self.new['file']}` is built with ESPHome 2099.1.0 and\nLibreTiny 9.9.9", notices)
+        self.assertIn("[ESPHome 2099.1.0 release](https://github.com/esphome/esphome/tree/2099.1.0)", notices)
+        self.assertIn("[LibreTiny 9.9.9](https://github.com/libretiny-eu/libretiny/tree/v9.9.9)", notices)
+        s60 = uf.load_pins()["esphome"]["image"]["esphome"]
+        self.assertIn(f"[ESPHome {s60} release]", notices.split(self.new["file"])[0])
+
+
+class EveryDeviceUpdatedTests(unittest.TestCase):
+    """The weekly update leaves no device behind, a device added included."""
+
+    def test_every_device_has_its_esphome_built(self):
+        for kind in kinds.READY:
+            self.assertIsNotNone(uf.esphome_command(kind), kind.key)
+
+    def test_every_devices_esphome_is_pinned_where_its_command_writes_it(self):
+        for kind in kinds.READY:
+            command = uf.esphome_command(kind)
+            if command is uf.command_esphome:
+                pin = PINS["esphome"]["image"]
+            elif command is uf.command_esphome_beken:
+                pin = PINS["beken"][kind.key]["esphome"]
+            else:
+                pin = PINS["espressif_kinds"][kind.key]["esphome"]
+            self.assertTrue((ROOT / pin["file"]).is_file(), kind.key)
+
+    def test_every_espressif_chip_takes_each_tasmota_release(self):
+        for kind in kinds.READY:
+            if kind.chip.startswith("esp32") and kind.chip != "esp32c3":
+                self.assertIn(kind.chip, uf.OTHER_CHIPS_TASMOTA, kind.key)
+                self.assertIn("tasmota", PINS[kind.chip], kind.key)
+
+    def test_every_device_is_built_by_one_run(self):
+        from unittest import mock
+        ran = []
+        commands = {name: mock.Mock(side_effect=lambda args, name=name: ran.append((name, args.plug)) or 0)
+                    for name in ("command_esphome", "command_esphome_beken", "command_esphome_kind")}
+        with mock.patch.multiple(uf, **commands):
+            self.assertEqual(uf.main(["esphome", "2099.1.0", "--every-device"]), 0)
+        self.assertEqual({plug or "sonoff-s60" for _, plug in ran}, {kind.key for kind in kinds.READY})
+
+    def test_it_is_not_asked_for_one_device(self):
+        import contextlib
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            uf.main(["esphome", "--every-device", "--plug", "sonoff-s61"])
+
+
+class OpenBekenRefTests(unittest.TestCase):
+    """OpenBeken moves only to a stable release."""
+
+    def stable(self, tag="1.18.321"):
+        from unittest import mock
+        return mock.patch.object(uf, "stable_release", return_value={"tag_name": tag})
+
+    def test_a_release_asked_for_is_checked_with_its_project(self):
+        with self.stable() as stable:
+            self.assertEqual(uf.openbeken_ref("1.18.321", {"app_commit": "c" * 40}), "1.18.321")
+        stable.assert_called_once_with(uf.OPENBEKEN_REPO, "1.18.321")
+
+    def test_a_tag_not_published_as_stable_is_refused(self):
+        from unittest import mock
+        with mock.patch.object(uf, "stable_release", side_effect=uf.UpdateError("not a stable release")):
+            with self.assertRaises(uf.UpdateError):
+                uf.openbeken_ref("1.18.999-beta", {"app_commit": "c" * 40})
+
+    def test_with_none_asked_for_it_stays_on_the_commit_pinned(self):
+        with self.stable() as stable:
+            self.assertEqual(uf.openbeken_ref(None, {"app_commit": "c" * 40}), "c" * 40)
+        stable.assert_not_called()
+
+    def test_with_nothing_pinned_it_starts_on_the_latest_release(self):
+        with self.stable():
+            self.assertEqual(uf.openbeken_ref(None, {}), "1.18.321")
+
+    def test_a_commit_cannot_be_asked_for(self):
+        import contextlib
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            uf.main(["openbeken", "--commit", "c" * 40])
+
+
+class OpenBekenPinnedTests(unittest.TestCase):
+    def test_the_oldest_beken_devices_build_is_the_one_compared(self):
+        pins = {"beken": {"a": {"openbeken": {"version": "1.18.321-1", "release": "1.18.321"}},
+                          "b": {"openbeken": {"version": "1.18.99-2", "release": "1.18.99"}},
+                          "c": {"esphome": {}}}}
+        self.assertEqual(uf.openbeken_pinned(pins), "1.18.99")
+
+    def test_every_beken_device_now(self):
+        self.assertTrue(uf.openbeken_pinned(PINS))
+
+
+class OpenBekenDueTests(unittest.TestCase):
+    """OpenBeken taken by the settled-release rule: each release a series of its own."""
+
+    @staticmethod
+    def releases(*pairs):
+        import datetime as dt
+        return [{"tag": tag, "published": dt.datetime.fromisoformat(day + "T12:00:00+00:00")} for tag, day in pairs]
+
+    @staticmethod
+    def on(day):
+        import datetime as dt
+        return dt.datetime.fromisoformat(day + "T13:00:00+00:00")
+
+    def due(self, history, day, pinned="1.18.320"):
+        return uf.due("openbeken", history, self.on(day), pinned, [])["due"]
+
+    def test_a_release_with_none_after_it_waits_fourteen_days(self):
+        history = self.releases(("1.18.320", "2026-10-28"), ("1.18.321", "2026-11-05"))
+        self.assertIsNone(self.due(history, "2026-11-18"))
+        self.assertEqual(self.due(history, "2026-11-19"), "1.18.321")
+
+    def test_one_a_newer_release_has_followed_waits_seven(self):
+        history = self.releases(("1.18.320", "2026-10-28"), ("1.18.321", "2026-11-05"), ("1.18.322", "2026-11-09"))
+        self.assertIsNone(self.due(history, "2026-11-11"))
+        self.assertEqual(self.due(history, "2026-11-12"), "1.18.321")
+
+    def test_the_build_on_the_latest_takes_nothing(self):
+        self.assertIsNone(self.due(self.releases(("1.18.321", "2026-11-05")), "2026-12-01", pinned="1.18.321"))
+
+    def test_a_tag_that_is_not_a_release_number_is_passed_over(self):
+        history = self.releases(("1.18.321", "2026-11-05"), ("nightly", "2026-11-06"))
+        self.assertEqual(self.due(history, "2026-11-19"), "1.18.321")
+
+    def test_its_pin_is_the_oldest_beken_devices_build(self):
+        self.assertEqual(uf.pinned_version(PINS, "openbeken"), uf.openbeken_pinned(PINS))
+        self.assertIn("openbeken", uf.PROJECTS)
+
+
+class OpenBekenEveryDeviceTests(unittest.TestCase):
+    def test_every_beken_device_is_built_on_the_one_release(self):
+        from unittest import mock
+        built = []
+        with mock.patch.object(uf, "stable_release", return_value={"tag_name": "1.18.321"}), \
+                mock.patch.object(uf, "command_openbeken",
+                                  side_effect=lambda args: built.append((args.plug, args.release)) or 0):
+            self.assertEqual(uf.main(["openbeken", "--release", "1.18.321", "--every-device", "--dry-run"]), 0)
+        self.assertEqual(built, [(plug, "1.18.321") for plug in uf.BEKEN_BUILDS])
+
+    def test_every_beken_device_has_its_openbeken_pinned(self):
+        for plug in uf.BEKEN_BUILDS:
+            self.assertIn("release", PINS["beken"][plug]["openbeken"], plug)
+
+
+class OpenBekenDocTests(unittest.TestCase):
+    """What a new OpenBeken writes, to a made-up one."""
+
+    def setUp(self):
+        from unittest import mock
+        self.old = uf.load_pins()["beken"]["sonoff-s61"]["openbeken"]
+        self.new = {"file": "artifacts/openbeken-sonoff-s61-1.18.999-1.rbl", "version": "1.18.999-1",
+                    "release": "1.18.999", "app_commit": "a" * 40, "sdk_commit": "b" * 40, "sha256": "0" * 64}
+        with mock.patch.object(uf, "released", return_value=True):
+            self.texts = uf.openbeken_doc_texts("sonoff-s61", self.old, self.new)
+
+    def test_its_row_says_the_new_file(self):
+        readme = self.texts[uf.ARTIFACTS_README]
+        self.assertIn("| `openbeken-sonoff-s61-1.18.999-1.rbl` |", readme)
+        self.assertNotIn(Path(self.old["file"]).name, readme)
+        self.assertIn(f"`{self.new['sha256']}`", readme)
+
+    def test_the_notices_name_its_file_and_both_commits(self):
+        notices = self.texts[uf.NOTICES]
+        self.assertIn(f"`{self.new['file']}`", notices)
+        self.assertNotIn(self.old["app_commit"], notices)
+        self.assertIn("a" * 40, notices)
+        self.assertIn("b" * 40, notices)
+
+    def test_the_changelog_says_the_release(self):
+        self.assertIn("OpenBeken for the sonoff-s61 is 1.18.999-1: built on OpenBeken", self.texts[uf.CHANGELOG])
+
+    def test_for_every_device_the_changelog_is_left_to_the_caller(self):
+        from unittest import mock
+        with mock.patch.object(uf, "released", return_value=True):
+            texts = uf.openbeken_doc_texts("sonoff-s61", self.old, self.new, changelog=False)
+        self.assertNotIn(uf.CHANGELOG, texts)
+
+
+class WorkflowTests(unittest.TestCase):
+    """The weekly update, as the workflow is written: GitHub alone can run it."""
+
+    def setUp(self):
+        self.workflow = (ROOT / ".github/workflows/firmware-update.yml").read_text(encoding="utf-8")
+
+    def test_every_devices_esphome_moves_together(self):
+        self.assertIn('update_firmware.py esphome "$ESPHOME" --every-device', self.workflow)
+
+    def test_every_devices_emulator_check_runs_on_the_update(self):
+        # Started on its branch, and required by main before the merge job merges it.
+        self.assertRegex(self.workflow, r"for workflow in [^;]*emulator-check\.yml")
+        from tools.repo import github_settings
+        self.assertIn("emulator", github_settings.REQUIRED_CHECKS)
+
+    def test_a_settled_openbeken_is_built_for_every_beken_device(self):
+        self.assertIn('["openbeken"]["due"]', self.workflow)
+        self.assertIn('update_firmware.py openbeken --release "$OPENBEKEN" --every-device', self.workflow)
+
+    def test_no_openbeken_merges_without_its_six_scenarios(self):
+        self.assertIn("fault_suite.py list openbeken", self.workflow)
+        self.assertRegex(self.workflow, r'passed=.*"\$SCENARIOS" != failure')
+
+
 class SettledReleaseTests(unittest.TestCase):
     """The settled-release rule (update_firmware.SETTLE_DAYS), on made-up histories."""
 

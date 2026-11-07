@@ -84,6 +84,11 @@ dump is ever committed. Tooling fetches it at run time.
 7. **Run the tests**, and add the ones the device needs: `tests/autoflash/test_kinds.py`
    covers telling it apart from its neighbours.
 
+   Nothing needs wiring in for updates: the weekly update builds every device's
+   ESPHome with one release and moves each chip's Tasmota with the ESP32-C3's
+   (`update_firmware.py`'s `esphome_command`). A test fails if it cannot tell how
+   to build a device's, or if its chip has no Tasmota that follows.
+
    A device the tool converts has its own run of the `emulator-check` workflow, from
    its public dump: each final firmware, then each plug taken to the other
    ([emulator_check.py](../tools/repo/emulator_check.py)). One with no dump is named
