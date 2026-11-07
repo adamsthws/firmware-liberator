@@ -52,7 +52,9 @@ How many at once, from the environment:
 
 Results: results.jsonl, a log per scenario, and what a failure leaves (its
 run records and the plug's serial output). A fault that never happened is
-NOT-FIRED, not a pass. Each row's notes say how short of memory the computer
+NOT-FIRED, not a pass; NO-INTERNET when it never happened because this computer
+could not reach eWeLink, which says nothing of the tool or the plug, and is run
+again. Each row's notes say how short of memory the computer
 was; a failure while it was starved prints "memory-starved", as the plug's
 connections can then fail with nothing wrong.
 """
@@ -645,6 +647,8 @@ class Tuner:
         WINDOW passing in a row a step on."""
         if STUB_CLOUD or not needs_cloud(row) or self.phase == "held" or started < self.changed:
             return
+        if row["verdict"] == "NO-INTERNET":
+            return  # this computer's network, not the cloud's, nor how many at once
         with self.lock:
             ok = row["verdict"] in ("PASS", "EMULATOR-LIMIT", "NO-TRAFFIC")
             if not ok and self.phase != "backing-off":
@@ -1979,6 +1983,7 @@ class Scenario:
                               # Asked for the plug's own network to be joined: right only
                               # where the plug really is on it - each is looked at.
                               "NEEDS-JOIN" if self.notes.get("needs_join") else "FAIL")
+        verdict = no_internet(verdict, [r for _, r in results])
         row = {**sc, "instance": self.n, "verdict": verdict, "runs": len(results),
                "results": [r for _, r in results], "codes": [c for c, _ in results],
                "notes": self.notes, "leftovers": left, "log": str(self.log),
@@ -2029,6 +2034,22 @@ def name_problems(names, networks, target):
 
 def key(scenario_id):
     return scenario_id.replace(">", "-to-").replace(":", "_").replace("@", "_at")
+
+
+# This computer, not its plug, cut off from eWeLink: the name not found, the
+# network down. Seen on a test machine once in 75 scenarios, before the fault.
+COMPUTER_OFFLINE = re.compile(r"Could not reach eWeLink \(eWeLink connection failed: [^)]*?"
+                              r"(?:Name or service not known|Temporary failure in name resolution|"
+                              r"Network is unreachable)")
+
+
+def no_internet(verdict, results):
+    """NO-INTERNET for a fault that never happened because this computer could
+    not reach eWeLink first; any other verdict as it is. A fault that cuts this
+    computer off (pcoff) has happened, so is never taken for this."""
+    if verdict == "NOT-FIRED" and any(COMPUTER_OFFLINE.search(result) for result in results):
+        return "NO-INTERNET"
+    return verdict
 
 
 def why_no_report(screen):

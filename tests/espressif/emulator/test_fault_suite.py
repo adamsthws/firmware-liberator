@@ -354,6 +354,24 @@ class ScenarioTests(unittest.TestCase):
         for wanted in ("update>esphome:U1:plugoff-1", "update>esphome:U1:outage-30", "update>esphome:U2:crash-1"):
             self.assertIn(wanted, ids)
 
+    def test_a_fault_this_computers_network_kept_from_happening_is_its_own_verdict(self):
+        # Seen: outage-60 counted as NOT-FIRED twice, this computer's lookup of
+        # eWeLink having failed before the fault, nothing of the plug's.
+        offline = ("no report (stopped at stage 2, Discovering the device: Could not reach eWeLink (eWeLink "
+                   "connection failed: [Errno -2] Name or service not known), so every device that answers is listed.)")
+        self.assertEqual(fs.no_internet("NOT-FIRED", ["no report", offline]), "NO-INTERNET")
+        self.assertEqual(fs.no_internet("FAIL", [offline]), "FAIL")              # pcoff: cut off on purpose
+        self.assertEqual(fs.no_internet("NOT-FIRED", ["no report (stopped at stage 3, Discovering the plug: "
+                                                      "eWeLink shows it offline)"]), "NOT-FIRED")
+
+    def test_the_tuner_does_not_blame_the_cloud_for_this_computers_network(self):
+        tuner = fs.Tuner()
+        tuner.phase, tuner.changed = "pause-up", 0
+        row = {"id": "x", "route": "sonoff>tasmota", "step": "C2", "fault": "outage", "verdict": "NO-INTERNET"}
+        with mock.patch.object(fs, "STUB_CLOUD", False):
+            tuner.finished(row, "/nonexistent", 1)
+        self.assertEqual(list(tuner.recent), [])
+
     def no_report(self, screen):
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "log"
