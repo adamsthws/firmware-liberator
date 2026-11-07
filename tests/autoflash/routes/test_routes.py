@@ -6,10 +6,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import kinds, routes
+from tests.autoflash.routes.espressif.test_espressif import RouteTestCase
+from tools.autoflash import cli, errors, kinds, prompts, routes
 from tools.autoflash.routes import beken, espressif, update
 from tools.autoflash.routes.espressif import identity
-from tools.autoflash.state import RunState
+from tools.autoflash.state import DONE, RunState
 
 
 def a_kind(key, family):
@@ -266,3 +267,68 @@ class NothingAnsweringTests(unittest.TestCase):
         # An S61 on Sonoff's firmware answers nothing on the LAN, converted here before or not.
         self.assertEqual(self.run_on("12:34:56:ab:cd:01", set()), "sonoff")
         self.assertEqual(self.run_on("12:34:56:ab:cd:ef", {"12:34:56:ab:cd:ef"}), "sonoff")
+
+
+class FirmwareChoiceTests(RouteTestCase):
+    """From Sonoff's firmware the choice waits for A1 to say what kind of plug
+    it is (step_choose, A3); a converted plug's kind is known when the route
+    is settled."""
+
+    def setUp(self):
+        super().setUp()
+        self.setUp_found()
+        self.addCleanup(routes.apply_target, "tasmota", "sonoff")
+
+    def test_it_is_asked_once_the_plug_is_known_then_kept(self):
+        ctx = self.ctx()
+        self.assertEqual(routes.settle_route(ctx), (None, "sonoff"))
+        self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A1", "A3"])
+        with mock.patch.object(prompts, "ask_choice", return_value=1) as asked:
+            self.assertEqual(routes.step_choose(ctx)["firmware"], "esphome")
+        self.assertEqual(asked.call_args.args[1], ["Tasmota", "ESPHome"])
+        self.assertEqual(ctx.state.input("firmware"), "esphome")
+        self.assertEqual([step for step, _, _ in routes.STEPS][-2:], ["I1", "I2"])
+        with mock.patch.object(prompts, "ask_choice", side_effect=AssertionError("asked again")):
+            self.assertEqual(routes.step_choose(ctx)["firmware"], "esphome")
+            self.assertEqual(routes.settle_firmware(ctx), "esphome")
+
+    def test_given_on_the_command_line_it_is_not_asked(self):
+        ctx = self.ctx(given="esphome")
+        with mock.patch.object(prompts, "ask_choice", side_effect=AssertionError("asked")):
+            self.assertEqual(routes.step_choose(ctx), {"firmware": "esphome", "asked": False})
+
+    def test_a_firmware_the_plugs_family_does_not_take_is_refused(self):
+        ctx = self.ctx(given="openbeken")
+        with self.assertRaisesRegex(errors.Abort, "a Sonoff S60 takes Tasmota or ESPHome"):
+            routes.step_choose(ctx)
+        with self.assertRaisesRegex(errors.Abort, "already runs Sonoff"):
+            routes.step_choose(self.ctx(given="sonoff"))
+
+    def test_a_conversion_cannot_switch_part_way(self):
+        ctx = self.ctx(given="tasmota", firmware="esphome")
+        with self.assertRaisesRegex(errors.Abort, "cannot switch"):
+            routes.settle_firmware(ctx)
+
+    def test_a_run_begun_before_there_was_a_choice_installs_tasmota(self):
+        ctx = self.ctx()
+        ctx.state.mark("A1", DONE)
+        with mock.patch.object(prompts, "ask_choice", side_effect=AssertionError("asked")):
+            self.assertEqual(routes.settle_firmware(ctx), "tasmota")
+
+    def test_an_unattended_run_must_be_told(self):
+        ctx = self.ctx()
+        with mock.patch.object(prompts, "UNATTENDED", True):
+            with self.assertRaisesRegex(errors.Abort, "--firmware esphome"):
+                routes.step_choose(ctx)
+        self.assertIsNone(ctx.state.input("firmware"))
+
+
+class AlreadyThereTests(RouteTestCase):
+    def test_asking_for_what_it_runs_ends_the_run_done(self):
+        ctx = self.ctx(given="esphome")
+        with mock.patch.object(routes.source, "find_current_firmware", return_value="esphome"):
+            with self.assertRaisesRegex(routes.NothingToDo, "already runs ESPHome"):
+                routes.settle_route(ctx)
+        # Never offered back as an unfinished run.
+        self.assertTrue(cli.run_is_complete(Path(self.tmp.name) / "run"))
+

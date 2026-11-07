@@ -5,7 +5,8 @@ import unittest
 from unittest import mock
 
 from tests.autoflash.test_device_requests import LockedTasmota
-from tools.autoflash import detect
+from tests.autoflash.test_openbeken import FakeOpenBeken
+from tools.autoflash import detect, openbeken
 from tools.espressif import layouts
 
 TASMOTA_TABLE = "1" * 64
@@ -453,7 +454,6 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual([(f.host, f.firmware) for f in found], [("192.0.2.137", "installer")])
 
 
-
 class RenamedRelayTests(unittest.TestCase):
     """An ESPHome knows its kind by its comment as well as its relay's name: the
     adoption guide's example renames the relay, and it was taken for Sonoff's."""
@@ -530,3 +530,33 @@ class OtherNetworksTests(unittest.TestCase):
                 mock.patch.object(detect, "_port_open", side_effect=lambda host, *_: asked.append(host) and False):
             detect.converted_plugs("10.0.0.2")
         self.assertEqual(asked, ["10.0.0.37"])
+
+
+class OpenBekenTests(unittest.TestCase):
+    """An OpenBeken on the network: a plug of this tool's, told by its kind."""
+
+    def test_openbeken_named_as_the_s61s_is_found_with_its_kind(self):
+        server = FakeOpenBeken()
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        found = detect.openbeken_plug(server.host, 2.0)
+        self.assertEqual((found.firmware, found.name, found.kind), ("openbeken", "openbeken-abcdef", "sonoff-s61"))
+        # The interim firmware, as its module says: told apart, its name shown.
+        server.interim, server.short_name = True, "autoflash-recovery-CDEF"
+        found = detect.openbeken_plug(server.host, 2.0)
+        self.assertEqual((found.firmware, found.name, found.kind), ("interim", "autoflash-recovery-CDEF", "sonoff-s61"))
+        self.assertEqual(found.describe(), f"the device at {server.host} (autoflash-recovery-CDEF), running the "
+                                           "interim firmware")
+        server.kind = None   # an OpenBeken the tool did not install: not a plug of ours
+        self.assertIsNone(detect.openbeken_plug(server.host, 2.0))
+
+    def test_one_that_will_not_say_whether_it_is_the_interim_firmware_is_asked_again_later(self):
+        # Never taken for the plug's own OpenBeken, and sent the wrong way.
+        server = FakeOpenBeken()
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        with mock.patch.object(openbeken, "is_interim", return_value=None):
+            self.assertIsNone(detect.openbeken_plug(server.host, 2.0))
+
