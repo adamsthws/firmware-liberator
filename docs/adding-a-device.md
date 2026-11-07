@@ -84,6 +84,11 @@ dump is ever committed. Tooling fetches it at run time.
 7. **Run the tests**, and add the ones the device needs: `tests/autoflash/test_kinds.py`
    covers telling it apart from its neighbours.
 
+   A device the tool converts has its own run of the `emulator-check` workflow, from
+   its public dump: each final firmware, then each plug taken to the other
+   ([emulator_check.py](../tools/repo/emulator_check.py)). One with no dump is named
+   in that file's `NO_DUMP`, or a test fails.
+
 8. **If it will not convert yet**, keep the work: put its folder in
    [devices/not-ready-yet/](../devices/not-ready-yet/README.md), with `ready=False`
    on its kind, and say there what is holding it up. The tool then turns it down.
