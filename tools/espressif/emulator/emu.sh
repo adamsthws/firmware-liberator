@@ -73,6 +73,8 @@ if [ -n "$instance" ]; then
 fi
 # The local cloud stub stands in for eWeLink for this instance alone, so it
 # cannot be combined with the real cloud (--cloud). See docs/cloud-stub.md.
+# Its code, in the checkout (entrypoint.sh is told where, too).
+STUB_DIR=tools/ewelink/stub_cloud
 STUB_CA=$EMU/stub-cloud
 if [ "$stub" = 1 ] && [ "$cloud" = 1 ]; then
     echo "--stub-cloud cannot be combined with --cloud" >&2; exit 2
@@ -214,9 +216,9 @@ if [ "$stub" = 1 ]; then
 from tools.espressif.emulator.patch_stock import holds_rsa_ca
 sys.exit(not holds_rsa_ca(open(sys.argv[1], "rb").read()))' "$SRC/flash.bin"; then
         STUB_CA=$EMU/stub-cloud-rsa
-        "$PY" -I "$ROOT/tools/espressif/emulator/stub_cloud/make_ca.py" --out-dir "$STUB_CA" --rsa >/dev/null
+        "$PY" -I "$ROOT/$STUB_DIR/make_ca.py" --out-dir "$STUB_CA" --rsa >/dev/null
     else
-        "$PY" -I "$ROOT/tools/espressif/emulator/stub_cloud/make_ca.py" --out-dir "$STUB_CA" >/dev/null
+        "$PY" -I "$ROOT/$STUB_DIR/make_ca.py" --out-dir "$STUB_CA" >/dev/null
     fi
 fi
 if [ ! -f "$STATE/flash.bin" ]; then
@@ -237,7 +239,7 @@ fi
 # The firmware the stub offers as eWeLink's latest, for a run going back to
 # Sonoff's with no backup: the plug's own, made as the plug's is (firmware.py).
 if [ "$stub" = 1 ]; then
-    "$PY" -I "$ROOT/tools/espressif/emulator/stub_cloud/firmware.py" "$SRC/flash.bin" "$STATE/stub-firmware.bin" \
+    "$PY" -I "$ROOT/$STUB_DIR/firmware.py" "$SRC/flash.bin" "$STATE/stub-firmware.bin" \
         --trust-ca "$STUB_CA/ca.crt" || rm -f "$STATE/stub-firmware.bin"
 fi
 # Copied by content: the backup's files are read-only, and a copy would be too.
@@ -349,6 +351,6 @@ exec "${awake[@]}" docker run --rm $tty --name "$NAME" --hostname autoflash-emu-
     -v "$STATE:/state" -v "$SRC/flash.bin:/secrets/stock-flash.bin:ro" "${stubvol[@]}" \
     -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e PLUG_MAC="$mac" -e CHIP="$chip" -e PSRAM="$psram" \
     -e CLOUD="$cloud" -e PCAP="$pcap" -e FIREWALL="$firewall" -e WINDOWS="$windows" \
-    -e STUB_CLOUD="$stub" -e STUB_PRODUCT_MODEL="$product" \
+    -e STUB_CLOUD="$stub" -e STUB_CLOUD_DIR="$STUB_DIR" -e STUB_PRODUCT_MODEL="$product" \
     -e AUTOFLASH_EMULATOR_URL="http://localhost:$PORT" \
     "$IMAGE"

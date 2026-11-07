@@ -151,8 +151,10 @@ ln -sfn /state/work /work
 # /state/work, using the CA/leaf mounted at /stub-cloud and this plug's identity
 # from its own dump. Logs (device values redacted) go to the instance's log dir.
 # Kept non-fatal: a stub problem must not bring the whole emulator down.
+# Where the stub is in the checkout comes from emu.sh (STUB_CLOUD_DIR), so
+# moving it needs no new image.
 if [ "$STUB_CLOUD" = 1 ]; then
-    stub=/state/work/tools/espressif/emulator/stub_cloud
+    stub=/state/work/${STUB_CLOUD_DIR:-tools/ewelink/stub_cloud}
     # The tool's trust: this system's roots and the stub's CA, so trusting the
     # stub takes nothing away from any other site.
     cat /etc/ssl/certs/ca-certificates.crt /stub-cloud/ca.crt > "$RUN/stub-ca-bundle.pem" 2>/dev/null \

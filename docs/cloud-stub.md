@@ -360,7 +360,7 @@ itself is never modified.
 
 ### Self-signed CA + server cert
 
-[`tools/espressif/emulator/stub_cloud/make_ca.py`](../tools/espressif/emulator/stub_cloud/make_ca.py)
+[`tools/ewelink/stub_cloud/make_ca.py`](../tools/ewelink/stub_cloud/make_ca.py)
 generates, into `captures/emulation/stub-cloud/` (git-ignored, private):
 
 - a **root CA**: EC P-256 (for the slot-size reason above), self-signed,
@@ -394,10 +394,10 @@ firmware string-patch is needed (test 1).
 
 ## The stub server
 
-[`tools/espressif/emulator/stub_cloud/stub_server.py`](../tools/espressif/emulator/stub_cloud/stub_server.py)
+[`tools/ewelink/stub_cloud/stub_server.py`](../tools/ewelink/stub_cloud/stub_server.py)
 is one stdlib-only HTTPS listener on `192.168.60.1:443` (the leaf cert), routed by
 request. Device identity for the account API is read from the booted flash dump by
-[`device_identity.py`](../tools/espressif/emulator/stub_cloud/device_identity.py), so the
+[`device_identity.py`](../tools/ewelink/stub_cloud/device_identity.py), so the
 LAN key never leaves the instance network. Every device/app message is logged with
 secret values (`apikey`, `deviceid`, `devicekey`, `encrypt_key`, …) redacted.
 
@@ -884,7 +884,7 @@ X1 too, from its configuration dump: X1 -23, D4 -19, E1 -22, reported -23.
 
 ## Files
 
-Added under `tools/espressif/emulator/stub_cloud/`: `__init__.py`, `make_ca.py`,
+Added under `tools/ewelink/stub_cloud/`: `__init__.py`, `make_ca.py`,
 `device_identity.py`, `stub_server.py`. Changed:
 `tools/espressif/emulator/patch_stock.py` (CA-swap patch), `rewrite_nvs.py`
 (`--dis-server`/`--dis-port`), `emu.sh` and `unattended-test.sh` (`--stub-cloud`,

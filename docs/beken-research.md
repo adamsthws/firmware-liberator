@@ -477,7 +477,7 @@ link that, on hardware, carries the pairing that *naturally* fires this trigger;
 With the dial reproduced, the rest of the eWeLink handshake completes against a
 local stub and the plug reaches **ONLINE** — driven end to end by
 `tools/beken/cloud_online.py` and the CoolKit stub
-(`tools/espressif/emulator/stub_cloud/stub_server.py`, extended with a `--plain` dispatch
+(`tools/ewelink/stub_cloud/stub_server.py`, extended with a `--plain` dispatch
 mode). Nothing leaves the host: the netstack relay (`attach_wifi_peer(net_out=True)`)
 is redirected so the factory dispatch IP resolves to loopback — plaintext dispatch
 on one port, TLS IoT on another.

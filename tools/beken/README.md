@@ -159,7 +159,7 @@ Those marked archived are in
   `python3 cloud_dial.py`
 
 - **`cloud_online.py`** — complete the eWeLink cloud cycle: the plug reaches
-  **ONLINE**. Stands up the CoolKit stub (`tools/espressif/emulator/stub_cloud/stub_server.py`,
+  **ONLINE**. Stands up the CoolKit stub (`tools/ewelink/stub_cloud/stub_server.py`,
   `--plain` dispatch mode) on loopback and bridges the netstack relay to it
   (plaintext dispatch + TLS IoT, fully contained — nothing leaves the host), seeds
   Wi-Fi creds and fires the pairing trigger as `cloud_dial.py` does, then drives

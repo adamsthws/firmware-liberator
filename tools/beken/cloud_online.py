@@ -1,7 +1,7 @@
 """Complete the eWeLink cloud cycle: the emulated S61 comes ONLINE against a stub.
 
 Builds on cloud_dial.py (which gets the plug to dial GET /dispatch/device) by
-standing up the local CoolKit stub (tools/espressif/emulator/stub_cloud/stub_server.py) on
+standing up the local CoolKit stub (tools/ewelink/stub_cloud/stub_server.py) on
 loopback and bridging the emulator's netstack to it, then driving the whole
 handshake:
 
@@ -60,7 +60,7 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # the tools beside this one
 ROOT = Path(os.environ.get("BK_EMU_ROOT", "/opt/beken-emulator"))
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools" / "espressif" / "emulator" / "stub_cloud"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools" / "ewelink" / "stub_cloud"))
 from src.main import build_emulator  # noqa: E402
 from unicorn import UC_HOOK_CODE  # noqa: E402
 from unicorn.arm_const import (  # noqa: E402

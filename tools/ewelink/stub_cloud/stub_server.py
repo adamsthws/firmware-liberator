@@ -56,7 +56,7 @@ import threading
 from pathlib import Path
 
 if __package__ in (None, ""):  # run as a script, isolated: the repository root, for `tools.`
-    sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"  # RFC 6455 magic
 # Never shown in cleartext in the log: they identify the account or device, or
@@ -315,7 +315,7 @@ class Stub:
         (the conversion only reads this; it delivers firmware over LAN), and the
         plug's own firmware to one asking with an older one, as query_ota's
         latest_offer does."""
-        from tools.espressif.emulator.stub_cloud.firmware import FILE_NAME, version_tuple
+        from tools.ewelink.stub_cloud.firmware import FILE_NAME, version_tuple
         try:
             asked = json.loads(body).get("deviceInfoList") or [] if body else []
         except (ValueError, AttributeError):
@@ -622,7 +622,7 @@ def main(argv: list[str] | None = None) -> int:
 
     device = json.loads(args.device_json.read_text()) if args.device_json else None
     try:
-        from tools.espressif.emulator.stub_cloud.firmware import read
+        from tools.ewelink.stub_cloud.firmware import read
         update = read(args.firmware)
     except Exception as exc:  # noqa: BLE001 - the stub serves the rest without it
         log("the firmware to offer could not be read:", exc)
