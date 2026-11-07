@@ -1,4 +1,4 @@
-"""The emulated S61's eWeLink: the local stub (tools/ewelink/stub_cloud),
+"""The emulated Beken plug's eWeLink: the local stub (tools/ewelink/stub_cloud),
 served on its router's address for the plug and for the tool alike, as
 bk-emu.sh plug runs it (plug-net.sh).
 

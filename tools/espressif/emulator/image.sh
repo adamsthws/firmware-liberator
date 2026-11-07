@@ -17,8 +17,9 @@
 #                                        together do not both build it
 #
 # emu.sh ensures its image every time: an image from an older checkout never
-# runs unseen. AUTOFLASH_EMU_PUBLISHED names another place to pull from, and
-# AUTOFLASH_EMU_NO_PULL=1 always builds.
+# runs unseen. AUTOFLASH_EMU_PUBLISHED names another place to pull from,
+# AUTOFLASH_EMU_NO_PULL=1 always builds, and AUTOFLASH_EMU_SOURCE_URL names
+# another place to download the QEMU source from.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
@@ -37,7 +38,7 @@ tag() {
 # this repository - and again without a network once it is there.
 QEMU_SOURCE=qemu-lcgamboa-64aed50.tar.xz
 QEMU_COMMIT=${QEMU_SOURCE%.tar.xz}; QEMU_COMMIT=${QEMU_COMMIT##*-}
-QEMU_SOURCE_URL=${AUTOFLASH_QEMU_SOURCE_URL:-https://github.com/adamsthws/firmware-liberator/releases/download/emulator-source-qemu-$QEMU_COMMIT/$QEMU_SOURCE}
+QEMU_SOURCE_URL=${AUTOFLASH_EMU_SOURCE_URL:-https://github.com/adamsthws/firmware-liberator/releases/download/emulator-source-qemu-$QEMU_COMMIT/$QEMU_SOURCE}
 qemu_source() {
     local want cache=$EMU/cache/$QEMU_SOURCE
     want=$(sed -n 's/^ARG QEMU_SOURCE_SHA256=//p' "$ROOT/tools/espressif/emulator/emu.Dockerfile")

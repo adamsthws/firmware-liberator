@@ -308,13 +308,13 @@ hook does - the Wi-Fi taken from Sonoff's firmware, the interim firmware
 named, fetching ESPHome and erasing itself, kept as OpenBeken, each way back
 to Sonoff's firmware - where a pass also checks the names the plug asked
 DHCP for and, after ESPHome, that the interim's settings are gone
-([testing.md](testing.md#the-s61s-fault-suite)):
+([testing.md](testing.md#the-beken-fault-suite)):
 
 ```sh
 tools/beken/emulator/fault_suite.py prep
 tools/beken/emulator/fault_suite.py list openbeken > openbeken.txt
-rm -rf captures/emulation/s61-openbeken   # no pass on the image before counts
-AUTOFLASH_S61_SUITE_DIR=captures/emulation/s61-openbeken AUTOFLASH_S61_WORKERS=2 \
+rm -rf captures/emulation/beken/suite-openbeken   # no pass on the image before counts
+AUTOFLASH_BEKEN_EMU_SUITE_DIR=captures/emulation/beken/suite-openbeken AUTOFLASH_BEKEN_EMU_WORKERS=2 \
     tools/beken/emulator/fault_suite.py batch openbeken.txt
 ```
 

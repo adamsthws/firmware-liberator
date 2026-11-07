@@ -127,7 +127,7 @@ class UiProxy(ThreadingHTTPServer):
 class Handler(BaseHTTPRequestHandler):
     server: UiProxy
     protocol_version = "HTTP/1.1"
-    server_version = "s61-ui-proxy"
+    server_version = "autoflash-beken-emu-ui-proxy"
 
     def log_message(self, *args) -> None:
         pass
@@ -141,7 +141,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Connection", "close")
         if how:
-            self.send_header("X-S61-Proxy", how)   # cache, live, stale or busy
+            self.send_header("X-Beken-Emu-Proxy", how)   # cache, live, stale or busy
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)

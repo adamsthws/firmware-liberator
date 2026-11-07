@@ -678,18 +678,19 @@ Before that:
   Sonoff's firmware), all came back with the settings and were converted -
   and the run now carries on by itself, trying the commit up to three times.
 
-## The S61's fault suite
+## The Beken fault suite
 
-`tools/beken/emulator/fault_suite.py` does the same for the Sonoff S61, on
-emulated S61s (`bk-emu.sh plug`, [its README](../tools/beken/emulator/README.md)):
-each its own plug on a home Wi-Fi of its own, with the local eWeLink stub, so
-nothing reaches the internet and every scenario can run side by side.
+`tools/beken/emulator/fault_suite.py` does the same for the Beken plugs, on
+emulated ones started from the public S61s dump (`bk-emu.sh --instance N plug`,
+[its README](../tools/beken/emulator/README.md)): each its own plug on a home
+Wi-Fi of its own, with the local eWeLink stub, so nothing reaches the internet
+and every scenario can run side by side.
 
 ```sh
 tools/beken/emulator/fault_suite.py prep      # the starting plugs: on the interim firmware, OpenBeken, ESPHome
 tools/beken/emulator/fault_suite.py prep-update   # and on an earlier release's OpenBeken and ESPHome
-tools/beken/emulator/fault_suite.py list > s61.txt
-AUTOFLASH_S61_WORKERS=2 tools/beken/emulator/fault_suite.py batch s61.txt   # what has not passed yet
+tools/beken/emulator/fault_suite.py list > beken.txt
+AUTOFLASH_BEKEN_EMU_WORKERS=2 tools/beken/emulator/fault_suite.py batch beken.txt   # what has not passed yet
 tools/beken/emulator/fault_suite.py report
 ```
 
@@ -721,9 +722,10 @@ gives the six a new OpenBeken build must pass
 Then the
 tool is run again as a person would, switching the plug off and on where it
 says to, up to four times; the scenario passes when the run's record has
-every step of its route done. Results are in `captures/emulation/s61-suite/`.
+every step of its route done. Results are in `captures/emulation/beken/suite/`
+(`AUTOFLASH_BEKEN_EMU_SUITE_DIR` names another folder).
 
-Each emulated S61 takes a core, so two workers suit a laptop. Sonoff's
+Each emulated plug takes a core, so two workers suit a laptop. Sonoff's
 firmware restarts by itself once it has its update, in the emulator as on a
 real plug, so the switch off and on the tool asks for comes only after a
 fault.

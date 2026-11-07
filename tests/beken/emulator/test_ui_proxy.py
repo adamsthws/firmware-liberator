@@ -70,7 +70,7 @@ class UiProxyTests(unittest.TestCase):
         try:
             connection.request("GET", path)
             response = connection.getresponse()
-            return response.status, response.getheader("X-S61-Proxy"), response.read()
+            return response.status, response.getheader("X-Beken-Emu-Proxy"), response.read()
         finally:
             connection.close()
 

@@ -212,7 +212,7 @@ jobs:
           tools/beken/emulator/bk-emu.sh dump
           tools/beken/emulator/fault_suite.py prep
           tools/beken/emulator/fault_suite.py list openbeken > openbeken.txt
-          AUTOFLASH_S61_SUITE_DIR=captures/emulation/s61-openbeken AUTOFLASH_S61_WORKERS=2 \
+          AUTOFLASH_BEKEN_EMU_SUITE_DIR=captures/emulation/beken/suite-openbeken AUTOFLASH_BEKEN_EMU_WORKERS=2 \
               tools/beken/emulator/fault_suite.py batch openbeken.txt 2>&1 | tee scenarios.txt
       - name: The pull request
         if: steps.branch.outputs.made != 'yes' && steps.update.outputs.changed == 'yes'

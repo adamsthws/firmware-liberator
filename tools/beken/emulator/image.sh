@@ -31,15 +31,16 @@
 #                                    is a patch
 #
 # bk-emu.sh ensures its image every time: an image from an older checkout never
-# runs unseen. AUTOFLASH_BEKEN_PUBLISHED names another place to pull from,
-# AUTOFLASH_BEKEN_NO_PULL=1 always builds, and AUTOFLASH_BEKEN_SOURCE_URL names
-# another place to download the archive from.
+# runs unseen. AUTOFLASH_BEKEN_EMU_PUBLISHED names another place to pull from,
+# AUTOFLASH_BEKEN_EMU_NO_PULL=1 always builds, and
+# AUTOFLASH_BEKEN_EMU_SOURCE_URL names another place to download the archive
+# from.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
 CACHE=$ROOT/captures/emulation/cache
-PUBLISHED=${AUTOFLASH_BEKEN_PUBLISHED:-ghcr.io/adamsthws/autoflash-beken-emu}
+PUBLISHED=${AUTOFLASH_BEKEN_EMU_PUBLISHED:-ghcr.io/adamsthws/autoflash-beken-emu}
 # What the archive holds of upstream: the emulator, not its firmwares/.
 ARCHIVED="src tests tools README.md requirements.txt .gitignore"
 
@@ -50,7 +51,7 @@ ARCHIVE=$(pin archive)
 ARCHIVE_SHA256=$(pin sha256)
 [ -n "$UPSTREAM_REPO" ] && [ -n "$UPSTREAM_COMMIT" ] && [ -n "$ARCHIVE" ] && [ -n "$ARCHIVE_SHA256" ] \
     || { echo "$HERE/UPSTREAM: needs repo, commit, archive and sha256" >&2; exit 2; }
-ARCHIVE_URL=${AUTOFLASH_BEKEN_SOURCE_URL:-https://github.com/adamsthws/firmware-liberator/releases/download/emulator-source-beken-${UPSTREAM_COMMIT:0:7}/$ARCHIVE}
+ARCHIVE_URL=${AUTOFLASH_BEKEN_EMU_SOURCE_URL:-https://github.com/adamsthws/firmware-liberator/releases/download/emulator-source-beken-${UPSTREAM_COMMIT:0:7}/$ARCHIVE}
 
 tag() {
     (cd "$HERE" && find UPSTREAM requirements.txt bk-emu.Dockerfile patches -type f -print0 \
@@ -120,7 +121,7 @@ ensure() {
     if [ "$rebuild" != --rebuild ] && labelled "$image"; then
         return 0
     fi
-    if [ "$rebuild" = --rebuild ] || [ "${AUTOFLASH_BEKEN_NO_PULL:-}" = 1 ] || ! pull "$image"; then
+    if [ "$rebuild" = --rebuild ] || [ "${AUTOFLASH_BEKEN_EMU_NO_PULL:-}" = 1 ] || ! pull "$image"; then
         build "$image"
     fi
 }

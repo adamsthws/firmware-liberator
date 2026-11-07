@@ -11,7 +11,7 @@ BK_EMU_ROOT if the fork is not where tools/beken/emulator/bk-emu.sh puts it.
 
 Usage:
   unstripe.py [RAW_DUMP] [OUT_LOGICAL]
-    RAW_DUMP      raw flash dump (default: $S61_DUMP, else the fork's S61 image)
+    RAW_DUMP      raw flash dump (default: $AUTOFLASH_BEKEN_EMU_DUMP, else the fork's S61 image)
     OUT_LOGICAL   output path (default: ./logical.bin)
 """
 import os
@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT))
 from src import crypto  # noqa: E402  (Beken CRC16 + strip_crcs, kept in one place)
 
 raw = sys.argv[1] if len(sys.argv) > 1 else os.environ.get(
-    "S61_DUMP", str(ROOT / "firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin"))
+    "AUTOFLASH_BEKEN_EMU_DUMP", str(ROOT / "firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin"))
 out = sys.argv[2] if len(sys.argv) > 2 else "logical.bin"
 
 data = Path(raw).read_bytes()

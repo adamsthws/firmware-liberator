@@ -76,7 +76,7 @@ OFFICIAL_FILES = {
     "sonoff-basic-1gs": ("SONOFF_BASIC-1GS_(FWSW-01-BASICR5-BK7238)_BK7238_v1.0.4_user1.bin",
                          "0df1f696e9c03b076fda5b6ef103b9a658ba3ec495afa2b013586c1c40e32d25"),
 }
-DUMPS = ROOT / "captures" / "emulation" / "beken-firmwares"
+DUMPS = ROOT / "captures" / "emulation" / "beken" / "firmwares"
 
 
 @dataclass(frozen=True)

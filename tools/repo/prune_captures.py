@@ -28,10 +28,12 @@ CAPTURES = ROOT / "captures"
 PRUNABLE = {
     "emulation/state": "an Espressif emulator's plug and its computer's copy of the checkout",
     "emulation/state-*": "an Espressif emulator's plug and its computer's copy of the checkout",
-    "emulation/s61/autoflash-s61-*": "a Beken emulator's plug and its computer's copy",
-    "emulation/s61/earlier-*": "an earlier release's tree, for the update scenarios",
+    "emulation/beken/state": "a Beken emulator's plug and its computer's copy of the checkout",
+    "emulation/beken/state-*": "a Beken emulator's plug and its computer's copy of the checkout",
     "emulation/legacy/*": "an earlier release's tree, for the legacy scenarios",
+    "emulation/beken/legacy/*": "an earlier release's tree, for the Beken update scenarios",
     "emulation/*/logs": "a suite's logs",
+    "emulation/beken/*/logs": "a Beken suite's logs",
     "emulation/public-plugs": "the public plugs' check's logs",
     "emulation/device-check": "the emulator check's logs",
     "esphome-build": "ESPHome's build cache",
@@ -57,8 +59,10 @@ def running_states() -> set[Path] | None:
             states.add(CAPTURES / "emulation/state")
         elif name.startswith("autoflash-emu-") and name.removeprefix("autoflash-emu-").isdigit():
             states.add(CAPTURES / f"emulation/state-{name.removeprefix('autoflash-emu-')}")
-        elif name.startswith("autoflash-s61-") and name.removeprefix("autoflash-s61-").isdigit():
-            states.add(CAPTURES / "emulation/s61" / name)
+        elif name == "autoflash-beken-emu":
+            states.add(CAPTURES / "emulation/beken/state")
+        elif name.startswith("autoflash-beken-emu-") and name.removeprefix("autoflash-beken-emu-").isdigit():
+            states.add(CAPTURES / f"emulation/beken/state-{name.removeprefix('autoflash-beken-emu-')}")
     return states
 
 

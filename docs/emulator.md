@@ -580,11 +580,11 @@ real plug would, onto its Wi-Fi and eWeLink.
   is not published.
 - **No firmware of your own.** None is in the image or this repository:
   `bk-emu.sh dump` fetches the public S61s dump from upstream's repository, which
-  publishes it, into `captures/emulation/beken-firmwares/` (the tools do this
+  publishes it, into `captures/emulation/beken/firmwares/` (the tools do this
   before they run), and `bk-emu.sh test` fetches upstream's other devices' dumps
   there too (about 280 MB). That directory is mounted into the container at the
-  emulator's `firmwares/`, and the checkout at `/work`, as your own user;
-  `S61_DUMP` names a dump of your own, under `captures/`.
+  emulator's `firmwares/`, and the checkout at `/work`, as your own user; a
+  tool there is given a dump of your own by its path under `captures/`.
 
 ### Using it
 
@@ -594,7 +594,7 @@ The tools in `tools/beken` run in its container:
 tools/beken/emulator/bk-emu.sh python tools/beken/emulator/seed_join.py
 tools/beken/emulator/bk-emu.sh run captures/your-dump.bin --wifi-peer auto
 tools/beken/emulator/bk-emu.sh test -k "Sonoff 4MB"    # upstream's self-tests, under the patches
-tools/beken/emulator/bk-emu.sh plug                     # the S61 on a home Wi-Fi of its own
+tools/beken/emulator/bk-emu.sh plug                     # the S61s dump as a plug, on a home Wi-Fi of its own
 tools/beken/emulator/bk-emu.sh computer tools/autoflash/cli.py run   # the tool, on that Wi-Fi
 tools/beken/emulator/bk-emu.sh power cycle              # the plug switched off and on
 tools/beken/emulator/bk-emu.sh --fresh plug            # the plug as new, on Sonoff's firmware again
@@ -609,11 +609,19 @@ beside the first, with its own container, network, state and web page port
 (8088+N); give the same `--instance N` to `computer`, `power` and `ui` to reach
 it.
 
+What it makes is kept in `captures/emulation/beken/`, laid out as the Espressif
+emulator's is in `captures/emulation/`: each plug's `state/` (`state-N/`), the
+fault suite's `saved/` plugs and `suite/` results, and the fetched dumps in
+`firmwares/`. A checkout from before kept them in folders named after the S61
+(`captures/emulation/s61/`, `s61-suite/`, `beken-firmwares/`); `bk-emu.sh` and
+the fault suite move those there the first time they run, unless a container
+is using one.
+
 `bk-emu.sh plug` runs the dump as a plug provisioned on a home Wi-Fi, on a Docker
-network of its own (`autoflash-beken`, apart from the Espressif emulator and
+network of its own (`autoflash-beken-emu`, apart from the Espressif emulator and
 everything else), where eWeLink is a local stub and nothing reaches the internet
 ([how](../tools/beken/emulator/README.md#how-it-fits-together)). The plug boots
-from its flash, kept in `captures/emulation/s61/autoflash-s61/` with its logs and
+from its flash, kept in `captures/emulation/beken/state/` with its logs and
 the stub's CA, so it carries on across firmware: each restart the firmware asks
 for a boot of its own, from the bootloader, as on a real plug.
 
@@ -642,7 +650,7 @@ page's polling from a 3-second cache, and passes every action straight on;
 coming on one open connection (`/events`), which the proxy passes straight
 through, one browser tab at a time.
 
-`AUTOFLASH_BEKEN_DUMP` names another whole flash under this checkout for a new
+`AUTOFLASH_BEKEN_EMU_FLASH` names another whole flash under this checkout for a new
 plug to start from, one `rebuild_dump.py` made for another model, say
 ([Adding a 4 MB BK7238 device](../tools/beken/README.md#adding-a-4-mb-bk7238-device-with-no-whole-dump)).
 

@@ -68,7 +68,7 @@ which its author checked on hardware, and which agrees with the stock driver.
   first conversion (a run to ESPHome installs OpenBeken first, as the interim
   firmware, to take it). The route has run end to end in the emulator in every
   direction, faults and all
-  ([its fault suite](../../docs/testing.md#the-s61s-fault-suite)).
+  ([its fault suite](../../docs/testing.md#the-beken-fault-suite)).
   From Sonoff's firmware a run to OpenBeken is B1, B2 (sent through eWeLink),
   K1, B4; a run to ESPHome is B1, B2 (OpenBeken as the interim firmware), J1,
   B4 (the backup through it), J2 (it fetches ESPHome), K2. A run back to

@@ -24,7 +24,7 @@ class ContainerIsExecedTests(unittest.TestCase):
             fake = Path(tmp, "docker")
             fake.write_text("#!/bin/sh\necho \"docker pid $$: $*\"\n", encoding="utf-8")
             fake.chmod(0o755)
-            script = ("set -u\nROOT=%s FIRMWARES=%s/firmwares IMAGE=img S61_DUMP=dump.bin\n%s\n"
+            script = ("set -u\nROOT=%s FIRMWARES=%s/firmwares IMAGE=img PUBLIC_DUMP=dump.bin\n%s\n"
                       "echo \"shell pid $$\"\ncontainer python -c pass\necho \"still here\"\n"
                       % (tmp, tmp, function))
             done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60,
@@ -43,10 +43,10 @@ class PlugDumpTests(unittest.TestCase):
             root = os.path.realpath(tmp)
             Path(root, "captures").mkdir()
             Path(root, "captures", "device.bin").touch()
-            script = f"set -u\nROOT={root} S61_DUMP=dump.bin\n{function}\nplug_dump\n"
-            env = {**os.environ, "AUTOFLASH_BEKEN_DUMP": own.format(root=root)}
+            script = f"set -u\nROOT={root} PUBLIC_DUMP=dump.bin\n{function}\nplug_dump\n"
+            env = {**os.environ, "AUTOFLASH_BEKEN_EMU_FLASH": own.format(root=root)}
             if not own:
-                del env["AUTOFLASH_BEKEN_DUMP"]
+                del env["AUTOFLASH_BEKEN_EMU_FLASH"]
             return subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60, env=env, cwd=tmp)
 
     def test_a_new_plug_starts_from_the_public_dump(self):
@@ -207,24 +207,40 @@ class NetworkRaceTests(unittest.TestCase):
         self.assertIn("Could not make the Docker network net", done.stderr)
 
 
+def checkout(tmp):
+    """What bk-emu.sh needs of this checkout, copied under `tmp`."""
+    for name in ("tools/beken/emulator/bk-emu.sh", "tools/beken/emulator/folders.py",
+                 "tools/beken/emulator/image.sh", "tools/beken/emulator/UPSTREAM", "tools/repo/emulator-room.sh"):
+        Path(tmp, name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, Path(tmp, name))
+
+
 @unittest.skipIf(shutil.which("bash") is None, "no bash")
 class OptionTests(unittest.TestCase):
     """bk-emu.sh spells the jobs it shares with emu.sh as emu.sh does:
     --instance N, --fresh, --rebuild."""
 
-    def run_script(self, *args):
+    def run_script(self, *args, before=None):
+        """bk-emu.sh ARGS, run from a copy of its checkout in a temporary
+        directory, so what it does to captures/ is done there; Docker a fake
+        that says what it was asked."""
         with tempfile.TemporaryDirectory() as tmp:
+            checkout(tmp)
             calls = Path(tmp, "calls")
-            Path(tmp, "docker").write_text('#!/bin/sh\necho "$*" >> %s\n' % calls, encoding="utf-8")
-            Path(tmp, "docker").chmod(0o755)
-            done = subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True, timeout=60,
-                                  env={**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}"})
+            Path(tmp, "bin").mkdir()
+            Path(tmp, "bin", "docker").write_text('#!/bin/sh\necho "$*" >> %s\n' % calls, encoding="utf-8")
+            Path(tmp, "bin", "docker").chmod(0o755)
+            if before:
+                before(Path(tmp))
+            done = subprocess.run(["bash", str(Path(tmp, SCRIPT.relative_to(ROOT))), *args], capture_output=True,
+                                  text=True, timeout=60, env={**os.environ, "PATH": f"{tmp}/bin:{os.environ['PATH']}"})
+            self.left = sorted(str(path.relative_to(tmp)) for path in Path(tmp, "captures").rglob("*"))
             return done, calls.read_text(encoding="utf-8") if calls.exists() else ""
 
     def test_an_instance_is_its_own_plug(self):
         done, calls = self.run_script("--instance", "2", "ui")
         self.assertEqual(done.returncode, 1, done.stderr)
-        self.assertIn("exec autoflash-s61-2 ", calls)
+        self.assertIn("exec autoflash-beken-emu-2 ", calls)
 
     def test_an_instance_out_of_range_is_refused(self):
         done, calls = self.run_script("--instance", "31", "plug")
@@ -244,6 +260,15 @@ class OptionTests(unittest.TestCase):
             self.assertEqual(done.returncode, 2, args)
             self.assertIn("--instance N", done.stdout, args)
             self.assertEqual(calls, "", args)
+
+    def test_an_earlier_checkouts_folders_are_moved_on_first_use(self):
+        def old(tmp):
+            Path(tmp, "captures/emulation/s61/autoflash-s61-2").mkdir(parents=True)
+            Path(tmp, "captures/emulation/s61/autoflash-s61-2/flash.bin").write_bytes(b"plug")
+        done, _calls = self.run_script("--instance", "2", "ui", before=old)
+        self.assertIn("s61/autoflash-s61-2 to beken/state-2", done.stderr)
+        self.assertEqual(self.left, ["captures/emulation", "captures/emulation/beken",
+                                     "captures/emulation/beken/state-2", "captures/emulation/beken/state-2/flash.bin"])
 
     def test_rebuild_reaches_image_sh(self):
         function = re.search(r"^ensure\(\) \{.*?^\}", SCRIPT.read_text(encoding="utf-8"), re.S | re.M).group(0)

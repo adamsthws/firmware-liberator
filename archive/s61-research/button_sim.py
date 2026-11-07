@@ -47,7 +47,7 @@ from unicorn.arm_const import (  # noqa: E402
     UC_ARM_REG_R9,
     UC_ARM_REG_SP)
 
-DUMP = os.environ.get("S61_DUMP", str(ROOT/"firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin"))
+DUMP = os.environ.get("AUTOFLASH_BEKEN_EMU_DUMP", str(ROOT/"firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin"))
 PIN = int(sys.argv[1]) if len(sys.argv) > 1 else 3      # button GPIO (0-5)
 GROUP, CH = PIN // 2, PIN & 1
 STATBIT = 2 * GROUP + CH                                # bit in state.pwmn_stat

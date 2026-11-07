@@ -1450,7 +1450,7 @@ conversion would destroy it unread. Supporting them needs a route of their own.
   eWeLink BLE messages through the dispatcher → Wi-Fi join), `button_sim.py`
   (button press), `long_press.py`, `pair_drive.py`, and `airkiss_capture.sh` +
   `airkiss_replay.py` (AirKiss relay). Emulator tools take paths via env
-  `BK_EMU_ROOT` / `S61_DUMP`; see the folder's README.
+  `BK_EMU_ROOT` / `AUTOFLASH_BEKEN_EMU_DUMP`; see the folder's README.
 
 ## Questions still open
 

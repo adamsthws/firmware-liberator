@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs as root in the Beken emulator's container (bk-emu.sh plug): puts the
-# emulated plug on the S61's Docker network as a plug on a home Wi-Fi, with
+# emulated plug on its Docker network as a plug on a home Wi-Fi, with
 # this container as that Wi-Fi's router, then runs the plug as your user
 # until the container stops.
 #
@@ -17,7 +17,7 @@ set -euo pipefail
 
 : "${HOST_UID:?}" "${HOST_GID:?}"
 STATE=${PLUG_STATE:-/state}
-RUN=${PLUG_NET_RUN:-/run/autoflash-s61}
+RUN=${PLUG_NET_RUN:-/run/autoflash-beken-emu}
 mkdir -p "$RUN"
 
 read -r address prefix < <(ip -4 -o address show dev eth0 | awk '{split($4, a, "/"); print a[1], a[2]; exit}')
