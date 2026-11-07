@@ -437,7 +437,7 @@ The addresses here are S61 1.0.2's.
   container (and can serve it).
   (It is not a hardware-AES engine with a baked key, as an earlier version of this
   page said.) See
-  [the main doc](../../docs/beken-research.md#firmware-update-and-conversion-the-ota-path).
+  [the main doc](../../docs/beken-research.md#the-update-path).
 - **Cloud ONLINE achieved:** `cloud_online.py` completes the
   handshake against a local stub — dispatch → TLS `/api/ws` → `register` → ONLINE,
   then heartbeats. Two S61-specific pieces: the dispatch reply must be compact JSON

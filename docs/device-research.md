@@ -7,11 +7,17 @@ so you need not repeat the work. To add a device, see
 
 ## By chip family
 
-- [Espressif research](espressif-research.md): the ESP32 and ESP32-C3 devices, their
-  partition layouts, a plug's Sonoff identity, locked devices, what a backup logs, and
-  how a device's firmware name is learnt.
+Both pages have the same sections, where the family has something to say: its
+devices, their flash and layouts, a plug's identity and stores, the cloud, the
+update path, what a backup logs, the stock firmware in the emulator, tools and
+methods, and questions still open.
+
+- [Espressif research](espressif-research.md): the ESP32 and ESP32-C3 devices, locked
+  devices among them, their partition layouts, a plug's Sonoff identity, how a
+  device's firmware name is learnt, and what a backup logs.
 - [Beken research](beken-research.md): the eWeLink firmware on the BK7238 devices: its
-  flash, update format, cloud, pairing, and the route to OpenBeken and ESPHome.
+  flash and stores, its cloud and update format, its pairing in the emulator, and
+  the route to OpenBeken and ESPHome.
 
 ## By device
 

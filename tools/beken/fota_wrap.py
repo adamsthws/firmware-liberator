@@ -2,7 +2,7 @@
 """Wrap an rt_ota .rbl (e.g. an OpenBeken BK7238 build) in the CoolKit "FOTA"
 download container the S61's OTA client (ais_qota_task) expects, so it can be
 served to the plug through the eWeLink `upgrade` command the same way the S60 is
-converted - see docs/beken-research.md#firmware-update-and-conversion-the-ota-path.
+converted - see docs/beken-research.md#the-update-path.
 
 The stock bootloader accepts a genuine third-party rt_ota image (no signature, no
 encryption, no secret key); OpenBeken already ships BK7238 images in this format
