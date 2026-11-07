@@ -115,8 +115,15 @@ def stop_at(instance: int, step: str, since: float, process: subprocess.Popen) -
 
 
 def side_by_side(jobs: list) -> list:
-    results: list = [None] * len(jobs)
-    threads = [threading.Thread(target=lambda i=i, job=job: results.__setitem__(i, job())) for i, job in enumerate(jobs)]
+    """Each job's result, run side by side; a job that raised has failed (1), and says why."""
+    results: list = [1] * len(jobs)
+
+    def run_one(i, job):
+        try:
+            results[i] = job()
+        except Exception as exc:  # noqa: BLE001 - said, and the job failed
+            print(f"FAIL  {exc!r}", flush=True)
+    threads = [threading.Thread(target=run_one, args=(i, job)) for i, job in enumerate(jobs)]
     for thread in threads:
         thread.start()
     for thread in threads:
