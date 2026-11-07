@@ -174,7 +174,7 @@ jobs:
               .venv/bin/python tools/repo/update_firmware.py esphome "$ESPHOME" --every-device 2>&1 | tee -a update.txt
           fi
           if [ -n "$OPENBEKEN" ]; then
-              .venv/bin/python tools/repo/update_firmware.py openbeken --release "$OPENBEKEN" --every-device 2>&1 | tee -a update.txt
+              .venv/bin/python tools/repo/update_firmware.py openbeken "$OPENBEKEN" --every-device 2>&1 | tee -a update.txt
           fi
           git add -A -- . ':!update.txt'
           # Asked by hand for what it installs already: nothing to make, test or open.

@@ -583,9 +583,20 @@ class OpenBekenEveryDeviceTests(unittest.TestCase):
         built = []
         with mock.patch.object(uf, "stable_release", return_value={"tag_name": "1.18.321"}), \
                 mock.patch.object(uf, "command_openbeken",
-                                  side_effect=lambda args: built.append((args.plug, args.release)) or 0):
-            self.assertEqual(uf.main(["openbeken", "--release", "1.18.321", "--every-device", "--dry-run"]), 0)
+                                  side_effect=lambda args: built.append((args.plug, args.version)) or 0):
+            self.assertEqual(uf.main(["openbeken", "1.18.321", "--every-device", "--dry-run"]), 0)
         self.assertEqual(built, [(plug, "1.18.321") for plug in uf.BEKEN_BUILDS])
+
+    def test_each_projects_version_is_given_alike(self):
+        from unittest import mock
+        for project, version in (("tasmota", "16.0.0"), ("esphome", "2026.10.0"), ("openbeken", "1.18.321")):
+            seen = []
+            with mock.patch.object(uf, f"command_{project}", side_effect=lambda args: seen.append(args.version) or 0), \
+                    mock.patch.object(uf.shutil, "which", return_value="/usr/bin/docker"):
+                self.assertEqual(uf.main([project, version]), 0)
+            self.assertEqual(seen, [version], project)
+        with mock.patch("sys.stderr"), self.assertRaises(SystemExit):
+            uf.main(["openbeken", "--release", "1.18.321"])
 
     def test_every_beken_device_has_its_openbeken_pinned(self):
         for plug in uf.BEKEN_BUILDS:
@@ -643,7 +654,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_a_settled_openbeken_is_built_for_every_beken_device(self):
         self.assertIn('["openbeken"]["due"]', self.workflow)
-        self.assertIn('update_firmware.py openbeken --release "$OPENBEKEN" --every-device', self.workflow)
+        self.assertIn('update_firmware.py openbeken "$OPENBEKEN" --every-device', self.workflow)
 
     def test_no_openbeken_merges_without_its_six_scenarios(self):
         self.assertIn("fault_suite.py list openbeken", self.workflow)
