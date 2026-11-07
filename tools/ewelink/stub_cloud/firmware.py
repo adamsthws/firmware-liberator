@@ -7,7 +7,7 @@ back on Sonoff's firmware, as it fetches the real file from eWeLink.
 emu.sh makes it on your computer, where patch_stock has what it needs, into
 the instance's state, and the stub reads it from there (read()):
 
-    python -I tools/espressif/emulator/stub_cloud/firmware.py STOCK_FLASH OUT --trust-ca CA
+    python -I tools/ewelink/stub_cloud/firmware.py STOCK_FLASH OUT --trust-ca CA
 """
 
 from __future__ import annotations
@@ -18,12 +18,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from tools.autoflash import kinds  # noqa: E402
 from tools.espressif import build_vendor_ota, flashmap  # noqa: E402
 from tools.espressif.emulator import patch_stock  # noqa: E402
-from tools.espressif.emulator.stub_cloud.device_identity import frame_params  # noqa: E402
+from tools.ewelink.stub_cloud.device_identity import frame_params  # noqa: E402
 
 FILE_NAME = "user1.bin"
 

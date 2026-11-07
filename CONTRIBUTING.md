@@ -127,7 +127,8 @@ eWeLink accounts and plugs' identities.
 - Where things go: `tools/autoflash/` is the conversion tool (`python3 -m
   tools.autoflash` runs it) and `tools/repo/` the repository's own plumbing; `tools/espressif/` and `tools/beken/`
   hold each chip family's tooling, its emulator in `emulator/`; `tools/ewelink/`
-  what talks to eWeLink whatever the chip; `devices/<plug>/` what is one plug's
+  what talks to eWeLink whatever the chip, and in `stub_cloud/` the stand-in
+  for it both emulators use; `devices/<plug>/` what is one plug's
   alone (its sheet, its ESPHome configs - at the paths converted plugs give
   Home Assistant, so a move means a new image - and modules); `tests/` mirrors `tools/`
   (`tests/autoflash/`, `tests/repo/`, `tests/ewelink/`, `tests/espressif/`,

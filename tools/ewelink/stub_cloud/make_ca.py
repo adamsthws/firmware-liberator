@@ -24,7 +24,7 @@ once and kept (firmware already patched trusts it; --force makes a new one), and
 the leaf is kept while it still fits - reissued only when it is missing, from
 another CA, or lacks a name it now needs.
 
-    python -I tools/espressif/emulator/stub_cloud/make_ca.py
+    python -I tools/ewelink/stub_cloud/make_ca.py
 """
 
 from __future__ import annotations
@@ -182,7 +182,7 @@ def leaf_fits(crt: Path, key: Path, ca_cert: x509.Certificate, router_ip: str) -
 
 
 def main(argv: list[str] | None = None) -> int:
-    repo = Path(__file__).resolve().parents[4]
+    repo = Path(__file__).resolve().parents[3]
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out-dir", type=Path,
                         default=repo / "captures" / "emulation" / "stub-cloud",

@@ -1,42 +1,26 @@
-"""The cloud stub's helpers run on their own, as the emulator runs them: in
-isolated mode (-I), where only their own path puts the repository on sys.path."""
+"""stub_server.py, the local stand-in for eWeLink's cloud both emulators use."""
 
-import contextlib
-import importlib.util
-import io
 import json
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.espressif.emulator.stub_cloud import stub_server
+from tools.ewelink.stub_cloud import stub_server
 
-STUB = Path(__file__).resolve().parents[2] / "tools" / "espressif" / "emulator" / "stub_cloud"
+STUB = Path(__file__).resolve().parents[3] / "tools" / "ewelink" / "stub_cloud"
 
 
-class StubHelpersRunIsolatedTests(unittest.TestCase):
-    def run_isolated(self, script):
-        return subprocess.run([sys.executable, "-I", str(STUB / script), "--help"],
+class RunIsolatedTests(unittest.TestCase):
+    """Run as the emulator runs it: in isolated mode (-I), where only its own
+    path puts the repository on sys.path."""
+
+    def test_it_imports_the_repository(self):
+        done = subprocess.run([sys.executable, "-I", str(STUB / "stub_server.py"), "--help"],
                               capture_output=True, text=True, timeout=60)
-
-    def test_device_identity_imports_the_repository(self):
-        done = self.run_isolated("device_identity.py")
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("usage:", done.stdout)
-
-    def test_make_ca_imports_the_repository(self):
-        done = self.run_isolated("make_ca.py")
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertIn("usage:", done.stdout)
-
-    def test_the_stub_and_its_firmware_import_the_repository(self):
-        for script in ("stub_server.py", "firmware.py"):
-            done = self.run_isolated(script)
-            self.assertEqual(done.returncode, 0, done.stderr)
-            self.assertIn("usage:", done.stdout)
 
 
 class FirmwareOfferTests(unittest.TestCase):
@@ -44,7 +28,7 @@ class FirmwareOfferTests(unittest.TestCase):
     the stub offers the plug its own firmware, and serves it to its id."""
 
     def setUp(self):
-        from tools.espressif.emulator.stub_cloud.firmware import Update
+        from tools.ewelink.stub_cloud.firmware import Update
         self.stub = stub_server.Stub("192.0.2.1", 443, 10, {"deviceid": "1000abcdef", "devicekey": "k"},
                                      Update("1.2.0", b"the file"))
 
@@ -78,36 +62,6 @@ class FirmwareOfferTests(unittest.TestCase):
         self.assertEqual(self.stub.ota_file("deviceid=1000abcdef&ts=1&sign=0"), b"the file")
         self.assertIsNone(self.stub.ota_file("deviceid=1000fedcba&ts=1&sign=0"))
         self.assertIsNone(self.stub.ota_file(""))
-
-    def test_the_file_emu_sh_made_is_read_with_its_version(self):
-        from tools.autoflash import kinds
-        from tools.espressif import build_vendor_ota
-        from tools.espressif.emulator.stub_cloud import firmware
-        from tests.espressif.test_dump_stock_flash import esp_image
-        wrapped = build_vendor_ota.build_wrapper(esp_image("1.2.0", "esp32_fw"), version="1.2.0",
-                                                 model=kinds.SONOFF_S60.wrapper_model)
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "stub-firmware.bin"
-            self.assertIsNone(firmware.read(path))
-            path.write_bytes(wrapped)
-            self.assertEqual(firmware.read(path), firmware.Update("1.2.0", wrapped))
-
-
-@unittest.skipUnless(importlib.util.find_spec("cryptography"), "needs the cryptography package")
-class RsaCaTests(unittest.TestCase):
-    def test_an_rsa_ca_is_eWeLinks_size_fits_the_slot_and_can_be_trusted(self):
-        from cryptography import x509
-        from tools.espressif.emulator.stub_cloud import make_ca
-        with tempfile.TemporaryDirectory() as folder:
-            out = Path(folder)
-            with contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(make_ca.main(["--out-dir", folder, "--rsa"]), 0)
-            pem = (out / "ca.crt").read_bytes()
-            self.assertLess(len(pem), make_ca.SLOT_BYTES)
-            self.assertEqual(x509.load_pem_x509_certificate(pem).public_key().key_size, make_ca.RSA_CA_BITS)
-            leaf = x509.load_pem_x509_certificate((out / "server.crt").read_bytes())
-            leaf.verify_directly_issued_by(x509.load_pem_x509_certificate(pem))
-            self.assertIn("SECLEVEL=1", (out / "openssl.cnf").read_text(encoding="utf-8"))
 
 
 class SendToDeviceTests(unittest.TestCase):

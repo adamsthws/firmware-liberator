@@ -1,4 +1,4 @@
-"""The emulated S61's eWeLink: the local stub (tools/espressif/emulator/stub_cloud),
+"""The emulated S61's eWeLink: the local stub (tools/ewelink/stub_cloud),
 served on its router's address for the plug and for the tool alike, as
 bk-emu.sh plug runs it (plug-net.sh).
 
@@ -30,7 +30,7 @@ from types import SimpleNamespace
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE.parent / "espressif" / "emulator" / "stub_cloud"))
+sys.path.insert(0, str(HERE.parent / "ewelink" / "stub_cloud"))
 import backup  # noqa: E402
 import cloud_online  # noqa: E402  (its compact JSON and certificates; needs the emulator image)
 import fota_wrap  # noqa: E402
