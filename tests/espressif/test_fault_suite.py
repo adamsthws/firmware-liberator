@@ -192,6 +192,38 @@ class SavedPlugTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "suite-esphome.*Run prep"):
                 fs.batch()
 
+    def test_the_real_cloud_keeps_where_ewelink_is_under_test(self):
+        def kind(route, step, fault, arg):
+            return fs.kind_of({"route": route, "step": step, "fault": fault, "arg": arg})
+        self.assertEqual(kind("sonoff>tasmota", "C2", "outage", 120), "cloud")    # every length at C2
+        self.assertEqual(kind("sonoff>esphome", "C2", "token", "login"), "cloud")
+        self.assertEqual(kind("sonoff>tasmota", "C3fb", "plugoff", 180), "cloud")
+        self.assertEqual(kind("sonoff>tasmota", "C3fb", "outage", 30), "stub")
+        self.assertEqual(kind("sonoff>tasmota", "C3", "plugoff", 1), "cloud")     # sent again through it
+        self.assertEqual(kind("sonoff>esphome", "D1", "crash", 60), "stub")
+        self.assertEqual(kind("sonoff>tasmota", "C2", "legacy", "v1.2.0"), "cloud")
+        self.assertEqual(kind("sonoff>tasmota", "G1", "legacy", "v1.2.0"), "stub")
+        self.assertEqual(kind("tasmota>esphome", "start", "legacy", "v2.0.2"), "stub")
+        self.assertEqual(kind("tasmota>esphome", "F4", "crash", 1), "any")
+
+    def test_a_real_cloud_batch_leaves_the_stub_only_scenarios_out(self):
+        rows = [{"id": "c", "route": "sonoff>tasmota", "step": "C2", "fault": "crash", "arg": 1},
+                {"id": "s", "route": "sonoff>tasmota", "step": "D1", "fault": "crash", "arg": 60}]
+        ran, said = [], []
+
+        def worker(n, todo, lock, cloud, *rest):
+            while not todo.empty():
+                ran.append(todo.get()["id"])
+        with mock.patch.object(fs, "scenarios", return_value=rows), mock.patch.object(fs, "latest", return_value={}), \
+                mock.patch.object(fs, "LOGS"), mock.patch.object(fs, "stale_starts", return_value=[]), \
+                mock.patch.object(fs, "STUB_CLOUD", False), mock.patch.object(fs, "NO_CLOUD", False), \
+                mock.patch.object(fs, "cloud_workers", return_value=1), mock.patch.object(fs, "worker", worker), \
+                mock.patch.object(fs.time, "sleep"), mock.patch.object(fs, "report"), \
+                mock.patch("builtins.print", side_effect=lambda *a, **k: said.append(" ".join(map(str, a)))):
+            fs.batch()
+        self.assertEqual(ran, ["c"])
+        self.assertTrue(any("1 left to the stub" in line for line in said))
+
     def test_runs_that_start_from_no_converted_plug_ask_nothing_of_it(self):
         self.assertEqual(self.stale('{"version": "1"}', [{"route": "sonoff>esphome", "fault": "crash"},
                                                          {"route": "esphome>sonoff", "fault": "legacy"}]), [])
