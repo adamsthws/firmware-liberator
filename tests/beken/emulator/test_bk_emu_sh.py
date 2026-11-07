@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "tools" / "beken" / "emulator" / "bk-emu.sh"
 PLUG_NET = ROOT / "tools" / "beken" / "emulator" / "plug-net.sh"
 

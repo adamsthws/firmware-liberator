@@ -129,7 +129,8 @@ cd "$work" && .venv/bin/mutmut run && .venv/bin/mutmut results
 
 mutmut names a mutant by its file's path (`tools.autoflash.plans...`), and
 matches it to what the tests import. A module the tests import by bare name -
-the Beken tools in `tools/beken`, which `tests/beken/test_tools.py` puts on
+the Beken tools in `tools/beken` and its emulator's in `tools/beken/emulator`,
+which `tests/beken/test_tools.py` and `tests/beken/emulator/` put on
 `sys.path` - is mutated from a copy at `src/<name>.py` in the work copy, with
 the test's path to them changed to `src`, so the two names agree.
 

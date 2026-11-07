@@ -12,8 +12,8 @@ Espressif emulator and everything else). The fork's `--net-tap` puts the plug's
 radio on a TAP device, which `plug-net.sh` bridges with the container's
 interface; the container is that Wi-Fi's router, `.1`: DHCP (the plug at
 `.50`-`.59`), DNS (every name the router), and eWeLink, the local stub
-(`tools/beken/cloud_stub.py`), which every connection the plug makes off the
-network is sent to - nothing reaches the internet. `tools/beken/plug.py` is
+(`tools/beken/emulator/cloud_stub.py`), which every connection the plug makes off the
+network is sent to - nothing reaches the internet. `tools/beken/emulator/plug.py` is
 the plug itself: it boots from its flash, kept in
 `captures/emulation/s61/autoflash-s61/` with its logs and the stub's CA, so it
 carries on across firmware - each restart the firmware asks for a boot of its

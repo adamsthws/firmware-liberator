@@ -1,8 +1,8 @@
 """The Beken conversion tooling in tools/beken: the pieces a conversion's data
 passes through - the OpenBeken config and its CRC, the EasyFlash KV40 store, the
 Wi-Fi migration, the FOTA container and its server, the stock-app extraction
-and the per-device backup. The emulator drivers beside them need the
-BekenEmulator fork and a dump, and are tested in the emulator, not here."""
+and the per-device backup. The emulator's own modules, in tools/beken/emulator,
+are tested in tests/beken/emulator."""
 
 import contextlib
 import hashlib
@@ -17,7 +17,6 @@ import threading
 import unittest
 import zlib
 from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
 
 TOOLS = Path(__file__).resolve().parents[2] / "tools" / "beken"
@@ -29,7 +28,6 @@ import obk_config  # noqa: E402
 import backup  # noqa: E402
 import ef40  # noqa: E402
 import fota_wrap as fota  # noqa: E402
-import stage_apply  # noqa: E402
 import stock_app  # noqa: E402
 import wifi_migrate  # noqa: E402
 
@@ -378,39 +376,6 @@ class FotaWrapTests(unittest.TestCase):
         self.assertGreater(fota.ANNOUNCED_VERSION, "1.0.2")
         self.assertLessEqual(len(fota.ANNOUNCED_VERSION), fota.VERSION_MAX)
 
-    def test_cloud_push_announces_it(self):
-        sent = []
-
-        class Session:
-            def __init__(self, *args, **kwargs):
-                self.stub = SimpleNamespace(heard=lambda message: None)
-                self.stublog = []
-
-            def run(self, secs, until=None):
-                self.stub.heard({"action": "register", "deviceid": "1000abcdef", "apikey": "made-up"})
-                self.stub.heard({"action": "update", "deviceid": "1000abcdef"})
-
-            def flash(self):
-                return bytes(0x400000)
-
-            def online(self):
-                return True, True, True, True
-
-        online = SimpleNamespace(SSID=b"net", PW=b"password", DISPATCH_IP="192.0.2.1", DUMP="dump.bin",
-                                 CloudSession=Session,
-                                 ss=SimpleNamespace(send_to_device=lambda device, command: sent.append(command) or True))
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(sys.modules, {"cloud_online": online}):
-            sys.modules.pop("cloud_push", None)
-            import cloud_push
-            image, dump = Path(tmp, "image.rbl"), Path(tmp, "dump.bin")
-            image.write_bytes(self.RBL[:96].replace(b"1.18.319", b"1.0.0\0\0\0") + bytes(256))
-            dump.write_bytes(bytes(0x400000))
-            with mock.patch.object(cloud_push.os, "_exit", side_effect=SystemExit), \
-                 contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
-                cloud_push.main([str(image), str(Path(tmp, "out.bin")), "--dump", str(dump)])
-            sys.modules.pop("cloud_push", None)
-        self.assertEqual(sent[0]["params"]["version"], fota.ANNOUNCED_VERSION)
-
     def test_the_container_the_firmware_decodes(self):
         c = fota.wrap(self.RBL)
         self.assertEqual(len(c), 116 + len(self.RBL))
@@ -713,39 +678,6 @@ class ConversionChainTests(unittest.TestCase):
         self.assertEqual(config[0x54:0x54 + 11], b"p@ss w0rd!\x00")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-class StageApplyTests(unittest.TestCase):
-    """stage_apply.py puts an rt_ota image where the stock bootloader applies
-    from, and test credentials where the installed firmware reads them."""
-
-    def flash(self):
-        flash = bytearray(b"\x00" * 0x286000 + b"\xa5" * (0x3e0000 - 0x286000) + b"\xff" * 0x20000)
-        flash[0x3e0000:0x3e1000] = kv40_store([("factory", b"x")])
-        return flash
-
-    def test_the_slot_is_erased_and_the_image_laid_at_its_start(self):
-        image = rbl_header() + b"body" * 100
-        flash = stage_apply.stage(self.flash(), image)
-        start, end = stage_apply.DOWNLOAD_SLOT
-        self.assertEqual(flash[start:start + len(image)], image)
-        self.assertEqual(set(flash[start + len(image):end]), {0xff})
-        self.assertEqual(flash[:start], b"\x00" * start)   # the app and bootloader untouched
-
-    def test_credentials_join_the_store_and_the_slot_can_be_left(self):
-        flash = stage_apply.stage(self.flash(), None, {"wifi-ssid": b"Net", "wifi-pass": b"secret12"})
-        self.assertEqual(ef40.parse_store(flash)["wifi-ssid"], b"Net")
-        self.assertEqual(set(flash[0x286000:0x3e0000]), {0xa5})
-
-    def test_only_an_rbl_that_fits_is_staged(self):
-        with self.assertRaises(ValueError):
-            stage_apply.stage(self.flash(), b"not an image")
-        with self.assertRaises(ValueError):
-            stage_apply.stage(self.flash(), rbl_header() + b"\0" * (0x3e0000 - 0x286000))
-
-
 class UpgradeCommandTests(unittest.TestCase):
     def test_the_command_names_the_plug_the_container_and_its_digest(self):
         register = {"action": "register", "deviceid": "1000abcdef", "apikey": "made-up-key",
@@ -756,278 +688,6 @@ class UpgradeCommandTests(unittest.TestCase):
         self.assertEqual(command["params"]["model"], "SN-BK7238-S61-01")
         self.assertEqual(command["params"]["binList"],
                          [{"downloadUrl": "http://8.8.8.8:8080/user1.bin", "digest": "ab" * 32, "name": "user1.bin"}])
-
-
-class StagedTests(unittest.TestCase):
-    def test_an_image_is_staged_only_byte_for_byte_at_the_slot(self):
-        image = rbl_header() + b"body" * 100
-        flash = stage_apply.stage(bytearray(b"\xff" * 0x400000), image)
-        self.assertTrue(stage_apply.staged(flash, image))
-        flash[0x286000 + 200] ^= 1
-        self.assertFalse(stage_apply.staged(flash, image))
-        self.assertFalse(stage_apply.staged(bytes(0x400000), image))
-
-
-
-class CloudStubTests(unittest.TestCase):
-    """The S61's stub serves a leaf for its own router's address."""
-
-    def test_a_plug_started_on_another_network_is_served_a_leaf_for_it(self):
-        made = []
-
-        def make_certs(folder, address):
-            made.append(address)
-            for name in ("ca.crt", "leaf.crt", "leaf.key"):
-                Path(folder, name).write_text(address, encoding="utf-8")
-            return b"", "", ""
-
-        online = SimpleNamespace(_make_certs=make_certs)
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(sys.modules, {"cloud_online": online}):
-            sys.modules.pop("cloud_stub", None)
-            import cloud_stub
-            state = Path(tmp)
-            cloud_stub.certificates(state, "198.18.62.1")
-            cloud_stub.certificates(state, "198.18.62.1")       # kept: the same router
-            leaf, _ = cloud_stub.certificates(state, "198.18.63.1")
-            sys.modules.pop("cloud_stub", None)
-            self.assertEqual(made, ["198.18.62.1", "198.18.63.1"])
-            self.assertEqual(leaf.read_text(encoding="utf-8"), "198.18.63.1")
-
-
-class StockHooksTests(unittest.TestCase):
-    """The help Sonoff's firmware is given to come online is at the places found
-    in it: with another firmware started there (plug.py turns it off), none of
-    it may touch the CPU, or it would corrupt that firmware's run."""
-
-    # As found in S61 1.0.2.
-    POINTS = SimpleNamespace(after_memcmp=0x29C3C, gate_passed=0x29C82, ef_get_env_blob=0x12F438,
-                             x509_crt_parse=0x125E4C, appfw_task=0x319A8, appfw_loop=0x319C4,
-                             ais_cloud_start=0x35744, link_create=0x357F2, link_task=0x35AA8, start_cloud=0x2C204,
-                             lan_publish=0x2BF7C, ctx_pointer=0x4044AC, cloud_flag=0x403E31, url_offset=0x5F,
-                             dispatch_url="http://8.8.8.8:80")
-
-    def hooks(self):
-        regs = SimpleNamespace(**{name: index for index, name in enumerate(
-            ("UC_ARM_REG_R0 UC_ARM_REG_R1 UC_ARM_REG_R2 UC_ARM_REG_R3 UC_ARM_REG_R4 UC_ARM_REG_R5 UC_ARM_REG_R6 "
-             "UC_ARM_REG_R7 UC_ARM_REG_R8 UC_ARM_REG_R9 UC_ARM_REG_R10 UC_ARM_REG_R11 UC_ARM_REG_R12 UC_ARM_REG_SP "
-             "UC_ARM_REG_LR UC_ARM_REG_PC UC_ARM_REG_CPSR").split())})
-        fakes = {"src": SimpleNamespace(), "src.main": SimpleNamespace(build_emulator=None),
-                 "unicorn": SimpleNamespace(UC_HOOK_CODE=4), "unicorn.arm_const": regs}
-        with mock.patch.dict(sys.modules, fakes):
-            sys.modules.pop("cloud_online", None)
-            import cloud_online
-        self.addCleanup(sys.modules.pop, "cloud_online", None)
-        touched, installed = [], []
-        mu = SimpleNamespace(
-            hook_add=lambda kind, callback, user, begin, end: installed.append((begin, callback)),
-            reg_read=lambda reg: 0x404000, reg_write=lambda reg, value: touched.append(("reg", reg, value)),
-            mem_read=lambda address, size: (b"wifi-ssid\0" + bytes(size))[:size],
-            mem_write=lambda address, data: touched.append(("mem", address)))
-        state = SimpleNamespace(timer3_5_ctl=0)
-        emu = SimpleNamespace(mu=mu, wifimac=SimpleNamespace(tick=lambda insns: 0), state=state, _exc_epoch=0)
-        hooks = cloud_online.StockHooks(emu, b"net", b"password", b"CA", 0.0, [], self.POINTS)
-        hooks.module = cloud_online
-        return hooks, emu, installed, touched
-
-    def test_nothing_is_touched_while_off(self):
-        hooks, emu, installed, touched = self.hooks()
-        hooks.active = False
-        hooks._started = 0.0
-        for address, callback in installed:
-            callback(emu.mu, address, 2, None)
-        emu.wifimac.tick(1)
-        self.assertEqual(touched, [])
-        self.assertEqual(emu.state.timer3_5_ctl, 0)
-
-    def test_on_they_act(self):
-        hooks, emu, installed, touched = self.hooks()
-        gate = dict(installed)[0x29C3C]   # the integrity gate: its compare made "equal"
-        gate(emu.mu, 0x29C3C, 2, None)
-        self.assertIn(("reg", 0, 0), touched)
-        emu.wifimac.tick(1)
-        self.assertTrue(emu.state.timer3_5_ctl & (1 << 9))
-
-    def test_every_place_the_help_goes_is_a_point_given(self):
-        _, _, installed, _ = self.hooks()
-        places = {begin for begin, _ in installed} - {0x4}   # the return from a forced call, in no firmware
-        self.assertEqual(places, {self.POINTS.after_memcmp, self.POINTS.ef_get_env_blob, self.POINTS.x509_crt_parse,
-                                  self.POINTS.ais_cloud_start, self.POINTS.appfw_loop})
-
-    def test_the_trigger_publishes_the_lan_service_and_then_starts_the_cloud(self):
-        hooks, emu, installed, touched = self.hooks()
-        loop = dict(installed)[self.POINTS.appfw_loop]
-        hooks._started = 0.0
-        loop(emu.mu, self.POINTS.appfw_loop, 2, None)   # first it readies the context
-        self.assertIn(("mem", self.POINTS.cloud_flag), touched)
-        loop(emu.mu, self.POINTS.appfw_loop, 2, None)
-        self.assertIn(("reg", 15, self.POINTS.lan_publish | 1), touched)
-        dict(installed)[0x4](emu.mu, 0x4, 2, None)      # it returns
-        self.assertIn(("reg", 15, self.POINTS.start_cloud | 1), touched)
-
-    def test_nothing_goes_in_until_there_are_points(self):
-        hooks, emu, installed, _ = self.hooks()
-        before = len(installed)
-        hooks.module.StockHooks(emu, b"net", b"password", b"CA", 0.0, [])
-        self.assertEqual(len(installed), before)
-
-    def test_a_firmware_dialling_elsewhere_is_refused(self):
-        hooks, _, _, _ = self.hooks()
-        self.assertIs(hooks.module.dialling_here(self.POINTS), self.POINTS)
-        with self.assertRaisesRegex(ValueError, "dispatch_url.*http://192.0.2.1"):
-            hooks.module.dialling_here(SimpleNamespace(dispatch_url="http://192.0.2.1:80"))
-
-
-class PlugTests(unittest.TestCase):
-    """The emulated plug's own decisions (tools/beken/plug.py)."""
-
-    def plug(self, tmp):
-        fakes = {"cloud_online": SimpleNamespace(SSID=b"net", PW=b"password"), "src": SimpleNamespace(),
-                 "src.main": SimpleNamespace(build_emulator=None), "unicorn": SimpleNamespace(UC_HOOK_CODE=4),
-                 "unicorn.arm_const": SimpleNamespace(UC_ARM_REG_LR=14, UC_ARM_REG_R0=0, UC_ARM_REG_R1=1,
-                                                      UC_ARM_REG_R2=2, UC_ARM_REG_R3=3)}
-        with mock.patch.dict(sys.modules, fakes):
-            sys.modules.pop("plug", None)
-            import plug
-        self.addCleanup(sys.modules.pop, "plug", None)
-        self.stock_points = plug.stock_points
-        return plug.Plug(Path(tmp), "tap0")
-
-    def test_sonoffs_app_is_the_one_the_points_are_found_in(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            plug = self.plug(tmp)
-            with mock.patch.object(self.stock_points, "app_of_flash", return_value=b"sonoff"), \
-                    mock.patch.object(self.stock_points, "find", return_value="its points") as find:
-                self.assertEqual(plug.stock_points(b"flash"), "its points")
-            find.assert_called_once_with(b"sonoff")
-
-    def test_any_other_app_is_left_alone(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            plug = self.plug(tmp)
-            with mock.patch.object(self.stock_points, "app_of_flash", return_value=bytes(0x1000)):
-                self.assertIsNone(plug.stock_points(b"flash"))
-            self.assertIn("no help for this app", plug.netlog[-1])
-
-    def test_the_power_switch(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            plug = self.plug(tmp)
-            self.assertTrue(plug.powered())                   # no switch yet: on
-            (Path(tmp) / "power").write_text("off\n", encoding="utf-8")
-            self.assertFalse(plug.powered())
-            (Path(tmp) / "power").write_text("on\n", encoding="utf-8")
-            self.assertTrue(plug.powered())
-
-
-class StubMemoryTests(unittest.TestCase):
-    def test_what_a_plug_said_of_itself_is_kept_across_a_restart(self):
-        with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch.dict(sys.modules, {"cloud_online": SimpleNamespace(_make_certs=None)}):
-            sys.modules.pop("cloud_stub", None)
-            import cloud_stub
-            import stub_server
-            path = Path(tmp, "stub-reported.json")
-            first = stub_server.Stub("192.0.2.1", 443, 10)
-            cloud_stub.remember(first, path)
-            first.heard({"action": "register", "deviceid": "1000abcdef", "apikey": "made-up"})
-            again = stub_server.Stub("192.0.2.1", 443, 10)
-            cloud_stub.remember(again, path)
-            sys.modules.pop("cloud_stub", None)
-        self.assertEqual(again.account_device()["deviceid"], "1000abcdef")
-
-
-class StubModelTests(unittest.TestCase):
-    """A flash rebuilt on an S61's settings says it is an S61: the stub's account
-    gives the model of the firmware it started on."""
-
-    def setUp(self):
-        patched = mock.patch.dict(sys.modules, {"cloud_online": SimpleNamespace(_make_certs=None)})
-        patched.start()
-        self.addCleanup(patched.stop)
-        sys.modules.pop("cloud_stub", None)
-        import cloud_stub
-        self.stub = cloud_stub
-        self.addCleanup(sys.modules.pop, "cloud_stub", None)
-
-    def test_the_model_is_the_one_the_app_holds_once(self):
-        self.assertEqual(self.stub.model_in(b"\0SN-BK7238-BASICR5-01\0"), "SN-BK7238-BASICR5-01")
-        self.assertEqual(self.stub.model_in(b"SN-BK7238-S61-01\0SN-BK7238-S61-01"), "SN-BK7238-S61-01")
-        self.assertEqual(self.stub.model_in(b"SN-BK7238-S61-01\0SN-BK7238-S41-01"), "")
-        self.assertEqual(self.stub.model_in(b"no model"), "")
-
-    def test_the_record_is_that_kinds_and_stays_when_the_firmware_changes(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            state, flash = Path(tmp), Path(tmp, "flash.bin")
-            flash.write_bytes(b"\xff" * 16)
-            with mock.patch.object(self.stub.stock_points, "app_of_flash", return_value=b"SN-BK7238-BASICR5-01\0"):
-                record = self.stub.device(flash, state)
-            self.assertEqual((record["model"], record["productModel"]), ("SN-BK7238-BASICR5-01", "BASIC-1GS"))
-            with mock.patch.object(self.stub.stock_points, "app_of_flash", return_value=b"OpenBeken"):
-                self.assertEqual(self.stub.device(flash, state)["model"], "SN-BK7238-BASICR5-01")
-
-    def test_with_none_to_read_it_is_an_s61(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            flash = Path(tmp, "flash.bin")
-            flash.write_bytes(b"\xff" * 16)
-            with mock.patch.object(self.stub.stock_points, "app_of_flash", side_effect=ValueError):
-                self.assertEqual(self.stub.device(flash, Path(tmp))["model"], "SN-BK7238-S61-01")
-
-    def test_what_the_plug_says_of_its_model_gives_way(self):
-        import stub_server
-        with tempfile.TemporaryDirectory() as tmp:
-            stub = stub_server.Stub("192.0.2.1", 443, 10)
-            self.stub.remember(stub, Path(tmp, "stub-reported.json"), "SN-BK7238-BASICR5-01")
-            stub.heard({"action": "register", "deviceid": "1000abcdef", "apikey": "made-up",
-                        "model": "SN-BK7238-S61-01"})
-        self.assertEqual(stub.reported["1000abcdef"]["model"], "SN-BK7238-BASICR5-01")
-
-
-class StubOfferTests(unittest.TestCase):
-    """The stub offers the plug its own Sonoff firmware, as eWeLink offers a real
-    one its official file: what a readout reverts with, and a run back to Sonoff
-    with no backup fetches. Made once, from the stock firmware it first started."""
-
-    def setUp(self):
-        patched = mock.patch.dict(sys.modules, {"cloud_online": SimpleNamespace(_make_certs=None)})
-        patched.start()
-        self.addCleanup(patched.stop)
-        sys.modules.pop("cloud_stub", None)
-        import cloud_stub
-        self.stub = cloud_stub
-        self.addCleanup(sys.modules.pop, "cloud_stub", None)
-
-    def test_it_is_the_stock_app_in_the_kinds_fota_made_once(self):
-        import fota_wrap
-        with tempfile.TemporaryDirectory() as tmp:
-            state, flash = Path(tmp), Path(tmp, "flash.bin")
-            flash.write_bytes(b"\xff" * 16)
-            with mock.patch.object(self.stub.stock_app, "stock_rbl", return_value=(b"RBL\0stock app", "1.0.2")):
-                first = self.stub.offered(flash, state, "SN-BK7238-S61-01")
-            # Started again on another firmware: the same offer, not made again.
-            with mock.patch.object(self.stub.stock_app, "stock_rbl", side_effect=ValueError) as made:
-                again = self.stub.offered(flash, state, "SN-BK7238-S61-01")
-            made.assert_not_called()
-        self.assertEqual(first.version, "1.0.2")
-        self.assertEqual(again.data, first.data)
-        ((name, version, image),) = fota_wrap.unwrap(first.data)
-        self.assertEqual((name, version, image), ("FWSW-01-S61-BK7238", "1.0.2", b"RBL\0stock app"))
-
-    def test_with_no_stock_app_it_offers_nothing(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            flash = Path(tmp, "flash.bin")
-            flash.write_bytes(b"\xff" * 16)
-            with mock.patch.object(self.stub.stock_app, "stock_rbl", side_effect=ValueError):
-                self.assertIsNone(self.stub.offered(flash, Path(tmp), "SN-BK7238-S61-01"))
-
-    def test_the_plug_asking_as_one_behind_is_offered_it_and_given_it(self):
-        import stub_server
-        update = SimpleNamespace(version="1.0.2", data=b"the fota")
-        stub = stub_server.Stub("192.0.2.1", 443, 10, {"model": "SN-BK7238-S61-01"}, update)
-        stub.heard({"action": "register", "deviceid": "1000abcdef", "apikey": "made-up"})
-        asked = json.dumps({"deviceInfoList": [{"deviceid": "1000abcdef", "model": "SN-BK7238-S61-01",
-                                                "version": "0.0.1"}]}).encode()
-        offers = stub.ota_query(asked)["data"]["otaInfoList"]
-        self.assertEqual([offer["version"] for offer in offers], ["1.0.2"])
-        self.assertEqual(stub.ota_file("deviceid=1000abcdef&ts=1&sign=0"), b"the fota")
-        self.assertIsNone(stub.ota_file("deviceid=1000000000"))
 
 
 class BusyPlugTests(unittest.TestCase):
@@ -1065,3 +725,7 @@ class BusyPlugTests(unittest.TestCase):
                                          listen_port=0, device_ip="127.0.0.1", wait=5, say=lambda *a: None)
         self.assertTrue(delivered.sent, delivered.error)
         self.assertRegex(delivered.error or "", stock.BUSY)
+
+
+if __name__ == "__main__":
+    unittest.main()

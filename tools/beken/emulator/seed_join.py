@@ -21,7 +21,7 @@ This is the integrity-gate bypass plus the credential injection; no other
 intervention, each at the place found in the firmware (stock_points.py). Requires
 the BekenEmulator fork.
 
-  $(tools/beken/emulator/bk-emu.sh python) tools/beken/seed_join.py
+  $(tools/beken/emulator/bk-emu.sh python) tools/beken/emulator/seed_join.py
   SSID=MyNet PASS=mypassword CH=6 SECS=40 python3 seed_join.py
 
 SECS=0 runs the plug until it is stopped.
@@ -40,7 +40,7 @@ import re
 import types
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))   # the tools beside this one
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools" / "beken"))   # the Beken tools
 import stock_points  # noqa: E402
 
 ROOT = Path(os.environ.get("BK_EMU_ROOT", "/opt/beken-emulator")); sys.path.insert(0, str(ROOT))

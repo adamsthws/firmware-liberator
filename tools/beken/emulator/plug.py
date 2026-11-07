@@ -31,7 +31,7 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
+sys.path[:0] = [str(HERE), str(HERE.parent)]   # the emulator's modules, and the Beken tools
 import cloud_online  # noqa: E402  (needs the emulator image)
 import stage_apply  # noqa: E402
 import stock_points  # noqa: E402

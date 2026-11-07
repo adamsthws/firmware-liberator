@@ -9,7 +9,7 @@
 # router is .1 (the network leaves it free: its gateway is .254, and Docker
 # hands out .128 and up): DHCP, the plug's addresses .50-.59, as a home
 # router's pool; DNS, every name this router; and eWeLink, the local stub
-# (tools/beken/cloud_stub.py), which every connection the plug makes off the
+# (tools/beken/emulator/cloud_stub.py), which every connection the plug makes off the
 # network is sent to. Nothing reaches the internet. The tool, on a computer
 # on the same network (bk-emu.sh computer), finds the plug as on a home
 # Wi-Fi, and the stub's account API at the router.
@@ -54,10 +54,10 @@ chmod +x "$RUN/router"
 "$RUN/router"
 
 as_you() { setpriv --reuid="$HOST_UID" --regid="$HOST_GID" --clear-groups env HOME=/tmp "$@"; }
-as_you python /work/tools/beken/plug.py --state "$STATE" --prepare
+as_you python /work/tools/beken/emulator/plug.py --state "$STATE" --prepare
 # The stub binds the router's ports 80 and 443, so it runs as root; what it
 # makes in the state directory is yours.
-python3 -I -B /work/tools/beken/cloud_stub.py --state "$STATE" --bind "$router" --flash "$STATE/flash.bin" \
+python3 -I -B /work/tools/beken/emulator/cloud_stub.py --state "$STATE" --bind "$router" --flash "$STATE/flash.bin" \
     >> "$STATE/stub.log" 2>&1 &
 for _ in $(seq 50); do [ -f "$STATE/ca.crt" ] && break; sleep 0.2; done
 touch "$STATE/serial.log"
@@ -65,4 +65,4 @@ chown "$HOST_UID:$HOST_GID" "$STATE"/ca.crt "$STATE"/leaf.* "$STATE/stub.log" "$
 echo "The plug's router, and its eWeLink, is $router." >&2
 
 exec setpriv --reuid="$HOST_UID" --regid="$HOST_GID" --clear-groups \
-    env HOME=/tmp python /work/tools/beken/plug.py --state "$STATE" >> "$STATE/serial.log" 2>&1
+    env HOME=/tmp python /work/tools/beken/emulator/plug.py --state "$STATE" >> "$STATE/serial.log" 2>&1

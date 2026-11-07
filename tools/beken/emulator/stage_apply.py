@@ -10,7 +10,7 @@ the bootloader makes (flash_writethrough: the RDID and the XIP mirror, patch
 `bk-emu.sh run OUT --wifi --wifi-peer ap --wifi-ssid SSID --wifi-pass PASS`,
 shows the installed firmware start afresh and join.
 
-    bk-emu.sh python tools/beken/stage_apply.py DUMP IMAGE.rbl OUT
+    bk-emu.sh python tools/beken/emulator/stage_apply.py DUMP IMAGE.rbl OUT
     (env: SECS=120, SSID, PASS, SEED=0 for no credentials; IMAGE "-" boots DUMP as it is)
 """
 from __future__ import annotations
@@ -21,7 +21,7 @@ import threading
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))   # the tools beside this one
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools" / "beken"))   # the Beken tools
 import ef40  # noqa: E402
 
 DOWNLOAD_SLOT = (0x286000, 0x3E0000)   # the stock download partition, up to the per-device region

@@ -591,7 +591,7 @@ real plug would, onto its Wi-Fi and eWeLink.
 The tools in `tools/beken` run in its container:
 
 ```sh
-tools/beken/emulator/bk-emu.sh python tools/beken/seed_join.py
+tools/beken/emulator/bk-emu.sh python tools/beken/emulator/seed_join.py
 tools/beken/emulator/bk-emu.sh run captures/your-dump.bin --wifi-peer auto
 tools/beken/emulator/bk-emu.sh test -k "Sonoff 4MB"    # upstream's self-tests, under the patches
 tools/beken/emulator/bk-emu.sh plug                     # the S61 on a home Wi-Fi of its own

@@ -227,7 +227,7 @@ Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
 
 ## Beken devices
 
-The Beken emulator's cloud bring-up (`tools/beken/cloud_online.py`,
+The Beken emulator's cloud bring-up (`tools/beken/emulator/cloud_online.py`,
 `cloud_dial.py`) finds the places it needs in the firmware itself
 (`tools/beken/stock_points.py`), and needs a whole flash to run from. To see
 whether a device's firmware can come up this way, run `stock_points.py` on its

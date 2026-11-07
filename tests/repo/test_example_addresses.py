@@ -21,9 +21,9 @@ BEKEN_EMULATOR_FILES = {
     "devices/sonoff-s61/openbeken.md",
     "docs/beken-research.md",
     "tools/beken/README.md",
-    "tools/beken/cloud_dial.py",
+    "tools/beken/emulator/cloud_dial.py",
     "tools/beken/emulator/patches/0005-emulator-bridge-the-Wi-Fi-peer-to-a-host-TAP-device-.patch",
-    "tools/beken/seed_join.py",
+    "tools/beken/emulator/seed_join.py",
 }
 
 
@@ -48,5 +48,5 @@ class ExampleAddressTests(unittest.TestCase):
         home = "192.168."
         self.assertEqual(strays("tests/x.py", f"{home}0.50 {home}1.1 {home}2.7"), [f"{home}0.50", f"{home}1.1", f"{home}2.7"])
         self.assertEqual(strays("docs/x.md", f"{home}99.50 {home}4.1 {home}60.1 {home}122.1 192.0.2.50"), [])
-        self.assertEqual(strays("tools/beken/cloud_dial.py", f"{home}1.1"), [])
-        self.assertEqual(strays("tools/beken/cloud_dial.py", f"{home}0.1"), [f"{home}0.1"])
+        self.assertEqual(strays("tools/beken/emulator/cloud_dial.py", f"{home}1.1"), [])
+        self.assertEqual(strays("tools/beken/emulator/cloud_dial.py", f"{home}0.1"), [f"{home}0.1"])

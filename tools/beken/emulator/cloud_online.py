@@ -36,7 +36,7 @@ firmware runs then, its LAN service published (the mDNS record the tool's local
 discovery finds) and the cloud started. Where all of this is in the firmware is
 found in the firmware itself (stock_points.py).
 
-  tools/beken/emulator/bk-emu.sh python tools/beken/cloud_online.py
+  tools/beken/emulator/bk-emu.sh python tools/beken/emulator/cloud_online.py
 
 The set-up is a CloudSession, which cloud_push.py builds on to push an
 `upgrade` once the plug is online.
@@ -57,10 +57,10 @@ import types
 from pathlib import Path
 from urllib.parse import urlsplit
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))   # the tools beside this one
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools" / "beken"))   # the Beken tools
 ROOT = Path(os.environ.get("BK_EMU_ROOT", "/opt/beken-emulator"))
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools" / "ewelink" / "stub_cloud"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools" / "ewelink" / "stub_cloud"))
 from src.main import build_emulator  # noqa: E402
 from unicorn import UC_HOOK_CODE  # noqa: E402
 from unicorn.arm_const import (  # noqa: E402
@@ -162,7 +162,7 @@ class StockHooks:
 
     They go in at `points` (stock_points.find), given here or to `attach`
     before that app runs. Each acts only while `active`: another firmware the
-    plug is converted to runs other code there (tools/beken/plug.py turns them
+    plug is converted to runs other code there (tools/beken/emulator/plug.py turns them
     off when it starts one). `boot()` starts the clock for the trigger again,
     as each boot of the plug needs."""
 

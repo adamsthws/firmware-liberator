@@ -29,8 +29,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE.parent / "ewelink" / "stub_cloud"))
+sys.path[:0] = [str(HERE), str(HERE.parent)]   # the emulator's modules, and the Beken tools
+sys.path.insert(0, str(HERE.parents[1] / "ewelink" / "stub_cloud"))
 import backup  # noqa: E402
 import cloud_online  # noqa: E402  (its compact JSON and certificates; needs the emulator image)
 import fota_wrap  # noqa: E402
@@ -38,7 +38,7 @@ import stock_app  # noqa: E402
 import stock_points  # noqa: E402
 import stub_server as ss  # noqa: E402
 
-sys.path.insert(0, str(HERE.parents[1]))
+sys.path.insert(0, str(HERE.parents[2]))
 from tools.autoflash import kinds  # noqa: E402
 
 # The S61's region of its own data, where the factory record keeps its MAC.
