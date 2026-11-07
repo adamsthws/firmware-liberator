@@ -18,7 +18,7 @@ With none here - captures/ is only ever a working copy - the maintainer's
 sealed backup is fetched from its private package and filed here first
 (tools/repo/private_backup.py restore, docs/private-backup.md), given its key and
 a login that can read the package; and a test copy asked for by --plug that
-is not here yet is made from it (copy_plug.py). AUTOFLASH_NO_RESTORE=1 says
+is not here yet is made from it (copy_plug.py). AUTOFLASH_EMU_NO_RESTORE=1 says
 not to.
 """
 
@@ -122,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError:
         wanted = None  # choose() says what is wrong with it
     missing = not found or (wanted is not None and all(plugs.folder_name(c.mac) != wanted for c in found))
-    if missing and os.environ.get("AUTOFLASH_NO_RESTORE") != "1":
+    if missing and os.environ.get("AUTOFLASH_EMU_NO_RESTORE") != "1":
         found = restored(args.plug)
     if not found:
         print("No Sonoff backup to emulate yet. A conversion keeps one for each plug, in\n"

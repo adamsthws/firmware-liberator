@@ -434,7 +434,7 @@ plug, given when it was paired. It is not in the dump — no `S60TP*` string
 anywhere in the flash — so the stub cannot read it from the plug. Instead
 `emu.sh` looks up the one eWeLink gave this plug in the tool's own records of
 earlier runs (`plugs/<mac>/runs/*/autoflash-state.json`: a real conversion's, a
-kept plug's or an instance's), and `AUTOFLASH_STUB_PRODUCT_MODEL=S60TPG|S60TPF`
+kept plug's or an instance's), and `AUTOFLASH_EMU_STUB_PRODUCT_MODEL=S60TPG|S60TPF`
 overrides it or covers a plug never seen by the real cloud. With neither, none is
 served and the run's report leaves "Device model" blank rather than guess.
 
@@ -519,11 +519,11 @@ after the list.
   `probe_ota_command.py` (the app dispatch).
 - **`unattended-test.sh --stub-cloud`** runs a whole conversion with no eWeLink
   account and a placeholder `.env` the stub ignores.
-- **`fault_suite.py --stub-cloud`** (or `AUTOFLASH_STUB_CLOUD=1`) drops the
+- **`fault_suite.py --stub-cloud`** (or `AUTOFLASH_EMU_STUB_CLOUD=1`) drops the
   cross-instance cloud lock entirely: every emulator has its own stub, so every
-  scenario runs in parallel on `AUTOFLASH_STUB_WORKERS` emulators (from
-  `AUTOFLASH_FIRST_INSTANCE`, default 1) with no turns at the cloud and no cloud-turn
-  monitor. Its saved starting plugs are `stub-suite-*` and its results go to
+  scenario runs in parallel on `AUTOFLASH_EMU_STUB_WORKERS` emulators (from
+  `AUTOFLASH_EMU_FIRST_INSTANCE`, default 1) with no turns at the cloud and no
+  cloud-turn monitor. Its saved starting plugs are `stub-suite-*` and its results go to
   `captures/emulation/suite-stub/`, apart from the real cloud's: their flash is
   the other kind, which the other mode's batch would refuse, and a stub pass is
   not a pass against the real cloud.

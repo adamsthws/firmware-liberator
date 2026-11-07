@@ -54,7 +54,7 @@ class TunerTests(unittest.TestCase):
                                 "verdict": verdict}, log, tuner.changed + 1)
 
     def tuner_with_no_pause(self):
-        with mock.patch.dict(fs.os.environ, {"AUTOFLASH_CLOUD_COOL_DOWN": "0", "AUTOFLASH_CLOUD_WORKERS": "6"}):
+        with mock.patch.dict(fs.os.environ, {"AUTOFLASH_EMU_CLOUD_COOL_DOWN": "0", "AUTOFLASH_EMU_CLOUD_WORKERS": "6"}):
             return fs.Tuner()
 
     def test_sends_the_plug_never_asked_for_put_the_pause_back(self):
@@ -242,7 +242,7 @@ class SavedPlugTests(unittest.TestCase):
         with mock.patch.object(fs, "scenarios", return_value=rows), mock.patch.object(fs, "latest", return_value={}), \
                 mock.patch.object(fs, "LOGS"), mock.patch.object(fs, "stale_starts", return_value=[]), \
                 mock.patch.object(fs, "STUB_CLOUD", False), mock.patch.object(fs, "NO_CLOUD", False), \
-                mock.patch.dict(fs.os.environ, {"AUTOFLASH_CONNECTION_LOG": "0"}), \
+                mock.patch.dict(fs.os.environ, {"AUTOFLASH_EMU_CONNECTION_LOG": "0"}), \
                 mock.patch.object(fs, "cloud_workers", return_value=1), mock.patch.object(fs, "worker", worker), \
                 mock.patch.object(fs.time, "sleep"), mock.patch.object(fs, "report"), \
                 mock.patch("builtins.print", side_effect=lambda *a, **k: said.append(" ".join(map(str, a)))):
@@ -860,12 +860,12 @@ class ScenarioTests(unittest.TestCase):
 
     def test_cloud_scenarios_are_side_by_side_unless_told_otherwise(self):
         for env, cores, no_cloud, expected in (({}, 8, False, 6), ({}, 2, False, 2), ({}, None, False, 1),
-                                               ({}, 8, True, 0), ({"AUTOFLASH_CLOUD_WORKERS": "1"}, 8, False, 1),
-                                               ({"AUTOFLASH_CLOUD_WORKERS": "5"}, 2, True, 5)):
+                                               ({}, 8, True, 0), ({"AUTOFLASH_EMU_CLOUD_WORKERS": "1"}, 8, False, 1),
+                                               ({"AUTOFLASH_EMU_CLOUD_WORKERS": "5"}, 2, True, 5)):
             with self.subTest(env=env, cores=cores, no_cloud=no_cloud), mock.patch.dict(fs.os.environ, env), \
                     mock.patch.object(fs.os, "cpu_count", return_value=cores), mock.patch.object(fs, "NO_CLOUD", no_cloud):
                 if not env:
-                    fs.os.environ.pop("AUTOFLASH_CLOUD_WORKERS", None)
+                    fs.os.environ.pop("AUTOFLASH_EMU_CLOUD_WORKERS", None)
                 self.assertEqual(fs.cloud_workers(), expected)
                 self.assertEqual(fs.Tuner().workers, expected)
 
@@ -963,7 +963,7 @@ class ScenarioTests(unittest.TestCase):
                 mock.patch.object(fs.shutil, "rmtree") as removed, mock.patch.object(fs.subprocess, "call") as call:
             with self.assertRaises(SystemExit) as refused:
                 fs.prep()
-        self.assertIn("AUTOFLASH_PREP_INSTANCE", str(refused.exception))
+        self.assertIn("AUTOFLASH_EMU_PREP_INSTANCE", str(refused.exception))
         removed.assert_not_called()
         call.assert_not_called()
 

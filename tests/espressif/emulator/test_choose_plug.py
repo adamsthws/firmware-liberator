@@ -83,7 +83,7 @@ class RestoreTests(unittest.TestCase):
         import tempfile
         from unittest import mock
         from tools.espressif.emulator import choose_plug as cp
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"AUTOFLASH_NO_RESTORE": "1"}), \
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"AUTOFLASH_EMU_NO_RESTORE": "1"}), \
              mock.patch.object(cp, "choices", return_value=[]), mock.patch.object(cp, "restored") as restored, \
              mock.patch("sys.stderr"):
             self.assertEqual(cp.main(["--out", f"{tmp}/plug"]), 1)

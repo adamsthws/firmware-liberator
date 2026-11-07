@@ -158,8 +158,9 @@ fi
 # The plug's product model (S60TPG UK, say) is eWeLink's name for it,
 # given when it was paired, and is not in its dump. The stub reports the one
 # eWeLink gave this plug in the tool's own records of earlier runs (a real
-# conversion's, a kept plug's, an instance's), or AUTOFLASH_STUB_PRODUCT_MODEL; with
-# neither, none - and the run's report leaves it blank rather than guess.
+# conversion's, a kept plug's, an instance's), or
+# AUTOFLASH_EMU_STUB_PRODUCT_MODEL; with neither, none - and the run's report
+# leaves it blank rather than guess.
 product_seen() {
     "$PY" -I - "$ROOT/captures" "$EMU/saved" "$(dirname "$STATE")" "${mac//:/-}" <<'EOF'
 import glob, json, os, re, sys
@@ -188,11 +189,11 @@ EOF
 }
 product=""
 if [ "$stub" = 1 ]; then
-    product=$(printf '%s' "${AUTOFLASH_STUB_PRODUCT_MODEL:-}" | tr '[:lower:]' '[:upper:]')
+    product=$(printf '%s' "${AUTOFLASH_EMU_STUB_PRODUCT_MODEL:-}" | tr '[:lower:]' '[:upper:]')
     [ -n "$product" ] || product=$(product_seen)
     case "$product" in
     ""|[A-Z0-9]*) ;;
-    *) echo "AUTOFLASH_STUB_PRODUCT_MODEL is a product model such as S60TPG, not '$product'" >&2; exit 2 ;;
+    *) echo "AUTOFLASH_EMU_STUB_PRODUCT_MODEL is a product model such as S60TPG, not '$product'" >&2; exit 2 ;;
     esac
 fi
 
