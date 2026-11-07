@@ -83,8 +83,12 @@ and asked of eWeLink by its account id, not by a local advert.
    online in eWeLink again.
 5. The flash is anonymised (tools/beken/scrub.py) - the network's name and
    password, plain (`wifi-ssid`, `wifi-pass`) and encoded (`ssid`, `pass`),
-   and every other copy, OpenBeken's included, as well as the identity - and
-   sent as the others are.
+   and every other copy, OpenBeken's included, as well as the identity
+   (`apiKey`, `app-apikey`, `secureCertSha256`, `user`) - and sent as the
+   others are. The `factory` record is kept as it is: the device's own
+   factory credentials, encrypted, not its owner's, and the stock firmware
+   does not start with it changed in any way (found by booting an S61 in the
+   emulator with each setting taken out in turn).
 
 Proven end to end against the emulated S61 (the whole round trip, the device
 back online in eWeLink, the flash anonymised); it has not run on a real Beken

@@ -7,8 +7,11 @@ eWeLink's Beken firmware keeps its settings as EasyFlash V4 (EF40) KV40 nodes
 (tools/beken/ef40.py): the Wi-Fi network's name plain under `wifi-ssid` and
 encoded under `ssid`, its password the same under `wifi-pass` and `pass`, and a
 JSON setting may name the network ("ssid"); the eWeLink identity under `apiKey`, `app-apikey`,
-`secureCertSha256`, `user` and `factory`; a Matter device's fabric under keys
-`f/...`. An EF40 store never erases a node in place, so every node of those
+`secureCertSha256` and `user`; a Matter device's fabric under keys `f/...`.
+The `factory` record is kept as it is: it is the device's own factory
+credentials, encrypted (base64 of ciphertext), not its owner's, and the stock
+firmware does not start with it changed in any way - found booting variants of
+an S61 in the emulator, each with one setting taken out. An EF40 store never erases a node in place, so every node of those
 names is changed, whatever its state. The name's and the password's every other
 copy goes too - OpenBeken, which the readout runs, saves the Wi-Fi it imported in
 its own settings - but none in the firmware areas, whose bytes are code, and no
@@ -32,7 +35,7 @@ FIRMWARE = (range(0x11000, 0x286000), range(0x286000, 0x3E0000))
 PASSWORDS = {b"wifi-pass", b"pass"}
 NETWORK = {b"wifi-ssid", b"ssid"}
 JSON_SSID = re.compile(rb'"ssid"\s*:\s*"((?:[^"\\]|\\.)*)"')
-IDENTITY = {b"apiKey", b"app-apikey", b"secureCertSha256", b"user", b"factory"}
+IDENTITY = {b"apiKey", b"app-apikey", b"secureCertSha256", b"user"}
 MATTER = b"f/"
 JSON_IDENTITY = re.compile(rb'"(deviceid|apikey|devicekey|encrypt_key)"\s*:\s*"([^"]{4,})"')
 MIN_LEN = 4
