@@ -1,10 +1,12 @@
-"""What the plug runs when a run starts: found on the network by what it
-answers as, or known from where an earlier run left it.
+"""What an Espressif plug runs when a run starts, where what it answers as
+does not say: part way, past the commit or not, as this computer's runs
+left it; ESPHome in safe mode; Tasmota's own safeboot.  And whether one on
+Tasmota leaves it for ESPHome without the hub.  The plug is found, whatever
+its family, by routes/source.py.
 """
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import json
 import re
@@ -12,157 +14,14 @@ import shutil
 import time
 from typing import TYPE_CHECKING
 
-from tools.autoflash import detect, esphome, hostsys, kinds, output, plugs, prompts, runs, unlock
-from tools.autoflash.device import DeviceError, PASSWORD_HINT
+from tools.autoflash import esphome, kinds, output, plugs, runs, unlock
+from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort
 from tools.autoflash.routes.espressif import evidence
 from tools.autoflash.state import ATTEMPTED, FAILED, PENDING, RunState
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
-
-
-def known_macs() -> set[str]:
-    """The MACs of the plugs this computer has records of: their backups and their runs."""
-    return {name.replace("-", ":") for name in
-            (path.name for path in plugs.PLUGS.glob("*")) if plugs.MAC_RE.match(name)}
-
-
-def find_current_firmware(ctx: Context) -> str:
-    """What the plug runs now: Tasmota, ESPHome or OpenBeken if it is one this
-    tool can find converted on the network, else Sonoff's firmware (found
-    later, through eWeLink).  With --plug-ip, the plug at that address."""
-    given = ctx.state.input("plug_ip")
-    if given:
-        running = identify_once_restarted(ctx, given)
-        if running == "locked":
-            unlock.ask_web_password(ctx, given)
-            running = unlock.identify(ctx, given)
-        elif running == "esphome-login":
-            unlock.ask_esphome_login(ctx, given)
-            running = unlock.identify(ctx, given)
-        mover = running == "mover"
-        if running in ("mover", "startup", "hub"):
-            running = "midway"
-        mac = hostsys.mac_of(given)
-        if running is None and mac and hostsys.normalise_mac(mac) in known_macs() \
-                and detect.answers_as_tasmota(given):
-            # A Tasmota without the plug's template, as the search finds it.
-            running = "untemplated"
-        if running in ("openbeken", "interim"):
-            # Its kind is its import module's to say, as the search finds it.
-            found = detect.openbeken_plug(given)
-            if not found or found.firmware != running:
-                raise Abort(f"the device at {given} did not say twice alike what it runs: run the same command "
-                            "again")
-            found.mac = mac
-            adopt_plug(ctx, found)
-            return running
-        if running is None and mac is None:
-            # Nothing there at all, not even on the network, so not a device on
-            # Sonoff's firmware to ask eWeLink about (seen on a real plug switched
-            # off: the run went on to eWeLink's discovery, and its report said it
-            # was converting from Sonoff). An S61 on Sonoff's answers nothing
-            # here but is on the network, so is still asked of eWeLink.
-            raise Abort(f"nothing answers at {given}: check the device is switched on and on your Wi-Fi, "
-                        "then run the same command again")
-        if running in ("tasmota", "esphome", "midway", "installer", "untemplated"):
-            adopt_plug(ctx, detect.Found(given, running, mac))
-            if mover:
-                running = esphome_safe_mode(ctx, running)
-            return past_the_commit(ctx, running)
-        return "sonoff"
-    # On screen while it looks - 5-10 s, before any stage line and its clock -
-    # and taken off again once it has looked.
-    output.transient_begin()
-    output.tell("Looking for supported devices on your network...")
-    known = known_macs()
-    # The network this computer's internet goes through first; its other
-    # Ethernet and Wi-Fi networks, read once, only if no plug is there.
-    lan = functools.cache(hostsys.lan_networks)
-
-    def search() -> list[detect.Found]:
-        try:
-            return detect.converted_plugs(hostsys.local_ip_towards("192.0.2.1"), others=lan,
-                                          known_macs=known, password=ctx.web_password,
-                                          esphome_login=ctx.esphome_login)
-        except OSError:
-            return []
-
-    def open_ones(found: list[detect.Found]) -> list[detect.Found]:
-        return [plug for plug in found if plug.firmware not in unlock.LOCKED]
-
-    found = search()
-    if not open_ones(found) and converted_here(ctx):
-        # A plug this computer converted, or left part way, may be restarting -
-        # a run stopped and started again at once finds it mid-restart.
-        output.tell("    None answered. One this computer converted may be restarting: looking "
-            f"again for up to {RESTART_GRACE:.0f} seconds...")
-        started = time.monotonic()
-        while not open_ones(found) and time.monotonic() - started < RESTART_GRACE:
-            time.sleep(5)
-            found = search()
-    output.transient_end()
-    # A Tasmota with a web password, or an ESPHome with a web login, says
-    # whether it is a plug this tool converts only once given it: offered,
-    # and it asked for if chosen, when someone can type it.
-    locked = [plug for plug in found if plug.firmware in unlock.LOCKED]
-    found = open_ones(found)
-    if locked and prompts.UNATTENDED:
-        ours = [plug for plug in locked if plug.mac and hostsys.normalise_mac(plug.mac) in known]
-        if ours and not found:
-            # A plug this computer converted: the one the run is for, surely.
-            raise Abort(unlock.locked_out(ctx, ours[0]))
-        for kind, given, what, hint in (("locked", ctx.web_password, "password", PASSWORD_HINT),
-                                        ("esphome-login", ctx.esphome_login, "login", unlock.ESPHOME_LOGIN_HINT)):
-            hosts = [plug.host for plug in locked if plug.firmware == kind]
-            if hosts:
-                output.tell(f"    Left out, for its web {what}{' (not the one given)' if given else ''}: "
-                     f"the {'Tasmota' if kind == 'locked' else 'ESPHome'} at {', '.join(hosts)}. "
-                     f"If it is the device, {hint}.")
-        locked = []
-    if not found and not locked:
-        return "sonoff"
-    stock = "A device still on Sonoff's firmware (it is set up in the eWeLink app)"
-    if prompts.UNATTENDED and len(found) == 1:
-        chosen = found[0]
-        prompts.answered_unattended("Which device is this run for", chosen.describe())
-    else:
-        offered = found + locked
-        output.transient_begin()
-        choice = prompts.ask_choice("Which device is this run for",
-                            [found_plug.describe()[0].upper() + found_plug.describe()[1:]
-                             for found_plug in offered] + [stock])
-        output.transient_end()
-        if choice == len(offered):
-            return "sonoff"
-        chosen = offered[choice]
-        if chosen.firmware in unlock.LOCKED:
-            chosen = unlock.unlocked(ctx, chosen)
-    adopt_plug(ctx, chosen)
-    if chosen.firmware == "midway" and chosen.name == "the mover":
-        return past_the_commit(ctx, esphome_safe_mode(ctx, chosen.firmware))
-    return past_the_commit(ctx, chosen.firmware)
-
-
-def identify_once_restarted(ctx: Context, host: str) -> str | None:
-    """What the plug at `host` runs.  Silent, a plug this computer converted
-    may be restarting - never to be taken for one on Sonoff's firmware, as
-    the search below waits for it too.  A MAC says which plug it is, where
-    the network still shows one."""
-    running = unlock.identify(ctx, host)
-    if running is not None or detect.answers_as_tasmota(host):
-        return running
-    mac = hostsys.mac_of(host)
-    if not (hostsys.normalise_mac(mac) in known_macs() if mac else converted_here(ctx)):
-        return None
-    output.tell("    It did not answer, and this computer converted it, so it may be restarting: looking "
-                f"again for up to {RESTART_GRACE:.0f} seconds...")
-    started = time.monotonic()
-    while running is None and time.monotonic() - started < RESTART_GRACE:
-        time.sleep(5)
-        running = unlock.identify(ctx, host)
-    return running
 
 
 def past_the_commit(ctx: Context, running: str) -> str:
@@ -330,56 +189,3 @@ def tasmota_missing(ctx: Context, running: str) -> str:
     return "safeboot"
 
 
-RESTART_GRACE = 45.0
-
-
-def converted_here(ctx: Context) -> bool:
-    """Whether this computer has a record of converting a plug, other than this run."""
-    for directory in runs.run_directories():
-        if directory.resolve() == ctx.dir.resolve():
-            continue
-        try:
-            if RunState.open(directory).input("firmware"):
-                return True
-        except (OSError, ValueError):
-            continue
-    return False
-
-
-def kind_left_part_way(ctx: Context) -> str | None:
-    """The kind this computer's latest run of the plug recorded. What a plug runs
-    part way - the mover, the startup firmware, the routes' Tasmota - is the
-    same on every kind of plug, and says nothing; a run taking one for the first
-    kind the tool knows sent it that chip's firmware."""
-    mac = ctx.state.input("plug_mac")
-    for directory in reversed(runs.run_directories()):
-        if directory.resolve() == ctx.dir.resolve() or plugs.mac_of_run(directory) != mac:
-            continue
-        try:
-            kind = RunState.open(directory).input("plug_kind")
-        except (OSError, ValueError):
-            continue
-        if kind:
-            return kind
-    return None
-
-
-def adopt_plug(ctx: Context, found: "detect.Found") -> None:
-    """This run is for the plug `found`: its address, and its MAC to file it by."""
-    ctx.set_plug_ip(found.host)
-    mac = found.mac or hostsys.mac_of(found.host)
-    if mac and plugs.MAC_RE.match(mac):
-        mac = hostsys.normalise_mac(mac)
-        ctx.state.set_input("plug_mac", mac)
-        runs.file_plug(ctx, mac, None)
-    kind = found.kind
-    if kind is None and found.firmware == "esphome":
-        # Every kind's ESPHome looks the same but for its comment: an S61's
-        # run must never take the S60's way.
-        named = kinds.for_esphome(*esphome.title(found.host))
-        kind = named.key if named else None
-    if kind is None and found.firmware == "midway" and ctx.state.input("plug_mac"):
-        kind = kind_left_part_way(ctx)
-    if kind:
-        ctx.state.set_input("plug_kind", kind)
-    output.say(f"    This run is for {found.describe()}.")

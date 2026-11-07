@@ -20,7 +20,7 @@ class LeavingTasmotaForESPHomeTests(RouteTestCase):
     def settle(self, *, direct):
         ctx = self.ctx(given="esphome", run=str(direct), plug_kind="sonoff-pow-elite")
         ctx.device = mock.Mock(sha_region=mock.Mock(return_value=self.ON_PLUG[direct]))
-        with mock.patch.object(source, "find_current_firmware", return_value="tasmota"), \
+        with mock.patch.object(routes.source, "find_current_firmware", return_value="tasmota"), \
                 mock.patch.object(update, "outdated", return_value=False), \
                 mock.patch.object(routes, "sonoff_backup_exists", return_value=True):
             routes.settle_route(ctx)

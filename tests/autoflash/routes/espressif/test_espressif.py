@@ -12,7 +12,7 @@ from unittest import mock
 from tools.autoflash import cli, errors, esphome, esphome_ota, join, prompts, routes, runner
 from tools.autoflash.state import DONE, RunState
 from tools.autoflash.routes import espressif, update
-from tools.autoflash.routes.espressif import evidence, identity, source, tasmota
+from tools.autoflash.routes.espressif import evidence, identity, tasmota
 
 
 class RouteTestCase(unittest.TestCase):
@@ -48,7 +48,7 @@ class RouteTestCase(unittest.TestCase):
 
     def setUp_found(self, running="sonoff"):
         # What the plug runs now, as the network would show it.
-        patch = mock.patch.object(source, "find_current_firmware", return_value=running)
+        patch = mock.patch.object(routes.source, "find_current_firmware", return_value=running)
         patch.start()
         self.addCleanup(patch.stop)
 
@@ -116,7 +116,7 @@ class FromAConvertedPlugTests(RouteTestCase):
 
     def settle(self, running, *, backup=True, given=None, answer=0):
         ctx = self.ctx(given=given, run=f"{running}-{given}-{backup}")
-        with mock.patch.object(source, "find_current_firmware", return_value=running), \
+        with mock.patch.object(routes.source, "find_current_firmware", return_value=running), \
                 mock.patch.object(routes, "sonoff_backup_exists", return_value=backup), \
                 mock.patch.object(identity, "kept_in_sector", return_value=None), \
                 mock.patch.object(identity, "account_record", return_value=None), \
