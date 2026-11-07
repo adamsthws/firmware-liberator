@@ -187,7 +187,7 @@ All in [`tools/autoflash/names.py`](../tools/autoflash/names.py) unless said:
   a plug's kind by its name, which you may change: it tells Tasmota by its
   template, ESPHome by its comment, OpenBeken by its driver's answer to
   `AutoflashKind`
-  ([`devices/sonoff-s61/openbeken.md`](../devices/sonoff-s61/openbeken.md)).
+  ([`tools/beken/openbeken/`](../tools/beken/openbeken/README.md)).
 - [`tools/beken/openbeken/drv_autoflash.c`](../tools/beken/openbeken/drv_autoflash.c):
   `autoflash_name()`, both the Beken plugs' OpenBeken names - `openbeken-%02x%02x%02x`, and
   `autoflash-recovery-%02X%02X` as the interim firmware, which is also how

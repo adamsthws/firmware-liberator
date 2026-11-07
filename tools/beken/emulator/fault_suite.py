@@ -124,7 +124,7 @@ POWER_CYCLE = re.compile(r"switch the (plug|device) off and on", re.IGNORECASE)
 # fetch of ESPHome.
 BAD_IMAGE_STEPS = {"B2", "J2", "O1"}
 # The interim firmware's settings, which it erases before the firmware it
-# fetched starts (devices/sonoff-s61/openbeken.md#the-interim-firmware): its
+# fetched starts (tools/beken/openbeken/README.md#the-interim-firmware): its
 # own sector, and the flash variables its Wi-Fi keeps.
 INTERIM_SETTINGS = ((0x3E1000, 0x1000), (0x1E5000, 0x8000))
 # The name a plug asks its router's DHCP for, by its firmware.

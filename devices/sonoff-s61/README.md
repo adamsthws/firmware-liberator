@@ -38,9 +38,9 @@ which its author checked on hardware, and which agrees with the stock driver.
   the S61's table for the tool's OpenBeken driver
   ([`tools/beken/openbeken/drv_autoflash.c`](../../tools/beken/openbeken/drv_autoflash.c)),
   which reads the stock Wi-Fi and meter calibration on first boot and
-  applies the wiring; the build recipe, the 4 MB table and reverting to stock:
-  [`openbeken.md`](openbeken.md). The 4 MB patches offered
-  upstream are [`tools/beken/openbeken/`](../../tools/beken/openbeken/). The tool
+  applies the wiring; the driver, its build with the 4 MB patches offered
+  upstream, and reverting to stock:
+  [`tools/beken/openbeken/`](../../tools/beken/openbeken/README.md). The tool
   installs `artifacts/openbeken-sonoff-s61-<version>.rbl`, built and pinned by
   `tools/repo/update_firmware.py` ([docs/updating-firmware.md](../../docs/updating-firmware.md)).
 - **ESPHome** (LibreTiny): [`esphome.yaml`](esphome.yaml), the path converted
@@ -75,6 +75,6 @@ which its author checked on hardware, and which agrees with the stock driver.
   Sonoff's firmware ends with K3: eWeLink shows the plug online, and it
   answers there.
 - **Research**: [`research.md`](research.md), the S61's own: its meter's
-  calibration and its wiring. What was found out about its firmware, which the
+  calibration, its wiring, and what OpenBeken did on it in the emulator. What was found out about its firmware, which the
   other 4 MB Beken plugs share, is in
   [`docs/beken-research.md`](../../docs/beken-research.md).

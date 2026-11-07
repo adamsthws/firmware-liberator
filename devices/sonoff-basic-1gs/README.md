@@ -61,7 +61,7 @@ no fallback by switching it off and on.
 ## Files
 
 - **OpenBeken**: [`drv_autoflash_sonoff_basic_1gs.c`](drv_autoflash_sonoff_basic_1gs.c),
-  this device's table for [the tool's OpenBeken driver](../sonoff-s61/openbeken.md),
+  this device's table for [the tool's OpenBeken driver](../../tools/beken/openbeken/README.md),
   which reads the stock Wi-Fi at first boot and applies the wiring. The tool installs
   `artifacts/openbeken-sonoff-basic-1gs-*.rbl`, built by `tools/repo/update_firmware.py`.
 - **ESPHome** (LibreTiny): [`esphome.yaml`](esphome.yaml); what it reports and how to

@@ -18,7 +18,7 @@ SUBNETS = {
 # Where the Beken emulator's built-in network, which its plug really joins, is used or described.
 BEKEN_EMULATOR_SUBNET = "1"
 BEKEN_EMULATOR_FILES = {
-    "devices/sonoff-s61/openbeken.md",
+    "devices/sonoff-s61/research.md",
     "docs/beken-research.md",
     "tools/beken/README.md",
     "tools/beken/emulator/cloud_dial.py",

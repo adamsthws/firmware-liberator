@@ -235,7 +235,7 @@ signed-char `Tiny_CRC8`, the `0x1e1000` config offset).
   `CFG_SetWiFiSSID()`/`CFG_SetWiFiPass()` — so it survives OpenBeken config-format
   changes across releases — then carries the factory meter calibration over and
   applies the plug's wiring. Reads the stock store only (reversible). Build recipe
-  and the `AutoflashRevertToStock` command in [`devices/sonoff-s61/openbeken.md`](../../devices/sonoff-s61/openbeken.md).
+  and the `AutoflashRevertToStock` command in [`openbeken/`](openbeken/README.md).
 - **`devices/sonoff-s61/esphome.md`** — the **ESPHome route**: how
   [`devices/sonoff-s61/esphome.yaml`](../../devices/sonoff-s61/esphome.yaml) (LibreTiny) reads
   the stock Wi-Fi and meter calibration from the EF40 store at boot, its 4 MB

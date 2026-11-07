@@ -195,7 +195,7 @@ pinned under `beken` in `firmware.json`, by plug.
 A change to what the OpenBeken driver does on first boot reaches only plugs
 converted after it: an updated plug keeps its settings, so the import does not
 run again. A fix that updated plugs need goes in what the driver does on every
-start ([openbeken.md](../devices/sonoff-s61/openbeken.md#updating)).
+start ([the driver's notes](../tools/beken/openbeken/README.md#updating)).
 
 ```sh
 python3 tools/repo/update_firmware.py openbeken                       # again on what is pinned
@@ -211,8 +211,8 @@ offered upstream, and the hook before an OTA's restart the driver uses),
 adds this project's OpenBeken driver
 (`tools/beken/openbeken/drv_autoflash.c` and `drv_autoflash.h`) and the
 plug's table for it (`devices/sonoff-s61/drv_autoflash_sonoff_s61.c`) to
-the build and to start-up as [openbeken.md](../devices/sonoff-s61/openbeken.md)
-says, and builds `OpenBK7238` with `FLASH_SIZE=4M` in this project's build
+the build and to start-up as [its notes](../tools/beken/openbeken/README.md)
+say, and builds `OpenBK7238` with `FLASH_SIZE=4M` in this project's build
 image (`tools/beken/openbeken/build.Dockerfile`, Ubuntu 24.04: the SDK's own
 toolchain wants a newer GLIBC than OpenBeken's image has). It checks the
 image is an rt_ota app of the version asked, fits the download slot, and
