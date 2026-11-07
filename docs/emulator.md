@@ -63,7 +63,7 @@ version's power meter.
 | | The emulator alone | With Windows beside it ("Windows from Linux") |
 |---|---|---|
 | Processor | any 64-bit one Docker runs on | x86-64 with hardware virtualisation (AMD-V/SVM or Intel VT-x) switched on in the firmware, so Linux has `/dev/kvm` |
-| Memory | 256 MB for an ESP32-C3, 1 GB for a classic ESP32: the emulator's cap | 3.3 GB at most: Windows 2 GB, QEMU and the disk tools 1 GB, an ESP32-C3's emulator 256 MB. An 8 GB laptop with a desktop open manages it |
+| Memory | 256 MB for an ESP32-C3, 350 MB for a classic ESP32: the emulator's cap | 3.3 GB at most: Windows 2 GB, QEMU and the disk tools 1 GB, an ESP32-C3's emulator 256 MB. An 8 GB laptop with a desktop open manages it |
 | Processors | 2, the emulator's cap | 2 more for Windows (caps, shared with everything else, not set aside) |
 | Disk | about 0.5 GB: the image, and the plug's state under `captures/emulation/state/` | about 30 GB free while Windows installs; then about 21 GB: the ISO 8.2 GB, the layers 10.8, 0.9 and 0.4 GB, the images 0.8 GB |
 | Downloads | the QEMU fork's source, once | Microsoft's ISO (8.2 GB), Windows Terminal (12 MB) and virtio-win's guest tools (32 MB), once; Python (11 MB) and OpenVPN (6 MB) each time a layer that gets them is set up |
@@ -163,7 +163,7 @@ keeps one connection per id, and the upgrade at C2 is sent through it - so it ca
 reach another instance's plug. Run the eWeLink stages, up to C2, one instance at
 a time; after C2 nothing uses the cloud. A new instance has no plug yet, so name
 it with `--plug MAC` when there is more than one backup. An S60's takes about
-0.6 of a CPU and 115 MB; a classic ESP32's runs two cores and is allowed 1 GB.
+0.6 of a CPU and 115 MB; a classic ESP32's runs two cores and is allowed 350 MB, having peaked at 250 MB.
 Run no more at once than your computer has cores: more makes runs fail that
 would otherwise pass. Each emulator waits to start until the computer has what it
 needs free - 250 MB for an ESP32-C3, 350 MB for a classic ESP32 or the S61, each
@@ -319,7 +319,7 @@ picks the QEMU for it:
 |---|---|---|
 | QEMU | `qemu-system-riscv32`, machine `esp32c3-picsimlab` | `qemu-system-xtensa`, machine `esp32-picsimlab` |
 | eFuse file | 1024 bytes (a shorter one is padded) | 124 bytes, used as it is |
-| Container memory | 256 MB | 1 GB: under that, the kernel kills QEMU part way through a download, which looks like the plug restarting |
+| Container memory | 256 MB | 350 MB (it peaked at 250 MB): under 256 MB, the kernel kills QEMU part way through a download, which looks like the plug restarting |
 
 The flash is the dump as it is, 4 MB on every plug so far. Some stock
 firmware stops at start-up without the external RAM (PSRAM) its plug has:
@@ -385,7 +385,7 @@ Technology" (VT-x) on Intel.
 Both containers are capped, so they cannot take over the computer. Windows
 gets 2 GB and 2 CPUs (`AUTOFLASH_EMU_WINDOWS_RAM=3G`,
 `AUTOFLASH_EMU_WINDOWS_CPUS=4` to change), and its container at most 1 GB more, for QEMU itself, without swap. The emulator
-gets 256 MB for an ESP32-C3, 1 GB for a classic ESP32, and 2 CPUs
+gets 256 MB for an ESP32-C3, 350 MB for a classic ESP32, and 2 CPUs
 (`AUTOFLASH_EMU_MEMORY=512m`, `AUTOFLASH_EMU_CPUS`).
 
 ```sh

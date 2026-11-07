@@ -340,8 +340,9 @@ from tools.autoflash import kinds
 print(next((k.psram_mb for k in kinds.EVERY if k.psram_mb and k.product_of(sys.argv[1])), ""))' "${product:-$(product_seen)}")
 # QEMU for the dual-core ESP32 takes more than the 256 MB the ESP32-C3's stays
 # in: over it, the kernel kills QEMU part way through a download, which looks
-# like the plug restarting.
-memory=256m; [ "$chip" = esp32 ] && memory=1g
+# like the plug restarting. Measured through every classic ESP32's conversions it
+# peaked at 250 MB, so 350 MB is its limit.
+memory=256m; [ "$chip" = esp32 ] && memory=350m
 # What one was measured to use with its computer (C3 146 MB, classic ESP32 249 MB), plus 100.
 room=250; [ "$chip" = esp32 ] && room=350
 wait_for_room "$room"

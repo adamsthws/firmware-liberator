@@ -278,7 +278,7 @@ Each of these is general, not per device:
 | `A stack overflow in task colink task` during TLS | the firmware's stack is sized for eWeLink's RSA-1024 CA, not an EC one | an RSA stub CA on a classic ESP32 whose firmware's is RSA |
 | `abort()` straight after `Disabling RNG` | external RAM missing | `psram_mb` on the kind |
 | `This chip is revision 0` on an ESP32-C3 | emulated eFuses too old | the revision the app's header asks for |
-| QEMU killed part way through a download | its container held under 256 MB | 1 GB for a classic ESP32 |
+| QEMU killed part way through a download | its container held under 256 MB | 350 MB for a classic ESP32 |
 
 ## Debugging
 
