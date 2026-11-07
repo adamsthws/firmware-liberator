@@ -32,6 +32,7 @@ several other HTTP clients, and following it led to a few more bugs nearby.
 - [A build failure, followed to its root](#a-build-failure-followed-to-its-root) -
   LibreTiny, SCons
 - [The emulator's Wi-Fi](#the-emulators-wi-fi) - QEMU (lcgamboa's fork)
+- [The emulator's classic ESP32](#the-emulators-classic-esp32) - QEMU (lcgamboa's fork)
 - [OpenBeken on a 4 MB BK7238](#openbeken-on-a-4-mb-bk7238) - OpenBeken,
   beken_freertos_sdk
 - [Smaller fixes found along the way](#smaller-fixes-found-along-the-way) -
@@ -155,6 +156,23 @@ Two more are open, and until they merge the emulator carries each as a patch:
 
 #15 let the emulator test what a person does when a plug falls back
 to its own setup network: join it, and let the conversion carry on through it.
+
+## The emulator's classic ESP32
+
+Plugs with a classic ESP32 run on the same fork, whose ESP32 cache emulation
+comes from Espressif's QEMU. Each flash operation made it throw away and
+retranslate the code of a whole 4 MB cache window, so Tasmota took about 10 s to
+boot and over 40 s for 2,000 small flash reads:
+
+| Project | Pull request | What it fixes |
+|---|---|---|
+| QEMU (lcgamboa) | [#20](https://github.com/lcgamboa/qemu/pull/20) | After a flash operation, only the cache pages whose bytes changed are refreshed: Tasmota boots in about 7 s, and the reads take 14-18 s |
+
+The emulator's own patch (`0003`) also leaves a window mapped once it is on.
+That makes it two to ten times faster again and stops the panics a classic
+ESP32 has on QEMU when it reads flash a lot. But it gives up QEMU's fault for
+reading flash with the cache off, so it stays here, and the cause of the panics
+is still to be found.
 
 ## OpenBeken on a 4 MB BK7238
 
