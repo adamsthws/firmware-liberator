@@ -149,7 +149,7 @@ through eWeLink. Use `--cloud` for the real one (the real plug must be
 unplugged, since the emulated one is its clone), or `--stub-cloud` for a local
 stand-in that serves this instance alone — then nothing reaches the real
 eWeLink, and any number of instances convert at once. See
-[cloud-stub.md](cloud-stub.md). The first start builds the image, which takes a
+[cloud-stub.md](cloud-stub.md#the-espressif-emulators-stub). The first start builds the image, which takes a
 few minutes.
 
 #### Several at once
@@ -631,7 +631,7 @@ is using one.
 `bk-emu.sh plug` runs the dump as a plug provisioned on a home Wi-Fi, on a Docker
 network of its own (`autoflash-beken-emu`, apart from the Espressif emulator and
 everything else), where eWeLink is a local stub and nothing reaches the internet
-([how](../tools/beken/emulator/README.md#how-it-fits-together)). The plug boots
+([how](../tools/beken/emulator/README.md#how-it-fits-together); [the stub](cloud-stub.md#the-beken-emulators-stub)). The plug boots
 from its flash, kept in `captures/emulation/beken/state/` with its logs and
 the stub's CA, so it carries on across firmware: each restart the firmware asks
 for a boot of its own, from the bootloader, as on a real plug.
