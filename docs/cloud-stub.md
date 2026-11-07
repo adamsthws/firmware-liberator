@@ -1,29 +1,39 @@
-# Local cloud stub for parallel emulator runs
+# Local cloud stubs for the emulators
 
-Give each emulated plug its **own** locally-served eWeLink "cloud", so emulator
-conversions run fully in parallel instead of taking turns on the one shared real
-cloud. All of it runs inside the emulator's isolated per-instance network;
-nothing touches the real eWeLink cloud, the real plugs, or the read-only stock
-dump.
+Each emulator gives its plug a locally served eWeLink "cloud" of its own, so
+conversions run without the real eWeLink cloud, and side by side. Both are built
+on one stub server,
+[`tools/ewelink/stub_cloud/stub_server.py`](../tools/ewelink/stub_cloud/stub_server.py),
+and run inside the emulator's own network: nothing touches the real eWeLink cloud,
+the real plugs, or the read-only stock dump.
 
-This one document holds the whole cloud-stub story: the goal, the design, the
-firmware facts it rests on, what was built, and the verification log. Contents:
+- **[The Espressif emulator's stub](#the-espressif-emulators-stub)**, chosen with
+  `emu.sh --stub-cloud`: [Status](#status) · [The goal](#the-goal) ·
+  [What the cloud is actually used for](#what-the-cloud-is-actually-used-for) ·
+  [The approach](#the-approach) · [What stub mode does not do](#what-stub-mode-does-not-do) ·
+  [Requirements, and where each came from](#requirements-and-where-each-came-from) ·
+  [Firmware facts (static analysis)](#firmware-facts-static-analysis) ·
+  [The private domain](#the-private-domain) ·
+  [Firmware and config changes](#firmware-and-config-changes) ·
+  [The stub server](#the-stub-server) · [Every exchange, with examples](#every-exchange-with-examples) ·
+  [Harness wiring and how to run it](#harness-wiring-and-how-to-run-it) ·
+  [Verification log](#verification-log) ·
+  [Risks and limitations](#risks-and-limitations) · [Safety / rollback](#safety--rollback) ·
+  [Files](#files) · [Ground rules](#ground-rules)
+- **[The Beken emulator's stub](#the-beken-emulators-stub)**, always on:
+  [Status](#status-1) · [What the cloud is actually used for](#what-the-cloud-is-actually-used-for-1) ·
+  [The approach](#the-approach-1) · [Firmware facts](#firmware-facts) ·
+  [The stub server](#the-stub-server-1) ·
+  [Harness wiring and how to run it](#harness-wiring-and-how-to-run-it-1) ·
+  [Verification log](#verification-log-1) · [Files](#files-1)
 
-- [Status](#status)
-- [The goal](#the-goal)
-- [What the cloud is actually used for](#what-the-cloud-is-actually-used-for)
-- [The approach](#the-approach) · [What stub mode does not do](#what-stub-mode-does-not-do)
-- [Requirements, and where each came from](#requirements-and-where-each-came-from)
-- [Firmware facts (static analysis)](#firmware-facts-static-analysis)
-- [The private domain](#the-private-domain)
-- [Firmware and config changes](#firmware-and-config-changes)
-- [The stub server](#the-stub-server) · [Every exchange, with examples](#every-exchange-with-examples)
-- [Harness wiring and how to run it](#harness-wiring-and-how-to-run-it)
-- [Verification log](#verification-log)
-- [Risks and limitations](#risks-and-limitations) · [Safety / rollback](#safety--rollback)
-- [Files](#files) · [Ground rules](#ground-rules)
+## The Espressif emulator's stub
 
-## Status
+The Espressif emulator runs against the real eWeLink cloud unless it is started
+with `--stub-cloud`; this part holds the whole story of that stub: the goal, the
+design, the firmware facts it rests on, what was built, and the verification log.
+
+### Status
 
 **Built and tested through the eWeLink-dependent part of a conversion, and
 proven to run in parallel** (2026-10-19). All of the following is done:
@@ -60,7 +70,7 @@ interim Tasmota), the rest runs over LAN and touches no eWeLink, the same under
 `--stub-cloud` as under `--cloud`. The real cloud remains the fidelity reference;
 keep a few `--cloud` smoke runs.
 
-## The goal
+### The goal
 
 Run many emulator conversions in parallel. The per-instance networks already
 parallelise (`--instance N`, `autoflash-emu-N`, `state-N`, port `8080+N`). The one
@@ -70,7 +80,7 @@ can be "online" at a time — the eWeLink-dependent part of each run has to be
 serialised. The stub removes that shared dependency by giving each instance its
 own cloud, served locally, so nothing is shared and runs go fully parallel.
 
-## What the cloud is actually used for
+### What the cloud is actually used for
 
 Tracing the conversion (`step_discover` in
 [`tools/autoflash/account.py`](../tools/autoflash/account.py), `step_bridge` in
@@ -102,7 +112,7 @@ it to the device, which then fetches the image over plain **LAN HTTP**. So the
 OTA bytes never go through the cloud (no cloud OTA, no router redirect) — the
 cloud only carries the small `upgrade` message that triggers the LAN fetch.
 
-## The approach
+### The approach
 
 Point each emulated plug at a dispatch server **on a private domain this project
 controls inside the emulator**, served by a small local stub with a **self-signed
@@ -110,7 +120,7 @@ cert** the plug is made to trust, so the plug comes online against the stub and
 the tool reads the plug's already-known key from the stub — no coolkit hostname,
 no coolkit cert, no shared cloud.
 
-### What stub mode does not do
+#### What stub mode does not do
 
 This is self-hosting — redirecting your own device to your own server — not
 impersonating eWeLink:
@@ -128,7 +138,7 @@ stub's own CA legitimately issued for it. The only firmware change on the trust
 side is making the working copy of the firmware trust that CA — the same thing
 any self-hosted-IoT setup does.
 
-## Requirements, and where each came from
+### Requirements, and where each came from
 
 What the stub and its harness have to do, each with the finding or the code that
 makes it necessary. The evidence is in [the firmware facts](#firmware-facts-static-analysis),
@@ -224,7 +234,7 @@ makes it necessary. The evidence is in [the firmware facts](#firmware-facts-stat
   image (here `autoflash-emu-stub`), so a worktree's build does not replace the
   `autoflash-emu` that other work runs.
 
-## Firmware facts (static analysis)
+### Firmware facts (static analysis)
 
 Reference findings from the stock Sonoff S60 1.2.0 flash dump, so they need not
 be re-derived. **Facts only — no secrets:** the dump holds the plug's eWeLink
@@ -234,7 +244,7 @@ Where a per-device value matters, the field is named and left in the dump.
 Source dump (read-only): `captures/plugs/<mac>/sonoff-backup/flash.bin`
 (ESP32-C3, 4 MB). The app under analysis is `ota_0`, the stock app the plug boots.
 
-### Flash layout
+#### Flash layout
 
 From `report.json` beside the dump:
 
@@ -247,7 +257,7 @@ From `report.json` beside the dump:
 | ota_0     | `0x020000` | `0x1f0000` | stock app `esp32_fw`, v1.0.0-21-g28df76c, Feb 12 2025, IDF v4.4.2 |
 | ota_1     | `0x210000` | `0x1f0000` | holds the conversion's `autoflash_bridge` installer after a run |
 
-### Dispatch / cloud connection (device side)
+#### Dispatch / cloud connection (device side)
 
 The plug maintains its eWeLink connection by contacting a **dispatch** host over
 TLS, which hands back the IoT server to use. Strings in `ota_0`:
@@ -271,7 +281,7 @@ NTP query first. **The IoT address the dispatch reply hands back is used as a
 numeric IP without DNS** (the plug `inet_aton`s the `IP` field;
 [test 3](#test-3--does-the-stub-bring-the-plug-online-and-enable-lan-control)).
 
-### TLS trust (device side)
+#### TLS trust (device side)
 
 `ota_0` pins a single **self-signed coolkit root CA**, embedded twice,
 byte-identical:
@@ -293,7 +303,7 @@ stops at the `END CERTIFICATE` marker, so trailing nulls are ignored. A straight
 MITM of the unmodified firmware is impossible without coolkit's CA private key;
 the stub instead replaces this trust anchor in a working copy with its own CA.
 
-### eWeLink identity in NVS
+#### eWeLink identity in NVS
 
 `frame_params` (JSON blob in NVS namespace `frame_params`, key `content`) holds
 the device identity and network config. Non-secret fields: `uiid` = `190`
@@ -311,7 +321,7 @@ appears nowhere in the flash. In this plug's dump `apikey` and `encrypt_key`
 hold the same value, and either opens its LAN advert (below), so for this plug
 it does not matter which of the two is the LAN key.
 
-### What the plug says of itself on the network
+#### What the plug says of itself on the network
 
 Its eWeLink LAN advert - mDNS `_ewelink._tcp`, whose TXT record carries
 `txtvers`, `id`, `type`, `apivers`, `seq`, `encrypt=true`, `iv` and `data1`,
@@ -329,7 +339,7 @@ network cannot reach.
 The messages the plug and the tool exchange with the cloud, each with an example,
 are under [the stub server](#every-exchange-with-examples).
 
-### Emulator boot patches (context)
+#### Emulator boot patches (context)
 
 [`patch_stock.py`](../tools/espressif/emulator/patch_stock.py) already edits `ota_0` only to
 make it boot under QEMU (which emulates no Bluetooth): two routines
@@ -338,7 +348,7 @@ These do not touch dispatch or TLS, so dispatch/trust behaviour in the emulator
 matches real hardware. The cloud-stub trust-anchor swap is an additional `ota_0`
 edit applied the same way (bytes checked, then `appimage.reseal`).
 
-## The private domain
+### The private domain
 
 Names resolved only by the emulator's `dnsmasq`, never registered publicly
 (`.test` is reserved by RFC 6761, so it can never clash with a real domain):
@@ -352,13 +362,13 @@ All resolve, via `/etc/hosts` entries the stub mode adds (dnsmasq reads
 where the stub listens. They only have to (a) not be coolkit's and (b) match the
 cert SAN and `dis_server`.
 
-## Firmware and config changes
+### Firmware and config changes
 
 All changes are applied to the emulator's **working copy** of the flash
 (`captures/emulation/state-N/…`), built from the read-only stock dump. The dump
 itself is never modified.
 
-### Self-signed CA + server cert
+#### Self-signed CA + server cert
 
 [`tools/ewelink/stub_cloud/make_ca.py`](../tools/ewelink/stub_cloud/make_ca.py)
 generates, into `captures/emulation/stub-cloud/` (git-ignored, private):
@@ -375,7 +385,7 @@ The CA is **kept stable once made** — it is flashed into the trust store, so
 `make_ca.py` reuses it and only reissues the leaf (e.g. to add a SAN); `--force`
 regenerates the CA. The CA private key never enters the firmware.
 
-### Firmware change A — trust the stub's CA (trust-store swap in `ota_0`)
+#### Firmware change A — trust the stub's CA (trust-store swap in `ota_0`)
 
 [`patch_stock.py --trust-ca <ca.crt>`](../tools/espressif/emulator/patch_stock.py) checks
 both slots currently hold the coolkit CA (`O=coolkit, CN=coolkit.cn`), overwrites
@@ -384,7 +394,7 @@ each with the stub's CA PEM null-padded to the original 1040-byte slot, then cal
 accepts it. Applied only in stub mode, alongside the existing BLE patches. The
 plain-boot path (no `--trust-ca`) is unchanged.
 
-### Firmware change B — point the plug at the stub's domain (NVS `dis_server`)
+#### Firmware change B — point the plug at the stub's domain (NVS `dis_server`)
 
 [`rewrite_nvs.py --dis-server disp.autoflash-stub.test --dis-port 443`](../tools/espressif/emulator/rewrite_nvs.py)
 sets those `frame_params` fields the same way it already rewrites
@@ -392,7 +402,7 @@ sets those `frame_params` fields the same way it already rewrites
 `nvs_partition_gen`, so the value length is not constrained. A pure NVS edit; no
 firmware string-patch is needed (test 1).
 
-## The stub server
+### The stub server
 
 [`tools/ewelink/stub_cloud/stub_server.py`](../tools/ewelink/stub_cloud/stub_server.py)
 is one stdlib-only HTTPS listener on `192.168.60.1:443` (the leaf cert), routed by
@@ -438,7 +448,7 @@ kept plug's or an instance's), and `AUTOFLASH_EMU_STUB_PRODUCT_MODEL=S60TPG|S60T
 overrides it or covers a plug never seen by the real cloud. With neither, none is
 served and the run's report leaves "Device model" blank rather than guess.
 
-### Every exchange, with examples
+#### Every exchange, with examples
 
 The message shapes were first taken from the firmware's own strings (the dispatch
 request template, `GET /api/ws`, `hbInterval`) and the repository's eWeLink
@@ -490,7 +500,7 @@ What the values are:
   (`4.4.3`). `binList` offers it under both of eWeLink's names, `user1.bin` and
   `user2.bin`; the plug fetched `user1.bin`.
 
-## Harness wiring and how to run it
+### Harness wiring and how to run it
 
 A single switch, **`--stub-cloud`** (mutually exclusive with `--cloud`), chooses
 the local stub over the real cloud and toggles everything below. There is no
@@ -543,7 +553,7 @@ keeps the flash its last run left, so switching an instance between modes is
 knowing way to start it over, and `--save`/`--from` carry the mode with a kept
 plug. Each parallel instance builds its own flash from the read-only stock dump.
 
-### The Tasmota bundle
+#### The Tasmota bundle
 
 `step_check` (A5) builds the conversion bundle from the official Tasmota files
 unless a valid one is already present, and `emu.sh` excludes the host's bundle
@@ -553,7 +563,7 @@ would — no pre-staging needed. The eWeLink-gated part of the conversion (up to
 and including C2) reaches no internet at all: the bridge image is a local
 artifact, delivered over LAN.
 
-## Verification log
+### Verification log
 
 Each entry: goal, how it was run safely, result, interpretation. Append new runs;
 don't rewrite old results.
@@ -576,7 +586,7 @@ sed 's/\x1b\[[0-9;]*m//g' "$D"/uart.log | tail -80  # de-coloured console
 grep -E 'ws <-|ws ->|relay' "$D"/stub.log           # the channel, secrets redacted
 ```
 
-### Test 1 — does the firmware honour `dis_server`?
+#### Test 1 — does the firmware honour `dis_server`?
 
 **Goal:** decide whether redirecting the plug is a config edit
 (`frame_params.dis_server`) or needs a firmware string-patch of the
@@ -593,7 +603,7 @@ preceded the lookup. No TLS/443 traffic (never resolved).
 The clock does not gate reaching dispatch. The moment DNS answers for the stub's
 domain, the plug connects with no other prerequisite.
 
-### Test 2 — does the trust swap let the TLS handshake complete?
+#### Test 2 — does the trust swap let the TLS handshake complete?
 
 **Goal:** with the stub's CA swapped in and the plug pointed at the stub's domain,
 confirm the plug completes a TLS handshake to the stub.
@@ -621,7 +631,7 @@ application-data record (its `POST /dispatch/device`). Negotiated cipher:
 though the stock CA is RSA-1024 — the plug offers ECDHE-ECDSA suites and
 negotiated one. No clock/validity gate blocked the handshake.
 
-### Test 3 — does the stub bring the plug online and enable LAN control?
+#### Test 3 — does the stub bring the plug online and enable LAN control?
 
 **Goal:** make the stub answer dispatch + IoT well enough that the plug reports
 online and opens its LAN-control interface.
@@ -650,7 +660,7 @@ mDNS** (`_ewelink._tcp.local`, `SRV …:8081`, TXT `encrypt=true`, `type=plug`) 
 to `query` suffices (the plug does not need real timer/energy values to come
 online).
 
-### Test 4 — end-to-end `--stub-cloud` conversion through C2
+#### Test 4 — end-to-end `--stub-cloud` conversion through C2
 
 **Goal:** a conversion with the stub as the only cloud — the tool reads the LAN
 key + metadata from the stub (touchpoint A), the plug is online via the stub
@@ -695,7 +705,7 @@ not use; the tool accepted `devicekey = apikey` at A2, and in this plug's dump
 the two are the same value anyway). Past C2, eWeLink is
 needed again only to send the installer again (see [Status](#status)).
 
-### Test 5 — parallel runs
+#### Test 5 — parallel runs
 
 **Goal:** confirm the original goal — more than one emulated plug (the same
 device id) online at once, which the real cloud forbids.
@@ -712,7 +722,7 @@ is independent (its own `192.168.60.1:443` in its own network namespace), so run
 are fully parallel — the whole point of the cloud stub. (Bounded only by host RAM:
 ~3 emulators on a laptop, one per core on the test VMs.)
 
-### Test 6 — full conversions, stub and cloud
+#### Test 6 — full conversions, stub and cloud
 
 **Goal:** whole conversions in both modes and to both firmwares, compared.
 
@@ -732,7 +742,7 @@ did.
 **Interpretation:** a stub run stands in for a cloud run end to end, report
 included.
 
-### Test 7 — the whole account record
+#### Test 7 — the whole account record
 
 **Goal:** an account record with what eWeLink's carries beyond test 6's product
 model, so the tool's failure paths read as they do against the real cloud (see
@@ -776,7 +786,7 @@ no clock ([risks](#risks-and-limitations)), and that found a restart check that
 leaned on one; the same race was open to any plug without NTP time, the plain
 emulator's included.
 
-### Test 8 — twenty fault-suite scenarios
+#### Test 8 — twenty fault-suite scenarios
 
 **Goal:** the fault suite against the stub, in part: every direction, and the
 cloud steps above all, where the stub stands in for eWeLink while a fault hits.
@@ -804,7 +814,7 @@ the run converted the plug.
 the real cloud does, the installer sent again included. The rest of the suite
 is still to run against it.
 
-### Test 9 — the signal from the start
+#### Test 9 — the signal from the start
 
 **Goal:** the plug's Wi-Fi signal read at the earliest stage of every
 direction, so a weak one can be fixed by moving the plug before the conversion
@@ -841,7 +851,7 @@ on to Tasmota it was read at X1 before anything was written: X1 -18, D4 -20,
 E1 -18, reported -20. With the API read added, the plug with no sensor was read at
 X1 too, from its configuration dump: X1 -23, D4 -19, E1 -22, reported -23.
 
-## Risks and limitations
+### Risks and limitations
 
 - **Fidelity:** the stub tests *the tool and the bridge firmware*, not eWeLink's
   servers. Keep a small set of real-`--cloud` runs as an end-to-end smoke test.
@@ -870,7 +880,7 @@ X1 too, from its configuration dump: X1 -23, D4 -19, E1 -22, reported -23.
   man-in-the-middle even though this is self-hosting your own device to your own
   server. It is kept confined to the firewalled per-instance network.
 
-## Safety / rollback
+### Safety / rollback
 
 - Stock dump untouched; all edits are on the per-instance working copy.
 - The real eWeLink is never reached in stub mode: its hostnames resolve to
@@ -882,7 +892,7 @@ X1 too, from its configuration dump: X1 -23, D4 -19, E1 -22, reported -23.
   never enters the firmware; device keys are read only inside the container and
   redacted in logs.
 
-## Files
+### Files
 
 Added under `tools/ewelink/stub_cloud/`: `__init__.py`, `make_ca.py`,
 `device_identity.py`, `stub_server.py`. Changed:
@@ -893,7 +903,7 @@ Added under `tools/ewelink/stub_cloud/`: `__init__.py`, `make_ca.py`,
 `tools/ewelink/get_device_key.py` / `tools/ewelink/probe_ota_command.py` (the
 `AUTOFLASH_EWELINK_API_BASE` override).
 
-## Ground rules
+### Ground rules
 
 - **No secrets in the repo.** The dump holds the plug's eWeLink keys and Wi-Fi
   password in cleartext; keep values out of docs and commits.
@@ -906,3 +916,101 @@ Added under `tools/ewelink/stub_cloud/`: `__init__.py`, `make_ca.py`,
   answering the dispatch protocol) resemble a TLS man-in-the-middle even though
   this is self-hosting; keep each change reviewed, and the stub confined to the
   firewalled per-instance network.
+
+## The Beken emulator's stub
+
+### Status
+
+Every Beken emulator plug runs against its stub: `bk-emu.sh plug` starts it, and
+there is no real-cloud mode. Sonoff's firmware comes ONLINE on it, and the tool's
+whole route runs through it in the emulator, in every direction
+([the Beken fault suite](testing.md#the-beken-fault-suite)).
+
+### What the cloud is actually used for
+
+The same two touchpoints as [on the Espressif emulator](#what-the-cloud-is-actually-used-for):
+the tool signs in to the account API to find the plug and push its update (B1, B2),
+and the plug holds its dispatch and IoT connection, without which it takes no
+update. A run back to Sonoff's firmware with no backup also fetches the plug's
+official file from the stub's update offer.
+
+### The approach
+
+The emulated plug is on a Wi-Fi of its own, whose router, `.1`, is the emulator's
+container: its DHCP, its DNS (every name the router) and its eWeLink, the stub, to
+which every connection the plug makes off the network is sent, whatever address it
+dialled ([how it fits together](../tools/beken/emulator/README.md#how-it-fits-together)).
+Nothing reaches the internet. The plug is made to trust the stub's CA by a
+trust-anchor swap where the firmware loads its CoolKit root, at
+`mbedtls_x509_crt_parse` (`cloud_online.StockHooks`): no check in its verify path is
+changed, only which root it trusts, and only while Sonoff's firmware is the one
+that starts. The tool, on a computer on the same Wi-Fi (`bk-emu.sh computer`), is
+pointed at the stub's account API (`AUTOFLASH_EWELINK_API_BASE`) with its CA trusted.
+
+### Firmware facts
+
+What the Beken firmware needs of its cloud differs from the S60's in a few ways,
+each found in the emulator ([the cloud handshake](beken-research.md#the-cloud-handshake-trust-swap-to-online)):
+
+- its factory dispatch URL is plaintext on port 80 (`http://8.8.8.8:80`, a
+  placeholder), so dispatch is served unencrypted;
+- the dispatch reply must be compact JSON, with a `domain` key and `port` a string;
+- the IoT WebSocket is `wss://` with the certificate verified: the leaf must carry
+  a `dNSName` SAN for the address dialled and a serverAuth EKU;
+- the firmware has no CA in flash to swap, as the S60's has: it builds its CoolKit
+  CA in RAM, which is why the swap is made where it is loaded.
+
+### The stub server
+
+[`tools/beken/emulator/cloud_stub.py`](../tools/beken/emulator/cloud_stub.py) runs
+the shared stub server on the router's address: dispatch in plaintext on `:80`, the
+IoT WebSocket and the account API over TLS on `:443`, under a CA of its own made
+once into the plug's state directory (`ca.crt`, the leaf beside it, made again for
+another address, as the plug checks the leaf names the one it dialled).
+
+- **The account record**: the plug's identity is what it says as it registers;
+  its MAC, which eWeLink's record carries, is read from the factory record in its
+  flash (`0x3e0000`). Its model is the one the stock app it first started holds,
+  not the one it registers with, which comes from its sealed factory data: so a
+  flash rebuilt on the S61's settings for another model
+  ([rebuild_dump.py](../tools/beken/README.md#rebuilding-a-dump)) says it is an S61,
+  and the stub gives the other model.
+- **The update offer**: as eWeLink offers a real plug its official file, the stub
+  offers the plug's own stock app, packed as the RBL its bootloader applies, in the
+  FOTA container its updater takes, named as its kind's are. A readout reverts with
+  it, and a run back to Sonoff with no backup fetches it. Both it and the model are
+  made once, from the Sonoff firmware the plug first started on, as it may next
+  start on another.
+- **What plugs said of themselves** is kept across restarts
+  (`stub-reported.json`), as an eWeLink account keeps its devices while they run
+  another firmware; `bk-emu.sh plug` returns once the plug is in it.
+
+### Harness wiring and how to run it
+
+`bk-emu.sh plug` runs it, as root in the plug's container (`plug-net.sh`), as it
+binds the router's ports 80 and 443; its log is `stub.log` in the plug's state
+directory (`captures/emulation/beken/state/`, or `state-N/` with `--instance N`).
+By hand:
+
+```sh
+python3 -I -B tools/beken/emulator/cloud_stub.py --state DIR --bind ADDRESS --flash DIR/flash.bin
+```
+
+The research run that first brought the S61 ONLINE, `cloud_online.py`, stands the
+same stub server up on loopback instead, with `--plain` dispatch
+([tools/beken/README.md](../tools/beken/README.md#driving-the-emulator)).
+
+### Verification log
+
+The handshake's log, from `cloud_online.py`: dispatch accepted, the CA swapped once,
+the WebSocket open, `register`, and ONLINE with heartbeats
+([the log](beken-research.md#the-cloud-handshake-trust-swap-to-online)). Each official
+file of the S61's generation comes ONLINE on it too
+([one code path](beken-research.md#one-code-path-for-every-4-mb-ewelink-build)).
+
+### Files
+
+`tools/beken/emulator/cloud_stub.py` (the stub, on
+`tools/ewelink/stub_cloud/stub_server.py`), `plug-net.sh` (the router: DHCP, DNS,
+the redirect to the stub, and the stub's start) and `cloud_online.py` (the
+trust-anchor swap, the compact JSON and the certificates).
