@@ -41,7 +41,7 @@ research, firmware builds or the emulator.
 - **`build_vendor_ota.py`**, **`analyze_vendor_ota.py`** - the 100-byte wrapper a stock
   updater takes, built around an ESP app, and checked.
 - **`serve_tasmota_ota.py`** - serves a checked, wrapped app to one owned plug.
-- **`test_ota_firewall.sh`** - checks the router rules that send a plug's update
+- **`check_ota_firewall.sh`** - checks the router rules that send a plug's update
   request to this computer.
 - **`RECOVERY_LOCK`**, **`REPARTITION_LOCK`** - while each is there, the tools that
   update a stock plug, and the server that replaces its partition table, refuse to
