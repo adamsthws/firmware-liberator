@@ -67,6 +67,7 @@ class FirmwareHandler(http.server.BaseHTTPRequestHandler):
         if self.client_address[0] != self.server.device_ip:
             self._empty_response(403)
             return
+        self.server.last_asked = time.monotonic()
         path = urllib.parse.urlsplit(self.path).path
         if path.lstrip("/") not in self.server.names:
             self._empty_response(404)
@@ -107,6 +108,7 @@ class FirmwareHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(piece)
             self.server.bytes_served += len(piece)
             self.server.served_ranges.append((lo + start, lo + start + len(piece) - 1))
+            self.server.last_asked = time.monotonic()
         self.connection.settimeout(self.timeout)
         if self.server.live:
             unique = self.server.unique_bytes_served()
@@ -134,6 +136,7 @@ class FirmwareServer(http.server.ThreadingHTTPServer):
         self.say = say
         self.bytes_served = 0
         self.served_ranges: list[tuple[int, int]] = []
+        self.last_asked = 0.0  # when the plug last asked for or took anything
         # One updating progress line on a terminal; full per-request lines in
         # logs and tests, and to `say` whenever live is False (a caller that
         # keeps the terminal to itself, as Autoflash does).
@@ -227,6 +230,40 @@ def until_online(device: dict, look_again, *, sleep=time.sleep, say=print) -> di
 # not blame on this computer's firewall (tools.autoflash.routes.espressif.installer.bridge_failure_advice).
 NOT_SENT = "The upgrade command was not sent: nothing reached the device."
 
+# A command the plug lost is not passed on again by eWeLink: seen after a power
+# cut part way through the download, the plug back online and nothing more asked
+# for. It is sent again, this many times in all: when the plug comes back and has
+# not asked for the file after RESEND_SETTLE seconds, or, with the plug online all
+# along as far as eWeLink says, after RESEND_QUIET seconds of its not asking. Only
+# then: a plug fetching is left alone, and it checks the file's SHA-256 whatever
+# it is sent. A send again has RESEND_WAIT seconds, if the first's are nearly up.
+COMMAND_SENDS = 3
+RESEND_SETTLE = 8.0
+RESEND_QUIET = 45.0
+RESEND_WAIT = 60.0
+
+
+@dataclass
+class Resending:
+    """Whether a command sent has been lost, from what eWeLink says of the plug
+    and when the plug last asked this computer for anything."""
+    sent_at: float
+    away: bool = False       # offline in eWeLink since the command
+    back_at: float | None = None
+
+    def heard(self, message: dict[str, Any], now: float) -> None:
+        params = message.get("params") if isinstance(message.get("params"), dict) else {}
+        if message.get("action") == "sysmsg" and "online" in params:
+            self.away = not params["online"]
+            self.back_at = now if params["online"] else None
+
+    def lost(self, asked_at: float, now: float) -> bool:
+        if self.back_at is not None and asked_at > self.back_at:
+            self.back_at = None   # it came back and is fetching
+        quiet = now - max(self.sent_at, asked_at)
+        if self.back_at is not None:
+            return quiet >= RESEND_SETTLE and now - self.back_at >= RESEND_SETTLE
+        return not self.away and quiet >= RESEND_QUIET
 
 
 @dataclass
@@ -290,13 +327,21 @@ def deliver(*, email: str, password: str, country_code: str, region: str, device
         say(f"Serving only {device_ip} at {' and '.join(f'{base_url}/{name}' for name in names)}")
         say(f"SHA-256 (complete file): {digest}")
         entries = [{"name": name, "downloadUrl": f"{base_url}/{name}", "digest": digest} for name in names]
-        seq = str(int(time.time() * 1000))
-        ws.send_json({
-            "action": "upgrade", "deviceid": device["deviceid"],
-            "apikey": device["apikey"], "userAgent": "app", "sequence": seq,
-            "params": {"model": model, "version": version, "binList": entries},
-        })
+
+
+        def send_command(socket_to_cloud: WebSocket) -> str:
+            sequence = str(int(time.time() * 1000))
+            socket_to_cloud.send_json({
+                "action": "upgrade", "deviceid": device["deviceid"],
+                "apikey": device["apikey"], "userAgent": "app", "sequence": sequence,
+                "params": {"model": model, "version": version, "binList": entries},
+            })
+            return sequence
+
+        seq = send_command(ws)
         result.sent = True
+        sends = 1
+        resending = Resending(time.monotonic())
         say("\nUpgrade command sent with owner-controlled private-LAN URLs.")
         say(f"Waiting up to {wait:.0f}s for device to connect...")
 
@@ -319,7 +364,9 @@ def deliver(*, email: str, password: str, country_code: str, region: str, device
                     line = describe_cloud(msg, seq)
                     if line:
                         say(f"  {line}")
-                    if msg.get("sequence") == seq and msg.get("error", 0) != 0:
+                    resending.heard(msg, time.monotonic())
+                    # A send again refused is no worse than the first still going.
+                    if sends == 1 and msg.get("sequence") == seq and msg.get("error", 0) != 0:
                         raise EwelinkError(f"Cloud rejected upgrade command: error {msg['error']}")
                 except socket.timeout:
                     pass
@@ -335,6 +382,16 @@ def deliver(*, email: str, password: str, country_code: str, region: str, device
                     ws = None
             else:
                 time.sleep(0.25)
+            now = time.monotonic()
+            if (ws is not None and sends < COMMAND_SENDS and complete_at is None
+                    and resending.lost(server.last_asked, now)):
+                sends += 1
+                server.end_progress()
+                say(f"  The device has not asked for the file: upgrade command sent again "
+                    f"(attempt {sends} of {COMMAND_SENDS}).")
+                seq = send_command(ws)
+                resending = Resending(now)
+                deadline = max(deadline, now + RESEND_WAIT)
     except KeyboardInterrupt:
         # Ctrl-C after the whole image has been delivered is not a failure: the
         # device already has it and is rebooting.  Interrupting before that is.
