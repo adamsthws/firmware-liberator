@@ -65,8 +65,8 @@ repository's release
 one archive named after its commit and never changed (`git archive` of the
 pinned commit, which `bk-emu.sh source` reproduces byte for byte), downloaded
 once into `captures/emulation/cache/` and checked against the SHA-256
-`UPSTREAM` pins. So the emulator needs nothing outside this repository. Upstream
-publishes no licence. `bk-emu.sh` with no argument lists the rest; what each
+`UPSTREAM` pins. So the emulator needs nothing outside this repository.
+`bk-emu.sh` with no argument lists the rest; what each
 patch does and why, how to change them, and how the pin moves, is
 [below](#the-fork).
 
@@ -160,8 +160,8 @@ archive on the release `emulator-source-beken-<commit>`, whose hash `UPSTREAM` a
 with these patches applied in name order when the image is built
 (`bk-emu.sh ensure` builds or pulls it; `bk-emu.sh dump` fetches the public
 S61s dump from upstream's repository; `bk-emu.sh test` runs upstream's
-self-tests under them, fetching its other devices' dumps the same way). Each is one commit's worth, with its reasoning in
-its header; none has been offered upstream yet.
+self-tests under them, fetching its other devices' dumps the same way). Each is one
+commit's worth, with its reasoning in its header.
 
 - **`0001` - monitor-mode RX delivery** (`src/wifimac.py`): sniffed frames
   reach the RX descriptors in monitor mode even when the scan state machine is
