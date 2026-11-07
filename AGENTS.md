@@ -78,6 +78,11 @@ and plugs' identities.
   on what changed. [docs/testing.md](docs/testing.md)
 - **Every fix has a test that fails without it.** A failing test or hook is
   fixed at its cause, never skipped, loosened or deleted.
+- **A test of one module mirrors its path**: `tools/a/b.py`'s tests are
+  `tests/a/test_b.py`, merged there rather than beside it under another
+  name. A test across modules, or of the whole repository, is named for
+  what it holds: in `tests/repo/`, or listed in `NOT_MIRRORED` in
+  `tests/repo/test_layout.py` with why. [More](docs/testing.md#where-a-test-goes)
 - **Tests run side by side and in any order**: each leaves nothing behind,
   uses a port it picked, and touches nothing computer-wide.
 - **Where things go**: `tools/autoflash/` the tool, `tools/repo/` the

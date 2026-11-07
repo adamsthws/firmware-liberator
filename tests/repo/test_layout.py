@@ -30,13 +30,15 @@ def repository_files(*patterns):
 
 class RepositoryRootTests(unittest.TestCase):
     def test_every_parents_index_reaches_the_repository(self):
+        """In the tools, and in their tests, which move with them."""
         wrong = []
-        for file in sorted(ROOT.glob("tools/**/*.py")):
+        for file in repository_files("tools/*.py", "tests/*.py"):
             for match in PARENTS.finditer(file.read_text(encoding="utf-8")):
                 parent = file.resolve().parents[int(match.group(1))]
                 parts = re.findall(r'"([^"]+)"', match.group(2))
                 if not parts:
-                    ok = parent == ROOT   # bare: the repository root
+                    # Bare: the repository root, or a test's own tests/.
+                    ok = parent == ROOT or parent == ROOT / "tests" and file.is_relative_to(ROOT / "tests")
                 else:
                     target = parent.joinpath(*parts)
                     # Joined to it: something in the repository, or a directory
@@ -176,6 +178,74 @@ class ChipFamilyTests(unittest.TestCase):
                              f"docs/{family}-research.md"):
                     self.assertTrue((ROOT / name).is_file(), name)
                 self.assertIn(f"\n## The {family.capitalize()} emulator\n", page)
+
+# A test module named for what it holds rather than for one module of tools/:
+# a test across modules, or one whose subject lives elsewhere, each with why.
+# Every other test module outside tests/repo/ - the repository's own tests,
+# each named for what it holds - mirrors the module it tests.
+NOT_MIRRORED = {
+    "tests/autoflash/test_windows_uac.py": "Windows' permission prompt answered every way, from "
+                                           "hostsys.elevated through the firewall rule it guards to "
+                                           "what firewall.py then says",
+    "tests/espressif/emulator/test_plug.py": "the emulator container's bin/plug, under container/, "
+                                             "which the emulator image's tag hashes",
+    "tests/espressif/emulator/test_softap_status.py": "the emulator container's bin/softap-status, "
+                                                      "under container/ likewise",
+}
+
+
+def mirrored_name(path: Path) -> str:
+    """What tests/.../test_<name>.py calls a file of tools/: a module by its
+    name, a script by its whole file name with '-' and '.' as '_' (emu.sh,
+    test_emu_sh.py)."""
+    return path.stem if path.suffix == ".py" else path.name.replace("-", "_").replace(".", "_")
+
+
+def unmirrored(root: Path, tests: list[Path]) -> list[str]:
+    """The test modules outside tests/repo/ that name no module or script at
+    the same place under tools/ - nor the package itself, as
+    tests/autoflash/routes/test_routes.py names routes/__init__.py."""
+    wrong = []
+    for test in tests:
+        relative = test.relative_to(root / "tests")
+        if relative.parts[0] == "repo" or not test.name.startswith("test_"):
+            continue
+        name, folder = test.stem.removeprefix("test_"), root.joinpath("tools", *relative.parts[:-1])
+        names = {mirrored_name(path) for path in folder.iterdir() if path.is_file()} if folder.is_dir() else set()
+        if folder.name == name and (folder / "__init__.py").is_file():
+            names.add(name)
+        if name not in names:
+            wrong.append(str(test.relative_to(root)))
+    return wrong
+
+
+class TestLayoutTests(unittest.TestCase):
+    def test_each_test_module_mirrors_the_module_it_tests(self):
+        """tests/ mirrors tools/: the tests of tools/a/b.py are tests/a/test_b.py,
+        of a script tools/a/c-d.sh tests/a/test_c_d_sh.py (AGENTS.md)."""
+        tests = repository_files("tests/**/test_*.py")
+        self.assertEqual(sorted(set(unmirrored(ROOT, tests)) - set(NOT_MIRRORED)), [],
+                         "name it after the module it tests, beside that module's path; "
+                         "a test across modules goes in NOT_MIRRORED, with why")
+
+    def test_each_test_left_unmirrored_is_there_and_still_unmirrored(self):
+        tests = [ROOT / name for name in NOT_MIRRORED]
+        self.assertEqual(sorted(unmirrored(ROOT, tests)), sorted(NOT_MIRRORED), "named for its module now: "
+                         "take it out of NOT_MIRRORED")
+
+    def test_a_test_named_for_no_module_is_found(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("tools/autoflash/runner.py", "tools/autoflash/routes/__init__.py",
+                         "tools/espressif/emulator/emu.sh"):
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_text("", encoding="utf-8")
+            tests = [root / "tests" / name for name in (
+                "autoflash/test_runner.py", "autoflash/routes/test_routes.py", "espressif/emulator/test_emu_sh.py",
+                "autoflash/test_runner_retries.py", "autoflash/routes/test_runner.py", "repo/test_anything.py")]
+            self.assertEqual(unmirrored(root, tests), ["tests/autoflash/test_runner_retries.py",
+                                                       "tests/autoflash/routes/test_runner.py"])
+
 
 def heading_anchors(text: str) -> set[str]:
     """The anchors GitHub gives a Markdown page's headings, a repeated one
