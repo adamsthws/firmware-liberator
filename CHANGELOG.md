@@ -52,6 +52,10 @@ check.
   and says to switch the plug off and on. A Ctrl-C just before the first stage
   is no longer forgotten, so a second press within 10 seconds stops the run.
 - The S61's backup is tried three times before the run goes on without one.
+- On Windows the tool starts where PowerShell is set to run no scripts - even
+  by a policy for the whole computer, which stopped it with "running scripts is
+  disabled on this system": `start.cmd` and the README's line run its start
+  script as text, not as a script file.
 - A plug that loses the upgrade command - a power cut part way through its
   download, say - is sent it again as soon as it is back on eWeLink, up to three
   times, rather than the run stopping about three minutes later for you to start again.
