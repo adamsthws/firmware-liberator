@@ -70,6 +70,10 @@ publishes no licence. `bk-emu.sh` with no argument lists the rest; what each
 patch does and why, how to change them, and how the pin moves, is in
 [docs/beken-s61-emulation.md](../../../docs/beken-s61-emulation.md#the-fork-toolsbekenemulator).
 
+`AUTOFLASH_BEKEN_DUMP` names another whole flash under this checkout for a new
+plug to start from, one `rebuild_dump.py` made for another model, say
+([Adding a 4 MB BK7238 device](../README.md#adding-a-4-mb-bk7238-device-with-no-whole-dump)).
+
 **No firmware is in the image or the archive.** The public S61s dump is Sonoff's
 firmware, which this repository never holds, so `bk-emu.sh dump` fetches it
 from upstream's repository, which publishes it, into

@@ -34,6 +34,32 @@ class ContainerIsExecedTests(unittest.TestCase):
         self.assertNotIn("still here", done.stdout)
 
 
+@unittest.skipIf(shutil.which("bash") is None, "no bash")
+class PlugDumpTests(unittest.TestCase):
+    def dump(self, own):
+        function = re.search(r"^plug_dump\(\) \{.*?^\}", SCRIPT.read_text(encoding="utf-8"), re.S | re.M).group(0)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = os.path.realpath(tmp)
+            Path(root, "captures").mkdir()
+            Path(root, "captures", "device.bin").touch()
+            script = f"set -u\nROOT={root} S61_DUMP=dump.bin\n{function}\nplug_dump\n"
+            env = {**os.environ, "AUTOFLASH_BEKEN_DUMP": own.format(root=root)}
+            if not own:
+                del env["AUTOFLASH_BEKEN_DUMP"]
+            return subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60, env=env, cwd=tmp)
+
+    def test_a_new_plug_starts_from_the_public_dump(self):
+        self.assertEqual(self.dump("").stdout.strip(), "/opt/beken-emulator/firmwares/dump.bin")
+
+    def test_or_from_a_flash_under_the_checkout_as_the_container_sees_it(self):
+        self.assertEqual(self.dump("{root}/captures/device.bin").stdout.strip(), "/work/captures/device.bin")
+
+    def test_one_outside_the_checkout_is_refused(self):
+        done = self.dump("/nowhere/device.bin")
+        self.assertNotEqual(done.returncode, 0)
+        self.assertIn("outside this checkout", done.stderr)
+
+
 def english_locale():
     """A UTF-8 English locale this computer has, or None."""
     try:

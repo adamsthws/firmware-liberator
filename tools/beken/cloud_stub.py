@@ -10,12 +10,17 @@ into DIR (ca.crt, with the leaf beside it), which the plug is made to trust
 (cloud_online.StockHooks' trust-anchor swap) and the tool is given
 (SSL_CERT_FILE). The plug's identity is what it says as it registers; its
 hardware address, which eWeLink's record carries, is read from its flash.
+
+Its model is what the firmware it first started holds, not what it says as it
+registers: that comes from its sealed factory data, so a flash rebuilt on the
+S61's settings for another model (rebuild_dump.py) says it is an S61.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import re
 import shutil
 import ssl
 import sys
@@ -27,7 +32,11 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "espressif" / "emulator" / "stub_cloud"))
 import backup  # noqa: E402
 import cloud_online  # noqa: E402  (its compact JSON and certificates; needs the emulator image)
+import stock_points  # noqa: E402
 import stub_server as ss  # noqa: E402
+
+sys.path.insert(0, str(HERE.parents[1]))
+from tools.autoflash import kinds  # noqa: E402
 
 # The S61's region of its own data, where the factory record keeps its MAC.
 REGION = 0x3E0000
@@ -54,19 +63,39 @@ def certificates(state: Path, address: str) -> tuple[Path, Path]:
     return leaf, key
 
 
-def device(flash: Path) -> dict:
-    """The account record's part the plug's register does not give."""
-    record = {"model": "SN-BK7238-S61-01", "productModel": "S61STPF", "name": "Sonoff S61"}
+def model_in(app: bytes) -> str:
+    """What a stock app calls itself, if it holds that once."""
+    found = set(re.findall(rb"SN-BK[0-9]+-[A-Z0-9]+-[0-9]+", app))
+    return found.pop().decode("ascii") if len(found) == 1 else ""
+
+
+def device(flash: Path, state: Path) -> dict:
+    """The account record's part the plug's register does not give. Its model is
+    kept in `state` the first time, from the Sonoff firmware it started on: the
+    stub may next start with another firmware on the flash."""
+    kept = state / "model"
+    data = flash.read_bytes() if flash.exists() else b""
     try:
-        record["staMac"] = backup.factory_mac(flash.read_bytes()[REGION:REGION + 0x1000])
-    except (OSError, ValueError):
+        model = kept.read_text(encoding="utf-8").strip()
+    except OSError:
+        try:
+            model = model_in(stock_points.app_of_flash(data))
+        except ValueError:
+            model = ""
+        kept.write_text(model + "\n", encoding="utf-8")
+    kind = next((kind for kind in kinds.EVERY if model and kind.stock_model == model), kinds.SONOFF_S61)
+    record = {"model": kind.stock_model, "productModel": kind.example_product_model, "name": kind.name}
+    try:
+        record["staMac"] = backup.factory_mac(data[REGION:REGION + 0x1000])
+    except ValueError:
         pass
     return record
 
 
-def remember(stub: ss.Stub, path: Path) -> None:
+def remember(stub: ss.Stub, path: Path, model: str = "") -> None:
     """What plugs have said of themselves, kept in `path` across restarts: an
-    eWeLink account keeps its devices while they run another firmware."""
+    eWeLink account keeps its devices while they run another firmware. Their
+    model is the record's `model`, whatever they say."""
     try:
         stub.reported.update(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, ValueError):
@@ -75,6 +104,9 @@ def remember(stub: ss.Stub, path: Path) -> None:
 
     def heard_and_kept(message: dict) -> None:
         heard(message)
+        for seen in stub.reported.values():
+            if model and seen.get("model"):
+                seen["model"] = model
         part = path.with_suffix(".part")
         part.write_text(json.dumps(stub.reported), encoding="utf-8")
         os.replace(part, path)
@@ -88,8 +120,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--flash", type=Path, required=True)
     args = parser.parse_args(argv)
     leaf, key = certificates(args.state, args.bind)
-    stub = ss.Handler.stub = ss.Stub(args.bind, 443, HEARTBEAT, device(args.flash))
-    remember(stub, args.state / "stub-reported.json")
+    record = device(args.flash, args.state)
+    stub = ss.Handler.stub = ss.Stub(args.bind, 443, HEARTBEAT, record)
+    remember(stub, args.state / "stub-reported.json", record["model"])
     # The S61 parses the port as a string; the tool takes either.
     stub.dispatch_response = lambda: {"error": 0, "reason": "", "IP": args.bind, "domain": args.bind,
                                       "port": "443"}

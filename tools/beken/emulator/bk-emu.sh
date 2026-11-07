@@ -74,7 +74,8 @@
 # AUTOFLASH_BEKEN_NETWORK the plug's network (default autoflash-beken),
 # AUTOFLASH_BEKEN_PLUG_NAME the plug (default autoflash-s61; its state is
 # captures/emulation/s61/<name>/), AUTOFLASH_BEKEN_COMPUTER a name for the
-# computer's container,
+# computer's container, AUTOFLASH_BEKEN_DUMP another whole flash under this
+# checkout (rebuild_dump.py's) for a new plug to start from,
 # AUTOFLASH_BEKEN_PUBLISHED another place to pull from, AUTOFLASH_BEKEN_NO_PULL=1
 # always builds, AUTOFLASH_BEKEN_SOURCE_URL another place to download the archive
 # from. Tools run as your own user, so what they write in /work is yours.
@@ -226,6 +227,15 @@ container() {
         -w "$workdir" "$IMAGE" "$@"
 }
 
+# The whole flash a new plug starts from, as its container sees it.
+plug_dump() {
+    local own=${AUTOFLASH_BEKEN_DUMP:-}
+    if [ -z "$own" ]; then echo "/opt/beken-emulator/firmwares/$S61_DUMP"; return; fi
+    own=$(realpath "$own")
+    case "$own" in "$ROOT"/*) echo "/work${own#"$ROOT"}" ;;
+        *) echo "$own is outside this checkout: put it under captures/" >&2; exit 2 ;; esac
+}
+
 # The plug's network, a /24 of its own: the tool sweeps the network it is on
 # at its real size, and Docker's default is a /16. Its gateway is .254 and
 # Docker hands out .128 and up, so .1-.127 are the plug's home network's own:
@@ -303,9 +313,10 @@ case "${1:-}" in
     plug)
         ensure; dump; network
         mkdir -p "$PLUG_STATE"
+        starts_from=$(plug_dump)
         docker run -d --rm --name "$PLUG" --network "$NETWORK" --cap-add NET_ADMIN --device /dev/net/tun \
             -v "$ROOT:/work:ro" -v "$FIRMWARES:/opt/beken-emulator/firmwares:ro" -v "$PLUG_STATE:/state" \
-            -e S61_DUMP="/opt/beken-emulator/firmwares/$S61_DUMP" \
+            -e S61_DUMP="$starts_from" \
             -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e PLUG_TRACE="${PLUG_TRACE:-}" \
             --entrypoint bash "$IMAGE" /work/tools/beken/emulator/plug-net.sh >/dev/null
         echo "The S61 is starting as $PLUG on $NETWORK, its router at $(subnet).1; its serial output is in" >&2
