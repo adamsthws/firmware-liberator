@@ -17,7 +17,7 @@ rejected (bad_certificate). We clear that the same honest way the S60 does
 (tools/espressif/emulator/patch_stock.py --trust-ca): a *trust-anchor swap*. The S60 swaps
 the CA PEM in its flash image; the S61 does not keep its CA as a static flash
 blob (it is assembled into RAM at TLS-setup time), so the swap is applied at the
-one point the firmware installs it - mbedtls_x509_crt_parse (0x125e4c): when the
+one point the firmware installs it - mbedtls_x509_crt_parse: when the
 firmware loads the CoolKit root CA into its trust store, we substitute our own
 CA. Nothing in the verification path is weakened; only which anchor is trusted
 changes, and the stub serves a leaf signed by that CA. Our CA/leaf are EC P-256
@@ -32,8 +32,9 @@ host; nothing reaches the real cloud.
 
 Two synthesised pieces, as in cloud_dial.py: Wi-Fi creds seeded at
 ef_get_env_blob, and the pairing-success trigger once Wi-Fi is up: what the
-firmware runs then, its LAN service published (0x2bf7c, the mDNS record the
-tool's local discovery finds) and the cloud started (0x2c204).
+firmware runs then, its LAN service published (the mDNS record the tool's local
+discovery finds) and the cloud started. Where all of this is in the firmware is
+found in the firmware itself (stock_points.py).
 
   tools/beken/emulator/bk-emu.sh python tools/beken/cloud_online.py
 
@@ -54,7 +55,9 @@ import threading
 import time
 import types
 from pathlib import Path
+from urllib.parse import urlsplit
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # the tools beside this one
 ROOT = Path(os.environ.get("BK_EMU_ROOT", "/opt/beken-emulator"))
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools" / "espressif" / "emulator" / "stub_cloud"))
@@ -78,6 +81,7 @@ from unicorn.arm_const import (  # noqa: E402
     UC_ARM_REG_R8,
     UC_ARM_REG_R9,
     UC_ARM_REG_SP)
+import stock_points  # noqa: E402
 import stub_server as ss  # noqa: E402
 
 
@@ -93,19 +97,10 @@ DUMP = os.environ.get("S61_DUMP", str(ROOT/"firmwares/Sonoff_S61s_EUPlug_WBBK_01
 SECS = float(os.environ.get("SECS", "85")); FORCE_AT = float(os.environ.get("FORCE_AT", "34"))
 HB = int(os.environ.get("HB", "10"))
 SSID = os.environ.get("SSID", "AutoflashNet").encode(); PW = os.environ.get("PASS", "autoflash1234").encode()
-AFTER_MEMCMP = 0x29c3c; TIMER5 = 1 << 9; APPFW_LOOP = 0x319c4; EFGET = 0x12f438
-CTXP = 0x4044ac; FLAG = 0x403e31; START_HANDLER = 0x2c204; URL_OFF = 0x5f
-# What the firmware runs once a joined plug's network is up (0x48fc8, 0x49b4e):
-# its LAN service published - the mDNS record eWeLink's local discovery
-# finds, with its id - then the cloud started. The trigger calls both in turn.
-LAN_PUBLISH = 0x2bf7c
-ON_NETWORK = (LAN_PUBLISH, START_HANDLER)
-# mbedtls_x509_crt_parse: where the firmware installs a cert into a trust store
-# (r0=chain, r1=PEM buffer, r2=len). We swap the CoolKit root CA here.
-X509_CRT_PARSE = 0x125e4c
+TIMER5 = 1 << 9
 COOLKIT_CN = b"CoolKit Root CA ECC"   # the baked-in trust anchor's subject CN, inside its DER
 
-# The dispatch server the firmware dials by default (ctx+0x5f): a placeholder
+# The dispatch server the firmware dials by default (Points.dispatch_url): a placeholder
 # public IP, so it routes off the device's subnet to the gateway (not loopback,
 # which the device's own stack would keep). We leave the context untouched and
 # redirect this target to the stub below, so nothing reaches the real address.
@@ -150,18 +145,28 @@ def _is_coolkit(buf):
     return COOLKIT_CN in der
 
 
+def dialling_here(points):
+    """`points`, if the firmware's dispatch URL is the address the relay redirects."""
+    dialled = urlsplit(points.dispatch_url)
+    if (dialled.hostname, dialled.port) != (DISPATCH_IP, DISPATCH_PORT):
+        raise stock_points.PointError("dispatch_url", "the firmware dials %s, and the relay here redirects %s:%d"
+                                      % (points.dispatch_url, DISPATCH_IP, DISPATCH_PORT))
+    return points
+
+
 class StockHooks:
     """What the stock firmware needs of the emulator to come online, put on
     `emu`: the integrity gate passed, the Wi-Fi credentials answered as a
     provisioned store gives them, the trust-anchor swap to `ca_pem`, the
     pairing-success trigger `force_at` seconds into a boot, and Timer 5.
 
-    Each acts only while `active`: the addresses are Sonoff's firmware's, and
-    another firmware the plug is converted to runs other code there
-    (tools/beken/plug.py turns them off when it starts one). `boot()` starts
-    the clock for the trigger again, as each boot of the plug needs."""
+    They go in at `points` (stock_points.find), given here or to `attach`
+    before that app runs. Each acts only while `active`: another firmware the
+    plug is converted to runs other code there (tools/beken/plug.py turns them
+    off when it starts one). `boot()` starts the clock for the trigger again,
+    as each boot of the plug needs."""
 
-    def __init__(self, emu, ssid, password, ca_pem, force_at, netlog):
+    def __init__(self, emu, ssid, password, ca_pem, force_at, netlog, points=None):
         self.emu, self.netlog = emu, netlog
         self._ssid, self._password, self._our_ca, self._force_at = ssid, password, ca_pem, force_at
         self.active = True
@@ -169,7 +174,10 @@ class StockHooks:
         self.dial = {"ais_cloud_start": 0}
         self._started = time.time()
         self._st = {"forced": False, "calling": False, "prepped": False, "next": []}
-        self._install()
+        self.points = None
+        self._install_timer()
+        if points is not None:
+            self.attach(points)
 
     def boot(self):
         self._started = time.time()
@@ -184,10 +192,13 @@ class StockHooks:
     def _string(self, address, n=40):
         b = self._read(address, n); z = b.find(0); return b[:z if z >= 0 else n]
 
-    def _install(self):
+    def attach(self, points):
+        """Put the hooks in, at the places given. Once: a plug's next boot is a new emulator."""
+        self.points = points
         mu = self.emu.mu
         on = lambda f: (lambda m, a, s, u: f(m, a, s, u) if self.active else None)  # noqa: E731
-        mu.hook_add(UC_HOOK_CODE, on(lambda m, a, s, u: mu.reg_write(UC_ARM_REG_R0, 0)), None, AFTER_MEMCMP, AFTER_MEMCMP)
+        mu.hook_add(UC_HOOK_CODE, on(lambda m, a, s, u: mu.reg_write(UC_ARM_REG_R0, 0)), None,
+                    points.after_memcmp, points.after_memcmp)
 
         def ef_get(m, a, s, u):   # the Wi-Fi credentials, as a provisioned plug's store gives them
             key = self._string(mu.reg_read(UC_ARM_REG_R0)); buf = mu.reg_read(UC_ARM_REG_R1)
@@ -202,7 +213,7 @@ class StockHooks:
             except Exception:
                 pass
             mu.reg_write(UC_ARM_REG_R0, len(val)); mu.reg_write(UC_ARM_REG_PC, mu.reg_read(UC_ARM_REG_LR))
-        mu.hook_add(UC_HOOK_CODE, on(ef_get), None, EFGET, EFGET)
+        mu.hook_add(UC_HOOK_CODE, on(ef_get), None, points.ef_get_env_blob, points.ef_get_env_blob)
 
         # --- the faithful trust swap (the S60's --trust-ca, applied at the parse point) ---
         # When the firmware loads the CoolKit root CA into a trust store, replace the PEM
@@ -222,9 +233,9 @@ class StockHooks:
                 mu.mem_write(r1, repl); mu.reg_write(UC_ARM_REG_R2, len(repl)); self.swap["n"] += 1
             except Exception as e:
                 self.swap["skip"].append(str(e))
-        mu.hook_add(UC_HOOK_CODE, on(trust), None, X509_CRT_PARSE, X509_CRT_PARSE)
+        mu.hook_add(UC_HOOK_CODE, on(trust), None, points.x509_crt_parse, points.x509_crt_parse)
         mu.hook_add(UC_HOOK_CODE, on(lambda m, a, s, u: self.dial.__setitem__(
-            "ais_cloud_start", self.dial["ais_cloud_start"] + 1)), None, 0x35744, 0x35744)
+            "ais_cloud_start", self.dial["ais_cloud_start"] + 1)), None, points.ais_cloud_start, points.ais_cloud_start)
 
         # The pairing-success trigger: force-call the start-cloud handler once Wi-Fi is up.
         st = self._st
@@ -249,20 +260,23 @@ class StockHooks:
                 return
             if not st["prepped"]:
                 st["prepped"] = True
-                p = struct.unpack("<I", self._read(CTXP, 4))[0]
+                p = struct.unpack("<I", self._read(points.ctx_pointer, 4))[0]
                 self.netlog.append("[dispatch url (factory) = %r -> redirected to the stub]"
-                                   % self._string(p + URL_OFF, 32))
+                                   % self._string(p + points.url_offset, 32))
                 try:
-                    mu.mem_write(FLAG, b"\x01")
+                    mu.mem_write(points.cloud_flag, b"\x01")
                 except Exception:
                     pass
                 return
             st["forced"] = True
             self.netlog.append("[pairing-success trigger @%.1f]" % (time.time() - self._started))
-            st["next"] = list(ON_NETWORK[1:])
-            force_thumb(ON_NETWORK[0])
-        mu.hook_add(UC_HOOK_CODE, on(appfw), None, APPFW_LOOP, APPFW_LOOP)
+            # What the firmware runs once a joined plug's network is up: its LAN
+            # service published, then the cloud started.
+            st["next"] = [points.start_cloud]
+            force_thumb(points.lan_publish)
+        mu.hook_add(UC_HOOK_CODE, on(appfw), None, points.appfw_loop, points.appfw_loop)
 
+    def _install_timer(self):
         mac = self.emu.wifimac
         tick = mac.tick
 
@@ -285,6 +299,7 @@ class CloudSession:
     def __init__(self, dump=DUMP, *, ssid=SSID, password=PW, heartbeat=HB, force_at=FORCE_AT,
                  routes=None, flash_writethrough=False):
         self.stublog, self.netlog = [], []
+        self.points = dialling_here(stock_points.find(stock_points.app_of_file(Path(dump).read_bytes())))
         self._ssid, self._password, self._force_at = ssid, password, force_at
         self._certs = Path(tempfile.mkdtemp(prefix="s61stub-"))
         self._our_ca, leaf_crt, leaf_key = _make_certs(self._certs, DISPATCH_IP)
@@ -332,7 +347,7 @@ class CloudSession:
 
     def _hooks(self):
         self.hooks = StockHooks(self.emu, self._ssid, self._password, self._our_ca, self._force_at,
-                                self.netlog)
+                                self.netlog, self.points)
         self.swap, self.dial = self.hooks.swap, self.hooks.dial
 
     def run(self, secs, until=None):
@@ -368,7 +383,7 @@ def main():
     p = session.emu.wifi_peer; nst = getattr(p, "net", None); ip = getattr(nst, "device_ip", None)
 
     def ips(b): return ".".join(str(x) for x in b) if isinstance(b, (bytes, bytearray)) and len(b) == 4 else str(b)
-    print("=== S61 CLOUD ONLINE (dispatch :%d plaintext, ws :%d TLS, trust-swapped) ==="
+    print("=== BK7238 CLOUD ONLINE (dispatch :%d plaintext, ws :%d TLS, trust-swapped) ==="
           % (session.dispatch_port, session.ws_port), flush=True)
     print("  device IP = %s   dial-chain = %s   CA trust-swaps = %d%s"
           % (ips(ip), dict(session.dial), session.swap["n"],

@@ -2,7 +2,7 @@
 
 A stock S61 boots unprovisioned and waits. This makes it a *provisioned* plug by
 answering the firmware's own credential read: it hooks `ef_get_env_blob`
-(EasyFlash V4, 0x12f438) and, for the keys `wifi-ssid` / `wifi-pass`, returns the
+(EasyFlash V4) and, for the keys `wifi-ssid` / `wifi-pass`, returns the
 SSID/passphrase we choose (exactly as a real provisioning store would have left
 them). Nothing else is forced — the firmware then runs its normal provisioned
 boot path.
@@ -17,8 +17,9 @@ Verified 2026-10-27: the plug associates (`encrypted` link), DHCP hands it
 192.168.1.100, and it then begins its post-join activity (Matter `_matterc` mDNS;
 the eWeLink cloud dispatch needs the eWeLink identity too — see the main doc).
 
-This is the integrity-gate bypass (0x29c3c) plus the credential injection; no
-other intervention. Requires the BekenEmulator fork.
+This is the integrity-gate bypass plus the credential injection; no other
+intervention, each at the place found in the firmware (stock_points.py). Requires
+the BekenEmulator fork.
 
   $(tools/beken/emulator/bk-emu.sh python) tools/beken/seed_join.py
   SSID=MyNet PASS=mypassword CH=6 SECS=40 python3 seed_join.py
@@ -39,6 +40,9 @@ import re
 import types
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # the tools beside this one
+import stock_points  # noqa: E402
+
 ROOT = Path(os.environ.get("BK_EMU_ROOT", "/opt/beken-emulator")); sys.path.insert(0, str(ROOT))
 from src.main import build_emulator  # noqa: E402
 from unicorn import UC_HOOK_CODE  # noqa: E402
@@ -56,9 +60,8 @@ PASS = os.environ.get("PASS", "autoflash1234").encode()
 CH = int(os.environ.get("CH", "1"))
 TAP = os.environ.get("TAP") or None
 
-AFTER_MEMCMP = 0x29c3c          # integrity-gate compare; force "equal"
+POINTS = stock_points.find(stock_points.app_of_file(Path(DUMP).read_bytes()))
 TIMER5_BIT = 1 << 9             # bk_timer = Timer 5, which the emulator doesn't raise
-EF_GET = 0x12f438               # ef_get_env_blob(key, value_buf, buf_len, saved_len_ptr)
 VALS = {b"wifi-ssid": SSID, b"wifi-pass": PASS}
 
 netlog = []
@@ -93,10 +96,10 @@ def h_efget(m, a, s, u):
         mu.reg_write(UC_ARM_REG_R0, len(val))               # return bytes read
         mu.reg_write(UC_ARM_REG_PC, mu.reg_read(UC_ARM_REG_LR))  # return, skip body
         inj[key.decode()] += 1
-mu.hook_add(UC_HOOK_CODE, h_efget, None, EF_GET, EF_GET)
+mu.hook_add(UC_HOOK_CODE, h_efget, None, POINTS.ef_get_env_blob, POINTS.ef_get_env_blob)
 
-def h_force(m, a, s, u): mu.reg_write(UC_ARM_REG_R0, 0)
-mu.hook_add(UC_HOOK_CODE, h_force, None, AFTER_MEMCMP, AFTER_MEMCMP)
+def h_force(m, a, s, u): mu.reg_write(UC_ARM_REG_R0, 0)   # the gate's compare says "equal"
+mu.hook_add(UC_HOOK_CODE, h_force, None, POINTS.after_memcmp, POINTS.after_memcmp)
 
 _tick = mac.tick
 def hooked_tick(self, insns):
@@ -118,7 +121,7 @@ p = emu.wifi_peer; net = getattr(p, "net", None)
 ip = getattr(net, "device_ip", None)
 got = ip not in (None, b"\xff\xff\xff\xff", b"\x00\x00\x00\x00")
 def ips(b): return ".".join(str(x) for x in b) if isinstance(b, (bytes, bytearray)) and len(b) == 4 else str(b)
-print("=== S61 SEED + JOIN ===", flush=True)
+print("=== BK7238 SEED + JOIN ===", flush=True)
 print("  injected creds: %s (ssid=%s)" % (dict(inj), SSID.decode()), flush=True)
 print("  peer role=%s  stations=%s" % (getattr(p, "active_role", None),
       {k.hex(): v for k, v in getattr(p, "stations", {}).items()}), flush=True)

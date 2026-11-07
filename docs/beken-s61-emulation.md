@@ -416,6 +416,10 @@ reaches the cloud, as the next section shows.
 
 ### The cloud dial: synthesise the pairing-success trigger
 
+The addresses in this document are those of S61 1.0.2. The tools find them in each
+firmware: what each is found from is in
+[`tools/beken/README.md`](../tools/beken/README.md#static-analysis).
+
 The emulated plug now performs the real eWeLink (CoolKit) cloud handshake. Driven
 end to end by `tools/beken/cloud_dial.py`: seed Wi-Fi creds (join + DHCP),
 then force-call the firmware's own **start-cloud handler** once Wi-Fi is up. The
