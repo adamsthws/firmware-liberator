@@ -14,7 +14,7 @@ device with [readout_espressif.py](../tools/autoflash/readout_espressif.py) and
 a Beken one with [readout_beken.py](../tools/autoflash/readout_beken.py). A run
 offers it at its first stage when the eWeLink account holds no supported
 device, and `readout` runs it for any device in the account (`--plug-ip` picks
-one).
+one). Every readout starts the same way:
 
 1. The device is found on the network by its eWeLink id, and eWeLink is asked
    what it runs and which firmware it would be offered. The firmware name comes
@@ -26,17 +26,29 @@ one).
    It is often another version than the one the device runs, so two to test
    against. Nothing is sent to the device for it, and a readout goes on without
    it.
-3. If the name's chip is an ESP32-C3 or a classic ESP32, and the owner types
-   PROCEED, the stock updater is sent the bridge, wrapped under that name. The
+
+Then the device's chip decides how its memory is read, and the owner types
+PROCEED before anything is sent to the device. On any other chip nothing is sent to the
+device: the readout is the offered firmware and what it and eWeLink said.
+
+### An Espressif device (ESP32-C3, classic ESP32)
+
+An Espressif device has two app slots, so the stock updater can be sent a bridge
+that reads the whole flash and leaves Sonoff's firmware where it is
+([readout_espressif.py](../tools/autoflash/readout_espressif.py)). The chip comes
+from the firmware name's last part (`ESP32C3FN4`, `ESP32D0WDV3`).
+
+1. With PROCEED, the stock updater is sent the bridge, wrapped under the device's
+   firmware name. The
    sender takes a model no kind has only with `--readout-model`, and then only
    for the exact bridge `firmware.json` pins for that chip
    ([serve_tasmota_ota.py](../tools/espressif/serve_tasmota_ota.py)). The bridge
    only reads, and at start-up it chooses Sonoff's slot for the next start.
-4. The whole flash is read through the bridge, checked against its own hash,
+2. The whole flash is read through the bridge, checked against its own hash,
    and kept, untouched, as the device's Sonoff backup on the owner's computer.
    The owner then switches the device off and on, and the tool waits for
    Sonoff's firmware to answer.
-5. An anonymised copy is made to send ([scrub.py](../tools/espressif/scrub.py)):
+3. An anonymised copy is made to send ([scrub.py](../tools/espressif/scrub.py)):
    - The Wi-Fi network's name and every Wi-Fi password the settings show are
      taken out: ESP-IDF's and Sonoff's, the old entries NVS leaves behind,
      every other copy of the same bytes, and each password's PMK. A network
@@ -52,14 +64,8 @@ one).
    - The firmware images are left byte for byte: they are Sonoff's published
      code, and a password found there is the firmware's own setup network's.
    - Every settings entry changed has its checksums made good again.
-6. The owner is shown what goes - "the device's firmware readout, anonymised" -
-   then asked, in a menu, to add an email address or a Telegram username, so
-   they can be told if support for the device is added, or to submit it
-   without either, or to quit and keep it unsent. A readout that is declined, or that
-   could not be sent, stays in the run's folder as `readout.tar`, and
-   `readout --send <file>` sends it later.
 
-## A Beken device (BK7238)
+### A Beken device (BK7238)
 
 A BK7238 has one app area, not two, so its whole flash can only be read by
 firmware that replaces Sonoff's for a few minutes ([readout_beken.py](../tools/autoflash/readout_beken.py)).
@@ -81,7 +87,7 @@ and asked of eWeLink by its account id, not by a local advert.
    only after checking the slot is the stock bootloader's - and the bootloader
    applies it on the restart that follows. The run waits for Sonoff to show
    online in eWeLink again.
-5. The flash is anonymised (tools/beken/scrub.py) - the network's name and
+5. The flash is anonymised ([scrub.py](../tools/beken/scrub.py)) - the network's name and
    password, plain (`wifi-ssid`, `wifi-pass`) and encoded (`ssid`, `pass`),
    and every other copy, OpenBeken's included, as well as the identity
    (`apiKey`, `app-apikey`, `secureCertSha256`, `user`) - and sent as the
@@ -94,8 +100,16 @@ Proven end to end against the emulated S61 (the whole round trip, the device
 back online in eWeLink, the flash anonymised); it has not run on a real Beken
 device.
 
-On any other chip nothing is sent to the device: the readout is the offered
-firmware and what it and eWeLink said. Nothing is ever sent from the emulator or an unattended run.
+### Sending it
+
+The owner is shown what goes - "the device's firmware readout, anonymised" -
+then asked, in a menu, to add an email address or a Telegram username, so
+they can be told if support for the device is added, or to submit it
+without either, or to quit and keep it unsent. A readout that is declined, or that
+could not be sent, stays in the run's folder as `readout.tar`, and
+`readout --send <file>` sends it later.
+
+Nothing is ever sent from the emulator or an unattended run.
 `AUTOFLASH_READOUT_URL` points a test at a server of its own.
 
 ## Is an anonymised copy enough?
@@ -112,14 +126,14 @@ settings, which is what the devices in `devices/not-ready-yet/` stop for.
 
 A tar, the manifest first and as it is, so the API reads it without unpacking anything; each `.bin` in it is xz-compressed (`flash.bin.xz`), about a quarter smaller than gzip on a real dump (a 4 MB S60 flash: 1.0 MB):
 
-| File | What |
-|---|---|
-| `manifest.json` | first, always: format 1; the tool's version; eWeLink's product model, brand and uiid; the stock firmware's model and version; its firmware name and where that came from; its chip; whether the memory was read; the facts the run logs (chip revision, security fuses, flash size, partition table); how many places had the network's name or a password blanked and an identity replaced; `contact`, the owner's `email` or `telegram`, only if they gave one |
-| `flash.bin.xz` | the whole flash, as above |
-| `efuse.bin` | the eFuse registers, as the bridge reads them |
-| `info.txt` | the bridge's `GET /info` |
-| `report.json` | the dump's check: partitions, which slot the boot selection picks, hashes |
-| `offered/<name>.xz` | each file of the firmware eWeLink offers the device, as it sends it (`user1.bin`, `user2.bin`); the manifest's `offered` gives each one's version, size and SHA-256 |
+| File | What | Espressif | Beken |
+|---|---|---|---|
+| `manifest.json` | first, always: format 1; the tool's version; eWeLink's product model, brand and uiid; the stock firmware's model and version; its firmware name and where that came from; its chip; whether the memory was read; how many places had the network's name or a password blanked and an identity replaced; `contact`, the owner's `email` or `telegram`, only if they gave one. An Espressif one adds the facts the run logs (chip revision, security fuses, flash size, partition table); a Beken one its partition table's name (`layout`) and what the readout OpenBeken said of itself (`device`: its build and chipset) | yes | yes |
+| `flash.bin.xz` | the whole flash, as above | yes | yes |
+| `efuse.bin` | the eFuse registers, as the bridge reads them | yes | |
+| `info.txt` | on Espressif, the bridge's `GET /info`; on Beken, the readout OpenBeken's build and chipset | yes | yes |
+| `report.json` | the dump's check: partitions, which slot the boot selection picks, hashes | yes | |
+| `offered/<name>.xz` | each file of the firmware eWeLink offers the device, as it sends it (`user1.bin`, `user2.bin`); the manifest's `offered` gives each one's version, size and SHA-256 | yes | yes |
 
 ## Where it goes
 
