@@ -56,6 +56,27 @@ flashed),
 [MINI-D boot log](https://community.home-assistant.io/t/can-you-flash-a-sonoff-mini-d/932312).
 No stock table was found for the BASICR4, non-Matter M5 or Dual R3 Lite.
 
+### Leaving Tasmota on a TH-style layout
+
+There is no room for the 715 KB mover between `ota_0` at `0x60000` and Tasmota's app at
+`0xE0000`: 512 KB. It is not smaller flash: the boot log shows 4 MB, with a 256 KB `nvs`
+pushing `ota_0` up. So these plugs leave through a temporary table: `nvs` `0x9000`,
+`0x14000`; `otadata` `0x1D000`; `phy` `0x1F000`; `ota_0` `0x20000`, `0x1F0000`; `ota_1`
+`0x210000`, `0x1A9000`. The mover goes at `0x20000`, in Tasmota's Safeboot area, the
+interim Tasmota in `ota_1`, and the Tasmota of the hub then writes the real table last.
+
+In the emulator, TH Elite and Dual R3 go from Tasmota to Sonoff and to ESPHome, and the
+TH Elite survived power cuts at each stage of its way to Sonoff. A cut inside the table
+plan was built by hand, not timed, and a cut mid-write while leaving was not reached.
+
+### One bootloader
+
+Every plug ends with ESPHome's bootloader, however it got Tasmota. Leaving Tasmota never
+writes it: stage D5 does, from the interim Tasmota. A plug going from Tasmota to ESPHome
+takes the direct route only if it has that bootloader already, read by its hash, and
+otherwise goes through the interim Tasmota. Tasmota's own bootloader starts the mover:
+seen in a POW Elite's boot log, in the emulator.
+
 ## Locked devices
 
 Reported locked, with secure boot and flash encryption:
