@@ -1,6 +1,7 @@
 # One-shot OTA bridge
 
-This is a native ESP-IDF ESP32-C3 application, not a factory image. It is
+This is a native ESP-IDF application, built for the ESP32-C3 and the classic
+ESP32, not a factory image. It is
 designed to be wrapped with `tools/build_vendor_ota.py` and written by a plug's
 stock updater - the Sonoff S60's, so far - to its inactive application slot.
 The application is the same for every plug; the wrapper names the plug's
@@ -32,7 +33,7 @@ Where stock saved no Wi-Fi it raises its own network at once, as v3 did.
 From 4.4.1 on, a bridge is named by one version: `BRIDGE_VERSION` in
 `main/main.c` and `PROJECT_VER` in `CMakeLists.txt` (a test keeps them equal)
 are the version its file is wrapped with and the one `/status` reports.
-Change both for the next bridge, 4.4.5. The stock updater is told 9.9.9
+Change both for the next bridge, 4.4.6. The stock updater is told 9.9.9
 instead: the sender wraps the app again as that, above any Sonoff release.
 
 Bridge 4.4.3 starts even when Sonoff's slot is no longer bootable - an upload
@@ -55,6 +56,26 @@ plug left on it by those names. On its own network, with no proven Wi-Fi,
 4.4.4 still saves the Tasmota settings it is sent - without Wi-Fi details -
 where 4.4.3 refused them (409): Tasmota then starts named
 `autoflash-recovery-XXXX` and makes its own network by that name.
+
+Bridge 4.4.5 adds the read-only `GET /info`, for the run's log: what a backup
+cannot hold, as plain `name: value` lines after the bridge's name. It writes
+nothing, sets no pin, and holds no Wi-Fi details, MAC or other identity.
+
+| Line | What it says | Where from |
+|---|---|---|
+| `chip`, `chip revision`, `cores`, `embedded flash` | the running chip, the revision as `major.minor` | `esp_chip_info`, which on a classic ESP32 also reads the register that tells revision 2 from 3 |
+| `flash id`, `flash chip size` | the JEDEC id in hex, and the size in bytes from that id | `esp_flash_read_id`, `esp_flash_get_physical_size` |
+| `psram in the package`, `psram on its own chip`, or `psram` | classic ESP32: the package's, and `not looked for`; ESP32-C3: none | the fuses, through `esp_chip_info` |
+| `running slot`, `fallback slot` | label, address and size; `none` when this slot starts again | the partition table and otadata |
+| `gpio levels` | `pin=level` for each pin whose input is on | `GPIO_IN_REG`, `GPIO_IN1_REG` |
+| `gpio input off` | the pins not read | `FUN_IE` in `IO_MUX` |
+
+The bridge cannot find PSRAM on a chip of its own: finding it means driving pins
+16 and 17 on a classic ESP32, which a board without PSRAM may use for something
+else, so this build does not set PSRAM up. A pin whose input is off reads 0 whatever
+is on it, and turning its input on would change how the board is set up, so it
+is named and not read. The flash chip's pins are left out altogether: 6 to 11 on a
+classic ESP32, 12 to 17 on an ESP32-C3.
 
 From 4.4.2 every build has the read-only `GET /flash` (the whole chip, with
 its size in `X-Flash-Size`), `GET /flash-sha256` (the SHA-256 of the whole

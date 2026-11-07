@@ -89,7 +89,7 @@ patches and driver, with the Basic Gen5's table,
 
 ## OTA bridge
 
-`artifacts/autoflash-bridge-sonoff-s60-4.4.4.ota` is this project's own firmware, under
+`artifacts/autoflash-bridge-sonoff-s60-4.4.5.ota` is this project's own firmware, under
 this repository's licence ([`LICENSE`](LICENSE)). Its source is in
 `archive/bridge/`, and `tools/espressif/build_vendor_ota.py` wraps it for the stock
 updater. It is built with ESP-IDF through PlatformIO, as pinned by

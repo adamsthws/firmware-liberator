@@ -34,7 +34,7 @@ __pycache__/
 *.img
 *.ota
 *.rbl
-!artifacts/autoflash-bridge-sonoff-s60-4.4.4.ota
+!artifacts/autoflash-bridge-sonoff-s60-4.4.5.ota
 !artifacts/tasmota-settings-template-15.6.0.0.bin
 !artifacts/autoflash-recovery-safeboot-imprintable.bin
 !artifacts/tasmota32c3-bluetooth.bin
@@ -47,7 +47,7 @@ __pycache__/
 !artifacts/esphome-sonoff-pow-elite-imprintable-2026.10.0-1.bin
 !artifacts/autoflash-mover-esp32-1.0.0.bin
 !artifacts/esphome-esp32-bootloader-1.0.0.bin
-!artifacts/autoflash-bridge-esp32-4.4.4.bin
+!artifacts/autoflash-bridge-esp32-4.4.5.bin
 !artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin
 !artifacts/tasmota-settings-template-esp32-15.6.0.0.bin
 !artifacts/sonoff-nspanel-partition-table.bin

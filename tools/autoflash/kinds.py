@@ -42,7 +42,7 @@ ESPHOME_AUTHOR = "adamsthws"
 class Kind:
     """A kind of plug the tool converts."""
 
-    # In file names (autoflash-bridge-sonoff-s60-4.4.4.ota) and a run's record.
+    # In file names (autoflash-bridge-sonoff-s60-4.4.5.ota) and a run's record.
     key: str
     # Its chip family (routes.FAMILIES: how firmware gets onto its flash), its
     # chip, and the ecosystem its stock firmware belongs to - how it is paired,

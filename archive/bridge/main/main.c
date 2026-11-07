@@ -54,12 +54,18 @@
  * own network, POST /tasmota-settings saves the template with no Wi-Fi in it
  * where 4.4.3 refused it: Tasmota then starts with the name the run gave it,
  * and makes its own network under that name, not Tasmota's default.
+ *
+ * 4.4.5: GET /info says what a backup cannot: the chip's exact revision, the
+ * flash chip's id and real size, whether PSRAM is in the chip's package, the
+ * slots, and the input pins' levels.  All read-only.
  */
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "esp_chip_info.h"
 #include "esp_err.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
@@ -78,7 +84,11 @@
 #include "esp_flash.h"
 #include "mbedtls/sha256.h"
 #include "soc/efuse_reg.h"
+#include "soc/gpio_periph.h"
+#include "soc/gpio_reg.h"
+#include "soc/io_mux_reg.h"
 #include "soc/soc.h"
+#include "soc/soc_caps.h"
 
 #define BRIDGE_MAX_IMAGE_SIZE 0x1f0000
 #define UPLOAD_BUFFER_SIZE 4096
@@ -98,7 +108,7 @@
 #define STA_WINDOW_MS 45000
 /* The one version: the wrapper the updater is given and the app description
  * (PROJECT_VER in ../CMakeLists.txt) carry the same; a test keeps them equal. */
-#define BRIDGE_VERSION "4.4.4"
+#define BRIDGE_VERSION "4.4.5"
 #define BRIDGE_NAME "bridge " BRIDGE_VERSION
 
 static const char *TAG = "autoflash_bridge";
@@ -277,6 +287,107 @@ static esp_err_t efuse_handler(httpd_req_t *req)
     httpd_resp_set_type(req, "application/octet-stream");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     return httpd_resp_send(req, s_upload_buffer, length);
+}
+
+/* The pins the chip reaches its flash through, always busy: their levels say
+ * nothing about the board. */
+#if CONFIG_IDF_TARGET_ESP32
+#define FLASH_PINS (0x3FULL << 6)
+#else
+#define FLASH_PINS (0x3FULL << 12)
+#endif
+
+__attribute__((format(printf, 2, 3)))
+static void info_add(size_t *used, const char *format, ...)
+{
+    if (*used >= sizeof(s_upload_buffer)) {
+        return;
+    }
+    va_list args;
+    va_start(args, format);
+    int added = vsnprintf(s_upload_buffer + *used, sizeof(s_upload_buffer) - *used, format, args);
+    va_end(args);
+    *used += added > 0 ? (size_t)added : 0;
+}
+
+/* Each pin's level as the chip's input register has it.  Nothing is set: a pin
+ * whose input is off reads 0 whatever is on it, so it is named, not read -
+ * turning its input on would be changing how the plug's board is set up. */
+static void info_gpio(size_t *used)
+{
+    uint64_t levels = REG_READ(GPIO_IN_REG);
+#if SOC_GPIO_PIN_COUNT > 32
+    levels |= (uint64_t)REG_READ(GPIO_IN1_REG) << 32;
+#endif
+    uint64_t input_off = 0;
+    info_add(used, "gpio levels:");
+    for (int pin = 0; pin < SOC_GPIO_PIN_COUNT; pin++) {
+        const uint64_t bit = 1ULL << pin;
+        if (!(bit & (uint64_t)SOC_GPIO_VALID_GPIO_MASK) || (bit & FLASH_PINS)) {
+            continue;
+        }
+        if (REG_READ(GPIO_PIN_MUX_REG[pin]) & FUN_IE) {
+            info_add(used, " %d=%d", pin, (int)((levels >> pin) & 1));
+        } else {
+            input_off |= bit;
+        }
+    }
+    info_add(used, "\ngpio input off:");
+    for (int pin = 0; pin < SOC_GPIO_PIN_COUNT; pin++) {
+        if (input_off & (1ULL << pin)) {
+            info_add(used, " %d", pin);
+        }
+    }
+    info_add(used, "\n");
+}
+
+/* What a backup cannot tell, as plain "name: value" lines.  Read-only: nothing
+ * here writes flash or sets a pin, and no Wi-Fi details, MAC or other identity
+ * are in it.  PSRAM on a chip of its own could only be found by talking to it,
+ * which drives pins a board without one may use for something else, so this
+ * build does not set PSRAM up and only the package's is reported. */
+static esp_err_t info_handler(httpd_req_t *req)
+{
+    size_t used = 0;
+    esp_chip_info_t chip;
+    esp_chip_info(&chip);
+    info_add(&used, BRIDGE_NAME "\nchip: " CONFIG_IDF_TARGET "\nchip revision: %d.%d\ncores: %d\n",
+             chip.revision / 100, chip.revision % 100, chip.cores);
+    info_add(&used, "embedded flash: %s\n", chip.features & CHIP_FEATURE_EMB_FLASH ? "yes" : "no");
+
+    uint32_t id = 0, size = 0;
+    if (esp_flash_read_id(NULL, &id) == ESP_OK) {
+        info_add(&used, "flash id: %06lx\n", (unsigned long)id);
+    } else {
+        info_add(&used, "flash id: not readable\n");
+    }
+    if (esp_flash_get_physical_size(NULL, &size) == ESP_OK) {
+        info_add(&used, "flash chip size: %lu\n", (unsigned long)size);
+    } else {
+        info_add(&used, "flash chip size: not known from its id\n");
+    }
+
+#if SOC_SPIRAM_SUPPORTED
+    info_add(&used, "psram in the package: %s\npsram on its own chip: not looked for\n",
+             chip.features & CHIP_FEATURE_EMB_PSRAM ? "yes" : "no");
+#else
+    info_add(&used, "psram: none, this chip cannot have it\n");
+#endif
+
+    info_add(&used, "running slot: %s at 0x%lx, 0x%lx bytes\n", s_running->label,
+             (unsigned long)s_running->address, (unsigned long)s_running->size);
+    const esp_partition_t *next = esp_ota_get_boot_partition();
+    if (next != NULL && next->address != s_running->address) {
+        info_add(&used, "fallback slot: %s at 0x%lx, 0x%lx bytes\n", next->label,
+                 (unsigned long)next->address, (unsigned long)next->size);
+    } else {
+        info_add(&used, "fallback slot: none\n");
+    }
+    info_gpio(&used);
+
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, s_upload_buffer, used < sizeof(s_upload_buffer) ? used : sizeof(s_upload_buffer));
 }
 
 /* Plain-text state for the host: which networks the bridge is on. */
@@ -653,6 +764,7 @@ static esp_err_t start_web_server(void)
     config.stack_size = 8192;
     config.recv_wait_timeout = 20;
     config.send_wait_timeout = 20;
+    config.max_uri_handlers = 10;
 
     httpd_handle_t server = NULL;
     ESP_ERROR_CHECK(httpd_start(&server, &config));
@@ -691,6 +803,10 @@ static esp_err_t start_web_server(void)
         .uri = "/flash-sha256", .method = HTTP_GET, .handler = flash_sha256_handler, .user_ctx = NULL,
     };
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &flash_sha256));
+    const httpd_uri_t info = {
+        .uri = "/info", .method = HTTP_GET, .handler = info_handler, .user_ctx = NULL,
+    };
+    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &info));
     return ESP_OK;
 }
 
