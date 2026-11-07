@@ -583,6 +583,14 @@ class UpdateCommandTests(unittest.TestCase):
         self.assertIn(f"!{file}", ignored)
         self.assertNotIn(old, ignored)
 
+    def test_publishing_copes_with_a_section_where_not_every_entry_is_a_file(self):
+        # firmware.json's esp32 section: its tasmota entry has "files", not "file".
+        (self.root / "artifacts" / "old.bin").write_bytes(b"old")
+        section = {"tasmota": {"version": "1"}, "bridge": {"file": "artifacts/old.bin"}}
+        uf.publish(section, "bridge", "artifacts/new.bin", b"new", {})
+        self.assertFalse((self.root / "artifacts" / "old.bin").exists())
+        self.assertEqual(section["bridge"]["file"], "artifacts/new.bin")
+
     def test_a_part_of_a_chip_that_does_not_exist_is_refused(self):
         code, errors = self.run_main("esp32c3", "recovery")
         self.assertEqual(code, 1)
