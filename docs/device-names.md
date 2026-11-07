@@ -254,7 +254,8 @@ add today's names to these lists rather than replacing them.
    [`NOTICES.md`](../NOTICES.md).
 4. Update the tests that name them: `tests/autoflash/test_setup_networks.py`,
    `tests/repo/test_published_artifacts.py`, `tests/autoflash/test_tasmota_settings.py`,
-   `tests/autoflash/test_autoflash.py`, `tests/espressif/test_flash_readout.py`.
+   `tests/autoflash/test_join.py`, `tests/autoflash/routes/espressif/test_installer.py`,
+   `test_mover.py` and `test_tasmota.py` beside it, `tests/espressif/test_flash_readout.py`.
 5. Update the pages that name them: [`troubleshooting.md`](troubleshooting.md)
    ("The plug's own network"), [`what-happens.md`](what-happens.md),
    [`technical-details.md`](technical-details.md), the ESPHome and
