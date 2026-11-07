@@ -31,7 +31,7 @@ check.
   only an ESP32-C3 on the S60's: the Sonoff POW Elite, POWCT, TH Elite and
   DUALR3, to Tasmota and to ESPHome, with their firmware pinned. A plug whose partition
   table the tool does not know stops after its backup, before anything of
-  Sonoff's is written over. The NSPanel, BASICR4, MINIR4 and M5 1C, 2C and 3C do
+  Sonoff's is written over. The NSPanel, MINIR4 and M5 1C, 2C and 3C do
   not start far enough in the emulator yet, so the tool turns them down as it
   does a device it does not know: `devices/not-ready-yet/` says what holds each
   one up, and `docs/adding-a-device.md` how to add a device.
@@ -58,6 +58,13 @@ check.
 - The Sonoff Basic Gen5 (BASIC-1GS). It has no public dump, so the tool checks
   the partition table in eWeLink's official update file before writing anything,
   and logs what the run learns. Beken devices on any other table are refused.
+- The Sonoff BASICR4 (ESP32-C3), wanting testers. It has been proven neither in
+  the emulator nor on a real plug: its stock firmware will not start on the
+  stand-in S60 flash the emulator runs it on (`espInit`, `ESP_ERR_NOT_FOUND`),
+  for want of a factory record a real one carries. Its firmware name and the
+  partition table the conversion checks for are confirmed from eWeLink's official
+  update file, its pins from published maps; a plug whose table is not that one
+  stops before anything of Sonoff's is written over.
 - Each device has one status, kept in `devices/status.json` and shown by a badge
   in the README and on the device's page: Proven, Testers wanted or Not ready
   yet. On a device wanting testers, the go-ahead before a run's first write says

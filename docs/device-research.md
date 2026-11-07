@@ -19,7 +19,7 @@ buttons or screens, so it cannot prove a device's wiring.
 | TH Elite (THR320D) | ESP32 | TH style | `FWSW-E32THR3-THR3-ESP32D0WDV3` | whole dump | converts both ways |
 | Dual R3 | ESP32 | TH style | `FWSWES-E32DR3-DUALR3-ESP32D0WDV3` | update file, on the TH Elite's flash | converts both ways |
 | NSPanel | ESP32 + PSRAM | S60 style, no `reserve` | `FWPNL-E32NSP-NSPANEL-ESP32D0WDV3` | whole dump | boots; rejects a one-record file at the header ([why](#the-nspanel-wants-three-records)) |
-| BASICR4 | ESP32-C3 | unknown | `FWSW-E32R4-BASICR4-ESP32C3` | update file | stops at start-up: `espInit`, `ESP_ERR_NOT_FOUND` |
+| BASICR4 | ESP32-C3 | unknown | `FWSW-E32R4-BASICR4-ESP32C3` | update file | does not start on the donor (`espInit`, `ESP_ERR_NOT_FOUND`); added from the official file, testers wanted |
 | MINIR4 | ESP32 + PSRAM | S60 style | `FWSW-E32R4-MINIR4-ESP32D0WDR2V3` | update file | goes to `factory mode`: wants a real unit's factory data |
 | M5 1C, 2C, 3C (not Matter) | ESP32 | unknown | `FWSWES-E32T5-T5-ESP32D0WDV3` | update file | goes quiet, never starts its Wi-Fi |
 

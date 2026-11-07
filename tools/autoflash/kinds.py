@@ -48,7 +48,8 @@ class Status(enum.Enum):
 
     # A real one has been converted and reported: converted with no warning.
     PROVEN = "Proven"
-    # Converts in the emulator, no real one reported yet: converted after a
+    # Converts in the emulator, or is added from its official file and a
+    # published pin map; no real one reported yet: converted after a
     # typed warning, asking for the run's log (tools/autoflash/testers.py).
     TESTERS_WANTED = "Testers wanted"
     # Does not convert in the emulator yet (devices/not-ready-yet/): turned
@@ -344,10 +345,12 @@ SONOFF_TH_ELITE = Kind(
     example_product_model="THR320D",
 )
 
-# Known from eWeLink's public firmware for them, not from a dump of one: what
-# their stock firmware calls itself is not known, so eWeLink's product model
-# says what they are, and a table not listed for them stops the run while they
-# can still go back (installer.require_known_layout).
+# Known from eWeLink's public firmware for them, not from a dump of one: eWeLink's
+# product model says what they are, and a table not listed for them stops the
+# run while they can still go back (installer.require_known_layout). The
+# BASICR4's stock model and firmware name are read from its official update
+# file (tools/espressif/emulator/public_dump.py); its pins are published ones:
+# devices/not-ready-yet/sonoff-basicr4/.
 SONOFF_BASICR4 = Kind(
     key="sonoff-basicr4",
     family="espressif",
@@ -357,9 +360,11 @@ SONOFF_BASICR4 = Kind(
     maker="Sonoff",
     short="BASICR4",
     product=re.compile(r"BASICR4"),
-    stock_model="",
+    stock_model="SN-ESP32C3-BASICR4-01",
     wrapper_model="FWSW-E32R4-BASICR4-ESP32C3",
-    # Blakadder's template: relay GPIO4, LED GPIO6, button GPIO9.
+    # Blakadder's template: relay GPIO4, Wi-Fi LED GPIO6 (LedLink), button GPIO9.
+    # GPIO5 is left unset: a zero-cross detector drives it, for Sonoff's Magic
+    # Switch, and nothing may drive it back.
     tasmota_gpio=(0, 0, 0, 0, 224, 0, 544, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",

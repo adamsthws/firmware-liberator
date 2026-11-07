@@ -141,6 +141,32 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(kinds.SONOFF_DUALR3.layout, "sonoff-th-elite")
 
 
+class BasicR4Tests(unittest.TestCase):
+    """Its pins as published: Blakadder's template, which ESPHome's device page
+    and digiblur's agree with but for the LED's polarity."""
+    KIND = kinds.SONOFF_BASICR4
+
+    def config(self):
+        return (ROOT / self.KIND.folder / "esphome.yaml").read_text(encoding="utf-8")
+
+    def test_its_template_is_blakadders(self):
+        relay, led_link, button = 224, 544, 32
+        gpio = dict(enumerate(self.KIND.tasmota_gpio))
+        self.assertEqual({pin: use for pin, use in gpio.items() if use}, {4: relay, 6: led_link, 9: button})
+
+    def test_its_esphome_has_the_same_pins(self):
+        config = self.config()
+        self.assertRegex(config, r"(?m)^  - id: relay\n    platform: gpio\n    name: \"Relay\"\n    pin: GPIO4\n")
+        self.assertRegex(config, r"(?m)^status_led:\n  pin:\n    number: GPIO6\n    inverted: false\n")
+        self.assertRegex(config, r"(?m)^    pin:\n      number: GPIO9\n      mode: INPUT_PULLUP\n      inverted: true\n")
+
+    def test_nothing_drives_its_zero_cross_input(self):
+        # GPIO5 is driven by the board, for Sonoff's Magic Switch: neither firmware sets it.
+        self.assertEqual(self.KIND.tasmota_gpio[5], 0)
+        code = "\n".join(line.split("#", 1)[0] for line in self.config().splitlines())
+        self.assertNotRegex(code, r"GPIO_?(NUM_)?0?5\b")
+
+
 class NotReadyYetTests(unittest.TestCase):
     def test_the_tool_turns_them_down_as_any_device_it_does_not_know(self):
         for kind in kinds.NOT_READY_YET:

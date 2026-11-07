@@ -1,5 +1,6 @@
 """A kind whose status is "Testers wanted" (devices/status.json): converted in
-the emulator, but no real one reported yet.  The go-ahead before a run's first
+the emulator, or added from its official file and a published pin map, but no
+real one reported yet.  The go-ahead before a run's first
 write says so, the same words for every such kind, and the run's log is asked
 for with its report.  A proven kind's go-ahead says nothing of it.
 """
@@ -23,9 +24,9 @@ def notice(kind: kinds.Kind) -> list[str]:
         return []
     return [
         "",
-        "The conversion for this particular device has only been proven in an",
-        "emulator so far. Please report your result so it can be marked as a",
-        "proven device! This run's log:",
+        "The conversion for this particular device has not been proven on a real",
+        "one yet. Please report your result so it can be marked as a proven",
+        "device! This run's log:",
         str(output.log_path() or LOG_ELSEWHERE),
     ]
 

@@ -117,9 +117,6 @@ class Update:
 S60_DUMP = Dump("Sonoff_S60TPG_UK_Plug_ESP32-C3_SM-049_1.2.0.bin",
                 "a638d7251c20a20ff14cf0eef9be3058bedd26ed80e260d7d0107d6b2599dff4", 0xF0)
 UPDATES = {
-    "sonoff-basicr4": Update("SONOFF_BASICR4_(FWSW-E32R4-BASICR4-ESP32C3)_ESP32-C3_v1.1.0_user1.bin",
-                             "cd4bbf2b08d9918a920d81c3ed2cef6e546673fd2c280106fd6852528866ac4a", 5,
-                             "s60", "SN-ESP32C3-BASICR4-01"),
     "sonoff-minir4": Update("SONOFF_MINIR4_(FWSW-E32R4-MINIR4-ESP32D0WDR2V3)_ESP32_v1.2.0_user1.bin",
                             "c881ddd667bc9d8c6905acf30051a1f2e4270c4be2dcfcfa39a5bfdd137c6ec0", 6,
                             "sonoff-pow-elite", "SN-ESP32D0-MINIR4-01"),
