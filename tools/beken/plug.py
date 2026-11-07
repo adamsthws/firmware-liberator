@@ -11,9 +11,9 @@ plug's does, and every restart the firmware asks for is a boot of its own,
 from the flash as it was left.
 
 Sonoff's firmware needs the emulator's help to come online
-(cloud_online.StockHooks); those hooks are at Sonoff's addresses, so they
-act only while Sonoff's app is the one that starts: it is told by the app's
-first bytes, as they were on the plug's first boot.
+(cloud_online.StockHooks), at places found in the app that starts
+(stock_points.py): an app they cannot be found in is another firmware, which
+is left alone.
 
 PLUG_TRACE=ADDR,ADDR (hex) logs each call there to the serial output.
 
@@ -23,7 +23,6 @@ The power switch is DIR/power: "off" stops the plug and keeps its flash,
 from __future__ import annotations
 
 import argparse
-import hashlib
 import os
 import signal
 import sys
@@ -35,14 +34,13 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import cloud_online  # noqa: E402  (needs the emulator image)
 import stage_apply  # noqa: E402
+import stock_points  # noqa: E402
 from src.main import build_emulator  # noqa: E402
 from unicorn import UC_HOOK_CODE  # noqa: E402
 from unicorn.arm_const import UC_ARM_REG_LR, UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3  # noqa: E402
 
 SSID, PASSWORD = cloud_online.SSID, cloud_online.PW
-APP_ENTRY = 0x10000
-# Enough of the app to tell Sonoff's from another firmware's.
-APP_SIGNATURE = 0x20000
+APP_ENTRY = stock_points.APP_BASE
 PEER_MAC = b"\x02\x00\x00\x00\x00\x01"
 
 
@@ -67,7 +65,6 @@ class Plug:
         self.state, self.tap = state, tap
         self.flash_path = state / "flash.bin"
         self.power_path = state / "power"
-        self.stock_path = state / "stock-app.sha256"
         self.stopping = False
         self.netlog: list[str] = []
 
@@ -93,13 +90,14 @@ class Plug:
         part.write_bytes(flash)
         os.replace(part, self.flash_path)
 
-    def is_stock(self, app: bytes) -> bool:
-        """Whether the app starting is Sonoff's, by its first bytes: as they
-        were at the plug's first boot ever, of the dump as it came."""
-        digest = hashlib.sha256(app).hexdigest()
-        if not self.stock_path.exists():
-            self.stock_path.write_text(digest + "\n", encoding="utf-8")
-        return digest == self.stock_path.read_text(encoding="utf-8").strip()
+    def stock_points(self, flash: bytes):
+        """Where the help goes in the app `flash` holds, as the bootloader has
+        just left it, or None if that is another firmware than Sonoff's."""
+        try:
+            return stock_points.find(stock_points.app_of_flash(flash))
+        except stock_points.PointError as exc:
+            self.netlog.append("[plug] no help for this app: %s" % exc)
+            return None
 
     def boot(self):
         emu = build_emulator(str(self.flash_path), chip="BK7238", with_boot=True, only_uart=True,
@@ -114,8 +112,10 @@ class Plug:
         hooks.active = False
 
         def app_starts(mu, address, size, user):
-            hooks.active = self.is_stock(bytes(mu.mem_read(APP_ENTRY, APP_SIGNATURE)))
+            points = self.stock_points(bytes(emu.physical_flash if emu.physical_flash is not None else emu.raw_flash))
+            hooks.active = points is not None
             if hooks.active:
+                hooks.attach(points)
                 hooks.boot()
             print("[plug] the app starts: %s" % ("Sonoff's firmware" if hooks.active else "another firmware"),
                   flush=True)

@@ -795,9 +795,16 @@ class CloudStubTests(unittest.TestCase):
 
 
 class StockHooksTests(unittest.TestCase):
-    """The help Sonoff's firmware is given to come online is at Sonoff's
-    addresses: with another firmware started there (plug.py turns it off),
-    none of it may touch the CPU, or it would corrupt that firmware's run."""
+    """The help Sonoff's firmware is given to come online is at the places found
+    in it: with another firmware started there (plug.py turns it off), none of
+    it may touch the CPU, or it would corrupt that firmware's run."""
+
+    # As found in S61 1.0.2.
+    POINTS = SimpleNamespace(after_memcmp=0x29C3C, gate_passed=0x29C82, ef_get_env_blob=0x12F438,
+                             x509_crt_parse=0x125E4C, appfw_task=0x319A8, appfw_loop=0x319C4,
+                             ais_cloud_start=0x35744, link_create=0x357F2, link_task=0x35AA8, start_cloud=0x2C204,
+                             lan_publish=0x2BF7C, ctx_pointer=0x4044AC, cloud_flag=0x403E31, url_offset=0x5F,
+                             dispatch_url="http://8.8.8.8:80")
 
     def hooks(self):
         regs = SimpleNamespace(**{name: index for index, name in enumerate(
@@ -814,11 +821,12 @@ class StockHooksTests(unittest.TestCase):
         mu = SimpleNamespace(
             hook_add=lambda kind, callback, user, begin, end: installed.append((begin, callback)),
             reg_read=lambda reg: 0x404000, reg_write=lambda reg, value: touched.append(("reg", reg, value)),
-            mem_read=lambda address, size: b"wifi-ssid\0" + bytes(size),
+            mem_read=lambda address, size: (b"wifi-ssid\0" + bytes(size))[:size],
             mem_write=lambda address, data: touched.append(("mem", address)))
         state = SimpleNamespace(timer3_5_ctl=0)
         emu = SimpleNamespace(mu=mu, wifimac=SimpleNamespace(tick=lambda insns: 0), state=state, _exc_epoch=0)
-        hooks = cloud_online.StockHooks(emu, b"net", b"password", b"CA", 0.0, [])
+        hooks = cloud_online.StockHooks(emu, b"net", b"password", b"CA", 0.0, [], self.POINTS)
+        hooks.module = cloud_online
         return hooks, emu, installed, touched
 
     def test_nothing_is_touched_while_off(self):
@@ -839,6 +847,35 @@ class StockHooksTests(unittest.TestCase):
         emu.wifimac.tick(1)
         self.assertTrue(emu.state.timer3_5_ctl & (1 << 9))
 
+    def test_every_place_the_help_goes_is_a_point_given(self):
+        _, _, installed, _ = self.hooks()
+        places = {begin for begin, _ in installed} - {0x4}   # the return from a forced call, in no firmware
+        self.assertEqual(places, {self.POINTS.after_memcmp, self.POINTS.ef_get_env_blob, self.POINTS.x509_crt_parse,
+                                  self.POINTS.ais_cloud_start, self.POINTS.appfw_loop})
+
+    def test_the_trigger_publishes_the_lan_service_and_then_starts_the_cloud(self):
+        hooks, emu, installed, touched = self.hooks()
+        loop = dict(installed)[self.POINTS.appfw_loop]
+        hooks._started = 0.0
+        loop(emu.mu, self.POINTS.appfw_loop, 2, None)   # first it readies the context
+        self.assertIn(("mem", self.POINTS.cloud_flag), touched)
+        loop(emu.mu, self.POINTS.appfw_loop, 2, None)
+        self.assertIn(("reg", 15, self.POINTS.lan_publish | 1), touched)
+        dict(installed)[0x4](emu.mu, 0x4, 2, None)      # it returns
+        self.assertIn(("reg", 15, self.POINTS.start_cloud | 1), touched)
+
+    def test_nothing_goes_in_until_there_are_points(self):
+        hooks, emu, installed, _ = self.hooks()
+        before = len(installed)
+        hooks.module.StockHooks(emu, b"net", b"password", b"CA", 0.0, [])
+        self.assertEqual(len(installed), before)
+
+    def test_a_firmware_dialling_elsewhere_is_refused(self):
+        hooks, _, _, _ = self.hooks()
+        self.assertIs(hooks.module.dialling_here(self.POINTS), self.POINTS)
+        with self.assertRaisesRegex(ValueError, "dispatch_url.*http://192.0.2.1"):
+            hooks.module.dialling_here(SimpleNamespace(dispatch_url="http://192.0.2.1:80"))
+
 
 class PlugTests(unittest.TestCase):
     """The emulated plug's own decisions (tools/beken/plug.py)."""
@@ -852,14 +889,23 @@ class PlugTests(unittest.TestCase):
             sys.modules.pop("plug", None)
             import plug
         self.addCleanup(sys.modules.pop, "plug", None)
+        self.stock_points = plug.stock_points
         return plug.Plug(Path(tmp), "tap0")
 
-    def test_sonoffs_app_is_the_one_its_first_boot_started(self):
+    def test_sonoffs_app_is_the_one_the_points_are_found_in(self):
         with tempfile.TemporaryDirectory() as tmp:
             plug = self.plug(tmp)
-            self.assertTrue(plug.is_stock(b"sonoff app"))     # the dump as it came
-            self.assertFalse(plug.is_stock(b"openbeken app"))
-            self.assertTrue(plug.is_stock(b"sonoff app"))     # back again, as after O2 or E2
+            with mock.patch.object(self.stock_points, "app_of_flash", return_value=b"sonoff"), \
+                    mock.patch.object(self.stock_points, "find", return_value="its points") as find:
+                self.assertEqual(plug.stock_points(b"flash"), "its points")
+            find.assert_called_once_with(b"sonoff")
+
+    def test_any_other_app_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            plug = self.plug(tmp)
+            with mock.patch.object(self.stock_points, "app_of_flash", return_value=bytes(0x1000)):
+                self.assertIsNone(plug.stock_points(b"flash"))
+            self.assertIn("no help for this app", plug.netlog[-1])
 
     def test_the_power_switch(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -176,6 +176,9 @@ Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
 ## Beken devices
 
 The Beken emulator's cloud bring-up (`tools/beken/cloud_online.py`,
-`cloud_dial.py`) uses addresses inside the S61's firmware, and needs a whole dump
-to run from. To add a Beken device, you need its whole dump, and those addresses
-found for it. Public update files alone are not enough.
+`cloud_dial.py`) finds the places it needs in the firmware itself
+(`tools/beken/stock_points.py`), and needs a whole flash to run from. To see
+whether a device's firmware can come up this way, run `stock_points.py` on its
+official file: each point it cannot find is named. The app of a BK7238 official
+file runs on another plug's bootloader and settings (`rebuild_dump.py`), but only
+the device's own whole flash has its factory data.

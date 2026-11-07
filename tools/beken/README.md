@@ -48,6 +48,23 @@ the other tools at it.
 - **`decomp.py`** — decompile functions to pseudo-C with angr (best-effort;
   a reading aid alongside `disasm.py`). No Java/Ghidra needed.
   `python3 decomp.py logical.bin 0x4203c`
+- **`stock_points.py`** — find the places in a BK7238 eWeLink app where the
+  emulator helps it, by what the code there refers to. The tools below use
+  nothing else, so one code path runs each build. A point it cannot find, or
+  could find in two places, is an error naming it. Standard library only.
+  `python3 stock_points.py dump.bin official.bin app.bin`
+
+  | Point | From what it is found |
+  |-------|-----------------------|
+  | `x509_crt_parse` | the function holding both `-----BEGIN/END CERTIFICATE-----` |
+  | `ef_get_env_blob` | of those logging `ENV isn't initialize OK.`, the one keeping a fourth argument |
+  | `after_memcmp`, `gate_passed` | the 32-byte compare after `%s%s%s%d%s%s`, whose result is tested at once |
+  | `appfw_task`, `appfw_loop` | the function given to the task `ais_appfw_task`; the target of its first branch back |
+  | `link_task`, `link_create`, `ais_cloud_start` | the task `ais_link_task`: its function, the call creating it, the function holding that call |
+  | `start_cloud` | the one function calling `ais_cloud_start` |
+  | `ctx_pointer`, `cloud_flag` | the first word in RAM each of those two reads through |
+  | `lan_publish` | called straight before `start_cloud`, starting by reading a flag beside `cloud_flag` |
+  | `dispatch_url`, `url_offset` | the plain `http://` URL in the function that checks `cloud_flag`; its field in the structure that function fills |
 
 ## Driving the emulator
 
@@ -56,7 +73,7 @@ Those marked archived are in
 
 - **`integrity_gate.py`** — lets the stock image boot under emulation past the
   flash-UID integrity gate that otherwise hangs the app layer (see the main doc).
-  Forces the identity `memcmp` at `0x29c3c` to "equal" (the outcome it has on real
+  Forces the identity `memcmp` to "equal" (the outcome it has on real
   hardware, whose UID the emulator's synthetic one can't match) and shows the
   firmware then boot the app framework naturally: `key_add` registers the button,
   the provisioned-check runs, and `ais_appfw_task` is created. This operates only
@@ -107,7 +124,7 @@ Those marked archived are in
   `python3 stage_apply.py dump.bin image.rbl out.bin` (env `SECS`, `SSID`, `PASS`, `SEED=0`)
 
 - **`seed_join.py`** — put the emulated plug on a network the faithful way.
-  Hooks the firmware's own `ef_get_env_blob` (EasyFlash V4, `0x12f438`) and returns
+  Hooks the firmware's own `ef_get_env_blob` (EasyFlash V4) and returns
   the tool's SSID/passphrase for `wifi-ssid`/`wifi-pass` — making it a provisioned
   plug at the credential read, with nothing else forced. Attaches the fork peer as a
   WPA2-PSK AP with the same creds; the plug then does the real sequence (station →
@@ -130,9 +147,9 @@ Those marked archived are in
 - **`cloud_dial.py`** — the full provisioning outcome: the emulated plug dials
   the **eWeLink (CoolKit) cloud**. Seeds Wi-Fi creds (join + DHCP), then synthesises
   the pairing-success trigger by force-calling the firmware's own start-cloud
-  handler `0x2c204` (the single call the pairing state machine makes on success).
+  handler (the single call the pairing state machine makes on success).
   `ais_link_task` then opens a TCP connection and sends `GET /dispatch/device`,
-  retried with backoff. The dispatch target lives in the AIS context (`*0x4044ac`,
+  retried with backoff. The dispatch target lives in the AIS context (`ctx_pointer`,
   factory placeholder `http://8.8.8.8:80`); **by default this tool repoints it to a
   local stub on the emulator's AP gateway (`http://192.168.1.1:80`), so the dial
   stays on this host.** `DISPATCH` steers it elsewhere; `DISPATCH=` keeps the factory
@@ -149,7 +166,7 @@ Those marked archived are in
   handles that the S60 does not: the S61 dispatch reply must be **compact** JSON
   with a **`domain`** key and a **string** `port`; and the IoT `wss://` cert is
   verified, cleared by a **trust-anchor swap** — the honest S60 `--trust-ca`
-  technique — applied at `mbedtls_x509_crt_parse` (`0x125e4c`) because the S61
+  technique — applied at `mbedtls_x509_crt_parse` because the S61
   assembles its CoolKit CA in RAM rather than keeping it in flash. It generates its
   own EC P-256 CA + leaf (openssl) and serves the leaf; the firmware's verify path
   is untouched. Env `SSID`/`PASS`/`SECS`/`FORCE_AT`/`HB`.
@@ -273,9 +290,12 @@ and `cloud_push.py --apply` then converts it to OpenBeken as it does the dump.
 
 Whether the file is the version the plug ran shows in the output: OpenBeken is
 shorter than the stock app, so the rest of the old app is still in the flash to
-compare with. The emulator's patches sit at addresses of one build, so another
-version or model needs them moved; each was found again by the shape of the
-code around it, for 1.1.0 and for the Basic Gen5's 1.0.4.
+compare with. The emulator's help goes where `stock_points.py` finds it, so
+another version or model needs nothing moved: each BK7238 official file of the
+S61's generation, on the S61's bootloader and settings, comes ONLINE on the stub
+(1.0.2 from the public dump; S61 1.1.0, BASIC-1GS 1.0.4, BASIC-1GSP 1.0.5, S41
+1.0.6, T6 1.0.3 rebuilt). The door sensor's firmware is another stack: its points
+are not found, and the tools refuse it by name.
 
 Not proven: any of it on a real plug, including that the REST read returns the
 raw striped flash there as it does in the emulator. The flash's unique ID is not
@@ -292,6 +312,8 @@ there, so a conversion would lose that sector before it could be read;
 `rebuild()` refuses a table it has no `INTERIM_WRITES` for unless they are given.
 
 ## Status
+
+The addresses here are S61 1.0.2's.
 
 - **Root cause:** the app layer never started because the `app` task
   hangs in a flash-UID factory integrity self-check (`bk_flash_get_uid` hashed vs a

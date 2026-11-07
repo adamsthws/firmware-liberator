@@ -8,31 +8,33 @@ we choose.
 Two things have to be synthesised, because the emulator has no BLE radio:
 
 1. Wi-Fi credentials. The firmware reads `wifi-ssid`/`wifi-pass` from EasyFlash
-   (`ef_get_env_blob`, 0x12f438); hooking that call feeds our SSID/pass, so the
-   plug associates (WPA2) and gets a DHCP lease. (Same technique as
-   `seed_join.py`.)
+   (`ef_get_env_blob`); hooking that call feeds our SSID/pass, so the plug
+   associates (WPA2) and gets a DHCP lease. (Same technique as `seed_join.py`.)
 
 2. The pairing-success trigger. The cloud dial is gated on a chain that normally
    fires only when an eWeLink BLE pairing COMPLETES over a real GATT link:
 
-       eWeLink pairing state machine (0x48a84..0x49cxx, "ewelink pair ok")
-         -> start-cloud handler 0x2c204   (callers 0x48ffe / 0x49b76 / 0x49ebc)
-            -> ais_cloud_start 0x35744     (gate: flag *0x403e31, precond 0x24fd8)
-               -> creates ais_link_task 0x35aa8
-                  -> reads the AIS context *0x4044ac and dials ctx+0x5f (dispatchUrl)
+       eWeLink pairing state machine ("ewelink pair ok")
+         -> start-cloud handler           (Points.start_cloud)
+            -> ais_cloud_start            (gate: Points.cloud_flag)
+               -> creates ais_link_task
+                  -> reads the AIS context (Points.ctx_pointer) and dials its
+                     dispatch URL (at Points.url_offset)
 
    Driving the BLE provisioning MESSAGES through the dispatcher (see
    `ble_provision.py`) runs the handlers and connects Wi-Fi, but never fires
    the pairing-FINISH event, so the device stays unpaired and dials nothing. We
-   synthesise that event directly by force-calling the start-cloud handler
-   (0x2c204) once Wi-Fi is up.
+   synthesise that event directly by force-calling the start-cloud handler once
+   Wi-Fi is up.
 
-The AIS context is already fully populated at boot: device UUID, model
-`SN-BK7238-S61-01`, the MAC, and a factory-default dispatch URL
-`http://8.8.8.8:80` at ctx+0x5f. By default this tool repoints that URL to a local
-stub on the emulator's own AP gateway (`http://192.168.1.1:80`), so the dial stays
-on this host and reaches nothing outside it. Set DISPATCH to steer it elsewhere, or
-DISPATCH= (empty) to leave the factory placeholder in place.
+The AIS context is already fully populated at boot: device UUID, model, the MAC,
+and a factory-default dispatch URL `http://8.8.8.8:80`. By default this tool
+repoints that URL to a local stub on the emulator's own AP gateway
+(`http://192.168.1.1:80`), so the dial stays on this host and reaches nothing
+outside it. Set DISPATCH to steer it elsewhere, or DISPATCH= (empty) to leave the
+factory placeholder in place.
+
+Each place named here is found in the firmware itself (stock_points.py).
 
 Owner's own account only: never point this at the real eWeLink cloud with anyone's
 account or plug but your own. The default dials a local stub and leaves the host.
@@ -53,6 +55,8 @@ import collections
 import re
 import types
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # the tools beside this one
+import stock_points  # noqa: E402
 ROOT = Path(os.environ.get("BK_EMU_ROOT", "/opt/beken-emulator")); sys.path.insert(0, str(ROOT))
 from src.main import build_emulator  # noqa: E402
 from unicorn import UC_HOOK_CODE  # noqa: E402
@@ -80,8 +84,8 @@ SECS = float(os.environ.get("SECS", "70")); FORCE_AT = float(os.environ.get("FOR
 SSID = os.environ.get("SSID", "AutoflashNet").encode(); PW = os.environ.get("PASS", "autoflash1234").encode()
 DISPATCH = os.environ.get("DISPATCH", "http://192.168.1.1:80")  # default: local stub; DISPATCH= keeps factory
 
-AFTER_MEMCMP = 0x29c3c; TIMER5 = 1 << 9; APPFW_LOOP = 0x319c4; EFGET = 0x12f438
-CTXP = 0x4044ac; FLAG = 0x403e31; START_HANDLER = 0x2c204; URL_OFF = 0x5f
+TIMER5 = 1 << 9
+POINTS = stock_points.find(stock_points.app_of_file(Path(DUMP).read_bytes()))
 
 netlog = []; net = []
 emu = build_emulator(DUMP, chip="BK7238", with_boot=True, only_uart=True, save_decrypted=False, wifi=True, log=lambda m: netlog.append(str(m)))
@@ -99,7 +103,7 @@ def _rd(a, n):
 def _rstr(a, n=40):
     b = _rd(a, n); z = b.find(0); return b[:z if z >= 0 else n]
 
-mu.hook_add(UC_HOOK_CODE, lambda m, a, s, u: mu.reg_write(UC_ARM_REG_R0, 0), None, AFTER_MEMCMP, AFTER_MEMCMP)
+mu.hook_add(UC_HOOK_CODE, lambda m, a, s, u: mu.reg_write(UC_ARM_REG_R0, 0), None, POINTS.after_memcmp, POINTS.after_memcmp)
 
 # (1) seed wifi creds: ef_get_env_blob(key, buf, size, &outlen)
 def h_ef(m, a, s, u):
@@ -114,10 +118,10 @@ def h_ef(m, a, s, u):
     except Exception:
         pass
     mu.reg_write(UC_ARM_REG_R0, len(val)); mu.reg_write(UC_ARM_REG_PC, mu.reg_read(UC_ARM_REG_LR))
-mu.hook_add(UC_HOOK_CODE, h_ef, None, EFGET, EFGET)
+mu.hook_add(UC_HOOK_CODE, h_ef, None, POINTS.ef_get_env_blob, POINTS.ef_get_env_blob)
 
 cnt = collections.Counter()
-for nm, a in (("ais_cloud_start", 0x35744), ("ais_link_task", 0x35aa8), ("link_create", 0x357f2)):
+for nm, a in (("ais_cloud_start", POINTS.ais_cloud_start), ("ais_link_task", POINTS.link_task), ("link_create", POINTS.link_create)):
     def mk(name):
         def h(m, aa, s, u): cnt[name] += 1
         return h
@@ -141,20 +145,20 @@ def h_appfw(m, a, s, u):
         return
     if not st["prepped"]:
         st["prepped"] = True
-        p = struct.unpack("<I", _rd(CTXP, 4))[0]
-        netlog.append("[ctx *0x4044ac=%#x dispatch-url=%r]" % (p, _rstr(p+URL_OFF, 32)))
+        p = struct.unpack("<I", _rd(POINTS.ctx_pointer, 4))[0]
+        netlog.append("[ctx *%#x=%#x dispatch-url=%r]" % (POINTS.ctx_pointer, p, _rstr(p+POINTS.url_offset, 32)))
         if DISPATCH and p:
             try:
-                mu.mem_write(p+URL_OFF, DISPATCH.encode()+b"\x00"); netlog.append("[repointed dispatch url -> %s]" % DISPATCH)
+                mu.mem_write(p+POINTS.url_offset, DISPATCH.encode()+b"\x00"); netlog.append("[repointed dispatch url -> %s]" % DISPATCH)
             except Exception as e:
                 netlog.append("[url err %r]" % e)
         try:
-            mu.mem_write(FLAG, b"\x01")
+            mu.mem_write(POINTS.cloud_flag, b"\x01")
         except Exception:
             pass
         return
-    st["forced"] = True; netlog.append("[synthesised pairing-success trigger @%.1f]" % (time.time()-t0)); force_thumb(START_HANDLER)
-mu.hook_add(UC_HOOK_CODE, h_appfw, None, APPFW_LOOP, APPFW_LOOP)
+    st["forced"] = True; netlog.append("[synthesised pairing-success trigger @%.1f]" % (time.time()-t0)); force_thumb(POINTS.start_cloud)
+mu.hook_add(UC_HOOK_CODE, h_appfw, None, POINTS.appfw_loop, POINTS.appfw_loop)
 _tick = mac.tick
 def hooked_tick(self, insns):
     r = _tick(insns); emu.state.timer3_5_ctl |= TIMER5; return r
@@ -170,7 +174,7 @@ time.sleep(0.4)
 p = emu.wifi_peer; nst = getattr(p, "net", None); ip = getattr(nst, "device_ip", None)
 def ips(b): return ".".join(str(x) for x in b) if isinstance(b, (bytes, bytearray)) and len(b) == 4 else str(b)
 dials = [(t, s) for t, s in net if "/dispatch/device" in s and "sends" in s]
-print("=== S61 CLOUD DIAL (dispatch=%s) ===" % (DISPATCH or "factory default http://8.8.8.8:80"), flush=True)
+print("=== BK7238 CLOUD DIAL (dispatch=%s) ===" % (DISPATCH or "factory default http://8.8.8.8:80"), flush=True)
 print("  device IP = %s" % ips(ip), flush=True)
 print("  dial-chain: %s" % dict(cnt), flush=True)
 for ln in netlog:
