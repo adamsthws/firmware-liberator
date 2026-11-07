@@ -10,6 +10,8 @@ from tests.espressif.test_inspect_stock_nvs import entry, page, variable
 from tools.espressif import scrub
 
 SSID = b"ExampleNet"
+OLD_SSID = b"OldNetwork-2"        # a network the device was on before: its entry replaced since
+AP_SSID = b"ITEAD-1000abcdef"     # the device's own setup network, not the owner's
 NOW, BEFORE = b"correct-horse-9", b"older-secret-1"
 PMK = hashlib.pbkdf2_hmac("sha1", NOW, SSID, 4096, 32)
 APIKEY = b"12345678-1234-4abc-8def-123456789abc"
@@ -17,18 +19,24 @@ FRAME = (b'{"ssid":"ExampleNet","passwd":"' + NOW + b'","deviceid":"1000abcdef",
          + b'","encrypt_key":"' + APIKEY + b'","model":"SN-ESP32C3-NEW-01"}')
 
 
+def ssid_blob(name: bytes) -> bytes:
+    return struct.pack("<I", len(name)) + name.ljust(32, b"\0")
+
+
 def flash() -> bytes:
-    ssid_blob = struct.pack("<I", len(SSID)) + SSID.ljust(32, b"\0")
     nvs = page([
         entry(0, 0x01, "nvs.net80211", data=b"\x01"),
         entry(0, 0x01, "frame_params", data=b"\x02"),
-        *variable(1, 0x41, "sta.ssid", ssid_blob),
+        *variable(1, 0x41, "sta.ssid", ssid_blob(OLD_SSID)),   # replaced since: its bytes stay
+        *variable(1, 0x41, "sta.ssid", ssid_blob(SSID)),
+        *variable(1, 0x41, "ap.ssid", ssid_blob(AP_SSID)),
         *variable(1, 0x21, "sta.pswd", BEFORE + b"\0"),  # replaced since: its bytes stay
         *variable(1, 0x21, "sta.pswd", NOW + b"\0"),
         *variable(1, 0x41, "sta.pmk", PMK),
         *variable(2, 0x21, "content", FRAME + b"\0"),
     ])
-    elsewhere = b"\xff" * 0x100 + b"cfg:" + NOW + b";" + PMK + b";" + APIKEY + b"\xff" * 0x100
+    elsewhere = (b"\xff" * 0x100 + b"cfg:" + NOW + b";" + PMK + b";" + APIKEY + b";net=" + SSID
+                 + b"\xff" * 0x100)
     image = b"\xff" * scrub.NVS_OFFSET + nvs
     return image.ljust(scrub.NVS_OFFSET + scrub.NVS_SIZE, b"\xff") + elsewhere
 
@@ -44,10 +52,28 @@ class ScrubTests(unittest.TestCase):
         before = flash()
         out, _ = scrub.wifi(before)
         self.assertEqual(len(out), len(before))
-        self.assertIn(SSID, out)
         self.assertIn(b'"model":"SN-ESP32C3-NEW-01"', out)
         self.assertIn(b'"passwd":"' + b"*" * len(NOW) + b'"', out)
 
+
+    def test_no_name_of_the_owners_network_is_left(self):
+        out, _ = scrub.wifi(flash())
+        for name in (SSID, OLD_SSID):
+            self.assertNotIn(name, out, name)
+        self.assertIn(b'"ssid":"' + b"*" * len(SSID) + b'"', out)
+        self.assertIn(ssid_blob(b"*" * len(SSID)), out)   # the entry keeps its length, blanked
+
+    def test_the_devices_own_setup_network_name_is_kept(self):
+        # Not the owner's: identity() takes the device id out of it.
+        self.assertIn(AP_SSID, scrub.wifi(flash())[0])
+
+    def test_a_short_name_is_taken_out_of_the_settings_too(self):
+        nvs = page([entry(0, 0x01, "nvs.net80211", data=b"\x01"),
+                    *variable(1, 0x41, "sta.ssid", ssid_blob(b"Hm"))])
+        image = (b"\xff" * scrub.NVS_OFFSET + nvs).ljust(0x40000, b"\xff")
+        out, _ = scrub.wifi(image)
+        self.assertIn(ssid_blob(b"**"), out)
+        self.assertNotIn(ssid_blob(b"Hm"), out)
 
     def test_a_flash_with_no_settings_is_returned_as_it_was(self):
         blank = b"\xff" * 0x20000

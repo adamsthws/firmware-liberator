@@ -1,6 +1,7 @@
 """Take what is the owner's out of a copy of a device's whole flash before the
-copy leaves the computer (tools/autoflash/readout_espressif.py): its Wi-Fi passwords,
-and its eWeLink identity, replaced by made-up values of the same shape.
+copy leaves the computer (tools/autoflash/readout_espressif.py): its Wi-Fi network's
+name and passwords, and its eWeLink identity, replaced by made-up values of the
+same shape.
 
 ESP-IDF keeps the station's password and its PMK in NVS (nvs.net80211:
 sta.pswd, sta.pmk; the soft AP's as ap.passwd, ap.pmk), and Sonoff's own
@@ -9,7 +10,10 @@ entry in place: one replaced is only marked so, and its old bytes stay, so a
 password the device had before is still there. So every entry of those names is
 blanked whatever its state, and then every copy of each password found anywhere in the flash but the firmware images, Sonoff's own published
 code: a password there is the firmware's, its setup network's. The network's
-name stays.
+name goes the same way: the station's (sta.ssid, every one an entry replaced
+has left), Sonoff's own copy (frame_params "ssid") and every other copy. The
+soft AP's name (ap.ssid) is the device's own setup network, not the owner's,
+and the identity below already takes the device id out of it.
 
 Sonoff's settings name the device to eWeLink (frame_params: deviceid, apikey,
 encrypt_key, devicekey). Each is replaced throughout the flash by a made-up
@@ -40,6 +44,7 @@ KEY_KEYS = {b"sta.pmk", b"ap.pmk"}
 SSID_KEYS = {b"sta.ssid": "sta", b"ap.ssid": "ap"}
 NVS_OFFSET, NVS_SIZE = 0x9000, 0x10000
 FRAME_PASSWD = re.compile(rb'"passwd"\s*:\s*"((?:[^"\\]|\\.)*)"')
+FRAME_SSID = re.compile(rb'"ssid"\s*:\s*"((?:[^"\\]|\\.)*)"')
 IDENTITY = ("deviceid", "apikey", "encrypt_key", "devicekey")
 MIN_LEN = 4
 
@@ -106,6 +111,12 @@ def _reseal(before: bytes, out: bytearray) -> None:
         struct.pack_into("<I", out, at + 4, zlib.crc32(header, 0xFFFFFFFF))
 
 
+def _name(value: bytes) -> bool:
+    """Whether `value` can be a Wi-Fi network's name: 1 to 32 bytes, not erased
+    flash (0xFF) or nothing (0x00) over and over."""
+    return 0 < len(value) <= 32 and set(value) - {0x00, 0xFF} != set()
+
+
 def _password(value: bytes) -> bool:
     """Whether `value` can be a Wi-Fi password: printable, of WPA's lengths (or
     WEP's shorter ones), not one byte over and over. An entry that was never
@@ -114,11 +125,13 @@ def _password(value: bytes) -> bool:
 
 
 def wifi(flash: bytes) -> tuple[bytes, int]:
-    """`flash` with its Wi-Fi passwords and keys blanked, and how many places were."""
+    """`flash` with its Wi-Fi network's name, passwords and keys blanked, and how
+    many places were."""
     out = bytearray(flash)
     start, size = _nvs_span(flash)
     secrets: set[bytes] = set()
-    ssids: dict[str, bytes] = {}
+    names: set[bytes] = set()      # every network name, for the PMKs
+    station: set[bytes] = set()    # the owner's network's, to take out
     blanked = 0
     for _, key, at, length in _entries(flash, start, size):
         if key in TEXT_KEYS:
@@ -132,18 +145,35 @@ def wifi(flash: bytes) -> tuple[bytes, int]:
             blanked += 1
         elif key in SSID_KEYS and length >= 36:
             count = struct.unpack_from("<I", flash, at)[0]
-            if 0 < count <= 32:
-                ssids[SSID_KEYS[key]] = flash[at + 4 : at + 4 + count]
+            name = flash[at + 4 : at + 4 + count] if 0 < count <= 32 else b""
+            if _name(name):
+                names.add(name)
+                if SSID_KEYS[key] == "sta":
+                    station.add(name)
+                    out[at + 4 : at + 4 + count] = b"*" * count
+                    blanked += 1
     for found in FRAME_PASSWD.finditer(flash):
         if _password(found.group(1)):
             secrets.add(found.group(1))
-    # A password's PMK is its network name's too: one kept elsewhere is found by it.
-    keys = {hashlib.pbkdf2_hmac("sha1", secret, ssid, 4096, 32)
-            for secret in secrets for ssid in ssids.values()}
     apps = _apps(flash)
+    # Sonoff's own copy of the network's name, however short.
+    for found in FRAME_SSID.finditer(flash):
+        name, (begin, end) = found.group(1), found.span(1)
+        if _name(name) and not any(begin in app for app in apps):
+            station.add(name)
+            names.add(name)
+            out[begin:end] = b"*" * (end - begin)
+            blanked += 1
+    # A password's PMK is its network name's too: one kept elsewhere is found by it.
+    keys = {hashlib.pbkdf2_hmac("sha1", secret, name, 4096, 32) for secret in secrets for name in names}
     for secret in sorted(secrets | {json.dumps(s.decode("utf-8", "replace"))[1:-1].encode() for s in secrets},
                          key=len, reverse=True):
         blanked += _replace_all(out, secret, b"*" * len(secret), apps)
+    # Every other copy of the network's name: one of MIN_LEN or more, as a
+    # shorter one would be found in unrelated bytes too.
+    for name in sorted(station, key=len, reverse=True):
+        if len(name) >= MIN_LEN:
+            blanked += _replace_all(out, name, b"*" * len(name), apps)
     for key in keys:
         blanked += _replace_all(out, key, bytes(len(key)), apps)
     _reseal(flash, out)
