@@ -1,6 +1,7 @@
 import base64
 import http.server
 import json
+import re
 import select
 import socket
 import threading
@@ -10,7 +11,8 @@ import urllib.error
 import urllib.parse
 from unittest import mock
 
-from tools.autoflash import device
+from tests.espressif.test_sonoff_identity import sonoff_nvs
+from tools.autoflash import device, plans
 from tools.autoflash.device import Device, DeviceError
 
 
@@ -338,3 +340,45 @@ class WebPasswordTests(unittest.TestCase):
         pages = [path for path, _ in self.plug.seen if not path.startswith("/cm?")]
         self.assertTrue(commands and all(f"password={LockedTasmota.PASSWORD}" in path for path in commands))
         self.assertTrue(pages and all(LockedTasmota.PASSWORD not in path for path in pages))
+
+
+class FakePlug:
+    """A plug's flash, read as the tool reads it through Berry."""
+
+    def __init__(self, flash: bytes):
+        self.flash = bytearray(flash)
+        self.reads = []
+
+    def read_region(self, address, length, timeout=30.0):
+        self.reads.append((address, length))
+        return bytes(self.flash[address:address + length])
+
+    read_nvs = device.Device.read_nvs
+
+    def sha_region(self, address, length, timeout=180.0):
+        return plans.sha256(bytes(self.flash[address:address + length]))
+
+
+class DeviceReadTests(unittest.TestCase):
+    def test_flash_is_read_in_pieces_as_hex(self):
+        flash = bytes(range(256)) * 64
+        asked = []
+
+        def berry_value(code, name, timeout=0):
+            address, size = map(int, re.search(r"flash\.read\((\d+),(\d+)\)", code).groups())
+            asked.append(size)
+            return '"' + flash[address:address + size].hex() + '"'
+
+        plug = device.Device("192.0.2.50")
+        with mock.patch.object(plug, "berry_value", side_effect=berry_value):
+            self.assertEqual(plug.read_region(100, 2000), flash[100:2100])
+        self.assertEqual(asked, [512, 512, 512, 464])
+        with mock.patch.object(plug, "berry_value", return_value="unknown"):
+            with self.assertRaises(device.DeviceError):
+                plug.read_region(0, 4)
+
+    def test_an_nvs_is_read_but_for_its_unused_pages(self):
+        plug = FakePlug(bytes(0x9000) + sonoff_nvs())
+        self.assertEqual(plug.read_nvs(0x9000, 0x10000), sonoff_nvs())
+        self.assertEqual(sum(1 for _, length in plug.reads if length == 0x1000), 1)
+

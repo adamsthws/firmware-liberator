@@ -1,0 +1,210 @@
+"""From Sonoff's firmware: what the plug reports through eWeLink (B1), and
+the new firmware sent to it (B2)."""
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+from tests.autoflash.routes.beken.test_beken import a_context
+from tools.autoflash import detect, errors, kinds, plugs
+from tools.autoflash.routes.beken import images, stock
+from tools.beken import fota_wrap, interim_marker, rbl
+from tools.ewelink import ota_push
+from tools.ewelink.get_device_key import EwelinkError
+
+
+S61 = kinds.SONOFF_S61
+MAC = "12:34:56:ab:cd:ef"
+
+
+class FromStockTests(unittest.TestCase):
+    DEVICE = {"deviceid": "1001234abc", "apikey": "k", "online": True, "productModel": "S61STPF",
+              "extra": {"model": "SN-BK7238-S61-01"}, "params": {"fwVersion": "1.0.2"}}
+
+    def setUp(self):
+        noted = mock.patch.object(stock.account, "note_firmware_name", return_value="FWSW-01-S61-BK7238")
+        self.noted = noted.start()
+        self.addCleanup(noted.stop)
+
+    def test_b1_takes_the_plugs_identity_from_its_account_record(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp)
+            ctx.account_devices = lambda: [{"deviceid": "other"}, self.DEVICE]
+            plugs_dir = Path(tmp) / "plugs"
+            with mock.patch.object(plugs, "PLUGS", plugs_dir), mock.patch.object(plugs, "CAPTURES", Path(tmp)):
+                plugs.remember_plug(MAC, ewelink_id="1001234abc")
+                with mock.patch.object(stock.prompts, "section"):
+                    result = stock.step_identify(ctx)
+            self.assertEqual(result, {"stock_version": "1.0.2", "model": "SN-BK7238-S61-01", "product": "S61STPF",
+                                      "signal_dbm": None, "firmware_name": "FWSW-01-S61-BK7238"})
+            self.noted.assert_called_once_with(S61, {}, "", "S61STPF", "SN-BK7238-S61-01")
+            self.assertEqual(ctx.state.input("stock_version"), "1.0.2")
+            # Another model on the account is never the plug.
+            ctx.account_devices = lambda: [dict(self.DEVICE, extra={"model": "SN-ESP32-MINIR4"})]
+            with mock.patch.object(plugs, "PLUGS", plugs_dir), mock.patch.object(plugs, "CAPTURES", Path(tmp)):
+                with self.assertRaisesRegex(errors.Abort, "does not convert"):
+                    stock.step_identify(ctx)
+
+    def test_b1_reads_the_wifi_signal_the_device_gave_ewelink_and_asks_about_a_weak_one(self):
+        for rssi, asked in ((-61, False), (-85, True)):
+            with tempfile.TemporaryDirectory() as tmp:
+                ctx = a_context(tmp)
+                device = dict(self.DEVICE, params={"fwVersion": "1.0.2", "rssi": rssi})
+                ctx.account_devices = lambda device=device: [device]
+                with mock.patch.object(plugs, "PLUGS", Path(tmp) / "plugs"), mock.patch.object(plugs, "CAPTURES", Path(tmp)):
+                    plugs.remember_plug(MAC, ewelink_id="1001234abc")
+                    with mock.patch.object(stock.prompts, "section"), \
+                            mock.patch.object(stock.join.prompts, "section"), \
+                            mock.patch.object(stock.join.output, "transient_begin"), \
+                            mock.patch.object(stock.join.output, "transient_end"), \
+                            mock.patch.object(stock.join.prompts, "ask_yes_no", return_value=False) as question:
+                        if asked:
+                            with self.assertRaisesRegex(errors.Abort, "weak Wi-Fi signal; nothing was written"):
+                                stock.step_identify(ctx)
+                        else:
+                            self.assertEqual(stock.step_identify(ctx)["signal_dbm"], rssi)
+                self.assertEqual(question.called, asked)
+        self.assertIsNone(stock.account_signal({"params": {"rssi": "strong"}}))
+
+    def test_b2_wraps_the_image_and_sends_it_through_ewelink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, stock_version="1.0.2", firmware="openbeken")
+            ctx.account_plug = SimpleNamespace(device_id="1001234abc")
+            ctx.account_devices = lambda: [self.DEVICE]
+            sent = {}
+
+            def deliver(**kwargs):
+                sent.update(kwargs)
+                kwargs["check_device"](self.DEVICE, "SN-BK7238-S61-01")
+                return ota_push.Delivery(sent=True, complete=True, bytes_served=len(kwargs["firmware"]), seconds=9.5)
+
+            with mock.patch.object(stock.firewall, "choose_port", return_value=8088), \
+                    mock.patch.object(stock.firewall, "ensure_firewall"), \
+                    mock.patch.object(stock.prompts, "warning_box"), \
+                    mock.patch.object(stock.prompts, "require_word", return_value=True), \
+                    mock.patch.object(stock.output, "say"), \
+                    mock.patch.object(ota_push, "deliver", side_effect=deliver):
+                result = stock.step_push(ctx)
+            image, version = images.image(ctx, "openbeken")
+            self.assertEqual(result["firmware"], "openbeken")
+            self.assertEqual(result["version"], version)
+            # The image alone: a run to OpenBeken keeps it, so sends no marker.
+            self.assertEqual(sent["firmware"], fota_wrap.wrap(image, name=S61.wrapper_model, version=images.FOTA_VERSION))
+            self.assertEqual(result["bytes"], len(sent["firmware"]))
+            self.assertEqual((sent["device_id"], sent["device_ip"], sent["listen_ip"], sent["listen_port"]),
+                             ("1001234abc", "127.0.0.1", "192.0.2.2", 8088))
+            self.assertEqual(sent["names"], ("user1.bin",))
+            self.assertIs(sent["live"], False)   # what it fetches is logged, never drawn over the stage line
+            # The plug must be as it was at B1: another model, or firmware, is refused before sending.
+            with self.assertRaisesRegex(EwelinkError, "1.0.3"):
+                sent["check_device"](dict(self.DEVICE, params={"fwVersion": "1.0.3"}), "SN-BK7238-S61-01")
+
+    def test_b2_on_a_run_to_esphome_sends_the_interim_firmware(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, stock_version="1.0.2", firmware="esphome")
+            ctx.account_plug = SimpleNamespace(device_id="1001234abc")
+            ctx.account_devices = lambda: [self.DEVICE]
+            sent = {}
+
+            def deliver(**kwargs):
+                sent.update(kwargs)
+                return ota_push.Delivery(sent=True, complete=True, bytes_served=len(kwargs["firmware"]), seconds=9.5)
+
+            with mock.patch.object(stock.firewall, "choose_port", return_value=8088), \
+                    mock.patch.object(stock.firewall, "ensure_firewall"), \
+                    mock.patch.object(stock.prompts, "warning_box"), \
+                    mock.patch.object(stock.prompts, "require_word", return_value=True), \
+                    mock.patch.object(stock.output, "say") as said, \
+                    mock.patch.object(ota_push, "deliver", side_effect=deliver):
+                result = stock.step_push(ctx)
+            image, _ = images.image(ctx, "openbeken")
+            self.assertEqual(result["firmware"], "openbeken")
+            # The same image and the marker after it, by which it knows itself the
+            # interim firmware - all of it in the container, its CRC over all of it.
+            sent_payload = interim_marker.with_marker(image)
+            self.assertEqual(sent["firmware"], fota_wrap.wrap(sent_payload, name=S61.wrapper_model,
+                                                              version=images.FOTA_VERSION))
+            self.assertEqual(sent["firmware"][116:], sent_payload)
+            self.assertEqual(interim_marker.find(sent_payload), interim_marker.offset_after(len(image)))
+            # And it is for the app that image installs, and only that.
+            marker = interim_marker.read(sent_payload, interim_marker.offset_after(len(image)))
+            self.assertTrue(interim_marker.for_app(marker, rbl.unpack(image)))
+            self.assertFalse(interim_marker.for_app(marker, rbl.unpack(images.image(ctx, "esphome")[0])))
+            shown = " ".join(str(call.args[0]) for call in said.call_args_list)
+            self.assertIn("Sending the interim firmware", shown)
+            self.assertNotIn("openbeken", shown.lower())
+            with mock.patch.object(detect, "identify", return_value="interim"):
+                self.assertEqual(stock.evidence_pushed(ctx),
+                                 (True, "The device answers as the interim firmware: the firmware was delivered "
+                                        "and installed."))
+            # The plug's own OpenBeken would be another firmware than the one sent.
+            with mock.patch.object(detect, "identify", return_value="openbeken"):
+                self.assertIsNone(stock.evidence_pushed(ctx)[0])
+
+    def test_a_spoilt_image_fails_only_the_bootloaders_check_and_only_once(self):
+        # --simulate-bad-image: fetched whole (the update's CRC is made over it
+        # as sent), but the RBL's own CRC of its body no longer holds.
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, firmware="openbeken")
+            image, _ = images.image(ctx, "openbeken")
+            with mock.patch.object(images, "SPOIL_STEP", "B2"), mock.patch.object(images.output, "say"):
+                spoilt = stock.payload(ctx, "openbeken", image)
+                again = stock.payload(ctx, "openbeken", image)
+                self.assertEqual(images.as_sent(ctx, "J2", image), image)   # another step's: as it is
+            self.assertEqual((len(spoilt), spoilt[:rbl.HEADER]), (len(image), image[:rbl.HEADER]))
+            with self.assertRaises(rbl.RblError):
+                rbl.unpack(spoilt)
+            # Once a run, by its record: the image sent again - by this run, or
+            # one run again after it, asked the same - is the good one.
+            self.assertEqual(again, image)
+            self.assertTrue(ctx.state.data["captures"]["B2.spoilt"])
+
+    def test_b2_not_confirmed_writes_nothing_and_a_cut_off_delivery_stays_attempted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, stock_version="1.0.2", firmware="esphome")
+            ctx.consented = False   # the go-ahead not given yet in this run
+            ctx.account_plug = SimpleNamespace(device_id="1001234abc")
+            ctx.account_devices = lambda: [self.DEVICE]
+            common = [mock.patch.object(stock.firewall, "choose_port", return_value=8088),
+                      mock.patch.object(stock.firewall, "ensure_firewall"),
+                      mock.patch.object(stock.prompts, "warning_box"), mock.patch.object(stock.output, "say")]
+            for patch in common:
+                patch.start()
+                self.addCleanup(patch.stop)
+            with mock.patch.object(stock.prompts, "require_word", return_value=False):
+                with self.assertRaises(errors.NothingWritten):
+                    stock.step_push(ctx)
+            with mock.patch.object(stock.prompts, "require_word", return_value=True) as asked, \
+                    mock.patch.object(ota_push, "deliver", return_value=ota_push.Delivery(sent=False, error="login failed")):
+                with self.assertRaisesRegex(errors.Abort, "was not sent: login failed"):
+                    stock.step_push(ctx)
+                # Given once a run: B2 sent again (errors.GoBack) does not ask again.
+                with self.assertRaisesRegex(errors.Abort, "was not sent: login failed"):
+                    stock.step_push(ctx)
+            asked.assert_called_once()
+            with mock.patch.object(stock.prompts, "require_word", return_value=True), \
+                    mock.patch.object(ota_push, "deliver",
+                                      return_value=ota_push.Delivery(sent=True, complete=False, bytes_served=100)):
+                with self.assertRaisesRegex(OSError, "fetched 100 of"):
+                    stock.step_push(ctx)
+            # Turned down while an update cut off part way holds the plug's
+            # updater (seen in the fault suite): switching it off and on frees it.
+            refused = ota_push.Delivery(sent=True, complete=False,
+                                        error="Cloud rejected upgrade command: error 410")
+            with mock.patch.object(stock.prompts, "require_word", return_value=True), \
+                    mock.patch.object(ota_push, "deliver", return_value=refused):
+                with self.assertRaisesRegex(errors.Abort, "Switch the device off and on"):
+                    stock.step_push(ctx)
+
+    def test_the_evidence_of_a_push_is_what_the_plug_answers_as(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, firmware="openbeken")
+            for running, verdict in (("openbeken", True), ("sonoff", False), (None, None), ("esphome", None),
+                                     ("interim", None)):
+                with mock.patch.object(detect, "identify", return_value=running):
+                    self.assertEqual(stock.evidence_pushed(ctx)[0], verdict, running)
+
+
+if __name__ == "__main__":
+    unittest.main()
