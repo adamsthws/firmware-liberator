@@ -106,7 +106,7 @@ def step_leave_tasmota(ctx: Context) -> dict[str, Any]:
         # the restart into the mover.  Not left waiting for one.  A plan
         # refused on a plug that already had it - the interim Tasmota, on
         # slot 1 - wrote nothing, and has no mover to restart into.
-        if not table_written(ctx) or ctx.device.current_ota() != plan.running:
+        if not table_written(ctx, plan) or ctx.device.current_ota() != plan.running:
             raise
         output.say("    Everything was written before the plan stopped; restarting the device into the mover.")
         ctx.device.command("Restart 99")
@@ -145,9 +145,9 @@ def wait_for_mover(ctx: Context, what: str) -> bool:
     return False
 
 
-def table_written(ctx: Context) -> bool:
+def table_written(ctx: Context, plan: plans.Plan) -> bool:
     try:
-        return ctx.device.sha_region(plans.TABLE_ADDRESS, plans.SECTOR, timeout=30) == plans.SONOFF_TABLE_SHA256
+        return ctx.device.sha_region(plans.TABLE_ADDRESS, plans.SECTOR, timeout=30) == plan.final_table_sha256()
     except (DeviceError, OSError):
         return False
 

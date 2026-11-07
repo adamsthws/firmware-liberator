@@ -673,6 +673,9 @@ class KindLeftPartWayTests(unittest.TestCase):
         self.assertEqual(self.adopted("midway", "the hub", "sonoff-pow-elite"), "sonoff-pow-elite")
 
 
+ORIGINAL_TABLE_WRITTEN = mover.table_written
+
+
 class LeaveTasmotaStoppedTests(unittest.TestCase):
     """L1's plan stopped with Sonoff's table in place: the plug is restarted
     into the mover only if the plan got as far as writing it."""
@@ -716,6 +719,17 @@ class LeaveTasmotaStoppedTests(unittest.TestCase):
         with self.assertRaisesRegex(errors.Abort, "did not pass"):
             mover.step_leave_tasmota(ctx)
         ctx.device.command.assert_not_called()
+
+
+    def test_the_table_looked_for_is_the_one_the_plan_writes(self):
+        # A temporary table, or a layout other than the S60's, is as written as Sonoff's.
+        from types import SimpleNamespace
+        plan = SimpleNamespace(final_table_sha256=lambda: "aa")
+        ctx = self.ctx(0)
+        written = ctx.device.sha_region
+        for found, expected in (("aa", True), (plans.SONOFF_TABLE_SHA256, False)):
+            written.return_value = found
+            self.assertEqual(ORIGINAL_TABLE_WRITTEN(ctx, plan), expected)
 
 
 class AdvertSignalTests(unittest.TestCase):
