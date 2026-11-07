@@ -21,14 +21,14 @@ own, from the bootloader, as on a real plug - and Sonoff's firmware is helped
 online (`cloud_online.StockHooks`) only while it is the one that starts.
 
 Each command first ensures the image: one labelled with the hash of what it is built
-from (`bk-emu.sh tag`: `UPSTREAM`, `patches/`, `requirements.txt`,
+from (`image.sh tag`: `UPSTREAM`, `patches/`, `requirements.txt`,
 `bk-emu.Dockerfile`), pulled from `ghcr.io/adamsthws/autoflash-beken-emu:<hash>`,
 which the `beken-emulator-image` workflow publishes for every version pushed,
 or built where it is not published - from the upstream source archive on this
 repository's release
 [`emulator-source-beken-d9a3772`](https://github.com/adamsthws/firmware-liberator/releases/tag/emulator-source-beken-d9a3772),
 one archive named after its commit and never changed (`git archive` of the
-pinned commit, which `bk-emu.sh source` reproduces byte for byte), downloaded
+pinned commit, which `image.sh source` reproduces byte for byte), downloaded
 once into `captures/emulation/cache/` and checked against the SHA-256
 `UPSTREAM` pins. So the emulator needs nothing outside this repository.
 `bk-emu.sh` with no argument lists the rest; what each
@@ -110,7 +110,7 @@ OpenBeken image and its FNV equals the RBL `raw hash`.
 The emulator is upstream BekenEmulator at the commit `UPSTREAM` pins - the
 archive on the release `emulator-source-beken-<commit>`, whose hash `UPSTREAM` also pins -
 with these patches applied in name order when the image is built
-(`bk-emu.sh ensure` builds or pulls it; `bk-emu.sh dump` fetches the public
+(`image.sh ensure` builds or pulls it; `bk-emu.sh dump` fetches the public
 S61s dump from upstream's repository; `bk-emu.sh test` runs upstream's
 self-tests under them, fetching its other devices' dumps the same way). Each is one
 commit's worth, with its reasoning in its header.
@@ -141,10 +141,10 @@ commit's worth, with its reasoning in its header.
 
 To change the fork: extract the archive (`captures/emulation/cache/`), apply
 the patches to it in order, make the change as a commit there, `git
-format-patch` it into `patches/`, and `bk-emu.sh ensure` builds the image
-again from the new set (its hash, `bk-emu.sh tag`, changed; the workflow
-publishes that version once it is pushed).
-Moving to a newer upstream commit: put its hash in `UPSTREAM`, `bk-emu.sh
+format-patch` it into `patches/`, and `image.sh ensure autoflash-beken-emu
+--rebuild` builds the image again from the new set (its hash, `image.sh tag`,
+changed; the workflow publishes that version once it is pushed).
+Moving to a newer upstream commit: put its hash in `UPSTREAM`, `image.sh
 source` makes the new archive (`git archive` of that commit, so anyone can
 reproduce its bytes), publish it as the release `emulator-source-beken-<its
 commit>` (draft first, with the archive attached, then publish: releases are
