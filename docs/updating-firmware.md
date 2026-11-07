@@ -41,7 +41,7 @@ official release takes that record and moves it on to its own layout, as
 Tasmota does on any upgrade - as long as `CFG_HOLDER` is the same in both,
 which the update checks. The S61's interim firmware is its OpenBeken image
 itself, with a marker sent after it, so it changes with every OpenBeken
-update ([below](#3-openbeken-and-esphome-for-the-s61)).
+update ([below](#3-openbeken)).
 
 **The bridge** changes only when its source in `archive/bridge` does, as a new
 version. `python3 tools/repo/update_firmware.py esp32c3 bridge` publishes the
@@ -143,6 +143,11 @@ Where it stops:
 
 ### 2. ESPHome
 
+ESPHome is built for every device: on ESP-IDF for an Espressif one, and on
+LibreTiny for a Beken one, where it is an rt_ota image like OpenBeken's.
+
+#### For an Espressif device
+
 ```sh
 python3 tools/repo/update_firmware.py esphome            # the latest release
 python3 tools/repo/update_firmware.py esphome 2026.10.0
@@ -185,12 +190,30 @@ built and where - so what pins a build is the Docker image it was made in, in
 `firmware.json`. The bootloader is repeatable: built again with the release
 that made the published one, it comes out the same.
 
-### 3. OpenBeken and ESPHome for the S61
+#### For a Beken device
 
-A Beken plug ends on OpenBeken or on ESPHome built on LibreTiny, each an
-rt_ota image the plug's stock bootloader applies from its download slot
-([devices/sonoff-s61/](../devices/sonoff-s61/README.md)); the images are
-pinned under `beken` in `firmware.json`, by plug.
+```sh
+python3 tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-s61
+```
+
+`esphome --plug sonoff-s61` builds `devices/sonoff-s61/esphome.yaml` in
+ESPHome's image for the release, as the S60's is built, and takes
+`image_bk7238_app.ota.rbl`: checked as an rt_ota app that fits the slot, says
+its version, project and ESPHome release, and has the Wi-Fi action in it,
+with the build's download partition where the stock bootloader looks. Its
+first boot reads the plug's Wi-Fi and calibration from the stock store, so
+the image holds no placeholders and nothing is written into it. The config's
+version is raised and the image published as the S60's is, with its docs. Its
+images are pinned under `beken` in `firmware.json`, by plug; the Basic Gen5's
+are built the same way, from `devices/sonoff-basic-1gs/`
+(`--plug sonoff-basic-1gs`).
+
+### 3. OpenBeken
+
+OpenBeken is built for the Beken devices only: an rt_ota image the plug's stock
+bootloader applies from its download slot
+([devices/sonoff-s61/](../devices/sonoff-s61/README.md)), pinned under `beken` in
+`firmware.json`, by plug.
 
 A change to what the OpenBeken driver does on first boot reaches only plugs
 converted after it: an updated plug keeps its settings, so the import does not
@@ -200,7 +223,6 @@ start ([the driver's notes](../tools/beken/openbeken/README.md#updating)).
 ```sh
 python3 tools/repo/update_firmware.py openbeken                       # again on what is pinned
 python3 tools/repo/update_firmware.py openbeken 1.18.321              # moved to a stable release
-python3 tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-s61
 ```
 
 `openbeken` clones [OpenBK7231T_App](https://github.com/openshwprojects/OpenBK7231T_App)
@@ -224,15 +246,6 @@ changelog. It moves only to a stable release (`openbeken VERSION`), as the weekl
 once one has settled, for every Beken device at once (`--every-device`). The
 version comes from what it builds: `1.18.320-2` is this project's second build on OpenBeken's release
 1.18.320, the number starting again at 1 on a new release.
-
-`esphome --plug sonoff-s61` builds `devices/sonoff-s61/esphome.yaml` in
-ESPHome's image for the release, as the S60's is built, and takes
-`image_bk7238_app.ota.rbl`: checked as an rt_ota app that fits the slot, says
-its version, project and ESPHome release, and has the Wi-Fi action in it,
-with the build's download partition where the stock bootloader looks. Its
-first boot reads the plug's Wi-Fi and calibration from the stock store, so
-the image holds no placeholders and nothing is written into it. The config's
-version is raised and the image published as the S60's is, with its docs.
 
 ### 4. The docs
 
