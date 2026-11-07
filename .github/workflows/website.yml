@@ -1,7 +1,9 @@
 # The website at firmwareliberator.com (website/README.md): tested and built
 # with Astro, then deployed from main to the Cloudflare Worker
-# website/wrangler.jsonc describes. A pull request builds it only, so one
-# that breaks the site shows before it is merged.
+# website/wrangler.jsonc describes; and the API Worker
+# (website/api/wrangler.jsonc), in a job of its own, so neither deploy
+# holds up or breaks the other. A pull request builds and tests only, so one
+# that breaks either shows before it is merged.
 #
 # The deploy job's environment, website, takes only main (set by
 # tools/repo/github_settings.py) and holds CLOUDFLARE_API_TOKEN.
@@ -78,3 +80,26 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npx wrangler deploy
+
+  deploy-api:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: website
+      url: https://api.firmwareliberator.com/readout
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - run: npm ci --ignore-scripts
+      - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy --config api/wrangler.jsonc

@@ -1,0 +1,27 @@
+// api.firmwareliberator.com: the project's API, for now the readouts the tool
+// sends to /readout (index.js says how they are guarded), kept apart from the website's
+// own Worker (../wrangler.jsonc) so nothing sent here can affect the site.
+// The website workflow deploys it in a job of its own.
+{
+  "name": "firmware-liberator-api",
+  "main": "index.js",
+  "compatibility_date": "2026-11-01",
+  "routes": [
+    { "pattern": "api.firmwareliberator.com", "custom_domain": true }
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  // Private: made, with its lifecycle rule, by tools/repo/cloudflare_settings.py.
+  "r2_buckets": [
+    { "binding": "READOUTS", "bucket_name": "firmware-liberator-readouts" }
+  ],
+  // Two a minute from one address: a device takes one.
+  "ratelimits": [
+    { "name": "READOUT_LIMIT", "namespace_id": "1001", "simple": { "limit": 2, "period": 60 } }
+  ],
+  "vars": {
+    // eWeLink product models enough readouts of are in, comma-separated:
+    // the next is thanked and not kept.
+    "ENOUGH": ""
+  }
+}
