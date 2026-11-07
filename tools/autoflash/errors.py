@@ -17,6 +17,11 @@ class NothingWritten(Abort):
     else does not say what the plug is (past_the_commit)."""
 
 
+class Finished(NothingWritten):
+    """The run ends here by the person's choice, with nothing converted: a
+    readout instead (readout.py). Its message is what the run ends by saying."""
+
+
 class GoBack(Exception):
     """A step finds that an earlier one did not take on the plug - the image
     it sent was never installed: the run goes back and does that one again.

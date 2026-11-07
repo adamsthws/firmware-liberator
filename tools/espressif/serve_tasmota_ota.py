@@ -21,7 +21,7 @@ if __package__ in (None, ""):  # run as a script: the repository root, for `tool
 
 from tools.autoflash import kinds  # noqa: E402
 from tools.autoflash.prompts import ask_secret
-from tools.espressif.analyze_vendor_ota import analyze
+from tools.espressif.analyze_vendor_ota import WRAPPER_SIZE, analyze
 from tools.espressif import chips
 from tools.espressif.build_vendor_ota import ANNOUNCED_VERSION, DEFAULT_MAX_PAYLOAD_SIZE, announce
 from tools.ewelink.get_device_key import EwelinkError, target_id_from_mdns
@@ -29,6 +29,16 @@ from tools.ewelink.ota_push import NOT_SENT, FirmwareServer, deliver, parse_sing
 
 
 SAFETY_FLAG = "--i-understand-stock-has-no-automatic-rollback"
+
+
+def is_bridge(firmware: bytes, chip_id: int) -> bool:
+    """Whether a wrapped file holds exactly the bridge firmware.json pins for its chip."""
+    chip = chips.by_id(chip_id)
+    try:
+        app = chip.bridge_app() if chip else None
+    except (OSError, ValueError):
+        return False
+    return app is not None and hashlib.sha256(firmware[WRAPPER_SIZE:]).digest() == hashlib.sha256(app).digest()
 
 
 def report_failure(exc: BaseException, sent: bool) -> None:
@@ -50,6 +60,9 @@ def main():
     parser.add_argument("--mdns-capture", type=Path, required=True)
     parser.add_argument("--wait", type=float, default=120.0)
     parser.add_argument(SAFETY_FLAG, action="store_true")
+    parser.add_argument("--readout-model", metavar="NAME",
+                        help="send the bridge, wrapped as NAME, to a device of a kind this tool does not "
+                             "convert yet, only to read it (tools/autoflash/readout.py): nothing else is sent so")
     args = parser.parse_args()
 
     recovery_lock = Path(__file__).resolve().parent / "RECOVERY_LOCK"
@@ -80,17 +93,22 @@ def main():
         return 2
     wrapper = report["wrapper"]
     esp = report["esp_image"]
-    valid = (
+    well_formed = (
         wrapper["magic_valid"] and wrapper["header_reserved_zero"]
         and wrapper["header_crc32_valid"] and wrapper["payload_offset_valid"]
         and wrapper["payload_size_valid"] and wrapper["payload_crc32_valid"]
         and wrapper["record_crc32_valid"] and wrapper["record_reserved_zero"]
-        and wrapper["model"] in {kind.wrapper_model for kind in kinds.ALL}
         and wrapper["actual_payload_size"] <= DEFAULT_MAX_PAYLOAD_SIZE
-        and any(esp["chip_id"] == chips.of(kind.chip).chip_id and wrapper["model"] == kind.wrapper_model
-                for kind in kinds.ALL if kind.family == "espressif") and esp["checksum_valid"]
-        and esp["sha256_valid"] is not False and esp["trailing_bytes"] == 0
+        and esp["checksum_valid"] and esp["sha256_valid"] is not False and esp["trailing_bytes"] == 0
     )
+    if args.readout_model:
+        # Any model, but only the bridge itself: it reads, and hands the device
+        # back to its own firmware when switched off and on.
+        valid = well_formed and wrapper["model"] == args.readout_model and is_bridge(firmware, esp["chip_id"])
+    else:
+        valid = well_formed and any(
+            esp["chip_id"] == chips.of(kind.chip).chip_id and wrapper["model"] == kind.wrapper_model
+            for kind in kinds.ALL if kind.family == "espressif")
     if not valid:
         print("Refusing: firmware failed the complete wrapper/native-image preflight", file=sys.stderr)
         return 2
@@ -104,11 +122,13 @@ def main():
         # Only a plug of a kind this tool converts, and only a file wrapped
         # for it: another Sonoff on the same account must never be sent it.
         kind = kinds.for_account(device.get("productModel"), model)
-        if kind is None:
+        if kind is None and args.readout_model:
+            pass  # the bridge alone, checked above, to a device not yet known
+        elif kind is None:
             raise EwelinkError(
                 f"Device model is {model}, not one this tool converts; refusing"
             )
-        if wrapper["model"] != kind.wrapper_model:
+        elif wrapper["model"] != kind.wrapper_model:
             raise EwelinkError(
                 f"The file is wrapped for {wrapper['model']}, not the {kind.name}'s "
                 f"{kind.wrapper_model}; refusing"

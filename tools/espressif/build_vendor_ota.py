@@ -65,9 +65,12 @@ def build_wrapper(
         )
 
     esp = parse_esp_image(payload)
-    kind = next((k for k in kinds.EVERY if k.wrapper_model == model), kinds.SONOFF_S60)
-    chip = chips.of(kind.chip)
-    if esp["chip_id"] != chip.chip_id:
+    kind = next((k for k in kinds.EVERY if k.wrapper_model == model), None)
+    if kind is None:  # a device not known yet (a readout): any chip there is a bridge for
+        if chips.by_id(esp["chip_id"]) is None:
+            raise ValueError(f"ESP image chip id {esp['chip_id']} is not a chip this tool knows")
+    elif esp["chip_id"] != chips.of(kind.chip).chip_id:
+        chip = chips.of(kind.chip)
         raise ValueError(f"ESP image chip id is not {chip.label} ({chip.chip_id})")
     if not esp["checksum_valid"] or esp["sha256_valid"] is False:
         raise ValueError("ESP image checksum or appended SHA-256 is invalid")

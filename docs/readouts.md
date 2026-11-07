@@ -1,0 +1,139 @@
+# Readouts
+
+A readout is a copy of a device's whole memory and of the firmware eWeLink
+offers it, or where its memory cannot be read, that firmware and what it says
+it is, sent by its owner to help add support for it. Owners are told only that
+it is a firmware readout, anonymised. This page covers what the tool does to
+make one, what is in it, and where it goes. Owners start one from the
+[README](../README.md#how-you-can-help).
+
+## How the tool makes one
+
+[readout.py](../tools/autoflash/readout.py) runs it. A run offers it at its first
+stage when the eWeLink account holds no supported device, and `readout` runs it
+for any device in the account (`--plug-ip` picks one).
+
+1. The device is found on the network by its eWeLink id, and eWeLink is asked
+   what it runs and which firmware it would be offered. The firmware name comes
+   from that offer, else from the public files' names
+   ([firmware_name.py](../tools/ewelink/firmware_name.py)), else, for a kind
+   the tool converts, from its own list.
+2. The firmware eWeLink would offer it, asked as one behind every release, is
+   fetched whole as the device fetches it ([offered_firmware.py](../tools/ewelink/offered_firmware.py)).
+   It is often another version than the one the device runs, so two to test
+   against. Nothing is sent to the device for it, and a readout goes on without
+   it.
+3. If the name's chip is an ESP32-C3 or a classic ESP32, and the owner types
+   PROCEED, the stock updater is sent the bridge, wrapped under that name. The
+   sender takes a model no kind has only with `--readout-model`, and then only
+   for the exact bridge `firmware.json` pins for that chip
+   ([serve_tasmota_ota.py](../tools/espressif/serve_tasmota_ota.py)). The bridge
+   only reads, and at start-up it chooses Sonoff's slot for the next start.
+4. The whole flash is read through the bridge, checked against its own hash,
+   and kept, untouched, as the device's Sonoff backup on the owner's computer.
+   The owner then switches the device off and on, and the tool waits for
+   Sonoff's firmware to answer.
+5. An anonymised copy is made to send ([scrub.py](../tools/espressif/scrub.py)):
+   - Every Wi-Fi password the settings show is taken out: ESP-IDF's and
+     Sonoff's, the old entries NVS leaves behind, every other copy of the same
+     bytes, and each password's PMK. Where a firmware keeps one somewhere else,
+     it goes as it is: the copy is private, and a question about it would only
+     make the owner hesitate to send it.
+   - The device's eWeLink identity (`deviceid`, `apikey`, `encrypt_key`,
+     `devicekey` in Sonoff's settings) is replaced everywhere by made-up values
+     of the same shape: a device id stays ten digits beginning 1000.
+   - The firmware images are left byte for byte: they are Sonoff's published
+     code, and a password found there is the firmware's own setup network's.
+   - Every settings entry changed has its checksums made good again.
+6. The owner is shown what goes - "the device's firmware readout, anonymised" -
+   then asked, in a menu, to add an email address or a Telegram username, so
+   they can be told if support for the device is added, or to submit it
+   without either, or to quit and keep it unsent. A readout that is declined, or that
+   could not be sent, stays in the run's folder as `readout.tar`, and
+   `readout --send <file>` sends it later.
+
+On any other chip nothing is sent to the device: the readout is the offered
+firmware and what it and eWeLink said. Nothing is ever sent from the emulator or an unattended run.
+`AUTOFLASH_READOUT_URL` points a test at a server of its own.
+
+## Is an anonymised copy enough?
+
+Yes. The emulator needs the flash as the device has it, not who the device is:
+its eWeLink identity only matters to eWeLink's servers, which an emulated copy
+never meets, as its cloud is the emulator's stub. The public test plugs are made
+the same way ([public_dump.py](../tools/espressif/emulator/public_dump.py)), and
+boot and convert in the emulator. A readout keeps all a public dump lacks: the
+device's real partition table, its factory data, its calibration and its own
+settings, which is what the devices in `devices/not-ready-yet/` stop for.
+
+## What is in one
+
+A tar, the manifest first and as it is, so the API reads it without unpacking anything; each `.bin` in it is xz-compressed (`flash.bin.xz`), about a quarter smaller than gzip on a real dump (a 4 MB S60 flash: 1.0 MB):
+
+| File | What |
+|---|---|
+| `manifest.json` | first, always: format 1; the tool's version; eWeLink's product model, brand and uiid; the stock firmware's model and version; its firmware name and where that came from; its chip; whether the memory was read; the facts the run logs (chip revision, security fuses, flash size, partition table); how many places had a password blanked and an identity replaced; `contact`, the owner's `email` or `telegram`, only if they gave one |
+| `flash.bin.xz` | the whole flash, as above |
+| `efuse.bin` | the eFuse registers, as the bridge reads them |
+| `info.txt` | the bridge's `GET /info` |
+| `report.json` | the dump's check: partitions, which slot the boot selection picks, hashes |
+| `offered/<name>.xz` | each file of the firmware eWeLink offers the device, as it sends it (`user1.bin`, `user2.bin`); the manifest's `offered` gives each one's version, size and SHA-256 |
+
+## Where it goes
+
+`POST https://api.firmwareliberator.com/readout`: the project's API, a Worker
+of its own ([api/index.js](../website/api/index.js)), apart from the website's, so
+nothing sent to it can affect the site. The tool is open source, so it can hold
+no secret to sign in with; instead every readout costs its sender work, and the
+store has limits it is never let past:
+
+- **Proof of work.** The tool finds a nonce so that SHA-256 of
+  `<time>:<the readout's SHA-256>:<nonce>` starts with 24 zero bits: about 17
+  million tries, 10 to 30 seconds on a computer, once a readout. Hardware
+  made for hashing does it in milliseconds, so this only stops a cheap flood;
+  the daily limits below are what bound the store. It goes in `X-Proof`, is good for that readout
+  alone, and only within 15 minutes of when it was made.
+- **It must be one.** `application/x-tar`, at most 24 MB, its first file a
+  `manifest.json` of the format the tool writes.
+- **Rate.** Before the Worker runs at all, a Cloudflare rate-limiting rule on
+  its hostname (`tools/repo/cloudflare_settings.py`) blocks an address sending
+  more than 5 requests in 10 seconds, for 10 seconds: a flood never reaches the
+  Worker, where every request, even one turned away, counts against the
+  account's 100,000 a day on Workers' free plan. Then two readouts a minute
+  from one address, held by Cloudflare's rate limiter only. 100 readouts and 250 MB a day from everyone; past that, the next waits
+  until the next day.
+- **Repeats.** The same readout sent again the same day is the one already
+  stored.
+- **Enough of one device.** A product model listed in `ENOUGH` in the Worker's
+  [wrangler.jsonc](../website/api/wrangler.jsonc) is thanked and not stored.
+- **Retention.** Each readout is stored privately in the R2 bucket
+  `firmware-liberator-readouts` as `readouts/<date>/<hash>.tar`; its
+  reference is `<date>-<12 hex>`. The bucket's lifecycle rule deletes
+  everything under `readouts/` 30 days after it came in. 250 MB a day for 30
+  days, 7.5 GB, plus 2 GB under `kept/`, stays within R2's free 10 GB.
+
+Nothing of the sender is stored but the contact they chose to give, in the manifest. Nothing serves the bucket.
+
+The bucket, its lifecycle rule and the rate-limiting rule are made by
+`python3 tools/repo/cloudflare_settings.py apply`. The website workflow deploys
+the Worker in a job of its own.
+
+## Working with them
+
+```sh
+cd website
+npx wrangler r2 object list firmware-liberator-readouts --prefix readouts/ --remote
+npx wrangler r2 object get firmware-liberator-readouts/readouts/2026-11-07/0a1b2c3d4e5f60718293a4b5.tar --remote --file readout.tar
+```
+
+- **One to keep**, past its 30 days: put it under `kept/`
+  (`wrangler r2 object put firmware-liberator-readouts/kept/<name> --file ...`),
+  then delete the original. Keep `kept/` under 2 GB.
+- **Duplicates.** The manifest's `flash.sha256` is of the device's own flash
+  before it was anonymised, so two readouts of one device share it.
+- **Once a device is supported**, add its product model to `ENOUGH`, and delete
+  its readouts but the one kept.
+
+Keep what you fetch under `captures/`: like any dump, it never goes into the
+repository. [Adding a device](adding-a-device.md) takes it from there, as a
+whole dump.

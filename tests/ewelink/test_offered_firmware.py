@@ -1,0 +1,47 @@
+"""The firmware eWeLink offers a device, fetched whole as the device asks for
+it, for its readout: never more than an update file, never twice, never
+stopping the readout."""
+import unittest
+
+from tools.ewelink import offered_firmware
+
+OFFERS = [{"version": "1.1.0", "binList": [
+    {"name": "user1.bin", "downloadUrl": "https://example.com/fw/user1.bin?x=1"},
+    {"name": "user2.bin", "downloadUrl": "https://example.com/fw/user2.bin"},
+    {"name": "local.bin", "downloadUrl": "file:///etc/passwd"},
+]}]
+
+
+class FetchTests(unittest.TestCase):
+    def test_each_file_is_asked_for_as_the_device_asks(self):
+        asked = []
+
+        def get(url, deviceid):
+            asked.append(offered_firmware.as_device(url, deviceid))
+            return url.encode()
+
+        found, problems = offered_firmware.fetch(OFFERS, "1000abcdef", get)
+        self.assertEqual([(item.name, item.version) for item in found], [("user1.bin", "1.1.0"), ("user2.bin", "1.1.0")])
+        self.assertEqual(problems, [])
+        self.assertEqual(asked[0], "https://example.com/fw/user1.bin?x=1&deviceid=1000abcdef&ts=1&sign=0")
+
+    def test_the_same_bytes_twice_are_kept_once(self):
+        found, _ = offered_firmware.fetch(OFFERS, "1000abcdef", lambda url, deviceid: b"same")
+        self.assertEqual(len(found), 1)
+
+    def test_a_failure_is_noted_by_its_type_alone(self):
+        def get(url, deviceid):
+            raise OSError(f"could not fetch {url}")
+
+        found, problems = offered_firmware.fetch(OFFERS, "1000abcdef", get)
+        self.assertEqual(found, [])
+        self.assertEqual(problems, ["user1.bin: OSError", "user2.bin: OSError"])
+        self.assertNotIn("example.com", " ".join(problems))
+
+    def test_nothing_is_asked_without_the_devices_id(self):
+        self.assertEqual(offered_firmware.fetch(OFFERS, "", lambda url, deviceid: b"x"),
+                         ([], ["no device id to ask with"]))
+
+
+if __name__ == "__main__":
+    unittest.main()

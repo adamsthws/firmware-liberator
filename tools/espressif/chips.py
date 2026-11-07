@@ -7,10 +7,13 @@ The conversion is otherwise the same on each: Tasmota's partition table for a
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from tools.espressif.analyze_vendor_ota import WRAPPER_SIZE
 
 ROOT = Path(__file__).resolve().parents[2]
 FIRMWARE = json.loads((ROOT / "artifacts" / "firmware.json").read_text(encoding="utf-8"))
@@ -54,6 +57,16 @@ class Chip:
     def bundle_file(self, name: str) -> Path:
         """Where a run's firmware bundle keeps one of its files."""
         return ROOT / "captures" / self.bundle / name
+
+    def bridge_app(self) -> bytes:
+        """The bridge's app, as firmware.json pins it: published wrapped for the
+        S60 on the ESP32-C3 (.ota), bare on the others. Raises ValueError for
+        a file that is not the one pinned."""
+        pin = self.pin("bridge")
+        data = (ROOT / pin["file"]).read_bytes()
+        if hashlib.sha256(data).hexdigest() != pin["sha256"]:
+            raise ValueError(f"{pin['file']} is not the file firmware.json pins")
+        return data[WRAPPER_SIZE:] if pin["file"].endswith(".ota") else data
 
     @property
     def interim_name(self) -> str:

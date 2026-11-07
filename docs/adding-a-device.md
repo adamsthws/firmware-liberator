@@ -9,7 +9,7 @@ this way.
 - **A whole-flash dump of the device on stock firmware, if you can find one.**
   [FlashDumps](https://github.com/openshwprojects/FlashDumps) has several. A dump
   has the device's real partition table, settings and factory data, so what you
-  test is what the device has.
+  test is what the device has. An owner's [readout](readouts.md) is one.
 - **Failing that, eWeLink's public update file for it.** It runs on another
   plug's flash (a *donor*), which tests the firmware but not the device's own
   layout. Some firmware will not get far this way: see

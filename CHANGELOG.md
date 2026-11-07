@@ -24,6 +24,14 @@ check.
   not start far enough in the emulator yet, so the tool turns them down as it
   does a device it does not know: `devices/not-ready-yet/` says what holds each
   one up, and `docs/adding-a-device.md` how to add a device.
+- A device the tool does not convert yet can be read out to help add it:
+  offered when the eWeLink account holds no supported device, or run for any
+  device with `readout`. On an ESP32-C3 or classic ESP32 it reads the whole
+  memory through the bridge, kept in the spare slot only until the device is
+  switched off and on, which starts its Sonoff firmware again; on any other
+  chip nothing is sent to the device. With the owner's agreement, a copy, with
+  every Wi-Fi password taken out and its eWeLink identity made up, goes to a
+  private store behind api.firmwareliberator.com. See `docs/readouts.md`.
 - A run logs what a backup says about the device - its chip, secure boot and
   flash encryption, flash size, partition table and each app's version - and
   shows it where the table is not one the tool knows: none of it is secret, and

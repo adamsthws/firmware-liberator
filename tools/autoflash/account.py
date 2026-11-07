@@ -228,13 +228,19 @@ def find_account_plug(ctx: Context, devices: list[dict[str, Any]]) -> str:
                 *(["It has:", *others] if others else ["It has no devices."]),
                 "",
                 "Add the device in the eWeLink app, or use the account it is in.",
+                *(["", "Or help add support for yours: it can be read out, only read, and sent in."]
+                  if devices else []),
             ])
             choice = prompts.ask_choice("What now", [
                 "Look again",
                 "Use a different eWeLink account",
                 "Type the device's address myself",
+                *(["Read-out my device to help add support for it"] if devices else []),
             ])
             output.transient_end()
+            if choice == 3:
+                from tools.autoflash import readout  # it builds on the routes, which import this
+                readout.from_run(ctx, devices)
         else:
             output.say("Looking for it on your network...")
             sightings = sight_plugs(plugs)
@@ -453,12 +459,24 @@ def note_firmware_name(kind: kinds.Kind | None, latest: dict[str, Any], deviceid
     return learned.name
 
 
-def step_discover(ctx: Context) -> dict[str, Any]:
-    """A2/A3/A4 - identify the device and read its OTA metadata."""
-    plug_ip = ctx.state.require("plug_ip")[0]
+@dataclass(frozen=True)
+class Asked:
+    """What the device says through eWeLink: its discovery report (kept as
+    mdns.json in the run), its firmware's version and model, eWeLink's product
+    model, any update offered, and the latest firmware eWeLink would give it."""
+    report: dict[str, Any]
+    version: str
+    model: str
+    product: str
+    endpoints: list[Any]
+    latest: dict[str, Any]
+    deviceid: str
+
+
+def ask_ewelink(ctx: Context, plug_ip: str) -> Asked:
+    """Ask the device at `plug_ip` and eWeLink what it is and runs; nothing is sent to it."""
     mdns = ctx.dir / "mdns.json"
     meta = ctx.dir / "ota-metadata.json"
-
     # The same report the discovery tool writes, without its console output.
     report = discover_ewelink.discover(8.0, None, plug_ip)
     if not report["packets"]:
@@ -491,8 +509,17 @@ def step_discover(ctx: Context) -> dict[str, Any]:
     finally:
         # Its download links may work as access tokens; what is needed is now read.
         meta.unlink(missing_ok=True)
+    return Asked(report, version, model, product, endpoints, latest, deviceid)
+
+
+def step_discover(ctx: Context) -> dict[str, Any]:
+    """A2/A3/A4 - identify the device and read its OTA metadata."""
+    plug_ip = ctx.state.require("plug_ip")[0]
+    asked = ask_ewelink(ctx, plug_ip)
+    report, version, model, product = asked.report, asked.version, asked.model, asked.product
+    endpoints = asked.endpoints
     kind = kinds.for_account(product, model)
-    name = note_firmware_name(kind, latest, deviceid, product, model)
+    name = note_firmware_name(kind, asked.latest, asked.deviceid, product, model)
     if kind is None:
         raise Abort(
             f"{plug_ip} is a {model or 'device of unknown model'}, which this tool does not "

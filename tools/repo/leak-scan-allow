@@ -25,3 +25,6 @@ autoflash
 258eafa5-e914-47da-95ca-c5ab0dc85b11
 4d36e972-e325-11ce-bfc1-08002be10318
 00000000-1111-2222-3333-444444444444
+# The made-up apikey tests/espressif/test_scrub.py anonymises, and what it becomes.
+12345678-1234-4abc-8def-123456789abc
+10000000-0000-0000-0000-000000000000
