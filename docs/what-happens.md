@@ -299,8 +299,12 @@ first half, checks them, and switches to them.
   of it: it is written there, the area Sonoff's layout keeps settings in is
   cleared, and Sonoff's layout table is written last - the one moment a power
   cut would leave a plug needing to be opened. The plug restarts into the
-  mover, which takes ESPHome itself as an update, or the startup firmware
-  as on the way from ESPHome.
+  mover, under whichever bootloader it has. To ESPHome, on a plug that already
+  has ESPHome's bootloader, the mover takes ESPHome itself as an update. On the
+  way to any other firmware, or on a plug with another bootloader, it takes the
+  startup firmware as on the way from ESPHome, and the full Tasmota then
+  installs ESPHome's bootloader, so that every plug the tool converts ends with
+  the same one.
 - **A plug left part way** - running the mover, the startup firmware or the
   full Tasmota on Sonoff's layout - is recognised when you run the tool again,
   and can go on to any of the three from where it is.

@@ -14,6 +14,11 @@ from tools.autoflash.routes.espressif.evidence import ATTEMPTED_EVIDENCE, DESTRU
 
 # Sonoff's firmware goes back on from the plug's own backup: there is no other.
 SONOFF_FROM_BACKUP = True
+# Tasmota to ESPHome without the hub, for a plug found with ESPHome's bootloader
+# already (source.leaves_tasmota_direct): the steps a run takes, not what it left
+# from, which stays "tasmota" (routes.route_source). Every other plug goes through
+# the hub, so that every plug ends with the same bootloader.
+DIRECT_FROM_TASMOTA = "tasmota-direct"
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -49,7 +54,7 @@ COMMON_STEPS: list[tuple[str, str, Callable[[Context], dict[str, Any]]]] = [
     ("C3", "Back up the Sonoff firmware", installer.step_backup),
     ("D1", "Berry-capable Tasmota via bridge AP", installer.step_berry_tasmota),
 ]
-# The hub every route but Tasmota to ESPHome passes through: Sonoff's layout,
+# The hub every route but DIRECT_FROM_TASMOTA passes through: Sonoff's layout,
 # the Berry Tasmota running from slot 1, ESPHome's bootloader in place.
 HUB_STEPS: list[tuple[str, str, Callable[[Context], dict[str, Any]]]] = [
     ("D4", "Promote to high slot and freeze NVS", hub.step_promote),
@@ -128,7 +133,7 @@ def steps_for(firmware: str, source: str = "sonoff") -> list[tuple[str, str, Cal
              "sonoff": SONOFF_FINAL_STEPS}[firmware]
     if source == "sonoff":
         return COMMON_STEPS + HUB_STEPS + final
-    if source == "tasmota" and firmware == "esphome":
+    if source == DIRECT_FROM_TASMOTA:
         # The mover takes ESPHome itself: no need to pass through the hub.
         return START_STEPS + [LEAVE_TASMOTA_STEP,
                               ("M1", "ESPHome, sent to the mover as an update", mover.step_esphome_from_mover),

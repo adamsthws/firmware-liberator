@@ -1074,10 +1074,10 @@ class PlanPhaseTests(unittest.TestCase):
 
     def test_its_berry_is_rendered_whole(self):
         with tempfile.TemporaryDirectory() as directory:
-            plan = plans.leave_tasmota(self.IMAGE, esphome_files.sonoff_table(), self.BOOTLOADER)
+            plan = plans.leave_tasmota(self.IMAGE, esphome_files.sonoff_table())
             rendered = self.state(MigrationFixture(Path(directory)), plan).render_berry().decode()
         self.assertNotRegex(rendered, r"@[A-Z][A-Z0-9_]+@")
-        for blob in ("bootloader", "mover", "table"):
+        for blob in ("mover", "table"):
             self.assertIn(f'"blob":"{blob}"', rendered)
         self.assertIn(plans.TASMOTA_TABLE_SHA256, rendered)   # the layout it starts from
         self.assertIn(plans.SONOFF_TABLE_SHA256, rendered)    # and the one it ends with

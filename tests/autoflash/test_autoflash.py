@@ -251,6 +251,7 @@ class ResumeTests(unittest.TestCase):
         known = {step for firmware in espressif.FIRMWARES for source in espressif.SOURCES
                  if firmware != source and (source != "outdated" or firmware in espressif.UPDATE_STEPS)
                  for step, _, _ in espressif.steps_for(firmware, source)}
+        known |= {step for step, _, _ in espressif.steps_for("esphome", espressif.DIRECT_FROM_TASMOTA)}
         self.assertTrue(evidence.DESTRUCTIVE_STEPS <= known)
         self.assertIn("E3", evidence.DESTRUCTIVE_STEPS)
         self.assertIn("C2", evidence.DESTRUCTIVE_STEPS)
@@ -575,7 +576,6 @@ class EsphomeSignalTests(unittest.TestCase):
                       mock.patch.object(esphome, "image_for", return_value=b"\0" * 64),
                       mock.patch.object(esphome, "mover_for", return_value=b"\0" * 64),
                       mock.patch.object(esphome, "sonoff_table", return_value=b""),
-                      mock.patch.object(esphome, "published_bootloader", return_value=b""),
                       mock.patch.object(esphome_ota, "probe", return_value=None),
                       mock.patch.object(plans, "esphome", return_value="plan"),
                       mock.patch.object(plans, "leave_tasmota", return_value="plan")):
@@ -730,7 +730,6 @@ class LeaveTasmotaStoppedTests(unittest.TestCase):
                       mock.patch.object(esphome_ota, "probe", return_value=None),
                       mock.patch.object(esphome, "mover_for", return_value=b""),
                       mock.patch.object(esphome, "sonoff_table", return_value=b""),
-                      mock.patch.object(esphome, "published_bootloader", return_value=b""),
                       mock.patch.object(plans, "leave_tasmota",
                                         return_value=SimpleNamespace(name="leave_tasmota", running=0))):
             patch.start()
@@ -756,7 +755,6 @@ class LeaveTasmotaStoppedTests(unittest.TestCase):
         with self.assertRaisesRegex(errors.Abort, "did not pass"):
             mover.step_leave_tasmota(ctx)
         ctx.device.command.assert_not_called()
-
 
     def test_the_table_looked_for_is_the_one_the_plan_writes(self):
         # A temporary table, or a layout other than the S60's, is as written as Sonoff's.
