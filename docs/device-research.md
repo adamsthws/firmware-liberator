@@ -87,17 +87,17 @@ A stock updater refuses a file whose wrapper names another firmware. In the emul
 the POW Elite read 100 bytes of a wrong one, reported `ota: fail` and stayed on Sonoff,
 so a wrong name costs nothing. The names vary too much to guess.
 
-Tried on the real server, with an S60 and an S61:
+Tried on the real server:
 
-| Asked | Answer |
-|---|---|
-| `ota/query` with the device's current version | no offer |
-| `ota/query` with its own id and version `0.0.1` | its latest firmware |
-| its own id, with another model | its own firmware: the model is ignored |
-| a made-up id, with any model | an unrelated 3.5.0: never use one |
-| an empty id | error 400 |
-| GET on the offered URL as given | empty 400 |
-| GET with `?deviceid=<its id>&ts=1&sign=0` | the file; the signature is not checked, and a `Range` is answered |
+| Asked | Answer | Tried on |
+|---|---|---|
+| `ota/query` with the device's current version | no offer | S60 |
+| `ota/query` with its own id and version `0.0.1` | its latest firmware | S60, S61 |
+| its own id, with another model | its own firmware: the model is ignored | S60 |
+| a made-up id, with any model | an unrelated 3.5.0: never use one | |
+| an empty id | error 400 | |
+| GET on the offered URL as given | empty 400 | S60 |
+| GET with `?deviceid=<its id>&ts=1&sign=0` | the file; the signature is not checked, and a `Range` is answered | S60, S61 |
 
 `tools/ewelink/firmware_name.py` uses this at stage 5, reading only the file's first
 bytes. Where eWeLink offers nothing, it falls back on the names in the public update
@@ -160,9 +160,39 @@ length and options, so it can be read from an update file by its description str
 | RF Firmware | `0x3e0000`, `0x1000` | `0x1e0000`, `0x1000` |
 | NET info | `0x3e1000`, `0x1000` | `0x1e1000`, `0x1000` |
 
+Further 4 MB entries, the same in all five files: NVS `0x3e2000`, `0xb000`; KEY
+`0x3ed000`, `0x1000`; matter info backup `0x3ee000`, `0x8000`; matter info `0x3f6000`,
+`0x8000`; matter factory info `0x3fe000`, `0x2000`. The OTA entry's description is
+lowercase `ota`. Stock models in their strings: `SN-BK7238-BASICR5-01`,
+`-BASIC1GSP-01`, `-S41-01`, `-T6C3-01`. A register message takes its model from factory
+data, not those strings, and only the S61's has been seen.
+
 The bootloader holds an RT-Thread FAL table that agrees. The update files' apps, at
 1.35 to 1.41 MB, would not fit a 2 MB table's application partition either. That
 these devices really have 4 MB is inferred from the files, not from a read-out.
+
+**The largest open risk is a spec that disagrees.**
+[CNX Software's review](https://www.cnx-software.com/2025/11/06/review-sonoff-basic-gen5-matter-switch-and-tx-gen2-matter-smart-wall-switch)
+gives the Basic Gen5 "2 MB flash (SiP)", while its firmware holds only the 4 MB table
+above, including an update slot at `0x286000`, beyond 2 MB. The firmware is the stronger
+evidence, as it could not update itself on 2 MB, but nobody has read a real one's flash
+here. Stock does not expose its flash size to a run: its register message gives
+`romVersion`, `chipid` and `model`, and `[Flash]id:` appears only on serial.
+
+### Adding a device from a pin map
+
+The Basic Gen5 is added this way; see
+[its page](../devices/sonoff-basic-1gs/README.md) for what has been run. Pins from
+[one post](https://www.elektroda.com/rtvforum/topic4167932.html) and OpenBeken's list.
+BASIC-1GSP (no published pin map; it has a meter, and forum titles mention a pulse-driven
+latching relay, which a wrong map could harm), S41 (no published pin map) and T6 (one
+unit's pins only, with touch over a UART protocol OpenBeken has no driver for:
+[saltech1's ESPHome work](https://github.com/saltech1/esphome-sonoff-t6-uart)) stay out.
+Pins are never guessed.
+
+Basic Gen5, S41 and T6 firmware lacks the `uiActive` string the S61 and BASIC-1GSP have, so
+a check of a plug back on Sonoff re-sends `sledOnline` there instead, proven only on the
+stub.
 
 ### Rebuilding a whole dump without a serial cable
 
