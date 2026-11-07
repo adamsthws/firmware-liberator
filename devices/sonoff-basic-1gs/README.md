@@ -1,8 +1,16 @@
 # Sonoff Basic Gen5
 
-**No real one has been converted.** The tool says so and asks you to accept it
-before it writes anything. If you try one, please send the run's log, whatever
-happens: it is how the next person learns whether this works.
+## Status
+
+[![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-basic-1gs.json)](README.md)
+
+## Testing
+
+**In the emulator:** it runs on another device's bootloader and settings, as no dump of a real one is published ([what was run](#what-has-been-run)).
+
+**Worth checking:** what model it reports, whether the run's backup found the flash matching the table, and whether the relay, both inputs and the LED work.
+
+## The device
 
 Sonoff's in-line Matter over Wi-Fi switch, model **BASIC-1GS**, board
 `BASIC-1GS-WIFI V1.2`, without the meter of its DIN rail cousin, the BASIC-1GSP
@@ -41,7 +49,7 @@ bootloader, radio data and settings were the S61's. The firmware itself said it 
 an S61 as it registered, as that comes from its factory data, so the stub's account
 gave this device's model in its place. The emulator has no relay, inputs or LED.
 
-**Not known until a real one is tried:** whether it reports the model above (if not,
+**What the emulator cannot show:** whether it reports the model above (if not,
 the tool stops with nothing written, and the log says what it reported), whether its
 flash is 4 MB as its firmware's table says, whether the conversion installs there,
 whether its stock bootloader is the S61's, and whether the pins are right.

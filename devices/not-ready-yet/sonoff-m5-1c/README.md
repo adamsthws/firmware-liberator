@@ -1,6 +1,14 @@
 # Sonoff M5 1-gang
 
-**Not ready yet: the tool does not convert this device.** its stock firmware starts in the emulator, run on another plug's flash as no usable dump of one is published (the public one is of a locked Matter version), but goes quiet and never starts its Wi-Fi. See [what is holding each one up](../README.md).
+## Status
+
+[![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-m5-1c.json)](README.md)
+
+## Where it stops
+
+Its stock firmware starts in the emulator, run on another plug's flash as no usable dump of one is published (the public one is of a locked Matter version), but goes quiet and never starts its Wi-Fi. See [what is holding each one up](../README.md).
+
+## The device
 
 Sonoff's the SwitchMan wall switch with 1 gang. **Not the Matter version**, whose part number ends in W: it has secure boot and flash encryption on, and cannot be converted; the tool does not offer it.
 

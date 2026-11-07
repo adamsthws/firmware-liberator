@@ -8,7 +8,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from tools.autoflash import esphome_ota, output, prompts, unlock
+from tools.autoflash import esphome_ota, kinds, output, prompts, testers, unlock
 from tools.autoflash.errors import Abort, NothingWritten
 
 if TYPE_CHECKING:
@@ -18,7 +18,8 @@ if TYPE_CHECKING:
 def consent_to_leave(ctx: Context, what: str) -> None:
     """The go-ahead, once, before the first write of a run from a converted plug.
     Not asked again as a step that stopped is tried again by itself: seen, a
-    retry asked for it, and Enter stopped the run."""
+    retry asked for it, and Enter stopped the run.  A kind still wanting testers
+    is said to be, in the same box."""
     if getattr(ctx, "consented", False):
         return
     output.transient_begin()
@@ -27,6 +28,7 @@ def consent_to_leave(ctx: Context, what: str) -> None:
         "process: a power cut while its memory is rewritten could leave a device",
         "that has to be opened to repair.",
         "Only go ahead with a device you can afford to lose.",
+        *testers.notice(kinds.of_run(ctx.state)),
     ])
     if not prompts.require_word(prompts.CONSENT_WORD):
         raise NothingWritten("not confirmed - nothing has been written to the device")

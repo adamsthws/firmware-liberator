@@ -1,9 +1,18 @@
 # Sonoff POW Ring
 
-Sonoff's the **POWCT**: a clamp-on energy meter with a small display. Its stock firmware calls itself `SN-ESP32D0-POWCT-01`.
+## Status
 
-The conversion runs in the emulator from a public dump of a stock one. The emulator
-has none of its hardware to see, so the wiring below is what its sources say.
+[![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-powct.json)](README.md)
+
+## Testing
+
+**In the emulator:** it converts, from a public dump of a stock one, to Tasmota and to ESPHome and back to Sonoff's firmware. The emulator has none of its hardware, so its wiring below is what its sources say, not what was seen.
+
+**Worth checking:** whether the relay, display, button and LEDs work, and what the meter reads against a load you know.
+
+## The device
+
+Sonoff's the **POWCT**: a clamp-on energy meter with a small display. Its stock firmware calls itself `SN-ESP32D0-POWCT-01`.
 
 | | |
 |---|---|

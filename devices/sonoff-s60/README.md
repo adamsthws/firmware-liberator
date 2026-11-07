@@ -1,5 +1,11 @@
 # Sonoff S60
 
+## Status
+
+[![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-s60.json)](README.md)
+
+## The device
+
 Sonoff's ESP32-C3 smart plug: the **S60TPG** (UK, Type G) and the **S60TPF**
 (Europe, Type E/F), the same board behind different pins. The stock firmware
 calls it `SN-ESP32C3-S60-01`. This folder holds or links everything specific

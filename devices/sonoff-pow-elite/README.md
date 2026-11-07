@@ -1,13 +1,21 @@
 # Sonoff POW Elite 16A
 
+## Status
+
+[![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-pow-elite.json)](README.md)
+
+## Testing
+
+**In the emulator:** it converts, from a public dump of a stock one, to Tasmota and to ESPHome and back to Sonoff's firmware. The emulator has none of its hardware, so its wiring below is what its sources say, not what was seen.
+
+**Worth checking:** whether the relay, display, button and LEDs work, and what the meter reads against a load you know.
+
+## The device
+
 Sonoff's DIN-rail power meter and switch with a small display, the **POWR316D**.
 Its stock firmware calls itself `SN-ESP32D0-POWR3-01`, and so does the 20 A
 POWR320D's, whose relay is a latching one on other pins: the tool converts a
 plug eWeLink calls a POWR316D, and no other.
-
-The conversion runs in the emulator from a public dump of a stock POWR316D. The
-emulator has no relay, meter or display, so the wiring below is what its sources
-say, not what was seen.
 
 | | |
 |---|---|

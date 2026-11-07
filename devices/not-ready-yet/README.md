@@ -13,6 +13,6 @@ so the work is not lost; none has a published image, or has been run on a real o
 
 To work on one in the emulator, set `AUTOFLASH_NOT_READY_YET=1`, and build its
 ESPHome with `tools/repo/update_firmware.py esphome --plug KEY`. When it converts
-both ways, move its folder up to `devices/`, take `ready=False` off its kind in
-`tools/autoflash/kinds.py` and move it to `READY`, and publish its image: the config's path is
+both ways, move its folder up to `devices/`, set its status to `Testers wanted` in
+[`devices/status.json`](../status.json), and publish its image: the config's path is
 part of the image, so it is built again from the new place.

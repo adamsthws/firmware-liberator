@@ -30,6 +30,7 @@ from tools.autoflash import (
     safety_locks,
     setup_network,
     tasmota_settings,
+    testers,
 )
 from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort, NothingWritten
@@ -144,6 +145,7 @@ def step_bridge(ctx: Context) -> dict[str, Any]:
             "will no longer control it. DO NOT UNPLUG IT during the process.",
             kept,
             "Only go ahead with a device you can afford to lose.",
+            *testers.notice(kinds.of_run(ctx.state)),
         ])
         if not prompts.require_word(prompts.CONSENT_WORD):
             raise NothingWritten("not confirmed - nothing has been written to the device")

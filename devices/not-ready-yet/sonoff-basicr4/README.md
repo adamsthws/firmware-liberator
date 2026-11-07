@@ -1,6 +1,14 @@
 # Sonoff BASICR4
 
-**Not ready yet: the tool does not convert this device.** its stock firmware stops at start-up in the emulator (`espInit`: `ESP_ERR_NOT_FOUND`), run on another plug's flash, as no dump of one is published. It may need what only a real one's flash holds. See [what is holding each one up](../README.md).
+## Status
+
+[![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-basicr4.json)](README.md)
+
+## Where it stops
+
+Its stock firmware stops at start-up in the emulator (`espInit`: `ESP_ERR_NOT_FOUND`), run on another plug's flash, as no dump of one is published. It may need what only a real one's flash holds. See [what is holding each one up](../README.md).
+
+## The device
 
 Sonoff's the ESP32-C3 inline switch.
 

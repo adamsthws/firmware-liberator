@@ -1,5 +1,17 @@
 # Sonoff S61
 
+## Status
+
+[![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-s61.json)](README.md)
+
+## Testing
+
+**In the emulator:** it converts in every direction, faults and all, from the public dump of a real one; the emulator has no relay, button, LEDs or meter.
+
+**Worth checking:** whether it came back on your Wi-Fi, and whether the relay, button, LEDs and meter work.
+
+## The device
+
 Sonoff's Beken smart plug, sold as the **S61S** (iPlug Gen2, Matter over
 Wi-Fi), model **S61STPF** for the European plug. The firmware calls itself
 `S61`: its eWeLink model is `SN-BK7238-S61-01`, its board id
