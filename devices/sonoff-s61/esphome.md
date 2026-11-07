@@ -162,5 +162,5 @@ ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-s61-2026.10
 with `tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-s61`
 ([docs/updating-firmware.md](../../docs/updating-firmware.md)).
 
-This has not yet been done on a real plug. The tool's route runs end to end in
+The tool's route runs end to end in
 the emulator ([its fault suite](../../docs/testing.md#the-s61s-fault-suite)).

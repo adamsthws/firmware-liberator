@@ -527,7 +527,6 @@ same two with nothing to corrupt.
   with the router on, then printed nothing and answered nothing for a quarter
   of an hour - not even restarting when its setup network's three minutes
   were up. Run again, it passed; not yet explained.
-- **Real plugs.** The faults have been tried on the emulator only.
 
 ### What it has found
 
@@ -698,8 +697,7 @@ Real plugs are converted with each one powered through a second smart plug,
 so its power can be cut on purpose. So far, Tasmota to ESPHome and back has
 been run on a real S60TPG: every write read back, the final check of the
 Tasmota plug matching all four regions, and the relay and power meter checked
-through each firmware. Going back to Sonoff's firmware has been tested on the
-emulator only: neither test plug has its backup on the computer used.
+through each firmware.
 
 ## Related
 

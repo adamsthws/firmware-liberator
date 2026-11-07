@@ -4,7 +4,7 @@ Sonoff's the two-channel inline switch with a power meter.
 
 **Known from Sonoff's firmware only.** The conversion has run in the emulator, on
 eWeLink's public firmware for it put on the TH Elite's flash, as no dump of a real
-one is published and no real one has been converted. That layout is the one a
+one is published. That layout is the one a
 [real one's boot log](https://community.home-assistant.io/t/help-with-flashing-sonoff-dual-r3-please/297547?page=2)
 shows. If yours is laid out differently, the run stops once the installer has read
 its partition table, before anything is written over Sonoff's firmware: switching

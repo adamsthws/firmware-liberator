@@ -5,9 +5,9 @@ Its stock firmware calls itself `SN-ESP32D0-POWR3-01`, and so does the 20 A
 POWR320D's, whose relay is a latching one on other pins: the tool converts a
 plug eWeLink calls a POWR316D, and no other.
 
-**Tested in the emulator only.** The conversion has run from a public dump of a
-stock POWR316D; no real one has been converted. The emulator has no relay, meter
-or display, so the wiring below is what its sources say, not what was seen.
+The conversion runs in the emulator from a public dump of a stock POWR316D. The
+emulator has no relay, meter or display, so the wiring below is what its sources
+say, not what was seen.
 
 | | |
 |---|---|

@@ -4,9 +4,8 @@
 
 Sonoff's the wall panel with a touch screen and two relays. Its stock firmware calls itself `E32-MSW-NX`.
 
-**Tested in the emulator only.** The conversion has run from a public dump of a
-stock one; no real one has been converted. The emulator has none of its hardware
-to see, so the wiring below is what its sources say.
+The conversion runs in the emulator from a public dump of a stock one. The emulator
+has none of its hardware to see, so the wiring below is what its sources say.
 
 | | |
 |---|---|

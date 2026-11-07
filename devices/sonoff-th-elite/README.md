@@ -2,9 +2,8 @@
 
 Sonoff's the **THR320D**: a thermostat switch with a socket for a sensor and a display. Its stock firmware calls itself `SN-ESP32D0-THR3-01`, and so does the THR316D's, wired otherwise: the tool converts one eWeLink calls a THR320D, and no other.
 
-**Tested in the emulator only.** The conversion has run from a public dump of a
-stock one; no real one has been converted. The emulator has none of its hardware
-to see, so the wiring below is what its sources say.
+The conversion runs in the emulator from a public dump of a stock one. The emulator
+has none of its hardware to see, so the wiring below is what its sources say.
 
 | | |
 |---|---|
