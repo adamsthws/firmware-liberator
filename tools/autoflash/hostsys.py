@@ -933,8 +933,17 @@ def firewall_advice(plug_ip: str | None, ports: Sequence[int], *, after_failure:
 
     Before trying: other security software, and an organisation's policy that
     ignores rules added on this computer. After a failure, also that the
-    computer is managed by an organisation at all.
+    computer is managed by an organisation at all. On macOS: the firewall
+    blocking everything, and after a failure the Local Network permission.
     """
+    if IS_MAC:
+        lines = [
+            "This Mac's firewall is set to block all incoming connections, which keeps the",
+            "device out whatever this tool allows. Turn off \"Block all incoming",
+            "connections\" in System Settings > Network > Firewall > Options while you",
+            "convert the device.",
+        ] if mac_blocks_all() else []
+        return lines + (mac_local_network_note() if after_failure else [])
     if not IS_WINDOWS:
         return []
     state = windows_firewall(plug_ip)
@@ -966,9 +975,40 @@ def local_rules_ignored(plug_ip: str | None) -> bool:
     return IS_WINDOWS and not windows_firewall(plug_ip)["local_rules"]
 
 
+def mac_blocks_all() -> bool:
+    """Whether the macOS firewall blocks all incoming connections: that
+    overrides the program it lets in, and only System Settings turns it off."""
+    tool = "/usr/libexec/ApplicationFirewall/socketfilterfw"
+    completed = _run([tool, "--getblockall"]) if IS_MAC and Path(tool).exists() else None
+    said = completed.stdout.lower() if completed else ""
+    # Worded differently across macOS versions: "...block all state set to
+    # enabled", "Block all ENABLED!", "...set to block all non-essential
+    # incoming connections". The disabled forms say "disabled".
+    return "enabled" in said or "non-essential" in said
+
+
+def mac_local_network_note() -> list[str]:
+    """macOS 15 and newer let an app reach devices on the local network only
+    with the user's permission. Apple's Terminal, and what runs in it, is
+    exempt; another terminal app (iTerm, VS Code's) is not."""
+    if not IS_MAC:
+        return []
+    major = platform.mac_ver()[0].split(".")[0]
+    terminal = os.environ.get("TERM_PROGRAM", "")
+    if not major.isdigit() or int(major) < 15 or terminal == "Apple_Terminal":
+        return []
+    app = f" ({terminal})" if terminal else ""
+    return [f"macOS lets the app this runs in{app} reach devices on your network only",
+            "with your permission. Allow it in System Settings > Privacy & Security >",
+            "Local Network, or run this in Terminal instead."]
+
+
 def security_software_note() -> list[str]:
     """For when the plug does not answer at all: other security software can
-    drop its answers before Windows' own firewall sees them."""
+    drop its answers before Windows' own firewall sees them, and on macOS the
+    terminal app may not be allowed onto the local network."""
+    if IS_MAC:
+        return mac_local_network_note()
     others = windows_firewall()["others"] if IS_WINDOWS else []
     if not others:
         return []
