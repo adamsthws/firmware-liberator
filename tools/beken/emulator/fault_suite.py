@@ -6,6 +6,11 @@ tools/espressif/emulator/fault_suite.py does for the S60.
     fault_suite.py prep                 the starting plugs: one on the interim firmware,
                                         one on OpenBeken, one on ESPHome, converted by
                                         the tool from the dump
+    fault_suite.py prep-update          the update scenarios' starting plugs: on OpenBeken
+                                        and on ESPHome as an earlier release converts them
+    fault_suite.py check                the final firmware, with no faults: each installed
+                                        from Sonoff's, then each plug taken to the other
+                                        (tools/repo/emulator_check.py)
     fault_suite.py list                 every scenario
     fault_suite.py list openbeken       those a new OpenBeken build is checked with
                                         (docs/updating-firmware.md)
@@ -97,7 +102,12 @@ ROUTES = {
     "interim>esphome": {"B4": 12, "J2": 14, "K2": 30},
     "interim>openbeken": {"J3": 15, "B4": 12},
     "interim>sonoff": {"B4": 12, "J4": 24, "K3": 75},
+    # A plug on the firmware of the release before, updated (prep_update).
+    "outdated>openbeken": {"U3": 14, "U4": 20},
+    "outdated>esphome": {"U1": 7, "U2": 20},
 }
+# The release whose firmware an update's plug is on: any before this checkout's.
+EARLIER_RELEASE = "v2.3.0"
 CORE = [("plugoff", 1), ("plugoff", 30), ("outage", 30), ("crash", 1), ("crash", 180), ("ctrlc", "once")]
 # At the steps that write, the riskiest moments too: just begun, nearly done.
 TIMING = [("plugoff", 1), ("crash", 1)]
@@ -192,6 +202,21 @@ def converted(state: dict, route: str) -> bool:
     return all((steps.get(step) or {}).get("status") == "done" for step in route_steps(route))
 
 
+def clear(folder: Path) -> None:
+    """A folder gone, read-only files in it too (OpenBeken's toolchain unpacks
+    so): a scenario started over what is left would fail for that reason alone."""
+    def writable_then(remove, path, _exc):
+        os.chmod(Path(path).parent, 0o700)
+        remove(path)
+    if not folder.exists():
+        return
+    try:
+        shutil.rmtree(folder, onerror=writable_then)
+    except OSError as exc:
+        raise RuntimeError(f"cannot remove {folder}, so cannot start from a clean plug: {exc}. "
+                           "If a container left it owned by root, chown it through one.") from exc
+
+
 class Instance:
     """One emulated plug, its Wi-Fi and its computer."""
 
@@ -224,7 +249,7 @@ class Instance:
     def reset(self, start: str) -> None:
         """The plug as `start` (sonoff: the dump, untouched; else saved by prep)."""
         self.stop()
-        shutil.rmtree(self.state, ignore_errors=True)
+        clear(self.state)
         if start != "sonoff":
             shutil.copytree(SAVED / start, self.state)
         (self.state / "work/captures").mkdir(parents=True, exist_ok=True)
@@ -302,6 +327,11 @@ class Instance:
         return logs[-1].read_text(encoding="utf-8", errors="replace") if logs else ""
 
 
+# Often enough that a fault timed from a step's start lands where it should: an
+# update's send takes about 7 s, so 90% of it leaves under a second.
+STEP_POLL = 0.1
+
+
 def wait_for_step(instance: Instance, step: str, run: subprocess.Popen, limit: float = RUN_LIMIT) -> bool:
     """Until the run starts `step`; False if it ends, or takes too long, first."""
     deadline = time.monotonic() + limit
@@ -309,7 +339,7 @@ def wait_for_step(instance: Instance, step: str, run: subprocess.Popen, limit: f
     while time.monotonic() < deadline and run.poll() is None:
         if begun.search(instance.last_log()):
             return True
-        time.sleep(0.5)
+        time.sleep(STEP_POLL)
     return False
 
 
@@ -471,6 +501,12 @@ def finish(run: subprocess.Popen, instance: Instance) -> None:
         subprocess.run(["docker", "kill", instance.computer], capture_output=True)
 
 
+def start_of(route: str) -> str:
+    """The saved plug a route starts from: an update's is for its firmware."""
+    source, target = route.split(">")
+    return f"outdated-{target}" if source == "outdated" else source
+
+
 def run_scenario(instance: Instance, sc: dict) -> dict:
     source, target = sc["route"].split(">")
     folder = OUT / "logs" / sc["id"].replace(":", "_").replace(">", "-")
@@ -481,7 +517,7 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
     notes: dict = {}
     memory = MemoryWatch()
     memory.start()
-    instance.reset(source)
+    instance.reset(start_of(sc["route"]))
     if not instance.start(source):
         notes["memory"] = memory.note()
         return dict(result="NOT-READY", notes=notes)
@@ -704,9 +740,86 @@ def prep() -> None:
 
 def save(instance: Instance, firmware: str) -> None:
     instance.stop()
-    shutil.rmtree(SAVED / firmware, ignore_errors=True)
+    clear(SAVED / firmware)
     shutil.copytree(instance.state, SAVED / firmware, ignore=keep_for_saving)
     print(f"saved the plug on {firmware} in {SAVED / firmware}", flush=True)
+
+
+def prep_update() -> None:
+    """The update scenarios' starting plugs: on OpenBeken and on ESPHome as
+    EARLIER_RELEASE converts them, which no run of this checkout can make. That
+    release's own suite makes them, from its tagged files."""
+    tree = EMU / "s61" / f"earlier-{EARLIER_RELEASE}"
+    clear(tree)
+    (tree / "captures/emulation").mkdir(parents=True)
+    archive = subprocess.run(["git", "-C", str(REPO), "archive", EARLIER_RELEASE], capture_output=True, check=True).stdout
+    subprocess.run(["tar", "-x", "-C", str(tree)], input=archive, check=True)
+    shutil.copytree(EMU / "beken-firmwares", tree / "captures/emulation/beken-firmwares")
+    try:
+        subprocess.run([str(tree / "tools/beken/emulator/fault_suite.py"), "prep"], check=True)
+        for firmware in ("openbeken", "esphome"):
+            kept = SAVED / f"outdated-{firmware}"
+            clear(kept)
+            shutil.copytree(tree / "captures/emulation/s61/saved" / firmware, kept)
+            print(f"saved the plug on {EARLIER_RELEASE}'s {firmware} in {kept}", flush=True)
+    finally:
+        clear(tree)
+
+
+# The check: two ways, each a final firmware installed, then that plug taken to
+# the other, as tools/espressif/emulator/public_plugs.py's for the S60.
+CHECK_WAYS = (("sonoff>openbeken", "openbeken>esphome"), ("sonoff>esphome", "esphome>openbeken"))
+
+
+def check_way(n: int, routes: tuple[str, ...]) -> int:
+    instance = Instance(n)
+    OUT.mkdir(parents=True, exist_ok=True)
+    try:
+        instance.reset("sonoff")
+        if not instance.start("sonoff"):
+            print(f"FAIL  {routes[0]}: the plug did not come online", flush=True)
+            return 1
+        for route in routes:
+            target = route.split(">")[1]
+            log = OUT / f"check-{route.replace('>', '-')}.log"
+            instance.before = set(instance.all_runs())
+            for attempt in range(RECOVERY_RUNS):
+                instance.tool(target, log, new=attempt == 0).wait(timeout=RUN_LIMIT)
+                if converted(instance.last_state(), route):
+                    break
+                if POWER_CYCLE.search(instance.last_log()[-3000:]):
+                    instance.power("cycle")
+                    instance.ready(target)
+            problems = [] if converted(instance.last_state(), route) else ["not converted"]
+            problems += interim_problems(route, instance.dhcp_names(), None)
+            print(f"{'FAIL' if problems else 'PASS'}  {route}{': ' + ', '.join(problems) if problems else ''}", flush=True)
+            if problems:
+                return 1
+            instance.stop()
+            if not instance.start(target):
+                print(f"FAIL  {route}: the plug did not start again on {target}", flush=True)
+                return 1
+        return 0
+    finally:
+        instance.stop()
+
+
+def check() -> int:
+    """The final firmware of every way, side by side: no faults, no account. A
+    way passes only by getting to its end: one whose thread raised has failed."""
+    failed = [1] * len(CHECK_WAYS)
+
+    def way(index: int) -> None:
+        try:
+            failed[index] = check_way(index + 1, CHECK_WAYS[index])
+        except Exception as exc:  # noqa: BLE001 - said, and the way failed
+            print(f"FAIL  {' then '.join(CHECK_WAYS[index])}: {exc!r}", flush=True)
+    threads = [threading.Thread(target=way, args=(index,)) for index in range(len(CHECK_WAYS))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return 1 if any(failed) else 0
 
 
 def keep_for_saving(folder: str, names: list[str]) -> list[str]:
@@ -731,6 +844,10 @@ def main(argv: list[str]) -> int:
     command = argv[0] if argv else ""
     if command == "prep":
         prep()
+    elif command == "prep-update":
+        prep_update()
+    elif command == "check":
+        return check()
     elif command == "list":
         for i in (OPENBEKEN_CHECK if argv[1:] == ["openbeken"] else [sc["id"] for sc in scenarios()]):
             print(i)

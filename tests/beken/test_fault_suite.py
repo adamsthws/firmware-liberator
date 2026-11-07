@@ -28,6 +28,78 @@ class ScenarioTests(unittest.TestCase):
             self.assertLessEqual(set(steps), set(fault_suite.route_steps(route)), route)
 
 
+class UpdateScenarioTests(unittest.TestCase):
+    def test_each_firmware_built_here_has_an_update_with_its_own_faults(self):
+        ids = {sc["id"] for sc in fault_suite.scenarios()}
+        for wanted in ("outdated>openbeken:U3:plugoff-1", "outdated>openbeken:U3@90:crash-1",
+                       "outdated>openbeken:U4:outage-30", "outdated>openbeken:apply@50:plugoff-1",
+                       "outdated>esphome:U1:plugoff-1", "outdated>esphome:U1@10:crash-1",
+                       "outdated>esphome:U2:crash-1", "outdated>esphome:apply@90:plugoff-1"):
+            self.assertIn(wanted, ids)
+
+    def test_an_update_starts_from_the_plug_saved_for_its_firmware(self):
+        self.assertEqual(fault_suite.start_of("outdated>openbeken"), "outdated-openbeken")
+        self.assertEqual(fault_suite.start_of("outdated>esphome"), "outdated-esphome")
+        self.assertEqual(fault_suite.start_of("esphome>openbeken"), "esphome")
+
+
+class StepTimingTests(unittest.TestCase):
+    def test_a_step_is_seen_soon_enough_for_a_fault_late_in_the_shortest(self):
+        shortest = min(seconds for steps in fault_suite.ROUTES.values() for seconds in steps.values())
+        self.assertLess(fault_suite.STEP_POLL, shortest * 0.1 / 2)
+
+
+class CheckTests(unittest.TestCase):
+    def test_each_final_firmware_is_installed_then_the_plug_taken_to_the_other(self):
+        for way in fault_suite.CHECK_WAYS:
+            self.assertEqual(way[0].split(">")[0], "sonoff")
+            self.assertEqual(way[1].split(">")[0], way[0].split(">")[1], "each starts from the plug the one before made")
+        self.assertEqual({way[0].split(">")[1] for way in fault_suite.CHECK_WAYS}, {"openbeken", "esphome"})
+
+    def test_a_way_that_raises_has_failed_and_says_why(self):
+        import io
+        from contextlib import redirect_stdout
+        from unittest import mock
+        with mock.patch.object(fault_suite, "check_way", side_effect=RuntimeError("the plug did not start")), \
+                redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(fault_suite.check(), 1)
+        self.assertIn("FAIL", out.getvalue())
+        self.assertIn("the plug did not start", out.getvalue())
+
+    def test_only_ways_that_got_to_their_end_pass(self):
+        from unittest import mock
+        with mock.patch.object(fault_suite, "check_way", return_value=0):
+            self.assertEqual(fault_suite.check(), 0)
+
+    def test_each_of_its_routes_is_one_the_tool_has(self):
+        for way in fault_suite.CHECK_WAYS:
+            for route in way:
+                self.assertTrue(fault_suite.route_steps(route), route)
+
+
+class ClearTests(unittest.TestCase):
+    def test_a_folder_goes_with_the_read_only_files_in_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp) / "state"
+            locked = folder / "toolchain"
+            locked.mkdir(parents=True)
+            (locked / "gcc").write_text("x", encoding="utf-8")
+            locked.chmod(0o555)
+            fault_suite.clear(folder)
+            self.assertFalse(folder.exists())
+
+    def test_a_folder_not_there_is_no_trouble(self):
+        with tempfile.TemporaryDirectory() as temp:
+            fault_suite.clear(Path(temp) / "never")
+
+    def test_one_that_will_not_go_is_said_plainly(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as temp:
+            with mock.patch.object(fault_suite.shutil, "rmtree", side_effect=PermissionError("denied")):
+                with self.assertRaisesRegex(RuntimeError, f"cannot remove {temp}.*denied"):
+                    fault_suite.clear(Path(temp))
+
+
 class BadImageScenarioTests(unittest.TestCase):
     def test_each_step_that_sends_an_image_the_bootloader_installs_has_one_it_refuses(self):
         found = {sc["id"] for sc in fault_suite.scenarios() if sc["fault"] == "badimage"}
