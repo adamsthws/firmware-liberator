@@ -168,9 +168,9 @@ Run no more at once than your computer has cores: more makes runs fail that
 would otherwise pass. Each emulator waits to start until the computer has what it
 needs free - 250 MB for an ESP32-C3, 350 MB for a classic ESP32 or the S61, each
 about 100 MB over what one was measured to use with its computer - and a load under
-twice its cores (`AUTOFLASH_EMU_MIN_FREE_MB` for another amount), for up to
-ten minutes (`AUTOFLASH_EMU_ROOM_WAIT`, in seconds), then starts anyway and says
-so: a failure then may be the computer's.
+twice its cores (`AUTOFLASH_EMULATOR_MIN_FREE_MB` for another amount), for up
+to ten minutes (`AUTOFLASH_EMULATOR_ROOM_WAIT`, in seconds), then starts anyway
+and says so: a failure then may be the computer's.
 
 Each instance's computer has its own copy of the checkout, of only what git tracks
 or would: what you ignore - `captures/`, `.env`, `.venv`, agents' worktrees - is

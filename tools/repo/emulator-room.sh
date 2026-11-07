@@ -46,12 +46,13 @@ copy_checkout() {
 # wait_for_room MB - until this computer has MB free and the cores for one more
 # emulator: one started on a starved computer fails for that alone, its plug
 # stopping mid-download. MB is what that emulator was measured to need, plus
-# 100 (docs/emulator.md); AUTOFLASH_EMU_MIN_FREE_MB stands for it. After
-# AUTOFLASH_EMU_ROOM_WAIT seconds (default 600) it starts anyway, saying so. Where
-# /proc says nothing (macOS), it does not wait.
+# 100 (docs/emulator.md); AUTOFLASH_EMULATOR_MIN_FREE_MB stands for it. After
+# AUTOFLASH_EMULATOR_ROOM_WAIT seconds (default 600) it starts anyway, saying
+# so. Where /proc says nothing (macOS), it does not wait. Both emulators wait
+# here, so its variables are AUTOFLASH_EMULATOR_, neither one's own.
 wait_for_room() {
-    local meminfo=${AUTOFLASH_MEMINFO:-/proc/meminfo} loadavg=${AUTOFLASH_LOADAVG:-/proc/loadavg}
-    local need=${AUTOFLASH_EMU_MIN_FREE_MB:-${1:?wait_for_room needs the MB this emulator needs}} limit=${AUTOFLASH_EMU_ROOM_WAIT:-600} waited=0 cores free load
+    local meminfo=${AUTOFLASH_EMULATOR_MEMINFO:-/proc/meminfo} loadavg=${AUTOFLASH_EMULATOR_LOADAVG:-/proc/loadavg}
+    local need=${AUTOFLASH_EMULATOR_MIN_FREE_MB:-${1:?wait_for_room needs the MB this emulator needs}} limit=${AUTOFLASH_EMULATOR_ROOM_WAIT:-600} waited=0 cores free load
     [ -r "$meminfo" ] && [ -r "$loadavg" ] || return 0
     cores=$(nproc 2>/dev/null || echo 1)
     while :; do

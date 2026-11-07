@@ -125,24 +125,24 @@ class WaitForRoomTests(unittest.TestCase):
         meminfo, loadavg = Path(temp.name, "meminfo"), Path(temp.name, "loadavg")
         meminfo.write_text(f"MemTotal: 8000000 kB\nMemAvailable: {free_mb * 1024} kB\n", encoding="utf-8")
         loadavg.write_text(f"{load} 1.0 1.0 1/100 1\n", encoding="utf-8")
-        return {"AUTOFLASH_MEMINFO": str(meminfo), "AUTOFLASH_LOADAVG": str(loadavg)}
+        return {"AUTOFLASH_EMULATOR_MEMINFO": str(meminfo), "AUTOFLASH_EMULATOR_LOADAVG": str(loadavg)}
 
     def test_with_room_it_starts_at_once(self):
         done = bash("wait_for_room 350", self.proc(2000, 0.5))
         self.assertEqual((done.returncode, done.stderr), (0, ""))
 
     def test_short_of_memory_it_waits_then_starts_saying_so(self):
-        done = bash("wait_for_room 350", {**self.proc(300, 0.5), "AUTOFLASH_EMU_ROOM_WAIT": "0"})
+        done = bash("wait_for_room 350", {**self.proc(300, 0.5), "AUTOFLASH_EMULATOR_ROOM_WAIT": "0"})
         self.assertEqual(done.returncode, 0)
         self.assertIn("300 MB free", done.stderr)
 
     def test_a_load_twice_the_cores_counts_as_no_room(self):
         cores = os.cpu_count() or 1
-        done = bash("wait_for_room 350", {**self.proc(4000, 2 * cores + 1), "AUTOFLASH_EMU_ROOM_WAIT": "0"})
+        done = bash("wait_for_room 350", {**self.proc(4000, 2 * cores + 1), "AUTOFLASH_EMULATOR_ROOM_WAIT": "0"})
         self.assertIn("a failure may be the computer's", done.stderr)
 
     def test_it_waits_for_what_that_emulator_needs(self):
-        done = bash("wait_for_room 350", {**self.proc(300, 0.5), "AUTOFLASH_EMU_ROOM_WAIT": "0"})
+        done = bash("wait_for_room 350", {**self.proc(300, 0.5), "AUTOFLASH_EMULATOR_ROOM_WAIT": "0"})
         self.assertIn("Starting with 300 MB free", done.stderr)   # short of the 350 it needs
         self.assertEqual(bash("wait_for_room 250", self.proc(300, 0.5)).stderr, "")
 
@@ -152,5 +152,5 @@ class WaitForRoomTests(unittest.TestCase):
             self.assertIn(needs, (ROOT / script).read_text(encoding="utf-8"), script)
 
     def test_where_proc_says_nothing_it_does_not_wait(self):
-        done = bash("wait_for_room 350", {"AUTOFLASH_MEMINFO": "/nonexistent", "AUTOFLASH_LOADAVG": "/nonexistent"})
+        done = bash("wait_for_room 350", {"AUTOFLASH_EMULATOR_MEMINFO": "/nonexistent", "AUTOFLASH_EMULATOR_LOADAVG": "/nonexistent"})
         self.assertEqual((done.returncode, done.stderr), (0, ""))
