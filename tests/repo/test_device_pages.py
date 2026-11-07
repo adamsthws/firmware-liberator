@@ -115,6 +115,26 @@ class EsphomePageTests(unittest.TestCase):
                 self.assertIn(f"ESPHome {pin['esphome']} built the current image, `{pin['file']}`,", changing)
                 self.assertIn(f"update_firmware.py esphome {pin['esphome']} --plug {plug}", changing)
 
+    def test_each_beken_image_has_a_paragraph_in_the_notices_update_firmware_rewrites(self):
+        # beken_esphome_doc_texts rewrites the image's own paragraph in NOTICES.md, and stops
+        # at one not in its form ("`<file>` is built with ESPHome X and LibreTiny Y", then the
+        # two releases' links).
+        from tools.repo import update_firmware
+        for plug, pins in FIRMWARE["beken"].items():
+            if "esphome" not in pins:
+                continue
+            with self.subTest(plug=plug):
+                old = pins["esphome"]
+                new = {**old, "file": f"artifacts/esphome-{plug}-2099.1.0-1.rbl", "esphome": "2099.1.0",
+                       "libretiny": "9.9.9", "sha256": "0" * 64}
+                notices = update_firmware.beken_esphome_doc_texts(plug, old, new, changelog=False)[0][
+                    update_firmware.NOTICES]
+                paragraph = " ".join(notices.split(f"`{new['file']}`", 1)[1].split("\n\n", 1)[0].split())
+                self.assertTrue(paragraph.startswith("is built with ESPHome 2099.1.0 and LibreTiny 9.9.9"), paragraph)
+                self.assertIn("[ESPHome 2099.1.0 release](https://github.com/esphome/esphome/tree/2099.1.0)",
+                              paragraph)
+                self.assertIn("[LibreTiny 9.9.9](https://github.com/libretiny-eu/libretiny/tree/v9.9.9)", paragraph)
+
 
 if __name__ == "__main__":
     unittest.main()
