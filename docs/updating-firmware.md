@@ -295,7 +295,7 @@ those few scenarios of the fault suite too - F4's reset, G1, `seven-times`,
 and the network gone at L1 and X1 ([testing.md](testing.md#the-fault-suite)).
 
 **The S61's OpenBeken**, built anew - above all on a new OpenBeken release -
-is run on the S61's emulator before it is published: the weekly update runs these
+is run on the S61 in the Beken emulator before it is published: the weekly update runs these
 six scenarios itself, and a pull request whose scenarios failed never merges itself. This project's driver
 and its hook before an OTA's restart lean on OpenBeken's own workings: where
 it keeps its settings and its Wi-Fi's (`0x3e1000`, and its flash variables

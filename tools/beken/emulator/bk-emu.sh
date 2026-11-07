@@ -1,5 +1,5 @@
 #!/bin/bash
-# The S61's emulator, BekenEmulator with this project's patches, as a container
+# The Beken emulator, BekenEmulator with this project's patches, as a container
 # image - built from the source archive this repository's release
 # emulator-source-beken-<commit> holds, or pulled where it is published - and
 # the tools in tools/beken run in it.
@@ -15,7 +15,7 @@
 #   tools/beken/emulator/bk-emu.sh plug
 #                             the public S61 dump as a plug on a home Wi-Fi, on the S61's
 #                             own Docker network (autoflash-beken, made the first time;
-#                             nothing of the S60's emulator is on it), until docker stop: its
+#                             nothing of the Espressif emulator is on it), until docker stop: its
 #                             radio bridged there through a TAP device, its router .1 - its
 #                             DHCP (the plug at .50-.59), DNS and eWeLink, the local stub -
 #                             in its container (autoflash-s61, plug-net.sh). Its flash, logs
@@ -137,7 +137,7 @@ build() {
     context=$(mktemp -d)
     cp -r "$HERE/bk-emu.Dockerfile" "$HERE/patches" "$HERE/requirements.txt" "$context/"
     cp "$source" "$context/bekenemulator.tar.xz"
-    echo "Building the S61 emulator image (the first time takes a minute or two)..." >&2
+    echo "Building the Beken emulator image (the first time takes a minute or two)..." >&2
     docker build -q -t "$1" --build-arg SOURCE_SHA256="$ARCHIVE_SHA256" \
         --label "autoflash.built-from=$(tag)" \
         --label "org.opencontainers.image.source=https://github.com/adamsthws/firmware-liberator" \
@@ -154,7 +154,7 @@ pull() {
         return 1
     fi
     docker tag "$published" "$1"
-    echo "Using the published S61 emulator image ($published)." >&2
+    echo "Using the published Beken emulator image ($published)." >&2
 }
 
 labelled() {

@@ -9,12 +9,9 @@ firmware pairs, and that nothing in the conversion needs (AirKiss replay, BLE
 provisioning, the button and pairing drives), are in
 [archive/s61-research/](../../archive/s61-research/).
 
-**The emulator** comes with this repository as a container image, kept as the
-S60's is: [`emulator/`](emulator/) pins the upstream commit and its source
-archive (on the repository's `emulator-source-beken-<commit>` release) and holds
-this project's patches, and its `bk-emu.sh` pulls the published image for that
-version or builds it, fetches the public S61s dump from upstream's repository
-(Sonoff's firmware, which this repository never holds) and runs a tool in the
+**The emulator**: how to use it is in
+[docs/emulator.md](../../docs/emulator.md#the-beken-emulator), and how it works in
+[emulator/](emulator/README.md). Its `bk-emu.sh python` runs a tool in its
 container, with this checkout at `/work`:
 
 ```sh

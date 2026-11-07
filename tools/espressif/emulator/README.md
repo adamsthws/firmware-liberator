@@ -35,7 +35,7 @@ together and what it changes, for working on it. How to use it is in
   no network - so building needs nothing outside this repository. Releases
   of this repository are immutable, so such a release holds one archive and
   never changes: moving the pin is a new archive on a new release, and the old
-  one stays for older checkouts (the S61's emulator is kept the same way,
+  one stays for older checkouts (the Beken emulator is kept the same way,
   `emulator-source-beken-<commit>`; the earlier `emulator-source` release
   was deleted on 2026-10-29, and its name cannot be used again). QEMU is
   GPL-2.0: the archive is its unmodified source, and this project's changes

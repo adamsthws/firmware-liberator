@@ -1,4 +1,4 @@
-# The S61 emulator's image, built once for each version of what it is built
+# The Beken emulator's image, built once for each version of what it is built
 # from (tools/beken/emulator/bk-emu.sh tag) and published as
 # ghcr.io/<owner>/autoflash-beken-emu:<that hash>: computers and runners pull
 # it rather than build it themselves (bk-emu.sh), and only one labelled with

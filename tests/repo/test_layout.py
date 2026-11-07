@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.autoflash import hostsys
+from tools.autoflash import hostsys, kinds
 
 ROOT = Path(__file__).resolve().parents[2]
 # `Path(__file__).resolve().parents[N]`, and any `/ "name"` parts joined to it.
@@ -160,6 +160,22 @@ class EmulatorPageTests(unittest.TestCase):
         self.assertLessEqual({"tools/espressif/emulator/README.md", "tools/beken/emulator/README.md"},
                              {str(page.relative_to(ROOT)) for page in emulator_readmes()})
 
+
+
+class ChipFamilyTests(unittest.TestCase):
+    def test_each_chip_family_is_laid_out_as_the_others(self):
+        """Each family the tool converts has the same pages in the same places:
+        its tooling's README, its emulator's, its research, and its part of the
+        emulator page."""
+        families = sorted({kind.family for kind in kinds.EVERY})
+        self.assertEqual(families, ["beken", "espressif"])
+        page = EMULATOR_PAGE.read_text(encoding="utf-8")
+        for family in families:
+            with self.subTest(family=family):
+                for name in (f"tools/{family}/README.md", f"tools/{family}/emulator/README.md",
+                             f"docs/{family}-research.md"):
+                    self.assertTrue((ROOT / name).is_file(), name)
+                self.assertIn(f"\n## The {family.capitalize()} emulator\n", page)
 
 def heading_anchors(text: str) -> set[str]:
     """The anchors GitHub gives a Markdown page's headings, a repeated one

@@ -201,7 +201,7 @@ jobs:
         continue-on-error: true
         run: |
           PYTHONUNBUFFERED=1 .venv/bin/python -m unittest discover -s tests > unit.txt 2>&1
-      - name: OpenBeken's six scenarios on the S61's emulator
+      - name: OpenBeken's six scenarios on the S61 in the Beken emulator
         if: steps.branch.outputs.made != 'yes' && steps.update.outputs.changed == 'yes' && env.OPENBEKEN != ''
         id: openbeken
         continue-on-error: true
@@ -240,7 +240,7 @@ jobs:
             echo "Every device's, by the emulator-check workflow started on this branch: its checks below. It merges only once they pass."
             echo
             if [ -n "$OPENBEKEN" ]; then
-              echo "### OpenBeken's six scenarios on the S61's emulator"
+              echo "### OpenBeken's six scenarios on the S61 in the Beken emulator"
               echo
               echo '```'; grep -E "^(PASS|FAIL|ERROR|MISTIMED|NOT-)" scenarios.txt 2>/dev/null || echo "(did not run)"; echo '```'
               echo

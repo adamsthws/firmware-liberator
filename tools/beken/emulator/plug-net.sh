@@ -1,5 +1,5 @@
 #!/bin/bash
-# Runs as root in the S61 emulator's container (bk-emu.sh plug): puts the
+# Runs as root in the Beken emulator's container (bk-emu.sh plug): puts the
 # emulated plug on the S61's Docker network as a plug on a home Wi-Fi, with
 # this container as that Wi-Fi's router, then runs the plug as your user
 # until the container stops.

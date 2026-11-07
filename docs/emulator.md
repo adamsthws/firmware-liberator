@@ -1,32 +1,34 @@
-# The emulator: converting a virtual plug
+# The emulators: converting a virtual plug
 
-`tools/espressif/emulator/` runs the whole conversion against an emulated
-Sonoff Espressif plug, so changes can be tried end to end without converting,
-or risking, a real plug. It runs the ESP32-C3 (the S60) and the classic ESP32
-(the POW Elite, POWCT, TH Elite, Dual R3, NSPanel and M5, among others): which
-of the two is read from the plug's flash ([Classic ESP32
-plugs](#classic-esp32-plugs)). The S61, a Beken plug, has an emulator of its
-own.
+Two emulators run the whole conversion against an emulated Sonoff plug, so changes
+can be tried end to end without converting, or risking, a real one. Each boots a
+real flash dump of a stock plug, so it runs Sonoff's own firmware, unmodified apart
+from the changes its emulator makes. They are development tools: they say nothing
+about hardware the dump did not come from.
 
-This page is how to use them. How each one works - what it changes in a dump,
-its patches to the emulator it is built on, how it is run, and how to debug it -
-is beside its code:
+| | Chips | How it works |
+|---|---|---|
+| [The Espressif emulator](#the-espressif-emulator) | the ESP32-C3 and the classic ESP32, under QEMU | [tools/espressif/emulator/](../tools/espressif/emulator/README.md) |
+| [The Beken emulator](#the-beken-emulator) | the BK7238, under BekenEmulator | [tools/beken/emulator/](../tools/beken/emulator/README.md) |
 
-- [tools/espressif/emulator/](../tools/espressif/emulator/README.md): the ESP32-C3
-  and the classic ESP32, under QEMU.
-- [tools/beken/emulator/](../tools/beken/emulator/README.md): the BK7238, under
-  BekenEmulator.
+This page is how to use them. How each works - what it changes in a dump, its
+patches to the emulator it is built on, and how it is run and debugged - is in its
+README, beside its code.
 
-The emulated plug boots a real flash dump of a stock plug, so it runs Sonoff's
-own firmware, unmodified apart from
+## The Espressif emulator
+
+`tools/espressif/emulator/` runs the ESP32-C3 (the S60) and the classic ESP32 (the
+POW Elite, POWCT, TH Elite, Dual R3, NSPanel and M5, among others): which of the two
+is read from the plug's flash ([Classic ESP32 plugs](#classic-esp32-plugs)). Its
+plug runs Sonoff's firmware with
 [the changes the emulator makes](../tools/espressif/emulator/README.md#what-is-changed-and-why).
 A full run has been completed this way from a UK S60TPG on stock 1.2.0, through every
-stage, to the official Tasmota on the official layout; how far each classic
-ESP32 device gets is in [espressif-research.md](espressif-research.md#espressif-devices).
-It is a development tool: it says nothing about hardware the dump did not come
-from, such as another regional version's power meter.
+stage, to the official Tasmota on the official layout; how far each classic ESP32
+device gets is in [espressif-research.md](espressif-research.md#espressif-devices).
+It says nothing about hardware the dump did not come from, such as another regional
+version's power meter.
 
-## What you need
+### What you need
 
 - **Docker,** on Linux, macOS, or Windows through WSL 2. Everything that is
   built or run lives in containers; nothing is installed on the host.
@@ -56,7 +58,7 @@ from, such as another regional version's power meter.
   .venv/bin/python -m pip install --require-hashes --no-deps -r requirements/ci.txt
   ```
 
-### Hardware
+#### Hardware
 
 | | The emulator alone | With Windows beside it ("Windows from Linux") |
 |---|---|---|
@@ -72,7 +74,7 @@ Measured on an AMD Ryzen 5 4500U (6 cores) with 8 GB: Windows peaked at
 up. The caps can be changed (below), and a computer short of memory is warned
 before Windows starts.
 
-### How long it takes
+#### How long it takes
 
 For a computer like the one these were measured on - an AMD Ryzen 5 4500U
 laptop with 8 GB, from 2020 - or faster. A faster one is nearer the low end.
@@ -123,7 +125,7 @@ keys and MAC. If both are online, they fight over one device in the account,
 and an upgrade sent by the conversion could reach the real plug. Unplug the
 real plug before using `--cloud`.
 
-## Using it
+### Using it
 
 On Linux or macOS (on Windows, see "On Windows" below):
 
@@ -150,7 +152,7 @@ eWeLink, and any number of instances convert at once. See
 [cloud-stub.md](cloud-stub.md). The first start builds the image, which takes a
 few minutes.
 
-### Several at once
+#### Several at once
 
 `--instance N` (1-30, on `emu.sh` and `unattended-test.sh`) runs another
 emulator beside the first: its own container (`autoflash-emu-N`), state
@@ -203,7 +205,7 @@ final link points at http://localhost:8080 instead of the plug's own address.
 Where it warns that sudo may ask for a password, it gives the emulator's
 (`AUTOFLASH_EMULATOR_SUDO_PASSWORD`); on a real computer it never knows one.
 
-### Unattended, for testing
+#### Unattended, for testing
 
 One command starts the emulator, converts the plug with nobody at the
 keyboard, prints the screen the run left, and stops the emulator again
@@ -242,7 +244,7 @@ and all. The recording stays in
 `captures/emulation/state/work/captures/unattended/<time>/`, beside the run's
 own `run.log`. The exit code is the run's: 0 when the plug was converted.
 
-### Public plugs
+#### Public plugs
 
 Every plug above starts from your Sonoff backup, and a plug kept with `--save`
 holds Sonoff's settings and a copy of the backup. A **public plug** holds
@@ -295,7 +297,7 @@ them (the `emulator-check` workflow). `unattended-test.sh
 --plug-dir=DIR` starts one with no backup at all. A public plug cannot go
 back to Sonoff: it has nothing of Sonoff's to go back to.
 
-### Classic ESP32 plugs
+#### Classic ESP32 plugs
 
 A classic ESP32 plug runs as an S60 does, with the same commands. Nothing
 says which chip to emulate: `emu.sh` reads it from the bootloader's header in
@@ -336,7 +338,7 @@ run; in a run you start with `emu.sh`, set it in the conversion window
 (`AUTOFLASH_NOT_READY_YET=1 run`). Where each of those devices stops is in
 [devices/not-ready-yet/](../devices/not-ready-yet/README.md).
 
-## On Windows
+### On Windows
 
 To test the tool's Windows code paths (`arp -a`, `netsh` firewall rules
 behind the elevation prompt, the Windows firewall itself), Windows can be the
@@ -355,7 +357,7 @@ after one question - and, where administrator rights are needed, one sudo or
 User Account Control prompt. Joining the plug's own Wi-Fi from Windows is not
 emulated either way.
 
-### Windows from Linux
+#### Windows from Linux
 
 ```sh
 tools/espressif/emulator/windows-test.sh --cloud
@@ -436,7 +438,7 @@ serial log; leaving it shuts Windows down. The conversion's captures are kept
 between runs (`~/.cache/autoflash-emu/windows/captures`), so an unfinished one
 can be resumed.
 
-#### SSH, to drive a run from a terminal
+##### SSH, to drive a run from a terminal
 
 Windows runs OpenSSH's server (set up in the `rig` layer) with PowerShell as
 its shell, on `127.0.0.1:2222` (`AUTOFLASH_WINDOWS_SSH_PORT` to change), logged on
@@ -487,7 +489,7 @@ plug, the firewall rule, serving the firmware - is the same as on any Windows.
 The evaluation lasts 180 days from when Windows was installed; after that,
 `--rebuild-layer=installed` installs it again from the kept ISO.
 
-#### Starting over
+##### Starting over
 
 | To get | Do |
 |---|---|
@@ -501,7 +503,7 @@ The evaluation lasts 180 days from when Windows was installed; after that,
 Everything under `~/.cache/autoflash-emu` belongs to you, not root, though the
 containers write it.
 
-### On a Windows computer
+#### On a Windows computer
 
 From the repository in PowerShell:
 
@@ -545,7 +547,7 @@ WSL stops its VM, and Docker with it, soon after its last window closes: with
                         br0 192.168.60.1 (dnsmasq, ufw) ── tap0 ── QEMU (plug .50)
 ```
 
-## Known gaps
+### Known gaps
 
 - **Open networks only.** The fork's access points have no WPA2, so the home
   network has no password. Every setup network the conversion makes is open
@@ -563,3 +565,89 @@ WSL stops its VM, and Docker with it, soon after its last window closes: with
 - **No chip revision.** QEMU has no revision register, so a classic ESP32 says
   revision 0.0, and the installer's pin levels are empty
   ([espressif-research.md](espressif-research.md#what-a-backup-logs)).
+
+## The Beken emulator
+
+`tools/beken/emulator/` runs the conversion against an emulated Sonoff Beken plug:
+[BekenEmulator](https://github.com/openshwprojects/BekenEmulator) at the commit
+`UPSTREAM` pins, with this project's patches, as a container image. It boots the
+public S61s dump, or a whole flash you give it, and runs Sonoff's firmware as a
+real plug would, onto its Wi-Fi and eWeLink.
+
+### What you need
+
+- **Docker.** Each command first pulls the emulator's image, or builds it where it
+  is not published.
+- **No firmware of your own.** None is in the image or this repository:
+  `bk-emu.sh dump` fetches the public S61s dump from upstream's repository, which
+  publishes it, into `captures/emulation/beken-firmwares/` (the tools do this
+  before they run), and `bk-emu.sh test` fetches upstream's other devices' dumps
+  there too (about 280 MB). That directory is mounted into the container at the
+  emulator's `firmwares/`, and the checkout at `/work`, as your own user;
+  `S61_DUMP` names a dump of your own, under `captures/`.
+
+### Using it
+
+The tools in `tools/beken` run in its container:
+
+```sh
+tools/beken/emulator/bk-emu.sh python tools/beken/seed_join.py
+tools/beken/emulator/bk-emu.sh run captures/your-dump.bin --wifi-peer auto
+tools/beken/emulator/bk-emu.sh test -k "Sonoff 4MB"    # upstream's self-tests, under the patches
+tools/beken/emulator/bk-emu.sh plug                     # the S61 on a home Wi-Fi of its own
+tools/beken/emulator/bk-emu.sh computer tools/autoflash/cli.py run   # the tool, on that Wi-Fi
+tools/beken/emulator/bk-emu.sh power cycle              # the plug switched off and on
+tools/beken/emulator/bk-emu.sh reset                    # the plug as new, on Sonoff's firmware again
+tools/beken/emulator/bk-emu.sh ui                       # OpenBeken's page, at http://127.0.0.1:8088/
+```
+
+`bk-emu.sh` with no argument lists the rest.
+
+`bk-emu.sh plug` runs the dump as a plug provisioned on a home Wi-Fi, on a Docker
+network of its own (`autoflash-beken`, apart from the Espressif emulator and
+everything else), where eWeLink is a local stub and nothing reaches the internet
+([how](../tools/beken/emulator/README.md#how-it-fits-together)). The plug boots
+from its flash, kept in `captures/emulation/s61/autoflash-s61/` with its logs and
+the stub's CA, so it carries on across firmware: each restart the firmware asks
+for a boot of its own, from the bootloader, as on a real plug.
+
+`bk-emu.sh computer` is a computer on that Wi-Fi: the tool there finds the
+plug as on a home network, and its eWeLink is the stub. It works in its own
+copy of this checkout (the plug's `work/`), so its runs' captures are its own;
+an unattended run takes its eWeLink account from `work/captures/` (a made-up
+one: the stub takes any). Sonoff's firmware, having fetched and staged a new
+image whole and checked its CRC, restarts a second later, and the bootloader
+installs it, as a real plug's does (the firmware's own code says so,
+[beken-research.md](beken-research.md)). A plug
+that does not come back is switched off and on - `bk-emu.sh power cycle`, as
+the tool then asks; an attended run there offers to do it itself: the plug's
+power switch is passed to the computer (`AUTOFLASH_EMULATOR_POWER`).
+
+**The plug's web page goes through a proxy** (`bk-emu.sh ui`, `ui_proxy.py`),
+OpenBeken's or ESPHome's - `ui` tells which by the name the plug gave its
+router - never opened straight. The emulated plug runs the real OpenBeken, but far
+slower than a chip: each request leaves a connection in TIME_WAIT on the plug,
+lwIP has room for only a few, and on the emulator's clock they clear slowly. A
+browser's parallel requests and the page's once-a-second polling fill them in
+seconds, and the plug stops answering though its firmware still runs. The proxy
+lets one request at a time reach the plug, at most one every 0.8 s, answers the
+page's polling from a 3-second cache, and passes every action straight on;
+[`ui_proxy.py`](../tools/beken/emulator/ui_proxy.py) says more. ESPHome's page keeps its live values
+coming on one open connection (`/events`), which the proxy passes straight
+through, one browser tab at a time.
+
+`AUTOFLASH_BEKEN_DUMP` names another whole flash under this checkout for a new
+plug to start from, one `rebuild_dump.py` made for another model, say
+([Adding a 4 MB BK7238 device](../tools/beken/README.md#adding-a-4-mb-bk7238-device-with-no-whole-dump)).
+
+### Known gaps
+
+- **No Bluetooth.** The BLE controller's registers are modelled, but there is no
+  radio: nothing is sent, and no phone can pair with the plug over BLE.
+- **Slow.** It runs the real firmware far slower than a chip, which is why its web
+  page goes through the proxy.
+- **Nothing around the chip.** No relay, meter or button is wired to its pins, so a
+  conversion passing says the firmware installs and starts, not that a device's
+  wiring is right.
+- **A Linux computer only.** `bk-emu.sh computer` is a Linux container; the
+  Espressif emulator's [Windows](#on-windows) set-up has no Beken counterpart yet.
