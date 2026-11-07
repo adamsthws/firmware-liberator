@@ -33,6 +33,20 @@ and, beside it, on 3.10, the oldest the tool runs on: a Mac's own Python may
 be older than 3.12, and so may one already installed where the portable one
 cannot be had.
 
+### Where a test goes
+
+`tests/` mirrors `tools/`: the tests of one module are beside where that
+module would be, named for it - `tools/autoflash/runner.py`'s in
+`tests/autoflash/test_runner.py`, `tools/autoflash/routes/espressif/mover.py`'s
+in `tests/autoflash/routes/espressif/test_mover.py`, a package's own
+`__init__.py`'s in `test_<package>.py` inside it, and a script's under its
+whole name with `-` and `.` as `_` (`emu.sh` in `test_emu_sh.py`). A test
+that follows one thing across several modules, or checks the whole
+repository, is named for what it holds instead: the repository's are in
+`tests/repo/`, and any other is listed in `NOT_MIRRORED` in
+`tests/repo/test_layout.py`, with why - which fails on a test module that is
+neither.
+
 ### Side by side, in any order
 
 `tests/run.py` runs each test in its own turn on one of many processes, in
