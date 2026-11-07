@@ -168,7 +168,8 @@ boot and over 40 s for 2,000 small flash reads:
 |---|---|---|
 | QEMU (lcgamboa) | [#20](https://github.com/lcgamboa/qemu/pull/20) | After a flash operation, only the cache pages whose bytes changed are refreshed: Tasmota boots in about 7 s, and the reads take 14-18 s |
 
-The emulator's own patch (`0003`) also leaves a window mapped once it is on.
+The emulator carries #20 as its patch `0003`, and its own `0004` also leaves a
+window mapped once it is on.
 That makes it two to ten times faster again and stops the panics a classic
 ESP32 has on QEMU when it reads flash a lot. But it gives up QEMU's fault for
 reading flash with the cache off, so it stays here, and the cause of the panics

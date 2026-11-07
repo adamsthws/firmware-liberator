@@ -686,24 +686,25 @@ change, and regenerate them. What they do:
   instead, block its traffic in the container
   (`iptables -I INPUT -s 192.168.60.50 -j DROP`). Offered upstream as
   [lcgamboa/qemu #19](https://github.com/lcgamboa/qemu/pull/19).
-- **`0003-esp32-cache-sync-only-what-differs.patch` - a classic ESP32 is
-  quick enough.** Each time a classic ESP32's flash cache came back on after a
-  flash operation, the fork threw away the translated code of both whole flash
-  windows, and changed the memory map each time it went off and on. Now a page
-  is copied, and its code thrown away, only if its bytes differ, and a window
-  stays mapped once on. Boot takes about 8 seconds instead of 26, and
-  the tool reads Tasmota's settings backup in about 6 seconds instead of 70.
-- **`0004-tcg-round-robin-kick-faster.patch` - no interrupt watchdog at
-  start-up.** One QEMU thread runs a classic ESP32's two cores in turn, each
-  for 100 ms of virtual time. Firmware reading flash on one core spins, with
-  interrupts off, until the other core has parked, which it does only on its
-  turn, so stock firmware tripped its interrupt watchdog at start-up and reset
-  over and over. The cores now take turns every millisecond. An ESP32-C3 has
-  one core and is not affected.
+- **`0003-esp32-cache-refresh-only-changed-pages.patch` - a classic ESP32's
+  flash operations are quicker.** Each time a classic ESP32's flash cache was
+  enabled or flushed, the fork threw away the translated code of its whole
+  4 MB window. Now only a page whose bytes changed is refreshed: Tasmota boots
+  in about 7 seconds instead of 10. Offered upstream as
+  [lcgamboa/qemu #20](https://github.com/lcgamboa/qemu/pull/20).
+- **`0004-esp32-cache-window-stays-mapped.patch` - a classic ESP32 is quick
+  enough, and does not panic.** Each flash operation also took the window out of
+  the memory map and put it back, which is slow, and with that, firmware that
+  reads flash a lot panics now and then, for a reason not yet found. A window
+  now stays mapped once on: Tasmota boots in about 3 seconds, and the tool reads
+  its settings backup in about 6 instead of 70. It gives up QEMU's fault for
+  reading flash with the cache off, so it is not offered upstream.
 
 Tried and dropped for the classic ESP32: QEMU's multi-threaded mode (MTTCG),
-which did not help and was slower, and stretching the firmware's watchdogs,
-which only hid real hangs for longer.
+which did not help and was slower; stretching the firmware's watchdogs,
+which only hid real hangs for longer; and the two cores taking turns every
+millisecond instead of every 100, which made no difference once flash
+operations were quick.
 
 What else the emulator needed from the fork is
 [upstream now](upstream-contributions.md#the-emulators-wi-fi): real addresses on
