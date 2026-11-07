@@ -300,6 +300,55 @@ class MacFirewallTests(unittest.TestCase):
         added.assert_not_called()
         self.assertTrue(rule.detail["preexisting"])
 
+    def blocks_all(self, said: str) -> bool:
+        completed = subprocess.CompletedProcess([], 0, stdout=said, stderr="")
+        with mock.patch.object(hostsys, "IS_MAC", True), \
+                mock.patch.object(hostsys.Path, "exists", return_value=True), \
+                mock.patch.object(hostsys, "_run", return_value=completed):
+            return hostsys.mac_blocks_all()
+
+    def test_block_all_is_read_in_each_wording(self):
+        for said in ("Firewall has block all state set to enabled.\n", "Block all ENABLED!\n",
+                     "Firewall is set to block all non-essential incoming connections\n"):
+            self.assertTrue(self.blocks_all(said), said)
+        for said in ("Firewall has block all state set to disabled.\n", "Block all DISABLED!\n", ""):
+            self.assertFalse(self.blocks_all(said), said)
+
+    def test_block_all_is_named_before_and_after_a_failure(self):
+        with mock.patch.object(hostsys, "IS_MAC", True), \
+                mock.patch.object(hostsys, "mac_local_network_note", return_value=[]):
+            with mock.patch.object(hostsys, "mac_blocks_all", return_value=True):
+                for after_failure in (False, True):
+                    text = " ".join(hostsys.firewall_advice("192.0.2.50", [8088], after_failure=after_failure))
+                    self.assertIn("Block all incoming connections", text)
+            with mock.patch.object(hostsys, "mac_blocks_all", return_value=False):
+                self.assertEqual(hostsys.firewall_advice("192.0.2.50", [8088]), [])
+
+    def local_network_note(self, release: str, terminal: str | None) -> list[str]:
+        environ = {} if terminal is None else {"TERM_PROGRAM": terminal}
+        with mock.patch.object(hostsys, "IS_MAC", True), \
+                mock.patch.object(hostsys.platform, "mac_ver", return_value=(release, ("", "", ""), "")), \
+                mock.patch.dict(hostsys.os.environ, environ, clear=True):
+            return hostsys.mac_local_network_note()
+
+    def test_local_network_permission_is_named_for_a_terminal_that_needs_it(self):
+        text = " ".join(self.local_network_note("15.1", "iTerm.app"))
+        self.assertIn("Local Network", text)
+        self.assertIn("iTerm.app", text)
+        self.assertIn("Local Network", " ".join(self.local_network_note("26.0", None)))
+        # Apple's Terminal is exempt, and macOS before 15 has no such permission.
+        self.assertEqual(self.local_network_note("15.1", "Apple_Terminal"), [])
+        self.assertEqual(self.local_network_note("14.6", "iTerm.app"), [])
+
+    def test_local_network_permission_is_said_when_the_device_does_not_answer(self):
+        note = ["NOTE"]
+        with mock.patch.object(hostsys, "IS_MAC", True), \
+                mock.patch.object(hostsys, "mac_blocks_all", return_value=False), \
+                mock.patch.object(hostsys, "mac_local_network_note", return_value=note):
+            self.assertEqual(hostsys.security_software_note(), note)
+            self.assertEqual(hostsys.firewall_advice("192.0.2.50", [8088], after_failure=True), note)
+            self.assertEqual(hostsys.firewall_advice("192.0.2.50", [8088]), [])
+
 
 class CommandOutputTests(unittest.TestCase):
     def test_output_that_does_not_decode_is_not_fatal(self):
