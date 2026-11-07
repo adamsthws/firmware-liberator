@@ -192,6 +192,17 @@ class SavedPlugTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "suite-esphome.*Run prep"):
                 fs.batch()
 
+    def test_the_connection_log_says_each_connection_once_up_and_once_gone(self):
+        session = "ipv4 2 tcp 6 300 ESTABLISHED src=192.168.60.50 dst=192.0.2.81 sport=50280 dport=443 "
+        closing = "ipv4 2 tcp 6 10 CLOSE src=192.168.60.50 dst=192.0.2.81 sport=50280 dport=443 "
+        fetched = "ipv4 2 tcp 6 120 TIME_WAIT src=192.168.60.50 dst=192.168.60.1 sport=1 dport=8089 "
+        seen, said = {}, []
+        for at, conntrack in (("1", session), ("2", session + "\n" + fetched), ("3", closing), ("4", closing),
+                              ("5", "")):
+            said += fs.connection_changes(seen, "autoflash-emu-1", conntrack, at)
+        self.assertEqual(said, ["1 autoflash-emu-1 ESTABLISHED 192.0.2.81:443", "3 autoflash-emu-1 CLOSE 192.0.2.81:443"])
+        self.assertEqual(seen, {})
+
     def test_a_scenario_run_again_keeps_its_earlier_attempts(self):
         # Seen: a batch's second go wrote over the first's log, and how the first
         # failed was gone by the time it was looked at.
@@ -233,6 +244,7 @@ class SavedPlugTests(unittest.TestCase):
         with mock.patch.object(fs, "scenarios", return_value=rows), mock.patch.object(fs, "latest", return_value={}), \
                 mock.patch.object(fs, "LOGS"), mock.patch.object(fs, "stale_starts", return_value=[]), \
                 mock.patch.object(fs, "STUB_CLOUD", False), mock.patch.object(fs, "NO_CLOUD", False), \
+                mock.patch.dict(fs.os.environ, {"AUTOFLASH_CONNECTION_LOG": "0"}), \
                 mock.patch.object(fs, "cloud_workers", return_value=1), mock.patch.object(fs, "worker", worker), \
                 mock.patch.object(fs.time, "sleep"), mock.patch.object(fs, "report"), \
                 mock.patch("builtins.print", side_effect=lambda *a, **k: said.append(" ".join(map(str, a)))):
