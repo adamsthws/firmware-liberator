@@ -1,13 +1,16 @@
-# Sonoff S61 (BK7238) emulation — technical reference
+# Beken research
 
-A working technical reference for emulating a stock Sonoff **S61** plug (Beken
-**BK7238**, not the ESP32-C3 the S60 uses) in the BekenEmulator fork. It records
-what is known about the firmware: how it boots, how it stores its
-configuration, how pairing and provisioning work, how its OTA update works, and
-how all of that is used to convert the plug to OpenBeken and back. Each claim was
-tested in the emulator unless the text says otherwise; the drivers that produced
-the results are in [tools/beken/](../tools/beken/README.md). Per-device identifiers are
-kept out of this repository; examples use the made-up MAC `12:34:56:ab:cd:ef`.
+What is known about the eWeLink firmware on Sonoff's BK7238 devices, and how it was
+found out, so you need not repeat the work. [device-research.md](device-research.md)
+lists the rest, by chip family and by device.
+
+Most of it was worked out on the S61's firmware 1.0.2 in the Beken emulator
+([tools/beken/emulator/](../tools/beken/emulator/README.md)), and holds for every 4 MB
+eWeLink build: [one code path](#one-code-path-for-every-4-mb-ewelink-build). Addresses
+are the S61 1.0.2's; the tools find each one in the firmware itself. Each claim was
+tested in the emulator unless the text says otherwise, and the drivers that produced
+the results are in [tools/beken/](../tools/beken/README.md). Per-device identifiers
+are kept out of this repository; examples use the made-up MAC `12:34:56:ab:cd:ef`.
 
 The dumps and plugs are the owner's own devices. Observing, testing and
 decompiling a program the owner lawfully owns, so other software can interoperate
@@ -16,102 +19,47 @@ Directive 2009/24/EC, Arts. 5–6, and UK CDPA 1988, ss. 50A/50BA/50B; right-to-
 law is background support, not the grant. This is the same footing for any device
 the project adds. See [legal.md](legal.md).
 
-## Goals
+## One code path for every 4 MB eWeLink build
 
-1. **Convert the plug to OpenBeken (or ESPHome) over OTA, and back to stock** — as
-   the S60 is converted to Tasmota/OpenBeken/ESPHome, through the vendor's own update path,
-   with no soldering. See [Firmware update and conversion](#firmware-update-and-conversion-the-ota-path).
-2. **Read the stored Wi-Fi credentials from flash**, so the conversion retains the
-   user's network with no re-typing — as the S60 conversion does. They are stored
-   **plaintext** in the EasyFlash V4 store under `wifi-ssid`/`wifi-pass`, readable
-   from a dump; see [Wi-Fi credentials](#wi-fi-credential-storage).
-3. **Run the stock plug in the emulator, onto Wi-Fi and the cloud** — to study the
-   firmware without a plug on the bench. Seeding credentials joins it to an AP, and
-   synthesising the pairing-success trigger dials the eWeLink cloud and reaches
-   ONLINE against a local stub (own account and plug only; `--net-out` for the real
-   cloud). See [the cloud dial](#the-cloud-dial-synthesise-the-pairing-success-trigger).
+`tools/beken/stock_points.py` finds what the emulator needs in the firmware itself. On
+every file below each point gave one answer, and each firmware reached ONLINE on the
+stub. Apart from the S61's own dump, these ran on the S61's bootloader and settings, so
+they show the firmware comes up, not how a real device's hardware behaves.
 
-## The emulator
+| Device | Firmware name | Version |
+|---|---|---|
+| S61 | `FWSW-01-S61-BK7238` | 1.0.2 (dump), 1.1.0 |
+| Basic Gen5 (BASIC-1GS) | `FWSW-01-BASICR5-BK7238` | 1.0.4 |
+| BASIC-1GSP | `FWSW-01-BASIC1GSP-BK7238` | 1.0.5 |
+| S41 | `FWSW-01-S41-BK7238` | 1.0.6 |
+| T6-3C | `FWSW-06-SWITCHES-BK7238` | 1.0.3 |
 
-- Base: **BekenEmulator** (`openshwprojects/BekenEmulator`), a Python emulator on
-  Unicorn (QEMU's CPU core). It models the BK7238 peripherals and a RivieraWaves
-  Wi-Fi MAC, and can attach a virtual 802.11 peer + user-mode IP network
-  (`src/wifipeer.py` + `src/netstack.py`) — enough that stock firmware reaches a
-  cloud TLS handshake over the station path.
-- The BLE controller **registers** are modelled (`src/blecore.py`) and host
-  commands complete, but there is **no BLE radio**: nothing is transmitted and no
-  peer can connect.
-- It comes with this repository as a container image, as the S60's QEMU does.
-  Its unmodified source, at the commit `../tools/beken/emulator/UPSTREAM` pins, is
-  an archive on the
-  [`emulator-source-beken-d9a3772`](https://github.com/adamsthws/firmware-liberator/releases/tag/emulator-source-beken-d9a3772)
-  release. That release is named after the commit, holds that one archive and
-  never changes; a new pin is a new release. This project's changes to the source
-  are the patches in
-  [`../tools/beken/emulator/patches/`](../tools/beken/emulator/patches/).
-  `../tools/beken/emulator/bk-emu.sh` builds the image from them
-  (`bk-emu.Dockerfile`), or pulls the one the `beken-emulator-image` workflow
-  published for that version (`ghcr.io/adamsthws/autoflash-beken-emu:<hash>`),
-  and runs the tools in it with this checkout at `/work` (see
-  [the fork](#the-fork-toolsbekenemulator)). Upstream publishes no licence;
-  its source is kept with this project so the emulator depends on nothing outside
-  this repository. Neither the archive nor the image holds any of upstream's
-  `firmwares/`: the public S61s dump is Sonoff's firmware, which this
-  repository never holds, so `bk-emu.sh` fetches it from upstream's
-  repository, which publishes it, into `captures/emulation/beken-firmwares/`,
-  mounted into the container.
-- BK7238 CPU is ARM968E-S (ARMv5TE), which Unicorn runs directly.
+## Their flash
 
-Run the S61 dump:
+Each app holds the SDK's partition table as entries of owner, description, start,
+length and options, so it can be read from an update file by its description strings.
 
-```sh
-tools/beken/emulator/bk-emu.sh run captures/<S61 dump>.bin --wifi-peer auto
-# which is, in the container:
-python /opt/beken-emulator/src/main.py <S61 dump>.bin --with-boot -chip BK7238 --only-uart --wifi-peer auto
-```
+| Partition | 4 MB (all of those above) | 2 MB (door sensor) |
+|---|---|---|
+| Bootloader | `0x0`, `0xf000` | the same |
+| Application | `0x11000`, `0x250000` | `0x11000`, `0x121000` |
+| OTA | `0x286000`, `0x15a000` | `0x132000`, `0xae000` |
+| RF Firmware | `0x3e0000`, `0x1000` | `0x1e0000`, `0x1000` |
+| NET info | `0x3e1000`, `0x1000` | `0x1e1000`, `0x1000` |
 
-Always pass `--only-uart`. Without it the emulator logs every MMIO access
-(300k+ lines) and runs so slowly it never progresses past init.
+Further 4 MB entries, the same in all five files: NVS `0x3e2000`, `0xb000`; KEY
+`0x3ed000`, `0x1000`; matter info backup `0x3ee000`, `0x8000`; matter info `0x3f6000`,
+`0x8000`; matter factory info `0x3fe000`, `0x2000`. The OTA entry's description is
+lowercase `ota`. Stock models in their strings: `SN-BK7238-BASICR5-01`,
+`-BASIC1GSP-01`, `-S41-01`, `-T6C3-01`. A register message takes its model from factory
+data, not those strings, and only the S61's has been seen.
 
-## Boot
+The bootloader holds an RT-Thread FAL table that agrees. The update files' apps, at
+1.35 to 1.41 MB, would not fit a 2 MB table's application partition either. That
+these devices really have 4 MB is inferred from the files, not from a read-out.
 
-Stock boot once looped on a watchdog reset. Cause: right after `ais_evt_task`
-starts, the Beken SDK reads the flash chip's **Unique ID** (command `0x4B`, 4
-dummy bytes, 8 data bytes) over the **SPI master at `0x802700`** — a path separate
-from the memory-mapped flash the emulator serves. That controller was unmodelled,
-so its STATUS register never signalled "done", the read spun, and the task
-watchdog reset the chip.
-
-Fixed in the fork by `src/spi_flash.py` (`SpiFlashMaster`): it serves the SPI
-STATUS/DATA registers and answers `0x4B` with a synthetic unique id, plus ~3 lines
-wiring it into the two MMIO hooks in `src/emulator.py`. It engages only while a
-transfer is configured (`CONFIG != 0`), so firmwares that never drive the SPI
-master are unaffected. Result: 0 reboots, RTOS runs, 6/6 regression (SPI-LED
-controllers, OpenBK7238 Wi-Fi/DHCP/HTTP, the S61 dump test).
-
-## What the firmware does at boot
-
-The eWeLink app runs. It boots to `ate_mode_state[0]` (normal, not ATE), runs its
-`ais` event loop, drives its status LED through the **PWM block** (`0x802B00`,
-~290k writes/run), brings up its **BLE stack** (`BLE_STACK_OK`), and initialises
-**EasyFlash V4.1.99**. It then settles into a **quiescent idle**: all AIS tasks
-created and blocked on their event queues, timers and interrupts (SYS/IRQ/FIQ/SVC)
-firing, ~58k idle-loop hits, **zero** Wi-Fi frames transmitted. The central event
-loop is a message pump at `0x23d6c` blocked on a queue receive (`0x134f7c`) from
-the queue whose handle is `*(0x403c0c)+4 = 0x403c10` (created ~0.45 s into boot by
-`0x17700`, stored at `0x16604`); it dispatches event messages 1–9 and otherwise
-waits.
-
-The device is **unprovisioned**: its EF40 store has no `wifi-ssid`/`wifi-pass`,
-and its CHIP ENV has no Matter fabric. So it does not try to connect — it waits
-for a **pairing trigger** (the button, or a command from the app over BLE/cloud).
-The `0x7fffffde` RX filter and the "monitor mode … as in EZ pairing" UART line are
-the MAC's **default** filter printed during `rwnxl_init`; they are not an active
-AirKiss sniff (the monitor callback `0x403b20` is NULL at boot — and in any case
-this build only ever registers a stub there, see
-[AirKiss](#airkiss-smartconfig-relay--decoder-stubbed-in-this-build)). BLE does
-not advertise at boot either (0 advertising payloads staged). This is a plug
-sitting powered-on-but-untouched.
+What is known of the Basic Gen5's own flash, and the one read that settles it, is in
+[its research](../devices/sonoff-basic-1gs/research.md).
 
 ## Flash layout
 
@@ -208,6 +156,46 @@ The bootloader copies `download` → `app`, decompressing and validating CRCs. A
 third-party image is accepted: the `crypt` nibble need only be non-zero (a flag),
 and `rt_ota_custom_verify` is a link-address sanity check, **not** a signature — see
 [Firmware update and conversion](#firmware-update-and-conversion-the-ota-path).
+
+## Boot
+
+Stock boot once looped on a watchdog reset. Cause: right after `ais_evt_task`
+starts, the Beken SDK reads the flash chip's **Unique ID** (command `0x4B`, 4
+dummy bytes, 8 data bytes) over the **SPI master at `0x802700`** — a path separate
+from the memory-mapped flash the emulator serves. That controller was unmodelled,
+so its STATUS register never signalled "done", the read spun, and the task
+watchdog reset the chip.
+
+Fixed in the fork by `src/spi_flash.py` (`SpiFlashMaster`): it serves the SPI
+STATUS/DATA registers and answers `0x4B` with a synthetic unique id, plus ~3 lines
+wiring it into the two MMIO hooks in `src/emulator.py`. It engages only while a
+transfer is configured (`CONFIG != 0`), so firmwares that never drive the SPI
+master are unaffected. Result: 0 reboots, RTOS runs, 6/6 regression (SPI-LED
+controllers, OpenBK7238 Wi-Fi/DHCP/HTTP, the S61 dump test).
+
+## What the firmware does at boot
+
+The eWeLink app runs. It boots to `ate_mode_state[0]` (normal, not ATE), runs its
+`ais` event loop, drives its status LED through the **PWM block** (`0x802B00`,
+~290k writes/run), brings up its **BLE stack** (`BLE_STACK_OK`), and initialises
+**EasyFlash V4.1.99**. It then settles into a **quiescent idle**: all AIS tasks
+created and blocked on their event queues, timers and interrupts (SYS/IRQ/FIQ/SVC)
+firing, ~58k idle-loop hits, **zero** Wi-Fi frames transmitted. The central event
+loop is a message pump at `0x23d6c` blocked on a queue receive (`0x134f7c`) from
+the queue whose handle is `*(0x403c0c)+4 = 0x403c10` (created ~0.45 s into boot by
+`0x17700`, stored at `0x16604`); it dispatches event messages 1–9 and otherwise
+waits.
+
+The device is **unprovisioned**: its EF40 store has no `wifi-ssid`/`wifi-pass`,
+and its CHIP ENV has no Matter fabric. So it does not try to connect — it waits
+for a **pairing trigger** (the button, or a command from the app over BLE/cloud).
+The `0x7fffffde` RX filter and the "monitor mode … as in EZ pairing" UART line are
+the MAC's **default** filter printed during `rwnxl_init`; they are not an active
+AirKiss sniff (the monitor callback `0x403b20` is NULL at boot — and in any case
+this build only ever registers a stub there, see
+[AirKiss](#airkiss-smartconfig-relay--decoder-stubbed-in-this-build)). BLE does
+not advertise at boot either (0 advertising payloads staged). This is a plug
+sitting powered-on-but-untouched.
 
 ## Wi-Fi credential storage
 
@@ -669,22 +657,6 @@ It **erases the app partition and writes the unsigned, third-party image to it.*
 So the conversion is **feasible** at the firmware level: no signature, no encryption,
 no per-device binding is needed to have an image accepted and flashed.
 
-### Emulator support for the in-emulator apply + boot
-
-Performing the apply in the emulator needs two pieces of flash hardware the bootloader
-relies on only when reprogramming its own flash; both are now modelled (behind a flag
-enabled for self-reprogramming emulation — see
-[The emulator performs the whole OTA apply](#the-emulator-performs-the-whole-ota-apply)):
-
-- the SPI flash JEDEC id (`REG_FLASH` RDID result at `0x803010`), from which the
-  bootloader computes the flash size — without it the size is 0 and all its writes are
-  bounds-checked out;
-- XIP write-through: each program/erase is mirrored into the memory-mapped flash image
-  de-striped, so `part_fw_hash_verify` and the app jump read what was just written
-  (unicorn memory `0x0–0x200000` is otherwise static once loaded).
-
-Neither bears on real hardware, where the write and read-back are consistent.
-
 ### The apply path
 
 `copy_fw_from_dl_part` reads the staged RBL body from the download partition
@@ -740,8 +712,8 @@ So algorithm support, the `crypt` flag, `body CRC32`, **decompression of the who
 image**, the streaming FNV `raw hash`, `custom_verify` (OpenBeken links at `0x10000`),
 and the final `part_fw_hash_verify` all pass for a genuine third-party conversion
 image, and the bootloader then **boots the freshly-installed OpenBeken** — the emulator
-performs the whole apply itself (see
-[below](#the-emulator-performs-the-whole-ota-apply)).
+performs the whole apply itself
+([how](../tools/beken/emulator/README.md#the-emulator-performs-the-whole-ota-apply)).
 
 End to end, then: push `upgrade` with a `downloadUrl` you control → the plug downloads
 the FOTA-wrapped OpenBeken `.rbl` and **stages it verbatim** to the download partition
@@ -749,53 +721,6 @@ the FOTA-wrapped OpenBeken `.rbl` and **stages it verbatim** to the download par
 decompresses and applies it. Nothing in the chain decrypts, signs, or needs a secret.
 `fota_wrap.py` builds the container for any `.rbl`. The remaining step — flashing a
 real plug — is irreversible and is not part of this emulator work.
-
-### Booting the converted firmware in the emulator
-
-The emulator runs OpenBeken. Booting `OpenBK7238_QIO_<ver>.bin` (OpenBeken's full
-flash) comes up to its application layer — `OpenBK7238, version 1.18.319`, config
-load, MQTT registration, and the config SoftAP. And the **conversion** itself boots:
-splicing OpenBeken's app (from the QIO, CRC-striped) over the stock app partition while
-keeping the **stock bootloader** and booting it gives
-
-```
-RT-Thread OTA package(V0.2.8-beken-...) init success   ← the stock S61 bootloader
-go os_addr(0x10000)                                     ← jumps to the app
-SDK Rev: 3.0.78 / OSK Rev: F-3.0.51                     ← OpenBeken's build (stock is 3.0.70)
-OpenBK7238, version 1.18.319
-Main_Init_After_Delay done
-softap ssid=OpenBK7238_<id> channel=1 cipher=OPEN       ← OpenBeken's config AP is up
-```
-
-(The `<id>` OpenBeken appends is derived from the device identity in the dump and is
-redacted here, like every other per-device value in these notes.)
-
-So the stock bootloader boots the OpenBeken app end to end (this can also be shown
-directly by splicing OpenBeken's app over the stock app partition and booting).
-
-#### The emulator performs the whole OTA apply
-
-The emulator reproduces the full apply itself — staged OpenBeken RBL in the download
-partition → erase → decompress → program → `part_fw_hash_verify` → jump → OpenBeken
-boots — once it models two pieces of flash hardware the bootloader relies on only when
-reprogramming its own flash:
-
-- **The SPI flash JEDEC id (`REG_FLASH` RDID result at `0x803010`).** The bootloader
-  derives the total flash size from it (`2 << ((id & 0xff) - 1)`); an unmodelled
-  register reads 0, so the size is 0 and *every* bootloader write fails its
-  `(addr + len <= size)` bounds check and is silently skipped — the apply then logs
-  success having written nothing. Modelled to return an id whose capacity byte matches
-  the image size (and whose maker/type match the bootloader's chip table).
-- **XIP write-through.** The memory-mapped flash image is loaded once at setup; real
-  hardware reads it live through the controller's 32+2 CRC framing, so each
-  program/erase is mirrored into the XIP map de-striped. Without this the hash-verify
-  (and the jump) read the stale pre-apply bytes.
-
-Both are gated behind an emulator flag enabled only when emulating self-reprogramming
-firmware (modelling real flash writes is correct but makes flash-writing firmware run
-slower), so normal device emulation is unaffected. With it on, the apply completes and
-OpenBeken boots exactly as above; the written app de-stripes byte-for-byte to the
-OpenBeken image and its FNV equals the RBL `raw hash`.
 
 ### Carrying Wi-Fi across the conversion: the OpenBeken config
 
@@ -833,84 +758,6 @@ config save/read works; UART (incl. the `CFG:` verdict) prints to **stdout**, no
 the `log`/`uart_sink` callbacks; and config writes are AND-without-clean-erase, so
 a *later* re-save corrupts the blob — hook the flash-program path and capture the
 **first** write burst for a clean reference.
-
-#### Energy-meter calibration: the stock formula, and the OpenBeken mapping
-
-The meter is a **BL0937** (the stock driver is registered as `bl0937b`). Its
-factory calibration is the EF40 key **`elecCalibCoef`** (80 B): `u32` magic, a
-flag byte (`1`), padding, then **three 24-byte records in the order current,
-voltage, power**, each beginning with three `int32` **`a, b, c`** (the rest of
-each record is unused). The setter at `0x31160` writes that shape; the getter at
-`0x311ac` checks magic and flag and hands the driver init (`0x301c0`) the 72-byte
-payload, which copies each record's `a,b,c` into the driver's calibration object
-(`0x404bbc`, mode 1).
-
-The driver's measurement function (`0x41a84`; `0x41918` is the uncalibrated
-twin) works in doubles. From the pulse period it forms the frequency `f` (Hz) and
-the **HLW8012-datasheet nominal value** with these board constants:
-
-| quantity | nominal from `f` | constants |
-|---|---|---|
-| current | `I = f · 1.1 · 1000 / 94638` | 94638 (datasheet), 1 mΩ shunt |
-| voltage | `V = f · 1.1 · 2040 / 15397` | 15397 (datasheet), 2040:1 divider |
-| power   | `P = f · 1.21 · 2040 · 1000 / 1721506` | 1721506 (datasheet), 1.21 = 1.1² |
-
-(1.1 plays the role of V_ref; BL0937's nominal is 1.218 V, which is why the
-factory trims below come out ~0.88–0.95.) It then applies the factory trim
-
-```
-x_cal = a·x²/1e7 + b·x/1e6 + c/1e6
-```
-
-— the same CoolKit quadratic mvoss96 found in the S60's `calib_coefficient0`
-(adamsthws/firmware-liberator PR #7). Currents below 3 mA zero current and power. On the
-dump: `a = c = 0` for all three, `b = 954547 / 879893 / 930747` (I/V/P): a pure
-linear trim.
-
-**OpenBeken's BL0937 driver measures the same `f`** — it counts falling edges of
-CF/CF1 per second (`drv_bl0937.c`) and scales `real = f · cal`
-(`drv_pwrCal.c`, `PWR_CAL_MULTIPLY`). So for a linear trim the mapping is exact:
-
-```
-cal_I = (1.1·1000/94638)        · b_I/1e6   = 0.011623 · 0.954547 = 0.011095
-cal_V = (1.1·2040/15397)        · b_V/1e6   = 0.145743 · 0.879893 = 0.128238
-cal_P = (1.21·2040·1000/1721506)· b_P/1e6   = 1.433861 · 0.930747 = 1.334562
-```
-
-(OpenBeken's generic defaults are 0.0118577 / 0.1325301 / 1.5 — same magnitudes,
-which is the independent check that `f` means the same thing in both.) The
-import module applies these with `CFG_SetPowerMeasurementCalibrationFloat` on
-first boot, and sets `PowerMax` to the plug's 3840 W rating. A non-zero `a` or
-`c` has no OpenBeken equivalent; the module then uses `b` and logs a warning.
-Not yet done: a check against a real metered load on hardware.
-
-#### The S61's wiring (proven OpenBeken template)
-
-The OpenBeken device database carries an entry for exactly this board,
-**S61STPF / `WBBK_01P_V1.3`**, verified on hardware by its author
-(elektroda.com topic 4157852; `OpenBekenIOT/webapp` `devices.json`):
-
-| pin | role | channel |
-|---|---|---|
-| P26 | `Rel` (relay) | 1 |
-| P9 | `Btn_Tgl_All` (button) | 1 |
-| P0 | `LED_n` (relay/power LED, active-low) | 1 |
-| P1 | `WifiLED_n` (Wi-Fi LED, active-low) | 2 |
-| P8 | `BL0937CF` (power pulses) | – |
-| P6 | `BL0937CF1` (V/I pulses) | – |
-| P24 | `BL0937SEL` | – |
-
-It agrees with the stock driver: the 6-byte parameter block its init passes to
-`bl0937b::open()` (`[0x13548c]+0x24` = `26 00 00 00 02 18`) ends in `0x18` =
-P24 for SEL (and `0x26` = `8<<2 | 6` looks like CF/CF1 packed). The template's
-`loglevel 0` worked around UART logging disturbing pulse counting on BK7238,
-fixed upstream in 1.18.235 (PR #1930); the release this project builds on has
-the fix. The import
-module applies this template on first boot, plus `SetStartValue 1 -1` so the
-relay restores its last state after a power cut (what the tool sets on the S60).
-The ESPHome config ([`devices/sonoff-s61/esphome.yaml`](../devices/sonoff-s61/esphome.yaml),
-on LibreTiny) uses the same pins (`hlw8012: model: BL0937, sel_pin: P24,
-cf_pin: P8, cf1_pin: P6`); see [the ESPHome route](#the-esphome-route-libretiny).
 
 #### Partition map: the SDK's 4 MB table *is* Sonoff's layout
 
@@ -1530,51 +1377,46 @@ from another context does not complete the round-trip. `IsWiFiStationProvisioned
 is `0x7388e` (reads `wifi-ssid` via `0x5ad84` → `0x12f438`), reached from CHIP
 `DriveStationState` `0x73b28`.
 
-## The fork (`../tools/beken/emulator/`)
+## Adding a device from a pin map
 
-The emulator is upstream BekenEmulator at the commit `UPSTREAM` pins - the
-archive on the release `emulator-source-beken-<commit>`, whose hash `UPSTREAM` also pins -
-with these patches applied in name order when the image is built
-(`bk-emu.sh ensure` builds or pulls it; `bk-emu.sh dump` fetches the public
-S61s dump from upstream's repository; `bk-emu.sh test` runs upstream's
-self-tests under them, fetching its other devices' dumps the same way). Each is one commit's worth, with its reasoning in
-its header; none has been offered upstream yet.
+The Basic Gen5 is added this way; see
+[its page](../devices/sonoff-basic-1gs/README.md) for what has been run. Pins from
+[one post](https://www.elektroda.com/rtvforum/topic4167932.html) and OpenBeken's list.
+BASIC-1GSP (no published pin map; it has a meter, and forum titles mention a pulse-driven
+latching relay, which a wrong map could harm), S41 (no published pin map) and T6 (one
+unit's pins only, with touch over a UART protocol OpenBeken has no driver for:
+[saltech1's ESPHome work](https://github.com/saltech1/esphome-sonoff-t6-uart)) stay out.
+Pins are never guessed.
 
-- **`0001` - monitor-mode RX delivery** (`src/wifimac.py`): sniffed frames
-  reach the RX descriptors in monitor mode even when the scan state machine is
-  not active, as the AirKiss path needs. Opt-in (`monitor_rx_deliver`), so
-  nothing else changes.
-- **`0002` - the SPI flash's Unique ID** (`src/spi_flash.py`, new, wired in
-  `src/emulator.py`): the boot fix above. Without it the SDK's UID read spins
-  and the watchdog reboots the chip.
-- **`0003` - OTA self-reprogramming** (`src/emulator.py`): the flash JEDEC id
-  and XIP write-through the stock bootloader needs to apply an update to its
-  own flash (`flash_writethrough`, off by default), plus flash-write speedups.
-- **`0004` - the 26 MHz timer group** (`src/emulator.py`, `tests/self_test.py`):
-  Timer 0-2 fire at each channel's programmed period, which LibreTiny's
-  FreeRTOS tick needs; OpenBeken's watchdog feed and the stock dump are
-  unchanged.
-- **`0005` - the device's Ethernet on a host TAP device** (`src/tapnet.py`,
-  new, `src/emulator.py`, `src/main.py`, `tests/tapnet.py`): `--net-tap
-  IFACE` bridges the Wi-Fi peer to a TAP device instead of the built-in
-  network, which is the device's router itself and reachable only through
-  port forwards. The device is then a station on the host's network, given
-  its address by that network's DHCP server and reached at it by every
-  protocol: how `bk-emu.sh plug` puts the S61 on a Docker network of its
-  own, where `bk-emu.sh computer` reaches it. The built-in network's own options are refused
-  beside it.
+Basic Gen5, S41 and T6 firmware lacks the `uiActive` string the S61 and BASIC-1GSP have, so
+a check of a plug back on Sonoff re-sends `sledOnline` there instead, proven only on the
+stub.
 
-To change the fork: extract the archive (`captures/emulation/cache/`), apply
-the patches to it in order, make the change as a commit there, `git
-format-patch` it into `patches/`, and `bk-emu.sh ensure` builds the image
-again from the new set (its hash, `bk-emu.sh tag`, changed; the workflow
-publishes that version once it is pushed).
-Moving to a newer upstream commit: put its hash in `UPSTREAM`, `bk-emu.sh
-source` makes the new archive (`git archive` of that commit, so anyone can
-reproduce its bytes), publish it as the release `emulator-source-beken-<its
-commit>` (draft first, with the archive attached, then publish: releases are
-immutable), pin its SHA-256 and name in `UPSTREAM`, and rework whatever
-patches no longer apply.
+## Rebuilding a whole dump without a serial cable
+
+The stock app is overwritten when OpenBeken goes on, but everything else can be read
+through OpenBeken's `GET /api/flash`, and the computer can fetch the official file
+itself. `tools/beken/rebuild_dump.py` combines them. Proven in the emulator on the S61:
+
+| Region | Rebuilt from 1.1.0, against the stock bootloader's own apply of 1.1.0 |
+|---|---|
+| Bootloader, FAL, radio, factory data | the same |
+| Application, RBL header, download slot | the same |
+| EasyFlash stores | differ: they hold the plug's own later history |
+
+It booted to ONLINE and converted to OpenBeken again. It cannot know the flash's unique
+id, or the plug's exact old version if the file is newer, though about 680 KB of the old
+app survives conversion and shows whether the versions match. A rebuilt dump holds the
+plug's Wi-Fi password and keys, so it stays private. The bootloader fills a short last
+block with `00 00 10 00 80 80 02 29` then zeros.
+
+## 2 MB devices: on hold
+
+The public door sensor is the one 2 MB device found, and it is a different firmware
+family, not a smaller S61: colink rather than `ais_*`, no Matter, no `EF40` store, and
+plain RBL updates with no FOTA container. Stock's `NET info` at `0x1e1000` holds data
+there, including the MAC, and OpenBeken's 2 MB build writes its config over it, so a
+conversion would destroy it unread. Supporting them needs a route of their own.
 
 ## Tools and methods
 
@@ -1609,3 +1451,8 @@ patches no longer apply.
   (button press), `long_press.py`, `pair_drive.py`, and `airkiss_capture.sh` +
   `airkiss_replay.py` (AirKiss relay). Emulator tools take paths via env
   `BK_EMU_ROOT` / `S61_DUMP`; see the folder's README.
+
+## Questions still open
+
+- Whether a real plug answers as the emulator does: `/api/flash` returning raw flash on a
+  Beken plug, and stock's checks of a rebuilt image.

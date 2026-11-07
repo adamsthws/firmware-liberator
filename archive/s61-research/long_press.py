@@ -1,7 +1,7 @@
 """Drive the S61 button long-press in the emulator, end to end, through the
 firmware's own key stack.
 
-Two emulator-side interventions, both explained in ../beken-s61-emulation.md:
+Two emulator-side interventions, both explained in docs/beken-research.md:
 
   1. Integrity-gate bypass. The app layer hangs in a flash-UID factory self-check
      (SHA256(hex(flash_uid)+fields) vs a stored cert; the emulator's synthetic

@@ -1,5 +1,5 @@
 """rt_ota RBL images, as the Beken SDK's packer makes them and the S61's stock
-bootloader applies them (docs/beken-s61-emulation.md, "Update (RBL) format").
+bootloader applies them (docs/beken-research.md, "Update (RBL) format").
 
 An RBL is a 96-byte header and a body: the firmware gzipped (level 9, no
 name, no time), padded (PKCS#7) and encrypted with AES-256-CBC under

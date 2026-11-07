@@ -107,6 +107,12 @@ dump is ever committed. Tooling fetches it at run time.
    or screens. A conversion passing there says the firmware installs and starts,
    not that the template is right.
 
+10. **Write down what you found out**, so the next person need not repeat it. What
+    is true of this one device goes in a `research.md` in its folder, listed in
+    [device-research.md](device-research.md); a test fails until it is. What holds
+    for its whole chip family goes in [espressif-research.md](espressif-research.md)
+    or [beken-research.md](beken-research.md).
+
 ## Its status
 
 Each device has one status, in [`devices/status.json`](../devices/status.json), and
@@ -157,7 +163,7 @@ partition table is not one the tool knows: the chip and its revision, whether
 secure boot and flash encryption are on, the flash size, the partition table, and
 each app's version, ESP-IDF and the firmware name its updater checks. The installer
 adds what a backup cannot hold, such as the exact chip revision, the flash chip's id
-and the input pins' levels ([what it logs](device-research.md#what-a-backup-logs)).
+and the input pins' levels ([what it logs](espressif-research.md#what-a-backup-logs)).
 None of it is secret, so a report of a device the tool stopped on is enough to start adding it.
 
 ## Learning the firmware name

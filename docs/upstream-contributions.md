@@ -197,7 +197,7 @@ Proven in the BekenEmulator on a dump of the owner's own S61: the default
 2 MB build unchanged, and the 4 MB build saving its config at `0x3e1000`,
 serving flash reads at the top of the chip, and `ota_http` downloading to
 `0x286000`, where the bootloader applies it.
-[docs/beken-s61-emulation.md](beken-s61-emulation.md) has the detail.
+[docs/beken-research.md](beken-research.md) has the detail.
 
 **Related:** the BekenEmulator has no licence, so nobody can tell on what terms
 a fix to it would be taken; [issue #2](https://github.com/openshwprojects/BekenEmulator/issues/2) ![state](https://img.shields.io/github/issues/detail/state/openshwprojects/BekenEmulator/2?label=)
@@ -257,7 +257,7 @@ people's code:
   not a trip to the wall socket.
 
 It took several fixes to the QEMU fork to get here (see
-[What is changed, and why](emulator.md#what-is-changed-and-why)): real MAC
+[What is changed, and why](../tools/espressif/emulator/README.md#what-is-changed-and-why)): real MAC
 addresses on the wire, a button that is not held down, a router that can be
 restarted, and Wi-Fi frames written only where the hardware would put them -
 those that belong upstream are [offered back](#the-emulators-wi-fi).

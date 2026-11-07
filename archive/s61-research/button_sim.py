@@ -1,7 +1,7 @@
 """Simulate the S61's physical button (press & hold 5 s -> pairing) in the
 BekenEmulator fork, driving the firmware's own key-handling stack.
 
-Background (see ../beken-s61-emulation.md "The button press CAN be simulated"):
+Background (see docs/beken-research.md "The button press"):
 the button is a GPIO 0-5 capture interrupt on the BK7238 PWM/timer block at
 0x802B00 (ICU IRQ 9, ISR 0x1bfd8 -> key handler 0x4203c). The key/button driver
 is not initialised during the emulator's boot-to-idle (its app main-init parks on

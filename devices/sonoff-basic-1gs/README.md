@@ -70,3 +70,5 @@ no fallback by switching it off and on.
   publishes it (`tools/autoflash/routes/beken/images.py`). This repository holds none.
 - **The images**: `artifacts/openbeken-sonoff-basic-1gs-*.rbl` and
   `artifacts/esphome-sonoff-basic-1gs-*.rbl`, built by `tools/repo/update_firmware.py`.
+- **Research**: [`research.md`](research.md), what is known of its flash size and the
+  read that settles it.

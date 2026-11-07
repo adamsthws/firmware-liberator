@@ -22,7 +22,7 @@ handling and energy totals, so the two plugs look alike in Home Assistant.
   and applied the way the stock firmware applies it: the BL0937's pulse rate
   reckoned with a 1.1 V reference where the datasheet (and ESPHome) say
   1.218 V, then `a*x^2/1e7 + b*x/1e6 + c/1e6` on the reading in A, V or W
-  ([the derivation](../../docs/beken-s61-emulation.md#energy-meter-calibration-the-stock-formula-and-the-openbeken-mapping)).
+  ([the derivation](research.md#energy-meter-calibration-the-stock-formula-and-the-openbeken-mapping)).
   One set of nine numbers, where the S60 has two sets for below and above
   300 W. The `Calibration` sensor says `stock store`, `from backup` (given
   through `autoflash_calibration`, nine numbers) or `missing`.

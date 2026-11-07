@@ -19,7 +19,7 @@ Where the plug has none, it is rebuilt from the device's eWeLink account record
 (from_account), which has the id, the key, the model and the kind. What the
 record lacks Sonoff's firmware does without: frame_params' sha256, which it
 sends neither in its dispatch nor its register, and the other entries
-(docs/device-research.md says how that was shown).
+(docs/espressif-research.md says how that was shown).
 """
 
 from __future__ import annotations

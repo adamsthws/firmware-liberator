@@ -6,7 +6,7 @@
 
 ## Where it stops
 
-Its stock firmware boots in the emulator, from a whole dump, but turns the installer down after reading the first 24 bytes of the file: its updater is hardcoded to expect a three-record manifest (the ESP32 app plus two HMI screen images), and the bridge sends one record, so the file is rejected at the header. A three-record file cannot be made screen-safe in software — the two screen records drive the display MCU into firmware-upload mode before their payload is even read, and the app is activated only after all three records succeed — so getting past the gate needs real screen images and a real unit, or a different entry point. See [what is holding each one up](../README.md) and the [full trace](../../../docs/device-research.md#the-nspanel-wants-three-records).
+Its stock firmware boots in the emulator, from a whole dump, but turns the installer down after reading the first 24 bytes of the file: its updater is hardcoded to expect a three-record manifest (the ESP32 app plus two HMI screen images), and the bridge sends one record, so the file is rejected at the header. A three-record file cannot be made screen-safe in software — the two screen records drive the display MCU into firmware-upload mode before their payload is even read, and the app is activated only after all three records succeed — so getting past the gate needs real screen images and a real unit, or a different entry point. See [what is holding each one up](../README.md) and the [full trace](research.md#the-nspanel-wants-three-records).
 
 ## The device
 

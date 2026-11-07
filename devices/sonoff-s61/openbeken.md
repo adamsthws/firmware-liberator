@@ -23,7 +23,7 @@ It goes through `CFG_SetWiFiSSID()` / `CFG_SetWiFiPass()` rather than writing th
 config blob itself, so it keeps working across OpenBeken releases that change the
 `mainConfig_t` layout or checksum. It reads the stock store only (never writes
 it), so it does not stand in the way of reverting to stock. See the full findings
-in [beken-s61-emulation.md](../../docs/beken-s61-emulation.md#carrying-wi-fi-across-the-conversion-the-openbeken-config).
+in [beken-research.md](../../docs/beken-research.md#carrying-wi-fi-across-the-conversion-the-openbeken-config).
 
 ## Integrating into OpenBeken
 
