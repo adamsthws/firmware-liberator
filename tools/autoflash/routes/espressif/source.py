@@ -14,11 +14,12 @@ import shutil
 import time
 from typing import TYPE_CHECKING
 
-from tools.autoflash import esphome, kinds, output, plugs, runs, unlock
+from tools.autoflash import kinds, output, plugs, runs, unlock
 from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort
 from tools.autoflash.routes.espressif import evidence
 from tools.autoflash.state import ATTEMPTED, FAILED, PENDING, RunState
+from tools.autoflash.routes.espressif import images
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -87,10 +88,10 @@ def leaves_tasmota_direct(ctx: Context) -> bool:
     that will not say goes through the hub, which is right for any plug; and so
     does one with a temporary table, which only the hub's Tasmota can replace."""
     kind = kinds.of_run(ctx.state)
-    if esphome.layout_of(kind).needs_temporary:
+    if images.layout_of(kind).needs_temporary:
         return False
-    chip = esphome.chip_of(kind)
-    bootloader = esphome.published_bootloader(chip)
+    chip = images.chip_of(kind)
+    bootloader = images.published_bootloader(chip)
     try:
         found = ctx.device.sha_region(chip.bootloader_at, len(bootloader), timeout=30)
     except (DeviceError, OSError):

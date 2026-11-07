@@ -7,10 +7,11 @@ from __future__ import annotations
 
 from typing import Any, Callable, TYPE_CHECKING
 
-from tools.autoflash import account, esphome, kinds
+from tools.autoflash import account, esphome as esphome, kinds
 from tools.autoflash.routes import update
 from tools.autoflash.routes.espressif import bundle, hub, identity, installer, mover, sonoff, tasmota
 from tools.autoflash.routes.espressif.evidence import ATTEMPTED_EVIDENCE, DESTRUCTIVE_STEPS  # noqa: F401
+from tools.autoflash.routes.espressif import images
 
 # Sonoff's firmware goes back on from the plug's own backup where this computer
 # has it - or else from Sonoff's official firmware and the plug's identity
@@ -55,8 +56,8 @@ POINT_OF_NO_RETURN = "C2"
 def published_version(kind: kinds.Kind, firmware: str) -> str | None:
     """The release of `firmware` this tool installs on a plug of `kind`: its
     own ESPHome's, and the official Tasmota it pins."""
-    return {"esphome": str(esphome.image_pin(kind)["version"]),
-            "tasmota": str(esphome.chip_of(kind).pin("tasmota")["version"])}.get(firmware)
+    return {"esphome": str(images.image_pin(kind)["version"]),
+            "tasmota": str(images.chip_of(kind).pin("tasmota")["version"])}.get(firmware)
 
 
 def resume_check(ctx: Context) -> None:

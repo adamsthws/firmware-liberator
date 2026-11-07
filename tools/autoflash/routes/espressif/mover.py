@@ -32,6 +32,7 @@ from tools.autoflash.routes.espressif import hub, identity
 from tools.espressif import nvs_image, sonoff_identity
 from tools.espressif.layouts import TEMPORARY_OTADATA
 from tools.espressif.safeboot.prepare_imprinted_bundle import BundleError, startup_image
+from tools.autoflash.routes.espressif import images
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -57,10 +58,10 @@ def step_esphome_install(ctx: Context) -> dict[str, Any]:
         "Once ESPHome is written, it has to join",
         "your Wi-Fi on its own, and a weak signal makes that less certain."])
     try:
-        image = esphome.image_for(ssid, password, own=ctx.esphome_firmware, kind=kinds.of_run(ctx.state))
-    except (esphome.ImageError, imprint.ImprintError, OSError) as exc:
+        image = images.image_for(ssid, password, own=ctx.esphome_firmware, kind=kinds.of_run(ctx.state))
+    except (images.ImageError, imprint.ImprintError, OSError) as exc:
         raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
-    name = ctx.esphome_firmware.name if ctx.esphome_firmware else esphome.image_file(kinds.of_run(ctx.state)).name
+    name = ctx.esphome_firmware.name if ctx.esphome_firmware else images.image_file(kinds.of_run(ctx.state)).name
     prompts.section("Installing ESPHome", quiet=True, body=[
         f"{name}, with your Wi-Fi written in (in memory only), goes into the half",
         "of the device's memory Tasmota is not running from. Every block is read back",
@@ -70,7 +71,7 @@ def step_esphome_install(ctx: Context) -> dict[str, Any]:
     if ctx.dry_run:
         output.say(f"[dry-run] would install {name}")
         return {"dry_run": True, "image": name}
-    return hub.run_plan(ctx, plans.esphome(image, esphome.layout_of(kinds.of_run(ctx.state)))) | {"image": name, "size": len(image),
+    return hub.run_plan(ctx, plans.esphome(image, images.layout_of(kinds.of_run(ctx.state)))) | {"image": name, "size": len(image),
                                                    "signal_dbm": signal}
 
 
@@ -95,13 +96,13 @@ def step_leave_tasmota(ctx: Context) -> dict[str, Any]:
         "to join your Wi-Fi on its own, and a weak signal makes that less certain."])
     handover.consent_to_leave(ctx, "Tasmota")
     kind = kinds.of_run(ctx.state)
-    layout = esphome.layout_of(kind)
+    layout = images.layout_of(kind)
     table, settings = (None, None) if ctx.dry_run else what_tasmota_has(ctx, layout)
     try:
-        chip = esphome.chip_of(kind)
-        plan = plans.leave_tasmota(esphome.mover_for(ssid, password, chip), esphome.leaving_table(kind),
+        chip = images.chip_of(kind)
+        plan = plans.leave_tasmota(images.mover_for(ssid, password, chip), images.leaving_table(kind),
                                    layout, tasmota_table=table, settings=settings)
-    except (esphome.ImageError, imprint.ImprintError, plans.PlanError, OSError) as exc:
+    except (images.ImageError, imprint.ImprintError, plans.PlanError, OSError) as exc:
         raise Abort(f"the mover cannot be used: {exc}") from exc
     try:
         result = hub.run_plan(ctx, plan)
@@ -192,8 +193,8 @@ def step_esphome_from_mover(ctx: Context) -> dict[str, Any]:
         return {"already": True}
     ssid, password = ctx.wifi()
     try:
-        image = esphome.image_for(ssid, password, own=ctx.esphome_firmware, kind=kinds.of_run(ctx.state))
-    except (esphome.ImageError, imprint.ImprintError, OSError) as exc:
+        image = images.image_for(ssid, password, own=ctx.esphome_firmware, kind=kinds.of_run(ctx.state))
+    except (images.ImageError, imprint.ImprintError, OSError) as exc:
         raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
     if ctx.dry_run:
         return {"dry_run": True}
@@ -201,8 +202,8 @@ def step_esphome_from_mover(ctx: Context) -> dict[str, Any]:
         # Given new Wi-Fi details on its own network: ESPHome gets those too.
         ssid, password = ctx.wifi()
         try:
-            image = esphome.image_for(ssid, password, own=ctx.esphome_firmware, kind=kinds.of_run(ctx.state))
-        except (esphome.ImageError, imprint.ImprintError, OSError) as exc:
+            image = images.image_for(ssid, password, own=ctx.esphome_firmware, kind=kinds.of_run(ctx.state))
+        except (images.ImageError, imprint.ImprintError, OSError) as exc:
             raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
     seconds = handover.send_as_esphome_update(ctx, image, "ESPHome")
     output.say(f"    ESPHome sent in {seconds}s; the device restarts into it.")
@@ -221,8 +222,8 @@ def step_esphome_update(ctx: Context) -> dict[str, Any]:
         "written in, as every ESPHome image this tool installs does.",
     ])
     try:
-        image = esphome.image_for(ssid, password, kind=kinds.of_run(ctx.state))
-    except (esphome.ImageError, imprint.ImprintError, OSError) as exc:
+        image = images.image_for(ssid, password, kind=kinds.of_run(ctx.state))
+    except (images.ImageError, imprint.ImprintError, OSError) as exc:
         raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
     if ctx.dry_run:
         return {"dry_run": True}
@@ -268,7 +269,7 @@ def step_startup_from_esphome(ctx: Context, *, again: bool = False) -> dict[str,
         "goes on next needs it written in, to join your Wi-Fi by itself.",
     ])
     try:
-        image = startup_image(ssid, password, esphome.chip_of(kinds.of_run(ctx.state)))
+        image = startup_image(ssid, password, images.chip_of(kinds.of_run(ctx.state)))
     except BundleError as exc:
         raise Abort(f"the startup firmware cannot be prepared: {exc}") from exc
     if ctx.dry_run:
@@ -287,7 +288,7 @@ def step_startup_from_esphome(ctx: Context, *, again: bool = False) -> dict[str,
 def step_berry_from_startup(ctx: Context) -> dict[str, Any]:
     """X2 - the Berry Tasmota, uploaded to the startup firmware, which writes it
     into the other slot; it starts with the Wi-Fi the startup firmware saved."""
-    image = esphome.interim_of(kinds.of_run(ctx.state))
+    image = images.interim_of(kinds.of_run(ctx.state))
     if ctx.dry_run:
         return {"dry_run": True}
     running = unlock.identify(ctx, ctx.device.host)

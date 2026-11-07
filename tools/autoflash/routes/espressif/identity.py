@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import esphome, hostsys, kinds, output, plans, plugs
+from tools.autoflash import hostsys, kinds, output, plans, plugs
 from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort
 from tools.autoflash.routes.espressif import hub
@@ -16,6 +16,7 @@ from tools.espressif import flashmap, sonoff_identity
 from tools.espressif.safeboot.safeboot_migration import OFFICIAL_TABLE_SHA256
 from tools.espressif.sonoff_identity import Identity, IdentityError
 from tools.ewelink.get_device_key import dispatch_server
+from tools.autoflash.routes.espressif import images
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -94,7 +95,7 @@ def from_account(ctx: Context, kind: kinds.Kind) -> Identity | None:
         return None
     try:
         return sonoff_identity.from_account(device, dispatch_server(ctx.ewelink_region()),
-                                            encrypted=esphome.chip_of(kind).key == "esp32")
+                                            encrypted=images.chip_of(kind).key == "esp32")
     except IdentityError as exc:
         output.tell(f"    The device's eWeLink record cannot rebuild its identity: {exc}.")
         return None
@@ -122,7 +123,7 @@ def step_keep_identity(ctx: Context) -> dict[str, Any]:
         output.say("Left out: this run was begun by an earlier version of this tool, and is past the hub.")
         return {"skipped": "begun before this step, and past the hub"}
     kind = kinds.of_run(ctx.state)
-    layout = esphome.layout_of(kind)
+    layout = images.layout_of(kind)
     hub.sonoff_layout_back(ctx)
     identity, where = for_tasmota(ctx, layout)
     if identity is None:

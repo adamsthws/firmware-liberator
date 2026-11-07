@@ -112,8 +112,9 @@ class MemoryOnlyBundleTests(unittest.TestCase):
 
     def test_the_plan_server_takes_its_plan_through_a_pipe_alone(self):
         # Not the recovery Safeboot: only the plan, ESPHome with the Wi-Fi written in.
-        from tools.autoflash import esphome, plans
-        image = plans.esphome(esphome.image_for("TestNet-2G", "correct-horse-battery")).bundle()
+        from tools.autoflash import plans
+        from tools.autoflash.routes.espressif import images
+        image = plans.esphome(images.image_for("TestNet-2G", "correct-horse-battery")).bundle()
         output = serve_through_pipe(
             ["plan", "--manifest", str(self.manifest), "--evidence-dir", str(self.out / "live"),
              "--device-ip", "127.0.0.1", "--plan-from-stdin", "--no-sensitive-captures", "--wait", "5"],

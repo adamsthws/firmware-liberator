@@ -16,7 +16,6 @@ from tools.autoflash import (
     detect,
     device,
     errors,
-    esphome,
     join,
     kinds,
     names,
@@ -53,6 +52,7 @@ from tools.espressif.safeboot.safeboot_migration import (
     official_release,
     sha256_bytes,
 )
+from tools.autoflash.routes.espressif import images
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -331,7 +331,7 @@ def recovery_firmware_up(ctx: Context, started: float, *, within: float) -> bool
 
 def official_app(ctx: Context) -> Path:
     """The bundle's official Tasmota, for the plug's chip."""
-    chip = esphome.chip_of(kinds.of_run(ctx.state))
+    chip = images.chip_of(kinds.of_run(ctx.state))
     return chip.bundle_file(f"{chip.tasmota_prefix}.bin")
 
 
@@ -805,7 +805,7 @@ def conversion_wifi(ctx: Context) -> None:
 
     def proven(ssid: str, password: str) -> bytes | None:
         try:
-            image = startup_image(ssid, password, esphome.chip_of(kinds.of_run(ctx.state)))
+            image = startup_image(ssid, password, images.chip_of(kinds.of_run(ctx.state)))
         except BundleError:
             return None
         return image if sha256_bytes(image) == wanted else None
@@ -908,8 +908,8 @@ def step_verify(ctx: Context) -> dict[str, Any]:
     device = ctx.device
     device.wait_reachable(timeout=180)
 
-    chip = esphome.chip_of(kinds.of_run(ctx.state))
-    _, bootloader_size, bootloader_sha256 = esphome.bootloader_file(chip)
+    chip = images.chip_of(kinds.of_run(ctx.state))
+    _, bootloader_size, bootloader_sha256 = images.bootloader_file(chip)
     expected = {
         # Written once at D5, for whichever firmware comes after.
         "bootloader": (chip.bootloader_at, bootloader_size, bootloader_sha256),

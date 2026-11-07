@@ -48,7 +48,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import esphome, imprint, plugs, tasmota_settings as ts  # noqa: E402
+from tools.autoflash import imprint, plugs, tasmota_settings as ts  # noqa: E402
+from tools.autoflash.routes.espressif import images  # noqa: E402
 from tools.espressif.emulator.copy_plug import MAC_AT  # noqa: E402
 from tools.espressif.inspect_stock_nvs import parse as parse_nvs  # noqa: E402
 from tools.autoflash.sonoff_secrets import PUBLIC_FIELDS, sonoff_values  # noqa: E402,F401
@@ -141,12 +142,12 @@ def sanitise_flash(flash: bytes) -> tuple[bytes, dict[str, str]]:
     out = bytearray(b"\xff" * FLASH_SIZE)
     proof: dict[str, str] = {}
 
-    bootloader = esphome.published_bootloader()
+    bootloader = images.published_bootloader()
     if flash[:len(bootloader)] != bootloader:
         raise Refused("its bootloader is not the published one: carry the plug past D5 first, "
                       "which writes it in place of Sonoff's")
     out[:len(bootloader)] = bootloader
-    proof["bootloader"] = f"{esphome.BOOTLOADER.relative_to(ROOT)}, byte for byte"
+    proof["bootloader"] = f"{images.BOOTLOADER.relative_to(ROOT)}, byte for byte"
 
     table = flash[TABLE_AT:TABLE_AT + TABLE_SIZE]
     layout = {SOURCE_TABLE_SHA256: "sonoff", TARGET_TABLE_SHA256: "tasmota",

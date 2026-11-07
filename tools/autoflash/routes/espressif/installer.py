@@ -15,7 +15,6 @@ from tools.espressif import build_vendor_ota, chips, device_facts, dump_stock_fl
 from tools.autoflash import (
     detect,
     device,
-    esphome,
     firewall,
     hostsys,
     interrupt,
@@ -37,6 +36,7 @@ from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.runs import ROOT
 from tools.autoflash.state import ATTEMPTED, DONE, FAILED
 from tools.espressif.safeboot.safeboot_migration import pinned_artifacts
+from tools.autoflash.routes.espressif import images
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -413,7 +413,7 @@ def step_backup(ctx: Context) -> dict[str, Any]:
 
 def step_berry_tasmota(ctx: Context) -> dict[str, Any]:
     """D1/D2 - Berry-capable Tasmota through the bridge."""
-    image = esphome.interim_of(kinds.of_run(ctx.state))
+    image = images.interim_of(kinds.of_run(ctx.state))
     output.say("Looking for the device's Wi-Fi network...")
     bridge = prompts.find_ssid(names.bridge_networks(ctx))
     setup = None if bridge else prompts.find_ssid(names.setup_networks(ctx))

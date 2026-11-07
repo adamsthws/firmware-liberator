@@ -7,8 +7,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.autoflash import esphome, plugs, tasmota_settings as ts
+from tools.autoflash import plugs, tasmota_settings as ts
 from tools.espressif.emulator import sanitise_plug as sp
+from tools.autoflash.routes.espressif import images
 
 HAS_NVS_GEN = importlib.util.find_spec("esp_idf_nvs_partition_gen") is not None
 TEST_MAC, REAL_MAC = "12:34:56:ab:cd:ef", "12:34:56:00:00:01"
@@ -58,7 +59,7 @@ class FlashTests(unittest.TestCase):
 
     def test_an_unknown_partition_table_is_refused(self):
         flash = bytearray(b"\xff" * sp.FLASH_SIZE)
-        bootloader = esphome.published_bootloader()
+        bootloader = images.published_bootloader()
         flash[:len(bootloader)] = bootloader
         with self.assertRaisesRegex(sp.Refused, "partition table"):
             sp.sanitise_flash(bytes(flash))

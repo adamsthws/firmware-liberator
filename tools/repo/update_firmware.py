@@ -67,7 +67,8 @@ from typing import Any, Callable
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import esphome, imprint, kinds, tasmota_settings  # noqa: E402
+from tools.autoflash import imprint, kinds, tasmota_settings  # noqa: E402
+from tools.autoflash.routes.espressif import images  # noqa: E402
 from tools.espressif import build_vendor_ota, chips, layouts  # noqa: E402
 from tools.beken import rbl, uf2  # noqa: E402
 from tools.espressif.safeboot.safeboot_migration import (  # noqa: E402
@@ -539,11 +540,11 @@ def build(builder: str, config_path: Path, version: str, workdir: Path) -> tuple
 
 def check_esphome_app(image: bytes, label: str, release: str, chip: chips.Chip = chips.ESP32C3) -> dict[str, str]:
     try:
-        esphome.check_app(image, label, chip)
+        images.check_app(image, label, chip)
         if not imprint.has_placeholders(image):
             raise UpdateError(f"{label} has no untouched Wi-Fi placeholders")
         imprint.imprint(image, "Autoflash-check", "a-password")  # each found once, and writable
-    except (esphome.ImageError, imprint.ImprintError) as exc:
+    except (images.ImageError, imprint.ImprintError) as exc:
         raise UpdateError(str(exc)) from exc
     if imprint.find_build_paths(image):
         raise UpdateError(f"{label} holds paths from the computer that built it")
@@ -632,7 +633,7 @@ def command_esphome(args: argparse.Namespace) -> int:
         described = check_esphome_app(app, f"the {key} built", release)
         built[key] = (version, app, bootloader, described)
         print(f"  {key} {version}: {len(app):,} bytes, ESP-IDF {described['esp_idf']}, "
-              f"{esphome.SLOT_SIZE - len(app):,} bytes to spare in the slot")
+              f"{images.SLOT_SIZE - len(app):,} bytes to spare in the slot")
     version, app, bootloader, described = built["image"]
     pinned_bootloader = (ROOT / pins["esphome"]["bootloader"]["file"]).read_bytes()
     new_bootloader = bootloader != pinned_bootloader
