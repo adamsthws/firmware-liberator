@@ -192,6 +192,22 @@ class SavedPlugTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "suite-esphome.*Run prep"):
                 fs.batch()
 
+    def test_a_scenario_run_again_keeps_its_earlier_attempts(self):
+        # Seen: a batch's second go wrote over the first's log, and how the first
+        # failed was gone by the time it was looked at.
+        with tempfile.TemporaryDirectory() as tmp:
+            log, evidence = Path(tmp) / "s.log", Path(tmp) / "s-evidence"
+            for attempt in ("first", "second", "third"):
+                fs.keep_earlier(log)
+                log.write_text(attempt, encoding="utf-8")
+                fs.keep_earlier(evidence)
+                evidence.mkdir()
+                (evidence / "run.log").write_text(attempt, encoding="utf-8")
+            self.assertEqual([(Path(tmp) / f"s.log{n}").read_text(encoding="utf-8") for n in (".1", ".2", "")],
+                             ["first", "second", "third"])
+            self.assertEqual((Path(tmp) / "s-evidence.1" / "run.log").read_text(encoding="utf-8"), "first")
+            self.assertIsNone(fs.keep_earlier(Path(tmp) / "none"))
+
     def test_the_real_cloud_keeps_where_ewelink_is_under_test(self):
         def kind(route, step, fault, arg):
             return fs.kind_of({"route": route, "step": step, "fault": fault, "arg": arg})
