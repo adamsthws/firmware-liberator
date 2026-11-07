@@ -1,0 +1,126 @@
+"""A run's record (tools/autoflash/state.py): kept across a reload and an
+interruption, every step's status as it was left, the file replaced whole."""
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from tools.autoflash import hostsys, routes
+from tools.autoflash.routes import espressif
+from tools.autoflash.routes.espressif import evidence
+from tools.autoflash.state import DONE, FAILED, RunState
+
+
+class RunStateTests(unittest.TestCase):
+    def test_a_moment_of_windows_refusal_is_waited_out(self):
+        real = hostsys.os.replace
+        with tempfile.TemporaryDirectory() as directory:
+            run = RunState.open(Path(directory))
+            refusals = [PermissionError(5, "Access is denied")] * 2
+
+            def flaky(source, target):
+                if refusals:
+                    raise refusals.pop()
+                real(source, target)
+
+            with mock.patch.object(hostsys.os, "replace", side_effect=flaky), \
+                    mock.patch.object(hostsys, "IS_WINDOWS", True), \
+                    mock.patch.object(hostsys.time, "sleep"):
+                run.mark("E3", DONE)
+            self.assertTrue(RunState.open(Path(directory)).is_done("E3"))
+            # Elsewhere a refusal means what it says, at once.
+            with mock.patch.object(hostsys.os, "replace", side_effect=PermissionError(13, "denied")), \
+                    mock.patch.object(hostsys, "IS_WINDOWS", False), \
+                    self.assertRaises(PermissionError):
+                run.mark("E2", DONE)
+
+    def test_state_survives_reload_and_records_steps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = RunState.open(root)
+            state.set_input("plug_ip", "192.0.2.99")
+            state.mark("A1", DONE, note="paired")
+            state.capture("D1.upload_seconds", 41)
+
+            reopened = RunState.open(root)
+            self.assertEqual(reopened.input("plug_ip"), "192.0.2.99")
+            self.assertTrue(reopened.is_done("A1"))
+            self.assertEqual(reopened.data["captures"]["D1.upload_seconds"], 41)
+
+    def test_require_reports_every_missing_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = RunState.open(Path(directory))
+            state.set_input("plug_ip", "")
+            with self.assertRaisesRegex(ValueError, "plug_ip.*listen_ip|listen_ip"):
+                state.require("plug_ip", "listen_ip")
+
+    def test_failed_step_is_not_skipped_on_resume(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = RunState.open(root)
+            state.mark("E1", FAILED, error="stage refused")
+            self.assertFalse(RunState.open(root).is_done("E1"))
+
+
+class ResumeTests(unittest.TestCase):
+    """The checklist is only useful if it behaves under interruption."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.directory.name)
+        self.addCleanup(self.directory.cleanup)
+
+    def test_a_step_that_never_reported_is_re_run(self):
+        state = RunState.open(self.root)
+        state.mark("C2", "attempted")
+        reopened = RunState.open(self.root)
+        self.assertFalse(reopened.is_done("C2"))
+        self.assertEqual(reopened.status("C2"), "attempted")
+
+    def test_a_crash_before_any_mark_leaves_the_step_pending(self):
+        state = RunState.open(self.root)
+        state.mark("A1", DONE)
+        # C2 was never reached at all
+        self.assertEqual(RunState.open(self.root).status("C2"), "pending")
+
+    def test_completed_and_failed_steps_are_distinguishable(self):
+        state = RunState.open(self.root)
+        state.mark("E1", DONE)
+        state.mark("E2", FAILED, error="stage refused")
+        reopened = RunState.open(self.root)
+        self.assertTrue(reopened.is_done("E1"))
+        self.assertFalse(reopened.is_done("E2"))
+        self.assertEqual(reopened.data["steps"]["E2"]["error"], "stage refused")
+
+    def test_migration_phases_resume_independently(self):
+
+        ids = [step for step, _, _ in routes.STEPS]
+        self.assertEqual(ids[ids.index("E1"):ids.index("E1") + 3], ["E1", "E2", "E3"])
+        state = RunState.open(self.root)
+        state.mark("E1", DONE)
+        state.mark("E2", DONE)
+        reopened = RunState.open(self.root)
+        self.assertTrue(reopened.is_done("E2"))
+        self.assertFalse(reopened.is_done("E3"))
+
+    def test_every_destructive_step_records_an_attempt_first(self):
+
+        # Every route's steps: STEPS holds only the route chosen for the run.
+        # From an earlier release ("outdated") only to this one: left, it is a run from what it runs.
+        known = {step for firmware in espressif.FIRMWARES for source in espressif.SOURCES
+                 if firmware != source and (source != "outdated" or firmware in espressif.UPDATE_STEPS)
+                 for step, _, _ in espressif.steps_for(firmware, source)}
+        known |= {step for step, _, _ in espressif.steps_for("esphome", espressif.DIRECT_FROM_TASMOTA)}
+        self.assertTrue(evidence.DESTRUCTIVE_STEPS <= known)
+        self.assertIn("E3", evidence.DESTRUCTIVE_STEPS)
+        self.assertIn("C2", evidence.DESTRUCTIVE_STEPS)
+
+    def test_state_file_is_replaced_atomically(self):
+        state = RunState.open(self.root)
+        state.mark("A1", DONE)
+        leftovers = [f for f in self.root.iterdir() if f.name.startswith(".")]
+        self.assertEqual(leftovers, [], "temporary files must not survive a write")
+
+
+if __name__ == "__main__":
+    unittest.main()

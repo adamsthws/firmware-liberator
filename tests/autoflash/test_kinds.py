@@ -11,6 +11,7 @@ from pathlib import Path
 from tools.autoflash import kinds
 from tools.autoflash.state import RunState
 
+
 S60 = kinds.SONOFF_S60
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -185,6 +186,18 @@ class NotReadyYetTests(unittest.TestCase):
         done = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True,
                               env={**os.environ, "AUTOFLASH_NOT_READY_YET": "1"}, check=True)
         self.assertEqual(done.stdout.strip(), "sonoff-m5-3c")
+
+
+class TemplateNameTests(unittest.TestCase):
+    """Tasmota's template is named as every firmware names the plug."""
+
+    def test_the_wiring_is_the_tested_s60tpg_template(self):
+        # Byte for byte the template proven on the UK plugs, apart from the name.
+        self.assertEqual(
+            kinds.SONOFF_S60.tasmota_template(),
+            '{"NAME":"Sonoff-S60","GPIO":[1,1,1,1,224,544,1,3104,1,32,1,0,0,0,0,0,0,0,'
+            '1,1,1,1],"FLAG":0,"BASE":1}',
+        )
 
 
 if __name__ == "__main__":

@@ -1,18 +1,18 @@
-"""Back to Sonoff's firmware with no backup on this computer (R1): the flash
-its backup would have held, put together."""
+"""Back to Sonoff's firmware (tools/autoflash/routes/espressif/sonoff.py): with
+no backup on this computer (R1), the flash its backup would have held, put
+together; and a plug whose Sonoff firmware ran from its second slot."""
 import json
 import unittest
 from unittest import mock
 
-from tests.espressif.test_sonoff_identity import FRAME
-from tests.autoflash.routes.espressif.test_identity import IDENTITY, MAC, Fixture, settings_of
+from tests.autoflash.routes.espressif.test_identity import Fixture, IDENTITY, MAC, settings_of
 from tests.autoflash.routes.espressif.test_sonoff_firmware import SONOFF_APP
-from tools.autoflash import plans
+from tests.espressif.test_sonoff_identity import FRAME
+from tools.autoflash import errors, output, plans, plugs
 from tools.autoflash.errors import NothingWritten
-from tools.autoflash.routes.espressif import hub, sonoff, sonoff_firmware
+from tools.autoflash.routes.espressif import hub, images, sonoff, sonoff_firmware
 from tools.espressif import sonoff_identity
 from tools.ewelink import get_device_key
-from tools.autoflash.routes.espressif import images
 
 
 class RebuiltTests(Fixture):
@@ -75,6 +75,45 @@ class RebuiltTests(Fixture):
         with mock.patch.object(sonoff, "rebuilt", side_effect=AssertionError("not with a backup")):
             result, _, _, second = self.restore(ctx)
         self.assertEqual(result["from"], "backup")
+
+
+class SonoffInTheHubsSlotTests(unittest.TestCase):
+    """A plug whose Sonoff firmware ran from its second slot has it there in its
+    backup, the slot the hub runs from (the public S60 dump: seen stopping at R1)."""
+
+    def restore(self, stock_slot, slots):
+        from types import SimpleNamespace
+        device = mock.Mock()
+        ctx = SimpleNamespace(state=SimpleNamespace(input={"plug_kind": "sonoff-s60", "plug_mac": "12:34:56:ab:cd:ef"}.get,
+                                                    capture=lambda key, value: None),
+                              device=device, dry_run=False)
+        with mock.patch.object(sonoff, "sonoff_backup", return_value=b"backup"), \
+             mock.patch.object(plugs, "find_backup", return_value="its backup"), \
+             mock.patch.object(plans, "stock_slot", return_value=stock_slot), \
+             mock.patch.object(plans, "back_to_sonoff", return_value=("first", "second")) as planned, \
+             mock.patch.object(hub, "running_slot", side_effect=slots), \
+             mock.patch.object(hub, "upload_or_prompt") as uploaded, \
+             mock.patch.object(hub, "run_plan", return_value={"plan": "x"}), \
+             mock.patch.object(output, "say"):
+            sonoff.step_sonoff_restore(ctx)
+        return planned.call_args.kwargs["running"], uploaded.called, device
+
+    def test_in_the_other_slot_nothing_moves(self):
+        running, uploaded, device = self.restore(0, [1])
+        self.assertEqual((running, uploaded), (1, False))
+        device.wait_for_reboot.assert_not_called()
+
+    def test_in_the_slot_tasmota_runs_from_tasmota_moves_first(self):
+        running, uploaded, device = self.restore(1, [1, 0])
+        self.assertEqual((running, uploaded), (0, True))
+        device.wait_for_reboot.assert_called_once()
+
+    def test_a_rerun_finds_it_moved(self):
+        self.assertEqual(self.restore(1, [0])[:2], (0, False))
+
+    def test_tasmota_that_will_not_move_stops_the_run_before_anything_is_written(self):
+        with self.assertRaisesRegex(errors.Abort, "still running from slot 1"):
+            self.restore(1, [1, 1])
 
 
 if __name__ == "__main__":

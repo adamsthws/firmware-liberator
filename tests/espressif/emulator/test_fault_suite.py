@@ -294,11 +294,11 @@ class RunWordsTests(unittest.TestCase):
         from types import SimpleNamespace
         from tools.autoflash import output
         from tools.autoflash.routes.espressif import tasmota
-        from tests.autoflash import test_autoflash
+        from tests.autoflash.routes.espressif import test_tasmota
         # A Tasmota that does not take the name and template at the reset's save.
         device = SimpleNamespace(wait_reachable=lambda **_: None, started_at=lambda: "t",
                                  uptime_seconds=lambda: 10, wait_for_reboot=lambda **_: 1.0,
-                                 command=test_autoflash.ConfigureStepTests.console([]), is_safeboot=lambda: False,
+                                 command=test_tasmota.ConfigureStepTests.console([]), is_safeboot=lambda: False,
                                  at_next_save=lambda commands, timeout=None: False)
         state = SimpleNamespace(input=lambda key: {"product_model": "S60TPF"}.get(key))
         ctx = SimpleNamespace(finder=SimpleNamespace(poll=lambda: "192.0.2.51"), device=device, state=state)

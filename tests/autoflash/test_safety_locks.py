@@ -6,8 +6,9 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from tools.autoflash import safety_locks
+from tools.autoflash import output, runs, safety_locks
 
 NAME = "RECOVERY_LOCK"
 
@@ -78,6 +79,20 @@ class SafetyLockTests(unittest.TestCase):
         self.lock.rename(self.lock.with_name(f"{NAME}.owner-authorized"))
         self.assertEqual(safety_locks.restore_left(self.root), [NAME])
         self.assertTrue(self.lock_in_place())
+
+
+class LeftLockTests(unittest.TestCase):
+    def test_a_lock_left_moved_aside_by_a_stopped_run_is_put_back(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / safety_locks.DIR).mkdir(parents=True)
+            (root / safety_locks.DIR / "RECOVERY_LOCK.owner-authorized").write_text("locked\n")
+            (root / safety_locks.DIR / "REPARTITION_LOCK").write_text("locked\n")
+            with mock.patch.object(runs, "ROOT", root), mock.patch.object(output, "say"):
+                safety_locks.restore_left_locks(runs.ROOT)
+            self.assertTrue((root / safety_locks.DIR / "RECOVERY_LOCK").exists())
+            self.assertFalse((root / safety_locks.DIR / "RECOVERY_LOCK.owner-authorized").exists())
+            self.assertTrue((root / safety_locks.DIR / "REPARTITION_LOCK").exists())
 
 
 if __name__ == "__main__":

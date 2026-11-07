@@ -1,22 +1,23 @@
-"""ESPHome and the way to and from it: its check (I2), the signal read before
-leaving it (X1), ESPHome from the mover (M1), the identity carried off
-Tasmota (L1), and an earlier release updated (U1, U2)."""
+"""ESPHome and the way to and from it (tools/autoflash/routes/espressif/mover.py):
+its check (I2), the signal read before leaving it (X1), Tasmota left for the
+mover (L1) and the identity carried off it, the mover's own network,
+ESPHome from the mover (M1), the startup firmware confirmed (X2), and an
+earlier release updated (U1, U2)."""
 import contextlib
 import io
-import unittest
 import time
+import unittest
 from pathlib import Path
 from unittest import mock
 
 from tests.autoflash.routes.espressif.test_espressif import RouteTestCase
-from tests.autoflash.routes.espressif.test_identity import IDENTITY, Fixture, on_tasmota
-from tools.autoflash import cli, detect, errors, esphome, esphome_ota, handover
-from tools.autoflash import join, kinds, prompts, report, routes, runs, unlock
-from tools.autoflash.state import DONE
+from tests.autoflash.routes.espressif.test_identity import Fixture, IDENTITY, on_tasmota
+from tools.autoflash import cli, detect, device, errors, esphome, esphome_ota, handover, join, kinds, output
+from tools.autoflash import plans, prompts, report, routes, runs, setup_network, unlock
 from tools.autoflash.routes import espressif, update
-from tools.autoflash.routes.espressif import evidence, mover, source
+from tools.autoflash.routes.espressif import evidence, hub, images, mover, source as espressif_source
+from tools.autoflash.state import DONE
 from tools.espressif import nvs_image, sonoff_identity
-from tools.autoflash.routes.espressif import images
 
 
 class CheckStepTests(RouteTestCase):
@@ -138,7 +139,7 @@ class ESPHomeUpdateTests(RouteTestCase):
                 mock.patch.object(esphome, "api_device_info", return_value=info), \
                 mock.patch.object(espressif, "published_version", return_value="1.6.0"), \
                 mock.patch.object(routes, "sonoff_backup_exists", return_value=True), \
-                mock.patch.object(source, "leaves_tasmota_direct", return_value=False), \
+                mock.patch.object(espressif_source, "leaves_tasmota_direct", return_value=False), \
                 mock.patch.object(prompts, "ask_choice", return_value=answer) as asked:
             route = routes.settle_route(ctx)
         self.addCleanup(routes.apply_target, "tasmota", "sonoff")
@@ -375,6 +376,274 @@ class CarriedOffTasmotaTests(Fixture):
 
     def test_with_neither_the_region_is_cleared_as_before(self):
         self.assertIsNone(mover.settings_to_carry(self.ctx(on_tasmota()), images.layout_of(kinds.SONOFF_S60)))
+
+
+class EsphomeSignalTests(unittest.TestCase):
+    """On the way to ESPHome the signal is read too, off the Tasmota the plug
+    still runs, before what then has to join the Wi-Fi on its own is written."""
+
+    def setUp(self):
+        from unittest import mock
+        self.run_plan = mock.Mock(return_value={"plan": "written"})
+        self.consent = mock.Mock()
+        for patch in (mock.patch.object(output, "say"),
+                      mock.patch.object(prompts, "section"),
+                      mock.patch.object(hub, "run_plan", self.run_plan),
+                      mock.patch.object(handover, "consent_to_leave", self.consent),
+                      mock.patch.object(mover, "wait_for_mover"),
+                      mock.patch.object(esphome, "is_esphome", return_value=False),
+                      mock.patch.object(images, "image_for", return_value=b"\0" * 64),
+                      mock.patch.object(images, "mover_for", return_value=b"\0" * 64),
+                      mock.patch.object(images, "leaving_table", return_value=b""),
+                      mock.patch.object(esphome_ota, "probe", return_value=None),
+                      mock.patch.object(plans, "esphome", return_value="plan"),
+                      mock.patch.object(mover, "what_tasmota_has", return_value=(None, None)),
+                      mock.patch.object(plans, "leave_tasmota", return_value="plan")):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def ctx(self, status):
+        from types import SimpleNamespace
+
+        def command(_):
+            if isinstance(status, Exception):
+                raise status
+            return status
+
+        inputs = {"plug_ip": "192.168.60.50"}
+        state = SimpleNamespace(input=inputs.get, set_input=inputs.__setitem__)
+        return SimpleNamespace(state=state, wifi=lambda: ("Home-2G", "pass"), esphome_firmware=None,
+                               dry_run=False, device=SimpleNamespace(command=command))
+
+    def signal(self, dbm):
+        return {"StatusSTS": {"Wifi": {"SSId": "Home-2G", "Signal": dbm}}}
+
+    def test_the_signal_is_recorded_with_the_install(self):
+        for step in (mover.step_esphome_install, mover.step_leave_tasmota):
+            self.run_plan.reset_mock()
+            self.assertEqual(step(self.ctx(self.signal(-58)))["signal_dbm"], -58, step.__name__)
+            self.run_plan.assert_called_once()
+
+    def test_a_weak_signal_stops_before_anything_is_written(self):
+        from unittest import mock
+        for step in (mover.step_esphome_install, mover.step_leave_tasmota):
+            with mock.patch.object(prompts, "ask_yes_no", return_value=False):
+                with self.assertRaisesRegex(errors.Abort, "weak Wi-Fi signal"):
+                    step(self.ctx(self.signal(-82)))
+        self.run_plan.assert_not_called()
+        self.consent.assert_not_called()  # asked first, before the go-ahead to leave Tasmota
+
+    def test_a_plug_that_does_not_say_is_installed_all_the_same(self):
+        from tools.autoflash.device import DeviceError
+        for status in ({"StatusSTS": {}}, DeviceError("no answer")):
+            self.run_plan.reset_mock()
+            self.assertIsNone(mover.step_esphome_install(self.ctx(status))["signal_dbm"])
+            self.run_plan.assert_called_once()
+
+    def test_a_weak_signal_agreed_to_is_not_asked_about_again(self):
+        from unittest import mock
+        ctx = self.ctx(self.signal(-82))
+        with mock.patch.object(prompts, "ask_yes_no", return_value=True) as asked:
+            mover.step_leave_tasmota(ctx)        # the earliest reading: asked
+            mover.step_esphome_install(ctx)      # a later one: told, not asked
+        asked.assert_called_once()
+        self.assertEqual(self.run_plan.call_count, 2)
+
+
+ORIGINAL_TABLE_WRITTEN = mover.table_written
+
+
+class LeaveTasmotaStoppedTests(unittest.TestCase):
+    """L1's plan stopped with Sonoff's table in place: the plug is restarted
+    into the mover only if the plan got as far as writing it."""
+
+    def setUp(self):
+        from types import SimpleNamespace
+        self.run_plan = mock.Mock(side_effect=errors.Abort("plan leave_tasmota did not pass"))
+        for patch in (mock.patch.object(output, "say"),
+                      mock.patch.object(hub, "run_plan", self.run_plan),
+                      mock.patch.object(handover, "consent_to_leave"),
+                      mock.patch.object(join, "note_signal"),
+                      mock.patch.object(join, "plug_signal"),
+                      mock.patch.object(mover, "wait_for_mover"),
+                      mock.patch.object(mover, "table_written", return_value=True),
+                      mock.patch.object(esphome_ota, "probe", return_value=None),
+                      mock.patch.object(images, "mover_for", return_value=b""),
+                      mock.patch.object(images, "leaving_table", return_value=b""),
+                      mock.patch.object(mover, "what_tasmota_has", return_value=(None, None)),
+                      mock.patch.object(plans, "leave_tasmota",
+                                        return_value=SimpleNamespace(name="leave_tasmota", running=0))):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def ctx(self, slot):
+        from types import SimpleNamespace
+        device = mock.Mock(current_ota=mock.Mock(return_value=slot))
+        inputs = {"plug_ip": "192.168.60.50"}
+        state = SimpleNamespace(input=inputs.get)
+        return SimpleNamespace(state=state, wifi=lambda: ("Home-2G", "pass"), dry_run=False,
+                                     device=device)
+
+    def test_a_plan_stopped_after_its_writes_restarts_the_plug_into_the_mover(self):
+        ctx = self.ctx(0)
+        self.assertEqual(mover.step_leave_tasmota(ctx)["restarted_after"], "a stopped report")
+        ctx.device.command.assert_called_once_with("Restart 99")
+
+    def test_a_plan_refused_on_the_interim_tasmota_is_not_taken_for_one_that_wrote(self):
+        # Seen in the fault suite: the hub, on slot 1 with Sonoff's table
+        # already, was restarted "into the mover", and L1 recorded as done.
+        ctx = self.ctx(1)
+        with self.assertRaisesRegex(errors.Abort, "did not pass"):
+            mover.step_leave_tasmota(ctx)
+        ctx.device.command.assert_not_called()
+
+    def test_the_table_looked_for_is_the_one_the_plan_writes(self):
+        # A temporary table, or a layout other than the S60's, is as written as Sonoff's.
+        from types import SimpleNamespace
+        plan = SimpleNamespace(final_table_sha256=lambda: "aa")
+        ctx = self.ctx(0)
+        written = ctx.device.sha_region
+        for found, expected in (("aa", True), (plans.SONOFF_TABLE_SHA256, False)):
+            written.return_value = found
+            self.assertEqual(ORIGINAL_TABLE_WRITTEN(ctx, plan), expected)
+
+
+class BerryFromStartupTests(unittest.TestCase):
+    """X2 - the startup firmware confirms itself only once used: switched off
+    and on before then, the plug starts the firmware it ran before (seen in the
+    fault suite, a power cut early in X2), which once passed for Tasmota."""
+
+    def x2(self, running, versions=("15.6.0.1(f5b34a2-bluetooth)",)):
+        from types import SimpleNamespace
+        from unittest import mock
+        ctx = SimpleNamespace(dry_run=False, device=SimpleNamespace(host="192.168.60.50"),
+                              state=SimpleNamespace(input=lambda name: None),
+                              web_password=None, esphome_login=None)
+        answers = iter(versions)
+        seen = []
+
+        def wait_for(ctx_, check, what, timeout=240.0):
+            seen.append(check("192.168.60.50"))
+
+        with mock.patch.object(detect, "identify", return_value=running), \
+             mock.patch.object(mover, "step_startup_from_esphome") as x1, \
+             mock.patch.object(hub, "upload_or_prompt", return_value="http:12s") as upload, \
+             mock.patch.object(join, "wait_for", side_effect=wait_for), \
+             mock.patch.object(device, "Device", lambda address, timeout=None: SimpleNamespace(
+                 firmware_version=lambda: next(answers))), \
+             mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
+            result = mover.step_berry_from_startup(ctx)
+        return result, x1, upload.called, seen
+
+    def test_already_on_tasmota_does_nothing(self):
+        result, x1, uploaded, _ = self.x2("hub")
+        self.assertEqual(result, {"already": True})
+        self.assertFalse(uploaded or x1.called)
+
+    def test_back_on_the_mover_the_startup_firmware_goes_on_again_first(self):
+        result, x1, uploaded, _ = self.x2("mover")
+        x1.assert_called_once()
+        self.assertEqual(x1.call_args.kwargs, {"again": True})  # no second go-ahead
+        self.assertTrue(uploaded)
+
+    def test_on_the_startup_firmware_it_is_uploaded(self):
+        result, x1, uploaded, seen = self.x2("startup")
+        self.assertFalse(x1.called)
+        self.assertTrue(uploaded)
+        self.assertEqual(seen, [True])
+
+    def test_a_page_not_answering_is_not_tasmota(self):
+        _, _, _, seen = self.x2("startup", versions=("",))
+        self.assertEqual(seen, [False])
+
+
+class MoverOwnNetworkTests(unittest.TestCase):
+    """A mover that cannot join the home Wi-Fi raises its own network, and is
+    set up through it - with the details the run has first, new ones only if
+    those fail - not left as a plug only a serial cable reaches."""
+
+    def wait(self, answers, network=None, sends=(None,), joined_already=False, unattended=False):
+        from types import SimpleNamespace
+        from unittest import mock
+        tries = iter(answers)
+        outcomes = iter(sends)
+
+        def wait_for(ctx, check, what, timeout=240.0):
+            if not next(tries):
+                raise errors.Abort(f"{what} did not answer within 4 minutes")
+
+        def send(ssid, password):
+            outcome = next(outcomes, None)
+            if outcome:
+                raise setup_network.SetupError(outcome)
+
+        adopted = []
+        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda key: "12:34:56:ab:cd:ef"),
+                              _wifi=("Home", "pw0"), wifi=lambda why=None: ("Home", "pw0"),
+                              adopt_wifi=lambda ssid, pw: adopted.append((ssid, pw)))
+        self.home_waits = 0
+        with mock.patch.object(join, "wait_for", side_effect=wait_for) as waited, \
+             mock.patch.object(prompts, "find_ssid", return_value=network), \
+             mock.patch.object(join, "on_a_plug_network", return_value=joined_already), \
+             mock.patch.object(join, "ask_credentials", return_value=("NewHome", "pw")), \
+             mock.patch.object(prompts, "UNATTENDED", unattended), \
+             mock.patch.object(join, "wait_until_joined"), \
+             mock.patch.object(time, "sleep"), \
+             mock.patch.object(setup_network, "send_esphome_wifi", side_effect=send) as sent, \
+             mock.patch.object(prompts, "section"), mock.patch.object(output, "tell"):
+            try:
+                result = mover.wait_for_mover(ctx, "the mover")
+            except errors.Abort as exc:
+                result = exc
+            self.home_waits = waited.call_count
+        return result, sent, adopted
+
+    def test_a_mover_on_the_home_wifi_is_used_as_ever(self):
+        result, sent, _ = self.wait([True])
+        self.assertIs(result, False)
+        sent.assert_not_called()
+
+    def test_after_a_router_outage_the_runs_own_details_do(self):
+        result, sent, adopted = self.wait([False, True], network="autoflash-recovery-CDEF")
+        self.assertIs(result, False)  # the same details: ESPHome has them already
+        sent.assert_called_once_with("Home", "pw0")
+        self.assertEqual(adopted, [])
+
+    def test_new_details_when_those_fail_which_esphome_gets_too(self):
+        result, sent, adopted = self.wait([False, False, True], network="autoflash-recovery-CDEF")
+        self.assertIs(result, True)
+        self.assertEqual([c.args for c in sent.call_args_list], [("Home", "pw0"), ("NewHome", "pw")])
+        self.assertEqual(adopted, [("NewHome", "pw")])
+
+    def test_unattended_it_stops_rather_than_asking(self):
+        result, _, _ = self.wait([False, False], network="autoflash-recovery-CDEF", unattended=True)
+        self.assertIsInstance(result, errors.Abort)
+        self.assertIn("did not join 'Home'", str(result))
+
+    def test_a_send_that_gets_no_answer_is_tried_again(self):
+        result, sent, _ = self.wait([False, True], network="autoflash-recovery-CDEF",
+                                    sends=("no answer", "no answer", None))
+        self.assertIs(result, False)
+        self.assertEqual(sent.call_count, 3)
+
+    def test_joined_already_it_carries_on_through_that(self):
+        result, sent, _ = self.wait([True], network="autoflash-recovery-CDEF", joined_already=True)
+        self.assertIs(result, False)
+        sent.assert_called_once()
+        self.assertEqual(self.home_waits, 1)  # only after sending: no wait first
+
+    def test_neither_says_to_switch_it_off_and_on(self):
+        result, sent, _ = self.wait([False], network=None)
+        self.assertIsInstance(result, errors.Abort)
+        self.assertIn("switch the device off and on", str(result))
+        self.assertIn("autoflash-recovery-CDEF", str(result))
+
+    def test_the_details_go_to_esphomes_own_page(self):
+        from unittest import mock
+        from tools.autoflash import setup_network
+        with mock.patch.object(setup_network, "page", return_value="ok") as page:
+            setup_network.send_esphome_wifi("My Wi-Fi", "p&ss")
+        self.assertEqual(page.call_args.args[1], "/wifisave?ssid=My+Wi-Fi&psk=p%26ss")
 
 
 if __name__ == "__main__":

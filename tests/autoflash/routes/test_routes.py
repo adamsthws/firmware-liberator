@@ -241,34 +241,6 @@ class KindTests(unittest.TestCase):
             self.assertEqual(kind.ecosystem, "ewelink")
 
 
-class NothingAnsweringTests(unittest.TestCase):
-    """A device given by its address with nothing at all there - not on the
-    network - stops the run there, saying so, rather than being taken for one
-    on Sonoff's and sent to eWeLink (seen on a real plug switched off,
-    2026-11-07)."""
-
-    def run_on(self, mac, known):
-        from tools.autoflash.routes import source
-        with tempfile.TemporaryDirectory() as tmp:
-            state = RunState.open(Path(tmp) / "run")
-            state.set_input("plug_ip", "192.0.2.52")
-            ctx = SimpleNamespace(state=state)
-            with mock.patch.object(source, "identify_once_restarted", return_value=None), \
-                    mock.patch.object(source.hostsys, "mac_of", return_value=mac), \
-                    mock.patch.object(source.detect, "answers_as_tasmota", return_value=False), \
-                    mock.patch.object(source, "known_macs", return_value=known):
-                return source.find_current_firmware(ctx)
-
-    def test_nothing_at_the_address(self):
-        with self.assertRaisesRegex(routes.Abort, "nothing answers at 192.0.2.52"):
-            self.run_on(None, set())
-
-    def test_one_on_the_network_that_answers_nothing_is_still_asked_of_ewelink(self):
-        # An S61 on Sonoff's firmware answers nothing on the LAN, converted here before or not.
-        self.assertEqual(self.run_on("12:34:56:ab:cd:01", set()), "sonoff")
-        self.assertEqual(self.run_on("12:34:56:ab:cd:ef", {"12:34:56:ab:cd:ef"}), "sonoff")
-
-
 class FirmwareChoiceTests(RouteTestCase):
     """From Sonoff's firmware the choice waits for A1 to say what kind of plug
     it is (step_choose, A3); a converted plug's kind is known when the route
