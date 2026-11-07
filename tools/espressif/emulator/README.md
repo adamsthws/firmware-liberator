@@ -175,6 +175,16 @@ change, and regenerate them. What they do:
   [espressif/qemu #183](https://github.com/espressif/qemu/pull/183), not yet
   merged, makes the switch fast and keeps the fault.
 
+**When you next move the pin:** lcgamboa merged #18, #19 and #20 on 7 November
+2026 (`2d075b740`), so `0001`-`0003` drop out on a commit after that. Replace
+`0004` with [espressif/qemu #183](https://github.com/espressif/qemu/pull/183)
+(or with lcgamboa's copy of it, once it is there): it is written for Espressif's
+`esp32.c`, so its changes to that file go into `esp32_picsimlab.c`, and it touches
+the same part of `esp32_dport.c` as #20. Then check that Tasmota still boots in
+about 3 seconds and reads its settings backup in about 6, and that ESP-IDF's
+panic test `test_cache_error` still ends in "Cache disabled but cached memory
+region accessed".
+
 Tried and dropped for the classic ESP32: QEMU's multi-threaded mode (MTTCG),
 which did not help and was slower; stretching the firmware's watchdogs,
 which only hid real hangs for longer; and the two cores taking turns every
