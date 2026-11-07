@@ -12,6 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "tools" / "beken" / "emulator" / "bk-emu.sh"
+IMAGE_SH = ROOT / "tools" / "beken" / "emulator" / "image.sh"
 PLUG_NET = ROOT / "tools" / "beken" / "emulator" / "plug-net.sh"
 
 
@@ -87,11 +88,11 @@ class ImageTagTests(unittest.TestCase):
             found.append(done.stdout.strip())
         return found
 
-    def test_the_s61_images_tag_is_the_same_in_any_locale(self):
-        english, c = self.tags(SCRIPT)
+    def test_the_beken_images_tag_is_the_same_in_any_locale(self):
+        english, c = self.tags(IMAGE_SH)
         self.assertEqual(english, c)
 
-    def test_the_s60_images_tag_is_the_same_in_any_locale(self):
+    def test_the_espressif_images_tag_is_the_same_in_any_locale(self):
         english, c = self.tags(ROOT / "tools" / "espressif" / "emulator" / "image.sh")
         self.assertEqual(english, c)
 
@@ -100,10 +101,14 @@ class ImageTagTests(unittest.TestCase):
 class ImageLockTests(unittest.TestCase):
     def test_the_lock_is_let_go_once_the_image_is_there(self):
         # Held on, the docker run exec'd next kept it for its whole run, and
-        # every other emulator's start waited behind it (seen in the fault suite).
+        # every other emulator's start waited behind it (seen in the fault suite):
+        # image.sh, which takes it, runs as a process of its own.
         function = re.search(r"^ensure\(\) \{.*?^\}", SCRIPT.read_text(encoding="utf-8"), re.S | re.M).group(0)
         with tempfile.TemporaryDirectory() as tmp:
-            script = ("set -u\nCACHE=%s IMAGE=img\nlabelled() { return 0; }\n%s\nensure\n"
+            Path(tmp, "image.sh").write_text('#!/bin/bash\nexec 9>"$(dirname "$0")/lock"\nflock 9\n',
+                                             encoding="utf-8")
+            Path(tmp, "image.sh").chmod(0o755)
+            script = ("set -u\nHERE=%s IMAGE=img\n%s\nensure\n"
                       "[ -e /proc/$$/fd/9 ] && echo held || echo free\n" % (tmp, function))
             done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60)
         self.assertEqual(done.stdout.strip(), "free", done.stderr)

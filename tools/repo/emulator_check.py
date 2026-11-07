@@ -32,7 +32,7 @@ from tools.autoflash import kinds  # noqa: E402
 EMULATORS = {
     "espressif": {"image_workflow": "emulator-image.yml", "image_tag": "tools/espressif/emulator/image.sh tag",
                   "image_name": "autoflash-emu", "published_variable": "AUTOFLASH_EMU_PUBLISHED"},
-    "beken": {"image_workflow": "beken-emulator-image.yml", "image_tag": "tools/beken/emulator/bk-emu.sh tag",
+    "beken": {"image_workflow": "beken-emulator-image.yml", "image_tag": "tools/beken/emulator/image.sh tag",
               "image_name": "autoflash-beken-emu", "published_variable": "AUTOFLASH_BEKEN_PUBLISHED"},
 }
 # What every device's conversion runs on, whichever changed.

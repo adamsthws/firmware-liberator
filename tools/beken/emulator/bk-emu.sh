@@ -50,132 +50,40 @@
 #                             default S61_DUMP), fetched from upstream's repository, which
 #                             publishes it, into captures/emulation/beken-firmwares/: this
 #                             repository, and the image, never hold Sonoff's firmware
-#   tools/beken/emulator/bk-emu.sh ensure [--rebuild]
-#                             the image, labelled with the hash of what it is built from:
-#                             as it is, or pulled, or built where it is not published
-#                             (image.sh's way); python/run/test do this first
-#   tools/beken/emulator/bk-emu.sh tag        that hash (UPSTREAM, patches/,
-#                             requirements.txt, bk-emu.Dockerfile)
-#   tools/beken/emulator/bk-emu.sh build IMAGE | pull IMAGE
-#                             build it from the archive (downloaded once into
-#                             captures/emulation/cache/ and checked against UPSTREAM's
-#                             hash), or pull the published one with this hash
-#                             (ghcr.io/adamsthws/autoflash-beken-emu:<hash>, which the
-#                             beken-emulator-image workflow builds)
-#   tools/beken/emulator/bk-emu.sh source [DIR]
-#                             make the archive UPSTREAM names, in DIR (default: the
-#                             current directory), from upstream at the pinned commit:
-#                             git archive, so the same commit gives the same bytes.
-#                             Publishing it as the release emulator-source-beken-<commit>
-#                             (one archive, never changed), and its hash in UPSTREAM, is
-#                             how the pin moves; a change to the emulator is a patch
 #
+# The image is ensured first, by python, run, plug, computer and test: as it
+# is, or pulled, or built where it is not published (image.sh, which says how).
 # AUTOFLASH_BEKEN_IMAGE names the image (default autoflash-beken-emu),
 # AUTOFLASH_BEKEN_NETWORK the plug's network (default autoflash-beken),
 # AUTOFLASH_BEKEN_PLUG_NAME the plug (default autoflash-s61; its state is
 # captures/emulation/s61/<name>/), AUTOFLASH_BEKEN_COMPUTER a name for the
 # computer's container, AUTOFLASH_BEKEN_DUMP another whole flash under this
 # checkout (rebuild_dump.py's) for a new plug to start from,
-# AUTOFLASH_BEKEN_PUBLISHED another place to pull from, AUTOFLASH_BEKEN_NO_PULL=1
-# always builds, AUTOFLASH_BEKEN_SOURCE_URL another place to download the archive
-# from. Tools run as your own user, so what they write in /work is yours.
+# and image.sh's own (AUTOFLASH_BEKEN_PUBLISHED, AUTOFLASH_BEKEN_NO_PULL,
+# AUTOFLASH_BEKEN_SOURCE_URL) where to get the image. Tools run as your own
+# user, so what they write in /work is yours.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
 EMU=$ROOT/captures/emulation
-CACHE=$EMU/cache
 FIRMWARES=$EMU/beken-firmwares
 S61_DUMP=Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin
 IMAGE=${AUTOFLASH_BEKEN_IMAGE:-autoflash-beken-emu}
 NETWORK=${AUTOFLASH_BEKEN_NETWORK:-autoflash-beken}
 PLUG=${AUTOFLASH_BEKEN_PLUG_NAME:-autoflash-s61}
 PLUG_STATE=$EMU/s61/$PLUG
-PUBLISHED=${AUTOFLASH_BEKEN_PUBLISHED:-ghcr.io/adamsthws/autoflash-beken-emu}
-# What the archive holds of upstream: the emulator, not its firmwares/.
-ARCHIVED="src tests tools README.md requirements.txt .gitignore"
 
 pin() { sed -n "s/^$1 //p" "$HERE/UPSTREAM"; }
 UPSTREAM_REPO=$(pin repo)
 UPSTREAM_COMMIT=$(pin commit)
-ARCHIVE=$(pin archive)
-ARCHIVE_SHA256=$(pin sha256)
-[ -n "$UPSTREAM_REPO" ] && [ -n "$UPSTREAM_COMMIT" ] && [ -n "$ARCHIVE" ] && [ -n "$ARCHIVE_SHA256" ] \
-    || { echo "$HERE/UPSTREAM: needs repo, commit, archive and sha256" >&2; exit 2; }
-ARCHIVE_URL=${AUTOFLASH_BEKEN_SOURCE_URL:-https://github.com/adamsthws/firmware-liberator/releases/download/emulator-source-beken-${UPSTREAM_COMMIT:0:7}/$ARCHIVE}
 
-tag() {
-    (cd "$HERE" && find UPSTREAM requirements.txt bk-emu.Dockerfile patches -type f -print0 \
-        | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
-}
-
-sha256() { sha256sum < "$1" | cut -c1-64; }
-
-# The archive, downloaded once and checked - as image.sh keeps the QEMU source.
-archive() {
-    local cache=$CACHE/$ARCHIVE part
-    mkdir -p "$CACHE"
-    if [ ! -f "$cache" ] || [ "$(sha256 "$cache")" != "$ARCHIVE_SHA256" ]; then
-        echo "Downloading the emulator's source ($ARCHIVE, about 300 kB)..." >&2
-        part=$(mktemp "$cache.XXXXXX.part")
-        curl -fsSL --retry 3 -o "$part" "$ARCHIVE_URL" \
-            || { rm -f "$part"; echo "Could not download $ARCHIVE_URL" >&2; exit 1; }
-        mv "$part" "$cache"
-    fi
-    if [ "$(sha256 "$cache")" != "$ARCHIVE_SHA256" ]; then
-        echo "$cache is not the archive UPSTREAM pins; delete it and run this again" >&2
-        exit 1
-    fi
-    echo "$cache"
-}
-
-context=""
-trap '[ -z "$context" ] || rm -rf "$context"' EXIT
-build() {
-    local source
-    source=$(archive)
-    context=$(mktemp -d)
-    cp -r "$HERE/bk-emu.Dockerfile" "$HERE/patches" "$HERE/requirements.txt" "$context/"
-    cp "$source" "$context/bekenemulator.tar.xz"
-    echo "Building the Beken emulator image (the first time takes a minute or two)..." >&2
-    docker build -q -t "$1" --build-arg SOURCE_SHA256="$ARCHIVE_SHA256" \
-        --label "autoflash.built-from=$(tag)" \
-        --label "org.opencontainers.image.source=https://github.com/adamsthws/firmware-liberator" \
-        -f "$context/bk-emu.Dockerfile" "$context" >/dev/null
-}
-
-pull() {
-    local want published
-    want=$(tag)
-    published=$PUBLISHED:$want
-    docker pull -q "$published" >/dev/null 2>&1 || return 1
-    if [ "$(docker image inspect -f '{{index .Config.Labels "autoflash.built-from"}}' "$published")" != "$want" ]; then
-        echo "$published is not labelled $want: not used" >&2
-        return 1
-    fi
-    docker tag "$published" "$1"
-    echo "Using the published Beken emulator image ($published)." >&2
-}
-
-labelled() {
-    [ "$(docker image inspect -f '{{index .Config.Labels "autoflash.built-from"}}' "$1" 2>/dev/null)" = "$(tag)" ]
-}
-
+# The image, labelled with the hash of what it is built from (image.sh). Its
+# own process, so its lock is let go once the image is there: what runs next
+# (exec docker run) would otherwise hold it for as long as it runs, and every
+# other emulator wait.
 ensure() {
-    local rebuild=${1:-}
-    if command -v flock >/dev/null; then
-        mkdir -p "$CACHE"
-        exec 9>"$CACHE/beken-image.lock"
-        flock 9
-    fi
-    if [ "$rebuild" = --rebuild ] || ! labelled "$IMAGE"; then
-        if [ "$rebuild" = --rebuild ] || [ "${AUTOFLASH_BEKEN_NO_PULL:-}" = 1 ] || ! pull "$IMAGE"; then
-            build "$IMAGE"
-        fi
-    fi
-    # Let go of it once the image is there: what runs next (exec docker run)
-    # would hold it for as long as it runs, and every other emulator wait.
-    exec 9>&-
+    "$HERE/image.sh" ensure "$IMAGE"
 }
 
 # Firmware dumps come from upstream's repository, which publishes them, never
@@ -280,27 +188,7 @@ subnet() {
     echo "${cidr%.*}"
 }
 
-source_archive() {
-    local out=${1:-.} clone
-    clone=$(mktemp -d)
-    trap 'rm -rf "$clone"' EXIT
-    echo "Cloning $UPSTREAM_REPO at ${UPSTREAM_COMMIT:0:7}..." >&2
-    git init -q "$clone"
-    git -C "$clone" remote add origin "$UPSTREAM_REPO"
-    git -C "$clone" fetch -q --depth 1 origin "$UPSTREAM_COMMIT"
-    # shellcheck disable=SC2086  # ARCHIVED is a list of paths
-    git -C "$clone" -c tar.umask=0022 archive --format=tar --prefix=BekenEmulator/ "$UPSTREAM_COMMIT" $ARCHIVED \
-        | xz -9 -T1 > "$out/$ARCHIVE"
-    rm -rf "$clone"
-    trap - EXIT
-    sha256sum "$out/$ARCHIVE"
-}
-
 case "${1:-}" in
-    tag) tag ;;
-    ensure) ensure "${2:-}" ;;
-    build) [ -n "${2:-}" ] || { echo "build needs an image name" >&2; exit 2; }; build "$2" ;;
-    pull) [ -n "${2:-}" ] || { echo "pull needs an image name" >&2; exit 2; }; pull "$2" ;;
     dump) dump ;;
     python) shift; ensure; dump || echo "No public dump: S61_DUMP must name a dump of your own." >&2; container "$@" ;;
     run)
@@ -378,6 +266,5 @@ case "${1:-}" in
                            -e AUTOFLASH_EWELINK_API_BASE="https://$(subnet).1" --entrypoint bash)
         container /work/tools/beken/emulator/computer.sh "$@" ;;
     test) shift; ensure; firmwares; container /opt/beken-emulator/tests/self_test.py "$@" ;;
-    source) source_archive "${2:-}" ;;
     *) sed -n "2,$(($(grep -n '^set -euo pipefail' "$0" | cut -d: -f1)-1))p" "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
