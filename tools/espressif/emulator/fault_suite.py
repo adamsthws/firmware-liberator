@@ -140,7 +140,11 @@ ROUTES = {
                        {"C3": 14, "C3fb": 14, "D1": 18, "D4": 31, "D5": 2, "I1": 30, "I2": 5}),
     # A plug on the Tasmota release before this one, updated (prep_update).
     "update>tasmota": ("suite-tasmota-earlier", "tasmota", {"U5": 38, "U6": 12}),
+    # A plug on our ESPHome of an earlier release of the tool, updated (prep_update).
+    "update>esphome": ("suite-esphome-earlier", "esphome", {"U1": 6, "U2": 72}),
 }
+# The release whose ESPHome update>esphome starts on: any before this checkout's.
+EARLIER_RELEASE = "v2.3.0"
 # Past D1 a stock route needs the cloud no more: it starts from a plug saved
 # there (prep), on the interim Tasmota, so any machine can run it.
 AFTER_D1 = {"sonoff>tasmota": "suite-afterD1-tasmota", "sonoff>esphome": "suite-afterD1-esphome"}
@@ -2062,11 +2066,9 @@ def prepared(said, stop_after, stopped):
     return stopped if stop_after else bool(re.search(r"Result:\s+Converted", said))
 
 
-def prep():
-    """The starting plugs, saved: one converted to each firmware; a stock plug
-    stopped just after C2 (the installer sent, before the backup) for each;
-    and one of those carried on as far as D1 (on the interim Tasmota), so the
-    steps after D1 need no cloud."""
+def make_start(save, args, stop_after=None):
+    """One starting plug, saved as `save`: a run with `args`, stopped once
+    `stop_after` is done, or else converted."""
     n = int(os.environ.get("AUTOFLASH_PREP_INSTANCE", "1"))
     # A run that could not start would count as one that failed, and take the
     # plug saved before it away.
@@ -2082,39 +2084,44 @@ def prep():
                 return
             time.sleep(0.2)
 
-    def make(save, args, stop_after=None):
-        log = OUT / f"prep-{save}.log"
-        log.parent.mkdir(parents=True, exist_ok=True)
-        # A fresh plug has the cloud from the start, as a C2 scenario's does.
-        fresh = "--fresh" in args
-        sc = Scenario(n, {"id": "prep", "step": "C2" if fresh else "", "fault": "prep", "arg": ""}, log)
-        monitor = PlugMonitor(sc).start()
-        since = time.time()
-        stopped = threading.Event()
-        if stop_after:
-            threading.Thread(target=stopped_after, args=(stop_after, sc, since, stopped), daemon=True).start()
-        stub = ["--stub-cloud"] if STUB_CLOUD else []
-        with open(log, "w", encoding="utf-8") as out:
-            subprocess.call([unattended, f"--instance={n}", f"--plug={MAC}", f"--save={saved(save)}",
-                             *stub, *args], stdout=out, stderr=subprocess.STDOUT)
-        monitor.stop.set()
-        plug_internet(n, False)
-        CLOUD.release(n)
-        kept = EMU / "saved" / saved(save)
-        if not prepared(log.read_text(encoding="utf-8", errors="replace"), stop_after, stopped.is_set()):
-            # Not the plug it should be: none rather than one every scenario
-            # from it would start wrong.
-            shutil.rmtree(kept, ignore_errors=True)
-            raise SystemExit(f"{saved(save)} NOT MADE: its run did not get there - see {log}")
-        print(saved(save), "saved" if (kept / "flash.bin").exists() else "MISSING", flush=True)
+    log = OUT / f"prep-{save}.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    # A fresh plug has the cloud from the start, as a C2 scenario's does.
+    fresh = "--fresh" in args
+    sc = Scenario(n, {"id": "prep", "step": "C2" if fresh else "", "fault": "prep", "arg": ""}, log)
+    monitor = PlugMonitor(sc).start()
+    since = time.time()
+    stopped = threading.Event()
+    if stop_after:
+        threading.Thread(target=stopped_after, args=(stop_after, sc, since, stopped), daemon=True).start()
+    stub = ["--stub-cloud"] if STUB_CLOUD else []
+    with open(log, "w", encoding="utf-8") as out:
+        subprocess.call([unattended, f"--instance={n}", f"--plug={MAC}", f"--save={saved(save)}",
+                         *stub, *args], stdout=out, stderr=subprocess.STDOUT)
+    monitor.stop.set()
+    plug_internet(n, False)
+    CLOUD.release(n)
+    kept = EMU / "saved" / saved(save)
+    if not prepared(log.read_text(encoding="utf-8", errors="replace"), stop_after, stopped.is_set()):
+        # Not the plug it should be: none rather than one every scenario
+        # from it would start wrong.
+        shutil.rmtree(kept, ignore_errors=True)
+        raise SystemExit(f"{saved(save)} NOT MADE: its run did not get there - see {log}")
+    print(saved(save), "saved" if (kept / "flash.bin").exists() else "MISSING", flush=True)
 
+
+def prep():
+    """The starting plugs, saved: one converted to each firmware; a stock plug
+    stopped just after C2 (the installer sent, before the backup) for each;
+    and one of those carried on as far as D1 (on the interim Tasmota), so the
+    steps after D1 need no cloud."""
     for target in ("tasmota", "esphome"):
-        make(ROUTES[f"{target}>sonoff"][0], ["--fresh", "--", "--firmware", target])
+        make_start(ROUTES[f"{target}>sonoff"][0], ["--fresh", "--", "--firmware", target])
         (converted_start(target) / "firmware.json").write_text(json.dumps(installs(target)), encoding="utf-8")
         stock = ROUTES[f"sonoff>{target}"][0]
-        make(stock, ["--fresh", "--", "--firmware", target], stop_after="C2")
-        make(AFTER_D1[f"sonoff>{target}"], [f"--from={saved(stock)}", "--", "--firmware", target],
-             stop_after="D1")
+        make_start(stock, ["--fresh", "--", "--firmware", target], stop_after="C2")
+        make_start(AFTER_D1[f"sonoff>{target}"], [f"--from={saved(stock)}", "--", "--firmware", target],
+                   stop_after="D1")
 
 
 def earlier_tasmota():
@@ -2131,9 +2138,11 @@ def earlier_tasmota():
 
 
 def prep_update():
-    """The update>tasmota scenarios' starting plug: the plug saved on Tasmota,
-    the release before in its app0.  No run gets one there, the tool installing
-    only this release."""
+    """The update scenarios' starting plugs, which no run of this checkout can
+    make, the tool installing only this release. For update>tasmota, the plug
+    saved on Tasmota, the release before in its app0; for update>esphome, a
+    plug EARLIER_RELEASE's tool converted: a build of ours has the plug's Wi-Fi
+    written in, so cannot simply be put in its slot."""
     kept = EMU / "saved" / saved(ROUTES["update>tasmota"][0])
     shutil.rmtree(kept, ignore_errors=True)
     shutil.copytree(converted_start("tasmota"), kept, symlinks=True)
@@ -2142,6 +2151,8 @@ def prep_update():
         flash.seek(APP0_OFFSET)
         flash.write(app)
     print(kept.name, "saved", flush=True)
+    make_start(ROUTES["update>esphome"][0],
+               ["--fresh", f"--code={legacy_tree(EARLIER_RELEASE)}", "--", "--firmware", "esphome"])
 
 
 def listing():

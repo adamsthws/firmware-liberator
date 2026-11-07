@@ -359,10 +359,11 @@ tools/espressif/emulator/fault_suite.py report
 `batch` refuses to start from a converted plug `prep` made with other firmware
 than this checkout installs: run `prep` again after a firmware change.
 
-The update scenarios (`update>tasmota`) start from a plug no run can make, since
-the tool installs only the current release. `prep-update` makes it from the plug
-`prep` saved on Tasmota, with the previous release firmware.json pins in its app
-slot, fetched from Tasmota's releases.
+The update scenarios (`update>tasmota`, `update>esphome`) start from a plug no run
+can make, since the tool installs only the current release. `prep-update` makes
+them: for Tasmota from the plug `prep` saved on it, with the previous release
+firmware.json pins in its app slot, fetched from Tasmota's releases; for ESPHome
+by converting a plug with the tool as an earlier release of this project shipped.
 
 Against the real cloud, the cloud scenarios run side by side on six emulators
 (`AUTOFLASH_CLOUD_WORKERS` for another number; one per core on a computer with
@@ -654,6 +655,7 @@ nothing reaches the internet and every scenario can run side by side.
 
 ```sh
 tools/beken/emulator/fault_suite.py prep      # the starting plugs: on the interim firmware, OpenBeken, ESPHome
+tools/beken/emulator/fault_suite.py prep-update   # and on an earlier release's OpenBeken and ESPHome
 tools/beken/emulator/fault_suite.py list > s61.txt
 AUTOFLASH_S61_WORKERS=2 tools/beken/emulator/fault_suite.py batch s61.txt   # what has not passed yet
 tools/beken/emulator/fault_suite.py report
@@ -678,7 +680,10 @@ when the tool saw that and sent the image again by itself. A plug converted
 through the interim firmware passes only if, by the names it asked its
 router's DHCP for, it was `autoflash-recovery-CDEF` there from its first
 request and never OpenBeken's own name, and - once ESPHome is on it - the
-interim's settings are gone from its flash. 239 scenarios; `list openbeken`
+interim's settings are gone from its flash. And a plug on the firmware of an
+earlier release is updated, to OpenBeken and to ESPHome, with the same faults:
+`prep-update` makes those plugs, through that release's own suite. 281
+scenarios; `list openbeken`
 gives the six a new OpenBeken build must pass
 ([updating-firmware.md](updating-firmware.md#5-test)).
 Then the

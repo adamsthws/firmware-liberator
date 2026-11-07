@@ -291,6 +291,11 @@ class ScenarioTests(unittest.TestCase):
                        "update>tasmota:U5:cancel-switch", "update>tasmota:U6:outage-30", "update>tasmota:U6:crash-1"):
             self.assertIn(wanted, ids)
 
+    def test_the_esphome_update_has_its_own_faults(self):
+        ids = {sc["id"] for sc in fs.scenarios()}
+        for wanted in ("update>esphome:U1:plugoff-1", "update>esphome:U1:outage-30", "update>esphome:U2:crash-1"):
+            self.assertIn(wanted, ids)
+
     def test_an_update_counts_as_having_got_there(self):
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "log"
@@ -304,7 +309,8 @@ class ScenarioTests(unittest.TestCase):
 
     def test_an_updates_earlier_release_is_never_stale(self):
         with mock.patch.object(fs, "converted_start", side_effect=AssertionError("asked")):
-            self.assertEqual(fs.stale_starts([{"route": "update>tasmota", "fault": "plugoff"}]), [])
+            self.assertEqual(fs.stale_starts([{"route": "update>tasmota", "fault": "plugoff"},
+                                               {"route": "update>esphome", "fault": "plugoff"}]), [])
 
     def test_the_composite_faults_are_listed(self):
         ids = {sc["id"] for sc in fs.scenarios()}
