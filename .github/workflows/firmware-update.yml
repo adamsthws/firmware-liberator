@@ -1,16 +1,18 @@
-# Moves the firmware the tool installs to each settled Tasmota and ESPHome
-# release, by itself (docs/updating-firmware.md):
+# Moves the firmware the tool installs to each settled Tasmota, ESPHome and
+# OpenBeken release, by itself (docs/updating-firmware.md):
 #
 #   1. due      which release of each is settled now (update_firmware.py due);
 #               an issue if the pinned Tasmota release has gone
-#   2. update   the update made, its docs written, the unit tests and the
-#               final-firmware emulator test run, and a pull request opened
+#   2. update   the update made for every device, its docs written, the unit
+#               tests run - with a new OpenBeken, its six scenarios on the S61's
+#               emulator too - a pull request opened, and on it the emulator check
+#               of every device (emulator-check.yml), which main requires
 #               with what they found
 #   3. merge    a pull request whose tests passed, open SETTLE_MERGE_DAYS with
 #               no `hold` label, merged - which is the release, started here
 #               (a merge by this workflow's token does not start one itself)
 #
-# Weekly, or by hand: with `tasmota` / `esphome` to take a given release, and
+# Weekly, or by hand: with `tasmota` / `esphome` / `openbeken` to take a given release, and
 # `dry_run` to do everything but push, open or merge.
 name: Firmware update
 
@@ -24,6 +26,9 @@ on:
         required: false
       esphome:
         description: "Build with this ESPHome release (e.g. 2026.11.2), whether settled or not"
+        required: false
+      openbeken:
+        description: "Build on this OpenBeken release (e.g. 1.18.321), whether settled or not"
         required: false
       dry_run:
         description: "Make and test the update, but push, open and merge nothing"
@@ -51,6 +56,7 @@ jobs:
     outputs:
       tasmota: ${{ steps.due.outputs.tasmota }}
       esphome: ${{ steps.due.outputs.esphome }}
+      openbeken: ${{ steps.due.outputs.openbeken }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -60,21 +66,23 @@ jobs:
         env:
           INPUT_TASMOTA: ${{ inputs.tasmota }}
           INPUT_ESPHOME: ${{ inputs.esphome }}
+          INPUT_OPENBEKEN: ${{ inputs.openbeken }}
         run: |
           python3 tools/repo/update_firmware.py due > due.json
           tasmota=$(python3 -c 'import json; print(json.load(open("due.json"))["tasmota"]["due"] or "")')
           esphome=$(python3 -c 'import json; print(json.load(open("due.json"))["esphome"]["due"] or "")')
+          openbeken=$(python3 -c 'import json; print(json.load(open("due.json"))["openbeken"]["due"] or "")')
           [ -z "$INPUT_TASMOTA" ] || tasmota=$INPUT_TASMOTA
           [ -z "$INPUT_ESPHOME" ] || esphome=$INPUT_ESPHOME
+          [ -z "$INPUT_OPENBEKEN" ] || openbeken=$INPUT_OPENBEKEN
           # Release numbers only: they name a branch and go into commands below.
-          for version in "$tasmota" "$esphome"; do
+          for version in "$tasmota" "$esphome" "$openbeken"; do
               if [ -n "$version" ] && ! [[ "$version" =~ ^v?[0-9]+(\.[0-9]+){1,3}$ ]]; then
                   echo "::error::$version is not a release number"; exit 1
               fi
           done
-          echo "tasmota=$tasmota" >> "$GITHUB_OUTPUT"
-          echo "esphome=$esphome" >> "$GITHUB_OUTPUT"
-          { echo "### Due"; echo; echo "Tasmota: ${tasmota:-nothing}; ESPHome: ${esphome:-nothing}";
+          { echo "tasmota=$tasmota"; echo "esphome=$esphome"; echo "openbeken=$openbeken"; } >> "$GITHUB_OUTPUT"
+          { echo "### Due"; echo; echo "Tasmota: ${tasmota:-nothing}; ESPHome: ${esphome:-nothing}; OpenBeken: ${openbeken:-nothing}";
             echo; echo '```json'; python3 -m json.tool due.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: An issue if the pinned Tasmota release has gone
         if: ${{ !inputs.dry_run }}
@@ -106,7 +114,7 @@ jobs:
 
   update:
     needs: due
-    if: ${{ needs.due.outputs.tasmota != '' || needs.due.outputs.esphome != '' }}
+    if: ${{ needs.due.outputs.tasmota != '' || needs.due.outputs.esphome != '' || needs.due.outputs.openbeken != '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
@@ -117,6 +125,7 @@ jobs:
     env:
       TASMOTA: ${{ needs.due.outputs.tasmota }}
       ESPHOME: ${{ needs.due.outputs.esphome }}
+      OPENBEKEN: ${{ needs.due.outputs.openbeken }}
       DRY_RUN: ${{ inputs.dry_run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -126,7 +135,7 @@ jobs:
       - name: Not made already
         id: branch
         run: |
-          branch="firmware/tasmota-${TASMOTA:-same}-esphome-${ESPHOME:-same}"
+          branch="firmware/tasmota-${TASMOTA:-same}-esphome-${ESPHOME:-same}-openbeken-${OPENBEKEN:-same}"
           echo "BRANCH=$branch" >> "$GITHUB_ENV"
           if [ -n "$(gh pr list --state open --head "$branch" --json number --jq '.[].number')" ]; then
               echo "A pull request for $branch is open already."
@@ -151,7 +160,10 @@ jobs:
               .venv/bin/python tools/repo/update_firmware.py tasmota "$TASMOTA" 2>&1 | tee -a update.txt
           fi
           if [ -n "$ESPHOME" ]; then
-              .venv/bin/python tools/repo/update_firmware.py esphome "$ESPHOME" 2>&1 | tee -a update.txt
+              .venv/bin/python tools/repo/update_firmware.py esphome "$ESPHOME" --every-device 2>&1 | tee -a update.txt
+          fi
+          if [ -n "$OPENBEKEN" ]; then
+              .venv/bin/python tools/repo/update_firmware.py openbeken --release "$OPENBEKEN" --every-device 2>&1 | tee -a update.txt
           fi
           git add -A -- . ':!update.txt'
           # Asked by hand for what it installs already: nothing to make, test or open.
@@ -161,7 +173,12 @@ jobs:
               exit 0
           fi
           echo "changed=yes" >> "$GITHUB_OUTPUT"
-          title="Install${TASMOTA:+ Tasmota $TASMOTA}${TASMOTA:+${ESPHOME:+ and}}${ESPHOME:+ ESPHome built with $ESPHOME}"
+          made=()
+          [ -z "$TASMOTA" ] || made+=("Tasmota $TASMOTA")
+          [ -z "$ESPHOME" ] || made+=("ESPHome built with $ESPHOME")
+          [ -z "$OPENBEKEN" ] || made+=("OpenBeken $OPENBEKEN")
+          joined=$(IFS=,; echo "${made[*]}")
+          title="Install ${joined//,/, }"
           echo "TITLE=$title" >> "$GITHUB_ENV"
           git commit -q -m "$title" -m "Made by the firmware-update workflow: tools/repo/update_firmware.py, then the unit tests and the final-firmware emulator test (the pull request says what they found)."
       - name: Nothing in it that should not be there
@@ -173,27 +190,33 @@ jobs:
         continue-on-error: true
         run: |
           PYTHONUNBUFFERED=1 .venv/bin/python -m unittest discover -s tests > unit.txt 2>&1
-      - name: The final firmware on the emulator
-        if: steps.branch.outputs.made != 'yes' && steps.update.outputs.changed == 'yes'
-        id: emulator
+      - name: OpenBeken's six scenarios on the S61's emulator
+        if: steps.branch.outputs.made != 'yes' && steps.update.outputs.changed == 'yes' && env.OPENBEKEN != ''
+        id: openbeken
         continue-on-error: true
         run: |
+          # What this project's driver and patches do on OpenBeken, each once, on
+          # the new image: the emulator check runs no faults, these do.
           set -o pipefail
-          .venv/bin/python -I tools/espressif/emulator/public_plugs.py fetch
-          .venv/bin/python -I tools/espressif/emulator/public_plugs.py test | tee emulator.txt
+          tools/beken/emulator/bk-emu.sh dump
+          tools/beken/emulator/fault_suite.py prep
+          tools/beken/emulator/fault_suite.py list openbeken > openbeken.txt
+          AUTOFLASH_S61_SUITE_DIR=captures/emulation/s61-openbeken AUTOFLASH_S61_WORKERS=2 \
+              tools/beken/emulator/fault_suite.py batch openbeken.txt 2>&1 | tee scenarios.txt
       - name: The pull request
         if: steps.branch.outputs.made != 'yes' && steps.update.outputs.changed == 'yes'
         env:
           UNIT: ${{ steps.unit.outcome }}
-          EMULATOR: ${{ steps.emulator.outcome }}
+          SCENARIOS: ${{ steps.openbeken.outcome }}
         run: |
-          passed=$([ "$UNIT" = success ] && [ "$EMULATOR" = success ] && echo yes || echo no)
+          passed=$([ "$UNIT" = success ] && [ "$SCENARIOS" != failure ] && echo yes || echo no)
           merge_on=$(date -u -d "+${MERGE_AFTER_DAYS} days" +%Y-%m-%d)
           {
             echo "Made by the [firmware-update workflow]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) under the settled-release rule ([docs/updating-firmware.md](docs/updating-firmware.md))."
             echo
             [ -z "$TASMOTA" ] || echo "- **Tasmota $TASMOTA**: [release notes](https://github.com/arendst/Tasmota/releases/tag/v$TASMOTA)"
             [ -z "$ESPHOME" ] || echo "- **ESPHome built with $ESPHOME**: [release notes](https://github.com/esphome/esphome/releases/tag/$ESPHOME)"
+            [ -z "$OPENBEKEN" ] || echo "- **OpenBeken $OPENBEKEN**: [release notes](https://github.com/openshwprojects/OpenBK7231T_App/releases/tag/$OPENBEKEN)"
             echo
             if [ "$passed" = yes ]; then
               echo "**Tests passed.** This merges itself on or after **$merge_on** (${MERGE_AFTER_DAYS} days), which releases it, unless it is labelled \`hold\`."
@@ -203,8 +226,14 @@ jobs:
             echo
             echo "### The final firmware on the emulator"
             echo
-            echo '```'; cat emulator.txt 2>/dev/null || echo "(did not run)"; echo '```'
+            echo "Every device's, by the emulator-check workflow started on this branch: its checks below. It merges only once they pass."
             echo
+            if [ -n "$OPENBEKEN" ]; then
+              echo "### OpenBeken's six scenarios on the S61's emulator"
+              echo
+              echo '```'; grep -E "^(PASS|FAIL|ERROR|MISTIMED|NOT-)" scenarios.txt 2>/dev/null || echo "(did not run)"; echo '```'
+              echo
+            fi
             echo "### Unit tests"
             echo
             echo '```'; grep -E "^(Ran [0-9]+ tests|OK|FAILED)" unit.txt || echo "(did not finish)"

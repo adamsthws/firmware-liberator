@@ -643,6 +643,13 @@ def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: d
     return dict(result="PASS" if ok else "FAIL", runs=runs)
 
 
+def all_passed(ids_file: str | None = None) -> bool:
+    """Whether every scenario of `ids_file` (else every one) has passed last."""
+    wanted = Path(ids_file).read_text(encoding="utf-8").split() if ids_file else [sc["id"] for sc in scenarios()]
+    passed = {i for i, entry in latest().items() if entry.get("result") == "PASS"}
+    return all(i in passed for i in wanted)
+
+
 def record(sc: dict, outcome: dict) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     with RESULTS.open("a", encoding="utf-8") as results:
@@ -853,6 +860,7 @@ def main(argv: list[str]) -> int:
             print(i)
     elif command == "batch":
         batch(argv[1] if len(argv) > 1 else None)
+        return 0 if all_passed(argv[1] if len(argv) > 1 else None) else 1
     elif command == "report":
         report()
     else:

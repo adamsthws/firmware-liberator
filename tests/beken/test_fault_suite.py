@@ -43,6 +43,18 @@ class UpdateScenarioTests(unittest.TestCase):
         self.assertEqual(fault_suite.start_of("esphome>openbeken"), "esphome")
 
 
+class BatchResultTests(unittest.TestCase):
+    def test_a_batch_has_passed_only_when_every_scenario_has(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as temp:
+            ids = Path(temp) / "ids"
+            ids.write_text("a\nb\n", encoding="utf-8")
+            with mock.patch.object(fault_suite, "latest", return_value={"a": {"result": "PASS"}, "b": {"result": "MISTIMED"}}):
+                self.assertFalse(fault_suite.all_passed(str(ids)))
+            with mock.patch.object(fault_suite, "latest", return_value={"a": {"result": "PASS"}, "b": {"result": "PASS"}}):
+                self.assertTrue(fault_suite.all_passed(str(ids)))
+
+
 class StepTimingTests(unittest.TestCase):
     def test_a_step_is_seen_soon_enough_for_a_fault_late_in_the_shortest(self):
         shortest = min(seconds for steps in fault_suite.ROUTES.values() for seconds in steps.values())
