@@ -1,22 +1,18 @@
+"""The migration server, tools/espressif/safeboot/serve_safeboot_migration.py:
+each phase served only once the evidence before it is in and checked, its
+Berry program and the chunks it fetches, and the plan phase."""
 import datetime as dt
 import hashlib
 import http.client
 import json
-import struct
 import tempfile
-import ssl
 import threading
 import unittest
-import urllib.error
-import zlib
 from pathlib import Path
 from unittest import mock
 
-from tools.espressif.safeboot import prepare_safeboot_migration as migration
+from tests.espressif.safeboot.test_safeboot_migration import canonical_nvs, partition_sector
 from tools.espressif.safeboot.safeboot_migration import (
-    MD5_MAGIC,
-    PARTITION_MAGIC,
-    PINNED_ARTIFACTS,
     RECOVERY_MODE,
     SECTOR_SIZE,
     SOURCE_PARTITIONS,
@@ -24,19 +20,11 @@ from tools.espressif.safeboot.safeboot_migration import (
     OFFICIAL_PARTITIONS,
     OFFICIAL_TABLE_SHA256,
     TARGET_PARTITIONS,
-    TARGET_TABLE_SHA256,
-    analyze_canonical_nvs,
-    official_release,
     parse_partition_sector,
-    require_pinned_artifacts,
-    require_tasmota_table,
     sector_aligned_size,
     sha256_bytes,
-    target_table,
 )
 from tools.autoflash import plans
-from tools.espressif.safeboot.configure_recovery_safeboot import render_header
-from tools.espressif.safeboot.validate_recovery_safeboot import header_value
 from tools.espressif.safeboot.serve_safeboot_migration import (
     COMMIT_FLAG,
     RESTORE_FLAG,
@@ -47,71 +35,6 @@ from tools.espressif.safeboot.serve_safeboot_migration import (
     phase_confirmation_refusal,
 )
 from tools.autoflash.routes.espressif import images
-
-
-def partition_sector(entries):
-    data = bytearray(b"\xff" * SECTOR_SIZE)
-    offset = 0
-    for label, ptype, subtype, start, size, flags in entries:
-        struct.pack_into(
-            "<HBBII16sI",
-            data,
-            offset,
-            PARTITION_MAGIC,
-            ptype,
-            subtype,
-            start,
-            size,
-            label.encode("ascii").ljust(16, b"\0"),
-            flags,
-        )
-        offset += 32
-    digest = hashlib.md5(data[:offset]).digest()
-    data[offset : offset + 32] = struct.pack("<H", MD5_MAGIC) + b"\xff" * 14 + digest
-    return bytes(data)
-
-
-def canonical_nvs():
-    data = bytearray(b"\xff" * 0x5000)
-    page = bytearray(b"\xff" * SECTOR_SIZE)
-    struct.pack_into("<II", page, 0, 0xFFFFFFFE, 7)
-    struct.pack_into("<I", page, 28, zlib.crc32(page[4:28], 0xFFFFFFFF) & 0xFFFFFFFF)
-
-    def mark_written(index):
-        shift = (index % 4) * 2
-        page[32 + index // 4] &= ~(0x03 << shift)
-        page[32 + index // 4] |= 0x02 << shift
-
-    def entry_crc(entry):
-        struct.pack_into(
-            "<I", entry, 4, zlib.crc32(entry[:4] + entry[8:32], 0xFFFFFFFF) & 0xFFFFFFFF
-        )
-
-    next_entry = 0
-    for key, chunk_index in (("Settings", 0), ("sta.apinfo", 128)):
-        payload = key.encode("ascii")[:4]
-        entry = bytearray(b"\xff" * 32)
-        struct.pack_into("<BBBB", entry, 0, 1, 0x42, 2, chunk_index)
-        entry[8:24] = key.encode("ascii").ljust(16, b"\0")
-        struct.pack_into("<H", entry, 24, len(payload))
-        struct.pack_into("<I", entry, 28, zlib.crc32(payload, 0xFFFFFFFF) & 0xFFFFFFFF)
-        entry_crc(entry)
-        page[64 + next_entry * 32 : 96 + next_entry * 32] = entry
-        page[96 + next_entry * 32 : 128 + next_entry * 32] = payload.ljust(32, b"\xff")
-        mark_written(next_entry)
-        mark_written(next_entry + 1)
-        next_entry += 2
-
-        index_entry = bytearray(b"\xff" * 32)
-        struct.pack_into("<BBBB", index_entry, 0, 1, 0x48, 1, 0xFF)
-        index_entry[8:24] = key.encode("ascii").ljust(16, b"\0")
-        struct.pack_into("<IBBH", index_entry, 24, len(payload), 1, chunk_index, 0xFFFF)
-        entry_crc(index_entry)
-        page[64 + next_entry * 32 : 96 + next_entry * 32] = index_entry
-        mark_written(next_entry)
-        next_entry += 1
-    data[:SECTOR_SIZE] = page
-    return bytes(data)
 
 
 class MigrationFixture:
@@ -248,69 +171,6 @@ class MigrationValidationTests(unittest.TestCase):
                 phase_confirmation_refusal("restore", False, True, lock_path)
             )
 
-    def test_private_recovery_header_round_trip_without_plaintext(self):
-        ssid = "Home test café"
-        password = 'safe-quote-"-test'
-        header = render_header(ssid, password)
-        self.assertEqual(header_value(header, "STA_SSID1"), ssid.encode("utf-8"))
-        self.assertEqual(header_value(header, "STA_PASS1"), password.encode("utf-8"))
-        self.assertNotIn(ssid.encode("utf-8"), header)
-        self.assertNotIn(password.encode("utf-8"), header)
-
-    def test_partition_fixtures_and_nvs_gate(self):
-        source = parse_partition_sector(partition_sector(SOURCE_PARTITIONS))
-        self.assertEqual(source["sha256"], SOURCE_TABLE_SHA256)
-        report = analyze_canonical_nvs(canonical_nvs())
-        self.assertTrue(report["ready"])
-        self.assertEqual(report["missing_keys"], [])
-        self.assertEqual(sector_aligned_size(12_345), 16_384)
-
-    def test_nvs_gate_rejects_blob_whose_index_survives_but_chunk_does_not(self):
-        nvs = bytearray(canonical_nvs())
-        # Erase the Settings BLOB_DATA entry and its payload while leaving its
-        # BLOB_IDX record written. Key-name-only validation would miss this.
-        nvs[32] |= 0x0F
-        report = analyze_canonical_nvs(bytes(nvs))
-        self.assertFalse(report["ready"])
-        self.assertEqual(report["missing_keys"], [])
-        self.assertIn("Settings", report["keys"])
-        self.assertEqual(report["incomplete_keys"], ["Settings"])
-
-    def test_pinned_artifact_gate_rejects_manifest_substitution(self):
-        manifest = {
-            "official_release": official_release(),
-            "artifacts": {
-                name: dict(expected) for name, expected in PINNED_ARTIFACTS.items()
-            },
-        }
-        require_pinned_artifacts(manifest)
-        manifest["artifacts"]["safeboot"]["sha256"] = "0" * 64
-        with self.assertRaisesRegex(ValueError, "safeboot sha256 differs"):
-            require_pinned_artifacts(manifest)
-
-    def test_a_bundle_of_a_release_pinned_before_is_taken_unless_current_only(self):
-        # A run that installed that release at F2, carried on by a version
-        # that pins a later one, finishes with its bundle.
-        from unittest import mock
-        from tools.espressif.safeboot import safeboot_migration as sm
-        earlier = {"version": "1.0.0", "files": {
-            name: {"name": name, "size": 10 + index, "sha256": f"{index}" * 64}
-            for index, name in enumerate(("factory", "safeboot", "app"))}}
-        manifest = {
-            "official_release": {"install_commit": "abc", "tasmota_commit": "def"},
-            "artifacts": {"bluetooth": dict(PINNED_ARTIFACTS["bluetooth"]),
-                          **{name: {"size": f["size"], "sha256": f["sha256"]}
-                             for name, f in earlier["files"].items()}},
-        }
-        with mock.patch.dict(sm.FIRMWARE["tasmota"], {"earlier": [earlier]}):
-            self.assertEqual(sm.earlier_release(manifest), earlier)
-            require_pinned_artifacts(manifest)
-            with self.assertRaisesRegex(ValueError, "identity differs"):
-                require_pinned_artifacts(manifest, current_only=True)
-            manifest["artifacts"]["app"]["sha256"] = "f" * 64
-            self.assertIsNone(sm.earlier_release(manifest))
-            with self.assertRaisesRegex(ValueError, "identity differs"):
-                require_pinned_artifacts(manifest)
 
     def test_report_parser_rejects_ambiguous_input(self):
         self.assertEqual(parse_report(b"status=PASS\nvalue=1\n"), {"status": "PASS", "value": "1"})
@@ -469,29 +329,6 @@ class MigrationValidationTests(unittest.TestCase):
             self.assertIn(state.arm_token, rendered)
             self.assertIn(sha256_bytes(fixture.target_table), rendered)
 
-    def test_the_interim_layout_moves_only_the_low_regions_clear_of_the_commit(self):
-        import tools.espressif.safeboot.safeboot_migration as migration
-        table = migration.interim_table()
-        self.assertEqual(sha256_bytes(table), migration.INTERIM_TABLE_SHA256)
-        source = {e["label"]: e for e in migration.parse_partition_sector(
-            migration.SOURCE_TABLE_FILE.read_bytes())["entries"]}
-        interim = {e["label"]: e for e in migration.parse_partition_sector(table)["entries"]}
-        low = ("nvs", "reserve", "otadata", "phy_init")
-        # Moved whole, each the same size and the same distance apart.
-        for label in low:
-            self.assertEqual(interim[label]["size"], source[label]["size"], label)
-            self.assertEqual(interim[label]["offset"] - source[label]["offset"],
-                             migration.MOVED_LOW_OFFSET - migration.LOW_REGIONS_OFFSET, label)
-        self.assertEqual(interim["ota_1"], source["ota_1"])  # the Tasmota that starts
-        moved = (migration.MOVED_LOW_OFFSET, migration.MOVED_LOW_OFFSET + migration.LOW_REGIONS_SIZE)
-        # In what was ota_0, clear of everything the commit writes or reads its
-        # copy from, and of the shrunk ota_0.
-        self.assertGreaterEqual(moved[0], interim["ota_0"]["end"])
-        self.assertEqual(moved[1], migration.OLD_OTA1_OFFSET)
-        self.assertGreaterEqual(moved[0], migration.SAFEBOOT_STAGE_OFFSET + migration.SAFEBOOT_SIZE)
-        self.assertGreaterEqual(moved[0], migration.SAFEBOOT_OFFSET + migration.SAFEBOOT_SIZE)
-        with self.assertRaises(ValueError):
-            migration.interim_table(b"\xff" * 4096)
 
     def test_the_commit_moves_the_settings_aside_before_writing_over_them(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -516,21 +353,6 @@ class MigrationValidationTests(unittest.TestCase):
         # same Tasmota, with its settings, where Sonoff's would start one without.
         self.assertIn("keep_interim_layout(interim)", commit)
 
-    def test_the_table_written_is_tasmotas_with_the_identitys_sector(self):
-        official = partition_sector(OFFICIAL_PARTITIONS)
-        self.assertEqual(sha256_bytes(official), OFFICIAL_TABLE_SHA256)  # as the factory image has it
-        table = target_table(official)
-        self.assertEqual(sha256_bytes(table), TARGET_TABLE_SHA256)
-        entries = {e["label"]: e for e in parse_partition_sector(table)["entries"]}
-        self.assertEqual((entries["spiffs"]["offset"], entries["spiffs"]["end"]), (0x3B0000, 0x3FF000))
-        self.assertEqual((entries["sonoff"]["type"], entries["sonoff"]["subtype"], entries["sonoff"]["offset"],
-                          entries["sonoff"]["end"]), (0x01, 0x40, 0x3FF000, 0x400000))
-        # Everything else as Tasmota has it.
-        self.assertEqual([e for e in parse_partition_sector(table)["entries"][:4]],
-                         parse_partition_sector(official)["entries"][:4])
-        for other in (partition_sector(TARGET_PARTITIONS), partition_sector(SOURCE_PARTITIONS)):
-            with self.assertRaisesRegex(ValueError, "partition entries differ|official"):
-                target_table(other)
 
     def test_restore_accepts_a_commit_made_on_tasmotas_own_table(self):
         # By a version of the tool before the identity was kept.
@@ -578,7 +400,6 @@ class MigrationValidationTests(unittest.TestCase):
         return off[:cut] + rec[cut:]
 
     def digests(self, partition):
-        import hashlib
         return [hashlib.sha256(partition[i:i + SECTOR_SIZE]).digest()
                 for i in range(0, len(partition), SECTOR_SIZE)]
 
@@ -808,7 +629,6 @@ class MigrationValidationTests(unittest.TestCase):
             self.assertNotIn("reason", evidence)
 
     def test_waiting_stops_when_the_plug_falls_silent(self):
-        from unittest import mock
         import tools.espressif.safeboot.serve_safeboot_migration as server_module
         with tempfile.TemporaryDirectory() as directory:
             _, state = self.staging(directory)
@@ -818,7 +638,6 @@ class MigrationValidationTests(unittest.TestCase):
                 self.assertEqual(server_module.wait_for_result(server, state, 900, 360), "silent")
 
     def test_a_plug_still_talking_is_given_the_whole_wait(self):
-        from unittest import mock
         import tools.espressif.safeboot.serve_safeboot_migration as server_module
         with tempfile.TemporaryDirectory() as directory:
             _, state = self.staging(directory)
@@ -900,7 +719,6 @@ class MigrationValidationTests(unittest.TestCase):
         # the half-read body, and never got back to its idle check.
         import socket
         import time as clock
-        from unittest import mock
         import tools.espressif.safeboot.serve_safeboot_migration as server_module
         returned = threading.Event()
         taken_after_return: list[bool] = []
@@ -1018,22 +836,6 @@ class MigrationValidationTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=2)
 
-
-class TasmotaTableTests(unittest.TestCase):
-    """A run's bundle may name either Tasmota table this tool converts to: a run
-    begun before the identity's sector was added carries Tasmota's own, and G1
-    resumed by this version must still take it."""
-
-    def test_either_reviewed_table_is_taken(self):
-        for partitions in (TARGET_PARTITIONS, OFFICIAL_PARTITIONS):
-            with self.subTest(entries=len(partitions)):
-                require_tasmota_table(parse_partition_sector(partition_sector(partitions)))
-
-    def test_any_other_is_refused(self):
-        changed = tuple(entry if entry[0] != "spiffs" else (*entry[:4], 0x040000, 0) for entry in OFFICIAL_PARTITIONS)
-        with self.assertRaisesRegex(ValueError, "partition entries differ"):
-            require_tasmota_table(parse_partition_sector(partition_sector(changed)))
-
     def test_a_restore_takes_a_bundle_made_with_tasmotas_own_table(self):
         with tempfile.TemporaryDirectory() as directory:
             fixture = MigrationFixture(Path(directory))
@@ -1049,64 +851,11 @@ class TasmotaTableTests(unittest.TestCase):
         self.assertEqual(state.target_table_sha256, OFFICIAL_TABLE_SHA256)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-class DownloadTests(unittest.TestCase):
-    """Seen in the fault suite: one TLS handshake timing out stopped a run."""
-
-    def fetch(self, *answers):
-        replies = iter(answers)
-
-        def urlopen(*_, **__):
-            reply = next(replies)
-            if isinstance(reply, Exception):
-                raise reply
-            return reply
-        with mock.patch.object(migration, "urlopen", side_effect=urlopen) as opened, \
-                mock.patch.object(migration.time, "sleep"):
-            try:
-                return migration.download("https://example.invalid/file"), opened.call_count
-            except OSError as exc:
-                return exc, opened.call_count
-
-    @staticmethod
-    def http_error(code):
-        return urllib.error.HTTPError("https://example.invalid/file", code, "no", None, None)
-
-    def test_a_moment_s_trouble_is_tried_again(self):
-        good = mock.MagicMock()
-        good.__enter__.return_value.read.return_value = b"file"
-        for trouble in (TimeoutError("The handshake operation timed out"), ConnectionResetError(),
-                        urllib.error.URLError("no route"), self.http_error(503),
-                        http.client.IncompleteRead(b"fi", 2)):
-            self.assertEqual(self.fetch(trouble, good), (b"file", 2))
-
-    def test_it_gives_up_after_its_tries_with_the_error_its_callers_expect(self):
-        always = [TimeoutError("timed out")] * migration.DOWNLOAD_TRIES
-        exc, tries = self.fetch(*always)
-        self.assertIsInstance(exc, TimeoutError)
-        self.assertEqual(tries, migration.DOWNLOAD_TRIES)
-        exc, tries = self.fetch(*[http.client.IncompleteRead(b"fi", 2)] * migration.DOWNLOAD_TRIES)
-        self.assertIsInstance(exc, OSError)
-        self.assertIn("cut off", str(exc))
-        self.assertEqual(tries, migration.DOWNLOAD_TRIES)
-
-    def test_what_would_only_fail_again_is_not_tried_again(self):
-        inspected = urllib.error.URLError(ssl.SSLCertVerificationError("certificate verify failed"))
-        for lasting in (self.http_error(404), inspected):
-            exc, tries = self.fetch(lasting)
-            self.assertIs(exc, lasting)
-            self.assertEqual(tries, 1)
-
-
 class ChunkBodyTests(unittest.TestCase):
     """Each chunk goes to the plug with its SHA-256, which the plug checks
     before writing it - asking again for one damaged on its way."""
 
     def test_the_hash_follows_the_hex(self):
-        import hashlib
         from tools.espressif.safeboot.serve_safeboot_migration import chunk_body
         chunk = bytes(range(256)) * 16
         body = chunk_body(chunk).decode("ascii")
@@ -1115,7 +864,7 @@ class ChunkBodyTests(unittest.TestCase):
 
     def test_every_phase_that_fetches_chunks_checks_them_and_asks_again(self):
         for phase in ("stage", "restore", "plan"):
-            source = (Path(__file__).resolve().parents[2] / f"tools/espressif/safeboot/repartition/berry/{phase}.be.tmpl").read_text()
+            source = (Path(__file__).resolve().parents[3] / f"tools/espressif/safeboot/repartition/berry/{phase}.be.tmpl").read_text()
             fetch = source[source.index("def fetch_chunk"):]
             fetch = fetch[:fetch.index("\nend\n")]
             with self.subTest(phase=phase):
@@ -1204,7 +953,6 @@ class PlanPhaseTests(unittest.TestCase):
                 send_chunks(state, "esphome", self.IMAGE)
 
     def test_a_write_reported_one_byte_off_is_refused(self):
-        import hashlib
         with tempfile.TemporaryDirectory() as directory:
             state = self.state(MigrationFixture(Path(directory)))
             wrong = bytearray(self.IMAGE)
@@ -1243,3 +991,7 @@ class PlanPhaseTests(unittest.TestCase):
                 MigrationState(fixture.manifest_path, fixture.manifest, "preflight",
                                "http://192.0.2.10:8089", fixture.evidence_dir, 7200,
                                plan=plans.esphome(self.IMAGE))
+
+
+if __name__ == "__main__":
+    unittest.main()

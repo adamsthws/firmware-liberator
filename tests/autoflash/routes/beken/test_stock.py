@@ -206,5 +206,42 @@ class FromStockTests(unittest.TestCase):
                     self.assertEqual(stock.evidence_pushed(ctx)[0], verdict, running)
 
 
+class BusyPlugTests(unittest.TestCase):
+    """A plug whose updater an update cut off part way still holds answers a
+    new one with error 410: through ota_push.deliver to the step's advice."""
+
+    def test_the_plugs_410_reaches_the_step_as_switch_it_off_and_on(self):
+        from tools.autoflash.routes.beken import stock
+        from tools.ewelink import ota_push, relay
+        device = {"deviceid": "1000abcdef", "apikey": "made-up", "devicekey": "made-up", "online": True,
+                  "extra": {"model": "SN-BK7238-S61-01"}, "params": {"fwVersion": "1.0.2"}}
+
+        class Socket:
+            sent: list = []
+
+            def send_json(self, value):
+                self.sent.append(value)
+
+            def receive_json(self, timeout=None):
+                last = self.sent[-1]
+                if last.get("action") == "userOnline":
+                    return {"error": 0}
+                return {"error": 410, "sequence": last["sequence"], "deviceid": "1000abcdef"}
+
+            def close(self):
+                pass
+
+        with mock.patch.object(ota_push, "login_session", return_value=("eu", {"at": "t", "user": {"apikey": "a"}})), \
+                mock.patch.object(ota_push, "get_devices", return_value=[device]), \
+                mock.patch.object(relay, "api_json", return_value={"domain": "192.0.2.1", "port": 443}), \
+                mock.patch.object(ota_push.WebSocket, "connect", return_value=Socket()):
+            delivered = ota_push.deliver(email="someone@example.invalid", password="made-up-password",
+                                         country_code="+44", region="eu", device_id="1000abcdef",
+                                         firmware=b"image", version="9.9.9", listen_ip="127.0.0.1",
+                                         listen_port=0, device_ip="127.0.0.1", wait=5, say=lambda *a: None)
+        self.assertTrue(delivered.sent, delivered.error)
+        self.assertRegex(delivered.error or "", stock.BUSY)
+
+
 if __name__ == "__main__":
     unittest.main()

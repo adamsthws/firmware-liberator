@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import fota_wrap as fota
-from tests.beken.test_tools import rbl_header
+from tests.beken.test_rbl import rbl_header
 
 
 class CloudPushTests(unittest.TestCase):

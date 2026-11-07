@@ -4,7 +4,8 @@ import unittest
 
 import ef40
 import stage_apply
-from tests.beken.test_tools import kv40_store, rbl_header
+from tests.beken.test_ef40 import kv40_store
+from tests.beken.test_rbl import rbl_header
 
 
 class StageApplyTests(unittest.TestCase):

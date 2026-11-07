@@ -338,7 +338,7 @@ class UpdateHelperTests(unittest.TestCase):
         # The conversion adds the entry for the plug's Sonoff identity to it
         # (safeboot_migration.target_table); a factory image already carrying
         # that, or any other, is not Tasmota's.
-        from tests.espressif.test_safeboot_migration import partition_sector
+        from tests.espressif.safeboot.test_safeboot_migration import partition_sector
         from tools.espressif.safeboot import safeboot_migration as migration
         for table, refused in ((partition_sector(migration.OFFICIAL_PARTITIONS), "Safeboot"),
                                (partition_sector(migration.TARGET_PARTITIONS), "partition table")):
