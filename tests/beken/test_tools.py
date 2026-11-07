@@ -934,6 +934,52 @@ class StubMemoryTests(unittest.TestCase):
         self.assertEqual(again.account_device()["deviceid"], "1000abcdef")
 
 
+class StubModelTests(unittest.TestCase):
+    """A flash rebuilt on an S61's settings says it is an S61: the stub's account
+    gives the model of the firmware it started on."""
+
+    def setUp(self):
+        patched = mock.patch.dict(sys.modules, {"cloud_online": SimpleNamespace(_make_certs=None)})
+        patched.start()
+        self.addCleanup(patched.stop)
+        sys.modules.pop("cloud_stub", None)
+        import cloud_stub
+        self.stub = cloud_stub
+        self.addCleanup(sys.modules.pop, "cloud_stub", None)
+
+    def test_the_model_is_the_one_the_app_holds_once(self):
+        self.assertEqual(self.stub.model_in(b"\0SN-BK7238-BASICR5-01\0"), "SN-BK7238-BASICR5-01")
+        self.assertEqual(self.stub.model_in(b"SN-BK7238-S61-01\0SN-BK7238-S61-01"), "SN-BK7238-S61-01")
+        self.assertEqual(self.stub.model_in(b"SN-BK7238-S61-01\0SN-BK7238-S41-01"), "")
+        self.assertEqual(self.stub.model_in(b"no model"), "")
+
+    def test_the_record_is_that_kinds_and_stays_when_the_firmware_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state, flash = Path(tmp), Path(tmp, "flash.bin")
+            flash.write_bytes(b"\xff" * 16)
+            with mock.patch.object(self.stub.stock_points, "app_of_flash", return_value=b"SN-BK7238-BASICR5-01\0"):
+                record = self.stub.device(flash, state)
+            self.assertEqual((record["model"], record["productModel"]), ("SN-BK7238-BASICR5-01", "BASIC-1GS"))
+            with mock.patch.object(self.stub.stock_points, "app_of_flash", return_value=b"OpenBeken"):
+                self.assertEqual(self.stub.device(flash, state)["model"], "SN-BK7238-BASICR5-01")
+
+    def test_with_none_to_read_it_is_an_s61(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            flash = Path(tmp, "flash.bin")
+            flash.write_bytes(b"\xff" * 16)
+            with mock.patch.object(self.stub.stock_points, "app_of_flash", side_effect=ValueError):
+                self.assertEqual(self.stub.device(flash, Path(tmp))["model"], "SN-BK7238-S61-01")
+
+    def test_what_the_plug_says_of_its_model_gives_way(self):
+        import stub_server
+        with tempfile.TemporaryDirectory() as tmp:
+            stub = stub_server.Stub("192.0.2.1", 443, 10)
+            self.stub.remember(stub, Path(tmp, "stub-reported.json"), "SN-BK7238-BASICR5-01")
+            stub.heard({"action": "register", "deviceid": "1000abcdef", "apikey": "made-up",
+                        "model": "SN-BK7238-S61-01"})
+        self.assertEqual(stub.reported["1000abcdef"]["model"], "SN-BK7238-BASICR5-01")
+
+
 class BusyPlugTests(unittest.TestCase):
     """A plug whose updater an update cut off part way still holds answers a
     new one with error 410: through ota_push.deliver to the step's advice."""
