@@ -69,10 +69,10 @@ WAYS = [
 ]
 
 
-def run(instance: int, source: str, firmware: str, save: str | None, log: Path,
+def run(instance: int, source: str | None, firmware: str, save: str | None, log: Path,
         extra: tuple[str, ...] = (), stop_after: str | None = None) -> tuple[bool, str]:
-    """One run from a saved plug; converted, and its result line."""
-    args = [str(UNATTENDED), f"--instance={instance}", f"--from={source}", *extra,
+    """One run, from a saved plug if `source` names one; converted, and its result line."""
+    args = [str(UNATTENDED), f"--instance={instance}", *([f"--from={source}"] if source else []), *extra,
             *([f"--save={save}"] if save else []), "--", "--firmware", firmware]
     log.parent.mkdir(parents=True, exist_ok=True)
     started = time.time()
