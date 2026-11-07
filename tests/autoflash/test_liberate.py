@@ -3,6 +3,7 @@ fetched, updated in place and started, and nothing of the user's - above
 all captures/, with the plugs' Sonoff backups - is ever touched. Against a
 GitHub of their own, on a port it picked."""
 
+import base64
 import http.server
 import io
 import os
@@ -232,8 +233,14 @@ class LiberatePs1Tests(LiberateTests, unittest.TestCase):
 
     def test_the_readme_line_fetches_it_from_the_latest_release_and_starts_it(self):
         self.github.releases = {"v1.0.0": release()}
-        line = shlex.split(self.readme_line(r"powershell -c \"irm "))
-        done = subprocess.run([POWERSHELL, *line[1:]], env=self.env, capture_output=True, text=True, timeout=120)
+        program, option, command = shlex.split(self.readme_line(r"powershell -c \"irm "))
+        self.assertEqual((program, option), ("powershell", "-c"))
+        # The line's own command, encoded: Defender takes "irm ... | iex" on a
+        # command line Python started for a trojan (Commando!ml), though not one
+        # typed in a terminal.
+        encoded = base64.b64encode(command.encode("utf-16-le")).decode("ascii")
+        done = subprocess.run([POWERSHELL, "-NoProfile", "-EncodedCommand", encoded], env=self.env,
+                              capture_output=True, text=True, timeout=120)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertEqual(self.started(), "")
 
