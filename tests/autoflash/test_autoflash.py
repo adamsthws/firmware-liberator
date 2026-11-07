@@ -52,9 +52,10 @@ from tools.autoflash.routes.espressif import (
     installer,
     mover,
     sonoff,
-    source,
     tasmota,
 )
+from tools.autoflash.routes import source
+from tools.autoflash.routes.espressif import source as espressif_source
 from tools.espressif import dump_stock_flash
 from tools.espressif import inspect_stock_nvs
 from tools.espressif.safeboot import prepare_imprinted_bundle
@@ -2689,7 +2690,7 @@ class UntemplatedByAddressTests(unittest.TestCase):
                 mock.patch.object(hostsys, "mac_of", return_value="12:34:56:AB:CD:EF"), \
                 mock.patch.object(source, "known_macs", return_value=known), \
                 mock.patch.object(source, "adopt_plug"), \
-                mock.patch.object(source, "past_the_commit", side_effect=lambda ctx, running: running):
+                mock.patch.object(espressif_source, "past_the_commit", side_effect=lambda ctx, running: running):
             return source.find_current_firmware(ctx)
 
     def test_a_known_plug_is_untemplated(self):
@@ -2734,9 +2735,9 @@ class EsphomeSafeModeTests(unittest.TestCase):
             if by_address:
                 with mock.patch.object(hostsys, "mac_of", return_value="12:34:56:AB:CD:EF"), \
                         mock.patch.object(source, "adopt_plug"), \
-                        mock.patch.object(source, "past_the_commit", side_effect=lambda ctx, running: running):
+                        mock.patch.object(espressif_source, "past_the_commit", side_effect=lambda ctx, running: running):
                     return source.find_current_firmware(ctx)
-            return source.esphome_safe_mode(ctx, "midway")
+            return espressif_source.esphome_safe_mode(ctx, "midway")
 
     def test_left_on_esphome_it_is_waited_out(self):
         converted = [("esphome", ["D5", "I1", "I2"])]
@@ -3526,7 +3527,7 @@ class PastTheCommitTests(unittest.TestCase):
         with mock.patch.object(runs, "run_directories", return_value=records), \
              mock.patch.object(plugs, "mac_of_run", return_value="12:34:56:ab:cd:ef"), \
              mock.patch.object(output, "say"):
-            return source.past_the_commit(ctx, running)
+            return espressif_source.past_the_commit(ctx, running)
 
     def test_a_run_that_committed_and_did_not_finish(self):
         self.assertEqual(self.source([(["E1", "E2", "E3"], None)]), "committed")

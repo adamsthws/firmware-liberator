@@ -286,7 +286,7 @@ class FromTheInterimFirmwareTests(unittest.TestCase):
     def test_with_plug_ip_it_is_found_with_its_kind(self):
         # As the search finds it: the plug's kind is its import module's to say
         # (an OpenBeken at --plug-ip was taken for Sonoff's firmware before).
-        from tools.autoflash.routes.espressif import source
+        from tools.autoflash.routes import source
         for interim, running in ((True, "interim"), (False, "openbeken")):
             with self.subTest(running=running), tempfile.TemporaryDirectory() as tmp:
                 self.server.interim = interim

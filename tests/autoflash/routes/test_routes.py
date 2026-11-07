@@ -188,7 +188,7 @@ class BekenTargetTests(unittest.TestCase):
                 with mock.patch.object(routes.source, "find_current_firmware", return_value=running), \
                         mock.patch.object(routes.plugs, "find_backup", return_value=object()), \
                         mock.patch.dict(update.RELEASE, tasmota=lambda ctx: None), \
-                        mock.patch.object(routes.source, "leaves_tasmota_direct", return_value=False), \
+                        mock.patch.object(routes.espressif_source, "leaves_tasmota_direct", return_value=False), \
                         mock.patch.object(routes.output, "say") as said:
                     self.assertEqual(routes.settle_route(ctx), ("esphome", running))
                 line = said.call_args.args[0]
@@ -248,7 +248,7 @@ class NothingAnsweringTests(unittest.TestCase):
     2026-11-07)."""
 
     def run_on(self, mac, known):
-        from tools.autoflash.routes.espressif import source
+        from tools.autoflash.routes import source
         with tempfile.TemporaryDirectory() as tmp:
             state = RunState.open(Path(tmp) / "run")
             state.set_input("plug_ip", "192.0.2.52")

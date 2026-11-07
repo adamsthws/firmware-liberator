@@ -133,7 +133,7 @@ class ESPHomeUpdateTests(RouteTestCase):
 
     def settle(self, info, *, given=None, answer=0, run="run", **inputs):
         ctx = self.ctx(given=given, run=run, plug_kind="sonoff-s60", **inputs)
-        with mock.patch.object(source, "find_current_firmware", return_value="esphome"), \
+        with mock.patch.object(routes.source, "find_current_firmware", return_value="esphome"), \
                 mock.patch.object(esphome, "api_device_info", return_value=info), \
                 mock.patch.object(espressif, "published_version", return_value="1.6.0"), \
                 mock.patch.object(routes, "sonoff_backup_exists", return_value=True), \
@@ -222,7 +222,7 @@ class ESPHomeUpdateTests(RouteTestCase):
     def replacing(self, info, *, word=True, **inputs):
         ctx = self.ctx(given="esphome", run=str(id(info)) + str(word), plug_kind="sonoff-s60", **inputs)
         ctx.replace_own_build = True
-        with mock.patch.object(source, "find_current_firmware", return_value="esphome"), \
+        with mock.patch.object(routes.source, "find_current_firmware", return_value="esphome"), \
                 mock.patch.object(esphome, "api_device_info", **(
                     {"side_effect": info} if isinstance(info, BaseException) else {"return_value": info})), \
                 mock.patch.object(espressif, "published_version", return_value="1.6.0"), \

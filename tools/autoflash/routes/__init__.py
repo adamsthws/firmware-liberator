@@ -31,7 +31,8 @@ from typing import Any, Callable, TYPE_CHECKING
 from tools.autoflash import account, detect, kinds, output, plugs, prompts, runs
 from tools.autoflash.errors import Abort
 from tools.autoflash.routes import beken, espressif, update
-from tools.autoflash.routes.espressif import source
+from tools.autoflash.routes import source
+from tools.autoflash.routes.espressif import source as espressif_source
 from tools.autoflash.state import RunState
 
 if TYPE_CHECKING:
@@ -287,7 +288,7 @@ def settle_route(ctx: Context) -> tuple[str | None, str]:
     ctx.state.set_input("source", running)
     ctx.state.set_input("firmware", firmware)
     if (running, firmware) == ("tasmota", "esphome"):
-        ctx.state.set_input(LEAVES_DIRECT, source.leaves_tasmota_direct(ctx))
+        ctx.state.set_input(LEAVES_DIRECT, espressif_source.leaves_tasmota_direct(ctx))
     if running == "outdated":
         output.say("Updating the device's {} from {} to {}.".format(FIRMWARES[firmware], *update.versions(ctx)))
         return firmware, running

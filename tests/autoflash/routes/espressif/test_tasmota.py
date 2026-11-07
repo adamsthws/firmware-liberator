@@ -17,7 +17,7 @@ class TasmotaUpdateTests(RouteTestCase):
 
     def settle(self, release, *, given=None, answer=0, run="run"):
         ctx = self.ctx(given=given, run=run, plug_kind="sonoff-s60")
-        with mock.patch.object(source, "find_current_firmware", return_value="tasmota"), \
+        with mock.patch.object(routes.source, "find_current_firmware", return_value="tasmota"), \
                 mock.patch.dict(update.RELEASE, tasmota=lambda ctx: release), \
                 mock.patch.object(routes, "sonoff_backup_exists", return_value=True), \
                 mock.patch.object(source, "leaves_tasmota_direct", return_value=False), \
