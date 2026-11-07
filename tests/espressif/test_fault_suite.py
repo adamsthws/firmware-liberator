@@ -344,6 +344,36 @@ class ScenarioTests(unittest.TestCase):
         for wanted in ("update>esphome:U1:plugoff-1", "update>esphome:U1:outage-30", "update>esphome:U2:crash-1"):
             self.assertIn(wanted, ids)
 
+    def no_report(self, screen):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "log"
+            log.write_text("--- run\n" + screen, encoding="utf-8")
+            return fs.Scenario.screen_result(mock.Mock(log=log))
+
+    def test_a_run_with_no_report_says_where_it_stopped_and_why(self):
+        # Seen: "no report" ten times on the real cloud, and why only on screen -
+        # once this computer's own way to eWeLink failing, not the plug.
+        self.assertEqual(self.no_report(
+            " Stage  2 - Discovering the device       - Underway\n"
+            "     Could not reach eWeLink (eWeLink connection failed: [Errno -2] Name or service not known), so\n"
+            "     every device that answers is listed.\n"
+            " Stage  2 - Discovering the device       - Stopped\n"
+            " Cleaned up. Nothing was left half done. Exiting.\n"
+            "Exit code 130 - stopped at a question, or by Ctrl-C\n"),
+            "no report (stopped at stage 2, Discovering the device: Could not reach eWeLink (eWeLink connection"
+            " failed: [Errno -2] Name or service not known), so every device that answers is listed.; exit 130)")
+
+    def test_a_question_an_unattended_run_cannot_answer_is_named(self):
+        self.assertEqual(self.no_report(
+            " Stage  3 of 15 - Discovering the plug        - Underway 22s\n\n"
+            " -- Your S60 did not answer on this network\n"
+            "     - 'S60TPG': eWeLink shows it offline - check it is switched on at the wall.\n"
+            "     1. Look again\n     4. Quit - stop here\n\n"
+            " ! An unattended run cannot answer this, so it stops here:\n     What now\n"
+            " Stage  3 of 15 - Discovering the plug        - Stopped\n"),
+            "no report (stopped at stage 3, Discovering the plug: Your S60 did not answer on this network "
+            "'S60TPG': eWeLink shows it offline - check it is switched on at the wall. What now)")
+
     def test_an_update_counts_as_having_got_there(self):
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "log"
