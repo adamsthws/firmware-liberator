@@ -48,7 +48,7 @@ if TYPE_CHECKING:
 # like every bridge from 4.4.1 on, by the version its file is wrapped with
 # (the updater is told build_vendor_ota.ANNOUNCED_VERSION); the file by the
 # kind of plug its wrapper is for (kinds.SONOFF_S60's).
-BRIDGE_OTA = Path("artifacts/autoflash-bridge-sonoff-s60-4.4.4.ota")
+BRIDGE_OTA = Path(chips.ESP32C3.pin("bridge")["file"])
 
 
 # What the sender says when the upgrade command never went out

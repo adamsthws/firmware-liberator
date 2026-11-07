@@ -32,12 +32,13 @@ class Chip:
 
     @property
     def pins(self) -> dict[str, Any]:
-        """What firmware.json pins for it. The ESP32-C3's came first, and keep
+        """What firmware.json pins for it. The ESP32-C3's first ones keep
         their own places there."""
         if self.key == ESP32C3.key:
             return {"tasmota": FIRMWARE["tasmota"],
                     "bootloader": FIRMWARE["esphome"]["bootloader"],
-                    "mover": FIRMWARE["esphome"]["mover"]}
+                    "mover": FIRMWARE["esphome"]["mover"],
+                    **FIRMWARE[self.key]}
         return FIRMWARE.get(self.key, {})
 
     def pin(self, name: str) -> dict[str, Any]:

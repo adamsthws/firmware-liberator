@@ -74,31 +74,19 @@ never starts. Check a rebuild against the published bridge: built from the
 same source it differs only in the build time and date, the ELF hash and the
 image checksum.
 
-Build with PlatformIO from a path without spaces (the ESP-IDF builder used here
-does not correctly quote every generated CMake path):
+Build and publish each chip's bridge with `tools/repo/update_firmware.py`, which
+builds it in Docker from a clean copy of this folder, checks it, and writes the
+file, `artifacts/firmware.json`, `artifacts/SHA256SUMS` and `.gitignore`, removing
+the file it replaces:
 
 ```sh
-cp -a archive/bridge /tmp/autoflash-bridge-build
-rm -f /tmp/autoflash-bridge-build/sdkconfig.autoflash-bridge*
-pio run -d /tmp/autoflash-bridge-build -e autoflash-bridge
+python3 tools/repo/update_firmware.py esp32c3 bridge   # wrapped for the S60's updater
+python3 tools/repo/update_firmware.py esp32 bridge
 ```
 
-The application image is then:
-
-```text
-/tmp/autoflash-bridge-build/.pio/build/autoflash-bridge/firmware.bin
-```
-
-Wrap the application for the stock updater - the version comes from the
-image, and the model is the S60's unless `--model` says another - and
-validate it:
-
-```sh
-python3 tools/build_vendor_ota.py \
-  /tmp/autoflash-bridge-build/.pio/build/autoflash-bridge/firmware.bin \
-  artifacts/autoflash-bridge-sonoff-s60-4.4.4.ota
-python3 tools/analyze_vendor_ota.py artifacts/autoflash-bridge-sonoff-s60-4.4.4.ota
-```
+The ESP32-C3's is published wrapped, with the version from the image and the
+S60's model; the run wraps the same app again for any other kind of plug. Check
+it with `python3 tools/espressif/analyze_vendor_ota.py <file>`.
 
 When it cannot join the stock network, or stock saved none, it creates
 `autoflash-recovery-XXXX` (the last four hex digits of the plug's Wi-Fi MAC),

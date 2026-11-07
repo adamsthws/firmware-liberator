@@ -57,10 +57,11 @@ settings are lost (see [Tasmota's own names](#tasmotas-own-names)).
   without Wi-Fi (since 4.4.4), so that Tasmota still starts under the name.
 - A changed installer is a new version: `PROJECT_VER` in
   [`archive/bridge/CMakeLists.txt`](../archive/bridge/CMakeLists.txt) and
-  `BRIDGE_VERSION` in `main.c` (a test keeps them equal). Build and wrap it
-  as [`archive/bridge/README.md`](../archive/bridge/README.md) says, into
-  `artifacts/autoflash-bridge-<kind>-<version>.ota` (the wrapper names the
-  plug's model, so there is one per kind of plug).
+  `BRIDGE_VERSION` in `main.c` (a test keeps them equal). Build and publish it
+  as [`archive/bridge/README.md`](../archive/bridge/README.md) says. The file
+  is `artifacts/autoflash-bridge-sonoff-s60-<version>.ota` on an ESP32-C3 (the
+  wrapper names the S60's model, and a run wraps it again for another) and
+  `artifacts/autoflash-bridge-esp32-<version>.bin` on a classic ESP32.
 
 ### The interim Tasmota (D1)
 

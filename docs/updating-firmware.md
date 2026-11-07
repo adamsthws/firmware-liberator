@@ -44,6 +44,11 @@ which the update checks. The S61's interim firmware is its OpenBeken image
 itself, with a marker sent after it, so it changes with every OpenBeken
 update ([below](#3-openbeken-and-esphome-for-the-s61)).
 
+**The bridge** changes only when its source in `archive/bridge` does, as a new
+version. `python3 tools/repo/update_firmware.py esp32c3 bridge` publishes the
+ESP32-C3's, wrapped for the S60's stock updater, and `esp32 bridge` the classic
+ESP32's. Each builds in Docker, and replaces the file before it in `artifacts/`.
+
 **The bootloader** is written in about a second, and a power cut in that
 second leaves a plug that has to be opened - the only step of a conversion
 that can. So a new ESPHome release brings a new app, and the published

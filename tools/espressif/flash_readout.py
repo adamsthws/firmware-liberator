@@ -42,6 +42,7 @@ from tools.autoflash.prompts import (  # noqa: E402
     warning_box,
 )
 from tools.ewelink.discover_ewelink import discover  # noqa: E402
+from tools.espressif import chips  # noqa: E402
 from tools.espressif.dump_stock_flash import is_bridge, save_dump  # noqa: E402
 from tools.autoflash.account import find_ewelink_plugs  # noqa: E402
 from tools.autoflash.firewall import DELIVERY_PORTS  # noqa: E402
@@ -53,9 +54,9 @@ from tools.autoflash.names import (  # noqa: E402
 )
 from tools.autoflash.runs import SETTINGS_PATH  # noqa: E402
 
-# The conversion's own bridge, the one it sends. Pinned as in SHA256SUMS.
-READOUT_OTA = Path("artifacts/autoflash-bridge-sonoff-s60-4.4.4.ota")
-READOUT_SHA256 = "4424af5d59258f5c1998269c65bffc5d1341f519352fdc1bfd9c76e37b34f5bb"
+# The conversion's own bridge, the one it sends, as firmware.json pins it.
+READOUT_OTA = Path(chips.ESP32C3.pin("bridge")["file"])
+READOUT_SHA256 = chips.ESP32C3.pin("bridge")["sha256"]
 CONFIRM_WORD = "readout"
 BRIDGE_AP_HOST = "192.168.4.1"
 STAGES = 6
