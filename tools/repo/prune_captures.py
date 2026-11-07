@@ -26,9 +26,9 @@ ROOT = Path(__file__).resolve().parents[2]
 CAPTURES = ROOT / "captures"
 # What may go, by its path in captures/, and what it is.
 PRUNABLE = {
-    "emulation/state": "an emulator's plug and its computer's copy of the checkout",
-    "emulation/state-*": "an emulator's plug and its computer's copy of the checkout",
-    "emulation/s61/autoflash-s61-*": "an S61 emulator's plug and its computer's copy",
+    "emulation/state": "an Espressif emulator's plug and its computer's copy of the checkout",
+    "emulation/state-*": "an Espressif emulator's plug and its computer's copy of the checkout",
+    "emulation/s61/autoflash-s61-*": "a Beken emulator's plug and its computer's copy",
     "emulation/s61/earlier-*": "an earlier release's tree, for the update scenarios",
     "emulation/legacy/*": "an earlier release's tree, for the legacy scenarios",
     "emulation/*/logs": "a suite's logs",
@@ -138,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
     total = 0
     for path, what in candidates(CAPTURES):
         name = path.relative_to(CAPTURES)
-        is_state = what.startswith("an emulator") or what.startswith("an S61 emulator")
+        is_state = what.startswith(("an Espressif emulator", "a Beken emulator"))
         if is_state and (running is None or path in running):
             continue
         if last_used(path) > cutoff:

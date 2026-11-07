@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ADDRESS = re.compile(r"(?<![0-9.])192\.168\.(\d+)\.\d+")
 SUBNETS = {
     "4",    # the setup networks plugs really make
-    "60",   # the S60 emulator's network
+    "60",   # the Espressif emulator's network
     "99",   # examples people read
     "122",  # libvirt's bridge, which discovery leaves out
 }
