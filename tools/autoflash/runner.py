@@ -373,7 +373,7 @@ def run_steps(ctx: Context) -> int:
     try:
         if ctx.state.input("plug_mac"):
             runs.hold_plug(ctx, ctx.state.input("plug_mac"))  # a run carried on: its plug is known
-        firmware, source = routes.settle_route(ctx)
+        firmware, _ = routes.settle_route(ctx)
         unlock.unlock_tasmota(ctx)
     except routes.NothingToDo as nothing:
         output.tell(str(nothing))
@@ -381,7 +381,7 @@ def run_steps(ctx: Context) -> int:
     except Abort as refused:
         output.tell(f"Stopped before anything was done: {refused}.")
         return 2
-    routes.apply_target(firmware, source, routes.family_of(ctx.state))
+    routes.apply_target(firmware, routes.route_source(ctx.state), routes.family_of(ctx.state))
     ctx.state.set_input("stopped_by", None)
     resumed = any(ctx.state.is_done(step) for step, _, _ in routes.STEPS)
     ctx.run_started, ctx.run_resumed = started, resumed

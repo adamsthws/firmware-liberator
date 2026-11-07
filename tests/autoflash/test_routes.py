@@ -183,6 +183,7 @@ class BekenTargetTests(unittest.TestCase):
                 with mock.patch.object(routes.source, "find_current_firmware", return_value=running), \
                         mock.patch.object(routes.plugs, "find_backup", return_value=object()), \
                         mock.patch.dict(update.RELEASE, tasmota=lambda ctx: None), \
+                        mock.patch.object(routes.source, "leaves_tasmota_direct", return_value=False), \
                         mock.patch.object(routes.output, "say") as said:
                     self.assertEqual(routes.settle_route(ctx), ("esphome", running))
                 line = said.call_args.args[0]

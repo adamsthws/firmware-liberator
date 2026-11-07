@@ -507,7 +507,7 @@ def _main() -> int:
             args.run = resolve_run_name(args.run, args.new, args.plug_ip,
                                         ask=args.command == "run" and not args.unattended)
         ctx = Context(args)
-        routes.apply_target(routes.recorded_firmware(ctx.state), runs.run_source(ctx.state),
+        routes.apply_target(routes.recorded_firmware(ctx.state), routes.route_source(ctx.state),
                             routes.family_of(ctx.state))  # a run settles it at its start
     except (QuitRun, KeyboardInterrupt):
         # q, or Ctrl-C, at a question before the run starts: which run, say.

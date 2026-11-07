@@ -5,6 +5,7 @@ answers as, or known from where an earlier run left it.
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import re
 import shutil
@@ -211,6 +212,23 @@ def past_the_commit(ctx: Context, running: str) -> str:
             return "committed"
         return tasmota_missing(ctx, running)  # its latest run says otherwise
     return tasmota_missing(ctx, running)
+
+
+def leaves_tasmota_direct(ctx: Context) -> bool:
+    """Whether a plug on Tasmota, going to ESPHome, can skip the hub: only with
+    ESPHome's bootloader on it already, as the hub is where a plug gets it. One
+    that will not say goes through the hub, which is right for any plug."""
+    chip = esphome.chip_of(kinds.of_run(ctx.state))
+    bootloader = esphome.published_bootloader(chip)
+    try:
+        found = ctx.device.sha_region(chip.bootloader_at, len(bootloader), timeout=30)
+    except (DeviceError, OSError):
+        found = None
+    if found == hashlib.sha256(bootloader).hexdigest():
+        return True
+    output.say("    Its bootloader is not this tool's, so it goes by way of the firmware that")
+    output.say("    installs one, as every device this tool converts ends with the same.")
+    return False
 
 
 # ESPHome started ten times in a row, each stopped within a minute, takes that

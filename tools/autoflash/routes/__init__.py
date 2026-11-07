@@ -46,6 +46,8 @@ FIRMWARES = {name: label for family in FAMILIES.values() for name, label in fami
 # The steps of a run from Sonoff's firmware a run of 1.x recorded: one with no
 # route recorded that has these done began from Sonoff's, for Tasmota.
 LEGACY_STOCK_STEPS = ("A5", "A1", "A2", "C2", "C3", "D1")
+# Where a run from Tasmota to ESPHome keeps its choice of route (route_source).
+LEAVES_DIRECT = "leaves_tasmota_direct"
 
 
 def family_of(state: RunState) -> ModuleType:
@@ -152,7 +154,19 @@ def recorded_firmware(state: RunState) -> str | None:
 def steps_of(state: RunState) -> Steps:
     """A run's route, as its record has it: its firmware once chosen, else
     the shared start alone."""
-    return steps_for(recorded_firmware(state), runs.run_source(state), family_of(state))
+    return steps_for(recorded_firmware(state), route_source(state), family_of(state))
+
+
+def route_source(state: RunState) -> str:
+    """The source whose steps a run takes: what it left from, but for the choice
+    settled once at its start between Tasmota's two ways to ESPHome (a run begun
+    before there was a choice, past L1, took the one without the hub)."""
+    source = runs.run_source(state)
+    if source == "tasmota" and state.input("firmware") == "esphome":
+        direct = state.input(LEAVES_DIRECT)
+        if direct or (direct is None and state.is_done("L1")):
+            return espressif.DIRECT_FROM_TASMOTA
+    return source
 
 
 # This run's route: Tasmota from Sonoff on an Espressif plug until it is known
@@ -263,6 +277,8 @@ def settle_route(ctx: Context) -> tuple[str | None, str]:
         running = updating  # left as any of its firmware is
     ctx.state.set_input("source", running)
     ctx.state.set_input("firmware", firmware)
+    if (running, firmware) == ("tasmota", "esphome"):
+        ctx.state.set_input(LEAVES_DIRECT, source.leaves_tasmota_direct(ctx))
     if running == "outdated":
         output.say("Updating the device's {} from {} to {}.".format(FIRMWARES[firmware], *update.versions(ctx)))
         return firmware, running

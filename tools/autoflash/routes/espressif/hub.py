@@ -241,7 +241,7 @@ def step_bootloader(ctx: Context) -> dict[str, Any]:
         # version once its commit had begun: the plug may no longer have the
         # layout and the Tasmota this needs, and never will on this route.
         # Its bootloader stays Sonoff's, as runs of that version left every
-        # plug; the next change of firmware puts ESPHome's on (L1).
+        # plug; the next change of firmware, by way of this step, puts ESPHome's on.
         output.say("Left as it is: this run was begun by an earlier version of this tool, which")
         output.say("kept Sonoff's bootloader, and is past the commit that step needs to come before.")
         ctx.state.set_input("bootloader_kept", "sonoff")

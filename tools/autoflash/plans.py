@@ -298,9 +298,13 @@ def esphome(image: bytes, layout: Layout = SONOFF_DUAL_OTA) -> Plan:
     ).check()
 
 
-def leave_tasmota(mover: bytes, sonoff_table: bytes, bootloader_image: bytes,
-                  bootloader_address: int = 0, layout: Layout = SONOFF_DUAL_OTA) -> Plan:
+def leave_tasmota(mover: bytes, sonoff_table: bytes, layout: Layout = SONOFF_DUAL_OTA) -> Plan:
     """From official Tasmota on Tasmota's layout to the mover on Sonoff's.
+
+    The bootloader stays as it is: it may be a build of Tasmota's own, which
+    starts the mover as well, and the full Tasmota has too little memory left
+    to hold ESPHome's while it writes it. The hub writes it (D5), on a Tasmota
+    that has room, and a route without the hub is only for a plug that has it.
 
     Tasmota runs from app0 at 0xE0000, across both of Sonoff's app slots, but
     the mover fits in front of it, at 0x20000: Sonoff's ota_0.  With the
@@ -316,12 +320,11 @@ def leave_tasmota(mover: bytes, sonoff_table: bytes, bootloader_image: bytes,
     return Plan(
         name="leave_tasmota", title="the mover", table_sha256=TASMOTA_TABLE_SHA256, running=0,
         steps=[
-            Write("bootloader", bootloader_address, whole=True),
             Write("mover", layout.ota[0]),
             Erase(layout.nvs, layout.low_size),
             Write("table", TABLE_ADDRESS, whole=True),
         ],
-        blobs={"bootloader": bootloader_image, "mover": mover, "table": sonoff_table},
+        blobs={"mover": mover, "table": sonoff_table},
     ).check()
 
 

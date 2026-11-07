@@ -76,9 +76,9 @@ def step_leave_tasmota(ctx: Context) -> dict[str, Any]:
 
     Official Tasmota runs across both of Sonoff's app slots, so it cannot write
     a firmware into either; the mover is small enough to go in front of it.
-    The plan writes ESPHome's bootloader, the mover, clears where Sonoff's
-    layout keeps its settings and boot selection, and writes Sonoff's
-    partition table last - then the plug restarts into the mover.
+    The plan writes the mover, clears where Sonoff's layout keeps its settings
+    and boot selection, and writes Sonoff's partition table last - then the plug
+    restarts into the mover, under whatever bootloader it has (plans.leave_tasmota).
     """
     host = ctx.state.input("plug_ip")
     if host and esphome_ota.probe(host) is not None and not esphome.is_esphome(host):
@@ -95,7 +95,7 @@ def step_leave_tasmota(ctx: Context) -> dict[str, Any]:
         kind = kinds.of_run(ctx.state)
         chip = esphome.chip_of(kind)
         plan = plans.leave_tasmota(esphome.mover_for(ssid, password, chip), esphome.sonoff_table(kind),
-                                   esphome.published_bootloader(chip), chip.bootloader_at, esphome.layout_of(kind))
+                                   esphome.layout_of(kind))
     except (esphome.ImageError, imprint.ImprintError, plans.PlanError, OSError) as exc:
         raise Abort(f"the mover cannot be used: {exc}") from exc
     try:
@@ -346,7 +346,7 @@ def wait_for_esphome(ctx: Context, wait: float) -> dict[str, Any]:
     if ctx.dry_run:
         output.say("[dry-run] would wait for ESPHome to answer")
         return {"dry_run": True}
-    as_update = runs.run_source(ctx.state) in ("tasmota", "safeboot")  # through the mover (M1)
+    as_update = ctx.state.is_done("M1")  # through the mover, not written from the hub (I1)
     output.say("Waiting for the device to start ESPHome and join your Wi-Fi...")
     started = time.monotonic()
     first_seen = None

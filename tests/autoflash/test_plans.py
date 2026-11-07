@@ -3,7 +3,8 @@ import struct
 import unittest
 from pathlib import Path
 
-from tools.autoflash import esphome, plans
+from tools.autoflash import esphome, kinds, plans
+from tools.espressif import chips
 from tools.espressif.safeboot import safeboot_migration
 
 SECTOR = plans.SECTOR
@@ -27,13 +28,11 @@ class PlanTests(unittest.TestCase):
     def test_every_plan_stays_inside_the_time_a_plug_may_be_busy(self):
         image = esphome.published_image()
         for plan in (plans.bootloader(esphome.published_bootloader()), plans.esphome(image),
-                     plans.leave_tasmota(esphome.mover_for("Home", "pw"), esphome.sonoff_table(),
-                                         esphome.published_bootloader())):
+                     plans.leave_tasmota(esphome.mover_for("Home", "pw"), esphome.sonoff_table())):
             self.assertLessEqual(plan.busy_estimate(), plans.BUSY_LIMIT, plan.name)
 
     def test_a_plan_travels_whole_and_says_the_same_on_arrival(self):
-        plan = plans.leave_tasmota(esphome.mover_for("Home", "pw"), esphome.sonoff_table(),
-                                   esphome.published_bootloader())
+        plan = plans.leave_tasmota(esphome.mover_for("Home", "pw"), esphome.sonoff_table())
         again = plans.Plan.from_bundle(plan.bundle())
         self.assertEqual(again.expected(), plan.expected())
         self.assertEqual(again.final_table_sha256(), plans.SONOFF_TABLE_SHA256)
@@ -42,16 +41,24 @@ class PlanTests(unittest.TestCase):
             plans.Plan.from_bundle(plan.bundle()[:-1])  # cut short
 
     def test_leaving_tasmota_writes_in_front_of_it_and_the_table_last(self):
-        plan = plans.leave_tasmota(esphome.mover_for("Home", "pw"), esphome.sonoff_table(),
-                                   esphome.published_bootloader())
+        plan = plans.leave_tasmota(esphome.mover_for("Home", "pw"), esphome.sonoff_table())
         ends = [end for _, end, _ in plan.regions()]
-        self.assertLessEqual(max(ends[:3]), plans.TASMOTA_APP0)  # never where Tasmota runs
+        self.assertLessEqual(max(ends), plans.TASMOTA_APP0)  # never where Tasmota runs
         self.assertEqual(plan.steps[-1], plans.Write("table", plans.TABLE_ADDRESS, whole=True))
         self.assertEqual(plan.running, 0)
         with self.assertRaisesRegex(plans.PlanError, "fit"):
-            plans.leave_tasmota(b"\xe9" * 0xC1000, esphome.sonoff_table(), esphome.published_bootloader())
+            plans.leave_tasmota(b"\xe9" * 0xC1000, esphome.sonoff_table())
         with self.assertRaisesRegex(plans.PlanError, "Sonoff's partition table"):
-            plans.leave_tasmota(b"\xe9" * 1000, b"\0" * SECTOR, esphome.published_bootloader())
+            plans.leave_tasmota(b"\xe9" * 1000, b"\0" * SECTOR)
+
+    def test_leaving_tasmota_leaves_the_bootloader_as_it_is(self):
+        # The full Tasmota has too little memory to hold ESPHome's while it writes
+        # it (a classic ESP32: BRY: MEMORY ALLOCATION FAILED). The hub writes it.
+        for kind, chip in ((kinds.SONOFF_S60, chips.ESP32C3), (kinds.SONOFF_POW_ELITE, chips.ESP32)):
+            plan = plans.leave_tasmota(esphome.mover_for("Home", "pw", chip), esphome.sonoff_table(kind),
+                                       esphome.layout_of(kind))
+            self.assertGreater(min(start for start, _, _ in plan.regions()), plans.TABLE_ADDRESS - 1, kind.key)
+            self.assertNotIn("bootloader", plan.blobs, kind.key)
 
     def test_putting_sonoffs_layout_back_copies_the_settings_home_then_the_table(self):
         plan = plans.sonoff_layout_back(esphome.sonoff_table())
