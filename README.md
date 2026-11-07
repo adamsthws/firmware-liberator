@@ -283,3 +283,11 @@ Thankyou for making such excellent devices. Please keep this update method open.
 > Someone who installs their own firmware takes on its upkeep. Tasmota, ESPHome and OpenBeken are maintained by their own communities.
 
 <br>
+
+## At your own risk
+
+You use this tool at your own risk. Changing a device's firmware can go wrong for reasons nobody controls - a power cut, a weak Wi-Fi signal, a device that differs from the ones it was tried on - and can leave a device that has to be opened and repaired with a serial cable, or one that cannot be repaired at all. Changing its firmware may also end its maker's warranty.
+
+The tool is provided as it is, with no warranty of any kind. Nobody who made it or contributed to it accepts responsibility for any harm to your devices, property or data, or any other loss, however it comes about. Sections 15 and 16 of its [licence](LICENSE), the GNU GPL v3, say so in full.
+
+Only go ahead with a device you can afford to lose.
