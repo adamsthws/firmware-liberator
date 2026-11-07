@@ -19,7 +19,10 @@ One TLS socket on `:443` wears every hat, routed by request:
   /v2/user/login, /v2/device/thing, /v2/device/ota/query
                           the account API the tool reads the plug's LAN key,
                           model and version from (the key is the one in the dump
-                          we booted, from --device-json).
+                          we booted, from --device-json). Asked with a version
+                          older than the plug's, the OTA query offers its own
+                          firmware, as eWeLink offers the latest (firmware.py).
+  GET  /ota/user1.bin     that firmware, to the device's id, as eWeLink serves it.
 
 Stdlib only, so it runs under the emulator image's plain python3. Every message
 is logged with secret values redacted, so one run is also the capture that pins
@@ -51,6 +54,9 @@ import struct
 import sys
 import threading
 from pathlib import Path
+
+if __package__ in (None, ""):  # run as a script, isolated: the repository root, for `tools.`
+    sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"  # RFC 6455 magic
 # Never shown in cleartext in the log: they identify the account or device, or
@@ -199,8 +205,10 @@ def _timestamp(when: dt.datetime) -> str:
 
 
 class Stub:
-    def __init__(self, iot_host: str, iot_port: int, hb_interval: int, device: dict | None = None):
+    def __init__(self, iot_host: str, iot_port: int, hb_interval: int, device: dict | None = None,
+                 update=None):
         self.iot_host = iot_host
+        self.update = update  # firmware.Update the OTA query offers, or None
         self.iot_port = iot_port
         self.hb_interval = hb_interval
         self.device = device  # the account-API view of this plug, or None
@@ -302,9 +310,34 @@ class Stub:
             item["itemData"]["productModel"] = d["productModel"]
         return {"error": 0, "data": {"thingList": [item]}}
 
-    def ota_query(self) -> dict:
-        # The conversion only reads this metadata; it delivers firmware over LAN.
-        return {"error": 0, "data": {"otaInfoList": []}}
+    def ota_query(self, body: bytes = b"") -> dict:
+        """What eWeLink offers: nothing to a device asking with its own version
+        (the conversion only reads this; it delivers firmware over LAN), and the
+        plug's own firmware to one asking with an older one, as query_ota's
+        latest_offer does."""
+        from tools.espressif.emulator.stub_cloud.firmware import FILE_NAME, version_tuple
+        try:
+            asked = json.loads(body).get("deviceInfoList") or [] if body else []
+        except (ValueError, AttributeError):
+            asked = []
+        offers = []
+        mine = (self.account_device() or {}).get("deviceid")
+        for info in asked if isinstance(asked, list) else []:
+            if (self.update and isinstance(info, dict) and info.get("deviceid") == mine
+                    and version_tuple(str(info.get("version", ""))) < version_tuple(self.update.version)):
+                offers.append({"deviceid": mine, "model": info.get("model"), "version": self.update.version,
+                               "binList": [{"name": FILE_NAME, "downloadUrl":
+                                            f"https://{self.iot_host}/ota/{FILE_NAME}",
+                                            "digest": hashlib.sha256(self.update.data).hexdigest()}]})
+        return {"error": 0, "data": {"otaInfoList": offers}}
+
+    def ota_file(self, query: str) -> bytes | None:
+        """The offered file, to the device's own id, as Sonoff's server asks."""
+        import urllib.parse
+        asked = urllib.parse.parse_qs(query).get("deviceid", [""])[0]
+        if self.update is None or not asked or asked != (self.account_device() or {}).get("deviceid"):
+            return None
+        return self.update.data
 
     def ws_reply(self, msg: dict) -> dict | None:
         """The IoT-channel answer to one device message, or None to stay quiet."""
@@ -358,7 +391,7 @@ class Handler(socketserver.BaseRequestHandler):
         request_line, headers, body = header
         log(peer, "->", request_line)
         parts = request_line.split(" ")
-        path = parts[1].split("?", 1)[0] if len(parts) > 1 else ""
+        path, _, query = (parts[1] if len(parts) > 1 else "").partition("?")
         if request_line.startswith("GET /api/ws"):
             self._serve_ws(sock, headers, peer)
         elif path == "/dispatch/device":
@@ -370,7 +403,11 @@ class Handler(socketserver.BaseRequestHandler):
         elif path == "/v2/device/thing":
             self._serve_signed_in(sock, headers, self.stub.device_thing, peer, "device list")
         elif path == "/v2/device/ota/query":
-            self._serve_signed_in(sock, headers, self.stub.ota_query, peer, "OTA query")
+            self._serve_signed_in(sock, headers, lambda: self.stub.ota_query(body), peer, "OTA query")
+        elif path.startswith("/ota/"):
+            data = self.stub.ota_file(query)
+            log(peer, "OTA file ->", f"{len(data)} bytes" if data else "refused")
+            self._send_http(sock, 200 if data else 404, data or b"", "application/octet-stream")
         else:
             self._send_http(sock, 404, b"", "text/plain")
 
@@ -489,6 +526,15 @@ class Handler(socketserver.BaseRequestHandler):
         if msg.get("action") == "register" and msg.get("deviceid"):
             deviceid = msg["deviceid"]
             _register_device(deviceid, conn)
+            # Whether it is the account's device - the plug's own id and key -
+            # without logging either: a plug put back on Sonoff's firmware
+            # with an identity rebuilt is seen to be itself.
+            account = self.stub.device or {}
+            if account.get("deviceid"):
+                log(conn.peer, "register: the account's own device id",
+                    "yes" if deviceid == account["deviceid"] else "NO",
+                    "| its key", "yes" if msg.get("apikey") in (account.get("apikey"), account.get("devicekey"))
+                    else "NO")
         self.stub.heard(msg)
         reply = self.stub.ws_reply(msg)   # keep the device online (error:0 + config)
         if reply is not None:
@@ -570,10 +616,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--device-json", type=Path, default=None,
                         help="JSON of this plug's account-API view (deviceid, "
                              "devicekey, model, ...) for the tool-facing API")
+    parser.add_argument("--firmware", type=Path, default=Path("/state/stub-firmware.bin"),
+                        help="the update file the OTA query offers, as emu.sh makes it (firmware.py)")
     args = parser.parse_args(argv)
 
     device = json.loads(args.device_json.read_text()) if args.device_json else None
-    Handler.stub = Stub(args.iot_host, args.iot_port, args.hb_interval, device)
+    try:
+        from tools.espressif.emulator.stub_cloud.firmware import read
+        update = read(args.firmware)
+    except Exception as exc:  # noqa: BLE001 - the stub serves the rest without it
+        log("the firmware to offer could not be read:", exc)
+        update = None
+    log(f"offering the plug's own firmware, {update.version}, to a query with an older version" if update
+        else "no firmware to offer")
+    Handler.stub = Stub(args.iot_host, args.iot_port, args.hb_interval, device, update)
     if args.plain:
         server = PlainServer((args.bind, args.port), Handler)
         scheme = "plaintext"

@@ -32,6 +32,66 @@ class StubHelpersRunIsolatedTests(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("usage:", done.stdout)
 
+    def test_the_stub_and_its_firmware_import_the_repository(self):
+        for script in ("stub_server.py", "firmware.py"):
+            done = self.run_isolated(script)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertIn("usage:", done.stdout)
+
+
+class FirmwareOfferTests(unittest.TestCase):
+    """Asked as query_ota.latest_offer asks, with a version older than any,
+    the stub offers the plug its own firmware, and serves it to its id."""
+
+    def setUp(self):
+        from tools.espressif.emulator.stub_cloud.firmware import Update
+        self.stub = stub_server.Stub("192.0.2.1", 443, 10, {"deviceid": "1000abcdef", "devicekey": "k"},
+                                     Update("1.2.0", b"the file"))
+
+    def query(self, version, deviceid="1000abcdef"):
+        body = json.dumps({"deviceInfoList": [{"deviceid": deviceid, "model": "m", "version": version}]})
+        return self.stub.ota_query(body.encode())["data"]["otaInfoList"]
+
+    def test_offered_only_to_a_device_behind_it(self):
+        offer, = self.query("0.0.1")
+        self.assertEqual((offer["version"], offer["binList"][0]["name"]), ("1.2.0", "user1.bin"))
+        self.assertEqual(offer["binList"][0]["downloadUrl"], "https://192.0.2.1/ota/user1.bin")
+        self.assertEqual(self.query("1.2.0"), [])  # the conversion's own question: nothing on offer
+        self.assertEqual(self.query("0.0.1", "1000fedcba"), [])
+        self.assertEqual(stub_server.Stub("192.0.2.1", 443, 10, {"deviceid": "1000abcdef"}).ota_query(b"{}"),
+                         {"error": 0, "data": {"otaInfoList": []}})
+
+    def test_a_register_says_whether_it_is_the_accounts_own_device(self):
+        handler = stub_server.Handler.__new__(stub_server.Handler)
+        handler.stub = stub_server.Stub("192.0.2.1", 443, 10, {"deviceid": "1000abcdef", "apikey": "a",
+                                                                "devicekey": "a"})
+        for deviceid, key, said in (("1000abcdef", "a", ("yes", "yes")), ("1000fedcba", "b", ("NO", "NO"))):
+            with mock.patch.dict(stub_server._devices, {}, clear=True), \
+                    mock.patch.object(stub_server, "log") as logged:
+                handler._device_message(mock.Mock(peer="test"), {"action": "register", "deviceid": deviceid,
+                                                                 "apikey": key}, None)
+            line = next(call.args for call in logged.call_args_list if "register:" in call.args[1])
+            self.assertEqual((line[2], line[4]), said)
+            self.assertNotIn(deviceid, " ".join(map(str, line)))
+
+    def test_the_file_goes_to_the_devices_own_id(self):
+        self.assertEqual(self.stub.ota_file("deviceid=1000abcdef&ts=1&sign=0"), b"the file")
+        self.assertIsNone(self.stub.ota_file("deviceid=1000fedcba&ts=1&sign=0"))
+        self.assertIsNone(self.stub.ota_file(""))
+
+    def test_the_file_emu_sh_made_is_read_with_its_version(self):
+        from tools.autoflash import kinds
+        from tools.espressif import build_vendor_ota
+        from tools.espressif.emulator.stub_cloud import firmware
+        from tests.espressif.test_dump_stock_flash import esp_image
+        wrapped = build_vendor_ota.build_wrapper(esp_image("1.2.0", "esp32_fw"), version="1.2.0",
+                                                 model=kinds.SONOFF_S60.wrapper_model)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "stub-firmware.bin"
+            self.assertIsNone(firmware.read(path))
+            path.write_bytes(wrapped)
+            self.assertEqual(firmware.read(path), firmware.Update("1.2.0", wrapped))
+
 
 @unittest.skipUnless(importlib.util.find_spec("cryptography"), "needs the cryptography package")
 class RsaCaTests(unittest.TestCase):

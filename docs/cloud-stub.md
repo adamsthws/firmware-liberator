@@ -410,7 +410,14 @@ secret values (`apikey`, `deviceid`, `devicekey`, `encrypt_key`, …) redacted.
 - **`GET /dispatch/app`** (tool/app) → the IoT server for the app side.
 - **`POST /v2/user/login`, `GET /v2/device/thing`, `POST /v2/device/ota/query`**
   (tool, touchpoint A) → a canned login token, a one-device list, and an empty
-  OTA list (firmware comes over LAN, not from the stub). The device list carries the
+  OTA list (firmware comes over LAN, not from the stub). Asked with a version
+  older than the plug's, as the tool asks for eWeLink's latest firmware, the OTA
+  query offers the plug's own Sonoff app instead, made as the plug's is (Bluetooth
+  start-up skipped, the stub's CA trusted) and wrapped as Sonoff's updates are:
+  `emu.sh` makes it into the instance's state (`stub_cloud/firmware.py`), and
+  `GET /ota/user1.bin?deviceid=<its id>` serves it. A run going back to Sonoff's
+  firmware without a backup fetches it from there. A register's log line says
+  whether its id and key are the account's device's, without either. The device list carries the
   plug's `devicekey`, `online` (true while its IoT WebSocket is held, as at
   eWeLink), its model, firmware version and other params (`ssid`, `bssid`) as
   the plug itself reports them, its MAC (`params.staMac`: the plug never reports
