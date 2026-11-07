@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Migrate a stock S61's Wi-Fi credentials into an OpenBeken config so the
 converted plug joins the user's network on first boot (no typing).
 

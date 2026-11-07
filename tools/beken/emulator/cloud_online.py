@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Complete the eWeLink cloud cycle: the emulated S61 comes ONLINE against a stub.
 
 Builds on cloud_dial.py (which gets the plug to dial GET /dispatch/device) by

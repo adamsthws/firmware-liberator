@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Un-stripe a raw Beken flash dump into a logical image, and decode its RBL
 headers.
 

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Back up a converted S61's stock per-device data from OpenBeken.
 
 The conversion leaves everything that makes the plug *this* plug untouched: the

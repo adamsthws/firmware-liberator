@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Make a BK7238 plug's whole stock flash again, with no serial cable, to run it
 in the emulator: a device with no public dump can be added this way.
 

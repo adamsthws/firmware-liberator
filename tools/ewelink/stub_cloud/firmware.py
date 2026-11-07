@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """The update file the stub offers a device, as eWeLink offers the latest
 firmware: the Sonoff app of the plug's own stock dump, made to run under QEMU
 and trust the stub as every Sonoff app the emulator runs is (patch_stock.py),

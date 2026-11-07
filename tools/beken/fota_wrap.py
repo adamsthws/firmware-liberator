@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Wrap an rt_ota .rbl (e.g. an OpenBeken BK7238 build) in the CoolKit "FOTA"
 download container the S61's OTA client (ais_qota_task) expects, so it can be
 served to the plug through the eWeLink `upgrade` command the same way the S60 is
