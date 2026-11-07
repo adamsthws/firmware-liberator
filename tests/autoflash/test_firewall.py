@@ -1,8 +1,10 @@
-"""The temporary firewall rule is removed however the tool exits."""
+"""This computer's firewall (tools/autoflash/firewall.py): the temporary rule is
+removed however the tool exits."""
 
 import types
 import unittest
 from unittest import mock
+
 from tools.autoflash import firewall, hostsys, output, prompts
 
 

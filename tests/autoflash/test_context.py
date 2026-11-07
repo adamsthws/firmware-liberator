@@ -1,8 +1,10 @@
-"""A run's context (tools/autoflash/context.py): its eWeLink account, its
-Wi-Fi typed only as the fallback, and the port its phases are served on."""
+"""A run's context (tools/autoflash/context.py): its eWeLink account and a
+password given for it, its Wi-Fi typed only as the fallback, and the port
+its phases are served on."""
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from tools.autoflash import context, errors, firewall, hostsys, output, prompts, runs, wifi
@@ -159,6 +161,31 @@ class PhasePortTests(unittest.TestCase):
         self.assertIsNone(port)
         self.assertEqual(opened, [])
         self.assertIn("all in use", error)
+
+
+class GivenPasswordTests(unittest.TestCase):
+    def context(self, given, email="me@example.com", given_email=None):
+        import tools.autoflash.cli as autoflash
+        ctx = SimpleNamespace(_ewelink_password=None, _given_ewelink_password=given,
+                              _given_email=given_email, email=lambda: email)
+        quiet = mock.patch.object(output, "say")
+        quiet.start()
+        self.addCleanup(quiet.stop)
+        return autoflash, ctx
+
+    def test_it_is_used_once_then_asked_for(self):
+        autoflash, ctx = self.context("from-env")
+        with mock.patch.object(prompts, "ask_secret", return_value="typed") as asked:
+            self.assertEqual(context.Context.ewelink_env(ctx)["EWELINK_PASSWORD"], "from-env")
+            asked.assert_not_called()
+            ctx._ewelink_password = None  # eWeLink refused it
+            self.assertEqual(context.Context.ewelink_env(ctx)["EWELINK_PASSWORD"], "typed")
+
+    def test_not_for_another_account_than_the_one_given(self):
+        autoflash, ctx = self.context("from-env", email="other@example.com",
+                                      given_email="me@example.com")
+        with mock.patch.object(prompts, "ask_secret", return_value="typed"):
+            self.assertEqual(context.Context.ewelink_env(ctx)["EWELINK_PASSWORD"], "typed")
 
 
 if __name__ == "__main__":

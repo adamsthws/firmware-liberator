@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tests.autoflash.test_device_requests import FakePlug
+from tests.autoflash.test_device import FakePlug
 from tests.autoflash.test_plans import stock_flash
 from tests.espressif.test_sonoff_identity import sonoff_nvs
 from tools.autoflash import output, plans, plugs

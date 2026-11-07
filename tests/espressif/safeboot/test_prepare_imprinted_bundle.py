@@ -1,4 +1,6 @@
-"""The Wi-Fi password and other secrets are never left on disk."""
+"""The recovery bundle (tools/espressif/safeboot/prepare_imprinted_bundle.py)
+never leaves the Wi-Fi password or other secrets on disk: built without the
+Wi-Fi, which E1 writes in in memory."""
 
 import json
 import socket
@@ -10,12 +12,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.espressif.safeboot import prepare_imprinted_bundle as bundle
-from tools.espressif.safeboot import safeboot_migration
+from tools.espressif.safeboot import prepare_imprinted_bundle as bundle, safeboot_migration
 from tools.espressif.safeboot.safeboot_migration import RECOVERY_ARTIFACT
-from tools.autoflash import runs
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 LOCAL = ROOT / "captures" / "safeboot-recovery-migration"
 OFFICIAL = {name: LOCAL / name for name in
             ("tasmota32c3.factory.bin", "tasmota32c3-safeboot.bin", "tasmota32c3.bin")}
@@ -188,24 +188,6 @@ class BundleWithoutWifiTests(unittest.TestCase):
         self.manifest.write_text(json.dumps(manifest))
         with self.assertRaisesRegex(ValueError, "different startup firmware"):
             bundle.validate_bundle(self.manifest)
-
-
-class RunSecretsTests(unittest.TestCase):
-    def test_only_the_secret_files_are_removed(self):
-        with tempfile.TemporaryDirectory(dir=ROOT / "tests") as directory:
-            run = Path(directory)
-            (run / "live").mkdir()
-            for name in runs.SECRET_FILES:
-                (run / name).write_bytes(b"secret")
-            kept = [run / "autoflash-state.json", run / "live" / "stage-report.json"]
-            for path in kept:
-                path.write_text("{}")
-            removed = runs.forget_run_secrets(run)
-            self.assertEqual(len(removed), len(runs.SECRET_FILES))
-            for name in runs.SECRET_FILES:
-                self.assertFalse((run / name).exists(), name)
-            for path in kept:
-                self.assertTrue(path.exists(), path.name)
 
 
 if __name__ == "__main__":

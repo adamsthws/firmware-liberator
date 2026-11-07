@@ -1,5 +1,6 @@
 """The command line's own handling, before a run starts."""
 import io
+import os
 import sys
 import tempfile
 import unittest
@@ -309,6 +310,29 @@ class RemoveRunTests(RunChoiceTests):
     def test_removing_the_current_run_forgets_it(self):
         self.assertFalse(self.remove([True, True], current=True)[1])
         self.assertTrue(self.remove([True, True], current=False)[1])
+
+
+class SudoPasswordTests(unittest.TestCase):
+    def setUp(self):
+        import tools.autoflash.cli as autoflash
+        self.autoflash = autoflash
+        patcher = mock.patch.dict(os.environ)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        for key in ("AUTOFLASH_SUDO_PASSWORD", "AUTOFLASH_EMULATOR_SUDO_PASSWORD"):
+            os.environ.pop(key, None)
+
+    def test_a_given_one_sudo_accepts_is_used(self):
+        os.environ["AUTOFLASH_SUDO_PASSWORD"] = "right"
+        with mock.patch.object(hostsys, "check_sudo_password", return_value=None), \
+                mock.patch.object(prompts, "ask_admin_password") as asked:
+            self.assertEqual(cli.admin_password(), "right")
+        asked.assert_not_called()
+
+    def test_unattended_without_one_says_what_to_give(self):
+        with mock.patch.object(prompts, "UNATTENDED", True), \
+                self.assertRaisesRegex(OSError, "AUTOFLASH_SUDO_PASSWORD"):
+            cli.admin_password()
 
 
 if __name__ == "__main__":
