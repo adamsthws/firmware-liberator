@@ -1,15 +1,18 @@
 """Take what is the owner's out of a copy of a Beken device's whole flash before
-it leaves the computer (tools/autoflash/readout_beken.py): its Wi-Fi password and its
-eWeLink identity, as tools/espressif/scrub.py does for an Espressif device's.
+it leaves the computer (tools/autoflash/readout_beken.py): its Wi-Fi network's name
+and password and its eWeLink identity, as tools/espressif/scrub.py does for an
+Espressif device's.
 
 eWeLink's Beken firmware keeps its settings as EasyFlash V4 (EF40) KV40 nodes
-(tools/beken/ef40.py): the Wi-Fi password plain under `wifi-pass` and encoded
-under `pass`; the eWeLink identity under `apiKey`, `app-apikey`,
+(tools/beken/ef40.py): the Wi-Fi network's name plain under `wifi-ssid` and
+encoded under `ssid`, its password the same under `wifi-pass` and `pass`, and a
+JSON setting may name the network ("ssid"); the eWeLink identity under `apiKey`, `app-apikey`,
 `secureCertSha256`, `user` and `factory`; a Matter device's fabric under keys
 `f/...`. An EF40 store never erases a node in place, so every node of those
-names is changed, whatever its state. The password's every other copy goes too
-- OpenBeken, which the readout runs, saves the Wi-Fi it imported in its own
-settings - but none in the firmware areas, whose bytes are code. Each node
+names is changed, whatever its state. The name's and the password's every other
+copy goes too - OpenBeken, which the readout runs, saves the Wi-Fi it imported in
+its own settings - but none in the firmware areas, whose bytes are code, and no
+other copy of a name shorter than MIN_LEN, which unrelated bytes hold too. Each node
 changed has its CRC made good again, so the copy still starts in the emulator.
 """
 
@@ -27,6 +30,8 @@ STORES = (0x3E0000, 0x400000)
 # The firmware areas: the app partition and the download slot, as the 4 MB table lays them out.
 FIRMWARE = (range(0x11000, 0x286000), range(0x286000, 0x3E0000))
 PASSWORDS = {b"wifi-pass", b"pass"}
+NETWORK = {b"wifi-ssid", b"ssid"}
+JSON_SSID = re.compile(rb'"ssid"\s*:\s*"((?:[^"\\]|\\.)*)"')
 IDENTITY = {b"apiKey", b"app-apikey", b"secureCertSha256", b"user", b"factory"}
 MATTER = b"f/"
 JSON_IDENTITY = re.compile(rb'"(deviceid|apikey|devicekey|encrypt_key)"\s*:\s*"([^"]{4,})"')
@@ -65,17 +70,18 @@ def _replace_all(out: bytearray, old: bytes, new: bytes) -> int:
 
 
 def scrub(flash: bytes) -> tuple[bytes, int]:
-    """`flash` with its Wi-Fi password and eWeLink identity taken out, and how
-    many places were changed."""
+    """`flash` with its Wi-Fi network's name and password and its eWeLink identity
+    taken out, and how many places were changed."""
     out = bytearray(flash)
     secrets: dict[bytes, bytes] = {}
     changed = 0
     for at, name, value, length in _nodes(flash):
         data = bytes(flash[value:value + length])
-        if name in PASSWORDS:
+        if name in PASSWORDS or name in NETWORK:
             new = b"*" * length
-            if name == b"wifi-pass" and len(data.rstrip(b"\0")) >= MIN_LEN:
-                secrets[data.rstrip(b"\0")] = b"*" * len(data.rstrip(b"\0"))
+            plain = data.rstrip(b"\0")
+            if name in (b"wifi-pass", b"wifi-ssid") and len(plain) >= MIN_LEN:
+                secrets[plain] = b"*" * len(plain)
         elif name in IDENTITY:
             # A clean printable id (a UUID, the app-apikey) is replaced by a
             # made-up one of its shape; anything else (a binary cert blob, the
@@ -92,7 +98,16 @@ def scrub(flash: bytes) -> tuple[bytes, int]:
         else:
             for found in JSON_IDENTITY.finditer(data):
                 secrets[found.group(2)] = made_up(found.group(2).decode("latin1")).encode("latin1")
-            continue
+            # A network named in a JSON setting, however short: starred there.
+            new = bytearray(data)
+            for found in JSON_SSID.finditer(data):
+                begin, end = found.span(1)
+                new[begin:end] = b"*" * (end - begin)
+                if end - begin >= MIN_LEN:
+                    secrets[found.group(1)] = b"*" * (end - begin)
+            if bytes(new) == data:
+                continue
+            new = bytes(new)
         out[value:value + length] = new
         _reseal(out, at, value, length)
         changed += 1

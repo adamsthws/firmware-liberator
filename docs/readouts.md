@@ -37,11 +37,15 @@ one).
    The owner then switches the device off and on, and the tool waits for
    Sonoff's firmware to answer.
 5. An anonymised copy is made to send ([scrub.py](../tools/espressif/scrub.py)):
-   - Every Wi-Fi password the settings show is taken out: ESP-IDF's and
-     Sonoff's, the old entries NVS leaves behind, every other copy of the same
-     bytes, and each password's PMK. Where a firmware keeps one somewhere else,
-     it goes as it is: the copy is private, and a question about it would only
-     make the owner hesitate to send it.
+   - The Wi-Fi network's name and every Wi-Fi password the settings show are
+     taken out: ESP-IDF's and Sonoff's, the old entries NVS leaves behind,
+     every other copy of the same bytes, and each password's PMK. A network
+     name shorter than four characters is taken out where the settings name
+     it, but not searched for elsewhere, as unrelated bytes hold it too. The
+     device's own setup network's name stays, its device id made up. Where a
+     firmware keeps a password somewhere else, it goes as it is: the copy is
+     private, and a question about it would only make the owner hesitate to
+     send it.
    - The device's eWeLink identity (`deviceid`, `apikey`, `encrypt_key`,
      `devicekey` in Sonoff's settings) is replaced everywhere by made-up values
      of the same shape: a device id stays ten digits beginning 1000.
@@ -77,7 +81,10 @@ and asked of eWeLink by its account id, not by a local advert.
    only after checking the slot is the stock bootloader's - and the bootloader
    applies it on the restart that follows. The run waits for Sonoff to show
    online in eWeLink again.
-5. The flash is anonymised (tools/beken/scrub.py) and sent as the others are.
+5. The flash is anonymised (tools/beken/scrub.py) - the network's name and
+   password, plain (`wifi-ssid`, `wifi-pass`) and encoded (`ssid`, `pass`),
+   and every other copy, OpenBeken's included, as well as the identity - and
+   sent as the others are.
 
 Proven end to end against the emulated S61 (the whole round trip, the device
 back online in eWeLink, the flash anonymised); it has not run on a real Beken
@@ -103,7 +110,7 @@ A tar, the manifest first and as it is, so the API reads it without unpacking an
 
 | File | What |
 |---|---|
-| `manifest.json` | first, always: format 1; the tool's version; eWeLink's product model, brand and uiid; the stock firmware's model and version; its firmware name and where that came from; its chip; whether the memory was read; the facts the run logs (chip revision, security fuses, flash size, partition table); how many places had a password blanked and an identity replaced; `contact`, the owner's `email` or `telegram`, only if they gave one |
+| `manifest.json` | first, always: format 1; the tool's version; eWeLink's product model, brand and uiid; the stock firmware's model and version; its firmware name and where that came from; its chip; whether the memory was read; the facts the run logs (chip revision, security fuses, flash size, partition table); how many places had the network's name or a password blanked and an identity replaced; `contact`, the owner's `email` or `telegram`, only if they gave one |
 | `flash.bin.xz` | the whole flash, as above |
 | `efuse.bin` | the eFuse registers, as the bridge reads them |
 | `info.txt` | the bridge's `GET /info` |
