@@ -90,6 +90,30 @@ def wrap(rbl: bytes, name: str = STAGING_NAME, version: str | None = None) -> by
     return bytes(header) + bytes(trailer) + bytes(desc) + rbl
 
 
+def unwrap(container: bytes) -> list[tuple[str, str, bytes]]:
+    """The images in a FOTA container, this tool's or one of Sonoff's official
+    files (whose u16 @12 is not 0): (name, version, payload) for each, with
+    every CRC checked as the plug checks it."""
+    if len(container) < 16 or struct.unpack_from("<I", container, 0)[0] != 0x1beef11e:
+        raise ValueError("not a FOTA container (no 0x1beef11e magic)")
+    base = 16 + struct.unpack_from("<H", container, 12)[0]
+    trailer = container[base:base + 24]
+    if len(trailer) < 24 or zlib.crc32(trailer[:0x14]) & 0xffffffff != struct.unpack_from(">I", trailer, 0x14)[0]:
+        raise ValueError("the FOTA container's trailer is damaged")
+    images = []
+    for index in range(trailer[1]):
+        desc = container[base + 24 + 76 * index:base + 24 + 76 * (index + 1)]
+        if len(desc) < 76 or zlib.crc32(desc[:0x3c]) & 0xffffffff != struct.unpack_from(">I", desc, 0x3c)[0]:
+            raise ValueError("descriptor %d of the FOTA container is damaged" % index)
+        offset, size, crc = struct.unpack_from(">III", desc, 0x30)
+        payload = container[base + offset:base + offset + size]
+        if len(payload) != size or zlib.crc32(payload) & 0xffffffff != crc:
+            raise ValueError("image %d of the FOTA container is damaged" % index)
+        images.append((desc[:0x20].split(b"\0")[0].decode("ascii", "replace"),
+                       desc[0x20:0x30].split(b"\0")[0].decode("ascii", "replace"), payload))
+    return images
+
+
 def upgrade_command(register: dict, url: str, digest: str, version: str,
                     name: str = "user1.bin") -> dict:
     """The eWeLink `upgrade` command that sends the plug to `url` for the FOTA
