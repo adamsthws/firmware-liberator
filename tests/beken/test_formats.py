@@ -2,6 +2,7 @@
 packer uses, the RBL the stock bootloader applies, the UF2 a LibreTiny ESPHome
 takes as an update, the stock app lifted out of a dump, and the marker sent
 after the interim firmware."""
+import lzma
 import re
 import struct
 import unittest
@@ -77,10 +78,26 @@ class RblTests(unittest.TestCase):
                 rbl.unpack(bytes(damaged))
         with self.assertRaisesRegex(rbl.RblError, "shorter"):
             rbl.unpack(bytes(packed[:-1]))
-        other = rbl.Header(algo=0x402, timestamp=0, name="app", version="1", sn=b"", body_crc32=0,
+        other = rbl.Header(algo=0x302, timestamp=0, name="app", version="1", sn=b"", body_crc32=0,
                            raw_hash=0, size_raw=0, size_package=0).pack()
-        with self.assertRaisesRegex(rbl.RblError, "0x402"):
+        with self.assertRaisesRegex(rbl.RblError, "0x302"):
             rbl.unpack(other)
+
+    def lzma_rbl(self, firmware, body=None):
+        """An RBL as Sonoff's official images are: an LZMA-alone stream under the same AES."""
+        plain = lzma.compress(firmware, format=lzma.FORMAT_ALONE) if body is None else body
+        cipher = aes.cbc_encrypt(rbl.KEY, rbl.IV, plain)
+        return rbl.Header(algo=rbl.ALGO_AES_LZMA, timestamp=1, name="app", version="1.1.0", sn=b"",
+                          body_crc32=zlib.crc32(cipher) & 0xFFFFFFFF, raw_hash=rbl.fnv1a32(firmware),
+                          size_raw=len(firmware), size_package=len(cipher)).pack() + cipher
+
+    def test_an_official_images_lzma_is_unpacked_and_checked(self):
+        firmware = b"official firmware" * 500
+        self.assertEqual(rbl.unpack(self.lzma_rbl(firmware)), firmware)
+        with self.assertRaisesRegex(rbl.RblError, "does not match"):
+            rbl.unpack(self.lzma_rbl(firmware, lzma.compress(b"another", format=lzma.FORMAT_ALONE)))
+        with self.assertRaisesRegex(rbl.RblError, "LZMA"):
+            rbl.unpack(self.lzma_rbl(firmware, b"not an LZMA stream"))
 
 
 class Uf2Tests(unittest.TestCase):

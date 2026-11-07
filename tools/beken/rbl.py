@@ -28,6 +28,8 @@ HEADER = 96
 # algo: the crypt nibbles (0x100: AES) and the compression (0x2: gzip), as the
 # packer's "-s aes -c gzip" writes them and the S61's own images carry them.
 ALGO_AES_GZIP = 0x102
+# Sonoff's own official images: the same AES, with an LZMA-alone stream in it.
+ALGO_AES_LZMA = 0x402
 # RT-Thread's public default key and IV: the packer's, and every S61 image's.
 KEY = b"0123456789ABCDEF0123456789ABCDEF"
 IV = b"0123456789ABCDEF"
@@ -103,16 +105,24 @@ def pack(firmware: bytes, *, name: str = "app", version: str, timestamp: int = 0
 
 
 def unpack(rbl: bytes) -> bytes:
-    """The firmware an RBL of ALGO_AES_GZIP carries, checked against its header."""
+    """The firmware an RBL of ALGO_AES_GZIP or ALGO_AES_LZMA carries, checked
+    against its header."""
     fields = header(rbl)
     body = rbl[HEADER:HEADER + fields.size_package]
     if len(body) != fields.size_package:
         raise RblError("the RBL is shorter than its header says")
     if zlib.crc32(body) & 0xFFFFFFFF != fields.body_crc32:
         raise RblError("the RBL body's CRC-32 is wrong")
-    if fields.algo != ALGO_AES_GZIP:
-        raise RblError(f"an RBL of algorithm 0x{fields.algo:x} is not one this unpacks (AES, gzip)")
-    firmware = gzip.decompress(aes.cbc_decrypt(KEY, IV, body))
+    if fields.algo == ALGO_AES_GZIP:
+        firmware = gzip.decompress(aes.cbc_decrypt(KEY, IV, body))
+    elif fields.algo == ALGO_AES_LZMA:
+        import lzma   # here: an optional part of a Python build, and only this needs it
+        try:
+            firmware = lzma.decompress(aes.cbc_decrypt(KEY, IV, body), format=lzma.FORMAT_ALONE)
+        except lzma.LZMAError as exc:
+            raise RblError(f"the RBL's LZMA stream is damaged: {exc}") from None
+    else:
+        raise RblError(f"an RBL of algorithm 0x{fields.algo:x} is not one this unpacks (AES with gzip or LZMA)")
     if len(firmware) != fields.size_raw or fnv1a32(firmware) != fields.raw_hash:
         raise RblError("the firmware in the RBL does not match its header's size and hash")
     return firmware

@@ -241,6 +241,56 @@ signed-char `Tiny_CRC8`, the `0x1e1000` config offset).
   OpenBeken's REST API into `captures/plugs/<mac>/sonoff-backup/`, the S60's
   layout, never overwriting. `python3 backup.py --plug http://<plug> --stock-rbl stock_app_1.0.2.rbl`
 
+## Rebuilding a dump
+
+**`rebuild_dump.py`** makes a BK7238 plug's whole stock flash again with no
+serial cable, so a device with no public dump can be run in the emulator. Not
+part of the tool's run: see the steps below. Everything it reads or writes is
+private, and the result is Sonoff's firmware, so it stays under `captures/`.
+
+1. Convert the plug to OpenBeken with the stock updater, which overwrites the
+   start of the stock app.
+2. Read the whole flash with `GET /api/flash/<start>-<len>` (`backup.read_flash`).
+3. Get the model's official OTA file: a FOTA container around an RBL of LZMA
+   under the public AES key (`fota_wrap.unwrap`, `rbl.unpack`).
+4. `python3 tools/beken/rebuild_dump.py READOUT.bin OFFICIAL.bin OUT.bin [--compare DUMP.bin]`
+
+It was tried on the S61 in the emulator, with the public dump as the answer.
+Reading over REST gave the plug's flash byte for byte. Each region of the result:
+
+| Region | Against the public dump |
+|--------|-------------------------|
+| bootloader and partition table, radio calibration, stale sectors in the app partition, user config | the same |
+| OpenBeken's config sector and other writes (`INTERIM_WRITES`) | the same once they are erased |
+| app | that of the official file, byte for byte as the stock bootloader writes it. The file's version need not be the plug's: the public file is 1.1.0, the dump 1.0.2 |
+| RBL header, download slot | that of the official file, as the bootloader leaves them. They come from the file, so match only at the same version |
+| EasyFlash stores | differ: the plug's own history since the dump (Wi-Fi details, `ota&state`, the eWeLink keys, a Matter id) |
+
+The rebuilt flash boots in the emulator to the point the public dump reaches:
+through the stock bootloader, onto Wi-Fi and ONLINE on the local stub, under the
+usual patches. With 1.1.0 from the public file it reports `romVersion` 1.1.0,
+and `cloud_push.py --apply` then converts it to OpenBeken as it does the dump.
+
+Whether the file is the version the plug ran shows in the output: OpenBeken is
+shorter than the stock app, so the rest of the old app is still in the flash to
+compare with. The emulator's patches sit at addresses of one build, so another
+version or model needs them moved; each was found again by the shape of the
+code around it, for 1.1.0 and for the Basic Gen5's 1.0.4.
+
+Not proven: any of it on a real plug, including that the REST read returns the
+raw striped flash there as it does in the emulator. The flash's unique ID is not
+read at all: the integrity gate, which checks it, stays patched. Only this
+project's OpenBeken build was read, soon after its first start: `INTERIM_WRITES`
+assumes those places were blank before it, as they are on the S61, and another
+model's may not be.
+
+A plug on another table needs more. The official apps carry the SDK's table,
+though not the bootloader's FAL one: the S41, T6 and Basic Gen5's (`BASIC-1GS`,
+`BASIC-1GSP`) are the S61's 4 MB one. The 2 MB door sensor's puts `NET info` at
+`0x1e1000`, where it holds data, and OpenBeken's 2 MB build writes its config
+there, so a conversion would lose that sector before it could be read;
+`rebuild()` refuses a table it has no `INTERIM_WRITES` for unless they are given.
+
 ## Status
 
 - **Root cause:** the app layer never started because the `app` task
