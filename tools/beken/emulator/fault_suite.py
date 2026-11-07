@@ -222,16 +222,20 @@ class Instance:
 
     def __init__(self, n: int):
         self.n = n
+        # As bk-emu.sh --instance N names them.
         self.plug = f"autoflash-s61-{n}"
         self.network = f"autoflash-beken-{n}"
         self.computer = f"autoflash-s61-computer-{n}"
         self.state = EMU / "s61" / self.plug
         self.before: set[Path] = set()   # runs the starting plug came with, not this scenario's
-        self.env = {**os.environ, "AUTOFLASH_BEKEN_PLUG_NAME": self.plug,
-                    "AUTOFLASH_BEKEN_NETWORK": self.network, "AUTOFLASH_BEKEN_COMPUTER": self.computer}
+        self.env = {key: value for key, value in os.environ.items() if key != "AUTOFLASH_BEKEN_NETWORK"}
+        self.env["AUTOFLASH_BEKEN_COMPUTER"] = self.computer
+
+    def command(self, *args) -> list[str]:
+        return [str(BK_EMU), "--instance", str(self.n), *args]
 
     def sh(self, *args, timeout=None, check=False):
-        return subprocess.run([str(BK_EMU), *args], env=self.env, capture_output=True, text=True,
+        return subprocess.run(self.command(*args), env=self.env, capture_output=True, text=True,
                               timeout=timeout, check=check)
 
     def stop(self) -> None:
@@ -304,7 +308,7 @@ class Instance:
         args = ["computer", "tools/autoflash/cli.py", "run", "--unattended", "--env-file",
                 "captures/tool.env", "--firmware", target] + (["--new"] if new else []) + list(more)
         out = open(log, "a", encoding="utf-8")
-        return subprocess.Popen([str(BK_EMU), *args], env=self.env, stdout=out, stderr=subprocess.STDOUT,
+        return subprocess.Popen(self.command(*args), env=self.env, stdout=out, stderr=subprocess.STDOUT,
                                 stdin=subprocess.DEVNULL)
 
     def all_runs(self) -> list[Path]:

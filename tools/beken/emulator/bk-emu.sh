@@ -4,6 +4,8 @@
 # emulator-source-beken-<commit> holds, or pulled where it is published - and
 # the tools in tools/beken run in it.
 #
+#   tools/beken/emulator/bk-emu.sh [--instance N] [--rebuild] [--fresh] COMMAND [ARGS...]
+#
 #   tools/beken/emulator/bk-emu.sh python ARGS...
 #                             run python in the emulator's container, with this checkout
 #                             at /work (the working directory) and the fetched firmware
@@ -20,19 +22,15 @@
 #                             DHCP (the plug at .50-.59), DNS and eWeLink, the local stub -
 #                             in its container (autoflash-s61, plug-net.sh). Its flash, logs
 #                             and the stub's CA are kept in captures/emulation/s61/autoflash-s61/,
-#                             so it carries on as it was left; delete that for a new plug.
+#                             so it carries on as it was left (--fresh for a new plug).
 #                             It returns once the plug is in its stub's account
 #   tools/beken/emulator/bk-emu.sh ui [PORT]
 #                             the plug's web page, OpenBeken's or ESPHome's, for this computer's browser,
-#                             at http://127.0.0.1:PORT/ (8088) through ui_proxy.py: opened
+#                             at http://127.0.0.1:PORT/ (8088, or 8088+N) through ui_proxy.py: opened
 #                             straight, a browser's requests lock the emulated plug up
 #                             (why, in ui_proxy.py)
 #   tools/beken/emulator/bk-emu.sh power off|on|cycle
 #                             the plug's power switch: its flash kept, as a plug unplugged
-#   tools/beken/emulator/bk-emu.sh reset
-#                             the plug as new: it and the computers on its Wi-Fi stopped,
-#                             its state (flash, runs, captures) deleted, and started again
-#                             on Sonoff's firmware from the dump
 #   tools/beken/emulator/bk-emu.sh computer [COMMAND...]
 #                             a computer on the plug's Wi-Fi: python COMMAND (a shell without
 #                             one) in the image, as python does, there, with eWeLink the
@@ -51,12 +49,21 @@
 #                             publishes it, into captures/emulation/beken-firmwares/: this
 #                             repository, and the image, never hold Sonoff's firmware
 #
+#   --instance N              another emulated plug beside the first (N = 1-30), for
+#                             plug, ui, power and computer: its own container
+#                             (autoflash-s61-N), network (autoflash-beken-N), state
+#                             (captures/emulation/s61/autoflash-s61-N/) and web page
+#                             port (8088+N), so tests can run side by side
+#   --rebuild                 rebuild the image first
+#   --fresh                   with plug: the plug as new - it and the computers on its
+#                             Wi-Fi stopped, its state (flash, runs, captures) deleted -
+#                             started again on Sonoff's firmware from the dump
+#
 # The image is ensured first, by python, run, plug, computer and test: as it
 # is, or pulled, or built where it is not published (image.sh, which says how).
 # AUTOFLASH_BEKEN_IMAGE names the image (default autoflash-beken-emu),
-# AUTOFLASH_BEKEN_NETWORK the plug's network (default autoflash-beken),
-# AUTOFLASH_BEKEN_PLUG_NAME the plug (default autoflash-s61; its state is
-# captures/emulation/s61/<name>/), AUTOFLASH_BEKEN_COMPUTER a name for the
+# AUTOFLASH_BEKEN_NETWORK the plug's network (default autoflash-beken, or
+# autoflash-beken-N), AUTOFLASH_BEKEN_COMPUTER a name for the
 # computer's container, AUTOFLASH_BEKEN_DUMP another whole flash under this
 # checkout (rebuild_dump.py's) for a new plug to start from,
 # and image.sh's own (AUTOFLASH_BEKEN_PUBLISHED, AUTOFLASH_BEKEN_NO_PULL,
@@ -70,8 +77,27 @@ EMU=$ROOT/captures/emulation
 FIRMWARES=$EMU/beken-firmwares
 S61_DUMP=Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin
 IMAGE=${AUTOFLASH_BEKEN_IMAGE:-autoflash-beken-emu}
-NETWORK=${AUTOFLASH_BEKEN_NETWORK:-autoflash-beken}
-PLUG=${AUTOFLASH_BEKEN_PLUG_NAME:-autoflash-s61}
+PLUG=autoflash-s61 NETWORK=autoflash-beken UI_PORT=8088
+
+usage() { sed -n "2,$(($(grep -n '^set -euo pipefail' "$0" | cut -d: -f1)-1))p" "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+rebuild="" fresh=0 instance=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --instance) [ $# -ge 2 ] || { echo "--instance needs a number, 1-30" >&2; exit 2; }; instance=$2; shift ;;
+    --instance=*) instance=${1#--instance=} ;;
+    --rebuild) rebuild=--rebuild ;;
+    --fresh) fresh=1 ;;
+    --*) usage ;;
+    *) break ;;
+    esac
+    shift
+done
+if [ -n "$instance" ]; then
+    case "$instance" in [1-9]|[12][0-9]|30) ;; *) echo "--instance needs a number, 1-30" >&2; exit 2 ;; esac
+    PLUG=$PLUG-$instance NETWORK=$NETWORK-$instance UI_PORT=$((UI_PORT + instance))
+fi
+[ "$fresh" = 0 ] || [ "${1:-}" = plug ] || { echo "--fresh is for plug" >&2; exit 2; }
+NETWORK=${AUTOFLASH_BEKEN_NETWORK:-$NETWORK}
 PLUG_STATE=$EMU/s61/$PLUG
 
 pin() { sed -n "s/^$1 //p" "$HERE/UPSTREAM"; }
@@ -83,7 +109,7 @@ UPSTREAM_COMMIT=$(pin commit)
 # (exec docker run) would otherwise hold it for as long as it runs, and every
 # other emulator wait.
 ensure() {
-    "$HERE/image.sh" ensure "$IMAGE"
+    "$HERE/image.sh" ensure "$IMAGE" ${rebuild:+"$rebuild"}
 }
 
 # Firmware dumps come from upstream's repository, which publishes them, never
@@ -199,6 +225,16 @@ case "${1:-}" in
             *) echo "$dump_path is outside this checkout: put it under captures/" >&2; exit 2 ;; esac
         container /opt/beken-emulator/src/main.py "$dump_path" --with-boot -chip BK7238 --only-uart "$@" ;;
     plug)
+        if [ "$fresh" = 1 ]; then
+            # Everything on its Wi-Fi first - the plug and any computer's run - so
+            # nothing writes its state while it goes.
+            if docker network inspect "$NETWORK" >/dev/null 2>&1; then
+                mapfile -t running < <(docker ps -q --filter "network=$NETWORK")
+                [ ${#running[@]} -eq 0 ] || docker stop -t 30 "${running[@]}" >/dev/null
+            fi
+            case "$PLUG_STATE" in "$EMU"/s61/?*) rm -rf "$PLUG_STATE" ;; esac
+            echo "$PLUG is new: its state is gone; it starts again from the dump." >&2
+        fi
         ensure; dump; network
         mkdir -p "$PLUG_STATE"
         starts_from=$(plug_dump)
@@ -217,14 +253,6 @@ case "${1:-}" in
             sleep 5
         done
         echo "$PLUG has not reached its stub after 10 minutes: see its serial.log" >&2; exit 1 ;;
-    reset)
-        # Everything on its Wi-Fi first - the plug and any computer's run - so
-        # nothing writes its state while it goes.
-        mapfile -t running < <(docker ps -q --filter "network=$NETWORK")
-        [ ${#running[@]} -eq 0 ] || docker stop -t 30 "${running[@]}" >/dev/null
-        case "$PLUG_STATE" in "$EMU"/s61/?*) rm -rf "$PLUG_STATE" ;; esac
-        echo "Reset $PLUG: its state is gone; starting it again from the dump." >&2
-        exec "$0" plug ;;
     ui)
         # The plug's address as its router gave it last (its firmware may have
         # changed, and with it its lease).
@@ -238,7 +266,7 @@ case "${1:-}" in
             openbeken-*|OpenBK*|autoflash-recovery-*) firmware=openbeken ;;
             *) echo "The plug at $lease runs neither OpenBeken nor ESPHome (it calls itself ${named:-nothing}): Sonoff's firmware has no page" >&2; exit 1 ;;
         esac
-        exec python3 -I "$HERE/ui_proxy.py" --device "$lease" --firmware "$firmware" --listen "127.0.0.1:${2:-8088}" ;;
+        exec python3 -I "$HERE/ui_proxy.py" --device "$lease" --firmware "$firmware" --listen "127.0.0.1:${2:-$UI_PORT}" ;;
     power)
         case "${2:-}" in
             off|on) echo "$2" > "$PLUG_STATE/power" ;;
@@ -266,5 +294,5 @@ case "${1:-}" in
                            -e AUTOFLASH_EWELINK_API_BASE="https://$(subnet).1" --entrypoint bash)
         container /work/tools/beken/emulator/computer.sh "$@" ;;
     test) shift; ensure; firmwares; container /opt/beken-emulator/tests/self_test.py "$@" ;;
-    *) sed -n "2,$(($(grep -n '^set -euo pipefail' "$0" | cut -d: -f1)-1))p" "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    *) usage ;;
 esac

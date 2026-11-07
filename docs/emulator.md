@@ -597,11 +597,17 @@ tools/beken/emulator/bk-emu.sh test -k "Sonoff 4MB"    # upstream's self-tests, 
 tools/beken/emulator/bk-emu.sh plug                     # the S61 on a home Wi-Fi of its own
 tools/beken/emulator/bk-emu.sh computer tools/autoflash/cli.py run   # the tool, on that Wi-Fi
 tools/beken/emulator/bk-emu.sh power cycle              # the plug switched off and on
-tools/beken/emulator/bk-emu.sh reset                    # the plug as new, on Sonoff's firmware again
+tools/beken/emulator/bk-emu.sh --fresh plug            # the plug as new, on Sonoff's firmware again
 tools/beken/emulator/bk-emu.sh ui                       # OpenBeken's page, at http://127.0.0.1:8088/
+tools/beken/emulator/bk-emu.sh --rebuild plug           # rebuild the image first
+tools/beken/emulator/bk-emu.sh --instance 2 plug        # a second plug beside the first
 ```
 
-`bk-emu.sh` with no argument lists the rest.
+`bk-emu.sh` with no argument lists the rest. Its options are spelt as
+`emu.sh`'s: `--fresh`, `--rebuild`, and `--instance N` (1-30) for another plug
+beside the first, with its own container, network, state and web page port
+(8088+N); give the same `--instance N` to `computer`, `power` and `ui` to reach
+it.
 
 `bk-emu.sh plug` runs the dump as a plug provisioned on a home Wi-Fi, on a Docker
 network of its own (`autoflash-beken`, apart from the Espressif emulator and
