@@ -224,6 +224,13 @@ class PublicListTests(unittest.TestCase):
         self.assertEqual(name_listed(PUBLIC_FILES, "S60TPF", "SN-ESP32C3-S60-01"), "FWSW-E32S60-S60-ESP32C3FN4")
         self.assertEqual(name_listed(PUBLIC_FILES, "S61STPG", "SN-BK7238-S61-01"), "FWSW-01-S61-BK7238")
 
+    def test_a_basicr4_by_the_model_its_official_file_names(self):
+        # Its kind's stock model, read from eWeLink's official file, finds the
+        # name the installer is wrapped for, with no product model to go by.
+        kind = kinds.SONOFF_BASICR4
+        official = "SONOFF_BASICR4_(FWSW-E32R4-BASICR4-ESP32C3)_ESP32-C3_v1.1.0_user1.bin"
+        self.assertEqual(name_listed([official], "", kind.stock_model), kind.wrapper_model)
+
     def test_the_stock_model_must_agree_on_the_chip(self):
         self.assertEqual(name_listed(PUBLIC_FILES, "", "SN-BK7238-S60-01"), "")
 

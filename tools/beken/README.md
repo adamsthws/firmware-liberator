@@ -346,7 +346,7 @@ the first. What makes that safe enough to offer, and what it leaves open:
   the flash matching the table.
 - **The person is told.** On a device whose status is "Testers wanted"
   ([devices/status.json](../../docs/adding-a-device.md#its-status)), the go-ahead at B2
-  says it has only been proven in an emulator and asks for the run's result, as on
+  says no real one has been proven yet and asks for the run's result, as on
   every such device; `PROCEED` goes on, as on any other.
 - **Each run logs what it learns**, in `run.log`: the file's firmware name, version
   and whole table, the version the device reports, and whether the flash matched.

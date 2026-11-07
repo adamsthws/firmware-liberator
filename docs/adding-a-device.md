@@ -112,7 +112,7 @@ nowhere else:
 | Status | Means | The tool |
 |---|---|---|
 | `Proven` | a real one has been converted and reported | converts it |
-| `Testers wanted` | it converts in the emulator, and no real one is reported yet | says so in the go-ahead before the first write, and asks for the run's log |
+| `Testers wanted` | it converts in the emulator, or is added from its official file and a published pin map; no real one is reported yet | says so in the go-ahead before the first write, and asks for the run's log |
 | `Not ready yet` | it does not convert in the emulator yet | turns it down |
 
 After changing the file, run `python3 tools/repo/device_status.py`: it writes each

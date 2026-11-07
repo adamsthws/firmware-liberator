@@ -65,7 +65,7 @@ class WarningTests(unittest.TestCase):
                 self.box.reset_mock()
                 self.assertEqual(self.bridge(kind, lambda word: True), (["proceed"], True))
                 self.assertEqual(self.box.call_count, 1)
-                self.assertIn("The conversion for this particular device has only been proven in an", self.said())
+                self.assertIn("The conversion for this particular device has not been proven on a real", self.said())
                 self.assertIn("Please report your result so it can be marked as a", self.said())
 
     def test_the_words_are_the_same_for_every_kind(self):
@@ -74,6 +74,14 @@ class WarningTests(unittest.TestCase):
         self.assertEqual(len(said), 1, said)
         self.assertNotIn("go wrong", " ".join(next(iter(said))))
         self.assertEqual(testers.notice(S60), [])
+
+    def test_the_words_claim_no_emulator_run_a_device_may_not_have_had(self):
+        # The BASICR4 wants testers though its stock firmware cannot start in the
+        # emulator: the same words for every kind have to be true of it too.
+        self.assertIn(kinds.SONOFF_BASICR4, WANTING)
+        for kind in WANTING:
+            with self.subTest(kind=kind.key):
+                self.assertNotIn("emulator", " ".join(testers.notice(kind)))
 
     def test_declined_nothing_is_sent(self):
         self.assertEqual(self.bridge(kinds.SONOFF_POW_ELITE, lambda word: False), (["proceed"], False))
@@ -85,7 +93,7 @@ class WarningTests(unittest.TestCase):
             handover.consent_to_leave(ctx, "Tasmota")
             handover.consent_to_leave(ctx, "Tasmota")
         self.assertEqual([call.args[0] for call in asked.call_args_list], ["proceed"])
-        self.assertIn("The conversion for this particular device has only been proven in an", self.said())
+        self.assertIn("The conversion for this particular device has not been proven on a real", self.said())
 
 
 class LogTests(unittest.TestCase):

@@ -42,7 +42,7 @@ LOGS = ROOT / "captures/emulation/device-check"
 # Devices with no public dump, so nothing for an emulator to run. A device is
 # here by decision: tests/repo/test_emulator_check.py fails on one that has
 # neither a dump nor a place here.
-NO_DUMP = {"sonoff-basic-1gs"}
+NO_DUMP = {"sonoff-basic-1gs", "sonoff-basicr4"}
 # An Espressif device's two ways, each a final firmware then the other.
 ESPRESSIF_WAYS = (("tasmota", "esphome"), ("esphome", "tasmota"))
 
