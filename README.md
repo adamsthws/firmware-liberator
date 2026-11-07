@@ -204,11 +204,8 @@ Run the tool as usual. When it finds no supported device in your eWeLink account
 > To read out a device that is already listed (another version of its firmware, say), run `sh start.sh readout`, or `start.cmd readout` on Windows, in the tool's folder.
 
 What a firmware readout does:
-- It only reads the device. Its Sonoff firmware, settings and eWeLink pairing stay as they are.
-- On a device with an ESP32-C3 or a classic ESP32 chip, it puts a small program in the spare firmware slot, which reads the device's whole memory. Then you switch the device off and on, and it starts its Sonoff firmware again.
-> The spare slot is lost. It often holds the Sonoff version from before the last update.
-- On a device with any other chip, nothing is sent to it, and its readout is made without.
-- The tool has never run on this kind of device. If the small program could not start at all, the device may need a serial cable to recover. Only go ahead with a device you can afford to lose.
+- To read the whole memory, it may install a small program in place of the device's firmware for a few minutes, then put the device's own Sonoff firmware, settings and eWeLink pairing back. On some devices it sends nothing at all, and the readout is only what the device reports.
+- The tool has never run on your kind of device. If the small program could not start at all, the device may need a serial cable to recover. Only go ahead with a device you can afford to lose.
 
 What is sent, once you agree:
 - **The device's firmware readout, anonymised.** It is kept privately, never published, and used only to add support for the device.

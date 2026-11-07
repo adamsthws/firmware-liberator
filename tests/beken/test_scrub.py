@@ -56,6 +56,16 @@ class ScrubTests(unittest.TestCase):
         self.assertEqual(out[:scrub.STORES[0]], before[:scrub.STORES[0]])
         self.assertEqual(len(out), len(before))
 
+    def test_a_binary_identity_blob_is_zeroed_whole(self):
+        blob = bytes([0x24, 0x8c, 0x00]) + bytes(range(0x30, 0x60))   # a DER-ish apiKey, not printable
+        image = bytearray(b"\xff" * 0x400000)
+        store = ef40.encode_node("apiKey", blob)
+        image[0x3E2000:0x3E2000 + len(store)] = store
+        out, _ = scrub.scrub(bytes(image))
+        kept = nodes(out)["apiKey"]
+        self.assertEqual(kept, bytes(len(blob)))
+        self.assertNotIn(blob, out)
+
     def test_a_flash_with_no_store_is_returned_as_it_was(self):
         blank = b"\xff" * 0x400000
         self.assertEqual(scrub.scrub(blank), (blank, 0))

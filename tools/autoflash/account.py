@@ -476,7 +476,6 @@ class Asked:
 def ask_ewelink(ctx: Context, plug_ip: str) -> Asked:
     """Ask the device at `plug_ip` and eWeLink what it is and runs; nothing is sent to it."""
     mdns = ctx.dir / "mdns.json"
-    meta = ctx.dir / "ota-metadata.json"
     # The same report the discovery tool writes, without its console output.
     report = discover_ewelink.discover(8.0, None, plug_ip)
     if not report["packets"]:
@@ -487,15 +486,24 @@ def ask_ewelink(ctx: Context, plug_ip: str) -> Asked:
         raise Abort(f"the device at {plug_ip} did not answer the eWeLink discovery; check "
                     "it is switched on and LAN Control is on in the eWeLink app")
     mdns.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    email = ctx.email()
-    env = ctx.ewelink_env()
-    if hostsys.run_tool(hostsys.python_script("tools/ewelink/query_ota.py", "--mdns-capture", str(mdns),
-                                      "--email", email, "--output", str(meta), "--latest-offer"),
-                interactive=True, env=env) != 0:
+    return _ask(ctx, report, "--mdns-capture", str(mdns))
+
+
+def ask_account(ctx: Context, device_id: str) -> Asked:
+    """Ask eWeLink what a device is and runs, by its id alone - no discovery on
+    the network: for a device that does no LAN Control (a Beken plug), found in
+    the account, not by a local advert. Nothing is sent to the device."""
+    return _ask(ctx, {"packets": []}, "--device-id", device_id)
+
+
+def _ask(ctx: Context, report: dict[str, Any], *query_args: str) -> Asked:
+    """Run query_ota (by mDNS capture or by device id) and read what it wrote."""
+    meta = ctx.dir / "ota-metadata.json"
+    if hostsys.run_tool(hostsys.python_script("tools/ewelink/query_ota.py", *query_args,
+                                      "--email", ctx.email(), "--output", str(meta), "--latest-offer"),
+                interactive=True, env=ctx.ewelink_env()) != 0:
         reasons = output.tool_problems(1)
         raise Abort("the eWeLink query failed" + (f": {reasons[0]}" if reasons else ""))
-
-    # Read what query_ota just wrote instead of asking the operator to retype it.
     try:
         metadata = json.loads(meta.read_text(encoding="utf-8"))
         version = str(metadata["query"]["version"])

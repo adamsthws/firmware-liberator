@@ -52,6 +52,34 @@ for any device in the account (`--plug-ip` picks one).
    could not be sent, stays in the run's folder as `readout.tar`, and
    `readout --send <file>` sends it later.
 
+## A Beken device (BK7238)
+
+A BK7238 has one app area, not two, so its whole flash can only be read by
+firmware that replaces Sonoff's for a few minutes (tools/autoflash/readout_beken.py).
+The chip comes from the stock model the account reports (`SN-BK...`), so a
+Beken device takes this path even though it does no LAN Control - it is found
+and asked of eWeLink by its account id, not by a local advert.
+
+1. The file eWeLink offers the device is unwrapped to its stock firmware and
+   its partition table. Nothing is written unless that table is the 4 MB
+   BK7238 one the readout OpenBeken is built for.
+2. With PROCEED, the stock updater is sent the readout OpenBeken
+   (`artifacts/openbeken-readout`), wrapped under the device's firmware name:
+   a build that sets no pins, so it drives nothing on unmapped hardware. It
+   joins the device's Wi-Fi from the stock store.
+3. The whole 4 MB flash is read through OpenBeken (`/api/flash`, paced and
+   retried), and kept on the computer as the device's own-data backup.
+4. OpenBeken fetches the device's own Sonoff firmware back - the offered file's
+   RBL, which its `AutoflashRevertToStock` writes to the stock download slot
+   only after checking the slot is the stock bootloader's - and the bootloader
+   applies it on the restart that follows. The run waits for Sonoff to show
+   online in eWeLink again.
+5. The flash is anonymised (tools/beken/scrub.py) and sent as the others are.
+
+Proven end to end against the emulated S61 (the whole round trip, the device
+back online in eWeLink, the flash anonymised); it has not run on a real Beken
+device.
+
 On any other chip nothing is sent to the device: the readout is the offered
 firmware and what it and eWeLink said. Nothing is ever sent from the emulator or an unattended run.
 `AUTOFLASH_READOUT_URL` points a test at a server of its own.

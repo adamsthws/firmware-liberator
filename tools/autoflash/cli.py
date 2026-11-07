@@ -335,7 +335,8 @@ def cmd_readout(ctx: Context, saved: Path | None) -> int:
     if not devices:
         raise Abort("a readout needs the device in an eWeLink account, and none was found in this one")
     given = ctx.args.plug_ip
-    output.tell(readout.run(ctx, readout.device_at(given, devices) if given else readout.choose(ctx, devices)))
+    device = readout.device_at(given, devices) if given else readout.choose(ctx, devices)
+    output.tell(readout.run(ctx, device, given))
     return 0
 
 
