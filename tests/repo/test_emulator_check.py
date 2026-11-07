@@ -68,6 +68,19 @@ class WaysTests(unittest.TestCase):
         self.assertFalse(check.NO_DUMP & {*public_dump.DUMPS, *public_dump.UPDATES})
 
 
+class SideBySideTests(unittest.TestCase):
+    def test_a_job_that_raises_has_failed_and_says_why(self):
+        import io
+        from contextlib import redirect_stdout
+        from tools.espressif.emulator import public_plugs
+
+        def broken():
+            raise RuntimeError("the emulator did not start")
+        with redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(public_plugs.side_by_side([lambda: 0, broken]), [0, 1])
+        self.assertIn("the emulator did not start", out.getvalue())
+
+
 class WorkflowTests(unittest.TestCase):
     def setUp(self):
         self.workflow = (ROOT / ".github/workflows/emulator-check.yml").read_text(encoding="utf-8")
