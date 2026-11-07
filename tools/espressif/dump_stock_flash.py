@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import re
 import os
@@ -158,6 +159,16 @@ def is_bridge(host: str) -> bool:
     except OSError:
         return False
     return re.match(BRIDGE_ID, status) is not None
+
+
+def read_info(host: str, timeout: float = 10.0) -> bytes | None:
+    """The bridge's GET /info; None from a bridge before 4.4.5, or one that does
+    not answer as a bridge. Only the log needs it, so nothing here is an error."""
+    try:
+        body, _ = fetch(host, "/info", timeout=timeout)
+    except (OSError, http.client.HTTPException, ValueError):
+        return None
+    return body if re.match(BRIDGE_ID, body) else None
 
 
 class IncompleteDump(OSError):

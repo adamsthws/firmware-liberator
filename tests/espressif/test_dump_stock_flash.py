@@ -104,6 +104,28 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class ReadInfoTests(unittest.TestCase):
+    """A bridge with no /info must never stop a run: only the log loses it."""
+
+    def answers(self, effect):
+        from unittest import mock
+        with mock.patch.object(dump_stock_flash, "fetch", side_effect=effect):
+            return dump_stock_flash.read_info("192.0.2.51")
+
+    def test_a_bridge_with_it(self):
+        body = b"bridge 4.4.5\nchip: esp32\n"
+        self.assertEqual(self.answers([(body, {})]), body)
+
+    def test_anything_else_is_nothing(self):
+        import http.client
+        import urllib.error
+        for effect in (urllib.error.HTTPError("http://192.0.2.51/info", 404, "Not Found", {}, None),
+                       urllib.error.URLError("no route"), TimeoutError(), ConnectionResetError(),
+                       http.client.BadStatusLine("x"), http.client.IncompleteRead(b""),
+                       [(b"<html>a plug's page</html>", {})]):
+            self.assertIsNone(self.answers(effect), effect)
+
+
 class PlugHashTests(unittest.TestCase):
     """A backup is checked byte for byte against the plug's own hash of its flash."""
 

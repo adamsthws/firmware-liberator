@@ -40,7 +40,7 @@ from tools.espressif.safeboot.safeboot_migration import pinned_artifacts
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
-# 4.4.4: joins the home network the stock firmware was on, raising its own
+# The bridge: joins the home network the stock firmware was on, raising its own
 # only if that fails, gives Tasmota its Wi-Fi at D1, and lets the plug's whole
 # flash be read first, for the backup - and starts even once an upload into
 # Sonoff's slot was cut off (from 4.4.3), where 4.4.2 would not, leaving a plug
@@ -339,11 +339,25 @@ def ask_to_join_bridge(bridge: str, *, tasmota: bool = False) -> None:
 AFTER_BACKUP = ("D1", "D4", "E1", "E2", "E3", "F2", "F4", "G1", "H1")
 
 
-def log_device_facts(ctx: Context, directory: Path, shown: bool) -> None:
-    """What the backup says about the plug, in the log, to add a device from a
-    report of one: on the screen too when the plug is one to report."""
+def bridge_info(ctx: Context) -> dict[str, str]:
+    """What the installer's GET /info says, for the log, looked for without
+    asking anyone: nothing from one before 4.4.5, or one not answering, and the
+    run carries on just the same."""
+    try:
+        host = (setup_network.SETUP_HOST if bridge_answers(setup_network.SETUP_HOST)
+                else bridge_on_home_network(ctx, timeout=10.0))
+        body = dump_stock_flash.read_info(host) if host else None
+    except OSError:
+        return {}
+    return device_facts.parse_info(body) if body else {}
+
+
+def log_device_facts(ctx: Context, directory: Path, shown: bool, info: dict[str, str] | None = None) -> None:
+    """What the backup and the installer say about the plug, in the log, to add
+    a device from a report of one: on the screen too when the plug is one to report."""
     efuse = directory / "efuse.bin"
-    facts = device_facts.lines((directory / "flash.bin").read_bytes(), efuse.read_bytes() if efuse.exists() else None)
+    facts = device_facts.lines((directory / "flash.bin").read_bytes(), efuse.read_bytes() if efuse.exists() else None,
+                               info)
     product = ctx.state.input("product_model")
     for line in ([f"eWeLink product: {product}"] if product else []) + facts:
         (output.tell if shown else output.log_only)(f"    {line}")
@@ -366,8 +380,12 @@ def require_known_layout(ctx: Context) -> None:
         output.tell(f"    The device's memory layout could not be read here ({exc}); its checks later still stand.")
         return
     known = hashlib.sha256(table).hexdigest() == layouts.of(kinds.of_run(ctx.state).layout).table_sha256
+    info = bridge_info(ctx)
     if backup:
-        log_device_facts(ctx, backup.directory, shown=not known)
+        log_device_facts(ctx, backup.directory, shown=not known, info=info)
+    else:
+        for line in device_facts.info_lines(info):
+            output.log_only(f"    {line}")
     if not known:
         raise Abort("this device's memory is not laid out as this tool expects, so nothing has been written "
                     "over its Sonoff firmware: switch it off and on to go back to it. Please report this "

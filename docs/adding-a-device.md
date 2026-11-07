@@ -115,8 +115,10 @@ false failures.
 Every backup logs what it found, in the run's `run.log`, and on the screen when the
 partition table is not one the tool knows: the chip and its revision, whether
 secure boot and flash encryption are on, the flash size, the partition table, and
-each app's version, ESP-IDF and the firmware name its updater checks. None of it
-is secret, so a report of a device the tool stopped on is enough to start adding it.
+each app's version, ESP-IDF and the firmware name its updater checks. The installer
+adds what a backup cannot hold, such as the exact chip revision, the flash chip's id
+and the input pins' levels ([what it logs](device-research.md#what-a-backup-logs)).
+None of it is secret, so a report of a device the tool stopped on is enough to start adding it.
 
 ## Learning the firmware name
 
