@@ -206,5 +206,55 @@ class NetworkRaceTests(unittest.TestCase):
         self.assertNotEqual(done.returncode, 0)
         self.assertIn("Could not make the Docker network net", done.stderr)
 
+
+@unittest.skipIf(shutil.which("bash") is None, "no bash")
+class OptionTests(unittest.TestCase):
+    """bk-emu.sh spells the jobs it shares with emu.sh as emu.sh does:
+    --instance N, --fresh, --rebuild."""
+
+    def run_script(self, *args):
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = Path(tmp, "calls")
+            Path(tmp, "docker").write_text('#!/bin/sh\necho "$*" >> %s\n' % calls, encoding="utf-8")
+            Path(tmp, "docker").chmod(0o755)
+            done = subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True, timeout=60,
+                                  env={**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}"})
+            return done, calls.read_text(encoding="utf-8") if calls.exists() else ""
+
+    def test_an_instance_is_its_own_plug(self):
+        done, calls = self.run_script("--instance", "2", "ui")
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertIn("exec autoflash-s61-2 ", calls)
+
+    def test_an_instance_out_of_range_is_refused(self):
+        done, calls = self.run_script("--instance", "31", "plug")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("1-30", done.stderr)
+        self.assertEqual(calls, "")
+
+    def test_fresh_is_for_plug_alone(self):
+        done, calls = self.run_script("--fresh", "power", "on")
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("--fresh is for plug", done.stderr)
+        self.assertEqual(calls, "")
+
+    def test_the_old_spellings_are_gone(self):
+        for args in (("reset",), ("ensure", "--rebuild"), ("--bogus", "plug")):
+            done, calls = self.run_script(*args)
+            self.assertEqual(done.returncode, 2, args)
+            self.assertIn("--instance N", done.stdout, args)
+            self.assertEqual(calls, "", args)
+
+    def test_rebuild_reaches_image_sh(self):
+        function = re.search(r"^ensure\(\) \{.*?^\}", SCRIPT.read_text(encoding="utf-8"), re.S | re.M).group(0)
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "image.sh").write_text('#!/bin/sh\necho "$*"\n', encoding="utf-8")
+            Path(tmp, "image.sh").chmod(0o755)
+            found = [subprocess.run(["bash", "-c", f"set -u\nHERE={tmp} IMAGE=img rebuild={rebuild}\n{function}\nensure"],
+                                    capture_output=True, text=True, timeout=60).stdout.strip()
+                     for rebuild in ("--rebuild", '""')]
+        self.assertEqual(found, ["ensure img --rebuild", "ensure img"])
+
+
 if __name__ == "__main__":
     unittest.main()

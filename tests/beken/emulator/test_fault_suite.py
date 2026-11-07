@@ -434,5 +434,14 @@ class SavingTests(unittest.TestCase):
                          ["sonoff-backup"])
 
 
+class InstanceTests(unittest.TestCase):
+    def test_each_instance_is_bk_emu_shs_own(self):
+        instance = fault_suite.Instance(3)
+        self.assertEqual(instance.command("power", "on"),
+                         [str(fault_suite.BK_EMU), "--instance", "3", "power", "on"])
+        self.assertEqual((instance.plug, instance.network), ("autoflash-s61-3", "autoflash-beken-3"))
+        self.assertEqual(instance.state, fault_suite.EMU / "s61" / "autoflash-s61-3")
+
+
 if __name__ == "__main__":
     unittest.main()
