@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """A whole S61 conversion in the emulator, the way the tool would drive one: the
 plug comes online against the local eWeLink stub (cloud_online.CloudSession),
 the stub pushes it an `upgrade` for a firmware image, and the plug downloads it

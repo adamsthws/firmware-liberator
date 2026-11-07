@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """The emulated Beken plug: on until switched off, through every firmware it
 is converted to and back, as bk-emu.sh plug runs it (plug-net.sh).
 

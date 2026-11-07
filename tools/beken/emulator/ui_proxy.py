@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """A proxy in front of the emulated plug's web page - OpenBeken's or ESPHome's -
 so a browser can use it (bk-emu.sh ui).
 

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Extract the stock S61 app from a flash dump, verified, ready to repackage.
 
 The app partition holds the firmware as the bootloader left it: decompressed and

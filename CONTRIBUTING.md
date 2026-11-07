@@ -124,6 +124,9 @@ eWeLink accounts and plugs' identities.
 - `artifacts/` - its firmware, `firmware.json` and `SHA256SUMS` - changes only through
   `tools/repo/update_firmware.py` - most often run by the weekly firmware-update
   workflow: [docs/updating-firmware.md](docs/updating-firmware.md).
+- A script in `tools/` that is run from the command line has a shebang and is
+  executable (`git update-index --chmod=+x`); a module only imported has
+  neither (`tests/repo/test_executables.py` holds this).
 - Where things go: `tools/autoflash/` is the conversion tool (`python3 -m
   tools.autoflash` runs it) and `tools/repo/` the repository's own plumbing; `tools/espressif/` and `tools/beken/`
   hold each chip family's tooling, its emulator in `emulator/`; `tools/ewelink/`

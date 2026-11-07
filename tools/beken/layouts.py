@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """The partition tables Beken devices' stock firmware comes on, read from the
 firmware itself.
 

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Stage an rt_ota .rbl in the S61's download slot and boot the stock bootloader
 over it in the emulator - the second half of a conversion, the one the plug does
 by itself after the cloud-pushed download, and the whole of a reversion's apply.
