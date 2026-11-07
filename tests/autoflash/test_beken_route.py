@@ -14,7 +14,7 @@ from tests.autoflash.test_openbeken import FakeOpenBeken
 from tests.beken import test_layouts
 from tools.autoflash import detect, errors, handover, kinds, openbeken, plugs, report, routes, state
 from tools.autoflash.routes import beken, update
-from tools.autoflash.routes.beken import arrived, images, onward, stock
+from tools.autoflash.routes.beken import arrived, evidence, images, onward, stock
 from tools.beken import fota_wrap, interim_marker, layouts, rbl, uf2
 from tools.ewelink import ota_push
 from tools.ewelink.get_device_key import EwelinkError
@@ -698,7 +698,7 @@ class OnwardTests(unittest.TestCase):
                                         "applied.")),
                     ("esphome", (True, "The device answers as ESPHome."))):
                 with mock.patch.object(detect, "identify", return_value=running):
-                    self.assertEqual(onward.evidence_installed(ctx), expected)
+                    self.assertEqual(evidence.evidence_installed(ctx), expected)
 
 
 class FromTheInterimFirmwareTests(unittest.TestCase):
@@ -767,7 +767,7 @@ class FromTheInterimFirmwareTests(unittest.TestCase):
             self.assertEqual(self.server.commands[-1], "AutoflashRevertToStock http://192.0.2.2:8088/firmware.rbl")
             # Still on it afterwards: the image was not applied, and is sent again.
             with mock.patch.object(detect, "identify", return_value="interim"):
-                self.assertEqual(onward.evidence_installed(ctx),
+                self.assertEqual(evidence.evidence_installed(ctx),
                                  (False, "The device still answers as the interim firmware: the image was not "
                                          "applied."))
 
@@ -929,10 +929,10 @@ class StillInstalledTests(unittest.TestCase):
     it was leaving, its step recorded done (seen in the fault suite)."""
 
     def judge(self, *answers):
-        with mock.patch.object(onward, "evidence_installed", side_effect=list(answers)), \
-                mock.patch.object(onward.time, "sleep"), \
-                mock.patch.object(onward.time, "monotonic", side_effect=[0, 0, 10, 100, 200]):
-            return onward.still_installed(SimpleNamespace(), wait=60)
+        with mock.patch.object(evidence, "evidence_installed", side_effect=list(answers)), \
+                mock.patch.object(evidence.time, "sleep"), \
+                mock.patch.object(evidence.time, "monotonic", side_effect=[0, 0, 10, 100, 200]):
+            return evidence.still_installed(SimpleNamespace(), wait=60)
 
     def test_still_on_the_firmware_it_left_is_doubted(self):
         ok, message = self.judge((False, "The plug still answers as OpenBeken: the image was not applied."))

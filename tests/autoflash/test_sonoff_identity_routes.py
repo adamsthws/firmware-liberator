@@ -11,10 +11,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import device as device_module, esphome, kinds, output, plans, plugs, sonoff_firmware
+from tools.autoflash import device as device_module, esphome, kinds, output, plans, plugs
 from tools.autoflash.errors import NothingWritten
 from tools.autoflash.routes import espressif
-from tools.autoflash.routes.espressif import hub, identity, mover, sonoff
+from tools.autoflash.routes.espressif import hub, identity, mover, sonoff, sonoff_firmware
 from tools.autoflash.state import DONE, RunState
 from tools.espressif import build_vendor_ota, nvs_image, sonoff_identity
 from tools.espressif.inspect_stock_nvs import parse

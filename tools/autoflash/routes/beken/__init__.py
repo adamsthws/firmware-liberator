@@ -31,7 +31,8 @@ from typing import Any, Callable, TYPE_CHECKING
 
 from tools.autoflash import kinds
 from tools.autoflash.routes import update
-from tools.autoflash.routes.beken import arrived, images, onward, stock
+from tools.autoflash.routes.beken import arrived, evidence, images, onward, stock
+from tools.autoflash.routes.beken.evidence import ATTEMPTED_EVIDENCE, DESTRUCTIVE_STEPS  # noqa: F401
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -118,10 +119,10 @@ def steps_for(firmware: str, source: str = "sonoff") -> Steps:
     raise ValueError(f"no route from {source}")
 
 
-# The steps that write to the plug, which happen once; and those tried again by
-# themselves when they fail for a reason that may pass: each only reads, or
-# waits - or, J3, sets the name it set again and restarts the plug.
-DESTRUCTIVE_STEPS = {"B2", "J2", "J4", "O1", "O2", "E1", "E2", "U1", "U3"}
+# The steps tried again by themselves when they fail for a reason that may
+# pass: each only reads, or waits - or, J3, sets the name it set again and
+# restarts the plug. (Those that write to the plug, which happen once, are
+# evidence.DESTRUCTIVE_STEPS.)
 RETRY_STEPS = {"B1", "J1", "J3", "K1", "K2", "K3", "B4", "U2", "U4"}
 # No Tasmota here to lose its settings and raise a network of its own.
 ERASED_CHECK_STEPS: set[str] = set()
@@ -170,24 +171,12 @@ PLAIN_DESCRIPTION = {
     "U3": "has OpenBeken fetch this release's OpenBeken, which the device installs as it restarts",
     "U4": "checks the device has started the updated OpenBeken and joined your Wi-Fi",
 }
-# What a step cut off part way may have left: the plug says, by what it answers as.
-ATTEMPTED_EVIDENCE: dict[str, Callable[["Context"], tuple[bool | None, str]]] = {
-    "B2": stock.evidence_pushed,
-    "J2": onward.evidence_installed,
-    "J4": onward.evidence_installed,
-    "O1": onward.evidence_installed,
-    "O2": onward.evidence_installed,
-    "E1": onward.evidence_installed,
-    "E2": onward.evidence_installed,
-    "U1": update.evidence_updated,
-    "U3": update.evidence_updated,
-}
 # A step from OpenBeken or ESPHome recorded done is doubted where the plug
 # still answers as the firmware it was leaving: the image was never applied (a
 # power cut while it was written, say), and sending it again is what is wanted.
 # The check steps ask the plug afresh anyway.
 STEP_VERIFIERS: dict[str, Callable[["Context"], tuple[bool, str]]] = {
-    **{step: onward.still_installed for step in ("J2", "J4", "O1", "O2", "E1", "E2")},
+    **{step: evidence.still_installed for step in ("J2", "J4", "O1", "O2", "E1", "E2")},
     "U1": update.still_updated, "U3": update.still_updated}
 # Sonoff's firmware goes back on from the public dump (images.stock_rbl), not
 # the plug's backup - which B4 takes first, from OpenBeken, where there is none.
