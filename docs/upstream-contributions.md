@@ -35,6 +35,8 @@ several other HTTP clients, and following it led to a few more bugs nearby.
 - [The emulator's classic ESP32](#the-emulators-classic-esp32) - QEMU (lcgamboa's fork, Espressif)
 - [OpenBeken on a 4 MB BK7238](#openbeken-on-a-4-mb-bk7238) - OpenBeken,
   beken_freertos_sdk
+- [A security fix, reported privately](#a-security-fix-reported-privately) -
+  Tasmota
 - [Smaller fixes found along the way](#smaller-fixes-found-along-the-way) -
   Tasmota, ESPHome, OpenBeken
 - [Other people's reports, reproduced on the emulator](#other-peoples-reports-reproduced-on-the-emulator) -
@@ -204,6 +206,14 @@ a fix to it would be taken. [Issue #2](https://github.com/openshwprojects/BekenE
 asked for one, and it is GPL-3.0 since 7 November 2026. The same day it was
 rewritten from Python into C++, so this project's fixes no longer apply to it
 as they are: they will be ported once the rewrite has settled.
+
+## A security fix, reported privately
+
+A weakness in Tasmota's web server was reported to its maintainers privately on
+2 November 2026, with a fix offered. Tasmota fixed it on 4 November, in
+[39146bb](https://github.com/arendst/Tasmota/commit/39146bb7b789b2394f22ba2dfb9b17ddd09b9f0e),
+and the fix reaches users in its next release. This page says more once that
+release is out.
 
 ## Smaller fixes found along the way
 
