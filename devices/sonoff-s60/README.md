@@ -8,7 +8,7 @@
 
 **For real:** Tasmota to ESPHome and back has been run on a real S60TPG, every write read back, and the relay and power meter checked through each firmware ([real plugs](../../docs/testing.md#real-plugs)).
 
-**In the emulator:** it converts in every direction, faults and all, from a dump of a real one ([the fault suite](../../docs/testing.md#the-fault-suite)); the emulator has no relay, button, LED or meter.
+**In the emulator:** it converts in every direction, faults and all, from a dump of a real one ([the fault suite](../../docs/testing.md#the-espressif-fault-suite)); the emulator has no relay, button, LED or meter.
 
 **Worth checking:** whether the relay, button, LED and meter work on yours.
 

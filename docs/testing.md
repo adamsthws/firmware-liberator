@@ -191,9 +191,13 @@ commit on a computer without one is not stopped - the hook says it skipped
 it, and the workflow runs it - and `git commit --no-verify` skips them all.
 `archive/` is linted like the rest.
 
-## The emulator
+## The emulators
 
-A conversion with nobody at the keyboard ([unattended.md](unattended.md)):
+Each chip family's emulator runs a conversion with nobody at the keyboard
+([unattended.md](unattended.md)), on an emulated plug of its own; how to set
+each up is in [emulator.md](emulator.md).
+
+### The Espressif emulator
 
 ```sh
 tools/espressif/emulator/unattended-test.sh --fresh --plug=MAC -- --firmware esphome
@@ -215,7 +219,31 @@ tools/espressif/emulator/unattended-test.sh --from=on-tasmota --plug=MAC -- --fi
 That is how every direction is tested: from a plug the tool converted, the
 kind a person converting it again would have.
 
-## The fault suite
+### The Beken emulator
+
+```sh
+tools/beken/emulator/bk-emu.sh --fresh plug
+tools/beken/emulator/bk-emu.sh computer tools/autoflash/cli.py run --unattended --env-file captures/tool.env --firmware esphome
+```
+
+`bk-emu.sh computer` runs the tool on the plug's Wi-Fi, in its own copy of this
+checkout (the plug's `work/`), so the env file is that copy's
+`captures/tool.env`: a made-up eWeLink account, as the plug's eWeLink is the
+local stub, which takes any (the fault suite writes one there). Several run side
+by side with `--instance N` (1-30), given to both commands: each its own plug,
+network and stub, so nothing is shared, eWeLink included.
+
+A plug carries on as the last run left it, its flash kept, until `--fresh`
+starts it again on Sonoff's firmware, so a second run converts it on from where
+the first ended. The fault suite's `prep` keeps plugs on each firmware to start
+from ([below](#the-beken-fault-suite)).
+
+## The fault suites
+
+Each emulator has a fault suite of its own, which puts every fault in the way of
+every step, in every direction. The two are laid out alike below.
+
+### The Espressif fault suite
 
 `tools/espressif/emulator/fault_suite.py` puts every fault in the way of every step, in
 every direction - 1,436 scenarios:
@@ -462,7 +490,7 @@ or one fewer at each trouble - and lengthen the pause when eWeLink is the
 trouble (`AUTOFLASH_EMU_CLOUD_MOST`, `AUTOFLASH_EMU_CLOUD_BACK_OFF`,
 `AUTOFLASH_EMU_CLOUD_PAUSE_UP`).
 
-### What it cannot show
+#### What it cannot show
 
 - **Timings.** The emulated plug is slower than a real one, and its flash
   never wears or fails: the one real moment of risk, a power cut while the
@@ -475,7 +503,7 @@ Every network a plug raises of its own - Tasmota's, ESPHome's, the mover's and
 the installer's - can be joined from the emulated computer, as a person's
 laptop or phone would join it ([emulator.md](emulator.md)).
 
-### Results
+#### Results
 
 On 22 October 2026 the suite ran every scenario on 2.0.1, against the cloud
 stub, on four machines at once - 22 emulators, about five hours. Every
@@ -537,7 +565,7 @@ Before the stub, on 18-19 October, the suite ran 1,453 scenarios on the code
 as of 19 October, the cloud ones against the real eWeLink: all passed but the
 same two with nothing to corrupt.
 
-### Still open
+#### Still open
 
 - **An update command ignored.** Now and then the stock plug, back on eWeLink
   after a send cut off part way and a restart, ignores the next update command
@@ -562,7 +590,7 @@ same two with nothing to corrupt.
   of an hour - not even restarting when its setup network's three minutes
   were up. Run again, it passed; not yet explained.
 
-### What it has found
+#### What it has found
 
 Each fixed, with a test, and the scenario run again. On 22 October:
 
@@ -679,7 +707,7 @@ Before that:
   Sonoff's firmware), all came back with the settings and were converted -
   and the run now carries on by itself, trying the commit up to three times.
 
-## The Beken fault suite
+### The Beken fault suite
 
 `tools/beken/emulator/fault_suite.py` does the same for the Beken plugs, on
 emulated ones started from the public S61s dump (`bk-emu.sh --instance N plug`,
@@ -730,6 +758,41 @@ Each emulated plug takes a core, so two workers suit a laptop. Sonoff's
 firmware restarts by itself once it has its update, in the emulator as on a
 real plug, so the switch off and on the tool asks for comes only after a
 fault.
+
+#### What it cannot show
+
+- **Timings.** The emulator runs the real firmware far slower than a chip, so a
+  step's length, and the moment of risk while the bootloader writes the new
+  firmware in, are the emulator's, not a real plug's.
+- **Radio.** The plug's Wi-Fi is a TAP device bridged onto a Docker network: a
+  fault takes the computer off it, but there is no signal to weaken.
+- **The wiring.** No relay, meter or button is wired to its pins, so a scenario
+  passing says the firmware installs and starts, not that a device's wiring is
+  right ([emulator.md](emulator.md#known-gaps-1)).
+
+#### Results
+
+Every direction has run end to end in the emulator, faults and all, from the
+public dump of a real S61. Each run's results are kept in
+`captures/emulation/beken/suite/` (`fault_suite.py report`); no dated run is
+recorded on this page yet.
+
+#### Still open
+
+- **A real plug.** No real Beken plug has been converted: whether one answers as
+  the emulator does - OpenBeken's `/api/flash` returning its raw flash, and Sonoff's
+  checks of a rebuilt image - is not known
+  ([Beken research](beken-research.md#questions-still-open)).
+
+#### What it has found
+
+Fixed, and each case in the suite since. In 2.3.0:
+
+- An image the stock bootloader would not install left the plug on the firmware
+  it had, and the run asked you to switch it off and on again and again. The run
+  now sends the image again by itself (twice at most), and the same goes for
+  ESPHome fetched by OpenBeken (J2, O1), found by OpenBeken's uptime: the suite's
+  `--simulate-bad-image STEP` scenarios.
 
 ## Real plugs
 

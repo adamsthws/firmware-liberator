@@ -292,7 +292,7 @@ tool's own recovery, which a new final firmware does not change. Where the
 recovery leans on the firmware's own behaviour, a major release (16 to 17,
 say) or release notes touching its Wi-Fi, settings, updates or Berry, run
 those few scenarios of the fault suite too - F4's reset, G1, `seven-times`,
-and the network gone at L1 and X1 ([testing.md](testing.md#the-fault-suite)).
+and the network gone at L1 and X1 ([testing.md](testing.md#the-espressif-fault-suite)).
 
 **The S61's OpenBeken**, built anew - above all on a new OpenBeken release -
 is run on the S61 in the Beken emulator before it is published: the weekly update runs these
