@@ -39,10 +39,14 @@ check.
   offered when the eWeLink account holds no supported device, or run for any
   device with `readout`. On an ESP32-C3 or classic ESP32 it reads the whole
   memory through the bridge, kept in the spare slot only until the device is
-  switched off and on, which starts its Sonoff firmware again; on any other
-  chip nothing is sent to the device. With the owner's agreement, a copy, with
-  every Wi-Fi password taken out and its eWeLink identity made up, goes to a
-  private store behind api.firmwareliberator.com. See `docs/readouts.md`.
+  switched off and on. On a BK7238 (which has one app area) it installs a
+  pin-free OpenBeken for a few minutes, reads the flash, and puts the device's
+  own Sonoff firmware back from the file eWeLink offers it - the whole round
+  trip proven against the emulated S61. On any other chip nothing is sent to
+  the device. With the owner's agreement, a copy, with every Wi-Fi password
+  taken out and its eWeLink identity made up, goes to a private store behind
+  api.firmwareliberator.com; the firmware eWeLink offers the device goes with
+  it, as a second version to test. See `docs/readouts.md`.
 - A run logs what a backup says about the device - its chip, secure boot and
   flash encryption, flash size, partition table and each app's version - and
   shows it where the table is not one the tool knows: none of it is secret, and

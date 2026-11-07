@@ -77,9 +77,14 @@ def scrub(flash: bytes) -> tuple[bytes, int]:
             if name == b"wifi-pass" and len(data.rstrip(b"\0")) >= MIN_LEN:
                 secrets[data.rstrip(b"\0")] = b"*" * len(data.rstrip(b"\0"))
         elif name in IDENTITY:
-            text = data.decode("latin1")
-            new = made_up(text).encode("latin1") if name in (b"apiKey", b"app-apikey", b"secureCertSha256") \
-                else b"*" * length
+            # A clean printable id (a UUID, the app-apikey) is replaced by a
+            # made-up one of its shape; anything else (a binary cert blob, the
+            # obfuscated apiKey) is zeroed whole, so no byte of it is left.
+            printable = data.rstrip(b"\0")
+            if printable and all(0x20 <= byte < 0x7F for byte in printable):
+                new = made_up(data.decode("latin1")).encode("latin1")
+            else:
+                new = bytes(length)
             if len(data) >= MIN_LEN:
                 secrets[data] = new
         elif name.startswith(MATTER):

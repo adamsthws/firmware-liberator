@@ -35,10 +35,12 @@ from typing import Any, TYPE_CHECKING
 from tools.autoflash import __version__, account, firewall, hostsys, kinds, names, output, plugs, prompts, safety_locks
 from tools.autoflash import setup_network
 from tools.autoflash.errors import Abort, Finished, NothingWritten
+from tools.autoflash import readout_beken
 from tools.autoflash.routes.espressif import installer
 from tools.autoflash import runs
 from tools.autoflash.runs import ROOT
 from tools.espressif import build_vendor_ota, chips, device_facts, dump_stock_flash, scrub
+from tools.beken import scrub as beken_scrub
 from tools.ewelink import discover_ewelink, firmware_name, offered_firmware
 
 if TYPE_CHECKING:
@@ -93,14 +95,27 @@ def answering_ids(report: dict[str, Any]) -> dict[str, str]:
 
 
 def device_at(address: str, devices: list[dict[str, Any]]) -> dict[str, Any]:
-    """The account's device answering eWeLink's discovery at `address` (--plug-ip)."""
+    """The account's device at `address` (--plug-ip): the one answering eWeLink's
+    discovery there, else the one whose hardware address is there (a Beken plug
+    does no LAN Control, so it answers no discovery - it is found by its MAC, as
+    the conversion finds it), else the one device the account holds."""
     try:
         here = answering_ids(discover_ewelink.discover(6.0, None, address))
     except OSError:
         here = {}
     match = [device for device in devices if str(device.get("deviceid")) in here]
     if not match:
-        raise Abort(f"no device in the eWeLink account answers at {address}; check LAN Control is on for it")
+        mac = hostsys.mac_of(address)
+        if mac:
+            at = hostsys.normalise_mac(mac)
+            match = [device for device in devices
+                     if (device.get("params") or {}).get("staMac")
+                     and hostsys.normalise_mac(str((device["params"]["staMac"]))) == at]
+    if not match and len(devices) == 1:
+        match = list(devices)  # one device in the account: it is the one at this address
+    if not match:
+        raise Abort(f"could not tell which device in the eWeLink account is at {address}: "
+                    "it answered no discovery and its hardware address was not found there")
     return match[0]
 
 
@@ -126,12 +141,12 @@ def locate(ctx: Context, device: dict[str, Any]) -> str:
     return address
 
 
-def run(ctx: Context, device: dict[str, Any]) -> str:
+def run(ctx: Context, device: dict[str, Any], address: str | None = None) -> str:
     """Read out the account's `device` and offer to send it. What the run ends
     by saying; Abort before anything was sent to the device, or after, with
     what to do."""
     ctx.state.set_input(STATE_KEY, "started")
-    ip = locate(ctx, device)
+    ip = address or locate(ctx, device)
     ctx.state.set_input("plug_ip", ip)
     mac = hostsys.mac_of(ip) or (device.get("params") or {}).get("staMac")
     if mac and plugs.MAC_RE.match(hostsys.normalise_mac(mac)):
@@ -143,7 +158,16 @@ def run(ctx: Context, device: dict[str, Any]) -> str:
         plugs.remember_plug(mac, ewelink_name=str(device.get("name") or "").strip() or None,
                             ewelink_id=str(device.get("deviceid") or "") or None,
                             model=str(device.get("productModel") or "") or None)
-    asked = account.ask_ewelink(ctx, ip)
+    # A device that does no LAN Control (a Beken plug) answers no local
+    # discovery: it is asked of eWeLink by its account id. The account record's
+    # model says the chip family before anything is read.
+    model = str((device.get("extra") or {}).get("model") or device.get("productModel") or "")
+    stock_chip = firmware_name.STOCK_MODEL.match(model)
+    known = kinds.for_account(str(device.get("productModel") or ""), model)
+    lan_free = (stock_chip is not None and stock_chip.group("chip").startswith("BK")) or (
+        known is not None and known.family == "beken")
+    asked = (account.ask_account(ctx, str(device.get("deviceid") or "")) if lan_free
+             else account.ask_ewelink(ctx, ip))
     learned, problems = firmware_name.learn(asked.latest.get("offers") or [], asked.deviceid,
                                             asked.product, asked.model)
     for problem in problems:
@@ -176,9 +200,16 @@ def run(ctx: Context, device: dict[str, Any]) -> str:
         f"Firmware name    {learned.name if learned else 'not learned'}",
     ])
     chip = BRIDGE_CHIPS.get(learned.chip) if learned else None
+    beken_stock = readout_beken.stock_from_offered(updates) if learned and learned.chip.startswith("BK") else None
+    if chip is None and beken_stock is not None:
+        return read_out_beken(ctx, manifest, learned.name, asked, device, beken_stock, updates)
     if chip is None:
-        why = ("its firmware name could not be learned" if learned is None else
-               f"there is no bridge for its chip ({learned.chip or 'not named'}) yet")
+        if learned is None:
+            why = "its firmware name could not be learned"
+        elif learned.chip.startswith("BK"):
+            why = "its stock firmware could not be read from the file eWeLink offers it"
+        else:
+            why = f"there is no bridge for its chip ({learned.chip or 'not named'}) yet"
         output.say(f"    Its memory cannot be read from here: {why}. The readout still helps.")
         manifest["read"] = False
         return offer(ctx, manifest, None, updates)
@@ -191,8 +222,28 @@ def run(ctx: Context, device: dict[str, Any]) -> str:
     if fresh:
         output.say(f"    Kept on this computer too, in {runs.display_path(saved)}: private, as it holds")
         output.say("    your Wi-Fi password. Going back to Sonoff's firmware later can use it.")
+    scrubbed, blanked = scrub.wifi(flash)
+    scrubbed, replaced = scrub.identity(scrubbed)
+    manifest["wifi_blanked"], manifest["identity_replaced"] = blanked, replaced
+    files = {"flash.bin": scrubbed, "efuse.bin": efuse, "info.txt": info or b"",
+             "report.json": json.dumps(report, indent=2).encode()}
     back = back_on_sonoff(ctx)
-    return offer(ctx, manifest, (flash, efuse, info or b"", report), updates, back=back)
+    return offer(ctx, manifest, files, updates, back=back)
+
+
+def read_out_beken(ctx: Context, manifest: dict[str, Any], name: str, asked, device: dict[str, Any],
+                   found, updates) -> str:
+    """A readout of a Beken device: install the readout OpenBeken, read the
+    whole flash, put Sonoff back (readout_beken), then anonymise and offer it."""
+    manifest["layout"] = found.layout.key
+    flash, info, back = readout_beken.read_out(ctx, name, asked.version, device, found)
+    manifest["read"] = True
+    manifest["flash"] = {"size": len(flash), "sha256": hashlib.sha256(flash).hexdigest()}
+    manifest["device"] = info
+    scrubbed, changed = beken_scrub.scrub(flash)
+    manifest["anonymised"] = changed
+    files = {"flash.bin": scrubbed, "info.txt": (json.dumps(info) + "\n").encode()}
+    return offer(ctx, manifest, files, updates, back=back)
 
 
 def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, *,
@@ -306,27 +357,23 @@ EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 TELEGRAM = re.compile(r"@?[A-Za-z][A-Za-z0-9_]{4,31}")
 
 
-def package(manifest: dict[str, Any], read: tuple[bytes, bytes, bytes, dict] | None,
+def package(manifest: dict[str, Any], files: dict[str, bytes] | None = None,
             updates: list[offered_firmware.Offered] | tuple = (), contact: dict[str, str] | None = None) -> bytes:
     """The readout as sent: a tar of manifest.json first; the firmware eWeLink
-    offers the device, under offered/; and, when read, the flash anonymised (its
-    Wi-Fi passwords taken out, its eWeLink identity made up), the eFuses, /info
-    and the dump's report. Each .bin is xz-compressed (flash.bin.xz)."""
-    files = {f"offered/{item.name}": item.data for item in updates}
-    blanked = replaced = 0
-    if read:
-        flash, efuse, info, report = read
-        scrubbed, blanked = scrub.wifi(flash)
-        scrubbed, replaced = scrub.identity(scrubbed)
-        files.update({"flash.bin": scrubbed, "efuse.bin": efuse, "info.txt": info,
-                      "report.json": json.dumps(report, indent=2).encode()})
-    counts = {"wifi_blanked": blanked, "identity_replaced": replaced, **({"contact": contact} if contact else {})}
-    files = {name + ".xz" if name.endswith(COMPRESSED) else name: lzma.compress(data) if name.endswith(COMPRESSED)
-             else data for name, data in files.items()}
-    files = {"manifest.json": json.dumps({**manifest, **counts}, indent=2).encode(), **files}
+    offers the device, under offered/; and `files` - the anonymised flash and
+    its companions (flash.bin, efuse.bin, info.txt, report.json), already
+    anonymised by the chip family that read them. Each .bin is xz-compressed
+    (flash.bin.xz), so the tar stays readable without unpacking it."""
+    out = {f"offered/{item.name}": item.data for item in updates}
+    out.update(files or {})
+    if contact:
+        manifest = {**manifest, "contact": contact}
+    out = {name + ".xz" if name.endswith(COMPRESSED) else name: lzma.compress(data) if name.endswith(COMPRESSED)
+           else data for name, data in out.items()}
+    out = {"manifest.json": json.dumps(manifest, indent=2).encode(), **out}
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT) as archive:
-        for name, data in files.items():
+        for name, data in out.items():
             entry = tarfile.TarInfo(name)
             entry.size, entry.mtime = len(data), int(time.time())
             archive.addfile(entry, io.BytesIO(data))
@@ -361,20 +408,21 @@ def ask_contact() -> dict[str, str] | None:
     return contact
 
 
-def offer(ctx: Context, manifest: dict[str, Any], read: tuple[bytes, bytes, bytes, dict] | None,
+def offer(ctx: Context, manifest: dict[str, Any], files: dict[str, bytes] | None = None,
           updates: list[offered_firmware.Offered] | tuple = (), *, back: bool = True) -> str:
     """Make the readout, ask, and send it; what the run ends by saying.
+    `files`: the anonymised flash and its companions, or None if not read.
     `back`: whether the device answered as its Sonoff firmware again."""
     path = ctx.dir / NAME
 
     def keep(contact: dict[str, str] | None = None) -> bytes:
-        data = package(manifest, read, updates, contact)
+        data = package(manifest, files, updates, contact)
         path.write_bytes(data)
         os.chmod(path, 0o600)
         return data
 
     url = upload_url()
-    contents = ["- the device's firmware readout, anonymised;"] if read or updates else []
+    contents = ["- the device's firmware readout, anonymised;"] if files or updates else []
     prompts.section("Send this firmware readout, to help add support for this device?", [
         "What is sent:",
         *contents,

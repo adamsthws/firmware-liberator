@@ -14,7 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tests.espressif.test_scrub import APIKEY, NOW, flash as wifi_flash
+from tests.espressif.test_scrub import flash as wifi_flash
 from tools.autoflash import account, errors, hostsys, output, prompts, readout, runner, safety_locks
 from tools.autoflash.state import RunState
 from tools.ewelink import firmware_name, offered_firmware
@@ -43,20 +43,21 @@ def a_ctx(tmp: str) -> SimpleNamespace:
                            email=lambda: "me@example.com", ewelink_env=lambda: {})
 
 
-class PackageTests(unittest.TestCase):
-    def test_the_flash_goes_without_its_wifi_password(self):
-        files = unpacked(readout.package(MANIFEST, (wifi_flash(), b"\0" * 124, b"bridge 4.4.5\n", {"size": 1})))
-        self.assertEqual(set(files), {"manifest.json", "flash.bin", "efuse.bin", "info.txt", "report.json"})
-        self.assertNotIn(NOW, files["flash.bin"])
-        self.assertNotIn(APIKEY, files["flash.bin"])
-        manifest = json.loads(files["manifest.json"])
-        self.assertGreater(manifest["wifi_blanked"], 0)
-        self.assertGreater(manifest["identity_replaced"], 0)
+# The anonymised files a read gives offer(): the scrubbing itself is in the
+# chip family's run path and tested in tests/espressif/test_scrub.py.
+FILES = {"flash.bin": b"flash bytes", "efuse.bin": b"\0" * 124, "info.txt": b"bridge 4.4.5\n",
+         "report.json": b"{}"}
 
+
+class PackageTests(unittest.TestCase):
+    def test_the_prepared_files_go_in_as_they_are(self):
+        files = unpacked(readout.package(MANIFEST, FILES))
+        self.assertEqual(set(files), {"manifest.json", "flash.bin", "efuse.bin", "info.txt", "report.json"})
+        self.assertEqual(files["flash.bin"], b"flash bytes")
 
     def test_the_manifest_comes_first_as_it_is_and_the_firmware_in_xz(self):
         offered = [offered_firmware.Offered("user1.bin", "1.1.0", b"\xe9offered app")]
-        names = members(readout.package(MANIFEST, (wifi_flash(), b"", b"", {}), offered))
+        names = members(readout.package(MANIFEST, FILES, offered))
         self.assertEqual(names[0], "manifest.json")
         self.assertIn("flash.bin.xz", names)
         self.assertIn("offered/user1.bin.xz", names)
@@ -72,10 +73,37 @@ class PackageTests(unittest.TestCase):
 
     def test_the_firmware_ewelink_offers_goes_too_as_it_is(self):
         offered = [offered_firmware.Offered("user1.bin", "1.1.0", b"\xe9offered app")]
-        files = unpacked(readout.package(MANIFEST, (wifi_flash(), b"", b"", {}), offered))
+        files = unpacked(readout.package(MANIFEST, FILES, offered))
         self.assertEqual(files["offered/user1.bin"], b"\xe9offered app")
         self.assertIn("flash.bin", files)
         self.assertEqual(unpacked(readout.package(MANIFEST, None, offered))["offered/user1.bin"], b"\xe9offered app")
+
+
+class DeviceAtTests(unittest.TestCase):
+    """--plug-ip picks the account device at that address: by discovery, by its
+    hardware address (a Beken plug does no discovery), or the one device there."""
+    S61 = {"deviceid": "1000abcdef", "params": {"staMac": "12:34:56:AB:CD:EF"}}
+    OTHER = {"deviceid": "2000bbbbbb", "params": {"staMac": "aa:bb:cc:dd:ee:ff"}}
+
+    def device_at(self, address, devices, answering=None, mac=None):
+        with mock.patch.object(readout.discover_ewelink, "discover", return_value={"packets": []}), \
+                mock.patch.object(readout, "answering_ids", return_value=answering or {}), \
+                mock.patch.object(readout.hostsys, "mac_of", return_value=mac):
+            return readout.device_at(address, devices)
+
+    def test_by_its_hardware_address_when_it_answers_no_discovery(self):
+        self.assertIs(self.device_at("192.0.2.60", [self.OTHER, self.S61], mac="12:34:56:ab:cd:ef"), self.S61)
+
+    def test_by_discovery_when_it_answers(self):
+        self.assertIs(self.device_at("192.0.2.60", [self.OTHER, self.S61],
+                                     answering={"2000bbbbbb": "192.0.2.60"}), self.OTHER)
+
+    def test_the_one_device_in_the_account_when_nothing_else_tells(self):
+        self.assertIs(self.device_at("192.0.2.60", [self.S61]), self.S61)
+
+    def test_it_stops_when_it_cannot_tell_among_several(self):
+        with self.assertRaisesRegex(readout.Abort, "could not tell which device"):
+            self.device_at("192.0.2.60", [self.OTHER, self.S61])
 
 
 class WhereTests(unittest.TestCase):
@@ -290,7 +318,7 @@ class OfferTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(prompts, "section") as shown, \
                 mock.patch.object(prompts, "ask_secret") as asked, mock.patch.object(output, "say"), \
                 mock.patch.object(readout, "upload_url", return_value=None):
-            readout.offer(a_ctx(tmp), MANIFEST, (flash, b"", b"", {}))
+            readout.offer(a_ctx(tmp), MANIFEST, {"flash.bin": flash})
         asked.assert_not_called()
         self.assertIn("- the device's firmware readout, anonymised;", shown.call_args.args[1])
 
