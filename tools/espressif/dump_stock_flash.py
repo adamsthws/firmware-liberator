@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Image a stock plug's whole flash through the readout bridge (research only).
+"""Image a stock plug's whole flash through the bridge (research only).
 
-Reads the flash chip from the research bridge's read-only `GET /flash` (build
-env `autoflash-bridge-flash-readout`) and its eFuse read registers from
+Reads the flash chip from the bridge's read-only `GET /flash` and its eFuse read registers from
 `GET /efuse`, checks the dump is complete and well formed, and reports what
 each application slot holds and which one otadata selects.
 
@@ -20,6 +19,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import os
 import struct
 import sys
@@ -45,8 +45,8 @@ APP_DESC_MAGIC = 0xABCD5432
 APP_DESC_OFFSET = 32
 OTA_SECTOR = 0x1000
 OTA_STATES_REJECTED = {3, 4}  # ESP_OTA_IMG_INVALID, ESP_OTA_IMG_ABORTED
-# "bridge v5 flash readout" or "bridge 4.4.1 flash readout".
-READOUT_STATUS = "flash readout"
+# How a bridge names itself: "bridge v5" up to v5, "bridge 4.4.1" from then on.
+BRIDGE_ID = rb"bridge (?:v\d+|\d+\.\d+\.\d+)"
 
 
 def parse_partition_table(flash: bytes) -> tuple[list[dict[str, Any]], bool]:
@@ -151,13 +151,13 @@ def write_private(path: Path, data: bytes) -> None:
         handle.write(data)
 
 
-def is_readout_bridge(host: str) -> bool:
-    """True when `host` answers as the flash-readout bridge."""
+def is_bridge(host: str) -> bool:
+    """True when `host` answers as the bridge."""
     try:
         status, _ = fetch(host, "/status", timeout=5)
     except OSError:
         return False
-    return READOUT_STATUS in status.decode("ascii", "replace")
+    return re.match(BRIDGE_ID, status) is not None
 
 
 class IncompleteDump(OSError):
@@ -266,8 +266,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--label", default="stock", help="name for this dump, e.g. the stock version")
     args = parser.parse_args(argv)
 
-    if not is_readout_bridge(args.host):
-        print(f"{args.host} is not the flash-readout bridge.", file=sys.stderr)
+    if not is_bridge(args.host):
+        print(f"{args.host} is not the bridge.", file=sys.stderr)
         return 2
     code = save_dump(args.host, args.label)
     if code == 0:

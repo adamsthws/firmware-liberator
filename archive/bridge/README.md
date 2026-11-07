@@ -106,17 +106,14 @@ an open network. Browse to `http://192.168.4.1/` to upload a native ESP32-C3
 application image. The browser sends the selected file as a raw request body;
 JavaScript must be enabled.
 
-The research env `autoflash-bridge-flash-readout` images a stock plug without
-opening it or converting it: it has the same `GET /flash` and `GET /efuse`,
-and leaves out `/update` and `/tasmota-settings`, so the only flash it writes
-is the startup otadata selection that returns the plug to stock on the next
-power cycle. The stock updater writes it over the inactive slot, so whatever
-was there (often the previous Sonoff version) is lost; the running stock
-version, bootloader, partition table and NVS are kept. Build it with
-`pio run -e autoflash-bridge-flash-readout`, wrap it as above into
-`captures/flash-readout/autoflash-bridge-sonoff-s60-flash-readout-4.4.4.ota`,
-then run `tools/flash_readout.py`: it installs it, reads and checks the dump,
-and walks you through putting the plug back to stock.
+The same bridge images a stock plug without opening it or converting it:
+`tools/espressif/flash_readout.py` installs it, reads and checks the dump through
+`GET /flash` and `GET /efuse`, sends nothing to `/update`, and walks you through
+putting the plug back to stock. The bridge's own write is the startup otadata
+selection that returns the plug to stock on the next power cycle. The stock updater
+writes it over the inactive slot, so whatever was there (often the previous Sonoff
+version) is lost; the running stock version, bootloader, partition table and NVS are
+kept.
 
 Do not deploy this bridge until its build artifact and wrapped OTA file pass
 the offline validators and a compatible final Tasmota image has been prepared.
