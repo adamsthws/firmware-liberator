@@ -281,10 +281,14 @@ def due(project: str, releases: list[dict[str, Any]], today: dt.datetime, pinned
             "due": newer[-1] if newer else None}
 
 
+def openbeken_release_of(pin: dict[str, Any]) -> str:
+    """The OpenBeken release a pin is built on."""
+    return pin.get("release") or pin["version"].split("-")[0]
+
+
 def openbeken_pinned(pins: dict[str, Any]) -> str:
     """The oldest release a Beken device's OpenBeken is built on: what a newer one is newer than."""
-    releases = [section["openbeken"].get("release") or section["openbeken"]["version"].split("-")[0]
-                for section in pins["beken"].values() if "openbeken" in section]
+    releases = [openbeken_release_of(section["openbeken"]) for section in pins["beken"].values() if "openbeken" in section]
     return min(releases, key=lambda release: version_key("openbeken", release))
 
 
@@ -633,7 +637,7 @@ def command_esphome(args: argparse.Namespace) -> int:
     texts, release_version = ({}, None) if args.no_docs else esphome_doc_texts(
         old_image, {"file": ESPHOME_BUILDS["image"][1].format(version=version), "version": version,
                     "esphome": release, "esp_idf": described["esp_idf"], "sha256": sha256_bytes(app)},
-        replaced)
+        changelog=not getattr(args, "every", False))
 
     for key, (version, app, _bootloader, described) in built.items():
         config_path = ROOT / ESPHOME_BUILDS[key][0]
@@ -660,8 +664,8 @@ def command_esphome(args: argparse.Namespace) -> int:
                     f"CHANGELOG.md: ESPHome is built with {release}"]
     else:
         write_texts(texts)
-        print(f"artifacts/README.md, NOTICES.md, devices/sonoff-s60/esphome.md and CHANGELOG.md "
-              f"({release_version}) say so.")
+        print("artifacts/README.md, NOTICES.md and devices/sonoff-s60/esphome.md say so"
+              + (f", and CHANGELOG.md ({release_version})." if release_version else "."))
         if args.mover or replaced:
             by_hand.append("the mover's or bootloader's own rows and paragraphs, which only the image's are written for")
         if old_image["esphome"] == release:
@@ -859,6 +863,7 @@ def command_openbeken_every(args: argparse.Namespace) -> int:
     """Every Beken device's OpenBeken, built on the one release: what the weekly
     update runs, so none is left on an older one."""
     release = stable_release(OPENBEKEN_REPO, args.release)["tag_name"]
+    before = openbeken_pinned(load_pins())
     for plug in BEKEN_BUILDS:
         print(f"\n== {plug}")
         code = command_openbeken(argparse.Namespace(**{**vars(args), "plug": plug, "release": release, "every": True}))
@@ -866,8 +871,7 @@ def command_openbeken_every(args: argparse.Namespace) -> int:
             return code
     if not args.dry_run and not args.no_docs:
         texts: dict[Path, str] = {}
-        link = f"[{release}](https://github.com/{OPENBEKEN_REPO}/releases/tag/{release})"
-        version = changelog_with(f"OpenBeken for each Beken device is built on OpenBeken {link}.", texts)
+        version = changelog_with(moved("OpenBeken", release, before), texts)
         write_texts(texts)
         print(f"CHANGELOG.md says so, under {version}.")
     return 0
@@ -890,8 +894,7 @@ def openbeken_doc_texts(plug: str, old: dict[str, Any], new: dict[str, Any],
     notices = notices.replace(old["app_commit"], new["app_commit"]).replace(old["sdk_commit"], new["sdk_commit"])
     texts = {ARTIFACTS_README: readme, NOTICES: notices}
     if changelog:
-        link = f"[{new['release']}](https://github.com/{OPENBEKEN_REPO}/releases/tag/{new['release']})"
-        changelog_with(f"OpenBeken for the {plug} is {new['version']}: built on OpenBeken {link}.", texts)
+        changelog_with(moved("OpenBeken", new["release"], openbeken_release_of(old), kinds.find(plug).name), texts)
     return texts
 
 
@@ -938,7 +941,8 @@ def command_esphome_beken(args: argparse.Namespace) -> int:
     new = {"file": file_pattern.format(version=version), "version": version, "esphome": release,
            "libretiny": libretiny, "sha256": sha256_bytes(image)}
     # Worked out before anything is written, so a passage not found changes nothing.
-    texts = {} if args.no_docs or not current else beken_esphome_doc_texts(args.plug, current, new)[0]
+    texts = {} if args.no_docs or not current else beken_esphome_doc_texts(
+        args.plug, current, new, changelog=not getattr(args, "every", False))[0]
     (ROOT / config_path).write_text(as_built(config, version), encoding="utf-8")
     publish(section, "esphome", new["file"], image,
             {"config": config_path, "version": version, "esphome": release, "libretiny": libretiny,
@@ -1145,14 +1149,24 @@ def esphome_command(kind: kinds.Kind) -> Callable[[argparse.Namespace], int] | N
 def command_esphome_every(args: argparse.Namespace) -> int:
     """Every device's ESPHome, built with the one release: what the weekly update
     runs, so none is left on an older one."""
+    before = pinned_version(load_pins(), "esphome")
     for kind in kinds.READY:
         command = esphome_command(kind)
         if command is None:
             raise UpdateError(f"no way to build {kind.name}'s ESPHome: esphome_command says how each is built")
         print(f"\n== {kind.name}")
-        code = command(argparse.Namespace(**{**vars(args), "plug": None if command is command_esphome else kind.key}))
+        code = command(argparse.Namespace(**{**vars(args), "plug": None if command is command_esphome else kind.key,
+                                             "every": True}))
         if code:
             return code
+    # One line for them all, as for Tasmota and OpenBeken: each device's own build
+    # writes none when it is one of every device's.
+    if not args.dry_run and not args.no_docs:
+        release = stable_release(ESPHOME_REPO, args.version)["tag_name"]
+        texts: dict[Path, str] = {}
+        version = changelog_with(moved("ESPHome", release, before), texts)
+        write_texts(texts)
+        print(f"CHANGELOG.md says so, under {version}.")
     return 0
 
 
@@ -1218,6 +1232,20 @@ def release_to_come(changelog: str) -> str:
     return next_minor(version) if released(version) else version
 
 
+RELEASE_PAGES = {"Tasmota": f"https://github.com/{TASMOTA_REPO}/releases/tag/v{{}}",
+                 "ESPHome": f"https://github.com/{ESPHOME_REPO}/releases/tag/{{}}",
+                 "OpenBeken": f"https://github.com/{OPENBEKEN_REPO}/releases/tag/{{}}"}
+
+
+def moved(firmware: str, new: str, old: str, device: str | None = None) -> str:
+    """A firmware's changelog line, the one form for each: every device's, or one's."""
+    page = RELEASE_PAGES[firmware]
+    name = f"{firmware} for the {device}" if device else firmware
+    if new == old:
+        return f"{name} rebuilt with [{new}]({page.format(new)})."
+    return f"{name} moved to [{new}]({page.format(new)}), from [{old}]({page.format(old)})."
+
+
 def changelog_with(entry: str, texts: dict[Path, str]) -> str:
     """CHANGELOG.md and tools/autoflash/__init__.py, in `texts`, with the entry
     under the release to come; that release's version."""
@@ -1251,14 +1279,12 @@ def substituted(text: str, pattern: str, replacement, what: str) -> str:
 
 def tasmota_doc_texts(old: str, new: str) -> tuple[dict[Path, str], str]:
     texts: dict[Path, str] = {}
-    version = changelog_with(f"A converted plug ends on Tasmota "
-                             f"[{new}](https://github.com/{TASMOTA_REPO}/releases/tag/v{new}), where it ended on {old}.",
-                             texts)
+    version = changelog_with(moved("Tasmota", new, old), texts)
     return texts, version
 
 
 def esphome_doc_texts(old: dict[str, Any], new: dict[str, Any],
-                      replaced: bool = False) -> tuple[dict[Path, str], str]:
+                      changelog: bool = True) -> tuple[dict[Path, str], str | None]:
     """artifacts/README.md, NOTICES.md, devices/sonoff-s60/esphome.md and the
     changelog for a new image: the same config with a new ESPHome release, or,
     with the same release, a change to the config, which a person describes -
@@ -1282,18 +1308,14 @@ def esphome_doc_texts(old: dict[str, Any], new: dict[str, Any],
                                  "the image's source release in NOTICES.md")
     texts[ESPHOME_README] = substituted(ESPHOME_README.read_text(encoding="utf-8"), r"ESPHome \S+ built the current",
                                         f"ESPHome {new['esphome']} built the current", "devices/sonoff-s60/esphome.md's release")
-    release = f"[{new['esphome']}](https://github.com/{ESPHOME_REPO}/releases/tag/{new['esphome']})"
-    version = changelog_with(
-        f"ESPHome for the S60 is {new['version']}: "
-        + (f"a change to its config, built with ESPHome {release} as {old['version']} was."
-           if new["esphome"] == old["esphome"] else
-           f"the same config, built with ESPHome {release}, where {old['version']} was built with {old['esphome']}.")
-        + ("" if replaced else " Its bootloader is unchanged, so a plug on ESPHome already is not given a new one."),
-        texts)
+    if not changelog:
+        return texts, None
+    version = changelog_with(moved("ESPHome", new["esphome"], old["esphome"], "S60"), texts)
     return texts, version
 
 
-def beken_esphome_doc_texts(plug: str, old: dict[str, Any], new: dict[str, Any]) -> tuple[dict[Path, str], str]:
+def beken_esphome_doc_texts(plug: str, old: dict[str, Any], new: dict[str, Any],
+                            changelog: bool = True) -> tuple[dict[Path, str], str | None]:
     """artifacts/README.md, NOTICES.md, the plug's esphome.md and the changelog
     for a Beken plug's new ESPHome image."""
     old_name, new_name = Path(old["file"]).name, Path(new["file"]).name
@@ -1327,9 +1349,9 @@ def beken_esphome_doc_texts(plug: str, old: dict[str, Any], new: dict[str, Any])
                        f"ESPHome {new['esphome']} built the current image, `{new['file']}`,", f"{page.name}'s release")
     texts[page] = substituted(text, r"update_firmware.py esphome \S+ --plug",
                               f"update_firmware.py esphome {new['esphome']} --plug", f"{page.name}'s command")
-    release = f"[{new['esphome']}](https://github.com/{ESPHOME_REPO}/releases/tag/{new['esphome']})"
-    version = changelog_with(f"ESPHome for the {plug} is {new['version']}: built with ESPHome {release} "
-                             f"on LibreTiny {new['libretiny']}.", texts)
+    if not changelog:
+        return texts, None
+    version = changelog_with(moved("ESPHome", new["esphome"], old["esphome"], kinds.find(plug).name), texts)
     return texts, version
 
 

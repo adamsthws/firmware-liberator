@@ -348,12 +348,11 @@ class ESPHomeDocTests(unittest.TestCase):
 
     def test_a_new_release_builds_the_same_config(self):
         _, texts = self.texts("2099.1.0")
-        self.assertIn("ESPHome for the S60 is 9.9.0: the same config, built with ESPHome", texts[uf.CHANGELOG])
+        self.assertIn("ESPHome for the S60 moved to [2099.1.0]", " ".join(texts[uf.CHANGELOG].split()))
 
     def test_the_same_release_builds_a_changed_config(self):
         _, texts = self.texts(uf.load_pins()["esphome"]["image"]["esphome"])
-        self.assertIn("ESPHome for the S60 is 9.9.0: a change to its config, built with ESPHome", texts[uf.CHANGELOG])
-        self.assertNotIn("the same config", texts[uf.CHANGELOG].split("## ")[1])
+        self.assertIn("ESPHome for the S60 rebuilt with [", " ".join(texts[uf.CHANGELOG].split()))
 
     def test_the_docs_say_what_it_is_and_not_how_it_got_there(self):
         old, texts = self.texts("2099.1.0")
@@ -383,7 +382,7 @@ class BekenESPHomeDocTests(unittest.TestCase):
         page = self.texts[uf.ROOT / "devices/sonoff-s61/esphome.md"]
         self.assertIn(f"ESPHome 2099.1.0 built the current image, `{self.new['file']}`,", page)
         self.assertIn("update_firmware.py esphome 2099.1.0 --plug sonoff-s61", page)
-        self.assertIn("ESPHome for the sonoff-s61 is 2099.1.0-1", self.texts[uf.CHANGELOG])
+        self.assertIn("ESPHome for the Sonoff S61 moved to [2099.1.0]", " ".join(self.texts[uf.CHANGELOG].split()))
 
     def test_the_notices_change_the_s61s_paragraph_and_not_the_s60s(self):
         notices = self.texts[uf.NOTICES]
@@ -424,8 +423,57 @@ class EveryDeviceUpdatedTests(unittest.TestCase):
         commands = {name: mock.Mock(side_effect=lambda args, name=name: ran.append((name, args.plug)) or 0)
                     for name in ("command_esphome", "command_esphome_beken", "command_esphome_kind")}
         with mock.patch.multiple(uf, **commands):
-            self.assertEqual(uf.main(["esphome", "2099.1.0", "--every-device"]), 0)
+            self.assertEqual(uf.main(["esphome", "2099.1.0", "--every-device", "--no-docs"]), 0)
         self.assertEqual({plug or "sonoff-s60" for _, plug in ran}, {kind.key for kind in kinds.READY})
+
+    def test_every_device_gets_one_changelog_line_and_none_of_its_own(self):
+        from unittest import mock
+        seen, lines = [], []
+        commands = {name: mock.Mock(side_effect=lambda args: seen.append(args.every) or 0)
+                    for name in ("command_esphome", "command_esphome_beken", "command_esphome_kind")}
+        with mock.patch.multiple(uf, **commands), \
+                mock.patch.object(uf, "stable_release", return_value={"tag_name": "2099.1.0"}), \
+                mock.patch.object(uf, "changelog_with", side_effect=lambda entry, texts: lines.append(entry) or "9.9.0"), \
+                mock.patch.object(uf, "write_texts"):
+            self.assertEqual(uf.main(["esphome", "2099.1.0", "--every-device"]), 0)
+        self.assertEqual(seen, [True] * len(kinds.READY))
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith("ESPHome moved to [2099.1.0]"), lines[0])
+
+    def test_each_firmwares_line_is_the_one_form(self):
+        self.assertEqual(uf.moved("Tasmota", "16.1.0", "16.0.0"),
+                         "Tasmota moved to [16.1.0](https://github.com/arendst/Tasmota/releases/tag/v16.1.0), "
+                         "from [16.0.0](https://github.com/arendst/Tasmota/releases/tag/v16.0.0).")
+        self.assertEqual(uf.moved("ESPHome", "2026.11.2", "2026.10.0"),
+                         "ESPHome moved to [2026.11.2](https://github.com/esphome/esphome/releases/tag/2026.11.2), "
+                         "from [2026.10.0](https://github.com/esphome/esphome/releases/tag/2026.10.0).")
+        self.assertTrue(uf.moved("OpenBeken", "1.18.321", "1.18.320").startswith(
+            "OpenBeken moved to [1.18.321](https://github.com/openshwprojects/OpenBK7231T_App/releases/tag/1.18.321)"))
+
+    def test_one_devices_line_names_it_and_a_rebuild_says_so(self):
+        self.assertTrue(uf.moved("ESPHome", "2026.11.2", "2026.10.0", "Sonoff S61").startswith("ESPHome for the Sonoff S61 moved to"))
+        self.assertTrue(uf.moved("ESPHome", "2026.10.0", "2026.10.0").startswith("ESPHome rebuilt with [2026.10.0]"))
+
+    def test_tasmotas_line_is_that_form(self):
+        from unittest import mock
+        with mock.patch.object(uf, "released", return_value=True):
+            tasmota = uf.tasmota_doc_texts("16.0.0", "16.1.0")[0][uf.CHANGELOG]
+        self.assertIn("Tasmota moved to [16.1.0]", " ".join(tasmota.split()))
+
+    def test_a_device_built_as_one_of_every_device_writes_no_line_of_its_own(self):
+        from unittest import mock
+        old = uf.load_pins()["beken"]["sonoff-s61"]["esphome"]
+        new = {"file": "artifacts/esphome-sonoff-s61-2099.1.0-1.rbl", "version": "2099.1.0-1",
+               "esphome": "2099.1.0", "libretiny": "9.9.9", "sha256": "0" * 64}
+        with mock.patch.object(uf, "released", return_value=True):
+            texts, version = uf.beken_esphome_doc_texts("sonoff-s61", old, new, changelog=False)
+            s60, s60_version = uf.esphome_doc_texts(uf.load_pins()["esphome"]["image"],
+                                                    {**new, "file": "artifacts/esphome-sonoff-s60-imprintable-9.9.0.bin",
+                                                     "esp_idf": "5.5.9"}, changelog=False)
+        self.assertNotIn(uf.CHANGELOG, texts)
+        self.assertNotIn(uf.CHANGELOG, s60)
+        self.assertIsNone(version)
+        self.assertIsNone(s60_version)
 
     def test_it_is_not_asked_for_one_device(self):
         import contextlib
@@ -555,7 +603,7 @@ class OpenBekenDocTests(unittest.TestCase):
         self.assertIn("b" * 40, notices)
 
     def test_the_changelog_says_the_release(self):
-        self.assertIn("OpenBeken for the sonoff-s61 is 1.18.999-1: built on OpenBeken", self.texts[uf.CHANGELOG])
+        self.assertIn("OpenBeken for the Sonoff S61 moved to [1.18.999]", " ".join(self.texts[uf.CHANGELOG].split()))
 
     def test_for_every_device_the_changelog_is_left_to_the_caller(self):
         from unittest import mock
