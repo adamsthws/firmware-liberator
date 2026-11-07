@@ -61,6 +61,35 @@ class PublishedArtifactTests(unittest.TestCase):
         self.assertIn(b"/efuse\0", wrapped)
         self.assertIn(b"/update\0", wrapped)
 
+    def test_each_chips_bridge_says_what_a_backup_cannot(self):
+        from tools.espressif import chips
+        from tools.autoflash.runs import ROOT
+        for chip in chips.ALL:
+            image = (ROOT / chip.pin("bridge")["file"]).read_bytes()
+            self.assertIn(b"/info\0", image, chip.label)
+            self.assertIn(b"chip revision: ", image, chip.label)
+            self.assertIn(b"gpio levels:", image, chip.label)
+
+    def test_info_only_reads(self):
+        # No pin is set, nothing is written, and nothing of the network or the
+        # plug's identity is in reach of what it says.
+        import re
+        from tools.autoflash.runs import ROOT
+        source = (ROOT / "archive/bridge/main/main.c").read_text(encoding="utf-8")
+        start = source.index("static void info_add(")
+        code = re.sub(r"/\*.*?\*/", "", source[start:source.index("/* Plain-text state for the host")], flags=re.DOTALL)
+        self.assertNotRegex(code, r"gpio_(set|reset|config|pull|output|input_enable)|gpio_ll_|REG_WRITE|REG_SET|"
+                                  r"PIN_INPUT_|esp_flash_(write|erase)|esp_partition_(write|erase)|nvs_|esp_ota_(set|begin)")
+        self.assertNotRegex(code, re.compile(r"wifi|ssid|password|mac\b|unique", re.IGNORECASE))
+
+    def test_every_handler_fits_the_servers_table(self):
+        # Beyond max_uri_handlers registering fails, and the bridge stops at start-up.
+        import re
+        from tools.autoflash.runs import ROOT
+        source = (ROOT / "archive/bridge/main/main.c").read_text(encoding="utf-8")
+        handlers = source.count("httpd_register_uri_handler(server, ")
+        self.assertLessEqual(handlers, int(re.search(r"config\.max_uri_handlers = (\d+);", source)[1]))
+
     def test_the_published_startup_firmware_saves_the_wifi(self):
         from tools.espressif.safeboot.safeboot_migration import PUBLISHED_RECOVERY_FILE, PUBLISHED_RECOVERY_SHA256
         image = PUBLISHED_RECOVERY_FILE.read_bytes()

@@ -20,7 +20,7 @@ lower case. Each plug works out its own, so no two plugs share a name.
 | When | Firmware | Name (hostname and own network) | Where the name comes from |
 |---|---|---|---|
 | Before conversion | Sonoff's own | `espressif` (no own network the tool uses) | Sonoff; not changed |
-| C2-D1 | the installer (bridge 4.4.4) | `autoflash-recovery-CDEF` | compiled in, from the MAC at boot |
+| C2-D1 | the installer (bridge 4.4.5) | `autoflash-recovery-CDEF` | compiled in, from the MAC at boot |
 | D1-E | interim (Berry) Tasmota | `autoflash-recovery-CDEF` | written into its settings by the installer, on the run's behalf |
 | E-F2 | the startup firmware (Safeboot) | `autoflash-recovery-CDEF` | compiled in as a pattern; saved, written out, for what follows |
 | F2-F4 | official Tasmota | `autoflash-recovery-CDEF` | the name the startup firmware saved |

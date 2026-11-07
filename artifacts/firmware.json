@@ -158,10 +158,10 @@
   },
   "esp32c3": {
     "bridge": {
-      "file": "artifacts/autoflash-bridge-sonoff-s60-4.4.4.ota",
-      "version": "4.4.4",
-      "size": 876228,
-      "sha256": "4424af5d59258f5c1998269c65bffc5d1341f519352fdc1bfd9c76e37b34f5bb"
+      "file": "artifacts/autoflash-bridge-sonoff-s60-4.4.5.ota",
+      "version": "4.4.5",
+      "size": 878004,
+      "sha256": "0421bef5cd1c82c43eee03c159253c6db8f54f46efcdb1005c1b870933188fb9"
     }
   },
   "esp32": {
@@ -213,10 +213,10 @@
       "sha256": "b52ccf9f4602c83db673d44e84d391c44fed6d24329d4fefb9fc0d72a95a0d4f"
     },
     "bridge": {
-      "file": "artifacts/autoflash-bridge-esp32-4.4.4.bin",
-      "version": "4.4.4",
-      "size": 837888,
-      "sha256": "a1e735de9fc2c4dfefb44e24901a41ac0958e6da1a6db68892cb1dba9c60e19d"
+      "file": "artifacts/autoflash-bridge-esp32-4.4.5.bin",
+      "version": "4.4.5",
+      "size": 839856,
+      "sha256": "779b2c471d771c44b629f83758b68c6a2b37045f29bef5de4cc12bcf92fefc69"
     },
     "recovery": {
       "file": "artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin",
