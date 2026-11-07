@@ -26,6 +26,9 @@ from tools.ewelink.get_device_key import (
 )
 
 
+VERSION_BEHIND_ALL = "0.0.1"  # older than any firmware, so eWeLink offers the latest
+
+
 def ota_identity(device: dict[str, Any]) -> dict[str, str]:
     model = (
         device.get("extra", {}).get("model")
@@ -55,6 +58,19 @@ def query_ota(region: str, token: str, identity: dict[str, str]) -> dict[str, An
     if response.get("error") != 0:
         raise EwelinkError("OTA metadata query failed: " + str(response.get("msg", "unknown error")))
     return response
+
+
+def latest_offer(region: str, token: str, identity: dict[str, str]) -> dict[str, Any]:
+    """eWeLink's offer of the latest firmware, which it makes only to a device it
+    takes to be behind: for reading the firmware name from the file, and not an
+    update on offer to this device. Asked with the device's own id alone, as a
+    made-up one is offered an unrelated file. Failing costs a run nothing, so it
+    is only noted: {"offers": [...]} or {"problem": ...}."""
+    try:
+        reply = query_ota(region, token, {**identity, "version": VERSION_BEHIND_ALL})
+        return {"offers": list(reply["data"]["otaInfoList"])}
+    except Exception as exc:  # whatever goes wrong: a run needs none of this
+        return {"problem": type(exc).__name__}
 
 
 def ota_endpoints(ota_list: list[dict[str, Any]]) -> list[tuple[str, int]]:
@@ -90,6 +106,8 @@ def main() -> int:
     parser.add_argument("--device-id")
     parser.add_argument("--mdns-capture", type=Path, default=Path("captures/mdns-1.1.1.json"))
     parser.add_argument("--output", type=Path, default=Path("captures/ota-metadata-1.2.0.json"))
+    parser.add_argument("--latest-offer", action="store_true",
+                        help="also save the offer of the latest firmware, to read its firmware name from")
     args = parser.parse_args()
 
     email = args.email or input("eWeLink email: ").strip()
@@ -106,8 +124,11 @@ def main() -> int:
         identity = ota_identity(device)
         response = query_ota(region, token, identity)
         # productModel names the region: S60TPG (UK) or S60TPF (Europe).
-        private_json(args.output, {"query": identity, "product": device.get("productModel"),
-                                   "response": response})
+        saved = {"query": identity, "product": device.get("productModel"), "response": response}
+        if args.latest_offer:
+            offered = response.get("data", {}).get("otaInfoList")
+            saved["latest_offer"] = {"offers": offered} if offered else latest_offer(region, token, identity)
+        private_json(args.output, saved)
     except EwelinkError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

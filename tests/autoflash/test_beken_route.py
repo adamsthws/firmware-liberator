@@ -177,6 +177,11 @@ class FromStockTests(unittest.TestCase):
     DEVICE = {"deviceid": "1001234abc", "apikey": "k", "online": True, "productModel": "S61STPF",
               "extra": {"model": "SN-BK7238-S61-01"}, "params": {"fwVersion": "1.0.2"}}
 
+    def setUp(self):
+        noted = mock.patch.object(stock.account, "note_firmware_name", return_value="FWSW-01-S61-BK7238")
+        self.noted = noted.start()
+        self.addCleanup(noted.stop)
+
     def test_b1_takes_the_plugs_identity_from_its_account_record(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp)
@@ -187,7 +192,8 @@ class FromStockTests(unittest.TestCase):
                 with mock.patch.object(stock.prompts, "section"):
                     result = stock.step_identify(ctx)
             self.assertEqual(result, {"stock_version": "1.0.2", "model": "SN-BK7238-S61-01", "product": "S61STPF",
-                                      "signal_dbm": None})
+                                      "signal_dbm": None, "firmware_name": "FWSW-01-S61-BK7238"})
+            self.noted.assert_called_once_with(S61, {}, "", "S61STPF", "SN-BK7238-S61-01")
             self.assertEqual(ctx.state.input("stock_version"), "1.0.2")
             # Another model on the account is never the plug.
             ctx.account_devices = lambda: [dict(self.DEVICE, extra={"model": "SN-ESP32-MINIR4"})]

@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, TYPE_CHECKING
 
-from tools.ewelink import discover_ewelink
+from tools.ewelink import discover_ewelink, firmware_name
 from tools.autoflash import hostsys, join, kinds, output, plugs, prompts, runs, setup_network
 from tools.autoflash.errors import Abort
 from tools.ewelink.query_ota import ota_endpoints
@@ -431,6 +431,28 @@ def already_converting(plug_ip: str) -> None:
         )
 
 
+def note_firmware_name(kind: kinds.Kind | None, latest: dict[str, Any], deviceid: str, product: str, model: str) -> str:
+    """Log the firmware name the device's stock updater checks, if it can be
+    learned, for a report of a device the tool does not know yet. It changes
+    nothing in how a known kind converts, and a run goes on without it.
+    `latest` is what query_ota saved of eWeLink's offer of the latest firmware."""
+    learned, problems = firmware_name.learn(latest.get("offers") or [], deviceid, product, model)
+    if latest.get("problem"):
+        problems.insert(0, f"eWeLink's offer could not be read ({latest['problem']})")
+    for problem in problems:
+        output.log_only(f"    Firmware name: {problem}")
+    if learned is None:
+        output.log_only("    Firmware name: not learned")
+        return ""
+    output.log_only(f"    Firmware name: {learned.name}, from {learned.source}; "
+                    f"its chip: {learned.chip or 'not named'}")
+    if kind is not None and learned.name != kind.wrapper_model:
+        output.tell(f"    Firmware name: {learned.source} says {learned.name}, but this tool wraps "
+                    f"firmware for this device as {kind.wrapper_model}. The conversion goes on: if "
+                    "the device turns the update down, its firmware stays as it is. Please report this")
+    return learned.name
+
+
 def step_discover(ctx: Context) -> dict[str, Any]:
     """A2/A3/A4 - identify the device and read its OTA metadata."""
     plug_ip = ctx.state.require("plug_ip")[0]
@@ -450,7 +472,7 @@ def step_discover(ctx: Context) -> dict[str, Any]:
     email = ctx.email()
     env = ctx.ewelink_env()
     if hostsys.run_tool(hostsys.python_script("tools/ewelink/query_ota.py", "--mdns-capture", str(mdns),
-                                      "--email", email, "--output", str(meta)),
+                                      "--email", email, "--output", str(meta), "--latest-offer"),
                 interactive=True, env=env) != 0:
         reasons = output.tool_problems(1)
         raise Abort("the eWeLink query failed" + (f": {reasons[0]}" if reasons else ""))
@@ -462,12 +484,15 @@ def step_discover(ctx: Context) -> dict[str, Any]:
         model = str(metadata["query"].get("model", ""))
         product = str(metadata.get("product") or "")
         endpoints = ota_endpoints(metadata["response"]["data"]["otaInfoList"])
+        latest = metadata.get("latest_offer") or {}
+        deviceid = str(metadata["query"].get("deviceid", ""))
     except (OSError, KeyError, TypeError, ValueError) as exc:
         raise Abort(f"could not read the OTA metadata just written: {exc}") from exc
     finally:
         # Its download links may work as access tokens; what is needed is now read.
         meta.unlink(missing_ok=True)
     kind = kinds.for_account(product, model)
+    name = note_firmware_name(kind, latest, deviceid, product, model)
     if kind is None:
         raise Abort(
             f"{plug_ip} is a {model or 'device of unknown model'}, which this tool does not "
@@ -507,4 +532,4 @@ def step_discover(ctx: Context) -> dict[str, Any]:
     ctx.state.set_input("stock_version", version)
     ctx.state.set_input("product_model", product)
     return {"stock_version": version, "update_offered": bool(endpoints), "model": model,
-            "signal_dbm": signal}
+            "signal_dbm": signal, "firmware_name": name}

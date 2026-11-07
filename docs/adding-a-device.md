@@ -116,6 +116,49 @@ secure boot and flash encryption are on, the flash size, the partition table, an
 each app's version, ESP-IDF and the firmware name its updater checks. None of it
 is secret, so a report of a device the tool stopped on is enough to start adding it.
 
+## Learning the firmware name
+
+A device's stock updater refuses a file wrapped for another firmware name, and the
+names vary too much to guess: `FWSW-E32S60-S60-ESP32C3FN4`,
+`FWSWES-E32DR3-DUALR3-ESP32D0WDV3`, `FWPNL-E32NSP-NSPANEL-ESP32D0WDV3`. A wrong name
+does no harm, as the device reports a failed update and stays on Sonoff's firmware.
+
+Before anything is written, each run tries to learn the name and logs it in
+`run.log`, with the chip it implies. This also happens on a device the tool then
+turns down, so a report of one already has its name.
+
+1. **The file eWeLink offers.** eWeLink offers nothing to a device on the latest
+   firmware, so the tool also asks with the device's own id and version `0.0.1`,
+   which gets it the latest. It then reads the first bytes of that `user1.bin`, not
+   the rest of the file, and never logs the link or the id. This changes nothing on
+   the device: it is only asked of eWeLink.
+2. **The public file list.** If that gives no name, the tool looks in the filenames
+   of the
+   [public update files](https://github.com/openshwprojects/FlashDumps/tree/4d3556605da2ce101382a01b6fb7d84e68c3df2a/IoT/zOTAz/eWeLink),
+   matching eWeLink's product model, then the model the stock firmware names. It
+   gives no name unless exactly one fits.
+
+What has been tried on eWeLink itself, on one S60:
+
+- The server goes by the device's id and ignores the model, so you cannot look up a
+  device you do not hold. A made-up id gets an unrelated file, so never use one,
+  and an empty id gets an error.
+- The download link answers an empty 400 as eWeLink gives it. With
+  `?deviceid=<the device's id>&ts=1&sign=0` added it answers, and a range request
+  gets just those bytes. The signature is not checked.
+
+The S60's name read this way matched its `wrapper_model`. Other devices, including
+Beken ones, have not been tried this way. The Beken route uses only the public list.
+
+For a kind the tool knows, a name that differs from its `wrapper_model` is shown on
+the screen as well, and the conversion goes on as before. A run that cannot learn
+the name goes on without it. A run on the cloud stub learns nothing, as the stub
+offers no file and the run does not look further.
+
+To use the name in your own code, call `firmware_name.learn()` in
+[firmware_name.py](../tools/ewelink/firmware_name.py). It returns the name, its chip
+and where it came from.
+
 ## When it does not boot
 
 Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
