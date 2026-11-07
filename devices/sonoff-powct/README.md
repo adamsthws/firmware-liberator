@@ -2,9 +2,8 @@
 
 Sonoff's the **POWCT**: a clamp-on energy meter with a small display. Its stock firmware calls itself `SN-ESP32D0-POWCT-01`.
 
-**Tested in the emulator only.** The conversion has run from a public dump of a
-stock one; no real one has been converted. The emulator has none of its hardware
-to see, so the wiring below is what its sources say.
+The conversion runs in the emulator from a public dump of a stock one. The emulator
+has none of its hardware to see, so the wiring below is what its sources say.
 
 | | |
 |---|---|

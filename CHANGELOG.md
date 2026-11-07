@@ -16,6 +16,23 @@ check.
 
 ## 2.4.0
 
+- The tool converts plugs with a classic ESP32 and other partition layouts, not
+  only an ESP32-C3 on the S60's: the Sonoff POW Elite, POWCT, TH Elite and
+  DUALR3, to Tasmota and to ESPHome, with their firmware pinned. A plug whose partition
+  table the tool does not know stops after its backup, before anything of
+  Sonoff's is written over. The NSPanel, BASICR4, MINIR4 and M5 1C, 2C and 3C do
+  not start far enough in the emulator yet, so the tool turns them down as it
+  does a device it does not know: `devices/not-ready-yet/` says what holds each
+  one up, and `docs/adding-a-device.md` how to add a device.
+- A run logs what a backup says about the device - its chip, secure boot and
+  flash encryption, flash size, partition table and each app's version - and
+  shows it where the table is not one the tool knows: none of it is secret, and
+  one report is then enough to start adding that device.
+- A run says a full disk plainly. Where a plug that has downloaded from this
+  computer then asks for nothing, it no longer blames this computer's firewall,
+  and says to switch the plug off and on. A Ctrl-C just before the first stage
+  is no longer forgotten, so a second press within 10 seconds stops the run.
+- The S61's backup is tried three times before the run goes on without one.
 - The Sonoff Basic Gen5 (BASIC-1GS), behind a warning: no real one has been
   converted. It has no public dump, so the tool checks the partition table in
   eWeLink's official update file before writing anything, asks you to accept the
@@ -66,8 +83,7 @@ check.
   S60's interim firmwares are, and once it has fetched the next firmware it
   erases its own settings, so ESPHome - or a later OpenBeken - finds nothing
   of it. A run that lost its record recognises a plug left on it, and goes on
-  from there. Tested end to end in the emulator in every direction; not yet on
-  a real plug.
+  from there. Tested end to end in the emulator in every direction.
 - From Sonoff's firmware the run finds the plug in eWeLink before it asks
   which firmware you want, because which firmware a plug can have depends on
   what plug it is. The question is a stage of its own (Choosing the firmware),

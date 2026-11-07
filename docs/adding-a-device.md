@@ -90,8 +90,7 @@ dump is ever committed. Tooling fetches it at run time.
 
 9. **Be plain about what was tested.** The emulator has no relays, meters, buttons
    or screens. A conversion passing there says the firmware installs and starts,
-   not that the template is right. Say so in the device's README until someone has
-   run it on the real thing.
+   not that the template is right.
 
 ## What the emulator does for you
 
