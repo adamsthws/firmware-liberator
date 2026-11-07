@@ -2,14 +2,12 @@
 each plug has, and the scenarios it lists."""
 
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/espressif/emulator"))
-import fault_suite as fs  # noqa: E402
+from tools.espressif.emulator import fault_suite as fs
 
 MAC = "12:34:56:ab:cd:ef"
 
@@ -288,7 +286,7 @@ class RunWordsTests(unittest.TestCase):
 
     def test_c3_starts_at_the_line_the_backup_begins_with(self):
         import re
-        source = (Path(__file__).resolve().parents[2] / "tools/autoflash/routes/espressif/installer.py")
+        source = (Path(__file__).resolve().parents[3] / "tools/autoflash/routes/espressif/installer.py")
         self.assertRegex(source.read_text(encoding="utf-8"), re.compile(fs.STARTS["C3"][0]))
         self.assertRegex("Backing up the plug's Sonoff firmware - about a minute...", fs.STARTS["C3"][0])  # legacy
 

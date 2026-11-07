@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[2] / "tools/espressif/emulator/container/bin/softap-status"
+SCRIPT = Path(__file__).resolve().parents[3] / "tools/espressif/emulator/container/bin/softap-status"
 
 
 def run(*lines: bytes) -> tuple[bytes, bytes]:
