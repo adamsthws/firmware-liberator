@@ -209,7 +209,7 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
         *([("Typed the Wi-Fi", "yes" if ctx.state.input("wifi_typed") else "no"),
            ("Joined setup network", "yes" if joined else "no")] if espressif else []),
         # Whether the device had to be switched off and on to start its new
-        # firmware: the emulated S61 never restarts by itself; a real one may.
+        # firmware: an emulated Beken plug never restarts by itself; a real one may.
         *([("Power cycled", "true" if ctx.state.input("power_cycles") else "false")] if not espressif else []),
         ("Checks passed", checks_passed(hardware)),
     ]

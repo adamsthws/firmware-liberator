@@ -32,8 +32,8 @@ the plug uses:
     python3 stub_server.py --bind 192.168.60.1 --cert server.crt --key server.key \\
         --device-json stub-device.json
 
-With `--plain` it serves plaintext HTTP/WS instead of TLS and needs no cert. The
-emulated S61's dispatch is plaintext (its factory dispatch URL is
+With `--plain` it serves plaintext HTTP/WS instead of TLS and needs no cert. An
+emulated Beken plug's dispatch is plaintext (its factory dispatch URL is
 `http://...:80`); its IoT WebSocket is still `wss://` and verifies the server
 cert, so a run serves dispatch plaintext and the IoT channel over TLS and swaps
 the firmware's trust anchor. See tools/beken/emulator/cloud_online.py.
@@ -594,7 +594,7 @@ class TLSServer(socketserver.ThreadingTCPServer):
 
 
 class PlainServer(socketserver.ThreadingTCPServer):
-    """Plaintext variant for the emulated S61, which dials http://...:80."""
+    """Plaintext variant for an emulated Beken plug, which dials http://...:80."""
     allow_reuse_address = True
     daemon_threads = True
 
@@ -606,7 +606,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cert")
     parser.add_argument("--key")
     parser.add_argument("--plain", action="store_true",
-                        help="serve plaintext HTTP/WS, no TLS (the emulated S61 dials "
+                        help="serve plaintext HTTP/WS, no TLS (an emulated Beken plug dials "
                              "http://...:80 with the factory dispatch URL)")
     parser.add_argument("--iot-host", default="192.168.60.1",
                         help="IoT server handed back by dispatch: a numeric IP (the plug "
