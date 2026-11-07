@@ -67,14 +67,10 @@ def bridge_file(ctx: Context) -> Path:
     kind = kinds.of_run(ctx.state)
     if kind is kinds.SONOFF_S60 or ctx.research_bridge:
         return ctx.bridge
-    chip = chips.of(kind.chip)
-    if chip is chips.ESP32C3:
-        app = (ROOT / BRIDGE_OTA).read_bytes()[build_vendor_ota.WRAPPER_SIZE:]
-    else:
-        pin = chip.pin("bridge")
-        app = (ROOT / pin["file"]).read_bytes()
-        if hashlib.sha256(app).hexdigest() != pin["sha256"]:
-            raise Abort(f"{pin['file']} is not the file firmware.json pins: refusing to send it")
+    try:
+        app = chips.of(kind.chip).bridge_app()
+    except (OSError, ValueError) as exc:
+        raise Abort(f"{exc}: refusing to send it") from exc
     wrapped = build_vendor_ota.build_wrapper(app, version=build_vendor_ota.app_version(app), model=kind.wrapper_model)
     path = ctx.dir / f"autoflash-bridge-{kind.key}.ota"
     path.write_bytes(wrapped)

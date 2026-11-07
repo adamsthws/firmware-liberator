@@ -36,6 +36,7 @@ from tools.autoflash import (  # noqa: E402
     output,
     plugs,
     prompts,
+    readout,
     report,
     routes,
     runner,
@@ -77,6 +78,8 @@ def run_is_complete(directory: Path) -> bool:
         state = RunState.open(directory)
     except (OSError, ValueError):
         return False
+    if state.input(readout.STATE_KEY):
+        return True  # a readout converts nothing, so has nothing to carry on
     steps = routes.steps_of(state)
     if not steps:
         return state.input("firmware") is not None  # it already ran what was asked
@@ -321,6 +324,21 @@ def cmd_run(ctx: Context) -> int:
         awake.let_sleep()
 
 
+def cmd_readout(ctx: Context, saved: Path | None) -> int:
+    """Read out a device in the eWeLink account, any kind, to help add it; or
+    send a readout kept from before (--send)."""
+    if saved:
+        output.tell(f"Sent, thank you! Its reference is {readout.send_saved(saved)}.")
+        return 0
+    output.say("Signing in to eWeLink to see which devices are in the account...")
+    devices = ctx.account_devices()
+    if not devices:
+        raise Abort("a readout needs the device in an eWeLink account, and none was found in this one")
+    given = ctx.args.plug_ip
+    output.tell(readout.run(ctx, readout.device_at(given, devices) if given else readout.choose(ctx, devices)))
+    return 0
+
+
 def forget_all_secrets() -> list[str]:
     """Delete every run's secret files, and the bundle's stored password."""
     removed = [item for directory in runs.run_directories() for item in runs.forget_run_secrets(directory)]
@@ -422,7 +440,7 @@ def _main() -> int:
     handle_signals()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", action="version", version=f"Autoflash {__version__}")
-    parser.add_argument("command", choices=["run", "status", "step", "list", "cleanup"])
+    parser.add_argument("command", choices=["run", "status", "step", "list", "cleanup", "readout"])
     parser.add_argument("step_id", nargs="?")
     parser.add_argument(
         "--run",
@@ -451,6 +469,8 @@ def _main() -> int:
     parser.add_argument("--esphome-api-key",
                         help="the device's ESPHome API encryption key, if it has one: for its Wi-Fi details, "
                         "and its updates where they are encrypted (asked for otherwise; never stored)")
+    parser.add_argument("--send", type=Path, metavar="FILE",
+                        help="with readout: send a readout kept from before (readout.tar in its run)")
     parser.add_argument("--wifi", action="store_true",
                         help="type the Wi-Fi details instead of reading them from the device")
     parser.add_argument("--no-backup", action="store_true",
@@ -503,6 +523,8 @@ def _main() -> int:
                 output.say(f"No conversion recorded for the device at {args.plug_ip}."
                            if args.plug_ip else "No conversions recorded yet.")
                 return 0
+        elif args.command == "readout":
+            args.run = start_new_run(args.plug_ip)  # never a conversion carried on
         else:
             args.run = resolve_run_name(args.run, args.new, args.plug_ip,
                                         ask=args.command == "run" and not args.unattended)
@@ -554,6 +576,24 @@ def _main() -> int:
                 firewall.say_quit(ctx)
             else:
                 firewall.release_firewall(ctx)
+            output.finish()
+    if args.command == "readout":
+        output.start(ctx.dir / "run.log", verbose=args.verbose)
+        try:
+            return cmd_readout(ctx, args.send)
+        except QuitRun:
+            output.tell("Stopped.")
+            return 130
+        except KeyboardInterrupt:
+            output.tell("Stopped with Ctrl-C. If the device was being read, switch it off and on: it starts "
+                        "its Sonoff firmware again.")
+            return 130
+        except (Abort, OSError, ValueError) as exc:
+            output.tell(f"FAILED: {exc}")
+            return 1
+        finally:
+            firewall.release_firewall(ctx)
+            runs.forget_run_secrets(ctx.dir)
             output.finish()
     output.start(ctx.dir / "run.log", verbose=args.verbose)
     log_run_choice()

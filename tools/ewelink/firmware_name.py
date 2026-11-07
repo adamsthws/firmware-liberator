@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 
 from tools.autoflash.hostsys import urlopen
+from tools.ewelink import offered_firmware
 
 # The public files' folder listed at one commit, the one
 # tools/espressif/emulator/public_dump.py fetches its files from.
@@ -103,10 +104,8 @@ def read_head(url: str, deviceid: str) -> bytes:
     unless asked as a device asks, with its id, a time and a signature; it does
     not check the last two. Only these bytes are read, even from a server that
     ignores the range and starts sending the whole file."""
-    asked = urllib.parse.urlsplit(url)
-    extra = urllib.parse.urlencode({"deviceid": deviceid, "ts": 1, "sign": 0})
-    full = asked._replace(query=f"{asked.query}&{extra}" if asked.query else extra).geturl()
-    request = urllib.request.Request(full, headers={"Range": f"bytes=0-{HEAD_SIZE - 1}",
+    request = urllib.request.Request(offered_firmware.as_device(url, deviceid),
+                                     headers={"Range": f"bytes=0-{HEAD_SIZE - 1}",
                                                     "User-Agent": "autoflash-research/0.1"})
     with urlopen(request, timeout=TIMEOUT) as reply:
         return reply.read(HEAD_SIZE)

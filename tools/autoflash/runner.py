@@ -94,6 +94,13 @@ def _execute(ctx: Context, step: str) -> int:
         output.tell(f"{back.reason}. Doing {back.step} again.")
         ctx.go_back = back.step
         return 0
+    except errors.Finished as done:
+        ctx.state.mark(step, FAILED, error=str(done), nothing_written=True)
+        output.stage_end("complete")
+        output.tell("")
+        output.tell(str(done))
+        ctx.finished = True
+        return 0
     except PlugNeverConnected as exc:
         ctx.state.mark(step, FAILED, error=str(exc))
         output.stage_end("stopped")
@@ -431,6 +438,9 @@ def run_steps(ctx: Context) -> int:
             output.say(f"    Doing {step} again: the device does not show it finished.")
             output.transient_end()
         code = execute_with_retries(ctx, step)
+        if code == 0 and getattr(ctx, "finished", False):
+            firewall.close_firewall_rules(ctx)
+            return 0
         back = getattr(ctx, "go_back", None)
         if code == 0 and back:
             ctx.go_back = None
