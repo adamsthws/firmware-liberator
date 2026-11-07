@@ -35,13 +35,13 @@ try:
         TABLE_OFFSET,
         TABLE_SIZE,
         TARGET_PARTITIONS,
-        TARGET_TABLE_SHA256,
         analyze_canonical_nvs,
         official_release,
         parse_partition_sector,
         require_exact_partitions,
         require_pinned_artifacts,
         sha256_bytes,
+        target_table as target_table_of,
         validate_native_image,
     )
 except ModuleNotFoundError:
@@ -64,13 +64,13 @@ except ModuleNotFoundError:
         TABLE_OFFSET,
         TABLE_SIZE,
         TARGET_PARTITIONS,
-        TARGET_TABLE_SHA256,
         analyze_canonical_nvs,
         official_release,
         parse_partition_sector,
         require_exact_partitions,
         require_pinned_artifacts,
         sha256_bytes,
+        target_table as target_table_of,
         validate_native_image,
     )
 
@@ -194,12 +194,13 @@ def main() -> int:
     if len(factory) != APP0_OFFSET + len(app):
         parser.error("factory image has unexpected bytes before/after app0")
 
-    target_table = factory[TABLE_OFFSET : TABLE_OFFSET + TABLE_SIZE]
+    try:
+        target_table = target_table_of(factory[TABLE_OFFSET : TABLE_OFFSET + TABLE_SIZE])
+    except ValueError as exc:
+        parser.error(f"the factory image's partition table: {exc}")
     target_report = parse_partition_sector(target_table)
     require_exact_partitions(target_report, TARGET_PARTITIONS)
-    if target_report["sha256"] != TARGET_TABLE_SHA256:
-        parser.error("target table differs from the reviewed official table sector")
-    target_table_path = output / "target-official-partition-table.bin"
+    target_table_path = output / "target-partition-table.bin"
     target_table_path.write_bytes(target_table)
 
     artifacts = {

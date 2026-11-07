@@ -33,7 +33,10 @@ PARTITION_MAGIC = 0x50AA
 MD5_MAGIC = 0xEBEB
 
 SOURCE_TABLE_SHA256 = "f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf"
-TARGET_TABLE_SHA256 = "619e5a9b645198b25d04949997221f587776965dfd13cbceddf9862c53e655c1"
+# Tasmota's own table, in its factory image: plugs converted before the
+# identity was kept have it (target_table).
+OFFICIAL_TABLE_SHA256 = "619e5a9b645198b25d04949997221f587776965dfd13cbceddf9862c53e655c1"
+TARGET_TABLE_SHA256 = "32993d6fc6af861fff9686c15f4b53144e20ae3493a123f36f96ef1f0e79e93f"
 
 SOURCE_PARTITIONS = (
     ("nvs", 0x01, 0x02, 0x009000, 0x010000, 0x0),
@@ -44,13 +47,23 @@ SOURCE_PARTITIONS = (
     ("ota_1", 0x00, 0x11, 0x210000, 0x1F0000, 0x0),
 )
 
-TARGET_PARTITIONS = (
+OFFICIAL_PARTITIONS = (
     ("nvs", 0x01, 0x02, 0x009000, 0x005000, 0x0),
     ("otadata", 0x01, 0x00, 0x00E000, 0x002000, 0x0),
     ("safeboot", 0x00, 0x00, 0x010000, 0x0D0000, 0x0),
     ("app0", 0x00, 0x10, 0x0E0000, 0x2D0000, 0x0),
     ("spiffs", 0x01, 0x82, 0x3B0000, 0x050000, 0x0),
 )
+# The table a conversion writes: Tasmota's, its filesystem one sector shorter,
+# and that sector at the top of the flash a data partition of its own, where
+# the plug's Sonoff identity is kept (tools/espressif/sonoff_identity.py). Its
+# subtype is one of those ESP-IDF leaves for custom data; nothing Tasmota does
+# reads or writes it.
+IDENTITY_PARTITION = ("sonoff", 0x01, 0x40, 0x3FF000, 0x001000, 0x0)
+TARGET_PARTITIONS = (*OFFICIAL_PARTITIONS[:4], ("spiffs", 0x01, 0x82, 0x3B0000, 0x04F000, 0x0),
+                     IDENTITY_PARTITION)
+# Either is a Tasmota layout this tool converted to.
+TASMOTA_TABLES = (TARGET_TABLE_SHA256, OFFICIAL_TABLE_SHA256)
 
 CANONICAL_NVS_OFFSET = 0x9000
 CANONICAL_NVS_SIZE = 0x5000
@@ -65,7 +78,7 @@ SAFEBOOT_SIZE = 0xD0000
 APP0_OFFSET = 0xE0000
 APP0_SIZE = 0x2D0000
 SPIFFS_OFFSET = 0x3B0000
-SPIFFS_SIZE = 0x50000
+SPIFFS_SIZE = 0x4F000
 SAFEBOOT_STAGE_OFFSET = OLD_OTA0_OFFSET
 
 # The commit copies Safeboot into place over where Sonoff's layout keeps the
@@ -261,6 +274,18 @@ def require_exact_partitions(
         raise ValueError(f"partition entries differ\nactual={actual!r}\nexpected={wanted!r}")
 
 
+def require_tasmota_table(report: dict[str, Any]) -> None:
+    """A Tasmota table this tool converts to: the one with the identity's sector,
+    or Tasmota's own, which a run begun before that sector, or a plug converted
+    by an earlier version, has. Either, with the reviewed bytes."""
+    for entries, sha256 in ((TARGET_PARTITIONS, TARGET_TABLE_SHA256), (OFFICIAL_PARTITIONS, OFFICIAL_TABLE_SHA256)):
+        if tuple(partition_tuple(entry) for entry in report["entries"]) == tuple(entries):
+            if report["sha256"] != sha256:
+                raise ValueError("target table differs from the reviewed official sector")
+            return
+    require_exact_partitions(report, TARGET_PARTITIONS)
+
+
 SOURCE_TABLE_FILE = Path(__file__).resolve().parents[3] / "artifacts" / "sonoff-s60-partition-table.bin"
 
 
@@ -281,6 +306,30 @@ def interim_table(source: bytes | None = None) -> bytes:
     require_exact_partitions(parse_partition_sector(bytes(table)), INTERIM_PARTITIONS)
     if sha256_bytes(bytes(table)) != INTERIM_TABLE_SHA256:
         raise ValueError("the interim table differs from the reviewed one")
+    return bytes(table)
+
+
+def target_table(official: bytes) -> bytes:
+    """The table a conversion writes (TARGET_PARTITIONS), from Tasmota's own as
+    its factory image has it: the filesystem's entry shortened, the identity's
+    added after it, the MD5 made again - and checked against the reviewed one."""
+    report = parse_partition_sector(official)
+    require_exact_partitions(report, OFFICIAL_PARTITIONS)
+    if report["sha256"] != OFFICIAL_TABLE_SHA256:
+        raise ValueError("that is not Tasmota's official partition table")
+    table = bytearray(official)
+    spiffs = (len(OFFICIAL_PARTITIONS) - 1) * PARTITION_ENTRY_SIZE
+    struct.pack_into("<I", table, spiffs + 8, TARGET_PARTITIONS[4][4])
+    label, kind, subtype, offset, size, flags = IDENTITY_PARTITION
+    entry = struct.pack("<HBBII16sI", PARTITION_MAGIC, kind, subtype, offset, size,
+                        label.encode("ascii"), flags)
+    md5_at = len(TARGET_PARTITIONS) * PARTITION_ENTRY_SIZE
+    table[md5_at - PARTITION_ENTRY_SIZE:md5_at] = entry
+    table[md5_at:md5_at + PARTITION_ENTRY_SIZE] = struct.pack("<H", MD5_MAGIC) + b"\xff" * 14 + bytes(16)
+    table[md5_at + 16:md5_at + 32] = hashlib.md5(table[:md5_at]).digest()
+    require_exact_partitions(parse_partition_sector(bytes(table)), TARGET_PARTITIONS)
+    if sha256_bytes(bytes(table)) != TARGET_TABLE_SHA256:
+        raise ValueError("the table with the identity's entry differs from the reviewed one")
     return bytes(table)
 
 

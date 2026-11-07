@@ -102,6 +102,8 @@ class Context:
         # From .env or the environment: tried once, then asked for if eWeLink refuses it.
         self._given_ewelink_password = credentials.get("EWELINK_PASSWORD")
         self._given_email = credentials.get("EWELINK_EMAIL")
+        # The last sign-in's region and access token, held in memory only.
+        self._ewelink_session: tuple[str, str] | None = None
         self._finder: join.PlugFinder | None = None
         # The go-ahead to replace the plug's firmware, given in this run.
         self.consented = False
@@ -258,6 +260,7 @@ class Context:
                 region, token = login(self.email(), self._ewelink_password or "", "+44", "eu")
                 devices = get_devices(region, token)
                 account.keep_account_private(devices)
+                self._ewelink_session = (region, token)
                 return devices
             except EwelinkError as exc:
                 if "login failed" not in str(exc):
@@ -273,6 +276,17 @@ class Context:
                 output.transient_end()
                 if choice == 1:
                     self.forget_account()
+
+    def ewelink_session(self) -> tuple[str, str] | None:
+        """The account's region and an access token, signing in if this run has
+        not; None when eWeLink cannot be reached."""
+        if self._ewelink_session is None:
+            self.account_devices()
+        return self._ewelink_session
+
+    def ewelink_region(self) -> str:
+        session = self.ewelink_session()
+        return session[0] if session else "eu"
 
     def forget_account(self) -> None:
         """Ask again which eWeLink account, and its password."""

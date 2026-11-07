@@ -393,6 +393,36 @@ class Device:
             )
         return digest
 
+    # Bytes of flash a read asks for at a time: Tasmota answers a command in
+    # one buffer, and this, as hex, sits well inside it.
+    READ_CHUNK = 512
+
+    def read_region(self, address: int, length: int, timeout: float = 30.0) -> bytes:
+        """`length` bytes of flash from `address`, read on the device as hex."""
+        out = bytearray()
+        while len(out) < length:
+            size = min(self.READ_CHUNK, length - len(out))
+            text = self.berry_value(f"import flash _r=flash.read({address + len(out)},{size}).tohex()",
+                                    "_r", timeout=timeout).strip('"')
+            try:
+                chunk = bytes.fromhex(text)
+            except ValueError:
+                chunk = b""
+            if len(chunk) != size:
+                raise DeviceError(f"expected {size} bytes of flash from the device, got {text[:40]!r} - "
+                                  "the running firmware probably cannot execute Berry")
+            out += chunk
+        return bytes(out)
+
+    def read_nvs(self, address: int, size: int) -> bytes:
+        """An NVS partition, its pages ESP-IDF never used left unread (erased)."""
+        out = bytearray(b"\xff" * size)
+        for page in range(0, size, 0x1000):
+            if self.read_region(address + page, 4) == b"\xff" * 4:
+                continue
+            out[page:page + 0x1000] = self.read_region(address + page, 0x1000)
+        return bytes(out)
+
     # -- state --------------------------------------------------------------
 
     def firmware_version(self) -> str:

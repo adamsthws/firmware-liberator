@@ -28,11 +28,14 @@ from tools.autoflash import (
 from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes import update
-from tools.autoflash.routes.espressif import hub
+from tools.autoflash.routes.espressif import hub, identity
+from tools.espressif import nvs_image, sonoff_identity
+from tools.espressif.layouts import TEMPORARY_OTADATA
 from tools.espressif.safeboot.prepare_imprinted_bundle import BundleError, startup_image
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
+    from tools.espressif.layouts import Layout
 
 
 def step_esphome_install(ctx: Context) -> dict[str, Any]:
@@ -91,11 +94,13 @@ def step_leave_tasmota(ctx: Context) -> dict[str, Any]:
         "After this stage the mover, and each firmware after it, has",
         "to join your Wi-Fi on its own, and a weak signal makes that less certain."])
     handover.consent_to_leave(ctx, "Tasmota")
+    kind = kinds.of_run(ctx.state)
+    layout = esphome.layout_of(kind)
+    table, settings = (None, None) if ctx.dry_run else what_tasmota_has(ctx, layout)
     try:
-        kind = kinds.of_run(ctx.state)
         chip = esphome.chip_of(kind)
         plan = plans.leave_tasmota(esphome.mover_for(ssid, password, chip), esphome.leaving_table(kind),
-                                   esphome.layout_of(kind))
+                                   layout, tasmota_table=table, settings=settings)
     except (esphome.ImageError, imprint.ImprintError, plans.PlanError, OSError) as exc:
         raise Abort(f"the mover cannot be used: {exc}") from exc
     try:
@@ -115,6 +120,32 @@ def step_leave_tasmota(ctx: Context) -> dict[str, Any]:
         wait_for_mover(ctx, "the device to start the mover")
         output.say("    The device is running the mover, on Sonoff's memory layout.")
     return result | {"signal_dbm": signal}
+
+
+def what_tasmota_has(ctx: Context, layout: Layout) -> tuple[str, bytes | None]:
+    """The table of the plug leaving Tasmota, which L1's plan checks it for,
+    and the settings it carries to the next firmware (settings_to_carry)."""
+    return (ctx.device.sha_region(plans.TABLE_ADDRESS, plans.SECTOR, timeout=30),
+            settings_to_carry(ctx, layout))
+
+
+def settings_to_carry(ctx: Context, layout: Layout) -> bytes | None:
+    """The settings L1 writes where Sonoff's layout keeps them: an NVS holding
+    the plug's Sonoff identity, from the sector Tasmota's layout keeps it in -
+    or, on a plug converted before there was one, from its backup on this
+    computer - so the next firmware has it as Sonoff's firmware kept it. None
+    where there is neither: the region is cleared, as before."""
+    kept = identity.kept_in_sector(ctx)
+    where = "kept on the device"
+    if kept is None:
+        kept, where = identity.from_backup(ctx), "from its backup on this computer"
+    if kept is None:
+        output.tell("    The device keeps no Sonoff identity, and this computer has no backup of it:")
+        output.tell("    going back to Sonoff's firmware later will need your eWeLink account.")
+        return None
+    size = TEMPORARY_OTADATA - layout.nvs if layout.needs_temporary else identity.nvs_size(layout)
+    output.say(f"    The device's Sonoff identity, {where}, goes into the settings of the next firmware.")
+    return nvs_image.used(sonoff_identity.nvs(kept, size))
 
 
 def wait_for_mover(ctx: Context, what: str) -> bool:

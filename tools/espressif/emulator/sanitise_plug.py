@@ -56,6 +56,7 @@ from tools.espressif.safeboot.safeboot_migration import (  # noqa: E402
     PUBLISHED_BLUETOOTH_FILE,
     PUBLISHED_RECOVERY_FILE,
     SOURCE_TABLE_SHA256,
+    OFFICIAL_TABLE_SHA256,
     TARGET_TABLE_SHA256,
     parse_partition_sector,
     sha256_bytes,
@@ -148,12 +149,14 @@ def sanitise_flash(flash: bytes) -> tuple[bytes, dict[str, str]]:
     proof["bootloader"] = f"{esphome.BOOTLOADER.relative_to(ROOT)}, byte for byte"
 
     table = flash[TABLE_AT:TABLE_AT + TABLE_SIZE]
-    layout = {SOURCE_TABLE_SHA256: "sonoff", TARGET_TABLE_SHA256: "tasmota"}.get(sha256_bytes(table))
+    layout = {SOURCE_TABLE_SHA256: "sonoff", TARGET_TABLE_SHA256: "tasmota",
+              OFFICIAL_TABLE_SHA256: "tasmota"}.get(sha256_bytes(table))
     if layout is None:
         raise Refused("its partition table is neither Sonoff's nor Tasmota's")
     out[TABLE_AT:TABLE_AT + TABLE_SIZE] = table
     proof["table"] = ("Sonoff's, as artifacts/sonoff-s60-partition-table.bin" if layout == "sonoff"
-                      else "Tasmota's, as its factory image has it")
+                      else "Tasmota's, as its factory image has it" if sha256_bytes(table) == OFFICIAL_TABLE_SHA256
+                      else "Tasmota's, with the entry of the sector that keeps Sonoff's identity, not copied")
     partitions = {entry["label"]: entry for entry in parse_partition_sector(table)["entries"]}
 
     def place(label: str, data: bytes) -> None:

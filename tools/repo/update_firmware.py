@@ -75,13 +75,14 @@ from tools.espressif.safeboot.safeboot_migration import (  # noqa: E402
     APP0_SIZE,
     SAFEBOOT_OFFSET,
     SAFEBOOT_SIZE,
+    OFFICIAL_PARTITIONS,
     TABLE_OFFSET,
     TABLE_SIZE,
-    TARGET_PARTITIONS,
     TARGET_TABLE_SHA256,
     parse_partition_sector,
     partition_tuple,
     sha256_bytes,
+    target_table,
     validate_native_image,
 )
 
@@ -334,16 +335,18 @@ def check_tasmota_files(files: dict[str, bytes], chip: chips.Chip = chips.ESP32C
     """Refuse a release whose files for `chip` would not fit the conversion.
 
     The conversion writes the partition table it was reviewed with (the
-    factory image's, byte for byte), the Safeboot into its partition and the
+    factory image's, with the entry for the plug's Sonoff identity added:
+    safeboot_migration.target_table), the Safeboot into its partition and the
     app into app0, and at the end compares each with these files.
     """
     factory, safeboot, app = files["factory"], files["safeboot"], files["app"]
     table = factory[TABLE_OFFSET:TABLE_OFFSET + TABLE_SIZE]
     try:
         entries = [partition_tuple(entry) for entry in parse_partition_sector(table)["entries"]]
+        written = target_table(table)
     except ValueError:
-        entries = []
-    if entries != list(TARGET_PARTITIONS) or sha256_bytes(table) != TARGET_TABLE_SHA256:
+        entries, written = [], b""
+    if entries != list(OFFICIAL_PARTITIONS) or sha256_bytes(written) != TARGET_TABLE_SHA256:
         raise UpdateError("the factory image's partition table is not the one the conversion "
                           "writes: the repartition itself would have to be reviewed again")
     if factory[SAFEBOOT_OFFSET:SAFEBOOT_OFFSET + len(safeboot)] != safeboot:

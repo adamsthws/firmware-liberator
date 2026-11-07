@@ -16,7 +16,8 @@ POINT_OF_NO_RETURN, DESTRUCTIVE_STEPS, RETRY_STEPS, ERASED_CHECK_STEPS,
 STAGE_NAMES, TARGET_STAGE_NAMES, PLAIN_DESCRIPTION, ATTEMPTED_EVIDENCE,
 STEP_VERIFIERS (each step its verifier doubts is done again, unasked),
 SONOFF_FROM_BACKUP (whether going back to Sonoff's firmware needs
-the plug's own backup), RESUME_CHECK, what a resumed run checks first (or None),
+the plug's own backup; where it does, sonoff_without_backup(ctx, source,
+asked) says what it can use instead, or None), RESUME_CHECK, what a resumed run checks first (or None),
 and published_version(kind, firmware), the release of this tool's own build
 of `firmware` it installs, if any, which a plug on an earlier release of it
 is offered as an update (routes/update.py).
@@ -256,8 +257,15 @@ def settle_route(ctx: Context) -> tuple[str | None, str]:
     # Tasmota stays a choice on Tasmota: its meter checked (rerun_on_tasmota).
     offered = family_of(ctx.state).FIRMWARES
     choices = [name for name in offered if name != running or running == "tasmota"]
-    if family_of(ctx.state).SONOFF_FROM_BACKUP and not sonoff_backup_exists(ctx):
-        choices.remove("sonoff")  # going back needs this plug's backup
+    if family_of(ctx.state).SONOFF_FROM_BACKUP and "sonoff" in choices and not sonoff_backup_exists(ctx):
+        # Going back needs this plug's backup - or, in a family that can do
+        # without, its Sonoff identity, kept on the plug or in its eWeLink account.
+        without = family_of(ctx.state).sonoff_without_backup(ctx, running, asked=given == "sonoff")
+        if without:
+            output.say(f"There is no backup of the device's Sonoff firmware on this computer: going back to it "
+                       f"would use {without}.")
+        else:
+            choices.remove("sonoff")
     if given:
         if given == running:
             nothing_to_convert(ctx, running)
@@ -266,7 +274,8 @@ def settle_route(ctx: Context) -> tuple[str | None, str]:
                         f"takes {' or '.join(offered.values())}")
         if given not in choices:
             raise Abort(f"this device cannot go to {FIRMWARES[given]}: there is no backup of its "
-                        "Sonoff firmware on this computer")
+                        "Sonoff firmware on this computer, the device keeps no Sonoff identity, and "
+                        "its eWeLink account has no record of it")
         firmware = given
     else:
         firmware = ask_firmware(running, choices,
@@ -307,7 +316,9 @@ def ask_firmware(source: str, choices: list[str], outdated: tuple[str, str, str]
              f"to {outdated[2]},", "the release this tool installs, keeping its settings."] if outdated else [])
     if source != "sonoff" and "sonoff" not in choices:
         body += [""] * bool(body) + ["Going back to Sonoff's own firmware needs the backup this tool takes",
-                                     "when it first converts a device, and there is none for this one here."]
+                                     "when it first converts a device, or the Sonoff identity the device",
+                                     "keeps on Tasmota, and there is neither for this one. --firmware sonoff",
+                                     "also tries the Sonoff settings ESPHome keeps, and your eWeLink account."]
     prompts.section("Choose the device's new firmware", body)
     labels = {"tasmota": "Tasmota" if source != "tasmota" else "Tasmota, as it is (its meter calibrated, if it is not)",
               "openbeken": "OpenBeken", "esphome": "ESPHome",

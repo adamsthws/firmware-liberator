@@ -177,6 +177,10 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
         # A run from a converted plug takes none: one is there or not.
         ("Sonoff backup", plugs.BACKUP_OUTCOMES[ctx.state.input("backup_outcome")
                                       or ("existing" if routes.sonoff_backup_exists(ctx) else "not taken")][1]),
+        # Where going back to Sonoff's firmware took the plug's identity from:
+        # only on such a run (sonoff.step_sonoff_restore).
+        *([("Sonoff identity", SONOFF_IDENTITY.get(captures.get("R1.identity"), "not read yet"))]
+          if espressif and firmware == "sonoff" else []),
         ("Computer", computer_description()),
         ("Python", python_description()),
         ("Time taken", took),
@@ -198,6 +202,10 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
     if os.environ.get("AUTOFLASH_EMULATOR_URL"):
         fields.append(("Ran in the emulator", "yes"))
     return [(label, answer(value)) for label, value in fields]
+
+
+SONOFF_IDENTITY = {"backup": "from the backup on this computer", "kept": "from the device",
+                   "account": "rebuilt from your eWeLink account"}
 
 
 def checks_passed(hardware: dict[str, str]) -> str:

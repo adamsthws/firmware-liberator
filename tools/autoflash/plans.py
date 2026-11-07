@@ -59,8 +59,12 @@ BUSY_LIMIT = 55.0
 
 try:
     from tools.espressif.safeboot.safeboot_migration import TARGET_TABLE_SHA256 as TASMOTA_TABLE_SHA256
+    from tools.espressif.safeboot.safeboot_migration import TASMOTA_TABLES
+    from tools.espressif.sonoff_identity import SECTOR_AT as IDENTITY_AT
 except ModuleNotFoundError:  # run as a script from tools/
     from safeboot_migration import TARGET_TABLE_SHA256 as TASMOTA_TABLE_SHA256
+    from safeboot_migration import TASMOTA_TABLES
+    from sonoff_identity import SECTOR_AT as IDENTITY_AT  # type: ignore[no-redef]
 
 
 class PlanError(ValueError):
@@ -298,7 +302,22 @@ def esphome(image: bytes, layout: Layout = SONOFF_DUAL_OTA) -> Plan:
     ).check()
 
 
-def leave_tasmota(mover: bytes, table: bytes, layout: Layout = SONOFF_DUAL_OTA) -> Plan:
+def keep_identity(sector: bytes, layout: Layout = SONOFF_DUAL_OTA) -> Plan:
+    """The sector that keeps the plug's Sonoff identity, at the top of the flash
+    (tools/espressif/sonoff_identity.py), written from the hub before the commit
+    takes Sonoff's settings: on Sonoff's layout it is the end of ota_1, past the
+    Berry Tasmota running there, or no partition's at all."""
+    if len(sector) != SECTOR:
+        raise PlanError("the identity is not one sector")
+    return Plan(
+        name="keep_identity", title="the device's Sonoff identity", table_sha256=layout.table_sha256,
+        running=1, steps=[Write("identity", IDENTITY_AT, whole=True)], blobs={"identity": sector},
+        restart=False,
+    ).check()
+
+
+def leave_tasmota(mover: bytes, table: bytes, layout: Layout = SONOFF_DUAL_OTA, *,
+                  tasmota_table: str | None = None, settings: bytes | None = None) -> Plan:
     """From official Tasmota on Tasmota's layout to the mover on Sonoff's, or on
     the temporary table of a layout that needs one (Layout.temporary_table).
 
@@ -313,19 +332,32 @@ def leave_tasmota(mover: bytes, table: bytes, layout: Layout = SONOFF_DUAL_OTA) 
     and Sonoff's partition table written last, the plug starts the mover from
     ota_0.  The table is the one moment a power cut leaves a plug that cannot
     start; it is one sector, written in a few milliseconds.
+
+    `tasmota_table` is the table the plug has: the one a conversion writes,
+    or Tasmota's own on a plug converted before the identity was kept.
+    `settings`, an NVS holding the plug's Sonoff identity, goes where Sonoff's
+    layout keeps its settings, so that the next firmware has it as Sonoff's
+    firmware kept it; the rest of that region is cleared.
     """
     if MOVER_AT + len(padded(mover)) > TASMOTA_APP0:
         raise PlanError("the mover does not fit in front of Tasmota")
     if sha256(table) != layout.leaving_sha256:
         raise PlanError("that is not Sonoff's partition table")
+    tasmota_table = tasmota_table or TASMOTA_TABLE_SHA256
+    if tasmota_table not in TASMOTA_TABLES:
+        raise PlanError("that is not a Tasmota layout this tool converts to")
+    blobs = {"mover": mover, "table": table}
+    clear: list = [Erase(layout.nvs, MOVER_AT - layout.nvs)]
+    if settings:
+        written = len(padded(settings))
+        if layout.nvs + written > (TEMPORARY_OTADATA if layout.needs_temporary else layout.otadata):
+            raise PlanError("the settings do not fit where the next layout keeps them")
+        blobs["settings"] = settings
+        clear = [Write("settings", layout.nvs), Erase(layout.nvs + written, MOVER_AT - layout.nvs - written)]
     return Plan(
-        name="leave_tasmota", title="the mover", table_sha256=TASMOTA_TABLE_SHA256, running=0,
-        steps=[
-            Write("mover", MOVER_AT),
-            Erase(layout.nvs, MOVER_AT - layout.nvs),
-            Write("table", TABLE_ADDRESS, whole=True),
-        ],
-        blobs={"mover": mover, "table": table},
+        name="leave_tasmota", title="the mover", table_sha256=tasmota_table, running=0,
+        steps=[Write("mover", MOVER_AT), *clear, Write("table", TABLE_ADDRESS, whole=True)],
+        blobs=blobs,
     ).check()
 
 

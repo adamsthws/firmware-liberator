@@ -333,6 +333,19 @@ class UpdateHelperTests(unittest.TestCase):
         with self.assertRaisesRegex(uf.UpdateError, "partition table"):
             uf.check_tasmota_files({"factory": blank, "safeboot": b"", "app": b""})
 
+    def test_a_factory_image_on_tasmotas_own_table_is_the_layout_the_conversion_writes(self):
+        # The conversion adds the entry for the plug's Sonoff identity to it
+        # (safeboot_migration.target_table); a factory image already carrying
+        # that, or any other, is not Tasmota's.
+        from tests.espressif.test_safeboot_migration import partition_sector
+        from tools.espressif.safeboot import safeboot_migration as migration
+        for table, refused in ((partition_sector(migration.OFFICIAL_PARTITIONS), "Safeboot"),
+                               (partition_sector(migration.TARGET_PARTITIONS), "partition table")):
+            factory = bytearray(0x400000)
+            factory[0x8000:0x9000] = table
+            with self.subTest(refused=refused), self.assertRaisesRegex(uf.UpdateError, refused):
+                uf.check_tasmota_files({"factory": bytes(factory), "safeboot": b"x", "app": b""})
+
 
 class ESPHomeDocTests(unittest.TestCase):
     """What an ESPHome update writes, from the image published now to a made-up one."""

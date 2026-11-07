@@ -45,6 +45,18 @@ API = {
 _STUB_API_BASE = os.environ.get("AUTOFLASH_EWELINK_API_BASE", "").rstrip("/")
 if _STUB_API_BASE:
     API = {region: _STUB_API_BASE for region in API}
+
+
+def dispatch_server(region: str) -> tuple[str, int]:
+    """Where a device of an account in `region` asks which server to connect to,
+    as a paired plug keeps it (frame_params' dis_server and dis_port). A stand-in
+    for eWeLink (AUTOFLASH_EWELINK_API_BASE) answers devices at its disp. name."""
+    if _STUB_API_BASE:
+        host = urllib.parse.urlsplit(_STUB_API_BASE).hostname or ""
+        return "disp." + host.split(".", 1)[-1], 443
+    return f"{region}-dispd.coolkit.{'cn' if region == 'cn' else 'cc'}", 443
+
+
 # Set by the fault suite on the real cloud (wait_for_turn). Unset in a normal run.
 _TURN_FILE = os.environ.get("AUTOFLASH_EMULATOR_CLOUD_TURN", "")
 

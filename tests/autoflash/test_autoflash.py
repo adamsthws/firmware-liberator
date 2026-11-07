@@ -578,6 +578,7 @@ class EsphomeSignalTests(unittest.TestCase):
                       mock.patch.object(esphome, "leaving_table", return_value=b""),
                       mock.patch.object(esphome_ota, "probe", return_value=None),
                       mock.patch.object(plans, "esphome", return_value="plan"),
+                      mock.patch.object(mover, "what_tasmota_has", return_value=(None, None)),
                       mock.patch.object(plans, "leave_tasmota", return_value="plan")):
             patch.start()
             self.addCleanup(patch.stop)
@@ -637,8 +638,11 @@ class SonoffInTheHubsSlotTests(unittest.TestCase):
     def restore(self, stock_slot, slots):
         from types import SimpleNamespace
         device = mock.Mock()
-        ctx = SimpleNamespace(state=SimpleNamespace(input={"plug_kind": "sonoff-s60"}.get), device=device, dry_run=False)
+        ctx = SimpleNamespace(state=SimpleNamespace(input={"plug_kind": "sonoff-s60", "plug_mac": "12:34:56:ab:cd:ef"}.get,
+                                                    capture=lambda key, value: None),
+                              device=device, dry_run=False)
         with mock.patch.object(sonoff, "sonoff_backup", return_value=b"backup"), \
+             mock.patch.object(plugs, "find_backup", return_value="its backup"), \
              mock.patch.object(plans, "stock_slot", return_value=stock_slot), \
              mock.patch.object(plans, "back_to_sonoff", return_value=("first", "second")) as planned, \
              mock.patch.object(hub, "running_slot", side_effect=slots), \
@@ -730,6 +734,7 @@ class LeaveTasmotaStoppedTests(unittest.TestCase):
                       mock.patch.object(esphome_ota, "probe", return_value=None),
                       mock.patch.object(esphome, "mover_for", return_value=b""),
                       mock.patch.object(esphome, "leaving_table", return_value=b""),
+                      mock.patch.object(mover, "what_tasmota_has", return_value=(None, None)),
                       mock.patch.object(plans, "leave_tasmota",
                                         return_value=SimpleNamespace(name="leave_tasmota", running=0))):
             patch.start()

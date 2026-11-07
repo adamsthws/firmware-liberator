@@ -43,6 +43,7 @@ from tools.espressif.safeboot.prepare_imprinted_bundle import (
 )
 from tools.espressif.safeboot.safeboot_migration import (
     APP0_OFFSET,
+    OFFICIAL_TABLE_SHA256,
     OFFICIAL_TASMOTA_VERSION,
     SAFEBOOT_OFFSET,
     TABLE_OFFSET,
@@ -925,6 +926,11 @@ def step_verify(ctx: Context) -> dict[str, Any]:
     for name, (address, length, wanted) in expected.items():
         actual = device.sha_region(address, length)
         matched = actual == wanted.lower()
+        if name == "table" and actual == OFFICIAL_TABLE_SHA256:
+            # Committed by a version of the tool before the identity was kept.
+            matched = True
+            output.say("  table: Tasmota's own, without the sector that keeps the device's Sonoff identity -")
+            output.say("  this conversion was begun by an earlier version")
         ok = ok and matched
         results[name] = {"expected": wanted, "actual": actual, "match": matched}
         report = output.tell if not matched else output.say
@@ -994,7 +1000,7 @@ def verify_table(ctx: "Context") -> tuple[bool, str]:
     manifest = load_manifest(ctx.manifest_path)
     wanted = manifest["artifacts"]["target_table"]["sha256"].lower()
     actual = ctx.device.sha_region(TABLE_OFFSET, TABLE_SIZE)
-    if actual == wanted:
+    if actual in (wanted, OFFICIAL_TABLE_SHA256):  # the latter, committed by an earlier version
         return True, ""
     return False, "the device's partition table is not the migrated one"
 
