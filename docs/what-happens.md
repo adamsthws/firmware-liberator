@@ -117,11 +117,14 @@ a run. The run's report gives the lowest reading.
 
 ## The run, step by step
 
-This is what `python3 -m tools.autoflash run` does, in order, for a Sonoff
-S60 still on Sonoff's firmware (for a plug already converted, see
-[Changing firmware later](#changing-firmware-later); an S61 has its own, shorter
-run: [devices/sonoff-s61/](../devices/sonoff-s61/README.md)). Steps
-1-8 are the same whichever firmware you choose.
+This is what `python3 -m tools.autoflash run` does, in order, for a plug still
+on Sonoff's firmware (for a plug already converted, see
+[Changing firmware later](#changing-firmware-later)). The first three steps are
+the same on every plug; then each chip family has its own:
+[an Espressif plug](#an-espressif-plug-the-s60), or
+[a Beken plug](#a-beken-plug-the-s61), whose run is shorter.
+
+### The start, on every plug
 
 1. **List what has to be in place first** - the eWeLink app and account, the
    plug added with LAN Control on - and wait for a key press.
@@ -137,6 +140,11 @@ run: [devices/sonoff-s61/](../devices/sonoff-s61/README.md)). Steps
 3. **Ask which firmware you would like** - Tasmota or ESPHome for an S60,
    OpenBeken or ESPHome for an S61. Your choices depend on which plug eWeLink
    says yours is (`--firmware` answers in advance).
+
+### An Espressif plug (the S60)
+
+Steps 4-8 are the same whichever firmware you choose.
+
 4. **Download the firmware it needs**, on the first run only, and check every
    file against a known fingerprint.
 5. **Ask the plug what firmware it has** and where it downloads updates from.
@@ -221,10 +229,51 @@ For **ESPHome**, after the bootloader, steps 9 and 10 are instead:
 The tool then switches the relay off and on again through ESPHome to check it,
 and gives you the plug's ESPHome page.
 
+### A Beken plug (the S61)
+
+Sonoff's Beken firmware does no LAN Control, so step 2 finds the plug by its
+eWeLink id in your account, not by its answer on your network, and everything up
+to the new firmware goes through eWeLink
+([the route](../tools/autoflash/routes/beken/)). Steps 4-7 are the same whichever
+firmware you choose.
+
+4. **Ask eWeLink what the plug runs** - its model and firmware, which must be
+   the kind's. For a device with no public dump, the official update file's
+   partition table is checked too, and the run stops before anything is written
+   unless it is the one the tool's firmware is built for.
+5. **Send the new firmware through eWeLink**, wrapped as Sonoff's updates are,
+   from your computer, after a temporary firewall rule if your firewall is on.
+   *This is the point of no return,* and the one place the tool asks you to
+   confirm: you type PROCEED, and nothing reaches the plug before that. Sonoff's
+   firmware stages the image in its download slot, and on the restart that follows
+   the plug's own bootloader installs it in place of Sonoff's firmware. A run to
+   ESPHome sends OpenBeken first, as the interim firmware, with a marker by which
+   it knows itself as that.
+6. **Check OpenBeken has started** and joined your Wi-Fi by itself: on its first
+   boot the tool's driver in it reads your Wi-Fi from Sonoff's own store, with the
+   meter's factory calibration, and applies the plug's wiring
+   ([the driver](../tools/beken/openbeken/README.md)).
+7. **Back up the plug's own data** through OpenBeken: its factory record, Sonoff's
+   stores and the system store (`0x3e0000`-`0x400000`), kept under its MAC address
+   in `captures/plugs/`, as an Espressif plug's backup is, with Sonoff's firmware
+   beside it - made from the public dump of a stock S61, or the device's official
+   file, as its own app was overwritten in step 5. The read is checked against the
+   plug's MAC in its factory record. A plug backed up before keeps that backup;
+   `--no-backup` skips it.
+
+A run to OpenBeken ends there. For **ESPHome**:
+
+8. **Have the interim firmware fetch ESPHome**, which it stages in the same
+   download slot; just before the restart that installs it, it erases its own
+   settings, so it leaves nothing of itself.
+9. **Check ESPHome is running** and has joined your Wi-Fi, which it reads, with
+   the calibration, from Sonoff's store on every boot.
+
 ## At the end
 
-The tool reads back four parts of the plug's memory, calculates a fingerprint
-of each, and compares them against the files they came from:
+On an Espressif plug converted to Tasmota, the tool reads back four parts of the
+plug's memory, calculates a fingerprint of each, and compares them against the
+files they came from:
 
 - the bootloader
 - the memory layout table
