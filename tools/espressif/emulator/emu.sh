@@ -234,6 +234,12 @@ if [ ! -f "$STATE/flash.bin" ]; then
     rm -f "$STATE/wifi-flash.bin"
     echo "$mode" > "$STATE/.flash-mode"
 fi
+# The firmware the stub offers as eWeLink's latest, for a run going back to
+# Sonoff's with no backup: the plug's own, made as the plug's is (firmware.py).
+if [ "$stub" = 1 ]; then
+    "$PY" -I "$ROOT/tools/espressif/emulator/stub_cloud/firmware.py" "$SRC/flash.bin" "$STATE/stub-firmware.bin" \
+        --trust-ca "$STUB_CA/ca.crt" || rm -f "$STATE/stub-firmware.bin"
+fi
 # Copied by content: the backup's files are read-only, and a copy would be too.
 # An ESP32-C3's file is padded to what the fork expects of it; an ESP32's is whole.
 rm -f "$STATE/efuse.bin" && cat "$SRC/efuse.bin" > "$STATE/efuse.bin"
