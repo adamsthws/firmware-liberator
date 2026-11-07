@@ -21,7 +21,7 @@ import zlib
 
 from tools.espressif.scrub import made_up
 
-# The settings stores at the top of a 4 MB BK7238's flash (docs/beken-s61-emulation.md):
+# The settings stores at the top of a 4 MB BK7238's flash (docs/beken-research.md):
 # the factory TLV, OpenBeken's settings, the EF40 app store and the system store.
 STORES = (0x3E0000, 0x400000)
 # The firmware areas: the app partition and the download slot, as the 4 MB table lays them out.

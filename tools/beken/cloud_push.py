@@ -21,7 +21,7 @@ store first (stage_apply.stage), so the firmware it ends on finds them there
 as on a provisioned plug; the dump itself is never written.
 
 Proven with it (2026-10-28, as scratch drivers; the notes in
-docs/beken-s61-emulation.md "Firmware update and conversion"): the descriptor
+docs/beken-research.md "Firmware update and conversion"): the descriptor
 name FWSW-01-S61-BK7238 selects the staging handler, the plug's HTTP client
 wants 206 answers, and nothing in the chain checks a signature.
 """

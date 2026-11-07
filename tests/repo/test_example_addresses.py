@@ -19,7 +19,7 @@ SUBNETS = {
 BEKEN_EMULATOR_SUBNET = "1"
 BEKEN_EMULATOR_FILES = {
     "devices/sonoff-s61/openbeken.md",
-    "docs/beken-s61-emulation.md",
+    "docs/beken-research.md",
     "tools/beken/README.md",
     "tools/beken/cloud_dial.py",
     "tools/beken/emulator/patches/0005-emulator-bridge-the-Wi-Fi-peer-to-a-host-TAP-device-.patch",

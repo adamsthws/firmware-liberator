@@ -3,7 +3,7 @@
 #
 # The conversion tool installs this pre-built, as an rt_ota update (.rbl) the
 # plug's stock bootloader applies from its download slot - the update format
-# the stock firmware itself is shipped in (docs/beken-s61-emulation.md). No
+# the stock firmware itself is shipped in (docs/beken-research.md). No
 # Wi-Fi and no passwords are in it: at boot the plug reads its own Wi-Fi
 # from where the stock firmware left it, the EasyFlash store at 0x3e2000 that
 # no conversion touches, and joins. The tool backs the plug up before this

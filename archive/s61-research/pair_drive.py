@@ -1,7 +1,7 @@
 """Drive the S61 into pairing mode in the emulator, and watch the emulated radio
 follow -- soft-AP beacons or station-mode association, or the AirKiss sniffer.
 
-Background (full story in ../beken-s61-emulation.md): with the integrity gate
+Background (full story in docs/beken-research.md): with the integrity gate
 bypassed (integrity_gate.py) the AIS app framework boots and its state
 machine (ais_appfw_task) cycles, but nothing sets a pairing method and posts the
 start event, so the firmware sits idle. This tool sets a method and calls the

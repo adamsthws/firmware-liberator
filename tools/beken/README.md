@@ -1,7 +1,7 @@
 # Beken tooling
 
 The tooling for Beken (BK72xx) plugs, worked out on the Sonoff S61 - see
-[docs/beken-s61-emulation.md](../../docs/beken-s61-emulation.md). Not part of
+[docs/beken-research.md](../../docs/beken-research.md). Not part of
 the Autoflash tool itself: these drive the **BekenEmulator** with this project's
 patches, read and write the flash formats a conversion passes through, or
 analyse a firmware image statically. The experiments that proved how the stock
@@ -212,7 +212,7 @@ built on the pieces here: `fota_wrap` for the push through eWeLink, `rbl` and
 an update sent to ESPHome, `backup.factory_mac` for the backup.
 
 Reading the stock config and carrying the Wi-Fi credentials into OpenBeken. See
-[the config-migration section of the emulation reference](../../docs/beken-s61-emulation.md#carrying-wi-fi-across-the-conversion-the-openbeken-config)
+[the config-migration section of the Beken research](../../docs/beken-research.md#carrying-wi-fi-across-the-conversion-the-openbeken-config)
 for the full findings (config partition map, OpenBeken `mainConfig_t` format, the
 signed-char `Tiny_CRC8`, the `0x1e1000` config offset).
 
@@ -439,7 +439,7 @@ The addresses here are S61 1.0.2's.
   container (and can serve it).
   (It is not a hardware-AES engine with a baked key, as an earlier version of this
   page said.) See
-  [the main doc](../../docs/beken-s61-emulation.md#firmware-update-and-conversion-the-ota-path).
+  [the main doc](../../docs/beken-research.md#firmware-update-and-conversion-the-ota-path).
 - **Cloud ONLINE achieved:** `cloud_online.py` completes the
   handshake against a local stub — dispatch → TLS `/api/ws` → `register` → ONLINE,
   then heartbeats. Two S61-specific pieces: the dispatch reply must be compact JSON

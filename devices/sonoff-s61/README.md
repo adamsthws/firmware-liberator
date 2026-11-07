@@ -17,9 +17,10 @@ Wi-Fi), model **S61STPF** for the European plug. The firmware calls itself
 `S61`: its eWeLink model is `SN-BK7238-S61-01`, its board id
 `FWSW-01-S61-BK`, and the module is the `WBBK_01P_V1.3`. This folder holds or
 links everything specific to the S61; the tooling it shares with other Beken
-plugs is in [`tools/beken/`](../../tools/beken/), and the emulation that worked
-all of this out is described in
-[`docs/beken-s61-emulation.md`](../../docs/beken-s61-emulation.md).
+plugs is in [`tools/beken/`](../../tools/beken/). What was found out about its
+firmware, which the other 4 MB Beken plugs share, is in
+[`docs/beken-research.md`](../../docs/beken-research.md); what is the S61's
+alone, its meter's calibration and its wiring, is in [research.md](research.md).
 
 | | |
 |---|---|
