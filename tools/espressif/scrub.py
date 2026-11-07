@@ -1,5 +1,5 @@
 """Take what is the owner's out of a copy of a device's whole flash before the
-copy leaves the computer (tools/autoflash/readout.py): its Wi-Fi passwords,
+copy leaves the computer (tools/autoflash/readout_espressif.py): its Wi-Fi passwords,
 and its eWeLink identity, replaced by made-up values of the same shape.
 
 ESP-IDF keeps the station's password and its PMK in NVS (nvs.net80211:

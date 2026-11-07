@@ -142,7 +142,7 @@ BEKEN_BUILDS = {
         "esphome": ("devices/sonoff-basic-1gs/esphome.yaml", "artifacts/esphome-sonoff-basic-1gs-{version}.rbl"),
     },
     # Not a device: the OpenBeken a readout of a Beken device the tool does not
-    # convert yet installs for a few minutes (tools/autoflash/readout.py). Its
+    # convert yet installs for a few minutes (tools/autoflash/readout_beken.py). Its
     # table sets no pins, so nothing is driven on hardware nobody has mapped.
     READOUT_BUILD: {
         "openbeken": ("tools/beken/openbeken/drv_autoflash_readout.c", "artifacts/openbeken-readout-{version}.rbl"),

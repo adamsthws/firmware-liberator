@@ -9,9 +9,12 @@ make one, what is in it, and where it goes. Owners start one from the
 
 ## How the tool makes one
 
-[readout.py](../tools/autoflash/readout.py) runs it. A run offers it at its first
-stage when the eWeLink account holds no supported device, and `readout` runs it
-for any device in the account (`--plug-ip` picks one).
+[readout.py](../tools/autoflash/readout.py) runs it, reading an Espressif
+device with [readout_espressif.py](../tools/autoflash/readout_espressif.py) and
+a Beken one with [readout_beken.py](../tools/autoflash/readout_beken.py). A run
+offers it at its first stage when the eWeLink account holds no supported
+device, and `readout` runs it for any device in the account (`--plug-ip` picks
+one).
 
 1. The device is found on the network by its eWeLink id, and eWeLink is asked
    what it runs and which firmware it would be offered. The firmware name comes
@@ -55,7 +58,7 @@ for any device in the account (`--plug-ip` picks one).
 ## A Beken device (BK7238)
 
 A BK7238 has one app area, not two, so its whole flash can only be read by
-firmware that replaces Sonoff's for a few minutes (tools/autoflash/readout_beken.py).
+firmware that replaces Sonoff's for a few minutes ([readout_beken.py](../tools/autoflash/readout_beken.py)).
 The chip comes from the stock model the account reports (`SN-BK...`), so a
 Beken device takes this path even though it does no LAN Control - it is found
 and asked of eWeLink by its account id, not by a local advert.

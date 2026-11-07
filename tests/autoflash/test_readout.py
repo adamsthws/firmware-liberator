@@ -1,6 +1,6 @@
-"""A readout: what it sends (the flash with no Wi-Fi password, and what the
-device said it is), where to and when not, only the bridge sent to the device
-and only once PROCEED is typed, and a run ending on it without a conversion."""
+"""A readout, what every chip family's shares: what it sends (the files a
+read gives, and what the device said it is), where to and when not, which way
+a device is read, and a run ending on it without a conversion."""
 import http.server
 import io
 import lzma
@@ -14,9 +14,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tests.espressif.test_scrub import flash as wifi_flash
-from tools.autoflash import account, errors, hostsys, output, prompts, readout, runner, safety_locks
+from tools.autoflash import account, errors, hostsys, output, plugs, prompts, readout, readout_espressif, runner, runs
 from tools.autoflash.state import RunState
+from tools.espressif import chips
 from tools.ewelink import firmware_name, offered_firmware
 
 MANIFEST = {"format": 1, "product": "NEWTHING", "stock_model": "SN-ESP32C3-NEW-01", "version": "1.0.0"}
@@ -165,39 +165,44 @@ class SendTests(unittest.TestCase):
         self.assertEqual((reference, got["type"], got["body"]), ("r-2026-0001", "application/x-tar", b"\x1f\x8bdata"))
 
 
+def start_run(test: unittest.TestCase) -> None:
+    """`test` set up for readout.run on DEVICE, at 192.0.2.77, asking eWeLink
+    nothing: its context (test.ctx), and the filing of its run (test.filed)."""
+    for name in ("say", "tell", "log_only", "transient_begin", "transient_end", "progress", "progress_clear"):
+        patch = mock.patch.object(output, name)
+        patch.start()
+        test.addCleanup(patch.stop)
+    for patch in (mock.patch.object(prompts, "section"), mock.patch.object(prompts, "warning_box")):
+        patch.start()
+        test.addCleanup(patch.stop)
+    test.tmp = tempfile.TemporaryDirectory()
+    test.addCleanup(test.tmp.cleanup)
+    test.ctx = a_ctx(test.tmp.name)
+    asked = account.Asked({"packets": []}, "1.0.0", "SN-NEW-01", "NEWTHING", [], {}, "1000abcdef")
+    filed = mock.patch.object(runs, "file_plug")
+    test.filed = filed.start()
+    test.addCleanup(filed.stop)
+    for patch in (mock.patch.object(readout, "locate", return_value="192.0.2.77"),
+                  mock.patch.object(hostsys, "mac_of", return_value="12:34:56:ab:cd:ef"),
+                  mock.patch.object(account, "ask_ewelink", return_value=asked),
+                  mock.patch.object(plugs, "remember_plug"),
+                  mock.patch.object(offered_firmware, "fetch",
+                                    return_value=([offered_firmware.Offered("user1.bin", "1.1.0", b"\xe9")], []))):
+        patch.start()
+        test.addCleanup(patch.stop)
+
+
+def learned(name: str, chip: str):
+    """eWeLink's firmware name for the device learned as `name`, on `chip`."""
+    return mock.patch.object(firmware_name, "learn", return_value=(firmware_name.Learned(name, chip, "eWeLink"), []))
+
+
 class RunTests(unittest.TestCase):
     def setUp(self):
-        for name in ("say", "tell", "log_only", "transient_begin", "transient_end", "progress", "progress_clear"):
-            patch = mock.patch.object(output, name)
-            patch.start()
-            self.addCleanup(patch.stop)
-        for patch in (mock.patch.object(prompts, "section"), mock.patch.object(prompts, "warning_box")):
-            patch.start()
-            self.addCleanup(patch.stop)
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.ctx = a_ctx(self.tmp.name)
-        asked = account.Asked({"packets": []}, "1.0.0", "SN-NEW-01", "NEWTHING", [], {}, "1000abcdef")
-        self.setUp_filed()
-        for patch in (mock.patch.object(readout, "locate", return_value="192.0.2.77"),
-                      mock.patch.object(hostsys, "mac_of", return_value="12:34:56:ab:cd:ef"),
-                      mock.patch.object(account, "ask_ewelink", return_value=asked),
-                      mock.patch.object(readout.plugs, "remember_plug"),
-                      mock.patch.object(offered_firmware, "fetch",
-                                        return_value=([offered_firmware.Offered("user1.bin", "1.1.0", b"\xe9")], []))):
-            patch.start()
-            self.addCleanup(patch.stop)
-
-    def setUp_filed(self):
-        filed = mock.patch.object(readout.runs, "file_plug")
-        self.filed = filed.start()
-        self.addCleanup(filed.stop)
-
-    def learned(self, name, chip):
-        return mock.patch.object(firmware_name, "learn", return_value=(firmware_name.Learned(name, chip, "eWeLink"), []))
+        start_run(self)
 
     def test_a_chip_with_no_bridge_is_sent_nothing_and_what_it_said_is_offered(self):
-        with self.learned("FWSW-01-NEW-BK7238", "BK7238"), \
+        with learned("FWSW-01-NEW-BK7238", "BK7238"), \
                 mock.patch.object(hostsys, "run_tool") as sent, \
                 mock.patch.object(readout, "offer", return_value="done") as offered:
             self.assertEqual(readout.run(self.ctx, DEVICE), "done")
@@ -213,53 +218,17 @@ class RunTests(unittest.TestCase):
         s60 = account.Asked({"packets": []}, "1.2.0", kinds.SONOFF_S60.stock_model, "S60TPG", [], {}, "1000abcdef")
         with mock.patch.object(account, "ask_ewelink", return_value=s60), \
                 mock.patch.object(firmware_name, "learn", return_value=(None, ["no offer"])), \
-                mock.patch.object(readout, "read_out", side_effect=errors.NothingWritten("stop")) as read:
+                mock.patch.object(readout_espressif, "read_out", side_effect=errors.NothingWritten("stop")) as read:
             with self.assertRaises(errors.NothingWritten):
                 readout.run(self.ctx, DEVICE)
-        self.assertEqual(read.call_args.args[1:3], (readout.chips.ESP32C3, kinds.SONOFF_S60.wrapper_model))
+        self.assertEqual(read.call_args.args[1:3], (chips.ESP32C3, kinds.SONOFF_S60.wrapper_model))
         self.assertTrue(read.call_args.kwargs["known"])
 
     def test_its_run_is_filed_under_the_device_as_a_conversions_is(self):
-        with self.learned("FWSW-01-NEW-BK7238", "BK7238"), mock.patch.object(readout, "offer", return_value="done"):
+        with learned("FWSW-01-NEW-BK7238", "BK7238"), mock.patch.object(readout, "offer", return_value="done"):
             readout.run(self.ctx, DEVICE)
         self.assertEqual(self.filed.call_args.args[1], "12:34:56:ab:cd:ef")
         self.assertEqual(self.ctx.state.input("plug_mac"), "12:34:56:ab:cd:ef")
-
-    def test_nothing_is_sent_without_proceed(self):
-        with self.learned("FWSW-E32NEW-NEW-ESP32C3", "ESP32C3"), \
-                mock.patch.object(prompts, "require_word", return_value=False), \
-                mock.patch.object(hostsys, "run_tool") as sent:
-            with self.assertRaises(errors.NothingWritten):
-                readout.run(self.ctx, DEVICE)
-        sent.assert_not_called()
-        warned = " ".join(prompts.warning_box.call_args.args[1])
-        self.assertIn("never run on this kind of device", warned)
-
-    def test_proceed_sends_the_bridge_wrapped_as_its_firmware_name(self):
-        from tools.autoflash import firewall
-        from tools.espressif import analyze_vendor_ota, dump_stock_flash
-        with self.learned("FWSW-E32NEW-NEW-ESP32C3", "ESP32C3"), \
-                mock.patch.object(prompts, "require_word", return_value=True), \
-                mock.patch.object(firewall, "choose_port", return_value=8088), \
-                mock.patch.object(firewall, "ensure_firewall"), \
-                mock.patch.object(safety_locks, "lifted"), mock.patch.object(safety_locks, "say_lock_back"), \
-                mock.patch.object(hostsys, "run_tool", return_value=0) as sent, \
-                mock.patch.object(readout, "find_bridge", return_value="192.0.2.77"), \
-                mock.patch.object(dump_stock_flash, "read_dump",
-                                  return_value=(wifi_flash(), b"\0" * 124, {"size": 1, "sha256": "ab"})), \
-                mock.patch.object(dump_stock_flash, "summary", return_value=[]), \
-                mock.patch.object(dump_stock_flash, "read_info", return_value=None), \
-                mock.patch.object(readout.plugs, "save_backup", return_value=(Path(self.tmp.name), False)), \
-                mock.patch.object(readout, "back_on_sonoff"), \
-                mock.patch.object(readout, "offer", return_value="done") as offered:
-            self.assertEqual(readout.run(self.ctx, DEVICE), "done")
-        command = sent.call_args.args[0]
-        self.assertEqual(command[1], "-u")  # each line of the sender's in the log as it comes
-        self.assertEqual(command[command.index("--readout-model") + 1], "FWSW-E32NEW-NEW-ESP32C3")
-        wrapped = Path(command[command.index("--firmware") + 1]).read_bytes()
-        self.assertEqual(analyze_vendor_ota.analyze(wrapped)["wrapper"]["model"], "FWSW-E32NEW-NEW-ESP32C3")
-        self.assertTrue(offered.call_args.args[1]["read"])
-        self.assertTrue(self.ctx.state.input(readout.STATE_KEY))
 
 
 class OfferTests(unittest.TestCase):
