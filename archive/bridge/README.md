@@ -2,7 +2,7 @@
 
 This is a native ESP-IDF application, built for the ESP32-C3 and the classic
 ESP32, not a factory image. It is
-designed to be wrapped with `tools/build_vendor_ota.py` and written by a plug's
+designed to be wrapped with `tools/espressif/build_vendor_ota.py` and written by a plug's
 stock updater - the Sonoff S60's, so far - to its inactive application slot.
 The application is the same for every plug; the wrapper names the plug's
 model, so each kind of plug has a wrapped file of its own.
