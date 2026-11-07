@@ -9,7 +9,7 @@ import time
 import collections
 import re
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent))   # the tools beside this one
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools" / "beken"))   # the Beken tools
 import stock_points  # noqa: E402
 ROOT = Path(os.environ.get("BK_EMU_ROOT", "/opt/beken-emulator")); sys.path.insert(0, str(ROOT))
 from src.main import build_emulator  # noqa: E402

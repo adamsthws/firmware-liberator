@@ -15,7 +15,7 @@ provisioning, the button and pairing drives), are in
 container, with this checkout at `/work`:
 
 ```sh
-tools/beken/emulator/bk-emu.sh python tools/beken/integrity_gate.py
+tools/beken/emulator/bk-emu.sh python tools/beken/emulator/integrity_gate.py
 ```
 
 In the container the emulator is at `/opt/beken-emulator`, the tools' default
@@ -69,8 +69,9 @@ the other tools at it.
 
 ## Driving the emulator
 
-Those marked archived are in
-[archive/s61-research/](../../archive/s61-research/), and are run from there.
+These are the emulator's own modules, in [emulator/](emulator/); those marked
+archived are in [archive/s61-research/](../../archive/s61-research/), and are
+run from there.
 
 - **`integrity_gate.py`** — lets the stock image boot under emulation past the
   flash-UID integrity gate that otherwise hangs the app layer (see the main doc).
@@ -80,7 +81,7 @@ Those marked archived are in
   the provisioned-check runs, and `ais_appfw_task` is created. This operates only
   inside the emulator, on a dump of the owner's own plug; it is never written to or
   run on a real plug.
-  `python3 integrity_gate.py`
+  `python3 emulator/integrity_gate.py`
 
 - **`long_press.py`** (archived) — with the gate cleared, drive the button long-press end
   to end through the firmware's own key stack. Two interventions: the integrity
@@ -113,7 +114,7 @@ Those marked archived are in
   and with `--apply` the next boot has the stock bootloader apply it and the new
   firmware start. The plug's Wi-Fi is written into a copy of the dump's
   EasyFlash store first, so that firmware finds it as on a provisioned plug.
-  `python3 cloud_push.py image.rbl out.bin --apply` (env `SECS`, `APPLY_SECS`)
+  `python3 emulator/cloud_push.py image.rbl out.bin --apply` (env `SECS`, `APPLY_SECS`)
 
 - **`stage_apply.py`** — the apply half of a conversion, or of a reversion, in
   one command: stage an rt_ota `.rbl` (OpenBeken's, the ESPHome build's, or the
@@ -122,7 +123,7 @@ Those marked archived are in
   with the emulator modelling the flash writes; the flash as the run leaves it
   is saved, for `bk-emu.sh run OUT --wifi --wifi-peer ap ...` to show the
   installed firmware start afresh and join.
-  `python3 stage_apply.py dump.bin image.rbl out.bin` (env `SECS`, `SSID`, `PASS`, `SEED=0`)
+  `python3 emulator/stage_apply.py dump.bin image.rbl out.bin` (env `SECS`, `SSID`, `PASS`, `SEED=0`)
 
 - **`seed_join.py`** — put the emulated plug on a network the faithful way.
   Hooks the firmware's own `ef_get_env_blob` (EasyFlash V4) and returns
@@ -132,7 +133,7 @@ Those marked archived are in
   associate → WPA2 four-way → **IPv4 DHCP → 192.168.1.100**). This corrects the old
   "seeding creds leaves it idle" result — that was the integrity gate, which this
   clears too. Env `SSID`/`PASS`/`CH`/`SECS`.
-  `python3 seed_join.py`
+  `python3 emulator/seed_join.py`
 
 - **`ble_provision.py`** (archived) — synthesise the eWeLink **BLE provisioning session**
   without a BLE radio: feed the provisioning messages (DEVICE_INFO, AUTH_TOKEN,
@@ -156,7 +157,7 @@ Those marked archived are in
   stays on this host.** `DISPATCH` steers it elsewhere; `DISPATCH=` keeps the factory
   placeholder. **Owner's own account only:** never point it at the real eWeLink cloud
   with anyone's account or plug but your own. Env `DISPATCH`/`SSID`/`PASS`/`SECS`/`FORCE_AT`.
-  `python3 cloud_dial.py`
+  `python3 emulator/cloud_dial.py`
 
 - **`cloud_online.py`** — complete the eWeLink cloud cycle: the plug reaches
   **ONLINE**. Stands up the CoolKit stub (`tools/ewelink/stub_cloud/stub_server.py`,
@@ -171,7 +172,7 @@ Those marked archived are in
   assembles its CoolKit CA in RAM rather than keeping it in flash. It generates its
   own EC P-256 CA + leaf (openssl) and serves the leaf; the firmware's verify path
   is untouched. Env `SSID`/`PASS`/`SECS`/`FORCE_AT`/`HB`.
-  `python3 cloud_online.py`. Its set-up is a `CloudSession`, which `cloud_push.py`
+  `python3 emulator/cloud_online.py`. Its set-up is a `CloudSession`, which `cloud_push.py`
   builds on.
 
 - **`button_sim.py`** (archived) — older button sim (predates the integrity-gate finding

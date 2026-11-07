@@ -36,7 +36,7 @@ With `--plain` it serves plaintext HTTP/WS instead of TLS and needs no cert. The
 emulated S61's dispatch is plaintext (its factory dispatch URL is
 `http://...:80`); its IoT WebSocket is still `wss://` and verifies the server
 cert, so a run serves dispatch plaintext and the IoT channel over TLS and swaps
-the firmware's trust anchor. See tools/beken/cloud_online.py.
+the firmware's trust anchor. See tools/beken/emulator/cloud_online.py.
 """
 
 from __future__ import annotations

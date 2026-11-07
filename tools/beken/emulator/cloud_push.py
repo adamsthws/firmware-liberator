@@ -4,7 +4,7 @@ the stub pushes it an `upgrade` for a firmware image, and the plug downloads it
 and stages it in its download slot - then, with --apply, the stock bootloader
 applies it on the next boot and the new firmware starts.
 
-    bk-emu.sh python tools/beken/cloud_push.py IMAGE.rbl OUT.bin [--apply]
+    bk-emu.sh python tools/beken/emulator/cloud_push.py IMAGE.rbl OUT.bin [--apply]
     (env: SECS=400, the most the push may take; APPLY_SECS=120 for the apply; SSID, PASS)
 
 IMAGE is an rt_ota .rbl: OpenBeken's 4 MB-table build, the ESPHome (LibreTiny)
@@ -35,7 +35,8 @@ import sys
 import threading
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))   # the tools beside this one
+HERE = Path(__file__).resolve().parent
+sys.path[:0] = [str(HERE), str(HERE.parent)]   # the emulator's modules, and the Beken tools
 import cloud_online  # noqa: E402  (the emulator, in its container)
 import fota_wrap  # noqa: E402
 import stage_apply  # noqa: E402

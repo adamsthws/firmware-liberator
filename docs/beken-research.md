@@ -409,7 +409,7 @@ firmware: what each is found from is in
 [`tools/beken/README.md`](../tools/beken/README.md#static-analysis).
 
 The emulated plug now performs the real eWeLink (CoolKit) cloud handshake. Driven
-end to end by `tools/beken/cloud_dial.py`: seed Wi-Fi creds (join + DHCP),
+end to end by `tools/beken/emulator/cloud_dial.py`: seed Wi-Fi creds (join + DHCP),
 then force-call the firmware's own **start-cloud handler** once Wi-Fi is up. The
 plug opens a TCP connection to its dispatch server and sends the CoolKit
 **`GET /dispatch/device`** request, retried with backoff — the genuine first step
@@ -476,7 +476,7 @@ link that, on hardware, carries the pairing that *naturally* fires this trigger;
 
 With the dial reproduced, the rest of the eWeLink handshake completes against a
 local stub and the plug reaches **ONLINE** — driven end to end by
-`tools/beken/cloud_online.py` and the CoolKit stub
+`tools/beken/emulator/cloud_online.py` and the CoolKit stub
 (`tools/ewelink/stub_cloud/stub_server.py`, extended with a `--plain` dispatch
 mode). Nothing leaves the host: the netstack relay (`attach_wifi_peer(net_out=True)`)
 is redirected so the factory dispatch IP resolves to loopback — plaintext dispatch
@@ -514,7 +514,7 @@ changes, and the stub serves a leaf signed by that CA.
 against the name the firmware verifies (it sends SNI `8.8.8.8`) — and a
 **serverAuth EKU**. With those the verification passes.
 
-**Verified** (`tools/beken/emulator/bk-emu.sh python tools/beken/cloud_online.py`):
+**Verified** (`tools/beken/emulator/bk-emu.sh python tools/beken/emulator/cloud_online.py`):
 
 ```
 dispatch -> {"error":0,...,"domain":"8.8.8.8","port":"443"}   (accepted)
@@ -912,12 +912,12 @@ flash writes), `s61_stage_boot.py`, `app_apply_test.py`, `obk_apply_test.py` and
 of them is in [`tools/beken/`](../tools/beken/README.md), run in the emulator's
 container:
 
-- `cloud_push.py IMAGE.rbl OUT.bin --apply` - a whole conversion: the plug comes
+- `emulator/cloud_push.py IMAGE.rbl OUT.bin --apply` - a whole conversion: the plug comes
   online against the stub (`cloud_online.py`'s `CloudSession`), is pushed an
   `upgrade` for the image wrapped by `fota_wrap.py`, downloads it in ranges and
   stages it at `0x286000` (checked byte for byte), and on the next boot the
   stock bootloader applies it and the new firmware starts.
-- `stage_apply.py` - the apply alone: an `.rbl` staged in the download slot of a
+- `emulator/stage_apply.py` - the apply alone: an `.rbl` staged in the download slot of a
   copy of a dump, test credentials seeded, and the stock bootloader booted over
   it; a reversion's apply too, with the repackaged stock app.
 - `stock_app.py` (the stock app out of a dump, verified, and packed again as
@@ -1035,7 +1035,7 @@ runtime target), so a legitimate pass needs the real plug's flash UID; otherwise
 the gate must be satisfied as an emulator opt-in.
 
 **Proven effect of clearing the gate** (force the `0x29c3c` memcmp result to
-"equal", the real-HW outcome — [`tools/beken/integrity_gate.py`](../tools/beken/integrity_gate.py)):
+"equal", the real-HW outcome — [`tools/beken/emulator/integrity_gate.py`](../tools/beken/emulator/integrity_gate.py)):
 within ~3.5 s the firmware takes the verified path, app-start continues,
 **`key_add` runs (the button registers itself on GPIO pins 0 and 2)**, the
 provisioned-check `0x48cc4` runs, and **`ais_appfw_task` is created** — all
