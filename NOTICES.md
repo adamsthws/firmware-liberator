@@ -55,6 +55,10 @@ source is the [ESPHome 2026.10.0 release](https://github.com/esphome/esphome/tre
 [LibreTiny 1.13.0](https://github.com/libretiny-eu/libretiny/tree/v1.13.0)
 (MIT), the Beken SDK LibreTiny builds on, and that config.
 
+`artifacts/esphome-sonoff-basic-1gs-2026.10.0-1.rbl` is built the same way, from the same
+sources, with this project's config
+[`devices/sonoff-basic-1gs/esphome.yaml`](devices/sonoff-basic-1gs/esphome.yaml).
+
 How they are built and published is in
 [`artifacts/README.md`](artifacts/README.md) and
 [`docs/updating-firmware.md`](docs/updating-firmware.md).
@@ -78,6 +82,10 @@ and the S61's table for it,
 [`devices/sonoff-s61/drv_autoflash_sonoff_s61.c`](devices/sonoff-s61/drv_autoflash_sonoff_s61.c),
 built into the image; `firmware.json` records the commits and each file's
 hash.
+
+`artifacts/openbeken-sonoff-basic-1gs-1.18.320-1.rbl` is the same OpenBeken, SDK,
+patches and driver, with the Basic Gen5's table,
+[`devices/sonoff-basic-1gs/drv_autoflash_sonoff_basic_1gs.c`](devices/sonoff-basic-1gs/drv_autoflash_sonoff_basic_1gs.c).
 
 ## OTA bridge
 

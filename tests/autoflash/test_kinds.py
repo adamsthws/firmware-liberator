@@ -91,7 +91,7 @@ class NamesTests(unittest.TestCase):
         self.assertIsNone(kinds.for_esphome("Sonoff S60 kitchen", ""))
 
     def test_an_openbeken_is_asked_on_our_chips_alone(self):
-        self.assertEqual(kinds.on_chip("BK7238"), (kinds.SONOFF_S61,))
+        self.assertEqual(kinds.on_chip("BK7238"), (kinds.SONOFF_S61, kinds.SONOFF_BASIC_1GS))
         self.assertEqual(kinds.on_chip("BK7231N"), ())
         self.assertEqual(kinds.on_chip(None), ())
 

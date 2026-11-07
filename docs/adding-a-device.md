@@ -182,3 +182,7 @@ whether a device's firmware can come up this way, run `stock_points.py` on its
 official file: each point it cannot find is named. The app of a BK7238 official
 file runs on another plug's bootloader and settings (`rebuild_dump.py`), but only
 the device's own whole flash has its factory data.
+
+A 4 MB BK7238 device with no whole dump can be added from its official file and a
+pin map you can trust, behind a warning that no real one has been converted:
+[how, and what that proves](../tools/beken/README.md#adding-a-4-mb-bk7238-device-with-no-whole-dump).

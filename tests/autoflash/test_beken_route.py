@@ -11,10 +11,11 @@ from types import SimpleNamespace
 from unittest import mock
 
 from tests.autoflash.test_openbeken import FakeOpenBeken
+from tests.beken import test_layouts
 from tools.autoflash import detect, errors, handover, kinds, openbeken, plugs, report, routes, state
 from tools.autoflash.routes import beken, update
 from tools.autoflash.routes.beken import arrived, images, onward, stock
-from tools.beken import fota_wrap, interim_marker, rbl, uf2
+from tools.beken import fota_wrap, interim_marker, layouts, rbl, uf2
 from tools.ewelink import ota_push
 from tools.ewelink.get_device_key import EwelinkError
 
@@ -171,6 +172,182 @@ class ImagesTests(unittest.TestCase):
             with mock.patch.dict(images.PUBLIC_DUMPS, {"sonoff-s61": ("http://example.test/dump.bin", "0" * 64)}):
                 with self.assertRaisesRegex(errors.Abort, "hash differs"):
                     images.stock_rbl(S61)
+
+
+class UntestedKindTests(unittest.TestCase):
+    """A kind with no public dump, no real one of which has been converted: its
+    official file's table checked, and the person told, before anything is written."""
+    KIND = kinds.SONOFF_BASIC_1GS
+    DEVICE = {"deviceid": "1001234abc", "apikey": "k", "online": True, "productModel": "BASIC-1GS",
+              "extra": {"model": "SN-BK7238-BASICR5-01"}, "params": {"fwVersion": "1.0.4"}}
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.use_official(test_layouts.FOUR_MB)
+        for patch in (mock.patch.object(stock.firewall, "choose_port", return_value=8088),
+                      mock.patch.object(stock.firewall, "ensure_firewall"),
+                      mock.patch.object(stock.account, "note_firmware_name", return_value=""),
+                      mock.patch.object(stock.prompts, "section"),
+                      mock.patch.object(stock.output, "transient_begin"),
+                      mock.patch.object(stock.output, "transient_end"),
+                      mock.patch.object(stock.output, "say")):
+            patch.start()
+            self.addCleanup(patch.stop)
+        logged = mock.patch.object(stock.output, "log_only")
+        self.logged = logged.start()
+        self.addCleanup(logged.stop)
+        boxes = mock.patch.object(stock.prompts, "warning_box")
+        self.box = boxes.start()
+        self.addCleanup(boxes.stop)
+
+    def use_official(self, table):
+        """The kind's official file: a made-up app holding `table`, kept where one fetched goes."""
+        image = rbl.pack(test_layouts.an_app(table), name="app", version="1.0.4")
+        data = fota_wrap.wrap(image, name=self.KIND.wrapper_model, version="1.0.4")
+        (Path(self.tmp.name) / "official.bin").write_bytes(data)
+        for patch in (mock.patch.dict(images.OFFICIAL_FILES, {self.KIND.key: ("official.bin",
+                                                                              hashlib.sha256(data).hexdigest())}),
+                      mock.patch.object(images, "DUMPS", Path(self.tmp.name))):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.image = image
+
+    def context(self, tmp, **inputs):
+        ctx = a_context(tmp, plug_kind=self.KIND.key, stock_version="1.0.4", firmware="openbeken", **inputs)
+        ctx.account_plug = SimpleNamespace(device_id="1001234abc")
+        ctx.account_devices = lambda: [self.DEVICE]
+        ctx.consented = False
+        return ctx
+
+    def logs(self):
+        return "\n".join(call.args[0] for call in self.logged.call_args_list)
+
+    def test_it_is_a_kind_the_tool_takes_by_its_model_alone(self):
+        self.assertIs(kinds.for_stock_model("SN-BK7238-BASICR5-01"), self.KIND)
+        self.assertIs(kinds.for_account("BASIC-1GS", ""), self.KIND)
+        self.assertIsNone(kinds.for_account("BASIC-1GSP", ""))   # another firmware, a latching relay
+        self.assertFalse(self.KIND.converted_for_real)
+        self.assertTrue(S61.converted_for_real)
+
+    def test_b1_logs_what_the_file_says_for_the_next_person(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.context(tmp)
+            with mock.patch.object(plugs, "PLUGS", Path(tmp) / "plugs"), mock.patch.object(plugs, "CAPTURES", Path(tmp)):
+                plugs.remember_plug(MAC, ewelink_id="1001234abc")
+                result = stock.step_identify(ctx)
+        self.assertEqual((result["official_name"], result["official_version"], result["layout"]),
+                         (self.KIND.wrapper_model, "1.0.4", "beken-4m"))
+        logs = self.logs()
+        self.assertIn(self.KIND.wrapper_model, logs)
+        self.assertIn("version 1.0.4; the device reports 1.0.4", logs)
+        self.assertIn("ota 0x286000+0x15a000", logs)
+        self.assertIn("Flash size: the stock firmware does not say; the table is for 4 MB", logs)
+
+    def test_b1_refuses_a_file_on_another_table_before_anything_else(self):
+        self.use_official(test_layouts.TWO_MB)
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.context(tmp)
+            with mock.patch.object(plugs, "PLUGS", Path(tmp) / "plugs"), mock.patch.object(plugs, "CAPTURES", Path(tmp)):
+                plugs.remember_plug(MAC, ewelink_id="1001234abc")
+                with self.assertRaisesRegex(errors.NothingWritten, "not one this tool knows.*nothing was written"):
+                    stock.step_identify(ctx)
+
+    def test_b2_refuses_it_too_and_sends_nothing(self):
+        self.use_official(test_layouts.TWO_MB)
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(ota_push, "deliver") as sent, \
+                mock.patch.object(stock.prompts, "require_word", return_value=True) as asked:
+            with self.assertRaises(errors.NothingWritten):
+                stock.step_push(self.context(tmp))
+        sent.assert_not_called()
+        asked.assert_not_called()
+
+    def test_a_table_said_to_be_unknown_in_a_test_is_refused_as_one(self):
+        with mock.patch.object(images, "UNKNOWN_TABLE", True), self.assertRaisesRegex(errors.NothingWritten, "0x1e1000"):
+            images.official(self.KIND)
+
+    def test_a_table_known_but_not_this_kinds_is_refused(self):
+        other = kinds.Kind(**{**vars(self.KIND), "layout": "another"})
+        with mock.patch.dict(images.OFFICIAL_FILES, {other.key: images.OFFICIAL_FILES[self.KIND.key]}), \
+                self.assertRaisesRegex(errors.NothingWritten, "not the another one"):
+            images.official(other)
+
+    def test_a_file_that_is_not_the_one_known_is_refused(self):
+        with mock.patch.dict(images.OFFICIAL_FILES, {self.KIND.key: ("official.bin", "0" * 64)}), \
+                mock.patch.object(images.urllib.request, "urlopen", side_effect=OSError("no network")):
+            with self.assertRaisesRegex(errors.NothingWritten, "could not be fetched.*Nothing was written"):
+                images.official_file(self.KIND)
+
+    def test_b2_asks_first_and_declined_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(ota_push, "deliver") as sent, \
+                mock.patch.object(stock.prompts, "require_word", return_value=False) as asked:
+            with self.assertRaisesRegex(errors.NothingWritten, "not accepted"):
+                stock.step_push(self.context(tmp))
+        sent.assert_not_called()
+        asked.assert_called_once_with("untested")
+        said = " ".join(self.box.call_args.args[1])
+        for words in ("emulator", "no fallback", "serial cable", "send this run's log"):
+            self.assertIn(words, said)
+        self.assertIn("No real Sonoff Basic Gen5 has been converted", self.box.call_args.args[0])
+
+    def test_accepted_it_goes_on_and_is_not_asked_again_in_the_run(self):
+        done = ota_push.Delivery(sent=True, complete=True, bytes_served=1, seconds=1.0)
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(ota_push, "deliver", return_value=done) as sent, \
+                mock.patch.object(stock.prompts, "require_word", return_value=True) as asked:
+            ctx = self.context(tmp)
+            stock.step_push(ctx)
+            stock.step_push(ctx)
+        self.assertEqual([call.args[0] for call in asked.call_args_list], ["untested", "proceed"])
+        self.assertEqual(sent.call_count, 2)
+
+    def test_an_unattended_run_has_accepted_it(self):
+        done = ota_push.Delivery(sent=True, complete=True, bytes_served=1, seconds=1.0)
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(ota_push, "deliver", return_value=done) as sent, \
+                mock.patch.object(stock.prompts, "UNATTENDED", True), \
+                mock.patch.object(stock.prompts, "answered_unattended") as answered:
+            stock.step_push(self.context(tmp))
+        sent.assert_called_once()
+        self.assertIn("UNTESTED", [call.args[1] for call in answered.call_args_list])
+
+    def test_an_s61_is_not_asked(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(stock.prompts, "require_word") as asked:
+            stock.accept_untested(a_context(tmp), S61)
+        asked.assert_not_called()
+
+    def test_going_back_sends_the_official_files_image(self):
+        self.assertEqual(images.stock_rbl(self.KIND), (self.image, "1.0.4"))
+
+    def test_going_back_is_refused_on_another_table(self):
+        self.use_official(test_layouts.TWO_MB)
+        with self.assertRaisesRegex(errors.Abort, "not one this tool knows"):
+            images.stock_rbl(self.KIND)
+
+    def test_the_backup_logs_whether_the_flash_matched(self):
+        for matched, words in ((True, "was read at 0x3e0000: it matches"), (False, "was not read at 0x3e0000")):
+            with tempfile.TemporaryDirectory() as tmp:
+                ctx = self.context(tmp)
+                arrived.note_flash(ctx, matched)
+                self.assertIs(ctx.state.data["captures"]["B4.flash_matched"], matched)
+                self.assertIn(words, self.logged.call_args.args[0])
+
+    def test_the_backup_asks_for_the_log(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(arrived, "_back_up", return_value="saved"), \
+                mock.patch.object(arrived.output, "tell") as told:
+            arrived.step_backup(self.context(tmp))
+            self.assertIn("send this run's log", told.call_args.args[0])
+            told.reset_mock()
+            ctx = a_context(tmp)
+            arrived.step_backup(ctx)
+            told.assert_not_called()
+
+    def test_every_official_file_names_its_kinds_firmware_and_a_known_table(self):
+        for key, (name, digest) in images.OFFICIAL_FILES.items():
+            kind = kinds.find(key)
+            with self.subTest(kind=key):
+                if name != "official.bin":
+                    self.assertIn(f"({kind.wrapper_model})", name)
+                self.assertIs(layouts.of(kind.layout), layouts.BEKEN_4M)
+                self.assertEqual(len(digest), 64)
 
 
 class FromStockTests(unittest.TestCase):

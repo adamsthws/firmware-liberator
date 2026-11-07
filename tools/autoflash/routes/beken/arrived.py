@@ -203,6 +203,8 @@ def step_backup(ctx: Context) -> dict[str, Any]:
         return {"dry_run": True} if ctx.dry_run else {"outcome": "not taken", "stage_outcome": "skipped"}
     outcome = _back_up(ctx, mac)
     ctx.state.set_input("backup_outcome", outcome)
+    if not kinds.of_run(ctx.state).converted_for_real:
+        output.tell(f"    No real one of these had been converted before: please send this run's log, {output.log_path()}")
     return {"outcome": outcome, "stage_outcome": plugs.BACKUP_OUTCOMES[outcome][0]}
 
 
@@ -234,6 +236,17 @@ def _read_region_with_retries(ctx: Context, host: str) -> bytes:
     return _read_region(host)
 
 
+def note_flash(ctx: Context, matched: bool) -> None:
+    """Whether the flash is laid out as the stock firmware's table says, for the
+    next person to read in the log: the first the tool can tell, as the stock
+    firmware does not say. On a smaller flash, reads this high would not find
+    this device's factory record."""
+    start = plugs.BEKEN_REGION[0]
+    ctx.state.capture("B4.flash_matched", matched)
+    output.log_only(f"    Flash: the device's own factory record was {'' if matched else 'not '}read at 0x{start:x}: "
+                    f"it {'matches' if matched else 'does not match'} the table in its firmware")
+
+
 def _back_up(ctx: Context, mac: str) -> str:
     if plugs.find_backup(mac):
         output.say("    The device's own data is backed up already.")
@@ -255,10 +268,13 @@ def _back_up(ctx: Context, mac: str) -> str:
         found = backup.factory_mac(region)
     except ValueError as exc:
         output.tell(f"    What was read is not the device's factory record ({exc}); no backup kept.")
+        note_flash(ctx, False)
         return "unreadable"
     if found.lower() != mac.lower():
         output.tell(f"    The data read names another device ({found}); no backup kept.")
+        note_flash(ctx, False)
         return "unreadable"
+    note_flash(ctx, True)
     try:
         stock, stock_version = images.stock_rbl(kind)
     except Abort as exc:

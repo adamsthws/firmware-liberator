@@ -129,6 +129,11 @@ BEKEN_BUILDS = {
         "openbeken": ("devices/sonoff-s61/drv_autoflash_sonoff_s61.c", "artifacts/openbeken-sonoff-s61-{version}.rbl"),
         "esphome": ("devices/sonoff-s61/esphome.yaml", "artifacts/esphome-sonoff-s61-{version}.rbl"),
     },
+    "sonoff-basic-1gs": {
+        "openbeken": ("devices/sonoff-basic-1gs/drv_autoflash_sonoff_basic_1gs.c",
+                      "artifacts/openbeken-sonoff-basic-1gs-{version}.rbl"),
+        "esphome": ("devices/sonoff-basic-1gs/esphome.yaml", "artifacts/esphome-sonoff-basic-1gs-{version}.rbl"),
+    },
 }
 # What the S60's config reaches into ESPHome for, beyond its documented
 # options: its last on_boot lambda saves the Wi-Fi under the one fixed key an

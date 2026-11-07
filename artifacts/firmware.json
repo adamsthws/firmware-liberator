@@ -120,6 +120,40 @@
         "size": 505184,
         "sha256": "b6591fde2e0ff5fba2ef3afc699c82437d7f151f9bd88b2c2a4ffdf069e332fb"
       }
+    },
+    "sonoff-basic-1gs": {
+      "openbeken": {
+        "file": "artifacts/openbeken-sonoff-basic-1gs-1.18.320-1.rbl",
+        "version": "1.18.320-1",
+        "release": "1.18.320",
+        "app_commit": "ce1abad8dc931720167a7628840adae30b92afaf",
+        "sdk_commit": "f5a64d4cda03bac6d885f4f30c27bbd3435c5e3a",
+        "sources": {
+          "tools/beken/openbeken/drv_autoflash.c": "d13081fa1478b4567f2c1de9b897aa80805099b266d770fb81a6a0b3b17bb469",
+          "tools/beken/openbeken/drv_autoflash.h": "2218efb6dca42e52ad92ec42afbeef8d43b33c6fee27006cf1c9025376d0c381",
+          "devices/sonoff-basic-1gs/drv_autoflash_sonoff_basic_1gs.c": "147b462777fdd8e15532a3b9d731dc2c2065fc43307d5336aa4ceaa023cce9e6"
+        },
+        "patches": {
+          "openbk7231t_app-bk7238-4m-flash.patch": "257b02a72a217d1644d35051dc3ba97f8522154fa25b4f67e6c0b44e63aada58",
+          "openbk7231t_app-ota-before-reboot-hook.patch": "cb1575c22da2a2e4e0a071e107e9db064d4b5bec57925ee1ee2f5d501a22ed1a",
+          "beken_freertos_sdk-4m-pack-profile.patch": "9d9e35179e947107b8664da51f1e75c3dbc5a575682f7fe5e59792222e2e7fe8"
+        },
+        "builder": "ubuntu@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c with tools/beken/openbeken/build.Dockerfile 4b04244bb63658a1",
+        "size": 509616,
+        "sha256": "2c3ff5c90ad09fdf8d430f785cfc1f8469eac482b8aff6577ba48b6304601ea9"
+      },
+      "esphome": {
+        "file": "artifacts/esphome-sonoff-basic-1gs-2026.10.0-1.rbl",
+        "config": "devices/sonoff-basic-1gs/esphome.yaml",
+        "version": "2026.10.0-1",
+        "esphome": "2026.10.0",
+        "libretiny": "1.13.0",
+        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
+        "built": "2026-11-07 01:43:32 +0000",
+        "earlier_builds": [],
+        "size": 489824,
+        "sha256": "9e2679eda296606db27ef959b05dbf63e3de31f9144729c2d8983c69c0c557c2"
+      }
     }
   },
   "esp32": {

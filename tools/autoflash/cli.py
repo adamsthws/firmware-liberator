@@ -476,6 +476,8 @@ def _main() -> int:
                         help=argparse.SUPPRESS)  # testing: the backup's reads fail until it asks what now
     parser.add_argument("--simulate-bad-image", nargs="?", const="B2", metavar="STEP",
                         help=argparse.SUPPRESS)  # testing: the S61's image STEP sends is refused by its bootloader
+    parser.add_argument("--simulate-unknown-table", action="store_true",
+                        help=argparse.SUPPRESS)  # testing: a Beken official file's table is not one known
     parser.add_argument("--bridge", help=argparse.SUPPRESS)  # research: archive/docs/reference/automatic-wifi.md
     args = parser.parse_args()
     if args.replace_own_build and (args.esphome or args.firmware not in (None, "esphome")):
@@ -483,6 +485,7 @@ def _main() -> int:
     prompts.UNATTENDED = args.unattended
     installer.SIMULATED_BACKUP_FAILURES = 2 * installer.BACKUP_ROUNDS if args.simulate_backup_failure else 0
     beken_images.SPOIL_STEP = args.simulate_bad_image
+    beken_images.UNKNOWN_TABLE = args.simulate_unknown_table
 
     try:
         given = credentials.load(args.env_file)
