@@ -447,6 +447,14 @@ ESTABLISHED = re.compile(r"\btcp\b.*\bESTABLISHED src=192\.168\.60\.50 "
                          r"dst=(?!10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.)(\S+) sport=(\d+) dport=(\d+)")
 
 
+# The plug's connection to this computer: what a run serves it.
+FETCHING = re.compile(r"\btcp\b.*\bESTABLISHED src=192\.168\.60\.50 dst=192\.168\.60\.1 ")
+
+
+def plug_fetching(n):
+    return bool(FETCHING.search(sh("docker", "exec", name(n), "cat", "/proc/net/nf_conntrack").stdout))
+
+
 def cloud_connections(n):
     """The plug's open connections to the internet, as its emulator's firewall
     tracks them. Sonoff's firmware prints nothing when it signs on to eWeLink."""
@@ -633,6 +641,11 @@ SIGN_IN_TURN = 15.0
 # plug that does not get there leaves the run to find that out.
 SIGNED_ON_AFTER = 15.0
 PLUG_BACK_AT_MOST = 60.0
+# A run's command that this long has not brought its plug to fetch anything has
+# been lost, and eWeLink does not pass one on again: the turn is of no more use
+# (seen: 3 minutes of one, with the plug back on eWeLink after a power cut).
+TURN_IDLE = 60.0
+SENT = re.compile(r"\] C2  |Sending the installer again")
 # Where a run asks for a turn before it signs in (get_device_key.wait_for_turn).
 TURN_FILE = "captures/cloud-turn"
 
@@ -775,6 +788,9 @@ class PlugMonitor:
         self.sc.say(f"CLOUD: turn taken ({why})")
         since = time.time()
         opened = opened_at = since
+        back_at = None
+        sent_seen = 0
+        idle_from = since
         try:
             while not self.stop.is_set() and time.time() - since < limit:
                 now = time.time()
@@ -782,11 +798,20 @@ class PlugMonitor:
                     looked = now
                     first_seen = self.connections_seen(first_seen, before, now)
                     if plug_first and any(now - seen >= SIGNED_ON_AFTER for seen in first_seen.values()):
-                        plug_first = False
+                        plug_first, back_at = False, now
                         self.sc.say(f"CLOUD: plug back after {now - opened_at:.0f}s")
                     elif plug_first and now - opened_at >= PLUG_BACK_AT_MOST:
-                        plug_first = False
+                        plug_first, back_at = False, now
                         self.sc.say(f"CLOUD: plug not back after {now - opened_at:.0f}s; the run goes on")
+                    if back_at is not None:
+                        # This run's sends: one before it, cancelled say, is not this turn's to wait on.
+                        text = self.run_text()
+                        sent = len(SENT.findall(text, max(text.rfind("=== run started"), 0)))
+                        if sent > sent_seen or (sent and plug_fetching(self.n)):
+                            sent_seen, idle_from = sent, now
+                        if sent and now - max(idle_from, back_at) >= TURN_IDLE:
+                            self.sc.say(f"CLOUD: nothing fetched for {TURN_IDLE:.0f}s; the turn is free")
+                            break
                 if not plug_first:
                     self.turn_file().unlink(missing_ok=True)
                 if time.time() - opened > 2:

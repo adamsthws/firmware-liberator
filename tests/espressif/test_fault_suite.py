@@ -636,6 +636,57 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(self.said_waiting(0), [])
         self.assertEqual(self.said_waiting(95, got=False), [])
 
+    def turn_length(self, texts, fetching=lambda second: False):
+        """How long a plug's turn lasts, connected from its start, its run's log
+        at each second being `texts(second)`, and what it said."""
+        session = ("192.0.2.81", "2", "443")
+        with tempfile.TemporaryDirectory() as tmp:
+            monitor = self.monitor(tmp)
+            said = []
+            monitor.sc.say = said.append
+            clock = [1000.0]
+            monitor.run_text = mock.Mock(side_effect=lambda: texts(clock[0] - 1000))
+            monitor.stop = mock.Mock(is_set=mock.Mock(return_value=False))
+            monitor.stop.wait = mock.Mock(side_effect=lambda _: clock.__setitem__(0, clock[0] + 0.5))
+            first = iter([set()])
+            with mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
+                    mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                    mock.patch.object(fs, "plug_fetching", side_effect=lambda _n: fetching(clock[0] - 1000)), \
+                    mock.patch.object(fs, "cloud_connections",
+                                      side_effect=lambda _n: next(first, {session})):
+                monitor.hold("test")
+        return clock[0] - 1000, said
+
+    def test_a_turn_ends_when_a_sent_command_brought_nothing(self):
+        # Seen on the real cloud: 3 minutes of a turn, its plug back on eWeLink
+        # after a power cut, with its command lost and eWeLink not passing it on.
+        length, said = self.turn_length(lambda _: "[12:00:00] C2  Stock to recovery bridge")
+        self.assertEqual(length, fs.SIGNED_ON_AFTER + fs.TURN_IDLE)
+        self.assertIn(f"CLOUD: nothing fetched for {fs.TURN_IDLE:.0f}s; the turn is free", said)
+
+    def test_a_command_an_earlier_run_sent_does_not_end_a_later_runs_turn(self):
+        # Seen: a run cancelled after its send, then one with --new whose turn to
+        # find the plug ended a minute in, its plug cut off as it was looked up.
+        earlier = "=== run started\n[12:00:00] C2  Stock to recovery bridge\n=== run ended ===\n"
+        length, said = self.turn_length(lambda _: earlier + "=== run started\n[12:05:00] A1  Pair the device\n")
+        self.assertEqual(length, fs.HOLD_AT_MOST)
+        self.assertFalse([line for line in said if "nothing fetched" in line])
+
+    def test_a_turn_stays_while_nothing_has_been_sent(self):
+        length, said = self.turn_length(lambda _: "[12:00:00] A1  Pair the device in eWeLink")
+        self.assertEqual(length, fs.HOLD_AT_MOST)
+        self.assertFalse([line for line in said if "nothing fetched" in line])
+
+    def test_a_turn_stays_while_the_plug_fetches(self):
+        length, _ = self.turn_length(lambda _: "[12:00:00] C2  Stock", fetching=lambda second: second < 100)
+        self.assertAlmostEqual(length, 100 + fs.TURN_IDLE, delta=1.5)
+
+    def test_sending_again_gives_the_plug_as_long_again(self):
+        def texts(second):
+            return "[12:00:00] C2  Stock\n" + ("    Sending the installer again\n" if second >= 50 else "")
+        length, _ = self.turn_length(texts)
+        self.assertAlmostEqual(length, 50 + fs.TURN_IDLE, delta=1.5)
+
     def said_in_a_turn(self, looks, limit=fs.HOLD_AT_MOST):
         """What a turn says, the plug's connections at each second being `looks`."""
         with tempfile.TemporaryDirectory() as tmp:
