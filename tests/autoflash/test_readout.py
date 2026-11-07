@@ -226,6 +226,7 @@ class RunTests(unittest.TestCase):
                 mock.patch.object(readout, "offer", return_value="done") as offered:
             self.assertEqual(readout.run(self.ctx, DEVICE), "done")
         command = sent.call_args.args[0]
+        self.assertEqual(command[1], "-u")  # each line of the sender's in the log as it comes
         self.assertEqual(command[command.index("--readout-model") + 1], "FWSW-E32NEW-NEW-ESP32C3")
         wrapped = Path(command[command.index("--firmware") + 1]).read_bytes()
         self.assertEqual(analyze_vendor_ota.analyze(wrapped)["wrapper"]["model"], "FWSW-E32NEW-NEW-ESP32C3")

@@ -227,7 +227,7 @@ def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, *,
             "--device-ip", ctx.state.input("plug_ip"), "--firmware", str(wrapped),
             "--email", ctx.email(), "--expected-current-version", version,
             "--mdns-capture", str(ctx.dir / "mdns.json"),
-            "--i-understand-stock-has-no-automatic-rollback", "--readout-model", name),
+            "--i-understand-stock-has-no-automatic-rollback", "--readout-model", name, unbuffered=True),
             interactive=True, env=ctx.ewelink_env())
     safety_locks.say_lock_back(ROOT, "RECOVERY_LOCK")
     ctx.state.set_input(STATE_KEY, "sent")

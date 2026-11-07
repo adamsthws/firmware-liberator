@@ -158,7 +158,9 @@ def step_bridge(ctx: Context) -> dict[str, Any]:
                 "--firmware", str(bridge_file(ctx)),
                 "--email", email, "--expected-current-version", version,
                 "--mdns-capture", str(ctx.dir / "mdns.json"),
-                "--i-understand-stock-has-no-automatic-rollback"),
+                "--i-understand-stock-has-no-automatic-rollback",
+                # Each line as it comes, so the run's log has when eWeLink said what.
+                unbuffered=True),
             interactive=True,
             env=env,
         )
