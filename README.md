@@ -79,7 +79,8 @@ Until now, the established way to flash a device was to open it, perform some so
 <br>
 
 ### Supported Devices
-> More coming soon!
+> More coming soon!  
+> **[How you can help](#how-you-can-help)**: if your Sonoff isn't listed, the tool can read it out and send it in, so support for it can be added.
 
 | Status | Device | Models |
 |---|---|---|
@@ -195,6 +196,28 @@ Please report back on how it went for you!
 
 <br>
 
+### How you can help
+
+**Got a Sonoff that isn't listed?** A firmware readout of it is the quickest way to get support for it added.
+
+Run the tool as usual. When it finds no supported device in your eWeLink account, it offers to **read-out your device to help add support for it**.
+> To read out a device that is already listed (another version of its firmware, say), run `sh start.sh readout`, or `start.cmd readout` on Windows, in the tool's folder.
+
+What a firmware readout does:
+- It only reads the device. Its Sonoff firmware, settings and eWeLink pairing stay as they are.
+- On a device with an ESP32-C3 or a classic ESP32 chip, it puts a small program in the spare firmware slot, which reads the device's whole memory. Then you switch the device off and on, and it starts its Sonoff firmware again.
+> The spare slot is lost. It often holds the Sonoff version from before the last update.
+- On a device with any other chip, nothing is sent to it, and its readout is made without.
+- The tool has never run on this kind of device. If the small program could not start at all, the device may need a serial cable to recover. Only go ahead with a device you can afford to lose.
+
+What is sent, once you agree:
+- **The device's firmware readout, anonymised.** It is kept privately, never published, and used only to add support for the device.
+- What the device and eWeLink said it is, and the tool's version.
+- If you choose to add it, your email address or Telegram username, so you can be told if support for your device is added.
+> A copy also stays on your computer, beside your other Sonoff backups.
+
+<br>
+
 ## Documentation
 
 - **[what-happens](docs/what-happens.md)** - how it works and what
@@ -210,6 +233,8 @@ Please report back on how it went for you!
 - **[testing](docs/testing.md)** - unit tests, the emulator, fault injectio, and real plugs.
 - **[updating-firmware](docs/updating-firmware.md)** - how the
   Tasmota and ESPHome the tool installs are updated.
+- **[readouts](docs/readouts.md)** - what a readout of a device holds, and
+  where it goes.
 - **[upstream-contributions](docs/upstream-contributions.md)** - bugs
   found and fixed while building this project.
 - **[legal](docs/legal.md)** - how the project remains lawful, and what it asks of you.
