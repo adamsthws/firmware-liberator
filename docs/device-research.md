@@ -239,8 +239,8 @@ Each of these is general, not per device:
 
 | What you saw | Cause | Fix |
 |---|---|---|
-| Boot 26 s, Tasmota's settings backup about 70 s | QEMU threw away translated code and changed the memory map at every flash operation | `patches/0003` |
-| Interrupt watchdog at start-up | a core spinning on a lock waited up to 100 ms for the other's turn | `patches/0004` |
+| Boot 26 s, Tasmota's settings backup about 70 s | QEMU threw away translated code and changed the memory map at every flash operation | `patches/0003` and `0004` |
+| Interrupt watchdog at start-up | flash operations, done with interrupts off, took that long (the cores taking turns more often made no difference) | `patches/0003` and `0004` |
 | Interrupt watchdog in `esp_dport_access_stall_other_cpu_start` | the workaround for a silicon bug QEMU does not have: the other core can be slow to answer | `patch_stock.py` skips it on ESP-IDF 4 |
 | `A stack overflow in task colink task` during TLS | the firmware's stack is sized for eWeLink's RSA-1024 CA, not an EC one | an RSA stub CA on a classic ESP32 whose firmware's is RSA |
 | `abort()` straight after `Disabling RNG` | external RAM missing | `psram_mb` on the kind |

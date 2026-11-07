@@ -1,21 +1,30 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From c651bb9a0941474119e422e7bbaffb244931856a Mon Sep 17 00:00:00 2001
 From: Adam Matthews <52178922+adamsthws@users.noreply.github.com>
-Date: Fri, 6 Nov 2026 18:00:00 +0000
-Subject: [PATCH] esp32 dport: a flash operation does not remap the cache
+Date: Sat, 7 Nov 2026 14:17:29 +0000
+Subject: [PATCH 3/4] esp32 dport: after a flash operation, refresh only the
+ cache pages that changed
 
-Every time a classic ESP32's cache came back on after a flash operation, QEMU
-threw away the translated code of both whole flash windows, and each time it
-went off and on it changed the memory map. A firmware with megabytes of code
-in flash spends its flash operations, with interrupts off, on that.
+Each time a classic ESP32's cache was enabled or flushed, the translated code
+of its whole 4 MB window was thrown away, and a flush read every page of the
+window from flash again, whether or not anything had changed. Firmware does
+this around every flash read, write and erase, so the code it runs from flash
+was retranslated each time, with its interrupts off.
 
-A page is now copied, and its code thrown away, only if its bytes differ; a
-page mapped to nothing is left alone by a flush; and a window stays mapped
-once on.
+A page's new contents are now read into a buffer and compared first: only a
+page whose bytes differ is copied in and has its translated code flushed. A
+page mapped to nothing holds the fill value whatever the flash does, so a
+flush no longer marks it to be filled again.
+
+The fault for reading a window while its cache is off is unchanged.
 ---
+ hw/misc/esp32_dport.c | 23 ++++++++++++++---------
+ 1 file changed, 14 insertions(+), 9 deletions(-)
+
 diff --git a/hw/misc/esp32_dport.c b/hw/misc/esp32_dport.c
+index ea69d1f10fd..f2c57d62021 100644
 --- a/hw/misc/esp32_dport.c
 +++ b/hw/misc/esp32_dport.c
-@@ -251,36 +251,55 @@
+@@ -251,36 +251,41 @@ static void esp32_cache_data_sync(Esp32CacheRegionState* crs)
      bool decrypt = (flash_enc != NULL && esp32_flash_decryption_enabled(flash_enc));
  
      uint8_t* cache_data = (uint8_t*) memory_region_get_ram_ptr(&crs->mem);
@@ -46,6 +55,7 @@ diff --git a/hw/misc/esp32_dport.c b/hw/misc/esp32_dport.c
          }
          crs->mmu_table[i] &= ~ESP32_CACHE_MMU_ENTRY_CHANGED;
 -        n++;
++        /* Only a page whose bytes changed needs its translated code thrown away. */
 +        if (memcmp(cache_page, page, ESP32_CACHE_PAGE_SIZE) != 0) {
 +            memcpy(cache_page, page, ESP32_CACHE_PAGE_SIZE);
 +            memory_region_flush_rom_device(&crs->mem, i * ESP32_CACHE_PAGE_SIZE, ESP32_CACHE_PAGE_SIZE);
@@ -58,49 +68,13 @@ diff --git a/hw/misc/esp32_dport.c b/hw/misc/esp32_dport.c
  {
      for (int i = 0; i < ESP32_CACHE_PAGES_PER_REGION; ++i) {
 -        crs->mmu_table[i] |= ESP32_CACHE_MMU_ENTRY_CHANGED;
-+        /* A page mapped to nothing holds the fill value whatever the flash does. */
++        /* A page mapped to nothing holds the fill value, whatever is in flash. */
 +        if (!(crs->mmu_table[i] & ESP32_CACHE_MMU_INVALID_VAL)) {
 +            crs->mmu_table[i] |= ESP32_CACHE_MMU_ENTRY_CHANGED;
-+        }
-+    }
-+}
-+
-+static void esp32_cache_region_update(Esp32CacheRegionState* crs, bool enabled)
-+{
-+    /*
-+     * Once on, a window stays mapped while the cache is off: changing the memory
-+     * map costs a TLB flush on every flash operation, and firmware does not read
-+     * flash with its cache off, or it would crash on a real chip.
-+     */
-+    if (enabled) {
-+        esp32_cache_data_sync(crs);
-+        if (!crs->mem.enabled) {
-+            memory_region_set_enabled(&crs->mem, true);
 +        }
      }
  }
  
-@@ -288,19 +307,10 @@
- {
-     bool cache_enabled = FIELD_EX32(cs->cache_ctrl_reg, DPORT_PRO_CACHE_CTRL, CACHE_ENA) != 0;
- 
--    bool drom0_enabled = cache_enabled &&
--        FIELD_EX32(cs->cache_ctrl1_reg, DPORT_PRO_CACHE_CTRL1, MASK_DROM0) == 0;
--    if (!cs->drom0.mem.enabled && drom0_enabled) {
--        esp32_cache_data_sync(&cs->drom0);
--    }
--    memory_region_set_enabled(&cs->drom0.mem, drom0_enabled);
--
--    bool iram0_enabled = cache_enabled &&
--        FIELD_EX32(cs->cache_ctrl1_reg, DPORT_PRO_CACHE_CTRL1, MASK_IRAM0) == 0;
--    if (!cs->iram0.mem.enabled && iram0_enabled) {
--        esp32_cache_data_sync(&cs->iram0);
--    }
--    memory_region_set_enabled(&cs->iram0.mem, iram0_enabled);
-+    esp32_cache_region_update(&cs->drom0, cache_enabled &&
-+        FIELD_EX32(cs->cache_ctrl1_reg, DPORT_PRO_CACHE_CTRL1, MASK_DROM0) == 0);
-+    esp32_cache_region_update(&cs->iram0, cache_enabled &&
-+        FIELD_EX32(cs->cache_ctrl1_reg, DPORT_PRO_CACHE_CTRL1, MASK_IRAM0) == 0);
- 
-     if (cs->dport->has_psram) {
-         bool dram1_enabled = cache_enabled &&
+-- 
+2.43.0
+
