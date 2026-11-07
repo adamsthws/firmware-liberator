@@ -16,6 +16,8 @@ directory, never here.
 | `sonoff-s60-partition-table.bin` | Sonoff's partition table, read from a stock plug: the one every conversion starts from, which the Tasmota route's preflight requires byte for byte. Written back when a plug leaves Tasmota's layout. Holds no secrets | `f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf` |
 | `openbeken-sonoff-s61-1.18.320-1.rbl` | OpenBeken for the S61, with the 4 MB table, the hook before an OTA's restart, the tool's OpenBeken driver and the S61's table for it built in (a run to ESPHome sends it, with a marker for its app after it, as the interim firmware): the rt_ota image the plug's stock bootloader applies from its download slot, whether sent by the stock firmware's updater, by OpenBeken's own OTA or in a UF2 through ESPHome's | `ec857a37db8511cfc6d8a437bf0e9127db89ca29a30fa9637d20aba669fb5add` |
 | `esphome-sonoff-s61-2026.10.0-1.rbl` | ESPHome for the S61, on LibreTiny: the same rt_ota image form, installed the same ways. Nothing is written into it: its first boot reads the plug's Wi-Fi and meter calibration from the stock store. The tool takes the plug's backup before it, through OpenBeken as the interim firmware | `b6591fde2e0ff5fba2ef3afc699c82437d7f151f9bd88b2c2a4ffdf069e332fb` |
+| `openbeken-sonoff-basic-1gs-1.18.320-1.rbl` | OpenBeken for the Basic Gen5, built as the S61's with that device's table for the driver. No real one has been converted | `2c3ff5c90ad09fdf8d430f785cfc1f8469eac482b8aff6577ba48b6304601ea9` |
+| `esphome-sonoff-basic-1gs-2026.10.0-1.rbl` | ESPHome for the Basic Gen5, on LibreTiny, built as the S61's less its meter. No real one has been converted | `9e2679eda296606db27ef959b05dbf63e3de31f9144729c2d8983c69c0c557c2` |
 
 The Bluetooth image is the exact file used by the successful migrations. It
 was retrieved from Tasmota's official moving `install/firmware` branch at
@@ -166,4 +168,6 @@ the plug as every firmware the tool installs does - OpenBeken
 `Sonoff-S61` as its comment - and ESPHome has no backup reader: the tool
 takes the backup through OpenBeken, installed first as the interim firmware,
 which knows itself by a marker sent after it that names its app. ESPHome is
-adopted into Home Assistant as a package rather than a copy of its config.
+adopted into Home Assistant as a package rather than a copy of its config. The
+Basic Gen5's are built the same way, from `devices/sonoff-basic-1gs/`
+(`--plug sonoff-basic-1gs`).

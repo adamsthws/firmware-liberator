@@ -16,6 +16,10 @@ check.
 
 ## 2.4.0
 
+- The Sonoff Basic Gen5 (BASIC-1GS), behind a warning: no real one has been
+  converted. It has no public dump, so the tool checks the partition table in
+  eWeLink's official update file before writing anything, asks you to accept the
+  warning, and logs what the run learns. Beken devices on any other table are refused.
 - The firmware this project builds says in its version which upstream release
   it is built on: OpenBeken 1.18.320-1 and ESPHome 2026.10.0-1, each this
   project's first build on that release, with the same code as the 1.1.0, 1.6.0

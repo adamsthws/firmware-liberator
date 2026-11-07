@@ -84,6 +84,7 @@ Until now, the established way to flash a device was to open it, perform some so
 - **Sonoff S60TPG** - UK / Type G
 - **Sonoff S60TPF** - EU / Type E/F
 - **Sonoff S61STPF** - EU / Type E/F
+- **Sonoff Basic Gen5** (BASIC-1GS) - untested: no real one has been converted, and the tool makes you accept that first ([more](devices/sonoff-basic-1gs/README.md))
 
 <br>
 

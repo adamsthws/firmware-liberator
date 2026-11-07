@@ -89,6 +89,9 @@ class Kind:
     layout: str = "sonoff-dual-ota"
     # eWeLink's name for one, for the emulator's cloud stub to give.
     example_product_model: str = ""
+    # False until a real one has been converted: the person is told so before
+    # anything is written, and accepts it (routes/beken/stock.py).
+    converted_for_real: bool = True
     # Whether it converts yet: devices/not-ready-yet/README.md says what holds
     # the others up. The tool turns them down like any device it does not know.
     ready: bool = True
@@ -192,6 +195,30 @@ SONOFF_S61 = Kind(
     openbeken_revert="AutoflashRevertToStock",
     uses_lan_control=False,
     example_product_model="S61STPF",
+)
+
+# Known from eWeLink's official update file and a pin map, not from a dump of one
+# (tools/beken/layouts.py checks that file's table): devices/sonoff-basic-1gs/.
+SONOFF_BASIC_1GS = Kind(
+    key="sonoff-basic-1gs",
+    family="beken",
+    chip="bk7238",
+    ecosystem="ewelink",
+    name="Sonoff Basic Gen5",
+    maker="Sonoff",
+    short="BASIC-1GS",
+    # Not the BASIC-1GSP, the DIN rail one, on other firmware.
+    product=re.compile(r"BASIC-1GS"),
+    stock_model="SN-BK7238-BASICR5-01",
+    wrapper_model="FWSW-01-BASICR5-BK7238",
+    tasmota_gpio=(),  # Tasmota does not run on the BK7238: OpenBeken does
+    esphome_legacy_setup_prefix="",
+    esphome_legacy_prefix="",
+    openbeken_revert="AutoflashRevertToStock",
+    uses_lan_control=False,
+    layout="beken-4m",
+    example_product_model="BASIC-1GS",
+    converted_for_real=False,
 )
 
 SONOFF_POW_ELITE = Kind(
@@ -389,7 +416,7 @@ SONOFF_M5_3C = _sonoff_m5(3, (33, 0, 0, 0, 32, 576, 0, 0, 0, 0, 0, 34, 0, 0, 0, 
                               0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 
 # Every kind the tool converts.
-READY = (SONOFF_S60, SONOFF_S61, SONOFF_POW_ELITE, SONOFF_POWCT, SONOFF_TH_ELITE, SONOFF_DUALR3)
+READY = (SONOFF_S60, SONOFF_S61, SONOFF_POW_ELITE, SONOFF_POWCT, SONOFF_TH_ELITE, SONOFF_DUALR3, SONOFF_BASIC_1GS)
 # Being worked on, in devices/not-ready-yet/. For the emulator, this variable has
 # the tool take them as it does the others: never for a real plug.
 NOT_READY_YET = (SONOFF_NSPANEL, SONOFF_BASICR4, SONOFF_MINIR4, SONOFF_M5_1C, SONOFF_M5_2C, SONOFF_M5_3C)

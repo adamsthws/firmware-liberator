@@ -55,6 +55,8 @@ __pycache__/
 !artifacts/esphome-sonoff-powct-imprintable-2026.10.0-1.bin
 !artifacts/esphome-sonoff-th-elite-imprintable-2026.10.0-1.bin
 !artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-1.bin
+!artifacts/openbeken-sonoff-basic-1gs-1.18.320-1.rbl
+!artifacts/esphome-sonoff-basic-1gs-2026.10.0-1.rbl
 
 # Answers for unattended runs: the eWeLink password, perhaps sudo's (see .env.example).
 .env
