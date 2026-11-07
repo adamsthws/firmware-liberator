@@ -5660,7 +5660,7 @@ class DeliveryPortTests(unittest.TestCase):
                 except errors.Abort as exc:
                     error = str(exc)
             self.asked = asked.call_count
-            command = run_tool.call_args.args[0] if run_tool.called else None
+            command = self.command = run_tool.call_args.args[0] if run_tool.called else None
             port = command[command.index("--listen-port") + 1] if command else None
             if command:
                 # Lifted here, under this root: its record says so.
@@ -5673,6 +5673,12 @@ class DeliveryPortTests(unittest.TestCase):
         # unattended run's PROCEED was typed twice (the suite's FAIL-ASKED-AGAIN).
         self.run_bridge(busy=set(), sends=2)
         self.assertEqual(self.asked, 1)
+
+    def test_the_sender_says_each_line_as_it_comes(self):
+        # Seen: its lines reached the run's log all at once as it ended, each
+        # stamped then, so when eWeLink said the plug was back could not be told.
+        self.run_bridge(busy=set())
+        self.assertEqual(self.command[1], "-u")
 
     def test_8088_is_used_when_free(self):
         port, opened, recorded, _ = self.run_bridge(busy=set())
