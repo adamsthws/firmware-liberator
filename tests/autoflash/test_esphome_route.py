@@ -190,6 +190,13 @@ class EndingTests(RouteTestCase):
         legacy.state.mark("D1", DONE)
         self.assertEqual(dict(report.report_fields(legacy, 300, False))["Firmware"], "Tasmota")
 
+    def test_a_run_that_never_found_its_device_does_not_say_it_was_on_sonoff(self):
+        # Seen on a real plug switched off: the report said "Converted from: Sonoff".
+        never = self.ctx(stock_version="")
+        self.assertEqual(dict(report.report_fields(never, 300, False))["Converted from"], "__")
+        self.assertEqual(dict(report.report_fields(self.ctx(run="found", source="sonoff"), 300, False))
+                         ["Converted from"], "Sonoff")
+
     def test_a_run_back_to_sonoff_says_where_the_identity_came_from(self):
         for taken, said in (("backup", "From the backup on this computer"), ("kept", "From the device"),
                             ("account", "Rebuilt from your eWeLink account"), (None, "Not read yet")):

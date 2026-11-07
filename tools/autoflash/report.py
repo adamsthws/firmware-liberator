@@ -128,6 +128,21 @@ CONVERTED_FROM = {"sonoff": "Sonoff", "tasmota": "Tasmota", "esphome": "ESPHome"
                   "outdated": "an earlier release"}   # of the run's firmware, named before it
 
 
+def converted_from(ctx: Context, firmware: str | None) -> str:
+    """What the plug ran at the run's start, for its report: "__", to fill in,
+    for a run that stopped before it found that out (the device not on the
+    network at all) - not Sonoff's, which runs.run_source takes when none is
+    recorded, for a run of 1.x."""
+    if ctx.state.input("replaced_build"):
+        return "its own build"
+    source = runs.run_source(ctx.state)
+    found = (ctx.state.input("source") or ctx.state.input("stock_version")
+             or any(map(ctx.state.is_done, ctx.state.data.get("steps", {}))))
+    if not found:
+        return "__"
+    return (f"{routes.FIRMWARES[firmware]}, " if source == "outdated" and firmware else "") + CONVERTED_FROM[source]
+
+
 def report_fields(ctx: Context, seconds: float, resumed: bool,
                   hardware: dict[str, str] | None = None,
                   result: str = "converted") -> list[tuple[str, str]]:
@@ -168,8 +183,7 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
     fields = [
         ("Result", result),
         ("Firmware", routes.FIRMWARES[firmware] if firmware else "not chosen"),
-        ("Converted from", (f"{routes.FIRMWARES[firmware]}, " if runs.run_source(ctx.state) == "outdated" else "")
-         + ("its own build" if ctx.state.input("replaced_build") else CONVERTED_FROM[runs.run_source(ctx.state)])),
+        ("Converted from", converted_from(ctx, firmware)),
         ("Tool version", __version__),
         ("Device model", model or "__"),
         ("Stock firmware", stock_version or "__"),
