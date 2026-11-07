@@ -8,6 +8,8 @@ from tools.beken import scrub
 
 PASSWORD = b"correct-horse-9"
 SSID = b"ExampleNet"
+# The factory record as an S61 holds it: base64 of ciphertext (made up here).
+FACTORY = b"cXVpdGUtbWFkZS11cC1mYWN0b3J5LXJlY29yZC1ub3QtYS1kZXZpY2Vz"
 APIKEY = b"12345678-1234-4abc-8def-123456789abc"
 
 
@@ -23,6 +25,7 @@ def flash() -> bytes:
         ef40.encode_node("pass", b"\x13\x37encoded\x00"),
         ef40.encode_node("apiKey", APIKEY),
         ef40.encode_node("user", b'{"account":"someone"}'),
+        ef40.encode_node("factory", FACTORY),
         ef40.encode_node("lan&info", b'{"deviceid":"1000abcdef","port":8081}'),
         ef40.encode_node("f/1/k", b"\x01\x02\x03\x04matter-key"),
         ef40.encode_node("elecCalibFlag", b"\x01"),
@@ -79,6 +82,10 @@ class ScrubTests(unittest.TestCase):
         image[0x3E2000:0x3E2000 + len(store)] = store
         found = nodes(scrub.scrub(bytes(image))[0])
         self.assertEqual((found["wifi-ssid"], found["lan&cfg"]), (b"**", b'{"ssid":"**"}'))
+
+    def test_the_factory_record_is_kept_byte_for_byte(self):
+        # The stock firmware does not start with it changed (seen in the emulator).
+        self.assertEqual(nodes(scrub.scrub(flash())[0])["factory"], FACTORY)
 
     def test_a_flash_with_no_store_is_returned_as_it_was(self):
         blank = b"\xff" * 0x400000
