@@ -14,7 +14,7 @@ import threading
 import time
 from typing import Any, Callable, TYPE_CHECKING
 
-from tools.autoflash import detect, esphome, firewall, handover, join, kinds, openbeken, output, runs
+from tools.autoflash import esphome, firewall, handover, join, kinds, openbeken, output, runs
 from tools.autoflash.errors import Abort
 from tools.autoflash.routes.beken import images
 from tools.beken import uf2
@@ -248,37 +248,3 @@ def step_openbeken_update(ctx: Context) -> dict[str, Any]:
     seconds = serve_to_plug(ctx, images.as_sent(ctx, "U3", image), f"OpenBeken {version}",
                             lambda url: openbeken.ota_http(host, url), unstick=lambda: openbeken.restart(host))
     return {"seconds": seconds, "version": version}
-
-
-# How long a plug just switched on may take to answer, before its record is judged.
-ANSWER_WAIT = 60.0
-
-
-def still_installed(ctx: Context, wait: float = ANSWER_WAIT) -> tuple[bool, str]:
-    """Whether an onward step recorded done still holds: not where the plug
-    answers as the firmware it was leaving. A plug not answering yet, or
-    answering as the new one, leaves the record be."""
-    deadline = time.monotonic() + wait
-    while True:
-        installed, message = evidence_installed(ctx)
-        if installed is not None or time.monotonic() >= deadline:
-            return installed is not False, message[0].lower() + message[1:].rstrip(".")
-        time.sleep(5)
-
-
-def evidence_installed(ctx: Context) -> tuple[bool | None, str]:
-    """Whether a step cut off got its image onto the plug: the plug answers as
-    the firmware the run installs, or still as the one it left - the interim
-    firmware, on a run from Sonoff's that has one (J2)."""
-    host = ctx.state.input("plug_ip")
-    firmware, source = runs.run_firmware(ctx.state), runs.run_source(ctx.state)
-    if source == "sonoff" and firmware in images.INTERIM:
-        source = "interim"
-    leaving = detect.NAMES.get(source, source)
-    running = detect.identify(host, timeout=3.0) if host else None
-    if running == firmware or (firmware == "sonoff" and running is None and not detect.answers_as_tasmota(host)):
-        return (True, f"The device answers as {detect.NAMES[firmware]}." if running == firmware
-                else "The device answers as neither OpenBeken nor ESPHome: Sonoff's firmware is back.")
-    if running == source:
-        return False, f"The device still answers as {leaving}: the image was not applied."
-    return None, "The device does not answer as the new firmware yet - it may still be installing it."

@@ -7,9 +7,9 @@ from __future__ import annotations
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import detect, esphome, join, kinds, output, plans, plugs, sonoff_firmware
+from tools.autoflash import detect, esphome, join, kinds, output, plans, plugs
 from tools.autoflash.errors import Abort, NothingWritten
-from tools.autoflash.routes.espressif import hub, identity
+from tools.autoflash.routes.espressif import hub, identity, sonoff_firmware
 from tools.espressif import sonoff_identity
 
 if TYPE_CHECKING:
