@@ -724,7 +724,7 @@ def module_commands(source: str) -> list[str]:
 def with_module(makefile: str, main: str, sources: list[str], init: str) -> tuple[str, str]:
     """platforms/obk_main.mk and src/user_main.c with the driver and the plug's
     table (`sources`, in src/driver/) built and run at start-up, as
-    devices/sonoff-s61/openbeken.md says to add them: listed beside the other
+    tools/beken/openbeken/README.md says to add them: listed beside the other
     drivers, and called once the config is loaded."""
     anchor = "OBKM_SRC  += $(OBK_SRCS)driver/drv_main.c\n"
     if makefile.count(anchor) != 1:

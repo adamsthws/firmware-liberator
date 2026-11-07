@@ -20,8 +20,8 @@ listed here:
 
 - [Sonoff NSPanel](../devices/not-ready-yet/sonoff-nspanel/research.md): why its updater
   refuses the bridge's file.
-- [Sonoff S61](../devices/sonoff-s61/research.md): its energy meter's calibration and
-  its wiring.
+- [Sonoff S61](../devices/sonoff-s61/research.md): its energy meter's calibration, its
+  wiring, and what OpenBeken did on it in the emulator.
 - [Sonoff Basic Gen5](../devices/sonoff-basic-1gs/research.md): its flash size.
 
 The emulators that most of it was found with are described in [emulator.md](emulator.md)
