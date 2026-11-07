@@ -187,10 +187,6 @@ NOT_MIRRORED = {
     "tests/autoflash/test_windows_uac.py": "Windows' permission prompt answered every way, from "
                                            "hostsys.elevated through the firewall rule it guards to "
                                            "what firewall.py then says",
-    "tests/espressif/emulator/test_plug.py": "the emulator container's bin/plug, under container/, "
-                                             "which the emulator image's tag hashes",
-    "tests/espressif/emulator/test_softap_status.py": "the emulator container's bin/softap-status, "
-                                                      "under container/ likewise",
 }
 
 

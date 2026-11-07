@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-PLUG = Path(__file__).resolve().parents[3] / "tools/espressif/emulator/container/bin/plug"
+PLUG = Path(__file__).resolve().parents[5] / "tools/espressif/emulator/container/bin/plug"
 
 
 class PlugRouterTests(unittest.TestCase):
