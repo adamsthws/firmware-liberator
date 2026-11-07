@@ -414,6 +414,35 @@ def needs_cloud(sc):
     return sc["fault"] == "legacy" or (sc["route"].startswith("sonoff>") and sc["step"] in CLOUD_STEPS)
 
 
+# Where eWeLink's own behaviour is under test: the send through it (C2, and C3fb
+# sending it again), and what a run of an old release does there. Everywhere
+# else a cloud scenario's fault falls once the plug has left Sonoff's firmware,
+# and the stub answers for eWeLink as well (each passed there on 2026-11-07); a
+# real-cloud batch leaves those to it. A plug back on Sonoff's
+# firmware after C3 or D1 has the installer sent again through eWeLink: one
+# power cut at each keeps that on the real cloud too. The lengths at C3fb are the
+# shortest and longest of each fault, where its outcome on the stub differed.
+REAL_CLOUD_C3FB = {("plugoff", 1), ("plugoff", 180), ("outage", 5), ("outage", 180), ("crash", 1),
+                   ("ctrlc", "once")}
+
+
+def cloud_matters(sc):
+    if not needs_cloud(sc):
+        return False
+    if sc["fault"] == "legacy":
+        return sc["step"] == "C2"
+    if sc["step"] == "C2":
+        return True
+    if sc["step"] == "C3fb":
+        return (sc["fault"], sc["arg"]) in REAL_CLOUD_C3FB
+    return (sc["fault"], sc["arg"]) == ("plugoff", 1) and sc["step"] in ("C3", "D1")
+
+
+def kind_of(sc):
+    """How `list` marks a scenario: on the real cloud, on the stub only, or anywhere."""
+    return ("cloud" if cloud_matters(sc) else "stub") if needs_cloud(sc) else "any"
+
+
 def starts_online(sc):
     # A plug fresh from Sonoff, its first run looking it up in eWeLink at once.
     return sc.get("step") == "C2" or sc.get("fault") == "legacy"
@@ -2024,6 +2053,7 @@ def batch(ids_file=None):
     stale = stale_starts(known[i] for i in ids if i not in done)
     if stale:
         raise SystemExit(f"Saved plugs not on the firmware this checkout installs: {', '.join(stale)}. Run prep.")
+    stub_only = 0
     for i in ids:
         if i in done:
             continue
@@ -2032,6 +2062,8 @@ def batch(ids_file=None):
         # and a no-cloud machine skips them.
         if STUB_CLOUD:
             anywhere.put(known[i])
+        elif kind_of(known[i]) == "stub":
+            stub_only += 1
         elif not (NO_CLOUD and needs_cloud(known[i])):
             (cloud if needs_cloud(known[i]) else anywhere).put(known[i])
     if STUB_CLOUD:
@@ -2043,6 +2075,9 @@ def batch(ids_file=None):
         na = int(os.environ.get("AUTOFLASH_ANY_WORKERS", "0"))
         first = int(os.environ.get("AUTOFLASH_FIRST_INSTANCE", nc + 1))  # clear of another batch's emulators
     print(f"batch: {cloud.qsize()} cloud on {nc}, {anywhere.qsize()} others on {na}", flush=True)
+    if stub_only:
+        print(f"batch: {stub_only} left to the stub (--stub-cloud batch): their fault comes after eWeLink",
+              flush=True)
     lock = threading.Lock()
     threads = [] if STUB_CLOUD else [threading.Thread(target=worker, args=(n, cloud, lock, True))
                                      for n in range(1, max(nc, TUNER.most) + 1)]
@@ -2182,7 +2217,7 @@ def prep_update():
 
 def listing():
     for sc in scenarios():
-        print(sc["id"], "cloud" if needs_cloud(sc) else "any")
+        print(sc["id"], kind_of(sc))
 
 
 def starved_label(row):

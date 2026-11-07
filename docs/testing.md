@@ -350,7 +350,7 @@ python -I tools/espressif/emulator/copy_plug.py --remove 12:34:56:ab:cd:ef
 
 ```sh
 tools/espressif/emulator/fault_suite.py --plug=MAC prep           # the starting plugs (eWeLink)
-tools/espressif/emulator/fault_suite.py list > all.txt            # every scenario, cloud or not
+tools/espressif/emulator/fault_suite.py list > all.txt            # every scenario: cloud, stub or any
 AUTOFLASH_ANY_WORKERS=3 \
     tools/espressif/emulator/fault_suite.py --plug=MAC batch all.txt   # what has not passed yet
 tools/espressif/emulator/fault_suite.py report
@@ -379,6 +379,15 @@ without that, a waiting run saw the plug whose turn it was as its own and sent
 it the installer. The turn ends once the plug has left Sonoff's firmware. Runs
 from an old release (`legacy`) know no such wait, and hold a turn from the start
 of their first run instead.
+
+A batch against the real cloud runs only the scenarios where eWeLink's own
+behaviour is under test (`cloud` in the list, 75 of them): the send through it
+at C2 at every length of each fault, sending it again at C3fb, a power cut at C3
+and D1 that leaves the plug back on Sonoff's firmware, and a run of an old
+release killed at C2. The rest that need a cloud (`stub`, 162) have their fault
+once the plug has left Sonoff's firmware, so the stub answers for eWeLink as
+well: a real-cloud batch says how many it left out, and `--stub-cloud batch`
+runs them.
 
 Add `--stub-cloud` to `prep` and `batch` to give each emulator its own local
 eWeLink stand-in instead of the shared real cloud: no cloud lock, so every
