@@ -87,6 +87,10 @@ hash.
 patches and driver, with the Basic Gen5's table,
 [`devices/sonoff-basic-1gs/drv_autoflash_sonoff_basic_1gs.c`](devices/sonoff-basic-1gs/drv_autoflash_sonoff_basic_1gs.c).
 
+`artifacts/openbeken-readout-1.18.320-1.rbl` is the same OpenBeken, SDK,
+patches and driver, with a table that sets no pins,
+[`tools/beken/openbeken/drv_autoflash_readout.c`](tools/beken/openbeken/drv_autoflash_readout.c).
+
 ## OTA bridge
 
 `artifacts/autoflash-bridge-sonoff-s60-4.4.5.ota` is this project's own firmware, under

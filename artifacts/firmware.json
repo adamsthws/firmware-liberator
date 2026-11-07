@@ -154,6 +154,28 @@
         "size": 489824,
         "sha256": "9e2679eda296606db27ef959b05dbf63e3de31f9144729c2d8983c69c0c557c2"
       }
+    },
+    "readout": {
+      "openbeken": {
+        "file": "artifacts/openbeken-readout-1.18.320-1.rbl",
+        "version": "1.18.320-1",
+        "release": "1.18.320",
+        "app_commit": "ce1abad8dc931720167a7628840adae30b92afaf",
+        "sdk_commit": "f5a64d4cda03bac6d885f4f30c27bbd3435c5e3a",
+        "sources": {
+          "tools/beken/openbeken/drv_autoflash.c": "d13081fa1478b4567f2c1de9b897aa80805099b266d770fb81a6a0b3b17bb469",
+          "tools/beken/openbeken/drv_autoflash.h": "2218efb6dca42e52ad92ec42afbeef8d43b33c6fee27006cf1c9025376d0c381",
+          "tools/beken/openbeken/drv_autoflash_readout.c": "4e45d77d02316db8a95ac50e36abf695697fe426b4741a779bd5afbb1e6126d8"
+        },
+        "patches": {
+          "openbk7231t_app-bk7238-4m-flash.patch": "257b02a72a217d1644d35051dc3ba97f8522154fa25b4f67e6c0b44e63aada58",
+          "openbk7231t_app-ota-before-reboot-hook.patch": "cb1575c22da2a2e4e0a071e107e9db064d4b5bec57925ee1ee2f5d501a22ed1a",
+          "beken_freertos_sdk-4m-pack-profile.patch": "9d9e35179e947107b8664da51f1e75c3dbc5a575682f7fe5e59792222e2e7fe8"
+        },
+        "builder": "ubuntu@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c with tools/beken/openbeken/build.Dockerfile 4b04244bb63658a1",
+        "size": 509568,
+        "sha256": "3459841073093d0bf8f859542ce7034dd702d69107249d3c38ea071e6110eee5"
+      }
     }
   },
   "esp32c3": {
