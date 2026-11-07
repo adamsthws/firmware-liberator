@@ -10,7 +10,7 @@ import re
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import detect, firewall, join, kinds, output, plugs, prompts, runs
+from tools.autoflash import account, detect, firewall, join, kinds, output, plugs, prompts, runs
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes.beken import images
 from tools.beken import fota_wrap, interim_marker
@@ -59,9 +59,11 @@ def step_identify(ctx: Context) -> dict[str, Any]:
     except EwelinkError as exc:
         raise Abort(str(exc)) from exc
     kind = kinds.for_stock_model(identity["model"])
+    product = str(device.get("productModel") or "").strip().upper()
+    # This route asks eWeLink for no update file, so only the public list can say.
+    name = account.note_firmware_name(kind, {}, "", product, identity["model"])
     if kind is None:
         raise Abort(f"the device is a {identity['model']}, which this tool does not convert yet. Nothing was written")
-    product = str(device.get("productModel") or "").strip().upper()
     ctx.state.set_input("plug_kind", kind.key)
     ctx.state.set_input("stock_version", identity["version"])
     ctx.state.set_input("product_model", product)
@@ -80,7 +82,7 @@ def step_identify(ctx: Context) -> dict[str, Any]:
         "Nothing has been written yet. After the conversion the device has to",
         "rejoin your Wi-Fi on its own; a weak signal makes that less certain."])
     return {"stock_version": identity["version"], "model": identity["model"], "product": product,
-            "signal_dbm": signal}
+            "signal_dbm": signal, "firmware_name": name}
 
 
 def account_signal(device: dict[str, Any]) -> int | None:
