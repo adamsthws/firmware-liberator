@@ -35,6 +35,8 @@ How many at once, from the environment:
                        of the last four fail with the cloud to blame
     AUTOFLASH_CLOUD_COOL_DOWN  seconds between two plugs' turns at the cloud (5)
     AUTOFLASH_ANY_WORKERS    emulators for the rest, after those
+    AUTOFLASH_CONNECTION_LOG  seconds between looks at every plug's connections,
+                       logged to connections.log on the real cloud (2; 0 for none)
     AUTOFLASH_MOST_WORKERS   start up to this many of those instead, of which the
                        number in <AUTOFLASH_SUITE_DIR>/workers take scenarios
                        when that file is there: a batch scaled while it runs
@@ -482,6 +484,45 @@ FETCHING = re.compile(r"\btcp\b.*\bESTABLISHED src=192\.168\.60\.50 dst=192\.168
 
 def plug_fetching(n):
     return bool(FETCHING.search(sh("docker", "exec", name(n), "cat", "/proc/net/nf_conntrack").stdout))
+
+
+CONNECTION = re.compile(r"\btcp\s+\d+\s+\d+\s+(\w+) src=192\.168\.60\.50 dst=(\S+) sport=(\d+) dport=(\d+)")
+
+
+def connection_changes(seen, emulator, conntrack, at):
+    """Lines for what an emulator's plug opened and closed since `seen`, which it
+    updates: each connection once as it is seen, and again once no longer up.
+    Its many short ones to this computer only when they are up."""
+    lines, live = [], {}
+    for state, dst, sport, dport in CONNECTION.findall(conntrack):
+        conn = (emulator, dst, sport, dport)
+        live[conn] = up = state == "ESTABLISHED"
+        before = seen.get(conn)
+        local = dst.startswith(("10.", "172.", "192.168."))
+        if (before is None and (up or not local)) or (before is not None and before != up):
+            lines.append(f"{at} {emulator} {state} {dst}:{dport}")
+    for conn in [c for c in seen if c[0] == emulator and c not in live]:
+        del seen[conn]
+    seen.update(live)
+    return lines
+
+
+def log_connections(path, every, stop):
+    """Every plug's connections, with times, for the whole batch: what a turn's log
+    shows of its own plug, of all of them, between turns too."""
+    seen = {}
+    with open(path, "a", encoding="utf-8") as out:
+        while not stop.wait(every):
+            for emulator in sh("docker", "ps", "--format", "{{.Names}}").stdout.split():
+                if not emulator.startswith("autoflash-emu-"):
+                    continue
+                try:
+                    conntrack = sh("docker", "exec", emulator, "cat", "/proc/net/nf_conntrack", timeout=10).stdout
+                except subprocess.TimeoutExpired:
+                    continue
+                out.writelines(line + "\n" for line in connection_changes(seen, emulator, conntrack,
+                                                                           time.strftime("%T")))
+            out.flush()
 
 
 def cloud_connections(n):
@@ -2117,11 +2158,17 @@ def batch(ids_file=None):
     most = max(na, int(os.environ.get("AUTOFLASH_MOST_WORKERS", na)))
     threads += [threading.Thread(target=worker, args=(n, anywhere, lock, False, lambda n: n - first < allowed(na)))
                 for n in range(first, first + most)]
+    stop_log = threading.Event()
+    every = float(os.environ.get("AUTOFLASH_CONNECTION_LOG", "2"))
+    if not STUB_CLOUD and every > 0:
+        threading.Thread(target=log_connections, args=(OUT / "connections.log", every, stop_log),
+                         daemon=True).start()
     for t in threads:
         t.start()
         time.sleep(20)  # staggered: start-ups are the busiest moment
     for t in threads:
         t.join()
+    stop_log.set()
     report()
 
 
