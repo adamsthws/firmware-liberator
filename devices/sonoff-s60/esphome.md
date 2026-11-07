@@ -1,4 +1,4 @@
-# ESPHome for the S60
+# ESPHome for the Sonoff S60
 
 [`esphome.yaml`](esphome.yaml) is the ESPHome the conversion installs when you choose
 ESPHome at the start. You do not need to build it to convert a plug: the tool

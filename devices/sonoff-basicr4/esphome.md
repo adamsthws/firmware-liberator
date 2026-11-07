@@ -5,6 +5,8 @@ choose ESPHome. You do not need to build it: the tool installs the pre-built ima
 in [`../../artifacts/`](../../artifacts/README.md) and writes your Wi-Fi into it,
 in memory only.
 
+## What it reports
+
 It switches the relay, from its button and over the network, with the pins in
 [this device's page](README.md). Sonoff's Magic Switch, a wall switch read through
 the zero-cross input on GPIO5, is not supported: none of ESPHome's own components

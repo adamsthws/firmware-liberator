@@ -1,10 +1,60 @@
-# ESPHome (LibreTiny) for the Sonoff S61
+# ESPHome for the Sonoff S61
 
-[`esphome.yaml`](esphome.yaml) is the ESPHome the
-conversion installs on an S61, built on [LibreTiny](https://docs.libretiny.eu/)
-for its BK7238. It is the S60's config ([`devices/sonoff-s60/esphome.yaml`](../../devices/sonoff-s60/esphome.yaml))
-with the S61's wiring and storage: the same entities, actions, calibration
-handling and energy totals, so the two plugs look alike in Home Assistant.
+[`esphome.yaml`](esphome.yaml) is the ESPHome the conversion installs on an S61
+when you choose ESPHome, built on [LibreTiny](https://docs.libretiny.eu/) for its
+BK7238. You do not need to build it: the tool installs the pre-built image in
+[`../../artifacts/`](../../artifacts/README.md). It is the S60's config
+([`devices/sonoff-s60/esphome.yaml`](../../devices/sonoff-s60/esphome.yaml)) with the
+S61's wiring and storage, and nothing is written into the image: it reads your
+Wi-Fi from the stock store at boot ([how it differs](#how-it-differs-from-the-s60s)).
+
+## What it reports
+
+The same entities, actions, calibration handling and energy totals as
+[the S60's](../sonoff-s60/esphome.md#what-it-reports), so the two plugs look alike in
+Home Assistant. The `Calibration` sensor says `stock store`, `from backup` (given
+through `autoflash_calibration`, nine numbers) or `missing`.
+
+## Adopted into Home Assistant
+
+Home Assistant's ESPHome builder can adopt a converted plug. It uses this config,
+at the release the plug's firmware came from, and your plug keeps that config until
+you choose a newer release: [how it works, how to take a fix and how to customise
+it](../../docs/home-assistant-adoption.md).
+
+## Changing it
+
+Edit `esphome.yaml`, then build and publish it with
+`python3 tools/repo/update_firmware.py esphome --plug sonoff-s61`
+([docs/updating-firmware.md](../../docs/updating-firmware.md)). Keep the names of
+the `WiFi Signal` sensor, the `Relay` switch, the four energy totals and the
+`autoflash_wifi` and `autoflash_calibration` actions: the tool and Home Assistant use
+each, as [the S60's page](../sonoff-s60/esphome.md#changing-it) says. This image has
+no `AUTOFLASH-IMPRINT-` placeholders.
+
+ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-s61-2026.10.0-1.rbl`,
+with `tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-s61`.
+
+To build it by hand, as you would the S60's image: in ESPHome's own Docker image,
+with the config alone in a directory. The first build fetches LibreTiny, its Beken
+SDK and the toolchain.
+
+```sh
+mkdir build && cp devices/sonoff-s61/esphome.yaml build/ && cd build
+docker run --rm -u "$(id -u):$(id -g)" -e HOME=/config -v "$PWD":/config \
+    ghcr.io/esphome/esphome:2026.10.0 compile esphome.yaml
+```
+
+The outputs, in `.esphome/build/esphome/.pioenvs/esphome/`:
+
+- `image_bk7238_app.ota.rbl` - the **rt_ota update** (about 500 KB) for the
+  conversion: wrapped with [`../fota_wrap.py`](../../tools/beken/fota_wrap.py) it is
+  what the stock plug downloads; staged in OpenBeken's `ota_http` it converts
+  an OpenBeken plug. The stock bootloader applies it from the download slot.
+- `firmware.uf2` - LibreTiny's flasher/OTA image, which ESPHome's own OTA
+  (and Home Assistant's ESPHome builder) send to a plug already on ESPHome.
+- `board.json` - the layout the build used; check it says `download:
+  0x286000+0x15A000` and `kvs: 0x3EE000+0x8000`.
 
 ## How it differs from the S60's
 
@@ -24,8 +74,7 @@ handling and energy totals, so the two plugs look alike in Home Assistant.
   1.218 V, then `a*x^2/1e7 + b*x/1e6 + c/1e6` on the reading in A, V or W
   ([the derivation](research.md#energy-meter-calibration-the-stock-formula-and-the-openbeken-mapping)).
   One set of nine numbers, where the S60 has two sets for below and above
-  300 W. The `Calibration` sensor says `stock store`, `from backup` (given
-  through `autoflash_calibration`, nine numbers) or `missing`.
+  300 W.
 - **The wiring** is the OpenBeken template's (S61STPF / `WBBK_01P_V1.3`): relay
   P26, button P9 (active low, pull-up), relay LED P0 and Wi-Fi LED P1 (both lit
   low), BL0937 CF P8, CF1 P6, SEL P24 with the 1 mΩ shunt and 2040:1 divider.
@@ -50,36 +99,6 @@ handling and energy totals, so the two plugs look alike in Home Assistant.
 
 Nothing in the S61 route needs a LibreTiny or ESPHome change: ESPHome 2026.10.0
 pins LibreTiny 1.13.0, which has the BK7238.
-
-## Adopted into Home Assistant
-
-Home Assistant's ESPHome builder can adopt a converted plug. It uses this config,
-at the release the plug's firmware came from, and your plug keeps that config until
-you choose a newer release: [how it works, how to take a fix and how to customise
-it](../../docs/home-assistant-adoption.md).
-
-## Building
-
-You build it as you would the S60's image: in ESPHome's own Docker image, with
-the config alone in a directory. The first build fetches LibreTiny, its Beken
-SDK and the toolchain.
-
-```sh
-mkdir build && cp devices/sonoff-s61/esphome.yaml build/ && cd build
-docker run --rm -u "$(id -u):$(id -g)" -e HOME=/config -v "$PWD":/config \
-    ghcr.io/esphome/esphome:2026.10.0 compile esphome.yaml
-```
-
-The outputs, in `.esphome/build/esphome/.pioenvs/esphome/`:
-
-- `image_bk7238_app.ota.rbl` - the **rt_ota update** (about 500 KB) for the
-  conversion: wrapped with [`../fota_wrap.py`](../../tools/beken/fota_wrap.py) it is
-  what the stock plug downloads; staged in OpenBeken's `ota_http` it converts
-  an OpenBeken plug. The stock bootloader applies it from the download slot.
-- `firmware.uf2` - LibreTiny's flasher/OTA image, which ESPHome's own OTA
-  (and Home Assistant's ESPHome builder) send to a plug already on ESPHome.
-- `board.json` - the layout the build used; check it says `download:
-  0x286000+0x15A000` and `kvs: 0x3EE000+0x8000`.
 
 ## Reverting to stock, and to OpenBeken
 
@@ -157,10 +176,6 @@ its own period - the period matters: OpenBeken's BK7238 build feeds its
 interrupt watchdog from a 10 s channel of that group, and a first version
 that raised every channel on every tick ran that feed back to back and
 starved OpenBeken instead.
-
-ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-s61-2026.10.0-1.rbl`,
-with `tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-s61`
-([docs/updating-firmware.md](../../docs/updating-firmware.md)).
 
 The tool's route runs end to end in
 the emulator ([its fault suite](../../docs/testing.md#the-s61s-fault-suite)).

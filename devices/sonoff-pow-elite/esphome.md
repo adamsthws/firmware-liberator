@@ -1,9 +1,11 @@
-# ESPHome for the POW Elite 16A
+# ESPHome for the Sonoff POW Elite 16A
 
 [`esphome.yaml`](esphome.yaml) is the ESPHome the conversion installs when you
 choose ESPHome. You do not need to build it: the tool installs the pre-built image
 in [`../../artifacts/`](../../artifacts/README.md) and writes your Wi-Fi into it,
 in memory only.
+
+## What it reports
 
 It reports voltage, current, power and energy from the meter, uncalibrated, and
 shows them on the display: a short press of the button switches the relay, a

@@ -5,6 +5,8 @@ choose ESPHome. You do not need to build it: the tool installs the pre-built ima
 in [`../../artifacts/`](../../artifacts/README.md) and writes your Wi-Fi into it,
 in memory only.
 
+## What it reports
+
 It reports the temperature and humidity of a Sonoff THS01 on its socket. The relay is pulsed for half a second, each pin interlocked with the other. It cannot be read back, so its state is what it was last told.
 
 ## Adopted into Home Assistant

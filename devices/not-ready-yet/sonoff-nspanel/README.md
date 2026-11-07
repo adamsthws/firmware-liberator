@@ -10,15 +10,17 @@ Its stock firmware boots in the emulator, from a whole dump, but turns the insta
 
 ## The device
 
-Sonoff's the wall panel with a touch screen and two relays. Its stock firmware calls itself `E32-MSW-NX`.
-
-The conversion runs in the emulator from a public dump of a stock one. The emulator
-has none of its hardware to see, so the wiring below is what its sources say.
+Sonoff's wall panel with a touch screen and two relays. Its screen keeps Sonoff's
+interface, which needs Sonoff's firmware behind it: after a conversion the panel's
+buttons and relays work, and its screen shows no useful page until you load one of
+your own. Blakadder's page links Tasmota's driver for it.
 
 | | |
 |---|---|
-| Chip | ESP32 (4 MB flash) |
+| Chip | ESP32 |
 | Firmware name | `FWPNL-E32NSP-NSPANEL-ESP32D0WDV3` |
+| Flash | 4 MB |
+| Stock model | `E32-MSW-NX` |
 | Relays | GPIO22, GPIO19 |
 | Screen power | GPIO4, on when low |
 | Buttons | GPIO14, GPIO27, active low |
@@ -27,12 +29,18 @@ has none of its hardware to see, so the wiring below is what its sources say.
 
 Pins from [Blakadder's template](https://templates.blakadder.com/sonoff_NSPanel.html).
 
+## Files
+
 - **Tasmota**: the official release, unchanged, given the template in
   [`tools/autoflash/kinds.py`](../../../tools/autoflash/kinds.py).
 - **ESPHome**: [`esphome.yaml`](esphome.yaml); [`esphome.md`](esphome.md) says what it reports.
-- **Screen**: it keeps Sonoff's interface, which needs Sonoff's firmware behind it: after a conversion the panel's buttons and relays work, and its screen shows no useful page until you load one of your own. Blakadder's page links Tasmota's driver for it.
 - **Flash layout**: as the S60's but for an unused entry, so its table is its own ([`artifacts/sonoff-nspanel-partition-table.bin`](../../../artifacts/README.md)).
-- **Calibration**: not carried over.
+- **Calibration**: none, as it has no meter.
+- **Back to Sonoff**: the tool writes back the device's own backup, taken before
+  anything of Sonoff's is written over; without it, Sonoff's official firmware for
+  it, with the identity the device keeps or your eWeLink account holds
+  ([how](../../../docs/what-happens.md#changing-firmware-later)).
 - **How it is converted**: as the S60 is ([`docs/what-happens.md`](../../../docs/what-happens.md)),
   with the firmware for its chip. [`docs/adding-a-device.md`](../../../docs/adding-a-device.md)
   says what was needed.
+- **Research**: [`research.md`](research.md), why its updater refuses the bridge's file.

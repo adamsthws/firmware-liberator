@@ -5,6 +5,8 @@ choose ESPHome. You do not need to build it: the tool installs the pre-built ima
 in [`../../../artifacts/`](../../../artifacts/README.md) and writes your Wi-Fi into it,
 in memory only.
 
+## What it reports
+
 It switches the two relays, from the buttons and over the network. It does not drive the screen.
 
 ## Adopted into Home Assistant
