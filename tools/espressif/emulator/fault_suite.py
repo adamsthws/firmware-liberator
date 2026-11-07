@@ -1944,7 +1944,7 @@ class Scenario:
                 except Exception as exc:  # noqa: BLE001 - a look, never the verdict
                     self.say(f"PROBE: failed: {exc!r}")
             keep = LOGS / (key(sc["id"]) + "-evidence")
-            shutil.rmtree(keep, ignore_errors=True)
+            keep_earlier(keep)
             shutil.copytree(self.state / "work/captures/plugs", keep, dirs_exist_ok=True,
                             ignore=shutil.ignore_patterns("*.bin"))
             uart = self.state / "logs/uart.log"
@@ -1980,6 +1980,17 @@ def name_problems(names, networks, target):
 
 def key(scenario_id):
     return scenario_id.replace(">", "-to-").replace(":", "_").replace("@", "_at")
+
+
+def keep_earlier(path):
+    """An earlier attempt's log or evidence moved aside for the next, numbered by
+    attempt (`.1` the first), so a scenario run again still shows how it failed."""
+    if not path.exists():
+        return None
+    n = 1
+    while path.with_name(f"{path.name}.{n}").exists():
+        n += 1
+    return path.rename(path.with_name(f"{path.name}.{n}"))
 
 
 def latest():
@@ -2020,7 +2031,7 @@ def worker(n, todo, lock, cloud=False, room=None):
         while memory_now()[0] < LOW_MEMORY_KB:
             time.sleep(10)
         log = LOGS / (key(sc["id"]) + ".log")
-        log.unlink(missing_ok=True)
+        keep_earlier(log)
         started = time.time()
         try:
             row = Scenario(n, sc, log).go()
