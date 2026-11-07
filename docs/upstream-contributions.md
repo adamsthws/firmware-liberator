@@ -199,9 +199,11 @@ serving flash reads at the top of the chip, and `ota_http` downloading to
 `0x286000`, where the bootloader applies it.
 [docs/beken-research.md](beken-research.md) has the detail.
 
-**Related:** the BekenEmulator has no licence, so nobody can tell on what terms
-a fix to it would be taken; [issue #2](https://github.com/openshwprojects/BekenEmulator/issues/2) ![state](https://img.shields.io/github/issues/detail/state/openshwprojects/BekenEmulator/2?label=)
-asks for one, and this project's fix waits on it.
+**Related:** the BekenEmulator had no licence, so nobody could tell on what terms
+a fix to it would be taken. [Issue #2](https://github.com/openshwprojects/BekenEmulator/issues/2) ![state](https://img.shields.io/github/issues/detail/state/openshwprojects/BekenEmulator/2?label=)
+asked for one, and it is GPL-3.0 since 7 November 2026. The same day it was
+rewritten from Python into C++, so this project's fixes no longer apply to it
+as they are: they will be ported once the rewrite has settled.
 
 ## Smaller fixes found along the way
 
