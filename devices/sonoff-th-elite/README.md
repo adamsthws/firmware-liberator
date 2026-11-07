@@ -17,6 +17,7 @@ Sonoff's the **THR320D**: a thermostat switch with a socket for a sensor and a d
 | | |
 |---|---|
 | Chip | ESP32 (4 MB flash) |
+| Firmware name | `FWSW-E32THR3-THR3-ESP32D0WDV3` |
 | Main relay | latching: a pulse on GPIO19 turns it on, on GPIO22 off. **Both on together overheats the device** |
 | Dry contact | GPIO4 |
 | LEDs | GPIO16, GPIO15, GPIO13, inverted |

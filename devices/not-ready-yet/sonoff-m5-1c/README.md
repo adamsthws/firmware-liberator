@@ -15,6 +15,7 @@ Sonoff's the SwitchMan wall switch with 1 gang. **Not the Matter version**, whos
 | | |
 |---|---|
 | Chip | ESP32 |
+| Firmware name | `FWSWES-E32T5-T5-ESP32D0WDV3` |
 | Relays | GPIO23 |
 | Status LED | GPIO5, inverted |
 | Buttons | GPIO0 |

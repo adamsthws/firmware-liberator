@@ -15,6 +15,7 @@ to the S60; the tooling it shares with other Espressif plugs is in
 | | |
 |---|---|
 | Chip | ESP32-C3 (4 MB flash) |
+| Firmware name | `FWSW-E32S60-S60-ESP32C3FN4` |
 | Relay | GPIO4 |
 | Status LED | GPIO5, not inverted |
 | Power meter | CSE7766 on UART, RX GPIO7, 4800 baud, even parity |

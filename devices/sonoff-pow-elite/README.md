@@ -20,6 +20,7 @@ plug eWeLink calls a POWR316D, and no other.
 | | |
 |---|---|
 | Chip | ESP32 (4 MB flash) |
+| Firmware name | `FWSW-E32POWP-POWPRO-ESP32D0WDV3` |
 | Relay | GPIO13 |
 | Status LED | GPIO18, inverted |
 | Wi-Fi LED | GPIO5, inverted |

@@ -17,6 +17,7 @@ Sonoff's the **POWCT**: a clamp-on energy meter with a small display. Its stock 
 | | |
 |---|---|
 | Chip | ESP32 (4 MB flash) |
+| Firmware name | `FWSW-E32POWCT-POWCT-ESP32D0WDV3` |
 | Relay | GPIO21 |
 | Status LED | GPIO13, inverted |
 | Wi-Fi LED | GPIO15, inverted |
