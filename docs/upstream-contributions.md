@@ -32,7 +32,7 @@ several other HTTP clients, and following it led to a few more bugs nearby.
 - [A build failure, followed to its root](#a-build-failure-followed-to-its-root) -
   LibreTiny, SCons
 - [The emulator's Wi-Fi](#the-emulators-wi-fi) - QEMU (lcgamboa's fork)
-- [The emulator's classic ESP32](#the-emulators-classic-esp32) - QEMU (lcgamboa's fork)
+- [The emulator's classic ESP32](#the-emulators-classic-esp32) - QEMU (lcgamboa's fork, Espressif)
 - [OpenBeken on a 4 MB BK7238](#openbeken-on-a-4-mb-bk7238) - OpenBeken,
   beken_freertos_sdk
 - [Smaller fixes found along the way](#smaller-fixes-found-along-the-way) -
@@ -167,6 +167,7 @@ boot and over 40 s for 2,000 small flash reads:
 | Project | Pull request | What it fixes |
 |---|---|---|
 | QEMU (lcgamboa) | [#20](https://github.com/lcgamboa/qemu/pull/20) | After a flash operation, only the cache pages whose bytes changed are refreshed: Tasmota boots in about 7 s, and the reads take 14-18 s |
+| QEMU (Espressif) | [#211](https://github.com/espressif/qemu/pull/211) | The same change where the code came from, checked with ESP-IDF's own flash and panic test apps: the same results, the cache-disabled fault unchanged, and its flash tests 10-35% faster |
 
 The emulator carries #20 as its patch `0003`, and its own `0004` also leaves a
 window mapped once it is on.
