@@ -344,11 +344,10 @@ the first. What makes that safe enough to offer, and what it leaves open:
   `0x3e0000` through OpenBeken. On a smaller flash that read would not find the
   device's factory record, so finding it, with the device's own MAC, is logged as
   the flash matching the table.
-- **The person accepts a warning.** A kind with `converted_for_real=False` asks for
-  the word `UNTESTED` at B2: no real one has been converted, a Beken device has no
-  fallback by switching it off and on as an Espressif one has, a failure may need a
-  serial cable, and please send the log. `--unattended` accepts it, as it does the
-  other go-aheads, and logs that it did.
+- **The person is told.** On a device whose status is "Testers wanted"
+  ([devices/status.json](../../docs/adding-a-device.md#its-status)), the go-ahead at B2
+  says it has only been proven in an emulator and asks for the run's result, as on
+  every such device; `PROCEED` goes on, as on any other.
 - **Each run logs what it learns**, in `run.log`: the file's firmware name, version
   and whole table, the version the device reports, and whether the flash matched.
   The fetched file stays out of this repository: `images.py` pins its name and hash.

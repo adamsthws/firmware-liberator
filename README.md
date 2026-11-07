@@ -81,10 +81,25 @@ Until now, the established way to flash a device was to open it, perform some so
 ## Supported Devices
 > More devices coming soon.
 
-- **Sonoff S60TPG** - UK / Type G
-- **Sonoff S60TPF** - EU / Type E/F
-- **Sonoff S61STPF** - EU / Type E/F
-- **Sonoff Basic Gen5** (BASIC-1GS) - untested: no real one has been converted, and the tool makes you accept that first ([more](devices/sonoff-basic-1gs/README.md))
+| Status | Device | Models |
+|---|---|---|
+| [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-s60.json)](devices/sonoff-s60/README.md) | [Sonoff S60](devices/sonoff-s60/README.md) | S60TPG (UK, Type G), S60TPF (EU, Type E/F) |
+| [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-s61.json)](devices/sonoff-s61/README.md) | [Sonoff S61](devices/sonoff-s61/README.md) | S61STPF (EU, Type E/F) |
+| [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-pow-elite.json)](devices/sonoff-pow-elite/README.md) | [Sonoff POW Elite 16A](devices/sonoff-pow-elite/README.md) | POWR316D |
+| [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-powct.json)](devices/sonoff-powct/README.md) | [Sonoff POW Ring](devices/sonoff-powct/README.md) | POWCT |
+| [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-th-elite.json)](devices/sonoff-th-elite/README.md) | [Sonoff TH Elite 20A](devices/sonoff-th-elite/README.md) | THR320D |
+| [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-dualr3.json)](devices/sonoff-dualr3/README.md) | [Sonoff Dual R3](devices/sonoff-dualr3/README.md) | DUALR3, DUALR3 Lite |
+| [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-basic-1gs.json)](devices/sonoff-basic-1gs/README.md) | [Sonoff Basic Gen5](devices/sonoff-basic-1gs/README.md) | BASIC-1GS |
+| [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-nspanel.json)](devices/not-ready-yet/sonoff-nspanel/README.md) | [Sonoff NSPanel](devices/not-ready-yet/sonoff-nspanel/README.md) | NSPanel |
+| [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-basicr4.json)](devices/not-ready-yet/sonoff-basicr4/README.md) | [Sonoff BASICR4](devices/not-ready-yet/sonoff-basicr4/README.md) | BASICR4 |
+| [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-minir4.json)](devices/not-ready-yet/sonoff-minir4/README.md) | [Sonoff MINI Extreme](devices/not-ready-yet/sonoff-minir4/README.md) | MINIR4 |
+| [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-m5-1c.json)](devices/not-ready-yet/sonoff-m5-1c/README.md) | [Sonoff M5 1-gang](devices/not-ready-yet/sonoff-m5-1c/README.md) | M5-1C |
+| [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-m5-2c.json)](devices/not-ready-yet/sonoff-m5-2c/README.md) | [Sonoff M5 2-gang](devices/not-ready-yet/sonoff-m5-2c/README.md) | M5-2C |
+| [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-m5-3c.json)](devices/not-ready-yet/sonoff-m5-3c/README.md) | [Sonoff M5 3-gang](devices/not-ready-yet/sonoff-m5-3c/README.md) | M5-3C |
+
+> **Proven**: a real one has been converted and reported.
+> **Testers wanted**: converts in the emulator, no real one reported yet. The tool warns you first, and asks for the run's log.
+> **Not ready yet**: the tool does not convert it yet.
 
 <br>
 

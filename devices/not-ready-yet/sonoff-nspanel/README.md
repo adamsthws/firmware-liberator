@@ -1,6 +1,14 @@
 # Sonoff NSPanel
 
-**Not ready yet: the tool does not convert this device.** its stock firmware boots in the emulator, from a whole dump, but turns the installer down after reading the first 24 bytes of the file. Why is not known yet. See [what is holding each one up](../README.md).
+## Status
+
+[![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-nspanel.json)](README.md)
+
+## Where it stops
+
+Its stock firmware boots in the emulator, from a whole dump, but turns the installer down after reading the first 24 bytes of the file. Why is not known yet. See [what is holding each one up](../README.md).
+
+## The device
 
 Sonoff's the wall panel with a touch screen and two relays. Its stock firmware calls itself `E32-MSW-NX`.
 

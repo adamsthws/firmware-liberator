@@ -1,6 +1,14 @@
 # Sonoff MINI Extreme
 
-**Not ready yet: the tool does not convert this device.** its stock firmware starts in the emulator, run on another plug's flash as no dump of one is published, but goes to `factory mode`: it wants factory data only a real one holds. See [what is holding each one up](../README.md).
+## Status
+
+[![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-minir4.json)](README.md)
+
+## Where it stops
+
+Its stock firmware starts in the emulator, run on another plug's flash as no dump of one is published, but goes to `factory mode`: it wants factory data only a real one holds. See [what is holding each one up](../README.md).
+
+## The device
 
 Sonoff's the **MINIR4**, an inline switch. Not the MINIR4M, the Matter one, which is locked.
 

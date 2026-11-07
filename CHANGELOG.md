@@ -36,10 +36,13 @@ check.
 - A plug that loses the upgrade command - a power cut part way through its
   download, say - is sent it again as soon as it is back on eWeLink, up to three
   times, rather than the run stopping about three minutes later for you to start again.
-- The Sonoff Basic Gen5 (BASIC-1GS), behind a warning: no real one has been
-  converted. It has no public dump, so the tool checks the partition table in
-  eWeLink's official update file before writing anything, asks you to accept the
-  warning, and logs what the run learns. Beken devices on any other table are refused.
+- The Sonoff Basic Gen5 (BASIC-1GS). It has no public dump, so the tool checks
+  the partition table in eWeLink's official update file before writing anything,
+  and logs what the run learns. Beken devices on any other table are refused.
+- Each device has one status, kept in `devices/status.json` and shown by a badge
+  in the README and on the device's page: Proven, Testers wanted or Not ready
+  yet. On a device wanting testers, the go-ahead before a run's first write says
+  so and asks you to report your result, and the report asks for the run's log.
 - The firmware this project builds says in its version which upstream release
   it is built on: OpenBeken 1.18.320-1 and ESPHome 2026.10.0-1, each this
   project's first build on that release, with the same code as the 1.1.0, 1.6.0

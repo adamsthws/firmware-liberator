@@ -1,9 +1,18 @@
 # Sonoff TH Elite 20A
 
-Sonoff's the **THR320D**: a thermostat switch with a socket for a sensor and a display. Its stock firmware calls itself `SN-ESP32D0-THR3-01`, and so does the THR316D's, wired otherwise: the tool converts one eWeLink calls a THR320D, and no other.
+## Status
 
-The conversion runs in the emulator from a public dump of a stock one. The emulator
-has none of its hardware to see, so the wiring below is what its sources say.
+[![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-th-elite.json)](README.md)
+
+## Testing
+
+**In the emulator:** it converts, from a public dump of a stock one, to Tasmota and to ESPHome and back to Sonoff's firmware. The emulator has none of its hardware, so its wiring below is what its sources say, not what was seen.
+
+**Worth checking:** whether the relay, display, sensor, button and LEDs work, and whether a run leaving Tasmota came through its temporary layout table.
+
+## The device
+
+Sonoff's the **THR320D**: a thermostat switch with a socket for a sensor and a display. Its stock firmware calls itself `SN-ESP32D0-THR3-01`, and so does the THR316D's, wired otherwise: the tool converts one eWeLink calls a THR320D, and no other.
 
 | | |
 |---|---|

@@ -40,7 +40,9 @@ dump is ever committed. Tooling fetches it at run time.
 2. **Add the kind** to [kinds.py](../tools/autoflash/kinds.py): its chip, eWeLink
    product model, stock model, the model its update wrapper names, and its Tasmota
    template. Set `product_model_decides` if another device shares its stock model
-   but is wired differently, so it is never mistaken for that one.
+   but is wired differently, so it is never mistaken for that one. Give it a
+   status in `devices/status.json`: `Not ready yet` until step 6 passes
+   ([its status](#its-status)).
 
 3. **Boot it in the emulator** with the stub cloud, and watch for it to come
    online (step 6 runs this and shows what it logged):
@@ -59,7 +61,7 @@ dump is ever committed. Tooling fetches it at run time.
    to that hash. Its `ota_1` has to be where the device's own table has it.
 
 5. **Add its firmware.** Write `devices/<key>/esphome.yaml`, `esphome.md` and
-   `README.md`, then build and pin the image. `artifacts/` changes only this way:
+   `README.md`, the last starting with its status, then build and pin the image. `artifacts/` changes only this way:
 
    ```sh
    .venv/bin/python tools/repo/update_firmware.py esphome --plug sonoff-example
@@ -95,12 +97,38 @@ dump is ever committed. Tooling fetches it at run time.
    in that file's `NO_DUMP`, or a test fails.
 
 8. **If it will not convert yet**, keep the work: put its folder in
-   [devices/not-ready-yet/](../devices/not-ready-yet/README.md), with `ready=False`
-   on its kind, and say there what is holding it up. The tool then turns it down.
+   [devices/not-ready-yet/](../devices/not-ready-yet/README.md), with its status
+   `Not ready yet`, and say there what is holding it up. The tool then turns it down.
 
 9. **Be plain about what was tested.** The emulator has no relays, meters, buttons
    or screens. A conversion passing there says the firmware installs and starts,
    not that the template is right.
+
+## Its status
+
+Each device has one status, in [`devices/status.json`](../devices/status.json), and
+nowhere else:
+
+| Status | Means | The tool |
+|---|---|---|
+| `Proven` | a real one has been converted and reported | converts it |
+| `Testers wanted` | it converts in the emulator, and no real one is reported yet | says so in the go-ahead before the first write, and asks for the run's log |
+| `Not ready yet` | it does not convert in the emulator yet | turns it down |
+
+After changing the file, run `python3 tools/repo/device_status.py`: it writes each
+device's badge file under `devices/status/`, with the words and colour of its status.
+The badges read those from GitHub, so they show what is on `main` once it is pushed,
+not your local edits. The warning before a first write is the same for every device
+wanting testers (`tools/autoflash/testers.py`).
+
+A device's README says its status only through its badge, at the top of its
+`## Status` section. The main README lists it in its table with the same badge.
+`tests/repo/test_device_status.py` fails if any of these disagree with the file,
+or if a README says a status in words.
+
+**When a report comes in** of a real one converted, change its line in
+`devices/status.json` to `Proven`, and run `tools/repo/device_status.py`. That moves
+the tool and every badge.
 
 ## What the emulator does for you
 
@@ -197,5 +225,5 @@ file runs on another plug's bootloader and settings (`rebuild_dump.py`), but onl
 the device's own whole flash has its factory data.
 
 A 4 MB BK7238 device with no whole dump can be added from its official file and a
-pin map you can trust, behind a warning that no real one has been converted:
+pin map you can trust, with the status "Testers wanted" and its warning:
 [how, and what that proves](../tools/beken/README.md#adding-a-4-mb-bk7238-device-with-no-whole-dump).

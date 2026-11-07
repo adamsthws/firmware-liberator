@@ -1,18 +1,27 @@
 # Sonoff Dual R3
 
-Sonoff's the two-channel inline switch with a power meter.
+## Status
 
-**Known from Sonoff's firmware only.** The conversion has run in the emulator, on
-eWeLink's public firmware for it put on the TH Elite's flash, as no dump of a real
-one is published. That layout is the one a
+[![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-dualr3.json)](README.md)
+
+## Testing
+
+**In the emulator:** it converts from eWeLink's public firmware for it, put on the TH Elite's flash, as no dump of a real one is published. The emulator has none of its hardware, so its wiring below is what its sources say, not what was seen.
+
+**Worth checking:** whether both relays, the wall switches, the button and the LED work, and which meter chip yours has.
+
+## The device
+
+Sonoff's two-channel inline switch with a power meter.
+
+Its flash is expected to be laid out as the TH Elite's, the layout a
 [real one's boot log](https://community.home-assistant.io/t/help-with-flashing-sonoff-dual-r3-please/297547?page=2)
 shows. If yours is laid out differently, the run stops once the installer has read
 its partition table, before anything is written over Sonoff's firmware: switching
-it off and on goes back to Sonoff's. Please report that with its model. The
-emulator has none of its hardware to see, so the wiring below is what its sources
-say. Leaving Tasmota, for ESPHome or for Sonoff's firmware, it spends a short time
-on a temporary layout table, as the TH Elite does, as its first app slot leaves no
-room in front of Tasmota for the firmware that moves it on.
+it off and on goes back to Sonoff's. Please report that with its model. Leaving
+Tasmota, for ESPHome or for Sonoff's firmware, it spends a short time on a
+temporary layout table, as the TH Elite does, as its first app slot leaves no room
+in front of Tasmota for the firmware that moves it on.
 
 | | |
 |---|---|

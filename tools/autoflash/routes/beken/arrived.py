@@ -203,8 +203,6 @@ def step_backup(ctx: Context) -> dict[str, Any]:
         return {"dry_run": True} if ctx.dry_run else {"outcome": "not taken", "stage_outcome": "skipped"}
     outcome = _back_up(ctx, mac)
     ctx.state.set_input("backup_outcome", outcome)
-    if not kinds.of_run(ctx.state).converted_for_real:
-        output.tell(f"    No real one of these had been converted before: please send this run's log, {output.log_path()}")
     return {"outcome": outcome, "stage_outcome": plugs.BACKUP_OUTCOMES[outcome][0]}
 
 

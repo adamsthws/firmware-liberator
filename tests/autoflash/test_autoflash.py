@@ -2799,7 +2799,7 @@ class ConsentTests(unittest.TestCase):
         # Seen: X1 tried again by itself asked for it again, and Enter stopped the run.
         from types import SimpleNamespace
         from unittest import mock
-        ctx = SimpleNamespace()
+        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda key: None))   # the S60's, proven
         with mock.patch.object(prompts, "require_word", return_value=True) as asked, \
              mock.patch.object(prompts, "warning_box"):
             handover.consent_to_leave(ctx, "Tasmota")
@@ -2811,7 +2811,7 @@ class ConsentTests(unittest.TestCase):
         from types import SimpleNamespace
         with mock.patch.object(prompts, "require_word", return_value=False), \
              mock.patch.object(prompts, "warning_box"), self.assertRaises(errors.NothingWritten):
-            handover.consent_to_leave(SimpleNamespace(), "Tasmota")
+            handover.consent_to_leave(SimpleNamespace(state=SimpleNamespace(input=lambda key: None)), "Tasmota")
 
     def test_proceed_in_any_case_goes_ahead(self):
         for reply in ("PROCEED", "proceed", " Proceed "):

@@ -10,7 +10,7 @@ import re
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import account, detect, firewall, join, kinds, output, plugs, prompts, runs
+from tools.autoflash import account, detect, firewall, join, kinds, output, plugs, prompts, runs, testers
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes.beken import images
 from tools.beken import fota_wrap, interim_marker
@@ -26,8 +26,6 @@ DELIVERY_WAIT = 300.0
 # How the plug turns an update down while one cut off part way still holds its
 # updater (error 410, relayed by eWeLink): until it is switched off and on.
 BUSY = re.compile(r"\berror 410\b")
-# What a person types to go on with a kind no real one of which has been converted.
-UNTESTED_WORD = "untested"
 
 
 def account_record(ctx: Context) -> dict[str, Any]:
@@ -67,26 +65,6 @@ def note_official_file(kind: kinds.Kind, reported_version: str) -> dict[str, Any
     output.log_only(f"    Flash size: the stock firmware does not say; the table is for "
                     f"{found.layout.flash_size // 0x100000} MB")
     return {"official_name": found.name, "official_version": found.version, "layout": found.layout.key}
-
-
-def accept_untested(ctx: Context, kind: kinds.Kind) -> None:
-    """A kind no real one of which has been converted: said plainly, and accepted
-    by a word of its own. An unattended run has accepted it by starting so."""
-    if kind.converted_for_real or getattr(ctx, "accepted_untested", False):
-        return
-    output.transient_begin()
-    prompts.warning_box(f"No real {kind.name} has been converted", [
-        "This conversion has run only in an emulator, on another device's settings",
-        "and bootloader. It may go wrong on a real one, and its pin map is untried.",
-        "Unlike an Espressif device, a Beken one has no fallback by switching it",
-        "off and on: if this fails, putting it right may need a serial cable.",
-        "Whatever happens, please send this run's log, so the next person knows:",
-        str(output.log_path() or "run.log, in this run's folder under captures/"),
-    ])
-    if not prompts.require_word(UNTESTED_WORD):
-        raise NothingWritten("not accepted - nothing has been written to the device")
-    output.transient_end()
-    ctx.accepted_untested = True
 
 
 def step_identify(ctx: Context) -> dict[str, Any]:
@@ -170,12 +148,12 @@ def step_push(ctx: Context) -> dict[str, Any]:
     # Checked again here: nothing reaches the plug but past this, a resumed run too.
     if kind.key in images.OFFICIAL_FILES:
         images.official(kind)
-    accept_untested(ctx, kind)
     if not getattr(ctx, "consented", False):  # once a run: not again when sent again (errors.GoBack)
         output.transient_begin()
         prompts.warning_box("Before going on", [
             "From here the device's Sonoff firmware is replaced, so the eWeLink app",
             "will no longer control it. DO NOT UNPLUG IT during the process.",
+            *testers.notice(kind),
         ])
         if not prompts.require_word(prompts.CONSENT_WORD):
             raise NothingWritten("not confirmed - nothing has been written to the device")

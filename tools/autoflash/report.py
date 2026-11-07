@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import __version__, esphome, hostsys, kinds, output, plugs, routes, runs
+from tools.autoflash import __version__, esphome, hostsys, kinds, output, plugs, routes, runs, testers
 from tools.autoflash.device import DeviceError
 from tools.autoflash.runs import ROOT
 from tools.ewelink import relay as ewelink_relay
@@ -403,3 +403,4 @@ def offer_report(ctx: Context, fields: list[tuple[str, str]], heading: str) -> N
     if any(value == "__" for _, value in fields):
         output.tell("")
         output.tell("Fill in the blanks (__) if you know them.")
+    testers.ask_for_log(kinds.of_run(ctx.state))

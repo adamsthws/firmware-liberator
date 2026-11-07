@@ -23,19 +23,47 @@ through a conversion is the tool's own, the same for every kind.
 Espressif plugs have one route (tools/autoflash/routes/espressif), whichever
 chip they have (tools/espressif/chips.py). Beken plugs have another.
 docs/adding-a-device.md says how to add a kind.
+
+How far each kind is proven is kept in devices/status.json, alone: the READMEs'
+badges read it from GitHub, and the tool from here.
 """
 
 from __future__ import annotations
 
+import enum
 import json
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 
 # The author every kind's ESPHome project is named for, as ESPHome's
 # author.project wants: what every image published so far calls itself.
 ESPHOME_AUTHOR = "adamsthws"
+
+
+class Status(enum.Enum):
+    """How far a kind is proven, as devices/status.json says it."""
+
+    # A real one has been converted and reported: converted with no warning.
+    PROVEN = "Proven"
+    # Converts in the emulator, no real one reported yet: converted after a
+    # typed warning, asking for the run's log (tools/autoflash/testers.py).
+    TESTERS_WANTED = "Testers wanted"
+    # Does not convert in the emulator yet (devices/not-ready-yet/): turned
+    # down like any device the tool does not know.
+    NOT_READY_YET = "Not ready yet"
+
+    @property
+    def colour(self) -> str:
+        """Its badge's colour: GitHub's green, the README's GitHub Support pink and
+        Ko-fi red."""
+        return {Status.PROVEN: "2EA44F", Status.TESTERS_WANTED: "EA4AAA", Status.NOT_READY_YET: "FF5E5B"}[self]
+
+
+STATUS_FILE = Path(__file__).resolve().parents[2] / "devices" / "status.json"
+STATUSES = {key: Status(value) for key, value in json.loads(STATUS_FILE.read_text(encoding="utf-8")).items()}
 
 
 @dataclass(frozen=True, eq=False)
@@ -89,15 +117,19 @@ class Kind:
     layout: str = "sonoff-dual-ota"
     # eWeLink's name for one, for the emulator's cloud stub to give.
     example_product_model: str = ""
-    # False until a real one has been converted: the person is told so before
-    # anything is written, and accepts it (routes/beken/stock.py).
-    converted_for_real: bool = True
-    # Whether it converts yet: devices/not-ready-yet/README.md says what holds
-    # the others up. The tool turns them down like any device it does not know.
-    ready: bool = True
     # The external RAM (MB, as QEMU's -m takes it) its stock firmware stops
     # without at start-up: only the emulator asks.
     psram_mb: int = 0
+
+    @property
+    def status(self) -> Status:
+        """How far it is proven (devices/status.json); one not listed there is not ready."""
+        return STATUSES.get(self.key, Status.NOT_READY_YET)
+
+    @property
+    def ready(self) -> bool:
+        """Whether the tool converts it."""
+        return self.status is not Status.NOT_READY_YET
 
     @property
     def folder(self) -> str:
@@ -218,7 +250,7 @@ SONOFF_BASIC_1GS = Kind(
     uses_lan_control=False,
     layout="beken-4m",
     example_product_model="BASIC-1GS",
-    converted_for_real=False,
+    # tools/beken/README.md#adding-a-4-mb-bk7238-device-with-no-whole-dump
 )
 
 SONOFF_POW_ELITE = Kind(
@@ -277,7 +309,6 @@ SONOFF_NSPANEL = Kind(
     stock_model="E32-MSW-NX",
     wrapper_model="FWPNL-E32NSP-NSPANEL-ESP32D0WDV3",
     psram_mb=4,
-    ready=False,
     # Blakadder's template: screen power GPIO4, buttons GPIO14 and GPIO27, relays
     # GPIO22 and GPIO19, buzzer GPIO21, thermistor GPIO38.
     tasmota_gpio=(0, 0, 0, 0, 3872, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 225, 0, 480, 224, 1, 0, 0, 0, 33, 0, 0, 0, 0,
@@ -334,7 +365,6 @@ SONOFF_BASICR4 = Kind(
     esphome_legacy_prefix="",
     product_model_decides=True,
     example_product_model="BASICR4",
-    ready=False,
 )
 
 SONOFF_MINIR4 = Kind(
@@ -350,7 +380,6 @@ SONOFF_MINIR4 = Kind(
     stock_model="",
     wrapper_model="FWSW-E32R4-MINIR4-ESP32D0WDR2V3",
     psram_mb=2,  # the R2 in its chip's name
-    ready=False,
     # Blakadder's template: button GPIO0, LED GPIO19, relay GPIO26, wall switch GPIO27.
     tasmota_gpio=(32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 576, 0, 0, 0, 0, 0, 0, 224, 160, 0, 0, 0, 0, 0, 0,
                   0, 0, 0, 0, 0, 0),
@@ -403,7 +432,6 @@ def _sonoff_m5(gang: int, gpio: tuple[int, ...]) -> Kind:
         esphome_legacy_prefix="",
         product_model_decides=True,
         example_product_model=f"M5-{gang}C-120",
-        ready=False,
     )
 
 
@@ -415,13 +443,15 @@ SONOFF_M5_2C = _sonoff_m5(2, (0, 0, 0, 0, 32, 576, 0, 0, 0, 0, 0, 33, 0, 0, 0, 2
 SONOFF_M5_3C = _sonoff_m5(3, (33, 0, 0, 0, 32, 576, 0, 0, 0, 0, 0, 34, 0, 0, 0, 225, 0, 0, 226, 224, 0, 0, 0, 0, 0, 0,
                               0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 
+# Every kind, the S60 first.
+EVERY = (SONOFF_S60, SONOFF_S61, SONOFF_POW_ELITE, SONOFF_POWCT, SONOFF_TH_ELITE, SONOFF_DUALR3, SONOFF_BASIC_1GS,
+         SONOFF_NSPANEL, SONOFF_BASICR4, SONOFF_MINIR4, SONOFF_M5_1C, SONOFF_M5_2C, SONOFF_M5_3C)
 # Every kind the tool converts.
-READY = (SONOFF_S60, SONOFF_S61, SONOFF_POW_ELITE, SONOFF_POWCT, SONOFF_TH_ELITE, SONOFF_DUALR3, SONOFF_BASIC_1GS)
+READY = tuple(kind for kind in EVERY if kind.ready)
 # Being worked on, in devices/not-ready-yet/. For the emulator, this variable has
 # the tool take them as it does the others: never for a real plug.
-NOT_READY_YET = (SONOFF_NSPANEL, SONOFF_BASICR4, SONOFF_MINIR4, SONOFF_M5_1C, SONOFF_M5_2C, SONOFF_M5_3C)
+NOT_READY_YET = tuple(kind for kind in EVERY if not kind.ready)
 ALL = READY + (NOT_READY_YET if os.environ.get("AUTOFLASH_NOT_READY_YET") else ())
-EVERY = READY + NOT_READY_YET
 
 
 def find(key: str | None) -> Kind | None:

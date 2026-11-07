@@ -227,8 +227,7 @@ class UntestedKindTests(unittest.TestCase):
         self.assertIs(kinds.for_stock_model("SN-BK7238-BASICR5-01"), self.KIND)
         self.assertIs(kinds.for_account("BASIC-1GS", ""), self.KIND)
         self.assertIsNone(kinds.for_account("BASIC-1GSP", ""))   # another firmware, a latching relay
-        self.assertFalse(self.KIND.converted_for_real)
-        self.assertTrue(S61.converted_for_real)
+        self.assertIs(self.KIND.status, kinds.Status.TESTERS_WANTED)
 
     def test_b1_logs_what_the_file_says_for_the_next_person(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -281,14 +280,15 @@ class UntestedKindTests(unittest.TestCase):
     def test_b2_asks_first_and_declined_writes_nothing(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(ota_push, "deliver") as sent, \
                 mock.patch.object(stock.prompts, "require_word", return_value=False) as asked:
-            with self.assertRaisesRegex(errors.NothingWritten, "not accepted"):
+            with self.assertRaisesRegex(errors.NothingWritten, "not confirmed"):
                 stock.step_push(self.context(tmp))
         sent.assert_not_called()
-        asked.assert_called_once_with("untested")
+        asked.assert_called_once_with("proceed")
         said = " ".join(self.box.call_args.args[1])
-        for words in ("emulator", "no fallback", "serial cable", "send this run's log"):
-            self.assertIn(words, said)
-        self.assertIn("No real Sonoff Basic Gen5 has been converted", self.box.call_args.args[0])
+        self.assertIn("The conversion for this particular device has only been proven in an", said)
+        # The same words as for every kind, with nothing of its own.
+        for words in ("serial cable", "flash size", "go wrong"):
+            self.assertNotIn(words, said)
 
     def test_accepted_it_goes_on_and_is_not_asked_again_in_the_run(self):
         done = ota_push.Delivery(sent=True, complete=True, bytes_served=1, seconds=1.0)
@@ -297,7 +297,7 @@ class UntestedKindTests(unittest.TestCase):
             ctx = self.context(tmp)
             stock.step_push(ctx)
             stock.step_push(ctx)
-        self.assertEqual([call.args[0] for call in asked.call_args_list], ["untested", "proceed"])
+        self.assertEqual([call.args[0] for call in asked.call_args_list], ["proceed"])
         self.assertEqual(sent.call_count, 2)
 
     def test_an_unattended_run_has_accepted_it(self):
@@ -307,12 +307,7 @@ class UntestedKindTests(unittest.TestCase):
                 mock.patch.object(stock.prompts, "answered_unattended") as answered:
             stock.step_push(self.context(tmp))
         sent.assert_called_once()
-        self.assertIn("UNTESTED", [call.args[1] for call in answered.call_args_list])
-
-    def test_an_s61_is_not_asked(self):
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(stock.prompts, "require_word") as asked:
-            stock.accept_untested(a_context(tmp), S61)
-        asked.assert_not_called()
+        self.assertIn("PROCEED", [call.args[1] for call in answered.call_args_list])
 
     def test_going_back_sends_the_official_files_image(self):
         self.assertEqual(images.stock_rbl(self.KIND), (self.image, "1.0.4"))
@@ -329,16 +324,6 @@ class UntestedKindTests(unittest.TestCase):
                 arrived.note_flash(ctx, matched)
                 self.assertIs(ctx.state.data["captures"]["B4.flash_matched"], matched)
                 self.assertIn(words, self.logged.call_args.args[0])
-
-    def test_the_backup_asks_for_the_log(self):
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(arrived, "_back_up", return_value="saved"), \
-                mock.patch.object(arrived.output, "tell") as told:
-            arrived.step_backup(self.context(tmp))
-            self.assertIn("send this run's log", told.call_args.args[0])
-            told.reset_mock()
-            ctx = a_context(tmp)
-            arrived.step_backup(ctx)
-            told.assert_not_called()
 
     def test_every_official_file_names_its_kinds_firmware_and_a_known_table(self):
         for key, (name, digest) in images.OFFICIAL_FILES.items():
