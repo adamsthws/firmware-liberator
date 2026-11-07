@@ -1,0 +1,28 @@
+# FirmwareLiberator
+
+> Converts Sonoff smart devices from their stock eWeLink firmware to Tasmota, ESPHome or OpenBeken over Wi-Fi: no soldering and no opening the device. Free and open source, it runs on Linux, macOS and Windows and walks you through every step.
+
+The front page has the current list of supported devices, and the one line to paste into a terminal to start, for each system.
+
+## Start here
+
+- [Front page](https://firmwareliberator.com/): what the tool does, what you need, and the one line that starts it
+- [What happens](https://firmwareliberator.com/docs/what-happens): each stage of a conversion, for someone deciding whether to run one
+- [Troubleshooting](https://firmwareliberator.com/docs/troubleshooting): problems met in practice, and their fixes
+
+## After converting
+
+- [Home Assistant adoption](https://firmwareliberator.com/docs/home-assistant-adoption): adding a plug converted to ESPHome to Home Assistant
+- [Updating firmware](https://firmwareliberator.com/docs/updating-firmware): keeping a converted plug's firmware up to date
+
+## Devices
+
+- [Sonoff S60](https://firmwareliberator.com/devices/sonoff-s60): the ESP32-C3 plug
+- [Sonoff S61](https://firmwareliberator.com/devices/sonoff-s61): the Beken BK7238 plug
+
+## Optional
+
+- [Technical details](https://firmwareliberator.com/docs/technical-details): how the conversion works
+- [Legal](https://firmwareliberator.com/docs/legal): backing up and replacing the firmware of a plug you own
+- [Changelog](https://firmwareliberator.com/CHANGELOG): the tool's versions
+- [Source code and releases](https://github.com/adamsthws/firmware-liberator): the repository on GitHub

@@ -12,12 +12,12 @@ them into a site.
 |---|---|
 | `src/site.mjs` | Which Markdown files are pages (`PAGES`: every one git tracks), the address of each, and how a link between them is rewritten |
 | `src/content.config.mjs` | Those files as Astro's `pages` collection, read from the repository root |
-| `src/pages/[...slug].astro` | One page per file, titled by its first heading |
+| `src/pages/[...slug].astro` | One page per file, titled by its first heading and described by its first paragraph |
 | `src/pages/404.astro` | What an address with no page answers |
 | `src/layouts/Page.astro` | Every page's frame: GitHub's Markdown styling, dark unless the reader picks light, the GitHub button, Cloudflare Web Analytics (no cookies) |
-| `public/` | Copied as they are: the icons and stylesheets, `robots.txt`, `_redirects` |
+| `public/` | Copied as they are: the icons and stylesheets, `robots.txt`, `llms.txt`, `_redirects` |
 | `astro.config.mjs` | The build: Markdown through Astro's Sätteri with the link rewriting, pictures copied beside their pages, a sitemap |
-| `test/` | The link rewriting's tests (`npm test`, Node's own runner) |
+| `test/` | Tests of the link rewriting, descriptions and `llms.txt`'s links (`npm test`, Node's own runner) |
 | `wrangler.jsonc` | The Worker: the files in `dist/`, the 404 page, and both names pointed at it |
 
 ## Addresses
@@ -34,6 +34,15 @@ Pages site's addresses took.
 `public/_redirects` sends `/liberate.sh` and `/liberate.ps1` to the latest
 release's, with a 302 so no browser keeps it past the next release.
 `tests/repo/test_site.py` checks each is a file every release carries.
+
+## Search engines
+
+`robots.txt` lets every crawler in, and points at the sitemap. Pages under
+`archive/` stay readable, but are marked `noindex` and left out of the
+sitemap, so a search doesn't land someone on a superseded procedure; they
+must not be blocked in `robots.txt`, or crawlers would never see the
+`noindex`. `llms.txt` is a short guide to the site for AI tools, written by
+hand: add a page to it when a page matters to someone converting a plug.
 
 ## Building it
 

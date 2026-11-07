@@ -1,10 +1,14 @@
 ---
 // The layout main's GitHub Pages site had, as an Astro layout.
-import { REPOSITORY } from "../site.mjs";
+import { REPOSITORY, address } from "../site.mjs";
 
 const SITE_TITLE = "FirmwareLiberator";
-const DESCRIPTION = "Sonoff S60 to Tasmota or ESPHome, over the air - flash it, don't smash it.";
-const { title } = Astro.props;
+// The front page's, in the words people search with. No device models: the
+// list of supported devices keeps growing.
+const HOME_TITLE = `Sonoff to Tasmota, ESPHome or OpenBeken over Wi-Fi · ${SITE_TITLE}`;
+const DESCRIPTION = "Convert Sonoff smart devices from eWeLink to Tasmota, ESPHome or OpenBeken over Wi-Fi: no soldering, no opening the device. Flash it, don't smash it.";
+const { title, description = DESCRIPTION, noindex = false } = Astro.props;
+const canonical = new URL(address(Astro.url.pathname), Astro.site);
 ---
 <!DOCTYPE html>
 <!-- Every page of the site: the rendered Markdown in GitHub's own styling,
@@ -14,12 +18,14 @@ const { title } = Astro.props;
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title && title !== SITE_TITLE ? `${title} · ${SITE_TITLE}` : SITE_TITLE}</title>
-<meta name="description" content={DESCRIPTION}>
+<title>{title ? `${title} · ${SITE_TITLE}` : HOME_TITLE}</title>
+<meta name="description" content={description}>
+{noindex && <meta name="robots" content="noindex">}
+<link rel="canonical" href={canonical}>
 <meta property="og:type" content="website">
-<meta property="og:title" content={title || SITE_TITLE}>
-<meta property="og:description" content={DESCRIPTION}>
-<meta property="og:url" content={new URL(Astro.url.pathname, Astro.site)}>
+<meta property="og:title" content={title || HOME_TITLE}>
+<meta property="og:description" content={description}>
+<meta property="og:url" content={canonical}>
 <meta property="og:image" content={new URL("/assets/apple-touch-icon.png", Astro.site)}>
 <meta name="twitter:card" content="summary">
 <!-- Safari takes the PNG, as it ignores SVG icons; the others prefer the
