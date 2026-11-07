@@ -24,7 +24,7 @@ plug runs Sonoff's firmware with
 [the changes the emulator makes](../tools/espressif/emulator/README.md#what-is-changed-and-why).
 A full run has been completed this way from a UK S60TPG on stock 1.2.0, through every
 stage, to the official Tasmota on the official layout; how far each classic ESP32
-device gets is in [espressif-research.md](espressif-research.md#espressif-devices).
+device gets is in [espressif-research.md](espressif-research.md#devices).
 It says nothing about hardware the dump did not come from, such as another regional
 version's power meter.
 

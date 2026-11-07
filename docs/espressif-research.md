@@ -2,14 +2,16 @@
 
 What is known about the ESP32 and ESP32-C3 devices the tool converts or might, and how
 it was found out, so you need not repeat the work. [device-research.md](device-research.md)
-lists the rest, by chip family and by device.
+lists the rest, by chip family and by device; [Beken research](beken-research.md) is
+laid out the same way.
 
 "Emulator" below means the plug ran under QEMU against the stub cloud
 ([emulator.md](emulator.md)). Nothing here has been run on a real plug unless it says
 so. The emulator has no relays, meters, buttons or screens, so it cannot prove a
-device's wiring.
+device's wiring. The legal footing for studying a plug's firmware, the same for every
+device and both chip families, is in [legal.md](legal.md#studying-and-emulating-the-firmware).
 
-## Espressif devices
+## Devices
 
 | Device | Chip | Layout | Firmware name | Source of the firmware | In the emulator |
 |---|---|---|---|---|---|
@@ -28,7 +30,25 @@ R3), `ESP32D0-MSW-T5` (M5). The POW Elite shares its stock model with the POW El
 20A (POWR320D), which is wired differently; the same goes for the TH Elite and
 THR316D. That is why a kind can say its eWeLink product decides.
 
-## Layouts
+### Locked devices
+
+Reported locked, with secure boot and flash encryption:
+[MINIR4M](https://www.elektroda.com/news/news4160452.html), M5 Matter versions
+([M5-3C-80W](https://www.elektroda.com/rtvforum/topic4125389.html); the public dump of
+it is encrypted, so unusable) and MINI-D.
+
+Matter is not itself the lock. The S61 carries a full Matter stack and is not locked:
+its updater checks integrity only, with no signature. What marks the locked ones is
+Espressif's secure boot on an ESP32 Matter build. To tell before writing anything:
+
+- the partition labels `esp_secure_cert`, `nvs_matter` or `fctry`;
+- `secure boot v2` or `flash encryption is enabled` in a serial boot log;
+- `Download mode is disabled` with GPIO0 held low;
+- a dump with no readable partition table.
+
+Each backup logs the fuses (below), so a run says so too.
+
+## Flash and layouts
 
 | Partition | S60 style | TH style | Locked Matter |
 |---|---|---|---|
@@ -81,7 +101,7 @@ Leaving Tasmota, Berry has about 28 KB free on the full build. A whole write hel
 classic ESP32's 26 KB bootloader twice, and stopped there. It now compares the hash on
 the plug first, as every conversion has already put that bootloader in place.
 
-## A plug's Sonoff identity
+## A plug's identity and stores
 
 What makes a plug the device its eWeLink account knows is a few entries of Sonoff's
 NVS, 300 to 550 bytes: `frame_params/content` and `data_backups/content` on every
@@ -155,29 +175,45 @@ gone by the time R1 runs; the sector at the end of `ota_1` is not, as every upda
 the way writes only as far as its image. R1 reads it there, and the tool keeps it
 on the way to ESPHome too.
 
+## The update path
+
+A stock plug takes its conversion as an update: an app inside Sonoff's 100-byte
+wrapper, which its updater refuses unless the wrapper names its own firmware
+([below](#learning-the-firmware-name)).
+
 The emulator cannot run Sonoff's official update file as eWeLink serves it: every
 Sonoff app it runs has Bluetooth start-up skipped and the stub's CA swapped in. So
 the stub offers the plug's own app made so (`stub_cloud/firmware.py`), as eWeLink's
 latest, to `ota/query` with an older version, and serves it to the device's id;
 fetching, unwrapping and checking it is the same code as against eWeLink.
 
-## Locked devices
+### Learning the firmware name
 
-Reported locked, with secure boot and flash encryption:
-[MINIR4M](https://www.elektroda.com/news/news4160452.html), M5 Matter versions
-([M5-3C-80W](https://www.elektroda.com/rtvforum/topic4125389.html); the public dump of
-it is encrypted, so unusable) and MINI-D.
+A stock updater refuses a file whose wrapper names another firmware. In the emulator
+the POW Elite read 100 bytes of a wrong one, reported `ota: fail` and stayed on Sonoff,
+so a wrong name costs nothing. The names vary too much to guess.
 
-Matter is not itself the lock. The S61 carries a full Matter stack and is not locked:
-its updater checks integrity only, with no signature. What marks the locked ones is
-Espressif's secure boot on an ESP32 Matter build. To tell before writing anything:
+Tried on the real server:
 
-- the partition labels `esp_secure_cert`, `nvs_matter` or `fctry`;
-- `secure boot v2` or `flash encryption is enabled` in a serial boot log;
-- `Download mode is disabled` with GPIO0 held low;
-- a dump with no readable partition table.
+| Asked | Answer | Tried on |
+|---|---|---|
+| `ota/query` with the device's current version | no offer | S60 |
+| `ota/query` with its own id and version `0.0.1` | its latest firmware | S60, S61 |
+| its own id, with another model | its own firmware: the model is ignored | S60 |
+| a made-up id, with any model | an unrelated 3.5.0: never use one | |
+| an empty id | error 400 | |
+| GET on the offered URL as given | empty 400 | S60 |
+| GET with `?deviceid=<its id>&ts=1&sign=0` | the file; the signature is not checked, and a `Range` is answered | S60, S61 |
 
-Each backup logs the fuses (below), so a run says so too.
+`tools/ewelink/firmware_name.py` uses this at stage 5, reading only the file's first
+bytes. Where eWeLink offers nothing, it falls back on the names in the public update
+files' filenames ([FlashDumps](https://github.com/openshwprojects/FlashDumps)
+`IoT/zOTAz`), giving a name only when exactly one fits. That finds 9 of 12 kinds and
+none wrongly: the M5s' product names do not match their file's `M5-1C-3C`.
+
+A wrapper's first byte pair is `03 01`, its record count is byte 1, and 76-byte records
+start at `0x18`. An NSPanel file has 3 names and an SPM 2. A Beken file has the same
+wrapper after an outer header of 16 bytes plus the 16-bit value at byte 12.
 
 ## What a backup logs
 
@@ -209,33 +245,19 @@ In the emulator the answer comes back whole, but QEMU has no pads or revision re
 every pin says its input is off, so `gpio levels` is empty, and a classic ESP32 says
 revision 0.0. What a real chip answers has not been seen yet.
 
-## Learning the firmware name
+## Tools and methods
 
-A stock updater refuses a file whose wrapper names another firmware. In the emulator
-the POW Elite read 100 bytes of a wrong one, reported `ota: fail` and stayed on Sonoff,
-so a wrong name costs nothing. The names vary too much to guess.
-
-Tried on the real server:
-
-| Asked | Answer | Tried on |
-|---|---|---|
-| `ota/query` with the device's current version | no offer | S60 |
-| `ota/query` with its own id and version `0.0.1` | its latest firmware | S60, S61 |
-| its own id, with another model | its own firmware: the model is ignored | S60 |
-| a made-up id, with any model | an unrelated 3.5.0: never use one | |
-| an empty id | error 400 | |
-| GET on the offered URL as given | empty 400 | S60 |
-| GET with `?deviceid=<its id>&ts=1&sign=0` | the file; the signature is not checked, and a `Range` is answered | S60, S61 |
-
-`tools/ewelink/firmware_name.py` uses this at stage 5, reading only the file's first
-bytes. Where eWeLink offers nothing, it falls back on the names in the public update
-files' filenames ([FlashDumps](https://github.com/openshwprojects/FlashDumps)
-`IoT/zOTAz`), giving a name only when exactly one fits. That finds 9 of 12 kinds and
-none wrongly: the M5s' product names do not match their file's `M5-1C-3C`.
-
-A wrapper's first byte pair is `03 01`, its record count is byte 1, and 76-byte records
-start at `0x18`. An NSPanel file has 3 names and an SPM 2. A Beken file has the same
-wrapper after an outer header of 16 bytes plus the 16-bit value at byte 12.
+- **The emulator**: the stock firmware under QEMU against the stub cloud
+  ([emulator.md](emulator.md)); a device with no whole dump runs its update file on a
+  donor's flash, as the table above says.
+- **Reading a plug and its firmware**, in [`tools/espressif/`](../tools/espressif/README.md):
+  `flashmap.py` (what a dump holds: its chip, partition table and MAC), `layouts.py`
+  (the tables Sonoff's firmware comes on), `sonoff_identity.py` (a plug's identity,
+  and `from_account`), `device_facts.py` (what a backup logs), and
+  `build_vendor_ota.py` / `analyze_vendor_ota.py` (the 100-byte wrapper a stock
+  updater takes).
+- **eWeLink**: `tools/ewelink/firmware_name.py` (the firmware name), and the stub's
+  `stub_cloud/firmware.py` (the plug's own app offered as eWeLink's latest).
 
 ## Questions still open
 
