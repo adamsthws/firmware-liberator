@@ -1,5 +1,5 @@
 """Take what is the owner's out of a copy of a Beken device's whole flash before
-it leaves the computer (tools/autoflash/readout.py): its Wi-Fi password and its
+it leaves the computer (tools/autoflash/readout_beken.py): its Wi-Fi password and its
 eWeLink identity, as tools/espressif/scrub.py does for an Espressif device's.
 
 eWeLink's Beken firmware keeps its settings as EasyFlash V4 (EF40) KV40 nodes

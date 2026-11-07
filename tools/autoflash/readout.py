@@ -1,20 +1,16 @@
 """A readout: a copy of a device's whole memory, to help add a device this tool
 does not convert yet, sent with its owner's consent to firmwareliberator.com.
 
-Nothing is converted. On a device with a chip there is a bridge for (an
-ESP32-C3 or a classic ESP32), its Sonoff updater is sent the bridge alone,
-wrapped under the firmware name eWeLink gives the device: the bridge goes in
-the spare app slot, reads the whole flash, and has already chosen Sonoff's slot
-again for the next start, so switching the device off and on puts it back as
-it was, settings and pairing kept. Only what was in the spare slot is lost
-(often the Sonoff version before the last update). On any other device nothing
-is sent to it at all: only what eWeLink says it is.
+Nothing is converted. What eWeLink says of the device settles how its memory
+is read, by its chip family: an Espressif device through the bridge, which
+leaves Sonoff's firmware where it is (readout_espressif.py); a Beken device
+through a readout OpenBeken, which puts Sonoff's firmware back
+(readout_beken.py). Either way the copy is anonymised before anything is sent,
+and the device is left on its Sonoff firmware. On a device neither can read,
+nothing is sent to it at all: only what eWeLink says it is.
 
-Before anything is sent, the copy is anonymised (tools/espressif/scrub.py): its
-Wi-Fi passwords taken out, as far as its settings show them, and its eWeLink
-identity replaced by a made-up one, so it still starts in the emulator as the
-device did. The copy kept on the
-computer, as the device's Sonoff backup, is the device's own, untouched.
+This is what both share: the device found in the eWeLink account and on the
+network, what it reports, and the readout packed, offered and sent.
 """
 
 from __future__ import annotations
@@ -32,15 +28,9 @@ import urllib.request
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import __version__, account, firewall, hostsys, kinds, names, output, plugs, prompts, safety_locks
-from tools.autoflash import setup_network
-from tools.autoflash.errors import Abort, Finished, NothingWritten
-from tools.autoflash import readout_beken
-from tools.autoflash.routes.espressif import installer
-from tools.autoflash import runs
-from tools.autoflash.runs import ROOT
-from tools.espressif import build_vendor_ota, chips, device_facts, dump_stock_flash, scrub
-from tools.beken import scrub as beken_scrub
+from tools.autoflash import __version__, account, hostsys, kinds, output, plugs, prompts, runs
+from tools.autoflash import readout_beken, readout_espressif
+from tools.autoflash.errors import Abort, Finished
 from tools.ewelink import discover_ewelink, firmware_name, offered_firmware
 
 if TYPE_CHECKING:
@@ -51,11 +41,7 @@ if TYPE_CHECKING:
 UPLOAD_URL = "https://api.firmwareliberator.com/readout"
 # The work each readout carries, as the Worker asks it (its PROOF_BITS).
 PROOF_BITS = 24
-# The chips the bridge runs on, as a firmware name says them (firmware_name.chip_of).
-BRIDGE_CHIPS = {"ESP32C3": chips.ESP32C3, "ESP32D0WD": chips.ESP32}
 FORMAT = 1
-READ_TRIES = 3
-BACK_ON_SONOFF_WAIT = 300.0
 # What the run's record keeps, so a readout is never offered back as a conversion to finish.
 STATE_KEY = "readout"
 
@@ -199,11 +185,15 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None) -> str
         f"Firmware now     {asked.version}",
         f"Firmware name    {learned.name if learned else 'not learned'}",
     ])
-    chip = BRIDGE_CHIPS.get(learned.chip) if learned else None
+    chip = readout_espressif.BRIDGE_CHIPS.get(learned.chip) if learned else None
     beken_stock = readout_beken.stock_from_offered(updates) if learned and learned.chip.startswith("BK") else None
-    if chip is None and beken_stock is not None:
-        return read_out_beken(ctx, manifest, learned.name, asked, device, beken_stock, updates)
-    if chip is None:
+    if chip is not None:
+        files, back = readout_espressif.read_and_anonymise(ctx, manifest, chip, learned.name, asked.version, device,
+                                                           known=known is not None)
+    elif beken_stock is not None:
+        files, back = readout_beken.read_and_anonymise(ctx, manifest, learned.name, asked.version, device,
+                                                       beken_stock)
+    else:
         if learned is None:
             why = "its firmware name could not be learned"
         elif learned.chip.startswith("BK"):
@@ -213,138 +203,7 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None) -> str
         output.say(f"    Its memory cannot be read from here: {why}. The readout still helps.")
         manifest["read"] = False
         return offer(ctx, manifest, None, updates)
-    flash, efuse, info, report = read_out(ctx, chip, learned.name, asked.version, known=known is not None)
-    manifest["read"] = True
-    manifest["facts"] = device_facts.lines(flash, efuse, device_facts.parse_info(info) if info else None)
-    manifest["flash"] = {"size": report["size"], "sha256": report["sha256"],
-                         "matches_device": report.get("matches_plug")}
-    saved, fresh = plugs.save_backup(flash, efuse, report, asked.version, kind=describe(device))
-    if fresh:
-        output.say(f"    Kept on this computer too, in {runs.display_path(saved)}: private, as it holds")
-        output.say("    your Wi-Fi password. Going back to Sonoff's firmware later can use it.")
-    scrubbed, blanked = scrub.wifi(flash)
-    scrubbed, replaced = scrub.identity(scrubbed)
-    manifest["wifi_blanked"], manifest["identity_replaced"] = blanked, replaced
-    files = {"flash.bin": scrubbed, "efuse.bin": efuse, "info.txt": info or b"",
-             "report.json": json.dumps(report, indent=2).encode()}
-    back = back_on_sonoff(ctx)
     return offer(ctx, manifest, files, updates, back=back)
-
-
-def read_out_beken(ctx: Context, manifest: dict[str, Any], name: str, asked, device: dict[str, Any],
-                   found, updates) -> str:
-    """A readout of a Beken device: install the readout OpenBeken, read the
-    whole flash, put Sonoff back (readout_beken), then anonymise and offer it."""
-    manifest["layout"] = found.layout.key
-    flash, info, back = readout_beken.read_out(ctx, name, asked.version, device, found)
-    manifest["read"] = True
-    manifest["flash"] = {"size": len(flash), "sha256": hashlib.sha256(flash).hexdigest()}
-    manifest["device"] = info
-    scrubbed, changed = beken_scrub.scrub(flash)
-    manifest["anonymised"] = changed
-    files = {"flash.bin": scrubbed, "info.txt": (json.dumps(info) + "\n").encode()}
-    return offer(ctx, manifest, files, updates, back=back)
-
-
-def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, *,
-             known: bool = False) -> tuple[bytes, bytes, bytes | None, dict]:
-    """Send the bridge, wait for it, and read the whole flash through it.
-    `known`: a kind the tool converts, which the bridge has run on before."""
-    app = chip.bridge_app()
-    wrapped = ctx.dir / "autoflash-bridge-readout.ota"
-    wrapped.write_bytes(build_vendor_ota.build_wrapper(app, version=build_vendor_ota.app_version(app), model=name))
-    output.transient_begin()
-    prompts.warning_box("Before going on", [
-        "This only reads the device: its Sonoff firmware, settings and eWeLink",
-        "pairing stay. A small program is put in its spare firmware slot to read",
-        "it; whatever was there, often the Sonoff version before its last update,",
-        "is lost. At the end you switch the device off and on, and it starts its",
-        "Sonoff firmware again.",
-        "",
-        *(["The same program starts every conversion of this kind of device."] if known else [
-            "This tool has never run on this kind of device. If the small program",
-            "could not start at all, the device may need a serial cable to recover.",
-            "Only go ahead with a device you can afford to lose."]),
-    ])
-    if not prompts.require_word(prompts.CONSENT_WORD):
-        raise NothingWritten("not confirmed - nothing has been sent to the device")
-    output.transient_end()
-    port = firewall.choose_port(ctx, "delivery_port", firewall.DELIVERY_PORTS, "the firmware")
-    firewall.ensure_firewall(ctx)
-    with safety_locks.lifted(ROOT, "RECOVERY_LOCK"):
-        code = hostsys.run_tool(hostsys.python_script(
-            "tools/espressif/serve_tasmota_ota.py",
-            "--listen-ip", ctx.listen_ip(), "--listen-port", str(port),
-            "--device-ip", ctx.state.input("plug_ip"), "--firmware", str(wrapped),
-            "--email", ctx.email(), "--expected-current-version", version,
-            "--mdns-capture", str(ctx.dir / "mdns.json"),
-            "--i-understand-stock-has-no-automatic-rollback", "--readout-model", name, unbuffered=True),
-            interactive=True, env=ctx.ewelink_env())
-    safety_locks.say_lock_back(ROOT, "RECOVERY_LOCK")
-    ctx.state.set_input(STATE_KEY, "sent")
-    host = find_bridge(ctx, sent=code == 0)
-    output.say("Reading the device's memory - about a minute...")
-    problem = ""
-    for _ in range(READ_TRIES):
-        try:
-            flash, efuse, report = dump_stock_flash.read_dump(host)
-            break
-        except OSError as exc:
-            problem = str(exc)
-            output.say(f"    The read did not come through: {problem}")
-    else:
-        raise Abort(f"the device's memory could not be read ({problem}). Switch it off and on: it starts "
-                    "its Sonoff firmware again")
-    for line in dump_stock_flash.summary(report):
-        output.log_only(f"    {line}")
-    return flash, efuse, dump_stock_flash.read_info(host), report
-
-
-def find_bridge(ctx: Context, *, sent: bool) -> str:
-    """Where the bridge answers: on the home network, or on its own once this
-    computer has joined it. Abort if the device went back to Sonoff instead."""
-    output.say("Waiting for it to start...")
-    address = installer.bridge_on_home_network(ctx, timeout=120.0)
-    if address:
-        return address
-    if installer.bridge_answers(setup_network.SETUP_HOST):
-        return setup_network.SETUP_HOST
-    if installer.back_on_sonoff(ctx):
-        raise Abort("the device is still on its Sonoff firmware, so nothing was read: "
-                    + ("it took the program but did not start it. " if sent else
-                       "the program was not delivered. ")
-                    + "It works as before")
-    network = prompts.find_ssid(names.bridge_networks(ctx)) or names.our_setup_network(ctx)
-    installer.ask_to_join_bridge(network)
-    found = installer.wait_for_bridge(ctx, network.split()[0], gone_back=lambda: installer.back_on_sonoff(ctx))
-    if found == installer.BACK_ON_SONOFF:
-        raise Abort("the device went back to its Sonoff firmware before it could be read. It works as before")
-    return found or setup_network.SETUP_HOST
-
-
-def back_on_sonoff(ctx: Context) -> bool:
-    """Have the person switch it off and on, and wait for Sonoff's firmware:
-    whether it answered."""
-    output.transient_begin()
-    prompts.section("Read. Now put it back on its Sonoff firmware", [
-        "Switch the device off, wait five seconds, and switch it on again (for a",
-        "wall switch, at its circuit breaker). If this computer joined the",
-        "device's own network, join your usual Wi-Fi again.",
-    ])
-    prompts.wait_for_key("Press any key once it is switched back on, or q to quit...")
-    output.transient_end()
-    started = time.monotonic()
-    while not installer.back_on_sonoff(ctx):
-        if time.monotonic() - started > BACK_ON_SONOFF_WAIT:
-            output.tell("    It has not answered as Sonoff's firmware yet. Check the eWeLink app; if it is")
-            output.tell("    missing there, switch it off and on once more.")
-            return False
-        output.progress(f"waiting for its Sonoff firmware... {time.monotonic() - started:.0f}s")
-        time.sleep(3.0)
-    output.progress_clear()
-    ctx.state.set_input(STATE_KEY, "read")
-    output.say("    It is back on its Sonoff firmware.")
-    return True
 
 
 # The large files inside are compressed with xz, about a quarter smaller than

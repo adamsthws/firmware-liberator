@@ -15,6 +15,7 @@ Each stage leans on the conversion's own helpers, with their retries: the
 firmware is delivered through eWeLink (tools/ewelink/ota_push), the flash read
 in paced, retried chunks (tools/autoflash/openbeken.read_flash), the revert
 served until the device has every byte (routes/beken/onward.serve_to_plug).
+The copy is anonymised (tools/beken/scrub.py) before anything is sent.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from tools.autoflash import firewall, openbeken, output, plugs, prompts, runs, s
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes.beken import arrived, onward, stock
 from tools.autoflash.runs import ROOT
-from tools.beken import fota_wrap, layouts, rbl
+from tools.beken import fota_wrap, layouts, rbl, scrub
 from tools.ewelink import ota_push
 
 if TYPE_CHECKING:
@@ -226,3 +227,18 @@ def read_out(ctx: Context, name: str, version: str, device: dict[str, Any],
     revert_to_sonoff(ctx, host, found)
     back = wait_for_sonoff(ctx, device["deviceid"])
     return flash, {"openbeken": str(info.get("build") or ""), "chipset": str(info.get("chipset") or "")}, back
+
+
+def read_and_anonymise(ctx: Context, manifest: dict[str, Any], name: str, version: str, device: dict[str, Any],
+                       found: Stock) -> tuple[dict[str, bytes], bool]:
+    """Read the device's whole flash through the readout OpenBeken, putting
+    Sonoff's firmware back (read_out), and anonymise it. The files to offer,
+    and whether the device answered as Sonoff's firmware again."""
+    manifest["layout"] = found.layout.key
+    flash, info, back = read_out(ctx, name, version, device, found)
+    manifest["read"] = True
+    manifest["flash"] = {"size": len(flash), "sha256": hashlib.sha256(flash).hexdigest()}
+    manifest["device"] = info
+    scrubbed, changed = scrub.scrub(flash)
+    manifest["anonymised"] = changed
+    return {"flash.bin": scrubbed, "info.txt": (json.dumps(info) + "\n").encode()}, back

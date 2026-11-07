@@ -62,7 +62,7 @@ def main():
     parser.add_argument(SAFETY_FLAG, action="store_true")
     parser.add_argument("--readout-model", metavar="NAME",
                         help="send the bridge, wrapped as NAME, to a device of a kind this tool does not "
-                             "convert yet, only to read it (tools/autoflash/readout.py): nothing else is sent so")
+                             "convert yet, only to read it (tools/autoflash/readout_espressif.py): nothing else is sent so")
     args = parser.parse_args()
 
     recovery_lock = Path(__file__).resolve().parent / "RECOVERY_LOCK"
