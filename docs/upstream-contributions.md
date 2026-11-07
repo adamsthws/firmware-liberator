@@ -173,10 +173,10 @@ boot and over 40 s for 2,000 small flash reads:
 
 The emulator carries #20 as its patch `0003`, and its own `0004` also leaves a
 window mapped once it is on.
-That makes it two to ten times faster again and stops the panics a classic
-ESP32 has on QEMU when it reads flash a lot. But it gives up QEMU's fault for
-reading flash with the cache off, so it stays here, and the cause of the panics
-is still to be found.
+That makes it two to ten times faster again, quick enough that Tasmota no
+longer outlasts its 5-second task watchdog while it reads flash a lot, which is
+what made it panic on QEMU. But it gives up QEMU's fault for reading flash with
+the cache off, so it stays here.
 
 ## OpenBeken on a 4 MB BK7238
 

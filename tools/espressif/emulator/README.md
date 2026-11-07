@@ -164,12 +164,16 @@ change, and regenerate them. What they do:
   in about 7 seconds instead of 10. Offered upstream as
   [lcgamboa/qemu #20](https://github.com/lcgamboa/qemu/pull/20).
 - **`0004-esp32-cache-window-stays-mapped.patch` - a classic ESP32 is quick
-  enough, and does not panic.** Each flash operation also took the window out of
-  the memory map and put it back, which is slow, and with that, firmware that
-  reads flash a lot panics now and then, for a reason not yet found. A window
-  now stays mapped once on: Tasmota boots in about 3 seconds, and the tool reads
+  enough not to trip its watchdog.** Each flash operation also took the window
+  out of the memory map and put it back, so a 32-byte flash read took several
+  milliseconds of the firmware's time instead of microseconds. Firmware that
+  reads flash a lot in one go then outlasts its 5-second task watchdog and
+  panics: Tasmota does, reading 2,000 values in one Berry command. A window now
+  stays mapped once on: Tasmota boots in about 3 seconds, and the tool reads
   its settings backup in about 6 instead of 70. It gives up QEMU's fault for
-  reading flash with the cache off, so it is not offered upstream.
+  reading flash with the cache off, so it is not offered upstream;
+  [espressif/qemu #183](https://github.com/espressif/qemu/pull/183), not yet
+  merged, makes the switch fast and keeps the fault.
 
 Tried and dropped for the classic ESP32: QEMU's multi-threaded mode (MTTCG),
 which did not help and was slower; stretching the firmware's watchdogs,
