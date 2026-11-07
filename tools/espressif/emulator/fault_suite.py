@@ -1294,7 +1294,10 @@ class Scenario:
         found = re.findall(r"Result:\s+(.*)", clean)
         if found and found[-1].strip() == "Updated":
             return "Converted (updated)"   # an update's report says so, and it counts the same
-        return found[-1].strip() if found else "no report"
+        if found:
+            return found[-1].strip()
+        why = why_no_report(clean)
+        return f"no report ({why})" if why else "no report"
 
     def person(self, stop):
         """As a person at the computer would: join the plug's own network when
@@ -1980,6 +1983,25 @@ def name_problems(names, networks, target):
 
 def key(scenario_id):
     return scenario_id.replace(">", "-to-").replace(":", "_").replace("@", "_at")
+
+
+def why_no_report(screen):
+    """Where a run that wrote no report stopped, and what it said there: a stage
+    stopped at a question an unattended run cannot answer says so only on screen."""
+    code = re.findall(r"Exit code (-?\d+)", screen)
+    stops = list(re.finditer(r"^ *Stage +(\d+)(?: of \d+)? - (.+?) +- Stopped *$", screen, re.M))
+    if not stops:
+        return f"exit {code[-1]}" if code else ""
+    stop = stops[-1]
+    before = screen[:stop.start()]
+    began = list(re.finditer(rf"^ *Stage +{stop[1]}(?: of \d+)? - .+- Underway.*$", before, re.M))
+    said = before[began[-1].end():] if began else ""
+    lines = [line.strip(" -!") for line in said.splitlines()
+             if line.strip() and not re.match(r" *\d+\. ", line) and "unattended run cannot" not in line]
+    detail = " ".join(lines)
+    detail = detail if len(detail) <= 200 else detail[:197] + "..."
+    return (f"stopped at stage {stop[1]}, {stop[2]}" + (f": {detail}" if detail else "")
+            + (f"; exit {code[-1]}" if code else ""))
 
 
 def keep_earlier(path):
