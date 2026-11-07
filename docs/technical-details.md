@@ -330,6 +330,12 @@ deliberately renamed before the underlying tools will run them on their own.
 
 ## The finished memory layout
 
+What a converted plug's flash holds at the end depends on its chip family: an
+Espressif plug on Tasmota is laid out again, while a Beken plug, and an
+Espressif plug on ESPHome, keep Sonoff's layout.
+
+### An Espressif plug on Tasmota
+
 Official Tasmota on the official partition layout - the same arrangement you
 would get from flashing the plug over USB - with one area more at the end:
 
@@ -372,6 +378,38 @@ last of `ota_1`, past any firmware written there. The startup firmware wipes the
 settings on its way to the interim Tasmota, so the sector is where going back
 to Sonoff finds the identity then; its checksum shows whether it is whole, and
 only this plug's identity is ever written there.
+
+### An Espressif plug on ESPHome
+
+ESPHome keeps Sonoff's partition layout and its settings, the plug's identity
+among them, and the tool writes the `sonoff` sector at the end of `ota_1` too
+([Espressif research](espressif-research.md#a-plugs-identity-and-stores)).
+
+### A Beken plug
+
+OpenBeken and ESPHome are both built for the stock bootloader's own 4 MB table,
+so a conversion writes only the app and the areas Sonoff's firmware leaves empty;
+the stock bootloader stays, and applies every later update from the download
+slot:
+
+| Area | What's in it | Where | Size |
+|---|---|---|---|
+| Bootloader | Sonoff's `rt_ota` bootloader, kept | `0x0` | 60 KiB |
+| Application | OpenBeken or ESPHome | `0x11000` | 2,368 KiB |
+| OTA | The download slot an update is staged in | `0x286000` | 1,384 KiB |
+| RF Firmware | The factory record: the MAC and radio calibration, kept | `0x3e0000` | 4 KiB |
+| NET info | OpenBeken's settings, or ESPHome's LittleFS | `0x3e1000` | 4 KiB |
+| NVS | Sonoff's store: Wi-Fi, meter calibration, eWeLink identity, kept | `0x3e2000` | 44 KiB |
+| matter info backup | ESPHome's preferences (FlashDB) | `0x3ee000` | 32 KiB |
+| matter info | Sonoff's system store, kept | `0x3f6000` | 32 KiB |
+
+Nothing of Sonoff's but its app is written over, so the plug keeps its own
+identity, Wi-Fi and calibration where Sonoff's firmware keeps them: each first
+boot reads them from there, and going back to Sonoff's firmware finds them as
+they were, so a Beken plug needs no `sonoff` area. The two open firmwares keep
+their own settings in different areas, so neither disturbs the other. Where each
+area came from: [Beken research](beken-research.md#flash-and-layouts) and
+[the ESPHome route](beken-research.md#the-esphome-route-libretiny).
 
 ## Stock firmware versions
 
