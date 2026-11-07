@@ -15,6 +15,7 @@ Sonoff's the **MINIR4**, an inline switch. Not the MINIR4M, the Matter one, whic
 | | |
 |---|---|
 | Chip | ESP32 |
+| Firmware name | `FWSW-E32R4-MINIR4-ESP32D0WDR2V3` |
 | Relay | GPIO26 |
 | LED | GPIO19, inverted |
 | Button | GPIO0, active low |

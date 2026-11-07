@@ -24,6 +24,7 @@ all of this out is described in
 | | |
 |---|---|
 | Chip | BK7238 (ARM968E-S), 4 MB flash |
+| Firmware name | `FWSW-01-S61-BK7238` |
 | Relay | P26 |
 | Button | P9, active low, pull-up |
 | Relay LED, Wi-Fi LED | P0, P1, both lit low |

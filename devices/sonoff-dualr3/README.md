@@ -26,6 +26,7 @@ in front of Tasmota for the firmware that moves it on.
 | | |
 |---|---|
 | Chip | ESP32 |
+| Firmware name | `FWSWES-E32DR3-DUALR3-ESP32D0WDV3` |
 | Relays | GPIO27, GPIO14 |
 | LED | GPIO13, inverted |
 | Power meter | CSE7761: TX GPIO25, RX GPIO26, 38400 baud, even parity; a BL0930 on units since September 2021 |

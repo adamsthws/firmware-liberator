@@ -19,6 +19,7 @@ Sonoff's in-line Matter over Wi-Fi switch, model **BASIC-1GS**, board
 | | |
 |---|---|
 | Chip | BK7238 |
+| Firmware name | `FWSW-01-BASICR5-BK7238` |
 | Flash | 4 MB by the table in its firmware; some published specs say 2 MB, and nobody has read one here |
 | Relay | P26 |
 | Inputs | P6 (`Btn`: reads low when pressed), P1 (`Btn_n`: reads high when pressed), each toggling the relay |

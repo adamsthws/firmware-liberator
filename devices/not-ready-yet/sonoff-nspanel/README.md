@@ -18,6 +18,7 @@ has none of its hardware to see, so the wiring below is what its sources say.
 | | |
 |---|---|
 | Chip | ESP32 (4 MB flash) |
+| Firmware name | `FWPNL-E32NSP-NSPANEL-ESP32D0WDV3` |
 | Relays | GPIO22, GPIO19 |
 | Screen power | GPIO4, on when low |
 | Buttons | GPIO14, GPIO27, active low |

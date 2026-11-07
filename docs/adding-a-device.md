@@ -61,7 +61,10 @@ dump is ever committed. Tooling fetches it at run time.
    to that hash. Its `ota_1` has to be where the device's own table has it.
 
 5. **Add its firmware.** Write `devices/<key>/esphome.yaml`, `esphome.md` and
-   `README.md`, the last starting with its status, then build and pin the image. `artifacts/` changes only this way:
+   `README.md`, the last starting with its status, and its table with a
+   `| Firmware name |` row, after its chip, of the kind's `wrapper_model`
+   (`tests/repo/test_firmware_names.py` holds the two alike). Then build and pin
+   the image. `artifacts/` changes only this way:
 
    ```sh
    .venv/bin/python tools/repo/update_firmware.py esphome --plug sonoff-example

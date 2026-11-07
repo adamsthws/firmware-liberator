@@ -28,6 +28,7 @@ Sonoff's ESP32-C3 inline switch, model **BASICR4**.
 | | |
 |---|---|
 | Chip | ESP32-C3 |
+| Firmware name | `FWSW-E32R4-BASICR4-ESP32C3` |
 | Flash | 4 MB by the header of its official update file; nobody has read one here |
 | Relay | GPIO4 |
 | LED | GPIO6: lit high by the Tasmota template, lit low by the ESPHome sources |
