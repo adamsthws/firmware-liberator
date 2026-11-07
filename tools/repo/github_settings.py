@@ -23,9 +23,19 @@ REPOSITORY = "adamsthws/firmware-liberator"
 GITHUB_ACTIONS = 15368   # the GitHub Actions app: only its runs may pass a required check
 ADMIN_ROLE = 5           # the repository's admin role, in a ruleset's bypass list
 
+WEBSITE = "https://firmwareliberator.com/"
+
+# How the repository is found: its description, website and topics are what
+# GitHub's search and its pages show, in the words people search with.
+TOPICS = ["beken", "bk7238", "esp32", "esp32-c3", "esphome", "ewelink", "firmware", "flashing-tool",
+          "home-assistant", "home-automation", "iot", "openbeken", "ota", "smart-plug", "sonoff", "tasmota"]
+
 # Pull requests are squashed - one commit each, as main's history is kept -
 # and their branches deleted once merged.
 REPOSITORY_SETTINGS = {
+    "description": "Convert Sonoff smart devices to Tasmota, ESPHome or OpenBeken over Wi-Fi, "
+                   "with no soldering. Fully automated OTA flasher for Linux, macOS and Windows.",
+    "homepage": WEBSITE,
     "allow_squash_merge": True,
     "allow_merge_commit": False,
     "allow_rebase_merge": False,
@@ -59,7 +69,6 @@ TOGGLES = ["private-vulnerability-reporting", "immutable-releases"]
 # (website/README.md) the website workflow deploys from this environment: it
 # takes only main, and holds the workflow's CLOUDFLARE_API_TOKEN. GitHub
 # Pages, which served it before, is off.
-WEBSITE = "https://firmwareliberator.com/"
 ENVIRONMENT = "website"
 ENVIRONMENT_POLICY = {"protected_branches": False, "custom_branch_policies": True}
 ENVIRONMENT_BRANCHES = ["main"]
@@ -143,6 +152,9 @@ def differences() -> list[tuple[str, str, Any]]:
     for key, want in REPOSITORY_SETTINGS.items():
         if repository.get(key) != want:
             found.append((key, f"is {repository.get(key)}, should be {want}", ("PATCH", "", {key: want})))
+    topics = api("/topics")["names"]
+    if sorted(topics) != sorted(TOPICS):
+        found.append(("topics", f"are {topics}, should be {TOPICS}", ("PUT", "/topics", {"names": TOPICS})))
     analysis = repository.get("security_and_analysis") or {}
     for key, want in SECURITY.items():
         have = (analysis.get(key) or {}).get("status")
