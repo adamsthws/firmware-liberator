@@ -280,9 +280,12 @@ def check_hardware(ctx: Context) -> dict[str, str]:
     """
     device = ctx.device
 
+    def state(reply: Any) -> str:
+        # POWER, or POWER1 on a template with more than one relay.
+        return str(reply.get("POWER", reply.get("POWER1", ""))).upper() if isinstance(reply, dict) else ""
+
     def switch(on: bool) -> bool:
-        reply = device.command(f"Power {'ON' if on else 'OFF'}")
-        return isinstance(reply, dict) and str(reply.get("POWER", "")).upper() == ("ON" if on else "OFF")
+        return state(device.command(f"Power {'ON' if on else 'OFF'}")) == ("ON" if on else "OFF")
 
     def meter() -> dict[str, Any] | None:
         time.sleep(METER_SETTLE)
@@ -292,8 +295,7 @@ def check_hardware(ctx: Context) -> dict[str, str]:
 
     output.say("Checking the relay and power meter...")
     try:
-        before = device.command("Power")
-        was_on = isinstance(before, dict) and str(before.get("POWER", "")).upper() == "ON"
+        was_on = state(device.command("Power")) == "ON"
         switched = switch(not was_on)
         first = meter()
         restored = switch(was_on)

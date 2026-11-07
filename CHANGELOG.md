@@ -39,6 +39,9 @@ check.
   log only said "at least", the flash chip's id and real size, the slots, whether
   PSRAM is in the chip's package, and the input pins' levels. An older installer
   only leaves these lines out.
+- A TH Elite on Tasmota no longer reports that its relay did not switch at the end
+  of a run: the check did not read the answer Tasmota gives where a template has
+  more than one relay.
 
 ## 2.3.0
 

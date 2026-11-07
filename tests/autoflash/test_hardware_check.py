@@ -68,6 +68,21 @@ class CheckHardwareTests(unittest.TestCase):
         self.assertNotIn("Mains voltage", result)  # the power meter line shows it
         self.assertEqual(result["Power meter"], "on: 231.5 V, 40 W; off: 231.5 V, 0 W")
 
+    def test_a_template_with_more_than_one_relay_answers_power1(self):
+        # The TH Elite's Tasmota: its dry contact is a relay as well.
+        state = {"power": "OFF"}
+
+        def command(text, timeout=None):
+            if text.startswith("Power"):
+                state["power"] = text.split()[1] if " " in text else state["power"]
+                return {"POWER1": state["power"]}
+            return {}
+
+        from types import SimpleNamespace
+        result = self.run_check(SimpleNamespace(device=SimpleNamespace(command=command)))
+        self.assertEqual(result["Relay"], "switches (meter unchanged)")
+        self.assertEqual(state["power"], "OFF")
+
     def test_the_screen_starts_each_answer_with_a_capital_as_the_report_does(self):
         ctx, _, _ = self.ctx({"ON": {"Voltage": 240, "Power": 3}, "OFF": {"Voltage": 0, "Power": 0}})
         with mock.patch.object(time, "sleep"), mock.patch.object(output, "say") as said:
