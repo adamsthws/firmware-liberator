@@ -313,71 +313,11 @@ though not the bootloader's FAL one: the S41, T6 and Basic Gen5's (`BASIC-1GS`,
 there, so a conversion would lose that sector before it could be read;
 `rebuild()` refuses a table it has no `INTERIM_WRITES` for unless they are given.
 
-## Adding a 4 MB BK7238 device with no whole dump
+## Adding a device
 
-A device with no public dump can be added from a pin map and eWeLink's official
-update file. The [Sonoff Basic Gen5](../../devices/sonoff-basic-1gs/README.md) is
-the first. What makes that safe enough to offer, and what it leaves open:
-
-- **The file's partition table is checked first.** Each app holds the SDK's table,
-  as entries of five words: owner, description, start, length, options.
-  `layouts.py` reads it by the description strings, and a run refuses a file
-  whose table is not listed there. That happens at B1, again at B2, and when
-  Sonoff's firmware is sent back. The known one is `beken-4m`: `Application`
-  `0x11000+0x250000`, `ota` `0x286000+0x15a000`, `RF Firmware` `0x3e0000`,
-  `NET info` `0x3e1000`, `NVS` `0x3e2000+0xb000`.
-- **Stock firmware does not say its flash size.** The register message gives only
-  `romVersion`, `chipid` (its MAC) and `model`; the account record's `params` add
-  the Wi-Fi and the relay's settings; the firmware name ends in `BK7238`, where an
-  Espressif one can end in `FN4`. The app reads the flash's ID for itself
-  (`[Flash]id:` on the serial output) but tells no one. There is no LAN API on this
-  route. So before a conversion the table is the only word on the flash.
-- **Published specs disagree with the table.**
-  [CNX Software's review](https://www.cnx-software.com/2025/11/06/review-sonoff-basic-gen5-matter-switch-and-tx-gen2-matter-smart-wall-switch/)
-  and others give the Basic Gen5, the BASIC-1GSP and the T6 "2 MB flash (SiP)", the
-  chip's usual figure, while their official files hold only the 4 MB table. The
-  file is what the device runs, so the tool goes by it, but nobody has read the
-  flash of one of these here.
-- **After the conversion the tool can tell.** B4 reads the device's own data at
-  `0x3e0000` through OpenBeken. On a smaller flash that read would not find the
-  device's factory record, so finding it, with the device's own MAC, is logged as
-  the flash matching the table.
-- **The person is told.** On a device whose status is "Testers wanted"
-  ([devices/status.json](../../docs/adding-a-device.md#its-status)), the go-ahead at B2
-  says no real one has been proven yet and asks for the run's result, as on
-  every such device; `PROCEED` goes on, as on any other.
-- **Each run logs what it learns**, in `run.log`: the file's firmware name, version
-  and whole table, the version the device reports, and whether the flash matched.
-  The fetched file stays out of this repository: `images.py` pins its name and hash.
-
-To try one in the emulator, make its whole flash and start a plug from it:
-
-```sh
-python3 tools/beken/rebuild_dump.py S61-DUMP.bin OFFICIAL.bin captures/device.bin
-AUTOFLASH_BEKEN_EMU_FLASH=captures/device.bin tools/beken/emulator/bk-emu.sh --fresh plug
-```
-
-This proves the firmware and the tool's path, not the device's hardware. The
-bootloader, radio data and settings are the S61's, and the stock firmware's model
-comes from its sealed factory data, so it says it is an S61 (`SN-BK7238-S61-01`).
-The stub gives the model the app itself holds instead (`cloud_stub.py`). Whether a
-real one reports that model is not known: if not, B1 stops with nothing written and
-the model in the log. The emulator has no relay, button or LED, so it says nothing of
-the pin map.
-
-### The candidates, and why only one was added
-
-All are BK7238 on the 4 MB table, and each file's stock firmware comes online on the
-stub. A device stays out without a pin map to trust: pins are never guessed.
-
-| Device | Firmware name, stock model | Pins | Added |
-|---|---|---|---|
-| Basic Gen5 `BASIC-1GS` | `FWSW-01-BASICR5-BK7238`, `SN-BK7238-BASICR5-01` | [one person's template](https://www.elektroda.com/rtvforum/topic4167932.html), in OpenBeken's device list | yes |
-| DIN rail `BASIC-1GSP` | `FWSW-01-BASIC1GSP-BK7238`, `SN-BK7238-BASIC1GSP-01` | none published. It has a meter, and forum questions describe a latching relay driven by pulses, which a wrong map could harm | no |
-| `S41STPB` (S41s, US) | `FWSW-01-S41-BK7238`, `SN-BK7238-S41-01` | none published. Built from the S61's source tree (`BK7238_S61_S41`), which does not make its pins the S61's | no |
-| T6 `T6-1C/2C/3C-120M` (TX Gen2) | `FWSW-06-SWITCHES-BK7238`, `SN-BK7238-T6C3-01` | [one two-pad unit's](https://github.com/saltech1/esphome-sonoff-t6-uart): relays P6 and P26, LED P9. No third relay is known, and its touch pads talk over a UART protocol (P1), which OpenBeken has no driver for | no |
-
-The 2 MB devices, the door sensor among them, are on hold.
+How to add a 4 MB BK7238 device, with or without a whole dump, what the tool
+checks of one added from its official update file, and the candidates looked at:
+[docs/adding-a-device.md](../../docs/adding-a-device.md#a-beken-device).
 
 ## Status
 

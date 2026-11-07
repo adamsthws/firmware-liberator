@@ -663,7 +663,7 @@ through, one browser tab at a time.
 
 `AUTOFLASH_BEKEN_EMU_FLASH` names another whole flash under this checkout for a new
 plug to start from, one `rebuild_dump.py` made for another model, say
-([Adding a 4 MB BK7238 device](../tools/beken/README.md#adding-a-4-mb-bk7238-device-with-no-whole-dump)).
+([adding a Beken device](adding-a-device.md#what-the-emulator-does-for-you-1)).
 
 ### Known gaps
 
