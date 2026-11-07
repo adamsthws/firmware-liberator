@@ -73,7 +73,8 @@ which its author checked on hardware, and which agrees with the stock driver.
   K1, B4; a run to ESPHome is B1, B2 (OpenBeken as the interim firmware), J1,
   B4 (the backup through it), J2 (it fetches ESPHome), K2. A run back to
   Sonoff's firmware ends with K3: eWeLink shows the plug online, and it
-  answers there.
+  answers there. What each step does:
+  [the run, step by step](../../docs/what-happens.md#a-beken-plug-the-s61).
 - **Research**: [`research.md`](research.md), the S61's own: its meter's
   calibration, its wiring, and what OpenBeken did on it in the emulator. What was found out about its firmware, which the
   other 4 MB Beken plugs share, is in
