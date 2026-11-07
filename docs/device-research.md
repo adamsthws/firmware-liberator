@@ -100,7 +100,30 @@ Each backup logs the fuses (below), so a run says so too.
 `tools/espressif/device_facts.py` puts in the run's log the chip and revision, secure
 boot, flash encryption, flash size, the partition table, and each app's version,
 ESP-IDF and firmware name, on screen too when the table is not known. A classic
-ESP32's eFuse file cannot tell revision 2 from 3, so it logs "at least".
+ESP32's eFuse file cannot tell revision 2 from 3, so from the file alone it logs "at
+least".
+
+At the same step the run asks the installer's `GET /info`, once, and logs the answer:
+the exact chip revision in place of "at least", then `Installer says` lines with the
+chip and its cores, whether its flash is embedded, the flash chip's JEDEC id and real
+size, the running and fallback slots, PSRAM and input pin levels. An installer before
+4.4.5, or one that does not answer, costs the run nothing: the log only lacks these lines.
+
+Some of it has limits:
+
+- **PSRAM.** The chip's fuses say whether PSRAM is in its package. PSRAM on a chip of
+  its own is not looked for: that would drive pins a board without it may use for
+  something else. So "no" in the package does not mean the plug has none. An ESP32-C3
+  cannot have any.
+- **Pin levels.** Levels are read from the chip's input registers, and nothing about a
+  pin is changed. Pins whose input is off (`gpio input off`) read 0 whatever is on them,
+  so they are named and not read. The flash chip's pins are left out: 6 to 11 on a classic
+  ESP32, 12 to 17 on an ESP32-C3. A level is a moment's snapshot in the installer, with
+  the board's own pull-ups and whatever stock left behind, not a pin map.
+
+In the emulator the answer comes back whole, but QEMU has no pads or revision register:
+every pin says its input is off, so `gpio levels` is empty, and a classic ESP32 says
+revision 0.0. What a real chip answers has not been seen yet.
 
 ## Learning the firmware name
 

@@ -4314,6 +4314,7 @@ class StockLayoutTests(unittest.TestCase):
         from tools.autoflash.routes.espressif import installer
         ctx = SimpleNamespace(state=SimpleNamespace(input=lambda name: None))
         with mock.patch.object(installer, "reach_bridge", return_value="192.0.2.51"), \
+                mock.patch.object(installer, "bridge_info", return_value={}), \
                 mock.patch.object(installer.dump_stock_flash, "read_table", return_value=table):
             installer.require_known_layout(ctx)
 
@@ -4325,6 +4326,90 @@ class StockLayoutTests(unittest.TestCase):
         from tools.autoflash.errors import Abort
         with self.assertRaisesRegex(Abort, "switch it off and on"):
             self.run_gate(b"\xff" * 0x1000)
+
+
+class BridgeInfoTests(unittest.TestCase):
+    """C3 - what only the chip can say goes in the log, and costs a run nothing."""
+
+    INFO = b"bridge 4.4.5\nchip: esp32\nchip revision: 3.1\nflash id: c84016\n"
+
+    def setUp(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        from tools.autoflash.routes.espressif import installer
+        self.installer = installer
+        self.ctx = SimpleNamespace(state=SimpleNamespace(input=lambda name: None))
+        self.logged = []
+        for patch in (mock.patch.object(installer.output, "log_only", self.logged.append),
+                      mock.patch.object(installer.output, "progress_clear"),
+                      mock.patch.object(installer.dump_stock_flash, "read_table",
+                                        return_value=self.table()),
+                      mock.patch.object(installer, "reach_bridge", return_value="192.0.2.51")):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    @staticmethod
+    def table():
+        from tools.espressif.safeboot.safeboot_migration import SOURCE_TABLE_FILE
+        return SOURCE_TABLE_FILE.read_bytes()
+
+    def read(self, *, answers=True, home=None, body=INFO):
+        from unittest import mock
+        with mock.patch.object(self.installer, "bridge_answers", return_value=answers), \
+                mock.patch.object(self.installer, "bridge_on_home_network", return_value=home) as looked, \
+                mock.patch.object(self.installer.dump_stock_flash, "read_info", return_value=body) as read:
+            return self.installer.bridge_info(self.ctx), looked, read
+
+    def test_read_once_on_the_installers_own_network(self):
+        info, looked, read = self.read()
+        self.assertEqual(info["flash id"], "c84016")
+        read.assert_called_once_with(self.installer.setup_network.SETUP_HOST)
+        looked.assert_not_called()
+
+    def test_or_on_the_home_network_without_asking_anyone(self):
+        info, looked, read = self.read(answers=False, home="192.0.2.51")
+        self.assertEqual(info["chip"], "esp32")
+        read.assert_called_once_with("192.0.2.51")
+        self.assertLessEqual(looked.call_args.kwargs["timeout"], 15)
+
+    def test_an_older_bridge_or_no_bridge_gives_nothing(self):
+        self.assertEqual(self.read(body=None)[0], {})
+        info, _, read = self.read(answers=False, home=None)
+        self.assertEqual(info, {})
+        read.assert_not_called()
+
+    def test_a_network_error_gives_nothing(self):
+        from unittest import mock
+        with mock.patch.object(self.installer, "bridge_answers", side_effect=OSError("gone")):
+            self.assertEqual(self.installer.bridge_info(self.ctx), {})
+
+    def test_with_no_backup_its_lines_are_still_logged(self):
+        from unittest import mock
+        with mock.patch.object(self.installer, "bridge_info",
+                               return_value=self.installer.device_facts.parse_info(self.INFO)):
+            self.installer.require_known_layout(self.ctx)
+        self.assertIn("    Chip revision: 3.1", self.logged)
+        self.assertIn("    Installer says flash id: c84016", self.logged)
+
+    def test_with_an_older_bridge_the_run_goes_on_and_logs_nothing_of_it(self):
+        from unittest import mock
+        with mock.patch.object(self.installer, "bridge_info", return_value={}):
+            self.installer.require_known_layout(self.ctx)
+        self.assertEqual(self.logged, [])
+
+    def test_the_backups_facts_carry_the_exact_revision(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from tools.espressif import flashmap
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / "flash.bin").write_bytes(b"\xff" * 0x400000)
+            (Path(folder) / "efuse.bin").write_bytes(bytes(flashmap.ESP32_EFUSE_SIZE))
+            with mock.patch.object(self.installer.kinds, "of_run"):
+                self.installer.log_device_facts(self.ctx, Path(folder), shown=False,
+                                                info=self.installer.device_facts.parse_info(self.INFO))
+        self.assertIn("    Chip revision: 3.1", self.logged)
+        self.assertFalse([line for line in self.logged if "at least" in line], self.logged)
 
 
 class WifiFromPlugTests(unittest.TestCase):

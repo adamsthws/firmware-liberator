@@ -1,6 +1,7 @@
 """What a backup says about a plug, for the run's log: enough to add a device
 the tool has not met from one person's report. None of it is secret: no Wi-Fi,
-account or identity is read, and the MAC is left out.
+account or identity is read, and the MAC is left out. What only the chip itself
+can say comes from the bridge's GET /info, where it has one.
 """
 
 from __future__ import annotations
@@ -12,6 +13,8 @@ from tools.espressif import flashmap
 
 APP_DESC_MAGIC = 0xABCD5432
 FIRMWARE_NAME = re.compile(rb"FW[A-Z]+-[A-Z0-9]+-[A-Z0-9-]+")
+INFO_LINE = re.compile(r"([a-z][a-z0-9 ]*): ?([\x20-\x7e]*)")
+INFO_MAX_LINES = 32
 
 
 def _text(data: bytes) -> str:
@@ -25,7 +28,7 @@ def _word(efuse: bytes, index: int) -> int:
 def security(efuse: bytes) -> dict[str, object]:
     """Chip revision, secure boot and flash encryption, from the eFuse file:
     for a classic ESP32 the revision is only known as at least this, as telling
-    2 from 3 takes a register no file holds."""
+    2 from 3 takes a register no file holds (parse_info's chip revision does)."""
     if len(efuse) == flashmap.ESP32_EFUSE_SIZE:
         crypt_count = (_word(efuse, 0) >> 20) & 0x7F
         rev1, rev2 = (_word(efuse, 3) >> 15) & 1, (_word(efuse, 5) >> 20) & 1
@@ -50,8 +53,27 @@ def _app(flash: bytes, slot: flashmap.Partition) -> str:
     return f"{described or 'no description'}; firmware names: {', '.join(names) or 'none found'}"
 
 
-def lines(flash: bytes, efuse: bytes | None) -> list[str]:
-    """The facts, a line each, for the log."""
+def parse_info(body: bytes) -> dict[str, str]:
+    """The name: value lines of the bridge's GET /info. It names itself on the
+    first line; a line not of that form is left out, not trusted into the log."""
+    found = {}
+    for line in body.decode("ascii", errors="replace").splitlines()[1:INFO_MAX_LINES]:
+        match = INFO_LINE.fullmatch(line)
+        if match:
+            found[match[1]] = match[2]
+    return found
+
+
+def info_lines(info: dict[str, str]) -> list[str]:
+    """What the bridge said about the chip, a line each, for the log."""
+    revision = [f"Chip revision: {info['chip revision']}"] if "chip revision" in info else []
+    return revision + [f"Installer says {name}: {value}" for name, value in info.items() if name != "chip revision"]
+
+
+def lines(flash: bytes, efuse: bytes | None, info: dict[str, str] | None = None) -> list[str]:
+    """The facts, a line each, for the log. `info`, what the bridge said, has
+    the chip's exact revision, where the eFuse file may only have a lower bound."""
+    info = info or {}
     found = [f"Flash size: {len(flash) // 0x100000} MB"]
     try:
         found.insert(0, f"Chip: {flashmap.chip_of(flash)}")
@@ -59,7 +81,8 @@ def lines(flash: bytes, efuse: bytes | None) -> list[str]:
         found.append(f"Chip: not known ({exc})")
     if efuse:
         fuses = security(efuse)
-        found.append(f"Chip revision: {fuses['revision']}")
+        if "chip revision" not in info:
+            found.append(f"Chip revision: {fuses['revision']}")
         found.append(f"Secure boot: {'on' if fuses['secure_boot'] else 'off'}")
         found.append(f"Flash encryption: {'on' if fuses['flash_encryption'] else 'off'}")
     try:
@@ -70,4 +93,4 @@ def lines(flash: bytes, efuse: bytes | None) -> list[str]:
             found.append(f"App in {slot.label}: {_app(flash, slot)}")
     except ValueError as exc:
         found.append(f"Partitions: not readable ({exc})")
-    return found
+    return found + info_lines(info)

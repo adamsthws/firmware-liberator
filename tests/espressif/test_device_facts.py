@@ -20,6 +20,28 @@ def flash(app: bytes = b"") -> bytes:
     return bytes(image)
 
 
+INFO = (b"bridge 4.4.5\nchip: esp32\nchip revision: 3.1\nflash id: c84016\n"
+        b"fallback slot: ota_0 at 0x20000, 0x1f0000 bytes\ngpio levels: 0=1 2=0\ngpio input off:\n")
+
+
+class InfoTests(unittest.TestCase):
+    def test_its_lines_are_read_by_name(self):
+        info = device_facts.parse_info(INFO)
+        self.assertEqual(info["chip"], "esp32")
+        self.assertEqual(info["gpio input off"], "")
+        self.assertNotIn("bridge 4.4.5", info)
+
+    def test_nothing_else_reaches_the_log(self):
+        self.assertEqual(device_facts.parse_info(b"bridge 4.4.5\n<html>: hi\nchip: \xff\nnot a line\n"), {})
+        self.assertEqual(device_facts.parse_info(b""), {})
+        many = b"bridge 4.4.5\n" + b"".join(b"name %d: x\n" % n for n in range(100))
+        self.assertLess(len(device_facts.parse_info(many)), 40)
+
+    def test_with_no_answer_there_are_no_lines(self):
+        self.assertEqual(device_facts.info_lines({}), [])
+        self.assertEqual(device_facts.lines(flash(), None), device_facts.lines(flash(), None, {}))
+
+
 class SecurityTests(unittest.TestCase):
     def test_a_plain_classic_esp32(self):
         fuses = device_facts.security(bytes(flashmap.ESP32_EFUSE_SIZE))
@@ -59,6 +81,19 @@ class LinesTests(unittest.TestCase):
         self.assertIn("esp32_fw version 1.2.3, ESP-IDF v4.1x", shown)
         self.assertIn("FWSW-E32EX-EXAMPLE-ESP32D0WDV3", shown)
         self.assertIn("Secure boot: off", shown)
+
+    def test_a_classic_esp32s_revision_is_at_least_without_the_bridges_word(self):
+        shown = device_facts.lines(flash(), bytes(flashmap.ESP32_EFUSE_SIZE))
+        self.assertIn("Chip revision: at least 0", shown)
+
+    def test_the_bridges_exact_revision_takes_its_place(self):
+        info = device_facts.parse_info(INFO)
+        shown = device_facts.lines(flash(), bytes(flashmap.ESP32_EFUSE_SIZE), info)
+        self.assertIn("Chip revision: 3.1", shown)
+        self.assertFalse([line for line in shown if "at least" in line], shown)
+        self.assertIn("Installer says flash id: c84016", shown)
+        self.assertIn("Installer says gpio levels: 0=1 2=0", shown)
+        self.assertIn("Installer says fallback slot: ota_0 at 0x20000, 0x1f0000 bytes", shown)
 
     def test_an_encrypted_flash_is_said_to_be_so_and_stops_nothing(self):
         shown = "\n".join(device_facts.lines(bytes(0x400000), None))
