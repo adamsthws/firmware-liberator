@@ -28,12 +28,12 @@ class PublishedArtifactTests(unittest.TestCase):
     def test_the_run_installs_the_pinned_bridge(self):
         from tools.autoflash.routes.espressif.installer import BRIDGE_OTA
         from tools.autoflash.runs import ROOT
-        self.assertEqual(BRIDGE_OTA.name, "autoflash-bridge-sonoff-s60-4.4.4.ota")
         line = f"{sha256_bytes((ROOT / BRIDGE_OTA).read_bytes())}  {BRIDGE_OTA.name}"
         self.assertIn(line, (ROOT / "artifacts" / "SHA256SUMS").read_text().splitlines())
 
     def test_the_bridge_carries_one_version_everywhere(self):
         import re
+        from tools.espressif import chips
         from tools.espressif.analyze_vendor_ota import analyze
         from tools.espressif.build_vendor_ota import app_version
         from tools.autoflash.routes.espressif.installer import BRIDGE_OTA
@@ -43,6 +43,9 @@ class PublishedArtifactTests(unittest.TestCase):
         version = re.search(r'#define BRIDGE_VERSION "([^"]+)"', source).group(1)
         self.assertEqual(re.search(r'set\(PROJECT_VER "([^"]+)"\)', project).group(1), version)
         self.assertIn(f"-{version}.ota", BRIDGE_OTA.name)
+        for chip in chips.ALL:
+            self.assertEqual(chip.pin("bridge")["version"], version, chip.label)
+            self.assertIn(version, chip.pin("bridge")["file"], chip.label)
         wrapped = (ROOT / BRIDGE_OTA).read_bytes()
         report = analyze(wrapped)
         self.assertEqual(report["wrapper"]["header_version"], version)

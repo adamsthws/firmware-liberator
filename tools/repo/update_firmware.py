@@ -32,6 +32,10 @@
         ESP32-C3's are, the bridge and the recovery Safeboot built from this
         repository's sources, the mover and its bootloader with ESPHome
 
+    python3 tools/repo/update_firmware.py esp32c3 [bridge]
+        the same for the ESP32-C3: its bridge, built from this repository's
+        sources and wrapped for the S60's stock updater
+
     python3 tools/repo/update_firmware.py openbeken [--plug sonoff-s61] [--commit SHA]
         build OpenBeken for a Beken plug - upstream at that commit (default: the
         one pinned, else main's head), this project's patches (the 4 MB
@@ -63,7 +67,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from tools.autoflash import esphome, imprint, kinds, tasmota_settings  # noqa: E402
-from tools.espressif import chips, layouts  # noqa: E402
+from tools.espressif import build_vendor_ota, chips, layouts  # noqa: E402
 from tools.beken import rbl, uf2  # noqa: E402
 from tools.espressif.safeboot.safeboot_migration import (  # noqa: E402
     APP0_OFFSET,
@@ -914,19 +918,36 @@ def esp32_tasmota(pins: dict[str, Any]) -> None:
     print(f"  Tasmota {release['version']}, and {ESP32_INTERIM} of {ESP32_INTERIM_TAG} for part way through: pinned")
 
 
-def esp32_bridge(pins: dict[str, Any]) -> None:
+def built_bridge(env: str, chip: chips.Chip) -> tuple[bytes, str]:
+    """The bridge's app for `chip`, built from archive/bridge, and its version."""
     source = FIRMWARE_BUILD_CACHE / "bridge"
     shutil.rmtree(source, ignore_errors=True)
     shutil.copytree(BRIDGE_SOURCE, source)
-    in_builder("cd /src && pio run -e autoflash-bridge-esp32 && chmod -R a+rwX /src", f"{source}:/src")
-    app = (source / ".pio/build/autoflash-bridge-esp32/firmware.bin").read_bytes()
+    in_builder(f"cd /src && pio run -e {env} && chmod -R a+rwX /src", f"{source}:/src")
+    app = (source / ".pio/build" / env / "firmware.bin").read_bytes()
     try:
-        validate_native_image(app, 0x1F0000, "the bridge", chips.ESP32)
+        validate_native_image(app, 0x1F0000, "the bridge", chip)
     except ValueError as exc:
         raise UpdateError(str(exc)) from exc
-    version = app_description(app)["version"]
+    return app, app_description(app)["version"]
+
+
+def esp32_bridge(pins: dict[str, Any]) -> None:
+    app, version = built_bridge("autoflash-bridge-esp32", chips.ESP32)
     publish(pins.setdefault("esp32", {}), "bridge", f"artifacts/autoflash-bridge-esp32-{version}.bin", app,
             {"version": version})
+
+
+def esp32c3_bridge(pins: dict[str, Any]) -> None:
+    """Wrapped for the S60's stock updater, as the file is sent; for another
+    kind of plug the run wraps the same app again for its model."""
+    app, version = built_bridge("autoflash-bridge", chips.ESP32C3)
+    try:
+        wrapped = build_vendor_ota.build_wrapper(app, version=version)
+    except ValueError as exc:
+        raise UpdateError(str(exc)) from exc
+    publish(pins.setdefault("esp32c3", {}), "bridge",
+            f"artifacts/autoflash-bridge-{kinds.SONOFF_S60.key}-{version}.ota", wrapped, {"version": version})
 
 
 def esp32_recovery(pins: dict[str, Any]) -> None:
@@ -998,16 +1019,19 @@ def esp32_tables(pins: dict[str, Any]) -> None:
 
 
 ESP32_PARTS = {"tables": esp32_tables, "template": esp32_template, "tasmota": esp32_tasmota, "bridge": esp32_bridge, "recovery": esp32_recovery, "mover": esp32_mover}
+ESP32C3_PARTS = {"bridge": esp32c3_bridge}
+CHIP_PARTS = {"esp32": ESP32_PARTS, "esp32c3": ESP32C3_PARTS}
 
 
-def command_esp32(args: argparse.Namespace) -> int:
-    unknown = set(args.parts) - set(ESP32_PARTS)
+def command_chip(args: argparse.Namespace) -> int:
+    parts = CHIP_PARTS[args.command]
+    unknown = set(args.parts) - set(parts)
     if unknown:
         raise UpdateError(f"no such part: {', '.join(sorted(unknown))}")
     pins = load_pins()
-    for part in args.parts or ESP32_PARTS:
+    for part in args.parts or parts:
         print(f"{part}:")
-        ESP32_PARTS[part](pins)
+        parts[part](pins)
         save_pins(pins)
     left_to_do(["artifacts/README.md: each file's row (name, SHA-256)",
                 "NOTICES.md: the files' names and sources",
@@ -1182,7 +1206,10 @@ def main(argv: list[str] | None = None) -> int:
     build_parser.set_defaults(run=command_esphome)
     esp32 = commands.add_parser("esp32", help="what any plug with a classic ESP32 needs")
     esp32.add_argument("parts", nargs="*", help=f"of {', '.join(ESP32_PARTS)} (default: all of them)")
-    esp32.set_defaults(run=command_esp32)
+    esp32.set_defaults(run=command_chip)
+    esp32c3 = commands.add_parser("esp32c3", help="what the ESP32-C3's plugs need beyond the other commands")
+    esp32c3.add_argument("parts", nargs="*", help=f"of {', '.join(ESP32C3_PARTS)} (default: all of them)")
+    esp32c3.set_defaults(run=command_chip)
     openbeken = commands.add_parser("openbeken", help="build and publish OpenBeken for a Beken plug")
     openbeken.add_argument("--plug", choices=sorted(BEKEN_BUILDS), default="sonoff-s61")
     openbeken.add_argument("--commit", help="OpenBK7231T_App's commit (default: the one pinned, else main's head)")
@@ -1191,7 +1218,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "esphome" and args.plug:
         args.run = command_esphome_beken if args.plug in BEKEN_BUILDS else command_esphome_kind
-    if shutil.which("docker") is None and args.command in ("esphome", "openbeken", "esp32"):
+    if shutil.which("docker") is None and args.command in ("esphome", "openbeken", "esp32", "esp32c3"):
         print("Firmware is built in Docker images: Docker is needed.", file=sys.stderr)
         return 2
     try:

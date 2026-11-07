@@ -68,7 +68,9 @@ The imprintable Safeboot contains reserved placeholder bytes instead of real
 Wi-Fi credentials. It **must not be flashed as published**: the private
 bundle-preparation path must imprint and validate a per-device copy first.
 
-From 4.4.1 on, a bridge is named by one version: the one its file is wrapped
+`tools/repo/update_firmware.py esp32c3 bridge` and `esp32 bridge` build and
+publish the bridge for each chip. From 4.4.1 on, a bridge is named by one
+version: the one its file is wrapped
 with, the one in its app description, and the one its status page reports
 (`bridge 4.4.4`). `tools/espressif/build_vendor_ota.py` takes it from the image and
 refuses any other. The stock updater is not given it: the sender wraps the

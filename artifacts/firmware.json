@@ -156,6 +156,14 @@
       }
     }
   },
+  "esp32c3": {
+    "bridge": {
+      "file": "artifacts/autoflash-bridge-sonoff-s60-4.4.4.ota",
+      "version": "4.4.4",
+      "size": 876228,
+      "sha256": "4424af5d59258f5c1998269c65bffc5d1341f519352fdc1bfd9c76e37b34f5bb"
+    }
+  },
   "esp32": {
     "tasmota": {
       "version": "16.0.0",

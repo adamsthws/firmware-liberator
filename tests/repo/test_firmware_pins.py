@@ -473,6 +473,11 @@ class ChangelogTests(unittest.TestCase):
             uf.substituted("no such text", r"ESPHome \S+ built the current", "x", "the release")
 
 
+def uf_root() -> Path:
+    """The real checkout, while UpdateCommandTests point update_firmware at a made-up one."""
+    return Path(__file__).resolve().parents[2]
+
+
 class UpdateCommandTests(unittest.TestCase):
     """update_firmware.py's tasmota and esphome commands, on a made-up checkout
     and releases: what each refuses, and what it writes."""
@@ -531,6 +536,57 @@ class UpdateCommandTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(errors):
             code = uf.main(list(argv))
         return code, errors.getvalue()
+
+    # -- the ESP32-C3's bridge
+
+    def test_the_esp32c3_bridge_is_built_wrapped_and_replaces_the_one_before(self):
+        from unittest import mock
+        from tools.espressif.analyze_vendor_ota import analyze
+        from tools.espressif.build_vendor_ota import WRAPPER_SIZE, app_version
+        from tools.espressif.chips import ESP32C3
+        app = (uf_root() / ESP32C3.pin("bridge")["file"]).read_bytes()[WRAPPER_SIZE:]  # a valid image
+        version = app_version(app)
+        old = "artifacts/autoflash-bridge-sonoff-s60-0.0.1.ota"
+        (self.root / old).write_bytes(b"the one before")
+        pins = self.pins() | {"esp32c3": {"bridge": {"file": old, "version": "0.0.1"}}}
+        (self.root / "artifacts" / "firmware.json").write_text(json.dumps(pins), encoding="utf-8")
+        with (self.root / "artifacts" / "SHA256SUMS").open("a", encoding="utf-8") as sums:
+            sums.write(f"{sha256_bytes(b'the one before')}  {Path(old).name}\n")
+        with (self.root / ".gitignore").open("a", encoding="utf-8") as ignore:
+            ignore.write(f"!{old}\n")
+        (self.root / "bridge-source").mkdir()
+
+        def build(script, *volumes):
+            self.assertIn("pio run -e autoflash-bridge &&", script)
+            built = self.root / "cache" / "bridge" / ".pio" / "build" / "autoflash-bridge"
+            built.mkdir(parents=True)
+            (built / "firmware.bin").write_bytes(app)
+
+        with mock.patch.object(uf, "BRIDGE_SOURCE", self.root / "bridge-source"), \
+             mock.patch.object(uf, "FIRMWARE_BUILD_CACHE", self.root / "cache"), \
+             mock.patch.object(uf, "in_builder", side_effect=build):
+            code, errors = self.run_main("esp32c3", "bridge")
+        self.assertEqual(code, 0, errors)
+
+        file = f"artifacts/autoflash-bridge-sonoff-s60-{version}.ota"
+        wrapped = (self.root / file).read_bytes()
+        self.assertEqual(wrapped[WRAPPER_SIZE:], app)
+        self.assertEqual(analyze(wrapped)["wrapper"]["record_version"], version)
+        self.assertFalse((self.root / old).exists())
+        pin = self.pins()["esp32c3"]["bridge"]
+        self.assertEqual((pin["file"], pin["version"], pin["size"], pin["sha256"]),
+                         (file, version, len(wrapped), sha256_bytes(wrapped)))
+        sums = (self.root / "artifacts" / "SHA256SUMS").read_text(encoding="utf-8")
+        self.assertIn(f"{sha256_bytes(wrapped)}  {Path(file).name}", sums)
+        self.assertNotIn(Path(old).name, sums)
+        ignored = (self.root / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn(f"!{file}", ignored)
+        self.assertNotIn(old, ignored)
+
+    def test_a_part_of_a_chip_that_does_not_exist_is_refused(self):
+        code, errors = self.run_main("esp32c3", "recovery")
+        self.assertEqual(code, 1)
+        self.assertIn("no such part", errors)
 
     # -- Tasmota
 
