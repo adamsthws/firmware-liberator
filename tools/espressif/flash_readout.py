@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Read a stock plug's whole flash over Wi-Fi, then put it back to stock.
 
-This is not the conversion. It installs a small read-only firmware into the
-plug's spare app slot, reads the plug's whole memory through it, and saves
-that under captures/flash-readout/. Switching the plug off and on afterwards
+This is not the conversion. It installs the conversion's bridge into the plug's
+spare app slot, only reads the plug's whole memory through it, and saves that
+under captures/flash-readout/. Switching the plug off and on afterwards
 boots its Sonoff firmware again, as it was.
 
 What it costs: the spare slot is overwritten, so whatever was there - often
@@ -30,7 +30,6 @@ from typing import Callable
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.espressif.analyze_vendor_ota import analyze  # noqa: E402
 from tools.autoflash import hostsys, kinds, output, safety_locks  # noqa: E402
 from tools.autoflash.output import PROBLEM_RE  # noqa: E402
 from tools.autoflash.prompts import (  # noqa: E402
@@ -43,7 +42,7 @@ from tools.autoflash.prompts import (  # noqa: E402
     warning_box,
 )
 from tools.ewelink.discover_ewelink import discover  # noqa: E402
-from tools.espressif.dump_stock_flash import fetch, is_readout_bridge, save_dump  # noqa: E402
+from tools.espressif.dump_stock_flash import is_bridge, save_dump  # noqa: E402
 from tools.autoflash.account import find_ewelink_plugs  # noqa: E402
 from tools.autoflash.firewall import DELIVERY_PORTS  # noqa: E402
 from tools.autoflash.names import (  # noqa: E402
@@ -54,17 +53,10 @@ from tools.autoflash.names import (  # noqa: E402
 )
 from tools.autoflash.runs import SETTINGS_PATH  # noqa: E402
 
-# The readout build of the conversion bridge, at the same version.
-READOUT_OTA = Path("captures/flash-readout/autoflash-bridge-sonoff-s60-flash-readout-4.4.4.ota")
-# --control: a conversion bridge, only to see whether it starts on this plug.
-# 4.4.4 is the one the conversion sends.  Pinned as in SHA256SUMS.
-CONTROL_FILES = {
-    "4.4.4": (Path("artifacts/autoflash-bridge-sonoff-s60-4.4.4.ota"),
-              "4424af5d59258f5c1998269c65bffc5d1341f519352fdc1bfd9c76e37b34f5bb"),
-}
+# The conversion's own bridge, the one it sends. Pinned as in SHA256SUMS.
+READOUT_OTA = Path("artifacts/autoflash-bridge-sonoff-s60-4.4.4.ota")
+READOUT_SHA256 = "4424af5d59258f5c1998269c65bffc5d1341f519352fdc1bfd9c76e37b34f5bb"
 CONFIRM_WORD = "readout"
-# How a bridge names itself: "bridge v5" up to v5, "bridge 4.4.1" from then on.
-BRIDGE_ID = rb"bridge (?:v\d+|\d+\.\d+\.\d+)"
 BRIDGE_AP_HOST = "192.168.4.1"
 STAGES = 6
 STOCK_LAN_PORT = 8081
@@ -78,45 +70,13 @@ def stage(number: int, title: str) -> None:
     print(f"\n[{number}/{STAGES}] {title}")
 
 
-def check_bridge_image(path: Path, marker: bytes) -> None:
-    """A locally built bridge is checked as an image here, not pinned."""
-    try:
-        data = path.read_bytes()
-        report = analyze(data)
-    except (OSError, ValueError) as exc:
-        raise Stop(f"the firmware {path} cannot be used: {exc}. "
-                   "Build it as archive/bridge/README.md describes") from exc
-    wrapper, esp = report["wrapper"], report["esp_image"]
-    if not (wrapper["payload_crc32_valid"] and wrapper["record_crc32_valid"]
-            and esp["chip_id"] in (0, 5) and esp["checksum_valid"] and esp["sha256_valid"] is not False):
-        raise Stop(f"{path} failed its integrity checks; rebuild it")
-    if not re.search(marker, data):
-        raise Stop(f"{path} is not the expected bridge build")
-
-
-def check_readout_file(path: Path) -> None:
-    check_bridge_image(path, BRIDGE_ID + rb" flash readout")
-
-
-def check_control_file(path: Path, expected: str | None) -> None:
-    if expected is None:
-        check_bridge_image(path, BRIDGE_ID + rb"\n")
-        return
+def check_bridge_file(path: Path) -> None:
     try:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError as exc:
         raise Stop(f"cannot read {path}: {exc}") from exc
-    if digest != expected:
+    if digest != READOUT_SHA256:
         raise Stop(f"{path} does not match its pinned SHA-256")
-
-
-def is_any_bridge(host: str) -> bool:
-    """True when `host` answers as any bridge: "bridge v5" or "bridge 4.4.1" on."""
-    try:
-        status, _ = fetch(host, "/status", timeout=5)
-    except OSError:
-        return False
-    return re.match(BRIDGE_ID, status) is not None
 
 
 def choose_plug(plug_ip: str | None) -> str:
@@ -183,7 +143,7 @@ def confirmed(version: str, control: bool = False) -> bool:
             "after it. The",
         ]
     else:
-        opening = ["This replaces the plug's spare app slot with a read-only firmware. The"]
+        opening = ["This replaces the plug's spare app slot with the bridge, only to read from. The"]
     warning_box("Before going on", [
         *opening,
         f"Sonoff {version} it is running, its settings and its eWeLink pairing stay;",
@@ -292,11 +252,11 @@ def stock_answers(plug_ip: str) -> bool:
 
 
 def find_bridge(plug_ip: str, mac: str | None, *, timeout: float = 120.0,
-                probe: Callable[[str], bool] = is_readout_bridge,
+                probe: Callable[[str], bool] = is_bridge,
                 by_mac: Callable[[str, str], str | None] = hostsys.find_by_mac,
                 clock: Callable[[], float] = time.monotonic,
                 sleep: Callable[[float], None] = time.sleep) -> str | None:
-    """The readout bridge's address on the home network, if it joined it.
+    """The bridge's address on the home network, if it joined it.
 
     It joins with the plug's own hardware address, so it is usually where the
     plug was; if the router moved it, it is found by that address.
@@ -325,14 +285,8 @@ def run(args: argparse.Namespace) -> int:
     print("Nothing on the plug changes until you type READOUT.")
 
     stage(1, "Checking this computer")
-    if args.control:
-        firmware, expected = CONTROL_FILES[args.control]
-        probe = is_any_bridge
-        name = f"the published bridge ({args.control})"
-        check_control_file(ROOT / firmware, expected)
-    else:
-        firmware, probe, name = Path(args.firmware), is_readout_bridge, "the readout firmware"
-        check_readout_file(ROOT / firmware)
+    firmware, probe, name = READOUT_OTA, is_bridge, "the bridge"
+    check_bridge_file(ROOT / firmware)
     if not (ROOT / safety_locks.DIR / "RECOVERY_LOCK").exists():
         raise Stop("RECOVERY_LOCK is not in place; refusing to start from an unsafe state")
     print(f"{name[0].upper()}{name[1:]} and safety lock: OK")
@@ -401,21 +355,21 @@ def run(args: argparse.Namespace) -> int:
                 ask_choice("Type 1 to look again", ["Look again"])
                 host = find_bridge(plug_ip, mac, timeout=30.0, probe=probe)
                 continue
-            section("The readout firmware did not join your Wi-Fi, but its own network is up", [
+            section("The bridge did not join your Wi-Fi, but its own network is up", [
                 f"Connect this computer to the Wi-Fi network {network}",
                 (f"(password {LEGACY_BRIDGE_PASSWORD}), then come back here."
                  if network.startswith(LEGACY_BRIDGE_PREFIX) else "(open), then come back here."),
             ])
             ask_choice("Type 1 once this computer is on that network",
                        [f"I've joined {network} - read the plug"])
-            host = BRIDGE_AP_HOST if is_readout_bridge(BRIDGE_AP_HOST) else None
+            host = BRIDGE_AP_HOST if is_bridge(BRIDGE_AP_HOST) else None
             if host is None:
-                print(f"Nothing answers as the readout firmware at {BRIDGE_AP_HOST} yet.")
+                print(f"Nothing answers as the bridge at {BRIDGE_AP_HOST} yet.")
         if args.control:
             print(f"{name[0].upper()}{name[1:]} started on this plug ({host}): the Sonoff updater")
             print("accepted it and it runs.")
         elif save_dump(host, args.label or f"stock-{version}", version) != 0:
-            raise Stop("the dump was not complete or not well formed. The readout firmware is "
+            raise Stop("the dump was not complete or not well formed. The bridge is "
                        f"still running: retry with python3 tools/espressif/dump_stock_flash.py --host {host}")
     finally:
         if rule is not None and not hostsys.close_firewall(rule):
@@ -441,10 +395,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--email", help="the eWeLink account the plug is in")
     parser.add_argument("--listen-ip", help="this computer's address as the plug sees it")
     parser.add_argument("--label", help="name for the saved dump (default: stock-<version>)")
-    parser.add_argument("--firmware", default=str(READOUT_OTA), help=argparse.SUPPRESS)
-    parser.add_argument("--control", nargs="?", const="4.4.4", choices=sorted(CONTROL_FILES),
-                        help="send a conversion bridge instead, only to see whether it starts "
-                             "(nothing is read): 4.4.4, the one the conversion sends")
+    parser.add_argument("--control", action="store_true",
+                        help="only see whether the bridge starts on this plug: nothing is read")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="also show the cloud's messages while the firmware is delivered")
     args = parser.parse_args(argv)

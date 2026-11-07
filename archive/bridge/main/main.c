@@ -54,11 +54,6 @@
  * own network, POST /tasmota-settings saves the template with no Wi-Fi in it
  * where 4.4.3 refused it: Tasmota then starts with the name the run gave it,
  * and makes its own network under that name, not Tasmota's default.
- *
- * BRIDGE_FLASH_READOUT (research build, never shipped): the same reads without
- * /update or /tasmota-settings, so a stock plug can be imaged without being
- * converted.  The only flash it writes is the otadata selection at startup,
- * which returns the plug to stock on the next power cycle.
  */
 
 #include <stdio.h>
@@ -104,11 +99,7 @@
 /* The one version: the wrapper the updater is given and the app description
  * (PROJECT_VER in ../CMakeLists.txt) carry the same; a test keeps them equal. */
 #define BRIDGE_VERSION "4.4.4"
-#ifdef BRIDGE_FLASH_READOUT
-#define BRIDGE_NAME "bridge " BRIDGE_VERSION " flash readout"
-#else
 #define BRIDGE_NAME "bridge " BRIDGE_VERSION
-#endif
 
 static const char *TAG = "autoflash_bridge";
 static const esp_partition_t *s_running;
@@ -672,9 +663,7 @@ static esp_err_t start_web_server(void)
         .uri = "/update", .method = HTTP_POST, .handler = update_handler, .user_ctx = NULL,
     };
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &root));
-#ifndef BRIDGE_FLASH_READOUT
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &update));
-#endif
     const httpd_uri_t status = {
         .uri = "/status", .method = HTTP_GET, .handler = status_handler, .user_ctx = NULL,
     };
@@ -683,19 +672,12 @@ static esp_err_t start_web_server(void)
         .uri = "/tasmota-settings", .method = HTTP_POST,
         .handler = tasmota_settings_handler, .user_ctx = NULL,
     };
-#ifndef BRIDGE_FLASH_READOUT
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &tasmota_settings));
-#endif
 #ifdef BRIDGE_NVS_READOUT
     const httpd_uri_t nvs = {
         .uri = "/nvs", .method = HTTP_GET, .handler = nvs_handler, .user_ctx = NULL,
     };
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &nvs));
-#endif
-#ifdef BRIDGE_FLASH_READOUT
-    /* Deliberately unregistered in this build. */
-    (void)update;
-    (void)tasmota_settings;
 #endif
     const httpd_uri_t flash = {
         .uri = "/flash", .method = HTTP_GET, .handler = flash_handler, .user_ctx = NULL,

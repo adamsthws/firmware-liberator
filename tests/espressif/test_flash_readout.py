@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest import mock
 
 from tools.autoflash import safety_locks
-from tools.espressif import flash_readout
+from tools.espressif import dump_stock_flash, flash_readout
 from tools.autoflash.routes.espressif import installer
 
 
@@ -75,9 +75,9 @@ class DeliverTests(unittest.TestCase):
             self.assertTrue((root / safety_locks.DIR / "RECOVERY_LOCK").exists())
             self.assertIn("went offline", (root / "sender.log").read_text())
 
-    def test_the_readout_file_is_the_conversion_bridge_version(self):
-        self.assertEqual(flash_readout.READOUT_OTA.name.rsplit("-", 1)[1],
-                         installer.BRIDGE_OTA.name.rsplit("-", 1)[1])
+    def test_it_reads_through_the_bridge_the_conversion_sends(self):
+        self.assertEqual(flash_readout.READOUT_OTA, installer.BRIDGE_OTA)
+        flash_readout.check_bridge_file(flash_readout.ROOT / flash_readout.READOUT_OTA)
 
 
 class CloudChatterTests(unittest.TestCase):
@@ -136,31 +136,21 @@ class SenderOutputTests(unittest.TestCase):
             self.assertIn("GET", (root / "sender.log").read_text())
 
 
-class ControlTests(unittest.TestCase):
-    def test_controls_are_the_pinned_published_bridges(self):
-        sums = (flash_readout.ROOT / "artifacts" / "SHA256SUMS").read_text()
-        for path, digest in flash_readout.CONTROL_FILES.values():
-            flash_readout.check_control_file(flash_readout.ROOT / path, digest)
-            self.assertIn(f"{digest}  {Path(path).name}", sums)
-
-    def test_the_default_control_is_what_the_conversion_sends(self):
-        self.assertEqual(flash_readout.CONTROL_FILES["4.4.4"][0], installer.BRIDGE_OTA)
-
+class BridgeFileTests(unittest.TestCase):
     def test_a_changed_file_is_refused(self):
         with tempfile.NamedTemporaryFile() as handle:
             handle.write(b"not the bridge")
             handle.flush()
             with self.assertRaises(flash_readout.Stop):
-                flash_readout.check_control_file(Path(handle.name), "0" * 64)
+                flash_readout.check_bridge_file(Path(handle.name))
 
 
 class BridgeIdTests(unittest.TestCase):
     def test_old_and_new_names_are_both_bridges(self):
         import re
-        for status in (b"bridge v5\nhome network: joined", b"bridge 4.4.1\nhome network: joined",
-                       b"bridge 4.4.12 flash readout\n"):
-            self.assertIsNotNone(re.match(flash_readout.BRIDGE_ID, status), status)
-        self.assertIsNone(re.match(flash_readout.BRIDGE_ID, b"tasmota"))
+        for status in (b"bridge v5\nhome network: joined", b"bridge 4.4.1\nhome network: joined"):
+            self.assertIsNotNone(re.match(dump_stock_flash.BRIDGE_ID, status), status)
+        self.assertIsNone(re.match(dump_stock_flash.BRIDGE_ID, b"tasmota"))
 
 
 class ConfirmTests(unittest.TestCase):
