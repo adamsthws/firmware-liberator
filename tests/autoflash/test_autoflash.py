@@ -629,6 +629,50 @@ class EsphomeSignalTests(unittest.TestCase):
         self.assertEqual(self.run_plan.call_count, 2)
 
 
+class KindLeftPartWayTests(unittest.TestCase):
+    """A plug left part way says nothing of its kind: the last run of it does."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        patches = (mock.patch.object(plugs, "CAPTURES", self.root), mock.patch.object(plugs, "PLUGS", self.root / "plugs"),
+                   mock.patch.object(output, "say"))
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def run_of(self, mac, name, **inputs):
+        directory = self.root / "plugs" / mac.replace(":", "-") / plugs.RUNS / name
+        directory.mkdir(parents=True)
+        state = RunState.open(directory)
+        for key, value in inputs.items():
+            state.set_input(key, value)
+        return directory
+
+    def adopted(self, firmware, name=None, kind=None):
+        from types import SimpleNamespace
+        here = self.root / "here"
+        here.mkdir()
+        ctx = SimpleNamespace(state=RunState.open(here), dir=here, set_plug_ip=lambda host: None)
+        with mock.patch.object(runs, "file_plug"), mock.patch.object(hostsys, "mac_of", return_value=None):
+            source.adopt_plug(ctx, detect.Found("192.0.2.50", firmware, "12:34:56:ab:cd:ef", name, kind))
+        return ctx.state.input("plug_kind")
+
+    def test_the_mover_is_the_kind_its_last_run_was(self):
+        self.run_of("12:34:56:ab:cd:ef", "1", plug_kind="sonoff-th-elite")
+        self.assertEqual(self.adopted("midway", "the mover"), "sonoff-th-elite")
+
+    def test_another_plugs_run_says_nothing_of_it(self):
+        self.run_of("12:34:56:ab:cd:00", "1", plug_kind="sonoff-th-elite")
+        self.assertIsNone(self.adopted("midway", "the mover"))
+
+    def test_what_it_says_itself_comes_first(self):
+        self.run_of("12:34:56:ab:cd:ef", "1", plug_kind="sonoff-th-elite")
+        self.assertEqual(self.adopted("midway", "the hub", "sonoff-pow-elite"), "sonoff-pow-elite")
+
+
 class LeaveTasmotaStoppedTests(unittest.TestCase):
     """L1's plan stopped with Sonoff's table in place: the plug is restarted
     into the mover only if the plan got as far as writing it."""
