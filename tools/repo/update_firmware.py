@@ -567,7 +567,7 @@ def publish(section: dict[str, Any], key: str, file: str, data: bytes, record: d
     old = section.get(key, {}).get("file", "")
     (ROOT / file).write_bytes(data)
     if old and old != file and (ROOT / old).exists() and not any(
-            other["file"] == old for name, other in section.items() if name != key):
+            other.get("file") == old for name, other in section.items() if name != key):
         (ROOT / old).unlink()
     SHA256SUMS.write_text(replace_sums_line(SHA256SUMS.read_text(encoding="utf-8"),
                                             Path(old).name if old and old != file else None, Path(file).name, data),
