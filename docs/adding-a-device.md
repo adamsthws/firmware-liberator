@@ -1,10 +1,47 @@
 # Adding a device
 
-How to add an Espressif device to the tool, and prove it in the emulator before
-it goes near a real one. Beken devices are at the end: they cannot yet be added
-this way.
+How to add a device to the tool, and prove it in the emulator before it goes near a
+real one. Each chip family is added its own way, in a part of its own below, laid
+out alike: what you need, the steps, what the emulator does for you, what a run
+tells you, and what to do when it does not boot. What every device shares - its
+status, and writing down what you found - comes first.
 
-## What you need
+## Its status
+Each device has one status, in [`devices/status.json`](../devices/status.json), and
+nowhere else:
+
+| Status | Means | The tool |
+|---|---|---|
+| `Proven` | a real one has been converted and reported | converts it |
+| `Testers wanted` | it converts in the emulator, or is added from its official file and a published pin map; no real one is reported yet | says so in the go-ahead before the first write, and asks for the run's log |
+| `Not ready yet` | it does not convert in the emulator yet | turns it down |
+
+After changing the file, run `python3 tools/repo/device_status.py`: it writes each
+device's badge file under `devices/status/`, with the words and colour of its status.
+The badges read those from GitHub, so they show what is on `main` once it is pushed,
+not your local edits. The warning before a first write is the same for every device
+wanting testers (`tools/autoflash/testers.py`).
+
+A device's README says its status only through its badge, at the top of its
+`## Status` section. The main README lists it in its table with the same badge.
+`tests/repo/test_device_status.py` fails if any of these disagree with the file,
+or if a README says a status in words.
+
+**When a report comes in** of a real one converted, change its line in
+`devices/status.json` to `Proven`, and run `tools/repo/device_status.py`. That moves
+the tool and every badge.
+
+## Writing down what you found out
+
+So the next person need not repeat it: what is true of one device goes in a
+`research.md` in its folder, listed in [device-research.md](device-research.md); a
+test fails until it is. What holds for its whole chip family goes in
+[espressif-research.md](espressif-research.md) or
+[beken-research.md](beken-research.md).
+
+## An Espressif device
+
+### What you need
 
 - **A whole-flash dump of the device on stock firmware, if you can find one.**
   [FlashDumps](https://github.com/openshwprojects/FlashDumps) has several. A dump
@@ -23,7 +60,7 @@ this way.
 Everything public you fetch stays out of the repository: no Sonoff firmware or
 dump is ever committed. Tooling fetches it at run time.
 
-## The steps
+### The steps
 
 1. **Add a test copy.** Add the device to `DUMPS` or `UPDATES` in
    [public_dump.py](../tools/espressif/emulator/public_dump.py), with the file's
@@ -109,39 +146,10 @@ dump is ever committed. Tooling fetches it at run time.
    or screens. A conversion passing there says the firmware installs and starts,
    not that the template is right.
 
-10. **Write down what you found out**, so the next person need not repeat it. What
-    is true of this one device goes in a `research.md` in its folder, listed in
-    [device-research.md](device-research.md); a test fails until it is. What holds
-    for its whole chip family goes in [espressif-research.md](espressif-research.md)
-    or [beken-research.md](beken-research.md).
+10. **Write down what you found out**
+    ([below](#writing-down-what-you-found-out)).
 
-## Its status
-
-Each device has one status, in [`devices/status.json`](../devices/status.json), and
-nowhere else:
-
-| Status | Means | The tool |
-|---|---|---|
-| `Proven` | a real one has been converted and reported | converts it |
-| `Testers wanted` | it converts in the emulator, or is added from its official file and a published pin map; no real one is reported yet | says so in the go-ahead before the first write, and asks for the run's log |
-| `Not ready yet` | it does not convert in the emulator yet | turns it down |
-
-After changing the file, run `python3 tools/repo/device_status.py`: it writes each
-device's badge file under `devices/status/`, with the words and colour of its status.
-The badges read those from GitHub, so they show what is on `main` once it is pushed,
-not your local edits. The warning before a first write is the same for every device
-wanting testers (`tools/autoflash/testers.py`).
-
-A device's README says its status only through its badge, at the top of its
-`## Status` section. The main README lists it in its table with the same badge.
-`tests/repo/test_device_status.py` fails if any of these disagree with the file,
-or if a README says a status in words.
-
-**When a report comes in** of a real one converted, change its line in
-`devices/status.json` to `Proven`, and run `tools/repo/device_status.py`. That moves
-the tool and every badge.
-
-## What the emulator does for you
+### What the emulator does for you
 
 No device needs its own patch for these. Each is found in the firmware, not listed
 by address.
@@ -158,7 +166,7 @@ Set `psram_mb` on the kind if its stock firmware stops at start-up without its
 external RAM. Run the emulated plug with up to one emulator per core: more gives
 false failures.
 
-## What a run tells you
+### What a run tells you
 
 Every backup logs what it found, in the run's `run.log`, and on the screen when the
 partition table is not one the tool knows: the chip and its revision, whether
@@ -168,7 +176,7 @@ adds what a backup cannot hold, such as the exact chip revision, the flash chip'
 and the input pins' levels ([what it logs](espressif-research.md#what-a-backup-logs)).
 None of it is secret, so a report of a device the tool stopped on is enough to start adding it.
 
-## Learning the firmware name
+#### Learning the firmware name
 
 A device's stock updater refuses a file wrapped for another firmware name, and the
 names vary too much to guess: `FWSW-E32S60-S60-ESP32C3FN4`,
@@ -211,7 +219,7 @@ To use the name in your own code, call `firmware_name.learn()` in
 [firmware_name.py](../tools/ewelink/firmware_name.py). It returns the name, its chip
 and where it came from.
 
-## When it does not boot
+### When it does not boot
 
 Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
 
@@ -225,16 +233,150 @@ Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
 | Both CPUs idle after `factory?`, no Wi-Fi | it is waiting for something the donor lacks | a whole dump is needed |
 | `ESP_ERR_NOT_FOUND` from `espInit` | a partition or setting the donor lacks | a whole dump is needed |
 
-## Beken devices
+## A Beken device
 
-The Beken emulator's cloud bring-up (`tools/beken/emulator/cloud_online.py`,
-`cloud_dial.py`) finds the places it needs in the firmware itself
-(`tools/beken/stock_points.py`), and needs a whole flash to run from. To see
-whether a device's firmware can come up this way, run `stock_points.py` on its
-official file: each point it cannot find is named. The app of a BK7238 official
-file runs on another plug's bootloader and settings (`rebuild_dump.py`), but only
-the device's own whole flash has its factory data.
+### What you need
 
-A 4 MB BK7238 device with no whole dump can be added from its official file and a
-pin map you can trust, with the status "Testers wanted" and its warning:
-[how, and what that proves](../tools/beken/README.md#adding-a-4-mb-bk7238-device-with-no-whole-dump).
+- **A BK7238 on the 4 MB table**, the S61's (`beken-4m` in
+  [layouts.py](../tools/beken/layouts.py)). The 2 MB devices are another firmware
+  family, on hold ([why](beken-research.md#2-mb-devices-on-hold)).
+- **eWeLink's official update file for it**, from
+  [FlashDumps](https://github.com/openshwprojects/FlashDumps), which publishes it.
+  A whole-flash dump of the device, where there is one, has its factory data too;
+  without one, the file's app runs on the S61's bootloader and settings.
+- **A pin map you can trust**, such as an OpenBeken template its author checked on
+  hardware. Pins are never guessed: a device stays out without one
+  ([the candidates](#the-candidates-and-why-only-one-was-added)).
+
+As for an Espressif device, nothing of Sonoff's you fetch is committed: the tool
+fetches the official file at run time, by the name and hash it pins.
+
+### The steps
+
+1. **See whether its firmware comes up in the emulator.** Run
+   [stock_points.py](../tools/beken/stock_points.py) on its official file: each
+   point the emulator needs that it cannot find is named.
+2. **Add the kind** to [kinds.py](../tools/autoflash/kinds.py): its chip, eWeLink
+   product model, stock model, the firmware name its update wrapper names, its
+   layout (`beken-4m`), and `uses_lan_control=False`. Give it its status in
+   `devices/status.json`: `Testers wanted`, as no real one has been converted
+   ([its status](#its-status)).
+3. **Pin its official update file** in `OFFICIAL_FILES` in
+   [images.py](../tools/autoflash/routes/beken/images.py), by name and SHA-256: a
+   run checks its partition table before writing anything, and sends its image
+   when the device goes back to Sonoff's firmware.
+4. **Add its firmware.** Write its table for the tool's OpenBeken driver,
+   `devices/<key>/drv_autoflash_<key>.c`
+   ([the driver](../tools/beken/openbeken/README.md)), and its
+   `esphome.yaml`, `esphome.md` and `README.md`, laid out as another Beken
+   device's (`tests/repo/test_device_pages.py` holds them alike). Then build and
+   pin both images:
+
+   ```sh
+   .venv/bin/python tools/repo/update_firmware.py openbeken --plug sonoff-example
+   .venv/bin/python tools/repo/update_firmware.py esphome --plug sonoff-example
+   ```
+
+5. **Convert it in the emulator**, from a whole flash made from its official file
+   ([below](#what-the-emulator-does-for-you-1)), to each firmware and back.
+6. **Run the tests**, and add the ones the device needs, as for an Espressif one.
+7. **Be plain about what was tested.** The emulator has no relay, button or LED,
+   and runs the device's firmware on the S61's bootloader and settings: a
+   conversion passing there proves the firmware and the tool's path, not the
+   device's hardware or its pin map.
+8. **Write down what you found out**
+   ([below](#writing-down-what-you-found-out)).
+
+The [Sonoff Basic Gen5](../devices/sonoff-basic-1gs/README.md) was added this way,
+the first.
+
+#### What the tool checks
+
+What makes adding a device from its official file safe enough to offer, and what it
+leaves open:
+
+- **The file's partition table is checked first.** Each app holds the SDK's table,
+  as entries of five words: owner, description, start, length, options.
+  `layouts.py` reads it by the description strings, and a run refuses a file
+  whose table is not listed there. That happens at B1, again at B2, and when
+  Sonoff's firmware is sent back. The known one is `beken-4m`: `Application`
+  `0x11000+0x250000`, `ota` `0x286000+0x15a000`, `RF Firmware` `0x3e0000`,
+  `NET info` `0x3e1000`, `NVS` `0x3e2000+0xb000`.
+- **Stock firmware does not say its flash size.** The register message gives only
+  `romVersion`, `chipid` (its MAC) and `model`; the account record's `params` add
+  the Wi-Fi and the relay's settings; the firmware name ends in `BK7238`, where an
+  Espressif one can end in `FN4`. The app reads the flash's ID for itself
+  (`[Flash]id:` on the serial output) but tells no one. There is no LAN API on this
+  route. So before a conversion the table is the only word on the flash.
+- **Published specs disagree with the table.**
+  [CNX Software's review](https://www.cnx-software.com/2025/11/06/review-sonoff-basic-gen5-matter-switch-and-tx-gen2-matter-smart-wall-switch/)
+  and others give the Basic Gen5, the BASIC-1GSP and the T6 "2 MB flash (SiP)", the
+  chip's usual figure, while their official files hold only the 4 MB table. The
+  file is what the device runs, so the tool goes by it, but nobody has read the
+  flash of one of these here.
+- **After the conversion the tool can tell.** B4 reads the device's own data at
+  `0x3e0000` through OpenBeken. On a smaller flash that read would not find the
+  device's factory record, so finding it, with the device's own MAC, is logged as
+  the flash matching the table.
+- **The person is told.** On a device whose status is "Testers wanted"
+  ([devices/status.json](#its-status)), the go-ahead at B2
+  says no real one has been proven yet and asks for the run's result, as on
+  every such device; `PROCEED` goes on, as on any other.
+- **Each run logs what it learns**, in `run.log`: the file's firmware name, version
+  and whole table, the version the device reports, and whether the flash matched.
+  The fetched file stays out of this repository: `images.py` pins its name and hash.
+
+#### The candidates, and why only one was added
+
+All are BK7238 on the 4 MB table, and each file's stock firmware comes online on the
+stub. A device stays out without a pin map to trust: pins are never guessed.
+
+| Device | Firmware name, stock model | Pins | Added |
+|---|---|---|---|
+| Basic Gen5 `BASIC-1GS` | `FWSW-01-BASICR5-BK7238`, `SN-BK7238-BASICR5-01` | [one person's template](https://www.elektroda.com/rtvforum/topic4167932.html), in OpenBeken's device list | yes |
+| DIN rail `BASIC-1GSP` | `FWSW-01-BASIC1GSP-BK7238`, `SN-BK7238-BASIC1GSP-01` | none published. It has a meter, and forum questions describe a latching relay driven by pulses, which a wrong map could harm | no |
+| `S41STPB` (S41s, US) | `FWSW-01-S41-BK7238`, `SN-BK7238-S41-01` | none published. Built from the S61's source tree (`BK7238_S61_S41`), which does not make its pins the S61's | no |
+| T6 `T6-1C/2C/3C-120M` (TX Gen2) | `FWSW-06-SWITCHES-BK7238`, `SN-BK7238-T6C3-01` | [one two-pad unit's](https://github.com/saltech1/esphome-sonoff-t6-uart): relays P6 and P26, LED P9. No third relay is known, and its touch pads talk over a UART protocol (P1), which OpenBeken has no driver for | no |
+
+The 2 MB devices, the door sensor among them, are on hold.
+
+### What the emulator does for you
+
+The emulator's help for Sonoff's Beken firmware - the integrity gate, the cloud
+dial, the trust-anchor swap - goes where
+[stock_points.py](../tools/beken/stock_points.py) finds it in the firmware itself,
+so another version or model needs nothing moved
+([one code path](beken-research.md#one-code-path-for-every-4-mb-ewelink-build)).
+It needs a whole flash to run from; the app of a BK7238 official file runs on
+another plug's bootloader and settings
+([rebuild_dump.py](../tools/beken/README.md#rebuilding-a-dump)), but only the
+device's own whole flash has its factory data.
+
+To try one in the emulator, make its whole flash and start a plug from it:
+
+```sh
+python3 tools/beken/rebuild_dump.py S61-DUMP.bin OFFICIAL.bin captures/device.bin
+AUTOFLASH_BEKEN_EMU_FLASH=captures/device.bin tools/beken/emulator/bk-emu.sh --fresh plug
+```
+
+This proves the firmware and the tool's path, not the device's hardware. The
+bootloader, radio data and settings are the S61's, and the stock firmware's model
+comes from its sealed factory data, so it says it is an S61 (`SN-BK7238-S61-01`).
+The stub gives the model the app itself holds instead (`cloud_stub.py`). Whether a
+real one reports that model is not known: if not, B1 stops with nothing written and
+the model in the log. The emulator has no relay, button or LED, so it says nothing of
+the pin map.
+
+### What a run tells you
+
+Stock Beken firmware says nothing of its flash, so each run logs what it learns
+in `run.log`: the official file's firmware name, version and whole partition table,
+the version the device reports, and, once OpenBeken has read the device's own
+factory record, whether its flash matches that table
+([what it logs](beken-research.md#what-a-backup-logs)).
+
+### When it does not boot
+
+`stock_points.py` names each point it cannot find in a firmware. The door sensor's
+firmware is another stack: its points are not found, and the tools refuse it by
+name ([rebuild_dump.py](../tools/beken/README.md#rebuilding-a-dump)).

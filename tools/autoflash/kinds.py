@@ -251,7 +251,7 @@ SONOFF_BASIC_1GS = Kind(
     uses_lan_control=False,
     layout="beken-4m",
     example_product_model="BASIC-1GS",
-    # tools/beken/README.md#adding-a-4-mb-bk7238-device-with-no-whole-dump
+    # docs/adding-a-device.md#a-beken-device
 )
 
 SONOFF_POW_ELITE = Kind(

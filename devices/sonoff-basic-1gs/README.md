@@ -53,7 +53,7 @@ gave this device's model in its place. The emulator has no relay, inputs or LED.
 the tool stops with nothing written, and the log says what it reported), whether its
 flash is 4 MB as its firmware's table says, whether the conversion installs there,
 whether its stock bootloader is the S61's, and whether the pins are right.
-[What the tool checks](../../tools/beken/README.md#adding-a-4-mb-bk7238-device-with-no-whole-dump).
+[What the tool checks](../../docs/adding-a-device.md#what-the-tool-checks).
 
 A failure here may need a serial cable: unlike an Espressif device, a Beken one has
 no fallback by switching it off and on.
@@ -75,6 +75,6 @@ no fallback by switching it off and on.
   publishes it (`tools/autoflash/routes/beken/images.py`). This repository holds none.
 - **How it is converted**: as the S61 is, by the same route
   ([`tools/autoflash/routes/beken/`](../../tools/autoflash/routes/beken/)), with its
-  own firmware name and table ([what the tool checks](../../tools/beken/README.md#adding-a-4-mb-bk7238-device-with-no-whole-dump)).
+  own firmware name and table ([what the tool checks](../../docs/adding-a-device.md#what-the-tool-checks)).
 - **Research**: [`research.md`](research.md), what is known of its flash size and the
   read that settles it.
