@@ -199,12 +199,12 @@ start ([openbeken.md](../devices/sonoff-s61/openbeken.md#updating)).
 
 ```sh
 python3 tools/repo/update_firmware.py openbeken                       # again on what is pinned
-python3 tools/repo/update_firmware.py openbeken --release 1.18.321    # moved to a stable release
+python3 tools/repo/update_firmware.py openbeken 1.18.321              # moved to a stable release
 python3 tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-s61
 ```
 
 `openbeken` clones [OpenBK7231T_App](https://github.com/openshwprojects/OpenBK7231T_App)
-at the commit pinned (or `--release`; with none pinned, its latest release) and its
+at the commit pinned (or the release given; with none pinned, its latest release) and its
 SDK, applies this project's patches
 ([`tools/beken/openbeken/`](../tools/beken/openbeken/): the 4 MB table,
 offered upstream, and the hook before an OTA's restart the driver uses),
@@ -220,7 +220,7 @@ holds each command the driver registers; then it publishes it, recording the
 OpenBeken and SDK commits, the OpenBeken release the commit is (or the latest
 before it, which the README's badge shows), the hashes of the driver, the table
 and the patches, and the build image, and writes its row, `NOTICES.md` and the
-changelog. It moves only to a stable release (`--release`), as the weekly update does
+changelog. It moves only to a stable release (`openbeken VERSION`), as the weekly update does
 once one has settled, for every Beken device at once (`--every-device`). The
 version comes from what it builds: `1.18.320-2` is this project's second build on OpenBeken's release
 1.18.320, the number starting again at 1 on a new release.

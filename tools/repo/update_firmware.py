@@ -37,7 +37,7 @@
         the same for the ESP32-C3: its bridge, built from this repository's
         sources and wrapped for the S60's stock updater
 
-    python3 tools/repo/update_firmware.py openbeken [--plug sonoff-s61] [--release TAG] [--every-device]
+    python3 tools/repo/update_firmware.py openbeken [VERSION] [--plug sonoff-s61] [--every-device]
         build OpenBeken for a Beken plug - upstream at that stable release (default:
         the commit pinned, else the latest release), this project's patches (the 4 MB
         table, the hook before an OTA's restart), its driver and the plug's
@@ -821,7 +821,7 @@ def command_openbeken(args: argparse.Namespace) -> int:
     pins = load_pins()
     section = beken_section(pins, args.plug)
     current = section.get("openbeken", {})
-    wanted = openbeken_ref(args.release, current)
+    wanted = openbeken_ref(args.version, current)
     driver = (ROOT / sources[0]).read_text(encoding="utf-8")
     init, commands = module_init(driver), module_commands(driver)
     builder = openbeken_builder()
@@ -873,11 +873,11 @@ def command_openbeken(args: argparse.Namespace) -> int:
 def command_openbeken_every(args: argparse.Namespace) -> int:
     """Every Beken device's OpenBeken, built on the one release: what the weekly
     update runs, so none is left on an older one."""
-    release = stable_release(OPENBEKEN_REPO, args.release)["tag_name"]
+    release = stable_release(OPENBEKEN_REPO, args.version)["tag_name"]
     before = openbeken_pinned(load_pins())
     for plug in BEKEN_BUILDS:
         print(f"\n== {plug}")
-        code = command_openbeken(argparse.Namespace(**{**vars(args), "plug": plug, "release": release, "every": True}))
+        code = command_openbeken(argparse.Namespace(**{**vars(args), "plug": plug, "version": release, "every": True}))
         if code:
             return code
     if not args.dry_run and not args.no_docs:
@@ -1405,9 +1405,9 @@ def main(argv: list[str] | None = None) -> int:
     esp32c3.add_argument("parts", nargs="*", help=f"of {', '.join(ESP32C3_PARTS)} (default: all of them)")
     esp32c3.set_defaults(run=command_chip)
     openbeken = commands.add_parser("openbeken", help="build and publish OpenBeken for a Beken plug")
+    openbeken.add_argument("version", nargs="?", help="e.g. 1.18.321, a stable release to move to (default: "
+                                                      "the commit pinned, else the latest release)")
     openbeken.add_argument("--plug", choices=sorted(BEKEN_BUILDS), default="sonoff-s61")
-    openbeken.add_argument("--release", help="OpenBeken's stable release to move to (default: the commit pinned, "
-                                             "else the latest release)")
     openbeken.add_argument("--dry-run", action="store_true", help="build and check, publish nothing")
     openbeken.add_argument("--no-docs", action="store_true", help="leave the docs to be written by hand")
     openbeken.add_argument("--every-device", action="store_true",
