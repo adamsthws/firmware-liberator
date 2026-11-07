@@ -645,7 +645,7 @@ PLUG_BACK_AT_MOST = 60.0
 # been lost, and eWeLink does not pass one on again: the turn is of no more use
 # (seen: 3 minutes of one, with the plug back on eWeLink after a power cut).
 TURN_IDLE = 60.0
-SENT = re.compile(r"\] C2  |Sending the installer again")
+SENT = re.compile(r"\] C2  |Sending the installer again|upgrade command sent again")
 # Where a run asks for a turn before it signs in (get_device_key.wait_for_turn).
 TURN_FILE = "captures/cloud-turn"
 

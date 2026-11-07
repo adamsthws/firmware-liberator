@@ -33,6 +33,9 @@ check.
   and says to switch the plug off and on. A Ctrl-C just before the first stage
   is no longer forgotten, so a second press within 10 seconds stops the run.
 - The S61's backup is tried three times before the run goes on without one.
+- A plug that loses the upgrade command - a power cut part way through its
+  download, say - is sent it again as soon as it is back on eWeLink, up to three
+  times, rather than the run stopping about three minutes later for you to start again.
 - The Sonoff Basic Gen5 (BASIC-1GS), behind a warning: no real one has been
   converted. It has no public dump, so the tool checks the partition table in
   eWeLink's official update file before writing anything, asks you to accept the
