@@ -92,13 +92,18 @@ def answers(*, email: str, password: str, country_code: str, region: str, device
     keeps a plug that went silent online until it has missed its
     heartbeats, minutes on, and passes it what is sent meanwhile to no one.
     Asked as the app asks for a plug's readings as its page opens
-    (uiActive), which changes nothing on the plug."""
+    (uiActive), which changes nothing on the plug. Firmware with no meter does
+    not know that and says nothing, so then asked to keep its LED's setting
+    as it last reported it, which changes nothing either."""
     try:
         region, session = login_session(email, password, country_code, region)
         device = select_device(get_devices(region, session["at"]), device_id)
         ws = app_socket(region, session)
         try:
-            return command(ws, device, {"uiActive": 60})
+            if command(ws, device, {"uiActive": 60}):
+                return True
+            led = (device.get("params") or {}).get("sledOnline")
+            return command(ws, device, {"sledOnline": led}) if led in ("on", "off") else False
         finally:
             ws.close()
     except (EwelinkError, WebSocketError, OSError, KeyError, ValueError):
