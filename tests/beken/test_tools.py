@@ -980,6 +980,56 @@ class StubModelTests(unittest.TestCase):
         self.assertEqual(stub.reported["1000abcdef"]["model"], "SN-BK7238-BASICR5-01")
 
 
+class StubOfferTests(unittest.TestCase):
+    """The stub offers the plug its own Sonoff firmware, as eWeLink offers a real
+    one its official file: what a readout reverts with, and a run back to Sonoff
+    with no backup fetches. Made once, from the stock firmware it first started."""
+
+    def setUp(self):
+        patched = mock.patch.dict(sys.modules, {"cloud_online": SimpleNamespace(_make_certs=None)})
+        patched.start()
+        self.addCleanup(patched.stop)
+        sys.modules.pop("cloud_stub", None)
+        import cloud_stub
+        self.stub = cloud_stub
+        self.addCleanup(sys.modules.pop, "cloud_stub", None)
+
+    def test_it_is_the_stock_app_in_the_kinds_fota_made_once(self):
+        import fota_wrap
+        with tempfile.TemporaryDirectory() as tmp:
+            state, flash = Path(tmp), Path(tmp, "flash.bin")
+            flash.write_bytes(b"\xff" * 16)
+            with mock.patch.object(self.stub.stock_app, "stock_rbl", return_value=(b"RBL\0stock app", "1.0.2")):
+                first = self.stub.offered(flash, state, "SN-BK7238-S61-01")
+            # Started again on another firmware: the same offer, not made again.
+            with mock.patch.object(self.stub.stock_app, "stock_rbl", side_effect=ValueError) as made:
+                again = self.stub.offered(flash, state, "SN-BK7238-S61-01")
+            made.assert_not_called()
+        self.assertEqual(first.version, "1.0.2")
+        self.assertEqual(again.data, first.data)
+        ((name, version, image),) = fota_wrap.unwrap(first.data)
+        self.assertEqual((name, version, image), ("FWSW-01-S61-BK7238", "1.0.2", b"RBL\0stock app"))
+
+    def test_with_no_stock_app_it_offers_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            flash = Path(tmp, "flash.bin")
+            flash.write_bytes(b"\xff" * 16)
+            with mock.patch.object(self.stub.stock_app, "stock_rbl", side_effect=ValueError):
+                self.assertIsNone(self.stub.offered(flash, Path(tmp), "SN-BK7238-S61-01"))
+
+    def test_the_plug_asking_as_one_behind_is_offered_it_and_given_it(self):
+        import stub_server
+        update = SimpleNamespace(version="1.0.2", data=b"the fota")
+        stub = stub_server.Stub("192.0.2.1", 443, 10, {"model": "SN-BK7238-S61-01"}, update)
+        stub.heard({"action": "register", "deviceid": "1000abcdef", "apikey": "made-up"})
+        asked = json.dumps({"deviceInfoList": [{"deviceid": "1000abcdef", "model": "SN-BK7238-S61-01",
+                                                "version": "0.0.1"}]}).encode()
+        offers = stub.ota_query(asked)["data"]["otaInfoList"]
+        self.assertEqual([offer["version"] for offer in offers], ["1.0.2"])
+        self.assertEqual(stub.ota_file("deviceid=1000abcdef&ts=1&sign=0"), b"the fota")
+        self.assertIsNone(stub.ota_file("deviceid=1000000000"))
+
+
 class BusyPlugTests(unittest.TestCase):
     """A plug whose updater an update cut off part way still holds answers a
     new one with error 410: through ota_push.deliver to the step's advice."""
