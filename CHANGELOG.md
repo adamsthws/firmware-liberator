@@ -26,6 +26,8 @@ check.
   and other builds they replace. A plug on one of those is offered it as an
   update. The README's badge shows OpenBeken's release, read from
   `artifacts/firmware.json`.
+- A plug whose Sonoff firmware ran from the second half of its memory can go back to
+  it. The run used to stop before writing it, as Tasmota ran from there.
 
 ## 2.3.0
 

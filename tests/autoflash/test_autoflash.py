@@ -51,6 +51,7 @@ from tools.autoflash.routes.espressif import (
     hub,
     installer,
     mover,
+    sonoff,
     source,
     tasmota,
 )
@@ -627,6 +628,42 @@ class EsphomeSignalTests(unittest.TestCase):
             mover.step_esphome_install(ctx)      # a later one: told, not asked
         asked.assert_called_once()
         self.assertEqual(self.run_plan.call_count, 2)
+
+
+class SonoffInTheHubsSlotTests(unittest.TestCase):
+    """A plug whose Sonoff firmware ran from its second slot has it there in its
+    backup, the slot the hub runs from (the public S60 dump: seen stopping at R1)."""
+
+    def restore(self, stock_slot, slots):
+        from types import SimpleNamespace
+        device = mock.Mock()
+        ctx = SimpleNamespace(state=SimpleNamespace(input={"plug_kind": "sonoff-s60"}.get), device=device, dry_run=False)
+        with mock.patch.object(sonoff, "sonoff_backup", return_value=b"backup"), \
+             mock.patch.object(plans, "stock_slot", return_value=stock_slot), \
+             mock.patch.object(plans, "back_to_sonoff", return_value=("first", "second")) as planned, \
+             mock.patch.object(hub, "running_slot", side_effect=slots), \
+             mock.patch.object(hub, "upload_or_prompt") as uploaded, \
+             mock.patch.object(hub, "run_plan", return_value={"plan": "x"}), \
+             mock.patch.object(output, "say"):
+            sonoff.step_sonoff_restore(ctx)
+        return planned.call_args.kwargs["running"], uploaded.called, device
+
+    def test_in_the_other_slot_nothing_moves(self):
+        running, uploaded, device = self.restore(0, [1])
+        self.assertEqual((running, uploaded), (1, False))
+        device.wait_for_reboot.assert_not_called()
+
+    def test_in_the_slot_tasmota_runs_from_tasmota_moves_first(self):
+        running, uploaded, device = self.restore(1, [1, 0])
+        self.assertEqual((running, uploaded), (0, True))
+        device.wait_for_reboot.assert_called_once()
+
+    def test_a_rerun_finds_it_moved(self):
+        self.assertEqual(self.restore(1, [0])[:2], (0, False))
+
+    def test_tasmota_that_will_not_move_stops_the_run_before_anything_is_written(self):
+        with self.assertRaisesRegex(errors.Abort, "still running from slot 1"):
+            self.restore(1, [1, 1])
 
 
 class KindLeftPartWayTests(unittest.TestCase):
