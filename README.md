@@ -15,7 +15,7 @@
 
 <br>
 
-## Keep this tool alive and growing  
+### Keep this tool alive and growing  
 Your kind donation goes toward expansion, supporting many more devices - Thankyou!  
 
 
@@ -25,7 +25,7 @@ Your kind donation goes toward expansion, supporting many more devices - Thankyo
 
 <br>
 
-### Liberation From The Cloud
+## Liberation From The Cloud
 
 Your device answers to you alone, on your own network.
 > Removes dependence on external cloud servers. After flashing you'll no longer require a cloud account or third party app - your device will be truely local and fully under your control.
@@ -60,7 +60,7 @@ Until now, the established way to flash a device was to open it, perform some so
 
 <br>
 
-## What you need
+### What you need
 
 **A supported device**
 > See [Supported Devices](#supported-devices).
@@ -78,8 +78,8 @@ Until now, the established way to flash a device was to open it, perform some so
 
 <br>
 
-## Supported Devices
-> More devices coming soon.
+### Supported Devices
+> More coming soon!
 
 | Status | Device | Models |
 |---|---|---|
@@ -97,9 +97,11 @@ Until now, the established way to flash a device was to open it, perform some so
 | [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-m5-2c.json)](devices/not-ready-yet/sonoff-m5-2c/README.md) | [Sonoff M5 2-gang](devices/not-ready-yet/sonoff-m5-2c/README.md) | M5-2C |
 | [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-m5-3c.json)](devices/not-ready-yet/sonoff-m5-3c/README.md) | [Sonoff M5 3-gang](devices/not-ready-yet/sonoff-m5-3c/README.md) | M5-3C |
 
-> **Proven**: a real one has been converted and reported.
-> **Testers wanted**: converts in the emulator, no real one reported yet. The tool warns you first, and asks for the run's log.
-> **Not ready yet**: the tool does not convert it yet.
+> **Proven** = A real one has been converted and reported.  
+
+> **Testers wanted** = Converts in the emulator, no real one reported yet. 
+
+> **Not ready yet** = The tool does not convert it yet but hopes to soon.
 
 <br>
 
@@ -138,7 +140,7 @@ sh start.sh       # Linux / macOS
 
 <br>
 
-## What you'll see
+### What you'll see
 
 **Tasmota:**
 
@@ -150,7 +152,7 @@ sh start.sh       # Linux / macOS
 
 <br>
 
-## If you have to stop
+### If you have to stop
 
 E.g. you close the window, lose your Wi-Fi, run out of time - it doesn't matter. Run the
 same command again - the one line above, or `start.cmd` / `sh start.sh` in the folder.
@@ -160,7 +162,7 @@ was interrupted, it checks the plug to work out where to resume from.
 
 <br>
 
-## What you end up with
+### What you end up with
 
 **Official:**  
 [ESPHome](https://github.com/esphome/esphome) - or - [Tasmota](https://github.com/arendst/tasmota) - or - [OpenBeken](https://github.com/openshwprojects/OpenBK7231T_App)  - (Your choice)
@@ -176,7 +178,14 @@ was interrupted, it checks the plug to work out where to resume from.
 
 <br>
 
-## How it went
+### If something goes wrong
+
+Start with **[troubleshooting](docs/troubleshooting.md)**
+> It covers the problems that came up while the tool was being built.
+
+<br>
+
+### How it went
 
 See how it went for others: **[Conversion Reports](https://github.com/adamsthws/firmware-liberator/discussions/1)**
 > Reading the thread is the quickest way to see how it went for others.
@@ -204,13 +213,6 @@ Please report back on how it went for you!
 - **[upstream-contributions](docs/upstream-contributions.md)** - bugs
   found and fixed while building this project.
 - **[legal](docs/legal.md)** - how the project remains lawful, and what it asks of you.
-
-<br>
-
-## If something goes wrong
-
-Start with **[troubleshooting](docs/troubleshooting.md)**
-> It covers the problems that came up while the tool was being built.
 
 <br>
 
@@ -242,7 +244,7 @@ S60 config.
 
 <br>
 
-## To Sonoff and eWeLink
+### To Sonoff and eWeLink
 
 Thankyou for making such excellent devices. Please keep this update method open. Letting owners run their own firmware is a win for you as much as for them.
 
