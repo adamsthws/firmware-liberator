@@ -47,6 +47,13 @@ class PruneTests(unittest.TestCase):
         self.assertFalse(state.exists())
         self.assertFalse(build.exists())
 
+    def test_a_beken_emulators_old_state_and_earlier_tree_go(self):
+        made = [self.make("emulation/beken/state/flash.bin"), self.make("emulation/beken/state-2/work/x.py"),
+                self.make("emulation/beken/legacy/v2.3.0/README.md")]
+        self.run_it("--delete")
+        for path in made:
+            self.assertFalse(path.exists(), path)
+
     def test_a_backup_is_kept_wherever_it_is(self):
         backup = self.make("emulation/state-3/work/captures/plugs/12-34-56-ab-cd-ef/sonoff-backup/flash.bin")
         other = self.make("emulation/state-3/flash.bin")
@@ -56,7 +63,8 @@ class PruneTests(unittest.TestCase):
 
     def test_what_is_not_listed_is_never_touched(self):
         kept = [self.make("plugs/12-34-56-ab-cd-ef/sonoff-backup/flash.bin"), self.make("emulation/saved/suite-esphome/flash.bin"),
-                self.make("emulation/beken-firmwares/dump.bin"), self.make("settings.json"),
+                self.make("emulation/beken/firmwares/dump.bin"),
+                self.make("emulation/beken/saved/openbeken/flash.bin"), self.make("settings.json"),
                 self.make("emulation/public-dumps/d.bin")]
         self.run_it("--delete")
         for path in kept:
@@ -75,7 +83,7 @@ class PruneTests(unittest.TestCase):
 
     def test_where_docker_cannot_say_no_emulator_state_goes(self):
         state = self.make("emulation/state-2/flash.bin")
-        logs = self.make("emulation/s61-suite/logs/run.log")
+        logs = self.make("emulation/beken/suite/logs/run.log")
         with mock.patch.object(prune, "running_states", return_value=None), \
                 redirect_stdout(io.StringIO()), mock.patch("sys.stderr", io.StringIO()):
             prune.main(["--delete"])
@@ -83,8 +91,8 @@ class PruneTests(unittest.TestCase):
         self.assertFalse(logs.exists())
 
     def test_a_suites_results_stay_with_only_its_logs_gone(self):
-        results = self.make("emulation/s61-suite/results.jsonl")
-        log = self.make("emulation/s61-suite/logs/x/tool.log")
+        results = self.make("emulation/beken/suite/results.jsonl")
+        log = self.make("emulation/beken/suite/logs/x/tool.log")
         self.run_it("--delete")
         self.assertTrue(results.exists())
         self.assertFalse(log.exists())

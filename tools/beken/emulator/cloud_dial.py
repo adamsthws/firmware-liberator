@@ -79,7 +79,7 @@ from unicorn.arm_const import (  # noqa: E402
     UC_ARM_REG_R9,
     UC_ARM_REG_SP)
 
-DUMP = os.environ.get("S61_DUMP", str(ROOT/"firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin"))
+DUMP = os.environ.get("AUTOFLASH_BEKEN_EMU_DUMP", str(ROOT/"firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin"))
 SECS = float(os.environ.get("SECS", "70")); FORCE_AT = float(os.environ.get("FORCE_AT", "34"))
 SSID = os.environ.get("SSID", "AutoflashNet").encode(); PW = os.environ.get("PASS", "autoflash1234").encode()
 DISPATCH = os.environ.get("DISPATCH", "http://192.168.1.1:80")  # default: local stub; DISPATCH= keeps factory

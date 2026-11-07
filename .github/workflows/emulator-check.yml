@@ -205,7 +205,7 @@ jobs:
           path: |
             captures/emulation/public-plugs/
             captures/emulation/device-check/
-            captures/emulation/s61-suite/check-*.log
+            captures/emulation/beken/suite/check-*.log
             captures/emulation/state-*/work/captures/plugs/*/runs/*/run.log
           if-no-files-found: ignore
           retention-days: 30

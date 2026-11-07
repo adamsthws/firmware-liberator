@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""The S61's fault suite: every direction, every step that writes to or waits
-on the plug, every fault - on emulated S61s side by side (bk-emu.sh plug), as
-tools/espressif/emulator/fault_suite.py does for the S60.
+"""The Beken fault suite: every direction, every step that writes to or waits
+on the plug, every fault - on emulated Beken plugs side by side (bk-emu.sh
+plug, from the public S61s dump), as tools/espressif/emulator/fault_suite.py
+does for the Espressif plugs.
 
     fault_suite.py prep                 the starting plugs: one on the interim firmware,
                                         one on OpenBeken, one on ESPHome, converted by
@@ -46,13 +47,14 @@ also checked: by the names it asked DHCP for, it was autoflash-recovery-CDEF
 there from its first request and never OpenBeken's own name; and once ESPHome
 is on it, the interim's settings are erased from its flash (interim_problems).
 
-Each emulator is a plug of its own (autoflash-s61-N, on autoflash-beken-N),
-AUTOFLASH_S61_WORKERS of them at once (default 2: each takes a core, and the
+Each emulator is a plug of its own (bk-emu.sh --instance N: autoflash-beken-emu-N),
+AUTOFLASH_BEKEN_EMU_WORKERS of them at once (default 2: each takes a core, and the
 tool's runs share what is left). Sonoff's firmware restarts by itself once
 it has an update, in the emulator as on a real plug
 (tools/beken/emulator/README.md).
 
-Results: captures/emulation/s61-suite/results.jsonl, and each scenario's run
+Results: captures/emulation/beken/suite/results.jsonl (AUTOFLASH_BEKEN_EMU_SUITE_DIR
+for another folder), and each scenario's run
 logs and the plug's serial output beside it. A fault that never happened is
 NOT-FIRED, not a pass. Each result's notes say how short of memory the computer
 was; a failure while it was starved prints "memory-starved", as the plug's
@@ -77,12 +79,12 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.routes import beken  # noqa: E402
+from tools.beken.emulator import folders  # noqa: E402
 from tools.repo.memory_pressure import MemoryWatch  # noqa: E402
 
 BK_EMU = REPO / "tools/beken/emulator/bk-emu.sh"
-EMU = REPO / "captures/emulation"
-SAVED = EMU / "s61/saved"
-OUT = Path(os.environ.get("AUTOFLASH_S61_SUITE_DIR", EMU / "s61-suite"))
+SAVED = folders.SAVED
+OUT = Path(os.environ.get("AUTOFLASH_BEKEN_EMU_SUITE_DIR", folders.SUITE))
 RESULTS = OUT / "results.jsonl"
 # A made-up eWeLink account: the plug's eWeLink is the local stub, which takes any.
 ACCOUNT = "EWELINK_EMAIL=someone@example.invalid\nEWELINK_PASSWORD=made-up-password\n"
@@ -108,6 +110,9 @@ ROUTES = {
 }
 # The release whose firmware an update's plug is on: any before this checkout's.
 EARLIER_RELEASE = "v2.3.0"
+# Where its tree keeps the dumps and the plugs its prep saves.
+EARLIER_FIRMWARES = "captures/emulation/beken-firmwares"
+EARLIER_SAVED = "captures/emulation/s61/saved"
 CORE = [("plugoff", 1), ("plugoff", 30), ("outage", 30), ("crash", 1), ("crash", 180), ("ctrlc", "once")]
 # At the steps that write, the riskiest moments too: just begun, nearly done.
 TIMING = [("plugoff", 1), ("crash", 1)]
@@ -223,13 +228,13 @@ class Instance:
     def __init__(self, n: int):
         self.n = n
         # As bk-emu.sh --instance N names them.
-        self.plug = f"autoflash-s61-{n}"
-        self.network = f"autoflash-beken-{n}"
-        self.computer = f"autoflash-s61-computer-{n}"
-        self.state = EMU / "s61" / self.plug
+        self.plug = f"autoflash-beken-emu-{n}"
+        self.network = f"autoflash-beken-emu-{n}"
+        self.computer = f"autoflash-beken-emu-computer-{n}"
+        self.state = folders.state(n)
         self.before: set[Path] = set()   # runs the starting plug came with, not this scenario's
-        self.env = {key: value for key, value in os.environ.items() if key != "AUTOFLASH_BEKEN_NETWORK"}
-        self.env["AUTOFLASH_BEKEN_COMPUTER"] = self.computer
+        self.env = {key: value for key, value in os.environ.items() if key != "AUTOFLASH_BEKEN_EMU_NETWORK"}
+        self.env["AUTOFLASH_BEKEN_EMU_COMPUTER"] = self.computer
 
     def command(self, *args) -> list[str]:
         return [str(BK_EMU), "--instance", str(self.n), *args]
@@ -262,13 +267,13 @@ class Instance:
 
     def dhcp_names(self) -> list[str]:
         """The names the plug asked its router's DHCP for, in order."""
-        log = subprocess.run(["docker", "exec", self.plug, "cat", "/run/autoflash-s61/dnsmasq.log"],
+        log = subprocess.run(["docker", "exec", self.plug, "cat", "/run/autoflash-beken-emu/dnsmasq.log"],
                              capture_output=True, text=True).stdout
         return [found.group(1) for found in DHCP_NAME.finditer(log)]
 
     def lease(self) -> str | None:
         found = subprocess.run(["docker", "exec", self.plug, "sh", "-c",
-                                "sort -n /run/autoflash-s61/leases | tail -1"],
+                                "sort -n /run/autoflash-beken-emu/leases | tail -1"],
                                capture_output=True, text=True).stdout.split()
         return found[2] if len(found) > 2 else None
 
@@ -476,7 +481,7 @@ def readdress(instance: Instance, notes: dict) -> None:
     """The router forgets the plug's address and gives it another when it next asks."""
     address = instance.lease() or ""
     last = int(address.rsplit(".", 1)[1]) if address else 50
-    must(notes, "docker", "exec", instance.plug, "/run/autoflash-s61/router", "55" if last < 55 else "50", timeout=60)
+    must(notes, "docker", "exec", instance.plug, "/run/autoflash-beken-emu/router", "55" if last < 55 else "50", timeout=60)
     notes["moved_from"] = address
 
 
@@ -684,7 +689,7 @@ def batch(ids_file: str | None = None) -> None:
     for i in wanted:
         if i in every and i not in passed:
             todo.put(every[i])
-    workers = int(os.environ.get("AUTOFLASH_S61_WORKERS", "2"))
+    workers = int(os.environ.get("AUTOFLASH_BEKEN_EMU_WORKERS", "2"))
     lock = threading.Lock()
 
     def work(n: int) -> None:
@@ -759,19 +764,20 @@ def save(instance: Instance, firmware: str) -> None:
 def prep_update() -> None:
     """The update scenarios' starting plugs: on OpenBeken and on ESPHome as
     EARLIER_RELEASE converts them, which no run of this checkout can make. That
-    release's own suite makes them, from its tagged files."""
-    tree = EMU / "s61" / f"earlier-{EARLIER_RELEASE}"
+    release's own suite makes them, from its tagged files: in its tree, its
+    folders are named as that release names them (v2.3.0's after the S61)."""
+    tree = folders.LEGACY / EARLIER_RELEASE
     clear(tree)
     (tree / "captures/emulation").mkdir(parents=True)
     archive = subprocess.run(["git", "-C", str(REPO), "archive", EARLIER_RELEASE], capture_output=True, check=True).stdout
     subprocess.run(["tar", "-x", "-C", str(tree)], input=archive, check=True)
-    shutil.copytree(EMU / "beken-firmwares", tree / "captures/emulation/beken-firmwares")
+    shutil.copytree(folders.FIRMWARES, tree / EARLIER_FIRMWARES)
     try:
         subprocess.run([str(tree / "tools/beken/emulator/fault_suite.py"), "prep"], check=True)
         for firmware in ("openbeken", "esphome"):
             kept = SAVED / f"outdated-{firmware}"
             clear(kept)
-            shutil.copytree(tree / "captures/emulation/s61/saved" / firmware, kept)
+            shutil.copytree(tree / EARLIER_SAVED / firmware, kept)
             print(f"saved the plug on {EARLIER_RELEASE}'s {firmware} in {kept}", flush=True)
     finally:
         clear(tree)
@@ -853,6 +859,8 @@ def report() -> None:
 
 def main(argv: list[str]) -> int:
     command = argv[0] if argv else ""
+    for line in folders.migrate():
+        print(line, file=sys.stderr)
     if command == "prep":
         prep()
     elif command == "prep-update":

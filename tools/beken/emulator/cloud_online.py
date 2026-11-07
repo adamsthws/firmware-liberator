@@ -93,7 +93,7 @@ class _Compact:   # the S61's embedded JSON parser rejects whitespace between to
 
 ss.json = _Compact()
 
-DUMP = os.environ.get("S61_DUMP", str(ROOT/"firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin"))
+DUMP = os.environ.get("AUTOFLASH_BEKEN_EMU_DUMP", str(ROOT/"firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin"))
 SECS = float(os.environ.get("SECS", "85")); FORCE_AT = float(os.environ.get("FORCE_AT", "34"))
 HB = int(os.environ.get("HB", "10"))
 SSID = os.environ.get("SSID", "AutoflashNet").encode(); PW = os.environ.get("PASS", "autoflash1234").encode()

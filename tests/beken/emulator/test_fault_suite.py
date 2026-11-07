@@ -1,4 +1,4 @@
-"""The S61's fault suite: its scenarios, and how it tells a plug converted."""
+"""The Beken fault suite: its scenarios, and how it tells a plug converted."""
 
 import tempfile
 import threading
@@ -427,7 +427,7 @@ class SavingTests(unittest.TestCase):
     def test_a_saved_plug_keeps_its_flash_and_its_runs_captures_only(self):
         self.assertEqual(fault_suite.keep_for_saving("/x/work", ["captures", "tools", "README.md"]),
                          ["tools", "README.md"])
-        self.assertEqual(fault_suite.keep_for_saving("/x/autoflash-s61-1",
+        self.assertEqual(fault_suite.keep_for_saving("/x/state-1",
                                                      ["flash.bin", "serial.log", "power", "ca.crt"]),
                          ["serial.log", "power", "ca.crt"])
         self.assertEqual(fault_suite.keep_for_saving("/x/plugs/12-34-56-ab-cd-ef", ["plug.json", "sonoff-backup"]),
@@ -439,8 +439,9 @@ class InstanceTests(unittest.TestCase):
         instance = fault_suite.Instance(3)
         self.assertEqual(instance.command("power", "on"),
                          [str(fault_suite.BK_EMU), "--instance", "3", "power", "on"])
-        self.assertEqual((instance.plug, instance.network), ("autoflash-s61-3", "autoflash-beken-3"))
-        self.assertEqual(instance.state, fault_suite.EMU / "s61" / "autoflash-s61-3")
+        self.assertEqual((instance.plug, instance.network, instance.computer),
+                         ("autoflash-beken-emu-3", "autoflash-beken-emu-3", "autoflash-beken-emu-computer-3"))
+        self.assertEqual(instance.state, fault_suite.REPO / "captures/emulation/beken/state-3")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""The emulated S61 as a plug: on until switched off, through every firmware it
+"""The emulated Beken plug: on until switched off, through every firmware it
 is converted to and back, as bk-emu.sh plug runs it (plug-net.sh).
 
     python plug.py --state DIR [--tap tap0]

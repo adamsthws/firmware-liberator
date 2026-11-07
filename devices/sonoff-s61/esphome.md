@@ -178,4 +178,4 @@ that raised every channel on every tick ran that feed back to back and
 starved OpenBeken instead.
 
 The tool's route runs end to end in
-the emulator ([its fault suite](../../docs/testing.md#the-s61s-fault-suite)).
+the emulator ([its fault suite](../../docs/testing.md#the-beken-fault-suite)).

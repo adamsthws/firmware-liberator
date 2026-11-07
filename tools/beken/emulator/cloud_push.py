@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("image", type=Path, help="the .rbl to convert to")
     ap.add_argument("out", type=Path, help="where the flash is written as the plug leaves it")
     ap.add_argument("--apply", action="store_true", help="then boot it, for the stock bootloader to apply it")
-    ap.add_argument("--dump", type=Path, default=Path(cloud_online.DUMP), help="the stock dump (default: S61_DUMP)")
+    ap.add_argument("--dump", type=Path, default=Path(cloud_online.DUMP), help="the stock dump (default: AUTOFLASH_BEKEN_EMU_DUMP)")
     args = ap.parse_args(argv)
     secs = float(os.environ.get("SECS", "400"))
 

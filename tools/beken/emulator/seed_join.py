@@ -53,7 +53,7 @@ from unicorn.arm_const import (  # noqa: E402
     UC_ARM_REG_R1,
     UC_ARM_REG_R3)
 
-DUMP = os.environ.get("S61_DUMP", str(ROOT/"firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin"))
+DUMP = os.environ.get("AUTOFLASH_BEKEN_EMU_DUMP", str(ROOT/"firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin"))
 SECS = float(os.environ.get("SECS", "40"))
 SSID = os.environ.get("SSID", "AutoflashNet").encode()
 PASS = os.environ.get("PASS", "autoflash1234").encode()

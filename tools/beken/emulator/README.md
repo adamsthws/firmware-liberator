@@ -6,8 +6,8 @@ for working on it. How to use it is in
 
 ## How it fits together
 
-`bk-emu.sh plug` runs the public S61 dump as a plug provisioned on a home
-Wi-Fi, on a Docker network of its own (`autoflash-beken`, apart from the
+`bk-emu.sh plug` runs the public S61s dump as a plug provisioned on a home
+Wi-Fi, on a Docker network of its own (`autoflash-beken-emu`, apart from the
 Espressif emulator and everything else). The fork's `--net-tap` puts the plug's
 radio on a TAP device, which `plug-net.sh` bridges with the container's
 interface; the container is that Wi-Fi's router, `.1`: DHCP (the plug at
@@ -15,7 +15,7 @@ interface; the container is that Wi-Fi's router, `.1`: DHCP (the plug at
 (`tools/beken/emulator/cloud_stub.py`), which every connection the plug makes off the
 network is sent to - nothing reaches the internet. `tools/beken/emulator/plug.py` is
 the plug itself: it boots from its flash, kept in
-`captures/emulation/s61/autoflash-s61/` with its logs and the stub's CA, so it
+`captures/emulation/beken/state/` with its logs and the stub's CA, so it
 carries on across firmware - each restart the firmware asks for a boot of its
 own, from the bootloader, as on a real plug - and Sonoff's firmware is helped
 online (`cloud_online.StockHooks`) only while it is the one that starts.
@@ -135,7 +135,7 @@ commit's worth, with its reasoning in its header.
   network, which is the device's router itself and reachable only through
   port forwards. The device is then a station on the host's network, given
   its address by that network's DHCP server and reached at it by every
-  protocol: how `bk-emu.sh plug` puts the S61 on a Docker network of its
+  protocol: how `bk-emu.sh plug` puts the plug on a Docker network of its
   own, where `bk-emu.sh computer` reaches it. The built-in network's own options are refused
   beside it.
 

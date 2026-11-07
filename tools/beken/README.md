@@ -19,8 +19,8 @@ tools/beken/emulator/bk-emu.sh python tools/beken/emulator/integrity_gate.py
 ```
 
 In the container the emulator is at `/opt/beken-emulator`, the tools' default
-`BK_EMU_ROOT`, and the fetched dump their default `S61_DUMP`; the image's Python
-has `capstone` for the static tools too (`angr`, for `decomp.py` only, goes
+`BK_EMU_ROOT`, and the fetched dump their default `AUTOFLASH_BEKEN_EMU_DUMP`;
+the image's Python has `capstone` for the static tools too (`angr`, for `decomp.py` only, goes
 into a virtual environment of your own, never the system). The examples below
 leave out the `bk-emu.sh python` prefix and assume the current directory is
 `tools/beken`.
@@ -354,7 +354,7 @@ To try one in the emulator, make its whole flash and start a plug from it:
 
 ```sh
 python3 tools/beken/rebuild_dump.py S61-DUMP.bin OFFICIAL.bin captures/device.bin
-AUTOFLASH_BEKEN_DUMP=captures/device.bin tools/beken/emulator/bk-emu.sh plug
+AUTOFLASH_BEKEN_EMU_FLASH=captures/device.bin tools/beken/emulator/bk-emu.sh --fresh plug
 ```
 
 This proves the firmware and the tool's path, not the device's hardware. The

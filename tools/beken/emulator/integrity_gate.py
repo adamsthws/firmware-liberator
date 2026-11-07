@@ -16,7 +16,7 @@ from src.main import build_emulator  # noqa: E402
 from unicorn import UC_HOOK_CODE  # noqa: E402
 from unicorn.arm_const import (  # noqa: E402
     UC_ARM_REG_R0)
-DUMP = os.environ.get("S61_DUMP", str(ROOT/"firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin"))
+DUMP = os.environ.get("AUTOFLASH_BEKEN_EMU_DUMP", str(ROOT/"firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin"))
 SECS = float(os.environ.get("SECS","25"))
 POINTS = stock_points.find(stock_points.app_of_file(Path(DUMP).read_bytes()))
 MARK = {"gate_passed": POINTS.gate_passed, "appfw_task": POINTS.appfw_task, "appfw_loop": POINTS.appfw_loop}

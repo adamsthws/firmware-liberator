@@ -12,16 +12,16 @@
 #                             mounted in; the image is ensured first:
 #                             tools/beken/emulator/bk-emu.sh python tools/beken/emulator/seed_join.py
 #   tools/beken/emulator/bk-emu.sh run DUMP [ARGS...]
-#                             run a BK7238 dump as the S61 work does: main.py DUMP
+#                             run a BK7238 dump as the emulator's tools do: main.py DUMP
 #                             --with-boot -chip BK7238 --only-uart ARGS
 #   tools/beken/emulator/bk-emu.sh plug
-#                             the public S61 dump as a plug on a home Wi-Fi, on the S61's
-#                             own Docker network (autoflash-beken, made the first time;
+#                             the public S61s dump as a plug on a home Wi-Fi, on the Beken
+#                             emulator's own Docker network (autoflash-beken-emu, made the first time;
 #                             nothing of the Espressif emulator is on it), until docker stop: its
 #                             radio bridged there through a TAP device, its router .1 - its
 #                             DHCP (the plug at .50-.59), DNS and eWeLink, the local stub -
-#                             in its container (autoflash-s61, plug-net.sh). Its flash, logs
-#                             and the stub's CA are kept in captures/emulation/s61/autoflash-s61/,
+#                             in its container (autoflash-beken-emu, plug-net.sh). Its flash, logs
+#                             and the stub's CA are kept in captures/emulation/beken/state/,
 #                             so it carries on as it was left (--fresh for a new plug).
 #                             It returns once the plug is in its stub's account
 #   tools/beken/emulator/bk-emu.sh ui [PORT]
@@ -45,14 +45,14 @@
 #                             upstream's firmwares/ (about 280 MB), fetched the first time
 #   tools/beken/emulator/bk-emu.sh dump
 #                             the public S61s dump (firmwares/Sonoff_S61s_..., the tools'
-#                             default S61_DUMP), fetched from upstream's repository, which
-#                             publishes it, into captures/emulation/beken-firmwares/: this
+#                             default AUTOFLASH_BEKEN_EMU_DUMP), fetched from upstream's repository,
+#                             which publishes it, into captures/emulation/beken/firmwares/: this
 #                             repository, and the image, never hold Sonoff's firmware
 #
 #   --instance N              another emulated plug beside the first (N = 1-30), for
 #                             plug, ui, power and computer: its own container
-#                             (autoflash-s61-N), network (autoflash-beken-N), state
-#                             (captures/emulation/s61/autoflash-s61-N/) and web page
+#                             (autoflash-beken-emu-N), network (autoflash-beken-emu-N), state
+#                             (captures/emulation/beken/state-N/) and web page
 #                             port (8088+N), so tests can run side by side
 #   --rebuild                 rebuild the image first
 #   --fresh                   with plug: the plug as new - it and the computers on its
@@ -61,23 +61,25 @@
 #
 # The image is ensured first, by python, run, plug, computer and test: as it
 # is, or pulled, or built where it is not published (image.sh, which says how).
-# AUTOFLASH_BEKEN_IMAGE names the image (default autoflash-beken-emu),
-# AUTOFLASH_BEKEN_NETWORK the plug's network (default autoflash-beken, or
-# autoflash-beken-N), AUTOFLASH_BEKEN_COMPUTER a name for the
-# computer's container, AUTOFLASH_BEKEN_DUMP another whole flash under this
-# checkout (rebuild_dump.py's) for a new plug to start from,
-# and image.sh's own (AUTOFLASH_BEKEN_PUBLISHED, AUTOFLASH_BEKEN_NO_PULL,
-# AUTOFLASH_BEKEN_SOURCE_URL) where to get the image. Tools run as your own
-# user, so what they write in /work is yours.
+# AUTOFLASH_BEKEN_EMU_IMAGE names the image (default autoflash-beken-emu),
+# AUTOFLASH_BEKEN_EMU_NETWORK the plug's network (default autoflash-beken-emu,
+# or autoflash-beken-emu-N), AUTOFLASH_BEKEN_EMU_COMPUTER a name for the
+# computer's container, AUTOFLASH_BEKEN_EMU_FLASH another whole flash under this
+# checkout (rebuild_dump.py's) for a new plug to start from, and image.sh's
+# own (AUTOFLASH_BEKEN_EMU_PUBLISHED, AUTOFLASH_BEKEN_EMU_NO_PULL,
+# AUTOFLASH_BEKEN_EMU_SOURCE_URL) where to get the image. In the container,
+# AUTOFLASH_BEKEN_EMU_DUMP is the dump its tools start from. Its folders are in
+# captures/emulation/beken/ (folders.py, which moves an earlier checkout's
+# there). Tools run as your own user, so what they write in /work is yours.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
 EMU=$ROOT/captures/emulation
-FIRMWARES=$EMU/beken-firmwares
-S61_DUMP=Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin
-IMAGE=${AUTOFLASH_BEKEN_IMAGE:-autoflash-beken-emu}
-PLUG=autoflash-s61 NETWORK=autoflash-beken UI_PORT=8088
+FIRMWARES=$EMU/beken/firmwares
+PUBLIC_DUMP=Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin
+IMAGE=${AUTOFLASH_BEKEN_EMU_IMAGE:-autoflash-beken-emu}
+PLUG=autoflash-beken-emu NETWORK=autoflash-beken-emu STATE=state UI_PORT=8088
 
 usage() { sed -n "2,$(($(grep -n '^set -euo pipefail' "$0" | cut -d: -f1)-1))p" "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 rebuild="" fresh=0 instance=""
@@ -94,11 +96,13 @@ while [ $# -gt 0 ]; do
 done
 if [ -n "$instance" ]; then
     case "$instance" in [1-9]|[12][0-9]|30) ;; *) echo "--instance needs a number, 1-30" >&2; exit 2 ;; esac
-    PLUG=$PLUG-$instance NETWORK=$NETWORK-$instance UI_PORT=$((UI_PORT + instance))
+    PLUG=$PLUG-$instance NETWORK=$NETWORK-$instance STATE=$STATE-$instance UI_PORT=$((UI_PORT + instance))
 fi
 [ "$fresh" = 0 ] || [ "${1:-}" = plug ] || { echo "--fresh is for plug" >&2; exit 2; }
-NETWORK=${AUTOFLASH_BEKEN_NETWORK:-$NETWORK}
-PLUG_STATE=$EMU/s61/$PLUG
+NETWORK=${AUTOFLASH_BEKEN_EMU_NETWORK:-$NETWORK}
+PLUG_STATE=$EMU/beken/$STATE
+# An earlier checkout's folders, named after the S61, moved to these once.
+case "${1:-}" in dump|python|run|plug|ui|power|computer|test) python3 -I "$HERE/folders.py" migrate ;; esac
 
 pin() { sed -n "s/^$1 //p" "$HERE/UPSTREAM"; }
 UPSTREAM_REPO=$(pin repo)
@@ -114,7 +118,7 @@ ensure() {
 
 # Firmware dumps come from upstream's repository, which publishes them, never
 # from this one: the paths given (sparse-checkout patterns) from its firmwares/,
-# at the pinned commit, into captures/emulation/beken-firmwares/.
+# at the pinned commit, into captures/emulation/beken/firmwares/.
 fetch_firmwares() {
     local work f
     mkdir -p "$FIRMWARES"
@@ -131,9 +135,9 @@ fetch_firmwares() {
 }
 
 dump() {
-    [ -f "$FIRMWARES/$S61_DUMP" ] && return 0
+    [ -f "$FIRMWARES/$PUBLIC_DUMP" ] && return 0
     echo "Fetching the public S61s dump from $UPSTREAM_REPO (4 MB)..." >&2
-    fetch_firmwares "/firmwares/$S61_DUMP"
+    fetch_firmwares "/firmwares/$PUBLIC_DUMP"
 }
 
 # Upstream's self-tests run every firmware in firmwares/ (about 280 MB).
@@ -157,14 +161,14 @@ container() {
     # CONTAINER_OPTIONS: what a caller adds (computer's network and settings).
     exec docker run --rm -i "${tty[@]}" ${CONTAINER_OPTIONS[@]+"${CONTAINER_OPTIONS[@]}"} --user "$(id -u):$(id -g)" \
         -v "${WORK:-$ROOT}:/work" -v "$FIRMWARES:/opt/beken-emulator/firmwares:ro" \
-        -e S61_DUMP="/opt/beken-emulator/firmwares/$S61_DUMP" \
+        -e AUTOFLASH_BEKEN_EMU_DUMP="/opt/beken-emulator/firmwares/$PUBLIC_DUMP" \
         -w "$workdir" "$IMAGE" "$@"
 }
 
 # The whole flash a new plug starts from, as its container sees it.
 plug_dump() {
-    local own=${AUTOFLASH_BEKEN_DUMP:-}
-    if [ -z "$own" ]; then echo "/opt/beken-emulator/firmwares/$S61_DUMP"; return; fi
+    local own=${AUTOFLASH_BEKEN_EMU_FLASH:-}
+    if [ -z "$own" ]; then echo "/opt/beken-emulator/firmwares/$PUBLIC_DUMP"; return; fi
     own=$(realpath "$own")
     case "$own" in "$ROOT"/*) echo "/work${own#"$ROOT"}" ;;
         *) echo "$own is outside this checkout: put it under captures/" >&2; exit 2 ;; esac
@@ -195,7 +199,7 @@ for candidate in [f"198.18.{n}.0/24" for n in range(61, 128)] + [f"172.31.{n}.0/
     if not any(ipaddress.ip_network(candidate).overlaps(network) for network in taken):
         print(candidate)
         break')
-        [ -n "$subnet" ] || { echo "No free /24 for the S61's Docker network: make one, and name it with AUTOFLASH_BEKEN_NETWORK" >&2; exit 1; }
+        [ -n "$subnet" ] || { echo "No free /24 for the plug's Docker network: make one, and name it with AUTOFLASH_BEKEN_EMU_NETWORK" >&2; exit 1; }
         docker network create --subnet "$subnet" --ip-range "${subnet%.*}.128/25" --gateway "${subnet%.*}.254" \
             --label autoflash.emulator=1 "$NETWORK" >/dev/null 2>&1 && return 0
         # Made by another run starting at the same moment - or that subnet taken
@@ -216,7 +220,7 @@ subnet() {
 
 case "${1:-}" in
     dump) dump ;;
-    python) shift; ensure; dump || echo "No public dump: S61_DUMP must name a dump of your own." >&2; container "$@" ;;
+    python) shift; ensure; dump || echo "No public dump: give the tool a dump of your own." >&2; container "$@" ;;
     run)
         [ -n "${2:-}" ] || { echo "run needs a dump" >&2; exit 2; }
         ensure
@@ -232,7 +236,7 @@ case "${1:-}" in
                 mapfile -t running < <(docker ps -q --filter "network=$NETWORK")
                 [ ${#running[@]} -eq 0 ] || docker stop -t 30 "${running[@]}" >/dev/null
             fi
-            case "$PLUG_STATE" in "$EMU"/s61/?*) rm -rf "$PLUG_STATE" ;; esac
+            case "$PLUG_STATE" in "$EMU"/beken/state*) rm -rf "$PLUG_STATE" ;; esac
             echo "$PLUG is new: its state is gone; it starts again from the dump." >&2
         fi
         ensure; dump; network
@@ -240,10 +244,10 @@ case "${1:-}" in
         starts_from=$(plug_dump)
         docker run -d --rm --name "$PLUG" --network "$NETWORK" --cap-add NET_ADMIN --device /dev/net/tun \
             -v "$ROOT:/work:ro" -v "$FIRMWARES:/opt/beken-emulator/firmwares:ro" -v "$PLUG_STATE:/state" \
-            -e S61_DUMP="$starts_from" \
+            -e AUTOFLASH_BEKEN_EMU_DUMP="$starts_from" \
             -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e PLUG_TRACE="${PLUG_TRACE:-}" \
             --entrypoint bash "$IMAGE" /work/tools/beken/emulator/plug-net.sh >/dev/null
-        echo "The S61 is starting as $PLUG on $NETWORK, its router at $(subnet).1; its serial output is in" >&2
+        echo "The plug is starting as $PLUG on $NETWORK, its router at $(subnet).1; its serial output is in" >&2
         echo "${PLUG_STATE#"$ROOT"/}/serial.log; docker stop $PLUG ends it." >&2
         # A run needs the plug in its account, which the stub only has once
         # the plug has registered with it: a minute or two from a new plug.
@@ -256,7 +260,7 @@ case "${1:-}" in
     ui)
         # The plug's address as its router gave it last (its firmware may have
         # changed, and with it its lease).
-        read -r _ _ lease named _ < <(docker exec "$PLUG" sh -c 'sort -n /run/autoflash-s61/leases | tail -1' 2>/dev/null)
+        read -r _ _ lease named _ < <(docker exec "$PLUG" sh -c 'sort -n /run/autoflash-beken-emu/leases | tail -1' 2>/dev/null)
         [ -n "${lease:-}" ] || { echo "No plug on its Wi-Fi yet: start it (bk-emu.sh plug) and give it a minute" >&2; exit 1; }
         # Which firmware, by the name it gave its router: esphome-abcdef, or
         # openbeken-abcdef (OpenBK7238_ABCDEF before its first start's naming;
@@ -287,7 +291,7 @@ case "${1:-}" in
         # The plug's power switch too, so a run can offer to switch it off and on;
         # and which terminal it is shown in (VS Code's: output.start_at_top).
         [ -f "$PLUG_STATE/power" ] || echo on > "$PLUG_STATE/power"
-        CONTAINER_OPTIONS=(${AUTOFLASH_BEKEN_COMPUTER:+--name "$AUTOFLASH_BEKEN_COMPUTER"}
+        CONTAINER_OPTIONS=(${AUTOFLASH_BEKEN_EMU_COMPUTER:+--name "$AUTOFLASH_BEKEN_EMU_COMPUTER"}
                            --network "$NETWORK" -v "$PLUG_STATE/ca.crt:/plug/ca.crt:ro"
                            -v "$PLUG_STATE/power:/plug/power" -e AUTOFLASH_EMULATOR_POWER=/plug/power
                            -e TERM_PROGRAM

@@ -1,5 +1,5 @@
 #!/bin/bash
-# A computer on the emulated S61's home Wi-Fi (bk-emu.sh computer): this
+# A computer on the emulated Beken plug's home Wi-Fi (bk-emu.sh computer): this
 # system's roots and the plug's stub's CA trusted, so trusting the stub takes
 # nothing away from any other site; then python ARGS, or a shell.
 set -euo pipefail
