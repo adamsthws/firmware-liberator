@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, passthroughImageService } from "astro/config";
 import { satteri } from "@astrojs/markdown-satteri";
 import sitemap from "@astrojs/sitemap";
-import { PICTURES, ROOT, pages, rewrite } from "./src/site.mjs";
+import { PICTURES, ROOT, pages, retired, rewrite } from "./src/site.mjs";
 
 const onSite = pages();
 
@@ -39,5 +39,5 @@ export default defineConfig({
   build: { format: "file" },
   image: { service: passthroughImageService() },
   markdown: { processor: satteri({ mdastPlugins: [links] }) },
-  integrations: [sitemap(), pictures],
+  integrations: [sitemap({ filter: (page) => !retired(new URL(page).pathname) }), pictures],
 });

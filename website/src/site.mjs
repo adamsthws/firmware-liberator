@@ -27,6 +27,38 @@ export function slug(path) {
   return page === "README" ? "" : page.replace(/\/README$/, "");
 }
 
+// A built page's address as readers use it: Astro's "file" format calls the
+// front page /index, and the Worker redirects from .html.
+export const address = (pathname) => pathname.replace(/\.html$/, "").replace(/\/index$/, "/");
+
+// Retired work stays readable but out of search results: a search must not
+// land someone on a superseded procedure for a mains-voltage plug.
+export const retired = (address) => /^\/?archive(\/|$)/.test(address);
+
+// What a search result says of a page: its first paragraph as plain text, cut
+// to the length results show. Markdown can't carry a description of its own,
+// as front matter would show on GitHub.
+export function description(markdown, limit = 160) {
+  const paragraph = markdown
+    .replace(/^#{1,6} .*$/gm, "")
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .find((block) => block && !/^(\||```|<|!\[|\[!\[|[-*] |\d+\. )/.test(block));
+  if (!paragraph) return undefined;
+  const text = paragraph
+    .replace(/^>\s?/gm, "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[*`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/:$/, ".");
+  if (text.length <= limit) return text;
+  const cut = text.slice(0, limit);
+  const sentence = cut.lastIndexOf(". ");
+  return sentence >= limit / 2 ? cut.slice(0, sentence + 1) : `${cut.slice(0, cut.lastIndexOf(" "))}…`;
+}
+
 // A link in the page at `from` (a repository path), as the site needs it:
 // another page by its address, a picture as it is, anything else on GitHub.
 export function rewrite(href, from, onSite) {
