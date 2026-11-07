@@ -13,6 +13,7 @@ class FakeGitHub:
     def __init__(self, checks_on_main=(), protect_rules=None):
         self.repository = {key: not want for key, want in gs.REPOSITORY_SETTINGS.items()}
         self.repository["security_and_analysis"] = {key: {"status": "disabled"} for key in gs.SECURITY}
+        self.topics = []
         self.scanning = {"state": "not-configured", "languages": ["actions", "c-cpp", "python"],
                          "query_suite": "default"}
         self.toggles = {toggle: False for toggle in gs.TOGGLES}
@@ -28,6 +29,8 @@ class FakeGitHub:
     def __call__(self, path, method="GET", body=None, ok_missing=False):
         if method != "GET":
             self.sent.append((method, path, body))
+            if path == "/topics":
+                self.topics = list(body["names"])
             if path == "/pages" and method == "DELETE":
                 self.pages = None
             if path.startswith("/environments/"):
@@ -47,6 +50,8 @@ class FakeGitHub:
             return None
         if path == "":
             return self.repository
+        if path == "/topics":
+            return {"names": list(self.topics)}
         if path == "/code-scanning/default-setup":
             return self.scanning
         if path.lstrip("/") in self.toggles:
@@ -152,6 +157,27 @@ class GitHubSettingsTests(unittest.TestCase):
             "actions", "javascript", "javascript-typescript", "python", "typescript"]}
         with mock.patch.object(gs, "api", fake):
             self.assertNotIn("CodeQL", [what for what, _, _ in gs.differences()])
+
+    def test_the_repository_says_what_it_is_and_where_its_website_is(self):
+        fake = FakeGitHub()
+        fake.repository.update(description="old words", homepage="")
+        code, out = run(fake)
+        self.assertIn("description: is old words, should be", out)
+        self.assertIn(f"homepage: is , should be {gs.WEBSITE}", out)
+        run(fake, "apply")
+        self.assertIn(("PATCH", "", {"homepage": gs.WEBSITE}), fake.sent)
+
+    def test_topics_are_set_whatever_order_github_lists_them_in(self):
+        fake = FakeGitHub()
+        code, out = run(fake)
+        self.assertIn("topics: are [], should be", out)
+        self.assertEqual(fake.sent, [])
+        run(fake, "apply")
+        self.assertEqual(fake.topics, gs.TOPICS)
+        fake.topics.reverse()
+        fake.sent.clear()
+        run(fake, "apply")
+        self.assertNotIn("/topics", [path for _, path, _ in fake.sent])
 
     def test_pages_is_turned_off(self):
         fake = FakeGitHub()
