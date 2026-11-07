@@ -13,12 +13,16 @@
 #               (a merge by this workflow's token does not start one itself)
 #
 # Weekly, or by hand: with `tasmota` / `esphome` / `openbeken` to take a given release, and
-# `dry_run` to do everything but push, open or merge.
+# `dry_run` to do everything but push, open or merge. On the first of each month
+# a dry run takes the releases already pinned, so that every step - each
+# device's build, its docs, the tests and OpenBeken's scenarios - is run when no
+# release is due, and found broken before one is.
 name: Firmware update
 
 on:
   schedule:
     - cron: "0 6 * * 1"   # Mondays, 06:00 UTC
+    - cron: "0 6 1 * *"   # the monthly dry run of what is pinned (REHEARSAL below)
   workflow_dispatch:
     inputs:
       tasmota:
@@ -67,6 +71,7 @@ jobs:
           INPUT_TASMOTA: ${{ inputs.tasmota }}
           INPUT_ESPHOME: ${{ inputs.esphome }}
           INPUT_OPENBEKEN: ${{ inputs.openbeken }}
+          REHEARSAL: ${{ github.event.schedule == '0 6 1 * *' }}
         run: |
           python3 tools/repo/update_firmware.py due > due.json
           tasmota=$(python3 -c 'import json; print(json.load(open("due.json"))["tasmota"]["due"] or "")')
@@ -75,6 +80,12 @@ jobs:
           [ -z "$INPUT_TASMOTA" ] || tasmota=$INPUT_TASMOTA
           [ -z "$INPUT_ESPHOME" ] || esphome=$INPUT_ESPHOME
           [ -z "$INPUT_OPENBEKEN" ] || openbeken=$INPUT_OPENBEKEN
+          if [ "$REHEARSAL" = true ]; then
+              # What is pinned, built again: every step run, nothing released.
+              tasmota=""
+              esphome=$(python3 -c 'from tools.repo import update_firmware as u; print(u.pinned_version(u.load_pins(), "esphome"))')
+              openbeken=$(python3 -c 'from tools.repo import update_firmware as u; print(u.pinned_version(u.load_pins(), "openbeken"))')
+          fi
           # Release numbers only: they name a branch and go into commands below.
           for version in "$tasmota" "$esphome" "$openbeken"; do
               if [ -n "$version" ] && ! [[ "$version" =~ ^v?[0-9]+(\.[0-9]+){1,3}$ ]]; then
@@ -85,7 +96,7 @@ jobs:
           { echo "### Due"; echo; echo "Tasmota: ${tasmota:-nothing}; ESPHome: ${esphome:-nothing}; OpenBeken: ${openbeken:-nothing}";
             echo; echo '```json'; python3 -m json.tool due.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: An issue if the pinned Tasmota release has gone
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && github.event.schedule != '0 6 1 * *' }}
         run: |
           missing=$(python3 -c 'import json; s=json.load(open("due.json"))["tasmota"]; print(s["pinned"] if s["pinned_missing"] else "")')
           [ -n "$missing" ] || exit 0
@@ -97,7 +108,7 @@ jobs:
           (docs/updating-firmware.md)."
           fi
       - name: An issue if this check is about to be switched off
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && github.event.schedule != '0 6 1 * *' }}
         run: |
           # GitHub switches a public repository's schedules off after 60 days
           # with no activity, and this check with them: said at 50.
@@ -126,7 +137,7 @@ jobs:
       TASMOTA: ${{ needs.due.outputs.tasmota }}
       ESPHOME: ${{ needs.due.outputs.esphome }}
       OPENBEKEN: ${{ needs.due.outputs.openbeken }}
-      DRY_RUN: ${{ inputs.dry_run }}
+      DRY_RUN: ${{ inputs.dry_run || github.event.schedule == '0 6 1 * *' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -266,7 +277,7 @@ jobs:
           done
 
   merge:
-    if: ${{ !inputs.dry_run }}
+    if: ${{ !inputs.dry_run && github.event.schedule != '0 6 1 * *' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
