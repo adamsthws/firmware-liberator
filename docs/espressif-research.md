@@ -129,7 +129,7 @@ plug rebuilt this way has not been tried.
 
 The ESPHome route keeps Sonoff's layout and NVS, identity included; the Tasmota
 route shrinks the NVS to 20 KB, which loses it. So the tool keeps it in a sector of
-its own at `0x3FF000` ([technical-details.md](technical-details.md#the-finished-memory-layout)).
+its own at `0x3FF000` ([technical-details.md](technical-details.md#an-espressif-plug-on-tasmota)).
 What was seen of it in the emulator:
 
 | What | S60 | POW Elite |
