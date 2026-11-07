@@ -8,8 +8,9 @@ class Plug:
     """The cloud's socket as the app sees it, with a plug behind it that
     reports each switch it is sent - or, `obeys` False, none."""
 
-    def __init__(self, obeys=True, error=0, reports=False):
+    def __init__(self, obeys=True, error=0, reports=False, knows_readings=True):
         self.sent, self.obeys, self.error, self.on, self.reports = [], obeys, error, False, reports
+        self.knows_readings = knows_readings
 
     def send_json(self, value):
         self.sent.append(value)
@@ -23,6 +24,10 @@ class Plug:
         if not self.obeys:
             raise relay.socket.timeout
         if "uiActive" in last["params"]:   # its readings asked for: answered, then sent
+            if not self.knows_readings:    # a plug with no meter says nothing
+                raise relay.socket.timeout
+            return {"error": 0, "deviceid": "1000abcdef", "sequence": last["sequence"]}
+        if "sledOnline" in last["params"]:
             return {"error": 0, "deviceid": "1000abcdef", "sequence": last["sequence"]}
         self.on = last["params"]["switches"][0]["switch"] == "on"
         if self.reports:   # its new state, as some plugs say it
@@ -54,6 +59,19 @@ class RelayTests(unittest.TestCase):
         self.assertIs(self.check(plug, ask=relay.answers), True)
         self.assertEqual([m["params"] for m in plug.sent if m.get("action") == "update"], [{"uiActive": 60}])
         self.assertFalse(plug.on)
+
+    def test_a_plug_with_no_meter_is_asked_to_keep_its_leds_setting(self):
+        plug = Plug(knows_readings=False)
+        device = {**DEVICE, "params": {**DEVICE["params"], "sledOnline": "off"}}
+        self.assertIs(self.check(plug, device, ask=relay.answers), True)
+        self.assertEqual([m["params"] for m in plug.sent if m.get("action") == "update"],
+                         [{"uiActive": 60}, {"sledOnline": "off"}])
+        self.assertFalse(plug.on)
+
+    def test_with_no_led_setting_reported_nothing_more_is_sent(self):
+        plug = Plug(knows_readings=False)
+        self.assertIs(self.check(plug, ask=relay.answers), False)
+        self.assertEqual([m["params"] for m in plug.sent if m.get("action") == "update"], [{"uiActive": 60}])
 
     def test_a_plug_online_still_from_before_does_not_answer(self):
         # eWeLink keeps a plug that restarted online until its heartbeats are
