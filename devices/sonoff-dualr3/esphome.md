@@ -5,6 +5,8 @@ choose ESPHome. You do not need to build it: the tool installs the pre-built ima
 in [`../../artifacts/`](../../artifacts/README.md) and writes your Wi-Fi into it,
 in memory only.
 
+## What it reports
+
 It switches both relays, from its button, wall switches and over the network, and reports voltage, currents and power from a CSE7761. Units with a BL0930 report no readings.
 
 ## Adopted into Home Assistant

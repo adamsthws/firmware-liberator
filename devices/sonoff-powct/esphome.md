@@ -5,6 +5,8 @@ choose ESPHome. You do not need to build it: the tool installs the pre-built ima
 in [`../../artifacts/`](../../artifacts/README.md) and writes your Wi-Fi into it,
 in memory only.
 
+## What it reports
+
 It reports voltage, current and power, the last two divided by pi as ESPHome's page says this device needs.
 
 ## Adopted into Home Assistant

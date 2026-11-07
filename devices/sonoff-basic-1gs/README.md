@@ -21,13 +21,12 @@ Sonoff's in-line Matter over Wi-Fi switch, model **BASIC-1GS**, board
 | Chip | BK7238 |
 | Firmware name | `FWSW-01-BASICR5-BK7238` |
 | Flash | 4 MB by the table in its firmware; some published specs say 2 MB, and nobody has read one here |
+| Stock model | `SN-BK7238-BASICR5-01`, 1.0.4 in the public file |
 | Relay | P26 |
 | Inputs | P6 (`Btn`: reads low when pressed), P1 (`Btn_n`: reads high when pressed), each toggling the relay |
 | Wi-Fi LED | P8, lit high |
-| Stock firmware | `SN-BK7238-BASICR5-01`, firmware name `FWSW-01-BASICR5-BK7238`, 1.0.4 in the public file |
-| Stock table | `beken-4m`, the S61's: app `0x11000`, download slot `0x286000`, radio data `0x3e0000`, store `0x3e2000` |
 
-The pins are [one person's template](https://www.elektroda.com/rtvforum/topic4167932.html),
+Pins from [one person's template](https://www.elektroda.com/rtvforum/topic4167932.html),
 now in OpenBeken's device list. Nobody has checked them here, and the emulator
 cannot. **It switches mains: never touch or connect its pins with it on the mains.**
 
@@ -63,12 +62,19 @@ no fallback by switching it off and on.
 
 - **OpenBeken**: [`drv_autoflash_sonoff_basic_1gs.c`](drv_autoflash_sonoff_basic_1gs.c),
   this device's table for [the tool's OpenBeken driver](../sonoff-s61/openbeken.md),
-  which reads the stock Wi-Fi at first boot and applies the wiring. It has no meter.
-- **ESPHome**: [`esphome.yaml`](esphome.yaml), and [`esphome.md`](esphome.md).
-- **Stock firmware**: going back sends eWeLink's official file, fetched by name and
+  which reads the stock Wi-Fi at first boot and applies the wiring. The tool installs
+  `artifacts/openbeken-sonoff-basic-1gs-*.rbl`, built by `tools/repo/update_firmware.py`.
+- **ESPHome** (LibreTiny): [`esphome.yaml`](esphome.yaml); what it reports and how to
+  change it: [`esphome.md`](esphome.md). The tool installs
+  `artifacts/esphome-sonoff-basic-1gs-*.rbl`, built the same way.
+- **Flash layout**: `beken-4m`, the S61's, by the table in its official file: app
+  `0x11000`, download slot `0x286000`, radio data `0x3e0000`, store `0x3e2000`.
+- **Calibration**: none, as it has no meter.
+- **Back to Sonoff**: going back sends eWeLink's official file, fetched by name and
   hash from [FlashDumps](https://github.com/openshwprojects/FlashDumps), which
   publishes it (`tools/autoflash/routes/beken/images.py`). This repository holds none.
-- **The images**: `artifacts/openbeken-sonoff-basic-1gs-*.rbl` and
-  `artifacts/esphome-sonoff-basic-1gs-*.rbl`, built by `tools/repo/update_firmware.py`.
+- **How it is converted**: as the S61 is, by the same route
+  ([`tools/autoflash/routes/beken/`](../../tools/autoflash/routes/beken/)), with its
+  own firmware name and table ([what the tool checks](../../tools/beken/README.md#adding-a-4-mb-bk7238-device-with-no-whole-dump)).
 - **Research**: [`research.md`](research.md), what is known of its flash size and the
   read that settles it.

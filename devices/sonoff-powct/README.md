@@ -12,12 +12,14 @@
 
 ## The device
 
-Sonoff's the **POWCT**: a clamp-on energy meter with a small display. Its stock firmware calls itself `SN-ESP32D0-POWCT-01`.
+Sonoff's clamp-on energy meter with a small display, the **POWCT**.
 
 | | |
 |---|---|
-| Chip | ESP32 (4 MB flash) |
+| Chip | ESP32 |
 | Firmware name | `FWSW-E32POWCT-POWCT-ESP32D0WDV3` |
+| Flash | 4 MB |
+| Stock model | `SN-ESP32D0-POWCT-01` |
 | Relay | GPIO21 |
 | Status LED | GPIO13, inverted |
 | Wi-Fi LED | GPIO15, inverted |
@@ -27,11 +29,17 @@ Sonoff's the **POWCT**: a clamp-on energy meter with a small display. Its stock 
 
 Pins from [ESPHome's page](https://devices.esphome.io/devices/sonoff-powct/); Blakadder has no template for it, so the Tasmota template in [`kinds.py`](../../tools/autoflash/kinds.py) was worked out from that table.
 
+## Files
+
 - **Tasmota**: the official release, unchanged, given the template in
   [`tools/autoflash/kinds.py`](../../tools/autoflash/kinds.py).
 - **ESPHome**: [`esphome.yaml`](esphome.yaml); [`esphome.md`](esphome.md) says what it reports.
 - **Flash layout**: Sonoff's, the same table as the S60's.
 - **Calibration**: not carried over.
+- **Back to Sonoff**: the tool writes back the device's own backup, taken before
+  anything of Sonoff's is written over; without it, Sonoff's official firmware for
+  it, with the identity the device keeps or your eWeLink account holds
+  ([how](../../docs/what-happens.md#changing-firmware-later)).
 - **How it is converted**: as the S60 is ([`docs/what-happens.md`](../../docs/what-happens.md)),
   with the firmware for its chip. [`docs/adding-a-device.md`](../../docs/adding-a-device.md)
   says what was needed.

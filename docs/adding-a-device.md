@@ -63,7 +63,9 @@ dump is ever committed. Tooling fetches it at run time.
 5. **Add its firmware.** Write `devices/<key>/esphome.yaml`, `esphome.md` and
    `README.md`, the last starting with its status, and its table with a
    `| Firmware name |` row, after its chip, of the kind's `wrapper_model`
-   (`tests/repo/test_firmware_names.py` holds the two alike). Then build and pin
+   (`tests/repo/test_firmware_names.py` holds the two alike). Lay both pages out
+   as another device's of its chip family are: `tests/repo/test_device_pages.py`
+   holds the sections, table rows and bullets they share. Then build and pin
    the image. `artifacts/` changes only this way:
 
    ```sh

@@ -30,15 +30,14 @@ Sonoff's ESP32-C3 inline switch, model **BASICR4**.
 | Chip | ESP32-C3 |
 | Firmware name | `FWSW-E32R4-BASICR4-ESP32C3` |
 | Flash | 4 MB by the header of its official update file; nobody has read one here |
+| Stock model | `SN-ESP32C3-BASICR4-01`, 1.1.0 in the public file |
 | Relay | GPIO4 |
 | LED | GPIO6: lit high by the Tasmota template, lit low by the ESPHome sources |
 | Button | GPIO9, active low |
 | Zero-cross input | GPIO5: a pulse at each mains zero crossing, read for Sonoff's Magic Switch. Left unset here |
-| Stock firmware | `SN-ESP32C3-BASICR4-01`, firmware name `FWSW-E32R4-BASICR4-ESP32C3`, 1.1.0 in the public file |
-| Stock table | not known: the S60's is expected, and the run stops before anything is written if it is another |
 
-The pins are [Blakadder's template](https://templates.blakadder.com/sonoff_BASICR4.html),
-and agree with [ESPHome's device page](https://devices.esphome.io/devices/sonoff-basic-r4-v1.0),
+Pins from [Blakadder's template](https://templates.blakadder.com/sonoff_BASICR4.html),
+which agrees with [ESPHome's device page](https://devices.esphome.io/devices/sonoff-basic-r4-v1.0),
 taken from [digiblur's](https://digiblur.com/wiki/devices/relays/sonoff-basic-r4/), on
 the relay, button and LED pins. They disagree on whether the LED is lit high or low;
 this follows Blakadder's, which only changes when the LED is lit. GPIO5 is
@@ -50,22 +49,22 @@ Blakadder's warning stands: **its circuit has no transformer, and its low-voltag
 sits at mains potential (130 V measured on 240 V mains). Never touch or connect its
 pins with it on the mains.**
 
-## Back to Sonoff
-
-As from any Espressif device: the run backs up the device's whole flash, Sonoff's
-firmware and settings, before anything is written over them, and going back writes
-that backup again. Neither needs a public dump. The installer reaches the device through
-Sonoff's own update method, in a file wrapped for `FWSW-E32R4-BASICR4-ESP32C3`, the
-name the run also learns from eWeLink's offer or the public file list
-([how](../../docs/adding-a-device.md#learning-the-firmware-name)); a wrong name is
-refused by the device, which stays on Sonoff. With `--no-backup` there is no way
-back: no Espressif device is sent Sonoff's official file.
-
 ## Files
 
 - **Tasmota**: the official release, unchanged, given the template in
   [`tools/autoflash/kinds.py`](../../tools/autoflash/kinds.py), without MagicSwitch.
 - **ESPHome**: [`esphome.yaml`](esphome.yaml); [`esphome.md`](esphome.md) says what it reports.
+- **Flash layout**: not known: the S60's is expected, and the run stops before
+  anything is written if it is another.
+- **Calibration**: none, as it has no meter.
+- **Back to Sonoff**: the tool writes back the device's own backup, taken before
+  anything of Sonoff's is written over; without it, Sonoff's official firmware for
+  it, with the identity the device keeps or your eWeLink account holds
+  ([how](../../docs/what-happens.md#changing-firmware-later)).
 - **How it is converted**: as the S60 is ([`docs/what-happens.md`](../../docs/what-happens.md)),
-  with the firmware for its chip. [`docs/adding-a-device.md`](../../docs/adding-a-device.md)
+  with the firmware for its chip, sent through Sonoff's own update method in a file
+  wrapped for `FWSW-E32R4-BASICR4-ESP32C3`, the name the run also learns from
+  eWeLink's offer or the public file list
+  ([how](../../docs/adding-a-device.md#learning-the-firmware-name)); a wrong name is
+  refused by the device, which stays on Sonoff. [`docs/adding-a-device.md`](../../docs/adding-a-device.md)
   says what was needed.
