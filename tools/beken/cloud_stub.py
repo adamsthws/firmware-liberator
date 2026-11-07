@@ -26,12 +26,15 @@ import ssl
 import sys
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "espressif" / "emulator" / "stub_cloud"))
 import backup  # noqa: E402
 import cloud_online  # noqa: E402  (its compact JSON and certificates; needs the emulator image)
+import fota_wrap  # noqa: E402
+import stock_app  # noqa: E402
 import stock_points  # noqa: E402
 import stub_server as ss  # noqa: E402
 
@@ -92,6 +95,28 @@ def device(flash: Path, state: Path) -> dict:
     return record
 
 
+def offered(flash: Path, state: Path, model: str) -> SimpleNamespace | None:
+    """The update file the stub offers the plug, as eWeLink offers a real one
+    its official file (query_ota.latest_offer): the plug's own stock app as the
+    RBL its bootloader applies, in the FOTA container its updater takes, named
+    as its kind's are. A readout reverts with it, a run back to Sonoff with no
+    backup fetches it. Made once into `state`, from the Sonoff firmware the plug
+    first started on: it may next start with another firmware on the flash.
+    None where the flash holds no stock app this can read."""
+    kept, kept_version = state / "offered.fota", state / "offered.version"
+    if not (kept.exists() and kept_version.exists()):
+        kind = next((kind for kind in kinds.EVERY if model and kind.stock_model == model), None)
+        try:
+            image, version = stock_app.stock_rbl(flash.read_bytes())
+        except (OSError, ValueError):
+            return None
+        if kind is None:
+            return None
+        kept.write_bytes(fota_wrap.wrap(image, name=kind.wrapper_model, version=version))
+        kept_version.write_text(version + "\n", encoding="utf-8")
+    return SimpleNamespace(version=kept_version.read_text(encoding="utf-8").strip(), data=kept.read_bytes())
+
+
 def remember(stub: ss.Stub, path: Path, model: str = "") -> None:
     """What plugs have said of themselves, kept in `path` across restarts: an
     eWeLink account keeps its devices while they run another firmware. Their
@@ -121,7 +146,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     leaf, key = certificates(args.state, args.bind)
     record = device(args.flash, args.state)
-    stub = ss.Handler.stub = ss.Stub(args.bind, 443, HEARTBEAT, record)
+    update = offered(args.flash, args.state, record["model"])
+    stub = ss.Handler.stub = ss.Stub(args.bind, 443, HEARTBEAT, record, update)
+    ss.log(f"offering {update.version} as the latest firmware" if update else "offering no firmware")
     remember(stub, args.state / "stub-reported.json", record["model"])
     # The S61 parses the port as a string; the tool takes either.
     stub.dispatch_response = lambda: {"error": 0, "reason": "", "IP": args.bind, "domain": args.bind,
