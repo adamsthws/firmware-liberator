@@ -61,6 +61,7 @@ from tools.espressif import inspect_stock_nvs
 from tools.espressif.safeboot import prepare_imprinted_bundle
 from tools.espressif.safeboot import safeboot_migration
 from tools.ewelink import discover_ewelink
+from tools.autoflash.routes.espressif import images
 
 
 def no_lock_records(root, name):
@@ -574,9 +575,9 @@ class EsphomeSignalTests(unittest.TestCase):
                       mock.patch.object(handover, "consent_to_leave", self.consent),
                       mock.patch.object(mover, "wait_for_mover"),
                       mock.patch.object(esphome, "is_esphome", return_value=False),
-                      mock.patch.object(esphome, "image_for", return_value=b"\0" * 64),
-                      mock.patch.object(esphome, "mover_for", return_value=b"\0" * 64),
-                      mock.patch.object(esphome, "leaving_table", return_value=b""),
+                      mock.patch.object(images, "image_for", return_value=b"\0" * 64),
+                      mock.patch.object(images, "mover_for", return_value=b"\0" * 64),
+                      mock.patch.object(images, "leaving_table", return_value=b""),
                       mock.patch.object(esphome_ota, "probe", return_value=None),
                       mock.patch.object(plans, "esphome", return_value="plan"),
                       mock.patch.object(mover, "what_tasmota_has", return_value=(None, None)),
@@ -733,8 +734,8 @@ class LeaveTasmotaStoppedTests(unittest.TestCase):
                       mock.patch.object(mover, "wait_for_mover"),
                       mock.patch.object(mover, "table_written", return_value=True),
                       mock.patch.object(esphome_ota, "probe", return_value=None),
-                      mock.patch.object(esphome, "mover_for", return_value=b""),
-                      mock.patch.object(esphome, "leaving_table", return_value=b""),
+                      mock.patch.object(images, "mover_for", return_value=b""),
+                      mock.patch.object(images, "leaving_table", return_value=b""),
                       mock.patch.object(mover, "what_tasmota_has", return_value=(None, None)),
                       mock.patch.object(plans, "leave_tasmota",
                                         return_value=SimpleNamespace(name="leave_tasmota", running=0))):

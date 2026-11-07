@@ -397,7 +397,8 @@ the routes, a package per chip family: `routes/espressif/` holds the S60's -
 `installer.py`, `hub.py`, `tasmota.py`, `mover.py` and `sonoff.py` by where
 the plug is on its way, `source.py` for where a run left one part way,
 `evidence.py` for what a step cut off left behind, `bundle.py` for the
-firmware bundle, `sonoff_firmware.py` for Sonoff's firmware where the plug has
+firmware bundle, `images.py` for the ESPHome images it is given,
+`sonoff_firmware.py` for Sonoff's firmware where the plug has
 no backup - and `routes/beken/` the S61's: `images.py` for the firmware it is
 given, Sonoff's included, `stock.py` for the push from Sonoff's firmware
 through eWeLink, `onward.py` for each converted firmware taking the next,

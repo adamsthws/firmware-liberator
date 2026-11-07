@@ -144,7 +144,7 @@ settings are lost (see [Tasmota's own names](#tasmotas-own-names)).
 - Rebuilt as [`devices/sonoff-s60/esphome.md`](../devices/sonoff-s60/esphome.md) says, a new version
   each time: `artifacts/esphome-<kind>-imprintable-<version>.bin` and its
   bootloader, then `IMAGE`, its SHA-256 and size in
-  [`tools/autoflash/esphome.py`](../tools/autoflash/esphome.py).
+  [`tools/autoflash/routes/espressif/images.py`](../tools/autoflash/routes/espressif/images.py).
 - Its Wi-Fi action (`autoflash_wifi`, `WIFI_ACTIONS` in `esphome.py`) and
   the Wi-Fi placeholders (`AUTOFLASH-IMPRINT-SSID>` and `-PASS>`, in
   [`tools/autoflash/imprint.py`](../tools/autoflash/imprint.py)) are in the
@@ -249,7 +249,7 @@ add today's names to these lists rather than replacing them.
 3. Rebuild every firmware whose name changed, each as a new version, and
    publish each artifact: the file in `artifacts/`, its line in `SHA256SUMS`,
    its row in [`artifacts/README.md`](../artifacts/README.md), the path,
-   SHA-256 and size where the tool pins it (`BRIDGE_OTA`, `esphome.IMAGE`,
+   SHA-256 and size where the tool pins it (`BRIDGE_OTA`, `images.IMAGE`,
    `CONTROL_FILES` in `flash_readout.py`), and
    [`NOTICES.md`](../NOTICES.md).
 4. Update the tests that name them: `tests/autoflash/test_setup_networks.py`,

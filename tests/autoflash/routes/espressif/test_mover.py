@@ -16,6 +16,7 @@ from tools.autoflash.state import DONE
 from tools.autoflash.routes import espressif, update
 from tools.autoflash.routes.espressif import evidence, mover, source
 from tools.espressif import nvs_image, sonoff_identity
+from tools.autoflash.routes.espressif import images
 
 
 class CheckStepTests(RouteTestCase):
@@ -146,7 +147,7 @@ class ESPHomeUpdateTests(RouteTestCase):
     @staticmethod
     def ours(release="1.4.0", **changed):
         return {"name": "esphome-abcdef", "esphome_version": "2026.10.0", "project_name": "adamsthws.sonoff-s60",
-                "project_version": release, "built": esphome.PINS["image"]["built"], "encrypted": False, **changed}
+                "project_version": release, "built": images.PINS["image"]["built"], "encrypted": False, **changed}
 
     def test_an_earlier_release_is_offered_the_update(self):
         ctx, route, offered = self.settle(self.ours(), answer=1)
@@ -295,13 +296,13 @@ class ESPHomeUpdateTests(RouteTestCase):
                 self.assertEqual("--replace-own-build" in str(stopped.exception), says)
 
     def test_a_build_published_for_an_earlier_release_is_offered_it(self):
-        ctx, route, _ = self.settle(self.ours(built=esphome.PINS["image"]["earlier_builds"][0]), answer=1)
+        ctx, route, _ = self.settle(self.ours(built=images.PINS["image"]["earlier_builds"][0]), answer=1)
         self.assertEqual(route, ("esphome", "outdated"))
 
     def test_published_builds_are_each_kinds_own(self):
-        s60, s61 = (esphome.published_builds(kinds.by_key(key)) for key in ("sonoff-s60", "sonoff-s61"))
-        self.assertIn(esphome.PINS["image"]["built"], s60)
-        self.assertIn(esphome.FIRMWARE["beken"]["sonoff-s61"]["esphome"]["built"], s61)
+        s60, s61 = (update.published_builds(kinds.by_key(key)) for key in ("sonoff-s60", "sonoff-s61"))
+        self.assertIn(images.PINS["image"]["built"], s60)
+        self.assertIn(images.FIRMWARE["beken"]["sonoff-s61"]["esphome"]["built"], s61)
         self.assertEqual(s60 & s61, set())
 
     def test_releases_are_compared_as_numbers(self):
@@ -362,18 +363,18 @@ class CarriedOffTasmotaTests(Fixture):
 
     def test_the_kept_identity_goes_into_sonoffs_settings(self):
         ctx = self.ctx(on_tasmota(sector=sonoff_identity.to_sector(IDENTITY)))
-        settings = mover.settings_to_carry(ctx, esphome.layout_of(kinds.SONOFF_S60))
+        settings = mover.settings_to_carry(ctx, images.layout_of(kinds.SONOFF_S60))
         self.assertEqual(sonoff_identity.from_nvs(settings + b"\xff" * (0x10000 - len(settings))), IDENTITY)
         self.assertNotIn(b"Home-2G", settings)  # nothing of the Wi-Fi
         self.assertEqual(len(settings) % nvs_image.PAGE, 0)
 
     def test_a_plug_converted_before_carries_its_backups(self):
         self.back_up()
-        settings = mover.settings_to_carry(self.ctx(on_tasmota()), esphome.layout_of(kinds.SONOFF_S60))
+        settings = mover.settings_to_carry(self.ctx(on_tasmota()), images.layout_of(kinds.SONOFF_S60))
         self.assertEqual(sonoff_identity.from_nvs(settings + b"\xff" * (0x10000 - len(settings))), IDENTITY)
 
     def test_with_neither_the_region_is_cleared_as_before(self):
-        self.assertIsNone(mover.settings_to_carry(self.ctx(on_tasmota()), esphome.layout_of(kinds.SONOFF_S60)))
+        self.assertIsNone(mover.settings_to_carry(self.ctx(on_tasmota()), images.layout_of(kinds.SONOFF_S60)))
 
 
 if __name__ == "__main__":

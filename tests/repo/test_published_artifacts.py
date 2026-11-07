@@ -110,31 +110,32 @@ if __name__ == "__main__":
 
 class PublishedESPHomeTests(unittest.TestCase):
     def test_the_esphome_image_is_pinned(self):
-        from tools.autoflash import esphome
+        from tools.autoflash.routes.espressif import images
         from tools.autoflash.runs import ROOT
-        image = esphome.published_image()  # refuses a changed file
-        line = f"{sha256_bytes(image)}  {esphome.IMAGE.name}"
+        image = images.published_image()  # refuses a changed file
+        line = f"{sha256_bytes(image)}  {images.IMAGE.name}"
         self.assertIn(line, (ROOT / "artifacts" / "SHA256SUMS").read_text().splitlines())
 
     def test_its_bootloader_is_pinned_and_comes_from_the_same_build(self):
-        from tools.autoflash import esphome
+        from tools.autoflash.routes.espressif import images
         from tools.autoflash.runs import ROOT
-        bootloader = esphome.published_bootloader()  # refuses a changed or broken file
-        line = f"{sha256_bytes(bootloader)}  {esphome.BOOTLOADER.name}"
+        bootloader = images.published_bootloader()  # refuses a changed or broken file
+        line = f"{sha256_bytes(bootloader)}  {images.BOOTLOADER.name}"
         self.assertIn(line, (ROOT / "artifacts" / "SHA256SUMS").read_text().splitlines())
         # Named for the image whose build made it: this one's, or an earlier
         # one's, kept when a later build's differed (docs/updating-firmware.md).
-        built = esphome.PINS["bootloader"]["version"]
-        self.assertTrue(esphome.BOOTLOADER.name.endswith(f"-{built}.bin"), "named for its build")
+        built = images.PINS["bootloader"]["version"]
+        self.assertTrue(images.BOOTLOADER.name.endswith(f"-{built}.bin"), "named for its build")
         as_numbers = lambda version: tuple(int(part) for part in re.split(r"[.-]", version))  # noqa: E731
-        self.assertLessEqual(as_numbers(built), as_numbers(esphome.PINS["image"]["version"]))
+        self.assertLessEqual(as_numbers(built), as_numbers(images.PINS["image"]["version"]))
 
     def test_the_esphome_image_can_have_the_wifi_written_in(self):
-        from tools.autoflash import esphome, imprint
-        image = esphome.published_image()
-        validate_native_image(image, esphome.SLOT_SIZE, "published ESPHome")
+        from tools.autoflash import imprint
+        from tools.autoflash.routes.espressif import images
+        image = images.published_image()
+        validate_native_image(image, images.SLOT_SIZE, "published ESPHome")
         self.assertEqual(imprint.find_build_paths(image), [])
-        written = esphome.image_for("Home", "a password")
+        written = images.image_for("Home", "a password")
         imprint.require_imprinted(written)
         self.assertEqual(len(written), len(image))
 
@@ -236,18 +237,18 @@ def include_entries(config):
 
 class ESPHomeImageCheckTests(unittest.TestCase):
     def test_a_factory_image_or_another_chip_is_refused(self):
-        from tools.autoflash import esphome
-        image = bytearray(esphome.published_image())
+        from tools.autoflash.routes.espressif import images
+        image = bytearray(images.published_image())
         factory = bytearray(image)
         factory[32:36] = b"\x50\x00\x00\x00"  # a bootloader's description, not an app's
-        with self.assertRaisesRegex(esphome.ImageError, "factory"):
-            esphome.check_app(bytes(factory), "firmware.factory.bin")
+        with self.assertRaisesRegex(images.ImageError, "factory"):
+            images.check_app(bytes(factory), "firmware.factory.bin")
         other = bytearray(image)
         other[12] = 0  # ESP32
-        with self.assertRaisesRegex(esphome.ImageError, "ESP32-C3"):
-            esphome.check_app(bytes(other), "firmware.ota.bin")
-        with self.assertRaisesRegex(esphome.ImageError, "app slot"):
-            esphome.check_app(bytes(image) + b"\0" * esphome.SLOT_SIZE, "big.bin")
+        with self.assertRaisesRegex(images.ImageError, "ESP32-C3"):
+            images.check_app(bytes(other), "firmware.ota.bin")
+        with self.assertRaisesRegex(images.ImageError, "app slot"):
+            images.check_app(bytes(image) + b"\0" * images.SLOT_SIZE, "big.bin")
 
 
 class PublishedFilesAreInGitTests(unittest.TestCase):

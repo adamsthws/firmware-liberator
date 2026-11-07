@@ -5,12 +5,13 @@ import unittest
 from unittest import mock
 
 from tests.autoflash.routes.espressif.test_espressif import RouteTestCase
-from tools.autoflash import esphome, routes
+from tools.autoflash import routes
 from tools.autoflash.device import DeviceError
 from tools.autoflash.state import DONE
 from tools.autoflash.routes import espressif, update
 from tools.autoflash.routes.espressif import source
 from tools.espressif import chips
+from tools.autoflash.routes.espressif import images
 
 
 class LeavingTasmotaForESPHomeTests(RouteTestCase):
@@ -26,7 +27,7 @@ class LeavingTasmotaForESPHomeTests(RouteTestCase):
             routes.settle_route(ctx)
         return ctx
 
-    ON_PLUG = {True: hashlib.sha256(esphome.published_bootloader(chips.ESP32)).hexdigest(), False: "0" * 64}
+    ON_PLUG = {True: hashlib.sha256(images.published_bootloader(chips.ESP32)).hexdigest(), False: "0" * 64}
 
     def names(self, state):
         return [step for step, _, _ in routes.steps_of(state)]
@@ -38,7 +39,7 @@ class LeavingTasmotaForESPHomeTests(RouteTestCase):
     def test_it_is_read_where_the_chip_keeps_it(self):
         ctx = self.settle(direct=True)
         ctx.device.sha_region.assert_called_once_with(chips.ESP32.bootloader_at,
-                                                      len(esphome.published_bootloader(chips.ESP32)), timeout=30)
+                                                      len(images.published_bootloader(chips.ESP32)), timeout=30)
 
     def test_any_other_goes_through_the_hub_which_writes_it(self):
         steps = self.names(self.settle(direct=False).state)

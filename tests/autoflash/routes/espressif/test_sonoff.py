@@ -7,11 +7,12 @@ from unittest import mock
 from tests.espressif.test_sonoff_identity import FRAME
 from tests.autoflash.routes.espressif.test_identity import IDENTITY, MAC, Fixture, settings_of
 from tests.autoflash.routes.espressif.test_sonoff_firmware import SONOFF_APP
-from tools.autoflash import esphome, plans
+from tools.autoflash import plans
 from tools.autoflash.errors import NothingWritten
 from tools.autoflash.routes.espressif import hub, sonoff, sonoff_firmware
 from tools.espressif import sonoff_identity
 from tools.ewelink import get_device_key
+from tools.autoflash.routes.espressif import images
 
 
 class RebuiltTests(Fixture):
@@ -29,7 +30,7 @@ class RebuiltTests(Fixture):
 
     def test_from_the_identity_the_plug_kept(self):
         flash = bytearray(b"\xff" * 0x400000)
-        flash[0x8000:0x9000] = esphome.sonoff_table()
+        flash[0x8000:0x9000] = images.sonoff_table()
         flash[0x9000:0x19000] = sonoff_identity.nvs(IDENTITY, 0x10000)
         ctx = self.ctx(flash)
         result, fetched, first, second = self.restore(ctx)
@@ -46,7 +47,7 @@ class RebuiltTests(Fixture):
         # As it does on the way from the mover or ESPHome to the hub; the end of
         # ota_1 is past every image written there since.
         flash = bytearray(b"\xff" * 0x400000)
-        flash[0x8000:0x9000] = esphome.sonoff_table()
+        flash[0x8000:0x9000] = images.sonoff_table()
         flash[0x3FF000:0x400000] = sonoff_identity.to_sector(IDENTITY)
         ctx = self.ctx(flash)
         _, fetched, _, second = self.restore(ctx)

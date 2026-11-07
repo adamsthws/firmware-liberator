@@ -34,7 +34,6 @@ from tools.espressif.safeboot.safeboot_migration import (
     sha256_bytes,
     target_table,
 )
-from tools.autoflash import esphome as esphome_files
 from tools.autoflash import plans
 from tools.espressif.safeboot.configure_recovery_safeboot import render_header
 from tools.espressif.safeboot.validate_recovery_safeboot import header_value
@@ -47,6 +46,7 @@ from tools.espressif.safeboot.serve_safeboot_migration import (
     parse_report,
     phase_confirmation_refusal,
 )
+from tools.autoflash.routes.espressif import images
 
 
 def partition_sector(entries):
@@ -1131,7 +1131,7 @@ class PlanPhaseTests(unittest.TestCase):
     one Berry program, every write read back and compared byte for byte."""
 
     IMAGE = b"\xe9" + bytes((index * 13 + 5) & 0xFF for index in range(10_000))
-    BOOTLOADER = esphome_files.published_bootloader()
+    BOOTLOADER = images.published_bootloader()
 
     def state(self, fixture, plan=None):
         return MigrationState(fixture.manifest_path, fixture.manifest, "plan",
@@ -1146,7 +1146,7 @@ class PlanPhaseTests(unittest.TestCase):
 
     def test_its_berry_is_rendered_whole(self):
         with tempfile.TemporaryDirectory() as directory:
-            plan = plans.leave_tasmota(self.IMAGE, esphome_files.sonoff_table())
+            plan = plans.leave_tasmota(self.IMAGE, images.sonoff_table())
             rendered = self.state(MigrationFixture(Path(directory)), plan).render_berry().decode()
         self.assertNotRegex(rendered, r"@[A-Z][A-Z0-9_]+@")
         for blob in ("mover", "table"):
@@ -1162,7 +1162,7 @@ class PlanPhaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             fixture = MigrationFixture(Path(directory))
             fixture.evidence_dir.mkdir(parents=True)
-            state = self.state(fixture, plans.sonoff_layout_back(esphome_files.sonoff_table()))
+            state = self.state(fixture, plans.sonoff_layout_back(images.sonoff_table()))
             rendered = state.render_berry().decode()
             self.assertIn("def copy_region", rendered)
             # Run again once its table is written, it must not copy the old

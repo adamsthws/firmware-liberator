@@ -9,9 +9,10 @@ from unittest import mock
 from tests.espressif.test_dump_stock_flash import esp_image
 from tests.espressif.test_sonoff_identity import FRAME
 from tests.autoflash.routes.espressif.test_identity import IDENTITY
-from tools.autoflash import esphome, kinds, plans
+from tools.autoflash import kinds, plans
 from tools.autoflash.routes.espressif import sonoff_firmware
 from tools.espressif import build_vendor_ota, sonoff_identity
+from tools.autoflash.routes.espressif import images
 
 
 def app_image(project, size=0x3000):
@@ -77,7 +78,7 @@ class SonoffFirmwareTests(unittest.TestCase):
 
     def test_the_stub_is_all_a_run_against_it_reaches(self):
         ctx = SimpleNamespace(ewelink_session=lambda: None)
-        layout = esphome.layout_of(kinds.SONOFF_S60)
+        layout = images.layout_of(kinds.SONOFF_S60)
         with mock.patch.dict("os.environ", {"AUTOFLASH_EWELINK_API_BASE": "https://apia.example.test"}), \
                 mock.patch.object(sonoff_firmware, "public", side_effect=AssertionError("not reached")):
             with self.assertRaisesRegex(sonoff_firmware.FirmwareError, "could not be fetched"):
@@ -88,9 +89,9 @@ class SonoffFirmwareTests(unittest.TestCase):
         self.assertEqual((app, where), (SONOFF_APP, "the public copy of Sonoff's update file (FlashDumps)"))
 
     def test_what_a_backup_would_hold_is_written_as_one(self):
-        layout = esphome.layout_of(kinds.SONOFF_S60)
+        layout = images.layout_of(kinds.SONOFF_S60)
         settings = sonoff_identity.nvs(IDENTITY, 0x10000)
-        flash = sonoff_firmware.flash_of(esphome.sonoff_table(), settings, SONOFF_APP, layout)
+        flash = sonoff_firmware.flash_of(images.sonoff_table(), settings, SONOFF_APP, layout)
         with mock.patch.object(plans, "app_length", return_value=len(SONOFF_APP)):
             first, second = plans.back_to_sonoff(flash, running=1, layout=layout)
         self.assertEqual(plans.stock_slot(flash, layout), 0)

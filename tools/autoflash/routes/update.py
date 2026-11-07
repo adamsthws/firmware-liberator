@@ -12,7 +12,7 @@ shared is here: which plug is offered the update, and what it says once it
 has it.  One is offered it only when its firmware says it is this tool's
 for its kind at an earlier version (RELEASE).  An ESPHome is also passed
 over where its API is encrypted, which ours never is, or where it is a build
-this project did not publish (esphome.published_builds): one adopted into an
+this project did not publish (published_builds): one adopted into an
 ESPHome dashboard, with a key or without, is that dashboard's to update - the
 published image would take away its changes and any key.  Its owner can ask
 for that (--replace-own-build, replace_own_build).
@@ -46,6 +46,17 @@ def older(version: str, than: str) -> bool:
 OWN_BUILD = "your own build"
 
 
+def published_builds(kind: kinds.Kind) -> set[str]:
+    """When each ESPHome this project published for `kind` was built, as its API
+    says.  Any other build is someone's own, whatever version it gives: the same
+    config built by a dashboard says the same version, and need not have a key."""
+    # Each family's images are its package's, and each package imports this.
+    from tools.autoflash.routes.beken import images as beken_images
+    from tools.autoflash.routes.espressif import images as espressif_images
+    pin = beken_images.PINS[kind.key]["esphome"] if kind.family == "beken" else espressif_images.image_pin(kind)
+    return {pin["built"], *pin.get("earlier_builds", ())}
+
+
 def esphome_release(ctx: Context) -> str | None:
     """The release of this tool's ESPHome for the run's kind the plug runs
     (esphome.api_device_info), or None: another project's, an encrypted one, or
@@ -60,7 +71,7 @@ def esphome_release(ctx: Context) -> str | None:
         return None
     if info["built"] == ctx.state.input("replaced_build"):
         return OWN_BUILD
-    if info["encrypted"] or info["built"] not in esphome.published_builds(kind):
+    if info["encrypted"] or info["built"] not in published_builds(kind):
         return None
     return str(info["project_version"])
 
@@ -121,7 +132,7 @@ def is_own_build(ctx: Context) -> bool:
     except esphome.ApiLocked:
         return True
     return bool(info and info["project_name"] == kind.esphome_project
-                and (info["encrypted"] or info["built"] not in esphome.published_builds(kind)))
+                and (info["encrypted"] or info["built"] not in published_builds(kind)))
 
 
 def replace_own_build(ctx: Context, firmware: str, published: str | None) -> bool:
@@ -146,7 +157,7 @@ def replace_own_build(ctx: Context, firmware: str, published: str | None) -> boo
     if not info or info["project_name"] != kind.esphome_project:
         raise Abort(f"--replace-own-build only replaces this project's ESPHome for a {kind.name}, and the "
                     f"device says it is {(info or {}).get('project_name') or 'no project'}")
-    if not info["encrypted"] and info["built"] in esphome.published_builds(kind):
+    if not info["encrypted"] and info["built"] in published_builds(kind):
         return False
     prompts.warning_box("Replacing your own build", [
         f"This installs this project's ESPHome {published} over the build on the device.",

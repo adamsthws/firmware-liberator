@@ -3,9 +3,10 @@ import struct
 import unittest
 from pathlib import Path
 
-from tools.autoflash import esphome, kinds, plans
+from tools.autoflash import kinds, plans
 from tools.espressif import chips, layouts
 from tools.espressif.safeboot import safeboot_migration
+from tools.autoflash.routes.espressif import images
 
 SECTOR = plans.SECTOR
 
@@ -14,7 +15,7 @@ def stock_flash(stock_slot=0, app_size=0x163874):
     """A 4 MiB flash laid out as Sonoff's, its firmware in `stock_slot`."""
     from tools.autoflash.imprint import parse_esp_image  # noqa: F401 - its format is what is built
     flash = bytearray(b"\xff" * 0x400000)
-    flash[0x8000:0x9000] = esphome.sonoff_table()
+    flash[0x8000:0x9000] = images.sonoff_table()
     flash[0x9000:0x1D000] = bytes(range(256)) * (0x14000 // 256)
     flash[0x1F000:0x20000] = b"\x07" * SECTOR
     for slot, project in ((stock_slot, b"esp32_fw"), (1 - stock_slot, b"autoflash_bridge")):
@@ -26,13 +27,13 @@ def stock_flash(stock_slot=0, app_size=0x163874):
 
 class PlanTests(unittest.TestCase):
     def test_every_plan_stays_inside_the_time_a_plug_may_be_busy(self):
-        image = esphome.published_image()
-        for plan in (plans.bootloader(esphome.published_bootloader()), plans.esphome(image),
-                     plans.leave_tasmota(esphome.mover_for("Home", "pw"), esphome.sonoff_table())):
+        image = images.published_image()
+        for plan in (plans.bootloader(images.published_bootloader()), plans.esphome(image),
+                     plans.leave_tasmota(images.mover_for("Home", "pw"), images.sonoff_table())):
             self.assertLessEqual(plan.busy_estimate(), plans.BUSY_LIMIT, plan.name)
 
     def test_a_plan_travels_whole_and_says_the_same_on_arrival(self):
-        plan = plans.leave_tasmota(esphome.mover_for("Home", "pw"), esphome.sonoff_table())
+        plan = plans.leave_tasmota(images.mover_for("Home", "pw"), images.sonoff_table())
         again = plans.Plan.from_bundle(plan.bundle())
         self.assertEqual(again.expected(), plan.expected())
         self.assertEqual(again.final_table_sha256(), plans.SONOFF_TABLE_SHA256)
@@ -41,39 +42,39 @@ class PlanTests(unittest.TestCase):
             plans.Plan.from_bundle(plan.bundle()[:-1])  # cut short
 
     def test_leaving_tasmota_writes_in_front_of_it_and_the_table_last(self):
-        plan = plans.leave_tasmota(esphome.mover_for("Home", "pw"), esphome.sonoff_table())
+        plan = plans.leave_tasmota(images.mover_for("Home", "pw"), images.sonoff_table())
         ends = [end for _, end, _ in plan.regions()]
         self.assertLessEqual(max(ends), plans.TASMOTA_APP0)  # never where Tasmota runs
         self.assertEqual(plan.steps[-1], plans.Write("table", plans.TABLE_ADDRESS, whole=True))
         self.assertEqual(plan.running, 0)
         with self.assertRaisesRegex(plans.PlanError, "fit"):
-            plans.leave_tasmota(b"\xe9" * 0xC1000, esphome.sonoff_table())
+            plans.leave_tasmota(b"\xe9" * 0xC1000, images.sonoff_table())
         with self.assertRaisesRegex(plans.PlanError, "Sonoff's partition table"):
             plans.leave_tasmota(b"\xe9" * 1000, b"\0" * SECTOR)
 
     def test_leaving_tasmota_carries_the_identity_into_sonoffs_settings(self):
         settings = b"\x01" * (2 * SECTOR + 100)
         for kind in (kinds.SONOFF_S60, kinds.SONOFF_TH_ELITE):
-            layout = esphome.layout_of(kind)
-            plan = plans.leave_tasmota(esphome.mover_for("Home", "pw", esphome.chip_of(kind)),
-                                       esphome.leaving_table(kind), layout, settings=settings)
+            layout = images.layout_of(kind)
+            plan = plans.leave_tasmota(images.mover_for("Home", "pw", images.chip_of(kind)),
+                                       images.leaving_table(kind), layout, settings=settings)
             self.assertEqual(plan.steps[1], plans.Write("settings", layout.nvs), kind.key)
             # The rest of where Sonoff's layout keeps its settings and boot selection, cleared.
             self.assertEqual(plan.steps[2], plans.Erase(layout.nvs + 3 * SECTOR, layouts.MOVER_AT - layout.nvs - 3 * SECTOR))
             self.assertEqual(plan.steps[-1], plans.Write("table", plans.TABLE_ADDRESS, whole=True))
             self.assertLessEqual(plan.busy_estimate(), plans.BUSY_LIMIT)
         with self.assertRaisesRegex(plans.PlanError, "do not fit"):
-            plans.leave_tasmota(b"\xe9" * 1000, esphome.sonoff_table(), settings=b"\x01" * 0x15000)
+            plans.leave_tasmota(b"\xe9" * 1000, images.sonoff_table(), settings=b"\x01" * 0x15000)
 
     def test_a_plug_on_tasmotas_own_table_leaves_it_too(self):
         # Converted before the identity was kept: the plan checks for the table it has.
-        own = plans.leave_tasmota(b"\xe9" * 1000, esphome.sonoff_table(),
+        own = plans.leave_tasmota(b"\xe9" * 1000, images.sonoff_table(),
                                   tasmota_table=safeboot_migration.OFFICIAL_TABLE_SHA256)
         self.assertEqual(own.table_sha256, safeboot_migration.OFFICIAL_TABLE_SHA256)
-        self.assertEqual(plans.leave_tasmota(b"\xe9" * 1000, esphome.sonoff_table()).table_sha256,
+        self.assertEqual(plans.leave_tasmota(b"\xe9" * 1000, images.sonoff_table()).table_sha256,
                          safeboot_migration.TARGET_TABLE_SHA256)
         with self.assertRaisesRegex(plans.PlanError, "Tasmota layout"):
-            plans.leave_tasmota(b"\xe9" * 1000, esphome.sonoff_table(), tasmota_table=plans.SONOFF_TABLE_SHA256)
+            plans.leave_tasmota(b"\xe9" * 1000, images.sonoff_table(), tasmota_table=plans.SONOFF_TABLE_SHA256)
 
     def test_the_identity_is_kept_at_the_top_of_the_flash_from_the_hub(self):
         plan = plans.keep_identity(b"\x02" * SECTOR)
@@ -93,15 +94,15 @@ class PlanTests(unittest.TestCase):
         # it (a classic ESP32: BRY: MEMORY ALLOCATION FAILED). The hub writes it.
         for kind, chip in ((kinds.SONOFF_S60, chips.ESP32C3), (kinds.SONOFF_POW_ELITE, chips.ESP32),
                            (kinds.SONOFF_TH_ELITE, chips.ESP32)):
-            plan = plans.leave_tasmota(esphome.mover_for("Home", "pw", chip), esphome.leaving_table(kind),
-                                       esphome.layout_of(kind))
+            plan = plans.leave_tasmota(images.mover_for("Home", "pw", chip), images.leaving_table(kind),
+                                       images.layout_of(kind))
             self.assertGreater(min(start for start, _, _ in plan.regions()), plans.TABLE_ADDRESS - 1, kind.key)
             self.assertNotIn("bootloader", plan.blobs, kind.key)
 
     def test_a_th_elite_leaves_tasmota_through_its_temporary_table(self):
         layout = layouts.SONOFF_TH_ELITE
-        table = esphome.leaving_table(kinds.SONOFF_TH_ELITE)
-        plan = plans.leave_tasmota(esphome.mover_for("Home", "pw", chips.ESP32), table, layout)
+        table = images.leaving_table(kinds.SONOFF_TH_ELITE)
+        plan = plans.leave_tasmota(images.mover_for("Home", "pw", chips.ESP32), table, layout)
         self.assertEqual(plan.steps[0], plans.Write("mover", layouts.MOVER_AT))
         self.assertEqual(plan.steps[1], plans.Erase(0x9000, layouts.MOVER_AT - 0x9000))
         self.assertEqual(plan.steps[-1], plans.Write("table", plans.TABLE_ADDRESS, whole=True))
@@ -109,11 +110,11 @@ class PlanTests(unittest.TestCase):
         self.assertEqual((plan.table_sha256, plan.running), (plans.TASMOTA_TABLE_SHA256, 0))
         self.assertLessEqual(max(end for _, end, _ in plan.regions()), plans.TASMOTA_APP0)
         with self.assertRaisesRegex(plans.PlanError, "Sonoff's partition table"):
-            plans.leave_tasmota(esphome.mover_for("Home", "pw", chips.ESP32), layout.table, layout)
+            plans.leave_tasmota(images.mover_for("Home", "pw", chips.ESP32), layout.table, layout)
 
     def test_from_the_temporary_table_each_step_leaves_a_plug_that_starts(self):
         layout = layouts.SONOFF_TH_ELITE
-        plan = plans.own_table_from_temporary(esphome.sonoff_table(kinds.SONOFF_TH_ELITE), layout)
+        plan = plans.own_table_from_temporary(images.sonoff_table(kinds.SONOFF_TH_ELITE), layout)
         self.assertEqual((plan.table_sha256, plan.final_table_sha256(), plan.running, plan.restart),
                          (layout.temporary_sha256, layout.table_sha256, 1, True))
         self.assertEqual(plan.steps[0], plans.Write("otadata", layout.otadata, whole=True))
@@ -139,7 +140,7 @@ class PlanTests(unittest.TestCase):
             plans.own_table_from_temporary(b"\0" * SECTOR, layout)
 
     def test_putting_sonoffs_layout_back_copies_the_settings_home_then_the_table(self):
-        plan = plans.sonoff_layout_back(esphome.sonoff_table())
+        plan = plans.sonoff_layout_back(images.sonoff_table())
         self.assertEqual((plan.table_sha256, plan.running, plan.restart),
                          (safeboot_migration.INTERIM_TABLE_SHA256, 1, True))
         self.assertEqual(plan.steps, [plans.Copy(safeboot_migration.MOVED_LOW_OFFSET, safeboot_migration.LOW_REGIONS_OFFSET,
