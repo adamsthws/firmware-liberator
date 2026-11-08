@@ -75,9 +75,11 @@ Three Cloudflare API tokens are in play, each allowed only what its job needs:
 | Settings check | `website` secret `CLOUDFLARE_READ_TOKEN` | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Read, Dynamic URL Redirects: Read, Zone WAF: Read. Account - Workers R2 Storage: Read |
 | Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit. Account - Workers R2 Storage: Edit |
 
-The deploy token reaches its two Workers and no other in the account. Set a
-secret with `gh secret set <name> --env website -R adamsthws/firmware-liberator`,
-which asks for the value.
+The deploy token reaches its two Workers and no other in the account. The
+environment's secrets are written down in `tools/repo/github_settings.py`,
+whose check fails on one missing; set one with `python3
+tools/repo/github_settings.py secret <name>`, which asks for the value or
+takes it on stdin.
 
 A domain with DNS records of its own stops a deploy (Cloudflare's code
 100117): delete them, and wrangler makes the Worker's.

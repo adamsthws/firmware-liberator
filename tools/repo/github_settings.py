@@ -3,17 +3,21 @@
 
     python3 tools/repo/github_settings.py          what differs from them
     python3 tools/repo/github_settings.py apply    set them
+    python3 tools/repo/github_settings.py secret NAME    set an environment
+                                                         secret, from stdin
 
 Through gh, logged in as an admin of the repository. `apply` changes only
 what differs, and of the checks before main (the second ruleset) requires
 only those that have run on main, saying which are left: a check required
 before its workflow is there - a new job, or one renamed - would hold every
 pull request back, the firmware-update workflow's too. Run it again once
-they have run.
+they have run. A secret's value cannot be read back, so only its name is
+checked, and `apply` leaves a missing one to `secret`.
 """
 
 from __future__ import annotations
 
+import getpass
 import json
 import subprocess
 import sys
@@ -67,11 +71,16 @@ TOGGLES = ["private-vulnerability-reporting", "immutable-releases"]
 
 # The website, firmwareliberator.com, is a Cloudflare Worker
 # (website/README.md) the website workflow deploys from this environment: it
-# takes only main, and holds the workflow's CLOUDFLARE_API_TOKEN. GitHub
-# Pages, which served it before, is off.
+# takes only main, and holds the Cloudflare tokens, each allowed only what its
+# workflow does (website/README.md lists their permissions). GitHub Pages,
+# which served it before, is off.
 ENVIRONMENT = "website"
 ENVIRONMENT_POLICY = {"protected_branches": False, "custom_branch_policies": True}
 ENVIRONMENT_BRANCHES = ["main"]
+ENVIRONMENT_SECRETS = {
+    "CLOUDFLARE_API_TOKEN": "the website workflow's, deploying the two Workers",
+    "CLOUDFLARE_READ_TOKEN": "the cloudflare-settings workflow's, reading the settings it checks",
+}
 
 MAIN = {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}}
 # The checks main requires: jobs of the unit tests and emulator, leak-scan
@@ -191,6 +200,14 @@ def differences() -> list[tuple[str, str, Any]]:
         if policy["name"] not in ENVIRONMENT_BRANCHES or policy.get("type") != "branch":
             found.append((f"environment '{ENVIRONMENT}' {policy.get('type')} {policy['name']}", "should not be there",
                           ("DELETE", f"/environments/{ENVIRONMENT}/deployment-branch-policies/{policy['id']}", None)))
+    secrets = {secret["name"] for secret in api(f"/environments/{ENVIRONMENT}/secrets")["secrets"]} \
+        if environment is not None else set()
+    for name in ENVIRONMENT_SECRETS:
+        if name not in secrets:
+            found.append((f"environment '{ENVIRONMENT}' secret {name}", "is missing", ("SECRET", name, None)))
+    for name in sorted(secrets - set(ENVIRONMENT_SECRETS)):
+        found.append((f"environment '{ENVIRONMENT}' secret {name}", "should not be there",
+                      ("DELETE", f"/environments/{ENVIRONMENT}/secrets/{name}", None)))
     existing = {ruleset["name"]: ruleset["id"] for ruleset in api("/rulesets")}
     for name, want in RULESETS.items():
         body = {"name": name, **want}
@@ -201,11 +218,40 @@ def differences() -> list[tuple[str, str, Any]]:
     return found
 
 
+def set_secret(name: str, value: str) -> None:
+    """Through gh, which seals it with the environment's public key; the value
+    goes on stdin, never into a command line."""
+    result = subprocess.run(["gh", "secret", "set", name, "--env", ENVIRONMENT, "-R", REPOSITORY],
+                            input=value, capture_output=True, text=True)
+    if result.returncode:
+        raise SettingsError(f"gh secret set {name}: {result.stderr.strip() or result.stdout.strip()}")
+
+
+def secret(name: str) -> int:
+    if name not in ENVIRONMENT_SECRETS:
+        print(f"github_settings: {name} is not one of {', '.join(ENVIRONMENT_SECRETS)}", file=sys.stderr)
+        return 2
+    value = (getpass.getpass(f"{name}: ") if sys.stdin.isatty() else sys.stdin.read()).strip()
+    if not value:
+        print(f"github_settings: no value for {name}", file=sys.stderr)
+        return 1
+    try:
+        set_secret(name, value)
+    except SettingsError as error:
+        print(f"github_settings: {error}", file=sys.stderr)
+        return 1
+    print(f"  environment '{ENVIRONMENT}' secret {name}: set")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
+    if len(args) == 2 and args[0] == "secret":
+        return secret(args[1])
     if args not in ([], ["apply"]):
         print(__doc__.strip(), file=sys.stderr)
         return 2
+    left = 0
     try:
         found = differences()
         if not found:
@@ -217,6 +263,11 @@ def main(argv: list[str] | None = None) -> int:
             print("python3 tools/repo/github_settings.py apply sets them.")
             return 1
         for what, _, (method, path, body) in found:
+            if method == "SECRET":
+                print(f"  {what}: left - its value is set with "
+                      f"python3 tools/repo/github_settings.py secret {path}")
+                left = 1
+                continue
             if what == "ruleset 'Checks before main'":
                 run = checks_run_on_main()
                 ready = [name for name in REQUIRED_CHECKS if name in run]
@@ -235,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
     except SettingsError as error:
         print(f"github_settings: {error}", file=sys.stderr)
         return 1
-    return 0
+    return left
 
 
 if __name__ == "__main__":
