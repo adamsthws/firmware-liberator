@@ -179,10 +179,14 @@ says which token does what.
 ## Working with them
 
 ```sh
+python3 tools/repo/readouts.py
 cd website
-npx wrangler r2 object list firmware-liberator-readouts --prefix readouts/ --remote
 npx wrangler r2 object get firmware-liberator-readouts/readouts/2026-11-07/0a1b2c3d4e5f60718293a4b5.tar --remote --file readout.tar
 ```
+
+Both take a token from `CLOUDFLARE_API_TOKEN` that can read the account's R2,
+such as the settings check's; putting or deleting one needs one that can edit
+it.
 
 - **One to keep**, past its 30 days: put it under `kept/`
   (`wrangler r2 object put firmware-liberator-readouts/kept/<name> --file ...`),
