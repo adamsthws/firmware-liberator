@@ -15,7 +15,8 @@ from tests.autoflash.routes.espressif.test_identity import Fixture, IDENTITY, on
 from tools.autoflash import cli, detect, device, errors, esphome, esphome_ota, handover, join, kinds, output
 from tools.autoflash import plans, prompts, report, routes, runs, setup_network, unlock
 from tools.autoflash.routes import espressif, update
-from tools.autoflash.routes.espressif import evidence, hub, images, mover, source as espressif_source
+from tools.autoflash.device import DeviceError
+from tools.autoflash.routes.espressif import evidence, hub, identity, images, mover, source as espressif_source
 from tools.autoflash.state import DONE
 from tools.espressif import nvs_image, sonoff_identity
 
@@ -376,6 +377,14 @@ class CarriedOffTasmotaTests(Fixture):
 
     def test_with_neither_the_region_is_cleared_as_before(self):
         self.assertIsNone(mover.settings_to_carry(self.ctx(on_tasmota()), images.layout_of(kinds.SONOFF_S60)))
+
+    def test_a_sector_that_cannot_be_read_is_passed_by(self):
+        # It stays where it is, for going back; the backup is carried instead.
+        self.back_up()
+        ctx = self.ctx(on_tasmota(sector=sonoff_identity.to_sector(IDENTITY)))
+        with mock.patch.object(identity, "kept_in_sector", side_effect=DeviceError("timed out")):
+            settings = mover.settings_to_carry(ctx, images.layout_of(kinds.SONOFF_S60))
+        self.assertEqual(sonoff_identity.from_nvs(settings + b"\xff" * (0x10000 - len(settings))), IDENTITY)
 
 
 class EsphomeSignalTests(unittest.TestCase):

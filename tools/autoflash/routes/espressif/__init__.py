@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any, Callable, TYPE_CHECKING
 
 from tools.autoflash import account, esphome as esphome, kinds
+from tools.autoflash.device import DeviceError
 from tools.autoflash.routes import update
 from tools.autoflash.routes.espressif import bundle, hub, identity, installer, mover, sonoff, tasmota
 from tools.autoflash.routes.espressif.evidence import ATTEMPTED_EVIDENCE, DESTRUCTIVE_STEPS  # noqa: F401
@@ -26,7 +27,11 @@ def sonoff_without_backup(ctx: Context, source: str, asked: bool = False) -> str
     way keep Sonoff's settings, which only the interim Tasmota can read (R1 does),
     so they are counted on only when Sonoff's firmware was `asked` for; and only
     then is the eWeLink account asked."""
-    if source in ("tasmota", "untemplated") and identity.kept_in_sector(ctx) is not None:
+    try:
+        kept = source in ("tasmota", "untemplated") and identity.kept_in_sector(ctx) is not None
+    except (DeviceError, OSError):
+        kept = False  # only what a run would use is said here
+    if kept:
         return "the Sonoff identity the device keeps, with Sonoff's official firmware"
     if not asked:
         return None

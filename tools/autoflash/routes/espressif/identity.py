@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import Any, TYPE_CHECKING
 
 from tools.autoflash import hostsys, kinds, output, plans, plugs
-from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort
 from tools.autoflash.routes.espressif import hub
 from tools.autoflash.state import PENDING
@@ -43,11 +42,9 @@ def nvs_size(layout: Layout) -> int:
 
 def from_settings(ctx: Context, layout: Layout) -> Identity | None:
     """The identity in the settings of a plug on Sonoff's layout, read through
-    the Berry Tasmota: Sonoff's own, kept by ESPHome, or put there as it left Tasmota."""
-    try:
-        return sonoff_identity.from_nvs(ctx.device.read_nvs(layout.nvs, nvs_size(layout)))
-    except (DeviceError, OSError):
-        return None
+    the Berry Tasmota: Sonoff's own, kept by ESPHome, or put there as it left
+    Tasmota. A read that fails raises: a plug that did not answer may keep one."""
+    return sonoff_identity.from_nvs(ctx.device.read_nvs(layout.nvs, nvs_size(layout)))
 
 
 def kept_in_sector(ctx: Context) -> Identity | None:
@@ -57,22 +54,20 @@ def kept_in_sector(ctx: Context) -> Identity | None:
     layout it is the end of ota_1, past any firmware written there: the
     updates that bring a plug back to the hub write only as far as their
     image, so it is still there when the startup firmware has wiped the
-    settings (its persist-settings.patch), and its checksum shows it whole."""
+    settings (its persist-settings.patch), and its checksum shows it whole.
+    A read that fails raises, as from_settings."""
     device = ctx.device
-    try:
-        header = device.read_region(sonoff_identity.SECTOR_AT, sonoff_identity.HEADER.size)
-        if header[:len(sonoff_identity.MAGIC)] != sonoff_identity.MAGIC:
-            return None
-        length = sonoff_identity.HEADER.unpack(header)[2]
-        sector = header + device.read_region(sonoff_identity.SECTOR_AT + len(header),
-                                             min(length, sonoff_identity.SECTOR_SIZE - len(header)))
-        identity = sonoff_identity.from_sector(sector)
-        if identity is not None and device.sha_region(plans.TABLE_ADDRESS, plans.SECTOR) == OFFICIAL_TABLE_SHA256:
-            output.say("    The device's partition table no longer has the entry for the sector that keeps its")
-            output.say("    Sonoff identity (Tasmota written over it whole, say), but the sector itself is there.")
-        return identity
-    except (DeviceError, OSError):
+    header = device.read_region(sonoff_identity.SECTOR_AT, sonoff_identity.HEADER.size)
+    if header[:len(sonoff_identity.MAGIC)] != sonoff_identity.MAGIC:
         return None
+    length = sonoff_identity.HEADER.unpack(header)[2]
+    sector = header + device.read_region(sonoff_identity.SECTOR_AT + len(header),
+                                         min(length, sonoff_identity.SECTOR_SIZE - len(header)))
+    identity = sonoff_identity.from_sector(sector)
+    if identity is not None and device.sha_region(plans.TABLE_ADDRESS, plans.SECTOR) == OFFICIAL_TABLE_SHA256:
+        output.say("    The device's partition table no longer has the entry for the sector that keeps its")
+        output.say("    Sonoff identity (Tasmota written over it whole, say), but the sector itself is there.")
+    return identity
 
 
 def account_record(ctx: Context, identity: Identity | None = None) -> dict[str, Any] | None:

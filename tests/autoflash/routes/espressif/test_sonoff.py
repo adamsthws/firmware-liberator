@@ -9,6 +9,7 @@ from tests.autoflash.routes.espressif.test_identity import Fixture, IDENTITY, MA
 from tests.autoflash.routes.espressif.test_sonoff_firmware import SONOFF_APP
 from tests.espressif.test_sonoff_identity import FRAME
 from tools.autoflash import errors, output, plans, plugs
+from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import NothingWritten
 from tools.autoflash.routes.espressif import hub, images, sonoff, sonoff_firmware
 from tools.espressif import sonoff_identity
@@ -64,6 +65,16 @@ class RebuiltTests(Fixture):
         self.assertEqual((frame["deviceid"], frame["apikey"], frame["dis_server"]),
                          ("10000e32ab", "made-up-key", get_device_key.dispatch_server("eu")[0]))
         self.assertEqual(ctx.state.data["captures"]["R1.rebuilt"]["identity"], "account")
+
+    def test_a_plug_that_does_not_answer_is_not_taken_for_one_that_kept_none(self):
+        # Seen in the fault suite: switched off as R1 read the identity, it was
+        # rebuilt from the account, the plug's own passed by.
+        ctx = self.ctx(b"\xff" * 0x400000)
+        ctx.account_devices = mock.Mock(side_effect=AssertionError("not the account"))
+        with mock.patch.object(ctx.device, "read_nvs", side_effect=DeviceError("timed out")), \
+                self.assertRaises(DeviceError):
+            self.restore(ctx)
+        self.assertNotIn("R1.rebuilt", ctx.state.data.get("captures", {}))
 
     def test_with_nothing_to_rebuild_from_nothing_is_written(self):
         with self.assertRaisesRegex(NothingWritten, "no record"):
