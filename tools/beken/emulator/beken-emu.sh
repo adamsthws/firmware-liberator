@@ -49,7 +49,7 @@
 #                             which publishes it, into captures/emulation/beken/firmwares/: this
 #                             repository, and the image, never hold Sonoff's firmware
 #
-#   --instance N              another emulated plug beside the first (N = 1-30), for
+#   --instance N              another emulated plug beside the first (N = 1-99), for
 #                             plug, ui, power and computer: its own container
 #                             (autoflash-beken-emu-N), network (autoflash-beken-emu-N), state
 #                             (captures/emulation/beken/state-N/) and web page
@@ -87,7 +87,7 @@ usage() { sed -n "2,$(($(grep -n '^set -euo pipefail' "$0" | cut -d: -f1)-1))p" 
 rebuild="" fresh=0 instance=""
 while [ $# -gt 0 ]; do
     case "$1" in
-    --instance) [ $# -ge 2 ] || { echo "--instance needs a number, 1-30" >&2; exit 2; }; instance=$2; shift ;;
+    --instance) [ $# -ge 2 ] || { echo "--instance needs a number, 1-99" >&2; exit 2; }; instance=$2; shift ;;
     --instance=*) instance=${1#--instance=} ;;
     --rebuild) rebuild=--rebuild ;;
     --fresh) fresh=1 ;;
@@ -97,7 +97,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 if [ -n "$instance" ]; then
-    case "$instance" in [1-9]|[12][0-9]|30) ;; *) echo "--instance needs a number, 1-30" >&2; exit 2 ;; esac
+    case "$instance" in [1-9]|[1-9][0-9]) ;; *) echo "--instance needs a number, 1-99" >&2; exit 2 ;; esac
     PLUG=$PLUG-$instance NETWORK=$NETWORK-$instance STATE=$STATE-$instance UI_PORT=$((UI_PORT + instance))
 fi
 [ "$fresh" = 0 ] || [ "${1:-}" = plug ] || { echo "--fresh is for plug" >&2; exit 2; }

@@ -41,7 +41,7 @@ while [ $# -gt 0 ]; do
     --fresh|--pcap|--rebuild|--no-firewall) emu_args+=("$1") ;;
     --plug=*) emu_args+=("$1"); plug_mac=$(echo "${1#--plug=}" | tr 'A-F-' 'a-f:') ;;
     --stub-cloud) stub=1 ;;
-    --instance=[1-9]|--instance=[12][0-9]|--instance=30)  # another emulator beside the first: see emu.sh
+    --instance=[1-9]|--instance=[1-9][0-9])  # another emulator beside the first: see emu.sh
         n=${1#--instance=}; emu_args+=("$1")
         NAME=autoflash-emu-$n PORT=$((8080 + n)) STATE=$STATE-$n ;;
     --keep) keep=1 ;;

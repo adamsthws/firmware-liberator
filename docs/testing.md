@@ -203,7 +203,7 @@ each up is in [emulator.md](emulator.md).
 tools/espressif/emulator/unattended-test.sh --fresh --plug=MAC -- --firmware esphome
 ```
 
-Several run side by side with `--instance=N` (1-30), each its own container,
+Several run side by side with `--instance=N` (1-99), each its own container,
 plug and network. Only the eWeLink stages (up to C2) cannot: every emulated
 plug is a copy of the same real one, and eWeLink keeps one connection per
 plug - so those run one at a time.
@@ -230,7 +230,7 @@ tools/beken/emulator/beken-emu.sh computer tools/autoflash/cli.py run --unattend
 checkout (the plug's `work/`), so the env file is that copy's
 `captures/tool.env`: a made-up eWeLink account, as the plug's eWeLink is the
 local stub, which takes any (the fault suite writes one there). Several run side
-by side with `--instance N` (1-30), given to both commands: each its own plug,
+by side with `--instance N` (1-99), given to both commands: each its own plug,
 network and stub, so nothing is shared, eWeLink included.
 
 A plug carries on as the last run left it, its flash kept, until `--fresh`

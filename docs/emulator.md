@@ -154,7 +154,7 @@ few minutes.
 
 #### Several at once
 
-`--instance N` (1-30, on `emu.sh` and `unattended-test.sh`) runs another
+`--instance N` (1-99, on `emu.sh` and `unattended-test.sh`) runs another
 emulator beside the first: its own container (`autoflash-emu-N`), state
 (`captures/emulation/state-N/`) and browser port (8080+N), so tests can run side
 by side. Each is its own small network, so the identical plugs do not meet.
@@ -615,7 +615,7 @@ tools/beken/emulator/beken-emu.sh --instance 2 plug        # a second plug besid
 ```
 
 `beken-emu.sh` with no argument lists the rest. Its options are spelt as
-`emu.sh`'s: `--fresh`, `--rebuild`, and `--instance N` (1-30) for another plug
+`emu.sh`'s: `--fresh`, `--rebuild`, and `--instance N` (1-99) for another plug
 beside the first, with its own container, network, state and web page port
 (8088+N); give the same `--instance N` to `computer`, `power` and `ui` to reach
 it.

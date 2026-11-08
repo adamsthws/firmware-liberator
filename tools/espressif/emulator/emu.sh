@@ -17,7 +17,7 @@
 #   tools/espressif/emulator/emu.sh --no-firewall  without the "computer's" firewall (ufw), on by default
 #   tools/espressif/emulator/emu.sh --windows  Windows is the computer, wired in by windows_link.py
 #                                    (from Windows, start it all with tools/espressif/emulator/emu.ps1)
-#   tools/espressif/emulator/emu.sh --instance N  another emulator beside the first (N = 1-30): its own
+#   tools/espressif/emulator/emu.sh --instance N  another emulator beside the first (N = 1-99): its own
 #                                    container (autoflash-emu-N), state (state-N) and browser
 #                                    port (8080+N), so tests can run side by side
 #
@@ -53,7 +53,7 @@ while [ $# -gt 0 ]; do
     --plug) [ $# -ge 2 ] || { echo "--plug needs a MAC address" >&2; exit 2; }; plug=$2; shift ;;
     --plug=*) plug=${arg#--plug=} ;;
     --plug-dir=*) plug_dir=$(cd "${arg#--plug-dir=}" && pwd) ;;
-    --instance) [ $# -ge 2 ] || { echo "--instance needs a number, 1-30" >&2; exit 2; }; instance=$2; shift ;;
+    --instance) [ $# -ge 2 ] || { echo "--instance needs a number, 1-99" >&2; exit 2; }; instance=$2; shift ;;
     --instance=*) instance=${arg#--instance=} ;;
     --cloud) cloud=1 ;;
     --stub-cloud) stub=1 ;;
@@ -69,7 +69,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 if [ -n "$instance" ]; then
-    case "$instance" in [1-9]|[12][0-9]|30) ;; *) echo "--instance needs a number, 1-30" >&2; exit 2 ;; esac
+    case "$instance" in [1-9]|[1-9][0-9]) ;; *) echo "--instance needs a number, 1-99" >&2; exit 2 ;; esac
     STATE=$STATE-$instance NAME=autoflash-emu-$instance
     PORT=$((8080 + instance)) LINK_PORT=$((7860 + instance))
 fi
