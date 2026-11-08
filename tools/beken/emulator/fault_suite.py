@@ -31,7 +31,8 @@ end-of-run checks passed (FAIL-CHECKS if not: tools/repo/fault_verdicts.py).
 The faults: the plug switched off for 1 or 30 s (plugoff), this computer off
 the plug's Wi-Fi for 30 s (outage), the tool killed and run again after 1 or
 180 s (crash), and Ctrl-C (ctrlc); at the steps that write, a power cut and
-another as the tool sends it again (double), and the router giving the plug
+another as the tool sends it again (double: in the same run, if it sends its
+command again itself), and the router giving the plug
 a new address once the step is done (readdress); and at each route's
 "apply", the plug switched off 10, 50 or 90% of the way through its
 bootloader writing the new firmware in - timed off the plug's own output.
@@ -648,6 +649,22 @@ def bad_image_scenario(instance: Instance, sc: dict, target: str, log: Path, not
     return dict(result="PASS" if ok else "FAIL", runs=runs)
 
 
+# What the sender says as it sends again a command its plug lost (tools/ewelink/ota_push).
+RESENT = re.compile(r"upgrade command sent again")
+
+
+def cut_as_sent_again(instance: Instance, run: subprocess.Popen, sc: dict, notes: dict) -> bool:
+    """A double's second cut, as the run under way sends its command again: one
+    that does converts by itself, and no run again would get the cut."""
+    before = len(RESENT.findall(instance.last_log()))
+    if not wait_for(run, lambda: len(RESENT.findall(instance.last_log())) > before):
+        return False
+    time.sleep(ROUTES[sc["route"]][sc["step"]] * sc["at"] / 100)
+    inject(instance, "plugoff", 1, notes)
+    notes["second_cut"] = True
+    return True
+
+
 def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: dict) -> dict:
     run = instance.tool(target, log, new=True)
     # A run a fault ended reaches its later steps only through runs again, with
@@ -674,8 +691,10 @@ def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: d
         if fault == "crash":
             run.wait(timeout=60)
             time.sleep(arg)
+        if sc["fault"] == "double":
+            cut_as_sent_again(instance, run, sc, notes)
     finish(run, instance)
-    second = sc["fault"] == "double"
+    second = sc["fault"] == "double" and not notes.get("second_cut")
     runs = 1
     while not converted(instance.last_state(), sc["route"]) and runs <= RECOVERY_RUNS:
         recover(instance, target, notes)
