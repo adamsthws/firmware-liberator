@@ -45,6 +45,8 @@ and plugs' identities.
   to; an unrelated bug found along the way gets a commit of its own.
 - **Stage only what you changed**, file by file - never `git add -A` or
   `git commit -a`: someone may be editing the same checkout.
+- **Work in a worktree of your own** (`git worktree add`) and land on `main`
+  with `git merge --ff-only`: other sessions commit in the main checkout.
 - **Before rewriting history**, make a backup branch
   (`backup/<branch>-before-<what>-<date>`); afterwards `git diff <old tip>
   <new tip>` is empty unless a change was meant.
