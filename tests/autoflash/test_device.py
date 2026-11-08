@@ -333,6 +333,38 @@ class RebootDetectionTests(unittest.TestCase):
         self.wait_on_clock(Fake("10.0.0.5"), clock, before=10)
 
 
+class BootIdentityTests(unittest.TestCase):
+    """started_at: Tasmota counts a boot once it has been up 10 s, so a count
+    read before then is waited out - it went up by one in the same boot, and
+    an upload cut off was taken for one the plug took and booted."""
+
+    def boots(self, *uptimes):
+        """What started_at says of a plug answering Status 1 with each uptime in
+        turn, its boot counted from 10 s on; and how long it waited."""
+        answers = iter(uptimes)
+        slept = []
+
+        def command(cmnd, timeout=None):
+            uptime = next(answers)
+            return {"StatusPRM": {"Uptime": f"0T00:00:{uptime:02d}", "StartupUTC": "",
+                                  "BootCount": 3 if uptime >= 10 else 2}}
+
+        plug = Device("192.0.2.50")
+        with mock.patch.object(plug, "command", side_effect=command), \
+             mock.patch.object(device.time, "sleep", side_effect=slept.append):
+            return plug.started_at(), slept
+
+    def test_a_boot_not_counted_yet_is_waited_for(self):
+        self.assertEqual(self.boots(9, 11), ("#3", [2]))
+
+    def test_a_counted_boot_is_read_at_once(self):
+        self.assertEqual(self.boots(40), ("#3", []))
+
+    def test_uptime_as_tasmota_writes_it(self):
+        self.assertEqual(device.uptime_of("1T02:03:04"), 93784)
+        self.assertIsNone(device.uptime_of(None))
+
+
 class AtNextSaveTests(unittest.TestCase):
     """The Berry driver that puts commands in as Tasmota saves before a restart."""
 
