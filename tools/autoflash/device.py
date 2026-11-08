@@ -172,6 +172,20 @@ def _exchange(host: str, method: str, target: str, headers: dict[str, str],
     return outcome["reply"]
 
 
+# Tasmota counts a boot when it has been up 10 s (BOOT_LOOP_TIME), at the turn
+# of that second; a second more, so a count read then is this boot's.
+BOOT_COUNTED_AFTER = 11
+
+
+def uptime_of(text: Any) -> int | None:
+    """Seconds in Tasmota's uptime as Status 1 gives it, "1T02:03:04"."""
+    found = re.fullmatch(r"(\d+)T(\d+):(\d+):(\d+)", text) if isinstance(text, str) else None
+    if not found:
+        return None
+    days, hours, minutes, seconds = (int(part) for part in found.groups())
+    return ((days * 24 + hours) * 60 + minutes) * 60 + seconds
+
+
 class Device:
     def __init__(
         self,
@@ -471,12 +485,23 @@ class Device:
         catches a restart that follows closely on another, which an uptime
         comparison misses.  The count covers a plug with no clock, whose boot
         time would read the same every time.
+
+        Tasmota counts a boot only once it has been up BOOT_COUNTED_AFTER: read
+        before then, the count goes up by one later in the same boot, which
+        looked like a restart (seen in the emulator: an upload cut off taken
+        for one the plug took and booted).  So that long is waited for first.
         """
-        status = self.command("Status 1")
-        if isinstance(status, dict):
-            prm = status.get("StatusPRM", {})
-            if prm.get("StartupUTC") or prm.get("BootCount") is not None:
-                return f"{prm.get('StartupUTC')}#{prm.get('BootCount')}"
+        for _ in range(2):
+            status = self.command("Status 1")
+            if not isinstance(status, dict):
+                return None
+            uptime = uptime_of(status.get("StatusPRM", {}).get("Uptime"))
+            if uptime is None or uptime >= BOOT_COUNTED_AFTER:
+                break
+            time.sleep(BOOT_COUNTED_AFTER - uptime)
+        prm = status.get("StatusPRM", {})
+        if prm.get("StartupUTC") or prm.get("BootCount") is not None:
+            return f"{prm.get('StartupUTC')}#{prm.get('BootCount')}"
         return None
 
     def is_safeboot(self) -> bool:

@@ -146,6 +146,10 @@ check.
   off by the network, is sent again only after a restart. Sent again at once, it
   went to a Tasmota still holding the upload cut off, which never took it: the
   run waited ten minutes and asked for it to be uploaded by hand.
+- A plug's boot is read only once Tasmota has counted it, 10 s after it starts.
+  Read sooner, as just after a restart, the count went up by one later in the
+  same boot, so an upload cut off could be taken for one the plug had taken and
+  started, and a restart could be seen where there was none.
 - OpenBeken for the Sonoff S61 rebuilt with
   [1.18.320](https://github.com/openshwprojects/OpenBK7231T_App/releases/tag/1.18.320).
 
