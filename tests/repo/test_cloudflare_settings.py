@@ -23,6 +23,11 @@ class FakeCloudflare:
         self.buckets = set()
         self.lifecycle = None
         self.tokens = None   # the account's API tokens; None: this token may not read them, as CI's
+        self.other_zones = []   # zones besides this one the token can see
+        self.accounts = 1   # how many accounts the token can see
+        # The Workers the token can see: Cloudflare lists those alone. The apply token sees them all.
+        self.workers = ["firmware-liberator", "firmware-liberator-api", "another-site"]
+        self.readable = set()   # of CI_REFUSED's paths, those the token may read
         self.sent = []
 
     @property
@@ -44,12 +49,19 @@ class FakeCloudflare:
             return None
         if path == f"/zones?name={cs.ZONE}":
             return [{"id": "z1", "name": cs.ZONE, "account": {"id": "a1"}}]
+        if path == "/zones?per_page=50":
+            return [{"id": "z1", "name": cs.ZONE}] + [{"id": f"o{n}", "name": name}
+                                                      for n, name in enumerate(self.other_zones)]
+        if path == "/accounts?per_page=50":
+            return [{"id": f"a{n + 1}"} for n in range(self.accounts)]
         if path == "/accounts/a1/tokens":
             assert ok_forbidden
             return copy.deepcopy(self.tokens)
+        if path in {template.format(account="a1", zone="z1") for _, template in cs.CI_REFUSED}:
+            assert ok_forbidden
+            return {} if path in self.readable else None
         if path == "/accounts/a1/workers/scripts":
-            return [{"id": "firmware-liberator", "tag": "t1"}, {"id": "firmware-liberator-api", "tag": "t2"},
-                    {"id": "another-site", "tag": "t3"}]
+            return [{"id": name, "tag": f"t{n + 1}"} for n, name in enumerate(self.workers)]
         if path.startswith(f"{BUCKETS}/") and path.endswith("/lifecycle"):
             assert ok_missing
             return self.lifecycle
@@ -160,7 +172,7 @@ class CloudflareSettingsTests(unittest.TestCase):
         workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/cloudflare-settings.yml").read_text(
             encoding="utf-8")
         self.assertNotIn(" apply", workflow.split("\nname:", 1)[1])
-        self.assertIn("run: python3 tools/repo/cloudflare_settings.py\n", workflow)
+        self.assertIn("run: python3 tools/repo/cloudflare_settings.py ci\n", workflow)
         self.assertIn("secrets.CLOUDFLARE_READ_TOKEN", workflow)
 
 
@@ -222,6 +234,51 @@ class DeployTokenTests(unittest.TestCase):
         code, out = run(self.fake)
         self.assertEqual(code, 1)
         self.assertIn("allows nothing (no such token)", out)
+
+
+class CiTokenReachTests(unittest.TestCase):
+    """`ci`: CI's read token sees this zone and account alone, no Workers, and
+    is refused what CI_REFUSED lists."""
+
+    def setUp(self):
+        self.fake = FakeCloudflare()
+        run(self.fake, "apply")
+        self.fake.sent.clear()
+        self.fake.workers = []   # as CI's token sees them
+
+    def test_a_token_that_sees_no_more_passes(self):
+        self.assertEqual(run(self.fake, "ci")[0], 0)
+
+    def test_one_that_sees_another_zone_fails(self):
+        self.fake.other_zones = ["example.com"]
+        code, out = run(self.fake, "ci")
+        self.assertEqual(code, 1)
+        self.assertIn("can see other zones (example.com)", out)
+        # Not asked of the apply token, used by hand.
+        self.assertEqual(run(self.fake)[0], 0)
+
+    def test_one_that_sees_another_account_or_a_worker_fails(self):
+        self.fake.accounts = 2
+        self.fake.workers = ["firmware-liberator"]
+        code, out = run(self.fake, "ci")
+        self.assertEqual(code, 1)
+        self.assertIn("can see 2 accounts", out)
+        self.assertIn("can see Workers (firmware-liberator)", out)
+
+    def test_each_read_it_should_be_refused_fails_where_it_works(self):
+        for what, template in cs.CI_REFUSED[1:]:   # the tokens list has a test of its own
+            with self.subTest(what):
+                self.fake.readable = {template.format(account="a1", zone="z1")}
+                code, out = run(self.fake, "ci")
+                self.assertEqual(code, 1)
+                self.assertIn(f"can read {what}: it should be refused", out)
+
+    def test_one_that_reads_the_accounts_tokens_fails(self):
+        self.fake.tokens = [deploy_token()]
+        code, out = run(self.fake, "ci")
+        self.assertEqual(code, 1)
+        self.assertIn("can read the account's API tokens", out)
+        self.assertEqual(self.fake.sent, [])
 
 
 if __name__ == "__main__":

@@ -133,3 +133,6 @@ differs and `... apply` to set it; delete the token, and push.
 The cloudflare-settings workflow checks them, with the read token, weekly
 and on each push to `main` that changes the script, failing on any
 difference: one made in the dashboard, or one written down and not applied.
+It runs `cloudflare_settings.py ci`, which also fails if the read token can
+see a zone besides `firmwareliberator.com`, or the account's API tokens: a
+token edited too wide is found by what it can read.
