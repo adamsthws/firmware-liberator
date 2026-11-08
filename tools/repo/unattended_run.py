@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run a whole conversion unattended, and keep the screen it drew for review.
 
-    python3 tools/repo/unattended_run.py [--size 100x40] [--save DIR] [-- run options...]
+    python3 tools/repo/unattended_run.py [--size 100x40] [--save DIR] [--command readout] [-- run options...]
 
 The conversion (autoflash/cli.py run --unattended) runs on a terminal of its
 own (a pseudo-terminal), so it draws exactly what a person would see - the
@@ -11,7 +11,9 @@ is rebuilt from the recording and printed, colours and all.
 
 The eWeLink account comes from .env (see .env.example), as does this
 computer's sudo password where sudo would ask for one.  Anything after `--`
-goes to the run itself: --plug-ip, --new, --verbose and so on.
+goes to the run itself: --plug-ip, --new, --verbose and so on. --command
+readout makes a readout instead (cli.py readout --unattended), as the fault
+suites' readout scenarios do.
 
 Saved, under captures/unattended/<time>/ unless --save says otherwise:
     screen.ansi   the final screen, with its colours: `cat` or `less -R` it
@@ -222,6 +224,15 @@ def record(command: list[str], size: tuple[int, int], live: bool,
     return os.waitstatus_to_exitcode(status), bytes(written)
 
 
+# What the tool can be run to do with nobody there (cli.py's commands).
+COMMANDS = ("run", "readout")
+
+
+def tool_command(command: str, extra: list[str]) -> list[str]:
+    """The tool's command line: `command` (COMMANDS), unattended, with `extra`."""
+    return [sys.executable, str(TOOL), command, "--unattended", *extra]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -232,6 +243,8 @@ def main() -> int:
                         "(default: captures/unattended/<time>/)")
     parser.add_argument("--timeout", type=float, metavar="MINUTES",
                         help="stop the run (as Ctrl-C would) if it is still going after this long")
+    parser.add_argument("--command", choices=COMMANDS, default="run",
+                        help="what the tool does unattended: a conversion (run, the default) or a readout")
     parser.add_argument("run_options", nargs=argparse.REMAINDER,
                         help="after --: options for the run itself, e.g. -- --plug-ip 192.168.99.50")
     args = parser.parse_args()
@@ -246,7 +259,7 @@ def main() -> int:
     size = args.size or (tuple(n or d for n, d in zip(shutil.get_terminal_size(), (80, 24)))
                          if live else (100, 40))
     save = args.save or ROOT / "captures" / "unattended" / time.strftime("%Y%m%d-%H%M%S")
-    command = [sys.executable, str(TOOL), "run", "--unattended", *extra]
+    command = tool_command(args.command, extra)
 
     code, written = record(command, size, live, args.timeout * 60 if args.timeout else None)
 

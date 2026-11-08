@@ -1,9 +1,12 @@
 """What both fault suites judge a run by beyond its steps: the report's
-end-of-run checks."""
+end-of-run checks, and the readout a readout keeps."""
 
+import io
+import tarfile
 import unittest
 
-from tools.autoflash import report
+from tools.autoflash import readout, report
+from tools.ewelink.offered_firmware import Offered
 from tools.repo import fault_verdicts
 
 
@@ -48,6 +51,57 @@ class EndChecksTests(unittest.TestCase):
     def test_a_run_with_no_report_has_nothing_to_judge(self):
         self.assertIsNone(fault_verdicts.checks_problem(run_log("Nothing to convert."), "tasmota"))
         self.assertIsNone(fault_verdicts.checks_problem("", "tasmota"))
+
+
+FLASH = b"\xff" * fault_verdicts.WHOLE_FLASH
+OFFERED = [Offered("user1.bin", "1.2.0", b"stock app")]
+
+
+def kept(family, flash=FLASH, files=None, updates=OFFERED, matches=True, **manifest):
+    """A readout.tar as the tool packs one (readout.package) for `family`;
+    `matches`, an Espressif read's own hash check."""
+    whole = {"espressif": {"flash.bin": flash, "efuse.bin": b"efuse", "info.txt": b"info", "report.json": b"{}"},
+             "beken": {"flash.bin": flash, "info.txt": b"{}"}}[family]
+    flash_entry = {"size": len(flash), "sha256": "ab"} | ({"matches_device": matches} if family == "espressif" else {})
+    return readout.package({"format": 1, "read": True, "flash": flash_entry, **manifest},
+                           whole if files is None else files, updates)
+
+
+class ReadoutTests(unittest.TestCase):
+    def test_a_whole_readout_of_each_family_lacks_nothing(self):
+        for family in ("espressif", "beken"):
+            self.assertEqual(fault_verdicts.readout_problems(kept(family), family), [], family)
+
+    def test_each_file_docs_readouts_lists_must_be_there(self):
+        self.assertEqual(fault_verdicts.readout_problems(kept("espressif", files={"flash.bin": FLASH}), "espressif"),
+                         ["no efuse.bin.xz", "no info.txt", "no report.json"])
+        self.assertEqual(fault_verdicts.readout_problems(kept("beken", updates=()), "beken"),
+                         ["no offered firmware"])
+
+    def test_the_whole_flash_read(self):
+        part = kept("beken", flash=FLASH[:0x100000])
+        self.assertEqual(fault_verdicts.readout_problems(part, "beken"),
+                         ["flash.bin is 1,048,576 bytes, the manifest says 1048576: not the whole 4,194,304"])
+        self.assertEqual(fault_verdicts.readout_problems(kept("espressif", matches=None), "espressif"),
+                         ["the flash read does not match the device's own hash"])
+
+    def test_read_unsent_and_with_no_contact(self):
+        self.assertEqual(fault_verdicts.readout_problems(kept("beken", read=False), "beken"),
+                         ["the manifest says the memory was not read"])
+        self.assertEqual(fault_verdicts.readout_problems(
+            readout.package({"format": 1, "read": True, "flash": {"size": len(FLASH)}},
+                            {"flash.bin": FLASH, "info.txt": b"{}"}, OFFERED, {"email": "someone@example.com"}),
+            "beken"), ["a contact in it, from an unattended run"])
+
+    def test_the_manifest_first_as_the_api_reads_it(self):
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=io.BytesIO(kept("beken"))) as tar, tarfile.open(fileobj=buffer, mode="w") as out:
+            for member in reversed(tar.getmembers()):
+                out.addfile(member, tar.extractfile(member))
+        self.assertEqual(fault_verdicts.readout_problems(buffer.getvalue(), "beken"), ["manifest.json is not first"])
+
+    def test_something_not_a_readout_says_so(self):
+        self.assertTrue(fault_verdicts.readout_problems(b"not a tar", "beken")[0].startswith("not a tar"))
 
 
 if __name__ == "__main__":

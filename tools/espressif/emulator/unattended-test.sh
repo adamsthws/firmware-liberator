@@ -19,6 +19,7 @@
 #                                                   (fault_suite.legacy_tree) - over the same
 #                                                   captures, as updating a checkout would; it
 #                                                   stays there until another --code
+#   tools/espressif/emulator/unattended-test.sh --readout     a readout of the plug (cli.py readout), not a conversion
 #   tools/espressif/emulator/unattended-test.sh -- --new   anything after -- goes to the run itself
 #
 # Needs .env with the eWeLink account the dump's plug is in. It starts the
@@ -34,7 +35,7 @@ case "$ROOT" in /mnt/[a-z]/*) STATE=$HOME/.local/share/autoflash-emu/state ;; es
 NAME=autoflash-emu PORT=8080
 PLUG=192.168.60.50
 
-emu_args=(--detach) keep=0 stub=0 run_args=() from="" save="" plug_mac="" code=""
+emu_args=(--detach) keep=0 stub=0 run_args=() from="" save="" plug_mac="" code="" driver_args=()
 while [ $# -gt 0 ]; do
     case "$1" in
     --fresh|--pcap|--rebuild|--no-firewall) emu_args+=("$1") ;;
@@ -47,8 +48,9 @@ while [ $# -gt 0 ]; do
     --from=*) from=${1#--from=} ;;
     --save=*) save=${1#--save=} ;;
     --code=*) code=$(cd "${1#--code=}" && pwd) ;;
+    --readout) driver_args=(--command readout) ;;
     --) shift; run_args=("$@"); break ;;
-    *) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    *) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
     esac
     shift
 done
@@ -171,7 +173,11 @@ until docker exec "$NAME" ping -c1 -W1 "$PLUG" >/dev/null 2>&1; do
     fi
     sleep 2
 done
-echo "The emulated plug is up; converting it unattended..."
+if [ ${#driver_args[@]} -gt 0 ]; then
+    echo "The emulated plug is up; reading it out unattended..."
+else
+    echo "The emulated plug is up; converting it unattended..."
+fi
 
 # The eWeLink account, for this run only: the emulator's copy of the
 # repository has no .env, so a run you sit through asks for it. Kept in the
@@ -216,7 +222,7 @@ stub_env=()
     -e AUTOFLASH_TASMOTA_PASSWORD="${AUTOFLASH_TASMOTA_PASSWORD:-}" -e AUTOFLASH_ESPHOME_OTA_PASSWORD="${AUTOFLASH_ESPHOME_OTA_PASSWORD:-}" \
     -e AUTOFLASH_ESPHOME_WEB_USER="${AUTOFLASH_ESPHOME_WEB_USER:-}" -e AUTOFLASH_ESPHOME_WEB_PASSWORD="${AUTOFLASH_ESPHOME_WEB_PASSWORD:-}" \
     -e AUTOFLASH_ESPHOME_API_KEY="${AUTOFLASH_ESPHOME_API_KEY:-}" \
-    -e HOME=/tmp "$NAME" /opt/venv/bin/python "$driver" --size 100x40 \
+    -e HOME=/tmp "$NAME" /opt/venv/bin/python "$driver" --size 100x40 "${driver_args[@]}" \
     --save "captures/unattended/$stamp" -- --env-file "$answers" "${run_args[@]}" || status=$?
 
 echo "On this computer: ${STATE#"$ROOT/"}/work/captures/unattended/$stamp/"

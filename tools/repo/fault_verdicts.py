@@ -1,10 +1,15 @@
 """What both fault suites judge a run by beyond its steps being done: the
-end-of-run checks the report of a converting run gives. A run whose steps all
-passed can still end with a relay that did not switch, or a check that never
-got to run, and say so only there (docs/testing.md#the-fault-suites)."""
+end-of-run checks the report of a converting run gives, and the readout.tar a
+readout keeps. A run whose steps all passed can still end with a relay that
+did not switch, or a check that never got to run, and say so only there
+(docs/testing.md#the-fault-suites)."""
 from __future__ import annotations
 
+import io
+import json
+import lzma
 import re
+import tarfile
 
 # As the run's log has them: the report's answer (tools/autoflash/report.py,
 # checks_passed), and the line its check said of the relay.
@@ -39,3 +44,45 @@ def checks_problem(log: str, firmware: str) -> str | None:
         return None
     relay = RELAY.findall(run)
     return f"Checks passed: {answers[-1]}; Relay: {relay[-1] if relay else 'not said'}"
+
+
+# What a readout keeps (docs/readouts.md, "What is in one"), by chip family:
+# each .bin in it xz-compressed, and the firmware eWeLink offers under offered/.
+READOUT_FILES = {"espressif": ("manifest.json", "flash.bin.xz", "efuse.bin.xz", "info.txt", "report.json"),
+                 "beken": ("manifest.json", "flash.bin.xz", "info.txt")}
+# The flash of every plug the emulators run: 4 MB.
+WHOLE_FLASH = 0x400000
+
+
+def readout_problems(data: bytes, family: str) -> list[str]:
+    """What a readout.tar lacks of a whole readout of a `family` device, as
+    docs/readouts.md lists it, unsent from an unattended run: [] for none."""
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+            files = {member.name: tar.extractfile(member).read() for member in tar.getmembers() if member.isfile()}
+    except (tarfile.TarError, OSError) as exc:
+        return [f"not a tar: {exc}"]
+    problems = [f"no {name}" for name in READOUT_FILES[family] if name not in files]
+    if list(files)[:1] != ["manifest.json"]:
+        problems.append("manifest.json is not first")
+    if not any(name.startswith("offered/") for name in files):
+        problems.append("no offered firmware")
+    try:
+        manifest = json.loads(files.get("manifest.json") or b"")
+    except ValueError:
+        return problems + ["manifest.json is not JSON"]
+    if manifest.get("read") is not True:
+        problems.append("the manifest says the memory was not read")
+    if "contact" in manifest:
+        problems.append("a contact in it, from an unattended run")
+    flash = manifest.get("flash") or {}
+    if family == "espressif" and flash.get("matches_device") is not True:
+        problems.append("the flash read does not match the device's own hash")
+    try:
+        size = len(lzma.decompress(files["flash.bin.xz"])) if "flash.bin.xz" in files else None
+    except lzma.LZMAError:
+        return problems + ["flash.bin.xz is not xz"]
+    if size is not None and (size != WHOLE_FLASH or flash.get("size") != size):
+        problems.append(f"flash.bin is {size:,} bytes, the manifest says {flash.get('size')}: "
+                        f"not the whole {WHOLE_FLASH:,}")
+    return problems

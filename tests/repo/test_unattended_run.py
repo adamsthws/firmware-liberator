@@ -71,5 +71,17 @@ class RecordingTests(unittest.TestCase):
         self.assertIn("\x1b[32mConversion complete!", screen.render())
 
 
+
+class CommandTests(unittest.TestCase):
+    def test_a_conversion_unless_told_otherwise(self):
+        self.assertEqual(unattended_run.tool_command("run", ["--new"])[2:], ["run", "--unattended", "--new"])
+
+    def test_a_readout_unattended_too(self):
+        # The fault suites' readout scenarios (docs/testing.md).
+        self.assertEqual(unattended_run.tool_command("readout", ["--plug-ip", "192.0.2.50"])[2:],
+                         ["readout", "--unattended", "--plug-ip", "192.0.2.50"])
+        self.assertIn("readout", unattended_run.COMMANDS)
+
+
 if __name__ == "__main__":
     unittest.main()
