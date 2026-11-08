@@ -96,6 +96,26 @@ class BatchResultTests(unittest.TestCase):
                 self.assertTrue(fault_suite.all_passed(str(ids)))
 
 
+    def test_a_batch_starts_the_longest_first(self):
+        from unittest import mock
+        rows = [{"id": i, "route": "sonoff>openbeken", "step": "B2", "fault": "plugoff", "arg": 1} for i in "abc"]
+        ran = []
+
+        def run(instance, sc):
+            ran.append(sc["id"])
+            return {"result": "PASS"}
+        with mock.patch.object(fault_suite, "scenarios", return_value=rows), \
+                mock.patch.object(fault_suite, "latest", return_value={}), \
+                mock.patch.object(fault_suite, "Instance"), mock.patch.object(fault_suite, "record"), \
+                mock.patch.object(fault_suite, "run_scenario", side_effect=run), \
+                mock.patch.dict(fault_suite.os.environ, {"AUTOFLASH_BEKEN_EMU_WORKERS": "1"}), \
+                mock.patch.object(fault_suite.scenario_times, "times", return_value={"a": 60, "b": 1800, "c": 300}) as took, \
+                mock.patch("builtins.print"):
+            fault_suite.batch()
+        self.assertEqual(ran, ["b", "c", "a"])
+        self.assertEqual(took.call_args.args, (fault_suite.folders.BEKEN,))
+
+
 class StepTimingTests(unittest.TestCase):
     def test_a_step_is_seen_soon_enough_for_a_fault_late_in_the_shortest(self):
         shortest = min(seconds for steps in fault_suite.ROUTES.values() for seconds in steps.values())

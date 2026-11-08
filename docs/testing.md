@@ -450,6 +450,13 @@ tools/espressif/emulator/fault_suite.py report
 `batch` refuses to start from a converted plug `prep` made with other firmware
 than this checkout installs: run `prep` again after a firmware change.
 
+`batch` starts the longest scenarios first, by how long each took when it last
+ran on this computer (from the results in `captures/emulation/*/`; one never
+run counts as a typical one plus its fault's length), so the batch does not
+end on a long one started last. The Beken suite's `batch` does the same, from
+its own results. With each machine ending near the others, a full run's
+scenarios can be shared out between machines by their total times.
+
 The update scenarios (`update>tasmota`, `update>esphome`) start from a plug no run
 can make, since the tool installs only the current release. `prep-update` makes
 them: for Tasmota from the plug `prep` saved on it, with the previous release

@@ -87,7 +87,7 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.routes import beken  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
-from tools.repo import fault_verdicts  # noqa: E402
+from tools.repo import fault_verdicts, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import MemoryWatch  # noqa: E402
 
@@ -819,9 +819,10 @@ def batch(ids_file: str | None = None) -> None:
     wanted = (Path(ids_file).read_text(encoding="utf-8").split() if ids_file else list(every))
     passed = {i for i, entry in latest().items() if entry.get("result") == "PASS"}
     todo: queue.Queue = queue.Queue()
-    for i in wanted:
-        if i in every and i not in passed:
-            todo.put(every[i])
+    # The longest first, so the batch does not end on one started last (scenario_times).
+    for sc in scenario_times.longest_first([every[i] for i in wanted if i in every and i not in passed],
+                                           scenario_times.times(folders.BEKEN)):
+        todo.put(sc)
     workers = int(os.environ.get("AUTOFLASH_BEKEN_EMU_WORKERS", "2"))
     lock = threading.Lock()
 

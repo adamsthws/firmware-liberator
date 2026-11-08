@@ -231,10 +231,29 @@ class SavedPlugTests(unittest.TestCase):
                 mock.patch.dict(fs.os.environ, {"AUTOFLASH_EMU_CONNECTION_LOG": "0"}), \
                 mock.patch.object(fs, "cloud_workers", return_value=1), mock.patch.object(fs, "worker", worker), \
                 mock.patch.object(fs.time, "sleep"), mock.patch.object(fs, "report"), \
+                mock.patch.object(fs.scenario_times, "times", return_value={}), \
                 mock.patch("builtins.print", side_effect=lambda *a, **k: said.append(" ".join(map(str, a)))):
             fs.batch()
         self.assertEqual(ran, ["c"])
         self.assertTrue(any("1 left to the stub" in line for line in said))
+
+    def test_a_batch_starts_the_longest_first(self):
+        rows = [{"id": i, "route": "sonoff>tasmota", "step": "D1", "fault": "crash", "arg": 60} for i in "abc"]
+        ran = []
+
+        def worker(n, todo, lock, cloud, *rest):
+            while not todo.empty():
+                ran.append(todo.get()["id"])
+        with mock.patch.object(fs, "scenarios", return_value=rows), mock.patch.object(fs, "latest", return_value={}), \
+                mock.patch.object(fs, "LOGS"), mock.patch.object(fs, "stale_starts", return_value=[]), \
+                mock.patch.object(fs, "STUB_CLOUD", True), mock.patch.object(fs, "worker", worker), \
+                mock.patch.dict(fs.os.environ, {"AUTOFLASH_EMU_STUB_WORKERS": "1"}), \
+                mock.patch.object(fs.time, "sleep"), mock.patch.object(fs, "report"), \
+                mock.patch.object(fs.scenario_times, "times", return_value={"a": 60, "b": 1800, "c": 300}) as took, \
+                mock.patch("builtins.print"):
+            fs.batch()
+        self.assertEqual(ran, ["b", "c", "a"])
+        self.assertEqual(took.call_args.args, (fs.EMU,))
 
     def test_runs_that_start_from_no_converted_plug_ask_nothing_of_it(self):
         self.assertEqual(self.stale('{"version": "1"}', [{"route": "sonoff>esphome", "fault": "crash"},
