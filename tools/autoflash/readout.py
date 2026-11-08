@@ -105,9 +105,29 @@ def device_at(address: str, devices: list[dict[str, Any]]) -> dict[str, Any]:
     return match[0]
 
 
+def lan_free(device: dict[str, Any]) -> bool:
+    """Whether the account's `device` does no LAN Control (a Beken plug), so
+    answers no local discovery. The account record's model says the chip
+    family before anything is read."""
+    model = str((device.get("extra") or {}).get("model") or device.get("productModel") or "")
+    stock_chip = firmware_name.STOCK_MODEL.match(model)
+    known = kinds.for_account(str(device.get("productModel") or ""), model)
+    return (stock_chip is not None and stock_chip.group("chip").startswith("BK")) or (
+        known is not None and known.family == "beken")
+
+
+def record_mac(device: dict[str, Any]) -> str | None:
+    """The hardware address eWeLink's record of `device` gives it, if any."""
+    mac = hostsys.normalise_mac(str((device.get("params") or {}).get("staMac") or ""))
+    return mac if plugs.MAC_RE.match(mac) else None
+
+
 def locate(ctx: Context, device: dict[str, Any]) -> str:
     """The device's address on this network: the one answering eWeLink's
-    discovery with its id, else typed by the person."""
+    discovery with its id, else typed by the person. A device that does no
+    LAN Control is looked for by its hardware address instead."""
+    if lan_free(device):
+        return locate_by_mac(device)
     wanted = str(device.get("deviceid") or "")
     output.say("Looking for it on your network...")
     try:
@@ -123,6 +143,34 @@ def locate(ctx: Context, device: dict[str, Any]) -> str:
         help_lines=["Check LAN Control is on for it in the eWeLink app. Its address is in your",
                     "router's device list, or the app's device information."],
         check=account.plug_at({wanted}))
+    output.transient_end()
+    return address
+
+
+def locate_by_mac(device: dict[str, Any]) -> str:
+    """A LAN-free device's address: the one with the hardware address its
+    eWeLink record gives, found on this computer's networks, else typed by
+    the person and checked against it."""
+    mac = record_mac(device)
+    if mac:
+        output.say("Looking for it on your network by its hardware address...")
+        networks = sorted(hostsys.lan_networks())
+        found = hostsys.find_by_mac(mac, networks) if networks else None
+        if found:
+            return found
+
+    def check(address: str) -> list[str]:
+        seen = hostsys.mac_of(address)
+        if mac and seen and seen != mac:
+            return [f"{address} is another device: its hardware address is not the one eWeLink has for yours."]
+        return []
+    output.transient_begin()
+    address = prompts.ask_ipv4(
+        "The device was not found on this network. Its address",
+        help_lines=["It answers no local discovery, so it was looked for by the hardware address",
+                    "eWeLink has for it. Its address is in your router's device list, or the",
+                    "eWeLink app's device information."],
+        check=check)
     output.transient_end()
     return address
 
@@ -144,15 +192,9 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None) -> str
         plugs.remember_plug(mac, ewelink_name=str(device.get("name") or "").strip() or None,
                             ewelink_id=str(device.get("deviceid") or "") or None,
                             model=str(device.get("productModel") or "") or None)
-    # A device that does no LAN Control (a Beken plug) answers no local
-    # discovery: it is asked of eWeLink by its account id. The account record's
-    # model says the chip family before anything is read.
-    model = str((device.get("extra") or {}).get("model") or device.get("productModel") or "")
-    stock_chip = firmware_name.STOCK_MODEL.match(model)
-    known = kinds.for_account(str(device.get("productModel") or ""), model)
-    lan_free = (stock_chip is not None and stock_chip.group("chip").startswith("BK")) or (
-        known is not None and known.family == "beken")
-    asked = (account.ask_account(ctx, str(device.get("deviceid") or "")) if lan_free
+    # A device that does no LAN Control (a Beken plug) is asked of eWeLink by
+    # its account id.
+    asked = (account.ask_account(ctx, str(device.get("deviceid") or "")) if lan_free(device)
              else account.ask_ewelink(ctx, ip))
     learned, problems = firmware_name.learn(asked.latest.get("offers") or [], asked.deviceid,
                                             asked.product, asked.model)
