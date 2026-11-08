@@ -533,6 +533,15 @@ and the cloud is not blamed for it. On the real cloud,
 looked at every 2 s (`AUTOFLASH_EMU_CONNECTION_LOG`, 0 for none): whether two plugs
 were on eWeLink at once, or a session dropped with no other plug about.
 
+**One real-cloud run a day.** Every emulated plug is the same device to eWeLink,
+so a real-cloud batch is one device reconnecting every minute or two for hours.
+One run of the 75 is fine; after several hundred real-cloud scenarios in a day,
+eWeLink starts dropping the device's sessions seconds after they open, more and
+more often, and the plug then stays away about five minutes. Runs find it
+offline and stop at "Discovering the device" (NOT-FIRED), and `connections.log`
+shows sessions closing within 15 s with nothing sent. Stop the batch for an hour
+and run it again: it carries on with what has not passed.
+
 **Several machines.** The scenarios that do not need eWeLink (every step after
 D1) run on any machine with Docker: copy the repository and the saved plugs
 (`captures/emulation/saved/`), give each machine part of the list, and set
