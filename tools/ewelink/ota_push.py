@@ -234,9 +234,11 @@ NOT_SENT = "The upgrade command was not sent: nothing reached the device."
 # cut part way through the download, the plug back online and nothing more asked
 # for. It is sent again, this many times in all: when the plug comes back and has
 # not asked for the file after RESEND_SETTLE seconds, or, with the plug online all
-# along as far as eWeLink says, after RESEND_QUIET seconds of its not asking. Only
-# then: a plug fetching is left alone, and it checks the file's SHA-256 whatever
-# it is sent. A send again has RESEND_WAIT seconds, if the first's are nearly up.
+# along as far as eWeLink says and nothing asked for since the command, after
+# RESEND_QUIET seconds: a command that never reached it. One that did, cut off
+# part way, waits for the plug to be back - sent again sooner, it went to a plug
+# still starting, a send wasted (seen on the S61). Only then: a plug fetching is
+# left alone, and it checks the file's SHA-256 whatever it is sent. A send again has RESEND_WAIT seconds, if the first's are nearly up.
 COMMAND_SENDS = 3
 RESEND_SETTLE = 8.0
 RESEND_QUIET = 45.0
@@ -263,7 +265,7 @@ class Resending:
         quiet = now - max(self.sent_at, asked_at)
         if self.back_at is not None:
             return quiet >= RESEND_SETTLE and now - self.back_at >= RESEND_SETTLE
-        return not self.away and quiet >= RESEND_QUIET
+        return not self.away and asked_at <= self.sent_at and quiet >= RESEND_QUIET
 
 
 @dataclass
