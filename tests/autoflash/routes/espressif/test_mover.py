@@ -570,6 +570,7 @@ class BerryFromStartupTests(unittest.TestCase):
                  firmware_version=lambda: next(answers))), \
              mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
             result = mover.step_berry_from_startup(ctx)
+        self.upload = upload
         return result, x1, upload.called, seen
 
     def test_already_on_tasmota_does_nothing(self):
@@ -588,6 +589,12 @@ class BerryFromStartupTests(unittest.TestCase):
         self.assertFalse(x1.called)
         self.assertTrue(uploaded)
         self.assertEqual(seen, [True])
+
+    def test_an_upload_cut_off_is_not_cleared_by_a_restart(self):
+        # Restarted before it has been used, the startup firmware starts what
+        # the plug ran before.
+        self.x2("startup")
+        self.assertEqual(self.upload.call_args.kwargs, {"restart_to_retry": False})
 
     def test_a_page_not_answering_is_not_tasmota(self):
         _, _, _, seen = self.x2("startup", versions=("",))

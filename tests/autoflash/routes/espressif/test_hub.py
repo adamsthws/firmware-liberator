@@ -1,5 +1,5 @@
 """The hub (tools/autoflash/routes/espressif/hub.py): Tasmota restarted before
-a promote is tried again, and an upload it refused."""
+a promote or an upload cut off is tried again, and an upload it refused."""
 import tempfile
 import time
 import unittest
@@ -54,18 +54,19 @@ class RefusedUploadTests(unittest.TestCase):
     """An upload Tasmota took whole and refused (damaged on the way, say) is
     sent again, three tries in all, before it is left to the person."""
 
-    def upload(self, outcomes, boots=None, answers=True):
+    def upload(self, outcomes, boots=None, answers=True, restarts=True, **kwargs):
         """upload_or_prompt with each upload's outcome from `outcomes`, and the
         boot the plug says it is on, in turn, from `boots` (one boot throughout
-        if not given)."""
+        if not given); a restart asked for is seen if `restarts`.  What the
+        plug was sent, in order, is in self.events."""
         from types import SimpleNamespace
         from tools.autoflash.device import DeviceError
         tries = iter(outcomes)
         boot = iter(boots or ["boot 1"] * 20)
-        sent = []
+        self.events = []
 
         def upload_firmware(path, timeout=None):
-            sent.append(path)
+            self.events.append("upload")
             outcome = next(tries)
             if isinstance(outcome, Exception):
                 raise outcome
@@ -74,19 +75,39 @@ class RefusedUploadTests(unittest.TestCase):
             if not answers:
                 raise DeviceError("did not answer")
 
-        ctx = SimpleNamespace(device=SimpleNamespace(upload_firmware=upload_firmware, started_at=lambda: next(boot),
-                                                     wait_reachable=wait_reachable))
+        def wait_for_reboot(**_):
+            if not restarts:
+                raise DeviceError("did not restart within 180s")
+            self.events.append("rebooted")
+
+        ctx = SimpleNamespace(device=SimpleNamespace(
+            upload_firmware=upload_firmware, started_at=lambda: next(boot), uptime_seconds=lambda: 10,
+            wait_reachable=wait_reachable, wait_for_reboot=wait_for_reboot,
+            command=lambda c, timeout=None: self.events.append(c)))
         with mock.patch.object(hub, "upload_or_prompt_by_hand", return_value="manual") as by_hand, \
              mock.patch.object(time, "sleep"), \
              mock.patch.object(output, "tell") as told, mock.patch.object(output, "say"):
-            result = hub.upload_or_prompt(ctx, Path("berry.bin"), "Berry Tasmota")
-        return result, len(sent), by_hand.called, " ".join(str(c.args[0]) for c in told.call_args_list)
+            result = hub.upload_or_prompt(ctx, Path("berry.bin"), "Berry Tasmota", **kwargs)
+        return (result, self.events.count("upload"), by_hand.called,
+                " ".join(str(c.args[0]) for c in told.call_args_list))
 
-    def test_an_upload_cut_off_and_not_taken_is_sent_again(self):
-        result, sent, by_hand, told = self.upload([TimeoutError("timed out"), None])
+    def test_an_upload_cut_off_and_not_taken_is_sent_again_after_a_restart(self):
+        # Seen in the emulator: sent again at once, to a Tasmota that still
+        # held the upload cut off, the second hung without a word for 600 s.
+        result, sent, by_hand, told = self.upload([ConnectionResetError("reset"), None])
         self.assertTrue(result.startswith("http:"))
         self.assertEqual((sent, by_hand), (2, False))
+        self.assertEqual(self.events, ["upload", "Restart 1", "rebooted", "upload"])
         self.assertIn("cut off", told)
+
+    def test_an_upload_cut_off_is_sent_again_without_a_restart_where_one_is_not_safe(self):
+        result, sent, by_hand, _ = self.upload([TimeoutError("timed out"), None], restart_to_retry=False)
+        self.assertTrue(result.startswith("http:"))
+        self.assertEqual(self.events, ["upload", "upload"])
+
+    def test_an_upload_cut_off_from_a_plug_that_will_not_restart_is_left_to_the_person(self):
+        result, sent, by_hand, _ = self.upload([TimeoutError("timed out")], restarts=False)
+        self.assertEqual((result, sent, by_hand), ("manual", 1, True))
 
     def test_an_upload_cut_off_but_taken_is_not_sent_again(self):
         # Taken, it is booted: another would write the other slot and boot that.

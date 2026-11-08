@@ -768,7 +768,8 @@ Before that:
   layout, and sent the plug round steps it could never finish.
 - Tried again after an upload of the interim Tasmota cut off by the network
   (D4), the next upload hung without a word: Tasmota still held the cut one.
-  The plug is now restarted first.
+  The plug is now restarted first - and also before the upload is sent again
+  within the step, which hung for ten minutes in the same way once that was added.
 - On a busy plug, setting Tasmota up (F4) gave up on a slow answer, then
   restarted the plug again on every try, and left the next step asking a
   plug not answering yet - which asked the person for the Wi-Fi.

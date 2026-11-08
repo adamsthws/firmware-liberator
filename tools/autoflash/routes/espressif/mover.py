@@ -306,7 +306,9 @@ def step_berry_from_startup(ctx: Context) -> dict[str, Any]:
         output.tell("    The device is back on the firmware it ran before - switched off and on")
         output.tell("    before the startup firmware was settled in - so that is sent again.")
         step_startup_from_esphome(ctx, again=True)
-    how = hub.upload_or_prompt(ctx, image, "Berry Tasmota")
+    # Not restarted to clear an upload cut off: restarted before it has been
+    # used, the startup firmware starts what the plug ran before.
+    how = hub.upload_or_prompt(ctx, image, "Berry Tasmota", restart_to_retry=False)
 
     def berry(address: str) -> bool:
         # Tasmota only once it says so: the page not answering, as while the
