@@ -21,7 +21,7 @@ and plugs' identities.
 - **No third party's proprietary firmware** (Sonoff's images, a plug's dump)
   is committed, released or built into a published image. Tooling that
   needs one fetches it at run time from where it is published, as
-  `tools/beken/emulator/bk-emu.sh dump` does.
+  `tools/beken/emulator/beken-emu.sh dump` does.
 
 ## Real plugs and the emulator
 

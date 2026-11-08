@@ -1,5 +1,5 @@
 #!/bin/bash
-# Runs as root in the Beken emulator's container (bk-emu.sh plug): puts the
+# Runs as root in the Beken emulator's container (beken-emu.sh plug): puts the
 # emulated plug on its Docker network as a plug on a home Wi-Fi, with
 # this container as that Wi-Fi's router, then runs the plug as your user
 # until the container stops.
@@ -11,7 +11,7 @@
 # router's pool; DNS, every name this router; and eWeLink, the local stub
 # (tools/beken/emulator/cloud_stub.py), which every connection the plug makes off the
 # network is sent to. Nothing reaches the internet. The tool, on a computer
-# on the same network (bk-emu.sh computer), finds the plug as on a home
+# on the same network (beken-emu.sh computer), finds the plug as on a home
 # Wi-Fi, and the stub's account API at the router.
 set -euo pipefail
 

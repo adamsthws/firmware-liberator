@@ -921,7 +921,7 @@ Added under `tools/ewelink/stub_cloud/`: `__init__.py`, `make_ca.py`,
 
 ### Status
 
-Every Beken emulator plug runs against its stub: `bk-emu.sh plug` starts it, and
+Every Beken emulator plug runs against its stub: `beken-emu.sh plug` starts it, and
 there is no real-cloud mode. Sonoff's firmware comes ONLINE on it, and the tool's
 whole route runs through it in the emulator, in every direction
 ([the Beken fault suite](testing.md#the-beken-fault-suite)).
@@ -944,7 +944,7 @@ Nothing reaches the internet. The plug is made to trust the stub's CA by a
 trust-anchor swap where the firmware loads its CoolKit root, at
 `mbedtls_x509_crt_parse` (`cloud_online.StockHooks`): no check in its verify path is
 changed, only which root it trusts, and only while Sonoff's firmware is the one
-that starts. The tool, on a computer on the same Wi-Fi (`bk-emu.sh computer`), is
+that starts. The tool, on a computer on the same Wi-Fi (`beken-emu.sh computer`), is
 pointed at the stub's account API (`AUTOFLASH_EWELINK_API_BASE`) with its CA trusted.
 
 ### Firmware facts
@@ -983,11 +983,11 @@ another address, as the plug checks the leaf names the one it dialled).
   start on another.
 - **What plugs said of themselves** is kept across restarts
   (`stub-reported.json`), as an eWeLink account keeps its devices while they run
-  another firmware; `bk-emu.sh plug` returns once the plug is in it.
+  another firmware; `beken-emu.sh plug` returns once the plug is in it.
 
 ### Harness wiring and how to run it
 
-`bk-emu.sh plug` runs it, as root in the plug's container (`plug-net.sh`), as it
+`beken-emu.sh plug` runs it, as root in the plug's container (`plug-net.sh`), as it
 binds the router's ports 80 and 443; its log is `stub.log` in the plug's state
 directory (`captures/emulation/beken/state/`, or `state-N/` with `--instance N`).
 By hand:

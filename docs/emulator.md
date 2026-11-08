@@ -590,9 +590,9 @@ real plug would, onto its Wi-Fi and eWeLink.
 - **Docker.** Each command first pulls the emulator's image, or builds it where it
   is not published.
 - **No firmware of your own.** None is in the image or this repository:
-  `bk-emu.sh dump` fetches the public S61s dump from upstream's repository, which
+  `beken-emu.sh dump` fetches the public S61s dump from upstream's repository, which
   publishes it, into `captures/emulation/beken/firmwares/` (the tools do this
-  before they run), and `bk-emu.sh test` fetches upstream's other devices' dumps
+  before they run), and `beken-emu.sh test` fetches upstream's other devices' dumps
   there too (about 280 MB). That directory is mounted into the container at the
   emulator's `firmwares/`, and the checkout at `/work`, as your own user; a
   tool there is given a dump of your own by its path under `captures/`.
@@ -602,19 +602,19 @@ real plug would, onto its Wi-Fi and eWeLink.
 The tools in `tools/beken` run in its container:
 
 ```sh
-tools/beken/emulator/bk-emu.sh python tools/beken/emulator/seed_join.py
-tools/beken/emulator/bk-emu.sh run captures/your-dump.bin --wifi-peer auto
-tools/beken/emulator/bk-emu.sh test -k "Sonoff 4MB"    # upstream's self-tests, under the patches
-tools/beken/emulator/bk-emu.sh plug                     # the S61s dump as a plug, on a home Wi-Fi of its own
-tools/beken/emulator/bk-emu.sh computer tools/autoflash/cli.py run   # the tool, on that Wi-Fi
-tools/beken/emulator/bk-emu.sh power cycle              # the plug switched off and on
-tools/beken/emulator/bk-emu.sh --fresh plug            # the plug as new, on Sonoff's firmware again
-tools/beken/emulator/bk-emu.sh ui                       # OpenBeken's page, at http://127.0.0.1:8088/
-tools/beken/emulator/bk-emu.sh --rebuild plug           # rebuild the image first
-tools/beken/emulator/bk-emu.sh --instance 2 plug        # a second plug beside the first
+tools/beken/emulator/beken-emu.sh python tools/beken/emulator/seed_join.py
+tools/beken/emulator/beken-emu.sh run captures/your-dump.bin --wifi-peer auto
+tools/beken/emulator/beken-emu.sh test -k "Sonoff 4MB"    # upstream's self-tests, under the patches
+tools/beken/emulator/beken-emu.sh plug                     # the S61s dump as a plug, on a home Wi-Fi of its own
+tools/beken/emulator/beken-emu.sh computer tools/autoflash/cli.py run   # the tool, on that Wi-Fi
+tools/beken/emulator/beken-emu.sh power cycle              # the plug switched off and on
+tools/beken/emulator/beken-emu.sh --fresh plug            # the plug as new, on Sonoff's firmware again
+tools/beken/emulator/beken-emu.sh ui                       # OpenBeken's page, at http://127.0.0.1:8088/
+tools/beken/emulator/beken-emu.sh --rebuild plug           # rebuild the image first
+tools/beken/emulator/beken-emu.sh --instance 2 plug        # a second plug beside the first
 ```
 
-`bk-emu.sh` with no argument lists the rest. Its options are spelt as
+`beken-emu.sh` with no argument lists the rest. Its options are spelt as
 `emu.sh`'s: `--fresh`, `--rebuild`, and `--instance N` (1-30) for another plug
 beside the first, with its own container, network, state and web page port
 (8088+N); give the same `--instance N` to `computer`, `power` and `ui` to reach
@@ -624,11 +624,11 @@ What it makes is kept in `captures/emulation/beken/`, laid out as the Espressif
 emulator's is in `captures/emulation/`: each plug's `state/` (`state-N/`), the
 fault suite's `saved/` plugs and `suite/` results, and the fetched dumps in
 `firmwares/`. A checkout from before kept them in folders named after the S61
-(`captures/emulation/s61/`, `s61-suite/`, `beken-firmwares/`); `bk-emu.sh` and
+(`captures/emulation/s61/`, `s61-suite/`, `beken-firmwares/`); `beken-emu.sh` and
 the fault suite move those there the first time they run, unless a container
 is using one.
 
-`bk-emu.sh plug` runs the dump as a plug provisioned on a home Wi-Fi, on a Docker
+`beken-emu.sh plug` runs the dump as a plug provisioned on a home Wi-Fi, on a Docker
 network of its own (`autoflash-beken-emu`, apart from the Espressif emulator and
 everything else), where eWeLink is a local stub and nothing reaches the internet
 ([how](../tools/beken/emulator/README.md#how-it-fits-together); [the stub](cloud-stub.md#the-beken-emulators-stub)). The plug boots
@@ -636,7 +636,7 @@ from its flash, kept in `captures/emulation/beken/state/` with its logs and
 the stub's CA, so it carries on across firmware: each restart the firmware asks
 for a boot of its own, from the bootloader, as on a real plug.
 
-`bk-emu.sh computer` is a computer on that Wi-Fi: the tool there finds the
+`beken-emu.sh computer` is a computer on that Wi-Fi: the tool there finds the
 plug as on a home network, and its eWeLink is the stub. It works in its own
 copy of this checkout (the plug's `work/`), so its runs' captures are its own;
 an unattended run takes its eWeLink account from `work/captures/` (a made-up
@@ -644,11 +644,11 @@ one: the stub takes any). Sonoff's firmware, having fetched and staged a new
 image whole and checked its CRC, restarts a second later, and the bootloader
 installs it, as a real plug's does (the firmware's own code says so,
 [beken-research.md](beken-research.md)). A plug
-that does not come back is switched off and on - `bk-emu.sh power cycle`, as
+that does not come back is switched off and on - `beken-emu.sh power cycle`, as
 the tool then asks; an attended run there offers to do it itself: the plug's
 power switch is passed to the computer (`AUTOFLASH_EMULATOR_POWER`).
 
-**The plug's web page goes through a proxy** (`bk-emu.sh ui`, `ui_proxy.py`),
+**The plug's web page goes through a proxy** (`beken-emu.sh ui`, `ui_proxy.py`),
 OpenBeken's or ESPHome's - `ui` tells which by the name the plug gave its
 router - never opened straight. The emulated plug runs the real OpenBeken, but far
 slower than a chip: each request leaves a connection in TIME_WAIT on the plug,
@@ -674,5 +674,5 @@ plug to start from, one `rebuild_dump.py` made for another model, say
 - **Nothing around the chip.** No relay, meter or button is wired to its pins, so a
   conversion passing says the firmware installs and starts, not that a device's
   wiring is right.
-- **A Linux computer only.** `bk-emu.sh computer` is a Linux container; the
+- **A Linux computer only.** `beken-emu.sh computer` is a Linux container; the
   Espressif emulator's [Windows](#on-windows) set-up has no Beken counterpart yet.

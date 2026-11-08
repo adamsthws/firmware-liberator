@@ -106,7 +106,7 @@ def check_public_dump(kind: kinds.Kind, instances: list[int]) -> int:
 
 def check_device(kind: kinds.Kind, instances: list[int]) -> int:
     if family_of(kind) == "beken":
-        subprocess.run([str(ROOT / "tools/beken/emulator/bk-emu.sh"), "dump"], check=True)
+        subprocess.run([str(ROOT / "tools/beken/emulator/beken-emu.sh"), "dump"], check=True)
         return subprocess.call([str(ROOT / "tools/beken/emulator/fault_suite.py"), "check"])
     from tools.espressif.emulator import public_dump
     if kind.key in public_dump.DUMPS or kind.key in public_dump.UPDATES:

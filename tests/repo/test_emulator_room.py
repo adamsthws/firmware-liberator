@@ -88,7 +88,7 @@ class CopyCheckoutTests(unittest.TestCase):
         self.assertEqual(sorted(path.relative_to(self.dest) for path in self.dest.rglob("*")), before)
 
     def test_neither_emulator_copies_any_other_way(self):
-        for script in ("tools/espressif/emulator/emu.sh", "tools/beken/emulator/bk-emu.sh"):
+        for script in ("tools/espressif/emulator/emu.sh", "tools/beken/emulator/beken-emu.sh"):
             text = (ROOT / script).read_text(encoding="utf-8")
             self.assertIn("copy_checkout", text, script)
             self.assertNotIn("rsync", text, script)
@@ -148,7 +148,7 @@ class WaitForRoomTests(unittest.TestCase):
 
     def test_each_emulator_says_what_it_needs(self):
         for script, needs in (("tools/espressif/emulator/emu.sh", "room=250; [ \"$chip\" = esp32 ] && room=350"),
-                              ("tools/beken/emulator/bk-emu.sh", "wait_for_room 350")):
+                              ("tools/beken/emulator/beken-emu.sh", "wait_for_room 350")):
             self.assertIn(needs, (ROOT / script).read_text(encoding="utf-8"), script)
 
     def test_where_proc_says_nothing_it_does_not_wait(self):

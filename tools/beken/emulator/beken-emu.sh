@@ -4,17 +4,17 @@
 # emulator-source-beken-<commit> holds, or pulled where it is published - and
 # the tools in tools/beken run in it.
 #
-#   tools/beken/emulator/bk-emu.sh [--instance N] [--rebuild] [--fresh] COMMAND [ARGS...]
+#   tools/beken/emulator/beken-emu.sh [--instance N] [--rebuild] [--fresh] COMMAND [ARGS...]
 #
-#   tools/beken/emulator/bk-emu.sh python ARGS...
+#   tools/beken/emulator/beken-emu.sh python ARGS...
 #                             run python in the emulator's container, with this checkout
 #                             at /work (the working directory) and the fetched firmware
 #                             mounted in; the image is ensured first:
-#                             tools/beken/emulator/bk-emu.sh python tools/beken/emulator/seed_join.py
-#   tools/beken/emulator/bk-emu.sh run DUMP [ARGS...]
+#                             tools/beken/emulator/beken-emu.sh python tools/beken/emulator/seed_join.py
+#   tools/beken/emulator/beken-emu.sh run DUMP [ARGS...]
 #                             run a BK7238 dump as the emulator's tools do: main.py DUMP
 #                             --with-boot -chip BK7238 --only-uart ARGS
-#   tools/beken/emulator/bk-emu.sh plug
+#   tools/beken/emulator/beken-emu.sh plug
 #                             the public S61s dump as a plug on a home Wi-Fi, on the Beken
 #                             emulator's own Docker network (autoflash-beken-emu, made the first time;
 #                             nothing of the Espressif emulator is on it), until docker stop: its
@@ -24,26 +24,26 @@
 #                             and the stub's CA are kept in captures/emulation/beken/state/,
 #                             so it carries on as it was left (--fresh for a new plug).
 #                             It returns once the plug is in its stub's account
-#   tools/beken/emulator/bk-emu.sh ui [PORT]
+#   tools/beken/emulator/beken-emu.sh ui [PORT]
 #                             the plug's web page, OpenBeken's or ESPHome's, for this computer's browser,
 #                             at http://127.0.0.1:PORT/ (8088, or 8088+N) through ui_proxy.py: opened
 #                             straight, a browser's requests lock the emulated plug up
 #                             (why, in ui_proxy.py)
-#   tools/beken/emulator/bk-emu.sh power off|on|cycle
+#   tools/beken/emulator/beken-emu.sh power off|on|cycle
 #                             the plug's power switch: its flash kept, as a plug unplugged
-#   tools/beken/emulator/bk-emu.sh computer [COMMAND...]
+#   tools/beken/emulator/beken-emu.sh computer [COMMAND...]
 #                             a computer on the plug's Wi-Fi: python COMMAND (a shell without
 #                             one) in the image, as python does, there, with eWeLink the
 #                             plug's stub (AUTOFLASH_EWELINK_API_BASE, its CA trusted) and
 #                             the plug's power switch to hand (AUTOFLASH_EMULATOR_POWER), in
 #                             its own copy of this checkout (the plug's state directory's
 #                             work/), so its runs' captures are its own:
-#                             tools/beken/emulator/bk-emu.sh computer tools/autoflash/cli.py run
-#   tools/beken/emulator/bk-emu.sh test [ARGS...]
+#                             tools/beken/emulator/beken-emu.sh computer tools/autoflash/cli.py run
+#   tools/beken/emulator/beken-emu.sh test [ARGS...]
 #                             upstream's own self-tests (tests/self_test.py ARGS,
 #                             -k PATTERN selects by name), under the patches; they run
 #                             upstream's firmwares/ (about 280 MB), fetched the first time
-#   tools/beken/emulator/bk-emu.sh dump
+#   tools/beken/emulator/beken-emu.sh dump
 #                             the public S61s dump (firmwares/Sonoff_S61s_..., the tools'
 #                             default AUTOFLASH_BEKEN_EMU_DUMP), fetched from upstream's repository,
 #                             which publishes it, into captures/emulation/beken/firmwares/: this
@@ -265,7 +265,7 @@ case "${1:-}" in
         # The plug's address as its router gave it last (its firmware may have
         # changed, and with it its lease).
         read -r _ _ lease named _ < <(docker exec "$PLUG" sh -c 'sort -n /run/autoflash-beken-emu/leases | tail -1' 2>/dev/null)
-        [ -n "${lease:-}" ] || { echo "No plug on its Wi-Fi yet: start it (bk-emu.sh plug) and give it a minute" >&2; exit 1; }
+        [ -n "${lease:-}" ] || { echo "No plug on its Wi-Fi yet: start it (beken-emu.sh plug) and give it a minute" >&2; exit 1; }
         # Which firmware, by the name it gave its router: esphome-abcdef, or
         # openbeken-abcdef (OpenBK7238_ABCDEF before its first start's naming;
         # autoflash-recovery-CDEF as the interim firmware).
@@ -283,7 +283,7 @@ case "${1:-}" in
         esac ;;
     computer)
         shift; ensure; network
-        [ -f "$PLUG_STATE/ca.crt" ] || { echo "No plug yet: start it first (bk-emu.sh plug)" >&2; exit 1; }
+        [ -f "$PLUG_STATE/ca.crt" ] || { echo "No plug yet: start it first (beken-emu.sh plug)" >&2; exit 1; }
         # The computer's own copy of this checkout, refreshed each time, its
         # captures kept: a plug's runs are filed apart from every other's. Only
         # what git tracks or would, as emu.sh's (copy_checkout).

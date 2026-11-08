@@ -209,7 +209,7 @@ jobs:
           # What this project's driver and patches do on OpenBeken, each once, on
           # the new image: the emulator check runs no faults, these do.
           set -o pipefail
-          tools/beken/emulator/bk-emu.sh dump
+          tools/beken/emulator/beken-emu.sh dump
           tools/beken/emulator/fault_suite.py prep
           tools/beken/emulator/fault_suite.py list openbeken > openbeken.txt
           AUTOFLASH_BEKEN_EMU_SUITE_DIR=captures/emulation/beken/suite-openbeken AUTOFLASH_BEKEN_EMU_WORKERS=2 \

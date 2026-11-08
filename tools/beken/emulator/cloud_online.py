@@ -37,7 +37,7 @@ firmware runs then, its LAN service published (the mDNS record the tool's local
 discovery finds) and the cloud started. Where all of this is in the firmware is
 found in the firmware itself (stock_points.py).
 
-  tools/beken/emulator/bk-emu.sh python tools/beken/emulator/cloud_online.py
+  tools/beken/emulator/beken-emu.sh python tools/beken/emulator/cloud_online.py
 
 The set-up is a CloudSession, which cloud_push.py builds on to push an
 `upgrade` once the plug is online.

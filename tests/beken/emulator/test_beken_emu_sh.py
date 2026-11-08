@@ -1,4 +1,4 @@
-"""bk-emu.sh hands the container its own process: a signal to the script - a
+"""beken-emu.sh hands the container its own process: a signal to the script - a
 timeout's, a Ctrl-C - reaches the docker client and so the container, instead
 of leaving both running behind a script that has gone."""
 
@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-SCRIPT = ROOT / "tools" / "beken" / "emulator" / "bk-emu.sh"
+SCRIPT = ROOT / "tools" / "beken" / "emulator" / "beken-emu.sh"
 IMAGE_SH = ROOT / "tools" / "beken" / "emulator" / "image.sh"
 PLUG_NET = ROOT / "tools" / "beken" / "emulator" / "plug-net.sh"
 
@@ -208,8 +208,8 @@ class NetworkRaceTests(unittest.TestCase):
 
 
 def checkout(tmp):
-    """What bk-emu.sh needs of this checkout, copied under `tmp`."""
-    for name in ("tools/beken/emulator/bk-emu.sh", "tools/beken/emulator/folders.py",
+    """What beken-emu.sh needs of this checkout, copied under `tmp`."""
+    for name in ("tools/beken/emulator/beken-emu.sh", "tools/beken/emulator/folders.py",
                  "tools/beken/emulator/image.sh", "tools/beken/emulator/UPSTREAM", "tools/repo/emulator-room.sh"):
         Path(tmp, name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / name, Path(tmp, name))
@@ -217,11 +217,11 @@ def checkout(tmp):
 
 @unittest.skipIf(shutil.which("bash") is None, "no bash")
 class OptionTests(unittest.TestCase):
-    """bk-emu.sh spells the jobs it shares with emu.sh as emu.sh does:
+    """beken-emu.sh spells the jobs it shares with emu.sh as emu.sh does:
     --instance N, --fresh, --rebuild."""
 
     def run_script(self, *args, before=None):
-        """bk-emu.sh ARGS, run from a copy of its checkout in a temporary
+        """beken-emu.sh ARGS, run from a copy of its checkout in a temporary
         directory, so what it does to captures/ is done there; Docker a fake
         that says what it was asked."""
         with tempfile.TemporaryDirectory() as tmp:

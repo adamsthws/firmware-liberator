@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The emulated Beken plug's eWeLink: the local stub (tools/ewelink/stub_cloud),
 served on its router's address for the plug and for the tool alike, as
-bk-emu.sh plug runs it (plug-net.sh).
+beken-emu.sh plug runs it (plug-net.sh).
 
     python3 -I -B cloud_stub.py --state DIR --bind ADDRESS --flash DIR/flash.bin
 

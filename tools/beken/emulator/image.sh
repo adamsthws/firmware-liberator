@@ -30,7 +30,7 @@
 #                                    how the pin moves; a change to the emulator
 #                                    is a patch
 #
-# bk-emu.sh ensures its image every time: an image from an older checkout never
+# beken-emu.sh ensures its image every time: an image from an older checkout never
 # runs unseen. AUTOFLASH_BEKEN_EMU_PUBLISHED names another place to pull from,
 # AUTOFLASH_BEKEN_EMU_NO_PULL=1 always builds, and
 # AUTOFLASH_BEKEN_EMU_SOURCE_URL names another place to download the archive

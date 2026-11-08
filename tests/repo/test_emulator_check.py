@@ -60,7 +60,7 @@ class WaysTests(unittest.TestCase):
         from tools.espressif.emulator import public_dump
         runs_from = {*public_dump.DUMPS, *public_dump.UPDATES,
                      "sonoff-s60",   # the published public plugs
-                     "sonoff-s61"}   # upstream's public dump (bk-emu.sh)
+                     "sonoff-s61"}   # upstream's public dump (beken-emu.sh)
         for kind in kinds.READY:
             self.assertTrue(kind.key in runs_from or kind.key in check.NO_DUMP, kind.key)
 
