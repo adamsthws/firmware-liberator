@@ -293,8 +293,11 @@ time limit.
 
 A plug can be left answering nothing - not even its web page - though it
 still answers ping: kept busy too long, or left waiting on your computer when
-the tool was stopped mid-stage. Give it two minutes; if its web page still does
-not answer, switch it off and on. Wherever this can happen, doing that is safe: staging
+the tool was stopped mid-stage. Part way through, the tool restarts a plug that
+has stopped getting anywhere by itself, where the firmware on it has a way to;
+Sonoff's own firmware has none
+([Espressif research](espressif-research.md#no-restart-command)). Give it two
+minutes; if its web page still does not answer, switch it off and on. Wherever this can happen, doing that is safe: staging
 writes only the spare half of memory, the rewrite downloads what it needs
 before it writes anything, and installing the official startup firmware
 carries on where it stopped. Then run the tool again.

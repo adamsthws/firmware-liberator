@@ -484,6 +484,24 @@ one thing a stub cannot stand in for is a *bound* session the **real** cloud wou
 accept (that needs eWeLink's device-secret, from a paired dump); with the trust
 swap, a local stub completes the exchange in the emulator.
 
+## No restart command
+
+As on the S60 ([Espressif research](espressif-research.md#no-restart-command)),
+Sonoff's firmware has no command that only restarts the plug, over the cloud or
+on the local network. Read from the public S61 dump's app (un-striped: 32 bytes
+of data, 2 of CRC), strings only:
+
+- **The cloud.** The eWeLink link module's (`ais/src/link.c`) actions are
+  `register`, `upgrade`, `subDevice`, `resetDispatch`, `redirect`, `addNotify`
+  and `notify`. Only `upgrade` restarts the plug (`bk_reboot(1)` a second after
+  the update is downloaded: [the FOTA download](#the-coolkit-fota-download-container)).
+- **The local network.** The `/zeroconf/` strings are a live server, not a
+  client or dead code: eWeLink's LAN control on port 8081 (`http://%s:8081`,
+  `/zeroconf/*`, announced as `eWeLink_%s` on `_ewelink`), for the eWeLink app
+  or an iHost to switch the plug once it is online. It has no update route and
+  no restart route.
+- `bk_reboot(%d)` is only the log line inside the restart function itself.
+
 ## The update path
 
 The goal is the S60-style conversion to open firmware — here **OpenBeken / ESPHome**
