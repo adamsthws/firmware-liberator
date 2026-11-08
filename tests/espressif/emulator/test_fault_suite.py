@@ -639,6 +639,22 @@ class ScenarioTests(unittest.TestCase):
                     sc.fault(fault, arg, 0, None)
                 self.assertTrue(sc.notes.get("not_applied"))
 
+    def test_a_cancel_that_came_as_the_run_finished_leaves_its_firmware_the_one_to_end_on(self):
+        # Seen at K1, a tenth of a second long: the run converted the plug to
+        # Tasmota as it was cancelled, no run followed for ESPHome, and the
+        # plug's Tasmota name was taken for a wrong one.
+        sc = self.scenario("cancel", "switch")
+        sc.target = "tasmota"
+        with mock.patch.object(sc, "run_tool") as runs, mock.patch.object(sc, "finish"):
+            sc.again([(0, "Converted")], "esphome", [])
+        runs.assert_not_called()
+        self.assertEqual(sc.target_final, "tasmota")
+        with mock.patch.object(sc, "run_tool", return_value=0), mock.patch.object(sc, "finish"), \
+                mock.patch.object(sc, "screen_result", return_value="Converted"), \
+                mock.patch.object(sc, "last_said", return_value=""), mock.patch.object(fs.Path, "read_text", return_value=""):
+            sc.again([(1, "Cancelled")], "esphome", [])
+        self.assertEqual(sc.target_final, "esphome")
+
     def test_the_second_sign_in_goes_where_the_run_does(self):
         for stub_cloud, expected in ((True, True), (False, False)):
             with self.subTest(stub_cloud=stub_cloud):
