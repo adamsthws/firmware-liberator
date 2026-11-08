@@ -251,6 +251,10 @@ def report_screen(fields: list[tuple[str, str]]) -> list[str]:
 
 # Long enough for the CSE7766 and Tasmota's energy driver to report a new reading.
 METER_SETTLE = 4.0
+# How long a device back on Sonoff's firmware may take to reach eWeLink once the
+# run has seen it on the network: an Espressif run's last step sees it there,
+# seconds before its firmware has dialled eWeLink (seconds). Looked for every 10 s.
+ONLINE_WAIT = 180.0
 MAINS_VOLTS, DEAD_VOLTS = 90.0, 20.0     # clearly live / clearly switched off
 LOAD_WATTS, IDLE_WATTS = 1.0, 0.5
 
@@ -361,14 +365,46 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
     if not device_id:
         return {"Relay": "not checked", "Power meter": "not checked"}
     output.say("Checking the relay through eWeLink...")
-    switched = ewelink_relay.check_relay(
-        email=ctx.email(), password=ctx.ewelink_env()["EWELINK_PASSWORD"], country_code="+44", region="eu",
-        device_id=device_id, say=output.say)
+    if wait_until_online(ctx, device_id):
+        switched = ewelink_relay.check_relay(
+            email=ctx.email(), password=ctx.ewelink_env()["EWELINK_PASSWORD"], country_code="+44", region="eu",
+            device_id=device_id, say=output.say)
+    else:
+        output.say(f"    eWeLink has not shown the device online within {ONLINE_WAIT:.0f}s, so its relay "
+                   "could not be switched there. Check the eWeLink app.")
+        switched = None
     result = {"Relay": "could not be checked" if switched is None
               else "switches (through eWeLink)" if all(switched) else "did not switch",
               "Power meter": "not checked"}
     output.say(f"    Relay: {answer(result['Relay'])}")
     return result
+
+
+def wait_until_online(ctx: Context, device_id: str) -> bool:
+    """Whether eWeLink shows the device online, with its relay's state in its
+    record, and it answers there, within ONLINE_WAIT: what a Beken run's arrival
+    waits for already, and an Espressif run's does not, as its last step sees the
+    device on the network only. The state comes with the device's first reports,
+    a second or two after it answers (seen in the emulator, where its record
+    starts empty), and switching needs it. False at once when eWeLink cannot be
+    reached."""
+    started = time.monotonic()
+    while True:
+        devices = ctx.account_devices()
+        online = any(found.get("deviceid") == device_id and found.get("online")
+                     and ewelink_relay.relay_state(found.get("params") or {}) is not None for found in devices or [])
+        if online and ewelink_relay.answers(email=ctx.email(), password=ctx.ewelink_env()["EWELINK_PASSWORD"],
+                                            country_code="+44", region="eu", device_id=device_id):
+            output.progress_clear()
+            waited = time.monotonic() - started
+            if waited >= 1:
+                output.say(f"    eWeLink shows the device online after {waited:.0f}s.")
+            return True
+        if devices is None or time.monotonic() - started >= ONLINE_WAIT:
+            output.progress_clear()
+            return False
+        output.progress(f"waiting for eWeLink to show the device online... {time.monotonic() - started:.0f}s")
+        time.sleep(10)
 
 
 def invite_report(ctx: Context, seconds: float, resumed: bool) -> None:

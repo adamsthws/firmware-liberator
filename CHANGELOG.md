@@ -99,6 +99,11 @@ check.
 - A TH Elite on Tasmota no longer reports that its relay did not switch at the end
   of a run: the check did not read the answer Tasmota gives where a template has
   more than one relay.
+- A plug back on Sonoff's firmware no longer reports its relay check as failed
+  while it is reaching eWeLink: the check waits, up to three minutes, for eWeLink to
+  show the plug online and for it to answer there, then switches the relay. An
+  Espressif plug's run checked straight away, seconds after its firmware first
+  answered on the network and before it had reached eWeLink.
 
 ## 2.3.0
 

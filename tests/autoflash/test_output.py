@@ -920,7 +920,10 @@ class ReportTests(OutputTestCase):
                        plug_mac="12:34:56:ab:cd:ef")
         ctx.email = lambda: "someone@example.invalid"
         ctx.ewelink_env = lambda: {"EWELINK_PASSWORD": "made-up-password"}
+        ctx.account_devices = lambda: [{"deviceid": "1000abcdef", "online": True,
+                                        "params": {"switches": [{"outlet": 0, "switch": "off"}]}}]
         with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+                mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
                 mock.patch.object(report.ewelink_relay, "check_relay", return_value=(True, True)) as switched, \
                 mock.patch.object(report, "offer_report") as offered, mock.patch.object(output, "show_links"):
             report.invite_report(ctx, 441, False)
@@ -928,8 +931,77 @@ class ReportTests(OutputTestCase):
         fields = dict(offered.call_args.args[1])
         self.assertEqual(fields["Checks passed"], "True")
         with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+                mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
                 mock.patch.object(report.ewelink_relay, "check_relay", return_value=(True, False)):
             self.assertEqual(report.check_ewelink_hardware(ctx)["Relay"], "did not switch")
+
+    def ewelink_ctx(self, seen: list[bool]):
+        """A run back to Sonoff on an S60, whose account shows the device as
+        `seen` says, one look at a time (then as the last)."""
+        ctx = self.ctx(firmware="sonoff", source="tasmota", plug_mac="12:34:56:ab:cd:ef")
+        ctx.email = lambda: "someone@example.invalid"
+        ctx.ewelink_env = lambda: {"EWELINK_PASSWORD": "made-up-password"}
+        looks = iter(seen)
+        self.online = False
+
+        def account_devices():
+            self.online = next(looks, self.online)
+            return [{"deviceid": "1000abcdef", "online": self.online,
+                     "params": {"switches": [{"outlet": 0, "switch": "off"}]}}]
+        ctx.account_devices = account_devices
+        return ctx
+
+    def test_a_device_back_online_is_switched_once_its_record_says_its_relays_state(self):
+        # Seen in the emulator: the device answered, and its first report of its
+        # relay came 1.5 s after the check read its record, which said nothing.
+        ctx = self.ewelink_ctx([True])
+        looks = iter([{}, {}, {"switches": [{"outlet": 0, "switch": "off"}]}])
+        state = {"params": {}}
+
+        def account_devices():
+            state["params"] = next(looks, state["params"])
+            return [{"deviceid": "1000abcdef", "online": True, "params": state["params"]}]
+        ctx.account_devices = account_devices
+        reached = lambda **kwargs: (True, True) if state["params"] else None  # noqa: E731
+        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+                mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
+                mock.patch.object(report.ewelink_relay, "check_relay", side_effect=reached), \
+                mock.patch.object(report.time, "sleep") as slept:
+            self.assertEqual(report.check_ewelink_hardware(ctx)["Relay"], "switches (through eWeLink)")
+        self.assertEqual(slept.call_count, 2)
+
+    def test_a_run_back_to_sonoff_waits_for_ewelink_before_switching_the_relay(self):
+        # An Espressif run's last step sees the device on the network, seconds
+        # before Sonoff's firmware has dialled eWeLink: switched at once, it could
+        # not be (seen in the emulator, every run back to Sonoff).
+        ctx = self.ewelink_ctx([False, False, True])
+        reached = lambda **kwargs: (True, True) if self.online else None  # noqa: E731
+        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+                mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
+                mock.patch.object(report.ewelink_relay, "check_relay", side_effect=reached), \
+                mock.patch.object(report.time, "sleep") as slept:
+            self.assertEqual(report.check_ewelink_hardware(ctx)["Relay"], "switches (through eWeLink)")
+        self.assertEqual(slept.call_count, 2)
+
+    def test_a_device_never_back_in_ewelink_is_not_switched_and_the_wait_ends(self):
+        ctx = self.ewelink_ctx([False])
+        clock = iter(range(0, 10_000, 30))
+        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+                mock.patch.object(report.ewelink_relay, "check_relay") as switched, \
+                mock.patch.object(report.time, "monotonic", side_effect=lambda: next(clock)), \
+                mock.patch.object(report.time, "sleep"):
+            self.assertEqual(report.check_ewelink_hardware(ctx)["Relay"], "could not be checked")
+        switched.assert_not_called()
+
+    def test_ewelink_out_of_reach_is_not_waited_for(self):
+        ctx = self.ewelink_ctx([False])
+        ctx.account_devices = lambda: None
+        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+                mock.patch.object(report.ewelink_relay, "check_relay") as switched, \
+                mock.patch.object(report.time, "sleep") as slept:
+            self.assertEqual(report.check_ewelink_hardware(ctx)["Relay"], "could not be checked")
+        switched.assert_not_called()
+        slept.assert_not_called()
 
     def test_a_report_gives_only_what_its_route_has(self):
         # Busy time, the Wi-Fi typed and a setup network joined are an Espressif route's.
