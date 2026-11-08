@@ -94,7 +94,7 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.routes import beken  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
-from tools.repo import fault_verdicts, scenario_times  # noqa: E402
+from tools.repo import cpu_load, fault_verdicts, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import MemoryWatch  # noqa: E402
 
@@ -867,6 +867,7 @@ def batch(ids_file: str | None = None) -> None:
                     sc = todo.get_nowait()
                 except queue.Empty:
                     return
+                cpu_load.wait_for_room(lambda line: print(line, flush=True))
                 try:
                     outcome = run_scenario(instance, sc)
                 except Exception as exc:  # noqa: BLE001 - one scenario's failure is recorded, not the batch's

@@ -542,6 +542,11 @@ cores. A batch can be scaled while it runs: started with
 `AUTOFLASH_EMU_MOST_WORKERS` above its workers, only the number written in
 `workers` in its results directory take a scenario - raised, more start; lowered,
 the last ones stop once their scenario ends.
+Both suites also hold the next scenario back while this computer's load is
+over 1.5 a core (`tools/repo/cpu_load.py`), up to half an hour, saying so: on
+8 November unit tests run beside a batch took the laptop to 28 on 6 cores, and
+fresh plugs never reached eWeLink. Run the unit tests elsewhere, or between
+batches, all the same.
 
 **The cloud, one plug at a time.** Every emulated plug is a copy of the same
 real one, and eWeLink keeps one connection per plug, so two online at once

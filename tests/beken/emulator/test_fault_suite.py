@@ -137,10 +137,26 @@ class BatchResultTests(unittest.TestCase):
                 mock.patch.object(fault_suite, "run_scenario", side_effect=run), \
                 mock.patch.dict(fault_suite.os.environ, {"AUTOFLASH_BEKEN_EMU_WORKERS": "1"}), \
                 mock.patch.object(fault_suite.scenario_times, "times", return_value={"a": 60, "b": 1800, "c": 300}) as took, \
+                mock.patch.object(fault_suite.cpu_load, "wait_for_room"), \
                 mock.patch("builtins.print"):
             fault_suite.batch()
         self.assertEqual(ran, ["b", "c", "a"])
         self.assertEqual(took.call_args.args, (fault_suite.folders.BEKEN,))
+
+    def test_a_scenario_waits_for_room_before_it_starts(self):
+        from unittest import mock
+        events = []
+        with mock.patch.object(fault_suite, "scenarios", return_value=[{"id": "a", "arg": 1}]), \
+                mock.patch.object(fault_suite, "latest", return_value={}), \
+                mock.patch.object(fault_suite, "Instance"), mock.patch.object(fault_suite, "record"), \
+                mock.patch.object(fault_suite, "run_scenario",
+                                  side_effect=lambda *a: events.append("run") or {"result": "PASS"}), \
+                mock.patch.dict(fault_suite.os.environ, {"AUTOFLASH_BEKEN_EMU_WORKERS": "1"}), \
+                mock.patch.object(fault_suite.scenario_times, "times", return_value={}), \
+                mock.patch.object(fault_suite.cpu_load, "wait_for_room", side_effect=lambda *a: events.append("wait")), \
+                mock.patch("builtins.print"):
+            fault_suite.batch()
+        self.assertEqual(events, ["wait", "run"])
 
 
 class StepTimingTests(unittest.TestCase):
