@@ -201,6 +201,15 @@ class LocateTests(unittest.TestCase):
             self.assertIn("another device", check("192.0.2.1")[0])
         self.discover.assert_not_called()
 
+    def test_one_not_answering_discovery_is_found_by_its_hardware_address(self):
+        # An Espressif device on the reading program a readout stopped part way left on it.
+        device = {**DEVICE, "params": {"staMac": "12:34:56:AB:CD:EF"}}
+        with mock.patch.object(hostsys, "find_by_mac", return_value="192.0.2.77") as found, \
+                mock.patch.object(prompts, "ask_ipv4") as asked:
+            self.assertEqual(readout.locate(None, device), "192.0.2.77")
+        self.assertEqual(found.call_args.args[0], "12:34:56:ab:cd:ef")
+        asked.assert_not_called()
+
     def test_another_device_is_found_by_discovery(self):
         self.discover.return_value = {"packets": ["x"]}
         with mock.patch.object(readout, "answering_ids", return_value={"1000abcdef": "192.0.2.88"}), \
@@ -227,6 +236,8 @@ def start_run(test: unittest.TestCase) -> None:
     test.filed = filed.start()
     test.addCleanup(filed.stop)
     for patch in (mock.patch.object(readout, "locate", return_value="192.0.2.77"),
+                  # On Sonoff's firmware, not a readout's reading program left on it.
+                  mock.patch.object(readout_espressif.installer, "bridge_answers", return_value=False),
                   mock.patch.object(hostsys, "mac_of", return_value="12:34:56:ab:cd:ef"),
                   mock.patch.object(account, "ask_ewelink", return_value=asked),
                   mock.patch.object(plugs, "remember_plug"),
@@ -267,6 +278,16 @@ class RunTests(unittest.TestCase):
                 readout.run(self.ctx, DEVICE)
         self.assertEqual(read.call_args.args[1:3], (chips.ESP32C3, kinds.SONOFF_S60.wrapper_model))
         self.assertTrue(read.call_args.kwargs["known"])
+
+    def test_on_the_reading_program_already_it_is_asked_of_ewelink_by_its_id(self):
+        # The bridge answers no discovery, as Sonoff's firmware would.
+        by_id = account.Asked({"packets": []}, "1.0.0", "SN-NEW-01", "NEWTHING", [], {}, "1000abcdef")
+        with learned("FWSW-01-NEW-BK7238", "BK7238"), mock.patch.object(readout, "offer", return_value="done"), \
+                mock.patch.object(readout_espressif.installer, "bridge_answers", return_value=True), \
+                mock.patch.object(account, "ask_account", return_value=by_id) as asked:
+            readout.run(self.ctx, DEVICE)
+        self.assertEqual(asked.call_args.args[1], "1000abcdef")
+        account.ask_ewelink.assert_not_called()
 
     def test_its_run_is_filed_under_the_device_as_a_conversions_is(self):
         with learned("FWSW-01-NEW-BK7238", "BK7238"), mock.patch.object(readout, "offer", return_value="done"):

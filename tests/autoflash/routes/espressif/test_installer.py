@@ -955,6 +955,14 @@ class RestartBridgeTests(unittest.TestCase):
                 host, _ = self.serve(status)
                 self.assertFalse(installer.restart_bridge(host))
 
+    def test_its_status_says_whether_sonoffs_firmware_is_there_to_start(self):
+        for status, has in (("bridge 4.4.6\nhome network: joined 192.0.2.77\n", True),
+                            ("bridge 4.4.6\nhome network: joined 192.0.2.77\nfallback: none - an upload was cut "
+                             "off\n", False),
+                            (None, True)):   # unreadable: a restart is tried, and refused or failing, asked
+            with self.subTest(status=status), mock.patch.object(setup_network, "page", return_value=status):
+                self.assertEqual(installer.has_fallback("192.0.2.77"), has)
+
     def test_restarted_it_is_waited_for_until_sonoff_answers(self):
         with mock.patch.object(installer, "restart_bridge", return_value=True), \
                 mock.patch.object(installer.time, "sleep"), mock.patch.object(output, "say"), \

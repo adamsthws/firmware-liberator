@@ -57,6 +57,10 @@ def find_current_firmware(ctx: Context) -> str:
             found.mac = mac
             adopt_plug(ctx, found)
             return running
+        if running == "installer":
+            left_by = installer_left_by(ctx, given, mac)
+            if left_by:
+                running = installer_back(given, left_by)
         if running == "readout":
             # On no route: settle_route puts Sonoff's firmware back.
             adopt_plug(ctx, detect.Found(given, running, mac))
@@ -142,6 +146,10 @@ def find_current_firmware(ctx: Context) -> str:
         chosen = offered[choice]
         if chosen.firmware in unlock.LOCKED:
             chosen = unlock.unlocked(ctx, chosen)
+    if chosen.firmware == "installer":
+        left_by = installer_left_by(ctx, chosen.host, chosen.mac)
+        if left_by:
+            return installer_back(chosen.host, left_by)
     adopt_plug(ctx, chosen)
     if chosen.firmware == "midway" and chosen.name == "the mover":
         return espressif_source.past_the_commit(ctx, espressif_source.esphome_safe_mode(ctx, chosen.firmware))
@@ -169,6 +177,69 @@ def identify_once_restarted(ctx: Context, host: str) -> str | None:
 
 
 RESTART_GRACE = 45.0
+
+# Where a run finds this tool's installer (the bridge) running and it is no
+# conversion's to carry on: a readout's, whose bridge is the same program, or
+# one no run of this computer's left. The bridge chose Sonoff's firmware for
+# the next start as it started, so switching it off and on puts it back.
+INSTALLER_LEFT = ("the device is on this tool's installer, left by {who}, and it would not restart, so nothing "
+                  "was done. Switch it off and on: it starts its Sonoff firmware again, its settings and pairing "
+                  "kept. Then run this again")
+
+
+def installer_left_by(ctx: Context, host: str, mac: str | None) -> str | None:
+    """Who left this tool's installer running at `host`, where it is no
+    conversion to carry on: "a readout stopped part way", or "no run of this
+    computer's". None for a conversion's: this computer's latest run on the
+    plug converting it and unfinished, or none at all but no Sonoff firmware
+    left to start. A readout never writes into Sonoff's slot, so its installer
+    always has Sonoff's firmware to fall back to: only a conversion's upload
+    takes it away. So no readout's is ever carried on as a conversion, whatever
+    computer ran it."""
+    from tools.autoflash.routes.espressif import installer
+    last = last_run(ctx, hostsys.normalise_mac(mac)) if mac else None
+    if last == "conversion":
+        return None
+    if last == "readout":
+        return "a readout stopped part way"
+    if not installer.has_fallback(host):
+        return None   # an upload into Sonoff's slot cut off part way: only a conversion's
+    return "no run of this computer's"
+
+
+def installer_back(host: str, left_by: str) -> str:
+    """This tool's installer at `host`, no conversion's, restarted into Sonoff's
+    firmware (bridge 4.4.6): "sonoff", for the run to go on from there. Abort,
+    with nothing done, where it would not restart: a person switches it off
+    and on."""
+    from tools.autoflash.routes.espressif import installer
+    output.say(f"    The device is on this tool's installer, left by {left_by}: restarting it into its Sonoff "
+               "firmware.")
+    if not installer.restart_into_sonoff(host):
+        raise Abort(INSTALLER_LEFT.format(who=left_by))
+    output.say("    It is back on its Sonoff firmware.")
+    return "sonoff"
+
+
+def last_run(ctx: Context, mac: str) -> str | None:
+    """What this computer's latest run on the plug `mac`, before this one, was:
+    "readout", or "conversion" while unfinished; None for a finished one, or
+    none. A run that got nowhere - stopped before it knew where it went - is
+    passed over."""
+    from tools.autoflash import readout, routes
+    for directory in reversed(runs.run_directories()):
+        if directory.resolve() == ctx.dir.resolve() or plugs.mac_of_run(directory) != mac:
+            continue
+        try:
+            state = RunState.open(directory)
+        except (OSError, ValueError):
+            continue
+        if state.input(readout.STATE_KEY):
+            return "readout"
+        if state.input("source") or state.input("firmware"):
+            steps = routes.steps_of(state)
+            return None if steps and state.is_done(steps[-1][0]) else "conversion"
+    return None
 
 
 def converted_here(ctx: Context) -> bool:

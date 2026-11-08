@@ -38,6 +38,8 @@ if TYPE_CHECKING:
 # The chips the bridge runs on, as a firmware name says them (firmware_name.chip_of).
 BRIDGE_CHIPS = {"ESP32C3": chips.ESP32C3, "ESP32D0WD": chips.ESP32}
 READ_TRIES = 3
+# Where the bridge was read through: on the home network, or its own.
+BRIDGE_HOST = "readout_bridge"
 BACK_ON_SONOFF_WAIT = 300.0
 
 
@@ -87,7 +89,15 @@ def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, *,
         raise NothingWritten("not confirmed - nothing has been sent to the device")
     output.transient_end()
     port = firewall.choose_port(ctx, "delivery_port", firewall.DELIVERY_PORTS, "the firmware")
+    # Before anything else: a rule a run stopped part way left is taken over
+    # here, and removed as this run ends.
     firewall.ensure_firewall(ctx)
+    plug_ip = ctx.state.input("plug_ip")
+    if plug_ip and installer.bridge_answers(plug_ip):
+        # A readout stopped part way left it there: read through it.
+        output.say("The reading program is on the device already, from a readout stopped part way.")
+        ctx.state.set_input(readout.STATE_KEY, "sent")
+        return read_through(ctx, plug_ip)
     with safety_locks.lifted(ROOT, "RECOVERY_LOCK"):
         code = hostsys.run_tool(hostsys.python_script(
             "tools/espressif/serve_tasmota_ota.py",
@@ -99,7 +109,12 @@ def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, *,
             interactive=True, env=ctx.ewelink_env())
     safety_locks.say_lock_back(ROOT, "RECOVERY_LOCK")
     ctx.state.set_input(readout.STATE_KEY, "sent")
-    host = find_bridge(ctx, sent=code == 0)
+    return read_through(ctx, find_bridge(ctx, sent=code == 0))
+
+
+def read_through(ctx: Context, host: str) -> tuple[bytes, bytes, bytes | None, dict]:
+    """The whole flash, efuses and what the bridge at `host` says of the chip."""
+    ctx.state.set_input(BRIDGE_HOST, host)   # where it is restarted from, once read
     output.say("Reading the device's memory - about a minute...")
     problem = ""
     for _ in range(READ_TRIES):
@@ -140,8 +155,15 @@ def find_bridge(ctx: Context, *, sent: bool) -> str:
 
 
 def back_on_sonoff(ctx: Context) -> bool:
-    """Have the person switch it off and on, and wait for Sonoff's firmware:
-    whether it answered."""
+    """The device back on its Sonoff firmware: restarted by the bridge (4.4.6),
+    else switched off and on by the person, and waited for. Whether Sonoff's
+    firmware answered."""
+    host = ctx.state.input(BRIDGE_HOST)
+    # On its own network, the person has their usual Wi-Fi to join again anyway.
+    if host and host != setup_network.SETUP_HOST and installer.restart_into_sonoff(host):
+        ctx.state.set_input(readout.STATE_KEY, "read")
+        output.say("    It is back on its Sonoff firmware.")
+        return True
     output.transient_begin()
     prompts.section("Read. Now put it back on its Sonoff firmware", [
         "Switch the device off, wait five seconds, and switch it on again (for a",

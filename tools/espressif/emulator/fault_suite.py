@@ -244,16 +244,25 @@ STEP_OF = {"C3fb": "C3", "F4rs": "F4", "F4tp": "F4", "D5ot": "D5"}  # the tool's
 # Readouts (cli.py readout, unattended, docs/readouts.md) of a plug fresh from
 # Sonoff's firmware. Their phases are no steps of the tool's: each starts and
 # ends at what the run says, and lasts in the emulator: the read as C3's, which
-# reads the flash through the same bridge; putting Sonoff's firmware back, 10 s
-# (2026-11-08): the person switching the plug off and on 6 s after the run asks,
-# then Sonoff's firmware answering 4 s later. The faults where each matters most,
-# at 40%: in the read, and in putting it back just after the person's power
-# cycle, as Sonoff's firmware starts (25 s, first guessed, put it at the end).
-STARTS.update({"read": (r"Reading the device's memory", 12),
-               "back": (r"Read\. Now put it back on its Sonoff firmware", 18)})
-ENDS = {"read": r"Read\. Now put it back on its Sonoff firmware", "back": r"It is back on its Sonoff firmware"}
+# reads the flash through the same bridge; putting Sonoff's firmware back, 5 s
+# (bridge 4.4.6, 2026-11-08): the bridge restarting the plug 1.5 s after it is
+# asked, Sonoff's firmware answering about 2.5 s later, 4 s in all. The faults
+# where each matters most, at 40%: in the read, and in putting it back just
+# after the restart, as Sonoff's firmware starts. Before 4.4.6 the person
+# switched the plug off and on, 10 s in all, and the phase was 18 s; at 18 s the
+# restart's phase was over before the fault (NOT-FIRED). Where the bridge will
+# not restart, the person is still asked.
+BACK = r"Restarting it into its Sonoff firmware|Read\. Now put it back on its Sonoff firmware"
+STARTS.update({"read": (r"Reading the device's memory", 12), "back": (BACK, 5)})
+ENDS = {"read": BACK, "back": r"It is back on its Sonoff firmware"}
 READOUT_FAULTS = [("read", "plugoff", 1), ("read", "outage", 30), ("read", "crash", 1),
                   ("back", "plugoff", 1), ("back", "outage", 30)]
+# A readout cut off mid-read, the bridge still running, and the tool run again
+# before the plug is switched off and on: to Sonoff's firmware, or the readout;
+# and (elsewhere) to Sonoff's firmware with this computer's records of the
+# plug's runs gone, as on another computer. The bridge is the conversions'
+# installer too, but only the readout's.
+READOUT_THEN = ("sonoff", "readout", "sonoff-elsewhere")
 READOUT = "readout.tar"
 # Where the readout asks for the plug to be switched off and on, and waits.
 READOUT_SWITCH = re.compile(r"Switch the device off, wait five seconds, and switch it on again")
@@ -449,6 +458,9 @@ def readout_scenarios():
     for step, fault, arg in READOUT_FAULTS:
         yield dict(id=sid("sonoff>readout", step, fault, arg), route="sonoff>readout", step=step,
                    fault=fault, arg=arg, at=40)
+    for then in READOUT_THEN:
+        yield dict(id=sid("sonoff>readout", "read", "crash", 1) + f"-then-{then}", route="sonoff>readout",
+                   step="read", fault="crash", arg=1, at=40, then=then)
     yield dict(id=sid("tasmota>readout", "start", "none", "refused"), route="tasmota>readout", step="start",
                fault="none", arg="refused", at=40)
 
@@ -1917,6 +1929,20 @@ class Scenario:
                 return self.finish_readout(results, "NOT-FIRED")
             if fault == "crash":
                 time.sleep(arg)
+        if sc.get("then"):
+            # Run again at once, the plug not switched off and on: on the bridge still.
+            self.say(f"PERSON: ran the tool again ({sc['then']}) before switching the plug off and on")
+            target, _, where = sc["then"].partition("-")
+            if where == "elsewhere":
+                self.ex("sh", "-c", "rm -rf /state/work/captures/plugs/*/runs", as_tool=True)
+                self.say("records of the plug's runs taken away, as on another computer")
+            results.append((self.run_tool(target), None))
+            results[-1] = (results[-1][0], self.readout_result())
+            # Its report says where it converted from; any stage of the
+            # conversions' says it went on as one.
+            if re.search(r"Converted from:\s+Unfinished conversion|Stage \d+ - (Installing interim firmware|"
+                         r"Updating the bootloader|Making room)", self.last_said()):
+                return self.finish_readout(results, "FAIL-TAKEN-FOR-CONVERSION")
         while not self.readout_done() and len(results) < MAX_RUNS:
             if SWITCH_ADVICE.search(self.last_said()):
                 self.say("following the run's advice: the plug switched off and on")
