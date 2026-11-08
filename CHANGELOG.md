@@ -66,6 +66,9 @@ check.
 - On an S61, a firmware delivery a power cut stopped part way is said plainly -
   the plug keeps its Sonoff firmware: switch it off and on, and run again - not
   as something unexpected.
+- A plug offline in eWeLink when a run sends to it is waited for five and a half
+  minutes, not three: after a send cut off part way it stays away about five,
+  and the run gave up just before it came back.
 - The Sonoff Basic Gen5 (BASIC-1GS). It has no public dump, so the tool checks
   the partition table in eWeLink's official update file before writing anything,
   and logs what the run learns. Beken devices on any other table are refused.

@@ -210,7 +210,9 @@ def describe_cloud(message: dict[str, Any], seq: str) -> str | None:
 
 
 # How long a plug offline in eWeLink is waited for before the send is refused.
-OFFLINE_WAIT = 180.0
+# After a send cut off part way, the plug stays away about 300 s, then restarts
+# by itself and is back some 18 s later (seen on the real cloud, 2026-11-06).
+OFFLINE_WAIT = 330.0
 
 
 def until_online(device: dict, look_again, *, sleep=time.sleep, say=print) -> dict:
@@ -218,7 +220,8 @@ def until_online(device: dict, look_again, *, sleep=time.sleep, say=print) -> di
     waited = 0.0
     while not device.get("online") and waited < OFFLINE_WAIT:
         if waited == 0:
-            say(f"Device is offline in eWeLink; waiting up to {OFFLINE_WAIT:.0f}s for it to come back...")
+            say(f"Device is offline in eWeLink; waiting up to {OFFLINE_WAIT:.0f}s for it to come back "
+                "(after a send cut off part way it stays away about five minutes)...")
         sleep(10)
         waited += 10
         device = look_again()
