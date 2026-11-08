@@ -112,12 +112,20 @@ def has_psscriptanalyzer(path: str) -> bool:
 
 
 @functools.cache
-def esphome_pins() -> dict:
-    return json.loads((ROOT / "artifacts" / "firmware.json").read_text(encoding="utf-8"))["esphome"]
+def esphome_pins() -> list[dict]:
+    """The Espressif builds firmware.json pins that ESPHome makes from a config."""
+    espressif = json.loads((ROOT / "artifacts" / "firmware.json").read_text(encoding="utf-8"))["espressif"]
+    return [pin for section in espressif.values() for pin in section.values() if "config" in pin]
+
+
+def esphome_builder() -> str:
+    """ESPHome's image, as the S60's image was last built in it."""
+    return json.loads((ROOT / "artifacts" / "firmware.json").read_text(encoding="utf-8"))["espressif"][
+        "sonoff-s60"]["esphome"]["builder"]
 
 
 def esphome_config(path: Path) -> bool:
-    return path.as_posix() in {build["config"] for build in esphome_pins().values()}
+    return path.as_posix() in {build["config"] for build in esphome_pins()}
 
 
 def esphome_command(files: list[str], mounts: Iterable[str] = ()) -> list[str]:
@@ -125,7 +133,7 @@ def esphome_command(files: list[str], mounts: Iterable[str] = ()) -> list[str]:
     user = ["-u", f"{os.getuid()}:{os.getgid()}"] if hasattr(os, "getuid") else []
     extra = [argument for mount in mounts for argument in ("-v", mount)]
     return ["docker", "run", "--rm", *user, "-e", "HOME=/tmp", "--tmpfs", "/cache",
-            "-v", f"{ROOT}:/config:ro", *extra, "-w", "/config", esphome_pins()["image"]["builder"],
+            "-v", f"{ROOT}:/config:ro", *extra, "-w", "/config", esphome_builder(),
             "-q", "config", *files]
 
 

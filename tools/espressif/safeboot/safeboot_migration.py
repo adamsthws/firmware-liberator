@@ -111,9 +111,10 @@ INTERIM_TABLE_SHA256 = "cfb1e1c46fa209a6c1eada92123a02847ab8e72f67c0044afbcb1c29
 FIRMWARE = json.loads(
     (Path(__file__).resolve().parents[3] / "artifacts" / "firmware.json").read_text(encoding="utf-8")
 )
-OFFICIAL_TASMOTA_VERSION = FIRMWARE["tasmota"]["version"]
-OFFICIAL_TASMOTA_TAG = FIRMWARE["tasmota"]["tag"]
-OFFICIAL_TASMOTA_COMMIT = FIRMWARE["tasmota"]["commit"]
+OFFICIAL_TASMOTA = FIRMWARE["espressif"]["esp32c3"]["tasmota"]
+OFFICIAL_TASMOTA_VERSION = OFFICIAL_TASMOTA["version"]
+OFFICIAL_TASMOTA_TAG = OFFICIAL_TASMOTA["tag"]
+OFFICIAL_TASMOTA_COMMIT = OFFICIAL_TASMOTA["commit"]
 
 
 def release_urls(release: dict[str, Any]) -> dict[str, str]:
@@ -122,7 +123,7 @@ def release_urls(release: dict[str, Any]) -> dict[str, str]:
     return {name: f"{base}/{file['name']}" for name, file in release["files"].items()}
 
 
-OFFICIAL_URLS = release_urls(FIRMWARE["tasmota"])
+OFFICIAL_URLS = release_urls(OFFICIAL_TASMOTA)
 # The Tasmota the interim firmware is made from, which need not follow the
 # official release: the recovery Safeboot is built from this source with this
 # project's patches, and the settings template D1 gives the Berry build below
@@ -146,7 +147,7 @@ PINNED_ARTIFACTS = {
     },
     **{
         name: {"size": file["size"], "sha256": file["sha256"]}
-        for name, file in FIRMWARE["tasmota"]["files"].items()
+        for name, file in OFFICIAL_TASMOTA["files"].items()
     },
 }
 
@@ -340,7 +341,7 @@ def manifest_chip(manifest: dict[str, Any]) -> chips.Chip:
 
 def tasmota_pin(chip: chips.Chip) -> dict[str, Any]:
     """The official release pinned for `chip`."""
-    return FIRMWARE["tasmota"] if chip is chips.ESP32C3 else chip.pin("tasmota")
+    return OFFICIAL_TASMOTA if chip is chips.ESP32C3 else chip.pin("tasmota")
 
 
 def pinned_artifacts(chip: chips.Chip) -> dict[str, dict[str, Any]]:

@@ -26,21 +26,22 @@ from tools.espressif import chips, layouts
 # What each is, as firmware.json pins it: tools/repo/update_firmware.py writes it,
 # docs/updating-firmware.md says when.
 FIRMWARE = json.loads((ROOT / "artifacts" / "firmware.json").read_text(encoding="utf-8"))
-PINS = FIRMWARE["esphome"]
+# By chip (what its plugs share) and by kind (each one's own), as Beken's are.
+PINS = FIRMWARE["espressif"]
 # The published image, the ESPHome made for the Sonoff S60 (kinds.SONOFF_S60),
 # pinned: a changed file is refused, never used unseen.
-IMAGE = ROOT / PINS["image"]["file"]
-IMAGE_SHA256 = PINS["image"]["sha256"]
-IMAGE_SIZE = PINS["image"]["size"]
+IMAGE = ROOT / PINS[kinds.SONOFF_S60.key]["esphome"]["file"]
+IMAGE_SHA256 = PINS[kinds.SONOFF_S60.key]["esphome"]["sha256"]
+IMAGE_SIZE = PINS[kinds.SONOFF_S60.key]["esphome"]["size"]
 # ESPHome's bootloader, from the same build, put in place of Sonoff's: Sonoff's
 # (ESP-IDF 4.4) starts ESPHome but cannot roll back an update that fails to
 # start ("Bootloader too old for OTA rollback").  It is all that sits before
 # the partition table at 0x8000, and the one part the plug cannot start without.
 # It is replaced only when that is the point: a power cut in the second it
 # takes to write leaves a plug that has to be opened.
-BOOTLOADER = ROOT / PINS["bootloader"]["file"]
-BOOTLOADER_SHA256 = PINS["bootloader"]["sha256"]
-BOOTLOADER_SIZE = PINS["bootloader"]["size"]
+BOOTLOADER = chips.ESP32C3.file("bootloader")
+BOOTLOADER_SHA256 = chips.ESP32C3.pin("bootloader")["sha256"]
+BOOTLOADER_SIZE = chips.ESP32C3.pin("bootloader")["size"]
 BOOTLOADER_ROOM = 0x8000
 # Sonoff's app slots, which the run leaves as they are: ESPHome goes into ota_0.
 SLOT_ADDRESS = 0x20000
@@ -76,10 +77,8 @@ def check_app(image: bytes, label: str, chip: chips.Chip = chips.ESP32C3) -> Non
 
 def image_pin(kind: kinds.Kind) -> dict:
     """What firmware.json pins for `kind`'s ESPHome."""
-    if kind is kinds.SONOFF_S60:
-        return PINS["image"]
     try:
-        return FIRMWARE["espressif_kinds"][kind.key]["esphome"]
+        return PINS[kind.key]["esphome"]
     except KeyError:
         raise ImageError(f"no ESPHome is published for the {kind.name}") from None
 
@@ -132,9 +131,9 @@ def published_bootloader(chip: chips.Chip = chips.ESP32C3) -> bytes:
 
 # The mover (devices/sonoff-s60/mover.yaml): a small ESPHome, run only while a
 # plug leaves Tasmota, that takes the next firmware as an ESPHome update.
-MOVER = ROOT / PINS["mover"]["file"]
-MOVER_SHA256 = PINS["mover"]["sha256"]
-MOVER_SIZE = PINS["mover"]["size"]
+MOVER = chips.ESP32C3.file("mover")
+MOVER_SHA256 = chips.ESP32C3.pin("mover")["sha256"]
+MOVER_SIZE = chips.ESP32C3.pin("mover")["size"]
 # Sonoff's partition table, as a stock S60 has it: written back when a plug
 # leaves Tasmota's layout.
 SONOFF_TABLE = ROOT / "artifacts" / "sonoff-s60-partition-table.bin"

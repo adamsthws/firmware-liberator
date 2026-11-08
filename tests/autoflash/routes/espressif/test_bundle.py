@@ -81,8 +81,8 @@ class StartChoiceTests(unittest.TestCase):
         import json
         import tempfile
         from unittest import mock
-        from tools.espressif.safeboot.safeboot_migration import FIRMWARE
-        earlier = FIRMWARE["tasmota"]["earlier"][0]
+        from tools.espressif.safeboot.safeboot_migration import OFFICIAL_TASMOTA
+        earlier = OFFICIAL_TASMOTA["earlier"][0]
         with tempfile.TemporaryDirectory() as directory:
             manifest = Path(directory) / "manifest.json"
             manifest.write_text(json.dumps({"schema": 1, "artifacts": {
@@ -100,7 +100,7 @@ class StartChoiceTests(unittest.TestCase):
             self.assertEqual(build.call_args.kwargs["release"], earlier)
             manifest.write_text(json.dumps({"schema": 1, "artifacts": {
                 name: {"size": file["size"], "sha256": file["sha256"]}
-                for name, file in FIRMWARE["tasmota"]["files"].items()}}))
+                for name, file in OFFICIAL_TASMOTA["files"].items()}}))
             self.assertIsNone(bundle.release_on_the_plug(ctx))
 
     def test_a_run_carried_on_keeps_a_bundle_this_version_can_use(self):

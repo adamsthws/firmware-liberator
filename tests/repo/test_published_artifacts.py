@@ -124,10 +124,10 @@ class PublishedESPHomeTests(unittest.TestCase):
         self.assertIn(line, (ROOT / "artifacts" / "SHA256SUMS").read_text().splitlines())
         # Named for the image whose build made it: this one's, or an earlier
         # one's, kept when a later build's differed (docs/updating-firmware.md).
-        built = images.PINS["bootloader"]["version"]
+        built = images.PINS["esp32c3"]["bootloader"]["version"]
         self.assertTrue(images.BOOTLOADER.name.endswith(f"-{built}.bin"), "named for its build")
         as_numbers = lambda version: tuple(int(part) for part in re.split(r"[.-]", version))  # noqa: E731
-        self.assertLessEqual(as_numbers(built), as_numbers(images.PINS["image"]["version"]))
+        self.assertLessEqual(as_numbers(built), as_numbers(images.PINS["sonoff-s60"]["esphome"]["version"]))
 
     def test_the_esphome_image_can_have_the_wifi_written_in(self):
         from tools.autoflash import imprint
