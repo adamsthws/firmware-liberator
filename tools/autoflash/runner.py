@@ -28,7 +28,7 @@ from tools.autoflash import (
     unlock,
 )
 from tools.autoflash.device import DeviceError
-from tools.autoflash.errors import Abort, NothingWritten
+from tools.autoflash.errors import Abort, NothingWritten, StoppedPartWay
 from tools.autoflash.phases import PhaseError, PlugNeverConnected
 from tools.autoflash.prompts import QuitRun
 from tools.autoflash.routes import update
@@ -113,7 +113,7 @@ def _execute(ctx: Context, step: str) -> int:
         # A phase that ended with no result may have got as far as writing:
         # where the plug can show whether the step finished, the step stays
         # "attempted" and the next run asks it.
-        if not (isinstance(exc, PhaseError) and step in routes.FAMILY.ATTEMPTED_EVIDENCE):
+        if not (isinstance(exc, (PhaseError, StoppedPartWay)) and step in routes.FAMILY.ATTEMPTED_EVIDENCE):
             ctx.state.mark(step, FAILED, error=str(exc),
                            **({"nothing_written": True} if isinstance(exc, NothingWritten) else {}))
         output.stage_end("stopped")

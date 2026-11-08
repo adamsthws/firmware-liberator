@@ -12,6 +12,11 @@ class Abort(RuntimeError):
     pass
 
 
+class StoppedPartWay(Abort):
+    """A send that stopped part way: what it got as far as writing is for the
+    device to say (ATTEMPTED_EVIDENCE), so the step stays attempted."""
+
+
 class NothingWritten(Abort):
     """A step stopped before it wrote anything to the plug: a run of nothing
     else does not say what the plug is (past_the_commit)."""

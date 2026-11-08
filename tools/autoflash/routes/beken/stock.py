@@ -11,7 +11,7 @@ import time
 from typing import Any, TYPE_CHECKING
 
 from tools.autoflash import account, detect, firewall, join, kinds, output, plugs, prompts, runs, testers
-from tools.autoflash.errors import Abort, NothingWritten
+from tools.autoflash.errors import Abort, NothingWritten, StoppedPartWay
 from tools.autoflash.routes.beken import images
 from tools.beken import fota_wrap, interim_marker
 from tools.ewelink import ota_push
@@ -188,9 +188,13 @@ def step_push(ctx: Context) -> dict[str, Any]:
                     "command again")
     if not delivered.complete:
         # Sent, and some of it may be on the plug: the plug says what it runs
-        # when the step is asked about (evidence_pushed).
-        raise OSError(f"the device fetched {delivered.bytes_served:,} of {len(container):,} bytes before the "
-                      f"delivery stopped ({delivered.error or 'it stopped asking'})")
+        # when the step is asked about (evidence_pushed). A power cut part way
+        # is the usual cause, not something unexpected.
+        raise StoppedPartWay(
+            f"the delivery stopped part way: the device fetched {delivered.bytes_served:,} of "
+            f"{len(container):,} bytes ({delivered.error or 'it stopped asking'}). It keeps its Sonoff firmware: "
+            "switch it off and on, wait until it shows online in the eWeLink app - a few minutes after a "
+            "delivery cut off - then run the same command again")
     seconds = round(time.monotonic() - started, 1)
     output.say(f"    The device has the whole image after {seconds}s; its bootloader installs it as it restarts.")
     return {"seconds": seconds, "firmware": firmware, "version": version, "bytes": len(container)}
