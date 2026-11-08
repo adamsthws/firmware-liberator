@@ -141,15 +141,19 @@ class PublishedESPHomeTests(unittest.TestCase):
 
     def test_adopted_each_kinds_config_is_taken_as_a_package_of_a_release(self):
         # A package, so taking a fix is one line; of a release, never a branch,
-        # so nothing pushed here later reaches an adopted plug by itself.
-        from tools.autoflash import __version__, kinds
+        # so nothing pushed here later reaches an adopted plug by itself. A
+        # rebuilt config names the release it comes out in, which may be the
+        # one to come (docs/updating-firmware.md), never one after it.
+        from tools.autoflash import kinds
         from tools.autoflash.runs import ROOT
+        from tools.repo.update_firmware import release_to_come
+        coming = tuple(map(int, release_to_come((ROOT / "CHANGELOG.md").read_text(encoding="utf-8")).split(".")))
         for kind in kinds.ALL:
             config = (ROOT / "devices" / kind.key / "esphome.yaml").read_text(encoding="utf-8")
             found = re.search(r"(?m)^dashboard_import:\n  package_import_url: github://\S+@v(\d+)\.(\d+)\.(\d+)\n"
                               r"  import_full_config: false$", config)
             self.assertIsNotNone(found, kind.key)
-            self.assertLessEqual(tuple(map(int, found.groups())), tuple(map(int, __version__.split("."))), kind.key)
+            self.assertLessEqual(tuple(map(int, found.groups())), coming, kind.key)
 
     def test_each_kinds_esphome_page_says_how_adoption_works(self):
         from tools.autoflash import kinds
