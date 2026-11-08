@@ -107,6 +107,9 @@ check.
   off eWeLink as it switches has its relay put back as it was once it returns,
   rather than left switched over. A plug asking eWeLink for its settings while the
   check waits no longer ends the run with "something unexpected went wrong".
+- A plug on Tasmota, ESPHome or OpenBeken that loses power or its Wi-Fi as a run
+  ends is waited for, up to four minutes, before its relay and meter are checked,
+  rather than reported as not answering the check.
 
 ## 2.3.0
 
