@@ -253,15 +253,15 @@
   "beken": {
     "sonoff-s61": {
       "openbeken": {
-        "file": "artifacts/openbeken-sonoff-s61-1.18.320-1.rbl",
-        "version": "1.18.320-1",
+        "file": "artifacts/openbeken-sonoff-s61-1.18.320-2.rbl",
+        "version": "1.18.320-2",
         "release": "1.18.320",
         "app_commit": "ce1abad8dc931720167a7628840adae30b92afaf",
         "sdk_commit": "f5a64d4cda03bac6d885f4f30c27bbd3435c5e3a",
         "sources": {
           "tools/beken/openbeken/drv_autoflash.c": "d13081fa1478b4567f2c1de9b897aa80805099b266d770fb81a6a0b3b17bb469",
           "tools/beken/openbeken/drv_autoflash.h": "2218efb6dca42e52ad92ec42afbeef8d43b33c6fee27006cf1c9025376d0c381",
-          "devices/sonoff-s61/drv_autoflash_sonoff_s61.c": "b7b0e311cd7b7d17dc0d74fa287824447ddee2c81da8875a08436063c620bb40"
+          "devices/sonoff-s61/drv_autoflash_sonoff_s61.c": "7308345e0187911a4d767f6883148225a47902a52cf36dfa91bacdb74622be47"
         },
         "patches": {
           "openbk7231t_app-bk7238-4m-flash.patch": "257b02a72a217d1644d35051dc3ba97f8522154fa25b4f67e6c0b44e63aada58",
@@ -270,7 +270,7 @@
         },
         "builder": "ubuntu@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c with tools/beken/openbeken/build.Dockerfile 4b04244bb63658a1",
         "size": 510304,
-        "sha256": "ec857a37db8511cfc6d8a437bf0e9127db89ca29a30fa9637d20aba669fb5add"
+        "sha256": "67c57d0d241bc463158cbff670e56c3210ccf16731cbd0d31f88a616bbf7f7a3"
       },
       "esphome": {
         "file": "artifacts/esphome-sonoff-s61-2026.10.0-1.rbl",

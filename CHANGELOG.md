@@ -128,6 +128,8 @@ check.
   failed try - the stage shown stopped, what failed, and that it would be tried
   again - stayed above the stage drawn afresh, so the stage seemed to run twice.
   The run's log still keeps every try.
+- OpenBeken for the Sonoff S61 rebuilt with
+  [1.18.320](https://github.com/openshwprojects/OpenBK7231T_App/releases/tag/1.18.320).
 
 ## 2.3.0
 

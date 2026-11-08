@@ -12,7 +12,7 @@
 // calibration lives in EF40 `elecCalibCoef` (80 B): a u32 magic, a flag byte,
 // then three 24-byte records in the order current, voltage, power, each
 // starting with three int32 a, b, c. Reverse-engineered from the stock
-// firmware's bl0937b driver (docs/beken-s61-emulation.md): it first forms the
+// firmware's bl0937b driver (devices/sonoff-s61/research.md): it first forms the
 // HLW8012-datasheet nominal value from the pulse frequency f (Hz),
 //
 //     I_nom = f * 1.1 * 1000 / 94638          (1 mOhm shunt)
