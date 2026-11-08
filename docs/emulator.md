@@ -609,7 +609,7 @@ tools/beken/emulator/beken-emu.sh plug                     # the S61s dump as a 
 tools/beken/emulator/beken-emu.sh computer tools/autoflash/cli.py run   # the tool, on that Wi-Fi
 tools/beken/emulator/beken-emu.sh power cycle              # the plug switched off and on
 tools/beken/emulator/beken-emu.sh --fresh plug            # the plug as new, on Sonoff's firmware again
-tools/beken/emulator/beken-emu.sh ui                       # OpenBeken's page, at http://127.0.0.1:8088/
+tools/beken/emulator/beken-emu.sh ui                       # OpenBeken's page, at http://127.0.0.1:8200/
 tools/beken/emulator/beken-emu.sh --rebuild plug           # rebuild the image first
 tools/beken/emulator/beken-emu.sh --instance 2 plug        # a second plug beside the first
 ```
@@ -617,7 +617,7 @@ tools/beken/emulator/beken-emu.sh --instance 2 plug        # a second plug besid
 `beken-emu.sh` with no argument lists the rest. Its options are spelt as
 `emu.sh`'s: `--fresh`, `--rebuild`, and `--instance N` (1-99) for another plug
 beside the first, with its own container, network, state and web page port
-(8088+N); give the same `--instance N` to `computer`, `power` and `ui` to reach
+(8200+N), clear of the Espressif emulators' 8080+N; give the same `--instance N` to `computer`, `power` and `ui` to reach
 it.
 
 What it makes is kept in `captures/emulation/beken/`, laid out as the Espressif
