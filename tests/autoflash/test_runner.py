@@ -165,6 +165,10 @@ class RunStepsTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual([row.split(" - ")[-1] for row in rows], ["Complete"] * 3, rows)
         self.assertNotIn("Doing S2 again", screen.render(colour=False))
+        drawn = output.ANSI_RE.sub("", terminal.getvalue())
+        self.assertIn("Stage 2 - Second - Retrying", drawn)   # each step done again says so
+        self.assertIn("Stage 3 - Third - Retrying", drawn)
+        self.assertNotIn("Stage 1 - First - Retrying", drawn)
         self.assertIn("Doing S2 again", (self.root / "run.log").read_text(encoding="utf-8"))  # kept
 
     def test_every_step_runs_in_turn_and_the_rules_are_closed(self):
@@ -521,8 +525,9 @@ class ScreenTests(unittest.TestCase):
                 runner.execute_with_retries(self.ctx, "E3")
             finally:
                 output.finish()
+        self.drawn = terminal.getvalue()
         screen = unattended_run.Screen(*self.SIZE)
-        screen.feed(terminal.getvalue().replace("\n", "\r\n"))  # as a terminal's line discipline does
+        screen.feed(self.drawn.replace("\n", "\r\n"))  # as a terminal's line discipline does
         return screen.render(colour=False)
 
     def test_a_try_that_failed_is_gone_once_the_stage_is_tried_again(self):
@@ -545,6 +550,19 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual([row.split(" - ")[-1] for row in screen.splitlines() if row.strip()],
                          ["Complete", "Complete"], screen)
         self.assertIn("trying again", self.log.read_text(encoding="utf-8"))  # the log keeps it
+
+    def test_a_stage_tried_again_says_retrying_while_it_runs(self):
+        tries = iter([PhaseError("the device stopped the stage without reaching this computer"), None])
+
+        def stage(ctx):
+            failure = next(tries)
+            if failure:
+                raise failure
+            output.tell("    A note while it runs again")   # its line drawn, as it was then
+            return {}
+        screen = self.screen([("E2", stage)])
+        self.assertIn("Staging startup firmware     - Retrying", output.ANSI_RE.sub("", self.drawn))
+        self.assertNotIn("Retrying", screen)   # once done, it says Complete like any other
 
     def test_the_last_try_stays_to_say_why_the_run_stopped(self):
         def stage(ctx):

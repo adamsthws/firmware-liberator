@@ -179,6 +179,8 @@ class Screen:
 STAGE_ROW = re.compile(r"^ *Stage +(?P<number>\d+) - (?P<name>.+?) +- (?P<outcome>[A-Z][a-z]+(?: [a-z]+)*)", re.M)
 
 
+# What a stage's line says while it runs: "Retrying" for a step done again.
+UNDER_WAY = ("Underway", "Retrying")
 # What a stage that passed ends with: all it showed is taken off the screen.
 PASSED = ("Complete", "Already done", "Skipped")
 
@@ -192,7 +194,7 @@ def stage_problems(screen: str) -> list[str]:
     - a stage's outcome is shown twice: a try that failed left on the
       screen when the stage was tried again, or a stage done again after a
       later one found it had not taken (GoBack) drawn under its first go;
-    - an "Underway" line has another stage's after it, not its own outcome:
+    - an "Underway" (or "Retrying") line has another stage's after it, not its own outcome:
       a stage that never ended;
     - a stage that passed still has its "Underway" line above its outcome:
       what it showed under that line - notes, instructions, a part that went
@@ -206,7 +208,7 @@ def stage_problems(screen: str) -> list[str]:
         stage, outcome = f"Stage {row['number']} - {row['name']}", row["outcome"]
         if underway not in (None, stage):
             problems.append(f"{underway}: left underway when the next stage began")
-        if outcome == "Underway":
+        if outcome in UNDER_WAY:
             underway = stage
             shown_under.add(stage)
             continue

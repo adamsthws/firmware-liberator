@@ -197,6 +197,7 @@ def execute_with_retries(ctx: Context, step: str) -> int:
         # again: the stage keeps one line, as one that passed first time does.
         # The log keeps them, and the report the number of tries.
         output.rewind(mark)
+        output.retrying()
     return code
 
 
@@ -424,10 +425,14 @@ def run_steps(ctx: Context) -> int:
     index = 0
     # Where the screen was as each step began, for going back to it (GoBack).
     marks: dict[str, tuple[int, bool, bool] | None] = {}
+    redone: set[str] = set()   # steps gone back to, done again: "Retrying" on their line
     while index < len(routes.STEPS):
         step, title, _ = routes.STEPS[index]
         index += 1
         marks[step] = output.mark()
+        if step in redone:
+            redone.discard(step)
+            output.retrying()
         if ctx.state.is_done(step):
             routes.begin_stage(step)
             if confirm_skip(ctx, step, title):
@@ -472,7 +477,9 @@ def run_steps(ctx: Context) -> int:
             # again: they are drawn afresh, as if the first time.  Only if it
             # still does not take does the run stop, saying why (execute).
             output.rewind(marks.get(back))
-            index = next(i for i, (name, _, _) in enumerate(routes.STEPS) if name == back)
+            here, index = index, next(i for i, (name, _, _) in enumerate(routes.STEPS) if name == back)
+            # Each step from that one to this is done again, and says so.
+            redone.update(name for name, _, _ in routes.STEPS[index:here])
             continue
         if code == 0 and stop_here_after_ctrl_c(step):
             firewall.close_firewall_rules(ctx)
