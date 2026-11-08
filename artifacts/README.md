@@ -6,7 +6,7 @@ directory, never here.
 
 | File | Purpose | SHA-256 |
 |---|---|---|
-| `autoflash-bridge-sonoff-s60-4.4.5.ota` | Wrapped one-shot bridge the run installs; joins the home Wi-Fi stock was on, raising its own network only if that fails, lets the run back up the whole flash, gives Tasmota its settings, and starts even after an upload cut off part way | `0421bef5cd1c82c43eee03c159253c6db8f54f46efcdb1005c1b870933188fb9` |
+| `autoflash-bridge-esp32c3-4.4.6.ota` | Wrapped one-shot bridge the run installs; joins the home Wi-Fi stock was on, raising its own network only if that fails, lets the run back up the whole flash, gives Tasmota its settings, and starts even after an upload cut off part way, and restarts the plug into Sonoff's firmware when asked | `dc1bbc9327e58857b2899c2d1b84911787b95180584d06224591e1a24ace2bb2` |
 | `tasmota32c3-bluetooth.bin` | Berry-capable Tasmota used temporarily on the original partition layout | `a92cfadaff5a3c824f790471ba31464acd2076a24ff1fcad2de28574c5641708` |
 | `autoflash-recovery-safeboot-imprintable.bin` | Credential-free recovery Safeboot template; saves the Wi-Fi for the official Tasmota installed after it | `ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd` |
 | `tasmota-settings-template-15.6.0.0.bin` | Tasmota's default settings with no Wi-Fi in them, for the bridge to fill in at D1 | `d63f03cb99540407037f36dc8155ec9b02d24425d3b02c52299713233e98f4a5` |
@@ -81,10 +81,10 @@ bundle-preparation path must imprint and validate a per-device copy first.
 publish the bridge for each chip. From 4.4.1 on, a bridge is named by one
 version: the one its file is wrapped
 with, the one in its app description, and the one its status page reports
-(`bridge 4.4.5`). `tools/espressif/build_vendor_ota.py` takes it from the image and
+(`bridge 4.4.6`). `tools/espressif/build_vendor_ota.py` takes it from the image and
 refuses any other. The stock updater is not given it: the sender wraps the
 same app again as 9.9.9 (`ANNOUNCED_VERSION`), above any Sonoff release, as
-the S61's images are sent. The next bridge is 4.4.6. 4.4.1 has the Wi-Fi behaviour tried on a
+the S61's images are sent. The next bridge is 4.4.7. 4.4.1 has the Wi-Fi behaviour tried on a
 stock plug as "v6" on 8 October 2026; beyond that only its version, its name
 and a larger buffer for the status reply differ. 4.4.2 is 4.4.1 with the
 read-only `GET /flash` and `GET /efuse` of the research readout build, and
@@ -105,9 +105,12 @@ saves Tasmota's settings without Wi-Fi details, where 4.4.3 refused them, so
 Tasmota starts under the run's name for it and makes its own network by that
 name, not its default `tasmota-XXXXXX-NNNN`. 4.4.5 is 4.4.4 with the read-only
 `GET /info`, for the run's log: [`../archive/bridge/README.md`](../archive/bridge/README.md)
-says what it answers. Its code is the same for
-any plug; the wrapper names the S60's model, which is why the file names the
-S60. Tested on the emulator and on real plugs.
+says what it answers. 4.4.6 is 4.4.5 with `POST /restart`, which starts the
+plug again into Sonoff's firmware as switching it off and on would, so a
+readout puts the plug back by itself. Its code is the same for any plug; the
+wrapper names the S60's model. Up to 4.4.5 the file named the S60
+(`autoflash-bridge-sonoff-s60-*.ota`); from 4.4.6 it names the chip, as the
+classic ESP32's does. Tested on the emulator and on real plugs up to 4.4.5.
 
 The version is well above any Sonoff release so far (1.2.0). The stock 1.2.0
 updater does not compare versions - the upgrade command decides what is

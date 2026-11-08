@@ -71,7 +71,7 @@ STATUSES = {key: Status(value) for key, value in json.loads(STATUS_FILE.read_tex
 class Kind:
     """A kind of plug the tool converts."""
 
-    # In file names (autoflash-bridge-sonoff-s60-4.4.5.ota) and a run's record.
+    # In file names (esphome-sonoff-s60-imprintable-*.bin) and a run's record.
     key: str
     # Its chip family (routes.FAMILIES: how firmware gets onto its flash), its
     # chip, and the ecosystem its stock firmware belongs to - how it is paired,

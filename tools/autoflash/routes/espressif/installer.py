@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import time
 import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING
 
@@ -223,6 +224,36 @@ def back_on_sonoff(ctx: Context) -> bool:
 def bridge_answers(host: str) -> bool:
     body = setup_network.page(host, timeout=2.0)
     return setup_network.is_bridge_page(body)
+
+
+def restart_bridge(host: str) -> bool:
+    """Have the bridge at `host` start the plug again into the firmware chosen
+    for its next start - Sonoff's, which it chose as it started - as switching
+    it off and on would (bridge 4.4.6). Whether it said it would: not one
+    before 4.4.6, nor one refusing (an upload under way, or no Sonoff firmware
+    to start)."""
+    request = urllib.request.Request(f"http://{host}/restart", data=b"", method="POST",
+                                     headers={"User-Agent": "Autoflash/1"})
+    try:
+        with urllib.request.urlopen(request, timeout=10.0) as response:
+            return response.status == 200
+    except (urllib.error.URLError, OSError):
+        return False
+
+
+def restart_into_sonoff(host: str, wait: float = 120.0) -> bool:
+    """The bridge at `host` restarted into Sonoff's firmware, waited for: whether
+    Sonoff's firmware answered there in `wait` seconds. False at once where the
+    bridge would not restart."""
+    if not restart_bridge(host):
+        return False
+    output.say("    Restarting it into its Sonoff firmware...")
+    started = time.monotonic()
+    while time.monotonic() - started < wait:
+        time.sleep(3.0)
+        if detect.identify(host) == "sonoff":
+            return True
+    return False
 
 
 def reach_bridge(ctx: Context, *, tasmota: bool = False) -> str:

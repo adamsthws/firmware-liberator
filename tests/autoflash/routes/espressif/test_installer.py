@@ -919,5 +919,55 @@ class JoinBridgeTests(unittest.TestCase):
         self.assertTrue(copied)
 
 
+class RestartBridgeTests(unittest.TestCase):
+    """POST /restart (bridge 4.4.6): the plug started again into Sonoff's
+    firmware, as switching it off and on would."""
+
+    def serve(self, status):
+        import http.server
+        import threading
+        asked = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_POST(self):
+                asked.append(self.path)
+                self.send_response(status if self.path == "/restart" else 404)
+                self.end_headers()
+                self.wfile.write(b"Restarting into app0 at 0x00010000.\n")
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"127.0.0.1:{server.server_address[1]}", asked
+
+    def test_a_bridge_that_restarts_says_so(self):
+        host, asked = self.serve(200)
+        self.assertTrue(installer.restart_bridge(host))
+        self.assertEqual(asked, ["/restart"])
+
+    def test_one_that_refuses_or_has_no_restart_does_not(self):
+        for status in (409, 404):   # an upload under way; a bridge before 4.4.6
+            with self.subTest(status):
+                host, _ = self.serve(status)
+                self.assertFalse(installer.restart_bridge(host))
+
+    def test_restarted_it_is_waited_for_until_sonoff_answers(self):
+        with mock.patch.object(installer, "restart_bridge", return_value=True), \
+                mock.patch.object(installer.time, "sleep"), mock.patch.object(output, "say"), \
+                mock.patch.object(detect, "identify", side_effect=[None, "installer", "sonoff"]) as asked:
+            self.assertTrue(installer.restart_into_sonoff("192.0.2.77"))
+        self.assertEqual(asked.call_count, 3)
+
+    def test_one_that_will_not_restart_is_not_waited_for(self):
+        with mock.patch.object(installer, "restart_bridge", return_value=False), \
+                mock.patch.object(detect, "identify") as asked:
+            self.assertFalse(installer.restart_into_sonoff("192.0.2.77"))
+        asked.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

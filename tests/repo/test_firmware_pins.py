@@ -80,7 +80,6 @@ class FileNameTests(unittest.TestCase):
     UNTIL_REBUILT = {
         "autoflash-mover-1.1.0.bin": "f6e131e1599c886d742c151c3ba3f84a285bba462b438c36b611d577e01ad243",
         "esphome-sonoff-s60-bootloader-1.2.0.bin": "3792bb665916d69c410c9fd10f69d1a6968e61f2a9e4969829a1c49f9ea6f433",
-        "autoflash-bridge-sonoff-s60-4.4.5.ota": "0421bef5cd1c82c43eee03c159253c6db8f54f46efcdb1005c1b870933188fb9",
         "autoflash-recovery-safeboot-imprintable.bin": "ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd",
         "tasmota-settings-template-15.6.0.0.bin": "d63f03cb99540407037f36dc8155ec9b02d24425d3b02c52299713233e98f4a5",
     }

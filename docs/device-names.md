@@ -20,7 +20,7 @@ lower case. Each plug works out its own, so no two plugs share a name.
 | When | Firmware | Name (hostname and own network) | Where the name comes from |
 |---|---|---|---|
 | Before conversion | Sonoff's own | `espressif` (no own network the tool uses) | Sonoff; not changed |
-| C2-D1 | the installer (bridge 4.4.5) | `autoflash-recovery-CDEF` | compiled in, from the MAC at boot |
+| C2-D1 | the installer (bridge 4.4.6) | `autoflash-recovery-CDEF` | compiled in, from the MAC at boot |
 | D1-E | interim (Berry) Tasmota | `autoflash-recovery-CDEF` | written into its settings by the installer, on the run's behalf |
 | E-F2 | the startup firmware (Safeboot) | `autoflash-recovery-CDEF` | compiled in as a pattern; saved, written out, for what follows |
 | F2-F4 | official Tasmota | `autoflash-recovery-CDEF` | the name the startup firmware saved |
@@ -59,7 +59,7 @@ settings are lost (see [Tasmota's own names](#tasmotas-own-names)).
   [`archive/bridge/CMakeLists.txt`](../archive/bridge/CMakeLists.txt) and
   `BRIDGE_VERSION` in `main.c` (a test keeps them equal). Build and publish it
   as [`archive/bridge/README.md`](../archive/bridge/README.md) says. The file
-  is `artifacts/autoflash-bridge-sonoff-s60-<version>.ota` on an ESP32-C3 (the
+  is `artifacts/autoflash-bridge-esp32c3-<version>.ota` on an ESP32-C3 (the
   wrapper names the S60's model, and a run wraps it again for another) and
   `artifacts/autoflash-bridge-esp32-<version>.bin` on a classic ESP32.
 
