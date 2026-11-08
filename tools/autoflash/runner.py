@@ -422,9 +422,12 @@ def run_steps(ctx: Context) -> int:
     join.wait_while_plug_busy(ctx)
     # By index: A3 lengthens the route as it chooses the firmware.
     index = 0
+    # Where the screen was as each step began, for going back to it (GoBack).
+    marks: dict[str, tuple[int, bool, bool] | None] = {}
     while index < len(routes.STEPS):
         step, title, _ = routes.STEPS[index]
         index += 1
+        marks[step] = output.mark()
         if ctx.state.is_done(step):
             routes.begin_stage(step)
             if confirm_skip(ctx, step, title):
@@ -465,6 +468,10 @@ def run_steps(ctx: Context) -> int:
         back = getattr(ctx, "go_back", None)
         if code == 0 and back:
             ctx.go_back = None
+            # The stages since that step off the screen, and why it is done
+            # again: they are drawn afresh, as if the first time.  Only if it
+            # still does not take does the run stop, saying why (execute).
+            output.rewind(marks.get(back))
             index = next(i for i, (name, _, _) in enumerate(routes.STEPS) if name == back)
             continue
         if code == 0 and stop_here_after_ctrl_c(step):

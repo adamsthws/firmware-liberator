@@ -126,6 +126,47 @@ class RunStepsTests(unittest.TestCase):
             code = runner.run_steps(SimpleNamespace(state=self.state, research_bridge=False, dry_run=dry_run))
         return code, ran, stand_ins
 
+    def test_a_step_gone_back_to_is_drawn_afresh_with_nothing_of_why(self):
+        # For a person who knows nothing of the steps: a step a later one found
+        # had not taken is done again unseen, as if the first time.
+        import io
+        import os
+        from tools.repo import unattended_run
+
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return True
+        found = []
+
+        def execute(ctx, step):
+            number = [name for name, _, _ in self.STEPS].index(step) + 1
+            output.stage_begin(number, dict((name, title) for name, title, _ in self.STEPS)[step])
+            if step == "S3" and not found:
+                found.append(step)
+                output.stage_end("not installed")
+                output.tell("S2's firmware was not installed. Doing S2 again.")
+                ctx.go_back = "S2"
+                return 0
+            output.stage_end("complete")
+            return 0
+        terminal = Terminal()
+        with mock.patch("sys.stdout", terminal), mock.patch.object(output, "colour_ok", return_value=True), \
+             mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
+            output.start(self.root / "run.log", verbose=False)
+            try:
+                code, _, _ = self.run_steps(execute_with_retries=mock.Mock(side_effect=execute), output=output,
+                                            say=output.say, tell=output.tell, skip=False)
+            finally:
+                output.finish()
+        screen = unattended_run.Screen(100, 40)
+        screen.feed(terminal.getvalue().replace("\n", "\r\n"))
+        rows = [row for row in screen.render(colour=False).splitlines()
+                if unattended_run.STAGE_ROW.match(row)]
+        self.assertEqual(code, 0)
+        self.assertEqual([row.split(" - ")[-1] for row in rows], ["Complete"] * 3, rows)
+        self.assertNotIn("Doing S2 again", screen.render(colour=False))
+        self.assertIn("Doing S2 again", (self.root / "run.log").read_text(encoding="utf-8"))  # kept
+
     def test_every_step_runs_in_turn_and_the_rules_are_closed(self):
         code, ran, stand_ins = self.run_steps()
         self.assertEqual((code, ran), (0, ["S1", "S2", "S3"]))
