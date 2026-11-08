@@ -187,6 +187,9 @@ NOT_MIRRORED = {
     "tests/autoflash/test_windows_uac.py": "Windows' permission prompt answered every way, from "
                                            "hostsys.elevated through the firewall rule it guards to "
                                            "what firewall.py then says",
+    "tests/autoflash/test_route_screens.py": "every route's whole run, through runner.py's loop and "
+                                             "output.py's drawing, read back with "
+                                             "tools/repo/unattended_run.py",
 }
 
 

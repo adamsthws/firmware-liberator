@@ -179,26 +179,47 @@ class Screen:
 STAGE_ROW = re.compile(r"^ *Stage +(?P<number>\d+) - (?P<name>.+?) +- (?P<outcome>[A-Z][a-z]+(?: [a-z]+)*)", re.M)
 
 
+# What a stage that passed ends with: all it showed is taken off the screen.
+PASSED = ("Complete", "Already done", "Skipped")
+
+
 def stage_problems(screen: str) -> list[str]:
-    """What a stage left on `screen` (Screen.render) that it should have
-    taken away once it moved on: [] for nothing.  Each stage keeps one
-    line, its outcome; above that only its "Underway" line, where something
-    is shown under it.  So a stage shown "Stopped" and then again is a try
-    that failed left on the screen when it was tried again, and an
-    "Underway" line with another stage's after it, and not its own outcome,
-    is a stage that never ended.  A stage done again after a later one
-    found it had not taken (GoBack) has two lines, each a finished one."""
-    problems, underway, stopped = [], None, set()
+    """What a run left on `screen` (Screen.render) that it should have taken
+    away as it moved on: [] for nothing.  A stage that passed leaves one
+    line, its outcome, with what it kept under it; one that stopped leaves
+    what it showed above its line, as that is why.  So it is a problem when
+
+    - a stage's outcome is shown twice: a try that failed left on the
+      screen when the stage was tried again, or a stage done again after a
+      later one found it had not taken (GoBack) drawn under its first go;
+    - an "Underway" line has another stage's after it, not its own outcome:
+      a stage that never ended;
+    - a stage that passed still has its "Underway" line above its outcome:
+      what it showed under that line - notes, instructions, a part that went
+      again - was left on the screen;
+    - two blank rows follow one another."""
+    problems: list[str] = []
+    underway: str | None = None
+    ended: set[str] = set()
+    shown_under: set[str] = set()   # stages with an "Underway" line on the screen
     for row in STAGE_ROW.finditer(screen):
         stage, outcome = f"Stage {row['number']} - {row['name']}", row["outcome"]
         if underway not in (None, stage):
             problems.append(f"{underway}: left underway when the next stage began")
-        if stage in stopped:
-            problems.append(f"{stage}: shown stopped, then again - the try that failed was left on the screen")
-            stopped.discard(stage)
-        underway = stage if outcome == "Underway" else None
-        if outcome == "Stopped":
-            stopped.add(stage)
+        if outcome == "Underway":
+            underway = stage
+            shown_under.add(stage)
+            continue
+        underway = None
+        if stage in ended:
+            problems.append(f"{stage}: shown {outcome.lower()}, after an earlier outcome - "
+                            "its first go was left on the screen")
+        ended.add(stage)
+        if outcome in PASSED and stage in shown_under:
+            problems.append(f"{stage}: passed, with what it showed while under way left above it")
+        shown_under.discard(stage)
+    if "\n\n\n" in "\n".join(line.rstrip() for line in screen.splitlines()).strip("\n"):
+        problems.append("two blank rows one after another")
     return problems
 
 

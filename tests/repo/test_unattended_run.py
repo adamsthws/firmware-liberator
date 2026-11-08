@@ -41,44 +41,68 @@ class ScreenTests(unittest.TestCase):
 
 
 class StageProblemsTests(unittest.TestCase):
-    """Each stage leaves one line, its outcome, once it has moved on."""
+    """A stage that passed leaves one line; one that stopped, what it showed."""
+
+    def problems(self, *rows):
+        return unattended_run.stage_problems("".join(f"{row}\n" for row in rows))
 
     def test_stages_that_each_ended_once_leave_nothing(self):
-        screen = ("Stage 12 - Verifying memory layout - Complete\n"
-                  "Stage 13 - Staging startup firmware - Underway\n\n"
-                  "    A note shown under it\n"
-                  "Stage 13 - Staging startup firmware - Complete\n"
-                  "Stage 14 - Committing memory layout - Stopped\n\n"
-                  "FAILED: the device did not answer\n")
-        self.assertEqual(unattended_run.stage_problems(screen), [])
+        self.assertEqual(self.problems(
+            "Stage 12 - Verifying memory layout - Complete",
+            "Stage 13 - Staging startup firmware - Complete",
+            "",
+            "    The meter is left as it is: the meter did not report.",   # kept, under its line
+            "Stage 14 - Committing memory layout - Underway",
+            "",
+            "    The device stopped part way",
+            "Stage 14 - Committing memory layout - Stopped",
+            "",
+            "FAILED: the device did not answer"), [])
 
     def test_a_try_that_failed_left_on_the_screen_is_found(self):
         # As a run on 2026-11-08 left it: the retry drew the stage again
         # under the failed try's lines.
-        screen = ("Stage 13 - Staging startup firmware     - Underway\n\n"
-                  "    The device's console: 00:00:00.328 BRY: Berry initialized\n"
-                  "Stage 13 - Staging startup firmware     - Stopped\n\n"
-                  "FAILED: the device stopped the stage without reaching this computer\n"
-                  "    That may have been the network - trying again in 10s (attempt 2 of 3).\n"
-                  "Stage 13 - Staging startup firmware     - Complete\n"
-                  "Stage 14 - Committing memory layout     - Complete\n")
-        self.assertEqual(unattended_run.stage_problems(screen),
-                         ["Stage 13 - Staging startup firmware: shown stopped, then again - "
-                          "the try that failed was left on the screen"])
+        self.assertEqual(self.problems(
+            "Stage 13 - Staging startup firmware     - Underway",
+            "",
+            "    The device's console: 00:00:00.328 BRY: Berry initialized",
+            "Stage 13 - Staging startup firmware     - Stopped",
+            "",
+            "FAILED: the device stopped the stage without reaching this computer",
+            "    That may have been the network - trying again in 10s (attempt 2 of 3).",
+            "Stage 13 - Staging startup firmware     - Complete",
+            "Stage 14 - Committing memory layout     - Complete"),
+            ["Stage 13 - Staging startup firmware: shown complete, after an earlier outcome - "
+             "its first go was left on the screen"])
 
     def test_a_stage_never_ended_is_found(self):
-        screen = ("Stage  9 - Preparing memory layout - Underway\n"
-                  "Stage 10 - Updating the bootloader - Complete\n")
-        self.assertEqual(unattended_run.stage_problems(screen),
+        self.assertEqual(self.problems("Stage  9 - Preparing memory layout - Underway",
+                                       "Stage 10 - Updating the bootloader - Complete"),
                          ["Stage 9 - Preparing memory layout: left underway when the next stage began"])
 
-    def test_a_stage_done_again_after_a_later_one_found_it_had_not_taken_is_no_problem(self):
-        screen = ("Stage 6 - Sending bridge firmware - Complete\n"
-                  "Stage 7 - Checking it arrived - Not installed\n\n"
-                  "The bridge was not installed. Doing B2 again.\n"
-                  "Stage 6 - Sending bridge firmware - Complete\n"
-                  "Stage 7 - Checking it arrived - Complete\n")
-        self.assertEqual(unattended_run.stage_problems(screen), [])
+    def test_a_stage_gone_back_to_drawn_under_its_first_go_is_found(self):
+        problems = self.problems("Stage 6 - Sending bridge firmware - Complete",
+                                 "Stage 7 - Checking it arrived - Not installed",
+                                 "",
+                                 "The bridge was not installed. Doing B2 again.",
+                                 "Stage 6 - Sending bridge firmware - Complete",
+                                 "Stage 7 - Checking it arrived - Complete")
+        self.assertEqual(len(problems), 2, problems)
+
+    def test_a_stage_that_passed_with_its_notes_left_above_it_is_found(self):
+        # As the fault suites' screens showed: instructions to join a network,
+        # long since done with, above a stage that had passed.
+        self.assertEqual(self.problems(
+            "Stage  8 - Installing interim firmware  - Underway",
+            "",
+            "-- Back to your usual Wi-Fi",
+            "    Your computer should rejoin your usual Wi-Fi by itself.",
+            "Stage  8 - Installing interim firmware  - Complete"),
+            ["Stage 8 - Installing interim firmware: passed, with what it showed while under way left above it"])
+
+    def test_two_blank_rows_together_are_found(self):
+        self.assertEqual(self.problems("Stage 1 - Checking - Complete", "", "", "Done"),
+                         ["two blank rows one after another"])
 
 
 @unittest.skipUnless(hasattr(os, "fork"), "a pseudo-terminal needs Linux or macOS")
