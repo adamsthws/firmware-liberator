@@ -110,6 +110,10 @@ check.
 - A plug on Tasmota, ESPHome or OpenBeken that loses power or its Wi-Fi as a run
   ends is waited for, up to four minutes, before its relay and meter are checked,
   rather than reported as not answering the check.
+- An ESPHome update is said done only once the plug has been seen running it for a
+  whole minute on end, the minute it takes to keep it. One that stopped answering
+  part way, switched off say, was said done all the same; it is now waited for,
+  and its minute starts again once it answers.
 
 ## 2.3.0
 
