@@ -18,6 +18,11 @@ from tools.ewelink.websocket_minimal import WebSocket, WebSocketError
 
 # How long the plug may take to report a switch it was sent (seconds).
 SWITCH_WAIT = 15.0
+# How long a plug that dropped off eWeLink as it switched may take to come back,
+# for its relay to be put back as it was (seconds; looked for every 5 s). Seen in
+# the emulator: Sonoff's S60 firmware closing its connection 2 ms after it had
+# confirmed a switch, back 15 s later, so the switch back reached no one.
+RESTORE_WAIT = 60.0
 
 
 def app_socket(region: str, session: dict[str, Any]) -> WebSocket:
@@ -129,7 +134,33 @@ def check_relay(*, email: str, password: str, country_code: str, region: str, de
             restored = switch(ws, device, was_on)
         finally:
             ws.close()
+        if not restored:
+            restored = switch_back(region, session, device, was_on, say)
     except (EwelinkError, WebSocketError, OSError, KeyError, ValueError) as exc:
         say(f"    The relay could not be switched through eWeLink: {exc}")
         return None
     return switched, restored
+
+
+def switch_back(region: str, session: dict[str, Any], device: dict[str, Any], on: bool,
+                say: Callable[[str], None]) -> bool:
+    """The relay put back as it was, once the plug answers through eWeLink again,
+    within RESTORE_WAIT: a check leaves the plug as it found it.  Sent again on a
+    new connection each time, as the plug's own may have gone: a switch to the
+    state it is in changes nothing."""
+    say("    The switch back was not confirmed: sending it again as the device comes back...")
+    deadline = time.monotonic() + RESTORE_WAIT
+    while time.monotonic() < deadline:
+        time.sleep(5)
+        try:
+            ws = app_socket(region, session)
+            try:
+                if switch(ws, device, on, wait=min(SWITCH_WAIT, max(1.0, deadline - time.monotonic()))):
+                    say("    The relay is back as it was.")
+                    return True
+            finally:
+                ws.close()
+        except (EwelinkError, WebSocketError, OSError):
+            continue
+    say("    The relay could not be put back as it was: check it in the eWeLink app.")
+    return False

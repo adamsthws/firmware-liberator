@@ -44,13 +44,15 @@ DEVICE = {"deviceid": "1000abcdef", "apikey": "made-up", "devicekey": "made-up",
 
 
 class RelayTests(unittest.TestCase):
-    def check(self, plug, device=DEVICE, ask=relay.check_relay, **more):
+    def check(self, plug, device=DEVICE, ask=relay.check_relay, sockets=None, **more):
+        """Asked of `plug`, or of `sockets` one connection at a time."""
         if ask is relay.check_relay:
             more.setdefault("say", lambda *a: None)
+        connect = {"side_effect": sockets} if sockets else {"return_value": plug}
         with mock.patch.object(relay, "login_session", return_value=("eu", {"at": "t", "user": {"apikey": "a"}})), \
                 mock.patch.object(relay, "get_devices", return_value=[device]), \
                 mock.patch.object(relay, "api_json", return_value={"domain": "192.0.2.1", "port": 443}), \
-                mock.patch.object(relay.WebSocket, "connect", return_value=plug):
+                mock.patch.object(relay.WebSocket, "connect", **connect):
             return ask(email="someone@example.invalid", password="made-up-password",
                        country_code="+44", region="eu", device_id="1000abcdef", **more)
 
@@ -96,11 +98,32 @@ class RelayTests(unittest.TestCase):
         self.assertEqual(self.check(Plug(reports=True)), (True, True))
 
     def test_a_switch_the_plug_never_reports_is_not_confirmed(self):
-        with mock.patch.object(relay, "SWITCH_WAIT", 0.2):
+        with mock.patch.object(relay, "SWITCH_WAIT", 0.2), mock.patch.object(relay, "RESTORE_WAIT", 0.5), \
+                mock.patch.object(relay.time, "sleep"):
+            self.assertEqual(self.check(Plug(obeys=False)), (False, False))
+
+    def test_a_plug_that_drops_off_as_it_switches_is_switched_back_once_it_returns(self):
+        # Seen in the emulator: the plug confirmed the first switch, closed its
+        # connection, and the switch back reached no one; the relay was left over.
+        class Dropping(Plug):
+            def receive_json(self, timeout=None):
+                if self.sent[-1].get("action") == "update" and len(self.sent) > 2:
+                    raise relay.socket.timeout       # the switch back, sent as it went
+                return super().receive_json(timeout)
+        first, again = Dropping(), Plug()
+        again.on = True
+        with mock.patch.object(relay.time, "sleep"), mock.patch.object(relay, "SWITCH_WAIT", 0.2):
+            self.assertEqual(self.check(first, sockets=[first, again]), (True, True))
+        self.assertFalse(again.on)   # as it was
+
+    def test_a_plug_that_never_returns_is_given_up_on(self):
+        with mock.patch.object(relay, "SWITCH_WAIT", 0.2), mock.patch.object(relay, "RESTORE_WAIT", 0.5), \
+                mock.patch.object(relay.time, "sleep"):
             self.assertEqual(self.check(Plug(obeys=False)), (False, False))
 
     def test_a_switch_turned_down_is_not_confirmed(self):
-        self.assertEqual(self.check(Plug(error=504)), (False, False))
+        with mock.patch.object(relay, "RESTORE_WAIT", 0.5), mock.patch.object(relay.time, "sleep"):
+            self.assertEqual(self.check(Plug(error=504)), (False, False))
 
     def test_an_offline_plug_is_not_tried(self):
         plug = Plug()
