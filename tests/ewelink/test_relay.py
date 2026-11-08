@@ -97,6 +97,17 @@ class RelayTests(unittest.TestCase):
     def test_a_report_of_the_new_state_confirms_a_switch_too(self):
         self.assertEqual(self.check(Plug(reports=True)), (True, True))
 
+    def test_a_query_from_the_plug_passed_on_meanwhile_is_not_its_report(self):
+        # Seen in the emulator: as Sonoff's firmware came back it asked the cloud
+        # for its settings, a query whose params are a list of their names.
+        class Asking(Plug):
+            def receive_json(self, timeout=None):
+                if self.sent[-1].get("action") == "update" and not getattr(self, "asked", False):
+                    self.asked = True
+                    return {"action": "query", "deviceid": "1000abcdef", "params": ["TZ", "timers"]}
+                return super().receive_json(timeout)
+        self.assertEqual(self.check(Asking(reports=True)), (True, True))
+
     def test_a_switch_the_plug_never_reports_is_not_confirmed(self):
         with mock.patch.object(relay, "SWITCH_WAIT", 0.2), mock.patch.object(relay, "RESTORE_WAIT", 0.5), \
                 mock.patch.object(relay.time, "sleep"):

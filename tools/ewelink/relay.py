@@ -88,7 +88,7 @@ def switch(ws: WebSocket, device: dict[str, Any], on: bool, *, wait: float = SWI
     answer to the command (error 0), which the S61 gives without reporting
     its new state, or a report of that state."""
     return command(ws, device, switch_params(device.get("params") or {}, on), wait=wait,
-                   taken=lambda msg: relay_state(msg.get("params") or {}) is on)
+                   taken=lambda msg: isinstance(msg.get("params"), dict) and relay_state(msg["params"]) is on)
 
 
 def answers(*, email: str, password: str, country_code: str, region: str, device_id: str) -> bool | None:
