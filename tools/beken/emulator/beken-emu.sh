@@ -26,7 +26,7 @@
 #                             It returns once the plug is in its stub's account
 #   tools/beken/emulator/beken-emu.sh ui [PORT]
 #                             the plug's web page, OpenBeken's or ESPHome's, for this computer's browser,
-#                             at http://127.0.0.1:PORT/ (8088, or 8088+N) through ui_proxy.py: opened
+#                             at http://127.0.0.1:PORT/ (8200, or 8200+N) through ui_proxy.py: opened
 #                             straight, a browser's requests lock the emulated plug up
 #                             (why, in ui_proxy.py)
 #   tools/beken/emulator/beken-emu.sh power off|on|cycle
@@ -53,7 +53,7 @@
 #                             plug, ui, power and computer: its own container
 #                             (autoflash-beken-emu-N), network (autoflash-beken-emu-N), state
 #                             (captures/emulation/beken/state-N/) and web page
-#                             port (8088+N), so tests can run side by side
+#                             port (8200+N), so tests can run side by side
 #   --rebuild                 rebuild the image first
 #   --fresh                   with plug: the plug as new - it and the computers on its
 #                             Wi-Fi stopped, its state (flash, runs, captures) deleted -
@@ -81,7 +81,7 @@ EMU=$ROOT/captures/emulation
 FIRMWARES=$EMU/beken/firmwares
 PUBLIC_DUMP=Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin
 IMAGE=${AUTOFLASH_BEKEN_EMU_IMAGE:-autoflash-beken-emu}
-PLUG=autoflash-beken-emu NETWORK=autoflash-beken-emu STATE=state UI_PORT=8088
+PLUG=autoflash-beken-emu NETWORK=autoflash-beken-emu STATE=state UI_PORT=8200
 
 usage() { sed -n "2,$(($(grep -n '^set -euo pipefail' "$0" | cut -d: -f1)-1))p" "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 rebuild="" fresh=0 instance=""

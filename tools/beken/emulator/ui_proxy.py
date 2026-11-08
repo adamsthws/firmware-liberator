@@ -30,7 +30,7 @@ again, as the page does by itself. Everything else goes as above. Sonoff's
 firmware has no page.
 
     python3 tools/beken/emulator/ui_proxy.py --device ADDRESS[:80] [--firmware esphome]
-                                             [--listen 127.0.0.1:8088]
+                                             [--listen 127.0.0.1:8200]
 """
 from __future__ import annotations
 
@@ -239,9 +239,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--device", required=True, help="the plug's address, with :PORT if not 80")
     parser.add_argument("--firmware", choices=("openbeken", "esphome"), default="openbeken",
                         help="whose page it is")
-    parser.add_argument("--listen", default="127.0.0.1:8088", help="where the browser opens it")
+    parser.add_argument("--listen", default="127.0.0.1:8200", help="where the browser opens it")
     args = parser.parse_args(argv)
-    proxy = UiProxy(address(args.listen, 8088), address(args.device, 80), firmware=args.firmware)
+    proxy = UiProxy(address(args.listen, 8200), address(args.device, 80), firmware=args.firmware)
     print("%s's page: http://%s:%d/ (the plug at %s:%d); Ctrl-C ends it."
           % ("ESPHome" if args.firmware == "esphome" else "OpenBeken", *proxy.server_address[:2],
              *proxy.device), flush=True)

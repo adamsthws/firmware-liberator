@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -220,16 +221,23 @@ class OptionTests(unittest.TestCase):
     """beken-emu.sh spells the jobs it shares with emu.sh as emu.sh does:
     --instance N, --fresh, --rebuild."""
 
-    def run_script(self, *args, before=None):
+    def run_script(self, *args, before=None, lease=""):
         """beken-emu.sh ARGS, run from a copy of its checkout in a temporary
         directory, so what it does to captures/ is done there; Docker a fake
-        that says what it was asked."""
+        that says what it was asked, and gives the plug LEASE (a line of its
+        router's leases), and ui_proxy.py one that says how it was started."""
         with tempfile.TemporaryDirectory() as tmp:
             checkout(tmp)
             calls = Path(tmp, "calls")
             Path(tmp, "bin").mkdir()
-            Path(tmp, "bin", "docker").write_text('#!/bin/sh\necho "$*" >> %s\n' % calls, encoding="utf-8")
-            Path(tmp, "bin", "docker").chmod(0o755)
+            Path(tmp, "bin", "docker").write_text(
+                '#!/bin/sh\necho "$*" >> %s\ncase "$*" in *leases*) echo "%s" ;; esac\n' % (calls, lease),
+                encoding="utf-8")
+            Path(tmp, "bin", "python3").write_text(
+                '#!/bin/sh\ncase "$*" in *ui_proxy.py*) echo "ui_proxy $*" >> %s; exit 0 ;; esac\nexec %s "$@"\n'
+                % (calls, sys.executable), encoding="utf-8")
+            for tool in ("docker", "python3"):
+                Path(tmp, "bin", tool).chmod(0o755)
             if before:
                 before(Path(tmp))
             done = subprocess.run(["bash", str(Path(tmp, SCRIPT.relative_to(ROOT))), *args], capture_output=True,
@@ -248,6 +256,14 @@ class OptionTests(unittest.TestCase):
             self.assertEqual(done.returncode, 2, instance)
             self.assertIn("1-99", done.stderr)
             self.assertEqual(calls, "", instance)
+
+    def test_the_page_is_on_a_port_no_espressif_emulator_takes(self):
+        # 8080+N is the Espressif emulator N's page, 8088 the tool's own bridge.
+        for args, port in ((("ui",), "8200"), (("--instance", "9", "ui"), "8209"),
+                           (("--instance", "99", "ui"), "8299")):
+            done, calls = self.run_script(*args, lease="1 2 192.0.2.60 openbeken-abcdef *")
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertIn(f"--listen 127.0.0.1:{port}", calls, args)
 
     def test_instances_go_up_to_99(self):
         done, calls = self.run_script("--instance", "99", "ui")
