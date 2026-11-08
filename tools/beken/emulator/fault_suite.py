@@ -31,8 +31,9 @@ plug off and on where the run says to - until the plug is converted, or four
 runs fail. Every scenario also checks the fault landed while its step was
 under way (MISTIMED if not), and that the converting run's report says its
 end-of-run checks passed (FAIL-CHECKS if not: tools/repo/fault_verdicts.py),
-and that each run left one line a stage on its screen, none of a try that
-failed (FAIL-SCREEN if not).
+that each run left one line a stage on its screen, none of a try that
+failed (FAIL-SCREEN if not), and that a plug converted to OpenBeken or ESPHome
+runs this checkout's release of it (FAIL-NOT-LATEST if not).
 
 The faults: the plug switched off for 1 or 30 s (plugoff), this computer off
 the plug's Wi-Fi for 30 s (outage), the tool killed and run again after 1 or
@@ -92,6 +93,7 @@ from typing import Callable
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
+from tools.autoflash import esphome, kinds, openbeken  # noqa: E402
 from tools.autoflash.routes import beken  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
 from tools.repo import cpu_load, fault_verdicts, scenario_times  # noqa: E402
@@ -124,6 +126,9 @@ ROUTES = {
     "outdated>openbeken": {"U3": 14, "U4": 20},
     "outdated>esphome": {"U1": 7, "U2": 20},
 }
+# The release of each firmware a converted plug must end on: this checkout's
+# (FAIL-NOT-LATEST) - after an update from an earlier release's, too.
+LATEST = {firmware: beken.published_version(kinds.SONOFF_S61, firmware) for firmware in ("openbeken", "esphome")}
 # The release whose firmware an update's plug is on: any before this checkout's.
 EARLIER_RELEASE = "v2.3.0"
 # Where its tree keeps the dumps and the plugs its prep saves.
@@ -602,6 +607,8 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         outcome = bad_image_scenario(instance, sc, target, log, notes)
     else:
         outcome = step_scenario(instance, sc, target, log, notes)
+    # Asked while it runs: a route through J2 stops it below, for its flash.
+    release = release_of(instance, target) if outcome["result"] == "PASS" and target in LATEST else None
     if outcome["result"] == "PASS" and target != "readout":
         names = instance.dhcp_names()
         flash = None
@@ -617,6 +624,11 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         if checks and not problems:
             outcome = dict(outcome, result="FAIL-CHECKS")
             notes["checks"] = checks
+        if target in LATEST and release != LATEST[target] and outcome["result"] == "PASS":
+            # Converted, but not on this checkout's release: an update from an
+            # earlier one, or a conversion that release began, left behind.
+            outcome = dict(outcome, result="FAIL-NOT-LATEST")
+            notes["release"] = f"{target} {release}"
     if outcome["result"] == "PASS" and log.exists():
         screen = fault_verdicts.screen_problems(log.read_text(encoding="utf-8", errors="replace"))
         if screen:
@@ -630,6 +642,27 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         pass
     notes["memory"] = memory.note()
     return dict(**outcome, notes=notes, seconds=round(time.monotonic() - started))
+
+
+def release_of(instance: Instance, firmware: str) -> str | None:
+    """The release of this project's `firmware` the plug runs: OpenBeken's, as
+    its build string says (openbeken.version); ESPHome's, as its API says
+    (project_version).  None where it does not answer as that.  A few tries:
+    it may be starting."""
+    for _ in range(3):
+        address = instance.lease()
+        if address and firmware == "openbeken":
+            found = openbeken.info(address)
+            if found:
+                return openbeken.version(found)
+        elif address:
+            info = esphome.api_device_info(address)
+            if info:
+                if info["project_name"] != kinds.SONOFF_S61.esphome_project:
+                    return None   # not this project's ESPHome
+                return str(info["project_version"])
+        time.sleep(5)
+    return None
 
 
 def apply_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: dict) -> dict:

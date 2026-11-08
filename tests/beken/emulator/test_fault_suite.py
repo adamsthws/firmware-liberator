@@ -31,7 +31,7 @@ class ScenarioTests(unittest.TestCase):
 class EndChecksTests(unittest.TestCase):
     """A converted plug passes only if the report's end-of-run checks did."""
 
-    def result(self, checks, screen=None):
+    def result(self, checks, screen=None, release=None):
         from unittest import mock
         sc = {"id": "sonoff>openbeken:B2:plugoff-1", "route": "sonoff>openbeken", "step": "B2",
               "fault": "plugoff", "arg": 1, "at": 40}
@@ -44,8 +44,10 @@ class EndChecksTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             plug = SimpleNamespace(reset=lambda start: None, start=lambda firmware: True, runs=list,
                                    dhcp_names=lambda: ["openbeken-cdef"], last_log=lambda: log, state=Path(tmp))
+            latest = fault_suite.LATEST["openbeken"]
             with mock.patch.object(fault_suite, "OUT", Path(tmp)), mock.patch.object(fault_suite, "MemoryWatch"), \
-                    mock.patch.object(fault_suite, "step_scenario", side_effect=step_scenario):
+                    mock.patch.object(fault_suite, "step_scenario", side_effect=step_scenario), \
+                    mock.patch.object(fault_suite, "release_of", return_value=release or latest):
                 return fault_suite.run_scenario(plug, sc)
 
     def test_a_converted_plug_whose_relay_switched_passes(self):
@@ -61,6 +63,22 @@ class EndChecksTests(unittest.TestCase):
         self.assertEqual(len(outcome["notes"]["screen"]), 1)
         clean = screen.replace("Stage 6 - Sending OpenBeken - Stopped\n", "")
         self.assertEqual(self.result("True", clean)["result"], "PASS")
+
+    def test_a_converted_plug_must_be_on_this_releases_firmware(self):
+        self.assertEqual(self.result("True")["result"], "PASS")
+        outcome = self.result("True", release="1.18.300-1")
+        self.assertEqual((outcome["result"], outcome["notes"]["release"]), ("FAIL-NOT-LATEST", "openbeken 1.18.300-1"))
+
+    def test_the_plugs_release_is_what_its_firmware_says(self):
+        from unittest import mock
+        plug = SimpleNamespace(lease=lambda: "192.0.2.50")
+        with mock.patch.object(fault_suite.openbeken, "info", return_value={"build": "Build on ... version 1.18.320-2"}):
+            self.assertEqual(fault_suite.release_of(plug, "openbeken"), "1.18.320-2")
+        ours = {"project_name": fault_suite.kinds.SONOFF_S61.esphome_project, "project_version": "2026.10.0-2"}
+        with mock.patch.object(fault_suite.esphome, "api_device_info", return_value=ours):
+            self.assertEqual(fault_suite.release_of(plug, "esphome"), "2026.10.0-2")
+        with mock.patch.object(fault_suite.esphome, "api_device_info", return_value=dict(ours, project_name="x.y")):
+            self.assertIsNone(fault_suite.release_of(plug, "esphome"))
 
     def test_one_whose_checks_failed_is_its_own_failure_saying_what_they_found(self):
         outcome = self.result("False")
