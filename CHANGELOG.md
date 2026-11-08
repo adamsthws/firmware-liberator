@@ -91,7 +91,11 @@ check.
   Tasmota with another one goes through the full Tasmota that installs it, even to
   ESPHome. On a classic ESP32 the run used to stop for lack of memory, writing
   nothing.
-- The installer is now 4.4.5, with a read-only `GET /info`, and each run logs its
+- The installer can restart the device into its Sonoff firmware (`POST /restart`),
+  just as switching it off and on would, so a run can put a device it left on the
+  installer back without asking you to. It refuses while an upload is under way,
+  and where an upload cut off part way has left no Sonoff firmware to start.
+- The installer is now 4.4.6, with a read-only `GET /info`, and each run logs its
   answer at the backup step: the chip's exact revision, where a classic ESP32's
   log only said "at least", the flash chip's id and real size, the slots, whether
   PSRAM is in the chip's package, and the input pins' levels. An older installer

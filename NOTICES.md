@@ -97,8 +97,9 @@ patches and driver, with a table that sets no pins,
 
 ## OTA bridge
 
-`artifacts/autoflash-bridge-sonoff-s60-4.4.5.ota` is this project's own firmware, under
-this repository's licence ([`LICENSE`](LICENSE)). Its source is in
+`artifacts/autoflash-bridge-esp32c3-4.4.6.ota` and `artifacts/autoflash-bridge-esp32-4.4.6.bin`
+are this project's own firmware, under
+this repository's licence ([`LICENSE`](LICENSE)). Their source is in
 `archive/bridge/`, and `tools/espressif/build_vendor_ota.py` wraps it for the stock
 updater. It is built with ESP-IDF through PlatformIO, as pinned by
 `archive/bridge/platformio.ini`.

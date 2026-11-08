@@ -77,6 +77,13 @@ is on it, and turning its input on would change how the board is set up, so it
 is named and not read. The flash chip's pins are left out altogether: 6 to 11 on a
 classic ESP32, 12 to 17 on an ESP32-C3.
 
+Bridge 4.4.6 adds `POST /restart`: the plug starts again into the firmware
+chosen for its next start - Sonoff's, which the bridge chooses as it starts -
+just as switching it off and on would, so a run need not ask anyone to. It is
+refused (409) while an upload is under way, and where the next start would be
+the bridge again, an upload cut off part way having left no Sonoff firmware to
+start.
+
 From 4.4.2 every build has the read-only `GET /flash` (the whole chip, with
 its size in `X-Flash-Size`), `GET /flash-sha256` (the SHA-256 of the whole
 chip, worked out on the plug) and `GET /efuse` (the eFuse read registers), so

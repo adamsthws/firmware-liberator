@@ -55,6 +55,12 @@
  * where 4.4.3 refused it: Tasmota then starts with the name the run gave it,
  * and makes its own network under that name, not Tasmota's default.
  *
+ * 4.4.6: POST /restart starts the plug again into the firmware chosen for the
+ * next start - Sonoff's, chosen as the bridge starts - as switching it off and
+ * on would, so the run need not ask anyone to.  Refused while an upload is
+ * under way, and where the next start would be this bridge again (an upload
+ * cut off part way left no Sonoff firmware to start).
+ *
  * 4.4.5: GET /info says what a backup cannot: the chip's exact revision, the
  * flash chip's id and real size, whether PSRAM is in the chip's package, the
  * slots, and the input pins' levels.  All read-only.
@@ -108,7 +114,7 @@
 #define STA_WINDOW_MS 45000
 /* The one version: the wrapper the updater is given and the app description
  * (PROJECT_VER in ../CMakeLists.txt) carry the same; a test keeps them equal. */
-#define BRIDGE_VERSION "4.4.5"
+#define BRIDGE_VERSION "4.4.6"
 #define BRIDGE_NAME "bridge " BRIDGE_VERSION
 
 static const char *TAG = "autoflash_bridge";
@@ -116,6 +122,7 @@ static const esp_partition_t *s_running;
 static const esp_partition_t *s_peer;
 /* The peer was not bootable at start-up: an upload into it was cut off. */
 static bool s_no_fallback;
+static volatile bool s_uploading;
 static volatile bool s_sta_trying;
 static volatile uint32_t s_sta_ip; /* network byte order; 0 until joined */
 static volatile bool s_tasmota_settings_saved;
@@ -528,7 +535,38 @@ static esp_err_t upload_error(httpd_req_t *req, const char *message)
     return httpd_resp_sendstr(req, message);
 }
 
+static esp_err_t upload(httpd_req_t *req);
+
 static esp_err_t update_handler(httpd_req_t *req)
+{
+    s_uploading = true;
+    esp_err_t result = upload(req);
+    s_uploading = false;
+    return result;
+}
+
+static esp_err_t restart_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    const esp_partition_t *next = esp_ota_get_boot_partition();
+    if (s_uploading) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_sendstr(req, "An upload is under way: not restarting.\n");
+    }
+    if (next == NULL || next == s_running) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_sendstr(req, "The next start would be this bridge again: not restarting.\n");
+    }
+    char body[96];
+    snprintf(body, sizeof(body), "Restarting into %s at 0x%08lx.\n", next->label, (unsigned long)next->address);
+    ESP_LOGI(TAG, "%s", body);
+    httpd_resp_sendstr(req, body);
+    xTaskCreate(delayed_restart, "restart", 2048, NULL, 5, NULL);
+    return ESP_OK;
+}
+
+static esp_err_t upload(httpd_req_t *req)
 {
     if (req->content_len <= 0 || req->content_len > BRIDGE_MAX_IMAGE_SIZE ||
         req->content_len > s_peer->size) {
@@ -764,7 +802,7 @@ static esp_err_t start_web_server(void)
     config.stack_size = 8192;
     config.recv_wait_timeout = 20;
     config.send_wait_timeout = 20;
-    config.max_uri_handlers = 10;
+    config.max_uri_handlers = 12;
 
     httpd_handle_t server = NULL;
     ESP_ERROR_CHECK(httpd_start(&server, &config));
@@ -807,6 +845,10 @@ static esp_err_t start_web_server(void)
         .uri = "/info", .method = HTTP_GET, .handler = info_handler, .user_ctx = NULL,
     };
     ESP_ERROR_CHECK(httpd_register_uri_handler(server, &info));
+    const httpd_uri_t restart = {
+        .uri = "/restart", .method = HTTP_POST, .handler = restart_handler, .user_ctx = NULL,
+    };
+    ESP_ERROR_CHECK(httpd_register_uri_handler(server, &restart));
     return ESP_OK;
 }
 
