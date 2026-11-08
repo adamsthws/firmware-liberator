@@ -63,6 +63,7 @@ class _State:
     stage_screen = ""                 # the same, number and name padded into columns
     name_width = 0                    # the longest stage name, so the columns line up
     most_stages = 0                   # the most the run may have, its numbers' column as wide
+    rows = 0                          # rows finished on screen, less those taken off (screen_mark)
     transient_rows: int | None = None  # rows on screen since transient_begin()
     transient_blank = False           # a blank row was last on screen when it began
     pending_prompt: str | None = None  # a question on screen, waiting for its answer
@@ -166,6 +167,7 @@ def start(log_path: Path | None, *, verbose: bool) -> None:
             _write_log(f"=== run started, tool version {__version__}{' (verbose)' if verbose else ''} ===")
         _s.concise = not verbose
         _s.paused = False
+        _s.rows = 0
         _s.name_width = _s.most_stages = 0   # the run's own route sets them (set_stage_width)
         _s.run_waited = 0.0
         _s.waiting_since = None   # a question left unanswered is not this run's wait
@@ -369,8 +371,7 @@ def before_input(prompt: str = "") -> None:
         if not _s.after_blank:
             print("", flush=True)
             _s.after_blank = True
-            if _s.transient_rows is not None:
-                _s.transient_rows += 1
+            _counted(1)
         _s.paused = True
         if _s.waiting_since is None:
             _s.waiting_since = time.monotonic()
@@ -399,9 +400,9 @@ def question(text: str, tail: str = "", hint: str = "") -> str:
 def after_input() -> None:
     """The keyboard has been read: the stage line may be drawn again."""
     with _lock:
-        if _s.transient_rows is not None and _s.pending_prompt is not None:
+        if _s.pending_prompt is not None:
             # The question and the answer echoed after it, then Enter.
-            _s.transient_rows += _rows(_s.pending_prompt + _s.pending_answer)
+            _counted(_rows(_s.pending_prompt + _s.pending_answer))
         _s.pending_prompt, _s.pending_answer = None, ""
         _s.after_blank = False  # the answer's line
         _s.paused = False
@@ -453,23 +454,9 @@ def transient_end() -> None:
         rows, _s.transient_rows = _s.transient_rows, None
         if rows is None:
             return
-        if rows >= terminal_size((100, 24)).lines:
-            # Taller than the window (VS Code's terminal panel, say): the cursor
-            # cannot go up past the window's top, so erasing would leave the
-            # block's start and the stage line above it stranded. Keep it whole.
-            if _s.stage is not None and not _s.paused:
-                _draw_stage()
-            return
-        if _s.live:
-            sys.stdout.write("\r\x1b[K")  # a stage line redrawn after the answer
-            _s.live = 0
-        # Up a row and erase it, row by row.  Not one erase-to-end from the top:
-        # when the block starts on the screen's first row that clears the whole
-        # screen, which tmux (scroll-on-clear) and some terminals first copy
-        # into the scrollback - the block would stay there.
-        sys.stdout.write("\x1b[1F\x1b[2K" * rows)
-        sys.stdout.flush()
-        _s.after_blank = _s.transient_blank  # the screen as the block found it
+        # Taller than the window (VS Code's terminal panel, say), it stays whole.
+        if _erase(rows):
+            _s.after_blank = _s.transient_blank  # the screen as the block found it
         if _s.stage is not None and not _s.paused:
             _draw_stage()
 
@@ -527,16 +514,55 @@ def transient_rewind(mark: tuple[int, bool, bool] | None) -> bool:
     with _lock:
         if mark is None or _s.transient_rows is None:
             return False
-        rows = _s.transient_rows - mark[0]
-        if rows >= terminal_size((100, 24)).lines:
-            return False  # the cursor cannot reach their first row
-        if _s.live:
-            sys.stdout.write("\r\x1b[K")  # a stage line drawn since
-            _s.live = 0
-        sys.stdout.write("\x1b[1F\x1b[2K" * rows)
-        sys.stdout.flush()
+        if not _erase(_s.transient_rows - mark[0]):
+            return False
         _s.transient_rows, _s.after_stage, _s.after_blank = mark
         return True
+
+
+def screen_mark() -> tuple[int, bool, bool] | None:
+    """Where the screen has got to, for screen_rewind() to go back to: before
+    a try of a step, so that a try that failed, and the note that it is tried
+    again, are taken off once it is.  None when nothing can be taken off the
+    screen (as for transient_begin()), or within a block that will be."""
+    with _lock:
+        if not (_s.concise and sys.stdout.isatty() and colour_ok()) or _s.transient_rows is not None:
+            return None
+        _break()
+        return _s.rows, _s.after_stage, _s.after_blank
+
+
+def screen_rewind(mark: tuple[int, bool, bool] | None) -> bool:
+    """Take everything shown since screen_mark() off the screen.  True when
+    it was; the log keeps it regardless."""
+    with _lock:
+        if mark is None or _s.transient_rows is not None:
+            return False
+        _break()
+        if not _erase(_s.rows - mark[0]):
+            return False
+        _, _s.after_stage, _s.after_blank = mark
+        return True
+
+
+def _erase(rows: int) -> bool:
+    """Take the last `rows` finished rows off the screen, the cursor left at
+    the start of the first.  Not when there are as many as the window has: the
+    cursor cannot go up past its top, so erasing would leave their start, and
+    the stage line above it, stranded."""
+    if rows >= terminal_size((100, 24)).lines:
+        return False
+    if _s.live:
+        sys.stdout.write("\r\x1b[K")  # a stage line drawn since
+        _s.live = 0
+    # Up a row and erase it, row by row.  Not one erase-to-end from the top:
+    # when the rows start on the screen's first that clears the whole screen,
+    # which tmux (scroll-on-clear) and some terminals first copy into the
+    # scrollback - the rows would stay there.
+    sys.stdout.write("\x1b[1F\x1b[2K" * rows)
+    sys.stdout.flush()
+    _s.rows -= rows
+    return True
 
 
 # ------------------------------------------------------------------- stages
@@ -640,6 +666,7 @@ def stage_end(outcome: str) -> None:
                 pad = " " * max(0, _s.live - len(ANSI_RE.sub("", first)))
                 sys.stdout.write(_clear_notice() + "\r" + first + pad + ("\n" + rest if rest else "") + "\n")
                 sys.stdout.flush()
+                _counted(_rows(first + ("\n" + rest if rest else "")))
                 _s.live = 0
                 _s.after_stage = True
                 _s.after_blank = False
@@ -982,8 +1009,7 @@ def _break() -> None:
             if _clip(line) != line:
                 line = shown = _clip(line)
             sys.stdout.write(_clear_notice() + "\r" + shown + " " * max(0, _s.live - len(line)) + "\n")
-            if _s.transient_rows is not None:
-                _s.transient_rows += 1
+            _counted(1)
             _s.after_stage = True
             _s.after_blank = False
         else:
@@ -1005,10 +1031,16 @@ def _print(text: str, *, stage: bool = False) -> None:
     text = _fit(text)
     print(text, flush=True)
     _s.after_blank = not ANSI_RE.sub("", text).strip()
-    if _s.transient_rows is not None:
-        _s.transient_rows += _rows(text)
+    _counted(_rows(text))
     if stage:
         _s.after_stage = True
+
+
+def _counted(rows: int) -> None:
+    """`rows` more finished on the screen, for taking them off again."""
+    _s.rows += rows
+    if _s.transient_rows is not None:
+        _s.transient_rows += rows
 
 
 def _screen_width() -> int | None:
@@ -1091,8 +1123,7 @@ def _gap(text: str) -> None:
     if ANSI_RE.sub("", text).strip("\r\n\t "):
         print("", flush=True)
         _s.after_blank = True
-        if _s.transient_rows is not None:
-            _s.transient_rows += 1
+        _counted(1)
 
 
 def _log_ctrl_c() -> None:

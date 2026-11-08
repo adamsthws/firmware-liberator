@@ -408,6 +408,108 @@ class GoBackTests(unittest.TestCase):
         self.assertIn(f"after it was sent {runner.GO_BACK_LIMIT + 1} times", self.ctx.last_failure)
 
 
+class ScreenTests(unittest.TestCase):
+    """However a stage ends, it leaves the screen as it should once the run
+    moves on: one line for it, its outcome, and nothing of a try that failed
+    (tools/repo/unattended_run.py, stage_problems).  Drawn as on a terminal
+    and read back as one shows it."""
+
+    SIZE = (100, 40)
+
+    def setUp(self):
+        from types import SimpleNamespace
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.log = Path(directory.name) / "run.log"
+        self.state = RunState.open(Path(directory.name))
+        self.ctx = SimpleNamespace(state=self.state, dry_run=False, go_back=None, finished=False)
+
+    def screen(self, stages):
+        """The screen once each of `stages` - (step, handler) - is run with
+        its retries, as run_steps() does, and then one that passes."""
+        import io
+        import os
+        from tools.repo import unattended_run
+
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return True
+
+        terminal = Terminal()
+        handlers = {step: (routes.STEP_INDEX[step][0], handler) for step, handler in stages}
+        handlers["E3"] = (routes.STEP_INDEX["E3"][0], lambda ctx: {})
+        with mock.patch("sys.stdout", terminal), mock.patch("sys.stdin", io.StringIO()),              mock.patch.dict(os.environ, {"NO_COLOR": ""}), mock.patch.object(output, "colour_ok", return_value=True),              mock.patch("shutil.get_terminal_size", return_value=os.terminal_size(self.SIZE)),              mock.patch.dict(routes.STEP_INDEX, handlers),              mock.patch.object(runner, "set_up_if_erased"), mock.patch.object(runner, "wait_for_plug_back"),              mock.patch.object(runner.time, "sleep"), mock.patch.object(firewall, "firewall_hint", return_value=[]):
+            output.start(self.log, verbose=False)
+            try:
+                for step, _ in stages:
+                    runner.execute_with_retries(self.ctx, step)
+                runner.execute_with_retries(self.ctx, "E3")
+            finally:
+                output.finish()
+        screen = unattended_run.Screen(*self.SIZE)
+        screen.feed(terminal.getvalue().replace("\n", "\r\n"))  # as a terminal's line discipline does
+        return screen.render(colour=False)
+
+    def test_a_try_that_failed_is_gone_once_the_stage_is_tried_again(self):
+        # As a run on 2026-11-08 left it: the plug's console line under the
+        # stage, the stage stopped, the note it would be tried again - and
+        # the stage again under them all.
+        tries = iter([PhaseError("the device stopped the stage without reaching this computer"), None])
+
+        def stage(ctx):
+            failure = next(tries)
+            if failure:
+                output.tell("    The device's console: 00:00:00.328 BRY: Berry initialized, RAM used 3885 bytes")
+                raise failure
+            return {}
+        screen = self.screen([("E2", stage)])
+        from tools.repo import unattended_run
+        self.assertEqual(unattended_run.stage_problems(screen), [], screen)
+        for gone in ("Stopped", "console", "FAILED", "trying again"):
+            self.assertNotIn(gone, screen)
+        self.assertEqual([row.split(" - ")[-1] for row in screen.splitlines() if row.strip()],
+                         ["Complete", "Complete"], screen)
+        self.assertIn("trying again", self.log.read_text(encoding="utf-8"))  # the log keeps it
+
+    def test_the_last_try_stays_to_say_why_the_run_stopped(self):
+        def stage(ctx):
+            raise PhaseError("the device stopped the stage without reaching this computer")
+        screen = self.screen([("E2", stage)])
+        from tools.repo import unattended_run
+        self.assertEqual(unattended_run.stage_problems(screen), [], screen)
+        self.assertEqual(screen.count("Stopped"), 1, screen)
+        self.assertEqual(screen.count("FAILED"), 1, screen)
+
+    def test_every_way_a_stage_ends_leaves_one_line_before_the_next(self):
+        from tools.autoflash.errors import Abort
+        from tools.autoflash.phases import PlugNeverConnected
+
+        def raising(exc, note=True):
+            def stage(ctx):
+                if note:
+                    output.tell("    A note shown under the stage")
+                raise exc
+            return stage
+        ways = {
+            "passed": lambda ctx: {},
+            "passed, with a note": lambda ctx: output.tell("    A note") or {},
+            "skipped": lambda ctx: {"stage_outcome": "skipped"},
+            "refused": raising(Abort("the device refused")),
+            "never connected": raising(PlugNeverConnected("the device never connected")),
+            "went wrong": raising(KeyError("unexpected")),
+            "network": raising(ConnectionResetError("connection reset")),
+            "went back": raising(errors.GoBack("E1", "ESPHome was not installed", "not installed")),
+        }
+        from tools.repo import unattended_run
+        for way, handler in ways.items():
+            with self.subTest(way):
+                self.setUp()
+                screen = self.screen([("E2", handler)])
+                self.assertEqual(unattended_run.stage_problems(screen), [], screen)
+                stages = [row for row in screen.splitlines() if unattended_run.STAGE_ROW.match(row)]
+                self.assertNotIn("Underway", stages[-1], screen)
+
+
 class PlugBackTests(unittest.TestCase):
     """Before a step is tried again, a plug that is not answering is waited for."""
 
