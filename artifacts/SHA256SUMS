@@ -3,14 +3,11 @@ ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd  autoflash-reco
 a92cfadaff5a3c824f790471ba31464acd2076a24ff1fcad2de28574c5641708  tasmota32c3-bluetooth.bin
 d63f03cb99540407037f36dc8155ec9b02d24425d3b02c52299713233e98f4a5  tasmota-settings-template-15.6.0.0.bin
 3792bb665916d69c410c9fd10f69d1a6968e61f2a9e4969829a1c49f9ea6f433  esphome-sonoff-s60-bootloader-1.2.0.bin
-f6e131e1599c886d742c151c3ba3f84a285bba462b438c36b611d577e01ad243  autoflash-mover-1.1.0.bin
 f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf  sonoff-s60-partition-table.bin
 67c57d0d241bc463158cbff670e56c3210ccf16731cbd0d31f88a616bbf7f7a3  openbeken-sonoff-s61-1.18.320-2.rbl
 7793c32e3f2e77294d2a9f929875063d404d832e05d7fbe5ed54fb37cd0e7762  esphome-sonoff-s60-imprintable-2026.10.0-1.bin
 b6591fde2e0ff5fba2ef3afc699c82437d7f151f9bd88b2c2a4ffdf069e332fb  esphome-sonoff-s61-2026.10.0-1.rbl
 be48fba7c873adeeb3c1dba401d57c4fc2be4d68f8d9928ca7a1bc9b28bc454d  esphome-sonoff-pow-elite-imprintable-2026.10.0-1.bin
-075fdc993d5004a747fd3cdc5705e3d464df80d2ab003aae66db17b2a98d1d42  autoflash-mover-esp32-1.0.0.bin
-b52ccf9f4602c83db673d44e84d391c44fed6d24329d4fefb9fc0d72a95a0d4f  esphome-esp32-bootloader-1.0.0.bin
 ea070080c6082d80e1198a95ada1b9a2e272836f46e947a91d6a4824f01afd05  autoflash-bridge-esp32-4.4.6.bin
 f1a25251f7756303e3d65061f9429d1f4da81968b89737d3d5d7364ea959860c  autoflash-recovery-safeboot-esp32-imprintable.bin
 7c790d6d445756cf7124841136a676741fbad33020706a8dd477e3dc51fbef49  tasmota-settings-template-esp32-15.6.0.0.bin
@@ -23,3 +20,6 @@ cbfba34d4314405a9dfb22a736455304c64cbeaa7ad02b4b9799867e1238e79c  esphome-sonoff
 9e2679eda296606db27ef959b05dbf63e3de31f9144729c2d8983c69c0c557c2  esphome-sonoff-basic-1gs-2026.10.0-1.rbl
 21ae9837d43286a37ab1a5649c33bba86a92634f0140e916767a6813d61b92a3  esphome-sonoff-basicr4-imprintable-2026.10.0-1.bin
 3459841073093d0bf8f859542ce7034dd702d69107249d3c38ea071e6110eee5  openbeken-readout-1.18.320-1.rbl
+5d6e17620a5f9f22aaa71b61dcd7c3a46c308a1976d34c78c3ef928349a8a23f  autoflash-mover-esp32c3-1.2.0.bin
+5c259a74ae1ea63f5cea3859f97ace5c6d1f6de2b118384f01cb8382c2fe2aed  autoflash-mover-esp32-1.1.0.bin
+b52ccf9f4602c83db673d44e84d391c44fed6d24329d4fefb9fc0d72a95a0d4f  esphome-esp32-bootloader-1.1.0.bin

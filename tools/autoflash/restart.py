@@ -6,7 +6,7 @@ answers at its address (detect.identify):
 
 - Tasmota, its startup firmware (Tasmota's safeboot) and the interim one
   included: the command Restart 1;
-- the mover, from 1.2.0: POST /restart (devices/mover_restart.h);
+- the mover, from 1.2.0: POST /restart (devices/mover_routes.h);
 - OpenBeken, the interim and the readout firmware included: reboot.
 
 Not the installer (the bridge): it restarts into Sonoff's firmware, which

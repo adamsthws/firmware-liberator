@@ -21,7 +21,11 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: adamsthws.autoflash-mover-esp32
-    version: "1.0.0"
+    version: "1.1.0"
+  # GET /mover, so the tool knows the mover, and POST /restart, so it can
+  # restart one that still answers (devices/mover_routes.h).
+  includes:
+    - ../mover_routes.h
   on_boot:
     # Before Wi-Fi starts (its priority is 250): the network to join, and the
     # mover's name. Joined from that for as long as it takes - a router
@@ -53,6 +57,10 @@ esphome:
             wifi::WiFiAP ap;
             ap.set_ssid(name);
             wifi::global_wifi_component->set_ap(ap);
+    # After Wi-Fi's setup (250), so the network is there for the routes.
+    - priority: -100
+      then:
+        - lambda: autoflash::start_routes();
 
 globals:
   - id: imprinted_ssid
