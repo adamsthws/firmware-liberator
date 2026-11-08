@@ -369,7 +369,7 @@ class ConciseTests(OutputTestCase):
         size = lambda *a: os.terminal_size((80, height[0]))
         waited = []
         def wait(prompt, *, until):
-            for rows in (16, 24):  # made taller: still short, then tall enough
+            for rows in (output.MIN_ROWS - 4, output.MIN_ROWS):  # made taller: still short, then tall enough
                 self.assertFalse(until())
                 height[0] = rows
             self.assertTrue(until())
@@ -381,17 +381,27 @@ class ConciseTests(OutputTestCase):
              mock.patch.object(prompts, "wait_for_key", side_effect=wait):
             prompts.wait_for_taller_window()
         self.assertEqual(len(waited), 1)
-        self.assertIn("It is 12 rows tall; make it at least 20", stdout.getvalue())
+        self.assertIn(f"It is 12 rows tall; make it at least {output.MIN_ROWS}", stdout.getvalue())
 
     def test_a_tall_enough_window_is_not_mentioned(self):
         stdout = FakeTerminal()
         with mock.patch("sys.stdout", stdout), \
              mock.patch.object(output, "colour_ok", return_value=True), \
-             mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 30))), \
+             mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, output.GOOD_ROWS))), \
              mock.patch.object(prompts, "wait_for_key") as wait:
             prompts.wait_for_taller_window()
         wait.assert_not_called()
         self.assertEqual(stdout.getvalue(), "")
+
+    def test_a_window_too_short_for_the_report_is_told_in_a_line_and_not_waited_for(self):
+        stdout = FakeTerminal()
+        with mock.patch("sys.stdout", stdout), \
+             mock.patch.object(output, "colour_ok", return_value=True), \
+             mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, output.MIN_ROWS + 5))), \
+             mock.patch.object(prompts, "wait_for_key") as wait:
+            prompts.wait_for_taller_window()
+        wait.assert_not_called()
+        self.assertIn("Make this window taller (e.g. maximise it): at 40 rows", stdout.getvalue())
 
     def test_a_checked_address_must_pass_with_no_using_it_anyway(self):
         asked = []
@@ -559,6 +569,38 @@ class ConciseTests(OutputTestCase):
             output.stage_end("complete")
         self.assertEqual(self.drawn(body), ["Stage 8 - Installing interim firmware - Complete",
                                             "Stage 9 - Preparing memory layout - Complete"])
+
+    def test_a_stage_s_line_is_left_once_above_what_it_shows(self):
+        # Seen in the fault suites: the line again, and a gap, under each note:
+        # 10 of a 48-row stage's rows.
+        def body():
+            output.stage_begin(8, "Installing interim firmware")
+            for n in range(3):
+                output.tell(f"    note {n}")
+                output.tick()   # the clock drawn again under it, as the ticker does
+            output.stage_end("stopped")
+        rows = self.drawn(body)
+        self.assertEqual(rows, ["Stage 8 - Installing interim firmware - Underway", "",
+                                "note 0", "note 1", "note 2",
+                                "Stage 8 - Installing interim firmware - Stopped"])
+
+    def test_what_is_shown_while_waiting_goes_once_done_and_stays_if_the_wait_stops_the_stage(self):
+        def body(fail):
+            output.stage_begin(8, "Installing interim firmware")
+            try:
+                with output.until_done():
+                    output.tell("-- Join the bridge's Wi-Fi network")
+                    if fail:
+                        raise RuntimeError("never joined")
+            except RuntimeError:
+                output.stage_end("stopped")
+                return
+            output.tell("    The installer joined your network.")
+            output.stage_end("stopped")
+        joined = self.drawn(lambda: body(False))
+        self.assertNotIn("-- Join the bridge's Wi-Fi network", joined)
+        self.assertIn("The installer joined your network.", joined)
+        self.assertIn("-- Join the bridge's Wi-Fi network", self.drawn(lambda: body(True)))
 
     def test_a_stage_that_stopped_leaves_what_it_showed(self):
         def body():

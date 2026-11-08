@@ -182,6 +182,118 @@ class BackOnSonoffTests(unittest.TestCase):
         self.assertEqual((sent, waited), (0, 1))
 
 
+class BridgeScreenTests(unittest.TestCase):
+    """What reaching the bridge shows goes once it is reached: its network
+    joined, the instructions to join it are done with (output.until_done)."""
+
+    def screen(self, waits, resend=None):
+        import io
+        import os
+        from types import SimpleNamespace
+        from tools.repo import unattended_run
+
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return True
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        ctx = SimpleNamespace(state=RunState.open(Path(directory.name)))
+        terminal = Terminal()
+        with mock.patch("sys.stdout", terminal), mock.patch.object(output, "colour_ok", return_value=True), \
+             mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))), \
+             mock.patch.object(installer, "bridge_answers", return_value=False), \
+             mock.patch.object(installer, "bridge_on_home_network", return_value=None), \
+             mock.patch.object(installer, "resend_if_back_on_sonoff", side_effect=resend or (lambda ctx: None)), \
+             mock.patch.object(prompts, "find_ssid", return_value="autoflash-recovery-ABCD"), \
+             mock.patch.object(installer, "wait_for_bridge",
+                               side_effect=waits if callable(waits) else list(waits)):
+            output.start(Path(directory.name) / "run.log", verbose=False)
+            output.stage_begin(7, "Backing up Sonoff firmware")
+            try:
+                installer.reach_bridge(ctx)
+                output.stage_end("stopped")   # stopped all the same: what is left shows
+            except errors.Abort:
+                output.stage_end("stopped")
+            finally:
+                output.finish()
+        screen = unattended_run.Screen(100, 40)
+        screen.feed(terminal.getvalue().replace("\n", "\r\n"))
+        return screen.render(colour=False), (Path(directory.name) / "run.log").read_text(encoding="utf-8")
+
+    def advice_screen(self, found):
+        import io
+        import os
+        from types import SimpleNamespace
+        from tools.repo import unattended_run
+
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return True
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        ctx = SimpleNamespace(state=RunState.open(Path(directory.name)))
+        terminal = Terminal()
+        with mock.patch("sys.stdout", terminal), mock.patch.object(output, "colour_ok", return_value=True), \
+             mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))), \
+             mock.patch.object(installer, "_wait_for_tasmota", return_value=found), \
+             mock.patch.object(installer.join, "configure_plug_wifi",
+                               side_effect=lambda ctx, network: output.tell("-- Join the device's setup network")):
+            output.start(Path(directory.name) / "run.log", verbose=False)
+            output.stage_begin(8, "Installing interim firmware")
+            installer.finish_tasmota_setup(ctx, route="home network", wait=900.0,
+                                           advice=("Tasmota has not appeared on your network", ["Switch it off and on."]))
+            output.stage_end("stopped")   # stopped all the same: what is left shows
+            output.finish()
+        screen = unattended_run.Screen(100, 40)
+        screen.feed(terminal.getvalue().replace("\n", "\r\n"))
+        return screen.render(colour=False)
+
+    def test_the_advice_goes_once_tasmotas_network_appears(self):
+        # It has done its job: the person switched it off and on, as advised.
+        screen = self.advice_screen(("network", "tasmota-ABCDEF-1234"))
+        self.assertNotIn("Tasmota has not appeared", screen)
+        self.assertIn("-- Join the device's setup network", screen)   # what is to do now
+
+    def test_it_stays_while_neither_tasmota_nor_its_network_appears(self):
+        self.assertIn("Tasmota has not appeared", self.advice_screen(None))
+
+    def test_the_instructions_and_the_waits_go_once_the_bridge_is_reached(self):
+        screen, log = self.screen([installer.BACK_ON_SONOFF, installer.BACK_ON_SONOFF, setup_network.SETUP_HOST])
+        self.assertNotIn("Join the bridge's Wi-Fi network", screen)
+        self.assertNotIn("While waiting", screen)
+        self.assertIn("Join the bridge's Wi-Fi network", log)        # the log keeps them
+        self.assertEqual(log.count("(switched off"), 1)              # said once, then
+        self.assertIn("went back to Sonoff's own firmware again", log)  # only noted
+
+    def test_back_on_sonoff_the_instructions_go_until_the_bridge_is_back(self):
+        # The bridge's network gone with it, joining it is no longer to do;
+        # given again once the installer has made it again. Kept, they stood
+        # above the installer sent again (the fault suite's C3fb:outage-5).
+        import sys
+        from tools.repo import unattended_run
+
+        def joins_shown():
+            screen = unattended_run.Screen(100, 40)
+            screen.feed(sys.stdout.getvalue().replace("\n", "\r\n"))
+            return screen.render(colour=False).count("Join the bridge's Wi-Fi network")
+        sending, waiting = [], []
+
+        def resend(ctx):
+            sending.append(joins_shown())   # as the installer is sent again
+            return None
+
+        def wait(ctx, network, **kwargs):
+            waiting.append(joins_shown())
+            return [installer.BACK_ON_SONOFF, setup_network.SETUP_HOST][len(waiting) - 1]
+        self.screen(wait, resend=resend)
+        self.assertEqual(sending, [0, 0])   # not while it is sent again
+        self.assertEqual(waiting, [1, 1])   # asked again once back, never twice over
+
+    def test_they_stay_when_the_wait_stops_the_stage(self):
+        screen, _ = self.screen([errors.Abort("the bridge never appeared")])
+        self.assertIn("Join the bridge's Wi-Fi network", screen)
+
+
 class WaitForBridgeTests(unittest.TestCase):
     """While waiting for the bridge's own network, a late join of the home one
     must still be noticed: the bridge then never raises its own."""

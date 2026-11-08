@@ -65,6 +65,7 @@ class _State:
     most_stages = 0                   # the most the run may have, its numbers' column as wide
     rows = 0                          # rows finished on screen, less those taken off again (mark)
     status = "Underway"               # what the stage line says while it runs: "Retrying" for a step done again
+    underway_row: int | None = None   # where the stage's line was left on the screen, above what it showed
     next_retrying = False             # the next stage begun is a step done again (retrying)
     stage_mark: tuple[int, bool, bool] | None = None  # the screen as the stage began (mark)
     blocks: list[tuple[int, bool]] = []  # the open blocks (transient_begin), innermost last:
@@ -456,6 +457,29 @@ def transient_begin(*, before_start: bool = False) -> None:
         _s.blocks.append((began, _s.after_blank))
 
 
+def transient_keep() -> None:
+    """Close the innermost block, leaving it on the screen: what it showed is
+    now why the stage stopped (until_done)."""
+    with _lock:
+        if _s.blocks:
+            _s.blocks.pop()
+
+
+@contextlib.contextmanager
+def until_done():
+    """A block - instructions, and what is said while they are followed - shown
+    while something is waited for, and taken off the screen once it is done:
+    joining a network, say.  Left on the screen if the wait stops the stage
+    instead, as it then says why."""
+    transient_begin()
+    try:
+        yield
+    except BaseException:
+        transient_keep()
+        raise
+    transient_end()
+
+
 def transient_end() -> None:
     """Take the innermost block since transient_begin() off the screen."""
     with _lock:
@@ -469,9 +493,16 @@ def transient_end() -> None:
             _draw_stage()
 
 
-# Rows a window needs for the run's questions to be taken off the screen once
-# answered: a block taller than the window has to stay (transient_end).
-MIN_ROWS = 20
+# Rows a window needs for the run's questions, and what a stage shows on the
+# way, to be taken off the screen once done with: more than the window holds
+# has to stay (transient_end, stage_end), and the stages with most to say
+# show up to about 20.  A shorter one is waited for to grow: 31, so that a
+# window opened at 30 rows (Windows Terminal's) is, as one at 24 (macOS's) is.
+MIN_ROWS = 31
+# Rows for the report at the end, up to about 38, to be seen whole as well: a
+# shorter window is only told so.  Most screens have them with the window
+# maximised; a window opened afresh is often 24 or 30.
+GOOD_ROWS = 40
 
 
 def start_at_top() -> None:
@@ -492,6 +523,12 @@ def start_at_top() -> None:
         sys.stdout.write("\n" if vscode else "\n" * terminal_size((100, 24)).lines + "\x1b[H\n")
         sys.stdout.flush()
         _s.after_blank = True
+
+
+def window_rows(*, before_start: bool = False) -> int | None:
+    """The window's height in rows, where things are taken off the screen;
+    None where nothing is.  `before_start`: as for transient_begin()."""
+    return terminal_size((100, 24)).lines if _drawn_over(before_start=before_start) else None
 
 
 def short_window(*, before_start: bool = False) -> int | None:
@@ -618,6 +655,7 @@ def stage_begin(number: int, name: str) -> None:
         _break()
         _s.stage_mark = (_s.rows, _s.after_stage, _s.after_blank) if _drawn_over() else None
         _s.status, _s.next_retrying = ("Retrying" if _s.next_retrying else "Underway"), False
+        _s.underway_row = None
         digits = len(str(max(_s.most_stages, number)))
         _s.stage = label
         _s.stage_prefix = f"Stage {number:>{digits}}"
@@ -1019,9 +1057,15 @@ def _rows(text: str) -> int:
 def _break() -> None:
     """Finish an unfinished line so the next output starts on a fresh one."""
     if _s.live:
-        if _s.live_is_stage:
+        if _s.live_is_stage and _s.underway_row is not None and _s.rows > _s.underway_row:
+            # Left once above what the stage showed already: drawn again under
+            # each note, it would take two rows a note (the line and a gap) and
+            # say nothing new.  The clock goes on under the last note.
+            sys.stdout.write(_clear_notice() + "\r\x1b[K")
+        elif _s.live_is_stage:
             # The underway line stays, without its spinner: only the stage
             # under way now has one, on the line drawn for it last.
+            _s.underway_row = _s.rows
             line = f"{MARGIN}{_s.stage_screen} - {_s.status}"
             shown = f"{MARGIN}{_s.stage_screen} - {styled(_s.status, BOLD)}"
             if _clip(line) != line:

@@ -460,13 +460,19 @@ def _wait_for_key(prompt: str = "Press any key to continue, or q to quit...", *,
 def wait_for_taller_window() -> None:
     """First of all, a window too short for answered questions to be cleared
     away is asked to be made taller.  Once it is, the note goes and the run
-    goes on by itself; a key goes on without."""
-    rows = output.short_window(before_start=True)
-    if not rows:
+    goes on by itself; a key goes on without.  One tall enough for that but
+    not for the report at the end is only told so, in a line: not every
+    screen has the rows, and stopping every run for it would not help."""
+    rows = output.window_rows(before_start=True)
+    if rows is None or rows >= output.GOOD_ROWS:
+        return
+    if rows >= output.MIN_ROWS:
+        output.show(f"Make this window taller (e.g. maximise it): at {output.GOOD_ROWS} rows the report "
+                    "at the end fits on the screen.", output.DIM)
         return
     output.transient_begin(before_start=True)
-    warning_box("Make this window taller", [
-        f"It is {rows} rows tall; make it at least {output.MIN_ROWS}.",
+    warning_box("Make this window taller (e.g. maximise it)", [
+        f"It is {rows} rows tall; make it at least {output.MIN_ROWS}, or {output.GOOD_ROWS} for the report at the end.",
         "(Otherwise things wouldn't display properly for you)",
     ])
     wait_for_key("Or press any key to go on as it is, or q to quit...",
