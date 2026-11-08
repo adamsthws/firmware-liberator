@@ -565,7 +565,11 @@ starts before its run does. Between two plugs' turns there is a short pause
 (5 s) while eWeLink lets go of the last one. A run signs in only once its plug
 has kept a connection to the internet open for 15 s, a minute at most, as eWeLink
 can still count the last turn's connection as the device and pass a command
-down it to no one. The suite can feel out how many
+down it to no one. A fresh plug not back in that minute, at its run's start with
+nothing yet sent to it, is switched off and on once, as a person would, and
+waited for again (noted as `fresh_plug_restarted`): on 8 November such plugs'
+every dial to eWeLink timed out, and their runs stopped at A1 to ask, the fault
+never come. The suite can feel out how many
 at once the cloud allows - one more at a time while the cloud scenarios pass,
 or one fewer at each trouble - and lengthen the pause when eWeLink is the
 trouble (`AUTOFLASH_EMU_CLOUD_MOST`, `AUTOFLASH_EMU_CLOUD_BACK_OFF`,

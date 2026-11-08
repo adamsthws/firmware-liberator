@@ -934,7 +934,7 @@ class PlugMonitor:
                 # The first run only, as any turn: the next run asks again
                 # (A1, at the front of the queue), and the cloud is free for
                 # others while this one's fault plays out.
-                self.hold("from the start")
+                self.hold("from the start", restart_once=True)
             live = self.live_run()
             if live:
                 handled[live[0]] = len(INTENT.findall(live[1]))
@@ -973,10 +973,13 @@ class PlugMonitor:
             self.sc.say(f"CLOUD: plug's connection to {connection[0]} closed")
         return {connection: seen.get(connection, now) for connection in live}
 
-    def hold(self, why, limit=HOLD_AT_MOST, run=None):
+    def hold(self, why, limit=HOLD_AT_MOST, run=None, restart_once=False):
         """Gives the plug its way out until the run ends, the plug leaves
         Sonoff's firmware or `limit` runs out; returns how many times `run`
-        had asked by then, all of them answered by this turn."""
+        had asked by then, all of them answered by this turn. `restart_once`:
+        a plug not back at eWeLink in PLUG_BACK_AT_MOST is switched off and on
+        once, as a person would, and waited for again (a fresh plug's, with
+        nothing yet sent to it)."""
         uart = self.state / "logs/uart.log"
         pos = uart.stat().st_size if uart.exists() else 0
         ended = self.run_text().count("=== run ended ===")
@@ -1003,6 +1006,17 @@ class PlugMonitor:
                     if plug_first and any(now - seen >= SIGNED_ON_AFTER for seen in first_seen.values()):
                         plug_first, back_at = False, now
                         self.sc.say(f"CLOUD: plug back after {now - opened_at:.0f}s")
+                    elif plug_first and now - opened_at >= PLUG_BACK_AT_MOST and restart_once:
+                        # Seen against the real cloud: a fresh plug's every TLS
+                        # dial to eWeLink timing out, the run then stopping at
+                        # A1 to ask, its fault never come (NOT-FIRED).
+                        restart_once = False
+                        self.sc.say(f"CLOUD: plug not back after {now - opened_at:.0f}s; switched off and on, "
+                                    "as a person would, and waited for again")
+                        self.sc.notes["fresh_plug_restarted"] = True
+                        self.sc.ex(PLUG_CMD, "restart")
+                        before, first_seen = cloud_connections(self.n), {}
+                        opened_at = time.time()
                     elif plug_first and now - opened_at >= PLUG_BACK_AT_MOST:
                         plug_first, back_at = False, now
                         self.sc.say(f"CLOUD: plug not back after {now - opened_at:.0f}s; the run goes on")
