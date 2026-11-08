@@ -124,6 +124,26 @@ the same on every plug; then each chip family has its own:
 [an Espressif plug](#an-espressif-plug-the-s60), or
 [a Beken plug](#a-beken-plug-the-s61), whose run is shorter.
 
+Each step also has a short ID, which the tool shows as it runs and keeps in
+the run's record. Side by side, by the numbers below:
+
+| | An Espressif plug | A Beken plug |
+|---|---|---|
+| 1. What has to be in place | `A0` | `A0` |
+| 2. Find the plug | `A1` | `A1` |
+| 3. Which firmware | `A3` | `A3` |
+| 4. | Download the firmware: `A5` | Ask eWeLink what it runs: `B1` |
+| 5. | Ask the plug what it runs: `A2` | Send the firmware, the point of no return: `B2` |
+| 6. | The installer, the point of no return: `C2` | OpenBeken started: `K1`; on the way to ESPHome, the interim firmware: `J1` |
+| 7. | Back up the Sonoff firmware: `C3` | Back up the plug's own data: `B4` |
+| 8. | A first Tasmota: `D1`, `D4` | ESPHome fetched: `J2` |
+| 9. | The bootloader `D5`, the Sonoff identity `K1`, the new layout `E1`, `E2`, `E3`; for ESPHome, ESPHome written: `I1` | ESPHome started: `K2` |
+| 10. | Official Tasmota: `F2`, `F4`, `G1`; for ESPHome, ESPHome started: `I2` | |
+| At the end | Every byte checked: `H1` | |
+
+An ID names a step within its family: the same ID in the other need not be
+the same step (`K1`).
+
 ### The start, on every plug
 
 1. **List what has to be in place first** - the eWeLink app and account, the
