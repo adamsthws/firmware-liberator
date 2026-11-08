@@ -42,6 +42,11 @@ STEP), fetched whole but failing the bootloader's CRC check, so the plug
 starts the firmware it had again; the scenario passes when the tool sends
 it again by itself and the plug is converted.
 
+And readouts (readout_scenarios): of a plug fresh from Sonoff's firmware,
+with a fault in the read and as Sonoff's firmware is put back, then what a
+person does until a whole readout.tar is kept and the plug works on Sonoff's
+firmware; and of a plug on OpenBeken, which must be refused.
+
 The routes from the interim firmware start from a plug a run to ESPHome left
 there, found by a new run. A plug converted through the interim firmware is
 also checked: by the names it asked DHCP for, it was autoflash-recovery-CDEF
@@ -142,6 +147,22 @@ NAME_PREFIX = {"interim": "autoflash-recovery-", "openbeken": "openbeken-", "esp
 OPENBEKEN_CHECK = ["sonoff>openbeken:B4:crash-1", "sonoff>esphome:J2:badimage-once", "interim>openbeken:J3:crash-1",
                    "interim>sonoff:J4:crash-1", "openbeken>sonoff:O2:crash-1", "esphome>openbeken:K1:crash-1"]
 
+# Readouts (cli.py readout, unattended, docs/readouts.md) of a plug fresh from
+# Sonoff's firmware: each phase where the fault matters most, where it starts
+# and ends in the run's log, and how long it lasts in the emulator (seconds).
+# The read is 256 paced chunks of 16 KB - B4 reads 8 of them in 12 s. Putting
+# Sonoff's firmware back is the readout OpenBeken fetching it (O2's 24 s), then
+# the bootloader writing it in and Sonoff's firmware starting (K3's 75 s): its
+# faults land at 10%, in the fetch, the part only the readout has - the
+# bootloader's write is the conversions' own, cut in their apply scenarios.
+READOUT_PHASES = {"read": (r"Reading the device's memory", r"\] +Read [\d,]+ bytes\.", 400),
+                  "back": (r"Putting the device's Sonoff firmware back", r"eWeLink shows the device online again", 100)}
+READOUT_FAULTS = [("read", "plugoff", 1, 40), ("read", "outage", 30, 40), ("read", "crash", 1, 40),
+                  ("back", "plugoff", 1, 10), ("back", "outage", 30, 10)]
+READOUT = "readout.tar"
+# Something served to the plug: the readout firmware, or Sonoff's (ota_push, onward).
+SERVED = re.compile(r"\] +Serving ")
+
 
 def sid(route: str, step: str, fault: str, arg, at: int = 40) -> str:
     return f"{route}:{step}{'' if at == 40 else f'@{at}'}:{fault}-{arg}"
@@ -173,7 +194,18 @@ def scenarios() -> list[dict]:
         for at in (10, 50, 90) if set(steps) & beken.DESTRUCTIVE_STEPS else ():
             found.append(dict(id=sid(route, "apply", "plugoff", 1, at), route=route, step="apply",
                               fault="plugoff", arg=1, at=at))
-    return found
+    return found + readout_scenarios()
+
+
+def readout_scenarios() -> list[dict]:
+    """A readout of a plug fresh from Sonoff's firmware, unattended; the same
+    with a fault in each phase where it matters most (READOUT_FAULTS); and one
+    started on a plug on OpenBeken, which must be refused."""
+    def one(route: str, step: str, fault: str, arg, at: int = 40) -> dict:
+        return dict(id=sid(route, step, fault, arg, at), route=route, step=step, fault=fault, arg=arg, at=at)
+    return [one("sonoff>readout", "start", "none", "unattended"),
+            *(one("sonoff>readout", step, fault, arg, at) for step, fault, arg, at in READOUT_FAULTS),
+            one("openbeken>readout", "start", "none", "refused")]
 
 
 def route_steps(route: str) -> list[str]:
@@ -291,12 +323,16 @@ class Instance:
         except OSError:
             return False
 
-    def online(self) -> bool:
-        """Sonoff's firmware in its eWeLink: the time zone it asks once there."""
+    def stub_said(self) -> bytes:
         try:
-            return '"TZ":{' in (self.state / "stub.log").read_text(encoding="utf-8", errors="replace")
+            return (self.state / "stub.log").read_bytes()
         except OSError:
-            return False
+            return b""
+
+    def online(self, since: int = 0) -> bool:
+        """Sonoff's firmware in its eWeLink: the time zone it asks once there -
+        since the stub's log was `since` bytes long."""
+        return b'"TZ":{' in self.stub_said()[since:]
 
     def start(self, firmware: str, wait: float = 300) -> bool:
         self.sh("plug", timeout=600, check=True)
@@ -314,8 +350,11 @@ class Instance:
         self.sh("power", how, timeout=60, check=True)
 
     def tool(self, target: str, log: Path, new: bool = False, more: tuple[str, ...] = ()) -> subprocess.Popen:
-        args = ["computer", "tools/autoflash/cli.py", "run", "--unattended", "--env-file",
-                "captures/tool.env", "--firmware", target] + (["--new"] if new else []) + list(more)
+        """A run of the tool to `target`, or a readout (target "readout")."""
+        args = (["computer", "tools/autoflash/cli.py", "readout", "--unattended", "--env-file", "captures/tool.env"]
+                if target == "readout" else
+                ["computer", "tools/autoflash/cli.py", "run", "--unattended", "--env-file",
+                 "captures/tool.env", "--firmware", target] + (["--new"] if new else [])) + list(more)
         out = open(log, "a", encoding="utf-8")
         return subprocess.Popen(self.command(*args), env=self.env, stdout=out, stderr=subprocess.STDOUT,
                                 stdin=subprocess.DEVNULL)
@@ -534,13 +573,15 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
     if not instance.start(source):
         notes["memory"] = memory.note()
         return dict(result="NOT-READY", notes=notes)
-    if sc["step"] == "apply":
+    if target == "readout":
+        outcome = readout_scenario(instance, sc, log, notes)
+    elif sc["step"] == "apply":
         outcome = apply_scenario(instance, sc, target, log, notes)
     elif sc["fault"] == "badimage":
         outcome = bad_image_scenario(instance, sc, target, log, notes)
     else:
         outcome = step_scenario(instance, sc, target, log, notes)
-    if outcome["result"] == "PASS":
+    if outcome["result"] == "PASS" and target != "readout":
         names = instance.dhcp_names()
         flash = None
         if "J2" in route_steps(sc["route"]):
@@ -658,6 +699,90 @@ def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: d
     if ok and not_fired(sc["fault"], notes):
         return dict(result="NOT-FIRED", runs=runs)
     return dict(result="PASS" if ok else "FAIL", runs=runs)
+
+
+def readout_problems(instance: Instance) -> list[str] | None:
+    """What the newest readout.tar this scenario's runs kept lacks
+    (fault_verdicts.readout_problems), or None when none kept one."""
+    kept = [path.parent / READOUT for path in instance.runs() if (path.parent / READOUT).is_file()]
+    if not kept:
+        return None
+    return fault_verdicts.readout_problems(kept[-1].read_bytes(), "beken")
+
+
+def settle(instance: Instance, since: int, wait: float = 120) -> None:
+    """Until the plug has started on Sonoff's firmware (in eWeLink since the
+    stub's log was `since` long) or on OpenBeken (answering), or `wait` runs out."""
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline and not (instance.online(since) or instance.answering()):
+        time.sleep(3)
+
+
+def sonoff_works(instance: Instance, wait: float = 300) -> bool:
+    """Whether the plug, switched off and on, starts Sonoff's firmware and is
+    back in eWeLink: on its Sonoff firmware, and working."""
+    since = len(instance.stub_said())
+    instance.power("cycle")
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        if instance.online(since):
+            return not instance.answering()
+        time.sleep(3)
+    return False
+
+
+def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> dict:
+    """A readout of the plug, with the fault in the phase under test; then
+    what a person does, up to RECOVERY_RUNS times: switch the plug off and on
+    where the run said to, put Sonoff's firmware back with the tool where the
+    plug was left on OpenBeken, else read it out again - until a whole readout
+    is kept. It passes when one is, and the plug works on Sonoff's firmware."""
+    if sc["route"].split(">")[0] != "sonoff":
+        return refused_readout(instance, log, notes)
+    run = instance.tool("readout", log)
+    if sc["fault"] != "none":
+        begins, ends, length = READOUT_PHASES[sc["step"]]
+        if not wait_for(run, lambda: re.search(begins, instance.last_log())):
+            finish(run, instance)
+            return dict(result="NO-STEP", runs=1)
+        time.sleep(length * sc["at"] / 100)
+        if re.search(ends, instance.last_log()):
+            notes["mistimed"] = True
+        inject(instance, sc["fault"], sc["arg"], notes)
+        if sc["fault"] == "crash":
+            run.wait(timeout=60)
+            time.sleep(sc["arg"])
+    finish(run, instance)
+    runs = 1
+    while readout_problems(instance) != [] and runs <= RECOVERY_RUNS:
+        since = len(instance.stub_said())
+        recover(instance, "sonoff", notes)
+        settle(instance, since)
+        again = "sonoff" if instance.answering() else "readout"
+        notes.setdefault("then", []).append(again)
+        finish(instance.tool(again, log), instance)
+        runs += 1
+    problems = readout_problems(instance)
+    notes["readout"] = problems if problems is not None else ["none kept"]
+    if notes.get("mistimed"):
+        return dict(result="MISTIMED", runs=runs)
+    if not_fired(sc["fault"], notes):
+        return dict(result="NOT-FIRED", runs=runs)
+    if problems != []:
+        return dict(result="FAIL-READOUT", runs=runs)
+    return dict(result="PASS" if sonoff_works(instance) else "FAIL-NOT-SONOFF", runs=runs)
+
+
+def refused_readout(instance: Instance, log: Path, notes: dict) -> dict:
+    """A readout started on a plug on OpenBeken: it must be refused, nothing
+    served to the plug, which is left answering on its firmware."""
+    run = instance.tool("readout", log)
+    finish(run, instance)
+    said = instance.last_log()
+    notes["said"] = (re.findall(r"FAILED: (.*)", said) or ["nothing"])[-1]
+    if run.returncode == 0 or SERVED.search(said):
+        return dict(result="FAIL-NOT-REFUSED", runs=1)
+    return dict(result="PASS" if instance.answering() else "FAIL-DISTURBED", runs=1)
 
 
 def all_passed(ids_file: str | None = None) -> bool:

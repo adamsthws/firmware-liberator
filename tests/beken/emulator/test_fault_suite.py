@@ -15,7 +15,7 @@ class ScenarioTests(unittest.TestCase):
         found = fault_suite.scenarios()
         ids = [sc["id"] for sc in found]
         self.assertEqual(len(ids), len(set(ids)))
-        self.assertEqual({sc["route"] for sc in found}, set(fault_suite.ROUTES))
+        self.assertEqual({sc["route"] for sc in found}, set(fault_suite.ROUTES) | {"sonoff>readout", "openbeken>readout"})
 
     def test_the_steps_that_write_are_also_faulted_early_and_late(self):
         ids = {sc["id"] for sc in fault_suite.scenarios()}
@@ -495,6 +495,132 @@ class InstanceTests(unittest.TestCase):
         self.assertEqual((instance.plug, instance.network, instance.computer),
                          ("autoflash-beken-emu-3", "autoflash-beken-emu-3", "autoflash-beken-emu-computer-3"))
         self.assertEqual(instance.state, fault_suite.REPO / "captures/emulation/beken/state-3")
+
+
+
+class ReadoutScenarioTests(unittest.TestCase):
+    """Readouts (cli.py readout): of a stock plug, faulted where it matters
+    most, and of a plug on OpenBeken, which must be refused."""
+
+    def test_the_readouts_listed(self):
+        self.assertEqual([sc["id"] for sc in fault_suite.scenarios() if sc["route"].endswith(">readout")], [
+            "sonoff>readout:start:none-unattended", "sonoff>readout:read:plugoff-1", "sonoff>readout:read:outage-30",
+            "sonoff>readout:read:crash-1", "sonoff>readout:back@10:plugoff-1", "sonoff>readout:back@10:outage-30",
+            "openbeken>readout:start:none-refused"])
+
+    def test_a_readout_is_run_as_one_found_by_itself(self):
+        from unittest import mock
+        with mock.patch.object(fault_suite.subprocess, "Popen") as popen, tempfile.TemporaryDirectory() as tmp:
+            fault_suite.Instance(3).tool("readout", Path(tmp, "tool.log"))
+            fault_suite.Instance(3).tool("sonoff", Path(tmp, "tool.log"), new=True)
+        readout, conversion = (c.args[0][3:] for c in popen.call_args_list)
+        # No --plug-ip: a Beken plug answers no discovery, and is found by its hardware address (a9f1a13).
+        self.assertEqual(readout, ["computer", "tools/autoflash/cli.py", "readout", "--unattended",
+                                   "--env-file", "captures/tool.env"])
+        self.assertEqual(conversion[2:3] + conversion[-3:], ["run", "--firmware", "sonoff", "--new"])
+
+    def test_each_phase_is_timed_from_what_the_readout_says(self):
+        import re
+        from unittest import mock
+        from tools.autoflash import output, readout_beken
+        said = []
+        with mock.patch.object(output, "say", side_effect=said.append), mock.patch.object(output, "progress"), \
+                mock.patch.object(output, "progress_clear"), \
+                mock.patch.object(readout_beken.openbeken, "read_flash", return_value=b"\xff" * readout_beken.WHOLE_FLASH), \
+                mock.patch.object(readout_beken.onward, "serve_to_plug"), \
+                mock.patch("tools.ewelink.relay.answers", return_value=True):
+            readout_beken.read_whole_flash(mock.Mock(), "192.0.2.50")
+            readout_beken.revert_to_sonoff(mock.Mock(), "192.0.2.50", mock.Mock())
+            ctx = mock.Mock(account_devices=lambda: [{"deviceid": "1000abcdef", "online": True}],
+                            ewelink_env=lambda: {"EWELINK_PASSWORD": "made-up"})
+            readout_beken.wait_for_sonoff(ctx, "1000abcdef")
+        log = "\n".join(f"[10:00:00] {line}" for line in said)
+        for phase, (begins, ends, _) in fault_suite.READOUT_PHASES.items():
+            self.assertLess(re.search(begins, log).start(), re.search(ends, log).start(), phase)
+
+    def instance(self, tmp, kept=None, answering=False):
+        """A plug whose runs kept `kept` (a readout.tar's bytes, or None)."""
+        run = Path(tmp, "runs/1/run.log")
+        run.parent.mkdir(parents=True, exist_ok=True)
+        run.write_text("[10:00:00] === run started ===\n", encoding="utf-8")
+        if kept is not None:
+            (run.parent / fault_suite.READOUT).write_bytes(kept)
+        return SimpleNamespace(runs=lambda: [run], answering=lambda: answering, last_log=lambda: "",
+                               stub_said=lambda: b"", tool=lambda target, log, **options: SimpleNamespace(target=target))
+
+    def outcome(self, sc, instance, kept_after=None, works=True):
+        from unittest import mock
+        notes = {}
+        tools = []
+
+        def run(target, log, **options):
+            tools.append(target)
+            if kept_after is not None and len(tools) == kept_after:
+                (instance.runs()[0].parent / fault_suite.READOUT).write_bytes(b"whole")
+            return SimpleNamespace(wait=lambda timeout=None: 0)
+        instance.tool = run
+        with mock.patch.object(fault_suite, "finish"), mock.patch.object(fault_suite, "wait_for", return_value=True), \
+                mock.patch.object(fault_suite, "inject"), mock.patch.object(fault_suite, "recover"), \
+                mock.patch.object(fault_suite, "settle"), mock.patch.object(fault_suite.time, "sleep"), \
+                mock.patch.object(fault_suite, "sonoff_works", return_value=works), \
+                mock.patch.object(fault_suite.fault_verdicts, "readout_problems",
+                                  side_effect=lambda data, family: [] if data == b"whole" else ["no info.txt"]):
+            return fault_suite.readout_scenario(instance, sc, Path("tool.log"), notes), tools, notes
+
+    SC = {"id": "x", "route": "sonoff>readout", "step": "read", "fault": "crash", "arg": 1, "at": 40}
+
+    def test_a_whole_readout_kept_and_sonoff_working_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            outcome, tools, _ = self.outcome(self.SC, self.instance(tmp), kept_after=1)
+        self.assertEqual((outcome["result"], tools), ("PASS", ["readout"]))
+
+    def test_a_plug_left_on_openbeken_is_put_back_on_sonoff_then_read_out_again(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = self.instance(tmp, answering=True)
+            outcome, tools, notes = self.outcome(self.SC, instance, kept_after=3)
+        # Still answering as OpenBeken after the conversion, in this stand-in: sent to Sonoff again.
+        self.assertEqual(tools[:2], ["readout", "sonoff"])
+        self.assertEqual(notes["then"][0], "sonoff")
+        self.assertEqual(outcome["result"], "PASS")
+
+    def test_none_kept_whole_or_sonoff_not_working_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            outcome, tools, notes = self.outcome(self.SC, self.instance(tmp, kept=b"part"))
+        self.assertEqual(outcome["result"], "FAIL-READOUT")
+        self.assertEqual(len(tools), 1 + fault_suite.RECOVERY_RUNS)
+        self.assertEqual(notes["readout"], ["no info.txt"])
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self.outcome(self.SC, self.instance(tmp), kept_after=1, works=False)[0]["result"],
+                             "FAIL-NOT-SONOFF")
+
+    def test_a_fault_after_its_phase_is_mistimed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = self.instance(tmp)
+            instance.last_log = lambda: "[10:00:00]     Read 4,194,304 bytes.\n"
+            self.assertEqual(self.outcome(self.SC, instance, kept_after=1)[0]["result"], "MISTIMED")
+
+    def refused(self, code, said="", answering=True):
+        from unittest import mock
+        sc = {"id": "x", "route": "openbeken>readout", "step": "start", "fault": "none", "arg": "refused", "at": 40}
+        instance = SimpleNamespace(tool=lambda target, log, **options: SimpleNamespace(returncode=code),
+                                   last_log=lambda: said, answering=lambda: answering)
+        with mock.patch.object(fault_suite, "finish"):
+            return fault_suite.readout_scenario(instance, sc, Path("tool.log"), {})["result"]
+
+    def test_a_readout_of_a_plug_on_openbeken_must_be_refused_leaving_it_as_it_was(self):
+        self.assertEqual(self.refused(1, "[10:00:00] FAILED: Device is offline in eWeLink"), "PASS")
+        self.assertEqual(self.refused(0), "FAIL-NOT-REFUSED")
+        self.assertEqual(self.refused(1, "[10:00:00] Serving only 192.0.2.50 at http://192.0.2.10:8088/user1.bin"),
+                         "FAIL-NOT-REFUSED")
+        self.assertEqual(self.refused(1, answering=False), "FAIL-DISTURBED")
+
+    def test_sonoff_online_is_told_from_the_stub_since_a_moment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = fault_suite.Instance(3)
+            instance.state = Path(tmp)
+            (Path(tmp) / "stub.log").write_bytes(b'{"TZ":{"x":1}}\nlater\n')
+            self.assertTrue(instance.online())
+            self.assertFalse(instance.online(since=10))
 
 
 if __name__ == "__main__":

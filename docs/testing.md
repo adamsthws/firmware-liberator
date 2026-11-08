@@ -246,7 +246,7 @@ every step, in every direction. The two are laid out alike below.
 ### The Espressif fault suite
 
 `tools/espressif/emulator/fault_suite.py` puts every fault in the way of every step, in
-every direction - 1,599 scenarios on an S60:
+every direction - 1,606 scenarios on an S60:
 
 - **Directions:** Sonoff to Tasmota, Sonoff to ESPHome, Tasmota to ESPHome,
   Tasmota to Sonoff, ESPHome to Tasmota, ESPHome to Sonoff, and official Tasmota
@@ -357,6 +357,24 @@ every direction - 1,599 scenarios on an S60:
   long each phase kept the plug busy (`plug_busy`), and `report` lists the
   longest: a real S60TPG once stopped answering after 70-90 s busy, though an
   S60TPF in the test reports was busy for two minutes without harm.
+- **Readouts** (`sonoff>readout`, `tasmota>readout`: `readout` takes no step
+  of the tool's, so their phases are timed from what it says): a plug fresh
+  from Sonoff's firmware read out unattended, found as a person who does not
+  know its address would have it found; then the same with the plug switched
+  off for a second, or the network gone for 30 s, at 40% of the read (12 s, as
+  C3 reads the flash through the same bridge) and of putting Sonoff's firmware
+  back (about 10 s in the emulator: the person switching the plug off and on
+  as the readout asks, 6 s in, then Sonoff's firmware answering; the fault
+  lands about 7 s in, as that firmware starts), and the computer crashing
+  mid-read. After each, the readout is run again as a person would, the plug
+  switched off and on where the run says to. It **passes** when a run kept
+  `readout.tar`, unsent, holding every file
+  [readouts.md](readouts.md#what-is-in-one) lists for an Espressif device,
+  with the whole flash its own hash check matched (FAIL-READOUT), and the plug
+  answers as Sonoff's firmware at the end (FAIL-NOT-SONOFF). And a readout of a
+  plug converted to Tasmota, given its address: it must stop before anything
+  is sent to the plug (FAIL-NOT-REFUSED), which keeps its Tasmota and template
+  (FAIL-DISTURBED).
 - **When:** at 40% of the step's usual time; at the riskiest steps also at 10%
   and 90%, and two faults running.
 
@@ -419,7 +437,7 @@ from the copy's record, and its results go to a folder of their own
 temporary table, Tasmota to ESPHome goes through the hub, as the tool takes
 it there, with `D5ot` added and that device's own step lengths; on any device
 but the S60 the runs of earlier releases and `update>esphome` are left out,
-as those releases knew no other plug. The TH Elite has 1,665 scenarios.
+as those releases knew no other plug. The TH Elite has 1,672 scenarios.
 
 ```sh
 tools/espressif/emulator/fault_suite.py --plug=MAC prep           # the starting plugs (eWeLink)
@@ -457,10 +475,10 @@ A batch against the real cloud runs only the scenarios where eWeLink's own
 behaviour is under test (`cloud` in the list, 75 of them): the send through it
 at C2 at every length of each fault, sending it again at C3fb, a power cut at C3
 and D1 that leaves the plug back on Sonoff's firmware, and a run of an old
-release killed at C2. The rest that need a cloud (`stub`, 162) have their fault
+release killed at C2. The rest that need a cloud (`stub`, 169) have their fault
 once the plug has left Sonoff's firmware, so the stub answers for eWeLink as
-well: a real-cloud batch says how many it left out, and `--stub-cloud batch`
-runs them.
+well - or are readouts, whose send through eWeLink is C2's: a real-cloud batch
+says how many it left out, and `--stub-cloud batch` runs them.
 
 Add `--stub-cloud` to `prep` and `batch` to give each emulator its own local
 eWeLink stand-in instead of the shared real cloud: no cloud lock, so every
@@ -776,7 +794,8 @@ router's DHCP for, it was `autoflash-recovery-CDEF` there from its first
 request and never OpenBeken's own name, and - once ESPHome is on it - the
 interim's settings are gone from its flash. And a plug on the firmware of an
 earlier release is updated, to OpenBeken and to ESPHome, with the same faults:
-`prep-update` makes those plugs, through that release's own suite. 281
+`prep-update` makes those plugs, through that release's own suite. And
+readouts, as the Espressif suite's, but for a Beken device: below. 288
 scenarios; `list openbeken`
 gives the six a new OpenBeken build must pass
 ([updating-firmware.md](updating-firmware.md#5-test)).
@@ -789,6 +808,24 @@ in the emulator, though nothing is wired to it, and back on Sonoff's firmware
 the relay is switched through the stub's eWeLink). `check` holds each way to
 them too. Results are in `captures/emulation/beken/suite/`
 (`AUTOFLASH_BEKEN_EMU_SUITE_DIR` names another folder).
+
+The readouts (`sonoff>readout`, `openbeken>readout`) are the Espressif
+suite's, for a Beken device, which the readout finds by its hardware address
+as it answers no discovery: a plug fresh from Sonoff's firmware read out
+unattended; the same with the plug switched off for a second, or this
+computer off its Wi-Fi for 30 s, at 40% of the read (about 400 s: the whole
+4 MB in 256 paced chunks, where B4 reads 8 in 12 s) and at 10% of putting
+Sonoff's firmware back (100 s, as O2 and K3 take: the fault lands while the
+readout OpenBeken fetches it, the part only the readout has), and the tool
+killed mid-read. After each, as a person would: the plug switched off and on
+where the run says to; Sonoff's firmware put back with the tool (`run
+--firmware sonoff`) where the plug was left on OpenBeken; otherwise the readout
+run again. It passes when a run kept `readout.tar`, unsent, holding every
+file [readouts.md](readouts.md#what-is-in-one) lists for a Beken device and
+the whole 4 MB flash (FAIL-READOUT), and the plug, switched off and on, starts
+Sonoff's firmware and is back in eWeLink (FAIL-NOT-SONOFF). A readout of a plug
+on OpenBeken must fail without serving the plug anything (FAIL-NOT-REFUSED),
+which still answers on OpenBeken (FAIL-DISTURBED).
 
 Each emulated plug takes a core, so two workers suit a laptop. Sonoff's
 firmware restarts by itself once it has its update, in the emulator as on a

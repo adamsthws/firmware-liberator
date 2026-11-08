@@ -1038,6 +1038,9 @@ class ScenarioTests(unittest.TestCase):
             if sc["fault"] in ("lostapp", "notemplate", "bootloop", "safemode"):
                 self.assertEqual(sc["step"], "start", sc["id"])
                 continue
+            if sc["route"].endswith(">readout"):
+                self.assertTrue(sc["step"] == "start" or sc["step"] in fs.STARTS, sc["id"])
+                continue
             if sc["step"] == "C2":
                 continue
             steps = fs.ROUTES[sc["route"]][2]
@@ -1080,6 +1083,183 @@ class EndChecksTests(unittest.TestCase):
     def test_checks_the_emulator_cannot_run_are_no_failure(self):
         self.assertEqual(self.verdict("Not run", target="sonoff")["verdict"], "PASS")
         self.assertEqual(self.verdict("Not run", target="tasmota")["verdict"], "FAIL-CHECKS")
+
+
+class ReadoutScenarioTests(unittest.TestCase):
+    """Readouts (cli.py readout): of a stock plug, faulted where it matters
+    most, and of a converted plug, which must be refused."""
+
+    def scenario(self, route="sonoff>readout", step="read", fault="crash", arg=1):
+        sc = fs.Scenario(24, {"id": fs.sid(route, step, fault, arg), "route": route, "step": step,
+                              "fault": fault, "arg": arg, "at": 40}, "/dev/null")
+        sc.started = 0
+        return sc
+
+    def test_the_readouts_listed_each_on_the_stub(self):
+        readouts = [sc for sc in fs.scenarios() if sc["route"].endswith(">readout")]
+        self.assertEqual([sc["id"] for sc in readouts], [
+            "sonoff>readout:start:none-unattended", "sonoff>readout:read:plugoff-1", "sonoff>readout:read:outage-30",
+            "sonoff>readout:read:crash-1", "sonoff>readout:back:plugoff-1", "sonoff>readout:back:outage-30",
+            "tasmota>readout:start:none-refused"])
+        self.assertEqual({fs.kind_of(sc) for sc in readouts}, {"stub"})   # signed in, and the bridge sent, there
+
+    def test_a_readout_is_run_as_one_and_a_refused_one_given_the_plugs_address(self):
+        sc = self.scenario()
+        with mock.patch.object(fs.subprocess, "call", return_value=0) as call:
+            sc.run_tool("readout", fresh=True)
+            sc.run_tool("readout", ["--plug-ip", fs.PLUG_IP], source="suite-tasmota")
+        stock, converted = (c.args[0] for c in call.call_args_list)
+        self.assertIn("--readout", stock)
+        self.assertNotIn("--firmware", stock)
+        self.assertEqual(stock[-1], "--")   # found as a person without its address finds it
+        self.assertEqual(converted[-3:], ["--", "--plug-ip", fs.PLUG_IP])
+        script = (fs.REPO / "tools/espressif/emulator/unattended-test.sh").read_text(encoding="utf-8")
+        self.assertIn("--readout) driver_args=(--command readout)", script)
+
+    def readout_says(self):
+        """What readout_espressif says from the read to the plug back on Sonoff's firmware."""
+        from tools.autoflash import output, prompts, readout_espressif
+        said = []
+        with mock.patch.object(output, "say", side_effect=said.append), \
+                mock.patch.object(output, "transient_begin"), mock.patch.object(output, "transient_end"), \
+                mock.patch.object(prompts, "section", side_effect=lambda title, lines: said.extend([title, *lines])), \
+                mock.patch.object(prompts, "wait_for_key"), \
+                mock.patch.object(readout_espressif.installer, "back_on_sonoff", return_value=True), \
+                mock.patch.object(readout_espressif.dump_stock_flash, "read_dump", return_value=(b"", b"", {})), \
+                mock.patch.object(readout_espressif.dump_stock_flash, "summary", return_value=[]), \
+                mock.patch.object(readout_espressif.dump_stock_flash, "read_info", return_value=b""), \
+                mock.patch.object(readout_espressif, "find_bridge", return_value=fs.PLUG_IP), \
+                mock.patch.object(readout_espressif, "firewall"), mock.patch.object(readout_espressif, "hostsys"), \
+                mock.patch.object(readout_espressif.safety_locks, "lifted"), \
+                mock.patch.object(readout_espressif.safety_locks, "say_lock_back"), \
+                mock.patch.object(prompts, "warning_box"), mock.patch.object(prompts, "require_word", return_value=True), \
+                tempfile.TemporaryDirectory() as tmp:
+            ctx = mock.Mock(dir=Path(tmp))
+            chip = mock.Mock(bridge_app=mock.Mock(return_value=b"app"))
+            with mock.patch.object(readout_espressif.build_vendor_ota, "build_wrapper", return_value=b"ota"), \
+                    mock.patch.object(readout_espressif.build_vendor_ota, "app_version", return_value="1"):
+                readout_espressif.read_out(ctx, chip, "FWSW-E32S60-S60-ESP32C3FN4", "1.2.0")
+            readout_espressif.back_on_sonoff(ctx)
+        return "\n".join(f"[10:00:00] {line}" for line in said)
+
+    def test_each_phase_is_timed_from_what_the_readout_says(self):
+        import re
+        said = self.readout_says()
+        for phase in ("read", "back"):
+            self.assertRegex(said, fs.STARTS[phase][0], phase)
+            self.assertRegex(said, fs.ENDS[phase], phase)
+            self.assertLess(re.search(fs.STARTS[phase][0], said).start(), re.search(fs.ENDS[phase], said).start())
+        # The person switches the plug off and on where the readout asks, as the run waits.
+        self.assertRegex(said, fs.READOUT_SWITCH)
+
+    def test_a_fault_putting_sonoff_back_lands_as_its_firmware_starts(self):
+        # In the emulator the phase lasts 10 s: the person's power cycle 6 s in,
+        # Sonoff's firmware answering 4 s after. At 25 s, 40% fell at its end (MISTIMED).
+        at = fs.STARTS["back"][1] * 40 / 100
+        self.assertGreater(at, 6)
+        self.assertLess(at, 10)
+
+    def test_the_person_switches_the_plug_off_and_on_where_the_readout_asks(self):
+        import threading
+        sc = self.scenario()
+        stop = threading.Event()
+        asked = "[10:00:00] Read. Now put it back on its Sonoff firmware\n" \
+                "[10:00:00]     Switch the device off, wait five seconds, and switch it on again (for a\n"
+        looks = iter([[(1.0, Path("run.log"), "=== run started ===\n")], [(1.0, Path("run.log"), asked)]])
+
+        def logs(state):
+            found = next(looks, None)
+            if found is None:
+                stop.set()
+                return []
+            return found
+        with mock.patch.object(sc, "ex", return_value=mock.Mock(stdout="", returncode=0)) as ex, \
+                mock.patch.object(fs, "run_logs", side_effect=logs), mock.patch.object(stop, "wait"):
+            sc.person(stop)
+        self.assertIn(mock.call(fs.PLUG_CMD, "restart"), ex.call_args_list)
+        self.assertEqual(sc.notes["switched"], 1)
+
+    def test_after_a_crash_the_readout_is_run_again_as_the_run_advised(self):
+        sc = self.scenario()
+        sc.fired = 1.0   # the crash came while the read was under way
+        # Killed, it said nothing; run again, it found the plug on the bridge.
+        advice = ["the device is already running our installer firmware ... switch the device off and on", ""]
+        with mock.patch.object(fs.threading, "Thread"), mock.patch.object(fs.time, "sleep"), \
+                mock.patch.object(sc, "run_tool", side_effect=[137, 1, 0]) as runs, \
+                mock.patch.object(sc, "readout_result", return_value="no readout"), \
+                mock.patch.object(sc, "readout_done", side_effect=[False, False, False, True]), \
+                mock.patch.object(sc, "last_said", side_effect=advice[::-1]), \
+                mock.patch.object(sc, "ex") as ex, mock.patch.object(sc, "finish_readout") as finish:
+            sc.go_readout()
+        self.assertEqual([c.args[0] for c in runs.call_args_list], ["readout"] * 3)
+        self.assertEqual(ex.call_args_list, [mock.call(fs.PLUG_CMD, "restart")])
+        self.assertEqual([code for code, _ in finish.call_args.args[0]], [137, 1, 0])
+
+    def test_a_fault_that_never_came_proves_nothing(self):
+        sc = self.scenario()
+        with mock.patch.object(fs.threading, "Thread"), mock.patch.object(sc, "run_tool", return_value=0), \
+                mock.patch.object(sc, "readout_result", return_value="Readout kept, not sent"), \
+                mock.patch.object(sc, "finish_readout") as finish:
+            sc.go_readout()
+        self.assertEqual(finish.call_args.args[1], "NOT-FIRED")
+
+    def verdict(self, route="sonoff>readout", kept=(), firmware="sonoff", left=(), **notes):
+        sc = self.scenario(route=route)
+        sc.target = "sonoff" if route == "sonoff>readout" else "tasmota"
+        sc.memory = mock.Mock(note=mock.Mock(return_value={}))
+        sc.notes.update(notes)
+        with mock.patch.object(sc, "leftovers", return_value=list(left)), \
+                mock.patch.object(sc, "names_seen", return_value=([], [])), \
+                mock.patch.object(sc, "readout_kept", return_value=None if kept is None else list(kept)), \
+                mock.patch.object(sc, "firmware_now", return_value=firmware), \
+                mock.patch.object(sc, "bricked", return_value=False), mock.patch.object(fs, "run_logs", return_value=[]), \
+                mock.patch.object(sc, "keep", side_effect=lambda results, verdict, left: verdict):
+            return sc.finish_readout([(0, "Readout kept, not sent")], None)
+
+    def test_a_whole_readout_kept_and_the_plug_back_on_sonoff_passes(self):
+        self.assertEqual(self.verdict(), "PASS")
+
+    def test_a_readout_short_of_whole_or_none_fails(self):
+        self.assertEqual(self.verdict(kept=["no efuse.bin.xz"]), "FAIL-READOUT")
+        self.assertEqual(self.verdict(kept=None), "FAIL-READOUT")
+
+    def test_a_plug_not_back_on_sonoff_fails(self):
+        self.assertEqual(self.verdict(firmware="installer"), "FAIL-NOT-SONOFF")
+
+    def test_a_fault_landed_after_its_phase_is_mistimed(self):
+        self.assertEqual(self.verdict(mistimed=True), "MISTIMED")
+        self.assertEqual(self.verdict(left=["firewall rule"]), "LEFTOVER")
+
+    def refused(self, code, sent=False, template=True):
+        sc = self.scenario(route="tasmota>readout", step="start", fault="none", arg="refused")
+        logs = [(1.0, Path("run.log"), "$ python tools/espressif/serve_tasmota_ota.py" if sent else "FAILED: no")]
+        with mock.patch.object(sc, "run_tool", return_value=code) as run, \
+                mock.patch.object(sc, "readout_result", return_value="Stopped"), \
+                mock.patch.object(fs, "run_logs", return_value=logs), \
+                mock.patch.object(sc, "template_ok", return_value=template), \
+                mock.patch.object(sc, "finish_readout", side_effect=lambda results, special: special) as finish:
+            verdict = sc.go_readout_refused()
+        self.assertEqual(run.call_args.args[:2], ("readout", ["--plug-ip", fs.PLUG_IP]))
+        return verdict, finish
+
+    def test_a_readout_of_a_converted_plug_must_be_refused_leaving_it_as_it_was(self):
+        self.assertEqual(self.refused(1)[0], None)   # judged as any: names, leftovers
+        self.assertEqual(self.refused(0)[0], "FAIL-NOT-REFUSED")
+        self.assertEqual(self.refused(1, sent=True)[0], "FAIL-NOT-REFUSED")
+        self.assertEqual(self.refused(1, template=False)[0], "FAIL-DISTURBED")
+
+    def test_how_a_readout_ended(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sc = self.scenario()
+            sc.state = Path(tmp)
+            run = Path(tmp, "work/captures/plugs/unidentified/runs/1/run.log")
+            run.parent.mkdir(parents=True)
+            for text, said in (("[1] Readout saved in captures/x/readout.tar, not sent.\n", "Readout kept, not sent"),
+                               ("[1] FAILED: the device's memory could not be read\n",
+                                "Stopped: the device's memory could not be read"),
+                               ("[1] Reading the device's memory\n", "no readout")):
+                run.write_text(f"=== run started ===\n{text}", encoding="utf-8")
+                self.assertEqual(sc.readout_result(), said)
 
 
 TH = kinds.SONOFF_TH_ELITE  # its layout leaves Tasmota through a temporary table
