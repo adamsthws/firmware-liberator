@@ -131,51 +131,53 @@ def configure_plug_wifi(ctx: Context, network: str | None) -> str:
         "own setup network for them. Type them here and this sends them to the",
         "device for you once you have joined that network.",
     ])
-    prompts.section("Join the device's setup network", [
-        f"In {hostsys.wifi_menu_hint()}, join:",
-        f"    {network}      (open - no password)",
-        "",
-        "If a setup page opens by itself, close it: while that page is open the",
-        "device keeps scanning for networks, which can drop this computer off its",
-        "network.",
-        "",
-        "The network can vanish for a few seconds every three minutes, as the",
-        "device restarts to try your Wi-Fi again: if this computer is dropped off",
-        "it, join it again.",
-    ])
-    wait_until_joined(network)
-    outcome = "manual"
+    with output.until_done():   # the instructions, and the sending, go once it has the details
+        prompts.section("Join the device's setup network", [
+            f"In {hostsys.wifi_menu_hint()}, join:",
+            f"    {network}      (open - no password)",
+            "",
+            "If a setup page opens by itself, close it: while that page is open the",
+            "device keeps scanning for networks, which can drop this computer off its",
+            "network.",
+            "",
+            "The network can vanish for a few seconds every three minutes, as the",
+            "device restarts to try your Wi-Fi again: if this computer is dropped off",
+            "it, join it again.",
+        ])
+        wait_until_joined(network)
+        outcome = "manual"
+        if credentials is not None:
+            name_with_the_wifi(ctx)
+            ssid, password = credentials
+            for attempt in range(1, SETUP_SEND_ATTEMPTS + 1):
+                output.tell(f"    Sending the Wi-Fi details for '{ssid}'. The device tests them first -")
+                output.tell("    stay on its network for about 20 seconds...")
+                try:
+                    outcome, address = setup_network.send_wifi(ssid, password)
+                except setup_network.SetupError as exc:
+                    outcome, address = "unknown", None
+                    output.tell(f"    {exc}")
+                if outcome == "saved" or attempt == SETUP_SEND_ATTEMPTS:
+                    break
+                if outcome == "rejected":
+                    if prompts.UNATTENDED:
+                        break  # nobody to type others: on to the plug's page, below
+                    output.tell(f"    The device could not connect to '{ssid}' with those details. Type them")
+                    output.tell("    again - the network's name exactly as it appears, and its password:")
+                    ssid, password = ask_credentials()
+                elif setup_network_gone(ctx, network):
+                    # No word, as it took them: tested, saved and restarted onto the
+                    # Wi-Fi before its answer was asked for, its network gone with
+                    # it (seen in the fault suite). Sent again, the run would wait
+                    # for this computer to join a network that is no more.
+                    outcome = "gone"
+                    break
+                else:
+                    output.tell(f"    No word from the device; sending them again (attempt {attempt + 1} "
+                         f"of {SETUP_SEND_ATTEMPTS}).")
+                    time.sleep(5)
+                wait_until_joined(network)  # dropped off it meanwhile, joined again
     if credentials is not None:
-        name_with_the_wifi(ctx)
-        ssid, password = credentials
-        for attempt in range(1, SETUP_SEND_ATTEMPTS + 1):
-            output.tell(f"    Sending the Wi-Fi details for '{ssid}'. The device tests them first -")
-            output.tell("    stay on its network for about 20 seconds...")
-            try:
-                outcome, address = setup_network.send_wifi(ssid, password)
-            except setup_network.SetupError as exc:
-                outcome, address = "unknown", None
-                output.tell(f"    {exc}")
-            if outcome == "saved" or attempt == SETUP_SEND_ATTEMPTS:
-                break
-            if outcome == "rejected":
-                if prompts.UNATTENDED:
-                    break  # nobody to type others: on to the plug's page, below
-                output.tell(f"    The device could not connect to '{ssid}' with those details. Type them")
-                output.tell("    again - the network's name exactly as it appears, and its password:")
-                ssid, password = ask_credentials()
-            elif setup_network_gone(ctx, network):
-                # No word, as it took them: tested, saved and restarted onto the
-                # Wi-Fi before its answer was asked for, its network gone with
-                # it (seen in the fault suite). Sent again, the run would wait
-                # for this computer to join a network that is no more.
-                outcome = "gone"
-                break
-            else:
-                output.tell(f"    No word from the device; sending them again (attempt {attempt + 1} "
-                     f"of {SETUP_SEND_ATTEMPTS}).")
-                time.sleep(5)
-            wait_until_joined(network)  # dropped off it meanwhile, joined again
         if outcome == "saved":
             output.tell(f"    The device connected to '{ssid}' and is restarting onto it"
                 + (f" at {address}." if address else "."))

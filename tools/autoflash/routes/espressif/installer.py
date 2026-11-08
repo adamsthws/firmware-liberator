@@ -286,17 +286,28 @@ def reach_bridge(ctx: Context, *, tasmota: bool = False) -> str:
     if address:
         output.say(f"    The installer joined your network at {address}.")
         return address
-    # The installer hands the plug back to Sonoff's firmware when it is switched
-    # off and on before its work is done - by design, so a power cut never
-    # strands it.  Waiting for the installer then waits for ever: looked for
-    # before the wait, and during it.
-    asked = False
+    # What it asks, and what is said while it is done, goes once the bridge is
+    # reached: the stage's other notes are no taller for it.
+    with output.until_done():
+        return join_bridge(ctx, tasmota=tasmota)
+
+
+def join_bridge(ctx: Context, *, tasmota: bool = False) -> str:
+    """reach_bridge's wait for the bridge's own network, asked to be joined.
+
+    The installer hands the plug back to Sonoff's firmware when it is switched
+    off and on before its work is done - by design, so a power cut never
+    strands it.  Waiting for the installer then waits for ever: looked for
+    before the wait, and during it."""
+    asked = said_back = False
+    asked_at = None   # where the screen was as the person was asked to join it
     while True:
         address = resend_if_back_on_sonoff(ctx)
         if address:
             return address
         bridge = prompts.find_ssid(names.bridge_networks(ctx)) or names.our_setup_network(ctx)
         if not asked:
+            asked_at = output.mark()
             ask_to_join_bridge(bridge, tasmota=tasmota and bool(ctx.state.input("tasmota_named_alone")))
             asked = True
 
@@ -306,8 +317,18 @@ def reach_bridge(ctx: Context, *, tasmota: bool = False) -> str:
         found = wait_for_bridge(ctx, bridge.split()[0], gone_back=gone_back, tasmota=tasmota)
         if found != BACK_ON_SONOFF:
             return found or setup_network.SETUP_HOST
-        output.tell("    While waiting, the device went back to Sonoff's own firmware (switched off")
-        output.tell("    and on, say).")
+        # Back on Sonoff's firmware, the bridge's network has gone with it:
+        # the instructions to join it are taken off, and given again once
+        # the installer, sent again, has made it again.  Seen in the fault
+        # suite: kept, they stood above the installer sent again, 27 rows.
+        output.rewind(asked_at)
+        asked = False
+        if not said_back:   # once: each time after says nothing new
+            output.tell("    While waiting, the device went back to Sonoff's own firmware (switched off")
+            output.tell("    and on, say).")
+            said_back = True
+        else:
+            output.say("    While waiting, the device went back to Sonoff's own firmware again.")
 
 
 def resend_if_back_on_sonoff(ctx: Context) -> str | None:
@@ -498,8 +519,8 @@ def step_berry_tasmota(ctx: Context) -> dict[str, Any]:
         if found:
             return {"plug_ip": found, "upload_route": "home network", "wifi": "preset",
                     "device_name": ctx.state.input("device_name")}
-        prompts.section("Tasmota has not appeared on your network", quick_power_cycle_hint(ctx))
-        return finish_tasmota_setup(ctx, route="home network", wait=900.0)
+        return finish_tasmota_setup(ctx, route="home network", wait=900.0,
+                                    advice=("Tasmota has not appeared on your network", quick_power_cycle_hint(ctx)))
     return finish_tasmota_setup(ctx, route="home network")
 
 
@@ -822,17 +843,26 @@ def tasmota_or_its_network(ctx: Context, *, timeout: float,
     return None
 
 
-def finish_tasmota_setup(ctx: Context, *, route: str, wait: float = 120.0) -> dict[str, Any]:
-    output.say("")
-    output.say("Waiting for Tasmota to start and make its setup network...")
-    networks = names.setup_networks(ctx)
-    if ctx.state.input("tasmota_named_alone"):
-        # Named as the installer was, Tasmota's network has the installer's
-        # name: looked for once the installer has gone, so that its network,
-        # still listed for a moment, is not taken for Tasmota's.
-        installer_gone(timeout=60.0)
-        networks = (names.our_setup_network(ctx), *networks)
-    found = tasmota_or_its_network(ctx, timeout=wait, networks=networks)
+def finish_tasmota_setup(ctx: Context, *, route: str, wait: float = 120.0,
+                         advice: tuple[str, list[str]] | None = None) -> dict[str, Any]:
+    """Tasmota found on the home network, or set up through its own.
+
+    `advice`: a section's title and lines, shown while Tasmota or its setup
+    network is waited for - what to do if neither appears - and taken off the
+    screen once one does: it has done its job.  Left if neither does, as it is
+    then still what to do."""
+    output.transient_begin()
+    if advice:
+        prompts.section(*advice)
+    try:
+        found = _wait_for_tasmota(ctx, wait)
+    except BaseException:
+        output.transient_keep()
+        raise
+    if found:
+        output.transient_end()
+    else:
+        output.transient_keep()
     if found and found[0] == "home":
         return {"plug_ip": found[1], "upload_route": route, "wifi": "preset",
                 "device_name": ctx.state.input("device_name")}
@@ -843,6 +873,21 @@ def finish_tasmota_setup(ctx: Context, *, route: str, wait: float = 120.0) -> di
     ip = join.configure_plug_wifi(ctx, network)
     named = network if network != names.our_setup_network(ctx) else ctx.state.input("device_name")
     return {"plug_ip": ip, "device_name": named, "upload_route": route}
+
+
+def _wait_for_tasmota(ctx: Context, wait: float) -> tuple[str, str] | None:
+    """finish_tasmota_setup's wait: Tasmota on the home network, or its setup
+    network; None if neither appears within `wait` seconds."""
+    output.say("")
+    output.say("Waiting for Tasmota to start and make its setup network...")
+    networks = names.setup_networks(ctx)
+    if ctx.state.input("tasmota_named_alone"):
+        # Named as the installer was, Tasmota's network has the installer's
+        # name: looked for once the installer has gone, so that its network,
+        # still listed for a moment, is not taken for Tasmota's.
+        installer_gone(timeout=60.0)
+        networks = (names.our_setup_network(ctx), *networks)
+    return tasmota_or_its_network(ctx, timeout=wait, networks=networks)
 
 
 def installer_gone(*, timeout: float) -> None:

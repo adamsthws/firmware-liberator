@@ -137,7 +137,12 @@ check.
   join a network, long since done with; the installer sent again. A step done
   again because a later one found it had not taken is drawn afresh too, and the
   run says why only if it still does not take. While a stage is done again its
-  line says "Retrying" rather than "Underway". The run's log keeps everything.
+  line says "Retrying" rather than "Underway". Instructions to join a network go
+  as soon as it is joined, and a stage's line is no longer drawn again under each
+  of its notes, so a stage with much to say stays short enough to clear. A window
+  under 40 rows is told, in a line, that maximising it fits the report at the end
+  on the screen; one of 30 rows or fewer is waited for to grow.
+  The run's log keeps everything.
 - A conversion an earlier version began, carried on by this one, ends on the
   release of Tasmota, ESPHome or OpenBeken this version installs. Where the earlier
   version had already installed its own release - official Tasmota, from the point
