@@ -179,6 +179,40 @@ gone by the time R1 runs; the sector at the end of `ota_1` is not, as every upda
 the way writes only as far as its image. R1 reads it there, and the tool keeps it
 on the way to ESPHome too.
 
+## No restart command
+
+Sonoff's firmware has no command that only restarts the plug, over the eWeLink
+cloud or on the local network: a plug left on it that has stopped answering is
+switched off and on by hand. Every other firmware a conversion leaves a plug on
+part way can be restarted by the tool
+([`restart.py`](../tools/autoflash/restart.py)).
+
+Read from the S60's stock 1.2.0 (strings and the app image's segments, not
+disassembled), on a copy of its dump:
+
+- **The cloud.** The WebSocket's `action` values, listed together at file
+  offset `0x39a84`, are the whole set: `register`, `update`, `upgrade`, `date`,
+  `notify`, `addNotify`, `deleteNotify`, `testNotify`, `resetDispatch` and
+  `redirect`. Only `upgrade` restarts the plug, after writing new firmware;
+  `resetDispatch` and `redirect` reconnect it to the cloud, and need it
+  connected to begin with.
+- **The local network.** eWeLink's LAN control: `/zeroconf/` on port 8081,
+  announced as `_ewelink._tcp`, taking the same `params` as the cloud
+  (`switch`, `pulse`, `startup` and so on). Its routes go through a framework
+  rather than plain string compares, so they cannot all be listed from strings;
+  none is a restart.
+- **Nowhere else.** No `reboot` or `restart` is a command key or value anywhere
+  in the image: the only such strings are ESP-IDF's own crash, watchdog and
+  update logs. A factory reset (the button, or `AT+RESET=` on the serial port)
+  wipes the pairing and settings.
+
+Not traced to its handler: the `params` key `reset` (`0x26514`), listed with the
+energy keys (`startups`, `totalKwh`, `getEventLog`), so most likely the energy
+counters' reset. Settling it, or listing every LAN route, takes disassembly of
+the handlers: a few hours each, and neither can add a restart command, as there
+is no such token. The S61's firmware is the same:
+[Beken research](beken-research.md#no-restart-command).
+
 ## The update path
 
 A stock plug takes its conversion as an update: an app inside Sonoff's 100-byte

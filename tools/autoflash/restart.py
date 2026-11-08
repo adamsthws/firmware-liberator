@@ -12,7 +12,8 @@ answers at its address (detect.identify):
 Not the installer (the bridge): it restarts into Sonoff's firmware, which
 leaves a conversion part way, so it is restarted only where that is meant
 (routes/source.py, readout_espressif.py). Nor Sonoff's own firmware, which has
-no such command, or this project's ESPHome.
+no such command over the cloud or the local network (docs/espressif-research.md,
+"No restart command"), or this project's ESPHome.
 """
 
 from __future__ import annotations
