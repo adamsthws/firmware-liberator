@@ -22,6 +22,7 @@ from tools.autoflash import (
     output,
     prompts,
     report,
+    restart,
     routes,
     runs,
     safety_locks,
@@ -78,7 +79,22 @@ def _execute(ctx: Context, step: str) -> int:
         output.stage_end("stopped")
         return 130  # main() says so, once it has cleaned up
     except errors.GoBack as back:
-        times = int(ctx.state.data.get("captures", {}).get(f"{back.step}.sent_again") or 0) + 1
+        captures = ctx.state.data.get("captures", {})
+        times = int(captures.get(f"{back.step}.sent_again") or 0) + 1
+        host = ctx.state.input("plug_ip")
+        if times > GO_BACK_LIMIT and not captures.get(f"{back.step}.restarted") and host \
+                and restart.restart(host):
+            # Once for a step: the device, answering but not taking it, restarted
+            # as switching it off and on would, and the step sent afresh.
+            ctx.state.capture(f"{back.step}.restarted", True)
+            ctx.state.capture(f"{back.step}.sent_again", 0)
+            ctx.state.mark(step, PENDING)
+            ctx.state.mark(back.step, PENDING, note=back.reason)
+            output.stage_end(back.outcome)
+            output.tell(f"{back.reason}, after it was sent {times - 1} times: the device was restarted. "
+                        f"Doing {back.step} again.")
+            ctx.go_back = back.step
+            return 0
         if times > GO_BACK_LIMIT:
             ctx.state.mark(step, FAILED, error=back.reason)
             output.stage_end("stopped")

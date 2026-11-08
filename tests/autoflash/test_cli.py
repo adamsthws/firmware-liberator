@@ -21,7 +21,8 @@ class BeforeTheRunTests(unittest.TestCase):
         with mock.patch("sys.argv", ["cli.py", "run", *more]), mock.patch("sys.stdout", screen), \
                 mock.patch.object(hostsys, "password_asker"), mock.patch.object(prompts, "UNATTENDED"), \
                 mock.patch.object(installer, "SIMULATED_BACKUP_FAILURES"), \
-                mock.patch.object(beken_images, "SPOIL_STEP"), mock.patch.object(beken_images, "UNKNOWN_TABLE"), \
+                mock.patch.object(beken_images, "SPOIL_STEP"), mock.patch.object(beken_images, "SPOIL_TIMES"), \
+                mock.patch.object(beken_images, "UNKNOWN_TABLE"), \
                 mock.patch.object(cli.signal, "signal"), mock.patch.object(interrupt, "install"), \
                 mock.patch.object(credentials, "load", return_value={}), \
                 mock.patch.object(cli, "adopt_older_runs"), mock.patch.object(output, "start_at_top"), \
@@ -45,6 +46,17 @@ class BeforeTheRunTests(unittest.TestCase):
         self.main(choosing=choosing)
         self.main(choosing=choosing, more=["--simulate-unknown-table"])
         self.assertEqual(seen, [False, True])
+
+    def test_a_test_can_ask_for_an_image_spoilt_a_number_of_times(self):
+        seen = []
+
+        def choosing(*_args, **_kwargs):
+            seen.append((beken_images.SPOIL_STEP, beken_images.SPOIL_TIMES))
+            raise KeyboardInterrupt
+        self.main(choosing=choosing, more=["--simulate-bad-image", "O1:3"])
+        self.main(choosing=choosing, more=["--simulate-bad-image", "J2"])
+        self.main(choosing=choosing)
+        self.assertEqual(seen, [("O1", 3), ("J2", 1), (None, 1)])
 
     def test_q_there_stops_the_same_way(self):
         code, screen = self.main(choosing=prompts.QuitRun("stopped at an operator prompt"))

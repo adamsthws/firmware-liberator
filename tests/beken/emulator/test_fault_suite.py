@@ -230,7 +230,7 @@ class ClearTests(unittest.TestCase):
 
 class BadImageScenarioTests(unittest.TestCase):
     def test_each_step_that_sends_an_image_the_bootloader_installs_has_one_it_refuses(self):
-        found = {sc["id"] for sc in fault_suite.scenarios() if sc["fault"] == "badimage"}
+        found = {sc["id"] for sc in fault_suite.scenarios() if sc["fault"] == "badimage" and sc["arg"] == "once"}
         self.assertEqual(found, {"sonoff>openbeken:B2:badimage-once", "sonoff>esphome:B2:badimage-once",
                                  "sonoff>esphome:J2:badimage-once", "openbeken>esphome:O1:badimage-once",
                                  "interim>esphome:J2:badimage-once"})
@@ -727,6 +727,25 @@ class ReadoutScenarioTests(unittest.TestCase):
             self.assertTrue(instance.online())
             self.assertFalse(instance.online(since=10))
 
+
+
+class RestartImageTests(unittest.TestCase):
+    """badimage-restart: an image refused past the times a run sends it again,
+    so the run restarts the plug (on OpenBeken) and sends it whole."""
+
+    def test_spoilt_once_past_the_runs_limit(self):
+        from tools.autoflash import runner
+        self.assertEqual(fault_suite.SPOILT_PAST_LIMIT, runner.GO_BACK_LIMIT + 1)
+
+    def test_listed_where_the_plug_refusing_it_is_on_openbeken(self):
+        ids = {sc["id"] for sc in fault_suite.scenarios() if sc["arg"] == "restart"}
+        self.assertEqual(ids, {"openbeken>esphome:O1:badimage-restart", "interim>esphome:J2:badimage-restart",
+                               "sonoff>esphome:J2:badimage-restart"})
+
+    def test_what_the_run_says_as_it_restarts_the_plug_is_seen(self):
+        said = ("O2 was not installed: the device restarted on the firmware it had, after it was sent 2 times: "
+                "the device was restarted. Doing O1 again.")
+        self.assertRegex(said, fault_suite.RESTARTED)
 
 if __name__ == "__main__":
     unittest.main()
