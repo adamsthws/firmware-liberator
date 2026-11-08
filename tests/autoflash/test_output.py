@@ -454,13 +454,13 @@ class ConciseTests(OutputTestCase):
                  mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, rows))):
                 output.stage_begin(12, "Verifying memory layout")
                 output.stage_end("complete")
-                mark = output.screen_mark()
+                mark = output.mark()
                 output.stage_begin(13, "Staging startup firmware")
                 output.tell("    The device's console: BRY: Berry initialized")
                 output.stage_end("stopped")
                 output.tell("FAILED: the device stopped the stage")
                 output.tell("    That may have been the network - trying again in 10s (attempt 2 of 3).")
-                self.assertEqual(output.screen_rewind(mark), rows > 8)
+                self.assertEqual(output.rewind(mark), rows > 8)
                 output.stage_begin(13, "Staging startup firmware")
                 output.stage_end("complete")
         return self.run_with(FakeTerminal(), False, body)
@@ -478,11 +478,74 @@ class ConciseTests(OutputTestCase):
 
     def test_nothing_is_taken_off_a_screen_that_cannot_be_drawn_over(self):
         def body():
-            mark = output.screen_mark()
+            mark = output.mark()
             output.tell("FAILED: the device stopped the stage")
-            self.assertFalse(output.screen_rewind(mark))
+            self.assertFalse(output.rewind(mark))
         screen, _ = self.run_with(io.StringIO(), False, body)   # piped: no terminal
         self.assertIn("FAILED", screen)
+
+    def drawn(self, body, rows=24):
+        def wrapped():
+            with mock.patch.object(output, "colour_ok", return_value=True), \
+                 mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, rows))):
+                body()
+        screen, _ = self.run_with(FakeTerminal(), False, wrapped)
+        return rendered(screen)
+
+    def test_a_block_inside_another_is_taken_off_and_the_outer_one_too(self):
+        # Seen in context.py: the Wi-Fi section's block, and the credentials
+        # asked in one of their own inside it. The inner one began afresh and
+        # the section stayed on the screen.
+        def body():
+            output.stage_begin(12, "Verifying memory layout")
+            output.transient_begin()
+            output.show("Your Wi-Fi details are needed")
+            output.transient_begin()
+            output.show("Wi-Fi network name:")
+            output.transient_end()
+            self.assertEqual(len(output._s.blocks), 1)
+            output.show("Wi-Fi password:")
+            output.transient_end()
+            output.stage_end("complete")
+        self.assertEqual(self.drawn(body), ["Stage 12 - Verifying memory layout - Complete"])
+
+    def test_a_try_inside_a_block_can_be_taken_off(self):
+        def body():
+            output.stage_begin(3, "Discovering the plug")
+            output.transient_begin()
+            output.show("Where to look.")
+            mark = output.mark()
+            output.show("FAILED: not answering")
+            self.assertTrue(output.rewind(mark))
+            output.show("Asked again")
+            output.transient_end()
+            output.stage_end("complete")
+        self.assertEqual(self.drawn(body), ["Stage 3 - Discovering the plug - Complete"])
+
+    def test_going_back_past_a_block_s_start_closes_it(self):
+        def body():
+            output.stage_begin(3, "Discovering the plug")
+            output.stage_end("complete")
+            mark = output.mark()
+            output.stage_begin(4, "Choosing the firmware")
+            output.transient_begin()
+            output.show("A question cut short")
+            self.assertTrue(output.rewind(mark))
+            self.assertEqual(output._s.blocks, [])
+            output.stage_begin(4, "Choosing the firmware")
+            output.stage_end("complete")
+        self.assertEqual(self.drawn(body), ["Stage 3 - Discovering the plug - Complete",
+                                            "Stage 4 - Choosing the firmware - Complete"])
+
+    def test_a_stage_that_ends_takes_off_every_block_still_open(self):
+        def body():
+            output.stage_begin(5, "Installing Tasmota")
+            output.transient_begin()
+            output.show("A note")
+            output.transient_begin()
+            output.show("Its question")
+            output.stage_end("stopped")
+        self.assertEqual(self.drawn(body), ["Stage 5 - Installing Tasmota - Stopped"])
 
     def test_success_is_green_and_underway_is_bold(self):
         def body():
