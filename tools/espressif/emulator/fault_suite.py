@@ -83,7 +83,7 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash import kinds, plugs  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.report import SONOFF_IDENTITY  # noqa: E402
-from tools.repo import fault_verdicts  # noqa: E402
+from tools.repo import fault_verdicts, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
 from tools.espressif import layouts  # noqa: E402
@@ -1101,6 +1101,7 @@ SWITCH_NOW = re.compile(r"switch it off and on:\s+(?:\[[\d:]+\]\s+)?at this stag
 class Scenario:
     def __init__(self, n, sc, log):
         self.n, self.sc, self.log = n, sc, log
+        self.created = time.time()   # its emulator's start and any turn at eWeLink counted too
         self.state = EMU / f"state-{n}"
         self.fired = None
         self.ctrl_c_before = 0
@@ -2254,7 +2255,8 @@ class Scenario:
         row = {**sc, "instance": self.n, "verdict": verdict, "runs": len(results),
                "results": [r for _, r in results], "codes": [c for c, _ in results],
                "notes": self.notes, "leftovers": left, "log": str(self.log),
-               "finished": time.strftime("%Y-%m-%d %H:%M:%S"), "host": os.uname().nodename}
+               "finished": time.strftime("%Y-%m-%d %H:%M:%S"), "host": os.uname().nodename,
+               "seconds": round(time.time() - self.created)}
         with open(RESULTS, "a", encoding="utf-8") as f:
             f.write(json.dumps(row) + "\n")
         if verdict != "PASS":
@@ -2422,7 +2424,10 @@ def batch(ids_file=None):
     if stale:
         raise SystemExit(f"Saved plugs not on the firmware this checkout installs: {', '.join(stale)}. Run prep.")
     stub_only = 0
-    for i in ids:
+    # The longest first, so the batch does not end on one started last (scenario_times).
+    took = scenario_times.times(EMU)
+    for sc in scenario_times.longest_first([known[i] for i in ids], took):
+        i = sc["id"]
         if i in done:
             continue
         # With a stub per instance nothing is shared, so every scenario runs in
