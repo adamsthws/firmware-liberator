@@ -60,6 +60,10 @@ class RoundTripTests(unittest.TestCase):
         self.found = rb.Stock(b"RBL\0stock", "1.0.2", layouts.BEKEN_4M)
         self.device = {"deviceid": "1000abcdef"}
         self.ctx = a_ctx()
+        # On Sonoff's firmware, as a readout begins: not the readout firmware already.
+        patch = mock.patch.object(rb.openbeken, "is_readout", return_value=False)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def test_nothing_is_sent_without_proceed(self):
         with mock.patch.object(rb.prompts, "warning_box"), \
@@ -98,3 +102,81 @@ class RoundTripTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_a_readout_found_already_on_the_readout_firmware_reads_through_it(self):
+        rb.openbeken.is_readout.return_value = True
+        with mock.patch.object(rb.prompts, "warning_box"), \
+                mock.patch.object(rb.prompts, "require_word", return_value=True), \
+                mock.patch.object(rb, "deliver_readout") as sent, \
+                mock.patch.object(rb, "wait_for_openbeken") as waited, \
+                mock.patch.object(rb.openbeken, "info", return_value={"build": "obk", "chipset": "BK7238"}), \
+                mock.patch.object(rb, "read_whole_flash", return_value=b"\xff" * rb.WHOLE_FLASH) as read, \
+                mock.patch.object(rb.plugs, "save_beken_backup", return_value=(None, False)), \
+                mock.patch.object(rb, "revert_to_sonoff"), mock.patch.object(rb, "wait_for_sonoff", return_value=True):
+            rb.read_out(self.ctx, "FWSW-01-S61-BK7238", "1.0.2", self.device, self.found)
+        sent.assert_not_called()
+        waited.assert_not_called()
+        self.assertEqual(read.call_args.args[1], "192.0.2.60")
+
+
+class PutBackTests(unittest.TestCase):
+    """A device a readout stopped part way left on the readout firmware: its
+    Sonoff firmware put back by the next run."""
+
+    def setUp(self):
+        for name in ("say", "tell", "log_only"):
+            patch = mock.patch.object(rb.output, name)
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.ctx = a_ctx()
+        self.found = rb.Stock(b"RBL\0stock", "1.0.2", layouts.BEKEN_4M)
+        for patch in (mock.patch.object(rb.plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}),
+                      mock.patch.object(rb, "revert_to_sonoff"),
+                      mock.patch.object(rb, "wait_for_sonoff", return_value=True)):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_from_the_firmware_kept_with_the_backup_eWeLink_asked_nothing(self):
+        from tools.autoflash import account
+        with mock.patch.object(rb, "saved_stock", return_value=self.found), \
+                mock.patch.object(account, "ask_account") as asked:
+            said = rb.put_back(self.ctx, "192.0.2.60")
+        asked.assert_not_called()
+        self.assertEqual(rb.revert_to_sonoff.call_args.args[1:], ("192.0.2.60", self.found))
+        rb.wait_for_sonoff.assert_called_once_with(self.ctx, "1000abcdef")
+        self.assertIn("Sonoff's firmware 1.0.2 is back", said)
+
+    def test_else_from_the_file_ewelink_offers_it(self):
+        from tools.autoflash import account
+        from tools.ewelink import offered_firmware
+        offered = account.Asked({"packets": []}, "1.0.2", "SN-BK7238-NEW-01", "NEWBK", [],
+                                {"offers": [{"x": 1}]}, "1000abcdef")
+        with mock.patch.object(rb, "saved_stock", return_value=None), \
+                mock.patch.object(account, "ask_account", return_value=offered) as asked, \
+                mock.patch.object(offered_firmware, "fetch", return_value=(["file"], [])), \
+                mock.patch.object(rb, "stock_from_offered", return_value=self.found):
+            rb.put_back(self.ctx, "192.0.2.60")
+        self.assertEqual(asked.call_args.args[1], "1000abcdef")
+        self.assertEqual(rb.revert_to_sonoff.call_args.args[2], self.found)
+
+    def test_with_neither_it_stops_having_sent_nothing(self):
+        with mock.patch.object(rb, "saved_stock", return_value=None), \
+                mock.patch.object(rb.plugs, "read_plug", return_value={}), \
+                mock.patch("tools.autoflash.readout.device_at", return_value={}):
+            self.ctx.account_devices = lambda: []
+            with self.assertRaisesRegex(rb.Abort, "found neither"):
+                rb.put_back(self.ctx, "192.0.2.60")
+        rb.revert_to_sonoff.assert_not_called()
+
+    def test_the_kept_firmware_is_read_from_the_backup(self):
+        import tempfile
+        from pathlib import Path
+        app = s61_app()
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "stock-app-1.0.2.rbl").write_bytes(rbl.pack(app, name="app", version="1.0.2"))
+            backup = SimpleNamespace(family="beken", directory=Path(tmp))
+            with mock.patch.object(rb.plugs, "find_backup", return_value=backup):
+                found = rb.saved_stock("12:34:56:ab:cd:ef")
+        self.assertEqual((found.version, found.layout), ("1.0.2", layouts.BEKEN_4M))
+        with mock.patch.object(rb.plugs, "find_backup", return_value=None):
+            self.assertIsNone(rb.saved_stock("12:34:56:ab:cd:ef"))

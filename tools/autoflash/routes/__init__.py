@@ -245,6 +245,11 @@ def settle_route(ctx: Context) -> tuple[str | None, str]:
         ctx.state.set_input("firmware", "tasmota")
         return "tasmota", "sonoff"
     running = source.find_current_firmware(ctx)
+    if running == "readout":
+        # A readout stopped part way left a device of no kind on its readout
+        # firmware: whatever was asked for, its Sonoff firmware goes back.
+        from tools.autoflash import readout_beken
+        raise NothingToDo(readout_beken.put_back(ctx, ctx.state.require("plug_ip")[0]))
     updating = running
     published = family_of(ctx.state).published_version(kinds.of_run(ctx.state), running)
     if update.outdated(ctx, running, published) or (

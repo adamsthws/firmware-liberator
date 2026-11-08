@@ -25,7 +25,7 @@ import json
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import firewall, openbeken, output, plugs, prompts, runs, safety_locks
+from tools.autoflash import firewall, hostsys, openbeken, output, plugs, prompts, runs, safety_locks
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes.beken import arrived, onward, stock
 from tools.autoflash.runs import ROOT
@@ -214,8 +214,15 @@ def read_out(ctx: Context, name: str, version: str, device: dict[str, Any],
     if not prompts.require_word(prompts.CONSENT_WORD):
         raise NothingWritten("not confirmed - nothing has been sent to the device")
     output.transient_end()
-    deliver_readout(ctx, name, version, device)
-    host = wait_for_openbeken(ctx)
+    plug_ip = ctx.state.require("plug_ip")[0]
+    if openbeken.is_readout(plug_ip):
+        # A readout stopped part way left it there: eWeLink cannot reach the
+        # device on it, and has no need to.
+        output.say("The readout firmware is on the device already, from a readout stopped part way.")
+        host = plug_ip
+    else:
+        deliver_readout(ctx, name, version, device)
+        host = wait_for_openbeken(ctx)
     info = openbeken.info(host) or {}
     flash = read_whole_flash(ctx, host)
     mac = ctx.state.input("plug_mac")
@@ -242,3 +249,49 @@ def read_and_anonymise(ctx: Context, manifest: dict[str, Any], name: str, versio
     scrubbed, changed = scrub.scrub(flash)
     manifest["anonymised"] = changed
     return {"flash.bin": scrubbed, "info.txt": (json.dumps(info) + "\n").encode()}, back
+
+
+def saved_stock(mac: str | None) -> Stock | None:
+    """Sonoff's firmware as a readout kept it, beside the device's backup."""
+    backup = plugs.find_backup(mac) if mac else None
+    if backup is None or backup.family != "beken":
+        return None
+    for path in sorted(backup.directory.glob("stock-app-*.rbl")):
+        data = path.read_bytes()
+        try:
+            layout, _table = layouts.known(rbl.unpack(data))
+        except (ValueError, rbl.RblError, layouts.LayoutError):
+            continue
+        return Stock(data, path.stem.removeprefix("stock-app-"), layout)
+    return None
+
+
+def put_back(ctx: Context, host: str) -> str:
+    """A device a readout stopped part way left on the readout firmware, at
+    `host`: its Sonoff firmware put back - as the readout kept it with the
+    backup, else the file eWeLink offers it - and what the run ends by
+    saying. Abort if neither is to be had."""
+    from tools.autoflash import account, readout
+    from tools.ewelink import offered_firmware
+    output.say("The device is on the readout firmware, left by a readout stopped part way: "
+               "putting its Sonoff firmware back.")
+    mac = ctx.state.input("plug_mac") or hostsys.mac_of(host)
+    device_id = str(plugs.read_plug(mac).get("ewelink_id") or "") if mac else ""
+    if not device_id:
+        device_id = str(readout.device_at(host, ctx.account_devices() or []).get("deviceid") or "")
+    found = saved_stock(mac)
+    if found is None and device_id:
+        asked = account.ask_account(ctx, device_id)
+        updates, problems = offered_firmware.fetch(asked.latest.get("offers") or [], asked.deviceid)
+        for problem in problems:
+            output.log_only(f"    Offered firmware: {problem}")
+        found = stock_from_offered(updates)
+    if found is None:
+        raise Abort("the device is on the readout firmware, and its Sonoff firmware was found neither with a "
+                    "backup on this computer nor in what eWeLink offers it")
+    revert_to_sonoff(ctx, host, found)
+    if device_id and wait_for_sonoff(ctx, device_id):
+        return (f"Sonoff's firmware {found.version} is back on the device. To send in its readout, "
+                "run the readout again.")
+    return (f"Sonoff's firmware {found.version} was put back on the device, but eWeLink has not shown it online "
+            "yet: switch it off and on.")

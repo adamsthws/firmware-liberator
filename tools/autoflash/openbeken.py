@@ -78,6 +78,17 @@ def is_interim(host: str, timeout: float = 4.0) -> bool | None:
     return True
 
 
+def is_readout(host: str, timeout: float = 4.0) -> bool:
+    """Whether the OpenBeken at `host` is the readout build (readout_beken), a
+    readout's for a few minutes: its driver answers AutoflashKind for
+    "readout" alone, as each build does for its own kind."""
+    try:
+        command(host, "AutoflashKind readout", timeout)
+    except (CommandError, OSError):
+        return False
+    return True
+
+
 def set_interim(host: str, interim: bool, timeout: float = 10.0) -> None:
     """The OpenBeken at `host` made the interim firmware (autoflash-recovery-CDEF),
     or the plug's OpenBeken for good (openbeken-abcdef), as its driver
