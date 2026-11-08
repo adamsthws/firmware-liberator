@@ -197,6 +197,40 @@ def evidence_updated(ctx: Context) -> tuple[bool | None, str]:
     return None, f"The device does not answer as {name}."
 
 
+# How often the plug is asked its release while it confirms an update (seconds):
+# more often than it can restart, so a restart in between is seen.
+CONFIRM_POLL = 5.0
+
+
+def confirmed_by(ctx: Context, name: str, old: str, new: str, confirm: float, wait: float) -> None:
+    """Returns once the plug has answered with `new` for `confirm` seconds on
+    end; stops the run where it goes back to `old`, goes unanswered for
+    `wait` + `confirm` seconds, or keeps restarting (three times as long in all)."""
+    started = held_since = time.monotonic()
+    lost_since: float | None = None
+    while True:
+        time.sleep(CONFIRM_POLL)
+        now = release(ctx)
+        if now == old:
+            raise Abort(f"the device went back to {name} {old}: the update did not hold. Running the same "
+                        "command again sends it again")
+        if now != new:
+            if lost_since is None:
+                output.say(f"    The device stopped answering before {name} {new} had confirmed itself;")
+                output.say("    waiting for it to answer again, then a minute more...")
+                lost_since = time.monotonic()
+            held_since = None
+        elif held_since is None:
+            held_since, lost_since = time.monotonic(), None
+        elif time.monotonic() - held_since >= confirm:
+            return
+        if (lost_since is not None and time.monotonic() - lost_since >= wait + confirm) \
+                or time.monotonic() - started >= 3 * (wait + confirm):
+            raise Abort(f"{name} {new} has not been seen to run for a minute on end since it was sent: "
+                        "whether the device kept it is not known. Switch the device off and on, and run "
+                        "the same command again")
+
+
 def still_updated(ctx: Context) -> tuple[bool, str]:
     """An update recorded done is doubted where the plug still runs the release
     it had (STEP_VERIFIERS): its new one never started, and is sent again."""
@@ -207,7 +241,13 @@ def still_updated(ctx: Context) -> tuple[bool, str]:
 def wait_for_update(ctx: Context, wait: float = 180.0, confirm: float = 0.0) -> dict[str, Any]:
     """The plug started the new release and joined the Wi-Fi; then, for
     `confirm` seconds, still runs it: an ESPHome that takes an update back if
-    it restarts before then (the S60's) has kept it."""
+    it restarts before then (the S60's) has kept it.
+
+    Kept only once it has answered with the new release, asked every
+    CONFIRM_POLL seconds, for `confirm` seconds on end. One it did not answer
+    may have restarted (a power cut, say) before it had confirmed it: the time
+    starts again once it answers, so done is never said of a plug not seen to
+    have kept it."""
     if ctx.dry_run:
         output.say("[dry-run] would wait for the updated firmware to answer")
         return {"dry_run": True}
@@ -220,9 +260,6 @@ def wait_for_update(ctx: Context, wait: float = 180.0, confirm: float = 0.0) -> 
     if confirm:
         output.say("    Waiting a minute while it confirms itself, so a power cut now")
         output.say("    cannot take it back...")
-        time.sleep(confirm)
-        if release(ctx) == old:
-            raise Abort(f"the device went back to {name} {old}: the update did not hold. Running the same "
-                        "command again sends it again")
+        confirmed_by(ctx, name, old, new, confirm, wait)
     output.say(f"    {name} {new} answered after {seconds:.0f}s.")
     return {"seconds": seconds, "from": old, "to": new}

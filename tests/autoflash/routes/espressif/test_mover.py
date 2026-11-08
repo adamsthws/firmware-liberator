@@ -320,13 +320,24 @@ class ESPHomeUpdateTests(RouteTestCase):
         self.assertFalse(update.older("1.18.320-2", "1.18.320-2"))
         self.assertFalse(update.older("16.0.0(release-tasmota32)", "16.0.0"))
 
-    def check(self, versions, confirm=0.0):
+    def check(self, versions, confirm=0.0, wait=60.0):
+        """`versions`: what the plug answers, in turn; the last, from then on.
+        Time passes only as the run sleeps."""
         ctx = self.ctx(source="outdated", firmware="esphome", update_from="1.4.0", update_to="1.6.0",
                        plug_kind="sonoff-s60")
-        answers = iter(self.ours(version) if version else None for version in versions)
-        with mock.patch.object(esphome, "api_device_info", side_effect=lambda *a, **k: next(answers)), \
-                mock.patch.object(time, "sleep"):
-            return update.wait_for_update(ctx, wait=60.0, confirm=confirm)
+        clock = [0.0]
+        said = list(versions)
+
+        def answer(*a, **k):
+            version = said.pop(0) if len(said) > 1 else said[0]
+            return self.ours(version) if version else None
+
+        def sleep(seconds):
+            clock[0] += seconds
+        with mock.patch.object(esphome, "api_device_info", side_effect=answer), \
+                mock.patch.object(time, "sleep", side_effect=sleep), \
+                mock.patch.object(time, "monotonic", side_effect=lambda: clock[0]):
+            return update.wait_for_update(ctx, wait=wait, confirm=confirm)
 
     def test_the_check_waits_for_the_new_release(self):
         result = self.check([None, "1.4.0", "1.6.0"])
@@ -335,8 +346,25 @@ class ESPHomeUpdateTests(RouteTestCase):
     def test_one_gone_back_to_its_old_release_is_not_done(self):
         # The S60's ESPHome takes an update back if it restarts before confirming it.
         with self.assertRaisesRegex(errors.Abort, "went back to ESPHome 1.4.0"):
-            self.check(["1.6.0", "1.4.0"], confirm=70.0)
-        self.assertEqual(self.check(["1.6.0", "1.6.0"], confirm=70.0)["to"], "1.6.0")
+            self.check(["1.6.0", "1.6.0", "1.4.0"], confirm=70.0)
+        self.assertEqual(self.check(["1.6.0"], confirm=70.0)["to"], "1.6.0")
+
+    def test_one_not_answering_during_its_minute_is_not_taken_to_have_kept_it(self):
+        # Only a plug seen to run the new release a whole minute on end has kept it.
+        with self.assertRaisesRegex(errors.Abort, "not been seen to run for a minute"):
+            self.check(["1.6.0"] * 6 + [None], confirm=60.0)
+
+    def test_the_minute_starts_again_once_a_plug_that_stopped_answering_is_back(self):
+        # update>esphome:U2:plugoff-180: switched off 24 s into the minute, back
+        # three minutes later; said done before, unseen.
+        answers = ["1.6.0"] * 5 + [None] * 38 + ["1.6.0"]
+        with mock.patch.object(output, "say") as said:
+            self.assertEqual(self.check(answers, confirm=60.0, wait=180.0)["to"], "1.6.0")   # U2's own wait
+        self.assertTrue(any("stopped answering" in c.args[0] for c in said.call_args_list))
+
+    def test_one_that_keeps_restarting_is_not_waited_on_for_ever(self):
+        with self.assertRaisesRegex(errors.Abort, "not been seen to run for a minute"):
+            self.check(["1.6.0"] + ["1.6.0", None] * 200, confirm=60.0)
 
     def test_a_send_cut_off_is_judged_by_the_release_it_runs(self):
         ctx = self.ctx(source="outdated", firmware="esphome", update_from="1.4.0", update_to="1.6.0",
