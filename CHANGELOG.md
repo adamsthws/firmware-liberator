@@ -105,7 +105,8 @@ check.
   Espressif plug's run checked straight away, seconds after its firmware first
   answered on the network and before it had reached eWeLink. And a plug that drops
   off eWeLink as it switches has its relay put back as it was once it returns,
-  rather than left switched over.
+  rather than left switched over. A plug asking eWeLink for its settings while the
+  check waits no longer ends the run with "something unexpected went wrong".
 
 ## 2.3.0
 
