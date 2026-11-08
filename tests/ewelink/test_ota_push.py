@@ -50,6 +50,16 @@ class ResendingTests(unittest.TestCase):
         self.assertTrue(watch.lost(0.0, 100.0 + ota_push.RESEND_QUIET))
 
 
+class OfflineWaitTests(unittest.TestCase):
+    def test_a_plug_away_its_five_minutes_after_a_send_cut_off_is_waited_for(self):
+        # Seen on the real cloud: offline about 300 s after a stopped send, then
+        # back once it restarted by itself; waited for 180 s, the run gave up first.
+        looks = iter([{"online": False}] * 30 + [{"online": True}])   # back after 310 s
+        device = ota_push.until_online({"online": False}, lambda: next(looks), sleep=lambda _: None,
+                                       say=lambda _: None)
+        self.assertTrue(device["online"])
+
+
 class LastAskedTests(unittest.TestCase):
     def test_a_request_counts_as_the_plug_asking(self):
         server = ota_push.FirmwareServer(("127.0.0.1", 0), b"x" * 64, "127.0.0.1", say=lambda _: None, live=False)
