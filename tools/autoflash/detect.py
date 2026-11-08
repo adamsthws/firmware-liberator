@@ -59,7 +59,7 @@ def _is_installer(host: str, timeout: float) -> bool:
         return False
 # What the mover's GET /mover begins with (devices/mover_routes.h: its
 # project's name, the classic ESP32's with -esp32 after it).
-MOVER_SAYS = "adamsthws.autoflash-mover"
+MOVER_SAYS = "liberator.mover"
 
 
 def _is_mover(host: str, timeout: float) -> bool:

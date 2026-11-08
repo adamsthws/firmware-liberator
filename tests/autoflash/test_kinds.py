@@ -77,6 +77,10 @@ class NamesTests(unittest.TestCase):
             config = (ROOT / "devices" / kind.key / "esphome.yaml").read_text(encoding="utf-8")
             self.assertRegex(config, rf"(?m)^  project:\n    name: {re.escape(kind.esphome_project)}\n", kind.key)
 
+    def test_its_esphome_is_known_by_the_name_images_before_2_4_0_had_too(self):
+        self.assertEqual(S60.esphome_project, "liberator.sonoff-s60")
+        self.assertEqual(S60.esphome_projects, ("liberator.sonoff-s60", "adamsthws.sonoff-s60"))
+
     def test_an_esphome_is_known_by_its_comment_whatever_its_name(self):
         S61 = kinds.SONOFF_S61
         self.assertIs(kinds.for_esphome("esphome abcdef", "Sonoff-S61"), S61)

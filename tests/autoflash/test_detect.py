@@ -625,7 +625,7 @@ class MoverTests(unittest.TestCase):
         return server
 
     def test_each_chips_mover_says_so(self):
-        for says in ("adamsthws.autoflash-mover 1.2.0", "adamsthws.autoflash-mover-esp32 1.1.0"):
+        for says in ("liberator.mover 1.2.0", "liberator.mover-esp32 1.1.0"):
             with self.subTest(says):
                 self.assertTrue(detect._is_mover(self.serve(says).host, 2.0))
         self.assertFalse(detect._is_mover(self.serve("").host, 2.0))

@@ -32,7 +32,7 @@ the `WiFi Signal` sensor, the `Relay` switch, the four energy totals and the
 each, as [the S60's page](../sonoff-s60/esphome.md#changing-it) says. This image has
 no `AUTOFLASH-IMPRINT-` placeholders.
 
-ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-s61-2026.10.0-1.rbl`,
+ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-s61-2026.10.0-2.rbl`,
 with `tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-s61`.
 
 To build it by hand, as you would the S60's image: in ESPHome's own Docker image,

@@ -18,8 +18,8 @@ esphome:
   comment: Sonoff-BASIC-1GS
   name_add_mac_suffix: true
   project:
-    name: adamsthws.sonoff-basic-1gs
-    version: "2026.10.0-1"
+    name: liberator.sonoff-basic-1gs
+    version: "2026.10.0-2"
   # System headers only: adoption takes this one file
   includes:
     - <libretiny.h>

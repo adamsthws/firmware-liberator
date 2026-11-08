@@ -148,7 +148,7 @@ class ESPHomeUpdateTests(RouteTestCase):
 
     @staticmethod
     def ours(release="1.4.0", **changed):
-        return {"name": "esphome-abcdef", "esphome_version": "2026.10.0", "project_name": "adamsthws.sonoff-s60",
+        return {"name": "esphome-abcdef", "esphome_version": "2026.10.0", "project_name": "liberator.sonoff-s60",
                 "project_version": release, "built": images.PINS["sonoff-s60"]["esphome"]["built"], "encrypted": False, **changed}
 
     def test_an_earlier_release_is_offered_the_update(self):
@@ -158,6 +158,12 @@ class ESPHomeUpdateTests(RouteTestCase):
         self.assertEqual(route, ("esphome", "outdated"))
         self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A5", "U1", "U2"])
         self.assertEqual(update.versions(ctx), ("1.4.0", "1.6.0"))
+
+    def test_one_named_as_before_2_4_0_is_offered_it_too(self):
+        # The images published before 2.4.0 call themselves adamsthws.sonoff-s60.
+        _, route, offered = self.settle(self.ours(project_name="adamsthws.sonoff-s60"), answer=1)
+        self.assertEqual(route, ("esphome", "outdated"))
+        self.assertIn("ESPHome, updated to 1.6.0", offered)
 
     def test_asked_for_on_the_command_line_it_is_updated_unasked(self):
         _, route, offered = self.settle(self.ours(), given="esphome")
@@ -171,7 +177,8 @@ class ESPHomeUpdateTests(RouteTestCase):
     def test_any_other_esphome_is_not_offered_it(self):
         for why, info in (("this release", self.ours("1.6.0")), ("a later one", self.ours("1.10.0")),
                           ("another project", self.ours(project_name="someone.else")),
-                          ("another kind's", self.ours(project_name="adamsthws.sonoff-s61")),
+                          ("another kind's", self.ours(project_name="liberator.sonoff-s61")),
+                          ("another kind's, named as before 2.4.0", self.ours(project_name="adamsthws.sonoff-s61")),
                           ("adopted, its API given a key", self.ours(encrypted=True)),
                           ("adopted without a key: not a build published",
                            self.ours(built="2026-11-04 21:19:12 +0000")),
@@ -260,7 +267,8 @@ class ESPHomeUpdateTests(RouteTestCase):
             self.replacing(self.ours("1.6.0", built=self.OWN), word=False)
 
     def test_another_projects_esphome_is_never_replaced(self):
-        for info in (self.ours(project_name="someone.else"), self.ours(project_name="adamsthws.sonoff-s61"), None):
+        for info in (self.ours(project_name="someone.else"), self.ours(project_name="liberator.sonoff-s61"),
+                     self.ours(project_name="adamsthws.sonoff-s61"), None):
             with self.subTest(info=info), self.assertRaisesRegex(errors.Abort, "only replaces this project's"):
                 self.replacing(info)
 

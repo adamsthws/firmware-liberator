@@ -17,8 +17,8 @@ esphome:
   comment: Sonoff-S60
   name_add_mac_suffix: true
   project:
-    name: adamsthws.sonoff-s60
-    version: "2026.10.0-1"
+    name: liberator.sonoff-s60
+    version: "2026.10.0-2"
   # System headers only: adoption takes this one file
   includes:
     - <nvs.h>

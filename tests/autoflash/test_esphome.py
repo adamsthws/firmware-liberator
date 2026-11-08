@@ -490,7 +490,7 @@ class DeviceInfoTests(unittest.TestCase):
 
     @staticmethod
     def info(name=b"esphome-abcdef", version=b"2026.10.0", built=b"2026-10-26 17:26:39 +0000",
-             project=b"adamsthws.sonoff-s60", release=b"1.4.0"):
+             project=b"liberator.sonoff-s60", release=b"1.4.0"):
         from tools.autoflash.esphome import _frame, _varint
         fields = b"".join(bytes([number << 3 | 2]) + _varint(len(value)) + value
                           for number, value in ((2, name), (4, version), (5, built), (8, project), (9, release)) if value)
@@ -500,7 +500,7 @@ class DeviceInfoTests(unittest.TestCase):
         port = self.serve((b"\x00\x00\x09", self.info()))
         self.assertEqual(esphome.api_device_info("127.0.0.1", port, timeout=3.0),
                          {"name": "esphome-abcdef", "esphome_version": "2026.10.0",
-                          "built": "2026-10-26 17:26:39 +0000", "project_name": "adamsthws.sonoff-s60",
+                          "built": "2026-10-26 17:26:39 +0000", "project_name": "liberator.sonoff-s60",
                           "project_version": "1.4.0", "encrypted": False})
 
     def test_one_built_as_no_project_says_none(self):

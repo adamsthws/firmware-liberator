@@ -38,9 +38,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-# The author every kind's ESPHome project is named for, as ESPHome's
-# author.project wants: what every image published so far calls itself.
-ESPHOME_AUTHOR = "adamsthws"
+# The namespace every kind's ESPHome project is named in (ESPHome wants one,
+# before a dot): liberator.sonoff-s60. Images before 2.4.0 were named in
+# EARLIER_ESPHOME_NAMESPACES: a plug on one still runs this project's.
+ESPHOME_NAMESPACE = "liberator"
+EARLIER_ESPHOME_NAMESPACES = ("adamsthws",)
 
 
 class Status(enum.Enum):
@@ -148,7 +150,13 @@ class Kind:
     def esphome_project(self) -> str:
         """The project its ESPHome is built as (devices/<kind>/esphome.yaml),
         which the plug says through its API, with the project's version."""
-        return f"{ESPHOME_AUTHOR}.{self.key}"
+        return f"{ESPHOME_NAMESPACE}.{self.key}"
+
+    @property
+    def esphome_projects(self) -> tuple[str, ...]:
+        """Every project name this project's ESPHome for it has been built as:
+        esphome_project, and those of images published before it."""
+        return (self.esphome_project, *(f"{namespace}.{self.key}" for namespace in EARLIER_ESPHOME_NAMESPACES))
 
     @property
     def display_name(self) -> str:
