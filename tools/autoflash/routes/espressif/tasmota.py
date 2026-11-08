@@ -617,7 +617,7 @@ def calibrate_tasmota_meter(ctx: Context, show: bool = False) -> dict[str, Any]:
     except (DeviceError, OSError, ValueError) as exc:
         outcome = {"skipped": str(exc)}
     if "skipped" in outcome:
-        output.tell(f"    The meter is left as it is: {outcome['skipped']}.")
+        output.keep(f"    The meter is left as it is: {outcome['skipped']}.")
     elif not outcome["changed"]:
         output.say("The meter is calibrated as Sonoff's firmware had it already", show=show)
     else:
@@ -959,8 +959,8 @@ def step_verify(ctx: Context) -> dict[str, Any]:
     earlier = earlier_release(manifest) if manifest.get("official_release") != official_release() else None
     if earlier is not None:
         # Begun by an earlier version, which installed that release at F2.
-        output.tell(f"  The device has Tasmota {earlier['version']}, the release this conversion began with.")
-        output.tell(f"  Its own page (Firmware Upgrade) takes it to {OFFICIAL_TASMOTA_VERSION}, the latest.")
+        output.keep(f"  The device has Tasmota {earlier['version']}, the release this conversion began with.")
+        output.keep(f"  Its own page (Firmware Upgrade) takes it to {OFFICIAL_TASMOTA_VERSION}, the latest.")
         results["release"] = earlier["version"]
     return results
 

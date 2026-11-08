@@ -547,6 +547,50 @@ class ConciseTests(OutputTestCase):
             output.stage_end("stopped")
         self.assertEqual(self.drawn(body), ["Stage 5 - Installing Tasmota - Stopped"])
 
+    def test_a_stage_that_passed_leaves_just_its_line(self):
+        # Seen in the fault suites: instructions to join a network, and the
+        # installer sent again, left above a stage long since complete.
+        def body():
+            output.stage_begin(8, "Installing interim firmware")
+            prompts.section("Join the bridge's Wi-Fi network", ["In your Wi-Fi menu, join it."])
+            output.tell("    Sending the installer again (attempt 2 of 3).")
+            output.stage_end("complete")
+            output.stage_begin(9, "Preparing memory layout")
+            output.stage_end("complete")
+        self.assertEqual(self.drawn(body), ["Stage 8 - Installing interim firmware - Complete",
+                                            "Stage 9 - Preparing memory layout - Complete"])
+
+    def test_what_a_stage_kept_is_shown_again_under_its_line(self):
+        def body():
+            output.stage_begin(16, "Configuring Tasmota")
+            output.tell("    Setting the template...")
+            output.keep("    The meter is left as it is: the meter did not report.")
+            output.stage_end("complete")
+            output.stage_begin(17, "Installing Safeboot")
+            output.stage_end("complete")
+        self.assertEqual(self.drawn(body), ["Stage 16 - Configuring Tasmota - Complete", "",
+                                            "The meter is left as it is: the meter did not report.",
+                                            "Stage 17 - Installing Safeboot - Complete"])
+
+    def test_a_stage_that_stopped_leaves_what_it_showed(self):
+        def body():
+            output.stage_begin(8, "Installing interim firmware")
+            output.tell("    The bridge was not delivered")
+            output.stage_end("stopped")
+        rows = self.drawn(body)
+        self.assertIn("The bridge was not delivered", rows)
+        self.assertEqual(rows[-1], "Stage 8 - Installing interim firmware - Stopped")
+
+    def test_what_a_stage_showed_taller_than_the_window_stays(self):
+        def body():
+            output.stage_begin(8, "Installing interim firmware")
+            for n in range(8):
+                output.tell(f"    note {n}")
+            output.stage_end("complete")
+        rows = self.drawn(body, rows=6)
+        self.assertIn("note 0", rows)
+        self.assertEqual(rows[-1], "Stage 8 - Installing interim firmware - Complete")
+
     def test_success_is_green_and_underway_is_bold(self):
         def body():
             with mock.patch.object(output, "colour_ok", return_value=True):
@@ -1606,8 +1650,7 @@ class StageGapTests(OutputTestCase):
             sys.stdout.write("Type PROCEED to go ahead: proceed\n")
             output.answered("proceed")
             output.transient_end()
-            output.show("Sending the bridge...")
-            output.stage_end("complete")
+            output.show("Sending the bridge...")   # the stage still under way
         rows = self.screen(body, colour=True)
         self.assertTrue(rows[0].startswith("Stage 3 - Discovering the plug - Underway"))
         self.assertEqual(rows[1:3], ["", "Sending the bridge..."])
