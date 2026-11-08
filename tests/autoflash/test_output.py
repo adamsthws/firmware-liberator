@@ -445,6 +445,45 @@ class ConciseTests(OutputTestCase):
         self.assertEqual(screen.count("Where to look."), 1)  # still there: not repeated
         self.assertNotIn("\x1b[1F", screen)
 
+    def failed_try(self, rows):
+        """A stage that stops with a note under it, its failure and the note
+        that it is tried again, then tried again and passing - in a window
+        `rows` tall."""
+        def body():
+            with mock.patch.object(output, "colour_ok", return_value=True), \
+                 mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, rows))):
+                output.stage_begin(12, "Verifying memory layout")
+                output.stage_end("complete")
+                mark = output.screen_mark()
+                output.stage_begin(13, "Staging startup firmware")
+                output.tell("    The device's console: BRY: Berry initialized")
+                output.stage_end("stopped")
+                output.tell("FAILED: the device stopped the stage")
+                output.tell("    That may have been the network - trying again in 10s (attempt 2 of 3).")
+                self.assertEqual(output.screen_rewind(mark), rows > 8)
+                output.stage_begin(13, "Staging startup firmware")
+                output.stage_end("complete")
+        return self.run_with(FakeTerminal(), False, body)
+
+    def test_a_failed_try_is_taken_off_the_screen(self):
+        screen, log = self.failed_try(24)
+        self.assertEqual(rendered(screen), ["Stage 12 - Verifying memory layout - Complete",
+                                            "Stage 13 - Staging startup firmware - Complete"])
+        self.assertIn("trying again", log)                   # the log keeps it
+
+    def test_a_failed_try_taller_than_the_window_stays(self):
+        screen, _ = self.failed_try(6)
+        self.assertNotIn("\x1b[1F", screen)                  # its first row is out of reach
+        self.assertIn("Stopped", screen)
+
+    def test_nothing_is_taken_off_a_screen_that_cannot_be_drawn_over(self):
+        def body():
+            mark = output.screen_mark()
+            output.tell("FAILED: the device stopped the stage")
+            self.assertFalse(output.screen_rewind(mark))
+        screen, _ = self.run_with(io.StringIO(), False, body)   # piped: no terminal
+        self.assertIn("FAILED", screen)
+
     def test_success_is_green_and_underway_is_bold(self):
         def body():
             with mock.patch.object(output, "colour_ok", return_value=True):

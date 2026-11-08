@@ -124,6 +124,10 @@ check.
   whole minute on end, the minute it takes to keep it. One that stopped answering
   part way, switched off say, was said done all the same; it is now waited for,
   and its minute starts again once it answers.
+- A stage tried again after a network drop leaves one line on the screen. Its
+  failed try - the stage shown stopped, what failed, and that it would be tried
+  again - stayed above the stage drawn afresh, so the stage seemed to run twice.
+  The run's log still keeps every try.
 
 ## 2.3.0
 
