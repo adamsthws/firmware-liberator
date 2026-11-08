@@ -206,6 +206,46 @@ class BadImageScenarioTests(unittest.TestCase):
         self.assertRegex(back.exception.reason, fault_suite.SENT_AGAIN)
 
 
+class DoubleCutTests(unittest.TestCase):
+    """A double's second cut as the run under way sends its command again."""
+
+    def cut(self, logs, ended_after=None):
+        from unittest import mock
+        texts = iter(logs)
+        last = [""]
+
+        def last_log():
+            last[0] = next(texts, last[0])
+            return last[0]
+        looks = [0]
+
+        def poll():
+            looks[0] += 1
+            return 0 if ended_after is not None and looks[0] > ended_after else None
+        instance = SimpleNamespace(last_log=last_log)
+        notes = {}
+        sc = {"route": "sonoff>openbeken", "step": "B2", "at": 40}
+        with mock.patch.object(fault_suite, "inject") as injected, mock.patch.object(fault_suite.time, "sleep"):
+            done = fault_suite.cut_as_sent_again(instance, SimpleNamespace(poll=poll), sc, notes)
+        return done, notes, injected
+
+    def test_the_second_cut_comes_as_the_same_run_sends_again(self):
+        # Seen: once the sender sent a lost command again itself, the first run
+        # converted, no run again came, and every double was NOT-FIRED.
+        sent = "] B2  Sending\n  Upgrade command sent with owner-controlled private-LAN URLs.\n"
+        again = sent + "  The device has not asked for the file: upgrade command sent again (attempt 2 of 3).\n"
+        done, notes, injected = self.cut([sent, sent, again])
+        self.assertTrue(done)
+        self.assertTrue(notes["second_cut"])
+        injected.assert_called_once()
+
+    def test_a_run_that_ends_without_sending_again_leaves_it_to_the_next(self):
+        done, notes, injected = self.cut(["] B2  Sending\n"], ended_after=3)
+        self.assertFalse(done)
+        self.assertNotIn("second_cut", notes)
+        injected.assert_not_called()
+
+
 class NewScenarioTests(unittest.TestCase):
     def test_every_route_that_writes_has_its_apply_cut_and_the_writing_steps_their_double_and_readdress(self):
         ids = {sc["id"] for sc in fault_suite.scenarios()}
