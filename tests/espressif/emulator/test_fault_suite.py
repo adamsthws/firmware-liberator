@@ -103,6 +103,50 @@ class CloudTurnTests(unittest.TestCase):
         self.assertEqual(self.turns_from_the_start({"step": "C2", "fault": "crash"}), ["from the start"])
         self.assertEqual(self.turns_from_the_start({"step": "C3", "fault": "crash"}), [])
 
+    def hold_while_never_back(self, **hold):
+        """A turn whose plug never reaches eWeLink; what was said and done."""
+        with tempfile.TemporaryDirectory() as state:
+            (Path(state) / "logs").mkdir()
+            (Path(state) / "logs/uart.log").write_text("", encoding="utf-8")
+            said = []
+            sc = mock.Mock(n=24, state=Path(state), sc={"step": "C2"}, say=said.append, notes={})
+            monitor = fs.PlugMonitor(sc)
+            clock = [1000.0]
+
+            def wait(_):
+                clock[0] += 5
+            with mock.patch.object(monitor, "live_run", return_value=None), \
+                    mock.patch.object(monitor, "run_text", return_value=""), \
+                    mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                    mock.patch.object(fs, "cloud_connections", return_value=set()), \
+                    mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
+                    mock.patch.object(monitor.stop, "wait", side_effect=wait):
+                monitor.hold("from the start", **hold)
+        return said, sc
+
+    def test_a_fresh_plug_never_back_at_ewelink_is_switched_off_and_on_once(self):
+        said, sc = self.hold_while_never_back(restart_once=True)
+        self.assertEqual(sc.ex.call_args_list, [mock.call(fs.PLUG_CMD, "restart")])
+        self.assertTrue(any("switched off and on" in line for line in said))
+        self.assertTrue(any("the run goes on" in line for line in said))   # not back after it either
+        self.assertTrue(sc.notes["fresh_plug_restarted"])
+
+    def test_other_turns_never_switch_the_plug(self):
+        said, sc = self.hold_while_never_back()
+        sc.ex.assert_not_called()
+        self.assertTrue(any("the run goes on" in line for line in said))
+
+    def test_the_turn_from_the_start_may_switch_its_plug(self):
+        monitor = fs.PlugMonitor(mock.Mock(n=24, state=Path("/nonexistent"), sc={"step": "C2", "fault": "crash"},
+                                           say=lambda _: None))
+        monitor.preheld = True
+        with mock.patch.object(monitor, "live_run", return_value=None), \
+                mock.patch.object(monitor, "hold") as hold, \
+                mock.patch.object(fs, "plug_internet"), mock.patch.object(fs, "NO_CLOUD", False), \
+                mock.patch.object(monitor.stop, "wait", side_effect=lambda _: monitor.stop.set()):
+            monitor.watching()
+        self.assertEqual(hold.call_args_list, [mock.call("from the start", restart_once=True)])
+
     def test_the_installer_sent_again_while_waiting_for_a_turn_is_answered_by_it(self):
         said = []
         monitor = fs.PlugMonitor(mock.Mock(n=24, state=Path("/nonexistent"), sc={"step": "C3"}, say=said.append))
