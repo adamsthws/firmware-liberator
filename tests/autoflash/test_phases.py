@@ -631,6 +631,21 @@ sys.exit({code})
         self.assertTrue(any("stage-server.log" in line for line in self.logged), self.logged)
 
 
+class ServerLogTests(unittest.TestCase):
+    def test_each_try_keeps_its_own_server_log_the_latest_where_the_evidence_reads_it(self):
+        # Seen on the emulator: K1 failed, was tried again and passed, and the
+        # failed try's log, written over, could not say why.
+        from tools.autoflash import phases
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "commit-server.log"
+            for attempt in ("first", "second", "third"):
+                phases.keep_earlier_try(log)
+                log.write_text(attempt, encoding="utf-8")
+            self.assertEqual(log.read_text(encoding="utf-8"), "third")
+            self.assertEqual([(Path(directory) / f"commit-server.{n}.log").read_text(encoding="utf-8")
+                              for n in (1, 2)], ["first", "second"])
+
+
 class PhaseDisplayTests(unittest.TestCase):
     """Hundreds of server request lines become a few readable ones."""
 

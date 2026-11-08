@@ -42,6 +42,20 @@ MANUAL_INSTRUCTION_RE = re.compile(
 ARM_RE = re.compile(r"(?P<name>autoflash_(?:commit|restore))\(\"(?P<token>[^\"]+)\"\)")
 
 
+def keep_earlier_try(log_path: Path) -> None:
+    """An earlier try's server log moved aside, numbered from the first
+    (commit-server.1.log), so the log at `log_path` is the latest try's alone -
+    what the evidence of a step reads (evidence.table_fetched) - and a
+    try that failed keeps its own.  Seen on the emulator: K1 failed, tried
+    again and passed, and the failed try's log, written over, could not say why."""
+    if not log_path.exists():
+        return
+    number = 1
+    while (earlier := log_path.with_name(f"{log_path.stem}.{number}{log_path.suffix}")).exists():
+        number += 1
+    log_path.rename(earlier)
+
+
 class PhaseError(RuntimeError):
     pass
 
@@ -346,6 +360,7 @@ class PhaseRunner:
         requested: list[float | None] = [None]  # the plug's last request, exactly
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
         log_path = self.evidence_dir / (f"plan-{plan.name}-server.log" if plan else f"{phase}-server.log")
+        keep_earlier_try(log_path)
         log_file = log_path.open("w", encoding="utf-8")
         display = PhaseDisplay(
             phase, self._blocks(phase, plan), title=plan.title if plan else None,
