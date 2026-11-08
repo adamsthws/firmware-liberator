@@ -69,6 +69,85 @@ class LayoutTests(unittest.TestCase):
             self.assertRegex(entry, r"^\d+\.\d+\.\d+$", query)
 
 
+class FileNameTests(unittest.TestCase):
+    """A published file a chip's plugs share names the chip, and a device's own
+    names the device, so the two chips' are told apart by name. Those published
+    before the rule keep their names - published files never change - each only
+    while it is that exact build: the build that replaces one is named by the
+    rule (update_firmware.CHIP_FILES, tasmota_settings.template_path), and takes
+    it out of here. docs/updating-firmware.md says so beside each build."""
+
+    UNTIL_REBUILT = {
+        "autoflash-mover-1.1.0.bin": "f6e131e1599c886d742c151c3ba3f84a285bba462b438c36b611d577e01ad243",
+        "esphome-sonoff-s60-bootloader-1.2.0.bin": "3792bb665916d69c410c9fd10f69d1a6968e61f2a9e4969829a1c49f9ea6f433",
+        "autoflash-bridge-sonoff-s60-4.4.5.ota": "0421bef5cd1c82c43eee03c159253c6db8f54f46efcdb1005c1b870933188fb9",
+        "autoflash-recovery-safeboot-imprintable.bin": "ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd",
+        "tasmota-settings-template-15.6.0.0.bin": "d63f03cb99540407037f36dc8155ec9b02d24425d3b02c52299713233e98f4a5",
+    }
+    # Tasmota's own build, under Tasmota's own name for it.
+    UPSTREAM = {"tasmota32c3-bluetooth.bin"}
+
+    @staticmethod
+    def published():
+        """Each file in artifacts/SHA256SUMS, and its hash."""
+        lines = (ROOT / "artifacts" / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+        return {name: digest for digest, name in (line.split("  ", 1) for line in lines)}
+
+    @staticmethod
+    def owners():
+        """Each file published, and what it belongs to: where firmware.json pins
+        it, or for those pinned in the code, what the code takes it for."""
+        from tools.autoflash.routes.espressif import images
+        from tools.espressif.safeboot import safeboot_migration
+        found = {Path(pin["file"]).name: owner for family in ("espressif", "beken")
+                 for owner, section in PINS[family].items() for pin in section.values() if "file" in pin}
+        for chip in chips.ALL:
+            found.setdefault(safeboot_migration.published_recovery_file(chip).name, chip.key)
+            found.setdefault(tasmota_settings.template_path(ROOT, chip).name, chip.key)
+        found.setdefault(images.SONOFF_TABLE.name, kinds.SONOFF_S60.key)
+        return found
+
+    @staticmethod
+    def named_by(name, owner):
+        return f"-{owner}-" in f"-{Path(name).stem}-"
+
+    def test_each_published_file_belongs_to_a_chip_or_a_device(self):
+        self.assertEqual(set(self.published()) - self.UPSTREAM - set(self.owners()), set())
+
+    def test_each_published_file_names_what_it_belongs_to(self):
+        published = self.published()
+        wrong = [f"{name} ({owner}'s)" for name, owner in self.owners().items()
+                 if not self.named_by(name, owner) and self.UNTIL_REBUILT.get(name) != published.get(name)]
+        self.assertEqual(wrong, [], "named by the rule: update_firmware.CHIP_FILES")
+
+    def test_each_file_named_before_the_rule_is_still_that_build(self):
+        published = self.published()
+        for name, digest in self.UNTIL_REBUILT.items():
+            self.assertEqual(published.get(name), digest,
+                             f"{name} was built again, so named by the rule: take it out of UNTIL_REBUILT")
+
+    def test_update_firmware_names_each_chips_files_by_the_rule(self):
+        for chip in chips.ALL:
+            for name in uf.CHIP_FILES:
+                file = uf.chip_file(chip, name, version="1.0.0", suffix=".bin")
+                self.assertTrue(self.named_by(file, chip.key), file)
+                self.assertFalse(any(self.named_by(file, other.key) for other in chips.ALL if other is not chip), file)
+        self.assertEqual(uf.ESPHOME_BUILDS["mover"][1], uf.chip_file(chips.ESP32C3, "mover"))
+        self.assertEqual(uf.BOOTLOADER_FILE, uf.chip_file(chips.ESP32C3, "bootloader"))
+
+    def test_a_template_captured_at_another_release_names_its_chip(self):
+        from unittest import mock
+        with mock.patch.object(tasmota_settings, "TEMPLATE_VERSION", 0x10000000):
+            for chip in chips.ALL:
+                self.assertTrue(self.named_by(tasmota_settings.template_path(ROOT, chip).name, chip.key), chip.key)
+
+    def test_each_chips_mover_is_built_from_its_chips_folder(self):
+        for chip in chips.ALL:
+            self.assertEqual(chip.pin("mover")["config"], f"devices/{chip.key}/mover.yaml", chip.key)
+            self.assertEqual(uf.mover_config(chip), chip.pin("mover")["config"], chip.key)
+        self.assertEqual(uf.ESPHOME_BUILDS["mover"][0], uf.mover_config(chips.ESP32C3))
+
+
 class TasmotaPinTests(unittest.TestCase):
     def test_the_files_come_from_the_release_pinned(self):
         tasmota = TASMOTA
@@ -834,9 +913,9 @@ class UpdateCommandTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.root = root = Path(directory.name)
-        (root / "devices" / "sonoff-s60").mkdir(parents=True)
         (root / "artifacts").mkdir()
         for key, version in (("image", "1.4.0"), ("mover", "1.1.0")):
+            (root / uf.ESPHOME_BUILDS[key][0]).parent.mkdir(parents=True)
             (root / uf.ESPHOME_BUILDS[key][0]).write_text(self.CONFIG.format(name=key, version=version),
                                                           encoding="utf-8")
         pins = {"espressif": {"esp32c3": {"tasmota": self.tasmota_pin("15.0.0", earlier=[self.tasmota_pin("14.0.0")])},
@@ -920,7 +999,7 @@ class UpdateCommandTests(unittest.TestCase):
             code, errors = self.run_main("esp32c3", "bridge")
         self.assertEqual(code, 0, errors)
 
-        file = f"artifacts/autoflash-bridge-sonoff-s60-{version}.ota"
+        file = f"artifacts/autoflash-bridge-esp32c3-{version}.ota"
         wrapped = (self.root / file).read_bytes()
         self.assertEqual(wrapped[WRAPPER_SIZE:], app)
         self.assertEqual(analyze(wrapped)["wrapper"]["record_version"], version)
@@ -1052,7 +1131,7 @@ class UpdateCommandTests(unittest.TestCase):
         code, _, built = self.esphome("--no-docs", "--mover")
         self.assertEqual(code, 0)
         self.assertEqual(built, [("esphome.yaml", "2099.1.0-1"), ("mover.yaml", "1.2.0")])
-        self.assertEqual(self.esphome_pins()["mover"]["file"], "artifacts/autoflash-mover-1.2.0.bin")
+        self.assertEqual(self.esphome_pins()["mover"]["file"], "artifacts/autoflash-mover-esp32c3-1.2.0.bin")
 
     def test_esphome_keeps_the_published_bootloader_unless_told(self):
         self.assertEqual(self.esphome("--no-docs", bootloader=b"another")[0], 0)
@@ -1063,7 +1142,7 @@ class UpdateCommandTests(unittest.TestCase):
         self.assertEqual(self.esphome("--no-docs", "--new-bootloader", bootloader=b"another")[0], 0)
         pin = self.esphome_pins()["bootloader"]
         self.assertEqual((pin["file"], pin["sha256"]),
-                         ("artifacts/esphome-sonoff-s60-bootloader-2099.1.0-1.bin", sha256_bytes(b"another")))
+                         ("artifacts/esphome-esp32c3-bootloader-2099.1.0-1.bin", sha256_bytes(b"another")))
         self.assertFalse((self.root / "artifacts/esphome-sonoff-s60-bootloader-1.2.0.bin").exists())
 
     def test_esphome_dry_run_changes_nothing(self):

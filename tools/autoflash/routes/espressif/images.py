@@ -129,7 +129,7 @@ def published_bootloader(chip: chips.Chip = chips.ESP32C3) -> bytes:
     return bootloader
 
 
-# The mover (devices/sonoff-s60/mover.yaml): a small ESPHome, run only while a
+# The mover (devices/esp32c3/mover.yaml): a small ESPHome, run only while a
 # plug leaves Tasmota, that takes the next firmware as an ESPHome update.
 MOVER = chips.ESP32C3.file("mover")
 MOVER_SHA256 = chips.ESP32C3.pin("mover")["sha256"]

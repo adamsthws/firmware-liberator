@@ -40,7 +40,7 @@ class AdoptionExamplesTests(unittest.TestCase):
     def test_the_lint_runs_it_for_the_guide_and_the_configs_it_builds_on(self):
         for path in ("docs/home-assistant-adoption.md", "devices/sonoff-s60/esphome.yaml"):
             self.assertTrue(lint.adoption_example(Path(path)), path)
-        for path in ("docs/testing.md", "devices/sonoff-s60/mover.yaml", "esphome.yaml"):
+        for path in ("docs/testing.md", "devices/esp32c3/mover.yaml", "esphome.yaml"):
             self.assertFalse(lint.adoption_example(Path(path)), path)
 
     def test_a_further_mount_goes_to_docker_before_the_image(self):
