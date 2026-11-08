@@ -59,7 +59,8 @@ class EndChecksTests(unittest.TestCase):
         outcome = self.result("True", screen)
         self.assertEqual(outcome["result"], "FAIL-SCREEN")
         self.assertEqual(len(outcome["notes"]["screen"]), 1)
-        self.assertEqual(self.result("True", screen.replace("Stopped", "Complete"))["result"], "PASS")
+        clean = screen.replace("Stage 6 - Sending OpenBeken - Stopped\n", "")
+        self.assertEqual(self.result("True", clean)["result"], "PASS")
 
     def test_one_whose_checks_failed_is_its_own_failure_saying_what_they_found(self):
         outcome = self.result("False")

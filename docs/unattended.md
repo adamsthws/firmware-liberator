@@ -85,9 +85,9 @@ full log is in the run's `run.log`, under `captures/plugs/<MAC>/runs/`, as usual
 
 A line starting `SCREEN:` after the exit code says a stage left something on
 the screen that it should have taken away: a try that failed, still shown
-after the stage was tried again, or a stage left "Underway" when the next
-began. The fault suites fail a run that does this (FAIL-SCREEN in
-[testing.md](testing.md)).
+after the stage was tried again; what a stage that passed showed while under
+way; or a stage left "Underway" when the next began. The fault suites fail a
+run that does this (FAIL-SCREEN in [testing.md](testing.md)).
 
 ## In the emulator
 

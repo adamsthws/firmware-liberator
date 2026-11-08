@@ -414,11 +414,14 @@ firmware asked for, has nothing to judge (`tools/repo/fault_verdicts.py`).
 It is **FAIL-SCREEN** when a run of this checkout's tool left on its screen
 something a stage should have taken away when the run moved on. Each run is
 recorded on a terminal of its own ([unattended.md](unattended.md#the-recording)),
-and the screen it ended on is read back: each stage should leave one line, its
-outcome, with its "Underway" line above only where something was shown under
-it. A stage shown "Stopped" and then again is a try that failed, left on the
-screen when the stage was tried again. An "Underway" line followed by
-another stage's is a stage that never ended. The result's notes name each one.
+and the screen it ended on is read back. A stage that passed should leave one
+line, its outcome, with only what it kept under it; one that stopped, what it
+showed above its line, as that says why. It is a problem when a stage's outcome
+is shown twice (a try that failed, or a step gone back to, left under its first
+go), an "Underway" line is followed by another stage's (a stage that never
+ended), a stage that passed still has its "Underway" line above it (what it
+showed was left on the screen), or two blank rows follow one another. The
+result's notes name each one.
 
 The emulated computer's list of networks keeps one the plug put out for a
 minute after it has gone or been renamed, as a real computer's does (the
