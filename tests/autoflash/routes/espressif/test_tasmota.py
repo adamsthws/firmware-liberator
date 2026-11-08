@@ -3,6 +3,7 @@ what its evidence says when it is cut off, official Tasmota installed, seen
 and configured, the restore, Tasmota put back on its own safeboot (T1), and
 an earlier release updated from its safeboot (U5, U6)."""
 import contextlib
+import shutil
 import tempfile
 import time
 import types
@@ -21,6 +22,35 @@ from tools.autoflash.state import ATTEMPTED, FAILED, RunState
 from tools.espressif.safeboot import prepare_imprinted_bundle, safeboot_migration
 from tools.espressif.safeboot.safeboot_migration import INTERIM_TABLE_SHA256
 from tools.espressif.safeboot.safeboot_migration import OFFICIAL_TASMOTA_VERSION
+
+
+class PrepareUpdateTests(RouteTestCase):
+    """Before a plug converted on an earlier release is updated in the same
+    run, its bundle is built again of this release (prepare_update)."""
+
+    def prepare(self, *, own_bundle=False, fetched=True):
+        ctx = self.ctx(run=f"prepare-{own_bundle}-{fetched}", plug_kind="sonoff-s60")
+        ctx.manifest_path = Path(tempfile.mkdtemp()) / "manifest.json"
+        self.addCleanup(shutil.rmtree, ctx.manifest_path.parent, ignore_errors=True)
+        default = ctx.manifest_path if not own_bundle else Path("/elsewhere/manifest.json")
+        with mock.patch.object(espressif.bundle, "default_manifest", return_value=default), \
+                mock.patch.object(espressif.bundle, "build_bundle",
+                                  side_effect=None if fetched else prepare_imprinted_bundle.BundleError("offline")) \
+                as built, mock.patch.object(output, "say"):
+            return tasmota.prepare_update(ctx), built
+
+    def test_the_bundle_is_built_again_of_this_release(self):
+        prepared, built = self.prepare()
+        self.assertTrue(prepared)
+        self.assertIsNone(built.call_args.kwargs["release"])   # this release's, not the plug's
+
+    def test_not_a_bundle_of_the_persons_own(self):
+        prepared, built = self.prepare(own_bundle=True)
+        self.assertFalse(prepared)
+        built.assert_not_called()
+
+    def test_this_release_not_fetched_leaves_the_plug_on_its_own(self):
+        self.assertFalse(self.prepare(fetched=False)[0])
 
 
 class TasmotaUpdateTests(RouteTestCase):

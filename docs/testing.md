@@ -312,8 +312,14 @@ every direction - 1,606 scenarios on an S60:
   whose runs - their bundle pinned to the firmware before - your checkout
   must finish with its own: killed at each of its steps, to Tasmota and to
   ESPHome, and each kind of plug it converted, taken on from there
-  ([updating-firmware.md](updating-firmware.md)). `unattended-test.sh
-  --code=DIR` runs the tool from another tree.
+  ([updating-firmware.md](updating-firmware.md)). A run that release had
+  already installed its own Tasmota or ESPHome in - Tasmota from F2, ESPHome
+  from I1 - finishes, then is updated to your checkout's release in the same
+  run: it is **FAIL-NOT-LATEST** if the plug ends on any other (its ESPHome
+  release asked of its API from the emulated computer). And each release killed at F4, then the plug switched off part
+  way through that update's upload (`legacy-v1.2.0+U5off`,
+  `legacy-v2.0.2+U5off`). `unattended-test.sh --code=DIR` runs the tool from
+  another tree.
 - **A converted plug left on Tasmota's own safeboot** (`lostapp-factory`): an
   ESPHome factory image - bootloader, partition table and app, for a serial
   flasher - uploaded through Tasmota's page, as a person who once asked

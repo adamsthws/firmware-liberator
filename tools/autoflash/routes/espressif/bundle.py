@@ -78,6 +78,19 @@ def make_bundle(ctx: Context, problem: str | None) -> dict[str, Any]:
     return validate_bundle(ctx.manifest_path)
 
 
+def make_bundle_of_this_release(ctx: Context) -> bool:
+    """The bundle built again of the release this version pins, for a plug
+    that finished a conversion on an earlier one and is updated from it
+    (tasmota.prepare_update).  False, the bundle as it was, when it cannot
+    be: the conversion is done whatever this finds."""
+    try:
+        build_bundle(output=ctx.manifest_path.parent, release=None, chip=chips.of(kinds.of_run(ctx.state).chip))
+    except (BundleError, OSError) as exc:
+        output.say(f"This release's Tasmota could not be fetched, so the device is left on its own: {exc}")
+        return False
+    return True
+
+
 def release_on_the_plug(ctx: Context) -> dict[str, Any] | None:
     """The official release pinned before whose app a run past F2 put on the
     plug, as the bundle that installed it holds it; None for the one pinned

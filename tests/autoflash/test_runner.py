@@ -12,7 +12,7 @@ from unittest import mock
 from tools.autoflash import device, errors, firewall, join, output, prompts, report, routes, runner, runs
 from tools.autoflash import safety_locks, unlock
 from tools.autoflash.phases import PhaseError
-from tools.autoflash.routes import espressif
+from tools.autoflash.routes import espressif, update
 from tools.autoflash.routes.espressif import bundle, evidence, tasmota
 from tools.autoflash.state import ATTEMPTED, DONE, FAILED, RunState
 
@@ -103,6 +103,7 @@ class RunStepsTests(unittest.TestCase):
             "begin_stage": mock.Mock(), "confirm_skip": mock.Mock(return_value=skip),
             "execute_with_retries": mock.Mock(side_effect=lambda ctx, step: ran.append(step) or codes.get(step, 0)),
             "stop_here_after_ctrl_c": mock.Mock(return_value=False), "close_firewall_rules": mock.Mock(),
+            "bring_up_to_date": mock.Mock(return_value=False),
             "tell_how_to_carry_on": mock.Mock(), "invite_report": mock.Mock(),
             "plug_page_url": mock.Mock(return_value=None), "rerun_on_tasmota": mock.Mock(return_value=0),
             "ask_choice": mock.Mock(return_value=answer),
@@ -601,6 +602,72 @@ class ScreenTests(unittest.TestCase):
                 self.assertEqual(unattended_run.stage_problems(screen), [], screen)
                 stages = [row for row in screen.splitlines() if unattended_run.STAGE_ROW.match(row)]
                 self.assertNotIn("Underway", stages[-1], screen)
+
+
+class BringUpToDateTests(unittest.TestCase):
+    """A plug the route has just taken to its firmware, but on an earlier
+    release of it than this version installs, goes on to that firmware's
+    update in the same run (bring_up_to_date)."""
+
+    def bring(self, family_name, firmware, release, *, prepared=True, dry_run=False):
+        from types import SimpleNamespace
+        family = routes.FAMILIES[family_name]
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        state = RunState.open(Path(directory.name))
+        state.set_input("plug_kind", "sonoff-s60" if family_name == "espressif" else "sonoff-s61")
+        ctx = SimpleNamespace(state=state, dry_run=dry_run, esphome_firmware=None)
+        routes.apply_target(firmware, "sonoff", family)
+        self.addCleanup(routes.apply_target, "tasmota", "sonoff")
+        prepare = mock.Mock(return_value=prepared)
+        with mock.patch.dict(update.RELEASE, {firmware: lambda ctx: release}), \
+                mock.patch.dict(family.__dict__, {"PREPARE_UPDATE": {firmware: prepare}}), \
+                mock.patch.object(output, "say"):
+            brought = runner.bring_up_to_date(ctx)
+        return brought, ctx, prepare, family
+
+    def test_each_firmware_on_an_earlier_release_goes_on_to_its_update(self):
+        for family_name, firmware in (("espressif", "tasmota"), ("espressif", "esphome"),
+                                      ("beken", "openbeken"), ("beken", "esphome")):
+            with self.subTest(family=family_name, firmware=firmware):
+                brought, ctx, prepare, family = self.bring(family_name, firmware, "0.0.1")
+                self.assertTrue(brought)
+                prepare.assert_called_once()
+                steps = [step for step, _, _ in family.UPDATE_STEPS[firmware]]
+                self.assertEqual([step for step, _, _ in routes.STEPS[-len(steps):]], steps)
+                published = family.published_version(runner.kinds.of_run(ctx.state), firmware)
+                self.assertEqual(update.versions(ctx), ("0.0.1", published))
+
+    def test_a_plug_on_this_release_is_left_as_it_is(self):
+        published = routes.FAMILIES["espressif"].published_version(runner.kinds.SONOFF_S60, "esphome")
+        brought, _, prepare, _ = self.bring("espressif", "esphome", published)
+        self.assertFalse(brought)
+        prepare.assert_not_called()
+        self.assertNotIn("U1", routes.STEP_INDEX)
+
+    def test_nor_when_what_it_needs_first_cannot_be_had(self):
+        brought, _, _, _ = self.bring("espressif", "tasmota", "0.0.1", prepared=False)
+        self.assertFalse(brought)
+        self.assertNotIn("U5", routes.STEP_INDEX)
+
+    def test_nor_a_plug_back_on_sonoff_nor_a_dry_run(self):
+        self.assertFalse(self.bring("espressif", "sonoff", "0.0.1")[0])
+        self.assertFalse(self.bring("espressif", "esphome", "0.0.1", dry_run=True)[0])
+
+    def test_the_run_goes_on_to_the_update_once_its_route_is_done(self):
+        # As a run resumed after it stopped part way through the update: its
+        # route done, the plug still on the earlier release.
+        ran = []
+
+        def bring(ctx):
+            routes.continue_with([("U9", "An update", None)])
+            return True
+        stand_ins = RunStepsTests()
+        stand_ins.setUp()
+        stand_ins.STEPS = list(RunStepsTests.STEPS)   # its own, to be added to
+        with mock.patch.dict(routes.STEP_INDEX):
+            code, ran, _ = stand_ins.run_steps(bring_up_to_date=mock.Mock(side_effect=bring))
+        self.assertEqual((code, ran), (0, ["S1", "S2", "S3", "U9"]))
 
 
 class PlugBackTests(unittest.TestCase):

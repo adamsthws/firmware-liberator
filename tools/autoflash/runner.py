@@ -391,6 +391,36 @@ def rerun_on_tasmota(ctx: Context) -> int:
     return 0
 
 
+def bring_up_to_date(ctx: Context) -> bool:
+    """Whether a plug the run's route has just taken to its firmware goes on
+    to that firmware's update, in the same run: when it runs an earlier
+    release than this version installs - begun by an earlier version, which
+    had installed its own release before the run stopped (official Tasmota,
+    from F2 on, must stay the release it began with to the end), or a run
+    stopped in an update it had begun.  The update's steps are added to the
+    route (routes.continue_with), after what the family needs first
+    (PREPARE_UPDATE: Tasmota's bundle built again).  Nothing is asked: the
+    firmware was chosen, and this release is what choosing it gets."""
+    firmware = routes.ROUTE[0] or runs.run_firmware(ctx.state)
+    steps = getattr(routes.FAMILY, "UPDATE_STEPS", {}).get(firmware)
+    if not steps or ctx.dry_run or any(step in routes.STEP_INDEX for step, _, _ in steps):
+        return False
+    published = routes.FAMILY.published_version(kinds.of_run(ctx.state), firmware)
+    try:
+        if not update.outdated(ctx, firmware, published):
+            return False
+    except (DeviceError, OSError, RuntimeError, ValueError):
+        return False   # not answering as it: the conversion's own checks have said it is there
+    prepare = getattr(routes.FAMILY, "PREPARE_UPDATE", {}).get(firmware)
+    if prepare is not None and not prepare(ctx):
+        return False
+    old, new = update.versions(ctx)
+    output.say(f"The device has {routes.FIRMWARES[firmware]} {old}: updating it to {new}, "
+               "the release this version installs.")
+    routes.continue_with(steps)
+    return True
+
+
 def run_steps(ctx: Context) -> int:
     started = time.monotonic()
     safety_locks.restore_left_locks(ROOT)  # a resumed run skips A5, which looks too
@@ -426,7 +456,14 @@ def run_steps(ctx: Context) -> int:
     # Where the screen was as each step began, for going back to it (GoBack).
     marks: dict[str, tuple[int, bool, bool] | None] = {}
     redone: set[str] = set()   # steps gone back to, done again: "Retrying" on their line
-    while index < len(routes.STEPS):
+    brought_up = False
+    while True:
+        if index >= len(routes.STEPS):
+            # The route done: a plug on an earlier release of its firmware
+            # goes on to that firmware's update, once (bring_up_to_date).
+            if brought_up or not bring_up_to_date(ctx):
+                break
+            brought_up = True
         step, title, _ = routes.STEPS[index]
         index += 1
         marks[step] = output.mark()
