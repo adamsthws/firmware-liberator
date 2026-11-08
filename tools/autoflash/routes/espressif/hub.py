@@ -19,12 +19,16 @@ if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
 
-def upload_or_prompt(ctx: "Context", path: Path, what: str) -> str:
+def upload_or_prompt(ctx: "Context", path: Path, what: str, restart_to_retry: bool = True) -> str:
     """Upload over HTTP, falling back to the operator's browser.
 
     The multipart path has not been exercised on this hardware.  A failure here
     must not strand a run: the same file uploaded through the web UI is
     identical, so offer that and carry on.
+
+    An upload cut off and not taken is sent again after a restart
+    (clear_cut_off_upload), unless `restart_to_retry` is False: to a plug that
+    a restart would take off the firmware being uploaded to.
     """
     device = ctx.device
     for attempt in range(1, UPLOAD_ATTEMPTS + 1):
@@ -52,8 +56,16 @@ def upload_or_prompt(ctx: "Context", path: Path, what: str) -> str:
                 return "http:answer lost"
             if took is None or attempt == UPLOAD_ATTEMPTS:
                 return upload_or_prompt_by_hand(ctx, path, what, exc)
-            output.tell(f"    The upload was cut off ({exc}); sending it again "
-                        f"(attempt {attempt + 1} of {UPLOAD_ATTEMPTS}).")
+            if restart_to_retry:
+                output.tell(f"    The upload was cut off ({exc}); restarting the device to clear it, "
+                            f"then sending it again (attempt {attempt + 1} of {UPLOAD_ATTEMPTS}).")
+                try:
+                    clear_cut_off_upload(device)
+                except (DeviceError, OSError) as restart_failed:
+                    return upload_or_prompt_by_hand(ctx, path, what, restart_failed)
+            else:
+                output.tell(f"    The upload was cut off ({exc}); sending it again "
+                            f"(attempt {attempt + 1} of {UPLOAD_ATTEMPTS}).")
         except Exception as exc:  # noqa: BLE001 - any failure falls back to the operator
             return upload_or_prompt_by_hand(ctx, path, what, exc)
     raise AssertionError("unreachable")
@@ -79,6 +91,16 @@ def upload_took(device: device.Device, booted: str | None) -> bool | None:
     except DeviceError:
         return None
     return None if now is None else now != booted
+
+
+def clear_cut_off_upload(device: device.Device) -> None:
+    """Restart Tasmota after an upload that was cut off: it still holds that
+    upload, and the next one hangs without a word until it gives up minutes
+    later.  It starts the same slot - an upload switches only once it is whole."""
+    booted, uptime = device.started_at(), device.uptime_seconds()
+    device.command("Restart 1")
+    device.wait_for_reboot(timeout=180, started_at=booted, before=uptime)
+    device.wait_reachable(timeout=120)
 
 
 def upload_or_prompt_by_hand(ctx: "Context", path: Path, what: str, exc: Exception) -> str:
@@ -136,16 +158,10 @@ def step_promote(ctx: Context) -> dict[str, Any]:
         output.say("[dry-run] would upload the same image through Firmware Upgrade")
         return {"current_ota": slot, "uploads": 0}
 
-    # Tried again after an upload that was cut off (the Wi-Fi going part way),
-    # Tasmota still holds that upload, and the next one hangs without a word
-    # until it gives up minutes later: a restart clears it.  It starts the same
-    # slot - an upload switches only once it is whole.
+    # Tried again after an upload that was cut off (the Wi-Fi going part way).
     if ctx.state.status("D4") == FAILED:
         output.say("Restarting the device first, to clear the upload that was cut off...")
-        booted, uptime = device.started_at(), device.uptime_seconds()
-        device.command("Restart 1")
-        device.wait_for_reboot(timeout=180, started_at=booted, before=uptime)
-        device.wait_reachable(timeout=120)
+        clear_cut_off_upload(device)
 
     # Every upload writes the other slot and boots it, so this alternates.
     # One swap is expected; a second is allowed in case the run started from an

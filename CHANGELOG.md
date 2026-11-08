@@ -142,6 +142,10 @@ check.
   at that moment, say - is sent them again before its start. It was sent only the
   start, which a restarted plug no longer knew ("'autoflash_run' undeclared"),
   until the step failed and was tried again from the top.
+- The upload of Tasmota to Tasmota that most conversions make part way (D4), cut
+  off by the network, is sent again only after a restart. Sent again at once, it
+  went to a Tasmota still holding the upload cut off, which never took it: the
+  run waited ten minutes and asked for it to be uploaded by hand.
 - OpenBeken for the Sonoff S61 rebuilt with
   [1.18.320](https://github.com/openshwprojects/OpenBK7231T_App/releases/tag/1.18.320).
 
