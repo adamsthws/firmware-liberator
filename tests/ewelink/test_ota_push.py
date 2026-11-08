@@ -35,6 +35,14 @@ class ResendingTests(unittest.TestCase):
         watch.heard(AWAY, 101.0)
         self.assertFalse(watch.lost(0.0, 1000.0))
 
+    def test_a_plug_that_fetched_part_is_not_sent_it_again_until_it_is_back(self):
+        # Seen on the S61: cut off part way, the plug said nothing of going
+        # offline; sent again after 45 s quiet, it was still starting, a send wasted.
+        watch = Resending(100.0)
+        self.assertFalse(watch.lost(110.0, 110.0 + ota_push.RESEND_QUIET + 60))
+        watch.heard(BACK, 200.0)
+        self.assertTrue(watch.lost(110.0, 200.0 + ota_push.RESEND_SETTLE))
+
     def test_a_plug_online_all_along_that_never_asks_has_lost_it(self):
         # A command gone down a connection eWeLink had not yet let go of.
         watch = Resending(100.0)
