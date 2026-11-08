@@ -10,7 +10,7 @@ from tools.repo import github_settings as gs
 class FakeGitHub:
     """GitHub's API for one repository, as tools/repo/github_settings.py sees it."""
 
-    def __init__(self, checks_on_main=(), protect_rules=None):
+    def __init__(self, checks_on_main=(), protect_rules=None, environment=False):
         self.repository = {key: not want for key, want in gs.REPOSITORY_SETTINGS.items()}
         self.repository["security_and_analysis"] = {key: {"status": "disabled"} for key in gs.SECURITY}
         self.topics = []
@@ -18,7 +18,10 @@ class FakeGitHub:
                          "query_suite": "default"}
         self.toggles = {toggle: False for toggle in gs.TOGGLES}
         self.pages = {"cname": "firmwareliberator.com", "build_type": "legacy"}
-        self.environments = {}
+        # A new environment has no secrets: with `environment`, it is there as written, its secrets set.
+        self.environments = {gs.ENVIRONMENT: {"policy": gs.ENVIRONMENT_POLICY, "branches": [
+            {"id": 1, "name": "main", "type": "branch"}]}} if environment else {}
+        self.secrets = set(gs.ENVIRONMENT_SECRETS) if environment else set()
         self.rulesets = {7: {"id": 7, "name": "Protect Main Branch", "target": "branch",
                              "enforcement": "active", "conditions": gs.MAIN, "bypass_actors": [],
                              "rules": protect_rules or [{"type": "deletion"}],
@@ -33,7 +36,9 @@ class FakeGitHub:
                 self.topics = list(body["names"])
             if path == "/pages" and method == "DELETE":
                 self.pages = None
-            if path.startswith("/environments/"):
+            if "/secrets/" in path:
+                self.secrets.discard(path.rsplit("/", 1)[1])
+            elif path.startswith("/environments/"):
                 name = path.split("/")[2]
                 if path.count("/") == 2:
                     self.environments[name] = {"policy": copy.deepcopy(body["deployment_branch_policy"]),
@@ -59,6 +64,9 @@ class FakeGitHub:
         if path == "/pages":
             assert ok_missing or self.pages is not None
             return self.pages
+        if path == f"/environments/{gs.ENVIRONMENT}/secrets":
+            assert gs.ENVIRONMENT in self.environments
+            return {"total_count": len(self.secrets), "secrets": [{"name": name} for name in sorted(self.secrets)]}
         if path.startswith("/environments/"):
             environment = self.environments.get(path.split("/")[2])
             if path.endswith("/deployment-branch-policies"):
@@ -99,7 +107,7 @@ class GitHubSettingsTests(unittest.TestCase):
         self.assertEqual(fake.sent, [])
 
     def test_only_checks_that_have_run_on_main_are_required(self):
-        fake = FakeGitHub(checks_on_main=["unit", "emulator", "scan"])
+        fake = FakeGitHub(checks_on_main=["unit", "emulator", "scan"], environment=True)
         code, out = run(fake, "apply")
         self.assertEqual(code, 0)
         self.assertIn("set, but for unit (Python 3.12), unit (Python 3.10), lint, not yet run on main", out)
@@ -131,7 +139,7 @@ class GitHubSettingsTests(unittest.TestCase):
         self.assertIn("ruleset 'Checks before main': left for now - none has run on main yet", out)
 
     def test_checks_are_required_once_each_has_run_on_main(self):
-        fake = FakeGitHub(checks_on_main=[*gs.REQUIRED_CHECKS, "CodeQL"])
+        fake = FakeGitHub(checks_on_main=[*gs.REQUIRED_CHECKS, "CodeQL"], environment=True)
         code, out = run(fake, "apply")
         self.assertEqual(code, 0)
         self.assertIn("ruleset 'Checks before main': set", out)
@@ -146,6 +154,7 @@ class GitHubSettingsTests(unittest.TestCase):
         fake.repository["security_and_analysis"] = {key: {"status": want} for key, want in gs.SECURITY.items()}
         fake.scanning = dict(gs.CODE_SCANNING)
         fake.toggles = {toggle: True for toggle in gs.TOGGLES}
+        fake.secrets = set(gs.ENVIRONMENT_SECRETS)
         fake.sent.clear()
         code, out = run(fake, "apply")
         self.assertEqual((code, fake.sent), (0, []))
@@ -222,3 +231,37 @@ class GitHubSettingsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_a_missing_secret_is_named_and_left_for_its_value(self):
+        fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
+        fake.secrets = {"CLOUDFLARE_API_TOKEN", "OLD_TOKEN"}
+        run(fake, "apply")
+        code, out = run(fake, "apply")
+        self.assertEqual(code, 1)
+        self.assertIn("secret CLOUDFLARE_READ_TOKEN: left - its value is set with "
+                      "python3 tools/repo/github_settings.py secret CLOUDFLARE_READ_TOKEN", out)
+        self.assertEqual(fake.secrets, {"CLOUDFLARE_API_TOKEN"})
+
+    def test_a_secret_goes_to_gh_on_stdin_never_in_its_arguments(self):
+        done = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch.object(gs.subprocess, "run", return_value=done) as ran, \
+                mock.patch("sys.stdin", io.StringIO("s3cret-value\n")), redirect_stdout(io.StringIO()):
+            self.assertEqual(gs.main(["secret", "CLOUDFLARE_READ_TOKEN"]), 0)
+        command, = ran.call_args.args
+        self.assertEqual(command, ["gh", "secret", "set", "CLOUDFLARE_READ_TOKEN", "--env", gs.ENVIRONMENT,
+                                   "-R", gs.REPOSITORY])
+        self.assertEqual(ran.call_args.kwargs["input"], "s3cret-value")
+
+    def test_only_a_secret_written_here_is_set(self):
+        with mock.patch.object(gs.subprocess, "run") as ran, mock.patch("sys.stderr", io.StringIO()):
+            self.assertEqual(gs.main(["secret", "SOMETHING_ELSE"]), 2)
+        ran.assert_not_called()
+
+    def test_the_workflows_use_the_secrets_written_here(self):
+        from pathlib import Path
+        import re
+        root = Path(__file__).resolve().parents[2] / ".github" / "workflows"
+        used = set()
+        for name in ("website.yml", "cloudflare-settings.yml"):
+            used |= set(re.findall(r"secrets\.(\w+)", (root / name).read_text(encoding="utf-8")))
+        self.assertEqual(used, set(gs.ENVIRONMENT_SECRETS))
