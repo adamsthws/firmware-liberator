@@ -129,7 +129,8 @@ check.
   again, drawn as a stage stopped and then run a second time; instructions to
   join a network, long since done with; the installer sent again. A step done
   again because a later one found it had not taken is drawn afresh too, and the
-  run says why only if it still does not take. Notes worth keeping - the meter
+  run says why only if it still does not take. While a stage is done again its
+  line says "Retrying" rather than "Underway". Notes worth keeping - the meter
   left as it was, say - are shown under the stage's line. The run's log keeps
   everything.
 - A download the server turns away for now - GitHub's release downloads

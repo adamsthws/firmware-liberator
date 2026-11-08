@@ -64,6 +64,8 @@ class _State:
     name_width = 0                    # the longest stage name, so the columns line up
     most_stages = 0                   # the most the run may have, its numbers' column as wide
     rows = 0                          # rows finished on screen, less those taken off again (mark)
+    status = "Underway"               # what the stage line says while it runs: "Retrying" for a step done again
+    next_retrying = False             # the next stage begun is a step done again (retrying)
     stage_mark: tuple[int, bool, bool] | None = None  # the screen as the stage began (mark)
     kept: list[str] = []              # its notes to show again once it has passed (keep)
     blocks: list[tuple[int, bool]] = []  # the open blocks (transient_begin), innermost last:
@@ -170,6 +172,7 @@ def start(log_path: Path | None, *, verbose: bool) -> None:
         _s.concise = not verbose
         _s.paused = False
         _s.rows, _s.blocks, _s.kept, _s.stage_mark = 0, [], [], None
+        _s.status, _s.next_retrying = "Underway", False
         _s.name_width = _s.most_stages = 0   # the run's own route sets them (set_stage_width)
         _s.run_waited = 0.0
         _s.waiting_since = None   # a question left unanswered is not this run's wait
@@ -204,6 +207,7 @@ def finish() -> None:
         _s.concise = False
         _s.stage = None
         _s.blocks = []
+        _s.next_retrying = False
         _s.name_width = 0
         _s.after_stage = False
         _s.after_blank = False
@@ -626,6 +630,7 @@ def stage_begin(number: int, name: str) -> None:
             return  # already begun: keep its line and its clock
         _break()
         _s.stage_mark = (_s.rows, _s.after_stage, _s.after_blank) if _drawn_over() else None
+        _s.status, _s.next_retrying = ("Retrying" if _s.next_retrying else "Underway"), False
         _s.kept = []
         digits = len(str(max(_s.most_stages, number)))
         _s.stage = label
@@ -638,7 +643,7 @@ def stage_begin(number: int, name: str) -> None:
             if sys.stdout.isatty():
                 _draw_stage()
             else:
-                _print(f"{_s.stage_screen} - Underway", stage=True)
+                _print(f"{_s.stage_screen} - {_s.status}", stage=True)
         else:
             _print("")
             _print(f"== {_s.stage}", stage=True)
@@ -646,6 +651,14 @@ def stage_begin(number: int, name: str) -> None:
 
 # Outcomes of a stage that passed: all it showed is taken off the screen.
 PASSED = ("complete", "already done", "skipped")
+
+
+def retrying() -> None:
+    """The next stage begun is a step done again - tried again after it
+    failed, or gone back to (GoBack): its line says "Retrying" while it runs,
+    not "Underway", so the person sees why it is there again."""
+    with _lock:
+        _s.next_retrying = True
 
 
 def stage_end(outcome: str) -> None:
@@ -936,8 +949,8 @@ def _draw_stage() -> None:
     frames = spinner_frames()
     spinner = frames[int(_stage_seconds() / SPIN_EVERY) % len(frames)]
     # A space after the spinner: the terminal's cursor sits clear of it.
-    line = f"{MARGIN}{_s.stage_screen} - Underway {spinner} "
-    shown = f"{MARGIN}{_s.stage_screen} - {styled('Underway', BOLD)} {spinner} "
+    line = f"{MARGIN}{_s.stage_screen} - {_s.status} {spinner} "
+    shown = f"{MARGIN}{_s.stage_screen} - {styled(_s.status, BOLD)} {spinner} "
     if _clip(line) != line:
         line = shown = _clip(line)
     if _s.live and not _s.live_is_stage:
@@ -1028,8 +1041,8 @@ def _break() -> None:
         if _s.live_is_stage:
             # The underway line stays, without its spinner: only the stage
             # under way now has one, on the line drawn for it last.
-            line = f"{MARGIN}{_s.stage_screen} - Underway"
-            shown = f"{MARGIN}{_s.stage_screen} - {styled('Underway', BOLD)}"
+            line = f"{MARGIN}{_s.stage_screen} - {_s.status}"
+            shown = f"{MARGIN}{_s.stage_screen} - {styled(_s.status, BOLD)}"
             if _clip(line) != line:
                 line = shown = _clip(line)
             sys.stdout.write(_clear_notice() + "\r" + shown + " " * max(0, _s.live - len(line)) + "\n")

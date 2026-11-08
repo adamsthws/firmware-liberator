@@ -100,6 +100,11 @@ class StageProblemsTests(unittest.TestCase):
             "Stage  8 - Installing interim firmware  - Complete"),
             ["Stage 8 - Installing interim firmware: passed, with what it showed while under way left above it"])
 
+    def test_a_stage_left_retrying_is_found_as_one_left_underway(self):
+        self.assertEqual(self.problems("Stage  9 - Preparing memory layout - Retrying",
+                                       "Stage 10 - Updating the bootloader - Complete"),
+                         ["Stage 9 - Preparing memory layout: left underway when the next stage began"])
+
     def test_two_blank_rows_together_are_found(self):
         self.assertEqual(self.problems("Stage 1 - Checking - Complete", "", "", "Done"),
                          ["two blank rows one after another"])
