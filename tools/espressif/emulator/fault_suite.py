@@ -2597,12 +2597,13 @@ def batch(ids_file=None):
 
 
 def installs(target):
-    """What firmware.json pins that a plug converted to `target` is made with."""
+    """What firmware.json pins that the plug under test (PLUG) converted to
+    `target` is made with: its kind's ESPHome, its chip's everything else."""
     espressif = json.loads((REPO / "artifacts/firmware.json").read_text(encoding="utf-8"))["espressif"]
+    chip = espressif[PLUG.chip]
     if target == "esphome":
-        return {"image": espressif["sonoff-s60"]["esphome"], "bootloader": espressif["esp32c3"]["bootloader"],
-                "mover": espressif["esp32c3"]["mover"]}
-    return espressif["esp32c3"][target]
+        return {"image": espressif[PLUG.key]["esphome"], "bootloader": chip["bootloader"], "mover": chip["mover"]}
+    return chip[target]
 
 
 def converted_start(target):

@@ -1,6 +1,7 @@
 """The fault suite's own logic: the names a plug may go by, the saved plugs
 each plug has, and the scenarios it lists."""
 
+import json
 import os
 import tempfile
 import unittest
@@ -1525,6 +1526,17 @@ class PlugRoutesTests(unittest.TestCase):
         routes, _ = self.routes_of(TH)
         self.assertEqual(routes["sonoff>tasmota"][2]["E3"], fs.TEMPORARY_TABLE_LENGTHS["E3"])
         self.assertEqual(fs.routes_for(kinds.SONOFF_S60)["sonoff>tasmota"][2]["E3"], 5)
+
+    def test_a_starting_plug_is_made_with_its_own_kinds_firmware(self):
+        # It once was the S60's and the ESP32-C3's whatever the plug, so a
+        # classic ESP32's starting plugs were never found stale.
+        pins = json.loads((fs.REPO / "artifacts/firmware.json").read_text(encoding="utf-8"))["espressif"]
+        for kind in (kinds.SONOFF_S60, kinds.SONOFF_POW_ELITE, TH):
+            with self.subTest(kind.key), mock.patch.object(fs, "PLUG", kind):
+                self.assertEqual(fs.installs("esphome"), {"image": pins[kind.key]["esphome"],
+                                                          "bootloader": pins[kind.chip]["bootloader"],
+                                                          "mover": pins[kind.chip]["mover"]})
+                self.assertEqual(fs.installs("tasmota"), pins[kind.chip]["tasmota"])
 
     def test_the_own_table_only_where_there_is_a_temporary_one(self):
         for kind in (kinds.SONOFF_S60, kinds.SONOFF_POW_ELITE):
