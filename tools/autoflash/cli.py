@@ -505,7 +505,8 @@ def _main() -> int:
         parser.error("--replace-own-build installs the published ESPHome, so goes with no other firmware")
     prompts.UNATTENDED = args.unattended
     installer.SIMULATED_BACKUP_FAILURES = 2 * installer.BACKUP_ROUNDS if args.simulate_backup_failure else 0
-    beken_images.SPOIL_STEP = args.simulate_bad_image
+    spoil, _, times = (args.simulate_bad_image or "").partition(":")
+    beken_images.SPOIL_STEP, beken_images.SPOIL_TIMES = spoil or None, int(times or 1)
     beken_images.UNKNOWN_TABLE = args.simulate_unknown_table
 
     try:

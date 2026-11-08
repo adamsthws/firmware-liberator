@@ -36,11 +36,13 @@ FOTA_VERSION = fota_wrap.ANNOUNCED_VERSION
 # The person, who did not choose it, is told of the interim firmware alone.
 INTERIM = {"esphome": "openbeken"}
 INTERIM_NAME = "the interim firmware"
-# Testing only (run --simulate-bad-image [STEP]): the step whose image is sent
-# spoilt, once a run - one byte of the RBL's body changed, so the plug fetches
-# it whole and an update's own CRC (made after) passes, but its bootloader,
-# checking the body's CRC in the RBL's header, refuses to install it.
+# Testing only (run --simulate-bad-image [STEP[:N]]): the step whose image is
+# sent spoilt, the first N times a run sends it (once, without N) - one byte of
+# the RBL's body changed, so the plug fetches it whole and an update's own CRC
+# (made after) passes, but its bootloader, checking the body's CRC in the RBL's
+# header, refuses to install it.
 SPOIL_STEP: str | None = None
+SPOIL_TIMES = 1
 # Testing only (run --simulate-unknown-table): the official file's table read
 # as if its NET info were at another place, as a device on another table's would be.
 UNKNOWN_TABLE = False
@@ -48,11 +50,13 @@ UNKNOWN_TABLE = False
 # is, by hash.  Fetched once into the directory the emulator keeps dumps in.
 def as_sent(ctx: Context, step: str, image: bytes) -> bytes:
     """`image` as `step` sends it: spoilt, where a test asked for that step's
-    (SPOIL_STEP) and this run has not sent it spoilt yet - so a test may ask on
-    every run, as a route reaches the step only after a restart asked for."""
-    if step != SPOIL_STEP or ctx.state.data.get("captures", {}).get(f"{step}.spoilt"):
+    (SPOIL_STEP) and this run has sent it spoilt fewer than SPOIL_TIMES times -
+    so a test may ask on every run, as a route reaches the step only after a
+    restart asked for."""
+    spoilt_so_far = int(ctx.state.data.get("captures", {}).get(f"{step}.spoilt") or 0)
+    if step != SPOIL_STEP or spoilt_so_far >= SPOIL_TIMES:
         return image
-    ctx.state.capture(f"{step}.spoilt", True)
+    ctx.state.capture(f"{step}.spoilt", spoilt_so_far + 1)
     spoilt = bytearray(image)
     spoilt[rbl.HEADER + (len(image) - rbl.HEADER) // 2] ^= 0xFF
     output.say(f"    The image is spoilt, as asked (--simulate-bad-image {step}): its bootloader will refuse it.")

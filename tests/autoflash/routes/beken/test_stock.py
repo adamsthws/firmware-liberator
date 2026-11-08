@@ -160,6 +160,18 @@ class FromStockTests(unittest.TestCase):
             self.assertEqual(again, image)
             self.assertTrue(ctx.state.data["captures"]["B2.spoilt"])
 
+    def test_spoilt_as_many_times_as_asked_then_sent_whole(self):
+        # --simulate-bad-image O1:3: past the times a run sends an image again,
+        # so the run restarts the plug before sending it whole.
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, firmware="esphome")
+            image = b"RBL" + bytes(rbl.HEADER) + b"x" * 64
+            with mock.patch.object(images, "SPOIL_STEP", "O1"), mock.patch.object(images, "SPOIL_TIMES", 3), \
+                    mock.patch.object(images.output, "say"):
+                sent = [images.as_sent(ctx, "O1", image) for _ in range(4)]
+            self.assertEqual([each == image for each in sent], [False, False, False, True])
+            self.assertEqual(ctx.state.data["captures"]["O1.spoilt"], 3)
+
     def test_b2_not_confirmed_writes_nothing_and_a_cut_off_delivery_stays_attempted(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp, stock_version="1.0.2", firmware="esphome")

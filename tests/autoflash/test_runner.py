@@ -408,6 +408,40 @@ class GoBackTests(unittest.TestCase):
         self.assertIn(f"after it was sent {runner.GO_BACK_LIMIT + 1} times", self.ctx.last_failure)
 
 
+class GoBackRestartTests(unittest.TestCase):
+    """A step sent again and again without taking: before the run stops, the
+    device - answering, but not taking it - is restarted, once, and the step
+    sent afresh."""
+    execute = GoBackTests.execute
+
+    def setUp(self):
+        GoBackTests.setUp(self)
+        self.state.set_input("plug_ip", "192.0.2.77")
+        self.state.capture("E1.sent_again", runner.GO_BACK_LIMIT)
+
+    def test_the_device_restarted_the_step_is_sent_afresh(self):
+        with mock.patch.object(runner.restart, "restart", return_value=True) as restarted:
+            code, ended, told = self.execute()
+        restarted.assert_called_once_with("192.0.2.77")
+        self.assertEqual((code, self.ctx.go_back), (0, "E1"))
+        self.assertEqual(self.state.data["captures"]["E1.sent_again"], 0)
+        self.assertIn("the device was restarted. Doing E1 again", told.call_args.args[0])
+
+    def test_once_only_then_the_run_stops(self):
+        self.state.capture("E1.restarted", True)
+        with mock.patch.object(runner.restart, "restart") as restarted:
+            code, ended, _ = self.execute()
+        restarted.assert_not_called()
+        self.assertEqual(code, 1)
+        ended.assert_called_once_with("stopped")
+
+    def test_one_that_cannot_be_restarted_stops_the_run_asking_for_it(self):
+        with mock.patch.object(runner.restart, "restart", return_value=False):
+            code, _, _ = self.execute()
+        self.assertEqual(code, 1)
+        self.assertIn("Switch the device off and on", self.ctx.last_failure)
+
+
 class ScreenTests(unittest.TestCase):
     """However a stage ends, it leaves the screen as it should once the run
     moves on: one line for it, its outcome, and nothing of a try that failed

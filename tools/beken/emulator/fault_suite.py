@@ -139,6 +139,14 @@ POWER_CYCLE = re.compile(r"switch the (plug|device) off and on", re.IGNORECASE)
 # spoilt (--simulate-bad-image STEP): Sonoff's firmware's, and OpenBeken's
 # fetch of ESPHome.
 BAD_IMAGE_STEPS = {"B2", "J2", "O1"}
+# Those of them where the plug, refusing the image, is on OpenBeken, which the
+# tool can restart: there the image is spoilt once more than the run sends it
+# again (runner.GO_BACK_LIMIT, 2), so the run restarts the plug - as a person
+# switching it off and on would - and sends it afresh (badimage-restart).
+RESTART_IMAGE_STEPS = {"J2", "O1"}
+SPOILT_PAST_LIMIT = 3
+# What a run says as it restarts a plug that would not take an image.
+RESTARTED = re.compile(r"the device was restarted\. Doing \S+ again")
 # The interim firmware's settings, which it erases before the firmware it
 # fetched starts (tools/beken/openbeken/README.md#the-interim-firmware): its
 # own sector, and the flash variables its Wi-Fi keeps.
@@ -196,6 +204,9 @@ def scenarios() -> list[dict]:
         for step in set(steps) & BAD_IMAGE_STEPS:
             found.append(dict(id=sid(route, step, "badimage", "once"), route=route, step=step,
                               fault="badimage", arg="once", at=40))
+        for step in set(steps) & RESTART_IMAGE_STEPS:
+            found.append(dict(id=sid(route, step, "badimage", "restart"), route=route, step=step,
+                              fault="badimage", arg="restart", at=40))
         # The plug switched off while its bootloader writes the new firmware in:
         # timed off the plug's own output, a share of the way through the write.
         for at in (10, 50, 90) if set(steps) & beken.DESTRUCTIVE_STEPS else ():
@@ -650,7 +661,8 @@ def bad_image_scenario(instance: Instance, sc: dict, target: str, log: Path, not
     record - and runs again, as a person would, until the plug is converted:
     which must come from a run that saw the image was not installed and sent
     it again."""
-    spoil = ("--simulate-bad-image", sc["step"])
+    spoil = ("--simulate-bad-image",
+             f"{sc['step']}:{SPOILT_PAST_LIMIT}" if sc["arg"] == "restart" else sc["step"])
     finish(instance.tool(target, log, new=True, more=spoil), instance)
     runs = 1
     while not converted(instance.last_state(), sc["route"]) and runs <= RECOVERY_RUNS:
@@ -660,6 +672,11 @@ def bad_image_scenario(instance: Instance, sc: dict, target: str, log: Path, not
     notes["sent_again"] = any(SENT_AGAIN.search(path.read_text(encoding="utf-8", errors="replace"))
                               for path in instance.runs())
     ok = converted(instance.last_state(), sc["route"]) and notes["sent_again"]
+    if sc["arg"] == "restart":
+        # Converted by the run that restarted the plug, not by a person's run after.
+        notes["restarted"] = any(RESTARTED.search(path.read_text(encoding="utf-8", errors="replace"))
+                                 for path in instance.runs())
+        ok = ok and notes["restarted"] and runs == 1
     return dict(result="PASS" if ok else "FAIL", runs=runs)
 
 
