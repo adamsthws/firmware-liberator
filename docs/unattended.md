@@ -83,6 +83,12 @@ The terminal is the same size as the one running it, or 100x40 with none.
 at a question, 143 stopped by `--timeout`, anything else failed. The run's
 full log is in the run's `run.log`, under `captures/plugs/<MAC>/runs/`, as usual.
 
+A line starting `SCREEN:` after the exit code says a stage left something on
+the screen that it should have taken away: a try that failed, still shown
+after the stage was tried again, or a stage left "Underway" when the next
+began. The fault suites fail a run that does this (FAIL-SCREEN in
+[testing.md](testing.md)).
+
 ## In the emulator
 
 `tools/espressif/emulator/unattended-test.sh --fresh` starts the emulator, converts the

@@ -174,6 +174,34 @@ class Screen:
         return "\n".join(rows) + "\n"
 
 
+# A stage's line as it is left on the screen: "Stage 13 - Staging startup
+# firmware   - Stopped", its number padded and its name to the longest's.
+STAGE_ROW = re.compile(r"^ *Stage +(?P<number>\d+) - (?P<name>.+?) +- (?P<outcome>[A-Z][a-z]+(?: [a-z]+)*)", re.M)
+
+
+def stage_problems(screen: str) -> list[str]:
+    """What a stage left on `screen` (Screen.render) that it should have
+    taken away once it moved on: [] for nothing.  Each stage keeps one
+    line, its outcome; above that only its "Underway" line, where something
+    is shown under it.  So a stage shown "Stopped" and then again is a try
+    that failed left on the screen when it was tried again, and an
+    "Underway" line with another stage's after it, and not its own outcome,
+    is a stage that never ended.  A stage done again after a later one
+    found it had not taken (GoBack) has two lines, each a finished one."""
+    problems, underway, stopped = [], None, set()
+    for row in STAGE_ROW.finditer(screen):
+        stage, outcome = f"Stage {row['number']} - {row['name']}", row["outcome"]
+        if underway not in (None, stage):
+            problems.append(f"{underway}: left underway when the next stage began")
+        if stage in stopped:
+            problems.append(f"{stage}: shown stopped, then again - the try that failed was left on the screen")
+            stopped.discard(stage)
+        underway = stage if outcome == "Underway" else None
+        if outcome == "Stopped":
+            stopped.add(stage)
+    return problems
+
+
 def parse_size(text: str) -> tuple[int, int]:
     match = re.fullmatch(r"(\d+)x(\d+)", text)
     if not match or int(match.group(1)) < 40 or int(match.group(2)) < 20:
@@ -284,6 +312,8 @@ def main() -> int:
     outcome = {0: "finished", 130: "stopped at a question, or by Ctrl-C",
                143: "stopped by --timeout"}.get(code, "failed")
     print(f"Exit code {code} - {outcome}")
+    for problem in stage_problems(screen.render(colour=False)):
+        print(f"SCREEN: {problem}")
     print(f"Kept in {shown}/: screen.ansi (cat it), screen.txt, screen.raw")
     return code
 
