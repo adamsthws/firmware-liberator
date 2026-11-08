@@ -15,6 +15,7 @@ import base64
 import concurrent.futures
 import getpass
 import hashlib
+import http.client
 import ipaddress
 import json
 import os
@@ -197,6 +198,46 @@ def with_trusted_roots(connect: Callable[[ssl.SSLContext], Any]) -> Any:
 def urlopen(request: urllib.request.Request, timeout: float):
     """urllib's urlopen, with with_trusted_roots()'s second try."""
     return with_trusted_roots(lambda context: urllib.request.urlopen(request, timeout=timeout, context=context))
+
+
+# The waits between a download's tries (seconds): about two and a quarter
+# minutes in all. GitHub's release downloads answered 504 for minutes at a time
+# on 2026-11-08, with good answers between, and a run stopped at the first.
+DOWNLOAD_WAITS = (5, 10, 20, 40, 60)
+
+
+def passing(exc: Exception) -> bool:
+    """Whether a failed download may work if tried again: a server turned it
+    away for now (5xx, or too many asked of it), or it was cut off on the way.
+    Not one refused for good (4xx), nor from a site whose certificate is not
+    trusted, which would only fail the same way."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code >= 500 or exc.code == 429
+    return not isinstance(getattr(exc, "reason", None), ssl.SSLCertVerificationError)
+
+
+def download(request: urllib.request.Request | str, timeout: float = 60.0,
+             say: Callable[[str], Any] | None = None) -> bytes:
+    """The file at `request`'s address, tried again through a passing
+    trouble (DOWNLOAD_WAITS, each said through `say`). What would only fail
+    again is raised at once; a download cut off part way, as an OSError, as
+    the callers expect of any failed one."""
+    if isinstance(request, str):
+        request = urllib.request.Request(request, headers={"User-Agent": "autoflash"})
+    waits = iter(DOWNLOAD_WAITS)
+    while True:
+        try:
+            with urlopen(request, timeout) as response:
+                return response.read()
+        except (OSError, http.client.HTTPException) as exc:
+            wait = next(waits, None) if passing(exc) else None
+            if wait is None:
+                if isinstance(exc, OSError):
+                    raise
+                raise OSError(f"the download was cut off: {exc!r}") from exc
+            if say:
+                say(f"The download of {request.full_url} failed ({exc}); trying again in {wait}s.")
+            time.sleep(wait)
 
 
 def normalise_mac(text: str) -> str:

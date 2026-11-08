@@ -76,7 +76,7 @@ class ImagesTests(unittest.TestCase):
                 mock.patch.object(images, "DUMPS", Path(tmp)), \
                 mock.patch.dict(images.PUBLIC_DUMPS, {"sonoff-s61": ("http://example.test/dump.bin",
                                                                       hashlib.sha256(dump).hexdigest())}), \
-                mock.patch.object(images.urllib.request, "urlopen", return_value=Reply()), \
+                mock.patch.object(images.hostsys, "urlopen", return_value=Reply()), \
                 mock.patch.object(images.output, "say"):
             packed, version = images.stock_rbl(S61)
             self.assertEqual((rbl.unpack(packed), version), (app, "1.0.2"))
@@ -189,7 +189,7 @@ class UntestedKindTests(unittest.TestCase):
 
     def test_a_file_that_is_not_the_one_known_is_refused(self):
         with mock.patch.dict(images.OFFICIAL_FILES, {self.KIND.key: ("official.bin", "0" * 64)}), \
-                mock.patch.object(images.urllib.request, "urlopen", side_effect=OSError("no network")):
+                mock.patch.object(images.hostsys, "download", side_effect=OSError("no network")):
             with self.assertRaisesRegex(errors.NothingWritten, "could not be fetched.*Nothing was written"):
                 images.official_file(self.KIND)
 
