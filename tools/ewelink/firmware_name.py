@@ -45,6 +45,9 @@ A_NAME = re.compile(r"[A-Z][A-Z0-9_]*(-[A-Z0-9_]+)*")
 PUBLIC_FILE = re.compile(r"SONOFF_(?P<model>.+?)_(\(.*\)_)?\((?P<names>[^()]+)\)_[^_]+_v[0-9.]+_user1\.bin")
 # What the stock firmware calls itself when it says its chip: SN-ESP32C3-S60-01.
 STOCK_MODEL = re.compile(r"SN-(?P<chip>[A-Z0-9]+)-(?P<model>[A-Z0-9]+)-[0-9]+")
+# One file for a run of gangs: M5-1C-3C is the M5-1C-86, M5-2C-86 and M5-3C-120.
+GANGS = re.compile(r"(?P<base>[A-Z0-9]+)-(?P<low>[0-9])C-(?P<high>[0-9])C")
+A_GANG = re.compile(r"(?P<base>[A-Z0-9]+)-(?P<gang>[0-9])C(-[A-Z0-9]+)*")
 CHIPS = ((re.compile(r"ESP32(C[0-9]|S[0-9]|H[0-9])"), None),
          # Sonoff's own names also spell it with a letter O: ESP32DOWDR2V3.
          (re.compile(r"ESP32D[0O]WD"), "ESP32D0WD"),
@@ -145,18 +148,27 @@ def same_model(product: str, listed: str) -> bool:
                               or listed.startswith(product + "-"))
 
 
+def in_gangs(product: str, listed: str) -> bool:
+    """Whether a file for a run of gangs is the product's: M5-1C-3C is M5-2C-86."""
+    gangs, gang = GANGS.fullmatch(listed.upper()), A_GANG.fullmatch(product.upper())
+    return bool(gangs and gang and gangs.group("base") == gang.group("base")
+                and gangs.group("low") <= gang.group("gang") <= gangs.group("high"))
+
+
 def name_listed(files: Iterable[str], product: str, stock_model: str) -> str:
     """The name among public filenames for this device: by eWeLink's product
-    model, or else by the model its stock firmware names, on the same chip. ""
+    model, then by a file for a run of gangs it is in, or else by the model its
+    stock firmware names, on the same chip. ""
     unless exactly one name fits: a wrong one would only mislead the reader."""
     listed = []
     for file in files:
         found = PUBLIC_FILE.fullmatch(file)
         if found:
             listed.append((found.group("model"), main_name(found.group("names").split("+"))))
-    fits = {name for model, name in listed if same_model(product, model)}
-    if len(fits) == 1:
-        return fits.pop()
+    for fitting in (same_model, in_gangs):
+        fits = {name for model, name in listed if fitting(product, model)}
+        if len(fits) == 1:
+            return fits.pop()
     stock = STOCK_MODEL.fullmatch(stock_model)
     if not stock:
         return ""
