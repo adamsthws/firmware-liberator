@@ -25,6 +25,9 @@ from typing import Any
 # A gap between two rows of one instance longer than this is a pause between
 # batches, not a scenario (seconds).
 LONGEST = 2 * 3600
+# A typical scenario, where none has been timed on this computer: the median of
+# the full run of 2026-11-08 (seconds).
+TYPICAL = 300.0
 
 
 def when(row: dict[str, Any]) -> dt.datetime | None:
@@ -35,11 +38,11 @@ def when(row: dict[str, Any]) -> dt.datetime | None:
         return None
 
 
-def times(root: Path) -> dict[str, float]:
-    """Each scenario id in the suites' folders in `root`, and how long it took
+def times(*roots: Path) -> dict[str, float]:
+    """Each scenario id in the suites' folders in `roots`, and how long it took
     the last time it ran."""
     found: dict[str, tuple[dt.datetime, float]] = {}
-    for path in sorted(Path(root).glob("*/results.jsonl")):
+    for path in sorted(path for root in roots for path in Path(root).glob("*/results.jsonl")):
         previous: dict[Any, dt.datetime] = {}
         try:
             lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -72,10 +75,54 @@ def fault_seconds(scenario: dict[str, Any]) -> float:
     return float(arg) if isinstance(arg, (int, float)) else 0.0
 
 
+def lengths(took: dict[str, float],
+            estimate: Callable[[dict[str, Any]], float] = fault_seconds) -> Callable[[dict[str, Any]], float]:
+    """How long a scenario is taken to last: what it took last; one never run,
+    the typical one (TYPICAL, where none has run) and its fault's length."""
+    typical = statistics.median(took.values()) if took else TYPICAL
+    return lambda sc: took.get(sc["id"], typical + estimate(sc))
+
+
 def longest_first(scenarios: Iterable[dict[str, Any]], took: dict[str, float],
                   estimate: Callable[[dict[str, Any]], float] = fault_seconds) -> list[dict[str, Any]]:
     """`scenarios` in the order to start them: by how long each took last, the
-    longest first; one never run, as the typical one and its fault's length.
-    Those that took as long keep their order."""
-    typical = statistics.median(took.values()) if took else 0.0
-    return sorted(scenarios, key=lambda sc: -took.get(sc["id"], typical + estimate(sc)))
+    longest first (lengths). Those that took as long keep their order."""
+    length = lengths(took, estimate)
+    return sorted(scenarios, key=lambda sc: -length(sc))
+
+
+def shares(scenarios: Iterable[dict[str, Any]], took: dict[str, float], workers: list[int],
+           estimate: Callable[[dict[str, Any]], float] = fault_seconds) -> list[tuple[list[dict[str, Any]], float]]:
+    """`scenarios` shared out between machines running `workers` emulators
+    each, so that they end together: the longest first, each to the machine
+    that would then end soonest. Each share, longest first, and about how long
+    it takes (seconds)."""
+    if not workers or min(workers) < 1:
+        raise ValueError("each machine runs one emulator or more")
+    length = lengths(took, estimate)
+    found: list[list[dict[str, Any]]] = [[] for _ in workers]
+    load = [0.0] * len(workers)
+    for sc in sorted(scenarios, key=lambda sc: -length(sc)):
+        machine = min(range(len(workers)), key=lambda n: ((load[n] + length(sc)) / workers[n], n))
+        found[machine].append(sc)
+        load[machine] += length(sc)
+    return [(share, load[n] / workers[n]) for n, share in enumerate(found)]
+
+
+def write_shares(ids_file: str, workers: list[int], every: Iterable[dict[str, Any]],
+                 took: dict[str, float]) -> list[str]:
+    """`ids_file`'s scenarios (its first word on each line, as `list` writes
+    it) shared out (shares), each share written beside it as `ids_file`.1,
+    .2, ...; what to say of each."""
+    known = {sc["id"]: sc for sc in every}
+    ids = [line.split()[0] for line in Path(ids_file).read_text(encoding="utf-8").splitlines() if line.strip()]
+    unknown = [i for i in ids if i not in known]
+    if unknown:
+        raise ValueError(f"not scenarios of this suite: {', '.join(unknown[:5])}")
+    said = []
+    for n, (share, seconds) in enumerate(shares([known[i] for i in ids], took, workers), 1):
+        path = Path(f"{ids_file}.{n}")
+        path.write_text("".join(sc["id"] + "\n" for sc in share), encoding="utf-8")
+        said.append(f"{path}: {len(share)} scenarios on {workers[n - 1]} emulators, "
+                    f"about {seconds / 3600:.1f} h")
+    return said

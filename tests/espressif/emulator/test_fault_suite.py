@@ -237,6 +237,20 @@ class SavedPlugTests(unittest.TestCase):
         self.assertEqual(ran, ["c"])
         self.assertTrue(any("1 left to the stub" in line for line in said))
 
+    def test_share_writes_each_machines_share_from_the_times_kept_here_and_given(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ids = Path(directory) / "all.txt"
+            ids.write_text("a any\nb any\n", encoding="utf-8")
+            rows = [{"id": "a"}, {"id": "b"}]
+            with mock.patch.object(fs, "scenarios", return_value=rows), \
+                    mock.patch.object(fs.scenario_times, "times", return_value={"a": 60, "b": 60}) as took, \
+                    mock.patch.object(fs.sys, "argv", ["fault_suite.py", "share", str(ids), "1", "1",
+                                                       "--times-from", "elsewhere"]), \
+                    mock.patch("builtins.print"):
+                fs.main()
+            self.assertEqual(took.call_args.args, (fs.EMU, Path("elsewhere")))
+            self.assertEqual([Path(f"{ids}.{n}").read_text(encoding="utf-8") for n in (1, 2)], ["a\n", "b\n"])
+
     def test_a_batch_starts_the_longest_first(self):
         rows = [{"id": i, "route": "sonoff>tasmota", "step": "D1", "fault": "crash", "arg": 60} for i in "abc"]
         ran = []
