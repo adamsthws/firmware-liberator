@@ -194,6 +194,25 @@ about 3 seconds and reads its settings backup in about 6, and that ESP-IDF's
 panic test `test_cache_error` still ends in "Cache disabled but cached memory
 region accessed".
 
+Worth trying in the same rebuild, but not needed: `-icount shift=3,sleep=off`
+for the classic ESP32 alone, which runs the firmware's clock by the
+instructions it runs rather than by the wall's. When the computer starves the
+emulator, a plug's clock now jumps ahead, and its own timeouts fire on the jump:
+Tasmota's web server dropped an upload part way once, 5 s with no data; the
+tool now gets past that, by restarting the plug and sending the upload again.
+Under `-icount`, the 2,000-read Berry command no longer tripped Tasmota's
+5-second task watchdog (4 runs of 4). But with `sleep=off` the clock also races
+ahead while the firmware is idle, waiting for the computer, so its timeouts may
+fire sooner instead. Keep it only if, on the classic ESP32:
+
+1. the 2,000-read Berry command still finishes without the watchdog panic;
+2. repeats of the TH Elite's upload at D4 all go in at once, none cut off and none
+   held back for minutes (one took 376 s on 8 November 2026);
+3. `emulator_check` passes all four routes for the POW Elite and the TH Elite;
+4. a conversion is no more than about a fifth slower.
+
+Otherwise the image ships without it.
+
 Tried and dropped for the classic ESP32: QEMU's multi-threaded mode (MTTCG),
 which did not help and was slower; stretching the firmware's watchdogs,
 which only hid real hangs for longer; and the two cores taking turns every
