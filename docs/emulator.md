@@ -47,7 +47,7 @@ version's power meter.
   is fetched from its private package and filed there first, and a test copy
   `--plug` asks for that is not there yet is made from it (`copy_plug.py`):
   given its key and a login that can read the package, a checkout with an empty
-  `captures/` runs the emulator ([private-backup.md](private-backup.md)).
+  `captures/` runs the emulator.
   `AUTOFLASH_EMU_NO_RESTORE=1` says not to. For a device you do not own,
   `public_dump.py` makes a test copy from a public dump or update file
   ([adding-a-device.md](adding-a-device.md)).
