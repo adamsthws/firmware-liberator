@@ -57,6 +57,10 @@ def find_current_firmware(ctx: Context) -> str:
             found.mac = mac
             adopt_plug(ctx, found)
             return running
+        if running == "readout":
+            # On no route: settle_route puts Sonoff's firmware back.
+            adopt_plug(ctx, detect.Found(given, running, mac))
+            return running
         if running is None and mac is None:
             # Nothing there at all, not even on the network, so not a device on
             # Sonoff's firmware to ask eWeLink about (seen on a real plug switched

@@ -478,5 +478,25 @@ class NothingAnsweringTests(unittest.TestCase):
         self.assertEqual(self.run_on("12:34:56:ab:cd:ef", {"12:34:56:ab:cd:ef"}), "sonoff")
 
 
+
+class ReadoutFirmwareTests(FirmwareSearchCase):
+    """A Beken device a readout stopped part way left on its readout firmware."""
+
+    def test_given_by_address_it_is_taken_as_that(self):
+        with mock.patch.object(detect, "identify", return_value="readout"):
+            self.assertEqual(source.find_current_firmware(self.ctx(plug_ip="192.0.2.137")), "readout")
+        self.assertEqual(source.adopt_plug.call_args.args[1].firmware, "readout")
+
+    def test_never_taken_for_tasmota_without_its_template(self):
+        # As a fault run found it: an OpenBeken not told apart, at a MAC this
+        # computer knows, answering Tasmota's commands - sent the Espressif way.
+        tasmota = mock.Mock(return_value=mock.Mock(command=mock.Mock(return_value={"Status": {}})))
+        with mock.patch.object(detect, "identify", return_value=None), \
+                mock.patch.object(detect, "Device", tasmota), \
+                mock.patch.object(detect.openbeken, "is_openbeken", return_value=True), \
+                mock.patch.object(source, "known_macs", return_value={"12:34:56:ab:cd:ef"}), \
+                mock.patch.object(source, "RESTART_GRACE", 0.0):   # not waited for as restarting
+            self.assertNotEqual(source.find_current_firmware(self.ctx(plug_ip="192.0.2.137")), "untemplated")
+
 if __name__ == "__main__":
     unittest.main()

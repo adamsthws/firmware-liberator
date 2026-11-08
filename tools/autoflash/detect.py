@@ -36,6 +36,8 @@ NAMES = {
     # OpenBeken as a run to ESPHome installs it first (routes/beken/images.INTERIM):
     # never called OpenBeken, which the person did not choose.
     "interim": "the interim firmware",
+    # The readout OpenBeken (readout_beken), left by a readout stopped part way.
+    "readout": "the readout firmware, left by a readout stopped part way",
     "midway": "a firmware part way through a conversion",
     "untemplated": "Tasmota without the device's template",
     "outdated": "an earlier release of the firmware this tool installs",
@@ -213,14 +215,17 @@ def _esphome(host: str, timeout: float, login: tuple[str, str] | None) -> str | 
 def openbeken_plug(host: str, timeout: float = 3.0) -> Found | None:
     """An OpenBeken at `host` the tool installed on a kind of plug, as it says
     (openbeken.kind): "interim" for the interim firmware, a run to ESPHome's
-    part way, as it says too (openbeken.is_interim); None for no OpenBeken,
-    another, or one that would not say which."""
+    part way, as it says too (openbeken.is_interim); "readout" for the
+    readout firmware, on a device of no kind (openbeken.is_readout); None for
+    no OpenBeken, another, or one that would not say which."""
     found = openbeken.info(host, timeout)
     if found is None:
         return None
     name = str(found.get("shortName") or "") or None
     kind = openbeken.kind(host, found, timeout)
     if kind is None:
+        if openbeken.is_readout(host, timeout):
+            return Found(host, "readout", name=name)
         return None  # an OpenBeken, but not on a plug this tool converts
     interim = openbeken.is_interim(host, timeout)
     if interim is None:
@@ -229,11 +234,13 @@ def openbeken_plug(host: str, timeout: float = 3.0) -> Found | None:
 
 
 def answers_as_tasmota(host: str, timeout: float = 3.0) -> bool:
+    """Whether Tasmota answers at `host`: not an OpenBeken, which takes
+    Tasmota's commands too - the tool never puts Tasmota on a Beken device."""
     try:
         status = Device(host, timeout=timeout).command("Status 0")
     except Exception:  # noqa: BLE001 - anything but Tasmota answering
         return False
-    return isinstance(status, dict) and "Status" in status
+    return isinstance(status, dict) and "Status" in status and not openbeken.is_openbeken(host, timeout)
 
 
 def interim_build(version: str) -> bool:

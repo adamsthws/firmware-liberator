@@ -149,6 +149,19 @@ class FamilyTests(unittest.TestCase):
                     routes.settle_route(converted)
 
 
+class ReadoutLeftTests(unittest.TestCase):
+    def test_a_device_on_the_readout_firmware_gets_sonoffs_back_and_the_run_ends(self):
+        from tools.autoflash import readout_beken
+        state = SimpleNamespace(input={"plug_ip": "192.0.2.60"}.get, require=lambda *keys: ["192.0.2.60"],
+                                is_done=lambda step: False)
+        ctx = SimpleNamespace(state=state, replace_own_build=False, firmware_given="openbeken")
+        with mock.patch.object(routes.source, "find_current_firmware", return_value="readout"), \
+                mock.patch.object(readout_beken, "put_back", return_value="Sonoff's firmware is back.") as back:
+            with self.assertRaisesRegex(routes.NothingToDo, "Sonoff's firmware is back"):
+                routes.settle_route(ctx)
+        self.assertEqual(back.call_args.args[1], "192.0.2.60")
+
+
 class BekenTargetTests(unittest.TestCase):
     """An S61 goes back to Sonoff's firmware from the public dump, not a
     backup; and a run of one that stopped before its firmware was chosen is

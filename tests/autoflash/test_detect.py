@@ -42,9 +42,11 @@ class TasmotaTests(unittest.TestCase):
 
     def setUp(self):
         # No OpenBeken at these made-up addresses: asked, it is whatever is there on this network.
-        patch = mock.patch.object(detect, "openbeken_plug", return_value=None)
-        patch.start()
-        self.addCleanup(patch.stop)
+        for patch in (mock.patch.object(detect, "openbeken_plug", return_value=None),
+                      mock.patch.object(detect.openbeken, "is_openbeken", return_value=False)):
+            patch.start()
+            self.addCleanup(patch.stop)
+
     def kind(self, fake):
         with mock.patch.object(detect, "Device", fake):
             found = detect._tasmota("192.0.2.137", 2.0)
@@ -550,6 +552,26 @@ class OpenBekenTests(unittest.TestCase):
                                            "interim firmware")
         server.kind = None   # an OpenBeken the tool did not install: not a plug of ours
         self.assertIsNone(detect.openbeken_plug(server.host, 2.0))
+
+    def test_the_readout_firmware_is_told_apart_from_an_openbeken_not_ours(self):
+        server = FakeOpenBeken()
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        server.kind = "readout"   # the readout build's driver: of no kind the tool converts
+        found = detect.openbeken_plug(server.host, 2.0)
+        self.assertEqual((found.firmware, found.kind), ("readout", None))
+        self.assertIn("running the readout firmware, left by a readout stopped part way", found.describe())
+
+    def test_an_openbeken_answering_tasmotas_commands_is_not_tasmota(self):
+        # OpenBeken takes Tasmota's Status 0 too; the tool never puts Tasmota on a Beken device.
+        tasmota = mock.Mock(return_value=mock.Mock(command=mock.Mock(return_value={"Status": {}})))
+        with mock.patch.object(detect, "Device", tasmota), \
+                mock.patch.object(openbeken, "is_openbeken", return_value=True):
+            self.assertFalse(detect.answers_as_tasmota("192.0.2.60"))
+        with mock.patch.object(detect, "Device", tasmota), \
+                mock.patch.object(openbeken, "is_openbeken", return_value=False):
+            self.assertTrue(detect.answers_as_tasmota("192.0.2.60"))
 
     def test_one_that_will_not_say_whether_it_is_the_interim_firmware_is_asked_again_later(self):
         # Never taken for the plug's own OpenBeken, and sent the wrong way.
