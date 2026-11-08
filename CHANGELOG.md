@@ -63,6 +63,9 @@ check.
 - A plug that loses the upgrade command - a power cut part way through its
   download, say - is sent it again as soon as it is back on eWeLink, up to three
   times, rather than the run stopping about three minutes later for you to start again.
+- On an S61, a firmware delivery a power cut stopped part way is said plainly -
+  the plug keeps its Sonoff firmware: switch it off and on, and run again - not
+  as something unexpected.
 - The Sonoff Basic Gen5 (BASIC-1GS). It has no public dump, so the tool checks
   the partition table in eWeLink's official update file before writing anything,
   and logs what the run learns. Beken devices on any other table are refused.

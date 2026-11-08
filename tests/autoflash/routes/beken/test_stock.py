@@ -186,7 +186,9 @@ class FromStockTests(unittest.TestCase):
             with mock.patch.object(stock.prompts, "require_word", return_value=True), \
                     mock.patch.object(ota_push, "deliver",
                                       return_value=ota_push.Delivery(sent=True, complete=False, bytes_served=100)):
-                with self.assertRaisesRegex(OSError, "fetched 100 of"):
+                # Said plainly, not as something unexpected (seen after a power cut
+                # part way in the fault suite), and the step left attempted.
+                with self.assertRaisesRegex(errors.StoppedPartWay, "fetched 100 of .*switch it off and on"):
                     stock.step_push(ctx)
             # Turned down while an update cut off part way holds the plug's
             # updater (seen in the fault suite): switching it off and on frees it.

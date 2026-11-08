@@ -524,6 +524,15 @@ class UnexpectedErrorTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(state.status("E3"), "attempted")
 
+    def test_a_send_stopped_part_way_is_said_plainly_and_stays_attempted(self):
+        # Seen in the fault suite: a power cut part way through B2's delivery
+        # said "something unexpected went wrong: OSError: ...".
+        stopped = errors.StoppedPartWay("the delivery stopped part way: the device fetched 1 of 2 bytes")
+        code, state, ended, _, told = self.run_step("E3", stopped)
+        self.assertEqual(code, 1)
+        self.assertEqual(state.status("E3"), "attempted")
+        self.assertEqual(told.call_args.args[0], f"FAILED: {stopped}")
+
     def test_ctrl_c_is_not_swallowed(self):
         with self.assertRaises(KeyboardInterrupt):
             self.run_step("E1", KeyboardInterrupt())
