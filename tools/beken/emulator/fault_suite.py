@@ -18,6 +18,10 @@ does for the Espressif plugs.
     fault_suite.py batch [FILE]         the scenarios in FILE (one id a line; every
                                         scenario without), skipping those passed
     fault_suite.py report               the latest result of each
+    fault_suite.py share FILE N...      FILE's scenarios shared out between machines
+                                        running N emulators each, to end together:
+                                        FILE.1, FILE.2, ... (--times-from DIR: another
+                                        machine's suite folders, for their times)
 
 Each scenario: a run of the tool from a starting plug (a fresh dump for
 Sonoff's firmware, a saved one otherwise); when the step under test has been
@@ -1041,6 +1045,20 @@ def main(argv: list[str]) -> int:
         return 0 if all_passed(argv[1] if len(argv) > 1 else None) else 1
     elif command == "report":
         report()
+    elif command == "share":
+        # share IDS WORKERS... [--times-from DIR]..., as the Espressif suite's
+        import argparse
+        parser = argparse.ArgumentParser(prog="fault_suite.py share")
+        parser.add_argument("file")
+        parser.add_argument("workers", nargs="+", type=int)
+        parser.add_argument("--times-from", action="append", default=[], type=Path, metavar="DIR")
+        args = parser.parse_args(argv[1:])
+        try:
+            for line in scenario_times.write_shares(args.file, args.workers, scenarios(),
+                                                    scenario_times.times(folders.BEKEN, *args.times_from)):
+                print(line)
+        except ValueError as exc:
+            parser.error(str(exc))
     else:
         print(__doc__)
         return 2

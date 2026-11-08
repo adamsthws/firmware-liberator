@@ -110,6 +110,19 @@ class BatchResultTests(unittest.TestCase):
                 self.assertTrue(fault_suite.all_passed(str(ids)))
 
 
+    def test_share_writes_each_machines_share(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as directory:
+            ids = Path(directory) / "beken.txt"
+            ids.write_text("a\nb\n", encoding="utf-8")
+            with mock.patch.object(fault_suite, "scenarios", return_value=[{"id": "a"}, {"id": "b"}]), \
+                    mock.patch.object(fault_suite.folders, "migrate", return_value=[]), \
+                    mock.patch.object(fault_suite.scenario_times, "times", return_value={}) as took, \
+                    mock.patch("builtins.print"):
+                self.assertEqual(fault_suite.main(["share", str(ids), "1", "1"]), 0)
+            self.assertEqual(took.call_args.args, (fault_suite.folders.BEKEN,))
+            self.assertEqual([Path(f"{ids}.{n}").read_text(encoding="utf-8") for n in (1, 2)], ["a\n", "b\n"])
+
     def test_a_batch_starts_the_longest_first(self):
         from unittest import mock
         rows = [{"id": i, "route": "sonoff>openbeken", "step": "B2", "fault": "plugoff", "arg": 1} for i in "abc"]

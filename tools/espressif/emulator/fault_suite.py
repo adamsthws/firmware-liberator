@@ -2699,9 +2699,23 @@ def main():
     parser.add_argument("--stub-cloud", action="store_true",
                         help="each emulator serves its own local eWeLink stub (offline, fully "
                              "parallel, no cloud lock); the default uses the real cloud")
-    parser.add_argument("command", choices=["prep", "prep-update", "list", "batch", "report"])
-    parser.add_argument("file", nargs="?", help="batch: the scenario ids to run (else all)")
+    parser.add_argument("command", choices=["prep", "prep-update", "list", "batch", "report", "share"])
+    parser.add_argument("file", nargs="?", help="batch: the scenario ids to run (else all); share: those to share out")
+    parser.add_argument("workers", nargs="*", type=int,
+                        help="share: how many emulators each machine runs, one number a machine")
+    parser.add_argument("--times-from", action="append", default=[], type=Path, metavar="DIR",
+                        help="share: another machine's suite folders, copied here, for how long its scenarios took")
     args = parser.parse_args()
+    if args.command == "share":
+        if not args.file or not args.workers:
+            parser.error("share needs the ids file and each machine's emulators: share all.txt 4 4 6")
+        try:
+            for line in scenario_times.write_shares(args.file, args.workers, scenarios(),
+                                                    scenario_times.times(EMU, *args.times_from)):
+                print(line)
+        except ValueError as exc:
+            parser.error(str(exc))
+        return
     STUB_CLOUD = STUB_CLOUD or args.stub_cloud
     if STUB_CLOUD and "AUTOFLASH_EMU_SUITE_DIR" not in os.environ:
         # Apart from the real cloud's results, whose batch would otherwise

@@ -67,5 +67,48 @@ class OrderTests(unittest.TestCase):
         self.assertEqual([sc["id"] for sc in found], ["x", "y"])
 
 
+class ShareTests(unittest.TestCase):
+    def test_machines_are_given_work_to_end_together(self):
+        took = {"a": 600, "b": 500, "c": 400, "d": 300, "e": 200, "f": 100}
+        found = scenario_times.shares([{"id": i} for i in took], took, [1, 1])
+        self.assertEqual([[sc["id"] for sc in share] for share, _ in found], [["a", "d", "e"], ["b", "c", "f"]])
+        self.assertEqual([seconds for _, seconds in found], [1100, 1000])
+
+    def test_a_machine_running_more_emulators_is_given_more(self):
+        took = {i: 100 for i in "abcdefgh"}
+        found = scenario_times.shares([{"id": i} for i in took], took, [3, 1])
+        self.assertEqual([len(share) for share, _ in found], [6, 2])
+        self.assertEqual([seconds for _, seconds in found], [200, 200])
+
+    def test_with_nothing_timed_yet_each_machine_is_given_as_many(self):
+        found = scenario_times.shares([{"id": i} for i in "abcd"], {}, [1, 1])
+        self.assertEqual([len(share) for share, _ in found], [2, 2])
+
+    def test_each_machine_runs_one_emulator_or_more(self):
+        with self.assertRaises(ValueError):
+            scenario_times.shares([{"id": "a"}], {}, [2, 0])
+
+    def test_the_shares_are_written_beside_the_ids_and_said(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ids = Path(directory) / "all.txt"
+            ids.write_text("a any\nb cloud\nc any\n", encoding="utf-8")
+            said = scenario_times.write_shares(str(ids), [1, 1], [{"id": i} for i in "abc"],
+                                               {"a": 3600, "b": 1800, "c": 1800})
+            self.assertEqual((Path(f"{ids}.1").read_text(encoding="utf-8"),
+                              Path(f"{ids}.2").read_text(encoding="utf-8")), ("a\n", "b\nc\n"))
+        self.assertEqual(said[0], f"{ids}.1: 1 scenarios on 1 emulators, about 1.0 h")
+        with tempfile.TemporaryDirectory() as directory:
+            ids = Path(directory) / "all.txt"
+            ids.write_text("z\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "not scenarios of this suite: z"):
+                scenario_times.write_shares(str(ids), [1], [{"id": "a"}], {})
+
+    def test_times_come_from_more_than_one_machines_results(self):
+        with tempfile.TemporaryDirectory() as one, tempfile.TemporaryDirectory() as two:
+            results(Path(one) / "suite", {"id": "a", "at": "2026-11-08T10:00:00", "seconds": 100})
+            results(Path(two) / "suite", {"id": "b", "at": "2026-11-08T10:00:00", "seconds": 200})
+            self.assertEqual(scenario_times.times(Path(one), Path(two)), {"a": 100.0, "b": 200.0})
+
+
 if __name__ == "__main__":
     unittest.main()

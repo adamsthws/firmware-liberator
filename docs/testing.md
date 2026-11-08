@@ -463,8 +463,18 @@ than this checkout installs: run `prep` again after a firmware change.
 ran on this computer (from the results in `captures/emulation/*/`; one never
 run counts as a typical one plus its fault's length), so the batch does not
 end on a long one started last. The Beken suite's `batch` does the same, from
-its own results. With each machine ending near the others, a full run's
-scenarios can be shared out between machines by their total times.
+its own results.
+
+`share` splits a run between machines so they end together, by the same
+times: each machine's number of emulators after the ids, and `--times-from`
+for each other machine's suite folders copied here (each machine keeps its
+own). It writes `all.txt.1`, `all.txt.2`, ..., one for each machine to `batch`,
+and says about how long each takes:
+
+```sh
+tools/espressif/emulator/fault_suite.py share all.txt 4 4 6 --times-from alice/ --times-from brenda/
+tools/beken/emulator/fault_suite.py share beken.txt 2 2 2
+```
 
 The update scenarios (`update>tasmota`, `update>esphome`) start from a plug no run
 can make, since the tool installs only the current release. `prep-update` makes
