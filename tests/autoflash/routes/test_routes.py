@@ -237,6 +237,19 @@ class BekenTargetTests(unittest.TestCase):
         self.assertEqual(routes.recorded_firmware(self.state(plug_kind="sonoff-s60", source="esphome")), "tasmota")
 
 
+class StepTableTests(unittest.TestCase):
+    def test_the_docs_table_has_each_familys_steps_from_sonoff(self):
+        """docs/what-happens.md lists both families' steps side by side, by ID."""
+        text = (Path(__file__).resolve().parents[3] / "docs" / "what-happens.md").read_text(encoding="utf-8")
+        start = text.index("| | An Espressif plug | A Beken plug |")
+        rows = [line.split("|")[2:4] for line in text[start:].splitlines()[2:] if line.startswith("|")]
+        for column, (family, firmwares) in enumerate(((espressif, ("tasmota", "esphome")),
+                                                     (beken, ("openbeken", "esphome")))):
+            listed = {code for row in rows for code in re.findall(r"`([A-Z]\d)`", row[column])}
+            steps = {step for firmware in firmwares for step, _, _ in routes.steps_for(firmware, "sonoff", family)}
+            self.assertEqual(listed, steps, family.__name__)
+
+
 class KindTests(unittest.TestCase):
     def test_every_kind_names_a_family_the_routes_know(self):
         for kind in kinds.ALL:
