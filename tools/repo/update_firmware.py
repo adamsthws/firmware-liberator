@@ -100,13 +100,35 @@ TASMOTA_FILES = {
     "safeboot": "tasmota32c3-safeboot.bin",
     "app": "tasmota32c3.bin",
 }
+# What a chip's plugs share is published under a name that says the chip, as
+# a device's own says the device, so that the two chips' are told apart by
+# name; tests/repo/test_firmware_pins.py holds every published file to it.
+CHIP_FILES = {
+    "mover": "artifacts/autoflash-mover-{chip}-{version}.bin",
+    "bootloader": "artifacts/esphome-{chip}-bootloader-{version}.bin",
+    "bridge": "artifacts/autoflash-bridge-{chip}-{version}{suffix}",
+    "recovery": "artifacts/autoflash-recovery-safeboot-{chip}-imprintable.bin",
+}
+
+
+def chip_file(chip: chips.Chip, name: str, **fields: str) -> str:
+    """Where `name`, shared by `chip`'s plugs, is published; a field not given
+    is left to fill ({version})."""
+    return CHIP_FILES[name].format_map({"version": "{version}", **fields, "chip": chip.key})
+
+
+def mover_config(chip: chips.Chip) -> str:
+    """A chip's mover, from its own folder: it is the same for any plug on it."""
+    return f"devices/{chip.key}/mover.yaml"
+
+
 # Each ESPHome build: its config, the file it is published as, and its name in
 # its section of firmware.json (the S60's for the image, the ESP32-C3's for the mover).
 ESPHOME_BUILDS = {
     "image": ("devices/sonoff-s60/esphome.yaml", "artifacts/esphome-sonoff-s60-imprintable-{version}.bin", "esphome"),
-    "mover": ("devices/sonoff-s60/mover.yaml", "artifacts/autoflash-mover-{version}.bin", "mover"),
+    "mover": (mover_config(chips.ESP32C3), chip_file(chips.ESP32C3, "mover"), "mover"),
 }
-BOOTLOADER_FILE = "artifacts/esphome-sonoff-s60-bootloader-{version}.bin"
+BOOTLOADER_FILE = chip_file(chips.ESP32C3, "bootloader")
 # Downloads ESPHome's builds need (ESP-IDF and its tools, a gigabyte or so),
 # kept between builds. captures/ is never committed.
 BUILD_CACHE = ROOT / "captures" / "esphome-build"
@@ -1055,7 +1077,8 @@ def built_bridge(env: str, chip: chips.Chip) -> tuple[bytes, str]:
 
 def esp32_bridge(pins: dict[str, Any]) -> None:
     app, version = built_bridge("autoflash-bridge-esp32", chips.ESP32)
-    publish(espressif_section(pins, chips.ESP32.key), "bridge", f"artifacts/autoflash-bridge-esp32-{version}.bin", app,
+    publish(espressif_section(pins, chips.ESP32.key), "bridge",
+            chip_file(chips.ESP32, "bridge", version=version, suffix=".bin"), app,
             {"version": version})
 
 
@@ -1068,7 +1091,7 @@ def esp32c3_bridge(pins: dict[str, Any]) -> None:
     except ValueError as exc:
         raise UpdateError(str(exc)) from exc
     publish(espressif_section(pins, chips.ESP32C3.key), "bridge",
-            f"artifacts/autoflash-bridge-{kinds.SONOFF_S60.key}-{version}.ota", wrapped, {"version": version})
+            chip_file(chips.ESP32C3, "bridge", version=version, suffix=".ota"), wrapped, {"version": version})
 
 
 def esp32_recovery(pins: dict[str, Any]) -> None:
@@ -1092,15 +1115,15 @@ def esp32_recovery(pins: dict[str, Any]) -> None:
                            env={**os.environ, "PYTHONPATH": str(ROOT)})
     if code:
         raise UpdateError("the recovery Safeboot is not publishable")
-    publish(espressif_section(pins, chips.ESP32.key), "recovery", "artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin",
-            image, {"tasmota_commit": INTERIM_TASMOTA_COMMIT})
+    publish(espressif_section(pins, chips.ESP32.key), "recovery", chip_file(chips.ESP32, "recovery"), image,
+            {"tasmota_commit": INTERIM_TASMOTA_COMMIT})
 
 
 def esp32_mover(pins: dict[str, Any]) -> None:
     release = pinned_version(pins, "esphome")
     builder = esphome_builder(release)
     BUILD_CACHE.mkdir(parents=True, exist_ok=True)
-    config = ROOT / "devices/esp32/mover.yaml"
+    config = ROOT / mover_config(chips.ESP32)
     version = config_version(config.read_text(encoding="utf-8"))
     app, bootloader = build(builder, config, version, BUILD_CACHE)
     described = check_esphome_app(app, "the mover built", release, chips.ESP32)
@@ -1108,10 +1131,10 @@ def esp32_mover(pins: dict[str, Any]) -> None:
     if len(app) > room:
         raise UpdateError(f"the mover is {len(app):,} bytes: {room:,} fit in front of Tasmota")
     section = espressif_section(pins, chips.ESP32.key)
-    record = {"config": "devices/esp32/mover.yaml", "version": version, "esphome": release,
+    record = {"config": mover_config(chips.ESP32), "version": version, "esphome": release,
               "esp_idf": described["esp_idf"], "builder": builder}
-    publish(section, "mover", f"artifacts/autoflash-mover-esp32-{version}.bin", app, record)
-    publish(section, "bootloader", f"artifacts/esphome-esp32-bootloader-{version}.bin", bootloader, record)
+    publish(section, "mover", chip_file(chips.ESP32, "mover", version=version), app, record)
+    publish(section, "bootloader", chip_file(chips.ESP32, "bootloader", version=version), bootloader, record)
 
 
 def esp32_template(pins: dict[str, Any]) -> None:

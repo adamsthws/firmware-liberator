@@ -34,7 +34,10 @@ used with the Berry Tasmota pinned above (15.6.0.1, same settings layout). If
 it, or the Tasmota the interim firmware is made from (15.6.0), changes,
 re-check and re-capture it: see `tools/autoflash/tasmota_settings.py`. The
 official release a converted plug ends on can change without it
-([`../docs/updating-firmware.md`](../docs/updating-firmware.md)).
+([`../docs/updating-firmware.md`](../docs/updating-firmware.md)). The
+ESP32-C3's was published before a chip's files named the chip: captured at
+another release, it is `tasmota-settings-template-esp32c3-<version>.bin`, as
+the classic ESP32's names `esp32` (`template_path` names it so).
 
 The imprintable Safeboot is built from the pinned Tasmota source with
 `tools/espressif/safeboot/repartition/recovery-safeboot/volatile-wifi-defaults.patch` and
@@ -60,7 +63,12 @@ To publish a new one: `tools/espressif/safeboot/configure_imprintable_safeboot.p
 header with the placeholders, `tools/espressif/safeboot/build_recovery_safeboot.sh` builds it from
 the pinned Tasmota source, `tools/espressif/safeboot/sanitise_safeboot.py` blanks the build
 machine's paths in place, and `tools/espressif/safeboot/validate_imprintable_safeboot.py` must
-then say it is publishable. A rebuild holds the same text as the published file
+then say it is publishable. The ESP32-C3's was published before a chip's files
+named the chip: a rebuild is published as
+`autoflash-recovery-safeboot-esp32c3-imprintable.bin`, as the classic ESP32's
+names `esp32`, with `PUBLISHED_RECOVERY_FILE` in
+`tools/espressif/safeboot/safeboot_migration.py` and its row here changed to
+it; `tests/repo/test_firmware_pins.py` fails until it is. A rebuild holds the same text as the published file
 but its build date and time; one built in a directory whose path is not as
 long as this one's (38 characters) has everything after the first such path a
 few bytes along.
@@ -114,7 +122,7 @@ image for that release (`firmware.json` pins it by digest);
 `firmware.ota.bin` is the file published. The bootloader is
 `bootloader/bootloader.bin` from an earlier build, with ESPHome 2026.9.1 and
 ESP-IDF 5.5.5. The mover is
-[`../devices/sonoff-s60/mover.yaml`](../devices/sonoff-s60/mover.yaml), built the same way, with ESPHome 2026.9.1: it drives no pins, so it
+[`../devices/esp32c3/mover.yaml`](../devices/esp32c3/mover.yaml), built the same way, with ESPHome 2026.9.1: it drives no pins, so it
 is the same for any plug with an ESP32-C3 and 4 MB of flash, and it
 goes by `autoflash-recovery-XXXX` as the bridge does.
 Like the imprintable Safeboot they hold placeholders instead of a

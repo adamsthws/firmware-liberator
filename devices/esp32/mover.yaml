@@ -12,7 +12,7 @@
 # Like the ESPHome images the tool installs, it is published pre-built with
 # Wi-Fi placeholders the tool writes the plug's Wi-Fi into; it saves nothing,
 # as it never stays. It is the same for any device with a classic ESP32 and 4 MB of
-# flash: it drives no pins. devices/sonoff-s60/mover.yaml is the ESP32-C3's.
+# flash: it drives no pins. devices/esp32c3/mover.yaml is the ESP32-C3's.
 
 esphome:
   # Sixteen characters: with ESPHome's suffix of the MAC (a dash and six) it is

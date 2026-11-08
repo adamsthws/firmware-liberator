@@ -119,7 +119,7 @@ settings are lost (see [Tasmota's own names](#tasmotas-own-names)).
 
 ### The mover
 
-- [`devices/sonoff-s60/mover.yaml`](../devices/sonoff-s60/mover.yaml): ESPHome
+- [`devices/esp32c3/mover.yaml`](../devices/esp32c3/mover.yaml): ESPHome
   names must be lower case and ESPHome's own suffix is six hex digits, so the
   mover is built as `autoflash-moving` with `name_add_mac_suffix` and its
   `on_boot` writes `autoflash-recovery-%02X%02X` over that name before its

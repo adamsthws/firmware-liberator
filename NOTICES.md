@@ -40,7 +40,7 @@ and that config.
 
 `artifacts/autoflash-mover-1.1.0.bin` is built the same way with ESPHome
 2026.9.1 and ESP-IDF 5.5.5 from
-[`devices/sonoff-s60/mover.yaml`](devices/sonoff-s60/mover.yaml), and
+[`devices/esp32c3/mover.yaml`](devices/esp32c3/mover.yaml), and
 `artifacts/esphome-sonoff-s60-bootloader-1.2.0.bin` is the ESP-IDF bootloader
 from the build of the S60's config at 1.2.0, with the same ESPHome and
 ESP-IDF. Their corresponding source is the

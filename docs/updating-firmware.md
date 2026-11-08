@@ -12,7 +12,7 @@ by hand takes the same steps ([after that](#by-hand)).
 |---|---|---|---|
 | Official Tasmota: `tasmota32c3.bin`, `tasmota32c3-safeboot.bin` (and `tasmota32c3.factory.bin`, for its partition table); the classic ESP32's `tasmota32*.bin`, at the same release | for good | every Tasmota release | [`firmware.json`](../artifacts/firmware.json) |
 | ESPHome for each device (`artifacts/esphome-*`) | for good | every ESPHome release, every device's built together (`esphome --every-device`) | `firmware.json` |
-| ESPHome's bootloader (`artifacts/esphome-sonoff-s60-bootloader-*.bin`) | for good | only when it has to change | `firmware.json` |
+| ESPHome's bootloader (`artifacts/esphome-*-bootloader-*.bin`) | for good | only when it has to change | `firmware.json` |
 | The mover (`artifacts/autoflash-mover-*.bin`) | a minute or two | only when its config changes | `firmware.json` |
 | OpenBeken for each Beken device (`artifacts/openbeken-*.rbl`) | for good | every OpenBeken release, every Beken device's built together (`openbeken --every-device`), its six scenarios run | `firmware.json` |
 | The Berry Tasmota, the recovery Safeboot, the settings template, the bridge | minutes | no | [`artifacts/README.md`](../artifacts/README.md) says where, and how each is changed |
@@ -64,6 +64,22 @@ bootloader stays, unless the new one fixes something an S60 needs (an ESP32-C3
 with no secure boot or flash encryption); the bootloader of ESP-IDF 5.x starts
 the apps of later 5.x releases. Replacing it is a decision of its own:
 `--new-bootloader`, then the whole fault suite and real plugs.
+
+**A file's name says what it belongs to**: a chip's, shared by every plug on
+it, names the chip (`autoflash-mover-esp32-1.0.0.bin`), and a device's own
+names the device (`esphome-sonoff-s60-imprintable-*.bin`). The ESP32-C3's
+mover, bootloader, bridge, recovery Safeboot and settings template were
+published before the rule, and published files never change, so each keeps its
+name until it is next built: `update_firmware.py` publishes the next one as
+`autoflash-mover-esp32c3-*`, `esphome-esp32c3-bootloader-*`,
+`autoflash-bridge-esp32c3-*`, as the classic ESP32's are, and the recovery
+Safeboot and the template are named so where they are made
+([`artifacts/README.md`](../artifacts/README.md)). Built again, take the file
+out of `UNTIL_REBUILT` in `tests/repo/test_firmware_pins.py`, which lets each
+old name be only while that exact build is published, and fails otherwise -
+so a release cannot carry a rebuild under the old name. Each chip's mover is
+built from its own folder, `devices/<chip>/mover.yaml`, which the same tests
+hold.
 
 ## By itself
 

@@ -39,10 +39,11 @@ class WhichDevicesTests(unittest.TestCase):
                      ".github/workflows/emulator-check.yml", "tools/repo/emulator_check.py"):
             self.assertEqual(keys([path]), self.ALL, path)
 
-    def test_the_classic_esp32s_shared_helpers_check_those_devices(self):
-        found = keys(["devices/esp32/mover.yaml"])
-        self.assertEqual(found, {kind.key for kind in kinds.READY if kind.chip == "esp32"})
-        self.assertNotIn("sonoff-s60", found)
+    def test_a_chips_shared_files_check_the_devices_on_it(self):
+        for chip in ("esp32", "esp32c3"):
+            found = keys([f"devices/{chip}/mover.yaml"])
+            self.assertEqual(found, {kind.key for kind in kinds.READY if kind.chip == chip} - check.NO_DUMP, chip)
+        self.assertNotIn("sonoff-s60", keys(["devices/esp32/mover.yaml"]))
 
     def test_nothing_a_conversion_runs_checks_nothing(self):
         self.assertEqual(keys(["docs/testing.md", "tests/repo/test_layout.py", "website/src/site.mjs"]), set())

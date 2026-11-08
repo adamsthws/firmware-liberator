@@ -208,9 +208,16 @@ def _require_size(settings: bytes) -> None:
         raise SettingsError(f"the record is {len(settings)} bytes, not {SIZE}")
 
 
+# The ESP32-C3's template was published before a chip's files named it. One
+# captured at another release is named as every other chip's is
+# (tests/repo/test_firmware_pins.py holds each published file to the rule).
+UNNAMED_TEMPLATE_VERSION = 0x0F060000
+
+
 def template_path(root, chip: chips.Chip = chips.ESP32C3) -> "Path":
     from pathlib import Path
-    family = "" if chip is chips.ESP32C3 else f"{chip.key}-"
+    unnamed = chip is chips.ESP32C3 and TEMPLATE_VERSION == UNNAMED_TEMPLATE_VERSION
+    family = "" if unnamed else f"{chip.key}-"
     return Path(root) / "artifacts" / f"tasmota-settings-template-{family}{version_text(TEMPLATE_VERSION)}.bin"
 
 

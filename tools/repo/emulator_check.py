@@ -54,8 +54,8 @@ def family_of(kind: kinds.Kind) -> str:
 def affected(kind: kinds.Kind, changed: list[str]) -> bool:
     """Whether a change to these paths could change how `kind` converts."""
     family = family_of(kind)
-    own = (f"devices/{kind.key}/", f"tools/{family}/", *SHARED,
-           *(("devices/esp32/",) if kind.chip == "esp32" else ()))
+    # A chip's folder holds what every plug on it shares: its mover.
+    own = (f"devices/{kind.key}/", f"devices/{kind.chip}/", f"tools/{family}/", *SHARED)
     return any(path.startswith(own) for path in changed)
 
 
