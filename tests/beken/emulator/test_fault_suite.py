@@ -31,21 +31,35 @@ class ScenarioTests(unittest.TestCase):
 class EndChecksTests(unittest.TestCase):
     """A converted plug passes only if the report's end-of-run checks did."""
 
-    def result(self, checks):
+    def result(self, checks, screen=None):
         from unittest import mock
         sc = {"id": "sonoff>openbeken:B2:plugoff-1", "route": "sonoff>openbeken", "step": "B2",
               "fault": "plugoff", "arg": 1, "at": 40}
         log = ("[10:00:00] === run started, tool version 2.3.0 ===\n[10:00:01]     Relay: Did not switch\n"
                f"[10:00:02]     Checks passed: {checks}\n[10:00:03] === run ended ===\n")
+        def step_scenario(instance, sc, target, tool_log, notes):
+            if screen is not None:
+                tool_log.write_text(screen, encoding="utf-8")   # what the run printed
+            return {"result": "PASS", "runs": 1}
         with tempfile.TemporaryDirectory() as tmp:
             plug = SimpleNamespace(reset=lambda start: None, start=lambda firmware: True, runs=list,
                                    dhcp_names=lambda: ["openbeken-cdef"], last_log=lambda: log, state=Path(tmp))
             with mock.patch.object(fault_suite, "OUT", Path(tmp)), mock.patch.object(fault_suite, "MemoryWatch"), \
-                    mock.patch.object(fault_suite, "step_scenario", return_value={"result": "PASS", "runs": 1}):
+                    mock.patch.object(fault_suite, "step_scenario", side_effect=step_scenario):
                 return fault_suite.run_scenario(plug, sc)
 
     def test_a_converted_plug_whose_relay_switched_passes(self):
         self.assertEqual(self.result("True")["result"], "PASS")
+
+    def test_a_stage_s_failed_try_left_on_the_screen_is_its_own_failure(self):
+        rule = "=" * 72
+        screen = (f"{rule}\nThe screen at the end of the run (100x40):\n{rule}\n"
+                  "Stage 6 - Sending OpenBeken - Stopped\nStage 6 - Sending OpenBeken - Complete\n"
+                  f"{rule}\nExit code 0 - finished\n")
+        outcome = self.result("True", screen)
+        self.assertEqual(outcome["result"], "FAIL-SCREEN")
+        self.assertEqual(len(outcome["notes"]["screen"]), 1)
+        self.assertEqual(self.result("True", screen.replace("Stopped", "Complete"))["result"], "PASS")
 
     def test_one_whose_checks_failed_is_its_own_failure_saying_what_they_found(self):
         outcome = self.result("False")
@@ -575,9 +589,11 @@ class ReadoutScenarioTests(unittest.TestCase):
             fault_suite.Instance(3).tool("sonoff", Path(tmp, "tool.log"), new=True)
         readout, conversion = (c.args[0][3:] for c in popen.call_args_list)
         # No --plug-ip: a Beken plug answers no discovery, and is found by its hardware address (a9f1a13).
-        self.assertEqual(readout, ["computer", "tools/autoflash/cli.py", "readout", "--unattended",
+        # On a terminal of its own, its screen kept (unattended_run.py adds --unattended).
+        self.assertEqual(readout, ["computer", "tools/repo/unattended_run.py", "--command", "readout", "--",
                                    "--env-file", "captures/tool.env"])
-        self.assertEqual(conversion[2:3] + conversion[-3:], ["run", "--firmware", "sonoff", "--new"])
+        self.assertEqual(conversion[1:3] + conversion[-3:],
+                         ["tools/repo/unattended_run.py", "--", "--firmware", "sonoff", "--new"])
 
     def test_each_phase_is_timed_from_what_the_readout_says(self):
         import re

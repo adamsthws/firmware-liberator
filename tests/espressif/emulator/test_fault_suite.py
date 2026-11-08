@@ -1090,7 +1090,7 @@ class EndChecksTests(unittest.TestCase):
     """A converted plug passes only if the report's end-of-run checks did."""
 
     def verdict(self, checks, relay="Switches (through eWeLink)", target="sonoff", route="esphome>sonoff",
-                result="Converted"):
+                result="Converted", runs="--- a run\n"):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             run = tmp / "state/work/captures/plugs" / plugs.folder_name(MAC) / "runs/1/run.log"
@@ -1099,7 +1099,7 @@ class EndChecksTests(unittest.TestCase):
                            f"[10:00:01]     Relay: {relay}\n[10:00:02]     Checks passed: {checks}\n"
                            "[10:00:03] === run ended ===\n", encoding="utf-8")
             log = tmp / "scenario.log"
-            log.write_text("--- a run\n    Result:   Converted\n", encoding="utf-8")
+            log.write_text(runs + "    Result:   Converted\n", encoding="utf-8")
             sc = fs.Scenario(24, {"id": f"{route}:R1:plugoff-1", "route": route, "step": "R1",
                                   "fault": "plugoff", "arg": 1, "at": 40}, log)
             sc.state, sc.target, sc.started = tmp / "state", target, 0
@@ -1128,6 +1128,23 @@ class EndChecksTests(unittest.TestCase):
         # checked, then started again afresh; that run makes no report.
         row = self.verdict("True", route="nobackup>sonoff", result="Converted (already: nothing to convert)")
         self.assertEqual(row["verdict"], "PASS")
+
+    def test_a_stage_s_failed_try_left_on_the_screen_is_its_own_failure(self):
+        rule = "=" * 72
+        screen = (f"{rule}\nThe screen at the end of the run (100x40):\n{rule}\n"
+                  "Stage 13 - Staging startup firmware - Stopped\n"
+                  "Stage 13 - Staging startup firmware - Complete\n"
+                  f"{rule}\nExit code 0 - finished\n")
+        row = self.verdict("True", runs="--- run --firmware sonoff\n" + screen)
+        self.assertEqual(row["verdict"], "FAIL-SCREEN")
+        self.assertEqual(len(row["notes"]["screen"]), 1)
+        # An earlier release's run is out already: not this checkout's to judge.
+        self.assertEqual(self.verdict("True", runs="--- run --code=/tmp/v2.3.0 --firmware sonoff\n" + screen
+                                      + "--- run --firmware sonoff\n")["verdict"], "PASS")
+        # The run that carries a legacy run on puts this checkout back (--code=
+        # its own path): it is this checkout's, and judged.
+        self.assertEqual(self.verdict("True", runs=f"--- run --code={fs.REPO} --firmware sonoff\n" + screen)
+                         ["verdict"], "FAIL-SCREEN")
 
     def test_checks_the_emulator_cannot_run_are_no_failure(self):
         self.assertEqual(self.verdict("Not run", target="sonoff")["verdict"], "PASS")

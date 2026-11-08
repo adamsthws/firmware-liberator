@@ -23,7 +23,9 @@ plug off and on, or joining its own network, where the run says to - until
 the plug is converted, or four runs fail. Every scenario also checks the fault
 landed while its step was under way (MISTIMED if not), that the run left
 no firewall rule and no helper behind, and that the converting run's report
-says its end-of-run checks passed (FAIL-CHECKS if not: tools/repo/fault_verdicts.py).
+says its end-of-run checks passed (FAIL-CHECKS if not: tools/repo/fault_verdicts.py),
+and that each run of this checkout's tool left one line a stage on its screen,
+none of a try that failed (FAIL-SCREEN if not).
 And readouts (readout_scenarios, go_readout): of a plug fresh from Sonoff's
 firmware, faulted in the read and as Sonoff's firmware is put back, until a
 whole readout.tar is kept and the plug is back on Sonoff's; and of a plug on
@@ -2028,6 +2030,8 @@ class Scenario:
             elif unknown or final:
                 special = "BAD-NAME"
                 self.notes["bad_names"] = unknown + ([final] if final else [])
+            elif self.screen_problems():
+                special = "FAIL-SCREEN"
             elif left:
                 special = "LEFTOVER"
         return self.keep(results, special or "PASS", left)
@@ -2042,6 +2046,18 @@ class Scenario:
                 return True
             time.sleep(3)
         return False
+
+    def screen_problems(self):
+        """What the runs of this checkout's tool left of a stage on their
+        screens that they should have taken away (fault_verdicts), kept in the
+        notes.  Not an earlier release's (--code= its tree), which is out already;
+        a run that puts this checkout back (--code= this checkout) is ours."""
+        runs = ("\n" + Path(self.log).read_text(encoding="utf-8", errors="replace")).split("\n--- ")
+        ours = "\n".join(run for run in runs[1:] if not earlier_release_run(run.partition("\n")[0]))
+        problems = fault_verdicts.screen_problems(ours)
+        if problems:
+            self.notes["screen"] = problems
+        return problems
 
     def last_said(self):
         """What the last run told the person: the screen it ended on, and its own
@@ -2258,6 +2274,8 @@ class Scenario:
                 # one at the end (docs/device-names.md).
                 special = "BAD-NAME"
                 self.notes["bad_names"] = unknown + ([final] if final else [])
+            elif converted and self.screen_problems():
+                special = "FAIL-SCREEN"  # a stage's output left behind once it moved on
             elif left and converted:
                 special = "LEFTOVER"
         # Every setup network can be joined (lcgamboa/qemu #15,
@@ -2301,6 +2319,15 @@ class Scenario:
                 (keep / "uart-tail.log").write_text(uart.read_text(errors="replace")[-300_000:])
         sh("docker", "stop", name(self.n), timeout=120)
         return row
+
+
+def earlier_release_run(header):
+    """Whether a run's header in a scenario's log (its unattended-test.sh
+    arguments) is of an earlier release's tree, not this checkout's: one with
+    --code= of another tree.  The run that carries a legacy run on names this
+    checkout (code=REPO), to put it back in place."""
+    found = re.search(r"--code=(\S+)", header)
+    return bool(found) and Path(found.group(1)).resolve() != REPO.resolve()
 
 
 def name_problems(names, networks, target):
