@@ -20,7 +20,7 @@ esphome:
   name: autoflash-moving
   name_add_mac_suffix: true
   project:
-    name: adamsthws.autoflash-mover-esp32
+    name: liberator.mover-esp32
     version: "1.1.0"
   # GET /mover, so the tool knows the mover, and POST /restart, so it can
   # restart one that still answers (devices/mover_routes.h).

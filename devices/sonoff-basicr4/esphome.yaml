@@ -18,8 +18,8 @@ esphome:
   comment: Sonoff-BASICR4
   name_add_mac_suffix: true
   project:
-    name: adamsthws.sonoff-basicr4
-    version: "2026.10.0-1"
+    name: liberator.sonoff-basicr4
+    version: "2026.10.0-2"
   on_boot:
     # Tasmota holds its output pins through a software restart, and the install
     # ends with one: release them before anything drives them.

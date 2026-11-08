@@ -24,5 +24,5 @@ Edit `esphome.yaml`, then build and publish it with
 `WiFi Signal` sensor's and `Relay` switch's names and the `autoflash_wifi` action:
 the tool uses each.
 
-ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-basic-1gs-2026.10.0-1.rbl`,
+ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-basic-1gs-2026.10.0-2.rbl`,
 with `tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-basic-1gs`.

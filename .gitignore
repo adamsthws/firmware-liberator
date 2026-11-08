@@ -39,12 +39,12 @@ __pycache__/
 !artifacts/autoflash-recovery-safeboot-imprintable.bin
 !artifacts/tasmota32c3-bluetooth.bin
 !artifacts/esphome-sonoff-s60-bootloader-1.2.0.bin
-!artifacts/esphome-sonoff-s60-imprintable-2026.10.0-1.bin
+!artifacts/esphome-sonoff-s60-imprintable-2026.10.0-2.bin
 !artifacts/autoflash-mover-esp32c3-1.2.0.bin
 !artifacts/sonoff-s60-partition-table.bin
 !artifacts/openbeken-sonoff-s61-1.18.320-2.rbl
-!artifacts/esphome-sonoff-s61-2026.10.0-1.rbl
-!artifacts/esphome-sonoff-pow-elite-imprintable-2026.10.0-1.bin
+!artifacts/esphome-sonoff-s61-2026.10.0-2.rbl
+!artifacts/esphome-sonoff-pow-elite-imprintable-2026.10.0-2.bin
 !artifacts/autoflash-mover-esp32-1.1.0.bin
 !artifacts/esphome-esp32-bootloader-1.1.0.bin
 !artifacts/autoflash-bridge-esp32-4.4.6.bin
@@ -52,12 +52,12 @@ __pycache__/
 !artifacts/tasmota-settings-template-esp32-15.6.0.0.bin
 !artifacts/sonoff-nspanel-partition-table.bin
 !artifacts/sonoff-th-elite-partition-table.bin
-!artifacts/esphome-sonoff-powct-imprintable-2026.10.0-1.bin
-!artifacts/esphome-sonoff-th-elite-imprintable-2026.10.0-1.bin
-!artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-1.bin
+!artifacts/esphome-sonoff-powct-imprintable-2026.10.0-2.bin
+!artifacts/esphome-sonoff-th-elite-imprintable-2026.10.0-2.bin
+!artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-2.bin
 !artifacts/openbeken-sonoff-basic-1gs-1.18.320-1.rbl
-!artifacts/esphome-sonoff-basic-1gs-2026.10.0-1.rbl
-!artifacts/esphome-sonoff-basicr4-imprintable-2026.10.0-1.bin
+!artifacts/esphome-sonoff-basic-1gs-2026.10.0-2.rbl
+!artifacts/esphome-sonoff-basicr4-imprintable-2026.10.0-2.bin
 !artifacts/openbeken-readout-1.18.320-1.rbl
 
 # Answers for unattended runs: the eWeLink password, perhaps sudo's (see .env.example).

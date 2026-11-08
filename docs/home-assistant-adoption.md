@@ -8,7 +8,7 @@ for your kind of plug:
 
 ```yaml
 packages:
-  adamsthws.sonoff-s60: github://adamsthws/firmware-liberator/devices/sonoff-s60/esphome.yaml@v2.3.0
+  liberator.sonoff-s60: github://adamsthws/firmware-liberator/devices/sonoff-s60/esphome.yaml@v2.3.0
 ```
 
 From then on you update the plug from the builder. The tool does not update an
@@ -53,7 +53,7 @@ Download your plug's `esphome.yaml` from the release you are on (it is in
 
 ```yaml
 packages:
-  adamsthws.sonoff-s60: !include common/sonoff-s60.yaml
+  liberator.sonoff-s60: !include common/sonoff-s60.yaml
 ```
 
 The builder then downloads nothing from this project, and the copy is yours to
@@ -71,7 +71,7 @@ substitutions:
   name: esphome-abcdef
   friendly_name: esphome abcdef
 packages:
-  adamsthws.sonoff-s60: github://adamsthws/firmware-liberator/devices/sonoff-s60/esphome.yaml@v2.3.0
+  liberator.sonoff-s60: github://adamsthws/firmware-liberator/devices/sonoff-s60/esphome.yaml@v2.3.0
 esphome:
   name: ${name}
   name_add_mac_suffix: false

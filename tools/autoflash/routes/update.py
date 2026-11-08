@@ -67,7 +67,7 @@ def esphome_release(ctx: Context) -> str | None:
     except esphome.ApiLocked:
         return None
     kind = kinds.of_run(ctx.state)
-    if not info or info["project_name"] != kind.esphome_project:
+    if not info or info["project_name"] not in kind.esphome_projects:
         return None
     if info["built"] == ctx.state.input("replaced_build"):
         return OWN_BUILD
@@ -131,7 +131,7 @@ def is_own_build(ctx: Context) -> bool:
         info = esphome.api_device_info(host, key=ctx.esphome_key) if host else None
     except esphome.ApiLocked:
         return True
-    return bool(info and info["project_name"] == kind.esphome_project
+    return bool(info and info["project_name"] in kind.esphome_projects
                 and (info["encrypted"] or info["built"] not in published_builds(kind)))
 
 
@@ -154,7 +154,7 @@ def replace_own_build(ctx: Context, firmware: str, published: str | None) -> boo
                         f"{'and the one given is not it' if locked.wrong else 'and none was given'}: "
                         f"{unlock.ESPHOME_KEY_HINT}") from None
         info = esphome.api_device_info(host, key=ctx.esphome_key)
-    if not info or info["project_name"] != kind.esphome_project:
+    if not info or info["project_name"] not in kind.esphome_projects:
         raise Abort(f"--replace-own-build only replaces this project's ESPHome for a {kind.name}, and the "
                     f"device says it is {(info or {}).get('project_name') or 'no project'}")
     if not info["encrypted"] and info["built"] in published_builds(kind):

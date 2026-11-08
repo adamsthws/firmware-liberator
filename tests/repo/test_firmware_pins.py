@@ -387,7 +387,7 @@ class OpenBekenModuleTests(unittest.TestCase):
 
 
 class UpdateHelperTests(unittest.TestCase):
-    CONFIG = ('esphome:\n  name: esphome\n  project:\n    name: adamsthws.sonoff-s60\n'
+    CONFIG = ('esphome:\n  name: esphome\n  project:\n    name: liberator.sonoff-s60\n'
               '    version: "1.2.0"\n  on_boot:\n    - priority: 1000\n'
               'ota:\n  - platform: esphome\n    version: 2\n')
 

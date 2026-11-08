@@ -84,10 +84,14 @@ check.
   yet. On a device wanting testers, the go-ahead before a run's first write says
   so and asks you to report your result, and the report asks for the run's log.
 - The firmware this project builds says in its version which upstream release
-  it is built on: OpenBeken 1.18.320-1 and ESPHome 2026.10.0-1, each this
-  project's first build on that release, with the same code as the 1.1.0, 1.6.0
-  and other builds they replace. A plug on one of those is offered it as an
-  update. The README's badge shows OpenBeken's release, read from
+  it is built on: OpenBeken 1.18.320-1 and ESPHome 2026.10.0-2. A plug on a
+  build they replace, such as the S60's ESPHome 1.6.0, is offered it as an
+  update.
+- This project's ESPHome and the mover call themselves `liberator.sonoff-s60`,
+  `liberator.mover` and so on, as ESPHome and Home Assistant show them, rather
+  than after a GitHub account. A plug on an earlier image, named
+  `adamsthws.sonoff-s60`, is still this project's ESPHome to the tool, and is
+  offered the update. The README's badge shows OpenBeken's release, read from
   `artifacts/firmware.json`.
 - A plug whose Sonoff firmware ran from the second half of its memory can go back to
   it. The run used to stop before writing it, as Tasmota ran from there.

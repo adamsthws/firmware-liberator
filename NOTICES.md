@@ -31,7 +31,7 @@ configuration, patch, documentation and helper are retained together under
 ESPHome's firmware code is distributed under the GNU General Public License
 v3.0.
 
-`artifacts/esphome-sonoff-s60-imprintable-2026.10.0-1.bin` is built with ESPHome
+`artifacts/esphome-sonoff-s60-imprintable-2026.10.0-2.bin` is built with ESPHome
 2026.10.0 and ESP-IDF 5.5.6 from this project's config
 [`devices/sonoff-s60/esphome.yaml`](devices/sonoff-s60/esphome.yaml), with `esphome compile`.
 Its corresponding source is the
@@ -49,7 +49,7 @@ ESP-IDF 5.5.5. Its corresponding source is the
 [ESPHome 2026.9.1 release](https://github.com/esphome/esphome/tree/2026.9.1)
 and that config, at 1.2.0 in this repository's history.
 
-`artifacts/esphome-sonoff-s61-2026.10.0-1.rbl` is built with ESPHome 2026.10.0 and
+`artifacts/esphome-sonoff-s61-2026.10.0-2.rbl` is built with ESPHome 2026.10.0 and
 LibreTiny 1.13.0 from this project's config
 [`devices/sonoff-s61/esphome.yaml`](devices/sonoff-s61/esphome.yaml), with
 `esphome compile`, the rt_ota image LibreTiny's build makes. Its corresponding
@@ -57,7 +57,7 @@ source is the [ESPHome 2026.10.0 release](https://github.com/esphome/esphome/tre
 [LibreTiny 1.13.0](https://github.com/libretiny-eu/libretiny/tree/v1.13.0)
 (MIT), the Beken SDK LibreTiny builds on, and that config.
 
-`artifacts/esphome-sonoff-basic-1gs-2026.10.0-1.rbl` is built with ESPHome 2026.10.0 and
+`artifacts/esphome-sonoff-basic-1gs-2026.10.0-2.rbl` is built with ESPHome 2026.10.0 and
 LibreTiny 1.13.0 from this project's config
 [`devices/sonoff-basic-1gs/esphome.yaml`](devices/sonoff-basic-1gs/esphome.yaml), with
 `esphome compile`, as the S61's is. Its corresponding source is the

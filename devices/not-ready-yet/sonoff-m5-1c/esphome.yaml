@@ -17,7 +17,7 @@ esphome:
   comment: Sonoff-M5-1C
   name_add_mac_suffix: true
   project:
-    name: adamsthws.sonoff-m5-1c
+    name: liberator.sonoff-m5-1c
     version: "1.0.0"
   on_boot:
     # Tasmota holds its output pins through a software restart, and the install
