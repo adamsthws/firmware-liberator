@@ -22,13 +22,14 @@ class FakeCloudflare:
         self.rulesets = {}  # entry point path: its rules, as Cloudflare keeps them
         self.buckets = set()
         self.lifecycle = None
+        self.tokens = None   # the account's API tokens; None: this token may not read them, as CI's
         self.sent = []
 
     @property
     def redirects(self):
         return self.rulesets.get(ENTRYPOINT)
 
-    def __call__(self, path, method="GET", body=None, ok_missing=False):
+    def __call__(self, path, method="GET", body=None, ok_missing=False, ok_forbidden=False):
         if method != "GET":
             self.sent.append((method, path, body))
             if path == BUCKETS:
@@ -43,6 +44,12 @@ class FakeCloudflare:
             return None
         if path == f"/zones?name={cs.ZONE}":
             return [{"id": "z1", "name": cs.ZONE, "account": {"id": "a1"}}]
+        if path == "/accounts/a1/tokens":
+            assert ok_forbidden
+            return copy.deepcopy(self.tokens)
+        if path == "/accounts/a1/workers/scripts":
+            return [{"id": "firmware-liberator", "tag": "t1"}, {"id": "firmware-liberator-api", "tag": "t2"},
+                    {"id": "another-site", "tag": "t3"}]
         if path.startswith(f"{BUCKETS}/") and path.endswith("/lifecycle"):
             assert ok_missing
             return self.lifecycle
@@ -155,6 +162,66 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertNotIn(" apply", workflow.split("\nname:", 1)[1])
         self.assertIn("run: python3 tools/repo/cloudflare_settings.py\n", workflow)
         self.assertIn("secrets.CLOUDFLARE_READ_TOKEN", workflow)
+
+
+def deploy_token(zone=("Zone Read", "Workers Routes Write", "DNS Write"), workers=("t1", "t2")):
+    """The deploy token as Cloudflare lists it: the zone by its id, Workers by their tags."""
+    return {"name": cs.DEPLOY_TOKEN, "status": "active", "policies": [
+        {"effect": "allow", "permission_groups": [{"name": name} for name in zone],
+         "resources": {"com.cloudflare.api.account.zone.z1": "*"}},
+        {"effect": "allow", "permission_groups": [{"name": "Individual Workers Editor"}],
+         "resources": {"com.cloudflare.api.account.a1": {
+             f"com.cloudflare.edge.worker.script.{tag}": "*" for tag in workers}}}]}
+
+
+class DeployTokenTests(unittest.TestCase):
+    def setUp(self):
+        self.fake = FakeCloudflare()
+        run(self.fake, "apply")
+        self.fake.sent.clear()
+
+    def test_not_checked_by_a_token_that_cannot_read_tokens(self):
+        code, out = run(self.fake)
+        self.assertEqual(code, 0)
+        self.assertIn(f"{cs.DEPLOY_TOKEN}: not checked", out)
+
+    def test_as_written_it_is_no_difference(self):
+        self.fake.tokens = [deploy_token(), {"name": "another", "status": "active", "policies": []}]
+        code, out = run(self.fake)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn(cs.DEPLOY_TOKEN, out)
+
+    def test_as_written_it_is_no_difference_whatever_the_hash_order(self):
+        # A set's order follows Python's hash seed, which differs run to run:
+        # a comparison that leant on it failed now and then.
+        import os
+        import subprocess
+        import sys
+        root = Path(__file__).resolve().parents[2]
+        code = ("from tests.repo.test_cloudflare_settings import FakeCloudflare, deploy_token, run\n"
+                "fake = FakeCloudflare(); run(fake, 'apply'); fake.tokens = [deploy_token()]\n"
+                "print(run(fake)[0])")
+        for seed in range(24):
+            done = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True,
+                                  env={**os.environ, "PYTHONHASHSEED": str(seed)}, check=True)
+            self.assertEqual(done.stdout.strip(), "0", f"PYTHONHASHSEED={seed}")
+
+    def test_a_wider_one_is_named_and_left_to_the_dashboard(self):
+        self.fake.tokens = [deploy_token(zone=("Zone Read", "Workers Routes Write", "DNS Write",
+                                               "Zone Settings Write"), workers=("t1", "t2", "t3"))]
+        code, out = run(self.fake)
+        self.assertEqual(code, 1)
+        self.assertIn("Zone Settings Write", out)
+        self.assertIn("another-site", out)
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn(f"{cs.DEPLOY_TOKEN}: left - change it in the dashboard", out)
+
+    def test_a_missing_one_is_a_difference(self):
+        self.fake.tokens = []
+        code, out = run(self.fake)
+        self.assertEqual(code, 1)
+        self.assertIn("allows nothing (no such token)", out)
 
 
 if __name__ == "__main__":
