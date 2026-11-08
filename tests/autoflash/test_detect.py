@@ -71,6 +71,7 @@ class TasmotaTests(unittest.TestCase):
                 mock.patch.object(detect.hostsys, "sweep"), \
                 mock.patch.object(detect.hostsys, "neighbour_table", return_value=neighbours), \
                 mock.patch.object(detect, "_port_open", return_value=True), \
+                mock.patch.object(detect, "_is_mover", return_value=False), \
                 mock.patch.object(detect, "_is_installer", return_value=False), \
                 mock.patch.object(detect, "answers_as_tasmota", return_value=True), \
                 mock.patch.object(detect.esphome, "page", return_value="other"), \
@@ -174,6 +175,7 @@ class TasmotaTests(unittest.TestCase):
                 mock.patch.object(detect.hostsys, "sweep"), \
                 mock.patch.object(detect.hostsys, "neighbour_table", return_value=neighbours), \
                 mock.patch.object(detect, "_port_open", return_value=True), \
+                mock.patch.object(detect, "_is_mover", return_value=False), \
                 mock.patch.object(detect, "_is_installer", return_value=False), \
                 mock.patch.object(detect.esphome, "page", return_value="other"):
             self.assertEqual(detect.converted_plugs("192.0.2.1", known_macs={"12:34:56:ab:cd:ef"}), [])
@@ -190,6 +192,7 @@ class TasmotaTests(unittest.TestCase):
                 mock.patch.object(detect.hostsys, "neighbour_table", return_value=neighbours), \
                 mock.patch.object(detect, "_port_open", return_value=True), \
                 mock.patch.object(detect.esphome, "page", return_value="other"), \
+                mock.patch.object(detect, "_is_mover", return_value=False), \
                 mock.patch.object(detect, "_is_installer", return_value=False):  # nothing real asked
             found = detect.converted_plugs("192.0.2.1", known_macs={"12:34:56:ab:cd:ef"})
         self.assertEqual([(f.host, f.firmware) for f in found], [("192.0.2.137", "midway")])
@@ -213,6 +216,7 @@ class TasmotaTests(unittest.TestCase):
                                   return_value={"192.0.2.137": "12:34:56:ab:cd:ef"}), \
                 mock.patch.object(detect, "_port_open", return_value=True), \
                 mock.patch.object(detect.esphome, "page", return_value="other"), \
+                mock.patch.object(detect, "_is_mover", return_value=False), \
                 mock.patch.object(detect, "_is_installer", return_value=False):  # nothing real asked
             found = detect.converted_plugs("192.0.2.1")
         self.assertEqual([(f.host, f.firmware, f.kind) for f in found],
@@ -229,6 +233,7 @@ class TasmotaTests(unittest.TestCase):
                 mock.patch.object(detect.hostsys, "neighbour_table", return_value=neighbours), \
                 mock.patch.object(detect, "_port_open", return_value=True), \
                 mock.patch.object(detect.esphome, "page", return_value="other"), \
+                mock.patch.object(detect, "_is_mover", return_value=False), \
                 mock.patch.object(detect, "_is_installer", return_value=False):  # nothing real asked
             found = detect.converted_plugs("192.0.2.1", known_macs={"12:34:56:ab:cd:ef"})
         self.assertEqual([(f.host, f.firmware) for f in found], [("192.0.2.137", "untemplated")])
@@ -302,6 +307,7 @@ class WebPasswordTests(unittest.TestCase):
         with mock.patch.object(detect, "_tasmota", side_effect=detect.Locked("192.0.2.42")), \
                 mock.patch.object(detect.esphome, "page", return_value="other"), \
                 mock.patch.object(detect, "_port_open", return_value=True), \
+                mock.patch.object(detect, "_is_mover", return_value=False), \
                 mock.patch.object(detect, "_is_installer", return_value=False), \
                 mock.patch.object(detect.hostsys, "sweep"), \
                 mock.patch.object(detect.hostsys, "neighbour_table", return_value=neighbours):
@@ -442,6 +448,7 @@ class InstallerTests(unittest.TestCase):
     def test_its_page_names_it(self):
         with mock.patch.object(detect.esphome, "page", return_value="other"), \
              mock.patch.object(detect, "_port_open", return_value=True), \
+             mock.patch.object(detect, "_is_mover", return_value=False), \
              mock.patch.object(detect, "_is_installer", return_value=True):
             self.assertEqual(detect.identify("192.0.2.137"), "installer")
 
@@ -451,6 +458,7 @@ class InstallerTests(unittest.TestCase):
              mock.patch.object(detect.hostsys, "neighbour_table", return_value=neighbours), \
              mock.patch.object(detect, "_port_open", return_value=True), \
              mock.patch.object(detect.esphome, "page", return_value="other"), \
+             mock.patch.object(detect, "_is_mover", return_value=False), \
              mock.patch.object(detect, "_is_installer", return_value=True):
             found = detect.converted_plugs("192.0.2.1")
         self.assertEqual([(f.host, f.firmware) for f in found], [("192.0.2.137", "installer")])
@@ -477,9 +485,6 @@ class RenamedRelayTests(unittest.TestCase):
         self.assertEqual(self.found(None, None), "other")
         self.assertEqual(self.found(None, "a lamp of my own"), "other")
 
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class OtherNetworksTests(unittest.TestCase):
@@ -582,3 +587,70 @@ class OpenBekenTests(unittest.TestCase):
         with mock.patch.object(openbeken, "is_interim", return_value=None):
             self.assertIsNone(detect.openbeken_plug(server.host, 2.0))
 
+
+class MoverPage(http.server.ThreadingHTTPServer):
+    """A mover from 1.2.0 (devices/mover_routes.h): GET /mover says what it
+    is; nothing else is on its web server."""
+
+    def __init__(self, says):
+        super().__init__(("127.0.0.1", 0), MoverHandler)
+        self.says = says
+
+    @property
+    def host(self):
+        return f"127.0.0.1:{self.server_address[1]}"
+
+
+class MoverHandler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
+
+    def do_GET(self):
+        body = self.server.says.encode() if self.path == "/mover" else b""
+        self.send_response(200 if body else 404)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class MoverTests(unittest.TestCase):
+    """The mover says what it is at /mover: known so while its update service
+    is busy or stuck, and found with its web server open."""
+
+    def serve(self, says):
+        server = MoverPage(says)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return server
+
+    def test_each_chips_mover_says_so(self):
+        for says in ("adamsthws.autoflash-mover 1.2.0", "adamsthws.autoflash-mover-esp32 1.1.0"):
+            with self.subTest(says):
+                self.assertTrue(detect._is_mover(self.serve(says).host, 2.0))
+        self.assertFalse(detect._is_mover(self.serve("").host, 2.0))
+        self.assertFalse(detect._is_mover(self.serve("another project 1.0").host, 2.0))
+
+    def test_known_with_its_update_service_stuck(self):
+        with mock.patch.object(detect.esphome, "page", return_value=None), \
+                mock.patch.object(detect, "_port_open", return_value=True), \
+                mock.patch.object(detect, "_is_mover", return_value=True), \
+                mock.patch.object(detect.esphome_ota, "probe", return_value=None):
+            self.assertEqual(detect.identify("192.0.2.137"), "mover")
+
+    def test_found_on_the_network_with_its_web_server_open(self):
+        # Its restart route opens port 80, which only a mover before 1.2.0
+        # kept shut: it was looked for only there. It says what it is, so it
+        # needs no MAC this computer knows.
+        neighbours = {"192.0.2.137": "12:34:56:ab:cd:ef"}
+        with mock.patch.object(detect.hostsys, "sweep"), \
+                mock.patch.object(detect.hostsys, "neighbour_table", return_value=neighbours), \
+                mock.patch.object(detect, "_port_open", return_value=True), \
+                mock.patch.object(detect.esphome, "page", return_value=None), \
+                mock.patch.object(detect, "_is_mover", return_value=True):
+            found = detect.converted_plugs("192.0.2.1")
+        self.assertEqual([(f.host, f.firmware, f.name) for f in found], [("192.0.2.137", "midway", "the mover")])
+
+
+if __name__ == "__main__":
+    unittest.main()

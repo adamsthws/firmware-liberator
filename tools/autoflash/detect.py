@@ -6,8 +6,9 @@ naming the template of a kind of plug this tool converts (kinds), ESPHome's
 page with the relay the ESPHome made for it names - each, behind its web
 login, once given that - or OpenBeken whose driver, built in by
 this tool, says what kind of plug it is on.  Midway through a conversion a
-plug can also be running the mover (an ESPHome with no page, only its update
-service), the startup firmware (a Tasmota safeboot), or the interim firmware
+plug can also be running the mover (an ESPHome with no page, which says what
+it is at /mover from 1.2.0, and before that has only its update service),
+the startup firmware (a Tasmota safeboot), or the interim firmware
 (the OpenBeken a run to ESPHome on a Beken plug installs first, which its
 module says it is), which a run carrying on recognises.
 """
@@ -56,6 +57,22 @@ def _is_installer(host: str, timeout: float) -> bool:
             return setup_network.is_bridge_page(reply.read(4096).decode("utf-8", "replace"))
     except Exception:  # noqa: BLE001 - anything but the installer answering
         return False
+# What the mover's GET /mover begins with (devices/mover_routes.h: its
+# project's name, the classic ESP32's with -esp32 after it).
+MOVER_SAYS = "adamsthws.autoflash-mover"
+
+
+def _is_mover(host: str, timeout: float) -> bool:
+    """This tool's mover says so at /mover: busy or stuck, its update service
+    may not answer."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://{host}/mover", timeout=timeout) as reply:
+            return reply.read(256).decode("utf-8", "replace").startswith(MOVER_SAYS)
+    except Exception:  # noqa: BLE001 - anything but the mover answering
+        return False
+
+
 SONOFF_TABLE_SHA256 = layouts.SONOFF_DUAL_OTA.table_sha256
 KNOWN_STOCK_TABLES = tuple(table for layout in layouts.ALL
                            for table in (layout.table_sha256, layout.interim_sha256, layout.temporary_sha256)
@@ -266,6 +283,8 @@ def identify(host: str, *, timeout: float = 3.0, password: str | None = None,
     if found:
         return None if found == "other" else found
     if _port_open(host, 80, timeout):
+        if _is_mover(host, timeout):
+            return "mover"
         on_openbeken = openbeken_plug(host, timeout)
         if on_openbeken:
             return on_openbeken.firmware
@@ -315,7 +334,8 @@ def converted_plugs(near: str, *, others: Callable[[], dict[str, int]] | None = 
     link on Windows).  A Tasmota
     safeboot counts only with one of `known_macs`: a plug this computer was
     converting, left on the startup firmware - any Tasmota mid-update looks
-    the same; and the mover likewise, as any ESPHome without a web page.  A Tasmota whose web password `password` is not is "locked",
+    the same; and a mover before 1.2.0 likewise, as any ESPHome without a web
+    page (one since says it is the mover).  A Tasmota whose web password `password` is not is "locked",
     and an ESPHome whose web login `esphome_login` is not "esphome-login":
     whether it is a plug this tool converts each says only once given its own."""
     seen = hostsys.sweep(near)
@@ -339,8 +359,9 @@ def _ask_neighbours(seen: dict[str, str], known_macs: set[str], timeout: float, 
     def ask(item: tuple[str, str]) -> Found | None:
         host, mac = item
         if not _port_open(host, 80, timeout):
-            # The mover has no web page, only ESPHome's update service - as
-            # has any ESPHome built without one: only a plug this computer knows.
+            # A mover before 1.2.0 has no web server, only ESPHome's update
+            # service - as has any ESPHome built without one: only a plug this
+            # computer knows.
             if (hostsys.normalise_mac(mac) in known_macs
                     and esphome_ota.probe(host, timeout=timeout) is not None):
                 return Found(host, "midway", mac, "the mover")
@@ -348,6 +369,8 @@ def _ask_neighbours(seen: dict[str, str], known_macs: set[str], timeout: float, 
         found = _esphome(host, timeout, esphome_login)
         if found:
             return None if found == "other" else Found(host, found, mac)
+        if _is_mover(host, timeout):
+            return Found(host, "midway", mac, "the mover")   # it says it is
         on_openbeken = openbeken_plug(host, timeout)
         if on_openbeken:
             on_openbeken.mac = mac

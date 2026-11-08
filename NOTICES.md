@@ -38,14 +38,16 @@ Its corresponding source is the
 [ESPHome 2026.10.0 release](https://github.com/esphome/esphome/tree/2026.10.0)
 and that config.
 
-`artifacts/autoflash-mover-1.1.0.bin` is built the same way with ESPHome
-2026.9.1 and ESP-IDF 5.5.5 from
-[`devices/esp32c3/mover.yaml`](devices/esp32c3/mover.yaml), and
+`artifacts/autoflash-mover-esp32c3-1.2.0.bin` is built the same way with ESPHome
+2026.10.0 and ESP-IDF 5.5.6 from
+[`devices/esp32c3/mover.yaml`](devices/esp32c3/mover.yaml) and
+[`devices/mover_routes.h`](devices/mover_routes.h); its corresponding source
+is the ESPHome 2026.10.0 release above and those files.
 `artifacts/esphome-sonoff-s60-bootloader-1.2.0.bin` is the ESP-IDF bootloader
-from the build of the S60's config at 1.2.0, with the same ESPHome and
-ESP-IDF. Their corresponding source is the
+from the build of the S60's config at 1.2.0, with ESPHome 2026.9.1 and
+ESP-IDF 5.5.5. Its corresponding source is the
 [ESPHome 2026.9.1 release](https://github.com/esphome/esphome/tree/2026.9.1)
-and those configs (the S60's at 1.2.0 is in this repository's history).
+and that config, at 1.2.0 in this repository's history.
 
 `artifacts/esphome-sonoff-s61-2026.10.0-1.rbl` is built with ESPHome 2026.10.0 and
 LibreTiny 1.13.0 from this project's config

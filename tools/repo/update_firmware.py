@@ -33,9 +33,9 @@
         ESP32-C3's are, the bridge and the recovery Safeboot built from this
         repository's sources, the mover and its bootloader with ESPHome
 
-    python3 tools/repo/update_firmware.py esp32c3 [bridge]
+    python3 tools/repo/update_firmware.py esp32c3 [bridge] [mover]
         the same for the ESP32-C3: its bridge, built from this repository's
-        sources and wrapped for the S60's stock updater
+        sources and wrapped for the S60's stock updater, and its mover
 
     python3 tools/repo/update_firmware.py openbeken [VERSION] [--plug sonoff-s61] [--every-device]
         build OpenBeken for a Beken plug - upstream at that stable release (default:
@@ -559,6 +559,14 @@ def app_description(image: bytes) -> dict[str, str]:
 def build(builder: str, config_path: Path, version: str, workdir: Path) -> tuple[bytes, bytes]:
     """Build one config at this version: its app and bootloader."""
     config = as_built(config_path.read_text(encoding="utf-8"), version)
+    for name in included(config):
+        # Named from where the config is - shared ones up in devices/, as the
+        # movers' restart - and built beside it, under its own name.
+        source = config_path.parent / name
+        if not source.is_file():
+            raise UpdateError(f"{config_path.name} includes {name}, which is not there")
+        shutil.copyfile(source, workdir / source.name)
+        config = config.replace(f"    - {name}\n", f"    - {source.name}\n")
     (workdir / config_path.name).write_text(config, encoding="utf-8")
     print(f"  building {config_path.name} {version} (minutes; a first build downloads ESP-IDF)...")
     docker("run", "--rm", "-u", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/config",
@@ -566,6 +574,13 @@ def build(builder: str, config_path: Path, version: str, workdir: Path) -> tuple
     name = re.search(r"^  name: (\S+)", config, re.MULTILINE).group(1)
     out = workdir / ".esphome" / "build" / name / "build"
     return (out / "firmware.ota.bin").read_bytes(), (out / "bootloader" / "bootloader.bin").read_bytes()
+
+
+def included(config: str) -> list[str]:
+    """The files an ESPHome config's esphome: includes: names: not a system
+    header in angle brackets (<nvs.h>), which the build's own paths give."""
+    found = re.search(r"^  includes:\n((?:    - .+\n)+)", config, re.MULTILINE)
+    return re.findall(r"^    - ([^<\s]\S*)", found.group(1), re.MULTILINE) if found else []
 
 
 def check_esphome_app(image: bytes, label: str, release: str, chip: chips.Chip = chips.ESP32C3) -> dict[str, str]:
@@ -1119,22 +1134,36 @@ def esp32_recovery(pins: dict[str, Any]) -> None:
             {"tasmota_commit": INTERIM_TASMOTA_COMMIT})
 
 
-def esp32_mover(pins: dict[str, Any]) -> None:
+def mover(pins: dict[str, Any], chip: chips.Chip, *, with_bootloader: bool) -> None:
+    """A chip's mover, at its config's version, with the ESPHome the S60's is
+    pinned to; and its bootloader, where the mover's is the chip's."""
     release = pinned_version(pins, "esphome")
     builder = esphome_builder(release)
     BUILD_CACHE.mkdir(parents=True, exist_ok=True)
-    config = ROOT / mover_config(chips.ESP32)
+    config = ROOT / mover_config(chip)
     version = config_version(config.read_text(encoding="utf-8"))
     app, bootloader = build(builder, config, version, BUILD_CACHE)
-    described = check_esphome_app(app, "the mover built", release, chips.ESP32)
+    described = check_esphome_app(app, "the mover built", release, chip)
     room = APP0_OFFSET - 0x20000
     if len(app) > room:
         raise UpdateError(f"the mover is {len(app):,} bytes: {room:,} fit in front of Tasmota")
-    section = espressif_section(pins, chips.ESP32.key)
-    record = {"config": mover_config(chips.ESP32), "version": version, "esphome": release,
+    print(f"  the mover {version}: {len(app):,} bytes, {room - len(app):,} to spare in front of Tasmota")
+    section = espressif_section(pins, chip.key)
+    record = {"config": mover_config(chip), "version": version, "esphome": release,
               "esp_idf": described["esp_idf"], "builder": builder}
-    publish(section, "mover", chip_file(chips.ESP32, "mover", version=version), app, record)
-    publish(section, "bootloader", chip_file(chips.ESP32, "bootloader", version=version), bootloader, record)
+    publish(section, "mover", chip_file(chip, "mover", version=version), app, record)
+    if with_bootloader:
+        publish(section, "bootloader", chip_file(chip, "bootloader", version=version), bootloader, record)
+
+
+def esp32_mover(pins: dict[str, Any]) -> None:
+    mover(pins, chips.ESP32, with_bootloader=True)
+
+
+def esp32c3_mover(pins: dict[str, Any]) -> None:
+    """The ESP32-C3's bootloader is the S60 ESPHome image's (BOOTLOADER_FILE),
+    published with it: only the mover here."""
+    mover(pins, chips.ESP32C3, with_bootloader=False)
 
 
 def esp32_template(pins: dict[str, Any]) -> None:
@@ -1163,7 +1192,7 @@ def esp32_tables(pins: dict[str, Any]) -> None:
 
 
 ESP32_PARTS = {"tables": esp32_tables, "template": esp32_template, "tasmota": esp32_tasmota, "bridge": esp32_bridge, "recovery": esp32_recovery, "mover": esp32_mover}
-ESP32C3_PARTS = {"bridge": esp32c3_bridge}
+ESP32C3_PARTS = {"bridge": esp32c3_bridge, "mover": esp32c3_mover}
 CHIP_PARTS = {"esp32": ESP32_PARTS, "esp32c3": ESP32C3_PARTS}
 
 

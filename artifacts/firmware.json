@@ -59,13 +59,14 @@
         "sha256": "3792bb665916d69c410c9fd10f69d1a6968e61f2a9e4969829a1c49f9ea6f433"
       },
       "mover": {
-        "file": "artifacts/autoflash-mover-1.1.0.bin",
+        "file": "artifacts/autoflash-mover-esp32c3-1.2.0.bin",
         "config": "devices/esp32c3/mover.yaml",
-        "version": "1.1.0",
-        "esphome": "2026.9.1",
-        "esp_idf": "5.5.5",
-        "size": 756960,
-        "sha256": "f6e131e1599c886d742c151c3ba3f84a285bba462b438c36b611d577e01ad243"
+        "version": "1.2.0",
+        "esphome": "2026.10.0",
+        "esp_idf": "5.5.6",
+        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
+        "size": 757584,
+        "sha256": "5d6e17620a5f9f22aaa71b61dcd7c3a46c308a1976d34c78c3ef928349a8a23f"
       },
       "bridge": {
         "file": "artifacts/autoflash-bridge-esp32c3-4.4.6.ota",
@@ -103,19 +104,19 @@
         "sha256": "07b888e8f57e47ccfeb9b0ba87268009ba3e8e49b64efad63f1d66292d260231"
       },
       "mover": {
-        "file": "artifacts/autoflash-mover-esp32-1.0.0.bin",
+        "file": "artifacts/autoflash-mover-esp32-1.1.0.bin",
         "config": "devices/esp32/mover.yaml",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "esphome": "2026.10.0",
         "esp_idf": "5.5.6",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "size": 715120,
-        "sha256": "075fdc993d5004a747fd3cdc5705e3d464df80d2ab003aae66db17b2a98d1d42"
+        "size": 715680,
+        "sha256": "5c259a74ae1ea63f5cea3859f97ace5c6d1f6de2b118384f01cb8382c2fe2aed"
       },
       "bootloader": {
-        "file": "artifacts/esphome-esp32-bootloader-1.0.0.bin",
+        "file": "artifacts/esphome-esp32-bootloader-1.1.0.bin",
         "config": "devices/esp32/mover.yaml",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "esphome": "2026.10.0",
         "esp_idf": "5.5.6",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
