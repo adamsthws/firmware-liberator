@@ -63,9 +63,9 @@ class _State:
     stage_screen = ""                 # the same, number and name padded into columns
     name_width = 0                    # the longest stage name, so the columns line up
     most_stages = 0                   # the most the run may have, its numbers' column as wide
-    rows = 0                          # rows finished on screen, less those taken off (screen_mark)
-    transient_rows: int | None = None  # rows on screen since transient_begin()
-    transient_blank = False           # a blank row was last on screen when it began
+    rows = 0                          # rows finished on screen, less those taken off again (mark)
+    blocks: list[tuple[int, bool]] = []  # the open blocks (transient_begin), innermost last:
+                                      # `rows` as each began, and whether a blank row was last
     pending_prompt: str | None = None  # a question on screen, waiting for its answer
     pending_answer = ""
     stage_started = 0.0
@@ -167,7 +167,7 @@ def start(log_path: Path | None, *, verbose: bool) -> None:
             _write_log(f"=== run started, tool version {__version__}{' (verbose)' if verbose else ''} ===")
         _s.concise = not verbose
         _s.paused = False
-        _s.rows = 0
+        _s.rows, _s.blocks = 0, []
         _s.name_width = _s.most_stages = 0   # the run's own route sets them (set_stage_width)
         _s.run_waited = 0.0
         _s.waiting_since = None   # a question left unanswered is not this run's wait
@@ -201,7 +201,7 @@ def finish() -> None:
         _s.log = _s.log_path = None
         _s.concise = False
         _s.stage = None
-        _s.transient_rows = None
+        _s.blocks = []
         _s.name_width = 0
         _s.after_stage = False
         _s.after_blank = False
@@ -439,24 +439,27 @@ def transient_begin(*, before_start: bool = False) -> None:
 
     `before_start`: a question asked before start(), which has no log yet and
     does not know whether the run will be verbose.
+
+    A block begun inside another is taken off on its own, and the outer
+    one, with whatever is left of it, when that ends.
     """
     with _lock:
-        if not ((_s.concise or before_start) and sys.stdout.isatty() and colour_ok()):
+        if not _drawn_over(before_start=before_start):
             return
-        _s.transient_rows = 0
+        began = _s.rows
         _break()  # the stage line, if drawn, is taken away and drawn again too
-        _s.transient_blank = _s.after_blank
+        _s.blocks.append((began, _s.after_blank))
 
 
 def transient_end() -> None:
-    """Take the block since transient_begin() off the screen."""
+    """Take the innermost block since transient_begin() off the screen."""
     with _lock:
-        rows, _s.transient_rows = _s.transient_rows, None
-        if rows is None:
+        if not _s.blocks:
             return
+        began, blank = _s.blocks.pop()
         # Taller than the window (VS Code's terminal panel, say), it stays whole.
-        if _erase(rows):
-            _s.after_blank = _s.transient_blank  # the screen as the block found it
+        if _erase(_s.rows - began):
+            _s.after_blank = blank  # the screen as the block found it
         if _s.stage is not None and not _s.paused:
             _draw_stage()
 
@@ -490,59 +493,45 @@ def short_window(*, before_start: bool = False) -> int | None:
     """The window's height in rows, when answered questions are being taken
     off the screen but the window is too short for that to always work.
     `before_start`: as for transient_begin()."""
-    if not ((_s.concise or before_start) and sys.stdout.isatty() and colour_ok()):
+    if not _drawn_over(before_start=before_start):
         return None
     rows = terminal_size((100, 24)).lines
     return rows if rows < MIN_ROWS else None
 
 
-def transient_mark() -> tuple[int, bool, bool] | None:
-    """Where the open block has got to, for transient_rewind() to go back to.
-    None when nothing is being taken off the screen."""
+def mark() -> tuple[int, bool, bool] | None:
+    """Where the screen has got to, for rewind() to go back to: before a
+    question that may be asked again, or a try of a step that may be tried
+    again.  None where nothing can be taken off the screen - outside a block
+    (transient_begin), only a concise run's own screen can be."""
     with _lock:
-        if _s.transient_rows is None:
-            return None
-        _break()
-        return _s.transient_rows, _s.after_stage, _s.after_blank
-
-
-def transient_rewind(mark: tuple[int, bool, bool] | None) -> bool:
-    """Take the rows since transient_mark() off the screen and keep the block
-    open, so a question asked again does not pile up under its earlier tries
-    - a block taller than the window could no longer be taken away at all.
-    True when they were taken off; the log keeps them regardless."""
-    with _lock:
-        if mark is None or _s.transient_rows is None:
-            return False
-        if not _erase(_s.transient_rows - mark[0]):
-            return False
-        _s.transient_rows, _s.after_stage, _s.after_blank = mark
-        return True
-
-
-def screen_mark() -> tuple[int, bool, bool] | None:
-    """Where the screen has got to, for screen_rewind() to go back to: before
-    a try of a step, so that a try that failed, and the note that it is tried
-    again, are taken off once it is.  None when nothing can be taken off the
-    screen (as for transient_begin()), or within a block that will be."""
-    with _lock:
-        if not (_s.concise and sys.stdout.isatty() and colour_ok()) or _s.transient_rows is not None:
+        if not (_s.blocks or _drawn_over()):
             return None
         _break()
         return _s.rows, _s.after_stage, _s.after_blank
 
 
-def screen_rewind(mark: tuple[int, bool, bool] | None) -> bool:
-    """Take everything shown since screen_mark() off the screen.  True when
-    it was; the log keeps it regardless."""
+def rewind(to: tuple[int, bool, bool] | None) -> bool:
+    """Take everything shown since mark() off the screen - a wrong answer and
+    its question, or a try that failed - so that what comes again does not
+    pile up under it until it is taller than the window and cannot be taken
+    away at all.  A block begun since goes with it.  True when it was; the
+    log keeps it regardless."""
     with _lock:
-        if mark is None or _s.transient_rows is not None:
+        if to is None:
             return False
-        _break()
-        if not _erase(_s.rows - mark[0]):
+        if not _erase(_s.rows - to[0]):
             return False
-        _, _s.after_stage, _s.after_blank = mark
+        _s.blocks = [block for block in _s.blocks if block[0] < to[0]]
+        _, _s.after_stage, _s.after_blank = to
         return True
+
+
+def _drawn_over(*, before_start: bool = False) -> bool:
+    """Whether rows can be taken off the screen again: on a terminal that can
+    move the cursor back up, showing a concise run (or, `before_start`, a
+    question before one)."""
+    return (_s.concise or before_start) and sys.stdout.isatty() and colour_ok()
 
 
 def _erase(rows: int) -> bool:
@@ -553,7 +542,7 @@ def _erase(rows: int) -> bool:
     if rows >= terminal_size((100, 24)).lines:
         return False
     if _s.live:
-        sys.stdout.write("\r\x1b[K")  # a stage line drawn since
+        sys.stdout.write(_clear_notice() + "\r\x1b[K")  # a stage line drawn since, and its notice
         _s.live = 0
     # Up a row and erase it, row by row.  Not one erase-to-end from the top:
     # when the rows start on the screen's first that clears the whole screen,
@@ -641,13 +630,14 @@ def stage_begin(number: int, name: str) -> None:
 
 def stage_end(outcome: str) -> None:
     """outcome: "complete", "stopped", "already done" or "skipped" (a stage
-    the run does not need, passed over).  A block - a note and its question
-    - still open is taken off first: one cut short by Ctrl-C or q would
-    otherwise stay, the stage's underway line with it above its last."""
+    the run does not need, passed over).  Any block - a note and its
+    question - still open is taken off first: one cut short by Ctrl-C or q
+    would otherwise stay, the stage's underway line with it above its last."""
     with _lock:
         if _s.stage is None:
             return
-        transient_end()
+        while _s.blocks:
+            transient_end()
         elapsed = _elapsed(_stage_seconds())
         timing = f" ({elapsed})" if outcome == "complete" else ""
         line = f"{_s.stage} - {outcome}{timing}"   # its time in the log and the report, not on screen
@@ -852,7 +842,7 @@ def _notice_drawn() -> bool:
     """Whether the ticker draws a Ctrl-C notice now: read from the signal
     handler, so without the lock the interrupted code may hold."""
     return (_s.concise and _s.ticker is not None and _s.stage is not None and not _s.paused
-            and not _s.held and _s.transient_rows is None)
+            and not _s.held and not _s.blocks)
 
 
 def _notice_rows() -> list[str]:
@@ -882,9 +872,9 @@ def _tick() -> None:
     seconds) - the spinner's line would be a second stage line in the block."""
     with _lock:
         if (_s.concise and _s.stage is not None and not _s.paused and not _s.held
-                and _s.transient_rows is None):
+                and not _s.blocks):
             _draw_stage()
-        elif _s.working and not _s.paused and not _s.held and _s.transient_rows is None:
+        elif _s.working and not _s.paused and not _s.held and not _s.blocks:
             _draw_working()
 
 
@@ -1039,8 +1029,6 @@ def _print(text: str, *, stage: bool = False) -> None:
 def _counted(rows: int) -> None:
     """`rows` more finished on the screen, for taking them off again."""
     _s.rows += rows
-    if _s.transient_rows is not None:
-        _s.transient_rows += rows
 
 
 def _screen_width() -> int | None:

@@ -65,7 +65,7 @@ def _retry(mark: tuple[int, bool, bool] | None, lines: Iterable[str]) -> None:
     """A wrong answer: take it and its question off the screen again, back to
     `mark`, then say why before asking again - so wrong answers do not pile
     up, one under another, until the question is taller than the window."""
-    output.transient_rewind(mark)
+    output.rewind(mark)
     _emit(lines)
 
 
@@ -489,7 +489,7 @@ def ask_text(
         _emit(help_lines)
     if example:
         _emit([f"Example: {example}"])
-    mark = output.transient_mark()
+    mark = output.mark()
     while True:
         answer = _raw(question + (QUIT_HINT if quit_hint else ""), default, private)
         if not answer:
@@ -515,7 +515,7 @@ def ask_yes_no(
     if UNATTENDED and default is not None:
         answered_unattended(f"{question} ({hint})", "y" if default else "n")
         return default
-    mark = output.transient_mark()
+    mark = output.mark()
     while True:
         answer = _raw(f"{question} ({hint})", None).lower()
         if not answer and default is not None:
@@ -537,7 +537,7 @@ def ask_choice(question: str, options: Sequence[str], *, help_lines: Sequence[st
     shown = [*options, QUIT_OPTION]
     for index, option in enumerate(shown, 1):
         _emit([f"{index}. {option}"])
-    mark = output.transient_mark()
+    mark = output.mark()
     while True:
         answer = _raw(question, None)
         try:
@@ -662,7 +662,7 @@ def ask_ipv4(
             )
         return True, ""
 
-    mark = output.transient_mark()
+    mark = output.mark()
     problem: list[str] = []  # what was wrong with the last address, shown above the question
     # No stage clock under the address while it is checked: two more rows
     # would make a try taller than a short window, and its first row would
@@ -689,7 +689,7 @@ def ask_ipv4(
                 return answer
             # Each try taken away again, or the question would climb the screen
             # one try at a time; when it stays, it has been explained once already.
-            if not output.transient_rewind(mark):
+            if not output.rewind(mark):
                 help_lines = ()
                 example = None
 
@@ -863,7 +863,7 @@ def require_word(word: str) -> bool:
         answered_unattended(question, word.upper())
         return True
     discard_typed_ahead()
-    mark = output.transient_mark()
+    mark = output.mark()
     prompt = output.question(question, ": ")
     while True:
         answer = _read_answer(prompt).strip().lower()
@@ -872,6 +872,6 @@ def require_word(word: str) -> bool:
             return True
         if answer in QUIT_WORDS:
             return False
-        output.transient_rewind(mark)  # the wrong answer, and its question, off the screen
+        output.rewind(mark)  # the wrong answer, and its question, off the screen
         prompt = output.question(f"Only the TYPED word {word.upper()} is accepted", " ",
                                  hint="(or hit q to quit):")

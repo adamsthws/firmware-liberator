@@ -236,7 +236,7 @@ class NoticeWrittenTests(unittest.TestCase):
         with mock.patch.object(output, "colour_ok", return_value=True), \
                 mock.patch.object(interrupt.time, "monotonic", return_value=1000.0), \
                 mock.patch.multiple(output._s, draws_notice=True, concise=True, ticker=object(), paused=False,
-                                    held=False, stage="Stage 1 - Confirming prerequisites", transient_rows=0,
+                                    held=False, stage="Stage 1 - Confirming prerequisites", blocks=[(0, False)],
                                     live=0):
             interrupt._state["first"] = 1000.0
             try:
@@ -245,7 +245,7 @@ class NoticeWrittenTests(unittest.TestCase):
                                  "     Press Ctrl-C again within 10 seconds to stop now.\n")
                 output._s.live = 20   # an unfinished line is ended first
                 self.assertTrue(output._notice_text().startswith("\n\n"))
-                output._s.transient_rows = None
+                output._s.blocks = []
                 output._s.live = 0
                 self.assertIsNone(output._notice_text())   # the ticker draws it
             finally:

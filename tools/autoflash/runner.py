@@ -177,7 +177,7 @@ PLUG_BACK_WAIT = 300.0
 
 def execute_with_retries(ctx: Context, step: str) -> int:
     for attempt in range(1, ATTEMPTS + 1):
-        mark = output.screen_mark()
+        mark = output.mark()
         code = execute(ctx, step)
         if step not in ("E3", "B4"):  # they count their own tries (COMMIT_ATTEMPTS, BACKUP_TRIES)
             ctx.state.capture(f"{step}.attempts", attempt)
@@ -196,7 +196,7 @@ def execute_with_retries(ctx: Context, step: str) -> int:
         # The try that failed off the screen, and the note that it is tried
         # again: the stage keeps one line, as one that passed first time does.
         # The log keeps them, and the report the number of tries.
-        output.screen_rewind(mark)
+        output.rewind(mark)
     return code
 
 
