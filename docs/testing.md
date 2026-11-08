@@ -382,6 +382,17 @@ backup though the run that converted it took one, or reported one on a
 computer without. It is **FAIL-IDENTITY** when a run back to Sonoff with no
 backup did not report the identity as the plug's own.
 
+It is **FAIL-CHECKS** when the report of the run that converted the plug says
+its end-of-run checks did not pass: `Checks passed: False`, the relay not
+switching or never answering, as every run back to Sonoff's firmware did when
+it asked eWeLink to switch the relay before the plug had got there. The
+result keeps the check's own `Relay` line. On Tasmota and ESPHome the check
+needs only the firmware, which the emulator runs, so `Checks passed: Not run`
+fails there too; back on Sonoff's firmware the relay is switched through
+eWeLink by the device id the plug's record keeps, and `Not run` - a plug
+with none kept - is no failure. A run with no report, of a plug already on the
+firmware asked for, has nothing to judge (`tools/repo/fault_verdicts.py`).
+
 The emulated computer's list of networks keeps one the plug put out for a
 minute after it has gone or been renamed, as a real computer's does (the
 emulator's `nmcli`; a number of seconds in `/run/autoflash-emu/scan-cache`
@@ -772,7 +783,11 @@ gives the six a new OpenBeken build must pass
 Then the
 tool is run again as a person would, switching the plug off and on where it
 says to, up to four times; the scenario passes when the run's record has
-every step of its route done. Results are in `captures/emulation/beken/suite/`
+every step of its route done, and the report's end-of-run checks passed as on
+the Espressif suite (FAIL-CHECKS: OpenBeken and ESPHome switch their relay pin
+in the emulator, though nothing is wired to it, and back on Sonoff's firmware
+the relay is switched through the stub's eWeLink). `check` holds each way to
+them too. Results are in `captures/emulation/beken/suite/`
 (`AUTOFLASH_BEKEN_EMU_SUITE_DIR` names another folder).
 
 Each emulated plug takes a core, so two workers suit a laptop. Sonoff's

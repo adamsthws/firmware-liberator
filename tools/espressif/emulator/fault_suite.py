@@ -21,8 +21,9 @@ been going for a share of its usual time (40%, or 10% and 90% at the riskiest
 steps), the fault; then the tool run again, as a person would - switching the
 plug off and on, or joining its own network, where the run says to - until
 the plug is converted, or four runs fail. Every scenario also checks the fault
-landed while its step was under way (MISTIMED if not), and that the run left
-no firewall rule and no helper behind.
+landed while its step was under way (MISTIMED if not), that the run left
+no firewall rule and no helper behind, and that the converting run's report
+says its end-of-run checks passed (FAIL-CHECKS if not: tools/repo/fault_verdicts.py).
 
 How many at once, from the environment:
     AUTOFLASH_EMU_CLOUD_WORKERS     emulators for the scenarios that need eWeLink (from
@@ -78,6 +79,7 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash import kinds, plugs  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.report import SONOFF_IDENTITY  # noqa: E402
+from tools.repo import fault_verdicts  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
 from tools.espressif import layouts  # noqa: E402
@@ -1975,6 +1977,11 @@ class Scenario:
                        and fault != "legacy" else None)
         no_backup = sc["route"].startswith("nobackup>")
         identity = re.findall(r"Sonoff identity:\s+(.*)", last_run)
+        # The report's end-of-run checks, from the run that converted the plug.
+        logs = run_logs(self.state)
+        checks = fault_verdicts.checks_problem(logs[-1][2], target_final) if converted and logs else None
+        if checks:
+            self.notes["checks"] = checks
         if not special:
             if self.notes.get("mistimed"):
                 special = "MISTIMED"
@@ -2029,6 +2036,8 @@ class Scenario:
                     "Settings reset to Tasmota's defaults" in ours
                     or (self.tasmota("MqttHost") or {}).get("MqttHost") != NOTEMPLATE_MQTT_HOST):
                 special = "FAIL-SETTINGS-LOST"  # its owner's settings reset with the template
+            elif converted and checks:
+                special = "FAIL-CHECKS"  # its relay did not switch, or was never checked
             elif converted and template_bad:
                 special = "BAD-TEMPLATE"  # a Tasmota that switches nothing
             elif converted and backup_line and backup_line != plugs.BACKUP_OUTCOMES["not taken" if no_backup else "existing"][1]:

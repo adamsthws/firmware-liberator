@@ -28,6 +28,31 @@ class ScenarioTests(unittest.TestCase):
             self.assertLessEqual(set(steps), set(fault_suite.route_steps(route)), route)
 
 
+class EndChecksTests(unittest.TestCase):
+    """A converted plug passes only if the report's end-of-run checks did."""
+
+    def result(self, checks):
+        from unittest import mock
+        sc = {"id": "sonoff>openbeken:B2:plugoff-1", "route": "sonoff>openbeken", "step": "B2",
+              "fault": "plugoff", "arg": 1, "at": 40}
+        log = ("[10:00:00] === run started, tool version 2.3.0 ===\n[10:00:01]     Relay: Did not switch\n"
+               f"[10:00:02]     Checks passed: {checks}\n[10:00:03] === run ended ===\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            plug = SimpleNamespace(reset=lambda start: None, start=lambda firmware: True, runs=list,
+                                   dhcp_names=lambda: ["openbeken-cdef"], last_log=lambda: log, state=Path(tmp))
+            with mock.patch.object(fault_suite, "OUT", Path(tmp)), mock.patch.object(fault_suite, "MemoryWatch"), \
+                    mock.patch.object(fault_suite, "step_scenario", return_value={"result": "PASS", "runs": 1}):
+                return fault_suite.run_scenario(plug, sc)
+
+    def test_a_converted_plug_whose_relay_switched_passes(self):
+        self.assertEqual(self.result("True")["result"], "PASS")
+
+    def test_one_whose_checks_failed_is_its_own_failure_saying_what_they_found(self):
+        outcome = self.result("False")
+        self.assertEqual(outcome["result"], "FAIL-CHECKS")
+        self.assertEqual(outcome["notes"]["checks"], "Checks passed: False; Relay: Did not switch")
+
+
 class EarlierAttemptTests(unittest.TestCase):
     def test_a_scenario_run_again_keeps_its_earlier_attempts_logs(self):
         # As the Espressif suite's: a second attempt wrote over the first's.
@@ -98,6 +123,18 @@ class CheckTests(unittest.TestCase):
         from unittest import mock
         with mock.patch.object(fault_suite, "check_way", return_value=0):
             self.assertEqual(fault_suite.check(), 0)
+
+    def test_a_way_whose_end_of_run_checks_failed_has_failed(self):
+        import io
+        from contextlib import redirect_stdout
+        from unittest import mock
+        plug = mock.Mock(all_runs=list, last_state=dict, dhcp_names=lambda: ["openbeken-cdef"],
+                         last_log=lambda: "[10:00:00] === run started ===\n[10:00:01]     Checks passed: False\n")
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fault_suite, "OUT", Path(tmp)), \
+                mock.patch.object(fault_suite, "Instance", return_value=plug), \
+                mock.patch.object(fault_suite, "converted", return_value=True), redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(fault_suite.check_way(1, ("sonoff>openbeken",)), 1)
+        self.assertIn("FAIL  sonoff>openbeken: Checks passed: False", out.getvalue())
 
     def test_each_of_its_routes_is_one_the_tool_has(self):
         for way in fault_suite.CHECK_WAYS:
