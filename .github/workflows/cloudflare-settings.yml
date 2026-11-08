@@ -4,7 +4,8 @@
 # push to main that changes them. A run fails on any difference, whether a
 # change made in the dashboard or one written down there and not applied
 # yet. Settings are applied by hand, with a short-lived token
-# (website/README.md); this job's token can read and nothing else.
+# (website/README.md); this job's token can read and nothing else, and the
+# check fails if it can see another zone or the account's API tokens.
 name: Cloudflare settings
 
 on:
@@ -36,4 +37,4 @@ jobs:
       - name: What differs from what is written down
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_READ_TOKEN }}
-        run: python3 tools/repo/cloudflare_settings.py
+        run: python3 tools/repo/cloudflare_settings.py ci

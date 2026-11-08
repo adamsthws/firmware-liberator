@@ -3,6 +3,8 @@
 
     python3 tools/repo/cloudflare_settings.py          what differs from them
     python3 tools/repo/cloudflare_settings.py apply    set them
+    python3 tools/repo/cloudflare_settings.py ci       what differs, and that the
+                                                       token reads no more than CI's should
 
 With CLOUDFLARE_API_TOKEN, in the environment or .env: to check, a token
 allowed to read the zone, its settings, its single redirects and its rate
@@ -15,6 +17,12 @@ The deploy token's permissions are checked too, but only with a token that
 can also read the account's API tokens and Workers: the apply token, never
 CI's, as that would show every token in the account. A token is changed in
 the dashboard, never by `apply`.
+
+`ci`, as the cloudflare-settings workflow runs it, also tries reads its
+token must be refused, failing where any works: other zones and accounts,
+Workers, and what CI_REFUSED lists. A token given more than it should be is
+found that way, by what it can see; reads alone cannot show what it can
+change.
 """
 
 from __future__ import annotations
@@ -124,7 +132,8 @@ def token() -> str:
 def api(path: str, method: str = "GET", body: Any = None, ok_missing: bool = False, whole: bool = False,
         ok_forbidden: bool = False) -> Any:
     """The answer's result, or with `whole` all of it, its result_info too;
-    None for a 404 with `ok_missing`, or a 403 with `ok_forbidden`."""
+    None for a 404 with `ok_missing`, or with `ok_forbidden` a refusal: 403,
+    or 401 as some products answer a token not allowed them."""
     request = urllib.request.Request(
         API + path, method=method, data=None if body is None else json.dumps(body).encode(),
         headers={"Authorization": f"Bearer {token()}", "Content-Type": "application/json"})
@@ -133,7 +142,7 @@ def api(path: str, method: str = "GET", body: Any = None, ok_missing: bool = Fal
             answer = json.load(response)
             return answer if whole else answer["result"]
     except urllib.error.HTTPError as error:
-        if (ok_missing and error.code == 404) or (ok_forbidden and error.code == 403):
+        if (ok_missing and error.code == 404) or (ok_forbidden and error.code in (401, 403)):
             return None
         detail = error.read().decode("utf-8", "replace")
         try:
@@ -185,9 +194,49 @@ DEPLOY_POLICIES = in_order([(frozenset(DEPLOY_ZONE_PERMISSIONS), frozenset({ZONE
                             (frozenset(DEPLOY_WORKERS_PERMISSIONS), frozenset(DEPLOY_WORKERS))])
 
 
-def differences() -> list[tuple[str, str, Any]]:
+# What CI's read token must be refused, each a sign of permissions it was
+# never meant to have: none of it is needed to check the settings. Each was
+# refused when written down (2026-11-08), so a failure is a change.
+CI_REFUSED = [
+    ("the account's API tokens", "/accounts/{account}/tokens"),
+    ("your user's details", "/user"),
+    ("the account's members", "/accounts/{account}/members"),
+    ("the account's audit logs", "/accounts/{account}/audit_logs"),
+    ("the account's billing", "/accounts/{account}/billing/profile"),
+    ("the zone's DNS records", "/zones/{zone}/dns_records"),
+    ("the API Worker's settings and bindings", "/accounts/{account}/workers/scripts/firmware-liberator-api/settings"),
+    ("the account's Pages projects", "/accounts/{account}/pages/projects"),
+    ("the zone's SSL certificates", "/zones/{zone}/ssl/certificate_packs"),
+    ("the account's KV namespaces", "/accounts/{account}/storage/kv/namespaces"),
+    ("the account's D1 databases", "/accounts/{account}/d1/database"),
+]
+
+
+def ci_token_reach(account: str, zone: str) -> list[tuple[str, str, Any]]:
+    """What CI's read token can see that it should not: a zone but this one,
+    an account but this one, any Worker (the list answers, filtered to those
+    it may see), or anything in CI_REFUSED."""
+    found: list[tuple[str, str, Any]] = []
+    others = sorted(item.get("name") for item in api("/zones?per_page=50") or [] if item.get("name") != ZONE)
+    if others:
+        found.append(("this token", f"can see other zones ({', '.join(others)}): give it {ZONE} alone", None))
+    accounts = api("/accounts?per_page=50") or []
+    if len(accounts) != 1:
+        found.append(("this token", f"can see {len(accounts)} accounts: give it this one alone", None))
+    workers = sorted(script.get("id") for script in api(f"/accounts/{account}/workers/scripts", ok_forbidden=True)
+                     or [])
+    if workers:
+        found.append(("this token", f"can see Workers ({', '.join(workers)}): it needs none", None))
+    for what, path in CI_REFUSED:
+        if api(path.format(account=account, zone=zone), ok_forbidden=True) is not None:
+            found.append(("this token", f"can read {what}: it should be refused", None))
+    return found
+
+
+def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
     """(what, how it differs, the change that makes it right: None for one
-    made in the dashboard)."""
+    made in the dashboard). With `ci`, what CI's token can see that it
+    should not too."""
     zones = api(f"/zones?name={ZONE}")
     if not zones:
         raise SettingsError(f"the token cannot see the zone {ZONE}")
@@ -222,23 +271,25 @@ def differences() -> list[tuple[str, str, Any]]:
             return "; ".join(f"{', '.join(names)} on {', '.join(on)}" for names, on in policies) \
                 or "nothing (no such token)"
         found.append((DEPLOY_TOKEN, f"allows {say(in_order(have))}, should allow {say(DEPLOY_POLICIES)}", None))
+    if ci:
+        found += ci_token_reach(zones[0]["account"]["id"], zones[0]["id"])
     return found
 
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if args not in ([], ["apply"]):
+    if args not in ([], ["apply"], ["ci"]):
         print(__doc__.strip(), file=sys.stderr)
         return 2
     try:
-        found = differences()
+        found = differences(ci=args == ["ci"])
         if not found:
             print(f"{ZONE}: every setting is as tools/repo/cloudflare_settings.py says.")
             return 0
         for what, how, _ in found:
             print(f"  {what}: {how}")
-        if not args:
-            print("python3 tools/repo/cloudflare_settings.py apply sets them.")
+        if args != ["apply"]:
+            print("python3 tools/repo/cloudflare_settings.py apply sets them; a token is changed in the dashboard.")
             return 1
         left = 0
         for what, _, change in found:
