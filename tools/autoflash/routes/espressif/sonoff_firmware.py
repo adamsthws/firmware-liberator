@@ -83,8 +83,7 @@ def fetch(url: str, query: dict[str, Any] | None = None) -> bytes:
         extra = urllib.parse.urlencode(query)
         url = asked._replace(query=f"{asked.query}&{extra}" if asked.query else extra).geturl()
     request = urllib.request.Request(url, headers={"User-Agent": "autoflash-research/0.1"})
-    with hostsys.urlopen(request, timeout=TIMEOUT) as reply:
-        return reply.read()
+    return hostsys.download(request, timeout=TIMEOUT, say=output.detail)
 
 
 def offered(ctx: Context, identity: Identity) -> bytes | None:

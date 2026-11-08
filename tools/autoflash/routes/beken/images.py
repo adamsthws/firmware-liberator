@@ -15,12 +15,11 @@ import hashlib
 import json
 import struct
 import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from tools.autoflash import kinds, output
+from tools.autoflash import hostsys, kinds, output
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.runs import ROOT
 from tools.beken import fota_wrap, layouts
@@ -98,8 +97,7 @@ def official_file(kind: kinds.Kind) -> bytes:
         return data
     output.say(f"Fetching eWeLink's official update file for the {kind.name} ({name})...")
     try:
-        with urllib.request.urlopen(OFFICIAL_FILES_AT + urllib.parse.quote(name), timeout=120) as reply:
-            data = reply.read()
+        data = hostsys.download(OFFICIAL_FILES_AT + urllib.parse.quote(name), timeout=120, say=output.detail)
     except OSError as exc:
         raise NothingWritten(f"eWeLink's official update file for the {kind.name} could not be fetched: {exc}. "
                              "Nothing was written") from exc
@@ -191,8 +189,7 @@ def stock_rbl(kind: kinds.Kind) -> tuple[bytes, str]:
     if hashlib.sha256(data).hexdigest() != digest:
         output.say(f"Fetching the public {kind.name} stock dump ({url.rsplit('/', 1)[1]}, 4 MB)...")
         try:
-            with urllib.request.urlopen(url, timeout=120) as reply:
-                data = reply.read()
+            data = hostsys.download(url, timeout=120, say=output.detail)
         except OSError as exc:
             raise Abort(f"the public dump of the {kind.name}'s stock firmware could not be fetched: {exc}") from exc
         if hashlib.sha256(data).hexdigest() != digest:

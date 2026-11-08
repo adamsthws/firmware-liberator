@@ -1,10 +1,13 @@
 import base64
+import http.client
 import json
+import ssl
 import subprocess
 import sys
 import tempfile
 import threading
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
@@ -594,6 +597,69 @@ class AdminPasswordTests(unittest.TestCase):
             prompts.ask_admin_password()
         self.assertEqual(check.call_count, 3)
         self.assertEqual(shown.call_count, 2)  # "try again" twice, not after the last
+
+
+class DownloadTests(unittest.TestCase):
+    """Seen in the fault suite: one TLS handshake timing out stopped a run, and on
+    2026-11-08 GitHub's release downloads answered 504 for minutes at a time."""
+
+    def fetch(self, *answers):
+        replies = iter(answers)
+        said, waited = [], []
+
+        def urlopen(*_, **__):
+            reply = next(replies)
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
+        with mock.patch.object(hostsys, "urlopen", side_effect=urlopen) as opened, \
+                mock.patch.object(hostsys.time, "sleep", side_effect=waited.append):
+            try:
+                found = hostsys.download("https://example.invalid/file", say=said.append)
+            except OSError as exc:
+                found = exc
+        return found, opened.call_count, waited, said
+
+    @staticmethod
+    def http_error(code):
+        return urllib.error.HTTPError("https://example.invalid/file", code, "no", None, None)
+
+    @staticmethod
+    def good():
+        reply = mock.MagicMock()
+        reply.__enter__.return_value.read.return_value = b"file"
+        return reply
+
+    def test_a_passing_trouble_is_tried_again(self):
+        for trouble in (TimeoutError("The handshake operation timed out"), ConnectionResetError(),
+                        urllib.error.URLError("no route"), self.http_error(503), self.http_error(504),
+                        self.http_error(429), http.client.IncompleteRead(b"fi", 2)):
+            found, tries, _, said = self.fetch(trouble, self.good())
+            self.assertEqual((found, tries), (b"file", 2), trouble)
+            self.assertIn("trying again in 5s", said[0])
+
+    def test_a_server_turning_it_away_for_minutes_is_waited_out_longer_each_time(self):
+        found, tries, waited, _ = self.fetch(*[self.http_error(504)] * 5, self.good())
+        self.assertEqual((found, tries), (b"file", 6))
+        self.assertEqual(waited, list(hostsys.DOWNLOAD_WAITS))
+        self.assertGreaterEqual(sum(hostsys.DOWNLOAD_WAITS), 120)
+
+    def test_it_gives_up_after_its_tries_with_the_error_its_callers_expect(self):
+        tries_in_all = len(hostsys.DOWNLOAD_WAITS) + 1
+        found, tries, _, _ = self.fetch(*[TimeoutError("timed out")] * tries_in_all)
+        self.assertIsInstance(found, TimeoutError)
+        self.assertEqual(tries, tries_in_all)
+        found, tries, _, _ = self.fetch(*[http.client.IncompleteRead(b"fi", 2)] * tries_in_all)
+        self.assertIsInstance(found, OSError)
+        self.assertIn("cut off", str(found))
+        self.assertEqual(tries, tries_in_all)
+
+    def test_what_would_only_fail_again_is_not_tried_again(self):
+        inspected = urllib.error.URLError(ssl.SSLCertVerificationError("certificate verify failed"))
+        for lasting in (self.http_error(404), self.http_error(403), inspected):
+            found, tries, waited, _ = self.fetch(lasting)
+            self.assertIs(found, lasting)
+            self.assertEqual((tries, waited), (1, []))
 
 
 if __name__ == "__main__":

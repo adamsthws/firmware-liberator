@@ -128,6 +128,12 @@ check.
   failed try - the stage shown stopped, what failed, and that it would be tried
   again - stayed above the stage drawn afresh, so the stage seemed to run twice.
   The run's log still keeps every try.
+- A download the server turns away for now - GitHub's release downloads
+  answering "504 Gateway Time-out" for minutes at a time, say - is tried again
+  for a little over two minutes, waiting longer each time, rather than three
+  times in ten seconds: the official Tasmota files, Sonoff's firmware for a Beken
+  plug, and the firmware eWeLink offers a plug. A run stopped by one before had
+  to be started again.
 - OpenBeken for the Sonoff S61 rebuilt with
   [1.18.320](https://github.com/openshwprojects/OpenBK7231T_App/releases/tag/1.18.320).
 
