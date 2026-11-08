@@ -36,7 +36,7 @@ which only names the old images; the sponsorship links (`.github/FUNDING.yml`,
 emulator's patches; and the private backup's package
 (`OWNER` in `tools/repo/private_backup.py`), which may stay where it is: move
 it only by uploading it again under the new owner, private
-([docs/private-backup.md](../docs/private-backup.md)).
+([private-firmware-backup.md](private-firmware-backup.md)).
 
 After the push, `python3 tools/repo/github_settings.py` says whether every
 setting came across, the `website` environment's secrets included, and

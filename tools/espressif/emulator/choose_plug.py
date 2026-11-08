@@ -16,7 +16,7 @@ with nobody at the keyboard, the plug chosen last time is used.
 
 With none here - captures/ is only ever a working copy - the maintainer's
 sealed backup is fetched from its private package and filed here first
-(tools/repo/private_backup.py restore, docs/private-backup.md), given its key and
+(tools/repo/private_backup.py restore, .github/private-firmware-backup.md), given its key and
 a login that can read the package; and a test copy asked for by --plug that
 is not here yet is made from it (copy_plug.py). AUTOFLASH_EMU_NO_RESTORE=1 says
 not to.
@@ -100,7 +100,7 @@ def restored(wanted: str | None) -> list[Choice]:
     except private_backup.SealError as exc:
         print(f"The sealed Sonoff backup could not be restored: {exc}\n"
               "(it needs AUTOFLASH_BACKUP_KEY and a GitHub login that can read the package:\n"
-              "docs/private-backup.md)", file=sys.stderr)
+              ".github/private-firmware-backup.md)", file=sys.stderr)
         return choices()
     print(f"Restored the sealed Sonoff backup of {mac} (tools/repo/private_backup.py).")
     if wanted and plugs.folder_name(wanted) != plugs.folder_name(mac) and \

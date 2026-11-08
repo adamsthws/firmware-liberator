@@ -188,8 +188,7 @@ remade as needed:
 | `emulation/legacy/`, `emulation/cache/`, `emulation/stub-cloud/` | earlier releases' trees, the QEMU fork's source, the cloud stub's own CA | the suite, `emu.sh` (a new CA means the saved stub plugs are made again) |
 
 The maintainer's own backup is sealed in a private package, and the emulator
-restores it when it is not in `captures/`
-([private-backup.md](private-backup.md)): in
+restores it when it is not in `captures/`: in
 the maintainer's checkout nothing in `captures/` needs backing up.
 
 ### Keeping secrets out of Git

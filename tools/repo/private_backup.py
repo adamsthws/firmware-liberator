@@ -6,7 +6,7 @@ with that plug's eWeLink keys and the Wi-Fi it was set up on - of which there
 is no other copy to be had. This seals it (compressed, then encrypted with a
 key only its owner has) and keeps the sealed file in a private package on
 GitHub's container registry, beside the public repository but never in it:
-not in its history, not in a clone, not in a release (docs/private-backup.md).
+not in its history, not in a clone, not in a release (.github/private-firmware-backup.md).
 
     python3 tools/repo/private_backup.py key
         a new key, written into .env as AUTOFLASH_BACKUP_KEY - never shown

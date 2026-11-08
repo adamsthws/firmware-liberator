@@ -3,14 +3,14 @@
 This page is for the project's maintainer. Nobody converting a plug needs it,
 and nothing here is part of a conversion.
 
-The emulator ([emulator.md](emulator.md)) boots a real plug's Sonoff backup:
+The emulator ([emulator.md](../docs/emulator.md)) boots a real plug's Sonoff backup:
 Sonoff's firmware, with that plug's eWeLink keys and the Wi-Fi it was set up on.
 The project has exactly one, and can never make another - every plug it had is
 converted. `tools/repo/private_backup.py` keeps a copy of it off the maintainer's
 computer without it ever being public: sealed on the maintainer's side, then
 kept in a **private** package on GitHub's container registry. It is not in the
 repository - not its history, a clone, a fork or a release - so
-[legal.md](legal.md)'s "no Sonoff firmware is in the repository" stays true.
+[legal.md](../docs/legal.md)'s "no Sonoff firmware is in the repository" stays true.
 
 ## What is sealed, and how
 
@@ -78,7 +78,7 @@ emulator stops and says so. A test copy asked for with `--plug` is then made
 from it (`copy_plug.py`), so the fault suite, `public_plugs.py make` and every
 other emulator run start from an empty `captures/`. On the maintainer's
 computer that makes `captures/` a working copy, safe to delete
-([technical-details.md](technical-details.md#what-captures-holds)).
+([technical-details.md](../docs/technical-details.md#what-captures-holds)).
 
 ## Commands
 
@@ -123,7 +123,7 @@ its first run, or `restore` does. Its `flash.bin` must have SHA-256
 ## On GitHub's side, one day
 
 Nothing opens the backup on GitHub's side today. It is needed only to make the
-public starting plugs again ([emulator.md](emulator.md#public-plugs)) and for
+public starting plugs again ([emulator.md](../docs/emulator.md#public-plugs)) and for
 the whole fault suite, which run on the maintainer's machines. A workflow that
 does - on runners of the maintainer's own, say - needs:
 

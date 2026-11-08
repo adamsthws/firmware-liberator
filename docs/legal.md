@@ -81,8 +81,7 @@ device the project works with, now or later.
   ([emulator.md](emulator.md#public-plugs)).
 - The maintainer keeps their own backup off their computer, as any owner may
   back up their own: encrypted on their side, in a private package only they
-  can reach, never in the repository, a release or anything public
-  ([private-backup.md](private-backup.md)).
+  can reach, never in the repository, a release or anything public.
 
 ### Nothing is circumvented
 
