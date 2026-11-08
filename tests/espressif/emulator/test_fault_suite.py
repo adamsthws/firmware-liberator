@@ -251,6 +251,28 @@ class SavedPlugTests(unittest.TestCase):
             self.assertEqual(took.call_args.args, (fs.EMU, Path("elsewhere")))
             self.assertEqual([Path(f"{ids}.{n}").read_text(encoding="utf-8") for n in (1, 2)], ["a\n", "b\n"])
 
+    def test_a_scenario_waits_for_room_before_it_starts(self):
+        import queue
+        import threading
+        todo = queue.Queue()
+        todo.put({"id": "a", "route": "sonoff>tasmota", "step": "D1", "fault": "crash", "arg": 60})
+        events = []
+
+        class Started:
+            def __init__(self, *args):
+                events.append("run")
+
+            def go(self):
+                return {"verdict": "PASS"}
+        with tempfile.TemporaryDirectory() as out, \
+                mock.patch.object(fs, "OUT", Path(out)), mock.patch.object(fs, "LOGS", Path(out)), \
+                mock.patch.object(fs, "memory_now", return_value=(fs.LOW_MEMORY_KB * 2, None)), \
+                mock.patch.object(fs.cpu_load, "wait_for_room", side_effect=lambda *a: events.append("wait")), \
+                mock.patch.object(fs, "Scenario", Started), mock.patch.object(fs, "TUNER"), \
+                mock.patch("builtins.print"):
+            fs.worker(1, todo, threading.Lock())
+        self.assertEqual(events, ["wait", "run"])
+
     def test_a_batch_starts_the_longest_first(self):
         rows = [{"id": i, "route": "sonoff>tasmota", "step": "D1", "fault": "crash", "arg": 60} for i in "abc"]
         ran = []

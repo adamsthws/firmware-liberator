@@ -85,7 +85,7 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash import kinds, plugs  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.report import SONOFF_IDENTITY  # noqa: E402
-from tools.repo import fault_verdicts, scenario_times  # noqa: E402
+from tools.repo import cpu_load, fault_verdicts, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
 from tools.espressif import layouts  # noqa: E402
@@ -2442,6 +2442,7 @@ def worker(n, todo, lock, cloud=False, room=None):
             continue
         while memory_now()[0] < LOW_MEMORY_KB:
             time.sleep(10)
+        cpu_load.wait_for_room(lambda line: print(line, flush=True))
         log = LOGS / (key(sc["id"]) + ".log")
         keep_earlier(log)
         started = time.time()
