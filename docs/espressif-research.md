@@ -153,6 +153,10 @@ partition, not past the last partition, so the `sonoff` area counts as free; and
 "Resize FS to max" begins by removing every non-app partition after the filesystem
 (`remove_partition_after_last_fs`, in `resize_max_flash_size_k`), whatever the flash
 size. Its other resize, which needs the filesystem last, is not offered.
+A fix is proposed upstream,
+[arendst/Tasmota#25241](https://github.com/arendst/Tasmota/pull/25241): it removes
+only `coredump` after the filesystem, and counts no space as free while another
+partition follows it.
 
 Just in front of the filesystem, at `0x3AF000` (the last 4 KB of `app0`), was tried
 as well, and is not used. On Tasmota's layout it is the better place: the filesystem
