@@ -7,6 +7,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tools.autoflash import kinds, plugs
+from tools.autoflash.routes import espressif
 from tools.espressif.emulator import fault_suite as fs
 
 MAC = "12:34:56:ab:cd:ef"
@@ -419,6 +421,12 @@ class ScenarioTests(unittest.TestCase):
         self.assertIn("sonoff>esphome:C2:crash-60", ids)
         self.assertNotIn("tasmota>sonoff:D4:crash-60", ids)
 
+    def test_a_fault_at_90_percent_of_r1_with_no_backup_comes_inside_it(self):
+        # R1 putting Sonoff's firmware and the kept identity took 53 s in the
+        # emulator; estimated at 60 s, its fault at 90% came a second after (MISTIMED).
+        at = fs.ROUTES["nobackup>sonoff"][2]["R1"] * 90 / 100
+        self.assertLess(at, 53 - 3)
+
     def test_a_packet_is_changed_only_where_a_step_sends_one(self):
         # R2 only sees Sonoff's LAN port take a connection: no packet there
         # carries data, and corrupt-once was always NO-TRAFFIC.
@@ -454,9 +462,9 @@ class ScenarioTests(unittest.TestCase):
         # (docs/updating-firmware.md): every step from Sonoff, both ways, and
         # each kind of plug it converted.
         ids = {sc["id"] for sc in fs.scenarios()}
-        for route, steps in (("sonoff>tasmota", fs.ROUTES["sonoff>tasmota"][2]),
-                             ("sonoff>esphome", fs.ROUTES["sonoff>esphome"][2])):
-            for step in set(steps) - {"C3fb"} | {"C2"}:
+        for route, steps in fs.LEGACY_STEPS["v2.0.2"].items():
+            self.assertEqual(set(steps), {fs.STEP_OF.get(step, step) for step in fs.ROUTES[route][2]} - {"K1"} | {"C2"})
+            for step in steps:
                 self.assertIn(f"{route}:{step}:legacy-v2.0.2", ids)
         for route in ("tasmota>esphome", "tasmota>sonoff", "esphome>tasmota", "esphome>sonoff"):
             self.assertIn(f"{route}:start:legacy-v2.0.2", ids)
@@ -1034,6 +1042,120 @@ class ScenarioTests(unittest.TestCase):
                 continue
             steps = fs.ROUTES[sc["route"]][2]
             self.assertTrue(sc["step"] in steps or sc["step"] in fs.STARTS, sc["id"])
+
+
+TH = kinds.SONOFF_TH_ELITE  # its layout leaves Tasmota through a temporary table
+
+
+class PlugRoutesTests(unittest.TestCase):
+    """Each route's steps, as the tool takes them on the plug under test."""
+
+    def routes_of(self, kind):
+        with mock.patch.object(fs, "PLUG", kind), mock.patch.object(fs, "ROUTES", fs.routes_for(kind)):
+            return fs.ROUTES, {sc["id"] for sc in fs.scenarios()}
+
+    def tool_steps(self, route, kind):
+        """The steps the tool takes on `route` that write to or wait on the plug."""
+        source, target = route.split(">")
+        source = fs.STARTS_ON.get(source, source)
+        if (source, target) == ("tasmota", "esphome") and not fs.layouts.of(kind.layout).needs_temporary:
+            source = espressif.DIRECT_FROM_TASMOTA
+        asks = {"A5", "A2"} | ({"C2"} if route in fs.C2_ROUTES else set())
+        steps = [step for step, _, _ in espressif.steps_for(target, source) if step not in asks]
+        # With no backup, only going back differs from tasmota>sonoff, whose
+        # steps before it are faulted already.
+        return [step for step in steps if step.startswith("R")] if route.startswith("nobackup>") else steps
+
+    def test_every_step_the_tool_takes_is_faulted(self):
+        for kind in (kinds.SONOFF_S60, TH):
+            routes, _ = self.routes_of(kind)
+            for route, (_, _, steps) in routes.items():
+                if route.startswith("update>"):
+                    continue
+                with self.subTest(kind=kind.key, route=route):
+                    self.assertEqual([fs.STEP_OF.get(step, step) for step in steps if step != "C3fb"],
+                                     self.tool_steps(route, kind))
+
+    def test_the_identity_is_kept_on_each_route_that_keeps_it(self):
+        _, ids = self.routes_of(kinds.SONOFF_S60)
+        for route in ("sonoff>tasmota", "sonoff>esphome", "esphome>tasmota"):
+            for fault in ("plugoff-1", "crash-1", "corrupt-once"):
+                self.assertIn(f"{route}:K1:{fault}", ids)
+
+    def test_back_to_sonoff_with_no_backup(self):
+        _, ids = self.routes_of(kinds.SONOFF_S60)
+        for wanted in ("nobackup>sonoff:R1:plugoff-1", "nobackup>sonoff:R1@90:plugoff-1",
+                       "nobackup>sonoff:R1:double-plugoff-1", "nobackup>sonoff:R2:outage-30"):
+            self.assertIn(wanted, ids)
+
+    def test_a_plug_on_a_temporary_table_goes_to_esphome_by_the_hub(self):
+        routes, ids = self.routes_of(TH)
+        self.assertNotIn("M1", routes["tasmota>esphome"][2])
+        self.assertIn("tasmota>esphome:D5:plugoff-1", ids)
+        for route in ("tasmota>sonoff", "tasmota>esphome"):
+            for at in (10, 50, 90):
+                self.assertIn(f"{route}:D5ot@{at}:plugoff-1", ids)
+
+    def test_its_own_lengths_on_a_temporary_table(self):
+        routes, _ = self.routes_of(TH)
+        self.assertEqual(routes["sonoff>tasmota"][2]["E3"], fs.TEMPORARY_TABLE_LENGTHS["E3"])
+        self.assertEqual(fs.routes_for(kinds.SONOFF_S60)["sonoff>tasmota"][2]["E3"], 5)
+
+    def test_the_own_table_only_where_there_is_a_temporary_one(self):
+        for kind in (kinds.SONOFF_S60, kinds.SONOFF_POW_ELITE):
+            self.assertFalse([i for i in self.routes_of(kind)[1] if ":D5ot" in i], kind.key)
+
+    def test_earlier_releases_only_on_an_s60(self):
+        for kind in (TH, kinds.SONOFF_POW_ELITE):
+            routes, ids = self.routes_of(kind)
+            self.assertNotIn("update>esphome", routes)
+            self.assertFalse([i for i in ids if ":legacy-" in i], kind.key)
+        self.assertIn("sonoff>tasmota:C2:legacy-v1.2.0", self.routes_of(kinds.SONOFF_S60)[1])
+
+    def test_the_kind_is_the_plug_records(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(plugs, "PLUGS", Path(tmp)):
+            self.assertIs(fs.plug_kind(MAC), kinds.SONOFF_S60)
+            plugs.plug_dir(MAC).mkdir()
+            (plugs.plug_dir(MAC) / plugs.PLUG_FILE).write_text('{"product_model": "THR320D"}', encoding="utf-8")
+            self.assertIs(fs.plug_kind(MAC), TH)
+        self.assertIs(fs.plug_kind(None), kinds.SONOFF_S60)
+
+    def test_the_start_with_no_backup_is_a_copy_without_it(self):
+        with tempfile.TemporaryDirectory() as emu, mock.patch.object(fs, "EMU", Path(emu)), \
+                mock.patch.object(fs, "MAC", MAC):
+            plug = fs.converted_start("tasmota") / "captures/plugs" / plugs.folder_name(MAC)
+            (plug / plugs.BACKUP).mkdir(parents=True)
+            (plug / plugs.BACKUP / "flash.bin").write_bytes(b"stock")
+            (plug / plugs.PLUG_FILE).write_text("{}", encoding="utf-8")
+            (fs.converted_start("tasmota") / "flash.bin").write_bytes(b"tasmota")
+            fs.no_backup_start()
+            copy = fs.converted_start("nobackup")
+            self.assertEqual((copy / "flash.bin").read_bytes(), b"tasmota")
+            self.assertTrue((copy / "captures/plugs" / plugs.folder_name(MAC) / plugs.PLUG_FILE).is_file())
+            self.assertFalse((copy / "captures/plugs" / plugs.folder_name(MAC) / plugs.BACKUP).exists())
+            self.assertEqual((plug / plugs.BACKUP / "flash.bin").read_bytes(), b"stock")
+
+    def test_the_identity_is_the_plugs_own_as_the_report_words_it(self):
+        self.assertTrue(fs.kept_identity_reported(["Rebuilt from your eWeLink account", "From the device "]))
+        self.assertFalse(fs.kept_identity_reported(["Rebuilt from your eWeLink account"]))
+        self.assertFalse(fs.kept_identity_reported([]))
+
+    def test_the_template_is_the_plugs_own(self):
+        # Seen: a TH Elite on its own template judged BAD-TEMPLATE, for not being an S60's.
+        module = {"Module": {"0": "Sonoff-THR320D"}}
+        for kind, name, own in ((TH, "Sonoff-THR320D", True), (TH, kinds.SONOFF_S60.display_name, False),
+                                (kinds.SONOFF_S60, kinds.SONOFF_S60.display_name, True),
+                                (kinds.SONOFF_S60, "Generic", False)):
+            with self.subTest(kind=kind.key, name=name), mock.patch.object(fs, "PLUG", kind):
+                self.assertEqual(fs.own_template({"NAME": name}, module), own)
+        with mock.patch.object(fs, "PLUG", TH):
+            self.assertFalse(fs.own_template({"NAME": "Sonoff-THR320D"}, {"Module": {"1": "Sonoff Basic"}}))
+
+    def test_its_start_counts_as_the_tasmota_one(self):
+        with mock.patch.object(fs, "installs", side_effect=lambda target: {"tasmota": {"v": 1}}[target]), \
+                mock.patch.object(fs, "converted_start", return_value=Path("/nonexistent")):
+            self.assertEqual(fs.stale_starts([{"route": "nobackup>sonoff", "fault": "plugoff"}]),
+                             [fs.saved("suite-tasmota-nobackup")])
 
 
 if __name__ == "__main__":
