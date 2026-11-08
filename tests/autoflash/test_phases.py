@@ -159,7 +159,7 @@ class FetchCheckTests(unittest.TestCase):
         from unittest import mock
         from tools.autoflash import phases
         captured, runner = [], self.runner()
-        runner._unanswered, runner._start_code = True, "loader"
+        runner._unanswered, runner._start_code = True, ("loader",)
 
         def fetched(_):
             runner._unanswered = False
@@ -175,7 +175,7 @@ class FetchCheckTests(unittest.TestCase):
         from unittest import mock
         from tools.autoflash import phases
         captured, runner = [], self.runner()
-        runner._reply_lost, runner._start_code = True, "loader"
+        runner._reply_lost, runner._start_code = True, ("loader",)
         runner._start.side_effect = lambda _: captured.append('  [10.0.0.5] "GET /berry/plan.be HTTP/1.1" 200 -')
         with mock.patch.object(phases, "FETCH_DEADLINE", 1.0):
             runner._require_fetch(self.Process(), captured, self.Reader(), "plan")
@@ -210,7 +210,7 @@ class FetchCheckTests(unittest.TestCase):
         from unittest import mock
         from tools.autoflash import phases
         runner = self.runner(answers=[True] * 10)
-        runner._unanswered, runner._start_code = True, "loader"
+        runner._unanswered, runner._start_code = True, ("loader",)
         with mock.patch.object(phases, "FETCH_DEADLINE", 1.0):
             with self.assertRaises(phases.PlugNeverConnected):
                 runner._require_fetch(self.Process(), [], self.Reader(), "plan")
@@ -384,7 +384,7 @@ class PhaseWaitTests(unittest.TestCase):
         shown = []
         runner.log = shown.append
         runner._plug_answers = mock.Mock(side_effect=[True] + [False] * 100)  # then busy running it
-        runner._start_code = "autoflash_run()"
+        runner._start_code = ("autoflash_run()",)
         runner._unanswered = True
         sent = []
         runner._start = sent.append
@@ -403,7 +403,7 @@ class PhaseWaitTests(unittest.TestCase):
             runner = phases.PhaseRunner.__new__(phases.PhaseRunner)
             runner.log = lambda line: None
             runner._plug_answers = mock.Mock(side_effect=[True] + [False] * 100)
-            runner._start_code, runner._started_at = "autoflash_run()", 1000
+            runner._start_code, runner._started_at = ("autoflash_run()",), 1000
             sent = []
             runner._start = sent.append
             clock = iter(range(1200, 100_000, 2))
@@ -421,7 +421,7 @@ class PhaseWaitTests(unittest.TestCase):
         runner = phases.PhaseRunner.__new__(phases.PhaseRunner)
         runner.log = lambda line: None
         runner._plug_answers = mock.Mock(return_value=True)
-        runner._start_code = "autoflash_run()"
+        runner._start_code = ("autoflash_run()",)
         runner._unanswered = True
         runner._start = mock.Mock()
         clock = iter(range(1000, 100_000, 2))
@@ -480,6 +480,52 @@ class PhaseWaitTests(unittest.TestCase):
         runner._start('autoflash_commit("x")')
         release.set()
         runner.device.berry.assert_called_once()
+
+
+    def started_again(self, phase, arm, lost):
+        """The commands a plug is sent when its start goes again: by `lost`,
+        given the runner and its start, standing in for what notices."""
+        import time as real_time
+        from unittest import mock
+        from tools.autoflash import phases
+        url = "http://192.0.2.1:8088/berry/stage.be"
+        runner = phases.PhaseRunner.__new__(phases.PhaseRunner)
+        runner.log = lambda line: None
+        sent = []
+        runner.device = mock.Mock()
+        runner._require_fetch = mock.Mock()
+        runner._plug_back = mock.Mock(return_value=True)
+        runner.device.berry.side_effect = lambda code, timeout: sent.append(code) or lost(runner, code)
+
+        def wait(*args):
+            deadline = real_time.monotonic() + 5
+            while len(sent) < 4 and real_time.monotonic() < deadline:
+                real_time.sleep(0.01)
+            return 0
+        runner._wait = wait
+        runner._drive(phase, mock.Mock(), [], mock.Mock(), lambda phase: True, 540.0, lambda: url, lambda: arm)
+        return url, sent
+
+    def test_a_start_sent_again_fetches_its_instructions_again_first(self):
+        # Seen in the fault suite: K1's plug switched off just after it fetched
+        # its instructions. Restarted, it had lost them, and answered the start,
+        # sent again as it came back, with "'autoflash_run' undeclared".
+        import urllib.error
+        for phase, arm, start in (("stage", None, "autoflash_run()"),
+                                  ("restore", ("autoflash_restore", "t0k3n"), 'autoflash_restore("t0k3n")')):
+            with self.subTest(phase):
+                gone = []
+
+                def lost(runner, code):
+                    if code == start and not gone:   # the plug off as the start went
+                        gone.append(code)
+                        raise urllib.error.URLError("no route to host")
+                url, sent = self.started_again(phase, arm, lost)
+                self.assertIn(url, sent[0])
+                self.assertEqual(sent[1], start)       # off as it went
+                self.assertIn(url, sent[2])            # back: fetched again,
+                self.assertEqual(sent[3], start)       # then started, a command of its own
+                self.assertNotIn(start, sent[2])       # never in one: the plug runs out of stack
 
 
 class PhaseRunTests(unittest.TestCase):

@@ -134,6 +134,10 @@ check.
   times in ten seconds: the official Tasmota files, Sonoff's firmware for a Beken
   plug, and the firmware eWeLink offers a plug. A run stopped by one before had
   to be started again.
+- A step whose plug restarted just after fetching its instructions - switched off
+  at that moment, say - is sent them again before its start. It was sent only the
+  start, which a restarted plug no longer knew ("'autoflash_run' undeclared"),
+  until the step failed and was tried again from the top.
 - OpenBeken for the Sonoff S61 rebuilt with
   [1.18.320](https://github.com/openshwprojects/OpenBK7231T_App/releases/tag/1.18.320).
 
