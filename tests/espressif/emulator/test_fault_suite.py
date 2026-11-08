@@ -1126,6 +1126,17 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(again.call_args.kwargs["later"],
                          ("G1", "plugoff", 1, 0.6 * fs.ROUTES["sonoff>tasmota"][2]["G1"]))
 
+    def test_the_cut_in_the_update_after_a_legacy_conversion_is_timed_by_an_updates_u5(self):
+        sc = fs.Scenario(24, {"id": "x", "route": "sonoff>tasmota", "step": "F4", "fault": "legacy",
+                              "arg": "v2.0.2+U5off", "at": 40}, "/dev/null")
+        sc.fired = "legacy"
+        with mock.patch.object(fs, "legacy_tree"), mock.patch.object(sc, "run_tool"), \
+             mock.patch.object(sc, "screen_result", return_value="Stopped"), \
+             mock.patch.object(fs.threading, "Thread"), mock.patch.object(sc, "again") as again:
+            sc.go_legacy()
+        self.assertEqual(again.call_args.kwargs["later"],
+                         ("U5", "plugoff", 1, 0.6 * fs.ROUTES["update>tasmota"][2]["U5"]))
+
     def test_an_earlier_releases_own_error_is_not_this_checkouts(self):
         # 1.2.0, killed as G1 began, had stopped on a TimeoutError of its own:
         # this checkout's run carried on in the same run log and converted.
@@ -1170,7 +1181,7 @@ class EndChecksTests(unittest.TestCase):
     """A converted plug passes only if the report's end-of-run checks did."""
 
     def verdict(self, checks, relay="Switches (through eWeLink)", target="sonoff", route="esphome>sonoff",
-                result="Converted", runs="--- a run\n"):
+                result="Converted", runs="--- a run\n", fault="plugoff", arg=1, step="R1", release=None):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             run = tmp / "state/work/captures/plugs" / plugs.folder_name(MAC) / "runs/1/run.log"
@@ -1180,14 +1191,15 @@ class EndChecksTests(unittest.TestCase):
                            "[10:00:03] === run ended ===\n", encoding="utf-8")
             log = tmp / "scenario.log"
             log.write_text(runs + "    Result:   Converted\n", encoding="utf-8")
-            sc = fs.Scenario(24, {"id": f"{route}:R1:plugoff-1", "route": route, "step": "R1",
-                                  "fault": "plugoff", "arg": 1, "at": 40}, log)
+            sc = fs.Scenario(24, {"id": f"{route}:{step}:{fault}-{arg}", "route": route, "step": step,
+                                  "fault": fault, "arg": arg, "at": 40}, log)
             sc.state, sc.target, sc.started = tmp / "state", target, 0
             sc.memory = mock.Mock(note=mock.Mock(return_value={}))
             with mock.patch.object(fs, "RESULTS", tmp / "results.jsonl"), mock.patch.object(fs, "LOGS", tmp / "logs"), \
                     mock.patch.object(fs, "sh"), mock.patch.object(sc, "leftovers", return_value=[]), \
                     mock.patch.object(sc, "names_seen", return_value=([], [])), \
-                    mock.patch.object(sc, "template_ok", return_value=True):
+                    mock.patch.object(sc, "template_ok", return_value=True), \
+                    mock.patch.object(sc, "release_of", return_value=release):
                 return sc.finish([(0, result)], None)
 
     def test_a_run_whose_relay_switched_passes(self):
@@ -1225,6 +1237,37 @@ class EndChecksTests(unittest.TestCase):
         # its own path): it is this checkout's, and judged.
         self.assertEqual(self.verdict("True", runs=f"--- run --code={fs.REPO} --firmware sonoff\n" + screen)
                          ["verdict"], "FAIL-SCREEN")
+
+    def test_a_conversion_an_earlier_release_began_must_end_on_this_ones_tasmota(self):
+        legacy = dict(target="tasmota", route="sonoff>tasmota", fault="legacy", arg="v2.0.2", step="F4")
+        self.assertEqual(self.verdict("True", release=fs.OFFICIAL_TASMOTA_VERSION, **legacy)["verdict"], "PASS")
+        row = self.verdict("True", release="15.6.0", **legacy)
+        self.assertEqual((row["verdict"], row["notes"]["release"]), ("FAIL-NOT-LATEST", "tasmota 15.6.0"))
+        # And on ESPHome: its release, this project's own.
+        to_esphome = dict(legacy, target="esphome", route="sonoff>esphome", step="I2")
+        self.assertEqual(self.verdict("True", release=fs.LATEST["esphome"], **to_esphome)["verdict"], "PASS")
+        self.assertEqual(self.verdict("True", release="2026.9.0-1", **to_esphome)["verdict"], "FAIL-NOT-LATEST")
+        # Only a legacy run is asked: any other converts with this release from the start.
+        self.assertEqual(self.verdict("True", release="15.6.0", target="tasmota", route="esphome>tasmota")
+                         ["verdict"], "PASS")
+
+    def test_esphomes_release_is_asked_of_its_api_from_the_emulated_computer(self):
+        import json
+        sc = fs.Scenario(24, {"id": "x", "route": "sonoff>esphome", "step": "I2", "fault": "legacy",
+                              "arg": "v2.0.2", "at": 40}, "/dev/null")
+        for answer, release in (({"project_name": fs.PLUG.esphome_project, "project_version": "2026.10.0-1"},
+                                 "2026.10.0-1"),
+                                ({"project_name": "someone.else", "project_version": "1.0"}, None)):
+            with mock.patch.object(sc, "ex", return_value=mock.Mock(stdout=json.dumps(answer) + "\n")) as ex:
+                self.assertEqual(sc.esphome_release(), release)
+            self.assertIn("api_device_info", ex.call_args.args[-1])
+        with mock.patch.object(sc, "ex", return_value=mock.Mock(stdout="null\n")), mock.patch.object(fs.time, "sleep"):
+            self.assertIsNone(sc.esphome_release())   # not answering, after a few tries
+
+    def test_a_fault_in_the_update_after_a_legacy_conversion_is_its_own_scenario(self):
+        ids = {sc["id"] for sc in fs.scenarios()}
+        for tag in fs.LEGACY_STEPS:
+            self.assertIn(f"sonoff>tasmota:F4:legacy-{tag}+U5off", ids)
 
     def test_checks_the_emulator_cannot_run_are_no_failure(self):
         self.assertEqual(self.verdict("Not run", target="sonoff")["verdict"], "PASS")

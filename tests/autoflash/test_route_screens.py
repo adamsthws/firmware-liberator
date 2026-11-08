@@ -94,6 +94,7 @@ class RouteScreenTests(unittest.TestCase):
                     (runner, "set_up_if_erased", mock.Mock(return_value=False)),
                     (runner, "wait_for_plug_back", mock.Mock()),
                     (runner, "stop_here_after_ctrl_c", mock.Mock(return_value=False)),
+                    (runner, "bring_up_to_date", mock.Mock(return_value=False)),
                     (runner.time, "sleep", mock.Mock()),
                     (firewall, "close_firewall_rules", mock.Mock()),
                     (report, "plug_page_url", mock.Mock(return_value=None)),

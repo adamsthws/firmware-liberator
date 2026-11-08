@@ -71,6 +71,9 @@ def resume_check(ctx: Context) -> None:
 
 
 RESUME_CHECK = resume_check
+# What an update of a plug just converted needs first (runner.bring_up_to_date):
+# official Tasmota's bundle, of this release rather than the one the run began with.
+PREPARE_UPDATE = {"tasmota": tasmota.prepare_update}
 
 
 # From Sonoff's firmware, after the start every route shares (routes.STOCK_START:

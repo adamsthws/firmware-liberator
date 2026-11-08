@@ -187,6 +187,17 @@ def apply_target(firmware: str | None, source: str = "sonoff", family: ModuleTyp
     STEP_INDEX = {step: (title, handler) for step, title, handler in STEPS}
 
 
+def continue_with(steps: Steps) -> None:
+    """Steps the run goes on to after its route's last: a plug converted on
+    an earlier release of its firmware, updated once done
+    (runner.bring_up_to_date).  The run's loop takes STEPS by index, so it
+    reaches them; each is added once."""
+    for step, title, handler in steps:
+        if step not in STEP_INDEX:
+            STEPS.append((step, title, handler))
+            STEP_INDEX[step] = (title, handler)
+
+
 def past_the_point_of_no_return(state: RunState) -> bool:
     """Whether a run has written to its plug: past its family's POINT_OF_NO_RETURN."""
     return state.is_done(family_of(state).POINT_OF_NO_RETURN)

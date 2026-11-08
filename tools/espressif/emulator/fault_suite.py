@@ -89,6 +89,8 @@ from tools.repo import cpu_load, fault_verdicts, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
 from tools.espressif import layouts  # noqa: E402
+from tools.espressif.safeboot.safeboot_migration import OFFICIAL_TASMOTA_VERSION  # noqa: E402
+from tools.autoflash.routes import espressif as espressif_routes  # noqa: E402
 EMU = REPO / "captures/emulation"
 OUT = Path(os.environ.get("AUTOFLASH_EMU_SUITE_DIR", EMU / "suite"))
 RESULTS = OUT / "results.jsonl"
@@ -430,6 +432,11 @@ def composite_scenarios():
         # through G1 of the run after, writing over 1.2.0's startup firmware,
         # which it cannot rebuild.
         yield one("sonoff>tasmota", "F4", "legacy", "v1.2.0+G1off")
+        # Killed at F4; then the plug switched off part way through U5 of the
+        # run after, which updates the release it began with to this one's
+        # once it is converted (runner.bring_up_to_date).
+        for tag in LEGACY_STEPS:
+            yield one("sonoff>tasmota", "F4", "legacy", f"{tag}+U5off")
     if layouts.of(PLUG.layout).needs_temporary:
         for route in ("tasmota>sonoff", "tasmota>esphome"):
             for at, fault, arg in ((10, "plugoff", 1), (50, "plugoff", 1), (90, "plugoff", 1),
@@ -1705,10 +1712,16 @@ class Scenario:
         # "+G1off": the plug switched off, too, part way through G1 of the
         # first run after - G1 then writing over that release's startup
         # firmware, unproven (step_restore), and carrying on after a cut.
-        # That G1 is this checkout's, and as long as its.
+        # That G1 is this checkout's, and as long as its.  "+U5off": part way
+        # through U5, the update to this release that run goes on to once the
+        # plug is converted - as long as an update's (update>tasmota).
         tag, _, then = sc["arg"].partition("+")
         steps = LEGACY_STEPS[tag].get(sc["route"], {})
-        later = ("G1", "plugoff", 1, 0.6 * ROUTES[sc["route"]][2]["G1"]) if then == "G1off" else None
+        later = None
+        if then:
+            later_step = then.removesuffix("off")
+            lengths = ROUTES[sc["route"]][2] | ROUTES["update>tasmota"][2]
+            later = (later_step, "plugoff", 1, 0.6 * lengths[later_step])
         old = legacy_tree(tag)
         stop = threading.Event()
         if step != "start":
@@ -1791,6 +1804,39 @@ class Scenario:
             return json.loads(out)
         except ValueError:
             return None
+
+    def release_of(self, firmware):
+        """The release of `firmware` the plug runs: official Tasmota's, or this
+        project's ESPHome's; None if it does not answer as that."""
+        return self.tasmota_release() if firmware == "tasmota" else self.esphome_release()
+
+    def esphome_release(self):
+        """The release of this project's ESPHome the plug runs, as its API
+        says (project_version), asked from the emulated computer by the tool
+        itself (esphome.api_device_info): the plug's API is on that network
+        only.  None if it does not answer as ours.  A few tries: it may be
+        starting."""
+        code = ("import json, sys; sys.path.insert(0, '/work'); from tools.autoflash import esphome; "
+                f"print(json.dumps(esphome.api_device_info({PLUG_IP!r})))")
+        for _ in range(3):
+            said = self.ex("python3", "-c", code, as_tool=True).stdout.strip().splitlines()
+            try:
+                info = json.loads(said[-1]) if said else None
+            except ValueError:
+                info = None
+            if isinstance(info, dict):
+                if info.get("project_name") != PLUG.esphome_project:
+                    return None   # not this project's ESPHome
+                return info.get("project_version") or None
+            time.sleep(5)
+        return None
+
+    def tasmota_release(self):
+        """The release of official Tasmota the plug runs, as its version says
+        (16.0.0(release-tasmota32)); None if it does not answer as one."""
+        version = ((self.tasmota("Status 2") or {}).get("StatusFWR") or {}).get("Version", "")
+        found = re.match(r"(\d+(?:\.\d+)+)\(release-tasmota", version)
+        return found.group(1) if found else None
 
     def template_ok(self):
         """Whether the plug runs Tasmota with its own template, asked a few
@@ -2186,7 +2232,7 @@ class Scenario:
         self.notes["plug_busy"] = plug_busy(self.state, self.started)
         if fault == "legacy" and sc["step"] in LEGACY_NAMED and final and re.match(r"^tasmota-[0-9A-F]{6}-\d{4}$", final):
             final = None  # set up by that release's F4, under Tasmota's own name, as it left every plug
-        if fault == "legacy" and "+" in arg:
+        if fault == "legacy" and arg.endswith("+G1off"):
             # Whether the restore after the cut carried on after sectors it had
             # written, or the cut came before it wrote any (the plug says).
             uart = self.state / "logs/uart.log"
@@ -2194,8 +2240,8 @@ class Scenario:
                 log.seek(getattr(self, "uart_from", 0))
                 found = re.findall(rb"AUTOFLASH RESTORE: carrying on after (\d+) sectors", log.read())
             self.notes["restore_carried_on_after"] = int(found[-1]) if found else 0
-            if not self.notes.get("later_fired") and not special:
-                special = "NOT-FIRED"
+        if fault == "legacy" and "+" in arg and not self.notes.get("later_fired") and not special:
+            special = "NOT-FIRED"
         self.notes["memory"] = self.memory.note()
         ours = re.sub(r"\s+", " ", "".join(self.ours(p, t) for m, p, t in run_logs(self.state)
                                            if m >= self.started))
@@ -2275,6 +2321,12 @@ class Scenario:
                     "Settings reset to Tasmota's defaults" in ours
                     or (self.tasmota("MqttHost") or {}).get("MqttHost") != NOTEMPLATE_MQTT_HOST):
                 special = "FAIL-SETTINGS-LOST"  # its owner's settings reset with the template
+            elif (fault == "legacy" and converted and target_final in LATEST
+                  and (release := self.release_of(target_final)) != LATEST[target_final]):
+                # Begun by an earlier release, it ends on this one's Tasmota or
+                # ESPHome: updated once converted (runner.bring_up_to_date).
+                self.notes["release"] = f"{target_final} {release}"
+                special = "FAIL-NOT-LATEST"
             elif converted and checks:
                 special = "FAIL-CHECKS"  # its relay did not switch, or was never checked
             elif converted and template_bad:
@@ -2333,6 +2385,11 @@ class Scenario:
                 (keep / "uart-tail.log").write_text(uart.read_text(errors="replace")[-300_000:])
         sh("docker", "stop", name(self.n), timeout=120)
         return row
+
+
+# The release each firmware a legacy run ends on must be: this checkout's
+# (FAIL-NOT-LATEST).
+LATEST = {"tasmota": OFFICIAL_TASMOTA_VERSION, "esphome": espressif_routes.published_version(PLUG, "esphome")}
 
 
 def earlier_release_run(header):

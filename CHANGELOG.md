@@ -131,6 +131,12 @@ check.
   again because a later one found it had not taken is drawn afresh too, and the
   run says why only if it still does not take. While a stage is done again its
   line says "Retrying" rather than "Underway". The run's log keeps everything.
+- A conversion an earlier version began, carried on by this one, ends on the
+  release of Tasmota, ESPHome or OpenBeken this version installs. Where the earlier
+  version had already installed its own release - official Tasmota, from the point
+  the conversion must finish on it - the run finishes, then goes on to update it in
+  the same run, its settings kept. It was left on the earlier release. A run
+  stopped part way through such an update finishes it when run again.
 - The report has a Meter calibration line, for a device with a power meter: whether
   its readings are calibrated as Sonoff's firmware had them, or why not. It was
   said on the screen, where it worried more than it helped.

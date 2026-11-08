@@ -31,7 +31,7 @@ from tools.autoflash.device import DeviceError, UploadRefused
 from tools.autoflash.errors import Abort
 from tools.autoflash.phases import PhaseError, failure_reason
 from tools.autoflash.routes import update
-from tools.autoflash.routes.espressif import evidence, hub
+from tools.autoflash.routes.espressif import bundle, evidence, hub
 from tools.autoflash.runs import ROOT
 from tools.autoflash.state import DONE, FAILED
 from tools.espressif.safeboot.prepare_imprinted_bundle import (
@@ -959,8 +959,20 @@ def step_verify(ctx: Context) -> dict[str, Any]:
     if earlier is not None:
         # Begun by an earlier version, which installed that release at F2.
         output.say(f"  The device has Tasmota {earlier['version']}, the release this conversion began with.")
-        results["release"] = earlier["version"]
+        results["release"] = earlier["version"]   # updated once converted (runner.bring_up_to_date)
     return results
+
+
+def prepare_update(ctx: Context) -> bool:
+    """Before a plug converted on an earlier release of official Tasmota is
+    updated in the same run (runner.bring_up_to_date): the bundle built
+    again of the release this version pins - the run's own bundle is the one
+    the conversion began with, as from F2 to H1 it must be.  Not a bundle of
+    the person's own (--manifest), which is not built again; False then, or
+    when this release cannot be fetched, and the plug is left on its own."""
+    if ctx.manifest_path != bundle.default_manifest(ctx):
+        return False
+    return bundle.make_bundle_of_this_release(ctx)
 
 
 def _hash_matches(ctx: "Context", name: str, offset: int, size_key: str) -> tuple[bool, str]:
