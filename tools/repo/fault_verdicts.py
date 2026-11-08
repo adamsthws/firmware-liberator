@@ -1,7 +1,8 @@
 """What both fault suites judge a run by beyond its steps being done: the
-end-of-run checks the report of a converting run gives, and the readout.tar a
-readout keeps. A run whose steps all passed can still end with a relay that
-did not switch, or a check that never got to run, and say so only there
+end-of-run checks the report of a converting run gives, the readout.tar a
+readout keeps, and the screen each run left. A run whose steps all passed can
+still end with a relay that did not switch, or a check that never got to run,
+and say so only there; or leave a stage's failed try on the screen
 (docs/testing.md#the-fault-suites)."""
 from __future__ import annotations
 
@@ -10,6 +11,8 @@ import json
 import lzma
 import re
 import tarfile
+
+from tools.repo import unattended_run
 
 # As the run's log has them: the report's answer (tools/autoflash/report.py,
 # checks_passed), and the line its check said of the relay.
@@ -86,3 +89,17 @@ def readout_problems(data: bytes, family: str) -> list[str]:
         problems.append(f"flash.bin is {size:,} bytes, the manifest says {flash.get('size')}: "
                         f"not the whole {WHOLE_FLASH:,}")
     return problems
+
+
+# As tools/repo/unattended_run.py prints the screen a run ended on, in the
+# output the fault suites keep of each run.
+SCREEN = re.compile(r"^The screen at the end of the run \(\d+x\d+\):\n=+\n(?P<screen>.*?)^=+$", re.M | re.S)
+
+
+def screen_problems(output: str) -> list[str]:
+    """What each run in `output` - every recorded run of a scenario, as its
+    log keeps them - left of a stage on its screen that it should have taken
+    away (unattended_run.stage_problems): [] for nothing, or no screen."""
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", output)  # printed in colour unless NO_COLOR is set
+    return [problem for found in SCREEN.finditer(plain)
+            for problem in unattended_run.stage_problems(found["screen"])]

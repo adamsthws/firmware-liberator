@@ -26,7 +26,9 @@ write), the fault; then the tool run again, as a person would - switching the
 plug off and on where the run says to - until the plug is converted, or four
 runs fail. Every scenario also checks the fault landed while its step was
 under way (MISTIMED if not), and that the converting run's report says its
-end-of-run checks passed (FAIL-CHECKS if not: tools/repo/fault_verdicts.py).
+end-of-run checks passed (FAIL-CHECKS if not: tools/repo/fault_verdicts.py),
+and that each run left one line a stage on its screen, none of a try that
+failed (FAIL-SCREEN if not).
 
 The faults: the plug switched off for 1 or 30 s (plugoff), this computer off
 the plug's Wi-Fi for 30 s (outage), the tool killed and run again after 1 or
@@ -351,11 +353,14 @@ class Instance:
         self.sh("power", how, timeout=60, check=True)
 
     def tool(self, target: str, log: Path, new: bool = False, more: tuple[str, ...] = ()) -> subprocess.Popen:
-        """A run of the tool to `target`, or a readout (target "readout")."""
-        args = (["computer", "tools/autoflash/cli.py", "readout", "--unattended", "--env-file", "captures/tool.env"]
+        """A run of the tool to `target`, or a readout (target "readout"), on a
+        terminal of its own as a person's (tools/repo/unattended_run.py): the
+        screen it ends on is printed after it, for FAIL-SCREEN."""
+        args = (["computer", "tools/repo/unattended_run.py", "--command", "readout", "--",
+                 "--env-file", "captures/tool.env"]
                 if target == "readout" else
-                ["computer", "tools/autoflash/cli.py", "run", "--unattended", "--env-file",
-                 "captures/tool.env", "--firmware", target] + (["--new"] if new else [])) + list(more)
+                ["computer", "tools/repo/unattended_run.py", "--", "--env-file", "captures/tool.env",
+                 "--firmware", target] + (["--new"] if new else [])) + list(more)
         out = open(log, "a", encoding="utf-8")
         return subprocess.Popen(self.command(*args), env=self.env, stdout=out, stderr=subprocess.STDOUT,
                                 stdin=subprocess.DEVNULL)
@@ -597,6 +602,11 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         if checks and not problems:
             outcome = dict(outcome, result="FAIL-CHECKS")
             notes["checks"] = checks
+    if outcome["result"] == "PASS" and log.exists():
+        screen = fault_verdicts.screen_problems(log.read_text(encoding="utf-8", errors="replace"))
+        if screen:
+            outcome = dict(outcome, result="FAIL-SCREEN")
+            notes["screen"] = screen
     for index, path in enumerate(instance.runs()):
         shutil.copy(path, folder / f"run-{index + 1}.log")
     try:

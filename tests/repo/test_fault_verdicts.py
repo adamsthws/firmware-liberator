@@ -106,3 +106,23 @@ class ReadoutTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScreenTests(unittest.TestCase):
+    """Each run's screen, as the fault suites keep it, is looked at."""
+
+    RULE = "=" * 72
+
+    def recorded(self, *rows):
+        return (f"--- run\nThe emulated plug is up; converting it unattended...\n{self.RULE}\n"
+                f"The screen at the end of the run (100x40):\n{self.RULE}\n" + "".join(f"{row}\n" for row in rows)
+                + f"{self.RULE}\nExit code 0 - finished\n")
+
+    def test_every_run_s_screen_is_looked_at_colours_and_all(self):
+        clean = self.recorded("\x1b[0m\x1b[32mStage 1\x1b[0m - Checking - \x1b[32mComplete\x1b[0m")
+        left = self.recorded("Stage 1 - Checking - Stopped", "Stage 1 - Checking - Complete")
+        self.assertEqual(fault_verdicts.screen_problems(clean), [])
+        self.assertEqual(len(fault_verdicts.screen_problems(clean + left)), 1)
+
+    def test_output_with_no_screen_has_nothing_to_judge(self):
+        self.assertEqual(fault_verdicts.screen_problems("Stage 1 - Checking - Stopped\nStage 1 - Checking - Complete\n"), [])

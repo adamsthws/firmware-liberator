@@ -411,6 +411,15 @@ eWeLink by the device id the plug's record keeps, and `Not run` - a plug
 with none kept - is no failure. A run with no report, of a plug already on the
 firmware asked for, has nothing to judge (`tools/repo/fault_verdicts.py`).
 
+It is **FAIL-SCREEN** when a run of this checkout's tool left on its screen
+something a stage should have taken away when the run moved on. Each run is
+recorded on a terminal of its own ([unattended.md](unattended.md#the-recording)),
+and the screen it ended on is read back: each stage should leave one line, its
+outcome, with its "Underway" line above only where something was shown under
+it. A stage shown "Stopped" and then again is a try that failed, left on the
+screen when the stage was tried again. An "Underway" line followed by
+another stage's is a stage that never ended. The result's notes name each one.
+
 The emulated computer's list of networks keeps one the plug put out for a
 minute after it has gone or been renamed, as a real computer's does (the
 emulator's `nmcli`; a number of seconds in `/run/autoflash-emu/scan-cache`
@@ -812,8 +821,10 @@ says to, up to four times; the scenario passes when the run's record has
 every step of its route done, and the report's end-of-run checks passed as on
 the Espressif suite (FAIL-CHECKS: OpenBeken and ESPHome switch their relay pin
 in the emulator, though nothing is wired to it, and back on Sonoff's firmware
-the relay is switched through the stub's eWeLink). `check` holds each way to
-them too. Results are in `captures/emulation/beken/suite/`
+the relay is switched through the stub's eWeLink), and its screen, as on the
+Espressif suite (FAIL-SCREEN: each run is recorded through
+`tools/repo/unattended_run.py`). `check` holds each way to the end-of-run
+checks too. Results are in `captures/emulation/beken/suite/`
 (`AUTOFLASH_BEKEN_EMU_SUITE_DIR` names another folder).
 
 The readouts (`sonoff>readout`, `openbeken>readout`) are the Espressif
