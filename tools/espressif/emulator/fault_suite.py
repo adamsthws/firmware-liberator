@@ -2156,7 +2156,9 @@ class Scenario:
         backup_line = (line[-1].strip() if line and not sc["route"].startswith("sonoff>")
                        and fault != "legacy" else None)
         no_backup = sc["route"].startswith("nobackup>")
-        identity = re.findall(r"Sonoff identity:\s+(.*)", last_run)
+        # None to look at when the last run found nothing to convert: it makes no report.
+        identity = (re.findall(r"Sonoff identity:\s+(.*)", last_run)
+                    if "nothing to convert" not in results[-1][1] else None)
         # The report's end-of-run checks, from the run that converted the plug.
         logs = run_logs(self.state)
         checks = fault_verdicts.checks_problem(logs[-1][2], target_final) if converted and logs else None
@@ -2222,7 +2224,7 @@ class Scenario:
                 special = "BAD-TEMPLATE"  # a Tasmota that switches nothing
             elif converted and backup_line and backup_line != plugs.BACKUP_OUTCOMES["not taken" if no_backup else "existing"][1]:
                 special = "FAIL-BACKUP-LINE"  # its backup is on this computer, or none is
-            elif converted and no_backup and not kept_identity_reported(identity):
+            elif converted and no_backup and identity is not None and not kept_identity_reported(identity):
                 special = "FAIL-IDENTITY"  # not the identity the plug kept
             elif converted and (unknown or final):
                 # A name this plug should never have, or not its converted
