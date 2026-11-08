@@ -243,10 +243,16 @@ class OptionTests(unittest.TestCase):
         self.assertIn("exec autoflash-beken-emu-2 ", calls)
 
     def test_an_instance_out_of_range_is_refused(self):
-        done, calls = self.run_script("--instance", "31", "plug")
-        self.assertEqual(done.returncode, 2)
-        self.assertIn("1-30", done.stderr)
-        self.assertEqual(calls, "")
+        for instance in ("0", "100", "x"):
+            done, calls = self.run_script("--instance", instance, "plug")
+            self.assertEqual(done.returncode, 2, instance)
+            self.assertIn("1-99", done.stderr)
+            self.assertEqual(calls, "", instance)
+
+    def test_instances_go_up_to_99(self):
+        done, calls = self.run_script("--instance", "99", "ui")
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertIn("exec autoflash-beken-emu-99 ", calls)
 
     def test_fresh_is_for_plug_alone(self):
         done, calls = self.run_script("--fresh", "power", "on")

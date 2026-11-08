@@ -510,7 +510,7 @@ after the list.
 - **`emu.sh --stub-cloud`** builds the stub flash (changes A + B), generates the
   CA, mounts the certs read-only at `/stub-cloud`, and sets `STUB_CLOUD=1`.
   `AUTOFLASH_EMU_IMAGE` builds/runs an isolated image (so a worktree's build need not
-  disturb a shared `autoflash-emu`); instances run 1–30.
+  disturb a shared `autoflash-emu`); instances run 1–99.
 - **`container/entrypoint.sh`**, in stub mode, adds the `/etc/hosts` records for
   the three stub hosts → `192.168.60.1`, opens inbound 443 on the LAN in ufw,
   builds a CA bundle of the system roots plus the stub's CA, reads the plug's

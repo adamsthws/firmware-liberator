@@ -1,8 +1,10 @@
 """emu.sh puts the emulator on a /24 Docker network of its own, on a subnet
 nothing on the computer uses yet - its routes, its other Docker networks - so
-that making it never takes another network's addresses."""
+that making it never takes another network's addresses; and takes --instance
+1-99."""
 
 import re
+import shutil
 import subprocess
 import sys
 import unittest
@@ -35,6 +37,29 @@ class EmulatorNetworkTests(unittest.TestCase):
 
     def test_ipv6_and_blank_lines_are_ignored(self):
         self.assertEqual(pick("\nfd00::/64\ndefault\n"), "198.18.60.0/24")
+
+
+@unittest.skipIf(shutil.which("bash") is None, "no bash")
+class InstanceTests(unittest.TestCase):
+    """--instance N is 1-99: enough for every core of a big computer, and a
+    range of numbers of its own for each session sharing one."""
+
+    def run_script(self, *args):
+        return subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True, timeout=60)
+
+    def test_up_to_99_is_taken(self):
+        for instance in ("1", "30", "31", "99"):
+            # --cloud with --stub-cloud is refused next, before anything is started.
+            for args in (("--instance", instance), (f"--instance={instance}",)):
+                done = self.run_script(*args, "--cloud", "--stub-cloud")
+                self.assertEqual(done.returncode, 2, args)
+                self.assertIn("--stub-cloud cannot be combined with --cloud", done.stderr, args)
+
+    def test_others_are_refused(self):
+        for instance in ("0", "05", "100", "x"):
+            done = self.run_script(f"--instance={instance}", "--cloud", "--stub-cloud")
+            self.assertEqual(done.returncode, 2, instance)
+            self.assertIn("--instance needs a number, 1-99", done.stderr, instance)
 
 
 if __name__ == "__main__":
