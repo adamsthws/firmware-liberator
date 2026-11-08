@@ -137,6 +137,13 @@ def locate(ctx: Context, device: dict[str, Any]) -> str:
     found = answering_ids(report).get(wanted)
     if found:
         return found
+    # Not answering as Sonoff's firmware - on the program a readout stopped
+    # part way left on it, say: where its hardware address is.
+    mac = record_mac(device)
+    networks = sorted(hostsys.lan_networks()) if mac else []
+    found = hostsys.find_by_mac(mac, networks) if networks else None
+    if found:
+        return found
     output.transient_begin()
     address = prompts.ask_ipv4(
         "The device did not answer here. Its address",
@@ -194,7 +201,10 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None) -> str
                             model=str(device.get("productModel") or "") or None)
     # A device that does no LAN Control (a Beken plug) is asked of eWeLink by
     # its account id.
-    asked = (account.ask_account(ctx, str(device.get("deviceid") or "")) if lan_free(device)
+    # So is one a readout stopped part way left on its reading program (the
+    # bridge), which answers no discovery either.
+    on_bridge = not lan_free(device) and readout_espressif.installer.bridge_answers(ip)
+    asked = (account.ask_account(ctx, str(device.get("deviceid") or "")) if lan_free(device) or on_bridge
              else account.ask_ewelink(ctx, ip))
     learned, problems = firmware_name.learn(asked.latest.get("offers") or [], asked.deviceid,
                                             asked.product, asked.model)

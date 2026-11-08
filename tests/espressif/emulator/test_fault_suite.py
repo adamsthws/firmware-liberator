@@ -1149,6 +1149,8 @@ class ReadoutScenarioTests(unittest.TestCase):
         self.assertEqual([sc["id"] for sc in readouts], [
             "sonoff>readout:start:none-unattended", "sonoff>readout:read:plugoff-1", "sonoff>readout:read:outage-30",
             "sonoff>readout:read:crash-1", "sonoff>readout:back:plugoff-1", "sonoff>readout:back:outage-30",
+            "sonoff>readout:read:crash-1-then-sonoff", "sonoff>readout:read:crash-1-then-readout",
+            "sonoff>readout:read:crash-1-then-sonoff-elsewhere",
             "tasmota>readout:start:none-refused"])
         self.assertEqual({fs.kind_of(sc) for sc in readouts}, {"stub"})   # signed in, and the bridge sent, there
 
@@ -1165,48 +1167,64 @@ class ReadoutScenarioTests(unittest.TestCase):
         script = (fs.REPO / "tools/espressif/emulator/unattended-test.sh").read_text(encoding="utf-8")
         self.assertIn("--readout) driver_args=(--command readout)", script)
 
-    def readout_says(self):
-        """What readout_espressif says from the read to the plug back on Sonoff's firmware."""
+    def readout_says(self, restarts=True):
+        """What readout_espressif says from the read to the plug back on Sonoff's
+        firmware: restarted by its bridge, or (`restarts` False) by the person."""
+        from contextlib import ExitStack
         from tools.autoflash import output, prompts, readout_espressif
         said = []
-        with mock.patch.object(output, "say", side_effect=said.append), \
-                mock.patch.object(output, "transient_begin"), mock.patch.object(output, "transient_end"), \
-                mock.patch.object(prompts, "section", side_effect=lambda title, lines: said.extend([title, *lines])), \
-                mock.patch.object(prompts, "wait_for_key"), \
-                mock.patch.object(readout_espressif.installer, "back_on_sonoff", return_value=True), \
-                mock.patch.object(readout_espressif.dump_stock_flash, "read_dump", return_value=(b"", b"", {})), \
-                mock.patch.object(readout_espressif.dump_stock_flash, "summary", return_value=[]), \
-                mock.patch.object(readout_espressif.dump_stock_flash, "read_info", return_value=b""), \
-                mock.patch.object(readout_espressif, "find_bridge", return_value=fs.PLUG_IP), \
-                mock.patch.object(readout_espressif, "firewall"), mock.patch.object(readout_espressif, "hostsys"), \
-                mock.patch.object(readout_espressif.safety_locks, "lifted"), \
-                mock.patch.object(readout_espressif.safety_locks, "say_lock_back"), \
-                mock.patch.object(prompts, "warning_box"), mock.patch.object(prompts, "require_word", return_value=True), \
-                tempfile.TemporaryDirectory() as tmp:
+        installer, dump = readout_espressif.installer, readout_espressif.dump_stock_flash
+        with ExitStack() as stack:
+            for owner, name, kwargs in (
+                    (output, "say", {"side_effect": said.append}),
+                    (output, "transient_begin", {}), (output, "transient_end", {}),
+                    (prompts, "section", {"side_effect": lambda title, lines: said.extend([title, *lines])}),
+                    (prompts, "wait_for_key", {}),
+                    (prompts, "warning_box", {}), (prompts, "require_word", {"return_value": True}),
+                    (installer, "back_on_sonoff", {"return_value": True}),
+                    (installer, "bridge_answers", {"return_value": False}),
+                    (installer, "restart_bridge", {"return_value": restarts}),
+                    (installer.detect, "identify", {"return_value": "sonoff"}),
+                    (installer.time, "sleep", {}),
+                    (dump, "read_dump", {"return_value": (b"", b"", {})}),
+                    (dump, "summary", {"return_value": []}),
+                    (dump, "read_info", {"return_value": b""}),
+                    (readout_espressif, "find_bridge", {"return_value": fs.PLUG_IP}),
+                    (readout_espressif, "firewall", {}), (readout_espressif, "hostsys", {}),
+                    (readout_espressif.safety_locks, "lifted", {}),
+                    (readout_espressif.safety_locks, "say_lock_back", {}),
+                    (readout_espressif.build_vendor_ota, "build_wrapper", {"return_value": b"ota"}),
+                    (readout_espressif.build_vendor_ota, "app_version", {"return_value": "1"})):
+                stack.enter_context(mock.patch.object(owner, name, **kwargs))
+            tmp = stack.enter_context(tempfile.TemporaryDirectory())
             ctx = mock.Mock(dir=Path(tmp))
+            inputs = {}
+            ctx.state.set_input.side_effect = inputs.__setitem__
+            ctx.state.input.side_effect = inputs.get
             chip = mock.Mock(bridge_app=mock.Mock(return_value=b"app"))
-            with mock.patch.object(readout_espressif.build_vendor_ota, "build_wrapper", return_value=b"ota"), \
-                    mock.patch.object(readout_espressif.build_vendor_ota, "app_version", return_value="1"):
-                readout_espressif.read_out(ctx, chip, "FWSW-E32S60-S60-ESP32C3FN4", "1.2.0")
+            readout_espressif.read_out(ctx, chip, "FWSW-E32S60-S60-ESP32C3FN4", "1.2.0")
             readout_espressif.back_on_sonoff(ctx)
         return "\n".join(f"[10:00:00] {line}" for line in said)
 
     def test_each_phase_is_timed_from_what_the_readout_says(self):
         import re
-        said = self.readout_says()
-        for phase in ("read", "back"):
-            self.assertRegex(said, fs.STARTS[phase][0], phase)
-            self.assertRegex(said, fs.ENDS[phase], phase)
-            self.assertLess(re.search(fs.STARTS[phase][0], said).start(), re.search(fs.ENDS[phase], said).start())
-        # The person switches the plug off and on where the readout asks, as the run waits.
-        self.assertRegex(said, fs.READOUT_SWITCH)
+        for restarts in (True, False):
+            with self.subTest(restarts=restarts):
+                said = self.readout_says(restarts)
+                for phase in ("read", "back"):
+                    self.assertRegex(said, fs.STARTS[phase][0], phase)
+                    self.assertRegex(said, fs.ENDS[phase], phase)
+                    self.assertLess(re.search(fs.STARTS[phase][0], said).start(),
+                                    re.search(fs.ENDS[phase], said).start())
+                # Where the bridge will not restart it, the person is asked to, as the run waits.
+                self.assertEqual(bool(fs.READOUT_SWITCH.search(said)), not restarts)
 
     def test_a_fault_putting_sonoff_back_lands_as_its_firmware_starts(self):
-        # In the emulator the phase lasts 10 s: the person's power cycle 6 s in,
-        # Sonoff's firmware answering 4 s after. At 25 s, 40% fell at its end (MISTIMED).
+        # In the emulator the phase lasts 4 s: the bridge's restart 1.5 s in,
+        # Sonoff's firmware answering by 4 s. At 18 s, 40% fell after its end (NOT-FIRED).
         at = fs.STARTS["back"][1] * 40 / 100
-        self.assertGreater(at, 6)
-        self.assertLess(at, 10)
+        self.assertGreater(at, 1.5)
+        self.assertLess(at, 4)
 
     def test_the_person_switches_the_plug_off_and_on_where_the_readout_asks(self):
         import threading

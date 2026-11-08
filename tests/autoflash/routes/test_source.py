@@ -498,5 +498,74 @@ class ReadoutFirmwareTests(FirmwareSearchCase):
                 mock.patch.object(source, "RESTART_GRACE", 0.0):   # not waited for as restarting
             self.assertNotEqual(source.find_current_firmware(self.ctx(plug_ip="192.0.2.137")), "untemplated")
 
+
+class InstallerFoundTests(FirmwareSearchCase):
+    """This tool's installer (the bridge) found running is carried on as a
+    conversion only where one left it: this computer's unfinished conversion,
+    or no Sonoff firmware left to start, which only a conversion's upload takes.
+    Any other - a readout's, the same program, or one no run here left - is
+    restarted into Sonoff's firmware and the run goes on from there; where it
+    will not restart, nothing is done."""
+
+    def find(self, last, fallback=True, restarts=True):
+        from tools.autoflash.routes.espressif import installer
+        with mock.patch.object(detect, "identify", return_value="installer"), \
+                mock.patch.object(installer, "has_fallback", return_value=fallback), \
+                mock.patch.object(installer, "restart_into_sonoff", return_value=restarts) as self.restarted, \
+                mock.patch.object(espressif_source, "past_the_commit", side_effect=lambda ctx, running: running), \
+                mock.patch.object(source, "last_run", return_value=last) as self.asked:
+            return source.find_current_firmware(self.ctx(plug_ip="192.0.2.137"))
+
+    def test_left_by_a_readout_it_is_restarted_into_sonoff(self):
+        self.assertEqual(self.find("readout"), "sonoff")
+        self.restarted.assert_called_once_with("192.0.2.137")
+        self.assertEqual(self.asked.call_args.args[1], "12:34:56:ab:cd:ef")
+
+    def test_left_by_a_conversion_here_it_carries_on(self):
+        self.assertEqual(self.find("conversion"), "installer")
+        self.restarted.assert_not_called()
+
+    def test_with_no_run_here_and_sonoff_there_it_is_restarted(self):
+        # A readout run on another computer, say: never taken for a conversion.
+        self.assertEqual(self.find(None, fallback=True), "sonoff")
+        self.restarted.assert_called_once()
+
+    def test_with_no_run_here_and_no_sonoff_left_it_carries_on(self):
+        # An upload into Sonoff's slot cut off: only a conversion makes one.
+        self.assertEqual(self.find(None, fallback=False), "installer")
+        self.restarted.assert_not_called()
+
+    def test_one_that_will_not_restart_has_nothing_done(self):
+        with self.assertRaisesRegex(errors.Abort, "left by a readout stopped part way.*nothing was done. "
+                                                  "Switch it off and on"):
+            self.find("readout", restarts=False)
+        source.adopt_plug.assert_not_called()
+
+    def test_the_last_run_on_that_plug_says_what_it_was(self):
+        from tools.autoflash import readout, routes
+        with tempfile.TemporaryDirectory() as tmp:
+            runs_made = []
+
+            def make(name, mac, **inputs):
+                path = Path(tmp) / name
+                state = RunState.open(path)
+                for key, value in inputs.items():
+                    state.set_input(key, value)
+                runs_made.append((path, mac))
+            make("1", "12:34:56:ab:cd:ef", **{readout.STATE_KEY: "sent"})
+            make("2", "aa:bb:cc:dd:ee:ff", source="sonoff", firmware="tasmota")
+            make("3", "12:34:56:ab:cd:ef")   # stopped before it knew where it went: passed over
+            here = SimpleNamespace(dir=Path(tmp) / "now")
+            macs = dict(runs_made)
+            with mock.patch.object(runs, "run_directories", return_value=[path for path, _ in runs_made]), \
+                    mock.patch.object(plugs, "mac_of_run", side_effect=lambda path: macs.get(path)):
+                self.assertEqual(source.last_run(here, "12:34:56:ab:cd:ef"), "readout")
+                self.assertEqual(source.last_run(here, "aa:bb:cc:dd:ee:ff"), "conversion")
+                with mock.patch.object(routes, "steps_of", return_value=[("A1", "", None)]), \
+                        mock.patch.object(RunState, "is_done", return_value=True):
+                    self.assertIsNone(source.last_run(here, "aa:bb:cc:dd:ee:ff"))   # finished
+                self.assertIsNone(source.last_run(here, "99:99:99:99:99:99"))
+
+
 if __name__ == "__main__":
     unittest.main()

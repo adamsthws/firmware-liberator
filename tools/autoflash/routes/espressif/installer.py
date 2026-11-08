@@ -226,6 +226,15 @@ def bridge_answers(host: str) -> bool:
     return setup_network.is_bridge_page(body)
 
 
+def has_fallback(host: str) -> bool:
+    """Whether the bridge at `host` has Sonoff's firmware to start next: not
+    where its status says it has none (an upload into Sonoff's slot cut off part
+    way). Taken to have it where the status cannot be read: a restart asked of
+    it then is refused or fails, and the person is asked instead."""
+    status = setup_network.page(host, "/status", timeout=3.0)
+    return status is None or "fallback: none" not in status
+
+
 def restart_bridge(host: str) -> bool:
     """Have the bridge at `host` start the plug again into the firmware chosen
     for its next start - Sonoff's, which it chose as it started - as switching
