@@ -135,8 +135,12 @@ def settings_to_carry(ctx: Context, layout: Layout) -> bytes | None:
     the plug's Sonoff identity, from the sector Tasmota's layout keeps it in -
     or, on a plug converted before there was one, from its backup on this
     computer - so the next firmware has it as Sonoff's firmware kept it. None
-    where there is neither: the region is cleared, as before."""
-    kept = identity.kept_in_sector(ctx)
+    where there is neither: the region is cleared, as before. A sector that
+    cannot be read is passed by: it is still there for going back."""
+    try:
+        kept = identity.kept_in_sector(ctx)
+    except (DeviceError, OSError):
+        kept = None
     where = "kept on the device"
     if kept is None:
         kept, where = identity.from_backup(ctx), "from its backup on this computer"

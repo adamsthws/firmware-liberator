@@ -8,6 +8,7 @@ from unittest import mock
 
 from tests.autoflash.routes.espressif.test_espressif import RouteTestCase
 from tools.autoflash import cli, errors, kinds, prompts, routes
+from tools.autoflash.device import DeviceError
 from tools.autoflash.routes import beken, espressif, update
 from tools.autoflash.routes.espressif import identity
 from tools.autoflash.state import DONE, RunState
@@ -226,6 +227,8 @@ class BekenTargetTests(unittest.TestCase):
                 mock.patch.object(identity, "account_record", side_effect=AssertionError("not asked")):
             self.assertIn("keeps", espressif.sonoff_without_backup(ctx, "tasmota"))
             self.assertIsNone(espressif.sonoff_without_backup(ctx, "esphome"))
+        with mock.patch.object(identity, "kept_in_sector", side_effect=DeviceError("timed out")):
+            self.assertIsNone(espressif.sonoff_without_backup(ctx, "tasmota"))
 
     def test_an_s61_run_with_no_firmware_chosen_has_the_start_alone(self):
         state = self.state(plug_kind="sonoff-s61", source="esphome")

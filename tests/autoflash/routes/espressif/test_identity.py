@@ -10,6 +10,7 @@ from tests.autoflash.test_device import FakePlug
 from tests.autoflash.test_plans import stock_flash
 from tests.espressif.test_sonoff_identity import sonoff_nvs
 from tools.autoflash import output, plans, plugs
+from tools.autoflash.device import DeviceError
 from tools.autoflash.routes import espressif
 from tools.autoflash.routes.espressif import hub, identity
 from tools.autoflash.state import DONE, RunState
@@ -76,6 +77,12 @@ class KeptOnTasmotaTests(Fixture):
             self.assertEqual(identity.kept_in_sector(ctx), IDENTITY)
         self.assertIn("no longer has the entry", output.say.call_args_list[0].args[0])
 
+    def test_a_sector_that_cannot_be_read_is_not_none(self):
+        ctx = self.ctx(on_tasmota(sector=sonoff_identity.to_sector(IDENTITY)))
+        with mock.patch.object(ctx.device, "read_region", side_effect=DeviceError("timed out")), \
+                self.assertRaises(DeviceError):
+            identity.kept_in_sector(ctx)
+
     def test_no_sector_or_a_damaged_one_is_none(self):
         self.assertIsNone(identity.kept_in_sector(self.ctx(on_tasmota())))
         sector = bytearray(sonoff_identity.to_sector(IDENTITY))
@@ -114,6 +121,12 @@ class KeepIdentityTests(Fixture):
     def test_with_neither_nothing_is_written(self):
         result, plan = self.run_k1(self.ctx(b"\xff" * 0x400000))
         self.assertEqual((result, plan), ({"kept": False}, None))
+
+    def test_a_plug_that_does_not_answer_is_not_taken_for_one_that_holds_none(self):
+        ctx = self.ctx(b"\xff" * 0x400000)
+        with mock.patch.object(ctx.device, "read_nvs", side_effect=DeviceError("timed out")), \
+                self.assertRaises(DeviceError):
+            self.run_k1(ctx)
 
     def test_a_run_past_its_commit_leaves_it_out(self):
         ctx = self.ctx(b"\xff" * 0x400000)
