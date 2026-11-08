@@ -25,7 +25,8 @@ going for a share of its usual time (40%, and 10% and 90% at the steps that
 write), the fault; then the tool run again, as a person would - switching the
 plug off and on where the run says to - until the plug is converted, or four
 runs fail. Every scenario also checks the fault landed while its step was
-under way (MISTIMED if not).
+under way (MISTIMED if not), and that the converting run's report says its
+end-of-run checks passed (FAIL-CHECKS if not: tools/repo/fault_verdicts.py).
 
 The faults: the plug switched off for 1 or 30 s (plugoff), this computer off
 the plug's Wi-Fi for 30 s (outage), the tool killed and run again after 1 or
@@ -81,6 +82,7 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.routes import beken  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
+from tools.repo import fault_verdicts  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import MemoryWatch  # noqa: E402
 
@@ -549,6 +551,10 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         if problems:
             outcome = dict(outcome, result="FAIL")
             notes["interim"] = problems
+        checks = fault_verdicts.checks_problem(instance.last_log(), target)
+        if checks and not problems:
+            outcome = dict(outcome, result="FAIL-CHECKS")
+            notes["checks"] = checks
     for index, path in enumerate(instance.runs()):
         shutil.copy(path, folder / f"run-{index + 1}.log")
     try:
@@ -811,6 +817,9 @@ def check_way(n: int, routes: tuple[str, ...]) -> int:
                     instance.ready(target)
             problems = [] if converted(instance.last_state(), route) else ["not converted"]
             problems += interim_problems(route, instance.dhcp_names(), None)
+            checks = fault_verdicts.checks_problem(instance.last_log(), target)
+            if checks:
+                problems.append(checks)
             print(f"{'FAIL' if problems else 'PASS'}  {route}{': ' + ', '.join(problems) if problems else ''}", flush=True)
             if problems:
                 return 1

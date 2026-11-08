@@ -1044,6 +1044,44 @@ class ScenarioTests(unittest.TestCase):
             self.assertTrue(sc["step"] in steps or sc["step"] in fs.STARTS, sc["id"])
 
 
+class EndChecksTests(unittest.TestCase):
+    """A converted plug passes only if the report's end-of-run checks did."""
+
+    def verdict(self, checks, relay="Switches (through eWeLink)", target="sonoff"):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            run = tmp / "state/work/captures/plugs" / plugs.folder_name(MAC) / "runs/1/run.log"
+            run.parent.mkdir(parents=True)
+            run.write_text("[10:00:00] === run started, tool version 2.3.0 ===\n"
+                           f"[10:00:01]     Relay: {relay}\n[10:00:02]     Checks passed: {checks}\n"
+                           "[10:00:03] === run ended ===\n", encoding="utf-8")
+            log = tmp / "scenario.log"
+            log.write_text("--- a run\n    Result:   Converted\n", encoding="utf-8")
+            sc = fs.Scenario(24, {"id": "esphome>sonoff:R1:plugoff-1", "route": "esphome>sonoff", "step": "R1",
+                                  "fault": "plugoff", "arg": 1, "at": 40}, log)
+            sc.state, sc.target, sc.started = tmp / "state", target, 0
+            sc.memory = mock.Mock(note=mock.Mock(return_value={}))
+            with mock.patch.object(fs, "RESULTS", tmp / "results.jsonl"), mock.patch.object(fs, "LOGS", tmp / "logs"), \
+                    mock.patch.object(fs, "sh"), mock.patch.object(sc, "leftovers", return_value=[]), \
+                    mock.patch.object(sc, "names_seen", return_value=([], [])), \
+                    mock.patch.object(sc, "template_ok", return_value=True):
+                return sc.finish([(0, "Converted")], None)
+
+    def test_a_run_whose_relay_switched_passes(self):
+        self.assertEqual(self.verdict("True")["verdict"], "PASS")
+
+    def test_a_run_whose_checks_failed_is_its_own_failure_saying_what_they_found(self):
+        # Every run back to Sonoff's firmware before 83c517d: the relay asked
+        # through eWeLink before the plug was there, and judged PASS.
+        row = self.verdict("False", relay="Could not be checked")
+        self.assertEqual(row["verdict"], "FAIL-CHECKS")
+        self.assertEqual(row["notes"]["checks"], "Checks passed: False; Relay: Could not be checked")
+
+    def test_checks_the_emulator_cannot_run_are_no_failure(self):
+        self.assertEqual(self.verdict("Not run", target="sonoff")["verdict"], "PASS")
+        self.assertEqual(self.verdict("Not run", target="tasmota")["verdict"], "FAIL-CHECKS")
+
+
 TH = kinds.SONOFF_TH_ELITE  # its layout leaves Tasmota through a temporary table
 
 
