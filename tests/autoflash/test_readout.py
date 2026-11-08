@@ -165,6 +165,50 @@ class SendTests(unittest.TestCase):
         self.assertEqual((reference, got["type"], got["body"]), ("r-2026-0001", "application/x-tar", b"\x1f\x8bdata"))
 
 
+class LocateTests(unittest.TestCase):
+    """A device's address with none given: by discovery, or for a Beken device,
+    which does no LAN Control, by the hardware address its record gives."""
+    BEKEN = {"deviceid": "1000abcdef", "productModel": "NEWBK", "extra": {"model": "SN-BK7238-NEW-01"},
+             "params": {"staMac": "12:34:56:AB:CD:EF"}}
+
+    def setUp(self):
+        for patch in (mock.patch.object(output, "say"), mock.patch.object(output, "tell"),
+                      mock.patch.object(output, "transient_begin"), mock.patch.object(output, "transient_end"),
+                      mock.patch.object(hostsys, "lan_networks", return_value={"192.0.2.10": 24})):
+            patch.start()
+            self.addCleanup(patch.stop)
+        discover = mock.patch.object(readout.discover_ewelink, "discover", return_value={"packets": []})
+        self.discover = discover.start()
+        self.addCleanup(discover.stop)
+
+    def test_a_beken_device_is_found_by_its_hardware_address_unasked(self):
+        with mock.patch.object(hostsys, "find_by_mac", return_value="192.0.2.77") as found, \
+                mock.patch.object(prompts, "ask_ipv4") as asked:
+            self.assertEqual(readout.locate(None, self.BEKEN), "192.0.2.77")
+        self.assertEqual(found.call_args.args, ("12:34:56:ab:cd:ef", ["192.0.2.10"]))
+        asked.assert_not_called()
+        self.discover.assert_not_called()
+
+    def test_a_beken_address_typed_is_checked_by_its_hardware_address_not_discovery(self):
+        with mock.patch.object(hostsys, "find_by_mac", return_value=None), \
+                mock.patch.object(prompts, "ask_ipv4", return_value="192.0.2.77") as asked:
+            self.assertEqual(readout.locate(None, self.BEKEN), "192.0.2.77")
+        self.assertNotIn("LAN Control", " ".join(asked.call_args.kwargs["help_lines"]))
+        check = asked.call_args.kwargs["check"]
+        with mock.patch.object(hostsys, "mac_of", return_value="12:34:56:ab:cd:ef"):
+            self.assertEqual(check("192.0.2.77"), [])
+        with mock.patch.object(hostsys, "mac_of", return_value="aa:bb:cc:dd:ee:ff"):
+            self.assertIn("another device", check("192.0.2.1")[0])
+        self.discover.assert_not_called()
+
+    def test_another_device_is_found_by_discovery(self):
+        self.discover.return_value = {"packets": ["x"]}
+        with mock.patch.object(readout, "answering_ids", return_value={"1000abcdef": "192.0.2.88"}), \
+                mock.patch.object(hostsys, "find_by_mac") as by_mac:
+            self.assertEqual(readout.locate(None, DEVICE), "192.0.2.88")
+        by_mac.assert_not_called()
+
+
 def start_run(test: unittest.TestCase) -> None:
     """`test` set up for readout.run on DEVICE, at 192.0.2.77, asking eWeLink
     nothing: its context (test.ctx), and the filing of its run (test.filed)."""

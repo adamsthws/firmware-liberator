@@ -548,8 +548,9 @@ def _ping_quietly(address: str, timeout: int) -> None:
         pass
 
 
-def find_by_mac(mac: str, subnet_of: str) -> str | None:
-    """The address `mac` currently has on `subnet_of`'s network, if it is there."""
+def find_by_mac(mac: str, subnet_of: str | Iterable[str]) -> str | None:
+    """The address `mac` currently has on `subnet_of`'s network, or networks
+    (as sweep takes them), if it is there."""
     wanted = normalise_mac(mac)
     for ip, seen in neighbour_table().items():
         if seen == wanted and ping_ok(ip):
