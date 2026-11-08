@@ -2031,6 +2031,7 @@ class Scenario:
         delay), a fault in the first of them too (noted as later_fired)."""
         sc = self.sc
         fault, arg = sc["fault"], sc["arg"]
+        first = len(results)
         while "Converted" not in results[-1][1] and len(results) < MAX_RUNS:
             said = self.last_said()
             if re.search(r"switch (the plug|the device|it) off and on", said):
@@ -2068,7 +2069,9 @@ class Scenario:
                 # Refused, as it should be: started again for the other one, as it says.
                 self.notes["switch_refused"] = True
                 extra = ["--new"]
-        self.target_final = target
+        # What the plug must end on: the last run's target. A run cancelled as it
+        # finished converted the plug as it was asked, and none followed for `target`.
+        self.target_final = target if len(results) > first else self.target
         return self.finish(results, None)
 
     def names_seen(self):
