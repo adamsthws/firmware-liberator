@@ -295,7 +295,12 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
     before the fetch, or than the time since - its bootloader did not take
     the image, and the run goes back to send it again (until_back), no
     restart to ask for.  Both, as the emulated plug's clock runs fast: there
-    its uptime outgrows the time since, but not on a real plug."""
+    its uptime outgrows the time since, but not on a real plug.  And its
+    uptime falling below the highest seen here, as the plug that had just
+    fetched it restarts: an image sent again soon after the last was refused
+    goes from a plug only just up, so its uptime before is small, and the
+    emulated plug's soon outgrows that too (seen in the fault suite: the
+    second refusal in a row waited out, and a switch off and on asked for)."""
     if ctx.dry_run:
         return {"dry_run": True}
     started = time.monotonic()
@@ -303,9 +308,12 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
     sent_by = next((step for step in ("J2", "O1")
                     if ctx.state.is_done(step) and isinstance(captures.get(f"{step}.fetched_at"), int)), None)
 
+    highest: list[int] = []   # the highest uptime OpenBeken has answered with here
+
     def restarted_since_sent(uptime: int) -> bool:
         before = captures.get(f"{sent_by}.uptime_before")
         return ((isinstance(before, int) and uptime < before)
+                or (bool(highest) and uptime < highest[0])
                 or uptime < time.time() - captures[f"{sent_by}.fetched_at"] - RESTART_SLACK)
 
     def check(host: str) -> bool:
@@ -313,8 +321,10 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
             return True
         if sent_by:
             uptime = (openbeken.info(host, timeout=3.0) or {}).get("uptime_s")
-            if isinstance(uptime, int) and restarted_since_sent(uptime):
-                raise NotTaken
+            if isinstance(uptime, int):
+                if restarted_since_sent(uptime):
+                    raise NotTaken
+                highest[:] = [max([uptime, *highest])]
         return False
 
     def look(_restarted: bool) -> bool:
