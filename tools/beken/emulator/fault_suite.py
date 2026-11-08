@@ -55,7 +55,8 @@ it has an update, in the emulator as on a real plug
 
 Results: captures/emulation/beken/suite/results.jsonl (AUTOFLASH_BEKEN_EMU_SUITE_DIR
 for another folder), and each scenario's run
-logs and the plug's serial output beside it. A fault that never happened is
+logs and the plug's serial output beside it; a scenario run again keeps its
+earlier attempts' beside them, numbered (logs/<scenario>.1 the first). A fault that never happened is
 NOT-FIRED, not a pass. Each result's notes say how short of memory the computer
 was; a failure while it was starved prints "memory-starved", as the plug's
 connections can then fail with nothing wrong.
@@ -80,6 +81,7 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.routes import beken  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
+from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import MemoryWatch  # noqa: E402
 
 BK_EMU = REPO / "tools/beken/emulator/bk-emu.sh"
@@ -519,7 +521,7 @@ def start_of(route: str) -> str:
 def run_scenario(instance: Instance, sc: dict) -> dict:
     source, target = sc["route"].split(">")
     folder = OUT / "logs" / sc["id"].replace(":", "_").replace(">", "-")
-    shutil.rmtree(folder, ignore_errors=True)
+    keep_earlier(folder)
     folder.mkdir(parents=True)
     log = folder / "tool.log"
     started = time.monotonic()

@@ -76,6 +76,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
+from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
 EMU = REPO / "captures/emulation"
 OUT = Path(os.environ.get("AUTOFLASH_EMU_SUITE_DIR", EMU / "suite"))
@@ -2069,17 +2070,6 @@ def why_no_report(screen):
     detail = detail if len(detail) <= 200 else detail[:197] + "..."
     return (f"stopped at stage {stop[1]}, {stop[2]}" + (f": {detail}" if detail else "")
             + (f"; exit {code[-1]}" if code else ""))
-
-
-def keep_earlier(path):
-    """An earlier attempt's log or evidence moved aside for the next, numbered by
-    attempt (`.1` the first), so a scenario run again still shows how it failed."""
-    if not path.exists():
-        return None
-    n = 1
-    while path.with_name(f"{path.name}.{n}").exists():
-        n += 1
-    return path.rename(path.with_name(f"{path.name}.{n}"))
 
 
 def latest():

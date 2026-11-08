@@ -28,6 +28,22 @@ class ScenarioTests(unittest.TestCase):
             self.assertLessEqual(set(steps), set(fault_suite.route_steps(route)), route)
 
 
+class EarlierAttemptTests(unittest.TestCase):
+    def test_a_scenario_run_again_keeps_its_earlier_attempts_logs(self):
+        # As the Espressif suite's: a second attempt wrote over the first's.
+        from unittest import mock
+        sc = {"id": "sonoff>openbeken:B2:plugoff-1", "route": "sonoff>openbeken", "step": "B2"}
+        plug = mock.Mock(start=mock.Mock(return_value=False))   # a plug that never starts: back at once
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fault_suite, "OUT", Path(tmp)), \
+                mock.patch.object(fault_suite, "MemoryWatch"):
+            folder = Path(tmp) / "logs" / "sonoff-openbeken_B2_plugoff-1"
+            for attempt in ("first", "second"):
+                fault_suite.run_scenario(plug, sc)
+                (folder / "tool.log").write_text(attempt, encoding="utf-8")
+            self.assertEqual((folder.with_name(folder.name + ".1") / "tool.log").read_text(encoding="utf-8"), "first")
+            self.assertEqual((folder / "tool.log").read_text(encoding="utf-8"), "second")
+
+
 class UpdateScenarioTests(unittest.TestCase):
     def test_each_firmware_built_here_has_an_update_with_its_own_faults(self):
         ids = {sc["id"] for sc in fault_suite.scenarios()}
