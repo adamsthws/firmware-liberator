@@ -861,7 +861,9 @@ the Espressif suite (FAIL-CHECKS: OpenBeken and ESPHome switch their relay pin
 in the emulator, though nothing is wired to it, and back on Sonoff's firmware
 the relay is switched through the stub's eWeLink), and its screen, as on the
 Espressif suite (FAIL-SCREEN: each run is recorded through
-`tools/repo/unattended_run.py`). `check` holds each way to the end-of-run
+`tools/repo/unattended_run.py`), and the release it ends on: a plug converted to
+OpenBeken or ESPHome must run your checkout's (FAIL-NOT-LATEST), updated from an
+earlier release's or not. `check` holds each way to the end-of-run
 checks too. Results are in `captures/emulation/beken/suite/`
 (`AUTOFLASH_BEKEN_EMU_SUITE_DIR` names another folder).
 
