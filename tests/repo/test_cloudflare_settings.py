@@ -148,6 +148,14 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertEqual((cs.RATE_LIMITS[0]["ratelimit"]["period"], cs.RATE_LIMITS[0]["ratelimit"]["mitigation_timeout"]),
                          (10, 10))
 
+    def test_the_workflow_only_checks(self):
+        # Settings are applied by hand; the workflow's token can only read them.
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/cloudflare-settings.yml").read_text(
+            encoding="utf-8")
+        self.assertNotIn(" apply", workflow.split("\nname:", 1)[1])
+        self.assertIn("run: python3 tools/repo/cloudflare_settings.py\n", workflow)
+        self.assertIn("secrets.CLOUDFLARE_READ_TOKEN", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -171,8 +171,10 @@ store has limits it is never let past:
 Nothing of the sender is stored but the contact they chose to give, in the manifest. Nothing serves the bucket.
 
 The bucket, its lifecycle rule and the rate-limiting rule are made by
-`python3 tools/repo/cloudflare_settings.py apply`. The website workflow deploys
-the Worker in a job of its own.
+`python3 tools/repo/cloudflare_settings.py apply`, by hand, and checked weekly
+by the cloudflare-settings workflow. The website workflow deploys the Worker
+in a job of its own. [website/README.md](../website/README.md#deploying-it)
+says which token does what.
 
 ## Working with them
 

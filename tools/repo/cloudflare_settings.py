@@ -4,12 +4,12 @@
     python3 tools/repo/cloudflare_settings.py          what differs from them
     python3 tools/repo/cloudflare_settings.py apply    set them
 
-With CLOUDFLARE_API_TOKEN, in the environment or .env, a token allowed to
-read the zone and edit its settings, its single redirects and its rate
-limiting rules, and to read and
-make the account's R2 buckets and their lifecycle rules. `apply` changes only what differs.
-The Worker serving the site, and the domains pointing at it, are
-wrangler.jsonc's, which the website workflow deploys.
+With CLOUDFLARE_API_TOKEN, in the environment or .env: to check, a token
+allowed to read the zone, its settings, its single redirects and its rate
+limiting rules, and the account's R2 buckets; to apply, one allowed to edit
+them all. `apply` changes only what differs. The Workers, and the domains
+pointing at them, are their wrangler.jsonc's, which the website workflow
+deploys. website/README.md says which token is which.
 """
 
 from __future__ import annotations

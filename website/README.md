@@ -62,31 +62,69 @@ request once it has been open a week with its checks passed.
 ## Deploying it
 
 `.github/workflows/website.yml` tests and builds it for each pull request,
-and on each push to `main` deploys it with wrangler from the `website`
-environment, which only `main` can use (`tools/repo/github_settings.py`).
-Its secret `CLOUDFLARE_API_TOKEN` is one Cloudflare API token, with these
-permissions:
+and on each push to `main` deploys both Workers with wrangler: the site
+(`website/wrangler.jsonc`) and the readouts API (`website/api/wrangler.jsonc`).
+It runs in the `website` environment, which only `main` can use
+(`tools/repo/github_settings.py`).
 
-- Individual Workers - `firmware-liberator`: Editor (the Worker, and only
-  it: the account's other Workers are out of its reach)
-- Zone `firmwareliberator.com` - Workers Routes: Write, DNS: Write (its
-  custom domains), Zone: Read, Zone Settings: Write, Dynamic URL Redirects:
-  Write (the settings below)
+Three Cloudflare API tokens are in play, each allowed only what its job needs:
 
-A Worker can only be picked once it exists, so the very first one was
-uploaded by hand with an account-wide token, with no domain. A domain with
-DNS records of its own stops the deploy (Cloudflare's code 100117): delete
-them, and wrangler makes the Worker's.
+| Token | Kept | Permissions |
+| --- | --- | --- |
+| Deploy | `website` secret `CLOUDFLARE_API_TOKEN` | Individual Workers - `firmware-liberator`, `firmware-liberator-api`: Editor. Zone `firmwareliberator.com` - Workers Routes: Write, DNS: Write (the custom domains), Zone: Read |
+| Settings check | `website` secret `CLOUDFLARE_READ_TOKEN` | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Read, Dynamic URL Redirects: Read, Zone WAF: Read. Account - Workers R2 Storage: Read |
+| Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit. Account - Workers R2 Storage: Edit |
 
-Set it with `gh secret set CLOUDFLARE_API_TOKEN --env website -R adamsthws/firmware-liberator`.
+The deploy token reaches its two Workers and no other in the account. Set a
+secret with `gh secret set <name> --env website -R adamsthws/firmware-liberator`,
+which asks for the value.
+
+A domain with DNS records of its own stops a deploy (Cloudflare's code
+100117): delete them, and wrangler makes the Worker's.
+
+### Adding a Worker
+
+The deploy token can only be given a Worker that already exists, so a new
+one is first uploaded from your computer:
+
+1. Make a short-lived token: Account - Workers Scripts: Edit, Workers R2
+   Storage: Edit, and the zone permissions of the deploy and apply tokens.
+   Put it in `CLOUDFLARE_API_TOKEN`.
+2. Check the name is free: the account's Workers (dashboard, Workers &
+   Pages) hold none by it. An upload under a taken name replaces that
+   Worker.
+3. Make what it binds to first: `python3 tools/repo/cloudflare_settings.py
+   apply` makes the bucket (the upload fails on a binding to a bucket that
+   is not there).
+4. Upload it from `website/`: `npx wrangler deploy --config <its
+   wrangler.jsonc>`.
+5. Check it answers (below).
+6. Add it to the deploy token's Individual Workers, and give the website
+   workflow a job deploying it.
+7. Delete the short-lived token.
+
+### Checking a deploy
+
+```sh
+curl -sI https://firmwareliberator.com/             # 200
+curl -sI https://firmwareliberator.com/liberate.sh  # 302
+curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/readout  # 405: only POST
+curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/         # 404
+```
 
 ## The zone's settings
 
-What the zone is set to beyond the Worker - `www.` sent on to the bare
-domain, HTTPS only, TLS 1.2 or newer - is written down, with why, in
-`tools/repo/cloudflare_settings.py`. The cloudflare-settings workflow sets
-it on each push to `main` that changes it, and checks it weekly, failing if
-it was changed in the dashboard. Locally, with the token in
-`CLOUDFLARE_API_TOKEN` (the environment or `.env`),
-`python3 tools/repo/cloudflare_settings.py` says what differs, and `... apply`
-sets it.
+What the zone and the account are set to beyond the Workers - `www.` sent
+on to the bare domain, HTTPS only, TLS 1.2 or newer, the API's
+rate-limiting rule, the readouts bucket and its 30-day lifecycle rule - is
+written down, with why, in `tools/repo/cloudflare_settings.py`.
+
+They change rarely, so they are set by hand, never by CI: a leaked CI token
+cannot change DNS-facing settings or the bucket. To change one, edit the
+script, then with the apply token in `CLOUDFLARE_API_TOKEN` (the environment
+or `.env`) run `python3 tools/repo/cloudflare_settings.py` to see what
+differs and `... apply` to set it; delete the token, and push.
+
+The cloudflare-settings workflow checks them, with the read token, weekly
+and on each push to `main` that changes the script, failing on any
+difference: one made in the dashboard, or one written down and not applied.
