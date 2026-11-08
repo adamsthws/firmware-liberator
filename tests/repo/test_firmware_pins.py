@@ -14,15 +14,64 @@ from pathlib import Path
 from tools.beken import rbl, uf2
 from tools.repo import update_firmware as uf
 from tools.autoflash import kinds, tasmota_settings
+from tools.espressif import chips
 from tools.espressif.safeboot.safeboot_migration import OFFICIAL_URLS, PINNED_ARTIFACTS, sha256_bytes
 
 ROOT = Path(__file__).resolve().parents[2]
 PINS = json.loads((ROOT / "artifacts" / "firmware.json").read_text(encoding="utf-8"))
+ESPRESSIF = PINS["espressif"]
+TASMOTA = ESPRESSIF["esp32c3"]["tasmota"]
+# The ESPHome builds of the S60's config: its image, and the ESP32-C3's mover
+# and bootloader, which come of the same release.
+S60_ESPHOME = {"image": ESPRESSIF["sonoff-s60"]["esphome"], "mover": ESPRESSIF["esp32c3"]["mover"],
+               "bootloader": ESPRESSIF["esp32c3"]["bootloader"]}
+
+
+class LayoutTests(unittest.TestCase):
+    """Each family's pins are kept alike: by what they belong to (a chip, which
+    every plug on it shares, or a device), then by firmware."""
+
+    FAMILIES = {"espressif": {chip.key for chip in chips.ALL}, "beken": {uf.READOUT_BUILD}}
+
+    def test_firmware_json_holds_each_family_and_nothing_else(self):
+        self.assertLessEqual(set(PINS) - {"about", "hold"}, set(self.FAMILIES))
+        self.assertEqual(set(PINS) & set(self.FAMILIES), set(self.FAMILIES))
+
+    def test_the_two_families_have_the_one_shape(self):
+        for family, shared in self.FAMILIES.items():
+            devices = {kind.key for kind in kinds.EVERY if (kind.chip.startswith("bk")) == (family == "beken")}
+            for owner, section in PINS[family].items():
+                self.assertIn(owner, shared | devices, (family, owner))
+                for name, pin in section.items():
+                    self.assertIsInstance(pin, dict, (family, owner, name))
+                    # A file published here, or one fetched from its project and checked against the pin.
+                    self.assertTrue("file" in pin or "files" in pin or "url" in pin, (family, owner, name))
+                    if "file" in pin:
+                        self.assertTrue(pin["file"].startswith("artifacts/"), pin["file"])
+                        self.assertIn("sha256", pin, pin["file"])
+
+    def test_each_devices_esphome_is_in_its_own_section_in_either_family(self):
+        for kind in kinds.READY:
+            family = "beken" if kind.chip.startswith("bk") else "espressif"
+            self.assertIn("esphome", PINS[family][kind.key], kind.key)
+            self.assertNotIn(kind.chip, PINS["beken" if family == "espressif" else "espressif"], kind.key)
+
+    def test_the_readmes_badges_read_firmware_json_where_it_pins_each(self):
+        # shields.io reads main's firmware.json each time the README is shown.
+        from urllib.parse import unquote
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        queries = [unquote(query) for query in re.findall(r"firmware\.json&query=([^&]+)&", readme)]
+        self.assertEqual(len(queries), 3)
+        for query in queries:
+            entry = PINS
+            for key in re.findall(r'\.(\w+)|\["([^"]+)"\]', query.removeprefix("$")):
+                entry = entry[key[0] or key[1]]
+            self.assertRegex(entry, r"^\d+\.\d+\.\d+$", query)
 
 
 class TasmotaPinTests(unittest.TestCase):
     def test_the_files_come_from_the_release_pinned(self):
-        tasmota = PINS["tasmota"]
+        tasmota = TASMOTA
         self.assertEqual(tasmota["tag"], f"v{tasmota['version']}")
         for key, name in uf.TASMOTA_FILES.items():
             self.assertEqual(tasmota["files"][key]["name"], name)
@@ -31,30 +80,30 @@ class TasmotaPinTests(unittest.TestCase):
             self.assertEqual(PINNED_ARTIFACTS[key]["sha256"], tasmota["files"][key]["sha256"])
 
     def test_each_earlier_release_is_kept_by_its_files(self):
-        current = {(f["size"], f["sha256"]) for f in PINS["tasmota"]["files"].values()}
-        versions = [entry["version"] for entry in PINS["tasmota"].get("earlier", [])]
-        self.assertNotIn(PINS["tasmota"]["version"], versions)
+        current = {(f["size"], f["sha256"]) for f in TASMOTA["files"].values()}
+        versions = [entry["version"] for entry in TASMOTA.get("earlier", [])]
+        self.assertNotIn(TASMOTA["version"], versions)
         self.assertEqual(len(versions), len(set(versions)))
-        for entry in PINS["tasmota"].get("earlier", []):
+        for entry in TASMOTA.get("earlier", []):
             self.assertEqual(set(entry["files"]), set(uf.TASMOTA_FILES), entry["version"])
             for file in entry["files"].values():
                 self.assertNotIn((file["size"], file["sha256"]), current, entry["version"])
 
     def test_the_release_takes_the_record_the_recovery_safeboot_saves(self):
-        self.assertEqual(PINS["tasmota"]["cfg_holder"], tasmota_settings.CFG_HOLDER)
+        self.assertEqual(TASMOTA["cfg_holder"], tasmota_settings.CFG_HOLDER)
 
 
 class ESPHomePinTests(unittest.TestCase):
     def test_each_file_is_the_one_pinned_and_in_sha256sums(self):
         sums = (ROOT / "artifacts" / "SHA256SUMS").read_text().splitlines()
-        for key, pin in PINS["esphome"].items():
+        for key, pin in S60_ESPHOME.items():
             data = (ROOT / pin["file"]).read_bytes()
             self.assertEqual((len(data), sha256_bytes(data)), (pin["size"], pin["sha256"]), key)
             self.assertIn(f"{pin['sha256']}  {Path(pin['file']).name}", sums)
 
     def test_each_app_was_built_as_firmware_json_says(self):
         for key in ("image", "mover"):
-            pin = PINS["esphome"][key]
+            pin = S60_ESPHOME[key]
             described = uf.app_description((ROOT / pin["file"]).read_bytes())
             self.assertEqual(described["version"], pin["esphome"], key)
             self.assertEqual(described["esp_idf"], pin["esp_idf"], key)
@@ -64,13 +113,13 @@ class ESPHomePinTests(unittest.TestCase):
         # published, fails here: what Home Assistant adopts must be what the
         # tool installs.
         for key in ("image", "mover"):
-            pin = PINS["esphome"][key]
+            pin = S60_ESPHOME[key]
             config = (ROOT / pin["config"]).read_text(encoding="utf-8")
             self.assertEqual(uf.config_version(config), pin["version"], key)
 
     def test_no_older_build_is_left_in_artifacts(self):
-        published = {Path(pin["file"]).name for pin in PINS["esphome"].values()}
-        published |= {Path(pin["file"]).name for pin in PINS.get("esp32", {}).values() if "file" in pin}
+        published = {Path(pin["file"]).name for section in ESPRESSIF.values() for pin in section.values()
+                     if "file" in pin}
         for pattern in ("esphome-sonoff-s60-*.bin", "autoflash-mover-*.bin"):
             for path in (ROOT / "artifacts").glob(pattern):
                 self.assertIn(path.name, published)
@@ -79,21 +128,21 @@ class ESPHomePinTests(unittest.TestCase):
 class DocumentedTests(unittest.TestCase):
     def test_artifacts_readme_has_each_files_row(self):
         readme = (ROOT / "artifacts/README.md").read_text(encoding="utf-8")
-        for pin in PINS["esphome"].values():
+        for pin in S60_ESPHOME.values():
             row = next((line for line in readme.splitlines()
                         if line.startswith(f"| `{Path(pin['file']).name}` |")), "")
             self.assertIn(f"`{pin['sha256']}`", row, pin["file"])
 
     def test_third_party_notices_name_each_file_and_its_build(self):
         notices = (ROOT / "NOTICES.md").read_text(encoding="utf-8")
-        for pin in PINS["esphome"].values():
+        for pin in S60_ESPHOME.values():
             self.assertIn(f"`{pin['file']}`", notices)
             self.assertIn(f"ESPHome {pin['esphome']}", notices)
             self.assertIn(f"ESP-IDF {pin['esp_idf']}", notices)
 
     def test_the_esphome_readme_names_the_release_that_built_the_image(self):
         readme = (ROOT / "devices/sonoff-s60/esphome.md").read_text(encoding="utf-8")
-        self.assertIn(f"ESPHome {PINS['esphome']['image']['esphome']} built the current", readme)
+        self.assertIn(f"ESPHome {S60_ESPHOME['image']['esphome']} built the current", readme)
 
 
 class BekenPinTests(unittest.TestCase):
@@ -149,9 +198,8 @@ class BekenPinTests(unittest.TestCase):
         self.assertEqual(uf.build_version("1.18.321", {"version": "1.18.320-2"}), "1.18.321-1")
 
     def test_each_esphome_version_says_the_release_it_is_built_on(self):
-        pins = [PINS["esphome"]["image"],
-                *(section["esphome"] for section in PINS["beken"].values() if "esphome" in section),
-                *(section["esphome"] for section in PINS["espressif_kinds"].values())]
+        pins = [section["esphome"] for family in ("espressif", "beken") for section in PINS[family].values()
+                if "esphome" in section]
         for pin in pins:
             self.assertRegex(pin["version"], rf"^{re.escape(pin['esphome'])}-[1-9]\d*$", pin["file"])
             self.assertTrue(pin["file"].endswith(f"-{pin['version']}{Path(pin['file']).suffix}"), pin["file"])
@@ -283,7 +331,7 @@ class UpdateHelperTests(unittest.TestCase):
 
     def test_the_build_times_pinned_are_the_images_own(self):
         pins = json.loads((ROOT / "artifacts/firmware.json").read_text(encoding="utf-8"))
-        s60, s61 = pins["esphome"]["image"], pins["beken"]["sonoff-s61"]["esphome"]
+        s60, s61 = pins["espressif"]["sonoff-s60"]["esphome"], pins["beken"]["sonoff-s61"]["esphome"]
         self.assertEqual(s60["built"], uf.build_time((ROOT / s60["file"]).read_bytes(), s60["file"]))
         self.assertEqual(s61["built"], uf.build_time(rbl.unpack((ROOT / s61["file"]).read_bytes()), s61["file"]))
 
@@ -320,7 +368,7 @@ class UpdateHelperTests(unittest.TestCase):
 
     def test_each_published_file_is_let_past_gitignore(self):
         lines = (ROOT / ".gitignore").read_text().splitlines()
-        for pin in PINS["esphome"].values():
+        for pin in S60_ESPHOME.values():
             self.assertIn(f"!{pin['file']}", lines)
 
     def test_cfg_holder_is_read_from_tasmotas_config(self):
@@ -353,7 +401,7 @@ class ESPHomeDocTests(unittest.TestCase):
 
     def texts(self, esphome):
         from unittest import mock
-        old = uf.load_pins()["esphome"]["image"]
+        old = uf.load_pins()["espressif"]["sonoff-s60"]["esphome"]
         new = {"file": "artifacts/esphome-sonoff-s60-imprintable-9.9.0.bin", "version": "9.9.0",
                "esphome": esphome, "esp_idf": "5.5.9", "sha256": "0" * 64}
         with mock.patch.object(uf, "released", return_value=True):
@@ -365,7 +413,7 @@ class ESPHomeDocTests(unittest.TestCase):
         self.assertIn("ESPHome for the S60 moved to [2099.1.0]", " ".join(texts[uf.CHANGELOG].split()))
 
     def test_the_same_release_builds_a_changed_config(self):
-        _, texts = self.texts(uf.load_pins()["esphome"]["image"]["esphome"])
+        _, texts = self.texts(uf.load_pins()["espressif"]["sonoff-s60"]["esphome"]["esphome"])
         self.assertIn("ESPHome for the S60 rebuilt with [", " ".join(texts[uf.CHANGELOG].split()))
 
     def test_the_docs_say_what_it_is_and_not_how_it_got_there(self):
@@ -403,7 +451,7 @@ class BekenESPHomeDocTests(unittest.TestCase):
         self.assertIn(f"`{self.new['file']}` is built with ESPHome 2099.1.0 and\nLibreTiny 9.9.9", notices)
         self.assertIn("[ESPHome 2099.1.0 release](https://github.com/esphome/esphome/tree/2099.1.0)", notices)
         self.assertIn("[LibreTiny 9.9.9](https://github.com/libretiny-eu/libretiny/tree/v9.9.9)", notices)
-        s60 = uf.load_pins()["esphome"]["image"]["esphome"]
+        s60 = uf.load_pins()["espressif"]["sonoff-s60"]["esphome"]["esphome"]
         self.assertIn(f"[ESPHome {s60} release]", notices.split(self.new["file"])[0])
 
 
@@ -417,19 +465,14 @@ class EveryDeviceUpdatedTests(unittest.TestCase):
     def test_every_devices_esphome_is_pinned_where_its_command_writes_it(self):
         for kind in kinds.READY:
             command = uf.esphome_command(kind)
-            if command is uf.command_esphome:
-                pin = PINS["esphome"]["image"]
-            elif command is uf.command_esphome_beken:
-                pin = PINS["beken"][kind.key]["esphome"]
-            else:
-                pin = PINS["espressif_kinds"][kind.key]["esphome"]
+            pin = PINS["beken" if command is uf.command_esphome_beken else "espressif"][kind.key]["esphome"]
             self.assertTrue((ROOT / pin["file"]).is_file(), kind.key)
 
     def test_every_espressif_chip_takes_each_tasmota_release(self):
         for kind in kinds.READY:
             if kind.chip.startswith("esp32") and kind.chip != "esp32c3":
                 self.assertIn(kind.chip, uf.OTHER_CHIPS_TASMOTA, kind.key)
-                self.assertIn("tasmota", PINS[kind.chip], kind.key)
+                self.assertIn("tasmota", ESPRESSIF[kind.chip], kind.key)
 
     def test_every_device_is_built_by_one_run(self):
         from unittest import mock
@@ -481,7 +524,7 @@ class EveryDeviceUpdatedTests(unittest.TestCase):
                "esphome": "2099.1.0", "libretiny": "9.9.9", "sha256": "0" * 64}
         with mock.patch.object(uf, "released", return_value=True):
             texts, version = uf.beken_esphome_doc_texts("sonoff-s61", old, new, changelog=False)
-            s60, s60_version = uf.esphome_doc_texts(uf.load_pins()["esphome"]["image"],
+            s60, s60_version = uf.esphome_doc_texts(uf.load_pins()["espressif"]["sonoff-s60"]["esphome"],
                                                     {**new, "file": "artifacts/esphome-sonoff-s60-imprintable-9.9.0.bin",
                                                      "esp_idf": "5.5.9"}, changelog=False)
         self.assertNotIn(uf.CHANGELOG, texts)
@@ -781,6 +824,9 @@ class UpdateCommandTests(unittest.TestCase):
     and releases: what each refuses, and what it writes."""
 
     CONFIG = 'esphome:\n  name: {name}\n  project:\n    name: x\n    version: "{version}"\n'
+    # Where each ESPHome build of the S60's config is pinned: its section, and its name there.
+    ESPHOME_PINS = {"image": ("sonoff-s60", "esphome"), "bootloader": ("esp32c3", "bootloader"),
+                    "mover": ("esp32c3", "mover")}
 
     def setUp(self):
         import tempfile
@@ -793,17 +839,19 @@ class UpdateCommandTests(unittest.TestCase):
         for key, version in (("image", "1.4.0"), ("mover", "1.1.0")):
             (root / uf.ESPHOME_BUILDS[key][0]).write_text(self.CONFIG.format(name=key, version=version),
                                                           encoding="utf-8")
-        pins = {"tasmota": self.tasmota_pin("15.0.0", earlier=[self.tasmota_pin("14.0.0")]), "esphome": {}}
+        pins = {"espressif": {"esp32c3": {"tasmota": self.tasmota_pin("15.0.0", earlier=[self.tasmota_pin("14.0.0")])},
+                              "sonoff-s60": {}}}
         for key, file, version in (("image", "artifacts/esphome-sonoff-s60-imprintable-1.4.0.bin", "1.4.0"),
                                    ("bootloader", "artifacts/esphome-sonoff-s60-bootloader-1.2.0.bin", "1.2.0"),
                                    ("mover", "artifacts/autoflash-mover-1.1.0.bin", "1.1.0")):
             (root / file).write_bytes(f"{key} {version}".encode())
-            pins["esphome"][key] = {"file": file, "version": version, "esphome": "2026.1.0", "esp_idf": "5.5.5"}
+            owner, name = self.ESPHOME_PINS[key]
+            pins["espressif"][owner][name] = {"file": file, "version": version, "esphome": "2026.1.0", "esp_idf": "5.5.5"}
         (root / "artifacts" / "firmware.json").write_text(json.dumps(pins), encoding="utf-8")
-        (root / "artifacts" / "SHA256SUMS").write_text("".join(f"{sha256_bytes(b'x')}  {Path(pin['file']).name}\n"
-                                                 for pin in pins["esphome"].values()), encoding="utf-8")
-        (root / ".gitignore").write_text("*.bin\n" + "".join(f"!{pin['file']}\n" for pin in pins["esphome"].values()),
-                                         encoding="utf-8")
+        files = [pin["file"] for pin in self.esphome_pins(pins).values()]
+        (root / "artifacts" / "SHA256SUMS").write_text("".join(f"{sha256_bytes(b'x')}  {Path(file).name}\n"
+                                                               for file in files), encoding="utf-8")
+        (root / ".gitignore").write_text("*.bin\n" + "".join(f"!{file}\n" for file in files), encoding="utf-8")
         self.before = self.snapshot()
         for name, value in (("ROOT", root), ("FIRMWARE_JSON", root / "artifacts" / "firmware.json"),
                             ("SHA256SUMS", root / "artifacts" / "SHA256SUMS"), ("GITIGNORE", root / ".gitignore"),
@@ -825,8 +873,13 @@ class UpdateCommandTests(unittest.TestCase):
     def pins(self):
         return json.loads((self.root / "artifacts" / "firmware.json").read_text(encoding="utf-8"))
 
+    def esphome_pins(self, pins=None):
+        """The S60's config's ESPHome builds, by what each is."""
+        espressif = (pins or self.pins())["espressif"]
+        return {key: espressif[owner][name] for key, (owner, name) in self.ESPHOME_PINS.items()}
+
     def before_pins(self):
-        return json.loads(self.before["artifacts/firmware.json"])["esphome"]
+        return self.esphome_pins(json.loads(self.before["artifacts/firmware.json"]))
 
     def run_main(self, *argv):
         import contextlib
@@ -846,7 +899,8 @@ class UpdateCommandTests(unittest.TestCase):
         version = app_version(app)
         old = "artifacts/autoflash-bridge-sonoff-s60-0.0.1.ota"
         (self.root / old).write_bytes(b"the one before")
-        pins = self.pins() | {"esp32c3": {"bridge": {"file": old, "version": "0.0.1"}}}
+        pins = self.pins()
+        pins["espressif"]["esp32c3"]["bridge"] = {"file": old, "version": "0.0.1"}
         (self.root / "artifacts" / "firmware.json").write_text(json.dumps(pins), encoding="utf-8")
         with (self.root / "artifacts" / "SHA256SUMS").open("a", encoding="utf-8") as sums:
             sums.write(f"{sha256_bytes(b'the one before')}  {Path(old).name}\n")
@@ -871,7 +925,7 @@ class UpdateCommandTests(unittest.TestCase):
         self.assertEqual(wrapped[WRAPPER_SIZE:], app)
         self.assertEqual(analyze(wrapped)["wrapper"]["record_version"], version)
         self.assertFalse((self.root / old).exists())
-        pin = self.pins()["esp32c3"]["bridge"]
+        pin = self.pins()["espressif"]["esp32c3"]["bridge"]
         self.assertEqual((pin["file"], pin["version"], pin["size"], pin["sha256"]),
                          (file, version, len(wrapped), sha256_bytes(wrapped)))
         sums = (self.root / "artifacts" / "SHA256SUMS").read_text(encoding="utf-8")
@@ -918,7 +972,7 @@ class UpdateCommandTests(unittest.TestCase):
         code, _, checked = self.tasmota("--no-docs")
         self.assertEqual(code, 0)
         checked.assert_called_once()
-        pin = self.pins()["tasmota"]
+        pin = self.pins()["espressif"]["esp32c3"]["tasmota"]
         self.assertEqual((pin["version"], pin["tag"], pin["commit"]), ("16.0.0", "v16.0.0", "c" * 40))
         self.assertEqual(pin["files"]["app"], {"name": "tasmota32c3.bin", "size": len(b"tasmota32c3.bin"),
                                                "sha256": sha256_bytes(b"tasmota32c3.bin")})
@@ -927,11 +981,11 @@ class UpdateCommandTests(unittest.TestCase):
 
     def test_tasmota_pinned_again_is_not_kept_as_its_own_earlier_release(self):
         self.assertEqual(self.tasmota("--no-docs", version="15.0.0")[0], 0)
-        self.assertEqual([entry["version"] for entry in self.pins()["tasmota"]["earlier"]], ["14.0.0"])
+        self.assertEqual([entry["version"] for entry in self.pins()["espressif"]["esp32c3"]["tasmota"]["earlier"]], ["14.0.0"])
 
     def test_tasmota_going_back_to_an_earlier_release_takes_it_out_of_earlier(self):
         self.assertEqual(self.tasmota("--no-docs", version="14.0.0")[0], 0)
-        self.assertEqual([entry["version"] for entry in self.pins()["tasmota"]["earlier"]], ["15.0.0"])
+        self.assertEqual([entry["version"] for entry in self.pins()["espressif"]["esp32c3"]["tasmota"]["earlier"]], ["15.0.0"])
 
     def test_tasmota_dry_run_changes_nothing(self):
         self.assertEqual(self.tasmota("--dry-run")[0], 0)
@@ -979,7 +1033,7 @@ class UpdateCommandTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(built, [("esphome.yaml", "2099.1.0-1")])
         new = "artifacts/esphome-sonoff-s60-imprintable-2099.1.0-1.bin"
-        pin = self.pins()["esphome"]["image"]
+        pin = self.esphome_pins()["image"]
         self.assertEqual((pin["file"], pin["version"], pin["esphome"], pin["builder"]),
                          (new, "2099.1.0-1", "2099.1.0", "esphome:2099.1.0@sha256:d"))
         self.assertEqual(pin["sha256"], sha256_bytes((self.root / new).read_bytes()))
@@ -991,23 +1045,23 @@ class UpdateCommandTests(unittest.TestCase):
         self.assertIn(f"!{new}\n", (self.root / ".gitignore").read_text(encoding="utf-8"))
         self.assertIn('version: "2099.1.0-1"', (self.root / "devices/sonoff-s60/esphome.yaml").read_text(encoding="utf-8"))
         # Neither the mover nor the bootloader, byte for byte the same, is touched.
-        self.assertEqual(self.pins()["esphome"]["mover"], self.before_pins()["mover"])
-        self.assertEqual(self.pins()["esphome"]["bootloader"]["version"], "1.2.0")
+        self.assertEqual(self.esphome_pins()["mover"], self.before_pins()["mover"])
+        self.assertEqual(self.esphome_pins()["bootloader"]["version"], "1.2.0")
 
     def test_esphome_builds_the_mover_at_its_own_next_minor(self):
         code, _, built = self.esphome("--no-docs", "--mover")
         self.assertEqual(code, 0)
         self.assertEqual(built, [("esphome.yaml", "2099.1.0-1"), ("mover.yaml", "1.2.0")])
-        self.assertEqual(self.pins()["esphome"]["mover"]["file"], "artifacts/autoflash-mover-1.2.0.bin")
+        self.assertEqual(self.esphome_pins()["mover"]["file"], "artifacts/autoflash-mover-1.2.0.bin")
 
     def test_esphome_keeps_the_published_bootloader_unless_told(self):
         self.assertEqual(self.esphome("--no-docs", bootloader=b"another")[0], 0)
-        self.assertEqual(self.pins()["esphome"]["bootloader"], self.before_pins()["bootloader"])
+        self.assertEqual(self.esphome_pins()["bootloader"], self.before_pins()["bootloader"])
         self.assertTrue((self.root / "artifacts/esphome-sonoff-s60-bootloader-1.2.0.bin").exists())
 
     def test_esphome_replaces_a_changed_bootloader_when_told(self):
         self.assertEqual(self.esphome("--no-docs", "--new-bootloader", bootloader=b"another")[0], 0)
-        pin = self.pins()["esphome"]["bootloader"]
+        pin = self.esphome_pins()["bootloader"]
         self.assertEqual((pin["file"], pin["sha256"]),
                          ("artifacts/esphome-sonoff-s60-bootloader-2099.1.0-1.bin", sha256_bytes(b"another")))
         self.assertFalse((self.root / "artifacts/esphome-sonoff-s60-bootloader-1.2.0.bin").exists())

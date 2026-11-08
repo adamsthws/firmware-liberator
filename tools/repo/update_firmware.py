@@ -100,10 +100,11 @@ TASMOTA_FILES = {
     "safeboot": "tasmota32c3-safeboot.bin",
     "app": "tasmota32c3.bin",
 }
-# Each ESPHome build: its config, and the file it is published as.
+# Each ESPHome build: its config, the file it is published as, and its name in
+# its section of firmware.json (the S60's for the image, the ESP32-C3's for the mover).
 ESPHOME_BUILDS = {
-    "image": ("devices/sonoff-s60/esphome.yaml", "artifacts/esphome-sonoff-s60-imprintable-{version}.bin"),
-    "mover": ("devices/sonoff-s60/mover.yaml", "artifacts/autoflash-mover-{version}.bin"),
+    "image": ("devices/sonoff-s60/esphome.yaml", "artifacts/esphome-sonoff-s60-imprintable-{version}.bin", "esphome"),
+    "mover": ("devices/sonoff-s60/mover.yaml", "artifacts/autoflash-mover-{version}.bin", "mover"),
 }
 BOOTLOADER_FILE = "artifacts/esphome-sonoff-s60-bootloader-{version}.bin"
 # Downloads ESPHome's builds need (ESP-IDF and its tools, a gigabyte or so),
@@ -265,7 +266,9 @@ def settled(project: str, releases: list[dict[str, Any]], today: dt.datetime) ->
 def pinned_version(pins: dict[str, Any], project: str) -> str:
     if project == "openbeken":
         return openbeken_pinned(pins)
-    return pins["tasmota"]["version"] if project == "tasmota" else pins["esphome"]["image"]["esphome"]
+    if project == "tasmota":
+        return pins["espressif"]["esp32c3"]["tasmota"]["version"]
+    return pins["espressif"][kinds.SONOFF_S60.key]["esphome"]["esphome"]
 
 
 def due(project: str, releases: list[dict[str, Any]], today: dt.datetime, pinned: str,
@@ -320,14 +323,18 @@ def command_check(_args: argparse.Namespace) -> int:
     tasmota_latest = stable_release(TASMOTA_REPO, None)["tag_name"].removeprefix("v")
     esphome_latest = stable_release(ESPHOME_REPO, None)["tag_name"]
     behind = False
-    print(f"Tasmota: pinned {pins['tasmota']['version']}, latest {tasmota_latest}"
-          + ("" if pins["tasmota"]["version"] == tasmota_latest else "  <- update"))
-    behind |= pins["tasmota"]["version"] != tasmota_latest
-    for name, pin in pins["esphome"].items():
-        late = name == "image" and pin["esphome"] != esphome_latest
-        behind |= late
-        print(f"ESPHome {name}: {Path(pin['file']).name}, built with {pin['esphome']}, "
-              f"latest {esphome_latest}" + ("  <- update" if late else ""))
+    tasmota = pinned_version(pins, "tasmota")
+    print(f"Tasmota: pinned {tasmota}, latest {tasmota_latest}" + ("" if tasmota == tasmota_latest else "  <- update"))
+    behind |= tasmota != tasmota_latest
+    # Each device's ESPHome follows the release; a mover and a bootloader are built again only when they need to be.
+    for owner, section in pins["espressif"].items():
+        for name, pin in section.items():
+            if "esphome" not in pin:
+                continue
+            late = name == "esphome" and pin["esphome"] != esphome_latest
+            behind |= late
+            print(f"ESPHome {owner} {name}: {Path(pin['file']).name}, built with {pin['esphome']}, "
+                  f"latest {esphome_latest}" + ("  <- update" if late else ""))
     openbeken_latest = stable_release(OPENBEKEN_REPO, None)["tag_name"]
     behind |= openbeken_latest != openbeken_pinned(pins)
     print(f"OpenBeken: built on {openbeken_pinned(pins)}, latest {openbeken_latest}"
@@ -407,7 +414,8 @@ def command_tasmota(args: argparse.Namespace) -> int:
     print(f"  CFG_HOLDER {holder}, as the recovery Safeboot's record has it")
 
     pins = load_pins()
-    old = pins["tasmota"]
+    chip = espressif_section(pins, chips.ESP32C3.key)
+    old = chip["tasmota"]
     previous = old["version"]
     # The release before is kept, by its files: a run that installed it, left
     # part way, finishes on it (safeboot_migration.earlier_release).
@@ -416,7 +424,7 @@ def command_tasmota(args: argparse.Namespace) -> int:
         earlier.insert(0, {key: old[key] for key in ("version", "tag", "commit", "files")})
     texts, release_version = tasmota_doc_texts(old["version"], version) if not args.no_docs and previous != version \
         else ({}, None)
-    pins["tasmota"] = {
+    chip["tasmota"] = {
         "version": version,
         "tag": tag,
         "commit": commit,
@@ -429,9 +437,9 @@ def command_tasmota(args: argparse.Namespace) -> int:
         print("\nChecked; firmware.json left as it was (--dry-run).")
         return 0
     # Every other chip a device is on takes the same release.
-    for chip, take in OTHER_CHIPS_TASMOTA.items():
-        if chip in pins:
-            print(f"{chip}:")
+    for other, take in OTHER_CHIPS_TASMOTA.items():
+        if other in pins["espressif"]:
+            print(f"{other}:")
             take(pins)
     save_pins(pins)
     write_texts(texts)
@@ -619,7 +627,9 @@ def publish(section: dict[str, Any], key: str, file: str, data: bytes, record: d
 def command_esphome(args: argparse.Namespace) -> int:
     release = stable_release(ESPHOME_REPO, args.version)["tag_name"]
     pins = load_pins()
-    old_image = dict(pins["esphome"]["image"])
+    device, chip = espressif_section(pins, kinds.SONOFF_S60.key), espressif_section(pins, chips.ESP32C3.key)
+    sections = {"image": device, "mover": chip, "bootloader": chip}
+    old_image = dict(device["esphome"])
     builder = esphome_builder(release)
     print(f"ESPHome {release}: {builder}")
     check_esphome_internals(builder)
@@ -627,19 +637,18 @@ def command_esphome(args: argparse.Namespace) -> int:
     BUILD_CACHE.mkdir(parents=True, exist_ok=True)
     built: dict[str, tuple[str, bytes, bytes, dict[str, str]]] = {}
     for key in ["image", *(["mover"] if args.mover else [])]:
-        version = build_version(release, pins["esphome"][key]) if key == "image" \
-            else next_minor(pins["esphome"][key]["version"])
+        version = build_version(release, old_image) if key == "image" else next_minor(chip[key]["version"])
         app, bootloader = build(builder, ROOT / ESPHOME_BUILDS[key][0], version, BUILD_CACHE)
         described = check_esphome_app(app, f"the {key} built", release)
         built[key] = (version, app, bootloader, described)
         print(f"  {key} {version}: {len(app):,} bytes, ESP-IDF {described['esp_idf']}, "
               f"{images.SLOT_SIZE - len(app):,} bytes to spare in the slot")
     version, app, bootloader, described = built["image"]
-    pinned_bootloader = (ROOT / pins["esphome"]["bootloader"]["file"]).read_bytes()
+    pinned_bootloader = (ROOT / chip["bootloader"]["file"]).read_bytes()
     new_bootloader = bootloader != pinned_bootloader
     if new_bootloader and not args.new_bootloader:
         print(f"  this build's bootloader differs from the published one "
-              f"(ESP-IDF {described['esp_idf']}, published: {pins['esphome']['bootloader']['esp_idf']}): "
+              f"(ESP-IDF {described['esp_idf']}, published: {chip['bootloader']['esp_idf']}): "
               "the published one is kept (--new-bootloader replaces it)")
     if args.dry_run:
         print("\nBuilt and checked; nothing published (--dry-run).")
@@ -653,13 +662,13 @@ def command_esphome(args: argparse.Namespace) -> int:
     for key, (version, app, _bootloader, described) in built.items():
         config_path = ROOT / ESPHOME_BUILDS[key][0]
         config_path.write_text(as_built(config_path.read_text(encoding="utf-8"), version), encoding="utf-8")
-        publish(pins["esphome"], key, ESPHOME_BUILDS[key][1].format(version=version), app,
+        publish(sections[key], ESPHOME_BUILDS[key][2], ESPHOME_BUILDS[key][1].format(version=version), app,
                 {"config": ESPHOME_BUILDS[key][0], "version": version, "esphome": release,
                  "esp_idf": described["esp_idf"], "builder": builder,
                  **(builds_record(app, "the ESPHome built", old_image, version) if key == "image" else {})})
     version, _app, bootloader, described = built["image"]
     if args.new_bootloader and new_bootloader:
-        publish(pins["esphome"], "bootloader", BOOTLOADER_FILE.format(version=version), bootloader,
+        publish(chip, "bootloader", BOOTLOADER_FILE.format(version=version), bootloader,
                 {"config": ESPHOME_BUILDS["image"][0], "version": version, "esphome": release,
                  "esp_idf": described["esp_idf"], "builder": builder})
     elif not new_bootloader:
@@ -691,6 +700,11 @@ def command_esphome(args: argparse.Namespace) -> int:
 
 def beken_section(pins: dict[str, Any], plug: str) -> dict[str, Any]:
     return pins.setdefault("beken", {}).setdefault(plug, {})
+
+
+def espressif_section(pins: dict[str, Any], owner: str) -> dict[str, Any]:
+    """What firmware.json pins for one Espressif chip (what its plugs share) or device."""
+    return pins.setdefault("espressif", {}).setdefault(owner, {})
 
 
 def git(*args: str, cwd: Path) -> str:
@@ -975,8 +989,8 @@ def command_esphome_beken(args: argparse.Namespace) -> int:
 
 # -- the other Espressif plugs' firmware -----------------------------------------
 # What a plug of each chip needs is the same but for its ESPHome. Pinned in
-# firmware.json under the chip's key, and each plug's ESPHome under
-# "espressif_kinds".
+# firmware.json under "espressif", by the chip's key, and each plug's own
+# (its ESPHome, its partition table) under its kind's, as Beken's are.
 ESP32_INTERIM_TAG = "v15.6.0"  # the release the settings template's layout is checked against
 ESP32_INTERIM = chips.ESP32.interim_name  # small enough for the smallest stock slot, a TH Elite's
 BRIDGE_SOURCE = ROOT / "archive" / "bridge"
@@ -1001,12 +1015,12 @@ def in_builder(script: str, *volumes: str) -> None:
 
 def esp32_tasmota(pins: dict[str, Any]) -> None:
     """Official Tasmota's ESP32 files, of the release the ESP32-C3's are pinned to."""
-    release = pins["tasmota"]
+    release = pins["espressif"]["esp32c3"]["tasmota"]
     names = {"factory": "tasmota32.factory.bin", "safeboot": "tasmota32-safeboot.bin", "app": "tasmota32.bin"}
     base = f"https://github.com/{TASMOTA_REPO}/releases/download"
     files = {key: download(f"{base}/{release['tag']}/{name}") for key, name in names.items()}
     check_tasmota_files(files, chips.ESP32)
-    section = pins.setdefault("esp32", {})
+    section = espressif_section(pins, chips.ESP32.key)
     section["tasmota"] = {"version": release["version"], "tag": release["tag"], "commit": release["commit"],
                           "files": {key: {"name": names[key], "size": len(data), "sha256": sha256_bytes(data)}
                                     for key, data in files.items()}}
@@ -1020,9 +1034,8 @@ def esp32_tasmota(pins: dict[str, Any]) -> None:
     print(f"  Tasmota {release['version']}, and {ESP32_INTERIM} of {ESP32_INTERIM_TAG} for part way through: pinned")
 
 
-# The Tasmota of each chip but the ESP32-C3's (firmware.json's "tasmota"), by its
-# section in firmware.json: each follows that release when the tasmota command
-# moves it.
+# The Tasmota of each chip but the ESP32-C3's, by its section in firmware.json:
+# each follows the ESP32-C3's release when the tasmota command moves it.
 OTHER_CHIPS_TASMOTA = {"esp32": esp32_tasmota}
 
 
@@ -1042,7 +1055,7 @@ def built_bridge(env: str, chip: chips.Chip) -> tuple[bytes, str]:
 
 def esp32_bridge(pins: dict[str, Any]) -> None:
     app, version = built_bridge("autoflash-bridge-esp32", chips.ESP32)
-    publish(pins.setdefault("esp32", {}), "bridge", f"artifacts/autoflash-bridge-esp32-{version}.bin", app,
+    publish(espressif_section(pins, chips.ESP32.key), "bridge", f"artifacts/autoflash-bridge-esp32-{version}.bin", app,
             {"version": version})
 
 
@@ -1054,7 +1067,7 @@ def esp32c3_bridge(pins: dict[str, Any]) -> None:
         wrapped = build_vendor_ota.build_wrapper(app, version=version)
     except ValueError as exc:
         raise UpdateError(str(exc)) from exc
-    publish(pins.setdefault("esp32c3", {}), "bridge",
+    publish(espressif_section(pins, chips.ESP32C3.key), "bridge",
             f"artifacts/autoflash-bridge-{kinds.SONOFF_S60.key}-{version}.ota", wrapped, {"version": version})
 
 
@@ -1079,12 +1092,12 @@ def esp32_recovery(pins: dict[str, Any]) -> None:
                            env={**os.environ, "PYTHONPATH": str(ROOT)})
     if code:
         raise UpdateError("the recovery Safeboot is not publishable")
-    publish(pins.setdefault("esp32", {}), "recovery", "artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin",
+    publish(espressif_section(pins, chips.ESP32.key), "recovery", "artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin",
             image, {"tasmota_commit": INTERIM_TASMOTA_COMMIT})
 
 
 def esp32_mover(pins: dict[str, Any]) -> None:
-    release = pins["esphome"]["image"]["esphome"]
+    release = pinned_version(pins, "esphome")
     builder = esphome_builder(release)
     BUILD_CACHE.mkdir(parents=True, exist_ok=True)
     config = ROOT / "devices/esp32/mover.yaml"
@@ -1094,7 +1107,7 @@ def esp32_mover(pins: dict[str, Any]) -> None:
     room = APP0_OFFSET - 0x20000
     if len(app) > room:
         raise UpdateError(f"the mover is {len(app):,} bytes: {room:,} fit in front of Tasmota")
-    section = pins.setdefault("esp32", {})
+    section = espressif_section(pins, chips.ESP32.key)
     record = {"config": "devices/esp32/mover.yaml", "version": version, "esphome": release,
               "esp_idf": described["esp_idf"], "builder": builder}
     publish(section, "mover", f"artifacts/autoflash-mover-esp32-{version}.bin", app, record)
@@ -1111,7 +1124,7 @@ def esp32_template(pins: dict[str, Any]) -> None:
     if found:
         raise UpdateError("the settings template is not usable: " + "; ".join(found))
     name = tasmota_settings.template_path(ROOT, chips.ESP32).relative_to(ROOT).as_posix()
-    publish(pins.setdefault("esp32", {}), "settings_template", name, template, {})
+    publish(espressif_section(pins, chips.ESP32.key), "settings_template", name, template, {})
 
 
 def esp32_tables(pins: dict[str, Any]) -> None:
@@ -1123,7 +1136,7 @@ def esp32_tables(pins: dict[str, Any]) -> None:
         table = public_dump.fetched(public_dump.DUMPS[dump])[TABLE_OFFSET:TABLE_OFFSET + TABLE_SIZE]
         if sha256_bytes(table) != layout.table_sha256:
             raise UpdateError(f"the public dump's table is not the {key} layout's")
-        publish(pins.setdefault("esp32", {}), f"table_{key}", layout.table_file, table, {})
+        publish(espressif_section(pins, key), "table", layout.table_file, table, {})
 
 
 ESP32_PARTS = {"tables": esp32_tables, "template": esp32_template, "tasmota": esp32_tasmota, "bridge": esp32_bridge, "recovery": esp32_recovery, "mover": esp32_mover}
@@ -1189,7 +1202,7 @@ def command_esphome_kind(args: argparse.Namespace) -> int:
     chip = chips.of(kind.chip)
     release = stable_release(ESPHOME_REPO, args.version)["tag_name"]
     pins = load_pins()
-    section = pins.setdefault("espressif_kinds", {}).setdefault(kind.key, {})
+    section = espressif_section(pins, kind.key)
     config_path = ROOT / kind.folder / "esphome.yaml"
     config = config_path.read_text(encoding="utf-8")
     current = section.get("esphome", {})

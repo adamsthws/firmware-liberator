@@ -31,6 +31,15 @@ them from the release's own page on GitHub and checks them against
 `firmware.json`. The ESPHome builds are kept in it: the run writes the plug's
 Wi-Fi into a copy of each.
 
+`firmware.json` keeps both chip families alike, `espressif` and `beken`, each
+by what a pin belongs to and then by firmware. A chip (`espressif.esp32c3`,
+`espressif.esp32`) holds what every plug on it shares: official Tasmota, the
+mover and its bootloader, the bridge, the recovery Safeboot. A device
+(`espressif.sonoff-s60`, `beken.sonoff-s61`) holds its own: its ESPHome, its
+OpenBeken, its partition table. `beken.readout` is the OpenBeken a
+[readout](readouts.md) installs. `tests/repo/test_firmware_pins.py` holds the
+two families to that one shape.
+
 **The interim firmware** - everything a plug runs only part way through a
 conversion - stays as it is. Each has been through every fault the suite puts
 in its way, a change to one means all of that again, and none of it is left
@@ -204,7 +213,8 @@ with the build's download partition where the stock bootloader looks. Its
 first boot reads the plug's Wi-Fi and calibration from the stock store, so
 the image holds no placeholders and nothing is written into it. The config's
 version is raised and the image published as the S60's is, with its docs. Its
-images are pinned under `beken` in `firmware.json`, by plug; the Basic Gen5's
+images are pinned under `beken` in `firmware.json`, by plug, as the Espressif
+devices' are under `espressif`; the Basic Gen5's
 are built the same way, from `devices/sonoff-basic-1gs/`
 (`--plug sonoff-basic-1gs`).
 

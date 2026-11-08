@@ -53,7 +53,7 @@ def published_builds(kind: kinds.Kind) -> set[str]:
     # Each family's images are its package's, and each package imports this.
     from tools.autoflash.routes.beken import images as beken_images
     from tools.autoflash.routes.espressif import images as espressif_images
-    pin = beken_images.PINS[kind.key]["esphome"] if kind.family == "beken" else espressif_images.image_pin(kind)
+    pin = (beken_images if kind.family == "beken" else espressif_images).PINS[kind.key]["esphome"]
     return {pin["built"], *pin.get("earlier_builds", ())}
 
 

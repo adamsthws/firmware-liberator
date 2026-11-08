@@ -45,5 +45,5 @@ class AdoptionExamplesTests(unittest.TestCase):
 
     def test_a_further_mount_goes_to_docker_before_the_image(self):
         command = lint.esphome_command(["/examples/a.yaml"], mounts=["/tmp/x:/examples:ro"])
-        self.assertLess(command.index("/tmp/x:/examples:ro"), command.index(lint.esphome_pins()["image"]["builder"]))
+        self.assertLess(command.index("/tmp/x:/examples:ro"), command.index(lint.esphome_builder()))
         self.assertEqual(command[-1], "/examples/a.yaml")

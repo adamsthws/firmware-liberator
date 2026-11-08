@@ -140,7 +140,7 @@ class SafebootMigrationTests(unittest.TestCase):
                           **{name: {"size": f["size"], "sha256": f["sha256"]}
                              for name, f in earlier["files"].items()}},
         }
-        with mock.patch.dict(sm.FIRMWARE["tasmota"], {"earlier": [earlier]}):
+        with mock.patch.dict(sm.OFFICIAL_TASMOTA, {"earlier": [earlier]}):
             self.assertEqual(sm.earlier_release(manifest), earlier)
             require_pinned_artifacts(manifest)
             with self.assertRaisesRegex(ValueError, "identity differs"):

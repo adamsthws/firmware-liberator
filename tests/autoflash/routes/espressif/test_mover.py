@@ -149,7 +149,7 @@ class ESPHomeUpdateTests(RouteTestCase):
     @staticmethod
     def ours(release="1.4.0", **changed):
         return {"name": "esphome-abcdef", "esphome_version": "2026.10.0", "project_name": "adamsthws.sonoff-s60",
-                "project_version": release, "built": images.PINS["image"]["built"], "encrypted": False, **changed}
+                "project_version": release, "built": images.PINS["sonoff-s60"]["esphome"]["built"], "encrypted": False, **changed}
 
     def test_an_earlier_release_is_offered_the_update(self):
         ctx, route, offered = self.settle(self.ours(), answer=1)
@@ -298,12 +298,12 @@ class ESPHomeUpdateTests(RouteTestCase):
                 self.assertEqual("--replace-own-build" in str(stopped.exception), says)
 
     def test_a_build_published_for_an_earlier_release_is_offered_it(self):
-        ctx, route, _ = self.settle(self.ours(built=images.PINS["image"]["earlier_builds"][0]), answer=1)
+        ctx, route, _ = self.settle(self.ours(built=images.PINS["sonoff-s60"]["esphome"]["earlier_builds"][0]), answer=1)
         self.assertEqual(route, ("esphome", "outdated"))
 
     def test_published_builds_are_each_kinds_own(self):
         s60, s61 = (update.published_builds(kinds.by_key(key)) for key in ("sonoff-s60", "sonoff-s61"))
-        self.assertIn(images.PINS["image"]["built"], s60)
+        self.assertIn(images.PINS["sonoff-s60"]["esphome"]["built"], s60)
         self.assertIn(images.FIRMWARE["beken"]["sonoff-s61"]["esphome"]["built"], s61)
         self.assertEqual(s60 & s61, set())
 

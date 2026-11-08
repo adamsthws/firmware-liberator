@@ -1,87 +1,253 @@
 {
   "about": "The firmware the tool installs that follows Tasmota's and ESPHome's releases, pinned. Written by tools/repo/update_firmware.py - see docs/updating-firmware.md - never by hand.",
-  "tasmota": {
-    "version": "16.0.0",
-    "tag": "v16.0.0",
-    "commit": "1c2173927cdf1be61759bcc3b064b9511a18e5d7",
-    "cfg_holder": 4617,
-    "files": {
-      "factory": {
-        "name": "tasmota32c3.factory.bin",
-        "size": 3153824,
-        "sha256": "cb9f1ac713119cd32ac7c8040027360a16e92a441bc3bbfd6d7beb7a1ddb3a30"
-      },
-      "safeboot": {
-        "name": "tasmota32c3-safeboot.bin",
-        "size": 819488,
-        "sha256": "93a103c9de4f537ce9d99d9e407ded690cf5324ba5b94fc7c789514a4aaae644"
-      },
-      "app": {
-        "name": "tasmota32c3.bin",
-        "size": 2236320,
-        "sha256": "42be8bc2add07ed845607d26ffd0eea8db8fa3194feb765c271ca1b23d670aba"
-      }
-    },
-    "earlier": [
-      {
-        "version": "15.6.0",
-        "tag": "v15.6.0",
-        "commit": "db3ae7e0276fdc38b7aeb241a2a8e33d8ffd6892",
+  "espressif": {
+    "esp32c3": {
+      "tasmota": {
+        "version": "16.0.0",
+        "tag": "v16.0.0",
+        "commit": "1c2173927cdf1be61759bcc3b064b9511a18e5d7",
+        "cfg_holder": 4617,
         "files": {
           "factory": {
             "name": "tasmota32c3.factory.bin",
-            "size": 3098496,
-            "sha256": "5c4181c756fb0a98c107a4d53389536f878b69fedbbce47168b07458122f53e8"
+            "size": 3153824,
+            "sha256": "cb9f1ac713119cd32ac7c8040027360a16e92a441bc3bbfd6d7beb7a1ddb3a30"
           },
           "safeboot": {
             "name": "tasmota32c3-safeboot.bin",
-            "size": 810672,
-            "sha256": "364339a828c243ddf5fee3ed24f8bf352dffc87b2572ca9d7f48736bcb852bdc"
+            "size": 819488,
+            "sha256": "93a103c9de4f537ce9d99d9e407ded690cf5324ba5b94fc7c789514a4aaae644"
           },
           "app": {
             "name": "tasmota32c3.bin",
-            "size": 2180992,
-            "sha256": "5991d11ad8f8b100b165974e81544594394df1d12d165012a42c002e1985cb1c"
+            "size": 2236320,
+            "sha256": "42be8bc2add07ed845607d26ffd0eea8db8fa3194feb765c271ca1b23d670aba"
+          }
+        },
+        "earlier": [
+          {
+            "version": "15.6.0",
+            "tag": "v15.6.0",
+            "commit": "db3ae7e0276fdc38b7aeb241a2a8e33d8ffd6892",
+            "files": {
+              "factory": {
+                "name": "tasmota32c3.factory.bin",
+                "size": 3098496,
+                "sha256": "5c4181c756fb0a98c107a4d53389536f878b69fedbbce47168b07458122f53e8"
+              },
+              "safeboot": {
+                "name": "tasmota32c3-safeboot.bin",
+                "size": 810672,
+                "sha256": "364339a828c243ddf5fee3ed24f8bf352dffc87b2572ca9d7f48736bcb852bdc"
+              },
+              "app": {
+                "name": "tasmota32c3.bin",
+                "size": 2180992,
+                "sha256": "5991d11ad8f8b100b165974e81544594394df1d12d165012a42c002e1985cb1c"
+              }
+            }
+          }
+        ]
+      },
+      "bootloader": {
+        "file": "artifacts/esphome-sonoff-s60-bootloader-1.2.0.bin",
+        "config": "devices/sonoff-s60/esphome.yaml",
+        "version": "1.2.0",
+        "esphome": "2026.9.1",
+        "esp_idf": "5.5.5",
+        "size": 21088,
+        "sha256": "3792bb665916d69c410c9fd10f69d1a6968e61f2a9e4969829a1c49f9ea6f433"
+      },
+      "mover": {
+        "file": "artifacts/autoflash-mover-1.1.0.bin",
+        "config": "devices/sonoff-s60/mover.yaml",
+        "version": "1.1.0",
+        "esphome": "2026.9.1",
+        "esp_idf": "5.5.5",
+        "size": 756960,
+        "sha256": "f6e131e1599c886d742c151c3ba3f84a285bba462b438c36b611d577e01ad243"
+      },
+      "bridge": {
+        "file": "artifacts/autoflash-bridge-sonoff-s60-4.4.5.ota",
+        "version": "4.4.5",
+        "size": 878004,
+        "sha256": "0421bef5cd1c82c43eee03c159253c6db8f54f46efcdb1005c1b870933188fb9"
+      }
+    },
+    "esp32": {
+      "tasmota": {
+        "version": "16.0.0",
+        "tag": "v16.0.0",
+        "commit": "1c2173927cdf1be61759bcc3b064b9511a18e5d7",
+        "files": {
+          "factory": {
+            "name": "tasmota32.factory.bin",
+            "size": 3152416,
+            "sha256": "a0c6ed5fa59e18885db435cb22cb0456d6c9bce92477092462224ab6fa5942eb"
+          },
+          "safeboot": {
+            "name": "tasmota32-safeboot.bin",
+            "size": 807328,
+            "sha256": "202aa207f6e5f967529a1f241a851a4a1116ad5e95d850d14960f2f10711f4a0"
+          },
+          "app": {
+            "name": "tasmota32.bin",
+            "size": 2234912,
+            "sha256": "977fd69e58cbae01b8298dade7e7a30eefa5ac5c58b06e021ee63618bfc9add6"
           }
         }
+      },
+      "interim": {
+        "url": "https://github.com/arendst/Tasmota/releases/download/v15.6.0/tasmota32-display.bin",
+        "size": 1471024,
+        "sha256": "07b888e8f57e47ccfeb9b0ba87268009ba3e8e49b64efad63f1d66292d260231"
+      },
+      "mover": {
+        "file": "artifacts/autoflash-mover-esp32-1.0.0.bin",
+        "config": "devices/esp32/mover.yaml",
+        "version": "1.0.0",
+        "esphome": "2026.10.0",
+        "esp_idf": "5.5.6",
+        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
+        "size": 715120,
+        "sha256": "075fdc993d5004a747fd3cdc5705e3d464df80d2ab003aae66db17b2a98d1d42"
+      },
+      "bootloader": {
+        "file": "artifacts/esphome-esp32-bootloader-1.0.0.bin",
+        "config": "devices/esp32/mover.yaml",
+        "version": "1.0.0",
+        "esphome": "2026.10.0",
+        "esp_idf": "5.5.6",
+        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
+        "size": 26016,
+        "sha256": "b52ccf9f4602c83db673d44e84d391c44fed6d24329d4fefb9fc0d72a95a0d4f"
+      },
+      "bridge": {
+        "file": "artifacts/autoflash-bridge-esp32-4.4.5.bin",
+        "version": "4.4.5",
+        "size": 839856,
+        "sha256": "779b2c471d771c44b629f83758b68c6a2b37045f29bef5de4cc12bcf92fefc69"
+      },
+      "recovery": {
+        "file": "artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin",
+        "tasmota_commit": "db3ae7e0276fdc38b7aeb241a2a8e33d8ffd6892",
+        "size": 801568,
+        "sha256": "f1a25251f7756303e3d65061f9429d1f4da81968b89737d3d5d7364ea959860c"
+      },
+      "settings_template": {
+        "file": "artifacts/tasmota-settings-template-esp32-15.6.0.0.bin",
+        "size": 4096,
+        "sha256": "7c790d6d445756cf7124841136a676741fbad33020706a8dd477e3dc51fbef49"
       }
-    ]
-  },
-  "esphome": {
-    "image": {
-      "file": "artifacts/esphome-sonoff-s60-imprintable-2026.10.0-1.bin",
-      "config": "devices/sonoff-s60/esphome.yaml",
-      "version": "2026.10.0-1",
-      "esphome": "2026.10.0",
-      "esp_idf": "5.5.6",
-      "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-      "built": "2026-11-06 22:21:09 +0000",
-      "earlier_builds": [
-        "2026-10-21 02:35:20 +0100",
-        "2026-10-22 19:49:39 +0000",
-        "2026-10-26 17:26:39 +0000",
-        "2026-11-04 14:38:48 +0000"
-      ],
-      "size": 967936,
-      "sha256": "7793c32e3f2e77294d2a9f929875063d404d832e05d7fbe5ed54fb37cd0e7762"
     },
-    "bootloader": {
-      "file": "artifacts/esphome-sonoff-s60-bootloader-1.2.0.bin",
-      "config": "devices/sonoff-s60/esphome.yaml",
-      "version": "1.2.0",
-      "esphome": "2026.9.1",
-      "esp_idf": "5.5.5",
-      "size": 21088,
-      "sha256": "3792bb665916d69c410c9fd10f69d1a6968e61f2a9e4969829a1c49f9ea6f433"
+    "sonoff-s60": {
+      "esphome": {
+        "file": "artifacts/esphome-sonoff-s60-imprintable-2026.10.0-1.bin",
+        "config": "devices/sonoff-s60/esphome.yaml",
+        "version": "2026.10.0-1",
+        "esphome": "2026.10.0",
+        "esp_idf": "5.5.6",
+        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
+        "built": "2026-11-06 22:21:09 +0000",
+        "earlier_builds": [
+          "2026-10-21 02:35:20 +0100",
+          "2026-10-22 19:49:39 +0000",
+          "2026-10-26 17:26:39 +0000",
+          "2026-11-04 14:38:48 +0000"
+        ],
+        "size": 967936,
+        "sha256": "7793c32e3f2e77294d2a9f929875063d404d832e05d7fbe5ed54fb37cd0e7762"
+      }
     },
-    "mover": {
-      "file": "artifacts/autoflash-mover-1.1.0.bin",
-      "config": "devices/sonoff-s60/mover.yaml",
-      "version": "1.1.0",
-      "esphome": "2026.9.1",
-      "esp_idf": "5.5.5",
-      "size": 756960,
-      "sha256": "f6e131e1599c886d742c151c3ba3f84a285bba462b438c36b611d577e01ad243"
+    "sonoff-pow-elite": {
+      "esphome": {
+        "file": "artifacts/esphome-sonoff-pow-elite-imprintable-2026.10.0-1.bin",
+        "config": "devices/sonoff-pow-elite/esphome.yaml",
+        "version": "2026.10.0-1",
+        "esphome": "2026.10.0",
+        "esp_idf": "5.5.6",
+        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
+        "built": "2026-11-06 22:23:44 +0000",
+        "earlier_builds": [
+          "2026-11-05 23:13:00 +0000"
+        ],
+        "size": 883312,
+        "sha256": "be48fba7c873adeeb3c1dba401d57c4fc2be4d68f8d9928ca7a1bc9b28bc454d"
+      }
+    },
+    "sonoff-powct": {
+      "esphome": {
+        "file": "artifacts/esphome-sonoff-powct-imprintable-2026.10.0-1.bin",
+        "config": "devices/sonoff-powct/esphome.yaml",
+        "version": "2026.10.0-1",
+        "esphome": "2026.10.0",
+        "esp_idf": "5.5.6",
+        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
+        "built": "2026-11-06 22:24:31 +0000",
+        "earlier_builds": [
+          "2026-11-06 01:00:39 +0000"
+        ],
+        "size": 870656,
+        "sha256": "00e34904e976bfe61230b7ef53f7e9c2331e8d7fbd9338e2122b85f7dd23f6c9"
+      }
+    },
+    "sonoff-th-elite": {
+      "esphome": {
+        "file": "artifacts/esphome-sonoff-th-elite-imprintable-2026.10.0-1.bin",
+        "config": "devices/sonoff-th-elite/esphome.yaml",
+        "version": "2026.10.0-1",
+        "esphome": "2026.10.0",
+        "esp_idf": "5.5.6",
+        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
+        "built": "2026-11-06 22:25:23 +0000",
+        "earlier_builds": [
+          "2026-11-06 01:04:22 +0000"
+        ],
+        "size": 863120,
+        "sha256": "cbfba34d4314405a9dfb22a736455304c64cbeaa7ad02b4b9799867e1238e79c"
+      },
+      "table": {
+        "file": "artifacts/sonoff-th-elite-partition-table.bin",
+        "size": 4096,
+        "sha256": "36d7dc76c5d2459ea174e48aaa19ff93dcb8130c43b124bba409d78b9c01c1b6"
+      }
+    },
+    "sonoff-dualr3": {
+      "esphome": {
+        "file": "artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-1.bin",
+        "config": "devices/sonoff-dualr3/esphome.yaml",
+        "version": "2026.10.0-1",
+        "esphome": "2026.10.0",
+        "esp_idf": "5.5.6",
+        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
+        "built": "2026-11-06 22:26:08 +0000",
+        "earlier_builds": [
+          "2026-11-06 01:27:40 +0000"
+        ],
+        "size": 868816,
+        "sha256": "76b94dbd480650acd4eb9b58099b81cc5ec1988b3d941a6ddcfa22ba49cf1d0b"
+      }
+    },
+    "sonoff-basicr4": {
+      "esphome": {
+        "file": "artifacts/esphome-sonoff-basicr4-imprintable-2026.10.0-1.bin",
+        "config": "devices/sonoff-basicr4/esphome.yaml",
+        "version": "2026.10.0-1",
+        "esphome": "2026.10.0",
+        "esp_idf": "5.5.6",
+        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
+        "built": "2026-11-07 15:47:18 +0000",
+        "earlier_builds": [],
+        "size": 910976,
+        "sha256": "21ae9837d43286a37ab1a5649c33bba86a92634f0140e916767a6813d61b92a3"
+      }
+    },
+    "sonoff-nspanel": {
+      "table": {
+        "file": "artifacts/sonoff-nspanel-partition-table.bin",
+        "size": 4096,
+        "sha256": "3c6436bcbd529015fcb3fd98565b7753199910b3dba30c9d6ccce77d08e09d70"
+      }
     }
   },
   "beken": {
@@ -175,170 +341,6 @@
         "builder": "ubuntu@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c with tools/beken/openbeken/build.Dockerfile 4b04244bb63658a1",
         "size": 509568,
         "sha256": "3459841073093d0bf8f859542ce7034dd702d69107249d3c38ea071e6110eee5"
-      }
-    }
-  },
-  "esp32c3": {
-    "bridge": {
-      "file": "artifacts/autoflash-bridge-sonoff-s60-4.4.5.ota",
-      "version": "4.4.5",
-      "size": 878004,
-      "sha256": "0421bef5cd1c82c43eee03c159253c6db8f54f46efcdb1005c1b870933188fb9"
-    }
-  },
-  "esp32": {
-    "tasmota": {
-      "version": "16.0.0",
-      "tag": "v16.0.0",
-      "commit": "1c2173927cdf1be61759bcc3b064b9511a18e5d7",
-      "files": {
-        "factory": {
-          "name": "tasmota32.factory.bin",
-          "size": 3152416,
-          "sha256": "a0c6ed5fa59e18885db435cb22cb0456d6c9bce92477092462224ab6fa5942eb"
-        },
-        "safeboot": {
-          "name": "tasmota32-safeboot.bin",
-          "size": 807328,
-          "sha256": "202aa207f6e5f967529a1f241a851a4a1116ad5e95d850d14960f2f10711f4a0"
-        },
-        "app": {
-          "name": "tasmota32.bin",
-          "size": 2234912,
-          "sha256": "977fd69e58cbae01b8298dade7e7a30eefa5ac5c58b06e021ee63618bfc9add6"
-        }
-      }
-    },
-    "interim": {
-      "url": "https://github.com/arendst/Tasmota/releases/download/v15.6.0/tasmota32-display.bin",
-      "size": 1471024,
-      "sha256": "07b888e8f57e47ccfeb9b0ba87268009ba3e8e49b64efad63f1d66292d260231"
-    },
-    "mover": {
-      "file": "artifacts/autoflash-mover-esp32-1.0.0.bin",
-      "config": "devices/esp32/mover.yaml",
-      "version": "1.0.0",
-      "esphome": "2026.10.0",
-      "esp_idf": "5.5.6",
-      "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-      "size": 715120,
-      "sha256": "075fdc993d5004a747fd3cdc5705e3d464df80d2ab003aae66db17b2a98d1d42"
-    },
-    "bootloader": {
-      "file": "artifacts/esphome-esp32-bootloader-1.0.0.bin",
-      "config": "devices/esp32/mover.yaml",
-      "version": "1.0.0",
-      "esphome": "2026.10.0",
-      "esp_idf": "5.5.6",
-      "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-      "size": 26016,
-      "sha256": "b52ccf9f4602c83db673d44e84d391c44fed6d24329d4fefb9fc0d72a95a0d4f"
-    },
-    "bridge": {
-      "file": "artifacts/autoflash-bridge-esp32-4.4.5.bin",
-      "version": "4.4.5",
-      "size": 839856,
-      "sha256": "779b2c471d771c44b629f83758b68c6a2b37045f29bef5de4cc12bcf92fefc69"
-    },
-    "recovery": {
-      "file": "artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin",
-      "tasmota_commit": "db3ae7e0276fdc38b7aeb241a2a8e33d8ffd6892",
-      "size": 801568,
-      "sha256": "f1a25251f7756303e3d65061f9429d1f4da81968b89737d3d5d7364ea959860c"
-    },
-    "settings_template": {
-      "file": "artifacts/tasmota-settings-template-esp32-15.6.0.0.bin",
-      "size": 4096,
-      "sha256": "7c790d6d445756cf7124841136a676741fbad33020706a8dd477e3dc51fbef49"
-    },
-    "table_sonoff-nspanel": {
-      "file": "artifacts/sonoff-nspanel-partition-table.bin",
-      "size": 4096,
-      "sha256": "3c6436bcbd529015fcb3fd98565b7753199910b3dba30c9d6ccce77d08e09d70"
-    },
-    "table_sonoff-th-elite": {
-      "file": "artifacts/sonoff-th-elite-partition-table.bin",
-      "size": 4096,
-      "sha256": "36d7dc76c5d2459ea174e48aaa19ff93dcb8130c43b124bba409d78b9c01c1b6"
-    }
-  },
-  "espressif_kinds": {
-    "sonoff-pow-elite": {
-      "esphome": {
-        "file": "artifacts/esphome-sonoff-pow-elite-imprintable-2026.10.0-1.bin",
-        "config": "devices/sonoff-pow-elite/esphome.yaml",
-        "version": "2026.10.0-1",
-        "esphome": "2026.10.0",
-        "esp_idf": "5.5.6",
-        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-06 22:23:44 +0000",
-        "earlier_builds": [
-          "2026-11-05 23:13:00 +0000"
-        ],
-        "size": 883312,
-        "sha256": "be48fba7c873adeeb3c1dba401d57c4fc2be4d68f8d9928ca7a1bc9b28bc454d"
-      }
-    },
-    "sonoff-powct": {
-      "esphome": {
-        "file": "artifacts/esphome-sonoff-powct-imprintable-2026.10.0-1.bin",
-        "config": "devices/sonoff-powct/esphome.yaml",
-        "version": "2026.10.0-1",
-        "esphome": "2026.10.0",
-        "esp_idf": "5.5.6",
-        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-06 22:24:31 +0000",
-        "earlier_builds": [
-          "2026-11-06 01:00:39 +0000"
-        ],
-        "size": 870656,
-        "sha256": "00e34904e976bfe61230b7ef53f7e9c2331e8d7fbd9338e2122b85f7dd23f6c9"
-      }
-    },
-    "sonoff-th-elite": {
-      "esphome": {
-        "file": "artifacts/esphome-sonoff-th-elite-imprintable-2026.10.0-1.bin",
-        "config": "devices/sonoff-th-elite/esphome.yaml",
-        "version": "2026.10.0-1",
-        "esphome": "2026.10.0",
-        "esp_idf": "5.5.6",
-        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-06 22:25:23 +0000",
-        "earlier_builds": [
-          "2026-11-06 01:04:22 +0000"
-        ],
-        "size": 863120,
-        "sha256": "cbfba34d4314405a9dfb22a736455304c64cbeaa7ad02b4b9799867e1238e79c"
-      }
-    },
-    "sonoff-dualr3": {
-      "esphome": {
-        "file": "artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-1.bin",
-        "config": "devices/sonoff-dualr3/esphome.yaml",
-        "version": "2026.10.0-1",
-        "esphome": "2026.10.0",
-        "esp_idf": "5.5.6",
-        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-06 22:26:08 +0000",
-        "earlier_builds": [
-          "2026-11-06 01:27:40 +0000"
-        ],
-        "size": 868816,
-        "sha256": "76b94dbd480650acd4eb9b58099b81cc5ec1988b3d941a6ddcfa22ba49cf1d0b"
-      }
-    },
-    "sonoff-basicr4": {
-      "esphome": {
-        "file": "artifacts/esphome-sonoff-basicr4-imprintable-2026.10.0-1.bin",
-        "config": "devices/sonoff-basicr4/esphome.yaml",
-        "version": "2026.10.0-1",
-        "esphome": "2026.10.0",
-        "esp_idf": "5.5.6",
-        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-07 15:47:18 +0000",
-        "earlier_builds": [],
-        "size": 910976,
-        "sha256": "21ae9837d43286a37ab1a5649c33bba86a92634f0140e916767a6813d61b92a3"
       }
     }
   }
