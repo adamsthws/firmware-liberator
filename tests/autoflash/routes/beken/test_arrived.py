@@ -142,6 +142,27 @@ class ArrivedTests(unittest.TestCase):
             with self.assertRaisesRegex(errors.Abort, "switch the device off and on"):
                 self.k2_with_openbeken_up_for(ctx, 950)
 
+    def test_k2_sees_a_restart_by_its_uptime_falling_below_the_highest_seen(self):
+        # The image sent again just after a refusal: OpenBeken was only just up,
+        # so its uptime before is small, and the emulated plug's fast clock soon
+        # outgrows both that and the time since. Seen in the fault suite: the
+        # second refusal in a row waited out, and a switch off and on asked for.
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, firmware="esphome")
+            ctx.state.mark("O1", state.DONE)
+            ctx.state.capture("O1.fetched_at", round(time.time()) - 20)
+            ctx.state.capture("O1.uptime_before", 15)
+            # Seen still up after the fetch, then back after a restart, its clock fast.
+            with mock.patch.object(arrived.esphome, "is_esphome", return_value=False), \
+                    mock.patch.object(openbeken, "info", side_effect=[{"uptime_s": 90}, None, {"uptime_s": 60}]), \
+                    mock.patch.object(arrived.join.time, "sleep"), \
+                    mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(0, 100000, 100))), \
+                    mock.patch.object(arrived.prompts, "UNATTENDED", True):
+                with self.assertRaises(errors.GoBack) as back:
+                    arrived.step_esphome_check(ctx, wait=1000)
+            self.assertEqual(back.exception.step, "O1")
+
     def test_without_b2_a_plug_on_sonoffs_firmware_is_only_waited_for(self):
         # Nothing this run sent to go back to: asked again, as before.
         with tempfile.TemporaryDirectory() as tmp:
