@@ -109,13 +109,15 @@ def token() -> str:
     return value
 
 
-def api(path: str, method: str = "GET", body: Any = None, ok_missing: bool = False) -> Any:
+def api(path: str, method: str = "GET", body: Any = None, ok_missing: bool = False, whole: bool = False) -> Any:
+    """The answer's result, or with `whole` all of it, its result_info too."""
     request = urllib.request.Request(
         API + path, method=method, data=None if body is None else json.dumps(body).encode(),
         headers={"Authorization": f"Bearer {token()}", "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            return json.load(response)["result"]
+            answer = json.load(response)
+            return answer if whole else answer["result"]
     except urllib.error.HTTPError as error:
         if ok_missing and error.code == 404:
             return None
