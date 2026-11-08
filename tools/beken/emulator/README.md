@@ -108,7 +108,7 @@ OpenBeken image and its FNV equals the RBL `raw hash`.
 ## The fork
 
 The emulator is upstream BekenEmulator at the commit `UPSTREAM` pins - the
-archive on the release `emulator-source-beken-<commit>`, whose hash `UPSTREAM` also pins -
+archive on the release `image.sh release` names, whose hash `UPSTREAM` also pins -
 with these patches applied in name order when the image is built
 (`image.sh ensure` builds or pulls it; `beken-emu.sh dump` fetches the public
 S61s dump from upstream's repository; `beken-emu.sh test` runs upstream's
@@ -141,12 +141,26 @@ commit's worth, with its reasoning in its header.
 
 To change the fork: extract the archive (`captures/emulation/cache/`), apply
 the patches to it in order, make the change as a commit there, `git
-format-patch` it into `patches/`, and `image.sh ensure autoflash-beken-emu
---rebuild` builds the image again from the new set (its hash, `image.sh tag`,
-changed; the workflow publishes that version once it is pushed).
-Moving to a newer upstream commit: put its hash in `UPSTREAM`, `image.sh
+format-patch` it into `patches/`, renamed `NNNN-what-it-does.patch` (a few
+lowercase words, as the Espressif emulator's are), and `image.sh ensure
+autoflash-beken-emu --rebuild` builds the image again from the new set (its
+hash, `image.sh tag`, changed; the workflow publishes that version once it is
+pushed).
+Moving to a newer upstream commit: put its hash in `UPSTREAM`, and `image.sh
 source` makes the new archive (`git archive` of that commit, so anyone can
-reproduce its bytes), publish it as the release `emulator-source-beken-<its
-commit>` (draft first, with the archive attached, then publish: releases are
-immutable), pin its SHA-256 and name in `UPSTREAM`, and rework whatever
-patches no longer apply.
+reproduce its bytes), `bekenemulator-<commit>.tar.xz`, writes its name and
+SHA-256 into `UPSTREAM`, and says the release to publish it as,
+`emulator-source-bekenemulator-<commit>` (draft first, with the archive
+attached, then publish: releases are immutable); then rework whatever patches
+no longer apply.
+
+**With the next image**, whatever brings it - a patch, or a new pin - three
+things change that would each be a new image on their own, so they wait for
+it, and `tests/repo/test_emulator_images.py` fails until they are done:
+`bk-emu.Dockerfile` becomes `beken-emu.Dockerfile`, named after the image as
+`beken-emu.sh` is (`image.sh` takes either); `UPSTREAM`, `requirements.txt` and
+the Dockerfile name the script `beken-emu.sh` (`image.sh source` writes
+`UPSTREAM` so); and the five patches take the name form above. The release
+holding today's archive keeps its earlier name, `emulator-source-beken-d9a3772`,
+after the family; `image.sh` names the next by the upstream project, and its
+exception for that one goes with that pin.

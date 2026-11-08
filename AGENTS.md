@@ -31,9 +31,11 @@ and plugs' identities.
   more at once than there are cores, or they fail falsely.
   [docs/emulator.md](docs/emulator.md)
 - **`tools/espressif/emulator/container/`, `patches/` and `emu.Dockerfile`
-  are hashed into the emulator image's tag**: any change, a comment
-  included, means a new image everywhere. Change them only for the
-  emulator's sake.
+  (and its `UPSTREAM`, once there), and `tools/beken/emulator/`'s `UPSTREAM`,
+  `requirements.txt`, `patches/` and Dockerfile, are hashed into each
+  emulator image's tag** (`image.sh tag`): any change, a comment included,
+  means a new image everywhere. Change them only for the emulator's sake;
+  `tests/repo/test_emulator_images.py` says what else goes with the next.
 
 ## Git
 

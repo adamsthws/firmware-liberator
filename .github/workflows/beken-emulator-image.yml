@@ -8,6 +8,7 @@ name: Beken emulator image
 on:
   push:
     paths:
+      - tools/beken/emulator/beken-emu.Dockerfile
       - tools/beken/emulator/bk-emu.Dockerfile
       - tools/beken/emulator/image.sh
       - tools/beken/emulator/UPSTREAM
