@@ -194,7 +194,7 @@ def short_loader(url: str, assign_to: str | None = None) -> str:
 class PhaseRunner:
     _started_at: float | None = None
     _resending = False  # the start, not delivered, waiting to go again
-    _start_code: str | None = None
+    _start_code: tuple[str, ...] = ()  # what goes again if the start does not reach the plug
     _starts = 0  # how many starts have been sent, to tell the last one's reply
     _unanswered = False  # the last start sent, its reply not yet come or given up
     _reply_lost = False  # the last start's request cut off: no reply will come
@@ -223,7 +223,7 @@ class PhaseRunner:
                     break
                 sent_again += 1
                 self.log("    The start did not reach the device; sending it again.")
-                self._start(self._start_code)
+                self._start(*self._start_code)
                 started, waited = self._started_at, 0.0
             reader.join(0.5)
             waited += 0.5
@@ -445,15 +445,26 @@ class PhaseRunner:
         kind, message = error.group("kind"), error.group("message")
         return message if kind == "migration_refused" else f"{kind}: {message}"
 
-    def _start(self, code: str) -> None:
-        """Send the command that starts the phase, without waiting on its reply.
+    def _start(self, *commands: str, again: tuple[str, ...] = ()) -> None:
+        """Send the commands that start the phase, one after another, without
+        waiting on the last one's reply.
 
         The phase reports to the server, which is what is waited on; the reply
         can come only when the phase ends - or never, when it ends by
         restarting the plug, as the commit does.
+
+        `again`: what to send if they do not reach the plug, when that is more
+        - the instructions fetched again, then the start, for a start that
+        runs what an earlier command fetched.  A plug that restarted in
+        between has lost them: seen in the fault suite, K1's plug switched off
+        just after its fetch answered every start sent again with
+        "'autoflash_run' undeclared", and the step failed.  Two commands, as
+        the first time, never one: a plug that fetched, compiled and ran a
+        plan in one command ran out of stack as the plan ended (K1 again, in
+        the fault suite), and restarted.
         """
         self._started_at = time.monotonic()
-        self._start_code = code
+        self._start_code = again or commands
         self._starts += 1
         mine = self._starts
         self._unanswered = True
@@ -471,9 +482,11 @@ class PhaseRunner:
                 self._reply_lost = True
 
         def send() -> None:
+            sending = commands
             for attempt in range(1, START_TRIES + 1):
                 try:
-                    self.device.berry(code, timeout=60.0)
+                    for command in sending:
+                        self.device.berry(command, timeout=60.0)
                     return
                 except urllib.error.HTTPError:
                     return  # it answered: the server's evidence decides
@@ -494,6 +507,7 @@ class PhaseRunner:
                     finally:
                         self._resending = False
                     self._started_at = time.monotonic()
+                    sending = self._start_code  # back, perhaps restarted: from the fetch again
                 except (TimeoutError, ConnectionError, http.client.HTTPException):
                     lost()
                     return  # sent, its reply lost or still to come: the server's evidence decides
@@ -552,7 +566,7 @@ class PhaseRunner:
                         # cut off, so taken for sent.
                         sent_again += 1
                         self.log("    The start did not reach the device; sending it again.")
-                        self._start(self._start_code)
+                        self._start(*self._start_code)
                         continue
                     raise PhaseError(
                         f"the device stopped the {phase} without reaching this computer"
@@ -591,11 +605,12 @@ class PhaseRunner:
 
             name, token = arm
             self.log("Telling the device to start. Leave it powered and connected.")
-            self._start(f'{name}("{token}")')
+            start = f'{name}("{token}")'
+            self._start(start, again=(short_loader(url, assign_to=closure), start))
         else:
             self.log("Sending the instructions to the device and starting.")
             self._start(short_loader(url))
             self._require_fetch(process, captured, reader, phase)
-            self._start(f"{START_NAME}()")
+            self._start(f"{START_NAME}()", again=(short_loader(url), f"{START_NAME}()"))
 
         return self._wait(phase, process, exec_timeout, get_heard, get_requested)
