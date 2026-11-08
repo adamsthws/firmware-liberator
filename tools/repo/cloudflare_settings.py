@@ -10,6 +10,11 @@ limiting rules, and the account's R2 buckets; to apply, one allowed to edit
 them all. `apply` changes only what differs. The Workers, and the domains
 pointing at them, are their wrangler.jsonc's, which the website workflow
 deploys. website/README.md says which token is which.
+
+The deploy token's permissions are checked too, but only with a token that
+can also read the account's API tokens and Workers: the apply token, never
+CI's, as that would show every token in the account. A token is changed in
+the dashboard, never by `apply`.
 """
 
 from __future__ import annotations
@@ -87,6 +92,13 @@ RATE_LIMITS = [{
                   "requests_per_period": RATE_LIMIT_REQUESTS, "mitigation_timeout": 10},
     "enabled": True,
 }]
+# The website workflow's token (website/README.md): the zone's Worker routes
+# and DNS records, for the Workers' custom domains, and its two Workers, by
+# name - no other Worker in the account.
+DEPLOY_TOKEN = "firmware-liberator-deploy-workers-ci-read-write"
+DEPLOY_ZONE_PERMISSIONS = {"Zone Read", "Workers Routes Write", "DNS Write"}
+DEPLOY_WORKERS = {"firmware-liberator", "firmware-liberator-api"}
+DEPLOY_WORKERS_PERMISSIONS = {"Individual Workers Editor"}
 # Each zone ruleset this script keeps, by its phase: the rules as written here.
 RULESETS = {REDIRECT_PHASE: ("redirects", REDIRECTS), RATE_LIMIT_PHASE: ("rate limits", RATE_LIMITS)}
 
@@ -109,8 +121,10 @@ def token() -> str:
     return value
 
 
-def api(path: str, method: str = "GET", body: Any = None, ok_missing: bool = False, whole: bool = False) -> Any:
-    """The answer's result, or with `whole` all of it, its result_info too."""
+def api(path: str, method: str = "GET", body: Any = None, ok_missing: bool = False, whole: bool = False,
+        ok_forbidden: bool = False) -> Any:
+    """The answer's result, or with `whole` all of it, its result_info too;
+    None for a 404 with `ok_missing`, or a 403 with `ok_forbidden`."""
     request = urllib.request.Request(
         API + path, method=method, data=None if body is None else json.dumps(body).encode(),
         headers={"Authorization": f"Bearer {token()}", "Content-Type": "application/json"})
@@ -119,7 +133,7 @@ def api(path: str, method: str = "GET", body: Any = None, ok_missing: bool = Fal
             answer = json.load(response)
             return answer if whole else answer["result"]
     except urllib.error.HTTPError as error:
-        if ok_missing and error.code == 404:
+        if (ok_missing and error.code == 404) or (ok_forbidden and error.code == 403):
             return None
         detail = error.read().decode("utf-8", "replace")
         try:
@@ -137,8 +151,43 @@ def comparable(rule: dict[str, Any], written: dict[str, Any] | None = None) -> d
     return {key: rule.get(key) for key in (written or REDIRECTS[0])}
 
 
+def deploy_token_policies(account: str, zone_id: str) -> list[tuple[frozenset[str], frozenset[str]]] | None:
+    """What the deploy token is allowed, as (permissions, what on) pairs - the
+    zone by its name, Workers by theirs - or None where this token cannot
+    read the account's tokens or Workers."""
+    tokens = api(f"/accounts/{account}/tokens", ok_forbidden=True)
+    scripts = api(f"/accounts/{account}/workers/scripts", ok_forbidden=True)
+    if tokens is None or scripts is None:
+        return None
+    workers = {f"com.cloudflare.edge.worker.script.{script.get('tag')}": script.get("id") for script in scripts}
+    zone = f"com.cloudflare.api.account.zone.{zone_id}"
+    found = [token for token in tokens if token.get("name") == DEPLOY_TOKEN and token.get("status") == "active"]
+    policies = []
+    for policy in (found[0].get("policies") or []) if found else []:
+        on = set()
+        for key, value in (policy.get("resources") or {}).items():
+            # An account's resources name its Workers inside it.
+            for inner in value if isinstance(value, dict) else {key: value}:
+                on.add(ZONE if inner == zone else workers.get(inner, inner))
+        denied = "" if policy.get("effect") == "allow" else "denied: "
+        policies.append((frozenset(denied + str(group.get("name")) for group in policy.get("permission_groups") or []),
+                         frozenset(on)))
+    return policies
+
+
+def in_order(policies: list[tuple[frozenset[str], frozenset[str]]]) -> list[tuple[list[str], list[str]]]:
+    """Policies in an order of their own, to compare and to show: a set's
+    text is in no fixed order, so sorting by it would differ run to run."""
+    return sorted((sorted(names), sorted(on)) for names, on in policies)
+
+
+DEPLOY_POLICIES = in_order([(frozenset(DEPLOY_ZONE_PERMISSIONS), frozenset({ZONE})),
+                            (frozenset(DEPLOY_WORKERS_PERMISSIONS), frozenset(DEPLOY_WORKERS))])
+
+
 def differences() -> list[tuple[str, str, Any]]:
-    """(what, how it differs, the change that makes it right)."""
+    """(what, how it differs, the change that makes it right: None for one
+    made in the dashboard)."""
     zones = api(f"/zones?name={ZONE}")
     if not zones:
         raise SettingsError(f"the token cannot see the zone {ZONE}")
@@ -165,6 +214,14 @@ def differences() -> list[tuple[str, str, Any]]:
         if have != READOUTS_LIFECYCLE["rules"]:
             found.append((f"{READOUTS_BUCKET} lifecycle", f"has {[rule.get('id') for rule in rules]}, should have "
                           "readouts-expire", lifecycle))
+    have = deploy_token_policies(zones[0]["account"]["id"], zones[0]["id"])
+    if have is None:
+        print(f"  {DEPLOY_TOKEN}: not checked - this token cannot read the account's API tokens and Workers")
+    elif in_order(have) != DEPLOY_POLICIES:
+        def say(policies):
+            return "; ".join(f"{', '.join(names)} on {', '.join(on)}" for names, on in policies) \
+                or "nothing (no such token)"
+        found.append((DEPLOY_TOKEN, f"allows {say(in_order(have))}, should allow {say(DEPLOY_POLICIES)}", None))
     return found
 
 
@@ -183,13 +240,19 @@ def main(argv: list[str] | None = None) -> int:
         if not args:
             print("python3 tools/repo/cloudflare_settings.py apply sets them.")
             return 1
-        for what, _, (method, path, body) in found:
+        left = 0
+        for what, _, change in found:
+            if change is None:
+                print(f"  {what}: left - change it in the dashboard")
+                left = 1
+                continue
+            method, path, body = change
             api(path, method, body)
             print(f"  {what}: set")
     except SettingsError as error:
         print(f"cloudflare_settings: {error}", file=sys.stderr)
         return 1
-    return 0
+    return left
 
 
 if __name__ == "__main__":

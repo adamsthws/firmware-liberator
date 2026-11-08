@@ -73,9 +73,12 @@ Three Cloudflare API tokens are in play, each allowed only what its job needs:
 | --- | --- | --- |
 | Deploy | `website` secret `CLOUDFLARE_API_TOKEN` | Individual Workers - `firmware-liberator`, `firmware-liberator-api`: Editor. Zone `firmwareliberator.com` - Workers Routes: Write, DNS: Write (the custom domains), Zone: Read |
 | Settings check | `website` secret `CLOUDFLARE_READ_TOKEN` | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Read, Dynamic URL Redirects: Read, Zone WAF: Read. Account - Workers R2 Storage: Read |
-| Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit. Account - Workers R2 Storage: Edit |
+| Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit. Account - Workers R2 Storage: Edit, Account API Tokens: Read, Workers Scripts: Read (to check the deploy token) |
 
-The deploy token reaches its two Workers and no other in the account. The
+The deploy token reaches its two Workers and no other in the account. Its
+permissions are written down in `tools/repo/cloudflare_settings.py` and
+checked by hand, with the apply token: reading one token means reading every
+token in the account, other sites' too, which CI's token is not allowed. The
 environment's secrets are written down in `tools/repo/github_settings.py`,
 whose check fails on one missing; set one with `python3
 tools/repo/github_settings.py secret <name>`, which asks for the value or
