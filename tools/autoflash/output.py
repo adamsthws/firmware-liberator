@@ -64,6 +64,8 @@ class _State:
     name_width = 0                    # the longest stage name, so the columns line up
     most_stages = 0                   # the most the run may have, its numbers' column as wide
     rows = 0                          # rows finished on screen, less those taken off again (mark)
+    stage_mark: tuple[int, bool, bool] | None = None  # the screen as the stage began (mark)
+    kept: list[str] = []              # its notes to show again once it has passed (keep)
     blocks: list[tuple[int, bool]] = []  # the open blocks (transient_begin), innermost last:
                                       # `rows` as each began, and whether a blank row was last
     pending_prompt: str | None = None  # a question on screen, waiting for its answer
@@ -167,7 +169,7 @@ def start(log_path: Path | None, *, verbose: bool) -> None:
             _write_log(f"=== run started, tool version {__version__}{' (verbose)' if verbose else ''} ===")
         _s.concise = not verbose
         _s.paused = False
-        _s.rows, _s.blocks = 0, []
+        _s.rows, _s.blocks, _s.kept, _s.stage_mark = 0, [], [], None
         _s.name_width = _s.most_stages = 0   # the run's own route sets them (set_stage_width)
         _s.run_waited = 0.0
         _s.waiting_since = None   # a question left unanswered is not this run's wait
@@ -354,6 +356,18 @@ def show(text: str = "", *codes: str) -> None:
 
 
 on_screen = show  # for say(), whose `show` is its flag
+
+
+def keep(text: str = "") -> None:
+    """A note under the stage that the person should still have once it has
+    passed - the meter left as it was, say: shown and logged as tell() is,
+    and shown again under the stage's line once what the stage showed is
+    taken off the screen (stage_end)."""
+    with _lock:
+        _write_log(text)
+        _print(text)
+        if _s.stage is not None:
+            _s.kept.append(text)
 
 
 def log_only(text: str) -> None:
@@ -611,6 +625,8 @@ def stage_begin(number: int, name: str) -> None:
         if _s.stage == label:
             return  # already begun: keep its line and its clock
         _break()
+        _s.stage_mark = (_s.rows, _s.after_stage, _s.after_blank) if _drawn_over() else None
+        _s.kept = []
         digits = len(str(max(_s.most_stages, number)))
         _s.stage = label
         _s.stage_prefix = f"Stage {number:>{digits}}"
@@ -628,16 +644,31 @@ def stage_begin(number: int, name: str) -> None:
             _print(f"== {_s.stage}", stage=True)
 
 
+# Outcomes of a stage that passed: all it showed is taken off the screen.
+PASSED = ("complete", "already done", "skipped")
+
+
 def stage_end(outcome: str) -> None:
     """outcome: "complete", "stopped", "already done" or "skipped" (a stage
     the run does not need, passed over).  Any block - a note and its
     question - still open is taken off first: one cut short by Ctrl-C or q
-    would otherwise stay, the stage's underway line with it above its last."""
+    would otherwise stay, the stage's underway line with it above its last.
+
+    A stage that passed leaves just its line: what it showed while under
+    way - notes, instructions, a part that went again - is taken off the
+    screen, and only what it kept (keep) is shown again under the line.
+    One that stopped leaves everything: that is why it stopped."""
     with _lock:
         if _s.stage is None:
             return
         while _s.blocks:
             transient_end()
+        cleared = False
+        if outcome in PASSED and _s.stage_mark is not None and _s.rows > _s.stage_mark[0]:
+            # Taller than the window, it has to stay.
+            cleared = _erase(_s.rows - _s.stage_mark[0])
+            if cleared:
+                _, _s.after_stage, _s.after_blank = _s.stage_mark
         elapsed = _elapsed(_stage_seconds())
         timing = f" ({elapsed})" if outcome == "complete" else ""
         line = f"{_s.stage} - {outcome}{timing}"   # its time in the log and the report, not on screen
@@ -662,7 +693,10 @@ def stage_end(outcome: str) -> None:
                 _s.after_blank = False
             else:
                 _print(text, stage=True)
-        _s.stage = None
+            if cleared:
+                for note in _s.kept:
+                    _print(note)
+        _s.stage, _s.stage_mark, _s.kept = None, None, []
 
 
 def progress(text: str = "") -> None:

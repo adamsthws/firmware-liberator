@@ -124,10 +124,14 @@ check.
   whole minute on end, the minute it takes to keep it. One that stopped answering
   part way, switched off say, was said done all the same; it is now waited for,
   and its minute starts again once it answers.
-- A stage tried again after a network drop leaves one line on the screen. Its
-  failed try - the stage shown stopped, what failed, and that it would be tried
-  again - stayed above the stage drawn afresh, so the stage seemed to run twice.
-  The run's log still keeps every try.
+- A stage that passes leaves just its line on the screen. What it showed while
+  under way stayed above it: a try that failed on the network and was tried
+  again, drawn as a stage stopped and then run a second time; instructions to
+  join a network, long since done with; the installer sent again. A step done
+  again because a later one found it had not taken is drawn afresh too, and the
+  run says why only if it still does not take. Notes worth keeping - the meter
+  left as it was, say - are shown under the stage's line. The run's log keeps
+  everything.
 - A download the server turns away for now - GitHub's release downloads
   answering "504 Gateway Time-out" for minutes at a time, say - is tried again
   for a little over two minutes, waiting longer each time, rather than three
