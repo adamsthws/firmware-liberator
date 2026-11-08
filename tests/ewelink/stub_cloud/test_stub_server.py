@@ -73,6 +73,30 @@ class SendToDeviceTests(unittest.TestCase):
         self.assertEqual(json.loads(conn.send.call_args.args[0]), {"action": "upgrade"})
 
 
+class OnlineTests(unittest.TestCase):
+    """The app watching a device is told when it comes and goes, as at eWeLink."""
+
+    def test_a_device_registering_is_said_to_be_online_to_its_watchers(self):
+        # Seen: a plug back after a power cut was never said to be online, so the
+        # sender did not send again the command it had lost, and waited 300 s.
+        app = mock.Mock()
+        handler = stub_server.Handler.__new__(stub_server.Handler)
+        handler.stub = stub_server.Stub("192.0.2.1", 443, 10)
+        with mock.patch.dict(stub_server._devices, {}, clear=True), \
+                mock.patch.dict(stub_server._subscribers, {"1000abcdef": {app}}, clear=True), \
+                mock.patch.object(stub_server, "log"):
+            handler._device_message(mock.Mock(peer="test"), {"action": "register", "deviceid": "1000abcdef",
+                                                             "apikey": "made-up"}, None)
+        told = [json.loads(call.args[0]) for call in app.send.call_args_list]
+        self.assertIn({"action": "sysmsg", "deviceid": "1000abcdef", "params": {"online": True}}, told)
+
+    def test_going_offline_is_said_too(self):
+        app = mock.Mock()
+        with mock.patch.dict(stub_server._subscribers, {"1000abcdef": {app}}, clear=True):
+            stub_server._tell_watchers("1000abcdef", False)
+        self.assertEqual(json.loads(app.send.call_args.args[0])["params"], {"online": False})
+
+
 class AccountDeviceTests(unittest.TestCase):
     """A plug whose identity the stub is not given - the S61's, sealed in its
     store - is listed as it registers, as eWeLink lists it."""

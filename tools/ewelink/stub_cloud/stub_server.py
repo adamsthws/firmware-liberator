@@ -180,6 +180,18 @@ def _unsubscribe(app: Conn) -> None:
             watchers.discard(app)
 
 
+def _tell_watchers(deviceid: str, online: bool) -> None:
+    """The apps watching a device told it came online or went offline, as
+    eWeLink tells them (sysmsg): a sender waits on that to send again a command
+    its plug lost (tools/ewelink/ota_push.Resending)."""
+    for app in _subscribers_of(deviceid):
+        try:
+            app.send(json.dumps({"action": "sysmsg", "deviceid": deviceid,
+                                 "params": {"online": online}}).encode())
+        except OSError:
+            pass
+
+
 def _online(deviceid: str) -> bool:
     """Whether the device holds its IoT WebSocket now: what eWeLink calls online."""
     with _relay_lock:
@@ -515,17 +527,14 @@ class Handler(socketserver.BaseRequestHandler):
             if role == "app":
                 _unsubscribe(conn)
             if role == "device" and deviceid:
-                for app in _drop_device(deviceid, conn):  # tell watchers it went offline
-                    try:
-                        app.send(json.dumps({"action": "sysmsg", "deviceid": deviceid,
-                                             "params": {"online": False}}).encode())
-                    except OSError:
-                        pass
+                _drop_device(deviceid, conn)
+                _tell_watchers(deviceid, False)
 
     def _device_message(self, conn: "Conn", msg: dict, deviceid: str | None) -> str | None:
         if msg.get("action") == "register" and msg.get("deviceid"):
             deviceid = msg["deviceid"]
             _register_device(deviceid, conn)
+            _tell_watchers(deviceid, True)
             # Whether it is the account's device - the plug's own id and key -
             # without logging either: a plug put back on Sonoff's firmware
             # with an identity rebuilt is seen to be itself.
