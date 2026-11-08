@@ -246,12 +246,16 @@ every step, in every direction. The two are laid out alike below.
 ### The Espressif fault suite
 
 `tools/espressif/emulator/fault_suite.py` puts every fault in the way of every step, in
-every direction - 1,436 scenarios:
+every direction - 1,599 scenarios on an S60:
 
 - **Directions:** Sonoff to Tasmota, Sonoff to ESPHome, Tasmota to ESPHome,
   Tasmota to Sonoff, ESPHome to Tasmota, ESPHome to Sonoff, and official Tasmota
-  updated from the release before.
-- **Steps:** each step that writes to the plug or waits on it.
+  updated from the release before. And Tasmota to Sonoff on a computer with
+  no backup of the plug (`nobackup>sonoff`), faulted where it differs, at R1
+  and R2: Sonoff's firmware is put together with the identity the plug kept.
+- **Steps:** each step that writes to the plug or waits on it, K1 (the Sonoff
+  identity kept at the top of the flash) among them. A test holds each
+  direction's steps to the tool's own.
 - **Faults:**
   - the network gone (the router off) for 5, 15, 30, 60, 120 or 180 s, or
     weak - one packet in ten lost - for a minute;
@@ -291,6 +295,9 @@ every direction - 1,436 scenarios:
     and 90% of it (step `F4rs`); and that fallback cut off by a second's
     power cut as the plug restarts to save the template it sent (`nohook-cut`,
     step `F4tp`), which can leave it without one.
+- **A plug on a temporary table given its own** (step `D5ot`, only on a plug
+  whose layout needs one, such as the TH Elite's): a power cut or crash as D5
+  writes the plug's own table back, at 10, 50 and 90% of it.
 - **Runs left by an earlier release** (`legacy-v1.2.0`): release 1.2.0 itself
   - its tagged files, with only `tools/espressif/emulator/legacy/v1.2.0.patch` on top,
   which points it at the cloud stub - converting a plug fresh from Sonoff,
@@ -371,7 +378,9 @@ bug whatever the fault - even if the next run converts the plug. It is
 plug's template - a Tasmota that switches nothing; **FAIL-ASKED-AGAIN** when a
 run asked for the go-ahead twice, as a step tried again by itself once did;
 and **FAIL-BACKUP-LINE** when a run from a converted plug reported no Sonoff
-backup though the run that converted it took one.
+backup though the run that converted it took one, or reported one on a
+computer without. It is **FAIL-IDENTITY** when a run back to Sonoff with no
+backup did not report the identity as the plug's own.
 
 The emulated computer's list of networks keeps one the plug put out for a
 minute after it has gone or been renamed, as a real computer's does (the
@@ -391,6 +400,15 @@ plug does not have, so it is never seen online:
 python -I tools/espressif/emulator/copy_plug.py --from MAC --to 12:34:56:ab:cd:ef
 python -I tools/espressif/emulator/copy_plug.py --remove 12:34:56:ab:cd:ef
 ```
+
+A test copy of another device, from its public dump ([adding a
+device](adding-a-device.md)), works the same way: the suite takes the device
+from the copy's record, and its results go to a folder of their own
+(`suite-stub-sonoff-th-elite`, say). On a device whose layout needs a
+temporary table, Tasmota to ESPHome goes through the hub, as the tool takes
+it there, with `D5ot` added and that device's own step lengths; on any device
+but the S60 the runs of earlier releases and `update>esphome` are left out,
+as those releases knew no other plug. The TH Elite has 1,665 scenarios.
 
 ```sh
 tools/espressif/emulator/fault_suite.py --plug=MAC prep           # the starting plugs (eWeLink)

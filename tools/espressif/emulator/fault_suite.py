@@ -75,9 +75,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
+from tools.autoflash import kinds, plugs  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
+from tools.autoflash.report import SONOFF_IDENTITY  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
+from tools.espressif import layouts  # noqa: E402
 EMU = REPO / "captures/emulation"
 OUT = Path(os.environ.get("AUTOFLASH_EMU_SUITE_DIR", EMU / "suite"))
 RESULTS = OUT / "results.jsonl"
@@ -139,15 +142,20 @@ ROUTES = {
     "tasmota>sonoff": ("suite-tasmota", "sonoff",
                        {"L1": 23, "X1": 12, "X2": 25, "D4": 31, "D5": 2, "R1": 32, "R2": 2}),
     "esphome>tasmota": ("suite-esphome", "tasmota",
-                        {"X1": 12, "X2": 25, "D4": 31, "D5": 2, "E1": 2, "E2": 17, "E3": 5,
+                        {"X1": 12, "X2": 25, "D4": 31, "D5": 2, "K1": 2, "E1": 2, "E2": 17, "E3": 5,
                          "F2": 35, "F4": 10, "G1": 21, "H1": 2}),
     "esphome>sonoff": ("suite-esphome", "sonoff",
                        {"X1": 12, "X2": 25, "D4": 31, "D5": 2, "R1": 32, "R2": 2}),
     "sonoff>tasmota": ("suite-stockC2-tasmota", "tasmota",
-                       {"C3": 14, "C3fb": 14, "D1": 18, "D4": 31, "D5": 2, "E1": 2, "E2": 17,
+                       {"C3": 14, "C3fb": 14, "D1": 18, "D4": 31, "D5": 2, "K1": 2, "E1": 2, "E2": 17,
                         "E3": 5, "F2": 35, "F4": 10, "G1": 21, "H1": 2}),
     "sonoff>esphome": ("suite-stockC2-esphome", "esphome",
-                       {"C3": 14, "C3fb": 14, "D1": 18, "D4": 31, "D5": 2, "I1": 30, "I2": 5}),
+                       {"C3": 14, "C3fb": 14, "D1": 18, "D4": 31, "D5": 2, "K1": 2, "I1": 30, "I2": 5}),
+    # Back to Sonoff with no backup on this computer: from a copy of the plug on
+    # Tasmota without one (prep), R1 putting Sonoff's firmware, fetched first,
+    # together with the identity the plug kept: 53 s in the emulator (2026-11-08,
+    # where 60 s put a fault at 90% a second after it).
+    "nobackup>sonoff": ("suite-tasmota-nobackup", "sonoff", {"R1": 53, "R2": 2}),
     # A plug on the Tasmota release before this one, updated (prep_update).
     "update>tasmota": ("suite-tasmota-earlier", "tasmota", {"U5": 38, "U6": 12}),
     # A plug on our ESPHome of an earlier release of the tool, updated (prep_update).
@@ -155,6 +163,48 @@ ROUTES = {
 }
 # The release whose ESPHome update>esphome starts on: any before this checkout's.
 EARLIER_RELEASE = "v2.3.0"
+# A route's name says what its plug starts on, but for these.
+STARTS_ON = {"nobackup": "tasmota"}
+
+# The lengths above are the S60's. A plug whose own layout has ota_0 elsewhere
+# than where the mover goes (the TH Elite's: Layout.needs_temporary) leaves
+# Tasmota through a temporary table, so never straight to ESPHome: only the
+# hub's Tasmota writes its own table back, as D5 starts (D5ot). Its usual
+# lengths where they differ from the S60's by more than a few seconds, the
+# shorter where runs differed, from its public dump (2026-11-07).
+TEMPORARY_TABLE_LENGTHS = {"C3": 30, "D1": 35, "D4": 38, "D5": 4, "E2": 27, "E3": 18, "F2": 57, "F4": 15,
+                           "G1": 37, "H1": 16, "I2": 22, "L1": 46, "X2": 32}
+TEMPORARY_TABLE_TO_ESPHOME = ("L1", "X1", "X2", "D4", "D5", "K1", "I1", "I2")
+# The releases legacy and update>esphome runs come from knew only the S60.
+S60_ONLY_ROUTES = {"update>esphome"}
+
+
+def plug_kind(mac):
+    """The kind of the plug the emulators run copies of, by its record's product
+    model: an S60 unless that says otherwise."""
+    record = plugs.read_plug(mac) if mac else {}
+    return kinds.for_account(record.get("product_model"), None) or kinds.SONOFF_S60
+
+
+def routes_for(kind):
+    """ROUTES as `kind` takes them, each step with its usual length on it."""
+    if kind is kinds.SONOFF_S60:
+        return ROUTES
+    layout = layouts.of(kind.layout)
+    routes = {}
+    for route, (start, target, steps) in ROUTES.items():
+        if route in S60_ONLY_ROUTES:
+            continue
+        if layout.needs_temporary:
+            if route == "tasmota>esphome":
+                known = {**ROUTES["tasmota>sonoff"][2], **ROUTES["sonoff>esphome"][2]}
+                steps = {step: known[step] for step in TEMPORARY_TABLE_TO_ESPHOME}
+            steps = {step: TEMPORARY_TABLE_LENGTHS.get(step, length) for step, length in steps.items()}
+        routes[route] = (start, target, steps)
+    return routes
+
+
+PLUG = kinds.SONOFF_S60  # --plug's kind (main)
 # Past D1 a stock route needs the cloud no more: it starts from a plug saved
 # there (prep), on the interim Tasmota, so any machine can run it.
 AFTER_D1 = {"sonoff>tasmota": "suite-afterD1-tasmota", "sonoff>esphome": "suite-afterD1-esphome"}
@@ -175,11 +225,14 @@ OTHER = {"tasmota": "esphome", "esphome": "tasmota"}
 # reset's save did not take it): cut off before Tasmota saves, the plug comes
 # back without it.
 # The tool says "device"; the releases legacy runs use, "plug".
+# D5ot is a plug on a temporary table given its own (TEMPORARY_TABLE_LENGTHS):
+# one plan of a few seconds, then a restart.
 STARTS = {"C3": (r"Backing up the (?:plug|device)'s Sonoff firmware", 12), "C3fb": (r"\] C3  ", 14),
-          "F4rs": (r"Settings reset to Tasmota's defaults", 3), "F4tp": (r"Template applied as", 2)}
+          "F4rs": (r"Settings reset to Tasmota's defaults", 3), "F4tp": (r"Template applied as", 2),
+          "D5ot": (r"on the temporary layout it left Tasmota through; writing its own", 8)}
 # F4's reset without the Berry driver: the name and template not put in.
 NOHOOK_RESET = re.compile(r"Settings reset to Tasmota's defaults, keeping the Wi-Fi; the (?:plug|device)")
-STEP_OF = {"C3fb": "C3", "F4rs": "F4", "F4tp": "F4"}  # the tool's own name for a step
+STEP_OF = {"C3fb": "C3", "F4rs": "F4", "F4tp": "F4", "D5ot": "D5"}  # the tool's own name for a step
 
 # Each length where it can lead somewhere the others do not (2026-10-21): an
 # outage of 5 s is within every timeout of the tool's (8 s and up) and takes
@@ -302,7 +355,12 @@ def composite_scenarios():
         of starting ten times, which ESPHome takes for a boot loop and starts
         in safe mode (go_safemode); then the tool, to ESPHome, Tasmota or
         Sonoff: it must know the plug for ESPHome in safe mode, not the mover
-        (FAIL-TAKEN-FOR-MOVER)."""
+        (FAIL-TAKEN-FOR-MOVER).
+    D5ot, on a plug with a temporary table only (TEMPORARY_TABLE_LENGTHS): a
+        power cut or crash as its own table is written back, at 10, 50 and
+        90% of it.
+
+    The legacy ones need an S60: the releases they run knew no other plug."""
     def one(route, step, fault, arg, at=40):
         return dict(id=sid(route, step, fault, arg, at), route=route, step=step, fault=fault, arg=arg, at=at)
 
@@ -321,16 +379,22 @@ def composite_scenarios():
         for at, fault, arg in ((10, "plugoff", 1), (50, "plugoff", 1), (90, "plugoff", 1),
                                (50, "plugoff", 5), (50, "crash", 1)):
             yield one(route, "F4rs", fault, arg, at)
-    for tag, routes in LEGACY_STEPS.items():
-        for route, steps in routes.items():
-            for step in steps:
-                yield one(route, step, "legacy", tag)
-        for route in LEGACY_STARTS[tag]:
-            yield one(route, "start", "legacy", tag)
-    # Killed at F4, past its commit; then the plug switched off part way
-    # through G1 of the run after, writing over 1.2.0's startup firmware,
-    # which it cannot rebuild.
-    yield one("sonoff>tasmota", "F4", "legacy", "v1.2.0+G1off")
+    if PLUG is kinds.SONOFF_S60:
+        for tag, routes in LEGACY_STEPS.items():
+            for route, steps in routes.items():
+                for step in steps:
+                    yield one(route, step, "legacy", tag)
+            for route in LEGACY_STARTS[tag]:
+                yield one(route, "start", "legacy", tag)
+        # Killed at F4, past its commit; then the plug switched off part way
+        # through G1 of the run after, writing over 1.2.0's startup firmware,
+        # which it cannot rebuild.
+        yield one("sonoff>tasmota", "F4", "legacy", "v1.2.0+G1off")
+    if layouts.of(PLUG.layout).needs_temporary:
+        for route in ("tasmota>sonoff", "tasmota>esphome"):
+            for at, fault, arg in ((10, "plugoff", 1), (50, "plugoff", 1), (90, "plugoff", 1),
+                                   (50, "plugoff", 30), (50, "crash", 1)):
+                yield one(route, "D5ot", fault, arg, at)
     for route in ("tasmota>tasmota", "tasmota>esphome", "tasmota>sonoff"):
         yield one(route, "start", "lostapp", "factory")
     for route in ("tasmota>tasmota", "tasmota>esphome"):
@@ -1640,13 +1704,13 @@ class Scenario:
             return None
 
     def template_ok(self):
-        """Whether the plug runs Tasmota with the S60's template, asked a few
+        """Whether the plug runs Tasmota with its own template, asked a few
         times: it may still be starting."""
         for _ in range(6):
             template, module = self.tasmota("Template"), self.tasmota("Module")
             if isinstance(template, dict) and isinstance(module, dict):
                 self.notes["template"] = template.get("NAME")
-                return "S60" in str(template.get("NAME")) and "0" in (module.get("Module") or {})
+                return own_template(template, module)
             time.sleep(5)
         return False
 
@@ -1904,10 +1968,13 @@ class Scenario:
         template_bad = converted and target_final == "tasmota" and not self.template_ok()
         # The report of the last run, from a converted plug (its backup taken
         # by the run that converted it): not a legacy release's.
-        line = re.findall(r"Sonoff backup:\s+(.*)", re.sub(r"\x1b\[[0-9;]*m", "", Path(self.log).read_text(
-            encoding="utf-8", errors="replace").split("--- ")[-1]))
+        last_run = re.sub(r"\x1b\[[0-9;]*m", "", Path(self.log).read_text(
+            encoding="utf-8", errors="replace").split("--- ")[-1])
+        line = re.findall(r"Sonoff backup:\s+(.*)", last_run)
         backup_line = (line[-1].strip() if line and not sc["route"].startswith("sonoff>")
                        and fault != "legacy" else None)
+        no_backup = sc["route"].startswith("nobackup>")
+        identity = re.findall(r"Sonoff identity:\s+(.*)", last_run)
         if not special:
             if self.notes.get("mistimed"):
                 special = "MISTIMED"
@@ -1964,8 +2031,10 @@ class Scenario:
                 special = "FAIL-SETTINGS-LOST"  # its owner's settings reset with the template
             elif converted and template_bad:
                 special = "BAD-TEMPLATE"  # a Tasmota that switches nothing
-            elif converted and backup_line and backup_line != "Taken by an earlier run":
-                special = "FAIL-BACKUP-LINE"  # its backup is on this computer
+            elif converted and backup_line and backup_line != plugs.BACKUP_OUTCOMES["not taken" if no_backup else "existing"][1]:
+                special = "FAIL-BACKUP-LINE"  # its backup is on this computer, or none is
+            elif converted and no_backup and not kept_identity_reported(identity):
+                special = "FAIL-IDENTITY"  # not the identity the plug kept
             elif converted and (unknown or final):
                 # A name this plug should never have, or not its converted
                 # one at the end (docs/device-names.md).
@@ -2031,6 +2100,18 @@ def name_problems(names, networks, target):
     converted = {"tasmota": f"tasmota-{three}", "esphome": f"esphome-{three}", "sonoff": "espressif"}.get(target)
     final = names[-1] if names and converted and names[-1] != converted else None
     return unknown, final
+
+
+def own_template(template, module):
+    """Whether Tasmota's answers to Template and Module are the plug's own
+    template, in use (module 0)."""
+    return PLUG.names_its_tasmota(str(template.get("NAME"))) and "0" in (module.get("Module") or {})
+
+
+def kept_identity_reported(lines):
+    """Whether the last of a report's "Sonoff identity" lines says the plug's
+    own: the report starts each answer with a capital."""
+    return bool(lines) and lines[-1].strip().lower() == SONOFF_IDENTITY["kept"].lower()
 
 
 def key(scenario_id):
@@ -2209,7 +2290,7 @@ def stale_starts(todo):
             made = json.loads((converted_start(target) / "firmware.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             made = None
-        if made != installs(target):
+        if made != installs(STARTS_ON.get(target, target)):
             stale.append(saved(ROUTES[f"{target}>sonoff"][0]))
     return stale
 
@@ -2270,7 +2351,7 @@ def prep():
     """The starting plugs, saved: one converted to each firmware; a stock plug
     stopped just after C2 (the installer sent, before the backup) for each;
     and one of those carried on as far as D1 (on the interim Tasmota), so the
-    steps after D1 need no cloud."""
+    steps after D1 need no cloud; and the one on Tasmota with no backup."""
     for target in ("tasmota", "esphome"):
         make_start(ROUTES[f"{target}>sonoff"][0], ["--fresh", "--", "--firmware", target])
         (converted_start(target) / "firmware.json").write_text(json.dumps(installs(target)), encoding="utf-8")
@@ -2278,6 +2359,17 @@ def prep():
         make_start(stock, ["--fresh", "--", "--firmware", target], stop_after="C2")
         make_start(AFTER_D1[f"sonoff>{target}"], [f"--from={saved(stock)}", "--", "--firmware", target],
                    stop_after="D1")
+    no_backup_start()
+
+
+def no_backup_start():
+    """The plug saved on Tasmota, copied without its Sonoff backup: a computer
+    that never had one. The copy leaves it out; nothing is deleted."""
+    kept = converted_start("nobackup")
+    shutil.rmtree(kept, ignore_errors=True)
+    shutil.copytree(converted_start("tasmota"), kept, symlinks=True,
+                    ignore=shutil.ignore_patterns(plugs.BACKUP))
+    print(kept.name, "saved", flush=True)
 
 
 def earlier_tasmota():
@@ -2341,7 +2433,7 @@ def report():
 
 def main():
     import argparse
-    global MAC, STUB_CLOUD, OUT, RESULTS, LOGS
+    global MAC, PLUG, ROUTES, STUB_CLOUD, OUT, RESULTS, LOGS
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--plug", help="the backed-up plug's MAC, as emu.sh --plug takes it")
     parser.add_argument("--stub-cloud", action="store_true",
@@ -2359,6 +2451,12 @@ def main():
     if args.command in ("prep", "prep-update", "batch") and not args.plug:
         parser.error("--plug is needed: the backed-up plug the emulators run copies of")
     MAC = args.plug
+    PLUG = plug_kind(MAC)
+    ROUTES = routes_for(PLUG)
+    if PLUG is not kinds.SONOFF_S60 and "AUTOFLASH_EMU_SUITE_DIR" not in os.environ:
+        # Its scenarios share the S60's names, not their passes.
+        OUT = OUT.with_name(f"{OUT.name}-{PLUG.key}")
+        RESULTS, LOGS = OUT / "results.jsonl", OUT / "logs"
     {"prep": prep, "prep-update": prep_update, "list": listing, "report": report,
      "batch": lambda: batch(args.file)}[args.command]()
 
