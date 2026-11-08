@@ -35,9 +35,17 @@ together and what it changes, for working on it. How to use it is in
   no network - so building needs nothing outside this repository. Releases
   of this repository are immutable, so such a release holds one archive and
   never changes: moving the pin is a new archive on a new release, and the old
-  one stays for older checkouts (the Beken emulator is kept the same way,
-  `emulator-source-beken-<commit>`; the earlier `emulator-source` release
-  was deleted on 2026-10-29, and its name cannot be used again). QEMU is
+  one stays for older checkouts (the Beken emulator is kept the same way; the
+  earlier `emulator-source` release was deleted on 2026-10-29, and its name
+  cannot be used again). Moving it: make the archive of the fork at the new
+  commit, with its subprojects, as `qemu-lcgamboa-<commit>.tar.xz`, and
+  `image.sh pin ARCHIVE COMMIT` writes the pin into `UPSTREAM` (repo, commit,
+  archive, SHA-256, the form the Beken emulator keeps its pin in), takes it out
+  of `emu.Dockerfile`, and says the release to publish the archive as,
+  `emulator-source-qemu-<commit>`: each named after the upstream project the
+  archive is of. The pin is moved into `UPSTREAM` with the next image, whatever
+  brings it, as that is a new image of its own:
+  `tests/repo/test_emulator_images.py` fails until it is. QEMU is
   GPL-2.0: the archive is its unmodified source, and this project's changes
   to it are the patches in `tools/espressif/emulator/patches/`, so a change to the
   emulator is a new patch, not a new release. The image is labelled with
@@ -136,8 +144,9 @@ half-changed.
 ### The QEMU fork (`tools/espressif/emulator/patches/*.patch`)
 
 Each patch is `git format-patch` output - one change, its reasoning in its
-header - applied in name order, each on top of those before it, when the
-image is built. To change one, apply them all to the fork's source, make the
+header - named `NNNN-what-it-does.patch` (a few lowercase words; the Beken
+emulator's take the same form with its next image), applied in name order,
+each on top of those before it, when the image is built. To change one, apply them all to the fork's source, make the
 change, and regenerate them. What they do:
 
 - **`0001-monitor-main-loop-context.patch` - QEMU's monitor answers.** The
