@@ -274,8 +274,11 @@ NEW = [("hangup", "continue"), ("sleep", 600), ("weak", 60),
        ("pcoff", 30), ("pcoff", 120), ("corrupt", "once")]
 # Steps that send nothing a changed packet could reach: R2 knows Sonoff's
 # firmware by its LAN port taking a connection, and reads nothing over it, so
-# corrupt-once there only ever came back NO-TRAFFIC.
-NOTHING_TO_CORRUPT = {"R2"}
+# corrupt-once there only ever came back NO-TRAFFIC. U2 (an ESPHome update)
+# asks ESPHome its version in a packet or two, then waits a minute while it
+# confirms itself; its one read, the calibration, comes after the fault's
+# minute is over.
+NOTHING_TO_CORRUPT = {"R2", "U2"}
 # Where a firmware raises its own network when it loses the home one: the
 # installer (C3, D1: after 45 s), the mover and ESPHome (L1, M1, X1, I2: after
 # 1.5 to 2 minutes). There the person joins it before being asked, and the run

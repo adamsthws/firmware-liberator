@@ -436,6 +436,10 @@ class ScenarioTests(unittest.TestCase):
             self.assertIn(f"{route}:R2:outage-5", ids)
             self.assertIn(f"{route}:R1:corrupt-once", ids)
         self.assertIn("sonoff>tasmota:H1:corrupt-once", ids)
+        # Nor in an ESPHome update's wait while ESPHome confirms itself.
+        self.assertNotIn("update>esphome:U2:corrupt-once", ids)
+        self.assertIn("update>esphome:U1:corrupt-once", ids)
+        self.assertIn("update>tasmota:U6:corrupt-once", ids)
 
     def test_the_tools_own_handling_at_the_riskiest_steps(self):
         ids = {sc["id"] for sc in fs.scenarios()}
