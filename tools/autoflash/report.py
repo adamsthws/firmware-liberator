@@ -255,6 +255,11 @@ METER_SETTLE = 4.0
 # run has seen it on the network: an Espressif run's last step sees it there,
 # seconds before its firmware has dialled eWeLink (seconds). Looked for every 10 s.
 ONLINE_WAIT = 180.0
+# How long a device on Tasmota, ESPHome or OpenBeken may take to answer again before its
+# relay is checked: one that lost power or its Wi-Fi as the run ended is still
+# starting, or waiting out a router's restart of up to three minutes and then
+# rejoining (seconds).
+ANSWER_WAIT = 240.0
 MAINS_VOLTS, DEAD_VOLTS = 90.0, 20.0     # clearly live / clearly switched off
 LOAD_WATTS, IDLE_WATTS = 1.0, 0.5
 
@@ -302,7 +307,8 @@ def check_hardware(ctx: Context) -> dict[str, str]:
     meter after each, so one reading is with it on and one with it off.
 
     Whatever is plugged into the plug is switched for a few seconds, without
-    asking: the run has just finished, and the plug ends as it started.
+    asking: the run has just finished, and the plug ends as it started. A plug
+    that lost power or its Wi-Fi as the run ended is waited for first.
     """
     device = ctx.device
 
@@ -321,6 +327,9 @@ def check_hardware(ctx: Context) -> dict[str, str]:
 
     output.say("Checking the relay and power meter...")
     try:
+        waited = device.wait_reachable(timeout=ANSWER_WAIT)
+        if waited >= 1:
+            output.say(f"    The device answered again after {waited:.0f}s.")
         was_on = state(device.command("Power")) == "ON"
         switched = switch(not was_on)
         first = meter()
@@ -340,9 +349,13 @@ def check_esphome_hardware(ctx: Context) -> dict[str, str]:
     """check_hardware's two switches and two readings, through ESPHome's web API."""
     host = ctx.state.input("plug_ip")
     output.say("Checking the relay and power meter...")
+    started = time.monotonic()
     was_on = esphome.relay(host)
+    while was_on is None and time.monotonic() - started < ANSWER_WAIT:   # still starting, perhaps
+        time.sleep(5)
+        was_on = esphome.relay(host)
     if was_on is None:
-        output.say("    The device did not answer the check.")
+        output.say(f"    The device did not answer the check within {ANSWER_WAIT:.0f}s.")
         return {key: "could not be checked" for key in ("Relay", "Power meter")}
     switched = esphome.switch_relay(host, not was_on)
     time.sleep(METER_SETTLE)

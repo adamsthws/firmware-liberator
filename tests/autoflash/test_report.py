@@ -60,9 +60,21 @@ class EndingTests(RouteTestCase):
         self.assertIn("236 V", result["Power meter"])
 
     def test_a_plug_that_does_not_answer_is_reported_not_raised(self):
-        with mock.patch.object(esphome, "relay", return_value=None):
+        clock = iter(range(0, 1000, 5))
+        with mock.patch.object(esphome, "relay", return_value=None), mock.patch.object(report.time, "sleep"), \
+                mock.patch.object(report.time, "monotonic", side_effect=lambda: next(clock)):
             result = report.check_esphome_hardware(self.ctx(firmware="esphome"))
         self.assertEqual(result["Relay"], "could not be checked")
+
+    def test_a_plug_still_starting_as_the_run_ends_is_checked_once_it_answers(self):
+        answers = iter([None, None, False])   # still starting, then answering: off
+        with mock.patch.object(report, "METER_SETTLE", 0), mock.patch.object(report.time, "sleep"), \
+                mock.patch.object(esphome, "relay", side_effect=lambda host: next(answers)), \
+                mock.patch.object(esphome, "switch_relay", return_value=True) as switched, \
+                mock.patch.object(esphome, "meter", return_value={}):
+            result = report.check_esphome_hardware(self.ctx(firmware="esphome"))
+        self.assertEqual([c.args[1] for c in switched.call_args_list], [True, False])
+        self.assertNotEqual(result["Relay"], "could not be checked")
 
 
 class ComputerDescriptionTests(unittest.TestCase):
@@ -131,7 +143,7 @@ class CheckHardwareTests(unittest.TestCase):
             raise AssertionError(text)
 
         from types import SimpleNamespace
-        return SimpleNamespace(device=SimpleNamespace(command=command)), sent, state
+        return SimpleNamespace(device=SimpleNamespace(command=command, wait_reachable=lambda timeout: 0.0)), sent, state
 
     def run_check(self, ctx):
         with mock.patch.object(time, "sleep"), mock.patch.object(output, "say"):
@@ -165,7 +177,7 @@ class CheckHardwareTests(unittest.TestCase):
             return {}
 
         from types import SimpleNamespace
-        result = self.run_check(SimpleNamespace(device=SimpleNamespace(command=command)))
+        result = self.run_check(SimpleNamespace(device=SimpleNamespace(command=command, wait_reachable=lambda timeout: 0.0)))
         self.assertEqual(result["Relay"], "switches (meter unchanged)")
         self.assertEqual(state["power"], "OFF")
 
@@ -184,10 +196,40 @@ class CheckHardwareTests(unittest.TestCase):
 
     def test_a_plug_that_stops_answering_is_reported_not_raised(self):
         from types import SimpleNamespace
-        ctx = SimpleNamespace(device=SimpleNamespace(command=mock.Mock(side_effect=OSError("refused"))))
+        ctx = SimpleNamespace(device=SimpleNamespace(command=mock.Mock(side_effect=OSError("refused")),
+                                                     wait_reachable=lambda timeout: 0.0))
         result = self.run_check(ctx)
         self.assertEqual(result["Relay"], "could not be checked")
         self.assertNotIn("Mains voltage", result)  # the power meter line shows it
+
+    def test_a_plug_still_starting_as_the_run_ends_is_checked_once_it_answers(self):
+        # Seen in the fault suite (update>tasmota:U6:plugoff-5): switched off and
+        # on as the update's last step finished, it refused the check a second on.
+        ctx, sent, state = self.ctx({"ON": {"Voltage": 240, "Power": 3}, "OFF": {"Voltage": 0, "Power": 0}},
+                                    start="OFF")
+        starting = {"answers": False}
+
+        def wait_reachable(timeout):
+            self.assertEqual(sent, [])   # nothing sent before it answers
+            starting["answers"] = True
+            return 20.0
+        ctx.device.wait_reachable = wait_reachable
+        result = self.run_check(ctx)
+        self.assertTrue(starting["answers"])
+        self.assertEqual(result["Relay"], "switches (meter confirms)")
+        self.assertEqual(state["power"], "OFF")
+
+    def test_a_router_restart_as_the_run_ends_is_waited_out(self):
+        # update>tasmota:U6:outage-180: the network back 150 s into the wait,
+        # then Tasmota rejoining it.
+        self.assertGreaterEqual(report.ANSWER_WAIT, 180 + 60)
+
+    def test_a_plug_that_never_answers_again_is_reported_not_raised(self):
+        from types import SimpleNamespace
+        never = mock.Mock(side_effect=report.DeviceError("192.0.2.50 did not answer within 180s"))
+        ctx = SimpleNamespace(device=SimpleNamespace(command=mock.Mock(), wait_reachable=never))
+        self.assertEqual(self.run_check(ctx)["Relay"], "could not be checked")
+        ctx.device.command.assert_not_called()
 
 
 if __name__ == "__main__":
