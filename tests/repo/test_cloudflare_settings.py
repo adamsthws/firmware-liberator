@@ -57,7 +57,7 @@ class FakeCloudflare:
         if path == "/accounts/a1/tokens":
             assert ok_forbidden
             return copy.deepcopy(self.tokens)
-        if path in {template.format(account="a1", zone="z1") for _, template in cs.CI_REFUSED}:
+        if path in {template.format(account="a1", zone="z1") for _, template in cs.CI_REFUSED + cs.DEPLOY_REFUSED}:
             assert ok_forbidden
             return {} if path in self.readable else None
         if path == "/accounts/a1/workers/scripts":
@@ -263,7 +263,7 @@ class CiTokenReachTests(unittest.TestCase):
         code, out = run(self.fake, "ci")
         self.assertEqual(code, 1)
         self.assertIn("can see 2 accounts", out)
-        self.assertIn("can see Workers (firmware-liberator)", out)
+        self.assertIn("can see the Workers ['firmware-liberator']: it should see none", out)
 
     def test_each_read_it_should_be_refused_fails_where_it_works(self):
         for what, template in cs.CI_REFUSED[1:]:   # the tokens list has a test of its own
@@ -280,6 +280,52 @@ class CiTokenReachTests(unittest.TestCase):
         self.assertIn("can read the account's API tokens", out)
         self.assertEqual(self.fake.sent, [])
 
+
+
+class DeployTokenReachTests(unittest.TestCase):
+    """`deploy-token`, as the website workflow runs it with the deploy token:
+    this zone and account, its two Workers, and no more."""
+
+    def setUp(self):
+        self.fake = FakeCloudflare()
+        self.fake.workers = sorted(cs.DEPLOY_WORKERS)
+
+    def test_a_token_that_sees_its_own_passes_and_sets_nothing(self):
+        code, out = run(self.fake, "deploy-token")
+        self.assertEqual((code, self.fake.sent), (0, []))
+        self.assertIn("sees firmwareliberator.com, its Workers and no more", out)
+
+    def test_one_that_sees_another_worker_or_zone_fails(self):
+        self.fake.workers.append("another-site")
+        self.fake.other_zones = ["example.com"]
+        code, out = run(self.fake, "deploy-token")
+        self.assertEqual(code, 1)
+        self.assertIn("another-site", out)
+        self.assertIn("can see other zones (example.com)", out)
+
+    def test_each_read_it_should_be_refused_fails_where_it_works(self):
+        for what, template in cs.DEPLOY_REFUSED:
+            with self.subTest(what):
+                self.fake.readable = {template.format(account="a1", zone="z1")}
+                if template.endswith("/tokens"):
+                    self.fake.tokens, self.fake.readable = [], set()
+                code, out = run(self.fake, "deploy-token")
+                self.assertEqual(code, 1)
+                self.assertIn(f"can read {what}: it should be refused", out)
+                self.fake.tokens = None
+
+    def test_what_it_edits_it_may_read(self):
+        # Its Workers' custom domains are DNS records; its Workers are its to edit.
+        self.fake.readable = {"/zones/z1/dns_records",
+                              "/accounts/a1/workers/scripts/firmware-liberator-api/settings"}
+        self.assertEqual(run(self.fake, "deploy-token")[0], 0)
+
+    def test_the_website_workflow_runs_it_after_both_deploys(self):
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/website.yml").read_text(encoding="utf-8")
+        job = workflow.split("\n  deploy-token:\n", 1)[1]
+        self.assertIn("needs: [deploy, deploy-api]", job)
+        self.assertIn("run: python3 tools/repo/cloudflare_settings.py deploy-token", job)
+        self.assertIn("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}", job)
 
 if __name__ == "__main__":
     unittest.main()

@@ -78,7 +78,11 @@ Three Cloudflare API tokens are in play, each allowed only what its job needs:
 The deploy token reaches its two Workers and no other in the account. Its
 permissions are written down in `tools/repo/cloudflare_settings.py` and
 checked by hand, with the apply token: reading one token means reading every
-token in the account, other sites' too, which CI's token is not allowed. The
+token in the account, other sites' too, which CI's token is not allowed. What
+it can see is checked on each deploy, by the workflow's `deploy-token` job
+with the token itself, after both deploys so a mistake there holds up
+neither: `firmwareliberator.com` and this account alone, its two Workers, and
+none of what `cloudflare_settings.py` lists as refused. The
 environment's secrets are written down in `tools/repo/github_settings.py`,
 whose check fails on one missing; set one with `python3
 tools/repo/github_settings.py secret <name>`, which asks for the value or

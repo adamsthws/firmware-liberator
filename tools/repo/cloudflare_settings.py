@@ -5,6 +5,9 @@
     python3 tools/repo/cloudflare_settings.py apply    set them
     python3 tools/repo/cloudflare_settings.py ci       what differs, and that the
                                                        token reads no more than CI's should
+    python3 tools/repo/cloudflare_settings.py deploy-token
+                                                       that the token reads no more than
+                                                       the deploy token should
 
 With CLOUDFLARE_API_TOKEN, in the environment or .env: to check, a token
 allowed to read the zone, its settings, its single redirects and its rate
@@ -194,28 +197,34 @@ DEPLOY_POLICIES = in_order([(frozenset(DEPLOY_ZONE_PERMISSIONS), frozenset({ZONE
                             (frozenset(DEPLOY_WORKERS_PERMISSIONS), frozenset(DEPLOY_WORKERS))])
 
 
-# What CI's read token must be refused, each a sign of permissions it was
-# never meant to have: none of it is needed to check the settings. Each was
-# refused when written down (2026-11-08), so a failure is a change.
-CI_REFUSED = [
+# What each of CI's tokens must be refused, each a sign of permissions it was
+# never meant to have. CI's read token needs none of it to check the
+# settings, and each was refused it when written down (2026-11-08), so a
+# failure there is a change. The deploy token edits the zone's DNS records
+# (its Workers' custom domains) and its Workers, so it may read those; its
+# value lives only in GitHub, so its list was first checked by CI itself.
+REFUSED = [
     ("the account's API tokens", "/accounts/{account}/tokens"),
     ("your user's details", "/user"),
     ("the account's members", "/accounts/{account}/members"),
     ("the account's audit logs", "/accounts/{account}/audit_logs"),
     ("the account's billing", "/accounts/{account}/billing/profile"),
-    ("the zone's DNS records", "/zones/{zone}/dns_records"),
-    ("the API Worker's settings and bindings", "/accounts/{account}/workers/scripts/firmware-liberator-api/settings"),
     ("the account's Pages projects", "/accounts/{account}/pages/projects"),
     ("the zone's SSL certificates", "/zones/{zone}/ssl/certificate_packs"),
     ("the account's KV namespaces", "/accounts/{account}/storage/kv/namespaces"),
     ("the account's D1 databases", "/accounts/{account}/d1/database"),
 ]
+CI_REFUSED = [*REFUSED,
+              ("the zone's DNS records", "/zones/{zone}/dns_records"),
+              ("the API Worker's settings and bindings",
+               "/accounts/{account}/workers/scripts/firmware-liberator-api/settings")]
+DEPLOY_REFUSED = REFUSED
 
 
-def ci_token_reach(account: str, zone: str) -> list[tuple[str, str, Any]]:
-    """What CI's read token can see that it should not: a zone but this one,
-    an account but this one, any Worker (the list answers, filtered to those
-    it may see), or anything in CI_REFUSED."""
+def token_reach(account: str, zone: str, workers: set[str], refused: list[tuple[str, str]]) -> list[tuple[str, str, Any]]:
+    """What the token in use can see that it should not: a zone but this one,
+    an account but this one, Workers other than `workers` (the list answers,
+    filtered to those it may see), or anything `refused` lists."""
     found: list[tuple[str, str, Any]] = []
     others = sorted(item.get("name") for item in api("/zones?per_page=50") or [] if item.get("name") != ZONE)
     if others:
@@ -223,14 +232,28 @@ def ci_token_reach(account: str, zone: str) -> list[tuple[str, str, Any]]:
     accounts = api("/accounts?per_page=50") or []
     if len(accounts) != 1:
         found.append(("this token", f"can see {len(accounts)} accounts: give it this one alone", None))
-    workers = sorted(script.get("id") for script in api(f"/accounts/{account}/workers/scripts", ok_forbidden=True)
-                     or [])
-    if workers:
-        found.append(("this token", f"can see Workers ({', '.join(workers)}): it needs none", None))
-    for what, path in CI_REFUSED:
+    seen = {script.get("id") for script in api(f"/accounts/{account}/workers/scripts", ok_forbidden=True) or []}
+    if seen != workers:
+        wanted = ", ".join(sorted(workers)) or "none"
+        found.append(("this token", f"can see the Workers {sorted(seen)}: it should see {wanted}", None))
+    for what, path in refused:
         if api(path.format(account=account, zone=zone), ok_forbidden=True) is not None:
             found.append(("this token", f"can read {what}: it should be refused", None))
     return found
+
+
+def ci_token_reach(account: str, zone: str) -> list[tuple[str, str, Any]]:
+    """What CI's read token can see that it should not: it needs no Worker."""
+    return token_reach(account, zone, set(), CI_REFUSED)
+
+
+def deploy_token_reach() -> list[tuple[str, str, Any]]:
+    """What the deploy token can see that it should not: anything but its two
+    Workers, this zone and this account, and what it edits."""
+    zones = api(f"/zones?name={ZONE}")
+    if not zones:
+        raise SettingsError(f"the token cannot see the zone {ZONE}")
+    return token_reach(zones[0]["account"]["id"], zones[0]["id"], DEPLOY_WORKERS, DEPLOY_REFUSED)
 
 
 def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
@@ -278,9 +301,22 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if args not in ([], ["apply"], ["ci"]):
+    if args not in ([], ["apply"], ["ci"], ["deploy-token"]):
         print(__doc__.strip(), file=sys.stderr)
         return 2
+    if args == ["deploy-token"]:
+        try:
+            found = deploy_token_reach()
+        except SettingsError as error:
+            print(f"cloudflare_settings: {error}", file=sys.stderr)
+            return 1
+        for what, how, _ in found:
+            print(f"  {what}: {how}")
+        if found:
+            print("Change the deploy token in the dashboard (website/README.md).")
+            return 1
+        print(f"The deploy token sees {ZONE}, its Workers and no more.")
+        return 0
     try:
         found = differences(ci=args == ["ci"])
         if not found:
