@@ -69,7 +69,7 @@ How they are built and published is in
 
 ## OpenBeken firmware
 
-`artifacts/openbeken-sonoff-s61-1.18.320-1.rbl` is OpenBeken
+`artifacts/openbeken-sonoff-s61-1.18.320-2.rbl` is OpenBeken
 ([openshwprojects/OpenBK7231T_App](https://github.com/openshwprojects/OpenBK7231T_App))
 at commit
 [`ce1abad8dc931720167a7628840adae30b92afaf`](https://github.com/openshwprojects/OpenBK7231T_App/tree/ce1abad8dc931720167a7628840adae30b92afaf)

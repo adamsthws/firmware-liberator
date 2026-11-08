@@ -290,10 +290,7 @@ NAMED_PAGE = re.compile(r"(?<![\w./-])((?:\.\./)*(?:docs|devices|tools|archive|w
 # with the image (artifacts/firmware.json), so it cannot change alone. Each is
 # let be only while that image is the one built from it; the build that replaces
 # the image puts the name right, and takes it out of here.
-UNTIL_REBUILT = {
-    "devices/sonoff-s61/drv_autoflash_sonoff_s61.c":
-        ("docs/beken-s61-emulation.md", ("beken", "sonoff-s61", "openbeken"), "artifacts/openbeken-sonoff-s61-1.18.320-1.rbl"),
-}
+UNTIL_REBUILT: dict[str, tuple[str, tuple[str, ...], str]] = {}
 
 
 def missing_pages(file: Path, text: str) -> list[str]:
