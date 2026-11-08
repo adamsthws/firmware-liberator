@@ -58,8 +58,8 @@ and plugs' identities.
 ## GitHub
 
 - **The repository is `adamsthws/firmware-liberator`**: always pass
-  `-R adamsthws/firmware-liberator` to `gh`, which otherwise picks the upstream
-  `HG0161/SonoffS60OTA`.
+  `-R adamsthws/firmware-liberator` to `gh`. Moving it:
+  [.github/moving-the-repository.md](.github/moving-the-repository.md).
 - **Its settings** live in `tools/repo/github_settings.py` and are set with
   it, never by hand. Renaming a job a required check names: `apply`, push,
   `apply`.
