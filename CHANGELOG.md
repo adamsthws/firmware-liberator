@@ -130,9 +130,10 @@ check.
   join a network, long since done with; the installer sent again. A step done
   again because a later one found it had not taken is drawn afresh too, and the
   run says why only if it still does not take. While a stage is done again its
-  line says "Retrying" rather than "Underway". Notes worth keeping - the meter
-  left as it was, say - are shown under the stage's line. The run's log keeps
-  everything.
+  line says "Retrying" rather than "Underway". The run's log keeps everything.
+- The report has a Meter calibration line, for a device with a power meter: whether
+  its readings are calibrated as Sonoff's firmware had them, or why not. It was
+  said on the screen, where it worried more than it helped.
 - A download the server turns away for now - GitHub's release downloads
   answering "504 Gateway Time-out" for minutes at a time, say - is tried again
   for a little over two minutes, waiting longer each time, rather than three

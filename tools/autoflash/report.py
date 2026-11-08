@@ -212,6 +212,10 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
         # firmware: an emulated Beken plug never restarts by itself; a real one may.
         *([("Power cycled", "true" if ctx.state.input("power_cycles") else "false")] if not espressif else []),
         ("Checks passed", checks_passed(hardware)),
+        # Only for a device with a meter, once the run knows what it is and
+        # where it is going: whether its readings are calibrated as Sonoff's
+        # firmware had them.
+        *([("Meter calibration", meter_calibration(captures, firmware))] if kind.has_meter and firmware else []),
     ]
     if os.environ.get("AUTOFLASH_EMULATOR_URL"):
         fields.append(("Ran in the emulator", "yes"))
@@ -220,6 +224,28 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
 
 SONOFF_IDENTITY = {"backup": "from the backup on this computer", "kept": "from the device",
                    "account": "rebuilt from your eWeLink account"}
+
+
+def meter_calibration(captures: dict[str, Any], firmware: str | None) -> str:
+    """How the run left the meter's calibration, from what its steps found:
+    Tasmota's (`<step>.meter`: changed, factory, or skipped and why), ESPHome's
+    (`<step>.meter`: what its Calibration sensor said, or skipped), or a Beken
+    plug's ESPHome (`<step>.calibration`).  The last step's word counts: an
+    update checks it again."""
+    if firmware == "sonoff":
+        return "Sonoff's own"
+    found: Any = None
+    for key, value in captures.items():
+        if key.endswith(".meter") or key.endswith(".calibration"):
+            found = value
+    if isinstance(found, dict) and "skipped" in found:
+        return f"not carried over ({found['skipped']})"
+    if isinstance(found, dict) and "changed" in found:
+        return "as Sonoff's firmware had it" + (", with its factory calibration" if found.get("factory") else "")
+    state = found.get("calibration") if isinstance(found, dict) else found
+    if isinstance(state, str) and state:
+        return state
+    return "not checked"
 
 
 def checks_passed(hardware: dict[str, str]) -> str:

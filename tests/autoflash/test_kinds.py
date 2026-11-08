@@ -188,6 +188,19 @@ class NotReadyYetTests(unittest.TestCase):
         self.assertEqual(done.stdout.strip(), "sonoff-m5-3c")
 
 
+class MeterTests(unittest.TestCase):
+    def test_a_kind_has_a_meter_exactly_where_its_esphome_reads_one(self):
+        # The report's Meter calibration line is only for a device with one.
+        import re
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        chip = re.compile(r"platform: *(cse7766|cse7761|bl0942|bl0937|bl0940|hlw8012|hlw8032|ade7953)")
+        for kind in kinds.READY + kinds.NOT_READY_YET:
+            config = root / "devices" / kind.key / "esphome.yaml"
+            if config.exists():
+                self.assertEqual(kind.has_meter, bool(chip.search(config.read_text(encoding="utf-8"))), kind.key)
+
+
 class TemplateNameTests(unittest.TestCase):
     """Tasmota's template is named as every firmware names the plug."""
 

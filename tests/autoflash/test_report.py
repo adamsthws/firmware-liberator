@@ -41,6 +41,40 @@ class EndingTests(RouteTestCase):
             ctx.state.capture("R1.identity", "backup")
             self.assertNotIn("Sonoff identity", dict(report.report_fields(ctx, 300, False)))
 
+    def test_a_device_with_a_meter_says_how_its_calibration_went(self):
+        # Said here, not on the screen: a plug's readings a few percent out is
+        # no news to the person converting it, and a clue to someone helping.
+        for firmware, key, found, said in (
+                ("tasmota", "F4.meter", {"changed": True, "factory": True, "factor": 1.02},
+                 "As Sonoff's firmware had it, with its factory calibration"),
+                ("tasmota", "F4.meter", {"changed": False, "factory": False, "factor": 1.02},
+                 "As Sonoff's firmware had it"),
+                ("tasmota", "F4.meter", {"skipped": "the meter did not report"},
+                 "Not carried over (the meter did not report)"),
+                ("esphome", "I2.meter", {"calibration": "from backup, factor 1.02"}, "From backup, factor 1.02"),
+                ("esphome", "I2.meter", {"skipped": "ESPHome did not take it"},
+                 "Not carried over (ESPHome did not take it)"),
+                ("esphome", "J3.calibration", "from backup", "From backup"),
+                ("esphome", None, None, "Not checked"),
+                ("sonoff", None, None, "Sonoff's own")):
+            with self.subTest(firmware=firmware, found=found):
+                ctx = self.ctx(firmware=firmware, run=f"meter-{firmware}-{key}-{said}")
+                if key:
+                    ctx.state.capture(key, found)
+                self.assertEqual(dict(report.report_fields(ctx, 300, False))["Meter calibration"], said)
+
+    def test_a_run_stopped_before_it_knew_the_device_says_nothing_of_a_meter(self):
+        # Seen: stopped at once on a wrong --plug-ip, "Meter calibration: Not
+        # checked" under "Device model: __".
+        ctx = self.ctx(run="never-known", stock_version="")
+        self.assertNotIn("Meter calibration", dict(report.report_fields(ctx, 300, False)))
+
+    def test_a_device_with_no_meter_says_nothing_of_one(self):
+        ctx = self.ctx(firmware="tasmota", run="no-meter")
+        ctx.state.set_input("plug_kind", "sonoff-th-elite")
+        ctx.state.capture("F4.meter", {"skipped": "this device's calibration is not read yet"})
+        self.assertNotIn("Meter calibration", dict(report.report_fields(ctx, 300, False)))
+
     def test_the_hardware_check_switches_through_esphome(self):
         relay = {"on": True}
 
