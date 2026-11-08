@@ -62,24 +62,19 @@ Until now, the established way to flash a device was to open it, perform some so
 
 ### What you need
 
-**A supported device**
-> See [Supported Devices](#supported-devices).
-
-**An eWeLink account**
+- **An eWeLink account**
 > A throwaway one is fine.  
 > (The device has to be added to eWeLink first).
 
-**A computer**
+- **A computer**
 > Linux, macOS or Windows, with Wi-Fi.
 
-**Admin rights**
+- **Admin rights**
 > Needed to add one temporary firewall rule.  
 > (Done automatically and removed when the tool finishes).
 
-<br>
-
-### Supported Devices
-> More coming soon!  
+- **A supported device**
+> More coming soon.  
 > **[How you can help](#how-you-can-help)**: if your Sonoff isn't listed, the tool can read it out and send it in, so support for it can be added.
 
 | Status | Device | Models |
@@ -112,32 +107,70 @@ Simply paste this one line into your terminal to get started...
 
 >You're walked through every step of the conversion.
 
+<br>
+
+**Linux**
+```sh
+sh -c "$(wget -qO- https://github.com/adamsthws/firmware-liberator/releases/latest/download/liberate.sh)"
+```
+> <details>
+> <summary>If you see: <code>wget: not found</code></summary>
+>
+> > Use the macOS line instead: the only difference being that it uses `curl` in place of `wget` to fetch your download.
+> </details>
+
+<br>
+
 **Windows**
 ```
 powershell -c "irm https://github.com/adamsthws/firmware-liberator/releases/latest/download/liberate.ps1 | iex"
 ```
+> <details>
+> <summary>If you see: <code>running scripts is disabled</code></summary>
+>
+> > A policy on your computer may be preventing scripts from running.
+> > Your two options are:
+> > - Use a different computer (i.e, one without a restrictive company policy enabled).
+> > - Lift the policy while you convert, then put it back afterward.
+> > To check that, run: `Get-ExecutionPolicy -List`. If it shows `MachinePolicy` or `UserPolicy` set to something other than `Undefined`, do the following...
+> >
+> > Open PowerShell as administrator and run this. It saves a copy of the policy in your user folder first, so it can be put back exactly:
+> >
+> > ```powershell
+> > foreach ($k in "HKLM", "HKCU") { $p = "${k}:\SOFTWARE\Policies\Microsoft\Windows\PowerShell"; if (Test-Path $p) { reg export "$k\SOFTWARE\Policies\Microsoft\Windows\PowerShell" "$HOME\$k-powershell-policy.reg" /y | Out-Null; Set-ItemProperty $p ExecutionPolicy Bypass; Set-ItemProperty $p EnableScripts 1 -Type DWord } }
+> > ```
+> >
+> > Run the liberator again. When the conversion is done, put the policy back as it was:
+> >
+> > ```powershell
+> > foreach ($k in "HKLM", "HKCU") { $f = "$HOME\$k-powershell-policy.reg"; if (Test-Path $f) { Remove-Item -Recurse "${k}:\SOFTWARE\Policies\Microsoft\Windows\PowerShell"; reg import $f 2>$null; Remove-Item $f } }
+> > ```
+> </details>
+
+<br>
 
 **macOS**
 ```sh
 sh -c "$(curl -fsSL https://github.com/adamsthws/firmware-liberator/releases/latest/download/liberate.sh)"
 ```
-**Linux**
-```sh
-sh -c "$(wget -qO- https://github.com/adamsthws/firmware-liberator/releases/latest/download/liberate.sh)"
-```
-> If that says `wget: not found`, use the macOS line instead.
 
-<details>
-<summary>Or with git, or a zip</summary>
+<br>
+<br>
 
-```sh
-git clone https://github.com/adamsthws/firmware-liberator.git
-cd firmware-liberator
-sh start.sh       # Linux / macOS
-.\start.cmd       # Windows
-```
--- or -- [download as a zip](https://github.com/adamsthws/firmware-liberator/archive/refs/heads/main.zip), and double-click `start.cmd`
-</details>
+> **Alternative download method**
+>
+> <details>
+> <summary>Get it with git or download it as a zip</summary>
+>
+> > ```sh
+> > git clone https://github.com/adamsthws/firmware-liberator.git
+> > cd firmware-liberator
+> > sh start.sh       # Linux / macOS
+> > .\start.cmd       # Windows
+> > ```
+> >
+> > -- or -- [download as a zip](https://github.com/adamsthws/firmware-liberator/archive/refs/heads/main.zip)
+> </details>
 
 <br>
 

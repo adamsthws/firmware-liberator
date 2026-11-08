@@ -109,7 +109,7 @@ updates.
 ## A plug from another region
 
 The UK S60TPG and the European S60TPF have both been converted (see
-[Supported Devices](../README.md#supported-devices)). A plug from
+[What you need](../README.md#what-you-need)). A plug from
 another region is expected to work the same way, and the tool checks the plug
 at two points rather than assuming:
 
