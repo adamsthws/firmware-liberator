@@ -33,6 +33,9 @@ PUBLIC_FILES = [
     "SONOFF_SPM-Main_(METERMCU-GD32F103RET6+METERMAIN-ESP32D0WDV3)_ESP32_v1.3.0_user1.bin",
     "SONOFF_Micro_(CKA-DM4-GL)_(FWSWES-SV04MATE)_SV6166F_v3.7.1_user1.bin",
     "SONOFF_L3-5M_(SN-OPL1200-L3RGB)_OPL1200_v1000.2.1060_user1.bin",
+    "SONOFF_M5-1C-3C_(FWSWES-E32T5-T5-ESP32D0WDV3)_ESP32_v1.3.0_user1.bin",
+    "SONOFF_M5-3C-80W_(FWSW-E32M5-M5M-ESP32DOWDR2V3)_ESP32_v1.2.0_user1.bin",
+    "SONOFF_T5-3C-86_(FWSWES-T5TOUCH-T5-CA51F3+FWSWES-T5TOUCH-T5-ESP32D0WDV3)_ESP32_v9.9.2_user1.bin",
     "SONOFF_L3-5M_(SN-OPL1200-L3RGBX)_OPL1200_v1000.2.1062_user1.bin",
 ]
 
@@ -233,6 +236,19 @@ class PublicListTests(unittest.TestCase):
 
     def test_the_stock_model_must_agree_on_the_chip(self):
         self.assertEqual(name_listed(PUBLIC_FILES, "", "SN-BK7238-S60-01"), "")
+
+    def test_an_m5_by_the_file_for_its_run_of_gangs(self):
+        for gangs in (1, 2, 3):
+            kind = kinds.find(f"sonoff-m5-{gangs}c")
+            for product in (f"M5-{gangs}C-86", f"M5-{gangs}C-120"):
+                with self.subTest(product=product):
+                    self.assertTrue(kind.product.fullmatch(product))
+                    self.assertEqual(name_listed(PUBLIC_FILES, product, kind.stock_model), kind.wrapper_model)
+
+    def test_a_run_of_gangs_is_only_those_gangs_of_that_device(self):
+        self.assertEqual(name_listed(PUBLIC_FILES, "M5-4C-86", ""), "")
+        self.assertEqual(name_listed(PUBLIC_FILES, "T5-2C-86", ""), "")
+        self.assertEqual(name_listed(PUBLIC_FILES, "M5-3C-80W", ""), "FWSW-E32M5-M5M-ESP32DOWDR2V3")
 
     def test_two_names_for_one_model_give_none(self):
         self.assertEqual(name_listed(PUBLIC_FILES, "L3-5M", ""), "")

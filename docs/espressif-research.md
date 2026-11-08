@@ -208,8 +208,9 @@ Tried on the real server:
 `tools/ewelink/firmware_name.py` uses this at stage 5, reading only the file's first
 bytes. Where eWeLink offers nothing, it falls back on the names in the public update
 files' filenames ([FlashDumps](https://github.com/openshwprojects/FlashDumps)
-`IoT/zOTAz`), giving a name only when exactly one fits. That finds 9 of 12 kinds and
-none wrongly: the M5s' product names do not match their file's `M5-1C-3C`.
+`IoT/zOTAz`), giving a name only when exactly one fits. That finds all 13 kinds and
+none wrongly. A file for a run of gangs, such as the M5's `M5-1C-3C`, is each gang's
+in it (`M5-2C-86`), unless a file names the device itself, as `M5-3C-80W`'s does.
 
 A wrapper's first byte pair is `03 01`, its record count is byte 1, and 76-byte records
 start at `0x18`. An NSPanel file has 3 names and an SPM 2. A Beken file has the same
