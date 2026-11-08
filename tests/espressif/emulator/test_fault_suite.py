@@ -1070,7 +1070,8 @@ class ScenarioTests(unittest.TestCase):
 class EndChecksTests(unittest.TestCase):
     """A converted plug passes only if the report's end-of-run checks did."""
 
-    def verdict(self, checks, relay="Switches (through eWeLink)", target="sonoff"):
+    def verdict(self, checks, relay="Switches (through eWeLink)", target="sonoff", route="esphome>sonoff",
+                result="Converted"):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             run = tmp / "state/work/captures/plugs" / plugs.folder_name(MAC) / "runs/1/run.log"
@@ -1080,7 +1081,7 @@ class EndChecksTests(unittest.TestCase):
                            "[10:00:03] === run ended ===\n", encoding="utf-8")
             log = tmp / "scenario.log"
             log.write_text("--- a run\n    Result:   Converted\n", encoding="utf-8")
-            sc = fs.Scenario(24, {"id": "esphome>sonoff:R1:plugoff-1", "route": "esphome>sonoff", "step": "R1",
+            sc = fs.Scenario(24, {"id": f"{route}:R1:plugoff-1", "route": route, "step": "R1",
                                   "fault": "plugoff", "arg": 1, "at": 40}, log)
             sc.state, sc.target, sc.started = tmp / "state", target, 0
             sc.memory = mock.Mock(note=mock.Mock(return_value={}))
@@ -1088,7 +1089,7 @@ class EndChecksTests(unittest.TestCase):
                     mock.patch.object(fs, "sh"), mock.patch.object(sc, "leftovers", return_value=[]), \
                     mock.patch.object(sc, "names_seen", return_value=([], [])), \
                     mock.patch.object(sc, "template_ok", return_value=True):
-                return sc.finish([(0, "Converted")], None)
+                return sc.finish([(0, result)], None)
 
     def test_a_run_whose_relay_switched_passes(self):
         self.assertEqual(self.verdict("True")["verdict"], "PASS")
@@ -1099,6 +1100,15 @@ class EndChecksTests(unittest.TestCase):
         row = self.verdict("False", relay="Could not be checked")
         self.assertEqual(row["verdict"], "FAIL-CHECKS")
         self.assertEqual(row["notes"]["checks"], "Checks passed: False; Relay: Could not be checked")
+
+    def test_a_plug_with_no_backup_must_be_reported_keeping_its_own_identity(self):
+        self.assertEqual(self.verdict("True", route="nobackup>sonoff")["verdict"], "FAIL-IDENTITY")
+
+    def test_a_last_run_that_found_nothing_to_convert_has_no_identity_to_report(self):
+        # nobackup>sonoff:R2:cancel-new: cancelled as Sonoff's firmware was
+        # checked, then started again afresh; that run makes no report.
+        row = self.verdict("True", route="nobackup>sonoff", result="Converted (already: nothing to convert)")
+        self.assertEqual(row["verdict"], "PASS")
 
     def test_checks_the_emulator_cannot_run_are_no_failure(self):
         self.assertEqual(self.verdict("Not run", target="sonoff")["verdict"], "PASS")
