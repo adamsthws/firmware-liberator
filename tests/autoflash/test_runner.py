@@ -795,6 +795,20 @@ class UnexpectedErrorTests(unittest.TestCase):
         self.assertEqual(state.status("E3"), "attempted")
         self.assertEqual(told.call_args.args[0], f"FAILED: {stopped}")
 
+    def test_a_run_stopped_as_it_sent_through_ewelink_is_told_to_wait(self):
+        # Seen on the real cloud: a run cancelled during the send, then one
+        # started at once, did not find the device, away from eWeLink for minutes.
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as tmp:
+            state = RunState.open(Path(tmp))
+            send = routes.FAMILY.POINT_OF_NO_RETURN
+            state.mark(send, "attempted", nothing_written=False)
+            self.assertTrue(runner.stopped_mid_send(SimpleNamespace(state=state, consented=True)))
+            # At the go-ahead itself nothing was sent.
+            self.assertFalse(runner.stopped_mid_send(SimpleNamespace(state=state, consented=False)))
+            state.mark(send, "done")
+            self.assertFalse(runner.stopped_mid_send(SimpleNamespace(state=state, consented=True)))
+
     def test_ctrl_c_is_not_swallowed(self):
         with self.assertRaises(KeyboardInterrupt):
             self.run_step("E1", KeyboardInterrupt())

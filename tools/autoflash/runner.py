@@ -328,6 +328,15 @@ def confirm_skip(ctx: Context, step: str, title: str) -> bool:
     return False
 
 
+def stopped_mid_send(ctx: Context) -> bool:
+    """Whether a run stopped while it sent the device its first firmware
+    through eWeLink, the go-ahead given: the device may have the command. One
+    stopped so stays away from eWeLink a few minutes (seen on the real cloud),
+    and a run started at once does not find it."""
+    return (ctx.state.status(routes.FAMILY.POINT_OF_NO_RETURN) == ATTEMPTED
+            and bool(getattr(ctx, "consented", False)))
+
+
 def tell_how_to_carry_on() -> None:
     output.tell("")
     output.tell("Fix the cause, then carry on with the same command again:")

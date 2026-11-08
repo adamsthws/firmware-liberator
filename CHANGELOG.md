@@ -69,6 +69,9 @@ check.
 - A plug offline in eWeLink when a run sends to it is waited for five and a half
   minutes, not three: after a send cut off part way it stays away about five,
   and the run gave up just before it came back.
+- A run stopped with Ctrl-C while it sent a device its firmware through eWeLink
+  says to wait about 3 minutes before running again: the device stays away from
+  eWeLink a few minutes after that, and a run started at once did not find it.
 - The Sonoff Basic Gen5 (BASIC-1GS). It has no public dump, so the tool checks
   the partition table in eWeLink's official update file before writing anything,
   and logs what the run learns. Beken devices on any other table are refused.

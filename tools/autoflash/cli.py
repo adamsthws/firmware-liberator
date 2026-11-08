@@ -637,6 +637,9 @@ def _main() -> int:
         output.tell("")
         output.tell("Stopped with Ctrl-C. Run again to pick up where you left off, or to start again.")
         output.tell("(Every step checks the device first, so running again is safe.)")
+        if runner.stopped_mid_send(ctx):
+            output.tell("It was being sent its new firmware through eWeLink, and stays away from eWeLink a")
+            output.tell("few minutes after that is stopped: wait about 3 minutes before running again.")
         ending = "cancelled"
         return 130
     finally:
