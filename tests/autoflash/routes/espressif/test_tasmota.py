@@ -20,6 +20,7 @@ from tools.autoflash.routes.espressif import evidence, hub, source as espressif_
 from tools.autoflash.state import ATTEMPTED, FAILED, RunState
 from tools.espressif.safeboot import prepare_imprinted_bundle, safeboot_migration
 from tools.espressif.safeboot.safeboot_migration import INTERIM_TABLE_SHA256
+from tools.espressif.safeboot.safeboot_migration import OFFICIAL_TASMOTA_VERSION
 
 
 class TasmotaUpdateTests(RouteTestCase):
@@ -40,11 +41,11 @@ class TasmotaUpdateTests(RouteTestCase):
 
     def test_an_earlier_release_is_offered_the_one_this_tool_installs(self):
         ctx, route, offered = self.settle("15.6.0")
-        self.assertEqual(offered, [f"Tasmota, updated to {tasmota.OFFICIAL_TASMOTA_VERSION}", "ESPHome",
+        self.assertEqual(offered, [f"Tasmota, updated to {OFFICIAL_TASMOTA_VERSION}", "ESPHome",
                                    "Sonoff's own firmware (back to eWeLink, from its backup)"])
         self.assertEqual(route, ("tasmota", "outdated"))
         self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A5", "U5", "U6"])
-        self.assertEqual(update.versions(ctx), ("15.6.0", tasmota.OFFICIAL_TASMOTA_VERSION))
+        self.assertEqual(update.versions(ctx), ("15.6.0", OFFICIAL_TASMOTA_VERSION))
         self.assertTrue(runs.plug_runs_tasmota(ctx.state))
 
     def test_asked_for_on_the_command_line_it_is_updated_unasked(self):
@@ -57,7 +58,7 @@ class TasmotaUpdateTests(RouteTestCase):
 
     def test_this_release_or_anyones_own_build_is_kept_as_it_is(self):
         # Its meter checked instead (rerun_on_tasmota), as ever.
-        for why, release in (("this release", tasmota.OFFICIAL_TASMOTA_VERSION), ("not official", None)):
+        for why, release in (("this release", OFFICIAL_TASMOTA_VERSION), ("not official", None)):
             with self.subTest(why):
                 with self.assertRaisesRegex(routes.NothingToDo, "already runs Tasmota"):
                     self.settle(release, given="tasmota", run=why)
@@ -76,7 +77,7 @@ class TasmotaUpdateTests(RouteTestCase):
         device = SimpleNamespace(is_safeboot=lambda: next(asks),
                                  command=lambda text, timeout=None: commands.append(text) or {})
         ctx = self.ctx(source="outdated", firmware="tasmota", update_from="15.6.0",
-                       update_to=tasmota.OFFICIAL_TASMOTA_VERSION)
+                       update_to=OFFICIAL_TASMOTA_VERSION)
         ctx.device = device
         return ctx, commands
 
@@ -103,17 +104,17 @@ class TasmotaUpdateTests(RouteTestCase):
 
     def test_the_check_waits_for_the_new_release_then_checks_the_meter(self):
         ctx, _ = self.plug()
-        answers = iter(["15.6.0", None, tasmota.OFFICIAL_TASMOTA_VERSION])
+        answers = iter(["15.6.0", None, OFFICIAL_TASMOTA_VERSION])
         with mock.patch.dict(update.RELEASE, tasmota=lambda ctx: next(answers)), \
                 mock.patch.object(tasmota, "calibrate_tasmota_meter", return_value={"changed": False}) as meter, \
                 mock.patch.object(time, "sleep"):
             result = tasmota.step_tasmota_updated(ctx)
-        self.assertEqual((result["to"], result["meter"]), (tasmota.OFFICIAL_TASMOTA_VERSION, {"changed": False}))
+        self.assertEqual((result["to"], result["meter"]), (OFFICIAL_TASMOTA_VERSION, {"changed": False}))
         meter.assert_called_once()
 
     def test_a_try_cut_off_is_judged_by_the_release_it_runs(self):
         ctx, _ = self.plug()
-        for release, finished in ((tasmota.OFFICIAL_TASMOTA_VERSION, True), ("15.6.0", False), (None, None)):
+        for release, finished in ((OFFICIAL_TASMOTA_VERSION, True), ("15.6.0", False), (None, None)):
             with mock.patch.dict(update.RELEASE, tasmota=lambda ctx, release=release: release):
                 self.assertIs(evidence.ATTEMPTED_EVIDENCE["U5"](ctx)[0], finished, release)
                 self.assertIs(espressif.STEP_VERIFIERS["U5"](ctx)[0], finished is not False, release)

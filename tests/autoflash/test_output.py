@@ -560,18 +560,6 @@ class ConciseTests(OutputTestCase):
         self.assertEqual(self.drawn(body), ["Stage 8 - Installing interim firmware - Complete",
                                             "Stage 9 - Preparing memory layout - Complete"])
 
-    def test_what_a_stage_kept_is_shown_again_under_its_line(self):
-        def body():
-            output.stage_begin(16, "Configuring Tasmota")
-            output.tell("    Setting the template...")
-            output.keep("    The meter is left as it is: the meter did not report.")
-            output.stage_end("complete")
-            output.stage_begin(17, "Installing Safeboot")
-            output.stage_end("complete")
-        self.assertEqual(self.drawn(body), ["Stage 16 - Configuring Tasmota - Complete", "",
-                                            "The meter is left as it is: the meter did not report.",
-                                            "Stage 17 - Installing Safeboot - Complete"])
-
     def test_a_stage_that_stopped_leaves_what_it_showed(self):
         def body():
             output.stage_begin(8, "Installing interim firmware")

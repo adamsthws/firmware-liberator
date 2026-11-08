@@ -354,8 +354,8 @@ def calibrate_esphome_meter(ctx: Context) -> dict[str, Any]:
     except esphome.ApiLocked:
         given = False
     if not given:
-        output.keep("    ESPHome did not take the device's factory calibration from its backup")
-        output.keep("    (one older than 1.4.0, or whose API key is not known).")
+        output.say("    ESPHome did not take the device's factory calibration from its backup")
+        output.say("    (one older than 1.4.0, or whose API key is not known): the report says so.")
         return {"skipped": "ESPHome did not take it"}
     # Its sensor says what it made of it once the action has run.
     state = None

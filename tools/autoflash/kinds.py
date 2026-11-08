@@ -112,6 +112,8 @@ class Kind:
     # wiring (the POW Elite's 16 A and 20 A): only eWeLink's product model then
     # says it is this kind, and a plug it does not name is not converted.
     product_model_decides: bool = False
+    # Whether it has a power meter: the report says how its calibration went.
+    has_meter: bool = False
     # Whether its meter is calibrated as the S60's (tools/autoflash/calibration.py).
     calibrated_as_s60: bool = False
     # Its stock partition table (tools/espressif/layouts.py), by key.
@@ -206,6 +208,7 @@ SONOFF_S60 = Kind(
     esphome_legacy_friendly_name="Sonoff S60",
     calibrated_as_s60=True,
     example_product_model="S60TPG",
+    has_meter=True,
 )
 
 SONOFF_S61 = Kind(
@@ -228,6 +231,7 @@ SONOFF_S61 = Kind(
     openbeken_revert="AutoflashRevertToStock",
     uses_lan_control=False,
     example_product_model="S61STPF",
+    has_meter=True,
 )
 
 # Known from eWeLink's official update file and a pin map, not from a dump of one
@@ -275,6 +279,7 @@ SONOFF_POW_ELITE = Kind(
     esphome_legacy_prefix="",
     product_model_decides=True,
     example_product_model="POWR316D",
+    has_meter=True,
 )
 
 SONOFF_POWCT = Kind(
@@ -295,6 +300,7 @@ SONOFF_POWCT = Kind(
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",
     example_product_model="POWCT",
+    has_meter=True,
 )
 
 SONOFF_NSPANEL = Kind(
@@ -415,6 +421,7 @@ SONOFF_DUALR3 = Kind(
     # A real one's boot log: laid out as the TH Elite is, not as the POW Elite.
     layout="sonoff-th-elite",
     example_product_model="DUALR3",
+    has_meter=True,
 )
 
 

@@ -181,10 +181,10 @@ class StepTests(unittest.TestCase):
         def command(text, timeout=None):
             raise device.DeviceError("no answer")
         with mock.patch.object(wifi, "backup_calibration", return_value=None), \
-             mock.patch.object(output, "keep") as kept:
+             mock.patch.object(output, "say") as said:
             outcome = tasmota.calibrate_tasmota_meter(self.ctx(command))
-        self.assertEqual(outcome, {"skipped": "no answer"})
-        self.assertIn("left as it is", kept.call_args.args[0])   # still said once the stage has passed
+        self.assertEqual(outcome, {"skipped": "no answer"})   # the report says so
+        self.assertIn("left as it is", said.call_args.args[0])
 
     def test_a_rerun_on_tasmota_checks_its_meter(self):
         with mock.patch.object(unlock, "unlock_tasmota") as unlocked, \

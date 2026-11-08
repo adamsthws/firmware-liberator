@@ -1,7 +1,7 @@
 """The screen a whole run leaves, route by route: every route's own stages,
 run by the run's own loop (runner.run_steps) and drawn by output.py as on a
 terminal, each step standing in for what steps do - a note, a section, a
-question answered, a note kept, a try that fails on the network, a later
+question answered, a try that fails on the network, a later
 step finding an earlier one did not take - then read back as a terminal
 shows it (tools/repo/unattended_run.py).  Every stage must leave one line,
 and nothing it showed on the way."""
@@ -23,7 +23,6 @@ from tools.autoflash.state import RunState
 from tools.repo import unattended_run
 
 SIZE = (100, 40)
-KEPT = "    The meter is left as it is: the meter did not report."
 
 
 class Terminal(io.StringIO):
@@ -69,8 +68,6 @@ class RouteScreenTests(unittest.TestCase):
                     sys.stdout.write("Go ahead? y\n")   # as input() shows it, and the answer echoed
                     output.answered("y")
                     output.transient_end()
-                if index == 2:
-                    output.keep(KEPT)
                 if step == retried and calls[step] == 1:
                     output.tell("    The device's console: 00:00:00.328 BRY: Berry initialized")
                     raise PhaseError(f"the device stopped the {step} without reaching this computer")
@@ -136,11 +133,6 @@ class RouteScreenTests(unittest.TestCase):
                 for gone in ("under way", "A section", "Go ahead", "console", "FAILED", "trying again",
                              "not installed", "again."):
                     self.assertNotIn(gone, screen)
-                if len(steps) > 2:
-                    rows = screen.splitlines()
-                    under = next(i for i, row in enumerate(rows) if (found := unattended_run.STAGE_ROW.match(row))
-                                 and found["number"] == "3")   # the third step's stage, which kept a note
-                    self.assertEqual([row.strip() for row in rows[under + 1:under + 3]], ["", KEPT.strip()], screen)
                 self.assertIn("under way", log)   # the log keeps everything
                 if any(step in family.RETRY_STEPS for step in steps):
                     self.assertIn("trying again", log)
