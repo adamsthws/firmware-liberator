@@ -2,16 +2,16 @@
 """Where the Beken emulator keeps what it makes, in captures/emulation/beken/,
 laid out as the Espressif emulator's is in captures/emulation/:
 
-    state/, state-N/    a plug (bk-emu.sh plug, --instance N) and its computer's copy
+    state/, state-N/    a plug (beken-emu.sh plug, --instance N) and its computer's copy
     saved/              the starting plugs the fault suite's prep saved
     legacy/<release>/   an earlier release's tree, for the update scenarios
     suite/, suite-*/    the fault suite's results and logs
-    firmwares/          the public dumps fetched from upstream (bk-emu.sh dump)
+    firmwares/          the public dumps fetched from upstream (beken-emu.sh dump)
 
     python3 -I tools/beken/emulator/folders.py migrate
 
 moves the folders an earlier checkout named after the S61 (captures/emulation/s61/,
-s61-suite/, beken-firmwares/ ...) to these, once: bk-emu.sh and the fault suite
+s61-suite/, beken-firmwares/ ...) to these, once: beken-emu.sh and the fault suite
 do it before they use them. All of them are emulator state that can be made
 again. None is moved while a container uses it, and none over a folder already
 there.
@@ -32,7 +32,7 @@ BEKEN = EMU / "beken"
 
 
 def state(instance: int | None = None) -> Path:
-    """A plug's state: bk-emu.sh's, or with --instance N its Nth's."""
+    """A plug's state: beken-emu.sh's, or with --instance N its Nth's."""
     return BEKEN / ("state" if instance is None else f"state-{instance}")
 
 

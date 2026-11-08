@@ -222,11 +222,11 @@ kind a person converting it again would have.
 ### The Beken emulator
 
 ```sh
-tools/beken/emulator/bk-emu.sh --fresh plug
-tools/beken/emulator/bk-emu.sh computer tools/autoflash/cli.py run --unattended --env-file captures/tool.env --firmware esphome
+tools/beken/emulator/beken-emu.sh --fresh plug
+tools/beken/emulator/beken-emu.sh computer tools/autoflash/cli.py run --unattended --env-file captures/tool.env --firmware esphome
 ```
 
-`bk-emu.sh computer` runs the tool on the plug's Wi-Fi, in its own copy of this
+`beken-emu.sh computer` runs the tool on the plug's Wi-Fi, in its own copy of this
 checkout (the plug's `work/`), so the env file is that copy's
 `captures/tool.env`: a made-up eWeLink account, as the plug's eWeLink is the
 local stub, which takes any (the fault suite writes one there). Several run side
@@ -731,7 +731,7 @@ Before that:
 ### The Beken fault suite
 
 `tools/beken/emulator/fault_suite.py` does the same for the Beken plugs, on
-emulated ones started from the public S61s dump (`bk-emu.sh --instance N plug`,
+emulated ones started from the public S61s dump (`beken-emu.sh --instance N plug`,
 [its README](../tools/beken/emulator/README.md)): each its own plug on a home
 Wi-Fi of its own, with the local eWeLink stub, so nothing reaches the internet
 and every scenario can run side by side.

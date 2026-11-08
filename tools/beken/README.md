@@ -11,18 +11,18 @@ provisioning, the button and pairing drives), are in
 
 **The emulator**: how to use it is in
 [docs/emulator.md](../../docs/emulator.md#the-beken-emulator), and how it works in
-[emulator/](emulator/README.md). Its `bk-emu.sh python` runs a tool in its
+[emulator/](emulator/README.md). Its `beken-emu.sh python` runs a tool in its
 container, with this checkout at `/work`:
 
 ```sh
-tools/beken/emulator/bk-emu.sh python tools/beken/emulator/integrity_gate.py
+tools/beken/emulator/beken-emu.sh python tools/beken/emulator/integrity_gate.py
 ```
 
 In the container the emulator is at `/opt/beken-emulator`, the tools' default
 `BK_EMU_ROOT`, and the fetched dump their default `AUTOFLASH_BEKEN_EMU_DUMP`;
 the image's Python has `capstone` for the static tools too (`angr`, for `decomp.py` only, goes
 into a virtual environment of your own, never the system). The examples below
-leave out the `bk-emu.sh python` prefix and assume the current directory is
+leave out the `beken-emu.sh python` prefix and assume the current directory is
 `tools/beken`.
 
 ## Static analysis
@@ -121,7 +121,7 @@ run from there.
   repackaged stock app's) in the download slot of a copy of a dump, seed test
   Wi-Fi credentials in its EasyFlash store, and boot the stock bootloader over it
   with the emulator modelling the flash writes; the flash as the run leaves it
-  is saved, for `bk-emu.sh run OUT --wifi --wifi-peer ap ...` to show the
+  is saved, for `beken-emu.sh run OUT --wifi --wifi-peer ap ...` to show the
   installed firmware start afresh and join.
   `python3 emulator/stage_apply.py dump.bin image.rbl out.bin` (env `SECS`, `SSID`, `PASS`, `SEED=0`)
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The emulated Beken plug: on until switched off, through every firmware it
-is converted to and back, as bk-emu.sh plug runs it (plug-net.sh).
+is converted to and back, as beken-emu.sh plug runs it (plug-net.sh).
 
     python plug.py --state DIR [--tap tap0]
 
@@ -19,7 +19,7 @@ is left alone.
 PLUG_TRACE=ADDR,ADDR (hex) logs each call there to the serial output.
 
 The power switch is DIR/power: "off" stops the plug and keeps its flash,
-"on" starts it again (bk-emu.sh power). The serial output is DIR/serial.log.
+"on" starts it again (beken-emu.sh power). The serial output is DIR/serial.log.
 """
 from __future__ import annotations
 

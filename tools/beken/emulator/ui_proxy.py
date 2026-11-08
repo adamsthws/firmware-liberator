@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """A proxy in front of the emulated plug's web page - OpenBeken's or ESPHome's -
-so a browser can use it (bk-emu.sh ui).
+so a browser can use it (beken-emu.sh ui).
 
 Why it is needed: the emulated plug runs the real firmware on lwIP, but under
 Unicorn, far slower than a chip. OpenBeken answers every request with

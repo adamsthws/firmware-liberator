@@ -37,7 +37,7 @@ CLOUD_WAIT = 180.0
 BACKUP_TRIES = 3
 BACKUP_PAUSE = 10.0
 # The emulated plug's power switch, where the run has one: a file holding off or
-# on (tools/beken/emulator/bk-emu.sh computer), offered as a choice of its own.
+# on (tools/beken/emulator/beken-emu.sh computer), offered as a choice of its own.
 EMULATED_POWER = "AUTOFLASH_EMULATOR_POWER"
 EMULATED_OFF = 3.0   # seconds off: long enough for the emulator to stop the plug
 # An OpenBeken's uptime set against the time since it fetched an image: this

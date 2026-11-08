@@ -356,7 +356,7 @@ To try one in the emulator, make its whole flash and start a plug from it:
 
 ```sh
 python3 tools/beken/rebuild_dump.py S61-DUMP.bin OFFICIAL.bin captures/device.bin
-AUTOFLASH_BEKEN_EMU_FLASH=captures/device.bin tools/beken/emulator/bk-emu.sh --fresh plug
+AUTOFLASH_BEKEN_EMU_FLASH=captures/device.bin tools/beken/emulator/beken-emu.sh --fresh plug
 ```
 
 This proves the firmware and the tool's path, not the device's hardware. The

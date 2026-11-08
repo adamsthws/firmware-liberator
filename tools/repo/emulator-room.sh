@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # What every emulator script shares, sourced by tools/espressif/emulator/emu.sh,
-# tools/beken/emulator/bk-emu.sh and tools/espressif/emulator/windows-test.sh.
+# tools/beken/emulator/beken-emu.sh and tools/espressif/emulator/windows-test.sh.
 
 # checkout_files SRC - the files git tracks or would in SRC, NUL-separated: what an
 # emulated computer's copy of the checkout holds.

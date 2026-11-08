@@ -8,10 +8,10 @@ test Wi-Fi credentials in the EasyFlash store unless SEED=0, so the firmware the
 bootloader installs has a network to join. The emulator models the flash writes
 the bootloader makes (flash_writethrough: the RDID and the XIP mirror, patch
 0003), and the flash as the run leaves it is saved to OUT: a second boot of OUT,
-`bk-emu.sh run OUT --wifi --wifi-peer ap --wifi-ssid SSID --wifi-pass PASS`,
+`beken-emu.sh run OUT --wifi --wifi-peer ap --wifi-ssid SSID --wifi-pass PASS`,
 shows the installed firmware start afresh and join.
 
-    bk-emu.sh python tools/beken/emulator/stage_apply.py DUMP IMAGE.rbl OUT
+    beken-emu.sh python tools/beken/emulator/stage_apply.py DUMP IMAGE.rbl OUT
     (env: SECS=120, SSID, PASS, SEED=0 for no credentials; IMAGE "-" boots DUMP as it is)
 """
 from __future__ import annotations

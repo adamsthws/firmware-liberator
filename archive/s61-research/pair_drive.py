@@ -37,9 +37,9 @@ integrity-gate bypass (force the compare at 0x29c3c to "equal") and raising
 Timer 5's interrupt status each slow tick (the key/app periodics run on
 bk_timer = Timer 5, which the emulator does not raise on its own).
 
-  $(tools/beken/emulator/bk-emu.sh python) archive/s61-research/pair_drive.py 0        # soft-AP (coexist)
-  $(tools/beken/emulator/bk-emu.sh python) archive/s61-research/pair_drive.py 1        # station
-  $(tools/beken/emulator/bk-emu.sh python) archive/s61-research/pair_drive.py airkiss  # sniffer-start
+  $(tools/beken/emulator/beken-emu.sh python) archive/s61-research/pair_drive.py 0        # soft-AP (coexist)
+  $(tools/beken/emulator/beken-emu.sh python) archive/s61-research/pair_drive.py 1        # station
+  $(tools/beken/emulator/beken-emu.sh python) archive/s61-research/pair_drive.py airkiss  # sniffer-start
 
 Env: SECS (run seconds, 18), FIRE_AT (when to drive, 8), SSID/PASS (peer AP to
 join for method 1 / credentials written into the config buffer).

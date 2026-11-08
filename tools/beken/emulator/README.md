@@ -6,7 +6,7 @@ for working on it. How to use it is in
 
 ## How it fits together
 
-`bk-emu.sh plug` runs the public S61s dump as a plug provisioned on a home
+`beken-emu.sh plug` runs the public S61s dump as a plug provisioned on a home
 Wi-Fi, on a Docker network of its own (`autoflash-beken-emu`, apart from the
 Espressif emulator and everything else). The fork's `--net-tap` puts the plug's
 radio on a TAP device, which `plug-net.sh` bridges with the container's
@@ -31,7 +31,7 @@ one archive named after its commit and never changed (`git archive` of the
 pinned commit, which `image.sh source` reproduces byte for byte), downloaded
 once into `captures/emulation/cache/` and checked against the SHA-256
 `UPSTREAM` pins. So the emulator needs nothing outside this repository.
-`bk-emu.sh` with no argument lists the rest; what each
+`beken-emu.sh` with no argument lists the rest; what each
 patch does and why, how to change them, and how the pin moves, is
 [below](#the-fork).
 
@@ -50,7 +50,7 @@ patch does and why, how to change them, and how the pin moves, is
 Run the S61 dump:
 
 ```sh
-tools/beken/emulator/bk-emu.sh run captures/<S61 dump>.bin --wifi-peer auto
+tools/beken/emulator/beken-emu.sh run captures/<S61 dump>.bin --wifi-peer auto
 # which is, in the container:
 python /opt/beken-emulator/src/main.py <S61 dump>.bin --with-boot -chip BK7238 --only-uart --wifi-peer auto
 ```
@@ -110,8 +110,8 @@ OpenBeken image and its FNV equals the RBL `raw hash`.
 The emulator is upstream BekenEmulator at the commit `UPSTREAM` pins - the
 archive on the release `emulator-source-beken-<commit>`, whose hash `UPSTREAM` also pins -
 with these patches applied in name order when the image is built
-(`image.sh ensure` builds or pulls it; `bk-emu.sh dump` fetches the public
-S61s dump from upstream's repository; `bk-emu.sh test` runs upstream's
+(`image.sh ensure` builds or pulls it; `beken-emu.sh dump` fetches the public
+S61s dump from upstream's repository; `beken-emu.sh test` runs upstream's
 self-tests under them, fetching its other devices' dumps the same way). Each is one
 commit's worth, with its reasoning in its header.
 
@@ -135,8 +135,8 @@ commit's worth, with its reasoning in its header.
   network, which is the device's router itself and reachable only through
   port forwards. The device is then a station on the host's network, given
   its address by that network's DHCP server and reached at it by every
-  protocol: how `bk-emu.sh plug` puts the plug on a Docker network of its
-  own, where `bk-emu.sh computer` reaches it. The built-in network's own options are refused
+  protocol: how `beken-emu.sh plug` puts the plug on a Docker network of its
+  own, where `beken-emu.sh computer` reaches it. The built-in network's own options are refused
   beside it.
 
 To change the fork: extract the archive (`captures/emulation/cache/`), apply

@@ -451,7 +451,7 @@ class SavingTests(unittest.TestCase):
 
 
 class InstanceTests(unittest.TestCase):
-    def test_each_instance_is_bk_emu_shs_own(self):
+    def test_each_instance_is_beken_emu_shs_own(self):
         instance = fault_suite.Instance(3)
         self.assertEqual(instance.command("power", "on"),
                          [str(fault_suite.BK_EMU), "--instance", "3", "power", "on"])

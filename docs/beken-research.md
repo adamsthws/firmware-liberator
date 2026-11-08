@@ -467,7 +467,7 @@ changes, and the stub serves a leaf signed by that CA.
 against the name the firmware verifies (it sends SNI `8.8.8.8`) — and a
 **serverAuth EKU**. With those the verification passes.
 
-**Verified** (`tools/beken/emulator/bk-emu.sh python tools/beken/emulator/cloud_online.py`):
+**Verified** (`tools/beken/emulator/beken-emu.sh python tools/beken/emulator/cloud_online.py`):
 
 ```
 dispatch -> {"error":0,...,"domain":"8.8.8.8","port":"443"}   (accepted)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The Beken fault suite: every direction, every step that writes to or waits
-on the plug, every fault - on emulated Beken plugs side by side (bk-emu.sh
+on the plug, every fault - on emulated Beken plugs side by side (beken-emu.sh
 plug, from the public S61s dump), as tools/espressif/emulator/fault_suite.py
 does for the Espressif plugs.
 
@@ -47,7 +47,7 @@ also checked: by the names it asked DHCP for, it was autoflash-recovery-CDEF
 there from its first request and never OpenBeken's own name; and once ESPHome
 is on it, the interim's settings are erased from its flash (interim_problems).
 
-Each emulator is a plug of its own (bk-emu.sh --instance N: autoflash-beken-emu-N),
+Each emulator is a plug of its own (beken-emu.sh --instance N: autoflash-beken-emu-N),
 AUTOFLASH_BEKEN_EMU_WORKERS of them at once (default 2: each takes a core, and the
 tool's runs share what is left). Sonoff's firmware restarts by itself once
 it has an update, in the emulator as on a real plug
@@ -84,7 +84,7 @@ from tools.beken.emulator import folders  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import MemoryWatch  # noqa: E402
 
-BK_EMU = REPO / "tools/beken/emulator/bk-emu.sh"
+BK_EMU = REPO / "tools/beken/emulator/beken-emu.sh"
 SAVED = folders.SAVED
 OUT = Path(os.environ.get("AUTOFLASH_BEKEN_EMU_SUITE_DIR", folders.SUITE))
 RESULTS = OUT / "results.jsonl"
@@ -229,7 +229,7 @@ class Instance:
 
     def __init__(self, n: int):
         self.n = n
-        # As bk-emu.sh --instance N names them.
+        # As beken-emu.sh --instance N names them.
         self.plug = f"autoflash-beken-emu-{n}"
         self.network = f"autoflash-beken-emu-{n}"
         self.computer = f"autoflash-beken-emu-computer-{n}"
