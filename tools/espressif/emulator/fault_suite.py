@@ -28,8 +28,10 @@ and that each run of this checkout's tool left one line a stage on its screen,
 none of a try that failed (FAIL-SCREEN if not).
 And readouts (readout_scenarios, go_readout): of a plug fresh from Sonoff's
 firmware, faulted in the read and as Sonoff's firmware is put back, until a
-whole readout.tar is kept and the plug is back on Sonoff's; and of a plug on
-Tasmota, which must be refused.
+whole readout.tar is kept and the plug is back on Sonoff's; of a plug on
+Tasmota, which must be refused; and of every device in an account
+(readout_all_scenarios, go_readout_all), on the stub, each sent to the API's
+own code (AUTOFLASH_NODE) and judged by what it answered and kept.
 
 How many at once, from the environment:
     AUTOFLASH_EMU_CLOUD_WORKERS     emulators for the scenarios that need eWeLink (from
@@ -268,6 +270,38 @@ READOUT_FAULTS = [("read", "plugoff", 1), ("read", "outage", 30), ("read", "cras
 # installer too, but only the readout's.
 READOUT_THEN = ("sonoff", "readout", "sonoff-elsewhere")
 READOUT = "readout.tar"
+# A readout of every device in the account (cli.py readout --all), the plug
+# fresh from Sonoff's firmware among devices the stub lists beside it, none of
+# them emulated (AUTOFLASH_EMU_STUB_OTHERS): each sent to the API Worker's own
+# code (unattended-test.sh --api). The accounts, by name: two first-stage
+# devices; three alike (product, model, version: of which the API keeps one
+# from one sender) and one not; two whose first is in the API's ENOUGH, with the plug; and
+# seven, enough quick first stages to reach the API's two readouts a minute.
+# Made up, as docs/cloud-stub.md asks.
+READOUT_ALL = "sonoff>readout-all"
+
+
+def other_device(number, product, model=None, version="1.0.0"):
+    """One of the account's other devices, made up (stub_server.Stub.other_item)."""
+    return {"deviceid": f"10000000{number:02x}", "name": f"Test device {number}", "productModel": product,
+            "model": model or f"SN-TEST-{product}-01", "uiid": 1, "fwVersion": version}
+
+
+ACCOUNTS = {
+    "mixed": [other_device(1, "TESTLIGHT"), other_device(2, "TESTSWITCH", version="2.1.0")],
+    "alike": [other_device(1, "TESTLIGHT"), other_device(2, "TESTLIGHT"), other_device(3, "TESTLIGHT"),
+              other_device(4, "TESTSWITCH")],
+    "enough": [other_device(1, "TESTLIGHT"), other_device(2, "TESTSWITCH")],
+    "many": [other_device(n, f"TESTMODEL{n}") for n in range(1, 8)],
+}
+# The faults in the emulated plug's read (READOUT_FAULTS), after the other
+# devices' first stages: the run stops there, and is run again.
+READOUT_ALL_FAULTS = [("read", "plugoff", 1), ("read", "crash", 1)]
+# A line of the API's requests.log (website/api/local.mjs): when, the method,
+# the path, the body's length, and the answer's status and body.
+API_REQUEST = re.compile(r"^\S+ (\w+) (\S+) \d+ -> (\d+) (.*)$")
+# What the readout of every device says as it starts on each one.
+READING_OUT = re.compile(r"Reading out (.*) \((\d+) of (\d+)\)\.\.\.")
 # Where the readout asks for the plug to be switched off and on, and waits.
 # The answers read off a run's report, in its log: each the last on its row
 # (report.report_screen).  The labels before 2.4.0 too, for an earlier
@@ -463,6 +497,7 @@ def composite_scenarios():
         yield one(route, step, "blips", 3, at=10)
         yield one(route, step, "lossy", "phase", at=10)
     yield from readout_scenarios()
+    yield from readout_all_scenarios()
 
 
 def readout_scenarios():
@@ -479,6 +514,109 @@ def readout_scenarios():
                    step="read", fault="crash", arg=1, at=40, then=then)
     yield dict(id=sid("tasmota>readout", "start", "none", "refused"), route="tasmota>readout", step="start",
                fault="none", arg="refused", at=40)
+
+
+def readout_all_scenarios():
+    """A readout of every device in each account (ACCOUNTS), unattended
+    (go_readout_all); and in the mixed one, with a fault in the plug's read."""
+    for account in ACCOUNTS:
+        yield dict(id=sid(READOUT_ALL, "start", "none", account), route=READOUT_ALL, step="start",
+                   fault="none", arg=account, at=40, account=account)
+    for step, fault, arg in READOUT_ALL_FAULTS:
+        yield dict(id=sid(READOUT_ALL, step, fault, arg), route=READOUT_ALL, step=step,
+                   fault=fault, arg=arg, at=40, account="mixed")
+
+
+def is_readout(route):
+    """Whether `route` is a readout's (go_readout, go_readout_all), not a conversion's."""
+    return route.partition(">")[2] in ("readout", "readout-all")
+
+
+def plug_product():
+    """eWeLink's product model for the emulated plug: its record's (a public
+    dump's test copy has one), else its kind's example. The stub lists it so
+    (AUTOFLASH_EMU_STUB_PRODUCT_MODEL), a product the tool asks /wanted of."""
+    return ((plugs.read_plug(MAC) if MAC else {}).get("product_model") or PLUG.example_product_model).upper()
+
+
+def api_asks(requests):
+    """The API's requests.log as the tool's readout of every device made it:
+    a /wanted for each device, then each /readout of it sent, a 429 sent
+    again. Each device's [wanted, why not, [(status, id) of each send]] -
+    wanted as the tool takes it: one it could not read goes ahead - and the
+    sends no /wanted came before."""
+    asks, unasked = [], []
+    for line in requests.splitlines():
+        found = API_REQUEST.match(line)
+        if not found:
+            continue
+        _, path, status, body = found.groups()
+        try:
+            answer = json.loads(body)
+        except ValueError:
+            answer = {}
+        answer = answer if isinstance(answer, dict) else {}
+        if path == "/wanted":
+            asks.append([not (status == "200" and answer.get("wanted") is False), str(answer.get("why") or ""), []])
+        elif path == "/readout":
+            (asks[-1][2] if asks else unasked).append((int(status), str(answer.get("id") or "")))
+    return asks, unasked
+
+
+def readout_all_problems(run, finished, api, account, plug, kept=()):
+    """What one run of a readout of every device did wrong, from its log
+    (`run`), whether it finished, and what the API was asked and kept (`api`,
+    its folder): [(verdict, why)], [] for nothing; and a summary. `account`
+    is how many devices the account holds, `plug` the emulated plug's product
+    model, `kept` the readouts the run kept unsent. Judged by the API's own
+    answers, never its rules: every device asked /wanted once, all of them in
+    a finished run (FAIL-NOT-ASKED); every one wanted sent until taken - 201,
+    after nothing but 429s - but the one a stopped run stopped on
+    (FAIL-NOT-SENT); none not wanted sent (FAIL-SENT-UNWANTED); each taken in
+    the API's store (FAIL-NOT-STORED), the plug's whole (FAIL-READOUT); and
+    none kept unsent (FAIL-KEPT-UNSENT)."""
+    problems = []
+    devices = [(who, int(total)) for who, _, total in READING_OUT.findall(run)]
+    requests = api / "requests.log"
+    asks, unasked = api_asks(requests.read_text(encoding="utf-8", errors="replace") if requests.exists() else "")
+    if finished and (len(devices) != account or any(total != account for _, total in devices)):
+        problems.append(("FAIL-NOT-ASKED", f"{len(devices)} devices read out, of the account's {account}"))
+    if len(asks) != len(devices) and (finished or len(asks) != len(devices) - 1):
+        problems.append(("FAIL-NOT-ASKED", f"{len(asks)} asked /wanted, of {len(devices)} devices read out"))
+    stored = sorted(path.name for path in api.glob("readouts__*.tar")) if api.is_dir() else []
+    whole = False
+    for number, (wanted, why, sent) in enumerate(asks):
+        who = devices[number][0] if number < len(devices) else f"device {number + 1}"
+        statuses = [status for status, _ in sent]
+        if not wanted:
+            if sent:
+                problems.append(("FAIL-SENT-UNWANTED", f"{who}: not wanted ({why}), sent all the same"))
+            continue
+        if not sent:
+            if finished or number != len(asks) - 1:   # else the device the run stopped on
+                problems.append(("FAIL-NOT-SENT", f"{who}: wanted, never sent"))
+            continue
+        if statuses[-1] != 201 or any(status != 429 for status in statuses[:-1]):
+            problems.append(("FAIL-NOT-SENT", f"{who}: wanted, answered {', '.join(map(str, statuses))}"))
+            continue
+        # The API's id is <day>-<the readout's SHA-256, its first 12 digits>;
+        # its key readouts/<day>/<the first 24>.tar.
+        day, _, digest = sent[-1][1].rpartition("-")
+        kept_as = [name for name in stored if day and digest and name.startswith(f"readouts__{day}__{digest}")]
+        if not kept_as:
+            problems.append(("FAIL-NOT-STORED", f"{who}: taken as {sent[-1][1]!r}, not in the API's store"))
+        elif who.endswith(f"({plug})"):
+            whole = True
+            missing = fault_verdicts.readout_problems((api / kept_as[0]).read_bytes(), "espressif")
+            if missing:
+                problems.append(("FAIL-READOUT", f"{who}: {'; '.join(missing)}"))
+    if unasked:
+        problems.append(("FAIL-SENT-UNWANTED", f"{len(unasked)} sent before any /wanted"))
+    problems += [("FAIL-KEPT-UNSENT", f"{name} kept unsent, though the API was there") for name in kept]
+    summary = {"devices": len(devices), "asked": len(asks), "wanted": sum(1 for ask in asks if ask[0]),
+               "taken": sum(1 for ask in asks if ask[2] and ask[2][-1][0] == 201),
+               "429": sum(1 for ask in asks for status, _ in ask[2] if status == 429), "plug_whole": whole}
+    return problems, summary
 
 
 # The steps that run a Berry phase on the plug (stage, restore, plan), each on
@@ -557,7 +695,7 @@ def esphome_factory_image():
 def needs_cloud(sc):
     # A legacy run starts from Sonoff, at C2, whatever step it stops at; a
     # readout signs in to eWeLink, and sends the bridge through it.
-    return (sc["fault"] == "legacy" or sc["route"].endswith(">readout")
+    return (sc["fault"] == "legacy" or is_readout(sc["route"])
             or (sc["route"].startswith("sonoff>") and sc["step"] in CLOUD_STEPS))
 
 
@@ -1172,8 +1310,11 @@ class Scenario:
         had no --firmware: Tasmota only."""
         args = [str(REPO / "tools/espressif/emulator/unattended-test.sh"), f"--instance={self.n}",
                 f"--plug={MAC}", "--keep"]
+        every = self.sc.get("route") == READOUT_ALL
         if target == "readout":
             args.append("--readout")
+        if every:
+            args.append("--api")
         if STUB_CLOUD:
             args.append("--stub-cloud")
         if fresh:
@@ -1183,8 +1324,17 @@ class Scenario:
         if code:
             args.append(f"--code={code}")
         legacy = code is not None and (Path(code) / LEGACY_TOOL).exists()
-        args += ["--", *([] if legacy or target == "readout" else ["--firmware", target]), *extra]
+        args += ["--", *([] if legacy or target == "readout" else ["--firmware", target]),
+                 *(["--all"] if every and target == "readout" else []), *extra]
         env = dict(os.environ)
+        # The account's other devices, and the API's ENOUGH, are a readout of
+        # every device's own: any other scenario's account is the plug alone.
+        for setting in ("AUTOFLASH_EMU_STUB_OTHERS", "AUTOFLASH_API_ENOUGH"):
+            env.pop(setting, None)
+        if every:
+            env["AUTOFLASH_EMU_STUB_OTHERS"] = str(self.others_file())
+            env["AUTOFLASH_EMU_STUB_PRODUCT_MODEL"] = plug_product()
+            env["AUTOFLASH_API_ENOUGH"] = ",".join(self.enough())
         if not STUB_CLOUD and not NO_CLOUD:
             env["AUTOFLASH_EMULATOR_CLOUD_TURN"] = f"/work/{TURN_FILE}"
         if (self.sc["fault"], self.sc["arg"]) == ("ctrlc", "countdown"):
@@ -1663,7 +1813,9 @@ class Scenario:
     def go_watched(self):
         sc = self.sc
         route, step = sc["route"], sc["step"]
-        if route.endswith(">readout"):
+        if route == READOUT_ALL:
+            return self.go_readout_all()
+        if is_readout(route):
             return self.go_readout()
         if sc["fault"] == "legacy":
             return self.go_legacy()
@@ -2034,6 +2186,121 @@ class Scenario:
         if results[-1][0] == 0 or sent:
             return self.finish_readout(results, "FAIL-NOT-REFUSED")
         return self.finish_readout(results, None if self.template_ok() else "FAIL-DISTURBED")
+
+    def go_readout_all(self):
+        """A readout of every device in the account (cli.py readout --all) the
+        stub lists for the scenario (ACCOUNTS), the plug fresh from Sonoff's
+        firmware among them, each readout sent to the API's own code - with
+        the fault, where there is one, in the plug's read. Then, as a person
+        would, the readout of every device run again until one finishes,
+        switching the plug off and on where the run says to, or MAX_RUNS runs."""
+        sc = self.sc
+        self.target = "sonoff"
+        fault, arg = sc["fault"], sc["arg"]
+        stop = threading.Event()
+        injector = None
+        if fault != "none":
+            self.step_length = STARTS[sc["step"]][1]
+            injector = threading.Thread(target=self.inject, daemon=True, args=(
+                time.time(), None, sc["at"] / 100 * self.step_length, stop, fault, arg))
+            injector.start()
+        judged = []
+        results = [self.run_readout_all(judged, fresh=True)]
+        stop.set()
+        if injector:
+            injector.join(fault_wait(arg))
+            if self.fired is None:
+                return self.finish_readout_all(results, judged, "NOT-FIRED")
+            if fault == "crash":
+                time.sleep(arg)
+        while results[-1][0] != 0 and len(results) < MAX_RUNS:
+            if SWITCH_ADVICE.search(self.last_said()):
+                self.say("following the run's advice: the plug switched off and on")
+                self.ex(PLUG_CMD, "restart")
+                time.sleep(5)
+            results.append(self.run_readout_all(judged))
+        if SWITCH_ADVICE.search(self.last_said()) and self.firmware_now(wait=120) != "sonoff":
+            self.say("following the run's advice: the plug switched off and on")
+            self.ex(PLUG_CMD, "restart")
+        return self.finish_readout_all(results, judged, None)
+
+    def run_readout_all(self, judged, fresh=False):
+        """One run of the readout of every device, and what it did wrong
+        (readout_all_problems) added to `judged`; its row in the results. What
+        the API was asked and kept is kept beside the scenario's log, as the
+        next run starts the API afresh."""
+        since = time.time()
+        code = self.run_tool("readout", fresh=fresh)
+        logs = [(m, p, t) for m, p, t in run_logs(self.state) if m >= since]
+        run = fault_verdicts.last_run(logs[-1][2]) if logs else ""
+        kept = sorted(path.name for path in logs[-1][1].parent.glob("readout*.tar")) if logs else []
+        api = Path(self.log).with_name(f"{Path(self.log).stem}-api-{len(judged) + 1}")
+        keep_earlier(api)
+        if (self.state / "api").is_dir():
+            shutil.copytree(self.state / "api", api)
+            # And what the API said as it ran: an error that stopped it is
+            # seen there (one run: Node 22.14's sqlite refused the database's
+            # numbered parameters, and nothing was asked).
+            if (self.state / "api-server.out").exists():
+                shutil.copy(self.state / "api-server.out", api / "api-server.out")
+        problems, summary = readout_all_problems(run, code == 0, api, len(ACCOUNTS[self.sc["account"]]) + 1,
+                                                 plug_product(), kept)
+        judged.append({"code": code, "problems": problems, **summary})
+        if problems:
+            self.say(f"READOUT-ALL: {problems}")
+        return code, (f"{summary['taken']} taken of {summary['wanted']} wanted, {summary['asked']} asked"
+                      + ("" if code == 0 else f"; {self.readout_result()}"))
+
+    def others_file(self):
+        """The account's other devices for the stub (AUTOFLASH_EMU_STUB_OTHERS), beside the scenario's log."""
+        path = Path(self.log).with_name(f"{Path(self.log).stem}-others.json")
+        path.write_text(json.dumps(ACCOUNTS[self.sc["account"]], indent=1) + "\n", encoding="utf-8")
+        return path
+
+    def enough(self):
+        """The API's ENOUGH (AUTOFLASH_API_ENOUGH): in the enough account, the
+        plug's product model and its first other device's."""
+        if self.sc.get("account") != "enough":
+            return []
+        return [plug_product(), ACCOUNTS["enough"][0]["productModel"]]
+
+    def finish_readout_all(self, results, judged, special):
+        """A readout of every device's verdict: each run as readout_all_problems
+        judges it, a finished run at the end, and the plug on working Sonoff
+        firmware; in the many account, NOT-FIRED where the API never answered
+        429, as its limit was never reached."""
+        self.ended = True
+        left = self.leftovers()
+        names, networks = self.names_seen()
+        self.notes["names"], self.notes["networks"] = names, networks
+        unknown, final = name_problems(names, networks, self.target)
+        self.notes["memory"] = self.memory.note()
+        self.notes["runs"] = judged
+        problems = [problem for run in judged for problem in run["problems"]]
+        self.notes["firmware"] = self.firmware_now(wait=120)
+        if not special:
+            if self.notes.get("mistimed"):
+                special = "MISTIMED"
+            elif self.notes.get("not_applied"):
+                special = "NOT-FIRED"
+            elif any(UNEXPECTED in t for m, _, t in run_logs(self.state) if m >= self.started):
+                special = "FAIL-UNEXPECTED"
+            elif problems:
+                special = problems[0][0]
+            elif results[-1][0] != 0:
+                special = "FAIL-NOT-FINISHED"
+            elif self.notes["firmware"] != "sonoff":
+                special = "BRICK" if self.bricked() else "FAIL-NOT-SONOFF"
+            elif unknown or final:
+                special = "BAD-NAME"
+                self.notes["bad_names"] = unknown + ([final] if final else [])
+            elif self.screen_problems():
+                special = "FAIL-SCREEN"
+            elif left:
+                special = "LEFTOVER"
+            elif self.sc["account"] == "many" and not any(run["429"] for run in judged):
+                special = "NOT-FIRED"
+        return self.keep(results, special or "PASS", left)
 
     def readout_result(self):
         """How the last readout ended, as the results list it."""
