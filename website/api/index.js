@@ -1,6 +1,7 @@
 // api.firmwareliberator.com: the project's API (tools/autoflash/readout.py,
 // .github/readouts.md). A Worker of its own, apart from the website's, so
-// nothing sent here can touch the site. Three paths, all POST from the tool:
+// nothing sent here can touch the site. Four paths, all POST from the tool:
+// /reports (reports.js, which says how it is guarded), and three for readouts:
 // - /wanted: whether a readout of a device would add anything, asked before
 //   it is made. Its product model, firmware model and version, the stage it
 //   would be (a first stage, or a whole memory), and the firmware eWeLink
@@ -60,11 +61,15 @@ export const MAX_FIRMWARE = 8;
 export const MAX_DEVICES = 50;
 export const STAGES = ["first", "whole"];
 
+import { answer } from "./answer.js";
 import { read, release, reserve } from "./counters.js";
 import { ready } from "./database.js";
-import { bodySubject, hex, proven, sha256 } from "./proof-of-work.js";
+import { bodySubject, hex, proven, sha256, work } from "./proof-of-work.js";
+import { countWanted, reports } from "./reports.js";
 
-const ROUTES = { "/readout": readout, "/wanted": wanted, "/notify": notify };
+export { work };
+
+const ROUTES = { "/readout": readout, "/wanted": wanted, "/notify": notify, "/reports": reports };
 
 export default {
   async fetch(request, env) {
@@ -79,16 +84,6 @@ export default {
   },
 };
 
-function answer(status, body, headers = {}) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
-  });
-}
-
-// The work asked, lowered only by the tests, which import this module and set
-// `bits`: nothing the Worker is given, a variable or a secret, can lower it.
-export const work = { bits: null };
 
 // The manifest a readout starts with, or null: the first file of its tar,
 // which is not compressed (the files after it are, each on its own).
@@ -203,6 +198,7 @@ export async function wanted(request, env, now = new Date()) {
       || !firmware.every((sha) => typeof sha === "string" && /^[0-9a-f]{64}$/.test(sha))) {
     return answer(400, { error: "that is not a question this tool asks" });
   }
+  await countWanted(env.DB, asked.product, now.toISOString().slice(0, 10));
   const held = [];
   for (const sha of firmware) {
     if (await isHeld(env, firmwareKey(sha))) {

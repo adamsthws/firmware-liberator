@@ -1,7 +1,7 @@
 // api/counters.js: a limit is never passed, by count or by bytes.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { read, release, reserve } from "../api/counters.js";
+import { read, release, reserve, reserveUpTo } from "../api/counters.js";
 import { d1 } from "../api/local-d1.mjs";
 
 test("counts up to its limit, and no further", async () => {
@@ -45,4 +45,29 @@ test("each name is counted alone; one never counted reads zero", async () => {
   await reserve(db, "a", "2026-11-09");
   assert.deepEqual(await read(db, "b"), { count: 0, bytes: 0 });
   assert.equal(db.db.prepare("SELECT day FROM counters WHERE name = 'a'").get().day, "2026-11-09");
+});
+
+test("several at once are taken whole or not at all", async () => {
+  const db = d1();
+  assert.equal(await reserve(db, "n", null, { by: 3, most: 5 }), true);
+  assert.equal(await reserve(db, "n", null, { by: 3, most: 5 }), false, "not part of them");
+  assert.deepEqual(await read(db, "n"), { count: 3, bytes: 0 });
+  for (const by of [0, -1, 1.5, 6]) {
+    assert.equal(await reserve(db, "m", null, { by, most: 5 }), false, String(by));
+  }
+});
+
+test("as many as still fit are taken, and no more", async () => {
+  const db = d1();
+  assert.equal(await reserveUpTo(db, "u", "2026-11-09", 4, 10), 4);
+  assert.equal(await reserveUpTo(db, "u", "2026-11-09", 9, 10), 6, "the room left");
+  assert.equal(await reserveUpTo(db, "u", "2026-11-09", 1, 10), 0);
+  assert.deepEqual(await read(db, "u"), { count: 10, bytes: 0 });
+});
+
+test("several given back at once", async () => {
+  const db = d1();
+  await reserve(db, "g", null, { by: 5 });
+  await release(db, "g", 0, 3);
+  assert.deepEqual(await read(db, "g"), { count: 2, bytes: 0 });
 });

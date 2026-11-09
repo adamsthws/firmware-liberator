@@ -310,6 +310,14 @@ const ask = async (asked, bindings, now = NOW) => {
   return (await readout.wanted(question(asked, { "X-Proof": proof }, body), bindings, now)).json();
 };
 
+test("asked first, the question is counted by its model for the figures", async () => {
+  const bindings = env();
+  await ask({ ...ASKED, product: "NewThing" }, bindings);
+  await ask({ ...ASKED, product: "NEWTHING", stage: "whole" }, bindings);
+  assert.deepEqual(bindings.DB.db.prepare("SELECT day, model, asked FROM wanted_days").all().map((row) => ({ ...row })),
+    [{ day: "2026-11-07", model: "NEWTHING", asked: 2 }]);
+});
+
 test("asked first, a device enough readouts of are in is not wanted, any other is", async () => {
   const bindings = env({ enough: "S60TPG, basicr4" });
   for (const [product, wanted] of [["BASICR4", false], ["s60tpg", false], ["NEWTHING", true]]) {
