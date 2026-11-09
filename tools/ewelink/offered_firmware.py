@@ -54,9 +54,12 @@ def download(url: str, deviceid: str) -> bytes:
 
 
 def fetch(offers: list[dict[str, Any]], deviceid: str,
-          get: Callable[[str, str], bytes] = download) -> tuple[list[Offered], list[str]]:
+          get: Callable[[str, str], bytes] = download,
+          skip: frozenset[str] = frozenset()) -> tuple[list[Offered], list[str]]:
     """Each file eWeLink's offers name, fetched whole, and what went wrong on the
-    way, for the log: only an exception's type, as its text could hold a link."""
+    way, for the log: only an exception's type, as its text could hold a link.
+    `skip`: the SHA-256 digests of files not to fetch (held already), by the
+    digest eWeLink gives each."""
     if not deviceid:
         return [], ["no device id to ask with"]
     found: list[Offered] = []
@@ -64,6 +67,8 @@ def fetch(offers: list[dict[str, Any]], deviceid: str,
     for offer in offers:
         for item in offer.get("binList") or []:
             url, name = str(item.get("downloadUrl", "")), str(item.get("name") or "firmware.bin")
+            if str(item.get("digest") or "").lower() in skip:
+                continue
             if urllib.parse.urlsplit(url).scheme not in ("http", "https") or len(found) >= MAX_FILES:
                 continue
             try:

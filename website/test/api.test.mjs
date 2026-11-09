@@ -19,7 +19,8 @@ function tar(files) {
   return Buffer.concat([...blocks, Buffer.alloc(1024)]);
 }
 
-const MANIFEST = { format: 1, product: "NEWTHING", tool: "2.4.0", read: true };
+const MANIFEST = { format: 1, product: "NEWTHING", stock_model: "SN-NEW-01", version: "1.0.0", tool: "2.4.0",
+  read: true };
 const readoutOf = (manifest = MANIFEST, extra = {}) =>
   tar({ "manifest.json": JSON.stringify(manifest), "flash.bin.xz": "\xfd7zXZ", ...extra });
 
@@ -44,9 +45,16 @@ function bucket() {
     list: async ({ prefix }) => ({
       objects: [...objects].filter(([key]) => key.startsWith(prefix)).map(([key, item]) => ({ key, size: item.size })),
     }),
-    put: async (key, body, options) => objects.set(key, { size: body.byteLength, options }),
+    get: async (key) => (objects.has(key) ? { text: async () => objects.get(key).text } : null),
+    put: async (key, body, options) => objects.set(key, {
+      size: typeof body === "string" ? body.length : body.byteLength, options,
+      text: typeof body === "string" ? body : "",
+    }),
   };
 }
+
+// The readouts kept, leaving out the marks of what is held and the day's count.
+const tars = (bindings) => [...bindings.READOUTS.objects.keys()].filter((key) => key.endsWith(".tar"));
 
 function env({ allowed = true, enough = "" } = {}) {
   return { READOUTS: bucket(), READOUT_LIMIT: { limit: async () => ({ success: allowed }) }, ENOUGH: enough,
@@ -70,7 +78,8 @@ test("a readout with its work done is kept, under a reference it is given back",
   assert.equal(response.status, 201);
   const { id } = await response.json();
   assert.match(id, /^2026-11-07-[0-9a-f]{12}$/);
-  const [[key, item]] = [...bindings.READOUTS.objects];
+  const [key] = tars(bindings);
+  const item = bindings.READOUTS.objects.get(key);
   assert.match(key, /^readouts\/2026-11-07\/[0-9a-f]{24}\.tar$/);
   assert.equal(item.options.customMetadata.product, "NEWTHING");
   assert.ok(!JSON.stringify(item.options).includes("192.0.2.9"), "the sender's address is kept");
@@ -83,7 +92,7 @@ test("the same one again is the one already kept", async () => {
   const again = await send(post(body), bindings);
   assert.equal(again.status, 200);
   assert.deepEqual(await again.json(), first);
-  assert.equal(bindings.READOUTS.objects.size, 1);
+  assert.equal(tars(bindings).length, 1);
 });
 
 test("without its work, old work, or another body's, nothing is kept", async () => {
@@ -106,7 +115,7 @@ test("one proof keeps one readout: another device's needs work of its own", asyn
   const second = readoutOf({ ...MANIFEST, product: "OTHERTHING" });
   assert.equal((await send(post(second, { "X-Proof": proof }), bindings)).status, 403);
   assert.equal((await send(post(second), bindings)).status, 201);
-  assert.equal(bindings.READOUTS.objects.size, 2);
+  assert.equal(tars(bindings).length, 2);
 });
 
 test("anything but a readout the tool makes is turned away", async () => {
@@ -131,18 +140,56 @@ test("too many from one sender wait", async () => {
   assert.equal(bindings.READOUTS.objects.size, 0);
 });
 
+const dayCount = (bindings, day, count, bytes) => bindings.READOUTS.objects.set(`readouts/${day}/_readouts.json`,
+  { size: 1, text: JSON.stringify({ count, bytes }) });
+
 test("a day's limit, by count and by size, is never passed", async () => {
   const bindings = env();
-  for (let index = 0; index < readout.DAILY_COUNT; index += 1) {
-    bindings.READOUTS.objects.set(`readouts/2026-11-07/${index}.tar`, { size: 1 });
-  }
+  dayCount(bindings, "2026-11-07", readout.DAILY_COUNT, 1);
   assert.equal((await send(post(readoutOf()), bindings)).status, 503);
   const full = env();
-  full.READOUTS.objects.set("readouts/2026-11-07/big.tar", { size: readout.DAILY_BYTES });
+  dayCount(full, "2026-11-07", 1, readout.DAILY_BYTES);
   assert.equal((await send(post(readoutOf()), full)).status, 503);
   const yesterday = env();
-  yesterday.READOUTS.objects.set("readouts/2026-11-06/big.tar", { size: readout.DAILY_BYTES });
+  dayCount(yesterday, "2026-11-06", readout.DAILY_COUNT, readout.DAILY_BYTES);
   assert.equal((await send(post(readoutOf()), yesterday)).status, 201);
+});
+
+test("the day's count is kept as readouts are, not listed", async () => {
+  const bindings = { ...env(), READOUTS: { ...bucket(), list: async () => assert.fail("listed the day's readouts") } };
+  for (const version of ["1.0.0", "1.0.1"]) {
+    assert.equal((await send(post(readoutOf({ ...MANIFEST, version })), bindings)).status, 201);
+  }
+  const count = JSON.parse(bindings.READOUTS.objects.get("readouts/2026-11-07/_readouts.json").text);
+  assert.equal(count.count, 2);
+  assert.ok(count.bytes > 0);
+});
+
+test("a readout adds something or is thanked and not kept", async () => {
+  const bindings = env();
+  const kept = async (manifest) => (await send(post(readoutOf(manifest)), bindings)).status === 201;
+  const first = { ...MANIFEST, read: false };
+  assert.ok(await kept(first), "the first of its model and version");
+  assert.ok(!(await kept({ ...first, tool: "2.4.1" })), "another first stage of it adds nothing");
+  assert.ok(await kept({ ...first, version: "1.1.0" }), "another version does");
+  assert.ok(await kept(MANIFEST), "a whole one, where only a first stage is held, does");
+  assert.ok(!(await kept({ ...MANIFEST, tool: "2.4.1" })), "a second whole one adds nothing");
+  assert.ok(!(await kept({ ...first, version: "1.0.0", tool: "2.4.2" })), "nor a first stage once a whole one is in");
+  assert.ok(await kept({ ...MANIFEST, stock_model: "SN-NEW-02" }), "another firmware model does");
+  const response = await send(post(readoutOf({ ...MANIFEST, tool: "2.4.3" })), bindings);
+  assert.deepEqual(await response.json(), { enough: true });
+});
+
+test("what is held is marked where the lifecycle rule removes it with the readouts", async () => {
+  const bindings = env();
+  const offered = [{ file: "offered/user1.bin", version: "1.1.0", sha256: "a".repeat(64) },
+    { file: null, version: "1.1.0", sha256: "b".repeat(64), held: true }];
+  assert.equal((await send(post(readoutOf({ ...MANIFEST, offered })), bindings)).status, 201);
+  const keys = [...bindings.READOUTS.objects.keys()];
+  assert.ok(keys.includes("readouts/held/NEWTHING/SN-NEW-01/1.0.0/whole"));
+  assert.ok(keys.includes(`readouts/firmware/${"a".repeat(64)}`));
+  assert.ok(!keys.includes(`readouts/firmware/${"b".repeat(64)}`), "a file left out is marked by the readout that held it");
+  assert.ok(keys.every((key) => key.startsWith("readouts/")));
 });
 
 test("a device enough readouts of are in is thanked, not kept", async () => {
@@ -171,7 +218,7 @@ test("without TEST_PROOF_BITS the full work is asked", async () => {
 test("the tool does the same work the Worker asks", () => {
   const tool = readFileSync(new URL("../../tools/autoflash/readout.py", import.meta.url), "utf8");
   assert.match(tool, new RegExp(`^PROOF_BITS = ${readout.PROOF_BITS}\\b`, "m"));
-  assert.match(tool, new RegExp(`^WANTED_PROOF_BITS = ${readout.WANTED_PROOF_BITS}\\b`, "m"));
+  assert.match(tool, new RegExp(`^LIGHT_PROOF_BITS = ${readout.LIGHT_PROOF_BITS}\\b`, "m"));
   assert.match(tool, /UPLOAD_URL = "https:\/\/api\.firmwareliberator\.com\/readout"/);
 });
 
@@ -182,8 +229,10 @@ test("every other address is not found, and the site is not this Worker", async 
   assert.doesNotMatch(site, /readout|api\//i);
 });
 
-function question(product, headers = {}, body = Buffer.from(JSON.stringify({ format: 1, product }))) {
-  return new Request("https://api.firmwareliberator.com/wanted", {
+const ASKED = { format: 1, product: "NEWTHING", model: "SN-NEW-01", version: "1.0.0", stage: "first", firmware: [] };
+
+function question(asked = ASKED, headers = {}, body = Buffer.from(JSON.stringify(asked)), path = "/wanted") {
+  return new Request(`https://api.firmwareliberator.com${path}`, {
     method: "POST",
     body,
     headers: { "Content-Type": "application/json", "Content-Length": String(body.byteLength),
@@ -191,52 +240,143 @@ function question(product, headers = {}, body = Buffer.from(JSON.stringify({ for
   });
 }
 
-const ask = (request, bindings, now = NOW) => readout.wanted(request, bindings, now);
+const ask = async (asked, bindings, now = NOW) => {
+  const body = Buffer.from(JSON.stringify(asked));
+  const proof = proofFor(body, BITS, Math.floor(now.getTime() / 1000));   // made as it is asked
+  return (await readout.wanted(question(asked, { "X-Proof": proof }, body), bindings, now)).json();
+};
 
 test("asked first, a device enough readouts of are in is not wanted, any other is", async () => {
   const bindings = env({ enough: "S60TPG, basicr4" });
-  for (const [product, expected] of [["BASICR4", false], ["s60tpg", false], ["NEWTHING", true]]) {
-    const response = await ask(question(product), bindings);
-    assert.equal(response.status, 200, product);
-    assert.deepEqual(await response.json(), { wanted: expected }, product);
+  for (const [product, wanted] of [["BASICR4", false], ["s60tpg", false], ["NEWTHING", true]]) {
+    const answer = await ask({ ...ASKED, product }, bindings);
+    assert.equal(answer.wanted, wanted, product);
+    if (!wanted) assert.equal(answer.why, "enough");
   }
   assert.equal(bindings.READOUTS.objects.size, 0);
 });
 
+test("asked first, a readout that would add nothing is not wanted", async () => {
+  const bindings = env();
+  await send(post(readoutOf({ ...MANIFEST, read: false })), bindings);
+  assert.deepEqual(await ask(ASKED, bindings), { wanted: false, why: "held", held: [] });
+  assert.equal((await ask({ ...ASKED, version: "2.0.0" }, bindings)).wanted, true);
+  assert.equal((await ask({ ...ASKED, stage: "whole" }, bindings)).wanted, true);
+  await send(post(readoutOf(MANIFEST)), bindings);
+  assert.equal((await ask({ ...ASKED, stage: "whole" }, bindings)).why, "held");
+});
+
+test("asked first, the files held already are named, wanted or not", async () => {
+  const bindings = env();
+  const offered = [{ file: "offered/user1.bin", version: "1.1.0", sha256: "a".repeat(64) }];
+  await send(post(readoutOf({ ...MANIFEST, product: "OTHERTHING", offered })), bindings);
+  const answer = await ask({ ...ASKED, firmware: ["a".repeat(64), "c".repeat(64)] }, bindings);
+  assert.deepEqual(answer, { wanted: true, held: ["a".repeat(64)] });
+  bindings.READOUTS.objects.set(`kept/firmware/${"c".repeat(64)}`, { size: 1 });
+  assert.deepEqual((await ask({ ...ASKED, firmware: ["c".repeat(64)] }, bindings)).held, ["c".repeat(64)]);
+});
+
+test("asked first, a full day says so, from its count read once a minute", async () => {
+  const bindings = env();
+  let reads = 0;
+  const get = bindings.READOUTS.get;
+  bindings.READOUTS.get = async (key) => { reads += 1; return get(key); };
+  dayCount(bindings, "2026-11-07", readout.DAILY_COUNT, 1);
+  const at = new Date("2026-11-07T12:00:00Z");
+  assert.deepEqual(await ask({ ...ASKED, product: "FULL1" }, bindings, at), { wanted: false, why: "full", held: [] });
+  await ask({ ...ASKED, product: "FULL1" }, bindings, new Date(at.getTime() + 30_000));
+  assert.equal(reads, 1, "read again within the minute");
+  await ask({ ...ASKED, product: "FULL1" }, bindings, new Date(at.getTime() + 61_000));
+  assert.equal(reads, 2);
+});
+
 test("each question needs work of its own, lighter than a readout's and newer", async () => {
-  const body = Buffer.from(JSON.stringify({ format: 1, product: "NEWTHING" }));
-  const other = Buffer.from(JSON.stringify({ format: 1, product: "OTHERTHING" }));
-  const minuteAgo = proofFor(body, BITS, NOW.getTime() / 1000 - readout.WANTED_PROOF_AGE - 5);
+  const body = Buffer.from(JSON.stringify(ASKED));
+  const other = Buffer.from(JSON.stringify({ ...ASKED, product: "OTHERTHING" }));
+  const minuteAgo = proofFor(body, BITS, NOW.getTime() / 1000 - readout.LIGHT_PROOF_AGE - 5);
   for (const proof of ["", "1:2:3", proofFor(other), minuteAgo]) {
-    assert.equal((await ask(question("NEWTHING", { "X-Proof": proof }, body), env())).status, 403, proof);
+    assert.equal((await readout.wanted(question(ASKED, { "X-Proof": proof }, body), env(), NOW)).status, 403, proof);
   }
-  assert.ok(readout.WANTED_PROOF_BITS < readout.PROOF_BITS);
-  assert.ok(readout.WANTED_PROOF_AGE < readout.PROOF_AGE);
+  assert.ok(readout.LIGHT_PROOF_BITS < readout.PROOF_BITS);
+  assert.ok(readout.LIGHT_PROOF_AGE < readout.PROOF_AGE);
 });
 
 test("a question is held to no readout limit, so a batch's leave its readouts theirs", async () => {
   const bindings = { ...env(), READOUT_LIMIT: { limit: async () => assert.fail("asked the readout limiter") } };
-  assert.equal((await ask(question("NEWTHING"), bindings)).status, 200);
+  assert.equal((await readout.wanted(question(), bindings, NOW)).status, 200);
 });
 
 test("anything but the tool's question is turned away", async () => {
   const bindings = env();
+  const json = (value) => Buffer.from(JSON.stringify(value));
   const badly = [
     [new Request("https://api.firmwareliberator.com/wanted"), 405],
-    [question("NEWTHING", { "Content-Type": "text/plain" }), 415],
-    [question("", {}, Buffer.from(JSON.stringify({ format: 1, product: "" }))), 400],
-    [question("", {}, Buffer.from(JSON.stringify({ format: 2, product: "NEWTHING" }))), 400],
-    [question("", {}, Buffer.from("not json")), 400],
-    [question("", {}, Buffer.alloc(readout.WANTED_MAX_BYTES + 1, 32)), 413],
+    [question(ASKED, { "Content-Type": "text/plain" }), 415],
+    [question(ASKED, {}, json({ ...ASKED, product: "" })), 400],
+    [question(ASKED, {}, json({ ...ASKED, stage: "some" })), 400],
+    [question(ASKED, {}, json({ ...ASKED, version: undefined })), 400],
+    [question(ASKED, {}, json({ ...ASKED, firmware: ["not a hash"] })), 400],
+    [question(ASKED, {}, json({ ...ASKED, firmware: Array(readout.MAX_FIRMWARE + 1).fill("a".repeat(64)) })), 400],
+    [question(ASKED, {}, json({ ...ASKED, format: 2 })), 400],
+    [question(ASKED, {}, Buffer.from("not json")), 400],
+    [question(ASKED, {}, Buffer.alloc(readout.QUESTION_MAX_BYTES + 1, 32)), 413],
   ];
   for (const [request, status] of badly) {
-    assert.equal((await ask(request, bindings)).status, status);
+    assert.equal((await readout.wanted(request, bindings, NOW)).status, status);
   }
 });
 
-test("the Worker sends /wanted to the question", async () => {
-  const body = Buffer.from(JSON.stringify({ format: 1, product: "NEWTHING" }));
-  const now = proofFor(body, BITS, Math.floor(Date.now() / 1000));   // fetch() checks it against the clock
-  const response = await worker.fetch(question("NEWTHING", { "X-Proof": now }, body), env());
-  assert.equal(response.status, 200);
+test("the Worker sends /wanted and /notify to their own", async () => {
+  for (const [path, value, status] of [["/wanted", ASKED, 200],
+    ["/notify", { format: 1, email: "me@example.com", devices: [{ product: "NEWTHING", model: "SN-NEW-01" }] }, 201]]) {
+    const body = Buffer.from(JSON.stringify(value));
+    const now = proofFor(body, BITS, Math.floor(Date.now() / 1000));   // fetch() checks it against the clock
+    const response = await worker.fetch(question(value, { "X-Proof": now }, body, path), env());
+    assert.equal(response.status, status, path);
+  }
+});
+
+const NOTIFY = { format: 1, email: " Me@Example.com ", devices: [
+  { product: "NEWTHING", model: "SN-NEW-01" }, { product: "newthing", model: "SN-NEW-02" },
+  { product: "BASICR4", model: "-" }] };
+const tell = (value, bindings, now = NOW) => readout.notify(question(value, {}, undefined, "/notify"), bindings, now);
+
+test("an address is kept once a product, with its models, to be told of a change", async () => {
+  const bindings = env({ enough: "NEWTHING" });   // wanted or not, an address is kept
+  const response = await tell(NOTIFY, bindings);
+  assert.equal(response.status, 201);
+  const kept = [...bindings.READOUTS.objects].filter(([key]) => key.startsWith("notify/"));
+  assert.deepEqual(kept.map(([key]) => key.split("/")[1]).sort(), ["BASICR4", "NEWTHING"]);
+  const [, item] = kept.find(([key]) => key.startsWith("notify/NEWTHING/"));
+  const value = JSON.parse(item.text);
+  assert.deepEqual([value.email, value.product, value.models], ["Me@Example.com", "NEWTHING", ["SN-NEW-01", "SN-NEW-02"]]);
+  const again = env();
+  await tell({ ...NOTIFY, email: "me@example.com" }, again);
+  assert.equal(kept.find(([key]) => key.startsWith("notify/NEWTHING/"))[0],
+    [...again.READOUTS.objects.keys()].find((key) => key.startsWith("notify/NEWTHING/")), "one per address, any case");
+});
+
+test("an address is never under readouts/, which the lifecycle rule empties", async () => {
+  const bindings = env();
+  await tell(NOTIFY, bindings);
+  for (const [key, item] of bindings.READOUTS.objects) {
+    if (key.startsWith("readouts/")) assert.ok(!item.text.includes("xample"), key);
+  }
+});
+
+test("a day's addresses are limited too", async () => {
+  const bindings = env();
+  bindings.READOUTS.objects.set("readouts/2026-11-07/_notify.json",
+    { size: 1, text: JSON.stringify({ count: readout.NOTIFY_DAILY, bytes: 0 }) });
+  assert.equal((await tell(NOTIFY, bindings)).status, 503);
+});
+
+test("anything but the tool's request to be told is turned away", async () => {
+  for (const value of [{ ...NOTIFY, email: "not an email" }, { ...NOTIFY, devices: [] },
+    { ...NOTIFY, devices: [{ model: "x" }] }, { ...NOTIFY, devices: Array(readout.MAX_DEVICES + 1).fill(NOTIFY.devices[0]) },
+    { ...NOTIFY, format: 2 }]) {
+    const bindings = env();
+    assert.equal((await tell(value, bindings)).status, 400, JSON.stringify(value).slice(0, 80));
+    assert.equal(bindings.READOUTS.objects.size, 0);
+  }
 });

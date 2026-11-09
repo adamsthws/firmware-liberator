@@ -27,13 +27,14 @@ import io
 import json
 import lzma
 import os
+import re
 import tarfile
 import time
 import urllib.error
 from dataclasses import dataclass
 import urllib.request
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import Any, Callable, TYPE_CHECKING
 
 from tools.autoflash import __version__, account, hostsys, kinds, output, plugs, prompts, runs
 from tools.autoflash import readout_beken, readout_espressif
@@ -48,10 +49,18 @@ if TYPE_CHECKING:
 # private store behind it: the project's API (website/api/index.js).
 UPLOAD_URL = "https://api.firmwareliberator.com/readout"
 # The work each readout carries, as the Worker asks it (its PROOF_BITS); and
-# the lighter work of asking first whether one is wanted (WANTED_PROOF_BITS).
+# the lighter work of /wanted and /notify (LIGHT_PROOF_BITS).
 PROOF_BITS = 24
-WANTED_PROOF_BITS = 20
+LIGHT_PROOF_BITS = 20
 FORMAT = 1
+# How long send() waits, each time the website says too many at once (it
+# takes two a minute from one address), before sending again: short tries, so
+# it goes as soon as the limit lets it, for up to a minute and a half.
+RATE_WAITS = (15.0,) * 6
+# What becomes of a device whose readout would add nothing, or that comes
+# once the website has taken all it can today.
+NOT_NEEDED = "not needed: the website has what it needs of this device already."
+FULL_TODAY = "not read out: the website has taken all the readouts it can today. Try again tomorrow."
 # What send() gives for a readout the website has enough of already.
 ENOUGH = "none needed: enough readouts of this device are in already"
 # What the run's record keeps, so a readout is never offered back as a conversion to finish.
@@ -60,6 +69,20 @@ STATE_KEY = "readout"
 # readout_espressif.BRIDGE_HOST: cleared before the next, when every device is
 # read out in one run.
 DEVICE_KEYS = ("plug_ip", "plug_mac", "stock_version", "product_model", STATE_KEY, "readout_sent")
+
+
+class WebsiteFull(NothingWritten):
+    """The website has taken all the readouts it can today: a readout of every
+    device ends there, the rest not read."""
+
+
+@dataclass(frozen=True)
+class Wanted:
+    """The website's answer to /wanted: whether a readout would add anything,
+    why not ("enough", "held" or "full"), and which offered files it holds."""
+    wanted: bool
+    why: str = ""
+    held: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -244,13 +267,6 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
         asked = account.ask_account(ctx, str(device.get("deviceid") or ""))
     else:
         asked = account.ask_ewelink(ctx, ip)
-    # Before the firmware eWeLink offers it is fetched, anything is sent to it,
-    # or the readout's own work is done: whether one is wanted at all.
-    if not still_wanted(asked.product):
-        if batch is not None:
-            return "not needed, as enough readouts of this device are in already."
-        return ("Not needed, thank you: enough readouts of this device are in already, so nothing was "
-                "read or sent.")
     learned, problems = firmware_name.learn(asked.latest.get("offers") or [], asked.deviceid,
                                             asked.product, asked.model)
     for problem in problems:
@@ -264,6 +280,21 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
                                         "this tool's list of devices")
     ctx.state.set_input("stock_version", asked.version)
     ctx.state.set_input("product_model", asked.product)
+    whole = whole_readout(listed, learned)
+    # Before the firmware eWeLink offers it is fetched, anything is sent to it,
+    # or the readout's own work is done: whether it would add anything at all,
+    # and which of the files eWeLink offers it are held already.
+    offers = asked.latest.get("offers") or []
+    with output.working("Asking the website whether a readout of it is wanted..."):
+        answer = ask_wanted(asked.product, asked.model, asked.version, "whole" if whole else "first",
+                            offered_digests(offers))
+    if not answer.wanted:
+        if answer.why == "full" and batch is not None:
+            raise WebsiteFull(FULL_TODAY)
+        said = FULL_TODAY if answer.why == "full" else NOT_NEEDED
+        if batch is not None:
+            return said
+        return single_not_wanted(said, asked)
     manifest = {
         "format": FORMAT, "tool": __version__, "product": asked.product, "stock_model": asked.model,
         "version": asked.version, "brand": str(device.get("brandName") or ""),
@@ -273,18 +304,26 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
     }
     # The firmware eWeLink offers it as well: often another version than the
     # one it runs, so two to test against. Nothing is sent to the device for it.
-    updates, problems = offered_firmware.fetch(asked.latest.get("offers") or [], asked.deviceid)
+    # Those the website holds already are left out - but for a Beken device read
+    # in full, which needs Sonoff's own to put back.
+    beken_whole = bool(learned and whole and learned.chip.startswith("BK"))
+    with output.working("Downloading the firmware eWeLink offers it..."):
+        updates, problems = offered_firmware.fetch(offers, asked.deviceid,
+                                                   skip=frozenset() if beken_whole else answer.held)
     for problem in problems:
         output.log_only(f"    Offered firmware: {problem}")
     manifest["offered"] = [{"file": f"offered/{item.name}", "version": item.version, "size": len(item.data),
                             "sha256": item.sha256} for item in updates]
+    manifest["offered"] += [{"file": None, "version": version, "sha256": digest, "held": True}
+                            for digest, version in offered_digests(offers, versions=True)
+                            if digest in answer.held and all(item.sha256 != digest for item in updates)]
+    sent = updates if not beken_whole else [item for item in updates if item.sha256 not in answer.held]
     prompts.section("What the device reported", [
         f"Model            {asked.model or 'not given'}",
         f"Product          {asked.product or 'not given'}",
         f"Firmware now     {asked.version}",
         f"Firmware name    {learned.name if learned else 'not learned'}",
     ])
-    whole = whole_readout(listed, learned)
     chip = readout_espressif.BRIDGE_CHIPS.get(learned.chip) if learned and whole else None
     beken_stock = (readout_beken.stock_from_offered(updates)
                    if learned and whole and learned.chip.startswith("BK") else None)
@@ -306,8 +345,8 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
             why = f"there is no bridge for its chip ({learned.chip or 'not named'}) yet"
         output.say(f"    Its memory cannot be read from here: {why}. The readout still helps.")
         manifest["read"] = False
-        return offer(ctx, manifest, None, updates, batch=batch, device=device)
-    return offer(ctx, manifest, files, updates, back=back, batch=batch, device=device)
+        return offer(ctx, manifest, None, sent, batch=batch, device=device)
+    return offer(ctx, manifest, files, sent, back=back, batch=batch, device=device)
 
 
 def reads_out(device: dict[str, Any]) -> bool:
@@ -373,17 +412,30 @@ def package(manifest: dict[str, Any], files: dict[str, bytes] | None = None,
     return buffer.getvalue()
 
 
-def ask_contact() -> dict[str, str] | None:
+# What the owner is told their address is kept for, wherever it is asked.
+CONTACT_HELP = ["You will be emailed when your device's support changes, and may be asked to",
+                "try it. Your address is kept for that alone; reply to any such email to be",
+                "taken off the list."]
+
+
+def ask_contact(when_supported: bool = False) -> dict[str, str] | None:
     """How the owner may be reached about the device, if they choose to say:
-    {"email": ...}, or None. Quit stops the run unsent."""
+    {"email": ...}, or None. Quit stops the run unsent. `when_supported`: no
+    readout goes, only the wish to be told when the device's status changes."""
     if prompts.UNATTENDED:
         prompts.answered_unattended("Contact details", "Submit without contact information")
         return None
     output.transient_begin()
-    choice = prompts.ask_choice("Add a way to reach you", [
-        "Add an email address",
-        "Submit without contact information",
-    ], help_lines=["If support for your device is added, you can be told, and asked to try it."])
+    if when_supported:
+        choice = prompts.ask_choice("Be told when this device is supported", [
+            "Add an email address",
+            "No, thank you",
+        ], help_lines=CONTACT_HELP)
+    else:
+        choice = prompts.ask_choice("Add a way to reach you", [
+            "Add an email address",
+            "Submit without contact information",
+        ], help_lines=CONTACT_HELP)
     contact = None
     if choice == 0:
         contact = {"email": prompts.ask_text("Your email address", private="email", validate=lambda text: (
@@ -391,7 +443,8 @@ def ask_contact() -> dict[str, str] | None:
     output.transient_end()
     if contact:
         contact = {key: value.strip() for key, value in contact.items()}
-        output.say("    Your contact details go with it.")
+        if not when_supported:
+            output.say("    Your contact details go with it.")
     return contact
 
 
@@ -431,7 +484,10 @@ def offer(ctx: Context, manifest: dict[str, Any], files: dict[str, bytes] | None
         except prompts.QuitRun:
             keep()
             return f"Not sent. The readout is kept in {path}, if you would like to send it later."
-        return sent(keep(contact), url, path, back)
+        said = sent(keep(contact), url, path, back)
+        if contact:
+            notify(contact["email"], [(manifest.get("product", ""), manifest.get("stock_model", ""))])
+        return said
 
 
 def sent(data: bytes, url: str, path: Path, back: bool) -> str:
@@ -468,11 +524,15 @@ def sent_in_batch(ctx: Context, data: bytes, device: dict[str, Any], back: bool)
     return f"sent, reference {reference}.{again}"
 
 
-def proof(data: bytes, now: float | None = None, bits: int | None = None) -> str:
+def proof(data: bytes, now: float | None = None, bits: int | None = None,
+          tick: Callable[[], None] | None = None) -> str:
     """"<time>:<nonce>" whose SHA-256 with `data`'s, as "<time>:<data's
     SHA-256>:<nonce>", starts with `bits` zero bits: the work the Worker asks
-    of each readout, about 10 to 30 seconds on a computer, so a flood of them
-    costs its sender."""
+    of each readout, so a flood of them costs its sender. About 17 million
+    tries on average, 20 seconds on a recent laptop, but luck decides: one in
+    twenty takes three times as long, and an older or smaller computer may take
+    minutes. `tick` is called every quarter of a million tries, to show it is
+    still going."""
     stamp = int(time.time() if now is None else now)
     prefix = hashlib.sha256(f"{stamp}:{hashlib.sha256(data).hexdigest()}:".encode())
     target = 1 << (256 - (PROOF_BITS if bits is None else bits))
@@ -483,40 +543,107 @@ def proof(data: bytes, now: float | None = None, bits: int | None = None) -> str
         if int.from_bytes(attempt.digest(), "big") < target:
             return f"{stamp}:{nonce}"
         nonce += 1
+        if tick is not None and not nonce & 0x3FFFF:
+            tick()
 
 
-def still_wanted(product: str, timeout: float = 15.0) -> bool:
-    """Whether the website still wants a readout of a device of eWeLink's
-    `product` model, asked with work of its own, lighter than a readout's.
-    Where it cannot say - unreachable, or an earlier website - the readout
-    goes ahead, and the website decides once it is sent."""
+def offered_digests(offers: list[dict[str, Any]], versions: bool = False) -> list[Any]:
+    """The SHA-256 eWeLink gives each file it offers (its `digest`), or with
+    `versions` (digest, version) pairs: what /wanted is told of the firmware."""
+    found = []
+    for offer in offers:
+        for item in offer.get("binList") or []:
+            digest = str(item.get("digest") or "").lower()
+            if re.fullmatch(r"[0-9a-f]{64}", digest) and digest not in [d for d, _ in found]:
+                found.append((digest, str(offer.get("version") or "")))
+    return found if versions else [digest for digest, _ in found][:8]
+
+
+def light_post(path: str, value: dict[str, Any], timeout: float = 15.0) -> dict[str, Any]:
+    """POST `value` to the website's `path` beside where readouts go, with the
+    lighter work /wanted and /notify ask; its JSON answer. OSError or ValueError
+    when it cannot say."""
     url = upload_url()
-    if url is None or not product:
-        return True
-    body = json.dumps({"format": FORMAT, "product": product}).encode()
-    request = urllib.request.Request(url.rsplit("/", 1)[0] + "/wanted", data=body, method="POST", headers={
+    if url is None:
+        raise OSError("not from a test run")
+    body = json.dumps(value).encode()
+    request = urllib.request.Request(url.rsplit("/", 1)[0] + path, data=body, method="POST", headers={
         "Content-Type": "application/json", "User-Agent": f"Autoflash/{__version__}",
-        "X-Proof": proof(body, bits=WANTED_PROOF_BITS)})
+        "X-Proof": proof(body, bits=LIGHT_PROOF_BITS)})
+    with hostsys.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def ask_wanted(product: str, model: str, version: str, stage: str, firmware: list[str]) -> Wanted:
+    """Whether the website wants this readout: one of a product, firmware model
+    and version, at `stage` ("first" or "whole"), that it has none like. Where
+    it cannot say - unreachable, or an earlier website - the readout goes
+    ahead, and the website decides once it is sent."""
+    if upload_url() is None or not product:
+        return Wanted(True)
     try:
-        with hostsys.urlopen(request, timeout=timeout) as response:
-            answer = json.loads(response.read().decode("utf-8"))
+        answer = light_post("/wanted", {"format": FORMAT, "product": product, "model": model or "-",
+                                        "version": version or "-", "stage": stage, "firmware": firmware})
     except (OSError, ValueError) as exc:   # an HTTPError is an OSError
         output.log_only(f"    Whether a readout is wanted: not answered ({exc}); it goes ahead.")
-        return True
-    return answer.get("wanted") is not False
+        return Wanted(True)
+    held = frozenset(str(sha) for sha in answer.get("held") or [] if str(sha) in firmware)
+    return Wanted(answer.get("wanted") is not False, str(answer.get("why") or ""), held)
+
+
+def notify(email: str, devices: list[tuple[str, str]]) -> bool:
+    """Ask the website to tell `email` when any of these devices' status
+    changes ((product, firmware model) each), wanted as readouts or not.
+    Whether it was taken; never raises."""
+    named = [{"product": product, "model": model or "-"} for product, model in dict.fromkeys(devices) if product]
+    if not named or upload_url() is None:
+        return False
+    try:
+        light_post("/notify", {"format": FORMAT, "email": email, "devices": named[:50]})
+    except (OSError, ValueError) as exc:
+        output.log_only(f"    Asking to be told of a change: not taken ({exc}).")
+        return False
+    return True
+
+
+def single_not_wanted(said: str, asked: account.Asked) -> str:
+    """A lone readout the website does not want: offered, still, to be told
+    when the device's status changes. What the run ends by saying."""
+    output.tell(f"    {said[0].upper()}{said[1:]}")
+    if upload_url() is None or prompts.UNATTENDED:
+        return said[0].upper() + said[1:]
+    try:
+        contact = ask_contact(when_supported=True)
+    except prompts.QuitRun:
+        contact = None
+    if contact and notify(contact["email"], [(asked.product, asked.model)]):
+        return "Nothing was read or sent. You will be emailed when this device's status changes. Thank you!"
+    return "Nothing was read or sent. Thank you!"
 
 
 def send(data: bytes, url: str = UPLOAD_URL, timeout: float = 120.0) -> str:
-    """POST a readout; the reference the store gave it."""
-    output.say("    Getting it ready to send - up to half a minute...")
+    """POST a readout; the reference the store gave it. One turned away as too
+    many at once - the website takes two a minute from one address, which a
+    readout of every device reaches - is sent again every 15 seconds, for up
+    to a minute and a half, with the same work, good for 15 minutes."""
+    started = time.monotonic()
+    with output.working("Getting it ready to send: a puzzle that keeps floods away, a few seconds to a "
+                        "minute or two..."):
+        work = proof(data, tick=lambda: output.progress(f"working on it... {time.monotonic() - started:.0f}s"))
+    output.progress_clear()
     request = urllib.request.Request(url, data=data, method="POST", headers={
         "Content-Type": "application/x-tar", "User-Agent": f"Autoflash/{__version__}",
-        "X-Proof": proof(data)})
-    try:
-        with hostsys.urlopen(request, timeout=timeout) as response:
-            answer = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        raise OSError(f"the website answered {exc.code}") from exc
+        "X-Proof": work})
+    for wait in (*RATE_WAITS, None):
+        try:
+            with hostsys.urlopen(request, timeout=timeout) as response:
+                answer = json.loads(response.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429 or wait is None:
+                raise OSError(f"the website answered {exc.code}") from exc
+            with output.working("The website takes two readouts a minute: sending it again shortly..."):
+                time.sleep(wait)
     if answer.get("enough"):
         return ENOUGH
     reference = str(answer.get("id") or "")
@@ -574,9 +701,13 @@ def run_all(ctx: Context, devices: list[dict[str, Any]]) -> str:
             output.transient_end()
             return "Nothing was read out or sent."
     output.transient_end()
+    if contact:
+        # Every device, its readout wanted or not: told when any one's changes.
+        notify(contact["email"], [(str(device.get("productModel") or ""),
+                                   str((device.get("extra") or {}).get("model") or "")) for device in ordered])
     became = []
     for number, device in enumerate(ordered, 1):
-        output.say(f"Reading out {describe(device)} ({number} of {len(ordered)})...")
+        output.tell(f"Reading out {describe(device)} ({number} of {len(ordered)})...")
         for key in (*DEVICE_KEYS, readout_espressif.BRIDGE_HOST):
             ctx.state.set_input(key, None)
         try:
@@ -585,6 +716,9 @@ def run_all(ctx: Context, devices: list[dict[str, Any]]) -> str:
             left = [describe(other) for other in ordered[number - 1:]]
             return "\n".join(["Stopped as asked. What became of each readout:", *became,
                               f"Not read out: {', '.join(left)}."])
+        except WebsiteFull as exc:
+            left = [describe(other) for other in ordered[number - 1:]]
+            return "\n".join(["What became of each readout:", *became, f"{', '.join(left)}: {exc}"])
         except NothingWritten as exc:
             became.append(f"{describe(device)}: not read out - {exc}.")
         except Abort as exc:
@@ -593,7 +727,7 @@ def run_all(ctx: Context, devices: list[dict[str, Any]]) -> str:
                 raise Abort("\n".join([f"{describe(device)}: {exc}", *became,
                                         *([f"Not read out yet: {', '.join(left)}."] if left else [])])) from exc
             became.append(f"{describe(device)}: not read out - {exc}.")
-        output.say(f"    {became[-1]}")
+        output.tell(f"    {became[-1]}")
     return "\n".join(["Thank you! What became of each readout:", *became])
 
 

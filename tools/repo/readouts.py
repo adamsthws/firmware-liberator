@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
 """The readouts people have sent, in the R2 bucket the API Worker keeps them in.
 
-    python3 tools/repo/readouts.py [prefix]    list them (prefix: readouts/)
+    python3 tools/repo/readouts.py [prefix]        list them (prefix: readouts/)
+    python3 tools/repo/readouts.py notify [PRODUCT]  who asked to be told when a
+                                                    device's status changes
 
 Each line is a readout's key, size, when it came in and what the Worker noted
 of it: the tool, the product, whether it holds a whole read and a contact.
+Under readouts/ only the readouts are listed, not the marks of what is held
+or the day's counts beside them; a prefix given lists everything under it.
+
+`notify` lists each address given for a product (eWeLink's product model),
+with the firmware models it was given with and when: whom to write to when
+that device's status changes (.github/readouts.md). An address is removed by
+deleting its object (notify/<PRODUCT>/<hash>.json).
 Fetch one with `npx wrangler r2 object get <bucket>/<key> --remote --file
 readout.tar`, from website/. The token is CLOUDFLARE_API_TOKEN, as for
 tools/repo/cloudflare_settings.py; reading the account's R2 is enough.
@@ -43,20 +52,35 @@ def describe(item: dict[str, Any]) -> str:
                       *(f"{key}={noted[key]}" for key in ("tool", "product", "read", "contact") if key in noted)])
 
 
+def subscriber(item: dict[str, Any]) -> str:
+    noted = item.get("custom_metadata") or {}
+    return "  ".join([noted.get("product", item["key"].split("/")[1]), noted.get("email", "?"),
+                      noted.get("models", "") or "-", str(item.get("last_modified", ""))])
+
+
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if len(args) > 1 or args[:1] in (["-h"], ["--help"]):
+    if args[:1] == ["notify"]:
+        if len(args) > 2:
+            print(__doc__.strip(), file=sys.stderr)
+            return 2
+        prefix, show, what = (f"notify/{args[1].upper()}/" if len(args) == 2 else "notify/"), subscriber, "addresses"
+    elif len(args) > 1 or args[:1] in (["-h"], ["--help"]):
         print(__doc__.strip(), file=sys.stderr)
         return 2
+    else:
+        prefix, show, what = (args[0] if args else "readouts/"), describe, "in " + cs.READOUTS_BUCKET
     count = 0
     try:
-        for item in objects(args[0] if args else "readouts/"):
-            print(describe(item))
+        for item in objects(prefix):
+            if not args and not item["key"].endswith(".tar"):
+                continue   # the marks of what is held, and the day's counts
+            print(show(item))
             count += 1
     except cs.SettingsError as error:
         print(f"readouts: {error}", file=sys.stderr)
         return 1
-    print(f"{count} in {cs.READOUTS_BUCKET}")
+    print(f"{count} {what}")
     return 0
 
 

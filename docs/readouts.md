@@ -36,15 +36,21 @@ its own as soon as it is ready. Devices that only get the quick readout below
 go first. A device that can be read out in full still asks you to type PROCEED:
 type s there to skip just that device, or q to quit, as at any question. At the
 end the tool says what became of each one. It may say a readout wasn't needed,
-because enough of that device are in already. Each readout gets its own
-10-to-30-second puzzle before it is sent (see [Sending it](#sending-it)).
+because one like it is in already, or that the website has taken all it can
+for today. Each readout gets its own puzzle before it is sent (see
+[Sending it](#sending-it)). If you added your email address, you'll be told
+when any of these devices' support changes, whether or not its readout was
+needed.
 
 The tool first asks eWeLink what the device runs and which firmware it would
-be offered. It then asks the website whether a readout of that device is
-still wanted: if enough are in already, it stops there and nothing more is
-done. Otherwise it downloads that firmware as the device would. Nothing is
-sent to the device for this. For a device the tool has not seen before, that is the
-whole readout.
+be offered. It then asks the website whether a readout of it would add
+anything: the website keeps one readout of each model and firmware version,
+so a device like one already sent in isn't needed. Then nothing more is done,
+but you can still leave your email address, to be told when the device is
+supported. Otherwise the tool downloads the offered firmware as the device
+would, leaving out any file the website has already. Nothing is sent to the
+device for this. For a device the tool has not seen before, that is the whole
+readout.
 
 A device listed as **Supported**, **Testers wanted** or **Readout wanted**
 ([devices](../devices/README.md)) is then read out in full. The tool says what
@@ -114,14 +120,16 @@ firmware.
 The tool shows you what goes - "the device's firmware readout, anonymised" -
 and asks you to choose one of:
 
-- add an email address, so you can be told if support for the device is
-  added,
+- add an email address, so you can be told when support for the device
+  changes,
 - send it without one, or
 - quit and keep it unsent.
 
-Before it sends, your computer spends 10 to 30 seconds working out a small
-puzzle. This lets the server turn away floods without the tool needing a
-password.
+Before it sends, your computer works out a small puzzle. This lets the server
+turn away floods without the tool needing a password. How long it takes is
+luck and your computer's speed: usually 10 to 30 seconds, sometimes a minute
+or two. The tool shows it is still working. If the website is busy with
+another readout from you, the tool tries again every 15 seconds.
 
 Once it is sent, the tool gives you its reference: quote it if you post
 about the device.
@@ -138,6 +146,15 @@ sh start.sh readout --send <path to readout.tar>
 The readout goes to the project's server at `api.firmwareliberator.com`. It
 is stored privately, never published, and used only to add support for the
 device. Nothing about you is stored except the (optional) contact information you chose to give.
+
+### Your email address
+
+If you give your email address, it is stored privately with your device's
+model, apart from the readout, so you can be emailed when that model's support
+changes: when it becomes supported, say, or a test version is ready to try. It
+is used for nothing else, and is removed if you reply to any such email
+asking for that. You can give it even when no readout of your device is
+needed.
 
 The server takes a limited number of readouts each day. If it has had enough
 that day, your readout stays unsent on your computer; send it the next day.
