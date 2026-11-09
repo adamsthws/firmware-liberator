@@ -313,6 +313,26 @@ class BoardTests(unittest.TestCase):
         start = heard.index(b"\x55\x5a")
         self.assertAlmostEqual(esphome_reads(heard[start:start + 24])["power"], 100, delta=0.1)
 
+    def test_a_pow_elite_holds_gpio23_low(self):
+        # Sonoff's firmware reads it to tell a POWR316D from a POWR320D: high,
+        # as every input idled, it drove the 320D's latching relay in the
+        # emulator, never GPIO13, and read no load.
+        with tempfile.TemporaryDirectory() as tmp:
+            args = board.Board("esp32", board.find_kind("sonoff-pow-elite"), Path(tmp), None).qemu_args()
+        self.assertIn("driver=esp32.gpio,property=gpio_in,value=0xff7fffff", args)
+        self.assertIn("driver=esp32.gpio,property=gpio_in1,value=0xff", args)
+
+    def test_other_boards_leave_the_inputs_as_plug_supervisor_sets_them(self):
+        for chip, kind in (("esp32c3", "sonoff-s60"), ("esp32", "sonoff-th-elite")):
+            with tempfile.TemporaryDirectory() as tmp:
+                args = board.Board(chip, board.find_kind(kind), Path(tmp), None).qemu_args()
+            self.assertFalse([arg for arg in args if "gpio_in" in arg], kind)
+
+    def test_a_pin_above_31_is_held_in_the_second_word(self):
+        self.assertEqual(board.input_levels(board.SOCS["esp32"], (33,)),
+                         ["-global", "driver=esp32.gpio,property=gpio_in,value=0xffffffff",
+                          "-global", "driver=esp32.gpio,property=gpio_in1,value=0xfd"])
+
 
 if __name__ == "__main__":
     unittest.main()

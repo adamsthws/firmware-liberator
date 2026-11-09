@@ -6,7 +6,7 @@
 
 ## Testing
 
-**In the emulator:** it converts, from a public dump of a stock one, to Tasmota and to ESPHome and back to Sonoff's firmware. The emulator has none of its hardware but its CSE7766 meter, which Tasmota and ESPHome both read; Sonoff's firmware 1.0.0 reports 0 V and 0 W through eWeLink with the relay on too, for a reason not yet known (the S60's reads it), so the rest of its wiring below is what its sources say, not what was seen.
+**In the emulator:** it converts, from a public dump of a stock one, to Tasmota and to ESPHome and back to Sonoff's firmware. The emulator has none of its hardware but its CSE7766 meter, which Tasmota and ESPHome both read, so the rest of its wiring below is what its sources say, not what was seen. Sonoff's firmware 1.0.0 reads it too (230.08 V and 99.99 W with the relay on, through eWeLink), as the emulated board holds GPIO23 low, the pin by which that firmware knows a 316D ([below](#which-relay-sonoffs-firmware-drives)).
 
 **Worth checking:** whether the relay, display, button and LEDs work, and what the meter reads against a load you know.
 
@@ -32,6 +32,21 @@ on other pins: the tool converts a plug eWeLink calls a POWR316D, and no other.
 Pins from [ESPHome's page](https://devices.esphome.io/devices/sonoff-pow-elite-16a/)
 and [Blakadder's template](https://templates.blakadder.com/sonoff_POWR316D.html),
 which agree.
+
+### Which relay Sonoff's firmware drives
+
+Sonoff's firmware is one for both models, and tells them apart by GPIO23, not
+by its settings or factory data (which say POWR316D). At start-up it reads
+GPIO23 as an input with its pull-up on: low, it drives the 316D's relay, GPIO13,
+high for on; high, the 320D's latching relay, with a 35 ms pulse on GPIO2 for on
+or GPIO4 for off, then both low. GPIO18's LED follows either way. A 316D's board
+must so hold GPIO23 low; a 320D's leaves it to the pull-up. Seen in 1.0.0's code
+(the function that reads GPIO23, and the relay's switch, which branches on what
+it found), and in the emulator. With every input reading high there, as at
+first, the firmware pulsed GPIO2 and GPIO4 and never raised GPIO13, so the
+emulated load never came on, and it took none of the meter's frames saying there
+was no load, voltage and all: 0 V and 0 W. Its board in the emulator now holds
+GPIO23 low (`HELD_LOW` in `tools/espressif/emulator/board.py`).
 
 ## Files
 

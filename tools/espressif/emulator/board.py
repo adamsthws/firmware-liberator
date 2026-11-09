@@ -30,6 +30,9 @@ its relay: it reads LOAD whatever the relay does.
 
 The baud rate and frame format a UART is set to are not checked: a firmware
 reading the meter at the wrong speed would still get its frames.
+
+Every input pin idles high (plug-supervisor), but those a kind's board holds
+low (HELD_LOW): a pin the firmware reads to know which board it is on.
 """
 
 from __future__ import annotations
@@ -81,6 +84,11 @@ TEMPLATE_GPIOS = {"esp32c3": tuple(range(22)), "esp32": (0, 1, 2, 3, 4, 5, 9, 10
 # A current clamp, not a meter in the relay's line: it measures whatever its
 # cable carries, whether or not the relay is on.
 CLAMPS = {"sonoff-powct"}
+# Input pins a kind's board holds low, where plug-supervisor's every input idling
+# high would read otherwise. Sonoff's POW Elite firmware reads GPIO23, its pull-up
+# on, to tell a POWR316D (low) from a POWR320D (high), whose latching relay it
+# would drive instead (devices/sonoff-pow-elite/README.md).
+HELD_LOW = {"sonoff-pow-elite": (23,)}
 
 
 @dataclass(frozen=True)
@@ -318,12 +326,27 @@ class Soc:
     out_sel_signal: int    # its signal bits
     uart_signals: tuple[int, ...]           # UnRXD_IN_IDX, which is UnTXD_OUT_IDX too
     iomux_rx: tuple[int | None, ...]        # each UART's RX pin through the IOMUX
+    gpio_device: str                        # QEMU's GPIO device, whose properties set the input pins
+    inputs: tuple[int, ...]                 # its gpio_in, gpio_in1 ...: 32 pins each, all high as plug-supervisor sets them
 
 
 SOCS = {
-    "esp32c3": Soc(2, 0x60004004, 0x60004020, 0x60004154, 0x1F, 0x40, 0x60004554, 0xFF, (6, 9), (20, None)),
-    "esp32": Soc(3, 0x3FF44004, 0x3FF44020, 0x3FF44130, 0x3F, 0x80, 0x3FF44530, 0x1FF, (14, 17, 198), (3, 9, 16)),
+    "esp32c3": Soc(2, 0x60004004, 0x60004020, 0x60004154, 0x1F, 0x40, 0x60004554, 0xFF, (6, 9), (20, None),
+                   "esp32c3.gpio", (0x3FFFFF,)),
+    "esp32": Soc(3, 0x3FF44004, 0x3FF44020, 0x3FF44130, 0x3F, 0x80, 0x3FF44530, 0x1FF, (14, 17, 198), (3, 9, 16),
+                 "esp32.gpio", (0xFFFFFFFF, 0xFF)),
 }
+
+
+def input_levels(soc: Soc, held_low: tuple[int, ...]) -> list[str]:
+    """QEMU's arguments setting the input pins as the board holds them: high but
+    for `held_low`. After plug-supervisor's, which they take the place of."""
+    args = []
+    for n, high in enumerate(soc.inputs):
+        level = high & ~sum(1 << (pin - 32 * n) for pin in held_low if pin // 32 == n)
+        name = "gpio_in" if n == 0 else f"gpio_in{n}"
+        args += ["-global", f"driver={soc.gpio_device},property={name},value={level:#x}"]
+    return args
 
 
 @dataclass(frozen=True)
@@ -405,6 +428,7 @@ class Board:
 
     def __init__(self, chip: str, kind: kinds.Kind | None, run: Path, console):
         self.soc = SOCS[chip]
+        self.held_low = HELD_LOW.get(kind.key, ()) if kind else ()
         self.wiring = Wiring.of(kind) if kind else None
         self.meter = None
         if self.wiring is not None:
@@ -431,6 +455,8 @@ class Board:
         args = []
         for n in range(self.soc.uarts):
             args += ["-chardev", f"socket,id=uart{n},path={self.run / f'uart{n}.sock'}", "-serial", f"chardev:uart{n}"]
+        if self.held_low:
+            args += input_levels(self.soc, self.held_low)
         return args + ["-chardev", f"socket,id=board-qmp,path={self.run / 'board-qmp.sock'}",
                        "-mon", "chardev=board-qmp,mode=control"]
 
