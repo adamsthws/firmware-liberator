@@ -210,6 +210,18 @@ change, and regenerate them. What they do:
   for the room temperature it reports (-2 °C here). A believable one would take
   properties like 0005's on `misc.esp32.sens`, and `plug-supervisor` setting them;
   no conversion needs it.
+- **`0006-esp32-uart-rx-timeout-ref-tick.patch` - a classic ESP32 hears a
+  short answer in time.** A UART hands what it received to the firmware when
+  its FIFO fills or the line has been quiet for its RX timeout. The fork
+  always counted the timeout's register in 8 bit times, its unit on the APB
+  clock; on REF_TICK, which Arduino-ESP32 runs every UART up to 250000 baud
+  from, ESP-IDF writes it 64 times larger for the same time. So Tasmota's
+  CSE7761 port (38400 baud 8E1, a timeout of one character: register 88)
+  held each answer 18 ms instead of 0.3, and Tasmota, which waits 6 ms, found
+  no meter ("C61: Rx none") though the board answered within 0.1 ms. The
+  register now counts in the unit of the clock the UART runs from, as ESP-IDF
+  writes it. Espressif's QEMU, which the fork's UART comes from, has the same
+  fault; the fix is offered to neither yet.
 
 **When you next move the pin:** lcgamboa merged #18, #19 and #20 on 7 November
 2026 (`2d075b740`), so `0001`-`0003` drop out on a commit after that. Replace
@@ -337,10 +349,9 @@ the GPIO matrix's routing every second.
   nearly undoes: it reads 101.9 W of the 100.
 - **Not modelled:** the baud rate and frame format a UART is set to (a
   firmware reading the meter at the wrong speed would still get its frames),
-  and a chip's timing. Tasmota gives a CSE7761 6 ms to answer each read; on
-  the classic ESP32 the answer reaches the firmware later than that, so
-  Tasmota finds no meter on a Dual R3 or a POWCT ("C61: Rx none"), where
-  ESPHome, which waits longer, reads it.
+  and a chip's timing: the board answers within about 0.1 ms. Tasmota gives
+  a CSE7761 6 ms to answer each read, which a classic ESP32 meets with
+  `patches/0006`.
 
 ### The browser forward (`container/bin/browser-forward`)
 
@@ -364,6 +375,7 @@ Each of these is general, not per device:
 | `abort()` straight after `Disabling RNG` | external RAM missing | `psram_mb` on the kind |
 | `This chip is revision 0` on an ESP32-C3 | emulated eFuses too old | the revision the app's header asks for |
 | QEMU killed part way through a download | its container held under 256 MB | 350 MB for a classic ESP32 |
+| Tasmota finds no CSE7761 ("C61: Rx none") | a UART on REF_TICK held what it received 64 times its RX timeout | `patches/0006` |
 
 ## Debugging
 
