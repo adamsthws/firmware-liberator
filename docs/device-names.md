@@ -16,6 +16,10 @@ you can do another rename in one pass.
 The examples are for a plug whose Wi-Fi MAC is `12:34:56:ab:cd:ef` (made
 up): `CDEF` is the last two bytes, upper case; `abcdef` is the last three,
 lower case. Each plug works out its own, so no two plugs share a name.
+The Wi-Fi MAC is the one on the plug's label and in the eWeLink app: the
+chip's own (base) MAC, which its Wi-Fi uses on your network, on an ESP32-C3
+and a classic ESP32 alike. Its own network's MAC is one more, and no name
+is made from it.
 
 | When | Firmware | Name (hostname and own network) | Where the name comes from |
 |---|---|---|---|
@@ -36,6 +40,14 @@ bytes, in lower case, and its name inside the firmware is the same: Tasmota's
 device name, OpenBeken's short and full names, ESPHome's friendly name
 (`esphome abcdef`, which ESPHome joins with a space). What plug it is goes
 elsewhere: Tasmota's template (`Sonoff-S60`) and ESPHome's comment.
+
+The plugs with a classic ESP32 (POW Elite, POWCT, TH Elite, DUALR3) go by
+the same names as the S60 at every step above, made from the same MAC. Seen
+in the emulator on 9 November 2026 on all four, from Sonoff's firmware to
+Tasmota and to ESPHome, and on between the two: each firmware's hostname
+in the DHCP log and in Tasmota's own `Hostname`, ESPHome's own network
+with the Wi-Fi off, and its mDNS name (`esphome-abcdef.local`). Converted
+Tasmota answers no mDNS: its release builds leave mDNS out.
 
 The names an earlier release used are still recognised (see
 [Old names](#old-names)), and so are the ones Tasmota gives itself where its
@@ -65,8 +77,11 @@ settings are lost (see [Tasmota's own names](#tasmotas-own-names)).
 
 ### The interim Tasmota (D1)
 
-- It is Tasmota's own build (`artifacts/tasmota32c3-bluetooth.bin`), not
-  changed. Its name comes from the settings record D1 sends:
+- It is Tasmota's own build, not changed: `artifacts/tasmota32c3-bluetooth.bin`
+  on an ESP32-C3, and on a classic ESP32 `tasmota32-display.bin`, fetched
+  as [`artifacts/firmware.json`](../artifacts/firmware.json) pins it
+  (`interim_build` in [`tools/espressif/chips.py`](../tools/espressif/chips.py)).
+  Its name comes from the settings record D1 sends:
   `give_tasmota_the_wifi()` in
   [`tools/autoflash/routes/espressif/installer.py`](../tools/autoflash/routes/espressif/installer.py) calls
   `tasmota_settings.named(template, our_setup_network(ctx))`
@@ -92,12 +107,15 @@ settings are lost (see [Tasmota's own names](#tasmotas-own-names)).
   header from `configure_imprintable_safeboot.py`, the build from
   [`tools/espressif/safeboot/build_recovery_safeboot.sh`](../tools/espressif/safeboot/build_recovery_safeboot.sh),
   then `tools/espressif/safeboot/sanitise_safeboot.py` and `tools/espressif/safeboot/validate_imprintable_safeboot.py`,
-  into `artifacts/autoflash-recovery-safeboot-imprintable.bin`; a test checks
+  into `artifacts/autoflash-recovery-safeboot-imprintable.bin` (an
+  ESP32-C3's) and `artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin`
+  (a classic ESP32's); a test checks
   the pattern is in the image (`tests/repo/test_published_artifacts.py`).
 
 ### Official Tasmota, and F4
 
-- Tasmota's own release (`tasmota32c3.bin`), not changed. Before F4 it runs
+- Tasmota's own release (`tasmota32c3.bin`, or `tasmota32.bin` on a classic
+  ESP32), not changed. Before F4 it runs
   on the startup firmware's saved name.
 - F4 (`step_configure()`) resets Tasmota's settings to its own defaults
   (`Reset 4`), which would name it Tasmota's way. Just before the reset it
@@ -119,7 +137,9 @@ settings are lost (see [Tasmota's own names](#tasmotas-own-names)).
 
 ### The mover
 
-- [`devices/esp32c3/mover.yaml`](../devices/esp32c3/mover.yaml): ESPHome
+- [`devices/esp32c3/mover.yaml`](../devices/esp32c3/mover.yaml), and
+  [`devices/esp32/mover.yaml`](../devices/esp32/mover.yaml) for a classic
+  ESP32, the same but for its chip: ESPHome
   names must be lower case and ESPHome's own suffix is six hex digits, so the
   mover is built as `autoflash-moving` with `name_add_mac_suffix` and its
   `on_boot` writes `autoflash-recovery-%02X%02X` over that name before its
@@ -128,11 +148,12 @@ settings are lost (see [Tasmota's own names](#tasmotas-own-names)).
   ESPHome's `-xxxxxx` (7) make 23, as `autoflash-recovery-XXXX` does. A new
   interim name means a new compiled name of the matching length.
 - A changed mover is a new version (`project: version:`), built with
-  `esphome compile` into `artifacts/autoflash-mover-<version>.bin`.
+  `esphome compile` into `artifacts/autoflash-mover-<chip>-<version>.bin`.
 
 ### ESPHome, converted
 
-- [`devices/sonoff-s60/esphome.yaml`](../devices/sonoff-s60/esphome.yaml): `name: esphome`
+- [`devices/sonoff-s60/esphome.yaml`](../devices/sonoff-s60/esphome.yaml), and
+  each plug's own `devices/<plug>/esphome.yaml` alike: `name: esphome`
   with `name_add_mac_suffix: true` gives `esphome-abcdef`; `on_boot` sets
   its own network to `App.get_name()`. `friendly_name: esphome` gives
   `esphome abcdef` (ESPHome joins them with a space); `comment` says what
