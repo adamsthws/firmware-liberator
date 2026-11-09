@@ -311,8 +311,10 @@ Tasmota's updates, its `Reset` commands and its filesystem leave the identity
 alone. Two things do not:
 
 - **Tasmota's Partition Wizard** offers to grow the filesystem by those 4 KB
-  ("Resize FS to max"). Doing it removes the identity's area from the table, and
-  the filesystem then writes over it once it fills up. Leave that button alone.
+  ("Resize FS to max"). Doing it removes the identity's area from the table.
+  The identity is still there at first, but the filesystem spreads its writes
+  over all of its space, however empty it is: in a test, saving files of about
+  80 KB in all wrote over it. Leave that button alone.
 - **Writing Tasmota's factory image over the plug**, with the web installer say,
   puts Tasmota's own table back. The identity is still there, and the tool still
   finds it, but the filesystem can now write over it in the same way.
