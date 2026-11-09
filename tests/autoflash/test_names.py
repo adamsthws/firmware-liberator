@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from tools.autoflash import names
+from tools.autoflash import names, prompts
 from tools.autoflash.state import RunState
 
 
@@ -51,6 +51,16 @@ class NamesTests(SetupNetworkTestCase):
         ctx.state.set_input("plug_kind", "sonoff-pow-elite")
         self.assertEqual(names.setup_networks(ctx)[2], "ESP_ABCDEF")
         self.assertEqual(names.setup_network_hint(ctx), "tasmota-abcdef, tasmota-ABCDEF-NNNN, or ESP_ABCDEF")
+
+    def test_esphome_with_no_earlier_build_goes_by_its_name_alone(self):
+        # Every kind but the S60 had no earlier ESPHome build, so no old names:
+        # an empty one, as a prefix, would take the home Wi-Fi - the first
+        # network listed - for ESPHome's own.
+        for mac, wanted in (("12:34:56:ab:cd:ef", ("esphome-abcdef",)), (None, ("esphome-",))):
+            ctx = self.ctx(mac=mac)
+            ctx.state.set_input("plug_kind", "sonoff-pow-elite")
+            self.assertEqual(names.esphome_networks(ctx), wanted)
+            self.assertIsNone(prompts._best_ssid(["HomeWifi", "Neighbour"], names.esphome_networks(ctx)))
 
     def test_one_more_carries_into_the_next_byte(self):
         self.assertEqual(names.setup_networks(self.ctx("12-34-56-AB-FF-FF"))[2], "ESP_AC0000")

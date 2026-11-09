@@ -124,12 +124,16 @@ def mover_networks(ctx: "Context") -> tuple[str, ...]:
 
 def esphome_networks(ctx: "Context") -> tuple[str, ...]:
     """ESPHome's own network, once installed - its name (esphome-abcdef) -
-    and the names an earlier build of this kind of plug's gave it."""
+    and the names an earlier build of this kind of plug's gave it.  A kind
+    with no earlier build has none: an empty prefix would match every network."""
     kind = kinds.of_run(ctx.state)
     mac = ctx.state.input("plug_mac")
-    return (final_name(ctx, "esphome") or ESPHOME_PREFIX,
-            named(ctx, kind.esphome_legacy_setup_prefix) if mac else kind.esphome_legacy_setup_prefix,
-            kind.esphome_legacy_prefix)
+    legacy = ()
+    if kind.esphome_legacy_setup_prefix:
+        legacy += (named(ctx, kind.esphome_legacy_setup_prefix) if mac else kind.esphome_legacy_setup_prefix,)
+    if kind.esphome_legacy_prefix:
+        legacy += (kind.esphome_legacy_prefix,)
+    return (final_name(ctx, "esphome") or ESPHOME_PREFIX, *legacy)
 
 
 def mover_network_hint(ctx: "Context") -> str:
