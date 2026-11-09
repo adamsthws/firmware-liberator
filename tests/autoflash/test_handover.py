@@ -50,7 +50,7 @@ class ConsentTests(unittest.TestCase):
             with self.subTest(reply=reply):
                 self.assertTrue(self.consent(reply, "proceed"))
                 self.assertEqual(len(self.asked), 2)
-                self.assertIn("(or hit q to quit):", self.asked[1])   # its own row, the one typed on
+                self.assertIn("(q to quit):", self.asked[1])   # how to quit, as at every question
         with mock.patch.object(output, "question", wraps=output.question) as laid_out:
             self.consent("", "PROCEED")
         self.assertEqual(laid_out.call_args.args[0], "Only the TYPED word PROCEED is accepted")

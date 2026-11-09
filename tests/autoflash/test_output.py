@@ -825,8 +825,8 @@ class InputTests(OutputTestCase):
                 output.show("")
                 prompts.ask_yes_no("Go on")              # a blank line already: not two
         screen, _ = self.run_with(io.StringIO(), False, body)
-        self.assertIn("3. Quit - stop here\n\n Which firmware would you like: \n", screen)
-        self.assertIn("would you like: \n\n Is it plugged in", screen)
+        self.assertIn("2. ESPHome\n\n Which firmware would you like (q to quit): \n", screen)
+        self.assertIn("would you like (q to quit): \n\n Is it plugged in", screen)
         self.assertNotIn("\n\n\n", screen)
 
 

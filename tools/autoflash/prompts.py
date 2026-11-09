@@ -52,8 +52,12 @@ BULLET = "    "
 # A password field on a row of its own, below a prompt too long to share one.
 FIELD = output.MARGIN + "> "
 QUIT_WORDS = {"q", "quit", "exit", "abort"}
-QUIT_HINT = " (q to quit)"
-QUIT_OPTION = "Quit - stop here"
+
+
+def hint_to_quit(tail: str = ": ") -> str:
+    """How to quit, the same at every question: q, said in grey after it -
+    never a numbered option.  On the screen only; `tail` follows it."""
+    return " " + output.styled("(q to quit)", output.DIM) + tail
 
 
 def _emit(lines: Iterable[str]) -> None:
@@ -122,12 +126,12 @@ def discard_typed_ahead() -> None:
         pass  # no console to clear: nothing was typed into it either
 
 
-def _raw(question: str, default: str | None, private: str | None = None) -> str:
+def _raw(question: str, default: str | None, private: str | None = None, hint: bool = True) -> str:
     if UNATTENDED:
         raise _no_one_to_answer(question)
     suffix = f" [{default}]" if default else ""
     discard_typed_ahead()
-    answer = _read_answer(output.question(f"{question}{suffix}", ": ")).strip()
+    answer = _read_answer(output.question(f"{question}{suffix}", hint_to_quit() if hint else ": ")).strip()
     if private:
         output.private(answer, private)
     output.answered(answer)
@@ -234,8 +238,7 @@ def _ask_secret(prompt: str, reveal_seconds: float = 1.0) -> str:
     """
     if UNATTENDED:
         raise _no_one_to_answer(prompt)
-    prompt = prompt.rstrip().rstrip(":") + QUIT_HINT + ": "
-    prompt = output.question(prompt)  # the question is logged; the answer never is
+    prompt = output.question(prompt.rstrip().rstrip(":"), hint_to_quit())  # logged; the answer never is
     value = ""
     try:
         value = _read_secret(prompt, reveal_seconds)
@@ -295,7 +298,7 @@ def _echo_off():
 def _secret_field_below(prompt: str) -> bool:
     """Whether the password field goes on the row below its prompt, so the
     whole field fits on one row and a carriage return can redraw it."""
-    return len(prompt) + 65 >= output.terminal_size().columns
+    return len(output.ANSI_RE.sub("", prompt)) + 65 >= output.terminal_size().columns
 
 
 def _read_secret(prompt: str, reveal_seconds: float) -> str:
@@ -400,13 +403,13 @@ def _ask_secret_windows(prompt: str, reveal_seconds: float) -> str:
     return line.value
 
 
-def wait_for_key(prompt: str = "Press any key to continue, or q to quit...", *,
+def wait_for_key(prompt: str = "Press any key to continue", *,
                  until: Callable[[], bool] | None = None) -> None:
     with interrupt.asking():
         _wait_for_key(prompt, until=until)
 
 
-def _wait_for_key(prompt: str = "Press any key to continue, or q to quit...", *,
+def _wait_for_key(prompt: str = "Press any key to continue", *,
                   until: Callable[[], bool] | None = None) -> None:
     """Pause until one key is pressed; q quits, anything else carries on.
     `until`: stop waiting without a key, too, once it is true - looked at a
@@ -418,7 +421,7 @@ def _wait_for_key(prompt: str = "Press any key to continue, or q to quit...", *,
     if UNATTENDED or not (sys.stdin.isatty() and sys.stdout.isatty()):
         return
     discard_typed_ahead()
-    sys.stdout.write(output.question(prompt))
+    sys.stdout.write(output.question(prompt, hint_to_quit("")))
     sys.stdout.flush()
     try:
         if hostsys.IS_WINDOWS:
@@ -477,7 +480,7 @@ def wait_for_taller_window() -> None:
         f"It is {rows} rows tall; make it at least {output.MIN_ROWS}, or {output.GOOD_ROWS} for the report at the end.",
         "(Otherwise things wouldn't display properly for you)",
     ])
-    wait_for_key("Or press any key to go on as it is, or q to quit...",
+    wait_for_key("Or press any key to go on as it is",
                  until=lambda: output.short_window(before_start=True) is None)
     output.transient_end()
 
@@ -499,9 +502,9 @@ def ask_text(
         _emit([f"Example: {example}"])
     mark = output.mark()
     while True:
-        answer = _raw(question + (QUIT_HINT if quit_hint else ""), default, private)
+        answer = _raw(question, default, private, hint=quit_hint)
         if not answer:
-            _retry(mark, ["An answer is needed here. Type quit to stop."])
+            _retry(mark, ["An answer is needed here."])
             continue
         if validate is None:
             return answer
@@ -519,7 +522,7 @@ def ask_yes_no(
 ) -> bool:
     if help_lines:
         _emit(help_lines)
-    hint = {True: "Y/n", False: "y/N", None: "y/n"}[default] + ", q to quit"
+    hint = {True: "Y/n", False: "y/N", None: "y/n"}[default]
     if UNATTENDED and default is not None:
         answered_unattended(f"{question} ({hint})", "y" if default else "n")
         return default
@@ -532,17 +535,18 @@ def ask_yes_no(
             return True
         if answer in {"n", "no"}:
             return False
-        _retry(mark, ["Please answer y or n, or q to quit."])
+        _retry(mark, ["Please answer y or n."])
 
 
 def ask_choice(question: str, options: Sequence[str], *, help_lines: Sequence[str] = ()) -> int:
     """Returns the zero-based index of the chosen option.
 
-    Every menu ends with a Quit option, which stops the run cleanly.
+    q stops the run cleanly, as at every question (hint_to_quit): no option is
+    numbered for it.
     """
     if help_lines:
         _emit(help_lines)
-    shown = [*options, QUIT_OPTION]
+    shown = list(options)
     for index, option in enumerate(shown, 1):
         _emit([f"{index}. {option}"])
     mark = output.mark()
@@ -553,19 +557,16 @@ def ask_choice(question: str, options: Sequence[str], *, help_lines: Sequence[st
         except ValueError:
             _retry(mark, ["Type the number of one of the options above."])
             continue
-        if chosen == len(shown):
-            raise QuitRun("stopped at an operator prompt")
         if 1 <= chosen <= len(options):
             return chosen - 1
         _retry(mark, [f"Choose a number between 1 and {len(shown)}."])
 
 
-def countdown_choice(question: str, options: Sequence[str], *,
-                     seconds: float = interrupt.CARRY_ON_AFTER, default: int = 0) -> int:
-    """A numbered choice that takes `default` by itself after `seconds`, the
-    time left shown as it runs down: for a question the run must not stand
-    still on, such as one asked after a Ctrl-C that may have been a mistake.
-    Enter takes the default at once; Ctrl-C stops."""
+def countdown_carry_on(question: str, *, seconds: float = interrupt.CARRY_ON_AFTER) -> bool:
+    """Whether to carry on: by itself after `seconds`, the time left shown as
+    it runs down, or at once with Enter; q stops, as at every question.  For
+    a question the run must not stand still on, such as one asked after a
+    Ctrl-C that may have been a mistake.  Ctrl-C stops too."""
     if UNATTENDED or not (sys.stdin.isatty() and sys.stdout.isatty()):
         # The emulator's tests: the countdown's time, with nobody to answer,
         # so a Ctrl-C can be pressed during it (it stops at once there).
@@ -573,29 +574,24 @@ def countdown_choice(question: str, options: Sequence[str], *,
         if wait > 0:
             with interrupt.asking():
                 time.sleep(wait)
-        answered_unattended(question, options[default])
-        return default
-    for index, option in enumerate(options, 1):
-        _emit([f"{index}. {option}" + ("   <- in a moment, by itself" if index - 1 == default else "")])
-    keys = {str(index): index - 1 for index in range(1, len(options) + 1)}
+        answered_unattended(question, "carry on")
+        return True
     out = sys.stdout
 
     def asked(left: float) -> str:
-        return (f"{question} - {options[default].split(' - ')[0].lower()} in {max(0, int(left + 0.99))} s, "
-                f"or press 1-{len(options)}")
+        return f"{question} - in {max(0, int(left + 0.99))} s by itself, or press Enter now"
 
     def draw(left: float) -> None:
-        out.write("\r" + output.question_row(asked(left), ": ") + " ")
+        out.write("\r" + output.question_row(asked(left), hint_to_quit()) + " ")
         out.flush()
 
     # Asked once, before the terminal is set to read single keys: asking
-    # readies it for a typed answer, which would undo that - a number was then
+    # readies it for a typed answer, which would undo that - a key was then
     # only taken with an Enter, whose new row was left blank on the screen.
-    out.write(output.question(asked(seconds), ": ") + " ")
-
-    chosen = default
+    out.write(output.question(asked(seconds), hint_to_quit()) + " ")
+    stop = False
     deadline = time.monotonic() + seconds
-    discard_typed_ahead()  # an Enter typed before would take the default at once
+    discard_typed_ahead()  # an Enter typed before would carry on at once
     with interrupt.asking():
         try:
             if hostsys.IS_WINDOWS:
@@ -608,8 +604,8 @@ def countdown_choice(question: str, options: Sequence[str], *,
                             raise KeyboardInterrupt
                         if char in ("\r", "\n"):
                             break
-                        if char in keys:
-                            chosen = keys[char]
+                        if char.lower() == "q":
+                            stop = True
                             out.write(char)   # the answer shown, as typed
                             break
                     time.sleep(0.2)
@@ -619,18 +615,18 @@ def countdown_choice(question: str, options: Sequence[str], *,
                 fd = sys.stdin.fileno()
                 saved = termios.tcgetattr(fd)
                 try:
-                    tty.setcbreak(fd)  # keys one at a time; Ctrl-C still a signal
+                    tty.setcbreak(fd)  # keys one at a time, unechoed; Ctrl-C still a signal
                     while time.monotonic() < deadline:
                         draw(deadline - time.monotonic())
                         if select.select([fd], [], [], 0.2)[0]:
                             key = os.read(fd, 1).decode("utf-8", "replace")
                             if key in ("\r", "\n"):
                                 break
-                            if key in keys:
-                                chosen = keys[key]
+                            if key.lower() == "q":
+                                stop = True
                                 out.write(key)   # the answer shown, as typed: nothing is echoed
                                 break
-                    time.sleep(0.1)   # an Enter typed after the number, by habit: dropped
+                    time.sleep(0.1)   # an Enter typed after the q, by habit: dropped
                     termios.tcflush(fd, termios.TCIFLUSH)
                 finally:
                     termios.tcsetattr(fd, termios.TCSADRAIN, saved)
@@ -638,8 +634,8 @@ def countdown_choice(question: str, options: Sequence[str], *,
             out.write("\n")
             out.flush()
             output.after_input()
-    output.answered(options[chosen])
-    return chosen
+    output.answered("stop" if stop else "carry on")
+    return not stop
 
 
 def ping_ok(address: str, timeout: int = 2) -> bool:
@@ -876,14 +872,14 @@ def require_word(word: str) -> bool:
     Enter or a y pressed by habit - is not taken as either: the question is
     asked again, saying only the word itself goes ahead."""
     output.tell("")
-    question = f"Type {word.upper()} to go ahead - q stops, changing nothing"
+    question = f"Type {word.upper()} to go ahead"
     if UNATTENDED:
         # Given in advance by starting the run with --unattended.
         answered_unattended(question, word.upper())
         return True
     discard_typed_ahead()
     mark = output.mark()
-    prompt = output.question(question, ": ")
+    prompt = output.question(question, hint_to_quit())
     while True:
         answer = _read_answer(prompt).strip().lower()
         output.answered(answer)
@@ -892,5 +888,4 @@ def require_word(word: str) -> bool:
         if answer in QUIT_WORDS:
             return False
         output.rewind(mark)  # the wrong answer, and its question, off the screen
-        prompt = output.question(f"Only the TYPED word {word.upper()} is accepted", " ",
-                                 hint="(or hit q to quit):")
+        prompt = output.question(f"Only the TYPED word {word.upper()} is accepted", hint_to_quit())

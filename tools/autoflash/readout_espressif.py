@@ -170,7 +170,7 @@ def back_on_sonoff(ctx: Context) -> bool:
         "wall switch, at its circuit breaker). If this computer joined the",
         "device's own network, join your usual Wi-Fi again.",
     ])
-    prompts.wait_for_key("Press any key once it is switched back on, or q to quit...")
+    prompts.wait_for_key("Press any key once it is switched back on")
     output.transient_end()
     started = time.monotonic()
     while not installer.back_on_sonoff(ctx):
