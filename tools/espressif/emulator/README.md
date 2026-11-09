@@ -380,6 +380,21 @@ Each of these is general, not per device:
   (`hbreak`): the bootloader overwrites software breakpoints in IRAM when it
   loads the app. For the bridge's symbols, build its ELF with
   `pio run -e autoflash-bridge` in `archive/bridge`.
+- **gdb on a plug already running**, with no restart: start QEMU's gdb server
+  through its monitor, and reach it through the container, as its network is not
+  the host's:
+
+  ```sh
+  docker exec autoflash-emu-N sh -c 'echo "gdbserver tcp:0.0.0.0:1234" | socat - UNIX-CONNECT:/run/autoflash-emu/monitor.sock'
+  script -qfc "riscv32-esp-elf-gdb -q -batch -ex 'set architecture riscv:rv32' \
+      -ex 'target remote | docker exec -i autoflash-emu-N socat - TCP:127.0.0.1:1234' -ex '...'" /dev/null
+  ```
+
+  `hbreak` with `commands ... printf ... continue` traces a call as it runs (the
+  BASICR4's dispatch was found so); gdb's `print` can call the firmware's own
+  functions, such as its ADC read, and memory reads show its state (the
+  overheat flag). `gdbserver none` stops the server again. A check that runs only
+  at start-up is over before gdb attaches: read what it left instead.
 - **Without a NIC** (`-nic none`) the fork does not map its Wi-Fi device, and
   firmware hangs in Wi-Fi initialisation. That is a test set-up problem, not
   a firmware one.
