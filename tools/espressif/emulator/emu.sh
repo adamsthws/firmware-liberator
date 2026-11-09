@@ -343,6 +343,11 @@ print(next((k.psram_mb for k in kinds.EVERY if k.psram_mb and k.product_of(sys.a
 kind=$(PYTHONPATH=$ROOT "$PY" -c 'import sys
 from tools.autoflash import kinds
 print(next((k.key for k in kinds.EVERY if k.product_of(sys.argv[1])), ""))' "$model")
+# And some read a sensor on the board that the emulated ADC would read as 0.
+adc=$(PYTHONPATH=$ROOT "$PY" -c 'import sys
+from tools.autoflash import kinds
+kind = next((k for k in kinds.EVERY if k.adc_readings and k.product_of(sys.argv[1])), None)
+print(" ".join(f"{name}={value}" for name, value in kind.adc_readings) if kind else "")' "$model")
 # QEMU for the dual-core ESP32 takes more than the 256 MB the ESP32-C3's stays
 # in: over it, the kernel kills QEMU part way through a download, which looks
 # like the plug restarting. Measured through every classic ESP32's conversions it
@@ -357,7 +362,7 @@ exec "${awake[@]}" docker run --rm $tty --name "$NAME" --hostname autoflash-emu-
     --sysctl net.ipv4.ip_forward="$(( cloud || windows ))" \
     "${publish[@]}" "${dev[@]}" \
     -v "$STATE:/state" -v "$SRC/flash.bin:/secrets/stock-flash.bin:ro" "${stubvol[@]}" \
-    -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e PLUG_MAC="$mac" -e CHIP="$chip" -e PSRAM="$psram" \
+    -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e PLUG_MAC="$mac" -e CHIP="$chip" -e PSRAM="$psram" -e ADC="$adc" \
     -e PLUG_KIND="$kind" -e CLOUD="$cloud" -e PCAP="$pcap" -e FIREWALL="$firewall" -e WINDOWS="$windows" \
     -e STUB_CLOUD="$stub" -e STUB_CLOUD_DIR="$STUB_DIR" -e STUB_PRODUCT_MODEL="$product" \
     -e AUTOFLASH_EMULATOR_URL="http://localhost:$PORT" \

@@ -68,6 +68,18 @@ class PlugRouterTests(unittest.TestCase):
         supervisor = PLUG.with_name("plug-supervisor").read_text(encoding="utf-8")
         self.assertIn("driver=esp32_wifi,property=access-points-off,value=on", supervisor)
 
+    def test_each_adc_reading_a_kind_gives_is_a_property_of_the_forks_adc(self):
+        # Silently ignored too, were the type or a property name wrong.
+        from tools.autoflash import kinds
+        emulator = PLUG.parents[2]
+        supervisor = PLUG.with_name("plug-supervisor").read_text(encoding="utf-8")
+        self.assertIn("driver=misc.esp32c3.saradc,property=", supervisor)
+        patch = (emulator / "patches/0005-esp32c3-saradc-channel-readings.patch").read_text(encoding="utf-8")
+        readings = [name for kind in kinds.EVERY for name, _ in kind.adc_readings]
+        self.assertIn("adc1_ch3", readings)
+        for name in readings:
+            self.assertIn(f'DEFINE_PROP_UINT16("{name}"', patch)
+
 
 if __name__ == "__main__":
     unittest.main()

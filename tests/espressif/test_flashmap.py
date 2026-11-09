@@ -82,6 +82,11 @@ class Esp32C3Efuse(unittest.TestCase):
         self.assertEqual(flashmap.mac_of_efuse(efuse), "12:34:56:ab:cd:ef")
         self.assertEqual((int.from_bytes(efuse[0x24:0x28], "little") >> 18) & 7, 3)
 
+    def test_it_holds_adc_calibration_as_every_chip_does(self):
+        # BLK_VERSION_MAJOR, block 2's bits 128-129: in the word EFUSE_RD_SYS_PART1_DATA4.
+        efuse = flashmap.esp32c3_efuse("12:34:56:ab:cd:ef")
+        self.assertEqual(int.from_bytes(efuse[0x40:0x44], "little") & 3, 1)
+
     def test_the_revision_is_read_from_the_apps_header(self):
         flash = bytearray(0x20000)
         flash[0x10000 + 14] = 3
