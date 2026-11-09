@@ -1315,7 +1315,7 @@ class ReadoutScenarioTests(unittest.TestCase):
         self.assertEqual(stock[-1], "--")   # found as a person without its address finds it
         self.assertEqual(converted[-3:], ["--", "--plug-ip", fs.PLUG_IP])
         script = (fs.REPO / "tools/espressif/emulator/unattended-test.sh").read_text(encoding="utf-8")
-        self.assertIn("--readout) driver_args=(--command readout)", script)
+        self.assertIn("--readout) driver_args+=(--command readout)", script)
 
     def readout_says(self, restarts=True):
         """What readout_espressif says from the read to the plug back on Sonoff's

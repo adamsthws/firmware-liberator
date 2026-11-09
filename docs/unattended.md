@@ -89,6 +89,25 @@ after the stage was tried again; what a stage that passed showed while under
 way; or a stage left "Underway" when the next began. The fault suites fail a
 run that does this (FAIL-SCREEN in [testing.md](testing.md)).
 
+## As a person sits through it
+
+`--attended` runs the tool without `--unattended`, so every question is asked
+as it is of a person at the keyboard, and `--answers FILE` answers them: a
+JSON list of what to type when the screen shows what. Each answer is typed
+once, or `times` times, when its `when` - a regular expression, matched on what
+the run has shown since the last answer - shows; `\r` is Enter:
+
+```json
+[{"when": "Press any key", "type": "x"},
+ {"when": "Type PROCEED", "type": "PROCEED\r"},
+ {"when": "Wi-Fi password for", "type": "secret\r", "times": 2}]
+```
+
+The recording then shows each question as it was asked and what it left
+behind once answered; `answers.json`, beside it, says where in `screen.raw`
+each answer was typed. In the emulator, `unattended-test.sh --answers=FILE` does
+the same.
+
 ## In the emulator
 
 `tools/espressif/emulator/unattended-test.sh --fresh` starts the emulator, converts the
