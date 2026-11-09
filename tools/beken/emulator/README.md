@@ -46,6 +46,12 @@ patch does and why, how to change them, and how the pin moves, is
   commands complete, but there is **no BLE radio**: nothing is transmitted and no
   peer can connect.
 - BK7238 CPU is ARM968E-S (ARMv5TE), which Unicorn runs directly.
+- The **SAR ADC** is modelled (`src/emulator.py`, `src/periph.py`): a channel no
+  one set reads 330 raw (about 1.06 V); `--adc CH:VALUE` or `--adc P23:1.65V` on
+  `main.py` sets one. Channels 7 and up (7 is the internal temperature sensor)
+  give no samples unless set. `beken-emu.sh` sets none, and the Beken plugs need
+  none: unlike the ESP32-C3's BASICR4 (`adc_readings` in `tools/autoflash/kinds.py`),
+  neither firmware acts on a reading ([Beken research](../../../docs/beken-research.md#0x3e0000--factory-tlv-store-mac--radio-calibration)).
 
 Run the S61 dump:
 

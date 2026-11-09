@@ -1,8 +1,11 @@
 """Reading a Beken app's partition table, in made-up apps: names, then entries
 pointing at them, at the places asked for. No firmware is here."""
+import re
 import struct
 import unittest
+from pathlib import Path
 
+from tools.autoflash import kinds
 from tools.beken import layouts
 
 FOUR_MB = (("Bootloader", 0x0, 0xF000), ("Application", 0x11000, 0x250000), ("ota", 0x286000, 0x15A000),
@@ -89,6 +92,25 @@ class KnownTests(unittest.TestCase):
     def test_the_name_is_taken_in_either_case(self):
         table = tuple(("OTA" if name == "ota" else name, start, length) for name, start, length in FOUR_MB)
         self.assertIs(layouts.known(an_app(table))[0], layouts.BEKEN_4M)
+
+
+
+class CalibrationTests(unittest.TestCase):
+    def test_each_beken_esphome_keeps_the_factory_calibration_where_the_sdk_reads_it(self):
+        # LibreTiny points the SDK's radio calibration at board_flash.calibration:
+        # it is the plug's own sector, and nothing else of ESPHome's is there.
+        start, length = next((at, size) for name, at, size in layouts.BEKEN_4M.partitions if name == "RF Firmware")
+        root = Path(__file__).resolve().parents[2]
+        for kind in kinds.EVERY:
+            if kind.family != "beken":
+                continue
+            with self.subTest(kind=kind.key):
+                config = (root / kind.folder / "esphome.yaml").read_text(encoding="utf-8")
+                parts = {name: (int(at, 16), int(size, 16)) for name, at, size in
+                         re.findall(r'board_flash\.(\w+): "0x([0-9A-Fa-f]+)\+0x([0-9A-Fa-f]+)"', config)}
+                self.assertEqual(parts.pop("calibration"), (start, length))
+                for name, (at, size) in parts.items():
+                    self.assertTrue(at + size <= start or at >= start + length, name)
 
 
 if __name__ == "__main__":
