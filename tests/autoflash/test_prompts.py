@@ -329,3 +329,10 @@ class AdminPasswordTests(unittest.TestCase):
         third = screens[2]
         self.assertEqual(third.count("That password was not accepted"), 1, third)
         self.assertNotIn("*********", third)   # neither wrong try left
+
+
+class SecretFieldTests(unittest.TestCase):
+    def test_a_password_is_typed_on_its_own_row_however_short_its_question(self):
+        # The same for every password, whatever its question's length.
+        for prompt in ("PIN (q to quit): ", "This computer's password (for sudo) (q to quit): "):
+            self.assertTrue(prompts._secret_field_below(prompt), prompt)

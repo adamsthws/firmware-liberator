@@ -296,9 +296,10 @@ def _echo_off():
 
 
 def _secret_field_below(prompt: str) -> bool:
-    """Whether the password field goes on the row below its prompt, so the
-    whole field fits on one row and a carriage return can redraw it."""
-    return len(output.ANSI_RE.sub("", prompt)) + 65 >= output.terminal_size().columns
+    """Whether the password field goes on the row below its prompt: always,
+    whatever the prompt's length - the same for every password, and the
+    whole field on one row, so a carriage return can redraw it."""
+    return True
 
 
 def _read_secret(prompt: str, reveal_seconds: float) -> str:
