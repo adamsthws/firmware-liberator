@@ -7,7 +7,7 @@ import unittest.mock
 import zlib
 from pathlib import Path
 
-from tools.beken import fota_wrap, rbl, rebuild_dump as rd
+from tools.beken import fota_wrap, layouts, rbl, rebuild_dump as rd
 
 SIZE_4M = 0x400000
 TABLE_4M = (("bootloader", "beken_onchip_crc", 0, 0x10000), ("app", "beken_onchip_crc", 0x10000, 0x250000),
@@ -74,6 +74,15 @@ def a_readout_4m():
     for start, stop in rd.INTERIM_WRITES:
         flash[start:stop] = b"\x55" * (stop - start)
     return bytes(flash)
+
+
+class CalibrationTests(unittest.TestCase):
+    def test_the_interim_firmware_never_writes_the_factory_calibration(self):
+        # The radio calibration (and the SDK's ADC values) the factory wrote at
+        # 0x3e0000: no firmware this tool installs could make it again.
+        start, length = next((at, size) for name, at, size in layouts.BEKEN_4M.partitions if name == "RF Firmware")
+        for begin, end in rd.INTERIM_WRITES:
+            self.assertTrue(end <= start or begin >= start + length, hex(begin))
 
 
 class StripeTests(unittest.TestCase):

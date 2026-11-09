@@ -108,18 +108,46 @@ conversion to OpenBeken — the basis for both Wi-Fi handover and reversibility.
 
 ### `0x3e0000` — factory TLV store (MAC + radio calibration)
 
-A nested TLV: `"TLV\0"`, total-len `u32`, then sections. Each section is a header
-`tag=0x00 | marker(3) | payload_len u32`, then entries `tag(1) | marker(3) |
-len u32 | value`. Two sections on this dump:
+A nested TLV: `"TLV\0"`, total-len `u32` (480 on the public S61s dump), then
+sections. Each section is a header `tag=0x00 | marker(3) | payload_len u32`, then
+entries `tag(1) | marker(3) | len u32 | value`. Four sections, named as Beken's
+SDK names them (`bk7011_cal_pub.h`,
+[beken_freertos_sdk](https://github.com/openshwprojects/beken_freertos_sdk)):
 
-- **Section `0x111111` (90 B) — device/manufacturing.** tag `0x02` len 6 = the
-  **Wi-Fi/base MAC** (examples in this repo use `12:34:56:ab:cd:ef`); other tags
-  (`0x01`,`0x03`–`0x07`, 4–8 B each) are per-device manufacturing constants.
-- **Section `0x222222` (162 B) — radio (RF) calibration.** Two 14-byte tables
-  (tags `0x02`,`0x03`) = per-Wi-Fi-channel TX-power calibration (descending
-  values across the 14 channels), a 40-byte table (tag `0x07`) of per-channel/
-  rate power, plus small scalars. This is the *radio* cal, distinct from the
-  *energy-meter* cal in the EF40 store below.
+- **`0x111111` TXID (90 B) — device and manufacturing.** ID (`0x01`), the
+  **Wi-Fi/base MAC** (`0x02`, 6 B; examples in this repo use `12:34:56:ab:cd:ef`),
+  THERMAL (`0x03`), CHANNEL (`0x04`), XTAL (`0x05`), **ADC** (`0x06`, 4 B: the SAR
+  ADC's calibration, `{u16 low, u16 high}`) and LPFCAP (`0x07`, 8 B). On the S61s
+  dump the ADC values are the SDK's own defaults (`0x472`, `0x8E9`), so its factory
+  stored none of its own.
+- **`0x222222` TXPWR_TAB (162 B) — TX power.** An enable flag, the 802.11b and
+  802.11g power tables (`0x02`, `0x03`, 14 B each: one value per channel), DIF_GN20,
+  the **BLE** power table (`0x07`, 40 B) and a calibration status; its last 34 bytes
+  are not read here.
+- **`0x333333` CALI_MAIN_TX (132 B)** and **`0x444444` CALI_MAIN_RX (64 B)** — the
+  radio's TX and RX DC, gain and phase calibration.
+
+This is the *radio* calibration, distinct from the *energy-meter* one in the EF40
+store below. No firmware this tool installs could make it again, and no step of a
+conversion writes it: the interim and readout OpenBeken write their settings at
+`0x3e1000` and their variables below `0x3e0000` (`rebuild_dump.INTERIM_WRITES`),
+ESPHome (LibreTiny) points the SDK at it (`board_flash.calibration`
+`0x3E0000+0x1000`) and puts nothing of its own there, and tests hold both. Both
+firmwares, built for the 4 MB table, read the radio calibration at `0x3e0000` (an
+upstream 2 MB build would look at `0x1e0000`, find none, and take defaults); neither
+applies the ADC values (OpenBeken's `hal_adc_bk7231.c` and LibreTiny's
+`wiring_analog.c` return the raw sample), and neither plug's firmware acts on an
+ADC reading. Both stock firmwares (the S61's 1.0.2, the Basic Gen5's 1.0.4) hold
+only the SDK's own ADC code: its internal temperature sensor's thread
+(`temp_detect`, `tadc_thread_entry`), which compensates the radio and crystal for
+temperature, and its `adc` console command - no overheat watch like the BASICR4's
+(no `TEMP_EVENT` or `TEMPERATURE_CHECK`), by their strings; their code was not
+read. The S61 meters with a BL0937 counting pulses, the Basic Gen5 has no meter,
+and neither OpenBeken's drivers here nor the ESPHome configs give a pin an ADC
+role. The plug's
+backup keeps the sector (`config-0x3e0000.bin`, `plugs.BEKEN_REGION`). That the
+SDK's closed calibration library reads this sector is inferred from its
+partition table and prototypes, not seen in its code.
 
 ### `0x3e2000` — EF40 **app** KV store (device config + Wi-Fi creds)
 
