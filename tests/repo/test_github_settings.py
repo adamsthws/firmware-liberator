@@ -269,7 +269,7 @@ if __name__ == "__main__":
         self.assertEqual((code, fake.secrets_set), (0, {}))   # a check sets nothing
         code, out = run(fake, "apply")
         self.assertEqual((code, fake.secrets_set), (0, ENV))
-        self.assertIn("secret CLOUDFLARE_EMAIL_FORWARD: set from .env", out)
+        self.assertIn("secret CLOUDFLARE_EMAIL_FORWARD: set from .env.infra", out)
         # Changed in .env, it is set again: GitHub cannot say it differs.
         run(fake, "apply", env={**ENV, "CLOUDFLARE_EMAIL_FORWARD": "hello,press"})
         self.assertEqual(fake.secrets_set["CLOUDFLARE_EMAIL_FORWARD"], "hello,press")
@@ -285,11 +285,11 @@ if __name__ == "__main__":
 
     def test_apply_stops_on_one_not_in_env(self):
         fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
-        with mock.patch.object(gs.cloudflare_settings.credentials, "ENV_FILE", Path("/nonexistent/.env")), \
+        with mock.patch.object(gs.cloudflare_settings, "ENV_FILE", Path("/nonexistent/.env.infra")), \
                 mock.patch("sys.stderr", io.StringIO()) as err:
             code, _ = run(fake, "apply", env={name: "" for name in gs.FROM_ENV})
         self.assertEqual((code, fake.secrets_set), (1, {}))
-        self.assertIn(f"no {gs.FROM_ENV[0]}: in the environment or .env", err.getvalue())
+        self.assertIn(f"no {gs.FROM_ENV[0]}: in the environment or .env.infra", err.getvalue())
 
     def test_a_secret_goes_to_gh_on_stdin_never_in_its_arguments(self):
         done = mock.Mock(returncode=0, stdout="", stderr="")

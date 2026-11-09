@@ -1,5 +1,6 @@
 import copy
 import io
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -185,9 +186,9 @@ class CloudflareSettingsTests(unittest.TestCase):
     def test_the_token_comes_from_the_environment_or_env(self):
         with tempfile.TemporaryDirectory() as directory:
             env_file = Path(directory) / ".env"
-            with mock.patch.object(cs.credentials, "ENV_FILE", env_file), \
+            with mock.patch.object(cs, "ENV_FILE", env_file), \
                     mock.patch.dict("os.environ", {"CLOUDFLARE_API_TOKEN": ""}):
-                with self.assertRaisesRegex(cs.SettingsError, "no CLOUDFLARE_API_TOKEN"):
+                with self.assertRaisesRegex(cs.SettingsError, "no CLOUDFLARE_API_TOKEN: in the environment or .env.infra"):
                     cs.token()
                 env_file.write_text("CLOUDFLARE_API_TOKEN=from-the-file\n", encoding="utf-8")
                 self.assertEqual(cs.token(), "from-the-file")
@@ -282,9 +283,19 @@ class CloudflareSettingsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             env_file = Path(directory) / ".env"
             env_file.write_text(f"{cs.EMAIL_DESTINATION}={DESTINATION}\n", encoding="utf-8")
-            with mock.patch.object(cs.credentials, "ENV_FILE", env_file), \
+            with mock.patch.object(cs, "ENV_FILE", env_file), \
                     mock.patch.dict("os.environ", {cs.EMAIL_DESTINATION: ""}):
                 self.assertEqual(cs.variable(cs.EMAIL_DESTINATION), DESTINATION)
+
+    def test_its_names_are_kept_apart_from_the_tools(self):
+        # The tool refuses a .env holding a name it does not know, so these live in .env.infra,
+        # which git ignores, so no emulator's copy of the checkout takes the token.
+        root = Path(__file__).resolve().parents[2]
+        self.assertEqual(cs.ENV_FILE, root / ".env.infra")
+        example = cs.credentials.parse((root / ".env.infra.example").read_text(encoding="utf-8"))
+        self.assertEqual(set(example), {"CLOUDFLARE_API_TOKEN", cs.EMAIL_DESTINATION, cs.EMAIL_FORWARD})
+        self.assertFalse(set(example) & (set(cs.credentials.KEYS) | set(cs.credentials.RENAMED)))
+        self.assertEqual(subprocess.run(["git", "check-ignore", "-q", ".env.infra"], cwd=root).returncode, 0)
 
     def test_the_workflow_only_checks(self):
         # Settings are applied by hand; the workflow's token can only read them.

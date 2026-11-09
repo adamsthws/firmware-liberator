@@ -147,14 +147,14 @@ Each address of the domain in `CLOUDFLARE_EMAIL_FORWARD`, named by the
 part before the @ (`contact`, say, separated by commas), is forwarded to
 `CLOUDFLARE_EMAIL_DESTINATION`, the account's verified destination address;
 mail to any other is dropped. Both are private, kept out of the repository
-where scrapers would find them: in `.env`, and in the `website` secrets of
+where scrapers would find them: in `.env.infra`, and in the `website` secrets of
 those names, which `python3 tools/repo/github_settings.py apply` sets from
-`.env` each time it runs. The check never prints them.
+`.env.infra` each time it runs. The check never prints them.
 
 The settings change rarely, so they are set by hand, never by CI: a leaked CI token
 cannot change DNS-facing settings or the bucket. To change one, edit the
 script, then with the apply token in `CLOUDFLARE_API_TOKEN` (the environment
-or `.env`) run `python3 tools/repo/cloudflare_settings.py` to see what
+or `.env.infra`) run `python3 tools/repo/cloudflare_settings.py` to see what
 differs and `... apply` to set it; delete the token, and push.
 
 The cloudflare-settings workflow checks them, with the read token, weekly

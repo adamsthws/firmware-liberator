@@ -9,7 +9,8 @@
                                                        that the token reads no more than
                                                        the deploy token should
 
-With CLOUDFLARE_API_TOKEN, in the environment or .env: to check, a token
+With CLOUDFLARE_API_TOKEN, in the environment or .env.infra (as
+.env.infra.example shows; not .env, whose names are the tool's): to check, a token
 allowed to read the zone, its settings, DNS records, single redirects, rate
 limiting rules and Email Routing rules, and the account's R2 buckets and
 Email Routing addresses; to apply, one allowed to edit them all. With
@@ -44,6 +45,10 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
+# The maintainer's tokens and private settings for the project's services,
+# apart from .env, which the tool reads and which refuses a name it does not
+# know.
+ENV_FILE = ROOT / ".env.infra"
 
 from tools.autoflash import credentials  # noqa: E402
 
@@ -152,17 +157,17 @@ class SettingsError(RuntimeError):
 
 
 def variable(name: str) -> str:
-    """`name` from the environment, or else .env."""
+    """`name` from the environment, or else .env.infra."""
     value = os.environ.get(name)
     if value:
         return value
     try:
-        env_file = credentials.parse(credentials.ENV_FILE.read_text(encoding="utf-8"))
+        env_file = credentials.parse(ENV_FILE.read_text(encoding="utf-8"))
     except FileNotFoundError:
         env_file = {}
     value = env_file.get(name)
     if not value:
-        raise SettingsError(f"no {name}: in the environment or .env")
+        raise SettingsError(f"no {name}: in the environment or .env.infra")
     return value
 
 

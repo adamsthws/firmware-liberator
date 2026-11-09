@@ -12,7 +12,7 @@ only those that have run on main, saying which are left: a check required
 before its workflow is there - a new job, or one renamed - would hold every
 pull request back, the firmware-update workflow's too. Run it again once
 they have run. A secret's value cannot be read back, so only its name is
-checked. `apply` sets each of FROM_ENV from the environment or .env, every
+checked. `apply` sets each of FROM_ENV from the environment or .env.infra, every
 time, and leaves any other missing one - a token - to `secret`.
 """
 
@@ -92,10 +92,10 @@ ENVIRONMENT_SECRETS = {
     "CLOUDFLARE_EMAIL_DESTINATION": "the address the domain's mail is forwarded to, which that workflow checks",
     "CLOUDFLARE_EMAIL_FORWARD": "the domain's addresses forwarded there, which that workflow checks",
 }
-# Secrets kept in .env rather than made for one job, as a token is: private
+# Secrets kept in .env.infra rather than made for one job, as a token is: private
 # settings the cloudflare-settings workflow checks against (as
 # tools/repo/cloudflare_settings.py says). GitHub cannot show what a secret
-# holds, so `apply` sets these from .env each time; one left behind there
+# holds, so `apply` sets these from .env.infra each time; one left behind there
 # is a difference that workflow finds.
 FROM_ENV = ["CLOUDFLARE_EMAIL_DESTINATION", "CLOUDFLARE_EMAIL_FORWARD"]
 
@@ -305,7 +305,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {what}: set")
         for name in FROM_ENV:
             set_secret(name, cloudflare_settings.variable(name).strip())
-            print(f"  environment '{ENVIRONMENT}' secret {name}: set from .env")
+            print(f"  environment '{ENVIRONMENT}' secret {name}: set from .env.infra")
     except (SettingsError, cloudflare_settings.SettingsError) as error:
         print(f"github_settings: {error}", file=sys.stderr)
         return 1
