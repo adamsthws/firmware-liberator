@@ -16,6 +16,7 @@ const WRITTEN = {
   "0003_totals.sql": "aa0200ac16c5e5e40e927121ac6388f35c2a05256ec7c14afe300f1d3ddef563",
   "0004_readouts.sql": "eff10d3be7755b62a242aa940ca197b3e34221032c0074087292a4f2bc2faedc",
   "0005_held_reports.sql": "08b89131937fcd4bd97e33644212c2404f4bbff56c25423eea22271307d84f50",
+  "0006_store_days.sql": "d2cfd8f1d253dd7cee22c09cd0cd19da3237af932ef0dd134c51032e8eef5ccf",
 };
 
 test("the migrations are numbered one after another, from 0001", () => {

@@ -232,3 +232,18 @@ test("a report held for review is in no total", async () => {
   await night.nightly(bindings, NIGHT);
   assert.equal(rows(bindings, "SELECT * FROM daily_totals").length, 0);
 });
+
+test("each night notes how much the store of readouts holds", async () => {
+  const bindings = env();
+  await night.nightly(bindings, NIGHT);
+  bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES (?, NULL, 3, 3000)")
+    .run(night.READOUTS_EVER);
+  await night.nightly(bindings, new Date("2026-11-11T03:17:00Z"));
+  await night.nightly(bindings, new Date("2026-11-11T03:18:00Z"));
+  assert.deepEqual(rows(bindings, "SELECT day, readouts, bytes FROM store_days ORDER BY day"), [
+    { day: "2026-11-10", readouts: 0, bytes: 0 },
+    { day: "2026-11-11", readouts: 3, bytes: 3000 },
+  ]);
+  const index = readFileSync(new URL("../api/index.js", import.meta.url), "utf8");
+  assert.match(index, new RegExp(`const READOUTS_EVER = "${night.READOUTS_EVER}";`), "named alike in index.js");
+});
