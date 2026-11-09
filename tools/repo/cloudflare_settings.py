@@ -8,6 +8,9 @@
     python3 tools/repo/cloudflare_settings.py deploy-token
                                                        that the token reads no more than
                                                        the deploy token should
+    python3 tools/repo/cloudflare_settings.py rotate NAME
+                                                       a new value for the API Worker's
+                                                       secret NAME, one made here
 
 With CLOUDFLARE_API_TOKEN, in the environment or .env.infra (as
 .env.infra.example shows; not .env, whose names are the tool's): to check, a token
@@ -36,6 +39,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import re
 import sys
 import urllib.error
@@ -170,11 +174,16 @@ CACHE_RULES = [{
     "enabled": True,
 }]
 
-# The API Worker's one secret (website/api/wrangler.jsonc): set by hand, as
-# its value is never read back, and checked here by name with the
-# maintainer's token; CI's is refused the Worker's settings.
+# The API Worker's secrets (website/api/wrangler.jsonc says what each is for),
+# set by `apply` and checked here by name with the maintainer's token - a
+# value is never read back, and CI's token is refused the Worker's settings.
+# - "made": a random value `apply` makes when it is missing, and `rotate NAME`
+#   replaces: nothing outside the Worker needs to know it.
+# - "kept": one that must never change, kept privately as API_<NAME> in the
+#   environment or .env.infra, from where `apply` sets it when it is missing;
+#   never made or rotated here.
 API_WORKER = "firmware-liberator-api"
-API_SECRETS = ("PLUG_KEY", "SENDER_KEY")
+API_SECRETS = {"PLUG_KEY": "kept", "SENDER_KEY": "made"}
 
 # Mail to the domain is received by Cloudflare's Email Routing, which made
 # and keeps its own DNS records: MX, its DKIM key and SPF. They are checked
@@ -543,17 +552,64 @@ def stats_differences(account: str, zone_id: str) -> list[tuple[str, str, Any]]:
     return found
 
 
+def put_secret(account: str, name: str, value: str) -> None:
+    """Set the API Worker's secret `name`; its value goes in the request's
+    body alone, never a command line or the screen."""
+    api(f"/accounts/{account}/workers/scripts/{API_WORKER}/secrets", "PUT",
+        {"name": name, "text": value, "type": "secret_text"})
+
+
+def made_secret() -> str:
+    """A new value for a "made" secret: 256 random bits."""
+    return secrets.token_hex(32)
+
+
 def secret_differences(account: str) -> list[tuple[str, str, Any]]:
-    """The API Worker's secrets: each there, by name."""
+    """The API Worker's secrets: each there, by name, and how `apply` sets one
+    that is not: a "made" one made afresh, a "kept" one from API_<NAME>."""
     path = f"/accounts/{account}/workers/scripts/{API_WORKER}/secrets"
     have = api(path, ok_missing=True)
     if have is None:
         return [(f"{API_WORKER} secrets", "cannot be checked: the Worker is not there yet",
                  "deploy it, then run this again")]
     names = {secret.get("name") for secret in have}
-    return [(f"{API_WORKER} secret {name}", "is not set",
-             f"set it from website/: npx wrangler secret put {name} --config api/wrangler.jsonc "
-             "(website/api/wrangler.jsonc says what it is)") for name in API_SECRETS if name not in names]
+    found: list[tuple[str, str, Any]] = []
+    for name, how in API_SECRETS.items():
+        if name in names:
+            continue
+        if how == "made":
+            found.append((f"{API_WORKER} secret {name}", "is not set",
+                          lambda name=name: put_secret(account, name, made_secret()) or []))
+            continue
+        try:
+            value = variable(f"API_{name}")
+        except SettingsError:
+            found.append((f"{API_WORKER} secret {name}", "is not set",
+                          f"put its value, kept privately, in .env.infra as API_{name} and run apply again "
+                          "(website/api/wrangler.jsonc says why it must never change)"))
+            continue
+        found.append((f"{API_WORKER} secret {name}", "is not set",
+                      lambda name=name, value=value: put_secret(account, name, value) or []))
+    return found
+
+
+def rotate(name: str) -> int:
+    """`rotate NAME`: a "made" secret replaced by a new value."""
+    if API_SECRETS.get(name) != "made":
+        made = [secret for secret, how in API_SECRETS.items() if how == "made"]
+        print(f"cloudflare_settings: only a secret made here is rotated here: {', '.join(made)}"
+              + (f" ({name} is kept, and must never change)" if name in API_SECRETS else ""), file=sys.stderr)
+        return 2
+    try:
+        zones = api(f"/zones?name={ZONE}")
+        if not zones:
+            raise SettingsError(f"the token cannot see the zone {ZONE}")
+        put_secret(zones[0]["account"]["id"], name, made_secret())
+    except SettingsError as error:
+        print(f"cloudflare_settings: {error}", file=sys.stderr)
+        return 1
+    print(f"  {API_WORKER} secret {name}: rotated")
+    return 0
 
 
 def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
@@ -609,6 +665,8 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
+    if len(args) == 2 and args[0] == "rotate":
+        return rotate(args[1])
     if args not in ([], ["apply"], ["ci"], ["deploy-token"]):
         print(__doc__.strip(), file=sys.stderr)
         return 2

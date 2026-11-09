@@ -85,7 +85,7 @@ Three Cloudflare API tokens are in play, each allowed only what its job needs:
 | --- | --- | --- |
 | Deploy | `website` secret `CLOUDFLARE_DEPLOY_TOKEN` | Individual Workers - `firmware-liberator`, `firmware-liberator-api`: Editor. Zone `firmwareliberator.com` - Workers Routes: Write, DNS: Write (the custom domains), Zone: Read |
 | Settings check | `website` secret `CLOUDFLARE_READ_TOKEN` | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Read, DNS: Read, Dynamic URL Redirects: Read, Zone WAF: Read, Email Routing Rules: Read. Account - Workers R2 Storage: Read, Email Routing Addresses: Read |
-| Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, DNS: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit, Email Routing Rules: Edit. Account - Workers R2 Storage: Edit, Email Routing Addresses: Edit, Account API Tokens: Read, Workers Scripts: Read (to check the deploy token) |
+| Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, DNS: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit, Email Routing Rules: Edit. Account - Workers R2 Storage: Edit, Email Routing Addresses: Edit, Account API Tokens: Read, Workers Scripts: Edit (to check the deploy token, and set the API Worker's secrets) |
 
 The deploy token reaches its two Workers and no other in the account. Its
 permissions are written down in `tools/repo/cloudflare_settings.py` and
@@ -120,8 +120,9 @@ one is first uploaded from your computer:
    Worker's `wrangler.jsonc`: commit that before the upload.
 4. Upload it from `website/`: `npx wrangler deploy --config <its
    wrangler.jsonc>`.
-5. For the API Worker, set its secret once (`website/api/wrangler.jsonc`
-   says what it is, and how): `apply` says if it is missing.
+5. For the API Worker, run `apply` again: it sets its secrets
+   (`website/api/wrangler.jsonc` says what each is) - SENDER_KEY made afresh,
+   PLUG_KEY from `API_PLUG_KEY` in `.env.infra` - and says what is left.
 6. Check it answers (below).
 7. Add it to the deploy token's Individual Workers, and give the website
    workflow a job deploying it.

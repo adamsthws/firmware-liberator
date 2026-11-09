@@ -4,14 +4,15 @@
 // (../wrangler.jsonc) so nothing sent here can affect the site. The website
 // workflow deploys it in a job of its own.
 //
-// Its two secrets are set by hand, from website/, and kept privately as well:
-// - PLUG_KEY (`npx wrangler secret put PLUG_KEY --config api/wrangler.jsonc`),
-//   the key a device's hash is stored under (reports.js), never changed: a
-//   new key would make every device seen before a new one.
-// - SENDER_KEY (`npx wrangler secret put SENDER_KEY --config api/wrangler.jsonc`),
-//   the key a sender's address is hashed under to count its readouts a day
-//   (index.js); any long random value. Until it is set, no readout is taken.
-//   Changing it starts the day's counts again.
+// Its two secrets are set by tools/repo/cloudflare_settings.py apply, which
+// checks each is there (API_SECRETS), never by hand:
+// - PLUG_KEY, the key a device's hash is stored under (reports.js), never
+//   changed: a new key would make every device seen before a new one. Kept
+//   privately as API_PLUG_KEY in .env.infra, from where apply sets it.
+// - SENDER_KEY, the key a sender's address is hashed under (index.js), to
+//   count its readouts a day and keep two of one key from coming from it.
+//   Made by apply, and changed with `cloudflare_settings.py rotate SENDER_KEY`,
+//   which starts the day's counts again. Until it is set, no readout is taken.
 {
   "name": "firmware-liberator-api",
   "main": "index.js",
