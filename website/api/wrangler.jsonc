@@ -1,7 +1,13 @@
-// api.firmwareliberator.com: the project's API, for now the readouts the tool
-// sends to /readout (index.js says how they are guarded), kept apart from the website's
-// own Worker (../wrangler.jsonc) so nothing sent here can affect the site.
-// The website workflow deploys it in a job of its own.
+// api.firmwareliberator.com: the project's API - the reports the tool sends
+// at the end of each run (reports.js), and the readouts it sends (index.js
+// says how each is guarded) - kept apart from the website's own Worker
+// (../wrangler.jsonc) so nothing sent here can affect the site. The website
+// workflow deploys it in a job of its own.
+//
+// Its one secret, PLUG_KEY, the key a device's hash is stored under
+// (reports.js), is set by hand (`npx wrangler secret put PLUG_KEY --config
+// api/wrangler.jsonc`, from website/), kept privately as well, and never
+// changed: a new key would make every device seen before a new one.
 {
   "name": "firmware-liberator-api",
   "main": "index.js",
@@ -22,11 +28,16 @@
     { "binding": "DB", "database_name": "firmware-liberator-api", "migrations_dir": "migrations",
       "database_id": "00000000-0000-0000-0000-000000000000" }
   ],
-  // Two a minute from one address: a device takes one.
+  // Two readouts a minute from one address: a device takes one. Three
+  // requests of reports: a run sends one, with any kept from before.
   "ratelimits": [
-    { "name": "READOUT_LIMIT", "namespace_id": "1001", "simple": { "limit": 2, "period": 60 } }
+    { "name": "READOUT_LIMIT", "namespace_id": "1001", "simple": { "limit": 2, "period": 60 } },
+    { "name": "REPORT_LIMIT", "namespace_id": "1002", "simple": { "limit": 3, "period": 60 } }
   ],
   "vars": {
+    // "on" to take reports; anything else answers 503 and the tool keeps
+    // them to send later: a switch, should something need looking at.
+    "INGEST": "on",
     // eWeLink product models enough readouts of are in, comma-separated:
     // the next is thanked and not kept.
     "ENOUGH": ""

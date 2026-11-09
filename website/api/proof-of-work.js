@@ -5,6 +5,10 @@
 // SHA-256 (bodySubject), a report's its random ID (reportSubject). The tool
 // does the work in tools/autoflash/proof_of_work.py.
 
+// The work asked, lowered only by the tests, which import the Worker's modules
+// and set `bits`: nothing the Worker is given, a variable or a secret, can.
+export const work = { bits: null };
+
 export async function sha256(data) {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", data));
 }

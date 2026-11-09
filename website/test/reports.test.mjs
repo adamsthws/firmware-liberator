@@ -1,0 +1,274 @@
+// api/reports.js: what /reports takes, keeps and turns away.
+import assert from "node:assert/strict";
+import { createHash, createHmac, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import { read } from "../api/counters.js";
+import worker from "../api/index.js";
+import { d1 } from "../api/local-d1.mjs";
+import { work } from "../api/proof-of-work.js";
+import * as api from "../api/reports.js";
+
+const NOW = new Date("2026-11-09T15:30:00Z");
+const BITS = 8;
+const KEY = "a key for the tests alone";
+work.bits = BITS;
+const FIXTURE = JSON.parse(readFileSync(new URL("./fixtures/reports.json", import.meta.url), "utf8")).valid[0];
+
+// The tool's work for a report's id (tools/autoflash/proof_of_work.py), made easy.
+function proofFor(id, time = NOW.getTime() / 1000, bits = BITS) {
+  for (let nonce = 0; ; nonce += 1) {
+    const hash = createHash("sha256").update(`${Math.floor(time)}:report-${id}:${nonce}`).digest();
+    if (hash.readUInt32BE(0) >>> (32 - bits) === 0) return `${Math.floor(time)}:${nonce}`;
+  }
+}
+
+// A report as the tool makes it, with a fresh id and its proof.
+function report(changes = {}, proofTime) {
+  const id = changes.id ?? randomBytes(16).toString("hex");
+  const made = { ...structuredClone(FIXTURE), ...changes, id };
+  return { ...made, proof: changes.proof ?? proofFor(id, proofTime) };
+}
+
+const plugOf = (n) => createHash("sha256").update(`a device ${n}`).digest("hex");
+const keyed = (plug) => createHmac("sha256", KEY).update(plug).digest("hex");
+
+function env({ allowed = true, ingest = "on", key = KEY } = {}) {
+  return { DB: d1(), INGEST: ingest, PLUG_KEY: key, REPORT_LIMIT: { limit: async () => ({ success: allowed }) } };
+}
+
+function post(body, headers = {}) {
+  const bytes = Buffer.from(typeof body === "string" ? body : JSON.stringify(body));
+  return new Request("https://api.firmwareliberator.com/reports", {
+    method: "POST", body: bytes,
+    headers: { "Content-Type": "application/json", "Content-Length": String(bytes.byteLength),
+      "CF-Connecting-IP": "192.0.2.9", ...headers },
+  });
+}
+
+const send = async (bindings, reports, now = NOW) => {
+  const response = await api.reports(post({ reports }), bindings, now);
+  return { status: response.status, ...(await response.json()) };
+};
+const rows = (bindings, sql, ...values) => bindings.DB.db.prepare(sql).all(...values).map((row) => ({ ...row }));
+
+test("a report the tool makes is kept, on the day it came in, and nothing of when in the day", async () => {
+  const bindings = env();
+  const sent = report({ plug: plugOf(1) });
+  assert.deepEqual(await send(bindings, [sent]),
+    { status: 200, accepted: [sent.id], duplicate: [], rejected: [], later: [] });
+  const [kept] = rows(bindings, "SELECT * FROM reports");
+  assert.equal(kept.id, sent.id);
+  assert.equal(kept.day, "2026-11-09");
+  assert.equal(kept.model, "S60TPG");
+  assert.deepEqual(JSON.parse(kept.stages), sent.stages);
+  assert.ok(!Object.values(kept).some((value) => String(value).includes("15:30")), "no time of day");
+});
+
+test("the device is kept as a keyed hash, never as the tool sent it", async () => {
+  const bindings = env();
+  await send(bindings, [report({ plug: plugOf(1) })]);
+  const [{ plug }] = rows(bindings, "SELECT plug FROM reports");
+  assert.equal(plug, keyed(plugOf(1)));
+  const everything = JSON.stringify(rows(bindings, "SELECT * FROM reports")) + JSON.stringify(rows(bindings, "SELECT * FROM plugs"));
+  assert.ok(!everything.includes(plugOf(1)));
+});
+
+test("one sent again, in the same request or a later one, is kept once", async () => {
+  const bindings = env();
+  const sent = report();
+  const first = await send(bindings, [sent, sent]);
+  assert.deepEqual([first.accepted, first.duplicate], [[sent.id], [sent.id]]);
+  const again = await send(bindings, [sent]);
+  assert.deepEqual([again.accepted, again.duplicate], [[], [sent.id]]);
+  assert.equal(rows(bindings, "SELECT id FROM reports").length, 1);
+  assert.deepEqual(await read(bindings.DB, "reports:2026-11-09"), { count: 1, bytes: 0 }, "counted once");
+});
+
+test("each report is held to the schema and its own work; the rest of the request is not", async () => {
+  const bindings = env();
+  const good = report();
+  const cases = [
+    [report({ result: "exploded" }), /result: not one of the allowed words/],
+    [{ ...report(), email: "me@example.com" }, /email: not allowed/],
+    [report({ proof: "1794000000:1" }), /proof of work/],
+    [report({ proof: proofFor("f".repeat(32)) }), /proof of work/, "work for another report"],
+    [report({ stopped: { step: "D4", error: "other", text: "x".repeat(9000) } }), /larger than|too long/],
+    ["not a report", /not object/],
+    [null, /not object/],
+  ];
+  const answer = await send(bindings, [good, ...cases.map(([value]) => value)]);
+  assert.deepEqual(answer.accepted, [good.id]);
+  assert.equal(answer.rejected.length, cases.length);
+  answer.rejected.forEach((rejected, index) => assert.match(rejected.why, cases[index][1], cases[index][2] ?? rejected.why));
+  assert.equal(answer.rejected[0].id, cases[0][0].id, "named where it can be");
+  assert.equal(answer.rejected.at(-1).id, null);
+});
+
+test("work made up to 31 days before is good, and older is not", async () => {
+  const bindings = env();
+  const kept = report({}, NOW.getTime() / 1000 - 30 * 86400);
+  const stale = report({}, NOW.getTime() / 1000 - 32 * 86400);
+  const answer = await send(bindings, [kept, stale]);
+  assert.deepEqual(answer.accepted, [kept.id]);
+  assert.deepEqual(answer.rejected.map((item) => item.id), [stale.id]);
+});
+
+test("the day's limit is never passed: what does not fit waits for another day", async () => {
+  const bindings = env();
+  bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES (?, ?, ?, 0)")
+    .run("reports:2026-11-09", "2026-11-09", api.REPORTS_DAILY - 2);
+  const sent = [report(), report(), report()];
+  const answer = await send(bindings, sent);
+  assert.deepEqual([answer.accepted, answer.later], [sent.slice(0, 2).map((r) => r.id), [sent[2].id]]);
+  const tomorrow = await send(bindings, [sent[2]], new Date("2026-11-10T00:00:01Z"));
+  assert.deepEqual(tomorrow.accepted, [sent[2].id], "sent again the next day, its work still good");
+});
+
+test("one device's reports are held to their own limit a day", async () => {
+  const bindings = env();
+  const plug = plugOf(2);
+  const first = await send(bindings, Array.from({ length: api.PLUG_DAILY - 1 }, () => report({ plug })));
+  assert.equal(first.accepted.length, api.PLUG_DAILY - 1);
+  const answer = await send(bindings, [report({ plug }), report({ plug }), report({ plug: plugOf(3) })]);
+  assert.equal(answer.accepted.length, 2, "its last, and another device's");
+  assert.match(answer.rejected[0].why, /more than 20 reports of one device in a day/);
+});
+
+test("a device's record: its first run, the runs to its first conversion, and what came after", async () => {
+  const bindings = env();
+  const plug = plugOf(4);
+  const failed = { plug, result: "failed", firmware: "tasmota",
+    stopped: { step: "D4", error: "upload-cut", text: "the delivery stopped part way" } };
+  await send(bindings, [report(failed), report({ ...failed, resumed: true })]);
+  await send(bindings, [report({ plug })]);   // converted, to Tasmota
+  const later = new Date("2026-11-12T09:00:00Z");
+  await send(bindings, [report({ plug, firmware: "esphome", from: "tasmota" }, later.getTime() / 1000)], later);
+  await send(bindings, [report({ plug, firmware: "sonoff", from: "esphome" }, later.getTime() / 1000)], later);
+  const [record] = rows(bindings, "SELECT * FROM plugs");
+  assert.deepEqual(record, {
+    plug: keyed(plug), model: "S60TPG", device: "sonoff-s60", first_day: "2026-11-09", last_day: "2026-11-12",
+    first_result: "failed", converted_day: "2026-11-09", runs: 5, runs_to_convert: 3, conversions: 2,
+    back_to_sonoff: 1, firmware: "sonoff", stock: "1.2.0", dev: 0,
+  });
+});
+
+test("a device's record follows it across days, back to Sonoff's firmware too", async () => {
+  const bindings = env();
+  const plug = plugOf(5);
+  const later = new Date("2026-11-20T09:00:00Z");
+  await send(bindings, [report({ plug })]);
+  await send(bindings, [report({ plug, firmware: "sonoff", from: "tasmota" }, later.getTime() / 1000)], later);
+  await send(bindings, [report({ plug, tag: "dev", firmware: "esphome", from: "sonoff" }, later.getTime() / 1000)],
+    later);
+  const [record] = rows(bindings, "SELECT first_day, last_day, first_result, runs, runs_to_convert, conversions, "
+    + "back_to_sonoff, firmware, dev FROM plugs");
+  assert.deepEqual(record, { first_day: "2026-11-09", last_day: "2026-11-20", first_result: "converted", runs: 3,
+    runs_to_convert: 1, conversions: 2, back_to_sonoff: 1, firmware: "esphome", dev: 1 });
+});
+
+test("a report with no device is kept, with no device record", async () => {
+  const bindings = env();
+  await send(bindings, [report({ plug: null })]);
+  assert.equal(rows(bindings, "SELECT * FROM reports").length, 1);
+  assert.equal(rows(bindings, "SELECT * FROM plugs").length, 0);
+});
+
+test("a report written twice at the same moment counts once in its device's record", async () => {
+  const bindings = env();
+  const sent = report({ plug: plugOf(6) });
+  const writes = [...api.writes(bindings.DB, sent, keyed(sent.plug), "2026-11-09"),
+    ...api.writes(bindings.DB, sent, keyed(sent.plug), "2026-11-09")];
+  await bindings.DB.batch(writes);
+  assert.equal(rows(bindings, "SELECT runs FROM plugs")[0].runs, 1);
+});
+
+test("a request of the most reports costs a fixed few queries", async () => {
+  const bindings = env();
+  let queries = 0;
+  const db = bindings.DB;
+  const counted = { ...db, prepare: (sql) => {
+    const statement = db.prepare(sql);
+    const wrap = (inner) => ({ ...inner, bind: (...values) => wrap(inner.bind(...values)),
+      first: (...args) => { queries += 1; return inner.first(...args); },
+      all: () => { queries += 1; return inner.all(); }, run: () => { queries += 1; return inner.run(); },
+      inner });
+    return wrap(statement);
+  }, batch: (statements) => { queries += 1; return db.batch(statements.map((statement) => statement.inner)); } };
+  const sent = Array.from({ length: api.MAX_REPORTS }, (_, n) => report({ plug: plugOf(100 + n) }));
+  const answer = await api.reports(post({ reports: sent }), { ...bindings, DB: counted }, NOW);
+  assert.equal((await answer.json()).accepted.length, api.MAX_REPORTS);
+  assert.ok(queries <= 6, `${queries} queries`);
+});
+
+test("a write that fails gives back its places in the day's count", async () => {
+  const bindings = env();
+  bindings.DB.batch = async () => {
+    throw new Error("D1 down");
+  };
+  await assert.rejects(send(bindings, [report(), report()]), /D1 down/);
+  assert.deepEqual(await read(bindings.DB, "reports:2026-11-09"), { count: 0, bytes: 0 });
+});
+
+test("anything but reports as the tool sends them is turned away, before any is looked at", async () => {
+  const many = Array.from({ length: api.MAX_REPORTS + 1 }, () => ({}));
+  const cases = [
+    [new Request("https://api.firmwareliberator.com/reports"), 405],
+    [post({ reports: [report()] }, { "Content-Type": "text/plain" }), 415],
+    [post({ reports: [report()] }, { "Content-Length": "x" }), 411],
+    [post({ reports: [report()] }, { "Content-Length": String(api.MAX_BODY + 1) }), 413],
+    [post({ reports: [report()] }, { "Content-Length": "5" }), 400],
+    [post("not json"), 400],
+    [post([report()]), 400],
+    [post({ reports: [] }), 400],
+    [post({ reports: many }), 400],
+    [post({ reports: [report()], also: 1 }), 400],
+  ];
+  for (const [request, status] of cases) {
+    const bindings = env();
+    assert.equal((await api.reports(request, bindings, NOW)).status, status, `${status}`);
+    assert.equal(rows(bindings, "SELECT * FROM reports").length, 0);
+  }
+});
+
+test("too many from one address wait a minute", async () => {
+  assert.equal((await api.reports(post({ reports: [report()] }), env({ allowed: false }), NOW)).status, 429);
+});
+
+test("nothing is taken while ingesting is off, or before the key is set", async () => {
+  for (const bindings of [env({ ingest: "off" }), { ...env(), INGEST: undefined }, { ...env(), PLUG_KEY: undefined },
+    { ...env(), PLUG_KEY: "" }]) {
+    const response = await api.reports(post({ reports: [report()] }), bindings, NOW);
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("Retry-After"), "3600");
+    assert.equal(rows(bindings, "SELECT * FROM reports").length, 0);
+  }
+});
+
+test("the Worker sends /reports here, once its database has the reports' tables", async () => {
+  const sent = report({}, Date.now() / 1000);
+  const response = await worker.fetch(post({ reports: [sent] }), env());
+  assert.deepEqual((await response.json()).accepted, [sent.id]);
+  const config = readFileSync(new URL("../api/wrangler.jsonc", import.meta.url), "utf8");
+  assert.match(config, /"INGEST": "on"/);
+  assert.match(config, /"name": "REPORT_LIMIT"/);
+});
+
+test("the tool does the same work the Worker asks of a report", () => {
+  const tool = readFileSync(new URL("../../tools/autoflash/report_data.py", import.meta.url), "utf8");
+  assert.match(tool, /^PLUG_PREFIX = "firmware-liberator plug:"$/m);
+  assert.equal(api.REPORT_PROOF_BITS, 24);
+});
+
+test("each question /wanted is asked is counted by its model and day, within a limit", async () => {
+  const bindings = env();
+  for (const product of ["NSPanel", "nspanel", "BASICR4", "not a model!", "x".repeat(40)]) {
+    await api.countWanted(bindings.DB, product, "2026-11-09");
+  }
+  assert.deepEqual(rows(bindings, "SELECT model, asked FROM wanted_days ORDER BY model"),
+    [{ model: "BASICR4", asked: 1 }, { model: "NSPANEL", asked: 2 }]);
+  bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES (?, ?, ?, 0)")
+    .run("wanted:2026-11-10", "2026-11-10", api.WANTED_COUNTED);
+  await api.countWanted(bindings.DB, "NSPANEL", "2026-11-10");
+  assert.equal(rows(bindings, "SELECT * FROM wanted_days WHERE day = '2026-11-10'").length, 0);
+});
