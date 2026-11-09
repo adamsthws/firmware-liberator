@@ -345,7 +345,7 @@ class OpenBekenUpdateTests(unittest.TestCase):
     def test_an_earlier_release_is_offered_the_update(self):
         ctx, route, offered = self.settle(answer=0)
         self.assertEqual(offered, [f"OpenBeken, update to {self.published}", "ESPHome",
-                                   "Sonoff's own firmware (back to eWeLink, from its backup)"])
+                                   "Sonoff (eWeLink)"])
         self.assertEqual(route, ("openbeken", "outdated"))
         self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A3", "U3", "U4"])
         self.assertEqual(update.versions(ctx), ("1.0.9", self.published))

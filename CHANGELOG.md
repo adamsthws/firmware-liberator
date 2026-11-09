@@ -188,6 +188,10 @@ check.
   to be in place has been read - not before the first stage, ahead of it. An
   update says so on its option alone ("ESPHome, update to 2026.10.0-2"), with no
   line above the options on the release the device runs.
+- Sonoff's firmware is offered to a converted plug with no backup on your computer
+  too, as almost every one can go back without it: its identity is the one it
+  keeps, or comes from your eWeLink account. It used to be offered only to a plug
+  on Tasmota keeping its identity, and the rest needed `--firmware sonoff`.
 - A yes/no question is taken off the screen once answered, even after a wrong
   answer first. It stayed, under "Please answer y or n.", when nothing was
   shown above it.
