@@ -223,13 +223,16 @@ def _timestamp(when: dt.datetime) -> str:
 
 class Stub:
     def __init__(self, iot_host: str, iot_port: int, hb_interval: int, device: dict | None = None,
-                 update=None, iot_domain: str = ""):
+                 update=None, iot_domain: str = "", others: list[dict] | None = None):
         self.iot_host = iot_host
         self.iot_domain = iot_domain or iot_host
         self.update = update  # firmware.Update the OTA query offers, or None
         self.iot_port = iot_port
         self.hb_interval = hb_interval
         self.device = device  # the account-API view of this plug, or None
+        # The account's other devices, none of them emulated: listed as eWeLink
+        # lists an account's every device, offered no firmware, never online.
+        self.others = list(others or [])
         # What the plug says of itself (firmware version, model, the params of
         # its updates) in its own dispatch, register and update messages: the
         # account API reports that, as the real cloud does, rather than
@@ -306,7 +309,10 @@ class Stub:
 
     def device_thing(self) -> dict:
         d = self.account_device()
+        others = [self.other_item(other) for other in self.others]
         if not d:
+            if others:
+                return {"error": 0, "data": {"thingList": others}}
             return {"error": 404, "msg": "no device configured in the stub"}
         seen = self.reported.get(d["deviceid"], {})
         model = seen.get("model") or d.get("model")
@@ -337,7 +343,22 @@ class Stub:
         # names the Tasmota template plainly "Sonoff S60".
         if d.get("productModel"):
             item["itemData"]["productModel"] = d["productModel"]
-        return {"error": 0, "data": {"thingList": [item]}}
+        return {"error": 0, "data": {"thingList": [item, *others]}}
+
+    @staticmethod
+    def other_item(other: dict) -> dict:
+        """eWeLink's record of one of the account's other devices (--others-json):
+        {"deviceid", "name", "productModel", "model", "uiid", "fwVersion"}, with
+        a made-up key, as the record carries one."""
+        item = {"itemData": {
+            "deviceid": other["deviceid"], "devicekey": "stub-other-devicekey", "apikey": "stub-user-apikey",
+            "name": other.get("name", other["deviceid"]), "online": bool(other.get("online", False)),
+            "extra": {"uiid": other.get("uiid", 0), "model": other.get("model", "")},
+            "params": {"fwVersion": other["fwVersion"]} if other.get("fwVersion") else {},
+        }}
+        if other.get("productModel"):
+            item["itemData"]["productModel"] = other["productModel"]
+        return item
 
     def ota_query(self, body: bytes = b"") -> dict:
         """What eWeLink offers: nothing to a device asking with its own version
@@ -646,9 +667,15 @@ def main(argv: list[str] | None = None) -> int:
                              "devicekey, model, ...) for the tool-facing API")
     parser.add_argument("--firmware", type=Path, default=Path("/state/stub-firmware.bin"),
                         help="the update file the OTA query offers, as emu.sh makes it (firmware.py)")
+    parser.add_argument("--others-json", type=Path, default=Path("/state/stub-others.json"),
+                        help="the account's other devices, none emulated, as emu.sh copies them from "
+                             "AUTOFLASH_EMU_STUB_OTHERS: a JSON list (Stub.other_item); none if missing")
     args = parser.parse_args(argv)
 
     device = json.loads(args.device_json.read_text()) if args.device_json else None
+    others = json.loads(args.others_json.read_text(encoding="utf-8")) if args.others_json.is_file() else []
+    if others:
+        log(f"the account's other devices: {len(others)}, none emulated")
     try:
         from tools.ewelink.stub_cloud.firmware import read
         update = read(args.firmware)
@@ -657,7 +684,7 @@ def main(argv: list[str] | None = None) -> int:
         update = None
     log(f"offering the plug's own firmware, {update.version}, to a query with an older version" if update
         else "no firmware to offer")
-    Handler.stub = Stub(args.iot_host, args.iot_port, args.hb_interval, device, update, args.iot_domain)
+    Handler.stub = Stub(args.iot_host, args.iot_port, args.hb_interval, device, update, args.iot_domain, others)
     if args.plain:
         server = PlainServer((args.bind, args.port), Handler)
         scheme = "plaintext"

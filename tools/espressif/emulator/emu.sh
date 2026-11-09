@@ -246,6 +246,13 @@ if [ "$stub" = 1 ]; then
     "$PY" -I "$ROOT/$STUB_DIR/firmware.py" "$SRC/flash.bin" "$STATE/stub-firmware.bin" \
         --trust-ca "$STUB_CA/ca.crt" --product "$product" || rm -f "$STATE/stub-firmware.bin"
 fi
+# The account's other devices, which the stub lists beside this one, none of
+# them emulated: AUTOFLASH_EMU_STUB_OTHERS names a JSON list of them
+# (docs/cloud-stub.md). None unless it is set, whatever an earlier start left.
+rm -f "$STATE/stub-others.json"
+if [ "$stub" = 1 ] && [ -n "${AUTOFLASH_EMU_STUB_OTHERS:-}" ]; then
+    cp "$AUTOFLASH_EMU_STUB_OTHERS" "$STATE/stub-others.json"
+fi
 # Copied by content: the backup's files are read-only, and a copy would be too.
 # An ESP32-C3's file is padded to what the fork expects of it; an ESP32's is whole.
 rm -f "$STATE/efuse.bin" && cat "$SRC/efuse.bin" > "$STATE/efuse.bin"
