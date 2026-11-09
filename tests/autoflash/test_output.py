@@ -532,6 +532,25 @@ class ConciseTests(OutputTestCase):
             output.stage_end("complete")
         self.assertEqual(self.drawn(body), ["Stage 3 - Discovering the plug - Complete"])
 
+    def test_a_question_asked_as_its_block_began_keeps_its_block_when_asked_again(self):
+        # Seen: a yes/no question answered wrongly first, with nothing shown
+        # between its block's start and the question, stayed on the screen
+        # once answered - the rewind closed the block it was asked in.
+        def body():
+            output.stage_begin(3, "Discovering the plug")
+            output.show("A note")
+            output.transient_begin()
+            mark = output.mark()
+            output.show("Use it anyway (y/N): maybe")
+            self.assertTrue(output.rewind(mark))
+            self.assertEqual(len(output._s.blocks), 1)
+            output.show("Please answer y or n.")
+            output.show("Use it anyway (y/N): y")
+            output.transient_end()
+            output.stage_end("stopped")
+        self.assertEqual(self.drawn(body), ["Stage 3 - Discovering the plug - Underway", "", "A note",
+                                            "Stage 3 - Discovering the plug - Stopped"])
+
     def test_going_back_past_a_block_s_start_closes_it(self):
         def body():
             output.stage_begin(3, "Discovering the plug")

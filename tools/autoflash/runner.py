@@ -465,7 +465,7 @@ def run_steps(ctx: Context) -> int:
     # By index: A3 lengthens the route as it chooses the firmware.
     index = 0
     # Where the screen was as each step began, for going back to it (GoBack).
-    marks: dict[str, tuple[int, bool, bool] | None] = {}
+    marks: dict[str, output.Mark | None] = {}
     redone: set[str] = set()   # steps gone back to, done again: "Retrying" on their line
     brought_up = False
     while True:

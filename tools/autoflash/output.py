@@ -29,7 +29,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import IO, Callable
+from typing import IO, Callable, NamedTuple
 
 from . import __version__, interrupt
 
@@ -68,7 +68,7 @@ class _State:
     underway_row: int | None = None   # where the stage's line was left on the screen, above what it showed
     waited = False                    # the stage's clock drawn under its last note since: a new note stands apart
     next_retrying = False             # the next stage begun is a step done again (retrying)
-    stage_mark: tuple[int, bool, bool] | None = None  # the screen as the stage began (mark)
+    stage_mark: Mark | None = None    # the screen as the stage began (mark)
     blocks: list[tuple[int, bool]] = []  # the open blocks (transient_begin), innermost last:
                                       # `rows` as each began, and whether a blank row was last
     pending_prompt: str | None = None  # a question on screen, waiting for its answer
@@ -552,7 +552,16 @@ def short_window(*, before_start: bool = False) -> int | None:
     return rows if rows < MIN_ROWS else None
 
 
-def mark() -> tuple[int, bool, bool] | None:
+class Mark(NamedTuple):
+    """Where the screen had got to (mark): the rows finished on it, whether
+    the stage's line or a blank row was last, and how many blocks were open."""
+    rows: int
+    after_stage: bool
+    after_blank: bool
+    blocks: int
+
+
+def mark() -> Mark | None:
     """Where the screen has got to, for rewind() to go back to: before a
     question that may be asked again, or a try of a step that may be tried
     again.  None where nothing can be taken off the screen - outside a block
@@ -561,22 +570,24 @@ def mark() -> tuple[int, bool, bool] | None:
         if not (_s.blocks or _drawn_over()):
             return None
         _break()
-        return _s.rows, _s.after_stage, _s.after_blank
+        return Mark(_s.rows, _s.after_stage, _s.after_blank, len(_s.blocks))
 
 
-def rewind(to: tuple[int, bool, bool] | None) -> bool:
+def rewind(to: Mark | None) -> bool:
     """Take everything shown since mark() off the screen - a wrong answer and
     its question, or a try that failed - so that what comes again does not
     pile up under it until it is taller than the window and cannot be taken
-    away at all.  A block begun since goes with it.  True when it was; the
-    log keeps it regardless."""
+    away at all.  A block begun since goes with it; one open at the mark
+    stays, though it began on the same row (a question asked as its block
+    began: seen, a yes/no question answered wrongly first was left on the
+    screen once answered).  True when it was; the log keeps it regardless."""
     with _lock:
         if to is None:
             return False
-        if not _erase(_s.rows - to[0]):
+        if not _erase(_s.rows - to.rows):
             return False
-        _s.blocks = [block for block in _s.blocks if block[0] < to[0]]
-        _, _s.after_stage, _s.after_blank = to
+        _s.blocks = _s.blocks[:to.blocks]
+        _s.after_stage, _s.after_blank = to.after_stage, to.after_blank
         return True
 
 
@@ -664,7 +675,7 @@ def stage_begin(number: int, name: str) -> None:
         if _s.stage == label:
             return  # already begun: keep its line and its clock
         _break()
-        _s.stage_mark = (_s.rows, _s.after_stage, _s.after_blank) if _drawn_over() else None
+        _s.stage_mark = Mark(_s.rows, _s.after_stage, _s.after_blank, len(_s.blocks)) if _drawn_over() else None
         _s.status, _s.next_retrying = ("Retrying" if _s.next_retrying else "Underway"), False
         _s.underway_row, _s.waited = None, False
         digits = len(str(max(_s.most_stages, number)))
@@ -711,10 +722,10 @@ def stage_end(outcome: str) -> None:
             return
         while _s.blocks:
             transient_end()
-        if outcome in PASSED and _s.stage_mark is not None and _s.rows > _s.stage_mark[0]:
+        if outcome in PASSED and _s.stage_mark is not None and _s.rows > _s.stage_mark.rows:
             # Taller than the window, it has to stay.
-            if _erase(_s.rows - _s.stage_mark[0]):
-                _, _s.after_stage, _s.after_blank = _s.stage_mark
+            if _erase(_s.rows - _s.stage_mark.rows):
+                _s.after_stage, _s.after_blank = _s.stage_mark.after_stage, _s.stage_mark.after_blank
         elapsed = _elapsed(_stage_seconds())
         timing = f" ({elapsed})" if outcome == "complete" else ""
         line = f"{_s.stage} - {outcome}{timing}"   # its time in the log and the report, not on screen

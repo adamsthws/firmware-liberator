@@ -168,6 +168,9 @@ check.
   to be in place has been read - not before the first stage, ahead of it. An
   update says so on its option alone ("ESPHome, update to 2026.10.0-2"), with no
   line above the options on the release the device runs.
+- A yes/no question is taken off the screen once answered, even after a wrong
+  answer first. It stayed, under "Please answer y or n.", when nothing was
+  shown above it.
 - A download the server turns away for now - GitHub's release downloads
   answering "504 Gateway Time-out" for minutes at a time, say - is tried again
   for a little over two minutes, waiting longer each time, rather than three
