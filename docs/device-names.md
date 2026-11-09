@@ -172,7 +172,10 @@ All in [`tools/autoflash/names.py`](../tools/autoflash/names.py) unless said:
   and found when a run is tried again by asking it
   (`setup_network.tasmota_answers()`: on its own network Tasmota's page waits
   on a Wi-Fi scan, its status does not).
-- `esphome_networks()`, `esphome_network_hint()`: ESPHome's.
+- `esphome_networks()`, `esphome_network_hint()`: ESPHome's - its name,
+  and the S60's earlier builds' (`kinds.py`). Every other kind had no
+  earlier build, so has none: an empty one, matching every network, took
+  the home Wi-Fi for a classic ESP32's ESPHome network when that was not up.
 - `TASMOTA_DEFAULT_NAME_RE` and `name_with_the_wifi()`
   ([`tools/autoflash/join.py`](../tools/autoflash/join.py)): a Tasmota under its
   own default name, given the Wi-Fi on its setup network, is named again in
