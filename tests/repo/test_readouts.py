@@ -42,7 +42,7 @@ def run(fake, *args):
 
 class ReadoutsTests(unittest.TestCase):
     def test_every_page_is_listed(self):
-        keys = [f"readouts/2026-11-07/{n:024x}.tar" for n in range(5)] + ["kept/one.tar"]
+        keys = [f"readouts/2026-11-07/{n:024x}.tar" for n in range(5)] + ["notify/NSPANEL/" + "b" * 64 + ".json"]
         fake = FakeBucket(keys)
         code, out = run(fake)
         self.assertEqual(code, 0)
@@ -52,10 +52,11 @@ class ReadoutsTests(unittest.TestCase):
         self.assertEqual([query.get("cursor") for query in fake.asked], [None, "2", "4"])
 
     def test_the_marks_beside_the_readouts_are_left_out_unless_asked_for(self):
-        keys = ["readouts/2026-11-07/aa.tar", "readouts/2026-11-07/_readouts.json",
-                "readouts/held/NSPANEL/E32-MSW-NX/1.5.0/first", "readouts/firmware/" + "a" * 64]
+        keys = ["readouts/2026-11-07/aa.tar", "readouts/held/NSPANEL/E32-MSW-NX/1.5.0/first",
+                "readouts/firmware/" + "a" * 64]
         self.assertEqual(run(FakeBucket(keys))[1].splitlines()[-1], f"1 in {cs.READOUTS_BUCKET}")
-        self.assertIn("2 in", run(FakeBucket(keys), "readouts/held/")[1] + run(FakeBucket(keys[2:]), "readouts/")[1])
+        self.assertIn("2 in", run(FakeBucket(keys[1:]), "readouts/")[1])
+        self.assertIn("1 in", run(FakeBucket(keys), "readouts/held/")[1])
 
     def test_who_asked_to_be_told_of_a_product(self):
         class Subscribers(FakeBucket):
@@ -73,7 +74,7 @@ class ReadoutsTests(unittest.TestCase):
         self.assertEqual(fake.asked[0]["prefix"], "notify/NSPANEL/")
 
     def test_a_prefix_narrows_it(self):
-        self.assertIn("1 in", run(FakeBucket(["readouts/a.tar", "kept/b.tar"]), "kept/")[1])
+        self.assertIn("1 in", run(FakeBucket(["readouts/a.tar", "notify/B/c.json"]), "notify/")[1])
 
     def test_an_api_error_is_said_plainly(self):
         def refused(*args, **kwargs):

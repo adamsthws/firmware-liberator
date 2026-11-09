@@ -79,18 +79,13 @@ REDIRECTS = [{
 
 # Where the API Worker keeps the readouts the tool sends
 # (website/api/index.js), as its wrangler.jsonc binds it. Private: a bucket
-# is made with no public access, and nothing here gives it any. Everything
-# under readouts/ is deleted READOUTS_KEPT_DAYS after it came in, which with
-# the Worker's daily limit keeps the bucket within R2's free 10 GB; one worth
-# keeping is moved under kept/ by hand (.github/readouts.md).
+# is made with no public access, and nothing here gives it any. Nothing in it
+# expires: a readout is kept only if it adds something, and kept for good, the
+# Worker's limit on the bytes of them all keeping the bucket within R2's free
+# 10 GB (.github/readouts.md). So it has no lifecycle rule, and one added in
+# the dashboard is a difference that `apply` takes away.
 READOUTS_BUCKET = "firmware-liberator-readouts"
-READOUTS_KEPT_DAYS = 30
-READOUTS_LIFECYCLE = {"rules": [{
-    "id": "readouts-expire",
-    "enabled": True,
-    "conditions": {"prefix": "readouts/"},
-    "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": READOUTS_KEPT_DAYS * 86400}},
-}]}
+READOUTS_LIFECYCLE = {"rules": []}
 
 
 # The API Worker's database (website/api/database.js), as its wrangler.jsonc
@@ -491,13 +486,11 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
     lifecycle = ("PUT", f"{account}/{READOUTS_BUCKET}/lifecycle", READOUTS_LIFECYCLE)
     if api(f"{account}/{READOUTS_BUCKET}", ok_missing=True) is None:
         found.append((READOUTS_BUCKET, "does not exist", ("POST", account, {"name": READOUTS_BUCKET})))
-        found.append((f"{READOUTS_BUCKET} lifecycle", "is not set", lifecycle))
     else:
         rules = (api(lifecycle[1], ok_missing=True) or {}).get("rules") or []
-        have = [{key: rule.get(key) for key in READOUTS_LIFECYCLE["rules"][0]} for rule in rules]
-        if have != READOUTS_LIFECYCLE["rules"]:
+        if rules:
             found.append((f"{READOUTS_BUCKET} lifecycle", f"has {[rule.get('id') for rule in rules]}, should have "
-                          "readouts-expire", lifecycle))
+                          "none: readouts are kept for good", lifecycle))
     if ci:
         print(f"  D1 {D1_DATABASE}: not checked - CI's token is refused D1, which reaches every database "
               "in the account; the hand check and the public snapshot's check cover it")

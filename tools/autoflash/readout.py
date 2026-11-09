@@ -60,6 +60,8 @@ RATE_WAITS = (15.0,) * 6
 # once the website has taken all it can today.
 NOT_NEEDED = "not needed: the website has what it needs of this device already."
 FULL_TODAY = "not read out: the website has taken all the readouts it can today. Try again tomorrow."
+# The website's store of readouts is full, until its maintainer makes room.
+STORE_FULL = "not read out: the website cannot take more readouts for now. Try again in a few weeks."
 # What send() gives for a readout the website has enough of already.
 ENOUGH = "none needed: enough readouts of this device are in already"
 # What the run's record keeps, so a readout is never offered back as a conversion to finish.
@@ -71,14 +73,15 @@ DEVICE_KEYS = ("plug_ip", "plug_mac", "stock_version", "product_model", STATE_KE
 
 
 class WebsiteFull(NothingWritten):
-    """The website has taken all the readouts it can today: a readout of every
-    device ends there, the rest not read."""
+    """The website has taken all the readouts it can, today or until its store
+    has room: a readout of every device ends there, the rest not read."""
 
 
 @dataclass(frozen=True)
 class Wanted:
     """The website's answer to /wanted: whether a readout would add anything,
-    why not ("enough", "held" or "full"), and which offered files it holds."""
+    why not ("enough", "held", "full" for the day or "store-full"), and which
+    offered files it holds."""
     wanted: bool
     why: str = ""
     held: frozenset[str] = frozenset()
@@ -288,9 +291,10 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
         answer = ask_wanted(asked.product, asked.model, asked.version, "whole" if whole else "first",
                             offered_digests(offers))
     if not answer.wanted:
-        if answer.why == "full" and batch is not None:
-            raise WebsiteFull(FULL_TODAY)
-        said = FULL_TODAY if answer.why == "full" else NOT_NEEDED
+        full = {"full": FULL_TODAY, "store-full": STORE_FULL}.get(answer.why)
+        if full and batch is not None:
+            raise WebsiteFull(full)
+        said = full or NOT_NEEDED
         if batch is not None:
             return said
         return single_not_wanted(said, asked)

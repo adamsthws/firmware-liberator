@@ -536,6 +536,14 @@ class NotWantedTests(unittest.TestCase):
         self.assertEqual(readout.ask_wanted.call_count, 1)
         self.assertIn("'Hall light' (NEWTHING), 'Porch' (NEWTHING): " + readout.FULL_TODAY, said)
 
+    def test_a_full_store_ends_a_batch_there_and_says_a_day_will_not_do(self):
+        readout.ask_wanted.return_value = readout.Wanted(False, "store-full")
+        with mock.patch.object(readout, "ask_contact", return_value=None), learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"):
+            said = readout.run_all(self.ctx, [DEVICE, {**DEVICE, "deviceid": "1000fedcba", "name": "Porch"}])
+        self.assertEqual(readout.ask_wanted.call_count, 1)
+        self.assertIn("'Hall light' (NEWTHING), 'Porch' (NEWTHING): " + readout.STORE_FULL, said)
+        self.assertNotIn("tomorrow", readout.STORE_FULL)
+
 
 class HeldFirmwareTests(unittest.TestCase):
     """The files eWeLink offers that the website holds already: left out."""

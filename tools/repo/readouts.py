@@ -8,7 +8,7 @@
 Each line is a readout's key, size, when it came in and what the Worker noted
 of it: the tool, the product, whether it holds a whole read and a contact.
 Under readouts/ only the readouts are listed, not the marks of what is held
-or the day's counts beside them; a prefix given lists everything under it.
+beside them; a prefix given lists everything under it.
 
 `notify` lists each address given for a product (eWeLink's product model),
 with the firmware models it was given with and when: whom to write to when
@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         for item in objects(prefix):
             if not args and not item["key"].endswith(".tar"):
-                continue   # the marks of what is held, and the day's counts
+                continue   # the marks of what is held
             print(show(item))
             count += 1
     except cs.SettingsError as error:

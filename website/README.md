@@ -139,7 +139,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/     
 
 What the zone and the account are set to beyond the Workers - `www.` sent
 on to the bare domain, HTTPS only, TLS 1.2 or newer, the API's
-rate-limiting rule, the readouts bucket and its 30-day lifecycle rule,
+rate-limiting rule, the readouts bucket (kept for good: no lifecycle rule),
 Email Routing and every DNS record but the Workers' - is written down, with
 why, in `tools/repo/cloudflare_settings.py`. A DNS record added in the
 dashboard is a difference, deleted by `apply`: write it down there instead.

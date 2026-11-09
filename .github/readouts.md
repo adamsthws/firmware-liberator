@@ -222,9 +222,9 @@ and the store has limits it is never let past:
   product model, firmware model and version is held at its stage (a whole one
   holds a first stage's too); otherwise it is thanked (`enough`) and not
   stored. What is held is marked as `readouts/held/<PRODUCT>/<model>/<version>/<first|whole>`,
-  and each offered file stored as `readouts/firmware/<sha256>`, so the marks
-  go with the readouts after 30 days. One moved under `kept/` keeps its
-  marks under `kept/held/...` and `kept/firmware/...`: move those with it.
+  and each offered file stored as `readouts/firmware/<sha256>`, kept with the
+  readouts. A readout deleted by hand takes its marks with it, or one like it
+  is never taken again.
 - **Asking first.** `POST /wanted` takes `{"format": 1, "product", "model",
   "version", "stage": "first"|"whole", "firmware": [<sha256>, ...]}` (8 files
   at most) and answers `{"wanted": bool, "why": "enough"|"held"|"full",
@@ -262,15 +262,19 @@ and the store has limits it is never let past:
   [wrangler.jsonc](../website/api/wrangler.jsonc) is thanked and not stored.
 - **Retention.** Each readout is stored privately in the R2 bucket
   `firmware-liberator-readouts` as `readouts/<date>/<hash>.tar`; its
-  reference is `<date>-<12 hex>`. The bucket's lifecycle rule deletes
-  everything under `readouts/` 30 days after it came in. 250 MB a day for 30
-  days, 7.5 GB, plus 2 GB under `kept/`, stays within R2's free 10 GB.
+  reference is `<date>-<12 hex>`. Nothing expires: only a readout that adds
+  something is kept, so the store grows only with firmware not seen before,
+  and an old one may help with a device's later versions. The bucket has no
+  lifecycle rule (`cloudflare_settings.py` takes away one added by hand).
+  8 GiB of readouts in all at most, counted in the database as the day's are,
+  keeps the bucket within R2's free 10 GB with room for `notify/`; past it,
+  `/readout` answers 503 and `/wanted` `store-full`, and the tool says to try
+  again in a few weeks, until room is made (below).
 
 Nothing of the sender is stored but the contact they chose to give: in the
 manifest, and under `notify/`. Nothing serves the bucket.
 
-The bucket, its lifecycle rule, the rate-limiting rule and the API's
-database are made by `python3 tools/repo/cloudflare_settings.py apply`, by
+The bucket, the rate-limiting rule and the API's database are made by `python3 tools/repo/cloudflare_settings.py apply`, by
 hand, which also brings the database up to date; the cloudflare-settings
 workflow checks all but the database weekly. The website workflow deploys the Worker
 in a job of its own. [website/README.md](../website/README.md#deploying-it)
@@ -288,16 +292,17 @@ Both take a token from `CLOUDFLARE_API_TOKEN` that can read the account's R2,
 such as the settings check's; putting or deleting one needs one that can edit
 it.
 
-- **One to keep**, past its 30 days: put it under `kept/`
-  (`wrangler r2 object put firmware-liberator-readouts/kept/<name> --file ...`),
-  with its marks (`readouts/held/...` as `kept/held/...`, and each of its
-  offered files' `readouts/firmware/...` as `kept/firmware/...`), then delete
-  the originals. Without its marks a readout like it is taken again once 30
-  days have passed. Keep `kept/` under 2 GB.
+- **Making room**, should the store fill: delete readouts no longer needed,
+  each with its marks (`readouts/held/...`, and its offered files'
+  `readouts/firmware/...`), then take their bytes off the store's count in the
+  database, from `website/` (`npx wrangler d1 execute firmware-liberator-api
+  --config api/wrangler.jsonc --remote --command "UPDATE counters SET count =
+  count - <n>, bytes = bytes - <bytes> WHERE name = 'readouts:all'"`). The
+  usage check warns long before it fills.
 - **Duplicates.** The manifest's `flash.sha256` is of the device's own flash
   before it was anonymised, so two readouts of one device share it.
-- **Once a device is supported**, add its product model to `ENOUGH`, and delete
-  its readouts but the one kept. Then write to everyone who asked to be told
+- **Once a device is supported**, add its product model to `ENOUGH`, so no
+  more of it are taken; its readouts stay. Then write to everyone who asked to be told
   about it: `python3 tools/repo/readouts.py notify <PRODUCT>` lists their
   addresses. Send each their own message, or Bcc them: never one with every
   address in view. Say why they are hearing from you, and that a reply asking
