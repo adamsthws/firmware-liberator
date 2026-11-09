@@ -145,6 +145,11 @@ class Context:
         output.private(password, "wifi-password")
         self._wifi, self._recovery = (ssid, password), image
 
+    def held_wifi(self) -> tuple[str, str] | None:
+        """The Wi-Fi details this run holds already - typed, or read off the
+        plug - asking nothing; None when it holds none."""
+        return self._wifi
+
     def wifi(self, why: list[str] | None = None) -> tuple[str, str]:
         """The Wi-Fi name and password: read from the plug where it can be.
 

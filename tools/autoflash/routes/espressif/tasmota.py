@@ -809,12 +809,19 @@ def conversion_wifi(ctx: Context) -> None:
             return None
         return image if sha256_bytes(image) == wanted else None
 
-    details = None if getattr(ctx.args, "wifi", False) else wifi.read_wifi_from_plug(ctx)
+    # Those this run holds first - typed earlier in it (--wifi), say, as the
+    # startup firmware was built: asked for again, seen in the emulator. Then,
+    # unless they are to be typed, those on the plug.
+    details = ctx.held_wifi()
     image = proven(*details) if details else None
+    on_plug = None
+    if image is None and not getattr(ctx.args, "wifi", False):
+        on_plug = details = wifi.read_wifi_from_plug(ctx)
+        image = proven(*details) if details else None
     if image is None:
         output.transient_begin()  # until details that match are given
         prompts.section("The Wi-Fi details the device was converted with are needed", [
-            *(["The device is on different Wi-Fi details now."] if details else []),
+            *(["The device is on different Wi-Fi details now."] if on_plug else []),
             "Its temporary startup firmware was built with the Wi-Fi details",
             "used during the conversion, and only those rebuild it exactly, so",
             "it can be swapped for the official one. They are checked against",

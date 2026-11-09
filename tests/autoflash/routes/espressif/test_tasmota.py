@@ -172,7 +172,7 @@ class ConversionWifiTests(unittest.TestCase):
         }))
         self.ctx = SimpleNamespace(evidence=evidence, manifest_path=Path("unused"),
                                    state=SimpleNamespace(input=lambda name: None),
-                                   args=SimpleNamespace(wifi=False),
+                                   args=SimpleNamespace(wifi=False), held_wifi=lambda: None,
                                    remember_wifi=mock.Mock())
         self.pinned = ("Home", "right")
         self.pin = mock.Mock(side_effect=lambda _, ssid, pw: setattr(self, "pinned", (ssid, pw)))
@@ -223,6 +223,29 @@ class ConversionWifiTests(unittest.TestCase):
         self.run_with(("NewNet", "new"), typed=["Home", "right"])
         for call in self.pin.call_args_list:
             self.assertNotEqual(call.args[1:], ("NewNet", "new"))
+
+    def test_details_typed_earlier_in_the_run_are_used_unasked(self):
+        # Seen in the emulator: typed at D5 (--wifi), and asked for again at G1.
+        self.ctx.args.wifi = True
+        self.ctx.held_wifi = lambda: ("Home", "right")
+        with mock.patch.object(wifi, "read_wifi_from_plug") as read:
+            asked = self.run_with(None)
+        asked.assert_not_called()
+        read.assert_not_called()
+        self.ctx.remember_wifi.assert_called_once_with("Home", "right", b"Home/right")
+
+    def test_details_held_that_do_not_match_go_on_to_the_plugs(self):
+        self.ctx.held_wifi = lambda: ("NewNet", "new")
+        asked = self.run_with(("Home", "right"))
+        asked.assert_not_called()
+        self.ctx.remember_wifi.assert_called_once_with("Home", "right", b"Home/right")
+
+    def test_with_wifi_typed_and_none_held_they_are_asked(self):
+        self.ctx.args.wifi = True
+        with mock.patch.object(wifi, "read_wifi_from_plug") as read:
+            asked = self.run_with(None, typed=["Home", "right"])
+        read.assert_not_called()
+        self.assertEqual(asked.call_count, 1)
 
     def test_a_lost_commit_report_falls_back_to_the_staging_record(self):
         import hashlib
