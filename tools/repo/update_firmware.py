@@ -513,12 +513,28 @@ def next_minor(version: str) -> str:
     return f"{major}.{minor + 1}.0"
 
 
-def build_version(release: str, current: dict[str, Any]) -> str:
+def build_version(release: str, current: dict[str, Any], *, folded: bool = False) -> str:
     """This project's build on an upstream release, as a distribution numbers
     its package of one: 2026.10.0-1, the number counting its builds on that
-    release. `current` is the pin it replaces."""
+    release. `current` is the pin it replaces; `folded`, it has never been
+    released, so a build on the same release takes its version."""
     built = re.fullmatch(rf"{re.escape(release)}-(\d+)", current.get("version", ""))
+    if built and folded:
+        return current["version"]
     return f"{release}-{int(built.group(1)) + 1 if built else 1}"
+
+
+def published_by_a_release(path: str) -> bool:
+    """Whether a release of the tool has published the file `path` in
+    artifacts/: the firmware.json of a release's tag pins it. With no release
+    tags to look in - a shallow clone, say - it may have been: a version
+    published is never built again under its own name."""
+    tags = git("tag", "--list", "v*", cwd=ROOT).split()
+    if not tags:
+        return True
+    return any(f'"{path}"' in subprocess.run(["git", "-C", str(ROOT), "show", f"{tag}:artifacts/firmware.json"],
+                                             capture_output=True, text=True, encoding="utf-8").stdout
+               for tag in tags)
 
 
 PROJECT_VERSION = re.compile(r'(^  project:\n(?:    .*\n)*?    version: ")([^"]+)(")', re.MULTILINE)
@@ -602,7 +618,14 @@ def check_esphome_app(image: bytes, label: str, release: str, chip: chips.Chip =
 def replace_sums_line(sums: str, old: str | None, new: str, data: bytes) -> str:
     """SHA256SUMS with the old file's line made the new one's (or the new one added)."""
     line = f"{sha256_bytes(data)}  {new}"
-    lines = [entry for entry in sums.splitlines() if not entry.endswith(f"  {new}")]
+    lines = sums.splitlines()
+    if old is None:
+        # A file built again under its own name keeps its place.
+        at = next((index for index, entry in enumerate(lines) if entry.endswith(f"  {new}")), None)
+        if at is not None:
+            lines[at] = line
+            return "\n".join(lines) + "\n"
+    lines = [entry for entry in lines if not entry.endswith(f"  {new}")]
     if old is not None:
         at = next((index for index, entry in enumerate(lines) if entry.endswith(f"  {old}")), None)
         if at is not None:
@@ -879,7 +902,10 @@ def command_openbeken(args: argparse.Namespace) -> int:
     source = openbeken_source(wanted)
     commit = git("rev-parse", "HEAD", cwd=source)
     release = openbeken_release(source)
-    version = build_version(release, current)
+    # A build no release has published is built again under its own version:
+    # a version never released is never raised.
+    folded = bool(current) and not published_by_a_release(current["file"])
+    version = build_version(release, current, folded=folded)
     print(f"OpenBeken {version} for the {args.plug}: {OPENBEKEN_REPO} at {commit[:7]}, built in {builder}")
     for path in sources:
         target = source / "src" / "driver" / Path(path).name
@@ -902,8 +928,9 @@ def command_openbeken(args: argparse.Namespace) -> int:
     record = {"file": file_pattern.format(version=version), "version": version, "release": release,
               "app_commit": commit, "sdk_commit": sdk_commit, "sha256": sha256_bytes(image)}
     # Worked out before anything is written, so a passage not found changes nothing.
-    texts = {} if args.no_docs or not current else openbeken_doc_texts(args.plug, current, record,
-                                                                       changelog=not getattr(args, "every", False))
+    # One folded into its version says what changed in that version's own line.
+    texts = {} if args.no_docs or not current else openbeken_doc_texts(
+        args.plug, current, record, changelog=not getattr(args, "every", False) and version != current["version"])
     publish(section, "openbeken", record["file"], image, {
         "version": version, "release": release, "app_commit": commit, "sdk_commit": sdk_commit,
         "sources": {path: sha256_bytes((ROOT / path).read_bytes()) for path in sources},
