@@ -73,7 +73,7 @@ REDIRECTS = [{
 # is made with no public access, and nothing here gives it any. Everything
 # under readouts/ is deleted READOUTS_KEPT_DAYS after it came in, which with
 # the Worker's daily limit keeps the bucket within R2's free 10 GB; one worth
-# keeping is moved under kept/ by hand (docs/readouts.md).
+# keeping is moved under kept/ by hand (.github/readouts.md).
 READOUTS_BUCKET = "firmware-liberator-readouts"
 READOUTS_KEPT_DAYS = 30
 READOUTS_LIFECYCLE = {"rules": [{

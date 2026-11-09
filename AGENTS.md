@@ -92,8 +92,9 @@ and plugs' identities.
 - **Where things go**: `tools/autoflash/` the tool, `tools/repo/` the
   repository's plumbing, `tools/espressif/` and `tools/beken/` each chip
   family's tooling, `tools/ewelink/` eWeLink, `devices/<plug>/` one plug's
-  own, `tests/` mirroring `tools/`, `docs/` prose, `website/` the website
-  built from them, `archive/` retired work (still linted). A plug's ESPHome config path is its `package_import_url`:
+  own, `tests/` mirroring `tools/`, `docs/` prose for users and contributors,
+  `.github/` pages for the maintainer alone (servers, API, accounts: kept off
+  the website), `website/` the website built from them, `archive/` retired work (still linted). A plug's ESPHome config path is its `package_import_url`:
   moving one means a new image.
 
 ## Firmware and releases
