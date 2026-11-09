@@ -120,28 +120,33 @@ one is first uploaded from your computer:
    Worker's `wrangler.jsonc`: commit that before the upload.
 4. Upload it from `website/`: `npx wrangler deploy --config <its
    wrangler.jsonc>`.
-5. Check it answers (below).
-6. Add it to the deploy token's Individual Workers, and give the website
+5. For the API Worker, set its secret once (`website/api/wrangler.jsonc`
+   says what it is, and how): `apply` says if it is missing.
+6. Check it answers (below).
+7. Add it to the deploy token's Individual Workers, and give the website
    workflow a job deploying it.
-7. Delete the short-lived token.
+8. Delete the short-lived token.
 
 ### Checking a deploy
 
 ```sh
 curl -sI https://firmwareliberator.com/             # 200
 curl -sI https://firmwareliberator.com/liberate.sh  # 302
-curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/readout  # 405: only POST
-curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/wanted   # 405: only POST
-curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/         # 404
+curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/readout  # 403: only a POST gets through
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.firmwareliberator.com/reports  # 415: the Worker answers
+curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/         # 403
+curl -s https://stats.firmwareliberator.com/v1/stats.json | head -c 120   # after the first night
 ```
 
 ## The zone's settings
 
 What the zone and the account are set to beyond the Workers - `www.` sent
 on to the bare domain, HTTPS only, TLS 1.2 or newer, the API's
-rate-limiting rule, the readouts bucket (kept for good: no lifecycle rule),
-Email Routing and every DNS record but the Workers' - is written down, with
-why, in `tools/repo/cloudflare_settings.py`. A DNS record added in the
+rate-limiting rule and its firewall rule (only a POST to one of its paths
+reaches the Worker), the readouts bucket (kept for good: no lifecycle rule),
+the public figures' bucket at `stats.firmwareliberator.com` with its cache
+rule, Email Routing and every DNS record but the Workers' and the figures'
+domain's - is written down, with why, in `tools/repo/cloudflare_settings.py`. A DNS record added in the
 dashboard is a difference, deleted by `apply`: write it down there instead.
 
 The API's D1 database is made there too, and brought up to date: `apply`
@@ -165,9 +170,16 @@ script, then with the apply token in `CLOUDFLARE_API_TOKEN` (the environment
 or `.env.infra`) run `python3 tools/repo/cloudflare_settings.py` to see what
 differs and `... apply` to set it; delete the token, and push.
 
-The cloudflare-settings workflow checks them, with the read token, weekly
+The cloudflare-settings workflow checks them, with the read token, daily
 and on each push to `main` that changes the script, failing on any
 difference: one made in the dashboard, or one written down and not applied.
 It runs `cloudflare_settings.py ci`, which also fails if the read token can
 see a zone besides `firmwareliberator.com`, or the account's API tokens: a
 token edited too wide is found by what it can read.
+
+Crawlers, AI ones included, may read `/stats` and its figures: cached, they
+cost nothing. Should that change, one more firewall rule in
+`cloudflare_settings.py` would block Cloudflare's verified AI crawlers
+there - `(cf.verified_bot_category eq "AI Crawler" and (http.request.uri.path
+eq "/stats" or http.host eq "stats.firmwareliberator.com"))` - once
+Cloudflare's documentation confirms the free plan allows that field.

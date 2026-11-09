@@ -16,6 +16,8 @@ ENTRYPOINT = f"{ZONE}/rulesets/phases/{cs.REDIRECT_PHASE}/entrypoint"
 RATE_LIMITS = f"{ZONE}/rulesets/phases/{cs.RATE_LIMIT_PHASE}/entrypoint"
 BUCKETS = "/accounts/a1/r2/buckets"
 DATABASES = "/accounts/a1/d1/database"
+STATS = f"{BUCKETS}/{cs.STATS_BUCKET}"
+SECRETS = f"/accounts/a1/workers/scripts/{cs.API_WORKER}/secrets"
 QUERY = f"{DATABASES}/u1/query"
 ADDRESSES = "/accounts/a1/email/routing/addresses"
 DESTINATION = "owner@example.com"
@@ -50,6 +52,9 @@ class FakeCloudflare:
         self.databases = []   # the account's D1 databases
         self.migrations = None   # what d1_migrations records; None: no such table, never migrated
         self.bound = "u1"   # the database id website/api/wrangler.jsonc binds
+        self.stats_domains = []   # the stats bucket's custom domains
+        self.r2_dev = False   # whether its r2.dev address is on
+        self.secrets = list(cs.API_SECRETS)   # the API Worker's secrets, by name; None: no such Worker
         self.sent = []
         self.ids = iter(range(100, 1000))
 
@@ -81,6 +86,10 @@ class FakeCloudflare:
                 self.addresses.append({"email": body["email"], "verified": None})
             elif path == BUCKETS:
                 self.buckets.add(body["name"])
+            elif path == f"{STATS}/domains/custom":
+                self.stats_domains.append({"domain": body["domain"], "enabled": body["enabled"]})
+            elif path == f"{STATS}/domains/managed":
+                self.r2_dev = body["enabled"]
             elif path == DATABASES:
                 self.databases.append({"name": body["name"], "uuid": "u1"})
             elif path == QUERY:
@@ -106,6 +115,13 @@ class FakeCloudflare:
         if path in {template.format(account="a1", zone="z1") for _, template in cs.CI_REFUSED + cs.DEPLOY_REFUSED}:
             assert ok_forbidden
             return {} if path in self.readable else None
+        if path == f"{STATS}/domains/custom":
+            return {"domains": copy.deepcopy(self.stats_domains)}
+        if path == f"{STATS}/domains/managed":
+            return {"enabled": self.r2_dev}
+        if path == SECRETS:
+            assert ok_missing
+            return None if self.secrets is None else [{"name": name, "type": "secret_text"} for name in self.secrets]
         if path == f"{DATABASES}?name={cs.D1_DATABASE}":
             return copy.deepcopy(self.databases)
         if path == "/accounts/a1/workers/scripts":
@@ -163,7 +179,11 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertEqual(run(fake, "apply")[0], 0)
         self.assertEqual(fake.settings, cs.SETTINGS)
         self.assertEqual([cs.comparable(rule) for rule in fake.redirects], cs.REDIRECTS)
-        self.assertEqual(fake.buckets, {cs.READOUTS_BUCKET})
+        self.assertEqual(fake.buckets, {cs.READOUTS_BUCKET, cs.STATS_BUCKET})
+        self.assertEqual(fake.stats_domains, [{"domain": cs.STATS_HOST, "enabled": True}])
+        for phase, (_, rules) in cs.RULESETS.items():
+            entry = f"{ZONE}/rulesets/phases/{phase}/entrypoint"
+            self.assertEqual([cs.comparable(rule, rules[0]) for rule in fake.rulesets[entry]], rules, phase)
         self.assertEqual([cs.comparable(rule, cs.RATE_LIMITS[0]) for rule in fake.rulesets[RATE_LIMITS]],
                          cs.RATE_LIMITS)
         self.assertIsNone(fake.lifecycle, "a new bucket has no lifecycle rule, and is given none")
@@ -330,6 +350,7 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertNotIn(" apply", workflow.split("\nname:", 1)[1])
         self.assertIn("run: python3 tools/repo/cloudflare_settings.py ci\n", workflow)
         self.assertIn("secrets.CLOUDFLARE_READ_TOKEN", workflow)
+        self.assertIn('- cron: "0 6 * * *"', workflow, "checked daily, so drift shows within a day")
         for name in (cs.EMAIL_DESTINATION, cs.EMAIL_FORWARD):
             self.assertIn(f"{name}: ${{{{ secrets.{name} }}}}", workflow)
 
@@ -574,3 +595,70 @@ class DatabaseTests(unittest.TestCase):
             (Path(folder) / "0002_it's.sql").write_text("", encoding="utf-8")
             with mock.patch.object(cs, "MIGRATIONS", Path(folder)), self.assertRaises(cs.SettingsError):
                 cs.migration_files()
+
+
+class ApiAndStatsTests(unittest.TestCase):
+    """The API's firewall rule and secret, and the public figures' bucket."""
+
+    def setUp(self):
+        self.fake = FakeCloudflare()
+        self.fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09"}]
+        run(self.fake, "apply")
+        self.fake.sent.clear()
+
+    def test_the_api_takes_only_a_post_to_its_paths(self):
+        expression = cs.FIREWALL_RULES[0]["expression"]
+        self.assertTrue(expression.startswith(f'(http.host eq "{cs.API_HOST}" and not '))
+        for path in cs.API_PATHS:
+            self.assertIn(f'"{path}"', expression)
+        self.assertIn('http.request.method eq "POST"', expression)
+        self.assertEqual(cs.FIREWALL_RULES[0]["action"], "block")
+
+    def test_the_figures_are_cached_on_their_host_alone(self):
+        rule = cs.CACHE_RULES[0]
+        self.assertEqual(rule["expression"], f'(http.host eq "{cs.STATS_HOST}")')
+        self.assertTrue(rule["action_parameters"]["cache"])
+
+    def test_r2_dev_turned_on_by_hand_is_turned_off(self):
+        self.fake.r2_dev = True
+        code, out = run(self.fake)
+        self.assertEqual(code, 1)
+        self.assertIn("r2.dev address: is on: it should be off", out)
+        run(self.fake, "apply")
+        self.assertFalse(self.fake.r2_dev)
+
+    def test_another_domain_for_the_figures_is_left_to_the_maintainer(self):
+        self.fake.stats_domains.append({"domain": f"figures.{cs.ZONE}", "enabled": True})
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn(f"should be at {cs.STATS_HOST} alone", out)
+
+    def test_the_figures_domains_own_dns_record_is_never_deleted(self):
+        self.fake.dns.append({"id": "s1", "type": "CNAME", "name": cs.STATS_HOST, "content": "public.r2.dev",
+                              "meta": {}})
+        self.assertEqual(run(self.fake)[0], 0)
+
+    def test_a_secret_not_set_says_how_to_set_it(self):
+        self.fake.secrets = []
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn("secret PLUG_KEY: left - set it from website/: npx wrangler secret put PLUG_KEY", out)
+
+    def test_before_the_worker_is_deployed_its_secrets_wait(self):
+        self.fake.secrets = None
+        code, out = run(self.fake)
+        self.assertEqual(code, 1)
+        self.assertIn("cannot be checked: the Worker is not there yet", out)
+
+    def test_ci_does_not_ask_for_the_workers_secrets(self):
+        def no_secrets(path, *args, **kwargs):
+            self.assertNotEqual(path, SECRETS)
+            return self.fake(path, *args, **kwargs)
+        code, out = run(no_secrets, "ci")
+        self.assertIn(f"{cs.API_WORKER} secrets: not checked", out)
+
+    def test_the_worker_binds_the_figures_bucket_and_its_secret(self):
+        config = (Path(__file__).resolve().parents[2] / "website/api/wrangler.jsonc").read_text(encoding="utf-8")
+        self.assertIn(f'"bucket_name": "{cs.STATS_BUCKET}"', config)
+        for name in cs.API_SECRETS:
+            self.assertIn(f"npx wrangler secret put {name}", config)

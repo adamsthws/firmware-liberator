@@ -1,7 +1,8 @@
 # The website's Cloudflare settings, as tools/repo/cloudflare_settings.py
-# says - the zone, its DNS records, its redirect and rate-limiting rule,
-# Email Routing, and the readouts bucket, which keeps them for good - checked,
-# never set: weekly, and on each push to main that changes them. A run fails
+# says - the zone, its DNS records, its redirect, rate-limiting, firewall and
+# cache rules, Email Routing, the readouts bucket, which keeps them for good,
+# and the public figures' bucket and its domain - checked, never set: daily,
+# and on each push to main that changes them. A run fails
 # on any difference, whether a change made in the dashboard or one written
 # down there and not applied yet. Settings are applied by hand, with a
 # short-lived token (website/README.md); this job's token can read and
@@ -16,7 +17,7 @@ on:
       - tools/repo/cloudflare_settings.py
       - .github/workflows/cloudflare-settings.yml
   schedule:
-    - cron: "0 6 * * 1"   # Mondays, 06:00 UTC
+    - cron: "0 6 * * *"   # daily, 06:00 UTC
   workflow_dispatch:
 
 permissions: {}

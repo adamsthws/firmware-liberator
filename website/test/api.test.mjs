@@ -286,6 +286,13 @@ test("the tool does the same work the Worker asks", () => {
   assert.match(tool, /UPLOAD_URL = "https:\/\/api\.firmwareliberator\.com\/readout"/);
 });
 
+test("the firewall before the Worker lets through its paths, and no others", () => {
+  const settings = readFileSync(new URL("../../tools/repo/cloudflare_settings.py", import.meta.url), "utf8");
+  const [, written] = /^API_PATHS = \(([^)]*)\)$/m.exec(settings);
+  assert.deepEqual(written.split(",").map((path) => path.trim().replaceAll('"', "")).sort(),
+    Object.keys(readout.ROUTES).sort());
+});
+
 test("every other address is not found, and the site is not this Worker", async () => {
   const response = await worker.fetch(new Request("https://api.firmwareliberator.com/"), env());
   assert.equal(response.status, 404);

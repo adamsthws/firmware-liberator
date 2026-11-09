@@ -121,6 +121,49 @@ RATE_LIMITS = [{
                   "requests_per_period": RATE_LIMIT_REQUESTS, "mitigation_timeout": 10},
     "enabled": True,
 }]
+# Before the API Worker too: only the tool's requests, a POST to one of its
+# paths, get through; anything else is blocked at Cloudflare's edge, so it
+# never counts against the account's Workers requests (the rate rule above
+# says why that matters). The free plan allows five such rules.
+FIREWALL_PHASE = "http_request_firewall_custom"
+# The paths, as the Worker routes them (website/test/api.test.mjs holds the two alike).
+API_PATHS = ("/readout", "/wanted", "/notify", "/reports")
+API_PATH_SET = " ".join(f'"{path}"' for path in API_PATHS)
+FIREWALL_RULES = [{
+    "ref": "api-only-the-tool",
+    "description": f"{API_HOST}: only a POST to {', '.join(API_PATHS)}",
+    "expression": (f'(http.host eq "{API_HOST}" and not (http.request.method eq "POST" and '
+                   f'http.request.uri.path in {{{API_PATH_SET}}}))'),
+    "action": "block",
+    "enabled": True,
+}]
+
+# The public figures the API Worker writes each night (website/api/nightly.js)
+# are served from a bucket of their own, holding nothing else, at STATS_HOST
+# alone: its custom domain, made here, which makes its own DNS record (left
+# out of the DNS check, as the Workers' are); R2's own public address for it
+# (r2.dev) stays off. Cloudflare does not cache JSON by itself, so a cache
+# rule has the figures served from its cache for an hour: a page view or a
+# crawl then costs no read of the bucket.
+STATS_BUCKET = "firmware-liberator-stats"
+STATS_HOST = f"stats.{ZONE}"
+CACHE_PHASE = "http_request_cache_settings"
+CACHE_RULES = [{
+    "ref": "stats-cached",
+    "description": f"{STATS_HOST}: served from Cloudflare's cache for an hour",
+    "expression": f'(http.host eq "{STATS_HOST}")',
+    "action": "set_cache_settings",
+    "action_parameters": {"cache": True, "edge_ttl": {"mode": "override_origin", "default": 3600},
+                          "browser_ttl": {"mode": "override_origin", "default": 3600}},
+    "enabled": True,
+}]
+
+# The API Worker's one secret (website/api/wrangler.jsonc): set by hand, as
+# its value is never read back, and checked here by name with the
+# maintainer's token; CI's is refused the Worker's settings.
+API_WORKER = "firmware-liberator-api"
+API_SECRETS = ("PLUG_KEY",)
+
 # Mail to the domain is received by Cloudflare's Email Routing, which made
 # and keeps its own DNS records: MX, its DKIM key and SPF. They are checked
 # against the list Email Routing gives of what it needs, so its key is not
@@ -158,7 +201,8 @@ DEPLOY_ZONE_PERMISSIONS = {"Zone Read", "Workers Routes Write", "DNS Write"}
 DEPLOY_WORKERS = {"firmware-liberator", "firmware-liberator-api"}
 DEPLOY_WORKERS_PERMISSIONS = {"Individual Workers Editor"}
 # Each zone ruleset this script keeps, by its phase: the rules as written here.
-RULESETS = {REDIRECT_PHASE: ("redirects", REDIRECTS), RATE_LIMIT_PHASE: ("rate limits", RATE_LIMITS)}
+RULESETS = {REDIRECT_PHASE: ("redirects", REDIRECTS), RATE_LIMIT_PHASE: ("rate limits", RATE_LIMITS),
+            FIREWALL_PHASE: ("firewall rules", FIREWALL_RULES), CACHE_PHASE: ("cache rules", CACHE_RULES)}
 
 
 class SettingsError(RuntimeError):
@@ -330,7 +374,8 @@ def dns_differences(zone: str) -> list[tuple[str, str, Any]]:
     """The zone's records against DNS_RECORDS and what Email Routing needs,
     the Workers' custom domains aside."""
     answer = api(f"{zone}/dns_records?per_page=500", whole=True)
-    have = [r for r in answer["result"] if not (r.get("meta") or {}).get("origin_worker_id")]
+    have = [r for r in answer["result"] if not (r.get("meta") or {}).get("origin_worker_id")
+            and r.get("name") != STATS_HOST]
     if answer["result_info"]["total_count"] > len(answer["result"]):
         raise SettingsError("the zone has more DNS records than one page lists")
     wanted = DNS_RECORDS + (api(f"{zone}/email/routing/dns") or [])
@@ -463,6 +508,42 @@ def create_database(account: str) -> list[str]:
     return left
 
 
+def stats_differences(account: str, zone_id: str) -> list[tuple[str, str, Any]]:
+    """The public figures' bucket: there, at STATS_HOST, and nowhere else."""
+    buckets = f"/accounts/{account}/r2/buckets"
+    if api(f"{buckets}/{STATS_BUCKET}", ok_missing=True) is None:
+        return [(STATS_BUCKET, "does not exist", ("POST", buckets, {"name": STATS_BUCKET})),
+                (f"{STATS_BUCKET} at {STATS_HOST}", "is not set",
+                 ("POST", f"{buckets}/{STATS_BUCKET}/domains/custom",
+                  {"domain": STATS_HOST, "zoneId": zone_id, "enabled": True, "minTLS": "1.2"}))]
+    found: list[tuple[str, str, Any]] = []
+    domains = (api(f"{buckets}/{STATS_BUCKET}/domains/custom") or {}).get("domains") or []
+    names = sorted(domain.get("domain") for domain in domains)
+    if not any(domain.get("domain") == STATS_HOST and domain.get("enabled") for domain in domains):
+        found.append((f"{STATS_BUCKET} at {STATS_HOST}", "is not set",
+                      ("POST", f"{buckets}/{STATS_BUCKET}/domains/custom",
+                       {"domain": STATS_HOST, "zoneId": zone_id, "enabled": True, "minTLS": "1.2"})))
+    elif names != [STATS_HOST]:
+        found.append((STATS_BUCKET, f"is served at {names}: it should be at {STATS_HOST} alone", None))
+    if (api(f"{buckets}/{STATS_BUCKET}/domains/managed") or {}).get("enabled"):
+        found.append((f"{STATS_BUCKET}'s r2.dev address", "is on: it should be off",
+                      ("PUT", f"{buckets}/{STATS_BUCKET}/domains/managed", {"enabled": False})))
+    return found
+
+
+def secret_differences(account: str) -> list[tuple[str, str, Any]]:
+    """The API Worker's secrets: each there, by name."""
+    path = f"/accounts/{account}/workers/scripts/{API_WORKER}/secrets"
+    have = api(path, ok_missing=True)
+    if have is None:
+        return [(f"{API_WORKER} secrets", "cannot be checked: the Worker is not there yet",
+                 "deploy it, then run this again")]
+    names = {secret.get("name") for secret in have}
+    return [(f"{API_WORKER} secret {name}", "is not set",
+             f"set it from website/: npx wrangler secret put {name} --config api/wrangler.jsonc "
+             "(website/api/wrangler.jsonc says what it is)") for name in API_SECRETS if name not in names]
+
+
 def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
     """(what, how it differs, the change that makes it right, as main's apply
     takes it). With `ci`, what CI's token can see that it
@@ -491,11 +572,14 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
         if rules:
             found.append((f"{READOUTS_BUCKET} lifecycle", f"has {[rule.get('id') for rule in rules]}, should have "
                           "none: readouts are kept for good", lifecycle))
+    found += stats_differences(zones[0]["account"]["id"], zones[0]["id"])
     if ci:
         print(f"  D1 {D1_DATABASE}: not checked - CI's token is refused D1, which reaches every database "
               "in the account; the hand check and the public snapshot's check cover it")
+        print(f"  {API_WORKER} secrets: not checked - CI's token is refused the Worker's settings")
     else:
         found += database_differences(zones[0]["account"]["id"])
+        found += secret_differences(zones[0]["account"]["id"])
     found += email_differences(zone, zones[0]["account"]["id"])
     found += dns_differences(zone)
     have = deploy_token_policies(zones[0]["account"]["id"], zones[0]["id"])
