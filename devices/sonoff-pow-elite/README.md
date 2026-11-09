@@ -6,7 +6,7 @@
 
 ## Testing
 
-**In the emulator:** it converts, from a public dump of a stock one, to Tasmota and to ESPHome and back to Sonoff's firmware. The emulator has none of its hardware but its CSE7766 meter, which Tasmota and ESPHome both read, so the rest of its wiring below is what its sources say, not what was seen.
+**In the emulator:** it converts, from a public dump of a stock one, to Tasmota and to ESPHome and back to Sonoff's firmware. The emulator has none of its hardware but its CSE7766 meter, which Tasmota and ESPHome both read; Sonoff's firmware 1.0.0 reports 0 V and 0 W through eWeLink with the relay on too, for a reason not yet known (the S60's reads it), so the rest of its wiring below is what its sources say, not what was seen.
 
 **Worth checking:** whether the relay, display, button and LEDs work, and what the meter reads against a load you know.
 

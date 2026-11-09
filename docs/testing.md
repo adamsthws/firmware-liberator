@@ -438,8 +438,8 @@ switching or never answering, as every run back to Sonoff's firmware did when
 it asked eWeLink to switch the relay before the plug had got there. The
 result keeps the check's own `Relay` line. On Tasmota and ESPHome the check
 needs only the firmware, which the emulator runs, so `Checks: Not run`
-fails there too; back on Sonoff's firmware the relay is switched through
-eWeLink by the device id the plug's record keeps, and `Not run` - a plug
+fails there too; back on Sonoff's firmware the relay is switched, and the
+meter read, through eWeLink by the device id the plug's record keeps, and `Not run` - a plug
 with none kept - is no failure. A run with no report, of a plug already on the
 firmware asked for, has nothing to judge (`tools/repo/fault_verdicts.py`).
 

@@ -457,9 +457,10 @@ def check_esphome_hardware(ctx: Context) -> dict[str, str]:
 
 
 def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
-    """check_hardware's two switches for a device back on Sonoff's firmware,
-    through eWeLink as the app switches it.  Its meter is not read: eWeLink
-    gives it only while the app asks for it, in units each model has its own."""
+    """check_hardware's two switches and two readings for a device back on
+    Sonoff's firmware, through eWeLink as the app switches it and asks for
+    its readings.  One that sends none (no meter, or the DualR3, which
+    refuses the asking) has its relay checked alone."""
     device_id = str(plugs.read_plug(ctx.state.input("plug_mac") or "").get("ewelink_id") or "")
     if not device_id:
         return {"Relay": "not checked", "Power meter": "not checked"}
@@ -468,15 +469,18 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
     if record is not None and ewelink_relay.motor_mode(record.get("params") or {}):
         return said({"Relay": "motor mode", "Power meter": "not checked"})
     if record is not None:
-        switched = ewelink_relay.check_relay(
+        checked = ewelink_relay.check_relay(
             account=ctx.ewelink, device_id=device_id, say=output.say)
     else:
         output.say(f"    eWeLink has not shown the device online within {ONLINE_WAIT:.0f}s, so its relay "
                    "could not be switched there. Check the eWeLink app.")
-        switched = None
-    return said({"Relay": "could not be checked" if switched is None
-                 else "switches (through eWeLink)" if all(switched) else "did not switch",
-                 "Power meter": "not checked"})
+        checked = None
+    if checked is None:
+        return said({"Relay": "could not be checked", "Power meter": "not checked"})
+    if checked.on is None and checked.off is None:
+        return said({"Relay": "switches (through eWeLink)" if checked.switched and checked.restored
+                     else "did not switch", "Power meter": "not checked"})
+    return said(describe_hardware(checked.switched, checked.restored, checked.on, checked.off))
 
 
 def wait_until_online(ctx: Context, device_id: str) -> dict[str, Any] | None:

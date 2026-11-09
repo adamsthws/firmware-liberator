@@ -1,16 +1,17 @@
 """A plug's relay switched through eWeLink, as the app switches it: the only
 way to reach it on Sonoff's firmware without its LAN key.  check_relay()
 switches it to the other state and back, each confirmed by the plug's
-answer to it, so a run back to Sonoff's firmware ends with the
-relay proved as a run to another firmware does (autoflash's report).
-answers() asks the plug for nothing it changes, to know it is there.
+answer to it, reading its meter after each as the app does, so a run back
+to Sonoff's firmware ends with the relay proved as a run to another
+firmware does (autoflash's report).  answers() asks the plug for nothing it
+changes, to know it is there.
 """
 
 from __future__ import annotations
 
 import socket
 import time
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 
 from tools.ewelink.get_device_key import (APP_ID, TOKEN_REFUSED, Account, EwelinkError, SessionEnded, api_json,
                                           get_devices, select_device)
@@ -27,6 +28,21 @@ RESTORE_WAIT = 60.0
 # A plug's answer to an update it does not take: error 400, which eWeLink
 # passes on (the DualR3's to uiActive). eWeLink's own for a plug not there is 504.
 REFUSED = 400
+# How long after a switch the meter is read, for it to have measured the new
+# state: as autoflash's report waits before reading Tasmota's (seconds).
+READING_SETTLE = 6.0
+# How long a plug asked for its readings may take to send them (seconds).
+READING_WAIT = 10.0
+
+
+class RelayCheck(NamedTuple):
+    """check_relay's answer: whether each switch was confirmed, and the meter
+    read with the relay on and with it off ({"Voltage", "Power"}, in volts and
+    watts), each None when not read."""
+    switched: bool
+    restored: bool
+    on: dict[str, float] | None = None
+    off: dict[str, float] | None = None
 
 
 def app_socket(region: str, session: dict[str, Any]) -> WebSocket:
@@ -105,6 +121,37 @@ def switch(ws: WebSocket, device: dict[str, Any], on: bool, *, wait: float = SWI
                    taken=lambda msg: isinstance(msg.get("params"), dict) and relay_state(msg["params"]) is on)
 
 
+def reading(params: dict[str, Any]) -> dict[str, float] | None:
+    """A plug's readings from a report of them, in volts and watts: Sonoff's
+    S60 and S61 firmware send voltage and power as whole hundredths (23022 is
+    230.22 V).  None for a report without them."""
+    values = {name: params[key] / 100 for name, key in (("Voltage", "voltage"), ("Power", "power"))
+              if isinstance(params.get(key), int) and not isinstance(params.get(key), bool)}
+    return values or None
+
+
+def read_meter(ws: WebSocket, device: dict[str, Any], *, wait: float = READING_WAIT) -> dict[str, float] | None:
+    """The plug's readings, asked for as the app asks as its page opens
+    (uiActive), which the plug answers by sending them.  None when it sends
+    none in `wait`: a plug with no meter, or one refusing it (the DualR3)."""
+    seq = str(int(time.time() * 1000))
+    ws.send_json({"action": "update", "deviceid": device["deviceid"], "apikey": device["apikey"],
+                  "userAgent": "app", "sequence": seq, "params": {"uiActive": 60}})
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        try:
+            msg = ws.receive_json(timeout=max(0.1, deadline - time.monotonic()))
+        except socket.timeout:
+            break
+        if msg.get("sequence") == seq and msg.get("error", 0) != 0:
+            return None
+        found = reading(msg["params"]) if (msg.get("deviceid") == device["deviceid"]
+                                            and isinstance(msg.get("params"), dict)) else None
+        if found:
+            return found
+    return None
+
+
 def answers(*, account: Account, device_id: str) -> bool | None:
     """Whether the plug answers through eWeLink now, or None when eWeLink
     cannot be reached.  The account's "online" does not say it: eWeLink
@@ -133,10 +180,11 @@ def answers(*, account: Account, device_id: str) -> bool | None:
 
 
 def check_relay(*, account: Account, device_id: str,
-                say: Callable[[str], None] = print) -> tuple[bool, bool] | None:
-    """Switch the plug's relay to the other state and back: whether each
-    switch was confirmed, or None when it could not be tried (eWeLink not
-    reached, the plug offline, or no relay state in its record)."""
+                say: Callable[[str], None] = print) -> RelayCheck | None:
+    """Switch the plug's relay to the other state and back, reading its meter
+    after each confirmed switch: whether each switch was confirmed, and the
+    readings, or None when it could not be tried (eWeLink not reached, the
+    plug offline, or no relay state in its record)."""
     try:
         device = account.use(lambda region, session: select_device(get_devices(region, session["at"]), device_id))
         region, session = account.session()
@@ -146,9 +194,15 @@ def check_relay(*, account: Account, device_id: str,
                 f"({'it is offline' if was_on is not None else 'its record gives no relay state'}).")
             return None
         ws = app_socket(region, session)
+
+        def switched_and_read(on: bool) -> tuple[bool, dict[str, float] | None]:
+            if not switch(ws, device, on):
+                return False, None
+            time.sleep(READING_SETTLE)
+            return True, read_meter(ws, device)
         try:
-            switched = switch(ws, device, not was_on)
-            restored = switch(ws, device, was_on)
+            switched, first = switched_and_read(not was_on)
+            restored, second = switched_and_read(was_on)
         finally:
             ws.close()
         if not restored:
@@ -156,7 +210,8 @@ def check_relay(*, account: Account, device_id: str,
     except (EwelinkError, WebSocketError, OSError, KeyError, ValueError) as exc:
         say(f"    The relay could not be switched through eWeLink: {exc}")
         return None
-    return switched, restored
+    on, off = (second, first) if was_on else (first, second)
+    return RelayCheck(switched, restored, on, off)
 
 
 def switch_back(region: str, session: dict[str, Any], device: dict[str, Any], on: bool,
