@@ -6,7 +6,7 @@
 
 ## Testing
 
-**In the emulator:** it converts, from a public dump of a stock one, to Tasmota and to ESPHome and back to Sonoff's firmware. The emulator has none of its hardware, so its wiring below is what its sources say, not what was seen.
+**In the emulator:** it converts, from a public dump of a stock one, to Tasmota and to ESPHome and back to Sonoff's firmware. The emulator has none of its hardware but its CSE7761 meter, which ESPHome reads, so the rest of its wiring below is what its sources say, not what was seen.
 
 **Worth checking:** whether the relay, display, button and LEDs work, and what the meter reads against a load you know.
 

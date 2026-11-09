@@ -17,7 +17,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 # subprojects its build would otherwise fetch, published with this repository
 # (emu.sh downloads it and checks it): nothing else is needed to build it, and
 # it is built with no network at all.
-ARG QEMU_SOURCE_SHA256=37f3cbc81b82c43a1bfa44b75c95278a506c871380be65e3727582f9c1640895
+ARG QEMU_SOURCE_SHA256
 COPY qemu-source.tar.xz /tmp/
 RUN echo "$QEMU_SOURCE_SHA256  /tmp/qemu-source.tar.xz" | sha256sum -c - \
     && tar -xJf /tmp/qemu-source.tar.xz -C / && mv /qemu /src && rm /tmp/qemu-source.tar.xz
