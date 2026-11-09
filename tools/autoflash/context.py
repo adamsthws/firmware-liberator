@@ -122,6 +122,7 @@ class Context:
         self.run_started = time.monotonic()
         self.run_resumed = False
         self.reported = False
+        self.stage_begun = False  # a stage begun this run: a report worth asking for
         self.last_failure = ""  # what the last stage to fail said, for the report
         self.last_failed_step = ""  # and which it was: a failure may send earlier steps back
         try:

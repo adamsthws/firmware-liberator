@@ -64,6 +64,28 @@ class BeforeTheRunTests(unittest.TestCase):
         self.assertIn("Stopped. Nothing was changed.", screen)
 
 
+class StoppedReportTests(unittest.TestCase):
+    """A run that did not finish asks for its report - but not one stopped
+    before any stage began, which says nothing of how the tool does."""
+
+    def ask(self, code, ending, begun, reported=False):
+        from types import SimpleNamespace
+        return cli.stopped_report(SimpleNamespace(reported=reported, stage_begun=begun), code, ending)
+
+    def test_a_run_that_failed_in_a_stage_asks(self):
+        self.assertEqual(self.ask(1, None, begun=True), "failed")
+
+    def test_one_stopped_before_any_stage_does_not(self):
+        # Seen: a wrong --plug-ip, stopped at once, still asked for its report.
+        self.assertIsNone(self.ask(2, None, begun=False))
+
+    def test_a_crash_asks_however_early(self):
+        self.assertEqual(self.ask(1, "crashed", begun=False), "crashed")
+
+    def test_nor_twice(self):
+        self.assertIsNone(self.ask(1, None, begun=True, reported=True))
+
+
 class PipeTests(unittest.TestCase):
     """Each in a process of its own: what it does to signals stays there."""
 

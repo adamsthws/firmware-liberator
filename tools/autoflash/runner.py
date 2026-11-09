@@ -67,6 +67,7 @@ def execute(ctx: Context, step: str) -> int:
 def _execute(ctx: Context, step: str) -> int:
     title, handler = routes.STEP_INDEX[step]
     routes.begin_stage(step)
+    ctx.stage_begun = True   # a report is worth asking for (cli.main)
     output.say(f"{step}  {title}")
     try:
         # Its errors are the step's: seen in the fault suite, an Abort from
