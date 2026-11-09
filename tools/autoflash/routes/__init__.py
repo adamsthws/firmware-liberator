@@ -373,10 +373,10 @@ def choose_route(ctx: Context, pending: FirmwareChoice) -> tuple[str, str]:
 
 def ask_firmware(source: str, choices: list[str], outdated: tuple[str, str, str] | None = None) -> str:
     """The firmware to install: the choices by name alone, with a word only on
-    what is particular to this plug - part way, on Tasmota's safeboot, on an
-    earlier release of the ESPHome, OpenBeken or Tasmota this tool installs
-    (`outdated`: which, the release it runs and this one), or with no backup to go back to
-    Sonoff's firmware from."""
+    what is particular to this plug - part way, on Tasmota's safeboot, or with
+    no backup to go back to Sonoff's firmware from.  On an earlier release of
+    the ESPHome, OpenBeken or Tasmota this tool installs (`outdated`: which,
+    the release it runs and this one), that firmware's option is its update."""
     output.transient_begin()
     body = (["This device was left part way through a conversion; it can go on to any",
              "of these from where it is."] if source in ("midway", "committed", "installer", "interim") else
@@ -384,9 +384,7 @@ def ask_firmware(source: str, choices: list[str], outdated: tuple[str, str, str]
              "stops there. Or it can go on to either of the others."] if source == "safeboot" else
             ["It runs Tasmota without the device's template, so it switches nothing;",
              "choosing Tasmota gives it the template, keeping its other settings."]
-            if source == "untemplated" else
-            [f"It runs {FIRMWARES[outdated[0]]} {outdated[1]}; choosing {FIRMWARES[outdated[0]]} updates it "
-             f"to {outdated[2]},", "the release this tool installs, keeping its settings."] if outdated else [])
+            if source == "untemplated" else [])
     if source != "sonoff" and "sonoff" not in choices:
         body += [""] * bool(body) + ["Going back to Sonoff's own firmware needs the backup this tool takes",
                                      "when it first converts a device, or the Sonoff identity the device",
@@ -397,7 +395,8 @@ def ask_firmware(source: str, choices: list[str], outdated: tuple[str, str, str]
               "openbeken": "OpenBeken", "esphome": "ESPHome",
               "sonoff": "Sonoff's own firmware (back to eWeLink, from its backup)"}
     if outdated:
-        labels[outdated[0]] = f"{FIRMWARES[outdated[0]]}, updated to {outdated[2]}"
+        # An update says so on its option alone, keeping the settings as one does.
+        labels[outdated[0]] = f"{FIRMWARES[outdated[0]]}, update to {outdated[2]}"
     try:
         choice = prompts.ask_choice("Which firmware would you like", [labels[name] for name in choices])
     except prompts.NoOneToAnswer:

@@ -70,8 +70,11 @@ class TasmotaUpdateTests(RouteTestCase):
         return ctx, route, (asked.call_args.args[1] if asked.called else None)
 
     def test_an_earlier_release_is_offered_the_one_this_tool_installs(self):
-        ctx, route, offered = self.settle("15.6.0")
-        self.assertEqual(offered, [f"Tasmota, updated to {OFFICIAL_TASMOTA_VERSION}", "ESPHome",
+        with mock.patch.object(prompts, "section") as shown:
+            ctx, route, offered = self.settle("15.6.0")
+        # Said on its option alone: no line above the options on it.
+        self.assertEqual(shown.call_args.args[1], [])
+        self.assertEqual(offered, [f"Tasmota, update to {OFFICIAL_TASMOTA_VERSION}", "ESPHome",
                                    "Sonoff's own firmware (back to eWeLink, from its backup)"])
         self.assertEqual(route, ("tasmota", "outdated"))
         self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A3", "A5", "U5", "U6"])
