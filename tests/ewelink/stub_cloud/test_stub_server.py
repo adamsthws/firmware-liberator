@@ -119,6 +119,23 @@ class AccountDeviceTests(unittest.TestCase):
         self.assertEqual(item["params"]["fwVersion"], "1.0.2")
         self.assertEqual(stub.account_login()["data"]["user"]["apikey"], "made-up-apikey")
 
+    def test_the_relay_is_off_until_the_plug_reports_it(self):
+        # The POW Elite's and POWCT's firmware reports its relay only when it changes.
+        stub = self.stub({"deviceid": "1000abcdef", "devicekey": "k"})
+        params = lambda: stub.device_thing()["data"]["thingList"][0]["itemData"]["params"]
+        self.assertEqual(params()["switches"], [{"switch": "off", "outlet": 0}])
+        stub.heard({"action": "update", "deviceid": "1000abcdef",
+                    "params": {"switches": [{"switch": "on", "outlet": 0}, {"switch": "off", "outlet": 1}]}})
+        self.assertEqual(params()["switches"], [{"switch": "on", "outlet": 0}, {"switch": "off", "outlet": 1}])
+
+    def test_a_single_switch_reported_leaves_no_list(self):
+        # The TH Elite's Sonoff 1.0.2 reports one switch, and answers a list with 400.
+        stub = self.stub({"deviceid": "1000abcdef", "devicekey": "k"})
+        stub.heard({"action": "update", "deviceid": "1000abcdef", "params": {"switch": "on", "startup": "off"}})
+        params = stub.device_thing()["data"]["thingList"][0]["itemData"]["params"]
+        self.assertEqual(params["switch"], "on")
+        self.assertNotIn("switches", params)
+
     def test_a_given_identity_is_kept(self):
         stub = self.stub({"deviceid": "1000fedcba", "devicekey": "k", "apikey": "a"})
         stub.heard({"action": "register", "deviceid": "1000abcdef", "apikey": "other"})
