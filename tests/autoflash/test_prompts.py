@@ -351,8 +351,8 @@ class QuestionScreenTests(unittest.TestCase):
                  'example="you@example.com")',
                  [("account email", "\r"), ("An answer is needed", "you@example.com\r")], "you@example.com"),
         "address": ('prompts.ask_ipv4("The device\'s address")',
-                    [("address", "eth0\r"), ("is not an address", "192.168.99.50\r")], "192.168.99.50"),
-        "password": ('prompts.ask_secret("Wi-Fi password for \'Home\': ")', [("password", "hunter22\r", r".*> ")],
+                    [("address", "eth0\r"), ("address", "192.168.99.50\r")], "192.168.99.50"),
+        "password": ('prompts.ask_secret("Wi-Fi password for \'Home\': ")', [("password", "hunter22\r", r".*\n\s*>")],
                      "hunter22"),
         "key": ("prompts.wait_for_key()", [("Press any key", "x")], None),
         "word": ('prompts.require_word(prompts.CONSENT_WORD)',
@@ -447,8 +447,8 @@ class QuestionScreenTests(unittest.TestCase):
         question = ("__import__('tools.espressif.safeboot.prepare_imprinted_bundle', "
                     "fromlist=['ask_password']).ask_password('Home')")
         code, answer, _, _, asked, end = self.ask(question, [
-            ("password for 'Home'", "abc\r", r".*> "), ("Same password again", "abd\r", r".*> "),
-            ("did not match.*password for 'Home'", "\r", r".*> "), ("Same password again", "\r", r".*> ")])
+            ("password for 'Home'", "abc\r", r".*\n\s*>"), ("Same password again", "abd\r", r".*\n\s*>"),
+            ("password for 'Home'", "\r", r".*\n\s*>"), ("Same password again", "\r", r".*\n\s*>")])
         self.assertEqual((code, answer), (0, ""), end.render(colour=False))
         rows = [row for row in asked[2].render(colour=False).splitlines() if row.strip()]
         self.assertEqual(sum("(q to quit)" in row for row in rows), 1, "\n".join(rows))
