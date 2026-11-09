@@ -54,6 +54,11 @@ first boot, and sets `PowerMax` to the plug's 3840 W rating. A non-zero `a` or
 `c` has no OpenBeken equivalent; the module then uses `b` and logs a warning.
 Not yet done: a check against a real metered load on hardware.
 
+**Which way SEL selects** was settled from OpenBeken's template (`SEL`,
+not `SEL_n`: voltage on high), Tasmota's BL0937 driver (voltage on high unless
+the pin is `NRG_SEL_i`) and ESPHome's `hlw8012` page ("When SEL=0 current is
+measured, when SEL=1 voltage is measured" for the BL0937); not yet on hardware.
+
 ## The S61's wiring (proven OpenBeken template)
 
 The OpenBeken device database carries an entry for exactly this board,
