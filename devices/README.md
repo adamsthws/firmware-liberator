@@ -18,7 +18,7 @@ published image, or has been converted on a real one.
 
 | Device | Status | Where it stops, in the emulator | What would move it on |
 |---|---|---|---|
-| [BASICR4](sonoff-basicr4/README.md) | Readout wanted | Starts, on a stand-in flash with its table at 0xC000, and is read out | Tasmota and ESPHome finding the table at 0xC000; a readout of a real one, to know its whole table |
+| [BASICR4](sonoff-basicr4/README.md) | Readout wanted | Starts, on a stand-in flash with its table at 0xC000, and is read out | A readout of a real one, to know its whole table and its bootloader's length; then the bridge copying its table to 0x8000 before converting it |
 | [MINIR4](sonoff-minir4/README.md) | Readout wanted | Starts and is read out, with the factory and pair records it keeps; a conversion not tried yet | trying one in the emulator |
 | [NSPanel](sonoff-nspanel/README.md) | Not supported yet | Boots from a whole dump, then turns the installer down after its first 24 bytes | finding out what it checks there |
 | [M5 1-gang](sonoff-m5-1c/README.md), [2-gang](sonoff-m5-2c/README.md), [3-gang](sonoff-m5-3c/README.md) | Not supported yet | Goes quiet, and never starts its Wi-Fi | a whole dump of one that is not the locked Matter version |

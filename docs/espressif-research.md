@@ -123,6 +123,35 @@ Leaving Tasmota, Berry has about 28 KB free on the full build. A whole write hel
 classic ESP32's 26 KB bootloader twice, and stopped there. It now compares the hash on
 the plug first, as every conversion has already put that bootloader in place.
 
+### Converting a table at 0xC000
+
+The BASICR4's bootloader and app read its partition table at 0xC000. Where a
+program looks is built into it (`CONFIG_PARTITION_TABLE_OFFSET`), not passed
+on by the bootloader, and everything the tool installs is built for 0x8000:
+the interim Tasmota, the mover, the safeboot, ESPHome and ESPHome's
+bootloader, and the bridge, which reads 0xC000 only when 0x8000 is empty.
+Tasmota's Partition Wizard (`partition_core.be`) writes the table at 0x8000 by
+address, and the tool's plans write it there too (`plans.TABLE_ADDRESS`).
+(Read in code and Tasmota's source; not yet tried.)
+
+So Tasmota put in a slot would start under Sonoff's bootloader, look at 0x8000,
+find no table and no NVS, and restart for ever: that is why bridge 4.4.6
+refuses an update on such a device. Nothing upstream needs to change. The
+likeliest way, inferred and not yet tried: the bridge writes a copy of the
+0xC000 table's entries at 0x8000 first, and reads it back. Sonoff's bootloader
+and app never read that sector, so a power cut there costs nothing. The
+interim Tasmota then starts and sees the same partitions, and D5 puts
+ESPHome's bootloader in place as on any plug, after which the device is laid
+out as any other converted one. Leaving Sonoff, the stale copy at 0xC000 goes
+before the Tasmota layout's `nvs` (0x9000-0xDFFF) takes that range; going back,
+the backup restores both. It needs a bridge built with dangerous flash writes
+allowed (its sdkconfig aborts on them), a BASICR4 layout in `layouts.py`, and
+a readout of a real one first: if its bootloader runs past 0x8000 - the
+reason for 0xC000 may be a bootloader over 32 KB - a table there would
+overwrite it, and the conversion must refuse. Custom Tasmota or ESPHome builds
+for 0xC000 would also work, but would not be the official images, and the
+Partition Wizard would write a table nothing reads.
+
 ## A plug's identity and stores
 
 What makes a plug the device its eWeLink account knows is a few entries of Sonoff's
