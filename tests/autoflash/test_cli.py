@@ -539,5 +539,38 @@ class SudoPasswordTests(unittest.TestCase):
             cli.admin_password()
 
 
+class ReadoutCommandTests(unittest.TestCase):
+    """readout: one device, the one chosen, or with --all every device in the
+    account without asking - as a script or an unattended run needs."""
+
+    def read(self, **args):
+        from types import SimpleNamespace
+        from tools.autoflash import readout
+        devices = [{"deviceid": "1000abcdef"}, {"deviceid": "1000fedcba"}]
+        ctx = SimpleNamespace(args=SimpleNamespace(**{"plug_ip": None, "all": False, **args}),
+                              account_devices=lambda: devices)
+        with mock.patch.object(cli.output, "say"), mock.patch.object(cli.output, "tell"), \
+                mock.patch.object(readout, "run_all", return_value="all") as every, \
+                mock.patch.object(readout, "read_out_chosen", return_value="chosen") as chosen:
+            cli.cmd_readout(ctx, None)
+        return every, chosen, devices
+
+    def test_all_reads_every_device_unasked(self):
+        every, chosen, devices = self.read(all=True)
+        self.assertEqual(every.call_args.args[1], devices)
+        chosen.assert_not_called()
+
+    def test_without_it_the_owner_chooses(self):
+        every, chosen, _ = self.read()
+        every.assert_not_called()
+        chosen.assert_called_once()
+
+    def test_it_is_an_option_of_the_command(self):
+        import subprocess
+        shown = subprocess.run([sys.executable, "-m", "tools.autoflash", "--help"], capture_output=True, text=True,
+                               cwd=Path(cli.__file__).resolve().parents[2], timeout=60).stdout
+        self.assertIn("--all", shown)
+
+
 if __name__ == "__main__":
     unittest.main()
