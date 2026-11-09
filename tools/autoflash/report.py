@@ -337,7 +337,11 @@ def describe_hardware(switched: bool, restored: bool,
     """
     def number(reading: dict[str, Any] | None, key: str) -> float | None:
         value = (reading or {}).get(key)
-        return float(value) if isinstance(value, (int, float)) else None
+        # Tasmota gives a device with two channels each as a list (the Dual
+        # R3's Power): the first is Relay 1's, the one switched.
+        if isinstance(value, list) and value:
+            value = value[0]
+        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
     def reading(values: dict[str, Any] | None) -> str:
         volts, watts = number(values, "Voltage"), number(values, "Power")

@@ -154,6 +154,23 @@ class SignalSensorTests(unittest.TestCase):
         api.assert_not_called()
 
 
+class MeterTests(unittest.TestCase):
+    """The readings the end-of-run check takes: one meter's Voltage and Power,
+    or a two-channel one's Power 1, its relay's (the Dual R3's)."""
+
+    serve = SignalSensorTests.serve
+
+    def test_a_meter_with_one_channel(self):
+        host, _ = self.serve({"/sensor/Voltage": b'{"value":230.1}', "/sensor/Power": b'{"value":99.9}'})
+        self.assertEqual(esphome.meter(host), {"Voltage": 230.1, "Power": 99.9})
+
+    def test_a_meter_with_two_takes_the_first_channels_power(self):
+        host, asked = self.serve({"/sensor/Voltage": b'{"value":230}', "/sensor/Power%201": b'{"value":100}',
+                                  "/sensor/Power%202": b'{"value":0}'})
+        self.assertEqual(esphome.meter(host), {"Voltage": 230.0, "Power": 100.0})
+        self.assertNotIn("/sensor/Power%202", asked)
+
+
 class ApiSignalTests(unittest.TestCase):
     """ESPHome's native API, spoken plainly: its configuration dump gives the
     signal, as an ESPHome without the signal sensor (ours, 1.0.0) prints it."""

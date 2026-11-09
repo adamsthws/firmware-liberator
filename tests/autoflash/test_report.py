@@ -164,6 +164,13 @@ class DescribeHardwareTests(unittest.TestCase):
         result = report.describe_hardware(True, True, {"Voltage": 238, "Power": 41.5}, {"Voltage": 238, "Power": 0})
         self.assertEqual(result["Relay"], "switches (meter confirms)")
 
+    def test_a_meter_with_two_channels_is_read_by_relay_1s(self):
+        # Tasmota's Status 10 on a Dual R3: Power a list, Voltage common.
+        result = report.describe_hardware(True, True, {"Voltage": 230, "Power": [100, 0]},
+                                          {"Voltage": 0, "Power": [0, 0]})
+        self.assertEqual(result["Relay"], "switches (meter confirms)")
+        self.assertEqual(result["Power meter"], "on: 230 V, 100 W; off: 0 V, 0 W")
+
     def test_no_change_on_the_meter_is_not_claimed_as_proof(self):
         result = report.describe_hardware(True, True, {"Voltage": 238, "Power": 0}, {"Voltage": 238, "Power": 0})
         self.assertEqual(result["Relay"], "switches (meter unchanged)")
