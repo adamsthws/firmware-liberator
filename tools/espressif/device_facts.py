@@ -9,7 +9,9 @@ from __future__ import annotations
 import re
 import struct
 
-from tools.espressif import flashmap
+from tools.espressif import ais_records, flashmap
+from tools.espressif.inspect_stock_nvs import parse
+from tools.ewelink import firmware_findings
 
 APP_DESC_MAGIC = 0xABCD5432
 FIRMWARE_NAME = re.compile(rb"FW[A-Z]+-[A-Z0-9]+-[A-Z0-9-]+")
@@ -89,8 +91,33 @@ def lines(flash: bytes, efuse: bytes | None, info: dict[str, str] | None = None)
         for part in flashmap.partitions(flash):
             found.append(f"Partition: {part.label} type {part.type:#04x}/{part.subtype:#04x} "
                          f"at {part.offset:#x}, {part.size:#x} bytes")
+        found.insert(1, f"Partition table at {flashmap.table_at(flash):#x}")
         for slot in flashmap.app_slots(flash):
             found.append(f"App in {slot.label}: {_app(flash, slot)}")
+            app = flash[slot.offset:slot.offset + slot.size]
+            if app[:1] == bytes([flashmap.IMAGE_MAGIC]) and FIRMWARE_NAME.search(app):  # Sonoff's, not ours
+                found += [f"Its firmware ({slot.label}): {finding.what} - {finding.detail}"
+                          for finding in firmware_findings.findings(app)]
+        found += records(flash)
     except ValueError as exc:
         found.append(f"Partitions: not readable ({exc})")
     return found + info_lines(info)
+
+
+def records(flash: bytes) -> list[str]:
+    """The ais SDK's records the settings hold, and which version each is: one
+    not known here is blanked whole in a readout (scrub.py), so it says so."""
+    nvs = flashmap.nvs(flash)
+    try:
+        names, values = parse(flash[nvs.offset:nvs.offset + nvs.size])
+    except (ValueError, struct.error):
+        return []
+    found = []
+    for (space, key), value in sorted(values.items()):
+        if key != "info" or names.get(space) not in ("pair", "factory") or value.data[:2] != b"\xaa\x55":
+            continue
+        known = ais_records.is_pair(value.data) if names[space] == "pair" else ais_records.is_factory(value.data)
+        version = struct.unpack_from("<H", value.data, 2)[0]
+        found.append(f"Settings: {names[space]} record version {version}, {len(value.data)} bytes"
+                     + ("" if known else " - a version not known here"))
+    return found

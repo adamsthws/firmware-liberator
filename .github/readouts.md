@@ -49,6 +49,13 @@ understood and its readout proven in the emulator.
 For the second stage the device's chip decides how its memory is read, and the
 owner types PROCEED before anything is sent to the device.
 
+Every readout of a whole memory logs what Sonoff's own firmware says of the
+hardware it drives ([firmware_findings.py](../tools/ewelink/firmware_findings.py)):
+the meter or sensor chips it names, a temperature watch like the BASICR4's, an
+ADC it reads, external RAM, Matter, which of Sonoff's SDKs it is, and the
+version of each ais record its settings hold. Each is a lead to check, not a
+fact: the firmware can drive it, the board may not have it.
+
 ### An Espressif device (ESP32-C3, classic ESP32)
 
 The chip comes from the firmware name's last part (`ESP32C3FN4`,
