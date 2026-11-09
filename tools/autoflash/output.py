@@ -640,12 +640,16 @@ def hold():
 
 @contextlib.contextmanager
 def working(text: str):
-    """A short wait outside any stage - the report being put together after
-    the last one - shown as `text` and the stages' spinner on a row of its
-    own, below a blank one, and taken away once it is over.  On a terminal
-    in concise mode only: elsewhere what the wait does is shown as it is."""
+    """A wait outside any stage - the report being put together after the
+    last one, a readout's - shown as `text` and the stages' spinner on a row
+    of its own, below a blank one, and taken away once it is over.  On a
+    terminal in concise mode only: elsewhere, or within a stage, whose own
+    spinner turns, `text` is said as a line, as any other."""
     with _lock:
         shown = _s.concise and _s.ticker is not None and _s.stage is None
+    if not shown:
+        say(text)
+    with _lock:
         if shown:
             _break()
             if not _s.after_blank:

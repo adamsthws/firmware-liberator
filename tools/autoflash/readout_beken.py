@@ -141,13 +141,12 @@ def _poll(ctx: Context, look, wait: float):
 
 def read_whole_flash(ctx: Context, host: str) -> bytes:
     """The device's whole flash, read through OpenBeken (paced, retried chunks)."""
-    output.say("Reading the device's memory - a few minutes...")
-
     def progress(done: int, total: int) -> None:
         output.progress(f"reading the device's memory: {100 * done // total}%")
 
     try:
-        flash = openbeken.read_flash(host, 0, WHOLE_FLASH, progress=progress)
+        with output.working("Reading the device's memory - a few minutes..."):
+            flash = openbeken.read_flash(host, 0, WHOLE_FLASH, progress=progress)
     finally:
         output.progress_clear()
     if len(flash) != WHOLE_FLASH:
@@ -177,17 +176,21 @@ def wait_for_sonoff(ctx: Context, device_id: str, wait: float = SONOFF_WAIT) -> 
     """Wait for Sonoff's firmware to start and show online in eWeLink again.
     Whether it did; the readout is kept and sent either way."""
     from tools.ewelink import relay as ewelink_relay
-    output.say("Waiting for Sonoff's firmware to start and rejoin eWeLink...")
     started = time.monotonic()
-    while time.monotonic() - started < wait:
-        devices = ctx.account_devices() if device_id else None
-        online = any(found.get("deviceid") == device_id and found.get("online") for found in devices or [])
-        if online and ewelink_relay.answers(account=ctx.ewelink, device_id=device_id):
-            output.progress_clear()
-            output.say(f"    eWeLink shows the device online again after {round(time.monotonic() - started)}s.")
-            return True
-        output.progress(f"waiting for eWeLink to show the device online... {time.monotonic() - started:.0f}s")
-        time.sleep(10)
+    with output.working("Waiting for Sonoff's firmware to start and rejoin eWeLink..."):
+        while time.monotonic() - started < wait:
+            devices = ctx.account_devices() if device_id else None
+            online = any(found.get("deviceid") == device_id and found.get("online") for found in devices or [])
+            if online and ewelink_relay.answers(account=ctx.ewelink, device_id=device_id):
+                break
+            output.progress(f"waiting for eWeLink to show the device online... {time.monotonic() - started:.0f}s")
+            time.sleep(10)
+        else:
+            online = False
+    if online:
+        output.progress_clear()
+        output.say(f"    eWeLink shows the device online again after {round(time.monotonic() - started)}s.")
+        return True
     output.progress_clear()
     output.tell("    eWeLink has not shown the device online yet. Switch it off and on; if it stays missing in "
                 "the app, its Sonoff firmware may need sending again.")

@@ -118,16 +118,18 @@ def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, *,
 def read_through(ctx: Context, host: str) -> tuple[bytes, bytes, bytes | None, dict]:
     """The whole flash, efuses and what the bridge at `host` says of the chip."""
     ctx.state.set_input(BRIDGE_HOST, host)   # where it is restarted from, once read
-    output.say("Reading the device's memory - about a minute...")
     problem = ""
-    for _ in range(READ_TRIES):
-        try:
-            flash, efuse, report = dump_stock_flash.read_dump(host)
-            break
-        except OSError as exc:
-            problem = str(exc)
-            output.say(f"    The read did not come through: {problem}")
-    else:
+    with output.working("Reading the device's memory - about a minute..."):
+        for _ in range(READ_TRIES):
+            try:
+                flash, efuse, report = dump_stock_flash.read_dump(host)
+                break
+            except OSError as exc:
+                problem = str(exc)
+                output.say(f"    The read did not come through: {problem}")
+        else:
+            flash = None
+    if flash is None:
         raise Abort(f"the device's memory could not be read ({problem}). Switch it off and on: it starts "
                     "its Sonoff firmware again")
     for line in dump_stock_flash.summary(report):
@@ -176,13 +178,19 @@ def back_on_sonoff(ctx: Context) -> bool:
     prompts.wait_for_key("Press any key once it is switched back on")
     output.transient_end()
     started = time.monotonic()
-    while not installer.back_on_sonoff(ctx):
-        if time.monotonic() - started > BACK_ON_SONOFF_WAIT:
-            output.tell("    It has not answered as Sonoff's firmware yet. Check the eWeLink app; if it is")
-            output.tell("    missing there, switch it off and on once more.")
-            return False
-        output.progress(f"waiting for its Sonoff firmware... {time.monotonic() - started:.0f}s")
-        time.sleep(3.0)
+    answered = False
+    with output.working("Waiting for its Sonoff firmware to answer..."):
+        while time.monotonic() - started <= BACK_ON_SONOFF_WAIT:
+            if installer.back_on_sonoff(ctx):
+                answered = True
+                break
+            output.progress(f"waiting for its Sonoff firmware... {time.monotonic() - started:.0f}s")
+            time.sleep(3.0)
+    if not answered:
+        output.progress_clear()
+        output.tell("    It has not answered as Sonoff's firmware yet. Check the eWeLink app; if it is")
+        output.tell("    missing there, switch it off and on once more.")
+        return False
     output.progress_clear()
     ctx.state.set_input(readout.STATE_KEY, "read")
     output.say("    It is back on its Sonoff firmware.")
