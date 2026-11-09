@@ -256,11 +256,11 @@ class StageEndTests(unittest.TestCase):
     """At the end of a stage, a Ctrl-C pressed during it is asked about, with a
     countdown that carries on by itself."""
 
-    def ask(self, pending, answer):
+    def ask(self, pending, carry_on):
         interrupt.clear()
         if pending:
             interrupt._state["first"] = 1.0
-        with mock.patch.object(prompts, "countdown_choice", return_value=answer) as asked, \
+        with mock.patch.object(prompts, "countdown_carry_on", return_value=carry_on) as asked, \
              mock.patch.object(prompts, "section"), mock.patch.object(output, "say"), \
              mock.patch.object(output, "tell") as told, mock.patch.object(output, "log_only"):
             stop = runner.stop_here_after_ctrl_c("D1")
@@ -268,14 +268,14 @@ class StageEndTests(unittest.TestCase):
         return stop, asked.called
 
     def test_nothing_pressed_nothing_asked(self):
-        self.assertEqual(self.ask(False, 1), (False, False))
+        self.assertEqual(self.ask(False, False), (False, False))
 
     def test_carrying_on_is_the_default(self):
-        self.assertEqual(self.ask(True, 0), (False, True))
+        self.assertEqual(self.ask(True, True), (False, True))
         self.assertFalse(interrupt.pending())
 
     def test_stopping_when_said(self):
-        self.assertEqual(self.ask(True, 1), (True, True))
+        self.assertEqual(self.ask(True, False), (True, True))
         # On the screen, as for a Ctrl-C at any other moment: how to carry on.
         self.assertIn("Run this again to carry on", self.told)
 
@@ -283,7 +283,7 @@ class StageEndTests(unittest.TestCase):
         from tools.autoflash import prompts
         with mock.patch.object(prompts, "UNATTENDED", True), \
              mock.patch.object(prompts, "answered_unattended"):
-            self.assertEqual(prompts.countdown_choice("Stop the run here", ["Carry on", "Stop here"]), 0)
+            self.assertTrue(prompts.countdown_carry_on("The run carries on to the next stage"))
 
     def test_the_emulators_countdown_waits_as_asking(self):
         from tools.autoflash import prompts
@@ -292,7 +292,7 @@ class StageEndTests(unittest.TestCase):
              mock.patch.object(prompts, "answered_unattended"), \
              mock.patch.dict("os.environ", {"AUTOFLASH_EMULATOR_COUNTDOWN": "30"}), \
              mock.patch.object(prompts.time, "sleep", side_effect=lambda s: seen.append((s, interrupt._state["asking"]))):
-            self.assertEqual(prompts.countdown_choice("Stop the run here", ["Carry on", "Stop here"]), 0)
+            self.assertTrue(prompts.countdown_carry_on("The run carries on to the next stage"))
         self.assertEqual(seen, [(30.0, 1)])  # a Ctrl-C during it stops at once
 
 

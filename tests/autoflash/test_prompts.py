@@ -3,6 +3,7 @@ is typed, keys typed ahead thrown away, a way to quit at every question, the
 answers of an unattended run, and the plug's setup network looked for."""
 import io
 import os
+import re
 import sys
 import time
 import unittest
@@ -115,7 +116,7 @@ class SecretPromptTests(unittest.TestCase):
         self.assertIn("LEN 9 True", text)
         # The prompt, with its quit hint, is too long to share the input row in
         # an 80-column terminal, so it sits on its own line above "> ".
-        self.assertIn("Password (q to quit):", text)
+        self.assertIn("Password (q to quit):", re.sub(r"\x1b\[[0-9;]*m", "", text))   # in grey
         # What is left on the input row after its final redraw: asterisks only.
         input_rows = [row for row in text.split("\n") if "> " in row]
         final = input_rows[-1].rstrip("\r").split("\r")[-1].replace("\x1b[K", "")
@@ -134,14 +135,24 @@ class QuitOptionTests(unittest.TestCase):
              mock.patch.object(prompts, "_emit"):
             return function(*args, **kwargs)
 
-    def test_menus_end_with_a_quit_option(self):
+    def test_a_menu_numbers_only_its_options_and_q_quits(self):
+        # q quits at every question, said in grey after it: never a number.
         from unittest import mock
-        shown = []
-        with mock.patch("builtins.input", return_value="3"), \
+        shown, asked = [], []
+        with mock.patch("builtins.input", side_effect=lambda prompt: asked.append(prompt) or "q"), \
              mock.patch.object(prompts, "_emit", side_effect=shown.extend):
             with self.assertRaises(prompts.QuitRun):
                 prompts.ask_choice("Which", ["One", "Two"])
-        self.assertEqual(shown[-1], "3. Quit - stop here")
+        self.assertEqual(shown, ["1. One", "2. Two"])
+        self.assertIn("(q to quit)", asked[0])
+
+    def test_a_number_past_the_options_is_asked_again(self):
+        from unittest import mock
+        replies = iter(["3", "2"])
+        with mock.patch("builtins.input", side_effect=lambda prompt: next(replies)), \
+             mock.patch.object(prompts, "_emit"), mock.patch.object(prompts, "_retry") as retried:
+            self.assertEqual(prompts.ask_choice("Which", ["One", "Two"]), 1)
+        self.assertIn("between 1 and 2", retried.call_args.args[1][0])
 
     def test_a_menu_choice_still_works(self):
         self.assertEqual(self.answer(prompts.ask_choice, "Which", ["One", "Two"], reply="2"), 1)
@@ -229,7 +240,7 @@ class UnattendedPromptTests(unittest.TestCase):
     def test_a_yes_no_question_takes_its_cautious_default(self):
         self.assertFalse(prompts.ask_yes_no("Carry on anyway", default=False))
         self.assertTrue(prompts.ask_yes_no("Enter it now", default=True))
-        self.assertIn("Carry on anyway (y/N, q to quit): n   (unattended)", self.screen.getvalue())
+        self.assertIn("Carry on anyway (y/N): n   (unattended)", self.screen.getvalue())
 
     def test_any_other_question_stops_the_run_and_names_it(self):
         for ask in (lambda: prompts.ask_choice("Which plug", ["one", "two"]),
@@ -252,9 +263,10 @@ if __name__ == "__main__":
 
 @unittest.skipUnless(hasattr(os, "fork"), "a pseudo-terminal needs Linux or macOS")
 class CountdownKeyTests(unittest.TestCase):
-    """The countdown after a Ctrl-C takes a number the moment it is pressed,
-    on a real terminal.  Its first redraw readied the terminal for a typed
-    answer, so a number waited for an Enter, whose row was left blank."""
+    """The countdown after a Ctrl-C carries on by itself, or at once with
+    Enter; q stops, as at every question - taken as it is pressed, on a real
+    terminal.  Its first redraw once readied the terminal for a typed answer,
+    so a key waited for an Enter, whose row was left blank."""
 
     def ask(self, typed):
         import codecs
@@ -267,30 +279,34 @@ class CountdownKeyTests(unittest.TestCase):
             from tools.autoflash import output, prompts
             output.start(None, verbose=False)
             output.transient_begin()
-            chosen = prompts.countdown_choice("Stop the run here", ["Carry on", "Stop here"], seconds=20)
+            carry_on = prompts.countdown_carry_on("The run carries on to the next stage", seconds=20)
             output.transient_end()
-            output.show(f"chosen {{chosen}}")
+            output.show(f"carry on {{carry_on}}")
             output.finish()
         """)
         code, written = unattended_run.record([sys.executable, "-c", script], (80, 24), live=False, timeout=30,
-                                              answers=[unattended_run.Answer(r"press 1-2", typed)])
+                                              answers=[unattended_run.Answer(r"press Enter now", typed)])
         screen = unattended_run.Screen(80, 24)
         screen.feed(codecs.decode(written, "utf-8", errors="replace"))
+        self.written = written
         return code, screen.render(colour=False).splitlines()
 
-    def test_a_number_is_taken_at_once(self):
-        import time
+    def test_q_stops_at_once(self):
         started = time.monotonic()
-        code, rows = self.ask("2")
-        self.assertEqual((code, rows[-1].strip()), (0, "chosen 1"))
+        code, rows = self.ask("q")
+        self.assertEqual((code, rows[-1].strip()), (0, "carry on False"))
         self.assertLess(time.monotonic() - started, 10)   # not the countdown's 20 s
 
-    def test_an_enter_after_the_number_leaves_no_row(self):
-        for typed, chosen in (("2\r", "chosen 1"), ("\r", "chosen 0")):
+    def test_enter_carries_on_at_once_leaving_no_row(self):
+        for typed, said in (("\r", "carry on True"), ("q\r", "carry on False")):
             with self.subTest(typed=typed):
                 code, rows = self.ask(typed)
-                self.assertEqual(rows[-1].strip(), chosen)
+                self.assertEqual(rows[-1].strip(), said)
                 self.assertNotEqual(rows[-2:-1], [""], rows)   # no blank row left above it
+
+    def test_how_to_quit_is_said_as_at_every_question(self):
+        self.ask("\r")
+        self.assertIn(b"\x1b[2m(q to quit)\x1b[0m", self.written)   # in grey, never a number
 
 
 class AdminPasswordTests(unittest.TestCase):

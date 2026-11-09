@@ -154,6 +154,9 @@ check.
   the conversion must finish on it - the run finishes, then goes on to update it in
   the same run, its settings kept. It was left on the earlier release. A run
   stopped part way through such an update finishes it when run again.
+- Every question says how to quit the same way: "(q to quit)", in grey, after it.
+  Menus no longer number a Quit option, and q quits at every one. After a Ctrl-C,
+  the run carries on by itself, or at once with Enter; q stops it there.
 - The report has a Meter calibration line, for a device with a power meter: whether
   its readings are calibrated as Sonoff's firmware had them, or why not. It was
   said on the screen, where it worried more than it helped.
