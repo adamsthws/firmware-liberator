@@ -57,12 +57,43 @@ Not yet done: a check against a real metered load on hardware.
 **In the emulator** the plug's board gives the BL0937's pulses at the rates this
 calibration makes a 100 W load on 230 V (CF 75 Hz, CF1 1794 Hz for the voltage
 and 39 Hz for the current; [the board](../../tools/beken/emulator/README.md#the-plugs-board-boardpy)),
-and both firmwares read them back: OpenBeken 248-250 V and 103-105 W, ESPHome
+and each firmware reads them back: OpenBeken 248-250 V and 103-105 W, ESPHome
 244 V and 103 W, a little high from the firmware's clock in the emulator, and
-0 W with the relay off. Which way SEL selects was settled from OpenBeken's template (`SEL`,
+0 W with the relay off; Sonoff's firmware 230.22 V, 0.43 A and 100.00 W on, and
+230.22 V and nothing off, as it times each period by the chip's clock. Which way SEL selects was settled from OpenBeken's template (`SEL`,
 not `SEL_n`: voltage on high), Tasmota's BL0937 driver (voltage on high unless
 the pin is `NRG_SEL_i`) and ESPHome's `hlw8012` page ("When SEL=0 current is
 measured, when SEL=1 voltage is measured" for the BL0937); not yet on hardware.
+
+## How Sonoff's firmware reads the meter
+
+Read from the public dump's app (destriped with `tools/beken/unstripe.py`,
+disassembled with `disasm.py`) and checked by running it in the emulator.
+The driver, `bl0937b` (its ops at `0x1657e4`: open `0x41f64`, the measurement
+`0x41918` and `0x41a84`), counts no GPIO interrupts:
+
+- **open** sets SEL (P24) as an output, low, and puts two channels of the
+  chip's PWM block (pwm_new, `0x802B00`) into capture: channel 0 (P6, CF1)
+  and channel 2 (P8, CF), each through `0x3f090(channel, 0, handler)`, whose
+  mode 0 is pwm_new's `PWM_CAP_POS_MODE` (4): rising edges, on the 26 MHz
+  clock. Its handler, `0x4203c(channel, count)`, is the PWM interrupt's
+  callback (`PWM_CAP_FUNC`), given the count the channel latched for one
+  period.
+- **SEL is switched per sample.** For CF1 the handler reads SEL back: low
+  (the current), it drops the first two periods after a switch, high (the
+  voltage) the first five; it keeps the next in a five-entry ring for that
+  quantity, and switches SEL. CF's periods go in a ring of their own.
+- **The measurement** turns each ring's period into microseconds (count + 1,
+  over 26) and a frequency, then applies the formula above (the doubles 1.1,
+  1000, 94638, 2040, 15397, 1.21, 1721506 sit in its literal pool), and
+  zeroes current and power below 3 mA.
+- **To the cloud** it reports `voltage` (0.01 V), `current` (0.01 A) and
+  `power` (0.01 W) with its other parameters, and again while the app asks
+  for readings (`uiActive`).
+
+So in the emulator, whose PWM block never captures anything, it read nothing
+and reported 0 V, 0 A and 0 W, until the plug's board gave its capture
+channels their counts ([the board](../../tools/beken/emulator/README.md#the-plugs-board-boardpy)).
 
 ## The S61's wiring (proven OpenBeken template)
 
@@ -82,7 +113,10 @@ The OpenBeken device database carries an entry for exactly this board,
 
 It agrees with the stock driver: the 6-byte parameter block its init passes to
 `bl0937b::open()` (`[0x13548c]+0x24` = `26 00 00 00 02 18`) ends in `0x18` =
-P24 for SEL (and `0x26` = `8<<2 | 6` looks like CF/CF1 packed). The template's
+P24 for SEL, and its bytes 2-4 are the PWM channels that capture CF1 (0, on
+P6, given twice, for the current and the voltage) and CF (2, on P8)
+([below](#how-sonoffs-firmware-reads-the-meter)). What the first byte, `0x26`,
+is was not worked out (it once looked like `8<<2 | 6`, CF and CF1 packed). The template's
 `loglevel 0` worked around UART logging disturbing pulse counting on BK7238,
 fixed upstream in 1.18.235 (PR #1930); the release this project builds on has
 the fix. The import

@@ -93,12 +93,27 @@ the Beken counterpart of the Espressif emulator's
   factory calibration in the public dump's store, as the stock firmware,
   OpenBeken's import and ESPHome's config each apply it
   ([devices/sonoff-s61/research.md](../../../devices/sonoff-s61/research.md#energy-meter-calibration-the-stock-formula-and-the-openbeken-mapping)):
-  75 Hz on CF, 1794 Hz on CF1 for the voltage and 39 Hz for the current. Both
-  firmwares count them by the GPIO interrupt, so the board drives those pins'
-  levels through the emulator's own GPIO model, between its chunks of
-  instructions (`_pacing`, which then raises the interrupt); and the idle loop
-  is skipped only while no pulse is due, as a skip of ten chunks would lose
-  one.
+  75 Hz on CF, 1794 Hz on CF1 for the voltage and 39 Hz for the current.
+  OpenBeken and ESPHome count them by the GPIO interrupt, so the board drives
+  those pins' levels through the emulator's own GPIO model, between its chunks
+  of instructions (`_pacing`, which then raises the interrupt); and the idle
+  loop is skipped only while no pulse is due, as a skip of ten chunks would
+  lose one.
+- **Sonoff's firmware times them instead**, with the chip's PWM block: CF1
+  (P6) on PWM channel 0 and CF (P8) on channel 2 capture rising edges (mode
+  4, pwm_new's `PWM_CAP_POS_MODE`) on the 26 MHz clock, and the PWM interrupt
+  hands the driver each period's count
+  ([how it reads them](../../../devices/sonoff-s61/research.md#how-sonoffs-firmware-reads-the-meter)).
+  The emulator models that block's registers but drives nothing into a
+  capture, so the firmware read nothing and reported 0 V, 0 A and 0 W. Where
+  a channel's control word (`0x802B00` + 0x40 a group) has it capturing, with
+  its pin the meter's, the board writes the count it latches - the clock,
+  over the group's divider, in one period at the output's rate (half of one
+  in edge mode) - into the channel's `RD_DATA`, and raises its interrupt
+  status (`pwmn_stat`) where it is enabled; and a pulse waits for that status
+  to be cleared, as for INTSTA below. The count is the period at the
+  output's rate, not the time since the last pulse given, so an edge a chunk
+  late does not change it.
 - **A cycle is one short low pulse**, the pin falling and rising again between
   two chunks: one interrupt, whichever edge the firmware waits for - the
   falling one (OpenBeken), or each in turn, as LibreTiny's change interrupt
@@ -120,8 +135,10 @@ the Beken counterpart of the Espressif emulator's
   in 70 s of the device's time (seen by printing the device's time beside its
   log). That the voltage is further out than the power is inferred to be the
   windows it is read in, each with the voltage's 1.8 kHz of interrupts, losing
-  more. Sonoff's firmware reported 0 V, 0 A and 0 W to the stub: what its
-  driver makes of the pulses was not looked into.
+  more. Sonoff's firmware reports what the load is, to the stub, as it times
+  the periods by the chip's clock rather than its own: 230.22 V, 0.43 A and
+  100.00 W with the relay on (switched through the stub's eWeLink, and asked
+  for readings as the app asks, `uiActive`), 230.22 V and nothing off.
 - **Not modelled:** the chip's pulse shape and width (only the rate counts),
   and a pulse's timing within a chunk of 0.2 ms.
 
