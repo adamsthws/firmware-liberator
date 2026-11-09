@@ -1194,6 +1194,25 @@ class ReportTests(OutputTestCase):
         switched.assert_not_called()
         slept.assert_not_called()
 
+    def test_a_dualr3_driving_a_motor_has_no_relay_to_switch(self):
+        # Set up for a curtain motor (workMode 2), a DualR3 reports no relay and
+        # refuses every switch: seen in the emulator, it was waited for three
+        # minutes and the report said "Checks passed: False".
+        ctx = self.ewelink_ctx([True])
+        ctx.account_devices = lambda: [{"deviceid": "1000abcdef", "online": True,
+                                        "params": {"workMode": 2, "motorTurn": 0}}]
+        clock = iter(range(0, 10_000, 30))
+        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+                mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
+                mock.patch.object(report.ewelink_relay, "check_relay") as switched, \
+                mock.patch.object(report.time, "monotonic", side_effect=lambda: next(clock)), \
+                mock.patch.object(report.time, "sleep") as slept:
+            hardware = report.check_ewelink_hardware(ctx)
+        self.assertEqual(hardware["Relay"], "motor mode")
+        self.assertEqual(report.checks_passed(hardware), "not run")
+        switched.assert_not_called()
+        slept.assert_not_called()
+
     def test_a_report_gives_only_what_its_route_has(self):
         # Busy time, the Wi-Fi typed and a setup network joined are an Espressif route's.
         espressif_only = ("Busy", "Wi-Fi typed", "Setup network")

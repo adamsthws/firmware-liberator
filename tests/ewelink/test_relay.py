@@ -70,6 +70,11 @@ class RelayTests(unittest.TestCase):
                          [{"uiActive": 60}, {"sledOnline": "off"}])
         self.assertFalse(plug.on)
 
+    def test_a_dualr3_driving_a_motor_says_so(self):
+        self.assertTrue(relay.motor_mode({"workMode": 2, "motorTurn": 0}))
+        self.assertFalse(relay.motor_mode({"workMode": 1, "switches": [{"outlet": 0, "switch": "off"}]}))
+        self.assertFalse(relay.motor_mode({"switch": "on"}))
+
     def test_with_no_led_setting_reported_nothing_more_is_sent(self):
         plug = Plug(knows_readings=False)
         self.assertIs(self.check(plug, ask=relay.answers), False)
