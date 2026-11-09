@@ -159,6 +159,16 @@ def replace_own_build(ctx: Context, firmware: str, published: str | None) -> boo
                     f"device says it is {(info or {}).get('project_name') or 'no project'}")
     if not info["encrypted"] and info["built"] in published_builds(kind):
         return False
+    with output.until_done():   # agreed, it has done its job; declined, it says why the run stops
+        replace_agreed(published)
+    ctx.state.set_input("replaced_build", info["built"])
+    ctx.state.set_input("update_from", OWN_BUILD)
+    ctx.state.set_input("update_to", published)
+    return True
+
+
+def replace_agreed(published: str) -> None:
+    """replace_own_build's warning, and its owner's go-ahead; Abort if not given."""
     prompts.warning_box("Replacing your own build", [
         f"This installs this project's ESPHome {published} over the build on the device.",
         "You lose any changes in its config, and any API encryption key. Home Assistant",
@@ -169,10 +179,6 @@ def replace_own_build(ctx: Context, firmware: str, published: str | None) -> boo
     ])
     if not prompts.require_word(prompts.CONSENT_WORD):
         raise Abort("not confirmed")
-    ctx.state.set_input("replaced_build", info["built"])
-    ctx.state.set_input("update_from", OWN_BUILD)
-    ctx.state.set_input("update_to", published)
-    return True
 
 
 def versions(ctx: Context) -> tuple[str, str]:
