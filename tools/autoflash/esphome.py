@@ -528,10 +528,14 @@ def _action_answer(host: str, names: tuple[str, ...], arguments: bytes, port: in
 
 def meter(host: str) -> dict[str, float]:
     """The meter's voltage and power, as check_hardware's readings: each only
-    if the plug has a reading (none, until its meter has reported)."""
+    if the plug has a reading (none, until its meter has reported). A device
+    with two channels names its power Power 1 and Power 2 (the Dual R3): the
+    first is its relay's, the one switched."""
     readings = {}
-    for key in ("Voltage", "Power"):
-        value = _state(host, f"/sensor/{key}")
-        if isinstance(value, (int, float)):
-            readings[key] = float(value)
+    for key, names in (("Voltage", ("Voltage",)), ("Power", ("Power", "Power 1"))):
+        for name in names:
+            value = _state(host, "/sensor/" + urllib.parse.quote(name))
+            if isinstance(value, (int, float)):
+                readings[key] = float(value)
+                break
     return readings
