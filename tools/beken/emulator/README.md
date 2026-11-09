@@ -52,6 +52,10 @@ patch does and why, how to change them, and how the pin moves, is
   give no samples unless set. `beken-emu.sh` sets none, and the Beken plugs need
   none: unlike the ESP32-C3's BASICR4 (`adc_readings` in `tools/autoflash/kinds.py`),
   neither firmware acts on a reading ([Beken research](../../../docs/beken-research.md#0x3e0000--factory-tlv-store-mac--radio-calibration)).
+- The plug's **power meter**, a BL0937, is on the plug's board, outside the
+  emulator: `board.py` ([below](#the-plugs-board-boardpy)). Nothing else on the
+  board is: no button, and the relay and LEDs are only the pins the firmware
+  drives.
 
 Run the S61 dump:
 
@@ -63,6 +67,63 @@ python /opt/beken-emulator/src/main.py <S61 dump>.bin --with-boot -chip BK7238 -
 
 Always pass `--only-uart`. Without it the emulator logs every MMIO access
 (300k+ lines) and runs so slowly it never progresses past init.
+
+## The plug's board (`board.py`)
+
+The S61's meter is a chip beside the BK7238, so `board.py` is that board.
+BekenEmulator has a BL0937 of its own (`set_energy_meter`), which toggles the
+pins on its 2 ms tick - 250 Hz at most, where the voltage needs 1.8 kHz - and
+follows no relay; `plug.py` leaves it unset. `plug.py` attaches it
+to the emulator it builds, from the checkout's copy in the container
+(`/work`), as `plug.py` itself is run: changing it needs no new image. It is
+the Beken counterpart of the Espressif emulator's
+[`board.py`](../../espressif/emulator/README.md#the-plugs-board-boardpy).
+
+- **The wiring is the S61's** (`WIRING`, as
+  `devices/sonoff-s61/drv_autoflash_sonoff_s61.c` and `esphome.yaml` have it,
+  which `tests/beken/emulator/test_board.py` holds it to): relay P26, BL0937 CF
+  P8, CF1 P6, SEL P24.
+- **The load.** 100 W, resistive, on 230 V mains, measured while the relay's
+  GPIO is driven high (its output driver on, bit 3 of the config word clear,
+  and bit 1 set), nothing while it is off. The voltage is measured on the
+  supply side, so it is there either way.
+- **The BL0937** gives pulses: CF at a rate that is the power, CF1 at one that
+  is the voltage while SEL is driven high and the current while it is low (the
+  BL0937's sense; an HLW8012's is the other way round). The rates come from the
+  factory calibration in the public dump's store, as the stock firmware,
+  OpenBeken's import and ESPHome's config each apply it
+  ([devices/sonoff-s61/research.md](../../../devices/sonoff-s61/research.md#energy-meter-calibration-the-stock-formula-and-the-openbeken-mapping)):
+  75 Hz on CF, 1794 Hz on CF1 for the voltage and 39 Hz for the current. Both
+  firmwares count them by the GPIO interrupt, so the board drives those pins'
+  levels through the emulator's own GPIO model, between its chunks of
+  instructions (`_pacing`, which then raises the interrupt); and the idle loop
+  is skipped only while no pulse is due, as a skip of ten chunks would lose
+  one.
+- **A cycle is one short low pulse**, the pin falling and rising again between
+  two chunks: one interrupt, whichever edge the firmware waits for - the
+  falling one (OpenBeken), or each in turn, as LibreTiny's change interrupt
+  switches between them (ESPHome, which counts a pulse when it reads the pin
+  high in its interrupt). A square wave's two edges a cycle were more
+  interrupts than the emulated CPU takes at 1.8 kHz: ESPHome read 160 V.
+- **A pulse waits for the last to be taken.** One is given only once the
+  firmware has cleared the interrupt the last latched (INTSTA), and a cycle not
+  given yet is given as soon as it has, at most a quarter of a second's worth
+  owed. A chip's edge is taken within microseconds; in the emulator a
+  firmware's stretches with interrupts off last far longer in the device's
+  time, and free-running at 1.8 kHz a quarter of the voltage's edges were lost:
+  OpenBeken read 176 V of 230.
+- **What the firmwares read**, in each way of `fault_suite.py check` (the
+  end-of-run check, with the cloud stub): OpenBeken 248-250 V and 103-105 W
+  with the relay on, the same voltage and 0 W off; ESPHome 244 V and 103 W on,
+  244 V and 0 W off. Both read a few percent high because the firmware's clock
+  falls behind the device's in the emulator: OpenBeken's uptime counted 67 s
+  in 70 s of the device's time (seen by printing the device's time beside its
+  log). That the voltage is further out than the power is inferred to be the
+  windows it is read in, each with the voltage's 1.8 kHz of interrupts, losing
+  more. Sonoff's firmware reported 0 V, 0 A and 0 W to the stub: what its
+  driver makes of the pulses was not looked into.
+- **Not modelled:** the chip's pulse shape and width (only the rate counts),
+  and a pulse's timing within a chunk of 0.2 ms.
 
 ## Booting the converted firmware in the emulator
 

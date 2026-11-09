@@ -16,6 +16,9 @@ Sonoff's firmware needs the emulator's help to come online
 (stock_points.py): an app they cannot be found in is another firmware, which
 is left alone.
 
+Its board (board.py) gives it a power meter, which measures a load while
+the relay is on.
+
 PLUG_TRACE=ADDR,ADDR (hex) logs each call there to the serial output.
 
 The power switch is DIR/power: "off" stops the plug and keeps its flash,
@@ -33,6 +36,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE), str(HERE.parent)]   # the emulator's modules, and the Beken tools
+import board  # noqa: E402
 import cloud_online  # noqa: E402  (needs the emulator image)
 import stage_apply  # noqa: E402
 import stock_points  # noqa: E402
@@ -42,6 +46,7 @@ from unicorn.arm_const import UC_ARM_REG_LR, UC_ARM_REG_R0, UC_ARM_REG_R1, UC_AR
 
 SSID, PASSWORD = cloud_online.SSID, cloud_online.PW
 APP_ENTRY = stock_points.APP_BASE
+KIND = "sonoff-s61"   # whose board it is: the dump's
 PEER_MAC = b"\x02\x00\x00\x00\x00\x01"
 
 
@@ -105,6 +110,7 @@ class Plug:
                              save_decrypted=False, wifi=True, log=self.netlog.append)
         emu.flash_writethrough = True
         emu.setup()
+        board.attach(emu, KIND)
         emu.net_sink = self.netlog.append
         emu.attach_wifi_peer(role="ap", ssid=SSID.decode(), passphrase=PASSWORD.decode(), channel=1,
                              peer_mac=PEER_MAC, tap=self.tap)

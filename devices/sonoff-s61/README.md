@@ -6,7 +6,7 @@
 
 ## Testing
 
-**In the emulator:** it converts in every direction, faults and all, from the public dump of a real one; the emulator has no relay, button, LEDs or meter.
+**In the emulator:** it converts in every direction, faults and all, from the public dump of a real one; the emulator has its meter, measuring a load while the relay pin is on, but no relay, button or LEDs.
 
 **Worth checking:** whether it came back on your Wi-Fi, and whether the relay, button, LEDs and meter work.
 

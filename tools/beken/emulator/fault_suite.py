@@ -30,7 +30,8 @@ write), the fault; then the tool run again, as a person would - switching the
 plug off and on where the run says to - until the plug is converted, or four
 runs fail. Every scenario also checks the fault landed while its step was
 under way (MISTIMED if not), and that the converting run's report says its
-end-of-run checks passed (FAIL-CHECKS if not: tools/repo/fault_verdicts.py),
+end-of-run checks passed, the emulated meter confirming the relay switched
+(FAIL-CHECKS if not: tools/repo/fault_verdicts.py),
 that each run left one line a stage on its screen, none of a try that
 failed (FAIL-SCREEN if not), and that a plug converted to OpenBeken or ESPHome
 runs this checkout's release of it (FAIL-NOT-LATEST if not).
@@ -620,7 +621,7 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         if problems:
             outcome = dict(outcome, result="FAIL")
             notes["interim"] = problems
-        checks = fault_verdicts.checks_problem(instance.last_log(), target)
+        checks = fault_verdicts.checks_problem(instance.last_log(), target, metered=True)
         if checks and not problems:
             outcome = dict(outcome, result="FAIL-CHECKS")
             notes["checks"] = checks
@@ -1030,7 +1031,7 @@ def check_way(n: int, routes: tuple[str, ...]) -> int:
                     instance.ready(target)
             problems = [] if converted(instance.last_state(), route) else ["not converted"]
             problems += interim_problems(route, instance.dhcp_names(), None)
-            checks = fault_verdicts.checks_problem(instance.last_log(), target)
+            checks = fault_verdicts.checks_problem(instance.last_log(), target, metered=True)
             if checks:
                 problems.append(checks)
             print(f"{'FAIL' if problems else 'PASS'}  {route}{': ' + ', '.join(problems) if problems else ''}", flush=True)

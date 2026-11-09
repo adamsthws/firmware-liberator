@@ -675,8 +675,13 @@ plug to start from, one `rebuild_dump.py` made for another model, say
   radio: nothing is sent, and no phone can pair with the plug over BLE.
 - **Slow.** It runs the real firmware far slower than a chip, which is why its web
   page goes through the proxy.
-- **Nothing around the chip.** No relay, meter or button is wired to its pins, so a
-  conversion passing says the firmware installs and starts, not that a device's
-  wiring is right.
+- **A power meter, but no button.** The S61's BL0937 is emulated, measuring a
+  100 W load on 230 V while the relay pin is driven high and none while it is
+  low, so the end-of-run check can say the meter confirms the switch
+  ([how](../tools/beken/emulator/README.md#the-plugs-board-boardpy)). OpenBeken
+  and ESPHome read it a little high, 244-250 V and 103-105 W, as the firmware's
+  clock falls behind in the emulator; Sonoff's firmware reports nothing from it.
+  A conversion passing says the firmware installs, starts and reads a meter on
+  the pins its config names - not that those are the device's.
 - **A Linux computer only.** `beken-emu.sh computer` is a Linux container; the
   Espressif emulator's [Windows](#on-windows) set-up has no Beken counterpart yet.

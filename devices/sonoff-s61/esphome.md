@@ -84,7 +84,8 @@ The outputs, in `.esphome/build/esphome/.pioenvs/esphome/`:
   the voltage with SEL high, so SEL is `inverted`, as ESPHome's `hlw8012` page
   says for this model. Before 2.4.0 it was not, and each reading was the
   other's: about 20 A whatever the load, and a voltage that followed it, 5 V
-  at 100 W.
+  at 100 W. The emulated meter showed it
+  ([the emulator's board](../../tools/beken/emulator/README.md#the-plugs-board-boardpy)).
 - **The flash layout.** LibreTiny's generic BK7238 board is the SDK's 2 MB
   layout. The config overrides it through `platformio_options` (PlatformIO's
   `board_flash.*` / `board_build.*` overrides) to the S61's stock bootloader

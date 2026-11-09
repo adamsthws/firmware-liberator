@@ -54,7 +54,12 @@ first boot, and sets `PowerMax` to the plug's 3840 W rating. A non-zero `a` or
 `c` has no OpenBeken equivalent; the module then uses `b` and logs a warning.
 Not yet done: a check against a real metered load on hardware.
 
-**Which way SEL selects** was settled from OpenBeken's template (`SEL`,
+**In the emulator** the plug's board gives the BL0937's pulses at the rates this
+calibration makes a 100 W load on 230 V (CF 75 Hz, CF1 1794 Hz for the voltage
+and 39 Hz for the current; [the board](../../tools/beken/emulator/README.md#the-plugs-board-boardpy)),
+and both firmwares read them back: OpenBeken 248-250 V and 103-105 W, ESPHome
+244 V and 103 W, a little high from the firmware's clock in the emulator, and
+0 W with the relay off. Which way SEL selects was settled from OpenBeken's template (`SEL`,
 not `SEL_n`: voltage on high), Tasmota's BL0937 driver (voltage on high unless
 the pin is `NRG_SEL_i`) and ESPHome's `hlw8012` page ("When SEL=0 current is
 measured, when SEL=1 voltage is measured" for the BL0937); not yet on hardware.
