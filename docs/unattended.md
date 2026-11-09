@@ -118,7 +118,7 @@ See "Unattended, for testing" in [emulator.md](emulator.md#unattended-for-testin
 
 A readout in the emulator is kept unsent. To test sending it, `--api` sends
 it to the API Worker's own code on your computer instead
-([`website/api/local.mjs`](../website/api/local.mjs), under Node; its
+([`website/api/local.mjs`](../website/api/local.mjs), under Node 22.23 or newer; its
 `ENOUGH` from `AUTOFLASH_API_ENOUGH`): what it was asked and kept is in the
 instance's state directory, under `api/`. With `AUTOFLASH_EMU_STUB_OTHERS`
 listing other devices in the account ([cloud-stub.md](cloud-stub.md)), a

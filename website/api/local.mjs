@@ -1,13 +1,26 @@
 // The API Worker (index.js) on this computer, for emulator runs that send
 // their readouts (tools/espressif/emulator/unattended-test.sh --api): the
-// Worker's own code, with an R2 bucket that keeps what it is given in a folder
-// and a rate limiter holding READOUT_LIMIT's rule - two a minute from one
-// address, in a fixed minute's window. Never deployed.
+// Worker's own code, with an R2 bucket that keeps what it is given in a folder,
+// its database in that folder too (api.sqlite, local-d1.mjs), and a rate
+// limiter holding READOUT_LIMIT's rule - two a minute from one address, in a
+// fixed minute's window. Never deployed.
 //   node website/api/local.mjs ADDRESS PORT FOLDER [ENOUGH]
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import worker from "./index.js";
+
+// local-d1.mjs's database is node:sqlite, which Node 22.11 has only behind a
+// flag and 22.14 misreads (numbered parameters, ?1, out of range): this was
+// tried on 22.23, and is refused on anything older rather than failing later.
+const [major, minor] = process.versions.node.split(".").map(Number);
+if (major < 22 || (major === 22 && minor < 23)) {
+  console.error(`website/api/local.mjs needs Node 22.23 or newer, not ${process.versions.node} (AUTOFLASH_NODE names one)`);
+  process.exit(2);
+}
+
+// After the check: an older Node fails as these are loaded.
+const { default: worker } = await import("./index.js");
+const { d1 } = await import("./local-d1.mjs");
 
 const [address, port, folder, enough = ""] = process.argv.slice(2);
 fs.mkdirSync(folder, { recursive: true });
@@ -35,7 +48,9 @@ const READOUT_LIMIT = {
     return { success: count <= 2 };
   },
 };
-const env = { READOUTS, READOUT_LIMIT, ENOUGH: enough };
+// Brought up to date at each start, as `apply` brings the real one.
+const DB = d1({ file: path.join(folder, "api.sqlite") });
+const env = { READOUTS, DB, READOUT_LIMIT, ENOUGH: enough };
 
 // Gone once the script that started it is (PARENT, its process id), however it ended.
 if (process.env.PARENT) {
