@@ -65,7 +65,7 @@ def _emit(lines: Iterable[str]) -> None:
         output.show(f"{BULLET}{line}")
 
 
-def _retry(mark: tuple[int, bool, bool] | None, lines: Iterable[str]) -> None:
+def _retry(mark: output.Mark | None, lines: Iterable[str]) -> None:
     """A wrong answer: take it and its question off the screen again, back to
     `mark`, then say why before asking again - so wrong answers do not pile
     up, one under another, until the question is taller than the window."""
