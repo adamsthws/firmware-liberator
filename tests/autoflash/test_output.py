@@ -403,6 +403,21 @@ class ConciseTests(OutputTestCase):
         wait.assert_not_called()
         self.assertIn("Make this window taller (e.g. maximise it): at 40 rows", stdout.getvalue())
 
+    def test_the_window_advice_changes_at_its_two_heights_exactly(self):
+        # Waited for below MIN_ROWS, told in a line below GOOD_ROWS, else nothing.
+        for rows, expected in ((output.MIN_ROWS - 1, "waited"), (output.MIN_ROWS, "line"),
+                               (output.GOOD_ROWS - 1, "line"), (output.GOOD_ROWS, "nothing")):
+            with self.subTest(rows=rows):
+                stdout = FakeTerminal()
+                with mock.patch("sys.stdout", stdout), \
+                     mock.patch.object(output, "colour_ok", return_value=True), \
+                     mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, rows))), \
+                     mock.patch.object(prompts, "wait_for_key") as wait:
+                    prompts.wait_for_taller_window()
+                shown = "waited" if wait.called else "line" if "Make this window taller" in stdout.getvalue() \
+                    else "nothing" if stdout.getvalue() == "" else stdout.getvalue()
+                self.assertEqual(shown, expected)
+
     def test_a_checked_address_must_pass_with_no_using_it_anyway(self):
         asked = []
         def check(address):

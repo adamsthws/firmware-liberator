@@ -429,6 +429,16 @@ ended), a stage that passed still has its "Underway" line above it (what it
 showed was left on the screen), or two blank rows follow one another. The
 result's notes name each one.
 
+The unit tests find most of these first, without the emulator:
+`tests/autoflash/test_route_screens.py` runs every route through the run's own
+loop, at the shortest window it goes on in and a wide one;
+`tests/autoflash/test_prompts.py` asks every kind of question on a real
+terminal and answers it as a person would, wrongly first;
+`tests/repo/test_screen_text.py` keeps each section of text to half the
+shortest window; `tests/repo/test_report_answers.py` reads the longest report
+back with the suites' own patterns; and `tests/autoflash/test_cli.py` checks
+the run-again menu names the stage its line showed.
+
 The emulated computer's list of networks keeps one the plug put out for a
 minute after it has gone or been renamed, as a real computer's does (the
 emulator's `nmcli`; a number of seconds in `/run/autoflash-emu/scan-cache`
