@@ -1160,6 +1160,17 @@ class ReportTests(OutputTestCase):
                 mock.patch.object(report.ewelink_relay, "check_relay", return_value=(True, False)):
             self.assertEqual(report.check_ewelink_hardware(ctx)["Relay"], "did not switch")
 
+    def test_a_dualr3_driving_a_motor_says_both_answers(self):
+        ctx = self.ewelink_ctx([True])
+        ctx.account_devices = lambda: [{"deviceid": "1000abcdef", "online": True, "params": {"workMode": 2}}]
+        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+                mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
+                mock.patch.object(output, "say") as said:
+            report.check_ewelink_hardware(ctx)
+        lines = [c.args[0] for c in said.call_args_list]
+        self.assertIn("    Relay: Motor mode", lines)
+        self.assertIn("    Power meter: Not checked", lines)
+
     def ewelink_ctx(self, seen: list[bool]):
         """A run back to Sonoff on an S60, whose account shows the device as
         `seen` says, one look at a time (then as the last)."""
