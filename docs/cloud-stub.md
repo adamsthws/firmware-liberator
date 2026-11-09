@@ -881,6 +881,32 @@ on to Tasmota it was read at X1 before anything was written: X1 -18, D4 -20,
 E1 -18, reported -20. With the API read added, the plug with no sensor was read at
 X1 too, from its configuration dump: X1 -23, D4 -19, E1 -22, reported -23.
 
+#### Test 10 — a readout of every device in an account
+
+**Goal:** a readout of every device the tool does not convert, attended, with
+each readout sent to the API Worker's own code (`website/api/index.js` under
+Node, its R2 bucket a folder and its rate limit the Worker's: two a minute from
+one address) through `AUTOFLASH_READOUT_URL`, and `/wanted` asked first.
+
+**Setup:** the BASICR4 or MINIR4 stand-in plug, and three to six other devices
+in the account (`AUTOFLASH_EMU_STUB_OTHERS`): an NSPanel (not supported yet),
+an S60TPG-M (a Matter variant: not seen), and made-up new models. Twelve runs on
+the alice VM, up to seven at once, on 2026-11-09.
+
+**Results:** every first-stage device was asked `/wanted`, then sent on its
+own; the BASICR4 and MINIR4 were read in full after PROCEED, put back on Sonoff
+by the bridge, and sent. `s` at PROCEED passed the BASICR4 by with nothing sent
+to it, and `q` ended the run listing what was sent and what was not. With the
+NSPanel or the BASICR4 in `ENOUGH`, it was answered "not needed": no readout
+of it was made, and the BASICR4 was asked no PROCEED. A first-stage readout's
+manifest held its product, firmware model and version, and no device id or
+name.
+
+**Found:** quick first stages reach the API's two readouts a minute: one run's
+third readout was answered 429 and kept unsent. `send()` now sends it again
+(then a minute later, since every 15 seconds); in five runs after (22 readouts), four 429s were each sent again
+and taken.
+
 ### Risks and limitations
 
 - **Fidelity:** the stub tests *the tool and the bridge firmware*, not eWeLink's

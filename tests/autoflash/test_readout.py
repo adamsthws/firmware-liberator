@@ -1,6 +1,7 @@
 """A readout, what every chip family's shares: what it sends (the files a
 read gives, and what the device said it is), where to and when not, which way
 a device is read, and a run ending on it without a conversion."""
+import contextlib
 import http.server
 import io
 import lzma
@@ -10,6 +11,7 @@ import tarfile
 import tempfile
 import threading
 import unittest
+import urllib.error
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -21,7 +23,7 @@ from tools.espressif import chips
 from tools.ewelink import firmware_name, offered_firmware
 
 # The website asked, where start_run says it wants every readout.
-STILL_WANTED = readout.still_wanted
+ASK_WANTED = readout.ask_wanted
 MANIFEST = {"format": 1, "product": "NEWTHING", "stock_model": "SN-ESP32C3-NEW-01", "version": "1.0.0"}
 DEVICE = {"deviceid": "1000abcdef", "name": "Hall light", "productModel": "NEWTHING",
           "extra": {"model": "SN-ESP32C3-NEW-01", "uiid": 77}, "params": {"fwVersion": "1.0.0"}}
@@ -199,7 +201,7 @@ class StillWantedTests(unittest.TestCase):
         given = f"http://127.0.0.1:{server.server_address[1]}/readout" if url == "set" else url
         try:
             with mock.patch.object(readout, "upload_url", return_value=given), mock.patch.object(output, "log_only"):
-                wanted = readout.still_wanted("BASICR4")
+                wanted = readout.ask_wanted("BASICR4", "SN-BASICR4-01", "1.1.0", "whole", ["a" * 64, "b" * 64])
         finally:
             server.shutdown()
             server.server_close()
@@ -207,25 +209,80 @@ class StillWantedTests(unittest.TestCase):
 
     def test_it_asks_beside_where_readouts_go_with_lighter_work_of_its_own(self):
         import hashlib
-        wanted, got = self.ask()
-        self.assertFalse(wanted)
+        wanted, got = self.ask(answer={"wanted": False, "why": "held", "held": ["a" * 64, "c" * 64]})
+        self.assertEqual(wanted, readout.Wanted(False, "held", frozenset({"a" * 64})))   # c was not asked of
         self.assertEqual((got["path"], got["type"]), ("/wanted", "application/json"))
-        self.assertEqual(json.loads(got["body"]), {"format": 1, "product": "BASICR4"})
+        self.assertEqual(json.loads(got["body"]), {"format": 1, "product": "BASICR4", "model": "SN-BASICR4-01",
+                                                   "version": "1.1.0", "stage": "whole",
+                                                   "firmware": ["a" * 64, "b" * 64]})
         stamp, nonce = got["proof"].split(":")
         work = hashlib.sha256(f"{stamp}:{hashlib.sha256(got['body']).hexdigest()}:{nonce}".encode()).digest()
-        self.assertLess(int.from_bytes(work, "big"), 1 << (256 - readout.WANTED_PROOF_BITS))
-        self.assertLess(readout.WANTED_PROOF_BITS, readout.PROOF_BITS)
+        self.assertLess(int.from_bytes(work, "big"), 1 << (256 - readout.LIGHT_PROOF_BITS))
+        self.assertLess(readout.LIGHT_PROOF_BITS, readout.PROOF_BITS)
 
     def test_wanted_when_the_website_says_so_or_cannot_say(self):
-        self.assertTrue(self.ask(answer={"wanted": True})[0])
-        self.assertTrue(self.ask(status=404, answer={"error": "an earlier website"})[0])
-        self.assertTrue(self.ask(status=429, answer={"error": "too many"})[0])
-        self.assertTrue(self.ask(url="http://127.0.0.1:9/readout")[0])   # nothing there
+        self.assertTrue(self.ask(answer={"wanted": True})[0].wanted)
+        self.assertTrue(self.ask(status=404, answer={"error": "an earlier website"})[0].wanted)
+        self.assertTrue(self.ask(status=429, answer={"error": "too many"})[0].wanted)
+        self.assertTrue(self.ask(url="http://127.0.0.1:9/readout")[0].wanted)   # nothing there
 
     def test_never_asked_from_a_test_run(self):
         wanted, got = self.ask(url=None)
-        self.assertTrue(wanted)
+        self.assertTrue(wanted.wanted)
         self.assertEqual(got, {})
+
+
+class RateLimitTests(unittest.TestCase):
+    """The website takes two readouts a minute from one address: a readout of
+    every device reaches that, as one in the emulator did (a 429, kept unsent)."""
+
+    def post(self, answers):
+        got = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802 - http.server's name
+                self.rfile.read(int(self.headers["Content-Length"]))
+                got.append(self.headers["X-Proof"])
+                status, body = answers[len(got) - 1]
+                body = json.dumps(body).encode()
+                self.send_response(status)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            with mock.patch.object(readout, "PROOF_BITS", 8), mock.patch.object(output, "say"), \
+                    mock.patch.object(readout.time, "sleep") as slept:
+                try:
+                    said = readout.send(b"\x1f\x8bdata", f"http://127.0.0.1:{server.server_address[1]}/readout")
+                except OSError as exc:
+                    said = exc
+        finally:
+            server.shutdown()
+            server.server_close()
+        return said, got, [call.args[0] for call in slept.call_args_list]
+
+    def test_too_many_at_once_is_sent_again_shortly_with_the_same_work(self):
+        said, proofs, waits = self.post([(429, {"error": "too many"}), (201, {"id": "r-1"})])
+        self.assertEqual(said, "r-1")
+        self.assertEqual(len(set(proofs)), 1)
+        self.assertEqual(waits, [15.0])
+
+    def test_it_gives_up_after_a_minute_and_a_half_of_tries(self):
+        said, proofs, waits = self.post([(429, {"error": "too many"})] * 7)
+        self.assertIsInstance(said, OSError)
+        self.assertIn("429", str(said))
+        self.assertEqual((len(proofs), waits), (7, [15.0] * 6))
+
+    def test_anything_else_turned_away_is_not_sent_again(self):
+        said, proofs, waits = self.post([(503, {"error": "enough for today"})])
+        self.assertIsInstance(said, OSError)
+        self.assertEqual((len(proofs), waits), (1, []))
 
 
 class LocateTests(unittest.TestCase):
@@ -306,7 +363,8 @@ def start_run(test: unittest.TestCase) -> None:
                   mock.patch.object(account, "ask_account", return_value=asked),
                   mock.patch.object(plugs, "remember_plug"),
                   # Wanted, as the website would say: never asked of it from a test.
-                  mock.patch.object(readout, "still_wanted", return_value=True),
+                  mock.patch.object(readout, "ask_wanted", return_value=readout.Wanted(True)),
+                  mock.patch.object(readout, "notify", return_value=True),
                   mock.patch.object(offered_firmware, "fetch",
                                     return_value=([offered_firmware.Offered("user1.bin", "1.1.0", b"\xe9")], []))):
         patch.start()
@@ -408,31 +466,191 @@ class RunTests(unittest.TestCase):
         self.assertEqual(self.ctx.state.input("plug_mac"), "12:34:56:ab:cd:ef")
 
 
+def kinds_basicr4_model() -> str:
+    from tools.autoflash import kinds
+    return kinds.SONOFF_BASICR4.stock_model
+
+
 class NotWantedTests(unittest.TestCase):
-    """A device the website has enough readouts of: nothing more is done."""
+    """A readout that would add nothing, or one the day has no room for:
+    nothing more is done - but the owner may still ask to be told."""
 
     def setUp(self):
         start_run(self)
-        readout.still_wanted.return_value = False
+        readout.ask_wanted.return_value = readout.Wanted(False, "held")
+        for patch in (mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"),
+                      mock.patch.object(prompts, "UNATTENDED", False)):
+            patch.start()
+            self.addCleanup(patch.stop)
 
-    def test_nothing_is_fetched_sent_to_it_or_sent_in(self):
+    def run_basicr4(self, contact=None):
         from tools.autoflash import kinds
         basicr4 = kinds.SONOFF_BASICR4
+        asked = account.Asked({"packets": []}, "1.1.0", basicr4.stock_model, "BASICR4", [], {}, "1000abcdef")
         with learned(basicr4.wrapper_model, "ESP32C3"), \
+                mock.patch.multiple(account, ask_ewelink=mock.Mock(return_value=asked),
+                                    ask_account=mock.Mock(return_value=asked)), \
+                mock.patch.object(readout, "ask_contact", return_value=contact) as asked, \
                 mock.patch.object(readout_espressif, "read_and_anonymise") as read, \
                 mock.patch.object(readout, "offer") as offered:
             said = readout.run(self.ctx, record("BASICR4", basicr4.stock_model))
-        self.assertIn("enough readouts of this device are in already", said)
-        self.assertEqual(readout.still_wanted.call_args.args[0], "NEWTHING")
-        offered_firmware.fetch.assert_not_called()
         read.assert_not_called()
         offered.assert_not_called()
+        offered_firmware.fetch.assert_not_called()
+        return said, asked
+
+    def test_nothing_is_fetched_sent_to_it_or_sent_in_and_it_asks_as_a_whole_readout(self):
+        said, _ = self.run_basicr4()
+        self.assertIn("Nothing was read or sent", said)
+        product, model, version, stage, _ = readout.ask_wanted.call_args.args
+        self.assertEqual((product, version, stage), ("BASICR4", "1.1.0", "whole"))
+
+    def test_the_owner_may_still_ask_to_be_told_when_it_is_supported(self):
+        said, asked = self.run_basicr4({"email": "me@example.com"})
+        self.assertTrue(asked.call_args.kwargs["when_supported"])
+        readout.notify.assert_called_once_with("me@example.com", [("BASICR4", kinds_basicr4_model())])
+        self.assertIn("emailed when this device's status changes", said)
+
+    def test_why_is_shown_before_it_is_asked(self):
+        # On the screen, not the log alone: else the owner is asked for an
+        # address with no word of why nothing is read.
+        self.run_basicr4(None)
+        self.assertIn("    Not needed: the website has what it needs of this device already.",
+                      [call.args[0] for call in output.tell.call_args_list])
+
+    def test_or_not(self):
+        said, _ = self.run_basicr4(None)
+        readout.notify.assert_not_called()
+        self.assertEqual(said, "Nothing was read or sent. Thank you!")
 
     def test_in_a_batch_it_says_so_and_the_rest_go_on(self):
-        with mock.patch.object(readout, "ask_contact", return_value=None), \
-                mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"):
-            said = readout.run_all(self.ctx, [DEVICE])
-        self.assertIn("'Hall light' (NEWTHING): not needed, as enough readouts of this device are in already.", said)
+        with mock.patch.object(readout, "ask_contact", return_value=None), learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"):
+            said = readout.run_all(self.ctx, [DEVICE, {**DEVICE, "deviceid": "1000fedcba", "name": "Porch"}])
+        self.assertIn("'Hall light' (NEWTHING): " + readout.NOT_NEEDED, said)
+        self.assertIn("'Porch' (NEWTHING): " + readout.NOT_NEEDED, said)
+
+    def test_a_full_day_ends_a_batch_there(self):
+        readout.ask_wanted.return_value = readout.Wanted(False, "full")
+        with mock.patch.object(readout, "ask_contact", return_value=None), learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"):
+            said = readout.run_all(self.ctx, [DEVICE, {**DEVICE, "deviceid": "1000fedcba", "name": "Porch"}])
+        self.assertEqual(readout.ask_wanted.call_count, 1)
+        self.assertIn("'Hall light' (NEWTHING), 'Porch' (NEWTHING): " + readout.FULL_TODAY, said)
+
+
+class HeldFirmwareTests(unittest.TestCase):
+    """The files eWeLink offers that the website holds already: left out."""
+
+    OFFERS = {"offers": [{"version": "1.1.0", "binList": [
+        {"name": "user1.bin", "downloadUrl": "https://example.com/user1.bin", "digest": "A" * 64},
+        {"name": "user2.bin", "downloadUrl": "https://example.com/user2.bin", "digest": "b" * 64}]}]}
+
+    def setUp(self):
+        start_run(self)
+        asked = account.Asked({"packets": []}, "1.0.0", "SN-NEW-01", "NEWTHING", [], self.OFFERS, "1000abcdef")
+        for patch in (mock.patch.object(account, "ask_account", return_value=asked),
+                      mock.patch.object(account, "ask_ewelink", return_value=asked)):
+            patch.start()
+            self.addCleanup(patch.stop)
+        readout.ask_wanted.return_value = readout.Wanted(True, "", frozenset({"a" * 64}))
+
+    def test_the_digests_go_with_the_question_and_a_held_file_is_not_fetched(self):
+        with learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"), mock.patch.object(readout, "offer", return_value="done") as offered:
+            readout.run(self.ctx, DEVICE)
+        self.assertEqual(readout.ask_wanted.call_args.args[4], ["a" * 64, "b" * 64])
+        self.assertEqual(offered_firmware.fetch.call_args.kwargs["skip"], frozenset({"a" * 64}))
+        manifest = offered.call_args.args[1]
+        self.assertIn({"file": None, "version": "1.1.0", "sha256": "a" * 64, "held": True}, manifest["offered"])
+
+    def test_a_beken_device_read_in_full_still_fetches_it_to_put_sonoff_back_but_does_not_send_it(self):
+        from tools.autoflash import kinds
+        s61 = kinds.SONOFF_S61
+        held = offered_firmware.Offered("user1.bin", "1.1.0", b"held")
+        readout.ask_wanted.return_value = readout.Wanted(True, "", frozenset({held.sha256}))
+        offered_firmware.fetch.return_value = ([held], [])
+        asked = account.Asked({"packets": []}, "1.0.2", s61.stock_model, "S61STPF", [], self.OFFERS, "1000abcdef")
+        with mock.patch.multiple(account, ask_ewelink=mock.Mock(return_value=asked),
+                                 ask_account=mock.Mock(return_value=asked)):
+            with learned(s61.wrapper_model, "BK7238"), \
+                    mock.patch.object(readout_beken, "stock_from_offered", return_value=mock.Mock()), \
+                    mock.patch.object(readout_beken, "read_and_anonymise", return_value=({}, True)), \
+                    mock.patch.object(readout, "offer", return_value="done") as offered:
+                readout.run(self.ctx, record("S61STPF", s61.stock_model))
+        self.assertEqual(offered_firmware.fetch.call_args.kwargs["skip"], frozenset())
+        self.assertEqual(offered.call_args.args[3], [])
+
+
+class NotifyTests(unittest.TestCase):
+    """An owner's address, to be told when their devices' status changes."""
+
+    def test_one_request_naming_each_device_once(self):
+        with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                mock.patch.object(readout, "light_post", return_value={}) as posted:
+            self.assertTrue(readout.notify("me@example.com", [("NSPanel", "E32-MSW-NX"), ("NSPanel", "E32-MSW-NX"),
+                                                              ("NEWTHING", ""), ("", "x")]))
+        path, value = posted.call_args.args
+        self.assertEqual((path, value["email"]), ("/notify", "me@example.com"))
+        self.assertEqual(value["devices"], [{"product": "NSPanel", "model": "E32-MSW-NX"},
+                                            {"product": "NEWTHING", "model": "-"}])
+
+    def test_never_from_a_test_run_and_never_raises(self):
+        with mock.patch.object(readout, "upload_url", return_value=None):
+            self.assertFalse(readout.notify("me@example.com", [("NSPanel", "x")]))
+        with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                mock.patch.object(readout, "light_post", side_effect=OSError("refused")), \
+                mock.patch.object(output, "log_only"):
+            self.assertFalse(readout.notify("me@example.com", [("NSPanel", "x")]))
+
+    def test_a_batch_asks_once_for_every_device_wanted_or_not(self):
+        start_run(self)
+        with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                mock.patch.object(prompts, "UNATTENDED", False), \
+                mock.patch.object(readout, "ask_contact", return_value={"email": "me@example.com"}), \
+                mock.patch.object(readout, "run", return_value="sent"):
+            readout.run_all(self.ctx, [DEVICE, {**DEVICE, "deviceid": "1000fedcba", "productModel": "OTHER"}])
+        readout.notify.assert_called_once()
+        self.assertEqual(readout.notify.call_args.args[1], [("NEWTHING", "SN-ESP32C3-NEW-01"),
+                                                            ("OTHER", "SN-ESP32C3-NEW-01")])
+
+    def test_a_readout_sent_with_an_address_asks_too(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(prompts, "section"), \
+                mock.patch.object(output, "say"), mock.patch.object(prompts, "UNATTENDED", False), \
+                mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                mock.patch.object(readout, "ask_contact", return_value={"email": "me@example.com"}), \
+                mock.patch.object(readout, "send", return_value="r-1"), \
+                mock.patch.object(readout, "notify") as told:
+            readout.offer(a_ctx(tmp), MANIFEST, None)
+        told.assert_called_once_with("me@example.com", [("NEWTHING", "SN-ESP32C3-NEW-01")])
+
+
+class ProofProgressTests(unittest.TestCase):
+    def test_each_wait_turns_the_stages_spinner(self):
+        # Outside a stage nothing else moves: an owner left looking at a still
+        # screen for a minute may take it to have stopped.
+        shown = []
+
+        @contextlib.contextmanager
+        def working(text):
+            shown.append(text)
+            yield
+
+        answers = iter([urllib.error.HTTPError("u", 429, "too many", {}, io.BytesIO(b"{}")), None])
+
+        def opened(request, timeout):
+            failed = next(answers)
+            if failed:
+                raise failed
+            return io.BytesIO(b'{"id": "r-1"}')
+        with mock.patch.object(output, "working", working), mock.patch.object(readout, "PROOF_BITS", 8), \
+                mock.patch.object(readout.hostsys, "urlopen", side_effect=opened), \
+                mock.patch.object(readout.time, "sleep"):
+            self.assertEqual(readout.send(b"data", "http://127.0.0.1:9/readout"), "r-1")
+        self.assertEqual([text.split(":")[0] for text in shown], ["Getting it ready to send",
+                                                                 "The website takes two readouts a minute"])
+
+    def test_long_work_says_it_is_still_going(self):
+        ticks = []
+        readout.proof(b"data", now=1794000000, bits=21, tick=lambda: ticks.append(1))
+        self.assertGreater(len(ticks), 0)
 
 
 class FirstStageTests(unittest.TestCase):
@@ -641,7 +859,7 @@ class RunAllTests(unittest.TestCase):
         def asked(ctx, deviceid):
             return account.Asked({"packets": []}, "1.0.0", "SN-NEW-01", f"NEW-{deviceid}", [], {}, deviceid)
         with mock.patch.object(readout, "PROOF_BITS", 8), learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"), \
-                mock.patch.object(readout, "still_wanted", STILL_WANTED), \
+                mock.patch.object(readout, "ask_wanted", ASK_WANTED), \
                 mock.patch.object(account, "ask_account", side_effect=asked), \
                 mock.patch.object(readout, "upload_url",
                                   return_value=f"http://127.0.0.1:{server.server_address[1]}/readout"):
@@ -652,7 +870,7 @@ class RunAllTests(unittest.TestCase):
         for path, digest, proof in posted:
             stamp, nonce = proof.split(":")
             work = hashlib.sha256(f"{stamp}:{digest}:{nonce}".encode()).digest()
-            bits = readout.WANTED_PROOF_BITS if path == "/wanted" else 8
+            bits = readout.LIGHT_PROOF_BITS if path == "/wanted" else 8
             self.assertLess(int.from_bytes(work, "big"), 1 << (256 - bits))
 
     def test_quit_at_the_contact_question_reads_nothing(self):

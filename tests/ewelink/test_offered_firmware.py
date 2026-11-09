@@ -38,6 +38,15 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(problems, ["user1.bin: OSError", "user2.bin: OSError"])
         self.assertNotIn("example.com", " ".join(problems))
 
+    def test_a_file_held_already_is_not_fetched_by_the_digest_ewelink_gives(self):
+        offers = [{"version": "1.1.0", "binList": [{**OFFERS[0]["binList"][0], "digest": "A" * 64},
+                                                   OFFERS[0]["binList"][1]]}]
+        asked = []
+        found, _ = offered_firmware.fetch(offers, "1000abcdef", lambda url, deviceid: asked.append(url) or url.encode(),
+                                          skip=frozenset({"a" * 64}))
+        self.assertEqual([item.name for item in found], ["user2.bin"])
+        self.assertEqual(len(asked), 1)
+
     def test_nothing_is_asked_without_the_devices_id(self):
         self.assertEqual(offered_firmware.fetch(OFFERS, "", lambda url, deviceid: b"x"),
                          ([], ["no device id to ask with"]))

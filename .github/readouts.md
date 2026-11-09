@@ -31,12 +31,21 @@ offered first where there are two or more). Every readout starts the same way:
    another version than the one the device runs, so two to test against. A
    readout goes on without it.
 
-Between the two, the tool asks the API whether a readout of that product
-model is still wanted (`POST /wanted`, `readout.still_wanted`), with lighter
-work of its own (below). One the API has enough of goes no further: nothing
-is fetched, nothing is sent to the device, and no readout's work is done.
-Where the API cannot say - unreachable, rate-limited, or an earlier Worker
-without `/wanted` - the readout goes ahead, and `/readout` decides.
+Between the two, the tool asks the API whether the readout would add
+anything (`POST /wanted`, `readout.ask_wanted`), with lighter work of its own
+(below): its product model, firmware model and version, the stage it would be
+(`first`, or `whole` where a second stage may follow), and the SHA-256 eWeLink
+gives each file it offers. The API keeps one readout of each model and version
+at each stage, a whole one standing for a first stage too, so ten identical
+plugs give one readout, alone or in a batch. One not wanted goes no further:
+nothing is fetched, nothing is sent to the device, and no readout's work is
+done; the owner is offered, still, to leave an address to be told when its
+support changes (`/notify`, below). A file the API holds already is not
+fetched and goes in the manifest's `offered` as `"held": true` - but for a
+Beken device read in full, which needs Sonoff's file to put back, and fetches
+it all the same without sending it. Where the API cannot say - unreachable,
+rate-limited, or an earlier Worker without `/wanted` - the readout goes ahead,
+and `/readout` decides by the same rule.
 
 That much is the first stage, and only ever reads: nothing is sent to the
 device. A device the tool has not seen gets that alone.
@@ -57,9 +66,11 @@ understood and its readout proven in the emulator.
 For the second stage the device's chip decides how its memory is read, and the
 owner types PROCEED before anything is sent to the device.
 
-Reading out every device, the contact question is asked once, and each
-device's readout is made and POSTed on its own, so the API can answer
-`enough` for one it has enough of (`ENOUGH`) and store the rest. The
+Reading out every device, the contact question is asked once, and an address
+given goes to `/notify` at once for every device in the batch, wanted or not.
+Each device's readout is made and POSTed on its own, so the API can answer
+`enough` for one it holds one like already, or has enough of (`ENOUGH`), and
+store the rest. When `/wanted` says the day is full, the batch ends there. The
 first-stage ones go first. Each device gets the readout it would get alone.
 The run's record is cleared of the last device's address, MAC, bridge and
 progress before the next. The run is not filed under any device, but each one
@@ -68,7 +79,12 @@ written to is held, as a conversion holds it. A readout not sent is kept as
 PROCEED (`s`), a first stage that fails or a send that fails is noted and the
 batch goes on. `q` there stops it, saying what was sent and what was not, and
 so does a full readout that fails part way, as that device may be left on its
-reading program. Each device's readout carries its own proof of work, which
+reading program. The API takes two readouts a minute from one address, which
+a batch of quick first stages reaches (seen in the emulator): a readout
+turned away with 429 is sent again every 15 seconds, for up to a minute and a
+half, with the same proof of work. Every wait outside a stage - the puzzle,
+these tries, the memory's read, Sonoff's return - shows the stages' spinner
+(`output.working`), as nothing else on the screen moves. Each device's readout carries its own proof of work, which
 is good for that readout's bytes alone, so a batch costs its sender the work
 once per device, as that many runs would.
 
@@ -202,15 +218,30 @@ and the store has limits it is never let past:
   however many devices one run reads out, each is worked for on its own.
 - **It must be one.** `application/x-tar`, at most 24 MB, its first file a
   `manifest.json` of the format the tool writes.
-- **Asking first.** `POST /wanted` takes `{"format": 1, "product": "<product
-  model>"}` and answers `{"wanted": true}`, or false for a model in `ENOUGH`.
-  It reads nothing but `ENOUGH` and stores nothing, so its proof of work, made
-  the same way over the question's own bytes, is lighter: 20 zero bits, about
-  a million tries, a second or two on a computer (one in 16 of a readout's
-  work), and good for a minute, not 15. Each
+- **Only what adds something.** A readout is stored only if none of its
+  product model, firmware model and version is held at its stage (a whole one
+  holds a first stage's too); otherwise it is thanked (`enough`) and not
+  stored. What is held is marked as `readouts/held/<PRODUCT>/<model>/<version>/<first|whole>`,
+  and each offered file stored as `readouts/firmware/<sha256>`, so the marks
+  go with the readouts after 30 days. One moved under `kept/` keeps its
+  marks under `kept/held/...` and `kept/firmware/...`: move those with it.
+- **Asking first.** `POST /wanted` takes `{"format": 1, "product", "model",
+  "version", "stage": "first"|"whole", "firmware": [<sha256>, ...]}` (8 files
+  at most) and answers `{"wanted": bool, "why": "enough"|"held"|"full",
+  "held": [<the files held>]}`. It reads only marks and the day's count, so
+  its proof of work, made the same way over the question's own bytes, is
+  lighter: 20 zero bits, about a million tries, a second or two on a computer
+  (one in 16 of a readout's work), and good for a minute, not 15. Each
   question needs its own. It is held to the hostname's rate-limiting rule, but
   not to the two-readouts-a-minute limit, which a batch's questions would use
   up before its readouts.
+- **Asking to be told.** `POST /notify` takes `{"format": 1, "email",
+  "devices": [{"product", "model"}, ...]}` (50 at most), with the same light
+  work, and keeps `notify/<PRODUCT>/<the address's SHA-256>.json` - the
+  address, the product, its firmware models and when - one per address and
+  product, its address and models in its metadata too. Nothing expires under
+  `notify/`: an address stays until that product's status changes and it is
+  written to, or until removed on request. 500 addresses a day at most.
 - **Rate.** Before the Worker runs at all, a Cloudflare rate-limiting rule on
   its hostname (`tools/repo/cloudflare_settings.py`) blocks an address sending
   more than 5 requests in 10 seconds, for 10 seconds: a flood never reaches the
@@ -218,6 +249,11 @@ and the store has limits it is never let past:
   account's 100,000 a day on Workers' free plan. Then two readouts a minute
   from one address, held by Cloudflare's rate limiter only. 100 readouts and
   250 MB a day from everyone; past that, the next waits until the next day.
+  The day's are counted in one small object, `readouts/<day>/_readouts.json`,
+  updated with each readout stored, not by listing the day's readouts (an R2
+  list is a dearer operation than a read). `/wanted` reads it at most once a
+  minute in a Worker, and `/readout` afresh; two readouts stored at the same
+  moment may count as one, so the limit is close, not exact.
 - **Repeats.** The same readout sent again the same day is the one already
   stored.
 - **Enough of one device.** A product model listed in `ENOUGH` in the Worker's
@@ -228,8 +264,8 @@ and the store has limits it is never let past:
   everything under `readouts/` 30 days after it came in. 250 MB a day for 30
   days, 7.5 GB, plus 2 GB under `kept/`, stays within R2's free 10 GB.
 
-Nothing of the sender is stored but the contact they chose to give, in the
-manifest. Nothing serves the bucket.
+Nothing of the sender is stored but the contact they chose to give: in the
+manifest, and under `notify/`. Nothing serves the bucket.
 
 The bucket, its lifecycle rule and the rate-limiting rule are made by
 `python3 tools/repo/cloudflare_settings.py apply`, by hand, and checked weekly
@@ -251,11 +287,21 @@ it.
 
 - **One to keep**, past its 30 days: put it under `kept/`
   (`wrangler r2 object put firmware-liberator-readouts/kept/<name> --file ...`),
-  then delete the original. Keep `kept/` under 2 GB.
+  with its marks (`readouts/held/...` as `kept/held/...`, and each of its
+  offered files' `readouts/firmware/...` as `kept/firmware/...`), then delete
+  the originals. Without its marks a readout like it is taken again once 30
+  days have passed. Keep `kept/` under 2 GB.
 - **Duplicates.** The manifest's `flash.sha256` is of the device's own flash
   before it was anonymised, so two readouts of one device share it.
 - **Once a device is supported**, add its product model to `ENOUGH`, and delete
-  its readouts but the one kept.
+  its readouts but the one kept. Then write to everyone who asked to be told
+  about it: `python3 tools/repo/readouts.py notify <PRODUCT>` lists their
+  addresses. Send each their own message, or Bcc them: never one with every
+  address in view. Say why they are hearing from you, and that a reply asking
+  for it removes them. Delete their objects once written to, or when asked
+  (`wrangler r2 object delete firmware-liberator-readouts/notify/<PRODUCT>/<hash>.json --remote`). An
+  address may have been given by someone other than its owner: anything sent
+  says how it came to be on the list.
 
 Keep what you fetch under `captures/`: like any dump, it never goes into the
 repository. [Adding a device](../docs/adding-a-device.md) takes it from there,
