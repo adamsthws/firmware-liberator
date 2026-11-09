@@ -7,8 +7,9 @@
 ## Where it stops
 
 Its firmware keeps its partition table at 0xC000, and its bootloader reads it
-there; Tasmota and ESPHome look for it at 0x8000, so the tool does not convert
-it yet, and turns it down as it does any device it does not know. Its stock
+there; Tasmota and ESPHome, like the tool's own programs, are built to look for
+it at 0x8000, so the tool does not convert it yet, and turns it down as it does
+any device it does not know. Its stock
 firmware starts in the emulator, on a stand-in flash with its table moved there,
 and is read out. See [what is holding each one up](../README.md).
 
@@ -62,6 +63,13 @@ pins with it on the mains.**
   updates.
 - **Calibration**: none, as it has no meter.
 - **Back to Sonoff**: a readout leaves it there; the tool does not convert it yet.
-- **How it is converted**: not yet: Tasmota and ESPHome would have to find its
-  table at 0xC000. [`docs/adding-a-device.md`](../../docs/adding-a-device.md)
-  says what adding a device takes.
+- **How it is converted**: not yet. Neither Tasmota nor ESPHome needs to
+  change: the likeliest way is for the bridge to write a copy of its table at
+  0x8000 first, which Sonoff's bootloader and app never read, after which the
+  interim Tasmota starts and the tool's usual steps put ESPHome's bootloader
+  and table in place, as on any plug
+  ([research](../../docs/espressif-research.md#converting-a-table-at-0xc000)).
+  It waits on a readout of a real one: how long its bootloader is (it must end
+  below 0x8000) and the rest of its table.
+  [`docs/adding-a-device.md`](../../docs/adding-a-device.md) says what adding a
+  device takes.
