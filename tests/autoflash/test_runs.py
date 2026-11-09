@@ -104,6 +104,24 @@ class RunFilingTests(unittest.TestCase):
         with self.assertRaisesRegex(errors.Abort, "API encryption key given.*is not one.*base64"):
             context.Context(args(esphome_api_key="not-a-key"))
 
+    def test_an_account_given_in_advance_that_cannot_be_one_stops_the_run_at_once(self):
+        from types import SimpleNamespace
+        name = runs.new_run_name(None)
+
+        def args(email=None):
+            return SimpleNamespace(run=name, manifest=bundle.DEFAULT_MANIFEST, dry_run=False, plug_ip=None,
+                                   email=email, web_user=None, web_password=None, esphome_ota_password=None,
+                                   esphome_web_user=None, esphome_web_password=None, esphome_api_key=None)
+        for email, given in (("07700 900123", None), (None, "test@test")):
+            with self.subTest(email=email, given=given), \
+                    mock.patch.object(credentials, "get", {"EWELINK_EMAIL": given}.get), \
+                    self.assertRaisesRegex(errors.Abort, "neither an email address nor a phone number"):
+                context.Context(args(email))
+        with mock.patch.object(credentials, "get", {"EWELINK_EMAIL": "+44-7700-900123"}.get):
+            self.assertEqual(context.Context(args())._given_email, "+447700900123")
+        with mock.patch.object(runs, "SETTINGS_PATH", self.captures / "settings.json"):
+            self.assertEqual(context.Context(args("me@example.com")).state.input("email"), "me@example.com")
+
     def test_older_runs_with_a_mac_are_adopted(self):
         old = RunState.open(self.captures / "conversion-20261011-1431")
         old.set_input("plug_mac", "58:cf:79:01:02:03")

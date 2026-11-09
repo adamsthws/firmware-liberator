@@ -77,7 +77,8 @@ check.
   as something unexpected.
 - An eWeLink account made with a phone number can be used: give the number with
   its country code (+44 7700 900123) where the tool asks for the account's email,
-  or as `--email` or `EWELINK_EMAIL`.
+  or as `--email` or `EWELINK_EMAIL`. One given in advance that is neither
+  stops the run at once.
 - A plug offline in eWeLink when a run sends to it is waited for five and a half
   minutes, not three: after a send cut off part way it stays away about five,
   and the run gave up just before it came back.
