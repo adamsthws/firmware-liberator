@@ -54,10 +54,6 @@ class ChoosePlugTests(unittest.TestCase):
                 self.assertEqual(len(choose_plug.choices()), 2)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class RestoreTests(unittest.TestCase):
     def test_with_no_backup_here_the_sealed_one_is_restored_and_a_test_copy_made(self):
         from unittest import mock
@@ -89,3 +85,6 @@ class RestoreTests(unittest.TestCase):
             self.assertEqual(cp.main(["--out", f"{tmp}/plug"]), 1)
         restored.assert_not_called()
 
+
+if __name__ == "__main__":
+    unittest.main()

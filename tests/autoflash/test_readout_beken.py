@@ -100,10 +100,6 @@ class RoundTripTests(unittest.TestCase):
         self.assertEqual(served["image"], b"RBL\0stock")
         command.assert_called_once_with("192.0.2.60", "AutoflashRevertToStock http://192.0.2.141:8088/firmware.rbl")
 
-
-if __name__ == "__main__":
-    unittest.main()
-
     def test_a_readout_found_already_on_the_readout_firmware_reads_through_it(self):
         rb.openbeken.is_readout.return_value = True
         with mock.patch.object(rb.prompts, "warning_box"), \
@@ -181,3 +177,7 @@ class PutBackTests(unittest.TestCase):
         self.assertEqual((found.version, found.layout), ("1.0.2", layouts.BEKEN_4M))
         with mock.patch.object(rb.plugs, "find_backup", return_value=None):
             self.assertIsNone(rb.saved_stock("12:34:56:ab:cd:ef"))
+
+
+if __name__ == "__main__":
+    unittest.main()

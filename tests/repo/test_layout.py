@@ -2,6 +2,7 @@
 moved to another depth (the 2026-10 reorganisation moved tools/emulator/ two
 levels down) must count its parents again."""
 
+import ast
 import json
 import os
 import re
@@ -218,7 +219,33 @@ def unmirrored(root: Path, tests: list[Path]) -> list[str]:
     return wrong
 
 
+def after_main_guard(text):
+    """What a test module has past `if __name__ == "__main__":` beyond its
+    unittest.main(): a test indented under it is a function of the guard,
+    never run, and a class after it is missed when the file is run itself."""
+    tree = ast.parse(text)
+    for i, node in enumerate(tree.body):
+        if isinstance(node, ast.If) and ast.unparse(node.test) in ('__name__ == "__main__"', "__name__ == '__main__'"):
+            return [ast.unparse(n).splitlines()[0] for n in node.body[1:] + tree.body[i + 1:]]
+    return []
+
+
 class TestLayoutTests(unittest.TestCase):
+    def test_nothing_comes_after_a_test_modules_main_guard(self):
+        """Found 2026-11-09: seven tests under test_github_settings.py's guard had
+        never run, since the 2026-10 reorganisation, and one of them was wrong."""
+        wrong = {str(test.relative_to(ROOT)): after_main_guard(test.read_text(encoding="utf-8"))
+                 for test in repository_files("tests/**/test_*.py")}
+        self.assertEqual({name: found for name, found in wrong.items() if found}, {},
+                         'the guard goes last, holding unittest.main() alone')
+
+    def test_a_test_under_the_guard_or_a_class_after_it_is_found(self):
+        guard = 'if __name__ == "__main__":\n    unittest.main()\n'
+        self.assertEqual(after_main_guard("class T:\n    pass\n\n\n" + guard), [])
+        self.assertEqual(after_main_guard(guard + "\n    def test_hidden(self):\n        pass\n"),
+                         ["def test_hidden(self):"])
+        self.assertEqual(after_main_guard(guard + "\n\nclass Later:\n    pass\n"), ["class Later:"])
+
     def test_each_test_module_mirrors_the_module_it_tests(self):
         """tests/ mirrors tools/: the tests of tools/a/b.py are tests/a/test_b.py,
         of a script tools/a/c-d.sh tests/a/test_c_d_sh.py (AGENTS.md)."""

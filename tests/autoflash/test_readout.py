@@ -980,10 +980,6 @@ class EndsTheRunTests(unittest.TestCase):
         self.assertIn("Sent, thank you!", [call.args[0] for call in told.call_args_list])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class OfferScreenTests(unittest.TestCase):
     """The offer to send and its question go together once answered: what the
     run then says is the answer.  Seen in an attended readout recorded in the
@@ -1016,3 +1012,7 @@ class OfferScreenTests(unittest.TestCase):
         final, said = self.offer("http://127.0.0.1:9/readout", sending=OSError("no route"))
         self.assertIn("Send this firmware readout", final)
         self.assertIn("could not be sent", said)
+
+
+if __name__ == "__main__":
+    unittest.main()

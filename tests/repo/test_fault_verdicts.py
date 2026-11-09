@@ -118,10 +118,6 @@ class ReadoutTests(unittest.TestCase):
         self.assertTrue(fault_verdicts.readout_problems(b"not a tar", "beken")[0].startswith("not a tar"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ScreenTests(unittest.TestCase):
     """Each run's screen, as the fault suites keep it, is looked at."""
 
@@ -170,3 +166,7 @@ class ReportLabelTests(unittest.TestCase):
             with self.subTest(log=log):
                 self.assertEqual(fault_verdicts.checks_problem(log, "tasmota"),
                                  "Checks passed: False; Relay: not said")
+
+
+if __name__ == "__main__":
+    unittest.main()

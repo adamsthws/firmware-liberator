@@ -662,10 +662,6 @@ class DownloadTests(unittest.TestCase):
             self.assertEqual((tries, waited), (1, []))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class LanAddressesTests(unittest.TestCase):
     """The networks discovery may sweep: Ethernet and Wi-Fi, a TAP adapter among
     them - the emulator's link is one - and never a VPN's tunnel."""
@@ -855,3 +851,6 @@ class NeighbourTableTests(unittest.TestCase):
                 mock.patch.object(hostsys, "_run", return_value=mock.Mock(returncode=0, stdout=arp)):
             self.assertEqual(hostsys.neighbour_table(), {"192.168.60.50": "12:34:56:ab:cd:ef"})
 
+
+if __name__ == "__main__":
+    unittest.main()

@@ -277,10 +277,6 @@ class UnattendedPromptTests(unittest.TestCase):
         self.assertIn("PROCEED   (unattended)", self.screen.getvalue())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 @unittest.skipUnless(hasattr(os, "fork"), "a pseudo-terminal needs Linux or macOS")
 class CountdownKeyTests(unittest.TestCase):
     """The countdown after a Ctrl-C carries on by itself, or at once with
@@ -514,3 +510,7 @@ class SecretFieldTests(unittest.TestCase):
         # The same for every password, whatever its question's length.
         for prompt in ("PIN (q to quit): ", "This computer's password (for sudo) (q to quit): "):
             self.assertTrue(prompts._secret_field_below(prompt), prompt)
+
+
+if __name__ == "__main__":
+    unittest.main()

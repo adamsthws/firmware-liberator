@@ -82,10 +82,6 @@ class VendorOtaAnalysisTests(unittest.TestCase):
         self.assertEqual(ANNOUNCED_VERSION, fota_wrap.ANNOUNCED_VERSION)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class WrapperVersionTests(unittest.TestCase):
     def image_with_version(self, version: bytes) -> bytes:
         # Only the app description after the two headers matters here.
@@ -111,3 +107,7 @@ class WrapperVersionTests(unittest.TestCase):
         model = "FWPNL-E32NSP-NSPANEL-ESP32D0WDV3"
         wrapped = build_wrapper(make_esp_image(chip_id=0), version="9.9.9", model=model)
         self.assertEqual(analyze(wrapped)["wrapper"]["model"], model)
+
+
+if __name__ == "__main__":
+    unittest.main()

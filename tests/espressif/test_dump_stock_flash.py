@@ -110,10 +110,6 @@ class DumpStockFlashTests(unittest.TestCase):
         self.assertEqual(dump_stock_flash.selected_ota_slot(record + b"\xff" * 0x1FE0, 2), 1)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ReadInfoTests(unittest.TestCase):
     """A bridge with no /info must never stop a run: only the log loses it."""
 
@@ -172,3 +168,7 @@ class PlugHashTests(unittest.TestCase):
     def test_an_older_bridge_leaves_it_unchecked(self):
         _, _, report = self.read(None)
         self.assertIsNone(report["matches_plug"])
+
+
+if __name__ == "__main__":
+    unittest.main()
