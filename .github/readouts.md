@@ -168,7 +168,7 @@ those [docs/readouts.md](../docs/readouts.md#what-is-in-one) lists.
 brand and uiid; the stock firmware's model and version; its firmware name and
 where that came from; its chip; whether the memory was read; how many places
 had the network's name or a password blanked and an identity replaced;
-`contact`, the owner's `email` or `telegram`, only if they gave one; and
+`contact`, the owner's `email`, only if they gave one; and
 `offered`, each offered file's version, size and SHA-256. An Espressif one adds
 the facts the run logs (chip revision, security fuses, flash size, partition
 table); a Beken one its partition table's name (`layout`) and what the readout

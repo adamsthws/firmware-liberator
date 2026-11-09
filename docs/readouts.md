@@ -112,9 +112,9 @@ firmware.
 The tool shows you what goes - "the device's firmware readout, anonymised" -
 and asks you to choose one of:
 
-- add an email address or a Telegram username, so you can be told if support
-  for the device is added,
-- send it without either, or
+- add an email address, so you can be told if support for the device is
+  added,
+- send it without one, or
 - quit and keep it unsent.
 
 Before it sends, your computer spends 10 to 30 seconds working out a small

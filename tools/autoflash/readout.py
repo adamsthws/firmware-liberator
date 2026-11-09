@@ -27,7 +27,6 @@ import io
 import json
 import lzma
 import os
-import re
 import tarfile
 import time
 import urllib.error
@@ -40,6 +39,7 @@ from tools.autoflash import __version__, account, hostsys, kinds, output, plugs,
 from tools.autoflash import readout_beken, readout_espressif
 from tools.autoflash.errors import Abort, Finished, NothingWritten
 from tools.ewelink import discover_ewelink, firmware_name, offered_firmware
+from tools.ewelink.get_device_key import is_email
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -339,9 +339,6 @@ def whole_readout(listed: kinds.Kind | None, learned: firmware_name.Learned | No
 # manifest, always first, without unpacking anything.
 COMPRESSED = (".bin",)
 NAME = "readout.tar"
-# How the owner may be reached about the device, should support for it be added.
-EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
-TELEGRAM = re.compile(r"@?[A-Za-z][A-Za-z0-9_]{4,31}")
 
 
 def package(manifest: dict[str, Any], files: dict[str, bytes] | None = None,
@@ -369,25 +366,19 @@ def package(manifest: dict[str, Any], files: dict[str, bytes] | None = None,
 
 def ask_contact() -> dict[str, str] | None:
     """How the owner may be reached about the device, if they choose to say:
-    {"email": ...}, {"telegram": "@..."}, or None. Quit stops the run unsent."""
+    {"email": ...}, or None. Quit stops the run unsent."""
     if prompts.UNATTENDED:
         prompts.answered_unattended("Contact details", "Submit without contact information")
         return None
     output.transient_begin()
     choice = prompts.ask_choice("Add a way to reach you", [
         "Add an email address",
-        "Add a Telegram username",
         "Submit without contact information",
     ], help_lines=["If support for your device is added, you can be told, and asked to try it."])
     contact = None
     if choice == 0:
         contact = {"email": prompts.ask_text("Your email address", private="email", validate=lambda text: (
-            bool(EMAIL.fullmatch(text.strip())), "That does not look like an email address."))}
-    elif choice == 1:
-        name = prompts.ask_text("Your Telegram username", private="telegram", example="@example_name",
-                                validate=lambda text: (bool(TELEGRAM.fullmatch(text.strip())),
-                                                       "A Telegram username is 5 to 32 letters, digits or _."))
-        contact = {"telegram": "@" + name.strip().lstrip("@")}
+            is_email(text), "That does not look like an email address."))}
     output.transient_end()
     if contact:
         contact = {key: value.strip() for key, value in contact.items()}

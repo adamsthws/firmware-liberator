@@ -245,7 +245,7 @@ What a firmware readout does:
 What is sent, once you agree:
 - **The device's firmware readout, anonymised.** It is kept privately, never published, and used only to add support for the device.
 - What the device and eWeLink said it is, and the tool's version.
-- If you choose to add it, your email address or Telegram username, so you can be told if support for your device is added.
+- If you choose to add it, your email address, so you can be told if support for your device is added.
 > A copy also stays on your computer, beside your other Sonoff backups.
 
 <br>

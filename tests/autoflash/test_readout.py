@@ -591,22 +591,17 @@ class OfferTests(unittest.TestCase):
         self.menu, self.asked = menu, asked
         return (unpacked(sent.call_args.args[0]) if sent.called else None), said, kept
 
-    def test_the_menu_offers_an_email_a_telegram_name_or_neither(self):
-        self.offer(2)
-        self.assertEqual(self.menu.call_args.args[1], ["Add an email address", "Add a Telegram username",
-                                                       "Submit without contact information"])
+    def test_the_menu_offers_an_email_or_none(self):
+        self.offer(1)
+        self.assertEqual(self.menu.call_args.args[1], ["Add an email address", "Submit without contact information"])
 
     def test_an_email_goes_with_it(self):
         sent, said, _ = self.offer(0, " me@example.com ")
         self.assertEqual(json.loads(sent["manifest.json"])["contact"], {"email": "me@example.com"})
         self.assertIn("Sent, thank you", said)
 
-    def test_a_telegram_name_goes_with_it_with_its_at(self):
-        sent, _, _ = self.offer(1, "example_name")
-        self.assertEqual(json.loads(sent["manifest.json"])["contact"], {"telegram": "@example_name"})
-
     def test_without_contact_nothing_is_asked_or_sent_of_it(self):
-        sent, _, _ = self.offer(2)
+        sent, _, _ = self.offer(1)
         self.assertNotIn("contact", json.loads(sent["manifest.json"]))
         self.asked.assert_not_called()
 
@@ -617,10 +612,15 @@ class OfferTests(unittest.TestCase):
         self.assertIn("Not sent", said)
 
     def test_what_is_typed_is_checked(self):
-        self.assertTrue(readout.EMAIL.fullmatch("me@example.com"))
-        self.assertFalse(readout.EMAIL.fullmatch("not an email"))
-        self.assertTrue(readout.TELEGRAM.fullmatch("@example_name"))
-        self.assertFalse(readout.TELEGRAM.fullmatch("abc"))
+        with mock.patch.object(prompts, "UNATTENDED", False), \
+                mock.patch.object(prompts, "ask_choice", return_value=0), \
+                mock.patch.object(prompts, "ask_text", return_value="me@example.com") as asked, \
+                mock.patch.object(output, "say"):
+            self.assertEqual(readout.ask_contact(), {"email": "me@example.com"})
+        valid = asked.call_args.kwargs["validate"]
+        self.assertTrue(valid("me@example.com")[0])
+        for typed in ("not an email", "a@b.c", "test@test"):
+            self.assertFalse(valid(typed)[0], typed)
 
     def test_the_owner_is_never_asked_for_their_wifi_password(self):
         # Where the settings hold none, the copy goes as it is: a question
