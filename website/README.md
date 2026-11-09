@@ -83,7 +83,7 @@ Three Cloudflare API tokens are in play, each allowed only what its job needs:
 
 | Token | Kept | Permissions |
 | --- | --- | --- |
-| Deploy | `website` secret `CLOUDFLARE_API_TOKEN` | Individual Workers - `firmware-liberator`, `firmware-liberator-api`: Editor. Zone `firmwareliberator.com` - Workers Routes: Write, DNS: Write (the custom domains), Zone: Read |
+| Deploy | `website` secret `CLOUDFLARE_DEPLOY_TOKEN` | Individual Workers - `firmware-liberator`, `firmware-liberator-api`: Editor. Zone `firmwareliberator.com` - Workers Routes: Write, DNS: Write (the custom domains), Zone: Read |
 | Settings check | `website` secret `CLOUDFLARE_READ_TOKEN` | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Read, DNS: Read, Dynamic URL Redirects: Read, Zone WAF: Read, Email Routing Rules: Read. Account - Workers R2 Storage: Read, Email Routing Addresses: Read |
 | Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, DNS: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit, Email Routing Rules: Edit. Account - Workers R2 Storage: Edit, Email Routing Addresses: Edit, Account API Tokens: Read, Workers Scripts: Read (to check the deploy token) |
 
