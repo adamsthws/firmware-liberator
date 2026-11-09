@@ -309,6 +309,30 @@ static commandResult_t Cmd_AutoflashKind(const void *context, const char *cmd,
 	return strcmp(args, plug->kind) == 0 ? CMD_RES_OK : CMD_RES_BAD_ARGUMENT;
 }
 
+// Where the meter's calibration came from, for the conversion tool, which
+// says in its report whether the factory one was kept: OK for `stock` when
+// OpenBeken's calibration is the one the first boot takes from the stock
+// store, for `missing` when the store has none, an error otherwise - and for
+// either on a plug with no meter. Read afresh each time, so it holds after a
+// restart, and says so once the plug's owner calibrates it themselves.
+// Changes nothing.
+//     AutoflashCalibration stock
+//     AutoflashCalibration missing
+static commandResult_t Cmd_AutoflashCalibration(const void *context, const char *cmd,
+												const char *args, int cmdFlags) {
+	if (args == NULL || args[0] == 0) {
+		return CMD_RES_NOT_ENOUGH_ARGUMENTS;
+	}
+	int wanted = strcmp(args, "stock") == 0 ? 1 : strcmp(args, "missing") == 0 ? -1 : 0;
+	if (!wanted) {
+		return CMD_RES_BAD_ARGUMENT;
+	}
+	if (plug->calibration_is_stock == NULL) {
+		return CMD_RES_ERROR;
+	}
+	return plug->calibration_is_stock() == wanted ? CMD_RES_OK : CMD_RES_ERROR;
+}
+
 // The interim firmware. A run of the conversion tool to ESPHome installs this
 // OpenBeken first, to back the plug up through its flash reads, then has it
 // fetch ESPHome; a run to OpenBeken installs the same image to keep. The tool
@@ -563,6 +587,10 @@ void Autoflash_Init(void) {
 	//cmddetail:"descr":"OK when this OpenBeken is on the given kind of plug, for the conversion tool.",
 	//cmddetail:"fn":"Cmd_AutoflashKind","file":"driver/drv_autoflash.c","requires":""}
 	CMD_RegisterCommand("AutoflashKind", Cmd_AutoflashKind, NULL);
+	//cmddetail:{"name":"AutoflashCalibration","args":"[stock|missing]",
+	//cmddetail:"descr":"OK when the meter's calibration is the stock store's (stock), or the store has none (missing), for the conversion tool.",
+	//cmddetail:"fn":"Cmd_AutoflashCalibration","file":"driver/drv_autoflash.c","requires":""}
+	CMD_RegisterCommand("AutoflashCalibration", Cmd_AutoflashCalibration, NULL);
 	//cmddetail:{"name":"AutoflashInterim","args":"[on|off]",
 	//cmddetail:"descr":"OK when this OpenBeken is the conversion tool's interim firmware; off makes it the plug's own, on the interim firmware.",
 	//cmddetail:"fn":"Cmd_AutoflashInterim","file":"driver/drv_autoflash.c","requires":""}

@@ -277,7 +277,8 @@ firmware you choose.
 6. **Check OpenBeken has started** and joined your Wi-Fi by itself: on its first
    boot the tool's driver in it reads your Wi-Fi from Sonoff's own store, with the
    meter's factory calibration, and applies the plug's wiring
-   ([the driver](../tools/beken/openbeken/README.md)).
+   ([the driver](../tools/beken/openbeken/README.md)). The tool asks the driver
+   whether the calibration is the one in Sonoff's store, which the report says.
 7. **Back up the plug's own data** through OpenBeken: its factory record, Sonoff's
    stores and the system store (`0x3e0000`-`0x400000`), kept under its MAC address
    in `captures/plugs/`, as an Espressif plug's backup is, with Sonoff's firmware

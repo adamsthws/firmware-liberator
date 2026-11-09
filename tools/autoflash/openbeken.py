@@ -28,7 +28,11 @@ FLASH_TRIES = 4
 
 
 class CommandError(RuntimeError):
-    """OpenBeken refused a command, or did not know it."""
+    """OpenBeken refused a command, or did not know it (`unknown`)."""
+
+    def __init__(self, message: str, unknown: bool = False):
+        super().__init__(message)
+        self.unknown = unknown
 
 
 def _url(host: str, path: str) -> str:
@@ -89,6 +93,32 @@ def is_readout(host: str, timeout: float = 4.0) -> bool:
     return True
 
 
+# Where the meter's calibration came from, in the words our ESPHome's
+# Calibration sensor uses (esphome.calibration_state), by what the driver's
+# AutoflashCalibration is asked.
+CALIBRATION_STATES = {"stock": "stock store", "missing": "missing"}
+CALIBRATION_CHANGED = "not the stock store's"
+
+
+def calibration_state(host: str, timeout: float = 4.0) -> str | None:
+    """Where the meter's calibration on the OpenBeken at `host` - one the tool
+    installed (kind) - came from, as its driver says (AutoflashCalibration):
+    the stock store's, missing from it, or neither (CALIBRATION_CHANGED: not
+    applied, or calibrated by the plug's owner since).  None from an OpenBeken
+    whose driver predates the command, or that does not answer."""
+    for asked, state in CALIBRATION_STATES.items():
+        try:
+            command(host, f"AutoflashCalibration {asked}", timeout)
+        except CommandError as exc:
+            if exc.unknown:
+                return None
+            continue
+        except OSError:
+            return None
+        return state
+    return CALIBRATION_CHANGED
+
+
 def set_interim(host: str, interim: bool, timeout: float = 10.0) -> None:
     """The OpenBeken at `host` made the interim firmware (autoflash-recovery-CDEF),
     or the plug's OpenBeken for good (openbeken-abcdef), as its driver
@@ -122,8 +152,9 @@ def command(host: str, text: str, timeout: float = 10.0) -> str:
     if not isinstance(envelope, dict):
         return body.strip()
     if "error" in envelope:
+        unknown = envelope["error"] == 501
         raise CommandError(f"{text.split()[0]}: {envelope.get('msg') or envelope['error']}"
-                           + (" (not a command this OpenBeken knows)" if envelope["error"] == 501 else ""))
+                           + (" (not a command this OpenBeken knows)" if unknown else ""), unknown)
     return str(envelope.get("msg", ""))
 
 

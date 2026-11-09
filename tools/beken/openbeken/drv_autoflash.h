@@ -31,6 +31,10 @@ typedef struct {
 	// Its meter's factory calibration, from the stock store into OpenBeken's
 	// config (first boot only): 1 when applied.
 	int (*apply_calibration)(void);
+	// Whether OpenBeken's meter calibration is what apply_calibration takes
+	// from the stock store now, for AutoflashCalibration: 1 it is, 0 it is
+	// not, -1 the store has none. NULL for a plug with no meter.
+	int (*calibration_is_stock)(void);
 } autoflash_device_t;
 
 // The plug this build is for, the one table its plug's file defines. To

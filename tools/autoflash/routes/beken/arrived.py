@@ -180,7 +180,14 @@ def step_openbeken_check(ctx: Context, wait: float = ARRIVAL_WAIT, *, interim: b
     name = str(found.get("shortName") or "")
     ctx.state.set_input("device_name", name)
     output.say(f"    OpenBeken {version} answered after {seconds}s, named {name!r}.")
-    return {"seconds": seconds, "version": version, "name": name, **({} if settled else {"told": "not interim"})}
+    # Whether its first start carried the meter's factory calibration over, as
+    # the report says: as K2 reads ESPHome's.
+    meter: dict[str, Any] = {}
+    if kind.has_meter:
+        meter["calibration"] = openbeken.calibration_state(ctx.state.input("plug_ip"))
+        output.say(f"    Its meter calibration: {meter['calibration'] or 'not said'}.")
+    return {"seconds": seconds, "version": version, "name": name, **({} if settled else {"told": "not interim"}),
+            **meter}
 
 
 def step_interim_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, Any]:

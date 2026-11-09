@@ -58,7 +58,7 @@ Three edits against `openshwprojects/OpenBK7231T_App`, here for the S61:
    Autoflash_Init();
    ```
 
-`Autoflash_Init()` registers the driver's four commands, runs the import (a
+`Autoflash_Init()` registers the driver's five commands, runs the import (a
 no-op once a Wi-Fi SSID is set) and looks for the interim marker, so it is
 safe on every boot.
 
@@ -85,6 +85,18 @@ you may rename it: `AutoflashKind sonoff-s61` answers OK on an S61, any other
 kind an error, and an OpenBeken without the driver does not know the command. It
 changes nothing. The tool asks this only of an OpenBeken on a chip that one of
 the plugs it supports has (BK7238).
+
+`AutoflashCalibration` says where the meter's calibration came from, for the
+run's report: `AutoflashCalibration stock` answers OK when OpenBeken's current,
+voltage and power calibration is what the first boot takes from the stock store,
+`AutoflashCalibration missing` when the store holds none (or none valid), and
+both an error otherwise - when it was not applied, or you have calibrated the
+plug yourself since - and on a plug with no meter. It works the calibration out
+from the store again each time, so it holds after a restart, and changes
+nothing. The tool asks it once OpenBeken has started (K1), and its report says
+`Meter: Retained` for `stock` and `Not retained` for either of the others, as
+it does from ESPHome's Calibration sensor; an OpenBeken whose driver predates
+the command leaves it `Not checked`.
 
 Commands: `AutoflashImportWiFi` (run the above by hand),
 `AutoflashRevertToStock <url>` ([below](#reverting-to-stock)) and
