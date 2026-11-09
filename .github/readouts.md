@@ -12,7 +12,8 @@ device with [readout_espressif.py](../tools/autoflash/readout_espressif.py) and
 a Beken one with [readout_beken.py](../tools/autoflash/readout_beken.py). A run
 offers it at its first stage when the eWeLink account holds no supported
 device, and `readout` runs it for any device in the account (`--plug-ip` picks
-one). Every readout starts the same way:
+one), or for every device in it the tool does not convert (`readout.run_all`,
+offered first where there are two or more). Every readout starts the same way:
 
 1. eWeLink is asked what the device runs and which firmware it would be
    offered. A device that can have a second stage is found on the network by
@@ -48,6 +49,21 @@ understood and its readout proven in the emulator.
 
 For the second stage the device's chip decides how its memory is read, and the
 owner types PROCEED before anything is sent to the device.
+
+Reading out every device, the contact question is asked once, and each
+device's readout is made and POSTed on its own, so the API can answer
+`enough` for one it has enough of (`ENOUGH`) and store the rest. The
+first-stage ones go first. Each device gets the readout it would get alone.
+The run's record is cleared of the last device's address, MAC, bridge and
+progress before the next. The run is not filed under any device, but each one
+written to is held, as a conversion holds it. A readout not sent is kept as
+`readout-<device id>.tar` beside the run's log. A device passed by at
+PROCEED (`s`), a first stage that fails or a send that fails is noted and the
+batch goes on. `q` there stops it, saying what was sent and what was not, and
+so does a full readout that fails part way, as that device may be left on its
+reading program. Each device's readout carries its own proof of work, which
+is good for that readout's bytes alone, so a batch costs its sender the work
+once per device, as that many runs would.
 
 Every readout of a whole memory logs what Sonoff's own firmware says of the
 hardware it drives ([firmware_findings.py](../tools/ewelink/firmware_findings.py)):
@@ -175,7 +191,8 @@ and the store has limits it is never let past:
   million tries, 10 to 30 seconds on a computer, once a readout. Hardware
   made for hashing does it in milliseconds, so this only stops a cheap flood;
   the daily limits below are what bound the store. It goes in `X-Proof`, is
-  good for that readout alone, and only within 15 minutes of when it was made.
+  good for that readout alone, and only within 15 minutes of when it was made:
+  however many devices one run reads out, each is worked for on its own.
 - **It must be one.** `application/x-tar`, at most 24 MB, its first file a
   `manifest.json` of the format the tool writes.
 - **Rate.** Before the Worker runs at all, a Cloudflare rate-limiting rule on

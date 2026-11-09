@@ -14,7 +14,10 @@ device through a readout OpenBeken, which puts Sonoff's firmware back
 and the device is left on its Sonoff firmware.
 
 This is what both share: the device found in the eWeLink account and on the
-network, what it reports, and the readout packed, offered and sent.
+network, what it reports, and the readout packed, offered and sent - for one
+device, or for every device in the account the tool does not convert, each
+read and sent on its own (run_all), so the website can turn down one it has
+enough readouts of.
 """
 
 from __future__ import annotations
@@ -28,13 +31,14 @@ import re
 import tarfile
 import time
 import urllib.error
+from dataclasses import dataclass
 import urllib.request
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from tools.autoflash import __version__, account, hostsys, kinds, output, plugs, prompts, runs
 from tools.autoflash import readout_beken, readout_espressif
-from tools.autoflash.errors import Abort, Finished
+from tools.autoflash.errors import Abort, Finished, NothingWritten
 from tools.ewelink import discover_ewelink, firmware_name, offered_firmware
 
 if TYPE_CHECKING:
@@ -46,8 +50,21 @@ UPLOAD_URL = "https://api.firmwareliberator.com/readout"
 # The work each readout carries, as the Worker asks it (its PROOF_BITS).
 PROOF_BITS = 24
 FORMAT = 1
+# What send() gives for a readout the website has enough of already.
+ENOUGH = "none needed: enough readouts of this device are in already"
 # What the run's record keeps, so a readout is never offered back as a conversion to finish.
 STATE_KEY = "readout"
+# What the run's record keeps of the one device being read out, with
+# readout_espressif.BRIDGE_HOST: cleared before the next, when every device is
+# read out in one run.
+DEVICE_KEYS = ("plug_ip", "plug_mac", "stock_version", "product_model", STATE_KEY, "readout_sent")
+
+
+@dataclass(frozen=True)
+class Batch:
+    """A readout of one device among several in one run (run_all): the
+    owner's contact details, asked once for them all."""
+    contact: dict[str, str] | None = None
 
 
 def upload_url() -> str | None:
@@ -186,10 +203,11 @@ def locate_by_mac(device: dict[str, Any]) -> str:
     return address
 
 
-def run(ctx: Context, device: dict[str, Any], address: str | None = None) -> str:
+def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch: Batch | None = None) -> str:
     """Read out the account's `device` and offer to send it. What the run ends
     by saying; Abort before anything was sent to the device, or after, with
-    what to do."""
+    what to do. In a `batch`, it is sent as it is made, unasked, and what is
+    returned is what became of it."""
     ctx.state.set_input(STATE_KEY, "started")
     # One the account says can have only the first stage is not looked for on
     # the network at all: that stage is eWeLink's to tell, so it works for a
@@ -202,9 +220,14 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None) -> str
     if mac and plugs.MAC_RE.match(hostsys.normalise_mac(mac)):
         mac = hostsys.normalise_mac(mac)
         ctx.state.set_input("plug_mac", mac)
-        # Under the device's own folder, as a conversion's run is: its log, the
-        # readout kept unsent, and the backup beside them.
-        runs.file_plug(ctx, mac, None)
+        if batch is None:
+            # Under the device's own folder, as a conversion's run is: its log, the
+            # readout kept unsent, and the backup beside them.
+            runs.file_plug(ctx, mac, None)
+        elif not first_only:
+            # A run of several devices stays where it is; one written to is held
+            # all the same, so no other run converts it meanwhile.
+            runs.hold_plug(ctx, mac)
         plugs.remember_plug(mac, ewelink_name=str(device.get("name") or "").strip() or None,
                             ewelink_id=str(device.get("deviceid") or "") or None,
                             model=str(device.get("productModel") or "") or None)
@@ -258,10 +281,10 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None) -> str
                    if learned and whole and learned.chip.startswith("BK") else None)
     if chip is not None:
         files, back = readout_espressif.read_and_anonymise(ctx, manifest, chip, learned.name, asked.version, device,
-                                                           known=known is not None)
+                                                           known=known is not None, skippable=batch is not None)
     elif beken_stock is not None:
         files, back = readout_beken.read_and_anonymise(ctx, manifest, learned.name, asked.version, device,
-                                                       beken_stock)
+                                                       beken_stock, skippable=batch is not None)
     else:
         if learned is None:
             why = "its firmware name could not be learned"
@@ -274,8 +297,8 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None) -> str
             why = f"there is no bridge for its chip ({learned.chip or 'not named'}) yet"
         output.say(f"    Its memory cannot be read from here: {why}. The readout still helps.")
         manifest["read"] = False
-        return offer(ctx, manifest, None, updates)
-    return offer(ctx, manifest, files, updates, back=back)
+        return offer(ctx, manifest, None, updates, batch=batch, device=device)
+    return offer(ctx, manifest, files, updates, back=back, batch=batch, device=device)
 
 
 def reads_out(device: dict[str, Any]) -> bool:
@@ -373,10 +396,14 @@ def ask_contact() -> dict[str, str] | None:
 
 
 def offer(ctx: Context, manifest: dict[str, Any], files: dict[str, bytes] | None = None,
-          updates: list[offered_firmware.Offered] | tuple = (), *, back: bool = True) -> str:
+          updates: list[offered_firmware.Offered] | tuple = (), *, back: bool = True,
+          batch: Batch | None = None, device: dict[str, Any] | None = None) -> str:
     """Make the readout, ask, and send it; what the run ends by saying.
     `files`: the anonymised flash and its companions, or None if not read.
-    `back`: whether the device answered as its Sonoff firmware again."""
+    `back`: whether the device answered as its Sonoff firmware again.
+    In a `batch` it is sent unasked, and kept under `device`'s id if not."""
+    if batch is not None:
+        return sent_in_batch(ctx, package(manifest, files, updates, batch.contact), device or {}, back)
     path = ctx.dir / NAME
 
     def keep(contact: dict[str, str] | None = None) -> bytes:
@@ -420,6 +447,27 @@ def sent(data: bytes, url: str, path: Path, back: bool) -> str:
                "Switch the device off and on once more: it then starts its Sonoff firmware again."))
 
 
+def sent_in_batch(ctx: Context, data: bytes, device: dict[str, Any], back: bool) -> str:
+    """A readout made in a batch, sent; what became of it. Kept, if not sent,
+    under the device's id, beside the others."""
+    path = ctx.dir / f"readout-{device.get('deviceid') or 'device'}.tar"
+    url = upload_url()
+    again = "" if back else " Switch it off and on once more: it then starts its Sonoff firmware again."
+    if url is None:
+        path.write_bytes(data)
+        os.chmod(path, 0o600)
+        return f"saved in {path}, not sent from a test run.{again}"
+    try:
+        reference = send(data, url)
+    except (OSError, ValueError) as exc:
+        path.write_bytes(data)
+        os.chmod(path, 0o600)
+        return f"not sent ({exc}): kept in {path}, to send later with this tool's readout --send.{again}"
+    if reference == ENOUGH:
+        return f"not needed, as enough readouts of this device are in already.{again}"
+    return f"sent, reference {reference}.{again}"
+
+
 def proof(data: bytes, now: float | None = None, bits: int | None = None) -> str:
     """"<time>:<nonce>" whose SHA-256 with `data`'s, as "<time>:<data's
     SHA-256>:<nonce>", starts with `bits` zero bits: the work the Worker asks
@@ -449,25 +497,88 @@ def send(data: bytes, url: str = UPLOAD_URL, timeout: float = 120.0) -> str:
     except urllib.error.HTTPError as exc:
         raise OSError(f"the website answered {exc.code}") from exc
     if answer.get("enough"):
-        return "none needed: enough readouts of this device are in already"
+        return ENOUGH
     reference = str(answer.get("id") or "")
     if not reference:
         raise ValueError("the website gave no reference")
     return reference
 
 
-def choose(ctx: Context, devices: list[dict[str, Any]]) -> dict[str, Any]:
+def choose(ctx: Context, devices: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The device to read out, or None for every one the tool does not convert
+    (run_all), offered first where there are two or more."""
+    wanted = unknown_devices(devices)
     if len(devices) == 1:
         return devices[0]
+    every = [f"Every device the tool does not convert yet ({len(wanted)})"] if len(wanted) > 1 else []
     output.transient_begin()
-    index = prompts.ask_choice("Which device should be read out", [describe(device) for device in devices])
+    index = prompts.ask_choice("Which device should be read out",
+                               [*every, *(describe(device) for device in devices)])
     output.transient_end()
-    return devices[index]
+    return None if index < len(every) else devices[index - len(every)]
+
+
+def read_out_chosen(ctx: Context, devices: list[dict[str, Any]]) -> str:
+    """The readout the owner chooses, of one device or of every one wanted;
+    what the run ends by saying."""
+    device = choose(ctx, devices)
+    return run_all(ctx, unknown_devices(devices)) if device is None else run(ctx, device)
+
+
+def run_all(ctx: Context, devices: list[dict[str, Any]]) -> str:
+    """Read out each of `devices` in turn, sending each readout as it is made,
+    on its own, so the website can turn down a device it has enough of. What
+    the run ends by saying: what became of each.
+
+    Each gets the readout it would alone: most only the first stage, which
+    sends nothing to the device, done first so they are in before any full
+    readout asks to go ahead; a full one still asks, s there passes the device
+    by, and q quits, as everywhere. One that fails part way stops the rest, as
+    it may need seeing to."""
+    ordered = sorted(devices, key=reads_out)
+    output.transient_begin()
+    prompts.section(f"Read out {len(ordered)} devices, to help add support for them", [
+        *(f"- {describe(device)}: " + ("its whole memory, once you agree" if reads_out(device) else
+                                       "what it and eWeLink say, and the firmware eWeLink offers it")
+          for device in ordered),
+        "",
+        "Each readout is anonymised, and sent on its own as it is made: the",
+        "website may say it has enough of a device already.",
+    ])
+    contact = None
+    if upload_url() is not None:
+        try:
+            contact = ask_contact()
+        except prompts.QuitRun:
+            output.transient_end()
+            return "Nothing was read out or sent."
+    output.transient_end()
+    became = []
+    for number, device in enumerate(ordered, 1):
+        output.say(f"Reading out {describe(device)} ({number} of {len(ordered)})...")
+        for key in (*DEVICE_KEYS, readout_espressif.BRIDGE_HOST):
+            ctx.state.set_input(key, None)
+        try:
+            became.append(f"{describe(device)}: {run(ctx, device, batch=Batch(contact))}")
+        except prompts.QuitRun:
+            left = [describe(other) for other in ordered[number - 1:]]
+            return "\n".join(["Stopped as asked. What became of each readout:", *became,
+                              f"Not read out: {', '.join(left)}."])
+        except NothingWritten as exc:
+            became.append(f"{describe(device)}: not read out - {exc}.")
+        except Abort as exc:
+            if reads_out(device):
+                left = [describe(other) for other in ordered[number:]]
+                raise Abort("\n".join([f"{describe(device)}: {exc}", *became,
+                                        *([f"Not read out yet: {', '.join(left)}."] if left else [])])) from exc
+            became.append(f"{describe(device)}: not read out - {exc}.")
+        output.say(f"    {became[-1]}")
+    return "\n".join(["Thank you! What became of each readout:", *became])
 
 
 def from_run(ctx: Context, devices: list[dict[str, Any]]) -> None:
     """A1's way out to a readout: run it, then end the run (errors.Finished)."""
-    raise Finished(run(ctx, choose(ctx, devices)))
+    raise Finished(read_out_chosen(ctx, devices))
 
 
 def send_saved(path: Path) -> str:

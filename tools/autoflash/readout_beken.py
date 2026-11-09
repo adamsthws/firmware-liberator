@@ -197,7 +197,7 @@ def wait_for_sonoff(ctx: Context, device_id: str, wait: float = SONOFF_WAIT) -> 
 
 
 def read_out(ctx: Context, name: str, version: str, device: dict[str, Any],
-             found: Stock) -> tuple[bytes, dict[str, str], bool]:
+             found: Stock, *, skippable: bool = False) -> tuple[bytes, dict[str, str], bool]:
     """Install the readout firmware, read the whole flash, put Sonoff back.
     The whole flash, what OpenBeken said of itself, and whether Sonoff answered."""
     output.transient_begin()
@@ -211,8 +211,9 @@ def read_out(ctx: Context, name: str, version: str, device: dict[str, Any],
         "at all, the device may need a serial cable to recover. Only go ahead with",
         "a device you can afford to lose.",
     ])
-    if not prompts.require_word(prompts.CONSENT_WORD):
-        raise NothingWritten("not confirmed - nothing has been sent to the device")
+    if not prompts.require_word(prompts.CONSENT_WORD, skip=skippable):
+        raise NothingWritten("skipped as asked, nothing was sent to it" if skippable else
+                             "not confirmed - nothing has been sent to the device")
     output.transient_end()
     plug_ip = ctx.state.require("plug_ip")[0]
     if openbeken.is_readout(plug_ip):
@@ -237,12 +238,13 @@ def read_out(ctx: Context, name: str, version: str, device: dict[str, Any],
 
 
 def read_and_anonymise(ctx: Context, manifest: dict[str, Any], name: str, version: str, device: dict[str, Any],
-                       found: Stock) -> tuple[dict[str, bytes], bool]:
+                       found: Stock, *, skippable: bool = False) -> tuple[dict[str, bytes], bool]:
     """Read the device's whole flash through the readout OpenBeken, putting
     Sonoff's firmware back (read_out), and anonymise it. The files to offer,
-    and whether the device answered as Sonoff's firmware again."""
+    and whether the device answered as Sonoff's firmware again. `skippable`:
+    one device of several, which its question may pass by."""
     manifest["layout"] = found.layout.key
-    flash, info, back = read_out(ctx, name, version, device, found)
+    flash, info, back = read_out(ctx, name, version, device, found, skippable=skippable)
     manifest["read"] = True
     manifest["flash"] = {"size": len(flash), "sha256": hashlib.sha256(flash).hexdigest()}
     manifest["device"] = info

@@ -52,6 +52,8 @@ BULLET = "    "
 # A password field on a row of its own, below a prompt too long to share one.
 FIELD = output.MARGIN + "> "
 QUIT_WORDS = {"q", "quit", "exit", "abort"}
+# Where one of several things can be passed by (require_word's `skip`).
+SKIP_WORDS = {"s", "skip"}
 
 
 def hint_to_quit(tail: str = ": ") -> str:
@@ -867,11 +869,14 @@ def confirm(prompt: str) -> bool:
     return ask_yes_no(prompt, default=False)
 
 
-def require_word(word: str) -> bool:
+def require_word(word: str, *, skip: bool = False) -> bool:
     """True once the operator types `word` - any capitalisation - and Enter;
     False if they type q (or another quit word) instead.  Anything else - an
     Enter or a y pressed by habit - is not taken as either: the question is
-    asked again, saying only the word itself goes ahead."""
+    asked again, saying only the word itself goes ahead.
+
+    With `skip` - one device among several - s passes this one by (False),
+    and q still quits the run (QuitRun), as it does everywhere."""
     output.tell("")
     question = f"Type {word.upper()} to go ahead"
     if UNATTENDED:
@@ -880,13 +885,19 @@ def require_word(word: str) -> bool:
         return True
     discard_typed_ahead()
     mark = output.mark()
-    prompt = output.question(question, hint_to_quit())
+    # q said as at every question; s before it.
+    hint = (" " + output.styled("(s to skip this device)", output.DIM) if skip else "") + hint_to_quit()
+    prompt = output.question(question, hint)
     while True:
         answer = _read_answer(prompt).strip().lower()
         output.answered(answer)
         if answer == word.lower():
             return True
+        if skip and answer in SKIP_WORDS:
+            return False
         if answer in QUIT_WORDS:
+            if skip:
+                raise QuitRun(answer)
             return False
         output.rewind(mark)  # the wrong answer, and its question, off the screen
-        prompt = output.question(f"Only the TYPED word {word.upper()} is accepted", hint_to_quit())
+        prompt = output.question(f"Only the TYPED word {word.upper()} is accepted", hint)

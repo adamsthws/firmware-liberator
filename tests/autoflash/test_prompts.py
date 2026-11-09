@@ -171,6 +171,26 @@ class QuitOptionTests(unittest.TestCase):
         with mock.patch.object(prompts, "_read_secret", return_value="quietly-long-password"):
             self.assertEqual(prompts.ask_secret("Password: "), "quietly-long-password")
 
+    def test_one_device_of_several_is_passed_by_with_s_and_q_still_quits(self):
+        from unittest import mock
+        asked = []
+        with mock.patch("builtins.input", side_effect=lambda prompt: asked.append(prompt) or "s"), \
+             mock.patch.object(prompts, "discard_typed_ahead"):
+            self.assertFalse(prompts.require_word(prompts.CONSENT_WORD, skip=True))
+        self.assertIn("(s to skip this device)", asked[0])
+        self.assertIn("(q to quit)", asked[0])
+        with mock.patch("builtins.input", return_value="q"), mock.patch.object(prompts, "discard_typed_ahead"):
+            with self.assertRaises(prompts.QuitRun):
+                prompts.require_word(prompts.CONSENT_WORD, skip=True)
+
+    def test_s_is_no_answer_where_nothing_can_be_skipped(self):
+        from unittest import mock
+        replies = iter(["s", "q"])
+        with mock.patch("builtins.input", side_effect=lambda prompt: next(replies)), \
+             mock.patch.object(prompts, "discard_typed_ahead"):
+            self.assertFalse(prompts.require_word(prompts.CONSENT_WORD))
+        self.assertEqual(next(replies, "both read"), "both read")
+
     def test_quitting_a_standalone_tool_is_a_clean_exit(self):
         self.assertTrue(issubclass(prompts.QuitRun, SystemExit))
 
@@ -337,6 +357,8 @@ class QuestionScreenTests(unittest.TestCase):
         "key": ("prompts.wait_for_key()", [("Press any key", "x")], None),
         "word": ('prompts.require_word(prompts.CONSENT_WORD)',
                  [("Type PROCEED", "y\r"), ("Only the TYPED word", "proceed\r")], True),
+        "word, one device of several": ('prompts.require_word(prompts.CONSENT_WORD, skip=True)',
+                                        [("s to skip this device", "s\r")], False),
         # A question asked first once readied the terminal for typed answers,
         # and the countdown then took a key only with an Enter.
         "countdown": ('[prompts.ask_yes_no("Use it anyway", default=False), '

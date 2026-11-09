@@ -97,6 +97,18 @@ test("without its work, old work, or another body's, nothing is kept", async () 
   assert.equal((await send(post(body, { "X-Proof": stale }), env())).status, 403);
 });
 
+test("one proof keeps one readout: another device's needs work of its own", async () => {
+  // So a run reading out many devices cannot spread one proof over them all.
+  const bindings = env();
+  const first = readoutOf();
+  const proof = proofFor(first);
+  assert.equal((await send(post(first, { "X-Proof": proof }), bindings)).status, 201);
+  const second = readoutOf({ ...MANIFEST, product: "OTHERTHING" });
+  assert.equal((await send(post(second, { "X-Proof": proof }), bindings)).status, 403);
+  assert.equal((await send(post(second), bindings)).status, 201);
+  assert.equal(bindings.READOUTS.objects.size, 2);
+});
+
 test("anything but a readout the tool makes is turned away", async () => {
   const cases = [
     [new Request("https://api.firmwareliberator.com/readout"), 405],
