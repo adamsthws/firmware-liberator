@@ -220,8 +220,11 @@ change, and regenerate them. What they do:
   held each answer 18 ms instead of 0.3, and Tasmota, which waits 6 ms, found
   no meter ("C61: Rx none") though the board answered within 0.1 ms. The
   register now counts in the unit of the clock the UART runs from, as ESP-IDF
-  writes it. Espressif's QEMU, which the fork's UART comes from, has the same
-  fault; the fix is offered to neither yet.
+  writes it. Offered to the fork as lcgamboa/qemu#21. Espressif's QEMU, which
+  the fork's UART comes from, has the same fault, hidden there by another: it
+  takes every ESP32 UART's baud rate from 40 MHz, so one on REF_TICK runs 40
+  times too fast. Both are offered as espressif/qemu#212
+  ([upstream contributions](../../../docs/upstream-contributions.md#the-emulators-classic-esp32)).
 
 **When you next move the pin:** lcgamboa merged #18, #19 and #20 on 7 November
 2026 (`2d075b740`), so `0001`-`0003` drop out on a commit after that. Replace
