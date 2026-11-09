@@ -120,8 +120,6 @@
 static const char *TAG = "autoflash_bridge";
 static const esp_partition_t *s_running;
 static const esp_partition_t *s_peer;
-/* The peer was not bootable at start-up: an upload into it was cut off. */
-static bool s_no_fallback;
 static volatile bool s_uploading;
 static volatile bool s_sta_trying;
 static volatile uint32_t s_sta_ip; /* network byte order; 0 until joined */
@@ -137,13 +135,18 @@ static uint8_t s_settings[TASMOTA_SETTINGS_SIZE];
  * recovery slot is pinned. */
 static char s_upload_buffer[UPLOAD_BUFFER_SIZE];
 
-static const char INDEX_HTML[] =
+static const char INDEX_HEAD[] =
     "<!doctype html><meta name=viewport content='width=device-width'>"
     "<title>Autoflash bridge</title>"
     "<style>body{font:16px system-ui;max-width:42rem;margin:3rem auto;padding:0 1rem}"
     "button{padding:.7rem 1rem}code{background:#eee;padding:.1rem .3rem}</style>"
-    "<h1>Autoflash bridge</h1>"
-    "<p>The untouched stock slot is selected for the next power cycle.</p>"
+    "<h1>Autoflash bridge</h1>";
+static const char INDEX_FALLBACK[] =
+    "<p>The untouched stock slot is selected for the next power cycle.</p>";
+static const char INDEX_NO_FALLBACK[] =
+    "<p>The stock slot no longer holds firmware that can start: an upload into it "
+    "was cut off. This bridge starts again after a power cycle; upload an image to carry on.</p>";
+static const char INDEX_FORM[] =
     "<p>Choose a native " CONFIG_IDF_TARGET " application image no larger than 0x1f0000 "
     "bytes. The peer slot is erased only after you press Upload.</p>"
     "<input id=f type=file accept='.bin,application/octet-stream'> "
@@ -161,11 +164,27 @@ static void delayed_restart(void *unused)
     esp_restart();
 }
 
+/* The slot the plug starts next, when it is not this bridge: read from otadata
+ * each time, not kept from start-up, as an upload pins the bridge before it
+ * erases the peer, and one cut off then leaves no fallback until the next. */
+static const esp_partition_t *fallback_slot(void)
+{
+    const esp_partition_t *next = esp_ota_get_boot_partition();
+    return next != NULL && next->address != s_running->address ? next : NULL;
+}
+
 static esp_err_t root_handler(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "text/html");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-    return httpd_resp_send(req, INDEX_HTML, HTTPD_RESP_USE_STRLEN);
+    const char *parts[] = {INDEX_HEAD, fallback_slot() != NULL ? INDEX_FALLBACK : INDEX_NO_FALLBACK, INDEX_FORM};
+    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
+        esp_err_t err = httpd_resp_send_chunk(req, parts[i], HTTPD_RESP_USE_STRLEN);
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+    return httpd_resp_send_chunk(req, NULL, 0);
 }
 
 #ifdef BRIDGE_NVS_READOUT
@@ -383,8 +402,8 @@ static esp_err_t info_handler(httpd_req_t *req)
 
     info_add(&used, "running slot: %s at 0x%lx, 0x%lx bytes\n", s_running->label,
              (unsigned long)s_running->address, (unsigned long)s_running->size);
-    const esp_partition_t *next = esp_ota_get_boot_partition();
-    if (next != NULL && next->address != s_running->address) {
+    const esp_partition_t *next = fallback_slot();
+    if (next != NULL) {
         info_add(&used, "fallback slot: %s at 0x%lx, 0x%lx bytes\n", next->label,
                  (unsigned long)next->address, (unsigned long)next->size);
     } else {
@@ -402,7 +421,7 @@ static esp_err_t status_handler(httpd_req_t *req)
 {
     char body[192];
     uint32_t ip = s_sta_ip;
-    const char *fallback = s_no_fallback ? "fallback: none - an upload was cut off\n" : "";
+    const char *fallback = fallback_slot() == NULL ? "fallback: none - an upload was cut off\n" : "";
     if (ip != 0) {
         snprintf(body, sizeof(body), BRIDGE_NAME "\nhome network: joined " IPSTR "\n%s%s",
                  IP2STR((esp_ip4_addr_t *)&ip),
@@ -549,12 +568,12 @@ static esp_err_t restart_handler(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-    const esp_partition_t *next = esp_ota_get_boot_partition();
+    const esp_partition_t *next = fallback_slot();
     if (s_uploading) {
         httpd_resp_set_status(req, "409 Conflict");
         return httpd_resp_sendstr(req, "An upload is under way: not restarting.\n");
     }
-    if (next == NULL || next == s_running) {
+    if (next == NULL) {
         httpd_resp_set_status(req, "409 Conflict");
         return httpd_resp_sendstr(req, "The next start would be this bridge again: not restarting.\n");
     }
@@ -882,7 +901,6 @@ void app_main(void)
         ESP_LOGI(TAG, "power-cycle fallback selected: %s at 0x%08lx",
                  s_peer->label, (unsigned long)s_peer->address);
     } else {
-        s_no_fallback = true;
         ESP_LOGW(TAG, "peer %s is not bootable (%s) - an upload into it was cut off; "
                  "no fallback, carrying on so it can be uploaded again",
                  s_peer->label, esp_err_to_name(err));

@@ -6,7 +6,7 @@ directory, never here.
 
 | File | Purpose | SHA-256 |
 |---|---|---|
-| `autoflash-bridge-esp32c3-4.4.6.ota` | Wrapped one-shot bridge the run installs; joins the home Wi-Fi stock was on, raising its own network only if that fails, lets the run back up the whole flash, gives Tasmota its settings, and starts even after an upload cut off part way, and restarts the plug into Sonoff's firmware when asked | `dc1bbc9327e58857b2899c2d1b84911787b95180584d06224591e1a24ace2bb2` |
+| `autoflash-bridge-esp32c3-4.4.6.ota` | Wrapped one-shot bridge the run installs; joins the home Wi-Fi stock was on, raising its own network only if that fails, lets the run back up the whole flash, gives Tasmota its settings, and starts even after an upload cut off part way, and restarts the plug into Sonoff's firmware when asked | `7a6c04dc50caf1996c1d2b62dcf0a1e0c9f64196a65be38d5fec39768f5da324` |
 | `tasmota32c3-bluetooth.bin` | Berry-capable Tasmota used temporarily on the original partition layout | `a92cfadaff5a3c824f790471ba31464acd2076a24ff1fcad2de28574c5641708` |
 | `autoflash-recovery-safeboot-imprintable.bin` | Credential-free recovery Safeboot template; saves the Wi-Fi for the official Tasmota installed after it | `ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd` |
 | `tasmota-settings-template-15.6.0.0.bin` | Tasmota's default settings with no Wi-Fi in them, for the bridge to fill in at D1 | `d63f03cb99540407037f36dc8155ec9b02d24425d3b02c52299713233e98f4a5` |

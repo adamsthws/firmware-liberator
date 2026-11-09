@@ -113,6 +113,11 @@ check.
   log only said "at least", the flash chip's id and real size, the slots, whether
   PSRAM is in the chip's package, and the input pins' levels. An older installer
   only leaves these lines out.
+- The installer's page no longer says Sonoff's firmware is chosen for the plug's next
+  start once an upload of Tasmota into its slot has been cut off part way, and its
+  status says there is none from that moment: the plug then starts the installer
+  again when switched off and on, so you can carry on. Both said so only after a
+  restart.
 - A TH Elite on Tasmota no longer reports that its relay did not switch at the end
   of a run: the check did not read the answer Tasmota gives where a template has
   more than one relay.

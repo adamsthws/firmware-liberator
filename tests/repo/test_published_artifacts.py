@@ -82,6 +82,22 @@ class PublishedArtifactTests(unittest.TestCase):
                                   r"PIN_INPUT_|esp_flash_(write|erase)|esp_partition_(write|erase)|nvs_|esp_ota_(set|begin)")
         self.assertNotRegex(code, re.compile(r"wifi|ssid|password|mac\b|unique", re.IGNORECASE))
 
+    def test_each_chips_bridge_says_its_fallback_as_it_is_now(self):
+        # An upload pins the bridge before erasing the peer: one cut off leaves no
+        # fallback from then on, which a flag set at start-up did not see, so the
+        # page and every route read otadata as they answer.
+        import re
+        from tools.espressif import chips
+        from tools.autoflash.runs import ROOT
+        source = (ROOT / "archive/bridge/main/main.c").read_text(encoding="utf-8")
+        self.assertNotIn("s_no_fallback", source)
+        for handler in ("root_handler", "info_handler", "status_handler", "restart_handler"):
+            body = re.search(rf"static esp_err_t {handler}\(httpd_req_t \*req\)\n\{{.*?\n\}}\n", source, re.DOTALL)
+            self.assertIn("fallback_slot()", body[0], handler)
+        for chip in chips.ALL:
+            image = (ROOT / chip.pin("bridge")["file"]).read_bytes()
+            self.assertTrue(b"The stock slot no longer holds firmware that can start" in image, chip.label)
+
     def test_every_handler_fits_the_servers_table(self):
         # Beyond max_uri_handlers registering fails, and the bridge stops at start-up.
         import re
