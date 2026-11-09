@@ -39,7 +39,7 @@ several other HTTP clients, and following it led to a few more bugs nearby.
   Tasmota
 - [Smaller fixes found along the way](#smaller-fixes-found-along-the-way) -
   Tasmota, ESPHome, OpenBeken
-- [The POWCT's status LED](#the-powcts-status-led) - Tasmota
+- [The POWCT's status LED](#the-powcts-status-led) - Tasmota, ESPHome
 - [Other people's reports, reproduced on the emulator](#other-peoples-reports-reproduced-on-the-emulator) -
   Tasmota
 
@@ -240,6 +240,7 @@ the emulator, not a POWCT in hand
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|
 | Tasmota | [#25243](https://github.com/arendst/Tasmota/pull/25243) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25243?label=) | The POWCT template in the TM1621 display driver's comment had the LED inverted (Led_i, 320); the copy in the CSE7761 driver's was made Led1 (288) in 2024 and this one missed |
+| ESPHome | [devices.esphome.io #1976](https://github.com/esphome/devices.esphome.io/pull/1976) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/devices.esphome.io/1976?label=) | ESPHome's page for the POWCT had the LED lit when low and its config inverted; with the fix the page moves to the site's `config.yaml` form, as any changed page must, its extras (energy total, power factor) in files of their own |
 
 ## Other people's reports, reproduced on the emulator
 
