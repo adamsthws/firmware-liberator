@@ -234,10 +234,12 @@ def parse_size(text: str) -> tuple[int, int]:
 
 
 class Answer:
-    """A person at the keyboard, as far as one question goes: when what the
-    run shows, since the last answer, matches `when` (a regular expression,
-    on the text without its colours), `type` is typed - "\r" is Enter - up
-    to `times` times."""
+    """A person at the keyboard, as far as one question goes: when the
+    question the run shows, since the last answer, matches `when` (a regular
+    expression, on the text without its colours), `type` is typed - "\r" is
+    Enter - up to `times` times.  The question is its last two rows (question):
+    not the notes above it, which can say a question's words - seen, "your
+    eWeLink account" in the firmware question's taken for the sign-in."""
 
     def __init__(self, when: str, type: str, times: int = 1) -> None:
         self.when, self.type, self.left = re.compile(when), type, times
@@ -247,6 +249,23 @@ class Answer:
     def load(cls, path: Path) -> list["Answer"]:
         """A list of {"when": ..., "type": ..., "times": ...}, as JSON."""
         return [cls(**item) for item in json.loads(path.read_text(encoding="utf-8"))]
+
+
+def question(screen: "Screen") -> str:
+    """The rows a question asks on: the screen's last two that hold anything -
+    its prompt, and under it a password's field (prompts.FIELD), or the row
+    the prompt follows.  Read off the screen, not the text written: a wrong
+    try is taken off by moving the cursor up, which text does not show."""
+    rows = [row for row in screen.render(colour=False).split("\n") if row.strip()]
+    return "\n".join(rows[-2:])
+
+
+def waiting(asked: str) -> bool:
+    """Whether a question is waiting for its answer: its prompt ends the
+    last row - "...: ", a password's "> ", "Press any key (q to quit)" -
+    not an answer typed after it (seen, a password's field filling in was
+    taken for its question asked again)."""
+    return asked.rstrip().endswith((":", ">", ")"))
 
 
 # What a terminal shows but the text does not say: colours, cursor moves.
@@ -275,7 +294,8 @@ def record(command: list[str], size: tuple[int, int], live: bool,
             os._exit(127)
     started, written, stopping = time.monotonic(), bytearray(), False
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-    since = ""   # what was shown since the last answer, as text
+    screen = Screen(*size)
+    answered = None   # the question last answered, as it was on the screen
     while True:
         try:
             if timeout and not stopping and time.monotonic() - started > timeout:
@@ -293,14 +313,15 @@ def record(command: list[str], size: tuple[int, int], live: bool,
             if live:
                 os.write(sys.stdout.fileno(), chunk)
             if answers:
-                since += CONTROL.sub("", decoder.decode(chunk))
+                screen.feed(decoder.decode(chunk))
+                asked = question(screen)
                 for answer in answers:
-                    if answer.left and answer.when.search(since):
+                    if waiting(asked) and asked != answered and answer.left and answer.when.search(asked):
                         time.sleep(0.5)   # as a person reads it
                         os.write(fd, answer.type.encode("utf-8"))
                         answer.typed_at.append(len(written))
                         answer.left -= 1
-                        since = ""
+                        answered = asked
                         break
         except KeyboardInterrupt:
             os.kill(pid, signal.SIGINT)  # passed on: the tool stops cleanly, as at a keyboard

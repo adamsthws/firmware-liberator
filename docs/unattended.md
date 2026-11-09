@@ -94,8 +94,10 @@ run that does this (FAIL-SCREEN in [testing.md](testing.md)).
 `--attended` runs the tool without `--unattended`, so every question is asked
 as it is of a person at the keyboard, and `--answers FILE` answers them: a
 JSON list of what to type when the screen shows what. Each answer is typed
-once, or `times` times, when its `when` - a regular expression, matched on what
-the run has shown since the last answer - shows; `\r` is Enter:
+once, or `times` times, when its `when` - a regular expression - matches the
+question waiting for an answer: the screen's last two rows, the prompt ending the
+last, not the notes above it. When several match, the first in the list with
+times left is typed; `\r` is Enter:
 
 ```json
 [{"when": "Press any key", "type": "x"},

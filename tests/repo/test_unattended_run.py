@@ -159,6 +159,37 @@ class AnswerTests(unittest.TestCase):
         name, word = answers[1].typed_at[0], answers[0].typed_at[0]
         self.assertLess(name, word)   # where each was typed, in the bytes written
 
+    def test_an_answer_waits_for_its_question_not_a_note_that_says_its_words(self):
+        # Seen: q typed at the firmware question, whose note said "your eWeLink
+        # account", for the sign-in's "eWeLink account email" asked later.
+        script = textwrap.dedent("""
+            print("Its note: going back uses your eWeLink account email record.")
+            print("A second line, and a third,")
+            print("then the question itself.")
+            first = input("Which firmware would you like: ")
+            account = input("eWeLink account email: ")
+            print(f"got {first} and {account}")
+        """)
+        answers = [unattended_run.Answer(r"eWeLink account email", "you@example.com\r"),
+                   unattended_run.Answer(r"Which firmware", "1\r")]
+        code, written = unattended_run.record([sys.executable, "-c", script], (80, 24), live=False,
+                                              timeout=60, answers=answers)
+        self.assertIn(b"got 1 and you@example.com", written)
+
+    def test_a_question_is_its_last_two_rows_on_the_screen(self):
+        screen = unattended_run.Screen(80, 24)
+        screen.feed("a note\r\nmore\r\n Wi-Fi password (q to quit):\r\n > ")
+        self.assertEqual(unattended_run.question(screen), " Wi-Fi password (q to quit):\n >")
+
+    def test_a_question_waits_until_its_prompt_ends_the_row(self):
+        for asked, expected in ((" Which firmware would you like (q to quit):", True),
+                                (" Wi-Fi password (q to quit):\n >", True),
+                                (" Press any key to continue (q to quit)", True),
+                                (" Wi-Fi password (q to quit):\n > ***", False),
+                                (" Which firmware would you like (q to quit): 1", False)):
+            with self.subTest(asked=asked):
+                self.assertEqual(unattended_run.waiting(asked), expected)
+
     def test_answers_are_read_from_a_file(self):
         import json
         import tempfile
