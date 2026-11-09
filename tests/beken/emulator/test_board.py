@@ -21,12 +21,26 @@ class Gpio:
     is still latched is lost."""
     def __init__(self):
         self.levels, self.int_status, self.rising = {}, 0, set()
+        self.enabled, self.pulses = {S61.cf, S61.cf1}, {}
 
     def drive(self, pin, level, config):
         before = self.levels.get(pin, 1)
-        if (before, level) == ((0, 1) if pin in self.rising else (1, 0)):
+        if pin in self.enabled and (before, level) == ((0, 1) if pin in self.rising else (1, 0)):
             self.int_status |= 1 << pin
+        self.pulses[pin] = self.pulses.get(pin, 0) + (level == 0)
         self.levels[pin] = level
+
+
+class Memory:
+    """Unicorn's memory, as far as the board reads and writes it: the PWM block."""
+    def __init__(self):
+        self.words = {}
+
+    def mem_read(self, address, size):
+        return self.words.get(address, 0).to_bytes(4, "little")[:size]
+
+    def mem_write(self, address, data):
+        self.words[address] = int.from_bytes(data, "little")
 
 
 class Emulator:
@@ -41,8 +55,9 @@ class Emulator:
         self.config = {S61.relay: OUTPUT_HIGH if relay_on else OUTPUT_LOW,
                        S61.sel: OUTPUT_HIGH if sel_high else OUTPUT_LOW,
                        S61.cf: INPUT_PULLUP, S61.cf1: INPUT_PULLUP}
-        self.state = SimpleNamespace(insn_count=0, gpio_hw=Gpio())
+        self.state = SimpleNamespace(insn_count=0, gpio_hw=Gpio(), pwmn_stat=0)
         self.paced, self.masked, self.change = 0, masked, change
+        self.mu = Memory()
         self.taken = {S61.cf: 0, S61.cf1: 0}
 
     def _gpio_config_word(self, pin):
@@ -179,6 +194,62 @@ class MeterTests(unittest.TestCase):
         self.assertFalse(attached(sel_high=True)._fast_tick_idle(None))
         self.assertFalse(attached(relay_on=True, sel_high=False)._fast_tick_idle(None))
         self.assertTrue(attached(relay_on=False, sel_high=False)._fast_tick_idle(None))
+
+
+class StockTests(unittest.TestCase):
+    """The meter as Sonoff's firmware reads it: CF1 (P6) and CF (P8) on PWM
+    channels 0 and 2 capturing rising edges (mode 4, interrupt on, the 26 MHz
+    clock undivided), each capture's count read in the PWM interrupt as the
+    period (devices/sonoff-s61/research.md)."""
+    CONTROL = (4 | 1 << 3 | 1 << 4)        # channel 0 of a group: capture rising edges, on, interrupting
+
+    def stock(self, **kwargs):
+        emu = attached(**kwargs)
+        emu.state.gpio_hw.enabled = set()                     # no GPIO interrupt: the pins are the PWM block's
+        emu.mu.words[board.PWMN_BASE] = self.CONTROL          # group 0: channel 0, P6
+        emu.mu.words[board.PWMN_BASE + 0x40] = self.CONTROL   # group 1: channel 2, P8
+        return emu
+
+    def periods(self, emu, seconds):
+        """Each channel's captured counts, taken in its interrupt after each chunk."""
+        got = {0: [], 2: []}
+        for _ in range(round(seconds / SECONDS_PER_INSN / CHUNK)):
+            emu.state.insn_count += CHUNK
+            emu._pacing(emu.state)
+            for channel in got:
+                bit = 2 * (channel // 2) + channel % 2
+                if emu.state.pwmn_stat >> bit & 1:
+                    emu.state.pwmn_stat &= ~(1 << bit)
+                    got[channel].append(emu.mu.words[board.PWMN_BASE + 0x40 * (channel // 2) + 0x28])
+        return got
+
+    def test_each_pulse_is_captured_with_its_period(self):
+        got = self.periods(self.stock(sel_high=True), 1.0)
+        hz = {channel: board.PWM_CLOCK / (sum(counts) / len(counts)) for channel, counts in got.items()}
+        self.assertAlmostEqual(hz[0] * S61.volts_per_hz, 230.0, delta=0.5)
+        self.assertAlmostEqual(hz[2] * S61.watts_per_hz, 100.0, delta=0.5)
+        self.assertAlmostEqual(len(got[0]), 230.0 / S61.volts_per_hz, delta=2)   # one interrupt a pulse
+
+    def test_a_capture_waits_for_the_last_to_be_taken(self):
+        emu = self.stock(sel_high=True)
+        emu.run(0.01)
+        self.assertEqual(emu.state.pwmn_stat & 1, 1)
+        self.assertEqual(emu.state.gpio_hw.pulses[S61.cf1], 1)
+        emu.run(0.1)                      # never taken: nothing more is captured
+        self.assertEqual(emu.state.gpio_hw.pulses[S61.cf1], 1)
+
+    def test_a_channel_not_capturing_is_left_alone(self):
+        emu = attached(sel_high=True)
+        emu.mu.words[board.PWMN_BASE] = 1 | 1 << 3 | 1 << 4    # driving a PWM output instead
+        emu.run(0.1)
+        self.assertEqual((emu.state.pwmn_stat, sorted(emu.mu.words)), (0, [board.PWMN_BASE]))
+
+    def test_the_groups_divider_and_edge_mode_scale_the_count(self):
+        emu = attached(sel_high=True)
+        emu.mu.words[board.PWMN_BASE] = 6 | 1 << 3 | 1 << 4 | 1 << 16   # both edges, 26 MHz / 2
+        emu.run(0.01)
+        count = emu.mu.words[board.PWMN_BASE + 0x28]
+        self.assertAlmostEqual(count, board.PWM_CLOCK / 2 / 2 / (230 / S61.volts_per_hz), delta=1)
 
 
 class EsphomeTests(unittest.TestCase):

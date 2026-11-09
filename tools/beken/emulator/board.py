@@ -8,10 +8,12 @@ needs no new image.
 The BL0937 reports by pulses, on two of the chip's GPIOs: CF at a rate that
 is the power, CF1 at a rate that is the voltage while SEL is driven high and
 the current while it is low (the BL0937's sense, the HLW8012's inverted).
-Each firmware counts them by the GPIO interrupt, so the board drives those
-pins' input levels, as an external chip does, at the rate the load gives, and
-reads the SEL and relay pins' outputs from the GPIO registers as the firmware
-left them. The relay pin driven high switches the load on; the voltage is
+OpenBeken and ESPHome count them by the GPIO interrupt, so the board drives
+those pins' input levels, as an external chip does, at the rate the load
+gives; Sonoff's firmware has the chip's PWM block capture them, timing each
+period, so where a PWM channel is capturing a pin the board gives the count it
+latches and its interrupt too. It reads the SEL and relay pins' outputs from
+the GPIO registers as the firmware left them. The relay pin driven high switches the load on; the voltage is
 measured on the supply side, so it is there either way.
 
 Rates come from the board's calibration: the factory trim in the public S61
@@ -101,6 +103,30 @@ class Bl0937:
 # The most cycles an output keeps owing the firmware, in seconds of its rate.
 BACKLOG = 0.25
 
+# The BK7238's PWM block (pwm_new: three groups of two channels, 0x40 apart),
+# which can capture a pin's edges instead of driving it: each channel's pin,
+# its capture modes (on rising, falling or both edges) and its clock, 26 MHz
+# before the group's divider (beken378/driver/pwm/pwm_bk7231n.h).
+PWMN_BASE = 0x00802B00
+PWM_CHANNEL = {6: 0, 7: 1, 8: 2, 9: 3, 24: 4, 26: 5}
+CAPTURE_MODES = (4, 5, 6)
+PWM_CLOCK = 26_000_000
+
+
+@dataclass(frozen=True)
+class Capture:
+    """A PWM channel capturing a pin's edges, as its group's control word says."""
+    group: int
+    post: int           # which of the group's two channels
+    mode: int
+    interrupt: int
+    divider: int
+
+    @property
+    def status_bit(self) -> int:
+        """Its interrupt status, as the emulator keeps it (state.pwmn_stat)."""
+        return 2 * self.group + self.post
+
 
 class Board:
     """The meter, wired to an emulator (src/emulator.py's), and set between
@@ -115,7 +141,8 @@ class Board:
     1.8 kHz: ESPHome read 160 V of 230.
 
     And a pulse is given only once the firmware has taken the interrupt the
-    last one latched (the GPIO controller's INTSTA bit cleared), else it would
+    last one latched (the GPIO controller's INTSTA bit, or the capturing PWM
+    channel's status, cleared), else it would
     be lost to the firmware. On the chip an interrupt is taken within
     microseconds; in the emulator a firmware's stretches with interrupts off
     last far longer in the device's time, and free-running at 1.8 kHz a
@@ -149,11 +176,38 @@ class Board:
         for name, cycles in self.meter.cycles(state.insn_count * self.seconds_per_insn, relay_on, sel_high).items():
             self.owed[name] = min(self.owed[name] + cycles, max(2.0, rates[name] * BACKLOG))
         for name, pin in self.pins().items():
-            if self.owed[name] >= 1 and not state.gpio_hw.int_status >> pin & 1:
+            capture = self.capture(pin)
+            taken = not (state.gpio_hw.int_status >> pin & 1
+                         or capture and state.pwmn_stat >> capture.status_bit & 1)
+            if self.owed[name] >= 1 and taken:
                 self.owed[name] -= 1
                 config = self.emu._gpio_config_word(pin)
                 state.gpio_hw.drive(pin, 0, config)
                 state.gpio_hw.drive(pin, 1, config)
+                if capture:
+                    self.captured(state, capture, rates[name])
+
+    def capture(self, pin: int) -> Capture | None:
+        """The PWM channel on `pin`, if the firmware has it capturing edges -
+        as Sonoff's firmware counts the BL0937's pulses - else None."""
+        channel = PWM_CHANNEL.get(pin)
+        if channel is None:
+            return None
+        group, post = divmod(channel, 2)
+        control = int.from_bytes(self.emu.mu.mem_read(PWMN_BASE + 0x40 * group, 4), "little")
+        mode, enabled = control >> 8 * post & 0x7, control >> 8 * post + 3 & 1
+        if mode not in CAPTURE_MODES or not enabled:
+            return None
+        return Capture(group, post, mode, control >> 8 * post + 4 & 1, (control >> 16 & 0xFF) + 1)
+
+    def captured(self, state, capture: Capture, hz: float) -> None:
+        """The pulse as the channel latches it: the clock's count since the
+        last edge it captures (both edges in edge mode), and its interrupt."""
+        counts = PWM_CLOCK / capture.divider / hz / (2 if capture.mode == CAPTURE_MODES[-1] else 1)
+        self.emu.mu.mem_write(PWMN_BASE + 0x40 * capture.group + 0x28 + 4 * capture.post,
+                              min(round(counts), 0xFFFFFFFF).to_bytes(4, "little"))
+        if capture.interrupt:
+            state.pwmn_stat |= 1 << capture.status_bit
 
     def pulsing(self) -> bool:
         """Whether an output may pulse before the next slow tick."""

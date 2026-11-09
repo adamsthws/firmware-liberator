@@ -680,7 +680,8 @@ plug to start from, one `rebuild_dump.py` made for another model, say
   low, so the end-of-run check can say the meter confirms the switch
   ([how](../tools/beken/emulator/README.md#the-plugs-board-boardpy)). OpenBeken
   and ESPHome read it a little high, 244-250 V and 103-105 W, as the firmware's
-  clock falls behind in the emulator; Sonoff's firmware reports nothing from it.
+  clock falls behind in the emulator; Sonoff's firmware reports it as it is,
+  230 V and 100 W, to the stub.
   A conversion passing says the firmware installs, starts and reads a meter on
   the pins its config names - not that those are the device's.
 - **A Linux computer only.** `beken-emu.sh computer` is a Linux container; the
