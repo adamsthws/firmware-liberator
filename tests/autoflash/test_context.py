@@ -1,6 +1,7 @@
 """A run's context (tools/autoflash/context.py): its eWeLink account and a
 password given for it, its Wi-Fi typed only as the fallback, and the port
 its phases are served on."""
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -135,6 +136,60 @@ class EwelinkAccountTests(unittest.TestCase):
         asked.assert_not_called()
 
 
+class OneSignInTests(unittest.TestCase):
+    """A run signs in to eWeLink once: each sign-in ends the one before, and
+    eWeLink turns away an account that signs in too often."""
+
+    def ctx(self, sign_in):
+        from types import SimpleNamespace
+        ctx = SimpleNamespace(ewelink=context.Account(sign_in), state=SimpleNamespace(set_input=lambda *a: None),
+                              _given_email=None, _given_ewelink_password=None)
+        ctx._ewelink_password = "pw"
+        return ctx
+
+    def test_the_devices_are_listed_again_with_the_same_sign_in(self):
+        sign_in = mock.Mock(return_value=("us", {"at": "t"}))
+        ctx = self.ctx(sign_in)
+        with mock.patch.object(context, "get_devices", return_value=[{"deviceid": "1000abcdef"}]) as listed:
+            for _ in range(3):
+                self.assertEqual(context.Context.account_devices(ctx), [{"deviceid": "1000abcdef"}])
+        sign_in.assert_called_once()
+        self.assertEqual({call.args for call in listed.call_args_list}, {("us", "t")})
+
+    def test_a_helper_is_handed_the_run_s_sign_in_once_there_is_one(self):
+        ctx = self.ctx(mock.Mock())
+        ctx.ewelink_env = lambda: {"EWELINK_PASSWORD": "pw"}
+        self.assertNotIn(context.SESSION_ENV, context.Context.helper_env(ctx))
+        ctx.ewelink.held = ("us", {"at": "t", "user": {"apikey": "a"}})
+        env = context.Context.helper_env(ctx)
+        self.assertEqual(env["EWELINK_PASSWORD"], "pw")
+        self.assertEqual(json.loads(env[context.SESSION_ENV])["at"], "t")
+
+    def test_another_account_is_signed_in_to_afresh(self):
+        sign_in = mock.Mock(side_effect=[("eu", {"at": "a"}), ("eu", {"at": "b"})])
+        ctx = self.ctx(sign_in)
+        with mock.patch.object(context, "get_devices", return_value=[]) as listed:
+            context.Context.account_devices(ctx)
+            context.Context.forget_account(ctx)
+            context.Context.account_devices(ctx)
+        self.assertEqual([call.args[1] for call in listed.call_args_list], ["a", "b"])
+
+    def test_the_sign_in_starts_where_the_account_was_last_found(self):
+        from types import SimpleNamespace
+        settings = {"ewelink_email": "you@example.com", "ewelink_region": "us"}
+        ctx = SimpleNamespace(email=lambda: "you@example.com", ewelink_env=lambda: {}, _ewelink_password="pw")
+        ctx._last_region = lambda: context.Context._last_region(ctx)
+        ctx._remember_region = lambda region: context.Context._remember_region(ctx, region)
+        with mock.patch.object(runs, "load_settings", lambda: dict(settings)), \
+                mock.patch.object(runs, "save_settings", settings.update), \
+                mock.patch.object(context, "login_session", return_value=("as", {"at": "t"})) as signed:
+            context.Context._sign_in(ctx)
+            self.assertEqual(signed.call_args.args[3], "us")
+            self.assertEqual(settings["ewelink_region"], "as")   # where eWeLink sent it
+            ctx.email = lambda: "other@example.com"
+            self.assertEqual(context.Context._last_region(ctx), "eu")   # another account's is not its
+
+
 class NextDeviceSignInTests(unittest.TestCase):
     """The next device's run in the same sitting keeps the last one's eWeLink
     sign-in: account, password and session, never asked again."""
@@ -142,13 +197,14 @@ class NextDeviceSignInTests(unittest.TestCase):
     def test_the_last_runs_account_and_sign_in_are_kept(self):
         from types import SimpleNamespace
         last = SimpleNamespace(state=SimpleNamespace(input={"email": "you@example.com"}.get),
-                               _ewelink_password="secret-1", _ewelink_session=("eu", "token"))
+                               _ewelink_password="secret-1", ewelink=context.Account(mock.Mock()))
+        last.ewelink.held = ("eu", {"at": "token"})
         inputs = {}
         ctx = SimpleNamespace(state=SimpleNamespace(input=inputs.get, set_input=inputs.__setitem__),
-                              _ewelink_password=None, _ewelink_session=None)
+                              _ewelink_password=None, ewelink=context.Account(mock.Mock()))
         context.Context.keep_sign_in(ctx, last)
-        self.assertEqual((inputs, ctx._ewelink_password, ctx._ewelink_session),
-                         ({"email": "you@example.com"}, "secret-1", ("eu", "token")))
+        self.assertEqual((inputs, ctx._ewelink_password, ctx.ewelink.session()),
+                         ({"email": "you@example.com"}, "secret-1", ("eu", {"at": "token"})))
         with mock.patch.object(prompts, "ask_choice") as menu, mock.patch.object(prompts, "ask_text") as asked:
             ctx.remember_email = lambda email: inputs.__setitem__("email", email)
             ctx._given_email = None
@@ -158,12 +214,13 @@ class NextDeviceSignInTests(unittest.TestCase):
 
     def test_a_run_from_a_converted_plug_had_none_to_keep(self):
         from types import SimpleNamespace
-        last = SimpleNamespace(state=SimpleNamespace(input={}.get), _ewelink_password=None, _ewelink_session=None)
+        last = SimpleNamespace(state=SimpleNamespace(input={}.get), _ewelink_password=None,
+                               ewelink=context.Account(mock.Mock()))
         inputs = {}
         ctx = SimpleNamespace(state=SimpleNamespace(input=inputs.get, set_input=inputs.__setitem__),
-                              _ewelink_password=None, _ewelink_session=None)
+                              _ewelink_password=None, ewelink=context.Account(mock.Mock()))
         context.Context.keep_sign_in(ctx, last)
-        self.assertEqual((inputs, ctx._ewelink_password), ({}, None))
+        self.assertEqual((inputs, ctx._ewelink_password, ctx.ewelink.held), ({}, None, None))
 
 
 class PhasePortTests(unittest.TestCase):

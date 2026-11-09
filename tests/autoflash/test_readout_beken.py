@@ -14,7 +14,8 @@ def a_ctx() -> SimpleNamespace:
     state._d["plug_ip"] = "192.0.2.60"
     state._d["plug_mac"] = "12:34:56:ab:cd:ef"
     return SimpleNamespace(state=state, dir=None, listen_ip=lambda: "192.0.2.141",
-                           email=lambda: "me@example.com", ewelink_env=lambda: {"EWELINK_PASSWORD": "pw"})
+                           email=lambda: "me@example.com", ewelink_env=lambda: {"EWELINK_PASSWORD": "pw"},
+                           ewelink=mock.sentinel.account)
 
 
 def s61_app() -> bytes:

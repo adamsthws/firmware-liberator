@@ -43,7 +43,8 @@ from tools.espressif.safeboot.prepare_imprinted_bundle import (
     pin_wifi,
     recovery_image,
 )
-from tools.ewelink.get_device_key import EwelinkError, account_name, get_devices, is_email, login, phone_number
+from tools.ewelink.get_device_key import (API, SESSION_ENV, Account, EwelinkError, account_name, get_devices,
+                                          is_email, login_session, phone_number, session_env)
 
 
 class Context:
@@ -109,8 +110,8 @@ class Context:
         self._given_ewelink_password = credentials.get("EWELINK_PASSWORD")
         given_email = credentials.get("EWELINK_EMAIL")
         self._given_email = account_name(given_email) if given_email else None
-        # The last sign-in's region and access token, held in memory only.
-        self._ewelink_session: tuple[str, str] | None = None
+        # The run's one sign-in to the account, held in memory only.
+        self.ewelink = Account(self._sign_in)
         self._finder: join.PlugFinder | None = None
         # The go-ahead to replace the plug's firmware, given in this run.
         self.consented = False
@@ -260,22 +261,41 @@ class Context:
             output.transient_end()
         return {**os.environ, "EWELINK_PASSWORD": self._ewelink_password}
 
+    def helper_env(self) -> dict[str, str]:
+        """What a helper tool that signs in to eWeLink is run with: the
+        password (ewelink_env), and this run's sign-in, which the helper uses
+        instead of one of its own - that would end this run's."""
+        env = self.ewelink_env()
+        if self.ewelink.held:
+            env[SESSION_ENV] = session_env(*self.ewelink.held)
+        return env
+
     def account_devices(self) -> list[dict[str, Any]] | None:
         """The devices in the owner's eWeLink account, or None when eWeLink
-        cannot be reached.  A wrong password is asked again; the list, which
-        holds each device's LAN key, stays in memory and is never logged."""
+        cannot be reached.  The list, which holds each device's LAN key, stays
+        in memory and is never logged."""
+        try:
+            devices = self.ewelink.use(lambda region, session: get_devices(region, session["at"]))
+        except EwelinkError as exc:
+            output.tell(f"    Could not reach eWeLink ({exc}), so every device that answers is listed.")
+            return None
+        account.keep_account_private(devices)
+        return devices
+
+    def _sign_in(self) -> tuple[str, dict[str, Any]]:
+        """Sign in to the account (self.ewelink), in the region it was last
+        found in, asking the password again while eWeLink refuses it."""
         while True:
             self.ewelink_env()
             try:
-                region, token = login(self.email(), self._ewelink_password or "", "+44", "eu")
-                devices = get_devices(region, token)
-                account.keep_account_private(devices)
-                self._ewelink_session = (region, token)
-                return devices
+                region, session = login_session(self.email(), self._ewelink_password or "", "+44",
+                                                self._last_region())
+                output.private(session.get("at"), "access-token")
+                self._remember_region(region)
+                return region, session
             except EwelinkError as exc:
                 if "login failed" not in str(exc):
-                    output.tell(f"    Could not reach eWeLink ({exc}), so every device that answers is listed.")
-                    return None
+                    raise
                 self._ewelink_password = None
                 output.transient_begin()
                 output.tell(f"    {exc}.")
@@ -287,16 +307,20 @@ class Context:
                 if choice == 1:
                     self.forget_account()
 
-    def ewelink_session(self) -> tuple[str, str] | None:
-        """The account's region and an access token, signing in if this run has
-        not; None when eWeLink cannot be reached."""
-        if self._ewelink_session is None:
-            self.account_devices()
-        return self._ewelink_session
-
     def ewelink_region(self) -> str:
-        session = self.ewelink_session()
-        return session[0] if session else "eu"
+        """The account's region: where it signed in, or was last found."""
+        return self.ewelink.held[0] if self.ewelink.held else self._last_region()
+
+    def _last_region(self) -> str:
+        settings = runs.load_settings()
+        region = settings.get("ewelink_region")
+        return region if settings.get("ewelink_email") == self.email() and region in API else "eu"
+
+    def _remember_region(self, region: str) -> None:
+        settings = runs.load_settings()
+        if settings.get("ewelink_email") == self.email() and settings.get("ewelink_region") != region:
+            settings["ewelink_region"] = region
+            runs.save_settings(settings)
 
     def keep_sign_in(self, previous: Context) -> None:
         """The next device's run in the same sitting (cli.next_device): the
@@ -306,11 +330,12 @@ class Context:
         if previous.state.input("email") and not self.state.input("email"):
             self.state.set_input("email", previous.state.input("email"))
         self._ewelink_password = previous._ewelink_password
-        self._ewelink_session = previous._ewelink_session
+        self.ewelink.held = previous.ewelink.held
 
     def forget_account(self) -> None:
         """Ask again which eWeLink account, and its password."""
         self.state.set_input("email", None)
+        self.ewelink.end()
         self._ewelink_password = None
         self._given_email = self._given_ewelink_password = None
 
@@ -350,6 +375,7 @@ class Context:
         settings = runs.load_settings()
         if settings.get("ewelink_email") != email:
             settings["ewelink_email"] = email
+            settings.pop("ewelink_region", None)  # the last account's
             runs.save_settings(settings)
 
     def file_under_plug(self, mac: str) -> None:

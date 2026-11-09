@@ -920,7 +920,7 @@ class DeliveryPortTests(unittest.TestCase):
             state.set_input("stock_version", "1.2.0")
             ctx = SimpleNamespace(state=state, bridge=Path("bridge.ota"), dir=root,
                                   listen_ip=lambda: "192.0.2.141", email=lambda: "me@example.com",
-                                  ewelink_env=lambda: {})
+                                  ewelink_env=lambda: {}, helper_env=lambda: {}, ewelink_region=lambda: "eu")
             opened = []
             # installer's own ROOT: the lock it lifts is this one, never the checkout's.
             with mock.patch.object(installer, "ROOT", root), \

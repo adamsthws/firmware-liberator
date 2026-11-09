@@ -365,9 +365,7 @@ def step_sonoff_check(ctx: Context, wait: float = CLOUD_WAIT) -> dict[str, Any]:
                 if devices is None and not device_id:
                     break
                 online = any(device.get("deviceid") == device_id and device.get("online") for device in devices or [])
-                if online and ewelink_relay.answers(
-                        email=ctx.email(), password=ctx.ewelink_env()["EWELINK_PASSWORD"], country_code="+44",
-                        region="eu", device_id=device_id):
+                if online and ewelink_relay.answers(account=ctx.ewelink, device_id=device_id):
                     output.progress_clear()
                     seconds = round(time.monotonic() - started, 1)
                     output.say(f"    eWeLink shows the device online again, and it answers, after {seconds}s.")

@@ -1144,7 +1144,7 @@ class ReportTests(OutputTestCase):
         ctx = self.ctx(plug_kind="sonoff-s61", product_model="S61STPF", firmware="sonoff", source="openbeken",
                        plug_mac="12:34:56:ab:cd:ef")
         ctx.email = lambda: "someone@example.invalid"
-        ctx.ewelink_env = lambda: {"EWELINK_PASSWORD": "made-up-password"}
+        ctx.ewelink = mock.sentinel.account
         ctx.account_devices = lambda: [{"deviceid": "1000abcdef", "online": True,
                                         "params": {"switches": [{"outlet": 0, "switch": "off"}]}}]
         with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
@@ -1165,7 +1165,7 @@ class ReportTests(OutputTestCase):
         `seen` says, one look at a time (then as the last)."""
         ctx = self.ctx(firmware="sonoff", source="tasmota", plug_mac="12:34:56:ab:cd:ef")
         ctx.email = lambda: "someone@example.invalid"
-        ctx.ewelink_env = lambda: {"EWELINK_PASSWORD": "made-up-password"}
+        ctx.ewelink = mock.sentinel.account
         looks = iter(seen)
         self.online = False
 

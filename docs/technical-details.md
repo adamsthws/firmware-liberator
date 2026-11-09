@@ -180,7 +180,7 @@ remade as needed:
 | `plugs/<MAC>/sonoff-backup/`, `plug.json` | your plug's Sonoff firmware and settings, and its record | nothing: **back it up** |
 | `plugs/<MAC>/runs/`, `unattended/` | each run's state and log, and recordings of unattended runs | the next run |
 | `safeboot-recovery-migration/` | the firmware bundle | the next run (A5) |
-| `settings.json`, `.autoflash-current`, `.safety-locks/` | the eWeLink email offered next time, the run in progress, the locks' state | the next run |
+| `settings.json`, `.autoflash-current`, `.safety-locks/` | the eWeLink email offered next time, and the region it signs in to, the run in progress, the locks' state | the next run |
 | `esphome-build/` | ESP-IDF and its tools, for `update_firmware.py esphome` | its next build |
 | `emulation/state*/` | each emulator's plug and computer | the emulator, from the backup |
 | `emulation/saved/` | plugs kept part way (`--save`), the fault suite's and the public ones | `fault_suite.py prep`, `public_plugs.py make` |
@@ -296,7 +296,13 @@ Your eWeLink password is asked once per run and held in memory only. It is
 never written to disk, to the run state or to the log, and never put on a
 command line: the delivery tool, `serve_tasmota_ota.py`, receives it through
 the `EWELINK_PASSWORD` environment variable and clears its copy as soon as it
-has signed in. The access token eWeLink hands back is not kept either.
+has signed in. The run signs in once: the access token eWeLink hands back is
+held in memory for the run alone and used for all it asks of eWeLink, as each
+sign-in ends the one before. The helper tools it starts (`query_ota.py`,
+`serve_tasmota_ota.py`) are handed it the way they are handed the password, in
+the `EWELINK_SESSION` environment variable, and sign in themselves only if
+eWeLink no longer takes it. It is never written down, and is kept out of the
+log.
 
 What is kept is the account's email (or phone number, for an account made
 with one), so the next run can offer it first. It is in

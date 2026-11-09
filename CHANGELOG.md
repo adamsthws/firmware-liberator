@@ -79,6 +79,10 @@ check.
   its country code (+44 7700 900123) where the tool asks for the account's email,
   or as `--email` or `EWELINK_EMAIL`. One given in advance that is neither
   stops the run at once.
+- A run signs in to eWeLink once, where it signed in again each time it asked
+  eWeLink something (twice every 10 s while waiting for a device to come back),
+  and in the region the account was last found in. The helper tools it starts use
+  that sign-in too, so converting an ESP32 device signs in once, not four times.
 - A plug offline in eWeLink when a run sends to it is waited for five and a half
   minutes, not three: after a send cut off part way it stays away about five,
   and the run gave up just before it came back.

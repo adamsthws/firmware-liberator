@@ -46,6 +46,49 @@ class TurnTests(unittest.TestCase):
             self.assertEqual(get_device_key.login_session("owner@example.test", "pw", "+44", "eu")[0], "eu")
 
 
+class AccountTests(unittest.TestCase):
+    def test_one_sign_in_serves_every_use(self):
+        sign_in = mock.Mock(return_value=("eu", {"at": "t"}))
+        account = get_device_key.Account(sign_in)
+        self.assertEqual([account.use(lambda region, session: session["at"]) for _ in range(3)], ["t"] * 3)
+        sign_in.assert_called_once()
+
+    def test_a_sign_in_ended_twice_running_is_given_up(self):
+        sign_in = mock.Mock(return_value=("eu", {"at": "t"}))
+        account = get_device_key.Account(sign_in)
+        ended = mock.Mock(side_effect=get_device_key.SessionEnded("ended"))
+        with self.assertRaises(get_device_key.SessionEnded):
+            account.use(ended)
+        self.assertEqual((sign_in.call_count, ended.call_count), (2, 2))
+
+    def test_ended_signs_in_again_next_time(self):
+        sign_in = mock.Mock(side_effect=[("eu", {"at": "a"}), ("us", {"at": "b"})])
+        account = get_device_key.Account(sign_in)
+        account.session()
+        account.end()
+        self.assertEqual(account.session(), ("us", {"at": "b"}))
+
+    def test_a_sign_in_handed_to_a_helper_is_what_it_uses(self):
+        session = {"at": "t", "rt": "refresh", "user": {"apikey": "a", "email": "owner@example.test"}}
+        given = get_device_key.session_env("us", session)
+        self.assertNotIn("refresh", given)          # only what a helper uses
+        self.assertNotIn("owner@example.test", given)
+        with mock.patch.dict(os.environ, {get_device_key.SESSION_ENV: given}):
+            self.assertEqual(get_device_key.given_session(), ("us", {"at": "t", "user": {"apikey": "a"}}))
+        for broken in ("", "null", "[]", "{}", '{"region": "mars", "at": "t"}', '{"region": "eu", "at": ""}'):
+            with mock.patch.dict(os.environ, {get_device_key.SESSION_ENV: broken}):
+                self.assertIsNone(get_device_key.given_session(), broken)
+
+    def test_a_token_eWeLink_refuses_is_a_sign_in_ended(self):
+        with mock.patch.object(get_device_key, "api_json", return_value={"error": 401, "msg": "token"}), \
+                self.assertRaises(get_device_key.SessionEnded):
+            get_device_key.get_devices("eu", "old")
+        with mock.patch.object(get_device_key, "api_json", return_value={"error": 500, "msg": "busy"}), \
+                self.assertRaises(get_device_key.EwelinkError) as raised:
+            get_device_key.get_devices("eu", "t")
+        self.assertNotIsInstance(raised.exception, get_device_key.SessionEnded)
+
+
 class DeviceKeyTests(unittest.TestCase):
     def test_login_signature_covers_exact_body(self):
         body, headers = signed_login_body("owner@example.test", "not-a-real-password", "+44")

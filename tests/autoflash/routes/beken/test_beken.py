@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from tools.autoflash import detect, report, routes, state
 from tools.autoflash.routes import beken
@@ -88,7 +89,7 @@ def a_context(tmp, **inputs):
                            esphome_password=None, esphome_key=None, esphome_firmware=None,
                            args=SimpleNamespace(no_backup=False), consented=True,
                            listen_ip=lambda: "192.0.2.2", email=lambda: "owner@example.com",
-                           ewelink_env=lambda: {"EWELINK_PASSWORD": "pw"}, account_plug=None,
+                           ewelink_env=lambda: {"EWELINK_PASSWORD": "pw"}, ewelink=mock.sentinel.account, account_plug=None,
                            account_devices=lambda: None,
                            # OpenBeken answering Tasmota's Status 11, its Wi-Fi signal in it.
                            device=SimpleNamespace(command=lambda cmd: {"StatusSTS": {"Wifi": {"Signal": -60}}}))

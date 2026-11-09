@@ -95,8 +95,7 @@ def deliver_readout(ctx: Context, name: str, version: str, device: dict[str, Any
     output.say("Sending the readout firmware through eWeLink...")
     with safety_locks.lifted(ROOT, "RECOVERY_LOCK"):
         delivered = ota_push.deliver(
-            email=ctx.email(), password=ctx.ewelink_env()["EWELINK_PASSWORD"], country_code="+44", region="eu",
-            device_id=device["deviceid"], firmware=container, version=fota_wrap.ANNOUNCED_VERSION,
+            account=ctx.ewelink, device_id=device["deviceid"], firmware=container, version=fota_wrap.ANNOUNCED_VERSION,
             listen_ip=ctx.listen_ip(), listen_port=port, device_ip=plug_ip, names=("user1.bin",),
             wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False)
     safety_locks.say_lock_back(ROOT, "RECOVERY_LOCK")
@@ -183,8 +182,7 @@ def wait_for_sonoff(ctx: Context, device_id: str, wait: float = SONOFF_WAIT) -> 
     while time.monotonic() - started < wait:
         devices = ctx.account_devices() if device_id else None
         online = any(found.get("deviceid") == device_id and found.get("online") for found in devices or [])
-        if online and ewelink_relay.answers(email=ctx.email(), password=ctx.ewelink_env()["EWELINK_PASSWORD"],
-                                             country_code="+44", region="eu", device_id=device_id):
+        if online and ewelink_relay.answers(account=ctx.ewelink, device_id=device_id):
             output.progress_clear()
             output.say(f"    eWeLink shows the device online again after {round(time.monotonic() - started)}s.")
             return True

@@ -17,10 +17,14 @@ if __package__ in (None, ""):  # run as a script: the repository root, for `tool
 from tools.autoflash.prompts import ask_secret  # noqa: E402
 from tools.ewelink.get_device_key import (
     API,
+    TOKEN_REFUSED,
+    Account,
     EwelinkError,
+    SessionEnded,
     api_json,
     get_devices,
-    login,
+    given_session,
+    login_session,
     select_device,
     target_id_from_mdns,
 )
@@ -55,6 +59,8 @@ def query_ota(region: str, token: str, identity: dict[str, str]) -> dict[str, An
             "User-Agent": "autoflash-research/0.1",
         },
     )
+    if response.get("error") in TOKEN_REFUSED:
+        raise SessionEnded("eWeLink ended the sign-in: " + str(response.get("msg", "token refused")))
     if response.get("error") != 0:
         raise EwelinkError("OTA metadata query failed: " + str(response.get("msg", "unknown error")))
     return response
@@ -69,6 +75,8 @@ def latest_offer(region: str, token: str, identity: dict[str, str]) -> dict[str,
     try:
         reply = query_ota(region, token, {**identity, "version": VERSION_BEHIND_ALL})
         return {"offers": list(reply["data"]["otaInfoList"])}
+    except SessionEnded:
+        raise  # signed in to again, and asked again (get_device_key.Account)
     except Exception as exc:  # whatever goes wrong: a run needs none of this
         return {"problem": type(exc).__name__}
 
@@ -118,9 +126,8 @@ def main() -> int:
     if not email or not password:
         print("The account and password are required.", file=sys.stderr)
         return 2
-    try:
-        device_id = args.device_id or target_id_from_mdns(args.mdns_capture)
-        region, token = login(email, password, args.country_code, args.region)
+    def ask(region: str, session: dict[str, Any]) -> dict[str, Any]:
+        token = session["at"]
         device = select_device(get_devices(region, token), device_id)
         identity = ota_identity(device)
         response = query_ota(region, token, identity)
@@ -129,6 +136,15 @@ def main() -> int:
         if args.latest_offer:
             offered = response.get("data", {}).get("otaInfoList")
             saved["latest_offer"] = {"offers": offered} if offered else latest_offer(region, token, identity)
+        return saved
+
+    try:
+        device_id = args.device_id or target_id_from_mdns(args.mdns_capture)
+        # The run's own sign-in where it handed one over, else one of this tool's.
+        account = Account(lambda: login_session(email, password, args.country_code, args.region),
+                          held=given_session())
+        saved = account.use(ask)
+        identity, response = saved["query"], saved["response"]
         private_json(args.output, saved)
     except EwelinkError as exc:
         print(f"Error: {exc}", file=sys.stderr)

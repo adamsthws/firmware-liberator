@@ -49,12 +49,11 @@ class RelayTests(unittest.TestCase):
         if ask is relay.check_relay:
             more.setdefault("say", lambda *a: None)
         connect = {"side_effect": sockets} if sockets else {"return_value": plug}
-        with mock.patch.object(relay, "login_session", return_value=("eu", {"at": "t", "user": {"apikey": "a"}})), \
-                mock.patch.object(relay, "get_devices", return_value=[device]), \
+        account = relay.Account(lambda: ("eu", {"at": "t", "user": {"apikey": "a"}}))
+        with mock.patch.object(relay, "get_devices", return_value=[device]), \
                 mock.patch.object(relay, "api_json", return_value={"domain": "192.0.2.1", "port": 443}), \
                 mock.patch.object(relay.WebSocket, "connect", **connect):
-            return ask(email="someone@example.invalid", password="made-up-password",
-                       country_code="+44", region="eu", device_id="1000abcdef", **more)
+            return ask(account=account, device_id="1000abcdef", **more)
 
     def test_a_plug_that_answers_is_there_and_nothing_on_it_changes(self):
         plug = Plug()
@@ -94,9 +93,34 @@ class RelayTests(unittest.TestCase):
         self.assertIs(self.check(Plug(error=504), ask=relay.answers), False)
 
     def test_whether_it_answers_is_not_known_without_ewelink(self):
-        with mock.patch.object(relay, "login_session", side_effect=relay.EwelinkError("no route")):
-            self.assertIsNone(relay.answers(email="someone@example.invalid", password="made-up-password",
-                                            country_code="+44", region="eu", device_id="1000abcdef"))
+        account = relay.Account(mock.Mock(side_effect=relay.EwelinkError("no route")))
+        self.assertIsNone(relay.answers(account=account, device_id="1000abcdef"))
+
+    def test_a_sign_in_eWeLink_ended_is_made_again_once(self):
+        # A helper tool signing in to the same account ends the run's sign-in.
+        sign_in = mock.Mock(side_effect=[("eu", {"at": "old", "user": {"apikey": "a"}}),
+                                         ("eu", {"at": "new", "user": {"apikey": "a"}})])
+        account = relay.Account(sign_in)
+
+        def devices(_region, token):
+            if token == "old":
+                raise relay.SessionEnded("eWeLink ended the sign-in")
+            return [DEVICE]
+        with mock.patch.object(relay, "get_devices", devices), \
+                mock.patch.object(relay, "api_json", return_value={"domain": "192.0.2.1", "port": 443}), \
+                mock.patch.object(relay.WebSocket, "connect", return_value=Plug()):
+            self.assertIs(relay.answers(account=account, device_id="1000abcdef"), True)
+            self.assertIs(relay.answers(account=account, device_id="1000abcdef"), True)
+        self.assertEqual(sign_in.call_count, 2)
+
+    def test_a_websocket_refusing_the_token_is_a_sign_in_ended(self):
+        class Refusing(Plug):
+            def receive_json(self, timeout=None):
+                return {"error": 401}
+        with mock.patch.object(relay, "api_json", return_value={"domain": "192.0.2.1", "port": 443}), \
+                mock.patch.object(relay.WebSocket, "connect", return_value=Refusing()), \
+                self.assertRaises(relay.SessionEnded):
+            relay.app_socket("eu", {"at": "old", "user": {"apikey": "a"}})
 
     def test_the_relay_is_switched_over_and_back(self):
         plug = Plug()

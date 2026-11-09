@@ -382,7 +382,7 @@ class ArrivedTests(unittest.TestCase):
     def k3_context(self, tmp):
         ctx = a_context(tmp, plug_ip="192.0.2.50")
         ctx.email = lambda: "someone@example.invalid"
-        ctx.ewelink_env = lambda: {"EWELINK_PASSWORD": "made-up-password"}
+        ctx.ewelink = mock.sentinel.account
         return ctx
 
     def test_k3_takes_the_plug_back_only_once_it_answers_through_ewelink(self):

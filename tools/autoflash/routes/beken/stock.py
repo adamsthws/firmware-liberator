@@ -175,8 +175,7 @@ def step_push(ctx: Context) -> dict[str, Any]:
     output.say(f"Sending {shown} {version} ({len(image):,} bytes; {len(container):,} wrapped) through eWeLink...")
     started = time.monotonic()
     delivered = ota_push.deliver(
-        email=ctx.email(), password=ctx.ewelink_env()["EWELINK_PASSWORD"], country_code="+44", region="eu",
-        device_id=device["deviceid"], firmware=container, version=images.FOTA_VERSION,
+        account=ctx.ewelink, device_id=device["deviceid"], firmware=container, version=images.FOTA_VERSION,
         listen_ip=listen_ip, listen_port=port, device_ip=plug_ip, names=("user1.bin",),
         wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False)
     if not delivered.sent:

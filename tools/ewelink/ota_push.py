@@ -29,7 +29,7 @@ from typing import Any, Callable
 if __package__ in (None, ""):  # run as a script: the repository root, for `tools.`
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools.ewelink.get_device_key import EwelinkError, get_devices, login_session, select_device  # noqa: E402
+from tools.ewelink.get_device_key import Account, EwelinkError, get_devices, select_device  # noqa: E402
 from tools.ewelink.relay import app_socket  # noqa: E402
 from tools.ewelink.websocket_minimal import WebSocket, WebSocketError  # noqa: E402
 
@@ -283,7 +283,7 @@ class Delivery:
     interrupted: bool = False
 
 
-def deliver(*, email: str, password: str, country_code: str, region: str, device_id: str,
+def deliver(*, account: Account, device_id: str,
             firmware: bytes, version: str, listen_ip: str, listen_port: int, device_ip: str,
             names: tuple[str, ...] = ("user1.bin", "user2.bin"), wait: float = 120.0,
             check_device: Callable[[dict[str, Any], str], None] | None = None,
@@ -301,10 +301,8 @@ def deliver(*, email: str, password: str, country_code: str, region: str, device
     thread: threading.Thread | None = None
     ws: WebSocket | None = None
     try:
-        region, session = login_session(email, password, country_code, region)
-        password = ""
-        devices = get_devices(region, session["at"])
-        device = select_device(devices, device_id)
+        device = account.use(lambda region, session: select_device(get_devices(region, session["at"]), device_id))
+        region, session = account.session()
         model = ((device.get("extra") or {}).get("model") or device.get("model") or device.get("productModel") or "")
         say(f"Device: {device.get('name')} ({model}, stock {(device.get('params') or {}).get('fwVersion')})")
         if check_device is not None:
@@ -408,7 +406,6 @@ def deliver(*, email: str, password: str, country_code: str, region: str, device
     except (EwelinkError, WebSocketError, OSError, KeyError, json.JSONDecodeError) as exc:
         result.error = str(exc)
     finally:
-        password = ""
         if ws is not None:
             ws.close()
         if server is not None:

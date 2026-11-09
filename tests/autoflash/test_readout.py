@@ -48,7 +48,8 @@ def unpacked(data: bytes) -> dict[str, bytes]:
 
 def a_ctx(tmp: str) -> SimpleNamespace:
     return SimpleNamespace(state=RunState.open(Path(tmp)), dir=Path(tmp), listen_ip=lambda: "192.0.2.141",
-                           email=lambda: "me@example.com", ewelink_env=lambda: {})
+                           email=lambda: "me@example.com", ewelink_env=lambda: {}, helper_env=lambda: {},
+                           ewelink_region=lambda: "eu")
 
 
 # The anonymised files a read gives offer(): the scrubbing itself is in the
