@@ -141,6 +141,27 @@ eWeLink accounts and plugs' identities.
 - Docs, comments and commit messages match the existing ones: plain,
   compact sentences saying what something does and why.
 
+## Recording what you find
+
+What you learn while working - how a device's firmware behaves, why something
+failed, an answer to an open question - goes into the repository's docs in the
+same change that comes of it, not later, and not only into a commit message or
+a conversation. Put each finding where someone would look for it: a device's
+own page, the chip family's research notes
+([docs/espressif-research.md](docs/espressif-research.md),
+[docs/beken-research.md](docs/beken-research.md)), the emulator's README, or the
+page about the part of the tool it concerns.
+
+- **Correct what it makes stale, then and there.** When research or a test
+  shows a page was wrong or a guess was, change that page in the same change:
+  never leave a known-wrong line for later.
+- **Say how sure it is.** Mark what was seen (where, and how) apart from what is
+  inferred, so the next person knows what to check.
+- **Close open questions.** An answer found moves out of "Questions still open"
+  into the section it belongs to; a new question found goes in.
+- **Write the method down too**, where it would help someone repeat it: how a
+  firmware was read, how a run was watched.
+
 ## Writing docs
 
 Write for the person reading the page, not from the side of whoever built the
