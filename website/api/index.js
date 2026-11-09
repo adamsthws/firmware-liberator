@@ -65,6 +65,7 @@ import { answer } from "./answer.js";
 import { read, release, reserve } from "./counters.js";
 import { ready } from "./database.js";
 import { bodySubject, hex, proven, sha256, work } from "./proof-of-work.js";
+import { nightly } from "./nightly.js";
 import { countWanted, reports } from "./reports.js";
 
 export { work };
@@ -81,6 +82,10 @@ export default {
       return answer(503, { error: "the API is being updated: try again later" }, { "Retry-After": "300" });
     }
     return route(request, env);
+  },
+  // The nightly job (nightly.js), at the time wrangler.jsonc's cron gives.
+  async scheduled(controller, env, context) {
+    context.waitUntil(nightly(env, new Date(controller.scheduledTime)));
   },
 };
 
