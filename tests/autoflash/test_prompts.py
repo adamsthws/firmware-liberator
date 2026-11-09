@@ -295,7 +295,7 @@ class CountdownKeyTests(unittest.TestCase):
             from tools.autoflash import output, prompts
             output.start(None, verbose=False)
             output.transient_begin()
-            carry_on = prompts.countdown_carry_on("The run carries on to the next stage", seconds=20)
+            carry_on = prompts.countdown_carry_on("Carrying on to the next stage", seconds=20)
             output.transient_end()
             output.show(f"carry on {{carry_on}}")
             output.finish()
@@ -319,6 +319,19 @@ class CountdownKeyTests(unittest.TestCase):
                 code, rows = self.ask(typed)
                 self.assertEqual(rows[-1].strip(), said)
                 self.assertNotEqual(rows[-2:-1], [""], rows)   # no blank row left above it
+
+    def test_its_seconds_count_down_in_an_80_column_window(self):
+        # Seen: wrapped onto two rows there, only the hint's was redrawn, and
+        # "in 20 s" stood still above it.
+        from tools.autoflash import runner
+        import inspect
+        self.assertIn('countdown_carry_on("Carrying on to the next stage")', inspect.getsource(runner))
+        with mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))), \
+                mock.patch.object(output, "colour_ok", return_value=True), \
+                mock.patch("sys.stdout", io.StringIO()):
+            shown = output.question_row("Carrying on to the next stage in 20 s, or press Enter now",
+                                        prompts.hint_to_quit())
+        self.assertIn("in 20 s", shown)
 
     def test_how_to_quit_is_said_as_at_every_question(self):
         self.ask("\r")
