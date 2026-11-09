@@ -15,8 +15,11 @@
 // - The device as a keyed hash (DEVICE_HASH_KEY_PERMANENT, a Worker secret) of the hash the
 //   tool sends of its MAC, so the stored value leads back to no device
 //   without the key, which never leaves Cloudflare.
-// - At most REPORTS_DAILY a day from everyone, and DEVICE_DAILY a day for one
-//   device; past the first, the rest wait for another day ("later").
+// - At most REPORTS_DAILY a day from everyone, SENDER_REPORTS_DAILY from one
+//   sender (sender.js: an IPv6 address by its /48), counted under a keyed
+//   hash (SENDER_KEY) of its address, never the address, and DEVICE_DAILY a
+//   day for one device; past the first two, the rest wait for another day
+//   ("later"), so no one computer can flood the figures.
 // - Nothing is taken (503) while INGEST is not "on": index.js checks it for
 //   every path, before this.
 // - One no run of the tool's would write (review.js) is held for review:
@@ -30,11 +33,13 @@ import { hex, proven, reportSubject, work } from "./proof-of-work.js";
 import schema from "./report-schema.json" with { type: "json" };
 import { validate } from "./report-schema.js";
 import { heldFor } from "./review.js";
+import { senderAddress } from "./sender.js";
 
 export const MAX_BODY = 1024 * 1024;
 export const MAX_REPORTS = 99;
 export const REPORTS_DAILY = 1000;
 export const DEVICE_DAILY = 20;
+export const SENDER_REPORTS_DAILY = 100;
 export const REPORT_PROOF_BITS = 24;
 // A report is sent when its run ends, or kept and sent within 30 days.
 export const REPORT_PROOF_AGE = 31 * 86400;
@@ -127,7 +132,7 @@ export async function reports(request, env, now = new Date()) {
   if (request.method !== "POST") {
     return answer(405, { error: "reports are sent here by the tool, with POST" }, { Allow: "POST" });
   }
-  if (!env.DEVICE_HASH_KEY_PERMANENT) {
+  if (!env.DEVICE_HASH_KEY_PERMANENT || !env.SENDER_KEY) {
     return answer(503, { error: "reports are not being taken just now: try again later" }, { "Retry-After": "3600" });
   }
   if (request.headers.get("Content-Type") !== "application/json") {
@@ -208,7 +213,14 @@ export async function reports(request, env, now = new Date()) {
     }
     taking.push([report, hash]);
   });
-  const granted = taking.length ? await reserveUpTo(env.DB, reportsOn(day), day, taking.length, REPORTS_DAILY) : 0;
+  // The sender's day first, then everyone's: what everyone's has no room
+  // for is given back to the sender's.
+  const sender = `report-sender:${(await keyed(env.SENDER_KEY, `reports|${senderAddress(request)}`)).slice(0, 32)}:${day}`;
+  const theirs = taking.length ? await reserveUpTo(env.DB, sender, day, taking.length, SENDER_REPORTS_DAILY) : 0;
+  const granted = theirs ? await reserveUpTo(env.DB, reportsOn(day), day, theirs, REPORTS_DAILY) : 0;
+  if (granted < theirs) {
+    await release(env.DB, sender, 0, theirs - granted);
+  }
   outcome.later.push(...taking.slice(granted).map(([report]) => report.id));
   const kept = taking.slice(0, granted);
   if (kept.length) {
@@ -216,6 +228,7 @@ export async function reports(request, env, now = new Date()) {
       await env.DB.batch(kept.flatMap(([report, hash]) => writes(env.DB, report, hash, day, heldFor(report))));
     } catch (error) {
       await release(env.DB, reportsOn(day), 0, kept.length);
+      await release(env.DB, sender, 0, kept.length);
       throw error;
     }
     outcome.accepted.push(...kept.map(([report]) => report.id));
