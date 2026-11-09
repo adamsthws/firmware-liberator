@@ -255,7 +255,7 @@ def checks_passed(hardware: dict[str, str]) -> str:
     """The end-of-run checks as one answer, whatever the device: for a plug,
     its relay switching off and on.  What each check found is in the log."""
     relay = hardware.get("Relay", "not checked")
-    if relay == "not checked":
+    if relay in ("not checked", "motor mode"):
         return "not run"
     return "true" if relay.startswith("switches") else "false"
 
@@ -440,7 +440,11 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
     if not device_id:
         return {"Relay": "not checked", "Power meter": "not checked"}
     output.say("Checking the relay through eWeLink...")
-    if wait_until_online(ctx, device_id):
+    record = wait_until_online(ctx, device_id)
+    if record is not None and ewelink_relay.motor_mode(record.get("params") or {}):
+        output.say("    Relay: Motor mode")
+        return {"Relay": "motor mode", "Power meter": "not checked"}
+    if record is not None:
         switched = ewelink_relay.check_relay(
             email=ctx.email(), password=ctx.ewelink_env()["EWELINK_PASSWORD"], country_code="+44", region="eu",
             device_id=device_id, say=output.say)
@@ -455,29 +459,31 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
     return result
 
 
-def wait_until_online(ctx: Context, device_id: str) -> bool:
-    """Whether eWeLink shows the device online, with its relay's state in its
-    record, and it answers there, within ONLINE_WAIT: what a Beken run's arrival
-    waits for already, and an Espressif run's does not, as its last step sees the
-    device on the network only. The state comes with the device's first reports,
-    a second or two after it answers (seen in the emulator, where its record
-    starts empty), and switching needs it. False at once when eWeLink cannot be
+def wait_until_online(ctx: Context, device_id: str) -> dict[str, Any] | None:
+    """The device's record once eWeLink shows it online, with its relay's state
+    in it (or that it drives a motor, with no relay), and it answers there,
+    within ONLINE_WAIT: what a Beken run's arrival waits for already, and an
+    Espressif run's does not, as its last step sees the device on the network
+    only. The state comes with the device's first reports, a second or two
+    after it answers (seen in the emulator, where its record starts empty),
+    and switching needs it. None by then, and at once when eWeLink cannot be
     reached."""
     started = time.monotonic()
     while True:
         devices = ctx.account_devices()
-        online = any(found.get("deviceid") == device_id and found.get("online")
-                     and ewelink_relay.relay_state(found.get("params") or {}) is not None for found in devices or [])
-        if online and ewelink_relay.answers(email=ctx.email(), password=ctx.ewelink_env()["EWELINK_PASSWORD"],
+        record = next((found for found in devices or [] if found.get("deviceid") == device_id and found.get("online")
+                       and (ewelink_relay.relay_state(found.get("params") or {}) is not None
+                            or ewelink_relay.motor_mode(found.get("params") or {}))), None)
+        if record and ewelink_relay.answers(email=ctx.email(), password=ctx.ewelink_env()["EWELINK_PASSWORD"],
                                             country_code="+44", region="eu", device_id=device_id):
             output.progress_clear()
             waited = time.monotonic() - started
             if waited >= 1:
                 output.say(f"    eWeLink shows the device online after {waited:.0f}s.")
-            return True
+            return record
         if devices is None or time.monotonic() - started >= ONLINE_WAIT:
             output.progress_clear()
-            return False
+            return None
         output.progress(f"waiting for eWeLink to show the device online... {time.monotonic() - started:.0f}s")
         time.sleep(10)
 

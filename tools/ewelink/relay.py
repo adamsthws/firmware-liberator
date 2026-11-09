@@ -58,6 +58,12 @@ def relay_state(params: dict[str, Any]) -> bool | None:
     return value == "on" if value in ("on", "off") else None
 
 
+def motor_mode(params: dict[str, Any]) -> bool:
+    """Whether a plug's params say it drives a curtain motor (a DualR3's
+    workMode 2): it then reports no relay, and refuses a switch with 400."""
+    return params.get("workMode") == 2
+
+
 def switch_params(params: dict[str, Any], on: bool) -> dict[str, Any]:
     """The params that switch the relay, in the shape the plug reports it."""
     word = "on" if on else "off"
