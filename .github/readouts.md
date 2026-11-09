@@ -339,14 +339,18 @@ it.
 - **Duplicates.** The manifest's `flash.sha256` is of the device's own flash
   before it was anonymised, so two readouts of one device share it.
 - **Once a device is supported**, add its product model to `ENOUGH`, so no
-  more of it are taken; its readouts stay. Then write to everyone who asked to be told
-  about it: `python3 tools/repo/readouts.py notify <PRODUCT>` lists their
-  addresses. Send each their own message, or Bcc them: never one with every
-  address in view. Say why they are hearing from you, and that a reply asking
-  for it removes them. Delete their objects once written to, or when asked
-  (`wrangler r2 object delete firmware-liberator-readouts/notify/<PRODUCT>/<hash>.json --remote`). An
-  address may have been given by someone other than its owner: anything sent
-  says how it came to be on the list.
+  more of it are taken; its readouts stay.
+- **When a release changes a device's status**, write to everyone who asked
+  to be told about it: `python3 tools/repo/readouts.py changes` lists each
+  device whose status differs from the latest release's, with each address
+  given for it and its removal link (`readouts.py notify <PRODUCT>` lists one
+  product's). Run it on your own computer, never in CI, whose logs are
+  public. Send each person their own message, never one with every address
+  in view, with their own removal link in it (and as its `List-Unsubscribe`
+  header, where the sender allows). Say why they are hearing from you: an
+  address may have been given by someone other than its owner. An address
+  stays on the list after it is written to, for the device's next change,
+  until its owner removes it.
 
 Keep what you fetch under `captures/`: like any dump, it never goes into the
 repository. [Adding a device](../docs/adding-a-device.md) takes it from there,

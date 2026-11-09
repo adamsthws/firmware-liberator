@@ -69,8 +69,8 @@ class ReadoutsTests(unittest.TestCase):
         fake = Subscribers(["notify/NSPANEL/" + "b" * 64 + ".json", "notify/BASICR4/" + "c" * 64 + ".json"])
         code, out = run(fake, "notify", "nspanel")
         self.assertEqual(code, 0)
-        self.assertEqual(out.splitlines(), ["NSPANEL  me@example.com  E32-MSW-NX  2026-11-07T10:00:00Z",
-                                            "1 addresses"])
+        self.assertEqual(out.splitlines(), ["NSPANEL  me@example.com  E32-MSW-NX  2026-11-07T10:00:00Z  "
+                                            "(no removal link)", "1 addresses"])
         self.assertEqual(fake.asked[0]["prefix"], "notify/NSPANEL/")
 
     def test_a_prefix_narrows_it(self):
@@ -83,6 +83,43 @@ class ReadoutsTests(unittest.TestCase):
                 mock.patch("sys.stderr", io.StringIO()) as err:
             self.assertEqual(readouts.main([]), 1)
         self.assertIn("readouts: GET /zones: HTTP 403", err.getvalue())
+
+
+class ChangesTests(unittest.TestCase):
+    """The devices whose status changed since a release, and whom to tell."""
+
+    def changes(self, before, now, given):
+        items = [{"key": f"notify/{product}/{n:064x}.json", "last_modified": "2026-11-09T10:00:00Z",
+                  "custom_metadata": {"product": product, "email": email, "models": "-",
+                                      "forget": f"https://api.firmwareliberator.com/forget?a={n:064x}&t={'0' * 32}"}}
+                 for n, (product, email) in enumerate(given)]
+        items.append({"key": "notify/_who/" + "e" * 64 + ".json"})
+        out = io.StringIO()
+        with mock.patch.object(readouts, "statuses", side_effect=lambda ref=None: now if ref is None else before), \
+                mock.patch.object(readouts, "objects", return_value=items), redirect_stdout(out):
+            code = readouts.main(["changes", "v2.3.0"])
+        return code, out.getvalue().splitlines()
+
+    def test_each_device_changed_is_named_with_whom_to_tell_and_their_link(self):
+        code, lines = self.changes({"sonoff-basicr4": "not-supported", "sonoff-s60": "supported"},
+                                   {"sonoff-basicr4": "readout-wanted", "sonoff-s60": "supported"},
+                                   [("BASICR4", "me@example.com"), ("S60TPG", "you@example.com")])
+        self.assertEqual(code, 0)
+        self.assertEqual(lines[0], "Sonoff BASICR4: not-supported -> readout-wanted")
+        self.assertIn("BASICR4  me@example.com", lines[1])
+        self.assertIn("https://api.firmwareliberator.com/forget?a=", lines[1])
+        self.assertNotIn("you@example.com", "\n".join(lines), "the S60's did not change")
+        self.assertEqual(lines[-1], "1 changed since v2.3.0, 1 to tell")
+
+    def test_nothing_changed_says_so(self):
+        code, lines = self.changes({"sonoff-s60": "supported"}, {"sonoff-s60": "supported"}, [])
+        self.assertEqual((code, lines), (0, ["No device's status changed since v2.3.0."]))
+
+    def test_never_run_by_ci_whose_logs_are_public(self):
+        from pathlib import Path
+        workflows = Path(readouts.__file__).resolve().parents[2] / ".github/workflows"
+        self.assertEqual([path.name for path in workflows.glob("*.yml")
+                          if "readouts.py" in path.read_text(encoding="utf-8")], [])
 
 
 class ReviewTests(unittest.TestCase):
