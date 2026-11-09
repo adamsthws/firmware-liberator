@@ -170,6 +170,43 @@ class TasmotaPinTests(unittest.TestCase):
         self.assertEqual(TASMOTA["cfg_holder"], tasmota_settings.CFG_HOLDER)
 
 
+# ESPHome reads a current transformer as one from 2026.11.0 (esphome#7836,
+# current_input: current_transformer: gain 1 and the x5 scale Tasmota's POWCT
+# model uses). Before it, cse7761 reads the POWCT's clamp as a shunt - 3.2
+# times too much - and its config divides by pi, as ESPHome's device page
+# says, leaving it 1.9% high.
+CLAMP_FROM = (2026, 11, 0)
+
+
+def clamp_problems(esphome: str, config: str) -> list[str]:
+    """What the POWCT's ESPHome `config` still does wrong for its clamp, built
+    with ESPHome `esphome`: nothing before CLAMP_FROM."""
+    if tuple(int(part) for part in re.findall(r"\d+", esphome)[:3]) < CLAMP_FROM:
+        return []
+    problems = []
+    if not re.search(r"^\s*current_input:\s*current_transformer\s*$", config, re.M):
+        problems.append("set current_input: current_transformer under the cse7761 sensor")
+    if "M_PI" in config:
+        problems.append("drop the divide-by-pi filters: the clamp is read as one now")
+    return problems
+
+
+class PowctClampTests(unittest.TestCase):
+    def test_the_clamp_is_read_as_one_once_esphome_can(self):
+        pin = ESPRESSIF["sonoff-powct"]["esphome"]
+        config = (ROOT / pin["config"]).read_text(encoding="utf-8")
+        self.assertEqual(clamp_problems(pin["esphome"], config), [],
+                         f"{pin['config']} is built with ESPHome {pin['esphome']}")
+
+    def test_it_asks_for_both_changes_from_2026_11_and_nothing_before(self):
+        old = "    current_1:\n      filters:\n        - lambda: return x / M_PI;\n"
+        new = "    current_input: current_transformer\n    current_1:\n      name: Current\n"
+        self.assertEqual(clamp_problems("2026.10.2", old), [])
+        self.assertEqual(len(clamp_problems("2026.11.0", old)), 2)
+        self.assertEqual(len(clamp_problems("2026.12.1", old)), 2)
+        self.assertEqual(clamp_problems("2026.11.0", new), [])
+
+
 class ESPHomePinTests(unittest.TestCase):
     def test_each_file_is_the_one_pinned_and_in_sha256sums(self):
         sums = (ROOT / "artifacts" / "SHA256SUMS").read_text().splitlines()
