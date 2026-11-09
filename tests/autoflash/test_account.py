@@ -259,7 +259,7 @@ class ModelGuardTests(unittest.TestCase):
         state = self.state = RunState.open(root)
         state.set_input("plug_ip", "10.0.0.63")
         ctx = SimpleNamespace(dir=root, state=state, email=lambda: "a@b.c",
-                              ewelink_env=lambda: {})
+                              ewelink_env=lambda: {}, helper_env=lambda: {}, ewelink_region=lambda: "us")
 
         def fake_tool(args, **_):
             if "tools/ewelink/query_ota.py" in args:
@@ -299,6 +299,8 @@ class ModelGuardTests(unittest.TestCase):
     def test_asks_query_ota_for_the_latest_offer(self):
         self.discover_with_model("SN-ESP32C3-S60-01")
         self.assertIn("--latest-offer", self.tool_args)
+        # In the account's own region, which the run's sign-in found.
+        self.assertEqual(self.tool_args[self.tool_args.index("--region") + 1], "us")
 
     def test_the_offer_failing_is_logged_and_the_run_goes_on(self):
         self.saved = {"latest_offer": {"problem": "EwelinkError"}}

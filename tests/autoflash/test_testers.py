@@ -20,7 +20,8 @@ def a_run(tmp: str, kind: kinds.Kind) -> SimpleNamespace:
     for key, value in {"plug_kind": kind.key, "plug_ip": "192.0.2.96", "stock_version": "1.2.0"}.items():
         state.set_input(key, value)
     return SimpleNamespace(state=state, bridge=Path("bridge.ota"), dir=Path(tmp), listen_ip=lambda: "192.0.2.141",
-                           email=lambda: "me@example.com", ewelink_env=lambda: {})
+                           email=lambda: "me@example.com", ewelink_env=lambda: {}, helper_env=lambda: {},
+                           ewelink_region=lambda: "eu")
 
 
 class WarningTests(unittest.TestCase):

@@ -12,6 +12,7 @@ from tests.autoflash.routes.espressif.test_identity import IDENTITY
 from tools.autoflash import kinds, plans
 from tools.autoflash.routes.espressif import sonoff_firmware
 from tools.espressif import build_vendor_ota, sonoff_identity
+from tools.ewelink.get_device_key import Account, EwelinkError
 from tools.autoflash.routes.espressif import images
 
 
@@ -55,7 +56,7 @@ class SonoffFirmwareTests(unittest.TestCase):
 
     def test_eWeLink_is_asked_as_the_device_asks(self):
         identity_ = IDENTITY
-        ctx = SimpleNamespace(ewelink_session=lambda: ("eu", "token"))
+        ctx = SimpleNamespace(ewelink=Account(lambda: ("eu", {"at": "token"})))
         offer = {"offers": [{"binList": [{"name": "user2.bin", "downloadUrl": "https://example.test/2"},
                                          {"name": "user1.bin", "downloadUrl": "https://example.test/1?x=1"}]}]}
         with mock.patch.object(sonoff_firmware, "latest_offer", return_value=offer) as asked, \
@@ -65,6 +66,23 @@ class SonoffFirmwareTests(unittest.TestCase):
                                                    "version": "0.0.1"})
         self.assertEqual(fetched.call_args.args, ("https://example.test/1?x=1",
                                                   {"deviceid": FRAME["deviceid"], "ts": 1, "sign": 0}))
+
+    def test_a_sign_in_a_helper_ended_is_made_again_for_the_offer(self):
+        sign_in = mock.Mock(side_effect=[("eu", {"at": "old"}), ("eu", {"at": "new"})])
+        ctx = SimpleNamespace(ewelink=Account(sign_in))
+        ctx.ewelink.session()
+        offer = {"offers": [{"binList": [{"name": "user1.bin", "downloadUrl": "https://example.test/1"}]}]}
+        tokens = []
+
+        def api_json(_url, *, headers, **_more):
+            tokens.append(headers["Authorization"].removeprefix("Bearer "))
+            if tokens[-1] == "old":   # as eWeLink answers a token a later sign-in ended
+                return {"error": 401, "msg": "Access token authentication error"}
+            return {"error": 0, "data": {"otaInfoList": offer["offers"]}}
+        with mock.patch("tools.ewelink.query_ota.api_json", api_json), \
+                mock.patch.object(sonoff_firmware, "fetch", return_value=b"file"):
+            self.assertEqual(sonoff_firmware.offered(ctx, IDENTITY), b"file")
+        self.assertEqual(tokens, ["old", "new"])
 
     def test_else_the_newest_public_copy_for_the_device(self):
         listed = ["SONOFF_S60TPG-UK_(FWSW-E32S60-S60-ESP32C3FN4)_ESP32-C3_v1.1.0_user1.bin",
@@ -77,7 +95,7 @@ class SonoffFirmwareTests(unittest.TestCase):
         self.assertIn(sonoff_firmware.firmware_name.PUBLIC_COMMIT, fetched.call_args.args[0])
 
     def test_the_stub_is_all_a_run_against_it_reaches(self):
-        ctx = SimpleNamespace(ewelink_session=lambda: None)
+        ctx = SimpleNamespace(ewelink=Account(mock.Mock(side_effect=EwelinkError("not reached"))))
         layout = images.layout_of(kinds.SONOFF_S60)
         with mock.patch.dict("os.environ", {"AUTOFLASH_EWELINK_API_BASE": "https://apia.example.test"}), \
                 mock.patch.object(sonoff_firmware, "public", side_effect=AssertionError("not reached")):

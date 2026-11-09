@@ -24,7 +24,7 @@ from tools.autoflash.prompts import ask_secret
 from tools.espressif.analyze_vendor_ota import WRAPPER_SIZE, analyze
 from tools.espressif import chips
 from tools.espressif.build_vendor_ota import ANNOUNCED_VERSION, DEFAULT_MAX_PAYLOAD_SIZE, announce
-from tools.ewelink.get_device_key import EwelinkError, target_id_from_mdns
+from tools.ewelink.get_device_key import Account, EwelinkError, given_session, login_session, target_id_from_mdns
 from tools.ewelink.ota_push import NOT_SENT, FirmwareServer, deliver, parse_single_range  # noqa: F401  (the server, for its tests)
 
 
@@ -141,11 +141,18 @@ def main():
                 f"{args.expected_current_version}; refusing"
             )
 
-    delivered = deliver(email=args.email, password=password, country_code=args.country_code, region=args.region,
-                        device_id=target_id_from_mdns(args.mdns_capture), firmware=firmware,
+    def sign_in() -> tuple[str, dict[str, Any]]:
+        # The password's copy goes as soon as it has been used: one sign-in.
+        nonlocal password
+        try:
+            return login_session(args.email, password, args.country_code, args.region)
+        finally:
+            password = ""
+
+    # The run's own sign-in where it handed one over, else one of this tool's.
+    delivered = deliver(account=Account(sign_in, held=given_session()), device_id=target_id_from_mdns(args.mdns_capture), firmware=firmware,
                         version=ANNOUNCED_VERSION, listen_ip=args.listen_ip, listen_port=args.listen_port,
                         device_ip=args.device_ip, wait=args.wait, check_device=check)
-    password = ""
     if delivered.error and not delivered.interrupted:
         report_failure(EwelinkError(delivered.error), delivered.sent)
     elif delivered.interrupted:

@@ -452,8 +452,7 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
         return {"Relay": "motor mode", "Power meter": "not checked"}
     if record is not None:
         switched = ewelink_relay.check_relay(
-            email=ctx.email(), password=ctx.ewelink_env()["EWELINK_PASSWORD"], country_code="+44", region="eu",
-            device_id=device_id, say=output.say)
+            account=ctx.ewelink, device_id=device_id, say=output.say)
     else:
         output.say(f"    eWeLink has not shown the device online within {ONLINE_WAIT:.0f}s, so its relay "
                    "could not be switched there. Check the eWeLink app.")
@@ -480,8 +479,7 @@ def wait_until_online(ctx: Context, device_id: str) -> dict[str, Any] | None:
         record = next((found for found in devices or [] if found.get("deviceid") == device_id and found.get("online")
                        and (ewelink_relay.relay_state(found.get("params") or {}) is not None
                             or ewelink_relay.motor_mode(found.get("params") or {}))), None)
-        if record and ewelink_relay.answers(email=ctx.email(), password=ctx.ewelink_env()["EWELINK_PASSWORD"],
-                                            country_code="+44", region="eu", device_id=device_id):
+        if record and ewelink_relay.answers(account=ctx.ewelink, device_id=device_id):
             output.progress_clear()
             waited = time.monotonic() - started
             if waited >= 1:

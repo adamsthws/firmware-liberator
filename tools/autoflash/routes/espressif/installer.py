@@ -125,7 +125,7 @@ def step_bridge(ctx: Context) -> dict[str, Any]:
     email = ctx.email()
     port = firewall.choose_port(ctx, "delivery_port", firewall.DELIVERY_PORTS, "the firmware")
     firewall.ensure_firewall(ctx)
-    env = ctx.ewelink_env()
+    env = ctx.helper_env()
 
     mac = ctx.state.input("plug_mac")
     backup = plugs.find_backup(mac) if mac else None
@@ -157,7 +157,7 @@ def step_bridge(ctx: Context) -> dict[str, Any]:
                 "--listen-ip", listen_ip, "--listen-port", str(port),
                 "--device-ip", plug_ip,
                 "--firmware", str(bridge_file(ctx)),
-                "--email", email, "--expected-current-version", version,
+                "--email", email, "--region", ctx.ewelink_region(), "--expected-current-version", version,
                 "--mdns-capture", str(ctx.dir / "mdns.json"),
                 "--i-understand-stock-has-no-automatic-rollback",
                 # Each line as it comes, so the run's log has when eWeLink said what.

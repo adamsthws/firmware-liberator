@@ -100,13 +100,12 @@ class SendingAgainTests(unittest.TestCase):
         device = {"deviceid": "1000000000", "apikey": "a", "online": True, "params": {"fwVersion": "1.2.0"},
                   "extra": {"model": "M"}}
         settings = {"RESEND_SETTLE": 0.0, "RESEND_QUIET": 3600.0, "RESEND_WAIT": 0.3} | limits
-        with mock.patch.object(ota_push, "login_session", return_value=("eu", {"at": "t"})), \
-                mock.patch.object(ota_push, "get_devices", return_value=[device]), \
+        with mock.patch.object(ota_push, "get_devices", return_value=[device]), \
                 mock.patch.object(ota_push, "select_device", return_value=device), \
                 mock.patch.object(ota_push, "app_socket", return_value=cloud), \
                 mock.patch.multiple(ota_push, **settings):
             delivered = ota_push.deliver(
-                email="a@example.com", password="p", country_code="+44", region="eu", device_id="1000000000",
+                account=ota_push.Account(lambda: ("eu", {"at": "t"})), device_id="1000000000",
                 firmware=firmware, version="9", listen_ip="127.0.0.1", listen_port=0, device_ip="127.0.0.1",
                 wait=0.6, say=said.append, live=False)
         return delivered, cloud, said

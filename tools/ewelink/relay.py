@@ -12,7 +12,8 @@ import socket
 import time
 from typing import Any, Callable
 
-from tools.ewelink.get_device_key import APP_ID, EwelinkError, api_json, get_devices, login_session, select_device
+from tools.ewelink.get_device_key import (APP_ID, TOKEN_REFUSED, Account, EwelinkError, SessionEnded, api_json,
+                                          get_devices, select_device)
 from tools.ewelink.probe_ota_command import WS_DISPATCH, nonce
 from tools.ewelink.websocket_minimal import WebSocket, WebSocketError
 
@@ -41,6 +42,9 @@ def app_socket(region: str, session: dict[str, Any]) -> WebSocket:
     })
     handshake = ws.receive_json(timeout=10)
     if handshake.get("error", 0) != 0:
+        ws.close()
+        if handshake.get("error") in TOKEN_REFUSED:
+            raise SessionEnded("eWeLink ended the sign-in (cloud WebSocket)")
         raise EwelinkError("Cloud WebSocket authentication failed")
     return ws
 
@@ -101,7 +105,7 @@ def switch(ws: WebSocket, device: dict[str, Any], on: bool, *, wait: float = SWI
                    taken=lambda msg: isinstance(msg.get("params"), dict) and relay_state(msg["params"]) is on)
 
 
-def answers(*, email: str, password: str, country_code: str, region: str, device_id: str) -> bool | None:
+def answers(*, account: Account, device_id: str) -> bool | None:
     """Whether the plug answers through eWeLink now, or None when eWeLink
     cannot be reached.  The account's "online" does not say it: eWeLink
     keeps a plug that went silent online until it has missed its
@@ -111,8 +115,7 @@ def answers(*, email: str, password: str, country_code: str, region: str, device
     too. Firmware with no meter does not know that and says nothing, so then
     asked to keep its LED's setting as it last reported it, which changes
     nothing either."""
-    try:
-        region, session = login_session(email, password, country_code, region)
+    def ask(region: str, session: dict[str, Any]) -> bool:
         device = select_device(get_devices(region, session["at"]), device_id)
         ws = app_socket(region, session)
         try:
@@ -122,18 +125,21 @@ def answers(*, email: str, password: str, country_code: str, region: str, device
             return command(ws, device, {"sledOnline": led}) if led in ("on", "off") else False
         finally:
             ws.close()
+
+    try:
+        return account.use(ask)
     except (EwelinkError, WebSocketError, OSError, KeyError, ValueError):
         return None
 
 
-def check_relay(*, email: str, password: str, country_code: str, region: str, device_id: str,
+def check_relay(*, account: Account, device_id: str,
                 say: Callable[[str], None] = print) -> tuple[bool, bool] | None:
     """Switch the plug's relay to the other state and back: whether each
     switch was confirmed, or None when it could not be tried (eWeLink not
     reached, the plug offline, or no relay state in its record)."""
     try:
-        region, session = login_session(email, password, country_code, region)
-        device = select_device(get_devices(region, session["at"]), device_id)
+        device = account.use(lambda region, session: select_device(get_devices(region, session["at"]), device_id))
+        region, session = account.session()
         was_on = relay_state(device.get("params") or {})
         if was_on is None or not device.get("online"):
             say(f"    The device's relay cannot be switched through eWeLink "

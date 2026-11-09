@@ -17,7 +17,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 try:
     from tools.autoflash.hostsys import urlopen
@@ -72,6 +72,15 @@ INSPECTED = ("{what} certificate was not trusted - security software, or a work 
 
 class EwelinkError(RuntimeError):
     pass
+
+
+class SessionEnded(EwelinkError):
+    """eWeLink no longer takes the access token: another sign-in to the
+    account ended it (a helper tool's, or the app's), or it expired."""
+
+
+# What eWeLink answers a request with an access token it no longer takes.
+TOKEN_REFUSED = (401, 402)
 
 
 # Every country calling code (ITU-T E.164). None is the start of another, so a
@@ -195,6 +204,61 @@ def login_session(account: str, password: str, country_code: str, region: str) -
     return region, response["data"]
 
 
+T = TypeVar("T")
+
+
+class Account:
+    """One sign-in to an eWeLink account, made when first needed and used
+    for everything after: each sign-in ends the one before it, and eWeLink
+    turns away an account signing in too often. `sign_in` gives the region
+    and session (login_session's); it is called again only once eWeLink has
+    ended the last."""
+
+    def __init__(self, sign_in: Callable[[], tuple[str, dict[str, Any]]],
+                 held: tuple[str, dict[str, Any]] | None = None):
+        self._sign_in = sign_in
+        self.held = held
+
+    def session(self) -> tuple[str, dict[str, Any]]:
+        if self.held is None:
+            self.held = self._sign_in()
+        return self.held
+
+    def use(self, work: Callable[[str, dict[str, Any]], T]) -> T:
+        """`work(region, session)`, again with a new sign-in if eWeLink had
+        ended this one."""
+        try:
+            return work(*self.session())
+        except SessionEnded:
+            self.held = None
+            return work(*self.session())
+
+    def end(self) -> None:
+        self.held = None
+
+
+# A sign-in handed to a helper tool (query_ota.py, serve_tasmota_ota.py) by the
+# run that started it, as EWELINK_PASSWORD is: a sign-in of the helper's own
+# would end the run's. Only what the helper uses of it: never on a command line.
+SESSION_ENV = "EWELINK_SESSION"
+
+
+def session_env(region: str, session: dict[str, Any]) -> str:
+    return json.dumps({"region": region, "at": session["at"],
+                       "user": {"apikey": (session.get("user") or {}).get("apikey", "")}})
+
+
+def given_session() -> tuple[str, dict[str, Any]] | None:
+    """The sign-in the run that started this helper handed it, if any."""
+    try:
+        given = json.loads(os.environ.get(SESSION_ENV) or "null")
+        if given["region"] in API and isinstance(given["at"], str) and given["at"]:
+            return given["region"], {"at": given["at"], "user": dict(given.get("user") or {})}
+    except (ValueError, TypeError, KeyError):
+        pass
+    return None
+
+
 def login(account: str, password: str, country_code: str, region: str) -> tuple[str, str]:
     region, session = login_session(account, password, country_code, region)
     return region, session["at"]
@@ -209,6 +273,8 @@ def get_devices(region: str, token: str) -> list[dict[str, Any]]:
             "User-Agent": "autoflash-research/0.1",
         },
     )
+    if response.get("error") in TOKEN_REFUSED:
+        raise SessionEnded("eWeLink ended the sign-in: " + str(response.get("msg", "token refused")))
     if response.get("error") != 0:
         raise EwelinkError("Could not retrieve owned devices: " + str(response.get("msg", "unknown error")))
     things = response.get("data", {}).get("thingList", [])

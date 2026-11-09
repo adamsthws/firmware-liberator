@@ -245,12 +245,11 @@ class BusyPlugTests(unittest.TestCase):
             def close(self):
                 pass
 
-        with mock.patch.object(ota_push, "login_session", return_value=("eu", {"at": "t", "user": {"apikey": "a"}})), \
-                mock.patch.object(ota_push, "get_devices", return_value=[device]), \
+        with mock.patch.object(ota_push, "get_devices", return_value=[device]), \
                 mock.patch.object(relay, "api_json", return_value={"domain": "192.0.2.1", "port": 443}), \
                 mock.patch.object(ota_push.WebSocket, "connect", return_value=Socket()):
-            delivered = ota_push.deliver(email="someone@example.invalid", password="made-up-password",
-                                         country_code="+44", region="eu", device_id="1000abcdef",
+            delivered = ota_push.deliver(account=ota_push.Account(lambda: ("eu", {"at": "t", "user": {"apikey": "a"}})),
+                                         device_id="1000abcdef",
                                          firmware=b"image", version="9.9.9", listen_ip="127.0.0.1",
                                          listen_port=0, device_ip="127.0.0.1", wait=5, say=lambda *a: None)
         self.assertTrue(delivered.sent, delivered.error)

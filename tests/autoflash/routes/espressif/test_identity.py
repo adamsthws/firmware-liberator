@@ -52,7 +52,7 @@ class Fixture(unittest.TestCase):
             state.set_input(key, value)
         return SimpleNamespace(state=state, device=FakePlug(flash), dry_run=False,
                                wifi=lambda: ("Home-2G", "pw"), account_devices=lambda: [],
-                               ewelink_region=lambda: "eu", ewelink_session=lambda: None)
+                               ewelink_region=lambda: "eu")
 
     def back_up(self, nvs=None):
         directory = plugs.backup_dir(MAC)

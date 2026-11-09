@@ -202,12 +202,15 @@ class AnnouncedVersionTests(unittest.TestCase):
         with mock.patch.object(sys, "argv", argv), \
              mock.patch.object(Path, "exists", autospec=True,
                                side_effect=lambda path: path.name != "RECOVERY_LOCK" and exists(path)), \
-             mock.patch.dict("os.environ", {"EWELINK_PASSWORD": "pw"}), \
+             mock.patch.dict("os.environ", {"EWELINK_PASSWORD": "pw", "EWELINK_SESSION":
+                             '{"region": "us", "at": "run-token", "user": {"apikey": "a"}}'}), \
              mock.patch.object(sender, "target_id_from_mdns", return_value="1000000000"), \
              mock.patch.object(sender, "deliver", return_value=Delivery(sent=True, complete=True)) as deliver, \
              mock.patch("builtins.print"):
             self.assertEqual(sender.main(), 0)
         sent = deliver.call_args.kwargs
+        # The run's sign-in, which it handed over: one of its own would end it.
+        self.assertEqual(sent["account"].held, ("us", {"at": "run-token", "user": {"apikey": "a"}}))
         self.assertEqual(sent["version"], ANNOUNCED_VERSION)
         self.assertEqual(analyze(sent["firmware"])["wrapper"]["header_version"], ANNOUNCED_VERSION)
         self.assertEqual(sent["firmware"][100:], bridge.read_bytes()[100:])

@@ -500,8 +500,9 @@ def _ask(ctx: Context, report: dict[str, Any], *query_args: str) -> Asked:
     """Run query_ota (by mDNS capture or by device id) and read what it wrote."""
     meta = ctx.dir / "ota-metadata.json"
     if hostsys.run_tool(hostsys.python_script("tools/ewelink/query_ota.py", *query_args,
-                                      "--email", ctx.email(), "--output", str(meta), "--latest-offer"),
-                interactive=True, env=ctx.ewelink_env()) != 0:
+                                      "--email", ctx.email(), "--region", ctx.ewelink_region(),
+                                      "--output", str(meta), "--latest-offer"),
+                interactive=True, env=ctx.helper_env()) != 0:
         reasons = output.tool_problems(1)
         raise Abort("the eWeLink query failed" + (f": {reasons[0]}" if reasons else ""))
     try:

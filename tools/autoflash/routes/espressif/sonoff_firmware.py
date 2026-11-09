@@ -25,6 +25,7 @@ from tools.espressif import chips
 from tools.espressif.analyze_vendor_ota import WRAPPER_SIZE, parse_esp_image
 from tools.espressif.sonoff_identity import Identity
 from tools.ewelink import firmware_name
+from tools.ewelink.get_device_key import EwelinkError
 from tools.ewelink.query_ota import latest_offer
 
 if TYPE_CHECKING:
@@ -88,10 +89,13 @@ def fetch(url: str, query: dict[str, Any] | None = None) -> bytes:
 
 def offered(ctx: Context, identity: Identity) -> bytes | None:
     """The file eWeLink offers the device, by its own id; None where it offers none."""
-    session = ctx.ewelink_session()
-    if session is None or not identity.deviceid:
+    if not identity.deviceid:
         return None
-    asked = latest_offer(*session, {"deviceid": identity.deviceid, "model": identity.model, "version": "0.0.1"})
+    query = {"deviceid": identity.deviceid, "model": identity.model, "version": "0.0.1"}
+    try:
+        asked = ctx.ewelink.use(lambda region, session: latest_offer(region, session["at"], query))
+    except EwelinkError:  # eWeLink not reached
+        return None
     for offer in asked.get("offers") or []:
         files = sorted(offer.get("binList") or [], key=lambda item: item.get("name") != "user1.bin")
         for item in files[:1]:
