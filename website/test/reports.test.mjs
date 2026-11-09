@@ -34,15 +34,16 @@ const hashOf = (n) => createHash("sha256").update(`a device ${n}`).digest("hex")
 const keyed = (hash) => createHmac("sha256", KEY).update(hash).digest("hex");
 
 function env({ allowed = true, key = KEY } = {}) {
-  return { DB: d1(), INGEST: "on", DEVICE_HASH_KEY_PERMANENT: key, REPORT_LIMIT: { limit: async () => ({ success: allowed }) } };
+  return { DB: d1(), INGEST: "on", DEVICE_HASH_KEY_PERMANENT: key, SENDER_KEY: "a sender key for the tests",
+    REPORT_LIMIT: { limit: async () => ({ success: allowed }) } };
 }
 
-function post(body, headers = {}) {
+function post(body, headers = {}, from = "192.0.2.9") {
   const bytes = Buffer.from(typeof body === "string" ? body : JSON.stringify(body));
   return new Request("https://api.firmwareliberator.com/reports", {
     method: "POST", body: bytes,
     headers: { "Content-Type": "application/json", "Content-Length": String(bytes.byteLength),
-      "CF-Connecting-IP": "192.0.2.9", ...headers },
+      "CF-Connecting-IP": from, ...headers },
   });
 }
 
@@ -198,7 +199,7 @@ test("a request of the most reports costs a fixed few queries", async () => {
   const sent = Array.from({ length: api.MAX_REPORTS }, (_, n) => report({ device_hash: hashOf(100 + n) }));
   const answer = await api.reports(post({ reports: sent }), { ...bindings, DB: counted }, NOW);
   assert.equal((await answer.json()).accepted.length, api.MAX_REPORTS);
-  assert.ok(queries <= 6, `${queries} queries`);
+  assert.ok(queries <= 8, `${queries} queries`);
 });
 
 test("a write that fails gives back its places in the day's count", async () => {
@@ -235,8 +236,9 @@ test("too many from one address wait a minute", async () => {
   assert.equal((await api.reports(post({ reports: [report()] }), env({ allowed: false }), NOW)).status, 429);
 });
 
-test("nothing is taken before the device hash's key is set", async () => {
-  for (const bindings of [{ ...env(), DEVICE_HASH_KEY_PERMANENT: undefined }, { ...env(), DEVICE_HASH_KEY_PERMANENT: "" }]) {
+test("nothing is taken before the device hash's key and the senders' are set", async () => {
+  for (const bindings of [{ ...env(), DEVICE_HASH_KEY_PERMANENT: undefined }, { ...env(), DEVICE_HASH_KEY_PERMANENT: "" },
+    { ...env(), SENDER_KEY: undefined }]) {
     const response = await api.reports(post({ reports: [report()] }), bindings, NOW);
     assert.equal(response.status, 503);
     assert.equal(response.headers.get("Retry-After"), "3600");
@@ -299,4 +301,34 @@ test("a report the tool writes is never held", async () => {
     stopped: { step: "D4", error: "upload-cut", text: "the delivery stopped part way: the device fetched 1 of 2" } })]);
   assert.deepEqual(rows(bindings, "SELECT quarantined FROM reports"), [{ quarantined: 0 }, { quarantined: 0 }]);
   assert.equal(rows(bindings, "SELECT * FROM held_reports").length, 0);
+});
+
+test("one sender's reports are held to their own limit a day, the rest left for later", async () => {
+  const bindings = env();
+  const sendFrom = async (from, reports) => (await api.reports(post({ reports }, {}, from), bindings, NOW)).json();
+  // No device, so the limit for one device does not come first.
+  const loose = () => report({ device_hash: null });
+  const first = await sendFrom("2001:db8:1:2::10", Array.from({ length: api.SENDER_REPORTS_DAILY - 2 }, loose));
+  assert.equal(first.accepted.length, api.SENDER_REPORTS_DAILY - 2);
+  const sameHome = Array.from({ length: 4 }, loose);
+  const answer = await sendFrom("2001:db8:1:ffff::99", sameHome);   // the same /48
+  assert.deepEqual([answer.accepted.length, answer.later], [2, sameHome.slice(2).map((r) => r.id)]);
+  assert.equal((await sendFrom("192.0.2.77", [loose()])).accepted.length, 1, "another sender is not held by it");
+});
+
+test("a sender is counted under a keyed hash, never its address", async () => {
+  const bindings = env();
+  await api.reports(post({ reports: [report()] }, {}, "198.51.100.23"), bindings, NOW);
+  const names = rows(bindings, "SELECT name FROM counters").map((row) => row.name);
+  assert.ok(names.some((name) => /^report-sender:[0-9a-f]{32}:2026-11-09$/.test(name)), names.join());
+  assert.ok(!JSON.stringify(rows(bindings, "SELECT * FROM counters")).includes("198.51.100.23"));
+});
+
+test("what everyone's day has no room for is given back to the sender's", async () => {
+  const bindings = env();
+  bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES (?, ?, ?, 0)")
+    .run("reports:2026-11-09", "2026-11-09", api.REPORTS_DAILY - 1);
+  await api.reports(post({ reports: [report(), report(), report()] }), bindings, NOW);
+  const [sender] = rows(bindings, "SELECT count FROM counters WHERE name LIKE 'report-sender:%'");
+  assert.equal(sender.count, 1, "only the one kept");
 });
