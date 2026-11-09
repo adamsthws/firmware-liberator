@@ -304,6 +304,20 @@ Sonoff SDK than the S60's: its components are `ais_*` (`ais_factory`, `ais_ota`,
   calibration 0 mV: the emulator gives it room temperature (`adc_readings` in
   [`kinds.py`](../tools/autoflash/kinds.py), a QEMU patch) and every emulated
   ESP32-C3 the calibration real ones carry.
+- **On the classic ESP32 only the NSPanel reads its ADC.** Its firmware alone links
+  `esp_adc_cal`, for its room thermistor (GPIO38, ADC1 channel 2), and nothing in it
+  acts on the reading beyond reporting it. The other classic devices' firmwares have
+  neither `esp_adc_cal` nor a temperature check, by their strings (a raw read can't be
+  ruled out that way, but the POW Elite, POWCT, TH Elite and Dual R3 convert both ways
+  in the emulator as it is). These firmwares are built on ESP-IDF v4.1.1, by their app
+  descriptions or source paths. The fork's classic ADC (`esp32_sens`) reads 0 on every
+  channel, as only PICSimLab sets it, and the emulated eFuses carry no calibration.
+  With neither a measured reference voltage (block 0) nor two points (block 3),
+  `esp_adc_cal` uses the reference the firmware passes, so a raw 0 reads as the
+  attenuation's offset, 75 to 142 mV on ADC1, not 0 mV. The emulated NSPanel then
+  sends eWeLink `"temperature": -2`, with no other effect seen
+  ([the NSPanel's research](../devices/sonoff-nspanel/research.md#its-room-temperature)).
+  A Beken plug's ADC is in [Beken research](beken-research.md#0x3e0000--factory-tlv-store-mac--radio-calibration).
 - **Its JSON parser takes only compact JSON** (`"error":0`, not `"error": 0`): with
   spaces its dispatch failed silently, over and over.
 - **It turns down an EC CA** where it pins eWeLink's RSA one (`unknown_ca`).
@@ -464,12 +478,3 @@ revision 0.0. What a real chip answers has not been seen yet.
   only whole M5 dump published is the encrypted Matter one (above), so it has no
   plaintext dump to compare against yet.
 - The BASICR4's whole partition table: only where it is (0xC000) is known.
-- The ADC on other chips. A classic ESP32 calibrates from its eFuses too, but from
-  a measured reference voltage (block 0) or two points (block 3), and with neither
-  ESP-IDF takes a nominal 1100 mV, not 0: an emulated one would read a voltage once
-  its ADC reads anything, and the fork's classic-ESP32 ADC also reads 0 unless set,
-  so it would want the property 0005 gives the ESP32-C3's. A BK7238 keeps its
-  ADC's calibration in flash, in the factory store at 0x3e0000, which no
-  conversion step writes and neither OpenBeken nor ESPHome applies
-  ([Beken research](beken-research.md#0x3e0000--factory-tlv-store-mac--radio-calibration));
-  the Beken emulator's ADC has not been looked at.

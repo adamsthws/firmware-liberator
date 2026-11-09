@@ -58,3 +58,15 @@ the update file); if the firmware could be made to report no screen, the baked c
 could drop below 3 and an ESP32-only file might match. The builder
 (`tools/espressif/build_vendor_ota.py`) still emits a single record and gains nothing
 from an NSPanel branch until one of these routes is proven, so none was added.
+
+## Its room temperature
+
+The NSPanel's firmware reads its room thermistor (GPIO38, ADC1 channel 2) through
+`esp_adc_cal` and reports it (`intTemp`, `tempCorrection`, then
+`{"temperature":...}` to eWeLink and its screen); nothing in it refuses an update
+or switches anything on that reading, as far as its strings show. In the emulator
+every classic-ESP32 ADC channel reads 0, which with no eFuse calibration comes out
+as the attenuation's offset, and the panel sends `"temperature": -2`. That is the
+only effect seen. A believable reading would need a patch like the ESP32-C3's 0005
+for the classic ADC (`misc.esp32.sens`, whose `ADC_values` is zeroed and set only
+by PICSimLab); the conversion doesn't need one.
