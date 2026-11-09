@@ -284,6 +284,9 @@ while the plug also tries the home one, on a link of its own with its own MAC
   makes inputs idle high, as with pull-ups. On a classic ESP32, `gpio_in` and
   `gpio_in1` (the pins above 31) are set all high the same way, and
   `strap_mode` is `0x12`, the strapping pins' value for booting from flash.
+  A board holding a pin low says so in `board.py` (`HELD_LOW`), which sets
+  `gpio_in` again after these: the POW Elite's GPIO23, by which Sonoff's
+  firmware tells a POWR316D from a POWR320D.
 - **`-no-reboot`.** The fork keeps its peripherals running across a software
   reset, so firmware restarting into a different image (stock into the
   bridge, the bridge into Tasmota) crashed at start-up on what the previous
