@@ -9,6 +9,9 @@ import struct
 from dataclasses import dataclass
 
 TABLE_AT = 0x8000
+# Where a bootloader and its apps read the table is set when they are built
+# (CONFIG_PARTITION_TABLE_OFFSET): ESP-IDF's 0x8000, or 0xC000 in the BASICR4's.
+TABLE_OFFSETS = (TABLE_AT, 0xC000)
 TABLE_SIZE = 0x1000
 ENTRY_SIZE = 32
 ENTRY_MAGIC = b"\xaa\x50"
@@ -38,17 +41,24 @@ class Partition:
     size: int
 
 
+def table_at(flash: bytes) -> int:
+    """Where the dump's partition table is, of the places one is built to be."""
+    for at in TABLE_OFFSETS:
+        if flash[at:at + len(ENTRY_MAGIC)] == ENTRY_MAGIC:
+            return at
+    raise ValueError("no partition table at 0x8000 or 0xC000: an encrypted dump, or not a whole flash")
+
+
 def partitions(flash: bytes) -> list[Partition]:
     """The partition table's entries, in the order it lists them."""
     found = []
-    for at in range(TABLE_AT, TABLE_AT + TABLE_SIZE, ENTRY_SIZE):
+    start = table_at(flash)
+    for at in range(start, start + TABLE_SIZE, ENTRY_SIZE):
         entry = flash[at:at + ENTRY_SIZE]
         if entry[:2] != ENTRY_MAGIC:
             break
         offset, size = struct.unpack_from("<II", entry, 4)
         found.append(Partition(entry[12:28].split(b"\0", 1)[0].decode("ascii"), entry[2], entry[3], offset, size))
-    if not found:
-        raise ValueError("no partition table at 0x8000: an encrypted dump, or not a whole flash")
     return found
 
 

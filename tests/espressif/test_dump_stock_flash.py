@@ -74,6 +74,16 @@ class DumpStockFlashTests(unittest.TestCase):
         # Sequence 6 is the newer record: (6 - 1) % 2 selects ota_1.
         self.assertEqual(report["otadata_selects"], "ota_1")
 
+    def test_a_table_built_to_be_at_0xc000_is_checked_there(self):
+        # The BASICR4's firmware and bootloader read it there; 0x8000 is blank.
+        image = flash()
+        image[0xC000:0xD000], image[0x8000:0x9000] = image[0x8000:0x9000], b"\xff" * 0x1000
+        report = dump_stock_flash.check(bytes(image))
+        self.assertEqual(report["partition_table_at"], "0xc000")
+        self.assertTrue(report["partition_table_md5_valid"])
+        self.assertEqual(report["otadata_selects"], "ota_1")
+        self.assertIn("partition table at 0xc000, MD5: valid", dump_stock_flash.summary(report))
+
     def test_a_damaged_partition_table_is_reported(self):
         report = dump_stock_flash.check(bytes(flash(table_md5=False)))
         self.assertFalse(report["partition_table_md5_valid"])

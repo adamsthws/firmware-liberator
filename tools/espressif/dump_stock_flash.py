@@ -36,6 +36,7 @@ if __package__ in (None, ""):
 
 from tools.espressif.analyze_vendor_ota import parse_esp_image  # noqa: E402
 from tools.autoflash import plugs  # noqa: E402
+from tools.espressif import flashmap  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 PARTITION_TABLE = 0x8000
@@ -50,11 +51,20 @@ OTA_STATES_REJECTED = {3, 4}  # ESP_OTA_IMG_INVALID, ESP_OTA_IMG_ABORTED
 BRIDGE_ID = rb"bridge (?:v\d+|\d+\.\d+\.\d+)"
 
 
+def table_offset(flash: bytes) -> int:
+    """Where the dump's partition table is: 0x8000, or 0xC000 for firmware built
+    so (the BASICR4's); 0x8000 when neither holds one."""
+    try:
+        return flashmap.table_at(flash)
+    except ValueError:
+        return PARTITION_TABLE
+
+
 def parse_partition_table(flash: bytes) -> tuple[list[dict[str, Any]], bool]:
     """Partition entries, and whether the table's MD5 record matches them."""
     entries: list[dict[str, Any]] = []
-    cursor = PARTITION_TABLE
-    while cursor + 32 <= PARTITION_TABLE + 0xC00:
+    start = cursor = table_offset(flash)
+    while cursor + 32 <= start + 0xC00:
         magic = struct.unpack_from("<H", flash, cursor)[0]
         if magic != PARTITION_MAGIC:
             break
@@ -66,7 +76,7 @@ def parse_partition_table(flash: bytes) -> tuple[list[dict[str, Any]], bool]:
         cursor += 32
     md5_ok = (
         struct.unpack_from("<H", flash, cursor)[0] == MD5_MAGIC
-        and flash[cursor + 16 : cursor + 32] == hashlib.md5(flash[PARTITION_TABLE:cursor]).digest()
+        and flash[cursor + 16 : cursor + 32] == hashlib.md5(flash[start:cursor]).digest()
     )
     return entries, md5_ok
 
@@ -104,9 +114,10 @@ def selected_ota_slot(otadata: bytes, slot_count: int) -> int | None:
 
 def check(flash: bytes) -> dict[str, Any]:
     """Everything a dump has to show before it is worth keeping."""
-    report: dict[str, Any] = {"size": len(flash), "sha256": hashlib.sha256(flash).hexdigest()}
+    report: dict[str, Any] = {"size": len(flash), "sha256": hashlib.sha256(flash).hexdigest(),
+                              "partition_table_at": f"0x{table_offset(flash):x}"}
     try:
-        boot = parse_esp_image(flash[:PARTITION_TABLE])
+        boot = parse_esp_image(flash[:table_offset(flash)])
         report["bootloader"] = {"checksum_valid": boot["checksum_valid"], "sha256_valid": boot["sha256_valid"]}
     except ValueError as exc:
         report["bootloader"] = {"error": str(exc)}
@@ -232,7 +243,8 @@ def write_dump(out: Path, flash: bytes, efuse: bytes, report: dict[str, Any]) ->
 def summary(report: dict[str, Any]) -> list[str]:
     """What a dump holds, a line each: its size, the table, each partition."""
     lines = [f"{report['size']:,} bytes, SHA-256 {report['sha256']}",
-             f"partition table MD5: {'valid' if report['partition_table_md5_valid'] else 'INVALID'}"]
+             f"partition table at {report.get('partition_table_at', '0x8000')}, MD5: "
+             f"{'valid' if report['partition_table_md5_valid'] else 'INVALID'}"]
     if "matches_plug" in report:
         lines.append("byte for byte the same as the device's flash, by the device's own SHA-256"
                      if report["matches_plug"] else "not checked against the device (bridge before 4.4.2)")
