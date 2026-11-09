@@ -124,10 +124,6 @@ class FirmwareServerTests(unittest.TestCase):
         self.assertEqual(parse_single_range("bytes=24-", 100), (24, 99))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class OfflineTests(unittest.TestCase):
     """A plug offline in eWeLink - after a send cut off part way, say - is
     waited for, not refused at once."""
@@ -312,3 +308,7 @@ class DescribeCloudTests(unittest.TestCase):
         from tools.ewelink.ota_push import describe_cloud
         self.assertIsNone(describe_cloud({"action": "update", "params": {}}, "1"))
         self.assertIsNone(describe_cloud({"error": 0, "sequence": "other"}, "1"))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -212,10 +212,6 @@ class EsphomeUpdatePasswordTests(unittest.TestCase):
         self.assertIsNone(ctx.esphome_key)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 def drawn(body):
     """What a terminal shows once `body` has run in a stage of a concise run."""
     import io
@@ -270,3 +266,7 @@ class TriesTests(unittest.TestCase):
         self.assertNotIn("Web password: *****", second)                # the wrong try gone
         self.assertIn("That is not its web password.", second)         # why, left
         self.assertNotIn("The device wants its web password", final)   # all gone once taken
+
+
+if __name__ == "__main__":
+    unittest.main()

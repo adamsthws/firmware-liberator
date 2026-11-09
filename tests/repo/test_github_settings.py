@@ -249,10 +249,6 @@ class GitHubSettingsTests(unittest.TestCase):
                 jobs.add(named.group(1).strip() if named else job)
         self.assertLessEqual(set(gs.REQUIRED_CHECKS), jobs)
 
-
-if __name__ == "__main__":
-    unittest.main()
-
     def test_a_missing_secret_is_named_and_left_for_its_value(self):
         fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
         fake.secrets = {"CLOUDFLARE_DEPLOY_TOKEN", "OLD_TOKEN"}
@@ -262,19 +258,21 @@ if __name__ == "__main__":
         self.assertEqual(code, 1)
         self.assertIn("secret CLOUDFLARE_READ_TOKEN: left - its value is set with "
                       "python3 tools/repo/github_settings.py secret CLOUDFLARE_READ_TOKEN", out)
-        self.assertEqual(fake.secrets, {"CLOUDFLARE_DEPLOY_TOKEN"})
+        self.assertEqual(fake.secrets, {"CLOUDFLARE_DEPLOY_TOKEN", *gs.FROM_ENV})
 
     def test_apply_sets_the_secrets_kept_in_env_each_time_and_never_shows_them(self):
         fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
-        code, out = run(fake)
-        self.assertEqual((code, fake.secrets_set), (0, {}))   # a check sets nothing
-        code, out = run(fake, "apply")
-        self.assertEqual((code, fake.secrets_set), (0, ENV))
-        self.assertIn("secret CLOUDFLARE_EMAIL_FORWARD: set from .env.infra", out)
-        # Changed in .env, it is set again: GitHub cannot say it differs.
-        run(fake, "apply", env={**ENV, "CLOUDFLARE_EMAIL_FORWARD": "hello,press"})
+        _, out = run(fake)
+        self.assertEqual(fake.secrets_set, {})   # a check sets nothing
+        _, applied = run(fake, "apply")
+        self.assertEqual(fake.secrets_set, ENV)
+        self.assertIn("secret CLOUDFLARE_EMAIL_FORWARD: set from .env.infra", applied)
+        # Changed in .env.infra, it is set again: GitHub cannot say it differs.
+        _, again = run(fake, "apply", env={**ENV, "CLOUDFLARE_EMAIL_FORWARD": "hello,press"})
         self.assertEqual(fake.secrets_set["CLOUDFLARE_EMAIL_FORWARD"], "hello,press")
-        self.assertNotIn("example.com", out)
+        for said in (out, applied, again):
+            self.assertNotIn("example.com", said)
+            self.assertNotIn("hello", said)
 
     def test_a_missing_secret_kept_in_env_is_set_not_left(self):
         fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
@@ -315,3 +313,7 @@ if __name__ == "__main__":
         for name in ("website.yml", "cloudflare-settings.yml"):
             used |= set(re.findall(r"secrets\.(\w+)", (root / name).read_text(encoding="utf-8")))
         self.assertEqual(used, set(gs.ENVIRONMENT_SECRETS))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -166,10 +166,6 @@ class ImprintTests(unittest.TestCase):
             require_imprinted(build_image(payload))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class RealImageTests(unittest.TestCase):
     """The synthetic fixture has one segment. Real Tasmota images have several,
     a different padding position and a much larger appended hash input, so the
@@ -258,3 +254,7 @@ class RecoverySafebootHeaderTests(unittest.TestCase):
         self.assertIn("#error AUTOFLASH_RECOVERY_PERSIST_SETTINGS requires", patch)
         self.assertIn("CFG_HOLDER == stored->cfg_holder", patch)
         self.assertIn("left alone", patch)
+
+
+if __name__ == "__main__":
+    unittest.main()

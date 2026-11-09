@@ -120,10 +120,6 @@ class PublishedArtifactTests(unittest.TestCase):
         self.assertNotIn(b"s60-recovery", image)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PublishedESPHomeTests(unittest.TestCase):
     def test_the_esphome_image_is_pinned(self):
         from tools.autoflash.routes.espressif import images
@@ -285,3 +281,7 @@ class PublishedFilesAreInGitTests(unittest.TestCase):
         tracked = set(subprocess.run(["git", "ls-files", "--", *pinned], cwd=ROOT, check=True,
                                      capture_output=True, text=True).stdout.split())
         self.assertEqual([path for path in pinned if path not in tracked], [])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -482,10 +482,6 @@ class SettingsBackupTests(unittest.TestCase):
         self.assertEqual(self.server.restored, b"\x09\x12" + bytes(4094))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 # The page Tasmota 15.6.0 sent back for an image it would not take (the
 # emulator, an upload too big for its slot), and the end of one it took.
 REFUSED_PAGE = ("<div style='text-align:center;color:var(--c_ttl);'><h3>Sonoff S60TPG</h3><h2>Tasmota</h2></div>"
@@ -686,3 +682,6 @@ class DeviceReadTests(unittest.TestCase):
         self.assertEqual(plug.read_nvs(0x9000, 0x10000), sonoff_nvs())
         self.assertEqual(sum(1 for _, length in plug.reads if length == 0x1000), 1)
 
+
+if __name__ == "__main__":
+    unittest.main()

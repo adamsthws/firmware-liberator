@@ -510,9 +510,6 @@ class DeployTokenReachTests(unittest.TestCase):
         self.assertIn("run: python3 tools/repo/cloudflare_settings.py deploy-token", job)
         self.assertIn("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}", job)
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class DatabaseTests(unittest.TestCase):
     """The API's D1 database: made, bound by its id, and every migration run."""
@@ -663,3 +660,7 @@ class ApiAndStatsTests(unittest.TestCase):
         self.assertIn(f'"bucket_name": "{cs.STATS_BUCKET}"', config)
         for name in cs.API_SECRETS:
             self.assertIn(f"npx wrangler secret put {name}", config)
+
+
+if __name__ == "__main__":
+    unittest.main()
