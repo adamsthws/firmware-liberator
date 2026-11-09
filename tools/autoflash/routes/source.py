@@ -257,8 +257,8 @@ def converted_here(ctx: Context) -> bool:
 
 def kind_left_part_way(ctx: Context) -> str | None:
     """The kind this computer's latest run of the plug recorded. What a plug runs
-    part way - the mover, the startup firmware, the routes' Tasmota - is the
-    same on every kind of plug, and says nothing; a run taking one for the first
+    part way - the installer, the mover, the startup firmware, the routes'
+    Tasmota - looks the same on every kind of plug, and says nothing; a run taking one for the first
     kind the tool knows sent it that chip's firmware."""
     mac = ctx.state.input("plug_mac")
     for directory in reversed(runs.run_directories()):
@@ -287,7 +287,7 @@ def adopt_plug(ctx: Context, found: "detect.Found") -> None:
         # run must never take the S60's way.
         named = kinds.for_esphome(*esphome.title(found.host))
         kind = named.key if named else None
-    if kind is None and found.firmware == "midway" and ctx.state.input("plug_mac"):
+    if kind is None and found.firmware in ("midway", "installer") and ctx.state.input("plug_mac"):
         kind = kind_left_part_way(ctx)
     if kind:
         ctx.state.set_input("plug_kind", kind)

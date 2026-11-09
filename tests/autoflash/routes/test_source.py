@@ -50,6 +50,12 @@ class KindLeftPartWayTests(unittest.TestCase):
         self.run_of("12:34:56:ab:cd:ef", "1", plug_kind="sonoff-th-elite")
         self.assertEqual(self.adopted("midway", "the mover"), "sonoff-th-elite")
 
+    def test_the_installer_is_the_kind_its_last_run_was(self):
+        # Found again by a run with --new, it was taken for an S60 and sent
+        # the S60's interim, which a POW Elite's installer refused.
+        self.run_of("12:34:56:ab:cd:ef", "1", plug_kind="sonoff-pow-elite")
+        self.assertEqual(self.adopted("installer", "the installer"), "sonoff-pow-elite")
+
     def test_another_plugs_run_says_nothing_of_it(self):
         self.run_of("12:34:56:ab:cd:00", "1", plug_kind="sonoff-th-elite")
         self.assertIsNone(self.adopted("midway", "the mover"))
