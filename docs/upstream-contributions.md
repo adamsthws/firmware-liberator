@@ -39,6 +39,7 @@ several other HTTP clients, and following it led to a few more bugs nearby.
   Tasmota
 - [Smaller fixes found along the way](#smaller-fixes-found-along-the-way) -
   Tasmota, ESPHome, OpenBeken
+- [The POWCT's status LED](#the-powcts-status-led) - Tasmota
 - [Other people's reports, reproduced on the emulator](#other-peoples-reports-reproduced-on-the-emulator) -
   Tasmota
 
@@ -227,6 +228,18 @@ release is out.
 | ESPHome | [esphome.io #8011](https://github.com/esphome/esphome.io/pull/8011) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/esphome.io/8011?label=) | The documentation for #22163's option, and what `name_add_mac_suffix` does to the friendly name |
 | ESPHome | [#22224](https://github.com/esphome/esphome/pull/22224) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/esphome/22224?label=) | The CSE7766 logged a clamped power factor and impossible reactive power at DEBUG on nearly every frame of a resistive load; at VERBOSE, as its other expected noise is. Measured on a real S60, before and after |
 | OpenBeken | [#2293](https://github.com/openshwprojects/OpenBK7231T_App/pull/2293) | ![state](https://img.shields.io/github/pulls/detail/state/openshwprojects/OpenBK7231T_App/2293?label=) | No way for a driver to act before an HTTP OTA restarts the device: a weak `HAL_OTA_BeforeReboot(ok)` hook, by which the S61's interim firmware erases its own settings so the firmware it fetched starts clean |
+
+## The POWCT's status LED
+
+Sonoff's own POWCT firmware lights its status LED, on GPIO13, by driving the
+pin high with the relay; Tasmota's two copies of its template disagreed on it,
+and ESPHome's page for the plug has it inverted. Found from the firmware and
+the emulator, not a POWCT in hand
+([devices/sonoff-powct](../devices/sonoff-powct/README.md#the-status-leds-polarity)):
+
+| Project | Pull request | Status | What it fixes |
+|---|---|---|---|
+| Tasmota | [#25243](https://github.com/arendst/Tasmota/pull/25243) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25243?label=) | The POWCT template in the TM1621 display driver's comment had the LED inverted (Led_i, 320); the copy in the CSE7761 driver's was made Led1 (288) in 2024 and this one missed |
 
 ## Other people's reports, reproduced on the emulator
 
