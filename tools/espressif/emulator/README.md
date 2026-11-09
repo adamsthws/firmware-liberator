@@ -113,11 +113,12 @@ half-changed.
   the firmware, is found by its issuer (the older RSA `coolkit` one, or the
   newer `CoolKit Root CA ECC`) and replaced, in its fixed 1040-byte slot, with
   the stub's own CA. That CA is EC P-256, as an RSA-2048 one would not fit.
-  Where a classic ESP32's firmware pins the RSA CA, the stub's is RSA-1024
-  instead (`make_ca.py --rsa`, kept in `captures/emulation/stub-cloud-rsa/`):
-  that firmware gives the task holding the connection only the stack an RSA
-  check takes, and on the POWCT an EC one overflowed it
-  (`A stack overflow in task colink task`). OpenSSL on Ubuntu refuses an
+  Where the firmware pins the RSA CA, the stub's is RSA-1024 instead
+  (`make_ca.py --rsa`, kept in `captures/emulation/stub-cloud-rsa/`), as
+  eWeLink's own is RSA: a classic ESP32's firmware gives the task holding the
+  connection only the stack an RSA check takes, and on the POWCT an EC one
+  overflowed it (`A stack overflow in task colink task`); the BASICR4's turns
+  an EC one down (`unknown_ca`). OpenSSL on Ubuntu refuses an
   RSA-1024 CA by default, so the tool inside the emulator runs with
   `OPENSSL_CONF` pointing at the `openssl.cnf` `make_ca.py` writes, which
   lowers it to `SECLEVEL=1`; nothing outside the container is changed. See

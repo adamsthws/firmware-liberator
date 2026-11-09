@@ -71,6 +71,12 @@ REQUEST_TIMEOUT = 30.0
 TOKEN_ENDED = {"error": 401, "msg": "Access token authentication error"}
 
 
+def wire(message: object) -> bytes:
+    """A message as compact JSON, as eWeLink's must be: the BASICR4's firmware
+    parses nothing else (a space after a colon fails its parser)."""
+    return json.dumps(message, separators=(",", ":")).encode()
+
+
 def log(*parts: object) -> None:
     ts = dt.datetime.now().strftime("%H:%M:%S.%f")[:-3]
     print(ts, *parts, flush=True)
@@ -186,8 +192,7 @@ def _tell_watchers(deviceid: str, online: bool) -> None:
     its plug lost (tools/ewelink/ota_push.Resending)."""
     for app in _subscribers_of(deviceid):
         try:
-            app.send(json.dumps({"action": "sysmsg", "deviceid": deviceid,
-                                 "params": {"online": online}}).encode())
+            app.send(wire({"action": "sysmsg", "deviceid": deviceid, "params": {"online": online}}))
         except OSError:
             pass
 
@@ -206,7 +211,7 @@ def send_to_device(deviceid: str, msg: dict) -> bool:
         conn = _devices.get(deviceid)
     if conn is None:
         return False
-    conn.send(json.dumps(msg).encode())
+    conn.send(wire(msg))
     return True
 
 # -- the server ----------------------------------------------------------------
@@ -218,8 +223,9 @@ def _timestamp(when: dt.datetime) -> str:
 
 class Stub:
     def __init__(self, iot_host: str, iot_port: int, hb_interval: int, device: dict | None = None,
-                 update=None):
+                 update=None, iot_domain: str = ""):
         self.iot_host = iot_host
+        self.iot_domain = iot_domain or iot_host
         self.update = update  # firmware.Update the OTA query offers, or None
         self.iot_port = iot_port
         self.hb_interval = hb_interval
@@ -256,9 +262,12 @@ class Stub:
     def dispatch_response(self) -> dict:
         # The plug connects to this host by numeric IP without DNS (it
         # inet_aton()s the field), so hand back an address, not a hostname.
-        # The S60 reads `IP`; the S61 reads `domain` (same numeric address) -
-        # include both so either firmware finds the field it parses.
-        return {"error": 0, "reason": "", "IP": self.iot_host, "domain": self.iot_host,
+        # The S60 reads `IP`; the S61 reads `domain` (the same numeric address,
+        # unless --iot-domain gives a name) - include both so either firmware
+        # finds the field it parses. eWeLink's `domain` is a hostname, which the
+        # MINIR4 connects by and checks the certificate against: its TLS cannot
+        # match an IP address in one.
+        return {"error": 0, "reason": "", "IP": self.iot_host, "domain": self.iot_domain,
                 "port": self.iot_port}
 
     def app_dispatch_response(self) -> dict:
@@ -467,7 +476,7 @@ class Handler(socketserver.BaseRequestHandler):
 
     def _serve_json(self, sock, response: dict, peer: str, what: str) -> None:
         log(peer, f"{what} ->", json.dumps(redacted(response)))
-        self._send_http(sock, 200, json.dumps(response).encode(), "application/json")
+        self._send_http(sock, 200, wire(response), "application/json")
 
     def _serve_signed_in(self, sock, headers, answer, peer: str, what: str) -> None:
         token = headers.get("authorization", "").removeprefix("Bearer ")
@@ -483,7 +492,7 @@ class Handler(socketserver.BaseRequestHandler):
             log(peer, "dispatch request (non-JSON):", body[:200])
         response = self.stub.dispatch_response()
         log(peer, "dispatch ->", json.dumps(response))
-        self._send_http(sock, 200, json.dumps(response).encode(), "application/json")
+        self._send_http(sock, 200, wire(response), "application/json")
 
     def _serve_ws(self, sock, headers, peer: str) -> None:
         key = headers.get("sec-websocket-key", "")
@@ -556,13 +565,13 @@ class Handler(socketserver.BaseRequestHandler):
         reply = self.stub.ws_reply(msg)   # keep the device online (error:0 + config)
         if reply is not None:
             log(conn.peer, "ws ->", json.dumps(redacted(reply)))
-            conn.send(json.dumps(reply).encode())
+            conn.send(wire(reply))
         # Pass the device's own reports (incl. its reply to a relayed command) to
         # any app watching it.
         if deviceid:
             for app in _subscribers_of(deviceid):
                 try:
-                    app.send(json.dumps(msg).encode())
+                    app.send(wire(msg))
                 except OSError:
                     pass
         return deviceid
@@ -575,20 +584,19 @@ class Handler(socketserver.BaseRequestHandler):
             device = _subscribe(target_id, conn)
             if device is not None:
                 log(conn.peer, f"relay app->device ({msg.get('action')})")
-                device.send(json.dumps(msg).encode())
+                device.send(wire(msg))
             else:
                 log(conn.peer, "relay: no such device online")
-                conn.send(json.dumps({"error": 404, "deviceid": target_id,
-                                      "sequence": msg.get("sequence")}).encode())
+                conn.send(wire({"error": 404, "deviceid": target_id, "sequence": msg.get("sequence")}))
             return
         if msg.get("action") == "userOnline" and not self.stub.signed_in(msg.get("at")):
             log(conn.peer, "ws -> refused: a token a later sign-in ended")
-            conn.send(json.dumps(TOKEN_ENDED).encode())
+            conn.send(wire(TOKEN_ENDED))
             return
         reply = self.stub.ws_reply(msg)   # userOnline handshake, keep-alives
         if reply is not None:
             log(conn.peer, "ws ->", json.dumps(redacted(reply)))
-            conn.send(json.dumps(reply).encode())
+            conn.send(wire(reply))
 
 
 class TLSServer(socketserver.ThreadingTCPServer):
@@ -629,6 +637,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="IoT server handed back by dispatch: a numeric IP (the plug "
                              "does no DNS for it) that the cert's IP SAN covers")
     parser.add_argument("--iot-port", type=int, default=443)
+    parser.add_argument("--iot-domain", default="",
+                        help="the hostname dispatch gives as `domain` (eWeLink gives one there), for a plug "
+                             "that connects by it (default: --iot-host)")
     parser.add_argument("--hb-interval", type=int, default=145)
     parser.add_argument("--device-json", type=Path, default=None,
                         help="JSON of this plug's account-API view (deviceid, "
@@ -646,7 +657,7 @@ def main(argv: list[str] | None = None) -> int:
         update = None
     log(f"offering the plug's own firmware, {update.version}, to a query with an older version" if update
         else "no firmware to offer")
-    Handler.stub = Stub(args.iot_host, args.iot_port, args.hb_interval, device, update)
+    Handler.stub = Stub(args.iot_host, args.iot_port, args.hb_interval, device, update, args.iot_domain)
     if args.plain:
         server = PlainServer((args.bind, args.port), Handler)
         scheme = "plaintext"

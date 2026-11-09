@@ -170,6 +170,20 @@ makes it necessary. The evidence is in [the firmware facts](#firmware-facts-stat
   `config {"hb":1,"hbInterval":145}`, or it drops the connection after ~10 s and
   dispatches again; `date` gets the date, `update` and `query` a bare `error:0`
   (test 3).
+- **Answer in compact JSON** (`{"error":0,...}`, no space after a colon). The
+  BASICR4's firmware (Sonoff's ais SDK) turns `{"error": 0}` down and dispatches
+  again, over and over; so eWeLink's own answer must be compact, though it has
+  not been seen here byte for byte (the device's traffic is over TLS). The S60
+  and S61 take either.
+- **Give a name as `domain`.** The MINIR4's firmware connects by dispatch's
+  `domain`, as eWeLink gives a hostname there, and checks the certificate against
+  it: its mbedTLS (ESP-IDF 4.4) cannot match an IP address in a certificate. The
+  Espressif emulator's stub answers `iot.autoflash-stub.test` (`--iot-domain`),
+  and keeps `IP` numeric for the S60. The MINIR4 also puts `-v1` into the
+  dispatch host it was given, so the emulator's DNS answers
+  `disp-v1.autoflash-stub.test` too.
+- **Serve any kind, converted or not**, and know an ais device by its factory
+  record where it has no `frame_params` (`device_identity.py`).
 
 **The tool (touchpoint A, and the app side)**
 

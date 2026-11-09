@@ -214,8 +214,9 @@ if [ "$stub" = 1 ]; then
     # Our own CA + leaf for the stub domain (once; kept stable - it is flashed in).
     # The plug's own identity is read from its dump inside the container, so the
     # LAN key stays on that network (see entrypoint.sh).
-    # A classic ESP32's firmware trusting eWeLink's RSA CA has the stack only for that.
-    if [ "$chip" = esp32 ] && PYTHONPATH=$ROOT "$PY" -c 'import sys
+    # A firmware trusting eWeLink's RSA CA is given an RSA one: a classic ESP32's has
+    # the stack only for that, and the BASICR4's turns down an EC one (unknown_ca).
+    if PYTHONPATH=$ROOT "$PY" -c 'import sys
 from tools.espressif.emulator.patch_stock import holds_rsa_ca
 sys.exit(not holds_rsa_ca(open(sys.argv[1], "rb").read()))' "$SRC/flash.bin"; then
         STUB_CA=$EMU/stub-cloud-rsa

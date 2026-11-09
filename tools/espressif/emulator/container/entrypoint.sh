@@ -141,10 +141,12 @@ else echo "internet: off" > "$RUN/cloud-label"; fi
 chown -R "$HOST_UID:$HOST_GID" "$RUN"
 # The local cloud stub answers on the router's own address, under names only
 # this instance's dnsmasq resolves (it reads /etc/hosts). Added before the
-# router starts, so the plug resolves them from its first dispatch lookup.
+# router starts, so the plug resolves them from its first dispatch lookup. The
+# MINIR4's firmware puts -v1 into the dispatch host it was given ("-v1%s").
 if [ "$STUB_CLOUD" = 1 ]; then
     grep -q autoflash-stub.test /etc/hosts 2>/dev/null \
-        || echo "192.168.60.1 disp.autoflash-stub.test iot.autoflash-stub.test apia.autoflash-stub.test" >> /etc/hosts
+        || echo "192.168.60.1 disp.autoflash-stub.test disp-v1.autoflash-stub.test iot.autoflash-stub.test" \
+                "apia.autoflash-stub.test" >> /etc/hosts
 fi
 /opt/autoflash-emu/bin/wifi-root home >/dev/null
 ln -sfn /state/work /work
@@ -171,7 +173,8 @@ if [ "$STUB_CLOUD" = 1 ]; then
             --out "$RUN/stub-device.json" 2>>/state/logs/stub.log; then
         /opt/venv/bin/python3 -I -B "$stub/stub_server.py" \
             --bind 192.168.60.1 --port 443 --cert /stub-cloud/server.crt --key /stub-cloud/server.key \
-            --iot-host 192.168.60.1 --iot-port 443 --device-json "$RUN/stub-device.json" \
+            --iot-host 192.168.60.1 --iot-domain iot.autoflash-stub.test --iot-port 443 \
+            --device-json "$RUN/stub-device.json" \
             >> /state/logs/stub.log 2>&1 &
     else
         echo "stub: could not read the device identity; stub not started" >> /state/logs/stub.log

@@ -64,6 +64,21 @@ class FirmwareOfferTests(unittest.TestCase):
         self.assertIsNone(self.stub.ota_file(""))
 
 
+class DispatchTests(unittest.TestCase):
+    def test_both_fields_hold_the_address_by_default(self):
+        answer = stub_server.Stub("192.0.2.1", 443, 10).dispatch_response()
+        self.assertEqual((answer["IP"], answer["domain"], answer["port"]), ("192.0.2.1", "192.0.2.1", 443))
+
+    def test_a_domain_given_is_a_name_and_the_address_stays_numeric(self):
+        # The MINIR4 connects by `domain` and checks the certificate against it.
+        answer = stub_server.Stub("192.0.2.1", 443, 10, iot_domain="iot.autoflash-stub.test").dispatch_response()
+        self.assertEqual((answer["IP"], answer["domain"]), ("192.0.2.1", "iot.autoflash-stub.test"))
+
+    def test_what_goes_on_the_wire_is_compact_json_as_ewelinks_is(self):
+        # The BASICR4's parser turns down {"error": 0}: a space after the colon.
+        self.assertEqual(stub_server.wire({"error": 0, "IP": "192.0.2.1"}), b'{"error":0,"IP":"192.0.2.1"}')
+
+
 class SendToDeviceTests(unittest.TestCase):
     def test_a_command_reaches_the_device_online_and_no_other(self):
         conn = mock.Mock()
