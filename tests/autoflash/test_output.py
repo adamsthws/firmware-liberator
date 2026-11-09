@@ -581,8 +581,23 @@ class ConciseTests(OutputTestCase):
             output.stage_end("stopped")
         rows = self.drawn(body)
         self.assertEqual(rows, ["Stage 8 - Installing interim firmware - Underway", "",
-                                "note 0", "note 1", "note 2",
+                                "note 0", "", "note 1", "", "note 2",   # each said after a wait
                                 "Stage 8 - Installing interim firmware - Stopped"])
+
+    def test_a_note_said_after_a_wait_stands_apart_its_own_lines_together(self):
+        # Seen in the fault suites' screens: notes of different moments - the
+        # plug gone back to Sonoff's firmware, then nothing answering - ran on
+        # as one.
+        def body():
+            output.stage_begin(7, "Backing up Sonoff firmware")
+            output.tell("    While waiting, the device went back to Sonoff's own firmware (switched off")
+            output.tell("    and on, say).")
+            output.tick()   # the clock drawn under it: time has passed
+            output.tell("    Nothing is answering at the device's address.")
+            output.stage_end("stopped")
+        self.assertEqual(self.drawn(body)[1:6], ["", "While waiting, the device went back to Sonoff's own firmware "
+                                                 "(switched off", "and on, say).", "",
+                                                 "Nothing is answering at the device's address."])
 
     def test_what_is_shown_while_waiting_goes_once_done_and_stays_if_the_wait_stops_the_stage(self):
         def body(fail):

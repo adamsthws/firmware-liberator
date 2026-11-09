@@ -66,6 +66,7 @@ class _State:
     rows = 0                          # rows finished on screen, less those taken off again (mark)
     status = "Underway"               # what the stage line says while it runs: "Retrying" for a step done again
     underway_row: int | None = None   # where the stage's line was left on the screen, above what it showed
+    waited = False                    # the stage's clock drawn under its last note since: a new note stands apart
     next_retrying = False             # the next stage begun is a step done again (retrying)
     stage_mark: tuple[int, bool, bool] | None = None  # the screen as the stage began (mark)
     blocks: list[tuple[int, bool]] = []  # the open blocks (transient_begin), innermost last:
@@ -665,7 +666,7 @@ def stage_begin(number: int, name: str) -> None:
         _break()
         _s.stage_mark = (_s.rows, _s.after_stage, _s.after_blank) if _drawn_over() else None
         _s.status, _s.next_retrying = ("Retrying" if _s.next_retrying else "Underway"), False
-        _s.underway_row = None
+        _s.underway_row, _s.waited = None, False
         digits = len(str(max(_s.most_stages, number)))
         _s.stage = label
         _s.stage_prefix = f"Stage {number:>{digits}}"
@@ -1072,6 +1073,7 @@ def _break() -> None:
             # each note, it would take two rows a note (the line and a gap) and
             # say nothing new.  The clock goes on under the last note.
             sys.stdout.write(_clear_notice() + "\r\x1b[K")
+            _s.waited = True
         elif _s.live_is_stage:
             # The underway line stays, without its spinner: only the stage
             # under way now has one, on the line drawn for it last.
@@ -1092,6 +1094,13 @@ def _break() -> None:
 
 def _print(text: str, *, stage: bool = False) -> None:
     _break()
+    if _s.waited and not stage and ANSI_RE.sub("", text).strip() and not _s.after_blank:
+        # Said after a wait - what came next, not more of the note above: a
+        # blank row between them, as a section has above it.
+        print("", flush=True)
+        _s.after_blank = True
+        _counted(1)
+    _s.waited = False
     if _s.after_blank and not ANSI_RE.sub("", text).strip():
         # Never two blank rows in a row: a block taken off the screen leaves
         # the blank row above it, and what comes next may start with its own.
