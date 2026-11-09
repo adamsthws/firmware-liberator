@@ -185,7 +185,7 @@ class RunChoiceTests(unittest.TestCase):
         name, menu = self.choose(0)
         self.assertEqual(name, "half")
         options = menu.call_args.args[1]
-        self.assertIn("stopped at stage 7, Backing up Sonoff firmware", options[0])
+        self.assertIn("carries on at stage 7, Backing up Sonoff firmware", options[0])
         self.assertIn("past the point of no return", options[0])
 
     def test_starting_a_new_plug_leaves_the_unfinished_run_alone(self):
@@ -206,7 +206,7 @@ class RunChoiceTests(unittest.TestCase):
             cli.log_run_choice()
         logged = "\n".join(call.args[0] for call in say.call_args_list)
         self.assertIn("a new conversion", logged)
-        self.assertIn("stopped at stage 7, Backing up Sonoff firmware", logged)
+        self.assertIn("carries on at stage 7, Backing up Sonoff firmware", logged)
         self.assertIn("past the point of no return", logged)
         self.assertEqual(cli.RUN_CHOICE, [])
 

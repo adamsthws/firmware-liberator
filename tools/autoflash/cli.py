@@ -108,7 +108,10 @@ def describe_run(directory: Path) -> str:
         stamp = when.strftime("%H:%M today" if today else "%d %b %H:%M")
     except ValueError:
         stamp = "an unknown time"
-    details = [f"stopped at {stage}" if pending else "finished", stamp]
+    # Where it carries on: after a stop between stages the next one, after
+    # one part way through the same stage again.  "Stopped at" the next
+    # stage read as one stage late after a stop between them.
+    details = [f"stopped {stamp}", f"carries on at {stage}"] if pending else ["finished", stamp]
     if pending and state.input("stopped_by") == "window":
         details.append("when its window was closed")
     if routes.past_the_point_of_no_return(state):
