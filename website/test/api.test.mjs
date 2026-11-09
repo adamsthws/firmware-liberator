@@ -170,7 +170,8 @@ test("without TEST_PROOF_BITS the full work is asked", async () => {
 
 test("the tool does the same work the Worker asks", () => {
   const tool = readFileSync(new URL("../../tools/autoflash/readout.py", import.meta.url), "utf8");
-  assert.match(tool, new RegExp(`PROOF_BITS = ${readout.PROOF_BITS}\\b`));
+  assert.match(tool, new RegExp(`^PROOF_BITS = ${readout.PROOF_BITS}\\b`, "m"));
+  assert.match(tool, new RegExp(`^WANTED_PROOF_BITS = ${readout.WANTED_PROOF_BITS}\\b`, "m"));
   assert.match(tool, /UPLOAD_URL = "https:\/\/api\.firmwareliberator\.com\/readout"/);
 });
 
@@ -179,4 +180,63 @@ test("every other address is not found, and the site is not this Worker", async 
   assert.equal(response.status, 404);
   const site = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
   assert.doesNotMatch(site, /readout|api\//i);
+});
+
+function question(product, headers = {}, body = Buffer.from(JSON.stringify({ format: 1, product }))) {
+  return new Request("https://api.firmwareliberator.com/wanted", {
+    method: "POST",
+    body,
+    headers: { "Content-Type": "application/json", "Content-Length": String(body.byteLength),
+      "X-Proof": proofFor(body), ...headers },
+  });
+}
+
+const ask = (request, bindings, now = NOW) => readout.wanted(request, bindings, now);
+
+test("asked first, a device enough readouts of are in is not wanted, any other is", async () => {
+  const bindings = env({ enough: "S60TPG, basicr4" });
+  for (const [product, expected] of [["BASICR4", false], ["s60tpg", false], ["NEWTHING", true]]) {
+    const response = await ask(question(product), bindings);
+    assert.equal(response.status, 200, product);
+    assert.deepEqual(await response.json(), { wanted: expected }, product);
+  }
+  assert.equal(bindings.READOUTS.objects.size, 0);
+});
+
+test("each question needs work of its own, lighter than a readout's and newer", async () => {
+  const body = Buffer.from(JSON.stringify({ format: 1, product: "NEWTHING" }));
+  const other = Buffer.from(JSON.stringify({ format: 1, product: "OTHERTHING" }));
+  const minuteAgo = proofFor(body, BITS, NOW.getTime() / 1000 - readout.WANTED_PROOF_AGE - 5);
+  for (const proof of ["", "1:2:3", proofFor(other), minuteAgo]) {
+    assert.equal((await ask(question("NEWTHING", { "X-Proof": proof }, body), env())).status, 403, proof);
+  }
+  assert.ok(readout.WANTED_PROOF_BITS < readout.PROOF_BITS);
+  assert.ok(readout.WANTED_PROOF_AGE < readout.PROOF_AGE);
+});
+
+test("a question is held to no readout limit, so a batch's leave its readouts theirs", async () => {
+  const bindings = { ...env(), READOUT_LIMIT: { limit: async () => assert.fail("asked the readout limiter") } };
+  assert.equal((await ask(question("NEWTHING"), bindings)).status, 200);
+});
+
+test("anything but the tool's question is turned away", async () => {
+  const bindings = env();
+  const badly = [
+    [new Request("https://api.firmwareliberator.com/wanted"), 405],
+    [question("NEWTHING", { "Content-Type": "text/plain" }), 415],
+    [question("", {}, Buffer.from(JSON.stringify({ format: 1, product: "" }))), 400],
+    [question("", {}, Buffer.from(JSON.stringify({ format: 2, product: "NEWTHING" }))), 400],
+    [question("", {}, Buffer.from("not json")), 400],
+    [question("", {}, Buffer.alloc(readout.WANTED_MAX_BYTES + 1, 32)), 413],
+  ];
+  for (const [request, status] of badly) {
+    assert.equal((await ask(request, bindings)).status, status);
+  }
+});
+
+test("the Worker sends /wanted to the question", async () => {
+  const body = Buffer.from(JSON.stringify({ format: 1, product: "NEWTHING" }));
+  const now = proofFor(body, BITS, Math.floor(Date.now() / 1000));   // fetch() checks it against the clock
+  const response = await worker.fetch(question("NEWTHING", { "X-Proof": now }, body), env());
+  assert.equal(response.status, 200);
 });

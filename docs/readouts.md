@@ -40,8 +40,10 @@ because enough of that device are in already. Each readout gets its own
 10-to-30-second puzzle before it is sent (see [Sending it](#sending-it)).
 
 The tool first asks eWeLink what the device runs and which firmware it would
-be offered, and downloads that firmware as the device would. Nothing is sent
-to the device for this. For a device the tool has not seen before, that is the
+be offered. It then asks the website whether a readout of that device is
+still wanted: if enough are in already, it stops there and nothing more is
+done. Otherwise it downloads that firmware as the device would. Nothing is
+sent to the device for this. For a device the tool has not seen before, that is the
 whole readout.
 
 A device listed as **Supported**, **Testers wanted** or **Readout wanted**
