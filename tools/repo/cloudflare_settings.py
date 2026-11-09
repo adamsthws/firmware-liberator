@@ -636,10 +636,11 @@ def main(argv: list[str] | None = None) -> int:
                 for line in change():
                     print(f"  {line}")
                     left = 1
+                print(f"  {what}: set")
             else:
                 method, path, body = change
                 api(path, method, body)
-            print(f"  {what}: set")
+                print(f"  {what}: {'removed' if method == 'DELETE' else 'set'}")
     except SettingsError as error:
         print(f"cloudflare_settings: {error}", file=sys.stderr)
         return 1
