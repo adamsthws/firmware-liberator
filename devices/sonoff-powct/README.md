@@ -27,7 +27,7 @@ Sonoff's clamp-on energy meter with a small display, the **POWCT**.
 | Display | TM1621: CS GPIO17, data GPIO5, read GPIO23, write GPIO18 |
 | Button | GPIO0, active low |
 
-Pins from [ESPHome's page](https://devices.esphome.io/devices/sonoff-powct/); Blakadder has no template for it, so the Tasmota template in [`kinds.py`](../../tools/autoflash/kinds.py) was worked out from that table.
+Pins from [ESPHome's page](https://devices.esphome.io/devices/sonoff-powct/). Blakadder has no template for it; the Tasmota template in [`kinds.py`](../../tools/autoflash/kinds.py) is the one Tasmota's own TM1621 driver gives (`xdrv_87_esp32_sonoff_tm1621.ino`). Its meter's RX is CSE7761 Rx 2, which tells Tasmota the meter is a POWCT's, with a current clamp, and not a Dual R3's.
 
 ## Files
 
