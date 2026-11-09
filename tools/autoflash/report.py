@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import __version__, esphome, hostsys, kinds, output, plugs, routes, runs, testers
+from tools.autoflash import __version__, esphome, hostsys, kinds, openbeken, output, plugs, routes, runs, testers
 from tools.autoflash.device import DeviceError
 from tools.autoflash.runs import ROOT
 from tools.ewelink import relay as ewelink_relay
@@ -233,7 +233,8 @@ def meter_calibration(captures: dict[str, Any], firmware: str | None) -> str:
     """How the run left the meter's calibration, from what its steps found:
     Tasmota's (`<step>.meter`: changed, factory, or skipped and why), ESPHome's
     (`<step>.meter`: what its Calibration sensor said, or skipped), or a Beken
-    plug's ESPHome (`<step>.calibration`).  The last step's word counts: an
+    plug's ESPHome or OpenBeken (`<step>.calibration`, OpenBeken's in the
+    same words, openbeken.calibration_state).  The last step's word counts: an
     update checks it again."""
     if firmware == "sonoff":
         return "retained"   # Sonoff's firmware, with its own
@@ -248,8 +249,9 @@ def meter_calibration(captures: dict[str, Any], firmware: str | None) -> str:
     state = found.get("calibration") if isinstance(found, dict) else found
     if isinstance(state, str) and state:
         # What ESPHome's Calibration sensor said: from the backup or Sonoff's
-        # own store, or "missing".
-        return "not retained" if state.startswith("missing") else "retained"
+        # own store, or "missing" - or OpenBeken's driver, that its
+        # calibration is not the stock store's either.
+        return "not retained" if state.startswith(("missing", openbeken.CALIBRATION_CHANGED)) else "retained"
     return "not checked"
 
 

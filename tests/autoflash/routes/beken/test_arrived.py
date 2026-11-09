@@ -39,12 +39,38 @@ class ArrivedTests(unittest.TestCase):
             self.assertIn("AutoflashInterim", self.server.commands)
             self.assertNotIn("told", result)
             self.assertFalse([c for c in self.server.commands if c.startswith("AutoflashInterim ")])
+            # And whether its first start took the meter's calibration from the stock store, for the report.
+            self.assertEqual(result["calibration"], "stock store")
             with mock.patch.object(openbeken, "info", return_value=None), \
                     mock.patch.object(arrived.join.time, "sleep"), \
                     mock.patch.object(arrived.prompts, "UNATTENDED", True), \
                     mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(0, 10000, 100))):
                 with self.assertRaisesRegex(errors.Abort, "has not answered.*switch the device off and on"):
                     arrived.step_openbeken_check(ctx, wait=10)
+
+    def test_k1_says_the_meter_calibration_was_not_carried_over_or_cannot_say(self):
+        for calibration, said in (("missing", "missing"), (None, "not the stock store's"),
+                                  # An OpenBeken whose driver predates the command.
+                                  ("unknown", None)):
+            with self.subTest(said=said), tempfile.TemporaryDirectory() as tmp:
+                self.server.calibration = calibration
+                self.server.unknown = {"AutoflashCalibration"} if calibration == "unknown" else set()
+                result = arrived.step_openbeken_check(a_context(tmp, plug_ip=self.server.host))
+                self.assertEqual(result["calibration"], said)
+
+    def test_k1_asks_nothing_of_a_meter_on_a_device_without_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, plug_ip=self.server.host, plug_kind="sonoff-basic-1gs")
+            self.server.kind = "sonoff-basic-1gs"
+            result = arrived.step_openbeken_check(ctx)
+            self.assertNotIn("calibration", result)
+            self.assertFalse([c for c in self.server.commands if c.startswith("AutoflashCalibration")])
+
+    def test_j1_asks_the_interim_firmware_nothing_of_the_meter(self):
+        self.server.interim = True
+        with tempfile.TemporaryDirectory() as tmp:
+            result = arrived.step_interim_check(a_context(tmp, plug_ip=self.server.host))
+            self.assertNotIn("calibration", result)
 
     def test_k1_on_the_interim_firmware_makes_it_the_plugs_own_and_restarts_it(self):
         # Not sent as one on a run to OpenBeken; were it so, it is told it is
@@ -56,7 +82,8 @@ class ArrivedTests(unittest.TestCase):
                 result = arrived.step_openbeken_check(ctx)
             self.assertEqual((result["name"], result["told"]), ("openbeken-abcdef", "not interim"))
             self.assertEqual(ctx.state.input("device_name"), "openbeken-abcdef")
-            self.assertEqual(self.server.commands[-2:], ["AutoflashInterim off", "reboot"])
+            # The meter asked of it once it has restarted under its name.
+            self.assertEqual(self.server.commands[-3:], ["AutoflashInterim off", "reboot", "AutoflashCalibration stock"])
             self.assertIn("Restarting it, so your network knows it by its new name",
                           " ".join(str(call.args[0]) for call in said.call_args_list))
             self.assertFalse(self.server.interim)

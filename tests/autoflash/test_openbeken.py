@@ -23,6 +23,9 @@ class FakeOpenBeken(http.server.ThreadingHTTPServer):
         self.restarts_on_reboot = True
         self.kind = "sonoff-s61"   # what its import module answers AutoflashKind for; None: no module
         self.interim = False   # whether its module says it is the interim firmware (AutoflashInterim)
+        # What its module answers AutoflashCalibration for: stock, missing, or
+        # None for neither (its calibration changed since).
+        self.calibration = "stock"
         self.short_name = "openbeken-abcdef"
         self.version = "1.0.0"   # the release its build string gives
 
@@ -79,6 +82,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(400, json.dumps({"error": 400, "msg": "bad argument", "res": ""}).encode())
         elif name == "AutoflashInterim" and not body.split()[1:] and not self.server.interim:
             self._send(400, json.dumps({"error": 400, "msg": "error", "res": ""}).encode())
+        elif name == "AutoflashCalibration" and body.split()[1:] != [self.server.calibration]:
+            self._send(400, json.dumps({"error": 400, "msg": "error", "res": ""}).encode())
         elif name == "AutoflashInterim" and body.split()[1:] not in ([], ["on"], ["off"]):
             self._send(400, json.dumps({"error": 400, "msg": "bad argument", "res": ""}).encode())
         else:
@@ -130,6 +135,19 @@ class OpenBekenTests(unittest.TestCase):
         self.assertIs(openbeken.is_interim(self.server.host), False)
         # Not answering: it cannot say.
         self.assertIsNone(openbeken.is_interim("127.0.0.1:1", timeout=0.5))
+
+    def test_its_meter_calibration_is_what_its_import_module_says(self):
+        # In the words ESPHome's Calibration sensor uses, which the report reads.
+        self.assertEqual(openbeken.calibration_state(self.server.host), "stock store")
+        self.assertEqual(self.server.commands, ["AutoflashCalibration stock"])
+        self.server.calibration = "missing"
+        self.assertEqual(openbeken.calibration_state(self.server.host), "missing")
+        self.server.calibration = None   # neither: not applied, or changed by its owner since
+        self.assertEqual(openbeken.calibration_state(self.server.host), "not the stock store's")
+        # A module from before the command, or a plug not answering: it cannot say.
+        self.server.kind = None
+        self.assertIsNone(openbeken.calibration_state(self.server.host))
+        self.assertIsNone(openbeken.calibration_state("127.0.0.1:1", timeout=0.5))
 
     def test_it_is_told_to_be_the_interim_firmware_or_not(self):
         openbeken.set_interim(self.server.host, False)

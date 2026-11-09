@@ -70,6 +70,16 @@ class EndingTests(RouteTestCase):
                     ctx.state.capture(key, found)
                 self.assertEqual(dict(report.report_fields(ctx, 300, False))["Meter"], said)
 
+    def test_an_s61_on_openbeken_says_how_its_calibration_went(self):
+        # Its driver says, at K1 (arrived.py), in the words of ESPHome's sensor.
+        for found, said in (("stock store", "Retained"), ("missing", "Not retained"),
+                            ("not the stock store's", "Not retained"), (None, "Not checked")):
+            with self.subTest(found=found):
+                ctx = self.ctx(firmware="openbeken", run=f"meter-openbeken-{said}")
+                ctx.state.set_input("plug_kind", "sonoff-s61")
+                ctx.state.capture("K1.calibration", found)
+                self.assertEqual(dict(report.report_fields(ctx, 300, False))["Meter"], said)
+
     def test_a_run_stopped_before_it_knew_the_device_says_nothing_of_a_meter(self):
         # Seen: stopped at once on a wrong --plug-ip, "Meter calibration: Not
         # checked" under "Device model: __".

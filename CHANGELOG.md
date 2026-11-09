@@ -239,6 +239,12 @@ check.
   started, and a restart could be seen where there was none.
 - OpenBeken for the Sonoff S61 rebuilt with
   [1.18.320](https://github.com/openshwprojects/OpenBK7231T_App/releases/tag/1.18.320).
+- A Sonoff S61 converted to OpenBeken says in the report whether its meter's
+  factory calibration carried over, "Retained" or "Not retained", as on ESPHome:
+  it said "Not checked". OpenBeken's driver answers `AutoflashCalibration`,
+  working out again what it takes from Sonoff's store and comparing it with
+  OpenBeken's calibration, so it says "Not retained" too once you calibrate the
+  plug yourself.
 - ESPHome on the Sonoff S61 reads its voltage and current the right way round.
   Its meter, a BL0937, measures the voltage while its SEL pin is high, where
   ESPHome sets it high to measure the current, so each showed the other: about
