@@ -59,6 +59,8 @@ export const MAX_FIRMWARE = 8;
 export const MAX_DEVICES = 50;
 export const STAGES = ["first", "whole"];
 
+import { bodySubject, hex, proven, sha256 } from "./proof-of-work.js";
+
 export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
@@ -82,41 +84,9 @@ function answer(status, body, headers = {}) {
   });
 }
 
-async function sha256(data) {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", data));
-}
-
-const hex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-
-function zeroBits(bytes) {
-  let bits = 0;
-  for (const byte of bytes) {
-    if (byte === 0) {
-      bits += 8;
-      continue;
-    }
-    return bits + Math.clz32(byte) - 24;
-  }
-  return bits;
-}
-
 // The work asked, lowered only by the tests, which import this module and set
 // `bits`: nothing the Worker is given, a variable or a secret, can lower it.
 export const work = { bits: null };
-
-// Whether "<time>:<nonce>" proves the work for a body of this hash, now.
-// `bits` is PROOF_BITS but in the tests, which ask for less, and /wanted's
-// lighter work; `age` how long ago it may have been made.
-export async function proven(proof, digest, now = Date.now() / 1000, bits = PROOF_BITS, age = PROOF_AGE) {
-  const [time, nonce, extra] = String(proof || "").split(":");
-  if (extra !== undefined || !/^\d{1,12}$/.test(time || "") || !/^\d{1,20}$/.test(nonce || "")) {
-    return false;
-  }
-  if (Math.abs(now - Number(time)) > age) {
-    return false;
-  }
-  return zeroBits(await sha256(new TextEncoder().encode(`${time}:${digest}:${nonce}`))) >= bits;
-}
 
 // The manifest a readout starts with, or null: the first file of its tar,
 // which is not compressed (the files after it are, each on its own).
@@ -235,7 +205,7 @@ async function question(request, env, now, what) {
     return answer(400, { error: `that is not a whole ${what}` });
   }
   const bits = work.bits ?? LIGHT_PROOF_BITS;
-  if (!(await proven(request.headers.get("X-Proof"), hex(await sha256(body)), now.getTime() / 1000, bits,
+  if (!(await proven(request.headers.get("X-Proof"), await bodySubject(body), now.getTime() / 1000, bits,
     LIGHT_PROOF_AGE))) {
     return answer(403, { error: `the ${what}'s proof of work does not check out` });
   }
@@ -307,9 +277,9 @@ export async function readout(request, env, now = new Date()) {
   if (body.byteLength !== declared) {
     return answer(400, { error: "that is not a whole readout" });
   }
-  const digest = hex(await sha256(body));
+  const digest = await bodySubject(body);
   const bits = work.bits ?? PROOF_BITS;
-  if (!(await proven(request.headers.get("X-Proof"), digest, now.getTime() / 1000, bits))) {
+  if (!(await proven(request.headers.get("X-Proof"), digest, now.getTime() / 1000, bits, PROOF_AGE))) {
     return answer(403, { error: "the readout's proof of work does not check out" });
   }
   const manifest = manifestOf(body);

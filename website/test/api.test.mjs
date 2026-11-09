@@ -24,7 +24,7 @@ const MANIFEST = { format: 1, product: "NEWTHING", stock_model: "SN-NEW-01", ver
 const readoutOf = (manifest = MANIFEST, extra = {}) =>
   tar({ "manifest.json": JSON.stringify(manifest), "flash.bin.xz": "\xfd7zXZ", ...extra });
 
-// The tool's work (readout.proof in tools/autoflash/readout.py), made easy for a test.
+// The tool's work (proof_of_work.solve, by way of readout.proof), made easy for a test.
 // Easier work than a real readout's, so the tests are quick: set on the module
 // (readout.work), as nothing the Worker is given can lower it.
 const BITS = 8;
