@@ -7,7 +7,7 @@ from __future__ import annotations
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import detect, join, kinds, output, plans, plugs
+from tools.autoflash import detect, join, kinds, output, plans, plugs, runs
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes.espressif import hub, identity, sonoff_firmware
 from tools.espressif import sonoff_identity
@@ -59,6 +59,25 @@ def rebuilt(ctx: Context, kind: kinds.Kind) -> tuple[bytes, str]:
     return flash, where
 
 
+def put_back(ctx: Context, why: str) -> dict[str, Any]:
+    """R1 with no way to put Sonoff's firmware together: the plug, on the
+    interim Tasmota here, goes back to the firmware it came from - ESPHome's
+    to ESPHome, the rest to Tasmota (one found part way, too) - rather than
+    being left part way. Its record says so (put_back) for the report and the
+    end of the run; and that it is part way now, so a run carried on goes on
+    there."""
+    from tools.autoflash import routes  # the routes import this module
+    came = runs.run_source(ctx.state)
+    firmware = "esphome" if came == "esphome" else "tasmota"
+    ctx.state.set_input("put_back", {"came_from": came, "why": why})
+    ctx.state.set_input("firmware", firmware)
+    ctx.state.set_input("source", "midway")
+    routes.go_on_instead("R1", firmware, "midway")
+    output.tell(f"    Sonoff's firmware cannot be put back: {why}.")
+    output.tell(f"    So the device goes back to {routes.FIRMWARES[firmware]}, rather than being left part way.")
+    return {"stage_outcome": "stopped", "put_back": firmware}
+
+
 def step_sonoff_restore(ctx: Context) -> dict[str, Any]:
     """R1 - the plug's own Sonoff firmware and settings, from its backup, beside
     the Tasmota it runs; the boot selection set to it last, then a restart.
@@ -74,7 +93,10 @@ def step_sonoff_restore(ctx: Context) -> dict[str, Any]:
         output.say("[dry-run] would put Sonoff's firmware together, as there is no backup of it")
         return {"dry_run": True}
     else:
-        backup, source = rebuilt(ctx, kind)
+        try:
+            backup, source = rebuilt(ctx, kind)
+        except NothingWritten as exc:
+            return put_back(ctx, str(exc))
     try:
         running = out_of_sonoffs_slot(ctx, backup, kind)
         first, second = plans.back_to_sonoff(backup, running=running, layout=layout)

@@ -349,7 +349,10 @@ the identity comes from: on Tasmota it reads the one the plug keeps, or else sig
 in to your eWeLink account; with neither, it stops there. From ESPHome the kept
 identity can be read only part way through, so the tool checks your account and,
 if that has no record of the plug, counts on the one the plug keeps - every plug
-this tool converted keeps one. Sonoff's firmware then
+this tool converted keeps one. If it turns out there is none after all, or
+Sonoff's firmware cannot be downloaded, the tool puts the plug back on the
+firmware it came from - ESPHome, or Tasmota - rather than leave it part way, and
+says so at the end. Sonoff's firmware then
 starts with its own settings: names, timers and energy history start afresh, and
 the meter's factory calibration comes back only with the backup.
 

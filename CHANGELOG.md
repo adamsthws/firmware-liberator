@@ -191,7 +191,10 @@ check.
 - Sonoff's firmware is offered to a converted plug with no backup on your computer
   too, as almost every one can go back without it: its identity is the one it
   keeps, or comes from your eWeLink account. It used to be offered only to a plug
-  on Tasmota keeping its identity, and the rest needed `--firmware sonoff`.
+  on Tasmota keeping its identity, and the rest needed `--firmware sonoff`. If
+  Sonoff's firmware cannot be put together after all - no identity anywhere, or
+  its download failing - the plug goes back to the firmware it came from, ESPHome
+  or Tasmota, instead of being left part way, and the report says "Put back on".
 - A yes/no question is taken off the screen once answered, even after a wrong
   answer first. It stayed, under "Please answer y or n.", when nothing was
   shown above it.

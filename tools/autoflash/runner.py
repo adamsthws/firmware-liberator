@@ -558,8 +558,14 @@ def run_steps(ctx: Context) -> int:
         output.show("Dry run complete: nothing was written to the device.", output.GREEN)
         return 0
     updated = runs.run_source(ctx.state) == "outdated"
-    output.show("Update complete!" if updated else "Conversion complete!", output.GREEN)
     firmware = routes.ROUTE[0] or runs.run_firmware(ctx.state)
+    if ctx.state.input("put_back"):
+        # Sonoff's firmware could not be put together (sonoff.put_back): why is
+        # under R1's line.
+        output.show(f"Sonoff's firmware could not be put back, so the device is back on "
+                    f"{routes.FIRMWARES[firmware]}.", output.YELLOW)
+    else:
+        output.show("Update complete!" if updated else "Conversion complete!", output.GREEN)
     if updated:
         output.tell(f"The device is running {routes.FIRMWARES[firmware]} {update.versions(ctx)[1]}...")
         url = report.plug_page_url(ctx.state.input("plug_ip"))

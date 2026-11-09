@@ -309,6 +309,17 @@ class BekenTargetTests(unittest.TestCase):
         self.assertEqual([step for step, _, _ in routes.STEPS][:3], ["A0", "A3", "E1"])
         self.assertIsNone(ctx.firmware_choice)
 
+    def test_going_on_instead_keeps_the_steps_taken_and_numbers_on(self):
+        # R1 with nothing to put Sonoff's firmware together from: back to
+        # ESPHome from the interim Tasmota, the stages numbered on from R1's.
+        self.addCleanup(routes.apply_target, "tasmota", "sonoff")
+        routes.apply_target("sonoff", "esphome", espressif)
+        routes.go_on_instead("R1", "esphome", "midway")
+        self.assertEqual([step for step, _, _ in routes.STEPS],
+                         ["A0", "A3", "A5", "X1", "X2", "D4", "D5", "R1", "K1", "I1", "I2"])
+        self.assertEqual(routes.ROUTE, ("esphome", "midway"))
+        self.assertNotIn("R2", routes.STEP_INDEX)
+
     def test_kept_on_tasmota_at_a3_the_run_ends_with_nothing_to_do(self):
         self.addCleanup(routes.apply_target, "tasmota", "sonoff")
         ctx = SimpleNamespace(state=self.state(plug_kind="sonoff-s60", plug_mac="12:34:56:ab:cd:ef", source="tasmota"),

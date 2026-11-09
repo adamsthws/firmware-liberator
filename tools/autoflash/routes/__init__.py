@@ -210,6 +210,20 @@ def apply_target(firmware: str | None, source: str = "sonoff", family: ModuleTyp
     STEP_INDEX = {step: (title, handler) for step, title, handler in STEPS}
 
 
+def go_on_instead(after: str, firmware: str, source: str) -> None:
+    """The run goes on to `firmware` instead, from where it is - `after`, the
+    step under way - on the route from `source`: the steps that route has
+    and the run has not taken, after it. Numbered on from there, as the run
+    showed them; a run carried on takes that route from the start, its
+    steps done passed over."""
+    global STEPS, STEP_INDEX, ROUTE
+    names = [step for step, _, _ in STEPS]
+    taken = STEPS[:names.index(after) + 1]
+    STEPS = taken + [entry for entry in steps_for(firmware, source, FAMILY) if entry[0] not in set(names)]
+    STEP_INDEX = {step: (title, handler) for step, title, handler in STEPS}
+    ROUTE = (firmware, source)
+
+
 def continue_with(steps: Steps) -> None:
     """Steps the run goes on to after its route's last: a plug converted on
     an earlier release of its firmware, updated once done

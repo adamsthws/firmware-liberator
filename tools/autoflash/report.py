@@ -94,6 +94,8 @@ def run_result(ctx: Context, ending: str) -> str:
     ending: "converted", "failed" or "crashed".
     """
     if ending == "converted":
+        if ctx.state.input("put_back"):
+            return f"put back on {routes.FIRMWARES[runs.run_firmware(ctx.state)]}"
         return "updated" if runs.run_source(ctx.state) == "outdated" else "converted"
     # The stage that failed, not the first left to do: a failure may have sent
     # earlier steps back to be done again (E3 refused as changed sends E1, E2).
@@ -137,7 +139,7 @@ def converted_from(ctx: Context, firmware: str | None) -> str:
     recorded, for a run of 1.x."""
     if ctx.state.input("replaced_build"):
         return "its own build"
-    source = runs.run_source(ctx.state)
+    source = (ctx.state.input("put_back") or {}).get("came_from") or runs.run_source(ctx.state)
     found = (ctx.state.input("source") or ctx.state.input("stock_version")
              or any(map(ctx.state.is_done, ctx.state.data.get("steps", {}))))
     if not found:
