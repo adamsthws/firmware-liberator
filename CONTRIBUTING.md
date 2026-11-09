@@ -172,6 +172,20 @@ here" in the docs.
 [docs/home-assistant-adoption.md](docs/home-assistant-adoption.md) is a good page
 to copy the style from.
 
+### What goes in `docs/`, and what in `.github/`
+
+`docs/` is published on the website, for the people who use the tool and
+those who work on its code. A page there says what its reader does and sees,
+and why, and links to the code for how.
+
+What only the maintainer needs goes in a page in `.github/`, which the website
+leaves out: how the project's servers and API work (proof of work, rate
+limits, storage, retention), the accounts and tokens behind them, and how to
+look after what they hold. Such a page says at its start that it is for the
+maintainer, and links to the `docs/` page its reader would otherwise look
+for. [.github/readouts.md](.github/readouts.md) is the maintainer's side of
+[docs/readouts.md](docs/readouts.md).
+
 ## Elsewhere
 
 A bug found in another project - Tasmota, ESPHome, ESP-IDF, OpenBeken, the

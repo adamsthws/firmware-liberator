@@ -1,5 +1,5 @@
 // api.firmwareliberator.com: the project's API. For now one path, /readout,
-// where the tool sends a device's readout with its owner's consent (tools/autoflash/readout.py, docs/readouts.md). A Worker
+// where the tool sends a device's readout with its owner's consent (tools/autoflash/readout.py, .github/readouts.md). A Worker
 // of its own, apart from the website's, so nothing sent here can touch the site.
 //
 // The tool is open source, so it can hold no secret: what keeps this from being
