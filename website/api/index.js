@@ -31,12 +31,13 @@
 //   the day is full. NOTIFY_DAILY addresses a day may be given.
 // - Until the database has every migration this code needs (database.js),
 //   each path answers 503, so the tool tries again later.
-// - Kept RETENTION_DAYS: the bucket's lifecycle rule (tools/repo/
-//   cloudflare_settings.py) deletes everything under readouts/, with the marks
-//   of what is held (readouts/held/, readouts/firmware/) and the day counts.
-//   One worth keeping is moved under kept/ by hand, with its marks
-//   (kept/held/..., kept/firmware/...). So the bucket stays under R2's free
-//   10 GB: DAILY_BYTES * RETENTION_DAYS, plus KEPT_BYTES for kept/.
+// - Kept for good, with the marks of what is held (readouts/held/,
+//   readouts/firmware/): a readout is kept only if it adds something, so the
+//   store grows only with firmware not seen before, and an old one may prove
+//   useful long after. TOTAL_BYTES of them at most, counted in the database
+//   as the day's are, keeps the bucket within R2's free 10 GB, with room for
+//   the addresses under notify/; past it, none is taken until some are
+//   deleted by hand (.github/readouts.md).
 // - A device enough readouts of are in, by eWeLink's product model in ENOUGH
 //   (a comma-separated variable in wrangler.jsonc), is not wanted at all.
 // - The same readout sent again the same day is the one already stored.
@@ -49,8 +50,7 @@ export const PROOF_BITS = 24;
 export const PROOF_AGE = 15 * 60;
 export const DAILY_COUNT = 100;
 export const DAILY_BYTES = 250 * 1024 * 1024;
-export const RETENTION_DAYS = 30;
-export const KEPT_BYTES = 2 * 1024 * 1024 * 1024;
+export const TOTAL_BYTES = 8 * 1024 * 1024 * 1024;
 export const FORMAT = 1;
 export const LIGHT_PROOF_BITS = 20;
 export const LIGHT_PROOF_AGE = 60;
@@ -119,39 +119,41 @@ function enoughOf(env) {
 const text = (value, most = 64) => typeof value === "string" && value.length > 0 && value.length <= most;
 const part = (value) => encodeURIComponent(String(value));
 
-// Where a readout of this model, version and stage is marked held: under
-// readouts/ (gone with the readouts, after RETENTION_DAYS) and kept/.
-const heldKeys = (product, model, version, stage) =>
-  ["readouts", "kept"].map((top) =>
-    `${top}/held/${part(product.toUpperCase())}/${part(model)}/${part(version)}/${stage}`);
-const firmwareKeys = (sha) => ["readouts", "kept"].map((top) => `${top}/firmware/${sha}`);
+// Where a readout of this model, version and stage is marked held, and an
+// offered file it holds.
+const heldKey = (product, model, version, stage) =>
+  `readouts/held/${part(product.toUpperCase())}/${part(model)}/${part(version)}/${stage}`;
+const firmwareKey = (sha) => `readouts/firmware/${sha}`;
 
-async function anyHeld(env, keys) {
-  for (const key of keys) {
-    if (await env.READOUTS.head(key)) {
-      return true;
-    }
-  }
-  return false;
-}
+const isHeld = async (env, key) => (await env.READOUTS.head(key)) !== null;
 
 // Whether a readout at `stage` adds anything: none at that stage is held, and
 // for a first stage, no whole one either, which holds all a first stage does.
 async function adds(env, product, model, version, stage) {
   const stages = stage === "whole" ? ["whole"] : ["first", "whole"];
   for (const each of stages) {
-    if (await anyHeld(env, heldKeys(product, model, version, each))) {
+    if (await isHeld(env, heldKey(product, model, version, each))) {
       return false;
     }
   }
   return true;
 }
 
-// The names of the day's counts (counters.js): readouts kept, and addresses given.
+// The names of the counts (counters.js): the day's readouts kept, and
+// addresses given, and the bytes of every readout ever kept.
 const readoutsOn = (day) => `readouts:${day}`;
 const notifyOn = (day) => `notify:${day}`;
+const READOUTS_EVER = "readouts:all";
 
-const full = (today) => today.count >= DAILY_COUNT || today.bytes >= DAILY_BYTES;
+// Why no readout can be kept now, or null: "store-full", the store's limit
+// reached, which waiting a day will not change, or "full", the day's.
+const fullness = async (env, day) => {
+  const [today, ever] = await Promise.all([read(env.DB, readoutsOn(day)), read(env.DB, READOUTS_EVER)]);
+  if (ever.bytes >= TOTAL_BYTES) {
+    return "store-full";
+  }
+  return today.count >= DAILY_COUNT || today.bytes >= DAILY_BYTES ? "full" : null;
+};
 
 // A question of the tool's, its light work done: the parsed JSON, or a Response.
 async function question(request, env, now, what) {
@@ -188,8 +190,8 @@ async function question(request, env, now, what) {
 // Whether a readout of a device would add anything, asked before it is made:
 // {"format": 1, "product", "model", "version", "stage": "first"|"whole",
 //  "firmware": [<SHA-256 of each file eWeLink offers it>]}. Answers
-// {"wanted": bool, "why": "enough"|"held"|"full" when not, "held": [<those
-// of the files kept already>]}.
+// {"wanted": bool, "why": "enough"|"held"|"full"|"store-full" when not,
+// "held": [<those of the files kept already>]}.
 export async function wanted(request, env, now = new Date()) {
   const asked = await question(request, env, now, "question");
   if (asked instanceof Response) {
@@ -203,7 +205,7 @@ export async function wanted(request, env, now = new Date()) {
   }
   const held = [];
   for (const sha of firmware) {
-    if (await anyHeld(env, firmwareKeys(sha))) {
+    if (await isHeld(env, firmwareKey(sha))) {
       held.push(sha);
     }
   }
@@ -214,8 +216,9 @@ export async function wanted(request, env, now = new Date()) {
   if (!(await adds(env, asked.product, asked.model, asked.version, asked.stage))) {
     return no("held");
   }
-  if (full(await read(env.DB, readoutsOn(now.toISOString().slice(0, 10))))) {
-    return no("full");
+  const full = await fullness(env, now.toISOString().slice(0, 10));
+  if (full) {
+    return no(full);
   }
   return answer(200, { wanted: true, held });
 }
@@ -270,10 +273,16 @@ export async function readout(request, env, now = new Date()) {
     { bytes: body.byteLength, most: DAILY_COUNT, mostBytes: DAILY_BYTES }))) {
     return answer(503, { error: "enough readouts for today: try again tomorrow" }, { "Retry-After": "86400" });
   }
+  if (!(await reserve(env.DB, READOUTS_EVER, null, { bytes: body.byteLength, mostBytes: TOTAL_BYTES }))) {
+    await release(env.DB, readoutsOn(day), body.byteLength);
+    return answer(503, { error: "the store of readouts is full: try again another time" },
+      { "Retry-After": "604800" });
+  }
   try {
     await keep(env, key, body, manifest, model, version, stage, id);
   } catch (error) {
     await release(env.DB, readoutsOn(day), body.byteLength);
+    await release(env.DB, READOUTS_EVER, body.byteLength);
     throw error;
   }
   return answer(201, { id });
@@ -290,11 +299,10 @@ async function keep(env, key, body, manifest, model, version, stage, id) {
       read: String(manifest.read === true),
     },
   });
-  const [heldKey] = heldKeys(manifest.product, model, version, stage);
-  await env.READOUTS.put(heldKey, id, { customMetadata: { readout: key } });
+  await env.READOUTS.put(heldKey(manifest.product, model, version, stage), id, { customMetadata: { readout: key } });
   for (const item of Array.isArray(manifest.offered) ? manifest.offered.slice(0, MAX_FIRMWARE) : []) {
     if (typeof item?.sha256 === "string" && /^[0-9a-f]{64}$/.test(item.sha256) && !item.held) {
-      await env.READOUTS.put(firmwareKeys(item.sha256)[0], id, { customMetadata: { readout: key } });
+      await env.READOUTS.put(firmwareKey(item.sha256), id, { customMetadata: { readout: key } });
     }
   }
 }

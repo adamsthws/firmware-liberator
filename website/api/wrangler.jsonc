@@ -11,7 +11,7 @@
   ],
   "workers_dev": false,
   "preview_urls": false,
-  // Private: made, with its lifecycle rule, by tools/repo/cloudflare_settings.py.
+  // Private, and kept for good: made by tools/repo/cloudflare_settings.py.
   "r2_buckets": [
     { "binding": "READOUTS", "bucket_name": "firmware-liberator-readouts" }
   ],

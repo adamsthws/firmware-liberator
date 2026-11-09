@@ -1,6 +1,6 @@
 # The website's Cloudflare settings, as tools/repo/cloudflare_settings.py
 # says - the zone, its DNS records, its redirect and rate-limiting rule,
-# Email Routing, and the readouts bucket with its lifecycle rule - checked,
+# Email Routing, and the readouts bucket, which keeps them for good - checked,
 # never set: weekly, and on each push to main that changes them. A run fails
 # on any difference, whether a change made in the dashboard or one written
 # down there and not applied yet. Settings are applied by hand, with a

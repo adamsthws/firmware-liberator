@@ -206,7 +206,7 @@ test("a readout adds something or is thanked and not kept", async () => {
   assert.deepEqual(await response.json(), { enough: true });
 });
 
-test("what is held is marked where the lifecycle rule removes it with the readouts", async () => {
+test("what is held is marked beside the readouts, kept for good with them", async () => {
   const bindings = env();
   const offered = [{ file: "offered/user1.bin", version: "1.1.0", sha256: "a".repeat(64) },
     { file: null, version: "1.1.0", sha256: "b".repeat(64), held: true }];
@@ -225,11 +225,46 @@ test("a device enough readouts of are in is thanked, not kept", async () => {
   assert.equal(bindings.READOUTS.objects.size, 0);
 });
 
-test("what it may keep stays within R2's free 10 GB", () => {
+test("what it may keep stays within R2's free 10 GB, with room to spare, and nothing expires", () => {
   const free = 10 * 1024 ** 3;
-  assert.ok(readout.DAILY_BYTES * readout.RETENTION_DAYS + readout.KEPT_BYTES <= free);
+  assert.ok(readout.TOTAL_BYTES <= free - 1.5 * 1024 ** 3, "room for the addresses and to notice before it fills");
+  assert.ok(readout.DAILY_BYTES < readout.TOTAL_BYTES);
   const settings = readFileSync(new URL("../../tools/repo/cloudflare_settings.py", import.meta.url), "utf8");
-  assert.match(settings, new RegExp(`READOUTS_KEPT_DAYS = ${readout.RETENTION_DAYS}\\b`));
+  assert.match(settings, /^READOUTS_LIFECYCLE = \{"rules": \[\]\}$/m);
+});
+
+// The bytes of every readout ever kept, as the database holds them.
+const storeHolds = (bindings, bytes) => bindings.DB.db
+  .prepare("INSERT INTO counters (name, day, count, bytes) VALUES ('readouts:all', NULL, 1, ?)").run(bytes);
+
+test("every readout kept counts towards the store's limit", async () => {
+  const bindings = env();
+  let bytes = 0;
+  for (const version of ["1.0.0", "1.0.1"]) {
+    const body = readoutOf({ ...MANIFEST, version });
+    bytes += body.byteLength;
+    await send(post(body), bindings);
+  }
+  assert.deepEqual(await read(bindings.DB, "readouts:all"), { count: 2, bytes });
+});
+
+test("the store's limit is never passed, and the day's place is given back", async () => {
+  const bindings = env();
+  storeHolds(bindings, readout.TOTAL_BYTES - 1);
+  const response = await send(post(readoutOf()), bindings);
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).error, /store of readouts is full/);
+  assert.deepEqual(await read(bindings.DB, "readouts:2026-11-07"), { count: 0, bytes: 0 });
+  assert.equal(tars(bindings).length, 0);
+});
+
+test("a readout not kept after all gives back its place in the store too", async () => {
+  const bindings = env();
+  bindings.READOUTS.put = async () => {
+    throw new Error("R2 down");
+  };
+  await assert.rejects(send(post(readoutOf()), bindings), /R2 down/);
+  assert.deepEqual(await read(bindings.DB, "readouts:all"), { count: 0, bytes: 0 });
 });
 
 test("the full work is asked, whatever the Worker is given", async () => {
@@ -301,8 +336,16 @@ test("asked first, the files held already are named, wanted or not", async () =>
   await send(post(readoutOf({ ...MANIFEST, product: "OTHERTHING", offered })), bindings);
   const answer = await ask({ ...ASKED, firmware: ["a".repeat(64), "c".repeat(64)] }, bindings);
   assert.deepEqual(answer, { wanted: true, held: ["a".repeat(64)] });
-  bindings.READOUTS.objects.set(`kept/firmware/${"c".repeat(64)}`, { size: 1 });
+  bindings.READOUTS.objects.set(`readouts/firmware/${"c".repeat(64)}`, { size: 1 });
   assert.deepEqual((await ask({ ...ASKED, firmware: ["c".repeat(64)] }, bindings)).held, ["c".repeat(64)]);
+});
+
+test("asked first, a full store says so, whatever the day", async () => {
+  const bindings = env();
+  storeHolds(bindings, readout.TOTAL_BYTES);
+  assert.equal((await ask({ ...ASKED, product: "FULL2" }, bindings)).why, "store-full");
+  assert.equal((await ask({ ...ASKED, product: "FULL2" }, bindings, new Date("2026-12-07T12:00:00Z"))).why,
+    "store-full");
 });
 
 test("asked first, a full day says so, by count or by bytes, and the next day does not", async () => {
@@ -381,7 +424,7 @@ test("an address is kept once a product, with its models, to be told of a change
     [...again.READOUTS.objects.keys()].find((key) => key.startsWith("notify/NEWTHING/")), "one per address, any case");
 });
 
-test("an address is never under readouts/, which the lifecycle rule empties", async () => {
+test("an address is kept apart from the readouts, under notify/ alone", async () => {
   const bindings = env();
   await tell(NOTIFY, bindings);
   for (const [key, item] of bindings.READOUTS.objects) {

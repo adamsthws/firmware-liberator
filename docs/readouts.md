@@ -145,7 +145,9 @@ sh start.sh readout --send <path to readout.tar>
 
 The readout goes to the project's server at `api.firmwareliberator.com`. It
 is stored privately, never published, and used only to add support for the
-device. Nothing about you is stored except the (optional) contact information you chose to give.
+device. It is kept, not deleted after a while: a readout of one firmware
+version can help with that device's later versions too. Nothing about you is
+stored except the (optional) contact information you chose to give.
 
 ### Your email address
 

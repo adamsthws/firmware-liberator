@@ -166,7 +166,7 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertEqual(fake.buckets, {cs.READOUTS_BUCKET})
         self.assertEqual([cs.comparable(rule, cs.RATE_LIMITS[0]) for rule in fake.rulesets[RATE_LIMITS]],
                          cs.RATE_LIMITS)
-        self.assertEqual(fake.lifecycle, cs.READOUTS_LIFECYCLE)
+        self.assertIsNone(fake.lifecycle, "a new bucket has no lifecycle rule, and is given none")
         self.assertTrue(fake.routing)
         self.assertEqual(fake.databases, [{"name": cs.D1_DATABASE, "uuid": "u1"}])
         self.assertEqual(fake.migrations, cs.migration_files())
@@ -191,13 +191,19 @@ class CloudflareSettingsTests(unittest.TestCase):
             self.assertIn(f'{{ "pattern": "{host}", "custom_domain": true }}', config)
         self.assertEqual(cs.REDIRECTS[0]["expression"], f'(http.host eq "www.{cs.ZONE}")')
 
-    def test_a_lifecycle_rule_changed_by_hand_is_put_back(self):
+    def test_a_lifecycle_rule_added_by_hand_is_taken_away_as_readouts_are_kept_for_good(self):
         fake = FakeCloudflare()
+        fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09"}]
         run(fake, "apply")
-        fake.lifecycle["rules"][0]["deleteObjectsTransition"]["condition"]["maxAge"] = 10 ** 9
+        fake.lifecycle = {"rules": [{"id": "readouts-expire", "enabled": True, "conditions": {"prefix": "readouts/"},
+                                     "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": 86400}}}]}
         fake.sent.clear()
+        code, out = run(fake)
+        self.assertEqual(code, 1)
+        self.assertIn("lifecycle: has ['readouts-expire'], should have none: readouts are kept for good", out)
         run(fake, "apply")
-        self.assertEqual([path for _, path, _ in fake.sent], [f"{BUCKETS}/{cs.READOUTS_BUCKET}/lifecycle"])
+        self.assertEqual(fake.sent, [("PUT", f"{BUCKETS}/{cs.READOUTS_BUCKET}/lifecycle", {"rules": []})])
+        self.assertEqual(run(fake)[0], 0)
 
     def test_the_readouts_go_to_the_bucket_it_makes(self):
         config = (Path(__file__).resolve().parents[2] / "website/api/wrangler.jsonc").read_text(encoding="utf-8")
