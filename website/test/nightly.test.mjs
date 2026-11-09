@@ -247,3 +247,14 @@ test("each night notes how much the store of readouts holds", async () => {
   const index = readFileSync(new URL("../api/index.js", import.meta.url), "utf8");
   assert.match(index, new RegExp(`const READOUTS_EVER = "${night.READOUTS_EVER}";`), "named alike in index.js");
 });
+
+test("each night clears readouts never taken as right and addresses never confirmed (pending.js)", async () => {
+  const bindings = { ...env(), READOUTS: { ...bucket(), delete: async () => {} } };
+  bindings.DB.db.prepare(`INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, review)
+    VALUES ('old', 'K', 'whole', 's', 'f', 1, 'readouts/x/old.tar', '2026-09-01T00:00:00Z', 'pending')`).run();
+  bindings.DB.db.prepare(`INSERT INTO signups (token, who, email, devices, day)
+    VALUES ('t', 'w', 'e', '[]', '2026-10-01')`).run();
+  const done = await night.nightly(bindings, NIGHT);
+  assert.deepEqual(done.pruned, { readouts: 1, signups: 1 });
+  assert.deepEqual(rows(bindings, "SELECT id FROM readouts"), []);
+});

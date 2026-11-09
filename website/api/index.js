@@ -1,8 +1,10 @@
 // api.firmwareliberator.com: the project's API (tools/autoflash/readout.py,
 // .github/readouts.md). A Worker of its own, apart from the website's, so
-// nothing sent here can touch the site. Five paths: four a POST from the tool
+// nothing sent here can touch the site. Six paths: four a POST from the tool
 // - /reports (reports.js, which says how it is guarded), and three for
-// readouts - and /forget, the one a person opens:
+// readouts - and /confirm and /forget, which a person opens from an email.
+// Every one answers 503 while INGEST is not "on". A sender is counted by its
+// address, an IPv6 one by its /48 (sender.js).
 // - /wanted: whether a readout of a device would add anything, asked before
 //   it is made. Its product model, firmware model and version, the stage it
 //   would be (a first stage, or a whole memory), and the firmware eWeLink
@@ -13,10 +15,13 @@
 //   stage are held (a whole one taking a first stage's place too), and its
 //   sender has had fewer than SENDER_DAILY kept today.
 // - /notify: an owner's email address and their devices' models, to be told
-//   when a device's status changes, whether or not a readout was wanted, with
-//   one removal link an address.
-// - /forget: that link. A GET shows a page asking to confirm; only the POST
-//   it sends removes the address, so a mail scanner following it cannot.
+//   when a device's status changes, whether or not a readout was wanted. The
+//   address is sent a link to confirm it, and nothing is kept until it is.
+// - /confirm: that link; /forget: the link to stop, one an address. A GET of
+//   either shows a page asking first; only the POST it sends acts, so a mail
+//   scanner following one does nothing.
+// - Readouts not taken as right are held to PENDING_BYTES, and deleted with
+//   unconfirmed addresses by the nightly job after their days (pending.js).
 //
 // The tool is open source, so it can hold no secret: what keeps this from being
 // flooded is that each request costs its sender work, and that the bucket has
@@ -27,7 +32,8 @@
 //   that body alone. Hardware made for it does that in milliseconds, so the
 //   daily limits below, not this, are what bound the bucket. /wanted and
 //   /notify ask lighter work (LIGHT_PROOF_BITS, a second or two) good for a
-//   minute (LIGHT_PROOF_AGE): each request is worked for afresh.
+//   minute (LIGHT_PROOF_AGE), and taken once: each request is worked for
+//   afresh. Text a sender gives is taken only if it is printable ASCII.
 // - It must be a readout: a tar of at most MAX_BYTES, its first file a
 //   manifest.json of the format the tool writes.
 // - At most two readouts a minute from one address (READOUT_LIMIT, held by the
@@ -65,7 +71,19 @@ export const LIGHT_PROOF_AGE = 60;
 export const QUESTION_MAX_BYTES = 4096;
 export const NOTIFY_DAILY = 500;
 export const MAX_FIRMWARE = 8;
-export const MAX_DEVICES = 50;
+export const MAX_DEVICES = 20;
+// Sign-ups to be told of a change one sender may ask for a day, and one
+// address may be sent a confirmation for: so nobody can have many strangers
+// emailed, or one stranger many times.
+export const NOTIFY_SENDER_DAILY = 5;
+// Where the confirmation an address is sent comes from: on the domain the
+// Email Service sends for (.github/readouts.md says how it was set up).
+export const NOTIFY_FROM = "updates@firmwareliberator.com";
+export const CONFIRM_URL = "https://api.firmwareliberator.com/confirm";
+// The most of the store that readouts not yet taken as right may take: so
+// made-up ones, kept until the nightly job deletes them (pending.js), can
+// never fill it.
+export const PENDING_BYTES = 1024 * 1024 * 1024;
 export const STAGES = ["first", "whole"];
 // Readouts kept of each product, firmware model and version, each from a
 // different sender: three, so one made up stands out against the two that
@@ -78,6 +96,8 @@ export const SENDER_DAILY = 20;
 import { answer } from "./answer.js";
 import { read, release, reserve } from "./counters.js";
 import { ready } from "./database.js";
+import { PENDING, SIGNUP_DAYS } from "./pending.js";
+import { senderAddress } from "./sender.js";
 import { bodySubject, hex, proven, sha256, work } from "./proof-of-work.js";
 import { nightly } from "./nightly.js";
 import { countWanted, reports } from "./reports.js";
@@ -87,13 +107,19 @@ export { work };
 // Each path, and only these: tools/repo/cloudflare_settings.py's firewall rule lets
 // through a POST to these alone.
 export const ROUTES = { "/readout": readout, "/wanted": wanted, "/notify": notify, "/reports": reports,
-  "/forget": forget };
+  "/confirm": confirm, "/forget": forget };
 
 export default {
   async fetch(request, env) {
     const route = ROUTES[new URL(request.url).pathname];
     if (!route) {
       return answer(404, { error: "readouts are sent to /readout, by the tool" });
+    }
+    // The one switch for every path: "on" takes requests; anything else, as
+    // the website workflow can deploy with, answers 503 for the tool to try
+    // again later.
+    if (env.INGEST !== "on") {
+      return answer(503, { error: "not taking requests for now: try again later" }, { "Retry-After": "3600" });
     }
     if (!(await ready(env.DB))) {
       return answer(503, { error: "the API is being updated: try again later" }, { "Retry-After": "300" });
@@ -133,7 +159,11 @@ function enoughOf(env) {
   return String(env.ENOUGH || "").split(",").map((model) => model.trim().toUpperCase()).filter(Boolean);
 }
 
-const text = (value, most = 64) => typeof value === "string" && value.length > 0 && value.length <= most;
+// Text from a sender: printable ASCII alone, so nothing kept can carry a
+// terminal's escape sequences to whoever reads it (tools/repo/readouts.py).
+const PRINTABLE = /^[\x20-\x7e]+$/;
+const text = (value, most = 64) => typeof value === "string" && value.length > 0 && value.length <= most
+  && PRINTABLE.test(value);
 const part = (value) => encodeURIComponent(String(value));
 
 // Where an offered file a readout holds is marked.
@@ -173,7 +203,8 @@ async function keyedHash(env, what) {
   return hex(new Uint8Array(mac)).slice(0, 32);
 }
 
-const addressOf = (request) => request.headers.get("CF-Connecting-IP") || "unknown";
+// A sender's address, as senders are counted: IPv6 by its /48 (sender.js).
+const addressOf = senderAddress;
 // The sender of a readout of `key`, as its row names it: one hash a key, so
 // nothing ties one sender's readouts of different keys together.
 const senderOf = (env, request, key) => keyedHash(env, `${key}|${addressOf(request)}`);
@@ -211,11 +242,16 @@ async function hold(env, row) {
   if (!taken) {
     return false;
   }
-  await env.DB.prepare(
+  const agreed = (await env.DB.prepare(
     `UPDATE readouts SET review = 'quorum' WHERE key = ?1 AND stage = ?2 AND review = 'pending'
      AND fingerprint = ?3 AND (SELECT count(*) FROM readouts WHERE key = ?1 AND stage = ?2
-       AND fingerprint = ?3 AND review != 'rejected') >= ?4`,
-  ).bind(row.key, row.stage, row.fingerprint, PER_KEY).run();
+       AND fingerprint = ?3 AND review != 'rejected') >= ?4 RETURNING bytes`,
+  ).bind(row.key, row.stage, row.fingerprint, PER_KEY).all()).results;
+  // Taken as right: no longer held to the pending readouts' room.
+  const bytes = agreed.reduce((total, each) => total + each.bytes, 0);
+  if (bytes) {
+    await release(env.DB, PENDING, bytes, agreed.length);
+  }
   return true;
 }
 
@@ -259,9 +295,16 @@ async function question(request, env, now, what) {
     return answer(400, { error: `that is not a whole ${what}` });
   }
   const bits = work.bits ?? LIGHT_PROOF_BITS;
-  if (!(await proven(request.headers.get("X-Proof"), await bodySubject(body), now.getTime() / 1000, bits,
-    LIGHT_PROOF_AGE))) {
+  const subject = await bodySubject(body);
+  const proof = String(request.headers.get("X-Proof") ?? "");
+  if (!(await proven(proof, subject, now.getTime() / 1000, bits, LIGHT_PROOF_AGE))) {
     return answer(403, { error: `the ${what}'s proof of work does not check out` });
+  }
+  // Each proof once: within its minute, one sent again is not taken.
+  const day = now.toISOString().slice(0, 10);
+  const used = hex(await sha256(new TextEncoder().encode(`${proof}|${subject}`))).slice(0, 32);
+  if (!(await reserve(env.DB, `proof:${used}`, day, { most: 1 }))) {
+    return answer(403, { error: `the ${what}'s proof of work was used already` });
   }
   try {
     const asked = JSON.parse(new TextDecoder().decode(body));
@@ -331,7 +374,7 @@ export async function readout(request, env, now = new Date()) {
   if (declared > MAX_BYTES) {
     return answer(413, { error: `a readout is at most ${MAX_BYTES} bytes` });
   }
-  const { success } = await env.READOUT_LIMIT.limit({ key: request.headers.get("CF-Connecting-IP") || "unknown" });
+  const { success } = await env.READOUT_LIMIT.limit({ key: addressOf(request) });
   if (!success) {
     return answer(429, { error: "too many readouts at once: try again in a minute" });
   }
@@ -345,7 +388,7 @@ export async function readout(request, env, now = new Date()) {
     return answer(403, { error: "the readout's proof of work does not check out" });
   }
   const manifest = manifestOf(body);
-  if (!manifest) {
+  if (!manifest || !text(manifest.product)) {
     return answer(400, { error: "that is not a readout this tool makes" });
   }
   const day = now.toISOString().slice(0, 10);
@@ -399,6 +442,12 @@ export async function readout(request, env, now = new Date()) {
     return answer(503, { error: "the store of readouts is full: try again another time" },
       { "Retry-After": "604800" });
   }
+  // Pending until three agree or it is approved, and held to their room.
+  if (!(await take(PENDING, null, { mostBytes: PENDING_BYTES }, body.byteLength))) {
+    await giveBack();
+    return answer(503, { error: "too many readouts are waiting for review: try again another time" },
+      { "Retry-After": "604800" });
+  }
   const row = { key: readoutKey, stage, sender: from, id, fingerprint: await fingerprintOf(manifest, stage),
     bytes: body.byteLength, object: key, received: now.toISOString() };
   if (!(await hold(env, row))) {
@@ -408,6 +457,14 @@ export async function readout(request, env, now = new Date()) {
   try {
     await keep(env, key, body, manifest, id);
   } catch (error) {
+    // Nothing of it left behind: a mark left would say a file is held that
+    // is not, and nothing would ever delete it.
+    const { results: marks } = await env.DB.prepare("SELECT sha FROM readout_firmware WHERE readout = ?").bind(id).all();
+    for (const mark of marks) {
+      await env.READOUTS.delete(firmwareKey(mark.sha));
+    }
+    await env.READOUTS.delete(key);
+    await env.DB.prepare("DELETE FROM readout_firmware WHERE readout = ?").bind(id).run();
     await env.DB.prepare("DELETE FROM readouts WHERE id = ?").bind(id).run();
     await giveBack();
     throw error;
@@ -420,14 +477,20 @@ async function keep(env, key, body, manifest, id) {
   await env.READOUTS.put(key, body, {
     httpMetadata: { contentType: "application/x-tar" },
     customMetadata: {
-      tool: String(manifest.tool || "").slice(0, 16),
+      tool: String(manifest.tool || "").replace(/[^\x20-\x7e]/g, "").slice(0, 16),
       product: manifest.product.slice(0, 40),
       contact: String(Boolean(manifest.contact)),
       read: String(manifest.read === true),
     },
   });
+  // Each file it holds marked, once - the first readout to hold one keeps the
+  // mark - and listed by the readout, so deleting it deletes its marks too:
+  // listed first, so a mark is never written that its readout does not list.
   for (const item of Array.isArray(manifest.offered) ? manifest.offered.slice(0, MAX_FIRMWARE) : []) {
-    if (typeof item?.sha256 === "string" && /^[0-9a-f]{64}$/.test(item.sha256) && !item.held) {
+    if (typeof item?.sha256 === "string" && /^[0-9a-f]{64}$/.test(item.sha256) && !item.held
+        && !(await isHeld(env, firmwareKey(item.sha256)))) {
+      await env.DB.prepare("INSERT OR IGNORE INTO readout_firmware (readout, sha) VALUES (?1, ?2)")
+        .bind(id, item.sha256).run();
       await env.READOUTS.put(firmwareKey(item.sha256), id, { customMetadata: { readout: key } });
     }
   }
@@ -454,10 +517,14 @@ async function indexOf(env, who) {
 }
 
 // An owner's email address, to be told when any of their devices' status
-// changes: {"format": 1, "email", "devices": [{"product", "model"}]}. Kept
-// under notify/<product>/<the address's SHA-256>.json, one a product and
-// address, until it is written to or removed (/forget, by the link each such
-// email carries: forgetLink, in each one's metadata as `forget`).
+// changes: {"format": 1, "email", "devices": [{"product", "model"}]}. Not
+// kept as given: the address is sent a link to confirm it (/confirm), and
+// only once its owner follows it is it kept, under
+// notify/<product>/<the address's SHA-256>.json, one a product and address,
+// until removed (/forget, by the link each such email carries). Asked and
+// never confirmed, it is deleted after SIGNUP_DAYS (pending.js). Answers 202
+// alike whether or not a confirmation was sent, so nobody learns from it
+// whether an address was asked for before.
 export async function notify(request, env, now = new Date()) {
   const asked = await question(request, env, now, "request");
   if (asked instanceof Response) {
@@ -469,12 +536,89 @@ export async function notify(request, env, now = new Date()) {
       || devices.length > MAX_DEVICES || !devices.every((device) => text(device?.product) && text(device?.model ?? "-"))) {
     return answer(400, { error: "that is not a request this tool makes" });
   }
+  if (!env.EMAIL) {
+    return answer(503, { error: "not taking addresses yet: try again another time" }, { "Retry-After": "86400" });
+  }
   const day = now.toISOString().slice(0, 10);
+  const sender = await keyedHash(env, `notify|${day}|${addressOf(request)}`);
+  if (!sender) {
+    return answer(503, { error: "the API is being set up: try again later" }, { "Retry-After": "3600" });
+  }
+  if (!(await reserve(env.DB, `notify-sender:${sender}:${day}`, day, { most: NOTIFY_SENDER_DAILY }))) {
+    return answer(503, { error: `${NOTIFY_SENDER_DAILY} a day from one address: try again tomorrow` },
+      { "Retry-After": "86400" });
+  }
+  const who = hex(await sha256(new TextEncoder().encode(email.toLowerCase())));
+  // One confirmation an address a day, however many ask for it.
+  if (!(await reserve(env.DB, `notify-to:${who}:${day}`, day, { most: 1 }))) {
+    return answer(202, { confirming: true });
+  }
   if (!(await reserve(env.DB, notifyOn(day), day, { most: NOTIFY_DAILY }))) {
     return answer(503, { error: "enough for today: try again tomorrow" }, { "Retry-After": "86400" });
   }
-  const who = hex(await sha256(new TextEncoder().encode(email.toLowerCase())));
-  const products = [...new Set(devices.map((device) => device.product.toUpperCase()))];
+  const token = hex(crypto.getRandomValues(new Uint8Array(16)));
+  const named = devices.map((device) => ({ product: device.product.toUpperCase(), model: device.model ?? "-" }));
+  await env.DB.prepare("INSERT INTO signups (token, who, email, devices, day) VALUES (?1, ?2, ?3, ?4, ?5)")
+    .bind(token, who, email, JSON.stringify(named), day).run();
+  const products = [...new Set(named.map((device) => device.product))];
+  try {
+    await env.EMAIL.send({
+      to: email,
+      from: NOTIFY_FROM,
+      subject: "Confirm: tell me when my device is supported",
+      text: [
+        "Someone - we hope you - asked Firmware Liberator to email this address when the",
+        `support for these devices changes: ${products.join(", ")}.`,
+        "",
+        `To be told, confirm it here: ${CONFIRM_URL}?t=${token}`,
+        "",
+        `If it was not you, do nothing: unless it is confirmed, the address is deleted in ${SIGNUP_DAYS} days`,
+        "and never written to again.",
+      ].join("\n"),
+    });
+  } catch (error) {
+    await env.DB.prepare("DELETE FROM signups WHERE token = ?").bind(token).run();
+    await release(env.DB, `notify-to:${who}:${day}`);
+    return answer(502, { error: "the confirmation could not be sent: try again later" });
+  }
+  return answer(202, { confirming: true });
+}
+
+// The link in a confirmation (?t=<token>): a GET shows what it confirms and
+// a button, and only the POST that button sends keeps the address, so a mail
+// scanner following the link confirms nothing.
+export async function confirm(request, env, now = new Date()) {
+  let token;
+  if (request.method === "GET") {
+    token = new URL(request.url).searchParams.get("t") ?? "";
+  } else if (request.method === "POST") {
+    token = new URLSearchParams(await request.text()).get("t") ?? "";
+  } else {
+    return answer(405, { error: "opened from the link in an email" }, { Allow: "GET, POST" });
+  }
+  const signup = TOKEN.test(token)
+    ? await env.DB.prepare("SELECT * FROM signups WHERE token = ?").bind(token).first() : null;
+  if (!signup) {
+    return page(404, "Nothing to confirm",
+      `<p>This link is not one we know, or it has been used, or more than ${SIGNUP_DAYS} days have passed.</p>`);
+  }
+  const devices = JSON.parse(signup.devices);
+  const products = [...new Set(devices.map((device) => device.product))];
+  if (request.method === "GET") {
+    return page(200, "Be told when your device is supported?",
+      `<p>Firmware Liberator will email you when the support for these changes: ${escape(products.join(", "))}.
+Every such email has a link to stop them.</p>
+<form method="post" action="/confirm"><input type="hidden" name="t" value="${token}">
+<button type="submit">Yes, email me</button></form>`);
+  }
+  await keepAddress(env, signup.email, signup.who, devices, now);
+  await env.DB.prepare("DELETE FROM signups WHERE token = ?").bind(token).run();
+  return page(200, "Confirmed", "<p>You will be emailed when your device's support changes. Thank you for helping.</p>");
+}
+
+// A confirmed address, kept for each product, with its one removal link.
+async function keepAddress(env, email, who, devices, now) {
+  const products = [...new Set(devices.map((device) => device.product))];
   // One token an address, kept as it was first made: every email sent it
   // carries the same link.
   const before = await indexOf(env, who);
@@ -484,20 +628,21 @@ export async function notify(request, env, now = new Date()) {
     products: [...new Set([...(Array.isArray(before?.products) ? before.products : []), ...products])] }),
   { httpMetadata: { contentType: "application/json" } });
   for (const product of products) {
-    const models = devices.filter((device) => device.product.toUpperCase() === product)
-      .map((device) => device.model).filter(Boolean);
+    const models = [...new Set(devices.filter((device) => device.product === product).map((device) => device.model))];
     await env.READOUTS.put(`notify/${part(product)}/${who}.json`,
-      JSON.stringify({ email, product, models: [...new Set(models)], since: now.toISOString(), forget }),
+      JSON.stringify({ email, product, models, since: now.toISOString(), forget }),
       // Its address, models and removal link in its metadata too: tools/repo/readouts.py notify lists
       // them without fetching each one.
       { httpMetadata: { contentType: "application/json" },
-        customMetadata: { product, email, models: [...new Set(models)].join(",").slice(0, 512), forget } });
+        customMetadata: { product, email, models: models.join(",").slice(0, 512), forget } });
   }
-  return answer(201, { products });
 }
 
+// Text put in a page's HTML, from wherever it came.
+const escape = (value) => String(value).replace(/[&<>"']/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
 function page(status, title, body) {
-  const escape = (value) => String(value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
 <title>${escape(title)}</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem}

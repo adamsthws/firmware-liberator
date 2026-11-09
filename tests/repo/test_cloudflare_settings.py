@@ -650,7 +650,8 @@ class ApiAndStatsTests(unittest.TestCase):
             self.assertIn(f'"{path}"', expression)
         self.assertIn('(http.request.method in {"POST"} and http.request.uri.path in '
                       '{"/readout" "/wanted" "/notify" "/reports"})', expression)
-        self.assertIn('(http.request.method in {"GET" "POST"} and http.request.uri.path in {"/forget"})', expression)
+        self.assertIn('(http.request.method in {"GET" "POST"} and http.request.uri.path in {"/confirm" "/forget"})',
+                      expression)
         self.assertEqual(cs.FIREWALL_RULES[0]["action"], "block")
 
     def test_the_figures_are_cached_on_their_host_alone(self):

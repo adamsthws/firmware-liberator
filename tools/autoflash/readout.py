@@ -27,6 +27,7 @@ import json
 import lzma
 import os
 import re
+import secrets
 import tarfile
 import time
 import urllib.error
@@ -418,8 +419,13 @@ def package(manifest: dict[str, Any], files: dict[str, bytes] | None = None,
 
 # What the owner is told their address is kept for, wherever it is asked.
 CONTACT_HELP = ["You will be emailed when your device's support changes, and may be asked to",
-                "try it. Your address is kept for that alone; reply to any such email to be",
-                "taken off the list."]
+                "try it. You are first sent an email to confirm: nothing is kept unless you",
+                "do. Your address is kept for that alone, and every such email has a link",
+                "to stop them."]
+# What the owner is told once an address is given.
+CONFIRM_SENT = "Check your inbox: follow the link in the email just sent to confirm your address."
+# Devices one sign-up may name, as the website takes them (MAX_DEVICES).
+NOTIFY_MOST = 20
 
 
 def ask_contact(when_supported: bool = False) -> dict[str, str] | None:
@@ -489,8 +495,8 @@ def offer(ctx: Context, manifest: dict[str, Any], files: dict[str, bytes] | None
             keep()
             return f"Not sent. The readout is kept in {path}, if you would like to send it later."
         said = sent(keep(contact), url, path, back)
-        if contact:
-            notify(contact["email"], [(manifest.get("product", ""), manifest.get("stock_model", ""))])
+        if contact and notify(contact["email"], [(manifest.get("product", ""), manifest.get("stock_model", ""))]):
+            said += f" {CONFIRM_SENT}"
         return said
 
 
@@ -555,7 +561,9 @@ def light_post(path: str, value: dict[str, Any], timeout: float = 15.0) -> dict[
     url = upload_url()
     if url is None:
         raise OSError("not from a test run")
-    body = json.dumps(value).encode()
+    # A random field of its own: two alike questions asked within one second
+    # would otherwise carry the same proof, which the website takes once.
+    body = json.dumps({**value, "nonce": secrets.token_hex(8)}).encode()
     request = urllib.request.Request(url.rsplit("/", 1)[0] + path, data=body, method="POST", headers={
         "Content-Type": "application/json", "User-Agent": f"Autoflash/{__version__}",
         "X-Proof": proof(body, bits=LIGHT_PROOF_BITS)})
@@ -588,7 +596,7 @@ def notify(email: str, devices: list[tuple[str, str]]) -> bool:
     if not named or upload_url() is None:
         return False
     try:
-        light_post("/notify", {"format": FORMAT, "email": email, "devices": named[:50]})
+        light_post("/notify", {"format": FORMAT, "email": email, "devices": named[:NOTIFY_MOST]})
     except (OSError, ValueError) as exc:
         output.log_only(f"    Asking to be told of a change: not taken ({exc}).")
         return False
@@ -606,7 +614,7 @@ def single_not_wanted(said: str, asked: account.Asked) -> str:
     except prompts.QuitRun:
         contact = None
     if contact and notify(contact["email"], [(asked.product, asked.model)]):
-        return "Nothing was read or sent. You will be emailed when this device's status changes. Thank you!"
+        return f"Nothing was read or sent. {CONFIRM_SENT} Thank you!"
     return "Nothing was read or sent. Thank you!"
 
 
@@ -692,10 +700,11 @@ def run_all(ctx: Context, devices: list[dict[str, Any]]) -> str:
             output.transient_end()
             return "Nothing was read out or sent."
     output.transient_end()
-    if contact:
+    if contact and notify(contact["email"], [(str(device.get("productModel") or ""),
+                                              str((device.get("extra") or {}).get("model") or ""))
+                                             for device in ordered]):
         # Every device, its readout wanted or not: told when any one's changes.
-        notify(contact["email"], [(str(device.get("productModel") or ""),
-                                   str((device.get("extra") or {}).get("model") or "")) for device in ordered])
+        output.tell(f"    {CONFIRM_SENT}")
     became = []
     for number, device in enumerate(ordered, 1):
         output.tell(f"Reading out {describe(device)} ({number} of {len(ordered)})...")

@@ -61,9 +61,15 @@ function bucket() {
 // The readouts kept, leaving out the marks of what is held and the day's count.
 const tars = (bindings) => [...bindings.READOUTS.objects.keys()].filter((key) => key.endsWith(".tar"));
 
+// What the Worker would email, kept to look at: each message as sent.
+function mailer() {
+  const sent = [];
+  return { sent, send: async (message) => { sent.push(message); return { messageId: `m${sent.length}` }; } };
+}
+
 function env({ allowed = true, enough = "" } = {}) {
   return { READOUTS: bucket(), DB: d1(), READOUT_LIMIT: { limit: async () => ({ success: allowed }) },
-    ENOUGH: enough, SENDER_KEY: "a-made-up-test-key" };
+    ENOUGH: enough, SENDER_KEY: "a-made-up-test-key", INGEST: "on", EMAIL: mailer() };
 }
 
 function post(body, headers = {}) {
@@ -179,6 +185,27 @@ test("a readout not kept after all gives back its place in the day's count", asy
     throw new Error("R2 down");
   };
   await assert.rejects(send(post(readoutOf()), bindings), /R2 down/);
+  assert.deepEqual(await read(bindings.DB, "readouts:2026-11-07"), { count: 0, bytes: 0 });
+});
+
+test("a readout cut off part way through being kept leaves nothing of it behind", async () => {
+  // Its tar and one file's mark written, then the next mark fails.
+  const bindings = env();
+  const put = bindings.READOUTS.put;
+  let puts = 0;
+  bindings.READOUTS.put = async (...args) => {
+    puts += 1;
+    if (puts === 3) {
+      throw new Error("R2 down");
+    }
+    return put(...args);
+  };
+  const offered = [{ file: "offered/user1.bin", version: "1.1.0", sha256: "a".repeat(64) },
+    { file: "offered/user2.bin", version: "1.1.0", sha256: "b".repeat(64) }];
+  await assert.rejects(send(post(readoutOf({ ...MANIFEST, offered })), bindings), /R2 down/);
+  assert.deepEqual([...bindings.READOUTS.objects.keys()], [], "its tar or a mark is left");
+  assert.deepEqual(bindings.DB.db.prepare("SELECT * FROM readout_firmware").all(), []);
+  assert.deepEqual(bindings.DB.db.prepare("SELECT * FROM readouts").all(), []);
   assert.deepEqual(await read(bindings.DB, "readouts:2026-11-07"), { count: 0, bytes: 0 });
 });
 
@@ -308,6 +335,35 @@ test("asked first, a readout that would add nothing is not wanted - nor one its 
   assert.equal((await askFrom("192.0.2.4", { ...ASKED, stage: "whole" })).wanted, true);
 });
 
+test("readouts waiting for review are held to their own room, and given it back once three agree", async () => {
+  assert.equal(readout.PENDING_BYTES, 1024 ** 3);
+  const bindings = env();
+  bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES ('readouts:pending', NULL, 0, ?)")
+    .run(readout.PENDING_BYTES - 10);
+  assert.equal((await from(bindings, "192.0.2.1", { firmware: FIRMWARE })).status, 503, "no room for one more");
+  bindings.DB.db.prepare("UPDATE counters SET bytes = 0 WHERE name = 'readouts:pending'").run();
+  for (const address of ["192.0.2.1", "192.0.2.2", "192.0.2.3"]) {
+    await from(bindings, address, { firmware: FIRMWARE });
+  }
+  assert.deepEqual(await read(bindings.DB, "readouts:pending"), { count: 0, bytes: 0 }, "agreed: none waiting");
+});
+
+test("two IPv6 addresses in one /48 are one sender", async () => {
+  // So one rented server's 65,536 /64s cannot be the three senders that agree.
+  const bindings = env();
+  assert.equal((await from(bindings, "2001:db8:1:2::10", { read: false })).status, 201);
+  assert.equal((await from(bindings, "2001:db8:1:ffff::99", { read: false })).status, 200, "the same sender's again");
+  assert.equal((await from(bindings, "2001:db8:2::10", { read: false })).status, 201, "the next /48 is another");
+});
+
+test("a readout naming its product with anything but printable text is turned away, and its tool is cleaned", async () => {
+  const bindings = env();
+  assert.equal((await from(bindings, "192.0.2.1", { product: "NEW\u001b[2JTHING" })).status, 400);
+  assert.equal((await from(bindings, "192.0.2.1", { tool: "2.4\u001b[2J" })).status, 201);
+  const [key] = tars(bindings);
+  assert.equal(bindings.READOUTS.objects.get(key).options.customMetadata.tool, "2.4[2J");
+});
+
 test("a device enough readouts of are in is thanked, not kept", async () => {
   const bindings = env({ enough: "OTHER, newthing" });
   const response = await send(post(readoutOf()), bindings);
@@ -383,7 +439,8 @@ test("the firewall before the Worker lets through its paths, and no others", () 
     [path, methods.split(",").map((method) => method.trim().replaceAll('"', "")).filter(Boolean)]);
   assert.deepEqual(paths.map(([path]) => path).sort(), Object.keys(readout.ROUTES).sort());
   // A GET only where a person opens a link: the removal page.
-  assert.deepEqual(paths.filter(([, methods]) => methods.includes("GET")).map(([path]) => path), ["/forget"]);
+  assert.deepEqual(paths.filter(([, methods]) => methods.includes("GET")).map(([path]) => path).sort(),
+    ["/confirm", "/forget"]);
 });
 
 test("every other address is not found, and the site is not this Worker", async () => {
@@ -404,8 +461,14 @@ function question(asked = ASKED, headers = {}, body = Buffer.from(JSON.stringify
   });
 }
 
-const ask = async (asked, bindings, now = NOW, headers = {}) => {
-  const body = Buffer.from(JSON.stringify(asked));
+// Each question with a field of its own, as the tool's are, so its proof is
+// its own: the Worker takes a proof once.
+let asked = 0;
+const fresh = (value) => ({ ...value, nonce: `n${(asked += 1)}` });
+
+const ask = async (question_, bindings, now = NOW, headers = {}) => {
+  const body = Buffer.from(JSON.stringify(fresh(question_)));
+  const asked = question_;
   const proof = proofFor(body, BITS, Math.floor(now.getTime() / 1000));   // made as it is asked
   return (await readout.wanted(question(asked, { "X-Proof": proof, ...headers }, body), bindings, now)).json();
 };
@@ -528,34 +591,143 @@ test("anything but the tool's question is turned away", async () => {
   }
 });
 
-test("the Worker sends /wanted and /notify to their own", async () => {
-  for (const [path, value, status] of [["/wanted", ASKED, 200],
-    ["/notify", { format: 1, email: "me@example.com", devices: [{ product: "NEWTHING", model: "SN-NEW-01" }] }, 201]]) {
-    const body = Buffer.from(JSON.stringify(value));
+test("the Worker sends each path to its own", async () => {
+  const signUp = { format: 1, email: "me@example.com", devices: [{ product: "NEWTHING", model: "SN-NEW-01" }] };
+  for (const [path, value, status] of [["/wanted", ASKED, 200], ["/notify", signUp, 202]]) {
+    const body = Buffer.from(JSON.stringify(fresh(value)));
     const now = proofFor(body, BITS, Math.floor(Date.now() / 1000));   // fetch() checks it against the clock
     const response = await worker.fetch(question(value, { "X-Proof": now }, body, path), env());
     assert.equal(response.status, status, path);
   }
+  for (const path of ["/confirm", "/forget"]) {
+    assert.equal((await worker.fetch(new Request(`https://api.firmwareliberator.com${path}`), env())).status, 404,
+      `${path}, opened with no link's token`);
+  }
+});
+
+test("switched off (INGEST), every path asks the tool to wait", async () => {
+  for (const path of Object.keys(readout.ROUTES)) {
+    for (const ingest of ["off", undefined]) {
+      const response = await worker.fetch(new Request(`https://api.firmwareliberator.com${path}`, { method: "POST" }),
+        { ...env(), INGEST: ingest });
+      assert.equal(response.status, 503, `${path} with INGEST ${ingest}`);
+      assert.equal(response.headers.get("Retry-After"), "3600");
+    }
+  }
+});
+
+test("a light proof is taken once: the same question sent again within its minute is not", async () => {
+  const bindings = env();
+  const body = Buffer.from(JSON.stringify(ASKED));
+  const proof = proofFor(body, BITS);
+  const send = () => readout.wanted(question(ASKED, { "X-Proof": proof }, body), bindings, NOW);
+  assert.equal((await send()).status, 200);
+  const again = await send();
+  assert.equal(again.status, 403);
+  assert.match((await again.json()).error, /used already/);
 });
 
 const NOTIFY = { format: 1, email: " Me@Example.com ", devices: [
   { product: "NEWTHING", model: "SN-NEW-01" }, { product: "newthing", model: "SN-NEW-02" },
   { product: "BASICR4", model: "-" }] };
-const tell = (value, bindings, now = NOW) => readout.notify(question(value, {}, undefined, "/notify"), bindings, now);
+const tell = (value, bindings, now = NOW, headers = {}) => {
+  const body = Buffer.from(JSON.stringify(fresh(value)));
+  const proof = proofFor(body, BITS, Math.floor(now.getTime() / 1000));   // made as it is asked
+  return readout.notify(question(value, { "X-Proof": proof, ...headers }, body, "/notify"), bindings, now);
+};
+const linkIn = (message) => /https:\/\/api\.firmwareliberator\.com\/confirm\?t=([0-9a-f]{32})/.exec(message.text);
+const confirmBy = (token, bindings) => readout.confirm(new Request("https://api.firmwareliberator.com/confirm",
+  { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ t: token }).toString() }), bindings, NOW);
+const notified = (bindings) => [...bindings.READOUTS.objects].filter(([key]) => key.startsWith("notify/"));
 
-test("an address is kept once a product, with its models, to be told of a change", async () => {
-  const bindings = env({ enough: "NEWTHING" });   // wanted or not, an address is kept
+// An address given, and confirmed through the link emailed to it: on `now`'s
+// day, as an address is sent one confirmation a day.
+async function signedUp(bindings, value = NOTIFY, now = NOW) {
+  assert.equal((await tell(value, bindings, now)).status, 202);
+  const [, token] = linkIn(bindings.EMAIL.sent.at(-1));
+  assert.equal((await confirmBy(token, bindings)).status, 200);
+}
+
+test("an address given is only sent a link to confirm it: nothing is kept until it is followed", async () => {
+  const bindings = env();
   const response = await tell(NOTIFY, bindings);
-  assert.equal(response.status, 201);
-  const kept = [...bindings.READOUTS.objects].filter(([key]) => key.startsWith("notify/") && !key.startsWith("notify/_who/"));
+  assert.deepEqual([response.status, await response.json()], [202, { confirming: true }]);
+  assert.deepEqual(notified(bindings), [], "not on the list");
+  const [message] = bindings.EMAIL.sent;
+  assert.deepEqual([message.to, message.from], ["Me@Example.com", readout.NOTIFY_FROM]);
+  assert.match(message.text, /NEWTHING, BASICR4/);
+  assert.match(message.text, /If it was not you, do nothing/);
+  assert.ok(linkIn(message), "it carries its link");
+});
+
+test("the link asks first: opening it, as a mail scanner may, confirms nothing", async () => {
+  const bindings = env();
+  await tell(NOTIFY, bindings);
+  const [link] = linkIn(bindings.EMAIL.sent[0]);
+  const response = await readout.confirm(new Request(link), bindings, NOW);
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /<form method="post" action="\/confirm">/);
+  assert.deepEqual(notified(bindings), []);
+});
+
+test("confirmed, the address is kept once a product, with its models, and the link is used up", async () => {
+  const bindings = env({ enough: "NEWTHING" });   // wanted or not, an address is kept
+  await signedUp(bindings);
+  const kept = notified(bindings).filter(([key]) => !key.startsWith("notify/_who/"));
   assert.deepEqual(kept.map(([key]) => key.split("/")[1]).sort(), ["BASICR4", "NEWTHING"]);
-  const [, item] = kept.find(([key]) => key.startsWith("notify/NEWTHING/"));
-  const value = JSON.parse(item.text);
+  const value = JSON.parse(kept.find(([key]) => key.startsWith("notify/NEWTHING/"))[1].text);
   assert.deepEqual([value.email, value.product, value.models], ["Me@Example.com", "NEWTHING", ["SN-NEW-01", "SN-NEW-02"]]);
-  const again = env();
-  await tell({ ...NOTIFY, email: "me@example.com" }, again);
-  assert.equal(kept.find(([key]) => key.startsWith("notify/NEWTHING/"))[0],
-    [...again.READOUTS.objects.keys()].find((key) => key.startsWith("notify/NEWTHING/")), "one per address, any case");
+  const [, token] = linkIn(bindings.EMAIL.sent[0]);
+  assert.equal((await confirmBy(token, bindings)).status, 404, "used once");
+});
+
+test("one confirmation an address a day, however many ask for it", async () => {
+  const bindings = env();
+  for (const address of ["192.0.2.1", "192.0.2.2", "192.0.2.3"]) {
+    assert.equal((await tell({ ...NOTIFY, email: "Me@Example.com" }, bindings, NOW, { "CF-Connecting-IP": address })).status, 202);
+  }
+  assert.equal(bindings.EMAIL.sent.length, 1, "a stranger cannot be emailed again and again");
+  await tell(NOTIFY, bindings, new Date("2026-11-08T12:00:00Z"));
+  assert.equal(bindings.EMAIL.sent.length, 2, "the next day, once more");
+});
+
+test("five sign-ups a day from one sender, so nobody can have many strangers emailed", async () => {
+  assert.equal(readout.NOTIFY_SENDER_DAILY, 5);
+  const bindings = env();
+  for (let n = 0; n < readout.NOTIFY_SENDER_DAILY; n += 1) {
+    assert.equal((await tell({ ...NOTIFY, email: `owner${n}@example.com` }, bindings)).status, 202);
+  }
+  assert.equal((await tell({ ...NOTIFY, email: "another@example.com" }, bindings)).status, 503);
+  assert.equal(bindings.EMAIL.sent.length, readout.NOTIFY_SENDER_DAILY);
+  assert.equal((await tell({ ...NOTIFY, email: "another@example.com" }, bindings, NOW,
+    { "CF-Connecting-IP": "2001:db8:9:9::1" })).status, 202, "another sender's are their own");
+});
+
+test("without an email to send with, no address is taken", async () => {
+  const bindings = env();
+  delete bindings.EMAIL;
+  assert.equal((await tell(NOTIFY, bindings)).status, 503);
+  assert.equal((await bindings.DB.prepare("SELECT count(*) AS n FROM signups").first()).n, 0);
+});
+
+test("a confirmation that cannot be sent leaves nothing, and may be asked for again", async () => {
+  const bindings = env();
+  bindings.EMAIL = { send: async () => { throw new Error("E_SENDER_NOT_VERIFIED"); } };
+  assert.equal((await tell(NOTIFY, bindings)).status, 502);
+  assert.equal((await bindings.DB.prepare("SELECT count(*) AS n FROM signups").first()).n, 0);
+  bindings.EMAIL = mailer();
+  assert.equal((await tell(NOTIFY, bindings)).status, 202);
+  assert.equal(bindings.EMAIL.sent.length, 1);
+});
+
+test("the confirmation page shows what a sender named as text, never as markup", async () => {
+  const bindings = env();
+  await tell({ ...NOTIFY, devices: [{ product: "<img src=x onerror=alert(1)>", model: "-" }] }, bindings);
+  const [link] = linkIn(bindings.EMAIL.sent[0]);
+  const html = await (await readout.confirm(new Request(link), bindings, NOW)).text();
+  assert.ok(!html.includes("<IMG") && !html.includes("<img"), "escaped");
+  assert.match(html, /&lt;IMG SRC=X ONERROR=ALERT\(1\)&gt;/);
 });
 
 const forgetLinkOf = (bindings) => JSON.parse([...bindings.READOUTS.objects]
@@ -563,12 +735,13 @@ const forgetLinkOf = (bindings) => JSON.parse([...bindings.READOUTS.objects]
 
 test("each address has one removal link, the same in every entry and every time it is given", async () => {
   const bindings = env();
-  await tell(NOTIFY, bindings);
+  await signedUp(bindings);
   const link = forgetLinkOf(bindings);
   assert.match(link, /^https:\/\/api\.firmwareliberator\.com\/forget\?a=[0-9a-f]{64}&t=[0-9a-f]{32}$/);
-  const entries = [...bindings.READOUTS.objects].filter(([key]) => /^notify\/[A-Z0-9]+\//.test(key));
+  const entries = notified(bindings).filter(([key]) => /^notify\/[A-Z0-9]+\//.test(key));
   assert.ok(entries.every(([, item]) => item.options.customMetadata.forget === link));
-  await tell({ ...NOTIFY, devices: [{ product: "NSPANEL", model: "E32-MSW-NX" }] }, bindings);
+  await signedUp(bindings, { ...NOTIFY, devices: [{ product: "NSPANEL", model: "E32-MSW-NX" }] },
+    new Date("2026-11-08T12:00:00Z"));
   assert.equal(forgetLinkOf(bindings), link);
 });
 
@@ -582,29 +755,29 @@ const confirmed = (link, bindings) => {
 
 test("the removal link asks first: opening it, as a mail scanner may, removes nothing", async () => {
   const bindings = env();
-  await tell(NOTIFY, bindings);
+  await signedUp(bindings);
   const before = bindings.READOUTS.objects.size;
   const response = await opened(forgetLinkOf(bindings), bindings);
   assert.equal(response.status, 200);
-  const html = await response.text();
-  assert.match(html, /<form method="post" action="\/forget">/);
+  assert.match(await response.text(), /<form method="post" action="\/forget">/);
   assert.match(response.headers.get("Content-Type"), /^text\/html/);
   assert.equal(bindings.READOUTS.objects.size, before);
 });
 
 test("confirmed, the address goes for every product it was given for", async () => {
   const bindings = env();
-  await tell(NOTIFY, bindings);
-  await tell({ ...NOTIFY, devices: [{ product: "NSPANEL", model: "E32-MSW-NX" }] }, bindings);
+  await signedUp(bindings);
+  await signedUp(bindings, { ...NOTIFY, devices: [{ product: "NSPANEL", model: "E32-MSW-NX" }] },
+    new Date("2026-11-08T12:00:00Z"));
   const link = forgetLinkOf(bindings);
   assert.equal((await confirmed(link, bindings)).status, 200);
-  assert.deepEqual([...bindings.READOUTS.objects.keys()].filter((key) => key.startsWith("notify/")), []);
+  assert.deepEqual(notified(bindings), []);
   assert.equal((await opened(link, bindings)).status, 404, "a second time, nothing to remove");
 });
 
 test("a wrong token, or another address's, removes nothing", async () => {
   const bindings = env();
-  await tell(NOTIFY, bindings);
+  await signedUp(bindings);
   const link = forgetLinkOf(bindings);
   const before = bindings.READOUTS.objects.size;
   for (const wrong of [link.replace(/t=[0-9a-f]{32}/, `t=${"0".repeat(32)}`), link.replace(/t=.*/, "t="),
@@ -612,13 +785,12 @@ test("a wrong token, or another address's, removes nothing", async () => {
     assert.equal((await confirmed(wrong, bindings)).status, 404, wrong);
   }
   assert.equal(bindings.READOUTS.objects.size, before);
-  const put = await readout.forget(new Request(link, { method: "PUT" }), bindings);
-  assert.equal(put.status, 405);
+  assert.equal((await readout.forget(new Request(link, { method: "PUT" }), bindings)).status, 405);
 });
 
 test("an address is kept apart from the readouts, under notify/ alone", async () => {
   const bindings = env();
-  await tell(NOTIFY, bindings);
+  await signedUp(bindings);
   for (const [key, item] of bindings.READOUTS.objects) {
     if (key.startsWith("readouts/")) assert.ok(!item.text.includes("xample"), key);
   }
@@ -628,17 +800,19 @@ test("a day's addresses are limited too", async () => {
   const bindings = env();
   bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES (?, ?, ?, 0)")
     .run("notify:2026-11-07", "2026-11-07", readout.NOTIFY_DAILY - 1);
-  assert.equal((await tell(NOTIFY, bindings)).status, 201, "the day's last");
-  assert.equal((await tell(NOTIFY, bindings)).status, 503);
+  assert.equal((await tell({ ...NOTIFY, email: "a@example.com" }, bindings)).status, 202, "the day's last");
+  assert.equal((await tell({ ...NOTIFY, email: "b@example.com" }, bindings)).status, 503);
   assert.deepEqual(await read(bindings.DB, "notify:2026-11-07"), { count: readout.NOTIFY_DAILY, bytes: 0 });
 });
 
 test("anything but the tool's request to be told is turned away", async () => {
-  for (const value of [{ ...NOTIFY, email: "not an email" }, { ...NOTIFY, devices: [] },
-    { ...NOTIFY, devices: [{ model: "x" }] }, { ...NOTIFY, devices: Array(readout.MAX_DEVICES + 1).fill(NOTIFY.devices[0]) },
-    { ...NOTIFY, format: 2 }]) {
+  assert.equal(readout.MAX_DEVICES, 20);
+  for (const value of [{ ...NOTIFY, email: "not an email" }, { ...NOTIFY, email: "a\u001b[31m@example.com" },
+    { ...NOTIFY, devices: [] }, { ...NOTIFY, devices: [{ model: "x" }] },
+    { ...NOTIFY, devices: [{ product: "NEW\nTHING", model: "x" }] },
+    { ...NOTIFY, devices: Array(readout.MAX_DEVICES + 1).fill(NOTIFY.devices[0]) }, { ...NOTIFY, format: 2 }]) {
     const bindings = env();
     assert.equal((await tell(value, bindings)).status, 400, JSON.stringify(value).slice(0, 80));
-    assert.equal(bindings.READOUTS.objects.size, 0);
+    assert.equal(bindings.EMAIL.sent.length, 0);
   }
 });

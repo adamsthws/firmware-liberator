@@ -137,7 +137,7 @@ FIREWALL_PHASE = "http_request_firewall_custom"
 # The paths, as the Worker routes them, and the methods each takes
 # (website/test/api.test.mjs holds the two alike): a POST from the tool, and
 # for /forget, opened from the link in an email, a GET too.
-API_METHODS = {"/readout": ("POST",), "/wanted": ("POST",), "/notify": ("POST",), "/reports": ("POST",), "/forget": ("GET", "POST")}
+API_METHODS = {"/readout": ("POST",), "/wanted": ("POST",), "/notify": ("POST",), "/reports": ("POST",), "/confirm": ("GET", "POST"), "/forget": ("GET", "POST")}
 API_PATHS = tuple(API_METHODS)
 
 

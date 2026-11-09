@@ -216,7 +216,10 @@ and the store has limits it is never let past:
   made for hashing does it in milliseconds, so this only stops a cheap flood;
   the daily limits below are what bound the store. It goes in `X-Proof`, is
   good for that readout alone, and only within 15 minutes of when it was made:
-  however many devices one run reads out, each is worked for on its own.
+  however many devices one run reads out, each is worked for on its own. A
+  light proof (`/wanted`, `/notify`) is taken once: one sent again within its
+  minute is refused (a day's count a proof, `proof:<hash>`), and the tool puts
+  a random `nonce` in each question so two alike never share one.
 - **It must be one.** `application/x-tar`, at most 24 MB, its first file a
   `manifest.json` of the format the tool writes.
 - **Only what adds something, from different people.** A readout is stored
@@ -255,22 +258,40 @@ and the store has limits it is never let past:
   question needs its own. It is held to the hostname's rate-limiting rule, but
   not to the two-readouts-a-minute limit, which a batch's questions would use
   up before its readouts.
-- **Asking to be told.** `POST /notify` takes `{"format": 1, "email",
-  "devices": [{"product", "model"}, ...]}` (50 at most), with the same light
-  work, and keeps `notify/<PRODUCT>/<the address's SHA-256>.json` - the
-  address, the product, its firmware models and when - one per address and
-  product, its address, models and removal link in its metadata too. Each
+- **Asking to be told, confirmed by its owner.** `POST /notify` takes
+  `{"format": 1, "email", "devices": [{"product", "model"}, ...]}` (20 at
+  most), with the same light work, and keeps nothing yet: the address is
+  emailed a link to confirm it (`/confirm?t=<token>`, from `NOTIFY_FROM`),
+  and the request waits in the database's `signups` table, deleted by the
+  nightly job after 7 days unless confirmed. It answers 202 whether or not an
+  email went, so nobody learns whether an address was asked for before. An
+  address is sent one confirmation a day however many ask, and one sender
+  (by its /64, below) may ask for 5 a day, so nobody can have many strangers
+  emailed, or one stranger often. Opening the link shows what it confirms and
+  a button; only the POST that button sends keeps the address, so a mail
+  scanner following it confirms nothing. Then it is kept as
+  `notify/<PRODUCT>/<the address's SHA-256>.json` - the address, the product,
+  its firmware models and when - one per address and product, its address,
+  models and removal link in its metadata too. Each
   address has one token (`notify/_who/<hash>.json`, with the products it was
   given for), and one link,
   `https://api.firmwareliberator.com/forget?a=<hash>&t=<token>`, the same in
   every entry and kept as first made. Nothing expires under `notify/`: an
   address stays until its owner removes it, or it is removed by hand. 500
-  addresses a day at most.
+  addresses a day at most. The confirmations are sent by Cloudflare Email
+  Service, which sends to any address only on Workers Paid; its binding
+  (`EMAIL`) unbound, `/notify` takes no address (503).
 - **Removing an address.** `/forget` is the one path a person opens: a GET
   of the link shows what it will do and a button, and only the POST that
   button sends removes the address, for every product it was given for, and
   its token - so a mail scanner that follows links removes nothing. The
-  firewall rule lets a GET through to it alone (`API_METHODS`).
+  firewall rule lets a GET through to it and `/confirm` alone (`API_METHODS`).
+- **Who a sender is.** Every count of senders - the readouts a key keeps from
+  each, the day's 20, the sign-ups, the Worker's rate limit - takes an IPv4
+  address whole and an IPv6 one by its first 64 bits
+  ([website/api/sender.js](../website/api/sender.js)): one home or phone
+  connection is given a whole /64, and could otherwise seem any number of
+  senders. One with many IPv4 addresses still can.
 - **One sender's readouts.** At most 20 a day are kept from one address
   (`SENDER_DAILY`), counted in the database under an HMAC of the day and the
   address with the Worker's secret `SENDER_KEY`, never the address itself;
@@ -290,6 +311,19 @@ and the store has limits it is never let past:
   ([website/api/counters.js](../website/api/counters.js)), each in a single
   statement, so two readouts at once can never both pass the limit; one not
   stored after all gives its place back. `/wanted` reads the same count.
+- **Readouts waiting for review.** One not taken as right - no three
+  agreeing, not approved - takes room from 1 GB of the store set aside for
+  them (`PENDING_BYTES`, the `readouts:pending` count), given back once it is
+  agreed or settled; and it, or one rejected, is deleted with its offered
+  files' marks by the nightly job 30 days after it came in
+  ([website/api/pending.js](../website/api/pending.js)), so made-up readouts
+  can neither fill the store nor hold a key's places for long.
+- **Printable text alone.** Every product, model, version, address and the
+  like the Worker takes is printable ASCII, and `readouts.py` escapes all it
+  prints, so nothing a sender wrote reaches a terminal as a control sequence.
+- **One switch.** `INGEST` in the Worker's `wrangler.jsonc`: "on" takes
+  requests; anything else - the website workflow can deploy with it off -
+  answers every path 503, for the tool to try again later.
 - **The database.** Until it has every migration the Worker's code needs
   ([website/api/database.js](../website/api/database.js)), each path answers
   503 and the tool sends again later.
@@ -316,6 +350,20 @@ hand, which also brings the database up to date; the cloudflare-settings
 workflow checks all but the database daily. The website workflow deploys the Worker
 in a job of its own. [website/README.md](../website/README.md#deploying-it)
 says which token does what.
+
+## Sending the confirmations
+
+`/notify`'s confirmations go through Cloudflare Email Service, the Worker's
+`EMAIL` binding, from `updates@firmwareliberator.com` (`NOTIFY_FROM` in
+[index.js](../website/api/index.js)). It sends to any address only on Workers
+Paid (3,000 emails a month included, then $0.35 per 1,000), and only from a
+domain onboarded for sending: in the dashboard, Compute, Email Service,
+Email Sending, Onboard Domain, for `firmwareliberator.com`. That adds its own
+DNS records - MX on its bounce subdomain, SPF, DKIM, and DMARC on
+`_dmarc.firmwareliberator.com` - which `cloudflare_settings.py` does not make
+or check yet: a difference it reports in them after onboarding is that, not
+drift. Until the domain is onboarded, a confirmation fails to send and
+`/notify` answers 502, keeping nothing.
 
 ## Working with them
 

@@ -33,8 +33,8 @@ function report(changes = {}, proofTime) {
 const hashOf = (n) => createHash("sha256").update(`a device ${n}`).digest("hex");
 const keyed = (hash) => createHmac("sha256", KEY).update(hash).digest("hex");
 
-function env({ allowed = true, ingest = "on", key = KEY } = {}) {
-  return { DB: d1(), INGEST: ingest, DEVICE_HASH_KEY_PERMANENT: key, REPORT_LIMIT: { limit: async () => ({ success: allowed }) } };
+function env({ allowed = true, key = KEY } = {}) {
+  return { DB: d1(), INGEST: "on", DEVICE_HASH_KEY_PERMANENT: key, REPORT_LIMIT: { limit: async () => ({ success: allowed }) } };
 }
 
 function post(body, headers = {}) {
@@ -235,12 +235,20 @@ test("too many from one address wait a minute", async () => {
   assert.equal((await api.reports(post({ reports: [report()] }), env({ allowed: false }), NOW)).status, 429);
 });
 
-test("nothing is taken while ingesting is off, or before the key is set", async () => {
-  for (const bindings of [env({ ingest: "off" }), { ...env(), INGEST: undefined }, { ...env(), DEVICE_HASH_KEY_PERMANENT: undefined },
-    { ...env(), DEVICE_HASH_KEY_PERMANENT: "" }]) {
+test("nothing is taken before the device hash's key is set", async () => {
+  for (const bindings of [{ ...env(), DEVICE_HASH_KEY_PERMANENT: undefined }, { ...env(), DEVICE_HASH_KEY_PERMANENT: "" }]) {
     const response = await api.reports(post({ reports: [report()] }), bindings, NOW);
     assert.equal(response.status, 503);
     assert.equal(response.headers.get("Retry-After"), "3600");
+    assert.equal(rows(bindings, "SELECT * FROM reports").length, 0);
+  }
+});
+
+test("nothing is taken while the Worker's one switch is off", async () => {
+  for (const ingest of ["off", undefined]) {
+    const bindings = { ...env(), INGEST: ingest };
+    const response = await worker.fetch(post({ reports: [report({}, Date.now() / 1000)] }), bindings);
+    assert.equal(response.status, 503, String(ingest));
     assert.equal(rows(bindings, "SELECT * FROM reports").length, 0);
   }
 });

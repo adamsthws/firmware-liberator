@@ -14,6 +14,7 @@
 // The work is done in SQL, on the database's side: the free plan gives a
 // Worker 10 ms of its own time, and the job's queries are a fixed few.
 import { ready } from "./database.js";
+import { prunePending } from "./pending.js";
 import { snapshot } from "./snapshot.js";
 
 export const RAW_DAYS = 365;
@@ -114,6 +115,9 @@ export async function nightly(env, now = new Date()) {
   const months = [...new Set([thisMonth, monthBefore(thisMonth), ...results.map((row) => row.day.slice(0, 7))])]
     .sort();
   await env.DB.batch([...folding(env.DB, today), ...remaking(env.DB, months, today)]);
+  // Readouts never taken as right, and addresses never confirmed, gone after
+  // their days (pending.js) - before the store's size is noted below.
+  const pruned = await prunePending(env, today);
   await env.DB.batch([...pruning(env.DB, today),
     env.DB.prepare(`INSERT INTO store_days (day, readouts, bytes)
       SELECT ?1, coalesce(max(count), 0), coalesce(max(bytes), 0) FROM counters WHERE name = ?2
@@ -127,5 +131,5 @@ export async function nightly(env, now = new Date()) {
   if (!(await env.STATS.head(archive))) {
     await env.STATS.put(archive, text, options);
   }
-  return { ran: true, folded: results.length, months };
+  return { ran: true, folded: results.length, months, pruned };
 }

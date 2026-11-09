@@ -161,13 +161,33 @@ class ReviewTests(unittest.TestCase):
         _, _, _, asked = self.run_with(["review", "basicr4"], lambda body: [])
         self.assertEqual(asked[0][2]["params"], ["BASICR4|%"])
 
+    @staticmethod
+    def database(review="pending", bytes_=1234):
+        """The API's database as settle() asks it: the readout, then the change."""
+        def rows(body):
+            if body["sql"].startswith("SELECT review"):
+                return [{"review": review, "bytes": bytes_}]
+            if body["sql"].startswith("UPDATE readouts"):
+                return [{"id": body["params"][1], "key": "BASICR4|x|1", "review": body["params"][0]}]
+            return []
+        return rows
+
     def test_approve_and_reject_settle_one_by_its_reference(self):
         for action, state in (("approve", "approved"), ("reject", "rejected")):
-            code, lines, _, asked = self.run_with([action, "2026-11-09-bbbbbbbbbbbb"], lambda body: [
-                {"id": body["params"][1], "key": "BASICR4|x|1", "review": body["params"][0]}])
+            code, lines, _, asked = self.run_with([action, "2026-11-09-bbbbbbbbbbbb"], self.database())
             self.assertEqual(code, 0)
-            self.assertEqual(asked[0][2]["params"], [state, "2026-11-09-bbbbbbbbbbbb"])
+            self.assertEqual(asked[1][2]["params"], [state, "2026-11-09-bbbbbbbbbbbb"])
             self.assertEqual(lines, [f"2026-11-09-bbbbbbbbbbbb (BASICR4|x|1): {state}"])
+
+    def test_one_settled_from_waiting_gives_back_its_room(self):
+        _, _, _, asked = self.run_with(["approve", "2026-11-09-bbbbbbbbbbbb"], self.database("pending", 1234))
+        self.assertEqual(asked[2][2]["params"], [1234, "readouts:pending"])
+        _, _, _, asked = self.run_with(["reject", "2026-11-09-bbbbbbbbbbbb"], self.database("quorum"))
+        self.assertEqual(len(asked), 2, "one agreed already gave its room back")
+
+    def test_what_a_sender_wrote_is_printed_escaped(self):
+        code, lines, _, _ = self.run_with(["review"], lambda body: [{**self.ROWS[0], "key": "BAD\x1b[2J|x|1"}])
+        self.assertEqual(lines[0], "BAD\\x1b[2J|x|1 (whole): 1 waiting")
 
     def test_a_reference_not_one_or_not_there_is_said_so(self):
         code, _, err, asked = self.run_with(["reject", "bobby-tables"], lambda body: [])

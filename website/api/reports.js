@@ -17,7 +17,8 @@
 //   without the key, which never leaves Cloudflare.
 // - At most REPORTS_DAILY a day from everyone, and DEVICE_DAILY a day for one
 //   device; past the first, the rest wait for another day ("later").
-// - Ingesting stops (503) while INGEST is not "on" in wrangler.jsonc.
+// - Nothing is taken (503) while INGEST is not "on": index.js checks it for
+//   every path, before this.
 // - One no run of the tool's would write (review.js) is held for review:
 //   answered as accepted, kept quarantined, counted nowhere.
 // - A request costs a fixed few database queries however many reports it
@@ -126,7 +127,7 @@ export async function reports(request, env, now = new Date()) {
   if (request.method !== "POST") {
     return answer(405, { error: "reports are sent here by the tool, with POST" }, { Allow: "POST" });
   }
-  if (env.INGEST !== "on" || !env.DEVICE_HASH_KEY_PERMANENT) {
+  if (!env.DEVICE_HASH_KEY_PERMANENT) {
     return answer(503, { error: "reports are not being taken just now: try again later" }, { "Retry-After": "3600" });
   }
   if (request.headers.get("Content-Type") !== "application/json") {

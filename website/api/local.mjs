@@ -52,7 +52,15 @@ const READOUT_LIMIT = {
 // Brought up to date at each start, as `apply` brings the real one.
 const DB = d1({ file: path.join(folder, "api.sqlite") });
 // A made-up SENDER_KEY: this copy counts its senders as the Worker does.
-const env = { READOUTS, DB, READOUT_LIMIT, ENOUGH: enough, SENDER_KEY: "a-made-up-key-for-this-computer" };
+// Every email it would send, written to mail.log instead.
+const EMAIL = {
+  send: async (message) => {
+    fs.appendFileSync(path.join(folder, "mail.log"), `${JSON.stringify(message)}\n`);
+    return { messageId: `local-${Date.now()}` };
+  },
+};
+const env = { READOUTS, DB, READOUT_LIMIT, EMAIL, INGEST: "on", ENOUGH: enough,
+  SENDER_KEY: "a-made-up-key-for-this-computer" };
 
 // Gone once the script that started it is (PARENT, its process id), however it ended.
 if (process.env.PARENT) {

@@ -212,9 +212,11 @@ class StillWantedTests(unittest.TestCase):
         wanted, got = self.ask(answer={"wanted": False, "why": "held", "held": ["a" * 64, "c" * 64]})
         self.assertEqual(wanted, readout.Wanted(False, "held", frozenset({"a" * 64})))   # c was not asked of
         self.assertEqual((got["path"], got["type"]), ("/wanted", "application/json"))
-        self.assertEqual(json.loads(got["body"]), {"format": 1, "product": "BASICR4", "model": "SN-BASICR4-01",
-                                                   "version": "1.1.0", "stage": "whole",
-                                                   "firmware": ["a" * 64, "b" * 64]})
+        asked = json.loads(got["body"])
+        # A random field of its own, so two alike questions never share a proof.
+        self.assertRegex(asked.pop("nonce"), r"^[0-9a-f]{16}$")
+        self.assertEqual(asked, {"format": 1, "product": "BASICR4", "model": "SN-BASICR4-01",
+                                 "version": "1.1.0", "stage": "whole", "firmware": ["a" * 64, "b" * 64]})
         stamp, nonce = got["proof"].split(":")
         work = hashlib.sha256(f"{stamp}:{hashlib.sha256(got['body']).hexdigest()}:{nonce}".encode()).digest()
         self.assertLess(int.from_bytes(work, "big"), 1 << (256 - readout.LIGHT_PROOF_BITS))
@@ -509,7 +511,7 @@ class NotWantedTests(unittest.TestCase):
         said, asked = self.run_basicr4({"email": "me@example.com"})
         self.assertTrue(asked.call_args.kwargs["when_supported"])
         readout.notify.assert_called_once_with("me@example.com", [("BASICR4", kinds_basicr4_model())])
-        self.assertIn("emailed when this device's status changes", said)
+        self.assertIn(readout.CONFIRM_SENT, said)
 
     def test_why_is_shown_before_it_is_asked(self):
         # On the screen, not the log alone: else the owner is asked for an
@@ -625,6 +627,21 @@ class NotifyTests(unittest.TestCase):
         readout.notify.assert_called_once()
         self.assertEqual(readout.notify.call_args.args[1], [("NEWTHING", "SN-ESP32C3-NEW-01"),
                                                             ("OTHER", "SN-ESP32C3-NEW-01")])
+
+    def test_a_batch_with_an_address_says_to_confirm_it(self):
+        start_run(self)
+        with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                mock.patch.object(prompts, "UNATTENDED", False), \
+                mock.patch.object(readout, "ask_contact", return_value={"email": "me@example.com"}), \
+                mock.patch.object(readout, "run", return_value="sent"):
+            readout.run_all(self.ctx, [DEVICE, {**DEVICE, "deviceid": "1000fedcba"}])
+        self.assertIn(f"    {readout.CONFIRM_SENT}", [call.args[0] for call in output.tell.call_args_list])
+
+    def test_at_most_twenty_devices_in_one_sign_up(self):
+        with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                mock.patch.object(readout, "light_post", return_value={}) as posted:
+            readout.notify("me@example.com", [(f"P{n}", "m") for n in range(30)])
+        self.assertEqual(len(posted.call_args.args[1]["devices"]), readout.NOTIFY_MOST)
 
     def test_a_readout_sent_with_an_address_asks_too(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(prompts, "section"), \

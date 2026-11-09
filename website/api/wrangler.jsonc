@@ -41,6 +41,12 @@
   ],
   // Two readouts a minute from one address: a device takes one. Three
   // requests of reports: a run sends one, with any kept from before.
+  // Cloudflare Email Service (Workers Paid): the confirmation an address
+  // given to /notify is sent, from NOTIFY_FROM on the domain onboarded for it
+  // (.github/readouts.md). Unbound, /notify takes no address.
+  "send_email": [
+    { "name": "EMAIL" }
+  ],
   "ratelimits": [
     { "name": "READOUT_LIMIT", "namespace_id": "1001", "simple": { "limit": 2, "period": 60 } },
     { "name": "REPORT_LIMIT", "namespace_id": "1002", "simple": { "limit": 3, "period": 60 } }

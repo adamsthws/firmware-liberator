@@ -68,8 +68,16 @@ def objects(prefix: str) -> Iterator[dict[str, Any]]:
 
 def describe(item: dict[str, Any]) -> str:
     noted = item.get("custom_metadata") or {}
-    return "  ".join([item["key"], f"{item.get('size', 0):>10}", str(item.get("last_modified", "")),
-                      *(f"{key}={noted[key]}" for key in ("tool", "product", "read", "contact") if key in noted)])
+    return "  ".join(shown(part) for part in [item["key"], f"{item.get('size', 0):>10}", item.get("last_modified", ""),
+                     *(f"{key}={noted[key]}" for key in ("tool", "product", "read", "contact") if key in noted)])
+
+
+def shown(value: Any) -> str:
+    """`value`, from the store, as it is safe to print: anything but
+    printable ASCII escaped, so nothing a sender wrote reaches the terminal
+    as a control sequence."""
+    return "".join(c if " " <= c <= "~" else f"\\x{ord(c):02x}" if ord(c) < 256 else f"\\u{ord(c):04x}"
+                   for c in str(value))
 
 
 def query(sql: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
@@ -83,6 +91,8 @@ def query(sql: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
 
 
 REVIEW_STATES = {"approve": "approved", "reject": "rejected"}
+# The count of the bytes of readouts waiting for review (website/api/pending.js).
+PENDING = "readouts:pending"
 
 
 def review(product: str | None) -> int:
@@ -94,12 +104,12 @@ def review(product: str | None) -> int:
     for row in rows:
         keys.setdefault((row["key"], row["stage"]), []).append(row)
     for (key, stage), held in keys.items():
-        print(f"{key} ({stage}): {len(held)} waiting")
+        print(f"{shown(key)} ({shown(stage)}): {len(held)} waiting")
         prints = [row["fingerprint"] for row in held]
         for row in held:
             odd = len(held) > 1 and prints.count(row["fingerprint"]) == 1 and len(set(prints)) > 1
-            print(f"    {row['id']}  {row['received']}  {row['object']}  {row['fingerprint'][:12]}"
-                  + ("  ODD" if odd else ""))
+            print(f"    {shown(row['id'])}  {shown(row['received'])}  {shown(row['object'])}  "
+                  f"{shown(row['fingerprint'][:12])}" + ("  ODD" if odd else ""))
     print(f"{len(rows)} waiting for review")
     return 0
 
@@ -109,20 +119,26 @@ def settle(action: str, reference: str) -> int:
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}-[0-9a-f]{12}", reference):
         print(f"readouts: {reference} is not a readout's reference (2026-11-09-0123456789ab)", file=sys.stderr)
         return 2
-    done = query("UPDATE readouts SET review = ?1 WHERE id = ?2 RETURNING id, key, review",
-                 [REVIEW_STATES[action], reference])
-    if not done:
+    before = query("SELECT review, bytes FROM readouts WHERE id = ?1", [reference])
+    if not before:
         print(f"readouts: no readout {reference}", file=sys.stderr)
         return 1
-    print(f"{done[0]['id']} ({done[0]['key']}): {done[0]['review']}")
+    done = query("UPDATE readouts SET review = ?1 WHERE id = ?2 RETURNING id, key, review",
+                 [REVIEW_STATES[action], reference])
+    # Settled: no longer held to the room for readouts waiting for review.
+    if before[0]["review"] == "pending":
+        query("UPDATE counters SET count = max(count - 1, 0), bytes = max(bytes - ?1, 0) WHERE name = ?2",
+              [before[0]["bytes"], PENDING])
+    print(f"{shown(done[0]['id'])} ({shown(done[0]['key'])}): {shown(done[0]['review'])}")
     return 0
 
 
 def subscriber(item: dict[str, Any]) -> str:
     noted = item.get("custom_metadata") or {}
-    return "  ".join([noted.get("product", item["key"].split("/")[1]), noted.get("email", "?"),
-                      noted.get("models", "") or "-", str(item.get("last_modified", "")),
-                      noted.get("forget", "(no removal link)")])
+    return "  ".join(shown(part) for part in [noted.get("product", item["key"].split("/")[1]),
+                                              noted.get("email", "?"), noted.get("models", "") or "-",
+                                              item.get("last_modified", ""),
+                                              noted.get("forget", "(no removal link)")])
 
 
 def subscribers(prefix: str = "notify/") -> Iterator[dict[str, Any]]:
