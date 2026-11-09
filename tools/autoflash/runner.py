@@ -380,7 +380,11 @@ def stop_here_after_ctrl_c(step: str) -> bool:
     ])
     output.transient_end()
     if choice == 1:
-        output.say(f"Stopped after {step}, as asked after Ctrl-C.")
+        output.log_only(f"Stopped after {step}, as asked after Ctrl-C.")
+        # Said on the screen too, as a Ctrl-C at any other moment is: the
+        # person is told how to carry on, not only that it was tidied up.
+        output.tell("")
+        output.tell("Stopped here, as asked. Run this again to carry on from the next stage.")
         return True
     output.say(f"Carrying on after {step}: Ctrl-C was not confirmed.")
     return False

@@ -261,8 +261,10 @@ class StageEndTests(unittest.TestCase):
         if pending:
             interrupt._state["first"] = 1.0
         with mock.patch.object(prompts, "countdown_choice", return_value=answer) as asked, \
-             mock.patch.object(prompts, "section"), mock.patch.object(output, "say"):
+             mock.patch.object(prompts, "section"), mock.patch.object(output, "say"), \
+             mock.patch.object(output, "tell") as told, mock.patch.object(output, "log_only"):
             stop = runner.stop_here_after_ctrl_c("D1")
+        self.told = " ".join(call.args[0] for call in told.call_args_list if call.args)
         return stop, asked.called
 
     def test_nothing_pressed_nothing_asked(self):
@@ -274,6 +276,8 @@ class StageEndTests(unittest.TestCase):
 
     def test_stopping_when_said(self):
         self.assertEqual(self.ask(True, 1), (True, True))
+        # On the screen, as for a Ctrl-C at any other moment: how to carry on.
+        self.assertIn("Run this again to carry on", self.told)
 
     def test_unattended_the_countdown_takes_its_default(self):
         from tools.autoflash import prompts
