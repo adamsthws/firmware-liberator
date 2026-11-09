@@ -18,6 +18,8 @@
 // - At most REPORTS_DAILY a day from everyone, and PLUG_DAILY a day for one
 //   device; past the first, the rest wait for another day ("later").
 // - Ingesting stops (503) while INGEST is not "on" in wrangler.jsonc.
+// - One no run of the tool's would write (review.js) is held for review:
+//   answered as accepted, kept quarantined, counted nowhere.
 // - A request costs a fixed few database queries however many reports it
 //   carries (D1 allows 50 a request on the free plan): the duplicates, the
 //   devices' counts for the day, the day's count, and one batch to write.
@@ -26,6 +28,7 @@ import { release, reserve, reserveUpTo } from "./counters.js";
 import { hex, proven, reportSubject, work } from "./proof-of-work.js";
 import schema from "./report-schema.json" with { type: "json" };
 import { validate } from "./report-schema.js";
+import { heldFor } from "./review.js";
 
 export const MAX_BODY = 1024 * 1024;
 export const MAX_REPORTS = 99;
@@ -68,8 +71,9 @@ async function problem(report, now, bits) {
 
 const INSERT = `INSERT OR IGNORE INTO reports (id, day, tag, tool, kind, result, step, error, text, family, device,
   model, stock, plug, firmware, source, backup, identity, os_family, os_version, python_version, python_source,
-  seconds, resumed, stages, signal, wifi_typed, setup_network, power_cycled, checks, meter)
-  VALUES (${Array(31).fill("?").join(", ")})`;
+  seconds, resumed, stages, signal, wifi_typed, setup_network, power_cycled, checks, meter, quarantined)
+  VALUES (${Array(32).fill("?").join(", ")})`;
+const HOLD = "INSERT OR IGNORE INTO held_reports (id, day, why) VALUES (?, ?, ?)";
 
 // The device's record, brought up to date by one report: only where that
 // report was written just before (changes(), in the same transaction), so a
@@ -94,8 +98,9 @@ const PLUG = `INSERT INTO plugs (plug, model, device, first_day, last_day, first
 
 const flag = (value) => (value === null ? null : Number(value));
 
-// The statements that write one report, with its device's record.
-export function writes(db, report, plug, day) {
+// The statements that write one report, with its device's record, or for
+// one held (`held`: why), only it, quarantined, and why it is held.
+export function writes(db, report, plug, day, held = null) {
   const stopped = report.stopped ?? {};
   const statements = [db.prepare(INSERT).bind(
     report.id, day, report.tag, report.tool, report.kind, report.result, stopped.step ?? null,
@@ -103,7 +108,10 @@ export function writes(db, report, plug, day) {
     report.firmware, report.from, report.backup, report.identity, report.os.family, report.os.version,
     report.python.version, report.python.source, report.seconds, Number(report.resumed),
     JSON.stringify(report.stages), report.signal, flag(report.wifi_typed), flag(report.setup_network),
-    flag(report.power_cycled), report.checks, report.meter)];
+    flag(report.power_cycled), report.checks, report.meter, Number(held !== null))];
+  if (held !== null) {
+    return [...statements, db.prepare(HOLD).bind(report.id, day, held)];
+  }
   if (plug !== null) {
     // A conversion is to another firmware than Sonoff's; back to Sonoff's is counted apart.
     const converted = report.result === "converted" && report.firmware !== "sonoff";
@@ -203,7 +211,7 @@ export async function reports(request, env, now = new Date()) {
   const kept = taking.slice(0, granted);
   if (kept.length) {
     try {
-      await env.DB.batch(kept.flatMap(([report, plug]) => writes(env.DB, report, plug, day)));
+      await env.DB.batch(kept.flatMap(([report, plug]) => writes(env.DB, report, plug, day, heldFor(report))));
     } catch (error) {
       await release(env.DB, reportsOn(day), 0, kept.length);
       throw error;

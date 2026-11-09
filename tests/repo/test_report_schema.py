@@ -54,6 +54,16 @@ class ReportSchemaTests(unittest.TestCase):
         for item in FIXTURES["invalid"]:
             self.assertNotEqual(report_schema.validate(schema, changed(item)), [], item["why"])
 
+    def test_the_failure_patterns_are_the_tools_in_words_both_languages_read_alike(self):
+        from tools.autoflash import failures
+        written = report_schema.current()["failurePatterns"]
+        self.assertEqual(written, [[name, pattern.pattern] for name, pattern in failures.PATTERNS])
+        for _, pattern in written:
+            # Groups, lookarounds, flags and the like differ between Python and
+            # JavaScript, or are missing in one: none is used.
+            self.assertNotIn("(?", pattern)
+            self.assertNotRegex(pattern, r"\\[AZzGQE]|\[:")
+
     def test_a_value_of_the_wrong_kind_is_turned_away(self):
         schema = report_schema.current()
         for value in (None, [], "report", 1, True):

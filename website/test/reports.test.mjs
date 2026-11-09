@@ -272,3 +272,23 @@ test("each question /wanted is asked is counted by its model and day, within a l
   await api.countWanted(bindings.DB, "NSPANEL", "2026-11-10");
   assert.equal(rows(bindings, "SELECT * FROM wanted_days WHERE day = '2026-11-10'").length, 0);
 });
+
+test("a report no run would write is answered as accepted, held for review, and counted nowhere", async () => {
+  const bindings = env();
+  const junk = report({ plug: plugOf(9), result: "failed",
+    stopped: { step: "D4", error: "upload-cut", text: "buy cheap watches at example dot com" } });
+  const answer = await send(bindings, [junk]);
+  assert.deepEqual(answer.accepted, [junk.id], "its sender learns nothing");
+  assert.deepEqual(rows(bindings, "SELECT quarantined FROM reports"), [{ quarantined: 1 }]);
+  assert.deepEqual(rows(bindings, "SELECT id, day, why FROM held_reports"),
+    [{ id: junk.id, day: "2026-11-09", why: "words that read as none of the tool's messages" }]);
+  assert.equal(rows(bindings, "SELECT * FROM plugs").length, 0, "no device's record");
+});
+
+test("a report the tool writes is never held", async () => {
+  const bindings = env();
+  await send(bindings, [report({ plug: plugOf(10) }), report({ result: "failed",
+    stopped: { step: "D4", error: "upload-cut", text: "the delivery stopped part way: the device fetched 1 of 2" } })]);
+  assert.deepEqual(rows(bindings, "SELECT quarantined FROM reports"), [{ quarantined: 0 }, { quarantined: 0 }]);
+  assert.equal(rows(bindings, "SELECT * FROM held_reports").length, 0);
+});

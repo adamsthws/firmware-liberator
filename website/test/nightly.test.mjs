@@ -223,3 +223,12 @@ test("the month before January is December of the year before", () => {
   assert.equal(night.monthBefore("2027-01"), "2026-12");
   assert.equal(night.monthBefore("2026-11"), "2026-10");
 });
+
+test("a report held for review is in no total", async () => {
+  const bindings = env();
+  const db = bindings.DB;
+  const report = { ...structuredClone(FIXTURE), id: randomBytes(16).toString("hex") };
+  await db.batch(writes(db, report, null, "2026-11-09", "words no report would hold"));
+  await night.nightly(bindings, NIGHT);
+  assert.equal(rows(bindings, "SELECT * FROM daily_totals").length, 0);
+});

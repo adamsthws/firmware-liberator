@@ -146,10 +146,14 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         stopped = None
     else:
         reason = ctx.last_failure or ""
+        text = plain(reason)
         result = ending
+        # Classed by the words sent, as the API checks them (website/api/review.js),
+        # but for words cut short, where the whole reason says more.
         stopped = {"step": stopped_step(ctx),
-                   "error": "crash" if ending == "crashed" else failures.classify(reason),
-                   "text": plain(reason)}
+                   "error": "crash" if ending == "crashed"
+                   else failures.classify(reason if text.endswith("...") else text),
+                   "text": text}
     joined = (captures.get("D1.upload_route") == "bridge network" or captures.get("D1.resumed") is True
               or (captures.get("D1.upload_route") == "home network" and captures.get("D1.wifi") != "preset")
               or captures.get("F4.wifi_route") == "setup network")
