@@ -15,8 +15,15 @@ has left), Sonoff's own copy (frame_params "ssid") and every other copy. The
 soft AP's name (ap.ssid) is the device's own setup network, not the owner's,
 and the identity below already takes the device id out of it.
 
+Sonoff's ais SDK (the BASICR4's and MINIR4's firmware) keeps the network's
+name and password in its pair record instead (tools/espressif/ais_records.py),
+and they go the same way, as do the name and password of every older copy of
+that record NVS has left. A pair or factory record of a version not known here
+is blanked whole after its header: nothing says where its secrets are.
+
 Sonoff's settings name the device to eWeLink (frame_params: deviceid, apikey,
-encrypt_key, devicekey). Each is replaced throughout the flash by a made-up
+encrypt_key, devicekey; on the ais SDK its factory record's deviceid and
+factory_apikey, whose SHA-256 is worked out again). Each is replaced throughout the flash by a made-up
 value of the same length and form, as tools/espressif/emulator/public_dump.py
 makes the public test plugs, which boot and convert in the emulator: the
 identity only matters to eWeLink's servers, which an emulated copy never meets.
@@ -33,7 +40,8 @@ import re
 import struct
 import zlib
 
-from tools.espressif import flashmap
+from tools.espressif import ais_records, flashmap
+from tools.espressif.inspect_stock_nvs import parse
 
 PAGE = 4096
 ENTRIES = 126
@@ -46,6 +54,7 @@ NVS_OFFSET, NVS_SIZE = 0x9000, 0x10000
 FRAME_PASSWD = re.compile(rb'"passwd"\s*:\s*"((?:[^"\\]|\\.)*)"')
 FRAME_SSID = re.compile(rb'"ssid"\s*:\s*"((?:[^"\\]|\\.)*)"')
 IDENTITY = ("deviceid", "apikey", "encrypt_key", "devicekey")
+FACTORY_IDENTITY = ("deviceid", "factory_apikey")
 MIN_LEN = 4
 
 
@@ -111,6 +120,29 @@ def _reseal(before: bytes, out: bytearray) -> None:
         struct.pack_into("<I", out, at + 4, zlib.crc32(header, 0xFFFFFFFF))
 
 
+# The ais SDK's records, by their namespace (their key is "info"), and how each
+# version known here is told.
+AIS_SPACES = {"pair": ais_records.is_pair, "factory": ais_records.is_factory}
+
+
+def _blank_unknown_ais(flash: bytes, out: bytearray, space: str) -> int:
+    """Blank, after its header, each `space` record whose version is not one
+    known here; how many were."""
+    start, size = _nvs_span(flash)
+    try:
+        names, _ = parse(flash[start:start + size])
+    except (ValueError, struct.error):
+        return 0
+    blanked = 0
+    for at, key, payload, length in _entries(flash, start, size):
+        data = flash[payload : payload + length]
+        if (key == b"info" and names.get(flash[at]) == space and len(data) > 4
+                and struct.unpack_from("<H", data)[0] == ais_records.MAGIC and not AIS_SPACES[space](data)):
+            out[payload + 4 : payload + length] = bytes(length - 4)
+            blanked += 1
+    return blanked
+
+
 def _name(value: bytes) -> bool:
     """Whether `value` can be a Wi-Fi network's name: 1 to 32 bytes, not erased
     flash (0xFF) or nothing (0x00) over and over."""
@@ -152,6 +184,19 @@ def wifi(flash: bytes) -> tuple[bytes, int]:
                     station.add(name)
                     out[at + 4 : at + 4 + count] = b"*" * count
                     blanked += 1
+    for _, _, at, length in _entries(flash, start, size):
+        layout = ais_records.pair_fields(flash[at : at + length])
+        if layout is None:
+            continue
+        for field, kept in (("password", secrets), ("ssid", station)):
+            value = ais_records.text(flash[at : at + length], layout, field)
+            if (_password if field == "password" else _name)(value):
+                kept.add(value)
+                names.update([value] if field == "ssid" else [])
+                place = at + layout[field][0]
+                out[place : place + len(value)] = b"*" * len(value)
+                blanked += 1
+    blanked += _blank_unknown_ais(flash, out, "pair")
     for found in FRAME_PASSWD.finditer(flash):
         if _password(found.group(1)):
             secrets.add(found.group(1))
@@ -201,10 +246,19 @@ def identity(flash: bytes) -> tuple[bytes, int]:
             if isinstance(frame, dict):
                 values |= {str(frame[name]) for name in IDENTITY
                            if isinstance(frame.get(name), str) and len(frame[name]) >= MIN_LEN}
+        elif ais_records.is_factory(flash[at : at + length]):
+            for name in FACTORY_IDENTITY:
+                value = ais_records.text(flash[at : at + length], ais_records.FACTORY_FIELDS, name)
+                if len(value) >= MIN_LEN:
+                    values.add(value.decode("ascii", "replace"))
     replaced = 0
     apps = _apps(flash)
     for value in sorted(values, key=len, reverse=True):
         replaced += _replace_all(out, value.encode(), made_up(value).encode(), apps)
+    for _, _, at, length in _entries(flash, start, size):
+        if ais_records.is_factory(flash[at : at + length]) and out[at : at + length] != flash[at : at + length]:
+            out[at : at + length] = ais_records.resealed(bytes(out[at : at + length]))
+    replaced += _blank_unknown_ais(flash, out, "factory")
     _reseal(flash, out)
     return bytes(out), replaced
 

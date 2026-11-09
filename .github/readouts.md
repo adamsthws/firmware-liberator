@@ -55,7 +55,8 @@ The chip comes from the firmware name's last part (`ESP32C3FN4`,
      private, and a question about it would only make the owner hesitate to
      send it.
    - The device's eWeLink identity (`deviceid`, `apikey`, `encrypt_key`,
-     `devicekey` in Sonoff's settings) is replaced everywhere by made-up values
+     `devicekey` in Sonoff's settings; `deviceid` and `factory_apikey` in the ais
+     SDK's factory record, whose checksum is made good) is replaced everywhere by made-up values
      of the same shape: a device id stays ten digits beginning 1000.
    - The firmware images are left byte for byte: they are Sonoff's published
      code, and a password found there is the firmware's own setup network's.
