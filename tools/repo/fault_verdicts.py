@@ -10,7 +10,9 @@ import io
 import json
 import lzma
 import re
+import shutil
 import tarfile
+from pathlib import Path
 
 from tools.repo import unattended_run
 
@@ -103,3 +105,23 @@ def screen_problems(output: str) -> list[str]:
     plain = re.sub(r"\x1b\[[0-9;]*m", "", output)  # printed in colour unless NO_COLOR is set
     return [problem for found in SCREEN.finditer(plain)
             for problem in unattended_run.stage_problems(found["screen"])]
+
+
+# As tools/repo/unattended_run.py says where it kept a run's recording.
+RECORDING = re.compile(r"^Kept in (?P<folder>\S+?)/?: screen\.ansi", re.M)
+
+
+def keep_recordings(output: str, work: Path, folder: Path) -> list[Path]:
+    """Each run's recording in `output` - every run of a scenario, as its log
+    keeps them - copied from the emulated computer's tree `work` into `folder`,
+    run-1.raw, run-2.raw...: every byte each run drew, to replay (cat it, or
+    feed it to unattended_run.Screen), where the log keeps only the screen it
+    ended on.  The emulator's own copies go when its next scenario begins."""
+    kept = []
+    for number, found in enumerate(RECORDING.finditer(output), 1):
+        where = Path(found["folder"])   # relative to the tree, or /work/... inside the emulator
+        source = work / (where.relative_to("/work") if where.is_absolute() else where) / "screen.raw"
+        if source.is_file():
+            folder.mkdir(parents=True, exist_ok=True)
+            kept.append(Path(shutil.copy(source, folder / f"run-{number}.raw")))
+    return kept
