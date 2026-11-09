@@ -6,6 +6,8 @@
 //   cannot give (run and step times, computers, Sonoff firmware met).
 // - Reports RAW_DAYS old are deleted, once their day is folded; the day
 //   counts behind the limits (counters) COUNTER_DAYS old.
+// - The store of readouts' size is noted for the day (store_days), for the
+//   admin view's graph of how fast it fills.
 // - The public snapshot is written to the stats bucket: totals only, from
 //   the maintainer's own testing and quarantined reports left out, and no
 //   figure for fewer than SMALLEST reports or devices (snapshot.js).
@@ -18,6 +20,9 @@ export const RAW_DAYS = 365;
 export const COUNTER_DAYS = 7;
 export const SNAPSHOT_KEY = "v1/stats.json";
 export const ARCHIVE_PREFIX = "v1/archive/";
+// The count of every readout kept, as index.js names it (READOUTS_EVER; a
+// test holds the two alike).
+export const READOUTS_EVER = "readouts:all";
 
 const DAY = 86_400_000;
 export const dayOf = (date) => date.toISOString().slice(0, 10);
@@ -109,7 +114,10 @@ export async function nightly(env, now = new Date()) {
   const months = [...new Set([thisMonth, monthBefore(thisMonth), ...results.map((row) => row.day.slice(0, 7))])]
     .sort();
   await env.DB.batch([...folding(env.DB, today), ...remaking(env.DB, months, today)]);
-  await env.DB.batch(pruning(env.DB, today));
+  await env.DB.batch([...pruning(env.DB, today),
+    env.DB.prepare(`INSERT INTO store_days (day, readouts, bytes)
+      SELECT ?1, coalesce(max(count), 0), coalesce(max(bytes), 0) FROM counters WHERE name = ?2
+      ON CONFLICT (day) DO UPDATE SET readouts = excluded.readouts, bytes = excluded.bytes`).bind(today, READOUTS_EVER)]);
   const figures = await snapshot(env.DB, now);
   const text = JSON.stringify(figures);
   const options = { httpMetadata: { contentType: "application/json", cacheControl: "public, max-age=3600" } };
