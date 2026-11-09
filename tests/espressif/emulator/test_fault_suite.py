@@ -1320,13 +1320,16 @@ class ReadoutScenarioTests(unittest.TestCase):
     def readout_says(self, restarts=True):
         """What readout_espressif says from the read to the plug back on Sonoff's
         firmware: restarted by its bridge, or (`restarts` False) by the person."""
-        from contextlib import ExitStack
+        from contextlib import ExitStack, nullcontext
         from tools.autoflash import output, prompts, readout_espressif
         said = []
         installer, dump = readout_espressif.installer, readout_espressif.dump_stock_flash
         with ExitStack() as stack:
             for owner, name, kwargs in (
                     (output, "say", {"side_effect": said.append}),
+                    # On a terminal a wait is shown, not logged.
+                    (output, "log_only", {"side_effect": said.append}),
+                    (output, "working", {"side_effect": lambda text: nullcontext()}),
                     (output, "transient_begin", {}), (output, "transient_end", {}),
                     (prompts, "section", {"side_effect": lambda title, lines: said.extend([title, *lines])}),
                     (prompts, "wait_for_key", {}),

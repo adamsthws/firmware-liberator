@@ -146,6 +146,9 @@ def read_through(ctx: Context, host: str) -> tuple[bytes, bytes, bytes | None, d
     """The whole flash, efuses and what the bridge at `host` says of the chip."""
     ctx.state.set_input(BRIDGE_HOST, host)   # where it is restarted from, once read
     problem = ""
+    # In the run's log too, which a wait on screen is not: the fault suite
+    # times a fault in the read from it.
+    output.log_only("Reading the device's memory...")
     with output.working("Reading the device's memory - about a minute..."):
         for _ in range(READ_TRIES):
             try:
