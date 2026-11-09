@@ -12,7 +12,8 @@ only those that have run on main, saying which are left: a check required
 before its workflow is there - a new job, or one renamed - would hold every
 pull request back, the firmware-update workflow's too. Run it again once
 they have run. A secret's value cannot be read back, so only its name is
-checked, and `apply` leaves a missing one to `secret`.
+checked. `apply` sets each of FROM_ENV from the environment or .env, every
+time, and leaves any other missing one - a token - to `secret`.
 """
 
 from __future__ import annotations
@@ -21,7 +22,12 @@ import getpass
 import json
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from tools.repo import cloudflare_settings  # noqa: E402
 
 REPOSITORY = "adamsthws/firmware-liberator"
 GITHUB_ACTIONS = 15368   # the GitHub Actions app: only its runs may pass a required check
@@ -83,7 +89,15 @@ ENVIRONMENT_BRANCHES = ["main"]
 ENVIRONMENT_SECRETS = {
     "CLOUDFLARE_API_TOKEN": "the website workflow's, deploying the two Workers",
     "CLOUDFLARE_READ_TOKEN": "the cloudflare-settings workflow's, reading the settings it checks",
+    "CLOUDFLARE_EMAIL_DESTINATION": "the address the domain's mail is forwarded to, which that workflow checks",
+    "CLOUDFLARE_EMAIL_FORWARD": "the domain's addresses forwarded there, which that workflow checks",
 }
+# Secrets kept in .env rather than made for one job, as a token is: private
+# settings the cloudflare-settings workflow checks against (as
+# tools/repo/cloudflare_settings.py says). GitHub cannot show what a secret
+# holds, so `apply` sets these from .env each time; one left behind there
+# is a difference that workflow finds.
+FROM_ENV = ["CLOUDFLARE_EMAIL_DESTINATION", "CLOUDFLARE_EMAIL_FORWARD"]
 
 MAIN = {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}}
 # The checks main requires: jobs of the unit tests and emulator, leak-scan
@@ -257,15 +271,18 @@ def main(argv: list[str] | None = None) -> int:
     left = 0
     try:
         found = differences()
-        if not found:
-            print(f"{REPOSITORY}: every setting is as tools/repo/github_settings.py says.")
-            return 0
         for what, how, _ in found:
             print(f"  {what}: {how}")
-        if not args:
+        if not found:
+            print(f"{REPOSITORY}: every setting is as tools/repo/github_settings.py says.")
+        elif not args:
             print("python3 tools/repo/github_settings.py apply sets them.")
             return 1
+        if not args:
+            return 0
         for what, _, (method, path, body) in found:
+            if method == "SECRET" and path in FROM_ENV:
+                continue
             if method == "SECRET":
                 print(f"  {what}: left - its value is set with "
                       f"python3 tools/repo/github_settings.py secret {path}")
@@ -286,7 +303,10 @@ def main(argv: list[str] | None = None) -> int:
                     continue
             api(path, method, body)
             print(f"  {what}: set")
-    except SettingsError as error:
+        for name in FROM_ENV:
+            set_secret(name, cloudflare_settings.variable(name).strip())
+            print(f"  environment '{ENVIRONMENT}' secret {name}: set from .env")
+    except (SettingsError, cloudflare_settings.SettingsError) as error:
         print(f"github_settings: {error}", file=sys.stderr)
         return 1
     return left
