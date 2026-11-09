@@ -59,7 +59,10 @@
  * next start - Sonoff's, chosen as the bridge starts - as switching it off and
  * on would, so the run need not ask anyone to.  Refused while an upload is
  * under way, and where the next start would be this bridge again (an upload
- * cut off part way left no Sonoff firmware to start).
+ * cut off part way left no Sonoff firmware to start).  It also starts on a
+ * device whose partition table is at 0xC000 (the BASICR4), taking the table
+ * from there without writing anything, and there only reads:
+ * register_later_table.
  *
  * 4.4.5: GET /info says what a backup cannot: the chip's exact revision, the
  * flash chip's id and real size, whether PSRAM is in the chip's package, the
@@ -88,6 +91,8 @@
 #include "nvs_flash.h"
 #include "tasmota_settings.h"
 #include "esp_flash.h"
+#include "esp_flash_partitions.h"
+#include "mbedtls/md5.h"
 #include "mbedtls/sha256.h"
 #include "soc/efuse_reg.h"
 #include "soc/gpio_periph.h"
@@ -367,6 +372,61 @@ static void info_gpio(size_t *used)
     info_add(used, "\n");
 }
 
+/* Sonoff's later firmware - the BASICR4's - is built for its partition table
+ * at 0xC000, and its bootloader reads it there; this bridge, as ESP-IDF builds
+ * it, reads 0x8000. Where that holds no table and 0xC000 one whose MD5 record
+ * matches, the bridge takes the device's own table from there, registering each
+ * entry before anything looks for a partition: nothing is written to flash.
+ * Nothing but Sonoff's firmware starts on such a device yet, so the bridge then
+ * only reads it, and refuses anything that would write over it. */
+#define LATER_TABLE_OFFSET 0xC000
+static bool s_later_table;
+
+static void register_later_table(void)
+{
+    if (esp_partition_find_first(ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL) != NULL) {
+        return;
+    }
+    static esp_partition_info_t table[ESP_PARTITION_TABLE_MAX_ENTRIES];
+    if (esp_flash_read(NULL, table, LATER_TABLE_OFFSET, sizeof(table)) != ESP_OK) {
+        ESP_LOGE(TAG, "no partition table at 0x8000, and 0x%x could not be read", LATER_TABLE_OFFSET);
+        return;
+    }
+    size_t count = 0;
+    while (count < ESP_PARTITION_TABLE_MAX_ENTRIES && table[count].magic == ESP_PARTITION_MAGIC) {
+        count++;
+    }
+    uint8_t digest[16];
+    if (count == 0 || count == ESP_PARTITION_TABLE_MAX_ENTRIES || table[count].magic != ESP_PARTITION_MAGIC_MD5 ||
+        mbedtls_md5((const unsigned char *)table, count * sizeof(table[0]), digest) != 0 ||
+        memcmp(digest, (const uint8_t *)&table[count] + ESP_PARTITION_MD5_OFFSET, sizeof(digest)) != 0) {
+        ESP_LOGE(TAG, "no partition table at 0x8000, nor a whole one at 0x%x", LATER_TABLE_OFFSET);
+        return;
+    }
+    /* By name: ESP-IDF 5.3 takes no NULL for the main flash here. */
+    for (size_t i = 0; i < count; i++) {
+        char label[sizeof(table[i].label) + 1] = {0};
+        memcpy(label, table[i].label, sizeof(table[i].label));
+        esp_err_t err = esp_partition_register_external(esp_flash_default_chip, table[i].pos.offset, table[i].pos.size, label,
+                                                        (esp_partition_type_t)table[i].type,
+                                                        (esp_partition_subtype_t)table[i].subtype, NULL);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "partition %s from 0x%x not taken: %s", label, LATER_TABLE_OFFSET, esp_err_to_name(err));
+            return;
+        }
+    }
+    s_later_table = true;
+    ESP_LOGI(TAG, "partition table read from 0x%x: %u entries", LATER_TABLE_OFFSET, (unsigned)count);
+}
+
+static esp_err_t refuse_on_later_table(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_set_status(req, "409 Conflict");
+    return httpd_resp_sendstr(req, "This device's partition table is at 0xC000, where nothing but Sonoff's "
+                                   "firmware starts yet: only reading it. Nothing was written.\n");
+}
+
 /* What a backup cannot tell, as plain "name: value" lines.  Read-only: nothing
  * here writes flash or sets a pin, and no Wi-Fi details, MAC or other identity
  * are in it.  PSRAM on a chip of its own could only be found by talking to it,
@@ -400,6 +460,7 @@ static esp_err_t info_handler(httpd_req_t *req)
     info_add(&used, "psram: none, this chip cannot have it\n");
 #endif
 
+    info_add(&used, "partition table: 0x%x\n", s_later_table ? LATER_TABLE_OFFSET : CONFIG_PARTITION_TABLE_OFFSET);
     info_add(&used, "running slot: %s at 0x%lx, 0x%lx bytes\n", s_running->label,
              (unsigned long)s_running->address, (unsigned long)s_running->size);
     const esp_partition_t *next = fallback_slot();
@@ -466,6 +527,9 @@ static bool query_number(const char *query, const char *key, size_t *value)
  * as it would without settings - under that name. */
 static esp_err_t tasmota_settings_handler(httpd_req_t *req)
 {
+    if (s_later_table) {
+        return refuse_on_later_table(req);
+    }
     char query[96];
     size_t pool, pool_size, ssid_index, password_index, crc;
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
@@ -558,6 +622,9 @@ static esp_err_t upload(httpd_req_t *req);
 
 static esp_err_t update_handler(httpd_req_t *req)
 {
+    if (s_later_table) {
+        return refuse_on_later_table(req);
+    }
     s_uploading = true;
     esp_err_t result = upload(req);
     s_uploading = false;
@@ -873,6 +940,8 @@ static esp_err_t start_web_server(void)
 
 void app_main(void)
 {
+    register_later_table();
+
     /* Vendor OTA may leave a newly booted bridge pending verification.  Confirm
      * it before selecting another slot, otherwise the bootloader can later
      * classify this recovery image as aborted.  A non-pending image can return

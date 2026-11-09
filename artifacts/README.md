@@ -6,7 +6,7 @@ directory, never here.
 
 | File | Purpose | SHA-256 |
 |---|---|---|
-| `autoflash-bridge-esp32c3-4.4.6.ota` | Wrapped one-shot bridge the run installs; joins the home Wi-Fi stock was on, raising its own network only if that fails, lets the run back up the whole flash, gives Tasmota its settings, and starts even after an upload cut off part way, and restarts the plug into Sonoff's firmware when asked | `7a6c04dc50caf1996c1d2b62dcf0a1e0c9f64196a65be38d5fec39768f5da324` |
+| `autoflash-bridge-esp32c3-4.4.6.ota` | Wrapped one-shot bridge the run installs; joins the home Wi-Fi stock was on, raising its own network only if that fails, lets the run back up the whole flash, gives Tasmota its settings, and starts even after an upload cut off part way, and restarts the plug into Sonoff's firmware when asked; on a device whose partition table is at 0xC000 it only reads | `3f1a871231bcec9cb78a5222f4eb46bca0c8ab9726987a9927c0bdd241be3a38` |
 | `tasmota32c3-bluetooth.bin` | Berry-capable Tasmota used temporarily on the original partition layout | `a92cfadaff5a3c824f790471ba31464acd2076a24ff1fcad2de28574c5641708` |
 | `autoflash-recovery-safeboot-imprintable.bin` | Credential-free recovery Safeboot template; saves the Wi-Fi for the official Tasmota installed after it | `ece36fd964c1443ef9fb74af87a0a257501c9e5ecfb1fb7a1c3aff1744bc29fd` |
 | `tasmota-settings-template-15.6.0.0.bin` | Tasmota's default settings with no Wi-Fi in them, for the bridge to fill in at D1 | `d63f03cb99540407037f36dc8155ec9b02d24425d3b02c52299713233e98f4a5` |
@@ -107,7 +107,11 @@ name, not its default `tasmota-XXXXXX-NNNN`. 4.4.5 is 4.4.4 with the read-only
 `GET /info`, for the run's log: [`../archive/bridge/README.md`](../archive/bridge/README.md)
 says what it answers. 4.4.6 is 4.4.5 with `POST /restart`, which starts the
 plug again into Sonoff's firmware as switching it off and on would, so a
-readout puts the plug back by itself. Its code is the same for any plug; the
+readout puts the plug back by itself, and that starts on a device whose
+partition table is at 0xC000 (the BASICR4's), taking the table from there
+without writing anything, and there only reads: it refuses uploads and
+Tasmota's settings, as nothing but Sonoff's firmware starts on such a device
+yet. Its code is the same for any plug; the
 wrapper names the S60's model. Up to 4.4.5 the file named the S60
 (`autoflash-bridge-sonoff-s60-*.ota`); from 4.4.6 it names the chip, as the
 classic ESP32's does. Tested on the emulator and on real plugs up to 4.4.5.

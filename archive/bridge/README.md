@@ -33,7 +33,7 @@ Where stock saved no Wi-Fi it raises its own network at once, as v3 did.
 From 4.4.1 on, a bridge is named by one version: `BRIDGE_VERSION` in
 `main/main.c` and `PROJECT_VER` in `CMakeLists.txt` (a test keeps them equal)
 are the version its file is wrapped with and the one `/status` reports.
-Change both for the next bridge, 4.4.6. The stock updater is told 9.9.9
+Change both for the next bridge, 4.4.7. The stock updater is told 9.9.9
 instead: the sender wraps the app again as that, above any Sonoff release.
 
 Bridge 4.4.3 starts even when Sonoff's slot is no longer bootable - an upload
@@ -90,6 +90,18 @@ cut off leaves no Sonoff firmware to start from that moment, not from the next
 start. Before, its page went on saying "The untouched stock slot is selected for
 the next power cycle", and `/status` gave no `fallback: none`, until the plug
 was switched off and on.
+
+4.4.6 also starts on a device whose partition table is at 0xC000 (the
+BASICR4's firmware and bootloader are built so), where an earlier bridge found no
+partitions at all and stopped on an assertion, over and over, with Sonoff's
+bootloader starting it each time. Where 0x8000 holds no table and 0xC000 one
+whose MD5 record matches, it registers that table's entries itself
+(`esp_partition_register_external`) before anything looks for a partition:
+nothing is written. It then only reads - `/flash`, `/info`, `/restart` - and
+refuses `/update` and `/tasmota-settings` (409), as Tasmota and ESPHome look
+for the table at 0x8000. `/info` says where the table is. ESP-IDF's own MD5
+check is off (`sdkconfig.defaults`), as with it a blank 0x8000 fails every
+partition lookup; the bridge checks the 0xC000 table's MD5 itself.
 
 From 4.4.2 every build has the read-only `GET /flash` (the whole chip, with
 its size in `X-Flash-Size`), `GET /flash-sha256` (the SHA-256 of the whole
