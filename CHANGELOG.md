@@ -46,7 +46,9 @@ check.
   until the device is switched off and on. On a BK7238 (which has one app area) it
   installs a pin-free OpenBeken for a few minutes, reads the flash, and puts the
   device's own Sonoff firmware back from the file eWeLink offers it - the whole
-  round trip proven against the emulated S61. With the owner's agreement, a copy, with every Wi-Fi password
+  round trip proven against the emulated S61. A readout of a whole memory logs
+  what Sonoff's firmware says of the hardware it drives: meter and sensor chips, a
+  temperature watch, an ADC, external RAM, Matter, its SDK. With the owner's agreement, a copy, with every Wi-Fi password
   taken out and its eWeLink identity made up, goes to a private store behind
   api.firmwareliberator.com; the firmware eWeLink offers the device goes with
   it, as a second version to test. See `docs/readouts.md`.
