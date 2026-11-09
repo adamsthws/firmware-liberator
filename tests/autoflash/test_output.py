@@ -1700,6 +1700,15 @@ class WorkingTests(OutputTestCase):
         self.assertEqual(text, "\n Please share how it went!\n")
 
 
+    def test_in_verbose_mode_or_within_a_stage_it_is_a_line_as_any_other(self):
+        def body():
+            with output.working("Reading the device's memory - about a minute..."):
+                pass
+        text, log = self.run_with(FakeTerminal(), True, body)
+        self.assertIn("Reading the device's memory - about a minute...", rendered(text))
+        self.assertIn("Reading the device's memory", log)
+
+
 class StageGapTests(OutputTestCase):
     """Whatever is shown under a stage's line - a message, a question, a
     helper's output - has one blank line between it and the stage line."""
