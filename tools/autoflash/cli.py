@@ -427,6 +427,20 @@ def admin_password() -> str:
     return prompts.ask_admin_password()
 
 
+def stopped_report(ctx: Context, code: int | None, ending: str | None) -> str | None:
+    """How a run that did not finish ended, for its report - "failed" or
+    "crashed" (report.report_ending) - when its report is to be asked for:
+    not once it has been, and not for a run stopped before any stage began
+    (a mistyped address, say), which says nothing of how the tool does.  A
+    crash always: that is the tool's own."""
+    reported = report.report_ending(code, ending)
+    if not reported or ctx.reported:
+        return None
+    if ending != "crashed" and not getattr(ctx, "stage_begun", False):
+        return None
+    return reported
+
+
 def handle_signals() -> None:
     """Being stopped, or the terminal being closed, must still run the cleanup
     in the finally blocks: the stored secrets and the firewall rule.  SIGPIPE
@@ -650,8 +664,8 @@ def _main() -> int:
             firewall.say_quit(ctx)
         else:
             firewall.release_firewall(ctx)
-        reported = report.report_ending(code, ending)
-        if reported and not ctx.reported:
+        reported = stopped_report(ctx, code, ending)
+        if reported:
             try:
                 report.invite_stopped_report(ctx, reported)
             except Exception as exc:  # noqa: BLE001 - never let the report hide how it ended
