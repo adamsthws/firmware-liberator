@@ -582,7 +582,9 @@ def countdown_carry_on(question: str, *, seconds: float = interrupt.CARRY_ON_AFT
     out = sys.stdout
 
     def asked(left: float) -> str:
-        return f"{question} - in {max(0, int(left + 0.99))} s by itself, or press Enter now"
+        # One row in an 80-column window, its hint too: one wrapped is redrawn
+        # only on its last row, and the seconds above it stood still.
+        return f"{question} in {max(0, int(left + 0.99))} s, or press Enter now"
 
     def draw(left: float) -> None:
         out.write("\r" + output.question_row(asked(left), hint_to_quit()) + " ")
