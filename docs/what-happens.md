@@ -230,6 +230,10 @@ release, tells you whether every byte matches, and removes the temporary firewal
 rule - which needs administrator rights again, so it says why before the system
 asks.
 
+Then it asks what next: convert another device, or read one out. Either starts
+on the next device, looking for it afresh, with your eWeLink sign-in kept so you
+are not asked for it again; `q` ends. A readout asks the same.
+
 For **ESPHome**, after the bootloader, steps 9 and 10 are instead:
 
 9. **Keep the plug's Sonoff identity** in the last 4 KB of its memory, as on the

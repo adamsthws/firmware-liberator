@@ -597,24 +597,71 @@ def _main() -> int:
             else:
                 firewall.release_firewall(ctx)
             output.finish()
-    if args.command == "readout":
-        output.start(ctx.dir / "run.log", verbose=args.verbose)
-        try:
-            return cmd_readout(ctx, args.send)
-        except QuitRun:
-            output.tell("Stopped.")
-            return 130
-        except KeyboardInterrupt:
-            output.tell("Stopped with Ctrl-C. If the device was being read, switch it off and on: it starts "
-                        "its Sonoff firmware again.")
-            return 130
-        except (Abort, OSError, ValueError) as exc:
-            output.tell(f"FAILED: {exc}")
-            return 1
-        finally:
-            firewall.release_firewall(ctx)
-            runs.forget_run_secrets(ctx.dir)
-            output.finish()
+    code = read_out(ctx) if args.command == "readout" else convert(ctx, given)
+    while code == 0 and not args.send:
+        command = what_next(args.command)
+        if command is None:
+            break
+        args.command = command
+        ctx = next_device(args, ctx)
+        if command == "run":
+            output.start_at_top()
+        code = read_out(ctx) if command == "readout" else convert(ctx, given)
+    return code
+
+
+def what_next(last: str) -> str | None:
+    """After a conversion or a readout that finished, what is next, in the
+    same sitting: another device converted, or one read out - "run" or
+    "readout" - with no command to type again.  None for nothing: q, or
+    Ctrl-C.  Asked only of someone at the keyboard."""
+    if prompts.UNATTENDED:
+        return None
+    output.tell("")
+    options = (["Convert another device", "Read out a device"] if last == "run"
+               else ["Convert a device", "Read out another device"])
+    try:
+        return ("run", "readout")[prompts.ask_choice("What next", options)]
+    except (QuitRun, KeyboardInterrupt):
+        return None
+
+
+def next_device(args: argparse.Namespace, previous: Context) -> Context:
+    """The next device's run: a new one, found afresh - not the address the
+    last was given - with the eWeLink account the last one signed in to."""
+    args.run, args.plug_ip, args.new = start_new_run(None), None, True
+    ctx = Context(args)
+    ctx.keep_sign_in(previous)
+    routes.apply_target(routes.recorded_firmware(ctx.state), routes.route_source(ctx.state),
+                        routes.family_of(ctx.state))
+    return ctx
+
+
+def read_out(ctx: Context) -> int:
+    """A readout, from its log's start to its end (cmd_readout)."""
+    output.start(ctx.dir / "run.log", verbose=ctx.args.verbose)
+    try:
+        return cmd_readout(ctx, ctx.args.send)
+    except QuitRun:
+        output.tell("Stopped.")
+        return 130
+    except KeyboardInterrupt:
+        output.tell("Stopped with Ctrl-C. If the device was being read, switch it off and on: it starts "
+                    "its Sonoff firmware again.")
+        return 130
+    except (Abort, OSError, ValueError) as exc:
+        output.tell(f"FAILED: {exc}")
+        return 1
+    finally:
+        firewall.release_firewall(ctx)
+        runs.forget_run_secrets(ctx.dir)
+        output.finish()
+
+
+def convert(ctx: Context, given: list[str]) -> int:
+    """A conversion, from its log's start to its end (cmd_run), its report
+    asked for if it stopped."""
+    args = ctx.args
     output.start(ctx.dir / "run.log", verbose=args.verbose)
     log_run_choice()
     if args.unattended:
