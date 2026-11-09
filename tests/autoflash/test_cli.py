@@ -270,6 +270,76 @@ class RunChoiceTests(unittest.TestCase):
         menu.assert_not_called()
 
 
+class StageNumberTests(unittest.TestCase):
+    """Where an unfinished run carries on, as the run-again menu says it
+    (describe_run, from the run's record), is the stage its line showed as
+    it ran (routes.begin_stage) - on every route, at every stage, chosen or
+    not.  Seen: "Stopped at stage 10" for a run that carried on at 9."""
+
+    KIND = {"espressif": "sonoff-s60", "beken": "sonoff-s61"}
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.addCleanup(routes.apply_target, "tasmota", "sonoff")
+
+    def carries_on_at(self, name, inputs, done):
+        state = RunState.open(self.root / name)
+        for key, value in {"plug_ip": "192.0.2.50", **inputs}.items():
+            state.set_input(key, value)
+        for step in done:
+            state.mark(step, DONE)
+        said = cli.describe_run(self.root / name)
+        return said.split("carries on at ", 1)[1].split(")", 1)[0].split(", past", 1)[0]
+
+    def as_shown(self, firmware, source, family, step):
+        """The stage line `step` begins with, as the run draws it."""
+        begun = []
+        routes.apply_target(firmware, source, family)
+        with mock.patch.object(output, "stage_begin", side_effect=lambda *line: begun.append(line)), \
+                mock.patch.object(output, "set_stage_width"):
+            routes.begin_stage(step)
+        return "stage {}, {}".format(*begun[0])
+
+    def test_every_stage_of_every_route(self):
+        from tools.autoflash.routes import espressif
+        checked = 0
+        for name, family in routes.FAMILIES.items():
+            for source in family.SOURCES:
+                for firmware in family.FIRMWARES:
+                    try:
+                        routes.steps_for(firmware, source, family)
+                    except ValueError:
+                        continue  # no such route
+                    ways = [(source, {})]
+                    if (source, firmware) == ("tasmota", "esphome"):
+                        ways = [(source, {routes.LEAVES_DIRECT: False}),
+                                (espressif.DIRECT_FROM_TASMOTA, {routes.LEAVES_DIRECT: True})]
+                    for route_source, extra in ways:
+                        steps = [step for step, _, _ in routes.steps_for(firmware, route_source, family)]
+                        for index, step in enumerate(steps):
+                            inputs = {"plug_kind": self.KIND[name], "source": source, "firmware": firmware, **extra}
+                            with self.subTest(route=f"{name} {route_source}>{firmware}", step=step):
+                                self.assertEqual(
+                                    self.carries_on_at(f"{name}-{route_source}-{firmware}-{step}", inputs,
+                                                       steps[:index]),
+                                    self.as_shown(firmware, route_source, family, step))
+                                checked += 1
+        self.assertGreater(checked, 100)
+
+    def test_a_run_stopped_before_its_firmware_was_chosen(self):
+        # From Sonoff's firmware, found in eWeLink; from a converted plug, the
+        # prerequisites read: both carry on at "Choosing the firmware".
+        for name, family in routes.FAMILIES.items():
+            for source, done in (("sonoff", ["A0", "A1"]), ("esphome", ["A0"])):
+                with self.subTest(family=name, source=source):
+                    said = self.carries_on_at(f"{name}-{source}", {"plug_kind": self.KIND[name], "source": source},
+                                              done)
+                    self.assertEqual(said, self.as_shown(None, source, family, "A3"))
+                    self.assertTrue(said.endswith("Choosing the firmware"), said)
+
+
 class RemoveRunTests(RunChoiceTests):
     """Unfinished runs can be removed from the menu, with care for half-converted plugs."""
 

@@ -309,6 +309,149 @@ class CountdownKeyTests(unittest.TestCase):
         self.assertIn(b"\x1b[2m(q to quit)\x1b[0m", self.written)   # in grey, never a number
 
 
+class QuestionScreenTests(unittest.TestCase):
+    """Every kind of question, asked under a stage's line as a run asks it,
+    on a real terminal, answered by keys typed as a person types them -
+    wrongly first, where a wrong answer can be given.  As it is asked: how
+    to quit said in grey, never a numbered option, and every row wrapped by
+    the tool, none by the terminal; a password typed on a row of its own.
+    Once answered: nothing of it left, the stage's own note still there.
+    Each of these was first seen in an attended emulator run."""
+
+    SIZE = (80, 40)
+    NOTE = "A note the stage showed before the question."
+    # (what is asked, keys typed as each pattern shows, what it returns)
+    QUESTIONS = {
+        "choice": ('prompts.ask_choice("Which firmware would you like", ["Tasmota", "ESPHome"], '
+                   'help_lines=["Either can be changed later."])',
+                   [("would you like", "3\r"), ("Choose a number between 1 and 2", "2\r")], 1),
+        "yes or no": ('prompts.ask_yes_no("Use it anyway", default=False)',
+                      [("Use it anyway", "maybe\r"), ("Please answer y or n", "y\r")], True),
+        "text": ('prompts.ask_text("eWeLink account email", help_lines=["The account the device is in."], '
+                 'example="you@example.com")',
+                 [("account email", "\r"), ("An answer is needed", "you@example.com\r")], "you@example.com"),
+        "address": ('prompts.ask_ipv4("The device\'s address")',
+                    [("address", "eth0\r"), ("is not an address", "192.168.99.50\r")], "192.168.99.50"),
+        "password": ('prompts.ask_secret("Wi-Fi password for \'Home\': ")', [("password", "hunter22\r", r".*> ")],
+                     "hunter22"),
+        "key": ("prompts.wait_for_key()", [("Press any key", "x")], None),
+        "word": ('prompts.require_word(prompts.CONSENT_WORD)',
+                 [("Type PROCEED", "y\r"), ("Only the TYPED word", "proceed\r")], True),
+        # A question asked first once readied the terminal for typed answers,
+        # and the countdown then took a key only with an Enter.
+        "countdown": ('[prompts.ask_yes_no("Use it anyway", default=False), '
+                      'prompts.countdown_carry_on("The run carries on", seconds=30)]',
+                      [("Use it anyway", "y\r"), ("press Enter now", "\r")], [True, True]),
+    }
+
+    def ask(self, question, typed):
+        import codecs
+        import json
+        import tempfile
+        import textwrap
+        from tools.repo import unattended_run
+        root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            result = Path(directory) / "answer.json"
+            script = textwrap.dedent(f"""
+                import json, sys
+                sys.path.insert(0, {str(root)!r})
+                from tools.autoflash import output, prompts
+                output.start(None, verbose=False)
+                output.set_stage_width(30, 15)
+                output.stage_begin(5, "Querying Sonoff firmware")
+                output.tell("    {self.NOTE}")
+                output.transient_begin()
+                answer = {question}
+                output.transient_end()
+                open({str(result)!r}, "w").write(json.dumps(answer))
+                output.finish()
+            """)
+            # Typed once the question is up - its quit hint drawn - not as soon
+            # as what comes before it is: a wrong answer's reason, say.
+            answers = [unattended_run.Answer(rf"(?s){when}.*\(q to quit\){after}", keys)
+                       for when, keys, after in (item + ("",) * (3 - len(item)) for item in typed)]
+            started = time.monotonic()
+            code, written = unattended_run.record([sys.executable, "-c", script], self.SIZE, live=False,
+                                                  timeout=30, answers=answers)
+            took = time.monotonic() - started
+            answer = json.loads(result.read_text(encoding="utf-8")) if result.exists() else "no answer"
+
+        def screen(upto):
+            drawn = Screen(*self.SIZE)
+            drawn.feed(codecs.decode(written[:upto], "utf-8", errors="replace"))
+            return drawn
+        asked = [screen(at) for rule in answers for at in rule.typed_at]
+        return code, answer, took, written, asked, screen(len(written))
+
+    def test_every_question(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from tools.repo import unattended_run
+        import warnings
+        # Side by side: each waits on its own terminal, most of the time. A
+        # terminal forked from threads can deadlock a child that runs Python
+        # before it starts its command; record's only sizes the terminal,
+        # then starts it (unattended_run.record), so Python's warning is not for it.
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", r"This process .* is multi-threaded, use of forkpty",
+                                    DeprecationWarning)
+            with ThreadPoolExecutor(len(self.QUESTIONS)) as pool:
+                runs = {name: pool.submit(self.ask, question, typed)
+                        for name, (question, typed, _) in self.QUESTIONS.items()}
+        for name, (_, typed, expected) in self.QUESTIONS.items():
+            with self.subTest(question=name):
+                code, answer, took, written, asked, end = runs[name].result()
+                self.assertEqual((code, answer), (0, expected), end.render(colour=False))
+                self.assertEqual(len(asked), len(typed), "a question not asked as expected")
+                self.assertLess(took, 20)   # never the countdown's 30 s
+                for screen in asked:
+                    rows = [row for row in screen.render(colour=False).splitlines() if row.strip()]
+                    self.assertIn("(q to quit)", rows[-2] if name == "password" else rows[-1])
+                    self.assertFalse([row for row in rows if re.match(r"\s*\d+\.\s+(Quit|Exit|Stop)", row)])
+                    self.assertEqual(screen.wrapped, 0, "\n".join(rows))
+                self.assertIn(b"\x1b[2m(q to quit)", written)   # in grey
+                if name == "password":
+                    rows = [row for row in asked[0].render(colour=False).splitlines() if row.strip()]
+                    self.assertEqual((rows[-2].strip(), rows[-1].strip()), ("Wi-Fi password for 'Home' (q to quit):", ">"))
+                rows = [row for row in end.render(colour=False).splitlines() if row.strip()]
+                self.assertEqual(len(rows), 2, "\n".join(rows))
+                self.assertTrue(unattended_run.STAGE_ROW.match(rows[0]), rows[0])
+                self.assertEqual(rows[1].strip(), self.NOTE)
+
+
+    def test_every_kind_of_question_is_here(self):
+        # A public function reading the keyboard itself is a kind of question:
+        # asked above, or this fails. Those built on one (ask_ipv4 on
+        # ask_text) are that one's.
+        import ast
+        readers = {"_raw", "_read_answer", "_ask_secret", "_wait_for_key", "setcbreak", "getwch", "input"}
+        not_questions = {"discard_typed_ahead"}   # throws away keys typed early: asks nothing
+        tree = ast.parse(Path(prompts.__file__).read_text(encoding="utf-8"))
+        kinds = {function.name for function in tree.body
+                 if isinstance(function, ast.FunctionDef) and not function.name.startswith("_")
+                 and readers & {node.id if isinstance(node, ast.Name) else node.attr for node in ast.walk(function)
+                                if isinstance(node, (ast.Name, ast.Attribute))}} - not_questions
+        asked = " ".join(question for question, _, _ in self.QUESTIONS.values())
+        self.assertGreater(len(kinds), 5)
+        self.assertEqual(sorted(kind for kind in kinds if f"prompts.{kind}(" not in asked), [])
+
+
+class Screen:
+    """unattended_run.Screen, counting the rows the terminal had to wrap
+    itself: a row the tool wrote past the edge, unwrapped."""
+
+    def __new__(cls, width, height):
+        from tools.repo import unattended_run
+
+        class Counting(unattended_run.Screen):
+            wrapped = 0
+
+            def _put(self, char):
+                self.wrapped += self.wrap_next
+                super()._put(char)
+        return Counting(width, height)
+
+
 class AdminPasswordTests(unittest.TestCase):
     def test_a_wrong_password_is_replaced_not_piled_up(self):
         # As every question's wrong answer is: only why, and the question again.

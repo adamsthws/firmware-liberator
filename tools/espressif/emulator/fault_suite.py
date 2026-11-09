@@ -269,6 +269,13 @@ READOUT_FAULTS = [("read", "plugoff", 1), ("read", "outage", 30), ("read", "cras
 READOUT_THEN = ("sonoff", "readout", "sonoff-elsewhere")
 READOUT = "readout.tar"
 # Where the readout asks for the plug to be switched off and on, and waits.
+# The answers read off a run's report, in its log: each the last on its row
+# (report.report_screen).  The labels before 2.4.0 too, for an earlier
+# release's runs.
+REPORT_RESULT = re.compile(r"Result:\s+(.*)")
+REPORT_BACKUP = re.compile(r"(?:Sonoff backup|\bBackup):\s+(.*)")
+REPORT_IDENTITY = re.compile(r"(?:Sonoff identity|\bIdentity):\s+(.*)")
+REPORT_UNFINISHED = re.compile(r"(?:Converted from|From):\s+Unfinished (?:conversion|run)")
 READOUT_SWITCH = re.compile(r"Switch the device off, wait five seconds, and switch it on again")
 # Advice to switch it off and on, from a readout as from a conversion.
 SWITCH_ADVICE = re.compile(r"switch (the plug|the device|it) off and on", re.IGNORECASE)
@@ -1490,7 +1497,7 @@ class Scenario:
         clean = re.sub(r"\x1b\[[0-9;]*m", "", runs)
         if "there is nothing to convert" in clean:
             return "Converted (already: nothing to convert)"
-        found = re.findall(r"Result:\s+(.*)", clean)
+        found = REPORT_RESULT.findall(clean)
         if found and found[-1].strip() == "Updated":
             return "Converted (updated)"   # an update's report says so, and it counts the same
         if found:
@@ -2002,8 +2009,8 @@ class Scenario:
             results[-1] = (results[-1][0], self.readout_result())
             # Its report says where it converted from; any stage of the
             # conversions' says it went on as one.
-            if re.search(r"(?:Converted from|From):\s+Unfinished (?:conversion|run)|Stage \d+ - (Installing interim firmware|"
-                         r"Updating the bootloader|Making room)", self.last_said()):
+            if REPORT_UNFINISHED.search(self.last_said()) or re.search(
+                    r"Stage \d+ - (Installing interim firmware|Updating the bootloader|Making room)", self.last_said()):
                 return self.finish_readout(results, "FAIL-TAKEN-FOR-CONVERSION")
         while not self.readout_done() and len(results) < MAX_RUNS:
             if SWITCH_ADVICE.search(self.last_said()):
@@ -2255,12 +2262,12 @@ class Scenario:
         # by the run that converted it): not a legacy release's.
         last_run = re.sub(r"\x1b\[[0-9;]*m", "", Path(self.log).read_text(
             encoding="utf-8", errors="replace").split("--- ")[-1])
-        line = re.findall(r"(?:Sonoff backup|\bBackup):\s+(.*)", last_run)
+        line = REPORT_BACKUP.findall(last_run)
         backup_line = (line[-1].strip() if line and not sc["route"].startswith("sonoff>")
                        and fault != "legacy" else None)
         no_backup = sc["route"].startswith("nobackup>")
         # None to look at when the last run found nothing to convert: it makes no report.
-        identity = (re.findall(r"(?:Sonoff identity|\bIdentity):\s+(.*)", last_run)
+        identity = (REPORT_IDENTITY.findall(last_run)
                     if "nothing to convert" not in results[-1][1] else None)
         # The report's end-of-run checks, from the run that converted the plug.
         logs = run_logs(self.state)
@@ -2641,7 +2648,7 @@ def prepared(said, stop_after, stopped):
     `stop_after` was done, or else converted. Saved whatever happened, a plug
     whose run stopped at the start was once listed as saved, and its
     scenarios all failed."""
-    return stopped if stop_after else bool(re.search(r"Result:\s+Converted", said))
+    return stopped if stop_after else any(found.startswith("Converted") for found in REPORT_RESULT.findall(said))
 
 
 def make_start(save, args, stop_after=None):

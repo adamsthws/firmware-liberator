@@ -30,6 +30,19 @@ class Terminal(io.StringIO):
         return True
 
 
+class Screen(unattended_run.Screen):
+    """A terminal that counts the rows it had to wrap itself: a row the
+    tool wrote past its edge, which output.py should have wrapped first."""
+
+    def __init__(self, width, height):
+        super().__init__(width, height)
+        self.wrapped = 0
+
+    def _put(self, char):
+        self.wrapped += self.wrap_next
+        super()._put(char)
+
+
 def every_route():
     """(family name, family, source, firmware) for every route a plug can take."""
     for name, family in routes.FAMILIES.items():
@@ -44,8 +57,10 @@ def every_route():
 
 
 class RouteScreenTests(unittest.TestCase):
-    def run_route(self, family, source, firmware):
-        """The screen and the log of a whole run of the route."""
+    def run_route(self, family, source, firmware, size=SIZE):
+        """The screen and the log of a whole run of the route, begun as a
+        real one is: only the start known, the rest once A3 has chosen
+        the firmware (routes.settle_route, step_choose)."""
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         state = RunState.open(Path(directory.name))
@@ -73,6 +88,8 @@ class RouteScreenTests(unittest.TestCase):
                     raise PhaseError(f"the device stopped the {step} without reaching this computer")
                 if step == back_from and calls[step] == 1:
                     raise errors.GoBack(steps[-2], f"{steps[-2]}'s firmware was not installed", "not installed")
+                if step == "A3":
+                    apply_target(firmware, source, family)
                 return {}
             return handler
 
@@ -86,7 +103,7 @@ class RouteScreenTests(unittest.TestCase):
         with ExitStack() as patches:
             for owner, name, value in (
                     (safety_locks, "restore_left_locks", mock.Mock()), (unlock, "unlock_tasmota", mock.Mock()),
-                    (routes, "settle_route", mock.Mock(return_value=(firmware, source))),
+                    (routes, "settle_route", mock.Mock(return_value=(None, source))),
                     (routes, "route_source", mock.Mock(return_value=source)),
                     (routes, "family_of", mock.Mock(return_value=family)),
                     (routes, "apply_target", apply_target),
@@ -106,7 +123,7 @@ class RouteScreenTests(unittest.TestCase):
                 patches.enter_context(mock.patch.object(owner, name, value))
             patches.enter_context(mock.patch("sys.stdout", terminal))
             patches.enter_context(mock.patch("sys.stdin", io.StringIO()))
-            patches.enter_context(mock.patch("shutil.get_terminal_size", return_value=os.terminal_size(SIZE)))
+            patches.enter_context(mock.patch("shutil.get_terminal_size", return_value=os.terminal_size(size)))
             patches.enter_context(mock.patch.object(routes, "STEPS", routes.STEPS))
             patches.enter_context(mock.patch.object(routes, "STEP_INDEX", routes.STEP_INDEX))
             patches.enter_context(mock.patch.object(routes, "FAMILY", routes.FAMILY))
@@ -117,8 +134,9 @@ class RouteScreenTests(unittest.TestCase):
                 code = runner.run_steps(ctx)
             finally:
                 output.finish()
-        screen = unattended_run.Screen(*SIZE)
+        screen = Screen(*size)
         screen.feed(terminal.getvalue().replace("\n", "\r\n"))  # as a terminal's line discipline does
+        self.wrapped = screen.wrapped
         return code, steps, screen.render(colour=False), log.read_text(encoding="utf-8")
 
     def test_every_route_leaves_one_line_a_stage_and_nothing_else_of_them(self):
@@ -129,8 +147,13 @@ class RouteScreenTests(unittest.TestCase):
                 routes_run += 1
                 self.assertEqual(code, 0, screen)
                 self.assertEqual(unattended_run.stage_problems(screen), [], screen)
+                self.assertEqual(self.wrapped, 0, screen)
                 lines = [row for row in screen.splitlines() if unattended_run.STAGE_ROW.match(row)]
                 self.assertEqual([row.rsplit(" - ", 1)[-1] for row in lines], ["Complete"] * len(steps), screen)
+                # Lined up, from the first stage to the last. Seen in the emulator:
+                # a converted plug's first two laid out for a route two stages
+                # long, the rest once A3 had chosen it.
+                self.assertEqual(len({(row.index(" - "), row.rindex(" - ")) for row in lines}), 1, screen)
                 for gone in ("under way", "A section", "Go ahead", "console", "FAILED", "trying again",
                              "not installed", "again."):
                     self.assertNotIn(gone, screen)
@@ -138,6 +161,17 @@ class RouteScreenTests(unittest.TestCase):
                 if any(step in family.RETRY_STEPS for step in steps):
                     self.assertIn("trying again", log)
         self.assertGreater(routes_run, 10)
+
+    def test_every_route_fits_each_window_it_goes_on_in(self):
+        # The shortest a run goes on in and a wide one, as well as SIZE: every
+        # row wrapped by the tool, none by the terminal, and no stage left.
+        for size in ((80, output.MIN_ROWS), (132, 50)):
+            for name, family, source, firmware in every_route():
+                with self.subTest(size=size, route=f"{name} {source}>{firmware}"):
+                    code, steps, screen, _ = self.run_route(family, source, firmware, size)
+                    self.assertEqual(code, 0, screen)
+                    self.assertEqual(self.wrapped, 0, screen)
+                    self.assertEqual(unattended_run.stage_problems(screen), [], screen)
 
 
 if __name__ == "__main__":
