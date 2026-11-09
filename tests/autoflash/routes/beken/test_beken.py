@@ -19,19 +19,19 @@ class RouteTests(unittest.TestCase):
             ("openbeken", "sonoff", ["A0", "A1", "A3", "B1", "B2", "K1", "B4"]),
             # Through the interim firmware, the backup taken on it.
             ("esphome", "sonoff", ["A0", "A1", "A3", "B1", "B2", "J1", "B4", "J2", "K2"]),
-            ("esphome", "openbeken", ["A0", "B4", "O1", "K2"]),
-            ("sonoff", "openbeken", ["A0", "B4", "O2", "K3"]),
-            ("openbeken", "esphome", ["A0", "E1", "K1", "B4"]),
-            ("sonoff", "esphome", ["A0", "E2", "K3"]),
+            ("esphome", "openbeken", ["A0", "A3", "B4", "O1", "K2"]),
+            ("sonoff", "openbeken", ["A0", "A3", "B4", "O2", "K3"]),
+            ("openbeken", "esphome", ["A0", "A3", "E1", "K1", "B4"]),
+            ("sonoff", "esphome", ["A0", "A3", "E2", "K3"]),
             # Left on the interim firmware by a run whose record is gone: on
             # as that run would have gone, kept as OpenBeken, or as from OpenBeken.
-            ("esphome", "interim", ["A0", "B4", "J2", "K2"]),
-            ("openbeken", "interim", ["A0", "J3", "K1", "B4"]),
-            ("sonoff", "interim", ["A0", "B4", "J4", "K3"]),
+            ("esphome", "interim", ["A0", "A3", "B4", "J2", "K2"]),
+            ("openbeken", "interim", ["A0", "A3", "J3", "K1", "B4"]),
+            ("sonoff", "interim", ["A0", "A3", "B4", "J4", "K3"]),
             # This tool's ESPHome or OpenBeken, an earlier release, updated
             # (left for another firmware, it is a run from the one it runs).
-            ("esphome", "outdated", ["A0", "U1", "U2"]),
-            ("openbeken", "outdated", ["A0", "U3", "U4"]),
+            ("esphome", "outdated", ["A0", "A3", "U1", "U2"]),
+            ("openbeken", "outdated", ["A0", "A3", "U3", "U4"]),
         ):
             with self.subTest(firmware=firmware, source=source):
                 self.assertEqual([s for s, _, _ in routes.steps_for(firmware, source, beken)], expected)

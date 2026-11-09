@@ -38,7 +38,7 @@ class LeavingTasmotaForESPHomeTests(RouteTestCase):
 
     def test_a_plug_with_esphomes_bootloader_goes_straight_to_esphome(self):
         ctx = self.settle(direct=True)
-        self.assertEqual(self.names(ctx.state), ["A0", "A5", "L1", "M1", "I2"])
+        self.assertEqual(self.names(ctx.state), ["A0", "A3", "A5", "L1", "M1", "I2"])
 
     def test_it_is_read_where_the_chip_keeps_it(self):
         ctx = self.settle(direct=True)
@@ -47,7 +47,7 @@ class LeavingTasmotaForESPHomeTests(RouteTestCase):
 
     def test_any_other_goes_through_the_hub_which_writes_it(self):
         steps = self.names(self.settle(direct=False).state)
-        self.assertEqual(steps, ["A0", "A5", "L1", "X1", "X2", "D4", "D5", "K1", "I1", "I2"])
+        self.assertEqual(steps, ["A0", "A3", "A5", "L1", "X1", "X2", "D4", "D5", "K1", "I1", "I2"])
 
     def test_a_plug_that_will_not_say_goes_through_the_hub(self):
         ctx = self.ctx(plug_kind="sonoff-pow-elite")
@@ -75,7 +75,7 @@ class LeavingTasmotaForESPHomeTests(RouteTestCase):
         ctx = self.ctx(source="tasmota", firmware="esphome")
         self.assertIn("D5", self.names(ctx.state))  # wrote nothing yet: as any new run
         ctx.state.mark("L1", DONE)     # that version's L1 wrote the bootloader
-        self.assertEqual(self.names(ctx.state), ["A0", "A5", "L1", "M1", "I2"])
+        self.assertEqual(self.names(ctx.state), ["A0", "A3", "A5", "L1", "M1", "I2"])
 
     def test_the_other_ways_from_tasmota_all_pass_through_the_hub(self):
         for running in ("safeboot", "committed", "untemplated"):

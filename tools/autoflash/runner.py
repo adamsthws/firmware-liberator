@@ -116,7 +116,7 @@ def _execute(ctx: Context, step: str) -> int:
         output.stage_end("complete")
         output.tell("")
         output.tell(str(done))
-        ctx.finished = True
+        ctx.finished = done
         return 0
     except PlugNeverConnected as exc:
         ctx.state.mark(step, FAILED, error=str(exc))
@@ -443,7 +443,7 @@ def run_steps(ctx: Context) -> int:
     try:
         if ctx.state.input("plug_mac"):
             runs.hold_plug(ctx, ctx.state.input("plug_mac"))  # a run carried on: its plug is known
-        firmware, _ = routes.settle_route(ctx)
+        firmware, _ = routes.settle_route(ctx, defer=True)
         unlock.unlock_tasmota(ctx)
     except routes.NothingToDo as nothing:
         output.tell(str(nothing))
@@ -517,6 +517,9 @@ def run_steps(ctx: Context) -> int:
         code = execute_with_retries(ctx, step)
         if code == 0 and getattr(ctx, "finished", False):
             firewall.close_firewall_rules(ctx)
+            # Kept on Tasmota, chosen at A3: as when it was asked for (above).
+            if isinstance(ctx.finished, routes.NothingToDo) and runs.run_source(ctx.state) == "tasmota":
+                return rerun_on_tasmota(ctx)
             return 0
         back = getattr(ctx, "go_back", None)
         if code == 0 and back:
