@@ -157,9 +157,12 @@ check.
 - Every question says how to quit the same way: "(q to quit)", in grey, after it.
   Menus no longer number a Quit option, and q quits at every one. After a Ctrl-C,
   the run carries on by itself, or at once with Enter; q stops it there.
-- The report has a Meter calibration line, for a device with a power meter: whether
-  its readings are calibrated as Sonoff's firmware had them, or why not. It was
-  said on the screen, where it worried more than it helped.
+- The report at the end is half as tall: two columns on the screen - the device on
+  the right, the run and the computer on the left - with shorter labels (Model,
+  Stock, Backup, Checks...) and answers (the meter "Retained" or "Not retained",
+  Python's "(venv)"). A device with a power meter says whether its calibration
+  carried over, which was said on the screen, where it worried more than it
+  helped. A run stopped before any stage began no longer asks for a report.
 - A download the server turns away for now - GitHub's release downloads
   answering "504 Gateway Time-out" for minutes at a time, say - is tried again
   for a little over two minutes, waiting longer each time, rather than three

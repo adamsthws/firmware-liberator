@@ -158,10 +158,10 @@ def remember_plug(mac: str, **details: Any) -> None:
 # ("backup_outcome"): what its stage line says, and what the report says.
 BACKUP_OUTCOMES = {
     "saved": ("complete", "Completed"),
-    "existing": ("already done", "Taken by an earlier run"),
+    "existing": ("already done", "Earlier run's"),
     "failed": ("skipped", "Failed"),
-    "not wanted": ("skipped", "Not taken (--no-backup)"),
-    "unreadable": ("skipped", "Not taken (device unreadable)"),
+    "not wanted": ("skipped", "Not wanted"),
+    "unreadable": ("skipped", "Unreadable"),
     "not taken": ("skipped", "Not taken"),
     # An S61 converted straight to ESPHome: only OpenBeken reads its own data
     # out, and the plug keeps it, untouched.

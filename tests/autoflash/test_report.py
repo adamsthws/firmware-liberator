@@ -23,57 +23,72 @@ class EndingTests(RouteTestCase):
     def test_a_run_that_never_found_its_device_does_not_say_it_was_on_sonoff(self):
         # Seen on a real plug switched off: the report said "Converted from: Sonoff".
         never = self.ctx(stock_version="")
-        self.assertEqual(dict(report.report_fields(never, 300, False))["Converted from"], "__")
+        self.assertEqual(dict(report.report_fields(never, 300, False))["From"], "__")
         self.assertEqual(dict(report.report_fields(self.ctx(run="found", source="sonoff"), 300, False))
-                         ["Converted from"], "Sonoff")
+                         ["From"], "Sonoff")
 
     def test_a_run_back_to_sonoff_says_where_the_identity_came_from(self):
-        for taken, said in (("backup", "From the backup on this computer"), ("kept", "From the device"),
-                            ("account", "Rebuilt from your eWeLink account"), (None, "Not read yet")):
+        for taken, said in (("backup", "Backup"), ("kept", "Device"),
+                            ("account", "EWeLink account"), (None, "Not read")):
             with self.subTest(taken=taken):
                 ctx = self.ctx(firmware="sonoff", source="tasmota", run=f"sonoff-{taken}")
                 if taken:
                     ctx.state.capture("R1.identity", taken)
-                self.assertEqual(dict(report.report_fields(ctx, 300, False))["Sonoff identity"], said)
+                self.assertEqual(dict(report.report_fields(ctx, 300, False))["Identity"], said)
         # Left out of every other run's report, whatever it read.
         for firmware in ("tasmota", "esphome"):
             ctx = self.ctx(firmware=firmware, run=f"to-{firmware}")
             ctx.state.capture("R1.identity", "backup")
-            self.assertNotIn("Sonoff identity", dict(report.report_fields(ctx, 300, False)))
+            self.assertNotIn("Identity", dict(report.report_fields(ctx, 300, False)))
 
     def test_a_device_with_a_meter_says_how_its_calibration_went(self):
         # Said here, not on the screen: a plug's readings a few percent out is
         # no news to the person converting it, and a clue to someone helping.
+        # In a word: why not is in the log.
         for firmware, key, found, said in (
-                ("tasmota", "F4.meter", {"changed": True, "factory": True, "factor": 1.02},
-                 "As Sonoff's firmware had it, with its factory calibration"),
-                ("tasmota", "F4.meter", {"changed": False, "factory": False, "factor": 1.02},
-                 "As Sonoff's firmware had it"),
-                ("tasmota", "F4.meter", {"skipped": "the meter did not report"},
-                 "Not carried over (the meter did not report)"),
-                ("esphome", "I2.meter", {"calibration": "from backup, factor 1.02"}, "From backup, factor 1.02"),
-                ("esphome", "I2.meter", {"skipped": "ESPHome did not take it"},
-                 "Not carried over (ESPHome did not take it)"),
-                ("esphome", "J3.calibration", "from backup", "From backup"),
+                ("tasmota", "F4.meter", {"changed": True, "factory": True, "factor": 1.02}, "Retained"),
+                ("tasmota", "F4.meter", {"changed": False, "factory": False, "factor": 1.02}, "Retained"),
+                ("tasmota", "F4.meter", {"skipped": "the meter did not report"}, "Not retained"),
+                ("esphome", "I2.meter", {"calibration": "from backup, factor 1.02"}, "Retained"),
+                ("esphome", "I2.meter", {"calibration": "missing"}, "Not retained"),
+                ("esphome", "I2.meter", {"skipped": "ESPHome did not take it"}, "Not retained"),
+                ("esphome", "J3.calibration", "from backup", "Retained"),
                 ("esphome", None, None, "Not checked"),
-                ("sonoff", None, None, "Sonoff's own")):
+                ("sonoff", None, None, "Retained")):
             with self.subTest(firmware=firmware, found=found):
                 ctx = self.ctx(firmware=firmware, run=f"meter-{firmware}-{key}-{said}")
                 if key:
                     ctx.state.capture(key, found)
-                self.assertEqual(dict(report.report_fields(ctx, 300, False))["Meter calibration"], said)
+                self.assertEqual(dict(report.report_fields(ctx, 300, False))["Meter"], said)
 
     def test_a_run_stopped_before_it_knew_the_device_says_nothing_of_a_meter(self):
         # Seen: stopped at once on a wrong --plug-ip, "Meter calibration: Not
         # checked" under "Device model: __".
         ctx = self.ctx(run="never-known", stock_version="")
-        self.assertNotIn("Meter calibration", dict(report.report_fields(ctx, 300, False)))
+        self.assertNotIn("Meter", dict(report.report_fields(ctx, 300, False)))
 
     def test_a_device_with_no_meter_says_nothing_of_one(self):
         ctx = self.ctx(firmware="tasmota", run="no-meter")
         ctx.state.set_input("plug_kind", "sonoff-th-elite")
         ctx.state.capture("F4.meter", {"skipped": "this device's calibration is not read yet"})
-        self.assertNotIn("Meter calibration", dict(report.report_fields(ctx, 300, False)))
+        self.assertNotIn("Meter", dict(report.report_fields(ctx, 300, False)))
+
+    def test_on_the_screen_the_device_is_on_the_right_the_run_on_the_left(self):
+        # Half the rows of one column; the answers a fault suite reads off the
+        # screen - the device's - each the last on its row.
+        fields = [("Result", "Converted"), ("Firmware", "Tasmota"), ("Tool", "2.4.0"), ("Backup", "Completed"),
+                  ("Computer", "Ubuntu 24.04.5 LTS"), ("Checks", "True"), ("Stage times", "1=0s, 2=6s")]
+        rows = report.report_screen(fields, columns=100)
+        self.assertEqual(rows[0].split(), ["Result:", "Converted"])
+        self.assertEqual(rows[1].split(), ["Tool:", "2.4.0", "Firmware:", "Tasmota"])
+        self.assertTrue(rows[2].rstrip().endswith("Backup:   Completed"), rows)
+        self.assertEqual(rows[-1].split()[0], "Stage")
+        self.assertEqual(len(rows), 5)
+
+    def test_a_window_too_narrow_for_two_has_one_column(self):
+        fields = [("Result", "Converted"), ("Firmware", "Tasmota"), ("Tool", "2.4.0")]
+        self.assertEqual([row.split()[0] for row in report.report_screen(fields, columns=60)],
+                         ["Result:", "Firmware:", "Tool:"])
 
     def test_the_hardware_check_switches_through_esphome(self):
         relay = {"on": True}

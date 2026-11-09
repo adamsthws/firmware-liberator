@@ -145,3 +145,14 @@ class RecordingTests(unittest.TestCase):
             found = fault_verdicts.keep_recordings(output, work, kept)
             self.assertEqual([path.name for path in found], ["run-1.raw", "run-2.raw"])
             self.assertEqual((kept / "run-2.raw").read_bytes(), b"second run")
+
+
+class ReportLabelTests(unittest.TestCase):
+    def test_the_checks_are_read_however_the_report_said_them(self):
+        # Shorter, and in two columns, since 2.4.0; an earlier release's runs
+        # (the legacy scenarios) say it as before.
+        for log in ("[10:00:02]     Checks passed: False\n",
+                    "[10:00:02]     Setup network: No                      Checks:   False\n"):
+            with self.subTest(log=log):
+                self.assertEqual(fault_verdicts.checks_problem(log, "tasmota"),
+                                 "Checks passed: False; Relay: not said")

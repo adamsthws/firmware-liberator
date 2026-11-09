@@ -18,7 +18,7 @@ from tools.repo import unattended_run
 
 # As the run's log has them: the report's answer (tools/autoflash/report.py,
 # checks_passed), and the line its check said of the relay.
-CHECKS_PASSED = re.compile(r"^\[[\d:]+\] +Checks passed: +(.+?) *$", re.M)
+CHECKS_PASSED = re.compile(r"^\[[\d:]+\] .*?\b(?:Checks passed|Checks): +(.+?) *$", re.M)
 RELAY = re.compile(r"^\[[\d:]+\] +Relay: +(.+?) *$", re.M)
 
 # The answers a run ending on each firmware may give in the emulator. On

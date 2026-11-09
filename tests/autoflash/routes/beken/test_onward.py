@@ -406,7 +406,7 @@ class OpenBekenUpdateTests(unittest.TestCase):
         ctx = self.ctx(firmware="openbeken", source="outdated")
         with mock.patch.object(routes, "STEPS", []), mock.patch.object(routes, "ROUTE", ("openbeken", "outdated")):
             fields = dict(report.report_fields(ctx, 60.0, False, result=report.run_result(ctx, "converted")))
-        self.assertEqual((fields["Result"], fields["Converted from"]), ("Updated", "OpenBeken, an earlier release"))
+        self.assertEqual((fields["Result"], fields["From"]), ("Updated", "OpenBeken, earlier release"))
 
 
 if __name__ == "__main__":

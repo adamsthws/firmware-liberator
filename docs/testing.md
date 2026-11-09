@@ -407,11 +407,11 @@ computer without. It is **FAIL-IDENTITY** when a run back to Sonoff with no
 backup did not report the identity as the plug's own.
 
 It is **FAIL-CHECKS** when the report of the run that converted the plug says
-its end-of-run checks did not pass: `Checks passed: False`, the relay not
+its end-of-run checks did not pass: `Checks: False`, the relay not
 switching or never answering, as every run back to Sonoff's firmware did when
 it asked eWeLink to switch the relay before the plug had got there. The
 result keeps the check's own `Relay` line. On Tasmota and ESPHome the check
-needs only the firmware, which the emulator runs, so `Checks passed: Not run`
+needs only the firmware, which the emulator runs, so `Checks: Not run`
 fails there too; back on Sonoff's firmware the relay is switched through
 eWeLink by the device id the plug's record keeps, and `Not run` - a plug
 with none kept - is no failure. A run with no report, of a plug already on the

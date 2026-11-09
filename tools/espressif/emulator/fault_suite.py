@@ -2002,7 +2002,7 @@ class Scenario:
             results[-1] = (results[-1][0], self.readout_result())
             # Its report says where it converted from; any stage of the
             # conversions' says it went on as one.
-            if re.search(r"Converted from:\s+Unfinished conversion|Stage \d+ - (Installing interim firmware|"
+            if re.search(r"(?:Converted from|From):\s+Unfinished (?:conversion|run)|Stage \d+ - (Installing interim firmware|"
                          r"Updating the bootloader|Making room)", self.last_said()):
                 return self.finish_readout(results, "FAIL-TAKEN-FOR-CONVERSION")
         while not self.readout_done() and len(results) < MAX_RUNS:
@@ -2255,12 +2255,12 @@ class Scenario:
         # by the run that converted it): not a legacy release's.
         last_run = re.sub(r"\x1b\[[0-9;]*m", "", Path(self.log).read_text(
             encoding="utf-8", errors="replace").split("--- ")[-1])
-        line = re.findall(r"Sonoff backup:\s+(.*)", last_run)
+        line = re.findall(r"(?:Sonoff backup|\bBackup):\s+(.*)", last_run)
         backup_line = (line[-1].strip() if line and not sc["route"].startswith("sonoff>")
                        and fault != "legacy" else None)
         no_backup = sc["route"].startswith("nobackup>")
         # None to look at when the last run found nothing to convert: it makes no report.
-        identity = (re.findall(r"Sonoff identity:\s+(.*)", last_run)
+        identity = (re.findall(r"(?:Sonoff identity|\bIdentity):\s+(.*)", last_run)
                     if "nothing to convert" not in results[-1][1] else None)
         # The report's end-of-run checks, from the run that converted the plug.
         logs = run_logs(self.state)
