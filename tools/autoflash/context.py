@@ -71,6 +71,12 @@ class Context:
         self.firmware_given = "esphome" if esphome or self.replace_own_build else getattr(args, "firmware", None)
         if args.plug_ip:
             self.state.set_input("plug_ip", args.plug_ip)
+        # An account given in advance is checked now: eWeLink is not asked
+        # with one that cannot be an account.
+        for given in (args.email, credentials.get("EWELINK_EMAIL")):
+            if given and not is_email(given) and phone_number(given) is None:
+                raise Abort("the eWeLink account given (--email, or EWELINK_EMAIL) is neither an email "
+                            "address nor a phone number with its country code (as +44 7700 900123)")
         if args.email:
             self.remember_email(args.email)
         if args.web_user:
