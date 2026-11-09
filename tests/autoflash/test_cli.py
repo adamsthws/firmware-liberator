@@ -293,7 +293,7 @@ class RunChoiceTests(unittest.TestCase):
         self.assertIn("past the point of no return", options[0])
 
     def test_starting_a_new_plug_leaves_the_unfinished_run_alone(self):
-        self.run_dir("half", ["A0", "A5"])
+        self.leaving_tasmota("half")
         name, menu = self.choose(1)
         self.assertNotEqual(name, "half")
         self.assertNotIn("past the point of no return", menu.call_args.args[1][0])
@@ -314,27 +314,45 @@ class RunChoiceTests(unittest.TestCase):
         self.assertIn("past the point of no return", logged)
         self.assertEqual(cli.RUN_CHOICE, [])
 
+    def leaving_tasmota(self, name):
+        """A run that wrote to its device, short of the point of no return:
+        one from Tasmota to ESPHome, past L1."""
+        self.plug_run(name, "12:34:56:ab:cd:ef", ["A0", "A3", "A5", "L1"], source="tasmota", firmware="esphome")
+
     def plug_run(self, name, mac, done, **inputs):
         self.run_dir(name, done)
         state = RunState.open(self.root / name)
         for key, value in {"plug_mac": mac, **inputs}.items():
             state.set_input(key, value)
 
+    def test_a_run_that_wrote_nothing_to_its_device_is_not_offered(self):
+        # Stopped at a question, say, after "Convert another device": it
+        # loses nothing by starting afresh.
+        for done in ([], ["A0"], ["A0", "A5", "A1", "A2"]):
+            with self.subTest(done=done):
+                self.run_dir("quiet", done)
+                name, menu = self.choose(0)
+                menu.assert_not_called()
+                self.assertNotEqual(name, "quiet")
+
     def test_a_run_a_later_run_of_the_same_plug_wrote_over_is_not_offered(self):
         # Seen: a run stopped as it left Tasmota, carried on after a later run
         # had put ESPHome on - asking for the Wi-Fi to leave a Tasmota long gone.
-        self.plug_run("1-stale", "12:34:56:ab:cd:ef", ["A0", "A5"])
+        self.plug_run("1-stale", "12:34:56:ab:cd:ef", ["A0", "A5", "A1", "A2", "C2"])
         self.plug_run("2-later", "12:34:56:ab:cd:ef", ["A0", "A5", "L1"], source="tasmota", firmware="esphome")
-        self.plug_run("3-other", "12:34:56:ab:cd:01", ["A0", "A5"])
+        self.plug_run("3-other", "12:34:56:ab:cd:01", ["A0", "A5", "A1", "A2", "C2"])
         _, menu = self.choose(0)
         self.assertEqual(len(menu.call_args.args[1]), 4)   # 2-later, 3-other, a new one, remove one
         self.assertNotIn("1-stale", " ".join(menu.call_args.args[1]))
 
     def test_a_later_run_that_wrote_nothing_leaves_it_offered(self):
-        self.plug_run("1-stale", "12:34:56:ab:cd:ef", ["A0", "A5"])
+        self.plug_run("1-stale", "12:34:56:ab:cd:ef", ["A0", "A5", "A1", "A2", "C2"])
         self.plug_run("2-later", "12:34:56:ab:cd:ef", ["A0"])
         _, menu = self.choose(0)
-        self.assertEqual(len(menu.call_args.args[1]), 4)
+        # The first offered, with a new run and removing one; the later, which
+        # wrote nothing, not.
+        self.assertEqual(len(menu.call_args.args[1]), 3)
+        self.assertIn("carries on at stage 7", menu.call_args.args[1][0])
 
     def test_not_asked_for_one_device_only_its_run_is_carried_on(self):
         from unittest import mock
@@ -434,7 +452,7 @@ class RemoveRunTests(RunChoiceTests):
         return name, menu, section
 
     def test_removing_the_only_unfinished_run_then_starts_a_new_one(self):
-        self.run_dir("half", ["A0", "A5"])
+        self.leaving_tasmota("half")
         name, _, section = self.menu([2])          # 1 continue, 2 new, 3 remove
         self.assertFalse((self.root / "half").exists())
         self.assertNotEqual(name, "half")
@@ -446,15 +464,15 @@ class RemoveRunTests(RunChoiceTests):
         self.assertIn("part-converted", section.call_args.args[0])
 
     def test_declining_keeps_the_run_and_shows_the_menu_again(self):
-        self.run_dir("half", ["A0"])
+        self.run_dir("half", ["A0", "A5", "A1", "A2", "C2"])
         name, menu, _ = self.menu([2, 0], confirm=False)
         self.assertTrue((self.root / "half").exists())
         self.assertEqual(name, "half")
         self.assertEqual(menu.call_count, 2)
 
     def test_with_several_runs_it_asks_which_to_remove(self):
-        self.run_dir("first", ["A0"])
-        self.run_dir("second", ["A0", "A5"])
+        self.run_dir("first", ["A0", "A5", "A1", "A2", "C2"])
+        self.run_dir("second", ["A0", "A5", "A1", "A2", "C2"])
         # 1-2 continue, 3 new, 4 remove; then pick the second; then start new
         name, menu, _ = self.menu([3, 1, 1])
         remaining = sorted(p.name for p in self.root.iterdir())

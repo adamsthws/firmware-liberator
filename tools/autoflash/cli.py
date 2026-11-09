@@ -204,6 +204,11 @@ def resolve_run_name(
     if plug_ip and not ask:
         # Not asked, for one device: only a run of that device is carried on.
         unfinished = [d for d in unfinished if RunState.open(d).input("plug_ip") == plug_ip]
+    if ask:
+        # Offered back only once it has written to its device: one stopped
+        # before - at a question, say, after "Convert another device" - loses
+        # nothing by starting afresh, and asking about it would be noise.
+        unfinished = [d for d in unfinished if wrote_to_plug(d)]
     if not unfinished:
         return start_new_run(plug_ip)
 
