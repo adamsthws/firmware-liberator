@@ -128,6 +128,15 @@ one is first uploaded from your computer:
    workflow a job deploying it.
 8. Delete the short-lived token.
 
+### Stopping the API
+
+Should something need looking at, the API can stop taking requests without
+a change to the repository: Actions, Website, Run workflow, with **ingest**
+off. Every path then answers 503, and the tool keeps what it would have sent
+to send later. It lasts until the next deploy, which any push to `main`
+makes; to keep it off longer, set `INGEST` to `"off"` in
+`website/api/wrangler.jsonc` and push that.
+
 ### Checking a deploy
 
 ```sh
