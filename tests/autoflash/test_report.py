@@ -61,7 +61,7 @@ class EndingTests(RouteTestCase):
                 ("esphome", "I2.meter", {"calibration": "from backup, factor 1.02"}, "Retained"),
                 ("esphome", "I2.meter", {"calibration": "missing"}, "Not retained"),
                 ("esphome", "I2.meter", {"skipped": "ESPHome did not take it"}, "Not retained"),
-                ("esphome", "J3.calibration", "from backup", "Retained"),
+                ("esphome", "K2.calibration", "from backup", "Retained"),   # an S61's ESPHome (arrived.py)
                 ("esphome", None, None, "Not checked"),
                 ("sonoff", None, None, "Retained")):
             with self.subTest(firmware=firmware, found=found):
