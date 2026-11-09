@@ -10,7 +10,7 @@ from unittest import mock
 
 from tools.autoflash import cli, credentials, hostsys, interrupt, output, prompts, routes, runs
 from tools.autoflash.routes.beken import images as beken_images
-from tools.autoflash.routes.espressif import installer
+from tools.autoflash.routes.espressif import identity, installer, sonoff_firmware
 from tools.autoflash.state import DONE, RunState
 
 
@@ -22,6 +22,8 @@ class BeforeTheRunTests(unittest.TestCase):
         with mock.patch("sys.argv", ["cli.py", "run", *more]), mock.patch("sys.stdout", screen), \
                 mock.patch.object(hostsys, "password_asker"), mock.patch.object(prompts, "UNATTENDED"), \
                 mock.patch.object(installer, "SIMULATED_BACKUP_FAILURES"), \
+                mock.patch.object(sonoff_firmware, "SIMULATE_NONE"), \
+                mock.patch.object(identity, "SIMULATE_NONE"), \
                 mock.patch.object(beken_images, "SPOIL_STEP"), mock.patch.object(beken_images, "SPOIL_TIMES"), \
                 mock.patch.object(beken_images, "UNKNOWN_TABLE"), \
                 mock.patch.object(cli.signal, "signal"), mock.patch.object(interrupt, "install"), \
@@ -59,6 +61,26 @@ class BeforeTheRunTests(unittest.TestCase):
         self.main(choosing=choosing)
         self.assertEqual(seen, [("O1", 3), ("J2", 1), (None, 1)])
 
+    def test_a_test_can_have_sonoffs_firmware_out_of_reach(self):
+        seen = []
+
+        def choosing(*_args, **_kwargs):
+            seen.append(sonoff_firmware.SIMULATE_NONE)
+            raise KeyboardInterrupt
+        self.main(choosing=choosing, more=["--simulate-no-sonoff-firmware"])
+        self.main(choosing=choosing)
+        self.assertEqual(seen, [True, False])
+
+    def test_a_test_can_have_a_plug_with_no_identity_anywhere(self):
+        seen = []
+
+        def choosing(*_args, **_kwargs):
+            seen.append(identity.SIMULATE_NONE)
+            raise KeyboardInterrupt
+        self.main(choosing=choosing, more=["--simulate-no-identity"])
+        self.main(choosing=choosing)
+        self.assertEqual(seen, [True, False])
+
     def test_q_there_stops_the_same_way(self):
         code, screen = self.main(choosing=prompts.QuitRun("stopped at an operator prompt"))
         self.assertEqual(code, 130)
@@ -92,6 +114,8 @@ class AnotherDeviceTests(unittest.TestCase):
                     mock.patch("sys.stdout", io.StringIO()),
                     mock.patch.object(hostsys, "password_asker"), mock.patch.object(prompts, "UNATTENDED"),
                     mock.patch.object(installer, "SIMULATED_BACKUP_FAILURES"),
+                    mock.patch.object(sonoff_firmware, "SIMULATE_NONE"),
+                    mock.patch.object(identity, "SIMULATE_NONE"),
                     mock.patch.object(beken_images, "SPOIL_STEP"), mock.patch.object(beken_images, "SPOIL_TIMES"),
                     mock.patch.object(beken_images, "UNKNOWN_TABLE"),
                     mock.patch.object(cli.signal, "signal"), mock.patch.object(interrupt, "install"),

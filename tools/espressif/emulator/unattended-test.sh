@@ -28,6 +28,8 @@
 #                                                   Node), not kept unsent: what it was asked and
 #                                                   kept is in the instance's state, api/;
 #                                                   AUTOFLASH_API_ENOUGH its ENOUGH
+#   tools/espressif/emulator/unattended-test.sh --size=COLUMNSxROWS  the terminal the run gets (100x40):
+#                                                   a short window's, say, for what the run says of it
 #   tools/espressif/emulator/unattended-test.sh --timeout=MINUTES  stop the run after that long, its
 #                                                   recording kept: one waiting at a question
 #                                                   nothing answers, say
@@ -47,6 +49,7 @@ NAME=autoflash-emu PORT=8080
 PLUG=192.168.60.50
 
 emu_args=(--detach) keep=0 stub=0 run_args=() from="" save="" plug_mac="" code="" driver_args=() answers_file="" api=0
+size=100x40
 while [ $# -gt 0 ]; do
     case "$1" in
     --fresh|--pcap|--rebuild|--no-firewall) emu_args+=("$1") ;;
@@ -62,6 +65,7 @@ while [ $# -gt 0 ]; do
     --readout) driver_args+=(--command readout) ;;
     --api) api=1 ;;
     --timeout=*) driver_args+=(--timeout "${1#--timeout=}") ;;
+    --size=*) size=${1#--size=} ;;
     --answers=*) answers_file=$(cd "$(dirname "${1#--answers=}")" && pwd)/$(basename "${1#--answers=}") ;;
     --) shift; run_args=("$@"); break ;;
     *) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
@@ -260,7 +264,7 @@ fi
     -e AUTOFLASH_TASMOTA_PASSWORD="${AUTOFLASH_TASMOTA_PASSWORD:-}" -e AUTOFLASH_ESPHOME_OTA_PASSWORD="${AUTOFLASH_ESPHOME_OTA_PASSWORD:-}" \
     -e AUTOFLASH_ESPHOME_WEB_USER="${AUTOFLASH_ESPHOME_WEB_USER:-}" -e AUTOFLASH_ESPHOME_WEB_PASSWORD="${AUTOFLASH_ESPHOME_WEB_PASSWORD:-}" \
     -e AUTOFLASH_ESPHOME_API_KEY="${AUTOFLASH_ESPHOME_API_KEY:-}" \
-    -e HOME=/tmp "$NAME" /opt/venv/bin/python "$driver" --size 100x40 "${driver_args[@]}" \
+    -e HOME=/tmp "$NAME" /opt/venv/bin/python "$driver" --size "$size" "${driver_args[@]}" \
     --save "captures/unattended/$stamp" -- --env-file "$answers" "${run_args[@]}" || status=$?
 
 [ "$api" = 1 ] && kill "$api_pid" 2>/dev/null

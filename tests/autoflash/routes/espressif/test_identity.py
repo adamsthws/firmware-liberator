@@ -9,10 +9,10 @@ from unittest import mock
 from tests.autoflash.test_device import FakePlug
 from tests.autoflash.test_plans import stock_flash
 from tests.espressif.test_sonoff_identity import sonoff_nvs
-from tools.autoflash import output, plans, plugs
+from tools.autoflash import kinds, output, plans, plugs
 from tools.autoflash.device import DeviceError
 from tools.autoflash.routes import espressif
-from tools.autoflash.routes.espressif import hub, identity
+from tools.autoflash.routes.espressif import hub, identity, images
 from tools.autoflash.state import DONE, RunState
 from tools.espressif import sonoff_identity
 from tools.espressif.inspect_stock_nvs import parse
@@ -92,6 +92,21 @@ class KeptOnTasmotaTests(Fixture):
         ctx = self.ctx(on_tasmota(sector=sonoff_identity.to_sector(IDENTITY)))
         identity.kept_in_sector(ctx)
         self.assertLess(sum(length for _, length in ctx.device.reads), 1000)
+
+
+class NoIdentityAnywhereTests(Fixture):
+    def test_a_test_can_have_a_plug_keep_none_and_its_account_hold_none(self):
+        # cli.py --simulate-no-identity: a plug that does keep one, and is in
+        # its account, taken for one that is neither - for the emulator's
+        # attended run back to Sonoff, which puts it back where it came from.
+        ctx = self.ctx(on_tasmota(sector=sonoff_identity.to_sector(IDENTITY)))
+        ctx.account_devices = lambda: [{"deviceid": IDENTITY.deviceid, "params": {"staMac": MAC}}]
+        self.assertEqual(identity.kept_in_sector(ctx), IDENTITY)
+        self.assertIsNotNone(identity.account_record(ctx))
+        with mock.patch.object(identity, "SIMULATE_NONE", True):
+            self.assertIsNone(identity.kept_in_sector(ctx))
+            self.assertIsNone(identity.account_record(ctx))
+            self.assertIsNone(identity.from_settings(ctx, images.layout_of(kinds.SONOFF_S60)))
 
 
 class KeepIdentityTests(Fixture):

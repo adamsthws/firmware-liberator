@@ -47,7 +47,7 @@ from tools.autoflash.errors import Abort  # noqa: E402
 from tools.autoflash.hostsys import FirewallRule  # noqa: E402
 from tools.autoflash.prompts import QuitRun  # noqa: E402
 from tools.autoflash.routes.beken import images as beken_images  # noqa: E402
-from tools.autoflash.routes.espressif import bundle, installer  # noqa: E402
+from tools.autoflash.routes.espressif import bundle, identity, installer, sonoff_firmware  # noqa: E402
 from tools.autoflash.state import FAILED, PENDING, RunState  # noqa: E402
 from tools.espressif.safeboot.prepare_imprinted_bundle import forget_stored_password  # noqa: E402
 
@@ -525,6 +525,10 @@ def _main() -> int:
                         help="show every action as it happens (it is all in the run's log either way)")
     parser.add_argument("--simulate-backup-failure", action="store_true",
                         help=argparse.SUPPRESS)  # testing: the backup's reads fail until it asks what now
+    parser.add_argument("--simulate-no-sonoff-firmware", action="store_true",
+                        help=argparse.SUPPRESS)  # testing: Sonoff's firmware not to be had, without a backup
+    parser.add_argument("--simulate-no-identity", action="store_true",
+                        help=argparse.SUPPRESS)  # testing: the plug keeps no Sonoff identity, in no account
     parser.add_argument("--simulate-bad-image", nargs="?", const="B2", metavar="STEP",
                         help=argparse.SUPPRESS)  # testing: the S61's image STEP sends is refused by its bootloader
     parser.add_argument("--simulate-unknown-table", action="store_true",
@@ -535,6 +539,8 @@ def _main() -> int:
         parser.error("--replace-own-build installs the published ESPHome, so goes with no other firmware")
     prompts.UNATTENDED = args.unattended
     installer.SIMULATED_BACKUP_FAILURES = 2 * installer.BACKUP_ROUNDS if args.simulate_backup_failure else 0
+    sonoff_firmware.SIMULATE_NONE = args.simulate_no_sonoff_firmware
+    identity.SIMULATE_NONE = args.simulate_no_identity
     spoil, _, times = (args.simulate_bad_image or "").partition(":")
     beken_images.SPOIL_STEP, beken_images.SPOIL_TIMES = spoil or None, int(times or 1)
     beken_images.UNKNOWN_TABLE = args.simulate_unknown_table

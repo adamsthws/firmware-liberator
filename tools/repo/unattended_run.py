@@ -66,6 +66,13 @@ class Screen:
         self.row = self.col = 0
         self.style = ""        # the colour sequences in force, as written
         self.wrap_next = False  # at the last column: the next character wraps
+        # Rows the terminal wrapped itself: written past its edge, as output.py
+        # never should (it wraps each row first).
+        self.wrapped = 0
+        self.continued: set[int] = set()   # rows carrying on a line the terminal wrapped
+        # Rows wiped whole (erase line 2, erase below): a question asked again
+        # where one was answered is drawn on rows wiped first.
+        self.wiped = 0
 
     def feed(self, text: str) -> None:
         for match in TOKEN.finditer(text):
@@ -89,6 +96,8 @@ class Screen:
     def _put(self, char: str) -> None:
         if self.wrap_next:
             self.row, self.col, self.wrap_next = self.row + 1, 0, False
+            self.wrapped += 1
+            self.continued.add(self.row)
         line = self._line()
         while len(line) < self.col:
             line.append((" ", ""))
@@ -106,6 +115,7 @@ class Screen:
         if char == "\n":
             self.row += 1
             self._line()
+            self.continued.discard(self.row)   # a line of its own from here
         elif char == "\r":
             self.col = 0
         elif char == "\b":
@@ -146,7 +156,10 @@ class Screen:
                 line[:self.col + 1] = [(" ", "")] * min(len(line), self.col + 1)
             else:
                 line.clear()
+                self.continued.discard(self.row)   # cleared, to be written afresh
+                self.wiped += 1
         elif final == "J":
+            self.wiped += 1
             if numbers[0] == 0:
                 del self._line()[self.col:]
                 del self.rows[self.row + 1:]
@@ -154,6 +167,22 @@ class Screen:
                 for line in self.rows[self._top():]:
                     line.clear()
         # Anything else - hiding the cursor, say - changes no text.
+
+    def last_row(self) -> int:
+        """Where the last row that holds anything is, counted from the top."""
+        rows = self.render(colour=False).split("\n")
+        return max((index for index, row in enumerate(rows) if row.strip()), default=0)
+
+    def lines(self) -> list[str]:
+        """The lines written, plain, each whole however many rows the
+        terminal wrapped it over, the blank ones left out."""
+        found: list[str] = []
+        for index, row in enumerate(self.render(colour=False).split("\n")):
+            if index in self.continued and found:
+                found[-1] += row
+            elif row.strip():
+                found.append(row)
+        return found
 
     def render(self, colour: bool = True) -> str:
         """Every row, scrollback and all, without the blank rows at the end."""
@@ -237,12 +266,14 @@ class Answer:
     """A person at the keyboard, as far as one question goes: when the
     question the run shows, since the last answer, matches `when` (a regular
     expression, on the text without its colours), `type` is typed - "\r" is
-    Enter - up to `times` times.  The question is its last two rows (question):
+    Enter - up to `times` times.  The question is its prompt's row (question):
     not the notes above it, which can say a question's words - seen, "your
-    eWeLink account" in the firmware question's taken for the sign-in."""
+    eWeLink account" in the firmware question's taken for the sign-in.
+    `anywhere`: typed when `when` shows anywhere on the screen, a question
+    or not - a Ctrl-C ("\x03") as a stage shows, say."""
 
-    def __init__(self, when: str, type: str, times: int = 1) -> None:
-        self.when, self.type, self.left = re.compile(when), type, times
+    def __init__(self, when: str, type: str, times: int = 1, anywhere: bool = False) -> None:
+        self.when, self.type, self.left, self.anywhere = re.compile(when), type, times, anywhere
         self.typed_at: list[int] = []   # how many bytes the run had written each time it was typed
 
     @classmethod
@@ -252,12 +283,18 @@ class Answer:
 
 
 def question(screen: "Screen") -> str:
-    """The rows a question asks on: the screen's last two that hold anything -
-    its prompt, and under it a password's field (prompts.FIELD), or the row
-    the prompt follows.  Read off the screen, not the text written: a wrong
+    """The question waiting: the last line on the screen, its prompt - with,
+    for a password, the field under it (prompts.FIELD).  Read off the screen, not the text written: a wrong
     try is taken off by moving the cursor up, which text does not show."""
-    rows = [row for row in screen.render(colour=False).split("\n") if row.strip()]
-    return "\n".join(rows[-2:])
+    lines = screen.lines()
+    # A password's field is a row of its own, under its prompt; any other
+    # question is its prompt's line alone, however many rows it wraps over -
+    # the line above can be the question before, answered (seen: "What now: 1"
+    # taken for "What now" asked again).
+    # The same for a prompt too long to share its row with "(q to quit)",
+    # which then goes on a row of its own under it (output.question).
+    field = lines and lines[-1].strip().startswith((">", "(q to quit)"))
+    return "\n".join(lines[-2:] if field else lines[-1:])
 
 
 def waiting(asked: str) -> bool:
@@ -313,15 +350,43 @@ def record(command: list[str], size: tuple[int, int], live: bool,
             if live:
                 os.write(sys.stdout.fileno(), chunk)
             if answers:
-                screen.feed(decoder.decode(chunk))
+                text = decoder.decode(chunk)
+                screen.feed(text)
                 asked = question(screen)
+                # A question waits with the cursor on its row: not once an
+                # Enter has moved it on, nor as its row is being redrawn.
+                at_prompt = screen.row == screen.last_row()
+                # Where the question's prompt is: the row above for a password's
+                # field or a hint under it - drawn after the prompt, perhaps once
+                # it was answered (seen: answered on "Password:" alone, then
+                # again as its field appeared under it).
+                prompt_row = screen.row - ("\n" in asked)
+                # Only a question waiting is weighed: as the answered one's row
+                # is redrawn, none is (its field erased for a moment, say).
+                if answered is not None and at_prompt and waiting(asked) \
+                        and (prompt_row != answered[0] or screen.wiped > answered[1]):
+                    # Another question: on another row, or on rows wiped since
+                    # - one asked again just as it was, a password not taken,
+                    # is answered again. Not the one answered, redrawn as the
+                    # tool takes the answer (a password's field filling in):
+                    # seen looking as it did, and answered twice.
+                    answered = None
                 for answer in answers:
-                    if waiting(asked) and asked != answered and answer.left and answer.when.search(asked):
+                    if answer.anywhere:
+                        if answer.left and answer.when.search(screen.render(colour=False)):
+                            time.sleep(0.5)
+                            os.write(fd, answer.type.encode("utf-8"))
+                            answer.typed_at.append(len(written))
+                            answer.left -= 1
+                            break
+                        continue
+                    if at_prompt and waiting(asked) and answered is None and answer.left \
+                            and answer.when.search(asked):
                         time.sleep(0.5)   # as a person reads it
                         os.write(fd, answer.type.encode("utf-8"))
                         answer.typed_at.append(len(written))
                         answer.left -= 1
-                        answered = asked
+                        answered = (prompt_row, screen.wiped)
                         break
         except KeyboardInterrupt:
             os.kill(pid, signal.SIGINT)  # passed on: the tool stops cleanly, as at a keyboard
@@ -387,7 +452,8 @@ def main() -> int:
         # Where each answer was typed, in screen.raw's bytes: to see what each
         # question left on the screen once answered.
         (save / "answers.json").write_text(json.dumps(
-            [{"when": answer.when.pattern, "type": answer.type, "typed_at": answer.typed_at} for answer in answers],
+            [{"when": answer.when.pattern, "type": answer.type, "typed_at": answer.typed_at,
+              **({"anywhere": True} if answer.anywhere else {})} for answer in answers],
             indent=1), encoding="utf-8")
 
     shown = save.resolve()

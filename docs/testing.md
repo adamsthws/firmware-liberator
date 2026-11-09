@@ -967,6 +967,40 @@ Fixed, and each case in the suite since. In 2.3.0:
   ESPHome fetched by OpenBeken (J2, O1), found by OpenBeken's uptime: the suite's
   `--simulate-bad-image STEP` scenarios.
 
+### Attended runs
+
+The fault suites run the tool unattended, so they never see its questions. The
+attended runs do: the tool sits in the emulator as you would sit at it, and each
+question is answered as a scenario says - often wrongly first, where a wrong
+answer can be given - then the screen is judged at every answer and at the end.
+
+```sh
+tools/espressif/emulator/attended_suite.py list
+tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers 3] --plug MAC
+```
+
+A scenario is a file in `tools/espressif/emulator/attended/` (an S60's) or
+`tools/beken/emulator/attended/` (an S61's): where the plug starts, what is
+done to it first (a Tasmota web password, an ESPHome with a web login and
+encrypted updates, sudo remembering no password), the run's options, the
+answers, and how the run should end - and, for a run stopped part way, a second
+run of the tool after it (`again`), as you would start it again. A run passes when it ends that way with
+every answer used, and is otherwise:
+
+| Verdict | Means |
+|---|---|
+| FAIL-RESULT | it ended with another exit code, or its report another Result |
+| FAIL-UNANSWERED | it stopped at a question no answer covers: new, or reworded |
+| FAIL-UNUSED | an answer was never typed: its question is no longer asked |
+| FAIL-QUESTION | as a question was answered: no "(q to quit)" on it, a row the terminal wrapped itself, or a question shown twice - an earlier try left on the screen |
+| FAIL-SCREEN | the screen it ended on, as FAIL-SCREEN above |
+| HARNESS | it could not be run - the plug not prepared, say: its `harness.log` says why |
+
+Results and recordings go to `captures/emulation/attended/<time>/`.
+`tests/espressif/emulator/test_attended_suite.py` checks every answer still
+matches a question the tool asks, so a question reworded fails in the unit
+tests first.
+
 ## Real plugs
 
 Real plugs are converted with each one powered through a second smart plug,

@@ -106,6 +106,14 @@ class SonoffFirmwareTests(unittest.TestCase):
             app, where = sonoff_firmware.official_app(ctx, kinds.SONOFF_S60, IDENTITY, layout)
         self.assertEqual((app, where), (SONOFF_APP, "the public copy of Sonoff's update file (FlashDumps)"))
 
+    def test_a_test_can_have_it_out_of_reach(self):
+        # cli.py --simulate-no-sonoff-firmware: nothing asked of eWeLink or the public copy.
+        ctx = SimpleNamespace(ewelink=Account(mock.Mock(side_effect=AssertionError("not asked"))))
+        with mock.patch.object(sonoff_firmware, "SIMULATE_NONE", True), \
+                mock.patch.object(sonoff_firmware, "public", side_effect=AssertionError("not asked")), \
+                self.assertRaisesRegex(sonoff_firmware.FirmwareError, "could not be fetched"):
+            sonoff_firmware.official_app(ctx, kinds.SONOFF_S60, IDENTITY, images.layout_of(kinds.SONOFF_S60))
+
     def test_what_a_backup_would_hold_is_written_as_one(self):
         layout = images.layout_of(kinds.SONOFF_S60)
         settings = sonoff_identity.nvs(IDENTITY, 0x10000)

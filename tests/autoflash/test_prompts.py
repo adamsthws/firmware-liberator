@@ -353,12 +353,12 @@ class QuestionScreenTests(unittest.TestCase):
     QUESTIONS = {
         "choice": ('prompts.ask_choice("Which firmware would you like", ["Tasmota", "ESPHome"], '
                    'help_lines=["Either can be changed later."])',
-                   [("would you like", "3\r"), ("Choose a number between 1 and 2", "2\r")], 1),
+                   [("would you like", "3\r"), ("would you like", "2\r")], 1),
         "yes or no": ('prompts.ask_yes_no("Use it anyway", default=False)',
-                      [("Use it anyway", "maybe\r"), ("Please answer y or n", "y\r")], True),
+                      [("Use it anyway", "maybe\r"), ("Use it anyway", "y\r")], True),
         "text": ('prompts.ask_text("eWeLink account email", help_lines=["The account the device is in."], '
                  'example="you@example.com")',
-                 [("account email", "\r"), ("An answer is needed", "you@example.com\r")], "you@example.com"),
+                 [("account email", "\r"), ("account email", "you@example.com\r")], "you@example.com"),
         "address": ('prompts.ask_ipv4("The device\'s address")',
                     [("address", "eth0\r"), ("address", "192.168.99.50\r")], "192.168.99.50"),
         "password": ('prompts.ask_secret("Wi-Fi password for \'Home\': ")', [("password", "hunter22\r", r".*\n\s*>")],

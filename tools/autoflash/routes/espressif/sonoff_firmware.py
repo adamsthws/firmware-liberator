@@ -118,8 +118,15 @@ def public(kind: kinds.Kind) -> bytes | None:
     return fetch(f"{PUBLIC_FILES}/{urllib.parse.quote(max(listed)[1])}")
 
 
+# Testing (cli.py --simulate-no-sonoff-firmware): Sonoff's firmware never to
+# be had, as with eWeLink and the public copy both out of reach.
+SIMULATE_NONE = False
+
+
 def official_app(ctx: Context, kind: kinds.Kind, identity: Identity, layout: Layout) -> tuple[bytes, str]:
     """Sonoff's firmware for the device, and where it came from."""
+    if SIMULATE_NONE:
+        raise FirmwareError("Sonoff's firmware for this device could not be fetched (simulated)")
     problems = []
     sources = [("the file eWeLink offers the device", lambda: offered(ctx, identity))]
     # A run against a stand-in for eWeLink (the emulator's) reaches nothing else.
