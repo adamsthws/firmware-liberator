@@ -1,9 +1,9 @@
 #!/bin/bash
 # Keeps the emulated plug powered: runs QEMU while /run/autoflash-emu/power says "on",
 # and starts it again after it is killed (that is what a power cut looks like).
-# Its serial output goes through the redactor before it reaches the log.
-# (`-serial file:/dev/stdout`, not `-serial stdio`: with stdin at /dev/null the
-# fork's stdio serial stays silent.)
+# QEMU runs through the plug's board (tools/espressif/emulator/board.py, from the
+# checkout's copy), which serves its serial ports and gives the plug its power
+# meter; the console's output goes through the redactor before it reaches the log.
 #
 # -no-reboot: the fork keeps its peripherals running across a guest software
 # reset, so firmware restarting into a different image (stock into the bridge,
@@ -44,9 +44,10 @@ while true; do
     echo "===== plug powered on $(date '+%F %T') =====" >> "$LOG"
     router=()
     [ -e "$RUN/router-off" ] && router=(-global "driver=esp32_wifi,property=access-points-off,value=on")
+    python3 -I -B /work/tools/espressif/emulator/board.py --chip "${CHIP:-esp32c3}" --kind "${KIND:-}" -- \
         "/opt/qemu/bin/$qemu" \
         -L /opt/qemu/pc-bios -machine "$machine" "${psram[@]}" -display none -no-reboot \
-        -serial file:/dev/stdout -monitor "unix:$RUN/monitor.sock,server,nowait" -pidfile "$RUN/qemu.pid" \
+        -monitor "unix:$RUN/monitor.sock,server,nowait" -pidfile "$RUN/qemu.pid" \
         -drive file=/state/flash.bin,if=mtd,format=raw \
         -drive file=/state/efuse.bin,if=none,format=raw,id=efuse \
         -global "driver=$efuse,property=drive,value=efuse" "${pins[@]}" \

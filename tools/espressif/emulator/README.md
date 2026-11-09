@@ -43,9 +43,9 @@ together and what it changes, for working on it. How to use it is in
   archive, SHA-256, the form the Beken emulator keeps its pin in), takes it out
   of `emu.Dockerfile`, and says the release to publish the archive as,
   `emulator-source-qemu-<commit>`: each named after the upstream project the
-  archive is of. The pin is moved into `UPSTREAM` with the next image, whatever
-  brings it, as that is a new image of its own:
-  `tests/repo/test_emulator_images.py` fails until it is. QEMU is
+  archive is of. `UPSTREAM` has held the pin since the image that brought the
+  plug's board ([below](#the-plugs-board-boardpy)), at the same commit, so
+  that move needed no new release. QEMU is
   GPL-2.0: the archive is its unmodified source, and this project's changes
   to it are the patches in `tools/espressif/emulator/patches/`, so a change to the
   emulator is a new patch, not a new release. The image is labelled with
@@ -248,14 +248,72 @@ while the plug also tries the home one, on a link of its own with its own MAC
   one left behind. QEMU now exits on a reset and is started again, so every
   restart is a clean power-on. Nothing in the conversion depends on the
   reset type.
-- **`-serial file:/dev/stdout`, not `-serial stdio`.** With stdin at
-  `/dev/null`, the fork's stdio serial port prints nothing.
+- **Through the plug's board.** QEMU is started by `board.py`, which serves
+  its serial ports and its power meter ([below](#the-plugs-board-boardpy)).
 - **Only ARP requests for the plug reach it** (a `tc` filter on `tap0`, in
   `entrypoint.sh`). When the plug does not answer, the conversion tool looks
   for it by pinging every address on the network, and that burst of ARP
   requests stops the fork's Wi-Fi receiving for good: the plug keeps sending,
   but hears nothing until it is restarted. A real plug ignores requests for
   other addresses anyway.
+
+### The plug's board (`board.py`)
+
+A plug's power meter is a chip on its board, beside the ESP32: QEMU has none,
+so `board.py` is that board. `plug-supervisor` starts QEMU through it, from
+the checkout's copy in the container (`/work`), as the redactor and the cloud
+stub are run: changing it needs no new image. It gives QEMU every UART as a
+socket it serves (`-chardev socket` and `-serial chardev:`), and a QMP monitor
+of its own, through which it reads the chip's GPIO registers with `xp`, as the
+firmware's reads would: the output and output-enable registers every 100 ms,
+the GPIO matrix's routing every second.
+
+- **The wiring is the kind's Tasmota template** (`kinds.py`; `emu.sh` passes
+  the kind it finds by the plug's product model as `PLUG_KIND`): Relay1 and
+  Relay2, and the meter's pins, CSE7766 RX or CSE7761 TX and RX. A UART hears
+  the meter when its RX signal takes the meter's output pin - through the
+  matrix, or that pin's IOMUX function (U2RXD's is GPIO16, the POW Elite's
+  meter) - and the meter hears a UART when the matrix routes that UART's TX
+  to the meter's input pin. So it is the firmware's own routing that connects
+  them: Tasmota and Sonoff's firmware read the S60's on UART1, ESPHome on
+  UART0, all three from GPIO7, and each finds its meter.
+- **UART0 also reaches the console**, the serial log, whatever else it is
+  routed to: its IOMUX pins keep their function, as on a real chip, so
+  ESPHome's commands to a CSE7761 on UART0 show in the log too.
+- **What a UART does not take is lost**, as on a wire into a full FIFO: the
+  board sends the meter's bytes only while QEMU has read nearly all it sent
+  before. Queued, a firmware busy for a few seconds was minutes behind the
+  meter after it (QEMU paces a UART's reads to its baud rate once its FIFO has
+  filled): Tasmota read the relay as off for minutes after it went on. And a
+  UART the firmware never reads - UART2 takes GPIO16 through the IOMUX until
+  told otherwise, the POW Elite's meter - stopped the board.
+- **The load.** 100 W, resistive, on 230 V 50 Hz mains: a channel measures it
+  while the relay that switches it is on - its GPIO's output set and enabled -
+  and nothing while it is off. The voltage is measured on the supply side,
+  so it is there either way. The POWCT's clamp is not in its relay's line: it
+  reads the load whatever the relay does.
+- **The CSE7766** (the S60, the POW Elite) sends a 24-byte frame about every
+  55 ms by itself: voltage, current and power each as the chip's coefficient
+  and a cycle, the PF pulse count, a checksum. Its coefficients are a typical
+  chip's (Tasmota's: 191200, 16140, 5364000), none of Tasmota's defaults, so
+  Tasmota takes them as the chip's own and the run's calibration of it
+  (`calibration.py`) can be tested. With no load the frame says the power
+  cycle is out of range (header `0xF2`), as the chip does.
+- **The CSE7761** (the Dual R3, the POWCT) answers what it is asked, at
+  38400 baud: reset, write enable and close, register reads and writes, each
+  checked by its checksum, and its factory conversion coefficients with their
+  checksum, which the firmware takes when it is right. Channel A follows
+  Relay1 and B Relay2 on the Dual R3; a gain the firmware sets other than the
+  one the board is calibrated at reads wrong, as on the real board. The
+  POWCT's ESPHome sets a shunt's gain, 16, on its clamp's input and reads it
+  at a shunt's scale, 3.2 times too much, which its config's division by pi
+  nearly undoes: it reads 101.9 W of the 100.
+- **Not modelled:** the baud rate and frame format a UART is set to (a
+  firmware reading the meter at the wrong speed would still get its frames),
+  and a chip's timing. Tasmota gives a CSE7761 6 ms to answer each read; on
+  the classic ESP32 the answer reaches the firmware later than that, so
+  Tasmota finds no meter on a Dual R3 or a POWCT ("C61: Rx none"), where
+  ESPHome, which waits longer, reads it.
 
 ### The browser forward (`container/bin/browser-forward`)
 

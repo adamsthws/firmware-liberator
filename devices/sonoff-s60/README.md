@@ -8,7 +8,7 @@
 
 **For real:** Tasmota to ESPHome and back has been run on a real S60TPG, every write read back, and the relay and power meter checked through each firmware ([real plugs](../../docs/testing.md#real-plugs)).
 
-**In the emulator:** it converts in every direction, faults and all, from a dump of a real one ([the fault suite](../../docs/testing.md#the-espressif-fault-suite)); the emulator has no relay, button, LED or meter.
+**In the emulator:** it converts in every direction, faults and all, from a dump of a real one ([the fault suite](../../docs/testing.md#the-espressif-fault-suite)); the emulator has no button or LED, but its CSE7766 meter is emulated, measuring a 100 W load while the relay is on: Tasmota, ESPHome and Sonoff's firmware 1.2.0 each read it (Sonoff's reports 230.08 V, 0.43 A and 99.99 W).
 
 **Worth checking:** whether the relay, button, LED and meter work on yours.
 

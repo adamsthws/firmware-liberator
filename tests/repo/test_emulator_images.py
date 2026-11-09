@@ -114,8 +114,10 @@ class PinHelperTests(unittest.TestCase):
         return folder
 
     def test_the_espressif_pin_moves_into_upstream(self):
-        folder = self.copy("espressif", ("image.sh", "emu.Dockerfile", "patches", "container"))
-        self.assertEqual(image_sh(folder, "tag"), TODAY["espressif"])
+        """From emu.Dockerfile the first time, and from UPSTREAM after."""
+        pinned = ("UPSTREAM",) if upstream(EMULATORS["espressif"]) else ()
+        folder = self.copy("espressif", ("image.sh", "emu.Dockerfile", "patches", "container", *pinned))
+        before = image_sh(folder, "tag")
         archive = folder.parent / "qemu-lcgamboa-1234567.tar.xz"
         archive.write_bytes(b"a made-up archive")
         image_sh(folder, "pin", str(archive), "1234567" + "0" * 33)
@@ -125,7 +127,7 @@ class PinHelperTests(unittest.TestCase):
         self.assertNotRegex((folder / "emu.Dockerfile").read_text(encoding="utf-8"), r"(?m)^ARG QEMU_SOURCE_SHA256=")
         self.assertRegex((folder / "emu.Dockerfile").read_text(encoding="utf-8"), r"(?m)^ARG QEMU_SOURCE_SHA256$")
         self.assertEqual(image_sh(folder, "release"), "emulator-source-qemu-1234567")
-        self.assertNotEqual(image_sh(folder, "tag"), TODAY["espressif"])
+        self.assertNotEqual(image_sh(folder, "tag"), before)
 
     def test_a_new_beken_pin_names_its_release_after_upstream(self):
         folder = self.copy("beken", ("image.sh", "UPSTREAM", "requirements.txt", "bk-emu.Dockerfile", "patches"))

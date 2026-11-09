@@ -564,11 +564,16 @@ WSL stops its VM, and Docker with it, soon after its last window closes: with
   network has no password. Every setup network the conversion makes is open
   from the installer 4.4.3 on, so all can be joined (`wifi join NAME`, and
   `wifi home` to go back); an earlier release's installer, with WPA2, cannot.
-- **No power meter, buttons or screen.** No plug's meter (the S60's CSE7766,
-  say) is emulated, so readings are absent and the end-of-run check's log says
-  the meter is unchanged; the checks still pass, as the relay switches. A
-  conversion passing says the firmware installs and starts, not that its
-  wiring is right.
+- **A power meter, but no buttons or screen.** Each plug's meter chip - the
+  S60's and the POW Elite's CSE7766, the Dual R3's and the POWCT's CSE7761 -
+  is emulated, measuring a 100 W load on 230 V while the relay is on and none
+  while it is off, so the end-of-run check can say the meter confirms the
+  switch, and Tasmota's calibration from the chip can be tried
+  ([how](../tools/espressif/emulator/README.md#the-plugs-board-boardpy)).
+  Tasmota finds no CSE7761 on a classic ESP32 in the emulator: the chip's
+  answers reach it too late. A conversion passing says the firmware installs
+  and starts, and reads a meter wired as the kind's template says - not that
+  the template is right for the device.
 - **One plug, one region.** The emulator runs whatever the dump came from. A
   dump of another model or region is needed to emulate it. A test copy made
   from an update file runs on another plug's flash, so it tests the firmware,

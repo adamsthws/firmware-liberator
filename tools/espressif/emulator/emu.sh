@@ -334,10 +334,15 @@ for candidate in ("198.18.60.0/24", "172.31.60.0/24", "10.231.60.0/24"):
     docker network create --subnet "$subnet" --label autoflash.emulator=1 "$NETWORK" >/dev/null 2>&1 ||
         docker network inspect "$NETWORK" >/dev/null
 fi
+model=${product:-$(product_seen)}
 # Some stock firmware stops at start-up without the external RAM its plug has.
 psram=$(PYTHONPATH=$ROOT "$PY" -c 'import sys
 from tools.autoflash import kinds
-print(next((k.psram_mb for k in kinds.EVERY if k.psram_mb and k.product_of(sys.argv[1])), ""))' "${product:-$(product_seen)}")
+print(next((k.psram_mb for k in kinds.EVERY if k.psram_mb and k.product_of(sys.argv[1])), ""))' "$model")
+# Its kind, whose wiring the plug's board (board.py) takes its meter from.
+kind=$(PYTHONPATH=$ROOT "$PY" -c 'import sys
+from tools.autoflash import kinds
+print(next((k.key for k in kinds.EVERY if k.product_of(sys.argv[1])), ""))' "$model")
 # QEMU for the dual-core ESP32 takes more than the 256 MB the ESP32-C3's stays
 # in: over it, the kernel kills QEMU part way through a download, which looks
 # like the plug restarting. Measured through every classic ESP32's conversions it
@@ -353,7 +358,7 @@ exec "${awake[@]}" docker run --rm $tty --name "$NAME" --hostname autoflash-emu-
     "${publish[@]}" "${dev[@]}" \
     -v "$STATE:/state" -v "$SRC/flash.bin:/secrets/stock-flash.bin:ro" "${stubvol[@]}" \
     -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e PLUG_MAC="$mac" -e CHIP="$chip" -e PSRAM="$psram" \
-    -e CLOUD="$cloud" -e PCAP="$pcap" -e FIREWALL="$firewall" -e WINDOWS="$windows" \
+    -e PLUG_KIND="$kind" -e CLOUD="$cloud" -e PCAP="$pcap" -e FIREWALL="$firewall" -e WINDOWS="$windows" \
     -e STUB_CLOUD="$stub" -e STUB_CLOUD_DIR="$STUB_DIR" -e STUB_PRODUCT_MODEL="$product" \
     -e AUTOFLASH_EMULATOR_URL="http://localhost:$PORT" \
     "$IMAGE"
