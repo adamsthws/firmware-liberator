@@ -32,22 +32,36 @@ class StatusFileTests(unittest.TestCase):
 
     def test_a_kind_with_none_is_not_converted(self):
         made_up = kinds.Kind(**{**vars(kinds.SONOFF_S60), "key": "sonoff-made-up"})
-        self.assertIs(made_up.status, kinds.Status.NOT_READY_YET)
+        self.assertIs(made_up.status, kinds.Status.NOT_SUPPORTED)
         self.assertFalse(made_up.ready)
 
     def test_the_tool_converts_those_ready_and_no_other(self):
         self.assertEqual({kind.key for kind in kinds.READY},
-                         {kind.key for kind in kinds.EVERY if kind.status is not kinds.Status.NOT_READY_YET})
-        self.assertIs(kinds.SONOFF_S60.status, kinds.Status.PROVEN)
+                         {kind.key for kind in kinds.EVERY
+                          if kind.status in (kinds.Status.SUPPORTED, kinds.Status.TESTERS_WANTED)})
+        self.assertIs(kinds.SONOFF_S60.status, kinds.Status.SUPPORTED)
 
-    def test_each_kinds_folder_is_where_its_status_puts_it(self):
+    def test_each_kind_has_its_own_folder_whatever_its_status(self):
         for kind in kinds.EVERY:
             with self.subTest(kind=kind.key):
+                self.assertEqual(kind.folder, f"devices/{kind.key}")
                 self.assertTrue((ROOT / kind.folder / "README.md").is_file())
-                self.assertEqual(kind.folder.startswith("devices/not-ready-yet/"),
-                                 kind.status is kinds.Status.NOT_READY_YET)
         folders = {path.parent.relative_to(ROOT).as_posix() for path in ROOT.glob("devices/**/esphome.yaml")}
         self.assertEqual(folders, {kind.folder for kind in kinds.EVERY})
+
+
+class StatusTests(unittest.TestCase):
+    def test_a_bridge_readout_is_only_for_a_kind_it_is_proven_on(self):
+        self.assertEqual({status for status in kinds.Status if status.reads_out},
+                         {kinds.Status.SUPPORTED, kinds.Status.TESTERS_WANTED, kinds.Status.READOUT_WANTED})
+        self.assertFalse(kinds.Status.READOUT_WANTED.converts)
+
+    def test_each_badge_colour_is_one_the_readme_uses(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        for status in kinds.Status:
+            if status is not kinds.Status.NOT_SUPPORTED:  # the one colour new to the page
+                with self.subTest(status=status.value):
+                    self.assertIn(f"color={status.colour}", readme)
 
 
 class BadgeTests(unittest.TestCase):
@@ -82,7 +96,7 @@ class BadgeTests(unittest.TestCase):
             with self.subTest(kind=kind.key):
                 shown = json.loads((device_status.BADGES / f"{kind.key}.json").read_text(encoding="utf-8"))
                 self.assertEqual((shown["label"], shown["message"], shown["color"]),
-                                 ("Status", kind.status.value, kind.status.colour))
+                                 ("Status", kind.status.label, kind.status.colour))
 
     def test_each_status_has_its_own_colour(self):
         self.assertEqual(len({status.colour for status in kinds.Status}), len(kinds.Status))

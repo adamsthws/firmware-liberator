@@ -78,16 +78,19 @@ check.
 - The Sonoff Basic Gen5 (BASIC-1GS). It has no public dump, so the tool checks
   the partition table in eWeLink's official update file before writing anything,
   and logs what the run learns. Beken devices on any other table are refused.
-- The Sonoff BASICR4 (ESP32-C3), wanting testers. It has been proven neither in
-  the emulator nor on a real plug: its stock firmware will not start on the
-  stand-in S60 flash the emulator runs it on (`espInit`, `ESP_ERR_NOT_FOUND`),
-  for want of a factory record a real one carries. Its firmware name and the
-  partition table the conversion checks for are confirmed from eWeLink's official
-  update file, its pins from published maps; a plug whose table is not that one
-  stops before anything of Sonoff's is written over.
+- A readout is safe on the Sonoff BASICR4 and MINIR4, whose firmware is a
+  newer Sonoff SDK. The BASICR4 keeps its partition table at 0xC000, where the
+  bridge did not look: bridge 4.4.6 takes it from there without writing
+  anything, and then only reads, where an earlier one would have stopped and
+  stayed on the device until it was opened. Both keep their eWeLink identity and Wi-Fi in
+  records of their own, which a readout now takes out too: before, one would
+  have sent in the device's identity and perhaps its Wi-Fi password. In the
+  emulator both now start as a paired device does and are read out. The
+  BASICR4 is not converted yet: Tasmota and ESPHome look for the table at 0x8000.
 - Each device has one status, kept in `devices/status.json` and shown by a badge
-  in the README and on the device's page: Proven, Testers wanted or Not ready
-  yet. On a device wanting testers, the go-ahead before a run's first write says
+  in the README and on the device's page: Supported, Testers wanted, Readout
+  wanted or Not supported yet; every device's folder is in `devices/`, whatever
+  its status. On a device wanting testers, the go-ahead before a run's first write says
   so and asks you to report your result, and the report asks for the run's log.
 - The firmware this project builds says in its version which upstream release
   it is built on: OpenBeken 1.18.320-1 and ESPHome 2026.10.0-2. A plug on a

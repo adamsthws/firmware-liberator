@@ -343,11 +343,11 @@ ESP32 firmware at all is in
 [its README](../tools/espressif/emulator/README.md#what-a-classic-esp32-needed).
 
 A device whose status in [`devices/status.json`](../devices/status.json) is
-`Not ready yet` is turned down, by the emulated run as by a real one, unless
+`readout-wanted` or `not-supported` is turned down, by the emulated run as by a real one, unless
 `AUTOFLASH_NOT_READY_YET=1` is set. `unattended-test.sh` passes it on to its
 run; in a run you start with `emu.sh`, set it in the conversion window
 (`AUTOFLASH_NOT_READY_YET=1 run`). Where each of those devices stops is in
-[devices/not-ready-yet/](../devices/not-ready-yet/README.md).
+[devices/](../devices/README.md).
 
 ### On Windows
 

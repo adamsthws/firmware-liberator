@@ -26,7 +26,7 @@ BADGES = ROOT / "devices" / "status"
 
 def badge(kind: kinds.Kind) -> str:
     """The badge file's text for `kind`, as shields.io's endpoint badge reads it."""
-    return json.dumps({"schemaVersion": 1, "label": "Status", "message": kind.status.value,
+    return json.dumps({"schemaVersion": 1, "label": "Status", "message": kind.status.label,
                        "color": kind.status.colour}, indent=2) + "\n"
 
 

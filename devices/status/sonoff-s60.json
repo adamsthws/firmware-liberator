@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
   "label": "Status",
-  "message": "Proven",
-  "color": "2EA44F"
+  "message": "Supported",
+  "color": "brightgreen"
 }

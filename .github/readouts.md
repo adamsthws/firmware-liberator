@@ -112,7 +112,7 @@ never meets, as its cloud is the emulator's stub. The public test plugs are
 made the same way ([public_dump.py](../tools/espressif/emulator/public_dump.py)),
 and boot and convert in the emulator. A readout keeps all a public dump lacks:
 the device's real partition table, its factory data, its calibration and its
-own settings, which is what the devices in `devices/not-ready-yet/` stop for.
+own settings, which is what the devices not converted yet ([devices/](../devices/README.md)) stop for.
 
 ## Its format
 

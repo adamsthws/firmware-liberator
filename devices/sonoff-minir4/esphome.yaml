@@ -1,5 +1,4 @@
-# ESPHome for the Sonoff M5 1-gang wall switch. Not the Matter version, whose part
-# number ends in W: it is locked, and cannot be converted.
+# ESPHome for the Sonoff MINI Extreme (MINIR4).
 #
 # The conversion tool installs this pre-built (artifacts/README.md says how it
 # is built), with no Wi-Fi and no passwords in it: it writes the device's own
@@ -7,17 +6,17 @@
 # boot they are handed to wifi.configure. Kept in this one file, so that Home
 # Assistant can adopt the device from it (dashboard_import) and build it there.
 #
-# Its pins are as published (devices/not-ready-yet/sonoff-m5-1c/README.md says where). It has run in
+# Its pins are as published (devices/sonoff-minir4/README.md says where). It has run in
 # the emulator only, which has no relay or other hardware to see.
 
 esphome:
   # Named as every firmware the conversion installs is, whatever the device.
   name: esphome
   friendly_name: esphome
-  comment: Sonoff-M5-1C
+  comment: Sonoff-MINIR4
   name_add_mac_suffix: true
   project:
-    name: liberator.sonoff-m5-1c
+    name: liberator.sonoff-minir4
     version: "1.0.0"
   on_boot:
     # Tasmota holds its output pins through a software restart, and the install
@@ -25,9 +24,8 @@ esphome:
     - priority: 1000
       then:
         - lambda: |-
-            gpio_hold_dis(GPIO_NUM_23);
+            gpio_hold_dis(GPIO_NUM_26);
             gpio_hold_dis(GPIO_NUM_19);
-            gpio_hold_dis(GPIO_NUM_5);
         # Before Wi-Fi starts (its priority is 250): the network to join, from
         # the image, and its own network's name. Wi-Fi details saved earlier
         # (from Home Assistant, say) take their place as Wi-Fi starts.
@@ -86,7 +84,7 @@ esphome:
 # Adopting the device in Home Assistant's ESPHome builder takes this config as
 # a package. update_firmware.py writes the release.
 dashboard_import:
-  package_import_url: github://adamsthws/firmware-liberator/devices/not-ready-yet/sonoff-m5-1c/esphome.yaml@v2.4.0
+  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-minir4/esphome.yaml@v2.4.0
   import_full_config: false
 
 globals:
@@ -141,14 +139,14 @@ captive_portal:
 
 status_led:
   pin:
-    number: GPIO5
+    number: GPIO19
     inverted: true
 
 switch:
   - id: relay
     platform: gpio
     name: "Relay"
-    pin: GPIO23
+    pin: GPIO26
     restore_mode: RESTORE_DEFAULT_OFF
 
 binary_sensor:
@@ -163,6 +161,17 @@ binary_sensor:
       - delayed_on: 10ms
       - delayed_off: 10ms
     on_press:
+      - switch.toggle: relay
+  - platform: gpio
+    id: wall_switch
+    internal: true
+    pin:
+      number: GPIO27
+      mode: INPUT_PULLUP
+      inverted: true
+    filters:
+      - delayed_on_off: 50ms
+    on_state:
       - switch.toggle: relay
 
 sensor:

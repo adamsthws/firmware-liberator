@@ -12,9 +12,10 @@ nowhere else:
 
 | Status | Means | The tool |
 |---|---|---|
-| `Proven` | a real one has been converted and reported | converts it |
-| `Testers wanted` | it converts in the emulator, or is added from its official file and a published pin map; no real one is reported yet | says so in the go-ahead before the first write, and asks for the run's log |
-| `Not ready yet` | it does not convert in the emulator yet | turns it down |
+| `supported` | a real one has been converted and reported | converts it |
+| `testers-wanted` | it converts in the emulator, or is added from its official file and a published pin map; no real one is reported yet | says so in the go-ahead before the first write, and asks for the run's log |
+| `readout-wanted` | it does not convert yet, but its readout through the bridge runs in the emulator and leaves it on its Sonoff firmware | turns a conversion down; reads it out in full |
+| `not-supported` | neither | turns it down; reads it out only as far as Sonoff's own firmware and eWeLink tell ([docs/readouts.md](readouts.md)) |
 
 After changing the file, run `python3 tools/repo/device_status.py`: it writes each
 device's badge file under `devices/status/`, with the words and colour of its status.
@@ -28,7 +29,7 @@ A device's README says its status only through its badge, at the top of its
 or if a README says a status in words.
 
 **When a report comes in** of a real one converted, change its line in
-`devices/status.json` to `Proven`, and run `tools/repo/device_status.py`. That moves
+`devices/status.json` to `supported`, and run `tools/repo/device_status.py`. That moves
 the tool and every badge.
 
 ## Writing down what you found out
@@ -82,7 +83,8 @@ dump is ever committed. Tooling fetches it at run time.
    product model, stock model, the model its update wrapper names, and its Tasmota
    template. Set `product_model_decides` if another device shares its stock model
    but is wired differently, so it is never mistaken for that one. Give it a
-   status in `devices/status.json`: `Not ready yet` until step 6 passes
+   status in `devices/status.json`: `not-supported` until its readout runs in the
+   emulator (`readout-wanted`), and that until step 6 passes
    ([its status](#its-status)).
 
 3. **Boot it in the emulator** with the stub cloud, and watch for it to come
@@ -142,9 +144,10 @@ dump is ever committed. Tooling fetches it at run time.
    ([emulator_check.py](../tools/repo/emulator_check.py)). One with no dump is named
    in that file's `NO_DUMP`, or a test fails.
 
-8. **If it will not convert yet**, keep the work: put its folder in
-   [devices/not-ready-yet/](../devices/not-ready-yet/README.md), with its status
-   `Not ready yet`, and say there what is holding it up. The tool then turns it down.
+8. **If it will not convert yet**, keep the work: its folder stays in `devices/`,
+   with its status `readout-wanted` or `not-supported`, and
+   [devices/README.md](../devices/README.md) says what is holding it up. The tool
+   then turns it down.
 
 9. **Be plain about what was tested.** The emulator has no relays, meters, buttons
    or screens. A conversion passing there says the firmware installs and starts,
@@ -265,7 +268,7 @@ fetches the official file at run time, by the name and hash it pins.
 2. **Add the kind** to [kinds.py](../tools/autoflash/kinds.py): its chip, eWeLink
    product model, stock model, the firmware name its update wrapper names, its
    layout (`beken-4m`), and `uses_lan_control=False`. Give it its status in
-   `devices/status.json`: `Testers wanted`, as no real one has been converted
+   `devices/status.json`: `testers-wanted`, as no real one has been converted
    ([its status](#its-status)).
 3. **Pin its official update file** in `OFFICIAL_FILES` in
    [images.py](../tools/autoflash/routes/beken/images.py), by name and SHA-256: a

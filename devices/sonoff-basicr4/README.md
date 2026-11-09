@@ -4,22 +4,21 @@
 
 [![Status](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fdevices%2Fstatus%2Fsonoff-basicr4.json)](README.md)
 
-## Testing
+## Where it stops
 
-**Not proven yet:** no real one has been converted, and it does not run in the
-emulator either. Its stock firmware will not start on the S60 flash the emulator
-would run it on: it stops early (`espInit`: `ESP_ERR_NOT_FOUND`), looking up a
-factory record the S60's settings do not carry. A real BASICR4 ships with its
-own, so this is the stand-in flash's gap, not the device's.
+Its firmware keeps its partition table at 0xC000, and its bootloader reads it
+there; Tasmota and ESPHome look for it at 0x8000, so the tool does not convert
+it yet, and turns it down as it does any device it does not know. Its stock
+firmware starts in the emulator, on a stand-in flash with its table moved there,
+and is read out. See [what is holding each one up](../README.md).
 
-**What is known** comes from eWeLink's official update file and published pin
-maps: its firmware name, that its app loads at the offset the tool expects (the
-S60's layout), and its pins. The conversion refuses a plug whose partition table
-is not that one, before anything of Sonoff's is written over.
-
-**Worth checking, on a real one:** what model it reports, whether its partition
-table is the one the tool expects, and whether the relay, button and LED work.
-Please report how it went, with the run's log.
+**A readout is safe, and wanted** ([`docs/readouts.md`](../../docs/readouts.md)):
+the bridge (4.4.6 or later) takes the table from 0xC000 without writing anything,
+only reads the device, and puts it back on Sonoff's firmware. The copy sent in has
+the Wi-Fi password and eWeLink identity taken out of the records this firmware
+keeps them in (its pair and factory records). It would show what nobody has seen:
+the whole table, of which the stand-in guesses all past the table itself (`nvs`
+from 0xD000, the rest as the S60's).
 
 ## The device
 
@@ -35,6 +34,7 @@ Sonoff's ESP32-C3 inline switch, model **BASICR4**.
 | LED | GPIO6: lit high by the Tasmota template, lit low by the ESPHome sources |
 | Button | GPIO9, active low |
 | Zero-cross input | GPIO5: a pulse at each mains zero crossing, read for Sonoff's Magic Switch. Left unset here |
+| Thermistor | GPIO3 (ADC1 channel 3), read by its stock firmware: under 580 mV it takes itself to be overheating and refuses updates. Not seen on a board yet, and read by neither the Tasmota template nor the ESPHome config here, so a converted one would lose this protection |
 
 Pins from [Blakadder's template](https://templates.blakadder.com/sonoff_BASICR4.html),
 which agrees with [ESPHome's device page](https://devices.esphome.io/devices/sonoff-basic-r4-v1.0),
@@ -54,17 +54,14 @@ pins with it on the mains.**
 - **Tasmota**: the official release, unchanged, given the template in
   [`tools/autoflash/kinds.py`](../../tools/autoflash/kinds.py), without MagicSwitch.
 - **ESPHome**: [`esphome.yaml`](esphome.yaml); [`esphome.md`](esphome.md) says what it reports.
-- **Flash layout**: not known: the S60's is expected, and the run stops before
-  anything is written if it is another.
+- **Flash layout**: its partition table is at 0xC000; the rest is not known.
+  In the emulator, [`public_dump.py`](../../tools/espressif/emulator/public_dump.py)
+  puts eWeLink's official update file on the S60's flash with its table moved there,
+  the factory and pair records a paired one has, and its thermistor (GPIO3) reading
+  room temperature: under 580 mV it takes itself to be overheating, and refuses
+  updates.
 - **Calibration**: none, as it has no meter.
-- **Back to Sonoff**: the tool writes back the device's own backup, taken before
-  anything of Sonoff's is written over; without it, Sonoff's official firmware for
-  it, with the identity the device keeps or your eWeLink account holds
-  ([how](../../docs/what-happens.md#changing-firmware-later)).
-- **How it is converted**: as the S60 is ([`docs/what-happens.md`](../../docs/what-happens.md)),
-  with the firmware for its chip, sent through Sonoff's own update method in a file
-  wrapped for `FWSW-E32R4-BASICR4-ESP32C3`, the name the run also learns from
-  eWeLink's offer or the public file list
-  ([how](../../docs/adding-a-device.md#learning-the-firmware-name)); a wrong name is
-  refused by the device, which stays on Sonoff. [`docs/adding-a-device.md`](../../docs/adding-a-device.md)
-  says what was needed.
+- **Back to Sonoff**: a readout leaves it there; the tool does not convert it yet.
+- **How it is converted**: not yet: Tasmota and ESPHome would have to find its
+  table at 0xC000. [`docs/adding-a-device.md`](../../docs/adding-a-device.md)
+  says what adding a device takes.

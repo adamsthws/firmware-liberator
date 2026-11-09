@@ -149,8 +149,8 @@ class ResearchIndexTests(unittest.TestCase):
     def test_a_page_the_index_leaves_out_is_named(self):
         index = "- [S61](../devices/sonoff-s61/research.md#its-wiring)\n- [Beken](beken-research.md)\n"
         pages = [ROOT / "devices/sonoff-s61/research.md", ROOT / "docs/beken-research.md",
-                 ROOT / "devices/not-ready-yet/sonoff-x/research.md"]
-        self.assertEqual(unlisted(index, pages), ["devices/not-ready-yet/sonoff-x/research.md"])
+                 ROOT / "devices/sonoff-x/research.md"]
+        self.assertEqual(unlisted(index, pages), ["devices/sonoff-x/research.md"])
 
 
 class EmulatorPageTests(unittest.TestCase):

@@ -55,7 +55,7 @@ class WarningTests(unittest.TestCase):
         return " ".join(line for call in self.box.call_args_list for line in call.args[1])
 
     def test_the_s60_is_proven_and_its_go_ahead_says_nothing_of_testers(self):
-        self.assertIs(S60.status, kinds.Status.PROVEN)
+        self.assertIs(S60.status, kinds.Status.SUPPORTED)
         self.assertEqual(self.bridge(S60, lambda word: True), (["proceed"], True))
         self.assertNotIn("emulator", self.said())
 
@@ -76,9 +76,8 @@ class WarningTests(unittest.TestCase):
         self.assertEqual(testers.notice(S60), [])
 
     def test_the_words_claim_no_emulator_run_a_device_may_not_have_had(self):
-        # The BASICR4 wants testers though its stock firmware cannot start in the
-        # emulator: the same words for every kind have to be true of it too.
-        self.assertIn(kinds.SONOFF_BASICR4, WANTING)
+        # A kind can be added from its official file, with no emulator run: the
+        # same words for every kind have to be true of it too.
         for kind in WANTING:
             with self.subTest(kind=kind.key):
                 self.assertNotIn("emulator", " ".join(testers.notice(kind)))
