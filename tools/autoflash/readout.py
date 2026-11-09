@@ -22,7 +22,6 @@ enough readouts of.
 
 from __future__ import annotations
 
-import hashlib
 import io
 import json
 import lzma
@@ -37,7 +36,7 @@ from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING
 
 from tools.autoflash import __version__, account, hostsys, kinds, output, plugs, prompts, runs
-from tools.autoflash import readout_beken, readout_espressif
+from tools.autoflash import proof_of_work, readout_beken, readout_espressif
 from tools.autoflash.errors import Abort, Finished, NothingWritten
 from tools.ewelink import discover_ewelink, firmware_name, offered_firmware
 from tools.ewelink.get_device_key import is_email
@@ -526,25 +525,10 @@ def sent_in_batch(ctx: Context, data: bytes, device: dict[str, Any], back: bool)
 
 def proof(data: bytes, now: float | None = None, bits: int | None = None,
           tick: Callable[[], None] | None = None) -> str:
-    """"<time>:<nonce>" whose SHA-256 with `data`'s, as "<time>:<data's
-    SHA-256>:<nonce>", starts with `bits` zero bits: the work the Worker asks
-    of each readout, so a flood of them costs its sender. About 17 million
-    tries on average, 20 seconds on a recent laptop, but luck decides: one in
-    twenty takes three times as long, and an older or smaller computer may take
-    minutes. `tick` is called every quarter of a million tries, to show it is
-    still going."""
-    stamp = int(time.time() if now is None else now)
-    prefix = hashlib.sha256(f"{stamp}:{hashlib.sha256(data).hexdigest()}:".encode())
-    target = 1 << (256 - (PROOF_BITS if bits is None else bits))
-    nonce = 0
-    while True:
-        attempt = prefix.copy()
-        attempt.update(str(nonce).encode())
-        if int.from_bytes(attempt.digest(), "big") < target:
-            return f"{stamp}:{nonce}"
-        nonce += 1
-        if tick is not None and not nonce & 0x3FFFF:
-            tick()
+    """The work the Worker asks of each readout, for its body: about 17
+    million tries, 20 seconds on a recent laptop, but an older or smaller
+    computer may take minutes (proof_of_work.solve)."""
+    return proof_of_work.solve(proof_of_work.body_subject(data), PROOF_BITS if bits is None else bits, now, tick)
 
 
 def offered_digests(offers: list[dict[str, Any]], versions: bool = False) -> list[Any]:

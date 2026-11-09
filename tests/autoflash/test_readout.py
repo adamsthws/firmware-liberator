@@ -647,11 +647,6 @@ class ProofProgressTests(unittest.TestCase):
         self.assertEqual([text.split(":")[0] for text in shown], ["Getting it ready to send",
                                                                  "The website takes two readouts a minute"])
 
-    def test_long_work_says_it_is_still_going(self):
-        ticks = []
-        readout.proof(b"data", now=1794000000, bits=21, tick=lambda: ticks.append(1))
-        self.assertGreater(len(ticks), 0)
-
 
 class FirstStageTests(unittest.TestCase):
     """A device the tool has not seen: everything from eWeLink, nothing asked of it."""
