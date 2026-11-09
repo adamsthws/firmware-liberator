@@ -441,6 +441,19 @@ class QuestionScreenTests(unittest.TestCase):
                 self.assertEqual(rows[1].strip(), self.NOTE)
 
 
+    def test_a_wifi_password_typed_differently_is_asked_afresh(self):
+        # Seen in an attended emulator run: the two tries, and why, stayed
+        # under each other as it was asked again.
+        question = ("__import__('tools.espressif.safeboot.prepare_imprinted_bundle', "
+                    "fromlist=['ask_password']).ask_password('Home')")
+        code, answer, _, _, asked, end = self.ask(question, [
+            ("password for 'Home'", "abc\r", r".*> "), ("Same password again", "abd\r", r".*> "),
+            ("did not match.*password for 'Home'", "\r", r".*> "), ("Same password again", "\r", r".*> ")])
+        self.assertEqual((code, answer), (0, ""), end.render(colour=False))
+        rows = [row for row in asked[2].render(colour=False).splitlines() if row.strip()]
+        self.assertEqual(sum("(q to quit)" in row for row in rows), 1, "\n".join(rows))
+        self.assertEqual(rows[-3].strip(), "The two passwords did not match - try again.")
+
     def test_every_kind_of_question_is_here(self):
         # A public function reading the keyboard itself is a kind of question:
         # asked above, or this fails. Those built on one (ask_ipv4 on

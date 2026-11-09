@@ -435,12 +435,16 @@ def ask_credentials() -> tuple[str, str]:
 
 
 def ask_password(ssid: str | None = None) -> str:
-    """A Wi-Fi password, typed twice and never stored."""
+    """A Wi-Fi password, typed twice and never stored.  Two that differ are
+    taken off the screen before it is asked again, only why left, as a wrong
+    answer to any question is: they piled up under each other."""
+    mark = output.mark()
     while True:
         password = ask_secret(f"Wi-Fi password for '{ssid}': " if ssid else "Wi-Fi password: ")
         if ask_secret("Same password again: ") == password:
             return password
-        output.show("The two passwords did not match - try again.")
+        output.rewind(mark)
+        output.show("    The two passwords did not match - try again.")
 
 
 def _credentials(args: argparse.Namespace) -> tuple[str, str]:

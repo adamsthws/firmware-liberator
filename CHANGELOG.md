@@ -204,6 +204,8 @@ check.
 - A conversion run with `--wifi` no longer asks for the Wi-Fi details again near
   its end, as it installs official Tasmota's safeboot: it uses those typed earlier
   in the same run.
+- Two Wi-Fi passwords typed that differ are taken off the screen before the
+  password is asked again, as any wrong answer is; they stayed under each other.
 - A download the server turns away for now - GitHub's release downloads
   answering "504 Gateway Time-out" for minutes at a time, say - is tried again
   for a little over two minutes, waiting longer each time, rather than three
