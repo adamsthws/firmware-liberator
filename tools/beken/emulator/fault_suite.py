@@ -636,6 +636,9 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
             notes["screen"] = screen
     for index, path in enumerate(instance.runs()):
         shutil.copy(path, folder / f"run-{index + 1}.log")
+    if log.exists():   # every run's recording: what each stage showed on the way
+        fault_verdicts.keep_recordings(log.read_text(encoding="utf-8", errors="replace"),
+                                       instance.state / "work", folder)
     try:
         shutil.copy(instance.state / "serial.log", folder / "serial.log")
     except OSError:

@@ -2369,6 +2369,12 @@ class Scenario:
                "seconds": round(time.time() - self.created)}
         with open(RESULTS, "a", encoding="utf-8") as f:
             f.write(json.dumps(row) + "\n")
+        # Every run's recording, whatever the verdict: what each stage showed
+        # on the way, gone from the emulator when its next scenario begins.
+        screens = LOGS / (key(sc["id"]) + "-screens")
+        keep_earlier(screens)
+        fault_verdicts.keep_recordings(Path(self.log).read_text(encoding="utf-8", errors="replace"),
+                                       self.state / "work", screens)
         if verdict != "PASS":
             # This scenario's own screens: the run's log goes back further.
             if STRANDED.search(re.sub(r"\s+", " ", Path(self.log).read_text(encoding="utf-8", errors="replace"))):

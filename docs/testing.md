@@ -529,9 +529,12 @@ AUTOFLASH_EMU_STUB_WORKERS=3 tools/espressif/emulator/fault_suite.py --plug=MAC 
 ```
 
 Results, a log per scenario and what each failure leaves (its run records and
-the plug's serial output) are kept in `captures/emulation/suite/`. A scenario run
-again keeps those of its earlier attempts beside them, numbered in order:
-`<scenario>.log.1` and `<scenario>-evidence.1` are its first. A scenario whose
+the plug's serial output) are kept in `captures/emulation/suite/`, and every
+run's screen recording in `<scenario>-screens/run-N.raw`: all it drew, where
+the log has only the screen it ended on (`cat` it in a terminal, or feed it to
+`unattended_run.Screen`). A scenario run again keeps those of its earlier
+attempts beside them, numbered in order: `<scenario>.log.1` and
+`<scenario>-evidence.1` are its first. A scenario whose
 fault never happened because this computer could not reach eWeLink (its name not
 found, its network down) is NO-INTERNET, not NOT-FIRED: a batch runs it again,
 and the cloud is not blamed for it. On the real cloud,

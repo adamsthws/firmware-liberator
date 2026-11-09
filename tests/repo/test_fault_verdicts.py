@@ -126,3 +126,22 @@ class ScreenTests(unittest.TestCase):
 
     def test_output_with_no_screen_has_nothing_to_judge(self):
         self.assertEqual(fault_verdicts.screen_problems("Stage 1 - Checking - Stopped\nStage 1 - Checking - Complete\n"), [])
+
+
+class RecordingTests(unittest.TestCase):
+    def test_each_runs_recording_is_kept_beside_the_scenario(self):
+        # The emulator's own copies go when its next scenario begins: seen,
+        # only the last scenario's recording was left to replay.
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            work, kept = Path(directory) / "work", Path(directory) / "logs/scenario-screens"
+            for name, drawn in (("20261109-000339", b"first run"), ("20261109-000607", b"second run")):
+                (work / "captures/unattended" / name).mkdir(parents=True)
+                (work / "captures/unattended" / name / "screen.raw").write_bytes(drawn)
+            output = ("--- run\nKept in captures/unattended/20261109-000339/: screen.ansi (cat it), screen.txt, screen.raw\n"
+                      "--- run\nKept in /work/captures/unattended/20261109-000607/: screen.ansi (cat it), screen.txt, "
+                      "screen.raw\n--- run\nKept in captures/unattended/gone/: screen.ansi (cat it)\n")
+            found = fault_verdicts.keep_recordings(output, work, kept)
+            self.assertEqual([path.name for path in found], ["run-1.raw", "run-2.raw"])
+            self.assertEqual((kept / "run-2.raw").read_bytes(), b"second run")
