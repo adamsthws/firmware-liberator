@@ -204,6 +204,21 @@ class MeterTests(unittest.TestCase):
             if config.exists():
                 self.assertEqual(kind.has_meter, bool(chip.search(config.read_text(encoding="utf-8"))), kind.key)
 
+    def test_a_meters_wiring_is_the_template_tasmota_publishes_for_it(self):
+        # Tasmota 16.0.0's drivers give these (xnrg_19_cse7761, xdrv_87_esp32_sonoff_tm1621),
+        # as Blakadder's templates do the POW Elite's and the Dual R3's. Which CSE7761 RX
+        # a template uses, Rx 1 (7328) or Rx 2 (7329), tells Tasmota which plug's meter it is.
+        published = {
+            kinds.SONOFF_POW_ELITE: [32, 0, 0, 0, 0, 576, 0, 0, 0, 224, 9280, 0, 3104, 0, 320, 0, 0, 0, 0, 0, 0,
+                                     9184, 9248, 9216, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            kinds.SONOFF_POWCT: [32, 0, 0, 0, 0, 9280, 0, 0, 0, 320, 0, 576, 0, 9184, 9216, 0, 0, 224, 0, 9248, 0,
+                                 7329, 7296, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            kinds.SONOFF_DUALR3: [32, 0, 0, 0, 0, 0, 0, 0, 0, 576, 225, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7296, 7328, 224,
+                                  0, 0, 0, 0, 160, 161, 0, 0, 0, 0, 0, 0],
+        }
+        for kind, gpio in published.items():
+            self.assertEqual(json.loads(kind.tasmota_template())["GPIO"], gpio, kind.key)
+
 
 class TemplateNameTests(unittest.TestCase):
     """Tasmota's template is named as every firmware names the plug."""
