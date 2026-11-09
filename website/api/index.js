@@ -100,6 +100,10 @@ function zeroBits(bytes) {
   return bits;
 }
 
+// The work asked, lowered only by the tests, which import this module and set
+// `bits`: nothing the Worker is given, a variable or a secret, can lower it.
+export const work = { bits: null };
+
 // Whether "<time>:<nonce>" proves the work for a body of this hash, now.
 // `bits` is PROOF_BITS but in the tests, which ask for less, and /wanted's
 // lighter work; `age` how long ago it may have been made.
@@ -230,7 +234,7 @@ async function question(request, env, now, what) {
   if (body.byteLength !== declared) {
     return answer(400, { error: `that is not a whole ${what}` });
   }
-  const bits = env.TEST_PROOF_BITS ? Number(env.TEST_PROOF_BITS) : LIGHT_PROOF_BITS;
+  const bits = work.bits ?? LIGHT_PROOF_BITS;
   if (!(await proven(request.headers.get("X-Proof"), hex(await sha256(body)), now.getTime() / 1000, bits,
     LIGHT_PROOF_AGE))) {
     return answer(403, { error: `the ${what}'s proof of work does not check out` });
@@ -304,7 +308,7 @@ export async function readout(request, env, now = new Date()) {
     return answer(400, { error: "that is not a whole readout" });
   }
   const digest = hex(await sha256(body));
-  const bits = env.TEST_PROOF_BITS ? Number(env.TEST_PROOF_BITS) : PROOF_BITS;
+  const bits = work.bits ?? PROOF_BITS;
   if (!(await proven(request.headers.get("X-Proof"), digest, now.getTime() / 1000, bits))) {
     return answer(403, { error: "the readout's proof of work does not check out" });
   }

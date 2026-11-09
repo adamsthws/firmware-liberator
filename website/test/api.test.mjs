@@ -25,8 +25,10 @@ const readoutOf = (manifest = MANIFEST, extra = {}) =>
   tar({ "manifest.json": JSON.stringify(manifest), "flash.bin.xz": "\xfd7zXZ", ...extra });
 
 // The tool's work (readout.proof in tools/autoflash/readout.py), made easy for a test.
-// Easier work than a real readout's, so the tests are quick (TEST_PROOF_BITS).
+// Easier work than a real readout's, so the tests are quick: set on the module
+// (readout.work), as nothing the Worker is given can lower it.
 const BITS = 8;
+readout.work.bits = BITS;
 
 function proofFor(body, bits = BITS, time = NOW.getTime() / 1000) {
   const digest = createHash("sha256").update(body).digest("hex");
@@ -57,8 +59,7 @@ function bucket() {
 const tars = (bindings) => [...bindings.READOUTS.objects.keys()].filter((key) => key.endsWith(".tar"));
 
 function env({ allowed = true, enough = "" } = {}) {
-  return { READOUTS: bucket(), READOUT_LIMIT: { limit: async () => ({ success: allowed }) }, ENOUGH: enough,
-    TEST_PROOF_BITS: String(BITS) };
+  return { READOUTS: bucket(), READOUT_LIMIT: { limit: async () => ({ success: allowed }) }, ENOUGH: enough };
 }
 
 function post(body, headers = {}) {
@@ -206,13 +207,16 @@ test("what it may keep stays within R2's free 10 GB", () => {
   assert.match(settings, new RegExp(`READOUTS_KEPT_DAYS = ${readout.RETENTION_DAYS}\\b`));
 });
 
-test("without TEST_PROOF_BITS the full work is asked", async () => {
-  const body = readoutOf();
-  const bindings = env();
-  delete bindings.TEST_PROOF_BITS;
-  assert.equal((await send(post(body), bindings)).status, 403);
-  const config = readFileSync(new URL("../api/wrangler.jsonc", import.meta.url), "utf8");
-  assert.doesNotMatch(config, /TEST_PROOF_BITS/);
+test("the full work is asked, whatever the Worker is given", async () => {
+  // A variable or secret, as the tests once lowered it by, changes nothing.
+  const bindings = { ...env(), TEST_PROOF_BITS: "1", PROOF_BITS: "1", LIGHT_PROOF_BITS: "1" };
+  readout.work.bits = null;
+  try {
+    assert.equal((await send(post(readoutOf()), bindings)).status, 403);
+    assert.equal((await readout.wanted(question(), bindings, NOW)).status, 403);
+  } finally {
+    readout.work.bits = BITS;
+  }
 });
 
 test("the tool does the same work the Worker asks", () => {
