@@ -15,6 +15,13 @@
   "r2_buckets": [
     { "binding": "READOUTS", "bucket_name": "firmware-liberator-readouts" }
   ],
+  // The API's database (database.js): made, and brought up to date from
+  // migrations/, by tools/repo/cloudflare_settings.py apply, which says the
+  // id to put here once it has made it.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "firmware-liberator-api", "migrations_dir": "migrations",
+      "database_id": "00000000-0000-0000-0000-000000000000" }
+  ],
   // Two a minute from one address: a device takes one.
   "ratelimits": [
     { "name": "READOUT_LIMIT", "namespace_id": "1001", "simple": { "limit": 2, "period": 60 } }

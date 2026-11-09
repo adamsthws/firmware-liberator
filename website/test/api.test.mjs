@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { read } from "../api/counters.js";
 import worker, * as readout from "../api/index.js";
+import { d1 } from "../api/local-d1.mjs";
 
 const NOW = new Date("2026-11-07T12:00:00Z");
 
@@ -59,7 +61,8 @@ function bucket() {
 const tars = (bindings) => [...bindings.READOUTS.objects.keys()].filter((key) => key.endsWith(".tar"));
 
 function env({ allowed = true, enough = "" } = {}) {
-  return { READOUTS: bucket(), READOUT_LIMIT: { limit: async () => ({ success: allowed }) }, ENOUGH: enough };
+  return { READOUTS: bucket(), DB: d1(), READOUT_LIMIT: { limit: async () => ({ success: allowed }) },
+    ENOUGH: enough };
 }
 
 function post(body, headers = {}) {
@@ -141,8 +144,9 @@ test("too many from one sender wait", async () => {
   assert.equal(bindings.READOUTS.objects.size, 0);
 });
 
-const dayCount = (bindings, day, count, bytes) => bindings.READOUTS.objects.set(`readouts/${day}/_readouts.json`,
-  { size: 1, text: JSON.stringify({ count, bytes }) });
+// A day's count of readouts kept, as the database holds it (api/counters.js).
+const dayCount = (bindings, day, count, bytes) => bindings.DB.db
+  .prepare("INSERT INTO counters (name, day, count, bytes) VALUES (?, ?, ?, ?)").run(`readouts:${day}`, day, count, bytes);
 
 test("a day's limit, by count and by size, is never passed", async () => {
   const bindings = env();
@@ -156,14 +160,35 @@ test("a day's limit, by count and by size, is never passed", async () => {
   assert.equal((await send(post(readoutOf()), yesterday)).status, 201);
 });
 
-test("the day's count is kept as readouts are, not listed", async () => {
+test("the day's count is kept in the database as readouts are, not listed", async () => {
   const bindings = { ...env(), READOUTS: { ...bucket(), list: async () => assert.fail("listed the day's readouts") } };
+  let bytes = 0;
   for (const version of ["1.0.0", "1.0.1"]) {
-    assert.equal((await send(post(readoutOf({ ...MANIFEST, version })), bindings)).status, 201);
+    const body = readoutOf({ ...MANIFEST, version });
+    bytes += body.byteLength;
+    assert.equal((await send(post(body), bindings)).status, 201);
   }
-  const count = JSON.parse(bindings.READOUTS.objects.get("readouts/2026-11-07/_readouts.json").text);
-  assert.equal(count.count, 2);
-  assert.ok(count.bytes > 0);
+  assert.deepEqual(await read(bindings.DB, "readouts:2026-11-07"), { count: 2, bytes });
+  assert.ok(![...bindings.READOUTS.objects.keys()].some((key) => key.includes("_readouts")), "no count in the bucket");
+});
+
+test("a readout not kept after all gives back its place in the day's count", async () => {
+  const bindings = env();
+  bindings.READOUTS.put = async () => {
+    throw new Error("R2 down");
+  };
+  await assert.rejects(send(post(readoutOf()), bindings), /R2 down/);
+  assert.deepEqual(await read(bindings.DB, "readouts:2026-11-07"), { count: 0, bytes: 0 });
+});
+
+test("until the database is brought up to date, every path asks the tool to wait", async () => {
+  const bindings = { ...env(), DB: d1({ migrated: false }) };
+  for (const path of ["/readout", "/wanted", "/notify"]) {
+    const response = await worker.fetch(new Request(`https://api.firmwareliberator.com${path}`, { method: "POST" }),
+      bindings);
+    assert.equal(response.status, 503, path);
+    assert.equal(response.headers.get("Retry-After"), "300", path);
+  }
 });
 
 test("a readout adds something or is thanked and not kept", async () => {
@@ -280,18 +305,14 @@ test("asked first, the files held already are named, wanted or not", async () =>
   assert.deepEqual((await ask({ ...ASKED, firmware: ["c".repeat(64)] }, bindings)).held, ["c".repeat(64)]);
 });
 
-test("asked first, a full day says so, from its count read once a minute", async () => {
-  const bindings = env();
-  let reads = 0;
-  const get = bindings.READOUTS.get;
-  bindings.READOUTS.get = async (key) => { reads += 1; return get(key); };
-  dayCount(bindings, "2026-11-07", readout.DAILY_COUNT, 1);
+test("asked first, a full day says so, by count or by bytes, and the next day does not", async () => {
   const at = new Date("2026-11-07T12:00:00Z");
-  assert.deepEqual(await ask({ ...ASKED, product: "FULL1" }, bindings, at), { wanted: false, why: "full", held: [] });
-  await ask({ ...ASKED, product: "FULL1" }, bindings, new Date(at.getTime() + 30_000));
-  assert.equal(reads, 1, "read again within the minute");
-  await ask({ ...ASKED, product: "FULL1" }, bindings, new Date(at.getTime() + 61_000));
-  assert.equal(reads, 2);
+  for (const [count, bytes] of [[readout.DAILY_COUNT, 1], [1, readout.DAILY_BYTES]]) {
+    const bindings = env();
+    dayCount(bindings, "2026-11-07", count, bytes);
+    assert.deepEqual(await ask({ ...ASKED, product: "FULL1" }, bindings, at), { wanted: false, why: "full", held: [] });
+    assert.equal((await ask({ ...ASKED, product: "FULL1" }, bindings, new Date("2026-11-08T00:00:01Z"))).wanted, true);
+  }
 });
 
 test("each question needs work of its own, lighter than a readout's and newer", async () => {
@@ -370,9 +391,11 @@ test("an address is never under readouts/, which the lifecycle rule empties", as
 
 test("a day's addresses are limited too", async () => {
   const bindings = env();
-  bindings.READOUTS.objects.set("readouts/2026-11-07/_notify.json",
-    { size: 1, text: JSON.stringify({ count: readout.NOTIFY_DAILY, bytes: 0 }) });
+  bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES (?, ?, ?, 0)")
+    .run("notify:2026-11-07", "2026-11-07", readout.NOTIFY_DAILY - 1);
+  assert.equal((await tell(NOTIFY, bindings)).status, 201, "the day's last");
   assert.equal((await tell(NOTIFY, bindings)).status, 503);
+  assert.deepEqual(await read(bindings.DB, "notify:2026-11-07"), { count: readout.NOTIFY_DAILY, bytes: 0 });
 });
 
 test("anything but the tool's request to be told is turned away", async () => {

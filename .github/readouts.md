@@ -249,11 +249,13 @@ and the store has limits it is never let past:
   account's 100,000 a day on Workers' free plan. Then two readouts a minute
   from one address, held by Cloudflare's rate limiter only. 100 readouts and
   250 MB a day from everyone; past that, the next waits until the next day.
-  The day's are counted in one small object, `readouts/<day>/_readouts.json`,
-  updated with each readout stored, not by listing the day's readouts (an R2
-  list is a dearer operation than a read). `/wanted` reads it at most once a
-  minute in a Worker, and `/readout` afresh; two readouts stored at the same
-  moment may count as one, so the limit is close, not exact.
+  The day's are counted in the API's database
+  ([website/api/counters.js](../website/api/counters.js)), each in a single
+  statement, so two readouts at once can never both pass the limit; one not
+  stored after all gives its place back. `/wanted` reads the same count.
+- **The database.** Until it has every migration the Worker's code needs
+  ([website/api/database.js](../website/api/database.js)), each path answers
+  503 and the tool sends again later.
 - **Repeats.** The same readout sent again the same day is the one already
   stored.
 - **Enough of one device.** A product model listed in `ENOUGH` in the Worker's
@@ -267,9 +269,10 @@ and the store has limits it is never let past:
 Nothing of the sender is stored but the contact they chose to give: in the
 manifest, and under `notify/`. Nothing serves the bucket.
 
-The bucket, its lifecycle rule and the rate-limiting rule are made by
-`python3 tools/repo/cloudflare_settings.py apply`, by hand, and checked weekly
-by the cloudflare-settings workflow. The website workflow deploys the Worker
+The bucket, its lifecycle rule, the rate-limiting rule and the API's
+database are made by `python3 tools/repo/cloudflare_settings.py apply`, by
+hand, which also brings the database up to date; the cloudflare-settings
+workflow checks all but the database weekly. The website workflow deploys the Worker
 in a job of its own. [website/README.md](../website/README.md#deploying-it)
 says which token does what.
 

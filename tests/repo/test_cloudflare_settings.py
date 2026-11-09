@@ -1,5 +1,7 @@
 import copy
 import io
+import re
+import sqlite3
 import subprocess
 import tempfile
 import unittest
@@ -13,6 +15,8 @@ ZONE = "/zones/z1"
 ENTRYPOINT = f"{ZONE}/rulesets/phases/{cs.REDIRECT_PHASE}/entrypoint"
 RATE_LIMITS = f"{ZONE}/rulesets/phases/{cs.RATE_LIMIT_PHASE}/entrypoint"
 BUCKETS = "/accounts/a1/r2/buckets"
+DATABASES = "/accounts/a1/d1/database"
+QUERY = f"{DATABASES}/u1/query"
 ADDRESSES = "/accounts/a1/email/routing/addresses"
 DESTINATION = "owner@example.com"
 FORWARD = "hello, Press"
@@ -43,6 +47,9 @@ class FakeCloudflare:
         # a long TXT record in quoted strings, a host without its final dot.
         self.dns = [{"id": "w1", "type": "AAAA", "name": cs.ZONE, "content": "100::",
                      "meta": {"origin_worker_id": "x"}}]
+        self.databases = []   # the account's D1 databases
+        self.migrations = None   # what d1_migrations records; None: no such table, never migrated
+        self.bound = "u1"   # the database id website/api/wrangler.jsonc binds
         self.sent = []
         self.ids = iter(range(100, 1000))
 
@@ -51,6 +58,10 @@ class FakeCloudflare:
         return self.rulesets.get(ENTRYPOINT)
 
     def __call__(self, path, method="GET", body=None, ok_missing=False, ok_forbidden=False, whole=False):
+        if path == QUERY and body["sql"] == "SELECT name FROM d1_migrations ORDER BY id":   # a read
+            if self.migrations is None:
+                raise cs.SettingsError(f"POST {QUERY}: HTTP 400: no such table: d1_migrations: SQLITE_ERROR")
+            return [{"results": [{"name": name} for name in self.migrations], "success": True}]
         if method != "GET":
             self.sent.append((method, path, body))
             if path == f"{ZONE}/dns_records":
@@ -70,6 +81,10 @@ class FakeCloudflare:
                 self.addresses.append({"email": body["email"], "verified": None})
             elif path == BUCKETS:
                 self.buckets.add(body["name"])
+            elif path == DATABASES:
+                self.databases.append({"name": body["name"], "uuid": "u1"})
+            elif path == QUERY:
+                self.migrations = (self.migrations or []) + re.findall(r"VALUES \('([^']+)'\);\s*$", body["sql"])
             elif path.endswith("/lifecycle"):
                 self.lifecycle = copy.deepcopy(body)
             elif "/rulesets/phases/" in path:
@@ -91,6 +106,8 @@ class FakeCloudflare:
         if path in {template.format(account="a1", zone="z1") for _, template in cs.CI_REFUSED + cs.DEPLOY_REFUSED}:
             assert ok_forbidden
             return {} if path in self.readable else None
+        if path == f"{DATABASES}?name={cs.D1_DATABASE}":
+            return copy.deepcopy(self.databases)
         if path == "/accounts/a1/workers/scripts":
             return [{"id": name, "tag": f"t{n + 1}"} for n, name in enumerate(self.workers)]
         if path == f"{ZONE}/dns_records?per_page=500":
@@ -123,6 +140,7 @@ class FakeCloudflare:
 def run(fake, *args):
     out = io.StringIO()
     with mock.patch.object(cs, "api", fake), redirect_stdout(out), \
+            mock.patch.object(cs, "bound_database_id", lambda: fake.bound), \
             mock.patch.dict("os.environ", {cs.EMAIL_DESTINATION: DESTINATION, cs.EMAIL_FORWARD: FORWARD}):
         code = cs.main(list(args))
     return code, out.getvalue()
@@ -150,6 +168,8 @@ class CloudflareSettingsTests(unittest.TestCase):
                          cs.RATE_LIMITS)
         self.assertEqual(fake.lifecycle, cs.READOUTS_LIFECYCLE)
         self.assertTrue(fake.routing)
+        self.assertEqual(fake.databases, [{"name": cs.D1_DATABASE, "uuid": "u1"}])
+        self.assertEqual(fake.migrations, cs.migration_files())
         self.assertEqual(fake.addresses, [{"email": DESTINATION, "verified": None}])
         fake.addresses[0]["verified"] = "2026-11-09T18:39:03Z"   # its owner followed Cloudflare's link
         fake.sent.clear()
@@ -464,3 +484,87 @@ class DeployTokenReachTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DatabaseTests(unittest.TestCase):
+    """The API's D1 database: made, bound by its id, and every migration run."""
+
+    def setUp(self):
+        self.fake = FakeCloudflare()
+        self.fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09"}]
+        run(self.fake, "apply")
+        self.fake.sent.clear()
+
+    def test_a_migration_not_yet_run_is_run_alone_and_recorded(self):
+        newest = cs.migration_files()[-1]
+        self.fake.migrations = self.fake.migrations[:-1]
+        code, out = run(self.fake)
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn(f"migration {newest}: has not been run", out)
+        code, out = run(self.fake, "apply")
+        self.assertEqual(code, 0, out)
+        self.assertEqual([path for _, path, _ in self.fake.sent], [QUERY])
+        self.assertEqual(self.fake.migrations, cs.migration_files())
+
+    def test_a_database_never_migrated_is_migrated(self):
+        self.fake.migrations = None
+        self.assertEqual(run(self.fake, "apply")[0], 0)
+        self.assertEqual(self.fake.migrations, cs.migration_files())
+
+    def test_migrations_run_out_of_their_order_are_left_to_the_maintainer(self):
+        self.fake.migrations = ["0001_renamed.sql"]
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn("a migration was changed, removed or renamed after it was run", out)
+
+    def test_a_binding_to_another_database_says_which_id_to_put_there(self):
+        self.fake.bound = cs.D1_PLACEHOLDER
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn("left - set its database_id to u1, add that id to tools/repo/leak-scan-allow", out)
+
+    def test_made_and_migrated_in_one_apply_which_says_the_id_to_bind(self):
+        fake = FakeCloudflare()
+        fake.bound = cs.D1_PLACEHOLDER
+        code, out = run(fake, "apply")
+        self.assertEqual(code, 1)
+        self.assertEqual(fake.migrations, cs.migration_files())
+        self.assertIn("set its database_id to u1", out)
+
+    def test_ci_never_asks_for_the_database(self):
+        fake = FakeCloudflare()
+
+        def no_d1(path, *args, **kwargs):
+            self.assertNotIn("/d1/database?", path)
+            self.assertNotEqual(path, QUERY)
+            return fake(path, *args, **kwargs)
+        code, out = run(no_d1, "ci")
+        self.assertIn(f"D1 {cs.D1_DATABASE}: not checked", out)
+
+    def test_what_apply_sends_runs_as_sqlite_runs_it(self):
+        # The SQL a migration is sent as, run where D1's engine runs: it makes
+        # what it should, records itself once, and runs again harmlessly
+        # but for the record, which is why a recorded one is never sent again.
+        db = sqlite3.connect(":memory:")
+        for name in cs.migration_files():
+            fake = FakeCloudflare()
+            fake.databases = [{"name": cs.D1_DATABASE, "uuid": "u1"}]
+            fake.migrations = [earlier for earlier in cs.migration_files() if earlier < name]
+            with mock.patch.object(cs, "api", fake), mock.patch.object(cs, "bound_database_id", lambda: "u1"):
+                changes = [change for _, _, change in cs.database_differences("a1")]
+            sql = changes[0][2]["sql"]
+            db.executescript(sql)
+            body = sql[:sql.rindex("INSERT INTO d1_migrations")]
+            db.executescript(body)   # the migration itself, again
+        self.assertEqual([row[0] for row in db.execute("SELECT name FROM d1_migrations ORDER BY id")],
+                         cs.migration_files())
+
+    def test_the_api_worker_binds_the_database_by_name(self):
+        self.assertRegex(cs.bound_database_id(), r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+    def test_a_migration_badly_named_is_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / "0001_ok.sql").write_text("", encoding="utf-8")
+            (Path(folder) / "0002_it's.sql").write_text("", encoding="utf-8")
+            with mock.patch.object(cs, "MIGRATIONS", Path(folder)), self.assertRaises(cs.SettingsError):
+                cs.migration_files()

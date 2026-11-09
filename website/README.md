@@ -109,14 +109,15 @@ The deploy token can only be given a Worker that already exists, so a new
 one is first uploaded from your computer:
 
 1. Make a short-lived token: Account - Workers Scripts: Edit, Workers R2
-   Storage: Edit, and the zone permissions of the deploy and apply tokens.
-   Put it in `CLOUDFLARE_API_TOKEN`.
+   Storage: Edit, D1: Edit, and the zone permissions of the deploy and apply
+   tokens. Put it in `CLOUDFLARE_API_TOKEN`.
 2. Check the name is free: the account's Workers (dashboard, Workers &
    Pages) hold none by it. An upload under a taken name replaces that
    Worker.
 3. Make what it binds to first: `python3 tools/repo/cloudflare_settings.py
-   apply` makes the bucket (the upload fails on a binding to a bucket that
-   is not there).
+   apply` makes the bucket and the database (the upload fails on a binding to
+   one that is not there), and says the database's id to put in the API
+   Worker's `wrangler.jsonc`: commit that before the upload.
 4. Upload it from `website/`: `npx wrangler deploy --config <its
    wrangler.jsonc>`.
 5. Check it answers (below).
@@ -142,6 +143,13 @@ rate-limiting rule, the readouts bucket and its 30-day lifecycle rule,
 Email Routing and every DNS record but the Workers' - is written down, with
 why, in `tools/repo/cloudflare_settings.py`. A DNS record added in the
 dashboard is a difference, deleted by `apply`: write it down there instead.
+
+The API's D1 database is made there too, and brought up to date: `apply`
+runs each file in `website/api/migrations/` it has not run yet, in order
+(`website/api/database.js` says how one is written). The apply token needs
+D1: Edit for that. CI never touches it: D1 permissions reach every database
+in the account, so the read token is refused them, and the check it runs
+says the database was not checked.
 
 Each address of the domain in `CLOUDFLARE_EMAIL_FORWARD`, named by the
 part before the @ (`contact`, say, separated by commas), is forwarded to

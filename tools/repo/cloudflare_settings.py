@@ -12,8 +12,8 @@
 With CLOUDFLARE_API_TOKEN, in the environment or .env.infra (as
 .env.infra.example shows; not .env, whose names are the tool's): to check, a token
 allowed to read the zone, its settings, DNS records, single redirects, rate
-limiting rules and Email Routing rules, and the account's R2 buckets and
-Email Routing addresses; to apply, one allowed to edit them all. With
+limiting rules and Email Routing rules, and the account's R2 buckets, D1
+databases and Email Routing addresses; to apply, one allowed to edit them all. With
 CLOUDFLARE_EMAIL_DESTINATION and CLOUDFLARE_EMAIL_FORWARD too, the same
 way: the address mail is forwarded to, and the domain's addresses forwarded
 there. They are private, so never written here. `apply` changes only what differs. The Workers, and the domains
@@ -91,6 +91,20 @@ READOUTS_LIFECYCLE = {"rules": [{
     "conditions": {"prefix": "readouts/"},
     "deleteObjectsTransition": {"condition": {"type": "Age", "maxAge": READOUTS_KEPT_DAYS * 86400}},
 }]}
+
+
+# The API Worker's database (website/api/database.js), as its wrangler.jsonc
+# binds it: made here, and brought up to date by running each file in
+# MIGRATIONS not yet run, in name order, recorded in d1_migrations as wrangler
+# records them. Only with the maintainer's token: D1 permissions reach every
+# database in the account, so CI's token is refused them (REFUSED) and `ci`
+# leaves the database to the hand check and to the public snapshot's check.
+D1_DATABASE = "firmware-liberator-api"
+API_WRANGLER = ROOT / "website" / "api" / "wrangler.jsonc"
+MIGRATIONS = ROOT / "website" / "api" / "migrations"
+D1_PLACEHOLDER = "00000000-0000-0000-0000-000000000000"
+D1_MIGRATIONS_TABLE = ("CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                       "name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);")
 
 
 # Before the API Worker (website/api/index.js) runs at all: more than
@@ -377,9 +391,86 @@ def email_differences(zone: str, account: str) -> list[tuple[str, str, Any]]:
     return found
 
 
+def jsonc(path: Path) -> Any:
+    """A wrangler.jsonc: JSON with whole-line // comments, as these are written."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return json.loads("\n".join(line for line in lines if not line.lstrip().startswith("//")))
+
+
+def bound_database_id() -> str:
+    """The database id the API Worker's wrangler.jsonc binds as DB."""
+    bound = [db for db in jsonc(API_WRANGLER).get("d1_databases") or [] if db.get("binding") == "DB"]
+    if len(bound) != 1 or bound[0].get("database_name") != D1_DATABASE:
+        raise SettingsError(f"{API_WRANGLER.relative_to(ROOT)} should bind {D1_DATABASE} as DB, once")
+    return str(bound[0].get("database_id") or "")
+
+
+def migration_files() -> list[str]:
+    """The migrations, in the order they run. A name goes into the SQL that
+    records it, so only the shape website/test/database.test.mjs holds them to."""
+    names = sorted(path.name for path in MIGRATIONS.glob("*.sql"))
+    for name in names:
+        if not re.fullmatch(r"\d{4}_[a-z0-9_]+\.sql", name):
+            raise SettingsError(f"{name}: a migration is named NNNN_words.sql")
+    return names
+
+
+def applied_migrations(query: str) -> list[str]:
+    """The migrations d1_migrations records, in the order they were run: none
+    for a database never migrated, which has no such table."""
+    try:
+        answer = api(query, "POST", {"sql": "SELECT name FROM d1_migrations ORDER BY id"})
+    except SettingsError as error:
+        if "no such table" in str(error):
+            return []
+        raise
+    return [row["name"] for row in answer[0]["results"]]
+
+
+def database_differences(account: str) -> list[tuple[str, str, Any]]:
+    """The API's database: there, bound by its id, and every migration run, in order."""
+    path = f"/accounts/{account}/d1/database"
+    found_db = [db for db in api(f"{path}?name={D1_DATABASE}") or [] if db.get("name") == D1_DATABASE]
+    if not found_db:
+        return [(f"D1 {D1_DATABASE}", "does not exist", lambda: create_database(account))]
+    uuid = found_db[0]["uuid"]
+    found: list[tuple[str, str, Any]] = []
+    bound = bound_database_id()
+    if bound != uuid:
+        found.append((str(API_WRANGLER.relative_to(ROOT)), f"binds the database {bound}, not {uuid}",
+                      f"set its database_id to {uuid}, add that id to tools/repo/leak-scan-allow (the leak "
+                      "scan takes any UUID for a device's), and commit both"))
+    query = f"{path}/{uuid}/query"
+    applied, files = applied_migrations(query), migration_files()
+    if applied != files[:len(applied)]:
+        found.append((f"D1 {D1_DATABASE}", f"has the migrations {applied}, which are not the first of {files}: "
+                      "a migration was changed, removed or renamed after it was run", None))
+        return found
+    for name in files[len(applied):]:
+        sql = (MIGRATIONS / name).read_text(encoding="utf-8")
+        found.append((f"D1 {D1_DATABASE} migration {name}", "has not been run",
+                      ("POST", query, {"sql": f"{D1_MIGRATIONS_TABLE}\n{sql}\n"
+                                              f"INSERT INTO d1_migrations (name) VALUES ('{name}');"})))
+    return found
+
+
+def create_database(account: str) -> list[str]:
+    """Make the API's database and run every migration in it: what is left
+    for the maintainer to do, as lines to show."""
+    api(f"/accounts/{account}/d1/database", "POST", {"name": D1_DATABASE})
+    left = []
+    for what, how, change in database_differences(account):
+        if not isinstance(change, tuple):
+            left.append(f"{what}: {how}: {change or 'change it in the dashboard'}")
+            continue
+        method, path, body = change
+        api(path, method, body)
+    return left
+
+
 def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
-    """(what, how it differs, the change that makes it right: None for one
-    made in the dashboard). With `ci`, what CI's token can see that it
+    """(what, how it differs, the change that makes it right, as main's apply
+    takes it). With `ci`, what CI's token can see that it
     should not too."""
     zones = api(f"/zones?name={ZONE}")
     if not zones:
@@ -407,6 +498,11 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
         if have != READOUTS_LIFECYCLE["rules"]:
             found.append((f"{READOUTS_BUCKET} lifecycle", f"has {[rule.get('id') for rule in rules]}, should have "
                           "readouts-expire", lifecycle))
+    if ci:
+        print(f"  D1 {D1_DATABASE}: not checked - CI's token is refused D1, which reaches every database "
+              "in the account; the hand check and the public snapshot's check cover it")
+    else:
+        found += database_differences(zones[0]["account"]["id"])
     found += email_differences(zone, zones[0]["account"]["id"])
     found += dns_differences(zone)
     have = deploy_token_policies(zones[0]["account"]["id"], zones[0]["id"])
@@ -451,13 +547,21 @@ def main(argv: list[str] | None = None) -> int:
             print("python3 tools/repo/cloudflare_settings.py apply sets them; a token is changed in the dashboard.")
             return 1
         left = 0
+        # A change is (method, path, body) to send; a function, for one made
+        # of several, giving back what it left; a sentence saying what to do
+        # by hand; or None, for one made in the dashboard.
         for what, _, change in found:
-            if change is None:
-                print(f"  {what}: left - change it in the dashboard")
+            if change is None or isinstance(change, str):
+                print(f"  {what}: left - {change or 'change it in the dashboard'}")
                 left = 1
                 continue
-            method, path, body = change
-            api(path, method, body)
+            if callable(change):
+                for line in change():
+                    print(f"  {line}")
+                    left = 1
+            else:
+                method, path, body = change
+                api(path, method, body)
             print(f"  {what}: set")
     except SettingsError as error:
         print(f"cloudflare_settings: {error}", file=sys.stderr)

@@ -28,3 +28,7 @@ autoflash
 # The made-up apikey tests/espressif/test_scrub.py anonymises, and what it becomes.
 12345678-1234-4abc-8def-123456789abc
 10000000-0000-0000-0000-000000000000
+# The placeholder the API Worker's wrangler.jsonc binds until
+# cloudflare_settings.py apply has made the database, and that database's
+# id once it has: a D1 database's id, which is not secret, not a device's.
+00000000-0000-0000-0000-000000000000

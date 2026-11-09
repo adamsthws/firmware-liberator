@@ -26,10 +26,11 @@
 //   manifest.json of the format the tool writes.
 // - At most two readouts a minute from one address (READOUT_LIMIT, held by the
 //   limiter, never stored), and DAILY_COUNT readouts and DAILY_BYTES a day from
-//   everyone, counted in one small object a day (readouts/<day>/_count.json)
-//   rather than by listing the day's readouts. /wanted reads it too, cached a
-//   minute in the Worker, and says so once the day is full. NOTIFY_DAILY
-//   addresses a day may be given.
+//   everyone, counted in the database (counters.js), where two at once can
+//   never both pass the limit. /wanted reads that count too, and says so once
+//   the day is full. NOTIFY_DAILY addresses a day may be given.
+// - Until the database has every migration this code needs (database.js),
+//   each path answers 503, so the tool tries again later.
 // - Kept RETENTION_DAYS: the bucket's lifecycle rule (tools/repo/
 //   cloudflare_settings.py) deletes everything under readouts/, with the marks
 //   of what is held (readouts/held/, readouts/firmware/) and the day counts.
@@ -59,21 +60,22 @@ export const MAX_FIRMWARE = 8;
 export const MAX_DEVICES = 50;
 export const STAGES = ["first", "whole"];
 
+import { read, release, reserve } from "./counters.js";
+import { ready } from "./database.js";
 import { bodySubject, hex, proven, sha256 } from "./proof-of-work.js";
+
+const ROUTES = { "/readout": readout, "/wanted": wanted, "/notify": notify };
 
 export default {
   async fetch(request, env) {
-    const path = new URL(request.url).pathname;
-    if (path === "/readout") {
-      return readout(request, env);
+    const route = ROUTES[new URL(request.url).pathname];
+    if (!route) {
+      return answer(404, { error: "readouts are sent to /readout, by the tool" });
     }
-    if (path === "/wanted") {
-      return wanted(request, env);
+    if (!(await ready(env.DB))) {
+      return answer(503, { error: "the API is being updated: try again later" }, { "Retry-After": "300" });
     }
-    if (path === "/notify") {
-      return notify(request, env);
-    }
-    return answer(404, { error: "readouts are sent to /readout, by the tool" });
+    return route(request, env);
   },
 };
 
@@ -145,48 +147,11 @@ async function adds(env, product, model, version, stage) {
   return true;
 }
 
-// The day's count: {count, bytes} of the readouts kept, or of the addresses
-// given (`what`: "readouts" or "notify"), in one small object a day.
-const countKey = (day, what) => `readouts/${day}/_${what}.json`;
+// The names of the day's counts (counters.js): readouts kept, and addresses given.
+const readoutsOn = (day) => `readouts:${day}`;
+const notifyOn = (day) => `notify:${day}`;
 
-async function counted(env, day, what) {
-  const found = await env.READOUTS.get(countKey(day, what));
-  if (!found) {
-    return { count: 0, bytes: 0 };
-  }
-  try {
-    const value = JSON.parse(await found.text());
-    return { count: Number(value.count) || 0, bytes: Number(value.bytes) || 0 };
-  } catch {
-    return { count: 0, bytes: 0 };
-  }
-}
-
-async function addCount(env, day, what, bytes) {
-  const now = await counted(env, day, what);
-  const next = { count: now.count + 1, bytes: now.bytes + bytes };
-  await env.READOUTS.put(countKey(day, what), JSON.stringify(next),
-    { httpMetadata: { contentType: "application/json" } });
-  cacheOf(env).delete(`${day}/${what}`);
-  return next;
-}
-
-// /wanted's reads of the day's count, a minute at a time in this Worker: a
-// readout is turned away by its own fresh count once the day is full anyway.
-// Keyed by the bucket's binding, which is one in a deployed Worker.
-const caches = new WeakMap();
-const cacheOf = (env) => caches.get(env.READOUTS) ?? caches.set(env.READOUTS, new Map()).get(env.READOUTS);
-async function cachedCount(env, day, what, now) {
-  const kept = cacheOf(env).get(`${day}/${what}`);
-  if (kept && now - kept.at < 60_000) {
-    return kept.value;
-  }
-  const value = await counted(env, day, what);
-  cacheOf(env).set(`${day}/${what}`, { at: now, value });
-  return value;
-}
-
-const full = (today, bytes = 0) => today.count >= DAILY_COUNT || today.bytes + bytes > DAILY_BYTES;
+const full = (today) => today.count >= DAILY_COUNT || today.bytes >= DAILY_BYTES;
 
 // A question of the tool's, its light work done: the parsed JSON, or a Response.
 async function question(request, env, now, what) {
@@ -249,7 +214,7 @@ export async function wanted(request, env, now = new Date()) {
   if (!(await adds(env, asked.product, asked.model, asked.version, asked.stage))) {
     return no("held");
   }
-  if (full(await cachedCount(env, now.toISOString().slice(0, 10), "readouts", now.getTime()))) {
+  if (full(await read(env.DB, readoutsOn(now.toISOString().slice(0, 10))))) {
     return no("full");
   }
   return answer(200, { wanted: true, held });
@@ -301,9 +266,21 @@ export async function readout(request, env, now = new Date()) {
   if (!(await adds(env, manifest.product, model, version, stage))) {
     return answer(200, { enough: true });
   }
-  if (full(await counted(env, day, "readouts"), body.byteLength)) {
+  if (!(await reserve(env.DB, readoutsOn(day), day,
+    { bytes: body.byteLength, most: DAILY_COUNT, mostBytes: DAILY_BYTES }))) {
     return answer(503, { error: "enough readouts for today: try again tomorrow" }, { "Retry-After": "86400" });
   }
+  try {
+    await keep(env, key, body, manifest, model, version, stage, id);
+  } catch (error) {
+    await release(env.DB, readoutsOn(day), body.byteLength);
+    throw error;
+  }
+  return answer(201, { id });
+}
+
+// A readout, with the marks of what it holds.
+async function keep(env, key, body, manifest, model, version, stage, id) {
   await env.READOUTS.put(key, body, {
     httpMetadata: { contentType: "application/x-tar" },
     customMetadata: {
@@ -320,8 +297,6 @@ export async function readout(request, env, now = new Date()) {
       await env.READOUTS.put(firmwareKeys(item.sha256)[0], id, { customMetadata: { readout: key } });
     }
   }
-  await addCount(env, day, "readouts", body.byteLength);
-  return answer(201, { id });
 }
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -342,7 +317,7 @@ export async function notify(request, env, now = new Date()) {
     return answer(400, { error: "that is not a request this tool makes" });
   }
   const day = now.toISOString().slice(0, 10);
-  if ((await counted(env, day, "notify")).count >= NOTIFY_DAILY) {
+  if (!(await reserve(env.DB, notifyOn(day), day, { most: NOTIFY_DAILY }))) {
     return answer(503, { error: "enough for today: try again tomorrow" }, { "Retry-After": "86400" });
   }
   const who = hex(await sha256(new TextEncoder().encode(email.toLowerCase())));
@@ -357,6 +332,5 @@ export async function notify(request, env, now = new Date()) {
       { httpMetadata: { contentType: "application/json" },
         customMetadata: { product, email, models: [...new Set(models)].join(",").slice(0, 512) } });
   }
-  await addCount(env, day, "notify", 0);
   return answer(201, { products });
 }
