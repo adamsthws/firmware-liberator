@@ -176,6 +176,94 @@ class AnswerTests(unittest.TestCase):
                                               timeout=60, answers=answers)
         self.assertIn(b"got 1 and you@example.com", written)
 
+    def test_a_question_taken_off_and_asked_again_as_it_was_is_answered_again(self):
+        # Seen: a wrong sudo password taken off the screen, the question asked
+        # again just as before, and nothing typed: the run waited for ever.
+        script = textwrap.dedent("""
+            import sys
+            first = input("Password: ")
+            sys.stdout.write("\\x1b[1F\\x1b[2K"); sys.stdout.flush()
+            second = input("Password: ")
+            print(f"got {first} then {second}")
+        """)
+        answers = [unattended_run.Answer(r"Password", "wrong\r"), unattended_run.Answer(r"Password", "right\r")]
+        code, written = unattended_run.record([sys.executable, "-c", script], (80, 24), live=False,
+                                              timeout=30, answers=answers)
+        self.assertIn(b"got wrong then right", written)
+
+    def test_a_question_redrawn_as_it_is_answered_is_not_answered_twice(self):
+        # Seen: a password's field redrawn as its typing was taken, looking for
+        # a moment as it did, and the next answer typed into the question after.
+        script = textwrap.dedent("""
+            import os, sys, termios, time, tty
+            # Read as a password is (prompts._read_secret): nothing echoed,
+            # the field redrawn in place, a new row only once it is done.
+            fd = sys.stdin.fileno()
+            saved = termios.tcgetattr(fd)
+            tty.setcbreak(fd)
+            sys.stdout.write("Password:\\n > "); sys.stdout.flush()
+            first = ""
+            while not first.endswith(("\\r", "\\n")):
+                first += os.read(fd, 1).decode()
+            for _ in range(3):
+                sys.stdout.write("\\r\\x1b[K"); sys.stdout.flush(); time.sleep(0.2)
+                sys.stdout.write(" > "); sys.stdout.flush(); time.sleep(0.3)
+            termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+            first = first.strip()
+            sys.stdout.write("\\n"); sys.stdout.flush()
+            second = input("Name: ")
+            print(f"got {first} then {second}")
+        """)
+        answers = [unattended_run.Answer(r"Password", "secret\r"), unattended_run.Answer(r"Password", "wrong\r"),
+                   unattended_run.Answer(r"Name", "Ada\r")]
+        code, written = unattended_run.record([sys.executable, "-c", script], (80, 24), live=False,
+                                              timeout=30, answers=answers)
+        self.assertIn(b"got secret then Ada", written)
+        self.assertEqual(answers[1].typed_at, [])
+
+    def test_a_password_answered_before_its_field_is_drawn_is_answered_once(self):
+        # Seen, 1 run in 25: typed on "Password:" alone, then typed again as its
+        # field appeared under it, a row down.
+        script = textwrap.dedent("""
+            import os, sys, termios, time, tty
+            fd = sys.stdin.fileno()
+            saved = termios.tcgetattr(fd)
+            tty.setcbreak(fd)
+            sys.stdout.write("Password:"); sys.stdout.flush()
+            time.sleep(1.5)   # the field long after its prompt: typed at the prompt, always
+            sys.stdout.write("\\n > "); sys.stdout.flush()
+            first = ""
+            while not first.endswith(("\\r", "\\n")):
+                first += os.read(fd, 1).decode()
+            termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+            sys.stdout.write("\\n"); sys.stdout.flush()
+            second = input("Name: ")
+            print(f"got {first.strip()} then {second}")
+        """)
+        answers = [unattended_run.Answer(r"Password", "secret\r"), unattended_run.Answer(r"Password", "wrong\r"),
+                   unattended_run.Answer(r"Name", "Ada\r")]
+        code, written = unattended_run.record([sys.executable, "-c", script], (80, 24), live=False,
+                                              timeout=30, answers=answers)
+        self.assertIn(b"got secret then Ada", written)
+
+    def test_a_question_is_its_own_row_not_the_answered_one_above(self):
+        # Seen: "What now: 1" answered, the next question drawn under it, and
+        # "What now" typed again.
+        screen = unattended_run.Screen(80, 24)
+        screen.feed(" What now (q to quit): 1\r\n ESPHome web user name (q to quit): ")
+        self.assertEqual(unattended_run.question(screen), " ESPHome web user name (q to quit):")
+
+    def test_a_long_prompt_with_its_hint_under_it_is_one_question(self):
+        screen = unattended_run.Screen(80, 24)
+        screen.feed(" Answered: 1\r\n More than one device answered. Which one is this run for\r\n (q to quit): ")
+        self.assertEqual(unattended_run.question(screen),
+                         " More than one device answered. Which one is this run for\n (q to quit):")
+
+    def test_a_question_wrapped_over_two_rows_is_one(self):
+        screen = unattended_run.Screen(40, 24)
+        screen.feed(" A question long enough to wrap, or press Enter now (q to quit) ")
+        self.assertIn("press Enter now", unattended_run.question(screen))
+
     def test_a_question_is_its_last_two_rows_on_the_screen(self):
         screen = unattended_run.Screen(80, 24)
         screen.feed("a note\r\nmore\r\n Wi-Fi password (q to quit):\r\n > ")

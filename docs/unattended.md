@@ -95,8 +95,8 @@ run that does this (FAIL-SCREEN in [testing.md](testing.md)).
 as it is of a person at the keyboard, and `--answers FILE` answers them: a
 JSON list of what to type when the screen shows what. Each answer is typed
 once, or `times` times, when its `when` - a regular expression - matches the
-question waiting for an answer: the screen's last two rows, the prompt ending the
-last, not the notes above it. When several match, the first in the list with
+question waiting for an answer: the screen's last row, its prompt ending it (with
+a password's field, the two), not the notes or the question answered above it. When several match, the first in the list with
 times left is typed; `\r` is Enter:
 
 ```json

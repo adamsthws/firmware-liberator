@@ -22,6 +22,12 @@ if TYPE_CHECKING:
     from tools.espressif.layouts import Layout
 
 
+# Testing (cli.py --simulate-no-identity): a plug that keeps no Sonoff identity
+# - in its settings or its sector - and is in no eWeLink account, as one
+# another tool converted and that was then removed from the app.
+SIMULATE_NONE = False
+
+
 def from_backup(ctx: Context) -> Identity | None:
     """The identity in the plug's Sonoff backup on this computer."""
     mac = ctx.state.input("plug_mac")
@@ -44,6 +50,8 @@ def from_settings(ctx: Context, layout: Layout) -> Identity | None:
     """The identity in the settings of a plug on Sonoff's layout, read through
     the Berry Tasmota: Sonoff's own, kept by ESPHome, or put there as it left
     Tasmota. A read that fails raises: a plug that did not answer may keep one."""
+    if SIMULATE_NONE:
+        return None
     return sonoff_identity.from_nvs(ctx.device.read_nvs(layout.nvs, nvs_size(layout)))
 
 
@@ -56,6 +64,8 @@ def kept_in_sector(ctx: Context) -> Identity | None:
     image, so it is still there when the startup firmware has wiped the
     settings (its persist-settings.patch), and its checksum shows it whole.
     A read that fails raises, as from_settings."""
+    if SIMULATE_NONE:
+        return None
     device = ctx.device
     header = device.read_region(sonoff_identity.SECTOR_AT, sonoff_identity.HEADER.size)
     if header[:len(sonoff_identity.MAGIC)] != sonoff_identity.MAGIC:
@@ -73,6 +83,8 @@ def kept_in_sector(ctx: Context) -> Identity | None:
 def account_record(ctx: Context, identity: Identity | None = None) -> dict[str, Any] | None:
     """The plug's record in its eWeLink account: by its id where that is known,
     else by its Wi-Fi MAC, which the record carries."""
+    if SIMULATE_NONE:
+        return None
     devices = ctx.account_devices() or []
     mac = hostsys.normalise_mac(str(ctx.state.input("plug_mac") or ""))
     for device in devices:
