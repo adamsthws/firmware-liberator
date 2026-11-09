@@ -141,6 +141,8 @@ What was seen of it in the emulator:
 | The filesystem filled up | kept | |
 | Tasmota's factory image written over it from `0x0` | kept; the table's entry gone, found by its magic | |
 | Partition Wizard (v16.0.0, loaded by hand) | offers "Resize FS to max" by 4 KB; doing it drops the entry, and the filesystem filled up wrote over the sector | |
+| The filesystem grown over the sector (Wizard as in #25241, deletion confirmed): 200 rewrites of a 200-byte file | kept | |
+| The same, an 8 KB file rewritten | written over at the 10th rewrite (about 80 KB); after another restart, kept for 12 | |
 | Back to Sonoff, no backup, from the kept identity: Sonoff's firmware online on the stub with its own id and key | yes, after the factory image too | yes |
 | Back to Sonoff, no backup, identity from the account record alone | yes | yes |
 | Tasmota to ESPHome: the identity in ESPHome's settings, and the sector kept | yes | |
@@ -154,9 +156,19 @@ partition, not past the last partition, so the `sonoff` area counts as free; and
 (`remove_partition_after_last_fs`, in `resize_max_flash_size_k`), whatever the flash
 size. Its other resize, which needs the filesystem last, is not offered.
 A fix is proposed upstream,
-[arendst/Tasmota#25241](https://github.com/arendst/Tasmota/pull/25241): it removes
-only `coredump` after the filesystem, and counts no space as free while another
-partition follows it.
+[arendst/Tasmota#25241](https://github.com/arendst/Tasmota/pull/25241): it lists a
+partition after the filesystem, and removes it only once the user confirms
+("Resize FS to max" and the migration's step 3 name it and ask); `coredump` is
+still removed without asking.
+
+Once the filesystem covers the sector, it is gone well before the filesystem is
+full. LittleFS has no table of free blocks: after each mount it starts allocating
+at a block picked from its metadata's checksums, moves forward through every free
+block and wraps round, so all of its 80 blocks are used in turn whatever is
+stored. Small files are kept inside the directory's own blocks and move nothing,
+which is why the 200 rewrites above left the sector alone; one larger file - an
+extension, a script, a web page - can reach it. Until then the tool still finds
+it by its header, with the table's entry gone.
 
 Just in front of the filesystem, at `0x3AF000` (the last 4 KB of `app0`), was tried
 as well, and is not used. On Tasmota's layout it is the better place: the filesystem
