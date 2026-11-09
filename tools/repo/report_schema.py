@@ -65,6 +65,10 @@ def schema() -> dict[str, Any]:
     return {
         "$comment": "Written by tools/repo/report_schema.py: change that, not this.",
         "maxBytes": MAX_BYTES,
+        # How the tool classes a failure's words (failures.PATTERNS), in its
+        # order, for the API to check a report's words read as the tool's own
+        # (website/api/review.js): matched ignoring case, as there.
+        "failurePatterns": [[name, pattern.pattern] for name, pattern in failures.PATTERNS],
         **record({
             "format": {"type": "integer", "enum": [report_data.FORMAT]},
             "id": string("^[0-9a-f]{32}$", 32),

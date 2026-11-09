@@ -1,6 +1,120 @@
 {
   "$comment": "Written by tools/repo/report_schema.py: change that, not this.",
   "maxBytes": 8192,
+  "failurePatterns": [
+    [
+      "declined",
+      "^not confirmed|was not confirmed|requires an explicit confirmation"
+    ],
+    [
+      "nothing-to-do",
+      "already runs Sonoff's firmware: there is nothing to convert"
+    ],
+    [
+      "crash",
+      "^something unexpected went wrong"
+    ],
+    [
+      "no-room",
+      "has no room to save"
+    ],
+    [
+      "device-lost",
+      "connection to the device was lost"
+    ],
+    [
+      "weak-signal",
+      "weak Wi-Fi signal"
+    ],
+    [
+      "unsupported-device",
+      "which this tool does not convert yet|not set up as a device this tool converts"
+    ],
+    [
+      "device-busy",
+      "still busy with an update"
+    ],
+    [
+      "credentials",
+      "encryption key|encryption: line|has a password|password|NeedsPassword"
+    ],
+    [
+      "unsafe-state",
+      "refusing to start from an unsafe state|another run is converting this device|has no record of|is not set; pass|address is not known|device id is not known|bundle has changed since|already running our installer|is running Tasmota, not Sonoff's firmware|so the installer has to be sent again"
+    ],
+    [
+      "backup",
+      "backup cannot be written back|backup could not be read|no backup of|found neither with a backup|cannot be put back without a backup"
+    ],
+    [
+      "identity",
+      "identity cannot be kept"
+    ],
+    [
+      "integrity",
+      "checksums failed|does not match the pinned|hash differs|is not the file firmware\\.json pins|refusing to send it|rt_ota"
+    ],
+    [
+      "download",
+      "could not be fetched|no public dump of|no \\S+ image is published|image is missing|public dump holds no"
+    ],
+    [
+      "ewelink-unreachable",
+      "eWeLink could not be reached"
+    ],
+    [
+      "ewelink-refused",
+      "official update file for the .* was refused|firmware was not sent:|readout firmware was not sent"
+    ],
+    [
+      "bad-option",
+      "--replace-own-build|needs to be told which firmware|cannot go to |cannot switch to|not sent from a test run|eWeLink account given"
+    ],
+    [
+      "ewelink-account",
+      "eWeLink account|eWeLink query failed|did not answer the eWeLink discovery"
+    ],
+    [
+      "computer-network",
+      "this computer reaches|this computer's address|are all in use on this computer|--listen-ip|readout could not be sent|did not fetch the \\S+ instructions|without reaching this computer"
+    ],
+    [
+      "network-join",
+      "did not join|cannot join it|has not answered on your Wi-Fi|did not answer on your Wi-Fi|neither rejoined|did not come back after its settings were reset|did not say which Wi-Fi network|but the bundle is set up for"
+    ],
+    [
+      "settings-lost",
+      "lost its settings|did not keep its template"
+    ],
+    [
+      "unexpected-layout",
+      "not laid out as this tool expects|partition table|memory could not be read"
+    ],
+    [
+      "not-taken",
+      "did not take|did not hold|still running from slot|keeps going back to the mover|still answers as the firmware it was to leave|has not been seen to run|did not come back after the upload|has not started ESPHome|did not switch to its safeboot|would not take its new name|went back to its Sonoff firmware before|still on its Sonoff firmware, so nothing was read|would not fetch Sonoff's firmware back|refused to fetch Sonoff's firmware|after it was sent \\d+ times"
+    ],
+    [
+      "upload-cut",
+      "stopped part way|was not uploaded|to the device failed|could not be sent to the device|did not complete within|did not print|nothing was armed"
+    ],
+    [
+      "unexpected-firmware",
+      "did not answer as a device this tool converts|Berry|did not say twice alike|did not say which slot|it is not the one this tool installs|metadata just written|redirected .* too many times"
+    ],
+    [
+      "preparation",
+      "cannot be used|could not be prepared|cannot be prepared|could not be set up for"
+    ],
+    [
+      "device-not-found",
+      "nothing answers at|could not tell which device"
+    ],
+    [
+      "device-no-answer",
+      "did not answer within|did not restart within|did not answer\\b"
+    ]
+  ],
   "type": "object",
   "properties": {
     "format": {

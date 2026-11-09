@@ -124,6 +124,13 @@ table every S60 ships with, read from a stock plug: a list of partition names,
 offsets and sizes, with no code or settings in it. Why the project keeps it is
 in [`docs/legal.md`](docs/legal.md).
 
+`website/api/held-words.json`, by which the project's API holds back for
+review a report holding words no real one would, is drawn from Shutterstock's
+[List of Dirty, Naughty, Obscene, and Otherwise Bad Words](https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/tree/5faf2ba42d7b1c0977169ec3611df25a3c08eb13),
+licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): its
+entries in the Latin alphabet, of three letters or more, lower-cased, taken by
+`tools/repo/held_words.py`, and otherwise unchanged.
+
 ## Website stylesheet
 
 `website/public/assets/github-markdown-dark.css` and

@@ -46,6 +46,17 @@ class PayloadTests(RouteTestCase):
         self.assertEqual(data["stopped"]["text"], "the device at <address> did not answer within 30s  caf")
         self.assertEqual(self.payload(ctx, "crashed", failure="KeyError: x")["stopped"]["error"], "crash")
 
+    def test_a_failure_is_classed_by_the_words_sent_but_for_words_cut_short(self):
+        ctx = self.ctx(firmware="esphome", plug_kind="sonoff-s60")
+        # The API checks the words sent read as their class (website/api/review.js).
+        data = self.payload(ctx, "failed", failure="the delivery stopped part way: x")
+        self.assertEqual((data["stopped"]["error"], data["stopped"]["text"]),
+                         ("upload-cut", "the delivery stopped part way: x"))
+        long = "x " * 150 + "the delivery stopped part way"
+        data = self.payload(ctx, "failed", failure=long)
+        self.assertTrue(data["stopped"]["text"].endswith("..."))
+        self.assertEqual(data["stopped"]["error"], "upload-cut", "from the whole reason, as the words sent lose it")
+
     def test_a_plug_put_back_says_so_and_where_it_came_from(self):
         ctx = self.ctx(firmware="esphome", source="midway", plug_kind="sonoff-s60",
                        put_back={"came_from": "esphome", "why": "no identity"})

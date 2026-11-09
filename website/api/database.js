@@ -12,7 +12,7 @@
 
 // The newest migration this code needs (test/database.test.mjs holds it to
 // the newest file in migrations/).
-export const LATEST_MIGRATION = "0004_readouts.sql";
+export const LATEST_MIGRATION = "0005_held_reports.sql";
 
 // Whether the database has every migration this code needs, asked at most
 // once a minute in a Worker: false until `apply` has run the newest, so a
