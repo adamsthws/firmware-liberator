@@ -21,11 +21,15 @@ research, firmware builds or the emulator.
   backup on the computer.
 - **`nvs_image.py`** - an ESP-IDF NVS partition, written as `nvs_partition_gen`
   writes one, with Python's standard library alone.
+- **`ais_records.py`** - the factory and pair records Sonoff's newer "ais" SDK
+  (the BASICR4's and MINIR4's firmware) keeps its eWeLink identity and Wi-Fi in,
+  where the S60's keeps `frame_params`.
 
 ## Reading a plug
 
 - **`flashmap.py`** - what a whole-flash dump holds, read from the dump itself: its
-  chip, its partition table, and the MAC from its eFuses.
+  chip, its partition table (at 0x8000, or 0xC000 where its firmware is built so),
+  and the MAC from its eFuses.
 - **`device_facts.py`** - what a backup says about a plug, for the run's log.
 - **`scrub.py`** - takes what is the owner's out of a copy of a whole flash before
   a readout leaves the computer.

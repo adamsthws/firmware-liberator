@@ -7,7 +7,7 @@ import unittest
 import zlib
 
 from tests.espressif.test_inspect_stock_nvs import entry, page, variable
-from tools.espressif import scrub
+from tools.espressif import ais_records, scrub
 
 SSID = b"ExampleNet"
 OLD_SSID = b"OldNetwork-2"        # a network the device was on before: its entry replaced since
@@ -122,6 +122,67 @@ class ChecksumTests(unittest.TestCase):
     def test_the_settings_still_check_out_after_both(self):
         self.assertEqual(bad_checksums(flash()), [])
         out = scrub.identity(scrub.wifi(flash())[0])[0]
+        self.assertEqual(bad_checksums(out), [])
+
+
+# The ais SDK's (the BASICR4's): its Wi-Fi and identity in records of its own.
+AIS_KEY = "00000000-1111-2222-3333-444444444444"
+FACTORY = ais_records.factory_record({
+    "chip_mac": "123456ABCDEF", "device_model": "SN-ESP32C3-BASICR4-01", "deviceid": "1000abcdee",
+    "factory_apikey": AIS_KEY, "sta_mac": "12:34:56:AB:CD:EF", "sap_mac": "12:34:56:AB:CD:F0"}, 138)
+
+
+def ais_flash() -> bytes:
+    nvs = page([
+        entry(0, 0x01, "factory", data=b"\x01"),
+        entry(0, 0x01, "pair", data=b"\x02"),
+        *variable(1, 0x41, "info", FACTORY),
+        *variable(2, 0x41, "info", ais_records.pair_record("OldNetwork-2", BEFORE.decode(), "eu-disp.coolkit.cc", 443)),
+        *variable(2, 0x41, "info", ais_records.pair_record(SSID.decode(), NOW.decode(), "eu-disp.coolkit.cc", 443)),
+    ])
+    elsewhere = b"\xff" * 0x100 + b"seen:" + NOW + b";" + SSID + b";" + AIS_KEY.encode() + b"\xff" * 0x100
+    return (b"\xff" * scrub.NVS_OFFSET + nvs).ljust(scrub.NVS_OFFSET + scrub.NVS_SIZE, b"\xff") + elsewhere
+
+
+class AisTests(unittest.TestCase):
+    def test_no_password_or_network_name_of_either_pair_record_is_left(self):
+        out, _ = scrub.wifi(ais_flash())
+        for secret in (NOW, BEFORE, SSID, OLD_SSID):
+            self.assertNotIn(secret, out, secret)
+        self.assertIn(b"eu-disp.coolkit.cc", out)  # where its cloud is: eWeLink's, nobody's own
+
+    def test_the_identity_in_the_factory_record_is_made_up_and_sealed_again(self):
+        out, _ = scrub.identity(ais_flash())
+        self.assertNotIn(b"1000abcdee", out)
+        self.assertNotIn(AIS_KEY.encode(), out)
+        at = out.index(b"SN-ESP32C3-BASICR4-01") - ais_records.FACTORY_FIELDS["device_model"][0]
+        record = out[at:at + ais_records.FACTORY_SIZE]
+        self.assertEqual(ais_records.text(record, ais_records.FACTORY_FIELDS, "deviceid"), b"1000000000")
+        self.assertEqual(record, ais_records.resealed(record))
+
+    def test_a_version_2_pair_record_loses_its_password_and_name_too(self):
+        # The MINIR4's 1.2.0 writes one, its host given more room.
+        record = ais_records.pair_with(b"\xaa\x55\x02\x00" + bytes(172), 443, host="eu-disp-v1.coolkit.cc",
+                                       ssid=SSID.decode(), password=NOW.decode())
+        nvs = page([entry(0, 0x01, "pair", data=b"\x01"), *variable(1, 0x41, "info", record)])
+        out, _ = scrub.wifi((b"\xff" * scrub.NVS_OFFSET + nvs).ljust(0x40000, b"\xff"))
+        self.assertNotIn(NOW, out)
+        self.assertNotIn(SSID, out)
+
+    def test_a_record_of_a_version_not_known_here_is_blanked_whole(self):
+        # Version 3 of either record: nothing says where its secrets are.
+        record = b"\xaa\x55\x03\x00" + b"\xbb\x01" + b"some-host.example" + NOW + SSID + AIS_KEY.encode()
+        nvs = page([entry(0, 0x01, "pair", data=b"\x01"), entry(0, 0x01, "factory", data=b"\x02"),
+                    *variable(1, 0x41, "info", record), *variable(2, 0x41, "info", record)])
+        image = (b"\xff" * scrub.NVS_OFFSET + nvs).ljust(0x40000, b"\xff")
+        out = scrub.identity(scrub.wifi(image)[0])[0]
+        for secret in (NOW, SSID, AIS_KEY.encode()):
+            self.assertNotIn(secret, out)
+        self.assertEqual(out.count(b"\xaa\x55\x03\x00"), 2)  # their headers stay, to be seen
+        self.assertEqual(bad_checksums(out), [])
+
+    def test_its_settings_still_check_out(self):
+        out = scrub.identity(scrub.wifi(ais_flash())[0])[0]
         self.assertEqual(bad_checksums(out), [])
 
 
