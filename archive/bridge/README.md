@@ -84,6 +84,13 @@ refused (409) while an upload is under way, and where the next start would be
 the bridge again, an upload cut off part way having left no Sonoff firmware to
 start.
 
+4.4.6 also says where the plug starts next as it is now, read from otadata on
+each request: an upload pins the bridge before it erases Sonoff's slot, so one
+cut off leaves no Sonoff firmware to start from that moment, not from the next
+start. Before, its page went on saying "The untouched stock slot is selected for
+the next power cycle", and `/status` gave no `fallback: none`, until the plug
+was switched off and on.
+
 From 4.4.2 every build has the read-only `GET /flash` (the whole chip, with
 its size in `X-Flash-Size`), `GET /flash-sha256` (the SHA-256 of the whole
 chip, worked out on the plug) and `GET /efuse` (the eFuse read registers), so
