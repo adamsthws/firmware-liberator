@@ -275,10 +275,10 @@ and the store has limits it is never let past:
   (`SENDER_DAILY`), counted in the database under an HMAC of the day and the
   address with the Worker's secret `SENDER_KEY`, never the address itself;
   the count is deleted with the day's others by the nightly job. One not kept
-  gives its place back. Until `SENDER_KEY` is set, no readout is taken: set it
-  once with `npx wrangler secret put SENDER_KEY --config api/wrangler.jsonc`
-  from `website/`, any long random value (`cloudflare_settings.py` checks it
-  is there).
+  gives its place back. Until `SENDER_KEY` is set, no readout is taken.
+  `cloudflare_settings.py apply` makes it when it is missing, and `rotate
+  SENDER_KEY` replaces it - which starts the day's counts again, and makes a
+  sender's next readout of a key it sent before look like another sender's.
 - **Rate.** Before the Worker runs at all, a Cloudflare rate-limiting rule on
   its hostname (`tools/repo/cloudflare_settings.py`) blocks an address sending
   more than 5 requests in 10 seconds, for 10 seconds: a flood never reaches the

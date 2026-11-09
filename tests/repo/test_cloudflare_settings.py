@@ -92,6 +92,8 @@ class FakeCloudflare:
                 self.r2_dev = body["enabled"]
             elif path == DATABASES:
                 self.databases.append({"name": body["name"], "uuid": "u1"})
+            elif path == SECRETS and method == "PUT":
+                self.secrets = [name for name in self.secrets or [] if name != body["name"]] + [body["name"]]
             elif path == QUERY:
                 self.migrations = (self.migrations or []) + re.findall(r"VALUES \('([^']+)'\);\s*$", body["sql"])
             elif path.endswith("/lifecycle"):
@@ -340,7 +342,8 @@ class CloudflareSettingsTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         self.assertEqual(cs.ENV_FILE, root / ".env.infra")
         example = cs.credentials.parse((root / ".env.infra.example").read_text(encoding="utf-8"))
-        self.assertEqual(set(example), {"CLOUDFLARE_API_TOKEN", cs.EMAIL_DESTINATION, cs.EMAIL_FORWARD})
+        kept = {f"API_{name}" for name, how in cs.API_SECRETS.items() if how == "kept"}
+        self.assertEqual(set(example), {"CLOUDFLARE_API_TOKEN", cs.EMAIL_DESTINATION, cs.EMAIL_FORWARD, *kept})
         self.assertFalse(set(example) & (set(cs.credentials.KEYS) | set(cs.credentials.RENAMED)))
         self.assertEqual(subprocess.run(["git", "check-ignore", "-q", ".env.infra"], cwd=root).returncode, 0)
 
@@ -638,11 +641,39 @@ class ApiAndStatsTests(unittest.TestCase):
                               "meta": {}})
         self.assertEqual(run(self.fake)[0], 0)
 
-    def test_a_secret_not_set_says_how_to_set_it(self):
-        self.fake.secrets = []
+    def test_a_made_secret_not_set_is_made_by_apply_a_value_never_shown(self):
+        self.fake.secrets = ["PLUG_KEY"]
         code, out = run(self.fake, "apply")
-        self.assertEqual((code, self.fake.sent), (1, []))
-        self.assertIn("secret PLUG_KEY: left - set it from website/: npx wrangler secret put PLUG_KEY", out)
+        self.assertEqual(code, 0, out)
+        [(method, path, body)] = self.fake.sent
+        self.assertEqual((method, path, body["name"], body["type"]), ("PUT", SECRETS, "SENDER_KEY", "secret_text"))
+        self.assertRegex(body["text"], r"^[0-9a-f]{64}$")
+        self.assertNotIn(body["text"], out)
+        self.assertIn("secret SENDER_KEY: set", out)
+        self.assertEqual(run(self.fake)[0], 0, "then nothing differs")
+
+    def test_a_kept_secret_is_set_from_env_infra_and_never_made(self):
+        self.fake.secrets = ["SENDER_KEY"]
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []), "with no API_PLUG_KEY, nothing is made up")
+        self.assertIn("secret PLUG_KEY: left - put its value, kept privately, in .env.infra as API_PLUG_KEY", out)
+        with mock.patch.dict("os.environ", {"API_PLUG_KEY": "a-made-up-kept-value"}):
+            code, out = run(self.fake, "apply")
+        self.assertEqual(code, 0, out)
+        self.assertEqual([(body["name"], body["text"]) for _, _, body in self.fake.sent],
+                         [("PLUG_KEY", "a-made-up-kept-value")])
+        self.assertNotIn("a-made-up-kept-value", out)
+
+    def test_only_a_made_secret_is_rotated(self):
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cs, "api", self.fake), redirect_stdout(out), mock.patch("sys.stderr", err):
+            self.assertEqual(cs.main(["rotate", "PLUG_KEY"]), 2)
+            self.assertEqual(self.fake.sent, [])
+            self.assertIn("PLUG_KEY is kept, and must never change", err.getvalue())
+            self.assertEqual(cs.main(["rotate", "SENDER_KEY"]), 0)
+        [(_, _, body)] = self.fake.sent
+        self.assertEqual(body["name"], "SENDER_KEY")
+        self.assertNotIn(body["text"], out.getvalue())
 
     def test_before_the_worker_is_deployed_its_secrets_wait(self):
         self.fake.secrets = None
@@ -657,11 +688,12 @@ class ApiAndStatsTests(unittest.TestCase):
         code, out = run(no_secrets, "ci")
         self.assertIn(f"{cs.API_WORKER} secrets: not checked", out)
 
-    def test_the_worker_binds_the_figures_bucket_and_its_secret(self):
+    def test_the_worker_binds_the_figures_bucket_and_its_secrets_are_set_here(self):
         config = (Path(__file__).resolve().parents[2] / "website/api/wrangler.jsonc").read_text(encoding="utf-8")
         self.assertIn(f'"bucket_name": "{cs.STATS_BUCKET}"', config)
+        self.assertNotIn("wrangler secret put", config, "set by cloudflare_settings.py apply, not by hand")
         for name in cs.API_SECRETS:
-            self.assertIn(f"npx wrangler secret put {name}", config)
+            self.assertIn(name, config)
 
 
 if __name__ == "__main__":
