@@ -1,0 +1,51 @@
+{
+  "$comment": "Reports both validators must agree on: tools/repo/report_schema.py (tests/repo/test_report_schema.py) and website/api/report-schema.js (website/test/report-schema.test.mjs). Each invalid one is the first valid one with one change: `set` a value, or `drop` a key, at a dotted path.",
+  "valid": [
+    {
+      "format": 1, "id": "0123456789abcdef0123456789abcdef", "proof": "1794000000:198", "tag": "user",
+      "tool": "2.4.0", "kind": "run", "result": "converted", "stopped": null, "family": "espressif",
+      "device": "sonoff-s60", "model": "S60TPG", "stock": "1.2.0",
+      "plug": "a5b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1", "firmware": "tasmota",
+      "from": "sonoff", "backup": "saved", "identity": null,
+      "os": {"family": "linux", "version": "Ubuntu 24.04.1 LTS"},
+      "python": {"version": "3.12.4", "source": "venv"}, "seconds": 512, "resumed": false,
+      "stages": {"A1": {"s": 12, "busy": 0, "tries": 1}, "D4": {"s": 61, "busy": 43, "tries": 2}},
+      "signal": -61, "wifi_typed": false, "setup_network": true, "power_cycled": null,
+      "checks": "passed", "meter": "carried"
+    },
+    {
+      "format": 1, "id": "fedcba9876543210fedcba9876543210", "proof": "1794000000:2293", "tag": "dev",
+      "tool": "2.4.0", "kind": "run", "result": "failed",
+      "stopped": {"step": "B2", "error": "unsupported-device", "text": "the device is a NEWTHING, which this tool does not convert yet. Nothing was written"},
+      "family": null, "device": null, "model": "NEWTHING", "stock": null, "plug": null, "firmware": null,
+      "from": "sonoff", "backup": "not taken", "identity": null,
+      "os": {"family": "windows", "version": "11 (build 10.0.22631)"},
+      "python": {"version": "unknown", "source": "other"}, "seconds": 0, "resumed": true, "stages": {},
+      "signal": null, "wifi_typed": null, "setup_network": null, "power_cycled": null,
+      "checks": "not-run", "meter": null
+    }
+  ],
+  "invalid": [
+    {"why": "a key the schema does not name", "set": {"email": "me@example.com"}},
+    {"why": "a missing key", "drop": "checks"},
+    {"why": "another format", "set": {"format": 2}},
+    {"why": "an ID not 32 hex digits", "set": {"id": "0123456789ABCDEF0123456789ABCDEF"}},
+    {"why": "a word not in the list", "set": {"result": "exploded"}},
+    {"why": "a pattern with a newline after it", "set": {"model": "S60TPG\n"}},
+    {"why": "a model too long", "set": {"model": "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}},
+    {"why": "a number out of range", "set": {"signal": 5}},
+    {"why": "a whole number given as a fraction", "set": {"seconds": 1.5}},
+    {"why": "a boolean given as a number", "set": {"seconds": true}},
+    {"why": "a number given as a string", "set": {"seconds": "512"}},
+    {"why": "null where none is allowed", "set": {"result": null}},
+    {"why": "text not printable ASCII", "set": {"stopped": {"step": "B2", "error": "other", "text": "café"}}},
+    {"why": "text too long", "set": {"stopped": {"step": "B2", "error": "other", "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}}},
+    {"why": "a step name not a step's", "set": {"stages.a1": {"s": 1, "busy": 0, "tries": 1}}},
+    {"why": "a stage with a key too many", "set": {"stages.A1.extra": 1}},
+    {"why": "a stage's number out of range", "set": {"stages.A1.tries": 0}},
+    {"why": "a nested key the schema does not name", "set": {"os.hostname": "kitchen-pc"}},
+    {"why": "an OS version with a character outside the list", "set": {"os.version": "Ubuntu <b>"}},
+    {"why": "a tool version that is not 2.x", "set": {"tool": "3.0.0"}},
+    {"why": "a proof not shaped as one", "set": {"proof": "1794000000:198:1"}}
+  ]
+}
