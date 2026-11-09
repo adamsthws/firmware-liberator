@@ -311,8 +311,10 @@ def report_screen(fields: list[tuple[str, str]], columns: int | None = None) -> 
     return lines
 
 
-# Long enough for the CSE7766 and Tasmota's energy driver to report a new reading.
-METER_SETTLE = 4.0
+# Long enough for the CSE7766 and Tasmota's energy driver to report a new
+# reading. With every relay off Tasmota keeps its last reading until its energy
+# watchdog zeroes it, after 4 s without one, on a 1 s tick: 5 s.
+METER_SETTLE = 6.0
 # How long a device back on Sonoff's firmware may take to reach eWeLink once the
 # run has seen it on the network: an Espressif run's last step sees it there,
 # seconds before its firmware has dialled eWeLink (seconds). Looked for every 10 s.

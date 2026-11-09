@@ -222,6 +222,33 @@ class CheckHardwareTests(unittest.TestCase):
         self.assertNotIn("Mains voltage", result)  # the power meter line shows it
         self.assertEqual(result["Power meter"], "on: 231.5 V, 40 W; off: 231.5 V, 0 W")
 
+    def test_tasmota_is_given_time_to_drop_its_readings_once_every_relay_is_off(self):
+        # With every relay off Tasmota stops taking the meter's readings and
+        # keeps the last until its energy watchdog (ENERGY_WATCHDOG, 4 s, on
+        # its 1 s tick) zeroes them: 5 s after, on a Dual R3 in the emulator.
+        clock = {"now": 0.0, "off_at": 0.0}
+        state = {"power": "OFF"}
+        on = {"Voltage": 230, "Power": [100, 0]}
+
+        def command(text, timeout=None):
+            if text.startswith("Power "):
+                state["power"] = text.split()[1]
+                clock["off_at"] = clock["now"]
+            if text.startswith("Power"):
+                return {"POWER1": state["power"]}
+            held = state["power"] == "OFF" and clock["now"] - clock["off_at"] < 5
+            return {"StatusSNS": {"ENERGY": on if state["power"] == "ON" or held
+                                  else {"Voltage": 0, "Power": [0, 0]}}}
+
+        def sleep(seconds):
+            clock["now"] += seconds
+
+        from types import SimpleNamespace
+        ctx = SimpleNamespace(device=SimpleNamespace(command=command, wait_reachable=lambda timeout: 0.0))
+        with mock.patch.object(time, "sleep", side_effect=sleep), mock.patch.object(output, "say"):
+            result = report.check_hardware(ctx)
+        self.assertEqual(result["Relay"], "switches (meter confirms)")
+
     def test_a_template_with_more_than_one_relay_answers_power1(self):
         # The TH Elite's Tasmota: its dry contact is a relay as well.
         state = {"power": "OFF"}
