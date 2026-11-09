@@ -6,7 +6,7 @@
 
 ## Testing
 
-**In the emulator:** it converts from eWeLink's public firmware for it, put on the TH Elite's flash, as no dump of a real one is published. The emulator has none of its hardware, so its wiring below is what its sources say, not what was seen.
+**In the emulator:** it converts from eWeLink's public firmware for it, put on the TH Elite's flash, as no dump of a real one is published, with its own settings in relay mode ([its work mode](../../docs/espressif-research.md#the-dual-r3s-work-mode)). The emulator has none of its hardware, so its wiring below is what its sources say, not what was seen.
 
 **Worth checking:** whether both relays, the wall switches, the button and the LED work, and which meter chip yours has.
 

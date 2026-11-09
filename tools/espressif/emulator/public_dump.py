@@ -103,7 +103,8 @@ class Update:
     number: int
     donor: str         # the key in DUMPS or S60_DUMP of the flash it goes on
     stock_model: str   # what its firmware calls itself, read from it
-    uiid: int = 0      # eWeLink's number for its kind, where its firmware checks it
+    uiid: int = 0      # eWeLink's number for its kind, where it differs from the donor's
+    settings: str = ""  # Sonoff's user settings (user_usual) for it, where the donor's are not its own
 
     @property
     def url(self) -> str:
@@ -120,9 +121,15 @@ UPDATES = {
     "sonoff-minir4": Update("SONOFF_MINIR4_(FWSW-E32R4-MINIR4-ESP32D0WDR2V3)_ESP32_v1.2.0_user1.bin",
                             "c881ddd667bc9d8c6905acf30051a1f2e4270c4be2dcfcfa39a5bfdd137c6ec0", 6,
                             "sonoff-pow-elite", "SN-ESP32D0-MINIR4-01"),
+    # The DualR3's firmware keeps its work mode as deviceMode in user_usual (1
+    # its two relays, 2 a curtain motor) and, finding none, starts as a motor,
+    # refusing every switch. Its own settings in relay mode, as a DualR3 out of
+    # the box is taken to be, in place of the TH Elite's; the firmware writes the
+    # rest of its defaults itself. uiid 126 is eWeLink's DualR3.
+    # docs/espressif-research.md#the-dual-r3s-work-mode
     "sonoff-dualr3": Update("SONOFF_DUALR3-Family_(FWSWES-E32DR3-DUALR3-ESP32D0WDV3)_ESP32_v1.6.1_user1.bin",
                             "4f14b1298061ee6669fd5fcbfa89baf6c2ef3daafa8c575736f38088179240b2", 7,
-                            "sonoff-th-elite", "E32-2SW-P0"),
+                            "sonoff-th-elite", "E32-2SW-P0", 126, '{"init":"true","deviceMode":1}'),
     **{f"sonoff-m5-{gang}c": Update("SONOFF_M5-1C-3C_(FWSWES-E32T5-T5-ESP32D0WDV3)_ESP32_v1.3.0_user1.bin",
                                     "f149baf000eb226c27babd1ea2a4bef6bcc3ca2973d9c57063106730112f4e6b", 7 + gang,
                                     "sonoff-pow-elite", "ESP32D0-MSW-T5", 159 + gang)
@@ -143,15 +150,26 @@ def identities(frame: dict, dump: Dump) -> dict[bytes, bytes]:
 KEPT_SPACES = {"frame_params", "nvs.net80211", "phy", "misc", "data_backups", "user_usual", "user_unusual"}
 
 
-def anonymised(flash: bytes, dump: "Dump | Update", stock_model: str | None = None, uiid: int = 0) -> bytes:
+def anonymised(flash: bytes, dump: "Dump | Update", stock_model: str | None = None, uiid: int = 0,
+               user_settings: str = "") -> bytes:
     """The dump with the plug's identity replaced throughout its settings - and,
-    given `stock_model`, what it calls itself."""
+    given `stock_model`, what it calls itself, given `uiid` its kind's number, and
+    given `user_settings` those for its user settings."""
     partition = flashmap.nvs(flash)
     settings = flash[partition.offset:partition.offset + partition.size]
     names, values = parse(settings)
     frame = next(json.loads(value.data.split(b"\0", 1)[0]) for (space, key), value in values.items()
                  if names[space] == "frame_params" and key == "content")
     replaced = identities(frame, dump)
+    # The eWeLink account it was paired to, made up as the stub's is (the plug's
+    # own apikey). Kept, it is someone's account, and the stub's would differ
+    # from it: the DualR3's firmware, seeing a new account, puts its user
+    # settings back to their defaults.
+    account = next((json.loads(value.data.split(b"\0", 1)[0]).get("finalUserApikey")
+                    for (space, key), value in values.items()
+                    if names[space] == "user_unusual" and key == "content"), None)
+    if account:
+        replaced.setdefault(account.encode(), dump.apikey.encode())
     if stock_model:
         replaced[frame["model"].encode()] = stock_model.encode()
     if uiid:
@@ -163,6 +181,8 @@ def anonymised(flash: bytes, dump: "Dump | Update", stock_model: str | None = No
         rows.append((names[space], "namespace", "", ""))
         for (_, key), value in sorted(item for item in values.items() if item[0][0] == space):
             data = value.data
+            if user_settings and (names[space], key) == ("user_usual", "content"):
+                data = user_settings.encode()
             for old, new in replaced.items():
                 data = data.replace(old, new)
             if names[space] == "nvs.net80211" and key in ("sta.mac", "ap.mac"):
@@ -195,7 +215,7 @@ def with_update(donor: bytes, update: Update) -> bytes:
     and started."""
     firmware = fetched(update)
     app = firmware[build_vendor_ota.WRAPPER_SIZE:]
-    flash = bytearray(anonymised(donor, update, update.stock_model, update.uiid))
+    flash = bytearray(anonymised(donor, update, update.stock_model, update.uiid, update.settings))
     first, second = flashmap.app_slots(flash)[:2]
     if len(app) > first.size:
         raise SystemExit(f"{update.file} does not fit the donor's slot")

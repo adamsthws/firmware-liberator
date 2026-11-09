@@ -72,7 +72,11 @@ dump is ever committed. Tooling fetches it at run time.
 
    This replaces the device's identity with a made-up one under
    `captures/plugs/`. For an update file, use the model its firmware calls itself
-   (`strings` finds it, in the shape `SN-...`, `E32-...` or `ESP32D0-...`).
+   (`strings` finds it, in the shape `SN-...`, `E32-...` or `ESP32D0-...`), and
+   give it its eWeLink kind (`uiid`) where it is not the donor's. The donor's
+   user settings (`user_usual`) are another firmware's: where the device's own
+   firmware reads one of its own that changes how it runs, give it `settings`,
+   as the Dual R3 has its work mode.
 
 2. **Add the kind** to [kinds.py](../tools/autoflash/kinds.py): its chip, eWeLink
    product model, stock model, the model its update wrapper names, and its Tasmota
