@@ -291,3 +291,25 @@ class CountdownKeyTests(unittest.TestCase):
                 code, rows = self.ask(typed)
                 self.assertEqual(rows[-1].strip(), chosen)
                 self.assertNotEqual(rows[-2:-1], [""], rows)   # no blank row left above it
+
+
+class AdminPasswordTests(unittest.TestCase):
+    def test_a_wrong_password_is_replaced_not_piled_up(self):
+        # As every question's wrong answer is: only why, and the question again.
+        from tests.autoflash.test_unlock import drawn
+        asked = iter(["wrong-one", "wrong-two", "right-one"])
+
+        def body(look):
+            def secret(prompt, reveal_seconds=1.0):
+                look()
+                value = next(asked)
+                output.show(f"{prompt}{'*' * len(value)}")
+                return value
+            with mock.patch.object(prompts, "ask_secret", side_effect=secret), \
+                 mock.patch.object(prompts.hostsys, "check_sudo_password",
+                                   side_effect=lambda value: None if value == "right-one" else "refused"):
+                prompts.ask_admin_password()
+        screens, _ = drawn(body)
+        third = screens[2]
+        self.assertEqual(third.count("That password was not accepted"), 1, third)
+        self.assertNotIn("*********", third)   # neither wrong try left
