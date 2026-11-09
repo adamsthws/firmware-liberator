@@ -8,7 +8,7 @@ back on Sonoff's firmware, as it fetches the real file from eWeLink.
 emu.sh makes it on your computer, where patch_stock has what it needs, into
 the instance's state, and the stub reads it from there (read()):
 
-    python -I tools/ewelink/stub_cloud/firmware.py STOCK_FLASH OUT --trust-ca CA
+    python -I tools/ewelink/stub_cloud/firmware.py STOCK_FLASH OUT --trust-ca CA [--product DUALR3]
 """
 
 from __future__ import annotations
@@ -42,16 +42,25 @@ def version_tuple(version: str) -> tuple[int, ...]:
         return ()
 
 
-def update_of(flash: bytes, ca_pem: bytes | None) -> Update:
-    """The update file for the plug whose stock flash this is."""
+def kind_of(model: str | None, product: str | None) -> kinds.Kind | None:
+    """The kind of a plug whose firmware calls itself `model`, eWeLink's
+    product model for it `product`: by the product model first, as the tool
+    takes it, for a kind whose firmware's name is not its own (the DualR3's,
+    E32-2SW-P0); else by that name."""
+    return (next((kind for kind in kinds.EVERY if kind.product_of(product)), None)
+            or next((kind for kind in kinds.EVERY if model and kind.stock_model == model), None))
+
+
+def update_of(flash: bytes, ca_pem: bytes | None, product: str | None = None) -> Update:
+    """The update file for the plug whose stock flash this is, eWeLink's
+    product model for it `product` where known."""
     patched = patch_stock.patch(flash, ca_pem)
     slot = next(slot for slot in flashmap.app_slots(patched)
                 if patch_stock.holds_sonoff_firmware(patched[slot.offset:slot.offset + slot.size]))
     app = patched[slot.offset:slot.offset + slot.size]
     length = build_vendor_ota.parse_esp_image(app)["parsed_image_size"]
     app = app[:length]
-    model = frame_params(flash).get("model")
-    kind = next((kind for kind in kinds.EVERY if kind.stock_model == model), None)
+    kind = kind_of(frame_params(flash).get("model"), product)
     if kind is None:
         raise ValueError("the dump's model is not a kind this tool knows")
     version = build_vendor_ota.app_version(app) or "1.0.0"
@@ -74,8 +83,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("flash", type=Path, help="the plug's stock dump")
     parser.add_argument("output", type=Path)
     parser.add_argument("--trust-ca", type=Path, default=None, help="the stub's CA, for the firmware to trust")
+    parser.add_argument("--product", default="", help="eWeLink's product model for the plug, e.g. DUALR3")
     args = parser.parse_args(argv)
-    update = update_of(args.flash.read_bytes(), args.trust_ca.read_bytes() if args.trust_ca else None)
+    update = update_of(args.flash.read_bytes(), args.trust_ca.read_bytes() if args.trust_ca else None, args.product)
     args.output.write_bytes(update.data)
     args.output.chmod(0o644)
     return 0
