@@ -271,7 +271,9 @@ and the patches, and the build image, and writes its row, `NOTICES.md` and the
 changelog. It moves only to a stable release (`openbeken VERSION`), as the weekly update does
 once one has settled, for every Beken device at once (`--every-device`). The
 version comes from what it builds: `1.18.320-2` is this project's second build on OpenBeken's release
-1.18.320, the number starting again at 1 on a new release.
+1.18.320, the number starting again at 1 on a new release. A build that no release of the tool has
+published yet (no release tag's `firmware.json` pins its file) is built again under its own version,
+the change folded into it, with no line of its own in the changelog.
 
 ### 4. The docs
 

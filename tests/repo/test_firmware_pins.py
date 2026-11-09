@@ -319,6 +319,22 @@ class BekenPinTests(unittest.TestCase):
         self.assertEqual(uf.build_version("1.18.320", {"version": "1.1.0"}), "1.18.320-1")
         self.assertEqual(uf.build_version("1.18.320", {"version": "1.18.320-1"}), "1.18.320-2")
         self.assertEqual(uf.build_version("1.18.321", {"version": "1.18.320-2"}), "1.18.321-1")
+        # One never released: a change folded into it, on the same release.
+        self.assertEqual(uf.build_version("1.18.320", {"version": "1.18.320-2"}, folded=True), "1.18.320-2")
+        self.assertEqual(uf.build_version("1.18.321", {"version": "1.18.320-2"}, folded=True), "1.18.321-1")
+
+    def test_a_build_is_published_once_a_releases_firmware_json_pins_it(self):
+        from unittest import mock
+        pins = {"v2.3.0": '{"file": "artifacts/openbeken-sonoff-s61-1.1.0.rbl"}'}
+
+        def run(args, **_):
+            return mock.Mock(stdout=pins.get(args[-1].split(":")[0], ""))
+        with mock.patch.object(uf, "git", return_value="v2.2.0\nv2.3.0"), mock.patch.object(uf.subprocess, "run", run):
+            self.assertTrue(uf.published_by_a_release("artifacts/openbeken-sonoff-s61-1.1.0.rbl"))
+            self.assertFalse(uf.published_by_a_release("artifacts/openbeken-sonoff-s61-1.18.320-2.rbl"))
+        # No tags to tell by - a shallow clone - and none is taken for unreleased.
+        with mock.patch.object(uf, "git", return_value=""):
+            self.assertTrue(uf.published_by_a_release("artifacts/openbeken-sonoff-s61-1.18.320-2.rbl"))
 
     def test_each_esphome_version_says_the_release_it_is_built_on(self):
         pins = [section["esphome"] for family in ("espressif", "beken") for section in PINS[family].values()
@@ -481,6 +497,10 @@ class UpdateHelperTests(unittest.TestCase):
         ])
         added = uf.replace_sums_line(sums, None, "artifacts/new.bin", b"new")
         self.assertEqual(added.splitlines()[-1], sha256_bytes(b"new") + "  artifacts/new.bin")
+        # Built again under its own name: in its own place.
+        again = uf.replace_sums_line(sums, None, "artifacts/one.bin", b"new")
+        self.assertEqual(again.splitlines()[0], sha256_bytes(b"new") + "  artifacts/one.bin")
+        self.assertEqual(len(again.splitlines()), 3)
 
     def test_the_new_file_is_let_in_where_the_old_one_was(self):
         ignore = "*.bin\n!artifacts/a-1.0.0.bin\n!artifacts/b.bin\n\n.env\n"
