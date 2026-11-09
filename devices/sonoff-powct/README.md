@@ -29,6 +29,8 @@ Sonoff's clamp-on energy meter with a small display, the **POWCT**.
 
 Pins from [ESPHome's page](https://devices.esphome.io/devices/sonoff-powct/). Blakadder has no template for it; the Tasmota template in [`kinds.py`](../../tools/autoflash/kinds.py) is the one Tasmota's own TM1621 driver gives (`xdrv_87_esp32_sonoff_tm1621.ino`). Its meter's RX is CSE7761 Rx 2, which tells Tasmota the meter is a POWCT's, with a current clamp, and not a Dual R3's.
 
+On ESPHome 2026.10, the meter reads the clamp as a Dual R3's shunt, 3.2 times too high, and the config divides by π as ESPHome's page says, leaving it about 2% high. ESPHome 2026.11.0 reads it as a clamp (`current_input: current_transformer`), and the build with it sets that and drops the division: [`test_firmware_pins.py`](../../tests/repo/test_firmware_pins.py) fails until it does.
+
 ## Files
 
 - **Tasmota**: the official release, unchanged, given the template in
