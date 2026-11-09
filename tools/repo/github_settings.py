@@ -87,7 +87,7 @@ ENVIRONMENT = "website"
 ENVIRONMENT_POLICY = {"protected_branches": False, "custom_branch_policies": True}
 ENVIRONMENT_BRANCHES = ["main"]
 ENVIRONMENT_SECRETS = {
-    "CLOUDFLARE_API_TOKEN": "the website workflow's, deploying the two Workers",
+    "CLOUDFLARE_DEPLOY_TOKEN": "the website workflow's, deploying the two Workers",
     "CLOUDFLARE_READ_TOKEN": "the cloudflare-settings workflow's, reading the settings it checks",
     "CLOUDFLARE_EMAIL_DESTINATION": "the address the domain's mail is forwarded to, which that workflow checks",
     "CLOUDFLARE_EMAIL_FORWARD": "the domain's addresses forwarded there, which that workflow checks",

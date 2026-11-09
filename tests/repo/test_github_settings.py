@@ -255,13 +255,13 @@ if __name__ == "__main__":
 
     def test_a_missing_secret_is_named_and_left_for_its_value(self):
         fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
-        fake.secrets = {"CLOUDFLARE_API_TOKEN", "OLD_TOKEN"}
+        fake.secrets = {"CLOUDFLARE_DEPLOY_TOKEN", "OLD_TOKEN"}
         run(fake, "apply")
         code, out = run(fake, "apply")
         self.assertEqual(code, 1)
         self.assertIn("secret CLOUDFLARE_READ_TOKEN: left - its value is set with "
                       "python3 tools/repo/github_settings.py secret CLOUDFLARE_READ_TOKEN", out)
-        self.assertEqual(fake.secrets, {"CLOUDFLARE_API_TOKEN"})
+        self.assertEqual(fake.secrets, {"CLOUDFLARE_DEPLOY_TOKEN"})
 
     def test_apply_sets_the_secrets_kept_in_env_each_time_and_never_shows_them(self):
         fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)

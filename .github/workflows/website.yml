@@ -6,7 +6,7 @@
 # that breaks either shows before it is merged.
 #
 # The deploy job's environment, website, takes only main (set by
-# tools/repo/github_settings.py) and holds CLOUDFLARE_API_TOKEN.
+# tools/repo/github_settings.py) and holds CLOUDFLARE_DEPLOY_TOKEN.
 name: Website
 
 on:
@@ -81,7 +81,7 @@ jobs:
           path: website/dist
       - name: Deploy
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
         run: npx wrangler deploy
 
   deploy-api:
@@ -104,7 +104,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Deploy
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
         run: npx wrangler deploy --config api/wrangler.jsonc
 
   # What the deploy token can see, once both deploys are done, so a mistaken
@@ -128,5 +128,5 @@ jobs:
           persist-credentials: false
       - name: What the deploy token can see
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
         run: python3 tools/repo/cloudflare_settings.py deploy-token

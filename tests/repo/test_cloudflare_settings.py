@@ -460,7 +460,7 @@ class DeployTokenReachTests(unittest.TestCase):
         job = workflow.split("\n  deploy-token:\n", 1)[1]
         self.assertIn("needs: [deploy, deploy-api]", job)
         self.assertIn("run: python3 tools/repo/cloudflare_settings.py deploy-token", job)
-        self.assertIn("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}", job)
+        self.assertIn("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}", job)
 
 if __name__ == "__main__":
     unittest.main()
