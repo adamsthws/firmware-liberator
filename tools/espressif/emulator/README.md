@@ -203,6 +203,13 @@ change, and regenerate them. What they do:
   calibration reading (10 bits from bit 188) is 2000 plus or minus its field (bit 9
   the sign), taken at 400, 550, 750 and 1370 mV for 0, 2.5, 6 and 11 dB. Block 2's
   bit *n* is in the eFuse file's word at `0x30 + 4 * (n / 32)`.
+- **A classic ESP32's ADC is left as the fork has it**: every channel reads 0
+  (`esp32_sens`'s `ADC_values`, set only by PICSimLab), and its eFuse file
+  (`flashmap.esp32_efuse`) holds no calibration, so `esp_adc_cal` reads a raw 0 as
+  its attenuation's offset, 75 to 142 mV. Only the NSPanel's firmware reads its ADC,
+  for the room temperature it reports (-2 °C here). A believable one would take
+  properties like 0005's on `misc.esp32.sens`, and `plug-supervisor` setting them;
+  no conversion needs it.
 
 **When you next move the pin:** lcgamboa merged #18, #19 and #20 on 7 November
 2026 (`2d075b740`), so `0001`-`0003` drop out on a commit after that. Replace
