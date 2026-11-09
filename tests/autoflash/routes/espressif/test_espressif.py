@@ -114,12 +114,12 @@ class RouteTests(RouteTestCase):
 class FromAConvertedPlugTests(RouteTestCase):
     """A plug this tool converted, found on the network, offered the other two."""
 
-    def settle(self, running, *, backup=True, given=None, answer=0):
-        ctx = self.ctx(given=given, run=f"{running}-{given}-{backup}")
+    def settle(self, running, *, backup=True, given=None, answer=0, record=None):
+        ctx = self.ctx(given=given, run=f"{running}-{given}-{backup}-{answer}-{bool(record)}")
         with mock.patch.object(routes.source, "find_current_firmware", return_value=running), \
                 mock.patch.object(routes, "sonoff_backup_exists", return_value=backup), \
                 mock.patch.object(identity, "kept_in_sector", return_value=None), \
-                mock.patch.object(identity, "account_record", return_value=None), \
+                mock.patch.object(identity, "account_record", return_value=record), \
                 mock.patch.object(prompts, "ask_choice", return_value=answer) as asked:
             route = routes.settle_route(ctx)
         return route, (asked.call_args.args[1] if asked.called else None)
@@ -127,7 +127,7 @@ class FromAConvertedPlugTests(RouteTestCase):
     def test_from_tasmota_the_other_two_are_offered_and_staying(self):
         (firmware, source), offered = self.settle("tasmota", answer=2)
         self.assertEqual(offered, ["Tasmota, as it is (its meter calibrated, if it is not)", "ESPHome",
-                                   "Sonoff's own firmware (back to eWeLink, from its backup)"])
+                                   "Sonoff (eWeLink)"])
         self.assertEqual((firmware, source), ("sonoff", "tasmota"))
 
     def test_staying_on_tasmota_converts_nothing(self):
@@ -137,10 +137,23 @@ class FromAConvertedPlugTests(RouteTestCase):
         with self.assertRaisesRegex(routes.NothingToDo, "already runs Tasmota"):
             self.settle("tasmota", given="tasmota")
 
-    def test_without_its_backup_sonoff_is_not_offered(self):
-        (firmware, _), offered = self.settle("esphome", backup=False)
-        self.assertEqual(offered, ["Tasmota"])
-        self.assertEqual(firmware, "tasmota")
+    def test_without_its_backup_sonoff_is_still_offered(self):
+        # Its firmware is Sonoff's official one; its identity the plug keeps,
+        # or its eWeLink account has: found once it is chosen.
+        for running, answer in (("esphome", 0), ("tasmota", 2)):
+            with self.subTest(running=running):
+                _, offered = self.settle(running, backup=False, answer=answer, record={"deviceid": "x"})
+                self.assertIn("Sonoff (eWeLink)", offered)
+
+    def test_chosen_without_a_backup_its_identity_is_found_before_anything_is_written(self):
+        # From ESPHome, what the plug keeps is counted on with no account record;
+        # from Tasmota, with neither kept nor recorded, it is refused there and then.
+        (firmware, source), _ = self.settle("esphome", backup=False, answer=1)
+        self.assertEqual((firmware, source), ("sonoff", "esphome"))
+        self.assertEqual(self.settle("tasmota", backup=False, answer=2, record={"deviceid": "x"})[0],
+                         ("sonoff", "tasmota"))
+        with self.assertRaisesRegex(errors.Abort, "keeps no Sonoff identity"):
+            self.settle("tasmota", backup=False, answer=2)
 
     def test_the_firmware_it_already_runs_cannot_be_asked_for(self):
         with self.assertRaisesRegex(routes.NothingToDo, "already runs ESPHome"):

@@ -20,25 +20,27 @@ from tools.autoflash.routes.espressif import images
 SONOFF_FROM_BACKUP = True
 
 
-def sonoff_without_backup(ctx: Context, source: str, asked: bool = False) -> str | None:
+def sonoff_without_backup(ctx: Context, source: str) -> str | None:
     """What going back to Sonoff's firmware uses for a plug with no backup on
-    this computer, in words for the run; None where there is nothing. A plug on
-    Tasmota keeps its identity in a sector this reads; ESPHome and a plug part
-    way keep Sonoff's settings, which only the interim Tasmota can read (R1 does),
-    so they are counted on only when Sonoff's firmware was `asked` for; and only
-    then is the eWeLink account asked."""
+    this computer, once it is chosen - before anything is written - in words
+    for the run; None where there is nothing. Sonoff's official firmware is
+    always to be had; the plug's identity is what may not be. A plug on
+    Tasmota keeps it in a sector this reads; failing that, the eWeLink
+    account's record of the plug rebuilds it. ESPHome, and a plug part way,
+    keep it too - in that sector and in Sonoff's settings - but only the
+    interim Tasmota can read them (R1 does): with no record in the account,
+    the run goes on counting on them, as a plug this tool converted has them."""
     try:
         kept = source in ("tasmota", "untemplated") and identity.kept_in_sector(ctx) is not None
     except (DeviceError, OSError):
         kept = False  # only what a run would use is said here
     if kept:
         return "the Sonoff identity the device keeps, with Sonoff's official firmware"
-    if not asked:
-        return None
+    record = identity.account_record(ctx) is not None
     if source in ("esphome", "midway", "committed", "safeboot"):
-        return ("the Sonoff identity the device keeps - or, failing that, your eWeLink account's "
-                "record of it - with Sonoff's official firmware")
-    if identity.account_record(ctx) is not None:
+        return ("the Sonoff identity the device keeps" + (" - or, failing that, your eWeLink account's record of it"
+                                                          if record else "") + ", with Sonoff's official firmware")
+    if record:
         return "your eWeLink account's record of the device, with Sonoff's official firmware"
     return None
 

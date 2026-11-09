@@ -343,9 +343,13 @@ firmware for your plug, which it downloads from eWeLink as the plug itself would
 layout, and settings holding the plug's identity and the Wi-Fi it is on now. The
 identity is the one the plug keeps; failing that, the tool rebuilds it from your
 eWeLink account, which knows the plug's id, key, model and kind, as long as the
-plug is still in it. The run says which it used. A plug on Tasmota with its
-identity is offered Sonoff's firmware as usual; from ESPHome, or with only your
-account to go on, ask for it with `--firmware sonoff`. Sonoff's firmware then
+plug is still in it. The run says which it used. Sonoff's firmware is offered
+either way. Once you choose it, before anything is written, the tool finds where
+the identity comes from: on Tasmota it reads the one the plug keeps, or else signs
+in to your eWeLink account; with neither, it stops there. From ESPHome the kept
+identity can be read only part way through, so the tool checks your account and,
+if that has no record of the plug, counts on the one the plug keeps - every plug
+this tool converted keeps one. Sonoff's firmware then
 starts with its own settings: names, timers and energy history start afresh, and
 the meter's factory calibration comes back only with the backup.
 

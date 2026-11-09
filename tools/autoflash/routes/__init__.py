@@ -16,8 +16,8 @@ POINT_OF_NO_RETURN, DESTRUCTIVE_STEPS, RETRY_STEPS, ERASED_CHECK_STEPS,
 STAGE_NAMES, TARGET_STAGE_NAMES, PLAIN_DESCRIPTION, ATTEMPTED_EVIDENCE,
 STEP_VERIFIERS (each step its verifier doubts is done again, unasked),
 SONOFF_FROM_BACKUP (whether going back to Sonoff's firmware needs
-the plug's own backup; where it does, sonoff_without_backup(ctx, source,
-asked) says what it can use instead, or None), RESUME_CHECK, what a resumed run checks first (or None),
+the plug's own backup; where it does, sonoff_without_backup(ctx, source)
+says what it can use instead once chosen, or None), RESUME_CHECK, what a resumed run checks first (or None),
 and published_version(kind, firmware), the release of this tool's own build
 of `firmware` it installs, if any, which a plug on an earlier release of it
 is offered as an update (routes/update.py).
@@ -114,8 +114,6 @@ def choose_converted(ctx: Context) -> dict[str, Any]:
         firmware = ctx.state.require("firmware")[0]
     else:
         ctx.firmware_choice = None
-        if pending.note:
-            output.say(pending.note)
         firmware, _ = choose_route(ctx, pending)
     apply_target(firmware, route_source(ctx.state), family_of(ctx.state))
     return {"firmware": firmware, "asked": pending is not None and not ctx.firmware_given}
@@ -243,11 +241,10 @@ class NothingToDo(Finished):
 class FirmwareChoice(NamedTuple):
     """A converted plug's firmware, still to be chosen at A3 (settle_route):
     what it answers as (`running`, "outdated" on an earlier release of
-    `updating`), what it can go to, and a word on those (`note`)."""
+    `updating`), and what it can go to."""
     running: str
     updating: str
     choices: list[str]
-    note: str
 
 
 def settle_firmware(ctx: Context) -> str | None:
@@ -312,42 +309,26 @@ def settle_route(ctx: Context, defer: bool = False) -> tuple[str | None, str]:
     # Tasmota stays a choice on Tasmota: its meter checked (rerun_on_tasmota).
     offered = family_of(ctx.state).FIRMWARES
     choices = [name for name in offered if name != running or running == "tasmota"]
-    note = ""
-    if family_of(ctx.state).SONOFF_FROM_BACKUP and "sonoff" in choices and not sonoff_backup_exists(ctx):
-        # Going back needs this plug's backup - or, in a family that can do
-        # without, its Sonoff identity, kept on the plug or in its eWeLink account.
-        without = family_of(ctx.state).sonoff_without_backup(ctx, running, asked=given == "sonoff")
-        if without:
-            note = (f"There is no backup of the device's Sonoff firmware on this computer: going back to it "
-                    f"would use {without}.")
-        else:
-            choices.remove("sonoff")
     if given:
         if given == running:
             nothing_to_convert(ctx, running)
         if given not in offered:
             raise Abort(f"this device cannot go to {FIRMWARES[given]}: a {kinds.of_run(ctx.state).name} "
                         f"takes {' or '.join(offered.values())}")
-        if given not in choices:
-            raise Abort(f"this device cannot go to {FIRMWARES[given]}: there is no backup of its "
-                        "Sonoff firmware on this computer, the device keeps no Sonoff identity, and "
-                        "its eWeLink account has no record of it")
-    pending = FirmwareChoice(running, updating, choices, note)
+    pending = FirmwareChoice(running, updating, choices)
     if defer:
         # Its source known from here (the prerequisites it is shown, its web
         # password): what it runs, an update's as the firmware it updates.
         ctx.state.set_input("source", updating)
         ctx.firmware_choice = pending
         return None, updating
-    if note:
-        output.say(note)
     return choose_route(ctx, pending)
 
 
 def choose_route(ctx: Context, pending: FirmwareChoice) -> tuple[str, str]:
     """A converted plug's firmware, given or asked (settle_route), recorded
     with where it goes from."""
-    running, updating, choices, _ = pending
+    running, updating, choices = pending
     if ctx.firmware_given:
         firmware = ctx.firmware_given
     else:
@@ -355,6 +336,15 @@ def choose_route(ctx: Context, pending: FirmwareChoice) -> tuple[str, str]:
                                 (updating, *update.versions(ctx)) if running == "outdated" else None)
         if firmware == running:
             nothing_to_convert(ctx, running)
+    if firmware == "sonoff" and family_of(ctx.state).SONOFF_FROM_BACKUP and not sonoff_backup_exists(ctx):
+        # Offered whatever the plug, as most have its identity somewhere: where
+        # it comes from is found now, before anything is written.
+        without = family_of(ctx.state).sonoff_without_backup(ctx, updating if running == "outdated" else running)
+        if without is None:
+            raise Abort("this device cannot go back to Sonoff's firmware: there is no backup of it on this "
+                        "computer, it keeps no Sonoff identity, and its eWeLink account has no record of it")
+        output.say(f"There is no backup of the device's Sonoff firmware on this computer: going back to it "
+                   f"uses {without}.")
     if running == "outdated" and firmware != updating:
         running = updating  # left as any of its firmware is
     ctx.state.set_input("source", running)
@@ -373,8 +363,8 @@ def choose_route(ctx: Context, pending: FirmwareChoice) -> tuple[str, str]:
 
 def ask_firmware(source: str, choices: list[str], outdated: tuple[str, str, str] | None = None) -> str:
     """The firmware to install: the choices by name alone, with a word only on
-    what is particular to this plug - part way, on Tasmota's safeboot, or with
-    no backup to go back to Sonoff's firmware from.  On an earlier release of
+    what is particular to this plug - part way, on Tasmota's safeboot, or
+    without its template.  On an earlier release of
     the ESPHome, OpenBeken or Tasmota this tool installs (`outdated`: which,
     the release it runs and this one), that firmware's option is its update."""
     output.transient_begin()
@@ -385,15 +375,10 @@ def ask_firmware(source: str, choices: list[str], outdated: tuple[str, str, str]
             ["It runs Tasmota without the device's template, so it switches nothing;",
              "choosing Tasmota gives it the template, keeping its other settings."]
             if source == "untemplated" else [])
-    if source != "sonoff" and "sonoff" not in choices:
-        body += [""] * bool(body) + ["Going back to Sonoff's own firmware needs the backup this tool takes",
-                                     "when it first converts a device, or the Sonoff identity the device",
-                                     "keeps on Tasmota, and there is neither for this one. --firmware sonoff",
-                                     "also tries the Sonoff settings ESPHome keeps, and your eWeLink account."]
     prompts.section("Choose the device's new firmware", body)
     labels = {"tasmota": "Tasmota" if source != "tasmota" else "Tasmota, as it is (its meter calibrated, if it is not)",
               "openbeken": "OpenBeken", "esphome": "ESPHome",
-              "sonoff": "Sonoff's own firmware (back to eWeLink, from its backup)"}
+              "sonoff": "Sonoff (eWeLink)"}
     if outdated:
         # An update says so on its option alone, keeping the settings as one does.
         labels[outdated[0]] = f"{FIRMWARES[outdated[0]]}, update to {outdated[2]}"

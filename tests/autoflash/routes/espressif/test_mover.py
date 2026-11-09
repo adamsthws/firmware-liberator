@@ -154,7 +154,7 @@ class ESPHomeUpdateTests(RouteTestCase):
     def test_an_earlier_release_is_offered_the_update(self):
         ctx, route, offered = self.settle(self.ours(), answer=1)
         self.assertEqual(offered, ["Tasmota", "ESPHome, update to 1.6.0",
-                                   "Sonoff's own firmware (back to eWeLink, from its backup)"])
+                                   "Sonoff (eWeLink)"])
         self.assertEqual(route, ("esphome", "outdated"))
         self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A3", "A5", "U1", "U2"])
         self.assertEqual(update.versions(ctx), ("1.4.0", "1.6.0"))

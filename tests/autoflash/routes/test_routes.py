@@ -148,7 +148,7 @@ class FamilyTests(unittest.TestCase):
         other = a_kind("made-up", "madeup")
         family = SimpleNamespace(FIRMWARES={"openbeken": "OpenBeken", "sonoff": "Sonoff"}, SONOFF_FROM_BACKUP=True,
                                  published_version=lambda kind, firmware: None,
-                                 sonoff_without_backup=lambda ctx, source, asked: None)
+                                 sonoff_without_backup=lambda ctx, source: None)
         state = self.state(plug_kind="made-up")
         ctx = SimpleNamespace(state=state, replace_own_build=False, firmware_given="tasmota", esphome_firmware=None)
         with mock.patch.object(kinds, "ALL", (kinds.SONOFF_S60, other)), \
@@ -252,14 +252,27 @@ class BekenTargetTests(unittest.TestCase):
                         with self.assertRaisesRegex(routes.Abort, "no backup"):
                             routes.settle_route(ctx)
 
-    def test_unasked_sonoff_is_offered_without_a_backup_only_from_a_kept_identity(self):
+    def test_sonoff_without_a_backup_uses_what_the_plug_keeps_or_the_account(self):
         ctx = SimpleNamespace()
+        # On Tasmota, the identity it keeps, read off it: no sign-in needed.
         with mock.patch.object(identity, "kept_in_sector", return_value="kept"), \
                 mock.patch.object(identity, "account_record", side_effect=AssertionError("not asked")):
             self.assertIn("keeps", espressif.sonoff_without_backup(ctx, "tasmota"))
-            self.assertIsNone(espressif.sonoff_without_backup(ctx, "esphome"))
-        with mock.patch.object(identity, "kept_in_sector", side_effect=DeviceError("timed out")):
-            self.assertIsNone(espressif.sonoff_without_backup(ctx, "tasmota"))
+        for kept, record, expected in ((DeviceError("timed out"), {"deviceid": "x"}, "account"),
+                                       (None, None, None)):
+            with self.subTest(kept=kept, record=record), \
+                    mock.patch.object(identity, "kept_in_sector", side_effect=[kept]), \
+                    mock.patch.object(identity, "account_record", return_value=record):
+                said = espressif.sonoff_without_backup(ctx, "tasmota")
+                self.assertIn(expected, said) if expected else self.assertIsNone(said)
+        # From ESPHome, what it keeps can be read only part way: counted on,
+        # the account's record named as the fallback where it has one.
+        for record in (None, {"deviceid": "x"}):
+            with self.subTest(source="esphome", record=record), \
+                    mock.patch.object(identity, "account_record", return_value=record):
+                said = espressif.sonoff_without_backup(ctx, "esphome")
+                self.assertIn("the Sonoff identity the device keeps", said)
+                self.assertEqual("eWeLink account" in said, record is not None)
 
     def test_an_s61_run_with_no_firmware_chosen_has_the_start_alone(self):
         state = self.state(plug_kind="sonoff-s61", source="esphome")
@@ -300,7 +313,7 @@ class BekenTargetTests(unittest.TestCase):
         self.addCleanup(routes.apply_target, "tasmota", "sonoff")
         ctx = SimpleNamespace(state=self.state(plug_kind="sonoff-s60", plug_mac="12:34:56:ab:cd:ef", source="tasmota"),
                               replace_own_build=False, firmware_given=None, esphome_firmware=None,
-                              firmware_choice=routes.FirmwareChoice("tasmota", "tasmota", ["tasmota", "esphome"], ""))
+                              firmware_choice=routes.FirmwareChoice("tasmota", "tasmota", ["tasmota", "esphome"]))
         with mock.patch.object(routes, "ask_firmware", return_value="tasmota"), \
                 self.assertRaisesRegex(errors.Finished, "already runs Tasmota"):
             routes.step_choose(ctx)

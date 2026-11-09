@@ -75,7 +75,7 @@ class TasmotaUpdateTests(RouteTestCase):
         # Said on its option alone: no line above the options on it.
         self.assertEqual(shown.call_args.args[1], [])
         self.assertEqual(offered, [f"Tasmota, update to {OFFICIAL_TASMOTA_VERSION}", "ESPHome",
-                                   "Sonoff's own firmware (back to eWeLink, from its backup)"])
+                                   "Sonoff (eWeLink)"])
         self.assertEqual(route, ("tasmota", "outdated"))
         self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A3", "A5", "U5", "U6"])
         self.assertEqual(update.versions(ctx), ("15.6.0", OFFICIAL_TASMOTA_VERSION))
