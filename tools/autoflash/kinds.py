@@ -46,23 +46,45 @@ EARLIER_ESPHOME_NAMESPACES = ("adamsthws",)
 
 
 class Status(enum.Enum):
-    """How far a kind is proven, as devices/status.json says it."""
+    """How far a kind is proven, as devices/status.json says it, by these ids."""
 
     # A real one has been converted and reported: converted with no warning.
-    PROVEN = "Proven"
+    SUPPORTED = "supported"
     # Converts in the emulator, or is added from its official file and a
     # published pin map; no real one reported yet: converted after a
     # typed warning, asking for the run's log (tools/autoflash/testers.py).
-    TESTERS_WANTED = "Testers wanted"
-    # Does not convert in the emulator yet (devices/not-ready-yet/): turned
-    # down like any device the tool does not know.
-    NOT_READY_YET = "Not ready yet"
+    TESTERS_WANTED = "testers-wanted"
+    # Not converted yet, but its readout through the bridge is proven safe in
+    # the emulator: read out in full, to add it.
+    READOUT_WANTED = "readout-wanted"
+    # Neither: turned down like a device the tool does not know, and read out
+    # only as far as Sonoff's own firmware tells (readout.py).
+    NOT_SUPPORTED = "not-supported"
+
+    @property
+    def label(self) -> str:
+        """Its words, as its badge and the README say them."""
+        return {Status.SUPPORTED: "Supported", Status.TESTERS_WANTED: "Testers wanted",
+                Status.READOUT_WANTED: "Readout wanted", Status.NOT_SUPPORTED: "Not supported yet"}[self]
 
     @property
     def colour(self) -> str:
-        """Its badge's colour: GitHub's green, the README's GitHub Support pink and
-        Ko-fi red."""
-        return {Status.PROVEN: "2EA44F", Status.TESTERS_WANTED: "EA4AAA", Status.NOT_READY_YET: "FF5E5B"}[self]
+        """Its badge's colour, one the README's badges use: the Tests badge's
+        passing green, the others' blue, the firmware badges' purple (the
+        FirmwareRoutes.svg border's), and shields.io's orange."""
+        return {Status.SUPPORTED: "brightgreen", Status.TESTERS_WANTED: "blue",
+                Status.READOUT_WANTED: "7C3AED", Status.NOT_SUPPORTED: "orange"}[self]
+
+    @property
+    def converts(self) -> bool:
+        """Whether the tool converts a kind of this status."""
+        return self in (Status.SUPPORTED, Status.TESTERS_WANTED)
+
+    @property
+    def reads_out(self) -> bool:
+        """Whether a readout may send it the bridge: only where the bridge is
+        proven to start and leave it as it was, as on every kind converted."""
+        return self is not Status.NOT_SUPPORTED
 
 
 STATUS_FILE = Path(__file__).resolve().parents[2] / "devices" / "status.json"
@@ -132,18 +154,18 @@ class Kind:
 
     @property
     def status(self) -> Status:
-        """How far it is proven (devices/status.json); one not listed there is not ready."""
-        return STATUSES.get(self.key, Status.NOT_READY_YET)
+        """How far it is proven (devices/status.json); one not listed there is not supported."""
+        return STATUSES.get(self.key, Status.NOT_SUPPORTED)
 
     @property
     def ready(self) -> bool:
         """Whether the tool converts it."""
-        return self.status is not Status.NOT_READY_YET
+        return self.status.converts
 
     @property
     def folder(self) -> str:
-        """Its own folder, from the repository's root."""
-        return f"devices/{self.key}" if self.ready else f"devices/not-ready-yet/{self.key}"
+        """Its own folder, from the repository's root, whatever its status."""
+        return f"devices/{self.key}"
 
     def product_of(self, product_model: str | None) -> str:
         """`product_model` as eWeLink gives it, if it is one of this kind's; else ""."""
@@ -372,7 +394,7 @@ SONOFF_TH_ELITE = Kind(
 # run while they can still go back (installer.require_known_layout). The
 # BASICR4's stock model and firmware name are read from its official update
 # file (tools/espressif/emulator/public_dump.py); its pins are published ones:
-# devices/not-ready-yet/sonoff-basicr4/.
+# devices/sonoff-basicr4/.
 SONOFF_BASICR4 = Kind(
     key="sonoff-basicr4",
     family="espressif",
@@ -408,7 +430,8 @@ SONOFF_MINIR4 = Kind(
     short="MINIR4",
     # Not the MINIR4M, the Matter one, which is locked.
     product=re.compile(r"MINIR4"),
-    stock_model="",
+    # Read from its official update file (tools/espressif/emulator/public_dump.py).
+    stock_model="SN-ESP32D0-MINIR4-01",
     wrapper_model="FWSW-E32R4-MINIR4-ESP32D0WDR2V3",
     psram_mb=2,  # the R2 in its chip's name
     # Blakadder's template: button GPIO0, LED GPIO19, relay GPIO26, wall switch GPIO27.
@@ -480,8 +503,8 @@ EVERY = (SONOFF_S60, SONOFF_S61, SONOFF_POW_ELITE, SONOFF_POWCT, SONOFF_TH_ELITE
          SONOFF_NSPANEL, SONOFF_BASICR4, SONOFF_MINIR4, SONOFF_M5_1C, SONOFF_M5_2C, SONOFF_M5_3C)
 # Every kind the tool converts.
 READY = tuple(kind for kind in EVERY if kind.ready)
-# Being worked on, in devices/not-ready-yet/. For the emulator, this variable has
-# the tool take them as it does the others: never for a real plug.
+# Being worked on: not converted yet. For the emulator, this variable has the
+# tool take them as it does the others: never for a real plug.
 NOT_READY_YET = tuple(kind for kind in EVERY if not kind.ready)
 ALL = READY + (NOT_READY_YET if os.environ.get("AUTOFLASH_NOT_READY_YET") else ())
 

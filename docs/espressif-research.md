@@ -20,7 +20,7 @@ device and both chip families, is in [legal.md](legal.md#studying-and-emulating-
 | POWCT | ESP32 | S60 style | `FWSW-E32POWCT-POWCT-ESP32D0WDV3` | whole dump | converts both ways |
 | TH Elite (THR320D) | ESP32 | TH style | `FWSW-E32THR3-THR3-ESP32D0WDV3` | whole dump | converts both ways |
 | Dual R3 | ESP32 | TH style | `FWSWES-E32DR3-DUALR3-ESP32D0WDV3` | update file, on the TH Elite's flash | converts both ways |
-| NSPanel | ESP32 + PSRAM | S60 style, no `reserve` | `FWPNL-E32NSP-NSPANEL-ESP32D0WDV3` | whole dump | boots; rejects a one-record file at the header ([why](../devices/not-ready-yet/sonoff-nspanel/research.md#the-nspanel-wants-three-records)) |
+| NSPanel | ESP32 + PSRAM | S60 style, no `reserve` | `FWPNL-E32NSP-NSPANEL-ESP32D0WDV3` | whole dump | boots; rejects a one-record file at the header ([why](../devices/sonoff-nspanel/research.md#the-nspanel-wants-three-records)) |
 | BASICR4 | ESP32-C3 | table at 0xC000; the rest unknown | `FWSW-E32R4-BASICR4-ESP32C3` | update file, on the S60's flash with its table moved | starts and is read out ([below](#sonoffs-ais-sdk)); not converted: Tasmota and ESPHome look at 0x8000 |
 | MINIR4 | ESP32 + PSRAM | S60 style | `FWSW-E32R4-MINIR4-ESP32D0WDR2V3` | update file | starts with the ais SDK's records and is read out ([below](#sonoffs-ais-sdk)); a conversion not tried yet |
 | M5 1C, 2C, 3C (not Matter) | ESP32 | unknown | `FWSWES-E32T5-T5-ESP32D0WDV3` | update file | goes quiet, never starts its Wi-Fi |

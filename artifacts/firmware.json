@@ -234,22 +234,6 @@
         "sha256": "79a5825de37ad30a866bd3388c15cf9d79fcb9287c45c10cf87cca57e83ef819"
       }
     },
-    "sonoff-basicr4": {
-      "esphome": {
-        "file": "artifacts/esphome-sonoff-basicr4-imprintable-2026.10.0-2.bin",
-        "config": "devices/sonoff-basicr4/esphome.yaml",
-        "version": "2026.10.0-2",
-        "esphome": "2026.10.0",
-        "esp_idf": "5.5.6",
-        "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-08 18:51:19 +0000",
-        "earlier_builds": [
-          "2026-11-07 15:47:18 +0000"
-        ],
-        "size": 910976,
-        "sha256": "7b09a1af49edf533510fa9b3ea3ca7eadfecf912e5ccfa066fc7696940746c5f"
-      }
-    },
     "sonoff-nspanel": {
       "table": {
         "file": "artifacts/sonoff-nspanel-partition-table.bin",

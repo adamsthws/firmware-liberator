@@ -32,15 +32,15 @@ Pins from [Blakadder's template](https://templates.blakadder.com/sonoff_NSPanel.
 ## Files
 
 - **Tasmota**: the official release, unchanged, given the template in
-  [`tools/autoflash/kinds.py`](../../../tools/autoflash/kinds.py).
+  [`tools/autoflash/kinds.py`](../../tools/autoflash/kinds.py).
 - **ESPHome**: [`esphome.yaml`](esphome.yaml); [`esphome.md`](esphome.md) says what it reports.
-- **Flash layout**: as the S60's but for an unused entry, so its table is its own ([`artifacts/sonoff-nspanel-partition-table.bin`](../../../artifacts/README.md)).
+- **Flash layout**: as the S60's but for an unused entry, so its table is its own ([`artifacts/sonoff-nspanel-partition-table.bin`](../../artifacts/README.md)).
 - **Calibration**: none, as it has no meter.
 - **Back to Sonoff**: the tool writes back the device's own backup, taken before
   anything of Sonoff's is written over; without it, Sonoff's official firmware for
   it, with the identity the device keeps or your eWeLink account holds
-  ([how](../../../docs/what-happens.md#changing-firmware-later)).
-- **How it is converted**: as the S60 is ([`docs/what-happens.md`](../../../docs/what-happens.md)),
-  with the firmware for its chip. [`docs/adding-a-device.md`](../../../docs/adding-a-device.md)
+  ([how](../../docs/what-happens.md#changing-firmware-later)).
+- **How it is converted**: as the S60 is ([`docs/what-happens.md`](../../docs/what-happens.md)),
+  with the firmware for its chip. [`docs/adding-a-device.md`](../../docs/adding-a-device.md)
   says what was needed.
 - **Research**: [`research.md`](research.md), why its updater refuses the bridge's file.

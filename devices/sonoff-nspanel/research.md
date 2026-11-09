@@ -1,7 +1,7 @@
 # Sonoff NSPanel: research
 
 What was found out about the NSPanel's own firmware. What it shares with the other
-Espressif devices is in [espressif-research.md](../../../docs/espressif-research.md).
+Espressif devices is in [espressif-research.md](../../docs/espressif-research.md).
 
 ## The NSPanel wants three records
 

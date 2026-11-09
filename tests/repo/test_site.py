@@ -18,7 +18,7 @@ def llms_device_line(kind: kinds.Kind) -> str:
     """How llms.txt's line for `kind` starts: its name and page, its status
     (devices/status.json), and for one the tool converts, what to (its chip
     family's firmwares). What the device is follows, in words of its own."""
-    line = f"- [{kind.name}]({WEBSITE}{kind.folder}): {kind.status.value}."
+    line = f"- [{kind.name}]({WEBSITE}{kind.folder}): {kind.status.label}."
     if kind.ready:
         offered = [label for name, label in routes.FAMILIES[kind.family].FIRMWARES.items() if name != "sonoff"]
         line += f" Converts to {' or '.join(offered)}."
@@ -103,10 +103,10 @@ class LlmsTxtTests(unittest.TestCase):
 
     def test_a_device_changing_status_or_firmware_changes_its_line(self):
         line = llms_device_line(kinds.SONOFF_S60)
-        self.assertEqual(line, f"- [Sonoff S60]({WEBSITE}devices/sonoff-s60): Proven. Converts to Tasmota or ESPHome. ")
+        self.assertEqual(line, f"- [Sonoff S60]({WEBSITE}devices/sonoff-s60): Supported. Converts to Tasmota or ESPHome. ")
         moved = kinds.Kind(**{**vars(kinds.SONOFF_S60), "key": "sonoff-made-up", "name": "Sonoff Made Up"})
         self.assertEqual(llms_device_line(moved),
-                         f"- [Sonoff Made Up]({WEBSITE}devices/not-ready-yet/sonoff-made-up): Not ready yet. ")
+                         f"- [Sonoff Made Up]({WEBSITE}devices/sonoff-made-up): Not supported yet. ")
         beken = kinds.Kind(**{**vars(kinds.SONOFF_S60), "family": "beken"})
         self.assertIn("Converts to OpenBeken or ESPHome.", llms_device_line(beken))
 

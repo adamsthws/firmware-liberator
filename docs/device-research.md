@@ -3,7 +3,7 @@
 What is known about the devices the tool converts or might, and how it was found out,
 so you need not repeat the work. To add a device, see
 [adding-a-device.md](adding-a-device.md); what holds particular devices up is in
-[devices/not-ready-yet/](../devices/not-ready-yet/README.md).
+[devices/](../devices/README.md).
 
 ## By chip family
 
@@ -24,7 +24,7 @@ methods, and questions still open.
 What was found out about one device is kept with its files, in its `research.md`, and
 listed here:
 
-- [Sonoff NSPanel](../devices/not-ready-yet/sonoff-nspanel/research.md): why its updater
+- [Sonoff NSPanel](../devices/sonoff-nspanel/research.md): why its updater
   refuses the bridge's file.
 - [Sonoff S61](../devices/sonoff-s61/research.md): its energy meter's calibration, its
   wiring, and what OpenBeken did on it in the emulator.

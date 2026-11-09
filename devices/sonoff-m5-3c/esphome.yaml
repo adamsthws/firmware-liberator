@@ -1,4 +1,4 @@
-# ESPHome for the Sonoff M5 2-gang wall switch. Not the Matter version, whose part
+# ESPHome for the Sonoff M5 3-gang wall switch. Not the Matter version, whose part
 # number ends in W: it is locked, and cannot be converted.
 #
 # The conversion tool installs this pre-built (artifacts/README.md says how it
@@ -7,17 +7,17 @@
 # boot they are handed to wifi.configure. Kept in this one file, so that Home
 # Assistant can adopt the device from it (dashboard_import) and build it there.
 #
-# Its pins are as published (devices/not-ready-yet/sonoff-m5-2c/README.md says where). It has run in
+# Its pins are as published (devices/sonoff-m5-3c/README.md says where). It has run in
 # the emulator only, which has no relay or other hardware to see.
 
 esphome:
   # Named as every firmware the conversion installs is, whatever the device.
   name: esphome
   friendly_name: esphome
-  comment: Sonoff-M5-2C
+  comment: Sonoff-M5-3C
   name_add_mac_suffix: true
   project:
-    name: liberator.sonoff-m5-2c
+    name: liberator.sonoff-m5-3c
     version: "1.0.0"
   on_boot:
     # Tasmota holds its output pins through a software restart, and the install
@@ -87,7 +87,7 @@ esphome:
 # Adopting the device in Home Assistant's ESPHome builder takes this config as
 # a package. update_firmware.py writes the release.
 dashboard_import:
-  package_import_url: github://adamsthws/firmware-liberator/devices/not-ready-yet/sonoff-m5-2c/esphome.yaml@v2.4.0
+  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-m5-3c/esphome.yaml@v2.4.0
   import_full_config: false
 
 globals:
@@ -156,6 +156,11 @@ switch:
     name: "Relay 2"
     pin: GPIO19
     restore_mode: RESTORE_DEFAULT_OFF
+  - id: relay_3
+    platform: gpio
+    name: "Relay 3"
+    pin: GPIO22
+    restore_mode: RESTORE_DEFAULT_OFF
 
 binary_sensor:
   - platform: gpio
@@ -174,7 +179,7 @@ binary_sensor:
     id: button_2
     internal: true
     pin:
-      number: GPIO15
+      number: GPIO0
       mode: INPUT_PULLUP
       inverted: true
     filters:
@@ -182,6 +187,18 @@ binary_sensor:
       - delayed_off: 10ms
     on_press:
       - switch.toggle: relay_2
+  - platform: gpio
+    id: button_3
+    internal: true
+    pin:
+      number: GPIO15
+      mode: INPUT_PULLUP
+      inverted: true
+    filters:
+      - delayed_on: 10ms
+      - delayed_off: 10ms
+    on_press:
+      - switch.toggle: relay_3
 
 sensor:
   # The conversion tool reads it (/sensor/WiFi Signal) before it changes the
