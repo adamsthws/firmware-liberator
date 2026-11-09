@@ -1,13 +1,17 @@
 """A readout: a copy of a device's whole memory, to help add a device this tool
 does not convert yet, sent with its owner's consent to firmwareliberator.com.
 
-Nothing is converted. What eWeLink says of the device settles how its memory
-is read, by its chip family: an Espressif device through the bridge, which
-leaves Sonoff's firmware where it is (readout_espressif.py); a Beken device
-through a readout OpenBeken, which puts Sonoff's firmware back
+Nothing is converted. A readout comes in two stages. The first is only ever
+read: what the device and eWeLink say it is, and the firmware eWeLink offers
+it, fetched as Sonoff's own updater would fetch it; nothing is sent to the
+device. A device the tool has not seen gets that alone. The second reads its
+whole memory, and only on a listed kind whose status says it is proven not to
+leave the device unable to start (kinds.Status.reads_out), under the firmware
+name that kind's own firmware has: an Espressif device through the bridge,
+which leaves Sonoff's firmware where it is (readout_espressif.py); a Beken
+device through a readout OpenBeken, which puts Sonoff's firmware back
 (readout_beken.py). Either way the copy is anonymised before anything is sent,
-and the device is left on its Sonoff firmware. On a device neither can read,
-nothing is sent to it at all: only what eWeLink says it is.
+and the device is left on its Sonoff firmware.
 
 This is what both share: the device found in the eWeLink account and on the
 network, what it reports, and the readout packed, offered and sent.
@@ -187,9 +191,14 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None) -> str
     by saying; Abort before anything was sent to the device, or after, with
     what to do."""
     ctx.state.set_input(STATE_KEY, "started")
-    ip = address or locate(ctx, device)
-    ctx.state.set_input("plug_ip", ip)
-    mac = hostsys.mac_of(ip) or (device.get("params") or {}).get("staMac")
+    # One the account says can have only the first stage is not looked for on
+    # the network at all: that stage is eWeLink's to tell, so it works for a
+    # device that answers no discovery (a Matter one, say), and asks nothing of it.
+    first_only = not reads_out(device)
+    ip = None if first_only else address or locate(ctx, device)
+    if ip:
+        ctx.state.set_input("plug_ip", ip)
+    mac = (hostsys.mac_of(ip) if ip else None) or (device.get("params") or {}).get("staMac")
     if mac and plugs.MAC_RE.match(hostsys.normalise_mac(mac)):
         mac = hostsys.normalise_mac(mac)
         ctx.state.set_input("plug_mac", mac)
@@ -203,17 +212,23 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None) -> str
     # its account id.
     # So is one a readout stopped part way left on its reading program (the
     # bridge), which answers no discovery either.
-    on_bridge = not lan_free(device) and readout_espressif.installer.bridge_answers(ip)
-    asked = (account.ask_account(ctx, str(device.get("deviceid") or "")) if lan_free(device) or on_bridge
-             else account.ask_ewelink(ctx, ip))
+    on_bridge = ip is not None and not lan_free(device) and readout_espressif.installer.bridge_answers(ip)
+    if first_only:
+        asked = ask_first_stage(ctx, device)
+    elif lan_free(device) or on_bridge:
+        asked = account.ask_account(ctx, str(device.get("deviceid") or ""))
+    else:
+        asked = account.ask_ewelink(ctx, ip)
     learned, problems = firmware_name.learn(asked.latest.get("offers") or [], asked.deviceid,
                                             asked.product, asked.model)
     for problem in problems:
         output.log_only(f"    Firmware name: {problem}")
     known = kinds.for_account(asked.product, asked.model)
-    if learned is None and known is not None and known.family == "espressif":
+    # Ready or not: a readout's second stage is for any kind listed whose status allows it.
+    listed = kinds.for_account(asked.product, asked.model, among=kinds.EVERY)
+    if learned is None and listed is not None and listed.status.reads_out and listed.family == "espressif":
         # A kind the tool converts: its own name for it, as a conversion sends.
-        learned = firmware_name.Learned(known.wrapper_model, firmware_name.chip_of(known.wrapper_model),
+        learned = firmware_name.Learned(listed.wrapper_model, firmware_name.chip_of(listed.wrapper_model),
                                         "this tool's list of devices")
     ctx.state.set_input("stock_version", asked.version)
     ctx.state.set_input("product_model", asked.product)
@@ -237,8 +252,10 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None) -> str
         f"Firmware now     {asked.version}",
         f"Firmware name    {learned.name if learned else 'not learned'}",
     ])
-    chip = readout_espressif.BRIDGE_CHIPS.get(learned.chip) if learned else None
-    beken_stock = readout_beken.stock_from_offered(updates) if learned and learned.chip.startswith("BK") else None
+    whole = whole_readout(listed, learned)
+    chip = readout_espressif.BRIDGE_CHIPS.get(learned.chip) if learned and whole else None
+    beken_stock = (readout_beken.stock_from_offered(updates)
+                   if learned and whole and learned.chip.startswith("BK") else None)
     if chip is not None:
         files, back = readout_espressif.read_and_anonymise(ctx, manifest, chip, learned.name, asked.version, device,
                                                            known=known is not None)
@@ -248,6 +265,9 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None) -> str
     else:
         if learned is None:
             why = "its firmware name could not be learned"
+        elif not whole:
+            why = ("this tool has not proven a full readout safe on this device yet, so nothing is "
+                   "sent to it: this readout is what it and eWeLink say, and the firmware eWeLink offers it")
         elif learned.chip.startswith("BK"):
             why = "its stock firmware could not be read from the file eWeLink offers it"
         else:
@@ -256,6 +276,39 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None) -> str
         manifest["read"] = False
         return offer(ctx, manifest, None, updates)
     return offer(ctx, manifest, files, updates, back=back)
+
+
+def reads_out(device: dict[str, Any]) -> bool:
+    """Whether the account's record of `device` names a kind listed whose
+    status allows a whole readout: only then can there be a second stage."""
+    model = str((device.get("extra") or {}).get("model") or "")
+    listed = kinds.for_account(str(device.get("productModel") or ""), model, among=kinds.EVERY)
+    return listed is not None and listed.status.reads_out
+
+
+def ask_first_stage(ctx: Context, device: dict[str, Any]) -> account.Asked:
+    """What eWeLink says of `device`, by its id; where its cloud has no update
+    record for it (one that never speaks to eWeLink's cloud itself, as a Matter
+    device may not), what the account's record of it says, so the first stage
+    still has something to send."""
+    deviceid = str(device.get("deviceid") or "")
+    try:
+        return account.ask_account(ctx, deviceid)
+    except Abort as exc:
+        output.say(f"    eWeLink could not say what it runs ({exc}): the account's record of it is sent.")
+        params = device.get("params") or {}
+        return account.Asked({"packets": []}, str(params.get("fwVersion") or ""),
+                             str((device.get("extra") or {}).get("model") or ""),
+                             str(device.get("productModel") or ""), [], {}, deviceid)
+
+
+def whole_readout(listed: kinds.Kind | None, learned: firmware_name.Learned | None) -> bool:
+    """Whether the device may be sent a program to read its whole memory: a
+    listed kind whose status allows it, under the firmware name that kind's
+    firmware has. A device with another name - a variant sharing its product
+    model, a Matter version, say - is one the tool has not seen."""
+    return (listed is not None and listed.status.reads_out and learned is not None
+            and learned.name == listed.wrapper_model)
 
 
 # The large files inside are compressed with xz, about a quarter smaller than

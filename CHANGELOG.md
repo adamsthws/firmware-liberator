@@ -31,19 +31,22 @@ check.
   only an ESP32-C3 on the S60's: the Sonoff POW Elite, POWCT, TH Elite and
   DUALR3, to Tasmota and to ESPHome, with their firmware pinned. A plug whose partition
   table the tool does not know stops after its backup, before anything of
-  Sonoff's is written over. The NSPanel, MINIR4 and M5 1C, 2C and 3C do
-  not start far enough in the emulator yet, so the tool turns them down as it
-  does a device it does not know: `devices/not-ready-yet/` says what holds each
+  Sonoff's is written over. The NSPanel, MINIR4, BASICR4 and M5 1C, 2C and 3C
+  are not converted yet, so the tool turns them down as it
+  does a device it does not know: `devices/` says what holds each
   one up, and `docs/adding-a-device.md` how to add a device.
 - A device the tool does not convert yet can be read out to help add it:
   offered when the eWeLink account holds no supported device, or run for any
-  device with `readout`. On an ESP32-C3 or classic ESP32 it reads the whole
-  memory through the bridge, kept in the spare slot only until the device is
-  switched off and on. On a BK7238 (which has one app area) it installs a
-  pin-free OpenBeken for a few minutes, reads the flash, and puts the device's
-  own Sonoff firmware back from the file eWeLink offers it - the whole round
-  trip proven against the emulated S61. On any other chip nothing is sent to
-  the device. With the owner's agreement, a copy, with every Wi-Fi password
+  device with `readout`. Its first stage only reads: what the device and
+  eWeLink say it is, and the firmware eWeLink offers it; nothing is sent to the
+  device, and a device the tool has not seen gets that alone. Its second stage
+  reads the whole memory, and is only for a device the tool lists as Supported,
+  Testers wanted or Readout wanted, under that kind's own firmware name. On an
+  ESP32-C3 or classic ESP32 that is through the bridge, kept in the spare slot only
+  until the device is switched off and on. On a BK7238 (which has one app area) it
+  installs a pin-free OpenBeken for a few minutes, reads the flash, and puts the
+  device's own Sonoff firmware back from the file eWeLink offers it - the whole
+  round trip proven against the emulated S61. With the owner's agreement, a copy, with every Wi-Fi password
   taken out and its eWeLink identity made up, goes to a private store behind
   api.firmwareliberator.com; the firmware eWeLink offers the device goes with
   it, as a second version to test. See `docs/readouts.md`.

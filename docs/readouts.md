@@ -29,12 +29,17 @@ device, the tool asks which; `--plug-ip <address>` picks it beforehand.
 
 The tool first asks eWeLink what the device runs and which firmware it would
 be offered, and downloads that firmware as the device would. Nothing is sent
-to the device for this. Then it says what it will do, and nothing is sent to
-the device until you type PROCEED.
+to the device for this. For a device the tool has not seen before, that is the
+whole readout.
+
+A device listed as **Supported**, **Testers wanted** or **Readout wanted**
+([devices](../devices/README.md)) is then read out in full. The tool says what
+it will do, and nothing is sent to the device until you type PROCEED.
 
 ## What happens to your device
 
-What the tool does depends on the device's chip:
+A device the tool has not seen before is left alone: nothing is sent to it.
+For a listed one, what the tool does depends on the device's chip:
 
 - **ESP32-C3 or classic ESP32** (the S60, POW Elite, TH Elite and others):
   these keep a second firmware slot, so the tool installs a small program

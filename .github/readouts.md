@@ -14,8 +14,13 @@ offers it at its first stage when the eWeLink account holds no supported
 device, and `readout` runs it for any device in the account (`--plug-ip` picks
 one). Every readout starts the same way:
 
-1. The device is found on the network by its eWeLink id, and eWeLink is asked
-   what it runs and which firmware it would be offered. The firmware name comes
+1. eWeLink is asked what the device runs and which firmware it would be
+   offered. A device that can have a second stage is found on the network by
+   its eWeLink id first; any other is not looked for there at all, and asked of
+   eWeLink by its id alone, so a device that answers no local discovery (a Matter
+   one, say) is read out too. Where eWeLink's cloud has no update record for it,
+   what the account's record says of it - its product model, firmware model and
+   version - is the readout. The firmware name comes
    from that offer, else from the public files' names
    ([firmware_name.py](../tools/ewelink/firmware_name.py)), else, for a kind
    the tool converts, from its own list.
@@ -25,9 +30,24 @@ one). Every readout starts the same way:
    another version than the one the device runs, so two to test against. A
    readout goes on without it.
 
-Then the device's chip decides how its memory is read. On a chip with neither
-path below, nothing is sent to the device: the readout is the offered firmware
-and what it and eWeLink said.
+That much is the first stage, and only ever reads: nothing is sent to the
+device. A device the tool has not seen gets that alone.
+
+The second stage reads its whole memory, and writes a program to it to do so: a
+bridge, or a readout OpenBeken. So it is only for a device the tool lists
+([devices/](../devices/README.md)) whose status is **Supported**, **Testers
+wanted** or **Readout wanted** - each proven, in the emulator at least, to start
+that program and go back to its Sonoff firmware - and only under the firmware name
+that kind's own firmware has: a variant sharing its product model, a Matter
+version say, is a device the tool has not seen
+([readout.whole_readout](../tools/autoflash/readout.py)). The BASICR4 is why: its
+partition table is where earlier bridges did not look, and a bridge sent to it
+would have stopped there and left it unable to start until it was opened. A device
+the tool has not seen moves on to the second stage once its first readout is
+understood and its readout proven in the emulator.
+
+For the second stage the device's chip decides how its memory is read, and the
+owner types PROCEED before anything is sent to the device.
 
 ### An Espressif device (ESP32-C3, classic ESP32)
 
