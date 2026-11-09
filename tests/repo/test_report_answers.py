@@ -97,7 +97,8 @@ class ReportAnswerTests(unittest.TestCase):
 
     def test_every_answer_a_suite_checks_is_on_the_right_or_across(self):
         # So it is the last on its row in two columns (report.report_screen).
-        self.assertLessEqual(set(READ), set(report.RIGHT) | set(report.WIDE))
+        self.assertLessEqual(set(READ), set(report.SUITES_READ) | set(report.WIDE))
+        self.assertLessEqual(set(report.SUITES_READ), set(report.RIGHT))
         self.assertLessEqual(set(report.RIGHT) | set(report.WIDE), set(dict(FIELDS)))
 
     def test_every_field_the_report_can_have_is_here(self):

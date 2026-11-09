@@ -280,6 +280,8 @@ def report_markdown(fields: list[tuple[str, str]]) -> str:
 # on its row (tools/espressif/emulator/fault_suite.py).
 WIDE = ("Result", "Stage times", "Busy")
 RIGHT = ("Firmware", "From", "Model", "Stock", "Backup", "Identity", "Signal", "Checks", "Meter")
+# Those of RIGHT a fault suite reads, which stay there, last on their rows.
+SUITES_READ = ("From", "Backup", "Identity", "Checks")
 # Columns each side needs at the least, else one column, as Markdown has it.
 SIDE = 34
 
@@ -302,8 +304,14 @@ def report_screen(fields: list[tuple[str, str]], columns: int | None = None) -> 
             rows.append(f"{label + ':':<{width}} {lines[0]}")
             rows.extend(" " * (width + 1) + line for line in lines[1:])
         return rows
-    left = cells([(label, value) for label, value in fields if label not in WIDE + RIGHT])
-    right = cells([(label, value) for label, value in fields if label in RIGHT])
+    left = [(label, value) for label, value in fields if label not in WIDE + RIGHT]
+    right = [(label, value) for label, value in fields if label in RIGHT]
+    # The columns ending together: the device's answers at the bottom that
+    # no fault suite reads go left when its column is the longer (an S61's,
+    # with fewer of this computer's).
+    while len(right) > len(left) + 1 and right[-1][0] not in SUITES_READ:
+        left.append(right.pop())
+    left, right = cells(left), cells(right)
     wide = [(label, value) for label, value in fields if label in WIDE]
     width = max(len(label) for label, _ in fields) + 1
     lines = [f"{margin}{label + ':':<{width}} {value}" for label, value in wide if label == "Result"]
