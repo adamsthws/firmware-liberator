@@ -386,6 +386,16 @@ def before_input(prompt: str = "") -> None:
             _write_log(f"? {prompt.strip()}")
 
 
+def question_row(text: str, tail: str = "") -> str:
+    """The row question() would end on for `text`, for redrawing it in place
+    (a countdown's), with nothing else done: question() itself readies the
+    terminal for an answer, which would undo a single-key read's mode."""
+    with _lock:
+        body = text + tail
+        rows = _fit(body.rstrip(" ")).split("\n")
+        return rows[-1] + body[len(body.rstrip(" ")):]
+
+
 def question(text: str, tail: str = "", hint: str = "") -> str:
     """before_input(), with the question laid out for the screen: every row
     but its last written here, the last returned for input() to show.
