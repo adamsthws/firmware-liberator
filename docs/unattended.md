@@ -14,7 +14,7 @@ chmod 600 .env
 
 | Name | What |
 |---|---|
-| `EWELINK_EMAIL` | the eWeLink account the plug is in |
+| `EWELINK_EMAIL` | the eWeLink account the plug is in: its email, or the phone number it was made with, with its country code (`+44 7700 900123`) |
 | `EWELINK_PASSWORD` | its password |
 | `AUTOFLASH_SUDO_PASSWORD` | Linux and macOS: your computer's password, only if sudo asks for one (for the temporary firewall rule) |
 | `AUTOFLASH_WIFI_SSID`, `AUTOFLASH_WIFI_PASSWORD` | only for a plug on an ESPHome that cannot say its Wi-Fi password (one of this project's first builds, or whose API has an encryption key not given as `AUTOFLASH_ESPHOME_API_KEY`), when your computer has no Sonoff backup of the plug to take it from: the network it is on, and its password (none for an open network) |

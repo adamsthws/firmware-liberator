@@ -522,7 +522,8 @@ def main(argv: list[str] | None = None, *, secret: Callable[[str], str] = ask_se
     parser.add_argument("--opnsense", help="SSH target for the router, e.g. root@192.168.99.1")
     parser.add_argument("--interface", help="the router's LAN interface, e.g. igc1")
     parser.add_argument("--no-cloud", action="store_true", help="network view only")
-    parser.add_argument("--email", help="eWeLink account; prompted when omitted")
+    parser.add_argument("--email", help="eWeLink account: its email, or its phone number with "
+                        "the country code; prompted when omitted")
     parser.add_argument("--country-code", default="+44")
     parser.add_argument("--region", choices=sorted(API), default="eu")
     parser.add_argument("--device-id", help="needed only if the account has more than one plug to watch")
@@ -538,7 +539,7 @@ def main(argv: list[str] | None = None, *, secret: Callable[[str], str] = ask_se
 
     password = ""
     if not args.no_cloud:
-        args.email = args.email or input("eWeLink email: ").strip()
+        args.email = args.email or input("eWeLink email or phone number: ").strip()
         password = os.environ.get("EWELINK_PASSWORD") or secret("eWeLink password (kept in memory only): ")
 
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
