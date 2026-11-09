@@ -907,6 +907,36 @@ third readout was answered 429 and kept unsent. `send()` now sends it again
 (then a minute later, since every 15 seconds); in five runs after (22 readouts), four 429s were each sent again
 and taken.
 
+#### Test 11 — the fault suite's readout of every device
+
+**Goal:** Test 10 as fault-suite scenarios (`sonoff>readout-all`,
+[testing.md](testing.md)), judged from what the API Worker's own code was
+asked and kept, with the plug switched off or the computer crashing in the
+plug's read.
+
+**Setup:** the BASICR4 stand-in plug, the suite's made-up accounts, five
+emulators at once on the alice VM, on 2026-11-09.
+
+**Results:** all six passed. Two alike devices were both taken and the third
+answered "held" (with the API keeping two a key; run again once it kept
+three, each from a different sender, all six passed again, and of the three
+alike devices, all from one sender, one was taken and two answered "held"); the plug's product and one other's in `ENOUGH` were answered
+"enough" and nothing was sent of them or to the plug; seven quick first
+stages met two 429s, each sent again and taken. Switched off or crashed in
+the read, the run stopped at the plug, having sent the two first stages; run
+again after the plug was switched off and on, it read and sent all three,
+the plug back on Sonoff's firmware. Switched off for a second, the read gave
+up after about five minutes of refused connections before the run stopped.
+
+**Found:** since the read's wait became the stages' spinner, its "Reading
+the device's memory" was no longer written to the run's log, so a fault in a
+readout's read never found its start and was NOT-FIRED, in both fault
+suites; it is logged again. The API's database (`local-d1.mjs`) needs a Node
+whose `node:sqlite` binds numbered parameters (`?1`): 22.11, with
+`--experimental-sqlite`, and 22.14 stopped at the first `/wanted` with
+"column index out of range", and the tool, unanswered, went ahead and kept
+each readout unsent; 22.23.4 ran it.
+
 ### Risks and limitations
 
 - **Fidelity:** the stub tests *the tool and the bridge firmware*, not eWeLink's

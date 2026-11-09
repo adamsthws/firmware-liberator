@@ -381,6 +381,32 @@ every direction - 1,606 scenarios on an S60:
   plug converted to Tasmota, given its address: it must stop before anything
   is sent to the plug (FAIL-NOT-REFUSED), which keeps its Tasmota and template
   (FAIL-DISTURBED).
+- **A readout of every device** (`sonoff>readout-all`, on the stub only):
+  `readout --all` unattended, on a plug fresh from Sonoff's firmware among
+  made-up devices the stub lists beside it (`AUTOFLASH_EMU_STUB_OTHERS`, none
+  of them emulated, so each gets only the first stage), every readout sent to
+  the API Worker's own code (`unattended-test.sh --api`; Node from
+  `AUTOFLASH_NODE`). The accounts: two other devices (`mixed`); three alike in
+  product, firmware model and version - of which the API keeps one from one
+  sender - and one not (`alike`); the plug's
+  product and one other's in the API's `ENOUGH` (`enough`); and seven, quick
+  first stages enough to reach the API's two readouts a minute (`many`: NOT-FIRED
+  if no run was answered 429). And in `mixed`, the plug switched off for a
+  second or the computer crashing at 40% of the plug's read, which is last, so
+  the run stops there; it is then run again, as a person would, until a run
+  finishes. Each run is judged by what the API answered and kept - its
+  `requests.log` and its store, copied beside the scenario's log
+  (`...-api-N/`) as the next run starts the API afresh - never by the API's
+  rules: every device read out was asked `/wanted` once, and in a finished run
+  every device in the account was (FAIL-NOT-ASKED); every one answered wanted
+  was sent until answered 201, a 429 sent again, but the device a stopped run
+  stopped on (FAIL-NOT-SENT); none answered not wanted was sent
+  (FAIL-SENT-UNWANTED); each readout answered 201 is in the API's store
+  (FAIL-NOT-STORED), the plug's holding every file of a whole readout
+  (FAIL-READOUT); and the run kept no readout unsent (FAIL-KEPT-UNSENT). It
+  **passes** when that holds for every run, the last run finished
+  (FAIL-NOT-FINISHED), and the plug answers as Sonoff's firmware at the end
+  (FAIL-NOT-SONOFF).
 - **When:** at 40% of the step's usual time; at the riskiest steps also at 10%
   and 90%, and two faults running.
 
