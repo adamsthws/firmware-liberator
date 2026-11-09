@@ -6,9 +6,9 @@
 //
 // Its two secrets are set by tools/repo/cloudflare_settings.py apply, which
 // checks each is there (API_SECRETS), never by hand:
-// - PLUG_KEY, the key a device's hash is stored under (reports.js), never
+// - DEVICE_HASH_KEY_PERMANENT, the key a device's hash is stored under (reports.js), never
 //   changed: a new key would make every device seen before a new one. Kept
-//   privately as API_PLUG_KEY in .env.infra, from where apply sets it.
+//   privately as API_DEVICE_HASH_KEY_PERMANENT in .env.infra, from where apply sets it.
 // - SENDER_KEY, the key a sender's address is hashed under (index.js), to
 //   count its readouts a day and keep two of one key from coming from it.
 //   Made by apply, and changed with `cloudflare_settings.py rotate SENDER_KEY`,

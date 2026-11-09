@@ -3,7 +3,7 @@ report says (report.py), as fixed words and bounded numbers, and nothing that
 identifies the person, their computer or their network. Read from the run's
 record, not from the screen's words, which change as the screen does.
 
-The plug is named by a hash of its MAC, the same from any computer, so a
+The device is named by a hash of its MAC, the same from any computer, so a
 second run on it is known as the same device; the API stores only a keyed
 hash of that. Every value here is one tools/repo/report_schema.py allows,
 which the API holds every report to.
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
 FORMAT = 1
-PLUG_PREFIX = "firmware-liberator plug:"
+DEVICE_PREFIX = "firmware-liberator device:"
 # "put-back": the run ended with the device on the firmware it came from
 # (report.run_result's "put back on ...").
 RESULTS = ("converted", "updated", "put-back", "failed", "crashed")
@@ -47,13 +47,13 @@ VERSION = re.compile(r"\d{1,4}(\.\d{1,4}){1,3}")
 OS_VERSION = re.compile(r"[A-Za-z0-9 ._()+/-]{1,48}")
 
 
-def plug_hash(mac: str | None) -> str | None:
-    """The plug, as the same 64 hex digits from any computer: None without a MAC."""
+def device_hash(mac: str | None) -> str | None:
+    """The device, as the same 64 hex digits from any computer: None without a MAC."""
     digits = re.sub(r"[^0-9a-f]", "", (mac or "").lower())
     if len(digits) != 12:
         return None
     normal = ":".join(digits[i:i + 2] for i in range(0, 12, 2))
-    return hashlib.sha256(f"{PLUG_PREFIX}{normal}".encode()).hexdigest()
+    return hashlib.sha256(f"{DEVICE_PREFIX}{normal}".encode()).hexdigest()
 
 
 def os_info() -> dict[str, str]:
@@ -109,7 +109,7 @@ def stopped_step(ctx: Context) -> str | None:
 
 
 def stages(ctx: Context) -> dict[str, dict[str, int]]:
-    """Each step the run timed: its seconds, how long it kept the plug busy,
+    """Each step the run timed: its seconds, how long it kept the device busy,
     and how many times it was tried."""
     captures = ctx.state.data.get("captures", {})
     found = {}
@@ -170,7 +170,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         "device": kind.key if kind else None,
         "model": product if MODEL.fullmatch(product) else None,
         "stock": stock if VERSION.fullmatch(stock) else None,
-        "plug": plug_hash(state.input("plug_mac")),
+        "device_hash": device_hash(state.input("plug_mac")),
         "firmware": firmware,
         "from": put_back.get("came_from") or source,
         "backup": backup,

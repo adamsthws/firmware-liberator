@@ -122,7 +122,7 @@ one is first uploaded from your computer:
    wrangler.jsonc>`.
 5. For the API Worker, run `apply` again: it sets its secrets
    (`website/api/wrangler.jsonc` says what each is) - SENDER_KEY made afresh,
-   PLUG_KEY from `API_PLUG_KEY` in `.env.infra` - and says what is left.
+   DEVICE_HASH_KEY_PERMANENT from `API_DEVICE_HASH_KEY_PERMANENT` in `.env.infra` - and says what is left.
 6. Check it answers (below).
 7. Add it to the deploy token's Individual Workers, and give the website
    workflow a job deploying it.

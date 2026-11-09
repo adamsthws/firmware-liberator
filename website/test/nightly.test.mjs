@@ -14,9 +14,9 @@ const FIXTURE = JSON.parse(readFileSync(new URL("./fixtures/reports.json", impor
 const NIGHT = new Date("2026-11-10T03:17:00Z");
 
 // A report as /reports writes it, on `day`.
-async function kept(db, day, changes = {}, plug = changes.plug ?? null) {
+async function kept(db, day, changes = {}, hash = changes.device_hash ?? null) {
   const report = { ...structuredClone(FIXTURE), ...changes, id: randomBytes(16).toString("hex") };
-  await db.batch(writes(db, report, plug, day));
+  await db.batch(writes(db, report, hash, day));
   return report.id;
 }
 
@@ -109,13 +109,13 @@ test("a night counts an old report before it deletes it", async () => {
 
 test("the figures leave out the maintainer's testing, and anything under five", async () => {
   const bindings = env();
-  const plugs = Array.from({ length: 6 }, (_, n) => `plug-${n}`);
-  for (const plug of plugs) {
-    await kept(bindings.DB, "2026-11-05", { plug });
+  const hashes = Array.from({ length: 6 }, (_, n) => `device-${n}`);
+  for (const hash of hashes) {
+    await kept(bindings.DB, "2026-11-05", { device_hash: hash });
   }
-  await kept(bindings.DB, "2026-11-05", { plug: "dev-plug", tag: "dev" });
+  await kept(bindings.DB, "2026-11-05", { device_hash: "dev-device", tag: "dev" });
   for (let n = 0; n < 4; n += 1) {
-    await kept(bindings.DB, "2026-11-06", { model: "RARE1", plug: `rare-${n}`, device: null });
+    await kept(bindings.DB, "2026-11-06", { model: "RARE1", device_hash: `rare-${n}`, device: null });
   }
   await night.nightly(bindings, NIGHT);
   const stats = figures(bindings);
@@ -124,7 +124,7 @@ test("the figures leave out the maintainer's testing, and anything under five", 
   assert.deepEqual(stats.models.map((row) => [row.model, row.devices]), [["S60TPG", 6]], "RARE1 has four");
   assert.equal(stats.models[0].firstRun, 100);
   assert.ok(!JSON.stringify(stats).includes("RARE1"));
-  assert.ok(!JSON.stringify(stats).includes("plug-"), "no device's id");
+  assert.ok(!JSON.stringify(stats).includes("device-"), "no device's id");
 });
 
 test("a run declined, or with nothing to do, is not a failure", async () => {
