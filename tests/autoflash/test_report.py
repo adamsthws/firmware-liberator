@@ -41,6 +41,15 @@ class EndingTests(RouteTestCase):
             ctx.state.capture("R1.identity", "backup")
             self.assertNotIn("Identity", dict(report.report_fields(ctx, 300, False)))
 
+    def test_a_plug_put_back_says_so_and_where_it_came_from(self):
+        # Sonoff's firmware could not be put together (sonoff.put_back): not
+        # "Converted", and from the firmware it began on, not "part way".
+        ctx = self.ctx(firmware="esphome", source="midway", run="put-back")
+        ctx.state.set_input("put_back", {"came_from": "esphome", "why": "no identity"})
+        fields = dict(report.report_fields(ctx, 300, False, result=report.run_result(ctx, "converted")))
+        self.assertEqual((fields["Result"], fields["From"], fields["Firmware"]),
+                         ("Put back on ESPHome", "ESPHome", "ESPHome"))
+
     def test_a_device_with_a_meter_says_how_its_calibration_went(self):
         # Said here, not on the screen: a plug's readings a few percent out is
         # no news to the person converting it, and a clue to someone helping.

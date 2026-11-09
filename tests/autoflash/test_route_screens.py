@@ -57,10 +57,11 @@ def every_route():
 
 
 class RouteScreenTests(unittest.TestCase):
-    def run_route(self, family, source, firmware, size=SIZE):
+    def run_route(self, family, source, firmware, size=SIZE, instead=None):
         """The screen and the log of a whole run of the route, begun as a
         real one is: only the start known, the rest once A3 has chosen
-        the firmware (routes.settle_route, step_choose)."""
+        the firmware (routes.settle_route, step_choose). `instead`: a step,
+        and what it does in place of the stand-in's last word."""
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         state = RunState.open(Path(directory.name))
@@ -74,7 +75,7 @@ class RouteScreenTests(unittest.TestCase):
         def stand_in(step):
             def handler(context):
                 calls[step] = calls.get(step, 0) + 1
-                index = steps.index(step)
+                index = steps.index(step) if step in steps else 0   # a step of a route gone on to instead
                 output.tell(f"    A note shown while {step} is under way.")
                 if index % 3 == 1:
                     output.transient_begin()
@@ -90,6 +91,11 @@ class RouteScreenTests(unittest.TestCase):
                     raise errors.GoBack(steps[-2], f"{steps[-2]}'s firmware was not installed", "not installed")
                 if step == "A3":
                     apply_target(firmware, source, family)
+                if instead and step == instead[0]:
+                    done = instead[1](context)
+                    routes.STEP_INDEX.update({name: (title, stand_in(name))
+                                              for name, (title, _) in routes.STEP_INDEX.items()})
+                    return done
                 return {}
             return handler
 
@@ -161,6 +167,28 @@ class RouteScreenTests(unittest.TestCase):
                 if any(step in family.RETRY_STEPS for step in steps):
                     self.assertIn("trying again", log)
         self.assertGreater(routes_run, 10)
+
+    def test_a_plug_put_back_shows_why_and_carries_on_numbered_after(self):
+        # Sonoff's firmware not to be put together at R1 (sonoff.put_back): its
+        # line stopped, with why under it, and the route back to ESPHome on.
+        from tools.autoflash.routes import espressif
+
+        def put_back(ctx):
+            ctx.state.set_input("put_back", {"came_from": "esphome", "why": "no identity"})
+            output.tell("    Sonoff's firmware cannot be put back: no identity.")
+            routes.go_on_instead("R1", "esphome", "midway")
+            return {"stage_outcome": "stopped"}
+        code, steps, screen, _ = self.run_route(espressif, "esphome", "sonoff", instead=("R1", put_back))
+        self.assertEqual(code, 0, screen)
+        self.assertEqual(unattended_run.stage_problems(screen), [], screen)
+        lines = [row for row in screen.splitlines() if unattended_run.STAGE_ROW.match(row)]
+        said = [(int(unattended_run.STAGE_ROW.match(row)["number"]), row.rsplit(" - ", 1)[-1]) for row in lines]
+        # A stage stopped keeps its line as it was under way, what it showed, then its outcome.
+        self.assertEqual(said, [(number, "Complete") for number in range(1, 8)] + [(8, "Underway"), (8, "Stopped")]
+                         + [(number, "Complete") for number in range(9, 12)], screen)
+        self.assertIn("Sonoff's firmware cannot be put back: no identity.", screen)
+        self.assertIn("Sonoff's firmware could not be put back, so the device is back on", screen)
+        self.assertNotIn("Conversion complete", screen)
 
     def test_every_route_fits_each_window_it_goes_on_in(self):
         # The shortest a run goes on in and a wide one, as well as SIZE: every

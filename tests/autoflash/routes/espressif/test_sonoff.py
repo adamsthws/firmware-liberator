@@ -76,9 +76,33 @@ class RebuiltTests(Fixture):
             self.restore(ctx)
         self.assertNotIn("R1.rebuilt", ctx.state.data.get("captures", {}))
 
-    def test_with_nothing_to_rebuild_from_nothing_is_written(self):
-        with self.assertRaisesRegex(NothingWritten, "no record"):
-            self.restore(self.ctx(b"\xff" * 0x400000))
+    def test_with_nothing_to_rebuild_from_it_goes_back_where_it_came_from(self):
+        # Never left part way: from ESPHome back to ESPHome, the rest to
+        # Tasmota, nothing written at R1, and the route on from there.
+        from tools.autoflash import routes
+        for came, firmware in (("esphome", "esphome"), ("tasmota", "tasmota"), ("midway", "tasmota")):
+            with self.subTest(came=came):
+                ctx = self.ctx(b"\xff" * 0x400000, source=came, firmware="sonoff")
+                with mock.patch.object(routes, "go_on_instead") as instead, \
+                        mock.patch.object(hub, "run_plan") as run, mock.patch.object(output, "tell") as told:
+                    result = sonoff.step_sonoff_restore(ctx)
+                run.assert_not_called()
+                instead.assert_called_once_with("R1", firmware, "midway")
+                self.assertEqual(result, {"stage_outcome": "stopped", "put_back": firmware})
+                self.assertEqual((ctx.state.input("firmware"), ctx.state.input("source")), (firmware, "midway"))
+                self.assertEqual(ctx.state.input("put_back")["came_from"], came)
+                self.assertIn("no record", told.call_args_list[0].args[0])
+                (self.tmp / "run" / "autoflash-state.json").unlink()
+
+    def test_a_firmware_that_cannot_be_fetched_goes_back_too(self):
+        from tools.autoflash import routes
+        ctx = self.ctx(b"\xff" * 0x400000, source="esphome", firmware="sonoff")
+        with mock.patch.object(sonoff, "rebuilt",
+                               side_effect=NothingWritten("Sonoff's firmware cannot be put back without a backup: "
+                                                          "eWeLink did not answer")), \
+                mock.patch.object(routes, "go_on_instead") as instead, mock.patch.object(output, "tell"):
+            self.assertEqual(sonoff.step_sonoff_restore(ctx)["put_back"], "esphome")
+        instead.assert_called_once_with("R1", "esphome", "midway")
 
     def test_the_backup_comes_first(self):
         self.back_up()

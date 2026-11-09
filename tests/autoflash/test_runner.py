@@ -187,6 +187,14 @@ class RunStepsTests(unittest.TestCase):
         self.assertIn("Dry run complete: nothing was written", shown)
         self.assertNotIn("Conversion complete", shown)
 
+    def test_a_plug_put_back_ends_saying_so_not_converted(self):
+        self.state.set_input("put_back", {"came_from": "esphome", "why": "no identity"})
+        code, _, stand_ins = self.run_steps()
+        self.assertEqual(code, 0)
+        shown = " ".join(str(call.args[0]) for call in stand_ins["output"].show.call_args_list)
+        self.assertIn("Sonoff's firmware could not be put back, so the device is back on", shown)
+        self.assertNotIn("Conversion complete", shown)
+
     def test_a_ctrl_c_just_before_the_first_stage_still_counts(self):
         # Seen on the emulator: the first press forgotten here, so the second
         # only asked, at the end of its stage, instead of stopping the run.
