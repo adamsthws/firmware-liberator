@@ -23,6 +23,11 @@
 #   tools/espressif/emulator/unattended-test.sh --answers=FILE  a run as a person sits through it: its
 #                                                   questions asked, and answered as FILE says
 #                                                   (unattended_run.py --attended --answers)
+#   tools/espressif/emulator/unattended-test.sh --api        readouts sent to the API Worker's own code on
+#                                                   this computer (website/api/local.mjs, under
+#                                                   Node), not kept unsent: what it was asked and
+#                                                   kept is in the instance's state, api/;
+#                                                   AUTOFLASH_API_ENOUGH its ENOUGH
 #   tools/espressif/emulator/unattended-test.sh --timeout=MINUTES  stop the run after that long, its
 #                                                   recording kept: one waiting at a question
 #                                                   nothing answers, say
@@ -41,7 +46,7 @@ case "$ROOT" in /mnt/[a-z]/*) STATE=$HOME/.local/share/autoflash-emu/state ;; es
 NAME=autoflash-emu PORT=8080
 PLUG=192.168.60.50
 
-emu_args=(--detach) keep=0 stub=0 run_args=() from="" save="" plug_mac="" code="" driver_args=() answers_file=""
+emu_args=(--detach) keep=0 stub=0 run_args=() from="" save="" plug_mac="" code="" driver_args=() answers_file="" api=0
 while [ $# -gt 0 ]; do
     case "$1" in
     --fresh|--pcap|--rebuild|--no-firewall) emu_args+=("$1") ;;
@@ -55,10 +60,11 @@ while [ $# -gt 0 ]; do
     --save=*) save=${1#--save=} ;;
     --code=*) code=$(cd "${1#--code=}" && pwd) ;;
     --readout) driver_args+=(--command readout) ;;
+    --api) api=1 ;;
     --timeout=*) driver_args+=(--timeout "${1#--timeout=}") ;;
     --answers=*) answers_file=$(cd "$(dirname "${1#--answers=}")" && pwd)/$(basename "${1#--answers=}") ;;
     --) shift; run_args=("$@"); break ;;
-    *) sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    *) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
     esac
     shift
 done
@@ -229,7 +235,21 @@ stub_env=()
                              -e OPENSSL_CONF=/stub-cloud/openssl.cnf)
 # A device not ready yet is taken only when this says so (tools/autoflash/kinds.py).
 [ -n "${AUTOFLASH_NOT_READY_YET:-}" ] && stub_env+=(-e AUTOFLASH_NOT_READY_YET=1)
-# Readouts sent to a test server of yours, not kept unsent (readout.upload_url).
+# Readouts sent to the API Worker's own code on this computer (--api), at the
+# address the emulator's computer has for this one, or to a test server of
+# yours; else kept unsent (readout.upload_url).
+if [ "$api" = 1 ]; then
+    gateway=$(docker exec "$NAME" ip route | awk '/^default/ {print $3; exit}')
+    api_port=$((8800 + ${n:-0}))
+    rm -rf "$STATE/api"
+    mkdir -p "$STATE/api"
+    # It ends with this script, however this script ends (local.mjs's PARENT).
+    PARENT=$$ "${AUTOFLASH_NODE:-node}" "$ROOT/website/api/local.mjs" "$gateway" "$api_port" "$STATE/api" \
+        "${AUTOFLASH_API_ENOUGH:-}" > "$STATE/api-server.out" 2>&1 &
+    api_pid=$!
+    AUTOFLASH_READOUT_URL=http://$gateway:$api_port/readout
+    echo "Readouts go to the API's own code here: http://$gateway:$api_port, kept in ${STATE#"$ROOT/"}/api/"
+fi
 [ -n "${AUTOFLASH_READOUT_URL:-}" ] && stub_env+=(-e AUTOFLASH_READOUT_URL="$AUTOFLASH_READOUT_URL")
 # The emulator's Wi-Fi, for a run from an ESPHome that cannot say what it is
 # (one of this project's first builds); and the emulated plug's passwords,
@@ -243,6 +263,7 @@ stub_env=()
     -e HOME=/tmp "$NAME" /opt/venv/bin/python "$driver" --size 100x40 "${driver_args[@]}" \
     --save "captures/unattended/$stamp" -- --env-file "$answers" "${run_args[@]}" || status=$?
 
+[ "$api" = 1 ] && kill "$api_pid" 2>/dev/null
 echo "On this computer: ${STATE#"$ROOT/"}/work/captures/unattended/$stamp/"
 [ "$keep" = 1 ] && echo "The emulator is still running: http://localhost:$PORT, or docker exec -it -u ubuntu $NAME tmux attach -t autoflash"
 exit "$status"
