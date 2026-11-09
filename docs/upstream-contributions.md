@@ -179,6 +179,15 @@ longer outlasts its 5-second task watchdog while it reads flash a lot, which is
 what made it panic on QEMU. But it gives up QEMU's fault for reading flash with
 the cache off, so it stays here.
 
+The emulated plug's power meter answers over a UART, and Tasmota found none
+on a classic ESP32: the UART held each answer 18 ms, where Tasmota waits 6.
+The emulator carries the first fix as its patch `0006`:
+
+| Project | Pull request | Status | What it fixes |
+|---|---|---|---|
+| QEMU (lcgamboa) | [#21](https://github.com/lcgamboa/qemu/pull/21) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/21?label=) | A UART on REF_TICK, as Arduino-ESP32 runs it, held received bytes 64 times its RX timeout (18 ms instead of 0.3 at 38400 baud 8E1), so Tasmota found no CSE7761: the timeout now counts in REF_TICK's unit, as ESP-IDF writes it |
+| QEMU (Espressif) | [#212](https://github.com/espressif/qemu/pull/212) | ![state](https://img.shields.io/github/pulls/detail/state/espressif/qemu/212?label=) | The same, and the baud rate of a UART on REF_TICK, taken from 40 MHz so it ran 40 times too fast and hid the timeout error; ESP-IDF's UART test app gives the same results before and after |
+
 ## OpenBeken on a 4 MB BK7238
 
 The Sonoff S61 is a Beken BK7238 with 4 MB of flash. OpenBeken's BK7238 build
