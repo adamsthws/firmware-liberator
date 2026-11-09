@@ -395,3 +395,37 @@ class EndsTheRunTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OfferScreenTests(unittest.TestCase):
+    """The offer to send and its question go together once answered: what the
+    run then says is the answer.  Seen in an attended readout recorded in the
+    emulator: the offer - a question - was left with nothing under it."""
+
+    def offer(self, url, sending=None):
+        from tests.autoflash.test_unlock import drawn
+        said = {}
+
+        def body(look):
+            with tempfile.TemporaryDirectory() as tmp, mock.patch.object(prompts, "UNATTENDED", False), \
+                    mock.patch.object(readout, "upload_url", return_value=url), \
+                    mock.patch.object(readout, "ask_contact", return_value=None), \
+                    mock.patch.object(readout, "send", side_effect=sending or (lambda data, url: "r-1")):
+                try:
+                    said["end"] = readout.offer(a_ctx(tmp), MANIFEST, None)
+                except readout.Abort as exc:
+                    said["end"] = str(exc)
+        _, final = drawn(body)
+        return final, said["end"]
+
+    def test_taken_off_once_answered(self):
+        for url in (None, "http://127.0.0.1:9/readout"):   # a test run's, and one sent
+            with self.subTest(url=url):
+                final, said = self.offer(url)
+                self.assertNotIn("Send this firmware readout", final)
+                self.assertTrue(said.startswith(("Readout saved", "Sent")), said)
+
+    def test_left_when_sending_fails_to_say_what(self):
+        final, said = self.offer("http://127.0.0.1:9/readout", sending=OSError("no route"))
+        self.assertIn("Send this firmware readout", final)
+        self.assertIn("could not be sent", said)
