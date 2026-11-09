@@ -135,6 +135,37 @@ class EwelinkAccountTests(unittest.TestCase):
         asked.assert_not_called()
 
 
+class NextDeviceSignInTests(unittest.TestCase):
+    """The next device's run in the same sitting keeps the last one's eWeLink
+    sign-in: account, password and session, never asked again."""
+
+    def test_the_last_runs_account_and_sign_in_are_kept(self):
+        from types import SimpleNamespace
+        last = SimpleNamespace(state=SimpleNamespace(input={"email": "you@example.com"}.get),
+                               _ewelink_password="secret-1", _ewelink_session=("eu", "token"))
+        inputs = {}
+        ctx = SimpleNamespace(state=SimpleNamespace(input=inputs.get, set_input=inputs.__setitem__),
+                              _ewelink_password=None, _ewelink_session=None)
+        context.Context.keep_sign_in(ctx, last)
+        self.assertEqual((inputs, ctx._ewelink_password, ctx._ewelink_session),
+                         ({"email": "you@example.com"}, "secret-1", ("eu", "token")))
+        with mock.patch.object(prompts, "ask_choice") as menu, mock.patch.object(prompts, "ask_text") as asked:
+            ctx.remember_email = lambda email: inputs.__setitem__("email", email)
+            ctx._given_email = None
+            self.assertEqual(context.Context.email(ctx), "you@example.com")
+        menu.assert_not_called()
+        asked.assert_not_called()
+
+    def test_a_run_from_a_converted_plug_had_none_to_keep(self):
+        from types import SimpleNamespace
+        last = SimpleNamespace(state=SimpleNamespace(input={}.get), _ewelink_password=None, _ewelink_session=None)
+        inputs = {}
+        ctx = SimpleNamespace(state=SimpleNamespace(input=inputs.get, set_input=inputs.__setitem__),
+                              _ewelink_password=None, _ewelink_session=None)
+        context.Context.keep_sign_in(ctx, last)
+        self.assertEqual((inputs, ctx._ewelink_password), ({}, None))
+
+
 class PhasePortTests(unittest.TestCase):
     """The migration steps are served on 8089 unless something else has it."""
 

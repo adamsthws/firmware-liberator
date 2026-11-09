@@ -292,6 +292,16 @@ class Context:
         session = self.ewelink_session()
         return session[0] if session else "eu"
 
+    def keep_sign_in(self, previous: Context) -> None:
+        """The next device's run in the same sitting (cli.next_device): the
+        eWeLink account the last run used, signed in to already - most
+        likely the next device's too; one in another account is offered
+        that at A1.  Held in memory, as the last run held it."""
+        if previous.state.input("email") and not self.state.input("email"):
+            self.state.set_input("email", previous.state.input("email"))
+        self._ewelink_password = previous._ewelink_password
+        self._ewelink_session = previous._ewelink_session
+
     def forget_account(self) -> None:
         """Ask again which eWeLink account, and its password."""
         self.state.set_input("email", None)

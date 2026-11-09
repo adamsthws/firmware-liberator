@@ -1,4 +1,5 @@
 """The command line's own handling, before a run starts."""
+import contextlib
 import io
 import os
 import sys
@@ -62,6 +63,87 @@ class BeforeTheRunTests(unittest.TestCase):
         code, screen = self.main(choosing=prompts.QuitRun("stopped at an operator prompt"))
         self.assertEqual(code, 130)
         self.assertIn("Stopped. Nothing was changed.", screen)
+
+
+class AnotherDeviceTests(unittest.TestCase):
+    """A conversion or a readout that finished asks what is next - another
+    device converted, or one read out - and goes on to it in the same
+    sitting: a new run, found afresh, the eWeLink sign-in kept.  Not after
+    one that stopped, nor in an unattended one."""
+
+    def main(self, *, codes, answers, command="run", more=()):
+        from types import SimpleNamespace
+        made, names = [], iter(f"run-{number}" for number in range(2, 9))
+
+        def context(args):
+            ctx = SimpleNamespace(args=args, run=args.run, plug_ip=args.plug_ip, dir=Path("unused"),
+                                  state=mock.Mock(input=mock.Mock(return_value=None)), keep_sign_in=mock.Mock())
+            made.append(ctx)
+            return ctx
+        codes, commands = iter(codes), []
+
+        def ran(ctx, *_):
+            commands.append(ctx.args.command)
+            return next(codes)
+        top, asked = mock.Mock(), mock.Mock(side_effect=list(answers))
+        with contextlib.ExitStack() as patches:
+            for patch in (
+                    mock.patch("sys.argv", ["cli.py", command, "--plug-ip", "192.0.2.50", *more]),
+                    mock.patch("sys.stdout", io.StringIO()),
+                    mock.patch.object(hostsys, "password_asker"), mock.patch.object(prompts, "UNATTENDED"),
+                    mock.patch.object(installer, "SIMULATED_BACKUP_FAILURES"),
+                    mock.patch.object(beken_images, "SPOIL_STEP"), mock.patch.object(beken_images, "SPOIL_TIMES"),
+                    mock.patch.object(beken_images, "UNKNOWN_TABLE"),
+                    mock.patch.object(cli.signal, "signal"), mock.patch.object(interrupt, "install"),
+                    mock.patch.object(credentials, "load", return_value={}),
+                    mock.patch.object(cli, "adopt_older_runs"), mock.patch.object(output, "start_at_top", top),
+                    mock.patch.object(prompts, "wait_for_taller_window"),
+                    mock.patch.object(cli, "resolve_run_name", return_value="run-1"),
+                    mock.patch.object(cli, "start_new_run", side_effect=lambda _: next(names)),
+                    mock.patch.object(cli, "Context", side_effect=context),
+                    mock.patch.object(routes, "apply_target"),
+                    mock.patch.object(cli, "refused_for_another_run", return_value=False),
+                    mock.patch.object(cli, "convert", ran), mock.patch.object(cli, "read_out", ran),
+                    mock.patch.object(prompts, "ask_choice", asked)):
+                patches.enter_context(patch)
+            code = cli.main()
+        self.commands = commands
+        return code, made, asked, top
+
+    CONVERT, READ_OUT = 0, 1   # the options' indexes
+
+    def test_after_one_another_is_offered_until_q(self):
+        code, made, asked, top = self.main(codes=[0, 0, 0], answers=[self.CONVERT, self.CONVERT,
+                                                                     prompts.QuitRun("q")])
+        self.assertEqual(code, 0)
+        self.assertEqual([ctx.run for ctx in made], ["run-1", "run-2", "run-3"])
+        # The address was the first device's: the next is found afresh.
+        self.assertEqual([ctx.plug_ip for ctx in made], ["192.0.2.50", None, None])
+        made[1].keep_sign_in.assert_called_once_with(made[0])
+        made[2].keep_sign_in.assert_called_once_with(made[1])
+        self.assertEqual(asked.call_args.args, ("What next", ["Convert another device", "Read out a device"]))
+        self.assertEqual(top.call_count, 1 + 2)   # each conversion at the top of the window
+
+    def test_a_conversion_and_a_readout_lead_to_each_other(self):
+        code, made, asked, _ = self.main(codes=[0, 0, 0], answers=[self.READ_OUT, self.CONVERT, KeyboardInterrupt()])
+        self.assertEqual((code, self.commands), (0, ["run", "readout", "run"]))
+        self.assertEqual(asked.call_args_list[1].args[1], ["Convert a device", "Read out another device"])
+        made[1].keep_sign_in.assert_called_once_with(made[0])
+
+    def test_not_after_one_that_stopped(self):
+        for command in ("run", "readout"):
+            for code in (1, 2, 130):
+                with self.subTest(command=command, code=code):
+                    ended, made, asked, _ = self.main(codes=[code], answers=[], command=command)
+                    self.assertEqual((ended, len(made)), (code, 1))
+                    asked.assert_not_called()
+
+    def test_not_asked_unattended_nor_after_a_readout_sent_again(self):
+        for command, more in (("run", ["--unattended"]), ("readout", ["--send", "readout.tar"])):
+            with self.subTest(command=command):
+                code, made, asked, _ = self.main(codes=[0], answers=[], command=command, more=more)
+                self.assertEqual((code, len(made)), (0, 1))
+                asked.assert_not_called()
 
 
 class StoppedReportTests(unittest.TestCase):

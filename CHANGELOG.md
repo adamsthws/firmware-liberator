@@ -184,6 +184,9 @@ check.
 - A yes/no question is taken off the screen once answered, even after a wrong
   answer first. It stayed, under "Please answer y or n.", when nothing was
   shown above it.
+- A conversion or a readout that finished asks what next: convert another
+  device, or read one out. With several devices, you go from one to the next
+  without starting the tool again or signing in to eWeLink again.
 - A download the server turns away for now - GitHub's release downloads
   answering "504 Gateway Time-out" for minutes at a time, say - is tried again
   for a little over two minutes, waiting longer each time, rather than three
