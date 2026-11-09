@@ -55,15 +55,21 @@ def setup_networks(ctx: "Context") -> tuple[str, ...]:
     them - and that name is the installer's network's, not looked for here:
     still up for a moment as the installer restarts into Tasmota, it was
     taken for Tasmota's (seen in the fault suite).  Tasmota has also been seen
-    broadcasting ESP-IDF's default name instead: ESP_ and the MAC of its
-    hotspot, one more than the plug's (ESP_ABCDF0).  Knowing the MAC, only
-    this plug's are matched, never a neighbour's Tasmota; without it, any
-    Tasmota's.
+    broadcasting ESP-IDF's default name instead (_default_network).  Knowing
+    the MAC, only this plug's are matched, never a neighbour's Tasmota;
+    without it, any Tasmota's.
     """
     mac = ctx.state.input("plug_mac")
     if not mac:
         return (TASMOTA_AP_PREFIX,)
-    return (final_name(ctx, "tasmota"), f"{TASMOTA_AP_PREFIX}{_mac_tail(mac)}-", f"ESP_{_mac_tail(mac, 1)}")
+    return (final_name(ctx, "tasmota"), f"{TASMOTA_AP_PREFIX}{_mac_tail(mac)}-", _default_network(ctx, mac))
+
+
+def _default_network(ctx: "Context", mac: str) -> str:
+    """ESP-IDF's default name for the plug's network: ESP_ and the MAC of its
+    hotspot, one more than the plug's (ESP_ABCDF0), on an ESP32-C3; ESP_ and
+    the plug's own MAC (ESP_ABCDEF) on a classic ESP32."""
+    return f"ESP_{_mac_tail(mac, kinds.of_run(ctx.state).chip != 'esp32')}"
 
 
 def setup_network_hint(ctx: "Context") -> str:
@@ -71,7 +77,7 @@ def setup_network_hint(ctx: "Context") -> str:
     mac = ctx.state.input("plug_mac")
     if not mac:
         return "tasmota-xxxxxx or tasmota-XXXXXX-NNNN"
-    return f"{final_name(ctx, 'tasmota')}, tasmota-{_mac_tail(mac)}-NNNN, or ESP_{_mac_tail(mac, 1)}"
+    return f"{final_name(ctx, 'tasmota')}, tasmota-{_mac_tail(mac)}-NNNN, or {_default_network(ctx, mac)}"
 
 
 def note_setup_network(ctx: "Context", network: str) -> None:

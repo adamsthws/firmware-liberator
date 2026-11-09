@@ -2410,7 +2410,9 @@ def name_problems(names, networks, target):
     if len(raw) != 12:
         return [], None
     two, three = raw[-4:].upper(), raw[-6:]
-    ap = f"{(int(raw, 16) + 1) & 0xFFFFFFFFFFFF:012X}"[-6:]
+    # ESP-IDF's default access point name: from the access-point MAC (the
+    # Wi-Fi MAC plus one) on an ESP32-C3, from the Wi-Fi MAC on a classic ESP32.
+    ap = f"{(int(raw, 16) + (PLUG.chip != 'esp32')) & 0xFFFFFFFFFFFF:012X}"[-6:]
     allowed = {"espressif", f"autoflash-recovery-{two}", f"tasmota-{three}", f"esphome-{three}", f"ESP_{ap}",
                f"Sonoff-Setup-{two}", f"sonoff-s60-{three}", "s60-ota-bridge", f"sonoff-s60-mover-{three}",
                f"S60-OTA-Bridge-{two}"}

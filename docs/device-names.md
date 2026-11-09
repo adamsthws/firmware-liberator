@@ -160,7 +160,8 @@ All in [`tools/autoflash/names.py`](../tools/autoflash/names.py) unless said:
   Tasmota's the device name too (`DeviceName`).
 - `bridge_networks()`, `mover_networks()`: the interim name and the old ones.
 - `setup_networks()`, `setup_network_hint()`: a Tasmota's own network -
-  `tasmota-abcdef`, Tasmota's own `tasmota-ABCDEF-` and `ESP_ABCDF0`. Not
+  `tasmota-abcdef`, Tasmota's own `tasmota-ABCDEF-` and `ESP_ABCDF0`
+  (`ESP_ABCDEF` on a classic ESP32). Not
   the interim name: the installer's network, listed for a moment after it
   restarts into a Tasmota that has the Wi-Fi, was taken for Tasmota's. The
   one Tasmota that does raise a network under the interim name (sent through
@@ -213,7 +214,8 @@ setup network itself then has that name, and the tool looks for it.
 
 For a moment as Tasmota turns its own network on, before it names it, the
 network goes out as `ESP_` and the plug's access-point MAC (the Wi-Fi MAC
-plus one: `ESP_ABCDF0`). Tasmota's `WifiManagerBegin()` turns the access
+plus one: `ESP_ABCDF0`); on a classic ESP32, as `ESP_` and the Wi-Fi MAC
+(`ESP_ABCDEF`). Tasmota's `WifiManagerBegin()` turns the access
 point on first (`WifiSetMode(WIFI_AP_STA)`, which ends with `delay(100)`)
 and names it after (`WiFi.softAP()`), so for those 100 ms it beacons under
 ESP-IDF's default name. Seen at nearly every Tasmota setup-network start in

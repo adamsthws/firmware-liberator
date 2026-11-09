@@ -29,6 +29,15 @@ class NameProblemTests(unittest.TestCase):
         self.assertEqual(fs.name_problems(["esphome-abcdef", "autoflash-recovery-CDEF", "espressif"],
                                           [], "sonoff"), ([], None))
 
+    def test_esp_idf_default_network_name_follows_the_chip(self):
+        # An ESP32-C3's is from its access-point MAC (the Wi-Fi MAC plus one);
+        # a classic ESP32's, from its Wi-Fi MAC.
+        for kind, ok, wrong in ((kinds.SONOFF_S60, "ESP_ABCDF0", "ESP_ABCDEF"),
+                                (kinds.SONOFF_POWCT, "ESP_ABCDEF", "ESP_ABCDF0")):
+            with self.subTest(kind=kind.key), mock.patch.object(fs, "PLUG", kind):
+                self.assertEqual(fs.name_problems(["tasmota-abcdef"], [ok], "tasmota"), ([], None))
+                self.assertEqual(fs.name_problems(["tasmota-abcdef"], [wrong], "tasmota"), ([wrong], None))
+
     def test_a_name_this_plug_should_never_have(self):
         unknown, _ = fs.name_problems(["autoflash-recovery-1234", "tasmota-abcdef"], ["tasmota"], "tasmota")
         self.assertEqual(unknown, ["autoflash-recovery-1234", "tasmota"])

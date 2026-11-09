@@ -44,6 +44,14 @@ class NamesTests(SetupNetworkTestCase):
         self.assertEqual(names.esphome_networks(self.ctx()),
                          ("esphome-abcdef", "Sonoff-Setup-CDEF", "sonoff-s60-"))
 
+    def test_a_classic_esp32s_default_name_is_its_own_mac(self):
+        # Seen in the emulator on the POW Elite and TH Elite: ESP_ and the
+        # Wi-Fi MAC itself, not the hotspot's.
+        ctx = self.ctx()
+        ctx.state.set_input("plug_kind", "sonoff-pow-elite")
+        self.assertEqual(names.setup_networks(ctx)[2], "ESP_ABCDEF")
+        self.assertEqual(names.setup_network_hint(ctx), "tasmota-abcdef, tasmota-ABCDEF-NNNN, or ESP_ABCDEF")
+
     def test_one_more_carries_into_the_next_byte(self):
         self.assertEqual(names.setup_networks(self.ctx("12-34-56-AB-FF-FF"))[2], "ESP_AC0000")
 
