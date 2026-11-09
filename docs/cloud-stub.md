@@ -468,6 +468,16 @@ kept plug's or an instance's), and `AUTOFLASH_EMU_STUB_PRODUCT_MODEL=S60TPG|S60T
 overrides it or covers a plug never seen by the real cloud. With neither, none is
 served and the run's report leaves "Model" blank rather than guess.
 
+**The account's other devices.** A real account often holds more than the
+plug being worked on, and a readout of every device reads them all. Set
+`AUTOFLASH_EMU_STUB_OTHERS` to a JSON file listing them, and `emu.sh` copies
+it to the instance's state directory, where the stub reads it
+(`--others-json`, default `/state/stub-others.json`). Each entry is
+`{"deviceid", "name", "productModel", "model", "uiid", "fwVersion"}`, made up.
+The stub lists them after the plug, offline, with a made-up key, and offers
+them no firmware: none of them is emulated, so only a readout's first stage,
+which asks eWeLink alone, can be run on them.
+
 #### Every exchange, with examples
 
 The message shapes were first taken from the firmware's own strings (the dispatch

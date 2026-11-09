@@ -229,6 +229,8 @@ stub_env=()
                              -e OPENSSL_CONF=/stub-cloud/openssl.cnf)
 # A device not ready yet is taken only when this says so (tools/autoflash/kinds.py).
 [ -n "${AUTOFLASH_NOT_READY_YET:-}" ] && stub_env+=(-e AUTOFLASH_NOT_READY_YET=1)
+# Readouts sent to a test server of yours, not kept unsent (readout.upload_url).
+[ -n "${AUTOFLASH_READOUT_URL:-}" ] && stub_env+=(-e AUTOFLASH_READOUT_URL="$AUTOFLASH_READOUT_URL")
 # The emulator's Wi-Fi, for a run from an ESPHome that cannot say what it is
 # (one of this project's first builds); and the emulated plug's passwords,
 # for one given one to test with, as this script's environment has them.

@@ -112,6 +112,41 @@ class OnlineTests(unittest.TestCase):
         self.assertEqual(json.loads(app.send.call_args.args[0])["params"], {"online": False})
 
 
+class OtherDevicesTests(unittest.TestCase):
+    """The account's other devices, none emulated, listed beside the plug."""
+
+    OTHER = {"deviceid": "1000000102", "name": "Hall panel", "productModel": "NSPanel",
+             "model": "E32-MSW-NX", "uiid": 133, "fwVersion": "1.5.0"}
+
+    def test_listed_after_the_plug_offline_with_their_own_record(self):
+        stub = stub_server.Stub("192.0.2.1", 443, 10, {"deviceid": "1000abcdef", "devicekey": "k"},
+                                others=[self.OTHER])
+        mine, other = [entry["itemData"] for entry in stub.device_thing()["data"]["thingList"]]
+        self.assertEqual(mine["deviceid"], "1000abcdef")
+        self.assertEqual((other["deviceid"], other["name"], other["productModel"], other["online"]),
+                         ("1000000102", "Hall panel", "NSPanel", False))
+        self.assertEqual((other["extra"], other["params"]), ({"uiid": 133, "model": "E32-MSW-NX"},
+                                                             {"fwVersion": "1.5.0"}))
+
+    def test_listed_before_the_plug_registers_too(self):
+        stub = stub_server.Stub("192.0.2.1", 443, 10, {"staMac": "12:34:56:ab:cd:ef"}, others=[self.OTHER])
+        self.assertEqual([entry["itemData"]["deviceid"] for entry in stub.device_thing()["data"]["thingList"]],
+                         ["1000000102"])
+
+    def test_offered_no_firmware(self):
+        stub = stub_server.Stub("192.0.2.1", 443, 10, {"deviceid": "1000abcdef", "devicekey": "k"},
+                                update=mock.Mock(version="9.9.9", data=b"x"), others=[self.OTHER])
+        asked = json.dumps({"deviceInfoList": [{"deviceid": "1000000102", "model": "E32-MSW-NX",
+                                                "version": "0.0.1"}]}).encode()
+        self.assertEqual(stub.ota_query(asked)["data"]["otaInfoList"], [])
+
+    def test_read_from_the_state_directory_where_emu_sh_puts_them(self):
+        emu = (Path(__file__).resolve().parents[3] / "tools/espressif/emulator/emu.sh").read_text(encoding="utf-8")
+        self.assertIn('cp "$AUTOFLASH_EMU_STUB_OTHERS" "$STATE/stub-others.json"', emu)
+        source = Path(stub_server.__file__).read_text(encoding="utf-8")
+        self.assertIn('default=Path("/state/stub-others.json")', source)
+
+
 class AccountDeviceTests(unittest.TestCase):
     """A plug whose identity the stub is not given - the S61's, sealed in its
     store - is listed as it registers, as eWeLink lists it."""
