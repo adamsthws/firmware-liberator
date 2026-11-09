@@ -98,6 +98,14 @@ def app_description(image: bytes) -> dict[str, str] | None:
     }
 
 
+def build_sha256(image: bytes) -> str | None:
+    """The SHA-256 of the ELF an app was built from (esp_app_desc_t's
+    app_elf_sha256), the same in every device running that build."""
+    if len(image) < APP_DESC_OFFSET + 176 or struct.unpack_from("<I", image, APP_DESC_OFFSET)[0] != APP_DESC_MAGIC:
+        return None
+    return image[APP_DESC_OFFSET + 144:APP_DESC_OFFSET + 176].hex()
+
+
 def selected_ota_slot(otadata: bytes, slot_count: int) -> int | None:
     """The OTA slot otadata boots: the valid record with the highest sequence."""
     best = None

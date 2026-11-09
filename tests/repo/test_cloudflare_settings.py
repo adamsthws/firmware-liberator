@@ -604,12 +604,14 @@ class ApiAndStatsTests(unittest.TestCase):
         run(self.fake, "apply")
         self.fake.sent.clear()
 
-    def test_the_api_takes_only_a_post_to_its_paths(self):
+    def test_the_api_takes_only_a_post_to_its_paths_and_a_get_of_the_removal_page(self):
         expression = cs.FIREWALL_RULES[0]["expression"]
         self.assertTrue(expression.startswith(f'(http.host eq "{cs.API_HOST}" and not '))
         for path in cs.API_PATHS:
             self.assertIn(f'"{path}"', expression)
-        self.assertIn('http.request.method eq "POST"', expression)
+        self.assertIn('(http.request.method in {"POST"} and http.request.uri.path in '
+                      '{"/readout" "/wanted" "/notify" "/reports"})', expression)
+        self.assertIn('(http.request.method in {"GET" "POST"} and http.request.uri.path in {"/forget"})', expression)
         self.assertEqual(cs.FIREWALL_RULES[0]["action"], "block")
 
     def test_the_figures_are_cached_on_their_host_alone(self):

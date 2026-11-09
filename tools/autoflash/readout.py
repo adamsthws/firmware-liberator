@@ -62,6 +62,7 @@ NOT_NEEDED = "not needed: the website has what it needs of this device already."
 FULL_TODAY = "not read out: the website has taken all the readouts it can today. Try again tomorrow."
 # The website's store of readouts is full, until its maintainer makes room.
 STORE_FULL = "not read out: the website cannot take more readouts for now. Try again in a few weeks."
+LIMIT_TODAY = "not read out: the website takes 20 readouts a day from one place. Try again tomorrow."
 # What send() gives for a readout the website has enough of already.
 ENOUGH = "none needed: enough readouts of this device are in already"
 # What the run's record keeps, so a readout is never offered back as a conversion to finish.
@@ -291,7 +292,7 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
         answer = ask_wanted(asked.product, asked.model, asked.version, "whole" if whole else "first",
                             offered_digests(offers))
     if not answer.wanted:
-        full = {"full": FULL_TODAY, "store-full": STORE_FULL}.get(answer.why)
+        full = {"full": FULL_TODAY, "store-full": STORE_FULL, "limit": LIMIT_TODAY}.get(answer.why)
         if full and batch is not None:
             raise WebsiteFull(full)
         said = full or NOT_NEEDED

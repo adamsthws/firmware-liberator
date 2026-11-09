@@ -529,6 +529,13 @@ class NotWantedTests(unittest.TestCase):
         self.assertIn("'Hall light' (NEWTHING): " + readout.NOT_NEEDED, said)
         self.assertIn("'Porch' (NEWTHING): " + readout.NOT_NEEDED, said)
 
+    def test_a_sender_at_its_daily_limit_ends_a_batch_there_too(self):
+        readout.ask_wanted.return_value = readout.Wanted(False, "limit")
+        with mock.patch.object(readout, "ask_contact", return_value=None), learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"):
+            said = readout.run_all(self.ctx, [DEVICE, {**DEVICE, "deviceid": "1000fedcba", "name": "Porch"}])
+        self.assertEqual(readout.ask_wanted.call_count, 1)
+        self.assertIn("'Hall light' (NEWTHING), 'Porch' (NEWTHING): " + readout.LIMIT_TODAY, said)
+
     def test_a_full_day_ends_a_batch_there(self):
         readout.ask_wanted.return_value = readout.Wanted(False, "full")
         with mock.patch.object(readout, "ask_contact", return_value=None), learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"):
@@ -719,8 +726,10 @@ class ChooseTests(unittest.TestCase):
                 learned(s60.wrapper_model, "ESP32C3"), \
                 mock.patch.object(readout_espressif, "read_and_anonymise") as read, \
                 mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
-                mock.patch.object(readout, "ask_contact", return_value=None):
+                mock.patch.object(readout, "ask_contact", return_value=None), \
+                mock.patch.object(runs, "hold_plug") as held:
             said = readout.run_all(self.ctx, [record("S60TPG", s60.stock_model)])
+        held.assert_called_once()   # held as one written to may be, and nothing left behind
         self.assertEqual(readout.ask_wanted.call_args.args[:4], ("S60TPG", s60.stock_model, "1.2.0", "whole"))
         read.assert_not_called()
         self.assertIn(readout.NOT_NEEDED, said)

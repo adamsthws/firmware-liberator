@@ -35,9 +35,10 @@ Between the two, the tool asks the API whether the readout would add
 anything (`POST /wanted`, `readout.ask_wanted`), with lighter work of its own
 (below): its product model, firmware model and version, the stage it would be
 (`first`, or `whole` where a second stage may follow), and the SHA-256 eWeLink
-gives each file it offers. The API keeps one readout of each model and version
-at each stage, a whole one standing for a first stage too, so ten identical
-plugs give one readout, alone or in a batch. One not wanted goes no further:
+gives each file it offers. The API keeps three readouts of each model and
+version (`PER_KEY`), each from a different sender, a whole one taking a first
+stage's place too: one sender's ten identical plugs give one readout, alone
+or in a batch, and three that agree come from three people. One not wanted goes no further:
 nothing is fetched, nothing is sent to the device, and no readout's work is
 done; the owner is offered, still, to leave an address to be told when its
 support changes (`/notify`, below). A file the API holds already is not
@@ -218,17 +219,36 @@ and the store has limits it is never let past:
   however many devices one run reads out, each is worked for on its own.
 - **It must be one.** `application/x-tar`, at most 24 MB, its first file a
   `manifest.json` of the format the tool writes.
-- **Only what adds something.** A readout is stored only if none of its
-  product model, firmware model and version is held at its stage (a whole one
-  holds a first stage's too); otherwise it is thanked (`enough`) and not
-  stored. What is held is marked as `readouts/held/<PRODUCT>/<model>/<version>/<first|whole>`,
-  and each offered file stored as `readouts/firmware/<sha256>`, kept with the
-  readouts. A readout deleted by hand takes its marks with it, or one like it
-  is never taken again.
+- **Only what adds something, from different people.** A readout is stored
+  only if fewer than three of its product model, firmware model and version
+  (its key) are held - a whole one takes a first stage's place too, as it
+  holds all one does - and its sender has none of that key; otherwise it is
+  thanked (`enough`) and not stored, before it takes any of the sender's 20 a
+  day. Each kept one is a row of the database's `readouts` table
+  (migrations/0004_readouts.sql): its key and stage; its sender, as an HMAC
+  of the key and the address under `SENDER_KEY`, so nothing ties one
+  sender's readouts of different keys together; its fingerprint; and its
+  review. The last place is taken in one statement, so two sent at once
+  cannot both have it. Each offered file stored is marked as
+  `readouts/firmware/<sha256>`.
+- **Agreeing, and review.** A readout's fingerprint is a hash of what every
+  genuine readout of its key shares, never its owner's settings: for a whole
+  one, its firmware as the tool read it before anything was taken out
+  (`manifest.firmware`: an Espressif device's partition table and each Sonoff
+  app's project, version and build hash, `esp_app_desc_t`'s `app_elf_sha256`;
+  a Beken device's layout and the Sonoff firmware it was put back on); for a
+  first stage, the SHA-256 of each file eWeLink offers it. Its size, or its
+  whole file's hash, says nothing: each holds its owner's own settings. Three
+  of one stage that share a fingerprint are marked `quorum`, taken as right;
+  every other readout is `pending`, waiting for review:
+  `python3 tools/repo/readouts.py review` lists them by key, an odd one's
+  fingerprint marked, and `readouts.py approve ID` or `reject ID` settles one.
+  A rejected one frees its place for another sender's.
 - **Asking first.** `POST /wanted` takes `{"format": 1, "product", "model",
   "version", "stage": "first"|"whole", "firmware": [<sha256>, ...]}` (8 files
-  at most) and answers `{"wanted": bool, "why": "enough"|"held"|"full",
-  "held": [<the files held>]}`. It reads only marks and the day's count, so
+  at most) and answers `{"wanted": bool, "why": "enough"|"held"|"full"|
+  "store-full"|"limit", "held": [<the files held>]}` - "limit" once its
+  sender has had 20 kept today. It reads only marks and the day's count, so
   its proof of work, made the same way over the question's own bytes, is
   lighter: 20 zero bits, about a million tries, a second or two on a computer
   (one in 16 of a readout's work), and good for a minute, not 15. Each
@@ -239,9 +259,26 @@ and the store has limits it is never let past:
   "devices": [{"product", "model"}, ...]}` (50 at most), with the same light
   work, and keeps `notify/<PRODUCT>/<the address's SHA-256>.json` - the
   address, the product, its firmware models and when - one per address and
-  product, its address and models in its metadata too. Nothing expires under
-  `notify/`: an address stays until that product's status changes and it is
-  written to, or until removed on request. 500 addresses a day at most.
+  product, its address, models and removal link in its metadata too. Each
+  address has one token (`notify/_who/<hash>.json`, with the products it was
+  given for), and one link,
+  `https://api.firmwareliberator.com/forget?a=<hash>&t=<token>`, the same in
+  every entry and kept as first made. Nothing expires under `notify/`: an
+  address stays until its owner removes it, or it is removed by hand. 500
+  addresses a day at most.
+- **Removing an address.** `/forget` is the one path a person opens: a GET
+  of the link shows what it will do and a button, and only the POST that
+  button sends removes the address, for every product it was given for, and
+  its token - so a mail scanner that follows links removes nothing. The
+  firewall rule lets a GET through to it alone (`API_METHODS`).
+- **One sender's readouts.** At most 20 a day are kept from one address
+  (`SENDER_DAILY`), counted in the database under an HMAC of the day and the
+  address with the Worker's secret `SENDER_KEY`, never the address itself;
+  the count is deleted with the day's others by the nightly job. One not kept
+  gives its place back. Until `SENDER_KEY` is set, no readout is taken: set it
+  once with `npx wrangler secret put SENDER_KEY --config api/wrangler.jsonc`
+  from `website/`, any long random value (`cloudflare_settings.py` checks it
+  is there).
 - **Rate.** Before the Worker runs at all, a Cloudflare rate-limiting rule on
   its hostname (`tools/repo/cloudflare_settings.py`) blocks an address sending
   more than 5 requests in 10 seconds, for 10 seconds: a flood never reaches the
@@ -293,8 +330,8 @@ such as the settings check's; putting or deleting one needs one that can edit
 it.
 
 - **Making room**, should the store fill: delete readouts no longer needed,
-  each with its marks (`readouts/held/...`, and its offered files'
-  `readouts/firmware/...`), then take their bytes off the store's count in the
+  each with its row in the `readouts` table and its offered files'
+  `readouts/firmware/...` marks, then take their bytes off the store's count in the
   database, from `website/` (`npx wrangler d1 execute firmware-liberator-api
   --config api/wrangler.jsonc --remote --command "UPDATE counters SET count =
   count - <n>, bytes = bytes - <bytes> WHERE name = 'readouts:all'"`). The
