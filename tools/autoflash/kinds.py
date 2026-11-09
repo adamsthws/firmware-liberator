@@ -495,11 +495,12 @@ def by_key(key: str | None) -> Kind | None:
     return next((kind for kind in ALL if kind.key == key), None)
 
 
-def for_account(product_model: str | None, stock_model: str | None) -> Kind | None:
+def for_account(product_model: str | None, stock_model: str | None, among: tuple[Kind, ...] = ALL) -> Kind | None:
     """The kind of a device in an eWeLink account, by its product model or by
     what its firmware calls itself (the account's extra.model); None for one
-    the tool does not convert."""
-    return next((kind for kind in ALL
+    the tool does not convert. `among`: the emulator's tooling, which runs a
+    kind not ready yet too, gives EVERY."""
+    return next((kind for kind in among
                  if kind.product_of(product_model)
                  or (stock_model and stock_model == kind.stock_model and not kind.product_model_decides)), None)
 

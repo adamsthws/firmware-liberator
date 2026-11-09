@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import struct
 import sys
 from pathlib import Path
 
@@ -23,24 +24,37 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from tools.autoflash import kinds  # noqa: E402
-from tools.espressif import flashmap  # noqa: E402
+from tools.espressif import ais_records, flashmap  # noqa: E402
 from tools.espressif.inspect_stock_nvs import parse  # noqa: E402
 
 MAC = re.compile(r"[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}")
 
 
 def frame_params(flash: bytes) -> dict:
+    """The identity in Sonoff's settings, as frame_params holds it; on the ais
+    SDK (the BASICR4's, the MINIR4's), which has none, as its factory record
+    holds it (tools/espressif/ais_records.py): its factory key is taken for the
+    LAN key too, which no ais device has been seen using yet."""
     partition = flashmap.nvs(flash)
     names, vals = parse(flash[partition.offset:partition.offset + partition.size])
     for (ns, key), value in vals.items():
         if names[ns] == "frame_params" and key == "content":
             return json.loads(value.data.split(b"\x00", 1)[0])
-    raise SystemExit("frame_params not found in NVS")
+    for (ns, key), value in vals.items():
+        if names[ns] == "factory" and key == "info" and ais_records.is_factory(value.data):
+            record = value.data
+            field = {name: ais_records.text(record, ais_records.FACTORY_FIELDS, name).decode()
+                     for name in ais_records.FACTORY_FIELDS}
+            return {"deviceid": field["deviceid"], "apikey": field["factory_apikey"],
+                    "encrypt_key": field["factory_apikey"], "model": field["device_model"],
+                    "uiid": struct.unpack_from("<H", record, ais_records.FACTORY_UIID)[0]}
+    raise SystemExit("neither frame_params nor a factory record found in NVS")
 
 
 def identity(flash: bytes, lan_key_field: str, product_model: str = "", sta_mac: str = "") -> dict:
     fp = frame_params(flash)
-    kind = kinds.for_account(product_model, fp.get("model"))
+    # Ready or not: the stub serves whichever test copy the emulator runs.
+    kind = kinds.for_account(product_model, fp.get("model"), among=kinds.EVERY)
     lan_key = fp.get(lan_key_field)
     if not lan_key:
         raise SystemExit(f"frame_params has no `{lan_key_field}` for the LAN key")
