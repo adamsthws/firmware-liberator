@@ -1,6 +1,8 @@
-// api.firmwareliberator.com: the project's API. For now one path, /readout,
-// where the tool sends a device's readout with its owner's consent (tools/autoflash/readout.py, .github/readouts.md). A Worker
-// of its own, apart from the website's, so nothing sent here can touch the site.
+// api.firmwareliberator.com: the project's API. Two paths: /readout, where the
+// tool sends a device's readout with its owner's consent, and /wanted, where it
+// asks first whether a readout of that device is still wanted, before reading
+// it (tools/autoflash/readout.py, .github/readouts.md). A Worker of its own,
+// apart from the website's, so nothing sent here can touch the site.
 //
 // The tool is open source, so it can hold no secret: what keeps this from being
 // flooded is that each readout costs its sender work, and that the bucket has
@@ -21,6 +23,11 @@
 // - A device enough readouts of are in, by eWeLink's product model in ENOUGH
 //   (a comma-separated variable in wrangler.jsonc), is thanked and not stored.
 // - The same readout sent again the same day is the one already stored.
+// - /wanted answers whether a product model is still wanted: ENOUGH, read and
+//   nothing stored, so its own proof is lighter (WANTED_PROOF_BITS, about a
+//   million tries, a second or two in the tool's Python) and good for a minute
+//   (WANTED_PROOF_AGE), each question worked for afresh. It is not held to
+//   READOUT_LIMIT, which a batch's questions would use up before its readouts.
 // No address or other detail of the sender is kept.
 
 export const MAX_BYTES = 24 * 1024 * 1024;
@@ -31,12 +38,18 @@ export const DAILY_BYTES = 250 * 1024 * 1024;
 export const RETENTION_DAYS = 30;
 export const KEPT_BYTES = 2 * 1024 * 1024 * 1024;
 export const FORMAT = 1;
+export const WANTED_PROOF_BITS = 20;
+export const WANTED_PROOF_AGE = 60;
+export const WANTED_MAX_BYTES = 1024;
 
 export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
     if (path === "/readout") {
       return readout(request, env);
+    }
+    if (path === "/wanted") {
+      return wanted(request, env);
     }
     return answer(404, { error: "readouts are sent to /readout, by the tool" });
   },
@@ -68,13 +81,14 @@ function zeroBits(bytes) {
 }
 
 // Whether "<time>:<nonce>" proves the work for a body of this hash, now.
-// `bits` is PROOF_BITS but in the tests, which ask for less.
-export async function proven(proof, digest, now = Date.now() / 1000, bits = PROOF_BITS) {
+// `bits` is PROOF_BITS but in the tests, which ask for less, and /wanted's
+// lighter work; `age` how long ago it may have been made.
+export async function proven(proof, digest, now = Date.now() / 1000, bits = PROOF_BITS, age = PROOF_AGE) {
   const [time, nonce, extra] = String(proof || "").split(":");
   if (extra !== undefined || !/^\d{1,12}$/.test(time || "") || !/^\d{1,20}$/.test(nonce || "")) {
     return false;
   }
-  if (Math.abs(now - Number(time)) > PROOF_AGE) {
+  if (Math.abs(now - Number(time)) > age) {
     return false;
   }
   return zeroBits(await sha256(new TextEncoder().encode(`${time}:${digest}:${nonce}`))) >= bits;
@@ -99,6 +113,45 @@ export function manifestOf(body) {
   } catch {
     return null;
   }
+}
+
+// The product models enough readouts of are in (ENOUGH), upper-case.
+function enoughOf(env) {
+  return String(env.ENOUGH || "").split(",").map((model) => model.trim().toUpperCase()).filter(Boolean);
+}
+
+// Whether a readout of a device is still wanted, asked before reading it:
+// {"format": 1, "product": "<eWeLink's product model>"}, its own work done.
+export async function wanted(request, env, now = new Date()) {
+  if (request.method !== "POST") {
+    return answer(405, { error: "asked by the tool, with POST" }, { Allow: "POST" });
+  }
+  if (request.headers.get("Content-Type") !== "application/json") {
+    return answer(415, { error: "the question is application/json" });
+  }
+  const declared = Number(request.headers.get("Content-Length"));
+  if (!Number.isInteger(declared) || declared <= 0 || declared > WANTED_MAX_BYTES) {
+    return answer(413, { error: `the question says its length, at most ${WANTED_MAX_BYTES} bytes` });
+  }
+  const body = await request.arrayBuffer();
+  if (body.byteLength !== declared) {
+    return answer(400, { error: "that is not a whole question" });
+  }
+  const bits = env.TEST_PROOF_BITS ? Number(env.TEST_PROOF_BITS) : WANTED_PROOF_BITS;
+  if (!(await proven(request.headers.get("X-Proof"), hex(await sha256(body)), now.getTime() / 1000, bits,
+    WANTED_PROOF_AGE))) {
+    return answer(403, { error: "the question's proof of work does not check out" });
+  }
+  let asked;
+  try {
+    asked = JSON.parse(new TextDecoder().decode(body));
+  } catch {
+    asked = null;
+  }
+  if (asked?.format !== FORMAT || typeof asked.product !== "string" || !asked.product || asked.product.length > 64) {
+    return answer(400, { error: "that is not a question this tool asks" });
+  }
+  return answer(200, { wanted: !enoughOf(env).includes(asked.product.toUpperCase()) });
 }
 
 export async function readout(request, env, now = new Date()) {
@@ -132,8 +185,7 @@ export async function readout(request, env, now = new Date()) {
   if (!manifest) {
     return answer(400, { error: "that is not a readout this tool makes" });
   }
-  const enough = String(env.ENOUGH || "").split(",").map((model) => model.trim().toUpperCase()).filter(Boolean);
-  if (enough.includes(manifest.product.toUpperCase())) {
+  if (enoughOf(env).includes(manifest.product.toUpperCase())) {
     return answer(200, { enough: true });
   }
   const day = now.toISOString().slice(0, 10);

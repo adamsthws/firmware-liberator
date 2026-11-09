@@ -130,6 +130,7 @@ one is first uploaded from your computer:
 curl -sI https://firmwareliberator.com/             # 200
 curl -sI https://firmwareliberator.com/liberate.sh  # 302
 curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/readout  # 405: only POST
+curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/wanted   # 405: only POST
 curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/         # 404
 ```
 

@@ -31,6 +31,13 @@ offered first where there are two or more). Every readout starts the same way:
    another version than the one the device runs, so two to test against. A
    readout goes on without it.
 
+Between the two, the tool asks the API whether a readout of that product
+model is still wanted (`POST /wanted`, `readout.still_wanted`), with lighter
+work of its own (below). One the API has enough of goes no further: nothing
+is fetched, nothing is sent to the device, and no readout's work is done.
+Where the API cannot say - unreachable, rate-limited, or an earlier Worker
+without `/wanted` - the readout goes ahead, and `/readout` decides.
+
 That much is the first stage, and only ever reads: nothing is sent to the
 device. A device the tool has not seen gets that alone.
 
@@ -195,6 +202,15 @@ and the store has limits it is never let past:
   however many devices one run reads out, each is worked for on its own.
 - **It must be one.** `application/x-tar`, at most 24 MB, its first file a
   `manifest.json` of the format the tool writes.
+- **Asking first.** `POST /wanted` takes `{"format": 1, "product": "<product
+  model>"}` and answers `{"wanted": true}`, or false for a model in `ENOUGH`.
+  It reads nothing but `ENOUGH` and stores nothing, so its proof of work, made
+  the same way over the question's own bytes, is lighter: 20 zero bits, about
+  a million tries, a second or two on a computer (one in 16 of a readout's
+  work), and good for a minute, not 15. Each
+  question needs its own. It is held to the hostname's rate-limiting rule, but
+  not to the two-readouts-a-minute limit, which a batch's questions would use
+  up before its readouts.
 - **Rate.** Before the Worker runs at all, a Cloudflare rate-limiting rule on
   its hostname (`tools/repo/cloudflare_settings.py`) blocks an address sending
   more than 5 requests in 10 seconds, for 10 seconds: a flood never reaches the

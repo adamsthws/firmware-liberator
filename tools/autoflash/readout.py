@@ -47,8 +47,10 @@ if TYPE_CHECKING:
 # Where readouts go: a Worker of their own, apart from the website's, with a
 # private store behind it: the project's API (website/api/index.js).
 UPLOAD_URL = "https://api.firmwareliberator.com/readout"
-# The work each readout carries, as the Worker asks it (its PROOF_BITS).
+# The work each readout carries, as the Worker asks it (its PROOF_BITS); and
+# the lighter work of asking first whether one is wanted (WANTED_PROOF_BITS).
 PROOF_BITS = 24
+WANTED_PROOF_BITS = 20
 FORMAT = 1
 # What send() gives for a readout the website has enough of already.
 ENOUGH = "none needed: enough readouts of this device are in already"
@@ -242,6 +244,13 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
         asked = account.ask_account(ctx, str(device.get("deviceid") or ""))
     else:
         asked = account.ask_ewelink(ctx, ip)
+    # Before the firmware eWeLink offers it is fetched, anything is sent to it,
+    # or the readout's own work is done: whether one is wanted at all.
+    if not still_wanted(asked.product):
+        if batch is not None:
+            return "not needed, as enough readouts of this device are in already."
+        return ("Not needed, thank you: enough readouts of this device are in already, so nothing was "
+                "read or sent.")
     learned, problems = firmware_name.learn(asked.latest.get("offers") or [], asked.deviceid,
                                             asked.product, asked.model)
     for problem in problems:
@@ -474,6 +483,27 @@ def proof(data: bytes, now: float | None = None, bits: int | None = None) -> str
         if int.from_bytes(attempt.digest(), "big") < target:
             return f"{stamp}:{nonce}"
         nonce += 1
+
+
+def still_wanted(product: str, timeout: float = 15.0) -> bool:
+    """Whether the website still wants a readout of a device of eWeLink's
+    `product` model, asked with work of its own, lighter than a readout's.
+    Where it cannot say - unreachable, or an earlier website - the readout
+    goes ahead, and the website decides once it is sent."""
+    url = upload_url()
+    if url is None or not product:
+        return True
+    body = json.dumps({"format": FORMAT, "product": product}).encode()
+    request = urllib.request.Request(url.rsplit("/", 1)[0] + "/wanted", data=body, method="POST", headers={
+        "Content-Type": "application/json", "User-Agent": f"Autoflash/{__version__}",
+        "X-Proof": proof(body, bits=WANTED_PROOF_BITS)})
+    try:
+        with hostsys.urlopen(request, timeout=timeout) as response:
+            answer = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError) as exc:   # an HTTPError is an OSError
+        output.log_only(f"    Whether a readout is wanted: not answered ({exc}); it goes ahead.")
+        return True
+    return answer.get("wanted") is not False
 
 
 def send(data: bytes, url: str = UPLOAD_URL, timeout: float = 120.0) -> str:
