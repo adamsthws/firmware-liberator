@@ -26,10 +26,10 @@ is offered as an update (routes/update.py).
 from __future__ import annotations
 
 from types import ModuleType
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable, NamedTuple, TYPE_CHECKING
 
 from tools.autoflash import account, detect, kinds, output, plugs, prompts, runs
-from tools.autoflash.errors import Abort
+from tools.autoflash.errors import Abort, Finished
 from tools.autoflash.routes import beken, espressif, update
 from tools.autoflash.routes import source
 from tools.autoflash.routes.espressif import source as espressif_source
@@ -80,7 +80,11 @@ def step_prerequisites(ctx: Context) -> dict[str, Any]:
 def step_choose(ctx: Context) -> dict[str, Any]:
     """A3 - which firmware the plug is to have, now that A1 has said what kind
     of plug it is: the one given on the command line, kept from an earlier
-    run, or asked for from its family's; and the route it takes from here."""
+    run, or asked for from its family's; and the route it takes from here.
+    A converted plug's is asked at the same point, after the prerequisites
+    (choose_converted)."""
+    if runs.run_source(ctx.state) != "sonoff":
+        return choose_converted(ctx)
     kind = kinds.of_run(ctx.state)
     family = FAMILIES[kind.family]
     kept = ctx.state.input("firmware")
@@ -101,14 +105,31 @@ def step_choose(ctx: Context) -> dict[str, Any]:
     return {"firmware": firmware, "asked": not given}
 
 
-# What every run from Sonoff's firmware begins with, whatever the plug: the
-# family's own steps follow once the firmware is chosen.
+def choose_converted(ctx: Context) -> dict[str, Any]:
+    """A3 on a plug this tool converted: the firmware settle_route left to
+    be chosen here (ctx.firmware_choice) - given, or asked - and the route
+    from here; or the one chosen at the run's start, carried on."""
+    pending = ctx.firmware_choice
+    if pending is None:
+        firmware = ctx.state.require("firmware")[0]
+    else:
+        ctx.firmware_choice = None
+        if pending.note:
+            output.say(pending.note)
+        firmware, _ = choose_route(ctx, pending)
+    apply_target(firmware, route_source(ctx.state), family_of(ctx.state))
+    return {"firmware": firmware, "asked": pending is not None and not ctx.firmware_given}
+
+
+# What every run begins with, whatever the plug: from Sonoff's firmware,
+# found through eWeLink first.  The family's own steps follow once the
+# firmware is chosen.
 STOCK_START: Steps = [
     ("A0", "Before you start", step_prerequisites),
     ("A1", "Pair the device in eWeLink", account.step_pair),
     ("A3", "Choose the firmware", step_choose),
 ]
-START: Steps = STOCK_START[:1]
+START: Steps = [STOCK_START[0], STOCK_START[2]]
 STAGE_NAMES = {"A0": "Confirming prerequisites", "A1": "Discovering the device", "A3": "Choosing the firmware"}
 PLAIN_DESCRIPTION = {
     "A0": "lists what needs to be in place before starting",
@@ -123,9 +144,9 @@ def steps_for(firmware: str | None, source: str = "sonoff", family: ModuleType =
     firmware is chosen (None: not yet)."""
     if source == "sonoff":
         return STOCK_START + (family.steps_for(firmware, source) if firmware else [])
-    if firmware is None or firmware == source:
+    if firmware == source:
         return []
-    return START + family.steps_for(firmware, source)
+    return START + (family.steps_for(firmware, source) if firmware else [])
 
 
 def update_available(ctx: Context) -> str | None:
@@ -145,10 +166,14 @@ def update_available(ctx: Context) -> str | None:
 def recorded_firmware(state: RunState) -> str | None:
     """The firmware a run's record says it installs, None if not chosen yet:
     a run of 1.x, with steps done but no choice recorded, was for Tasmota -
-    an Espressif plug's; a plug of another family has no such runs."""
+    an Espressif plug's; a plug of another family has no such runs.  A run
+    from a converted plug stopped before its A3 chose has done no more than
+    the steps before."""
     firmware = state.input("firmware")
-    if (not firmware and "tasmota" in family_of(state).FIRMWARES
-            and (runs.run_source(state) != "sonoff" or any(map(state.is_done, LEGACY_STOCK_STEPS)))):
+    before = {step for step, _, _ in START}
+    started = (any(state.is_done(step) for step in state.data["steps"] if step not in before)
+               if runs.run_source(state) != "sonoff" else any(map(state.is_done, LEGACY_STOCK_STEPS)))
+    if not firmware and "tasmota" in family_of(state).FIRMWARES and started:
         firmware = "tasmota"
     return firmware
 
@@ -210,8 +235,19 @@ def sonoff_backup_exists(ctx: Context) -> bool:
     return bool(mac and plugs.find_backup(mac))
 
 
-class NothingToDo(Exception):
-    """The plug already runs the firmware asked for."""
+class NothingToDo(Finished):
+    """The plug already runs the firmware asked for: found before any stage,
+    or chosen at A3 (runner.run_steps)."""
+
+
+class FirmwareChoice(NamedTuple):
+    """A converted plug's firmware, still to be chosen at A3 (settle_route):
+    what it answers as (`running`, "outdated" on an earlier release of
+    `updating`), what it can go to, and a word on those (`note`)."""
+    running: str
+    updating: str
+    choices: list[str]
+    note: str
 
 
 def settle_firmware(ctx: Context) -> str | None:
@@ -230,13 +266,15 @@ def nothing_to_convert(ctx: Context, source: str) -> None:
                          "API key, run this again with --replace-own-build." if own else ""))
 
 
-def settle_route(ctx: Context) -> tuple[str | None, str]:
+def settle_route(ctx: Context, defer: bool = False) -> tuple[str | None, str]:
     """What the plug runs now and which firmware it is to have: kept from the
     run's start, given on the command line, or found out and asked - once,
     before anything is done.  A plug this tool converted is found on the
     network by what it answers as, and says its kind; one still on Sonoff's
     firmware is found through eWeLink at A1, and its firmware chosen at A3,
-    so for it the firmware is None here."""
+    so for it the firmware is None here.  `defer`: a converted plug's is
+    chosen at A3 too, after the prerequisites, as one from Sonoff's is
+    (choose_converted) - None here, what it was given checked already."""
     kept, running = ctx.state.input("firmware"), ctx.state.input("source")
     given = ctx.firmware_given
     if kept and given and given != kept:
@@ -274,13 +312,14 @@ def settle_route(ctx: Context) -> tuple[str | None, str]:
     # Tasmota stays a choice on Tasmota: its meter checked (rerun_on_tasmota).
     offered = family_of(ctx.state).FIRMWARES
     choices = [name for name in offered if name != running or running == "tasmota"]
+    note = ""
     if family_of(ctx.state).SONOFF_FROM_BACKUP and "sonoff" in choices and not sonoff_backup_exists(ctx):
         # Going back needs this plug's backup - or, in a family that can do
         # without, its Sonoff identity, kept on the plug or in its eWeLink account.
         without = family_of(ctx.state).sonoff_without_backup(ctx, running, asked=given == "sonoff")
         if without:
-            output.say(f"There is no backup of the device's Sonoff firmware on this computer: going back to it "
-                       f"would use {without}.")
+            note = (f"There is no backup of the device's Sonoff firmware on this computer: going back to it "
+                    f"would use {without}.")
         else:
             choices.remove("sonoff")
     if given:
@@ -293,7 +332,24 @@ def settle_route(ctx: Context) -> tuple[str | None, str]:
             raise Abort(f"this device cannot go to {FIRMWARES[given]}: there is no backup of its "
                         "Sonoff firmware on this computer, the device keeps no Sonoff identity, and "
                         "its eWeLink account has no record of it")
-        firmware = given
+    pending = FirmwareChoice(running, updating, choices, note)
+    if defer:
+        # Its source known from here (the prerequisites it is shown, its web
+        # password): what it runs, an update's as the firmware it updates.
+        ctx.state.set_input("source", updating)
+        ctx.firmware_choice = pending
+        return None, updating
+    if note:
+        output.say(note)
+    return choose_route(ctx, pending)
+
+
+def choose_route(ctx: Context, pending: FirmwareChoice) -> tuple[str, str]:
+    """A converted plug's firmware, given or asked (settle_route), recorded
+    with where it goes from."""
+    running, updating, choices, _ = pending
+    if ctx.firmware_given:
+        firmware = ctx.firmware_given
     else:
         firmware = ask_firmware(running, choices,
                                 (updating, *update.versions(ctx)) if running == "outdated" else None)
@@ -371,16 +427,29 @@ def _stage_name(step: str, title: str, firmware: str | None, family: ModuleType)
 
 def stage_layout() -> tuple[int, int]:
     """The longest stage name the run may show, and the most stages it may
-    have.  From Sonoff's firmware the rest of the route is known only once A1
-    has found the kind of plug and A3 the firmware, so every stage line is
-    laid out for the longest route from there there could be."""
-    if ROUTE[1] != "sonoff":
-        return max(len(stage_name(name)) for name, _, _ in STEPS), len(STEPS)
-    possible = [(firmware, family, steps_for(firmware, "sonoff", family)) for family in FAMILIES.values()
-                for firmware in family.FIRMWARES if firmware != "sonoff"]
+    have.  The rest of the route is known only once A3 has chosen the
+    firmware - from Sonoff's firmware, once A1 has found the kind of plug -
+    so every stage line is laid out for the longest route there could be:
+    from Sonoff's, on any plug; from a converted plug, in its family."""
+    if ROUTE[1] == "sonoff":
+        possible = [(firmware, family, steps_for(firmware, "sonoff", family)) for family in FAMILIES.values()
+                    for firmware in family.FIRMWARES if firmware != "sonoff"]
+    else:
+        sources = set(FAMILY.SOURCES) - {"sonoff"} | {getattr(FAMILY, "DIRECT_FROM_TASMOTA", "outdated")}
+        possible = [(firmware, FAMILY, steps_for(firmware, start, FAMILY))
+                    for firmware in FAMILY.FIRMWARES for start in sources if routable(firmware, start)]
     return (max(len(_stage_name(name, title, firmware, family))
                 for firmware, family, steps in possible for name, title, _ in steps),
             max(len(steps) for _, _, steps in possible))
+
+
+def routable(firmware: str, source: str) -> bool:
+    """Whether the family has a route from `source` to `firmware`."""
+    try:
+        FAMILY.steps_for(firmware, source)
+    except ValueError:
+        return False
+    return True
 
 
 def plain_description(step: str, title: str) -> str:

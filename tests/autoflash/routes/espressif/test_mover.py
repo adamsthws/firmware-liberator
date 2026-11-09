@@ -156,7 +156,7 @@ class ESPHomeUpdateTests(RouteTestCase):
         self.assertEqual(offered, ["Tasmota", "ESPHome, updated to 1.6.0",
                                    "Sonoff's own firmware (back to eWeLink, from its backup)"])
         self.assertEqual(route, ("esphome", "outdated"))
-        self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A5", "U1", "U2"])
+        self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A3", "A5", "U1", "U2"])
         self.assertEqual(update.versions(ctx), ("1.4.0", "1.6.0"))
 
     def test_one_named_as_before_2_4_0_is_offered_it_too(self):
@@ -246,7 +246,7 @@ class ESPHomeUpdateTests(RouteTestCase):
         ctx, route, warned = self.replacing(self.ours("1.6.0", built=self.OWN))
         self.assertEqual(route, ("esphome", "outdated"))
         self.assertEqual(update.versions(ctx), (update.OWN_BUILD, "1.6.0"))
-        self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A5", "U1", "U2"])
+        self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A3", "A5", "U1", "U2"])
         said = " ".join(warned.call_args.args[1])
         self.assertIn("You lose any changes", said)
         self.assertIn("If you renamed its relay", said)

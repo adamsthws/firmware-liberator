@@ -192,7 +192,7 @@ class RunStepsTests(unittest.TestCase):
         # only asked, at the end of its stage, instead of stopping the run.
         from tools.autoflash import interrupt
 
-        def press(*_):
+        def press(*_, **__):
             interrupt._on_interrupt(None, None)
             return "tasmota", "sonoff"
         self.addCleanup(interrupt.clear)
@@ -203,6 +203,16 @@ class RunStepsTests(unittest.TestCase):
         code, ran, stand_ins = self.run_steps(settle_route=mock.Mock(side_effect=errors.Abort("no plug")))
         self.assertEqual((code, ran), (2, []))
         stand_ins["apply_target"].assert_not_called()
+
+    def test_kept_on_tasmota_at_a3_checks_its_meter(self):
+        def keep(ctx, step):
+            ctx.finished = routes.NothingToDo("on Tasmota")
+            return 0
+        code, ran, stand_ins = self.run_steps(execute_with_retries=mock.Mock(side_effect=keep),
+                                              run_source=mock.Mock(return_value="tasmota"))
+        self.assertEqual(code, 0)
+        stand_ins["rerun_on_tasmota"].assert_called_once()
+        stand_ins["invite_report"].assert_not_called()
 
     def test_nothing_to_do_on_tasmota_checks_its_meter(self):
         code, ran, stand_ins = self.run_steps(settle_route=mock.Mock(side_effect=routes.NothingToDo("on Tasmota")),

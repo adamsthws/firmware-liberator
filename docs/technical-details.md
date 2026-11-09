@@ -442,8 +442,8 @@ through eWeLink, `onward.py` for each converted firmware taking the next,
 `arrived.py` for the checks and the backup, `evidence.py` for what a step cut
 off left behind. `routes/source.py` finds the plug and what it runs when a
 run starts, whatever its family, and `routes/__init__.py` holds the start every route
-shares (A0; from Sonoff's firmware the plug found in eWeLink, A1, and the
-firmware chosen once its kind is known, A3) and settles which route a run
+shares (A0, then the firmware chosen, A3; from Sonoff's firmware, the plug
+found in eWeLink between them, A1, which says its kind) and settles which route a run
 takes, by the plug's kind: a family package gives it the same handful of
 names (its `FIRMWARES`, `SOURCES` and `steps_for`, and what the runner needs
 to know of each step), so a second chip family is a second package, not a

@@ -327,7 +327,8 @@ the plug back to Sonoff's firmware.
 
 A plug this tool converted can move to either of the other two, or back to
 Sonoff's firmware. The tool finds your plug on the network by how it answers,
-tells you what it runs, and offers the other two. Every route has the same
+lists what has to be in place, then tells you what it runs and offers the other
+two - steps 1 and 3 above, with no eWeLink in between. Every route has the same
 checks as above.
 
 Going back to Sonoff's firmware writes the plug's own backup from your computer

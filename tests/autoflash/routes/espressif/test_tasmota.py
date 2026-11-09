@@ -74,7 +74,7 @@ class TasmotaUpdateTests(RouteTestCase):
         self.assertEqual(offered, [f"Tasmota, updated to {OFFICIAL_TASMOTA_VERSION}", "ESPHome",
                                    "Sonoff's own firmware (back to eWeLink, from its backup)"])
         self.assertEqual(route, ("tasmota", "outdated"))
-        self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A5", "U5", "U6"])
+        self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A3", "A5", "U5", "U6"])
         self.assertEqual(update.versions(ctx), ("15.6.0", OFFICIAL_TASMOTA_VERSION))
         self.assertTrue(runs.plug_runs_tasmota(ctx.state))
 

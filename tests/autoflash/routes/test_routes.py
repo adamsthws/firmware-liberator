@@ -86,6 +86,24 @@ class FamilyTests(unittest.TestCase):
                       for firmware in family.FIRMWARES if firmware != "sonoff")
         self.assertEqual(layouts[0][1], longest)
 
+    def test_a_converted_plugs_stages_are_laid_out_alike_before_and_after_its_firmware_is_chosen(self):
+        # Seen in the emulator, from ESPHome to Tasmota: stages 1 and 2
+        # drawn for a route of two, the rest for one of fifteen.
+        for family in (espressif, beken):
+            for source in family.SOURCES:
+                for firmware in family.FIRMWARES:
+                    if source == "sonoff" or not routes.routable(firmware, source) \
+                            or not routes.steps_for(firmware, source, family):
+                        continue
+                    with self.subTest(family=family.__name__, source=source, firmware=firmware):
+                        # An update is laid out before as what it updates.
+                        before = firmware if source == "outdated" else source
+                        routes.apply_target(None, before, family)
+                        unchosen = routes.stage_layout()
+                        routes.apply_target(firmware, source, family)
+                        self.assertEqual(routes.stage_layout(), unchosen)
+                        self.assertGreaterEqual(unchosen[1], len(routes.STEPS))
+
     def test_before_you_start_lists_what_is_needed_for_any_device(self):
         for source, needed in (("sonoff", "- LAN Control turned on in the device's settings in the app."),
                                ("tasmota", "- Your device connected to Wi-Fi, as it is now.")):
@@ -246,8 +264,47 @@ class BekenTargetTests(unittest.TestCase):
     def test_an_s61_run_with_no_firmware_chosen_has_the_start_alone(self):
         state = self.state(plug_kind="sonoff-s61", source="esphome")
         self.assertIsNone(routes.recorded_firmware(state))
-        self.assertEqual(routes.steps_of(state), [])
-        self.assertEqual(routes.recorded_firmware(self.state(plug_kind="sonoff-s60", source="esphome")), "tasmota")
+        self.assertEqual(routes.steps_of(state), routes.START)
+        # An S60's of 1.x, past the start, was for Tasmota; stopped at A3, not yet.
+        state = self.state(plug_kind="sonoff-s60", source="esphome")
+        state.mark("A0", DONE)
+        self.assertIsNone(routes.recorded_firmware(state))
+        state.mark("A5", DONE)
+        self.assertEqual(routes.recorded_firmware(state), "tasmota")
+
+    def test_a_converted_plugs_firmware_is_asked_after_its_prerequisites(self):
+        # As from Sonoff's firmware: the question comes at "Choosing the
+        # firmware", once the list of what is needed has been read - not
+        # before the first stage, ahead of it.
+        self.addCleanup(routes.apply_target, "tasmota", "sonoff")
+        state = self.state(plug_kind="sonoff-s61", plug_mac="12:34:56:ab:cd:ef")
+        ctx = SimpleNamespace(state=state, replace_own_build=False, firmware_given=None, esphome_firmware=None,
+                              firmware_choice=None)
+        with mock.patch.object(routes.source, "find_current_firmware", return_value="esphome"), \
+                mock.patch.object(routes.plugs, "find_backup", return_value=object()), \
+                mock.patch.object(routes, "ask_firmware", return_value="openbeken") as asked, \
+                mock.patch.object(routes.output, "say") as said:
+            self.assertEqual(routes.settle_route(ctx, defer=True), (None, "esphome"))
+            asked.assert_not_called()
+            said.assert_not_called()
+            self.assertEqual(state.input("source"), "esphome")
+            self.assertEqual([step for step, _, _ in routes.steps_of(state)], ["A0", "A3"])
+            self.assertEqual(routes.step_choose(ctx), {"firmware": "openbeken", "asked": True})
+            asked.assert_called_once()
+        self.assertEqual(said.call_args.args[0], "Converting the device from ESPHome to OpenBeken.")
+        self.assertEqual(state.input("firmware"), "openbeken")
+        self.assertEqual([step for step, _, _ in routes.STEPS][:3], ["A0", "A3", "E1"])
+        self.assertIsNone(ctx.firmware_choice)
+
+    def test_kept_on_tasmota_at_a3_the_run_ends_with_nothing_to_do(self):
+        self.addCleanup(routes.apply_target, "tasmota", "sonoff")
+        ctx = SimpleNamespace(state=self.state(plug_kind="sonoff-s60", plug_mac="12:34:56:ab:cd:ef", source="tasmota"),
+                              replace_own_build=False, firmware_given=None, esphome_firmware=None,
+                              firmware_choice=routes.FirmwareChoice("tasmota", "tasmota", ["tasmota", "esphome"], ""))
+        with mock.patch.object(routes, "ask_firmware", return_value="tasmota"), \
+                self.assertRaisesRegex(errors.Finished, "already runs Tasmota"):
+            routes.step_choose(ctx)
+        self.assertEqual(routes.steps_of(ctx.state), [])  # complete: nothing to carry on
 
 
 class StepTableTests(unittest.TestCase):
