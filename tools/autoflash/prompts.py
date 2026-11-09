@@ -578,11 +578,18 @@ def countdown_choice(question: str, options: Sequence[str], *,
     keys = {str(index): index - 1 for index in range(1, len(options) + 1)}
     out = sys.stdout
 
+    def asked(left: float) -> str:
+        return (f"{question} - {options[default].split(' - ')[0].lower()} in {max(0, int(left + 0.99))} s, "
+                f"or press 1-{len(options)}")
+
     def draw(left: float) -> None:
-        out.write("\r" + output.question(
-            f"{question} - {options[default].split(' - ')[0].lower()} in {max(0, int(left + 0.99))} s, "
-            f"or press 1-{len(options)}", ": ") + " ")
+        out.write("\r" + output.question_row(asked(left), ": ") + " ")
         out.flush()
+
+    # Asked once, before the terminal is set to read single keys: asking
+    # readies it for a typed answer, which would undo that - a number was then
+    # only taken with an Enter, whose new row was left blank on the screen.
+    out.write(output.question(asked(seconds), ": ") + " ")
 
     chosen = default
     deadline = time.monotonic() + seconds
@@ -601,6 +608,7 @@ def countdown_choice(question: str, options: Sequence[str], *,
                             break
                         if char in keys:
                             chosen = keys[char]
+                            out.write(char)   # the answer shown, as typed
                             break
                     time.sleep(0.2)
             else:
@@ -618,7 +626,10 @@ def countdown_choice(question: str, options: Sequence[str], *,
                                 break
                             if key in keys:
                                 chosen = keys[key]
+                                out.write(key)   # the answer shown, as typed: nothing is echoed
                                 break
+                    time.sleep(0.1)   # an Enter typed after the number, by habit: dropped
+                    termios.tcflush(fd, termios.TCIFLUSH)
                 finally:
                     termios.tcsetattr(fd, termios.TCSADRAIN, saved)
         finally:

@@ -248,3 +248,46 @@ class UnattendedPromptTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(hasattr(os, "fork"), "a pseudo-terminal needs Linux or macOS")
+class CountdownKeyTests(unittest.TestCase):
+    """The countdown after a Ctrl-C takes a number the moment it is pressed,
+    on a real terminal.  Its first redraw readied the terminal for a typed
+    answer, so a number waited for an Enter, whose row was left blank."""
+
+    def ask(self, typed):
+        import codecs
+        import textwrap
+        from tools.repo import unattended_run
+        root = Path(__file__).resolve().parents[2]
+        script = textwrap.dedent(f"""
+            import sys
+            sys.path.insert(0, {str(root)!r})
+            from tools.autoflash import output, prompts
+            output.start(None, verbose=False)
+            output.transient_begin()
+            chosen = prompts.countdown_choice("Stop the run here", ["Carry on", "Stop here"], seconds=20)
+            output.transient_end()
+            output.show(f"chosen {{chosen}}")
+            output.finish()
+        """)
+        code, written = unattended_run.record([sys.executable, "-c", script], (80, 24), live=False, timeout=30,
+                                              answers=[unattended_run.Answer(r"press 1-2", typed)])
+        screen = unattended_run.Screen(80, 24)
+        screen.feed(codecs.decode(written, "utf-8", errors="replace"))
+        return code, screen.render(colour=False).splitlines()
+
+    def test_a_number_is_taken_at_once(self):
+        import time
+        started = time.monotonic()
+        code, rows = self.ask("2")
+        self.assertEqual((code, rows[-1].strip()), (0, "chosen 1"))
+        self.assertLess(time.monotonic() - started, 10)   # not the countdown's 20 s
+
+    def test_an_enter_after_the_number_leaves_no_row(self):
+        for typed, chosen in (("2\r", "chosen 1"), ("\r", "chosen 0")):
+            with self.subTest(typed=typed):
+                code, rows = self.ask(typed)
+                self.assertEqual(rows[-1].strip(), chosen)
+                self.assertNotEqual(rows[-2:-1], [""], rows)   # no blank row left above it
