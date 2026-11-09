@@ -570,8 +570,7 @@ WSL stops its VM, and Docker with it, soon after its last window closes: with
   while it is off, so the end-of-run check can say the meter confirms the
   switch, and Tasmota's calibration from the chip can be tried
   ([how](../tools/espressif/emulator/README.md#the-plugs-board-boardpy)).
-  Tasmota finds no CSE7761 on a classic ESP32 in the emulator: the chip's
-  answers reach it too late. A conversion passing says the firmware installs
+  A conversion passing says the firmware installs
   and starts, and reads a meter wired as the kind's template says - not that
   the template is right for the device.
 - **One plug, one region.** The emulator runs whatever the dump came from. A
