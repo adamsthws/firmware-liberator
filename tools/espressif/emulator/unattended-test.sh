@@ -20,6 +20,12 @@
 #                                                   captures, as updating a checkout would; it
 #                                                   stays there until another --code
 #   tools/espressif/emulator/unattended-test.sh --readout     a readout of the plug (cli.py readout), not a conversion
+#   tools/espressif/emulator/unattended-test.sh --answers=FILE  a run as a person sits through it: its
+#                                                   questions asked, and answered as FILE says
+#                                                   (unattended_run.py --attended --answers)
+#   tools/espressif/emulator/unattended-test.sh --timeout=MINUTES  stop the run after that long, its
+#                                                   recording kept: one waiting at a question
+#                                                   nothing answers, say
 #   tools/espressif/emulator/unattended-test.sh -- --new   anything after -- goes to the run itself
 #
 # Needs .env with the eWeLink account the dump's plug is in. It starts the
@@ -35,7 +41,7 @@ case "$ROOT" in /mnt/[a-z]/*) STATE=$HOME/.local/share/autoflash-emu/state ;; es
 NAME=autoflash-emu PORT=8080
 PLUG=192.168.60.50
 
-emu_args=(--detach) keep=0 stub=0 run_args=() from="" save="" plug_mac="" code="" driver_args=()
+emu_args=(--detach) keep=0 stub=0 run_args=() from="" save="" plug_mac="" code="" driver_args=() answers_file=""
 while [ $# -gt 0 ]; do
     case "$1" in
     --fresh|--pcap|--rebuild|--no-firewall) emu_args+=("$1") ;;
@@ -48,9 +54,11 @@ while [ $# -gt 0 ]; do
     --from=*) from=${1#--from=} ;;
     --save=*) save=${1#--save=} ;;
     --code=*) code=$(cd "${1#--code=}" && pwd) ;;
-    --readout) driver_args=(--command readout) ;;
+    --readout) driver_args+=(--command readout) ;;
+    --timeout=*) driver_args+=(--timeout "${1#--timeout=}") ;;
+    --answers=*) answers_file=$(cd "$(dirname "${1#--answers=}")" && pwd)/$(basename "${1#--answers=}") ;;
     --) shift; run_args=("$@"); break ;;
-    *) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    *) sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
     esac
     shift
 done
@@ -173,10 +181,18 @@ until docker exec "$NAME" ping -c1 -W1 "$PLUG" >/dev/null 2>&1; do
     fi
     sleep 2
 done
-if [ ${#driver_args[@]} -gt 0 ]; then
-    echo "The emulated plug is up; reading it out unattended..."
+# Answers for an attended run, where the run reads them in the emulated computer.
+if [ -n "$answers_file" ]; then
+    mkdir -p "$STATE/work/captures"
+    cp "$answers_file" "$STATE/work/captures/answers.json"
+    driver_args+=(--attended --answers captures/answers.json)
+fi
+how=unattended
+[ -n "$answers_file" ] && how="as a person would, answered from $(basename "$answers_file")"
+if [[ " ${driver_args[*]} " == *" --command readout "* ]]; then
+    echo "The emulated plug is up; reading it out $how..."
 else
-    echo "The emulated plug is up; converting it unattended..."
+    echo "The emulated plug is up; converting it $how..."
 fi
 
 # The eWeLink account, for this run only: the emulator's copy of the

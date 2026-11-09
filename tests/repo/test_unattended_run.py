@@ -142,6 +142,36 @@ class RecordingTests(unittest.TestCase):
 
 
 
+@unittest.skipUnless(hasattr(os, "fork"), "a pseudo-terminal needs Linux or macOS")
+class AnswerTests(unittest.TestCase):
+    def test_each_question_is_answered_as_it_shows(self):
+        script = textwrap.dedent("""
+            name = input("Your name: ")
+            word = input("Type PROCEED to go ahead: ")
+            print(f"got {name} and {word}")
+        """)
+        answers = [unattended_run.Answer(r"Type PROCEED", "PROCEED\r"), unattended_run.Answer(r"Your name", "Ada\r")]
+        code, written = unattended_run.record([sys.executable, "-c", script], (80, 24), live=False,
+                                              timeout=60, answers=answers)
+        self.assertEqual(code, 0, written)
+        self.assertIn(b"got Ada and PROCEED", written)
+        self.assertEqual([answer.left for answer in answers], [0, 0])   # each once, as told
+        name, word = answers[1].typed_at[0], answers[0].typed_at[0]
+        self.assertLess(name, word)   # where each was typed, in the bytes written
+
+    def test_answers_are_read_from_a_file(self):
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "answers.json"
+            path.write_text(json.dumps([{"when": "Wi-Fi password", "type": "secret\r", "times": 2}]))
+            loaded = unattended_run.Answer.load(path)
+        self.assertEqual((loaded[0].type, loaded[0].left), ("secret\r", 2))
+
+    def test_an_attended_run_is_not_told_it_is_unattended(self):
+        self.assertNotIn("--unattended", unattended_run.tool_command("run", ["--new"], attended=True))
+
+
 class CommandTests(unittest.TestCase):
     def test_a_conversion_unless_told_otherwise(self):
         self.assertEqual(unattended_run.tool_command("run", ["--new"])[2:], ["run", "--unattended", "--new"])

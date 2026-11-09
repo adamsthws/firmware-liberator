@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import codecs
 import contextlib
+import json
 import os
 import re
 import select
@@ -232,9 +233,30 @@ def parse_size(text: str) -> tuple[int, int]:
     return int(match.group(1)), int(match.group(2))
 
 
+class Answer:
+    """A person at the keyboard, as far as one question goes: when what the
+    run shows, since the last answer, matches `when` (a regular expression,
+    on the text without its colours), `type` is typed - "\r" is Enter - up
+    to `times` times."""
+
+    def __init__(self, when: str, type: str, times: int = 1) -> None:
+        self.when, self.type, self.left = re.compile(when), type, times
+        self.typed_at: list[int] = []   # how many bytes the run had written each time it was typed
+
+    @classmethod
+    def load(cls, path: Path) -> list["Answer"]:
+        """A list of {"when": ..., "type": ..., "times": ...}, as JSON."""
+        return [cls(**item) for item in json.loads(path.read_text(encoding="utf-8"))]
+
+
+# What a terminal shows but the text does not say: colours, cursor moves.
+CONTROL = re.compile(r"\x1b\[[0-9;?]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-_]")
+
+
 def record(command: list[str], size: tuple[int, int], live: bool,
-           timeout: float | None) -> tuple[int, bytes]:
-    """Run `command` on a pseudo-terminal of `size`; its exit code and every byte it wrote."""
+           timeout: float | None, answers: list[Answer] = ()) -> tuple[int, bytes]:
+    """Run `command` on a pseudo-terminal of `size`; its exit code and every
+    byte it wrote.  `answers`: typed as their questions show (Answer)."""
     import fcntl
     import pty
     import struct
@@ -252,6 +274,8 @@ def record(command: list[str], size: tuple[int, int], live: bool,
         finally:
             os._exit(127)
     started, written, stopping = time.monotonic(), bytearray(), False
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    since = ""   # what was shown since the last answer, as text
     while True:
         try:
             if timeout and not stopping and time.monotonic() - started > timeout:
@@ -268,6 +292,16 @@ def record(command: list[str], size: tuple[int, int], live: bool,
             written += chunk
             if live:
                 os.write(sys.stdout.fileno(), chunk)
+            if answers:
+                since += CONTROL.sub("", decoder.decode(chunk))
+                for answer in answers:
+                    if answer.left and answer.when.search(since):
+                        time.sleep(0.5)   # as a person reads it
+                        os.write(fd, answer.type.encode("utf-8"))
+                        answer.typed_at.append(len(written))
+                        answer.left -= 1
+                        since = ""
+                        break
         except KeyboardInterrupt:
             os.kill(pid, signal.SIGINT)  # passed on: the tool stops cleanly, as at a keyboard
     os.close(fd)
@@ -279,9 +313,10 @@ def record(command: list[str], size: tuple[int, int], live: bool,
 COMMANDS = ("run", "readout")
 
 
-def tool_command(command: str, extra: list[str]) -> list[str]:
-    """The tool's command line: `command` (COMMANDS), unattended, with `extra`."""
-    return [sys.executable, str(TOOL), command, "--unattended", *extra]
+def tool_command(command: str, extra: list[str], attended: bool = False) -> list[str]:
+    """The tool's command line: `command` (COMMANDS), unattended unless
+    `attended` (its questions then answered by --answers), with `extra`."""
+    return [sys.executable, str(TOOL), command, *([] if attended else ["--unattended"]), *extra]
 
 
 def main() -> int:
@@ -296,6 +331,12 @@ def main() -> int:
                         help="stop the run (as Ctrl-C would) if it is still going after this long")
     parser.add_argument("--command", choices=COMMANDS, default="run",
                         help="what the tool does unattended: a conversion (run, the default) or a readout")
+    parser.add_argument("--attended", action="store_true",
+                        help="run the tool as a person would sit through it, not --unattended: "
+                        "its questions are asked, and answered by --answers")
+    parser.add_argument("--answers", type=Path, metavar="FILE",
+                        help="what to type at each question, for --attended: a JSON list of "
+                        '{"when": regex, "type": text, "times": n}, "\\r" for Enter')
     parser.add_argument("run_options", nargs=argparse.REMAINDER,
                         help="after --: options for the run itself, e.g. -- --plug-ip 192.168.99.50")
     args = parser.parse_args()
@@ -310,9 +351,10 @@ def main() -> int:
     size = args.size or (tuple(n or d for n, d in zip(shutil.get_terminal_size(), (80, 24)))
                          if live else (100, 40))
     save = args.save or ROOT / "captures" / "unattended" / time.strftime("%Y%m%d-%H%M%S")
-    command = tool_command(args.command, extra)
+    command = tool_command(args.command, extra, attended=args.attended)
+    answers = Answer.load(args.answers) if args.answers else []
 
-    code, written = record(command, size, live, args.timeout * 60 if args.timeout else None)
+    code, written = record(command, size, live, args.timeout * 60 if args.timeout else None, answers)
 
     screen = Screen(*size)
     screen.feed(codecs.decode(written, "utf-8", errors="replace"))
@@ -320,6 +362,12 @@ def main() -> int:
     (save / "screen.raw").write_bytes(written)
     (save / "screen.ansi").write_text(screen.render(), encoding="utf-8")
     (save / "screen.txt").write_text(screen.render(colour=False), encoding="utf-8")
+    if answers:
+        # Where each answer was typed, in screen.raw's bytes: to see what each
+        # question left on the screen once answered.
+        (save / "answers.json").write_text(json.dumps(
+            [{"when": answer.when.pattern, "type": answer.type, "typed_at": answer.typed_at} for answer in answers],
+            indent=1), encoding="utf-8")
 
     shown = save.resolve()
     with contextlib.suppress(ValueError):
