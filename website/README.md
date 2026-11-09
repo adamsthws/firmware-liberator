@@ -84,8 +84,8 @@ Three Cloudflare API tokens are in play, each allowed only what its job needs:
 | Token | Kept | Permissions |
 | --- | --- | --- |
 | Deploy | `website` secret `CLOUDFLARE_API_TOKEN` | Individual Workers - `firmware-liberator`, `firmware-liberator-api`: Editor. Zone `firmwareliberator.com` - Workers Routes: Write, DNS: Write (the custom domains), Zone: Read |
-| Settings check | `website` secret `CLOUDFLARE_READ_TOKEN` | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Read, Dynamic URL Redirects: Read, Zone WAF: Read. Account - Workers R2 Storage: Read |
-| Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit. Account - Workers R2 Storage: Edit, Account API Tokens: Read, Workers Scripts: Read (to check the deploy token) |
+| Settings check | `website` secret `CLOUDFLARE_READ_TOKEN` | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Read, DNS: Read, Dynamic URL Redirects: Read, Zone WAF: Read, Email Routing Rules: Read. Account - Workers R2 Storage: Read, Email Routing Addresses: Read |
+| Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, DNS: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit, Email Routing Rules: Edit. Account - Workers R2 Storage: Edit, Email Routing Addresses: Edit, Account API Tokens: Read, Workers Scripts: Read (to check the deploy token) |
 
 The deploy token reaches its two Workers and no other in the account. Its
 permissions are written down in `tools/repo/cloudflare_settings.py` and
@@ -138,10 +138,20 @@ curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/     
 
 What the zone and the account are set to beyond the Workers - `www.` sent
 on to the bare domain, HTTPS only, TLS 1.2 or newer, the API's
-rate-limiting rule, the readouts bucket and its 30-day lifecycle rule - is
-written down, with why, in `tools/repo/cloudflare_settings.py`.
+rate-limiting rule, the readouts bucket and its 30-day lifecycle rule,
+Email Routing and every DNS record but the Workers' - is written down, with
+why, in `tools/repo/cloudflare_settings.py`. A DNS record added in the
+dashboard is a difference, deleted by `apply`: write it down there instead.
 
-They change rarely, so they are set by hand, never by CI: a leaked CI token
+Each address of the domain in `CLOUDFLARE_EMAIL_FORWARD`, named by the
+part before the @ (`contact`, say, separated by commas), is forwarded to
+`CLOUDFLARE_EMAIL_DESTINATION`, the account's verified destination address;
+mail to any other is dropped. Both are private, kept out of the repository
+where scrapers would find them: in `.env`, and in the `website` secrets of
+those names, which `python3 tools/repo/github_settings.py apply` sets from
+`.env` each time it runs. The check never prints them.
+
+The settings change rarely, so they are set by hand, never by CI: a leaked CI token
 cannot change DNS-facing settings or the bucket. To change one, edit the
 script, then with the apply token in `CLOUDFLARE_API_TOKEN` (the environment
 or `.env`) run `python3 tools/repo/cloudflare_settings.py` to see what

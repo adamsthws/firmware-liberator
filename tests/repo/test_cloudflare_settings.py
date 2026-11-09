@@ -12,6 +12,12 @@ ZONE = "/zones/z1"
 ENTRYPOINT = f"{ZONE}/rulesets/phases/{cs.REDIRECT_PHASE}/entrypoint"
 RATE_LIMITS = f"{ZONE}/rulesets/phases/{cs.RATE_LIMIT_PHASE}/entrypoint"
 BUCKETS = "/accounts/a1/r2/buckets"
+ADDRESSES = "/accounts/a1/email/routing/addresses"
+DESTINATION = "owner@example.com"
+FORWARD = "hello, Press"
+# What Email Routing says it needs, as it lists them: a TXT record whole, a host with its final dot.
+ROUTING_DNS = [{"type": "MX", "name": cs.ZONE, "content": "route1.mx.cloudflare.net.", "priority": 50},
+               {"type": "TXT", "name": f"cf2024-1._domainkey.{cs.ZONE}", "content": '"v=DKIM1; p=AAAABBBB"'}]
 
 
 class FakeCloudflare:
@@ -28,16 +34,40 @@ class FakeCloudflare:
         # The Workers the token can see: Cloudflare lists those alone. The apply token sees them all.
         self.workers = ["firmware-liberator", "firmware-liberator-api", "another-site"]
         self.readable = set()   # of CI_REFUSED's paths, those the token may read
+        self.routing = False
+        self.email_rules = []
+        self.catch_all = {"id": "c1", **copy.deepcopy(cs.EMAIL_CATCH_ALL)}
+        self.addresses = []
+        # The Workers' custom domains, as wrangler makes them; DNS records listed as Cloudflare does,
+        # a long TXT record in quoted strings, a host without its final dot.
+        self.dns = [{"id": "w1", "type": "AAAA", "name": cs.ZONE, "content": "100::",
+                     "meta": {"origin_worker_id": "x"}}]
         self.sent = []
+        self.ids = iter(range(100, 1000))
 
     @property
     def redirects(self):
         return self.rulesets.get(ENTRYPOINT)
 
-    def __call__(self, path, method="GET", body=None, ok_missing=False, ok_forbidden=False):
+    def __call__(self, path, method="GET", body=None, ok_missing=False, ok_forbidden=False, whole=False):
         if method != "GET":
             self.sent.append((method, path, body))
-            if path == BUCKETS:
+            if path == f"{ZONE}/dns_records":
+                self.dns.append({"id": f"d{next(self.ids)}", "meta": {}, **body,
+                                 "content": f'"{body["content"]}"' if body["type"] == "TXT" else body["content"]})
+            elif path.startswith(f"{ZONE}/dns_records/"):
+                self.dns = [r for r in self.dns if r["id"] != path.rsplit("/", 1)[1]]
+            elif path == f"{ZONE}/email/routing/enable":
+                self.routing = True
+            elif path == f"{ZONE}/email/routing/rules/catch_all":
+                self.catch_all = {"id": "c1", **copy.deepcopy(body)}
+            elif path == f"{ZONE}/email/routing/rules":
+                self.email_rules.append({"id": f"e{next(self.ids)}", **copy.deepcopy(body)})
+            elif path.startswith(f"{ZONE}/email/routing/rules/"):
+                self.email_rules = [r for r in self.email_rules if r["id"] != path.rsplit("/", 1)[1]]
+            elif path == ADDRESSES:
+                self.addresses.append({"email": body["email"], "verified": None})
+            elif path == BUCKETS:
                 self.buckets.add(body["name"])
             elif path.endswith("/lifecycle"):
                 self.lifecycle = copy.deepcopy(body)
@@ -62,6 +92,18 @@ class FakeCloudflare:
             return {} if path in self.readable else None
         if path == "/accounts/a1/workers/scripts":
             return [{"id": name, "tag": f"t{n + 1}"} for n, name in enumerate(self.workers)]
+        if path == f"{ZONE}/dns_records?per_page=500":
+            return {"result": copy.deepcopy(self.dns), "result_info": {"total_count": len(self.dns)}}
+        if path == f"{ZONE}/email/routing/dns":
+            return copy.deepcopy(ROUTING_DNS)
+        if path == f"{ZONE}/email/routing":
+            return {"enabled": self.routing}
+        if path == f"{ZONE}/email/routing/rules?per_page=50":
+            return copy.deepcopy(self.email_rules + [self.catch_all])
+        if path == f"{ZONE}/email/routing/rules/catch_all":
+            return copy.deepcopy(self.catch_all)
+        if path == f"{ADDRESSES}?per_page=50":
+            return copy.deepcopy(self.addresses)
         if path.startswith(f"{BUCKETS}/") and path.endswith("/lifecycle"):
             assert ok_missing
             return self.lifecycle
@@ -79,7 +121,8 @@ class FakeCloudflare:
 
 def run(fake, *args):
     out = io.StringIO()
-    with mock.patch.object(cs, "api", fake), redirect_stdout(out):
+    with mock.patch.object(cs, "api", fake), redirect_stdout(out), \
+            mock.patch.dict("os.environ", {cs.EMAIL_DESTINATION: DESTINATION, cs.EMAIL_FORWARD: FORWARD}):
         code = cs.main(list(args))
     return code, out.getvalue()
 
@@ -93,6 +136,8 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertIn("redirects: are [], should be ['www-to-apex']", out)
         self.assertIn(f"{cs.READOUTS_BUCKET}: does not exist", out)
         self.assertIn("rate limits: are [], should be ['api-flood']", out)
+        self.assertIn("Email Routing: is off", out)
+        self.assertIn(f"TXT _dmarc.{cs.ZONE} 'v=DMARC1; ", out)
 
     def test_apply_sets_them_and_then_sends_nothing(self):
         fake = FakeCloudflare()
@@ -103,6 +148,9 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertEqual([cs.comparable(rule, cs.RATE_LIMITS[0]) for rule in fake.rulesets[RATE_LIMITS]],
                          cs.RATE_LIMITS)
         self.assertEqual(fake.lifecycle, cs.READOUTS_LIFECYCLE)
+        self.assertTrue(fake.routing)
+        self.assertEqual(fake.addresses, [{"email": DESTINATION, "verified": None}])
+        fake.addresses[0]["verified"] = "2026-11-09T18:39:03Z"   # its owner followed Cloudflare's link
         fake.sent.clear()
         code, out = run(fake, "apply")
         self.assertEqual((code, fake.sent), (0, []))
@@ -167,6 +215,77 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertEqual((cs.RATE_LIMITS[0]["ratelimit"]["period"], cs.RATE_LIMITS[0]["ratelimit"]["mitigation_timeout"]),
                          (10, 10))
 
+    def test_dns_records_are_those_written_down_email_routings_and_the_workers(self):
+        fake = FakeCloudflare()
+        fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09T18:39:03Z"}]
+        run(fake, "apply")
+        self.assertEqual(sorted((r["type"], r["name"]) for r in fake.dns), sorted(
+            [("AAAA", cs.ZONE)] + [(r["type"], r["name"]) for r in cs.DNS_RECORDS + ROUTING_DNS]))
+        # Listed as Cloudflare does, they are no difference.
+        for record in fake.dns:
+            if record["type"] == "TXT":
+                record["content"] = '"' + record["content"][1:-1][:5] + '" "' + record["content"][1:-1][5:] + '"'
+            elif record["type"] == "MX":
+                record["content"] = record["content"].rstrip(".")
+        self.assertEqual(run(fake)[0], 0)
+        # One added by hand is deleted, one changed put back.
+        fake.dns.append({"id": "h1", "type": "A", "name": f"mail.{cs.ZONE}", "content": "192.0.2.50", "meta": {}})
+        dmarc = next(r for r in fake.dns if r["name"] == f"_dmarc.{cs.ZONE}")
+        dmarc["content"] = '"v=DMARC1; p=none"'
+        fake.sent.clear()
+        code, out = run(fake)
+        self.assertEqual(code, 1)
+        self.assertIn(f"A mail.{cs.ZONE} '192.0.2.50': is not written down", out)
+        self.assertIn(f"TXT _dmarc.{cs.ZONE} 'v=DMARC1; p=none': is not written down", out)
+        run(fake, "apply")
+        self.assertEqual(sorted(method for method, _, _ in fake.sent), ["DELETE", "DELETE", "POST"])
+        self.assertEqual(run(fake)[0], 0)
+
+    def test_each_address_named_is_forwarded_and_no_address_is_shown(self):
+        fake = FakeCloudflare()
+        fake.addresses = [{"email": DESTINATION.upper(), "verified": "2026-11-09T18:39:03Z"}]
+        code, out = run(fake, "apply")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(sorted((r["matchers"][0]["value"], r["actions"][0]["value"], r["enabled"])
+                                for r in fake.email_rules),
+                         [(f"hello@{cs.ZONE}", [DESTINATION], True), (f"press@{cs.ZONE}", [DESTINATION], True)])
+        # Listed in another order, they are no difference.
+        fake.email_rules.reverse()
+        self.assertEqual(run(fake)[0], 0)
+        # One sent elsewhere, one more made by hand, and a catch-all turned on are put back.
+        fake.email_rules[0]["actions"][0]["value"] = ["someone@example.org"]
+        fake.email_rules.append({"id": "e9", "name": "sales", "matchers": [{"type": "literal", "field": "to",
+                                 "value": f"sales@{cs.ZONE}"}], "actions": [{"type": "drop"}], "enabled": True})
+        fake.catch_all["enabled"] = True
+        fake.addresses.append({"email": "someone@example.org", "verified": None})
+        fake.sent.clear()
+        code, out = run(fake, "apply")
+        self.assertEqual(code, 1)   # the other address is left to the dashboard
+        self.assertIn(f"email rule 4: is to be made, from {cs.EMAIL_FORWARD}", out)
+        self.assertIn("email catch-all: forwards as written nowhere", out)
+        self.assertIn(f"destination addresses: 1 besides {cs.EMAIL_DESTINATION}", out)
+        for private in ("@example.", "hello", "press", "sales"):
+            self.assertNotIn(private, out.lower())
+        self.assertEqual(sorted(r["matchers"][0]["value"] for r in fake.email_rules),
+                         [f"hello@{cs.ZONE}", f"press@{cs.ZONE}"])
+        self.assertEqual(fake.catch_all, {"id": "c1", **cs.EMAIL_CATCH_ALL})
+
+    def test_an_unverified_destination_is_left_to_its_owner(self):
+        fake = FakeCloudflare()
+        run(fake, "apply")
+        fake.sent.clear()
+        code, out = run(fake, "apply")
+        self.assertEqual((code, fake.sent), (1, []))
+        self.assertIn(f"{cs.EMAIL_DESTINATION}: is not verified", out)
+
+    def test_the_destination_comes_from_the_environment_or_env(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / ".env"
+            env_file.write_text(f"{cs.EMAIL_DESTINATION}={DESTINATION}\n", encoding="utf-8")
+            with mock.patch.object(cs.credentials, "ENV_FILE", env_file), \
+                    mock.patch.dict("os.environ", {cs.EMAIL_DESTINATION: ""}):
+                self.assertEqual(cs.variable(cs.EMAIL_DESTINATION), DESTINATION)
+
     def test_the_workflow_only_checks(self):
         # Settings are applied by hand; the workflow's token can only read them.
         workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/cloudflare-settings.yml").read_text(
@@ -174,6 +293,8 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertNotIn(" apply", workflow.split("\nname:", 1)[1])
         self.assertIn("run: python3 tools/repo/cloudflare_settings.py ci\n", workflow)
         self.assertIn("secrets.CLOUDFLARE_READ_TOKEN", workflow)
+        for name in (cs.EMAIL_DESTINATION, cs.EMAIL_FORWARD):
+            self.assertIn(f"{name}: ${{{{ secrets.{name} }}}}", workflow)
 
 
 def deploy_token(zone=("Zone Read", "Workers Routes Write", "DNS Write"), workers=("t1", "t2")):
@@ -189,6 +310,7 @@ def deploy_token(zone=("Zone Read", "Workers Routes Write", "DNS Write"), worker
 class DeployTokenTests(unittest.TestCase):
     def setUp(self):
         self.fake = FakeCloudflare()
+        self.fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09T18:39:03Z"}]
         run(self.fake, "apply")
         self.fake.sent.clear()
 
@@ -210,8 +332,9 @@ class DeployTokenTests(unittest.TestCase):
         import subprocess
         import sys
         root = Path(__file__).resolve().parents[2]
-        code = ("from tests.repo.test_cloudflare_settings import FakeCloudflare, deploy_token, run\n"
-                "fake = FakeCloudflare(); run(fake, 'apply'); fake.tokens = [deploy_token()]\n"
+        code = ("from tests.repo.test_cloudflare_settings import DESTINATION, FakeCloudflare, deploy_token, run\n"
+                "fake = FakeCloudflare(); fake.addresses = [{'email': DESTINATION, 'verified': '2026-11-09'}]\n"
+                "run(fake, 'apply'); fake.tokens = [deploy_token()]\n"
                 "print(run(fake)[0])")
         for seed in range(24):
             done = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True,
@@ -242,6 +365,7 @@ class CiTokenReachTests(unittest.TestCase):
 
     def setUp(self):
         self.fake = FakeCloudflare()
+        self.fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09T18:39:03Z"}]
         run(self.fake, "apply")
         self.fake.sent.clear()
         self.fake.workers = []   # as CI's token sees them

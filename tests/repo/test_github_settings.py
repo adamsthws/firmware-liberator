@@ -2,6 +2,7 @@ import copy
 import io
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 from unittest import mock
 
 from tools.repo import github_settings as gs
@@ -28,6 +29,11 @@ class FakeGitHub:
                              "node_id": "x", "created_at": "2026-10-21"}}
         self.checks_on_main = list(checks_on_main)
         self.sent = []
+        self.secrets_set = {}   # what gh was given for each secret it set
+
+    def set_secret(self, name, value):
+        self.secrets.add(name)
+        self.secrets_set[name] = value
 
     def __call__(self, path, method="GET", body=None, ok_missing=False):
         if method != "GET":
@@ -84,9 +90,14 @@ class FakeGitHub:
         raise AssertionError(f"unexpected {method} {path}")
 
 
-def run(fake, *args):
+# What .env holds for FROM_ENV's secrets.
+ENV = {"CLOUDFLARE_EMAIL_DESTINATION": "owner@example.com", "CLOUDFLARE_EMAIL_FORWARD": "hello"}
+
+
+def run(fake, *args, env=ENV):
     out = io.StringIO()
-    with mock.patch.object(gs, "api", fake), redirect_stdout(out):
+    with mock.patch.object(gs, "api", fake), mock.patch.object(gs, "set_secret", fake.set_secret), \
+            mock.patch.dict("os.environ", env), redirect_stdout(out):
         code = gs.main(list(args))
     return code, out.getvalue()
 
@@ -251,6 +262,34 @@ if __name__ == "__main__":
         self.assertIn("secret CLOUDFLARE_READ_TOKEN: left - its value is set with "
                       "python3 tools/repo/github_settings.py secret CLOUDFLARE_READ_TOKEN", out)
         self.assertEqual(fake.secrets, {"CLOUDFLARE_API_TOKEN"})
+
+    def test_apply_sets_the_secrets_kept_in_env_each_time_and_never_shows_them(self):
+        fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
+        code, out = run(fake)
+        self.assertEqual((code, fake.secrets_set), (0, {}))   # a check sets nothing
+        code, out = run(fake, "apply")
+        self.assertEqual((code, fake.secrets_set), (0, ENV))
+        self.assertIn("secret CLOUDFLARE_EMAIL_FORWARD: set from .env", out)
+        # Changed in .env, it is set again: GitHub cannot say it differs.
+        run(fake, "apply", env={**ENV, "CLOUDFLARE_EMAIL_FORWARD": "hello,press"})
+        self.assertEqual(fake.secrets_set["CLOUDFLARE_EMAIL_FORWARD"], "hello,press")
+        self.assertNotIn("example.com", out)
+
+    def test_a_missing_secret_kept_in_env_is_set_not_left(self):
+        fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
+        fake.secrets -= set(gs.FROM_ENV)
+        code, out = run(fake, "apply")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(fake.secrets, set(gs.ENVIRONMENT_SECRETS))
+        self.assertNotIn("left", out)
+
+    def test_apply_stops_on_one_not_in_env(self):
+        fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
+        with mock.patch.object(gs.cloudflare_settings.credentials, "ENV_FILE", Path("/nonexistent/.env")), \
+                mock.patch("sys.stderr", io.StringIO()) as err:
+            code, _ = run(fake, "apply", env={name: "" for name in gs.FROM_ENV})
+        self.assertEqual((code, fake.secrets_set), (1, {}))
+        self.assertIn(f"no {gs.FROM_ENV[0]}: in the environment or .env", err.getvalue())
 
     def test_a_secret_goes_to_gh_on_stdin_never_in_its_arguments(self):
         done = mock.Mock(returncode=0, stdout="", stderr="")
