@@ -176,6 +176,16 @@ class GitHubSettingsTests(unittest.TestCase):
         run(fake, "apply")
         self.assertIn(("PATCH", "", {"homepage": gs.WEBSITE}), fake.sent)
 
+    def test_the_topics_name_each_maker_chip_family_and_firmware_the_devices_have(self):
+        import re
+        from tools.autoflash import kinds, routes
+        self.assertLessEqual(len(gs.TOPICS), 20, "GitHub takes 20 topics at most")
+        wanted = {name for name in routes.FIRMWARES if name != "sonoff"}
+        for kind in kinds.EVERY:
+            # A topic as GitHub writes one: esp32c3 is esp32-c3.
+            wanted |= {kind.maker.lower(), kind.ecosystem, kind.family, re.sub(r"^esp32(?=.)", "esp32-", kind.chip)}
+        self.assertLessEqual(wanted, set(gs.TOPICS))
+
     def test_topics_are_set_whatever_order_github_lists_them_in(self):
         fake = FakeGitHub()
         code, out = run(fake)

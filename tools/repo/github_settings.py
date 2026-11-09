@@ -31,8 +31,11 @@ WEBSITE = "https://firmwareliberator.com/"
 
 # How the repository is found: its description, website and topics are what
 # GitHub's search and its pages show, in the words people search with.
-TOPICS = ["beken", "bk7238", "esp32", "esp32-c3", "esphome", "ewelink", "firmware", "flashing-tool",
-          "home-assistant", "home-automation", "iot", "openbeken", "ota", "smart-plug", "sonoff", "tasmota"]
+# tests/repo/test_github_settings.py fails until the topics name each maker,
+# chip, chip family and firmware the devices have.
+TOPICS = ["beken", "bk7238", "esp32", "esp32-c3", "esphome", "espressif", "ewelink", "firmware", "flashing-tool",
+          "home-assistant", "home-automation", "iot", "openbeken", "ota", "smart-plug", "smart-switch", "sonoff",
+          "tasmota"]
 
 # Pull requests are squashed - one commit each, as main's history is kept -
 # and their branches deleted once merged.
