@@ -91,6 +91,7 @@ from tools.repo import cpu_load, fault_verdicts, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
 from tools.espressif import layouts  # noqa: E402
+from tools.espressif.emulator.patch_stock import holds_rsa_ca, trusts  # noqa: E402
 from tools.espressif.safeboot.safeboot_migration import OFFICIAL_TASMOTA_VERSION  # noqa: E402
 from tools.autoflash.routes import espressif as espressif_routes  # noqa: E402
 EMU = REPO / "captures/emulation"
@@ -2830,6 +2831,10 @@ def batch(ids_file=None):
     stale = stale_starts(known[i] for i in ids if i not in done)
     if stale:
         raise SystemExit(f"Saved plugs not on the firmware this checkout installs: {', '.join(stale)}. Run prep.")
+    untrusting = untrusting_starts() if STUB_CLOUD else []
+    if untrusting:
+        raise SystemExit(f"Saved plugs not trusting the stub's CA as it is now: {', '.join(untrusting)}. "
+                         "Run prep (prep-update for an -earlier one).")
     stub_only = 0
     # The longest first, so the batch does not end on one started last (scenario_times).
     took = scenario_times.times(EMU)
@@ -2908,6 +2913,41 @@ def stale_starts(todo):
         if made != installs(STARTS_ON.get(target, target)):
             stale.append(saved(ROUTES[f"{target}>sonoff"][0]))
     return stale
+
+
+def stub_ca():
+    """The CA the stub serves this plug, as emu.sh chooses it: an RSA one for
+    a firmware trusting eWeLink's RSA CA. None while it is not made yet."""
+    source = REPO / "captures/plugs" / MAC.replace(":", "-").lower() / "sonoff-backup/flash.bin"
+    try:
+        rsa = holds_rsa_ca(source.read_bytes())
+        return (EMU / ("stub-cloud-rsa" if rsa else "stub-cloud") / "ca.crt").read_bytes()
+    except (OSError, ValueError):
+        return None
+
+
+def untrusting_starts():
+    """This plug's saved stub plugs holding a Sonoff firmware - on the plug, or
+    in its backup, which a run back to Sonoff's writes - that does not trust
+    the CA the stub serves it now: made before that CA was made again, or
+    before emu.sh chose an RSA one for it. It turns the stub down
+    (unknown_ca), never comes online, and its scenario fails its checks."""
+    pem = stub_ca()
+    found = []
+    last4 = MAC.replace(":", "").lower()[-4:]
+    for kept in sorted((EMU / "saved").glob("stub-*")):
+        name = kept.name.removeprefix("stub-").removesuffix(f"-{last4}")
+        if saved(name) != kept.name:
+            continue   # another plug's
+        for flash in [kept / "flash.bin", *kept.glob("captures/plugs/*/sonoff-backup/flash.bin")]:
+            try:
+                trusted = trusts(flash.read_bytes(), pem)
+            except (OSError, ValueError):
+                continue   # not a whole flash, or none
+            if trusted is False:
+                found.append(kept.name)
+                break
+    return found
 
 
 def prepared(said, stop_after, stopped):

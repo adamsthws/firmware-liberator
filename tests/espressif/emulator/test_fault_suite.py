@@ -247,6 +247,70 @@ class SavedPlugTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "suite-esphome.*Run prep"):
                 fs.batch()
 
+    def untrusting(self, saved: dict[str, dict[str, bytes]], rsa: bool, cas: dict[str, bytes]):
+        """untrusting_starts over saved plugs {name: {path: flash}}, of a plug whose
+        firmware trusts eWeLink's RSA CA or not, and the stub's CAs {dir: pem}.
+        A flash is Sonoff's when it holds b"sonoff", trusting the CAs it holds."""
+        with tempfile.TemporaryDirectory() as root:
+            emu, repo = Path(root) / "emulation", Path(root) / "repo"
+            source = repo / "captures/plugs/12-34-56-ab-cd-ef/sonoff-backup/flash.bin"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"rsa" if rsa else b"ec")
+            for name, pem in cas.items():
+                (emu / name).mkdir(parents=True)
+                (emu / name / "ca.crt").write_bytes(pem)
+            for name, files in saved.items():
+                for path, flash in files.items():
+                    (emu / "saved" / name / path).parent.mkdir(parents=True, exist_ok=True)
+                    (emu / "saved" / name / path).write_bytes(flash)
+            with mock.patch.object(fs, "EMU", emu), mock.patch.object(fs, "REPO", repo), \
+                    mock.patch.object(fs, "MAC", "12:34:56:ab:cd:ef"), mock.patch.object(fs, "STUB_CLOUD", True), \
+                    mock.patch.object(fs, "holds_rsa_ca", side_effect=lambda flash: flash == b"rsa"), \
+                    mock.patch.object(fs, "trusts", side_effect=lambda flash, pem:
+                                      None if b"sonoff" not in flash else pem is not None and pem in flash):
+                return fs.untrusting_starts()
+
+    def test_a_saved_plug_trusting_a_stub_ca_made_before_the_one_there_now_is_found(self):
+        # Seen: the stub's RSA CA made again the day after the S60's saved plugs,
+        # whose Sonoff backups turned the stub down (unknown_ca), so a run back
+        # to Sonoff's failed its checks.
+        backup = "captures/plugs/12-34-56-ab-cd-ef/sonoff-backup/flash.bin"
+        saved = {"stub-suite-tasmota": {"flash.bin": b"tasmota", backup: b"sonoff OLD"},
+                 "stub-suite-stockC2-tasmota": {"flash.bin": b"sonoff NEW"},
+                 "stub-suite-esphome": {"flash.bin": b"esphome", backup: b"sonoff NEW"},
+                 "stub-suite-tasmota-nobackup": {"flash.bin": b"tasmota"}}
+        self.assertEqual(self.untrusting(saved, True, {"stub-cloud-rsa": b"NEW", "stub-cloud": b"EC"}),
+                         ["stub-suite-tasmota"])
+
+    def test_one_trusting_the_other_kind_of_ca_is_found_too(self):
+        # The S60's update plugs, made before emu.sh gave its firmware an RSA CA.
+        saved = {"stub-suite-tasmota-earlier": {"captures/plugs/12-34-56-ab-cd-ef/sonoff-backup/flash.bin":
+                                                b"sonoff EC"}}
+        self.assertEqual(self.untrusting(saved, True, {"stub-cloud-rsa": b"RSA", "stub-cloud": b"EC"}),
+                         ["stub-suite-tasmota-earlier"])
+        self.assertEqual(self.untrusting(saved, False, {"stub-cloud-rsa": b"RSA", "stub-cloud": b"EC"}), [])
+
+    def test_with_no_stub_ca_yet_every_saved_sonoff_firmware_is_found(self):
+        # emu.sh makes one afresh, which none of them trusts.
+        self.assertEqual(self.untrusting({"stub-suite-stockC2-tasmota": {"flash.bin": b"sonoff EC"}}, False, {}),
+                         ["stub-suite-stockC2-tasmota"])
+
+    def test_another_plugs_and_the_real_clouds_saved_plugs_are_left_out(self):
+        backup = "captures/plugs/{}/sonoff-backup/flash.bin"
+        saved = {"stub-suite-tasmota": {backup.format("12-34-56-ab-cd-ef"): b"sonoff EC"},
+                 "stub-suite-tasmota-2d01": {backup.format("12-34-56-e3-2d-01"): b"sonoff OLD"},
+                 "suite-tasmota": {backup.format("12-34-56-ab-cd-ef"): b"sonoff COOLKIT"}}
+        self.assertEqual(self.untrusting(saved, False, {"stub-cloud": b"EC"}), [])
+
+    def test_a_stub_batch_refuses_to_start_from_one(self):
+        with mock.patch.object(fs, "scenarios", return_value=[{"id": "a", "route": "tasmota>sonoff", "fault": "crash"}]), \
+                mock.patch.object(fs, "latest", return_value={}), mock.patch.object(fs, "LOGS"), \
+                mock.patch.object(fs, "stale_starts", return_value=[]), mock.patch.object(fs, "STUB_CLOUD", True), \
+                mock.patch.object(fs, "untrusting_starts", return_value=["stub-suite-tasmota"]), \
+                mock.patch.object(fs, "worker", side_effect=AssertionError("a scenario was run")):
+            with self.assertRaisesRegex(SystemExit, "stub-suite-tasmota.*Run prep"):
+                fs.batch()
+
     def test_the_connection_log_says_each_connection_once_up_and_once_gone(self):
         session = "ipv4 2 tcp 6 300 ESTABLISHED src=192.168.60.50 dst=192.0.2.81 sport=50280 dport=443 "
         closing = "ipv4 2 tcp 6 10 CLOSE src=192.168.60.50 dst=192.0.2.81 sport=50280 dport=443 "
@@ -337,6 +401,7 @@ class SavedPlugTests(unittest.TestCase):
                 ran.append(todo.get()["id"])
         with mock.patch.object(fs, "scenarios", return_value=rows), mock.patch.object(fs, "latest", return_value={}), \
                 mock.patch.object(fs, "LOGS"), mock.patch.object(fs, "stale_starts", return_value=[]), \
+                mock.patch.object(fs, "untrusting_starts", return_value=[]), \
                 mock.patch.object(fs, "STUB_CLOUD", True), mock.patch.object(fs, "worker", worker), \
                 mock.patch.dict(fs.os.environ, {"AUTOFLASH_EMU_STUB_WORKERS": "1"}), \
                 mock.patch.object(fs.time, "sleep"), mock.patch.object(fs, "report"), \

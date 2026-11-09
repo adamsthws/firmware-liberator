@@ -198,6 +198,33 @@ class Flash(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "no app slot"):
             patch_stock.patch(self.flash())
 
+    def holding(self, coolkit: bytes, *, with_bt: bool = True) -> bytes:
+        flash = bytearray(self.flash())
+        app = xtensa_app(with_bt=with_bt, coolkit=coolkit)
+        flash[0x20000:0x20000 + len(app)] = app
+        return bytes(flash)
+
+    @unittest.skipUnless(importlib.util.find_spec("cryptography"), "needs the cryptography package")
+    def test_the_kind_of_ca_the_firmware_trusts_is_read_from_its_der(self):
+        # Read with nothing beyond the standard library, for the fault suite.
+        from cryptography.hazmat.primitives.asymmetric import ec, rsa
+        rsa_ca = CoolkitCa.pem("coolkit", rsa.generate_private_key(65537, 1024))
+        ec_ca = CoolkitCa.pem("CoolKit", ec.generate_private_key(ec.SECP256R1()))
+        ours = CoolkitCa.pem("Autoflash stub", ec.generate_private_key(ec.SECP256R1()))
+        self.assertTrue(patch_stock.holds_rsa_ca(self.holding(rsa_ca + b"\0")))
+        self.assertFalse(patch_stock.holds_rsa_ca(self.holding(ec_ca + b"\0")))
+        self.assertFalse(patch_stock.holds_rsa_ca(self.holding(ours + b"\0" + rsa_ca + b"\0", with_bt=False)))
+        self.assertTrue(patch_stock.holds_rsa_ca(self.holding(ours + b"\0" + rsa_ca + b"\0")))
+
+    @unittest.skipUnless(importlib.util.find_spec("cryptography"), "needs the cryptography package")
+    def test_whether_sonoffs_firmware_trusts_the_stubs_ca_as_it_is_now(self):
+        from cryptography.hazmat.primitives.asymmetric import ec
+        made, again = (CoolkitCa.pem("Autoflash stub", ec.generate_private_key(ec.SECP256R1())) for _ in range(2))
+        self.assertIs(patch_stock.trusts(self.holding(made + b"\0"), made), True)
+        self.assertIs(patch_stock.trusts(self.holding(made + b"\0"), again), False)
+        self.assertIs(patch_stock.trusts(self.holding(made + b"\0"), None), False)   # not made yet
+        self.assertIsNone(patch_stock.trusts(self.holding(made + b"\0", with_bt=False), again))   # not Sonoff's
+
 
 if __name__ == "__main__":
     unittest.main()
