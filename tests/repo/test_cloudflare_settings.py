@@ -733,5 +733,25 @@ class ApiAndStatsTests(unittest.TestCase):
             self.assertIn(name, config)
 
 
+
+class StoppingTheApiTests(unittest.TestCase):
+    """The website workflow, run by hand, can deploy the API taking nothing."""
+
+    def test_run_by_hand_it_can_deploy_the_api_switched_off(self):
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/website.yml").read_text(encoding="utf-8")
+        trigger = workflow[workflow.index("  workflow_dispatch:"):workflow.index("\npermissions:")]
+        self.assertIn('options: ["on", "off"]', trigger)
+        self.assertIn('default: "on"', trigger)
+        job = workflow[workflow.index("\n  deploy-api:"):workflow.index("\n  deploy-token:")]
+        self.assertIn("INGEST: ${{ inputs.ingest || 'on' }}", job, "a push deploys it on")
+        self.assertIn('npx wrangler deploy --config api/wrangler.jsonc --var "INGEST:$INGEST"', job)
+        self.assertNotIn("${{ inputs.ingest }}", job.split("run: |", 1)[1], "never pasted into the script")
+
+    def test_the_switch_is_the_workers_own(self):
+        root = Path(__file__).resolve().parents[2]
+        self.assertIn('"INGEST": "on"', (root / "website/api/wrangler.jsonc").read_text(encoding="utf-8"))
+        self.assertIn('if (env.INGEST !== "on") {', (root / "website/api/index.js").read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()
