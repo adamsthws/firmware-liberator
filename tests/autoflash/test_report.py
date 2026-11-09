@@ -130,9 +130,11 @@ class EndingTests(RouteTestCase):
     def test_a_plug_that_does_not_answer_is_reported_not_raised(self):
         clock = iter(range(0, 1000, 5))
         with mock.patch.object(esphome, "relay", return_value=None), mock.patch.object(report.time, "sleep"), \
-                mock.patch.object(report.time, "monotonic", side_effect=lambda: next(clock)):
+                mock.patch.object(report.time, "monotonic", side_effect=lambda: next(clock)), \
+                mock.patch.object(output, "say") as said:
             result = report.check_esphome_hardware(self.ctx(firmware="esphome"))
         self.assertEqual(result["Relay"], "could not be checked")
+        self.assertIn("    Relay: Could not be checked", [c.args[0] for c in said.call_args_list])
 
     def test_a_plug_still_starting_as_the_run_ends_is_checked_once_it_answers(self):
         answers = iter([None, None, False])   # still starting, then answering: off
@@ -319,6 +321,18 @@ class CheckHardwareTests(unittest.TestCase):
         result = self.run_check(ctx)
         self.assertEqual(result["Relay"], "could not be checked")
         self.assertNotIn("Mains voltage", result)  # the power meter line shows it
+
+    def test_a_check_the_plug_stopped_answering_still_says_what_it_found(self):
+        # Seen in the classic fault suite: the screen gave no Relay line, so the
+        # suite recorded "Relay: not said".
+        from types import SimpleNamespace
+        ctx = SimpleNamespace(device=SimpleNamespace(command=mock.Mock(side_effect=OSError("refused")),
+                                                     wait_reachable=lambda timeout: 0.0))
+        with mock.patch.object(time, "sleep"), mock.patch.object(output, "say") as said:
+            report.check_hardware(ctx)
+        lines = [c.args[0] for c in said.call_args_list]
+        self.assertIn("    Relay: Could not be checked", lines)
+        self.assertIn("    Power meter: Could not be checked", lines)
 
     def test_a_plug_still_starting_as_the_run_ends_is_checked_once_it_answers(self):
         # Seen in the fault suite (update>tasmota:U6:plugoff-5): switched off and

@@ -417,9 +417,18 @@ def check_hardware(ctx: Context) -> dict[str, str]:
         second = meter()
     except (DeviceError, OSError, ValueError) as exc:
         output.say(f"    The device did not answer the check: {exc}")
-        return {key: "could not be checked" for key in ("Relay", "Power meter")}
+        return said(UNCHECKED)
     on, off = (second, first) if was_on else (first, second)
-    result = describe_hardware(switched, restored, on, off)
+    return said(describe_hardware(switched, restored, on, off))
+
+
+# What a check the device did not answer found.
+UNCHECKED = {"Relay": "could not be checked", "Power meter": "could not be checked"}
+
+
+def said(result: dict[str, str]) -> dict[str, str]:
+    """`result`, each of its answers shown: every check says them, whatever it
+    found, as a fault suite reads them off the screen."""
     for label, value in result.items():
         output.say(f"    {label}: {answer(value)}")
     return result
@@ -436,7 +445,7 @@ def check_esphome_hardware(ctx: Context) -> dict[str, str]:
         was_on = esphome.relay(host)
     if was_on is None:
         output.say(f"    The device did not answer the check within {ANSWER_WAIT:.0f}s.")
-        return {key: "could not be checked" for key in ("Relay", "Power meter")}
+        return said(UNCHECKED)
     switched = esphome.switch_relay(host, not was_on)
     time.sleep(METER_SETTLE)
     first = esphome.meter(host) or None
@@ -444,10 +453,7 @@ def check_esphome_hardware(ctx: Context) -> dict[str, str]:
     time.sleep(METER_SETTLE)
     second = esphome.meter(host) or None
     on, off = (second, first) if was_on else (first, second)
-    result = describe_hardware(switched, restored, on, off)
-    for label, value in result.items():
-        output.say(f"    {label}: {answer(value)}")
-    return result
+    return said(describe_hardware(switched, restored, on, off))
 
 
 def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
@@ -460,8 +466,7 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
     output.say("Checking the relay through eWeLink...")
     record = wait_until_online(ctx, device_id)
     if record is not None and ewelink_relay.motor_mode(record.get("params") or {}):
-        output.say("    Relay: Motor mode")
-        return {"Relay": "motor mode", "Power meter": "not checked"}
+        return said({"Relay": "motor mode", "Power meter": "not checked"})
     if record is not None:
         switched = ewelink_relay.check_relay(
             account=ctx.ewelink, device_id=device_id, say=output.say)
@@ -469,11 +474,9 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
         output.say(f"    eWeLink has not shown the device online within {ONLINE_WAIT:.0f}s, so its relay "
                    "could not be switched there. Check the eWeLink app.")
         switched = None
-    result = {"Relay": "could not be checked" if switched is None
-              else "switches (through eWeLink)" if all(switched) else "did not switch",
-              "Power meter": "not checked"}
-    output.say(f"    Relay: {answer(result['Relay'])}")
-    return result
+    return said({"Relay": "could not be checked" if switched is None
+                 else "switches (through eWeLink)" if all(switched) else "did not switch",
+                 "Power meter": "not checked"})
 
 
 def wait_until_online(ctx: Context, device_id: str) -> dict[str, Any] | None:
