@@ -52,7 +52,7 @@ __pycache__/
 !artifacts/tasmota-settings-template-esp32-15.6.0.0.bin
 !artifacts/sonoff-nspanel-partition-table.bin
 !artifacts/sonoff-th-elite-partition-table.bin
-!artifacts/esphome-sonoff-powct-imprintable-2026.10.0-2.bin
+!artifacts/esphome-sonoff-powct-imprintable-2026.10.0-3.bin
 !artifacts/esphome-sonoff-th-elite-imprintable-2026.10.0-2.bin
 !artifacts/esphome-sonoff-dualr3-imprintable-2026.10.0-2.bin
 !artifacts/openbeken-sonoff-basic-1gs-1.18.320-1.rbl

@@ -192,6 +192,15 @@ def clamp_problems(esphome: str, config: str) -> list[str]:
 
 
 class PowctClampTests(unittest.TestCase):
+    def test_its_status_led_is_lit_when_high_as_in_its_tasmota_template(self):
+        # Sonoff's firmware drives GPIO13 with the relay, uninverted
+        # (devices/sonoff-powct/README.md), as its Tasmota template's Led1 (288,
+        # tests/autoflash/test_kinds.py) has it.
+        config = (ROOT / "devices/sonoff-powct/esphome.yaml").read_text(encoding="utf-8")
+        block = config.split("id: relay_led\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("GPIO13", block)
+        self.assertNotIn("inverted", block)
+
     def test_the_clamp_is_read_as_one_once_esphome_can(self):
         pin = ESPRESSIF["sonoff-powct"]["esphome"]
         config = (ROOT / pin["config"]).read_text(encoding="utf-8")

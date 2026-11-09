@@ -327,13 +327,14 @@ SONOFF_POWCT = Kind(
     product=re.compile(r"POWCT"),
     stock_model="SN-ESP32D0-POWCT-01",
     wrapper_model="FWSW-E32POWCT-POWCT-ESP32D0WDV3",
-    # Tasmota's own template (its TM1621 driver, xdrv_87): button GPIO0,
-    # TM1621 GPIO5/17/18/23, status LED GPIO13 (inverted, as ESPHome's table
-    # has it), Wi-Fi LED GPIO15, relay GPIO21, CSE7761 RX GPIO25 and TX GPIO26.
+    # Tasmota's own template (its CSE7761 driver, xnrg_19): button GPIO0,
+    # TM1621 GPIO5/17/18/23, status LED GPIO13 (Led1, not inverted: Sonoff's
+    # firmware drives it high while the relay is on, devices/sonoff-powct/README.md),
+    # Wi-Fi LED GPIO15 (inverted), relay GPIO21, CSE7761 RX GPIO25 and TX GPIO26.
     # The meter's RX is CSE7761 Rx 2 (7329), which tells Tasmota it is a
     # POWCT's: its clamp's gain and scale, and the display showing the meter.
     # Rx 1 (7328) is a Dual R3's, with a shunt.
-    tasmota_gpio=(32, 0, 0, 0, 0, 9280, 0, 0, 0, 320, 0, 576, 0, 9184, 9216, 0, 0, 224, 0, 9248, 0,
+    tasmota_gpio=(32, 0, 0, 0, 0, 9280, 0, 0, 0, 288, 0, 576, 0, 9184, 9216, 0, 0, 224, 0, 9248, 0,
                   7329, 7296, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",

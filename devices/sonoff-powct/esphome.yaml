@@ -17,7 +17,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: liberator.sonoff-powct
-    version: "2026.10.0-2"
+    version: "2026.10.0-3"
   on_boot:
     # Tasmota holds its output pins through a software restart, and the install
     # ends with one: release them before anything drives them.
@@ -164,9 +164,8 @@ switch:
 output:
   - platform: gpio
     id: relay_led
-    pin:
-      number: GPIO13
-      inverted: true
+    # Lit when high, as Sonoff's firmware drives it (README.md).
+    pin: GPIO13
 
 display:
   platform: tm1621
