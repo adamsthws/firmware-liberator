@@ -112,3 +112,8 @@ Docs, comments and commit messages: plain, compact sentences saying what
 and why, for someone who was not there. Comments as sparing as the code
 around them. Docs speak to their reader, not from our side:
 [CONTRIBUTING.md](CONTRIBUTING.md#writing-docs).
+
+**Record findings as you go, unasked**: what research or a test shows goes
+into the docs in the change it comes from, a page it makes stale is corrected
+then, and an open question answered is closed
+([CONTRIBUTING.md](CONTRIBUTING.md#recording-what-you-find)).
