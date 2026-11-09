@@ -2,13 +2,100 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import struct
 import unittest
 from unittest import mock
 
-from tools.espressif.emulator import public_dump
+from tools.espressif import ais_records, flashmap
+from tools.espressif.emulator import appimage, public_dump
 
 DUMP = public_dump.Dump("d.bin", "0" * 64, 0xAB)
+BASICR4 = public_dump.UPDATES["sonoff-basicr4"]
+
+
+def entry(label: bytes, kind: int, subtype: int, offset: int, size: int) -> bytes:
+    return b"\xaa\x50" + bytes([kind, subtype]) + struct.pack("<II", offset, size) + label.ljust(16, b"\0") + bytes(4)
+
+
+def s60_like() -> tuple[bytearray, str]:
+    """A flash laid out as the S60's, its bootloader a stand-in holding the two
+    instructions that say where the table is, where the S60's has them; and
+    that bootloader's hash."""
+    flash = bytearray(b"\xff" * 0x30000)
+    size = 0x3200
+    header = bytes([0xE9, 1, 2, 0x20]) + bytes(8) + struct.pack("<H", 5) + bytes(9) + b"\x01"
+    flash[:24] = header
+    flash[24:32] = struct.pack("<II", 0x403D0000 - 0x2000, size)
+    flash[32:32 + size] = bytes(size)
+    for at, register in public_dump.S60_BOOTLOADER_TABLE_AT:
+        flash[at:at + 2] = public_dump.c_lui(register, 0x8)
+    boot = bytearray(flash[:appimage.parse(flash).length])
+    appimage.reseal(boot, appimage.parse(boot))
+    flash[:len(boot)] = boot
+    entries = (entry(b"nvs", 1, 2, 0x9000, 0x10000) + entry(b"reserve", 1, 2, 0x19000, 0x4000)
+               + entry(b"otadata", 1, 0, 0x1D000, 0x2000) + entry(b"ota_0", 0, 0x10, 0x20000, 0x10000))
+    flash[0x8000:0x8000 + len(entries)] = entries
+    flash[0x9000:0x9000 + 0x3000] = b"\x5a" * 0x3000  # the settings, at the front as the generator writes them
+    return flash, hashlib.sha256(boot).hexdigest()
+
+
+class TableMoved(unittest.TestCase):
+    def moved(self, flash: bytearray, sha256: str) -> bytes:
+        with mock.patch.object(public_dump, "S60_BOOTLOADER_SHA256", sha256):
+            return public_dump.table_moved(bytes(flash), 0xC000)
+
+    def test_the_bootloader_reads_it_where_it_went_and_still_starts(self):
+        out = self.moved(*s60_like())
+        for at, register in public_dump.S60_BOOTLOADER_TABLE_AT:
+            self.assertEqual(out[at:at + 2], public_dump.c_lui(register, 0xC))
+        self.assertTrue(appimage.verify(out, appimage.parse(out)))
+
+    def test_only_the_settings_move_out_of_its_way(self):
+        out = self.moved(*s60_like())
+        self.assertEqual(flashmap.table_at(out), 0xC000)
+        self.assertEqual(out[0x8000:0x9000], b"\xff" * 0x1000)
+        self.assertEqual([(p.label, p.offset, p.size) for p in flashmap.partitions(out)],
+                         [("nvs", 0xD000, 0xC000), ("reserve", 0x19000, 0x4000), ("otadata", 0x1D000, 0x2000),
+                          ("ota_0", 0x20000, 0x10000)])
+        self.assertEqual(out[0xD000:0x10000], b"\x5a" * 0x3000)
+
+    def test_its_checksum_row_is_esp_idfs(self):
+        table = self.moved(*s60_like())[0xC000:0xD000]
+        entries = table[:4 * flashmap.ENTRY_SIZE]
+        self.assertEqual(table[len(entries):len(entries) + 32], b"\xeb\xeb" + b"\xff" * 14 + hashlib.md5(entries).digest())
+
+    def test_settings_that_would_not_fit_stop_it(self):
+        flash, sha256 = s60_like()
+        flash[0x18000] = 0
+        with self.assertRaisesRegex(SystemExit, "do not fit"):
+            self.moved(flash, sha256)
+
+    def test_another_bootloader_stops_it(self):
+        flash, _ = s60_like()
+        with self.assertRaisesRegex(SystemExit, "not the S60's"):
+            self.moved(flash, "0" * 64)
+
+    def test_compressed_lui_is_encoded_as_the_s60s_bootloader_has_it(self):
+        self.assertEqual(public_dump.c_lui(10, 0x8), bytes.fromhex("2165"))  # c.lui a0,0x8
+        self.assertEqual(public_dump.c_lui(13, 0x8), bytes.fromhex("a166"))  # c.lui a3,0x8
+
+
+class FactoryRecord(unittest.TestCase):
+    def test_it_holds_the_test_copys_made_up_identity_and_model(self):
+        record = public_dump.factory_record(BASICR4)
+        field = lambda name: ais_records.text(record, ais_records.FACTORY_FIELDS, name).decode()  # noqa: E731
+        self.assertTrue(ais_records.is_factory(record))
+        self.assertEqual(field("device_model"), "SN-ESP32C3-BASICR4-01")  # must be its own model
+        self.assertEqual((field("deviceid"), field("factory_apikey")), (BASICR4.deviceid, BASICR4.apikey))
+        self.assertEqual(struct.unpack_from("<H", record, ais_records.FACTORY_UIID)[0], 138)
+
+    def test_it_is_tied_to_the_emulated_chip(self):
+        record = public_dump.factory_record(BASICR4)
+        field = lambda name: ais_records.text(record, ais_records.FACTORY_FIELDS, name)  # noqa: E731
+        self.assertEqual((field("chip_mac"), field("sta_mac"), field("sap_mac")),
+                         (b"123456E32D05", b"12:34:56:E3:2D:05", b"12:34:56:E3:2D:06"))
 
 
 class Identity(unittest.TestCase):

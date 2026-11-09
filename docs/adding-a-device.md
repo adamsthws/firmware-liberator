@@ -233,9 +233,11 @@ Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
 | `This chip is revision 0 but ...` | eFuses too old | make the copy again: `public_dump.py` sets it |
 | `A stack overflow in task colink task` | stub CA is a heavier type than the firmware's | see the CA row above |
 | `Interrupt wdt timeout` at start-up | a core waiting for the other | look for a new cross-core wait; do not stretch the watchdog |
-| `factory mode`, `factory pid not set` | factory data only a real unit has | a whole dump is needed |
+| `factory mode`, `factory pid not set` | factory data only a real unit has: on Sonoff's ais SDK (`aisFactoryLoadInfo` in the firmware), a record of its own | on the ais SDK, `ais_sdk=True` in `public_dump.py` writes one; else a whole dump is needed |
 | Both CPUs idle after `factory?`, no Wi-Fi | it is waiting for something the donor lacks | a whole dump is needed |
-| `ESP_ERR_NOT_FOUND` from `espInit` | a partition or setting the donor lacks | a whole dump is needed |
+| `ESP_ERR_NOT_FOUND` from `espInit` | a partition or setting the donor lacks: on the BASICR4, its partition table, built to be at 0xC000 | `table_at` in `public_dump.py`; else a whole dump is needed |
+| The upgrade answered `"error": 407` | the firmware refuses updates: on the BASICR4, it takes its thermistor, read as 0 V, to be overheating | the kind's `adc_readings` |
+| `GET /dispatch/device` over and over, never `/api/ws` | the firmware's JSON parser turned the stub's answer down | the stub answers compact JSON, as eWeLink's must be: check what changed |
 
 ## A Beken device
 

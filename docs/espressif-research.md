@@ -21,8 +21,8 @@ device and both chip families, is in [legal.md](legal.md#studying-and-emulating-
 | TH Elite (THR320D) | ESP32 | TH style | `FWSW-E32THR3-THR3-ESP32D0WDV3` | whole dump | converts both ways |
 | Dual R3 | ESP32 | TH style | `FWSWES-E32DR3-DUALR3-ESP32D0WDV3` | update file, on the TH Elite's flash | converts both ways |
 | NSPanel | ESP32 + PSRAM | S60 style, no `reserve` | `FWPNL-E32NSP-NSPANEL-ESP32D0WDV3` | whole dump | boots; rejects a one-record file at the header ([why](../devices/not-ready-yet/sonoff-nspanel/research.md#the-nspanel-wants-three-records)) |
-| BASICR4 | ESP32-C3 | unknown | `FWSW-E32R4-BASICR4-ESP32C3` | update file | does not start on the donor (`espInit`, `ESP_ERR_NOT_FOUND`); added from the official file, testers wanted |
-| MINIR4 | ESP32 + PSRAM | S60 style | `FWSW-E32R4-MINIR4-ESP32D0WDR2V3` | update file | goes to `factory mode`: wants a real unit's factory data |
+| BASICR4 | ESP32-C3 | table at 0xC000; the rest unknown | `FWSW-E32R4-BASICR4-ESP32C3` | update file, on the S60's flash with its table moved | starts and is read out ([below](#sonoffs-ais-sdk)); not converted: Tasmota and ESPHome look at 0x8000 |
+| MINIR4 | ESP32 + PSRAM | S60 style | `FWSW-E32R4-MINIR4-ESP32D0WDR2V3` | update file | starts with the ais SDK's records and is read out ([below](#sonoffs-ais-sdk)); a conversion not tried yet |
 | M5 1C, 2C, 3C (not Matter) | ESP32 | unknown | `FWSWES-E32T5-T5-ESP32D0WDV3` | update file | goes quiet, never starts its Wi-Fi |
 
 Stock models, as a firmware calls itself: `E32-MSW-NX` (NSPanel), `E32-2SW-P0` (Dual
@@ -213,6 +213,115 @@ gone by the time R1 runs; the sector at the end of `ota_1` is not, as every upda
 the way writes only as far as its image. R1 reads it there, and the tool keeps it
 on the way to ESPHome too.
 
+## Sonoff's ais SDK
+
+The BASICR4's firmware (1.1.0, ESP-IDF 4.4.2) and the MINIR4's are a newer
+Sonoff SDK than the S60's: its components are `ais_*` (`ais_factory`, `ais_ota`,
+`ais_colink`) where the S60's are `esf_*`. Read from the BASICR4's update file
+(its RISC-V code disassembled), it differs in what an emulated one needs:
+
+- **The partition table is at 0xC000** (`CONFIG_PARTITION_TABLE_OFFSET`): its
+  `load_partitions` maps sector 0 and adds 0xC000 where the S60's adds 0x8000, so
+  its bootloader reads it there too. On the S60's flash it found no table,
+  `nvs_flash_init` returned `ESP_ERR_NOT_FOUND`, and `espInit` aborted.
+  [`tools/espressif/flashmap.py`](../tools/espressif/flashmap.py) finds a table at
+  either place; the MINIR4's real table is at 0x8000 (its `nvs` starts at 0x9000).
+- **Its identity and Wi-Fi are records of its own**, not `frame_params`
+  ([`ais_records.py`](../tools/espressif/ais_records.py) has both), each a blob
+  `info` that starts with the magic `0x55AA` and a version, then NUL-padded text
+  at fixed places. A readout takes the Wi-Fi and identity out of them
+  ([`scrub.py`](../tools/espressif/scrub.py)), and blanks whole, after its header,
+  one of a version not known here.
+
+  The **factory record** (namespace `factory`, 178 bytes, version 1 on both) is
+  written at the factory by `AT+LICENSE_WRITE` from a license whose fields hash to
+  its `sha256_check`; without one the firmware stays in `factory mode`.
+  `aisFactoryLoadInfo` checks only the magic and version. It holds the eWeLink
+  identity the device registers with:
+
+  | Offset | Field | Size |
+  |---|---|---|
+  | 0 | magic `0x55AA`, version `1` | 2 + 2 |
+  | 4 | chip MAC, `%02X` six times | 16 |
+  | 20 | `device_model` (must be the firmware's own, `SN-ESP32C3-BASICR4-01`) | 32 |
+  | 52 | `deviceid` | 16 |
+  | 68 | `factory_apikey` | 40 |
+  | 108, 126 | `sta_mac`, `sap_mac` | 18 each |
+  | 144 | `uiid` (138 on both, by SonoffLAN's list) | u16 |
+  | 146 | SHA-256 of `factory_apikey`, `sta_mac`, `sap_mac`, `device_model`, the uiid in decimal, `deviceid` and the chip MAC, run together | 32 |
+
+  The **pair record** (namespace `pair`) holds the Wi-Fi it was paired with and
+  where it finds eWeLink; it counts as paired when the SSID is set. Two versions
+  are known:
+
+  | Field | Version 1: 142 bytes (the BASICR4's 1.1.0) | Version 2: 176 bytes (the MINIR4's 1.2.0) |
+  |---|---|---|
+  | magic, version | 0, 2 + 2 | 0, 2 + 2 |
+  | dispatch port | 4, u16 | 4, u16 |
+  | dispatch host | 6, 32 | 6, 65 |
+  | SSID | 38, 33 | 71, 33 |
+  | password | 71, 65 | 104, 65 |
+  | not read | 136, 6 | 169, 7 |
+
+  Version 1's places were read from the BASICR4's code (`aisPairLoadInfo`, and
+  what reads it: the cloud connection, the Wi-Fi join). Version 2's came from an
+  emulated MINIR4, which was given a version 1 record and wrote it again as
+  version 2 (`pair info data ver too old` ... `pair save info data ok` on its
+  serial port): its host given 65 bytes, the SSID seen at 71. Given a version 1
+  record holding a made-up password, it wrote the password at 104 (and logged
+  `pair info: ssid[...] pwd[...]`), NUL-padded; 65 bytes fits, as in version 1,
+  though no password longer than 64 characters can show whether the field runs
+  on into the 7 bytes after it, which were 0. The scrub also removes every copy of
+  a password ESP-IDF's own `nvs.net80211` holds, wherever it is.
+- **It boots in normal mode only when nobody answers** the `factory?` it sends three
+  times on its serial port with `factory!`: a production jig's.
+- **Its settings' namespaces**, none of them the S60's but `phy`: `factory`, `pair`,
+  `pair_bkp`, `pair_run_param`, `ewelink_device`, `outlets`, `scene`, `slisaon`.
+  The donor's `frame_params` and the rest mean nothing to it.
+- **Its dispatch** is `GET https://<host>:<port>/dispatch/device`, no body, through
+  `esp_http_client` with the pinned CA. Its handler copies the reply only when it is
+  not chunked and under 128 bytes; it then needs `error` 0, `IP` as a string, and
+  `port` as a string (with none it leaves the port out), and makes
+  `wss://<IP>[:<port>]/api/ws`. A reply it cannot parse leaves that URL empty, and
+  its connection loop dispatches again every 2 seconds, saying nothing.
+- **No secure boot or flash encryption** code is in its app, nor in the S60's (no
+  `secure_boot` or `flash_encrypt` strings, where a build with them has both), and
+  its updater (`ais_ota`) takes the wrapped bridge (`"error": 0`) once it is not
+  overheating.
+- **The BASICR4's 1.1.0 says nothing on its serial port** past `normal mode`; the
+  MINIR4's 1.2.0 logs each step of its cloud connection (`http request: ...`,
+  `Get WsUri OK!`, `WEBSOCKET_EVENT_DISCONNECTED`), which is how its `-v1` host and
+  certificate check were found.
+- **It turns down updates while overheating.** A `TEMPERATURE_CHECK` task reads
+  ADC1 channel 3 (GPIO3) through `esp_adc_cal`, in millivolts: at start-up 3
+  readings 300 ms apart, over 12 rounds; later 10 readings a second apart. All
+  under 580 mV, it posts `TEMP_EVENT` 0, whose handler sets a flag (`0x3fca0649` in
+  1.1.0) and an LED pattern (13); while the flag is set, `upgrade` is answered
+  `"error": 407`. A low reading meaning hot is an NTC divider to ground; no
+  published pin map names GPIO3, so it is not seen on a board yet. Neither the
+  Tasmota template nor the ESPHome config this tool installs reads GPIO3, so a
+  converted BASICR4 would lose this protection. The emulated ADC read 0 V, with no eFuse
+  calibration 0 mV: the emulator gives it room temperature (`adc_readings` in
+  [`kinds.py`](../tools/autoflash/kinds.py), a QEMU patch) and every emulated
+  ESP32-C3 the calibration real ones carry.
+- **Its JSON parser takes only compact JSON** (`"error":0`, not `"error": 0`): with
+  spaces its dispatch failed silently, over and over.
+- **It turns down an EC CA** where it pins eWeLink's RSA one (`unknown_ca`).
+- **Flash and other Sonoff ESP32-C3 builds.** By their image headers the BASICR4's,
+  the S60's and the MINIR4's apps are all for 4 MB of flash (the BASICR4's at 80 MHz,
+  the S60's at 40 MHz), so the table did not move for a larger flash. Of the other
+  Sonoff ESP32-C3 update files published, the MINI-2GS's, MINI-DIM's and MINIR4M's
+  are Matter OTA images (magic `0x1BEEF11E`, with Sonoff's 100-byte wrapper inside;
+  the app starts 178 or 330 bytes in), built with ESP-IDF 5, whose
+  `load_partitions` is not the code looked for here: their table's place is not
+  known. 0xC000 is ESP-IDF's place for a table when the bootloader needs more
+  than 32 KB (secure boot, flash encryption) and the default in Espressif's Matter
+  SDK; that the BASICR4 was built from Sonoff's Matter-era project for that reason
+  is a guess.
+- **The MINIR4 puts `-v1` into its dispatch host** (`-v1%s`), and **connects by
+  dispatch's `domain`**, checking the certificate against it: ESP-IDF 4.4's mbedTLS
+  cannot match an IP address in one, so the stub gives a name there.
+
 ## No restart command
 
 Sonoff's firmware has no command that only restarts the plug, over the eWeLink
@@ -329,12 +438,38 @@ revision 0.0. What a real chip answers has not been seen yet.
   and `from_account`), `device_facts.py` (what a backup logs), and
   `build_vendor_ota.py` / `analyze_vendor_ota.py` (the 100-byte wrapper a stock
   updater takes).
-- **eWeLink**: `tools/ewelink/firmware_name.py` (the firmware name), and the stub's
-  `stub_cloud/firmware.py` (the plug's own app offered as eWeLink's latest).
+- **eWeLink**: `tools/ewelink/firmware_name.py` (the firmware name), the stub's
+  `stub_cloud/firmware.py` (the plug's own app offered as eWeLink's latest), and
+  `firmware_findings.py` (what Sonoff's firmware says of its hardware, a detector
+  each).
+- **Reading an update file's code**, as the BASICR4's was read. Strip the 100-byte
+  wrapper, split the ESP image into its segments (each a load address and bytes),
+  and make each an ELF with `riscv32-esp-elf-objcopy -I binary -O elf32-littleriscv
+  -B riscv --rename-section .data=.text,code,alloc,load,contents`, then
+  `riscv32-esp-elf-objdump -d --adjust-vma=<its address>`; the DROM segment
+  (`0x3c...`) holds the strings, so each `lui`/`addi` pair's address can be named.
+  An `ESP_ERROR_CHECK` that aborts names its file, line and function: its call to
+  `_esp_error_check_failed` carries the line in `a2`, which finds the call. The
+  table's place is the constant `load_partitions` adds after
+  `spi_flash_mmap(0, 0x1000, ...)` (`lui a5,0x8` or `0xc`); the app description
+  (the first segment's start) says the ESP-IDF version. PlatformIO's toolchain
+  (`~/.platformio/packages/toolchain-riscv32-esp`) has both tools.
+- **Watching a running emulated plug**: gdb on the plug QEMU runs, without restarting
+  it ([the emulator's README](../tools/espressif/emulator/README.md#debugging)).
 
 ## Questions still open
 
-- What the M5 waits for after `factory?`, and what BASICR4's `espInit` cannot find.
-  Neither input pin levels nor eWeLink's model number for the M5 (160 to 162) moved it.
-  Both run on a donor flash from an update file; the only whole M5 dump published is the
-  encrypted Matter one (above), so neither has a plaintext dump to compare against yet.
+- What the M5 waits for after `factory?`. Neither input pin levels nor eWeLink's model
+  number for it (160 to 162) moved it. It runs on a donor flash from an update file; the
+  only whole M5 dump published is the encrypted Matter one (above), so it has no
+  plaintext dump to compare against yet.
+- The BASICR4's whole partition table: only where it is (0xC000) is known.
+- The ADC on other chips. A classic ESP32 calibrates from its eFuses too, but from
+  a measured reference voltage (block 0) or two points (block 3), and with neither
+  ESP-IDF takes a nominal 1100 mV, not 0: an emulated one would read a voltage once
+  its ADC reads anything, and the fork's classic-ESP32 ADC also reads 0 unless set,
+  so it would want the property 0005 gives the ESP32-C3's. A BK7238 keeps its
+  ADC's calibration in flash, in the factory store at 0x3e0000, which no
+  conversion step writes and neither OpenBeken nor ESPHome applies
+  ([Beken research](beken-research.md#0x3e0000--factory-tlv-store-mac--radio-calibration));
+  the Beken emulator's ADC has not been looked at.

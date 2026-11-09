@@ -3,7 +3,8 @@
 
 The stock firmware keeps the home Wi-Fi in two places: ESP-IDF's own
 `nvs.net80211` (sta.ssid / sta.pswd) and Sonoff's `frame_params` JSON
-(`ssid` / `passwd`). Both are rewritten to `--ssid` with an empty password,
+(`ssid` / `passwd`), or on Sonoff's ais SDK its `pair` record. Each is
+rewritten to `--ssid` with an empty password,
 and the saved BSSID / AP info is dropped so the firmware scans afresh.
 Everything else (eWeLink keys, calibration, energy history) is kept as is. A
 dump taken after the plug was reset has no `ssid`, `passwd`, `dis_server` or
@@ -21,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import struct
 import subprocess
 import sys
 import tempfile
@@ -29,7 +31,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from tools.espressif import flashmap  # noqa: E402
+from tools.espressif import ais_records, flashmap  # noqa: E402
 from tools.espressif.inspect_stock_nvs import ENTRIES, PAGE, parse  # noqa: E402
 
 # What a plug that has been paired has in frame_params: where a reset one is
@@ -53,6 +55,18 @@ def entries_of(page: bytes):
         if written and entry[1] != 0x42 and 1 <= span:
             yield entry
         index += span if written and 1 <= span <= ENTRIES - index else 1
+
+
+def pair_rewritten(record: bytes, ssid: str, dis_server: str | None, dis_port: int | None) -> bytes:
+    """The ais SDK's pair record (tools/espressif/ais_records.py) joining `ssid`
+    with no password; its cloud kept unless another is asked for, as
+    frame_params' is."""
+    host = ais_records.text(record, ais_records.pair_fields(record), "host").decode() or DISPATCH[0]
+    port = struct.unpack_from("<H", record, ais_records.PAIR_PORT)[0] or DISPATCH[1]
+    try:
+        return ais_records.pair_with(record, dis_port or port, ssid=ssid, password="", host=dis_server or host)
+    except ValueError as exc:
+        raise SystemExit(f"pair: {exc}") from None
 
 
 def ssid_blob(ssid: bytes) -> bytes:
@@ -113,6 +127,8 @@ def rewritten(nvs: bytes, ssid: str, dis_server: str | None = None,
                     data = set_json_string(data, "dis_server", dis_server or DISPATCH[0])
                 if dis_port is not None or not paired:
                     data = set_json_number(data, "dis_port", dis_port or DISPATCH[1])
+            elif space == "pair" and key == "info" and ais_records.is_pair(data):
+                data = pair_rewritten(data, ssid, dis_server, dis_port)
             if value.kind in INTS:
                 signed = value.kind & 0x10 != 0
                 rows.append((key, "data", INTS[value.kind], str(int.from_bytes(data, "little", signed=signed))))

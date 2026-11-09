@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import struct
 import sys
 import time
 import urllib.parse
@@ -31,8 +32,8 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from tools.autoflash import kinds, plugs  # noqa: E402
-from tools.espressif import build_vendor_ota, flashmap  # noqa: E402
-from tools.espressif.emulator import copy_plug, rewrite_nvs  # noqa: E402
+from tools.espressif import ais_records, build_vendor_ota, flashmap  # noqa: E402
+from tools.espressif.emulator import appimage, copy_plug, rewrite_nvs  # noqa: E402
 from tools.espressif.inspect_stock_nvs import parse  # noqa: E402
 
 COMMIT = "4d3556605da2ce101382a01b6fb7d84e68c3df2a"
@@ -103,8 +104,10 @@ class Update:
     number: int
     donor: str         # the key in DUMPS or S60_DUMP of the flash it goes on
     stock_model: str   # what its firmware calls itself, read from it
-    uiid: int = 0      # eWeLink's number for its kind, where it differs from the donor's
+    uiid: int = 0      # eWeLink's number for its kind, where it differs from the donor's or its firmware checks it
     settings: str = ""  # Sonoff's user settings (user_usual) for it, where the donor's are not its own
+    table_at: int = flashmap.TABLE_AT  # where its firmware reads the partition table
+    ais_sdk: bool = False  # its firmware is Sonoff's ais SDK, which keeps its own records (ais_rows)
 
     @property
     def url(self) -> str:
@@ -118,9 +121,16 @@ class Update:
 S60_DUMP = Dump("Sonoff_S60TPG_UK_Plug_ESP32-C3_SM-049_1.2.0.bin",
                 "a638d7251c20a20ff14cf0eef9be3058bedd26ed80e260d7d0107d6b2599dff4", 0xF0)
 UPDATES = {
+    # Built with the S60 bootloader's ESP-IDF (v4.4.2-dirty), but for a table at
+    # 0xC000 (its load_partitions maps sector 0 and adds 0xC000). Its uiid is
+    # SonoffLAN's (DEVICES.md), which has the S60's as the S60's settings do; the
+    # MINIR4's, below, is the same.
+    "sonoff-basicr4": Update("SONOFF_BASICR4_(FWSW-E32R4-BASICR4-ESP32C3)_ESP32-C3_v1.1.0_user1.bin",
+                             "cd4bbf2b08d9918a920d81c3ed2cef6e546673fd2c280106fd6852528866ac4a", 5,
+                             "s60", "SN-ESP32C3-BASICR4-01", 138, table_at=0xC000, ais_sdk=True),
     "sonoff-minir4": Update("SONOFF_MINIR4_(FWSW-E32R4-MINIR4-ESP32D0WDR2V3)_ESP32_v1.2.0_user1.bin",
                             "c881ddd667bc9d8c6905acf30051a1f2e4270c4be2dcfcfa39a5bfdd137c6ec0", 6,
-                            "sonoff-pow-elite", "SN-ESP32D0-MINIR4-01"),
+                            "sonoff-pow-elite", "SN-ESP32D0-MINIR4-01", 138, ais_sdk=True),
     # The DualR3's firmware keeps its work mode as deviceMode in user_usual (1
     # its two relays, 2 a curtain motor) and, finding none, starts as a motor,
     # refusing every switch. Its own settings in relay mode, as a DualR3 out of
@@ -149,12 +159,37 @@ def identities(frame: dict, dump: Dump) -> dict[bytes, bytes]:
 # Of a donor's settings, what is not its own alone.
 KEPT_SPACES = {"frame_params", "nvs.net80211", "phy", "misc", "data_backups", "user_usual", "user_unusual"}
 
+def factory_record(update: Update) -> bytes:
+    """The record a plug of `update`'s kind would have been given at the
+    factory (tools/espressif/ais_records.py), with the test copy's made-up
+    identity."""
+    octets = bytes.fromhex(update.mac.replace(":", ""))
+    softap = octets[:5] + bytes([(octets[5] + 1) & 0xFF])  # ESP-IDF's softAP MAC: the base + 1
+    return ais_records.factory_record({
+        "chip_mac": octets.hex().upper(), "device_model": update.stock_model, "deviceid": update.deviceid,
+        "factory_apikey": update.apikey, "sta_mac": ":".join(f"{b:02X}" for b in octets),
+        "sap_mac": ":".join(f"{b:02X}" for b in softap)}, update.uiid)
+
+
+# A paired plug's home network, made up: rewrite_nvs points it at the emulator's.
+HOME_WIFI = ("home-wifi", "made-up-password")
+
+
+def ais_rows(update: Update) -> tuple[tuple[str, str, str, str], ...]:
+    """The ais SDK's records of a plug of `update`'s kind that has been made
+    and paired, as rows for the NVS generator. The donor's settings, in
+    another SDK's places, mean nothing to its firmware."""
+    paired = ais_records.pair_record(*HOME_WIFI, *rewrite_nvs.DISPATCH)
+    return (("factory", "namespace", "", ""), ("info", "data", "hex2bin", factory_record(update).hex()),
+            ("pair", "namespace", "", ""), ("info", "data", "hex2bin", paired.hex()))
+
 
 def anonymised(flash: bytes, dump: "Dump | Update", stock_model: str | None = None, uiid: int = 0,
-               user_settings: str = "") -> bytes:
+               user_settings: str = "", added: tuple[tuple[str, str, str, str], ...] = ()) -> bytes:
     """The dump with the plug's identity replaced throughout its settings - and,
     given `stock_model`, what it calls itself, given `uiid` its kind's number, and
-    given `user_settings` those for its user settings."""
+    given `user_settings` those for its user settings. `added` are more settings,
+    as rows for the NVS generator."""
     partition = flashmap.nvs(flash)
     settings = flash[partition.offset:partition.offset + partition.size]
     names, values = parse(settings)
@@ -195,7 +230,7 @@ def anonymised(flash: bytes, dump: "Dump | Update", stock_model: str | None = No
                 rows.append((key, "data", "string", data.rstrip(b"\0").decode()))
             else:
                 rows.append((key, "data", "hex2bin", data.hex()))
-    new = rewrite_nvs.rebuild(rows, partition.size)
+    new = rewrite_nvs.rebuild(rows + list(added), partition.size)
     out = bytearray(flash)
     out[partition.offset:partition.offset + partition.size] = new
     if any(old in out for old in replaced):
@@ -210,12 +245,69 @@ def anonymised(flash: bytes, dump: "Dump | Update", stock_model: str | None = No
     return bytes(out)
 
 
+# Where the S60's bootloader (ESP-IDF v4.4.2-dirty) says where its table is:
+# c.lui of 0x8000, in load_partition_table's bootloader_mmap and in its error
+# message. Each is the flash offset of the instruction and its register.
+S60_BOOTLOADER_TABLE_AT = ((0x316A, 10), (0x3194, 13))  # a0, a3
+S60_BOOTLOADER_SHA256 = "1b8ab8e5dbf1474c796bda4bc356c03fb22040e5eae63ed584359730bf1d72e1"
+
+
+def c_lui(register: int, upper: int) -> bytes:
+    """RISC-V's compressed lui, for an upper immediate of 1 to 31."""
+    return (0x6001 | (register << 7) | (upper << 2)).to_bytes(2, "little")
+
+
+def table_moved(flash: bytes, to: int) -> bytes:
+    """An S60 flash as a plug built for its partition table at `to` would have
+    it: its bootloader reading it there and nothing where it was. The settings
+    partition, which covers `to` on the S60, starts after it instead and keeps
+    its end; nothing else moves. A real one's layout past the table is not
+    known, so this is the least a table at `to` needs."""
+    bootloader_end = appimage.parse(flash).length
+    if hashlib.sha256(flash[:bootloader_end]).hexdigest() != S60_BOOTLOADER_SHA256:
+        raise SystemExit("the donor's bootloader is not the S60's this knows how to move the table for")
+    old = flashmap.table_at(flash)
+    out = bytearray(flash)
+    for at, register in S60_BOOTLOADER_TABLE_AT:
+        if out[at:at + 2] != c_lui(register, old >> 12):
+            raise SystemExit(f"the S60's bootloader does not read its table at 0x{old:x}")
+        out[at:at + 2] = c_lui(register, to >> 12)
+    boot = bytearray(out[:bootloader_end])
+    appimage.reseal(boot, appimage.parse(boot))
+    out[:bootloader_end] = boot
+
+    settings = flashmap.nvs(flash)
+    start, end = to + flashmap.TABLE_SIZE, settings.offset + settings.size
+    if not settings.offset <= to < end:
+        raise SystemExit(f"0x{to:x} is not in the settings partition, which this moves out of its way")
+    kept = flash[settings.offset:settings.offset + end - start]
+    if flash[settings.offset + len(kept):end].count(0xFF) != end - settings.offset - len(kept):
+        raise SystemExit("the settings do not fit after the moved table")
+    entries = b""
+    for at in range(old, old + flashmap.TABLE_SIZE, flashmap.ENTRY_SIZE):
+        entry = bytearray(flash[at:at + flashmap.ENTRY_SIZE])
+        if entry[:2] != flashmap.ENTRY_MAGIC:
+            break
+        if struct.unpack_from("<I", entry, 4)[0] == settings.offset:
+            struct.pack_into("<II", entry, 4, start, end - start)
+        entries += entry
+    table = entries + b"\xeb\xeb" + b"\xff" * 14 + hashlib.md5(entries).digest()
+    out[old:old + flashmap.TABLE_SIZE] = b"\xff" * flashmap.TABLE_SIZE
+    out[settings.offset:end] = b"\xff" * (end - settings.offset)
+    out[to:to + flashmap.TABLE_SIZE] = table.ljust(flashmap.TABLE_SIZE, b"\xff")
+    out[start:end] = kept
+    return bytes(out)
+
+
 def with_update(donor: bytes, update: Update) -> bytes:
     """The donor plug's flash with the update's firmware in place of its own,
     and started."""
     firmware = fetched(update)
     app = firmware[build_vendor_ota.WRAPPER_SIZE:]
-    flash = bytearray(anonymised(donor, update, update.stock_model, update.uiid, update.settings))
+    added = ais_rows(update) if update.ais_sdk else ()
+    flash = bytearray(anonymised(donor, update, update.stock_model, update.uiid, update.settings, added))
+    if update.table_at != flashmap.table_at(flash):
+        flash = bytearray(table_moved(flash, update.table_at))
     first, second = flashmap.app_slots(flash)[:2]
     if len(app) > first.size:
         raise SystemExit(f"{update.file} does not fit the donor's slot")
