@@ -8,6 +8,9 @@
     python3 tools/repo/readouts.py approve ID        one taken as right
     python3 tools/repo/readouts.py reject ID         one taken as wrong: its place
                                                     goes to another sender's
+    python3 tools/repo/readouts.py changes [REF]     the devices whose status changed
+                                                    since REF (the latest release's
+                                                    tag), and whom to tell of each
 
 Each line is a readout's key, size, when it came in and what the Worker noted
 of it: the tool, the product, whether it holds a whole read and a contact.
@@ -23,21 +26,26 @@ token, as cloudflare_settings.py reads it (D1 is refused to CI's).
 
 `notify` lists each address given for a product (eWeLink's product model),
 with the firmware models it was given with and when: whom to write to when
-that device's status changes (.github/readouts.md). An address is removed by
-deleting its object (notify/<PRODUCT>/<hash>.json).
+that device's status changes (.github/readouts.md), and the link each email
+to them carries for them to remove their address themselves. `changes` is the
+same for each device whose status in devices/status.json differs from REF's:
+run it when a release changes one. Never from CI, whose logs are public.
 Fetch one with `npx wrangler r2 object get <bucket>/<key> --remote --file
 readout.tar`, from website/. The token is CLOUDFLARE_API_TOKEN, as for
 tools/repo/cloudflare_settings.py; reading the account's R2 is enough.
 """
 from __future__ import annotations
 
+import json
 import re
+import subprocess
 import sys
 import urllib.parse
 from pathlib import Path
 from typing import Any, Iterator
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 
 from tools.repo import cloudflare_settings as cs  # noqa: E402
 
@@ -113,7 +121,53 @@ def settle(action: str, reference: str) -> int:
 def subscriber(item: dict[str, Any]) -> str:
     noted = item.get("custom_metadata") or {}
     return "  ".join([noted.get("product", item["key"].split("/")[1]), noted.get("email", "?"),
-                      noted.get("models", "") or "-", str(item.get("last_modified", ""))])
+                      noted.get("models", "") or "-", str(item.get("last_modified", "")),
+                      noted.get("forget", "(no removal link)")])
+
+
+def subscribers(prefix: str = "notify/") -> Iterator[dict[str, Any]]:
+    """Each address given, one a product: not the index each address has."""
+    return (item for item in objects(prefix) if not item["key"].startswith("notify/_who/"))
+
+
+def statuses(ref: str | None = None) -> dict[str, str]:
+    """devices/status.json as it is, or as it was at `ref`."""
+    if ref is None:
+        return json.loads((ROOT / "devices/status.json").read_text(encoding="utf-8"))
+    shown = subprocess.run(["git", "-C", str(ROOT), "show", f"{ref}:devices/status.json"], capture_output=True,
+                           text=True, check=False)
+    return json.loads(shown.stdout) if shown.returncode == 0 else {}
+
+
+def latest_release() -> str:
+    found = subprocess.run(["git", "-C", str(ROOT), "describe", "--tags", "--abbrev=0", "--match", "v*"],
+                           capture_output=True, text=True, check=False)
+    if found.returncode != 0:
+        raise cs.SettingsError("no release tag to compare with: give one")
+    return found.stdout.strip()
+
+
+def changes(ref: str | None) -> int:
+    """The devices whose status changed since `ref`, each with whom to tell."""
+    from tools.autoflash import kinds
+    ref = ref or latest_release()
+    before, now = statuses(ref), statuses()
+    changed = [kind for kind in kinds.EVERY if before.get(kind.key) != now.get(kind.key)]
+    if not changed:
+        print(f"No device's status changed since {ref}.")
+        return 0
+    given = list(subscribers())
+    told = 0
+    for kind in changed:
+        print(f"{kind.name}: {before.get(kind.key, 'not listed')} -> {now.get(kind.key)}")
+        theirs = [item for item in given if kind.product_of(item["key"].split("/")[1])]
+        for item in theirs:
+            print("    " + subscriber(item))
+        told += len(theirs)
+        if not theirs:
+            print("    nobody asked to be told")
+    print(f"{len(changed)} changed since {ref}, {told} to tell")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -124,6 +178,15 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         try:
             return review(args[1] if len(args) == 2 else None) if args[0] == "review" else settle(*args)
+        except cs.SettingsError as error:
+            print(f"readouts: {error}", file=sys.stderr)
+            return 1
+    if args[:1] == ["changes"]:
+        if len(args) > 2:
+            print(__doc__.strip(), file=sys.stderr)
+            return 2
+        try:
+            return changes(args[1] if len(args) == 2 else None)
         except cs.SettingsError as error:
             print(f"readouts: {error}", file=sys.stderr)
             return 1
@@ -142,6 +205,8 @@ def main(argv: list[str] | None = None) -> int:
         for item in objects(prefix):
             if not args and not item["key"].endswith(".tar"):
                 continue   # the marks of what is held
+            if item["key"].startswith("notify/_who/"):
+                continue   # an address's index: its products and removal token
             print(show(item))
             count += 1
     except cs.SettingsError as error:
