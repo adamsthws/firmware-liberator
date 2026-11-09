@@ -179,5 +179,26 @@ class PutBackTests(unittest.TestCase):
             self.assertIsNone(rb.saved_stock("12:34:56:ab:cd:ef"))
 
 
+
+class ReadWholeFlashTests(unittest.TestCase):
+    def test_the_reads_start_is_in_the_runs_log(self):
+        # On a terminal the wait is shown, not logged: the Beken fault suite
+        # times a fault in the read from the log (READOUT_PHASES).
+        import contextlib
+        import re
+        from tools.autoflash import output
+        from tools.beken.emulator import fault_suite
+        logged = []
+        with mock.patch.object(output, "working", side_effect=lambda text: contextlib.nullcontext()), \
+                mock.patch.object(output, "log_only", side_effect=logged.append), \
+                mock.patch.object(output, "say", side_effect=logged.append), \
+                mock.patch.object(output, "progress_clear"), \
+                mock.patch.object(rb.openbeken, "read_flash", return_value=b"\xff" * rb.WHOLE_FLASH):
+            rb.read_whole_flash(a_ctx(), "192.0.2.60")
+        start, end, _ = fault_suite.READOUT_PHASES["read"]
+        log = "\n".join(f"[10:00:00] {line}" for line in logged)
+        self.assertLess(re.search(start, log).start(), re.search(end, log).start())
+
+
 if __name__ == "__main__":
     unittest.main()

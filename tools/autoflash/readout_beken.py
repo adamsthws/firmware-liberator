@@ -145,6 +145,9 @@ def read_whole_flash(ctx: Context, host: str) -> bytes:
         output.progress(f"reading the device's memory: {100 * done // total}%")
 
     try:
+        # In the run's log too, which a wait on screen is not: the fault
+        # suite times a fault in the read from it.
+        output.log_only("Reading the device's memory...")
         with output.working("Reading the device's memory - a few minutes..."):
             flash = openbeken.read_flash(host, 0, WHOLE_FLASH, progress=progress)
     finally:
