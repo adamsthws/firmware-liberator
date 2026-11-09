@@ -36,6 +36,20 @@ class EndChecksTests(unittest.TestCase):
             self.assertEqual(fault_verdicts.checks_problem(log, firmware),
                              "Checks passed: Not run; Relay: not said", firmware)
 
+    def test_a_metered_plug_needs_its_meter_to_confirm_the_switch(self):
+        """As the Beken suite asks: its emulated S61 measures a load while the
+        relay is on (tools/beken/emulator/board.py)."""
+        unchanged = run_log("    Relay: Switches (meter unchanged)", "    Checks passed: True")
+        for firmware in ("esphome", "openbeken"):
+            self.assertIsNone(fault_verdicts.checks_problem(unchanged, firmware), firmware)
+            self.assertEqual(fault_verdicts.checks_problem(unchanged, firmware, metered=True),
+                             "the meter did not confirm the switch; Relay: Switches (meter unchanged)")
+        confirms = run_log("    Relay: Switches (meter confirms)", "    Checks passed: True")
+        self.assertIsNone(fault_verdicts.checks_problem(confirms, "openbeken", metered=True))
+        # Back on Sonoff's firmware the relay is switched through eWeLink, and no meter is read.
+        through = run_log("    Relay: Switches (through eWeLink)", "    Checks passed: True")
+        self.assertIsNone(fault_verdicts.checks_problem(through, "sonoff", metered=True))
+
     def test_only_the_last_run_counts(self):
         earlier = run_log("    Relay: Did not switch", "    Checks passed: False")
         self.assertIsNone(fault_verdicts.checks_problem(

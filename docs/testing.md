@@ -871,8 +871,9 @@ tool is run again as a person would, switching the plug off and on where it
 says to, up to four times; the scenario passes when the run's record has
 every step of its route done, and the report's end-of-run checks passed as on
 the Espressif suite (FAIL-CHECKS: OpenBeken and ESPHome switch their relay pin
-in the emulator, though nothing is wired to it, and back on Sonoff's firmware
-the relay is switched through the stub's eWeLink), and its screen, as on the
+in the emulator, and the emulated plug's meter measures a load while the relay
+is on, so their check must also say the meter confirms the switch; back on
+Sonoff's firmware the relay is switched through the stub's eWeLink), and its screen, as on the
 Espressif suite (FAIL-SCREEN: each run is recorded through
 `tools/repo/unattended_run.py`), and the release it ends on: a plug converted to
 OpenBeken or ESPHome must run your checkout's (FAIL-NOT-LATEST), updated from an
@@ -910,9 +911,11 @@ fault.
   firmware in, are the emulator's, not a real plug's.
 - **Radio.** The plug's Wi-Fi is a TAP device bridged onto a Docker network: a
   fault takes the computer off it, but there is no signal to weaken.
-- **The wiring.** No relay, meter or button is wired to its pins, so a scenario
-  passing says the firmware installs and starts, not that a device's wiring is
-  right ([emulator.md](emulator.md#known-gaps-1)).
+- **The wiring.** Only the meter is wired to its pins, measuring a load while
+  the relay pin is driven high; no relay or button is there, so a scenario
+  passing says the firmware installs, starts and reads a meter on the pins its
+  config names, not that those are the device's
+  ([emulator.md](emulator.md#known-gaps-1)).
 
 #### Results
 

@@ -38,17 +38,24 @@ def last_run(log: str) -> str:
     return log[log.rfind("=== run started"):] if "=== run started" in log else log
 
 
-def checks_problem(log: str, firmware: str) -> str | None:
+def checks_problem(log: str, firmware: str, metered: bool = False) -> str | None:
     """What the end-of-run checks of the last run in `log` said, when they did
     not pass for a plug on `firmware`: "Checks passed: False; Relay: Did not
     switch". None when they passed, or the run gave no report (a plug already
-    on the firmware asked for has nothing to check)."""
+    on the firmware asked for has nothing to check). `metered`: the emulated
+    plug's meter measures a load while its relay is on, so where the check
+    reads the meter (all but Sonoff's firmware) it must confirm the switch."""
     run = last_run(log)
     answers = CHECKS_PASSED.findall(run)
-    if not answers or answers[-1] in PASSING.get(firmware, {"True", "Not run"}):
-        return None
     relay = RELAY.findall(run)
-    return f"Checks passed: {answers[-1]}; Relay: {relay[-1] if relay else 'not said'}"
+    said = f"Relay: {relay[-1] if relay else 'not said'}"
+    if not answers:
+        return None
+    if answers[-1] not in PASSING.get(firmware, {"True", "Not run"}):
+        return f"Checks passed: {answers[-1]}; {said}"
+    if metered and firmware != "sonoff" and not (relay and relay[-1].endswith("(meter confirms)")):
+        return f"the meter did not confirm the switch; {said}"
+    return None
 
 
 # What a readout keeps (docs/readouts.md, "What is in one"), by chip family:

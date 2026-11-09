@@ -31,11 +31,12 @@ class ScenarioTests(unittest.TestCase):
 class EndChecksTests(unittest.TestCase):
     """A converted plug passes only if the report's end-of-run checks did."""
 
-    def result(self, checks, screen=None, release=None):
+    def result(self, checks, screen=None, release=None, relay=None):
         from unittest import mock
         sc = {"id": "sonoff>openbeken:B2:plugoff-1", "route": "sonoff>openbeken", "step": "B2",
               "fault": "plugoff", "arg": 1, "at": 40}
-        log = ("[10:00:00] === run started, tool version 2.3.0 ===\n[10:00:01]     Relay: Did not switch\n"
+        relay = relay or ("Switches (meter confirms)" if checks == "True" else "Did not switch")
+        log = (f"[10:00:00] === run started, tool version 2.3.0 ===\n[10:00:01]     Relay: {relay}\n"
                f"[10:00:02]     Checks passed: {checks}\n[10:00:03] === run ended ===\n")
         def step_scenario(instance, sc, target, tool_log, notes):
             if screen is not None:
@@ -79,6 +80,15 @@ class EndChecksTests(unittest.TestCase):
             self.assertEqual(fault_suite.release_of(plug, "esphome"), "2026.10.0-2")
         with mock.patch.object(fault_suite.esphome, "api_device_info", return_value=dict(ours, project_name="x.y")):
             self.assertIsNone(fault_suite.release_of(plug, "esphome"))
+
+    def test_one_whose_meter_did_not_confirm_the_switch_failed_its_checks(self):
+        """The emulated plug's meter measures a load while the relay is on
+        (tools/beken/emulator/board.py), so a check that saw no change in it
+        did not read it."""
+        outcome = self.result("True", relay="Switches (meter unchanged)")
+        self.assertEqual(outcome["result"], "FAIL-CHECKS")
+        self.assertEqual(outcome["notes"]["checks"],
+                         "the meter did not confirm the switch; Relay: Switches (meter unchanged)")
 
     def test_one_whose_checks_failed_is_its_own_failure_saying_what_they_found(self):
         outcome = self.result("False")
