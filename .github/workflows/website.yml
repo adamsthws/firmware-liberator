@@ -47,6 +47,9 @@ jobs:
       - run: npm run build
         env:
           ASTRO_TELEMETRY_DISABLED: "1"
+      # What was built, as search engines read it: the sitemap, each page's
+      # address and description (checks/built.mjs).
+      - run: npm run check
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: site

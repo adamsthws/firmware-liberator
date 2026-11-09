@@ -6,6 +6,7 @@ import { dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const REPOSITORY = "adamsthws/firmware-liberator";
+export const SITE = "https://firmwareliberator.com";
 export const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 // Every Markdown file git tracks, so a link to one never leaves the site

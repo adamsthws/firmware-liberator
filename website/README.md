@@ -43,6 +43,18 @@ sitemap, so a search doesn't land someone on a superseded procedure; they
 must not be blocked in `robots.txt`, or crawlers would never see the
 `noindex`. `llms.txt` is a short guide to the site for AI tools, written by
 hand: add a page to it when a page matters to someone converting a plug.
+Its list of devices follows the tool: `tests/repo/test_site.py` fails until
+each device the tool knows has its line there, in the tool's order, with its
+status from `devices/status.json` and the firmware it converts to. The same
+test holds the front page's title and description, `llms.txt`'s summary, the
+README's opening and the repository's description on GitHub to naming every
+maker and firmware the tool has.
+
+`checks/built.mjs` checks what the build made: the sitemap lists every page
+but the retired ones, each page names its own canonical address and has a
+description, only the retired pages and the 404 are `noindex`, and
+`robots.txt` names the sitemap that was built. Run it after a build with
+`npm run check`; the website workflow does, before it deploys.
 
 ## Building it
 
