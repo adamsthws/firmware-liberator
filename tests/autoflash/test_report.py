@@ -135,6 +135,22 @@ class EndingTests(RouteTestCase):
         self.assertNotEqual(result["Relay"], "could not be checked")
 
 
+class ReportColumnTests(unittest.TestCase):
+    def test_the_columns_end_together(self):
+        # Seen on an S61: its device answers ran two rows below this computer's.
+        fields = [("Result", "Converted"), ("Tool", "2.4.0"), ("Firmware", "OpenBeken"), ("Computer", "Ubuntu"),
+                  ("From", "Sonoff"), ("Python", "3.12"), ("Model", "S61STPF"), ("Time", "1m 19s"),
+                  ("Stock", "1.0.2"), ("Retries", "None"), ("Backup", "Completed"), ("Power cycled", "False"),
+                  ("Signal", "-45 dBm"), ("Checks", "True"), ("Meter", "Not checked"), ("Stage times", "1=0s")]
+        rows = report.report_screen(fields, columns=100)
+        body = rows[1:-1]   # between the result and the stage times
+        self.assertEqual(len(body), 7, "\n".join(rows))
+        meter = next(row for row in rows if "Meter:" in row)
+        self.assertLess(meter.index("Meter:"), 20)   # on the left now
+        checks = next(row for row in rows if "Checks:" in row)
+        self.assertTrue(checks.rstrip().endswith("True"))   # a suite's, still last on its row
+
+
 class ComputerDescriptionTests(unittest.TestCase):
     """Windows 11 is named so, on a Python before 3.12 that calls it "10"."""
 
