@@ -70,7 +70,9 @@ import { countWanted, reports } from "./reports.js";
 
 export { work };
 
-const ROUTES = { "/readout": readout, "/wanted": wanted, "/notify": notify, "/reports": reports };
+// Each path, and only these: tools/repo/cloudflare_settings.py's firewall rule lets
+// through a POST to these alone.
+export const ROUTES = { "/readout": readout, "/wanted": wanted, "/notify": notify, "/reports": reports };
 
 export default {
   async fetch(request, env) {

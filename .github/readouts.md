@@ -276,7 +276,7 @@ manifest, and under `notify/`. Nothing serves the bucket.
 
 The bucket, the rate-limiting rule and the API's database are made by `python3 tools/repo/cloudflare_settings.py apply`, by
 hand, which also brings the database up to date; the cloudflare-settings
-workflow checks all but the database weekly. The website workflow deploys the Worker
+workflow checks all but the database daily. The website workflow deploys the Worker
 in a job of its own. [website/README.md](../website/README.md#deploying-it)
 says which token does what.
 
