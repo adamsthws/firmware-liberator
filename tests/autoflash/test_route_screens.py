@@ -190,6 +190,20 @@ class RouteScreenTests(unittest.TestCase):
         self.assertIn("Sonoff's firmware could not be put back, so the device is back on", screen)
         self.assertNotIn("Conversion complete", screen)
 
+    def test_a_second_run_in_the_same_sitting_draws_as_it_would_alone(self):
+        # "What next" runs one conversion after another in the same process:
+        # nothing one leaves behind - in output's screen, the route tables - may
+        # change how the next is drawn.
+        from tools.autoflash.routes import beken, espressif
+        alone = {route: self.run_route(*route)[2] for route in ((espressif, "sonoff", "tasmota"),
+                                                                (beken, "sonoff", "openbeken"),
+                                                                (espressif, "tasmota", "esphome"))}
+        for first in alone:
+            for then in alone:
+                with self.subTest(first=first[1:], then=then[1:]):
+                    self.run_route(*first)
+                    self.assertEqual(self.run_route(*then)[2], alone[then])
+
     def test_every_route_fits_each_window_it_goes_on_in(self):
         # The shortest a run goes on in and a wide one, as well as SIZE: every
         # row wrapped by the tool, none by the terminal, and no stage left.
