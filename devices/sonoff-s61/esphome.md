@@ -32,7 +32,7 @@ the `WiFi Signal` sensor, the `Relay` switch, the four energy totals and the
 each, as [the S60's page](../sonoff-s60/esphome.md#changing-it) says. This image has
 no `AUTOFLASH-IMPRINT-` placeholders.
 
-ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-s61-2026.10.0-2.rbl`,
+ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-s61-2026.10.0-3.rbl`,
 with `tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-s61`.
 
 To build it by hand, as you would the S60's image: in ESPHome's own Docker image,
@@ -79,7 +79,12 @@ The outputs, in `.esphome/build/esphome/.pioenvs/esphome/`:
   P26, button P9 (active low, pull-up), relay LED P0 and Wi-Fi LED P1 (both lit
   low), BL0937 CF P8, CF1 P6, SEL P24 with the 1 mΩ shunt and 2040:1 divider.
   `hlw8012` reads the meter; it alternates CF1 between current and voltage
-  (`change_mode_every: 1`, every 2 s), so each refreshes every 4 s.
+  (`change_mode_every: 1`, every 2 s), so each refreshes every 4 s. It drives
+  SEL high for the current, as an HLW8012 takes it, where a BL0937 measures
+  the voltage with SEL high, so SEL is `inverted`, as ESPHome's `hlw8012` page
+  says for this model. Before 2.4.0 it was not, and each reading was the
+  other's: about 20 A whatever the load, and a voltage that followed it, 5 V
+  at 100 W.
 - **The flash layout.** LibreTiny's generic BK7238 board is the SDK's 2 MB
   layout. The config overrides it through `platformio_options` (PlatformIO's
   `board_flash.*` / `board_build.*` overrides) to the S61's stock bootloader

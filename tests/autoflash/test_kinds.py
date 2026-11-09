@@ -204,6 +204,20 @@ class MeterTests(unittest.TestCase):
             if config.exists():
                 self.assertEqual(kind.has_meter, bool(chip.search(config.read_text(encoding="utf-8"))), kind.key)
 
+    def test_a_bl0937s_sel_is_inverted_for_esphome(self):
+        # hlw8012 drives SEL high for the current, as an HLW8012 takes it; a BL0937
+        # measures the voltage with SEL high (ESPHome's hlw8012 page, Tasmota's
+        # driver, OpenBeken's S61 template). Not inverted, each reads the other.
+        import re
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        for config in sorted(root.glob("devices/*/esphome.yaml")):
+            text = config.read_text(encoding="utf-8")
+            for meter in re.finditer(r"(?m)^  - platform: hlw8012\n((?:    .*\n)+)", text):
+                if re.search(r"model: BL0937\n", meter.group(1)):
+                    self.assertRegex(meter.group(1), r"sel_pin:\n +number: \w+\n +inverted: true\n",
+                                     config.parent.name)
+
     def test_a_meters_wiring_is_the_template_tasmota_publishes_for_it(self):
         # Tasmota 16.0.0's drivers give these (xnrg_19_cse7761, xdrv_87_esp32_sonoff_tm1621),
         # as Blakadder's templates do the POW Elite's and the Dual R3's. Which CSE7761 RX

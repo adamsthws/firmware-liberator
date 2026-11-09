@@ -26,7 +26,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: liberator.sonoff-s61
-    version: "2026.10.0-2"
+    version: "2026.10.0-3"
   # System headers only: adoption takes this one file
   includes:
     - <libretiny.h>
@@ -456,10 +456,14 @@ sensor:
   # and a 2040:1 divider. Calibrated as the stock firmware does: it reckons
   # the pulse rate with a reference of 1.1 V where the BL0937 datasheet (and
   # ESPHome) say 1.218 V, then applies the factory trim a*x^2/1e7 + b*x/1e6 +
-  # c/1e6 to a reading x in A, V or W.
+  # c/1e6 to a reading x in A, V or W. A BL0937 measures the voltage with SEL
+  # high, where hlw8012 drives it high for the current (an HLW8012's sense),
+  # so SEL is inverted, as ESPHome's page says for this model.
   - platform: hlw8012
     model: BL0937
-    sel_pin: P24
+    sel_pin:
+      number: P24
+      inverted: true
     cf_pin: P8
     cf1_pin: P6
     current_resistor: 0.001

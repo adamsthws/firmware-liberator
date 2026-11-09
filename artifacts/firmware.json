@@ -266,19 +266,20 @@
         "sha256": "67c57d0d241bc463158cbff670e56c3210ccf16731cbd0d31f88a616bbf7f7a3"
       },
       "esphome": {
-        "file": "artifacts/esphome-sonoff-s61-2026.10.0-2.rbl",
+        "file": "artifacts/esphome-sonoff-s61-2026.10.0-3.rbl",
         "config": "devices/sonoff-s61/esphome.yaml",
-        "version": "2026.10.0-2",
+        "version": "2026.10.0-3",
         "esphome": "2026.10.0",
         "libretiny": "1.13.0",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-08 18:44:20 +0000",
+        "built": "2026-11-09 18:11:59 +0000",
         "earlier_builds": [
           "2026-11-04 14:39:04 +0000",
-          "2026-11-06 22:21:51 +0000"
+          "2026-11-06 22:21:51 +0000",
+          "2026-11-08 18:44:20 +0000"
         ],
-        "size": 505200,
-        "sha256": "72d927e71af40d255dbaab966db4d8da53e746beb6e1c7febd4014c0daf65eb6"
+        "size": 505216,
+        "sha256": "ccf824eddbf6d05256bc681e819304f875e40fd0c59865966d208ac396141eb8"
       }
     },
     "sonoff-basic-1gs": {

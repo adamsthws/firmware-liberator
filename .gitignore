@@ -43,7 +43,7 @@ __pycache__/
 !artifacts/autoflash-mover-esp32c3-1.2.0.bin
 !artifacts/sonoff-s60-partition-table.bin
 !artifacts/openbeken-sonoff-s61-1.18.320-2.rbl
-!artifacts/esphome-sonoff-s61-2026.10.0-2.rbl
+!artifacts/esphome-sonoff-s61-2026.10.0-3.rbl
 !artifacts/esphome-sonoff-pow-elite-imprintable-2026.10.0-2.bin
 !artifacts/autoflash-mover-esp32-1.1.0.bin
 !artifacts/esphome-esp32-bootloader-1.1.0.bin

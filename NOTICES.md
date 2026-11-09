@@ -49,7 +49,7 @@ ESP-IDF 5.5.5. Its corresponding source is the
 [ESPHome 2026.9.1 release](https://github.com/esphome/esphome/tree/2026.9.1)
 and that config, at 1.2.0 in this repository's history.
 
-`artifacts/esphome-sonoff-s61-2026.10.0-2.rbl` is built with ESPHome 2026.10.0 and
+`artifacts/esphome-sonoff-s61-2026.10.0-3.rbl` is built with ESPHome 2026.10.0 and
 LibreTiny 1.13.0 from this project's config
 [`devices/sonoff-s61/esphome.yaml`](devices/sonoff-s61/esphome.yaml), with
 `esphome compile`, the rt_ota image LibreTiny's build makes. Its corresponding
