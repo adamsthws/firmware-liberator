@@ -21,13 +21,42 @@ Sonoff's clamp-on energy meter with a small display, the **POWCT**.
 | Flash | 4 MB |
 | Stock model | `SN-ESP32D0-POWCT-01` |
 | Relay | GPIO21 |
-| Status LED | GPIO13, inverted |
+| Status LED | GPIO13, lit when high: on while the relay is on ([how this is known](#the-status-leds-polarity)) |
 | Wi-Fi LED | GPIO15, inverted |
 | Power meter | CSE7761: RX GPIO25, TX GPIO26, 38400 baud, even parity |
 | Display | TM1621: CS GPIO17, data GPIO5, read GPIO23, write GPIO18 |
 | Button | GPIO0, active low |
 
-Pins from [ESPHome's page](https://devices.esphome.io/devices/sonoff-powct/). Blakadder has no template for it; the Tasmota template in [`kinds.py`](../../tools/autoflash/kinds.py) is the one Tasmota's own TM1621 driver gives (`xdrv_87_esp32_sonoff_tm1621.ino`). Its meter's RX is CSE7761 Rx 2, which tells Tasmota the meter is a POWCT's, with a current clamp, and not a Dual R3's.
+Pins from [ESPHome's page](https://devices.esphome.io/devices/sonoff-powct/), but for the status LED's polarity. Blakadder has no template for it; the Tasmota template in [`kinds.py`](../../tools/autoflash/kinds.py) is the one Tasmota's CSE7761 driver gives (`xnrg_19_cse7761.ino`). Its meter's RX is CSE7761 Rx 2, which tells Tasmota the meter is a POWCT's, with a current clamp, and not a Dual R3's.
+
+### The status LED's polarity
+
+The sources disagree on GPIO13: ESPHome's page has it lit when low, as
+Tasmota's TM1621 driver's template does (`Led_i`, 320), while Tasmota's
+CSE7761 driver has it lit when high (`Led`, 288) - changed from 320 by
+Tasmota's maintainer in the commit that fixed the POWCT's calibration
+(arendst/Tasmota `23de275dbe`, July 2024). Sonoff's own firmware (1.1.1) settles it
+for high, found without the device:
+
+- **It drives GPIO13 as the relay.** Its relay function (at `0x400db1c8`)
+  sets GPIO21 and then GPIO13 to the same level, the relay's state, through
+  ESP-IDF's `gpio_set_level`; the only other code that drives GPIO13 is its
+  start-up and its factory pin test. In the emulator, switching
+  the relay through eWeLink (the cloud stub) sets GPIO13's output bit with
+  GPIO21's: `GPIO_OUT` `0x04262020` with the relay on, `0x04060020` off, GPIO13
+  a plain GPIO output (its matrix selection `0x100`). A relay LED is lit while
+  the relay is on, so high is lit.
+- **It inverts the LED that is lit when low.** The network LED, GPIO15, is
+  driven through LEDC, and its driver (`0x40135788`, duty at `0x401357f8`)
+  inverts the brightness it is given into the duty cycle, so full brightness
+  is the pin held low. No such inversion is applied to GPIO13.
+
+eWeLink's network indicator setting (`sledOnline`) is GPIO15's, and leaves
+GPIO13 as it is: the emulator showed no change to it either way.
+
+This project's [`esphome.yaml`](esphome.yaml) drives GPIO13 the same way,
+lit when high, from its build 2026.10.0-3; the builds before it, never
+published, had it inverted.
 
 On ESPHome 2026.10, the meter reads the clamp as a Dual R3's shunt, 3.2 times too high, and the config divides by π as ESPHome's page says, leaving it about 2% high. ESPHome 2026.11.0 reads it as a clamp (`current_input: current_transformer`), and the build with it sets that and drops the division: [`test_firmware_pins.py`](../../tests/repo/test_firmware_pins.py) fails until it does.
 
