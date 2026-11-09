@@ -27,6 +27,18 @@ sh start.sh readout
 On Windows, run `start.cmd readout`. If your account holds more than one
 device, the tool asks which; `--plug-ip <address>` picks it beforehand.
 
+### Every device at once
+
+If your account holds two or more devices the tool doesn't convert, the
+first choice is to read out every one of them. You're asked once whether to
+add a way to reach you, and then each device is read out in turn and sent on
+its own as soon as it is ready. Devices that only get the quick readout below
+go first. A device that can be read out in full still asks you to type PROCEED:
+type s there to skip just that device, or q to quit, as at any question. At the
+end the tool says what became of each one. It may say a readout wasn't needed,
+because enough of that device are in already. Each readout gets its own
+10-to-30-second puzzle before it is sent (see [Sending it](#sending-it)).
+
 The tool first asks eWeLink what the device runs and which firmware it would
 be offered, and downloads that firmware as the device would. Nothing is sent
 to the device for this. For a device the tool has not seen before, that is the

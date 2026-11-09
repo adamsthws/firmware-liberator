@@ -374,6 +374,205 @@ class FirstStageTests(unittest.TestCase):
                          ("NEWTHING", "SN-ESP32C3-NEW-01", "1.0.0", False))
 
 
+class ChooseTests(unittest.TestCase):
+    def choose(self, devices, answer):
+        with mock.patch.object(output, "transient_begin"), mock.patch.object(output, "transient_end"), \
+                mock.patch.object(prompts, "ask_choice", return_value=answer) as asked:
+            chosen = readout.choose(SimpleNamespace(), devices)
+        return asked.call_args.args[1], chosen
+
+    def test_every_device_not_supported_is_offered_first(self):
+        from tools.autoflash import kinds
+        s60 = record("S60TPG", kinds.SONOFF_S60.stock_model)
+        other = {**DEVICE, "deviceid": "1000fedcba", "name": "Porch"}
+        options, chosen = self.choose([s60, DEVICE, other], 0)
+        self.assertEqual(options[0], "Every device the tool does not convert yet (2)")
+        self.assertIsNone(chosen)
+        self.assertEqual(self.choose([s60, DEVICE, other], 2)[1], DEVICE)
+
+    def test_with_one_such_device_only_the_devices_are_offered(self):
+        from tools.autoflash import kinds
+        options, _ = self.choose([record("S60TPG", kinds.SONOFF_S60.stock_model), DEVICE], 0)
+        self.assertEqual(len(options), 2)
+
+    def test_every_one_is_every_device_the_tool_does_not_convert(self):
+        from tools.autoflash import kinds
+        s60 = record("S60TPG", kinds.SONOFF_S60.stock_model)
+        with mock.patch.object(readout, "choose", return_value=None), \
+                mock.patch.object(readout, "run_all", return_value="done") as every:
+            self.assertEqual(readout.read_out_chosen(SimpleNamespace(), [s60, DEVICE]), "done")
+        self.assertEqual(every.call_args.args[1], [DEVICE])
+
+
+class RunAllTests(unittest.TestCase):
+    """Every device the tool does not convert, read out in one go, each sent on its own."""
+
+    def setUp(self):
+        start_run(self)
+        from tools.autoflash import kinds
+        self.basicr4 = {**record("BASICR4", kinds.SONOFF_BASICR4.stock_model), "deviceid": "1000000004",
+                        "name": "Shed"}
+        self.other = {**DEVICE, "deviceid": "1000fedcba", "name": "Porch"}
+        for patch in (mock.patch.object(prompts, "UNATTENDED", False),
+                      mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"),
+                      mock.patch.object(readout, "ask_contact", return_value={"email": "me@example.com"}),
+                      mock.patch.object(runs, "hold_plug")):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def run_all(self, devices, send=None):
+        """run_all through readout.run, each device's readout sent by `send`
+        (default: a reference each); what it ended by saying, and what was sent."""
+        sent = mock.Mock(side_effect=send or (lambda data, url: f"r-{len(sent.call_args_list)}"))
+        with learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"), mock.patch.object(readout, "send", sent), \
+                mock.patch.object(readout_espressif, "read_and_anonymise", return_value=(FILES, True)) as read:
+            said = readout.run_all(self.ctx, devices)
+        self.read = read
+        return said, [json.loads(unpacked(call.args[0])["manifest.json"]) for call in sent.call_args_list]
+
+    def test_each_is_sent_on_its_own_with_the_contact_asked_once(self):
+        said, manifests = self.run_all([DEVICE, self.other])
+        self.assertEqual(len(manifests), 2)
+        self.assertEqual([manifest["contact"] for manifest in manifests], [{"email": "me@example.com"}] * 2)
+        readout.ask_contact.assert_called_once()
+        self.assertIn("'Hall light' (NEWTHING): sent, reference r-1.", said)
+        self.assertIn("'Porch' (NEWTHING): sent, reference r-2.", said)
+
+    def test_the_first_stage_ones_go_before_a_full_readout(self):
+        from tools.autoflash import kinds
+        with mock.patch.object(account, "ask_ewelink", side_effect=lambda ctx, ip: account.Asked(
+                {"packets": []}, "1.1.0", kinds.SONOFF_BASICR4.stock_model, "BASICR4", [], {}, "1000000004")), \
+                learned(kinds.SONOFF_BASICR4.wrapper_model, "ESP32C3"), \
+                mock.patch.object(readout, "send", side_effect=["r-1", "r-2"]) as sent, \
+                mock.patch.object(readout_espressif, "read_and_anonymise", return_value=(FILES, True)):
+            readout.run_all(self.ctx, [self.basicr4, DEVICE])
+        self.assertEqual([json.loads(unpacked(call.args[0])["manifest.json"]).get("read", True)
+                          for call in sent.call_args_list], [False, True])
+
+    def test_one_the_website_has_enough_of_is_said_so_and_the_rest_go_on(self):
+        said, manifests = self.run_all([DEVICE, self.other], send=[readout.ENOUGH, "r-2"])
+        self.assertEqual(len(manifests), 2)
+        self.assertIn("'Hall light' (NEWTHING): not needed, as enough readouts of this device are in already.", said)
+
+    def test_one_not_sent_is_kept_under_its_id_and_the_rest_go_on(self):
+        said, manifests = self.run_all([DEVICE, self.other], send=[OSError("no route"), "r-2"])
+        self.assertEqual(len(manifests), 2)
+        self.assertTrue((Path(self.tmp.name) / "readout-1000abcdef.tar").exists())
+        self.assertIn("readout --send", said)
+
+    def test_a_full_readout_passed_by_at_its_question_lets_the_rest_go_on(self):
+        # The first stage's go first: DEVICE's, then the BASICR4's full one.
+        with mock.patch.object(readout, "run", side_effect=["sent", errors.NothingWritten("not confirmed")]):
+            said = readout.run_all(self.ctx, [self.basicr4, DEVICE])
+        self.assertIn("'Shed' (BASICR4): not read out - not confirmed.", said)
+        self.assertIn("(NEWTHING): sent", said)
+
+    def test_a_full_readout_failing_part_way_stops_the_rest(self):
+        # It may be left on its reading program, and need seeing to first.
+        second = {**self.basicr4, "deviceid": "1000000005", "name": "Barn"}
+        with mock.patch.object(readout, "run", side_effect=["sent", errors.Abort("the bridge did not answer"),
+                                                             "sent"]) as each:
+            with self.assertRaises(errors.Abort) as stopped:
+                readout.run_all(self.ctx, [self.basicr4, DEVICE, second])
+        self.assertEqual(each.call_count, 2)
+        self.assertIn("Not read out yet: 'Barn' (BASICR4).", str(stopped.exception))
+        self.assertIn("'Shed' (BASICR4): the bridge did not answer", str(stopped.exception))
+        self.assertIn("'Hall light' (NEWTHING): sent", str(stopped.exception))
+
+    def test_a_first_stage_failing_lets_the_rest_go_on(self):
+        with mock.patch.object(readout, "run", side_effect=[errors.Abort("eWeLink is down"), "sent"]):
+            said = readout.run_all(self.ctx, [DEVICE, self.other])
+        self.assertIn("'Hall light' (NEWTHING): not read out - eWeLink is down.", said)
+        self.assertIn("'Porch' (NEWTHING): sent", said)
+
+    def test_nothing_of_one_device_is_taken_for_the_next(self):
+        seen = []
+
+        def each(ctx, device, batch):
+            seen.append(ctx.state.input("plug_ip"))
+            ctx.state.set_input("plug_ip", "192.0.2.77")
+            ctx.state.set_input(readout_espressif.BRIDGE_HOST, "192.0.2.77")
+            return "sent"
+        with mock.patch.object(readout, "run", side_effect=each):
+            readout.run_all(self.ctx, [DEVICE, self.other])
+        self.assertEqual(seen, [None, None])
+
+    def test_the_run_stays_where_it_is_and_a_device_written_to_is_held(self):
+        from tools.autoflash import kinds
+        device = {**self.basicr4, "params": {**DEVICE["params"], "staMac": "12:34:56:AB:CD:EF"}}
+        with mock.patch.object(account, "ask_ewelink", return_value=account.Asked(
+                {"packets": []}, "1.1.0", kinds.SONOFF_BASICR4.stock_model, "BASICR4", [], {}, "1000000004")), \
+                learned(kinds.SONOFF_BASICR4.wrapper_model, "ESP32C3"), \
+                mock.patch.object(readout, "send", return_value="r-1"), \
+                mock.patch.object(readout_espressif, "read_and_anonymise", return_value=(FILES, True)):
+            readout.run_all(self.ctx, [device])
+        self.filed.assert_not_called()
+        self.assertEqual(runs.hold_plug.call_args.args[1], "12:34:56:ab:cd:ef")
+
+    def test_a_full_readouts_question_may_pass_its_device_by(self):
+        from tools.autoflash import kinds
+        with mock.patch.object(account, "ask_ewelink", return_value=account.Asked(
+                {"packets": []}, "1.1.0", kinds.SONOFF_BASICR4.stock_model, "BASICR4", [], {}, "1000000004")), \
+                learned(kinds.SONOFF_BASICR4.wrapper_model, "ESP32C3"), \
+                mock.patch.object(readout_espressif, "read_and_anonymise",
+                                  side_effect=errors.NothingWritten("skipped as asked, nothing was sent to it")) as read:
+            said = readout.run_all(self.ctx, [self.basicr4])
+        self.assertTrue(read.call_args.kwargs["skippable"])
+        self.assertIn("'Shed' (BASICR4): not read out - skipped as asked, nothing was sent to it.", said)
+
+    def test_q_at_a_full_readouts_question_stops_the_rest(self):
+        second = {**self.basicr4, "deviceid": "1000000005", "name": "Barn"}
+        with mock.patch.object(readout, "run", side_effect=["sent", prompts.QuitRun("q"), "sent"]) as each:
+            said = readout.run_all(self.ctx, [self.basicr4, DEVICE, second])
+        self.assertEqual(each.call_count, 2)
+        self.assertIn("Stopped as asked", said)
+        self.assertIn("'Hall light' (NEWTHING): sent", said)
+        self.assertIn("Not read out: 'Shed' (BASICR4), 'Barn' (BASICR4).", said)
+
+    def test_each_device_sent_carries_work_of_its_own(self):
+        # One proof is good for one readout's bytes alone, so a batch cannot
+        # spread one proof over many devices: each POST is worked for afresh.
+        import hashlib
+        posted = []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802 - http.server's name
+                body = self.rfile.read(int(self.headers["Content-Length"]))
+                posted.append((hashlib.sha256(body).hexdigest(), self.headers["X-Proof"]))
+                answer = json.dumps({"id": f"r-{len(posted)}"}).encode()
+                self.send_response(201)
+                self.send_header("Content-Length", str(len(answer)))
+                self.end_headers()
+                self.wfile.write(answer)
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        def asked(ctx, deviceid):
+            return account.Asked({"packets": []}, "1.0.0", "SN-NEW-01", f"NEW-{deviceid}", [], {}, deviceid)
+        with mock.patch.object(readout, "PROOF_BITS", 8), learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"), \
+                mock.patch.object(account, "ask_account", side_effect=asked), \
+                mock.patch.object(readout, "upload_url",
+                                  return_value=f"http://127.0.0.1:{server.server_address[1]}/readout"):
+            readout.run_all(self.ctx, [DEVICE, self.other])
+        self.assertEqual(len(posted), 2)
+        self.assertNotEqual(posted[0][0], posted[1][0])
+        for digest, proof in posted:
+            stamp, nonce = proof.split(":")
+            work = hashlib.sha256(f"{stamp}:{digest}:{nonce}".encode()).digest()
+            self.assertLess(int.from_bytes(work, "big"), 1 << (256 - 8))
+
+    def test_quit_at_the_contact_question_reads_nothing(self):
+        with mock.patch.object(readout, "ask_contact", side_effect=prompts.QuitRun("q")), \
+                mock.patch.object(readout, "run") as each:
+            self.assertEqual(readout.run_all(self.ctx, [DEVICE, self.other]), "Nothing was read out or sent.")
+        each.assert_not_called()
+
+
 class OfferTests(unittest.TestCase):
     def offer(self, choice, typed=None):
         """offer() with the contact menu answered `choice` (index; None: Quit) and

@@ -44,11 +44,13 @@ BACK_ON_SONOFF_WAIT = 300.0
 
 
 def read_and_anonymise(ctx: Context, manifest: dict[str, Any], chip: chips.Chip, name: str, version: str,
-                       device: dict[str, Any], *, known: bool = False) -> tuple[dict[str, bytes], bool]:
+                       device: dict[str, Any], *, known: bool = False,
+                       skippable: bool = False) -> tuple[dict[str, bytes], bool]:
     """Read the device's whole flash through the bridge (read_out), keep it as
     its Sonoff backup, and anonymise it. The files to offer, and whether the
-    device answered as Sonoff's firmware again."""
-    flash, efuse, info, report = read_out(ctx, chip, name, version, known=known)
+    device answered as Sonoff's firmware again. `skippable`: one device of
+    several, which its question may pass by."""
+    flash, efuse, info, report = read_out(ctx, chip, name, version, known=known, skippable=skippable)
     manifest["read"] = True
     manifest["facts"] = device_facts.lines(flash, efuse, device_facts.parse_info(info) if info else None)
     manifest["flash"] = {"size": report["size"], "sha256": report["sha256"],
@@ -66,7 +68,7 @@ def read_and_anonymise(ctx: Context, manifest: dict[str, Any], chip: chips.Chip,
 
 
 def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, *,
-             known: bool = False) -> tuple[bytes, bytes, bytes | None, dict]:
+             known: bool = False, skippable: bool = False) -> tuple[bytes, bytes, bytes | None, dict]:
     """Send the bridge, wait for it, and read the whole flash through it.
     `known`: a kind the tool converts, which the bridge has run on before."""
     app = chip.bridge_app()
@@ -85,8 +87,9 @@ def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, *,
             "could not start at all, the device may need a serial cable to recover.",
             "Only go ahead with a device you can afford to lose."]),
     ])
-    if not prompts.require_word(prompts.CONSENT_WORD):
-        raise NothingWritten("not confirmed - nothing has been sent to the device")
+    if not prompts.require_word(prompts.CONSENT_WORD, skip=skippable):
+        raise NothingWritten("skipped as asked, nothing was sent to it" if skippable else
+                             "not confirmed - nothing has been sent to the device")
     output.transient_end()
     port = firewall.choose_port(ctx, "delivery_port", firewall.DELIVERY_PORTS, "the firmware")
     # Before anything else: a rule a run stopped part way left is taken over
