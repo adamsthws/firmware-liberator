@@ -386,7 +386,11 @@ After a new router or a changed Wi-Fi password, the plug cannot join any more.
 - **ESPHome** opens its own network by itself after a minute and a half
   without your Wi-Fi (its name, such as `esphome-abcdef`). Join it, and its page
   asks for your Wi-Fi. It keeps trying your Wi-Fi meanwhile, so after a router
-  restart it simply rejoins.
+  restart it simply rejoins. It opens that network only once each time it
+  starts: if it has done so already - your router was off for more than a
+  minute since, say - switch the plug off and on, and it opens it again a
+  minute and a half later. (A fault of ESPHome 2026.10, which builds the
+  ESPHome the tool installs; ESPHome 2026.11 opens it every time.)
 - **Tasmota** keeps trying your Wi-Fi and never opens a network by itself, so
   a router restart cannot leave it waiting on one. Press its button 6 times
   quickly: it opens its setup network for 3 minutes (its name, such as
