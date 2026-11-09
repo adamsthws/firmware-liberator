@@ -641,12 +641,13 @@ def send(data: bytes, url: str = UPLOAD_URL, timeout: float = 120.0) -> str:
 
 
 def choose(ctx: Context, devices: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """The device to read out, or None for every one the tool does not convert
-    (run_all), offered first where there are two or more."""
-    wanted = unknown_devices(devices)
+    """The device to read out, or None for every device in the account
+    (run_all), offered first where there are two or more: those the tool
+    converts too, as one may run a firmware version the website has no
+    readout of - new firmware is what a conversion meets unready."""
     if len(devices) == 1:
         return devices[0]
-    every = [f"Every device the tool does not convert yet ({len(wanted)})"] if len(wanted) > 1 else []
+    every = [f"Every device in the account ({len(devices)})"]
     output.transient_begin()
     index = prompts.ask_choice("Which device should be read out",
                                [*every, *(describe(device) for device in devices)])
@@ -655,10 +656,10 @@ def choose(ctx: Context, devices: list[dict[str, Any]]) -> dict[str, Any] | None
 
 
 def read_out_chosen(ctx: Context, devices: list[dict[str, Any]]) -> str:
-    """The readout the owner chooses, of one device or of every one wanted;
-    what the run ends by saying."""
+    """The readout the owner chooses, of one device or of every one in the
+    account; what the run ends by saying."""
     device = choose(ctx, devices)
-    return run_all(ctx, unknown_devices(devices)) if device is None else run(ctx, device)
+    return run_all(ctx, devices) if device is None else run(ctx, device)
 
 
 def run_all(ctx: Context, devices: list[dict[str, Any]]) -> str:
@@ -678,8 +679,9 @@ def run_all(ctx: Context, devices: list[dict[str, Any]]) -> str:
                                        "what it and eWeLink say, and the firmware eWeLink offers it")
           for device in ordered),
         "",
-        "Each readout is anonymised, and sent on its own as it is made: the",
-        "website may say it has enough of a device already.",
+        "Only a device the website has no readout like - its model and firmware",
+        "version - is read. Each readout is anonymised, and sent on its own as it",
+        "is made.",
     ])
     contact = None
     if upload_url() is not None:

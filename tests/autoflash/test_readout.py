@@ -688,28 +688,42 @@ class ChooseTests(unittest.TestCase):
             chosen = readout.choose(SimpleNamespace(), devices)
         return asked.call_args.args[1], chosen
 
-    def test_every_device_not_supported_is_offered_first(self):
+    def test_every_device_in_the_account_is_offered_first_those_it_converts_too(self):
+        # A device the tool converts may run firmware the website has no readout
+        # of: new firmware is what a conversion meets unready.
         from tools.autoflash import kinds
         s60 = record("S60TPG", kinds.SONOFF_S60.stock_model)
         other = {**DEVICE, "deviceid": "1000fedcba", "name": "Porch"}
         options, chosen = self.choose([s60, DEVICE, other], 0)
-        self.assertEqual(options[0], "Every device the tool does not convert yet (2)")
+        self.assertEqual(options[0], "Every device in the account (3)")
         self.assertIsNone(chosen)
         self.assertEqual(self.choose([s60, DEVICE, other], 2)[1], DEVICE)
+        self.assertEqual(len(self.choose([s60, DEVICE], 0)[0]), 3)
 
-    def test_with_one_such_device_only_the_devices_are_offered(self):
-        from tools.autoflash import kinds
-        options, _ = self.choose([record("S60TPG", kinds.SONOFF_S60.stock_model), DEVICE], 0)
-        self.assertEqual(len(options), 2)
-
-    def test_every_one_is_every_device_the_tool_does_not_convert(self):
+    def test_every_one_is_every_device_in_the_account(self):
         from tools.autoflash import kinds
         s60 = record("S60TPG", kinds.SONOFF_S60.stock_model)
         with mock.patch.object(readout, "choose", return_value=None), \
                 mock.patch.object(readout, "run_all", return_value="done") as every:
             self.assertEqual(readout.read_out_chosen(SimpleNamespace(), [s60, DEVICE]), "done")
-        self.assertEqual(every.call_args.args[1], [DEVICE])
+        self.assertEqual(every.call_args.args[1], [s60, DEVICE])
 
+    def test_a_device_it_converts_is_read_only_if_its_firmware_is_new_to_the_website(self):
+        from tools.autoflash import kinds
+        start_run(self)
+        s60 = kinds.SONOFF_S60
+        asked = account.Asked({"packets": []}, "1.2.0", s60.stock_model, "S60TPG", [], {}, "1000abcdef")
+        readout.ask_wanted.return_value = readout.Wanted(False, "held")
+        with mock.patch.multiple(account, ask_ewelink=mock.Mock(return_value=asked),
+                                 ask_account=mock.Mock(return_value=asked)), \
+                learned(s60.wrapper_model, "ESP32C3"), \
+                mock.patch.object(readout_espressif, "read_and_anonymise") as read, \
+                mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                mock.patch.object(readout, "ask_contact", return_value=None):
+            said = readout.run_all(self.ctx, [record("S60TPG", s60.stock_model)])
+        self.assertEqual(readout.ask_wanted.call_args.args[:4], ("S60TPG", s60.stock_model, "1.2.0", "whole"))
+        read.assert_not_called()
+        self.assertIn(readout.NOT_NEEDED, said)
 
 class RunAllTests(unittest.TestCase):
     """Every device the tool does not convert, read out in one go, each sent on its own."""

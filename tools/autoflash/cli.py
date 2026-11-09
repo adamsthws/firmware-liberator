@@ -343,8 +343,12 @@ def cmd_readout(ctx: Context, saved: Path | None) -> int:
     if not devices:
         raise Abort("a readout needs the device in an eWeLink account, and none was found in this one")
     given = ctx.args.plug_ip
-    output.tell(readout.run(ctx, readout.device_at(given, devices), given) if given
-                else readout.read_out_chosen(ctx, devices))
+    if given:
+        output.tell(readout.run(ctx, readout.device_at(given, devices), given))
+    elif getattr(ctx.args, "all", False):
+        output.tell(readout.run_all(ctx, devices))
+    else:
+        output.tell(readout.read_out_chosen(ctx, devices))
     return 0
 
 
@@ -495,6 +499,9 @@ def _main() -> int:
                         "and its updates where they are encrypted (asked for otherwise; never stored)")
     parser.add_argument("--send", type=Path, metavar="FILE",
                         help="with readout: send a readout kept from before (readout.tar in its run)")
+    parser.add_argument("--all", action="store_true",
+                        help="with readout: every device in the eWeLink account, each sent on its own, "
+                        "without asking which (as its first choice does)")
     parser.add_argument("--wifi", action="store_true",
                         help="type the Wi-Fi details instead of reading them from the device")
     parser.add_argument("--no-backup", action="store_true",
