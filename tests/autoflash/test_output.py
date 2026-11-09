@@ -1149,7 +1149,7 @@ class ReportTests(OutputTestCase):
                                         "params": {"switches": [{"outlet": 0, "switch": "off"}]}}]
         with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
                 mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
-                mock.patch.object(report.ewelink_relay, "check_relay", return_value=(True, True)) as switched, \
+                mock.patch.object(report.ewelink_relay, "check_relay", return_value=report.ewelink_relay.RelayCheck(True, True)) as switched, \
                 mock.patch.object(report, "offer_report") as offered, mock.patch.object(output, "show_links"):
             report.invite_report(ctx, 441, False)
         self.assertEqual(switched.call_args.kwargs["device_id"], "1000abcdef")
@@ -1157,8 +1157,25 @@ class ReportTests(OutputTestCase):
         self.assertEqual(fields["Checks"], "True")
         with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
                 mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
-                mock.patch.object(report.ewelink_relay, "check_relay", return_value=(True, False)):
+                mock.patch.object(report.ewelink_relay, "check_relay", return_value=report.ewelink_relay.RelayCheck(True, False)):
             self.assertEqual(report.check_ewelink_hardware(ctx)["Relay"], "did not switch")
+
+    def test_a_run_back_to_sonoff_reads_the_meter_through_ewelink(self):
+        # Sonoff's S60 firmware in the emulator, a 100 W load on 230 V.
+        ctx = self.ewelink_ctx([True])
+        checked = report.ewelink_relay.RelayCheck(True, True, {"Voltage": 230.08, "Power": 99.99},
+                                                  {"Voltage": 0.0, "Power": 0.0})
+        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+                mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
+                mock.patch.object(report.ewelink_relay, "check_relay", return_value=checked), \
+                mock.patch.object(output, "say") as said:
+            hardware = report.check_ewelink_hardware(ctx)
+        self.assertEqual(hardware, {"Relay": "switches (meter confirms)",
+                                    "Power meter": "on: 230.08 V, 99.99 W; off: 0 V, 0 W"})
+        self.assertEqual(report.checks_passed(hardware), "true")
+        lines = [c.args[0] for c in said.call_args_list]
+        self.assertIn("    Relay: Switches (meter confirms)", lines)
+        self.assertIn("    Power meter: On: 230.08 V, 99.99 W; off: 0 V, 0 W", lines)
 
     def test_a_dualr3_driving_a_motor_says_both_answers(self):
         ctx = self.ewelink_ctx([True])
@@ -1198,7 +1215,7 @@ class ReportTests(OutputTestCase):
             state["params"] = next(looks, state["params"])
             return [{"deviceid": "1000abcdef", "online": True, "params": state["params"]}]
         ctx.account_devices = account_devices
-        reached = lambda **kwargs: (True, True) if state["params"] else None  # noqa: E731
+        reached = lambda **kwargs: report.ewelink_relay.RelayCheck(True, True) if state["params"] else None  # noqa: E731
         with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
                 mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
                 mock.patch.object(report.ewelink_relay, "check_relay", side_effect=reached), \
@@ -1211,7 +1228,7 @@ class ReportTests(OutputTestCase):
         # before Sonoff's firmware has dialled eWeLink: switched at once, it could
         # not be (seen in the emulator, every run back to Sonoff).
         ctx = self.ewelink_ctx([False, False, True])
-        reached = lambda **kwargs: (True, True) if self.online else None  # noqa: E731
+        reached = lambda **kwargs: report.ewelink_relay.RelayCheck(True, True) if self.online else None  # noqa: E731
         with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
                 mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
                 mock.patch.object(report.ewelink_relay, "check_relay", side_effect=reached), \

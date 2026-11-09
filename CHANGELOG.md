@@ -156,6 +156,11 @@ check.
   off eWeLink as it switches has its relay put back as it was once it returns,
   rather than left switched over. A plug asking eWeLink for its settings while the
   check waits no longer ends the run with "something unexpected went wrong".
+- A plug back on Sonoff's firmware has its meter read at the end of the run, as
+  the eWeLink app reads it, after each switch of its relay: the report gives its
+  readings with the relay on and off, and whether they show the relay switching,
+  as on Tasmota and ESPHome. A plug that gives eWeLink no readings, a Dual R3,
+  has its relay checked alone as before.
 - The end-of-run check always shows its Relay and Power meter answers. A plug
   that stopped answering it on Tasmota or ESPHome, or a Dual R3 driving a
   motor, showed neither, or only one.
