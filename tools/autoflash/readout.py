@@ -334,21 +334,28 @@ def offer(ctx: Context, manifest: dict[str, Any], files: dict[str, bytes] | None
 
     url = upload_url()
     contents = ["- the device's firmware readout, anonymised;"] if files or updates else []
-    prompts.section("Send this firmware readout, to help add support for this device?", [
-        "What is sent:",
-        *contents,
-        "- what the device and eWeLink said it is, and this tool's version.",
-    ])
-    if url is None:
-        keep()
-        output.say("    Not sent from a test run.")
-        return f"Readout saved in {path}, not sent."
-    try:
-        contact = ask_contact()
-    except prompts.QuitRun:
-        keep()
-        return f"Not sent. The readout is kept in {path}, if you would like to send it later."
-    data = keep(contact)
+    # The offer and its question go together once answered: what the run then
+    # says - sent, or not - is the answer.  Left if sending fails, to say what.
+    with output.until_done():
+        prompts.section("Send this firmware readout, to help add support for this device?", [
+            "What is sent:",
+            *contents,
+            "- what the device and eWeLink said it is, and this tool's version.",
+        ])
+        if url is None:
+            keep()
+            output.say("    Not sent from a test run.")
+            return f"Readout saved in {path}, not sent."
+        try:
+            contact = ask_contact()
+        except prompts.QuitRun:
+            keep()
+            return f"Not sent. The readout is kept in {path}, if you would like to send it later."
+        return sent(keep(contact), url, path, back)
+
+
+def sent(data: bytes, url: str, path: Path, back: bool) -> str:
+    """offer()'s readout sent to `url`; what the run ends by saying."""
     try:
         reference = send(data, url)
     except (OSError, ValueError) as exc:
