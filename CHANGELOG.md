@@ -201,6 +201,9 @@ check.
 - A run stopped before it wrote anything to its device - at a question, say - is
   no longer offered back as "A conversion did not finish last time": starting
   afresh loses nothing.
+- A conversion run with `--wifi` no longer asks for the Wi-Fi details again near
+  its end, as it installs official Tasmota's safeboot: it uses those typed earlier
+  in the same run.
 - A download the server turns away for now - GitHub's release downloads
   answering "504 Gateway Time-out" for minutes at a time, say - is tried again
   for a little over two minutes, waiting longer each time, rather than three
