@@ -301,7 +301,15 @@ class Stub:
             return {"error": 404, "msg": "no device configured in the stub"}
         seen = self.reported.get(d["deviceid"], {})
         model = seen.get("model") or d.get("model")
+        # eWeLink's record holds the relay's state from the plug's earlier
+        # reports; this one starts each run with none, and the POW Elite's and
+        # POWCT's firmware reports it only when it changes. So until the plug
+        # reports it, it is off, in the shape those two take. Once reported it
+        # is only the plug's own: the TH Elite's 1.0.2 reports one switch, and
+        # answers a list with 400.
         params = {**seen.get("params", {}), "model": model}
+        if "switch" not in params and "switches" not in params:
+            params["switches"] = [{"switch": "off", "outlet": 0}]
         if seen.get("fwVersion"):  # unknown until the plug has said, as at eWeLink
             params["fwVersion"] = seen["fwVersion"]
         if d.get("staMac"):  # eWeLink has it from the plug; this one never says it here

@@ -200,7 +200,13 @@ makes it necessary. The evidence is in [the firmware facts](#firmware-facts-stat
   computer's network". The plug reports `ssid` and `bssid` in its `update`s,
   which the stub passes on as eWeLink does; it never reports its MAC there, so
   `staMac` is the MAC of the plug being run
-  ([test 7](#test-7--the-whole-account-record)).
+  ([test 7](#test-7--the-whole-account-record)). `params.switches` starts as
+  the relay off, until the plug reports it: eWeLink's record has it from the
+  plug's earlier reports, and the POW Elite's and POWCT's firmware reports it
+  only when it changes, so with none the tool's relay check back on Sonoff's
+  firmware waited three minutes and gave up. Once the plug reports its relay,
+  in either shape, the record has only that: the TH Elite's Sonoff 1.0.2
+  reports one `switch`, and answers a `switches` list with error 400.
 - **Relay the app's commands.** The installer goes as an `upgrade` from the tool's
   app connection (`userAgent:"app"`) to the plug, and the plug's replies come
   back; without the relay the command never reached the plug (test 4c). A
