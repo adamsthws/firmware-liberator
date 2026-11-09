@@ -42,6 +42,13 @@ class Dump(unittest.TestCase):
         self.assertEqual((flashmap.nvs(flash).offset, flashmap.nvs(flash).size), (0x9000, 0x40000))
         self.assertEqual([slot.offset for slot in flashmap.app_slots(flash)], [0x60000])
 
+    def test_a_table_built_to_be_at_0xc000_is_read_there(self):
+        # The BASICR4's firmware reads its table there (CONFIG_PARTITION_TABLE_OFFSET).
+        flash = bytearray(flash_with(0, 5)) + b"\xff" * 0x4000
+        flash[0xC000:0xC040], flash[0x8000:0x8040] = flash[0x8000:0x8040], b"\xff" * 0x40
+        self.assertEqual(flashmap.table_at(bytes(flash)), 0xC000)
+        self.assertEqual([slot.offset for slot in flashmap.app_slots(bytes(flash))], [0x60000])
+
 
 class Mac(unittest.TestCase):
     MAC = "12:34:56:ab:cd:ef"
