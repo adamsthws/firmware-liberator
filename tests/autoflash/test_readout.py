@@ -14,7 +14,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import account, errors, hostsys, output, plugs, prompts, readout, readout_espressif, runner, runs
+from tools.autoflash import account, errors, hostsys, output, plugs, prompts, readout, readout_beken
+from tools.autoflash import readout_espressif, runner, runs
 from tools.autoflash.state import RunState
 from tools.espressif import chips
 from tools.ewelink import firmware_name, offered_firmware
@@ -22,6 +23,11 @@ from tools.ewelink import firmware_name, offered_firmware
 MANIFEST = {"format": 1, "product": "NEWTHING", "stock_model": "SN-ESP32C3-NEW-01", "version": "1.0.0"}
 DEVICE = {"deviceid": "1000abcdef", "name": "Hall light", "productModel": "NEWTHING",
           "extra": {"model": "SN-ESP32C3-NEW-01", "uiid": 77}, "params": {"fwVersion": "1.0.0"}}
+
+
+def record(product: str, model: str) -> dict:
+    """The account's record of a device eWeLink knows as `product`, its firmware as `model`."""
+    return {**DEVICE, "productModel": product, "extra": {**DEVICE["extra"], "model": model}}
 
 
 def members(data: bytes) -> list[str]:
@@ -240,6 +246,7 @@ def start_run(test: unittest.TestCase) -> None:
                   mock.patch.object(readout_espressif.installer, "bridge_answers", return_value=False),
                   mock.patch.object(hostsys, "mac_of", return_value="12:34:56:ab:cd:ef"),
                   mock.patch.object(account, "ask_ewelink", return_value=asked),
+                  mock.patch.object(account, "ask_account", return_value=asked),
                   mock.patch.object(plugs, "remember_plug"),
                   mock.patch.object(offered_firmware, "fetch",
                                     return_value=([offered_firmware.Offered("user1.bin", "1.1.0", b"\xe9")], []))):
@@ -275,25 +282,96 @@ class RunTests(unittest.TestCase):
                 mock.patch.object(firmware_name, "learn", return_value=(None, ["no offer"])), \
                 mock.patch.object(readout_espressif, "read_out", side_effect=errors.NothingWritten("stop")) as read:
             with self.assertRaises(errors.NothingWritten):
-                readout.run(self.ctx, DEVICE)
+                readout.run(self.ctx, record("S60TPG", kinds.SONOFF_S60.stock_model))
         self.assertEqual(read.call_args.args[1:3], (chips.ESP32C3, kinds.SONOFF_S60.wrapper_model))
         self.assertTrue(read.call_args.kwargs["known"])
 
+    def asked_as(self, product: str, model: str):
+        asked = account.Asked({"packets": []}, "1.0.0", model, product, [], {}, "1000abcdef")
+        return mock.patch.multiple(account, ask_ewelink=mock.Mock(return_value=asked),
+                                   ask_account=mock.Mock(return_value=asked))
+
+    def read(self, product: str, model: str, name: str, chip: str):
+        """What a readout of this device sent it (the reading program, or None),
+        and what it offered to send."""
+        with self.asked_as(product, model), learned(name, chip), \
+                mock.patch.object(readout_espressif, "read_and_anonymise", return_value=({}, True)) as espressif, \
+                mock.patch.object(readout_beken, "read_and_anonymise", return_value=({}, True)) as beken, \
+                mock.patch.object(readout, "offer", return_value="done") as offered:
+            readout.run(self.ctx, record(product, model))
+        sent = espressif if espressif.called else beken if beken.called else None
+        return sent, offered.call_args.args[1]
+
+    def test_a_device_the_tool_has_not_seen_is_sent_nothing(self):
+        # Even with a chip a bridge runs on: it could be laid out so the bridge
+        # leaves it unable to start, as the BASICR4 would have been.
+        sent, manifest = self.read("NEWTHING", "SN-NEW-01", "FWSW-E32-NEW-ESP32C3", "ESP32C3")
+        self.assertIsNone(sent)
+        self.assertFalse(manifest["read"])
+
+    def test_a_kind_wanting_a_readout_is_read_in_full(self):
+        from tools.autoflash import kinds
+        basicr4 = kinds.SONOFF_BASICR4
+        self.assertIs(basicr4.status, kinds.Status.READOUT_WANTED)
+        sent, _ = self.read("BASICR4", basicr4.stock_model, basicr4.wrapper_model, "ESP32C3")
+        self.assertIsNotNone(sent)
+
+    def test_a_listed_product_under_another_firmware_name_is_sent_nothing(self):
+        # A variant sharing the product model - a Matter version, say - is not the kind.
+        from tools.autoflash import kinds
+        sent, _ = self.read("S60TPG", kinds.SONOFF_S60.stock_model, "FWSW-E32S60M-S60M-ESP32C3", "ESP32C3")
+        self.assertIsNone(sent)
+
+    def test_a_kind_not_supported_yet_is_sent_nothing(self):
+        from tools.autoflash import kinds
+        nspanel = kinds.SONOFF_NSPANEL
+        self.assertIs(nspanel.status, kinds.Status.NOT_SUPPORTED)
+        sent, _ = self.read("NSPANEL", nspanel.stock_model, nspanel.wrapper_model, "ESP32D0WD")
+        self.assertIsNone(sent)
+
     def test_on_the_reading_program_already_it_is_asked_of_ewelink_by_its_id(self):
         # The bridge answers no discovery, as Sonoff's firmware would.
-        by_id = account.Asked({"packets": []}, "1.0.0", "SN-NEW-01", "NEWTHING", [], {}, "1000abcdef")
+        from tools.autoflash import kinds
+        basicr4 = kinds.SONOFF_BASICR4
+        by_id = account.Asked({"packets": []}, "1.1.0", basicr4.stock_model, "BASICR4", [], {}, "1000abcdef")
         with learned("FWSW-01-NEW-BK7238", "BK7238"), mock.patch.object(readout, "offer", return_value="done"), \
                 mock.patch.object(readout_espressif.installer, "bridge_answers", return_value=True), \
                 mock.patch.object(account, "ask_account", return_value=by_id) as asked:
-            readout.run(self.ctx, DEVICE)
+            readout.run(self.ctx, record("BASICR4", basicr4.stock_model))
         self.assertEqual(asked.call_args.args[1], "1000abcdef")
         account.ask_ewelink.assert_not_called()
 
     def test_its_run_is_filed_under_the_device_as_a_conversions_is(self):
+        device = {**DEVICE, "params": {**DEVICE["params"], "staMac": "12:34:56:AB:CD:EF"}}
         with learned("FWSW-01-NEW-BK7238", "BK7238"), mock.patch.object(readout, "offer", return_value="done"):
-            readout.run(self.ctx, DEVICE)
+            readout.run(self.ctx, device)
         self.assertEqual(self.filed.call_args.args[1], "12:34:56:ab:cd:ef")
         self.assertEqual(self.ctx.state.input("plug_mac"), "12:34:56:ab:cd:ef")
+
+
+class FirstStageTests(unittest.TestCase):
+    """A device the tool has not seen: everything from eWeLink, nothing asked of it."""
+
+    def setUp(self):
+        start_run(self)
+
+    def test_it_is_not_looked_for_on_the_network(self):
+        # So a device answering no discovery - a Matter one, say - is read out too.
+        with learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"), mock.patch.object(readout, "offer", return_value="done"):
+            readout.run(self.ctx, DEVICE)
+        readout.locate.assert_not_called()
+        account.ask_ewelink.assert_not_called()
+        self.assertEqual(account.ask_account.call_args.args[1], "1000abcdef")
+
+    def test_with_nothing_from_its_cloud_the_accounts_record_is_sent(self):
+        failed = mock.Mock(side_effect=errors.Abort("no OTA model"))
+        with mock.patch.multiple(account, ask_account=failed, ask_ewelink=failed), \
+                mock.patch.object(firmware_name, "learn", return_value=(None, ["no offer"])), \
+                mock.patch.object(readout, "offer", return_value="done") as offered:
+            self.assertEqual(readout.run(self.ctx, DEVICE), "done")
+        manifest = offered.call_args.args[1]
+        self.assertEqual((manifest["product"], manifest["stock_model"], manifest["version"], manifest["read"]),
+                         ("NEWTHING", "SN-ESP32C3-NEW-01", "1.0.0", False))
 
 
 class OfferTests(unittest.TestCase):

@@ -4,17 +4,26 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tests.autoflash.test_readout import DEVICE, learned, start_run
+from tests.autoflash.test_readout import learned, record, start_run
 from tests.espressif.test_scrub import flash as wifi_flash
-from tools.autoflash import errors, hostsys, plugs, prompts, readout, readout_espressif, safety_locks
+from tools.autoflash import account, errors, hostsys, kinds, plugs, prompts, readout, readout_espressif, safety_locks
+
+# A kind a whole readout is for (Readout wanted) that the tool does not convert:
+# the bridge has never run on a real one.
+BASICR4 = kinds.SONOFF_BASICR4
+AS_BASICR4 = account.Asked({"packets": []}, "1.1.0", BASICR4.stock_model, "BASICR4", [], {}, "1000abcdef")
+DEVICE = record("BASICR4", BASICR4.stock_model)
 
 
 class BridgeTests(unittest.TestCase):
     def setUp(self):
         start_run(self)
+        asked = mock.patch.object(account, "ask_ewelink", return_value=AS_BASICR4)
+        asked.start()
+        self.addCleanup(asked.stop)
 
     def test_nothing_is_sent_without_proceed(self):
-        with learned("FWSW-E32NEW-NEW-ESP32C3", "ESP32C3"), \
+        with learned(BASICR4.wrapper_model, "ESP32C3"), \
                 mock.patch.object(prompts, "require_word", return_value=False), \
                 mock.patch.object(hostsys, "run_tool") as sent:
             with self.assertRaises(errors.NothingWritten):
@@ -26,7 +35,7 @@ class BridgeTests(unittest.TestCase):
     def test_proceed_sends_the_bridge_wrapped_as_its_firmware_name(self):
         from tools.autoflash import firewall
         from tools.espressif import analyze_vendor_ota, dump_stock_flash
-        with learned("FWSW-E32NEW-NEW-ESP32C3", "ESP32C3"), \
+        with learned(BASICR4.wrapper_model, "ESP32C3"), \
                 mock.patch.object(prompts, "require_word", return_value=True), \
                 mock.patch.object(firewall, "choose_port", return_value=8088), \
                 mock.patch.object(firewall, "ensure_firewall"), \
@@ -43,9 +52,9 @@ class BridgeTests(unittest.TestCase):
             self.assertEqual(readout.run(self.ctx, DEVICE), "done")
         command = sent.call_args.args[0]
         self.assertEqual(command[1], "-u")  # each line of the sender's in the log as it comes
-        self.assertEqual(command[command.index("--readout-model") + 1], "FWSW-E32NEW-NEW-ESP32C3")
+        self.assertEqual(command[command.index("--readout-model") + 1], BASICR4.wrapper_model)
         wrapped = Path(command[command.index("--firmware") + 1]).read_bytes()
-        self.assertEqual(analyze_vendor_ota.analyze(wrapped)["wrapper"]["model"], "FWSW-E32NEW-NEW-ESP32C3")
+        self.assertEqual(analyze_vendor_ota.analyze(wrapped)["wrapper"]["model"], BASICR4.wrapper_model)
         self.assertTrue(offered.call_args.args[1]["read"])
         self.assertTrue(self.ctx.state.input(readout.STATE_KEY))
 
