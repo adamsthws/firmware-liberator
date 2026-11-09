@@ -42,3 +42,25 @@ jobs:
           CLOUDFLARE_EMAIL_DESTINATION: ${{ secrets.CLOUDFLARE_EMAIL_DESTINATION }}
           CLOUDFLARE_EMAIL_FORWARD: ${{ secrets.CLOUDFLARE_EMAIL_FORWARD }}
         run: python3 tools/repo/cloudflare_settings.py ci
+
+  # The API's health (tools/repo/api_health.py): the public figures made last
+  # night, by a database with every migration, and the account well within
+  # the free plan. Daily, not on a push: neither changes with one.
+  health:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: website
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The public figures are fresh
+        run: python3 tools/repo/api_health.py snapshot
+      - name: The account is well within the free plan
+        if: ${{ !cancelled() }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_READ_TOKEN }}
+        run: python3 tools/repo/api_health.py usage
