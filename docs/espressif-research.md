@@ -76,6 +76,28 @@ flashed),
 [MINI-D boot log](https://community.home-assistant.io/t/can-you-flash-a-sonoff-mini-d/932312).
 No stock table was found for the BASICR4, non-Matter M5 or Dual R3 Lite.
 
+### The Dual R3's work mode
+
+The Dual R3 runs as two relays or drives a curtain motor. Its firmware (1.6.1)
+keeps which as `deviceMode` in its user settings, the JSON in NVS namespace
+`user_usual`, key `content`, and reports it to eWeLink as `workMode`: 1 relays
+(it then loads each relay's saved state), 2 motor; 3 is a third mode, not looked
+into. At start-up, finding no `deviceMode` or one outside 1 to 3, it writes 2 and
+runs as a motor, refusing every switch from eWeLink with error 400. A `workMode`
+update through eWeLink changes it. This was read
+from the firmware's code (its start-up and its `workMode` handler) and seen in
+the emulator; [SonoffLAN](https://github.com/AlexxIT/SonoffLAN) treats workMode 2
+on a Dual R3 (uiid 126) as a cover. The firmware also puts all its user settings
+back to their defaults, `deviceMode` 2 among them, when the account it registers
+with is not the one its `user_unusual` settings name (`finalUserApikey`).
+
+The emulator's Dual R3 runs on the TH Elite's settings, which have no
+`deviceMode`, so [public_dump.py](../tools/espressif/emulator/public_dump.py)
+gives it its own, `{"init":"true","deviceMode":1}`, and the firmware adds the rest
+of its defaults. That a Dual R3 out of the box is in relay mode is assumed, not
+seen: how its factory sets that is not known. The test copy's account is made
+the stub's, so the firmware keeps the mode.
+
 ### Leaving Tasmota on a TH-style layout
 
 There is no room for the 715 KB mover between `ota_0` at `0x60000` and Tasmota's app at
