@@ -117,6 +117,17 @@ class EwelinkAccountTests(unittest.TestCase):
         self.assertEqual(email, "new@example.com")
         menu.assert_not_called()
 
+    def test_a_phone_number_is_kept_as_it_signs_in(self):
+        email, _, asked = self.email(typed="+44 7700 900123")
+        self.assertEqual(email, "+447700900123")
+        valid = asked.call_args.kwargs["validate"]
+        for answer in ("+44 7700 900123", "+44-7700-900123", "new@example.com",
+                       "first.last+tag@mail.example.co.uk"):
+            self.assertTrue(valid(answer)[0], answer)
+        for answer in ("07700 900123", "test@test", "test@", "@example.com", "test@example.",
+                       "test@.com", "test@example.c", "test@example.123", "two@at@example.com"):
+            self.assertFalse(valid(answer)[0], answer)
+
     def test_once_chosen_in_a_run_it_is_not_asked_again(self):
         email, menu, asked = self.email(remembered="old@example.com", chosen="run@example.com")
         self.assertEqual(email, "run@example.com")

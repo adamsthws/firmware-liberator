@@ -100,7 +100,8 @@ def private_json(path: Path, value: Any) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--email", help="prompted locally when omitted")
+    parser.add_argument("--email", help="the eWeLink account: its email, or its phone number "
+                        "with the country code; prompted locally when omitted")
     parser.add_argument("--country-code", default="+44")
     parser.add_argument("--region", choices=sorted(API), default="eu")
     parser.add_argument("--device-id")
@@ -110,12 +111,12 @@ def main() -> int:
                         help="also save the offer of the latest firmware, to read its firmware name from")
     args = parser.parse_args()
 
-    email = args.email or input("eWeLink email: ").strip()
+    email = args.email or input("eWeLink email or phone number: ").strip()
     password = os.environ.get("EWELINK_PASSWORD") or ask_secret(
         "eWeLink password (not stored): "
     )
     if not email or not password:
-        print("Email and password are required.", file=sys.stderr)
+        print("The account and password are required.", file=sys.stderr)
         return 2
     try:
         device_id = args.device_id or target_id_from_mdns(args.mdns_capture)

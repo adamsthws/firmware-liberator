@@ -55,6 +55,38 @@ class DeviceKeyTests(unittest.TestCase):
         import base64
         self.assertEqual(base64.b64decode(headers["Authorization"][5:]), expected)
 
+    def test_a_phone_number_signs_in_with_its_own_country_code(self):
+        for typed, number, code in (("+44 7700 900123", "+447700900123", "+44"),
+                                    ("+44-7700-900123", "+447700900123", "+44"),
+                                    ("0086 138-0013-8000", "+8613800138000", "+86"),
+                                    ("+1 (555) 010-0199", "+15550100199", "+1"),
+                                    ("+353 85 123 4567", "+353851234567", "+353")):
+            body = json.loads(signed_login_body(typed, "pw", "+44")[0])
+            self.assertEqual(body, {"password": "pw", "countryCode": code, "phoneNumber": number})
+
+    def test_an_email_needs_a_domain_with_a_top_level_one(self):
+        for text in ("owner@example.test", "o.w+n@mail.example.co.uk", "owner@xn--80ak6aa92e.xn--p1ai",
+                     " owner@example.com "):
+            self.assertTrue(get_device_key.is_email(text), text)
+        for text in ("test@test", "test@example.", "test@-example.com", "test@example.c",
+                     "test @example.com", "owner"):
+            self.assertFalse(get_device_key.is_email(text), text)
+
+    def test_an_email_keeps_the_country_code_given(self):
+        body = json.loads(signed_login_body("owner@example.test", "pw", "+44")[0])
+        self.assertEqual(body, {"password": "pw", "countryCode": "+44", "email": "owner@example.test"})
+
+    def test_a_number_without_its_country_code_is_not_sent(self):
+        for typed in ("07700 900123", "+28 1234 5678", "+44 77", "owner"):
+            self.assertIsNone(get_device_key.phone_number(typed))
+            with self.assertRaises(EwelinkError):
+                signed_login_body(typed, "pw", "+44")
+
+    def test_no_calling_code_is_the_start_of_another(self):
+        for code in get_device_key.CALLING_CODES:
+            for other in get_device_key.CALLING_CODES - {code}:
+                self.assertFalse(other.startswith(code), (code, other))
+
     def test_extracts_one_id_from_repeated_mdns_packets(self):
         capture = {
             "packets": [

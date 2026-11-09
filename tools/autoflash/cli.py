@@ -474,7 +474,8 @@ def _main() -> int:
         help="workstation address the device fetches from; derived from the device's "
         "address when omitted",
     )
-    parser.add_argument("--email")
+    parser.add_argument("--email", help="the eWeLink account the device is in: its email, or its phone "
+                        "number with the country code (+44 7700 900123)")
     parser.add_argument("--web-user", help="Tasmota web username, for a Tasmota built with another than admin")
     parser.add_argument("--web-password",
                         help="the device's Tasmota web password, if it has one (asked for otherwise; never stored)")

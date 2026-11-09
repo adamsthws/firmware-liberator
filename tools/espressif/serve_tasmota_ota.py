@@ -53,7 +53,8 @@ def main():
     parser.add_argument("--listen-port", type=int, default=8088)
     parser.add_argument("--device-ip", required=True)
     parser.add_argument("--firmware", type=Path, required=True)
-    parser.add_argument("--email", required=True)
+    parser.add_argument("--email", required=True,
+                        help="the eWeLink account: its email, or its phone number with the country code")
     parser.add_argument("--country-code", default="+44")
     parser.add_argument("--region", default="eu")
     parser.add_argument("--expected-current-version", required=True)

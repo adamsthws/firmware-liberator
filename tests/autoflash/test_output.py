@@ -1871,6 +1871,8 @@ class ScrubTests(PrivacyTestCase):
             '{"apikey": "abc-123", "at": "token", "action": "update"}':
                 '{"apikey": "<redacted>", "at": "<redacted>", "action": "update"}',
             "[sudo] password for someone: ": "[sudo] password for <user>: ",
+            '{"phoneNumber": "+447700900123", "countryCode": "+44"}':
+                '{"phoneNumber": "<phone>", "countryCode": "+44"}',
             "this computer is 81.2.69.160 on the internet": "this computer is <public-ip> on the internet",
         }
         for line, expected in cases.items():
@@ -1927,6 +1929,13 @@ class LogFileTests(PrivacyTestCase):
             output._private.clear()
             RunState.open(Path(directory))  # as a new run reads it back
         self.assertEqual(output.scrub("kitchen-plug at 192.0.2.50"), "<device-name> at 192.0.2.50")
+
+    def test_an_account_made_with_a_phone_number_is_written_as_one(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = RunState.open(Path(directory))
+            state.set_input("email", "+447700900123")
+        self.assertEqual(output.scrub("account +447700900123"), "account <phone>")
+        self.assertEqual(output._private["+447700900123"], "phone")
 
 
 if __name__ == "__main__":

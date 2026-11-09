@@ -149,7 +149,8 @@ the same step (`K1`).
 1. **List what has to be in place first** - the eWeLink app and account, the
    plug added with LAN Control on - and wait for a key press.
 2. **Find the plug on your network.** The tool signs in to your eWeLink account
-   (it asks for your email and password here, once for the whole run) and
+   (it asks for your email - or phone number, for an account made with one - and
+   password here, once for the whole run) and
    looks on your network for the plugs in that account it can convert, matched
    by their eWeLink id, so no other device can be mistaken for yours. If it
    finds one it carries on by itself; if it finds several it asks which. A plug

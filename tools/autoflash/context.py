@@ -43,7 +43,7 @@ from tools.espressif.safeboot.prepare_imprinted_bundle import (
     pin_wifi,
     recovery_image,
 )
-from tools.ewelink.get_device_key import EwelinkError, get_devices, login
+from tools.ewelink.get_device_key import EwelinkError, account_name, get_devices, is_email, login, phone_number
 
 
 class Context:
@@ -101,7 +101,8 @@ class Context:
         self._ewelink_password: str | None = None
         # From .env or the environment: tried once, then asked for if eWeLink refuses it.
         self._given_ewelink_password = credentials.get("EWELINK_PASSWORD")
-        self._given_email = credentials.get("EWELINK_EMAIL")
+        given_email = credentials.get("EWELINK_EMAIL")
+        self._given_email = account_name(given_email) if given_email else None
         # The last sign-in's region and access token, held in memory only.
         self._ewelink_session: tuple[str, str] | None = None
         self._finder: join.PlugFinder | None = None
@@ -298,10 +299,11 @@ class Context:
         self._given_email = self._given_ewelink_password = None
 
     def email(self) -> str:
-        """The eWeLink account email, chosen once per run.
+        """The eWeLink account, chosen once per run: its email, or the phone
+        number it was made with.
 
         The last account used on this computer is offered first; a plug in
-        another account needs that account's email instead.
+        another account needs that account's instead.
         """
         email = self.state.input("email") or self._given_email
         if not email:
@@ -309,21 +311,25 @@ class Context:
             last = runs.load_settings().get("ewelink_email")
             if last and prompts.ask_choice("Which eWeLink account is this device in", [
                 f"The one used last time: {last}",
-                "A different account - enter its email",
+                "A different account - enter its email or phone number",
             ]) == 0:
                 email = last
             else:
                 email = prompts.ask_text(
-                    "eWeLink account email",
+                    "eWeLink account email or phone number",
+                    help_lines=["A phone number goes with its country code, as +44 7700 900123."],
                     validate=lambda answer: (
-                        ("@" in answer, "That does not look like an email address.")
+                        is_email(answer) or phone_number(answer) is not None,
+                        "That is neither an email address nor a phone number with its country code.",
                     ),
                 )
             output.transient_end()
+        email = account_name(email)
         self.remember_email(email)
         return email
 
     def remember_email(self, email: str) -> None:
+        email = account_name(email)
         self.state.set_input("email", email)
         settings = runs.load_settings()
         if settings.get("ewelink_email") != email:

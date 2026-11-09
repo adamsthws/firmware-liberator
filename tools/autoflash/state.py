@@ -88,7 +88,9 @@ class RunState:
     @staticmethod
     def _keep_private(key: str, value: Any) -> None:
         if key in PRIVATE_INPUTS and isinstance(value, str):
-            output.private(value, PRIVATE_INPUTS[key])
+            # An eWeLink account made with a phone number is written as one.
+            phone = key == "email" and "@" not in value
+            output.private(value, "phone" if phone else PRIVATE_INPUTS[key])
 
     def input(self, key: str, default: Any = None) -> Any:
         return self.data["inputs"].get(key, default)

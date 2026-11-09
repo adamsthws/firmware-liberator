@@ -114,6 +114,9 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
      r'\1"<redacted>"'),
     (re.compile(r"\bsign=[0-9a-fA-F]+"), "sign=<signature>"),
     (re.compile(r"[\w.%+-]+@[\w-]+(?:\.[\w-]+)+"), "<email>"),
+    # A phone number with its country code, as an eWeLink account made with
+    # one is signed in with (and eWeLink's answer repeats).
+    (re.compile(r"(?<![\w+])\+[1-9]\d{6,14}\b"), "<phone>"),
     (re.compile(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b"), "<mac>"),
     # An eWeLink device id; and a converted plug's name, which ends with the
     # MAC's (tasmota-abcdef, esphome-abcdef, openbeken-abcdef, ESPHome's

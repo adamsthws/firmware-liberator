@@ -298,9 +298,10 @@ command line: the delivery tool, `serve_tasmota_ota.py`, receives it through
 the `EWELINK_PASSWORD` environment variable and clears its copy as soon as it
 has signed in. The access token eWeLink hands back is not kept either.
 
-What is kept is the account's email, so the next run can offer it first. It
-is in `captures/settings.json` and the run's state file, both inside
-`captures/`, which git ignores. In the run's log it is written as `<email>`,
+What is kept is the account's email (or phone number, for an account made
+with one), so the next run can offer it first. It is in
+`captures/settings.json` and the run's state file, both inside `captures/`,
+which git ignores. In the run's log it is written as `<email>` (or `<phone>`),
 along with the plug's device id, name and hardware address.
 
 The device list eWeLink returns includes each device's LAN key (`devicekey`):
@@ -311,7 +312,7 @@ run records about the plug. It stays in memory only while the run needs the
 account, and is gone when the run's processes exit. It stops mattering once
 the plug runs Tasmota.
 
-For an unattended run (testing, below), the email and password can be given
+For an unattended run (testing, below), the account and password can be given
 in advance instead, in a `.env` file at the top of the checkout. Git ignores
 it, and `AGENTS.md` tells AI coding tools not to read it. What it holds is
 read into the tool's memory only: it is not passed on to the helper tools'
