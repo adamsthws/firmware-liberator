@@ -284,8 +284,9 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn(f"A mail.{cs.ZONE} '192.0.2.50': is not written down", out)
         self.assertIn(f"TXT _dmarc.{cs.ZONE} 'v=DMARC1; p=none': is not written down", out)
-        run(fake, "apply")
+        code, out = run(fake, "apply")
         self.assertEqual(sorted(method for method, _, _ in fake.sent), ["DELETE", "DELETE", "POST"])
+        self.assertIn(f"A mail.{cs.ZONE} '192.0.2.50': removed", out)
         self.assertEqual(run(fake)[0], 0)
 
     def test_each_address_named_is_forwarded_and_no_address_is_shown(self):

@@ -302,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
                           "apply again once they have")
                     continue
             api(path, method, body)
-            print(f"  {what}: set")
+            print(f"  {what}: {'removed' if method == 'DELETE' else 'set'}")
         for name in FROM_ENV:
             set_secret(name, cloudflare_settings.variable(name).strip())
             print(f"  environment '{ENVIRONMENT}' secret {name}: set from .env.infra")

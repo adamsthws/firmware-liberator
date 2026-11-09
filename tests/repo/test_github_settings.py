@@ -214,7 +214,7 @@ class GitHubSettingsTests(unittest.TestCase):
         code, out = run(fake)
         self.assertIn("Pages: is on, should be off", out)
         code, out = run(fake, "apply")
-        self.assertIn("Pages: set", out)
+        self.assertIn("Pages: removed", out)
         self.assertIsNone(fake.pages)
 
     def test_the_website_environment_takes_main_only(self):
@@ -256,7 +256,8 @@ if __name__ == "__main__":
     def test_a_missing_secret_is_named_and_left_for_its_value(self):
         fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
         fake.secrets = {"CLOUDFLARE_DEPLOY_TOKEN", "OLD_TOKEN"}
-        run(fake, "apply")
+        _, first = run(fake, "apply")
+        self.assertIn(f"environment '{gs.ENVIRONMENT}' secret OLD_TOKEN: removed", first)
         code, out = run(fake, "apply")
         self.assertEqual(code, 1)
         self.assertIn("secret CLOUDFLARE_READ_TOKEN: left - its value is set with "
