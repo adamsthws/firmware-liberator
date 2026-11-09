@@ -114,11 +114,17 @@ def min_chip_revision(flash: bytes, slot: Partition) -> int:
 
 
 def esp32c3_efuse(mac: str, revision: int = 0) -> bytes:
-    """An ESP32-C3's eFuse file with this MAC and chip revision, and nothing else."""
+    """An ESP32-C3's eFuse file with this MAC and chip revision, and the ADC
+    calibration every chip leaves Espressif with."""
     efuse = bytearray(ESP32C3_EFUSE_SIZE)
     efuse[0x18:0x1E] = bytes.fromhex(mac.replace(":", ""))[::-1]
     # EFUSE_RD_MAC_SPI_SYS_3's WAFER_VERSION, bits 18 to 20.
     efuse[0x24:0x28] = struct.pack("<I", (revision & 7) << 18)
+    # Block 2's BLK_VERSION_MAJOR (EFUSE_RD_SYS_PART1_DATA4, bits 0 and 1) 1: "with
+    # calibration". Its ADC fields left 0 are mid-range ones (init code 1000, 2000
+    # at the calibration voltage): without any, esp_adc_cal reads every input as
+    # 0 mV, and the BASICR4's firmware takes its thermistor to be overheating.
+    efuse[0x40:0x44] = struct.pack("<I", 1)
     return bytes(efuse)
 
 

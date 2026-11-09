@@ -125,6 +125,10 @@ class Kind:
     # The external RAM (MB, as QEMU's -m takes it) its stock firmware stops
     # without at start-up: only the emulator asks.
     psram_mb: int = 0
+    # What its board's analog inputs read at rest, as the emulator's ADC takes them
+    # (QEMU property, raw 12-bit sample), where stock firmware acts on one: only
+    # the emulator asks.
+    adc_readings: tuple[tuple[str, int], ...] = ()
 
     @property
     def status(self) -> Status:
@@ -388,6 +392,10 @@ SONOFF_BASICR4 = Kind(
     esphome_legacy_prefix="",
     product_model_decides=True,
     example_product_model="BASICR4",
+    # Its stock firmware watches a thermistor on GPIO3 (ADC1 channel 3) and, read
+    # under 580 mV, takes itself to be overheating and refuses updates (error 407).
+    # This reads about 1 V, as such a divider does at room temperature.
+    adc_readings=(("adc1_ch3", 2700),),
 )
 
 SONOFF_MINIR4 = Kind(

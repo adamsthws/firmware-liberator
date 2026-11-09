@@ -33,6 +33,12 @@ esp32)
 esac
 psram=()
 [ -n "${PSRAM:-}" ] && psram=(-m "${PSRAM}M")
+# What the board's analog inputs read (emu.sh, from the kind): e.g. adc1_ch3=2700
+# for a thermistor at room temperature, which the ADC would otherwise read as 0.
+adc=()
+for reading in ${ADC:-}; do
+    adc+=(-global "driver=misc.esp32c3.saradc,property=${reading%%=*},value=${reading#*=}")
+done
 capture=()
 [ "$PCAP" = 1 ] && capture=(-object "filter-dump,id=d0,netdev=n0,file=/state/logs/wifi-$(date +%Y%m%d-%H%M%S).pcap")
 
@@ -50,7 +56,7 @@ while true; do
         -monitor "unix:$RUN/monitor.sock,server,nowait" -pidfile "$RUN/qemu.pid" \
         -drive file=/state/flash.bin,if=mtd,format=raw \
         -drive file=/state/efuse.bin,if=none,format=raw,id=efuse \
-        -global "driver=$efuse,property=drive,value=efuse" "${pins[@]}" \
+        -global "driver=$efuse,property=drive,value=efuse" "${pins[@]}" "${adc[@]}" \
         -netdev tap,id=n0,ifname=tap0,script=no,downscript=no \
         -net "nic,model=$nic,netdev=n0" "${capture[@]}" "${router[@]}" \
         </dev/null 2>&1 \

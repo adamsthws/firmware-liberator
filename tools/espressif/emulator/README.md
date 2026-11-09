@@ -183,6 +183,25 @@ change, and regenerate them. What they do:
   reading flash with the cache off, so it is not offered upstream;
   [espressif/qemu #183](https://github.com/espressif/qemu/pull/183), not yet
   merged, makes the switch fast and keeps the fault.
+- **`0005-esp32c3-saradc-channel-readings.patch` - a sensor on the board reads
+  as it would at rest.** Only PICSimLab gives the fork's ADC a value, so on its
+  own every channel read 0, and the BASICR4's firmware took its thermistor to be
+  overheating and refused updates (`"error": 407`). The properties `adc1_ch0` to
+  `adc1_ch4` hold each ADC1 channel's raw 12-bit sample; a kind's
+  `adc_readings` ([kinds.py](../../autoflash/kinds.py)) sets them, through
+  `plug-supervisor`. Not offered upstream yet.
+- **ADC calibration in the eFuses.** A real ESP32-C3 leaves Espressif with its
+  ADC measured, in eFuse block 2: an init code (the offset) and the reading at a
+  known voltage, for each attenuation, under `BLK_VERSION_MAJOR = 1`. Without it
+  `esp_adc_cal` turns every reading into 0 mV, whatever the ADC gives.
+  `flashmap.esp32c3_efuse` gives each emulated chip version 1 with its fields 0,
+  a nominal chip: the BASICR4's raw 2700 then reads about 1.0 V, where a real
+  chip would differ by a few percent. ESP-IDF reads block 2 so:
+  `BLK_VERSION_MAJOR` (bits 128-129) 1 means calibrated; each attenuation's init
+  code (10 bits from bit 148, one after another) is its field + 1000; its
+  calibration reading (10 bits from bit 188) is 2000 plus or minus its field (bit 9
+  the sign), taken at 400, 550, 750 and 1370 mV for 0, 2.5, 6 and 11 dB. Block 2's
+  bit *n* is in the eFuse file's word at `0x30 + 4 * (n / 32)`.
 
 **When you next move the pin:** lcgamboa merged #18, #19 and #20 on 7 November
 2026 (`2d075b740`), so `0001`-`0003` drop out on a commit after that. Replace
