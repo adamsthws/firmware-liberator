@@ -35,5 +35,21 @@ class ReadTests(unittest.TestCase):
             self.assertEqual(firmware.read(path), firmware.Update("1.2.0", wrapped))
 
 
+class KindTests(unittest.TestCase):
+    def test_by_its_firmwares_own_model(self):
+        from tools.autoflash import kinds
+        from tools.ewelink.stub_cloud import firmware
+        self.assertIs(firmware.kind_of("SN-ESP32C3-S60-01", ""), kinds.SONOFF_S60)
+
+    def test_by_its_product_model_where_its_firmware_does_not_say(self):
+        # The DualR3's firmware calls itself E32-2SW-P0, as other devices' do:
+        # with no product model no file was made, and a run back to Sonoff's
+        # firmware without a backup found none offered.
+        from tools.autoflash import kinds
+        from tools.ewelink.stub_cloud import firmware
+        self.assertIs(firmware.kind_of("E32-2SW-P0", "DUALR3"), kinds.SONOFF_DUALR3)
+        self.assertIsNone(firmware.kind_of("E32-2SW-P0", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

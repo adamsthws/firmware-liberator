@@ -243,7 +243,7 @@ fi
 # Sonoff's with no backup: the plug's own, made as the plug's is (firmware.py).
 if [ "$stub" = 1 ]; then
     "$PY" -I "$ROOT/$STUB_DIR/firmware.py" "$SRC/flash.bin" "$STATE/stub-firmware.bin" \
-        --trust-ca "$STUB_CA/ca.crt" || rm -f "$STATE/stub-firmware.bin"
+        --trust-ca "$STUB_CA/ca.crt" --product "$product" || rm -f "$STATE/stub-firmware.bin"
 fi
 # Copied by content: the backup's files are read-only, and a copy would be too.
 # An ESP32-C3's file is padded to what the fork expects of it; an ESP32's is whole.
