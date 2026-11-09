@@ -1582,7 +1582,7 @@ class PlugRoutesTests(unittest.TestCase):
             self.assertEqual((plug / plugs.BACKUP / "flash.bin").read_bytes(), b"stock")
 
     def test_the_identity_is_the_plugs_own_as_the_report_words_it(self):
-        self.assertTrue(fs.kept_identity_reported(["Rebuilt from your eWeLink account", "From the device "]))
+        self.assertTrue(fs.kept_identity_reported(["EWeLink account", "Device "]))
         self.assertFalse(fs.kept_identity_reported(["Rebuilt from your eWeLink account"]))
         self.assertFalse(fs.kept_identity_reported([]))
 

@@ -4,10 +4,12 @@ each stage took, what the plug's hardware does, and where to post it.
 
 from __future__ import annotations
 
+import itertools
 import os
 import platform
 import re
 import sys
+import textwrap
 import time
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
@@ -69,11 +71,11 @@ def python_description() -> str:
         source = "portable"
     elif (hostsys.IS_MAC and "Python.framework" in running.parts
           and any((portable / name).exists() for name in ("installed-by-autoflash", "installed-by-s60"))):
-        source = "installed by start.sh"
+        source = "start.sh's"
     elif sys.prefix != sys.base_prefix:
-        source = "in a virtual environment"
+        source = "venv"
     else:
-        source = "existing installation"
+        source = "system"
     return f"{platform.python_version()} ({source})"
 
 
@@ -121,11 +123,11 @@ def stage_timings(ctx: Context, key: str) -> str:
 
 # What a run's starting point is called in its report: one for each of SOURCES.
 CONVERTED_FROM = {"sonoff": "Sonoff", "tasmota": "Tasmota", "esphome": "ESPHome", "openbeken": "OpenBeken",
-                  "midway": "unfinished conversion", "committed": "unfinished conversion",
-                  "installer": "unfinished conversion", "interim": "unfinished conversion",
-                  "safeboot": "Tasmota's safeboot",
-                  "untemplated": "Tasmota without its template",
-                  "outdated": "an earlier release"}   # of the run's firmware, named before it
+                  "midway": "unfinished run", "committed": "unfinished run",
+                  "installer": "unfinished run", "interim": "unfinished run",
+                  "safeboot": "Tasmota safeboot",
+                  "untemplated": "Tasmota, no template",
+                  "outdated": "earlier release"}   # of the run's firmware, named before it
 
 
 def converted_from(ctx: Context, firmware: str | None) -> str:
@@ -170,7 +172,7 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
               or captures.get("D1.resumed") is True
               or (captures.get("D1.upload_route") == "home network" and captures.get("D1.wifi") != "preset")
               or captures.get("F4.wifi_route") == "setup network")
-    took = output.elapsed(seconds) + (" (since resuming)" if resumed else "")
+    took = output.elapsed(seconds) + (" (resumed)" if resumed else "")
     retries = {number: captures[f"{step}.attempts"] - 1 for number, (step, _, _) in enumerate(routes.STEPS, 1)
                if isinstance(captures.get(f"{step}.attempts"), int) and captures[f"{step}.attempts"] > 1}
     retried = [f"{number} ({count} {'retry' if count == 1 else 'retries'})"
@@ -183,47 +185,46 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
     fields = [
         ("Result", result),
         ("Firmware", routes.FIRMWARES[firmware] if firmware else "not chosen"),
-        ("Converted from", converted_from(ctx, firmware)),
-        ("Tool version", __version__),
-        ("Device model", model or "__"),
-        ("Stock firmware", stock_version or "__"),
+        ("From", converted_from(ctx, firmware)),
+        ("Tool", __version__),
+        ("Model", model or "__"),
+        ("Stock", stock_version or "__"),
         # How it went, never where it is or which plug: the path holds the MAC.
         # A run from a converted plug takes none: one is there or not.
-        ("Sonoff backup", plugs.BACKUP_OUTCOMES[ctx.state.input("backup_outcome")
+        ("Backup", plugs.BACKUP_OUTCOMES[ctx.state.input("backup_outcome")
                                       or ("existing" if routes.sonoff_backup_exists(ctx) else "not taken")][1]),
         # Where going back to Sonoff's firmware took the plug's identity from:
         # only on such a run (sonoff.step_sonoff_restore).
-        *([("Sonoff identity", SONOFF_IDENTITY.get(captures.get("R1.identity"), "not read yet"))]
+        *([("Identity", SONOFF_IDENTITY.get(captures.get("R1.identity"), "not read"))]
           if espressif and firmware == "sonoff" else []),
         ("Computer", computer_description()),
         ("Python", python_description()),
-        ("Time taken", took),
+        ("Time", took),
         # By stage number.  Busy is how long a Berry stage kept the plug from
         # anything else: at 70-90s a real S60TPG stops answering for good.
         ("Stage times", stage_timings(ctx, "seconds")),
         # Only where the route has them: a Berry stage's busy time, the Wi-Fi
         # typed or a setup network joined are an Espressif route's.
-        *([("Device busy", stage_timings(ctx, "plug_busy_seconds"))] if espressif else []),
+        *([("Busy", stage_timings(ctx, "plug_busy_seconds"))] if espressif else []),
         ("Retries", ", ".join(retried) or "none"),
-        ("Device Wi-Fi signal", f"{signal} dBm" if isinstance(signal, int) else "not recorded"),
-        *([("Typed the Wi-Fi", "yes" if ctx.state.input("wifi_typed") else "no"),
-           ("Joined setup network", "yes" if joined else "no")] if espressif else []),
+        ("Signal", f"{signal} dBm" if isinstance(signal, int) else "not recorded"),
+        *([("Wi-Fi typed", "yes" if ctx.state.input("wifi_typed") else "no"),
+           ("Setup network", "yes" if joined else "no")] if espressif else []),
         # Whether the device had to be switched off and on to start its new
         # firmware: an emulated Beken plug never restarts by itself; a real one may.
         *([("Power cycled", "true" if ctx.state.input("power_cycles") else "false")] if not espressif else []),
-        ("Checks passed", checks_passed(hardware)),
+        ("Checks", checks_passed(hardware)),
         # Only for a device with a meter, once the run knows what it is and
         # where it is going: whether its readings are calibrated as Sonoff's
         # firmware had them.
-        *([("Meter calibration", meter_calibration(captures, firmware))] if kind.has_meter and firmware else []),
+        *([("Meter", meter_calibration(captures, firmware))] if kind.has_meter and firmware else []),
     ]
     if os.environ.get("AUTOFLASH_EMULATOR_URL"):
-        fields.append(("Ran in the emulator", "yes"))
+        fields.append(("Emulator", "yes"))
     return [(label, answer(value)) for label, value in fields]
 
 
-SONOFF_IDENTITY = {"backup": "from the backup on this computer", "kept": "from the device",
-                   "account": "rebuilt from your eWeLink account"}
+SONOFF_IDENTITY = {"backup": "backup", "kept": "device", "account": "eWeLink account"}
 
 
 def meter_calibration(captures: dict[str, Any], firmware: str | None) -> str:
@@ -233,18 +234,20 @@ def meter_calibration(captures: dict[str, Any], firmware: str | None) -> str:
     plug's ESPHome (`<step>.calibration`).  The last step's word counts: an
     update checks it again."""
     if firmware == "sonoff":
-        return "Sonoff's own"
+        return "retained"   # Sonoff's firmware, with its own
     found: Any = None
     for key, value in captures.items():
         if key.endswith(".meter") or key.endswith(".calibration"):
             found = value
     if isinstance(found, dict) and "skipped" in found:
-        return f"not carried over ({found['skipped']})"
+        return "not retained"   # why is in the log
     if isinstance(found, dict) and "changed" in found:
-        return "as Sonoff's firmware had it" + (", with its factory calibration" if found.get("factory") else "")
+        return "retained"
     state = found.get("calibration") if isinstance(found, dict) else found
     if isinstance(state, str) and state:
-        return state
+        # What ESPHome's Calibration sensor said: from the backup or Sonoff's
+        # own store, or "missing".
+        return "not retained" if state.startswith("missing") else "retained"
     return "not checked"
 
 
@@ -269,10 +272,43 @@ def report_markdown(fields: list[tuple[str, str]]) -> str:
     return "".join(f"**{label}:** {value}\n" for label, value in fields)
 
 
-def report_screen(fields: list[tuple[str, str]]) -> list[str]:
-    """For the terminal, which shows Markdown as typed: plain labels, lined up."""
+# Where each answer goes on the screen: the device's on the right, the run's and
+# this computer's on the left, and these across the whole width.  The answers a
+# fault suite reads off the screen are on the right or across it, each the last
+# on its row (tools/espressif/emulator/fault_suite.py).
+WIDE = ("Result", "Stage times", "Busy")
+RIGHT = ("Firmware", "From", "Model", "Stock", "Backup", "Identity", "Signal", "Checks", "Meter")
+# Columns each side needs at the least, else one column, as Markdown has it.
+SIDE = 34
+
+
+def report_screen(fields: list[tuple[str, str]], columns: int | None = None) -> list[str]:
+    """For the terminal: plain labels, lined up, in two columns where the
+    window is wide enough - half the rows - else one."""
+    margin, gap = "    ", "   "
+    columns = columns or output.terminal_size((100, 24)).columns
+    side = (columns - len(margin) - len(gap) - 2) // 2
+    if side < SIDE:
+        width = max(len(label) for label, _ in fields) + 1
+        return [f"{margin}{label + ':':<{width}} {value}" for label, value in fields]
+
+    def cells(column: list[tuple[str, str]]) -> list[str]:
+        width = max((len(label) for label, _ in column), default=0) + 1
+        rows = []
+        for label, value in column:
+            lines = textwrap.wrap(value, side - width - 1) or [""]
+            rows.append(f"{label + ':':<{width}} {lines[0]}")
+            rows.extend(" " * (width + 1) + line for line in lines[1:])
+        return rows
+    left = cells([(label, value) for label, value in fields if label not in WIDE + RIGHT])
+    right = cells([(label, value) for label, value in fields if label in RIGHT])
+    wide = [(label, value) for label, value in fields if label in WIDE]
     width = max(len(label) for label, _ in fields) + 1
-    return [f"    {label + ':':<{width}} {value}" for label, value in fields]
+    lines = [f"{margin}{label + ':':<{width}} {value}" for label, value in wide if label == "Result"]
+    lines += [(margin + f"{one:<{side}}{gap}{two}").rstrip()
+              for one, two in itertools.zip_longest(left, right, fillvalue="")]
+    lines += [f"{margin}{label + ':':<{width}} {value}" for label, value in wide if label != "Result"]
+    return lines
 
 
 # Long enough for the CSE7766 and Tasmota's energy driver to report a new reading.
