@@ -19,8 +19,14 @@
   "preview_urls": false,
   // Private, and kept for good: made by tools/repo/cloudflare_settings.py.
   "r2_buckets": [
-    { "binding": "READOUTS", "bucket_name": "firmware-liberator-readouts" }
+    { "binding": "READOUTS", "bucket_name": "firmware-liberator-readouts" },
+    // Public: the figures the nightly job writes (nightly.js), served from
+    // stats.firmwareliberator.com, and nothing else.
+    { "binding": "STATS", "bucket_name": "firmware-liberator-stats" }
   ],
+  // The nightly job (nightly.js), at 03:17 UTC: after the day it counts has
+  // ended everywhere it is evening, and before the website is built from it.
+  "triggers": { "crons": ["17 3 * * *"] },
   // The API's database (database.js): made, and brought up to date from
   // migrations/, by tools/repo/cloudflare_settings.py apply, which says the
   // id to put here once it has made it.

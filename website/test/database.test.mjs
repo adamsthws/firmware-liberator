@@ -13,6 +13,7 @@ import { d1, migrate, migration, migrations } from "../api/local-d1.mjs";
 const WRITTEN = {
   "0001_counters.sql": "db8a1672da5fc1b696fb61412d7c7d5ebfbffffab60e88e555ab23a1eed08f23",
   "0002_reports.sql": "92ececb36c841fa2526e0541d44b7102c6bbf276bdea89b8668ab3d3623bbae3",
+  "0003_totals.sql": "aa0200ac16c5e5e40e927121ac6388f35c2a05256ec7c14afe300f1d3ddef563",
 };
 
 test("the migrations are numbered one after another, from 0001", () => {
