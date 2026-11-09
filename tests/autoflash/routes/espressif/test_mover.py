@@ -153,7 +153,7 @@ class ESPHomeUpdateTests(RouteTestCase):
 
     def test_an_earlier_release_is_offered_the_update(self):
         ctx, route, offered = self.settle(self.ours(), answer=1)
-        self.assertEqual(offered, ["Tasmota", "ESPHome, updated to 1.6.0",
+        self.assertEqual(offered, ["Tasmota", "ESPHome, update to 1.6.0",
                                    "Sonoff's own firmware (back to eWeLink, from its backup)"])
         self.assertEqual(route, ("esphome", "outdated"))
         self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A3", "A5", "U1", "U2"])
@@ -163,7 +163,7 @@ class ESPHomeUpdateTests(RouteTestCase):
         # The images published before 2.4.0 call themselves adamsthws.sonoff-s60.
         _, route, offered = self.settle(self.ours(project_name="adamsthws.sonoff-s60"), answer=1)
         self.assertEqual(route, ("esphome", "outdated"))
-        self.assertIn("ESPHome, updated to 1.6.0", offered)
+        self.assertIn("ESPHome, update to 1.6.0", offered)
 
     def test_asked_for_on_the_command_line_it_is_updated_unasked(self):
         _, route, offered = self.settle(self.ours(), given="esphome")
