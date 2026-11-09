@@ -85,6 +85,10 @@ def secret_or_retry(title: str, lines: list[str], secrets: list[Secret],
     is stopped.  Returns the secret and its value, or (None, None)."""
     output.transient_begin()
     prompts.section(title, lines)
+    # Each try taken off the screen before the next, as a wrong answer to any
+    # question is (prompts._retry), only why it was not taken left: tries
+    # would pile up under each other.
+    mark = output.mark()
     options = [f"Type its {secret.kind}" for secret in secrets]
     options.append(last or f"Try again without {'one' if secrets else 'it'} - once you have removed it yourself")
     while True:
@@ -97,13 +101,15 @@ def secret_or_retry(title: str, lines: list[str], secrets: list[Secret],
                 value = secret.ask()
                 answer = answered(functools.partial(secret.check, value)) if value else True
         except ValueError as exc:
+            output.rewind(mark)
             output.tell(f"    {exc}.")
             continue
         if answer is False:
             output.transient_end()
             return secret, value
+        output.rewind(mark)
         output.tell("    The device did not answer; choose again to try once more." if answer is None
-             else f"    That is not its {secret.kind}." if secret else f"    {still}")
+                    else f"    That is not its {secret.kind}." if secret else f"    {still}")
 
 
 def password_or_retry(title: str, lines: list[str], check: Callable[[str | None], bool | None], *,

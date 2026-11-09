@@ -214,3 +214,59 @@ class EsphomeUpdatePasswordTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def drawn(body):
+    """What a terminal shows once `body` has run in a stage of a concise run."""
+    import io
+    import os
+    import tempfile
+    from pathlib import Path
+
+    class Terminal(io.StringIO):
+        def isatty(self):
+            return True
+    terminal, seen = Terminal(), {}
+    with tempfile.TemporaryDirectory() as directory, mock.patch("sys.stdout", terminal), \
+            mock.patch.object(output, "colour_ok", return_value=True), \
+            mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
+        output.start(Path(directory) / "run.log", verbose=False)
+        output.stage_begin(9, "Preparing memory layout")
+        try:
+            body(lambda: seen.setdefault("asked", []).append(screen_of(terminal.getvalue())))
+        finally:
+            output.finish()
+    return seen.get("asked", []), screen_of(terminal.getvalue())
+
+
+def screen_of(text):
+    from tools.repo import unattended_run
+    screen = unattended_run.Screen(100, 40)
+    screen.feed(text.replace("\n", "\r\n"))
+    return screen.render(colour=False)
+
+
+class TriesTests(unittest.TestCase):
+    """A wrong try is taken off the screen before the next, as a wrong answer
+    to any question is: only why it was not taken is left."""
+
+    def test_a_wrong_password_and_its_menu_go_before_the_next_try(self):
+        typed = iter(["wrong", "right"])
+
+        def body(look):
+            def ask():
+                look()   # the screen as each password is asked
+                value = next(typed)
+                output.show(f"Web password: {'*' * len(value)}")
+                return value
+            secret = unlock.Secret("web password", ask, lambda value: value != "right")
+            with mock.patch.object(prompts, "ask_choice",
+                                   side_effect=lambda q, options, **k: output.show(f"{q}: 1") or 0):
+                unlock.secret_or_retry("The device wants its web password", ["It has one set."],
+                                       [secret], lambda: None, still="")
+        asked, final = drawn(body)
+        second = asked[1]
+        self.assertEqual(second.count("What now: 1"), 1, second)       # one menu, not two
+        self.assertNotIn("Web password: *****", second)                # the wrong try gone
+        self.assertIn("That is not its web password.", second)         # why, left
+        self.assertNotIn("The device wants its web password", final)   # all gone once taken
