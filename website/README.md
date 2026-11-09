@@ -142,13 +142,16 @@ curl -s https://stats.firmwareliberator.com/v1/stats.json | head -c 120   # afte
 ## The zone's settings
 
 What the zone and the account are set to beyond the Workers - `www.` sent
-on to the bare domain, HTTPS only, TLS 1.2 or newer, the API's
-rate-limiting rule and its firewall rule (only a POST to one of its paths
-reaches the Worker), the readouts bucket (kept for good: no lifecycle rule),
-the public figures' bucket at `stats.firmwareliberator.com` with its cache
-rule, Email Routing and every DNS record but the Workers' and the figures'
-domain's - is written down, with why, in `tools/repo/cloudflare_settings.py`. A DNS record added in the
-dashboard is a difference, deleted by `apply`: write it down there instead.
+on to the bare domain, HTTPS only, TLS 1.2 or newer, email addresses in
+pages hidden from scrapers, the API's rate-limiting rule and its firewall
+rule (only a POST to one of its paths reaches the Worker), the readouts
+bucket (kept for good: no lifecycle rule), the public figures' bucket at
+`stats.firmwareliberator.com` with its cache rule, Email Routing, DNSSEC,
+and every DNS record but the Workers' and the figures' domain's, the CAA
+records letting only Cloudflare's certificate authorities issue for the
+domain among them - is written down, with why, in
+`tools/repo/cloudflare_settings.py`. A DNS record added in the dashboard is
+a difference, deleted by `apply`: write it down there instead.
 
 The API's D1 database is made there too, and brought up to date: `apply`
 runs each file in `website/api/migrations/` it has not run yet, in order

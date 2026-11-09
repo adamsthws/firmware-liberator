@@ -31,7 +31,8 @@ class FakeCloudflare:
     """Cloudflare's API for one zone, as tools/repo/cloudflare_settings.py sees it."""
 
     def __init__(self):
-        self.settings = {"always_use_https": "off", "min_tls_version": "1.0"}
+        self.settings = {"always_use_https": "off", "min_tls_version": "1.0", "email_obfuscation": "off"}
+        self.dnssec = "disabled"
         self.rulesets = {}  # entry point path: its rules, as Cloudflare keeps them
         self.buckets = set()
         self.lifecycle = None
@@ -70,8 +71,14 @@ class FakeCloudflare:
         if method != "GET":
             self.sent.append((method, path, body))
             if path == f"{ZONE}/dns_records":
-                self.dns.append({"id": f"d{next(self.ids)}", "meta": {}, **body,
-                                 "content": f'"{body["content"]}"' if body["type"] == "TXT" else body["content"]})
+                # Cloudflare writes a CAA record's content from its data, and lists a TXT record's quoted.
+                if "data" in body:
+                    content = f'{body["data"]["flags"]} {body["data"]["tag"]} "{body["data"]["value"]}"'
+                else:
+                    content = f'"{body["content"]}"' if body["type"] == "TXT" else body["content"]
+                self.dns.append({"id": f"d{next(self.ids)}", "meta": {}, **body, "content": content})
+            elif path == f"{ZONE}/dnssec":
+                self.dnssec = "active"   # as once the registrar's DS record is seen
             elif path.startswith(f"{ZONE}/dns_records/"):
                 self.dns = [r for r in self.dns if r["id"] != path.rsplit("/", 1)[1]]
             elif path == f"{ZONE}/email/routing/enable":
@@ -147,6 +154,8 @@ class FakeCloudflare:
             assert ok_missing
             name = path.rsplit("/", 1)[1]
             return {"name": name} if name in self.buckets else None
+        if path == f"{ZONE}/dnssec":
+            return {"status": self.dnssec}
         if path.startswith(f"{ZONE}/settings/"):
             return {"id": path.rsplit("/", 1)[1], "value": self.settings[path.rsplit("/", 1)[1]]}
         if "/rulesets/phases/" in path:
@@ -346,6 +355,33 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertEqual(set(example), {"CLOUDFLARE_API_TOKEN", cs.EMAIL_DESTINATION, cs.EMAIL_FORWARD, *kept})
         self.assertFalse(set(example) & (set(cs.credentials.KEYS) | set(cs.credentials.RENAMED)))
         self.assertEqual(subprocess.run(["git", "check-ignore", "-q", ".env.infra"], cwd=root).returncode, 0)
+
+    def test_dnssec_is_turned_on_and_pending_is_waited_for(self):
+        fake = FakeCloudflare()
+        fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09T18:39:03Z"}]
+        code, out = run(fake)
+        self.assertIn("DNSSEC: is disabled", out)
+        run(fake, "apply")
+        self.assertIn(("PATCH", f"{ZONE}/dnssec", {"status": "active"}), fake.sent)
+        # Turned on, it waits for Cloudflare to put the DS record in .com: nothing to send.
+        fake.dnssec = "pending"
+        fake.sent.clear()
+        code, out = run(fake, "apply")
+        self.assertEqual((code, fake.sent), (1, []))
+        self.assertIn("DNSSEC: left - wait: Cloudflare, the registrar, adds the DS record", out)
+
+    def test_caa_lets_only_cloudflares_certificate_authorities_issue(self):
+        fake = FakeCloudflare()
+        fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09T18:39:03Z"}]
+        run(fake, "apply")
+        made = [body for method, path, body in fake.sent if path == f"{ZONE}/dns_records" and body["type"] == "CAA"]
+        self.assertEqual(sorted(body["data"]["value"] for body in made), ["letsencrypt.org", "pki.goog", "ssl.com"])
+        self.assertTrue(all("content" not in body and body["data"]["tag"] == "issue" for body in made))
+        # Listed back as Cloudflare writes them, they are no difference; one more by hand is.
+        self.assertEqual(run(fake)[0], 0)
+        fake.dns.append({"id": "h2", "type": "CAA", "name": cs.ZONE, "content": '0 issue "example.org"', "meta": {}})
+        code, out = run(fake)
+        self.assertIn(f"""CAA {cs.ZONE} '0 issue "example.org"': is not written down""", out)
 
     def test_the_workflow_only_checks(self):
         # Settings are applied by hand; the workflow's token can only read them.

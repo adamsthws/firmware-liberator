@@ -59,9 +59,13 @@ from tools.autoflash import credentials  # noqa: E402
 ZONE = "firmwareliberator.com"
 API = "https://api.cloudflare.com/client/v4"
 
+# Email addresses in the site's pages are hidden from scrapers, shown to a
+# browser by Cloudflare's script (on by default; kept on here). It covers
+# HTML Cloudflare serves, but not what a Worker's own code writes into a
+# page, nor an address inside a tag's attribute other than a link's href.
 # Plain HTTP is answered with a redirect to HTTPS, and TLS older than 1.2,
 # which every browser of the last decade outgrew, is refused.
-SETTINGS = {"always_use_https": "on", "min_tls_version": "1.2"}
+SETTINGS = {"always_use_https": "on", "min_tls_version": "1.2", "email_obfuscation": "on"}
 
 # www.firmwareliberator.com, which wrangler.jsonc also points at the Worker,
 # is sent on to firmwareliberator.com, keeping the path and query, so the
@@ -201,7 +205,20 @@ EMAIL_CATCH_ALL = {"name": "", "matchers": [{"type": "all"}], "actions": [{"type
 # The zone's DNS records beyond Email Routing's and the Workers' custom
 # domains' (wrangler makes those): any other record is a difference, and
 # `apply` deletes it. Each proves something, and is public anyway.
+def caa(authority: str) -> dict[str, Any]:
+    """A CAA record letting `authority` issue certificates for the domain,
+    its subdomains and wildcards; the API takes it as data, and lists it as
+    content."""
+    return {"type": "CAA", "name": ZONE, "content": f'0 issue "{authority}"',
+            "data": {"flags": 0, "tag": "issue", "value": authority}}
+
+
 DNS_RECORDS = [
+    # Only the certificate authorities Cloudflare's Universal SSL uses may
+    # issue a certificate for the domain: one from any other, for someone
+    # who has fooled it, is refused. Cloudflare adds its own CAs' records
+    # beside these, unlisted, should it take on another.
+    *(caa(authority) for authority in ("letsencrypt.org", "pki.goog", "ssl.com")),
     # DMARC: mail from the domain that passes neither SPF nor DKIM is put in
     # spam, and receivers' reports go to Cloudflare's DMARC Management
     # (dashboard, Email, DMARC Management).
@@ -391,6 +408,18 @@ def said(record: dict[str, Any]) -> str:
     return f"{record['type']} {record['name']} {text(record)!r}"
 
 
+def dnssec_differences(zone: str) -> list[tuple[str, str, Any]]:
+    """DNSSEC on: answers signed, so a resolver can tell them from forged
+    ones. Cloudflare is the registrar, and puts the DS record in .com itself
+    once it is turned on: pending until then."""
+    status = api(f"{zone}/dnssec").get("status")
+    if status == "active":
+        return []
+    if status == "pending":
+        return [("DNSSEC", "is pending", "wait: Cloudflare, the registrar, adds the DS record to .com itself")]
+    return [("DNSSEC", f"is {status}", ("PATCH", f"{zone}/dnssec", {"status": "active"}))]
+
+
 def dns_differences(zone: str) -> list[tuple[str, str, Any]]:
     """The zone's records against DNS_RECORDS and what Email Routing needs,
     the Workers' custom domains aside."""
@@ -404,6 +433,8 @@ def dns_differences(zone: str) -> list[tuple[str, str, Any]]:
     for record in wanted:
         if not any(key(r) == key(record) for r in have):
             body = {**record, "content": text(record), "ttl": 1, "proxied": False}
+            if "data" in record:
+                del body["content"]
             found.append((said(record), "is missing", ("POST", f"{zone}/dns_records", body)))
     for record in have:
         if not any(key(r) == key(record) for r in wanted):
@@ -650,6 +681,7 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
         found += secret_differences(zones[0]["account"]["id"])
     found += email_differences(zone, zones[0]["account"]["id"])
     found += dns_differences(zone)
+    found += dnssec_differences(zone)
     have = deploy_token_policies(zones[0]["account"]["id"], zones[0]["id"])
     if have is None:
         print(f"  {DEPLOY_TOKEN}: not checked - this token cannot read the account's API tokens and Workers")
