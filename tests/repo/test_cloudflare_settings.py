@@ -678,7 +678,7 @@ class ApiAndStatsTests(unittest.TestCase):
         self.assertEqual(run(self.fake)[0], 0)
 
     def test_a_made_secret_not_set_is_made_by_apply_a_value_never_shown(self):
-        self.fake.secrets = ["PLUG_KEY"]
+        self.fake.secrets = ["DEVICE_HASH_KEY_PERMANENT"]
         code, out = run(self.fake, "apply")
         self.assertEqual(code, 0, out)
         [(method, path, body)] = self.fake.sent
@@ -691,21 +691,21 @@ class ApiAndStatsTests(unittest.TestCase):
     def test_a_kept_secret_is_set_from_env_infra_and_never_made(self):
         self.fake.secrets = ["SENDER_KEY"]
         code, out = run(self.fake, "apply")
-        self.assertEqual((code, self.fake.sent), (1, []), "with no API_PLUG_KEY, nothing is made up")
-        self.assertIn("secret PLUG_KEY: left - put its value, kept privately, in .env.infra as API_PLUG_KEY", out)
-        with mock.patch.dict("os.environ", {"API_PLUG_KEY": "a-made-up-kept-value"}):
+        self.assertEqual((code, self.fake.sent), (1, []), "with no API_DEVICE_HASH_KEY_PERMANENT, nothing is made up")
+        self.assertIn("secret DEVICE_HASH_KEY_PERMANENT: left - put its value, kept privately, in .env.infra as API_DEVICE_HASH_KEY_PERMANENT", out)
+        with mock.patch.dict("os.environ", {"API_DEVICE_HASH_KEY_PERMANENT": "a-made-up-kept-value"}):
             code, out = run(self.fake, "apply")
         self.assertEqual(code, 0, out)
         self.assertEqual([(body["name"], body["text"]) for _, _, body in self.fake.sent],
-                         [("PLUG_KEY", "a-made-up-kept-value")])
+                         [("DEVICE_HASH_KEY_PERMANENT", "a-made-up-kept-value")])
         self.assertNotIn("a-made-up-kept-value", out)
 
     def test_only_a_made_secret_is_rotated(self):
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.object(cs, "api", self.fake), redirect_stdout(out), mock.patch("sys.stderr", err):
-            self.assertEqual(cs.main(["rotate", "PLUG_KEY"]), 2)
+            self.assertEqual(cs.main(["rotate", "DEVICE_HASH_KEY_PERMANENT"]), 2)
             self.assertEqual(self.fake.sent, [])
-            self.assertIn("PLUG_KEY is kept, and must never change", err.getvalue())
+            self.assertIn("DEVICE_HASH_KEY_PERMANENT is kept, and must never change", err.getvalue())
             self.assertEqual(cs.main(["rotate", "SENDER_KEY"]), 0)
         [(_, _, body)] = self.fake.sent
         self.assertEqual(body["name"], "SENDER_KEY")

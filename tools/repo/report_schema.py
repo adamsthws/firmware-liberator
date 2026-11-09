@@ -86,7 +86,7 @@ def schema() -> dict[str, Any]:
             "device": nullable(words(*(kind.key for kind in kinds.EVERY))),
             "model": nullable(string(f"^{report_data.MODEL.pattern}$", 24)),
             "stock": nullable(string(f"^{report_data.VERSION.pattern}$", 19)),
-            "plug": nullable(string("^[0-9a-f]{64}$", 64)),
+            "device_hash": nullable(string("^[0-9a-f]{64}$", 64)),
             "firmware": nullable(words(*routes.FIRMWARES)),
             "from": words(*sources),
             "backup": words(*plugs.BACKUP_OUTCOMES),

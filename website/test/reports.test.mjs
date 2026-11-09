@@ -30,11 +30,11 @@ function report(changes = {}, proofTime) {
   return { ...made, proof: changes.proof ?? proofFor(id, proofTime) };
 }
 
-const plugOf = (n) => createHash("sha256").update(`a device ${n}`).digest("hex");
-const keyed = (plug) => createHmac("sha256", KEY).update(plug).digest("hex");
+const hashOf = (n) => createHash("sha256").update(`a device ${n}`).digest("hex");
+const keyed = (hash) => createHmac("sha256", KEY).update(hash).digest("hex");
 
 function env({ allowed = true, ingest = "on", key = KEY } = {}) {
-  return { DB: d1(), INGEST: ingest, PLUG_KEY: key, REPORT_LIMIT: { limit: async () => ({ success: allowed }) } };
+  return { DB: d1(), INGEST: ingest, DEVICE_HASH_KEY_PERMANENT: key, REPORT_LIMIT: { limit: async () => ({ success: allowed }) } };
 }
 
 function post(body, headers = {}) {
@@ -54,7 +54,7 @@ const rows = (bindings, sql, ...values) => bindings.DB.db.prepare(sql).all(...va
 
 test("a report the tool makes is kept, on the day it came in, and nothing of when in the day", async () => {
   const bindings = env();
-  const sent = report({ plug: plugOf(1) });
+  const sent = report({ device_hash: hashOf(1) });
   assert.deepEqual(await send(bindings, [sent]),
     { status: 200, accepted: [sent.id], duplicate: [], rejected: [], later: [] });
   const [kept] = rows(bindings, "SELECT * FROM reports");
@@ -67,11 +67,11 @@ test("a report the tool makes is kept, on the day it came in, and nothing of whe
 
 test("the device is kept as a keyed hash, never as the tool sent it", async () => {
   const bindings = env();
-  await send(bindings, [report({ plug: plugOf(1) })]);
-  const [{ plug }] = rows(bindings, "SELECT plug FROM reports");
-  assert.equal(plug, keyed(plugOf(1)));
-  const everything = JSON.stringify(rows(bindings, "SELECT * FROM reports")) + JSON.stringify(rows(bindings, "SELECT * FROM plugs"));
-  assert.ok(!everything.includes(plugOf(1)));
+  await send(bindings, [report({ device_hash: hashOf(1) })]);
+  const [{ device_hash: stored }] = rows(bindings, "SELECT device_hash FROM reports");
+  assert.equal(stored, keyed(hashOf(1)));
+  const everything = JSON.stringify(rows(bindings, "SELECT * FROM reports")) + JSON.stringify(rows(bindings, "SELECT * FROM devices"));
+  assert.ok(!everything.includes(hashOf(1)));
 });
 
 test("one sent again, in the same request or a later one, is kept once", async () => {
@@ -127,27 +127,27 @@ test("the day's limit is never passed: what does not fit waits for another day",
 
 test("one device's reports are held to their own limit a day", async () => {
   const bindings = env();
-  const plug = plugOf(2);
-  const first = await send(bindings, Array.from({ length: api.PLUG_DAILY - 1 }, () => report({ plug })));
-  assert.equal(first.accepted.length, api.PLUG_DAILY - 1);
-  const answer = await send(bindings, [report({ plug }), report({ plug }), report({ plug: plugOf(3) })]);
+  const hash = hashOf(2);
+  const first = await send(bindings, Array.from({ length: api.DEVICE_DAILY - 1 }, () => report({ device_hash: hash })));
+  assert.equal(first.accepted.length, api.DEVICE_DAILY - 1);
+  const answer = await send(bindings, [report({ device_hash: hash }), report({ device_hash: hash }), report({ device_hash: hashOf(3) })]);
   assert.equal(answer.accepted.length, 2, "its last, and another device's");
   assert.match(answer.rejected[0].why, /more than 20 reports of one device in a day/);
 });
 
 test("a device's record: its first run, the runs to its first conversion, and what came after", async () => {
   const bindings = env();
-  const plug = plugOf(4);
-  const failed = { plug, result: "failed", firmware: "tasmota",
+  const hash = hashOf(4);
+  const failed = { device_hash: hash, result: "failed", firmware: "tasmota",
     stopped: { step: "D4", error: "upload-cut", text: "the delivery stopped part way" } };
   await send(bindings, [report(failed), report({ ...failed, resumed: true })]);
-  await send(bindings, [report({ plug })]);   // converted, to Tasmota
+  await send(bindings, [report({ device_hash: hash })]);   // converted, to Tasmota
   const later = new Date("2026-11-12T09:00:00Z");
-  await send(bindings, [report({ plug, firmware: "esphome", from: "tasmota" }, later.getTime() / 1000)], later);
-  await send(bindings, [report({ plug, firmware: "sonoff", from: "esphome" }, later.getTime() / 1000)], later);
-  const [record] = rows(bindings, "SELECT * FROM plugs");
+  await send(bindings, [report({ device_hash: hash, firmware: "esphome", from: "tasmota" }, later.getTime() / 1000)], later);
+  await send(bindings, [report({ device_hash: hash, firmware: "sonoff", from: "esphome" }, later.getTime() / 1000)], later);
+  const [record] = rows(bindings, "SELECT * FROM devices");
   assert.deepEqual(record, {
-    plug: keyed(plug), model: "S60TPG", device: "sonoff-s60", first_day: "2026-11-09", last_day: "2026-11-12",
+    device_hash: keyed(hash), model: "S60TPG", device: "sonoff-s60", first_day: "2026-11-09", last_day: "2026-11-12",
     first_result: "failed", converted_day: "2026-11-09", runs: 5, runs_to_convert: 3, conversions: 2,
     back_to_sonoff: 1, firmware: "sonoff", stock: "1.2.0", dev: 0,
   });
@@ -155,32 +155,32 @@ test("a device's record: its first run, the runs to its first conversion, and wh
 
 test("a device's record follows it across days, back to Sonoff's firmware too", async () => {
   const bindings = env();
-  const plug = plugOf(5);
+  const hash = hashOf(5);
   const later = new Date("2026-11-20T09:00:00Z");
-  await send(bindings, [report({ plug })]);
-  await send(bindings, [report({ plug, firmware: "sonoff", from: "tasmota" }, later.getTime() / 1000)], later);
-  await send(bindings, [report({ plug, tag: "dev", firmware: "esphome", from: "sonoff" }, later.getTime() / 1000)],
+  await send(bindings, [report({ device_hash: hash })]);
+  await send(bindings, [report({ device_hash: hash, firmware: "sonoff", from: "tasmota" }, later.getTime() / 1000)], later);
+  await send(bindings, [report({ device_hash: hash, tag: "dev", firmware: "esphome", from: "sonoff" }, later.getTime() / 1000)],
     later);
   const [record] = rows(bindings, "SELECT first_day, last_day, first_result, runs, runs_to_convert, conversions, "
-    + "back_to_sonoff, firmware, dev FROM plugs");
+    + "back_to_sonoff, firmware, dev FROM devices");
   assert.deepEqual(record, { first_day: "2026-11-09", last_day: "2026-11-20", first_result: "converted", runs: 3,
     runs_to_convert: 1, conversions: 2, back_to_sonoff: 1, firmware: "esphome", dev: 1 });
 });
 
 test("a report with no device is kept, with no device record", async () => {
   const bindings = env();
-  await send(bindings, [report({ plug: null })]);
+  await send(bindings, [report({ device_hash: null })]);
   assert.equal(rows(bindings, "SELECT * FROM reports").length, 1);
-  assert.equal(rows(bindings, "SELECT * FROM plugs").length, 0);
+  assert.equal(rows(bindings, "SELECT * FROM devices").length, 0);
 });
 
 test("a report written twice at the same moment counts once in its device's record", async () => {
   const bindings = env();
-  const sent = report({ plug: plugOf(6) });
-  const writes = [...api.writes(bindings.DB, sent, keyed(sent.plug), "2026-11-09"),
-    ...api.writes(bindings.DB, sent, keyed(sent.plug), "2026-11-09")];
+  const sent = report({ device_hash: hashOf(6) });
+  const writes = [...api.writes(bindings.DB, sent, keyed(sent.device_hash), "2026-11-09"),
+    ...api.writes(bindings.DB, sent, keyed(sent.device_hash), "2026-11-09")];
   await bindings.DB.batch(writes);
-  assert.equal(rows(bindings, "SELECT runs FROM plugs")[0].runs, 1);
+  assert.equal(rows(bindings, "SELECT runs FROM devices")[0].runs, 1);
 });
 
 test("a request of the most reports costs a fixed few queries", async () => {
@@ -195,7 +195,7 @@ test("a request of the most reports costs a fixed few queries", async () => {
       inner });
     return wrap(statement);
   }, batch: (statements) => { queries += 1; return db.batch(statements.map((statement) => statement.inner)); } };
-  const sent = Array.from({ length: api.MAX_REPORTS }, (_, n) => report({ plug: plugOf(100 + n) }));
+  const sent = Array.from({ length: api.MAX_REPORTS }, (_, n) => report({ device_hash: hashOf(100 + n) }));
   const answer = await api.reports(post({ reports: sent }), { ...bindings, DB: counted }, NOW);
   assert.equal((await answer.json()).accepted.length, api.MAX_REPORTS);
   assert.ok(queries <= 6, `${queries} queries`);
@@ -236,8 +236,8 @@ test("too many from one address wait a minute", async () => {
 });
 
 test("nothing is taken while ingesting is off, or before the key is set", async () => {
-  for (const bindings of [env({ ingest: "off" }), { ...env(), INGEST: undefined }, { ...env(), PLUG_KEY: undefined },
-    { ...env(), PLUG_KEY: "" }]) {
+  for (const bindings of [env({ ingest: "off" }), { ...env(), INGEST: undefined }, { ...env(), DEVICE_HASH_KEY_PERMANENT: undefined },
+    { ...env(), DEVICE_HASH_KEY_PERMANENT: "" }]) {
     const response = await api.reports(post({ reports: [report()] }), bindings, NOW);
     assert.equal(response.status, 503);
     assert.equal(response.headers.get("Retry-After"), "3600");
@@ -256,7 +256,7 @@ test("the Worker sends /reports here, once its database has the reports' tables"
 
 test("the tool does the same work the Worker asks of a report", () => {
   const tool = readFileSync(new URL("../../tools/autoflash/report_data.py", import.meta.url), "utf8");
-  assert.match(tool, /^PLUG_PREFIX = "firmware-liberator plug:"$/m);
+  assert.match(tool, /^DEVICE_PREFIX = "firmware-liberator device:"$/m);
   assert.equal(api.REPORT_PROOF_BITS, 24);
 });
 
@@ -275,19 +275,19 @@ test("each question /wanted is asked is counted by its model and day, within a l
 
 test("a report no run would write is answered as accepted, held for review, and counted nowhere", async () => {
   const bindings = env();
-  const junk = report({ plug: plugOf(9), result: "failed",
+  const junk = report({ device_hash: hashOf(9), result: "failed",
     stopped: { step: "D4", error: "upload-cut", text: "buy cheap watches at example dot com" } });
   const answer = await send(bindings, [junk]);
   assert.deepEqual(answer.accepted, [junk.id], "its sender learns nothing");
   assert.deepEqual(rows(bindings, "SELECT quarantined FROM reports"), [{ quarantined: 1 }]);
   assert.deepEqual(rows(bindings, "SELECT id, day, why FROM held_reports"),
     [{ id: junk.id, day: "2026-11-09", why: "words that read as none of the tool's messages" }]);
-  assert.equal(rows(bindings, "SELECT * FROM plugs").length, 0, "no device's record");
+  assert.equal(rows(bindings, "SELECT * FROM devices").length, 0, "no device's record");
 });
 
 test("a report the tool writes is never held", async () => {
   const bindings = env();
-  await send(bindings, [report({ plug: plugOf(10) }), report({ result: "failed",
+  await send(bindings, [report({ device_hash: hashOf(10) }), report({ result: "failed",
     stopped: { step: "D4", error: "upload-cut", text: "the delivery stopped part way: the device fetched 1 of 2" } })]);
   assert.deepEqual(rows(bindings, "SELECT quarantined FROM reports"), [{ quarantined: 0 }, { quarantined: 0 }]);
   assert.equal(rows(bindings, "SELECT * FROM held_reports").length, 0);

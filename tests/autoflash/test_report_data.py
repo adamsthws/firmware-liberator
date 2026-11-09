@@ -36,7 +36,7 @@ class PayloadTests(RouteTestCase):
                                        failure="nothing answers at 192.0.2.50 (12:34:56:ab:cd:ef): check it"))
         for private in ("192.0.2.50", MAC, MAC.replace(":", ""), "me@example.com", "kitchen"):
             self.assertNotIn(private.lower(), sent.lower(), private)
-        self.assertIn(report_data.plug_hash(MAC), sent)
+        self.assertIn(report_data.device_hash(MAC), sent)
 
     def test_a_failed_run_says_where_and_what_kind_in_plain_words(self):
         ctx = self.ctx(firmware="esphome", plug_kind="sonoff-s60")
@@ -79,13 +79,13 @@ class PayloadTests(RouteTestCase):
 
 
 class WordTests(RouteTestCase):
-    def test_a_plug_is_the_same_hash_however_its_mac_is_written(self):
-        expected = report_data.plug_hash(MAC)
+    def test_a_device_is_the_same_hash_however_its_mac_is_written(self):
+        expected = report_data.device_hash(MAC)
         self.assertRegex(expected, r"^[0-9a-f]{64}$")
         for written in ("12-34-56-AB-CD-EF", "123456abcdef", " 12:34:56:AB:CD:EF "):
-            self.assertEqual(report_data.plug_hash(written), expected, written)
+            self.assertEqual(report_data.device_hash(written), expected, written)
         for nothing in (None, "", "12:34:56", "not a mac"):
-            self.assertIsNone(report_data.plug_hash(nothing))
+            self.assertIsNone(report_data.device_hash(nothing))
 
     def test_the_meter_in_a_word(self):
         for firmware, captures, word in (

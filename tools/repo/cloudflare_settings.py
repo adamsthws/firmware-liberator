@@ -187,7 +187,7 @@ CACHE_RULES = [{
 #   environment or .env.infra, from where `apply` sets it when it is missing;
 #   never made or rotated here.
 API_WORKER = "firmware-liberator-api"
-API_SECRETS = {"PLUG_KEY": "kept", "SENDER_KEY": "made"}
+API_SECRETS = {"DEVICE_HASH_KEY_PERMANENT": "kept", "SENDER_KEY": "made"}
 
 # Mail to the domain is received by Cloudflare's Email Routing, which made
 # and keeps its own DNS records: MX, its DKIM key and SPF. They are checked

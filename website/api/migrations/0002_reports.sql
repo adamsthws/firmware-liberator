@@ -5,8 +5,8 @@
 
 -- One a report, as report-schema.json describes it, for a year (the nightly
 -- job deletes older ones once their totals are kept). `day` is when it came
--- in, as a UTC date: never the time, nor anything of the sender. `plug` is
--- the keyed hash of the tool's hash of the device's MAC. `quarantined`: left
+-- in, as a UTC date: never the time, nor anything of the sender. `device_hash`
+-- is the keyed hash of the tool's hash of the device's MAC. `quarantined`: left
 -- out of every figure, set by hand for reports found to be made up.
 CREATE TABLE IF NOT EXISTS reports (
   id TEXT PRIMARY KEY,
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS reports (
   device TEXT,
   model TEXT,
   stock TEXT,
-  plug TEXT,
+  device_hash TEXT,
   firmware TEXT,
   source TEXT NOT NULL,
   backup TEXT NOT NULL,
@@ -44,15 +44,15 @@ CREATE TABLE IF NOT EXISTS reports (
 ) WITHOUT ROWID;
 
 CREATE INDEX IF NOT EXISTS reports_day ON reports (day);
-CREATE INDEX IF NOT EXISTS reports_plug_day ON reports (plug, day) WHERE plug IS NOT NULL;
+CREATE INDEX IF NOT EXISTS reports_device_day ON reports (device_hash, day) WHERE device_hash IS NOT NULL;
 
 -- One a device, kept for good, so a second run on it is known as the same
 -- device: when it was first and last seen, how its first run ended, how many
 -- runs it took to its first conversion, and how many conversions and returns
 -- to Sonoff's firmware it has had. `dev`: seen in a report from the
 -- maintainer's own testing, so left out of the public figures.
-CREATE TABLE IF NOT EXISTS plugs (
-  plug TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS devices (
+  device_hash TEXT PRIMARY KEY,
   model TEXT,
   device TEXT,
   first_day TEXT NOT NULL,

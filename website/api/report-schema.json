@@ -271,7 +271,7 @@
       "pattern": "^\\d{1,4}(\\.\\d{1,4}){1,3}$",
       "maxLength": 19
     },
-    "plug": {
+    "device_hash": {
       "type": [
         "string",
         "null"
@@ -489,7 +489,7 @@
     "device",
     "model",
     "stock",
-    "plug",
+    "device_hash",
     "firmware",
     "from",
     "backup",
