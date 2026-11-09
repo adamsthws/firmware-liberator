@@ -126,14 +126,26 @@ RATE_LIMITS = [{
 # never counts against the account's Workers requests (the rate rule above
 # says why that matters). The free plan allows five such rules.
 FIREWALL_PHASE = "http_request_firewall_custom"
-# The paths, as the Worker routes them (website/test/api.test.mjs holds the two alike).
-API_PATHS = ("/readout", "/wanted", "/notify", "/reports")
-API_PATH_SET = " ".join(f'"{path}"' for path in API_PATHS)
+# The paths, as the Worker routes them, and the methods each takes
+# (website/test/api.test.mjs holds the two alike): a POST from the tool, and
+# for /forget, opened from the link in an email, a GET too.
+API_METHODS = {"/readout": ("POST",), "/wanted": ("POST",), "/notify": ("POST",), "/reports": ("POST",), "/forget": ("GET", "POST")}
+API_PATHS = tuple(API_METHODS)
+
+
+def _allowed(methods: tuple[str, ...]) -> str:
+    """The firewall expression's term for the paths taking `methods`."""
+    paths = " ".join(f'"{path}"' for path, taken in API_METHODS.items() if taken == methods)
+    said = " ".join(f'"{method}"' for method in methods)
+    return f"(http.request.method in {{{said}}} and http.request.uri.path in {{{paths}}})"
+
+
 FIREWALL_RULES = [{
     "ref": "api-only-the-tool",
-    "description": f"{API_HOST}: only a POST to {', '.join(API_PATHS)}",
-    "expression": (f'(http.host eq "{API_HOST}" and not (http.request.method eq "POST" and '
-                   f'http.request.uri.path in {{{API_PATH_SET}}}))'),
+    "description": f"{API_HOST}: only " + "; ".join(f"{'/'.join(methods)} to {', '.join(p for p, m in API_METHODS.items() if m == methods)}"
+                                                    for methods in dict.fromkeys(API_METHODS.values())),
+    "expression": (f'(http.host eq "{API_HOST}" and not ('
+                   + " or ".join(_allowed(methods) for methods in dict.fromkeys(API_METHODS.values())) + "))"),
     "action": "block",
     "enabled": True,
 }]
@@ -162,7 +174,7 @@ CACHE_RULES = [{
 # its value is never read back, and checked here by name with the
 # maintainer's token; CI's is refused the Worker's settings.
 API_WORKER = "firmware-liberator-api"
-API_SECRETS = ("PLUG_KEY",)
+API_SECRETS = ("PLUG_KEY", "SENDER_KEY")
 
 # Mail to the domain is received by Cloudflare's Email Routing, which made
 # and keeps its own DNS records: MX, its DKIM key and SPF. They are checked

@@ -33,6 +33,7 @@ const READOUTS = {
     objects: fs.readdirSync(folder).map((name) => name.replaceAll("__", "/")).filter((key) => key.startsWith(prefix))
       .map((key) => ({ key, size: fs.statSync(file(key)).size })),
   }),
+  delete: async (key) => fs.rmSync(file(key), { force: true }),
   put: async (key, body, options) => {
     fs.writeFileSync(file(key), typeof body === "string" ? body : Buffer.from(body));
     fs.writeFileSync(`${file(key)}.meta.json`, JSON.stringify(options ?? {}));
@@ -50,7 +51,8 @@ const READOUT_LIMIT = {
 };
 // Brought up to date at each start, as `apply` brings the real one.
 const DB = d1({ file: path.join(folder, "api.sqlite") });
-const env = { READOUTS, DB, READOUT_LIMIT, ENOUGH: enough };
+// A made-up SENDER_KEY: this copy counts its senders as the Worker does.
+const env = { READOUTS, DB, READOUT_LIMIT, ENOUGH: enough, SENDER_KEY: "a-made-up-key-for-this-computer" };
 
 // Gone once the script that started it is (PARENT, its process id), however it ended.
 if (process.env.PARENT) {

@@ -83,3 +83,58 @@ class ReadoutsTests(unittest.TestCase):
                 mock.patch("sys.stderr", io.StringIO()) as err:
             self.assertEqual(readouts.main([]), 1)
         self.assertIn("readouts: GET /zones: HTTP 403", err.getvalue())
+
+
+class ReviewTests(unittest.TestCase):
+    """The readouts waiting for review, and settling one."""
+
+    ROWS = [
+        {"id": "2026-11-09-aaaaaaaaaaaa", "key": "BASICR4|SN-ESP32C3-BASICR4-01|1.1.0", "stage": "whole",
+         "fingerprint": "1" * 64, "object": "readouts/2026-11-09/a.tar", "received": "2026-11-09T10:00:00Z"},
+        {"id": "2026-11-09-bbbbbbbbbbbb", "key": "BASICR4|SN-ESP32C3-BASICR4-01|1.1.0", "stage": "whole",
+         "fingerprint": "2" * 64, "object": "readouts/2026-11-09/b.tar", "received": "2026-11-09T11:00:00Z"},
+        {"id": "2026-11-09-cccccccccccc", "key": "BASICR4|SN-ESP32C3-BASICR4-01|1.1.0", "stage": "whole",
+         "fingerprint": "1" * 64, "object": "readouts/2026-11-09/c.tar", "received": "2026-11-09T12:00:00Z"},
+    ]
+
+    def run_with(self, args, rows):
+        asked = []
+
+        def fake(path, method="GET", body=None, **kwargs):
+            if path == f"/zones?name={cs.ZONE}":
+                return [{"id": "z1", "account": {"id": "a1"}}]
+            asked.append((path, method, body))
+            return [{"results": rows(body), "success": True}]
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cs, "api", fake), mock.patch.object(cs, "bound_database_id", return_value="u1"), \
+                redirect_stdout(out), mock.patch("sys.stderr", err):
+            code = readouts.main(args)
+        return code, out.getvalue().splitlines(), err.getvalue(), asked
+
+    def test_each_waiting_readout_is_listed_by_key_the_odd_one_marked(self):
+        code, lines, _, asked = self.run_with(["review"], lambda body: self.ROWS)
+        self.assertEqual(code, 0)
+        self.assertEqual(lines[0], "BASICR4|SN-ESP32C3-BASICR4-01|1.1.0 (whole): 3 waiting")
+        self.assertEqual([line.endswith("ODD") for line in lines[1:4]], [False, True, False])
+        self.assertEqual(lines[-1], "3 waiting for review")
+        self.assertEqual(asked[0][0], "/accounts/a1/d1/database/u1/query")
+        self.assertIn("review = 'pending'", asked[0][2]["sql"])
+
+    def test_one_product_alone(self):
+        _, _, _, asked = self.run_with(["review", "basicr4"], lambda body: [])
+        self.assertEqual(asked[0][2]["params"], ["BASICR4|%"])
+
+    def test_approve_and_reject_settle_one_by_its_reference(self):
+        for action, state in (("approve", "approved"), ("reject", "rejected")):
+            code, lines, _, asked = self.run_with([action, "2026-11-09-bbbbbbbbbbbb"], lambda body: [
+                {"id": body["params"][1], "key": "BASICR4|x|1", "review": body["params"][0]}])
+            self.assertEqual(code, 0)
+            self.assertEqual(asked[0][2]["params"], [state, "2026-11-09-bbbbbbbbbbbb"])
+            self.assertEqual(lines, [f"2026-11-09-bbbbbbbbbbbb (BASICR4|x|1): {state}"])
+
+    def test_a_reference_not_one_or_not_there_is_said_so(self):
+        code, _, err, asked = self.run_with(["reject", "bobby-tables"], lambda body: [])
+        self.assertEqual((code, asked), (2, []))
+        code, _, err, _ = self.run_with(["reject", "2026-11-09-000000000000"], lambda body: [])
+        self.assertEqual(code, 1)
+        self.assertIn("no readout 2026-11-09-000000000000", err)

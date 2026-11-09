@@ -29,23 +29,28 @@ device, the tool asks which; `--plug-ip <address>` picks it beforehand.
 
 ### Every device at once
 
-If your account holds two or more devices the tool doesn't convert, the
-first choice is to read out every one of them. You're asked once whether to
+If your account holds two or more devices, the first choice is to read out
+every one of them, those the tool converts too: one may run a firmware version
+the website has no readout of, and new firmware is what a conversion can meet
+unready. You're asked once whether to
 add a way to reach you, and then each device is read out in turn and sent on
 its own as soon as it is ready. Devices that only get the quick readout below
 go first. A device that can be read out in full still asks you to type PROCEED:
 type s there to skip just that device, or q to quit, as at any question. At the
 end the tool says what became of each one. It may say a readout wasn't needed,
 because one like it is in already, or that the website has taken all it can
-for today. Each readout gets its own puzzle before it is sent (see
+for today, or that it takes 20 readouts a day from one place. Each readout
+gets its own puzzle before it is sent (see
 [Sending it](#sending-it)). If you added your email address, you'll be told
 when any of these devices' support changes, whether or not its readout was
 needed.
 
 The tool first asks eWeLink what the device runs and which firmware it would
 be offered. It then asks the website whether a readout of it would add
-anything: the website keeps one readout of each model and firmware version,
-so a device like one already sent in isn't needed. Then nothing more is done,
+anything: the website keeps three readouts of each model and firmware
+version, each from a different person, so a device like three already sent
+in isn't needed, nor a second one of a model you sent in already - one
+readout each is enough, however many of a device you have. Then nothing more is done,
 but you can still leave your email address, to be told when the device is
 supported. Otherwise the tool downloads the offered firmware as the device
 would, leaving out any file the website has already. Nothing is sent to the
@@ -154,9 +159,9 @@ stored except the (optional) contact information you chose to give.
 If you give your email address, it is stored privately with your device's
 model, apart from the readout, so you can be emailed when that model's support
 changes: when it becomes supported, say, or a test version is ready to try. It
-is used for nothing else, and is removed if you reply to any such email
-asking for that. You can give it even when no readout of your device is
-needed.
+is used for nothing else. Every such email has a link to remove your address,
+which asks you to confirm first. You can give it even when no readout of your
+device is needed.
 
 The server takes a limited number of readouts each day. If it has had enough
 that day, your readout stays unsent on your computer; send it the next day.

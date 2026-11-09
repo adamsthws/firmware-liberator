@@ -37,14 +37,18 @@ check.
   one up, and `docs/adding-a-device.md` how to add a device.
 - A device the tool does not convert yet can be read out to help add it:
   offered when the eWeLink account holds no supported device, or run for any
-  device with `readout`, or for every device in the account the tool does not
-  convert at once, each sent on its own as it is made, so the website can turn
-  down one it has enough readouts of. Before reading one, the tool asks the
-  website whether it would add anything: the website keeps one readout of each
-  model and firmware version, so one like it is neither read nor worked for,
+  device with `readout`, or for every device in the account at once (`readout
+  --all`), each sent on its own as it is made, so the website can turn down one
+  it has enough readouts of - those the tool converts too, as one may run new
+  firmware. Before reading one, the tool asks the website whether it would add
+  anything: the website keeps three readouts of each model and firmware
+  version, each from a different person, and 20 a day from one place, so one
+  like them, or a second of a model from the same place, is neither read nor
+  worked for,
   and a file of the firmware eWeLink offers that it holds already is not sent.
   Whether or not a readout is needed, you can leave your email address, kept
-  with your device's model, to be told when its support changes. Its first stage only reads: what the device and
+  with your device's model, to be told when its support changes; every such
+  email has a link to remove it. Its first stage only reads: what the device and
   eWeLink say it is, and the firmware eWeLink offers it; nothing is sent to the
   device, and a device the tool has not seen gets that alone. Its second stage
   reads the whole memory, and is only for a device the tool lists as Supported,

@@ -21,6 +21,7 @@ found (routes/espressif/installer.py).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from typing import Any, TYPE_CHECKING
@@ -30,7 +31,7 @@ from tools.autoflash import setup_network
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes.espressif import installer
 from tools.autoflash.runs import ROOT
-from tools.espressif import build_vendor_ota, chips, device_facts, dump_stock_flash, scrub
+from tools.espressif import build_vendor_ota, chips, device_facts, dump_stock_flash, flashmap, scrub
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -52,6 +53,7 @@ def read_and_anonymise(ctx: Context, manifest: dict[str, Any], chip: chips.Chip,
     several, which its question may pass by."""
     flash, efuse, info, report = read_out(ctx, chip, name, version, known=known, skippable=skippable)
     manifest["read"] = True
+    manifest["firmware"] = firmware_of(flash)
     manifest["facts"] = device_facts.lines(flash, efuse, device_facts.parse_info(info) if info else None)
     manifest["flash"] = {"size": report["size"], "sha256": report["sha256"],
                          "matches_device": report.get("matches_plug")}
@@ -65,6 +67,31 @@ def read_and_anonymise(ctx: Context, manifest: dict[str, Any], chip: chips.Chip,
     files = {"flash.bin": scrubbed, "efuse.bin": efuse, "info.txt": info or b"",
              "report.json": json.dumps(report, indent=2).encode()}
     return files, back_on_sonoff(ctx)
+
+
+# The bridge's own project name: in the spare slot, where a readout put it.
+BRIDGE_PROJECT = "autoflash_bridge"
+
+
+def firmware_of(flash: bytes) -> dict[str, Any]:
+    """What every genuine readout of this model and firmware version shares,
+    read before anything is taken out, for the website to tell readouts that
+    agree from one that does not: its partition table and each Sonoff app's
+    build. Not the owner's settings, nor what lies past an app in its slot,
+    which differ from device to device."""
+    try:
+        table = [[p.label, p.type, p.subtype, p.offset, p.size] for p in flashmap.partitions(flash)]
+        slots = flashmap.app_slots(flash)
+    except ValueError:
+        return {}
+    apps = []
+    for slot in slots:
+        image = flash[slot.offset:slot.offset + slot.size]
+        described, built = dump_stock_flash.app_description(image), dump_stock_flash.build_sha256(image)
+        if described and built and described["project"] != BRIDGE_PROJECT:
+            apps.append({"project": described["project"], "version": described["version"], "elf_sha256": built})
+    return {"table": hashlib.sha256(json.dumps(table).encode()).hexdigest(),
+            "apps": sorted(apps, key=lambda app: app["elf_sha256"])}
 
 
 def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, *,

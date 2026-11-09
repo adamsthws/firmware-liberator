@@ -115,5 +115,53 @@ class BackOnSonoffTests(unittest.TestCase):
         asked.assert_called_once()
 
 
+def flash_with(apps, nvs=b"settings", tail=b""):
+    """A 2 MB flash: a table at 0x8000 (nvs, ota_0, ota_1), and in each slot an
+    app of (project, version, build hash), or nothing; `nvs` its settings,
+    `tail` what an earlier firmware left past the app in its slot."""
+    import struct
+    flash = bytearray(b"\xff" * 0x200000)
+    entries = [("nvs", 1, 2, 0x9000, 0x5000), ("ota_0", 0, 0x10, 0x10000, 0x80000), ("ota_1", 0, 0x11, 0x90000, 0x80000)]
+    for n, (label, kind, subtype, offset, size) in enumerate(entries):
+        flash[0x8000 + 32 * n:0x8000 + 32 * (n + 1)] = (b"\xaa\x50" + bytes([kind, subtype]) + struct.pack("<II", offset, size)
+                                                       + label.encode().ljust(16, b"\0") + b"\0" * 4)
+    flash[0x9000:0x9000 + len(nvs)] = nvs
+    for (_, _, _, offset, _), app in zip(entries[1:], apps):
+        if app is None:
+            continue
+        project, version, built = app
+        image = bytearray(b"\xe9" + b"\0" * 511)
+        struct.pack_into("<I", image, 32, 0xABCD5432)
+        image[32 + 16:32 + 48] = version.encode().ljust(32, b"\0")
+        image[32 + 48:32 + 80] = project.encode().ljust(32, b"\0")
+        image[32 + 144:32 + 176] = built
+        flash[offset:offset + len(image)] = image
+        flash[offset + 0x40000:offset + 0x40000 + len(tail)] = tail
+    return bytes(flash)
+
+
+class FirmwareOfTests(unittest.TestCase):
+    """What every genuine readout of a model and version shares, for the
+    website to tell those that agree from one that does not."""
+
+    SONOFF = ("esp32_fw", "1.1.0", bytes(range(32)))
+    BRIDGE = ("autoflash_bridge", "4.4.6", bytes(32))
+
+    def test_two_devices_settings_and_leftovers_apart_agree(self):
+        one = readout_espressif.firmware_of(flash_with([self.SONOFF, self.BRIDGE], nvs=b"mine", tail=b"old"))
+        two = readout_espressif.firmware_of(flash_with([self.BRIDGE, self.SONOFF], nvs=b"yours", tail=b"older"))
+        self.assertEqual(one, two)
+        self.assertEqual(one["apps"], [{"project": "esp32_fw", "version": "1.1.0", "elf_sha256": bytes(range(32)).hex()}])
+        self.assertRegex(one["table"], r"^[0-9a-f]{64}$")
+
+    def test_another_build_does_not(self):
+        other = ("esp32_fw", "1.1.0", bytes(range(1, 33)))
+        self.assertNotEqual(readout_espressif.firmware_of(flash_with([self.SONOFF, self.BRIDGE])),
+                            readout_espressif.firmware_of(flash_with([other, self.BRIDGE])))
+
+    def test_a_flash_with_no_table_has_none(self):
+        self.assertEqual(readout_espressif.firmware_of(b"\xff" * 0x10000), {})
+
+
 if __name__ == "__main__":
     unittest.main()
