@@ -39,14 +39,18 @@ The chip comes from the firmware name's last part (`ESP32C3FN4`,
    `--readout-model`, and then only for the exact bridge `firmware.json` pins
    for that chip ([serve_tasmota_ota.py](../tools/espressif/serve_tasmota_ota.py)).
    The bridge only reads, and at start-up it chooses Sonoff's slot for the
-   next start.
+   next start. On a device whose partition table is at 0xC000 (the BASICR4's),
+   bridge 4.4.6 and later take the table from there without writing it
+   anywhere; an earlier one found none and stopped, on the device, at every
+   start.
 2. The whole flash is read through the bridge, checked against its own hash,
    and kept, untouched, as the device's Sonoff backup on the owner's computer.
    The owner then switches the device off and on, and the tool waits for
    Sonoff's firmware to answer.
 3. An anonymised copy is made to send ([scrub.py](../tools/espressif/scrub.py)):
    - The Wi-Fi network's name and every Wi-Fi password the settings show are
-     taken out: ESP-IDF's and Sonoff's, the old entries NVS leaves behind,
+     taken out: ESP-IDF's and Sonoff's (on Sonoff's newer "ais" SDK, the
+     BASICR4's and MINIR4's, its pair record's), the old entries NVS leaves behind,
      every other copy of the same bytes, and each password's PMK. A network
      name shorter than four characters is taken out where the settings name
      it, but not searched for elsewhere, as unrelated bytes hold it too. The

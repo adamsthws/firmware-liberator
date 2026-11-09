@@ -71,8 +71,8 @@
       "bridge": {
         "file": "artifacts/autoflash-bridge-esp32c3-4.4.6.ota",
         "version": "4.4.6",
-        "size": 878868,
-        "sha256": "7a6c04dc50caf1996c1d2b62dcf0a1e0c9f64196a65be38d5fec39768f5da324"
+        "size": 880180,
+        "sha256": "3f1a871231bcec9cb78a5222f4eb46bca0c8ab9726987a9927c0bdd241be3a38"
       }
     },
     "esp32": {
@@ -126,8 +126,8 @@
       "bridge": {
         "file": "artifacts/autoflash-bridge-esp32-4.4.6.bin",
         "version": "4.4.6",
-        "size": 840640,
-        "sha256": "61dc6a0a7f3a6f06eff6bc85ce7a0d8b8ffc3de5bb0ddd64a40c2e7a818185b3"
+        "size": 841760,
+        "sha256": "3e27f0f649bac9b7ba4df98d5487bb0953d34fbab7a398d223a6468847bd8b09"
       },
       "recovery": {
         "file": "artifacts/autoflash-recovery-safeboot-esp32-imprintable.bin",
