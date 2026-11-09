@@ -13,6 +13,8 @@ is never modified.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import struct
 import sys
 from pathlib import Path
@@ -28,6 +30,8 @@ RETURN_0_XTENSA = bytes.fromhex("0c021df0")  # movi.n a2,0 ; retw.n
 
 PEM_BEGIN = b"-----BEGIN CERTIFICATE-----"
 PEM_END = b"-----END CERTIFICATE-----"
+# A certificate's EC public key, as its DER gives it: the OID id-ecPublicKey.
+EC_PUBLIC_KEY = bytes.fromhex("06072a8648ce3d0201")
 
 # QEMU (Espressif's and the lcgamboa fork) emulates no Bluetooth: the
 # controller's clock setup fails, and the app aborts or faults there. Bluetooth
@@ -75,15 +79,31 @@ def _is_coolkit_ca(pem: bytes) -> bool:
 
 def holds_rsa_ca(flash: bytes) -> bool:
     """Whether the Sonoff firmware in this flash trusts eWeLink's RSA CA: the
-    stub's own CA is then RSA too, for the stack that firmware gives it."""
-    from cryptography.hazmat.primitives.asymmetric import rsa
+    stub's own CA is then RSA too, for the stack that firmware gives it.
+    Read from the certificates' DER, with nothing beyond the standard library,
+    for the fault suite as for emu.sh."""
     for slot in flashmap.app_slots(flash):
         app = flash[slot.offset:slot.offset + slot.size]
         if holds_sonoff_firmware(app):
-            for at, size in coolkit_slots(app):
-                pem = app[at:at + size].split(b"\0", 1)[0]
-                return isinstance(_coolkit_ca(pem).public_key(), rsa.RSAPublicKey)
+            for der in certificates(app):
+                if b"coolkit" in der.lower():
+                    return EC_PUBLIC_KEY not in der
     return False
+
+
+def certificates(app: bytes) -> list[bytes]:
+    """The DER of each PEM certificate in `app`."""
+    found, at = [], app.find(PEM_BEGIN)
+    while at >= 0:
+        end = app.find(PEM_END, at)
+        if end < 0:
+            break
+        try:
+            found.append(base64.b64decode(b"".join(app[at + len(PEM_BEGIN):end].split())))
+        except (binascii.Error, ValueError):
+            pass
+        at = app.find(PEM_BEGIN, end)
+    return found
 
 
 def coolkit_slots(app: bytes) -> list[tuple[int, int]]:
@@ -291,6 +311,17 @@ def skip_bluetooth(app: bytearray, image: appimage.Image, chip: str) -> int:
             at = image.offset_of(address)
             app[at:at + len(RETURN_0_RISCV)] = RETURN_0_RISCV
     return len(starters)
+
+
+def trusts(flash: bytes, ca_pem: bytes | None) -> bool | None:
+    """Whether every Sonoff firmware in this flash holds `ca_pem`, as
+    swap_trust_anchor puts it there; None when the flash holds none."""
+    found = None
+    for slot in flashmap.app_slots(flash):
+        app = flash[slot.offset:slot.offset + slot.size]
+        if holds_sonoff_firmware(app):
+            found = found is not False and ca_pem is not None and ca_pem in app
+    return found
 
 
 def holds_sonoff_firmware(app: bytes) -> bool:

@@ -557,7 +557,12 @@ scenario runs in parallel on `AUTOFLASH_EMU_STUB_WORKERS` emulators, and no eWeL
 account is needed. Its starting plugs (`stub-suite-*`) and results
 (`captures/emulation/suite-stub/`) are its own: a stub plug's flash is the
 other kind, and a stub run's passes are not the real cloud's. See
-[cloud-stub.md](cloud-stub.md).
+[cloud-stub.md](cloud-stub.md). A stub plug's Sonoff firmware, on it and in
+its backup, trusts the stub's CA as it was when `prep` made it, so `batch`
+also refuses one whose firmware does not trust the CA the stub serves that
+plug now (`captures/emulation/stub-cloud*/`, made again only if gone): it
+would turn the stub down and never come online, and fail its checks. Run
+`prep` again, and `prep-update` for an `-earlier` plug.
 
 ```sh
 AUTOFLASH_EMU_STUB_WORKERS=3 tools/espressif/emulator/fault_suite.py --plug=MAC --stub-cloud prep
