@@ -224,9 +224,13 @@ of 5).
 Calling `WiFi.softAP()` first - which turns the access point on and names
 it at once - ends it: built from the same commit, 8 starts of 8 without the
 change went out as `ESP_ABCDF0` first, none of 8 with it, and the setup
+page still worked. On a classic ESP32 too (`tasmota32` built from the
+merged change and from the commit before it, on a TH Elite): 7 of 8 starts
+without it went out as `ESP_ABCDEF` first, none of 8 with it, and the setup
 page still worked. That is a change to Tasmota
-([#25169](https://github.com/arendst/Tasmota/pull/25169)), so it reaches plugs
-only with a Tasmota release that has it. Until then a computer can list that
+([#25169](https://github.com/arendst/Tasmota/pull/25169), merged into
+`development` on 22 October 2026, after 16.0.0), so it reaches plugs only
+with a Tasmota release that has it. Until then a computer can list that
 name for a minute after, and the tool never takes it over the real one
 (`find_ssid()`).
 
