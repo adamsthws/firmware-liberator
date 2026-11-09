@@ -23,6 +23,9 @@ SWITCH_WAIT = 15.0
 # the emulator: Sonoff's S60 firmware closing its connection 2 ms after it had
 # confirmed a switch, back 15 s later, so the switch back reached no one.
 RESTORE_WAIT = 60.0
+# A plug's answer to an update it does not take: error 400, which eWeLink
+# passes on (the DualR3's to uiActive). eWeLink's own for a plug not there is 504.
+REFUSED = 400
 
 
 def app_socket(region: str, session: dict[str, Any]) -> WebSocket:
@@ -64,9 +67,10 @@ def switch_params(params: dict[str, Any], on: bool) -> dict[str, Any]:
 
 
 def command(ws: WebSocket, device: dict[str, Any], params: dict[str, Any], *, wait: float = SWITCH_WAIT,
-            taken: Callable[[dict[str, Any]], bool] = lambda msg: False) -> bool:
+            taken: Callable[[dict[str, Any]], bool] = lambda msg: False,
+            answers: tuple[int, ...] = (0,)) -> bool:
     """Send the plug an update, as the app does; True once it has answered
-    it (error 0), or sent what `taken` accepts."""
+    it with an error in `answers` (0, it took it), or sent what `taken` accepts."""
     seq = str(int(time.time() * 1000))
     ws.send_json({"action": "update", "deviceid": device["deviceid"], "apikey": device["apikey"],
                   "userAgent": "app", "sequence": seq, "params": params})
@@ -77,7 +81,7 @@ def command(ws: WebSocket, device: dict[str, Any], params: dict[str, Any], *, wa
         except socket.timeout:
             break
         if msg.get("sequence") == seq:
-            return msg.get("error", 0) == 0
+            return msg.get("error", 0) in answers
         if msg.get("deviceid") == device["deviceid"] and taken(msg):
             return True
     return False
@@ -97,15 +101,16 @@ def answers(*, email: str, password: str, country_code: str, region: str, device
     keeps a plug that went silent online until it has missed its
     heartbeats, minutes on, and passes it what is sent meanwhile to no one.
     Asked as the app asks for a plug's readings as its page opens
-    (uiActive), which changes nothing on the plug. Firmware with no meter does
-    not know that and says nothing, so then asked to keep its LED's setting
-    as it last reported it, which changes nothing either."""
+    (uiActive), which changes nothing on the plug: refusing it is answering
+    too. Firmware with no meter does not know that and says nothing, so then
+    asked to keep its LED's setting as it last reported it, which changes
+    nothing either."""
     try:
         region, session = login_session(email, password, country_code, region)
         device = select_device(get_devices(region, session["at"]), device_id)
         ws = app_socket(region, session)
         try:
-            if command(ws, device, {"uiActive": 60}):
+            if command(ws, device, {"uiActive": 60}, answers=(0, REFUSED)):
                 return True
             led = (device.get("params") or {}).get("sledOnline")
             return command(ws, device, {"sledOnline": led}) if led in ("on", "off") else False

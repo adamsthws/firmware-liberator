@@ -75,6 +75,13 @@ class RelayTests(unittest.TestCase):
         self.assertIs(self.check(plug, ask=relay.answers), False)
         self.assertEqual([m["params"] for m in plug.sent if m.get("action") == "update"], [{"uiActive": 60}])
 
+    def test_a_plug_refusing_the_question_is_there(self):
+        # The DualR3's Sonoff firmware answers uiActive with error 400: its own
+        # refusal, which eWeLink passes on, and only a plug there sends.
+        plug = Plug(error=400)
+        self.assertIs(self.check(plug, ask=relay.answers), True)
+        self.assertEqual([m["params"] for m in plug.sent if m.get("action") == "update"], [{"uiActive": 60}])
+
     def test_a_plug_online_still_from_before_does_not_answer(self):
         # eWeLink keeps a plug that restarted online until its heartbeats are
         # missed: what is sent to it meanwhile goes to no one.
