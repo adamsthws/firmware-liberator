@@ -32,6 +32,16 @@ class FromTasmotasSafebootTests(unittest.TestCase):
         self.assertTrue(runs.device_runs_tasmota(self.state(["T1"])))      # Tasmota back
         self.assertFalse(runs.device_runs_tasmota(self.state(["T1", "L1"])))  # on the mover
 
+    def test_a_run_from_esphome_is_on_tasmota_from_x2_until_it_is_left(self):
+        def runs_tasmota(*done):
+            state = self.state(done)
+            state.set_input("source", "esphome")
+            return runs.device_runs_tasmota(state)
+        self.assertIs(runs_tasmota(), False)              # ESPHome still
+        self.assertIs(runs_tasmota("X2"), True)           # the interim Tasmota
+        self.assertIs(runs_tasmota("X2", "I1"), False)    # past it
+        self.assertIs(runs_tasmota("X2", "R1"), False)
+
 
 class RunFilingTests(unittest.TestCase):
     """A run moves under its device's MAC once found; older runs are adopted."""
@@ -64,6 +74,15 @@ class RunFilingTests(unittest.TestCase):
         self.assertTrue((ctx.dir / "autoflash-state.json").is_file())
         self.assertFalse((self.captures / name).exists())
         self.assertEqual(runs.read_current(), ctx.run)
+
+    def test_the_current_run_and_settings_are_kept_on_a_computer_with_no_folder_for_them_yet(self):
+        with mock.patch.object(runs, "CURRENT_POINTER", self.captures / "new" / ".current"), \
+                mock.patch.object(runs, "SETTINGS_PATH", self.captures / "other" / "settings.json"):
+            for _ in range(2):   # into a new folder, then into the one there is
+                runs.remember_current("devices/unidentified/runs/20261013-031500")
+                self.assertEqual(runs.read_current(), "devices/unidentified/runs/20261013-031500")
+                runs.save_settings({"language": "en"})
+                self.assertEqual(runs.load_settings(), {"language": "en"})
 
     def test_the_last_run_as_a_release_before_2_4_0_wrote_it_down_is_found(self):
         (self.captures / ".current").write_text("plugs/58-cf-79-01-02-03/runs/20261013-031500\n", encoding="utf-8")
