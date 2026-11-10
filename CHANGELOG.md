@@ -79,6 +79,10 @@ check.
 - A plug that loses the upgrade command - a power cut part way through its
   download, say - is sent it again as soon as it is back on eWeLink, up to three
   times, rather than the run stopping about three minutes later for you to start again.
+- On an S61 whose bootloader refused ESPHome three times, the run restarts it
+  and sends ESPHome again, as it was meant to: the restart was not seen, as the
+  plug had only just restarted, refusing it, and the run stopped asking you to
+  switch it off and on.
 - On an S61, a firmware delivery a power cut stopped part way is said plainly -
   the plug keeps its Sonoff firmware: switch it off and on, and run again - not
   as something unexpected.
