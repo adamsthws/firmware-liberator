@@ -22,6 +22,18 @@ class EndingTests(RouteTestCase):
         legacy.state.mark("D1", DONE)
         self.assertEqual(dict(report.report_fields(legacy, 300, False))["Firmware"], "Tasmota")
 
+    def test_it_says_whether_a_setup_network_was_joined(self):
+        for captures, joined in (({}, "No"),
+                                 ({"D1.upload_route": "bridge network"}, "Yes"),
+                                 ({"D1.resumed": True}, "Yes"),
+                                 ({"D1.upload_route": "home network"}, "Yes"),
+                                 ({"D1.upload_route": "home network", "D1.wifi": "preset"}, "No"),
+                                 ({"F4.wifi_route": "setup network"}, "Yes")):
+            with self.subTest(captures):
+                ctx = self.ctx(run=f"run-{len(captures)}-{joined}-{sorted(captures)}", firmware="tasmota")
+                ctx.state.data["captures"] = captures
+                self.assertEqual(dict(report.report_fields(ctx, 300, False))["Setup network"].lower(), joined.lower())
+
     def test_a_run_that_never_found_its_device_does_not_say_it_was_on_sonoff(self):
         # Seen on a real device switched off: the report said "Converted from: Sonoff".
         never = self.ctx(stock_version="")
@@ -106,6 +118,16 @@ class EndingTests(RouteTestCase):
         self.assertEqual(rows[-1].split()[0], "Stage")
         self.assertEqual(len(rows), 5)
 
+    def test_a_long_answer_wraps_within_its_column_under_itself(self):
+        fields = [("Result", "Converted"), ("Tool", "2.4.0"),
+                  ("Firmware", "Tasmota with a long name that takes more than one line of its column")]
+        rows = report.report_screen(fields, columns=100)
+        side = (100 - 4 - 3 - 2) // 2
+        right = [row[4 + side + 3:] for row in rows[1:]]
+        self.assertEqual(right[0], "Firmware: Tasmota with a long name that takes")
+        self.assertTrue(all(len(row) <= side for row in right), rows)
+        self.assertEqual(right[1:], [" " * 10 + "more than one line of its column"])
+
     def test_a_window_too_narrow_for_two_has_one_column(self):
         fields = [("Result", "Converted"), ("Firmware", "Tasmota"), ("Tool", "2.4.0")]
         self.assertEqual([row.split()[0] for row in report.report_screen(fields, columns=60)],
@@ -121,13 +143,17 @@ class EndingTests(RouteTestCase):
         def meter(host):
             return {"Voltage": 236.0, "Power": 0.0} if relay["on"] else {"Voltage": 0.0, "Power": 0.0}
 
-        with mock.patch.object(report, "METER_SETTLE", 0), \
+        done = []
+        with mock.patch.object(report.time, "sleep", side_effect=lambda seconds: done.append(seconds)), \
                 mock.patch.object(esphome, "relay", side_effect=lambda host: relay["on"]), \
-                mock.patch.object(esphome, "switch_relay", side_effect=switch), \
-                mock.patch.object(esphome, "meter", side_effect=meter):
+                mock.patch.object(esphome, "switch_relay", side_effect=lambda host, on: done.append(on) or switch(host, on)), \
+                mock.patch.object(esphome, "meter", side_effect=lambda host: done.append("read") or meter(host)):
             result = report.check_esphome_hardware(self.ctx(firmware="esphome"))
         self.assertTrue(relay["on"], "left as it was found")
-        self.assertIn("236 V", result["Power meter"])
+        self.assertEqual(result, {"Relay": "switches (meter confirms)",
+                                  "Power meter": "on: 236 V, 0 W; off: 0 V, 0 W"})
+        # Each reading once the meter has settled after its switch.
+        self.assertEqual(done, [False, report.METER_SETTLE, "read", True, report.METER_SETTLE, "read"])
 
     def test_a_device_that_does_not_answer_is_reported_not_raised(self):
         clock = iter(range(0, 1000, 5))
@@ -187,6 +213,32 @@ class ComputerDescriptionTests(unittest.TestCase):
     def test_windows_11_named_by_python_3_12(self):
         self.assertEqual(self.describe("11", "10.0.26100"), "Windows 11 (build 10.0.26100)")
 
+    def test_linux_by_its_own_name_else_its_kernel(self):
+        for release, expected in (({"PRETTY_NAME": "Ubuntu 24.04.5 LTS"}, "Ubuntu 24.04.5 LTS"),
+                                  ({}, "Linux 6.8.0")):
+            with self.subTest(expected), mock.patch.object(hostsys, "IS_WINDOWS", False), \
+                    mock.patch.object(hostsys, "IS_MAC", False), \
+                    mock.patch.object(platform, "freedesktop_os_release", return_value=release, create=True), \
+                    mock.patch.object(platform, "release", return_value="6.8.0"):
+                self.assertEqual(report.computer_description(), expected)
+
+    def test_a_macs_python_that_start_sh_installed_is_named_so(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as home:
+            framework = "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3"
+            for mac, executable, marked, expected in (
+                    (True, framework, True, "start.sh's"),
+                    (True, framework, False, "system"),        # one installed otherwise
+                    (True, "/usr/bin/python3", True, "system"),
+                    (False, framework, True, "system")):
+                marker = Path(home) / "installed-by-autoflash"
+                marker.touch() if marked else marker.unlink(missing_ok=True)
+                with self.subTest(mac=mac, executable=executable, marked=marked), \
+                        mock.patch.object(hostsys, "IS_MAC", mac), mock.patch.object(sys, "executable", executable), \
+                        mock.patch.object(sys, "prefix", sys.base_prefix), \
+                        mock.patch.dict("os.environ", {"AUTOFLASH_PYTHON_HOME": home}):
+                    self.assertTrue(report.python_description().endswith(f"({expected})"))
+
     def test_a_server_is_not_called_11(self):
         self.assertEqual(self.describe("10", "10.0.26100", product_type=3),
                          "Windows 10 (build 10.0.26100)")
@@ -209,6 +261,26 @@ class DescribeHardwareTests(unittest.TestCase):
                                           {"Voltage": 0, "Power": [0, 0]})
         self.assertEqual(result["Relay"], "switches (meter confirms)")
         self.assertEqual(result["Power meter"], "on: 230 V, 100 W; off: 0 V, 0 W")
+
+    def test_proof_needs_mains_with_it_on_and_next_to_none_with_it_off(self):
+        for on, off, confirms in (
+                ({"Voltage": report.MAINS_VOLTS}, {"Voltage": report.DEAD_VOLTS - 0.1}, True),
+                ({"Voltage": report.MAINS_VOLTS - 0.1}, {"Voltage": 0}, False),   # too low to be mains
+                ({"Voltage": 230}, {"Voltage": report.DEAD_VOLTS}, False),        # not clearly off
+                ({"Voltage": 230}, {"Voltage": 25}, False),
+                ({"Voltage": 110}, {"Voltage": 0}, True),                          # 110 V mains
+                ({"Power": report.LOAD_WATTS}, {"Power": report.IDLE_WATTS - 0.1}, True),
+                ({"Power": report.LOAD_WATTS - 0.1}, {"Power": 0}, False),
+                ({"Power": 40}, {"Power": report.IDLE_WATTS}, False),
+                ({"Power": 40}, {"Power": 0.6}, False),
+                ({"Power": 2}, {"Power": 0}, True)):                                  # a phone charger
+            with self.subTest(on=on, off=off):
+                self.assertEqual(report.describe_hardware(True, True, on, off)["Relay"],
+                                 "switches (meter confirms)" if confirms else "switches (meter unchanged)")
+
+    def test_a_reading_with_neither_number_says_so(self):
+        self.assertEqual(report.describe_hardware(True, True, {"Voltage": 231}, {"Current": 0})["Power meter"],
+                         "on: 231 V; off: no reading")
 
     def test_no_change_on_the_meter_is_not_claimed_as_proof(self):
         result = report.describe_hardware(True, True, {"Voltage": 238, "Power": 0}, {"Voltage": 238, "Power": 0})
@@ -386,6 +458,21 @@ class StoppedRunIssueTests(RouteTestCase):
         self.assertTrue(query["title"][0].startswith("Stopped at stage"))
         self.assertNotIn("192.0.2.50", url, "no address in what is sent to GitHub")
         self.assertIn("**Model:** S60TPF", copied[0], "the report, ready to paste")
+
+    def test_a_stopped_run_sends_its_report_too(self):
+        ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
+        ctx.last_failure, ctx.last_failed_step = "the device did not answer within 30s", ""
+        ctx.run_started, ctx.run_resumed = time.monotonic(), True
+        with mock.patch.object(hostsys, "copy_to_clipboard", return_value=True), \
+                mock.patch.object(output, "show_link"), mock.patch.object(output, "tell"), \
+                mock.patch.object(report.report_upload, "send") as sent:
+            report.invite_stopped_report(ctx, "crashed")
+        (to, ending, _seconds, resumed), = [c.args for c in sent.call_args_list]
+        self.assertEqual((to, ending, resumed), (ctx, "crashed", True))
+
+    def test_a_title_just_short_enough_is_kept_whole(self):
+        self.assertEqual(report.public_text("x" * 240), "x" * 240)
+        self.assertEqual(report.public_text("x" * 241), "x" * 237 + "...")
 
     def test_its_link_is_short_and_fills_in_the_forms_own_fields(self):
         url = report.issue_url("stopped at stage 12 of 18 (Upload): " + "x" * 400, "f" * 32)
