@@ -97,8 +97,12 @@ class OpenBekenTests(unittest.TestCase):
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
         patch = mock.patch.object(openbeken.time, "sleep")
-        patch.start()
+        self.slept = patch.start()
         self.addCleanup(patch.stop)
+
+    def test_an_address_alone_is_asked_on_port_80(self):
+        self.assertEqual(openbeken._url("192.0.2.50", "/api/info"), "http://192.0.2.50:80/api/info")
+        self.assertEqual(openbeken._url("192.0.2.50:8080", "/api/info"), "http://192.0.2.50:8080/api/info")
 
     def test_info_says_what_it_is(self):
         found = openbeken.info(self.server.host)
@@ -175,12 +179,21 @@ class OpenBekenTests(unittest.TestCase):
         self.addCleanup(other.shutdown)
         self.assertIsNone(openbeken.info(f"127.0.0.1:{other.server_address[1]}"))
         self.assertIsNone(openbeken.info("127.0.0.1:1", timeout=0.5))  # nothing listening
+        for half in (b'{"chipset": "BK7238"}', b'{"build": "version 1.0.0"}'):
+            with self.subTest(half=half), mock.patch.object(openbeken, "_get", return_value=half):
+                self.assertIsNone(openbeken.info(self.server.host))
 
     def test_a_command_answers_through_the_envelope(self):
         self.assertEqual(openbeken.command(self.server.host, "SetStartValue 1 -1"), "SetStartValue done")
         self.assertEqual(self.server.commands, ["SetStartValue 1 -1"])
-        with self.assertRaisesRegex(openbeken.CommandError, "NoSuchCommand.*not a command this OpenBeken knows"):
+        with self.assertRaisesRegex(openbeken.CommandError, "NoSuchCommand.*not a command this OpenBeken knows") \
+                as refused:
             openbeken.command(self.server.host, "NoSuchCommand 1")
+        self.assertTrue(refused.exception.unknown)
+        with self.assertRaisesRegex(openbeken.CommandError, "^AutoflashKind: bad argument$") as refused:
+            openbeken.command(self.server.host, "AutoflashKind other")
+        self.assertFalse(refused.exception.unknown)
+        self.assertFalse(openbeken.CommandError("refused").unknown)
 
     def test_ota_http_sends_the_url_as_one_argument(self):
         openbeken.ota_http(self.server.host, "http://192.0.2.2:8088/esphome.rbl")
@@ -214,6 +227,12 @@ class OpenBekenTests(unittest.TestCase):
         data = openbeken.read_flash(self.server.host, 0x3E0000, len(FLASH), progress=lambda done, total: seen.append(done))
         self.assertEqual(data, FLASH)
         self.assertEqual(seen, [0x4000, 0x8000])
+        self.assertEqual(self.slept.call_count, 2 + 1)   # after each short read, then between the chunks
+        self.slept.reset_mock()
+        # A length that ends part way through a chunk: the last read is short,
+        # and nothing is waited for after it.
+        self.assertEqual(openbeken.read_flash(self.server.host, 0x3E0000, 0x4100), FLASH[:0x4100])
+        self.assertEqual(self.slept.call_args_list, [mock.call(openbeken.FLASH_PAUSE)])
         with mock.patch.object(openbeken, "FLASH_TRIES", 1):
             self.server.flash_failures = 1
             with self.assertRaisesRegex(OSError, "short read"):
