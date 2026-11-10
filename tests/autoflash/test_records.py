@@ -51,6 +51,15 @@ class DeviceLayoutTests(unittest.TestCase):
             self.assertEqual((first / "flash.bin").stat().st_mode & 0o777, 0o400)
         self.assertIn("58:cf:79:01:02:03", (first / "README.txt").read_text())
 
+    def test_the_note_beside_a_backup_is_true_of_any_espressif_device(self):
+        # It once said every device was an S60: an ESP32-C3 in a welded case.
+        saved, _ = self.records.save_backup(b"F", efuse_with_mac("58:cf:79:01:02:03"), {}, "1.2.0", kind="Sonoff POW Elite")
+        note = (saved / "README.txt").read_text(encoding="utf-8")
+        self.assertIn("Sonoff POW Elite", note)
+        self.assertIn("esptool.py write_flash 0x0 flash.bin", note)
+        for only_the_s60s in ("esp32c3", "ESP32-C3", "welded", "socket", "Tasmota"):
+            self.assertNotIn(only_the_s60s, note)
+
     def test_backed_up_devices_are_listed_by_mac(self):
         self.records.save_backup(b"F", efuse_with_mac("58:cf:79:01:02:03"), {}, "1.2.0")
         self.records.remember_device("58:cf:79:01:02:03", ewelink_name="Kettle")
