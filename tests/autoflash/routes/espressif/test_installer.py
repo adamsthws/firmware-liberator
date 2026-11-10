@@ -712,20 +712,6 @@ class StockBackupTests(unittest.TestCase):
         self.assertIn("sonoff-backup", self.inputs["stock_backup"])
         self.assertEqual(self.records.read_device(self.MAC)["stock_version"], "1.2.0")
 
-    def test_a_device_backed_up_before_is_not_read_again(self):
-        self.records.save_backup(b"original", efuse_with_mac(self.MAC), {}, "1.2.0")
-        self.assertEqual(self.back_up([]), [])
-        self.assertIn("sonoff-backup", self.inputs["stock_backup"])
-
-    def test_a_resumed_run_does_not_read_again(self):
-        self.inputs["stock_backup"] = "captures/devices/x/sonoff-backup"
-        self.assertEqual(self.back_up([]), [])
-
-    def test_no_backup_when_asked_for_none(self):
-        self.ctx.args.no_backup = True
-        self.back_up([])
-        self.assertNotIn("stock_backup", self.inputs)
-
     def test_one_failed_read_is_retried(self):
         self.back_up([OSError("timed out"), self.dump])
         self.assertIn("stock_backup", self.inputs)
@@ -808,7 +794,21 @@ class StockBackupTests(unittest.TestCase):
         reach.assert_not_called()
         read.assert_not_called()
         self.assertEqual(result, {"outcome": "existing", "stage_outcome": "already done"})
+        self.assertIn("sonoff-backup", self.inputs["stock_backup"])
         self.layout_checked.assert_called_once_with(self.ctx)   # its layout checked all the same
+
+    def test_a_resumed_run_does_not_read_again(self):
+        self.inputs["stock_backup"] = "captures/devices/x/sonoff-backup"
+        _, reach, read = self.stage()
+        reach.assert_not_called()
+        read.assert_not_called()
+
+    def test_no_backup_when_asked_for_none(self):
+        self.ctx.args.no_backup = True
+        result, reach, read = self.stage()
+        read.assert_not_called()
+        self.assertEqual(result["outcome"], "not wanted")
+        self.assertNotIn("stock_backup", self.inputs)
 
     def test_a_resumed_run_keeps_how_its_backup_went(self):
         self.inputs["stock_backup"] = "captures/devices/x/sonoff-backup"
