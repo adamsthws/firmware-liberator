@@ -109,19 +109,38 @@ class NoIdentityAnywhereTests(Fixture):
             self.assertIsNone(identity.from_settings(ctx, images.layout_of(kinds.SONOFF_S60)))
 
 
+class AccountRecordTests(Fixture):
+    def test_found_by_its_id_else_by_its_mac(self):
+        ctx = self.ctx(on_tasmota())
+        by_mac = {"deviceid": "1000fedcba", "params": {"staMac": MAC.upper()}}
+        by_id = {"deviceid": IDENTITY.deviceid, "params": {}}
+        other = {"deviceid": "1000000001", "params": {"staMac": "12:34:56:ab:cd:01"}}
+        ctx.account_devices = lambda: [other, by_mac, by_id]
+        self.assertIs(identity.account_record(ctx, IDENTITY), by_mac)   # the first that is the device
+        ctx.account_devices = lambda: [other, by_id]
+        self.assertIs(identity.account_record(ctx, IDENTITY), by_id)
+        self.assertIsNone(identity.account_record(ctx))
+
+
 class KeepIdentityTests(Fixture):
     """K1: from the backup on this computer, else the device's own settings."""
 
     def run_k1(self, ctx):
-        with mock.patch.object(hub, "sonoff_layout_back"), \
-                mock.patch.object(hub, "run_plan", return_value={"plan": "keep_identity"}) as run:
+        order = []
+        with mock.patch.object(hub, "sonoff_layout_back", side_effect=lambda ctx: order.append("layout back")), \
+                mock.patch.object(hub, "run_plan", side_effect=lambda *_: order.append("kept") or
+                                  {"plan": "keep_identity"}) as run:
             result = identity.step_keep_identity(ctx)
+        self.order = order
         return result, (run.call_args.args[1] if run.called else None)
 
     def test_from_the_backup(self):
         self.back_up()
         result, plan = self.run_k1(self.ctx(b"\xff" * 0x400000))
         self.assertEqual(result["from"], "its Sonoff backup on this computer")
+        self.assertIs(result["kept"], True)
+        # Written from the hub on Sonoff's layout, put back first.
+        self.assertEqual(self.order, ["layout back", "kept"])
         self.assertEqual(plan.steps, [plans.Write("identity", sonoff_identity.SECTOR_AT, whole=True)])
         self.assertEqual(sonoff_identity.from_sector(plan.blobs["identity"]), IDENTITY)
 
@@ -129,8 +148,14 @@ class KeepIdentityTests(Fixture):
         flash, _ = stock_flash()
         flash = bytearray(flash)
         flash[0x9000:0x19000] = sonoff_nvs()
-        result, plan = self.run_k1(self.ctx(flash))
+        ctx = self.ctx(flash)
+        result, plan = self.run_k1(ctx)
         self.assertEqual(result["from"], "its own settings")
+        # Every page of its settings partition looked at, as long as Sonoff's table says it is.
+        from tools.espressif import flashmap
+        nvs = flashmap.nvs(bytes(flash))
+        self.assertEqual([address for address, length in ctx.device.reads if length == 4],
+                         list(range(nvs.offset, nvs.offset + nvs.size, 0x1000)))
         self.assertEqual(sonoff_identity.from_sector(plan.blobs["identity"]), IDENTITY)
 
     def test_with_neither_nothing_is_written(self):
