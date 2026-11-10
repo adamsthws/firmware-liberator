@@ -708,17 +708,62 @@ test("without an email to send with, no address is taken", async () => {
   const bindings = env();
   delete bindings.EMAIL;
   assert.equal((await tell(NOTIFY, bindings)).status, 503);
-  assert.equal((await bindings.DB.prepare("SELECT count(*) AS n FROM signups").first()).n, 0);
+  assert.equal((await bindings.DB.prepare("SELECT count(*) AS n FROM confirmations").first()).n, 0);
 });
 
 test("a confirmation that cannot be sent leaves nothing, and may be asked for again", async () => {
   const bindings = env();
   bindings.EMAIL = { send: async () => { throw new Error("E_SENDER_NOT_VERIFIED"); } };
   assert.equal((await tell(NOTIFY, bindings)).status, 502);
-  assert.equal((await bindings.DB.prepare("SELECT count(*) AS n FROM signups").first()).n, 0);
+  assert.equal((await bindings.DB.prepare("SELECT count(*) AS n FROM confirmations").first()).n, 0);
   bindings.EMAIL = mailer();
   assert.equal((await tell(NOTIFY, bindings)).status, 202);
   assert.equal(bindings.EMAIL.sent.length, 1);
+});
+
+const at = (time) => new Date(`2026-11-${time}Z`);
+
+test("an address not confirmed is sent its link once more a day after, and only once", async () => {
+  assert.equal(readout.REMIND_AFTER_DAYS, 1);
+  const bindings = env();
+  await tell(NOTIFY, bindings);   // at 2026-11-07T12:00
+  assert.equal(await readout.remind(bindings, at("08T03:17:00")), 0, "not the next night: a day after");
+  assert.equal(await readout.remind(bindings, at("08T11:47:00")), 0, "too soon");
+  assert.equal(await readout.remind(bindings, at("08T12:47:00")), 1);
+  const [first, again] = bindings.EMAIL.sent;
+  assert.match(again.subject, /^Reminder/);
+  assert.match(again.text, /on 2026-11-07/);
+  assert.match(again.text, /This is the only reminder/);
+  assert.equal(linkIn(again)[1], linkIn(first)[1], "the same link");
+  assert.equal(await readout.remind(bindings, at("08T12:47:00")), 0, "a run twice reminds nobody twice");
+  assert.equal(await readout.remind(bindings, at("09T12:47:00")), 0);
+  assert.equal(bindings.EMAIL.sent.length, 2);
+  assert.equal((await confirmBy(linkIn(again)[1], bindings)).status, 200, "the reminder's link confirms it");
+});
+
+test("a reminder goes to none confirmed, and once an address however often it was given", async () => {
+  const bindings = env();
+  await signedUp(bindings);   // confirmed on 2026-11-07
+  await tell(NOTIFY, bindings, at("08T12:00:00"));   // given again, not confirmed
+  await tell({ ...NOTIFY, email: "other@example.com" }, bindings, at("08T12:00:00"));
+  await tell({ ...NOTIFY, email: "other@example.com" }, bindings, at("09T12:00:00"));
+  const before = bindings.EMAIL.sent.length;
+  assert.equal(await readout.remind(bindings, at("11T03:47:00")), 1);
+  assert.deepEqual(bindings.EMAIL.sent.slice(before).map((message) => message.to), ["other@example.com"]);
+});
+
+test("a reminder is counted against the day's emails, and one that fails is tried again", async () => {
+  const bindings = env();
+  await tell(NOTIFY, bindings);
+  const send = bindings.EMAIL.send;
+  bindings.EMAIL.send = async () => { throw new Error("E_RATE_LIMIT_EXCEEDED"); };
+  assert.equal(await readout.remind(bindings, at("09T03:47:00")), 0);
+  assert.deepEqual(await read(bindings.DB, "notify:2026-11-09"), { count: 0, bytes: 0 });
+  bindings.EMAIL.send = send;
+  await bindings.DB.prepare("INSERT INTO counters (name, day, count, bytes) VALUES (?1, ?2, ?3, 0)")
+    .bind("notify:2026-11-10", "2026-11-10", readout.NOTIFY_DAILY).run();
+  assert.equal(await readout.remind(bindings, at("10T03:47:00")), 0, "none left today");
+  assert.equal(await readout.remind(bindings, at("11T03:47:00")), 1);
 });
 
 test("the confirmation page shows what a sender named as text, never as markup", async () => {
