@@ -29,7 +29,7 @@ class FromStockTests(unittest.TestCase):
 
     def test_b1_takes_the_devices_identity_from_its_account_record(self):
         with tempfile.TemporaryDirectory() as tmp:
-            ctx = a_context(tmp)
+            ctx = a_context(tmp, device_kind=None)   # what it is, B1 finds
             ctx.account_devices = lambda: [{"deviceid": "other"}, self.DEVICE]
             devices_dir = Path(tmp) / "devices"
             with mock.patch.object(records, "DEVICES", devices_dir), mock.patch.object(records, "CAPTURES", Path(tmp)):
@@ -39,7 +39,8 @@ class FromStockTests(unittest.TestCase):
             self.assertEqual(result, {"stock_version": "1.0.2", "model": "SN-BK7238-S61-01", "product": "S61STPF",
                                       "signal_dbm": None, "firmware_name": "FWSW-01-S61-BK7238"})
             self.noted.assert_called_once_with(S61, {}, "", "S61STPF", "SN-BK7238-S61-01")
-            self.assertEqual(ctx.state.input("stock_version"), "1.0.2")
+            self.assertEqual([ctx.state.input(key) for key in ("device_kind", "stock_version", "product_model")],
+                             [S61.key, "1.0.2", "S61STPF"])
             # Another model on the account is never the device.
             ctx.account_devices = lambda: [dict(self.DEVICE, extra={"model": "SN-ESP32-MINIR4"})]
             with mock.patch.object(records, "DEVICES", devices_dir), mock.patch.object(records, "CAPTURES", Path(tmp)):
@@ -66,6 +67,9 @@ class FromStockTests(unittest.TestCase):
                             self.assertEqual(stock.step_identify(ctx)["signal_dbm"], rssi)
                 self.assertEqual(question.called, asked)
         self.assertIsNone(stock.account_signal({"params": {"rssi": "strong"}}))
+        # Only a reading a radio gives: 0 is what a device says for none.
+        for rssi, kept in ((-1, -1), (-119, -119), (0, None), (-120, None), (True, None)):
+            self.assertEqual(stock.account_signal({"params": {"rssi": rssi}}), kept, rssi)
 
     def test_b2_wraps_the_image_and_sends_it_through_ewelink(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -80,12 +84,15 @@ class FromStockTests(unittest.TestCase):
                 return ota_push.Delivery(sent=True, complete=True, bytes_served=len(kwargs["firmware"]), seconds=9.5)
 
             with mock.patch.object(stock.firewall, "choose_port", return_value=8088), \
-                    mock.patch.object(stock.firewall, "ensure_firewall"), \
+                    mock.patch.object(stock.firewall, "ensure_firewall") as opened, \
                     mock.patch.object(stock.prompts, "warning_box"), \
                     mock.patch.object(stock.prompts, "require_word", return_value=True), \
                     mock.patch.object(stock.output, "say"), \
+                    mock.patch.object(stock.time, "monotonic", side_effect=[100.0, 109.54]), \
                     mock.patch.object(ota_push, "deliver", side_effect=deliver):
                 result = stock.step_push(ctx)
+            opened.assert_called_once_with(ctx)   # its port let through before the device asks
+            self.assertEqual(result["seconds"], 9.5)
             image, version = images.image(ctx, "openbeken")
             self.assertEqual(result["firmware"], "openbeken")
             self.assertEqual(result["version"], version)
@@ -175,7 +182,7 @@ class FromStockTests(unittest.TestCase):
     def test_b2_not_confirmed_writes_nothing_and_a_cut_off_delivery_stays_attempted(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp, stock_version="1.0.2", firmware="esphome")
-            ctx.consented = False   # the go-ahead not given yet in this run
+            del ctx.consented   # the go-ahead not given yet in this run
             ctx.account_device = SimpleNamespace(device_id="1001234abc")
             ctx.account_devices = lambda: [self.DEVICE]
             common = [mock.patch.object(stock.firewall, "choose_port", return_value=8088),
