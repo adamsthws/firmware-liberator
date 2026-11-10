@@ -28,13 +28,12 @@ and devices' identities.
 - **Ask before doing anything to a real device**: a conversion is not undone
   by running it again.
 - **Stop each emulator** (`docker stop`) when a test batch ends, and run no
-  more at once than there are cores, or they fail falsely.
-  [docs/emulator.md](docs/emulator.md)
-- **`tools/espressif/emulator/container/`, `patches/` and `emu.Dockerfile`
-  (and its `UPSTREAM`, once there), and `tools/beken/emulator/`'s `UPSTREAM`,
-  `requirements.txt`, `patches/` and Dockerfile, are hashed into each
-  emulator image's tag** (`image.sh tag`): any change, a comment included,
-  means a new image everywhere. Change them only for the emulator's sake;
+  more at once than there are cores, or they fail falsely ([more](docs/emulator.md)).
+- **Each emulator image's tag hashes** (`image.sh tag`)
+  `tools/espressif/emulator/`'s `container/`, `patches/`, `emu.Dockerfile` and
+  `UPSTREAM`, and `tools/beken/emulator/`'s `UPSTREAM`, `requirements.txt`,
+  `patches/` and `beken-emu.Dockerfile`: any change, a comment included, means
+  a new image everywhere. Change them only for the emulator's sake;
   `tests/repo/test_emulator_images.py` says what else goes with the next.
 
 ## Git
@@ -93,8 +92,9 @@ and devices' identities.
   repository's plumbing, `tools/espressif/` and `tools/beken/` each chip
   family's tooling, `tools/ewelink/` eWeLink, `devices/<device>/` one device's
   own, `tests/` mirroring `tools/`, `docs/` prose for users and contributors,
-  `.github/` pages for the maintainer alone (servers, API, accounts: kept off
-  the website), `website/` the website built from them, `archive/` retired work (still linted). A device's ESPHome config path is its `package_import_url`:
+  `.github/` the maintainer's own pages (servers, API, accounts; not on the
+  website), `website/` the site built from the rest, `archive/` retired work
+  (still linted). A device's ESPHome config path is its `package_import_url`:
   moving one means a new image.
 
 ## Firmware and releases

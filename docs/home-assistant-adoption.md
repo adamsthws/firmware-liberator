@@ -42,8 +42,8 @@ remove the device from Home Assistant and add it again, and delete its config fr
 the builder. The tool can then update the device again.
 
 If you renamed the relay, it goes back to how it was before you renamed it, because
-ESPHome saves a relay's state under its name. That may switch whatever is plugged
-in, so unplug anything that should not change.
+ESPHome saves a relay's state under its name. That may switch whatever the device
+controls, so disconnect anything that should not be switched.
 
 ## Using your own config instead
 

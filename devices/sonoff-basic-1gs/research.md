@@ -7,14 +7,14 @@ eWeLink builds in [beken-research.md](../../docs/beken-research.md).
 
 **The largest open risk is a spec that disagrees.**
 [CNX Software's review](https://www.cnx-software.com/2025/11/06/review-sonoff-basic-gen5-matter-switch-and-tx-gen2-matter-smart-wall-switch)
-gives the Basic Gen5 "2 MB flash (SiP)", while its firmware holds only the 4 MB table
-([Their flash](../../docs/beken-research.md#their-flash)), including an update slot at
-`0x286000`, beyond 2 MB. The firmware is the stronger
-evidence, as it could not update itself on 2 MB, but nobody has read a real one's flash
-here. Stock does not expose its flash size to a run: its register message gives
+gives the Basic Gen5 "2 MB flash (SiP)", while its firmware holds only the 4 MB
+table ([Their flash](../../docs/beken-research.md#their-flash)), with an update
+slot at `0x286000`, beyond 2 MB. The firmware is the stronger evidence, as it
+could not update itself on 2 MB, but nobody has read a real one's flash here.
+Stock firmware does not tell a run its flash size: its register message gives
 `romVersion`, `chipid` and `model`, and `[Flash]id:` appears only on serial.
 
-What is known of the Basic Gen5's flash, from a search of every source found:
+Every source found says this of its flash:
 
 | Evidence | Says | Kind |
 |---|---|---|
@@ -26,8 +26,9 @@ What is known of the Basic Gen5's flash, from a search of every source found:
 | [CNX Software's review](https://www.cnx-software.com/2025/11/06/review-sonoff-basic-gen5-matter-switch-and-tx-gen2-matter-smart-wall-switch) | "2 MB flash (SiP)", word for word as for the Tx Gen2 and later the BASIC-1GSP; its photos do not show the chip | indirect: it reads like the older datasheet's text |
 | Generic BK7238 pages, LibreTiny's board, forum posts | 2 MB | indirect: written before 4 MB existed, and the same was wrongly said of the S61s |
 
-Probably 4 MB, then, but nobody has measured one. Sonoff's pages, the CSA listing, the
-Elektroda thread and GitHub said nothing on it. One read-only test settles it: on a real
-unit, BK7231GUIFlashTool in BK7238 mode, "Firmware backup (read) only", over TX1 and RX1;
-its `Flash MID loaded:` line says `162085` for 4 MB, `152085` or `154285` for 2 MB. Stock's
-serial boot log also prints `[Flash]id:`.
+So it is probably 4 MB, but nobody has measured one. Sonoff's pages, the CSA
+listing, the Elektroda thread and GitHub say nothing on it. One read-only test
+settles it. On a real unit, run BK7231GUIFlashTool in BK7238 mode, "Firmware
+backup (read) only", over TX1 and RX1: its `Flash MID loaded:` line says `162085`
+for 4 MB, and `152085` or `154285` for 2 MB. Stock's serial boot log also prints
+`[Flash]id:`.
