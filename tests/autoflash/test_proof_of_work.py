@@ -36,15 +36,27 @@ class SolveTests(unittest.TestCase):
 
     def test_long_work_says_it_is_still_going(self) -> None:
         ticks = []
-        proof_of_work.solve("subject", 21, now=1794000000, tick=lambda: ticks.append(1))
+        work = proof_of_work.solve("subject", 21, now=1794000000, tick=lambda: ticks.append(1))
+        tries = int(work.split(":")[1])
         self.assertGreater(len(ticks), 0)
+        self.assertEqual(len(ticks), tries // 0x40000)  # every quarter of a million tries, no more
 
 
 class MainTests(unittest.TestCase):
     def test_it_prints_the_work_for_its_subject(self):
+        subject = "report-" + "0" * 32
         out = io.StringIO()
-        with contextlib.redirect_stdout(out), mock.patch.object(proof_of_work.os, "nice", create=True):
-            self.assertEqual(proof_of_work.main(["report-" + "0" * 32, "8"]), 0)
+        with contextlib.redirect_stdout(out), mock.patch.object(proof_of_work.os, "nice", create=True) as nice, \
+                mock.patch.object(proof_of_work.time, "time", return_value=1794000000):
+            self.assertEqual(proof_of_work.main([subject, "8"]), 0)
+        self.assertEqual(out.getvalue().strip(), proof_of_work.solve(subject, 8, now=1794000000))
+        nice.assert_called_once_with(19)  # the lowest priority, so the run beside it never waits
+
+    def test_it_reads_its_command_line(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), mock.patch.object(proof_of_work.os, "nice", create=True), \
+                mock.patch.object(proof_of_work.sys, "argv", ["proof_of_work.py", "subject", "4"]):
+            self.assertEqual(proof_of_work.main(), 0)
         self.assertRegex(out.getvalue().strip(), r"^\d+:\d+$")
 
     def test_anything_else_is_refused(self):
