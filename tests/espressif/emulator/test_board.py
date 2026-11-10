@@ -9,6 +9,7 @@ import time
 import unittest
 from pathlib import Path
 
+from tests.espressif.emulator.test_redact import after_an_earlier_release, under_an_earlier_release
 from tools.autoflash import calibration, kinds
 from tools.espressif.emulator import board
 
@@ -332,6 +333,22 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(board.input_levels(board.SOCS["esp32"], (33,)),
                          ["-global", "driver=esp32.gpio,property=gpio_in,value=0xffffffff",
                           "-global", "driver=esp32.gpio,property=gpio_in1,value=0xfd"])
+
+
+class EarlierReleaseTests(unittest.TestCase):
+    def test_it_starts_under_an_earlier_releases_tool(self):
+        with tempfile.TemporaryDirectory() as temp:
+            script = under_an_earlier_release("board.py", temp)
+            done = subprocess.run([sys.executable, "-I", "-B", str(script), "--help"], capture_output=True,
+                                  text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_it_starts_after_an_earlier_releases_tool(self):
+        with tempfile.TemporaryDirectory() as temp:
+            script = after_an_earlier_release("board.py", temp)
+            done = subprocess.run([sys.executable, "-I", "-B", str(script), "--help"], capture_output=True,
+                                  text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
 
 
 if __name__ == "__main__":

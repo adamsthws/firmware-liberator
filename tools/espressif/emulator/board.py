@@ -55,7 +55,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+    # Under an earlier release's tool (unattended-test.sh --code) the tree around
+    # this folder is that release's: this checkout's modules are kept in it. A
+    # later copy of the checkout empties that copy, leaving its folders.
+    _kept = Path(__file__).resolve().parent / "checkout"
+    sys.path.insert(0, str(_kept if (_kept / "tools/__init__.py").is_file() else Path(__file__).resolve().parents[3]))
 
 from tools.autoflash import kinds  # noqa: E402
 
