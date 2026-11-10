@@ -53,8 +53,25 @@ maker and firmware the tool has.
 `checks/built.mjs` checks what the build made: the sitemap lists every page
 but the retired ones, each page names its own canonical address and has a
 description, only the retired pages and the 404 are `noindex`, and
-`robots.txt` names the sitemap that was built. Run it after a build with
-`npm run check`; the website workflow does, before it deploys.
+`robots.txt` names the sitemap that was built. Pages built from no Markdown
+file, such as `/stats`, are held to the same, by `EXTRA_PAGES` in
+`src/site.mjs`. Run it after a build with `npm run check`; the website
+workflow does, before it deploys.
+
+## Stats
+
+`/stats` is built from the public figures the API's nightly job writes to
+`stats.firmwareliberator.com` (`src/stats.mjs`), into the page itself, so it
+reads in full with no script; `public/assets/stats.js` adds its tooltips. Its
+colours are a chart palette checked for colour-blind readers and contrast in
+both themes. The website workflow builds it daily at 04:30 UTC, after the
+night's figures, and fails that build if they are missing. While they are
+three days old or less, the build adds their headline to `llms.txt`, under
+`## Figures`, with their date; `public/llms.txt` itself stays written by hand.
+To build the page without the live figures, make some up:
+
+    node scripts/sample-stats.mjs > /tmp/stats.json
+    STATS_FILE=/tmp/stats.json npm run build
 
 ## Building it
 

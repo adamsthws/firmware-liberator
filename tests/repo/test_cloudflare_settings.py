@@ -823,6 +823,15 @@ class StoppingTheApiTests(unittest.TestCase):
         self.assertIn('npx wrangler deploy --config api/wrangler.jsonc --var "INGEST:$INGEST"', job)
         self.assertNotIn("${{ inputs.ingest }}", job.split("run: |", 1)[1], "never pasted into the script")
 
+    def test_the_daily_build_follows_the_nightly_job_and_never_redeploys_the_api(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / ".github/workflows/website.yml").read_text(encoding="utf-8")
+        self.assertIn('- cron: "30 4 * * *"', workflow)
+        self.assertIn('"crons": ["17 3 * * *"', (root / "website/api/wrangler.jsonc").read_text(encoding="utf-8"))
+        job = workflow[workflow.index("\n  deploy-api:"):workflow.index("\n  deploy-token:")]
+        self.assertIn("github.event_name != 'schedule'", job.split("runs-on:", 1)[0], "a stopped API stays stopped")
+        self.assertIn("REQUIRE_STATS: ${{ github.event_name == 'schedule' && '1' || '' }}", workflow)
+
     def test_the_switch_is_the_workers_own(self):
         root = Path(__file__).resolve().parents[2]
         self.assertIn('"INGEST": "on"', (root / "website/api/wrangler.jsonc").read_text(encoding="utf-8"))
