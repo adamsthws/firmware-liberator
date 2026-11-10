@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Adam Matthews <52178922+adamsthws@users.noreply.github.com>
 Date: Wed, 28 Oct 2026 20:17:26 +0000
-Subject: [PATCH 2/4] emulator: SPI flash Unique-ID model so BK7238 boot
+Subject: [PATCH] emulator: SPI flash Unique-ID model so BK7238 boot
  completes
 
 Minimal SPI-master model serving the on-board flash's 64-bit Read Unique ID
@@ -149,7 +149,7 @@ index 0000000..55de1d2
 +        if self._cmd is None:                      # first byte: the command
 +            self._cmd = 0 if out_byte == CMD_READ_UNIQUE_ID else -1
 +            return 0xFF
-+        if self._cmd < 0:                          # a command we don't model
++        if self._cmd < 0:                          # a command not modelled
 +            return 0xFF
 +        self._cmd += 1
 +        i = self._cmd - 5                          # 1 command + 4 dummy bytes

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Adam Matthews <52178922+adamsthws@users.noreply.github.com>
 Date: Wed, 28 Oct 2026 20:06:53 +0000
-Subject: [PATCH 1/4] emulator: Wi-Fi MAC monitor-mode RX delivery for
+Subject: [PATCH] emulator: Wi-Fi MAC monitor-mode RX delivery for
  AirKiss/smartconfig
 
 Deliver sniffed frames to RX descriptors while in monitor mode even when the

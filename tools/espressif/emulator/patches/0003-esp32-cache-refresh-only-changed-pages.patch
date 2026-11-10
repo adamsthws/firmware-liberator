@@ -1,7 +1,7 @@
 From c651bb9a0941474119e422e7bbaffb244931856a Mon Sep 17 00:00:00 2001
 From: Adam Matthews <52178922+adamsthws@users.noreply.github.com>
 Date: Sat, 7 Nov 2026 14:17:29 +0000
-Subject: [PATCH 3/4] esp32 dport: after a flash operation, refresh only the
+Subject: [PATCH] esp32 dport: after a flash operation, refresh only the
  cache pages that changed
 
 Each time a classic ESP32's cache was enabled or flushed, the translated code

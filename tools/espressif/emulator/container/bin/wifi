@@ -1,6 +1,6 @@
 #!/bin/bash
 # This computer's Wi-Fi, emulated. Stands in for your desktop's Wi-Fi menu.
-#   wifi                 what we are joined to, and what we can see
+#   wifi                 the network this computer is on, and those it can see
 #   wifi join NAME       join a network (the home one, or the device's own)
 #   wifi home            back to the home network
 set -euo pipefail
@@ -39,7 +39,7 @@ join)
     fi
     ;;
 *)
-    sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,/^set /s/^# \{0,1\}//p' "$0"
     exit 2
     ;;
 esac
