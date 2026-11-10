@@ -73,6 +73,39 @@ To build the page without the live figures, make some up:
     node scripts/sample-stats.mjs > /tmp/stats.json
     STATS_FILE=/tmp/stats.json npm run build
 
+## The admin view
+
+`admin.firmwareliberator.com` (`admin/`) is the maintainer's view of what
+the API holds: reports held for review, to release or delete, the day's
+counts against their limits, the readout store filling over time, mail sent
+and bounced, and the month's use of the account against what the plan
+includes. It reads the API's database live; only releasing or deleting a
+held report changes it.
+
+Cloudflare Access stands in front of it, and the Worker checks Access's
+signed token on every request itself (`admin/access.js`), so a request that
+reached it some other way is refused. `python3
+tools/repo/cloudflare_settings.py apply` makes Access's part, once the
+account has a Zero Trust organisation (dashboard, Zero Trust, free plan):
+
+- **GitHub sign-in**, from a GitHub OAuth app of yours: homepage
+  `https://admin.firmwareliberator.com`, callback
+  `https://<team>.cloudflareaccess.com/cdn-cgi/access/callback`. Its id and
+  secret go in `.env.infra` as `ACCESS_GITHUB_CLIENT_ID` and
+  `ACCESS_GITHUB_CLIENT_SECRET`.
+- **The application** at `admin.firmwareliberator.com`, GitHub its only
+  sign-in, and **one policy**: your address alone (`ACCESS_ADMIN_EMAIL` in
+  `.env.infra`, or else `EMAIL_DESTINATION`), signed in with GitHub.
+
+`apply` then says the team, the application's audience tag and the account
+id to put in `admin/wrangler.jsonc`'s `vars`; until they are there the
+Worker lets no one in. Its secret `ANALYTICS_TOKEN` is a token of its own
+that can read only Account Analytics, kept in `.env.infra` as
+`ADMIN_ANALYTICS_TOKEN`; without it the view leaves out the month's use.
+Access is checked by the hand check alone: CI's token has no reach into it,
+and its policy holds your address. Each deploy checks the view answers a
+request not signed in with anything but a page.
+
 ## Building it
 
 Node 22 or newer:
@@ -91,8 +124,9 @@ request once it has been open a week with its checks passed.
 ## Deploying it
 
 `.github/workflows/website.yml` tests and builds it for each pull request,
-and on each push to `main` deploys both Workers with wrangler: the site
-(`website/wrangler.jsonc`) and the readouts API (`website/api/wrangler.jsonc`).
+and on each push to `main` deploys its three Workers with wrangler: the site
+(`website/wrangler.jsonc`), the API (`website/api/wrangler.jsonc`) and the
+admin view (`website/admin/wrangler.jsonc`).
 It runs in the `website` environment, which only `main` can use
 (`tools/repo/github_settings.py`).
 
@@ -100,17 +134,17 @@ Three Cloudflare API tokens are in play, each allowed only what its job needs:
 
 | Token | Kept | Permissions |
 | --- | --- | --- |
-| Deploy | `website` secret `CLOUDFLARE_DEPLOY_TOKEN` | Individual Workers - `firmware-liberator`, `firmware-liberator-api`: Editor. Zone `firmwareliberator.com` - Workers Routes: Write, DNS: Write (the custom domains), Zone: Read |
+| Deploy | `website` secret `CLOUDFLARE_DEPLOY_TOKEN` | Individual Workers - `firmware-liberator`, `firmware-liberator-api`, `firmware-liberator-admin`: Editor. Zone `firmwareliberator.com` - Workers Routes: Write, DNS: Write (the custom domains), Zone: Read |
 | Settings check | `website` secret `CLOUDFLARE_READ_TOKEN` | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Read, DNS: Read, Dynamic URL Redirects: Read, Zone WAF: Read, Cache Settings: Read (the cache rules), Email Routing Rules: Read, Analytics: Read (the mail check). Account - Workers R2 Storage: Read, Account Analytics: Read (the usage check), Email Routing Addresses: Read, Email Sending: Read (the mail check's suppression list) |
-| Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, DNS: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit, Cache Settings: Edit (the cache rules), Email Routing Rules: Edit. Account - Workers R2 Storage: Edit, D1: Edit, Email Routing Addresses: Edit, Email Sending: Edit (onboarding the domain for sending), Account API Tokens: Read, Workers Scripts: Edit (to check the deploy token, and set the API Worker's secrets) |
+| Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, DNS: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit, Cache Settings: Edit (the cache rules), Email Routing Rules: Edit. Account - Workers R2 Storage: Edit, D1: Edit, Email Routing Addresses: Edit, Email Sending: Edit (onboarding the domain for sending), Account API Tokens: Read, Workers Scripts: Edit (to check the deploy token, and set the Workers' secrets), Access: Organizations, Identity Providers, and Groups: Edit, Access: Apps and Policies: Edit (the admin view's sign-in) |
 
-The deploy token reaches its two Workers and no other in the account. Its
+The deploy token reaches its three Workers and no other in the account. Its
 permissions are written down in `tools/repo/cloudflare_settings.py` and
 checked by hand, with the apply token: reading one token means reading every
 token in the account, other sites' too, which CI's token is not allowed. What
 it can see is checked on each deploy, by the workflow's `deploy-token` job
-with the token itself, after both deploys so a mistake there holds up
-neither: `firmwareliberator.com` and this account alone, its two Workers, and
+with the token itself, after the deploys so a mistake there holds up
+none: `firmwareliberator.com` and this account alone, its three Workers, and
 none of what `cloudflare_settings.py` lists as refused. The
 environment's secrets are written down in `tools/repo/github_settings.py`,
 whose check fails on one missing; set one with `python3
@@ -137,9 +171,11 @@ one is first uploaded from your computer:
    Worker's `wrangler.jsonc`: commit that before the upload.
 4. Upload it from `website/`: `npx wrangler deploy --config <its
    wrangler.jsonc>`.
-5. For the API Worker, run `apply` again: it sets its secrets
-   (`website/api/wrangler.jsonc` says what each is) - SENDER_KEY made afresh,
-   DEVICE_HASH_KEY_PERMANENT from `API_DEVICE_HASH_KEY_PERMANENT` in `.env.infra` - and says what is left.
+5. Run `apply` again: it sets the Worker's secrets (its `wrangler.jsonc`
+   says what each is) - for the API, SENDER_KEY made afresh and
+   DEVICE_HASH_KEY_PERMANENT from `API_DEVICE_HASH_KEY_PERMANENT` in
+   `.env.infra`; for the admin view, ANALYTICS_TOKEN from
+   `ADMIN_ANALYTICS_TOKEN` - and says what is left.
 6. Check it answers (below).
 7. Add it to the deploy token's Individual Workers, and give the website
    workflow a job deploying it.

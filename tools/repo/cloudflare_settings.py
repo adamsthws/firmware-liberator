@@ -16,7 +16,8 @@ With CLOUDFLARE_API_TOKEN, in the environment or .env.infra (as
 .env.infra.example shows; not .env, whose names are the tool's): to check, a token
 allowed to read the zone, its settings, DNS records, single redirects, rate
 limiting rules and Email Routing rules, and the account's R2 buckets, D1
-databases and Email Routing addresses; to apply, one allowed to edit them all. With
+databases, Email Routing addresses, Workers' secrets and Access (the admin
+view's sign-in); to apply, one allowed to edit them all. With
 CLOUDFLARE_EMAIL_DESTINATION and CLOUDFLARE_EMAIL_FORWARD too, the same
 way: the address mail is forwarded to, and the domain's addresses forwarded
 there. They are private, so never written here. `apply` changes only what differs. The Workers, and the domains
@@ -105,6 +106,7 @@ READOUTS_LIFECYCLE = {"rules": []}
 # leaves the database to the hand check and to the public snapshot's check.
 D1_DATABASE = "firmware-liberator-api"
 API_WRANGLER = ROOT / "website" / "api" / "wrangler.jsonc"
+ADMIN_WRANGLER = ROOT / "website" / "admin" / "wrangler.jsonc"
 MIGRATIONS = ROOT / "website" / "api" / "migrations"
 D1_PLACEHOLDER = "00000000-0000-0000-0000-000000000000"
 D1_MIGRATIONS_TABLE = ("CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -198,6 +200,23 @@ CACHE_RULES = [{
 API_WORKER = "firmware-liberator-api"
 API_SECRETS = {"DEVICE_HASH_KEY_PERMANENT": "kept", "SENDER_KEY": "made", "ALERTS_RECIPIENT_EMAIL": "destination"}
 
+# The admin view (website/admin/), behind Cloudflare Access: its Worker's
+# one secret, a token that can only read the account's analytics, "kept" as
+# ADMIN_ANALYTICS_TOKEN; and the Access application in front of it,
+# made here (access_differences): GitHub sign-in alone, and the maintainer
+# alone let in - by ACCESS_ADMIN_EMAIL, or else EMAIL_DESTINATION, never
+# written here or printed. Access's GitHub sign-in is a GitHub OAuth app
+# of the maintainer's, its id and secret kept as ACCESS_GITHUB_CLIENT_ID and
+# ACCESS_GITHUB_CLIENT_SECRET. Not checked by CI: its token has no reach
+# into Access, and the policy holds the maintainer's address.
+ADMIN_WORKER = "firmware-liberator-admin"
+ADMIN_HOST = f"admin.{ZONE}"
+ADMIN_SECRETS = {"ANALYTICS_TOKEN": "kept"}
+# Each Worker's secrets, and the prefix a "kept" one's name has in .env.infra.
+WORKER_SECRETS = {API_WORKER: ("API_", API_SECRETS), ADMIN_WORKER: ("ADMIN_", ADMIN_SECRETS)}
+ACCESS_APP = {"name": "FirmwareLiberator admin", "domain": ADMIN_HOST, "type": "self_hosted",
+              "session_duration": "24h", "auto_redirect_to_identity": True, "app_launcher_visible": False}
+
 # Mail to the domain is received by Cloudflare's Email Routing, which made
 # and keeps its own DNS records: MX, its DKIM key and SPF. They are checked
 # against the list Email Routing gives of what it needs, so its key is not
@@ -241,11 +260,11 @@ DNS_RECORDS = [
 ]
 
 # The website workflow's token (website/README.md): the zone's Worker routes
-# and DNS records, for the Workers' custom domains, and its two Workers, by
+# and DNS records, for the Workers' custom domains, and its three Workers, by
 # name - no other Worker in the account.
 DEPLOY_TOKEN = "firmware-liberator-deploy-workers-ci-read-write"
 DEPLOY_ZONE_PERMISSIONS = {"Zone Read", "Workers Routes Write", "DNS Write"}
-DEPLOY_WORKERS = {"firmware-liberator", "firmware-liberator-api"}
+DEPLOY_WORKERS = {"firmware-liberator", "firmware-liberator-api", "firmware-liberator-admin"}
 DEPLOY_WORKERS_PERMISSIONS = {"Individual Workers Editor"}
 # Each zone ruleset this script keeps, by its phase: the rules as written here.
 RULESETS = {REDIRECT_PHASE: ("redirects", REDIRECTS), RATE_LIMIT_PHASE: ("rate limits", RATE_LIMITS),
@@ -253,7 +272,9 @@ RULESETS = {REDIRECT_PHASE: ("redirects", REDIRECTS), RATE_LIMIT_PHASE: ("rate l
 
 
 class SettingsError(RuntimeError):
-    pass
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status   # the HTTP status Cloudflare answered, if it answered
 
 
 def variable(name: str) -> str:
@@ -295,7 +316,7 @@ def api(path: str, method: str = "GET", body: Any = None, ok_missing: bool = Fal
             detail = "; ".join(e.get("message", "") for e in json.loads(detail)["errors"]) or detail
         except (ValueError, KeyError, TypeError):
             pass
-        raise SettingsError(f"{method} {path}: HTTP {error.code}: {detail}") from None
+        raise SettingsError(f"{method} {path}: HTTP {error.code}: {detail}", error.code) from None
     except OSError as error:
         raise SettingsError(f"{method} {path}: {error}") from None
 
@@ -548,11 +569,12 @@ def jsonc(path: Path) -> Any:
     return json.loads("\n".join(line for line in lines if not line.lstrip().startswith("//")))
 
 
-def bound_database_id() -> str:
-    """The database id the API Worker's wrangler.jsonc binds as DB."""
-    bound = [db for db in jsonc(API_WRANGLER).get("d1_databases") or [] if db.get("binding") == "DB"]
+def bound_database_id(config: Path = API_WRANGLER) -> str:
+    """The database id a Worker's wrangler.jsonc (the API's, or the admin
+    view's, which reads the same database) binds as DB."""
+    bound = [db for db in jsonc(config).get("d1_databases") or [] if db.get("binding") == "DB"]
     if len(bound) != 1 or bound[0].get("database_name") != D1_DATABASE:
-        raise SettingsError(f"{API_WRANGLER.relative_to(ROOT)} should bind {D1_DATABASE} as DB, once")
+        raise SettingsError(f"{config.relative_to(ROOT)} should bind {D1_DATABASE} as DB, once")
     return str(bound[0].get("database_id") or "")
 
 
@@ -586,11 +608,12 @@ def database_differences(account: str) -> list[tuple[str, str, Any]]:
         return [(f"D1 {D1_DATABASE}", "does not exist", lambda: create_database(account))]
     uuid = found_db[0]["uuid"]
     found: list[tuple[str, str, Any]] = []
-    bound = bound_database_id()
-    if bound != uuid:
-        found.append((str(API_WRANGLER.relative_to(ROOT)), f"binds the database {bound}, not {uuid}",
-                      f"set its database_id to {uuid}, add that id to tools/repo/leak-scan-allow (the leak "
-                      "scan takes any UUID for a device's), and commit both"))
+    for config in (API_WRANGLER, ADMIN_WRANGLER):
+        bound = bound_database_id(config)
+        if bound != uuid:
+            found.append((str(config.relative_to(ROOT)), f"binds the database {bound}, not {uuid}",
+                          f"set its database_id to {uuid}, add that id to tools/repo/leak-scan-allow (the leak "
+                          "scan takes any UUID for a device's), and commit both"))
     query = f"{path}/{uuid}/query"
     applied, files = applied_migrations(query), migration_files()
     if applied != files[:len(applied)]:
@@ -642,10 +665,10 @@ def stats_differences(account: str, zone_id: str) -> list[tuple[str, str, Any]]:
     return found
 
 
-def put_secret(account: str, name: str, value: str) -> None:
-    """Set the API Worker's secret `name`; its value goes in the request's
-    body alone, never a command line or the screen."""
-    api(f"/accounts/{account}/workers/scripts/{API_WORKER}/secrets", "PUT",
+def put_secret(account: str, name: str, value: str, worker: str = API_WORKER) -> None:
+    """Set a Worker's secret `name`; its value goes in the request's body
+    alone, never a command line or the screen."""
+    api(f"/accounts/{account}/workers/scripts/{worker}/secrets", "PUT",
         {"name": name, "text": value, "type": "secret_text"})
 
 
@@ -654,42 +677,44 @@ def made_secret() -> str:
     return secrets.token_hex(32)
 
 
-def secret_differences(account: str) -> list[tuple[str, str, Any]]:
-    """The API Worker's secrets: each there, by name, and how `apply` sets one
-    that is not: a "made" one made afresh, a "kept" one from API_<NAME>."""
-    path = f"/accounts/{account}/workers/scripts/{API_WORKER}/secrets"
+def secret_differences(account: str, worker: str = API_WORKER) -> list[tuple[str, str, Any]]:
+    """A Worker's secrets (WORKER_SECRETS): each there, by name, and how
+    `apply` sets one that is not: a "made" one made afresh, a "kept" one from
+    <PREFIX><NAME>, a "destination" one from EMAIL_DESTINATION."""
+    prefix, wanted = WORKER_SECRETS[worker]
+    path = f"/accounts/{account}/workers/scripts/{worker}/secrets"
     have = api(path, ok_missing=True)
     if have is None:
-        return [(f"{API_WORKER} secrets", "cannot be checked: the Worker is not there yet",
+        return [(f"{worker} secrets", "cannot be checked: the Worker is not there yet",
                  "deploy it, then run this again")]
     names = {secret.get("name") for secret in have}
     found: list[tuple[str, str, Any]] = []
-    for name, how in API_SECRETS.items():
+    for name, how in wanted.items():
         if name in names:
             continue
         if how == "made":
-            found.append((f"{API_WORKER} secret {name}", "is not set",
-                          lambda name=name: put_secret(account, name, made_secret()) or []))
+            found.append((f"{worker} secret {name}", "is not set",
+                          lambda name=name: put_secret(account, name, made_secret(), worker) or []))
             continue
         if how == "destination":
             try:
                 value = variable(EMAIL_DESTINATION)
             except SettingsError:
-                found.append((f"{API_WORKER} secret {name}", "is not set",
+                found.append((f"{worker} secret {name}", "is not set",
                               f"put the maintainer's address in .env.infra as {EMAIL_DESTINATION} and run apply again"))
                 continue
-            found.append((f"{API_WORKER} secret {name}", "is not set",
-                          lambda name=name, value=value: put_secret(account, name, value) or []))
+            found.append((f"{worker} secret {name}", "is not set",
+                          lambda name=name, value=value: put_secret(account, name, value, worker) or []))
             continue
         try:
-            value = variable(f"API_{name}")
+            value = variable(f"{prefix}{name}")
         except SettingsError:
-            found.append((f"{API_WORKER} secret {name}", "is not set",
-                          f"put its value, kept privately, in .env.infra as API_{name} and run apply again "
-                          "(website/api/wrangler.jsonc says why it must never change)"))
+            found.append((f"{worker} secret {name}", "is not set",
+                          f"put its value, kept privately, in .env.infra as {prefix}{name} and run apply again "
+                          "(the Worker's wrangler.jsonc says what it is)"))
             continue
-        found.append((f"{API_WORKER} secret {name}", "is not set",
-                      lambda name=name, value=value: put_secret(account, name, value) or []))
+        found.append((f"{worker} secret {name}", "is not set",
+                      lambda name=name, value=value: put_secret(account, name, value, worker) or []))
     return found
 
 
@@ -714,6 +739,122 @@ def rotate(name: str) -> int:
         print(f"  Every sender looks new from {at}. Over the next weeks, look at the keys this weakened:\n"
               f"    python3 tools/repo/readouts.py rotated {at}")
     return 0
+
+
+def admin_email() -> str:
+    """The one address Access lets into the admin view."""
+    try:
+        return variable("ACCESS_ADMIN_EMAIL")
+    except SettingsError:
+        return variable(EMAIL_DESTINATION)
+
+
+def github_idp(account: str) -> dict[str, Any] | None:
+    """Access's GitHub sign-in, if it has one."""
+    providers = api(f"/accounts/{account}/access/identity_providers") or []
+    return next((idp for idp in providers if idp.get("type") == "github"), None)
+
+
+def admin_app_body(idp: str) -> dict[str, Any]:
+    return {**ACCESS_APP, "allowed_idps": [idp]}
+
+
+def admin_policy_body(idp: str, email: str) -> dict[str, Any]:
+    """Allow: the maintainer's address, signed in with GitHub; no one else."""
+    return {"name": "The maintainer, by GitHub", "decision": "allow", "precedence": 1,
+            "include": [{"email": {"email": email}}], "require": [{"login_method": {"id": idp}}], "exclude": []}
+
+
+def policy_matches(have: dict[str, Any], want: dict[str, Any]) -> bool:
+    return all((have.get(key) or []) == want[key] for key in ("include", "require", "exclude")) \
+        and have.get("decision") == want["decision"]
+
+
+def admin_vars() -> dict[str, Any]:
+    """The admin Worker's vars, as its wrangler.jsonc has them."""
+    return jsonc(ADMIN_WRANGLER).get("vars") or {}
+
+
+def access_differences(account: str) -> list[tuple[str, str, Any]]:
+    """Cloudflare Access in front of the admin view: its organisation (made
+    in the dashboard: it names the account's team), the GitHub sign-in, the
+    application at ADMIN_HOST and its one policy; and the admin Worker's
+    wrangler.jsonc holding the team, the application's audience tag and the
+    account, which its own check of each request needs."""
+    try:
+        organisation = api(f"/accounts/{account}/access/organizations", ok_missing=True)
+    except SettingsError as error:
+        if error.status not in (401, 403):
+            raise
+        # A token made before the admin view: the rest is still checked.
+        return [("Access", "cannot be checked: this token is not allowed Access",
+                 "give the apply token Access: Organizations, Identity Providers, and Groups: Edit and "
+                 "Access: Apps and Policies: Edit (website/README.md), then run this again")]
+    team_domain = (organisation or {}).get("auth_domain") or ""
+    if not team_domain.endswith(".cloudflareaccess.com"):
+        return [("Access", "has no Zero Trust organisation",
+                 "in the dashboard, Zero Trust: choose a team name and the free plan, then run apply again")]
+    team = team_domain.removesuffix(".cloudflareaccess.com")
+    found: list[tuple[str, str, Any]] = []
+    idp = github_idp(account)
+    if idp is None:
+        try:
+            client = {"client_id": variable("ACCESS_GITHUB_CLIENT_ID"),
+                      "client_secret": variable("ACCESS_GITHUB_CLIENT_SECRET")}
+        except SettingsError:
+            return [("Access GitHub sign-in", "is not set",
+                     "make a GitHub OAuth app (github.com/settings/developers) with the homepage "
+                     f"https://{ADMIN_HOST} and the callback https://{team_domain}/cdn-cgi/access/callback; "
+                     "put its id and a new secret in .env.infra as ACCESS_GITHUB_CLIENT_ID and "
+                     "ACCESS_GITHUB_CLIENT_SECRET, and run apply again")]
+        found.append(("Access GitHub sign-in", "is not set",
+                      ("POST", f"/accounts/{account}/access/identity_providers",
+                       {"name": "GitHub", "type": "github", "config": client})))
+    try:
+        email = admin_email()
+    except SettingsError:
+        return found + [(f"Access for {ADMIN_HOST}", "cannot be made: no address to let in",
+                         f"put the maintainer's address in .env.infra as ACCESS_ADMIN_EMAIL (or {EMAIL_DESTINATION}) "
+                         "and run apply again")]
+    apps = api(f"/accounts/{account}/access/apps") or []
+    app = next((app for app in apps if app.get("domain") == ADMIN_HOST), None)
+    if app is None:
+        def make() -> list[str]:
+            made = github_idp(account)
+            if made is None:
+                return ["Access GitHub sign-in: still missing, so the application was not made"]
+            new = api(f"/accounts/{account}/access/apps", "POST", admin_app_body(made["id"]))
+            api(f"/accounts/{account}/access/apps/{new['id']}/policies", "POST",
+                admin_policy_body(made["id"], email))
+            return [f"Access application {ADMIN_HOST}: made; now set website/admin/wrangler.jsonc's vars "
+                    "to what the next check says, and commit"]
+        found.append((f"Access application {ADMIN_HOST}", "does not exist", make))
+        return found
+    if idp is not None:
+        want = admin_app_body(idp["id"])
+        off = sorted(key for key, value in want.items() if app.get(key) != value)
+        if off:
+            found.append((f"Access application {ADMIN_HOST}", f"differs in {', '.join(off)}",
+                          ("PUT", f"/accounts/{account}/access/apps/{app['id']}", want)))
+        policies = api(f"/accounts/{account}/access/apps/{app['id']}/policies") or []
+        policy = admin_policy_body(idp["id"], email)
+        path = f"/accounts/{account}/access/apps/{app['id']}/policies"
+        if not policies:
+            found.append((f"Access policy for {ADMIN_HOST}", "is not set", ("POST", path, policy)))
+        elif len(policies) > 1:
+            found.append((f"Access policies for {ADMIN_HOST}", f"are {len(policies)}: there should be one, "
+                          "the maintainer's alone", None))
+        elif not policy_matches(policies[0], policy):
+            # Its rules are never printed: they hold the maintainer's address.
+            found.append((f"Access policy for {ADMIN_HOST}", "lets in someone other than the maintainer, "
+                          "or without GitHub", ("PUT", f"{path}/{policies[0]['id']}", policy)))
+    want_vars = {"ACCESS_TEAM": team, "ACCESS_AUD": app.get("aud") or "", "ACCOUNT_ID": account}
+    have_vars = admin_vars()
+    for name, value in want_vars.items():
+        if have_vars.get(name) != value:
+            found.append((f"{ADMIN_WRANGLER.relative_to(ROOT)} {name}", f"is {have_vars.get(name)!r}",
+                          f"set it to {value!r} and commit; the website workflow deploys it"))
+    return found
 
 
 def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
@@ -748,10 +889,14 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
     if ci:
         print(f"  D1 {D1_DATABASE}: not checked - CI's token is refused D1, which reaches every database "
               "in the account; the hand check and the public snapshot's check cover it")
-        print(f"  {API_WORKER} secrets: not checked - CI's token is refused the Worker's settings")
+        print(f"  {API_WORKER} and {ADMIN_WORKER} secrets: not checked - CI's token is refused the Workers' settings")
+        print(f"  Access for {ADMIN_HOST}: not checked - CI's token has no reach into Access, whose policy "
+              "holds the maintainer's address")
     else:
         found += database_differences(zones[0]["account"]["id"])
         found += secret_differences(zones[0]["account"]["id"])
+        found += secret_differences(zones[0]["account"]["id"], ADMIN_WORKER)
+        found += access_differences(zones[0]["account"]["id"])
     found += email_differences(zone, zones[0]["account"]["id"])
     found += sending_differences(zone)
     found += dns_differences(zone)
