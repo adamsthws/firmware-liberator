@@ -8,6 +8,8 @@
 //   counts behind the limits (counters) COUNTER_DAYS old.
 // - The store of readouts' size is noted for the day (store_days), for the
 //   admin view's graph of how fast it fills.
+// - The maintainer is emailed when yesterday reached a limit for everyone, or
+//   the store passed most of its limit (alerts.js): counts only.
 // - The public snapshot is written to the stats bucket: totals only, from
 //   the maintainer's own testing and quarantined reports left out, and no
 //   figure for fewer than SMALLEST reports or devices (snapshot.js).
@@ -17,6 +19,7 @@
 //   made-up reports of one model, or a real rush the maintainer releases.
 // The work is done in SQL, on the database's side: the free plan gives a
 // Worker 10 ms of its own time, and the job's queries are a fixed few.
+import { alert } from "./alerts.js";
 import { ready } from "./database.js";
 import { prunePending } from "./pending.js";
 import { snapshot } from "./snapshot.js";
@@ -146,7 +149,8 @@ function holding(db, found) {
   ]);
 }
 
-export async function nightly(env, now = new Date()) {
+// `limits`: the API's, as index.js's scheduled() gives them, for alerts.js.
+export async function nightly(env, now = new Date(), limits = null) {
   if (!(await ready(env.DB))) {
     return { ran: false, why: "the database does not have every migration yet" };
   }
@@ -164,6 +168,7 @@ export async function nightly(env, now = new Date()) {
     env.DB.prepare(`INSERT INTO store_days (day, readouts, bytes)
       SELECT ?1, coalesce(max(count), 0), coalesce(max(bytes), 0) FROM counters WHERE name = ?2
       ON CONFLICT (day) DO UPDATE SET readouts = excluded.readouts, bytes = excluded.bytes`).bind(today, READOUTS_EVER)]);
+  const alerted = limits ? await alert(env, today, limits) : { sent: false, lines: [], why: "no limits given" };
   const figures = await snapshot(env.DB, now);
   const text = JSON.stringify(figures);
   const options = { httpMetadata: { contentType: "application/json", cacheControl: "public, max-age=3600" } };
@@ -173,5 +178,5 @@ export async function nightly(env, now = new Date()) {
   if (!(await env.STATS.head(archive))) {
     await env.STATS.put(archive, text, options);
   }
-  return { ran: true, folded: results.length, months, pruned, held };
+  return { ran: true, folded: results.length, months, pruned, held, alerted };
 }
