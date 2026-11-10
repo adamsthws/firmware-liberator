@@ -120,6 +120,13 @@ jobs:
             *) echo "ingest is on or off, not $INGEST"; exit 1 ;;
           esac
           npx wrangler deploy --config api/wrangler.jsonc --var "INGEST:$INGEST"
+      # That it answers as deployed: migrated, with its database, through the
+      # firewall (tools/repo/api_health.py live).
+      - name: The API answers
+        working-directory: .
+        env:
+          INGEST: ${{ inputs.ingest || 'on' }}
+        run: python3 tools/repo/api_health.py live "$INGEST"
 
   # What the deploy token can see, once both deploys are done, so a mistaken
   # expectation fails here without holding up the site: this zone and account,
