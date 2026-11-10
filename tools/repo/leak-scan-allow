@@ -32,3 +32,8 @@ autoflash
 # cloudflare_settings.py apply has made the database, and that database's
 # id once it has: a D1 database's id, which is not secret, not a device's.
 00000000-0000-0000-0000-000000000000
+# Not made up, and not a secret: the API Worker's D1 database's id, which
+# website/api/wrangler.jsonc must name for the Worker to bind it, and which
+# is no use without a token for the account (cloudflare_settings.py apply
+# made it, and says to put it there).
+4c2b6c15-fdaf-4457-aad2-5db90250be14
