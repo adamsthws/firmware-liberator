@@ -51,3 +51,61 @@ class MonthlyDryRunTests(unittest.TestCase):
         merge = self.text[self.text.index("\n  merge:"):]
         self.assertIn(self.MONTHLY.replace("==", "!="), merge.split("\n")[2])
         self.assertEqual(self.text.count(self.MONTHLY.replace("==", "!=")), 3)
+
+    def test_it_publishes_nothing(self):
+        # The publish job runs only on what the update job says to, which a dry run never does.
+        self.assertIn("if: ${{ needs.update.outputs.publish == 'yes' }}", job(self.text, "publish"))
+        made = job(self.text, "update")
+        self.assertLess(made.index('if [ "$DRY_RUN" = true ]; then'), made.index('echo "publish=yes"'))
+
+
+def job(text, name):
+    """One job of a workflow, as written: from its name to the next job's."""
+    start = text.index(f"\n  {name}:\n")
+    following = re.search(r"\n(?:  #.*\n)*  [a-z-]+:\n", text[start + 1:])
+    return text[start:start + 1 + following.start()] if following else text[start:]
+
+
+class FirmwareUpdateTests(unittest.TestCase):
+    """The weekly update builds with the releases' own tools, so the job that
+    does can only read; what it made is pushed by a job that runs none of it,
+    and only a pull request it opened is merged, which releases it."""
+
+    def setUp(self):
+        self.text = workflow("firmware-update.yml")
+
+    def test_no_token_is_given_to_every_job(self):
+        top = self.text[:self.text.index("\njobs:")]
+        self.assertNotIn("github.token", top)
+
+    def test_the_build_can_only_read(self):
+        update = job(self.text, "update")
+        permissions = re.search(r"    permissions:\n((?:      .*\n)+)", update).group(1)
+        self.assertNotIn("write", permissions)
+        self.assertIn("update_firmware.py esphome", update)
+        self.assertIn("git bundle create", update)
+
+    def test_the_publish_job_runs_nothing_of_the_update_and_checks_it_first(self):
+        publish = job(self.text, "publish")
+        self.assertIn("contents: write", publish)
+        for update_code in (".venv", "update_firmware.py esphome", "update_firmware.py openbeken", "unittest",
+                            "fault_suite", "pip install", "npm"):
+            self.assertNotIn(update_code, publish)
+        push = publish.index("git push")
+        self.assertLess(publish.index('update_firmware.py publishable "$GITHUB_SHA" FETCH_HEAD'), push)
+        self.assertLess(publish.index('leak_scan.py range "$GITHUB_SHA..FETCH_HEAD"'), push)
+        # Run from this commit's checkout: the update's commit is fetched, never checked out.
+        self.assertNotRegex(publish, r"git (checkout|switch)")
+
+    def test_both_jobs_name_the_same_branch(self):
+        made = re.search(r'branch="(firmware/[^"]+)"', job(self.text, "update")).group(1)
+        published = re.search(r"BRANCH: (firmware/.+)", job(self.text, "publish")).group(1)
+        self.assertEqual(re.sub(r"\$\{(\w+):-same\}", lambda m: m.group(1).lower(), made),
+                         re.sub(r"\$\{\{ needs\.due\.outputs\.(\w+) \|\| 'same' \}\}", r"\1", published))
+
+    def test_only_a_pull_request_it_opened_is_merged(self):
+        merge = job(self.text, "merge")
+        listed = merge[merge.index("gh pr list"):merge.index("; do")]
+        self.assertIn("--author app/github-actions", listed)
+        self.assertIn("select(.isCrossRepository | not)", listed)
+        self.assertIn('select(.headRefName | startswith(\\"firmware/\\"))', listed)

@@ -105,15 +105,24 @@ behind, on a series that has had its fixes. A release listed under `hold` in
 The workflow makes what is due into a pull request: the update (steps 1 and 2
 below, its docs and changelog line written, the version raised a minor version),
 for every device, a device added included - then the unit tests, and on the pull
-request the emulator check of every device (step 4), which main requires. Nothing is
-pushed if the leak scan finds anything in it. The pull request says which
+request the emulator check of every device (step 4), which main requires.
+The update is built by the releases' own tools - ESPHome's image,
+PlatformIO's downloads, OpenBeken's makefiles - so the job that builds it
+holds a token that can only read. A second job, which runs none of that,
+pushes it: only if it is one commit on `main` changing nothing but the
+firmware, its pins, the devices' configs and pages, the notes and the
+version line (`update_firmware.py publishable`), and the leak scan finds
+nothing in it. The pull request says which
 releases, what each check found, and the tests' results; the workflow then
 starts the lint, leak-scan and emulator-check workflows on its branch, as a
 pull request opened with a workflow's own token starts none itself, so the
 checks `main` requires are there. One whose tests passed **merges itself 7
 days after it was opened, which is the release**, unless it is labelled
 `hold`; one whose tests failed, or a check `main` requires, is labelled
-`tests-failed` and never merged by the workflow. A pull request is merged only
+`tests-failed` and never merged by the workflow. Only a pull request the
+workflow opened itself, from a `firmware/` branch of this repository, is
+merged: the label alone, which anyone with triage rights could give a fork's
+pull request, is not enough. A pull request is merged only
 if `main` has not moved on since it was made and tested; otherwise it is
 closed, and the next week's run makes it again.
 
