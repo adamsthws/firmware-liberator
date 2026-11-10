@@ -1,5 +1,7 @@
-"""unattended-test.sh takes --instance=N as emu.sh does, 1-99."""
+"""unattended-test.sh takes --instance=N as emu.sh does, 1-99; and --api keeps the API
+Worker's own code in a container of its own beside the emulator."""
 
+import re
 import shutil
 import subprocess
 import unittest
@@ -26,6 +28,29 @@ class InstanceTests(unittest.TestCase):
             self.assertEqual(done.returncode, 2, instance)
             self.assertIn("--instance=N", done.stdout, instance)  # the usage
             self.assertNotIn("--save turns the plug off", done.stderr, instance)
+
+
+class ApiTests(unittest.TestCase):
+    """Seen: run on this computer, under its Node, the API was out of reach of
+    the emulated computer wherever a firewall turned the emulators' network
+    away, and every readout-all scenario failed as if nothing had been sent."""
+
+    def setUp(self):
+        self.text = SCRIPT.read_text(encoding="utf-8")
+
+    def test_the_api_runs_in_a_container_on_the_emulators_network(self):
+        start = re.search(r'docker run -d --name "\$api_name" --network "\$network".*?\n(?:.*\\\n)*.*', self.text)
+        self.assertIsNotNone(start, "the API's docker run")
+        self.assertIn('"$API_IMAGE" node /website/api/local.mjs', start.group(0))
+
+    def test_its_image_is_pinned_by_digest(self):
+        self.assertRegex(self.text, r"(?m)^API_IMAGE=node:22\.\d+\.\d+-[a-z-]+@sha256:[0-9a-f]{64}$")
+
+    def test_nothing_runs_node_on_this_computer(self):
+        for line in self.text.splitlines():
+            code = line.split("#", 1)[0]
+            if re.search(r"(^|[\s\"'])(\$\{AUTOFLASH_NODE[^}]*\}|node)[\"']?\s+\S*local\.mjs", code):
+                self.assertIn('"$API_IMAGE" node', code, line)
 
 
 if __name__ == "__main__":

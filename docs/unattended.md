@@ -117,9 +117,10 @@ emulated plug this way, prints its final screen and stops the emulator again.
 See "Unattended, for testing" in [emulator.md](emulator.md#unattended-for-testing).
 
 A readout in the emulator is kept unsent. To test sending it, `--api` sends
-it to the API Worker's own code on your computer instead
-([`website/api/local.mjs`](../website/api/local.mjs), under Node 22.23 or newer; its
-`ENOUGH` from `AUTOFLASH_API_ENOUGH`): what it was asked and kept is in the
+it to the API Worker's own code instead
+([`website/api/local.mjs`](../website/api/local.mjs), in a container of its own
+on the emulator's network, from a pinned Node image; its `ENOUGH` from
+`AUTOFLASH_API_ENOUGH`): what it was asked and kept is in the
 instance's state directory, under `api/`. With `AUTOFLASH_EMU_STUB_OTHERS`
 listing other devices in the account ([cloud-stub.md](cloud-stub.md)), a
 readout of every device can be run there too.

@@ -23,11 +23,12 @@
 #   tools/espressif/emulator/unattended-test.sh --answers=FILE  a run as a person sits through it: its
 #                                                   questions asked, and answered as FILE says
 #                                                   (unattended_run.py --attended --answers)
-#   tools/espressif/emulator/unattended-test.sh --api        readouts sent to the API Worker's own code on
-#                                                   this computer (website/api/local.mjs, under
-#                                                   Node), not kept unsent: what it was asked and
-#                                                   kept is in the instance's state, api/;
-#                                                   AUTOFLASH_API_ENOUGH its ENOUGH
+#   tools/espressif/emulator/unattended-test.sh --api        readouts sent to the API Worker's own code
+#                                                   (website/api/local.mjs), in a container of
+#                                                   its own beside the emulator, not kept unsent:
+#                                                   what it was asked and kept is in the
+#                                                   instance's state, api/; AUTOFLASH_API_ENOUGH
+#                                                   its ENOUGH
 #   tools/espressif/emulator/unattended-test.sh --size=COLUMNSxROWS  the terminal the run gets (100x40):
 #                                                   a short window's, say, for what the run says of it
 #   tools/espressif/emulator/unattended-test.sh --timeout=MINUTES  stop the run after that long, its
@@ -141,6 +142,17 @@ if [ -n "$from" ] || [[ " ${emu_args[*]} " == *" --fresh "* ]] || \
         [ -z "$(docker ps -q -f "name=^$NAME\$")" ]; then
     "$ROOT/tools/espressif/emulator/emu.sh" "${emu_args[@]}" >/dev/null
 fi
+# The API Worker's own code for --api, in a container on the emulator's network,
+# beside the emulated computer: nothing of this computer's - its firewall, its
+# Node - comes between them. local.mjs needs Node 22.23 or newer.
+API_IMAGE=node:22.23.4-bookworm-slim@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d
+api_name=$NAME-api
+# shellcheck disable=SC2329  # run by the exit traps below
+stop_api() {
+    [ "$api" = 1 ] || return 0
+    docker logs "$api_name" > "$STATE/api-server.out" 2>&1 || true
+    docker rm -f "$api_name" >/dev/null 2>&1 || true
+}
 # shellcheck disable=SC2329  # run by the exit trap below
 keep_plug() {
     [ -n "$save" ] || return 0
@@ -154,7 +166,7 @@ keep_plug() {
     rm -rf "$SAVED/$save/captures/unattended"
     echo "Kept as '$save' (--from=$save)."
 }
-[ "$keep" = 1 ] || trap 'keep_plug; docker stop "$NAME" >/dev/null 2>&1 || true' EXIT
+[ "$keep" = 1 ] || trap 'stop_api; keep_plug; docker stop "$NAME" >/dev/null 2>&1 || true' EXIT
 
 as_you=(docker exec -u "$(id -u):$(id -g)" -w /work)
 waited=0
@@ -233,7 +245,7 @@ else
     grep '^ *\(export \)\?EWELINK_' "$ROOT/.env" \
         | "${as_you[@]}" -i "$NAME" sh -c "umask 077 && cat > $answers"
 fi
-[ "$keep" = 1 ] && trap 'docker exec "$NAME" rm -f "$answers" 2>/dev/null || true' EXIT
+[ "$keep" = 1 ] && trap 'stop_api; docker exec "$NAME" rm -f "$answers" 2>/dev/null || true' EXIT
 
 # On a terminal the run is shown live; otherwise its final screen is printed.
 [ -t 1 ] && as_you+=(-t)
@@ -246,20 +258,26 @@ stub_env=()
                              -e OPENSSL_CONF=/stub-cloud/openssl.cnf)
 # A device not ready yet is taken only when this says so (tools/autoflash/kinds.py).
 [ -n "${AUTOFLASH_NOT_READY_YET:-}" ] && stub_env+=(-e AUTOFLASH_NOT_READY_YET=1)
-# Readouts sent to the API Worker's own code on this computer (--api), at the
-# address the emulator's computer has for this one, or to a test server of
-# yours; else kept unsent (readout.upload_url).
+# Readouts sent to the API Worker's own code (--api), at its container's address
+# on the emulator's network, or to a test server of yours; else kept unsent
+# (readout.upload_url). The container goes as this script ends (stop_api).
 if [ "$api" = 1 ]; then
-    gateway=$(docker exec "$NAME" ip route | awk '/^default/ {print $3; exit}')
-    api_port=$((8800 + ${n:-0}))
-    rm -rf "$STATE/api"
+    docker rm -f "$api_name" >/dev/null 2>&1 || true   # one a killed run left
+    rm -rf "$STATE/api" "$STATE/api-server.out"
     mkdir -p "$STATE/api"
-    # It ends with this script, however this script ends (local.mjs's PARENT).
-    PARENT=$$ "${AUTOFLASH_NODE:-node}" "$ROOT/website/api/local.mjs" "$gateway" "$api_port" "$STATE/api" \
-        "${AUTOFLASH_API_ENOUGH:-}" > "$STATE/api-server.out" 2>&1 &
-    api_pid=$!
-    AUTOFLASH_READOUT_URL=http://$gateway:$api_port/readout
-    echo "Readouts go to the API's own code here: http://$gateway:$api_port, kept in ${STATE#"$ROOT/"}/api/"
+    network=$(docker inspect -f '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}}' "$NAME" | awk '{print $1}')
+    docker run -d --name "$api_name" --network "$network" --user "$(id -u):$(id -g)" \
+        -v "$ROOT/website:/website:ro" -v "$STATE/api:/api" -e AUTOFLASH_LOCAL_PROOF_BITS \
+        "$API_IMAGE" node /website/api/local.mjs 0.0.0.0 8080 /api "${AUTOFLASH_API_ENOUGH:-}" >/dev/null
+    api_address=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$api_name")
+    waited=0
+    until docker logs "$api_name" 2>&1 | grep -q '^API on'; do
+        [ "$(docker inspect -f '{{.State.Running}}' "$api_name" 2>/dev/null)" = true ] && [ $((waited += 1)) -le 60 ] || {
+            echo "The API's container did not start:" >&2; docker logs "$api_name" >&2 2>&1; exit 1; }
+        sleep 1
+    done
+    AUTOFLASH_READOUT_URL=http://$api_address:8080/readout
+    echo "Readouts go to the API's own code here: http://$api_address:8080 (its container $api_name), kept in ${STATE#"$ROOT/"}/api/"
 fi
 [ -n "${AUTOFLASH_READOUT_URL:-}" ] && stub_env+=(-e AUTOFLASH_READOUT_URL="$AUTOFLASH_READOUT_URL")
 # The emulator's Wi-Fi, for a run from an ESPHome that cannot say what it is
@@ -274,7 +292,7 @@ fi
     -e HOME=/tmp "$NAME" /opt/venv/bin/python "$driver" --size "$size" "${driver_args[@]}" \
     --save "captures/unattended/$stamp" -- --env-file "$answers" "${run_args[@]}" || status=$?
 
-[ "$api" = 1 ] && kill "$api_pid" 2>/dev/null
+stop_api
 echo "On this computer: ${STATE#"$ROOT/"}/work/captures/unattended/$stamp/"
 [ "$keep" = 1 ] && echo "The emulator is still running: http://localhost:$PORT, or docker exec -it -u ubuntu $NAME tmux attach -t autoflash"
 exit "$status"

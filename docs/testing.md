@@ -385,8 +385,10 @@ every direction - 1,606 scenarios on an S60:
   `readout --all` unattended, on a plug fresh from Sonoff's firmware among
   made-up devices the stub lists beside it (`AUTOFLASH_EMU_STUB_OTHERS`, none
   of them emulated, so each gets only the first stage), every readout sent to
-  the API Worker's own code (`unattended-test.sh --api`; Node from
-  `AUTOFLASH_NODE`). The accounts: two other devices (`mixed`); three alike in
+  the API Worker's own code (`unattended-test.sh --api`), in a container of its
+  own on the emulator's network, beside the emulated computer, so nothing of
+  the computer running the suite - its Node, its firewall - comes into it.
+  The accounts: two other devices (`mixed`); three alike in
   product, firmware model and version - of which the API keeps one from one
   sender - and one not (`alike`); the plug's
   product and one other's in the API's `ENOUGH` (`enough`); and seven, quick

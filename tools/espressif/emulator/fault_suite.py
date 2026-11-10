@@ -31,7 +31,8 @@ firmware, faulted in the read and as Sonoff's firmware is put back, until a
 whole readout.tar is kept and the plug is back on Sonoff's; of a plug on
 Tasmota, which must be refused; and of every device in an account
 (readout_all_scenarios, go_readout_all), on the stub, each sent to the API's
-own code (AUTOFLASH_NODE) and judged by what it answered and kept.
+own code (in a container beside the emulator) and judged by what it
+answered and kept.
 
 How many at once, from the environment:
     AUTOFLASH_EMU_CLOUD_WORKERS     emulators for the scenarios that need eWeLink (from
