@@ -17,8 +17,9 @@
 //   (SPIKE_SMALLEST or more, and over SPIKE_TIMES its daily average over the
 //   SPIKE_DAYS before) are held for review (held_reports): a flood of
 //   made-up reports of one model, or a real rush the maintainer releases.
-// The work is done in SQL, on the database's side: the free plan gives a
-// Worker 10 ms of its own time, and the job's queries are a fixed few.
+// The work is done in SQL, on the database's side, in a fixed few queries:
+// so a night's Worker time and queries stay small whatever the plan (the
+// free plan's 10 ms and 50 queries a run would be enough).
 import { alert } from "./alerts.js";
 import { ready } from "./database.js";
 import { prunePending } from "./pending.js";
