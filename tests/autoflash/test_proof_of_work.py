@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import unittest
+from unittest import mock
 
 from tools.autoflash import proof_of_work
 
@@ -35,6 +38,19 @@ class SolveTests(unittest.TestCase):
         ticks = []
         proof_of_work.solve("subject", 21, now=1794000000, tick=lambda: ticks.append(1))
         self.assertGreater(len(ticks), 0)
+
+
+class MainTests(unittest.TestCase):
+    def test_it_prints_the_work_for_its_subject(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), mock.patch.object(proof_of_work.os, "nice", create=True):
+            self.assertEqual(proof_of_work.main(["report-" + "0" * 32, "8"]), 0)
+        self.assertRegex(out.getvalue().strip(), r"^\d+:\d+$")
+
+    def test_anything_else_is_refused(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(proof_of_work.main([]), 2)
+            self.assertEqual(proof_of_work.main(["subject", "many"]), 2)
 
 
 if __name__ == "__main__":

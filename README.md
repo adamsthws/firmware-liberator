@@ -267,6 +267,8 @@ What is sent, once you agree:
   Tasmota and ESPHome the tool installs are updated.
 - **[readouts](docs/readouts.md)** - what a readout of a device holds, and
   where it goes.
+- **[what-the-tool-sends](docs/what-the-tool-sends.md)** - the report each
+  run sends, what it is used for, and how to turn it off.
 - **[upstream-contributions](docs/upstream-contributions.md)** - bugs
   found and fixed while building this project.
 - **[legal](docs/legal.md)** - how the project remains lawful, and what it asks of you.

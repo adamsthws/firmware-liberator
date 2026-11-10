@@ -38,6 +38,7 @@ from tools.autoflash import (  # noqa: E402
     prompts,
     readout,
     report,
+    report_upload,
     routes,
     runner,
     runs,
@@ -514,6 +515,9 @@ def _main() -> int:
     # An ESPHome built by hand (firmware.ota.bin), instead of the published one.
     parser.add_argument("--esphome", metavar="PATH", help=argparse.SUPPRESS)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--no-report", action="store_true",
+                        help="send the project no report of how the run went "
+                             "(docs/what-the-tool-sends.md says what one holds)")
     parser.add_argument("--unattended", action="store_true",
                         help="nobody at the keyboard: go ahead past the point of no return "
                         "without typing PROCEED, take the eWeLink details from .env, and "
@@ -693,6 +697,7 @@ def convert(ctx: Context, given: list[str]) -> int:
             f"{old} is now {credentials.RENAMED[old]}" for old in credentials.renamed))
     code = None  # 130 only when the operator chose to quit, not for Ctrl-C
     ending = None  # "crashed", or "cancelled" by the operator: see run_result()
+    report_upload.begin(ctx)
     try:
         code = cmd_run(ctx)
         return code

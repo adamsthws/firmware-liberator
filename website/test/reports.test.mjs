@@ -268,6 +268,9 @@ test("the tool does the same work the Worker asks of a report", () => {
   const tool = readFileSync(new URL("../../tools/autoflash/report_data.py", import.meta.url), "utf8");
   assert.match(tool, /^DEVICE_PREFIX = "firmware-liberator device:"$/m);
   assert.equal(api.REPORT_PROOF_BITS, 24);
+  const sender = readFileSync(new URL("../../tools/autoflash/report_upload.py", import.meta.url), "utf8");
+  assert.match(sender, new RegExp(`^PROOF_BITS = ${api.REPORT_PROOF_BITS}$`, "m"));
+  assert.match(sender, /^UPLOAD_URL = "https:\/\/api\.firmwareliberator\.com\/reports"$/m);
 });
 
 test("each question /wanted is asked is counted by its model and day, within a limit", async () => {
