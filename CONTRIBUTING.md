@@ -219,6 +219,33 @@ maintainer, and links to the `docs/` page its reader would otherwise look
 for. [.github/readouts.md](.github/readouts.md) is the maintainer's side of
 [docs/readouts.md](docs/readouts.md).
 
+### Specifics live in the code
+
+A doc that copies a detail from the code goes stale the day the code
+changes, and nothing tells you. So each specific - a limit, a timeout, a
+count, a version, a permission, a list of names, which file does what - is
+written once, in the code, with a comment beside it saying why. A page says
+what happens and why, and names where to look for the rest.
+
+- **Name the constant or file, not its value.** "`TOKENS` in
+  `tools/repo/cloudflare_settings.py` lists each token and what it may do",
+  not the list itself; "at most `READOUT_LIMIT` a minute", not "two a
+  minute"; "the Workers", not "the three Workers".
+- **Have the tool say it.** Where someone needs the details to act, the code
+  prints them from what it holds - in `--help`, or in the message that says
+  what is left to do - rather than a page repeating them.
+  `tools/repo/cloudflare_tokens.py` run without its token says how to make
+  one, from `ROTATE_PERMISSIONS`.
+- **A page that must give a value** - a port to open in a firewall, say - has
+  a test holding it to the code's.
+- **Comments sit beside what they explain**, so a change to one is made with
+  the other in view.
+
+`tests/repo/test_layout.py` fails when a page names, in backticks, a path
+under the project's own folders that is not there, or when a maintainer's or
+contributor's page names an `UPPER_CASE` constant no code holds: the most
+common way a page goes stale is a rename.
+
 ## Elsewhere
 
 A bug found in another project - Tasmota, ESPHome, ESP-IDF, OpenBeken, the

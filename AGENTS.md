@@ -113,6 +113,11 @@ and why, for someone who was not there. Comments as sparing as the code
 around them. Docs speak to their reader, not from our side:
 [CONTRIBUTING.md](CONTRIBUTING.md#writing-docs).
 
+**Specifics live in the code**: a value, limit, version, permission or list
+is written once, in the code with a comment beside it; docs name the
+constant or file instead of copying it, and the tool prints what someone
+needs to act ([CONTRIBUTING.md](CONTRIBUTING.md#specifics-live-in-the-code)).
+
 **Record findings as you go, unasked**: what research or a test shows goes
 into the docs in the change it comes from, a page it makes stale is corrected
 then, and an open question answered is closed
