@@ -69,15 +69,15 @@ version's power meter.
 | Downloads | the QEMU fork's source, once | Microsoft's ISO (8.2 GB), Windows Terminal (12 MB) and virtio-win's guest tools (32 MB), once; Python (11 MB) and OpenVPN (6 MB) each time a layer that gets them is set up |
 | Time | see "How long it takes", below | |
 
-Measured on an AMD Ryzen 5 4500U (6 cores) with 8 GB: Windows peaked at
+Measured on a 6-core laptop processor from 2020 with 8 GB: Windows peaked at
 2.1 GB, an S60's emulator at 80 MB, and the layers took 7, 2 and 1 minutes to set
 up. The caps can be changed (below), and a computer short of memory is warned
 before Windows starts.
 
 #### How long it takes
 
-For a computer like the one these were measured on - an AMD Ryzen 5 4500U
-laptop with 8 GB, from 2020 - or faster. A faster one is nearer the low end.
+For a computer like the one these were measured on - a 6-core laptop
+processor from 2020, with 8 GB - or faster. A faster one is nearer the low end.
 
 **Once, the first time:**
 

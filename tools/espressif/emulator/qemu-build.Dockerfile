@@ -1,10 +1,10 @@
 # Build environment for the lcgamboa QEMU fork (the ESP32-C3 and the classic
 # ESP32, with Wi-Fi), so its
-# build tooling stays out of the host. Ubuntu 24.04 matches Linux Mint 22, so
-# the binary it builds also runs on the host.
+# build tooling stays out of the host. The binary it builds runs on Ubuntu 24.04
+# and the distributions built on it.
 #
 #   docker build -t autoflash-qemu-build -f tools/espressif/emulator/qemu-build.Dockerfile tools/espressif/emulator
-#   docker run --rm -u "$(id -u):$(id -g)" -v ~/Git/emu/lcgamboa-qemu:/src autoflash-qemu-build
+#   docker run --rm -u "$(id -u):$(id -g)" -v /path/to/lcgamboa-qemu:/src autoflash-qemu-build
 FROM ubuntu:24.04
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \

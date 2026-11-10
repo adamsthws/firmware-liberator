@@ -177,6 +177,11 @@ way.
 - **Say where.** "From this project" or "on your computer", not "from here".
 - **Write full sentences.** A reader should not have to read one twice to find
   out what it is about.
+- **Keep to any computer.** The tool, its tests and its emulators run on many
+  kinds of computer, so describe what was found as it applies to any of them
+  ("a firewall that turns the emulators' network away", "a 6-core computer"),
+  never the machine it was found on: no computer, virtual machine or user
+  names, home folders or a contributor's own setup.
 
 For example:
 

@@ -749,8 +749,8 @@ each with LAN port 8081 open. Two clones of one device id online concurrently.
 
 **Interpretation:** the shared-cloud serialisation is gone. Each instance's stub
 is independent (its own `192.168.60.1:443` in its own network namespace), so runs
-are fully parallel — the whole point of the cloud stub. (Bounded only by host RAM:
-~3 emulators on a laptop, one per core on the test VMs.)
+are fully parallel — the whole point of the cloud stub. (Bounded only by the
+computer: one emulator per core at most, [testing.md](testing.md).)
 
 #### Test 6 — full conversions, stub and cloud
 
@@ -891,7 +891,7 @@ one address) through `AUTOFLASH_READOUT_URL`, and `/wanted` asked first.
 **Setup:** the BASICR4 or MINIR4 stand-in plug, and three to six other devices
 in the account (`AUTOFLASH_EMU_STUB_OTHERS`): an NSPanel (not supported yet),
 an S60TPG-M (a Matter variant: not seen), and made-up new models. Twelve runs on
-the alice VM, up to seven at once, on 2026-11-09.
+one computer, up to seven at once, on 2026-11-09.
 
 **Results:** every first-stage device was asked `/wanted`, then sent on its
 own; the BASICR4 and MINIR4 were read in full after PROCEED, put back on Sonoff
@@ -915,7 +915,7 @@ asked and kept, with the plug switched off or the computer crashing in the
 plug's read.
 
 **Setup:** the BASICR4 stand-in plug, the suite's made-up accounts, five
-emulators at once on the alice VM, on 2026-11-09.
+emulators at once, on 2026-11-09.
 
 **Results:** all six passed. Two alike devices were both taken and the third
 answered "held" (with the API keeping two a key; run again once it kept
