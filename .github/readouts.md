@@ -385,6 +385,27 @@ for good, or its owner marked one of ours as spam - makes `send()` throw
 nothing and tries it no more that day, and its reminder is not tried again;
 those failures are left out of the alert, as some are expected.
 
+### Bounces and complaints
+
+A bounce or a spam complaint comes back after the email has gone, so the
+Worker never sees it. Email Service handles both itself: it suppresses the
+address, permanently for a mailbox or domain that does not exist and for a
+complaint, and nothing is sent to it again. The cloudflare-settings
+workflow's daily `health` job (`api_health.py mail`) fails when more than 2%
+of the last 7 days' emails bounced (5 at least), or on any complaint in the
+last 2 days: Email Service pauses an account's sending, alerts included,
+once its reputation is poor, and Cloudflare's own marks for good standing are
+a hard bounce rate under 2% and complaints under 0.1%. It prints counts only,
+as CI's log is public. When it fails:
+
+- Look at the dashboard's Email Sending activity log, which has each bounce
+  and its reason, and the suppression list, which names the address.
+- Many bounces at once from mistyped or made-up addresses mean someone is
+  giving them: lower `NOTIFY_SENDER_DAILY` or `NOTIFY_DAILY` until it stops.
+- A complaint: remove that address from the list (`/forget`'s link, or by
+  hand under `notify/`). Leave it suppressed, so it is never written to
+  again, unless its owner asks to be told once more.
+
 ## Working with them
 
 ```sh

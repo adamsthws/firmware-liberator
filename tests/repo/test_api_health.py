@@ -152,9 +152,94 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("if: github.event_name != 'push'", job)
         self.assertIn("run: python3 tools/repo/api_health.py snapshot", job)
         self.assertIn("run: python3 tools/repo/api_health.py usage", job)
+        self.assertIn("run: python3 tools/repo/api_health.py mail", job)
         self.assertIn("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_READ_TOKEN }}", job)
 
     def test_the_read_token_is_given_what_usage_needs(self):
         readme = (Path(health.ROOT) / "website/README.md").read_text(encoding="utf-8")
         row = next(line for line in readme.splitlines() if line.startswith("| Settings check |"))
         self.assertIn("Account Analytics: Read", row)
+        self.assertIn("Analytics: Read (the mail check)", row)
+        self.assertIn("Email Sending: Read (the mail check's suppression list)", row)
+
+
+def delivered(**counts):
+    return {"viewer": {"zones": [{"emailSendingAdaptiveGroups": [
+        {"count": n, "dimensions": {"status": status}} for status, n in counts.items()]}]}}
+
+
+def suppressed(*rows):
+    return [{"id": f"s{n}", "email": f"owner{n}@example.com", "reason": reason, "created_at": at}
+            for n, (reason, at) in enumerate(rows)]
+
+
+def mail_run(analytics, listed=(), asked=None):
+    def api(path, **_):
+        if path.startswith("/zones?"):
+            return [{"id": "z1", "account": {"id": "a1"}}]
+        if asked is not None:
+            asked.append(path)
+        return list(listed)
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
+            mock.patch.object(health.cs, "api", side_effect=api), \
+            mock.patch.object(health, "graphql", return_value=analytics):
+        code = health.main(["mail"], now=NOW)
+    return code, out.getvalue() + err.getvalue()
+
+
+class MailTests(unittest.TestCase):
+    def test_few_bounces_and_no_complaint_pass_and_say_the_counts(self):
+        code, out = mail_run(delivered(delivered=400, deliveryFailed=7),
+                             suppressed(("hard_bounce", "2026-11-09T20:00:00Z")))
+        self.assertEqual(code, 0, out)
+        self.assertIn("400 emails delivered, 7 bounced", out)
+        self.assertIn("1 for a hard bounce, 0 for a complaint", out)
+
+    def test_bounces_past_two_percent_fail(self):
+        code, out = mail_run(delivered(delivered=200, deliveryFailed=8))
+        self.assertEqual(code, 1)
+        self.assertIn("8 of 208 emails in 7 days bounced (3.8%), past 2%", out)
+
+    def test_one_mistyped_address_among_few_emails_does_not_fail(self):
+        self.assertEqual(mail_run(delivered(delivered=3, deliveryFailed=4))[0], 0)
+
+    def test_any_recent_complaint_fails_and_one_older_does_not(self):
+        code, out = mail_run(delivered(delivered=10), suppressed(("complaint", "2026-11-09T08:00:00Z")))
+        self.assertEqual(code, 1)
+        self.assertIn("1 marked as spam in 2 days", out)
+        self.assertEqual(mail_run(delivered(delivered=10), suppressed(("complaint", "2026-11-01T08:00:00Z")))[0], 0)
+
+    def test_it_never_prints_an_address(self):
+        _, out = mail_run(delivered(delivered=10, deliveryFailed=9), suppressed(
+            ("complaint", "2026-11-09T08:00:00Z"), ("hard_bounce", "2026-11-09T08:00:00Z")))
+        self.assertNotIn("@", out)
+
+    def test_it_reads_every_page_of_the_suppression_list(self):
+        asked = []
+        full = suppressed(*[("manual", "2026-01-01T00:00:00Z")] * health.SUPPRESSIONS_PAGE)
+        pages = iter([full, suppressed(("complaint", "2026-11-09T08:00:00Z"))])
+        def api(path, **_):
+            if path.startswith("/zones?"):
+                return [{"id": "z1", "account": {"id": "a1"}}]
+            asked.append(path)
+            return next(pages)
+        with mock.patch.object(health.cs, "api", side_effect=api), \
+                mock.patch.object(health, "graphql", return_value=delivered()):
+            self.assertEqual(health.mail(NOW)["complaints"], 1)
+        self.assertEqual(asked, [f"/accounts/a1/email/sending/suppressions?per_page={health.SUPPRESSIONS_PAGE}&page=1",
+                                 f"/accounts/a1/email/sending/suppressions?per_page={health.SUPPRESSIONS_PAGE}&page=2"])
+
+    def test_it_asks_the_zones_analytics_for_the_last_days(self):
+        asked = {}
+        with mock.patch.object(health.cs, "api", side_effect=lambda path, **_: (
+                [{"id": "z1", "account": {"id": "a1"}}] if path.startswith("/zones?") else [])), \
+                mock.patch.object(health, "graphql", side_effect=lambda query, variables: asked.update(variables)
+                                  or delivered()):
+            health.mail(NOW)
+        self.assertEqual(asked, {"zone": "z1", "start": "2026-11-03", "end": "2026-11-10"})
+
+    def test_a_token_without_the_zones_analytics_says_what_it_needs(self):
+        code, out = mail_run({"viewer": {"zones": []}})
+        self.assertEqual(code, 1)
+        self.assertIn("give it the zone's Analytics: Read", out)
