@@ -262,8 +262,13 @@ and the store has limits it is never let past:
   `{"format": 1, "email", "devices": [{"product", "model"}, ...]}` (20 at
   most), with the same light work, and keeps nothing yet: the address is
   emailed a link to confirm it (`/confirm?t=<token>`, from `NOTIFY_FROM`),
-  and the request waits in the database's `signups` table, deleted by the
-  nightly job after 7 days unless confirmed. It answers 202 whether or not an
+  and the request waits in the database's `confirmations` table, deleted by the
+  nightly job after 7 days unless confirmed. A day after its link was sent,
+  the Worker's hourly cron sends it once more (`remind`,
+  `REMIND_AFTER_DAYS`): once an address however often it was given, none
+  already confirmed, counted against the 500 a day; its counter
+  (`notify-remind:<hash>`) outlives the sign-up, so a run twice reminds
+  nobody twice. It answers 202 whether or not an
   email went, so nobody learns whether an address was asked for before. An
   address is sent one confirmation a day however many ask, and one sender
   (by its /64, below) may ask for 5 a day, so nobody can have many strangers
@@ -360,8 +365,8 @@ says which token does what.
 `EMAIL` binding, from `updates@firmwareliberator.com` (`NOTIFY_FROM` in
 [index.js](../website/api/index.js)). It sends to any address only on Workers
 Paid (3,000 emails a month included, then $0.35 per 1,000); the sign-up
-limits bound what it can cost, at most 500 confirmations a day, about 15,000
-a month - some $4 past those included. It sends only from a domain onboarded
+limits bound what it can cost, at most 500 confirmations and reminders a
+day, about 15,000 a month - some $4 past those included. It sends only from a domain onboarded
 for sending: `cloudflare_settings.py apply` onboards `firmwareliberator.com`
 itself (`SENDING_DOMAIN`), then makes the DNS records Email Service lists
 for it - an MX, SPF and DKIM on its bounce subdomain - which the DNS check

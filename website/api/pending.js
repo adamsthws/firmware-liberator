@@ -44,7 +44,7 @@ export async function prunePending(env, today) {
       await release(env.DB, PENDING, row.bytes);
     }
   }
-  const signups = await env.DB.prepare("DELETE FROM signups WHERE day < ?1").bind(
+  const signups = await env.DB.prepare("DELETE FROM confirmations WHERE day < ?1").bind(
     dayBefore(today, SIGNUP_DAYS).slice(0, 10)).run();
   return { readouts: old.length, signups: signups.meta?.changes ?? 0 };
 }

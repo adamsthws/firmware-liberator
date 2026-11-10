@@ -80,6 +80,15 @@ export const NOTIFY_SENDER_DAILY = 5;
 // Email Service sends for (.github/readouts.md says how it was set up).
 export const NOTIFY_FROM = "updates@firmwareliberator.com";
 export const CONFIRM_URL = "https://api.firmwareliberator.com/confirm";
+// An address not confirmed this many days after its link was sent is sent it
+// once more (remind, run hourly): a confirmation is easily missed, and once is
+// all, so a stranger's address given is written to twice at most.
+export const REMIND_AFTER_DAYS = 1;
+// Reminders sent a run at most; any more go the next hour.
+export const REMIND_EACH_RUN = 100;
+// wrangler.jsonc's cron for the nightly job; its other, hourly, sends the
+// reminders alone.
+export const NIGHTLY_CRON = "17 3 * * *";
 // The most of the store that readouts not yet taken as right may take: so
 // made-up ones, kept until the nightly job deletes them (pending.js), can
 // never fill it.
@@ -126,11 +135,17 @@ export default {
     }
     return route(request, env);
   },
-  // The nightly job (nightly.js), at the time wrangler.jsonc's cron gives.
+  // The nightly job (nightly.js) then the reminders (remind), or, at the
+  // hourly cron, the reminders alone: at the times wrangler.jsonc's crons give.
   async scheduled(controller, env, context) {
     // The limits the maintainer is told were reached (alerts.js).
     const limits = { DAILY_COUNT, DAILY_BYTES, TOTAL_BYTES, NOTIFY_DAILY, REPORTS_DAILY, from: NOTIFY_FROM };
-    context.waitUntil(nightly(env, new Date(controller.scheduledTime), limits));
+    const now = new Date(controller.scheduledTime);
+    if (controller.cron !== NIGHTLY_CRON) {
+      context.waitUntil(remind(env, now).then((reminded) => ({ reminded })));
+      return;
+    }
+    context.waitUntil(nightly(env, now, limits).then(async (done) => ({ ...done, reminded: await remind(env, now) })));
   },
 };
 
@@ -560,30 +575,77 @@ export async function notify(request, env, now = new Date()) {
   }
   const token = hex(crypto.getRandomValues(new Uint8Array(16)));
   const named = devices.map((device) => ({ product: device.product.toUpperCase(), model: device.model ?? "-" }));
-  await env.DB.prepare("INSERT INTO signups (token, who, email, devices, day) VALUES (?1, ?2, ?3, ?4, ?5)")
-    .bind(token, who, email, JSON.stringify(named), day).run();
-  const products = [...new Set(named.map((device) => device.product))];
+  await env.DB.prepare("INSERT INTO confirmations (token, who, email, devices, day, sent) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
+    .bind(token, who, email, JSON.stringify(named), day, now.toISOString()).run();
   try {
-    await env.EMAIL.send({
-      to: email,
-      from: NOTIFY_FROM,
-      subject: "Confirm: tell me when my device is supported",
-      text: [
-        "Someone - we hope you - asked Firmware Liberator to email this address when the",
-        `support for these devices changes: ${products.join(", ")}.`,
-        "",
-        `To be told, confirm it here: ${CONFIRM_URL}?t=${token}`,
-        "",
-        `If it was not you, do nothing: unless it is confirmed, the address is deleted in ${SIGNUP_DAYS} days`,
-        "and never written to again.",
-      ].join("\n"),
-    });
+    await env.EMAIL.send(confirmation(email, named, token));
   } catch (error) {
-    await env.DB.prepare("DELETE FROM signups WHERE token = ?").bind(token).run();
+    await env.DB.prepare("DELETE FROM confirmations WHERE token = ?").bind(token).run();
     await release(env.DB, `notify-to:${who}:${day}`);
     return answer(502, { error: "the confirmation could not be sent: try again later" });
   }
   return answer(202, { confirming: true });
+}
+
+// The email asking an address's owner to confirm it, or, given the day it was
+// asked for, asking once more.
+function confirmation(email, devices, token, given = null) {
+  const reminder = given !== null;
+  const products = [...new Set(devices.map((device) => device.product))];
+  return {
+    to: email,
+    from: NOTIFY_FROM,
+    subject: `${reminder ? "Reminder - confirm" : "Confirm"}: tell me when my device is supported`,
+    text: [
+      `Someone - we hope you - asked Firmware Liberator${reminder ? ` on ${given}` : ""} to email this address when the`,
+      `support for these devices changes: ${products.join(", ")}.`,
+      "",
+      `To be told, confirm it here: ${CONFIRM_URL}?t=${token}`,
+      "",
+      reminder
+        ? `This is the only reminder. If it was not you, do nothing: unless it is confirmed, the address is deleted`
+        : `If it was not you, do nothing: unless it is confirmed, the address is deleted in ${SIGNUP_DAYS} days`,
+      reminder ? `${SIGNUP_DAYS} days after it was given, and never written to again.` : "and never written to again.",
+    ].join("\n"),
+  };
+}
+
+// The hourly cron's part (scheduled): each address sent its link
+// REMIND_AFTER_DAYS or more ago, still not confirmed, is sent it once more - once an
+// address, however many times it was given, and none already confirmed
+// through another link. Counted against NOTIFY_DAILY like any confirmation.
+// How many it sent.
+export async function remind(env, now = new Date()) {
+  if (!env.EMAIL || !(await ready(env.DB))) {
+    return 0;
+  }
+  const today = now.toISOString().slice(0, 10);
+  const before = new Date(now.getTime() - REMIND_AFTER_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const { results } = await env.DB.prepare(`SELECT confirmations.* FROM confirmations
+    LEFT JOIN counters ON counters.name = 'notify-remind:' || confirmations.who AND counters.count > 0
+    WHERE confirmations.sent <= ?1 AND counters.name IS NULL ORDER BY confirmations.sent LIMIT ?2`)
+    .bind(before, REMIND_EACH_RUN).all();
+  let sent = 0;
+  for (const signup of results) {
+    // The counter outlives the sign-up (pruning in nightly.js, SIGNUP_DAYS in
+    // pending.js), so a run twice reminds nobody twice.
+    if (await env.READOUTS.head(whoKey(signup.who))
+        || !(await reserve(env.DB, `notify-remind:${signup.who}`, today, { most: 1 }))) {
+      continue;
+    }
+    if (!(await reserve(env.DB, notifyOn(today), today, { most: NOTIFY_DAILY }))) {
+      await release(env.DB, `notify-remind:${signup.who}`);
+      break;
+    }
+    try {
+      await env.EMAIL.send(confirmation(signup.email, JSON.parse(signup.devices), signup.token, signup.day));
+      sent += 1;
+    } catch {
+      await release(env.DB, `notify-remind:${signup.who}`);
+      await release(env.DB, notifyOn(today));
+    }
+  }
+  return sent;
 }
 
 // The link in a confirmation (?t=<token>): a GET shows what it confirms and
@@ -599,7 +661,7 @@ export async function confirm(request, env, now = new Date()) {
     return answer(405, { error: "opened from the link in an email" }, { Allow: "GET, POST" });
   }
   const signup = TOKEN.test(token)
-    ? await env.DB.prepare("SELECT * FROM signups WHERE token = ?").bind(token).first() : null;
+    ? await env.DB.prepare("SELECT * FROM confirmations WHERE token = ?").bind(token).first() : null;
   if (!signup) {
     return page(404, "Nothing to confirm",
       `<p>This link is not one we know, or it has been used, or more than ${SIGNUP_DAYS} days have passed.</p>`);
@@ -614,7 +676,7 @@ Every such email has a link to stop them.</p>
 <button type="submit">Yes, email me</button></form>`);
   }
   await keepAddress(env, signup.email, signup.who, devices, now);
-  await env.DB.prepare("DELETE FROM signups WHERE token = ?").bind(token).run();
+  await env.DB.prepare("DELETE FROM confirmations WHERE token = ?").bind(token).run();
   return page(200, "Confirmed", "<p>You will be emailed when your device's support changes. Thank you for helping.</p>");
 }
 
