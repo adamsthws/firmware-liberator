@@ -119,12 +119,26 @@ test("the figures leave out the maintainer's testing, and anything under five", 
   }
   await night.nightly(bindings, NIGHT);
   const stats = figures(bindings);
-  assert.equal(stats.devices.seen, 10, "the dev device left out");
+  assert.equal(stats.devices.seen, 6, "the dev device left out, and RARE1's, of no device kind the tool knows");
   assert.equal(stats.runs.runs, 10);
   assert.deepEqual(stats.models.map((row) => [row.model, row.devices]), [["S60TPG", 6]], "RARE1 has four");
   assert.equal(stats.models[0].firstRun, 100);
   assert.ok(!JSON.stringify(stats).includes("RARE1"));
   assert.ok(!JSON.stringify(stats).includes("device-"), "no device's id");
+});
+
+test("a run that met a device the tool does not convert yet is no failure, but counted apart", async () => {
+  const bindings = env();
+  for (let n = 0; n < 5; n += 1) {
+    await kept(bindings.DB, "2026-11-05", { device_hash: `ok-${n}` });
+    await kept(bindings.DB, "2026-11-05", { model: "NEWONE", device: null, family: null, device_hash: `new-${n}`,
+      result: "failed", stopped: { step: "A2", error: "unsupported-device", text: "" } });
+  }
+  await night.nightly(bindings, NIGHT);
+  const { runs, failures, devices } = figures(bindings);
+  assert.deepEqual([runs.runs, runs.converted, runs.failed, runs.unsupported, runs.success], [10, 5, null, 5, 100]);
+  assert.deepEqual(failures, [], "not where runs stop");
+  assert.deepEqual([devices.seen, devices.firstRun], [5, 100], "the devices the tool converts");
 });
 
 test("a run declined, or with nothing to do, is not a failure", async () => {
