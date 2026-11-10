@@ -37,13 +37,55 @@ class StartChoiceTests(unittest.TestCase):
     def test_a5_asks_nothing_about_wifi(self):
         # The details are read off the device at E1, so A5 has nothing to ask.
         from unittest import mock
-        with mock.patch.object(bundle, "validate_bundle", return_value={}), \
+        with mock.patch.object(bundle, "validate_bundle", return_value={}) as validate, \
              mock.patch.object(hostsys, "check_sha256sums", return_value=[]), \
              mock.patch.object(prompts, "ask_choice") as menu, \
              mock.patch.object(bundle, "make_bundle") as rebuild, \
              self.locks_in_place(), mock.patch.object(output, "say"):
-            bundle.step_check(self.ctx())
+            self.assertEqual(bundle.step_check(self.ctx()), {"mode": "official"})
         menu.assert_not_called()
+        rebuild.assert_not_called()
+        # A bundle of a release pinned before is no start for a new run.
+        self.assertTrue(validate.call_args.kwargs["current_only"])
+
+    def test_a5_puts_back_a_lock_a_stopped_run_left_aside_before_checking_them(self):
+        order = []
+        with mock.patch.object(bundle, "validate_bundle", return_value={"migration_mode": "imprinted"}), \
+             mock.patch.object(hostsys, "check_sha256sums", return_value=[]), \
+             mock.patch.object(safety_locks, "restore_left_locks", side_effect=lambda root: order.append("restore")), \
+             mock.patch.object(safety_locks, "in_place", side_effect=lambda root, lock: order.append(lock) or True), \
+             mock.patch.object(output, "say"):
+            self.assertEqual(bundle.step_check(self.ctx()), {"mode": "imprinted"})
+        self.assertEqual(order, ["restore", *safety_locks.NAMES])
+
+    def test_a5_says_why_a_bundle_there_cannot_be_used_but_not_of_a_missing_one(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        manifest = Path(directory.name) / "manifest.json"
+        ctx = self.ctx()
+        ctx.manifest_path = manifest
+        default = mock.patch.object(bundle, "default_manifest", return_value=manifest)
+        default.start()
+        self.addCleanup(default.stop)
+        for exists, problem in ((False, None), (True, "it is damaged")):
+            if exists:
+                manifest.write_text("{}", encoding="utf-8")
+            with mock.patch.object(bundle, "validate_bundle", side_effect=ValueError("it is damaged")), \
+                 mock.patch.object(bundle, "make_bundle", return_value={}) as rebuild, \
+                 mock.patch.object(hostsys, "check_sha256sums", return_value=[]), \
+                 self.locks_in_place(), mock.patch.object(output, "say"):
+                bundle.step_check(ctx)
+            rebuild.assert_called_once_with(ctx, problem=problem)
+
+    def test_a_run_carried_on_leaves_a_bundle_it_was_given_or_one_before_a5_alone(self):
+        ctx = self.ctx()
+        with mock.patch.object(bundle, "validate_bundle", side_effect=ValueError("old")) as validate, \
+             mock.patch.object(bundle, "make_bundle") as rebuild:
+            bundle.bundle_of_this_version(ctx)  # A5 not done
+            ctx.state.mark("A5", state.DONE, result={})
+            ctx.manifest_path = Path(tempfile.gettempdir()) / "given" / "manifest.json"  # --manifest
+            bundle.bundle_of_this_version(ctx)
+        validate.assert_not_called()
         rebuild.assert_not_called()
 
     def test_a_run_carried_on_has_a_bundle_this_version_cannot_use_built_again(self):
