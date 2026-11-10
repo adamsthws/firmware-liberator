@@ -136,7 +136,7 @@ Three Cloudflare API tokens are in play, each allowed only what its job needs:
 | --- | --- | --- |
 | Deploy | `website` secret `CLOUDFLARE_DEPLOY_TOKEN` | Individual Workers - `firmware-liberator`, `firmware-liberator-api`, `firmware-liberator-admin`: Editor. Zone `firmwareliberator.com` - Workers Routes: Write, DNS: Write (the custom domains), Zone: Read |
 | Settings check | `website` secret `CLOUDFLARE_READ_TOKEN` | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Read, DNS: Read, Dynamic URL Redirects: Read, Zone WAF: Read, Cache Settings: Read (the cache rules), Email Routing Rules: Read, Analytics: Read (the mail check). Account - Workers R2 Storage: Read, Account Analytics: Read (the usage check), Email Routing Addresses: Read, Email Sending: Read (the mail check's suppression list) |
-| Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, DNS: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit, Cache Settings: Edit (the cache rules), Email Routing Rules: Edit. Account - Workers R2 Storage: Edit, D1: Edit, Email Routing Addresses: Edit, Email Sending: Edit (onboarding the domain for sending), Account API Tokens: Read, Workers Scripts: Edit (to check the deploy token, and set the Workers' secrets), Access: Organizations, Identity Providers, and Groups: Edit, Access: Apps and Policies: Edit (the admin view's sign-in) |
+| Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, DNS: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit, Cache Settings: Edit (the cache rules), Email Routing Rules: Edit. Account - Workers R2 Storage: Edit, D1: Edit, Email Routing Addresses: Edit, Email Sending: Edit (onboarding the domain for sending), Account API Tokens: Read, Workers Scripts: Edit (to check the deploy token, and set the Workers' secrets), Access: Organizations, Identity Providers, and Groups: Edit, Access: Apps and Policies: Edit (the admin view's sign-in), Account Settings: Read and Edit (the Web Analytics site; Edit alone is refused) |
 
 The deploy token reaches its three Workers and no other in the account. Its
 permissions are written down in `tools/repo/cloudflare_settings.py` and
@@ -228,6 +228,17 @@ runs each file in `website/api/migrations/` it has not run yet, in order
 D1: Edit for that. CI never touches it: D1 permissions reach every database
 in the account, so the read token is refused them, and the check it runs
 says the database was not checked.
+
+Visits are counted by Cloudflare Web Analytics, without cookies: every page
+carries its beacon tag (`src/layouts/Page.astro`), naming the account's
+site for the zone by its token. `apply` checks that site: the one the tag
+names, its automatic setup off (Cloudflare would add a second tag, counting
+each visit twice), and its one rule Cloudflare's own, measuring every host
+and path; with none, it makes one and says the token to put in the tag.
+The apply token needs Account Settings: Read and Edit for it - Web
+Analytics refuses a token with Edit alone, as other account settings do
+not. That reaches every setting of the account, so the read token is
+refused it, and CI does not check the site.
 
 Each address of the domain in `CLOUDFLARE_EMAIL_FORWARD`, named by the
 part before the @ (`contact`, say, separated by commas), is forwarded to
