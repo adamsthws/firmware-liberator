@@ -84,9 +84,10 @@ real device off before using `--cloud`.
 | Downloads | the emulator's image, or the QEMU fork's source where the image has to be built, once | Microsoft's ISO (8.2 GB), Windows Terminal (12 MB) and virtio-win's guest tools (32 MB), once; Python (11 MB) and OpenVPN (6 MB) each time a layer that gets them is set up |
 
 Measured on a 6-core laptop processor from 2020 with 8 GB, Windows peaked at
-2.1 GB, an S60's emulator at 80 MB, and the layers took 7, 2 and 1 minutes to
-set up. The caps [can be changed](#windows-from-linux), and a computer short
-of memory is warned before Windows starts.
+2.1 GB and the layers took 7, 2 and 1 minutes to set up. What an emulator
+itself uses under its cap is [with running several](#several-at-once). The
+caps [can be changed](#windows-from-linux), and a computer short of memory is
+warned before Windows starts.
 
 #### How long it takes
 
@@ -198,11 +199,13 @@ backup.
   another instance's device. With the real cloud, run the stages up to C2 one
   instance at a time; after C2 nothing uses the cloud.
 - **Run no more at once than your computer has cores**, or runs fail that
-  would otherwise pass. An S60's emulator takes about 0.6 of a CPU and 115 MB;
-  a classic ESP32's runs two cores and peaked at 250 MB.
+  would otherwise pass. Sampled with `docker stats` every 2 seconds through
+  whole conversions, an S60's emulator, its computer included, took about 0.6
+  of a CPU and about 115 MB, peaking near 150 MB; a classic ESP32's runs two
+  cores and peaked at 250 MB.
 - **Each emulator waits for room before it starts**: 250 MB of free memory
   for an ESP32-C3, 350 MB for a classic ESP32 or the S61 (each about 100 MB
-  over what one was measured to use with its computer;
+  over the most one was measured to use with its computer;
   `AUTOFLASH_EMULATOR_MIN_FREE_MB` asks for another amount), and a load under
   twice the computer's cores. After ten minutes (`AUTOFLASH_EMULATOR_ROOM_WAIT`,
   in seconds) it starts anyway and says so, and a failure then may be the

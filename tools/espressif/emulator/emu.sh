@@ -320,8 +320,8 @@ awake=()
 if [ "$tty" = -it ] && systemd-inhibit --what=sleep:idle true 2>/dev/null; then
     awake=(systemd-inhibit --what=sleep:idle --who="Autoflash emulator" --why="the emulated device's conversion" --mode=block)
 fi
-# Capped: the device, its router and the tool used about 80 MB between them, on
-# an ESP32-C3.
+# Capped (--memory, below): through a whole conversion on an ESP32-C3 the
+# device, its router and the tool peaked at about 150 MB between them.
 # The emulator's own Docker network, a /24 (AUTOFLASH_EMU_NETWORK names another).
 # The conversion tool in the container sweeps the network it is on at its real
 # size, and Docker's default bridge is a /16: a /22 swept, some 4 s, every run.
