@@ -270,8 +270,8 @@ def backups() -> list[Backup]:
 
 
 README = """\
-The Sonoff firmware of the {kind} with MAC address {mac}, backed up on
-{date}, just before Tasmota was written over it. It was running Sonoff
+The Sonoff firmware of the {kind} with MAC address {mac}, as the tool
+read it on {date}, before anything replaced it. It was running Sonoff
 {version}.
 
   flash.bin    the device's whole flash chip: bootloader, partition table, the
@@ -284,12 +284,13 @@ it private. flash.bin holds your Wi-Fi password and the device's eWeLink keys in
 plain text. It belongs to this device only - the MAC above is on no other.
 
 Going back to the Sonoff firmware
-  Write flash.bin back over USB-serial. That means opening the device (its case
-  is welded shut) and wiring a 3.3 V USB-serial adapter to the ESP32-C3 - never
-  with the device in a mains socket. Then, with the chip held in its download
-  mode:
+  The tool writes this backup back over the air when asked to return the
+  device to Sonoff (docs/technical-details.md). Without the tool, write
+  flash.bin back over USB-serial. That means opening the device and wiring a
+  3.3 V USB-serial adapter to its chip - never while the device is connected
+  to the mains. Then, with the chip held in its download mode:
 
-      esptool.py --chip esp32c3 write_flash 0x0 flash.bin
+      esptool.py write_flash 0x0 flash.bin
 
   It boots the Sonoff {version} it had, with its settings and eWeLink identity.
   One of its two app slots holds the conversion's small installer instead of
