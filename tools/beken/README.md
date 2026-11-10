@@ -350,7 +350,9 @@ the `0x1e1000` config offset) are in
 **`rebuild_dump.py`** makes a BK7238 device's whole stock flash again with no
 serial cable, so that a device with no public dump can be run in the emulator.
 It is not part of the tool's run. Everything it reads or writes is private, and
-the result is Sonoff's firmware, so it all stays under `captures/`.
+the result is Sonoff's firmware, so it all stays under `captures/`. The
+emulator check (`tools/repo/emulator_check.py`) uses it for a device with no
+public dump, the public S61 dump standing in for a readout.
 
 1. Convert the device to OpenBeken with the stock updater, which overwrites the
    start of the stock app.

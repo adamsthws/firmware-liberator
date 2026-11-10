@@ -5,19 +5,24 @@ for every device the tool converts, so a new one has it by being added.
     python -I tools/repo/emulator_check.py list [--changed-since COMMIT]
         as JSON, the devices to check and the emulator image each needs: those a
         change since COMMIT could affect, or every one that has something to run
-        from (NO_DUMP names those that have not)
+        from (NOTHING_TO_RUN names those that have not)
     python -I tools/repo/emulator_check.py DEVICE [--instances 1,2]
         its check: each final firmware installed, then each device taken to the
         other, two ways side by side (a way goes on as soon as its own run is
-        done). Nothing here needs a secret or an account: an S60 starts from the
-        published public devices, any other Espressif device from its public dump
-        on the cloud stub, and an S61 from upstream's public dump.
+        done), on the two emulators numbered: two devices checked at once on one
+        computer each need their own. Nothing here needs a secret or an
+        account: an S60 starts from the published public devices, any other
+        Espressif device from its public dump on the cloud stub, an S61 from
+        upstream's public dump, and a Beken device with no public dump from a
+        flash rebuilt from the S61's and its official update file
+        (rebuilt_flash).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -39,10 +44,14 @@ EMULATORS = {
 SHARED = ("tools/autoflash/", "tools/ewelink/", "tools/repo/emulator_check.py", "artifacts/",
           ".github/workflows/emulator-check.yml")
 LOGS = ROOT / "captures/emulation/device-check"
-# Devices with no public dump, so nothing for an emulator to run. A device is
-# here by decision: tests/repo/test_emulator_check.py fails on one that has
-# neither a dump nor a place here.
-NO_DUMP = {"sonoff-basic-1gs"}
+# Devices with nothing for an emulator to run: no public dump, nor a flash to
+# rebuild from an official update file. A device is here by decision:
+# tests/repo/test_emulator_check.py fails on one that has neither something to
+# run from nor a place here.
+NOTHING_TO_RUN: set[str] = set()
+# The Beken device whose public dump gives a rebuilt flash its bootloader,
+# radio data and settings (rebuilt_flash).
+REBUILT_FROM = "sonoff-s61"
 # An Espressif device's two ways, each a final firmware then the other.
 ESPRESSIF_WAYS = (("tasmota", "esphome"), ("esphome", "tasmota"))
 
@@ -69,7 +78,7 @@ def changed_since(commit: str) -> list[str] | None:
 
 def jobs(changed: list[str] | None) -> list[dict[str, str]]:
     return [{"device": kind.key, "family": family_of(kind), **EMULATORS[family_of(kind)]}
-            for kind in kinds.READY if kind.key not in NO_DUMP and (changed is None or affected(kind, changed))]
+            for kind in kinds.READY if kind.key not in NOTHING_TO_RUN and (changed is None or affected(kind, changed))]
 
 
 def check_public_dump(kind: kinds.Kind, instances: list[int]) -> int:
@@ -104,10 +113,60 @@ def check_public_dump(kind: kinds.Kind, instances: list[int]) -> int:
                                check=False)
 
 
+def rebuilt(kind: kinds.Kind) -> bool:
+    """Whether a Beken device's check starts from a rebuilt flash: one with no
+    public dump of its own, but an official update file pinned."""
+    from tools.autoflash.routes.beken import images
+    return kind.key not in images.PUBLIC_DUMPS and kind.key in images.OFFICIAL_FILES
+
+
+def rebuilt_flash(kind: kinds.Kind) -> Path:
+    """The whole stock flash of a device with no public dump, as rebuild_dump.py
+    makes it from the public S61 dump (beken-emu.sh dump fetched it) and the
+    device's official update file (fetched here), each checked against its
+    pinned hash. Both are Sonoff's, and so is the flash made from them: it is
+    kept in captures/ only. Made again at each check, in a second or two, so
+    it is never older than what it is made from."""
+    import hashlib
+
+    from tools.autoflash.errors import NothingWritten
+    from tools.autoflash.routes.beken import images
+    from tools.beken import rebuild_dump
+    from tools.beken.emulator import folders
+
+    url, digest = images.PUBLIC_DUMPS[REBUILT_FROM]
+    dump = (images.DUMPS / url.rsplit("/", 1)[1]).read_bytes()
+    if hashlib.sha256(dump).hexdigest() != digest:
+        raise SystemExit(f"{images.DUMPS / url.rsplit('/', 1)[1]} is not the public dump this tool pins")
+    try:
+        flash = rebuild_dump.rebuild(dump, images.official_file(kind))
+    except NothingWritten as exc:
+        raise SystemExit(f"{exc}.") from exc
+    out = folders.REBUILT / f"{kind.key}.bin"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    part = out.with_name(f"{out.name}.{os.getpid()}.part")
+    part.write_bytes(flash)
+    part.replace(out)   # whole, for a check already started from it
+    print(f"{kind.name}: a whole flash rebuilt from the public S61 dump and its official update file, "
+          f"in {out.relative_to(ROOT)}.", flush=True)
+    return out
+
+
+def check_beken(kind: kinds.Kind, instances: list[int]) -> int:
+    """A Beken device: the S61 from upstream's public dump, any other from its
+    rebuilt flash. Its logs are kept as an Espressif device's are (LOGS)."""
+    subprocess.run([str(ROOT / "tools/beken/emulator/beken-emu.sh"), "dump"], check=True)
+    env = {name: value for name, value in os.environ.items() if name != "AUTOFLASH_BEKEN_EMU_FLASH"}
+    env["AUTOFLASH_BEKEN_EMU_SUITE_DIR"] = str(LOGS / kind.key)
+    if rebuilt(kind):
+        env["AUTOFLASH_BEKEN_EMU_FLASH"] = str(rebuilt_flash(kind))
+    return subprocess.call([str(ROOT / "tools/beken/emulator/fault_suite.py"), "check",
+                            "--instances", ",".join(map(str, instances))], env=env)
+
+
 def check_device(kind: kinds.Kind, instances: list[int]) -> int:
     if family_of(kind) == "beken":
-        subprocess.run([str(ROOT / "tools/beken/emulator/beken-emu.sh"), "dump"], check=True)
-        return subprocess.call([str(ROOT / "tools/beken/emulator/fault_suite.py"), "check"])
+        return check_beken(kind, instances)
     from tools.espressif.emulator import public_dump
     if kind.key in public_dump.DUMPS or kind.key in public_dump.UPDATES:
         return check_public_dump(kind, instances)
@@ -128,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.device == "list":
         print(json.dumps(jobs(changed_since(args.changed_since) if args.changed_since else None)))
         return 0
-    kind = next((kind for kind in kinds.READY if kind.key == args.device and kind.key not in NO_DUMP), None)
+    kind = next((kind for kind in kinds.READY if kind.key == args.device and kind.key not in NOTHING_TO_RUN), None)
     if kind is None:
         parser.error(f"no such device: {args.device}; list says which there are")
     return check_device(kind, [int(n) for n in args.instances.split(",")][:2])

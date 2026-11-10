@@ -9,8 +9,10 @@ does for the Espressif devices.
                                         the tool from the dump
     fault_suite.py prep-update          the update scenarios' starting devices: on OpenBeken
                                         and on ESPHome as an earlier release converts them
-    fault_suite.py check                the final firmware, with no faults: each installed
-                                        from Sonoff's, then each device taken to the other
+    fault_suite.py check [--instances 1,2]
+                                        the final firmware, with no faults: each installed
+                                        from Sonoff's, then each device taken to the other,
+                                        on the two emulators numbered
                                         (tools/repo/emulator_check.py)
     fault_suite.py list                 every scenario
     fault_suite.py list openbeken       those a new OpenBeken build is checked with
@@ -1071,14 +1073,15 @@ def check_way(n: int, routes: tuple[str, ...]) -> int:
         instance.stop()
 
 
-def check() -> int:
-    """The final firmware of every way, side by side: no faults, no account. A
-    way passes only by getting to its end: one whose thread raised has failed."""
+def check(instances: tuple[int, ...] = (1, 2)) -> int:
+    """The final firmware of every way, side by side, each on its emulator of
+    `instances`: no faults, no account. A way passes only by getting to its
+    end: one whose thread raised has failed."""
     failed = [1] * len(CHECK_WAYS)
 
     def way(index: int) -> None:
         try:
-            failed[index] = check_way(index + 1, CHECK_WAYS[index])
+            failed[index] = check_way(instances[index], CHECK_WAYS[index])
         except Exception as exc:  # noqa: BLE001 - said, and the way failed
             print(f"FAIL  {' then '.join(CHECK_WAYS[index])}: {exc!r}", flush=True)
     threads = [threading.Thread(target=way, args=(index,)) for index in range(len(CHECK_WAYS))]
@@ -1116,7 +1119,13 @@ def main(argv: list[str]) -> int:
     elif command == "prep-update":
         prep_update()
     elif command == "check":
-        return check()
+        import argparse
+        parser = argparse.ArgumentParser(prog="fault_suite.py check")
+        parser.add_argument("--instances", default="1,2", help="the two emulators to use (default 1,2)")
+        numbers = parser.parse_args(argv[1:]).instances.split(",")
+        if len(numbers) != len(CHECK_WAYS) or not all(number.isdigit() for number in numbers):
+            parser.error(f"--instances needs {len(CHECK_WAYS)} numbers, such as 3,4")
+        return check(tuple(map(int, numbers)))
     elif command == "list":
         for i in (OPENBEKEN_CHECK if argv[1:] == ["openbeken"] else [sc["id"] for sc in scenarios()]):
             print(i)
