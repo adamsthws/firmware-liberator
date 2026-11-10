@@ -1,5 +1,6 @@
 """Each device's records, under its MAC (tools/autoflash/records.py), and one run on
 a device at a time - a run that dies lets go of it."""
+import json
 import subprocess
 import sys
 import tempfile
@@ -68,6 +69,46 @@ class DeviceLayoutTests(unittest.TestCase):
         self.assertTrue(found.describe().startswith("58:cf:79:01:02:03"))
         self.assertIn("Kettle", found.describe())
         self.assertIn("1.2.0", found.describe())
+
+    def test_a_beken_devices_own_data_runs_to_the_end_of_its_4_mb(self):
+        start, size = records.BEKEN_REGION
+        self.assertEqual((start, start + size), (0x3E0000, 4 * 1024 * 1024))
+
+    def test_the_records_are_kept_in_this_checkout(self):
+        self.assertEqual(records.ROOT / "tools" / "autoflash" / "records.py", Path(records.__file__).resolve())
+
+    def test_what_a_backup_holds_and_when_it_was_taken(self):
+        # A device whose folder is there already, as a readout leaves it.
+        self.records.remember_device(MAC, ewelink_name="Kettle")
+        with mock.patch.object(records.time, "strftime", return_value="2026-11-10"):
+            saved, _ = self.records.save_backup(b"F", efuse_with_mac(MAC), {"checked": True}, None)
+        self.assertEqual(json.loads((saved / "report.json").read_text(encoding="utf-8")), {"checked": True})
+        note = (saved / "README.txt").read_text(encoding="utf-8")
+        self.assertIn("read it on 2026-11-10", note)
+        self.assertIn("Sonoff\n(unknown version)", note)
+        self.assertEqual(self.records.read_device(MAC)["backed_up"], "2026-11-10")
+        if sys.platform != "win32":
+            self.assertEqual(saved.parent.stat().st_mode & 0o777, 0o700)
+
+    def test_a_devices_record_names_it_by_its_mac_and_is_its_own(self):
+        self.records.remember_device("12-34-56-AB-CD-EF", ewelink_name="Kettle", stock_version="")
+        self.assertEqual(self.records.read_device(MAC), {"ewelink_name": "Kettle", "mac": MAC})
+        if sys.platform != "win32":
+            self.assertEqual(self.records.device_dir(MAC).stat().st_mode & 0o777, 0o700)
+
+    def test_only_a_whole_backup_is_offered_newest_first_named_only_by_its_own_name(self):
+        older, newer = "12:34:56:ab:cd:01", "12:34:56:ab:cd:02"
+        for mac, date in ((newer, "2026-11-02"), (older, "2026-11-01")):
+            self.records.save_backup(b"F", efuse_with_mac(mac), {}, "1.2.0", date=date)
+        self.records.remember_device(older, ewelink_name=records.kinds.ALL[0].name)  # eWeLink's name for the model
+        part = self.records.backup_dir("12:34:56:ab:cd:03")
+        part.mkdir(parents=True)
+        (part / "flash.bin").write_bytes(b"F")  # its eFuses never read
+        self.assertEqual([backup.mac for backup in self.records.backups()], [newer, older])
+        if sys.platform != "win32":
+            self.assertEqual(self.records.device_dir(newer).stat().st_mode & 0o777, 0o700)
+        for backup in self.records.backups():
+            self.assertNotIn('"', backup.describe())
 
     def test_a_run_knows_its_device_from_where_it_is_kept(self):
         run = self.records.runs_dir("58:cf:79:01:02:03") / "20261013-031500"
@@ -169,6 +210,29 @@ class EarlierNamesTests(unittest.TestCase):
             other.wait()
             other.stdout.close()
 
+    def test_a_rename_another_run_made_meanwhile_is_no_failure(self):
+        self.keep(self.earlier)
+        rename = Path.rename
+
+        def renamed_by_the_other_run(path, target):
+            rename(path, target)
+            if path == self.earlier:
+                raise FileNotFoundError(2, "No such file or directory")
+        with mock.patch.object(Path, "rename", renamed_by_the_other_run):
+            records.take_over_earlier_names()
+        self.assertTrue((self.devices / "12-34-56-ab-cd-ef" / "sonoff-backup" / "flash.bin").is_file())
+        self.assertTrue((self.devices / "12-34-56-ab-cd-ef" / "device.json").is_file())
+
+    def test_a_rename_refused_while_both_folders_are_there_says_so(self):
+        self.keep(self.earlier)
+
+        def refused_as_another_folder_appears(path, target):
+            self.devices.mkdir()
+            raise PermissionError(13, "Access is denied")
+        with mock.patch.object(Path, "rename", refused_as_another_folder_appears):
+            with self.assertRaisesRegex(records.EarlierNames, "could not rename"):
+                records.take_over_earlier_names()
+
     def test_a_rename_refused_says_so_and_leaves_it(self):
         self.keep(self.earlier)
         with mock.patch.object(Path, "rename", side_effect=PermissionError(13, "Access is denied")):
@@ -227,7 +291,7 @@ class DeviceLockTests(unittest.TestCase):
         try:
             with self.assertRaises(records.DeviceBusy) as busy:
                 records.hold(MAC, "devices/this-run")
-            self.assertIn("the-other-run", str(busy.exception))
+            self.assertTrue(str(busy.exception).startswith("run devices/the-other-run, process "))
         finally:
             other.kill()
             other.wait()
@@ -237,6 +301,23 @@ class DeviceLockTests(unittest.TestCase):
         other.wait()
         records.hold(MAC, "devices/this-run")  # not refused
         self.assertIn(MAC, records._HELD)
+
+    def held_here(self, mac=MAC, run="devices/this-run"):
+        records.hold(mac, run)
+        self.addCleanup(records._HELD[mac].close)
+        return records.device_dir(mac) / "run.lock"
+
+    def test_the_first_run_on_a_new_records_folder_makes_it(self):
+        with mock.patch.object(records, "DEVICES", self.root / "captures" / "devices"):
+            self.assertTrue(self.held_here().is_file())
+
+    def test_the_lock_says_only_which_run_holds_it_now(self):
+        lock = records.device_dir(MAC) / "run.lock"
+        lock.parent.mkdir(parents=True)
+        lock.write_text("run devices/a-long-gone-run-with-a-long-name, process 1, since 00:00:00\n" * 3,
+                        encoding="utf-8")
+        self.held_here()
+        self.assertRegex(lock.read_text(encoding="utf-8"), r"^run devices/this-run, process \d+, since [\d:]+\n$")
 
     def test_the_run_refused_is_told_plainly(self):
         from types import SimpleNamespace
