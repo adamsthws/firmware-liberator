@@ -106,6 +106,7 @@ import { answer } from "./answer.js";
 import { read, release, reserve } from "./counters.js";
 import { ready } from "./database.js";
 import { PENDING, SIGNUP_DAYS } from "./pending.js";
+import { SUPPRESSED, sendMail } from "./mail.js";
 import { senderAddress } from "./sender.js";
 import { bodySubject, hex, proven, sha256, work } from "./proof-of-work.js";
 import { nightly } from "./nightly.js";
@@ -577,10 +578,16 @@ export async function notify(request, env, now = new Date()) {
   const named = devices.map((device) => ({ product: device.product.toUpperCase(), model: device.model ?? "-" }));
   await env.DB.prepare("INSERT INTO confirmations (token, who, email, devices, day, sent) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
     .bind(token, who, email, JSON.stringify(named), day, now.toISOString()).run();
-  try {
-    await env.EMAIL.send(confirmation(email, named, token));
-  } catch (error) {
+  const mailed = await sendMail(env, confirmation(email, named, token), day);
+  if (!mailed.sent) {
     await env.DB.prepare("DELETE FROM confirmations WHERE token = ?").bind(token).run();
+    await release(env.DB, notifyOn(day));
+    // An address that bounced for good, or marked one of ours as spam, is
+    // answered as any other, so nobody learns that of it; it is not tried
+    // again today.
+    if (mailed.code === SUPPRESSED) {
+      return answer(202, { confirming: true });
+    }
     await release(env.DB, `notify-to:${who}:${day}`);
     return answer(502, { error: "the confirmation could not be sent: try again later" });
   }
@@ -637,12 +644,16 @@ export async function remind(env, now = new Date()) {
       await release(env.DB, `notify-remind:${signup.who}`);
       break;
     }
-    try {
-      await env.EMAIL.send(confirmation(signup.email, JSON.parse(signup.devices), signup.token, signup.day));
+    const mailed = await sendMail(env, confirmation(signup.email, JSON.parse(signup.devices), signup.token, signup.day),
+      today);
+    if (mailed.sent) {
       sent += 1;
-    } catch {
+      continue;
+    }
+    await release(env.DB, notifyOn(today));
+    // Suppressed, it is not to be tried again; any other failure, next hour.
+    if (mailed.code !== SUPPRESSED) {
       await release(env.DB, `notify-remind:${signup.who}`);
-      await release(env.DB, notifyOn(today));
     }
   }
   return sent;

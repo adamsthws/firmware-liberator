@@ -5,8 +5,11 @@
 // never a report, a readout, an address or anything of a sender. Sent with the
 // Worker's EMAIL binding (Cloudflare Email Service) to ALERTS_RECIPIENT_EMAIL, a secret set
 // by tools/repo/cloudflare_settings.py apply from the maintainer's Email
-// Routing destination; with either missing, nothing is sent.
+// Routing destination; with either missing, nothing is sent. Yesterday's
+// emails that failed to send are a line too (mail.js), but for those to an
+// address on the suppression list, which are expected now and then.
 import { read } from "./counters.js";
+import { SUPPRESSED, failedOn, sendMail } from "./mail.js";
 
 export const STORE_WARN = 0.75;
 
@@ -34,6 +37,11 @@ export async function alertLines(db, today, limits) {
     lines.push(`The day's limit of addresses given was reached on ${yesterday}: `
       + `${notify.count} of ${limits.NOTIFY_DAILY}.`);
   }
+  const failed = Object.entries(await failedOn(db, yesterday)).filter(([code]) => code !== SUPPRESSED);
+  if (failed.length) {
+    lines.push(`Emails that could not be sent on ${yesterday}: `
+      + `${failed.map(([code, n]) => `${n} ${code}`).join(", ")} (Cloudflare's Email Sending activity log has each).`);
+  }
   const { results } = await db.prepare("SELECT day, bytes FROM store_days WHERE day IN (?, ?)")
     .bind(today, yesterday).all();
   const held = Object.fromEntries(results.map((row) => [row.day, row.bytes]));
@@ -54,15 +62,14 @@ export async function alert(env, today, limits) {
   if (!env.EMAIL || !env.ALERTS_RECIPIENT_EMAIL) {
     return { sent: false, lines, why: "no EMAIL binding or ALERTS_RECIPIENT_EMAIL secret" };
   }
-  try {
-    await env.EMAIL.send({
-      to: env.ALERTS_RECIPIENT_EMAIL,
-      from: limits.from,
-      subject: `Firmware Liberator's API: ${lines.length === 1 ? "one thing" : `${lines.length} things`} to look at`,
-      text: [...lines, "", "The admin view has the detail. This was sent by the API's nightly job."].join("\n"),
-    });
-  } catch (error) {
-    return { sent: false, lines, why: `the email could not be sent: ${error}` };
+  const mailed = await sendMail(env, {
+    to: env.ALERTS_RECIPIENT_EMAIL,
+    from: limits.from,
+    subject: `Firmware Liberator's API: ${lines.length === 1 ? "one thing" : `${lines.length} things`} to look at`,
+    text: [...lines, "", "The admin view has the detail. This was sent by the API's nightly job."].join("\n"),
+  }, today);
+  if (!mailed.sent) {
+    return { sent: false, lines, why: `the email could not be sent: ${mailed.error}` };
   }
   return { sent: true, lines };
 }
