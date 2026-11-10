@@ -75,7 +75,7 @@ def english_locale():
 class ImageTagTests(unittest.TestCase):
     """An emulator image's tag is the same on every computer: its files sorted
     by byte, not by the locale - an English one sorts UPSTREAM among the lower
-    case names, C before them, and a laptop's tag and the published image's
+    case names, C before them, and one computer's tag and the published image's
     did not match (seen setting up the S61's suite on other machines)."""
 
     def tags(self, script):
