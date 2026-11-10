@@ -25,6 +25,7 @@ You start it by pasting one line into a terminal; the front page has the line fo
 - [Front page](https://firmwareliberator.com/): what the tool does, what you need, and the one line that starts it
 - [What happens](https://firmwareliberator.com/docs/what-happens): each stage of a conversion, for someone deciding whether to run one
 - [Troubleshooting](https://firmwareliberator.com/docs/troubleshooting): problems met in practice, and their fixes
+- [Stats](https://firmwareliberator.com/stats): how many conversions people have run, how they went, and the devices most wanted, rebuilt daily
 
 ## After converting
 

@@ -6,12 +6,13 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { PAGES, SITE, retired, slug } from "../src/site.mjs";
+import { EXTRA_PAGES, PAGES, SITE, retired, slug } from "../src/site.mjs";
 
 const DIST = fileURLToPath(new URL("../dist/", import.meta.url));
 const read = (path) => readFileSync(DIST + path, "utf-8");
-// A page's address, and the file the build makes for it ("file" format).
-const addresses = PAGES.map(slug);
+// A page's address, and the file the build makes for it ("file" format):
+// each Markdown page's, and those built from none (EXTRA_PAGES).
+const addresses = [...PAGES.map(slug), ...EXTRA_PAGES];
 const file = (address) => `${address || "index"}.html`;
 const locs = (xml) => [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
 const local = (url) => {
@@ -51,4 +52,22 @@ test("robots.txt lets every crawler in and names the sitemap the build made", ()
 
 test("llms.txt is served", () => {
   assert.match(read("llms.txt"), /^# /);
+});
+
+test("llms.txt's figures, where it has them, say how fresh they are, and are", () => {
+  const llms = read("llms.txt");
+  const found = /^## Figures\n\nAs of (\d{4}-\d{2}-\d{2}) \(UTC\); rebuilt daily/m.exec(llms);
+  // The daily build (REQUIRE_STATS) must have them: the figures are made each night.
+  assert.ok(found || !process.env.REQUIRE_STATS, "no figures, where the daily build must have them");
+  if (found) {
+    assert.ok(Date.now() - Date.parse(`${found[1]}T00:00:00Z`) <= 4 * 86_400_000, `figures as of ${found[1]}`);
+    assert.equal(llms.indexOf("## Figures"), llms.lastIndexOf("## Figures"), "once");
+  }
+});
+
+test("the stats page has its figures, where the daily build must", () => {
+  const page = read("stats.html");
+  assert.ok(!process.env.REQUIRE_STATS || page.includes('class="tile hero"'), "no figures on /stats");
+  assert.match(page, /<script src="\/assets\/stats\.js" defer><\/script>/);
+  assert.doesNotMatch(page, /ENOENT|could not be read|answered \d{3}|\/tmp\/|\/home\//, "no build detail on the page");
 });

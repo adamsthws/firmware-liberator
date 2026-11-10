@@ -69,6 +69,10 @@ def schema() -> dict[str, Any]:
         # order, for the API to check a report's words read as the tool's own
         # (website/api/review.js): matched ignoring case, as there.
         "failurePatterns": [[name, pattern.pattern] for name, pattern in failures.PATTERNS],
+        # What the stats page and admin view call each failure class and each
+        # device kind, in the tool's own words (failures.CLASSES, kinds).
+        "failureClasses": dict(failures.CLASSES),
+        "deviceNames": {kind.key: kind.name for kind in kinds.EVERY},
         **record({
             "format": {"type": "integer", "enum": [report_data.FORMAT]},
             "id": string("^[0-9a-f]{32}$", 32),

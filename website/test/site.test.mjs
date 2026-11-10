@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { REPOSITORY, address, description, pages, retired, rewrite, slug } from "../src/site.mjs";
+import { EXTRA_PAGES, REPOSITORY, address, description, pages, retired, rewrite, slug } from "../src/site.mjs";
 
 const onSite = pages();
 const github = `https://github.com/${REPOSITORY}`;
@@ -70,7 +70,7 @@ test("llms.txt links only to pages that exist, none of them retired", () => {
   const text = readFileSync(new URL("../public/llms.txt", import.meta.url), "utf-8");
   const addresses = [...text.matchAll(/https:\/\/firmwareliberator\.com\/([^)\s]*)/g)].map((match) => match[1]);
   assert.ok(addresses.length > 0);
-  const known = new Set([...onSite].map(slug));
+  const known = new Set([...[...onSite].map(slug), ...EXTRA_PAGES]);
   for (const address of addresses) {
     assert.ok(known.has(address) && !retired(address), address);
   }
