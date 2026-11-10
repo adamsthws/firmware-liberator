@@ -38,7 +38,7 @@ GRACE = 10.0
 CARRY_ON_AFTER = 30.0
 
 _lock = threading.Lock()
-_state: dict[str, Any] = {"first": None, "asking": 0, "closed": False, "installed": False,
+_state: dict[str, Any] = {"first": None, "asking": 0, "closed": False,
                          "deferring": 0, "deferred": False, "shown_by": None, "logged_by": None}
 NOTICE_TITLE = "! Are you sure?"
 
@@ -50,7 +50,6 @@ def install() -> None:
     signal.signal(signal.SIGINT, _on_interrupt)
     if hasattr(signal, "SIGHUP"):
         signal.signal(signal.SIGHUP, _on_closed)
-    _state["installed"] = True
 
 
 def _say(text: str) -> None:
