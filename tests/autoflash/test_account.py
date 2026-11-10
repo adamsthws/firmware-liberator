@@ -231,6 +231,16 @@ class FindAccountDeviceTests(unittest.TestCase):
                          shown.call_args.args[0])
         self.assertIn("cannot reach the internet", shown.call_args.args[1][0])
 
+    def test_another_account_chosen_is_signed_in_to_and_its_devices_looked_at(self):
+        ctx = self.ctx()
+        sighting = account.Sighting(account.account_device(S60), "192.0.2.50", True)
+        with mock.patch.object(prompts, "ask_choice", side_effect=[1]), \
+             mock.patch.object(account, "sight_devices", return_value=[sighting]), \
+             mock.patch.object(prompts, "section"), mock.patch.object(output, "say"):
+            self.assertEqual(account.find_account_device(ctx, [SWITCH]), "192.0.2.50")
+        ctx.forget_account.assert_called_once()
+        ctx.account_devices.assert_called_once()
+
     def test_an_account_without_an_s60_says_what_it_has(self):
         ctx = self.ctx()
         with mock.patch.object(prompts, "ask_choice", return_value=2), \
@@ -248,6 +258,8 @@ class ModelGuardTests(unittest.TestCase):
     learned = (None, [])
     saved: dict = {}
 
+    written = True
+
     def discover_with_model(self, model):
         import json
         from types import SimpleNamespace
@@ -255,14 +267,14 @@ class ModelGuardTests(unittest.TestCase):
 
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        root = Path(directory.name)
+        root = self.root = Path(directory.name)
         state = self.state = RunState.open(root)
         state.set_input("device_ip", "10.0.0.63")
         ctx = SimpleNamespace(dir=root, state=state, email=lambda: "a@b.c",
                               ewelink_env=lambda: {}, helper_env=lambda: {}, ewelink_region=lambda: "us")
 
         def fake_tool(args, **_):
-            if "tools/ewelink/query_ota.py" in args:
+            if "tools/ewelink/query_ota.py" in args and self.written:
                 self.tool_args = args
                 (root / "ota-metadata.json").write_text(json.dumps({
                     "query": {"version": "1.2.0", "model": model, "deviceid": self.saved.get("deviceid", "")},
@@ -281,6 +293,21 @@ class ModelGuardTests(unittest.TestCase):
     def test_an_s60_continues(self):
         self.assertEqual(self.discover_with_model("SN-ESP32C3-S60-01")["model"], "SN-ESP32C3-S60-01")
         self.assertEqual(self.state.input("device_kind"), "sonoff-s60")  # kept for the run
+        self.assertEqual(self.state.input("stock_version"), "1.2.0")
+        self.assertEqual(self.state.input("product_model"), "")
+
+    def test_the_discovery_report_is_kept_and_the_ota_metadata_is_not(self):
+        # Its download links may work as access tokens.
+        import json
+        self.discover_with_model("SN-ESP32C3-S60-01")
+        kept = json.loads((self.root / "mdns.json").read_text(encoding="utf-8"))
+        self.assertEqual(kept["packets"][0]["source"], "10.0.0.63")
+        self.assertFalse((self.root / "ota-metadata.json").exists())
+
+    def test_metadata_the_query_did_not_write_stops_the_step_plainly(self):
+        self.written = False
+        with self.assertRaisesRegex(errors.Abort, "could not read the OTA metadata"):
+            self.discover_with_model("SN-ESP32C3-S60-01")
 
     def test_the_name_learned_is_kept_with_the_step(self):
         self.learned = (firmware_name.Learned("FWSW-E32S60-S60-ESP32C3FN4", "ESP32C3", "a test"), [])
@@ -428,6 +455,33 @@ class PairStepTests(unittest.TestCase):
              mock.patch.object(output, "say"):
             self.assertEqual(account.step_pair(ctx)["device_ip"], "192.168.60.50")
         self.assertEqual(ctx.state.input("device_kind"), "sonoff-s60")
+
+    def pair(self, ctx, arp_mac):
+        account_devices = [{"deviceid": "1000000001", "productModel": "S60TPG", "name": "Sonoff S60",
+                            "online": True, "params": {"staMac": "12:34:56:AB:CD:EF"}}]
+        ctx.account_devices = lambda: account_devices
+        with mock.patch.object(account, "sight_devices",
+                               side_effect=lambda devices: [account.Sighting(p, "192.0.2.50", True)
+                                                          for p in devices]), \
+             mock.patch.object(hostsys, "mac_of", return_value=arp_mac), \
+             mock.patch.object(runs, "file_device") as filed, mock.patch.object(output, "say"):
+            result = account.step_pair(ctx)
+        return result, filed
+
+    def test_the_device_found_is_kept_for_the_run_and_filed_under_its_hardware_address(self):
+        ctx = self.ctx()
+        result, filed = self.pair(ctx, "12:34:56:ab:cd:e0")
+        self.assertEqual(result, {"device_ip": "192.0.2.50", "device_mac": "12:34:56:ab:cd:e0"})
+        self.assertEqual((ctx.state.input("device_ip"), ctx.state.input("device_mac")),
+                         ("192.0.2.50", "12:34:56:ab:cd:e0"))
+        self.assertEqual(filed.call_args.args[:2], (ctx, "12:34:56:ab:cd:e0"))
+        self.assertEqual(filed.call_args.args[2].device_id, "1000000001")
+
+    def test_one_this_computer_cannot_see_the_hardware_address_of_takes_the_accounts(self):
+        ctx = self.ctx()
+        result, filed = self.pair(ctx, None)
+        self.assertEqual(ctx.state.input("device_mac"), "12:34:56:ab:cd:ef")
+        filed.assert_called_once()
 
     def test_a_typed_address_leaves_the_screen_with_its_question(self):
         # Asked after the "did not answer" menu, it is a block of its own, taken
