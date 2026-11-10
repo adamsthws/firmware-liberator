@@ -6,9 +6,8 @@
 #   device off | device on   switch it off / on
 #   device cycle N [SECS]  N quick power cycles, SECS (default 2) on each time -
 #                        Tasmota's settings reset is 7 in a row
-#   device router off [SECS]  the access point goes, as when the router restarts (not
-#                        faithful: see docs/emulator.md); back after
-#                        SECS if given
+#   device router off [SECS]  the access points go, as when the router restarts;
+#                        back after SECS if given
 #   device router on       the Wi-Fi is back, and the device rejoins by itself
 set -euo pipefail
 RUN=/run/autoflash-emu
@@ -110,7 +109,7 @@ router)
     esac
     ;;
 *)
-    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,/^set /s/^# \{0,1\}//p' "$0"
     exit 2
     ;;
 esac

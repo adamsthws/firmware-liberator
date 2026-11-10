@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Adam Matthews <52178922+adamsthws@users.noreply.github.com>
 Date: Wed, 28 Oct 2026 20:17:26 +0000
-Subject: [PATCH 3/4] emulator: BK7238 OTA self-reprogramming (flash RDID + XIP
+Subject: [PATCH] emulator: BK7238 OTA self-reprogramming (flash RDID + XIP
  write-through)
 
 Model the two flash-hardware pieces the rt_ota bootloader uses only when
@@ -51,7 +51,7 @@ index 828446e..8b9caf0 100644
 +        image (unicorn flash memory), de-striped, so code and the OTA
 +        hash-verify that read the mapped flash see what was just written.  Real
 +        hardware does this live through the flash controller's 32+2 CRC framing;
-+        our XIP image is otherwise loaded once at setup and never updated, so a
++        the XIP image is otherwise loaded once at setup and never updated, so a
 +        bootloader OTA apply would program the physical dump yet read back the
 +        stale pre-apply bytes and fail its own hash check.  Only the striped XIP
 +        window (logical offset < FLASH_SIZE) is mirrored; the non-striped data

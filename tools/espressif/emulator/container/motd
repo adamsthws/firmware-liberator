@@ -2,8 +2,8 @@
   ┌─ Autoflash emulator ────────────────────────────────────────────────────┐
   │ This terminal is your simulated computer, joined to the simulated home  │
   │ Wi-Fi PICSimLabWifi (open network - no password; this computer is       │
-  │ 192.168.60.1). The device is the emulated stock Sonoff 1.2.0, already   │
-  │ paired with your account.                                               │
+  │ 192.168.60.1). The device is emulated: it starts on Sonoff's firmware,  │
+  │ already paired with your account.                                       │
   │                                                                         │
   │ Run the conversion exactly as on a real device:                         │
   │     run            (short for: python -m tools.autoflash run)           │
