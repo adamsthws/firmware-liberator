@@ -434,7 +434,7 @@ def dns_differences(zone: str) -> list[tuple[str, str, Any]]:
             and r.get("name") != STATS_HOST]
     if answer["result_info"]["total_count"] > len(answer["result"]):
         raise SettingsError("the zone has more DNS records than one page lists")
-    wanted = DNS_RECORDS + (api(f"{zone}/email/routing/dns") or [])
+    wanted = DNS_RECORDS + (api(f"{zone}/email/routing/dns") or []) + sending_records(zone)
     found = []
     for record in wanted:
         if not any(key(r) == key(record) for r in have):
@@ -446,6 +446,56 @@ def dns_differences(zone: str) -> list[tuple[str, str, Any]]:
         if not any(key(r) == key(record) for r in wanted):
             found.append((said(record), "is not written down", ("DELETE", f"{zone}/dns_records/{record['id']}", None)))
     return found
+
+
+# The domain the API Worker's email is sent from (Cloudflare Email Service,
+# its EMAIL binding: the sign-ups' confirmations and the nightly alerts),
+# onboarded for sending as the zone itself, so mail comes from
+# updates@firmwareliberator.com. Onboarding makes Cloudflare want its own DNS
+# records - a bounce subdomain's MX, SPF and DKIM - which the DNS check then
+# expects as it does Email Routing's; but for its DMARC record: DNS_RECORDS
+# has the zone's one, and a second would void both.
+SENDING_DOMAIN = ZONE
+
+
+def sending_domains(zone: str) -> list[dict[str, Any]]:
+    """The zone's domains onboarded for Email Service's sending."""
+    return api(f"{zone}/email/sending/subdomains") or []
+
+
+def sending_records(zone: str, domains: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """The DNS records Email Service wants for each domain onboarded, as it
+    lists them, but its DMARC one: the zone has its own (DNS_RECORDS)."""
+    records = []
+    for domain in sending_domains(zone) if domains is None else domains:
+        ident = domain.get("id") or domain.get("tag")
+        for record in api(f"{zone}/email/sending/subdomains/{ident}/dns") or []:
+            if not str(record.get("name", "")).startswith("_dmarc."):
+                records.append({field: record[field] for field in ("type", "name", "content", "priority")
+                                if record.get(field) is not None})
+    return records
+
+
+def onboard_sending(zone: str) -> list[str]:
+    """Onboard SENDING_DOMAIN for sending, and make the DNS records it then
+    wants that the zone lacks; what is left to do by hand, if anything."""
+    made = api(f"{zone}/email/sending/subdomains", "POST", {"name": SENDING_DOMAIN})
+    have = [key(r) for r in api(f"{zone}/dns_records?per_page=500", whole=True)["result"]]
+    for record in sending_records(zone, [made]):
+        if key(record) not in have:
+            api(f"{zone}/dns_records", "POST", {**record, "content": text(record), "ttl": 1, "proxied": False})
+    return []
+
+
+def sending_differences(zone: str) -> list[tuple[str, str, Any]]:
+    """SENDING_DOMAIN onboarded for Email Service's sending, and enabled."""
+    found = [domain for domain in sending_domains(zone) if domain.get("name") == SENDING_DOMAIN]
+    if not found:
+        return [(f"Email Sending for {SENDING_DOMAIN}", "is not onboarded", lambda: onboard_sending(zone))]
+    if not found[0].get("enabled"):
+        return [(f"Email Sending for {SENDING_DOMAIN}", "is onboarded but not enabled",
+                 "enable it in the dashboard: Compute, Email Service, Email Sending")]
+    return []
 
 
 def email_rules(destination: str) -> list[dict[str, Any]]:
@@ -696,6 +746,7 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
         found += database_differences(zones[0]["account"]["id"])
         found += secret_differences(zones[0]["account"]["id"])
     found += email_differences(zone, zones[0]["account"]["id"])
+    found += sending_differences(zone)
     found += dns_differences(zone)
     found += dnssec_differences(zone)
     have = deploy_token_policies(zones[0]["account"]["id"], zones[0]["id"])

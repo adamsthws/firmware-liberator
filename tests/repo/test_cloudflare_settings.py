@@ -25,6 +25,14 @@ FORWARD = "hello, Press"
 # What Email Routing says it needs, as it lists them: a TXT record whole, a host with its final dot.
 ROUTING_DNS = [{"type": "MX", "name": cs.ZONE, "content": "route1.mx.cloudflare.net.", "priority": 50},
                {"type": "TXT", "name": f"cf2024-1._domainkey.{cs.ZONE}", "content": '"v=DKIM1; p=AAAABBBB"'}]
+# What Email Service says a domain onboarded for sending needs, made up in its shape.
+SENDING = f"{ZONE}/email/sending/subdomains"
+SENDING_DNS = [{"type": "MX", "name": f"cf-bounce.{cs.ZONE}", "content": "route1.mx.cloudflare.net", "priority": 10,
+                "ttl": 1},
+               {"type": "TXT", "name": f"cf-bounce.{cs.ZONE}", "content": "v=spf1 include:_spf.mx.cloudflare.net ~all",
+                "ttl": 1},
+               {"type": "TXT", "name": f"cf-bounce._domainkey.{cs.ZONE}", "content": "v=DKIM1; p=CCCCDDDD", "ttl": 1},
+               {"type": "TXT", "name": f"_dmarc.{cs.ZONE}", "content": "v=DMARC1; p=reject;", "ttl": 1}]
 
 
 class FakeCloudflare:
@@ -56,6 +64,7 @@ class FakeCloudflare:
         self.stats_domains = []   # the stats bucket's custom domains
         self.r2_dev = False   # whether its r2.dev address is on
         self.secrets = list(cs.API_SECRETS)   # the API Worker's secrets, by name; None: no such Worker
+        self.sending = []   # the zone's domains onboarded for Email Service's sending
         self.sent = []
         self.ids = iter(range(100, 1000))
 
@@ -99,6 +108,9 @@ class FakeCloudflare:
                 self.r2_dev = body["enabled"]
             elif path == DATABASES:
                 self.databases.append({"name": body["name"], "uuid": "u1"})
+            elif path == SENDING:
+                self.sending.append({"tag": "s1", "name": body["name"], "enabled": True})
+                return copy.deepcopy(self.sending[-1])
             elif path == SECRETS and method == "PUT":
                 self.secrets = [name for name in self.secrets or [] if name != body["name"]] + [body["name"]]
             elif path == QUERY:
@@ -139,6 +151,10 @@ class FakeCloudflare:
             return {"result": copy.deepcopy(self.dns), "result_info": {"total_count": len(self.dns)}}
         if path == f"{ZONE}/email/routing/dns":
             return copy.deepcopy(ROUTING_DNS)
+        if path == SENDING:
+            return copy.deepcopy(self.sending)
+        if path.startswith(f"{SENDING}/") and path.endswith("/dns"):
+            return copy.deepcopy(SENDING_DNS)
         if path == f"{ZONE}/email/routing":
             return {"enabled": self.routing}
         if path == f"{ZONE}/email/routing/rules?per_page=50":
@@ -277,8 +293,9 @@ class CloudflareSettingsTests(unittest.TestCase):
         fake = FakeCloudflare()
         fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09T18:39:03Z"}]
         run(fake, "apply")
+        sending = [r for r in SENDING_DNS if not r["name"].startswith("_dmarc.")]
         self.assertEqual(sorted((r["type"], r["name"]) for r in fake.dns), sorted(
-            [("AAAA", cs.ZONE)] + [(r["type"], r["name"]) for r in cs.DNS_RECORDS + ROUTING_DNS]))
+            [("AAAA", cs.ZONE)] + [(r["type"], r["name"]) for r in cs.DNS_RECORDS + ROUTING_DNS + sending]))
         # Listed as Cloudflare does, they are no difference.
         for record in fake.dns:
             if record["type"] == "TXT":
@@ -632,6 +649,43 @@ class DatabaseTests(unittest.TestCase):
             (Path(folder) / "0002_it's.sql").write_text("", encoding="utf-8")
             with mock.patch.object(cs, "MIGRATIONS", Path(folder)), self.assertRaises(cs.SettingsError):
                 cs.migration_files()
+
+
+class EmailSendingTests(unittest.TestCase):
+    """The domain the API Worker's email is sent from, onboarded by apply."""
+
+    def setUp(self):
+        self.fake = FakeCloudflare()
+        self.fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09"}]
+
+    def test_apply_onboards_the_zone_itself_and_makes_the_records_it_wants(self):
+        code, out = run(self.fake)
+        self.assertIn(f"Email Sending for {cs.ZONE}: is not onboarded", out)
+        run(self.fake, "apply")
+        self.assertEqual(self.fake.sending, [{"tag": "s1", "name": cs.ZONE, "enabled": True}])
+        made = [(r["type"], r["name"]) for r in self.fake.dns]
+        for record in SENDING_DNS[:3]:
+            self.assertIn((record["type"], record["name"]), made)
+        self.assertEqual(run(self.fake)[0], 0, "then nothing differs, the new records expected")
+
+    def test_the_zones_one_dmarc_record_stays_alone(self):
+        # Two DMARC records void both: the zone keeps its own (DNS_RECORDS).
+        run(self.fake, "apply")
+        dmarc = [r for r in self.fake.dns if r["name"] == f"_dmarc.{cs.ZONE}"]
+        self.assertEqual(len(dmarc), 1)
+        self.assertIn("p=quarantine", dmarc[0]["content"])
+
+    def test_a_record_it_wants_gone_missing_is_found(self):
+        run(self.fake, "apply")
+        self.fake.dns = [r for r in self.fake.dns if r["name"] != f"cf-bounce._domainkey.{cs.ZONE}"]
+        code, out = run(self.fake)
+        self.assertEqual(code, 1)
+        self.assertIn(f"TXT cf-bounce._domainkey.{cs.ZONE} 'v=DKIM1; p=CCCCDDDD': is missing", out)
+
+    def test_one_turned_off_is_left_to_the_dashboard(self):
+        self.fake.sending = [{"tag": "s1", "name": cs.ZONE, "enabled": False}]
+        code, out = run(self.fake, "apply")
+        self.assertIn(f"Email Sending for {cs.ZONE}: left - enable it in the dashboard", out)
 
 
 class ApiAndStatsTests(unittest.TestCase):

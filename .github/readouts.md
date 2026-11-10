@@ -362,13 +362,13 @@ says which token does what.
 Paid (3,000 emails a month included, then $0.35 per 1,000); the sign-up
 limits bound what it can cost, at most 500 confirmations a day, about 15,000
 a month - some $4 past those included. It sends only from a domain onboarded
-for sending: in the dashboard, Compute, Email Service, Email Sending, Onboard
-Domain, for `firmwareliberator.com`. That adds its own
-DNS records - MX on its bounce subdomain, SPF, DKIM, and DMARC on
-`_dmarc.firmwareliberator.com` - which `cloudflare_settings.py` does not make
-or check yet: a difference it reports in them after onboarding is that, not
-drift. Until the domain is onboarded, a confirmation fails to send and
-`/notify` answers 502, keeping nothing.
+for sending: `cloudflare_settings.py apply` onboards `firmwareliberator.com`
+itself (`SENDING_DOMAIN`), then makes the DNS records Email Service lists
+for it - an MX, SPF and DKIM on its bounce subdomain - which the DNS check
+expects from then on, as it does Email Routing's. All but its DMARC record:
+the zone has its own in `DNS_RECORDS`, and two would void both. Until the
+domain is onboarded, a confirmation fails to send and `/notify` answers
+502, keeping nothing.
 
 ## Working with them
 
