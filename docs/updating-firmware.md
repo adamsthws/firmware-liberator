@@ -207,10 +207,14 @@ not depend on the computer building it. In turn, the command:
 - raises the config's `project` version (`2026.10.0-2` is this project's
   second build on ESPHome 2026.10.0, the number starting again at 1 on a new
   release), sets its `package_import_url` to the release it will come out in
-  (the top of `CHANGELOG.md`, or the next after it), and builds it. A device
-  adopted into Home Assistant keeps to that release until its owner names a
-  newer one, and the release workflow refuses a version whose configs name a
-  release that is not out, so rebuild them if the version changes first;
+  (the top of `CHANGELOG.md`, or the next after it), and builds it. A build
+  that no release of the tool has published yet keeps its version and its
+  file's name, as OpenBeken's does ([below](#3-openbeken)), with no changelog
+  line of its own. A device adopted into Home Assistant keeps to that release
+  until its owner names a newer one, and the release workflow refuses a
+  version whose configs name a release that is not out, so the command sets
+  every device's config to it, one not ready yet too; rebuild them if the
+  version changes first;
 - checks the app is one for the device's chip that fits Sonoff's slot, says it
   is that ESPHome release, holds each Wi-Fi placeholder once and untouched,
   takes a Wi-Fi written in, and holds no path from the computer that built it;
@@ -221,7 +225,8 @@ not depend on the computer building it. In turn, the command:
 Then it publishes the image in `artifacts/` (removing the one before), and
 updates its line in `SHA256SUMS`, the config's version and `firmware.json`.
 `--mover` builds and publishes the mover the same way, only for a change to
-its config. `--dry-run` builds and checks, and publishes nothing. ESP-IDF and
+its config, a minor version on unless no release has published the one
+before. `--dry-run` builds and checks, and publishes nothing. ESP-IDF and
 its tools are downloaded once, to `captures/esphome-build/`.
 
 An ESPHome build is not byte for byte repeatable, as it holds the time it was
@@ -300,6 +305,8 @@ fails while any of it is missing:
 - `NOTICES.md`: the image's name, ESPHome release and ESP-IDF version;
 - `devices/sonoff-s60/esphome.md`: the ESPHome release that built the current
   image;
+- for another Espressif device's ESPHome (`--device KIND`), its row in
+  `artifacts/README.md` and its name in `NOTICES.md`;
 - for a Beken device's ESPHome, the same, with its LibreTiny version, in its
   own page (`devices/sonoff-s61/esphome.md`);
 - for its OpenBeken: its row in `artifacts/README.md`, and its name and the
@@ -308,10 +315,8 @@ fails while any of it is missing:
   under the release to come - a new section, a minor version on, once the one
   above has been released, with `tools/autoflash/__init__.py` raised to it.
 
-Left to write by hand, as the command lists when it ends: another Espressif
-device's row in `artifacts/README.md` and the release in its `esphome.md`
-(`--device KIND`); everything for a device's first build, which has no passage
-to rewrite; the mover's or bootloader's own rows (`--mover`,
+Left to write by hand, as the command lists when it ends: everything for a
+device's first build, which has no passage to rewrite; the mover's or bootloader's own rows (`--mover`,
 `--new-bootloader`); and, for a config changed and built with the release
 already pinned, what the change does, in `CHANGELOG.md` and
 `devices/sonoff-s60/esphome.md`.
