@@ -62,8 +62,10 @@
 // - The addresses under notify/ have no expiry: they are kept until the
 //   device's status changes and they are written to, or until removed on
 //   request, by its owner through /forget. No address or other detail of a
-//   sender is kept: a sender's day count is named by a keyed hash of its
+//   sender is kept here: a sender's day count is named by a keyed hash of its
 //   address (SENDER_KEY, a Worker secret), deleted with the day's counts.
+//   Cloudflare's own log of each request (wrangler.jsonc), kept seven days,
+//   holds its address.
 
 export const MAX_BYTES = 24 * 1024 * 1024;
 export const PROOF_BITS = 24;

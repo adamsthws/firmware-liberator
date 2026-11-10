@@ -27,6 +27,13 @@
   ],
   "workers_dev": false,
   "preview_urls": false,
+  // Workers Logs and traces: every request, and any error or uncaught
+  // exception, kept by Cloudflare for seven days, so a failure can be looked
+  // into - a trace shows where the time of each went (the database, the
+  // buckets, email). A request's log holds the sender's address, and its
+  // trace the address's rough place and network; docs/what-the-tool-sends.md
+  // says so. Both are within what Workers Paid includes, at this traffic.
+  "observability": { "enabled": true, "head_sampling_rate": 1, "logs": { "enabled": true, "invocation_logs": true }, "traces": { "enabled": true, "head_sampling_rate": 1 } },
   // Private, and kept for good: made by tools/repo/cloudflare_settings.py.
   "r2_buckets": [
     { "binding": "READOUTS", "bucket_name": "firmware-liberator-readouts" },

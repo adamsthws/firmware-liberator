@@ -152,7 +152,9 @@ The readout goes to the project's server at `api.firmwareliberator.com`,
 which stores it privately, never publishes it, and uses it only to add
 support for the device. It is kept for good, since a readout of one firmware
 version can help with the device's later versions too. Nothing about you is
-stored but the contact information you chose to give.
+stored with it but the contact information you chose to give. Cloudflare,
+which runs the server, logs each request with your internet address for
+seven days, so that the maintainer can look into a failure.
 
 Past the server's daily limit, yours stays unsent on your computer, to send
 the next day. One of a device the project has enough readouts of already is
