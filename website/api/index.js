@@ -113,6 +113,19 @@ export const STAGES = ["first", "whole"];
 // different sender: three, so one made up stands out against the two that
 // agree, and none is taken as right until that many do (readouts table).
 export const PER_KEY = 3;
+// And from three networks (Cloudflare's ASN for the request), so that no
+// one, nor two, rented servers' networks, however many address blocks they
+// have, are enough for readouts to agree. A key's places past PER_KEY, up to
+// MAX_PLACES, go only to a readout from a network none of those held came
+// from, until some agree: three made up on one network cannot keep out the
+// owners who would outvote them, and wait for review until they are deleted
+// (pending.js). Three alike from fewer networks wait for one more, or for
+// the maintainer to approve them (the admin view, or readouts.py approve).
+export const MIN_NETWORKS = 3;
+export const MAX_PLACES = 2 * PER_KEY;
+// The maintainer is emailed when readouts come to agree, unless the admin
+// view's switch, this setting, is "off" (settings table).
+export const AGREEMENT_SETTING = "email_on_agreement";
 // Readouts kept a day from one sender's address (SENDER_DAILY), counted under
 // a keyed hash of it (SENDER_KEY, a Worker secret), never the address itself.
 export const SENDER_DAILY = 20;
@@ -271,15 +284,24 @@ const keyOf = (product, model, version) => `${product.toUpperCase()}|${model}|${
 // whole one takes a first stage's place too, as it holds all one does.
 const HOLDING = "review != 'rejected' AND (?2 = 'first' OR stage = 'whole')";
 
-// Whether a readout at `stage` would add anything for `sender`: a place is
-// left, and that sender has none of the key already - so a sender with many
-// of one device sends one, and three agreeing come from three senders.
-async function adds(env, key, stage, sender) {
+// Whether a place of key ?1 at stage ?2 is left for a readout from the
+// network ?n: fewer than PER_KEY are held; or, while none of them agree,
+// fewer than MAX_PLACES are and none came from that network.
+const PLACE_LEFT = (n) => `((SELECT count(*) FROM readouts WHERE key = ?1 AND ${HOLDING}) < ${PER_KEY}
+  OR (?${n} IS NOT NULL AND (SELECT count(*) FROM readouts WHERE key = ?1 AND ${HOLDING}) < ${MAX_PLACES}
+    AND NOT EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND ${HOLDING} AND review IN ('quorum', 'approved'))
+    AND NOT EXISTS (SELECT 1 FROM readouts JOIN readout_networks ON readout_networks.id = readouts.id
+      WHERE readouts.key = ?1 AND ${HOLDING} AND readout_networks.network = ?${n})))`;
+
+// Whether a readout at `stage` would add anything for `sender`, from
+// `network`: a place is left for it, and that sender has none of the key
+// already - so a sender with many of one device sends one, and three
+// agreeing come from three senders.
+async function adds(env, key, stage, sender, network) {
   const row = await env.DB.prepare(
-    `SELECT (SELECT count(*) FROM readouts WHERE key = ?1 AND ${HOLDING}) AS held,
-            (SELECT count(*) FROM readouts WHERE key = ?1 AND sender = ?3) AS theirs`,
-  ).bind(key, stage, sender ?? "").first();
-  return row.held < PER_KEY && row.theirs === 0;
+    `SELECT ${PLACE_LEFT(4)} AS room, (SELECT count(*) FROM readouts WHERE key = ?1 AND sender = ?3) AS theirs`,
+  ).bind(key, stage, sender ?? "", network).first();
+  return Boolean(row.room) && row.theirs === 0;
 }
 
 // A keyed hash (SENDER_KEY) of `what`, 32 hex: null where the Worker has none.
@@ -301,6 +323,10 @@ const addressOf = senderAddress;
 // The sender of a readout of `key`, as its row names it: one hash a key, so
 // nothing ties one sender's readouts of different keys together.
 const senderOf = (env, request, key) => keyedHash(env, `${key}|${addressOf(request)}`);
+// The network a readout of `key` came from, as readout_networks names it: a
+// keyed hash of its ASN and the key, or null where Cloudflare gives none.
+export const networkOf = (env, request, key) =>
+  (Number.isInteger(request.cf?.asn) ? keyedHash(env, `${key}|network|${request.cf.asn}`) : null);
 
 // JSON with its keys in order, so the same fields always hash alike.
 const canonical = (value) => Array.isArray(value) ? `[${value.map(canonical).join(",")}]`
@@ -320,32 +346,64 @@ async function fingerprintOf(manifest, stage) {
   return hex(await sha256(new TextEncoder().encode(canonical(shared))));
 }
 
-// A readout's row, if a place is left and its sender has none of the key:
-// in one statement, so two sent at once cannot both take the last place.
-// Then every pending row of its key and stage marked agreed (quorum) once
-// PER_KEY of them hold the same fingerprint.
+// A readout's row, if a place is left for it and its sender has none of the
+// key: in one statement, so two sent at once cannot both take the last place;
+// then its network. Then every pending row of its key and stage marked
+// agreed (quorum) once PER_KEY of them, from MIN_NETWORKS networks, hold the
+// same fingerprint - and the maintainer told.
 async function hold(env, row) {
   const taken = await env.DB.prepare(
     `INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received)
      SELECT ?4, ?1, ?2, ?3, ?5, ?6, ?7, ?8
-     WHERE (SELECT count(*) FROM readouts WHERE key = ?1 AND ${HOLDING}) < ?9
+     WHERE ${PLACE_LEFT(9)}
      ON CONFLICT (key, sender) DO NOTHING RETURNING id`,
-  ).bind(row.key, row.stage, row.sender, row.id, row.fingerprint, row.bytes, row.object, row.received, PER_KEY)
+  ).bind(row.key, row.stage, row.sender, row.id, row.fingerprint, row.bytes, row.object, row.received, row.network)
     .first();
   if (!taken) {
     return false;
   }
+  if (row.network) {
+    await env.DB.prepare("INSERT OR IGNORE INTO readout_networks (id, network) VALUES (?1, ?2)")
+      .bind(row.id, row.network).run();
+  }
   const agreed = (await env.DB.prepare(
     `UPDATE readouts SET review = 'quorum' WHERE key = ?1 AND stage = ?2 AND review = 'pending'
      AND fingerprint = ?3 AND (SELECT count(*) FROM readouts WHERE key = ?1 AND stage = ?2
-       AND fingerprint = ?3 AND review != 'rejected') >= ?4 RETURNING bytes`,
-  ).bind(row.key, row.stage, row.fingerprint, PER_KEY).all()).results;
+       AND fingerprint = ?3 AND review != 'rejected') >= ?4
+     AND (SELECT count(DISTINCT readout_networks.network) FROM readouts
+       JOIN readout_networks ON readout_networks.id = readouts.id WHERE readouts.key = ?1 AND readouts.stage = ?2
+       AND readouts.fingerprint = ?3 AND readouts.review != 'rejected') >= ?5 RETURNING bytes`,
+  ).bind(row.key, row.stage, row.fingerprint, PER_KEY, MIN_NETWORKS).all()).results;
   // Taken as right: no longer held to the pending readouts' room.
   const bytes = agreed.reduce((total, each) => total + each.bytes, 0);
   if (bytes) {
     await release(env.DB, PENDING, bytes, agreed.length);
   }
+  if (agreed.length) {
+    await tellAgreed(env, row, agreed.length);
+  }
   return true;
+}
+
+// The maintainer's email that readouts of a key have come to agree: unless
+// the admin view's switch is off, or there is nowhere to send it. Those alike
+// from too few networks send none: the admin view lists them (Nearly agreed).
+async function tellAgreed(env, row, newly) {
+  if (!env.EMAIL || !env.ALERTS_RECIPIENT_EMAIL) {
+    return;
+  }
+  const setting = await env.DB.prepare("SELECT value FROM settings WHERE name = ?").bind(AGREEMENT_SETTING).first("value");
+  if (setting === "off") {
+    return;
+  }
+  await sendMail(env, {
+    to: env.ALERTS_RECIPIENT_EMAIL,
+    from: NOTIFY_FROM,
+    subject: `Readouts agree: ${row.key} (${row.stage})`,
+    text: [`Readouts of ${row.key}, at the ${row.stage} stage, now agree: ${PER_KEY} or more alike, from `
+      + `${MIN_NETWORKS} or more networks, so they are taken as right (${newly} newly).`, "",
+      "python3 tools/repo/readouts.py review lists them. The admin view's switch turns these emails off."].join("\n"),
+  }, row.received.slice(0, 10));
 }
 
 // The day's count of one sender's readouts, under a keyed hash of their
@@ -439,7 +497,7 @@ export async function wanted(request, env, now = new Date()) {
     return no("enough");
   }
   const key = keyOf(asked.product, asked.model, asked.version);
-  if (!(await adds(env, key, asked.stage, await senderOf(env, request, key)))) {
+  if (!(await adds(env, key, asked.stage, await senderOf(env, request, key), await networkOf(env, request, key)))) {
     return no("held");
   }
   const day = now.toISOString().slice(0, 10);
@@ -524,7 +582,8 @@ export async function readout(request, env, now = new Date()) {
   // is thanked and not kept - before it takes any of its sender's day.
   const readoutKey = keyOf(manifest.product, model, version);
   const from = await senderOf(env, request, readoutKey);
-  if (!(await adds(env, readoutKey, stage, from))) {
+  const network = await networkOf(env, request, readoutKey);
+  if (!(await adds(env, readoutKey, stage, from, network))) {
     return answer(200, { enough: true });
   }
   if (!(await take(sender, day, { most: SENDER_DAILY }))) {
@@ -547,7 +606,7 @@ export async function readout(request, env, now = new Date()) {
     return answer(503, { error: "too many readouts are waiting for review: try again another time" },
       { "Retry-After": "604800" });
   }
-  const row = { key: readoutKey, stage, sender: from, id, fingerprint: await fingerprintOf(manifest, stage),
+  const row = { key: readoutKey, stage, sender: from, network, id, fingerprint: await fingerprintOf(manifest, stage),
     bytes: body.byteLength, object: key, received: now.toISOString() };
   if (!(await hold(env, row))) {
     await giveBack();   // its place taken meanwhile, by another sent at once
@@ -564,6 +623,7 @@ export async function readout(request, env, now = new Date()) {
     }
     await env.READOUTS.delete(key);
     await env.DB.prepare("DELETE FROM readout_firmware WHERE readout = ?").bind(id).run();
+    await env.DB.prepare("DELETE FROM readout_networks WHERE id = ?").bind(id).run();
     await env.DB.prepare("DELETE FROM readouts WHERE id = ?").bind(id).run();
     await giveBack();
     throw error;

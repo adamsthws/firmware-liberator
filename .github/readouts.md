@@ -104,10 +104,18 @@ request costs its sender some work, the store has hard limits it is never
 let past, and only a readout that adds something is kept:
 
 - A readout is kept only while fewer than three of its key are held, each
-  from a different sender. Three that agree are taken as right; any other
-  waits for review, in room set aside for it, and is deleted after a while if
-  it is never settled. So made-up readouts can neither fill the store nor
-  hold a key's places for long.
+  from a different sender. Three that agree, from three networks
+  (Cloudflare's ASN for each request), are taken as right, and you are
+  emailed when they are (the admin view's switch turns that off). Three alike
+  from fewer networks wait for one more, with no email: the admin view lists
+  them under Nearly agreed, with a button to approve them (or
+  `readouts.py approve` one at a time). Any other
+  waits for review, in room set aside for it, and is deleted after half a
+  year if it is never settled. So made-up readouts can neither fill the store
+  nor hold a key's places for long.
+- Until three agree, a key has three more places, each for a readout from a
+  network none of those held came from: three made up on one rented server's
+  network cannot keep out the owners who would outvote them.
 - A kept readout is kept for good, in a private bucket that nothing serves:
   an old one may help with a device's later versions.
 - An owner may ask to be told when a device's status changes. The address is

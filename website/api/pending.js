@@ -39,6 +39,7 @@ export async function prunePending(env, today) {
     await env.READOUTS.delete(row.object);
     await env.DB.batch([
       env.DB.prepare("DELETE FROM readout_firmware WHERE readout = ?").bind(row.id),
+      env.DB.prepare("DELETE FROM readout_networks WHERE id = ?").bind(row.id),
       env.DB.prepare("DELETE FROM readouts WHERE id = ?").bind(row.id),
     ]);
     await release(env.DB, READOUTS_EVER, row.bytes);

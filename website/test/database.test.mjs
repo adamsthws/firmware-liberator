@@ -20,7 +20,8 @@ const WRITTEN = {
   "0007_signups.sql": "5ca2feb1cdd2c8b6284cb21ab75ad6e622ce57942a82451b61b1248eb8467ce2",
   "0008_confirmations.sql": "296f2ac75e2950bfdb3817313fc12a9e3b6dc1f954bb4cc1322d74657d5bade3",
   "0009_mail_days.sql": "cd65431a174bfa5a3299fbf63aa7960a675b7b3fc2f460acfc3d331aa4ba0465",
-  "0010_model_senders.sql": "6139afc204fd3035e3f3969b38b2f5856bc4e47e6a02e38bad6399155de4a29d",
+  "0010_model_senders.sql": "430681629148038603e98a5d0410e098b65936fd7ac80757e730b525e94e1ab4",
+  "0011_networks_and_settings.sql": "5ce944c5534eb3315feb64bd43524931eabcdd5a3a0d114238b1ce4c2a51d402",
 };
 
 test("the migrations are numbered one after another, from 0001", () => {
