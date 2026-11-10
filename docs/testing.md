@@ -980,6 +980,14 @@ In 2.4.0:
   left ESPHome on the plug waiting up to 105 s for the rest of it, its update
   service taking nothing else meanwhile, and every run started again in that time
   timed out. The run now waits that out, once, and sends the update again.
+- After the stock bootloader refused ESPHome a third time
+  (`sonoff>esphome:J2:badimage-restart`, `interim>esphome:J2:badimage-restart`),
+  the run restarted the interim firmware but never saw it back: it waited for an
+  uptime below the one before, and the plug, only just restarted by the refusal,
+  had been up for less than it takes to start again. A restart is now also told
+  by the plug going quiet once asked, then answering again: the emulated plug's
+  clock runs faster than the wall's, so its uptime cannot be set against the time
+  since it was asked.
 
 ### Attended runs
 
