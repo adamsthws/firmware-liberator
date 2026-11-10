@@ -12,7 +12,7 @@ only those that have run on main, saying which are left: a check required
 before its workflow is there - a new job, or one renamed - would hold every
 pull request back, the firmware-update workflow's too. Run it again once
 they have run. A secret's value cannot be read back, so only its name is
-checked. `apply` sets each of FROM_ENV from the environment or .env.infra, every
+checked, and one not written here is deleted. `apply` sets each of FROM_ENV from the environment or .env.infra, every
 time, and leaves any other missing one - a token - to `secret`.
 """
 
@@ -44,7 +44,9 @@ TOPICS = ["beken", "bk7238", "esp32", "esp32-c3", "esphome", "espressif", "eweli
           "tasmota"]
 
 # Pull requests are squashed - one commit each, as main's history is kept -
-# and their branches deleted once merged.
+# and their branches deleted once merged. No wiki: on a public repository any
+# GitHub user may edit one by default, pages under the project's address no
+# review, leak scan or check sees; the docs live in docs/.
 REPOSITORY_SETTINGS = {
     "description": "Convert Sonoff smart devices to Tasmota, ESPHome or OpenBeken over Wi-Fi, "
                    "with no soldering. Fully automated OTA flasher for Linux, macOS and Windows.",
@@ -53,6 +55,32 @@ REPOSITORY_SETTINGS = {
     "allow_merge_commit": False,
     "allow_rebase_merge": False,
     "delete_branch_on_merge": True,
+    "has_wiki": False,
+}
+
+# GitHub Actions, each at repos/REPOSITORY/<path>:
+# - an action is used only pinned to a commit, as every workflow pins them
+#   (a tag can be moved to other code; a commit cannot);
+# - a workflow's token reads unless the workflow asks for more, and can never
+#   approve a pull request: no workflow here does, and one that could would
+#   pass a review a ruleset asked for;
+# - a pull request from anyone outside the repository waits for the maintainer
+#   to let its workflows run, not only a first one: a fork's workflows run
+#   whatever it changed.
+ACTIONS = {
+    "/actions/permissions": {"enabled": True, "allowed_actions": "all", "sha_pinning_required": True},
+    "/actions/permissions/workflow": {"default_workflow_permissions": "read",
+                                      "can_approve_pull_request_reviews": False},
+    "/actions/permissions/fork-pr-contributor-approval": {"approval_policy": "all_external_contributors"},
+}
+
+# The repository's own secrets, apart from the website environment's, each
+# set by the script that says what it is for: any other is a difference, and
+# `apply` deletes it. Every workflow's job could read one; the environment's
+# are for main's alone.
+REPOSITORY_SECRETS = {
+    "AUTOFLASH_BACKUP_KEY": "the sealed stock-firmware backup's key, for the emulator: "
+                            "python3 tools/repo/private_backup.py secret",
 }
 
 # Secret scanning refuses a push holding a known kind of token; Dependabot
@@ -82,7 +110,8 @@ TOGGLES = ["private-vulnerability-reporting", "immutable-releases"]
 # (website/README.md) the website workflow deploys from this environment: it
 # takes only main, and holds the Cloudflare tokens, each allowed only what its
 # workflow does (website/README.md lists their permissions). GitHub Pages,
-# which served it before, is off.
+# which served it before, is off, and it is the one environment: another
+# (github-pages, which Pages left) is deleted.
 ENVIRONMENT = "website"
 ENVIRONMENT_POLICY = {"protected_branches": False, "custom_branch_policies": True}
 ENVIRONMENT_BRANCHES = ["main"]
@@ -200,6 +229,21 @@ def differences() -> list[tuple[str, str, Any]]:
     if api("/pages", ok_missing=True) is not None:
         found.append(("Pages", "is on, should be off: the website is a Cloudflare Worker",
                       ("DELETE", "/pages", None)))
+    for path, want in ACTIONS.items():
+        have = api(path)
+        off = sorted(key for key, value in want.items() if have.get(key) != value)
+        if off:
+            found.append((f"Actions {path.removeprefix('/actions/')}",
+                          "differs in " + ", ".join(f"{key} (is {have.get(key)}, should be {want[key]})" for key in off),
+                          ("PUT", path, want)))
+    repository_secrets = {secret["name"] for secret in api("/actions/secrets")["secrets"]}
+    for name, how in REPOSITORY_SECRETS.items():
+        if name not in repository_secrets:
+            found.append((f"repository secret {name}", "is missing", ("LEFT", f"set it: {how.split(': ')[-1]}", None)))
+    for name in sorted(repository_secrets - set(REPOSITORY_SECRETS)):
+        found.append((f"repository secret {name}", "should not be there", ("DELETE", f"/actions/secrets/{name}", None)))
+    for name in sorted({env["name"] for env in api("/environments")["environments"]} - {ENVIRONMENT}):
+        found.append((f"environment '{name}'", "should not be there", ("DELETE", f"/environments/{name}", None)))
     environment = api(f"/environments/{ENVIRONMENT}", ok_missing=True)
     have = (environment or {}).get("deployment_branch_policy")
     if have != ENVIRONMENT_POLICY:
@@ -286,6 +330,10 @@ def main(argv: list[str] | None = None) -> int:
             if method == "SECRET":
                 print(f"  {what}: left - its value is set with "
                       f"python3 tools/repo/github_settings.py secret {path}")
+                left = 1
+                continue
+            if method == "LEFT":
+                print(f"  {what}: left - {path}")
                 left = 1
                 continue
             if what == "ruleset 'Checks before main'":
