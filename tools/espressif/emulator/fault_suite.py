@@ -123,7 +123,7 @@ STUB_CLOUD = os.environ.get("AUTOFLASH_EMU_STUB_CLOUD") == "1"
 
 def records_under(root):
     """The tool's records under `root`/captures: devices/, or plugs/ where a
-    release before 2.4.0 keeps them - a legacy run's until this checkout's
+    release before 3.0.0 keeps them - a legacy run's until this checkout's
     tool carries it on and renames them, or a device saved by one."""
     captures = Path(root) / "captures"
     earlier = captures / "plugs"
@@ -347,7 +347,7 @@ READING_OUT = re.compile(r"Reading out (.*) \((\d+) of (\d+)\)\.\.\.")
 # it, wherever it is (report.report_screen). The result is the line the
 # harness prints from the run's own log (unattended_run.logged_result), as
 # the screen says it above the report instead; an earlier release's report
-# has it on the screen too. The labels before 2.4.0 too, for an earlier
+# has it on the screen too. The labels before 3.0.0 too, for an earlier
 # release's runs.
 REPORT_RESULT = re.compile(r"Result:\s+(\S.*?)(?:\s{2,}|$)", re.M)
 REPORT_BACKUP = re.compile(r"(?:Sonoff backup|\bBackup):\s+(\S.*?)(?:\s{2,}|$)", re.M)

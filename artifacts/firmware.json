@@ -149,7 +149,7 @@
         "esphome": "2026.10.0",
         "esp_idf": "5.5.6",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-08 18:42:13 +0000",
+        "built": "2026-11-10 15:55:44 +0000",
         "earlier_builds": [
           "2026-10-21 02:35:20 +0100",
           "2026-10-22 19:49:39 +0000",
@@ -158,7 +158,7 @@
           "2026-11-06 22:21:09 +0000"
         ],
         "size": 967936,
-        "sha256": "6c638efbc9697fe9b648db1f597cd772ef2bcb977ac3fded4d450aaa9eb73bc2"
+        "sha256": "78a9796bdc169e1f208e2ebe93766d9be9a3c69ab33d3b9bdc79e05b3188fcab"
       }
     },
     "sonoff-pow-elite": {
@@ -169,13 +169,13 @@
         "esphome": "2026.10.0",
         "esp_idf": "5.5.6",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-08 18:46:25 +0000",
+        "built": "2026-11-10 15:57:05 +0000",
         "earlier_builds": [
           "2026-11-05 23:13:00 +0000",
           "2026-11-06 22:23:44 +0000"
         ],
         "size": 883312,
-        "sha256": "2711dcbea8e5e49fd5e694cfc099aa12ade86a5b2a755a55d1c9eda65373b658"
+        "sha256": "1a462e946c051e8c735cdb53f0b8100e28203c488f697e5a548d8a2c29d4cc0d"
       }
     },
     "sonoff-powct": {
@@ -186,14 +186,14 @@
         "esphome": "2026.10.0",
         "esp_idf": "5.5.6",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-09 15:38:43 +0000",
+        "built": "2026-11-10 15:57:40 +0000",
         "earlier_builds": [
           "2026-11-06 01:00:39 +0000",
           "2026-11-06 22:24:31 +0000",
           "2026-11-08 18:48:06 +0000"
         ],
         "size": 870656,
-        "sha256": "fa53430d85068a541d3a3740ec2c21ec3f1722717bc896699c3869faaa4d0ec4"
+        "sha256": "d75f9b4e4a7ed58a95cb1ad6a08fa4a0bfce5f03af3b65443fa924506a11c31f"
       }
     },
     "sonoff-th-elite": {
@@ -204,13 +204,13 @@
         "esphome": "2026.10.0",
         "esp_idf": "5.5.6",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-08 18:48:47 +0000",
+        "built": "2026-11-10 15:58:17 +0000",
         "earlier_builds": [
           "2026-11-06 01:04:22 +0000",
           "2026-11-06 22:25:23 +0000"
         ],
         "size": 863120,
-        "sha256": "a4a8f6031d700f017c36f3a93700ae664a5ce4a871c428cc806b3b65f1397aa6"
+        "sha256": "6783373bce2d8941b7e20080a85360a24f6a57e72e57ad72a7a2d511f3983d0a"
       },
       "table": {
         "file": "artifacts/sonoff-th-elite-partition-table.bin",
@@ -226,13 +226,13 @@
         "esphome": "2026.10.0",
         "esp_idf": "5.5.6",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-08 18:49:26 +0000",
+        "built": "2026-11-10 15:58:52 +0000",
         "earlier_builds": [
           "2026-11-06 01:27:40 +0000",
           "2026-11-06 22:26:08 +0000"
         ],
         "size": 868816,
-        "sha256": "79a5825de37ad30a866bd3388c15cf9d79fcb9287c45c10cf87cca57e83ef819"
+        "sha256": "3923e646cea3bd5e39692e2a92b39234677ebd94f0454d1487554fbfa0712c2a"
       }
     },
     "sonoff-nspanel": {
@@ -272,14 +272,14 @@
         "esphome": "2026.10.0",
         "libretiny": "1.13.0",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-09 18:11:59 +0000",
+        "built": "2026-11-10 15:56:18 +0000",
         "earlier_builds": [
           "2026-11-04 14:39:04 +0000",
           "2026-11-06 22:21:51 +0000",
           "2026-11-08 18:44:20 +0000"
         ],
         "size": 505216,
-        "sha256": "ccf824eddbf6d05256bc681e819304f875e40fd0c59865966d208ac396141eb8"
+        "sha256": "f1a5e519ba079e4d45a8a77f7ca81cadb8398e21fd1914dda86addbac84f59f7"
       }
     },
     "sonoff-basic-1gs": {
@@ -310,12 +310,12 @@
         "esphome": "2026.10.0",
         "libretiny": "1.13.0",
         "builder": "ghcr.io/esphome/esphome:2026.10.0@sha256:1dff19a59070cdb523b76576cdc74d200f862d43c1407809088855920cf57145",
-        "built": "2026-11-08 18:50:35 +0000",
+        "built": "2026-11-10 15:59:22 +0000",
         "earlier_builds": [
           "2026-11-07 01:43:32 +0000"
         ],
         "size": 489824,
-        "sha256": "55d3aeddd9fa5b9b6bc00ef9e285bfd3d6c41843144422095b6ee2fede517340"
+        "sha256": "92f00bd1476d44110c63f61d1da955c804e81e79f5f0eefec85083595fb8fa0d"
       }
     },
     "readout": {

@@ -85,7 +85,7 @@ esphome:
 # Adopting the device in Home Assistant's ESPHome builder takes this config as
 # a package. update_firmware.py writes the release.
 dashboard_import:
-  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-dualr3/esphome.yaml@v2.4.0
+  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-dualr3/esphome.yaml@v3.0.0
   import_full_config: false
 
 globals:

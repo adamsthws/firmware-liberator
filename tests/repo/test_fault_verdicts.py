@@ -252,7 +252,7 @@ class RecordingTests(unittest.TestCase):
 
 class ReportLabelTests(unittest.TestCase):
     def test_the_checks_are_read_however_the_report_said_them(self):
-        # Shorter, and in two columns, since 2.4.0; an earlier release's runs
+        # Shorter, and in two columns, since 3.0.0; an earlier release's runs
         # (the legacy scenarios) say it as before.
         for log, said in (("[10:00:02]     Checks passed: False\n", "False"),
                           ("[10:00:02]     Setup network: No                      Checks:   False\n", "False"),

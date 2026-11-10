@@ -182,7 +182,7 @@ esphome:
 # so nothing of ours reaches an adopted device until its owner names a newer one.
 # update_firmware.py writes the release.
 dashboard_import:
-  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-s61/esphome.yaml@v2.4.0
+  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-s61/esphome.yaml@v3.0.0
   import_full_config: false
 
 globals:
