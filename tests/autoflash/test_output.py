@@ -258,6 +258,20 @@ class ConciseTests(OutputTestCase):
         self.assertIn("Before going on", log)
         self.assertIn("-> proceed", log)
 
+    def test_an_answer_wider_than_the_window_is_taken_off_with_its_question(self):
+        def body():
+            with mock.patch.object(output, "colour_ok", return_value=True), \
+                 mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
+                output.stage_begin(5, "Installing the installer firmware")
+                output.transient_begin()          # the underway line: 1 row
+                output.before_input("Where is it: ")  # a blank row before it
+                output.answered("x" * 90)         # prompt and answer: 2 rows
+                output.transient_end()
+                output.stage_end("complete")
+        screen, _ = self.run_with(FakeTerminal(), False, body)
+        self.assertIn("\x1b[1F\x1b[2K" * 4, screen)
+        self.assertNotIn("\x1b[1F\x1b[2K" * 5, screen)
+
     def test_a_question_taller_than_the_window_stays_whole(self):
         def body():
             with mock.patch.object(output, "colour_ok", return_value=True), \
@@ -854,6 +868,15 @@ class InputTests(OutputTestCase):
         _, log = self.run_with(io.StringIO(), False, body)
         self.assertIn("? Have you joined it", log)
         self.assertIn("-> y", log)
+
+    def test_each_run_on_the_same_log_is_marked_where_it_starts_and_ends(self):
+        # A run carried on appends to its log; one cut off has no end mark.
+        self.log = Path(self.tmp.name) / "devices" / "run" / "run.log"
+        for verbose in (False, True):
+            self.run_with(io.StringIO(), verbose, lambda: None)
+        log = self.log.read_text(encoding="utf-8")
+        self.assertEqual((log.count("=== run started"), log.count("=== run ended ===")), (2, 2))
+        self.assertIn("(verbose) ===", log)
 
     def test_a_password_is_never_logged(self):
         def body():
@@ -1969,6 +1992,12 @@ class LogFileTests(PrivacyTestCase):
             state.set_input("email", "+447700900123")
         self.assertEqual(output.scrub("account +447700900123"), "account <phone>")
         self.assertEqual(output._private["+447700900123"], "phone")
+
+
+class ElapsedTests(unittest.TestCase):
+    def test_a_minute_or_more_is_given_in_minutes_and_seconds(self):
+        self.assertEqual([output.elapsed(seconds) for seconds in (59, 59.6, 60, 125)],
+                         ["59s", "1m 00s", "1m 00s", "2m 05s"])
 
 
 if __name__ == "__main__":
