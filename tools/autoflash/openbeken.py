@@ -196,17 +196,23 @@ RESTART_WAIT = 120.0
 
 def restart(host: str, wait: float = RESTART_WAIT) -> bool:
     """Restart OpenBeken, and say whether it has, answering again, within
-    `wait` seconds: its uptime back below what it was."""
+    `wait` seconds: its uptime back below what it was, or answering again
+    after it stopped. Its uptime alone missed a plug that had only just
+    restarted - its bootloader refusing an image - which had been up for
+    less than it takes to start and join the Wi-Fi again."""
     before = (info(host) or {}).get("uptime_s")
     try:
         command(host, "reboot", timeout=5.0)
     except (OSError, CommandError):
         pass   # the plug may restart before it answers
+    gone = False
     deadline = time.monotonic() + wait
     while time.monotonic() < deadline:
         time.sleep(3)
         found = info(host, timeout=3.0)
-        if found and (not isinstance(before, int) or int(found.get("uptime_s") or 0) < before):
+        if not found:
+            gone = True
+        elif gone or not isinstance(before, int) or int(found.get("uptime_s") or 0) < before:
             return True
     return False
 

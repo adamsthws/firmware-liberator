@@ -195,6 +195,16 @@ class OpenBekenTests(unittest.TestCase):
         with mock.patch.object(openbeken.time, "monotonic", side_effect=[0, 0, 5, 11]):
             self.assertFalse(openbeken.restart(self.server.host, wait=10))
 
+    def test_a_restart_just_after_another_is_seen(self):
+        # Seen in the emulator: the interim firmware, just restarted by its
+        # bootloader refusing ESPHome, had been up 20 s; restarted again, it
+        # had been up longer than that by the time it answered.
+        answers = [{"uptime_s": 20}, None, None, {"uptime_s": 60}, {"uptime_s": 63}]
+        with mock.patch.object(openbeken, "info", side_effect=answers), \
+                mock.patch.object(openbeken.time, "monotonic", side_effect=[0, 0, 3, 6, 9, 200]), \
+                mock.patch.object(openbeken.time, "sleep"):
+            self.assertTrue(openbeken.restart(self.server.host, wait=120))
+
     def test_channels_are_read(self):
         self.assertEqual(openbeken.channels(self.server.host), {"1": 1, "2": 0})
 
