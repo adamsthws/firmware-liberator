@@ -49,6 +49,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(plan.running, 0)
         with self.assertRaisesRegex(plans.PlanError, "fit"):
             plans.leave_tasmota(b"\xe9" * 0xC1000, images.sonoff_table())
+        plans.leave_tasmota(b"\xe9" * (plans.TASMOTA_APP0 - layouts.MOVER_AT), images.sonoff_table())  # just fits
         with self.assertRaisesRegex(plans.PlanError, "Sonoff's partition table"):
             plans.leave_tasmota(b"\xe9" * 1000, b"\0" * SECTOR)
 
@@ -65,6 +66,14 @@ class PlanTests(unittest.TestCase):
             self.assertLessEqual(plan.busy_estimate(), plans.BUSY_LIMIT)
         with self.assertRaisesRegex(plans.PlanError, "do not fit"):
             plans.leave_tasmota(b"\xe9" * 1000, images.sonoff_table(), settings=b"\x01" * 0x15000)
+
+    def test_the_settings_may_fill_all_the_room_sonoffs_layout_keeps_them_in(self):
+        layout = images.layout_of(kinds.SONOFF_S60)
+        room = layout.otadata - layout.nvs
+        mover, table = images.mover_for("Home", "pw"), images.sonoff_table()
+        plans.leave_tasmota(mover, table, layout, settings=b"\x01" * room)
+        with self.assertRaisesRegex(plans.PlanError, "settings do not fit"):
+            plans.leave_tasmota(mover, table, layout, settings=b"\x01" * (room + 1))
 
     def test_a_device_on_tasmotas_own_table_leaves_it_too(self):
         # Converted before the identity was kept: the plan checks for the table it has.
@@ -185,6 +194,7 @@ class PlanTests(unittest.TestCase):
         entry = plans.otadata_selecting(1)
         sequence, _, state, crc = struct.unpack_from("<I20sII", entry)
         self.assertEqual((sequence - 1) % 2, 1)
+        self.assertNotIn(sequence, (0, 0xFFFFFFFF))   # ESP-IDF takes neither as a selection
         self.assertEqual(state, 0xFFFFFFFF)
         import binascii
         self.assertEqual(binascii.crc32(struct.pack("<I", 11), 0xFFFFFFFF) & 0xFFFFFFFF, 0x28FE78FE)
@@ -211,6 +221,14 @@ class BackToSonoffTests(unittest.TestCase):
         self.assertEqual(second.steps[-1], plans.Erase(plans.SONOFF_OTADATA, plans.OTADATA_SIZE))
         for plan in (first, second):
             self.assertLessEqual(plan.busy_estimate(), plans.BUSY_LIMIT)
+
+    def test_the_app_is_measured_in_its_own_slot(self):
+        flash, size = stock_flash(stock_slot=0)
+        from unittest import mock
+        with mock.patch.object(plans, "app_length", return_value=size) as measured:
+            plans.back_to_sonoff(flash, running=1)
+        at = plans.SONOFF_OTA[0]
+        self.assertEqual(measured.call_args.args[0], flash[at:at + layouts.SONOFF_DUAL_OTA.slot_size])
 
     def test_firmware_kept_in_ota_1_gets_a_boot_selection_written(self):
         _, second = self.plans_for(stock_slot=1, running=0)
@@ -318,6 +336,34 @@ class PlanCheckTests(unittest.TestCase):
             with self.assertRaisesRegex(plans.PlanError, "keeps the device busy past .* s; split it"):
                 plan.check()
 
+
+
+class WhatTheDeviceIsGivenTests(unittest.TestCase):
+    """A write of part of its data - Sonoff's app split in two - is hashed,
+    padded and timed as that part, in what the device is given and checks."""
+
+    def setUp(self):
+        self.data = bytes(range(256)) * 32   # two sectors
+        self.plan = plans.Plan("x", "x", plans.SONOFF_TABLE_SHA256, 1,
+                               steps=[plans.Write("a", 0x20000, SECTOR, SECTOR - 100),
+                                      plans.Erase(0x30000, SECTOR)],
+                               blobs={"a": self.data})
+        self.part = self.data[SECTOR:2 * SECTOR - 100]
+
+    def test_what_the_device_reports_is_the_hash_of_the_part_written(self):
+        self.assertEqual(self.plan.expected(), {"step0": plans.sha256(self.part), "step1": "erased"})
+
+    def test_the_berry_plan_gives_the_part_its_padding_and_their_hashes(self):
+        import json
+        write, erase = json.loads(self.plan.berry())
+        self.assertEqual((write["first"], write["len"], write["sha"], write["pad"], write["padsha"]),
+                         (1, SECTOR - 100, plans.sha256(self.part), 100, plans.sha256(b"\xff" * 100)))
+        self.assertEqual(erase["sha"], plans.sha256(b"\xff" * SECTOR))
+
+    def test_copies_count_towards_the_time_busy_as_writes_do(self):
+        alone = self.plan.busy_estimate()
+        self.plan.steps.append(plans.Copy(0x100000, 0x40000, 0x10000))
+        self.assertAlmostEqual(self.plan.busy_estimate(), alone + 0x10000 * plans.SECONDS_PER_BYTE)
 
 
 class WholeWriteTests(unittest.TestCase):
