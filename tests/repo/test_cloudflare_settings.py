@@ -18,6 +18,8 @@ BUCKETS = "/accounts/a1/r2/buckets"
 DATABASES = "/accounts/a1/d1/database"
 STATS = f"{BUCKETS}/{cs.STATS_BUCKET}"
 SECRETS = f"/accounts/a1/workers/scripts/{cs.API_WORKER}/secrets"
+ADMIN_SECRETS = f"/accounts/a1/workers/scripts/{cs.ADMIN_WORKER}/secrets"
+ACCESS = "/accounts/a1/access"
 QUERY = f"{DATABASES}/u1/query"
 ADDRESSES = "/accounts/a1/email/routing/addresses"
 DESTINATION = "owner@example.com"
@@ -48,7 +50,7 @@ class FakeCloudflare:
         self.other_zones = []   # zones besides this one the token can see
         self.accounts = 1   # how many accounts the token can see
         # The Workers the token can see: Cloudflare lists those alone. The apply token sees them all.
-        self.workers = ["firmware-liberator", "firmware-liberator-api", "another-site"]
+        self.workers = ["firmware-liberator", "firmware-liberator-api", "firmware-liberator-admin", "another-site"]
         self.readable = set()   # of CI_REFUSED's paths, those the token may read
         self.routing = False
         self.email_rules = []
@@ -64,6 +66,13 @@ class FakeCloudflare:
         self.stats_domains = []   # the stats bucket's custom domains
         self.r2_dev = False   # whether its r2.dev address is on
         self.secrets = list(cs.API_SECRETS)   # the API Worker's secrets, by name; None: no such Worker
+        self.admin_secrets = list(cs.ADMIN_SECRETS)   # the admin Worker's, likewise
+        # Access, as apply leaves it: the team, GitHub sign-in, the admin application and its one policy.
+        self.organisation = {"auth_domain": "team1.cloudflareaccess.com"}
+        self.idps = [{"id": "g1", "name": "GitHub", "type": "github"}]
+        self.apps = [{"id": "app1", "aud": "aud1", **cs.admin_app_body("g1")}]
+        self.policies = {"app1": [{"id": "p1", **cs.admin_policy_body("g1", DESTINATION)}]}
+        self.admin_vars = {"ACCESS_TEAM": "team1", "ACCESS_AUD": "aud1", "ACCOUNT_ID": "a1"}
         self.sending = []   # the zone's domains onboarded for Email Service's sending
         self.sent = []
         self.ids = iter(range(100, 1000))
@@ -113,6 +122,23 @@ class FakeCloudflare:
                 return copy.deepcopy(self.sending[-1])
             elif path == SECRETS and method == "PUT":
                 self.secrets = [name for name in self.secrets or [] if name != body["name"]] + [body["name"]]
+            elif path == ADMIN_SECRETS and method == "PUT":
+                self.admin_secrets = [name for name in self.admin_secrets or [] if name != body["name"]] + [body["name"]]
+            elif path == f"{ACCESS}/identity_providers":
+                self.idps.append({"id": f"g{next(self.ids)}", "name": body["name"], "type": body["type"]})
+            elif path == f"{ACCESS}/apps" and method == "POST":
+                self.apps.append({"id": f"app{next(self.ids)}", "aud": f"aud{next(self.ids)}", **copy.deepcopy(body)})
+                self.policies[self.apps[-1]["id"]] = []
+                return copy.deepcopy(self.apps[-1])
+            elif re.fullmatch(f"{ACCESS}/apps/[^/]+", path):
+                app = next(app for app in self.apps if app["id"] == path.rsplit("/", 1)[1])
+                app.update(copy.deepcopy(body))
+            elif re.fullmatch(f"{ACCESS}/apps/[^/]+/policies", path):
+                self.policies[path.split("/")[-2]].append({"id": f"p{next(self.ids)}", **copy.deepcopy(body)})
+            elif re.fullmatch(f"{ACCESS}/apps/[^/]+/policies/[^/]+", path):
+                app = path.split("/")[-3]
+                self.policies[app] = [{"id": policy["id"], **copy.deepcopy(body)} if policy["id"] == path.rsplit("/", 1)[1]
+                                      else policy for policy in self.policies[app]]
             elif path == QUERY:
                 self.migrations = (self.migrations or []) + re.findall(r"VALUES \('([^']+)'\);\s*$", body["sql"])
             elif path.endswith("/lifecycle"):
@@ -143,6 +169,21 @@ class FakeCloudflare:
         if path == SECRETS:
             assert ok_missing
             return None if self.secrets is None else [{"name": name, "type": "secret_text"} for name in self.secrets]
+        if path == ADMIN_SECRETS:
+            assert ok_missing
+            return None if self.admin_secrets is None else [{"name": name, "type": "secret_text"}
+                                                            for name in self.admin_secrets]
+        if path == f"{ACCESS}/organizations":
+            assert ok_missing
+            if self.organisation == "forbidden":
+                raise cs.SettingsError(f"GET {path}: HTTP 403: Authentication error", 403)
+            return copy.deepcopy(self.organisation)
+        if path == f"{ACCESS}/identity_providers":
+            return copy.deepcopy(self.idps)
+        if path == f"{ACCESS}/apps":
+            return copy.deepcopy(self.apps)
+        if re.fullmatch(f"{ACCESS}/apps/[^/]+/policies", path):
+            return copy.deepcopy(self.policies[path.split("/")[-2]])
         if path == f"{DATABASES}?name={cs.D1_DATABASE}":
             return copy.deepcopy(self.databases)
         if path == "/accounts/a1/workers/scripts":
@@ -183,7 +224,8 @@ class FakeCloudflare:
 def run(fake, *args):
     out = io.StringIO()
     with mock.patch.object(cs, "api", fake), redirect_stdout(out), \
-            mock.patch.object(cs, "bound_database_id", lambda: fake.bound), \
+            mock.patch.object(cs, "bound_database_id", lambda config=None: fake.bound), \
+            mock.patch.object(cs, "admin_vars", lambda: copy.deepcopy(getattr(fake, "admin_vars", {}))), \
             mock.patch.dict("os.environ", {cs.EMAIL_DESTINATION: DESTINATION, cs.EMAIL_FORWARD: FORWARD}):
         code = cs.main(list(args))
     return code, out.getvalue()
@@ -368,8 +410,11 @@ class CloudflareSettingsTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         self.assertEqual(cs.ENV_FILE, root / ".env.infra")
         example = cs.credentials.parse((root / ".env.infra.example").read_text(encoding="utf-8"))
-        kept = {f"API_{name}" for name, how in cs.API_SECRETS.items() if how == "kept"}
-        self.assertEqual(set(example), {"CLOUDFLARE_API_TOKEN", cs.EMAIL_DESTINATION, cs.EMAIL_FORWARD, *kept})
+        kept = {f"{prefix}{name}" for prefix, wanted in cs.WORKER_SECRETS.values()
+                for name, how in wanted.items() if how == "kept"}
+        access = {"ACCESS_GITHUB_CLIENT_ID", "ACCESS_GITHUB_CLIENT_SECRET", "ACCESS_ADMIN_EMAIL"}
+        self.assertEqual(set(example), {"CLOUDFLARE_API_TOKEN", cs.EMAIL_DESTINATION, cs.EMAIL_FORWARD,
+                                        *kept, *access})
         self.assertFalse(set(example) & (set(cs.credentials.KEYS) | set(cs.credentials.RENAMED)))
         self.assertEqual(subprocess.run(["git", "check-ignore", "-q", ".env.infra"], cwd=root).returncode, 0)
 
@@ -412,7 +457,7 @@ class CloudflareSettingsTests(unittest.TestCase):
             self.assertIn(f"{name}: ${{{{ secrets.{name} }}}}", workflow)
 
 
-def deploy_token(zone=("Zone Read", "Workers Routes Write", "DNS Write"), workers=("t1", "t2")):
+def deploy_token(zone=("Zone Read", "Workers Routes Write", "DNS Write"), workers=("t1", "t2", "t3")):
     """The deploy token as Cloudflare lists it: the zone by its id, Workers by their tags."""
     return {"name": cs.DEPLOY_TOKEN, "status": "active", "policies": [
         {"effect": "allow", "permission_groups": [{"name": name} for name in zone],
@@ -458,7 +503,7 @@ class DeployTokenTests(unittest.TestCase):
 
     def test_a_wider_one_is_named_and_left_to_the_dashboard(self):
         self.fake.tokens = [deploy_token(zone=("Zone Read", "Workers Routes Write", "DNS Write",
-                                               "Zone Settings Write"), workers=("t1", "t2", "t3"))]
+                                               "Zone Settings Write"), workers=("t1", "t2", "t3", "t4"))]
         code, out = run(self.fake)
         self.assertEqual(code, 1)
         self.assertIn("Zone Settings Write", out)
@@ -523,7 +568,7 @@ class CiTokenReachTests(unittest.TestCase):
 
 class DeployTokenReachTests(unittest.TestCase):
     """`deploy-token`, as the website workflow runs it with the deploy token:
-    this zone and account, its two Workers, and no more."""
+    this zone and account, its three Workers, and no more."""
 
     def setUp(self):
         self.fake = FakeCloudflare()
@@ -559,10 +604,10 @@ class DeployTokenReachTests(unittest.TestCase):
                               "/accounts/a1/workers/scripts/firmware-liberator-api/settings"}
         self.assertEqual(run(self.fake, "deploy-token")[0], 0)
 
-    def test_the_website_workflow_runs_it_after_both_deploys(self):
+    def test_the_website_workflow_runs_it_after_the_deploys(self):
         workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/website.yml").read_text(encoding="utf-8")
         job = workflow.split("\n  deploy-token:\n", 1)[1]
-        self.assertIn("needs: [deploy, deploy-api]", job)
+        self.assertIn("needs: [deploy, deploy-api, deploy-admin]", job)
         self.assertIn("run: python3 tools/repo/cloudflare_settings.py deploy-token", job)
         self.assertIn("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}", job)
 
@@ -631,7 +676,7 @@ class DatabaseTests(unittest.TestCase):
             fake = FakeCloudflare()
             fake.databases = [{"name": cs.D1_DATABASE, "uuid": "u1"}]
             fake.migrations = [earlier for earlier in cs.migration_files() if earlier < name]
-            with mock.patch.object(cs, "api", fake), mock.patch.object(cs, "bound_database_id", lambda: "u1"):
+            with mock.patch.object(cs, "api", fake), mock.patch.object(cs, "bound_database_id", lambda config=None: "u1"):
                 changes = [change for _, _, change in cs.database_differences("a1")]
             sql = changes[0][2]["sql"]
             db.executescript(sql)
@@ -767,7 +812,7 @@ class ApiAndStatsTests(unittest.TestCase):
         self.fake.secrets = [name for name in cs.API_SECRETS if name != "ALERTS_RECIPIENT_EMAIL"]
         out = io.StringIO()
         with mock.patch.object(cs, "api", self.fake), redirect_stdout(out), \
-                mock.patch.object(cs, "bound_database_id", lambda: self.fake.bound), \
+                mock.patch.object(cs, "bound_database_id", lambda config=None: self.fake.bound), \
                 mock.patch.object(cs, "email_differences", lambda zone, account: []), \
                 mock.patch.object(cs, "variable", side_effect=lambda name: (_ for _ in ()).throw(
                     cs.SettingsError(f"no {name}")) if name == cs.EMAIL_DESTINATION else "x"):
@@ -799,7 +844,7 @@ class ApiAndStatsTests(unittest.TestCase):
             self.assertNotEqual(path, SECRETS)
             return self.fake(path, *args, **kwargs)
         code, out = run(no_secrets, "ci")
-        self.assertIn(f"{cs.API_WORKER} secrets: not checked", out)
+        self.assertIn(f"{cs.API_WORKER} and {cs.ADMIN_WORKER} secrets: not checked", out)
 
     def test_the_worker_binds_the_figures_bucket_and_its_secrets_are_set_here(self):
         config = (Path(__file__).resolve().parents[2] / "website/api/wrangler.jsonc").read_text(encoding="utf-8")
@@ -809,6 +854,125 @@ class ApiAndStatsTests(unittest.TestCase):
             self.assertIn(name, config)
 
 
+
+class AdminAccessTests(unittest.TestCase):
+    """Access in front of the admin view, and the admin Worker's settings."""
+
+    def setUp(self):
+        self.fake = FakeCloudflare()
+        self.fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09"}]
+        run(self.fake, "apply")
+        self.fake.sent.clear()
+        self.assertEqual(run(self.fake)[0], 0, "the fake starts with Access as apply leaves it")
+
+    def fresh(self):
+        self.fake.idps, self.fake.apps, self.fake.policies = [], [], {}
+
+    def test_with_no_organisation_it_says_to_make_one_and_nothing_else(self):
+        self.fake.organisation = None
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn("Access: left - in the dashboard, Zero Trust: choose a team name", out)
+
+    def test_a_token_not_allowed_access_says_so_and_the_rest_is_still_checked(self):
+        self.fake.organisation = "forbidden"
+        self.fake.r2_dev = True
+        code, out = run(self.fake, "apply")
+        self.assertEqual(code, 1)
+        self.assertIn("Access: cannot be checked: this token is not allowed Access", out)
+        self.assertIn("Access: Apps and Policies: Edit", out)
+        self.assertFalse(self.fake.r2_dev, "what it can set, it sets")
+
+    def test_with_no_github_app_kept_it_says_how_to_make_one_with_its_callback(self):
+        self.fresh()
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn("https://team1.cloudflareaccess.com/cdn-cgi/access/callback", out)
+        self.assertIn("ACCESS_GITHUB_CLIENT_ID", out)
+
+    def test_apply_makes_the_sign_in_the_application_and_its_policy_never_showing_them(self):
+        self.fresh()
+        kept = {"ACCESS_GITHUB_CLIENT_ID": "made-up-id", "ACCESS_GITHUB_CLIENT_SECRET": "made-up-secret"}
+        with mock.patch.dict("os.environ", kept):
+            code, out = run(self.fake, "apply")
+        self.assertEqual(code, 1, "it says what to put in the admin wrangler.jsonc")
+        for value in (*kept.values(), DESTINATION):
+            self.assertNotIn(value, out)
+        [idp] = self.fake.idps
+        [app] = self.fake.apps
+        self.assertEqual((app["domain"], app["allowed_idps"], app["auto_redirect_to_identity"]),
+                         (cs.ADMIN_HOST, [idp["id"]], True))
+        [policy] = self.fake.policies[app["id"]]
+        self.assertEqual((policy["decision"], policy["include"], policy["require"]),
+                         ("allow", [{"email": {"email": DESTINATION}}], [{"login_method": {"id": idp["id"]}}]))
+        self.fake.admin_vars = {"ACCESS_TEAM": "team1", "ACCESS_AUD": app["aud"], "ACCOUNT_ID": "a1"}
+        self.assertEqual(run(self.fake)[0], 0, "then nothing differs")
+
+    def test_an_admin_address_of_its_own_comes_before_the_mail_destination(self):
+        with mock.patch.dict("os.environ", {"ACCESS_ADMIN_EMAIL": "admin@example.com"}):
+            code, out = run(self.fake, "apply")
+        self.assertNotIn("admin@example.com", out)
+        [policy] = self.fake.policies["app1"]
+        self.assertEqual(policy["include"], [{"email": {"email": "admin@example.com"}}])
+
+    def test_a_policy_widened_by_hand_is_put_back_its_rules_never_printed(self):
+        self.fake.policies["app1"][0]["include"] = [{"everyone": {}}]
+        code, out = run(self.fake)
+        self.assertEqual(code, 1)
+        self.assertIn("lets in someone other than the maintainer", out)
+        self.assertNotIn("everyone", out)
+        run(self.fake, "apply")
+        self.assertEqual(self.fake.policies["app1"][0]["include"], [{"email": {"email": DESTINATION}}])
+
+    def test_a_second_policy_is_left_to_the_maintainer(self):
+        self.fake.policies["app1"].append({"id": "p2", "decision": "bypass", "include": [{"everyone": {}}]})
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn("are 2: there should be one", out)
+
+    def test_another_sign_in_allowed_on_the_application_is_taken_off(self):
+        self.fake.apps[0]["allowed_idps"] = ["g1", "otp"]
+        code, out = run(self.fake, "apply")
+        self.assertIn(f"Access application {cs.ADMIN_HOST}: differs in allowed_idps", out)
+        self.assertEqual(self.fake.apps[0]["allowed_idps"], ["g1"])
+
+    def test_the_admin_workers_vars_are_said_to_set_by_hand(self):
+        self.fake.admin_vars = {"ACCESS_TEAM": "", "ACCESS_AUD": "", "ACCOUNT_ID": ""}
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn("website/admin/wrangler.jsonc ACCESS_AUD: left - set it to 'aud1' and commit", out)
+
+    def test_the_admin_workers_secret_is_kept_in_env_infra(self):
+        self.fake.admin_secrets = []
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn(f"{cs.ADMIN_WORKER} secret ANALYTICS_TOKEN: left - put its value, kept privately, "
+                      "in .env.infra as ADMIN_ANALYTICS_TOKEN", out)
+        with mock.patch.dict("os.environ", {"ADMIN_ANALYTICS_TOKEN": "made-up-token"}):
+            code, out = run(self.fake, "apply")
+        self.assertEqual(code, 0, out)
+        self.assertEqual([(path, body["name"], body["text"]) for _, path, body in self.fake.sent],
+                         [(ADMIN_SECRETS, "ANALYTICS_TOKEN", "made-up-token")])
+        self.assertNotIn("made-up-token", out)
+
+    def test_ci_asks_nothing_of_access(self):
+        def no_access(path, *args, **kwargs):
+            self.assertFalse(path.startswith(ACCESS) or path == ADMIN_SECRETS, path)
+            return self.fake(path, *args, **kwargs)
+        code, out = run(no_access, "ci")
+        self.assertIn(f"Access for {cs.ADMIN_HOST}: not checked", out)
+
+    def test_both_workers_bind_the_same_database(self):
+        self.assertEqual(cs.bound_database_id(cs.ADMIN_WRANGLER), cs.bound_database_id())
+
+    def test_the_website_workflow_deploys_the_admin_view_and_checks_it_is_closed(self):
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/website.yml").read_text(encoding="utf-8")
+        job = workflow[workflow.index("  deploy-admin:"):workflow.index("  deploy-token:")]
+        self.assertIn("npx wrangler deploy --config admin/wrangler.jsonc", job)
+        self.assertIn("github.event_name != 'schedule'", job)
+        self.assertIn("https://admin.firmwareliberator.com/", job)
+        self.assertIn("needs: [deploy, deploy-api, deploy-admin]", workflow)
+        self.assertIn(cs.ADMIN_WORKER, cs.DEPLOY_WORKERS)
 
 class StoppingTheApiTests(unittest.TestCase):
     """The website workflow, run by hand, can deploy the API taking nothing."""
