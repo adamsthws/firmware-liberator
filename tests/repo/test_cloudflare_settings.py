@@ -679,7 +679,7 @@ class ApiAndStatsTests(unittest.TestCase):
         self.assertEqual(run(self.fake)[0], 0)
 
     def test_a_made_secret_not_set_is_made_by_apply_a_value_never_shown(self):
-        self.fake.secrets = ["DEVICE_HASH_KEY_PERMANENT"]
+        self.fake.secrets = [name for name in cs.API_SECRETS if name != "SENDER_KEY"]
         code, out = run(self.fake, "apply")
         self.assertEqual(code, 0, out)
         [(method, path, body)] = self.fake.sent
@@ -690,7 +690,7 @@ class ApiAndStatsTests(unittest.TestCase):
         self.assertEqual(run(self.fake)[0], 0, "then nothing differs")
 
     def test_a_kept_secret_is_set_from_env_infra_and_never_made(self):
-        self.fake.secrets = ["SENDER_KEY"]
+        self.fake.secrets = [name for name in cs.API_SECRETS if name != "DEVICE_HASH_KEY_PERMANENT"]
         code, out = run(self.fake, "apply")
         self.assertEqual((code, self.fake.sent), (1, []), "with no API_DEVICE_HASH_KEY_PERMANENT, nothing is made up")
         self.assertIn("secret DEVICE_HASH_KEY_PERMANENT: left - put its value, kept privately, in .env.infra as API_DEVICE_HASH_KEY_PERMANENT", out)
@@ -700,6 +700,26 @@ class ApiAndStatsTests(unittest.TestCase):
         self.assertEqual([(body["name"], body["text"]) for _, _, body in self.fake.sent],
                          [("DEVICE_HASH_KEY_PERMANENT", "a-made-up-kept-value")])
         self.assertNotIn("a-made-up-kept-value", out)
+
+    def test_the_alerts_address_is_set_from_the_email_destination_never_shown(self):
+        self.fake.secrets = [name for name in cs.API_SECRETS if name != "ALERTS_RECIPIENT_EMAIL"]
+        code, out = run(self.fake, "apply")
+        self.assertEqual(code, 0, out)
+        [(method, path, body)] = [sent for sent in self.fake.sent if sent[1] == SECRETS]
+        self.assertEqual((method, body["name"], body["text"]), ("PUT", "ALERTS_RECIPIENT_EMAIL", DESTINATION))
+        self.assertNotIn(DESTINATION, out)
+
+    def test_the_alerts_address_waits_for_the_email_destination(self):
+        self.fake.secrets = [name for name in cs.API_SECRETS if name != "ALERTS_RECIPIENT_EMAIL"]
+        out = io.StringIO()
+        with mock.patch.object(cs, "api", self.fake), redirect_stdout(out), \
+                mock.patch.object(cs, "bound_database_id", lambda: self.fake.bound), \
+                mock.patch.object(cs, "email_differences", lambda zone, account: []), \
+                mock.patch.object(cs, "variable", side_effect=lambda name: (_ for _ in ()).throw(
+                    cs.SettingsError(f"no {name}")) if name == cs.EMAIL_DESTINATION else "x"):
+            cs.main(["apply"])
+        self.assertIn(f"secret ALERTS_RECIPIENT_EMAIL: left - put the maintainer's address in .env.infra as {cs.EMAIL_DESTINATION}",
+                      out.getvalue())
 
     def test_only_a_made_secret_is_rotated(self):
         out, err = io.StringIO(), io.StringIO()

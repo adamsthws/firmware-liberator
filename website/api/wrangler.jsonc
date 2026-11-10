@@ -4,7 +4,7 @@
 // (../wrangler.jsonc) so nothing sent here can affect the site. The website
 // workflow deploys it in a job of its own.
 //
-// Its two secrets are set by tools/repo/cloudflare_settings.py apply, which
+// Its secrets are set by tools/repo/cloudflare_settings.py apply, which
 // checks each is there (API_SECRETS), never by hand:
 // - DEVICE_HASH_KEY_PERMANENT, the key a device's hash is stored under (reports.js), never
 //   changed: a new key would make every device seen before a new one. Kept
@@ -12,7 +12,11 @@
 // - SENDER_KEY, the key a sender's address is hashed under (index.js), to
 //   count its readouts a day and keep two of one key from coming from it.
 //   Made by apply, and changed with `cloudflare_settings.py rotate SENDER_KEY`,
-//   which starts the day's counts again. Until it is set, no readout is taken.
+//   which starts the day's counts again. Until it is set, no readout or
+//   report is taken.
+// - ALERTS_RECIPIENT_EMAIL, the maintainer's address, which the nightly job emails when a
+//   limit was reached (alerts.js): set from CLOUDFLARE_EMAIL_DESTINATION in
+//   .env.infra, the Email Routing destination, never written here.
 {
   "name": "firmware-liberator-api",
   "main": "index.js",
@@ -39,21 +43,23 @@
     { "binding": "DB", "database_name": "firmware-liberator-api", "migrations_dir": "migrations",
       "database_id": "00000000-0000-0000-0000-000000000000" }
   ],
-  // Two readouts a minute from one address: a device takes one. Three
-  // requests of reports: a run sends one, with any kept from before.
   // Cloudflare Email Service (Workers Paid): the confirmation an address
   // given to /notify is sent, from NOTIFY_FROM on the domain onboarded for it
-  // (.github/readouts.md). Unbound, /notify takes no address.
+  // (.github/readouts.md), and the nightly job's alerts to ALERTS_RECIPIENT_EMAIL
+  // (alerts.js). Unbound, /notify takes no address, and no alert is sent.
   "send_email": [
     { "name": "EMAIL" }
   ],
+  // Two readouts a minute from one address: a device takes one. Three
+  // requests of reports: a run sends one, with any kept from before.
   "ratelimits": [
     { "name": "READOUT_LIMIT", "namespace_id": "1001", "simple": { "limit": 2, "period": 60 } },
     { "name": "REPORT_LIMIT", "namespace_id": "1002", "simple": { "limit": 3, "period": 60 } }
   ],
   "vars": {
-    // "on" to take reports; anything else answers 503 and the tool keeps
-    // them to send later: a switch, should something need looking at.
+    // "on" to take requests; anything else answers 503 on every path, and
+    // the tool keeps what it would send for later: the one switch, should
+    // something need looking at (website/README.md, Stopping the API).
     "INGEST": "on",
     // eWeLink product models enough readouts of are in, comma-separated:
     // the next is thanked and not kept.

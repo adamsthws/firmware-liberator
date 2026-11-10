@@ -100,7 +100,7 @@ import { PENDING, SIGNUP_DAYS } from "./pending.js";
 import { senderAddress } from "./sender.js";
 import { bodySubject, hex, proven, sha256, work } from "./proof-of-work.js";
 import { nightly } from "./nightly.js";
-import { countWanted, reports } from "./reports.js";
+import { countWanted, REPORTS_DAILY, reports } from "./reports.js";
 
 export { work };
 
@@ -128,7 +128,9 @@ export default {
   },
   // The nightly job (nightly.js), at the time wrangler.jsonc's cron gives.
   async scheduled(controller, env, context) {
-    context.waitUntil(nightly(env, new Date(controller.scheduledTime)));
+    // The limits the maintainer is told were reached (alerts.js).
+    const limits = { DAILY_COUNT, DAILY_BYTES, TOTAL_BYTES, NOTIFY_DAILY, REPORTS_DAILY, from: NOTIFY_FROM };
+    context.waitUntil(nightly(env, new Date(controller.scheduledTime), limits));
   },
 };
 

@@ -186,8 +186,11 @@ CACHE_RULES = [{
 # - "kept": one that must never change, kept privately as API_<NAME> in the
 #   environment or .env.infra, from where `apply` sets it when it is missing;
 #   never made or rotated here.
+# - "destination": the maintainer's address, EMAIL_DESTINATION (below), which
+#   the API's nightly job emails when a limit was reached (alerts.js): set
+#   from it, as it is kept for Email Routing already, and never printed.
 API_WORKER = "firmware-liberator-api"
-API_SECRETS = {"DEVICE_HASH_KEY_PERMANENT": "kept", "SENDER_KEY": "made"}
+API_SECRETS = {"DEVICE_HASH_KEY_PERMANENT": "kept", "SENDER_KEY": "made", "ALERTS_RECIPIENT_EMAIL": "destination"}
 
 # Mail to the domain is received by Cloudflare's Email Routing, which made
 # and keeps its own DNS records: MX, its DKIM key and SPF. They are checked
@@ -611,6 +614,16 @@ def secret_differences(account: str) -> list[tuple[str, str, Any]]:
         if how == "made":
             found.append((f"{API_WORKER} secret {name}", "is not set",
                           lambda name=name: put_secret(account, name, made_secret()) or []))
+            continue
+        if how == "destination":
+            try:
+                value = variable(EMAIL_DESTINATION)
+            except SettingsError:
+                found.append((f"{API_WORKER} secret {name}", "is not set",
+                              f"put the maintainer's address in .env.infra as {EMAIL_DESTINATION} and run apply again"))
+                continue
+            found.append((f"{API_WORKER} secret {name}", "is not set",
+                          lambda name=name, value=value: put_secret(account, name, value) or []))
             continue
         try:
             value = variable(f"API_{name}")
