@@ -8,7 +8,9 @@
 //   after they were given.
 import { release } from "./counters.js";
 
-export const PENDING_DAYS = 30;
+// Half a year: a rare device's owners may come months apart, and a readout
+// deleted before the next arrives never meets one to agree with.
+export const PENDING_DAYS = 180;
 export const SIGNUP_DAYS = 7;
 // The count of bytes held by readouts not yet taken as right (counters.js).
 export const PENDING = "readouts:pending";

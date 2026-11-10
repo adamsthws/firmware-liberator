@@ -59,7 +59,7 @@ after a week. So that a made-up model name cannot be put on the public
 figures by one computer, the server also notes, for each model a report
 names, a scrambled code of your address and that model, which ties you to
 nothing else; it is deleted once enough people have named that model, or
-after 90 days. The address itself is never stored.
+after a year. The address itself is never stored.
 
 - **Each report** is deleted after a year, leaving only totals made from it,
   such as "so many S60s converted in November".

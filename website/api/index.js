@@ -52,9 +52,10 @@
 //   readouts/firmware/): a readout is kept only if it adds something, so the
 //   store grows only with firmware not seen before, and an old one may prove
 //   useful long after. TOTAL_BYTES of them at most, counted in the database
-//   as the day's are, keeps the bucket within R2's free 10 GB, with room for
-//   the addresses under notify/; past it, none is taken until some are
-//   deleted by hand (.github/readouts.md).
+//   as the day's are: room enough that a flood of made-up ones, at the day's
+//   limit, takes months to fill it, at well under a dollar a month (R2
+//   includes 10 GB, then $0.015 a GB-month, 2026). Past it, none is taken
+//   until some are deleted by hand (.github/readouts.md).
 // - A device enough readouts of are in, by eWeLink's product model in ENOUGH
 //   (a comma-separated variable in wrangler.jsonc), is not wanted at all.
 // - The same readout sent again the same day is the one already stored.
@@ -69,7 +70,7 @@ export const PROOF_BITS = 24;
 export const PROOF_AGE = 15 * 60;
 export const DAILY_COUNT = 100;
 export const DAILY_BYTES = 250 * 1024 * 1024;
-export const TOTAL_BYTES = 8 * 1024 * 1024 * 1024;
+export const TOTAL_BYTES = 50 * 1024 * 1024 * 1024;
 export const FORMAT = 1;
 export const LIGHT_PROOF_BITS = 20;
 export const LIGHT_PROOF_AGE = 60;
@@ -102,8 +103,9 @@ export const REMIND_EACH_RUN = 100;
 export const NIGHTLY_CRON = "17 3 * * *";
 // The most of the store that readouts not yet taken as right may take: so
 // made-up ones, kept until the nightly job deletes them (pending.js), can
-// never fill it.
-export const PENDING_BYTES = 1024 * 1024 * 1024;
+// never fill it. Enough for a rare device's readouts to wait the months it
+// may take others to send theirs.
+export const PENDING_BYTES = 10 * 1024 * 1024 * 1024;
 export const STAGES = ["first", "whole"];
 // Readouts kept of each product, firmware model and version, each from a
 // different sender: three, so one made up stands out against the two that
