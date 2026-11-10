@@ -145,10 +145,13 @@ RATE_LIMITS = [{
 # never counts against the account's Workers requests (the rate rule above
 # says why that matters). The free plan allows five such rules.
 FIREWALL_PHASE = "http_request_firewall_custom"
-# The paths, as the Worker routes them, and the methods each takes
-# (website/test/api.test.mjs holds the two alike): a POST from the tool, and
-# for /forget, opened from the link in an email, a GET too.
-API_METHODS = {"/readout": ("POST",), "/wanted": ("POST",), "/notify": ("POST",), "/reports": ("POST",), "/confirm": ("GET", "POST"), "/forget": ("GET", "POST")}
+# The paths and the methods each takes, as the API's description gives them
+# (website/api/openapi.json, which website/test/openapi.test.mjs holds the
+# Worker to): a POST from the tool, and for /confirm and /forget, opened from
+# the link in an email, a GET too.
+API_DESCRIPTION = ROOT / "website" / "api" / "openapi.json"
+API_METHODS = {path: tuple(method.upper() for method in ("get", "post", "put", "patch", "delete") if method in item)
+               for path, item in json.loads(API_DESCRIPTION.read_text(encoding="utf-8"))["paths"].items()}
 API_PATHS = tuple(API_METHODS)
 
 

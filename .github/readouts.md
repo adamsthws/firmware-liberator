@@ -13,7 +13,8 @@ reason, is written beside the code that does it:
 | The second stage on a Beken device, through the readout OpenBeken | [readout_beken.py](../tools/autoflash/readout_beken.py) |
 | What is taken out of a copy | [tools/espressif/scrub.py](../tools/espressif/scrub.py), [tools/beken/scrub.py](../tools/beken/scrub.py) |
 | What Sonoff's firmware says of the hardware it drives | [firmware_findings.py](../tools/ewelink/firmware_findings.py) |
-| Each path of the API, and how it is guarded | [website/api/index.js](../website/api/index.js) and the modules beside it |
+| Each path of the API, what it takes and answers | [website/api/openapi.json](../website/api/openapi.json) |
+| How each path is guarded | [website/api/index.js](../website/api/index.js) and the modules beside it |
 | The bucket, the rules in front of the API, its database and its secrets | [cloudflare_settings.py](../tools/repo/cloudflare_settings.py), [wrangler.jsonc](../website/api/wrangler.jsonc) |
 
 ## Two stages

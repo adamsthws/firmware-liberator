@@ -284,7 +284,7 @@ class LiveTests(unittest.TestCase):
             raise health.urllib.error.HTTPError(request.full_url, 400, "", {}, io.BytesIO(b"{}"))
         with mock.patch.object(health.urllib.request, "urlopen", side_effect=urlopen), \
                 mock.patch.object(health, "light_proof_bits", return_value=4):
-            self.assertEqual(health.ask("/wanted", b'{"format": 0}')[0], 400)
+            self.assertEqual(health.ask("/v1/wanted", b'{"format": 0}')[0], 400)
         self.assertEqual(sent["Content-type"], "application/json")
         stamp, nonce = sent["X-proof"].split(":")
         subject = health.proof_of_work.body_subject(sent["body"])

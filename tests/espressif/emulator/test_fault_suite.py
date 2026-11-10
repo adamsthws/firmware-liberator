@@ -1573,12 +1573,12 @@ class ReadoutAllScenarioTests(unittest.TestCase):
     RUN = ("[10:00:00] Reading out 'Test device 1' (TESTLIGHT) (1 of 3)...\n"
            "[10:00:20] Reading out 'Test device 2' (TESTLIGHT) (2 of 3)...\n"
            "[10:00:30] Reading out 'Device (stub)' (BASICR4) (3 of 3)...\n")
-    WANTED = '2026-11-09T10:00:01.000Z POST /wanted 140 -> 200 {"wanted":true,"held":[]}'
-    HELD = '2026-11-09T10:00:21.000Z POST /wanted 140 -> 200 {"wanted":false,"why":"held","held":[]}'
-    LIMITED = '2026-11-09T10:00:40.000Z POST /readout 9000 -> 429 {"error":"too many readouts at once"}'
+    WANTED = '2026-11-09T10:00:01.000Z POST /v1/wanted 140 -> 200 {"wanted":true,"held":[]}'
+    HELD = '2026-11-09T10:00:21.000Z POST /v1/wanted 140 -> 200 {"wanted":false,"why":"held","held":[]}'
+    LIMITED = '2026-11-09T10:00:40.000Z POST /v1/readout 9000 -> 429 {"error":"too many readouts at once"}'
 
     def taken(self, digest):
-        return f'2026-11-09T10:00:10.000Z POST /readout 9000 -> 201 {{"id":"2026-11-09-{digest[:12]}"}}'
+        return f'2026-11-09T10:00:10.000Z POST /v1/readout 9000 -> 201 {{"id":"2026-11-09-{digest[:12]}"}}'
 
     def scenario(self, account="mixed", step="start", fault="none", arg=None):
         arg = account if arg is None else arg
@@ -1690,7 +1690,7 @@ class ReadoutAllScenarioTests(unittest.TestCase):
         self.assertEqual(self.problems(requests, finished=True, stored=(self.A,))[0], ["FAIL-NOT-SENT"])
 
     def test_an_answer_the_tool_could_not_read_is_wanted(self):
-        failed = '2026-11-09T10:00:01.000Z POST /wanted 140 -> 500 {"error":"x"}'
+        failed = '2026-11-09T10:00:01.000Z POST /v1/wanted 140 -> 500 {"error":"x"}'
         self.assertEqual(self.problems([failed, self.HELD, self.WANTED, self.taken(self.B)], stored=(self.B,))[0],
                          ["FAIL-NOT-SENT"])
 

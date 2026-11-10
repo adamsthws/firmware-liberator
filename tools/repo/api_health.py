@@ -37,7 +37,7 @@ Read and the account's Email Sending: Read.
 needs no token. It asks the API what only a deployed, migrated Worker with
 its database answers rightly: a GET of /confirm with a token that cannot be
 one (the firewall's GET path, the Worker, the database's newest migration:
-a page saying there is nothing to confirm), and a POST to /wanted with the
+a page saying there is nothing to confirm), and a POST to /v1/wanted with the
 light proof of work but of a format no tool sends (the firewall's POST path,
 the proof checked and taken once in the database: 400). Nothing is counted
 or kept but that proof's mark. Deployed taking no requests (`off`), each is
@@ -150,12 +150,12 @@ def live_problems(ingest: str) -> list[str]:
     elif status != 404 or "Nothing to confirm" not in text:
         problems.append(f"GET /confirm: {status} {text[:200]!r}, not its page saying there is nothing to confirm")
     body = json.dumps({"format": 0, "health": "check", "nonce": secrets.token_hex(8)}).encode()
-    status, text = ask("/wanted", body)
+    status, text = ask("/v1/wanted", body)
     if ingest == "off":
         if status != 503:
-            problems.append(f"POST /wanted: {status} {text[:200]!r}, not 503 as taking no requests")
+            problems.append(f"POST /v1/wanted: {status} {text[:200]!r}, not 503 as taking no requests")
     elif status != 400 or "not a question this tool makes" not in text:
-        problems.append(f"POST /wanted: {status} {text[:200]!r}, not 400 for a question of no tool's format"
+        problems.append(f"POST /v1/wanted: {status} {text[:200]!r}, not 400 for a question of no tool's format"
                         + (" (run python3 tools/repo/cloudflare_settings.py apply)" if "being updated" in text else ""))
     return problems
 

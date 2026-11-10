@@ -1,20 +1,21 @@
 // api.firmwareliberator.com: the project's API (tools/autoflash/readout.py,
 // .github/readouts.md). A Worker of its own, apart from the website's, so
-// nothing sent here can touch the site. Six paths: four a POST from the tool
-// - /reports (reports.js, which says how it is guarded), and three for
-// readouts - and /confirm and /forget, which a person opens from an email.
+// nothing sent here can touch the site. Six paths, as openapi.json describes
+// them: four a POST from the tool, under /v1/ - /v1/reports (reports.js, which
+// says how it is guarded), and three for readouts - and /confirm and /forget,
+// which a person opens from an email.
 // Every one answers 503 while INGEST is not "on". A sender is counted by its
 // address, an IPv6 one by its /48 (sender.js).
-// - /wanted: whether a readout of a device would add anything, asked before
+// - /v1/wanted: whether a readout of a device would add anything, asked before
 //   it is made. Its product model, firmware model and version, the stage it
 //   would be (a first stage, or a whole memory), and the firmware eWeLink
 //   offers it, by SHA-256: the answer says whether it is wanted, and which of
 //   those files are held already, so they are left out.
-// - /readout: a readout, made with its owner's consent. Kept only if it adds
+// - /v1/readout: a readout, made with its owner's consent. Kept only if it adds
 //   something: fewer than PER_KEY readouts of that model and version at that
 //   stage are held (a whole one taking a first stage's place too), and its
 //   sender has had fewer than SENDER_DAILY kept today.
-// - /notify: an owner's email address and their devices' models, to be told
+// - /v1/notify: an owner's email address and their devices' models, to be told
 //   when a device's status changes, whether or not a readout was wanted. The
 //   address is sent a link to confirm it, and nothing is kept until it is.
 // - /confirm: that link; /forget: the link to stop, one an address. A GET of
@@ -121,20 +122,21 @@ import { senderAddress } from "./sender.js";
 import { bodySubject, hex, proven, sha256, work } from "./proof-of-work.js";
 import { nightly } from "./nightly.js";
 import { countWanted, REPORTS_DAILY, reports } from "./reports.js";
-import schema from "./report-schema.json" with { type: "json" };
 
 export { work };
 
-// Each path, and only these: tools/repo/cloudflare_settings.py's firewall rule lets
-// through a POST to these alone.
-export const ROUTES = { "/readout": readout, "/wanted": wanted, "/notify": notify, "/reports": reports,
+// Each path, and only these, as openapi.json describes them: the tool's under
+// /v1/, kept working for every version of the tool released against them, and
+// the two pages an email links to. tools/repo/cloudflare_settings.py's firewall
+// rule, made from openapi.json, lets through these and their methods alone.
+export const ROUTES = { "/v1/readout": readout, "/v1/wanted": wanted, "/v1/notify": notify, "/v1/reports": reports,
   "/confirm": confirm, "/forget": forget };
 
 export default {
   async fetch(request, env) {
     const route = ROUTES[new URL(request.url).pathname];
     if (!route) {
-      return answer(404, { error: "readouts are sent to /readout, by the tool" });
+      return answer(404, { error: "no such path: the tool's are under /v1/" });
     }
     // The one switch for every path: "on" takes requests; anything else, as
     // the website workflow can deploy with, answers 503 for the tool to try
@@ -246,10 +248,11 @@ const part = (value) => encodeURIComponent(String(value));
 // model, written as a report's model is (report-schema.json) in either case;
 // its firmware model; and the version it runs - those two "-" for none. No
 // space, "|", ":" or "/" in any, so none can carry a sentence or a link into
-// an email or the figures, and keyOf's "|" is never part of one.
-const PRODUCT = new RegExp(schema.properties.model.pattern, "i");
-const FIRMWARE_MODEL = /^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,63})$/;
-const VERSION = /^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,31})$/;
+// an email or the figures, and keyOf's "|" is never part of one. openapi.json
+// gives the same (test/openapi.test.mjs holds them alike).
+export const PRODUCT = /^[A-Za-z0-9][A-Za-z0-9-]{0,23}$/;
+export const FIRMWARE_MODEL = /^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,63})$/;
+export const VERSION = /^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,31})$/;
 const fits = (value, pattern) => typeof value === "string" && pattern.test(value);
 
 // Where an offered file a readout holds is marked.

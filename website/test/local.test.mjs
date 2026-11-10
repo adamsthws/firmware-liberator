@@ -38,10 +38,10 @@ test("it answers as the Worker does and keeps what it is given in its folder", a
   try {
     const body = Buffer.from(JSON.stringify({ format: 1, product: "NSPanel", model: "E32-MSW-NX", version: "1.5.0",
       stage: "first", firmware: [] }));
-    const answer = await fetch(`http://127.0.0.1:${port}/wanted`, { method: "POST", body,
+    const answer = await fetch(`http://127.0.0.1:${port}/v1/wanted`, { method: "POST", body,
       headers: { "Content-Type": "application/json", "X-Proof": proofFor(body, 20) } });
     assert.deepEqual(await answer.json(), { wanted: false, why: "enough", held: [] });
-    assert.match(fs.readFileSync(path.join(folder, "requests.log"), "utf8"), /POST \/wanted .* -> 200/);
+    assert.match(fs.readFileSync(path.join(folder, "requests.log"), "utf8"), /POST \/v1\/wanted .* -> 200/);
   } finally {
     child.kill();
     fs.rmSync(folder, { recursive: true, force: true });

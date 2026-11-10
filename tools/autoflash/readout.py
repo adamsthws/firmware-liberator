@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 # Where readouts go: a Worker of their own, apart from the website's, with a
 # private store behind it: the project's API (website/api/index.js).
-UPLOAD_URL = "https://api.firmwareliberator.com/readout"
+UPLOAD_URL = "https://api.firmwareliberator.com/v1/readout"
 # The work each readout carries, as the Worker asks it (its PROOF_BITS); and
 # the lighter work of /wanted and /notify (LIGHT_PROOF_BITS).
 PROOF_BITS = 24
