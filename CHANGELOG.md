@@ -232,6 +232,9 @@ check.
   in the same run.
 - Two Wi-Fi passwords typed that differ are taken off the screen before the
   password is asked again, as any wrong answer is; they stayed under each other.
+- The arrow keys move along a typed answer on Linux and macOS. The terminal used
+  to echo them: the up arrow moved the cursor into the rows above, garbling the
+  screen, and their codes became part of the answer.
 - The countdown after Ctrl-C counts down in an 80-column window too: its words fit
   one row ("Carrying on to the next stage in 20 s, or press Enter now"). On two,
   only the second was redrawn, and "in 20 s" stood still above it.

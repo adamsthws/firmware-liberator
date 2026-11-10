@@ -515,6 +515,24 @@ class QuestionScreenTests(unittest.TestCase):
         self.assertEqual(sum("(q to quit)" in row for row in rows), 1, "\n".join(rows))
         self.assertEqual(rows[-3].strip(), "The two passwords did not match - try again.")
 
+    def test_arrow_keys_edit_the_answer(self):
+        # Seen in an attended emulator run: echoed by the terminal, the up
+        # arrow moved the cursor into the rows above, and both arrows' codes
+        # were taken as part of the answer.
+        code, answer, _, _, _, end = self.ask('prompts.ask_text("eWeLink account email")', [
+            ("account email", "you@exampl.com" + "\x1b[D" * 4 + "e" + "\x1b[A\x1b[B\r")])
+        self.assertEqual((code, answer), (0, "you@example.com"), end.render(colour=False))
+        rows = [row for row in end.render(colour=False).splitlines() if row.strip()]
+        self.assertEqual(len(rows), 2, "\n".join(rows))
+        self.assertEqual(rows[1].strip(), self.NOTE)
+
+    def test_an_answer_is_not_recalled_by_the_next_question(self):
+        # The consent word is typed, never brought back with the up arrow.
+        code, answer, _, _, _, end = self.ask(
+            '[prompts.ask_text("eWeLink account email"), prompts.require_word(prompts.CONSENT_WORD)]',
+            [("account email", "proceed\r"), ("Type PROCEED", "\x1b[A\r"), ("Only the TYPED word", "q\r")])
+        self.assertEqual((code, answer), (0, ["proceed", False]), end.render(colour=False))
+
     def test_every_kind_of_question_is_here(self):
         # A public function reading the keyboard itself is a kind of question:
         # asked above, or this fails. Those built on one (ask_ipv4 on

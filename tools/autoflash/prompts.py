@@ -148,6 +148,10 @@ def _read_answer(prompt: str) -> str:
     """input() for a question laid out by output.question().  Nothing is in
     flight at a question, so Ctrl-C stops the run at once; its row is ended
     then, so what the run says next starts on its own."""
+    editor = _line_editor()
+    if editor:
+        # Colours wrapped as readline needs, so it knows how wide the prompt is.
+        prompt = output.ANSI_RE.sub(lambda code: f"\001{code.group()}\002", prompt)
     with interrupt.asking(), _ctrl_c_unseen():
         try:
             return input(prompt)
@@ -156,6 +160,29 @@ def _read_answer(prompt: str) -> str:
             sys.stdout.flush()
             output.after_input()
             raise
+        finally:
+            if editor and hasattr(editor, "clear_history"):   # not in every build
+                # No answer comes back with the up arrow: the consent word is
+                # typed afresh, never recalled.
+                editor.clear_history()
+
+
+def _line_editor():
+    """readline, where input() then edits the answer with the arrow keys -
+    without it the terminal echoes them, and the up arrow moves the cursor
+    into what is already on the screen.  None without a terminal, or where
+    Python has no readline: Windows' console edits the line itself."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return None
+    try:
+        import readline
+    except ImportError:
+        return None
+    if "libedit" not in (readline.__doc__ or ""):
+        # GNU readline shows ^C for a Ctrl-C, which stops the run and needs no
+        # mark (_ctrl_c_unseen).
+        readline.parse_and_bind("set echo-control-characters off")
+    return readline
 
 
 @contextlib.contextmanager
