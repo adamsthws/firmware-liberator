@@ -171,8 +171,10 @@ ROUTES = {
     # together with the identity the plug kept: 53 s in the emulator (2026-11-08,
     # where 60 s put a fault at 90% a second after it).
     "nobackup>sonoff": ("suite-tasmota-nobackup", "sonoff", {"R1": 53, "R2": 2}),
-    # A plug on the Tasmota release before this one, updated (prep_update).
-    "update>tasmota": ("suite-tasmota-earlier", "tasmota", {"U5": 38, "U6": 12}),
+    # A plug on the Tasmota release before this one, updated (prep_update):
+    # U5 43-46 s in the emulator, and U6 2 s, as U5 now waits for Tasmota's
+    # boot (2026-11-10, where 12 s put every fault at 40% and 90% after U6).
+    "update>tasmota": ("suite-tasmota-earlier", "tasmota", {"U5": 44, "U6": 2}),
     # A plug on our ESPHome of an earlier release of the tool, updated (prep_update).
     "update>esphome": ("suite-esphome-earlier", "esphome", {"U1": 6, "U2": 72}),
 }
