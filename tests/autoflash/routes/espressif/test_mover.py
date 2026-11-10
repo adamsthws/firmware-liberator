@@ -26,6 +26,12 @@ class CheckStepTests(RouteTestCase):
         with mock.patch.object(esphome, "is_esphome", return_value=True):
             self.assertIn("seconds", mover.step_esphome_check(self.ctx(firmware="esphome")))
 
+    def test_esphome_answering_is_given_the_devices_factory_calibration(self):
+        with mock.patch.object(esphome, "is_esphome", return_value=True), \
+                mock.patch.object(mover, "calibrate_esphome_meter", return_value={"calibration": "from backup"}):
+            result = mover.step_esphome_check(self.ctx(firmware="esphome"))
+        self.assertEqual(result["meter"], {"calibration": "from backup"})
+
     def test_waiting_in_vain_points_at_the_wifi(self):
         with mock.patch.object(esphome, "is_esphome", return_value=False), \
                 mock.patch.object(time, "sleep"):
@@ -64,9 +70,10 @@ class SignalBeforeLeavingESPHomeTests(RouteTestCase):
                 mock.patch.object(handover, "consent_to_leave") as consent, \
                 mock.patch.object(detect, "identify", return_value="startup"), \
                 mock.patch.object(prompts, "ask_yes_no", return_value=carry_on) as asked, \
-                mock.patch.object(prompts, "section"):
+                mock.patch.object(prompts, "section"), \
+                mock.patch.object(unlock, "unlock_esphome") as self.unlocked:
             try:
-                mover.step_startup_from_esphome(ctx)
+                self.result = mover.step_startup_from_esphome(ctx)
             except errors.Abort as exc:
                 return ctx, consent, asked, exc
         return ctx, consent, asked, None
@@ -83,6 +90,8 @@ class SignalBeforeLeavingESPHomeTests(RouteTestCase):
         self.assertEqual(ctx.state.data["captures"]["X1.signal_dbm"], -58)
         asked.assert_not_called()
         consent.assert_called_once()
+        self.assertEqual(self.result, {"already": "startup"})   # past it: nothing sent
+        self.unlocked.assert_called_once_with(ctx)   # its password or key asked for first, where it has one
 
     def test_an_esphome_without_the_sensor_goes_on_unasked(self):
         ctx, consent, asked, stopped = self.x1(None)
@@ -98,19 +107,68 @@ class ConfirmedOnlyAfterAMinuteTests(RouteTestCase):
     def check(self, source, answers, probes=()):
         ctx = self.ctx(source=source, firmware="esphome")
         ctx.state.mark("M1", DONE)
-        clock = iter(range(0, 100_000, 3))
-        with mock.patch.object(time, "monotonic", side_effect=lambda: next(clock)), \
+        self.clock = 1000.0   # not from 0: times are measured from the start
+        self.answered_at = []
+
+        def tick():
+            self.clock += 3
+            return self.clock
+
+        def asked(host):
+            answer = next(answers)
+            if answer:
+                self.answered_at.append(self.clock)
+            return answer
+        answers = iter(answers)
+        with mock.patch.object(time, "monotonic", side_effect=tick), \
                 mock.patch.object(time, "sleep"), \
-                mock.patch.object(esphome, "is_esphome", side_effect=list(answers)), \
+                mock.patch.object(esphome, "is_esphome", side_effect=asked), \
                 mock.patch.object(esphome_ota, "probe", side_effect=list(probes) or None), \
-                mock.patch.object(mover, "step_esphome_from_mover") as resent:
-            return mover.step_esphome_check(ctx), resent
+                mock.patch.object(mover, "step_esphome_from_mover",
+                                  side_effect=lambda ctx: self.answered_at.clear()) as self.resent:
+            return mover.step_esphome_check(ctx), self.resent
 
     def test_from_tasmota_it_is_only_done_once_esphome_has_confirmed_itself(self):
         result, _ = self.check("tasmota", [True] * 40)
         self.assertEqual(result["resent"], 0)
-        # Asked again until 70 s after it first answered: 3 s a step.
-        self.assertGreaterEqual(result["seconds"], 0)
+        # Asked again until 70 s after it first answered.
+        self.assertGreaterEqual(self.answered_at[-1] - self.answered_at[0], mover.ESPHOME_CONFIRMS_AFTER)
+        self.assertLess(result["seconds"], 10)   # from the start of the wait to its first answer
+
+    def test_the_minute_starts_again_once_it_has_been_sent_again(self):
+        result, resent = self.check("tasmota", [True] * 5 + [False] + [True] * 40, probes=[object()])
+        resent.assert_called_once()
+        self.assertGreaterEqual(self.answered_at[-1] - self.answered_at[0], mover.ESPHOME_CONFIRMS_AFTER)
+
+    def test_one_that_keeps_going_back_to_the_mover_is_sent_esphome_twice_then_stops(self):
+        with self.assertRaisesRegex(errors.Abort, "keeps going back to the mover"):
+            self.check("tasmota", [False] * 10, probes=[object()] * 10)
+        self.assertEqual(self.resent.call_count, 2)
+
+    def test_from_tasmota_esphome_has_its_minute_on_top_of_the_wait(self):
+        # First answering late in the wait, it still has the minute to confirm itself.
+        late = int(150 / 6)   # two clock reads a step: 6 s
+        result, _ = self.check("tasmota", [False] * late + [True] * 60, probes=[None] * late)
+        self.assertGreaterEqual(result["seconds"], 140)
+
+    def test_esphome_sent_again_late_in_the_wait_has_the_whole_wait_again(self):
+        late = 35   # 210 s in, two clock reads a step
+        result, resent = self.check("tasmota", [False] * (late + 11) + [True] * 40,
+                                    probes=[None] * late + [object()] + [None] * 10)
+        resent.assert_called_once()
+        self.assertEqual(result["resent"], 1)
+
+    def test_the_device_is_followed_to_a_new_address(self):
+        ctx = self.ctx(source="tasmota", firmware="esphome")
+
+        def moved():
+            ctx.state.set_input("device_ip", "192.0.2.51")
+            return "192.0.2.51"
+        ctx.finder = mock.Mock(poll=mock.Mock(side_effect=moved))
+        with mock.patch.object(esphome, "is_esphome", side_effect=lambda host: host == "192.0.2.51"), \
+                mock.patch.object(time, "sleep"), mock.patch.object(join, "set_up_through_own_network") as own:
+            mover.step_esphome_check(ctx)
+        own.assert_not_called()
 
     def test_back_on_the_mover_it_is_sent_esphome_again(self):
         result, resent = self.check("tasmota", [False] + [True] * 40, probes=[object()])
@@ -411,6 +469,16 @@ class CarriedOffTasmotaTests(Fixture):
         settings = mover.settings_to_carry(self.ctx(on_tasmota()), images.layout_of(kinds.SONOFF_S60))
         self.assertEqual(sonoff_identity.from_nvs(settings + b"\xff" * (0x10000 - len(settings))), IDENTITY)
 
+    def test_on_a_layout_leaving_through_a_temporary_table_they_fit_its_settings(self):
+        # Its settings end where the temporary table's boot selection begins.
+        from tools.espressif.layouts import TEMPORARY_OTADATA
+        layout = images.layout_of(kinds.SONOFF_TH_ELITE)
+        self.assertTrue(layout.needs_temporary)
+        ctx = self.ctx(on_tasmota(sector=sonoff_identity.to_sector(IDENTITY)))
+        with mock.patch.object(sonoff_identity, "nvs", wraps=sonoff_identity.nvs) as built:
+            mover.settings_to_carry(ctx, layout)
+        self.assertEqual(built.call_args.args[1], TEMPORARY_OTADATA - layout.nvs)
+
     def test_with_neither_the_region_is_cleared_as_before(self):
         self.assertIsNone(mover.settings_to_carry(self.ctx(on_tasmota()), images.layout_of(kinds.SONOFF_S60)))
 
@@ -431,11 +499,12 @@ class EsphomeSignalTests(unittest.TestCase):
         from unittest import mock
         self.run_plan = mock.Mock(return_value={"plan": "written"})
         self.consent = mock.Mock()
+        self.wait_for_mover = mock.Mock()
         for patch in (mock.patch.object(output, "say"),
                       mock.patch.object(prompts, "section"),
                       mock.patch.object(hub, "run_plan", self.run_plan),
                       mock.patch.object(handover, "consent_to_leave", self.consent),
-                      mock.patch.object(mover, "wait_for_mover"),
+                      mock.patch.object(mover, "wait_for_mover", self.wait_for_mover),
                       mock.patch.object(esphome, "is_esphome", return_value=False),
                       mock.patch.object(images, "image_for", return_value=b"\0" * 64),
                       mock.patch.object(images, "mover_for", return_value=b"\0" * 64),
@@ -468,6 +537,19 @@ class EsphomeSignalTests(unittest.TestCase):
             self.run_plan.reset_mock()
             self.assertEqual(step(self.ctx(self.signal(-58)))["signal_dbm"], -58, step.__name__)
             self.run_plan.assert_called_once()
+
+    def test_tasmota_is_left_only_with_the_go_ahead_and_the_mover_then_waited_for(self):
+        ctx = self.ctx(self.signal(-58))
+        mover.step_leave_tasmota(ctx)
+        self.consent.assert_called_once_with(ctx, "Tasmota")
+        self.wait_for_mover.assert_called_once()
+
+    def test_a_device_already_on_the_mover_is_not_written_again(self):
+        # The mover answers ESPHome's update service, but is not ESPHome.
+        with mock.patch.object(esphome_ota, "probe", return_value=object()):
+            self.assertEqual(mover.step_leave_tasmota(self.ctx(self.signal(-58))), {"already": True})
+        self.run_plan.assert_not_called()
+        self.consent.assert_not_called()
 
     def test_a_weak_signal_stops_before_anything_is_written(self):
         from unittest import mock
@@ -597,6 +679,7 @@ class BerryFromStartupTests(unittest.TestCase):
         self.assertFalse(x1.called)
         self.assertTrue(uploaded)
         self.assertEqual(seen, [True])
+        self.assertEqual(result, {"upload": "http:12s"})   # how it went, for the report
 
     def test_an_upload_cut_off_is_not_cleared_by_a_restart(self):
         # Restarted before it has been used, the startup firmware starts what
