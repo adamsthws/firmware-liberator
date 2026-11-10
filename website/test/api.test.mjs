@@ -443,6 +443,22 @@ test("the firewall before the Worker lets through its paths, and no others", () 
     ["/confirm", "/forget"]);
 });
 
+test("its pages cannot be put inside another site's, and no answer is read as other than it is", async () => {
+  const bindings = env();
+  const page = await readout.default.fetch(new Request("https://api.firmwareliberator.com/confirm?t=not-a-token"), bindings);
+  assert.match(page.headers.get("Content-Security-Policy"), /(^|; )frame-ancestors 'none'(;|$)/);
+  assert.equal(page.headers.get("X-Content-Type-Options"), "nosniff");
+  const json = await worker.fetch(new Request("https://api.firmwareliberator.com/"), bindings);
+  assert.equal(json.headers.get("X-Content-Type-Options"), "nosniff");
+});
+
+test("the Worker can send email from NOTIFY_FROM alone", () => {
+  const config = readFileSync(new URL("../api/wrangler.jsonc", import.meta.url), "utf8");
+  const binding = config.split("\n").find((line) => line.includes('"name": "EMAIL"'));
+  assert.deepEqual(JSON.parse(binding.trim().replace(/,$/, "")),
+    { name: "EMAIL", allowed_sender_addresses: [readout.NOTIFY_FROM] });
+});
+
 test("every other address is not found, and the site is not this Worker", async () => {
   const response = await worker.fetch(new Request("https://api.firmwareliberator.com/"), env());
   assert.equal(response.status, 404);

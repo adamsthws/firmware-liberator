@@ -49,8 +49,10 @@
   // given to /notify is sent, from NOTIFY_FROM on the domain onboarded for it
   // (cloudflare_settings.py's SENDING_DOMAIN), and the nightly job's alerts to ALERTS_RECIPIENT_EMAIL
   // (alerts.js). Unbound, /notify takes no address, and no alert is sent.
+  // From NOTIFY_FROM alone (index.js), so no mistake here can send as any
+  // other address on the domain.
   "send_email": [
-    { "name": "EMAIL" }
+    { "name": "EMAIL", "allowed_sender_addresses": ["updates@firmwareliberator.com"] }
   ],
   // Two readouts a minute from one address: a device takes one. Three
   // requests of reports: a run sends one, with any kept from before.
