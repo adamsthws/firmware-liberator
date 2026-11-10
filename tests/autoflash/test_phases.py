@@ -78,6 +78,7 @@ class LoaderTests(unittest.TestCase):
         run_now = lambda target, daemon: mock.Mock(start=target)
         with mock.patch("tools.autoflash.phases.threading.Thread", side_effect=run_now):
             runner._start('autoflash_restore("token")')
+        self.runner = runner
         return device.berry.call_count
 
     def test_a_start_that_never_reached_the_device_is_sent_again(self):
@@ -87,6 +88,19 @@ class LoaderTests(unittest.TestCase):
         dropped = urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))
         self.assertEqual(self.started(dropped, None), 2)
         self.assertEqual(self.started(dropped, dropped, dropped, None), 3)
+
+    def test_once_sent_again_the_silence_is_judged_again(self):
+        import urllib.error
+        self.started(urllib.error.URLError(ConnectionRefusedError(111, "Connection refused")), None)
+        self.assertFalse(self.runner._resending)
+        self.assertFalse(self.runner._reply_lost)
+
+    def test_a_start_that_never_reached_the_device_in_any_try_is_known_to_have_no_reply(self):
+        # So the fetch check sends it again, once the device answers.
+        import urllib.error
+        dropped = urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))
+        self.started(dropped, dropped, dropped)
+        self.assertTrue(self.runner._reply_lost)
 
     def test_a_start_that_may_have_arrived_is_never_sent_twice(self):
         import io
@@ -621,6 +635,50 @@ sys.exit({code})
         self.device.berry_fire.assert_not_called()
         self.device.berry.assert_not_called()
 
+    def test_a_device_that_never_fetches_its_instructions_stops_the_phase_at_once(self):
+        # The server would go on to fail by itself, saying less.
+        for phase, lines, confirm in (
+                ("stage", [self.loader(), "sleep 4"], None),
+                ("commit", [self.loader(), 'autoflash_commit("t0ken")', "sleep 4"], lambda phase: True)):
+            with self.subTest(phase), mock.patch.object(phases, "FETCH_DEADLINE", 1.0):
+                with self.assertRaises(phases.DeviceNeverConnected):
+                    self.run_phase(phase, lines, code=1, confirm=confirm)
+                self.assertEqual(len(self.device.berry.call_args_list), 1)   # never told to start
+                self.device.berry.reset_mock()
+
+    def test_a_phase_stopped_part_way_stops_its_server(self):
+        import subprocess
+        started, real = [], subprocess.Popen
+
+        def popen(*args, **kwargs):
+            started.append(real(*args, **kwargs))
+            self.addCleanup(started[-1].kill)
+            return started[-1]
+        with mock.patch.object(phases.subprocess, "Popen", side_effect=popen), self.assertRaises(PhaseError):
+            self.run_phase("commit", [self.loader(), 'autoflash_commit("t0ken")', self.FETCH, "sleep 30"],
+                           confirm=lambda phase: False)
+        self.assertIsNotNone(started[0].wait(timeout=5))
+
+    def test_each_run_starts_afresh_keeping_the_last_ones_log(self):
+        self.run_phase("stage", [self.loader(), "sleep 0.6", self.FETCH, "sleep 0.6", self.CHUNK])
+        (code, _), runner = self.run_phase("stage", [self.loader(), "sleep 0.6", self.FETCH, "sleep 0.6", self.CHUNK])
+        self.assertIsNotNone(runner.busy_seconds)
+        self.assertTrue((self.root / "live" / "stage-server.1.log").is_file())
+        # A run that never started has kept the device busy for no time at all, not the last one's.
+        with mock.patch.object(PhaseRunner, "_command", return_value=[sys.executable, "-c", "print('port in use')"]):
+            with self.assertRaises(PhaseError):
+                runner.run("stage")
+        self.assertIsNone(runner.busy_seconds)
+
+    def test_a_server_failing_says_the_devices_reason_once(self):
+        self.device.console_log.return_value = ['RSL: RESULT = {"Br":"[migration_refused] its console\'s reason"}']
+        (code, said), _ = self.run_phase("stage", [self.loader(), self.FETCH], code=1)
+        self.assertTrue(said.endswith("THE DEVICE SAYS: its console's reason"), said)
+        # Where the server has said why, it is not said again.
+        (code, said), _ = self.run_phase("stage", [self.loader(), self.FETCH, "THE DEVICE SAYS: the server's reason"],
+                                         code=1)
+        self.assertTrue(said.endswith("THE DEVICE SAYS: the server's reason"), said)
+
     def test_a_failed_phase_carries_the_devices_own_reason(self):
         self.device.console_log.return_value = [
             'RSL: RESULT = {"Br":"[migration_refused] the staged image did not verify"}']
@@ -668,6 +726,7 @@ class PhaseDisplayTests(unittest.TestCase):
         written, logged = self.run_lines("stage", 198, lines)
         self.assertEqual(logged, ["    The device fetched its instructions.", "    STAGE RESULT: PASS"])
         self.assertIn("block 198/198", written)
+        self.assertNotIn("memory layout", written)   # its captures are not a preflight's
         self.assertNotIn("\n", written.rstrip("\n"), "progress stays on one line")
 
     def test_installing_esphome_counts_its_blocks(self):
@@ -678,6 +737,32 @@ class PhaseDisplayTests(unittest.TestCase):
         written, _ = self.run_lines("plan", 226, lines, title="ESPHome")
         self.assertIn("Copying ESPHome: block 226/226", written)
         self.assertNotIn("startup firmware", written)
+
+    def test_the_preflight_counts_what_it_reads_and_a_line_after_ends_the_progress(self):
+        from tools.autoflash.phases import PhaseDisplay
+        written, logged = [], []
+        display = PhaseDisplay("preflight", None, write=written.append, log=logged.append)
+        for n in range(2):
+            display.feed(f'  [10.0.0.5] "POST /capture/flash/{n} HTTP/1.1" 200 -')
+        display.feed("PREFLIGHT RESULT: PASS")
+        display.close()
+        self.assertEqual(written, ["\r    Reading the device's memory layout: 1 blocks   ",
+                                   "\r    Reading the device's memory layout: 2 blocks   ", "\n"])
+        self.assertEqual(logged, ["    PREFLIGHT RESULT: PASS"])
+
+    def test_how_many_blocks_a_phase_copies(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "m.json"
+            manifest.write_text(json.dumps({"artifacts": {"safeboot": {"size": 4096 * 3 + 1},
+                                                          "recovery_safeboot": {"size": 4096 * 2}}}),
+                                encoding="utf-8")
+            runner = PhaseRunner(repo_root=Path(directory), manifest=manifest, evidence_dir=Path(directory),
+                                 listen_ip="192.0.2.141", device=None, log=lambda _: None)
+            self.assertEqual(runner._blocks("stage"), 2)      # the recovery image's
+            self.assertEqual(runner._blocks("restore"), 4)    # a part block is a block
+            self.assertIsNone(runner._blocks("commit"))
+            self.assertEqual(runner._blocks("plan", mock.Mock(blocks=lambda: 57)), 57)
 
     def test_refusals_are_always_shown(self):
         _, logged = self.run_lines("commit", None, ["  REFUSED /chunk/safeboot/9: outside the artifact",
