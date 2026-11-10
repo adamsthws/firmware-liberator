@@ -733,8 +733,10 @@ function page(status, title, body) {
 <title>${escape(title)}</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:3rem auto;padding:0 1rem}
 button{font:inherit;padding:.5rem 1rem}</style></head><body><h1>${escape(title)}</h1>${body}</body></html>`,
   { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'",
-    "Referrer-Policy": "no-referrer" } });
+    // Never inside another site's page, which could dress its button up as
+    // something else.
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" } });
 }
 
 // Whether `token` is the one `who`'s index holds, compared in fixed time.
