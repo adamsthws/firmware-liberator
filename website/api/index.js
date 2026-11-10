@@ -33,7 +33,8 @@
 //   daily limits below, not this, are what bound the bucket. /wanted and
 //   /notify ask lighter work (LIGHT_PROOF_BITS, a second or two) good for a
 //   minute (LIGHT_PROOF_AGE), and taken once: each request is worked for
-//   afresh. Text a sender gives is taken only if it is printable ASCII.
+//   afresh. A device's names are taken only as a model's name is written
+//   (PRODUCT, FIRMWARE_MODEL, VERSION), other text only as printable ASCII.
 // - It must be a readout: a tar of at most MAX_BYTES, its first file a
 //   manifest.json of the format the tool writes.
 // - At most two readouts a minute from one address (READOUT_LIMIT, held by the
@@ -120,6 +121,7 @@ import { senderAddress } from "./sender.js";
 import { bodySubject, hex, proven, sha256, work } from "./proof-of-work.js";
 import { nightly } from "./nightly.js";
 import { countWanted, REPORTS_DAILY, reports } from "./reports.js";
+import schema from "./report-schema.json" with { type: "json" };
 
 export { work };
 
@@ -192,6 +194,16 @@ const PRINTABLE = /^[\x20-\x7e]+$/;
 const text = (value, most = 64) => typeof value === "string" && value.length > 0 && value.length <= most
   && PRINTABLE.test(value);
 const part = (value) => encodeURIComponent(String(value));
+
+// The names a device goes by, as the tool sends them: its eWeLink product
+// model, written as a report's model is (report-schema.json) in either case;
+// its firmware model; and the version it runs - those two "-" for none. No
+// space, "|", ":" or "/" in any, so none can carry a sentence or a link into
+// an email or the figures, and keyOf's "|" is never part of one.
+const PRODUCT = new RegExp(schema.properties.model.pattern, "i");
+const FIRMWARE_MODEL = /^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,63})$/;
+const VERSION = /^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,31})$/;
+const fits = (value, pattern) => typeof value === "string" && pattern.test(value);
 
 // Where an offered file a readout holds is marked.
 const firmwareKey = (sha) => `readouts/firmware/${sha}`;
@@ -355,7 +367,8 @@ export async function wanted(request, env, now = new Date()) {
     return asked;
   }
   const firmware = asked.firmware ?? [];
-  if (!text(asked.product) || !text(asked.model) || !text(asked.version, 32) || !STAGES.includes(asked.stage)
+  if (!fits(asked.product, PRODUCT) || !fits(asked.model, FIRMWARE_MODEL) || !fits(asked.version, VERSION)
+      || !STAGES.includes(asked.stage)
       || !Array.isArray(firmware) || firmware.length > MAX_FIRMWARE
       || !firmware.every((sha) => typeof sha === "string" && /^[0-9a-f]{64}$/.test(sha))) {
     return answer(400, { error: "that is not a question this tool asks" });
@@ -415,7 +428,7 @@ export async function readout(request, env, now = new Date()) {
     return answer(403, { error: "the readout's proof of work does not check out" });
   }
   const manifest = manifestOf(body);
-  if (!manifest || !text(manifest.product)) {
+  if (!manifest || !fits(manifest.product, PRODUCT)) {
     return answer(400, { error: "that is not a readout this tool makes" });
   }
   const day = now.toISOString().slice(0, 10);
@@ -429,8 +442,8 @@ export async function readout(request, env, now = new Date()) {
     return answer(200, { enough: true });
   }
   const stage = manifest.read === true ? "whole" : "first";
-  const model = text(manifest.stock_model) ? manifest.stock_model : "-";
-  const version = text(manifest.version, 32) ? manifest.version : "-";
+  const model = fits(manifest.stock_model, FIRMWARE_MODEL) ? manifest.stock_model : "-";
+  const version = fits(manifest.version, VERSION) ? manifest.version : "-";
   const sender = await senderOn(env, request, day);
   if (!sender) {
     return answer(503, { error: "the API is being set up: try again later" }, { "Retry-After": "3600" });
@@ -561,7 +574,8 @@ export async function notify(request, env, now = new Date()) {
   const devices = asked.devices;
   const email = typeof asked.email === "string" ? asked.email.trim() : "";
   if (!text(email, 254) || !EMAIL.test(email) || !Array.isArray(devices) || !devices.length
-      || devices.length > MAX_DEVICES || !devices.every((device) => text(device?.product) && text(device?.model ?? "-"))) {
+      || devices.length > MAX_DEVICES
+      || !devices.every((device) => fits(device?.product, PRODUCT) && fits(device?.model ?? "-", FIRMWARE_MODEL))) {
     return answer(400, { error: "that is not a request this tool makes" });
   }
   if (!env.EMAIL) {
