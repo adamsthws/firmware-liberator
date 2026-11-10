@@ -13,7 +13,7 @@ const NOW = new Date("2026-11-07T12:00:00Z");
 function tar(files) {
   const blocks = [];
   for (const [name, text] of Object.entries(files)) {
-    const data = Buffer.from(text);
+    const data = Buffer.isBuffer(text) ? text : Buffer.from(text);
     const header = Buffer.alloc(512);
     header.write(name, 0);
     header.write(data.length.toString(8).padStart(11, "0"), 124);
@@ -24,8 +24,22 @@ function tar(files) {
 
 const MANIFEST = { format: 1, product: "NEWTHING", stock_model: "SN-NEW-01", version: "1.0.0", tool: "2.4.0",
   read: true };
+// xz files, as the tool's lzma.compress writes them: of 1 MiB of zeros, a
+// flash chip's size, and of 3 MiB, no chip's.
+const XZ_1MIB = Buffer.from("/Td6WFoAAATm1rRGAgAhARYAAAB0L+Wj7///ANldAABv/f//o7f/Rz5IFXI5YVG4kijmo4YH+e7kHoLTL8U6PAFLsX7J"
+  + "iopNL6MN2X+m44wjEVPgWRjFdYrid/i2lH8MasDedElk4ulcU7IE2PdEDKtfDW1G6eXDdoi3llestk3haR1v+0uIEGxCy4g/XACP0E6vJiiUcR89jyTh"
+  + "cJ6nI1/sKMuF0ZWYin4qkfIndfcZwAaYTZj92K/VkA/EJVP49ZE2MQWlsO5vwXBNRwzRkRGqrWAdus6xJxhcWYbpZlJYvul2rFnk5VsFCPnH2q38+1Iq"
+  + "9+SVJQAAAAAAwva6PqJwa2AAAfUBgIBAAHmXf0exxGf7AgAAAAAEWVo=", "base64");
+const XZ_3MIB = Buffer.from("/Td6WFoAAATm1rRGAgAhARYAAAB0L+Wj//8RAWxdAABv/f//o7f/Rz5IFXI5YVG4kijmo4YH+e7kHoLTL8U6PAFLsX7J"
+  + "iopNL6MN2X+m44wjEVPgWRjFdYrid/i2lH8MasDedElk4ulcU7IE2PdEDKtfDW1G6eXDdoi3llestk3haR1v+0uIEGxCy4g/XACP0E6vJiiUcR89jyTh"
+  + "cJ6nI1/sKMuF0ZWYin4qkfIndfcZwAaYTZj92K/VkA/EJVP49ZE2MQWlsO5vwXBNRwzRkRGqrWAdus6xJxhcWYbpZlJYvul2rFnk5VsFCPnH2q38+1Ir"
+  + "dM0eWyBC+d1TPfgpZAk7gMsqbN+1O/DEvS5fqg8+S2ZCkBMO/xCT+HF4WfgLzf+VKEYPqfx83vuaMC5WwI+F84OBwGXEJVP49ZE2MQWlsO5vwXBNRwzR"
+  + "kRGqrWAdus6xJxhcWYbpZlJYvul2rFnk5VsFCPnH2q38+1IrdM0eWyBC+d1TPfgpZAk7gMsqbN+1O/DEvEgn5liQAO0AmQDsc1On/b6ufDEan7eNMW5w"
+  + "nqcjX+woy4XRlZiKfiqR8id19xnABphNmP3Yr9WQD8QlU/j1kTYxBaWw7m/BcE1HDNGREaqtYB26zrEnGFxZhulmUli+6XasWeTlWwUI+cfarfz7Uit0"
+  + "zR5bIEL53VM9+ClkCTuAyyps37U78MS9Ll+qDz5LZkKQEw7/EJP4cXhZ+AvMsOLZAAAAALuBRxe1BKA/AAGnBICAwAEoGV2CscRn+wIAAAAABFla",
+"base64");
 const readoutOf = (manifest = MANIFEST, extra = {}) =>
-  tar({ "manifest.json": JSON.stringify(manifest), "flash.bin.xz": "\xfd7zXZ", ...extra });
+  tar({ "manifest.json": JSON.stringify(manifest), "flash.bin.xz": XZ_1MIB, ...extra });
 
 // Offered files, as a readout holds them: its manifest's list, and the files.
 function offering(...contents) {
@@ -427,6 +441,22 @@ test("a readout naming an offered file it does not hold, or one that is not what
   }
 });
 
+test("a readout of the whole memory holds a whole flash chip's, or is turned away", async () => {
+  assert.equal(readout.xzUnpacked(new Uint8Array(XZ_1MIB)), 1024 * 1024);
+  assert.equal(readout.xzUnpacked(new Uint8Array(XZ_3MIB)), 3 * 1024 * 1024);
+  for (const [why, files] of [["no memory", { "manifest.json": JSON.stringify(MANIFEST) }],
+    ["not xz", { "manifest.json": JSON.stringify(MANIFEST), "flash.bin.xz": "\xfd7zXZ, and nothing" }],
+    ["no flash chip's size", { "manifest.json": JSON.stringify(MANIFEST), "flash.bin.xz": XZ_3MIB }],
+    ["cut short", { "manifest.json": JSON.stringify(MANIFEST), "flash.bin.xz": XZ_1MIB.subarray(0, 200) }]]) {
+    const bindings = env();
+    assert.equal((await send(post(tar(files)), bindings)).status, 400, why);
+    assert.deepEqual(tars(bindings), [], why);
+  }
+  const firstStage = { ...MANIFEST, read: false };
+  assert.equal((await send(post(tar({ "manifest.json": JSON.stringify(firstStage) })), env())).status, 201,
+    "a first stage has no memory to hold");
+});
+
 test("the Worker finds the offered files in a readout the tool itself packs", () => {
   const made = spawnSync(process.env.AUTOFLASH_PYTHON || "python3", ["-c", `
 import base64, sys
@@ -445,6 +475,7 @@ sys.stdout.write(base64.b64encode(readout.package(manifest, {"flash.bin": b"flas
   assert.equal(createHash("sha256").update(files.get(name)).digest("hex"),
     createHash("sha256").update(Buffer.from("\xe9offered app", "latin1")).digest("hex"));
   assert.ok(files.has("flash.bin.xz"));
+  assert.equal(readout.xzUnpacked(files.get("flash.bin.xz")), 5, "the size read as the tool's xz gives it");
 });
 
 test("asked first, a readout that would add nothing is not wanted - nor one its sender sent", async () => {
