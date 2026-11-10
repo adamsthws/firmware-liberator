@@ -108,6 +108,13 @@ class LogTests(unittest.TestCase):
         self.assertIn("No real Sonoff POW Ring had been reported converted: please attach this run's log",
                       self.told(kinds.SONOFF_POWCT))
 
+    def test_it_says_where_the_log_is_open_or_not(self):
+        for path, where in ((Path("/runs/run.log"), str(Path("/runs/run.log"))), (None, testers.LOG_ELSEWHERE)):
+            with self.subTest(path=path), mock.patch.object(output, "log_path", return_value=path), \
+                    mock.patch.object(output, "tell") as told:
+                testers.ask_for_log(kinds.SONOFF_POWCT)
+            self.assertEqual(told.call_args_list[-1], mock.call(f"    {where}"))
+
     def test_not_of_a_proven_one(self):
         self.assertNotIn("log", self.told(S60))
 
