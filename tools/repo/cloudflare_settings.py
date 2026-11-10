@@ -11,6 +11,8 @@
     python3 tools/repo/cloudflare_settings.py rotate NAME
                                                        a new value for the API Worker's
                                                        secret NAME, one made here
+    python3 tools/repo/cloudflare_settings.py email    the domain's mail forwarded: asks
+                                                       to whom, and which addresses
 
 Each command is run with the token whose job it is, from the environment or
 .env.infra (as .env.infra.example shows; not .env, whose names are the
@@ -18,10 +20,7 @@ tool's): `ci` CLOUDFLARE_SETTINGS_CHECK_TOKEN, CI's, which reads; `deploy-token`
 CLOUDFLARE_WORKERS_DEPLOY_TOKEN, the website workflow's; the rest
 CLOUDFLARE_SETTINGS_APPLY_TOKEN, the maintainer's, which edits. TOKENS lists
 what each is allowed, and tools/repo/cloudflare_tokens.py makes them; `apply`
-checks each. With CLOUDFLARE_EMAIL_DESTINATION and CLOUDFLARE_EMAIL_FORWARD
-too, the same way: the address mail is forwarded to, and the domain's
-addresses forwarded there. They are private, so never written here. `apply`
-changes only what differs. The Workers, and the domains pointing at them, are
+checks each. `apply` changes only what differs. The Workers, and the domains pointing at them, are
 their wrangler.jsonc's, which the website workflow deploys. website/README.md
 says which token is which.
 
@@ -206,9 +205,9 @@ CACHE_RULES = [{
 #   password manager (KEPT_IN), as no copy can be read back from the Worker:
 #   `apply` asks for it at a hidden prompt when the Worker lacks it, and
 #   keeps it nowhere; never made or rotated here.
-# - "destination": the maintainer's address, EMAIL_DESTINATION (below), which
-#   the API's nightly job emails when a limit was reached (alerts.js): set
-#   from it, as it is kept for Email Routing already, and never printed.
+# - "destination": the maintainer's address, the one the domain's mail is
+#   forwarded to (below), which the API's nightly job emails when a limit was
+#   reached (alerts.js): set from Email Routing's rules, and never printed.
 # - "token": a Cloudflare token TOKENS lists, which tools/repo/cloudflare_tokens.py
 #   makes and sets on the Worker alone, kept nowhere else.
 API_WORKER = "firmware-liberator-api"
@@ -218,8 +217,8 @@ API_SECRETS = {"DEVICE_HASH_KEY_PERMANENT": "kept", "SENDER_KEY": "made", "ALERT
 # one secret, a token that can only read the account's analytics
 # (admin-dashboard-read-only in TOKENS); and the Access application in front of it,
 # made here (access_differences): GitHub sign-in alone, and the maintainer
-# alone let in - by ACCESS_ADMIN_EMAIL, or else the variable EMAIL_DESTINATION
-# names (CLOUDFLARE_EMAIL_DESTINATION), never written here or printed. Access's GitHub sign-in is a GitHub OAuth app
+# alone let in - by ACCESS_ADMIN_EMAIL, or else the address the domain's mail
+# is forwarded to, never written here or printed. Access's GitHub sign-in is a GitHub OAuth app
 # of the maintainer's, whose client id and secret `apply` asks for the once it
 # makes the sign-in, and keeps nowhere. Not checked by CI: its token has no reach
 # into Access, and the policy holds the maintainer's address.
@@ -248,14 +247,15 @@ ANALYTICS_BEACON = re.compile(r"""data-cf-beacon='\{"token": "([0-9a-f]{32})"\}'
 # Mail to the domain is received by Cloudflare's Email Routing, which made
 # and keeps its own DNS records: MX, its DKIM key and SPF. They are checked
 # against the list Email Routing gives of what it needs, so its key is not
-# copied here. Each address EMAIL_FORWARD names, by the part before the @
-# ("contact", say, separated by commas), is forwarded to EMAIL_DESTINATION,
-# the maintainer's, a destination address the account has verified; mail to
-# any other is dropped (the catch-all, as Cloudflare makes it, left off).
-# Both are kept out of the repository, where scrapers would find them, and
-# out of what this prints, as CI's log is public.
-EMAIL_DESTINATION = "CLOUDFLARE_EMAIL_DESTINATION"
-EMAIL_FORWARD = "CLOUDFLARE_EMAIL_FORWARD"
+# copied here. Some of the domain's addresses ("contact", say) are forwarded
+# to one destination, the maintainer's, an address the account has
+# verified; mail to any other is dropped (the catch-all, as Cloudflare makes
+# it, left off). Which, and to whom, is private, so kept in Email Routing's
+# rules alone - never in the repository, where scrapers would find it, nor in
+# what this prints, as CI's log is public. `email` asks for both and sets
+# them; the checks hold the rules to their shape (email_differences), and
+# take the destination from them where it is needed (the alerts address, the
+# admin view's one sign-in).
 EMAIL_CATCH_ALL = {"name": "", "matchers": [{"type": "all"}], "actions": [{"type": "drop"}], "enabled": False}
 
 # The zone's DNS records beyond Email Routing's and the Workers' custom
@@ -797,45 +797,124 @@ def sending_differences(zone: str) -> list[tuple[str, str, Any]]:
     return []
 
 
-def email_rules(destination: str) -> list[dict[str, Any]]:
-    """A rule for each address EMAIL_FORWARD names, forwarding it to
-    `destination`, in an order of their own to compare."""
-    names = sorted({name.strip().lower() for name in variable(EMAIL_FORWARD).split(",") if name.strip()})
+FORWARD_NAME = re.compile(r"[a-z0-9][a-z0-9._+-]*")
+
+
+def email_rules(destination: str, names: list[str]) -> list[dict[str, Any]]:
+    """A rule forwarding each of the domain's addresses `names` names, by the
+    part before the @, to `destination`."""
     return [{"name": "", "matchers": [{"type": "literal", "field": "to", "value": f"{name}@{ZONE}"}],
-             "actions": [{"type": "forward", "value": [destination]}], "enabled": True} for name in names]
+             "actions": [{"type": "forward", "value": [destination]}], "enabled": True} for name in sorted(names)]
+
+
+def forwarding_rules(zone: str) -> list[dict[str, Any]]:
+    """Email Routing's rules, the catch-all aside."""
+    return [rule for rule in api(f"{zone}/email/routing/rules?per_page=50") or []
+            if rule.get("matchers") != EMAIL_CATCH_ALL["matchers"]]
+
+
+def forwarded_to(rule: dict[str, Any]) -> str | None:
+    """The one address a rule forwards one of the domain's addresses to, if
+    it is such a rule, as `email` makes them: else None."""
+    matchers, actions = rule.get("matchers") or [], rule.get("actions") or []
+    if not rule.get("enabled") or len(matchers) != 1 or len(actions) != 1:
+        return None
+    to, action = matchers[0], actions[0]
+    if (to.get("type"), to.get("field")) != ("literal", "to") or action.get("type") != "forward" \
+            or len(action.get("value") or []) != 1:
+        return None
+    name, _, domain = str(to.get("value", "")).lower().partition("@")
+    if domain != ZONE or not FORWARD_NAME.fullmatch(name):
+        return None
+    return str(action["value"][0]).strip().lower()
+
+
+def destination(zone: str) -> str | None:
+    """The address the domain's mail is forwarded to, as its rules say: None
+    while there is none, or more than one."""
+    found = {forwarded_to(rule) for rule in forwarding_rules(zone)}
+    return found.pop() if len(found) == 1 and None not in found else None
 
 
 def email_differences(zone: str, account: str) -> list[tuple[str, str, Any]]:
-    """Email Routing: on, its rules and catch-all as written, and the
-    destination address the account's one, verified. Addresses are never
-    printed."""
+    """Email Routing: on, each rule forwarding one of the domain's addresses
+    to one destination, the same for all, which the account has verified, and
+    its catch-all as written. Which addresses, and to whom, `email` sets and
+    asks for; here only their shape is held, and no address is printed."""
     found: list[tuple[str, str, Any]] = []
-    want = variable(EMAIL_DESTINATION).strip().lower()
-    written = email_rules(want)
     if not api(f"{zone}/email/routing").get("enabled"):
         found.append(("Email Routing", "is off", ("POST", f"{zone}/email/routing/enable", {})))
+    rules = forwarding_rules(zone)
+    if not rules:
+        found.append(("email forwarding", "is not set",
+                      "run python3 tools/repo/cloudflare_settings.py email in a terminal, which asks for it"))
+    for n, rule in enumerate(rules, 1):
+        if forwarded_to(rule) is None:
+            found.append((f"email rule {n}", "does not forward one of the domain's addresses to one address",
+                          "set the forwarding again: python3 tools/repo/cloudflare_settings.py email"))
+    to = {forwarded_to(rule) for rule in rules} - {None}
+    if len(to) > 1:
+        found.append(("email rules", f"forward to {len(to)} addresses: there should be one",
+                      "set the forwarding again: python3 tools/repo/cloudflare_settings.py email"))
     fields = ("name", "matchers", "actions", "enabled")
-    rules = [rule for rule in api(f"{zone}/email/routing/rules?per_page=50") or []
-             if rule.get("matchers") != EMAIL_CATCH_ALL["matchers"]]
-    have = [{field: rule.get(field) for field in fields} for rule in rules]
-    if sorted(have, key=lambda rule: json.dumps(rule, sort_keys=True)) != written:
-        found += [(f"email rule {n}", "is not as written", ("DELETE", f"{zone}/email/routing/rules/{rule['id']}", None))
-                  for n, rule in enumerate(rules, 1)]
-        found += [(f"email rule {n}", f"is to be made, from {EMAIL_FORWARD}",
-                   ("POST", f"{zone}/email/routing/rules", rule)) for n, rule in enumerate(written, len(rules) + 1)]
     catch_all = api(f"{zone}/email/routing/rules/catch_all")
     if {field: catch_all.get(field) for field in fields} != EMAIL_CATCH_ALL:
         found.append(("email catch-all", f"{'forwards' if catch_all.get('enabled') else 'is off'} as written "
                       "nowhere", ("PUT", f"{zone}/email/routing/rules/catch_all", EMAIL_CATCH_ALL)))
     path = f"/accounts/{account}/email/routing/addresses"
     have = {item.get("email", "").lower(): item for item in api(f"{path}?per_page=50") or []}
-    if want not in have:
-        found.append((EMAIL_DESTINATION, "is not a destination address", ("POST", path, {"email": want})))
-    elif not have[want].get("verified"):
-        found.append((EMAIL_DESTINATION, "is not verified: follow the link Cloudflare mailed it", None))
-    if len(have) - (want in have):
-        found.append(("destination addresses", f"{len(have) - (want in have)} besides {EMAIL_DESTINATION}", None))
+    if len(to) == 1:
+        want = next(iter(to))
+        if want not in have:
+            found.append(("the address mail is forwarded to", "is not a destination address of the account",
+                          ("POST", path, {"email": want})))
+        elif not have[want].get("verified"):
+            found.append(("the address mail is forwarded to", "is not verified: follow the link Cloudflare "
+                          "mailed it", None))
+    others = len(have) - len(to & set(have))
+    if others:
+        found.append(("destination addresses", f"{others} besides the one mail is forwarded to", None))
     return found
+
+
+def set_email() -> int:
+    """`email`: the domain's mail forwarded - to whom, and which of its
+    addresses - as asked for at a hidden prompt, and kept by Email Routing
+    alone; the API's alerts address set to match."""
+    if not sys.stdin.isatty():
+        print("cloudflare_settings: run email in a terminal, where it can ask", file=sys.stderr)
+        return 2
+    to = (ask("the address the domain's mail is forwarded to") or "").lower()
+    names = sorted({name.strip().lower() for name in (ask(
+        f"the addresses of {ZONE} forwarded there, by the part before the @, separated by commas") or "").split(",")
+        if name.strip()})
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", to) or not names \
+            or not all(FORWARD_NAME.fullmatch(name) for name in names):
+        print("cloudflare_settings: that is not an address and a list of names: nothing changed", file=sys.stderr)
+        return 1
+    try:
+        zones = api(f"/zones?name={ZONE}")
+        if not zones:
+            raise SettingsError(f"the token cannot see the zone {ZONE}")
+        zone, account = f"/zones/{zones[0]['id']}", zones[0]["account"]["id"]
+        if not api(f"{zone}/email/routing").get("enabled"):
+            api(f"{zone}/email/routing/enable", "POST", {})
+        path = f"/accounts/{account}/email/routing/addresses"
+        if to not in {item.get("email", "").lower() for item in api(f"{path}?per_page=50") or []}:
+            api(path, "POST", {"email": to})
+            print("  the address mail is forwarded to: added; follow the link Cloudflare mails it")
+        for rule in forwarding_rules(zone):
+            api(f"{zone}/email/routing/rules/{rule['id']}", "DELETE")
+        for rule in email_rules(to, names):
+            api(f"{zone}/email/routing/rules", "POST", rule)
+        api(f"{zone}/email/routing/rules/catch_all", "PUT", EMAIL_CATCH_ALL)
+        put_secret(account, "ALERTS_RECIPIENT_EMAIL", to)
+    except SettingsError as error:
+        print(f"cloudflare_settings: {error}", file=sys.stderr)
+        return 1
+    print(f"  email forwarding: set, {len(names)} of the domain's addresses to the one given; the API's alerts "
+          "go there too. Run apply to let that address, too, into the admin view.")
+    return 0
 
 
 def jsonc(path: Path) -> Any:
@@ -1059,10 +1138,11 @@ def made_secret() -> str:
     return secrets.token_hex(32)
 
 
-def secret_differences(account: str, worker: str = API_WORKER) -> list[tuple[str, str, Any]]:
+def secret_differences(account: str, worker: str = API_WORKER, to: str | None = None) -> list[tuple[str, str, Any]]:
     """A Worker's secrets (WORKER_SECRETS): each there, by name, and how
     `apply` sets one that is not: a "made" one made afresh, a "kept" one
-    asked for, a "destination" one from EMAIL_DESTINATION; a "token" one is
+    asked for, a "destination" one from `to`, the address the domain's mail
+    is forwarded to; a "token" one is
     left to tools/repo/cloudflare_tokens.py."""
     wanted = WORKER_SECRETS[worker]
     path = f"/accounts/{account}/workers/scripts/{worker}/secrets"
@@ -1085,14 +1165,13 @@ def secret_differences(account: str, worker: str = API_WORKER) -> list[tuple[str
                           f"make it: python3 tools/repo/cloudflare_tokens.py {key}"))
             continue
         if how == "destination":
-            try:
-                value = variable(EMAIL_DESTINATION)
-            except SettingsError:
+            if not to:
                 found.append((f"{worker} secret {name}", "is not set",
-                              f"put the maintainer's address in .env.infra as {EMAIL_DESTINATION} and run apply again"))
+                              "set the domain's mail forwarding first: python3 tools/repo/cloudflare_settings.py "
+                              "email"))
                 continue
             found.append((f"{worker} secret {name}", "is not set",
-                          lambda name=name, value=value: put_secret(account, name, value, worker) or []))
+                          lambda name=name, value=to: put_secret(account, name, value, worker) or []))
             continue
         if not sys.stdin.isatty():
             found.append((f"{worker} secret {name}", "is not set",
@@ -1134,12 +1213,15 @@ def rotate(name: str) -> int:
     return 0
 
 
-def admin_email() -> str:
-    """The one address Access lets into the admin view."""
+def admin_email(to: str | None) -> str:
+    """The one address Access lets into the admin view: ACCESS_ADMIN_EMAIL,
+    or else `to`, the one the domain's mail is forwarded to."""
     try:
         return variable("ACCESS_ADMIN_EMAIL")
     except SettingsError:
-        return variable(EMAIL_DESTINATION)
+        if not to:
+            raise
+        return to
 
 
 def github_idp(account: str) -> dict[str, Any] | None:
@@ -1168,7 +1250,7 @@ def admin_vars() -> dict[str, Any]:
     return jsonc(ADMIN_WRANGLER).get("vars") or {}
 
 
-def access_differences(account: str) -> list[tuple[str, str, Any]]:
+def access_differences(account: str, to: str | None = None) -> list[tuple[str, str, Any]]:
     """Cloudflare Access in front of the admin view: its organisation (made
     in the dashboard: it names the account's team), the GitHub sign-in, the
     application at ADMIN_HOST and its one policy; and the admin Worker's
@@ -1207,11 +1289,11 @@ def access_differences(account: str) -> list[tuple[str, str, Any]]:
             return []
         found.append(("Access GitHub sign-in", "is not set", sign_in))
     try:
-        email = admin_email()
+        email = admin_email(to)
     except SettingsError:
         return found + [(f"Access for {ADMIN_HOST}", "cannot be made: no address to let in",
-                         f"put the maintainer's address in .env.infra as ACCESS_ADMIN_EMAIL (or {EMAIL_DESTINATION}) "
-                         "and run apply again")]
+                         "set the domain's mail forwarding (python3 tools/repo/cloudflare_settings.py email), "
+                         "or put the address in .env.infra as ACCESS_ADMIN_EMAIL, and run apply again")]
     apps = api(f"/accounts/{account}/access/apps") or []
     app = next((app for app in apps if app.get("domain") == ADMIN_HOST), None)
     if app is None:
@@ -1300,9 +1382,10 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
         print("  Web Analytics: not checked - CI's token is refused it, which reads every account setting")
     else:
         found += database_differences(zones[0]["account"]["id"])
-        found += secret_differences(zones[0]["account"]["id"])
+        to = destination(zone)
+        found += secret_differences(zones[0]["account"]["id"], to=to)
         found += secret_differences(zones[0]["account"]["id"], ADMIN_WORKER)
-        found += access_differences(zones[0]["account"]["id"])
+        found += access_differences(zones[0]["account"]["id"], to)
         found += analytics_differences(zones[0]["account"]["id"], zones[0]["id"])
     found += email_differences(zone, zones[0]["account"]["id"])
     found += sending_differences(zone)
@@ -1339,6 +1422,8 @@ def run(args: list[str]) -> int:
     """main's work, with the token for `args` in use."""
     if len(args) == 2 and args[0] == "rotate":
         return rotate(args[1])
+    if args == ["email"]:
+        return set_email()
     if args == ["deploy-token"]:
         try:
             found = deploy_token_reach()

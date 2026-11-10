@@ -54,10 +54,8 @@ ALLOW_FILE = Path(__file__).resolve().parent / "leak-scan-allow"
 LOCAL_FILE = Path(__file__).resolve().parent / "leak-scan.local"
 CAPTURES = ROOT / "captures"
 # The maintainer's tokens, keys and private addresses for the project's
-# services (.env.infra.example), but for the names of the domain's addresses
-# mail is forwarded from - "contact", say - words any page may use.
+# services (.env.infra.example).
 INFRA_FILE = ROOT / ".env.infra"
-INFRA_NOT_SECRET = {"CLOUDFLARE_EMAIL_FORWARD"}
 # The emulator's own network and the computer itself: not anyone's real address.
 EMULATOR_NETWORKS = [ipaddress.ip_network(n) for n in ("192.168.60.0/24", "127.0.0.0/8", "0.0.0.0/32")]
 SHORTEST = 4  # values shorter than this match too much to mean anything
@@ -137,8 +135,7 @@ def own_values() -> dict[str, str]:
     except (OSError, ValueError):
         infra = {}
     for key, value in infra.items():
-        if key not in INFRA_NOT_SECRET:
-            add(value, f"a value in .env.infra ({key})")
+        add(value, f"a value in .env.infra ({key})")
     try:
         add(json.loads((CAPTURES / "settings.json").read_text())["ewelink_email"], "the eWeLink account")
     except (OSError, ValueError, KeyError):
