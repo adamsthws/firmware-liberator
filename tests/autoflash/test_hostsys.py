@@ -149,8 +149,17 @@ class WindowsFirewallTests(unittest.TestCase):
         hostsys._firewall_cache.clear()
         with mock.patch.object(hostsys, "powershell", return_value=None):
             self.assertIsNone(hostsys.windows_firewall()["enabled"])
+            # Nor taken for a policy that ignores the rule the tool adds: that is said only when seen.
+            self.assertTrue(hostsys.windows_firewall()["local_rules"])
+            self.assertFalse(hostsys.windows_firewall()["domain"])  # nor an organisation's computer
             with mock.patch.object(hostsys, "IS_WINDOWS", True):
                 self.assertEqual(hostsys.active_firewall(), "windows")
+
+    def test_one_seen_on_is_the_active_firewall_and_one_seen_off_is_not(self):
+        for enabled, expected in ((True, "windows"), (False, None)):
+            with mock.patch.object(hostsys, "IS_WINDOWS", True), \
+                    mock.patch.object(hostsys, "windows_firewall", return_value={"enabled": enabled}):
+                self.assertEqual(hostsys.active_firewall(), expected)
 
     def test_advice_names_what_the_tool_cannot_change(self):
         public = dict(self.STATE, networks=[{"interface": "Wi-Fi", "category": "Public"}])
@@ -354,6 +363,10 @@ class MacFirewallTests(unittest.TestCase):
 
 
 class CommandOutputTests(unittest.TestCase):
+    def test_the_reviewed_tools_run_from_the_repositorys_root(self):
+        self.assertEqual(hostsys.run_tool.__defaults__[0], hostsys.ROOT)
+        self.assertTrue((hostsys.ROOT / "tools" / "autoflash" / "hostsys.py").is_file())
+
     def test_output_that_does_not_decode_is_not_fatal(self):
         # A German netsh's umlaut, say, in a code page Python did not expect.
         completed = hostsys._run([sys.executable, "-c",
@@ -519,6 +532,21 @@ class PortTests(unittest.TestCase):
             self.assertEqual(hostsys.first_free_port("127.0.0.1", [busy, free]), free)
             self.assertIsNone(hostsys.first_free_port("127.0.0.1", [busy]))
 
+    def test_a_port_left_in_time_wait_is_free(self):
+        # An earlier run's server closed its end first, which leaves the port in
+        # TIME_WAIT: a new one may listen there all the same.
+        import socket
+        with socket.socket() as server:
+            server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # as http.server's
+            server.bind(("127.0.0.1", 0))
+            server.listen()
+            port = server.getsockname()[1]
+            with socket.create_connection(("127.0.0.1", port)) as client:
+                accepted, _ = server.accept()
+                accepted.close()
+                client.recv(1)
+        self.assertTrue(hostsys.port_is_free("127.0.0.1", port))
+
 
 class SudoPromptTests(unittest.TestCase):
     """sudo's own question is counted on screen only when it is really asked."""
@@ -632,7 +660,8 @@ class DownloadTests(unittest.TestCase):
 
     def test_a_passing_trouble_is_tried_again(self):
         for trouble in (TimeoutError("The handshake operation timed out"), ConnectionResetError(),
-                        urllib.error.URLError("no route"), self.http_error(503), self.http_error(504),
+                        urllib.error.URLError("no route"), self.http_error(500), self.http_error(503),
+                        self.http_error(504),
                         self.http_error(429), http.client.IncompleteRead(b"fi", 2)):
             found, tries, _, said = self.fetch(trouble, self.good())
             self.assertEqual((found, tries), (b"file", 2), trouble)
@@ -739,6 +768,23 @@ class LanAddressesTests(unittest.TestCase):
                 self.assertEqual(hostsys.lan_networks(), {})   # a tool that fails: nothing beyond the default
             self.assertEqual(run.call_args_list[0].args[0], expected)
 
+    def test_its_tools_answers_are_read_only_when_both_worked(self):
+        links = "2: eth0: <BROADCAST,UP> mtu 1500 state UP\\    link/ether 12:34:56:ab:cd:ef brd ff:ff:ff:ff:ff:ff\n"
+        addresses = "2: eth0    inet 192.0.2.10/24 brd 192.0.2.255 scope global eth0\\       valid_lft forever\n"
+        ok = lambda stdout: mock.Mock(returncode=0, stdout=stdout)
+        cases = (([ok(addresses), ok(links)], {"192.0.2.10": 24}),
+                 ([ok(addresses), None], {}),
+                 ([mock.Mock(returncode=1, stdout=addresses), ok(links)], {}),
+                 ([ok(addresses), mock.Mock(returncode=1, stdout=links)], {}))
+        for answers, expected in cases:
+            with self.subTest(answers=answers), mock.patch.object(hostsys, "IS_LINUX", True), \
+                    mock.patch.object(hostsys, "_run", side_effect=answers):
+                self.assertEqual(hostsys.lan_networks(), expected)
+        ifconfig = "en0: flags=8863<UP,BROADCAST> mtu 1500\n\tether 12:34:56:ab:cd:ef\n\tinet 192.0.2.10 netmask 0xffffff00\n"
+        with mock.patch.object(hostsys, "IS_LINUX", False), mock.patch.object(hostsys, "IS_MAC", True), \
+                mock.patch.object(hostsys, "_run", return_value=ok(ifconfig)):
+            self.assertEqual(hostsys.lan_networks(), {"192.0.2.10": 24})
+
 
 class NetworkOfTests(unittest.TestCase):
     """A sweep covers the network as this computer has it, no wider than a /22."""
@@ -823,6 +869,16 @@ class SweepTests(unittest.TestCase):
                 mock.patch.object(hostsys.time, "sleep"):
             seen = hostsys.sweep("10.20.5.9")
         self.assertEqual(seen, {"10.20.4.37": "12:34:56:ab:cd:ef", "10.20.6.8": "12:34:56:ab:cd:01"})
+
+    def test_what_answered_last_is_read_once_the_pings_are_done(self):
+        # The watcher reads only every SWEEP_READ_EVERY: a reply at the end is still caught.
+        with mock.patch.object(hostsys, "IS_LINUX", True), \
+                mock.patch.object(hostsys, "SWEEP_READ_EVERY", 60), \
+                mock.patch.object(hostsys, "lan_networks", return_value={}), \
+                mock.patch.object(hostsys, "neighbour_table", return_value={"10.0.0.37": "12:34:56:ab:cd:ef"}), \
+                mock.patch.object(hostsys, "_ping_quietly"), \
+                mock.patch.object(hostsys.time, "sleep"):
+            self.assertEqual(hostsys.sweep("10.0.0.2"), {"10.0.0.37": "12:34:56:ab:cd:ef"})
 
     def test_no_more_pings_at_once_than_files_allow(self):
         resource = __import__("resource")
