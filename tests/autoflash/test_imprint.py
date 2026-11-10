@@ -6,6 +6,7 @@ from pathlib import Path
 from tools.espressif.analyze_vendor_ota import parse_esp_image
 from tools.autoflash.imprint import (
     FILLER,
+    LEGACY_MARKERS,
     PASSWORD_FIELD_BYTES,
     PASSWORD_MARKER,
     SSID_FIELD_BYTES,
@@ -153,6 +154,22 @@ class ImprintTests(unittest.TestCase):
     def test_the_network_name_can_be_read_back_from_an_imprinted_copy(self):
         result = imprint(self.image, "Wonky-2G", "correct horse")
         self.assertEqual(imprinted_ssid(result, self.image), "Wonky-2G")
+
+    def test_an_image_built_with_the_earlier_markers_is_filled_just_the_same(self):
+        ssid_marker, password_marker = LEGACY_MARKERS
+        legacy = build_image(placeholder_payload().replace(SSID_MARKER, ssid_marker)
+                             .replace(PASSWORD_MARKER, password_marker))
+        self.assertTrue(has_placeholders(legacy))
+        ssid_at = find_field(legacy, ssid_marker, SSID_FIELD_BYTES)
+        result = imprint(legacy, "Wonky-2G", "correct horse")
+        self.assertEqual(read_c_string(result, ssid_at), b"Wonky-2G")
+        require_imprinted(result)
+
+    def test_a_placeholder_the_image_ends_inside_is_refused(self):
+        field = SSID_MARKER + FILLER * SSID_FIELD_BYTES
+        self.assertEqual(find_field(b"rodata" + field, SSID_MARKER, SSID_FIELD_BYTES), 6)   # just fits
+        with self.assertRaisesRegex(ImprintError, "too close to the end"):
+            find_field(b"rodata" + field[:-1], SSID_MARKER, SSID_FIELD_BYTES)
 
     def test_an_image_written_after_the_marker_is_refused(self):
         # What the faulty tool produced: marker kept, value after it.
