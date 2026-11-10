@@ -2,7 +2,7 @@
 
 > Converts Sonoff smart devices from their stock eWeLink firmware to Tasmota, ESPHome or OpenBeken over Wi-Fi: no soldering and no opening the device. Free and open source, it runs on Linux, macOS and Windows, walks you through every step, and can put Sonoff's own firmware back.
 
-You start it by pasting one line into a terminal; the front page has the line for each system. Each device's status says how far it is proven: Supported means a real one has been converted and reported; Testers wanted means it converts in the emulator, or was added from its official update file and a published pin map, and no real one has been reported yet; Readout wanted means the tool does not convert it yet, but reads it out in full, a readout proven in the emulator to leave it as it was; Not supported yet means the tool neither converts it nor reads out more than Sonoff's firmware and eWeLink say.
+You start it by pasting one line into a terminal; the front page has the line for each system. Each device's status says how far it is proven. Supported: a real one has been converted and reported. Testers wanted: it converts in the emulator, or was added from its official update file and a published pin map, but no real one has been reported yet. Readout wanted: the tool does not convert it yet, but can read it out in full, which the emulator shows leaves it on its Sonoff firmware. Not supported yet: the tool neither converts it nor reads more of it than Sonoff's firmware and eWeLink report.
 
 ## Devices
 
