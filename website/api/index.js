@@ -420,7 +420,7 @@ export async function wanted(request, env, now = new Date()) {
       || !firmware.every((sha) => typeof sha === "string" && /^[0-9a-f]{64}$/.test(sha))) {
     return answer(400, { error: "that is not a question this tool asks" });
   }
-  await countWanted(env.DB, asked.product, now.toISOString().slice(0, 10));
+  await countWanted(env, request, asked.product, now.toISOString().slice(0, 10));
   const held = [];
   for (const sha of firmware) {
     if (await isHeld(env, firmwareKey(sha))) {

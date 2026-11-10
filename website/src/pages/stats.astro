@@ -172,8 +172,8 @@ const view = figures && {
 
       <p class="foot">
         Figures to the end of {date(figures.through)} (UTC), made {figures.generated.replace("T", " ").replace("Z", " UTC")}, and
-        updated daily. A figure for fewer than {figures.smallest} runs or devices is not shown, and the maintainer's own
-        testing is left out. The data is <a href={STATS_URL}>stats.json</a>, under
+        updated daily. A figure for fewer than {figures.smallest} runs or devices is not shown, nor a model until
+        several people have named it on several days, and the maintainer's own testing is left out. The data is <a href={STATS_URL}>stats.json</a>, under
         <a href="https://creativecommons.org/licenses/by/4.0/">{figures.licence}</a>: {figures.attribution}.
       </p>
     </>

@@ -11,7 +11,10 @@
 //
 // Kept, and how floods are bounded:
 // - Nothing of the sender: no address (the rate limiter holds it a minute,
-//   never stored), no time of day; a report's day, as a UTC date.
+//   never stored), no time of day; a report's day, as a UTC date. For the
+//   figures' model names alone, a keyed hash of the address and the model it
+//   names (namedBy), which ties the sender to nothing else, kept until the
+//   model is vouched for (nightly.js) or VOUCH_KEEP_DAYS pass.
 // - The device as a keyed hash (DEVICE_HASH_KEY_PERMANENT, a Worker secret) of the hash the
 //   tool sends of its MAC, so the stored value leads back to no device
 //   without the key, which never leaves Cloudflare.
@@ -32,7 +35,7 @@ import { release, reserve, reserveUpTo } from "./counters.js";
 import { hex, proven, reportSubject, work } from "./proof-of-work.js";
 import schema from "./report-schema.json" with { type: "json" };
 import { validate } from "./report-schema.js";
-import { heldFor } from "./review.js";
+import { heldFor, holdsHeldWords } from "./review.js";
 import { senderAddress } from "./sender.js";
 
 export const MAX_BODY = 1024 * 1024;
@@ -48,6 +51,15 @@ export const WANTED_COUNTED = 2000;
 const MODEL = new RegExp(schema.properties.model.pattern);
 
 const ID = /^[0-9a-f]{32}$/;
+
+// Who named `model`, as model_senders keeps it: a keyed hash (SENDER_KEY) of
+// the model and the sender's address, one a model, so nothing ties one
+// sender's names together. A model's name is shown in the figures only once
+// several have given it, over several days (snapshot.js).
+export async function namedBy(env, request, model) {
+  return (await keyed(env.SENDER_KEY, `model|${model}|${senderAddress(request)}`)).slice(0, 32);
+}
+const NAMED = "INSERT OR IGNORE INTO model_senders (model, sender, day) VALUES (?, ?, ?)";
 const reportsOn = (day) => `reports:${day}`;
 
 // The device as stored: HMAC-SHA256 of the tool's hash under DEVICE_HASH_KEY_PERMANENT.
@@ -224,10 +236,15 @@ export async function reports(request, env, now = new Date()) {
     await release(env.DB, sender, 0, theirs - granted);
   }
   outcome.later.push(...taking.slice(granted).map(([report]) => report.id));
-  const kept = taking.slice(0, granted);
+  const kept = taking.slice(0, granted).map(([report, hash]) => [report, hash, heldFor(report)]);
+  // The models the reports counted name, each noted once as this sender's.
+  const models = [...new Set(kept.filter(([report, , held]) => held === null && report.tag === "user" && report.model)
+    .map(([report]) => report.model))];
+  const naming = await Promise.all(models.map(async (model) =>
+    env.DB.prepare(NAMED).bind(model, await namedBy(env, request, model), day)));
   if (kept.length) {
     try {
-      await env.DB.batch(kept.flatMap(([report, hash]) => writes(env.DB, report, hash, day, heldFor(report))));
+      await env.DB.batch([...kept.flatMap(([report, hash, held]) => writes(env.DB, report, hash, day, held)), ...naming]);
     } catch (error) {
       await release(env.DB, reportsOn(day), 0, kept.length);
       await release(env.DB, sender, 0, kept.length);
@@ -240,13 +257,20 @@ export async function reports(request, env, now = new Date()) {
 
 // One of /wanted's questions, counted for the figures by its product model
 // and day (wanted_days): the devices people would read out for the tool to
-// learn. Only a model's shape is counted, and WANTED_COUNTED a day, so a
-// flood of made-up names cannot grow the table without end.
-export async function countWanted(db, product, day) {
+// learn. Only a model's shape is counted, none with a word no model has
+// (review.js), and WANTED_COUNTED a day, so a flood of made-up names cannot
+// grow the table without end; and its sender noted (namedBy), so a name is
+// shown only once several have asked of it.
+export async function countWanted(env, request, product, day) {
   const model = String(product).trim().toUpperCase();
-  if (!MODEL.test(model) || !(await reserve(db, `wanted:${day}`, day, { most: WANTED_COUNTED }))) {
+  if (!MODEL.test(model) || holdsHeldWords(model)
+      || !(await reserve(env.DB, `wanted:${day}`, day, { most: WANTED_COUNTED }))) {
     return;
   }
-  await db.prepare(`INSERT INTO wanted_days (day, model, asked) VALUES (?, ?, 1)
-    ON CONFLICT (day, model) DO UPDATE SET asked = asked + 1`).bind(day, model).run();
+  const statements = [env.DB.prepare(`INSERT INTO wanted_days (day, model, asked) VALUES (?, ?, 1)
+    ON CONFLICT (day, model) DO UPDATE SET asked = asked + 1`).bind(day, model)];
+  if (env.SENDER_KEY) {
+    statements.push(env.DB.prepare(NAMED).bind(model, await namedBy(env, request, model), day));
+  }
+  await env.DB.batch(statements);
 }
