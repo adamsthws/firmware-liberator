@@ -27,7 +27,8 @@ They cover the tool's decisions (which route, what to ask, when to try
 again, what counts as done), with the device and the network stood in for,
 and the parts that must be exact: the plans the device carries out, the
 update protocols, image checks and pins, what is kept and what never is.
-Every bug listed on this page has a test that fails without its fix.
+Every bug the tests or the fault suites have found has a test that fails
+without its fix.
 
 The `emulator-check` workflow runs them on Python 3.12.10, the portable Python
 the start scripts install and most conversions run on, and on 3.10, the
@@ -60,22 +61,18 @@ still running after 60 seconds (`--timeout`; the longest takes about 10) is
 stopped, reported with where each of its threads was, and fails the run.
 
 2,000 runs in a row passed, each in a new random order, on Python 3.10, 3.12
-and 3.14 and on 2 to 64 processes, once the five problems the first hundred
-runs found were fixed:
-
-| Found | What it was | Fixed by |
-|---|---|---|
-| A test saw a sleep hold another had just taken | one awake test takes a systemd inhibitor while another checks none is left | running them as one (`TOGETHER` in `tests/run.py`) |
-| "recovery_safeboot size changed" | bundle tests left the recovery image in memory, for the next test's bundle | each starting and ending with none |
-| A wait of -1,000,000 s | a question one test left unanswered was taken as the next's wait | `output.start()` beginning with no question pending |
-| "Address already in use" | a port picked free, let go, then taken by another test before the server bound it | the server started again on another |
-| A clean-up waiting for ever, once | a test server's `shutdown()`; never seen again, so its cause is not known | the time limit, which would now show where it was |
+and 3.14 and on 2 to 64 processes. The rules below come from what the first
+runs found. The time limit is there for a hang like the one in a test
+server's `shutdown()` that once waited for ever: seen only once, its cause is
+not known, and the limit would now show where it was.
 
 When you write a test, keep it safe to run this way:
 
 - **Leave nothing behind** in a module, a class or the environment: patch for
   the test (`mock.patch...start()` with `addCleanup`), and put back what the
-  code under test keeps for a process's life.
+  code under test keeps for a process's life. A bundle's recovery image left
+  in memory, or a question left unanswered for the next test's
+  `output.start()`, each broke a test that ran after.
 - **Keep a port** you picked as free. A server given one is started again on
   another if it cannot bind it, and a check that nobody answers keeps the
   socket bound but not listening, so a connection is refused at once and no
@@ -344,7 +341,8 @@ layout needs one, such as the TH Elite's): a power cut or crash at 10, 50 and
 
 **A Berry phase riding out the network by itself** (`blips-3`, `lossy-phase`,
 at E2, G1, I1, L1 and R1): two 3 s outages between 10% and 90% of the phase,
-further apart than its 20 s of retrying, or one packet in ten lost throughout.
+further apart than its 20 s of retrying (which count only the time spent
+failing), or one packet in ten lost throughout.
 The step must not be tried again: a phase started over from its first block,
 a pass anywhere else, is FAIL-RETRIED here. Every scenario also keeps how
 long each phase kept the device busy (`device_busy`), and `report` lists the
@@ -691,61 +689,20 @@ moment as Tasmota names its own.
 
 #### What whole runs have shown
 
-**The whole suite, on release 2.0.1.** Every scenario of the time ran against
-the cloud stub, on 22 emulators over four machines, in about five hours; each
-failure's cause was fixed and the scenario run again. The latest result of
-each:
+The current code passes the whole suite: the 1,541 scenarios on the stub, and
+the 75 cloud ones against the real eWeLink, where two NOT-FIRED, eWeLink
+having dropped the device's sessions, passed when run again after an hour's
+pause ([one real-cloud run a day](#running-it)). Run across several
+computers, with the Beken suite and the attended runs beside it, that took
+about ten hours.
 
-| Direction | Scenarios | Passed | A phase's retries spent | Nothing to corrupt |
-|---|---:|---:|---:|---:|
-| Sonoff to Tasmota | 369 | 368 | 1 | - |
-| Sonoff to ESPHome | 206 | 204 | 2 | - |
-| Tasmota to ESPHome | 83 | 82 | 1 | - |
-| Tasmota to Sonoff | 199 | 198 | - | 1 |
-| ESPHome to Tasmota | 318 | 317 | 1 | - |
-| ESPHome to Sonoff | 168 | 167 | - | 1 |
-| Tasmota to Tasmota | 2 | 2 | - | - |
-| **All** | **1,345** | **1,338** | **5** | **2** |
-
-- In the five, the Wi-Fi dropped more than once in one Berry phase, whose
-  20 seconds of retries counted from its first failure and never restarted,
-  so a later drop found them spent and the phase stopped. Each device
-  converted when the step was tried again, but a phase should ride out short
-  drops by itself:
-  [#5](https://github.com/adamsthws/firmware-liberator/pull/5) made the
-  retries count only time spent failing. With it, 38 scenarios of drops,
-  packet loss and a weak signal at every phase that moves data, run three
-  times over, all passed but one, whose drops came just before its phase
-  began (as G1 checked the device, then as it was started), now fixed too
-  ([below](#what-it-has-found)).
-- The two with nothing to corrupt had a packet changed during R2, the check
-  that Sonoff's firmware is back, which carries no data; the suite no longer
-  tries it there.
-- No phase kept the device busy longer than 86 seconds (L1, on a weak
-  signal).
-
-Before the stub, 1,453 scenarios, the cloud ones against the real eWeLink,
-all passed but the same two with nothing to corrupt.
-
-**Release 2.0.2.** Its firmware-writing steps check each block on the device
-instead of sending it back, so are shorter, and every fault timed by them was
-retimed. 301 ran on it, on four machines in about an hour: every scenario at
-E2, G1, I1, L1 and R1, where the change is, and samples at D5, H1 and C3 for
-its other fixes. All passed, the retimed ones once their faults
-were placed by the new lengths, and one when run again, its 1.2.0 run (which
-the scenario stops at G1) having first stopped by itself at F4. Over two runs
-of 52 scenarios of drops, loss, a weak signal and corrupted packets, those
-steps kept the device busy 18 seconds where they had taken 31, and no phase
-longer than 78 seconds, on a weak signal for a minute of it.
-
-**The real eWeLink on a bad day.** While some of eWeLink's EU servers for
-devices turned connections away (four of six in the morning, one by midday),
-fresh conversions to each firmware and two faults at C2 were run against it.
-Sonoff to ESPHome converted (2 min 45 s), and Sonoff to Tasmota on its third
-run after an outage at C2. A fresh Sonoff to Tasmota never got the installer
-to the device in four tries, as the device's connection to eWeLink, or the
-test computer's, kept failing; the run blamed some of that on the test
-computer's firewall, which is fixed ([below](#what-it-has-found)).
+How long a phase keeps the device busy is measured in sample runs, not in a
+whole run. In runs of the drop, packet-loss and weak-signal scenarios, made
+once the firmware-writing steps checked each block on the device instead of
+sending it back, the longest was 78 seconds, on a weak signal for a minute of
+it. That is close to the 70-90 s after which a real S60TPG once stopped
+answering ([above](#what-it-covers)), which is why `report` lists each
+scenario's longest.
 
 #### Still open
 
@@ -773,133 +730,45 @@ computer's firewall, which is fixed ([below](#what-it-has-found)).
 
 #### What it has found
 
-Each of these is fixed, with a test, and its scenario was run again.
+Each fault the suite has found is fixed, with a unit test that fails without
+the fix, and its scenario was run again; the [changelog](../CHANGELOG.md)
+lists them. They were of a few kinds: a power cut or a stopped run leaving
+the flash half written, or the next run unable to carry on; an upload that
+stalled and was waited on for good; a device taken for something it was not,
+as it restarted or was too busy to answer; the network gone just before a
+phase began, or as a firmware first started; trouble reported as something
+else ("something unexpected went wrong", or the firewall blamed); and a
+stopped run leaving a firewall rule or a safety lock behind.
 
-**Power cuts, and flash left half written**
+What they showed about the firmware, which any change must still allow for:
 
-- A power cut during D1, or Ctrl-C and a new run, left a device with no
-  network at all: the installer would not start once Sonoff's half-written
-  slot was unbootable, and only a serial cable could recover it. Installer
-  4.4.3 starts regardless, a run finds the device on it and carries on, and
-  an upload to it that stops is tried again by itself.
-- A power cut while the memory layout was rebuilt for Tasmota cost Tasmota
-  its settings, which the rebuild wrote over, leaving the device on its setup
-  network and the next run stuck. The settings are now moved aside first:
-  cuts timed off the device's output at each point of the rebuild, then each
-  way on (Tasmota, ESPHome, Sonoff's firmware), all kept them and converted.
-  The run also tries the commit up to three times by itself.
-- A power cut while G1 wrote the official startup firmware back left one
-  sector half written, and every later run refused to go on, the device stuck
-  on Tasmota. That sector is now written again.
-- A power cut just after F4's reset left official Tasmota on its own network
-  with no Wi-Fi, while the run waited for a restart it could not see. It is
-  now set up through that network.
-- ESPHome sent as an update confirms itself only after a minute running; a
-  power cut before then took the device back to the firmware before, which
-  the run waited on for good, or left on, saying it was done.
-- A device switched off and on after the installer was sent goes back to
-  Sonoff's firmware, as the installer means it to, and the run waited a
-  quarter of an hour for the installer, then stopped. It now sends it again.
-
-**Uploads that stall**
-
-- The installer waited for ever on an upload its computer stopped sending (a
-  laptop closed, say), answering nothing until switched off and on. It now
-  gives up after a minute and the run tries again, and a stalled upload to it
-  is noticed after two minutes, not five.
-- After the network cut off an upload of the interim Tasmota (D4), the next
-  hung silently, Tasmota still holding the cut one. The device is now
-  restarted first, also before an upload sent again within the step, which
-  then hung for ten minutes the same way.
-- Once, official Tasmota's upload of the startup firmware (F2) never
-  finished. A stall is now noticed after two minutes and the upload tried
-  again from a restart, three times in all, as checked by cutting the traffic
-  mid-upload, once and twice running.
-
-**A device taken for something it is not**
-
-- As a device D1 had just restarted onto the Wi-Fi started up, the network a
-  Tasmota shows for a moment was taken for its setup network, and the run
-  waited 15 minutes for it to be joined, then crashed (6 scenarios). The
-  device is now given a minute first, and an error in that check stops only
-  its step.
-- A Tasmota too busy to say its template in time was taken for one not yet
-  set up as an S60, and sent down a route that never finished.
-- Just after a restart, Tasmota could not yet say which slot it runs from
-  (D4), was taken for one in the wrong slot, and was sent another upload.
-- A run started from the beginning took a device restarting, or left on the
-  startup firmware, for one still on Sonoff's firmware.
-- Started again from the beginning after the layout was rebuilt for Tasmota,
-  a run took the startup firmware for the ESPHome route's, on Sonoff's
-  layout, and sent the device round steps it could never finish.
-- An upload Tasmota refused, X2's device back on the mover or ESPHome, and
-  official Tasmota not running yet all went unnoticed. Each is now seen and
-  sent again.
-
-**A run carried on, or started again**
-
-- A run stopped as the commit ran, whose device then finished the commit,
-  carried on by asking the startup firmware for the device's network, which
-  it cannot say, and was sent back to the start with no way forward.
-- A run started again from the beginning missed a commit the device finished
-  after the run before was stopped.
-- Asked for the firmware the device already ran (a run stopped during its
-  last check, then started from the beginning), a run kept saying it had
-  crashed.
-
-**The network gone at the wrong moment**
-
-- Wi-Fi drops just before a phase began went wrong three ways: G1's check
-  that the device runs official Tasmota stopped the step as if it had failed;
-  the command starting a phase, lost on its way, left the run waiting on a
-  device that never began; and reading the Wi-Fi details off the device,
-  timed out once, had the person asked to type them. Each is now asked or
-  sent again once the device answers.
-- Sonoff's firmware, written back, does not try its network again if it was
-  gone as it first started, so an outage just then left the device off the
-  Wi-Fi for good while the run said only to wait. The run now says to switch
-  it off and on when nothing has answered for two minutes.
-- ESPHome given your Wi-Fi gave it up, saving the empty one, if its first
-  join took over half a minute. It now keeps it.
-- On a busy device, setting Tasmota up (F4) gave up on a slow answer,
-  restarted the device on every try, and left the next step asking a device
-  not yet answering, which asked the person for the Wi-Fi.
-- A device switched on as the run starts was asked about at once; it is now
-  given a minute.
-
-**The device's own network**
-
-- Tasmota sent through the installer's own network joined your Wi-Fi by
-  itself, with the settings an earlier, cut-off try had left, while the run
-  waited a quarter of an hour for a setup network it never raised.
-- After the installer could not be sent again (the device offline in
-  eWeLink), the run asked for the installer's own network, never raised.
-
-**Trouble reported as something else**
-
-- A request dropped part way through a step (a connection reset in an
-  outage, a reply cut off by a power cut, none in time) was put as
-  "something unexpected went wrong", though the step was tried again as for
-  any network trouble: 32 scenarios, 23 at the final check (H1), the rest
-  during the backup (C3) or F4. It now says the connection to the device was
-  lost.
-- ESPHome's page arriving with a byte changed stopped the run as "something
-  unexpected", where a dropped connection is asked again.
-- Against the real eWeLink, a send of the installer that failed before the
-  device was told to fetch it, eWeLink having dropped the tool's connection,
-  was put down to the computer's firewall. It now says what happened.
-- With the tool stopped part way through sending the installer, the device
-  stays away from eWeLink, and the run refused at once, blaming the firewall.
-  It now waits for the device, then says to switch it off and on.
-
-**What a run leaves on the computer**
-
-- A run stopped as the firewall rule was added left the rule behind, and the
-  next took it for one the computer had before.
-- With two devices converted at once, one run put back a safety lock the
-  other had lifted.
-- A safety lock moved aside while a step ran was not put back when the
-  computer stopped, and every later run failed.
+- **The installer must start whatever Sonoff left.** A power cut during D1,
+  or a run stopped there, can leave Sonoff's slot half written and unbootable;
+  an installer that would not start then left the device on no network, for a
+  serial cable to recover. The installer starts regardless, and the run finds
+  the device on it.
+- **ESPHome sent as an update confirms itself only after a minute running.**
+  A power cut before then takes the device back to the firmware before.
+- **Tasmota keeps an upload the network cut off.** The next upload hangs
+  silently until the device restarts, so the tool restarts it first, also
+  before an upload sent again within a step.
+- **Just restarted, or busy, Tasmota is not yet itself.** For a moment it
+  puts out a network that looks like its setup network (as `ESP_` and its
+  access-point MAC, [device-names.md](device-names.md)), cannot yet say which
+  slot it runs from, and may not say its template in time. The tool gives a
+  device a minute after a restart, or after it is switched on, before
+  judging it.
+- **Official Tasmota cut off just after F4's reset** is on its own network
+  with no Wi-Fi, and is set up through that network.
+- **Tasmota keeps Wi-Fi details from a cut-off try.** Sent through the
+  installer's own network, it joined the home Wi-Fi by itself with what an
+  earlier try had left, and raised no setup network.
+- **Sonoff's firmware, written back, tries its network only as it starts.** If
+  the network is gone then, it stays off the Wi-Fi until switched off and on,
+  which the run asks for when nothing has answered for two minutes.
+- **A device whose installer send was stopped part way stays away from
+  eWeLink** for a while; the run waits for it, then asks for the device to be
+  switched off and on.
 
 ### The Beken fault suite
 
@@ -1016,8 +885,8 @@ for the interim firmware, above) and none of these applies:
 
 #### What whole runs have shown
 
-Every direction has run end to end in the emulator, faults and all, from the
-public dump of a real S61; no whole run's totals are recorded.
+The current code passes all 291 scenarios, every direction end to end in the
+emulator, faults and all, from the public dump of a real S61.
 
 #### Still open
 
@@ -1028,27 +897,24 @@ public dump of a real S61; no whole run's totals are recorded.
 
 #### What it has found
 
-Each is fixed, and its case has been in the suite since.
+Each fault found is fixed, and its case is in the suite. What they showed
+about the firmware and the emulator:
 
-- An image the stock bootloader would not install left the device on the
-  firmware it had, and the run asked you to switch it off and on again and
-  again. It now sends the image again by itself (twice at most), as it does
-  ESPHome fetched by OpenBeken (J2, O1), told by OpenBeken's uptime: the
-  suite's `--simulate-bad-image STEP` scenarios (fixed in 2.3.0).
-- This computer crashing 10% into an ESPHome update
-  (`outdated>esphome:U1@10:crash-1`) left ESPHome waiting up to 105 s for the
-  rest, its update service taking nothing else meanwhile, so every run
-  started again in that time timed out. The run now waits that out, once,
-  and sends the update again (fixed in 2.4.0).
-- After the stock bootloader refused ESPHome a third time
-  (`sonoff>esphome:J2:badimage-restart`,
-  `interim>esphome:J2:badimage-restart`), the run restarted the interim
-  firmware but never saw it back: it waited for an uptime below the one
-  before, and the device, only just restarted by the refusal, had been up for
-  less than it takes to start again. A restart is now also told by the device
-  going quiet once asked, then answering again; its uptime cannot be set
-  against the time since it was asked, as the emulated clock runs faster than
-  the wall's (fixed in 2.4.0).
+- **ESPHome holds an update cut off part way for up to 105 s,** its update
+  service taking nothing else meanwhile, so a run started again in that time
+  times out. The tool waits that out once, then sends the update again
+  (`outdated>esphome:U1@10:crash-1`).
+- **An OpenBeken just restarted cannot be told restarting again by its
+  uptime.** Restarted by the stock bootloader refusing ESPHome, it has been up
+  for less than it takes to start again, so the tool also takes it going
+  quiet once asked, then answering, as a restart
+  (`sonoff>esphome:J2:badimage-restart`). In the emulator, uptime cannot be
+  set against the time since the device was asked either: the emulated
+  device's time runs faster than the wall's, so its uptime outgrows the time
+  the tool counts, which a real device's does not (`step_esphome_check` in
+  `tools/autoflash/routes/beken/arrived.py`). This is apart from the
+  firmware's own clock falling slightly behind the emulated device's time
+  ([the emulator's README](../tools/beken/emulator/README.md)).
 
 ### Attended runs
 
@@ -1089,10 +955,14 @@ tests first.
 
 ## Real devices
 
-Real devices are powered through a second smart plug, to cut their power on
-purpose. Tasmota to ESPHome and back has run on a real S60TPG: every write
-read back, the final check of the device on Tasmota matching all four
-regions, and the relay and power meter checked through each firmware.
+The S60 is the only device tested for real, and the only one
+[Supported](../devices/README.md); every other is tested in the emulator alone,
+and no real Beken device has been converted
+([still open](#still-open-1)). A real device under test is powered through a
+second smart plug, so its power can be cut on purpose. Tasmota to ESPHome and
+back has run on a real S60TPG: every write read back, the final check of the
+device on Tasmota matching all four regions, and the relay and power meter
+checked through each firmware.
 
 ## Related
 
