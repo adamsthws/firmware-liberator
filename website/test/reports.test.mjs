@@ -275,15 +275,36 @@ test("the tool does the same work the Worker asks of a report", () => {
 
 test("each question /wanted is asked is counted by its model and day, within a limit", async () => {
   const bindings = env();
-  for (const product of ["NSPanel", "nspanel", "BASICR4", "not a model!", "x".repeat(40)]) {
-    await api.countWanted(bindings.DB, product, "2026-11-09");
+  for (const product of ["NSPanel", "nspanel", "BASICR4", "not a model!", "x".repeat(40), "SHIT-LAMP"]) {
+    await api.countWanted(bindings, post({}), product, "2026-11-09");
   }
   assert.deepEqual(rows(bindings, "SELECT model, asked FROM wanted_days ORDER BY model"),
-    [{ model: "BASICR4", asked: 1 }, { model: "NSPANEL", asked: 2 }]);
+    [{ model: "BASICR4", asked: 1 }, { model: "NSPANEL", asked: 2 }], "no word no model has");
   bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES (?, ?, ?, 0)")
     .run("wanted:2026-11-10", "2026-11-10", api.WANTED_COUNTED);
-  await api.countWanted(bindings.DB, "NSPANEL", "2026-11-10");
+  await api.countWanted(bindings, post({}), "NSPANEL", "2026-11-10");
   assert.equal(rows(bindings, "SELECT * FROM wanted_days WHERE day = '2026-11-10'").length, 0);
+});
+
+test("who named a model is kept as a keyed hash of it and their address, once a day, never the address", async () => {
+  const bindings = env();
+  await api.countWanted(bindings, post({}, {}, "198.51.100.23"), "NSPANEL", "2026-11-09");
+  await api.countWanted(bindings, post({}, {}, "198.51.100.23"), "NSPANEL", "2026-11-09");
+  await api.reports(post({ reports: [report({ model: "NSPANEL" }), report({ model: "BASICR4" })] }, {}, "198.51.100.23"),
+    bindings, NOW);
+  const kept = rows(bindings, "SELECT model, sender, day FROM model_senders ORDER BY model");
+  assert.deepEqual(kept.map((row) => [row.model, row.day]), [["BASICR4", "2026-11-09"], ["NSPANEL", "2026-11-09"]],
+    "one a model and day, however often given");
+  assert.match(kept[0].sender, /^[0-9a-f]{32}$/);
+  assert.notEqual(kept[0].sender, kept[1].sender, "nothing ties one sender's models together");
+  assert.ok(!JSON.stringify(rows(bindings, "SELECT * FROM model_senders")).includes("198.51.100"));
+});
+
+test("a report held for review, or the maintainer's own, vouches for no model", async () => {
+  const bindings = env();
+  await send(bindings, [report({ model: "NEWDEV", tag: "dev" }),
+    report({ model: "NEWDEV", result: "failed", stopped: { step: "D4", error: "upload-cut", text: "buy cheap watches" } })]);
+  assert.deepEqual(rows(bindings, "SELECT * FROM model_senders"), []);
 });
 
 test("a report no run would write is answered as accepted, held for review, and counted nowhere", async () => {

@@ -55,7 +55,11 @@ The report goes to the project's server, `api.firmwareliberator.com`, on
 Cloudflare. Like any website, it sees your internet address, and uses it only
 to limit how many reports one computer can send: it holds the address in
 memory for a minute, and counts it for the day as a scrambled code deleted
-after a week. The address itself is never stored.
+after a week. So that a made-up model name cannot be put on the public
+figures by one computer, the server also notes, for each model a report
+names, a scrambled code of your address and that model, which ties you to
+nothing else; it is deleted once enough people have named that model, or
+after 90 days. The address itself is never stored.
 
 - **Each report** is deleted after a year, leaving only totals made from it,
   such as "so many S60s converted in November".

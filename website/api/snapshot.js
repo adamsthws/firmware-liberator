@@ -5,7 +5,10 @@
 // - No figure stands for fewer than SMALLEST: a count below it is null, a
 //   rate is given only over SMALLEST or more, and a row of a list (a model,
 //   a Sonoff version, a tool version) under it is left out, so no one report
-//   or device can be picked out, nor a made-up name shown by a few reports.
+//   or device can be picked out.
+// - No model's name is shown before it is vouched for (vouched_models:
+//   VOUCH_SENDERS senders over VOUCH_DAYS days, nightly.js), so no made-up
+//   name can be put on the page by one sender, however many reports it makes.
 // - A run's success is a conversion, over conversions, failures and crashes:
 //   one the person declined, with nothing to do, or that met a device the tool
 //   does not convert yet (counted as "unsupported", and in "wanted"), counts
@@ -21,6 +24,8 @@ const NOT_FAILURES = "('declined', 'nothing-to-do', 'unsupported-device')";
 // its record before they were held (nightly.js).
 const NOT_HELD = `device_hash NOT IN (SELECT reports.device_hash FROM held_reports
   JOIN reports ON reports.id = held_reports.id WHERE reports.device_hash IS NOT NULL)`;
+
+const VOUCHED = "model IN (SELECT model FROM vouched_models)";
 
 const count = (n) => (Number.isInteger(n) && n >= SMALLEST ? n : null);
 // A percentage to one decimal, of `whole` SMALLEST or more.
@@ -64,10 +69,10 @@ export async function snapshot(db, now = new Date()) {
     WHERE dev = 0 AND ${NOT_HELD} GROUP BY month`)).map((row) => [row.month, row.n]));
   const models = await all(`SELECT model, max(device) AS device, count(*) AS devices,
       sum(conversions > 0) AS converted, sum(first_result = 'converted') AS first_run
-    FROM devices WHERE dev = 0 AND ${NOT_HELD} AND model IS NOT NULL GROUP BY model HAVING count(*) >= ?
+    FROM devices WHERE dev = 0 AND ${NOT_HELD} AND ${VOUCHED} GROUP BY model HAVING count(*) >= ?
     ORDER BY devices DESC, model`, SMALLEST);
   const modelMonths = await all(`SELECT substr(first_day, 1, 7) AS month, model, count(*) AS devices FROM devices
-    WHERE dev = 0 AND ${NOT_HELD} AND model IS NOT NULL GROUP BY month, model HAVING count(*) >= ? ORDER BY month, model`, SMALLEST);
+    WHERE dev = 0 AND ${NOT_HELD} AND ${VOUCHED} GROUP BY month, model HAVING count(*) >= ? ORDER BY month, model`, SMALLEST);
   const routes = await all(`SELECT source, firmware, ${OUTCOMES} FROM monthly_totals
     WHERE tag = 'user' AND firmware != '' GROUP BY source, firmware HAVING sum(n) >= ? ORDER BY runs DESC`, SMALLEST);
   const tools = await all(`SELECT tool, ${OUTCOMES} FROM monthly_totals WHERE tag = 'user'
@@ -76,15 +81,15 @@ export async function snapshot(db, now = new Date()) {
     WHERE tag = 'user' AND result IN ('failed', 'crashed') AND error NOT IN ${NOT_FAILURES}
     GROUP BY step, error HAVING sum(n) >= ? ORDER BY runs DESC, step, error`, SMALLEST);
   const unsupported = new Map((await all(`SELECT model, sum(n) AS n FROM monthly_totals
-    WHERE tag = 'user' AND error = 'unsupported-device' AND model != '' GROUP BY model`))
+    WHERE tag = 'user' AND error = 'unsupported-device' AND ${VOUCHED} GROUP BY model`))
     .map((row) => [row.model, row.n]));
-  const asked = await all("SELECT model, sum(asked) AS asked FROM wanted_days GROUP BY model");
+  const asked = await all(`SELECT model, sum(asked) AS asked FROM wanted_days WHERE ${VOUCHED} GROUP BY model`);
   const wanted = new Map(asked.map((row) => [row.model, { asked: row.asked, unsupported: 0 }]));
   for (const [model, n] of unsupported) {
     wanted.set(model, { asked: wanted.get(model)?.asked ?? 0, unsupported: n });
   }
   const stock = await all(`SELECT model, stock, sum(runs) AS runs, sum(converted) AS converted FROM monthly_stock
-    WHERE tag = 'user' GROUP BY model, stock HAVING sum(runs) >= ? ORDER BY model, stock`, SMALLEST);
+    WHERE tag = 'user' AND ${VOUCHED} GROUP BY model, stock HAVING sum(runs) >= ? ORDER BY model, stock`, SMALLEST);
   const computers = await all(`SELECT os_family, python_source, sum(n) AS runs FROM monthly_environment
     WHERE tag = 'user' GROUP BY os_family, python_source HAVING sum(n) >= ? ORDER BY runs DESC`, SMALLEST);
   const times = await all(`SELECT month, device, firmware, source, n, p50, p90 FROM monthly_times

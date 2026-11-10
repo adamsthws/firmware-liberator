@@ -32,6 +32,9 @@ function bucket() {
 const env = () => ({ DB: d1(), STATS: bucket() });
 const rows = (bindings, sql, ...values) => bindings.DB.db.prepare(sql).all(...values).map((row) => ({ ...row }));
 const figures = (bindings) => JSON.parse(bindings.STATS.objects.get(night.SNAPSHOT_KEY).body);
+// Models enough senders have given, over enough days, to be shown (vouching).
+const vouched = (bindings, ...models) => models.forEach((model) =>
+  bindings.DB.db.prepare("INSERT INTO vouched_models (model, day) VALUES (?, '2026-11-01')").run(model));
 
 test("each day before today is counted once, and today's are left for tomorrow", async () => {
   const bindings = env();
@@ -117,6 +120,7 @@ test("the figures leave out the maintainer's testing, and anything under five", 
   for (let n = 0; n < 4; n += 1) {
     await kept(bindings.DB, "2026-11-06", { model: "RARE1", device_hash: `rare-${n}`, device: null });
   }
+  vouched(bindings, "S60TPG", "RARE1");
   await night.nightly(bindings, NIGHT);
   const stats = figures(bindings);
   assert.equal(stats.devices.seen, 6, "the dev device left out, and RARE1's, of no device kind the tool knows");
@@ -168,11 +172,40 @@ test("the devices wanted: /wanted's questions and the runs stopped for want of s
     await kept(bindings.DB, "2026-11-05", { model: "BASICR4", device: null, result: "failed",
       stopped: { step: "A2", error: "unsupported-device", text: "" } });
   }
+  vouched(bindings, "NSPANEL", "FEW", "BASICR4");
   await night.nightly(bindings, NIGHT);
   assert.deepEqual(figures(bindings).wanted, [
     { model: "NSPANEL", asked: 6, unsupportedRuns: null },
     { model: "BASICR4", asked: null, unsupportedRuns: 5 },
   ]);
+});
+
+test("a model's name is shown once three senders have given it, on three days, and who gave it then forgotten", async () => {
+  assert.deepEqual([night.VOUCH_SENDERS, night.VOUCH_DAYS, night.VOUCH_KEEP_DAYS], [3, 3, 90]);
+  const bindings = env();
+  const gave = bindings.DB.db.prepare("INSERT INTO model_senders (model, sender, day) VALUES (?, ?, ?)");
+  for (const [sender, day] of [["a", "2026-11-01"], ["b", "2026-11-03"], ["c", "2026-11-05"]]) {
+    gave.run("TRUSTED1", sender, day);
+  }
+  for (const day of ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04"]) {
+    gave.run("ONESENDER", "a", day);   // one sender, however many days
+  }
+  for (const sender of ["a", "b", "c", "d"]) {
+    gave.run("ONEEVENING", sender, "2026-11-08");   // many senders, one day
+  }
+  gave.run("LONGAGO", "z", "2026-08-01");
+  for (const model of ["TRUSTED1", "ONESENDER", "ONEEVENING"]) {
+    for (let n = 0; n < 5; n += 1) {
+      await kept(bindings.DB, "2026-11-05", { model, device_hash: `${model}-${n}` });
+    }
+  }
+  await night.nightly(bindings, NIGHT);
+  assert.deepEqual(rows(bindings, "SELECT model, day FROM vouched_models"), [{ model: "TRUSTED1", day: "2026-11-10" }]);
+  assert.deepEqual(figures(bindings).models.map((row) => row.model), ["TRUSTED1"]);
+  assert.ok(!JSON.stringify(figures(bindings)).includes("ONESENDER"));
+  assert.ok(!JSON.stringify(figures(bindings)).includes("ONEEVENING"));
+  assert.deepEqual(rows(bindings, "SELECT DISTINCT model FROM model_senders ORDER BY model"),
+    [{ model: "ONEEVENING" }, { model: "ONESENDER" }], "TRUSTED1's vouched for, LONGAGO's past 90 days: forgotten");
 });
 
 test("the figures say what they are, how fresh, and for which schema", async () => {

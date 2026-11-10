@@ -12,8 +12,9 @@
 // - The maintainer is emailed when yesterday reached a limit for everyone, or
 //   the store passed most of its limit (alerts.js): counts only.
 // - The public snapshot is written to the stats bucket: totals only, from
-//   the maintainer's own testing and quarantined reports left out, and no
-//   figure for fewer than SMALLEST reports or devices (snapshot.js).
+//   the maintainer's own testing and quarantined reports left out, no figure
+//   for fewer than SMALLEST reports or devices, and no model's name before
+//   enough senders gave it over enough days (vouching; snapshot.js).
 // - Before a day is folded, a model's reports that day far above its usual
 //   (SPIKE_SMALLEST or more, and over SPIKE_TIMES its daily average over the
 //   SPIKE_DAYS before) are held for review (held_reports): a flood of
@@ -39,6 +40,13 @@ export const SPIKE_WHY = "a day far above usual for its model";
 // The count of every readout kept, as index.js names it (READOUTS_EVER; a
 // test holds the two alike).
 export const READOUTS_EVER = "readouts:all";
+// A model's name is shown in the figures once VOUCH_SENDERS senders have
+// given it, on VOUCH_DAYS days (model_senders, reports.js): so no one sender,
+// nor a few in one evening, can put a made-up name on the public page. Who
+// gave one is kept VOUCH_KEEP_DAYS at most, and not past its vouching.
+export const VOUCH_SENDERS = 3;
+export const VOUCH_DAYS = 3;
+export const VOUCH_KEEP_DAYS = 90;
 
 const DAY = 86_400_000;
 export const dayOf = (date) => date.toISOString().slice(0, 10);
@@ -157,6 +165,18 @@ function holding(db, found) {
   ]);
 }
 
+// The statements vouching for each model enough senders gave, over enough
+// days, then forgetting who gave those, and any given VOUCH_KEEP_DAYS ago.
+export function vouching(db, today) {
+  return [
+    db.prepare(`INSERT OR IGNORE INTO vouched_models (model, day)
+      SELECT model, ?1 FROM model_senders GROUP BY model
+      HAVING count(DISTINCT sender) >= ?2 AND count(DISTINCT day) >= ?3`).bind(today, VOUCH_SENDERS, VOUCH_DAYS),
+    db.prepare("DELETE FROM model_senders WHERE model IN (SELECT model FROM vouched_models) OR day < ?")
+      .bind(daysBefore(today, VOUCH_KEEP_DAYS)),
+  ];
+}
+
 // `limits`: the API's, as index.js's scheduled() gives them, for alerts.js.
 export async function nightly(env, now = new Date(), limits = null) {
   if (!(await ready(env.DB))) {
@@ -172,7 +192,7 @@ export async function nightly(env, now = new Date(), limits = null) {
   // Readouts never taken as right, and addresses never confirmed, gone after
   // their days (pending.js) - before the store's size is noted below.
   const pruned = await prunePending(env, today);
-  await env.DB.batch([...pruning(env.DB, today),
+  await env.DB.batch([...pruning(env.DB, today), ...vouching(env.DB, today),
     env.DB.prepare(`INSERT INTO store_days (day, readouts, bytes)
       SELECT ?1, coalesce(max(count), 0), coalesce(max(bytes), 0) FROM counters WHERE name = ?2
       ON CONFLICT (day) DO UPDATE SET readouts = excluded.readouts, bytes = excluded.bytes`).bind(today, READOUTS_EVER)]);
