@@ -676,7 +676,9 @@ answering though its firmware still runs
 **Where its files are.** In `captures/emulation/beken/`, laid out as the
 Espressif emulator's `captures/emulation/`: each device's `state/` (`state-N/`)
 with its flash, logs and the stub's CA, the fault suite's `saved/` devices and
-`suite/` results, and the fetched dumps in `firmwares/`. Older checkouts' folders
+`suite/` results, the fetched dumps and official files in `firmwares/`, and in
+`rebuilt/` the whole flash the emulator check rebuilds for a device with no
+public dump. Older checkouts' folders
 named after the S61 (`captures/emulation/s61/`, `s61-suite/`,
 `beken-firmwares/`) are moved there by `beken-emu.sh` and the fault suite the
 first time they run, unless a container is using one.
@@ -685,6 +687,10 @@ first time they run, unless a container is using one.
 this checkout for a new device to start from, such as one `rebuild_dump.py`
 made for another model
 ([adding a Beken device](adding-a-device.md#what-the-emulator-does-for-you-1)).
+The emulator check does so for the Sonoff Basic Gen5
+(`tools/repo/emulator_check.py sonoff-basic-1gs`). The emulated board stays
+the S61's whatever the flash; the check holds a device with no meter only to
+its relay switching, not to a meter seeing it.
 
 ### Known gaps
 

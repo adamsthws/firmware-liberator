@@ -7,6 +7,8 @@ laid out as the Espressif emulator's is in captures/emulation/:
     legacy/<release>/   an earlier release's tree, for the update scenarios
     suite/, suite-*/    the fault suite's results and logs
     firmwares/          the public dumps fetched from upstream (beken-emu.sh dump)
+    rebuilt/            a whole flash rebuilt for a device with no public dump
+                        (tools/repo/emulator_check.py)
 
     python3 -I tools/beken/emulator/folders.py migrate
 
@@ -40,6 +42,7 @@ SAVED = BEKEN / "saved"
 LEGACY = BEKEN / "legacy"
 SUITE = BEKEN / "suite"
 FIRMWARES = BEKEN / "firmwares"
+REBUILT = BEKEN / "rebuilt"
 
 
 def old_names(emulation: Path) -> list[tuple[Path, Path]]:

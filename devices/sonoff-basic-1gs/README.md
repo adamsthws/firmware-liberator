@@ -47,12 +47,14 @@ S61 dump's bootloader and settings and this device's official update file:
 - The same to ESPHome, through the interim firmware, and back.
 - With `--simulate-unknown-table` the run stopped at B1, before any update was
   sent.
-- `tools/beken/emulator/fault_suite.py check`, with `AUTOFLASH_BEKEN_EMU_FLASH`
-  naming that flash, passed all four ways: each final firmware from stock,
-  then each taken to the other. With no meter, its end-of-run check asks only
-  that the relay switched, not that a meter saw it. This is run by hand:
-  the check a change runs (`tools/repo/emulator_check.py`) skips this device,
-  as no dump of one is published (`NO_DUMP`).
+- The emulator check (`tools/repo/emulator_check.py sonoff-basic-1gs`) passes
+  all four ways: each final firmware from stock, then each taken to the other.
+  With no meter, its end-of-run check asks only that the relay switched, not
+  that a meter saw it. It fetches the public S61 dump and this device's
+  official file, rebuilds the flash from them in
+  `captures/emulation/beken/rebuilt/`, and runs from that. The
+  `emulator-check` workflow runs it for every change that could affect this
+  device.
 
 This proves the firmware and the tool's path, not this device's hardware. The
 bootloader, radio data and settings were the S61's. The firmware said it was an

@@ -250,6 +250,27 @@ class CheckTests(unittest.TestCase):
         with mock.patch.object(fault_suite, "check_way", return_value=0):
             self.assertEqual(fault_suite.check(), 0)
 
+    def test_each_way_runs_on_the_emulator_asked_for(self):
+        # So two devices' checks run side by side on one computer (emulator_check.py --instances).
+        from unittest import mock
+        with mock.patch.object(fault_suite.folders, "migrate", return_value=[]):
+            with mock.patch.object(fault_suite, "check_way", return_value=0) as way:
+                self.assertEqual(fault_suite.main(["check", "--instances", "3,4"]), 0)
+            self.assertEqual(sorted(call.args for call in way.call_args_list),
+                             sorted(zip((3, 4), fault_suite.CHECK_WAYS)))
+            with mock.patch.object(fault_suite, "check_way", return_value=0) as way:
+                self.assertEqual(fault_suite.main(["check"]), 0)
+        self.assertEqual(sorted(call.args[0] for call in way.call_args_list), [1, 2])
+
+    def test_one_emulator_for_two_ways_is_refused(self):
+        import io
+        from contextlib import redirect_stderr
+        from unittest import mock
+        with mock.patch.object(fault_suite.folders, "migrate", return_value=[]), \
+                redirect_stderr(io.StringIO()) as said, self.assertRaises(SystemExit):
+            fault_suite.main(["check", "--instances", "3"])
+        self.assertIn("--instances needs 2 numbers", said.getvalue())
+
     def test_a_way_whose_end_of_run_checks_failed_has_failed(self):
         import io
         from contextlib import redirect_stdout
