@@ -58,12 +58,21 @@ class BusyTasmotaHandler(http.server.BaseHTTPRequestHandler):
             server.answered.set()
         elif self.path.startswith("/missing"):
             self.reply(404, b"not found")
+        elif self.path.startswith("/bad"):
+            self.reply(400, b"bad request")
         elif self.path.startswith("/moved"):
-            self.reply(302, b"", {"Location": "/cm?cmnd=Status"})
+            # /moved301 and the like: that status; /moved, 302.
+            self.reply(int(self.path[len("/moved"):] or 302), b"", {"Location": "/cm?cmnd=Status"})
+        elif self.path.startswith("/headers"):
+            self.reply(200, json.dumps(dict(self.headers.items())).encode())
         elif self.path.startswith("/cm"):
             self.reply(200, b'{"Status":{}}')
         else:
             self.reply(200, b"<title>Tasmota</title>")
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        self.reply(303, b"", {"Location": "/headers"})   # as a form's answer comes
 
 
 # Long enough that a device told to answer late answers only once released: a
@@ -100,10 +109,15 @@ class HeldRequestTests(unittest.TestCase):
         with self.assertRaises(TimeoutError):
             client._get("/slow", {}, timeout=0.3)
         self.assertEqual(device.held_requests(), 1)
+        self.assertTrue(device._held[0][1].daemon)   # never keeps the tool from ending
         self.server.release.set()
         self.assertTrue(self.server.answered.wait(10))
         self.assertTrue(held_ends(), "the answered request was still held")
         self.assertEqual(self.server.closed_unanswered, [False])
+
+    def test_a_slow_answer_within_the_time_given_is_waited_for(self):
+        client = self.start(delay=0.5)
+        self.assertEqual(client._get("/slow", {}, timeout=10), "late")
 
     def test_a_device_with_requests_held_is_not_sent_more_than_a_few(self):
         client = self.start(delay=NOT_YET)
@@ -142,7 +156,7 @@ class HeldRequestTests(unittest.TestCase):
     def test_the_web_page_check_still_says_no_at_once(self):
         client = self.start(delay=NOT_YET)
         self.server.slow_page = True
-        self.assertFalse(client.answers(timeout=0.3))
+        self.assertIs(client.answers(timeout=0.3), False)
         self.assertFalse(self.server.answered.is_set())  # no, before the device answered
         self.server.release.set()
         self.assertTrue(self.server.answered.wait(10))
@@ -153,12 +167,32 @@ class HeldRequestTests(unittest.TestCase):
             client._get("/missing", {}, timeout=5)
         self.assertEqual(caught.exception.code, 404)
         self.assertEqual(caught.exception.read(), b"not found")
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            client._get("/bad", {}, timeout=5)
+        self.assertEqual(caught.exception.code, 400)
         self.assertTrue(client.answers(timeout=5))  # any answer is an answer
         self.assertEqual(client.command("Status"), {"Status": {}})
 
     def test_a_redirect_is_followed(self):
         client = self.start()
-        self.assertEqual(client._get("/moved", {}, timeout=5), '{"Status":{}}')
+        for status in ("", "301", "302", "303", "307", "308"):
+            self.assertEqual(client._get(f"/moved{status}", {}, timeout=5), '{"Status":{}}', status)
+
+    def test_a_form_redirected_is_fetched_with_its_headers_but_its_body_type(self):
+        client = Device(self.start().host, password="s3cret-71")
+        sent = json.loads(client._request("POST", "/u2", {}, 5, body=b"x",
+                                          headers={"Content-Type": "multipart/form-data; boundary=b"}))
+        self.assertNotIn("Content-Type", sent)
+        self.assertEqual(sent["Referer"], f"http://{client.host}/")
+        self.assertTrue(sent["Authorization"].startswith("Basic "))
+
+    def test_a_device_is_asked_on_port_80_unless_its_address_says_otherwise(self):
+        for host, port in (("192.0.2.50", 80), ("192.0.2.50:8080", 8080)):
+            with mock.patch.object(device.http.client, "HTTPConnection") as made:
+                made.return_value.connect.side_effect = ConnectionRefusedError("refused")
+                with self.assertRaises(urllib.error.URLError):
+                    device._exchange(host, "GET", "/", {}, None, 1.0)
+            made.assert_called_once_with("192.0.2.50", port, timeout=1.0)
 
     def test_nobody_there_is_a_url_error_and_nothing_is_held(self):
         with socket.socket() as spare:
@@ -179,6 +213,9 @@ class HeldRequestTests(unittest.TestCase):
         self.addCleanup(lambda: (server.shutdown(), server.server_close()))
         with self.assertRaisesRegex(DeviceError, "web UI has a password"):
             Device(f"127.0.0.1:{server.server_address[1]}")._get("/", {}, timeout=5)
+        # Its commands refused without Tasmota's own words: a password all the same.
+        with self.assertRaisesRegex(DeviceError, "web UI has a password"):
+            Device(f"127.0.0.1:{server.server_address[1]}")._get("/cm", {}, timeout=5)
 
 
 class BerryFireTests(unittest.TestCase):
@@ -192,7 +229,7 @@ class BerryFireTests(unittest.TestCase):
         device = Device("10.0.0.63")
         for error in (http.client.IncompleteRead(b""), ConnectionResetError(54, "reset")):
             with mock.patch.object(device, "berry", side_effect=error):
-                self.assertFalse(device.berry_fire('autoflash_commit("x")'))
+                self.assertIs(device.berry_fire('autoflash_commit("x")'), False)
 
     def test_other_errors_still_surface(self):
         from tools.autoflash.device import Device, DeviceError
@@ -314,6 +351,59 @@ class RebootDetectionTests(unittest.TestCase):
         with self.assertRaises(DeviceError):
             self.wait_on_clock(Fake("10.0.0.5"), clock, started_at="#1", before=10)
 
+    def answering(self, clock, *, offline=(), boot=None, uptime):
+        """A device answering on `clock`: not at the seconds in `offline`, its
+        boot `boot` (a function of the seconds waited, or None for no answer),
+        its uptime `uptime` of them."""
+        from tools.autoflash.device import Device
+        start = clock.now
+
+        class Fake(Device):
+            def reachable(self, timeout=3.0):
+                return clock.now - start not in offline
+
+            def started_at(self):
+                return boot(clock.now - start) if boot else None
+
+            def uptime_seconds(self):
+                return uptime(clock.now - start)
+
+        return Fake("10.0.0.5")
+
+    def settled(self, client, clock, **kwargs):
+        import tools.autoflash.device as device_module
+        with mock.patch.object(device_module, "time", clock):
+            return client.wait_for_reboot(timeout=60, settle=4, **kwargs)
+
+    def test_each_way_a_restart_is_seen_settles_and_says_how_long_it_waited(self):
+        # Seen at the first look, 3 s in, then 4 s to settle.
+        clock = self.Clock()
+        another_boot = self.answering(clock, boot=lambda waited: "#2", uptime=lambda waited: 100)
+        self.assertEqual(self.settled(another_boot, clock, started_at="#1"), 7.0)
+        clock = self.Clock()
+        younger_than_the_wait = self.answering(clock, boot=lambda waited: "#1", uptime=lambda waited: 0)
+        self.assertEqual(self.settled(younger_than_the_wait, clock, started_at="#1"), 7.0)
+        clock = self.Clock()
+        clock_went_back = self.answering(clock, uptime=lambda waited: 5)
+        self.assertEqual(self.settled(clock_went_back, clock, before=10), 7.0)
+
+    def test_a_device_up_a_moment_before_the_wait_is_not_taken_for_restarted(self):
+        from tools.autoflash.device import DeviceError
+        clock = self.Clock()
+        same_boot = self.answering(clock, boot=lambda waited: "#1", uptime=lambda waited: 1 + int(waited))
+        with self.assertRaises(DeviceError):
+            self.settled(same_boot, clock, started_at="#1")
+
+    def test_with_nothing_to_go_on_only_going_away_is_a_restart(self):
+        from tools.autoflash.device import DeviceError
+        clock = self.Clock()
+        never_away = self.answering(clock, uptime=lambda waited: 600)
+        with self.assertRaises(DeviceError):
+            self.settled(never_away, clock)
+        clock = self.Clock()
+        away_once = self.answering(clock, offline={3.0}, uptime=lambda waited: 600)
+        self.assertEqual(self.settled(away_once, clock), 10.0)
+
     def test_an_uptime_question_the_restart_cuts_off_is_asked_again(self):
         import urllib.error
         from tools.autoflash.device import Device
@@ -383,7 +473,7 @@ class AtNextSaveTests(unittest.TestCase):
         from tools.autoflash.device import Device
         client = Device("192.0.2.1")
         client.command = lambda c, timeout=None: {"Command": "Unknown"}
-        self.assertFalse(client.at_next_save(["Hostname x"]))
+        self.assertIs(client.at_next_save(["Hostname x"]), False)
         # And Berry that would not take it: its error, not the class, comes back.
         client.command = lambda c, timeout=None: {"Br": "[syntax_error] input:1: strict: ..."}
         self.assertFalse(client.at_next_save(["Hostname x"]))
@@ -510,6 +600,7 @@ class UploadRefusalTests(unittest.TestCase):
             with self.assertRaises(device.UploadRefused) as raised:
                 client._upload("/up", "tasmota32c3.bin", b"\xe9" * 16, 10)
         self.assertEqual(raised.exception.reason, "Not enough space")
+        self.assertEqual(str(raised.exception), "the device refused the upload: Not enough space")
         self.assertIsInstance(raised.exception, DeviceError)
 
     def test_a_taken_upload_returns_its_page(self):
@@ -613,7 +704,7 @@ class WebPasswordTests(unittest.TestCase):
     def test_it_says_when_it_wants_one_and_runs_nothing_to_say_it(self):
         self.assertTrue(Device(self.client.host).wants_password())
         self.assertTrue(Device(self.client.host, password="not-it-9").wants_password())
-        self.assertFalse(Device(self.client.host, password=LockedTasmota.PASSWORD).wants_password())
+        self.assertIs(Device(self.client.host, password=LockedTasmota.PASSWORD).wants_password(), False)
         self.assertEqual({path.partition("?")[0] for path, _ in self.client.seen}, {"/cm"})
         self.assertFalse([path for path, _ in self.client.seen if "cmnd=" in path])
 
@@ -681,6 +772,13 @@ class DeviceReadTests(unittest.TestCase):
         client = FakeDevice(bytes(0x9000) + sonoff_nvs())
         self.assertEqual(client.read_nvs(0x9000, 0x10000), sonoff_nvs())
         self.assertEqual(sum(1 for _, length in client.reads if length == 0x1000), 1)
+
+    def test_each_used_page_is_read_whole_into_its_place(self):
+        pages = [b"\x01" * 0x1000, b"\xff" * 0x1000, b"\x02" * 0x1000, b"\xff" * 0x1000]
+        client = FakeDevice(bytes(0x9000) + b"".join(pages))
+        self.assertEqual(client.read_nvs(0x9000, 0x4000), b"".join(pages))
+        self.assertEqual(client.reads, [(0x9000, 4), (0x9000, 0x1000), (0xa000, 4),
+                                        (0xb000, 4), (0xb000, 0x1000), (0xc000, 4)])
 
 
 if __name__ == "__main__":
