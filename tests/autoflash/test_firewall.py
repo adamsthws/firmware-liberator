@@ -44,11 +44,16 @@ class ReleaseFirewallTests(unittest.TestCase):
         lines = []
         with mock.patch.object(hostsys, "close_firewall", side_effect=KeyboardInterrupt), \
              mock.patch.object(output, "tell", side_effect=lines.append):
-            firewall.release_firewall(ctx)  # does not raise
+            self.assertFalse(firewall.release_firewall(ctx))  # does not raise; a rule is left
         screen = "\n".join(lines)
         self.assertIn("was not removed (stopped with Ctrl-C)", screen)
         self.assertIn("192.0.2.50", screen)
         self.assertEqual(firewall.recorded_rules(ctx), [self.RULE])  # still recorded for cleanup
+
+
+class PortTests(unittest.TestCase):
+    def test_the_image_and_the_phases_are_never_served_on_the_same_port(self):
+        self.assertEqual(set(firewall.DELIVERY_PORTS) & set(firewall.PHASE_PORTS), set())
 
 
 class QuitTests(unittest.TestCase):
