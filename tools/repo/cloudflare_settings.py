@@ -37,6 +37,7 @@ change.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import secrets
@@ -185,7 +186,9 @@ CACHE_RULES = [{
 # set by `apply` and checked here by name with the maintainer's token - a
 # value is never read back, and CI's token is refused the Worker's settings.
 # - "made": a random value `apply` makes when it is missing, and `rotate NAME`
-#   replaces: nothing outside the Worker needs to know it.
+#   replaces: nothing outside the Worker needs to know it. Rotating SENDER_KEY
+#   makes every sender look new for a while: .github/readouts.md, Rotating
+#   SENDER_KEY, says what that weakens, and when to.
 # - "kept": one that must never change, kept privately as API_<NAME> in the
 #   environment or .env.infra, from where `apply` sets it when it is missing;
 #   never made or rotated here.
@@ -706,6 +709,10 @@ def rotate(name: str) -> int:
         print(f"cloudflare_settings: {error}", file=sys.stderr)
         return 1
     print(f"  {API_WORKER} secret {name}: rotated")
+    if name == "SENDER_KEY":
+        at = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        print(f"  Every sender looks new from {at}. Over the next weeks, look at the keys this weakened:\n"
+              f"    python3 tools/repo/readouts.py rotated {at}")
     return 0
 
 

@@ -304,8 +304,8 @@ and the store has limits it is never let past:
   the count is deleted with the day's others by the nightly job. One not kept
   gives its place back. Until `SENDER_KEY` is set, no readout is taken.
   `cloudflare_settings.py apply` makes it when it is missing, and `rotate
-  SENDER_KEY` replaces it - which starts the day's counts again, and makes a
-  sender's next readout of a key it sent before look like another sender's.
+  SENDER_KEY` replaces it, which weakens the limits for a while: see
+  [Rotating SENDER_KEY](#rotating-sender_key).
 - **Rate.** Before the Worker runs at all, a Cloudflare rate-limiting rule on
   its hostname (`tools/repo/cloudflare_settings.py`) blocks an address sending
   more than 5 requests in 10 seconds, for 10 seconds: a flood never reaches the
@@ -405,6 +405,26 @@ as CI's log is public. When it fails:
 - A complaint: remove that address from the list (`/forget`'s link, or by
   hand under `notify/`). Leave it suppressed, so it is never written to
   again, unless its owner asks to be told once more.
+
+### Rotating SENDER_KEY
+
+Every count of a sender is an HMAC under `SENDER_KEY`, so a new key makes
+each sender look new. `rotate SENDER_KEY` therefore:
+
+- starts the day's counts of each sender again: its 20 readouts, 5
+  sign-ups and 100 reports, for the rest of that day;
+- lets a sender that already sent a readout of a key send another of it,
+  taking a second of the key's 3 places. A key with readouts from both
+  sides of a rotation can so reach its quorum with two senders, not three;
+- loses nothing: readouts and their reviews stay as they are, and no
+  address was ever kept to link the old hashes to the new.
+
+So rotate it only when it may have leaked - it never leaves the Worker's
+secrets, so that means someone reached the Cloudflare account - not on a
+schedule. It prints the time it rotated and the command that lists, until
+you settle them, the keys taken as right from readouts sent on both sides of
+it: `readouts.py rotated <time>`. Over the next weeks, look at each, and
+`reject` a readout where two of the three could be the same sender's.
 
 ## Working with them
 

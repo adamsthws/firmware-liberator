@@ -8,6 +8,9 @@
     python3 tools/repo/readouts.py approve ID        one taken as right
     python3 tools/repo/readouts.py reject ID         one taken as wrong: its place
                                                     goes to another sender's
+    python3 tools/repo/readouts.py rotated TIME      the keys taken as right with
+                                                    readouts from both sides of
+                                                    SENDER_KEY's rotation at TIME
     python3 tools/repo/readouts.py changes [REF]     the devices whose status changed
                                                     since REF (the latest release's
                                                     tag), and whom to tell of each
@@ -21,7 +24,10 @@ beside them; a prefix given lists everything under it.
 API has not taken as right: fewer than three of them, from three senders,
 agree (.github/readouts.md). Each line is its reference, stage, when it came
 in, its object and fingerprint; one whose fingerprint differs from the rest
-of its key is marked ODD. The API's database is read with the maintainer's
+of its key is marked ODD. `rotated` lists, the same way, each key taken as
+right from readouts sent both before and after TIME (as `cloudflare_settings.py
+rotate SENDER_KEY` printed it): two of its three could be one sender's, as a
+new key makes every sender look new. The API's database is read with the maintainer's
 token, as cloudflare_settings.py reads it (D1 is refused to CI's).
 
 `notify` lists each address given for a product (eWeLink's product model),
@@ -114,6 +120,27 @@ def review(product: str | None) -> int:
     return 0
 
 
+def rotated(when: str) -> int:
+    """The keys taken as right from readouts on both sides of `when`."""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z", when):
+        print(f"readouts: {when} is not a time as rotate prints it (2026-11-10T12:00:00Z)", file=sys.stderr)
+        return 2
+    rows = query("SELECT id, key, stage, fingerprint, object, received FROM readouts"
+                 " WHERE review IN ('quorum', 'approved') ORDER BY key, stage, received", [])
+    keys: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        keys.setdefault((row["key"], row["stage"]), []).append(row)
+    both = {found: kept for found, kept in keys.items()
+            if min(row["received"] for row in kept) < when <= max(row["received"] for row in kept)}
+    for (key, stage), kept in both.items():
+        print(f"{shown(key)} ({shown(stage)}): {len(kept)} taken as right, sent both sides of {when}")
+        for row in kept:
+            side = "before" if row["received"] < when else "after"
+            print(f"    {shown(row['id'])}  {shown(row['received'])}  {shown(row['object'])}  {side}")
+    print(f"{len(both)} to look at again")
+    return 0
+
+
 def settle(action: str, reference: str) -> int:
     """`approve` or `reject` one readout, by its reference."""
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}-[0-9a-f]{12}", reference):
@@ -188,11 +215,13 @@ def changes(ref: str | None) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if args[:1] in (["review"], ["approve"], ["reject"]):
+    if args[:1] in (["review"], ["approve"], ["reject"], ["rotated"]):
         if (args[0] == "review" and len(args) > 2) or (args[0] != "review" and len(args) != 2):
             print(__doc__.strip(), file=sys.stderr)
             return 2
         try:
+            if args[0] == "rotated":
+                return rotated(args[1])
             return review(args[1] if len(args) == 2 else None) if args[0] == "review" else settle(*args)
         except cs.SettingsError as error:
             print(f"readouts: {error}", file=sys.stderr)
