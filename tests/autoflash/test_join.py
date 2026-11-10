@@ -72,6 +72,26 @@ class NetworkCheckTests(unittest.TestCase):
             )
 
 
+    def test_the_network_names_are_kept_out_of_the_log(self):
+        with mock.patch.object(output, "private") as private:
+            join.check_device_network(self.ctx("Home-2G"))
+        self.assertEqual(private.call_args_list, [mock.call("Home-2G", "wifi-name")] * 2)
+
+    def test_weak_is_below_minus_75_dbm(self):
+        with mock.patch.object(prompts, "ask_yes_no", return_value=True) as asked, \
+                mock.patch.object(output, "transient_begin"), mock.patch.object(output, "transient_end"):
+            join.warn_if_weak_signal(self.ctx("Home-2G"), -75, ["then"])
+            asked.assert_not_called()
+            join.warn_if_weak_signal(self.ctx("Home-2G"), -76, ["then"])
+            asked.assert_called_once()
+
+    def test_an_unattended_run_stops_at_a_weak_signal(self):
+        with mock.patch.object(prompts, "UNATTENDED", True), mock.patch.object(prompts, "answered_unattended"), \
+                mock.patch.object(output, "transient_begin"), mock.patch.object(output, "transient_end"):
+            with self.assertRaisesRegex(errors.Abort, "weak Wi-Fi signal"):
+                join.warn_if_weak_signal(self.ctx("Home-2G"), -82, ["then"])
+
+
 class AdvertSignalTests(unittest.TestCase):
     """From Sonoff's firmware the signal is read at A2, before anything is
     written, from the device's own eWeLink advert, opened with its LAN key."""
@@ -154,10 +174,10 @@ class BusyDeviceTests(unittest.TestCase):
         return SimpleNamespace(state=state, device=device, steps=routes.STEPS), pings
 
     def wait(self, ctx, pings):
-        clock = iter(range(0, 100_000, 3))
+        clock = iter(range(50_000, 150_000, 3))  # as far from 0 as a real clock is
         with mock.patch.object(hostsys, "ping_ok", return_value=pings), \
              mock.patch.object(time, "monotonic", side_effect=lambda: next(clock)), \
-             mock.patch.object(time, "sleep"), \
+             mock.patch.object(time, "sleep") as self.slept, \
              mock.patch.object(output, "tell") as told, \
              mock.patch.object(output, "progress"), \
              mock.patch.object(output, "progress_clear"):
@@ -173,6 +193,7 @@ class BusyDeviceTests(unittest.TestCase):
         told = self.wait(ctx, pings)
         self.assertEqual(ctx.device.answers.call_count, 4)
         self.assertIn("answering again", told.call_args.args[0])
+        self.assertEqual(self.slept.call_count, 2)  # a pause between each two asks
 
     def test_a_device_off_the_network_is_left_to_the_steps(self):
         ctx, _ = self.ctx(answers=[False])
@@ -182,6 +203,41 @@ class BusyDeviceTests(unittest.TestCase):
         ctx, pings = self.ctx(d1_done=False)
         self.wait(ctx, pings)
         ctx.device.answers.assert_not_called()
+
+    def test_with_no_address_a_finished_run_or_esphome_nothing_is_checked(self):
+        for left in ("no address", routes.STEPS[-1][0], "I1"):
+            with self.subTest(left=left):
+                ctx, pings = self.ctx(answers=[False])
+                if left == "no address":
+                    ctx.state.set_input("device_ip", None)
+                else:
+                    ctx.state.mark(left, DONE)
+                self.wait(ctx, pings)
+                ctx.device.answers.assert_not_called()
+
+
+class SendThroughOwnNetworkTests(unittest.TestCase):
+    """The Wi-Fi details sent through a device's own network: tried three times."""
+
+    def send(self, failures):
+        with mock.patch.object(prompts, "section"), mock.patch.object(hostsys, "wifi_menu_hint", return_value="x"), \
+                mock.patch.object(join, "wait_until_joined"), mock.patch.object(time, "sleep"), \
+                mock.patch.object(output, "tell"), \
+                mock.patch.object(setup_network, "send_esphome_wifi", side_effect=[
+                    *(setup_network.SetupError("no answer") for _ in range(failures)), None]) as sent:
+            try:
+                join.send_through_own_network("ESP_ABCDF0", "Home", "pw")
+            finally:
+                self.sent = sent.call_count
+
+    def test_a_third_try_that_works_is_enough(self):
+        self.send(2)
+        self.assertEqual(self.sent, 3)
+
+    def test_three_tries_that_fail_stop_the_run(self):
+        with self.assertRaisesRegex(errors.Abort, "could not be sent"):
+            self.send(3)
+        self.assertEqual(self.sent, 3)
 
 
 class UserActionWaitTests(unittest.TestCase):
@@ -239,7 +295,7 @@ class SetupNetworkGoneTests(unittest.TestCase):
 
     def gone(self, answering, visible, network="tasmota-ABCDEF-1234"):
         from types import SimpleNamespace
-        clock = iter(range(0, 1000, 2))
+        clock = iter(range(5000, 6000, 2))  # as far from 0 as a real clock is
         ctx = SimpleNamespace(state=SimpleNamespace(input={"device_mac": "12:34:56:ab:cd:ef"}.get))
         with mock.patch.object(setup_network, "port_open", return_value=answering), \
              mock.patch.object(prompts, "scan_wifi_ssids", return_value=visible), \
@@ -249,6 +305,17 @@ class SetupNetworkGoneTests(unittest.TestCase):
 
     def test_nothing_answering_and_not_listed_is_gone(self):
         self.assertTrue(self.gone(False, ["Home"]))
+
+    def test_it_looks_again_only_after_a_pause(self):
+        from types import SimpleNamespace
+        clock = iter(range(5000, 6000, 2))  # as far from 0 as a real clock is
+        ctx = SimpleNamespace(state=SimpleNamespace(input={"device_mac": "12:34:56:ab:cd:ef"}.get))
+        with mock.patch.object(setup_network, "port_open", return_value=False) as asked, \
+             mock.patch.object(prompts, "scan_wifi_ssids", return_value=["Home"]), \
+             mock.patch.object(time, "monotonic", side_effect=lambda: next(clock)), \
+             mock.patch.object(time, "sleep") as slept:
+            join.setup_network_gone(ctx, "tasmota-ABCDEF-1234")
+        self.assertEqual(slept.call_count, asked.call_count)
 
     def test_still_answering_is_not(self):
         self.assertFalse(self.gone(True, ["Home"]))
@@ -286,6 +353,19 @@ class LocateTests(SetupNetworkTestCase):
             self.assertEqual(join.locate_device(ctx, setup=True), "192.0.2.77")
         setup.assert_called_once_with(ctx, None)
         self.assertIn("tasmota-ABCDEF-NNNN, or ESP_ABCDF0", offered[2])
+
+    def test_an_address_given_when_it_is_not_found_is_kept_and_no_setup_network_offered(self):
+        moved = []
+        ctx = SimpleNamespace(state=SimpleNamespace(input={"device_ip": "192.0.2.50"}.get),
+                              finder=SimpleNamespace(poll=lambda: None), set_device_ip=moved.append)
+        with mock.patch.object(time, "sleep") as slept, \
+                mock.patch.object(time, "monotonic", side_effect=iter(range(0, 10_000, 100))), \
+                mock.patch.object(output, "progress"), mock.patch.object(output, "progress_clear"), \
+                mock.patch.object(prompts, "wait_or_ask", return_value="192.0.2.9") as asked:
+            self.assertEqual(join.locate_device(ctx), "192.0.2.9")
+        self.assertIsNone(asked.call_args.kwargs["other"])
+        self.assertEqual(moved, ["192.0.2.9"])
+        self.assertTrue(slept.called)  # a pause between looks
 
     def test_without_it_only_waiting_or_an_address_is_offered(self):
         offered = []
