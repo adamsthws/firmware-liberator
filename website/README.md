@@ -84,7 +84,7 @@ Three Cloudflare API tokens are in play, each allowed only what its job needs:
 | Token | Kept | Permissions |
 | --- | --- | --- |
 | Deploy | `website` secret `CLOUDFLARE_DEPLOY_TOKEN` | Individual Workers - `firmware-liberator`, `firmware-liberator-api`: Editor. Zone `firmwareliberator.com` - Workers Routes: Write, DNS: Write (the custom domains), Zone: Read |
-| Settings check | `website` secret `CLOUDFLARE_READ_TOKEN` | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Read, DNS: Read, Dynamic URL Redirects: Read, Zone WAF: Read, Cache Settings: Read (the cache rules), Email Routing Rules: Read. Account - Workers R2 Storage: Read, Account Analytics: Read (the usage check), Email Routing Addresses: Read, Email Sending: Read |
+| Settings check | `website` secret `CLOUDFLARE_READ_TOKEN` | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Read, DNS: Read, Dynamic URL Redirects: Read, Zone WAF: Read, Cache Settings: Read (the cache rules), Email Routing Rules: Read, Analytics: Read (the mail check). Account - Workers R2 Storage: Read, Account Analytics: Read (the usage check), Email Routing Addresses: Read, Email Sending: Read (the mail check's suppression list) |
 | Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, DNS: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit, Cache Settings: Edit (the cache rules), Email Routing Rules: Edit. Account - Workers R2 Storage: Edit, D1: Edit, Email Routing Addresses: Edit, Email Sending: Edit (onboarding the domain for sending), Account API Tokens: Read, Workers Scripts: Edit (to check the deploy token, and set the API Worker's secrets) |
 
 The deploy token reaches its two Workers and no other in the account. Its

@@ -44,8 +44,9 @@ jobs:
         run: python3 tools/repo/cloudflare_settings.py ci
 
   # The API's health (tools/repo/api_health.py): the public figures made last
-  # night, by a database with every migration, and the account well within
-  # what its plan includes. Daily, not on a push: neither changes with one.
+  # night, by a database with every migration, the account well within what
+  # its plan includes, and its emails bouncing rarely, drawing no complaint.
+  # Daily, not on a push: none changes with one.
   health:
     if: github.event_name != 'push'
     runs-on: ubuntu-24.04
@@ -64,3 +65,8 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_READ_TOKEN }}
         run: python3 tools/repo/api_health.py usage
+      - name: The API's emails bounce rarely, and draw no complaint
+        if: ${{ !cancelled() }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_READ_TOKEN }}
+        run: python3 tools/repo/api_health.py mail

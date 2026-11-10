@@ -3,6 +3,7 @@
 
     python3 tools/repo/api_health.py snapshot    the public figures are fresh, and of today's schema
     python3 tools/repo/api_health.py usage       the account is well within what its plan includes
+    python3 tools/repo/api_health.py mail        the API's emails bounce rarely, and draw no complaint
 
 `snapshot` needs no token: it reads the public figures the API Worker writes
 each night (website/api/nightly.js), and fails if they are missing, older than
@@ -18,6 +19,18 @@ what D1 and R2 hold, each against what the account's plan includes a month
 fails at WARN_AT of any, so the maintainer hears long before a bill: past
 what is included, each is billed, not stopped. Any error Cloudflare's
 analytics give is said in full.
+
+`mail` reads what came of the emails the API Worker sends (website/api/mail.js
+counts only what happens as it sends): from Email Service's analytics, how
+many of the last MAIL_DAYS' were delivered and how many bounced; from the
+account's suppression list, the addresses added since COMPLAINT_DAYS ago for
+a spam complaint or a hard bounce. It fails when the bounces pass
+BOUNCE_WARN, Cloudflare's own mark for a sender's good standing (once there
+are MIN_BOUNCES, so one mistyped address among few emails does not), or on
+any complaint: Email Service pauses an account's sending for poor
+reputation. Counts only, as CI's log is public: never an address. With
+CLOUDFLARE_API_TOKEN, CI's read token, which needs the zone's Analytics:
+Read and the account's Email Sending: Read.
 """
 
 from __future__ import annotations
@@ -62,6 +75,12 @@ INCLUDED = {
 CLASS_B = {"GetObject", "HeadObject", "HeadBucket", "UsageSummary", "GetBucketEncryption", "GetBucketLocation",
            "GetBucketCors", "GetBucketLifecycleConfiguration"}
 FREE = {"DeleteObject", "DeleteBucket", "AbortMultipartUpload"}
+
+MAIL_DAYS = 7
+COMPLAINT_DAYS = 2
+BOUNCE_WARN = 0.02
+MIN_BOUNCES = 5
+SUPPRESSIONS_PAGE = 1000
 
 
 class HealthError(RuntimeError):
@@ -187,6 +206,64 @@ def usage(now: dt.datetime) -> dict[str, int]:
                                       "month": stamp(month)}))
 
 
+MAIL_QUERY = """
+query Mail($zone: string!, $start: Date!, $end: Date!) {
+  viewer { zones(filter: {zoneTag: $zone}) {
+    emailSendingAdaptiveGroups(limit: 10000, filter: {date_geq: $start, date_leq: $end}) {
+      count dimensions { status } }
+  } }
+}"""
+
+
+def delivery(data: dict[str, Any]) -> dict[str, int]:
+    """The emails' count by status (delivered, deliveryFailed - a bounce - ...)."""
+    zones = data["viewer"]["zones"]
+    if not zones:
+        raise HealthError("the token sees no zone analytics: give it the zone's Analytics: Read")
+    counts: dict[str, int] = {}
+    for row in zones[0].get("emailSendingAdaptiveGroups") or []:
+        status = str((row.get("dimensions") or {}).get("status") or "")
+        counts[status] = counts.get(status, 0) + int(row.get("count") or 0)
+    return counts
+
+
+def suppressions(account: str) -> list[dict[str, Any]]:
+    """Every entry of the account's suppression list."""
+    found: list[dict[str, Any]] = []
+    for page in range(1, 101):
+        rows = cs.api(f"/accounts/{account}/email/sending/suppressions?per_page={SUPPRESSIONS_PAGE}&page={page}") or []
+        found += rows
+        if len(rows) < SUPPRESSIONS_PAGE:
+            return found
+    return found
+
+
+def mail(now: dt.datetime) -> dict[str, int]:
+    zones = cs.api(f"/zones?name={cs.ZONE}")
+    if not zones:
+        raise HealthError(f"the token cannot see the zone {cs.ZONE}")
+    today = now.date()
+    counts = delivery(graphql(MAIL_QUERY, {"zone": zones[0]["id"], "end": today.isoformat(),
+                                           "start": (today - dt.timedelta(days=MAIL_DAYS)).isoformat()}))
+    since = (now - dt.timedelta(days=COMPLAINT_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    added = [row for row in suppressions(zones[0]["account"]["id"]) if str(row.get("created_at") or "") >= since]
+    return {"delivered": counts.get("delivered", 0), "bounced": counts.get("deliveryFailed", 0),
+            "complaints": sum(row.get("reason") == "complaint" for row in added),
+            "hard bounces suppressed": sum(row.get("reason") == "hard_bounce" for row in added)}
+
+
+def mail_problems(measures: dict[str, int]) -> list[str]:
+    problems = []
+    tried = measures["delivered"] + measures["bounced"]
+    if measures["bounced"] >= MIN_BOUNCES and measures["bounced"] >= BOUNCE_WARN * tried:
+        problems.append(f"{measures['bounced']} of {tried} emails in {MAIL_DAYS} days bounced "
+                        f"({measures['bounced'] / tried:.1%}), past {BOUNCE_WARN:.0%}: .github/readouts.md says what to do")
+    if measures["complaints"]:
+        problems.append(f"{measures['complaints']} marked as spam in {COMPLAINT_DAYS} days: "
+                        ".github/readouts.md says what to do")
+    return problems
+
+
 def usage_problems(measures: dict[str, int]) -> list[str]:
     return [f"{what}: {measures[what]:,} of {limit:,} ({measures[what] / limit:.0%}), past {WARN_AT:.0%}"
             for what, limit in INCLUDED.items() if measures.get(what, 0) >= WARN_AT * limit]
@@ -194,7 +271,7 @@ def usage_problems(measures: dict[str, int]) -> list[str]:
 
 def main(argv: list[str] | None = None, now: dt.datetime | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if args not in (["snapshot"], ["usage"]):
+    if args not in (["snapshot"], ["usage"], ["mail"]):
         print(__doc__.strip(), file=sys.stderr)
         return 2
     now = now or dt.datetime.now(dt.timezone.utc)
@@ -202,6 +279,13 @@ def main(argv: list[str] | None = None, now: dt.datetime | None = None) -> int:
         if args == ["snapshot"]:
             problems = snapshot_problems(fetch_snapshot(), now)
             good = f"The public figures at {SNAPSHOT_URL} are fresh, of schema {latest_migration()}."
+        elif args == ["mail"]:
+            measures = mail(now)
+            print(f"  In {MAIL_DAYS} days: {measures['delivered']:,} emails delivered, {measures['bounced']:,} bounced")
+            print(f"  Suppressed in {COMPLAINT_DAYS} days: {measures['hard bounces suppressed']:,} for a hard bounce, "
+                  f"{measures['complaints']:,} for a complaint")
+            problems = mail_problems(measures)
+            good = "The API's emails bounce rarely, and drew no complaint."
         else:
             measures = usage(now)
             for what, limit in INCLUDED.items():
