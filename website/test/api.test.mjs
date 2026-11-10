@@ -356,9 +356,12 @@ test("two IPv6 addresses in one /48 are one sender", async () => {
   assert.equal((await from(bindings, "2001:db8:2::10", { read: false })).status, 201, "the next /48 is another");
 });
 
-test("a readout naming its product with anything but printable text is turned away, and its tool is cleaned", async () => {
+test("a readout naming its product with anything but a model's name is turned away, and its tool is cleaned", async () => {
   const bindings = env();
   assert.equal((await from(bindings, "192.0.2.1", { product: "NEW\u001b[2JTHING" })).status, 400);
+  // "|" joins a key's parts (keyOf): in a name, two devices could share one key.
+  assert.equal((await from(bindings, "192.0.2.1", { product: "NEW|THING" })).status, 400);
+  assert.equal((await from(bindings, "192.0.2.1", { product: "NEW THING" })).status, 400);
   assert.equal((await from(bindings, "192.0.2.1", { tool: "2.4\u001b[2J" })).status, 201);
   const [key] = tars(bindings);
   assert.equal(bindings.READOUTS.objects.get(key).options.customMetadata.tool, "2.4[2J");
@@ -594,6 +597,9 @@ test("anything but the tool's question is turned away", async () => {
     [new Request("https://api.firmwareliberator.com/wanted"), 405],
     [question(ASKED, { "Content-Type": "text/plain" }), 415],
     [question(ASKED, {}, json({ ...ASKED, product: "" })), 400],
+    [question(ASKED, {}, json({ ...ASKED, product: "NEW|THING" })), 400],
+    [question(ASKED, {}, json({ ...ASKED, model: "SN|NEW" })), 400],
+    [question(ASKED, {}, json({ ...ASKED, version: "1.0 beta" })), 400],
     [question(ASKED, {}, json({ ...ASKED, stage: "some" })), 400],
     [question(ASKED, {}, json({ ...ASKED, version: undefined })), 400],
     [question(ASKED, {}, json({ ...ASKED, firmware: ["not a hash"] })), 400],
@@ -834,9 +840,12 @@ test("what tools/repo/api_health.py live asks after a deploy is answered as it e
 });
 
 test("the confirmation page shows what a sender named as text, never as markup", async () => {
+  // No such name gets in (below); were one ever kept, it is still escaped.
   const bindings = env();
-  await tell({ ...NOTIFY, devices: [{ product: "<img src=x onerror=alert(1)>", model: "-" }] }, bindings);
-  const [link] = linkIn(bindings.EMAIL.sent[0]);
+  await tell(NOTIFY, bindings);
+  const [link, token] = linkIn(bindings.EMAIL.sent[0]);
+  bindings.DB.db.prepare("UPDATE confirmations SET devices = ? WHERE token = ?")
+    .run(JSON.stringify([{ product: "<IMG SRC=X ONERROR=ALERT(1)>", model: "-" }]), token);
   const html = await (await readout.confirm(new Request(link), bindings, NOW)).text();
   assert.ok(!html.includes("<IMG") && !html.includes("<img"), "escaped");
   assert.match(html, /&lt;IMG SRC=X ONERROR=ALERT\(1\)&gt;/);
@@ -922,6 +931,10 @@ test("anything but the tool's request to be told is turned away", async () => {
   for (const value of [{ ...NOTIFY, email: "not an email" }, { ...NOTIFY, email: "a\u001b[31m@example.com" },
     { ...NOTIFY, devices: [] }, { ...NOTIFY, devices: [{ model: "x" }] },
     { ...NOTIFY, devices: [{ product: "NEW\nTHING", model: "x" }] },
+    // Nothing but a model's name: no sentence or link put into the email.
+    { ...NOTIFY, devices: [{ product: "URGENT-VERIFY-AT", model: "-" }, { product: "evil.example/login", model: "-" }] },
+    { ...NOTIFY, devices: [{ product: "Confirm your account", model: "-" }] },
+    { ...NOTIFY, devices: [{ product: "NEWTHING", model: "see https://evil.example" }] },
     { ...NOTIFY, devices: Array(readout.MAX_DEVICES + 1).fill(NOTIFY.devices[0]) }, { ...NOTIFY, format: 2 }]) {
     const bindings = env();
     assert.equal((await tell(value, bindings)).status, 400, JSON.stringify(value).slice(0, 80));
