@@ -106,6 +106,17 @@ class AdoptDeviceTests(unittest.TestCase):
             source.adopt_device(ctx, found)
         self.assertEqual(inputs["device_kind"], "sonoff-s60")
 
+    def test_the_run_takes_its_address_and_files_itself_by_its_mac(self):
+        from types import SimpleNamespace
+        inputs = {}
+        ctx = SimpleNamespace(state=SimpleNamespace(set_input=inputs.__setitem__, input=inputs.get),
+                              set_device_ip=lambda ip: inputs.__setitem__("device_ip", ip))
+        found = detect.Found("192.0.2.137", "tasmota", "12-34-56-AB-CD-EF", "tasmota-ABCDEF-1234", "sonoff-s60")
+        with mock.patch.object(runs, "file_device") as filed, mock.patch.object(output, "say"):
+            source.adopt_device(ctx, found)
+        self.assertEqual((inputs["device_ip"], inputs["device_mac"]), ("192.0.2.137", "12:34:56:ab:cd:ef"))
+        filed.assert_called_once_with(ctx, "12:34:56:ab:cd:ef", None)
+
     def adopt_esphome(self, title, comment=None):
         from types import SimpleNamespace
         inputs = {}
@@ -189,7 +200,8 @@ class RestartingDeviceTests(FirmwareSearchCase):
             return source.find_current_firmware(self.ctx(device_ip="192.0.2.137")), asked.call_count
 
     def test_a_device_it_converted_is_waited_for(self):
-        self.assertEqual(self.find([None, None, "esphome"]), ("esphome", 3))
+        self.assertEqual(self.find([None, None, "esphome"], clock=lambda: 1000.0), ("esphome", 3))
+        self.assertEqual(source.time.sleep.call_args_list, [mock.call(5)] * 2)   # a pause between looks
 
     def test_with_no_mac_to_go_on_any_conversion_here_is_reason_to_wait(self):
         source.converted_here.return_value = True
@@ -351,11 +363,12 @@ class DiscoverySearchTests(FirmwareSearchCase):
             return self.found() if len(looks) == 3 else []
         with mock.patch.object(prompts, "UNATTENDED", True), \
                 mock.patch.object(source, "converted_here", return_value=True), \
-                mock.patch.object(time, "sleep"), \
+                mock.patch.object(time, "sleep") as slept, \
                 mock.patch.object(detect, "converted_devices", side_effect=search), \
                 mock.patch.object(hostsys, "lan_networks", return_value={"10.0.5.9": 24}) as lan:
             self.assertEqual(source.find_current_firmware(self.ctx()), "tasmota")
         self.assertEqual(looks, [{"10.0.5.9": 24}] * 3)
+        self.assertEqual(slept.call_args_list, [mock.call(5)] * 2)   # a pause between looks
         lan.assert_called_once()
 
 
@@ -490,6 +503,53 @@ class NothingAnsweringTests(unittest.TestCase):
 
 
 
+class FoundByAddressTests(FirmwareSearchCase):
+    def test_a_converted_device_given_by_address_is_the_runs(self):
+        with mock.patch.object(detect, "identify", return_value="tasmota"), \
+                mock.patch.object(espressif_source, "past_the_commit", side_effect=lambda ctx, running: running):
+            self.assertEqual(source.find_current_firmware(self.ctx(device_ip="192.0.2.137")), "tasmota")
+        found = source.adopt_device.call_args.args[1]
+        self.assertEqual((found.host, found.firmware, found.mac), ("192.0.2.137", "tasmota", "12:34:56:ab:cd:ef"))
+
+
+class FoundOnTheNetworkTests(FirmwareSearchCase):
+    def search(self, *found, choice=None):
+        asked = mock.Mock(return_value=choice)
+        with mock.patch.object(detect, "converted_devices", return_value=list(found)), \
+                mock.patch.object(prompts, "ask_choice", asked), \
+                mock.patch.object(espressif_source, "esphome_safe_mode", side_effect=lambda ctx, running: "esphome") \
+                as self.safe_mode, \
+                mock.patch.object(espressif_source, "past_the_commit", side_effect=lambda ctx, running: running):
+            return source.find_current_firmware(self.ctx()), asked.call_args
+
+    def test_attended_one_found_is_still_asked_about(self):
+        # It may be another device: the one the run is for may be on Sonoff's firmware.
+        tasmota = detect.Found("192.0.2.137", "tasmota", "12:34:56:ab:cd:ef", "tasmota-ABCDEF")
+        running, asked = self.search(tasmota, choice=1)
+        self.assertEqual(running, "sonoff")
+        self.assertEqual(len(asked.args[1]), 2)
+        source.adopt_device.assert_not_called()
+
+    def test_the_mover_found_is_checked_for_esphomes_safe_mode(self):
+        mover = detect.Found("192.0.2.137", "midway", "12:34:56:ab:cd:ef", "the mover")
+        self.assertEqual(self.search(mover, choice=0)[0], "esphome")
+        startup = detect.Found("192.0.2.137", "midway", "12:34:56:ab:cd:ef", "the startup firmware")
+        self.assertEqual(self.search(startup, choice=0)[0], "midway")
+        self.safe_mode.assert_not_called()
+        hub = detect.Found("192.0.2.137", "tasmota", "12:34:56:ab:cd:ef", "the mover")
+        self.assertEqual(self.search(hub, choice=0)[0], "tasmota")
+        self.safe_mode.assert_not_called()
+
+    def test_an_installer_no_conversion_left_goes_on_from_sonoffs_firmware(self):
+        from tools.autoflash.routes.espressif import installer
+        bridge = detect.Found("192.0.2.137", "installer", "12:34:56:ab:cd:ef", "the installer")
+        with mock.patch.object(source, "last_run", return_value="readout"), \
+                mock.patch.object(installer, "restart_into_sonoff", return_value=True) as restarted:
+            self.assertEqual(self.search(bridge, choice=0)[0], "sonoff")
+        restarted.assert_called_once_with("192.0.2.137")
+        source.adopt_device.assert_not_called()
+
+
 class ReadoutFirmwareTests(FirmwareSearchCase):
     """A Beken device a readout stopped part way left on its readout firmware."""
 
@@ -565,6 +625,7 @@ class InstallerFoundTests(FirmwareSearchCase):
                 runs_made.append((path, mac))
             make("1", "12:34:56:ab:cd:ef", **{readout.STATE_KEY: "sent"})
             make("2", "aa:bb:cc:dd:ee:ff", source="sonoff", firmware="tasmota")
+            make("4", "aa:bb:cc:dd:ee:01", firmware="tasmota")   # its firmware chosen, its source not yet found
             make("3", "12:34:56:ab:cd:ef")   # stopped before it knew where it went: passed over
             here = SimpleNamespace(dir=Path(tmp) / "now")
             macs = dict(runs_made)
@@ -572,8 +633,9 @@ class InstallerFoundTests(FirmwareSearchCase):
                     mock.patch.object(records, "mac_of_run", side_effect=lambda path: macs.get(path)):
                 self.assertEqual(source.last_run(here, "12:34:56:ab:cd:ef"), "readout")
                 self.assertEqual(source.last_run(here, "aa:bb:cc:dd:ee:ff"), "conversion")
-                with mock.patch.object(routes, "steps_of", return_value=[("A1", "", None)]), \
-                        mock.patch.object(RunState, "is_done", return_value=True):
+                self.assertEqual(source.last_run(here, "aa:bb:cc:dd:ee:01"), "conversion")
+                with mock.patch.object(routes, "steps_of", return_value=[("A1", "", None), ("H1", "", None)]), \
+                        mock.patch.object(RunState, "is_done", side_effect=lambda step: step == "H1"):
                     self.assertIsNone(source.last_run(here, "aa:bb:cc:dd:ee:ff"))   # finished
                 self.assertIsNone(source.last_run(here, "99:99:99:99:99:99"))
 
