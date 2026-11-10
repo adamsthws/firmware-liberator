@@ -382,7 +382,11 @@ def whole_readout(listed: kinds.Kind | None, learned: firmware_name.Learned | No
     """Whether the device may be sent a program to read its whole memory: a
     listed kind whose status allows it, under the firmware name that kind's
     firmware has. A device with another name - a variant sharing its product
-    model, a Matter version, say - is one the tool has not seen."""
+    model, a Matter version, say - is one the tool has not seen.
+
+    The BASICR4 is why: its partition table is where earlier bridges did not
+    look, and one sent to it would have stopped there, leaving it unable to
+    start until it was opened (devices/sonoff-basicr4/README.md)."""
     return (listed is not None and listed.status.reads_out and learned is not None
             and learned.name == listed.wrapper_model)
 

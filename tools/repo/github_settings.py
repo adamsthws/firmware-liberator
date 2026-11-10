@@ -109,9 +109,9 @@ TOGGLES = ["private-vulnerability-reporting", "immutable-releases"]
 # The website, firmwareliberator.com, is a Cloudflare Worker
 # (website/README.md) the website workflow deploys from this environment: it
 # takes only main, and holds the Cloudflare tokens, each allowed only what its
-# workflow does (website/README.md lists their permissions). GitHub Pages,
-# which served it before, is off, and it is the one environment: another
-# (github-pages, which Pages left) is deleted.
+# workflow does (tools/repo/cloudflare_settings.py lists what each is given).
+# GitHub Pages, which served it before, is off, and it is the one environment:
+# another (github-pages, which Pages left) is deleted.
 ENVIRONMENT = "website"
 ENVIRONMENT_POLICY = {"protected_branches": False, "custom_branch_policies": True}
 ENVIRONMENT_BRANCHES = ["main"]
