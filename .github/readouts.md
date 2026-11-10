@@ -86,7 +86,12 @@ device is xz-compressed; the files eWeLink offers, under `offered/`, are not,
 so the API checks each against the SHA-256 the manifest gives it, and turns
 the readout away if one is missing or differs. Only a file checked so is
 marked held (`readouts/firmware/`), so no readout can have the tool leave out
-a file the store does not have. The files are those
+a file the store does not have. One of the whole memory must hold
+`flash.bin.xz` unpacking to a flash chip's size, a power of two from 512 KiB
+to 32 MiB, which the API reads from the xz file's own index without
+unpacking it. The offered files' own format is not checked: a first stage is
+mostly of a device the tool does not know, whose files may be in any. The
+files are those
 [docs/readouts.md](../docs/readouts.md#what-is-in-one) lists, and
 `readout.package` and the two `read_and_anonymise` functions write them.
 

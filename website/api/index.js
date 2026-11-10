@@ -227,17 +227,17 @@ export function filesOf(body) {
   return files;
 }
 
-// The SHA-256s of the offered files a readout holds, each checked against
-// the one its manifest gives it: null if one it names is not in it, or is
-// not what it says. Only these are marked held (keep), so no readout can have
-// the tool leave out of later ones a file the store does not have.
-async function offeredIn(body, manifest) {
+// The SHA-256s of the offered files a readout holds (`files`, filesOf), each
+// checked against the one its manifest gives it: null if one it names is not
+// in it, or is not what it says. Only these are marked held (keep), so no
+// readout can have the tool leave out of later ones a file the store does not
+// have.
+async function offeredIn(files, manifest) {
   const listed = (Array.isArray(manifest.offered) ? manifest.offered : [])
     .filter((item) => item?.file !== null && item?.file !== undefined).slice(0, MAX_FIRMWARE);
   if (!listed.length) {
     return [];
   }
-  const files = filesOf(body);
   const found = [];
   for (const item of listed) {
     const data = typeof item.file === "string" ? files?.get(item.file) : undefined;
@@ -247,6 +247,53 @@ async function offeredIn(body, manifest) {
     found.push(item.sha256);
   }
   return found;
+}
+
+// The bytes an xz file unpacks to, read from its index without unpacking it:
+// null where it is not one xz stream, as the tool's lzma.compress writes.
+export function xzUnpacked(bytes) {
+  const MAGIC = [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00];
+  if (bytes.length < 32 || MAGIC.some((byte, at) => bytes[at] !== byte)
+      || bytes[bytes.length - 2] !== 0x59 || bytes[bytes.length - 1] !== 0x5a) {
+    return null;
+  }
+  const footer = bytes.length - 12;
+  const backward = new DataView(bytes.buffer, bytes.byteOffset + footer + 4, 4).getUint32(0, true);
+  let at = footer - (backward + 1) * 4;
+  if (at < 12 || bytes[at] !== 0x00) {
+    return null;
+  }
+  at += 1;
+  const number = () => {
+    let value = 0;
+    for (let shift = 0; shift < 63 && at < footer; shift += 7) {
+      const byte = bytes[at++];
+      value += (byte & 0x7f) * 2 ** shift;
+      if (!(byte & 0x80)) {
+        return value;
+      }
+    }
+    return NaN;
+  };
+  const records = number();
+  if (!Number.isSafeInteger(records) || records < 1 || records > 65536) {
+    return null;
+  }
+  let total = 0;
+  for (let record = 0; record < records; record += 1) {
+    number();   // its compressed size
+    total += number();
+  }
+  return Number.isSafeInteger(total) && at <= footer ? total : null;
+}
+
+// Whether a readout of the whole memory holds one, as the tool reads it: its
+// flash.bin.xz unpacking to a flash chip's size, a power of two from 512 KiB
+// to 32 MiB. Checked without unpacking it, from the xz file's own index.
+export function wholeFlash(files) {
+  const flash = files?.get("flash.bin.xz");
+  const size = flash ? xzUnpacked(flash) : null;
+  return size !== null && size >= 512 * 1024 && size <= 32 * 1024 * 1024 && (size & (size - 1)) === 0;
 }
 
 // The product models enough readouts of are in (ENOUGH), upper-case.
@@ -543,9 +590,13 @@ export async function readout(request, env, now = new Date()) {
   if (!manifest || !fits(manifest.product, PRODUCT)) {
     return answer(400, { error: "that is not a readout this tool makes" });
   }
-  const offered = await offeredIn(body, manifest);
+  const files = filesOf(body);
+  const offered = await offeredIn(files, manifest);
   if (!offered) {
     return answer(400, { error: "a file the readout names is not in it, or is not the file it says" });
+  }
+  if (manifest.read === true && !wholeFlash(files)) {
+    return answer(400, { error: "a readout of the whole memory holds no whole flash chip's memory" });
   }
   const day = now.toISOString().slice(0, 10);
   // Its reference, which its sender is shown, and where it is kept.
