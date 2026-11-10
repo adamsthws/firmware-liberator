@@ -329,6 +329,12 @@ class LocateTests(unittest.TestCase):
             self.assertIn("another device", check("192.0.2.1")[0])
         self.discover.assert_not_called()
 
+    def test_a_beken_device_is_known_by_its_product_model_alone(self):
+        # An account record with no firmware model in it: the product says the chip family.
+        from tools.autoflash import kinds
+        self.assertTrue(readout.lan_free({"productModel": kinds.SONOFF_S61.example_product_model}))
+        self.assertFalse(readout.lan_free(DEVICE))
+
     def test_one_not_answering_discovery_is_found_by_its_hardware_address(self):
         # An Espressif device on the reading program a readout stopped part way left on it.
         device = {**DEVICE, "params": {"staMac": "12:34:56:AB:CD:EF"}}
@@ -466,6 +472,24 @@ class RunTests(unittest.TestCase):
         self.assertEqual(asked.call_args.args[1], "1000abcdef")
         account.ask_ewelink.assert_not_called()
 
+    def test_what_it_keeps_of_the_device_and_learns_its_name_from(self):
+        from tools.autoflash import kinds
+        basicr4 = kinds.SONOFF_BASICR4
+        offers = {"offers": [{"version": "1.1.0", "binList": []}]}
+        asked = account.Asked({"packets": []}, "1.0.0", basicr4.stock_model, "BASICR4", [], offers, "1000abcdef")
+        with mock.patch.multiple(account, ask_ewelink=mock.Mock(return_value=asked),
+                                 ask_account=mock.Mock(return_value=asked)), \
+                learned(basicr4.wrapper_model, "ESP32C3"), \
+                mock.patch.object(readout_espressif, "read_and_anonymise", return_value=({}, True)), \
+                mock.patch.object(readout, "offer", return_value="done"):
+            readout.run(self.ctx, record("BASICR4", basicr4.stock_model))
+            self.assertEqual(firmware_name.learn.call_args.args[0], offers["offers"])
+        self.assertEqual({key: self.ctx.state.input(key) for key in readout.DEVICE_KEYS[:5]}, {
+            "device_ip": "192.0.2.77", "device_mac": "12:34:56:ab:cd:ef", "stock_version": "1.0.0",
+            "product_model": "BASICR4", readout.STATE_KEY: "started"})
+        records.remember_device.assert_called_once_with(
+            "12:34:56:ab:cd:ef", ewelink_name="Hall light", ewelink_id="1000abcdef", model="BASICR4")
+
     def test_its_run_is_filed_under_the_device_as_a_conversions_is(self):
         device = {**DEVICE, "params": {**DEVICE["params"], "staMac": "12:34:56:AB:CD:EF"}}
         with learned("FWSW-01-NEW-BK7238", "BK7238"), mock.patch.object(readout, "offer", return_value="done"):
@@ -560,6 +584,18 @@ class NotWantedTests(unittest.TestCase):
         self.assertNotIn("tomorrow", readout.STORE_FULL)
 
 
+class NotWantedFromATestRunTests(unittest.TestCase):
+    def test_from_a_test_run_nothing_is_asked(self):
+        start_run(self)
+        readout.ask_wanted.return_value = readout.Wanted(False, "held")
+        with mock.patch.object(readout, "upload_url", return_value=None), \
+                mock.patch.object(prompts, "UNATTENDED", False), \
+                mock.patch.object(readout, "ask_contact") as asked:
+            said = readout.single_not_wanted(readout.NOT_NEEDED, mock.Mock(product="BASICR4", model="m"))
+        asked.assert_not_called()
+        self.assertEqual(said, readout.NOT_NEEDED[0].upper() + readout.NOT_NEEDED[1:])
+
+
 class HeldFirmwareTests(unittest.TestCase):
     """The files eWeLink offers that the website holds already: left out."""
 
@@ -583,6 +619,11 @@ class HeldFirmwareTests(unittest.TestCase):
         self.assertEqual(offered_firmware.fetch.call_args.kwargs["skip"], frozenset({"a" * 64}))
         manifest = offered.call_args.args[1]
         self.assertIn({"file": None, "version": "1.1.0", "sha256": "a" * 64, "held": True}, manifest["offered"])
+
+    def test_at_most_eight_digests_go_with_the_question(self):
+        offers = [{"version": "1.1.0", "binList": [{"digest": f"{n:x}" * 64} for n in range(10)]}]
+        self.assertEqual(readout.offered_digests(offers), [f"{n:x}" * 64 for n in range(8)])
+        self.assertEqual(len(readout.offered_digests(offers, versions=True)), 10)
 
     def test_a_beken_device_read_in_full_still_fetches_it_to_put_sonoff_back_but_does_not_send_it(self):
         from tools.autoflash import kinds
@@ -658,9 +699,10 @@ class NotifyTests(unittest.TestCase):
                 mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
                 mock.patch.object(readout, "ask_contact", return_value={"email": "me@example.com"}), \
                 mock.patch.object(readout, "send", return_value="r-1"), \
-                mock.patch.object(readout, "notify") as told:
-            readout.offer(a_ctx(tmp), MANIFEST, None)
+                mock.patch.object(readout, "notify", return_value=True) as told:
+            said = readout.offer(a_ctx(tmp), MANIFEST, None)
         told.assert_called_once_with("me@example.com", [("NEWTHING", "SN-ESP32C3-NEW-01")])
+        self.assertTrue(said.endswith(f" {readout.CONFIRM_SENT}"))
 
 
 class ProofProgressTests(unittest.TestCase):
@@ -731,7 +773,13 @@ class ChooseTests(unittest.TestCase):
         self.assertEqual(options[0], "Every device in the account (3)")
         self.assertIsNone(chosen)
         self.assertEqual(self.choose([s60, DEVICE, other], 2)[1], DEVICE)
+        self.assertEqual(self.choose([s60, DEVICE, other], 1)[1], s60)
         self.assertEqual(len(self.choose([s60, DEVICE], 0)[0]), 3)
+
+    def test_a_kind_is_known_for_a_full_readout_by_its_firmware_model_too(self):
+        from tools.autoflash import kinds
+        self.assertTrue(readout.reads_out(record("NEWTHING", kinds.SONOFF_S60.stock_model)))
+        self.assertFalse(readout.reads_out(DEVICE))
 
     def test_every_one_is_every_device_in_the_account(self):
         from tools.autoflash import kinds
@@ -960,7 +1008,8 @@ class OfferTests(unittest.TestCase):
         self.assertIn("Sent, thank you", said)
 
     def test_without_contact_nothing_is_asked_or_sent_of_it(self):
-        sent, _, _ = self.offer(1)
+        sent, _, kept = self.offer(1)
+        self.assertFalse(kept)  # sent: no copy is left behind
         self.assertNotIn("contact", json.loads(sent["manifest.json"]))
         self.asked.assert_not_called()
 
