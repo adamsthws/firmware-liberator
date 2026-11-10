@@ -309,6 +309,10 @@ READ_TOKEN_PERMISSIONS = {
         "Cache Settings: Read": "CACHE_RULES",
         "Email Routing Rules: Read": "email_differences: the forwarding rules and the catch-all",
         "Analytics: Read": "api_health.py mail: what came of the emails sent",
+        "Workers Routes: Read": "unwritten_differences: any Worker route",
+        # Cloudflare's list of a zone's rulesets takes none of the rule
+        # permissions above; this read, of the zone alone, is one it does.
+        "Transform Rules: Read": "unwritten_differences: the zone's rulesets listed",
     },
     "account": {
         "Workers R2 Storage: Read": "READOUTS_BUCKET and STATS_BUCKET; readouts.py's listing",
@@ -331,6 +335,11 @@ APPLY_TOKEN_PERMISSIONS = {
         "Zone WAF: Edit": "RATE_LIMITS and FIREWALL_RULES",
         "Cache Settings: Edit": "CACHE_RULES",
         "Email Routing Rules: Edit": "email_differences: the forwarding rules and the catch-all",
+        "Workers Routes: Edit": "unwritten_differences: a Worker route deleted",
+        # Lists the zone's rulesets, and deletes one in the transform phases. A
+        # ruleset in another phase not kept here needs that phase's Edit:
+        # apply says so, and makes the rest.
+        "Transform Rules: Edit": "unwritten_differences: the zone's rulesets listed, a transform one deleted",
     },
     "account": {
         "Workers R2 Storage: Edit": "READOUTS_BUCKET and STATS_BUCKET: made, the figures' domain, no lifecycle rule",
@@ -649,6 +658,71 @@ def jsonc(path: Path) -> Any:
     """A wrangler.jsonc: JSON with whole-line // comments, as these are written."""
     lines = path.read_text(encoding="utf-8").splitlines()
     return json.loads("\n".join(line for line in lines if not line.lstrip().startswith("//")))
+
+
+# Nothing of the project's is there unseen: a zone ruleset in a phase RULESETS
+# does not keep, a Worker route (the Workers answer on custom domains alone), a
+# custom domain no wrangler.jsonc names, or a Worker or bucket by the project's
+# name nothing here knows. The account holds other projects' too, so only this
+# zone's and the project's names are looked at; Cloudflare's own managed
+# rulesets (kind "managed") are its, never a difference. A Worker or bucket
+# is left to be deleted by hand, as deleting one takes its code or what it
+# holds with it; a rule, route or domain `apply` deletes.
+PROJECT = "firmware-liberator"
+WRANGLER_CONFIGS = (ROOT / "website" / "wrangler.jsonc", API_WRANGLER, ADMIN_WRANGLER)
+
+
+def custom_domains() -> set[tuple[str, str]]:
+    """(hostname, Worker) of each custom domain the wrangler.jsonc files name."""
+    return {(route["pattern"], config["name"]) for config in map(jsonc, WRANGLER_CONFIGS)
+            for route in config.get("routes") or [] if route.get("custom_domain")}
+
+
+def unwritten_differences(zone: str, account: str, ci: bool = False) -> list[tuple[str, str, Any]]:
+    """What is there of the project's that nothing here says should be."""
+    found: list[tuple[str, str, Any]] = []
+
+    def refused(what: str, permission: str) -> None:
+        # A check that cannot run is a difference, never a pass: the token is
+        # given what READ_TOKEN_PERMISSIONS and APPLY_TOKEN_PERMISSIONS list.
+        found.append((what, "cannot be checked: this token is refused them",
+                      f"give it {permission} (READ_TOKEN_PERMISSIONS, APPLY_TOKEN_PERMISSIONS)"))
+
+    rulesets = api(f"{zone}/rulesets", ok_forbidden=True)
+    if rulesets is None:
+        refused("zone rulesets", "Transform Rules: Read, or Edit")
+    for ruleset in rulesets or []:
+        if ruleset.get("kind") == "zone" and ruleset.get("phase") not in RULESETS:
+            found.append((f"zone ruleset {ruleset.get('phase')}", "is not written here",
+                          ("DELETE", f"{zone}/rulesets/{ruleset['id']}", None)))
+    routes = api(f"{zone}/workers/routes", ok_forbidden=True)
+    if routes is None:
+        refused("Worker routes", "Workers Routes: Read, or Edit")
+    for route in routes or []:
+        found.append((f"Worker route {route.get('pattern')}", "is not written here: the Workers answer on their "
+                      "custom domains alone", ("DELETE", f"{zone}/workers/routes/{route['id']}", None)))
+    buckets = api(f"/accounts/{account}/r2/buckets", ok_forbidden=True)
+    if buckets is None:
+        refused("R2 buckets", "Workers R2 Storage: Read, or Edit")
+    for name in sorted(bucket.get("name", "") for bucket in (buckets or {}).get("buckets") or []):
+        if name.startswith(PROJECT) and name not in (READOUTS_BUCKET, STATS_BUCKET):
+            found.append((f"R2 bucket {name}", "is not written here",
+                          "empty and delete it in the dashboard, once nothing in it is needed"))
+    if ci:
+        print("  Workers and their custom domains: not checked - CI's token is refused the Workers")
+        return found
+    for script in api(f"/accounts/{account}/workers/scripts") or []:
+        name = script.get("id") or ""
+        if name.startswith(PROJECT) and name not in DEPLOY_WORKERS:
+            found.append((f"Worker {name}", "is not written here: no wrangler.jsonc deploys it",
+                          f"delete it (npx wrangler delete --name {name}) once it is not needed"))
+    wanted = custom_domains()
+    for domain in api(f"/accounts/{account}/workers/domains?zone_name={ZONE}") or []:
+        if (domain.get("hostname"), domain.get("service")) not in wanted:
+            found.append((f"Worker custom domain {domain.get('hostname')}",
+                          f"points at {domain.get('service')}, which no wrangler.jsonc says",
+                          ("DELETE", f"/accounts/{account}/workers/domains/{domain['id']}", None)))
+    return found
 
 
 def bound_database_id(config: Path = API_WRANGLER) -> str:
@@ -999,6 +1073,7 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
         if have != rules:
             found.append((what, f"are {[rule['ref'] for rule in have]}, should be {[r['ref'] for r in rules]}",
                           ("PUT", f"{zone}/rulesets/phases/{phase}/entrypoint", {"rules": rules})))
+    found += unwritten_differences(zone, zones[0]["account"]["id"], ci)
     account = f"/accounts/{zones[0]['account']['id']}/r2/buckets"
     lifecycle = ("PUT", f"{account}/{READOUTS_BUCKET}/lifecycle", READOUTS_LIFECYCLE)
     if api(f"{account}/{READOUTS_BUCKET}", ok_missing=True) is None:
@@ -1078,15 +1153,25 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  {what}: left - {change or 'change it in the dashboard'}")
                 left = 1
                 continue
-            if callable(change):
-                for line in change():
-                    print(f"  {line}")
-                    left = 1
-                print(f"  {what}: set")
-            else:
-                method, path, body = change
-                api(path, method, body)
-                print(f"  {what}: {'removed' if method == 'DELETE' else 'set'}")
+            # One this token is refused is left, and the rest still made: a rule
+            # in a phase not kept here needs that phase's Edit, which
+            # APPLY_TOKEN_PERMISSIONS cannot know before it is there.
+            try:
+                if callable(change):
+                    for line in change():
+                        print(f"  {line}")
+                        left = 1
+                    print(f"  {what}: set")
+                else:
+                    method, path, body = change
+                    api(path, method, body)
+                    print(f"  {what}: {'removed' if method == 'DELETE' else 'set'}")
+            except SettingsError as error:
+                if error.status not in (401, 403):
+                    raise
+                print(f"  {what}: left - this token is refused it ({error}): give it the permission "
+                      "(APPLY_TOKEN_PERMISSIONS), and run apply again")
+                left = 1
     except SettingsError as error:
         print(f"cloudflare_settings: {error}", file=sys.stderr)
         return 1
