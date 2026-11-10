@@ -110,7 +110,7 @@ class TokensTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.env = Path(self.directory.name) / ".env.infra"
         self.env.write_text("# a comment, kept\nCLOUDFLARE_SETTINGS_APPLY_TOKEN=an-old-one\n"
-                            "CLOUDFLARE_EMAIL_FORWARD=contact\n", encoding="utf-8")
+                            "ACCESS_ADMIN_EMAIL=owner@example.org\n", encoding="utf-8")
         self.github = {}
         self.addCleanup(setattr, cs, "TOKEN_VARIABLE", cs.TOKEN_VARIABLE)
 
@@ -350,7 +350,7 @@ class TokensTests(unittest.TestCase):
             ct.write_env("CLOUDFLARE_SETTINGS_APPLY_TOKEN", "new")
             ct.write_env("CLOUDFLARE_READOUTS_REVIEW_TOKEN", "added")
         self.assertEqual(self.env.read_text(encoding="utf-8").splitlines(), [
-            "# a comment, kept", "CLOUDFLARE_SETTINGS_APPLY_TOKEN=new", "CLOUDFLARE_EMAIL_FORWARD=contact",
+            "# a comment, kept", "CLOUDFLARE_SETTINGS_APPLY_TOKEN=new", "ACCESS_ADMIN_EMAIL=owner@example.org",
             "CLOUDFLARE_READOUTS_REVIEW_TOKEN=added"])
         self.assertEqual(stat.S_IMODE(self.env.stat().st_mode), 0o600)
 

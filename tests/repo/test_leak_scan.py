@@ -82,9 +82,8 @@ class OwnValueTests(unittest.TestCase):
                 {"inputs": {"device_ip": "10.9.8.7", "listen_ip": "192.168.60.10"}}))
             (root / "captures/settings.json").write_text(json.dumps({"ewelink_email": "someone@example.org"}))
             (root / ".env").write_text("EWELINK_PASSWORD=Fake-Passw0rd\n")
-            (root / ".env.infra").write_text("# the project's\nACCESS_GITHUB_CLIENT_SECRET=fake-oauth-secret\n"
-                                             "CLOUDFLARE_EMAIL_DESTINATION=owner@example.org\n"
-                                             "CLOUDFLARE_EMAIL_FORWARD=contact,press\n", encoding="utf-8")
+            (root / ".env.infra").write_text("# the project's\nCLOUDFLARE_SETTINGS_APPLY_TOKEN=fake-apply-token\n"
+                                             "ACCESS_ADMIN_EMAIL=owner@example.org\n", encoding="utf-8")
             (root / "leak-scan.local").write_text("# mine\nmy-router-name\n")
             with mock.patch.object(ls, "CAPTURES", root / "captures"), \
                  mock.patch.object(ls, "INFRA_FILE", root / ".env.infra"), \
@@ -97,9 +96,8 @@ class OwnValueTests(unittest.TestCase):
         self.assertIn("1000fake99", values)
         self.assertIn("someone@example.org", values)
         self.assertIn("Fake-Passw0rd", values)
-        self.assertEqual(values["fake-oauth-secret"], "a value in .env.infra (ACCESS_GITHUB_CLIENT_SECRET)")
+        self.assertEqual(values["fake-apply-token"], "a value in .env.infra (CLOUDFLARE_SETTINGS_APPLY_TOKEN)")
         self.assertIn("owner@example.org", values)
-        self.assertNotIn("contact,press", values)   # the forwarded addresses' names: words, not secrets
         self.assertIn("my-router-name", values)
         self.assertIn("10.9.8.7", values)
         self.assertNotIn("192.168.60.10", values)   # the emulator's own network

@@ -140,6 +140,13 @@ dashboard or written down and not applied. It cannot check the database, the
 Workers' secrets, Access or Web Analytics, which its token is refused: the
 script run by hand, with the apply token, checks those.
 
+The domain's mail forwarding - which of its addresses, and to whom - is
+private, so it is written nowhere in the repository: Email Routing keeps it.
+`python3 tools/repo/cloudflare_settings.py email`, run in a terminal, asks
+for both and sets them, and the API's alerts address with them; every check
+holds the forwarding to its shape alone. Put the address in
+`tools/repo/leak-scan.local`, so the leak scan stops a commit that holds it.
+
 ### The admin view
 
 Cloudflare Access stands in front of the admin view, and the Worker checks
@@ -153,8 +160,8 @@ that is left to you. Two are always yours:
    `apply` names. `apply`, run in a terminal, asks for its client ID and a
    new secret once, to make the sign-in, and keeps neither.
 
-The one address let in is `ACCESS_ADMIN_EMAIL` in `.env.infra`, or else
-`CLOUDFLARE_EMAIL_DESTINATION`. `apply` then says the values to put in
+The one address let in is `ACCESS_ADMIN_EMAIL` in `.env.infra`, or else the
+one the domain's mail is forwarded to. `apply` then says the values to put in
 `admin/wrangler.jsonc`; until they are there the Worker lets no one in. CI
 does not check Access, and each deploy checks only that the view turns away a
 request that is not signed in.

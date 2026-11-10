@@ -2,7 +2,6 @@ import copy
 import io
 import unittest
 from contextlib import redirect_stdout
-from pathlib import Path
 from unittest import mock
 
 from tools.repo import github_settings as gs
@@ -111,14 +110,10 @@ class FakeGitHub:
         raise AssertionError(f"unexpected {method} {path}")
 
 
-# What .env holds for FROM_ENV's secrets.
-ENV = {"CLOUDFLARE_EMAIL_DESTINATION": "owner@example.com", "CLOUDFLARE_EMAIL_FORWARD": "hello"}
-
-
-def run(fake, *args, env=ENV):
+def run(fake, *args, env=None):
     out = io.StringIO()
     with mock.patch.object(gs, "api", fake), mock.patch.object(gs, "set_secret", fake.set_secret), \
-            mock.patch.dict("os.environ", env), redirect_stdout(out):
+            mock.patch.dict("os.environ", env or {}), redirect_stdout(out):
         code = gs.main(list(args))
     return code, out.getvalue()
 
@@ -315,37 +310,15 @@ class GitHubSettingsTests(unittest.TestCase):
         # A Cloudflare token is made, and set, by cloudflare_tokens.py.
         self.assertIn("secret CLOUDFLARE_SETTINGS_CHECK_TOKEN: left - made with "
                       "python3 tools/repo/cloudflare_tokens.py settings-check-read-only", out)
-        self.assertEqual(fake.secrets, {"CLOUDFLARE_WORKERS_DEPLOY_TOKEN", *gs.FROM_ENV})
+        self.assertEqual(fake.secrets, {"CLOUDFLARE_WORKERS_DEPLOY_TOKEN"})
 
-    def test_apply_sets_the_secrets_kept_in_env_each_time_and_never_shows_them(self):
+    def test_apply_sets_no_secret_itself(self):
+        # Each is a Cloudflare token, made and set by cloudflare_tokens.py; the
+        # domain's mail forwarding, private, is kept by Cloudflare alone.
         fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
-        _, out = run(fake)
-        self.assertEqual(fake.secrets_set, {})   # a check sets nothing
-        _, applied = run(fake, "apply")
-        self.assertEqual(fake.secrets_set, ENV)
-        self.assertIn("secret CLOUDFLARE_EMAIL_FORWARD: set from .env.infra", applied)
-        # Changed in .env.infra, it is set again: GitHub cannot say it differs.
-        _, again = run(fake, "apply", env={**ENV, "CLOUDFLARE_EMAIL_FORWARD": "hello,press"})
-        self.assertEqual(fake.secrets_set["CLOUDFLARE_EMAIL_FORWARD"], "hello,press")
-        for said in (out, applied, again):
-            self.assertNotIn("example.com", said)
-            self.assertNotIn("hello", said)
-
-    def test_a_missing_secret_kept_in_env_is_set_not_left(self):
-        fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
-        fake.secrets -= set(gs.FROM_ENV)
-        code, out = run(fake, "apply")
-        self.assertEqual(code, 0, out)
-        self.assertEqual(fake.secrets, set(gs.ENVIRONMENT_SECRETS))
-        self.assertNotIn("left", out)
-
-    def test_apply_stops_on_one_not_in_env(self):
-        fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
-        with mock.patch.object(gs.cloudflare_settings, "ENV_FILE", Path("/nonexistent/.env.infra")), \
-                mock.patch("sys.stderr", io.StringIO()) as err:
-            code, _ = run(fake, "apply", env={name: "" for name in gs.FROM_ENV})
-        self.assertEqual((code, fake.secrets_set), (1, {}))
-        self.assertIn(f"no {gs.FROM_ENV[0]}: in the environment or .env.infra", err.getvalue())
+        self.assertEqual(run(fake, "apply")[0], 0)
+        self.assertEqual(fake.secrets_set, {})
+        self.assertTrue(all(name.startswith("CLOUDFLARE_") and name.endswith("_TOKEN") for name in gs.ENVIRONMENT_SECRETS))
 
     def test_a_secret_goes_to_gh_on_stdin_never_in_its_arguments(self):
         done = mock.Mock(returncode=0, stdout="", stderr="")

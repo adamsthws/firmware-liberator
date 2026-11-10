@@ -26,7 +26,7 @@ ADDRESSES = "/accounts/a1/email/routing/addresses"
 ANALYTICS = "/accounts/a1/rum/site_info"
 ALL_MEASURED = {"id": "ru1", "host": "*", "paths": ["*"], "inclusive": True, "is_paused": False, "priority": 1000}
 DESTINATION = "owner@example.com"
-FORWARD = "hello, Press"
+FORWARDED = ["hello", "press"]
 APPLY_VALUE = "made-up-apply-token-value-0123456789abcdef"
 # What Email Routing says it needs, as it lists them: a TXT record whole, a host with its final dot.
 ROUTING_DNS = [{"type": "MX", "name": cs.ZONE, "content": "route1.mx.cloudflare.net.", "priority": 50},
@@ -58,7 +58,9 @@ class FakeCloudflare:
         self.workers = ["firmware-liberator", "firmware-liberator-api", "firmware-liberator-admin", "another-site"]
         self.readable = set()   # of CI_REFUSED's paths, those the token may read
         self.routing = False
-        self.email_rules = []
+        # The domain's forwarding, as `email` leaves it: kept by Email Routing alone.
+        self.email_rules = [{"id": f"e{n}", **rule}
+                            for n, rule in enumerate(cs.email_rules(DESTINATION, FORWARDED), 1)]
         self.catch_all = {"id": "c1", **copy.deepcopy(cs.EMAIL_CATCH_ALL)}
         self.addresses = []
         # The Workers' custom domains, as wrangler makes them; DNS records listed as Cloudflare does,
@@ -295,7 +297,7 @@ def run(fake, *args, answers=None):
             mock.patch.object(cs.getpass, "getpass", side_effect=list(answers or [])), \
             mock.patch.object(cs, "bound_database_id", lambda config=None: fake.bound), \
             mock.patch.object(cs, "admin_vars", lambda: copy.deepcopy(getattr(fake, "admin_vars", {}))), \
-            mock.patch.dict("os.environ", {cs.EMAIL_DESTINATION: DESTINATION, cs.EMAIL_FORWARD: FORWARD}):
+            mock.patch.object(cs, "ENV_FILE", Path("/nonexistent/.env.infra")):
         code = cs.main(list(args))
     return code, out.getvalue()
 
@@ -431,18 +433,13 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertIn(f"A mail.{cs.ZONE} '192.0.2.50': removed", out)
         self.assertEqual(run(fake)[0], 0)
 
-    def test_each_address_named_is_forwarded_and_no_address_is_shown(self):
+    def test_forwarding_is_held_to_its_shape_and_no_address_is_shown(self):
         fake = FakeCloudflare()
         fake.addresses = [{"email": DESTINATION.upper(), "verified": "2026-11-09T18:39:03Z"}]
-        code, out = run(fake, "apply")
-        self.assertEqual(code, 0, out)
-        self.assertEqual(sorted((r["matchers"][0]["value"], r["actions"][0]["value"], r["enabled"])
-                                for r in fake.email_rules),
-                         [(f"hello@{cs.ZONE}", [DESTINATION], True), (f"press@{cs.ZONE}", [DESTINATION], True)])
-        # Listed in another order, they are no difference.
-        fake.email_rules.reverse()
+        self.assertEqual(run(fake, "apply")[0], 0)
+        fake.email_rules.reverse()   # listed in another order: no difference
         self.assertEqual(run(fake)[0], 0)
-        # One sent elsewhere, one more made by hand, and a catch-all turned on are put back.
+        # One sent elsewhere, one that drops, and a catch-all turned on.
         fake.email_rules[0]["actions"][0]["value"] = ["someone@example.org"]
         fake.email_rules.append({"id": "e9", "name": "sales", "matchers": [{"type": "literal", "field": "to",
                                  "value": f"sales@{cs.ZONE}"}], "actions": [{"type": "drop"}], "enabled": True})
@@ -450,15 +447,48 @@ class CloudflareSettingsTests(unittest.TestCase):
         fake.addresses.append({"email": "someone@example.org", "verified": None})
         fake.sent.clear()
         code, out = run(fake, "apply")
-        self.assertEqual(code, 1)   # the other address is left to the dashboard
-        self.assertIn(f"email rule 4: is to be made, from {cs.EMAIL_FORWARD}", out)
+        self.assertEqual(code, 1)
+        self.assertIn("email rule 3: does not forward one of the domain's addresses to one address", out)
+        self.assertIn("email rules: forward to 2 addresses: there should be one", out)
         self.assertIn("email catch-all: forwards as written nowhere", out)
-        self.assertIn(f"destination addresses: 1 besides {cs.EMAIL_DESTINATION}", out)
         for private in ("@example.", "hello", "press", "sales"):
             self.assertNotIn(private, out.lower())
-        self.assertEqual(sorted(r["matchers"][0]["value"] for r in fake.email_rules),
-                         [f"hello@{cs.ZONE}", f"press@{cs.ZONE}"])
-        self.assertEqual(fake.catch_all, {"id": "c1", **cs.EMAIL_CATCH_ALL})
+        # Which, and to whom, only `email` changes; the catch-all apply puts back.
+        self.assertEqual(fake.sent, [("PUT", f"{ZONE}/email/routing/rules/catch_all", cs.EMAIL_CATCH_ALL)])
+
+    def test_no_forwarding_is_left_to_email_which_asks(self):
+        fake = FakeCloudflare()
+        fake.email_rules = []
+        fake.secrets = [name for name in cs.API_SECRETS if name != "ALERTS_RECIPIENT_EMAIL"]
+        code, out = run(fake, "apply")
+        self.assertEqual(code, 1)
+        self.assertIn("email forwarding: left - run python3 tools/repo/cloudflare_settings.py email in a terminal", out)
+        self.assertIn("secret ALERTS_RECIPIENT_EMAIL: left - set the domain's mail forwarding first", out)
+
+    def test_email_sets_the_forwarding_asked_for_and_the_alerts_address_never_showing_them(self):
+        fake = FakeCloudflare()
+        fake.email_rules = [{"id": "old", "name": "", "matchers": [{"type": "literal", "field": "to",
+                             "value": f"old@{cs.ZONE}"}], "actions": [{"type": "forward", "value": ["x@example.net"]}],
+                             "enabled": True}]
+        code, out = run(fake, "email", answers=["\x1b[200~New@Example.com\x1b[201~", "Contact, press ,contact"])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(sorted((r["matchers"][0]["value"], r["actions"][0]["value"]) for r in fake.email_rules),
+                         [(f"contact@{cs.ZONE}", ["new@example.com"]), (f"press@{cs.ZONE}", ["new@example.com"])])
+        self.assertTrue(fake.routing)
+        self.assertEqual(fake.addresses, [{"email": "new@example.com", "verified": None}])
+        self.assertIn(("PUT", SECRETS, {"name": "ALERTS_RECIPIENT_EMAIL", "text": "new@example.com",
+                                        "type": "secret_text"}), fake.sent)
+        for private in ("example.com", "contact", "press"):
+            self.assertNotIn(private, out.lower())
+
+    def test_email_changes_nothing_given_no_address_or_no_terminal(self):
+        for args in ({"answers": ["not an address", "contact"]}, {"answers": ["new@example.com", "a b"]}, {}):
+            with self.subTest(args=args):
+                fake = FakeCloudflare()
+                with mock.patch("sys.stderr", io.StringIO()):
+                    code, _ = run(fake, "email", **args)
+                self.assertNotEqual(code, 0)
+                self.assertEqual(fake.sent, [])
 
     def test_an_unverified_destination_is_left_to_its_owner(self):
         fake = FakeCloudflare()
@@ -466,15 +496,7 @@ class CloudflareSettingsTests(unittest.TestCase):
         fake.sent.clear()
         code, out = run(fake, "apply")
         self.assertEqual((code, fake.sent), (1, []))
-        self.assertIn(f"{cs.EMAIL_DESTINATION}: is not verified", out)
-
-    def test_the_destination_comes_from_the_environment_or_env(self):
-        with tempfile.TemporaryDirectory() as directory:
-            env_file = Path(directory) / ".env"
-            env_file.write_text(f"{cs.EMAIL_DESTINATION}={DESTINATION}\n", encoding="utf-8")
-            with mock.patch.object(cs, "ENV_FILE", env_file), \
-                    mock.patch.dict("os.environ", {cs.EMAIL_DESTINATION: ""}):
-                self.assertEqual(cs.variable(cs.EMAIL_DESTINATION), DESTINATION)
+        self.assertIn("the address mail is forwarded to: is not verified", out)
 
     def test_its_names_are_kept_apart_from_the_tools(self):
         # The tool refuses a .env holding a name it does not know, so these live in .env.infra,
@@ -484,7 +506,7 @@ class CloudflareSettingsTests(unittest.TestCase):
         example = cs.credentials.parse((root / ".env.infra.example").read_text(encoding="utf-8"))
         tokens = {spec["variable"] for spec in cs.TOKENS.values() if spec["kept"] == "env"}
         # What a tool asks for at a hidden prompt has no place in it.
-        self.assertEqual(set(example), {cs.EMAIL_DESTINATION, cs.EMAIL_FORWARD, "ACCESS_ADMIN_EMAIL", *tokens})
+        self.assertEqual(set(example), {"ACCESS_ADMIN_EMAIL", *tokens})
         self.assertFalse(set(example) & (set(cs.credentials.KEYS) | set(cs.credentials.RENAMED)))
         self.assertEqual(subprocess.run(["git", "check-ignore", "-q", ".env.infra"], cwd=root).returncode, 0)
 
@@ -523,8 +545,7 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertIn("run: python3 tools/repo/cloudflare_settings.py ci\n", workflow)
         self.assertIn("CLOUDFLARE_SETTINGS_CHECK_TOKEN: ${{ secrets.CLOUDFLARE_SETTINGS_CHECK_TOKEN }}", workflow)
         self.assertIn('- cron: "0 6 * * *"', workflow, "checked daily, so drift shows within a day")
-        for name in (cs.EMAIL_DESTINATION, cs.EMAIL_FORWARD):
-            self.assertIn(f"{name}: ${{{{ secrets.{name} }}}}", workflow)
+        self.assertNotIn("EMAIL", workflow, "the forwarding is held to its shape, and needs no address")
 
 
 WORKERS = ["firmware-liberator", "firmware-liberator-api", "firmware-liberator-admin", "another-site"]
@@ -945,26 +966,13 @@ class ApiAndStatsTests(unittest.TestCase):
                          [("DEVICE_HASH_KEY_PERMANENT", "a-made-up-kept-value")])
         self.assertNotIn("a-made-up-kept-value", out)
 
-    def test_the_alerts_address_is_set_from_the_email_destination_never_shown(self):
+    def test_the_alerts_address_is_the_one_mail_is_forwarded_to_never_shown(self):
         self.fake.secrets = [name for name in cs.API_SECRETS if name != "ALERTS_RECIPIENT_EMAIL"]
         code, out = run(self.fake, "apply")
         self.assertEqual(code, 0, out)
         [(method, path, body)] = [sent for sent in self.fake.sent if sent[1] == SECRETS]
         self.assertEqual((method, body["name"], body["text"]), ("PUT", "ALERTS_RECIPIENT_EMAIL", DESTINATION))
         self.assertNotIn(DESTINATION, out)
-
-    def test_the_alerts_address_waits_for_the_email_destination(self):
-        self.fake.secrets = [name for name in cs.API_SECRETS if name != "ALERTS_RECIPIENT_EMAIL"]
-        out = io.StringIO()
-        with mock.patch.object(cs, "api", self.fake), redirect_stdout(out), \
-                mock.patch.object(cs, "bound_database_id", lambda config=None: self.fake.bound), \
-                mock.patch.object(cs, "email_differences", lambda zone, account: []), \
-                mock.patch.object(cs, "asked_token", lambda: APPLY_VALUE), \
-                mock.patch.object(cs, "variable", side_effect=lambda name: (_ for _ in ()).throw(
-                    cs.SettingsError(f"no {name}")) if name == cs.EMAIL_DESTINATION else "x"):
-            cs.main(["apply"])
-        self.assertIn(f"secret ALERTS_RECIPIENT_EMAIL: left - put the maintainer's address in .env.infra as {cs.EMAIL_DESTINATION}",
-                      out.getvalue())
 
     def test_only_a_made_secret_is_rotated(self):
         out, err = io.StringIO(), io.StringIO()
