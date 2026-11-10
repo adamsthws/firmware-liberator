@@ -317,12 +317,17 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
                                                    skip=frozenset() if beken_whole else answer.held)
     for problem in problems:
         output.log_only(f"    Offered firmware: {problem}")
+    sent = updates if not beken_whole else [item for item in updates if item.sha256 not in answer.held]
+    # Each file sent named by its place in the readout, which the website
+    # checks it against; each held already, fetched for a Beken device or not,
+    # by its SHA-256 alone.
     manifest["offered"] = [{"file": f"offered/{item.name}", "version": item.version, "size": len(item.data),
-                            "sha256": item.sha256} for item in updates]
+                            "sha256": item.sha256} for item in sent]
+    manifest["offered"] += [{"file": None, "version": item.version, "sha256": item.sha256, "held": True}
+                            for item in updates if item not in sent]
     manifest["offered"] += [{"file": None, "version": version, "sha256": digest, "held": True}
                             for digest, version in offered_digests(offers, versions=True)
                             if digest in answer.held and all(item.sha256 != digest for item in updates)]
-    sent = updates if not beken_whole else [item for item in updates if item.sha256 not in answer.held]
     prompts.section("What the device reported", [
         f"Model            {asked.model or 'not given'}",
         f"Product          {asked.product or 'not given'}",
@@ -391,9 +396,12 @@ def whole_readout(listed: kinds.Kind | None, learned: firmware_name.Learned | No
             and learned.name == listed.wrapper_model)
 
 
-# The large files inside are compressed with xz, about a quarter smaller than
-# gzip on a real dump; the tar around them is not, so the API Worker reads its
-# manifest, always first, without unpacking anything.
+# The large files read from the device are compressed with xz, about a quarter
+# smaller than gzip on a real dump; the tar around them is not, so the API
+# Worker reads its manifest, always first, without unpacking anything. The
+# firmware eWeLink offers goes in as it is: the Worker checks each file against
+# the SHA-256 the manifest gives it, which it cannot do through xz, before
+# marking it held.
 COMPRESSED = (".bin",)
 NAME = "readout.tar"
 
@@ -401,17 +409,18 @@ NAME = "readout.tar"
 def package(manifest: dict[str, Any], files: dict[str, bytes] | None = None,
             updates: list[offered_firmware.Offered] | tuple = (), contact: dict[str, str] | None = None) -> bytes:
     """The readout as sent: a tar of manifest.json first; the firmware eWeLink
-    offers the device, under offered/; and `files` - the anonymised flash and
-    its companions (flash.bin, efuse.bin, info.txt, report.json), already
-    anonymised by the chip family that read them. Each .bin is xz-compressed
-    (flash.bin.xz), so the tar stays readable without unpacking it."""
-    out = {f"offered/{item.name}": item.data for item in updates}
-    out.update(files or {})
+    offers the device, under offered/, as it is; and `files` - the anonymised
+    flash and its companions (flash.bin, efuse.bin, info.txt, report.json),
+    already anonymised by the chip family that read them. Each of those .bin
+    is xz-compressed (flash.bin.xz), so the tar stays readable without
+    unpacking it."""
     if contact:
         manifest = {**manifest, "contact": contact}
-    out = {name + ".xz" if name.endswith(COMPRESSED) else name: lzma.compress(data) if name.endswith(COMPRESSED)
-           else data for name, data in out.items()}
-    out = {"manifest.json": json.dumps(manifest, indent=2).encode(), **out}
+    out = {"manifest.json": json.dumps(manifest, indent=2).encode()}
+    out.update({f"offered/{item.name}": item.data for item in updates})
+    for name, data in (files or {}).items():
+        compressed = name.endswith(COMPRESSED)
+        out[name + ".xz" if compressed else name] = lzma.compress(data) if compressed else data
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT) as archive:
         for name, data in out.items():

@@ -114,10 +114,10 @@ A readout is one file, `readout.tar`, holding:
 |---|---|---|---|
 | `manifest.json` | what eWeLink and the device said they are (model, firmware version, chip), the tool's version, how many things were taken out, and your contact if you gave one | yes | yes |
 | `flash.bin.xz` | the whole memory, anonymised, compressed | yes | yes |
-| `efuse.bin` | the chip's fixed settings (its eFuses), as the reading program saw them | yes | |
+| `efuse.bin.xz` | the chip's fixed settings (its eFuses), as the reading program saw them, compressed | yes | |
 | `info.txt` | what the reading program said about the device | yes | yes |
 | `report.json` | the check of the memory read: its partitions and hashes | yes | |
-| `offered/<name>.xz` | each file of the firmware eWeLink offers the device | yes | yes |
+| `offered/<name>` | each file of the firmware eWeLink offers the device, as eWeLink serves it | yes | yes |
 
 A device whose memory was not read has only the manifest and the offered
 firmware.
