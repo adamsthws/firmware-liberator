@@ -585,11 +585,8 @@ def back_up_stock(ctx: Context, host: str) -> str:
     The bridge only reads it.  Taken automatically, under the consent typed at
     C2; if it fails the person decides whether to carry on without one, and an
     unattended run carries on.  Returns how it went: a devices.BACKUP_OUTCOMES key.
+    The caller, step_backup, has already asked backup_not_needed.
     """
-    skip = backup_not_needed(ctx)
-    if skip:
-        output.say(f"    {skip[1]}")
-        return skip[0]
     known = ctx.state.input("device_mac")
     output.say("Backing up the device's Sonoff firmware - about a minute...")
     first = True
