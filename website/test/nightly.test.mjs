@@ -208,15 +208,19 @@ test("a night costs a fixed few queries, well within even the free plan's 50", a
   assert.ok(queries <= 25, `${queries} queries`);
 });
 
-test("the cron is daily, and the Worker hands it to the nightly job", async () => {
+test("the nightly cron runs the nightly job; the hourly one the reminders alone", async () => {
   const config = readFileSync(new URL("../api/wrangler.jsonc", import.meta.url), "utf8");
-  assert.match(config, /"crons": \["17 3 \* \* \*"\]/);
+  assert.match(config, /"crons": \["17 3 \* \* \*", "47 \* \* \* \*"\]/);
   assert.match(config, /"binding": "STATS", "bucket_name": "firmware-liberator-stats"/);
   const { default: worker } = await import("../api/index.js");
   const waited = [];
-  await worker.scheduled({ scheduledTime: NIGHT.getTime() }, env(), { waitUntil: (promise) => waited.push(promise) });
+  await worker.scheduled({ cron: "17 3 * * *", scheduledTime: NIGHT.getTime() }, env(),
+    { waitUntil: (promise) => waited.push(promise) });
   assert.equal(waited.length, 1);
   assert.equal((await waited[0]).ran, true);
+  await worker.scheduled({ cron: "47 * * * *", scheduledTime: NIGHT.getTime() }, env(),
+    { waitUntil: (promise) => waited.push(promise) });
+  assert.deepEqual(await waited[1], { reminded: 0 }, "no nightly job hourly");
 });
 
 test("the month before January is December of the year before", () => {
@@ -252,8 +256,8 @@ test("each night clears readouts never taken as right and addresses never confir
   const bindings = { ...env(), READOUTS: { ...bucket(), delete: async () => {} } };
   bindings.DB.db.prepare(`INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, review)
     VALUES ('old', 'K', 'whole', 's', 'f', 1, 'readouts/x/old.tar', '2026-09-01T00:00:00Z', 'pending')`).run();
-  bindings.DB.db.prepare(`INSERT INTO signups (token, who, email, devices, day)
-    VALUES ('t', 'w', 'e', '[]', '2026-10-01')`).run();
+  bindings.DB.db.prepare(`INSERT INTO confirmations (token, who, email, devices, day, sent)
+    VALUES ('t', 'w', 'e', '[]', '2026-10-01', '2026-10-01T12:00:00Z')`).run();
   const done = await night.nightly(bindings, NIGHT);
   assert.deepEqual(done.pruned, { readouts: 1, signups: 1 });
   assert.deepEqual(rows(bindings, "SELECT id FROM readouts"), []);

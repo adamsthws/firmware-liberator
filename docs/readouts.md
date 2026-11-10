@@ -157,8 +157,9 @@ stored except the (optional) contact information you chose to give.
 ### Your email address
 
 If you give your email address, you're first sent an email with a link to
-confirm it. Nothing is kept unless you follow that link: an address never
-confirmed is deleted after 7 days. Once confirmed, it is stored privately with
+confirm it, and once more the next day if you haven't yet. Nothing is kept
+unless you follow that link: an address never confirmed is deleted after 7
+days. Once confirmed, it is stored privately with
 your device's model, apart from the readout, so you can be emailed when that
 model's support changes: when it becomes supported, say, or a test version is
 ready to try. It is used for nothing else. Every such email has a link to

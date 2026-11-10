@@ -48,7 +48,7 @@ check.
   and a file of the firmware eWeLink offers that it holds already is not sent.
   Whether or not a readout is needed, you can leave your email address, kept
   with your device's model, to be told when its support changes, once you
-  confirm it from an email sent to it; every such email has a link to remove it. Its first stage only reads: what the device and
+  confirm it from an email sent to it (and reminded once, the next day); every such email has a link to remove it. Its first stage only reads: what the device and
   eWeLink say it is, and the firmware eWeLink offers it; nothing is sent to the
   device, and a device the tool has not seen gets that alone. Its second stage
   reads the whole memory, and is only for a device the tool lists as Supported,

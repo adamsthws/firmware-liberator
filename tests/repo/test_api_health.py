@@ -62,7 +62,7 @@ class SnapshotTests(unittest.TestCase):
         workflow = (Path(health.ROOT) / ".github/workflows/cloudflare-settings.yml").read_text(encoding="utf-8")
         self.assertIn('- cron: "0 6 * * *"', workflow)
         api = (Path(health.ROOT) / "website/api/wrangler.jsonc").read_text(encoding="utf-8")
-        self.assertIn('"crons": ["17 3 * * *"]', api)
+        self.assertIn('"crons": ["17 3 * * *", "47 * * * *"]', api)
 
     def test_figures_from_a_database_short_of_a_migration_say_to_apply_it(self):
         code, out = run("snapshot", snapshot=figures(schema="0001_counters.sql"))

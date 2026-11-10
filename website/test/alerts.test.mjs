@@ -82,9 +82,10 @@ test("the nightly job is given the API's own limits", async () => {
   const bindings = { ...env(), STATS: { head: async () => null, put: async () => {} } };
   count(bindings, "reports:2026-11-09", "2026-11-09", 1000);
   const waited = [];
-  await worker.scheduled({ scheduledTime: Date.parse("2026-11-10T03:17:00Z") }, bindings,
+  await worker.scheduled({ cron: "17 3 * * *", scheduledTime: Date.parse("2026-11-10T03:17:00Z") }, bindings,
     { waitUntil: (promise) => waited.push(promise) });
   const done = await waited[0];
   assert.equal(done.alerted.sent, true, "1000 is the real limit of reports a day");
   assert.equal(bindings.sent[0].from, "updates@firmwareliberator.com");
+  assert.equal(done.reminded, 0, "and sends the reminders after it");
 });

@@ -48,11 +48,11 @@ test("an address never confirmed is deleted after its days", async () => {
   assert.equal(SIGNUP_DAYS, 7);
   const env = { DB: d1(), READOUTS: bucket() };
   for (const [token, day] of [["a".repeat(32), "2026-11-01"], ["b".repeat(32), "2026-11-03"]]) {
-    await env.DB.prepare("INSERT INTO signups (token, who, email, devices, day) VALUES (?1, 'w', 'e', '[]', ?2)")
+    await env.DB.prepare("INSERT INTO confirmations (token, who, email, devices, day, sent) VALUES (?1, 'w', 'e', '[]', ?2, ?2 || 'T12:00:00Z')")
       .bind(token, day).run();
   }
   assert.equal((await prunePending(env, "2026-11-09")).signups, 1);
-  assert.equal((await env.DB.prepare("SELECT day FROM signups").first()).day, "2026-11-03");
+  assert.equal((await env.DB.prepare("SELECT day FROM confirmations").first()).day, "2026-11-03");
 });
 
 test("it names the store's count as index.js does", () => {

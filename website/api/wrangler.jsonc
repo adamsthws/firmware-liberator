@@ -35,7 +35,9 @@
   ],
   // The nightly job (nightly.js), at 03:17 UTC: after the day it counts has
   // ended everywhere it is evening, and before the website is built from it.
-  "triggers": { "crons": ["17 3 * * *"] },
+  // And hourly, the confirmations' reminders alone (index.js remind), so each
+  // goes within the hour of its day being up.
+  "triggers": { "crons": ["17 3 * * *", "47 * * * *"] },
   // The API's database (database.js): made, and brought up to date from
   // migrations/, by tools/repo/cloudflare_settings.py apply, which says the
   // id to put here once it has made it.
