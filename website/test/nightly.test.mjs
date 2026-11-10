@@ -237,6 +237,24 @@ test("the nightly cron runs the nightly job; the hourly one the reminders alone"
   assert.deepEqual(await waited[1], { reminded: 0 }, "no nightly job hourly");
 });
 
+test("each day's emails are kept by outcome after the counts behind them go", async () => {
+  const bindings = env();
+  const count = bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES (?, ?, ?, 0)");
+  count.run("mail-sent:2026-11-09", "2026-11-09", 12);
+  count.run("mail-failed:E_RECIPIENT_SUPPRESSED:2026-11-09", "2026-11-09", 2);
+  count.run("mail-failed:E_RATE_LIMITED:2026-11-02", "2026-11-02", 1);
+  count.run("mail-sent:2026-11-10", "2026-11-10", 3);   // today's: tomorrow
+  await night.nightly(bindings, NIGHT);
+  assert.deepEqual(rows(bindings, "SELECT day, outcome, code, n FROM mail_days ORDER BY day, outcome, code"), [
+    { day: "2026-11-02", outcome: "failed", code: "E_RATE_LIMITED", n: 1 },
+    { day: "2026-11-09", outcome: "failed", code: "E_RECIPIENT_SUPPRESSED", n: 2 },
+    { day: "2026-11-09", outcome: "sent", code: "", n: 12 },
+  ]);
+  assert.deepEqual(rows(bindings, "SELECT name FROM counters WHERE name GLOB 'mail-*' ORDER BY name").map((row) => row.name),
+    ["mail-failed:E_RECIPIENT_SUPPRESSED:2026-11-09", "mail-sent:2026-11-09", "mail-sent:2026-11-10"],
+    "the count over a week old gone, its copy kept");
+});
+
 test("the month before January is December of the year before", () => {
   assert.equal(night.monthBefore("2027-01"), "2026-12");
   assert.equal(night.monthBefore("2026-11"), "2026-10");

@@ -7,7 +7,8 @@
 // - Reports RAW_DAYS old are deleted, once their day is folded; the day
 //   counts behind the limits (counters) COUNTER_DAYS old.
 // - The store of readouts' size is noted for the day (store_days), for the
-//   admin view's graph of how fast it fills.
+//   admin view's graph of how fast it fills; the emails sent and failed each
+//   day (mail.js's counts) copied to mail_days, kept after the counts go.
 // - The maintainer is emailed when yesterday reached a limit for everyone, or
 //   the store passed most of its limit (alerts.js): counts only.
 // - The public snapshot is written to the stats bucket: totals only, from
@@ -114,6 +115,12 @@ function remaking(db, months, today) {
 // day counts behind the limits, COUNTER_DAYS old.
 export function pruning(db, today) {
   return [
+    // Before the counts behind them can go: each day's emails, copied afresh.
+    db.prepare(`INSERT OR REPLACE INTO mail_days (day, outcome, code, n)
+      SELECT day, CASE WHEN name GLOB 'mail-sent:*' THEN 'sent' ELSE 'failed' END,
+        CASE WHEN name GLOB 'mail-failed:*' THEN substr(name, 13, length(name) - 12 - length(day) - 1) ELSE '' END,
+        count
+      FROM counters WHERE day < ?1 AND (name GLOB 'mail-sent:*' OR name GLOB 'mail-failed:*:*')`).bind(today),
     db.prepare("DELETE FROM reports WHERE day < ? AND day IN (SELECT day FROM folded)").bind(daysBefore(today, RAW_DAYS)),
     db.prepare("DELETE FROM counters WHERE day IS NOT NULL AND day < ?").bind(daysBefore(today, COUNTER_DAYS)),
   ];
