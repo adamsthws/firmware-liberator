@@ -153,7 +153,10 @@ one is first uploaded from your computer:
    binding to something that is not there. For the database it says the id
    to put in the Worker's `wrangler.jsonc`: commit that before the upload.
 4. Upload it from `website/`: `npx wrangler deploy --config <its
-   wrangler.jsonc>`.
+   wrangler.jsonc>`. Or, to give the deploy token the Worker before it is
+   ready, upload a placeholder under its name with the Workers API: a script
+   answering 404, with no route, custom domain, `workers.dev` address or
+   previews. The workflow's first deploy then replaces it.
 5. Run `apply` again. It sets the Worker's secrets, which its
    `wrangler.jsonc` describes, and says what is left.
 6. Check it answers (below).
