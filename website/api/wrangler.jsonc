@@ -41,7 +41,7 @@
   // id to put here once it has made it.
   "d1_databases": [
     { "binding": "DB", "database_name": "firmware-liberator-api", "migrations_dir": "migrations",
-      "database_id": "00000000-0000-0000-0000-000000000000" }
+      "database_id": "4c2b6c15-fdaf-4457-aad2-5db90250be14" }
   ],
   // Cloudflare Email Service (Workers Paid): the confirmation an address
   // given to /notify is sent, from NOTIFY_FROM on the domain onboarded for it
