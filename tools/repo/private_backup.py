@@ -59,6 +59,9 @@ sys.path.insert(0, str(ROOT))
 from tools.autoflash import credentials, records  # noqa: E402
 
 KEY_NAME = "AUTOFLASH_BACKUP_KEY"
+# A private package of the maintainer's account, not linked to the
+# repository: a package's visibility is its own, and one made public cannot
+# be made private again, so its settings are never changed.
 OWNER, PACKAGE, TAG = "adamsthws", "autoflash-private", "sonoff-backup"
 REFERENCE = f"ghcr.io/{OWNER}/{PACKAGE}:{TAG}"
 REPOSITORY = "adamsthws/firmware-liberator"
@@ -73,7 +76,10 @@ PUBLIC_CONTROL = ("oras-project/oras", "v1.2.3")
 
 # The sealed file: this line, a 12-byte nonce, then the xz-compressed tar of
 # the backup encrypted with AES-256-GCM under the key, this line its
-# associated data - so any AES-GCM implementation can open it.
+# associated data - so any AES-GCM implementation can open it, and a change
+# to any byte is found. Compressed first, as encrypted data does not compress
+# (4.2 MB to 1.0 MB: a flash is mostly empty). The tar holds a manifest of
+# each file's size and SHA-256, which opening checks every file against.
 MAGIC = b"AUTOFLASH-SEALED-BACKUP 1\n"
 NONCE_SIZE, KEY_SIZE = 12, 32
 MANIFEST = "MANIFEST.json"
@@ -336,6 +342,11 @@ def anonymous_manifest(repository: str, tag: str) -> int:
 
 
 def command_check_private(_args: argparse.Namespace) -> int:
+    """Private only if all three say so: the registry, asked as nobody, does
+    not hand the package over - having handed over a public one (ORAS's own)
+    first, so the check is shown to tell the two apart; GitHub's own setting
+    for it, read as its owner, is private; and it is there under its tag, so
+    the refusal means "not for you", not "no such thing"."""
     problems = []
     control = anonymous_manifest(*PUBLIC_CONTROL)
     print(f"  a public package, asked for as nobody: HTTP {control} (200: the check can tell)")

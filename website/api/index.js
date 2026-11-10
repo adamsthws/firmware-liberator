@@ -40,7 +40,10 @@
 //   limiter, never stored), and DAILY_COUNT readouts and DAILY_BYTES a day from
 //   everyone, counted in the database (counters.js), where two at once can
 //   never both pass the limit. /wanted reads that count too, and says so once
-//   the day is full. NOTIFY_DAILY addresses a day may be given.
+//   the day is full. NOTIFY_DAILY addresses a day may be given. /wanted and
+//   /notify are not held to READOUT_LIMIT, which a batch's questions would
+//   use up before its readouts: the hostname's rate-limiting rule
+//   (tools/repo/cloudflare_settings.py) holds them, as it does every path.
 // - Until the database has every migration this code needs (database.js),
 //   each path answers 503, so the tool tries again later.
 // - Kept for good, with the marks of what is held (readouts/held/,
@@ -69,7 +72,11 @@ export const FORMAT = 1;
 export const LIGHT_PROOF_BITS = 20;
 export const LIGHT_PROOF_AGE = 60;
 export const QUESTION_MAX_BYTES = 4096;
+// Confirmations and reminders sent a day at most: what bounds the cost of
+// email. Email Service includes 3,000 a month on Workers Paid, then $0.35 a
+// 1,000 (2026), so a month of full days, some 15,000, is about $4.
 export const NOTIFY_DAILY = 500;
+// The most offered files a /wanted question names, and devices a /notify.
 export const MAX_FIRMWARE = 8;
 export const MAX_DEVICES = 20;
 // Sign-ups to be told of a change one sender may ask for a day, and one
@@ -77,7 +84,9 @@ export const MAX_DEVICES = 20;
 // emailed, or one stranger many times.
 export const NOTIFY_SENDER_DAILY = 5;
 // Where the confirmation an address is sent comes from: on the domain the
-// Email Service sends for (.github/readouts.md says how it was set up).
+// Email Service sends for (SENDING_DOMAIN in tools/repo/cloudflare_settings.py,
+// which onboards it). Until it is onboarded, a confirmation fails to send and
+// /notify answers 502, keeping nothing.
 export const NOTIFY_FROM = "updates@firmwareliberator.com";
 export const CONFIRM_URL = "https://api.firmwareliberator.com/confirm";
 // An address not confirmed this many days after its link was sent is sent it
@@ -410,6 +419,7 @@ export async function readout(request, env, now = new Date()) {
     return answer(400, { error: "that is not a readout this tool makes" });
   }
   const day = now.toISOString().slice(0, 10);
+  // Its reference, which its sender is shown, and where it is kept.
   const id = `${day}-${digest.slice(0, 12)}`;
   const key = `readouts/${day}/${digest.slice(0, 24)}.tar`;
   if (await env.READOUTS.head(key)) {

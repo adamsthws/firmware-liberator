@@ -30,6 +30,10 @@ identity only matters to eWeLink's servers, which an emulated copy never meets.
 
 Each settings entry changed has its checksums made good again, so the copy
 still starts as it was, on a device or in the emulator.
+
+A password a firmware keeps somewhere its settings do not show goes as it is:
+the copy is private, and a question about it would only make the owner
+hesitate to send it.
 """
 
 from __future__ import annotations

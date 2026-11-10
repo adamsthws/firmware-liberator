@@ -28,7 +28,11 @@ deploys. website/README.md says which token is which.
 The deploy token's permissions are checked too, but only with a token that
 can also read the account's API tokens and Workers: the apply token, never
 CI's, as that would show every token in the account. A token is changed in
-the dashboard, never by `apply`.
+the dashboard, never by `apply`: READ_TOKEN_PERMISSIONS and
+APPLY_TOKEN_PERMISSIONS list what to give the two this is run with.
+
+Settings are applied by hand, never by CI. They change rarely, and a token
+that only reads, should CI's ever leak, cannot change the DNS or a bucket.
 
 `ci`, as the cloudflare-settings workflow runs it, also tries reads its
 token must be refused, failing where any works: other zones and accounts,
@@ -93,7 +97,7 @@ REDIRECTS = [{
 # is made with no public access, and nothing here gives it any. Nothing in it
 # expires: a readout is kept only if it adds something, and kept for good, the
 # Worker's limit on the bytes of them all keeping the bucket within R2's free
-# 10 GB (.github/readouts.md). So it has no lifecycle rule, and one added in
+# 10 GB (TOTAL_BYTES in website/api/index.js). So it has no lifecycle rule, and one added in
 # the dashboard is a difference that `apply` takes away.
 READOUTS_BUCKET = "firmware-liberator-readouts"
 READOUTS_LIFECYCLE = {"rules": []}
@@ -155,6 +159,12 @@ def _allowed(methods: tuple[str, ...]) -> str:
     return f"(http.request.method in {{{said}}} and http.request.uri.path in {{{paths}}})"
 
 
+# Crawlers, AI ones included, may read /stats and the figures behind it:
+# cached, they cost nothing. Should that change, one more rule here would
+# block Cloudflare's verified AI crawlers there -
+#   (cf.verified_bot_category eq "AI Crawler" and (http.request.uri.path eq "/stats"
+#    or http.host eq "stats.firmwareliberator.com"))
+# - once Cloudflare's documentation confirms the free plan allows that field.
 FIREWALL_RULES = [{
     "ref": "api-only-the-tool",
     "description": f"{API_HOST}: only " + "; ".join(f"{'/'.join(methods)} to {', '.join(p for p, m in API_METHODS.items() if m == methods)}"
@@ -205,8 +215,8 @@ API_SECRETS = {"DEVICE_HASH_KEY_PERMANENT": "kept", "SENDER_KEY": "made", "ALERT
 # one secret, a token that can only read the account's analytics, "kept" as
 # ADMIN_ANALYTICS_TOKEN; and the Access application in front of it,
 # made here (access_differences): GitHub sign-in alone, and the maintainer
-# alone let in - by ACCESS_ADMIN_EMAIL, or else EMAIL_DESTINATION, never
-# written here or printed. Access's GitHub sign-in is a GitHub OAuth app
+# alone let in - by ACCESS_ADMIN_EMAIL, or else the variable EMAIL_DESTINATION
+# names (CLOUDFLARE_EMAIL_DESTINATION), never written here or printed. Access's GitHub sign-in is a GitHub OAuth app
 # of the maintainer's, its id and secret kept as ACCESS_GITHUB_CLIENT_ID and
 # ACCESS_GITHUB_CLIENT_SECRET. Not checked by CI: its token has no reach
 # into Access, and the policy holds the maintainer's address.
@@ -278,6 +288,65 @@ DEPLOY_TOKEN = "firmware-liberator-deploy-workers-ci-read-write"
 DEPLOY_ZONE_PERMISSIONS = {"Zone Read", "Workers Routes Write", "DNS Write"}
 DEPLOY_WORKERS = {"firmware-liberator", "firmware-liberator-api", "firmware-liberator-admin"}
 DEPLOY_WORKERS_PERMISSIONS = {"Individual Workers Editor"}
+
+# The two tokens this script is run with, each made by hand in the dashboard
+# (My Profile, API Tokens): what to give it there, as the dashboard names
+# each permission, on the zone alone ("zone") and on the account ("account"),
+# with what here needs it. A check that comes to need more is a permission
+# to add there, and written down here.
+# - The read token is CI's: the website environment's secret
+#   CLOUDFLARE_READ_TOKEN (github_settings.py), which the cloudflare-settings
+#   workflow runs `ci` and tools/repo/api_health.py with. It reads and nothing
+#   more, and `ci` fails where it can read what CI_REFUSED lists.
+#   tools/repo/readouts.py lists with it, or one like it.
+READ_TOKEN_PERMISSIONS = {
+    "zone": {
+        "Zone: Read": "the zone found by its name, and its account",
+        "Zone Settings: Read": "SETTINGS",
+        "DNS: Read": "dns_differences and dnssec_differences",
+        "Dynamic URL Redirects: Read": "REDIRECTS",
+        "Zone WAF: Read": "RATE_LIMITS and FIREWALL_RULES",
+        "Cache Settings: Read": "CACHE_RULES",
+        "Email Routing Rules: Read": "email_differences: the forwarding rules and the catch-all",
+        "Analytics: Read": "api_health.py mail: what came of the emails sent",
+    },
+    "account": {
+        "Workers R2 Storage: Read": "READOUTS_BUCKET and STATS_BUCKET; readouts.py's listing",
+        "Account Analytics: Read": "api_health.py usage: the month's use against what the plan includes",
+        "Email Routing Addresses: Read": "email_differences: the destination address, verified",
+        "Email Sending: Read": "api_health.py mail: the suppression list",
+    },
+}
+# - The apply token is kept nowhere: made when a setting is to change, and
+#   deleted once `apply` has run. It edits what the read token reads, and
+#   reaches what CI's is refused because each reaches the whole account: its
+#   API tokens (reading one means reading every one, other sites' too), every
+#   D1 database, the Workers' settings, Access, and the account's settings.
+APPLY_TOKEN_PERMISSIONS = {
+    "zone": {
+        "Zone: Read": "the zone found by its name, and its account",
+        "Zone Settings: Edit": "SETTINGS",
+        "DNS: Edit": "dns_differences, dnssec_differences, and the records onboard_sending makes",
+        "Dynamic URL Redirects: Edit": "REDIRECTS",
+        "Zone WAF: Edit": "RATE_LIMITS and FIREWALL_RULES",
+        "Cache Settings: Edit": "CACHE_RULES",
+        "Email Routing Rules: Edit": "email_differences: the forwarding rules and the catch-all",
+    },
+    "account": {
+        "Workers R2 Storage: Edit": "READOUTS_BUCKET and STATS_BUCKET: made, the figures' domain, no lifecycle rule",
+        "D1: Edit": "database_differences: the API's database made, and each migration run",
+        "Email Routing Addresses: Edit": "email_differences: the destination address",
+        "Email Sending: Edit": "onboard_sending: the domain onboarded for sending",
+        "Account API Tokens: Read": "deploy_token_policies: the deploy token's permissions",
+        "Workers Scripts: Edit": "deploy_token_policies: its Workers by name; secret_differences: the Workers' secrets",
+        "Access: Organizations, Identity Providers, and Groups: Edit": "access_differences: the admin view's sign-in",
+        "Access: Apps and Policies: Edit": "access_differences: the admin view's application and its one policy",
+        # Both: Web Analytics refuses a token with Edit alone, as other
+        # account settings do not.
+        "Account Settings: Read": "analytics_differences: the Web Analytics site",
+        "Account Settings: Edit": "analytics_differences: the Web Analytics site",
+    },
+}
 # Each zone ruleset this script keeps, by its phase: the rules as written here.
 RULESETS = {REDIRECT_PHASE: ("redirects", REDIRECTS), RATE_LIMIT_PHASE: ("rate limits", RATE_LIMITS),
             FIREWALL_PHASE: ("firewall rules", FIREWALL_RULES), CACHE_PHASE: ("cache rules", CACHE_RULES)}

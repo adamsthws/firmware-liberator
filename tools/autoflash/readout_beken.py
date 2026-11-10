@@ -16,6 +16,10 @@ firmware is delivered through eWeLink (tools/ewelink/ota_push), the flash read
 in paced, retried chunks (tools/autoflash/openbeken.read_flash), the revert
 served until the device has every byte (routes/beken/onward.serve_to_device).
 The copy is anonymised (tools/beken/scrub.py) before anything is sent.
+
+Proven end to end on the emulated S61 - the round trip, the device back
+online in eWeLink, the flash anonymised - and not yet run on a real Beken
+device.
 """
 
 from __future__ import annotations

@@ -95,6 +95,9 @@ CLASS_B = {"GetObject", "HeadObject", "HeadBucket", "UsageSummary", "GetBucketEn
            "GetBucketCors", "GetBucketLifecycleConfiguration"}
 FREE = {"DeleteObject", "DeleteBucket", "AbortMultipartUpload"}
 
+# Cloudflare's own marks for a sender's good standing are a hard bounce rate
+# under 2% and complaints under 0.1%: among so few emails, any complaint is
+# past the second.
 MAIL_DAYS = 7
 COMPLAINT_DAYS = 2
 BOUNCE_WARN = 0.02

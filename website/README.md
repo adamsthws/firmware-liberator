@@ -6,105 +6,58 @@ served by a Cloudflare Worker that holds nothing but the built files. The
 pages are written once, as the repository's Markdown; this folder only turns
 them into a site.
 
-## What is here
+This page says how the pieces fit and what a person does by hand. The
+specifics - a limit, a rule, a permission, a schedule - are written once,
+beside the code that sets them, with the reason for each.
 
-| | |
-|---|---|
-| `src/site.mjs` | Which Markdown files are pages (`PAGES`: every one git tracks), the address of each, and how a link between them is rewritten |
-| `src/content.config.mjs` | Those files as Astro's `pages` collection, read from the repository root |
-| `src/pages/[...slug].astro` | One page per file, titled by its first heading and described by its first paragraph |
-| `src/pages/404.astro` | What an address with no page answers |
-| `src/layouts/Page.astro` | Every page's frame: GitHub's Markdown styling, dark unless the reader picks light, the GitHub button, Cloudflare Web Analytics (no cookies) |
-| `public/` | Copied as they are: the icons and stylesheets, `robots.txt`, `llms.txt`, `_redirects` |
-| `astro.config.mjs` | The build: Markdown through Astro's Sätteri with the link rewriting, pictures copied beside their pages, a sitemap |
-| `test/` | Tests of the link rewriting, descriptions and `llms.txt`'s links (`npm test`, Node's own runner) |
-| `wrangler.jsonc` | The Worker: the files in `dist/`, the 404 page, and both names pointed at it |
+## The pieces
 
-## Addresses
+| Piece | What it is | Where it is written down |
+|---|---|---|
+| The site | The Markdown pages, and `/stats`, built into files and served by the Worker `firmware-liberator` | `src/`, `astro.config.mjs`, `public/`, `wrangler.jsonc` |
+| The API | `api.firmwareliberator.com`: a Worker of its own, which takes the reports and readouts the tool sends | `api/` ([api/index.js](api/index.js) says how each path is guarded) |
+| The admin view | `admin.firmwareliberator.com`: the maintainer's view of what the API holds, behind Cloudflare Access | `admin/` |
+| The zone and the account | DNS, redirects, rate-limiting, firewall and cache rules, the two buckets, the database, email, Access, Web Analytics | [tools/repo/cloudflare_settings.py](../tools/repo/cloudflare_settings.py) |
+| The repository's side | The `website` environment, its secrets and the branch it takes | [tools/repo/github_settings.py](../tools/repo/github_settings.py) |
+| Deploying and checking | The workflows that build, deploy and check all of the above | `.github/workflows/website.yml`, `cloudflare-settings.yml` |
 
-Every Markdown file git tracks is a page, but `.github/`'s templates. A page's
-address is its path without `.md`: `docs/emulator.md` is
-`/docs/emulator`, a folder's `README.md` is the folder (`/devices/sonoff-s61`),
-and the README is `/`. A link to another page goes to its address; a link to
-anything else in the repository - the tool, a config, `LICENSE` - goes to it
-on GitHub; pictures under `docs/` are served beside the pages. The Worker
-also answers `/docs/emulator.html` (by redirect), the form the old GitHub
-Pages site's addresses took.
+The API is kept apart from the site so that nothing sent to it can affect
+the site. How readouts are handled, and how to look after what the API holds,
+is in [.github/readouts.md](../.github/readouts.md).
 
-`public/_redirects` sends `/liberate.sh` and `/liberate.ps1` to the latest
-release's, with a 302 so no browser keeps it past the next release.
-`tests/repo/test_site.py` checks each is a file every release carries.
+## Changing something
 
-## Search engines
+| To change | Edit | Then |
+|---|---|---|
+| A page | Its Markdown file | Push: the website workflow builds and deploys it |
+| How pages are addressed, linked or described | `src/site.mjs` | `npm test`, push |
+| A limit or a path of the API | `api/` (and `API_METHODS` in `cloudflare_settings.py` for a path) | `npm test`, push; `apply` for the firewall rule |
+| The API's database | A new file in `api/migrations/` (`api/database.js` says how one is written) | Run `apply`, then push |
+| A DNS record, rule, bucket or other Cloudflare setting | `cloudflare_settings.py` | Run `apply` (below), then push |
+| A secret or setting of the `website` environment | `github_settings.py` | `python3 tools/repo/github_settings.py apply`, or `... secret NAME` |
+| A Cloudflare token's permissions | The dashboard, and the token's list in `cloudflare_settings.py` | Run the script's check |
 
-`robots.txt` lets every crawler in, and points at the sitemap. Pages under
-`archive/` stay readable, but are marked `noindex` and left out of the
-sitemap, so a search doesn't land someone on a superseded procedure; they
-must not be blocked in `robots.txt`, or crawlers would never see the
-`noindex`. `llms.txt` is a short guide to the site for AI tools, written by
-hand: add a page to it when a page matters to someone converting a device.
-Its list of devices follows the tool: `tests/repo/test_site.py` fails until
-each device the tool knows has its line there, in the tool's order, with its
-status from `devices/status.json` and the firmware it converts to. The same
-test holds the front page's title and description, `llms.txt`'s summary, the
-README's opening and the repository's description on GitHub to naming every
-maker and firmware the tool has.
+## Pages and addresses
 
-`checks/built.mjs` checks what the build made: the sitemap lists every page
-but the retired ones, each page names its own canonical address and has a
-description, only the retired pages and the 404 are `noindex`, and
-`robots.txt` names the sitemap that was built. Pages built from no Markdown
-file, such as `/stats`, are held to the same, by `EXTRA_PAGES` in
-`src/site.mjs`. Run it after a build with `npm run check`; the website
-workflow does, before it deploys.
+Every Markdown file git tracks is a page, except those under `.github/`. A
+page's address is its path without `.md`: `docs/emulator.md` is
+`/docs/emulator`, a folder's `README.md` is the folder, and the README is
+`/`. A link to another page goes to its address, and a link to anything else
+in the repository goes to it on GitHub. `src/site.mjs` holds these rules, and
+`test/` tests them.
 
-## Stats
+Pages under `archive/` stay readable but are kept out of search results.
+`public/llms.txt` is a short guide to the site for AI tools, written by hand:
+add a page to it when the page matters to someone converting a device.
+`tests/repo/test_site.py` holds its list of devices, and the wording that
+names every maker and firmware, to what the tool has.
 
-`/stats` is built from the public figures the API's nightly job writes to
-`stats.firmwareliberator.com` (`src/stats.mjs`), into the page itself, so it
-reads in full with no script; `public/assets/stats.js` adds its tooltips. Its
-colours are a chart palette checked for colour-blind readers and contrast in
-both themes. The website workflow builds it daily at 04:30 UTC, after the
-night's figures, and fails that build if they are missing. While they are
-three days old or less, the build adds their headline to `llms.txt`, under
-`## Figures`, with their date; `public/llms.txt` itself stays written by hand.
-To build the page without the live figures, make some up:
+`/stats` is built from the public figures the API's nightly job writes
+(`src/stats.mjs`), so the website workflow also builds daily, after them. To
+build the page without the live figures, make some up:
 
     node scripts/sample-stats.mjs > /tmp/stats.json
     STATS_FILE=/tmp/stats.json npm run build
-
-## The admin view
-
-`admin.firmwareliberator.com` (`admin/`) is the maintainer's view of what
-the API holds: reports held for review, to release or delete, the day's
-counts against their limits, the readout store filling over time, mail sent
-and bounced, and the month's use of the account against what the plan
-includes. It reads the API's database live; only releasing or deleting a
-held report changes it.
-
-Cloudflare Access stands in front of it, and the Worker checks Access's
-signed token on every request itself (`admin/access.js`), so a request that
-reached it some other way is refused. `python3
-tools/repo/cloudflare_settings.py apply` makes Access's part, once the
-account has a Zero Trust organisation (dashboard, Zero Trust, free plan):
-
-- **GitHub sign-in**, from a GitHub OAuth app of yours: homepage
-  `https://admin.firmwareliberator.com`, callback
-  `https://<team>.cloudflareaccess.com/cdn-cgi/access/callback`. Its id and
-  secret go in `.env.infra` as `ACCESS_GITHUB_CLIENT_ID` and
-  `ACCESS_GITHUB_CLIENT_SECRET`.
-- **The application** at `admin.firmwareliberator.com`, GitHub its only
-  sign-in, and **one policy**: your address alone (`ACCESS_ADMIN_EMAIL` in
-  `.env.infra`, or else `EMAIL_DESTINATION`), signed in with GitHub.
-
-`apply` then says the team, the application's audience tag and the account
-id to put in `admin/wrangler.jsonc`'s `vars`; until they are there the
-Worker lets no one in. Its secret `ANALYTICS_TOKEN` is a token of its own
-that can read only Account Analytics, kept in `.env.infra` as
-`ADMIN_ANALYTICS_TOKEN`; without it the view leaves out the month's use.
-Access is checked by the hand check alone: CI's token has no reach into it,
-and its policy holds your address. Each deploy checks the view answers a
-request not signed in with anything but a page.
 
 ## Building it
 
@@ -114,45 +67,77 @@ Node 22 or newer:
     npm ci --ignore-scripts
     npm test
     npm run build          # into dist/
+    npm run check          # what was built, as search engines read it
     npx astro preview      # dist/ at http://localhost:4321
 
 Packages come only from `package-lock.json`, by hash, with no install
-scripts run. Dependabot moves them, a week after each release
-(`.github/dependabot.yml`), and the dependabot-merge workflow merges its pull
-request once it has been open a week with its checks passed.
+scripts run. Dependabot moves them (`.github/dependabot.yml`), and the
+dependabot-merge workflow merges its pull requests.
 
 ## Deploying it
 
-`.github/workflows/website.yml` tests and builds it for each pull request,
-and on each push to `main` deploys its three Workers with wrangler: the site
-(`website/wrangler.jsonc`), the API (`website/api/wrangler.jsonc`) and the
-admin view (`website/admin/wrangler.jsonc`).
-It runs in the `website` environment, which only `main` can use
-(`tools/repo/github_settings.py`).
+`.github/workflows/website.yml` tests and builds the site for each pull
+request. On each push to `main` it deploys the three Workers, each in a job
+of its own so that no deploy holds up another, and then checks what it
+deployed. It runs in the `website` environment, which only `main` can use.
 
-Three Cloudflare API tokens are in play, each allowed only what its job needs:
+### The Cloudflare tokens
 
-| Token | Kept | Permissions |
-| --- | --- | --- |
-| Deploy | `website` secret `CLOUDFLARE_DEPLOY_TOKEN` | Individual Workers - `firmware-liberator`, `firmware-liberator-api`, `firmware-liberator-admin`: Editor. Zone `firmwareliberator.com` - Workers Routes: Write, DNS: Write (the custom domains), Zone: Read |
-| Settings check | `website` secret `CLOUDFLARE_READ_TOKEN` | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Read, DNS: Read, Dynamic URL Redirects: Read, Zone WAF: Read, Cache Settings: Read (the cache rules), Email Routing Rules: Read, Analytics: Read (the mail check). Account - Workers R2 Storage: Read, Account Analytics: Read (the usage check), Email Routing Addresses: Read, Email Sending: Read (the mail check's suppression list) |
-| Settings apply | nowhere: made when needed, deleted after | Zone `firmwareliberator.com` - Zone: Read, Zone Settings: Edit, DNS: Edit, Dynamic URL Redirects: Edit, Zone WAF: Edit, Cache Settings: Edit (the cache rules), Email Routing Rules: Edit. Account - Workers R2 Storage: Edit, D1: Edit, Email Routing Addresses: Edit, Email Sending: Edit (onboarding the domain for sending), Account API Tokens: Read, Workers Scripts: Edit (to check the deploy token, and set the Workers' secrets), Access: Organizations, Identity Providers, and Groups: Edit, Access: Apps and Policies: Edit (the admin view's sign-in), Account Settings: Read and Edit (the Web Analytics site; Edit alone is refused) |
+Each token is made by hand in Cloudflare's dashboard and allowed only what
+its job needs. `cloudflare_settings.py` lists what to give each, with what
+needs it.
 
-The deploy token reaches its three Workers and no other in the account. Its
-permissions are written down in `tools/repo/cloudflare_settings.py` and
-checked by hand, with the apply token: reading one token means reading every
-token in the account, other sites' too, which CI's token is not allowed. What
-it can see is checked on each deploy, by the workflow's `deploy-token` job
-with the token itself, after the deploys so a mistake there holds up
-none: `firmwareliberator.com` and this account alone, its three Workers, and
-none of what `cloudflare_settings.py` lists as refused. The
-environment's secrets are written down in `tools/repo/github_settings.py`,
-whose check fails on one missing; set one with `python3
-tools/repo/github_settings.py secret <name>`, which asks for the value or
-takes it on stdin.
+| Token | For | Kept | Its permissions |
+|---|---|---|---|
+| Deploy | The website workflow deploying the three Workers, and no other in the account | `website` secret `CLOUDFLARE_DEPLOY_TOKEN` | `DEPLOY_ZONE_PERMISSIONS`, `DEPLOY_WORKERS_PERMISSIONS` |
+| Settings check | The cloudflare-settings workflow reading the settings and the API's health | `website` secret `CLOUDFLARE_READ_TOKEN` | `READ_TOKEN_PERMISSIONS` |
+| Settings apply | You, changing a setting | Nowhere: made when needed, deleted after | `APPLY_TOKEN_PERMISSIONS` |
+| Admin analytics | The admin view showing the month's use | `ADMIN_ANALYTICS_TOKEN` in `.env.infra`; `apply` sets it on the Worker | Account Analytics: Read alone |
 
-A domain with DNS records of its own stops a deploy (Cloudflare's code
-100117): delete them, and wrangler makes the Worker's.
+The deploy token's permissions are checked with the apply token, never by
+CI: reading one token means reading every token in the account. What each of
+CI's tokens can see is checked instead, on each run, against a list of what
+it must be refused. Set a secret with `python3 tools/repo/github_settings.py
+secret <name>`, which asks for the value or takes it on stdin.
+
+### Changing a Cloudflare setting
+
+Settings are applied by hand, never by CI. They change rarely, and a CI token
+that can only read cannot, if it leaks, change the DNS or a bucket.
+
+1. Edit `cloudflare_settings.py`. A record or rule made in the dashboard is
+   a difference that `apply` removes, so write it down there instead.
+2. Make the apply token and put it in `CLOUDFLARE_API_TOKEN`, in the
+   environment or `.env.infra` (`.env.infra.example` lists every name that
+   file takes).
+3. Run `python3 tools/repo/cloudflare_settings.py` to see what differs, and
+   `... apply` to set it. `apply` says what is left to do by hand.
+4. Delete the token, and push.
+
+The cloudflare-settings workflow then checks the settings daily, and on each
+push that changes the script. It fails on any difference, whether made in the
+dashboard or written down and not applied. It cannot check the database, the
+Workers' secrets, Access or Web Analytics, which its token is refused: the
+script run by hand, with the apply token, checks those.
+
+### The admin view
+
+Cloudflare Access stands in front of the admin view, and the Worker checks
+Access's signed token on every request itself, so a request that reached it
+some other way is refused. `apply` makes Access's part and says each step
+that is left to you. Two are always yours:
+
+1. A Zero Trust organisation for the account (dashboard, Zero Trust, free
+   plan).
+2. A GitHub OAuth app for the sign-in, with the homepage and callback
+   `apply` names. Its id and secret go in `.env.infra` as
+   `ACCESS_GITHUB_CLIENT_ID` and `ACCESS_GITHUB_CLIENT_SECRET`.
+
+The one address let in is `ACCESS_ADMIN_EMAIL` in `.env.infra`, or else
+`CLOUDFLARE_EMAIL_DESTINATION`. `apply` then says the three values to put in
+`admin/wrangler.jsonc`; until they are there the Worker lets no one in. CI
+does not check Access, and each deploy checks only that the view turns away a
+request that is not signed in.
 
 ### Adding a Worker
 
@@ -162,42 +147,35 @@ one is first uploaded from your computer:
 1. Make a short-lived token: Account - Workers Scripts: Edit, Workers R2
    Storage: Edit, D1: Edit, and the zone permissions of the deploy and apply
    tokens. Put it in `CLOUDFLARE_API_TOKEN`.
-2. Check the name is free: the account's Workers (dashboard, Workers &
-   Pages) hold none by it. An upload under a taken name replaces that
-   Worker.
-3. Make what it binds to first: `python3 tools/repo/cloudflare_settings.py
-   apply` makes the bucket and the database (the upload fails on a binding to
-   one that is not there), and says the database's id to put in the API
-   Worker's `wrangler.jsonc`: commit that before the upload.
+2. Check the name is free (dashboard, Workers & Pages): an upload under a
+   taken name replaces that Worker.
+3. Run `apply` to make what the Worker binds to, as the upload fails on a
+   binding to something that is not there. For the database it says the id
+   to put in the Worker's `wrangler.jsonc`: commit that before the upload.
 4. Upload it from `website/`: `npx wrangler deploy --config <its
    wrangler.jsonc>`.
-5. Run `apply` again: it sets the Worker's secrets (its `wrangler.jsonc`
-   says what each is) - for the API, SENDER_KEY made afresh and
-   DEVICE_HASH_KEY_PERMANENT from `API_DEVICE_HASH_KEY_PERMANENT` in
-   `.env.infra`; for the admin view, ANALYTICS_TOKEN from
-   `ADMIN_ANALYTICS_TOKEN` - and says what is left.
+5. Run `apply` again. It sets the Worker's secrets, which its
+   `wrangler.jsonc` describes, and says what is left.
 6. Check it answers (below).
-7. Add it to the deploy token's Individual Workers, and give the website
-   workflow a job deploying it.
+7. Add it to the deploy token's Workers, in the dashboard and in
+   `DEPLOY_WORKERS`, and give the website workflow a job that deploys it.
 8. Delete the short-lived token.
 
 ### Stopping the API
 
-Should something need looking at, the API can stop taking requests without
-a change to the repository: Actions, Website, Run workflow, with **ingest**
+Should something need looking at, the API can stop taking requests without a
+change to the repository: Actions, Website, Run workflow, with **ingest**
 off. Every path then answers 503, and the tool keeps what it would have sent
-to send later. It lasts until the next deploy, which any push to `main`
-makes; to keep it off longer, set `INGEST` to `"off"` in
-`website/api/wrangler.jsonc` and push that.
+to send later. This lasts until the next deploy, which any push to `main`
+makes. To keep it off longer, set `INGEST` to `"off"` in `api/wrangler.jsonc`
+and push that.
 
 ### Checking a deploy
 
-The API's deploy checks itself: its last step, `python3
-tools/repo/api_health.py live`, asks the new Worker what only one deployed
-with its database and newest migration answers rightly, through the
-firewall, and fails the job if not - after a deploy made before `apply` ran
-a new migration, say, it says to run it. It needs no token, and counts
-nothing. By hand:
+The API's deploy checks itself: its last step,
+`python3 tools/repo/api_health.py live`, fails the job unless the new Worker
+answers as one deployed with its database and newest migration does. By
+hand:
 
 ```sh
 curl -sI https://firmwareliberator.com/             # 200
@@ -207,63 +185,3 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.firmwareliberator.c
 curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/         # 403
 curl -s https://stats.firmwareliberator.com/v1/stats.json | head -c 120   # after the first night
 ```
-
-## The zone's settings
-
-What the zone and the account are set to beyond the Workers - `www.` sent
-on to the bare domain, HTTPS only, TLS 1.2 or newer, email addresses in
-pages hidden from scrapers, the API's rate-limiting rule and its firewall
-rule (only a POST to one of its paths reaches the Worker), the readouts
-bucket (kept for good: no lifecycle rule), the public figures' bucket at
-`stats.firmwareliberator.com` with its cache rule, Email Routing, DNSSEC,
-and every DNS record but the Workers' and the figures' domain's, the CAA
-records letting only Cloudflare's certificate authorities issue for the
-domain among them - is written down, with why, in
-`tools/repo/cloudflare_settings.py`. A DNS record added in the dashboard is
-a difference, deleted by `apply`: write it down there instead.
-
-The API's D1 database is made there too, and brought up to date: `apply`
-runs each file in `website/api/migrations/` it has not run yet, in order
-(`website/api/database.js` says how one is written). The apply token needs
-D1: Edit for that. CI never touches it: D1 permissions reach every database
-in the account, so the read token is refused them, and the check it runs
-says the database was not checked.
-
-Visits are counted by Cloudflare Web Analytics, without cookies: every page
-carries its beacon tag (`src/layouts/Page.astro`), naming the account's
-site for the zone by its token. `apply` checks that site: the one the tag
-names, its automatic setup off (Cloudflare would add a second tag, counting
-each visit twice), and its one rule Cloudflare's own, measuring every host
-and path; with none, it makes one and says the token to put in the tag.
-The apply token needs Account Settings: Read and Edit for it - Web
-Analytics refuses a token with Edit alone, as other account settings do
-not. That reaches every setting of the account, so the read token is
-refused it, and CI does not check the site.
-
-Each address of the domain in `CLOUDFLARE_EMAIL_FORWARD`, named by the
-part before the @ (`contact`, say, separated by commas), is forwarded to
-`CLOUDFLARE_EMAIL_DESTINATION`, the account's verified destination address;
-mail to any other is dropped. Both are private, kept out of the repository
-where scrapers would find them: in `.env.infra`, and in the `website` secrets of
-those names, which `python3 tools/repo/github_settings.py apply` sets from
-`.env.infra` each time it runs. The check never prints them.
-
-The settings change rarely, so they are set by hand, never by CI: a leaked CI token
-cannot change DNS-facing settings or the bucket. To change one, edit the
-script, then with the apply token in `CLOUDFLARE_API_TOKEN` (the environment
-or `.env.infra`) run `python3 tools/repo/cloudflare_settings.py` to see what
-differs and `... apply` to set it; delete the token, and push.
-
-The cloudflare-settings workflow checks them, with the read token, daily
-and on each push to `main` that changes the script, failing on any
-difference: one made in the dashboard, or one written down and not applied.
-It runs `cloudflare_settings.py ci`, which also fails if the read token can
-see a zone besides `firmwareliberator.com`, or the account's API tokens: a
-token edited too wide is found by what it can read.
-
-Crawlers, AI ones included, may read `/stats` and its figures: cached, they
-cost nothing. Should that change, one more firewall rule in
-`cloudflare_settings.py` would block Cloudflare's verified AI crawlers
-there - `(cf.verified_bot_category eq "AI Crawler" and (http.request.uri.path
-eq "/stats" or http.host eq "stats.firmwareliberator.com"))` - once
-Cloudflare's documentation confirms the free plan allows that field.
