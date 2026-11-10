@@ -145,7 +145,9 @@ export async function reports(request, env, now = new Date()) {
   if (declared > MAX_BODY) {
     return answer(413, { error: `reports are at most ${MAX_BODY} bytes at once` });
   }
-  const { success } = await env.REPORT_LIMIT.limit({ key: request.headers.get("CF-Connecting-IP") || "unknown" });
+  // By the sender as every limit counts them (sender.js), so one IPv6
+  // connection cannot step round it address by address.
+  const { success } = await env.REPORT_LIMIT.limit({ key: senderAddress(request) });
   if (!success) {
     return answer(429, { error: "too many at once: try again in a minute" });
   }
