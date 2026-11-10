@@ -28,6 +28,15 @@ class FakeGitHub:
                              "rules": protect_rules or [{"type": "deletion"}],
                              "node_id": "x", "created_at": "2026-10-21"}}
         self.checks_on_main = list(checks_on_main)
+        # Actions as a new repository has them: any action by tag, a workflow's token allowed to
+        # approve, a fork's workflows run unasked after a first pull request.
+        self.actions = {"/actions/permissions": {"enabled": True, "allowed_actions": "all",
+                                                 "sha_pinning_required": False},
+                        "/actions/permissions/workflow": {"default_workflow_permissions": "read",
+                                                          "can_approve_pull_request_reviews": True},
+                        "/actions/permissions/fork-pr-contributor-approval": {
+                            "approval_policy": "first_time_contributors"}}
+        self.repository_secrets = set(gs.REPOSITORY_SECRETS)
         self.sent = []
         self.secrets_set = {}   # what gh was given for each secret it set
 
@@ -42,11 +51,17 @@ class FakeGitHub:
                 self.topics = list(body["names"])
             if path == "/pages" and method == "DELETE":
                 self.pages = None
-            if "/secrets/" in path:
+            if path in self.actions:
+                self.actions[path] = copy.deepcopy(body)
+            elif path.startswith("/actions/secrets/"):
+                self.repository_secrets.discard(path.rsplit("/", 1)[1])
+            elif "/secrets/" in path:
                 self.secrets.discard(path.rsplit("/", 1)[1])
             elif path.startswith("/environments/"):
                 name = path.split("/")[2]
-                if path.count("/") == 2:
+                if path.count("/") == 2 and method == "DELETE":
+                    del self.environments[name]
+                elif path.count("/") == 2:
                     self.environments[name] = {"policy": copy.deepcopy(body["deployment_branch_policy"]),
                                                "branches": []}
                 elif method == "POST":
@@ -70,6 +85,12 @@ class FakeGitHub:
         if path == "/pages":
             assert ok_missing or self.pages is not None
             return self.pages
+        if path in self.actions:
+            return copy.deepcopy(self.actions[path])
+        if path == "/actions/secrets":
+            return {"secrets": [{"name": name} for name in sorted(self.repository_secrets)]}
+        if path == "/environments":
+            return {"environments": [{"name": name} for name in self.environments]}
         if path == f"/environments/{gs.ENVIRONMENT}/secrets":
             assert gs.ENVIRONMENT in self.environments
             return {"total_count": len(self.secrets), "secrets": [{"name": name} for name in sorted(self.secrets)]}
@@ -230,6 +251,41 @@ class GitHubSettingsTests(unittest.TestCase):
         fake.sent.clear()
         run(fake, "apply")
         self.assertEqual([sent for sent in fake.sent if sent[1].startswith("/environments/")], [])
+
+    def test_the_website_is_the_one_environment(self):
+        fake = FakeGitHub(environment=True)
+        fake.environments["github-pages"] = {"policy": gs.ENVIRONMENT_POLICY, "branches": []}
+        code, out = run(fake)
+        self.assertIn("environment 'github-pages': should not be there", out)
+        run(fake, "apply")
+        self.assertEqual(list(fake.environments), [gs.ENVIRONMENT])
+
+    def test_actions_are_pinned_and_a_forks_workflows_wait_for_the_maintainer(self):
+        fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
+        code, out = run(fake)
+        self.assertIn("Actions permissions: differs in sha_pinning_required (is False, should be True)", out)
+        self.assertIn("Actions permissions/workflow: differs in can_approve_pull_request_reviews", out)
+        self.assertIn("Actions permissions/fork-pr-contributor-approval: differs in approval_policy", out)
+        run(fake, "apply")
+        self.assertEqual(fake.actions, gs.ACTIONS)
+        fake.sent.clear()
+        run(fake, "apply")
+        self.assertEqual([sent for sent in fake.sent if sent[1].startswith("/actions")], [])
+
+    def test_the_wiki_is_off(self):
+        self.assertIs(gs.REPOSITORY_SETTINGS["has_wiki"], False)
+        code, out = run(FakeGitHub())
+        self.assertIn("has_wiki: is True, should be False", out)
+
+    def test_a_repository_secret_not_written_here_is_deleted_and_a_missing_one_left(self):
+        fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
+        fake.repository_secrets = {"OLD_TOKEN"}
+        code, out = run(fake, "apply")
+        self.assertEqual(code, 1)
+        self.assertIn("repository secret OLD_TOKEN: removed", out)
+        self.assertIn("repository secret AUTOFLASH_BACKUP_KEY: left - set it: "
+                      "python3 tools/repo/private_backup.py secret", out)
+        self.assertEqual(fake.repository_secrets, set())
 
     def test_the_website_is_deployed_from_the_environment_written_here(self):
         from pathlib import Path
