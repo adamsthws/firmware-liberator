@@ -71,6 +71,29 @@ class WifiFallbackTests(unittest.TestCase):
         asked.assert_called_once()
         self.assertIn("Tasmota is waiting on its setup network.", shown.call_args.args[1])
 
+    def test_details_typed_are_kept_out_of_the_log_and_reported_as_typed(self):
+        ctx = self.ctx(found=None, bundle_for="Home-2G")
+        recorded = {}
+        ctx.state.set_input = lambda key, value: recorded.__setitem__(key, value)
+        with mock.patch.object(context, "recovery_image", return_value=b"image"), \
+             mock.patch.object(prompts, "section"), mock.patch.object(prompts, "ask_secret", return_value="pw"), \
+             mock.patch.object(output, "private") as private:
+            self.assertEqual(context.Context.wifi(ctx), ("Home-2G", "pw"))
+        self.assertIn(mock.call("Home-2G", "wifi-name"), private.call_args_list)
+        self.assertIn(mock.call("pw", "wifi-password"), private.call_args_list)
+        self.assertIs(recorded.get("wifi_typed"), True)
+
+    def test_wifi_forces_typing_over_details_given_in_advance(self):
+        ctx = self.ctx(found=None)
+        ctx.args.wifi = True
+        given = {"AUTOFLASH_WIFI_SSID": "Given-2G", "AUTOFLASH_WIFI_PASSWORD": "given"}
+        with mock.patch.object(context.credentials, "get", side_effect=given.get), \
+             mock.patch.object(context, "recovery_image", return_value=b"image"), \
+             mock.patch.object(prompts, "section"), \
+             mock.patch.object(context, "ask_credentials", return_value=("Home-2G", "pw")) as asked:
+            self.assertEqual(context.Context.wifi(ctx), ("Home-2G", "pw"))
+        asked.assert_called_once()
+
     def test_a_bundle_the_checkout_cannot_use_is_built_again(self):
         ctx = self.ctx(found=("Home-2G", "pw"))
         with mock.patch.object(context, "recovery_image", side_effect=prepare_imprinted_bundle.BundleError("x")), \
@@ -88,7 +111,8 @@ class EwelinkAccountTests(unittest.TestCase):
         inputs = {"email": chosen} if chosen else {}
         ctx = SimpleNamespace(state=SimpleNamespace(input=inputs.get,
                                                     set_input=inputs.__setitem__),
-                              remember_email=lambda e: inputs.__setitem__("email", e),
+                              remember_email=lambda e: (inputs.__setitem__("email", e),
+                                                        setattr(self, "remembered", e)),
                               _given_email=given)
         with mock.patch.object(runs, "load_settings",
                                return_value={"ewelink_email": remembered} if remembered else {}), \
@@ -106,6 +130,7 @@ class EwelinkAccountTests(unittest.TestCase):
         email, _, asked = self.email(remembered="old@example.com", choice=1)
         self.assertEqual(email, "new@example.com")
         asked.assert_called_once()
+        self.assertEqual(self.remembered, "new@example.com")   # offered first next time
 
     def test_one_given_in_advance_is_used_without_asking(self):
         email, menu, asked = self.email(remembered="old@example.com", given="env@example.com")
@@ -174,6 +199,44 @@ class OneSignInTests(unittest.TestCase):
             context.Context.account_devices(ctx)
         self.assertEqual([call.args[1] for call in listed.call_args_list], ["a", "b"])
 
+    def test_the_account_list_is_kept_out_of_the_log(self):
+        # It holds each device's LAN key.
+        ctx = self.ctx(mock.Mock(return_value=("us", {"at": "t"})))
+        devices = [{"deviceid": "1000abcdef", "devicekey": "secret"}]
+        with mock.patch.object(context, "get_devices", return_value=devices), \
+                mock.patch.object(context.account, "keep_account_private") as kept:
+            context.Context.account_devices(ctx)
+        kept.assert_called_once_with(devices)
+
+    def test_the_sign_in_uses_the_password_and_keeps_its_token_out_of_the_log(self):
+        from types import SimpleNamespace
+        ctx = SimpleNamespace(email=lambda: "you@example.com", _ewelink_password=None,
+                              _last_region=lambda: "eu", _remember_region=lambda region: None)
+        ctx.ewelink_env = lambda: setattr(ctx, "_ewelink_password", "typed")
+        with mock.patch.object(context, "login_session", return_value=("eu", {"at": "token"})) as signed, \
+                mock.patch.object(output, "private") as private:
+            self.assertEqual(context.Context._sign_in(ctx), ("eu", {"at": "token"}))
+        self.assertEqual(signed.call_args.args[:2], ("you@example.com", "typed"))
+        private.assert_called_once_with("token", "access-token")
+
+    def test_another_accounts_region_is_not_written_over(self):
+        from types import SimpleNamespace
+        settings = {"ewelink_email": "other@example.com", "ewelink_region": "us"}
+        ctx = SimpleNamespace(email=lambda: "you@example.com")
+        with mock.patch.object(runs, "load_settings", lambda: dict(settings)), \
+                mock.patch.object(runs, "save_settings") as saved:
+            context.Context._remember_region(ctx, "as")
+        saved.assert_not_called()
+
+    def test_forgetting_the_account_forgets_its_password_and_any_given(self):
+        ctx = self.ctx(mock.Mock(return_value=("eu", {"at": "a"})))
+        inputs = {"email": "you@example.com"}
+        ctx.state = SimpleNamespace(set_input=inputs.__setitem__)
+        ctx._given_email, ctx._given_ewelink_password = "you@example.com", "given"
+        context.Context.forget_account(ctx)
+        self.assertEqual((inputs["email"], ctx._ewelink_password, ctx._given_email, ctx._given_ewelink_password),
+                         (None, None, None, None))
+
     def test_the_sign_in_starts_where_the_account_was_last_found(self):
         from types import SimpleNamespace
         settings = {"ewelink_email": "you@example.com", "ewelink_region": "us"}
@@ -233,7 +296,7 @@ class PhasePortTests(unittest.TestCase):
             state.set_input("delivery_port", delivered)
             ctx = SimpleNamespace(state=state, manifest_path=Path("m.json"), evidence=Path("e"),
                                   listen_ip=lambda: "192.0.2.141", device=object(),
-                                  recovery_bytes=lambda: None)
+                                  recovery_bytes=lambda: b"recovery")
             opened = []
             with mock.patch.object(hostsys, "port_is_free", lambda ip, port: port not in busy), \
                  mock.patch.object(firewall, "ensure_firewall",
@@ -241,7 +304,10 @@ class PhasePortTests(unittest.TestCase):
                  mock.patch.object(context, "PhaseRunner") as runner, \
                  mock.patch.object(output, "say"):
                 try:
-                    context.Context.phase_runner(ctx)
+                    self.assertIs(context.Context.phase_runner(ctx), runner.return_value)
+                    self.assertIs(ctx.last_runner, runner.return_value)
+                    # Given the startup firmware unless told otherwise (a restore).
+                    self.assertEqual(runner.call_args.kwargs["recovery"], b"recovery")
                     error = None
                 except errors.Abort as exc:
                     error = str(exc)
