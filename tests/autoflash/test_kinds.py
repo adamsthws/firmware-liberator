@@ -124,6 +124,11 @@ class NamesTests(unittest.TestCase):
         self.assertRegex(kinds.names("short"), r"^S60, S61.* or \S+$")
         self.assertLessEqual({"sonoff", "s60", "s61"}, kinds.name_words())
 
+    def test_every_kind_is_named_once_the_last_after_or(self):
+        named = kinds.names().split(", ")
+        named[-1:] = named[-1].split(" or ")
+        self.assertEqual(named, [kind.name for kind in kinds.ALL])
+
 
 class RunTests(unittest.TestCase):
     def state(self):
@@ -139,6 +144,17 @@ class RunTests(unittest.TestCase):
     def test_one_that_recorded_none_the_first_the_tool_knows(self):
         # A run from before kinds were recorded: the S60's, the only kind then.
         self.assertIs(kinds.of_run(self.state()), kinds.ALL[0])
+
+
+class ConversionTests(unittest.TestCase):
+    def test_only_a_beken_kind_is_converted_without_lan_control(self):
+        # The S61's and Basic 1GS's go through eWeLink alone; every Espressif
+        # kind's uses the LAN API, which answers only with LAN Control on.
+        for kind in kinds.EVERY:
+            self.assertEqual(kind.uses_lan_control, kind.family != "beken", kind.key)
+
+    def test_only_the_s60s_meter_is_calibrated_as_the_s60s(self):
+        self.assertEqual([kind for kind in kinds.EVERY if kind.calibrated_as_s60], [S60])
 
 
 class LayoutTests(unittest.TestCase):
@@ -170,6 +186,28 @@ class BasicR4Tests(unittest.TestCase):
         self.assertEqual(self.KIND.tasmota_gpio[5], 0)
         code = "\n".join(line.split("#", 1)[0] for line in self.config().splitlines())
         self.assertNotRegex(code, r"GPIO_?(NUM_)?0?5\b")
+
+
+class M5Tests(unittest.TestCase):
+    """Each M5's template wires what its ESPHome does: a button, a relay for
+    each gang, and the status LED - and nothing else."""
+
+    def test_its_template_has_the_pins_its_esphome_has(self):
+        from tools.espressif.emulator.board import TEMPLATE_GPIOS
+        button, relay, led_link_inverted = 32, 224, 576
+        for kind in (kinds.SONOFF_M5_1C, kinds.SONOFF_M5_2C, kinds.SONOFF_M5_3C):
+            with self.subTest(kind=kind.key):
+                config = (ROOT / kind.folder / "esphome.yaml").read_text(encoding="utf-8")
+                expected = {int(gpio): relay + int(n or 1) - 1 for n, gpio in re.findall(
+                    r"(?m)^  - id: relay(?:_(\d))?\n    platform: gpio\n    name: .*\n    pin: GPIO(\d+)\n", config)}
+                expected |= {int(gpio): button + int(n) - 1 for n, gpio in re.findall(
+                    r"(?m)^    id: button_(\d)\n    internal: true\n    pin:\n      number: GPIO(\d+)\n", config)}
+                led = re.search(r"(?m)^status_led:\n  pin:\n    number: GPIO(\d+)\n    inverted: true\n", config)
+                expected[int(led.group(1))] = led_link_inverted
+                gang = int(kind.key[-2])
+                self.assertEqual(len(expected), 2 * gang + 1)
+                gpio = dict(zip(TEMPLATE_GPIOS[kind.chip], kind.tasmota_gpio))
+                self.assertEqual({pin: use for pin, use in gpio.items() if use}, expected)
 
 
 class NotReadyYetTests(unittest.TestCase):
