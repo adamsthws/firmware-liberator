@@ -144,6 +144,23 @@ class CtrlCTests(unittest.TestCase):
         self.assertEqual(reached, [])
         self.assertFalse(interrupt._state["deferred"])
 
+    def test_a_stop_put_off_is_said_and_nothing_more_is_asked(self):
+        with self.assertRaises(KeyboardInterrupt):
+            with interrupt.deferred():
+                self.press()
+                self.press()
+                left = interrupt.pending(), interrupt.notice()
+        interrupt._say.assert_called_with("\n  Stopping as soon as this is finished.\n")
+        self.assertEqual(left, (False, []))   # no countdown to a stop already coming
+
+    def test_a_stop_put_off_once_does_not_stop_the_next_block(self):
+        with self.assertRaises(KeyboardInterrupt):
+            with interrupt.deferred():
+                self.press()
+                self.press()
+        with interrupt.deferred():
+            pass  # no Ctrl-C this time: it ends as it began
+
     def test_one_press_inside_a_deferred_block_only_asks(self):
         with interrupt.deferred():
             self.press()
@@ -176,7 +193,17 @@ class CtrlCTests(unittest.TestCase):
         interrupt._say.assert_called_with("\n\n ! Are you sure?\n     Press Ctrl-C again within 10 seconds to stop now.\n")
 
     def test_helpers_are_kept_out_of_the_terminals_ctrl_c(self):
-        self.assertTrue(interrupt.child_group())
+        if interrupt.os.name == "nt":
+            self.assertEqual(interrupt.child_group(), {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP})
+        else:
+            self.assertEqual(interrupt.child_group(), {"start_new_session": True})
+
+    def test_a_run_begins_with_no_ctrl_c_and_no_window_closed(self):
+        program = ("from tools.autoflash import interrupt\n"
+                   "print(interrupt.window_closed(), interrupt.pending())\n")
+        ran = subprocess.run([sys.executable, "-c", program], cwd=Path(__file__).resolve().parents[2],
+                             check=True, capture_output=True, text=True, timeout=30)
+        self.assertEqual(ran.stdout.split(), ["False", "False"])
 
 
 class NoticeOnScreenTests(unittest.TestCase):
