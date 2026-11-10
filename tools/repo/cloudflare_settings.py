@@ -12,24 +12,18 @@
                                                        a new value for the API Worker's
                                                        secret NAME, one made here
 
-With CLOUDFLARE_API_TOKEN, in the environment or .env.infra (as
-.env.infra.example shows; not .env, whose names are the tool's): to check, a token
-allowed to read the zone, its settings, DNS records, single redirects, rate
-limiting rules and Email Routing rules, and the account's R2 buckets, D1
-databases, Email Routing addresses, Workers' secrets, Access (the admin
-view's sign-in) and Web Analytics sites; to apply, one allowed to edit
-them all. With
-CLOUDFLARE_EMAIL_DESTINATION and CLOUDFLARE_EMAIL_FORWARD too, the same
-way: the address mail is forwarded to, and the domain's addresses forwarded
-there. They are private, so never written here. `apply` changes only what differs. The Workers, and the domains
-pointing at them, are their wrangler.jsonc's, which the website workflow
-deploys. website/README.md says which token is which.
-
-The deploy token's permissions are checked too, but only with a token that
-can also read the account's API tokens and Workers: the apply token, never
-CI's, as that would show every token in the account. A token is changed in
-the dashboard, never by `apply`: READ_TOKEN_PERMISSIONS and
-APPLY_TOKEN_PERMISSIONS list what to give the two this is run with.
+Each command is run with the token whose job it is, from the environment or
+.env.infra (as .env.infra.example shows; not .env, whose names are the
+tool's): `ci` CLOUDFLARE_SETTINGS_CHECK_TOKEN, CI's, which reads; `deploy-token`
+CLOUDFLARE_WORKERS_DEPLOY_TOKEN, the website workflow's; the rest
+CLOUDFLARE_SETTINGS_APPLY_TOKEN, the maintainer's, which edits. TOKENS lists
+what each is allowed, and tools/repo/cloudflare_tokens.py makes them; `apply`
+checks each. With CLOUDFLARE_EMAIL_DESTINATION and CLOUDFLARE_EMAIL_FORWARD
+too, the same way: the address mail is forwarded to, and the domain's
+addresses forwarded there. They are private, so never written here. `apply`
+changes only what differs. The Workers, and the domains pointing at them, are
+their wrangler.jsonc's, which the website workflow deploys. website/README.md
+says which token is which.
 
 Settings are applied by hand, never by CI. They change rarely, and a token
 that only reads, should CI's ever leak, cannot change the DNS or a bucket.
@@ -43,7 +37,10 @@ change.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
+import getpass
+import ipaddress
 import json
 import os
 import secrets
@@ -205,29 +202,35 @@ CACHE_RULES = [{
 #   replaces: nothing outside the Worker needs to know it. Rotating SENDER_KEY
 #   makes every sender look new for a while: .github/readouts.md, Rotating
 #   SENDER_KEY, says what that weakens, and when to.
-# - "kept": one that must never change, kept privately as API_<NAME> in the
-#   environment or .env.infra, from where `apply` sets it when it is missing;
-#   never made or rotated here.
+# - "kept": one that must never change, kept by the maintainer in a
+#   password manager (KEPT_IN), as no copy can be read back from the Worker:
+#   `apply` asks for it at a hidden prompt when the Worker lacks it, and
+#   keeps it nowhere; never made or rotated here.
 # - "destination": the maintainer's address, EMAIL_DESTINATION (below), which
 #   the API's nightly job emails when a limit was reached (alerts.js): set
 #   from it, as it is kept for Email Routing already, and never printed.
+# - "token": a Cloudflare token TOKENS lists, which tools/repo/cloudflare_tokens.py
+#   makes and sets on the Worker alone, kept nowhere else.
 API_WORKER = "firmware-liberator-api"
 API_SECRETS = {"DEVICE_HASH_KEY_PERMANENT": "kept", "SENDER_KEY": "made", "ALERTS_RECIPIENT_EMAIL": "destination"}
 
 # The admin view (website/admin/), behind Cloudflare Access: its Worker's
-# one secret, a token that can only read the account's analytics, "kept" as
-# ADMIN_ANALYTICS_TOKEN; and the Access application in front of it,
+# one secret, a token that can only read the account's analytics
+# (admin-dashboard-read-only in TOKENS); and the Access application in front of it,
 # made here (access_differences): GitHub sign-in alone, and the maintainer
 # alone let in - by ACCESS_ADMIN_EMAIL, or else the variable EMAIL_DESTINATION
 # names (CLOUDFLARE_EMAIL_DESTINATION), never written here or printed. Access's GitHub sign-in is a GitHub OAuth app
-# of the maintainer's, its id and secret kept as ACCESS_GITHUB_CLIENT_ID and
-# ACCESS_GITHUB_CLIENT_SECRET. Not checked by CI: its token has no reach
+# of the maintainer's, whose client id and secret `apply` asks for the once it
+# makes the sign-in, and keeps nowhere. Not checked by CI: its token has no reach
 # into Access, and the policy holds the maintainer's address.
 ADMIN_WORKER = "firmware-liberator-admin"
 ADMIN_HOST = f"admin.{ZONE}"
-ADMIN_SECRETS = {"ANALYTICS_TOKEN": "kept"}
-# Each Worker's secrets, and the prefix a "kept" one's name has in .env.infra.
-WORKER_SECRETS = {API_WORKER: ("API_", API_SECRETS), ADMIN_WORKER: ("ADMIN_", ADMIN_SECRETS)}
+ADMIN_SECRETS = {"ANALYTICS_TOKEN": "token"}
+# Where the maintainer keeps a "kept" secret, which `apply` reminds them of
+# when it asks for one.
+KEPT_IN = "your password manager"
+# Each Worker's secrets.
+WORKER_SECRETS = {API_WORKER: API_SECRETS, ADMIN_WORKER: ADMIN_SECRETS}
 ACCESS_APP = {"name": "FirmwareLiberator admin", "domain": ADMIN_HOST, "type": "self_hosted",
               "session_duration": "24h", "auto_redirect_to_identity": True, "app_launcher_visible": False}
 
@@ -284,81 +287,123 @@ DNS_RECORDS = [
     {"type": "TXT", "name": f"_github-pages-challenge-adamsthws.{ZONE}", "content": "ee553f2ec46fa330f7f3221f7399ec"},
 ]
 
-# The website workflow's token (website/README.md): the zone's Worker routes
-# and DNS records, for the Workers' custom domains, and its three Workers, by
-# name - no other Worker in the account.
-DEPLOY_TOKEN = "firmware-liberator-deploy-workers-ci-read-write"
-DEPLOY_ZONE_PERMISSIONS = {"Zone Read", "Workers Routes Write", "DNS Write"}
+# The project's Cloudflare tokens, each allowed only what its job needs, and
+# made or remade from here by tools/repo/cloudflare_tokens.py, which puts
+# each value where it is used, and nowhere else: a GitHub secret of the
+# website environment ("github"), a Worker's secret ("worker"), or, for one
+# you use from your computer, .env.infra ("env"). Each is named for its job:
+# firmware-liberator-<key> in Cloudflare, and `variable` where it is kept
+# under a name, which the tool that uses it reads. What each is allowed is in
+# the API's names for the permissions, on the zone alone ("zone"), the account
+# ("account"), or the Workers by name ("workers"), with what needs it; `apply`
+# checks each token against it (token_differences). A check that comes to
+# need more is a permission written down here, and the token remade.
+TOKEN_PREFIX = "firmware-liberator-"
 DEPLOY_WORKERS = {"firmware-liberator", "firmware-liberator-api", "firmware-liberator-admin"}
-DEPLOY_WORKERS_PERMISSIONS = {"Individual Workers Editor"}
+TOKENS: dict[str, dict[str, Any]] = {
+    # The maintainer's, for `apply` and this script's other commands, and
+    # kept nowhere: before each run you give it, in the dashboard, a TTL
+    # ending within `minutes` and Roll it, and paste the value when this asks
+    # (asked_token), as a change is applied as soon as it is made. Usable from
+    # the address it was made from alone ("from_here"), and allowed no tokens'
+    # making, so it never can make itself more. It edits what the check token
+    # reads, and reaches what CI's is refused because each reaches the whole
+    # account: its API tokens (reading one means reading every one, other
+    # sites' too), every D1 database, the Workers' settings, Access, and the
+    # account's settings.
+    "settings-apply": {
+        "variable": "CLOUDFLARE_SETTINGS_APPLY_TOKEN", "kept": "asked", "minutes": 10, "from_here": True,
+        "zone": {
+            "Zone Read": "the zone found by its name, and its account",
+            "Zone Settings Write": "SETTINGS",
+            "DNS Write": "dns_differences, dnssec_differences, and the records onboard_sending makes",
+            "Dynamic URL Redirects Write": "REDIRECTS",
+            "Zone WAF Write": "RATE_LIMITS and FIREWALL_RULES",
+            "Cache Settings Write": "CACHE_RULES",
+            "Email Routing Rules Write": "email_differences: the forwarding rules and the catch-all",
+            "Workers Routes Write": "unwritten_differences: a Worker route deleted",
+            # Lists the zone's rulesets, and deletes one in the transform phases. A
+            # ruleset in another phase not kept here needs that phase's Write:
+            # apply says so, and makes the rest.
+            "Zone Transform Rules Write": "unwritten_differences: the zone's rulesets listed, a transform one deleted",
+        },
+        "account": {
+            "Workers R2 Storage Write": "READOUTS_BUCKET and STATS_BUCKET: made, the figures' domain, no lifecycle rule",
+            "D1 Write": "database_differences: the API's database made, and each migration run",
+            "Email Routing Addresses Write": "email_differences: the destination address",
+            "Email Sending Write": "onboard_sending: the domain onboarded for sending",
+            "Account API Tokens Read": "token_differences: each token's permissions",
+            "Workers Scripts Write": "token_differences: the Workers by name; secret_differences: the Workers' secrets",
+            "Access: Organizations Write": "access_differences: the Zero Trust team",
+            "Access: Identity Providers Write": "access_differences: the admin view's GitHub sign-in",
+            "Access: Groups Write": "access_differences: as Access asks of the two above",
+            "Access: Apps and Policies Write": "access_differences: the admin view's application and its one policy",
+            # Both: Web Analytics refuses a token with Write alone, as other
+            # account settings do not.
+            "Account Settings Read": "analytics_differences: the Web Analytics site",
+            "Account Settings Write": "analytics_differences: the Web Analytics site",
+        },
+    },
+    # CI's: the cloudflare-settings workflow runs `ci` and
+    # tools/repo/api_health.py with it. It reads and nothing more, and `ci`
+    # fails where it can read what CI_REFUSED lists.
+    "settings-check-read-only": {
+        "variable": "CLOUDFLARE_SETTINGS_CHECK_TOKEN", "kept": "github",
+        "zone": {
+            "Zone Read": "the zone found by its name, and its account",
+            "Zone Settings Read": "SETTINGS",
+            "DNS Read": "dns_differences and dnssec_differences",
+            "Dynamic URL Redirects Read": "REDIRECTS",
+            "Zone WAF Read": "RATE_LIMITS and FIREWALL_RULES",
+            "Cache Settings Read": "CACHE_RULES",
+            "Email Routing Rules Read": "email_differences: the forwarding rules and the catch-all",
+            "Analytics Read": "api_health.py mail: what came of the emails sent",
+            "Workers Routes Read": "unwritten_differences: any Worker route",
+            # Cloudflare's list of a zone's rulesets takes none of the rule
+            # permissions above; this read, of the zone alone, is one it does.
+            "Zone Transform Rules Read": "unwritten_differences: the zone's rulesets listed",
+        },
+        "account": {
+            "Workers R2 Storage Read": "READOUTS_BUCKET and STATS_BUCKET",
+            "Account Analytics Read": "api_health.py usage: the month's use against what the plan includes",
+            "Email Routing Addresses Read": "email_differences: the destination address, verified",
+            "Email Sending Read": "api_health.py mail: the suppression list",
+        },
+    },
+    # The website workflow's, deploying the Workers: the zone's Worker routes
+    # and DNS records, for their custom domains, and its three Workers, by
+    # name - no other Worker in the account.
+    "workers-deploy": {
+        "variable": "CLOUDFLARE_WORKERS_DEPLOY_TOKEN", "kept": "github",
+        "zone": {
+            "Zone Read": "wrangler finding the zone",
+            "Workers Routes Write": "the Workers' custom domains",
+            "DNS Write": "the custom domains' DNS records",
+        },
+        "workers": {"Individual Workers Editor": "wrangler deploy, of DEPLOY_WORKERS alone"},
+    },
+    # The admin view's, showing the month's use: its Worker's secret
+    # ANALYTICS_TOKEN, and kept nowhere else.
+    "admin-dashboard-read-only": {
+        "kept": "worker", "worker_secret": (ADMIN_WORKER, "ANALYTICS_TOKEN"),
+        "account": {"Account Analytics Read": "the month's use, as api_health.py usage reads it"},
+    },
+    # The maintainer's, for tools/repo/readouts.py: reviewing readouts in the
+    # API's database, and listing the bucket they are kept in.
+    "readouts-review": {
+        "variable": "CLOUDFLARE_READOUTS_REVIEW_TOKEN", "kept": "env",
+        "zone": {"Zone Read": "the zone found by its name, and its account"},
+        "account": {
+            "D1 Write": "review, approve and reject: the readouts table",
+            "Workers R2 Storage Read": "list, changes and notify: the readouts bucket",
+        },
+    },
+}
+DEPLOY_TOKEN = TOKEN_PREFIX + "workers-deploy"
+# The token each command of this script is run with; tools that borrow api()
+# set their own.
+TOKEN_VARIABLE = TOKENS["settings-apply"]["variable"]
 
-# The two tokens this script is run with, each made by hand in the dashboard
-# (My Profile, API Tokens): what to give it there, as the dashboard names
-# each permission, on the zone alone ("zone") and on the account ("account"),
-# with what here needs it. A check that comes to need more is a permission
-# to add there, and written down here.
-# - The read token is CI's: the website environment's secret
-#   CLOUDFLARE_READ_TOKEN (github_settings.py), which the cloudflare-settings
-#   workflow runs `ci` and tools/repo/api_health.py with. It reads and nothing
-#   more, and `ci` fails where it can read what CI_REFUSED lists.
-#   tools/repo/readouts.py lists with it, or one like it.
-READ_TOKEN_PERMISSIONS = {
-    "zone": {
-        "Zone: Read": "the zone found by its name, and its account",
-        "Zone Settings: Read": "SETTINGS",
-        "DNS: Read": "dns_differences and dnssec_differences",
-        "Dynamic URL Redirects: Read": "REDIRECTS",
-        "Zone WAF: Read": "RATE_LIMITS and FIREWALL_RULES",
-        "Cache Settings: Read": "CACHE_RULES",
-        "Email Routing Rules: Read": "email_differences: the forwarding rules and the catch-all",
-        "Analytics: Read": "api_health.py mail: what came of the emails sent",
-        "Workers Routes: Read": "unwritten_differences: any Worker route",
-        # Cloudflare's list of a zone's rulesets takes none of the rule
-        # permissions above; this read, of the zone alone, is one it does.
-        "Transform Rules: Read": "unwritten_differences: the zone's rulesets listed",
-    },
-    "account": {
-        "Workers R2 Storage: Read": "READOUTS_BUCKET and STATS_BUCKET; readouts.py's listing",
-        "Account Analytics: Read": "api_health.py usage: the month's use against what the plan includes",
-        "Email Routing Addresses: Read": "email_differences: the destination address, verified",
-        "Email Sending: Read": "api_health.py mail: the suppression list",
-    },
-}
-# - The apply token is kept nowhere: made when a setting is to change, and
-#   deleted once `apply` has run. It edits what the read token reads, and
-#   reaches what CI's is refused because each reaches the whole account: its
-#   API tokens (reading one means reading every one, other sites' too), every
-#   D1 database, the Workers' settings, Access, and the account's settings.
-APPLY_TOKEN_PERMISSIONS = {
-    "zone": {
-        "Zone: Read": "the zone found by its name, and its account",
-        "Zone Settings: Edit": "SETTINGS",
-        "DNS: Edit": "dns_differences, dnssec_differences, and the records onboard_sending makes",
-        "Dynamic URL Redirects: Edit": "REDIRECTS",
-        "Zone WAF: Edit": "RATE_LIMITS and FIREWALL_RULES",
-        "Cache Settings: Edit": "CACHE_RULES",
-        "Email Routing Rules: Edit": "email_differences: the forwarding rules and the catch-all",
-        "Workers Routes: Edit": "unwritten_differences: a Worker route deleted",
-        # Lists the zone's rulesets, and deletes one in the transform phases. A
-        # ruleset in another phase not kept here needs that phase's Edit:
-        # apply says so, and makes the rest.
-        "Transform Rules: Edit": "unwritten_differences: the zone's rulesets listed, a transform one deleted",
-    },
-    "account": {
-        "Workers R2 Storage: Edit": "READOUTS_BUCKET and STATS_BUCKET: made, the figures' domain, no lifecycle rule",
-        "D1: Edit": "database_differences: the API's database made, and each migration run",
-        "Email Routing Addresses: Edit": "email_differences: the destination address",
-        "Email Sending: Edit": "onboard_sending: the domain onboarded for sending",
-        "Account API Tokens: Read": "deploy_token_policies: the deploy token's permissions",
-        "Workers Scripts: Edit": "deploy_token_policies: its Workers by name; secret_differences: the Workers' secrets",
-        "Access: Organizations, Identity Providers, and Groups: Edit": "access_differences: the admin view's sign-in",
-        "Access: Apps and Policies: Edit": "access_differences: the admin view's application and its one policy",
-        # Both: Web Analytics refuses a token with Edit alone, as other
-        # account settings do not.
-        "Account Settings: Read": "analytics_differences: the Web Analytics site",
-        "Account Settings: Edit": "analytics_differences: the Web Analytics site",
-    },
-}
 # Each zone ruleset this script keeps, by its phase: the rules as written here.
 RULESETS = {REDIRECT_PHASE: ("redirects", REDIRECTS), RATE_LIMIT_PHASE: ("rate limits", RATE_LIMITS),
             FIREWALL_PHASE: ("firewall rules", FIREWALL_RULES), CACHE_PHASE: ("cache rules", CACHE_RULES)}
@@ -385,8 +430,102 @@ def variable(name: str) -> str:
     return value
 
 
+# What a terminal can wrap a paste in (bracketed paste), which a hidden
+# prompt keeps.
+PASTE_MARKS = ("\x1b[200~", "\x1b[201~")
+
+
+def ask(what: str) -> str | None:
+    """A secret typed or pasted at a hidden prompt, so it is never written
+    down: None where there is no terminal to ask at, or nothing was given."""
+    if not sys.stdin.isatty():
+        return None
+    given = getpass.getpass(f"{what}: ")
+    for mark in PASTE_MARKS:
+        given = given.replace(mark, "")
+    return given.strip() or None
+
+
+TRACE = "https://api.cloudflare.com/cdn-cgi/trace"
+
+
+def own_address() -> str:
+    """The address this computer's requests reach Cloudflare's API from, as
+    Cloudflare's trace page there says, as a network of that one address."""
+    with urllib.request.urlopen(TRACE, timeout=30) as answer:
+        lines = dict(line.split("=", 1) for line in answer.read().decode().splitlines() if "=" in line)
+    return str(ipaddress.ip_network(ipaddress.ip_address(lines["ip"])))
+
+
+def asked_token(now: dt.datetime | None = None) -> str | None:
+    """The settings-apply token, asked for, so it is never written down, and
+    taken only as TOKENS has it: rolled for this run, with a TTL ending
+    within its minutes, usable from this computer's address alone. None,
+    said why, where it is not; a token outside its TTL Cloudflare refuses
+    as it does a value that is no token's."""
+    key = "settings-apply"
+    spec, name = TOKENS[key], TOKEN_PREFIX + key
+    print(f"Give the {name} token: in Cloudflare's dashboard (Manage Account, Account API Tokens), give it a TTL "
+          f"ending within {spec['minutes']} minutes and Roll it, then paste the value it shows.", file=sys.stderr)
+    value = ask(name)
+    if not value:
+        if not sys.stdin.isatty():
+            print("cloudflare_settings: run this in a terminal, where it can ask for the token", file=sys.stderr)
+        return None
+    now = now or dt.datetime.now(dt.timezone.utc)
+    with using(value):
+        try:
+            try:
+                zones = api(f"/zones?name={ZONE}")
+            except SettingsError as error:
+                if error.status not in (401, 403):
+                    raise
+                raise SettingsError(f"Cloudflare does not take that token ({error}): check its TTL - start and end "
+                                    f"today, the end within {spec['minutes']} minutes - and that its value was "
+                                    "pasted, as Roll shows it") from None
+            account = zones[0]["account"]["id"]
+            token = api(f"/accounts/{account}/tokens/" + api(f"/accounts/{account}/tokens/verify")["id"])
+            expires = token.get("expires_on")
+            allowed = ((token.get("condition") or {}).get("request_ip") or {}).get("in") or []
+            if token.get("name") != name:
+                raise SettingsError(f"the token given is {token.get('name')!r}: give {name}")
+            if not expires or dt.datetime.fromisoformat(expires.replace("Z", "+00:00")) \
+                    > now + dt.timedelta(minutes=spec["minutes"]):
+                raise SettingsError(f"{name} expires {expires or 'never'}: give it a TTL ending within "
+                                    f"{spec['minutes']} minutes")
+            address = own_address()
+            if [str(ipaddress.ip_network(entry, strict=False)) for entry in allowed] != [address]:
+                raise SettingsError(f"{name} is usable from more than this computer's address: in the dashboard, "
+                                    f"give it Client IP Address Filtering, Is in, {address} alone")
+        except (SettingsError, OSError, KeyError, IndexError, ValueError) as error:
+            print(f"cloudflare_settings: {error}", file=sys.stderr)
+            return None
+    return value
+
+
+def token_key() -> str:
+    """The key in TOKENS of the token in use."""
+    return next((key for key, spec in TOKENS.items() if spec.get("variable") == TOKEN_VARIABLE), TOKEN_VARIABLE)
+
+
+# A token used for a moment in place of TOKEN_VARIABLE's, and held in memory
+# alone: tools/repo/cloudflare_tokens.py's short-lived helper.
+_IN_USE: str | None = None
+
+
+@contextlib.contextmanager
+def using(value: str):
+    """api() calls in this block made with the token `value`."""
+    global _IN_USE
+    before, _IN_USE = _IN_USE, value
+    try:
+        yield
+    finally:
+        _IN_USE = before
+
+
 def token() -> str:
-    return variable("CLOUDFLARE_API_TOKEN")
+    return _IN_USE or variable(TOKEN_VARIABLE)
 
 
 def api(path: str, method: str = "GET", body: Any = None, ok_missing: bool = False, whole: bool = False,
@@ -414,44 +553,86 @@ def api(path: str, method: str = "GET", body: Any = None, ok_missing: bool = Fal
         raise SettingsError(f"{method} {path}: {error}") from None
 
 
+def every_page(path: str, ok_forbidden: bool = False) -> list[Any] | None:
+    """All of a list Cloudflare gives a page at a time; None for a refusal
+    with `ok_forbidden`."""
+    found: list[Any] = []
+    page = 1
+    while True:
+        answer = api(f"{path}?per_page=50&page={page}", whole=True, ok_forbidden=ok_forbidden)
+        if answer is None:
+            return None
+        found += answer.get("result") or []
+        if page >= ((answer.get("result_info") or {}).get("total_pages") or 1):
+            return found
+        page += 1
+
+
 def comparable(rule: dict[str, Any], written: dict[str, Any] | None = None) -> dict[str, Any]:
     """What a rule says, as `written` (REDIRECTS' first, by default) words it,
     from what Cloudflare returns: only the keys written here."""
     return {key: rule.get(key) for key in (written or REDIRECTS[0])}
 
 
-def deploy_token_policies(account: str, zone_id: str) -> list[tuple[frozenset[str], frozenset[str]]] | None:
-    """What the deploy token is allowed, as (permissions, what on) pairs - the
-    zone by its name, Workers by theirs - or None where this token cannot
-    read the account's tokens or Workers."""
-    tokens = api(f"/accounts/{account}/tokens", ok_forbidden=True)
-    scripts = api(f"/accounts/{account}/workers/scripts", ok_forbidden=True)
-    if tokens is None or scripts is None:
-        return None
-    workers = {f"com.cloudflare.edge.worker.script.{script.get('tag')}": script.get("id") for script in scripts}
+Policies = list[tuple[list[str], list[str]]]
+
+
+def written_policies(spec: dict[str, Any]) -> Policies:
+    """What a TOKENS entry allows, as (permissions, what on) pairs in an
+    order of their own: the zone by its name, the account as "account",
+    Workers by theirs."""
+    on = {"zone": [ZONE], "account": ["account"], "workers": sorted(DEPLOY_WORKERS)}
+    return sorted((sorted(spec[scope]), on[scope]) for scope in on if spec.get(scope))
+
+
+def live_policies(token: dict[str, Any], zone_id: str, workers: dict[str, str]) -> Policies:
+    """What a token Cloudflare lists allows, as written_policies words it;
+    `workers` names each Worker by its resource."""
     zone = f"com.cloudflare.api.account.zone.{zone_id}"
-    found = [token for token in tokens if token.get("name") == DEPLOY_TOKEN and token.get("status") == "active"]
     policies = []
-    for policy in (found[0].get("policies") or []) if found else []:
+    for policy in token.get("policies") or []:
         on = set()
         for key, value in (policy.get("resources") or {}).items():
-            # An account's resources name its Workers inside it.
-            for inner in value if isinstance(value, dict) else {key: value}:
-                on.add(ZONE if inner == zone else workers.get(inner, inner))
+            if isinstance(value, dict):   # an account's resources naming its Workers inside it
+                on.update(workers.get(inner, inner) for inner in value)
+            else:
+                on.add(ZONE if key == zone else "account" if key.startswith("com.cloudflare.api.account.")
+                       and ".zone." not in key else key)
         denied = "" if policy.get("effect") == "allow" else "denied: "
-        policies.append((frozenset(denied + str(group.get("name")) for group in policy.get("permission_groups") or []),
-                         frozenset(on)))
-    return policies
+        policies.append((sorted(denied + str(group.get("name")) for group in policy.get("permission_groups") or []),
+                         sorted(on)))
+    return sorted(policies)
 
 
-def in_order(policies: list[tuple[frozenset[str], frozenset[str]]]) -> list[tuple[list[str], list[str]]]:
-    """Policies in an order of their own, to compare and to show: a set's
-    text is in no fixed order, so sorting by it would differ run to run."""
-    return sorted((sorted(names), sorted(on)) for names, on in policies)
+def say(policies: Policies) -> str:
+    return "; ".join(f"{', '.join(names)} on {', '.join(on)}" for names, on in policies) or "nothing"
 
 
-DEPLOY_POLICIES = in_order([(frozenset(DEPLOY_ZONE_PERMISSIONS), frozenset({ZONE})),
-                            (frozenset(DEPLOY_WORKERS_PERMISSIONS), frozenset(DEPLOY_WORKERS))])
+def token_differences(account: str, zone_id: str) -> list[tuple[str, str, Any]]:
+    """Each token in TOKENS there and allowed what it says, and no other of
+    the project's; unchecked where this token cannot read the account's
+    tokens and Workers. One is made or changed by
+    tools/repo/cloudflare_tokens.py, never by `apply`, whose token cannot
+    make one."""
+    tokens = every_page(f"/accounts/{account}/tokens", ok_forbidden=True)
+    scripts = api(f"/accounts/{account}/workers/scripts", ok_forbidden=True)
+    if tokens is None or scripts is None:
+        print("  API tokens: not checked - this token cannot read the account's API tokens and Workers")
+        return []
+    workers = {f"com.cloudflare.edge.worker.script.{script.get('tag')}": script.get("id") for script in scripts}
+    found: list[tuple[str, str, Any]] = []
+    for key, spec in TOKENS.items():
+        name, remake = TOKEN_PREFIX + key, f"run python3 tools/repo/cloudflare_tokens.py {key}"
+        have = [token for token in tokens if token.get("name") == name and token.get("status") == "active"]
+        if not have:
+            found.append((name, "does not exist", remake))
+        elif (policies := live_policies(have[0], zone_id, workers)) != written_policies(spec):
+            found.append((name, f"allows {say(policies)}, should allow {say(written_policies(spec))}", remake))
+    for token in tokens:
+        name = str(token.get("name"))
+        if name.startswith(TOKEN_PREFIX) and name[len(TOKEN_PREFIX):] not in TOKENS:
+            found.append((name, "is not written here", "delete it in the dashboard once nothing uses it"))
+    return found
 
 
 # What each of CI's tokens must be refused, each a sign of permissions it was
@@ -687,26 +868,27 @@ def unwritten_differences(zone: str, account: str, ci: bool = False) -> list[tup
 
     def refused(what: str, permission: str) -> None:
         # A check that cannot run is a difference, never a pass: the token is
-        # given what READ_TOKEN_PERMISSIONS and APPLY_TOKEN_PERMISSIONS list.
+        # given what TOKENS lists.
         found.append((what, "cannot be checked: this token is refused them",
-                      f"give it {permission} (READ_TOKEN_PERMISSIONS, APPLY_TOKEN_PERMISSIONS)"))
+                      f"give it {permission} (TOKENS), and remake it: python3 tools/repo/cloudflare_tokens.py "
+                      f"{token_key()}"))
 
     rulesets = api(f"{zone}/rulesets", ok_forbidden=True)
     if rulesets is None:
-        refused("zone rulesets", "Transform Rules: Read, or Edit")
+        refused("zone rulesets", "Zone Transform Rules Read, or Write")
     for ruleset in rulesets or []:
         if ruleset.get("kind") == "zone" and ruleset.get("phase") not in RULESETS:
             found.append((f"zone ruleset {ruleset.get('phase')}", "is not written here",
                           ("DELETE", f"{zone}/rulesets/{ruleset['id']}", None)))
     routes = api(f"{zone}/workers/routes", ok_forbidden=True)
     if routes is None:
-        refused("Worker routes", "Workers Routes: Read, or Edit")
+        refused("Worker routes", "Workers Routes Read, or Write")
     for route in routes or []:
         found.append((f"Worker route {route.get('pattern')}", "is not written here: the Workers answer on their "
                       "custom domains alone", ("DELETE", f"{zone}/workers/routes/{route['id']}", None)))
     buckets = api(f"/accounts/{account}/r2/buckets", ok_forbidden=True)
     if buckets is None:
-        refused("R2 buckets", "Workers R2 Storage: Read, or Edit")
+        refused("R2 buckets", "Workers R2 Storage Read, or Write")
     for name in sorted(bucket.get("name", "") for bucket in (buckets or {}).get("buckets") or []):
         if name.startswith(PROJECT) and name not in (READOUTS_BUCKET, STATS_BUCKET):
             found.append((f"R2 bucket {name}", "is not written here",
@@ -879,9 +1061,10 @@ def made_secret() -> str:
 
 def secret_differences(account: str, worker: str = API_WORKER) -> list[tuple[str, str, Any]]:
     """A Worker's secrets (WORKER_SECRETS): each there, by name, and how
-    `apply` sets one that is not: a "made" one made afresh, a "kept" one from
-    <PREFIX><NAME>, a "destination" one from EMAIL_DESTINATION."""
-    prefix, wanted = WORKER_SECRETS[worker]
+    `apply` sets one that is not: a "made" one made afresh, a "kept" one
+    asked for, a "destination" one from EMAIL_DESTINATION; a "token" one is
+    left to tools/repo/cloudflare_tokens.py."""
+    wanted = WORKER_SECRETS[worker]
     path = f"/accounts/{account}/workers/scripts/{worker}/secrets"
     have = api(path, ok_missing=True)
     if have is None:
@@ -896,6 +1079,11 @@ def secret_differences(account: str, worker: str = API_WORKER) -> list[tuple[str
             found.append((f"{worker} secret {name}", "is not set",
                           lambda name=name: put_secret(account, name, made_secret(), worker) or []))
             continue
+        if how == "token":
+            key = next(key for key, spec in TOKENS.items() if spec.get("worker_secret") == (worker, name))
+            found.append((f"{worker} secret {name}", "is not set",
+                          f"make it: python3 tools/repo/cloudflare_tokens.py {key}"))
+            continue
         if how == "destination":
             try:
                 value = variable(EMAIL_DESTINATION)
@@ -906,15 +1094,20 @@ def secret_differences(account: str, worker: str = API_WORKER) -> list[tuple[str
             found.append((f"{worker} secret {name}", "is not set",
                           lambda name=name, value=value: put_secret(account, name, value, worker) or []))
             continue
-        try:
-            value = variable(f"{prefix}{name}")
-        except SettingsError:
+        if not sys.stdin.isatty():
             found.append((f"{worker} secret {name}", "is not set",
-                          f"put its value, kept privately, in .env.infra as {prefix}{name} and run apply again "
-                          "(the Worker's wrangler.jsonc says what it is)"))
+                          f"run apply in a terminal, which asks for its value, kept in {KEPT_IN} as "
+                          f"{name} (the Worker's wrangler.jsonc says what it is)"))
             continue
-        found.append((f"{worker} secret {name}", "is not set",
-                      lambda name=name, value=value: put_secret(account, name, value, worker) or []))
+
+        def kept(name: str = name) -> list[str]:
+            print(f"  {worker} secret {name}: look for it in {KEPT_IN}, under {name}")
+            value = ask(f"{worker} secret {name}")
+            if not value:
+                return [f"{worker} secret {name}: left - not given: run apply again"]
+            put_secret(account, name, value, worker)
+            return []
+        found.append((f"{worker} secret {name}", "is not set", kept))
     return found
 
 
@@ -988,8 +1181,8 @@ def access_differences(account: str) -> list[tuple[str, str, Any]]:
             raise
         # A token made before the admin view: the rest is still checked.
         return [("Access", "cannot be checked: this token is not allowed Access",
-                 "give the apply token Access: Organizations, Identity Providers, and Groups: Edit and "
-                 "Access: Apps and Policies: Edit (APPLY_TOKEN_PERMISSIONS), then run this again")]
+                 "remake the apply token, which TOKENS allows Access: python3 tools/repo/cloudflare_tokens.py "
+                 "settings-apply, then run this again")]
     team_domain = (organisation or {}).get("auth_domain") or ""
     if not team_domain.endswith(".cloudflareaccess.com"):
         return [("Access", "has no Zero Trust organisation",
@@ -998,18 +1191,21 @@ def access_differences(account: str) -> list[tuple[str, str, Any]]:
     found: list[tuple[str, str, Any]] = []
     idp = github_idp(account)
     if idp is None:
-        try:
-            client = {"client_id": variable("ACCESS_GITHUB_CLIENT_ID"),
-                      "client_secret": variable("ACCESS_GITHUB_CLIENT_SECRET")}
-        except SettingsError:
+        how = ("a GitHub OAuth app (github.com/settings/developers) with the homepage "
+               f"https://{ADMIN_HOST} and the callback https://{team_domain}/cdn-cgi/access/callback")
+        if not sys.stdin.isatty():
             return [("Access GitHub sign-in", "is not set",
-                     "make a GitHub OAuth app (github.com/settings/developers) with the homepage "
-                     f"https://{ADMIN_HOST} and the callback https://{team_domain}/cdn-cgi/access/callback; "
-                     "put its id and a new secret in .env.infra as ACCESS_GITHUB_CLIENT_ID and "
-                     "ACCESS_GITHUB_CLIENT_SECRET, and run apply again")]
-        found.append(("Access GitHub sign-in", "is not set",
-                      ("POST", f"/accounts/{account}/access/identity_providers",
-                       {"name": "GitHub", "type": "github", "config": client})))
+                     f"make {how}, then run apply in a terminal, which asks for its client id and a new secret")]
+
+        def sign_in() -> list[str]:
+            print(f"  Access GitHub sign-in: from {how}")
+            client = {"client_id": ask("its Client ID"), "client_secret": ask("a new client secret of it")}
+            if not all(client.values()):
+                return ["Access GitHub sign-in: left - not given: run apply again"]
+            api(f"/accounts/{account}/access/identity_providers", "POST",
+                {"name": "GitHub", "type": "github", "config": client})
+            return []
+        found.append(("Access GitHub sign-in", "is not set", sign_in))
     try:
         email = admin_email()
     except SettingsError:
@@ -1061,7 +1257,15 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
     """(what, how it differs, the change that makes it right, as main's apply
     takes it). With `ci`, what CI's token can see that it
     should not too."""
-    zones = api(f"/zones?name={ZONE}")
+    try:
+        zones = api(f"/zones?name={ZONE}")
+    except SettingsError as error:
+        spec = TOKENS[token_key()] if token_key() in TOKENS else {}
+        if error.status not in (401, 403) or not spec.get("minutes"):
+            raise
+        # Cloudflare answers so for a token past its time, or used from elsewhere.
+        raise SettingsError(f"{error}: the {token_key()} token lasts {spec['minutes']} minutes, from the address it "
+                            "was made from: in the dashboard, give it a new TTL and Roll it", error.status) from None
     if not zones:
         raise SettingsError(f"the token cannot see the zone {ZONE}")
     zone = f"/zones/{zones[0]['id']}"
@@ -1104,26 +1308,37 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
     found += sending_differences(zone)
     found += dns_differences(zone)
     found += dnssec_differences(zone)
-    have = deploy_token_policies(zones[0]["account"]["id"], zones[0]["id"])
-    if have is None:
-        print(f"  {DEPLOY_TOKEN}: not checked - this token cannot read the account's API tokens and Workers")
-    elif in_order(have) != DEPLOY_POLICIES:
-        def say(policies):
-            return "; ".join(f"{', '.join(names)} on {', '.join(on)}" for names, on in policies) \
-                or "nothing (no such token)"
-        found.append((DEPLOY_TOKEN, f"allows {say(in_order(have))}, should allow {say(DEPLOY_POLICIES)}", None))
+    if not ci:
+        found += token_differences(zones[0]["account"]["id"], zones[0]["id"])
     if ci:
         found += ci_token_reach(zones[0]["account"]["id"], zones[0]["id"])
     return found
 
 
 def main(argv: list[str] | None = None) -> int:
+    global TOKEN_VARIABLE
     args = sys.argv[1:] if argv is None else argv
-    if len(args) == 2 and args[0] == "rotate":
-        return rotate(args[1])
-    if args not in ([], ["apply"], ["ci"], ["deploy-token"]):
+    # Each command is run with the token whose job it is.
+    TOKEN_VARIABLE = TOKENS[{"ci": "settings-check-read-only", "deploy-token": "workers-deploy"}
+                            .get(args[0] if args else "", "settings-apply")]["variable"]
+    if not (len(args) == 2 and args[0] == "rotate") and args not in ([], ["apply"], ["ci"], ["deploy-token"], ["email"]):
         print(__doc__.strip(), file=sys.stderr)
         return 2
+    if len(args) == 2 and args[0] == "rotate" and API_SECRETS.get(args[1]) != "made":
+        return rotate(args[1])   # refused before a token is asked for
+    if TOKENS[token_key()]["kept"] == "asked":
+        value = asked_token()
+        if not value:
+            return 1
+        with using(value):
+            return run(args)
+    return run(args)
+
+
+def run(args: list[str]) -> int:
+    """main's work, with the token for `args` in use."""
+    if len(args) == 2 and args[0] == "rotate":
+        return rotate(args[1])
     if args == ["deploy-token"]:
         try:
             found = deploy_token_reach()
@@ -1133,8 +1348,8 @@ def main(argv: list[str] | None = None) -> int:
         for what, how, _ in found:
             print(f"  {what}: {how}")
         if found:
-            print("Change the deploy token in the dashboard (DEPLOY_ZONE_PERMISSIONS and DEPLOY_WORKERS_PERMISSIONS "
-                  "in tools/repo/cloudflare_settings.py).")
+            print(f"Remake the deploy token as TOKENS says: python3 tools/repo/cloudflare_tokens.py "
+                  f"{DEPLOY_TOKEN.removeprefix(TOKEN_PREFIX)}")
             return 1
         print(f"The deploy token sees {ZONE}, its Workers and no more.")
         return 0
@@ -1146,7 +1361,8 @@ def main(argv: list[str] | None = None) -> int:
         for what, how, _ in found:
             print(f"  {what}: {how}")
         if args != ["apply"]:
-            print("python3 tools/repo/cloudflare_settings.py apply sets them; a token is changed in the dashboard.")
+            print("python3 tools/repo/cloudflare_settings.py apply sets them; a token is made by "
+                  "tools/repo/cloudflare_tokens.py.")
             return 1
         left = 0
         # A change is (method, path, body) to send; a function, for one made
@@ -1159,13 +1375,15 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             # One this token is refused is left, and the rest still made: a rule
             # in a phase not kept here needs that phase's Edit, which
-            # APPLY_TOKEN_PERMISSIONS cannot know before it is there.
+            # TOKENS cannot know before it is there.
             try:
                 if callable(change):
-                    for line in change():
+                    lines = change()
+                    for line in lines:
                         print(f"  {line}")
                         left = 1
-                    print(f"  {what}: set")
+                    if not lines:
+                        print(f"  {what}: set")
                 else:
                     method, path, body = change
                     api(path, method, body)
@@ -1174,7 +1392,8 @@ def main(argv: list[str] | None = None) -> int:
                 if error.status not in (401, 403):
                     raise
                 print(f"  {what}: left - this token is refused it ({error}): give it the permission "
-                      "(APPLY_TOKEN_PERMISSIONS), and run apply again")
+                      f"(TOKENS), remake it (python3 tools/repo/cloudflare_tokens.py {token_key()}), and run "
+                      "apply again")
                 left = 1
     except SettingsError as error:
         print(f"cloudflare_settings: {error}", file=sys.stderr)

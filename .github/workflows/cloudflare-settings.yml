@@ -39,7 +39,7 @@ jobs:
           persist-credentials: false
       - name: What differs from what is written down
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_READ_TOKEN }}
+          CLOUDFLARE_SETTINGS_CHECK_TOKEN: ${{ secrets.CLOUDFLARE_SETTINGS_CHECK_TOKEN }}
           CLOUDFLARE_EMAIL_DESTINATION: ${{ secrets.CLOUDFLARE_EMAIL_DESTINATION }}
           CLOUDFLARE_EMAIL_FORWARD: ${{ secrets.CLOUDFLARE_EMAIL_FORWARD }}
         run: python3 tools/repo/cloudflare_settings.py ci
@@ -64,10 +64,10 @@ jobs:
       - name: The account is well within what its plan includes
         if: ${{ !cancelled() }}
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_READ_TOKEN }}
+          CLOUDFLARE_SETTINGS_CHECK_TOKEN: ${{ secrets.CLOUDFLARE_SETTINGS_CHECK_TOKEN }}
         run: python3 tools/repo/api_health.py usage
       - name: The API's emails bounce rarely, and draw no complaint
         if: ${{ !cancelled() }}
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_READ_TOKEN }}
+          CLOUDFLARE_SETTINGS_CHECK_TOKEN: ${{ secrets.CLOUDFLARE_SETTINGS_CHECK_TOKEN }}
         run: python3 tools/repo/api_health.py mail

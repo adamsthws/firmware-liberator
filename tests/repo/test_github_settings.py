@@ -307,14 +307,15 @@ class GitHubSettingsTests(unittest.TestCase):
 
     def test_a_missing_secret_is_named_and_left_for_its_value(self):
         fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
-        fake.secrets = {"CLOUDFLARE_DEPLOY_TOKEN", "OLD_TOKEN"}
+        fake.secrets = {"CLOUDFLARE_WORKERS_DEPLOY_TOKEN", "OLD_TOKEN"}
         _, first = run(fake, "apply")
         self.assertIn(f"environment '{gs.ENVIRONMENT}' secret OLD_TOKEN: removed", first)
         code, out = run(fake, "apply")
         self.assertEqual(code, 1)
-        self.assertIn("secret CLOUDFLARE_READ_TOKEN: left - its value is set with "
-                      "python3 tools/repo/github_settings.py secret CLOUDFLARE_READ_TOKEN", out)
-        self.assertEqual(fake.secrets, {"CLOUDFLARE_DEPLOY_TOKEN", *gs.FROM_ENV})
+        # A Cloudflare token is made, and set, by cloudflare_tokens.py.
+        self.assertIn("secret CLOUDFLARE_SETTINGS_CHECK_TOKEN: left - made with "
+                      "python3 tools/repo/cloudflare_tokens.py settings-check-read-only", out)
+        self.assertEqual(fake.secrets, {"CLOUDFLARE_WORKERS_DEPLOY_TOKEN", *gs.FROM_ENV})
 
     def test_apply_sets_the_secrets_kept_in_env_each_time_and_never_shows_them(self):
         fake = FakeGitHub(checks_on_main=gs.REQUIRED_CHECKS, environment=True)
@@ -350,9 +351,9 @@ class GitHubSettingsTests(unittest.TestCase):
         done = mock.Mock(returncode=0, stdout="", stderr="")
         with mock.patch.object(gs.subprocess, "run", return_value=done) as ran, \
                 mock.patch("sys.stdin", io.StringIO("s3cret-value\n")), redirect_stdout(io.StringIO()):
-            self.assertEqual(gs.main(["secret", "CLOUDFLARE_READ_TOKEN"]), 0)
+            self.assertEqual(gs.main(["secret", "CLOUDFLARE_SETTINGS_CHECK_TOKEN"]), 0)
         command, = ran.call_args.args
-        self.assertEqual(command, ["gh", "secret", "set", "CLOUDFLARE_READ_TOKEN", "--env", gs.ENVIRONMENT,
+        self.assertEqual(command, ["gh", "secret", "set", "CLOUDFLARE_SETTINGS_CHECK_TOKEN", "--env", gs.ENVIRONMENT,
                                    "-R", gs.REPOSITORY])
         self.assertEqual(ran.call_args.kwargs["input"], "s3cret-value")
 
