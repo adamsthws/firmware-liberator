@@ -206,7 +206,8 @@ commit the push would send - so a commit made with `--no-verify` is still
 caught on its way out. It finds two kinds of thing:
 
 - **Your own, by value** - only your computer knows them: every value in
-  `.env`; the eWeLink account and each plug's eWeLink id and name; each plug's
+  `.env`, and in `.env.infra` if you keep the project's services (its tokens,
+  keys and private addresses); the eWeLink account and each plug's eWeLink id and name; each plug's
   MAC (from `captures/plugs/`: its folder, its record, its backup's eFuses), in
   any form, and as raw bytes in any file; the Sonoff settings in each backup
   that say which plug, account or network it is (its eWeLink keys, the Wi-Fi it
