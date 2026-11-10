@@ -1,7 +1,8 @@
 # The website's Cloudflare settings, as tools/repo/cloudflare_settings.py
 # says - the zone, its DNS records, its redirect, rate-limiting, firewall and
 # cache rules, Email Routing, the readouts bucket, which keeps them for good,
-# and the public figures' bucket and its domain - checked, never set: daily,
+# and the public figures' bucket and its domain, and that nothing of the
+# project's is there unwritten (a rule, route or bucket) - checked, never set: daily,
 # and on each push to main that changes them. A run fails
 # on any difference, whether a change made in the dashboard or one written
 # down there and not applied yet. Settings are applied by hand, with a
