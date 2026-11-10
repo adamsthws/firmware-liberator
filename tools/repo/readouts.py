@@ -27,8 +27,8 @@ in, its object and fingerprint; one whose fingerprint differs from the rest
 of its key is marked ODD. `rotated` lists, the same way, each key taken as
 right from readouts sent both before and after TIME (as `cloudflare_settings.py
 rotate SENDER_KEY` printed it): two of its three could be one sender's, as a
-new key makes every sender look new. The API's database is read with the maintainer's
-token, as cloudflare_settings.py reads it (D1 is refused to CI's).
+new key makes every sender look new. The API's database is read with the
+maintainer's CLOUDFLARE_READOUTS_REVIEW_TOKEN (D1 is refused to CI's).
 
 `notify` lists each address given for a product (eWeLink's product model),
 with the firmware models it was given with and when: whom to write to when
@@ -37,8 +37,10 @@ to them carries for them to remove their address themselves. `changes` is the
 same for each device whose status in devices/status.json differs from REF's:
 run it when a release changes one. Never from CI, whose logs are public.
 Fetch one with `npx wrangler r2 object get <bucket>/<key> --remote --file
-readout.tar`, from website/. The token is CLOUDFLARE_API_TOKEN, as for
-tools/repo/cloudflare_settings.py; reading the account's R2 is enough.
+readout.tar`, from website/, with CLOUDFLARE_API_TOKEN, as wrangler names it,
+set to the same token. It is CLOUDFLARE_READOUTS_REVIEW_TOKEN, in the
+environment or .env.infra, as TOKENS in tools/repo/cloudflare_settings.py
+allows it; tools/repo/cloudflare_tokens.py makes it.
 """
 from __future__ import annotations
 
@@ -215,6 +217,7 @@ def changes(ref: str | None) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
+    cs.TOKEN_VARIABLE = cs.TOKENS["readouts-review"]["variable"]
     if args[:1] in (["review"], ["approve"], ["reject"], ["rotated"]):
         if (args[0] == "review" and len(args) > 2) or (args[0] != "review" and len(args) != 2):
             print(__doc__.strip(), file=sys.stderr)

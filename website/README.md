@@ -97,28 +97,29 @@ dependabot-merge workflow merges its pull requests.
 ## Deploying it
 
 `.github/workflows/website.yml` tests and builds the site for each pull
-request. On each push to `main` it deploys the three Workers, each in a job
+request. On each push to `main` it deploys the Workers, each in a job
 of its own so that no deploy holds up another, and then checks what it
 deployed. It runs in the `website` environment, which only `main` can use.
 
 ### The Cloudflare tokens
 
-Each token is made by hand in Cloudflare's dashboard and allowed only what
-its job needs. `cloudflare_settings.py` lists what to give each, with what
-needs it.
+Each token is allowed only what its job needs, and named for that job.
+`TOKENS` in `tools/repo/cloudflare_settings.py` is the list: each token, what
+it is for, where its value is kept, and what it is allowed, with why. `apply`
+checks every token in the account against it.
 
-| Token | For | Kept | Its permissions |
-|---|---|---|---|
-| Deploy | The website workflow deploying the three Workers, and no other in the account | `website` secret `CLOUDFLARE_DEPLOY_TOKEN` | `DEPLOY_ZONE_PERMISSIONS`, `DEPLOY_WORKERS_PERMISSIONS` |
-| Settings check | The cloudflare-settings workflow reading the settings and the API's health | `website` secret `CLOUDFLARE_READ_TOKEN` | `READ_TOKEN_PERMISSIONS` |
-| Settings apply | You, changing a setting | Nowhere: made when needed, deleted after | `APPLY_TOKEN_PERMISSIONS` |
-| Admin analytics | The admin view showing the month's use | `ADMIN_ANALYTICS_TOKEN` in `.env.infra`; `apply` sets it on the Worker | Account Analytics: Read alone |
+`python3 tools/repo/cloudflare_tokens.py` makes the tokens, or remakes them
+with what `TOKENS` says and new values, and puts each value where it is
+kept, never on the screen. Run it after changing `TOKENS`, and to replace
+every token should one have been seen. A token that can make tokens could
+make itself any other, so the script runs only with one you make by hand,
+short-lived and usable from your computer alone, which it deletes when it is
+done. Run it and it says how to make that token, then asks for it, so it is
+never written down.
 
-The deploy token's permissions are checked with the apply token, never by
-CI: reading one token means reading every token in the account. What each of
-CI's tokens can see is checked instead, on each run, against a list of what
-it must be refused. Set a secret with `python3 tools/repo/github_settings.py
-secret <name>`, which asks for the value or takes it on stdin.
+CI never checks the tokens' permissions, as reading one token means reading
+every token in the account. It checks instead, on each run, that its own
+token is refused what it must never reach.
 
 ### Changing a Cloudflare setting
 
@@ -127,12 +128,11 @@ that can only read cannot, if it leaks, change the DNS or a bucket.
 
 1. Edit `cloudflare_settings.py`. A record or rule made in the dashboard is
    a difference that `apply` removes, so write it down there instead.
-2. Make the apply token and put it in `CLOUDFLARE_API_TOKEN`, in the
-   environment or `.env.infra` (`.env.infra.example` lists every name that
-   file takes).
-3. Run `python3 tools/repo/cloudflare_settings.py` to see what differs, and
-   `... apply` to set it. `apply` says what is left to do by hand.
-4. Delete the token, and push.
+2. Run `python3 tools/repo/cloudflare_settings.py` to see what differs, and
+   `... apply` to set it, in a terminal. Each asks for the settings-apply
+   token and says how to ready it: a short TTL and a roll in the dashboard,
+   so each value serves one run. `apply` says what is left to do by hand.
+3. Push.
 
 The cloudflare-settings workflow then checks the settings daily, and on each
 push that changes the script. It fails on any difference, whether made in the
@@ -150,11 +150,11 @@ that is left to you. Two are always yours:
 1. A Zero Trust organisation for the account (dashboard, Zero Trust, free
    plan).
 2. A GitHub OAuth app for the sign-in, with the homepage and callback
-   `apply` names. Its id and secret go in `.env.infra` as
-   `ACCESS_GITHUB_CLIENT_ID` and `ACCESS_GITHUB_CLIENT_SECRET`.
+   `apply` names. `apply`, run in a terminal, asks for its client ID and a
+   new secret once, to make the sign-in, and keeps neither.
 
 The one address let in is `ACCESS_ADMIN_EMAIL` in `.env.infra`, or else
-`CLOUDFLARE_EMAIL_DESTINATION`. `apply` then says the three values to put in
+`CLOUDFLARE_EMAIL_DESTINATION`. `apply` then says the values to put in
 `admin/wrangler.jsonc`; until they are there the Worker lets no one in. CI
 does not check Access, and each deploy checks only that the view turns away a
 request that is not signed in.
@@ -164,9 +164,8 @@ request that is not signed in.
 The deploy token can only be given a Worker that already exists, so a new
 one is first uploaded from your computer:
 
-1. Make a short-lived token: Account - Workers Scripts: Edit, Workers R2
-   Storage: Edit, D1: Edit, and the zone permissions of the deploy and apply
-   tokens. Put it in `CLOUDFLARE_API_TOKEN`.
+1. Ready the settings-apply token, as above. wrangler reads its own name:
+   set `CLOUDFLARE_API_TOKEN` to its value for the upload.
 2. Check the name is free (dashboard, Workers & Pages): an upload under a
    taken name replaces that Worker.
 3. Run `apply` to make what the Worker binds to, as the upload fails on a
@@ -180,9 +179,9 @@ one is first uploaded from your computer:
 5. Run `apply` again. It sets the Worker's secrets, which its
    `wrangler.jsonc` describes, and says what is left.
 6. Check it answers (below).
-7. Add it to the deploy token's Workers, in the dashboard and in
-   `DEPLOY_WORKERS`, and give the website workflow a job that deploys it.
-8. Delete the short-lived token.
+7. Add it to `DEPLOY_WORKERS`, remake the deploy token
+   (`cloudflare_tokens.py workers-deploy`), and give the website workflow a
+   job that deploys it.
 
 ### Stopping the API
 

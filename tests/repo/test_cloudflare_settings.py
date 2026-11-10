@@ -1,4 +1,5 @@
 import copy
+import datetime as dt
 import io
 import re
 import sqlite3
@@ -26,6 +27,7 @@ ANALYTICS = "/accounts/a1/rum/site_info"
 ALL_MEASURED = {"id": "ru1", "host": "*", "paths": ["*"], "inclusive": True, "is_paused": False, "priority": 1000}
 DESTINATION = "owner@example.com"
 FORWARD = "hello, Press"
+APPLY_VALUE = "made-up-apply-token-value-0123456789abcdef"
 # What Email Routing says it needs, as it lists them: a TXT record whole, a host with its final dot.
 ROUTING_DNS = [{"type": "MX", "name": cs.ZONE, "content": "route1.mx.cloudflare.net.", "priority": 50},
                {"type": "TXT", "name": f"cf2024-1._domainkey.{cs.ZONE}", "content": '"v=DKIM1; p=AAAABBBB"'}]
@@ -49,6 +51,7 @@ class FakeCloudflare:
         self.buckets = set()
         self.lifecycle = None
         self.tokens = None   # the account's API tokens; None: this token may not read them, as CI's
+        self.tokens_page = 50   # how many Cloudflare lists a page
         self.other_zones = []   # zones besides this one the token can see
         self.accounts = 1   # how many accounts the token can see
         # The Workers the token can see: Cloudflare lists those alone. The apply token sees them all.
@@ -158,7 +161,8 @@ class FakeCloudflare:
             elif path == ADMIN_SECRETS and method == "PUT":
                 self.admin_secrets = [name for name in self.admin_secrets or [] if name != body["name"]] + [body["name"]]
             elif path == f"{ACCESS}/identity_providers":
-                self.idps.append({"id": f"g{next(self.ids)}", "name": body["name"], "type": body["type"]})
+                self.idps.append({"id": f"g{next(self.ids)}", "name": body["name"], "type": body["type"],
+                                  "config": copy.deepcopy(body["config"])})
             elif path == f"{ACCESS}/apps" and method == "POST":
                 self.apps.append({"id": f"app{next(self.ids)}", "aud": f"aud{next(self.ids)}", **copy.deepcopy(body)})
                 self.policies[self.apps[-1]["id"]] = []
@@ -192,6 +196,13 @@ class FakeCloudflare:
         if path == "/accounts/a1/tokens":
             assert ok_forbidden
             return copy.deepcopy(self.tokens)
+        if path.startswith("/accounts/a1/tokens?per_page=50&page="):
+            assert ok_forbidden and whole
+            if self.tokens is None:
+                return None
+            page, size = int(path.rsplit("=", 1)[1]), self.tokens_page
+            return {"result": copy.deepcopy(self.tokens[(page - 1) * size:page * size]),
+                    "result_info": {"page": page, "total_pages": max(1, -(-len(self.tokens) // size))}}
         if path in {template.format(account="a1", zone="z1") for _, template in cs.CI_REFUSED + cs.DEPLOY_REFUSED}:
             assert ok_forbidden
             return {} if path in self.readable else None
@@ -271,9 +282,17 @@ class FakeCloudflare:
         raise AssertionError(f"unexpected {method} {path}")
 
 
-def run(fake, *args):
+def run(fake, *args, answers=None):
+    """main against `fake`; with `answers`, in a terminal where each hidden
+    prompt is given the next of them, and else with none to ask at."""
     out = io.StringIO()
-    with mock.patch.object(cs, "api", fake), redirect_stdout(out), \
+    stdin = io.StringIO()
+    if answers is not None:
+        stdin.isatty = lambda: True
+    # The apply token, as asked for and found to be as TOKENS has it (AskedTokenTests).
+    with mock.patch.object(cs, "api", fake), redirect_stdout(out), mock.patch("sys.stdin", stdin), \
+            mock.patch.object(cs, "asked_token", lambda: APPLY_VALUE), \
+            mock.patch.object(cs.getpass, "getpass", side_effect=list(answers or [])), \
             mock.patch.object(cs, "bound_database_id", lambda config=None: fake.bound), \
             mock.patch.object(cs, "admin_vars", lambda: copy.deepcopy(getattr(fake, "admin_vars", {}))), \
             mock.patch.dict("os.environ", {cs.EMAIL_DESTINATION: DESTINATION, cs.EMAIL_FORWARD: FORWARD}):
@@ -351,13 +370,16 @@ class CloudflareSettingsTests(unittest.TestCase):
     def test_the_token_comes_from_the_environment_or_env(self):
         with tempfile.TemporaryDirectory() as directory:
             env_file = Path(directory) / ".env"
+            # Set here: a command run before, in this process, leaves its own.
             with mock.patch.object(cs, "ENV_FILE", env_file), \
-                    mock.patch.dict("os.environ", {"CLOUDFLARE_API_TOKEN": ""}):
-                with self.assertRaisesRegex(cs.SettingsError, "no CLOUDFLARE_API_TOKEN: in the environment or .env.infra"):
+                    mock.patch.object(cs, "TOKEN_VARIABLE", "CLOUDFLARE_SETTINGS_APPLY_TOKEN"), \
+                    mock.patch.dict("os.environ", {"CLOUDFLARE_SETTINGS_APPLY_TOKEN": ""}):
+                with self.assertRaisesRegex(cs.SettingsError,
+                                            "no CLOUDFLARE_SETTINGS_APPLY_TOKEN: in the environment or .env.infra"):
                     cs.token()
-                env_file.write_text("CLOUDFLARE_API_TOKEN=from-the-file\n", encoding="utf-8")
+                env_file.write_text("CLOUDFLARE_SETTINGS_APPLY_TOKEN=from-the-file\n", encoding="utf-8")
                 self.assertEqual(cs.token(), "from-the-file")
-                with mock.patch.dict("os.environ", {"CLOUDFLARE_API_TOKEN": "from-the-environment"}):
+                with mock.patch.dict("os.environ", {"CLOUDFLARE_SETTINGS_APPLY_TOKEN": "from-the-environment"}):
                     self.assertEqual(cs.token(), "from-the-environment")
                     # The file is not even read: a line it cannot parse is no matter.
                     env_file.write_text("not a setting\n", encoding="utf-8")
@@ -460,11 +482,9 @@ class CloudflareSettingsTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         self.assertEqual(cs.ENV_FILE, root / ".env.infra")
         example = cs.credentials.parse((root / ".env.infra.example").read_text(encoding="utf-8"))
-        kept = {f"{prefix}{name}" for prefix, wanted in cs.WORKER_SECRETS.values()
-                for name, how in wanted.items() if how == "kept"}
-        access = {"ACCESS_GITHUB_CLIENT_ID", "ACCESS_GITHUB_CLIENT_SECRET", "ACCESS_ADMIN_EMAIL"}
-        self.assertEqual(set(example), {"CLOUDFLARE_API_TOKEN", cs.EMAIL_DESTINATION, cs.EMAIL_FORWARD,
-                                        *kept, *access})
+        tokens = {spec["variable"] for spec in cs.TOKENS.values() if spec["kept"] == "env"}
+        # What a tool asks for at a hidden prompt has no place in it.
+        self.assertEqual(set(example), {cs.EMAIL_DESTINATION, cs.EMAIL_FORWARD, "ACCESS_ADMIN_EMAIL", *tokens})
         self.assertFalse(set(example) & (set(cs.credentials.KEYS) | set(cs.credentials.RENAMED)))
         self.assertEqual(subprocess.run(["git", "check-ignore", "-q", ".env.infra"], cwd=root).returncode, 0)
 
@@ -501,72 +521,140 @@ class CloudflareSettingsTests(unittest.TestCase):
             encoding="utf-8")
         self.assertNotIn(" apply", workflow.split("\nname:", 1)[1])
         self.assertIn("run: python3 tools/repo/cloudflare_settings.py ci\n", workflow)
-        self.assertIn("secrets.CLOUDFLARE_READ_TOKEN", workflow)
+        self.assertIn("CLOUDFLARE_SETTINGS_CHECK_TOKEN: ${{ secrets.CLOUDFLARE_SETTINGS_CHECK_TOKEN }}", workflow)
         self.assertIn('- cron: "0 6 * * *"', workflow, "checked daily, so drift shows within a day")
         for name in (cs.EMAIL_DESTINATION, cs.EMAIL_FORWARD):
             self.assertIn(f"{name}: ${{{{ secrets.{name} }}}}", workflow)
 
 
-def deploy_token(zone=("Zone Read", "Workers Routes Write", "DNS Write"), workers=("t1", "t2", "t3")):
-    """The deploy token as Cloudflare lists it: the zone by its id, Workers by their tags."""
-    return {"name": cs.DEPLOY_TOKEN, "status": "active", "policies": [
-        {"effect": "allow", "permission_groups": [{"name": name} for name in zone],
-         "resources": {"com.cloudflare.api.account.zone.z1": "*"}},
-        {"effect": "allow", "permission_groups": [{"name": "Individual Workers Editor"}],
-         "resources": {"com.cloudflare.api.account.a1": {
-             f"com.cloudflare.edge.worker.script.{tag}": "*" for tag in workers}}}]}
+WORKERS = ["firmware-liberator", "firmware-liberator-api", "firmware-liberator-admin", "another-site"]
 
 
-class DeployTokenTests(unittest.TestCase):
+def listed(key, extra=(), workers=WORKERS):
+    """A token of TOKENS as Cloudflare lists it once made: the zone by its id,
+    the account by its, Workers by their tags as FakeCloudflare gives them;
+    `extra` permissions on the zone besides."""
+    spec = cs.TOKENS[key]
+    tags = {name: f"t{n + 1}" for n, name in enumerate(workers)}
+    resources = {"zone": {"com.cloudflare.api.account.zone.z1": "*"}, "account": {"com.cloudflare.api.account.a1": "*"},
+                 "workers": {"com.cloudflare.api.account.a1": {
+                     f"com.cloudflare.edge.worker.script.{tags[name]}": "*" for name in sorted(cs.DEPLOY_WORKERS)}}}
+    policies = [{"effect": "allow", "resources": resources[scope],
+                 "permission_groups": [{"name": name} for name in [*spec[scope], *(extra if scope == "zone" else ())]]}
+                for scope in ("zone", "account", "workers") if spec.get(scope)]
+    return {"id": f"id-{key}", "name": cs.TOKEN_PREFIX + key, "status": "active", "policies": policies}
+
+
+class TokenTests(unittest.TestCase):
+    """`apply` checks each token TOKENS lists against what it says, and finds
+    any other of the project's."""
+
     def setUp(self):
         self.fake = FakeCloudflare()
         self.fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09T18:39:03Z"}]
+        self.fake.workers = list(WORKERS)
         run(self.fake, "apply")
         self.fake.sent.clear()
+        self.fake.tokens = [listed(key) for key in cs.TOKENS] + [{"name": "another-site", "status": "active",
+                                                                   "policies": []}]
 
     def test_not_checked_by_a_token_that_cannot_read_tokens(self):
+        self.fake.tokens = None
         code, out = run(self.fake)
         self.assertEqual(code, 0)
-        self.assertIn(f"{cs.DEPLOY_TOKEN}: not checked", out)
+        self.assertIn("API tokens: not checked", out)
 
     def test_as_written_it_is_no_difference(self):
-        self.fake.tokens = [deploy_token(), {"name": "another", "status": "active", "policies": []}]
         code, out = run(self.fake)
         self.assertEqual(code, 0, out)
-        self.assertNotIn(cs.DEPLOY_TOKEN, out)
+        self.assertNotIn(cs.TOKEN_PREFIX + "workers-deploy", out)
 
     def test_as_written_it_is_no_difference_whatever_the_hash_order(self):
         # A set's order follows Python's hash seed, which differs run to run:
         # a comparison that leant on it failed now and then.
         import os
-        import subprocess
         import sys
         root = Path(__file__).resolve().parents[2]
-        code = ("from tests.repo.test_cloudflare_settings import DESTINATION, FakeCloudflare, deploy_token, run\n"
+        code = ("from tests.repo.test_cloudflare_settings import DESTINATION, FakeCloudflare, WORKERS, listed, run\n"
+                "from tools.repo import cloudflare_settings as cs\n"
                 "fake = FakeCloudflare(); fake.addresses = [{'email': DESTINATION, 'verified': '2026-11-09'}]\n"
-                "run(fake, 'apply'); fake.tokens = [deploy_token()]\n"
+                "fake.workers = list(WORKERS); run(fake, 'apply'); fake.tokens = [listed(k) for k in cs.TOKENS]\n"
                 "print(run(fake)[0])")
         for seed in range(24):
             done = subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True,
                                   env={**os.environ, "PYTHONHASHSEED": str(seed)}, check=True)
             self.assertEqual(done.stdout.strip(), "0", f"PYTHONHASHSEED={seed}")
 
-    def test_a_wider_one_is_named_and_left_to_the_dashboard(self):
-        self.fake.tokens = [deploy_token(zone=("Zone Read", "Workers Routes Write", "DNS Write",
-                                               "Zone Settings Write"), workers=("t1", "t2", "t3", "t4"))]
+    def test_a_wider_one_is_named_and_left_to_be_remade(self):
+        self.fake.tokens[2] = listed("workers-deploy", extra=["Zone Settings Write"])
+        self.fake.tokens[2]["policies"][1]["resources"]["com.cloudflare.api.account.a1"][
+            "com.cloudflare.edge.worker.script.t4"] = "*"
         code, out = run(self.fake)
         self.assertEqual(code, 1)
         self.assertIn("Zone Settings Write", out)
         self.assertIn("another-site", out)
         code, out = run(self.fake, "apply")
         self.assertEqual((code, self.fake.sent), (1, []))
-        self.assertIn(f"{cs.DEPLOY_TOKEN}: left - change it in the dashboard", out)
+        self.assertIn(f"{cs.DEPLOY_TOKEN}: left - run python3 tools/repo/cloudflare_tokens.py workers-deploy", out)
 
-    def test_a_missing_one_is_a_difference(self):
-        self.fake.tokens = []
+    def test_a_missing_or_expired_one_is_to_be_made(self):
+        del self.fake.tokens[4]
+        self.fake.tokens[0]["status"] = "expired"
         code, out = run(self.fake)
         self.assertEqual(code, 1)
-        self.assertIn("allows nothing (no such token)", out)
+        self.assertIn(f"{cs.TOKEN_PREFIX}readouts-review: does not exist", out)
+        self.assertIn(f"{cs.TOKEN_PREFIX}settings-apply: does not exist", out)
+
+    def test_an_apply_token_past_its_minutes_says_to_make_another(self):
+        def refused(path, *args, **kwargs):
+            raise cs.SettingsError(f"GET {path}: HTTP 403: Invalid access token", 403)
+        err = io.StringIO()
+        with mock.patch("sys.stderr", err):
+            code, _ = run(refused, "apply")
+        self.assertEqual(code, 1)
+        self.assertIn("the settings-apply token lasts 10 minutes, from the address it was made from: in the "
+                      "dashboard, give it a new TTL and Roll it", err.getvalue())
+
+    def test_every_page_of_tokens_is_read(self):
+        self.fake.tokens_page = 2
+        self.assertEqual(run(self.fake)[0], 0)
+        del self.fake.tokens[4]
+        self.assertIn(f"{cs.TOKEN_PREFIX}readouts-review: does not exist", run(self.fake)[1])
+
+    def test_another_of_the_projects_is_left_to_be_deleted(self):
+        self.fake.tokens.append({"name": cs.TOKEN_PREFIX + "drift-detection-ci-read-only", "status": "active",
+                                 "policies": []})
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn("firmware-liberator-drift-detection-ci-read-only: left - delete it in the dashboard "
+                      "once nothing uses it", out)
+
+    def test_each_tool_reads_the_token_whose_job_it_is(self):
+        def seen(main, *args):
+            with mock.patch.object(cs, "api", side_effect=cs.SettingsError("stop")), redirect_stdout(io.StringIO()), \
+                    mock.patch("sys.stderr", io.StringIO()):
+                main(list(args))
+            return cs.TOKEN_VARIABLE
+        from tools.repo import api_health, readouts
+        try:
+            self.assertEqual(seen(cs.main, "apply"), "CLOUDFLARE_SETTINGS_APPLY_TOKEN")
+            self.assertEqual(seen(cs.main, "ci"), "CLOUDFLARE_SETTINGS_CHECK_TOKEN")
+            self.assertEqual(seen(cs.main, "deploy-token"), "CLOUDFLARE_WORKERS_DEPLOY_TOKEN")
+            self.assertEqual(seen(api_health.main, "usage"), "CLOUDFLARE_SETTINGS_CHECK_TOKEN")
+            self.assertEqual(seen(readouts.main, "review"), "CLOUDFLARE_READOUTS_REVIEW_TOKEN")
+        finally:
+            cs.TOKEN_VARIABLE = cs.TOKENS["settings-apply"]["variable"]
+
+    def test_each_is_named_for_its_job_and_kept_under_its_variable(self):
+        for key, spec in cs.TOKENS.items():
+            self.assertIn(spec["kept"], ("github", "env", "worker", "asked"))
+            # One kept on a Worker alone is kept under the Worker's name for it.
+            self.assertEqual(spec.get("variable"), None if spec["kept"] == "worker" else "CLOUDFLARE_"
+                             + key.removesuffix("-read-only").upper().replace("-", "_") + "_TOKEN", key)
+            self.assertEqual(spec["kept"] == "worker", bool(spec.get("worker_secret")), key)
+            self.assertEqual(key.endswith("-read-only"), all(
+                name.endswith(" Read") for scope in ("zone", "account", "workers") for name in spec.get(scope, {})),
+                key)
 
 
 class CiTokenReachTests(unittest.TestCase):
@@ -608,7 +696,7 @@ class CiTokenReachTests(unittest.TestCase):
                 self.assertIn(f"can read {what}: it should be refused", out)
 
     def test_one_that_reads_the_accounts_tokens_fails(self):
-        self.fake.tokens = [deploy_token()]
+        self.fake.tokens = [listed("workers-deploy")]
         code, out = run(self.fake, "ci")
         self.assertEqual(code, 1)
         self.assertIn("can read the account's API tokens", out)
@@ -636,7 +724,8 @@ class DeployTokenReachTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("another-site", out)
         self.assertIn("can see other zones (example.com)", out)
-        self.assertIn("(DEPLOY_ZONE_PERMISSIONS and DEPLOY_WORKERS_PERMISSIONS in tools/repo/cloudflare_settings.py)", out)
+        self.assertIn("Remake the deploy token as TOKENS says: python3 tools/repo/cloudflare_tokens.py workers-deploy",
+                      out)
 
     def test_each_read_it_should_be_refused_fails_where_it_works(self):
         for what, template in cs.DEPLOY_REFUSED:
@@ -660,7 +749,7 @@ class DeployTokenReachTests(unittest.TestCase):
         job = workflow.split("\n  deploy-token:\n", 1)[1]
         self.assertIn("needs: [deploy, deploy-api, deploy-admin]", job)
         self.assertIn("run: python3 tools/repo/cloudflare_settings.py deploy-token", job)
-        self.assertIn("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}", job)
+        self.assertIn("CLOUDFLARE_WORKERS_DEPLOY_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_DEPLOY_TOKEN }}", job)
 
 
 class DatabaseTests(unittest.TestCase):
@@ -839,13 +928,18 @@ class ApiAndStatsTests(unittest.TestCase):
         self.assertIn("secret SENDER_KEY: set", out)
         self.assertEqual(run(self.fake)[0], 0, "then nothing differs")
 
-    def test_a_kept_secret_is_set_from_env_infra_and_never_made(self):
+    def test_a_kept_secret_is_asked_for_never_made_and_never_read_from_a_file(self):
         self.fake.secrets = [name for name in cs.API_SECRETS if name != "DEVICE_HASH_KEY_PERMANENT"]
-        code, out = run(self.fake, "apply")
-        self.assertEqual((code, self.fake.sent), (1, []), "with no API_DEVICE_HASH_KEY_PERMANENT, nothing is made up")
-        self.assertIn("secret DEVICE_HASH_KEY_PERMANENT: left - put its value, kept privately, in .env.infra as API_DEVICE_HASH_KEY_PERMANENT", out)
-        with mock.patch.dict("os.environ", {"API_DEVICE_HASH_KEY_PERMANENT": "a-made-up-kept-value"}):
+        with mock.patch.dict("os.environ", {"API_DEVICE_HASH_KEY_PERMANENT": "not-taken-from-here"}):
             code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []), "with no terminal to ask at, nothing is made up")
+        self.assertIn("secret DEVICE_HASH_KEY_PERMANENT: left - run apply in a terminal, which asks for its value, "
+                      "kept in your password manager as DEVICE_HASH_KEY_PERMANENT", out)
+        code, out = run(self.fake, "apply", answers=[""])
+        self.assertIn("look for it in your password manager, under DEVICE_HASH_KEY_PERMANENT", out)
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn("DEVICE_HASH_KEY_PERMANENT: left - not given", out)
+        code, out = run(self.fake, "apply", answers=["\x1b[200~a-made-up-kept-value\x1b[201~"])
         self.assertEqual(code, 0, out)
         self.assertEqual([(body["name"], body["text"]) for _, _, body in self.fake.sent],
                          [("DEVICE_HASH_KEY_PERMANENT", "a-made-up-kept-value")])
@@ -865,6 +959,7 @@ class ApiAndStatsTests(unittest.TestCase):
         with mock.patch.object(cs, "api", self.fake), redirect_stdout(out), \
                 mock.patch.object(cs, "bound_database_id", lambda config=None: self.fake.bound), \
                 mock.patch.object(cs, "email_differences", lambda zone, account: []), \
+                mock.patch.object(cs, "asked_token", lambda: APPLY_VALUE), \
                 mock.patch.object(cs, "variable", side_effect=lambda name: (_ for _ in ()).throw(
                     cs.SettingsError(f"no {name}")) if name == cs.EMAIL_DESTINATION else "x"):
             cs.main(["apply"])
@@ -877,7 +972,8 @@ class ApiAndStatsTests(unittest.TestCase):
             self.assertEqual(cs.main(["rotate", "DEVICE_HASH_KEY_PERMANENT"]), 2)
             self.assertEqual(self.fake.sent, [])
             self.assertIn("DEVICE_HASH_KEY_PERMANENT is kept, and must never change", err.getvalue())
-            self.assertEqual(cs.main(["rotate", "SENDER_KEY"]), 0)
+            with mock.patch.object(cs, "asked_token", lambda: APPLY_VALUE):
+                self.assertEqual(cs.main(["rotate", "SENDER_KEY"]), 0)
         [(_, _, body)] = self.fake.sent
         self.assertEqual(body["name"], "SENDER_KEY")
         self.assertNotIn(body["text"], out.getvalue())
@@ -931,7 +1027,8 @@ class AdminAccessTests(unittest.TestCase):
         code, out = run(self.fake, "apply")
         self.assertEqual(code, 1)
         self.assertIn("Access: cannot be checked: this token is not allowed Access", out)
-        self.assertIn("Access: Apps and Policies: Edit (APPLY_TOKEN_PERMISSIONS)", out)
+        self.assertIn("Access: left - remake the apply token, which TOKENS allows Access: "
+                      "python3 tools/repo/cloudflare_tokens.py settings-apply", out)
         self.assertFalse(self.fake.r2_dev, "what it can set, it sets")
 
     def test_with_no_github_app_kept_it_says_how_to_make_one_with_its_callback(self):
@@ -939,17 +1036,17 @@ class AdminAccessTests(unittest.TestCase):
         code, out = run(self.fake, "apply")
         self.assertEqual((code, self.fake.sent), (1, []))
         self.assertIn("https://team1.cloudflareaccess.com/cdn-cgi/access/callback", out)
-        self.assertIn("ACCESS_GITHUB_CLIENT_ID", out)
+        self.assertIn("then run apply in a terminal, which asks for its client id and a new secret", out)
 
     def test_apply_makes_the_sign_in_the_application_and_its_policy_never_showing_them(self):
         self.fresh()
-        kept = {"ACCESS_GITHUB_CLIENT_ID": "made-up-id", "ACCESS_GITHUB_CLIENT_SECRET": "made-up-secret"}
-        with mock.patch.dict("os.environ", kept):
-            code, out = run(self.fake, "apply")
+        # Asked for, a paste's wrapping taken off; never kept.
+        code, out = run(self.fake, "apply", answers=["\x1b[200~made-up-id\x1b[201~", "made-up-secret\n"])
         self.assertEqual(code, 1, "it says what to put in the admin wrangler.jsonc")
-        for value in (*kept.values(), DESTINATION):
+        for value in ("made-up-id", "made-up-secret", DESTINATION):
             self.assertNotIn(value, out)
         [idp] = self.fake.idps
+        self.assertEqual(idp["config"], {"client_id": "made-up-id", "client_secret": "made-up-secret"})
         [app] = self.fake.apps
         self.assertEqual((app["domain"], app["allowed_idps"], app["auto_redirect_to_identity"]),
                          (cs.ADMIN_HOST, [idp["id"]], True))
@@ -958,6 +1055,14 @@ class AdminAccessTests(unittest.TestCase):
                          ("allow", [{"email": {"email": DESTINATION}}], [{"login_method": {"id": idp["id"]}}]))
         self.fake.admin_vars = {"ACCESS_TEAM": "team1", "ACCESS_AUD": app["aud"], "ACCOUNT_ID": "a1"}
         self.assertEqual(run(self.fake)[0], 0, "then nothing differs")
+
+    def test_a_sign_in_not_given_is_left_and_the_rest_still_made(self):
+        self.fresh()
+        code, out = run(self.fake, "apply", answers=["", ""])
+        self.assertEqual(code, 1)
+        self.assertIn("Access GitHub sign-in: left - not given: run apply again", out)
+        self.assertNotIn("Access GitHub sign-in: set", out)
+        self.assertEqual(self.fake.idps, [])
 
     def test_an_admin_address_of_its_own_comes_before_the_mail_destination(self):
         with mock.patch.dict("os.environ", {"ACCESS_ADMIN_EMAIL": "admin@example.com"}):
@@ -993,18 +1098,13 @@ class AdminAccessTests(unittest.TestCase):
         self.assertEqual((code, self.fake.sent), (1, []))
         self.assertIn("website/admin/wrangler.jsonc ACCESS_AUD: left - set it to 'aud1' and commit", out)
 
-    def test_the_admin_workers_secret_is_kept_in_env_infra(self):
+    def test_the_admin_workers_secret_is_a_token_kept_on_it_alone(self):
         self.fake.admin_secrets = []
-        code, out = run(self.fake, "apply")
-        self.assertEqual((code, self.fake.sent), (1, []))
-        self.assertIn(f"{cs.ADMIN_WORKER} secret ANALYTICS_TOKEN: left - put its value, kept privately, "
-                      "in .env.infra as ADMIN_ANALYTICS_TOKEN", out)
-        with mock.patch.dict("os.environ", {"ADMIN_ANALYTICS_TOKEN": "made-up-token"}):
+        with mock.patch.dict("os.environ", {"CLOUDFLARE_ADMIN_DASHBOARD_TOKEN": "made-up-token"}):
             code, out = run(self.fake, "apply")
-        self.assertEqual(code, 0, out)
-        self.assertEqual([(path, body["name"], body["text"]) for _, path, body in self.fake.sent],
-                         [(ADMIN_SECRETS, "ANALYTICS_TOKEN", "made-up-token")])
-        self.assertNotIn("made-up-token", out)
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn(f"{cs.ADMIN_WORKER} secret ANALYTICS_TOKEN: left - make it: "
+                      "python3 tools/repo/cloudflare_tokens.py admin-dashboard-read-only", out)
 
     def test_ci_asks_nothing_of_access(self):
         def no_access(path, *args, **kwargs):
@@ -1149,14 +1249,15 @@ class UnwrittenTests(unittest.TestCase):
         self.assertIn("Worker routes: cannot be checked", out)
         self.assertIn("R2 buckets: cannot be checked", out)
         _, applied = run(self.fake, "apply")
-        self.assertIn("Worker routes: left - give it Workers Routes: Read, or Edit", applied)
+        self.assertIn("Worker routes: left - give it Workers Routes Read, or Write (TOKENS), and remake it: "
+                      "python3 tools/repo/cloudflare_tokens.py settings-apply", applied)
 
     def test_each_permission_asked_for_is_in_the_tokens_lists(self):
-        for permission in ("Transform Rules", "Workers Routes", "Workers R2 Storage"):
-            self.assertTrue(any(name.startswith(permission) for scope in cs.READ_TOKEN_PERMISSIONS.values()
-                                for name in scope), permission)
-            self.assertTrue(any(name.startswith(permission) for scope in cs.APPLY_TOKEN_PERMISSIONS.values()
-                                for name in scope), permission)
+        for permission in ("Zone Transform Rules", "Workers Routes", "Workers R2 Storage"):
+            for key in ("settings-check-read-only", "settings-apply"):
+                spec = cs.TOKENS[key]
+                self.assertTrue(any(name.startswith(permission) for scope in ("zone", "account")
+                                    for name in spec.get(scope, {})), (key, permission))
 
     def test_a_change_apply_is_refused_is_left_and_the_rest_still_made(self):
         self.fake.other_rulesets = [{"id": "x1", "kind": "zone", "phase": "http_request_origin", "name": "x"}]
@@ -1173,6 +1274,69 @@ class UnwrittenTests(unittest.TestCase):
         self.fake.workers = []
         out = self.said("ci")
         self.assertIn("Workers and their custom domains: not checked", out)
+
+
+class AskedTokenTests(unittest.TestCase):
+    """The apply token, asked for each run and taken only as TOKENS has it."""
+
+    NOW = dt.datetime(2026, 11, 10, 12, 0, tzinfo=dt.timezone.utc)
+
+    def setUp(self):
+        self.token = {"id": "apply1", "name": cs.TOKEN_PREFIX + "settings-apply", "status": "active",
+                      "expires_on": "2026-11-10T12:08:00Z", "condition": {"request_ip": {"in": ["192.0.2.50/32"]}}}
+        self.refuse = False
+
+    def api(self, path, method="GET", body=None, **kwargs):
+        if self.refuse or cs.token() != APPLY_VALUE:
+            raise cs.SettingsError(f"{method} {path}: HTTP 403: Invalid access token", 403)
+        answers = {f"/zones?name={cs.ZONE}": [{"id": "z1", "account": {"id": "a1"}}],
+                   "/accounts/a1/tokens/verify": {"id": "apply1", "status": "active"},
+                   "/accounts/a1/tokens/apply1": self.token}
+        return copy.deepcopy(answers[path])
+
+    def ask(self, pasted=APPLY_VALUE, tty=True):
+        stdin, err = io.StringIO(), io.StringIO()
+        stdin.isatty = lambda: tty
+        with mock.patch.object(cs, "api", self.api), mock.patch("sys.stdin", stdin), mock.patch("sys.stderr", err), \
+                mock.patch.object(cs.getpass, "getpass", return_value=pasted), \
+                mock.patch.object(cs, "own_address", lambda: "192.0.2.50/32"):
+            return cs.asked_token(self.NOW), err.getvalue()
+
+    def test_one_rolled_for_this_run_from_here_is_taken_and_never_written_down(self):
+        value, said = self.ask(f"\x1b[200~{APPLY_VALUE}\x1b[201~")
+        self.assertEqual(value, APPLY_VALUE)
+        self.assertIn("give it a TTL ending within 10 minutes and Roll it", said)
+        self.assertNotIn(APPLY_VALUE, said)
+
+    def test_one_otherwise_is_refused_saying_why(self):
+        for change, why in (({"name": "another"}, "the token given is 'another'"),
+                            ({"expires_on": None}, "expires never: give it a TTL ending within 10 minutes"),
+                            ({"expires_on": "2026-11-10T12:10:01Z"}, "give it a TTL ending within 10 minutes"),
+                            ({"condition": None}, "usable from more than this computer's address"),
+                            ({"condition": {"request_ip": {"in": ["192.0.2.0/24"]}}}, "more than this computer's")):
+            with self.subTest(change=change):
+                self.setUp()
+                self.token.update(change)
+                value, said = self.ask()
+                self.assertIsNone(value)
+                self.assertIn(why, said)
+
+    def test_one_cloudflare_will_not_take_is_said_to_check_its_ttl(self):
+        self.refuse = True
+        value, said = self.ask()
+        self.assertIsNone(value)
+        self.assertIn("Cloudflare does not take that token", said)
+        self.assertIn("check its TTL", said)
+
+    def test_with_no_terminal_none_is_asked_for(self):
+        value, said = self.ask(tty=False)
+        self.assertIsNone(value)
+        self.assertIn("run this in a terminal", said)
+
+    def test_main_asks_for_it_and_uses_it_for_the_run_alone(self):
+        stdin = io.StringIO()
+        with mock.patch.object(cs, "asked_token", lambda: None), mock.patch("sys.stdin", stdin):
+            self.assertEqual(cs.main(["apply"]), 1, "no token given: nothing done")
 
 
 class StoppingTheApiTests(unittest.TestCase):

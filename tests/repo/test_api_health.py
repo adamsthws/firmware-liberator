@@ -153,16 +153,16 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("run: python3 tools/repo/api_health.py snapshot", job)
         self.assertIn("run: python3 tools/repo/api_health.py usage", job)
         self.assertIn("run: python3 tools/repo/api_health.py mail", job)
-        self.assertIn("CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_READ_TOKEN }}", job)
+        self.assertIn("CLOUDFLARE_SETTINGS_CHECK_TOKEN: ${{ secrets.CLOUDFLARE_SETTINGS_CHECK_TOKEN }}", job)
 
     def test_the_read_token_is_given_what_usage_needs(self):
         """As cloudflare_settings.py lists what to give CI's read token: the
         account's analytics for `usage`; the zone's, and the account's
         suppression list, for `mail`."""
-        given = health.cs.READ_TOKEN_PERMISSIONS
-        self.assertIn("api_health.py usage", given["account"]["Account Analytics: Read"])
-        self.assertIn("api_health.py mail", given["zone"]["Analytics: Read"])
-        self.assertIn("api_health.py mail", given["account"]["Email Sending: Read"])
+        given = health.cs.TOKENS["settings-check-read-only"]
+        self.assertIn("api_health.py usage", given["account"]["Account Analytics Read"])
+        self.assertIn("api_health.py mail", given["zone"]["Analytics Read"])
+        self.assertIn("api_health.py mail", given["account"]["Email Sending Read"])
 
 
 def delivered(**counts):

@@ -13,7 +13,8 @@ before its workflow is there - a new job, or one renamed - would hold every
 pull request back, the firmware-update workflow's too. Run it again once
 they have run. A secret's value cannot be read back, so only its name is
 checked, and one not written here is deleted. `apply` sets each of FROM_ENV from the environment or .env.infra, every
-time, and leaves any other missing one - a token - to `secret`.
+time, and leaves any other missing one to `secret` - or a Cloudflare
+token to tools/repo/cloudflare_tokens.py, which makes it and sets it.
 """
 
 from __future__ import annotations
@@ -116,8 +117,8 @@ ENVIRONMENT = "website"
 ENVIRONMENT_POLICY = {"protected_branches": False, "custom_branch_policies": True}
 ENVIRONMENT_BRANCHES = ["main"]
 ENVIRONMENT_SECRETS = {
-    "CLOUDFLARE_DEPLOY_TOKEN": "the website workflow's, deploying the three Workers",
-    "CLOUDFLARE_READ_TOKEN": "the cloudflare-settings workflow's, reading the settings it checks",
+    "CLOUDFLARE_WORKERS_DEPLOY_TOKEN": "the website workflow's, deploying the three Workers",
+    "CLOUDFLARE_SETTINGS_CHECK_TOKEN": "the cloudflare-settings workflow's, reading the settings it checks",
     "CLOUDFLARE_EMAIL_DESTINATION": "the address the domain's mail is forwarded to, which that workflow checks",
     "CLOUDFLARE_EMAIL_FORWARD": "the domain's addresses forwarded there, which that workflow checks",
 }
@@ -328,8 +329,10 @@ def main(argv: list[str] | None = None) -> int:
             if method == "SECRET" and path in FROM_ENV:
                 continue
             if method == "SECRET":
-                print(f"  {what}: left - its value is set with "
-                      f"python3 tools/repo/github_settings.py secret {path}")
+                made = [key for key, spec in cloudflare_settings.TOKENS.items() if spec.get("variable") == path]
+                print(f"  {what}: left - " + (f"made with python3 tools/repo/cloudflare_tokens.py {made[0]}" if made
+                                              else f"its value is set with python3 tools/repo/github_settings.py "
+                                                   f"secret {path}"))
                 left = 1
                 continue
             if method == "LEFT":

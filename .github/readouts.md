@@ -164,9 +164,12 @@ cd website
 npx wrangler r2 object get firmware-liberator-readouts/readouts/2026-11-07/0a1b2c3d4e5f60718293a4b5.tar --remote --file readout.tar
 ```
 
-Both take a token from `CLOUDFLARE_API_TOKEN` that can read the account's R2,
-such as the settings check's; putting or deleting an object needs one that
-can edit it. `readouts.py --help` lists its other commands.
+`readouts.py` reads `CLOUDFLARE_READOUTS_REVIEW_TOKEN` from the environment or
+`.env.infra`: the readouts token, allowed the API's database and to read the
+buckets, which `tools/repo/cloudflare_tokens.py readouts-review` makes.
+wrangler reads its own name, `CLOUDFLARE_API_TOKEN`: set it to the same
+token. Putting or deleting an object needs one that can edit the bucket.
+`readouts.py --help` lists its other commands.
 
 - **Reviewing.** `readouts.py review` lists the readouts waiting, by key,
   with an odd one's fingerprint marked; `approve ID` or `reject ID` settles

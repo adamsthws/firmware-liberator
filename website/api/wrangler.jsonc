@@ -8,7 +8,8 @@
 // checks each is there (API_SECRETS), never by hand:
 // - DEVICE_HASH_KEY_PERMANENT, the key a device's hash is stored under (reports.js), never
 //   changed: a new key would make every device seen before a new one. Kept
-//   privately as API_DEVICE_HASH_KEY_PERMANENT in .env.infra, from where apply sets it.
+//   by the maintainer somewhere safe, as the Worker never gives it back;
+//   apply asks for it when the Worker lacks it.
 // - SENDER_KEY, the key a sender's address is hashed under (index.js), to
 //   count its readouts a day and keep two of one key from coming from it.
 //   Made by apply, and changed with `cloudflare_settings.py rotate SENDER_KEY`,
