@@ -73,7 +73,11 @@ NOISE_MAX_PLAINTEXT = 1024
 CHALLENGES = {REQUEST_SHA256_AUTH: (hashlib.sha256, 64), REQUEST_AUTH: (hashlib.md5, 32)}
 
 BLOCK = 8192
-# Longer than the plug's own data timeout (105 s), as espota2 has it.
+# How long ESPHome on the plug waits for more of an update before it gives the
+# sender up: until then, one cut off part way - the computer crashed, say -
+# keeps its update service, which takes no other.
+PLUG_DATA_TIMEOUT = 105.0
+# Longer than the plug's own, as espota2 has it.
 DATA_TIMEOUT = 160.0
 
 # What the plug says when it refuses, in words for the run's log.
@@ -98,6 +102,12 @@ ERRORS = {
 
 class OTAError(RuntimeError):
     """The plug refused, or the update could not be completed."""
+
+
+class Busy(OTAError):
+    """The plug took the connection, but its update service did not answer
+    it: most likely still held by an update cut off part way, until
+    PLUG_DATA_TIMEOUT has gone by."""
 
 
 class NeedsPassword(OTAError):
@@ -319,7 +329,10 @@ def upload(host: str, data: bytes, *, kind: int = APP, port: int = PORT,
     with socket.create_connection((host, port), timeout=timeout) as raw:
         raw.settimeout(timeout)
         raw.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        offer = _handshake(raw, key)
+        try:
+            offer = _handshake(raw, key)
+        except TimeoutError as exc:
+            raise Busy("its update service did not answer") from exc
         if offer.encrypted_only:
             raise NeedsEncryption()
         if kind != APP and not offer.partition_access:

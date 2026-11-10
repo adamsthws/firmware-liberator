@@ -260,6 +260,16 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(ota.wants("127.0.0.1", key=bytes(32), port=fake.port), ota.KEY)
         self.assertEqual(fake.received, [])
 
+    def test_a_plug_still_holding_a_lost_update_is_told_apart(self):
+        # Its update service on another session: the connection is taken (the
+        # stack's backlog) and the handshake goes unanswered.
+        held = socket.socket()
+        self.addCleanup(held.close)
+        held.bind(("127.0.0.1", 0))
+        held.listen(1)
+        with self.assertRaises(ota.Busy):
+            ota.upload("127.0.0.1", b"image", port=held.getsockname()[1], timeout=0.5)
+
     def test_a_refusal_part_way_is_said_in_words(self):
         for key in (None, KEY):
             fake = self.fake(flags=0, refuse_at=ota.BLOCK, key=key)
