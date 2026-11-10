@@ -139,6 +139,13 @@ makes; to keep it off longer, set `INGEST` to `"off"` in
 
 ### Checking a deploy
 
+The API's deploy checks itself: its last step, `python3
+tools/repo/api_health.py live`, asks the new Worker what only one deployed
+with its database and newest migration answers rightly, through the
+firewall, and fails the job if not - after a deploy made before `apply` ran
+a new migration, say, it says to run it. It needs no token, and counts
+nothing. By hand:
+
 ```sh
 curl -sI https://firmwareliberator.com/             # 200
 curl -sI https://firmwareliberator.com/liberate.sh  # 302

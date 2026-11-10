@@ -4,6 +4,7 @@
     python3 tools/repo/api_health.py snapshot    the public figures are fresh, and of today's schema
     python3 tools/repo/api_health.py usage       the account is well within what its plan includes
     python3 tools/repo/api_health.py mail        the API's emails bounce rarely, and draw no complaint
+    python3 tools/repo/api_health.py live [on|off]  the API just deployed answers as it should
 
 `snapshot` needs no token: it reads the public figures the API Worker writes
 each night (website/api/nightly.js), and fails if they are missing, older than
@@ -31,6 +32,17 @@ any complaint: Email Service pauses an account's sending for poor
 reputation. Counts only, as CI's log is public: never an address. With
 CLOUDFLARE_API_TOKEN, CI's read token, which needs the zone's Analytics:
 Read and the account's Email Sending: Read.
+
+`live` is the website workflow's last step of deploying the API Worker, and
+needs no token. It asks the API what only a deployed, migrated Worker with
+its database answers rightly: a GET of /confirm with a token that cannot be
+one (the firewall's GET path, the Worker, the database's newest migration:
+a page saying there is nothing to confirm), and a POST to /wanted with the
+light proof of work but of a format no tool sends (the firewall's POST path,
+the proof checked and taken once in the database: 400). Nothing is counted
+or kept but that proof's mark. Deployed taking no requests (`off`), each is
+to answer 503. It tries for LIVE_WAIT, as a new version takes some seconds
+to be everywhere.
 """
 
 from __future__ import annotations
@@ -38,7 +50,9 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+import secrets
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -47,6 +61,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from tools.autoflash import proof_of_work  # noqa: E402
 from tools.repo import cloudflare_settings as cs  # noqa: E402
 
 SNAPSHOT_URL = f"https://{cs.STATS_HOST}/v1/stats.json"
@@ -55,6 +70,10 @@ SNAPSHOT_URL = f"https://{cs.STATS_HOST}/v1/stats.json"
 # missed, while a check run by hand at any hour sees at most about 24.
 SNAPSHOT_AGE = dt.timedelta(hours=25)
 DATABASE_JS = ROOT / "website" / "api" / "database.js"
+INDEX_JS = ROOT / "website" / "api" / "index.js"
+API_URL = f"https://{cs.API_HOST}"
+LIVE_WAIT = 90
+LIVE_EVERY = 10
 WARN_AT = 0.5
 GRAPHQL = f"{cs.API}/graphql"
 
@@ -92,6 +111,60 @@ def latest_migration() -> str:
     if not found:
         raise HealthError(f"{DATABASE_JS.relative_to(ROOT)} names no LATEST_MIGRATION")
     return found.group(1)
+
+
+def light_proof_bits() -> int:
+    found = re.search(r"^export const LIGHT_PROOF_BITS = (\d+);$", INDEX_JS.read_text(encoding="utf-8"), re.M)
+    if not found:
+        raise HealthError(f"{INDEX_JS.relative_to(ROOT)} names no LIGHT_PROOF_BITS")
+    return int(found.group(1))
+
+
+def ask(path: str, body: bytes | None = None) -> tuple[int, str]:
+    """The API's answer to a GET, or with `body` a POST of it: (status, text)."""
+    headers = {"User-Agent": "firmware-liberator-health"}
+    if body is not None:
+        headers |= {"Content-Type": "application/json", "X-Proof": proof_of_work.solve(
+            proof_of_work.body_subject(body), light_proof_bits())}
+    request = urllib.request.Request(API_URL + path, data=body, method="GET" if body is None else "POST",
+                                     headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.status, response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as error:
+        return error.code, error.read().decode("utf-8", "replace")
+    except OSError as error:
+        return 0, str(error)
+
+
+def live_problems(ingest: str) -> list[str]:
+    """What the API answered wrongly, once, as deployed taking requests or not."""
+    problems = []
+    status, text = ask("/confirm?t=not-a-token")
+    if ingest == "off":
+        if status != 503:
+            problems.append(f"GET /confirm: {status} {text[:200]!r}, not 503 as taking no requests")
+    elif status != 404 or "Nothing to confirm" not in text:
+        problems.append(f"GET /confirm: {status} {text[:200]!r}, not its page saying there is nothing to confirm")
+    body = json.dumps({"format": 0, "health": "check", "nonce": secrets.token_hex(8)}).encode()
+    status, text = ask("/wanted", body)
+    if ingest == "off":
+        if status != 503:
+            problems.append(f"POST /wanted: {status} {text[:200]!r}, not 503 as taking no requests")
+    elif status != 400 or "not a question this tool makes" not in text:
+        problems.append(f"POST /wanted: {status} {text[:200]!r}, not 400 for a question of no tool's format"
+                        + (" (run python3 tools/repo/cloudflare_settings.py apply)" if "being updated" in text else ""))
+    return problems
+
+
+def live(ingest: str, wait: float = LIVE_WAIT, every: float = LIVE_EVERY) -> list[str]:
+    """live_problems, asked again until none or `wait` seconds have passed."""
+    started = time.monotonic()
+    while True:
+        problems = live_problems(ingest)
+        if not problems or time.monotonic() - started + every > wait:
+            return problems
+        time.sleep(every)
 
 
 def fetch_snapshot(url: str = SNAPSHOT_URL) -> dict[str, Any]:
@@ -271,7 +344,7 @@ def usage_problems(measures: dict[str, int]) -> list[str]:
 
 def main(argv: list[str] | None = None, now: dt.datetime | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if args not in (["snapshot"], ["usage"], ["mail"]):
+    if args not in (["snapshot"], ["usage"], ["mail"], ["live"], ["live", "on"], ["live", "off"]):
         print(__doc__.strip(), file=sys.stderr)
         return 2
     now = now or dt.datetime.now(dt.timezone.utc)
@@ -279,6 +352,10 @@ def main(argv: list[str] | None = None, now: dt.datetime | None = None) -> int:
         if args == ["snapshot"]:
             problems = snapshot_problems(fetch_snapshot(), now)
             good = f"The public figures at {SNAPSHOT_URL} are fresh, of schema {latest_migration()}."
+        elif args[0] == "live":
+            ingest = args[1] if len(args) > 1 else "on"
+            problems = live(ingest)
+            good = (f"{API_URL} answers as deployed, " + ("taking requests." if ingest == "on" else "taking none."))
         elif args == ["mail"]:
             measures = mail(now)
             print(f"  In {MAIL_DAYS} days: {measures['delivered']:,} emails delivered, {measures['bounced']:,} bounced")
