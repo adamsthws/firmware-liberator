@@ -259,6 +259,18 @@ check.
   20 A whatever was plugged in, and a voltage that rose with the load (5 V at
   100 W). The power was right. SEL is now inverted in its config, as ESPHome's
   page says for this chip.
+- Each run sends the project an anonymous report of how it went: the device,
+  the firmware it went to and from, and how far it got, never anything of you,
+  your computer or your network. Reports from everyone add up to the figures
+  on [firmwareliberator.com/stats](https://firmwareliberator.com/stats).
+  `--no-report`, or `AUTOFLASH_NO_REPORT=1` in `.env`, stops it, and the tool
+  says so once, the first time it runs on a computer;
+  [what the tool sends](docs/what-the-tool-sends.md) says what a report holds.
+  A report that could not be sent is kept on your computer and sent the next
+  time, for up to 30 days.
+- A run that stopped offers to open a GitHub issue for it, with its title
+  filled in and its report on your clipboard to paste; the end of a run no
+  longer asks for its report to be posted in Discussions.
 
 ## 2.3.0
 

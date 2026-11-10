@@ -52,13 +52,13 @@ cannot connect:
   work or school - makes eWeLink's and GitHub's certificates untrusted. The
   tool says so; use another network, or pause that software.
 
-A problem not listed here may be new. Please post it in the
-[Test reports](https://github.com/adamsthws/firmware-liberator/discussions/1) thread - see
-[How it went](../README.md#how-it-went) - and the fix
-will help everyone after you. To ask for help, start a
-[discussion](https://github.com/adamsthws/firmware-liberator/discussions)
-of your own or open an [issue](https://github.com/adamsthws/firmware-liberator/issues)
-rather than asking in the thread.
+A problem not listed here may be new. Please open an
+[issue](https://github.com/adamsthws/firmware-liberator/issues/new?template=bug-report.yml)
+for it, and the fix will help everyone after you: when a run stops, the tool
+shows a link to one with its title filled in, and puts the run's report on
+your clipboard to paste in. To ask a question, start a
+[discussion](https://github.com/adamsthws/firmware-liberator/discussions) of
+your own.
 
 On Linux, blocked connections show in the kernel log:
 
@@ -121,10 +121,11 @@ at two points rather than assuming:
   Tasmota and keeps working; only the move to the official layout is refused.
   Leave it as it is and report it rather than forcing past the check.
 
-Either way, or if it converts cleanly, please post in the
-[Test reports](https://github.com/adamsthws/firmware-liberator/discussions/1) thread - see
-[How it went](../README.md#how-it-went) for what to
-include. Reports from other regions are very welcome.
+Either way, please open an
+[issue](https://github.com/adamsthws/firmware-liberator/issues/new?template=bug-report.yml)
+for it, from the link the tool shows when it stops. A plug from another region
+that converts cleanly needs nothing more: its run's report already tells the
+project ([what the tool sends](what-the-tool-sends.md)).
 
 ## The plug can't be found
 
