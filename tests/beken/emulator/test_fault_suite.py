@@ -188,6 +188,25 @@ class BatchResultTests(unittest.TestCase):
         self.assertEqual(events, ["wait", "run"])
 
 
+    def test_a_scenario_that_raises_is_recorded_with_where(self):
+        from unittest import mock
+
+        def run(instance, sc):
+            raise FileNotFoundError(2, "No such file or directory")
+        with mock.patch.object(fault_suite, "scenarios", return_value=[{"id": "a", "arg": 1}]), \
+                mock.patch.object(fault_suite, "latest", return_value={}), \
+                mock.patch.object(fault_suite, "Instance"), mock.patch.object(fault_suite, "record") as record, \
+                mock.patch.object(fault_suite, "run_scenario", side_effect=run), \
+                mock.patch.dict(fault_suite.os.environ, {"AUTOFLASH_BEKEN_EMU_WORKERS": "1"}), \
+                mock.patch.object(fault_suite.scenario_times, "times", return_value={}), \
+                mock.patch.object(fault_suite.cpu_load, "wait_for_room"), \
+                mock.patch("builtins.print"):
+            fault_suite.batch()
+        outcome = record.call_args.args[1]
+        self.assertEqual(outcome["result"], "ERROR")
+        self.assertIn("FileNotFoundError", outcome["notes"]["error"])
+        self.assertIn("in run", outcome["notes"]["trace"])
+
 class StepTimingTests(unittest.TestCase):
     def test_a_step_is_seen_soon_enough_for_a_fault_late_in_the_shortest(self):
         shortest = min(seconds for steps in fault_suite.ROUTES.values() for seconds in steps.values())
