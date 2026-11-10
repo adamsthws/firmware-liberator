@@ -1,8 +1,8 @@
 """The partition tables Sonoff's firmware comes on, and where each keeps things.
 
-Every plan and every Berry program that writes a plug's flash takes its
-addresses from here, so a plug laid out differently is one more entry, checked
-by the same steps. A table not listed stops a run while the plug can still go
+Every plan and every Berry program that writes a device's flash takes its
+addresses from here, so a device laid out differently is one more entry, checked
+by the same steps. A table not listed stops a run while the device can still go
 back to Sonoff's firmware (installer.require_known_layout).
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TABLE_ENTRY_SIZE = 32
-# Where a plug leaving Tasmota takes the mover: in front of Tasmota's app, over
+# Where a device leaving Tasmota takes the mover: in front of Tasmota's app, over
 # its safeboot, which is all that has room. A layout whose ota_0 is not here
 # leaves through a temporary table with it here (Layout.temporary_table).
 MOVER_AT = 0x20000
@@ -42,7 +42,7 @@ class Layout:
 
     @property
     def leaving_sha256(self) -> str:
-        """The table a plug on Tasmota leaves for (temporary_table says why)."""
+        """The table a device on Tasmota leaves for (temporary_table says why)."""
         return self.temporary_sha256 if self.needs_temporary else self.table_sha256
 
     @property
@@ -99,9 +99,9 @@ class Layout:
                      for label, kind, subtype, offset, size, flags in self.partitions())
 
     def temporary_table(self) -> bytes:
-        """What a plug leaving Tasmota has between Tasmota's table and its own, when
+        """What a device leaving Tasmota has between Tasmota's table and its own, when
         the mover does not fit at its own ota_0, as Tasmota's app starts too soon
-        after it: it then runs as a plug with its ota_0 at MOVER_AT, until the
+        after it: it then runs as a device with its ota_0 at MOVER_AT, until the
         Tasmota of the hub writes its own table (plans.own_table_from_temporary)."""
         return self._table_of(self.temporary_partitions())
 
@@ -127,7 +127,7 @@ SONOFF_NSPANEL = Layout(
     (0x20000, 0x210000), 0x1F0000, 0x9000, 0x1D000, 0x1F000)
 # A larger NVS, for its history of readings, and smaller app slots: an interim
 # Tasmota must be one that fits (the Layout's slot_size says), and the mover
-# does not fit between its ota_0 and Tasmota's app, so a plug on Tasmota leaves
+# does not fit between its ota_0 and Tasmota's app, so a device on Tasmota leaves
 # through a temporary table.
 SONOFF_TH_ELITE = Layout(
     "sonoff-th-elite", "artifacts/sonoff-th-elite-partition-table.bin",

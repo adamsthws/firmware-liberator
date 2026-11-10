@@ -23,12 +23,12 @@ DEFAULT_MANIFEST = Path("captures/safeboot-recovery-migration/manifest.json")
 
 
 def default_manifest(ctx: Context) -> Path:
-    """Where the bundle for this run's plug's chip goes, unless --manifest said."""
+    """Where the bundle for this run's device's chip goes, unless --manifest said."""
     return (ROOT / "captures" / chips.of(kinds.of_run(ctx.state).chip).bundle / "manifest.json").resolve()
 
 
 def step_check(ctx: Context) -> dict[str, Any]:
-    """A5 - offline preconditions, building the bundle if there is none.  Touches no plug."""
+    """A5 - offline preconditions, building the bundle if there is none.  Touches no device."""
     try:
         manifest = validate_bundle(ctx.manifest_path, current_only=True)
     except ValueError as exc:
@@ -36,7 +36,7 @@ def step_check(ctx: Context) -> dict[str, Any]:
             raise Abort(f"the bundle at {ctx.manifest_path} cannot be used: {exc}") from exc
         manifest = make_bundle(ctx, problem=None if not ctx.manifest_path.exists() else str(exc))
     else:
-        # Nothing is asked about Wi-Fi here: the details are read off the plug
+        # Nothing is asked about Wi-Fi here: the details are read off the device
         # at E1, and the bundle is rebuilt then if they are for another network.
         output.say("bundle and pinned artifacts: OK")
 
@@ -70,7 +70,7 @@ def make_bundle(ctx: Context, problem: str | None) -> dict[str, Any]:
         "temporary firmware, which has to rejoin your Wi-Fi by itself.",
     ])
     try:
-        build_bundle(output=ctx.manifest_path.parent, release=release_on_the_plug(ctx),
+        build_bundle(output=ctx.manifest_path.parent, release=release_on_the_device(ctx),
                      chip=chips.of(kinds.of_run(ctx.state).chip))
     except BundleError as exc:
         raise Abort(f"the bundle could not be prepared: {exc}") from exc
@@ -79,7 +79,7 @@ def make_bundle(ctx: Context, problem: str | None) -> dict[str, Any]:
 
 
 def make_bundle_of_this_release(ctx: Context) -> bool:
-    """The bundle built again of the release this version pins, for a plug
+    """The bundle built again of the release this version pins, for a device
     that finished a conversion on an earlier one and is updated from it
     (tasmota.prepare_update).  False, the bundle as it was, when it cannot
     be: the conversion is done whatever this finds."""
@@ -91,9 +91,9 @@ def make_bundle_of_this_release(ctx: Context) -> bool:
     return True
 
 
-def release_on_the_plug(ctx: Context) -> dict[str, Any] | None:
+def release_on_the_device(ctx: Context) -> dict[str, Any] | None:
     """The official release pinned before whose app a run past F2 put on the
-    plug, as the bundle that installed it holds it; None for the one pinned
+    device, as the bundle that installed it holds it; None for the one pinned
     now, or before F2. A bundle built again must be of that release: its
     Safeboot is G1's, its files are H1's check. One 1.2.0 made, from another
     startup firmware, is built again (the fault suite's legacy-v1.2.0 at H1)."""
@@ -109,14 +109,14 @@ def bundle_of_this_version(ctx: Context) -> None:
     """A run carried on past A5 has its bundle checked, as A5 checks it, and
     built again if this version cannot use it: one an earlier version made
     before the firmware the tool installs changed, which every phase server
-    refuses (docs/updating-firmware.md). Until F2, nothing on the plug depends
+    refuses (docs/updating-firmware.md). Until F2, nothing on the device depends
     on it - the startup firmware it pins is the published one with the same
     Wi-Fi, written in again when next needed (adopt_wifi), and a step whose
     checks were made with the old one does them again (of_this_bundle). From
-    F2 the plug runs the official app the bundle holds, and the Safeboot G1
+    F2 the device runs the official app the bundle holds, and the Safeboot G1
     writes, and H1's check, must be that release's: a bundle of a release
-    pinned before is kept, or built again of it (release_on_the_plug), and
-    the plug ends on it."""
+    pinned before is kept, or built again of it (release_on_the_device), and
+    the device ends on it."""
     if not ctx.state.is_done("A5") or ctx.manifest_path != default_manifest(ctx):
         return
     try:

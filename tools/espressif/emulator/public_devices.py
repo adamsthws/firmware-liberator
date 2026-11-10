@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""Public starting plugs, and the test of the final firmware run from them.
+"""Public starting devices, and the test of the final firmware run from them.
 
-    python -I tools/espressif/emulator/public_plugs.py make --plug MAC --stock DIR
-        the suite's plugs saved after D1 (fault_suite.py --stub-cloud prep, on
-        MAC, a test copy: copy_plug.py), carried on to just before the final
+    python -I tools/espressif/emulator/public_devices.py make --device MAC --stock DIR
+        the suite's devices saved after D1 (fault_suite.py --stub-cloud prep, on
+        MAC, a test copy: copy_device.py), carried on to just before the final
         firmware - after E3 on the way to Tasmota, after D5 on the way to
-        ESPHome - and made public (sanitise_plug.py, DIR the real plug's
+        ESPHome - and made public (sanitise_device.py, DIR the real device's
         Sonoff backup): captures/emulation/saved/public-pre-final-tasmota and
         -esphome. Again only when what runs before the final firmware changes.
 
-    python -I tools/espressif/emulator/public_plugs.py test
+    python -I tools/espressif/emulator/public_devices.py test
         from those, the final firmware firmware.json pins, both ways: each
-        installed (F2 to H1, I1 and I2), then each plug taken to the other
+        installed (F2 to H1, I1 and I2), then each device taken to the other
         (L1 to I2, X1 to H1). No cloud, real or stub, no account and nothing
         of Sonoff's: docs/updating-firmware.md.
 
-    python -I tools/espressif/emulator/public_plugs.py publish --stock DIR
-        shown public again (sanitise_plug.prove, against the real backup),
+    python -I tools/espressif/emulator/public_devices.py publish --stock DIR
+        shown public again (sanitise_device.prove, against the real backup),
         then uploaded to the repository's emulator-public-plugs release; it
         prints the PUBLISHED pin to put below
-    python -I tools/espressif/emulator/public_plugs.py fetch
+    python -I tools/espressif/emulator/public_devices.py fetch
         the published ones (PUBLISHED), checked, into captures/: what a
         checkout with no backup, such as a GitHub Actions runner, tests from
 
@@ -47,7 +47,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 SAVED = ROOT / "captures/emulation/saved"
-# The public plugs as published: one xz-compressed tar of the two, named by
+# The public devices as published: one xz-compressed tar of the two, named by
 # its hash, in the release below. Made again only with what runs before the
 # final firmware (an interim firmware, or what a run keeps of itself).
 RELEASE = "emulator-public-plugs"
@@ -56,12 +56,12 @@ PUBLISHED = {
     "file": "public-plugs-bdd2a0878b28.tar.xz",
     "sha256": "bdd2a0878b28248c23ab59166197a33fbaec13baa40e041270f542a90104ff3d",
 }
-LOGS = ROOT / "captures/emulation/public-plugs"
+LOGS = ROOT / "captures/emulation/public-devices"
 UNATTENDED = ROOT / "tools/espressif/emulator/unattended-test.sh"
 # Where each way stops before its final firmware, and what it is made into.
 STARTS = {"tasmota": ("E3", "public-pre-final-tasmota"), "esphome": ("D5", "public-pre-final-esphome")}
 # The test: two ways, one on each emulator, each a final firmware installed,
-# then that plug taken to the other. A way goes on as soon as its own first
+# then that device taken to the other. A way goes on as soon as its own first
 # run is done: neither waits for the other.
 WAYS = [
     [("public-pre-final-tasmota", "tasmota", "public-on-tasmota"), ("public-on-tasmota", "esphome", None)],
@@ -71,7 +71,7 @@ WAYS = [
 
 def run(instance: int, source: str | None, firmware: str, save: str | None, log: Path,
         extra: tuple[str, ...] = (), stop_after: str | None = None) -> tuple[bool, str]:
-    """One run, from a saved plug if `source` names one; converted, and its result line."""
+    """One run, from a saved device if `source` names one; converted, and its result line."""
     args = [str(UNATTENDED), f"--instance={instance}", *([f"--from={source}"] if source else []), *extra,
             *([f"--save={save}"] if save else []), "--", "--firmware", firmware]
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -89,7 +89,7 @@ def run(instance: int, source: str | None, firmware: str, save: str | None, log:
 
 
 def step_done(saved: Path, step: str) -> bool:
-    """Whether the kept plug's current run has the step done, and the next not begun."""
+    """Whether the kept device's current run has the step done, and the next not begun."""
     import json
     try:
         current = (saved / "captures/.autoflash-current").read_text().strip()
@@ -101,7 +101,7 @@ def step_done(saved: Path, step: str) -> bool:
 
 def stop_at(instance: int, step: str, since: float, process: subprocess.Popen) -> None:
     """Ctrl-C twice once the run's own log says the step is done, as
-    fault_suite.prep does: the run stops, and --save keeps the plug."""
+    fault_suite.prep does: the run stops, and --save keeps the device."""
     from tools.espressif.emulator import fault_suite as fs
     scenario = fs.Scenario(instance, {"id": "public", "step": "", "fault": "prep", "arg": ""}, os.devnull)
 
@@ -134,12 +134,12 @@ def side_by_side(jobs: list) -> list:
 def command_make(args: argparse.Namespace) -> int:
     os.environ["AUTOFLASH_EMU_STUB_CLOUD"] = "1"
     from tools.espressif.emulator import fault_suite as fs
-    fs.STUB_CLOUD, fs.MAC = True, args.plug
+    fs.STUB_CLOUD, fs.MAC = True, args.device
     jobs, made = [], []
     for (firmware, (step, public)), instance in zip(STARTS.items(), args.instances):
         source = fs.saved(fs.AFTER_D1[f"sonoff>{firmware}"])
         if not (SAVED / source / "flash.bin").exists():
-            print(f"No {source}: run fault_suite.py --plug={args.plug} --stub-cloud prep first", file=sys.stderr)
+            print(f"No {source}: run fault_suite.py --device={args.device} --stub-cloud prep first", file=sys.stderr)
             return 1
         work = f"{public}-unsanitised"
         made.append((firmware, work, public))
@@ -152,7 +152,7 @@ def command_make(args: argparse.Namespace) -> int:
             failed += 1
             continue
         shutil.rmtree(SAVED / f"{public}.new", ignore_errors=True)
-        code = subprocess.call([sys.executable, "-I", str(ROOT / "tools/espressif/emulator/sanitise_plug.py"),
+        code = subprocess.call([sys.executable, "-I", str(ROOT / "tools/espressif/emulator/sanitise_device.py"),
                                 str(SAVED / work), str(SAVED / f"{public}.new"), "--stock", str(args.stock)])
         shutil.rmtree(SAVED / work, ignore_errors=True)  # it holds Sonoff's: never left lying
         if code:
@@ -168,7 +168,7 @@ def command_test(args: argparse.Namespace) -> int:
     for start in (public for _, public in STARTS.values()):
         mode = SAVED / start / "flash-mode"
         if not mode.is_file() or mode.read_text().strip() != "public":
-            print(f"No public plug {start}: make them (public_plugs.py make) or fetch them", file=sys.stderr)
+            print(f"No public device {start}: make them (public_devices.py make) or fetch them", file=sys.stderr)
             return 1
     started = time.time()
     said_lock = threading.Lock()
@@ -179,7 +179,7 @@ def command_test(args: argparse.Namespace) -> int:
             with said_lock:
                 print(f"{'PASS' if ok else 'FAIL'}  {source} to {firmware}: {said}", flush=True)
                 if not ok:
-                    for later, to, _ in runs[n + 1:]:  # each starts from the plug the one before made
+                    for later, to, _ in runs[n + 1:]:  # each starts from the device the one before made
                         print(f"SKIP  {later} to {to}: the run before it failed", flush=True)
             if not ok:
                 return 1
@@ -192,7 +192,7 @@ def command_test(args: argparse.Namespace) -> int:
 
 
 def packed() -> bytes:
-    """The two public plugs as an xz tar, the same bytes for the same plugs."""
+    """The two public devices as an xz tar, the same bytes for the same devices."""
     out = io.BytesIO()
     with tarfile.open(fileobj=out, mode="w", format=tarfile.PAX_FORMAT) as tar:
         for _, public in STARTS.values():
@@ -211,37 +211,37 @@ def packed() -> bytes:
 
 
 def command_publish(args: argparse.Namespace) -> int:
-    from tools.autoflash import plugs
-    from tools.espressif.emulator import sanitise_plug
+    from tools.autoflash import records
+    from tools.espressif.emulator import sanitise_device
     stock = (args.stock / "flash.bin").read_bytes()
-    real_mac = plugs.mac_from_efuse((args.stock / "efuse.bin").read_bytes())
+    real_mac = records.mac_from_efuse((args.stock / "efuse.bin").read_bytes())
     for _, public in STARTS.values():
-        checked = sanitise_plug.prove(SAVED / public, stock, real_mac)
+        checked = sanitise_device.prove(SAVED / public, stock, real_mac)
         print(f"{public}: shown public again ({checked['files']} files)")
     data = packed()
     digest = hashlib.sha256(data).hexdigest()
-    name = f"public-plugs-{digest[:12]}.tar.xz"
+    name = f"public-devices-{digest[:12]}.tar.xz"
     with __import__("tempfile").TemporaryDirectory() as tmp:
         path = Path(tmp) / name
         path.write_bytes(data)
         if subprocess.run(["gh", "release", "view", RELEASE, "--repo", REPOSITORY],
                           capture_output=True).returncode:
             subprocess.run(["gh", "release", "create", RELEASE, "--repo", REPOSITORY, "--prerelease",
-                            "--title", "Emulator: public plugs",
-                            "--notes", "Plugs for the emulator with nothing of Sonoff's or of any real plug in "
+                            "--title", "Emulator: public devices",
+                            "--notes", "Devices for the emulator with nothing of Sonoff's or of any real device in "
                                        "them, from which the firmware a conversion ends on is tested "
-                                       "(docs/emulator.md#public-plugs). Not a release of the tool."],
+                                       "(docs/emulator.md#public-devices). Not a release of the tool."],
                            check=True)
         subprocess.run(["gh", "release", "upload", RELEASE, str(path), "--repo", REPOSITORY, "--clobber"],
                        check=True)
-    print(f"Published {name} ({len(data):,} bytes). Pin it in tools/espressif/emulator/public_plugs.py:")
+    print(f"Published {name} ({len(data):,} bytes). Pin it in tools/espressif/emulator/public_devices.py:")
     print(f'PUBLISHED = {{\n    "file": "{name}",\n    "sha256": "{digest}",\n}}')
     return 0
 
 
 def command_fetch(_args: argparse.Namespace) -> int:
     if not PUBLISHED["file"]:
-        print("No public plugs are published yet (PUBLISHED)", file=sys.stderr)
+        print("No public devices are published yet (PUBLISHED)", file=sys.stderr)
         return 1
     url = f"https://github.com/{REPOSITORY}/releases/download/{RELEASE}/{PUBLISHED['file']}"
     with urllib.request.urlopen(url, timeout=120) as response:
@@ -261,7 +261,7 @@ def command_fetch(_args: argparse.Namespace) -> int:
             shutil.rmtree(SAVED / public, ignore_errors=True)
         SAVED.mkdir(parents=True, exist_ok=True)
         tar.extractall(SAVED, members=members, filter="data")
-    print(f"Fetched the public plugs ({PUBLISHED['file']}) into {SAVED}")
+    print(f"Fetched the public devices ({PUBLISHED['file']}) into {SAVED}")
     return 0
 
 
@@ -269,15 +269,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--instances", default="1,2", help="the two emulators to use (default 1,2)")
     commands = parser.add_subparsers(dest="command", required=True)
-    make = commands.add_parser("make", help="make the public starting plugs (needs the real dump)")
-    make.add_argument("--plug", required=True, help="the test copy's MAC (copy_plug.py)")
-    make.add_argument("--stock", type=Path, required=True, help="the real plug's Sonoff backup directory")
+    make = commands.add_parser("make", help="make the public starting devices (needs the real dump)")
+    make.add_argument("--device", required=True, help="the test copy's MAC (copy_device.py)")
+    make.add_argument("--stock", type=Path, required=True, help="the real device's Sonoff backup directory")
     make.set_defaults(run=command_make)
-    commands.add_parser("test", help="the final firmware, from the public plugs").set_defaults(run=command_test)
-    publish = commands.add_parser("publish", help="publish the public plugs (needs the real dump)")
-    publish.add_argument("--stock", type=Path, required=True, help="the real plug's Sonoff backup directory")
+    commands.add_parser("test", help="the final firmware, from the public devices").set_defaults(run=command_test)
+    publish = commands.add_parser("publish", help="publish the public devices (needs the real dump)")
+    publish.add_argument("--stock", type=Path, required=True, help="the real device's Sonoff backup directory")
     publish.set_defaults(run=command_publish)
-    commands.add_parser("fetch", help="the published public plugs, into captures/").set_defaults(run=command_fetch)
+    commands.add_parser("fetch", help="the published public devices, into captures/").set_defaults(run=command_fetch)
     args = parser.parse_args(argv)
     args.instances = [int(n) for n in args.instances.split(",")][:2]
     if len(args.instances) != 2:

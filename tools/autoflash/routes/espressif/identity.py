@@ -1,4 +1,4 @@
-"""The plug's Sonoff identity, wherever it is (tools/espressif/sonoff_identity.py):
+"""The device's Sonoff identity, wherever it is (tools/espressif/sonoff_identity.py):
 kept on its way to Tasmota (K1), taken off Tasmota's layout as it leaves (L1),
 and found again on its way back to Sonoff's firmware (R1).
 """
@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import hostsys, kinds, output, plans, plugs
+from tools.autoflash import hostsys, kinds, output, plans, records
 from tools.autoflash.errors import Abort
 from tools.autoflash.routes.espressif import hub
 from tools.autoflash.state import PENDING
@@ -22,16 +22,16 @@ if TYPE_CHECKING:
     from tools.espressif.layouts import Layout
 
 
-# Testing (cli.py --simulate-no-identity): a plug that keeps no Sonoff identity
+# Testing (cli.py --simulate-no-identity): a device that keeps no Sonoff identity
 # - in its settings or its sector - and is in no eWeLink account, as one
 # another tool converted and that was then removed from the app.
 SIMULATE_NONE = False
 
 
 def from_backup(ctx: Context) -> Identity | None:
-    """The identity in the plug's Sonoff backup on this computer."""
-    mac = ctx.state.input("plug_mac")
-    backup = plugs.find_backup(mac) if mac else None
+    """The identity in the device's Sonoff backup on this computer."""
+    mac = ctx.state.input("device_mac")
+    backup = records.find_backup(mac) if mac else None
     if backup is None:
         return None
     try:
@@ -47,20 +47,20 @@ def nvs_size(layout: Layout) -> int:
 
 
 def from_settings(ctx: Context, layout: Layout) -> Identity | None:
-    """The identity in the settings of a plug on Sonoff's layout, read through
+    """The identity in the settings of a device on Sonoff's layout, read through
     the Berry Tasmota: Sonoff's own, kept by ESPHome, or put there as it left
-    Tasmota. A read that fails raises: a plug that did not answer may keep one."""
+    Tasmota. A read that fails raises: a device that did not answer may keep one."""
     if SIMULATE_NONE:
         return None
     return sonoff_identity.from_nvs(ctx.device.read_nvs(layout.nvs, nvs_size(layout)))
 
 
 def kept_in_sector(ctx: Context) -> Identity | None:
-    """The identity in the sector at the top of the plug's flash, found by what
+    """The identity in the sector at the top of the device's flash, found by what
     the sector says it is, whatever the table: on Tasmota's layout the table's
     entry for it may have gone with a reflash, which is said. On Sonoff's
     layout it is the end of ota_1, past any firmware written there: the
-    updates that bring a plug back to the hub write only as far as their
+    updates that bring a device back to the hub write only as far as their
     image, so it is still there when the startup firmware has wiped the
     settings (its persist-settings.patch), and its checksum shows it whole.
     A read that fails raises, as from_settings."""
@@ -81,12 +81,12 @@ def kept_in_sector(ctx: Context) -> Identity | None:
 
 
 def account_record(ctx: Context, identity: Identity | None = None) -> dict[str, Any] | None:
-    """The plug's record in its eWeLink account: by its id where that is known,
+    """The device's record in its eWeLink account: by its id where that is known,
     else by its Wi-Fi MAC, which the record carries."""
     if SIMULATE_NONE:
         return None
     devices = ctx.account_devices() or []
-    mac = hostsys.normalise_mac(str(ctx.state.input("plug_mac") or ""))
+    mac = hostsys.normalise_mac(str(ctx.state.input("device_mac") or ""))
     for device in devices:
         params = device.get("params") or {}
         if (identity and device.get("deviceid") == identity.deviceid) or (
@@ -96,7 +96,7 @@ def account_record(ctx: Context, identity: Identity | None = None) -> dict[str, 
 
 
 def from_account(ctx: Context, kind: kinds.Kind) -> Identity | None:
-    """The identity rebuilt from the plug's eWeLink account record."""
+    """The identity rebuilt from the device's eWeLink account record."""
     device = account_record(ctx)
     if device is None:
         return None
@@ -110,7 +110,7 @@ def from_account(ctx: Context, kind: kinds.Kind) -> Identity | None:
 
 def for_tasmota(ctx: Context, layout: Layout) -> tuple[Identity | None, str]:
     """The identity to keep on the way to Tasmota, and where it came from: the
-    backup on this computer, else the plug's own settings."""
+    backup on this computer, else the device's own settings."""
     identity = from_backup(ctx)
     if identity is not None:
         return identity, "its Sonoff backup on this computer"
@@ -119,10 +119,10 @@ def for_tasmota(ctx: Context, layout: Layout) -> tuple[Identity | None, str]:
 
 
 def step_keep_identity(ctx: Context) -> dict[str, Any]:
-    """K1 - the plug's Sonoff identity, kept in the sector at the top of its
+    """K1 - the device's Sonoff identity, kept in the sector at the top of its
     memory from the hub: on the way to Tasmota before the commit takes
     Sonoff's settings, and on the way to ESPHome, which keeps them but loses
-    them as it is left (kept_in_sector). From there the plug can go back to
+    them as it is left (kept_in_sector). From there the device can go back to
     Sonoff's firmware with no backup on the computer."""
     if ctx.state.status("E3") != PENDING or ctx.state.status("I1") != PENDING:
         # A run begun before this step was, carried on past the hub: there is

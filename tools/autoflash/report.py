@@ -1,5 +1,5 @@
 """The report of a run, for the person to share: what was converted, how long
-each stage took, what the plug's hardware does, and where to post it.
+each stage took, what the device's hardware does, and where to post it.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import __version__, esphome, hostsys, kinds, openbeken, output, plugs, report_upload, routes, runs, testers
+from tools.autoflash import __version__, esphome, hostsys, kinds, openbeken, output, records, report_upload, routes, runs, testers
 from tools.autoflash.device import DeviceError
 from tools.autoflash.runs import ROOT
 from tools.ewelink import relay as ewelink_relay
@@ -34,16 +34,16 @@ KOFI_URL = "https://ko-fi.com/adamsthws"
 DONATE_URL = "https://www.paypal.me/adamsthws"
 
 
-def plug_page_url(plug_ip: str | None) -> str | None:
-    """The address to open the converted plug's Tasmota page at.
+def device_page_url(device_ip: str | None) -> str | None:
+    """The address to open the converted device's Tasmota page at.
 
-    Inside the emulator (tools/espressif/emulator) the plug's address only exists in its
+    Inside the emulator (tools/espressif/emulator) the device's address only exists in its
     container; the emulator says where your browser reaches it instead.
     """
     emulated = os.environ.get("AUTOFLASH_EMULATOR_URL")
     if emulated:
         return emulated
-    return f"http://{plug_ip}" if plug_ip else None
+    return f"http://{device_ip}" if device_ip else None
 
 
 def computer_description() -> str:
@@ -85,7 +85,7 @@ def python_description() -> str:
 
 def public_text(text: str, limit: int = 240) -> str:
     """`text` fit for a public post: on one line, with nothing that identifies
-    the plug, the network or the person - not even a private address."""
+    the device, the network or the person - not even a private address."""
     text = output.scrub(" ".join(str(text).split()))
     text = re.sub(r"(?<![\w.])\d{1,3}(?:\.\d{1,3}){3}(?![\w])", "<address>", text)
     return text if len(text) <= limit else text[:limit - 3].rstrip() + "..."
@@ -137,7 +137,7 @@ CONVERTED_FROM = {"sonoff": "Sonoff", "tasmota": "Tasmota", "esphome": "ESPHome"
 
 
 def converted_from(ctx: Context, firmware: str | None) -> str:
-    """What the plug ran at the run's start, for its report: "__", to fill in,
+    """What the device ran at the run's start, for its report: "__", to fill in,
     for a run that stopped before it found that out (the device not on the
     network at all) - not Sonoff's, which runs.run_source takes when none is
     recorded, for a run of 1.x."""
@@ -165,12 +165,12 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
     # None for a run stopped before its firmware was chosen (A3).
     firmware = routes.recorded_firmware(ctx.state)
     espressif = kind.family == "espressif"
-    # A run that starts on a converted plug never asks Sonoff's firmware or
-    # eWeLink: what the plug's record kept from its first conversion - the
+    # A run that starts on a converted device never asks Sonoff's firmware or
+    # eWeLink: what the device's record kept from its first conversion - the
     # model, and the Sonoff firmware its backup holds - stands in.
-    record = plugs.read_plug(ctx.state.input("plug_mac") or "")
+    record = records.read_device(ctx.state.input("device_mac") or "")
     product = str(ctx.state.input("product_model") or record.get("model") or "")
-    # A converted plug with no record here says its kind, if not its exact model.
+    # A converted device with no record here says its kind, if not its exact model.
     model = kind.product_of(product) or (kind.name if runs.run_source(ctx.state) != "sonoff" else "")
     stock_version = str(ctx.state.input("stock_version") or record.get("stock_version") or "")
     captures = ctx.state.data.get("captures", {})
@@ -184,7 +184,7 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
     retried = [f"{number} ({count} {'retry' if count == 1 else 'retries'})"
                for number, count in retries.items()]
     # The lowest of the run's readings: from Sonoff's advert at A2, from Tasmota
-    # at L1, D4, E1 or I1 - wherever the plug's firmware could give one.
+    # at L1, D4, E1 or I1 - wherever the device's firmware could give one.
     readings = [value for key, value in captures.items() if key.endswith(".signal_dbm")
                 and isinstance(value, int) and not isinstance(value, bool)]
     signal = min(readings) if readings else None
@@ -195,29 +195,29 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
         ("Tool", __version__),
         ("Model", model or "__"),
         ("Stock", stock_version or "__"),
-        # How it went, never where it is or which plug: the path holds the MAC.
-        # A run from a converted plug takes none: one is there or not.
-        ("Backup", plugs.BACKUP_OUTCOMES[ctx.state.input("backup_outcome")
+        # How it went, never where it is or which device: the path holds the MAC.
+        # A run from a converted device takes none: one is there or not.
+        ("Backup", records.BACKUP_OUTCOMES[ctx.state.input("backup_outcome")
                                       or ("existing" if routes.sonoff_backup_exists(ctx) else "not taken")][1]),
-        # Where going back to Sonoff's firmware took the plug's identity from:
+        # Where going back to Sonoff's firmware took the device's identity from:
         # only on such a run (sonoff.step_sonoff_restore).
         *([("Identity", SONOFF_IDENTITY.get(captures.get("R1.identity"), "not read"))]
           if espressif and firmware == "sonoff" else []),
         ("Computer", computer_description()),
         ("Python", python_description()),
         ("Time", took),
-        # By stage number.  Busy is how long a Berry stage kept the plug from
+        # By stage number.  Busy is how long a Berry stage kept the device from
         # anything else: at 70-90s a real S60TPG stops answering for good.
         ("Stage times", stage_timings(ctx, "seconds")),
         # Only where the route has them: a Berry stage's busy time, the Wi-Fi
         # typed or a setup network joined are an Espressif route's.
-        *([("Busy", stage_timings(ctx, "plug_busy_seconds"))] if espressif else []),
+        *([("Busy", stage_timings(ctx, "device_busy_seconds"))] if espressif else []),
         ("Retries", ", ".join(retried) or "none"),
         ("Signal", f"{signal} dBm" if isinstance(signal, int) else "not recorded"),
         *([("Wi-Fi typed", "yes" if ctx.state.input("wifi_typed") else "no"),
            ("Setup network", "yes" if joined else "no")] if espressif else []),
         # Whether the device had to be switched off and on to start its new
-        # firmware: an emulated Beken plug never restarts by itself; a real one may.
+        # firmware: an emulated Beken device never restarts by itself; a real one may.
         *([("Power cycled", "true" if ctx.state.input("power_cycles") else "false")] if not espressif else []),
         ("Checks", checks_passed(hardware)),
         # Only for a device with a meter, once the run knows what it is and
@@ -237,7 +237,7 @@ def meter_calibration(captures: dict[str, Any], firmware: str | None) -> str:
     """How the run left the meter's calibration, from what its steps found:
     Tasmota's (`<step>.meter`: changed, factory, or skipped and why), ESPHome's
     (`<step>.meter`: what its Calibration sensor said, or skipped), or a Beken
-    plug's ESPHome or OpenBeken (`<step>.calibration`, OpenBeken's in the
+    device's ESPHome or OpenBeken (`<step>.calibration`, OpenBeken's in the
     same words, openbeken.calibration_state).  The last step's word counts: an
     update checks it again."""
     if firmware == "sonoff":
@@ -260,7 +260,7 @@ def meter_calibration(captures: dict[str, Any], firmware: str | None) -> str:
 
 
 def checks_passed(hardware: dict[str, str]) -> str:
-    """The end-of-run checks as one answer, whatever the device: for a plug,
+    """The end-of-run checks as one answer, whatever the device: for a device,
     its relay switching off and on.  What each check found is in the log."""
     relay = hardware.get("Relay", "not checked")
     if relay in ("not checked", "motor mode"):
@@ -390,8 +390,8 @@ def check_hardware(ctx: Context) -> dict[str, str]:
     """Switch the relay to the other state and back - two switches - reading the
     meter after each, so one reading is with it on and one with it off.
 
-    Whatever is plugged into the plug is switched for a few seconds, without
-    asking: the run has just finished, and the plug ends as it started. A plug
+    Whatever is plugged into the device is switched for a few seconds, without
+    asking: the run has just finished, and the device ends as it started. A device
     that lost power or its Wi-Fi as the run ended is waited for first.
     """
     device = ctx.device
@@ -440,7 +440,7 @@ def said(result: dict[str, str]) -> dict[str, str]:
 
 def check_esphome_hardware(ctx: Context) -> dict[str, str]:
     """check_hardware's two switches and two readings, through ESPHome's web API."""
-    host = ctx.state.input("plug_ip")
+    host = ctx.state.input("device_ip")
     output.say("Checking the relay and power meter...")
     started = time.monotonic()
     was_on = esphome.relay(host)
@@ -465,7 +465,7 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
     Sonoff's firmware, through eWeLink as the app switches it and asks for
     its readings.  One that sends none (no meter, or the DualR3, which
     refuses the asking) has its relay checked alone."""
-    device_id = str(plugs.read_plug(ctx.state.input("plug_mac") or "").get("ewelink_id") or "")
+    device_id = str(records.read_device(ctx.state.input("device_mac") or "").get("ewelink_id") or "")
     if not device_id:
         return {"Relay": "not checked", "Power meter": "not checked"}
     output.say("Checking the relay through eWeLink...")

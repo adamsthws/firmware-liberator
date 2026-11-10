@@ -1,4 +1,4 @@
-"""cloud_push.py, a whole conversion of the emulated plug through the stub."""
+"""cloud_push.py, a whole conversion of the emulated device through the stub."""
 
 import contextlib
 import io
@@ -16,7 +16,7 @@ from tests.beken.test_rbl import rbl_header
 class CloudPushTests(unittest.TestCase):
     RBL = rbl_header(version=b"1.18.319") + bytes(range(256)) * 4
 
-    def test_it_announces_the_version_the_plug_takes(self):
+    def test_it_announces_the_version_the_device_takes(self):
         sent = []
 
         class Session:

@@ -1,4 +1,4 @@
-"""The Espressif routes: each firmware's steps, from each place a plug may be
+"""The Espressif routes: each firmware's steps, from each place a device may be
 found, and which are tried again."""
 import contextlib
 import io
@@ -22,16 +22,16 @@ class RouteTestCase(unittest.TestCase):
         self.quiet = contextlib.redirect_stdout(io.StringIO())
         self.quiet.__enter__()
         self.addCleanup(self.quiet.__exit__, None, None, None)
-        # No plug's own network to be seen, nor joined, an ESPHome that
+        # No device's own network to be seen, nor joined, an ESPHome that
         # wants nothing for an update and says nothing of what it is:
         # nothing goes on the network.
-        for owner, name, value in ((join, "on_a_plug_network", False), (prompts, "find_ssid", None),
+        for owner, name, value in ((join, "on_a_device_network", False), (prompts, "find_ssid", None),
                                    (esphome_ota, "wants", esphome_ota.NOTHING),
                                    (esphome, "api_device_info", None)):
             patch = mock.patch.object(owner, name, return_value=value)
             patch.start()
             self.addCleanup(patch.stop)
-        # A Tasmota that says no release of official Tasmota: asked, it would be the plug at plug_ip.
+        # A Tasmota that says no release of official Tasmota: asked, it would be the device at device_ip.
         patch = mock.patch.dict(update.RELEASE, tasmota=lambda ctx: None)
         patch.start()
         self.addCleanup(patch.stop)
@@ -39,7 +39,7 @@ class RouteTestCase(unittest.TestCase):
     def ctx(self, given=None, run="run", **inputs):
         state = RunState.open(Path(self.tmp.name) / run)
         for key, value in {"product_model": "S60TPF", "stock_version": "1.2.0",
-                           "plug_ip": "192.0.2.50", **inputs}.items():
+                           "device_ip": "192.0.2.50", **inputs}.items():
             state.set_input(key, value)
         return SimpleNamespace(state=state, firmware_given=given, esphome_firmware=None, replace_own_build=False,
                                dry_run=False, finder=SimpleNamespace(poll=lambda: None),
@@ -47,7 +47,7 @@ class RouteTestCase(unittest.TestCase):
                                esphome_login=None)
 
     def setUp_found(self, running="sonoff"):
-        # What the plug runs now, as the network would show it.
+        # What the device runs now, as the network would show it.
         patch = mock.patch.object(routes.source, "find_current_firmware", return_value=running)
         patch.start()
         self.addCleanup(patch.stop)
@@ -85,7 +85,7 @@ class RouteTests(RouteTestCase):
         # I1 stays "attempted", with no error kept, when its phase ends with no
         # result; the reason it gave decides whether to try again in this run.
         ctx = self.ctx(firmware="esphome")
-        ctx.last_failure = ("the plug stopped the esphome without reaching this computer; "
+        ctx.last_failure = ("the device stopped the esphome without reaching this computer; "
                             "its console says: POST /capture/written/22 returned HTTP -1")
         tries = []
 
@@ -94,7 +94,7 @@ class RouteTests(RouteTestCase):
             return 1 if len(tries) == 1 else 0
 
         with mock.patch.object(runner, "execute", side_effect=execute), \
-                mock.patch.object(runner, "wait_for_plug_back"), mock.patch.object(time, "sleep"):
+                mock.patch.object(runner, "wait_for_device_back"), mock.patch.object(time, "sleep"):
             self.assertEqual(runner.execute_with_retries(ctx, "I1"), 0)
         self.assertEqual(tries, ["I1", "I1"])
 
@@ -106,13 +106,13 @@ class RouteTests(RouteTestCase):
     def test_d4_is_not_rechecked_once_esphome_runs(self):
         ctx = self.ctx(firmware="esphome")
         ctx.state.mark("I1", DONE)
-        ctx.device = SimpleNamespace(current_ota=lambda: self.fail("asked the plug"))
+        ctx.device = SimpleNamespace(current_ota=lambda: self.fail("asked the device"))
         with mock.patch.object(evidence, "commit_report", return_value=None):
             self.assertEqual(tasmota.verify_high_slot(ctx), (True, ""))
 
 
-class FromAConvertedPlugTests(RouteTestCase):
-    """A plug this tool converted, found on the network, offered the other two."""
+class FromAConvertedDeviceTests(RouteTestCase):
+    """A device this tool converted, found on the network, offered the other two."""
 
     def settle(self, running, *, backup=True, given=None, answer=0, record=None):
         ctx = self.ctx(given=given, run=f"{running}-{given}-{backup}-{answer}-{bool(record)}")
@@ -138,7 +138,7 @@ class FromAConvertedPlugTests(RouteTestCase):
             self.settle("tasmota", given="tasmota")
 
     def test_without_its_backup_sonoff_is_still_offered(self):
-        # Its firmware is Sonoff's official one; its identity the plug keeps,
+        # Its firmware is Sonoff's official one; its identity the device keeps,
         # or its eWeLink account has: found once it is chosen.
         for running, answer in (("esphome", 0), ("tasmota", 2)):
             with self.subTest(running=running):
@@ -146,7 +146,7 @@ class FromAConvertedPlugTests(RouteTestCase):
                 self.assertIn("Sonoff (eWeLink)", offered)
 
     def test_chosen_without_a_backup_its_identity_is_found_before_anything_is_written(self):
-        # From ESPHome, what the plug keeps is counted on with no account record;
+        # From ESPHome, what the device keeps is counted on with no account record;
         # from Tasmota, with neither kept nor recorded, it is refused there and then.
         (firmware, source), _ = self.settle("esphome", backup=False, answer=1)
         self.assertEqual((firmware, source), ("sonoff", "esphome"))
@@ -161,7 +161,7 @@ class FromAConvertedPlugTests(RouteTestCase):
         with self.assertRaisesRegex(errors.Abort, "no backup"):
             self.settle("tasmota", backup=False, given="sonoff")
 
-    def test_a_plug_left_part_way_can_go_on_to_any_of_the_three(self):
+    def test_a_device_left_part_way_can_go_on_to_any_of_the_three(self):
         _, offered = self.settle("midway")
         self.assertEqual(len(offered), 3)
 
@@ -213,7 +213,7 @@ class FromAConvertedPlugTests(RouteTestCase):
 class FromTheInstallerTests(RouteTestCase):
     def test_on_from_the_installer_it_needs_no_ewelink(self):
         # Left part way from Sonoff's firmware: the backup and D1 need only the
-        # installer; the eWeLink steps, which a plug on it cannot answer, are not run.
+        # installer; the eWeLink steps, which a device on it cannot answer, are not run.
         for firmware in espressif.FIRMWARES:
             steps = [step for step, _, _ in espressif.steps_for(firmware, "installer")]
             self.assertEqual(steps[:3], ["A5", "C3", "D1"], firmware)

@@ -23,7 +23,7 @@ class EndingTests(RouteTestCase):
         self.assertEqual(dict(report.report_fields(legacy, 300, False))["Firmware"], "Tasmota")
 
     def test_a_run_that_never_found_its_device_does_not_say_it_was_on_sonoff(self):
-        # Seen on a real plug switched off: the report said "Converted from: Sonoff".
+        # Seen on a real device switched off: the report said "Converted from: Sonoff".
         never = self.ctx(stock_version="")
         self.assertEqual(dict(report.report_fields(never, 300, False))["From"], "__")
         self.assertEqual(dict(report.report_fields(self.ctx(run="found", source="sonoff"), 300, False))
@@ -43,7 +43,7 @@ class EndingTests(RouteTestCase):
             ctx.state.capture("R1.identity", "backup")
             self.assertNotIn("Identity", dict(report.report_fields(ctx, 300, False)))
 
-    def test_a_plug_put_back_says_so_and_where_it_came_from(self):
+    def test_a_device_put_back_says_so_and_where_it_came_from(self):
         # Sonoff's firmware could not be put together (sonoff.put_back): not
         # "Converted", and from the firmware it began on, not "part way".
         ctx = self.ctx(firmware="esphome", source="midway", run="put-back")
@@ -53,7 +53,7 @@ class EndingTests(RouteTestCase):
                          ("Put back on ESPHome", "ESPHome", "ESPHome"))
 
     def test_a_device_with_a_meter_says_how_its_calibration_went(self):
-        # Said here, not on the screen: a plug's readings a few percent out is
+        # Said here, not on the screen: a device's readings a few percent out is
         # no news to the person converting it, and a clue to someone helping.
         # In a word: why not is in the log.
         for firmware, key, found, said in (
@@ -78,19 +78,19 @@ class EndingTests(RouteTestCase):
                             ("not the stock store's", "Not retained"), (None, "Not checked")):
             with self.subTest(found=found):
                 ctx = self.ctx(firmware="openbeken", run=f"meter-openbeken-{said}")
-                ctx.state.set_input("plug_kind", "sonoff-s61")
+                ctx.state.set_input("device_kind", "sonoff-s61")
                 ctx.state.capture("K1.calibration", found)
                 self.assertEqual(dict(report.report_fields(ctx, 300, False))["Meter"], said)
 
     def test_a_run_stopped_before_it_knew_the_device_says_nothing_of_a_meter(self):
-        # Seen: stopped at once on a wrong --plug-ip, "Meter calibration: Not
+        # Seen: stopped at once on a wrong --device-ip, "Meter calibration: Not
         # checked" under "Device model: __".
         ctx = self.ctx(run="never-known", stock_version="")
         self.assertNotIn("Meter", dict(report.report_fields(ctx, 300, False)))
 
     def test_a_device_with_no_meter_says_nothing_of_one(self):
         ctx = self.ctx(firmware="tasmota", run="no-meter")
-        ctx.state.set_input("plug_kind", "sonoff-th-elite")
+        ctx.state.set_input("device_kind", "sonoff-th-elite")
         ctx.state.capture("F4.meter", {"skipped": "this device's calibration is not read yet"})
         self.assertNotIn("Meter", dict(report.report_fields(ctx, 300, False)))
 
@@ -129,7 +129,7 @@ class EndingTests(RouteTestCase):
         self.assertTrue(relay["on"], "left as it was found")
         self.assertIn("236 V", result["Power meter"])
 
-    def test_a_plug_that_does_not_answer_is_reported_not_raised(self):
+    def test_a_device_that_does_not_answer_is_reported_not_raised(self):
         clock = iter(range(0, 1000, 5))
         with mock.patch.object(esphome, "relay", return_value=None), mock.patch.object(report.time, "sleep"), \
                 mock.patch.object(report.time, "monotonic", side_effect=lambda: next(clock)), \
@@ -138,7 +138,7 @@ class EndingTests(RouteTestCase):
         self.assertEqual(result["Relay"], "could not be checked")
         self.assertIn("    Relay: Could not be checked", [c.args[0] for c in said.call_args_list])
 
-    def test_a_plug_still_starting_as_the_run_ends_is_checked_once_it_answers(self):
+    def test_a_device_still_starting_as_the_run_ends_is_checked_once_it_answers(self):
         answers = iter([None, None, False])   # still starting, then answering: off
         with mock.patch.object(report, "METER_SETTLE", 0), mock.patch.object(report.time, "sleep"), \
                 mock.patch.object(esphome, "relay", side_effect=lambda host: next(answers)), \
@@ -244,7 +244,7 @@ class CheckHardwareTests(unittest.TestCase):
         with mock.patch.object(time, "sleep"), mock.patch.object(output, "say"):
             return report.check_hardware(ctx)
 
-    def test_a_plug_that_was_off_goes_on_then_back_off(self):
+    def test_a_device_that_was_off_goes_on_then_back_off(self):
         ctx, sent, state = self.ctx({"ON": {"Voltage": 240, "Power": 3}, "OFF": {"Voltage": 0, "Power": 0}},
                                     start="OFF")
         result = self.run_check(ctx)
@@ -253,7 +253,7 @@ class CheckHardwareTests(unittest.TestCase):
         self.assertEqual(result["Relay"], "switches (meter confirms)")
         self.assertNotIn("Mains voltage", result)  # the power meter line shows it
 
-    def test_a_plug_that_was_on_goes_off_then_back_on(self):
+    def test_a_device_that_was_on_goes_off_then_back_on(self):
         ctx, sent, state = self.ctx({"ON": {"Voltage": 231.5, "Power": 40}, "OFF": {"Voltage": 231.5, "Power": 0}})
         result = self.run_check(ctx)
         self.assertEqual([c for c in sent if c.startswith("Power ")], ["Power OFF", "Power ON"])
@@ -316,7 +316,7 @@ class CheckHardwareTests(unittest.TestCase):
         with mock.patch.object(prompts, "ask_yes_no", side_effect=AssertionError("asked")):
             self.run_check(ctx)
 
-    def test_a_plug_that_stops_answering_is_reported_not_raised(self):
+    def test_a_device_that_stops_answering_is_reported_not_raised(self):
         from types import SimpleNamespace
         ctx = SimpleNamespace(device=SimpleNamespace(command=mock.Mock(side_effect=OSError("refused")),
                                                      wait_reachable=lambda timeout: 0.0))
@@ -324,7 +324,7 @@ class CheckHardwareTests(unittest.TestCase):
         self.assertEqual(result["Relay"], "could not be checked")
         self.assertNotIn("Mains voltage", result)  # the power meter line shows it
 
-    def test_a_check_the_plug_stopped_answering_still_says_what_it_found(self):
+    def test_a_check_the_device_stopped_answering_still_says_what_it_found(self):
         # Seen in the classic fault suite: the screen gave no Relay line, so the
         # suite recorded "Relay: not said".
         from types import SimpleNamespace
@@ -336,8 +336,8 @@ class CheckHardwareTests(unittest.TestCase):
         self.assertIn("    Relay: Could not be checked", lines)
         self.assertIn("    Power meter: Could not be checked", lines)
 
-    def test_a_plug_still_starting_as_the_run_ends_is_checked_once_it_answers(self):
-        # Seen in the fault suite (update>tasmota:U6:plugoff-5): switched off and
+    def test_a_device_still_starting_as_the_run_ends_is_checked_once_it_answers(self):
+        # Seen in the fault suite (update>tasmota:U6:deviceoff-5): switched off and
         # on as the update's last step finished, it refused the check a second on.
         ctx, sent, state = self.ctx({"ON": {"Voltage": 240, "Power": 3}, "OFF": {"Voltage": 0, "Power": 0}},
                                     start="OFF")
@@ -358,7 +358,7 @@ class CheckHardwareTests(unittest.TestCase):
         # then Tasmota rejoining it.
         self.assertGreaterEqual(report.ANSWER_WAIT, 180 + 60)
 
-    def test_a_plug_that_never_answers_again_is_reported_not_raised(self):
+    def test_a_device_that_never_answers_again_is_reported_not_raised(self):
         from types import SimpleNamespace
         never = mock.Mock(side_effect=report.DeviceError("192.0.2.50 did not answer within 180s"))
         ctx = SimpleNamespace(device=SimpleNamespace(command=mock.Mock(), wait_reachable=never))
@@ -369,7 +369,7 @@ class StoppedRunIssueTests(RouteTestCase):
     """A run that stopped offers an issue for it, its report on the clipboard."""
 
     def test_a_stopped_run_links_an_issue_and_copies_its_report(self):
-        ctx = self.ctx(firmware="tasmota", plug_kind="sonoff-s60")
+        ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
         ctx.last_report_id = "0123456789abcdef0123456789abcdef"
         ctx.last_failure, ctx.last_failed_step = "the device at 192.0.2.50 did not answer within 30s", ""
         ctx.run_started, ctx.run_resumed = time.monotonic(), False

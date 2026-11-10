@@ -1,6 +1,6 @@
 """What the tool asks (tools/autoflash/prompts.py): a secret shown only as it
 is typed, keys typed ahead thrown away, a way to quit at every question, the
-answers of an unattended run, and the plug's setup network looked for."""
+answers of an unattended run, and the device's setup network looked for."""
 import io
 import os
 import re
@@ -17,7 +17,7 @@ from tools.autoflash import names, output, prompts
 class TypedAheadTests(unittest.TestCase):
     """A key pressed while nothing was asking - during the look round the
     network, with nothing on screen - is not the next question's answer (seen
-    in the emulator: an Enter taken as an empty answer to "Which plug")."""
+    in the emulator: an Enter taken as an empty answer to "Which device")."""
 
     def test_dropped_on_a_terminal(self):
         with mock.patch.object(prompts.sys.stdin, "isatty", return_value=True), \
@@ -39,7 +39,7 @@ class TypedAheadTests(unittest.TestCase):
         with mock.patch.object(prompts, "discard_typed_ahead", side_effect=lambda: order.append("dropped")), \
              mock.patch("builtins.input", side_effect=lambda _: order.append("asked") or "2"), \
              mock.patch.object(prompts, "UNATTENDED", False), mock.patch.object(prompts, "_emit"):
-            self.assertEqual(prompts.ask_choice("Which plug is this run for", ["a", "b"]), 1)
+            self.assertEqual(prompts.ask_choice("Which device is this run for", ["a", "b"]), 1)
         self.assertEqual(order, ["dropped", "asked"])
 
 
@@ -202,7 +202,7 @@ class SearchTests(SetupNetworkTestCase):
              mock.patch.object(prompts.time, "sleep"):
             return prompts.find_ssid(names.setup_networks(ctx))
 
-    def test_the_plugs_network_is_found_by_either_name(self):
+    def test_the_devices_network_is_found_by_either_name(self):
         self.assertEqual(self.find(["Home", "tasmota-ABCDEF-1234"], self.ctx()), "tasmota-ABCDEF-1234")
         self.assertEqual(self.find(["Home", "ESP_ABCDF0"], self.ctx()), "ESP_ABCDF0")
 
@@ -233,7 +233,7 @@ class SearchTests(SetupNetworkTestCase):
         with mock.patch.object(prompts, "scan_wifi_ssids", return_value=["Home", "autoflash-recovery-CDEF"]):
             self.assertEqual(prompts.find_ssid(names.bridge_networks(self.ctx())), "autoflash-recovery-CDEF")
 
-    def test_only_tasmotas_own_name_is_kept_as_the_plugs(self):
+    def test_only_tasmotas_own_name_is_kept_as_the_devices(self):
         ctx = self.ctx()
         names.note_setup_network(ctx, "ESP_ABCDF0")  # not what its router shows
         names.note_setup_network(ctx, "autoflash-recovery-CDEF")  # only until it is set up
@@ -263,7 +263,7 @@ class UnattendedPromptTests(unittest.TestCase):
         self.assertIn("Carry on anyway (y/N): n   (unattended)", self.screen.getvalue())
 
     def test_any_other_question_stops_the_run_and_names_it(self):
-        for ask in (lambda: prompts.ask_choice("Which plug", ["one", "two"]),
+        for ask in (lambda: prompts.ask_choice("Which device", ["one", "two"]),
                     lambda: prompts.ask_yes_no("No default"),
                     lambda: prompts.ask_text("eWeLink account email"),
                     lambda: prompts.ask_secret("Wi-Fi password: ")):

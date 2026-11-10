@@ -1,7 +1,7 @@
 #!/bin/bash
 # This computer's Wi-Fi, emulated. Stands in for your desktop's Wi-Fi menu.
 #   wifi                 what we are joined to, and what we can see
-#   wifi join NAME       join a network (the home one, or the plug's own)
+#   wifi join NAME       join a network (the home one, or the device's own)
 #   wifi home            back to the home network
 set -euo pipefail
 RUN=/run/autoflash-emu
@@ -32,7 +32,7 @@ join)
     fi
     echo "Joining $name..."
     if sudo /opt/autoflash-emu/bin/wifi-root join "$name"; then
-        echo "Joined $name; the plug is at $(cat "$RUN/gateway"). Back home: wifi home"
+        echo "Joined $name; the device is at $(cat "$RUN/gateway"). Back home: wifi home"
     else
         echo "Could not get an address from $name. Back home: wifi home" >&2
         exit 1

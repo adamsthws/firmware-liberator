@@ -34,7 +34,7 @@ class WifiMigrateTests(unittest.TestCase):
         path = self.stock({"wifi-ssid": b"HomeNet\x00", "wifi-pass": b"secret\x00"})
         self.assertEqual(wifi_migrate.read_stock_creds(path), (b"HomeNet", b"secret"))
 
-    def test_an_unprovisioned_plug_has_none(self):
+    def test_an_unprovisioned_device_has_none(self):
         self.assertEqual(wifi_migrate.read_stock_creds(self.stock({})), (None, None))
         self.assertEqual(wifi_migrate.read_stock_creds(self.stock({"wifi-ssid": b"HomeNet"})),
                          (None, None))
@@ -75,7 +75,7 @@ class WifiMigrateTests(unittest.TestCase):
         self.assertEqual(out.read_bytes()[:3584],
                          obk_config.build_config("HomeNet", "secret", template=bytes([0xAB]) * 3584))
 
-    def test_nothing_is_written_for_an_unprovisioned_plug(self):
+    def test_nothing_is_written_for_an_unprovisioned_device(self):
         stock = self.stock({})
         obk = self.tmp / "obk.bin"
         obk.write_bytes(bytes(0x100))

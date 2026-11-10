@@ -1,5 +1,5 @@
-"""Back to Sonoff's own firmware, from the plug's backup - or, with none on
-this computer, from Sonoff's official firmware and the plug's identity (R1, R2).
+"""Back to Sonoff's own firmware, from the device's backup - or, with none on
+this computer, from Sonoff's official firmware and the device's identity (R1, R2).
 """
 
 from __future__ import annotations
@@ -7,7 +7,7 @@ from __future__ import annotations
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import detect, join, kinds, output, plans, plugs, runs
+from tools.autoflash import detect, join, kinds, output, plans, records, runs
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes.espressif import hub, identity, sonoff_firmware
 from tools.espressif import sonoff_identity
@@ -18,9 +18,9 @@ if TYPE_CHECKING:
 
 
 def sonoff_backup(ctx: Context) -> bytes:
-    """The plug's own Sonoff backup, checked to be this plug's."""
-    mac = ctx.state.input("plug_mac")
-    backup = plugs.find_backup(mac) if mac else None
+    """The device's own Sonoff backup, checked to be this device's."""
+    mac = ctx.state.input("device_mac")
+    backup = records.find_backup(mac) if mac else None
     if backup is None:
         raise Abort("there is no backup of this device's Sonoff firmware on this computer")
     try:
@@ -30,9 +30,9 @@ def sonoff_backup(ctx: Context) -> bytes:
 
 
 def rebuilt(ctx: Context, kind: kinds.Kind) -> tuple[bytes, str]:
-    """For a plug with no backup on this computer, what its backup would have
+    """For a device with no backup on this computer, what its backup would have
     held: Sonoff's firmware for it, its layout, and settings holding its Sonoff
-    identity and the Wi-Fi it is on now. The identity is the one the plug kept -
+    identity and the Wi-Fi it is on now. The identity is the one the device kept -
     in its settings, or in the sector at the top of its flash, which outlasts
     the startup firmware wiping the settings on the way here - else rebuilt
     from its eWeLink account record. Says which."""
@@ -60,7 +60,7 @@ def rebuilt(ctx: Context, kind: kinds.Kind) -> tuple[bytes, str]:
 
 
 def put_back(ctx: Context, why: str) -> dict[str, Any]:
-    """R1 with no way to put Sonoff's firmware together: the plug, on the
+    """R1 with no way to put Sonoff's firmware together: the device, on the
     interim Tasmota here, goes back to the firmware it came from - ESPHome's
     to ESPHome, the rest to Tasmota (one found part way, too) - rather than
     being left part way. Its record says so (put_back) for the report and the
@@ -79,14 +79,14 @@ def put_back(ctx: Context, why: str) -> dict[str, Any]:
 
 
 def step_sonoff_restore(ctx: Context) -> dict[str, Any]:
-    """R1 - the plug's own Sonoff firmware and settings, from its backup, beside
+    """R1 - the device's own Sonoff firmware and settings, from its backup, beside
     the Tasmota it runs; the boot selection set to it last, then a restart.
     Two plans, as Sonoff's firmware is more than one may write. With no backup
     on this computer, they write what it would have held (rebuilt)."""
     kind = kinds.of_run(ctx.state)
     layout = images.layout_of(kind)
-    mac = ctx.state.input("plug_mac")
-    if mac and plugs.find_backup(mac):
+    mac = ctx.state.input("device_mac")
+    if mac and records.find_backup(mac):
         backup, source = sonoff_backup(ctx), "backup"
         ctx.state.capture("R1.identity", "backup")
     elif ctx.dry_run:
@@ -108,7 +108,7 @@ def step_sonoff_restore(ctx: Context) -> dict[str, Any]:
 
 def out_of_sonoffs_slot(ctx: Context, backup: bytes, kind: kinds.Kind) -> int:
     """The slot Tasmota runs from, once it is not the one Sonoff's firmware goes
-    back in. A plug that ran Sonoff's firmware from its second slot has it there
+    back in. A device that ran Sonoff's firmware from its second slot has it there
     in its backup, where the hub runs: Tasmota sent again goes in the other."""
     if ctx.dry_run:
         return 1 - plans.stock_slot(backup, images.layout_of(kind))

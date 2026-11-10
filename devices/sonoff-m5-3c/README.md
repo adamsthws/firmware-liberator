@@ -6,7 +6,7 @@
 
 ## Where it stops
 
-Its stock firmware starts in the emulator, run on another plug's flash as no usable dump of one is published (the public one is of a locked Matter version), but goes quiet and never starts its Wi-Fi. See [what is holding each one up](../README.md).
+Its stock firmware starts in the emulator, run on another device's flash as no usable dump of one is published (the public one is of a locked Matter version), but goes quiet and never starts its Wi-Fi. See [what is holding each one up](../README.md).
 
 ## The device
 

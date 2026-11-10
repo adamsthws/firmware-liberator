@@ -44,7 +44,7 @@ class Screen(unattended_run.Screen):
 
 
 def every_route():
-    """(family name, family, source, firmware) for every route a plug can take."""
+    """(family name, family, source, firmware) for every route a device can take."""
     for name, family in routes.FAMILIES.items():
         for source in family.SOURCES:
             for firmware in family.FIRMWARES:
@@ -113,14 +113,14 @@ class RouteScreenTests(unittest.TestCase):
                     (routes, "route_source", mock.Mock(return_value=source)),
                     (routes, "family_of", mock.Mock(return_value=family)),
                     (routes, "apply_target", apply_target),
-                    (join, "wait_while_plug_busy", mock.Mock()),
+                    (join, "wait_while_device_busy", mock.Mock()),
                     (runner, "set_up_if_erased", mock.Mock(return_value=False)),
-                    (runner, "wait_for_plug_back", mock.Mock()),
+                    (runner, "wait_for_device_back", mock.Mock()),
                     (runner, "stop_here_after_ctrl_c", mock.Mock(return_value=False)),
                     (runner, "bring_up_to_date", mock.Mock(return_value=False)),
                     (runner.time, "sleep", mock.Mock()),
                     (firewall, "close_firewall_rules", mock.Mock()),
-                    (report, "plug_page_url", mock.Mock(return_value=None)),
+                    (report, "device_page_url", mock.Mock(return_value=None)),
                     (report, "invite_report", mock.Mock()),
                     (runs, "run_source", mock.Mock(return_value=source)),
                     (runs, "run_firmware", mock.Mock(return_value=firmware)),
@@ -157,7 +157,7 @@ class RouteScreenTests(unittest.TestCase):
                 lines = [row for row in screen.splitlines() if unattended_run.STAGE_ROW.match(row)]
                 self.assertEqual([row.rsplit(" - ", 1)[-1] for row in lines], ["Complete"] * len(steps), screen)
                 # Lined up, from the first stage to the last. Seen in the emulator:
-                # a converted plug's first two laid out for a route two stages
+                # a converted device's first two laid out for a route two stages
                 # long, the rest once A3 had chosen it.
                 self.assertEqual(len({(row.index(" - "), row.rindex(" - ")) for row in lines}), 1, screen)
                 for gone in ("under way", "A section", "Go ahead", "console", "FAILED", "trying again",
@@ -168,7 +168,7 @@ class RouteScreenTests(unittest.TestCase):
                     self.assertIn("trying again", log)
         self.assertGreater(routes_run, 10)
 
-    def test_a_plug_put_back_shows_why_and_carries_on_numbered_after(self):
+    def test_a_device_put_back_shows_why_and_carries_on_numbered_after(self):
         # Sonoff's firmware not to be put together at R1 (sonoff.put_back): its
         # line stopped, with why under it, and the route back to ESPHome on.
         from tools.autoflash.routes import espressif

@@ -1,7 +1,7 @@
 # Contributing
 
 Thank you for helping. A report of how a conversion went is as useful as
-code: what worked, what did not, and on which plug and computer.
+code: what worked, what did not, and on which device and computer.
 
 ## Reporting
 
@@ -9,13 +9,13 @@ code: what worked, what did not, and on which plug and computer.
   checks: [Conversions In The Wild](https://github.com/adamsthws/firmware-liberator/discussions/1).
 - **A conversion that went wrong**: an [issue](https://github.com/adamsthws/firmware-liberator/issues/new/choose),
   with the run's log attached. The log is safe to share - your account,
-  network and plug are already written in it as `<email>`, `<wifi-name>` and
-  so on - but its folder is named after the plug's MAC address: attach the
+  network and device are already written in it as `<email>`, `<wifi-name>` and
+  so on - but its folder is named after the device's MAC address: attach the
   file, do not paste its path. [docs/troubleshooting.md](docs/troubleshooting.md)
   covers what has gone wrong before.
-- **A plug the list does not have yet** - if you got the tool working on a
+- **A device the list does not have yet** - if you got the tool working on a
   model or a stock firmware version that is not in the compatibility list, please
-  contribute it back so the list keeps growing. Say what the plug was and
+  contribute it back so the list keeps growing. Say what the device was and
   what the conversion took - the addresses, config and wiring a new model
   needed, and anything that differed from a listed one. A report alone is
   welcome; a pull request that adds the support is more welcome still, and the
@@ -68,31 +68,31 @@ side and in any order, so a new test must leave nothing behind, keep hold of
 any port it picked, and touch nothing shared across the whole computer:
 [docs/testing.md](docs/testing.md#side-by-side-in-any-order). Coverage and
 mutation testing show where the tests are thin - a guide, not a target:
-[docs/testing.md](docs/testing.md#how-much-they-test). The emulator -
-a virtual S60 running the plug's own firmware - tests whole conversions:
-[docs/emulator.md](docs/emulator.md). Never try a change on a plug you
-cannot afford to lose.
+[docs/testing.md](docs/testing.md#how-much-they-test). The emulators - a
+virtual device of each chip family, running Sonoff's own firmware - test whole
+conversions: [docs/emulator.md](docs/emulator.md). Never try a change on a
+device you cannot afford to lose.
 
 ## Keeping private things out
 
 The repository is public, and the tool handles people's Wi-Fi passwords,
-eWeLink accounts and plugs' identities.
+eWeLink accounts and devices' identities.
 
-- `.env` (passwords for unattended runs) and `captures/` (each plug's
+- `.env` (passwords for unattended runs) and `captures/` (each device's
   backup and runs) are never committed; Git ignores both.
 - In examples, tests and docs, use the made-up MAC `12:34:56:ab:cd:ef` and
-  addresses that are nobody's - never your plug's, network's or account's. A
+  addresses that are nobody's - never your device's, network's or account's. A
   test's address can be a real device where it runs. Tests, the archive and
   internal defaults use `192.0.2.x`, reserved for examples. What people read -
   prompts, help text, docs, screenshots - uses `192.168.99.x`, which looks like
-  a home network, with `192.168.99.50` the plug. An address a program really
+  a home network, with `192.168.99.50` the device. An address a program really
   uses stays, such as the Beken emulator's built-in network;
   `tests/repo/test_example_addresses.py` holds every file to this and lists them.
 - If the leak scan stops a commit, take the finding out. A new made-up
   example belongs in `tools/repo/leak-scan-allow`; nothing real is ever let through
   with `--no-verify`.
   [docs/technical-details.md](docs/technical-details.md#keeping-secrets-out-of-git)
-- No third party's proprietary firmware - Sonoff's stock images, a plug's
+- No third party's proprietary firmware - Sonoff's stock images, a device's
   dump, anything else this project has no right to publish - is ever committed,
   put on a release or built into a published image. Git ignores `*.bin` for this
   reason; the exceptions listed in `.gitignore` are open-source firmware this
@@ -131,8 +131,8 @@ eWeLink accounts and plugs' identities.
   tools.autoflash` runs it) and `tools/repo/` the repository's own plumbing; `tools/espressif/` and `tools/beken/`
   hold each chip family's tooling, its emulator in `emulator/`; `tools/ewelink/`
   what talks to eWeLink whatever the chip, and in `stub_cloud/` the stand-in
-  for it both emulators use; `devices/<plug>/` what is one plug's
-  alone (its sheet, its ESPHome configs - at the paths converted plugs give
+  for it both emulators use; `devices/<device>/` what is one device's
+  alone (its sheet, its ESPHome configs - at the paths converted devices give
   Home Assistant, so a move means a new image - and modules); `tests/` mirrors `tools/`
   (`tests/autoflash/`, `tests/repo/`, `tests/ewelink/`, `tests/espressif/`,
   `tests/beken/`; `tests/run.py <directory>` runs one of them); `docs/` prose only;
@@ -168,10 +168,17 @@ Write for the person reading the page, not from the side of whoever built the
 tool. That person may not know how the project works, or why it was made this
 way.
 
-- **Say "you" and "your plug"**, and tell readers what they do and what happens
+- **Say "you" and "your device"**, and tell readers what they do and what happens
   to them. Call the software "the tool" or "this project", or name the program,
   such as "the stub". Avoid "we", "our" and "ours".
-- **Use words the reader already has.** On pages for plug owners, say "firmware"
+- **Say "device", not "plug"**, in docs, code and what the tool prints: the
+  project began with one smart plug and now converts switches, relays and
+  panels too. "Plug" stays only where it is someone else's word: "smart plug"
+  as a product's description, a product's or firmware's own name, a name
+  already published (the `emulator-public-plugs` release), and the names
+  earlier releases gave things the tool still reads (`captures/plugs/`).
+  `tests/repo/test_device_wording.py` holds every file to this.
+- **Use words the reader already has.** On pages for device owners, say "firmware"
   rather than "image", and leave out terms such as "pushed" or "pinned" where
   only the result matters. Pages for people working on the code can use them.
 - **Say where.** "From this project" or "on your computer", not "from here".
@@ -188,7 +195,7 @@ For example:
 | Instead of | Write |
 |---|---|
 | so one you add changes nothing of ours | The project's config does not use substitutions, so you cannot change its settings with them |
-| The tool then leaves the plug to the builder | From then on you update the plug from the builder |
+| The tool then leaves the device to the builder | From then on you update the device from the builder |
 | Your config then fetches nothing from here | The builder then downloads nothing from this project |
 | ESPHome takes it for a new item and refuses it | ESPHome treats it as a new item and shows an error |
 

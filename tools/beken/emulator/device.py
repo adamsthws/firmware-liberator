@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""The emulated Beken plug: on until switched off, through every firmware it
-is converted to and back, as beken-emu.sh plug runs it (plug-net.sh).
+"""The emulated Beken device: on until switched off, through every firmware it
+is converted to and back, as beken-emu.sh device runs it (device-net.sh).
 
-    python plug.py --state DIR [--tap tap0]
+    python device.py --state DIR [--tap tap0]
 
 Its flash is DIR/flash.bin: the public dump the first time, with the home
-Wi-Fi's details added to its store, as a plug provisioned in the app has
-them; from then on what the plug left there. Each boot starts from the
+Wi-Fi's details added to its store, as a device provisioned in the app has
+them; from then on what the device left there. Each boot starts from the
 bootloader, which applies an image waiting in the download slot as a real
-plug's does, and every restart the firmware asks for is a boot of its own,
+device's does, and every restart the firmware asks for is a boot of its own,
 from the flash as it was left.
 
 Sonoff's firmware needs the emulator's help to come online
@@ -19,9 +19,9 @@ is left alone.
 Its board (board.py) gives it a power meter, which measures a load while
 the relay is on.
 
-PLUG_TRACE=ADDR,ADDR (hex) logs each call there to the serial output.
+DEVICE_TRACE=ADDR,ADDR (hex) logs each call there to the serial output.
 
-The power switch is DIR/power: "off" stops the plug and keeps its flash,
+The power switch is DIR/power: "off" stops the device and keeps its flash,
 "on" starts it again (beken-emu.sh power). The serial output is DIR/serial.log.
 """
 from __future__ import annotations
@@ -51,7 +51,7 @@ PEER_MAC = b"\x02\x00\x00\x00\x00\x01"
 
 
 def trace(mu, address: int) -> None:
-    """Log each call at `address` (PLUG_TRACE): its first four arguments - as
+    """Log each call at `address` (DEVICE_TRACE): its first four arguments - as
     strings where they point at one - and where it returns to."""
     def text(value: int) -> str:
         try:
@@ -66,7 +66,7 @@ def trace(mu, address: int) -> None:
     mu.hook_add(UC_HOOK_CODE, called, None, address, address)
 
 
-class Plug:
+class Device:
     def __init__(self, state: Path, tap: str):
         self.state, self.tap = state, tap
         self.flash_path = state / "flash.bin"
@@ -102,7 +102,7 @@ class Plug:
         try:
             return stock_points.find(stock_points.app_of_flash(flash))
         except stock_points.PointError as exc:
-            self.netlog.append("[plug] no help for this app: %s" % exc)
+            self.netlog.append("[device] no help for this app: %s" % exc)
             return None
 
     def boot(self):
@@ -124,10 +124,10 @@ class Plug:
             if hooks.active:
                 hooks.attach(points)
                 hooks.boot()
-            print("[plug] the app starts: %s" % ("Sonoff's firmware" if hooks.active else "another firmware"),
+            print("[device] the app starts: %s" % ("Sonoff's firmware" if hooks.active else "another firmware"),
                   flush=True)
         emu.mu.hook_add(UC_HOOK_CODE, app_starts, None, APP_ENTRY, APP_ENTRY)
-        for address in filter(None, os.environ.get("PLUG_TRACE", "").split(",")):
+        for address in filter(None, os.environ.get("DEVICE_TRACE", "").split(",")):
             trace(emu.mu, int(address, 16))
         return emu
 
@@ -153,7 +153,7 @@ class Plug:
         thread.join(10)
         self.save(emu)
         emu.close_network()
-        print("[plug] %s; its flash is kept" % why, flush=True)
+        print("[device] %s; its flash is kept" % why, flush=True)
         if why == "halted":
             time.sleep(5)   # not round again at once, should it halt at every boot
 
@@ -172,16 +172,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tap", default="tap0")
     parser.add_argument("--prepare", action="store_true", help="only make the flash, the first time")
     args = parser.parse_args(argv)
-    plug = Plug(args.state, args.tap)
+    device = Device(args.state, args.tap)
     if args.prepare:
-        plug.prepare()
+        device.prepare()
         return 0
 
     def stop(*_):
-        plug.stopping = True
+        device.stopping = True
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    plug.run()
+    device.run()
     return 0
 
 

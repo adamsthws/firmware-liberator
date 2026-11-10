@@ -1,12 +1,12 @@
 # Technical details
 
 This page covers what the [README](../README.md) leaves out. You don't need it
-to convert a plug. It covers what the firmware bundle holds, how your Wi-Fi
+to convert a device. It covers what the firmware bundle holds, how your Wi-Fi
 details and eWeLink account are handled, where the one-line start keeps the
 tool, the finished memory layout, the stock firmware versions it converts, and
 where the developer and research material lives.
 
-For a plain-English account of what happens to the plug, read
+For a plain-English account of what happens to the device, read
 [what-happens.md](what-happens.md) instead.
 
 ## The firmware bundle
@@ -23,7 +23,7 @@ python3 tools/espressif/safeboot/prepare_imprinted_bundle.py --without-wifi
 
 ### What is in it
 
-Partway through the conversion the plug needs two Tasmota images that are not
+Partway through the conversion the device needs two Tasmota images that are not
 part of the ordinary release download:
 
 - [`artifacts/tasmota32c3-bluetooth.bin`](../artifacts/tasmota32c3-bluetooth.bin)
@@ -44,7 +44,7 @@ copy differs from the published image in nothing else.
 The bundle pins that copy by SHA-256 without storing it, and holds the
 Bluetooth image, the official Tasmota release files and the partition table
 taken from them, all pinned by hash so nothing can be swapped underneath you.
-It needs no flash dump: the tool reads the plug's partition table and settings
+It needs no flash dump: the tool reads the device's partition table and settings
 live, and checks them, before anything is written.
 
 The published images remove the need to compile Tasmota locally. They do not
@@ -70,18 +70,18 @@ holding something else is left alone.
 
 ## How your Wi-Fi details are handled
 
-Partway through, the plug runs a small temporary startup firmware that has to
+Partway through, the device runs a small temporary startup firmware that has to
 join your Wi-Fi by itself, so your network name and password are written into
-it. You are not asked for them: by that point the plug is running Tasmota on
-your network, and the tool reads them from the plug's own configuration into
-memory. The plug is connected with them at that moment, which proves they
-work, and the tool checks the name against the network the plug reports
+it. You are not asked for them: by that point the device is running Tasmota on
+your network, and the tool reads them from the device's own configuration into
+memory. The device is connected with them at that moment, which proves they
+work, and the tool checks the name against the network the device reports
 being on. Nothing is typed, and nothing is written to disk.
 
 Earlier still, the installer reads the Wi-Fi the Sonoff firmware saved, joins
 that network, and gives the first Tasmota its settings with the details in, so
 it joins too. The temporary startup firmware later saves them where official
-Tasmota reads them, so the finished plug joins by itself as well.
+Tasmota reads them, so the finished device joins by itself as well.
 
 If the details cannot be read or given automatically, the tool says why and
 asks for them - only then, and only once. With `--wifi` they are asked for
@@ -89,12 +89,12 @@ instead, typed twice, since Tasmota never reports its password for checking.
 
 Apart from the Sonoff backup (below), your Wi-Fi password is never written
 to disk. It is held in memory for the run only; the temporary startup firmware built from it is built in memory and
-handed to the migration server through a pipe, never as a file. The plug loses
+handed to the migration server through a pipe, never as a file. The device loses
 the password at the end of the run, when the official startup firmware
 replaces the temporary one.
 
-Other secrets are not kept either, outside the backup: the plug's eWeLink
-LAN key is never saved, and the update links, the plug's settings memory and staged firmware
+Other secrets are not kept either, outside the backup: the device's eWeLink
+LAN key is never saved, and the update links, the device's settings memory and staged firmware
 are deleted or reduced to hashes as soon as they have been checked - however
 the run ends. `python3 -m tools.autoflash cleanup` deletes any such file
 still on disk, such as after the computer lost power mid-run. It leaves the
@@ -105,27 +105,27 @@ backups alone.
 Stage 6 of the run, "Backing up the Sonoff firmware", comes straight after
 the installer is sent and before anything is written over the Sonoff
 firmware. It is covered by the PROCEED typed at stage 5, whose warning says
-the backup will be taken (or that the plug has one already); nothing reaches
-the plug before PROCEED. The stage reads the plug's whole 4 MB flash through the installer (bridge 4.4.2's read-only
-`GET /flash` and `GET /efuse`), checks it byte for byte against the plug -
-the installer works out the SHA-256 of its flash on the plug itself
+the backup will be taken (or that the device has one already); nothing reaches
+the device before PROCEED. The stage reads the device's whole 4 MB flash through the installer (bridge 4.4.2's read-only
+`GET /flash` and `GET /efuse`), checks it byte for byte against the device -
+the installer works out the SHA-256 of its flash on the device itself
 (`GET /flash-sha256`), and a backup whose hash differs is refused and read
-again - and keeps it with the plug's other records,
-under its MAC address - which no other plug has:
+again - and keeps it with the device's other records,
+under its MAC address - which no other device has:
 
 ```text
-captures/plugs/58-cf-79-01-02-03/
-    plug.json              the plug's eWeLink name and id, model, Sonoff version
+captures/devices/58-cf-79-01-02-03/
+    device.json              the device's eWeLink name and id, model, Sonoff version
     sonoff-backup/         the backup
     runs/20261013-031500/  each conversion of it: its state and its log
 ```
 
-A run starts in `captures/plugs/unidentified/runs/` and moves under the MAC as
-soon as the plug is found, before anything is written to it. Runs from before
+A run starts in `captures/devices/unidentified/runs/` and moves under the MAC as
+soon as the device is found, before anything is written to it. Runs from before
 this layout, kept straight under `captures/`, are moved there the next time
-the tool starts if they know their plug's MAC; the rest stay put and still
+the tool starts if they know their device's MAC; the rest stay put and still
 work. The MAC is taken from the chip's own eFuses for the backup, so it is
-filed under the plug it came from even if the network reported another.
+filed under the device it came from even if the network reported another.
 
 The backup holds:
 
@@ -135,35 +135,35 @@ The backup holds:
 - `report.json` - what the backup holds, checked when it was taken;
 - `README.txt` - how to use it.
 
-It is the original: written once, read-only, never replaced. A plug that is
+It is the original: written once, read-only, never replaced. A device that is
 converted again keeps its first backup, and the run says so in the warning
-before PROCEED rather than reading the plug again. Like every stage, the
+before PROCEED rather than reading the device again. Like every stage, the
 backup shows as one line on screen; what it found - the partitions, the
 Sonoff version, where it was kept - is in the run's log, and on screen with
 `--verbose`. Only a failure is shown: after two failed reads the run says
 the conversion can go on without a backup, though that is not recommended,
 and offers to try again, to carry on without one, or to quit - which leaves
-the plug on the installer, to carry on from there next time or go back to
+the device on the installer, to carry on from there next time or go back to
 Sonoff with a power cycle. Carrying on marks the stage "Skipped", in green:
 the conversion is not affected. An unattended run carries on without one.
 The test report says how the backup went - completed, failed, or not taken -
-and never where it is or which plug it came from. `python3 -m tools.autoflash list` shows
-every backed-up plug.
+and never where it is or which device it came from. `python3 -m tools.autoflash list` shows
+every backed-up device.
 
 It is for two things. **Going back to Sonoff:** writing `flash.bin` back
 over USB-serial (`esptool.py --chip esp32c3 write_flash 0x0 flash.bin`)
-returns the plug to the Sonoff version, settings and pairing it had - but
-that means opening the plug, which is what the over-the-air route avoids.
+returns the device to the Sonoff version, settings and pairing it had - but
+that means opening the device, which is what the over-the-air route avoids.
 One of the two app slots holds the installer rather than an older Sonoff
-version; the plug boots the other. Going back to Sonoff's firmware over the
+version; the device boots the other. Going back to Sonoff's firmware over the
 air writes this backup back when it is on the computer; without it, the tool
-uses the identity the plug keeps or your eWeLink account
+uses the identity the device keeps or your eWeLink account
 ([The finished memory layout](#the-finished-memory-layout)). **The emulator:** `tools/espressif/emulator/emu.sh` offers every
-backed-up plug by its MAC and runs a copy of the one you choose
+backed-up device by its MAC and runs a copy of the one you choose
 ([docs/emulator.md](emulator.md)).
 
 **It holds secrets in plain text:** your Wi-Fi password, as the Sonoff
-firmware saved it, and the plug's eWeLink keys. The directory and files can
+firmware saved it, and the device's eWeLink keys. The directory and files can
 be read by your user only, `cleanup` keeps them, and they never belong in
 an issue or a discussion. Delete them if you do not want them, or convert
 with `--no-backup` to keep none. Reading the flash takes under a minute.
@@ -172,20 +172,20 @@ with `--no-backup` to keep none. Reading the flash takes under a minute.
 
 `captures/` is ignored by Git: what the tool and its tests keep on your
 computer. **Your Sonoff backups are the one thing in it that cannot be made
-again** - keep a copy of `captures/plugs/` somewhere safe; everything else is
+again** - keep a copy of `captures/devices/` somewhere safe; everything else is
 remade as needed:
 
 | In `captures/` | What it is | Made again by |
 |---|---|---|
-| `plugs/<MAC>/sonoff-backup/`, `plug.json` | your plug's Sonoff firmware and settings, and its record | nothing: **back it up** |
-| `plugs/<MAC>/runs/`, `unattended/` | each run's state and log, and recordings of unattended runs | the next run |
+| `devices/<MAC>/sonoff-backup/`, `device.json` | your device's Sonoff firmware and settings, and its record | nothing: **back it up** |
+| `devices/<MAC>/runs/`, `unattended/` | each run's state and log, and recordings of unattended runs | the next run |
 | `safeboot-recovery-migration/` | the firmware bundle | the next run (A5) |
 | `settings.json`, `.autoflash-current`, `.safety-locks/` | the eWeLink email offered next time, and the region it signs in to, the run in progress, the locks' state | the next run |
 | `esphome-build/` | ESP-IDF and its tools, for `update_firmware.py esphome` | its next build |
-| `emulation/state*/` | each emulator's plug and computer | the emulator, from the backup |
-| `emulation/saved/` | plugs kept part way (`--save`), the fault suite's and the public ones | `fault_suite.py prep`, `public_plugs.py make` |
-| `emulation/suite*/`, `emulation/public-plugs/` | the fault suite's results and logs, the public plugs' | their next run; what they found is in [testing.md](testing.md) |
-| `emulation/legacy/`, `emulation/cache/`, `emulation/stub-cloud/` | earlier releases' trees, the QEMU fork's source, the cloud stub's own CA | the suite, `emu.sh` (a new CA means the saved stub plugs are made again) |
+| `emulation/state*/` | each emulator's device and computer | the emulator, from the backup |
+| `emulation/saved/` | devices kept part way (`--save`), the fault suite's and the public ones | `fault_suite.py prep`, `public_devices.py make` |
+| `emulation/suite*/`, `emulation/public-devices/` | the fault suite's results and logs, the public devices' | their next run; what they found is in [testing.md](testing.md) |
+| `emulation/legacy/`, `emulation/cache/`, `emulation/stub-cloud/` | earlier releases' trees, the QEMU fork's source, the cloud stub's own CA | the suite, `emu.sh` (a new CA means the saved stub devices are made again) |
 
 The maintainer's own backup is sealed in a private package, and the emulator
 restores it when it is not in `captures/`: in
@@ -207,11 +207,11 @@ caught on its way out. It finds two kinds of thing:
 
 - **Your own, by value** - only your computer knows them: every value in
   `.env`, and in `.env.infra` if you keep the project's services (its tokens,
-  keys and private addresses); the eWeLink account and each plug's eWeLink id and name; each plug's
-  MAC (from `captures/plugs/`: its folder, its record, its backup's eFuses), in
+  keys and private addresses); the eWeLink account and each device's eWeLink id and name; each device's
+  MAC (from `captures/devices/`: its folder, its record, its backup's eFuses), in
   any form, and as raw bytes in any file; the Sonoff settings in each backup
-  that say which plug, account or network it is (its eWeLink keys, the Wi-Fi it
-  was set up on); the addresses real runs - not the emulator's - found plugs
+  that say which device, account or network it is (its eWeLink keys, the Wi-Fi it
+  was set up on); the addresses real runs - not the emulator's - found devices
   and your computer at; and each line of `tools/repo/leak-scan.local`, a file Git
   ignores, for anything else of yours (a router's name, a public address).
 - **Anyone's, by shape**: a MAC address that could be a real device's - one
@@ -255,11 +255,11 @@ says what differs from that, and `... apply` sets it.
 Not written to disk is not the same as never exposed. The password crosses
 your local network up to three times during a run, in plain HTTP:
 
-- inside the Sonoff backup, as the installer sends the plug's flash to the
+- inside the Sonoff backup, as the installer sends the device's flash to the
   tool (not with `--no-backup`). While it runs, the installer answers anyone
   on your network - it also takes any firmware it is sent, which could read
   the same memory, so reading it adds no new way in;
-- when the tool reads it, in the plug's configuration backup (skipped if you
+- when the tool reads it, in the device's configuration backup (skipped if you
   typed the details instead). This is the same `/dl` download as
   Configuration → Backup Configuration in Tasmota's web UI. The file is only
   lightly obfuscated: each byte is XORed with a fixed key, by a published
@@ -274,11 +274,11 @@ the tool just as from a browser logging in.
 That risk is accepted on purpose. Tasmota's web UI has no HTTPS, so every
 settings backup taken from a browser exposes the password the same way;
 the run adds nothing an ordinary backup does not. And the password only gets
-someone onto the network the plug is already on - which anyone able to watch
+someone onto the network the device is already on - which anyone able to watch
 this traffic is on already.
 
-Keeping the password on the plug throughout was considered: Berry could
-write it into the startup firmware on the plug, or leave it in flash for that
+Keeping the password on the device throughout was considered: Berry could
+write it into the startup firmware on the device, or leave it in flash for that
 firmware to read. That is not worth it to close two brief exposures in a
 process that is no more exposed than everyday Tasmota use. If traffic on your
 local network is a concern, the answer is to separate it, for example with an
@@ -286,9 +286,9 @@ IoT VLAN, not to change this tool.
 
 ## How your eWeLink account is handled
 
-The run signs in to your eWeLink account twice: once to find the plug, by
-matching the plugs it converts in the account against what answers on your
-network, and once to send the plug the cloud update command that installs the
+The run signs in to your eWeLink account twice: once to find the device, by
+matching the devices it converts in the account against what answers on your
+network, and once to send the device the cloud update command that installs the
 bridge. Both
 go straight to eWeLink's own servers over HTTPS, and the update command over
 an encrypted WebSocket. Nothing about the account passes through anyone else.
@@ -309,15 +309,15 @@ What is kept is the account's email (or phone number, for an account made
 with one), so the next run can offer it first. It is in
 `captures/settings.json` and the run's state file, both inside `captures/`,
 which git ignores. In the run's log it is written as `<email>` (or `<phone>`),
-along with the plug's device id, name and hardware address.
+along with the device's device id, name and hardware address.
 
 The device list eWeLink returns includes each device's LAN key (`devicekey`):
 not the device id, and not an account login, but the secret its LAN Control
 mode encrypts local traffic with. eWeLink sends it whether asked or not. The
 run does not use it: it is never logged, and is left out of everything the
-run records about the plug. It stays in memory only while the run needs the
+run records about the device. It stays in memory only while the run needs the
 account, and is gone when the run's processes exit. It stops mattering once
-the plug runs Tasmota.
+the device runs Tasmota.
 
 For an unattended run (testing, below), the account and password can be given
 in advance instead, in a `.env` file at the top of the checkout. Git ignores
@@ -327,7 +327,7 @@ environment, and the passwords are kept out of the log. A password given this
 way is tried once; if eWeLink refuses it, it is asked for instead.
 
 A throwaway eWeLink account is fine, and limits what a mistake could expose:
-once the plug is converted, the account is no longer needed.
+once the device is converted, the account is no longer needed.
 
 ## Locks on the destructive steps
 
@@ -337,14 +337,14 @@ deliberately renamed before the underlying tools will run them on their own.
 
 ## The finished memory layout
 
-What a converted plug's flash holds at the end depends on its chip family: an
-Espressif plug on Tasmota is laid out again, while a Beken plug, and an
-Espressif plug on ESPHome, keep Sonoff's layout.
+What a converted device's flash holds at the end depends on its chip family: an
+Espressif device on Tasmota is laid out again, while a Beken device, and an
+Espressif device on ESPHome, keep Sonoff's layout.
 
-### An Espressif plug on Tasmota
+### An Espressif device on Tasmota
 
 Official Tasmota on the official partition layout - the same arrangement you
-would get from flashing the plug over USB - with one area more at the end:
+would get from flashing the device over USB - with one area more at the end:
 
 | Area | What's in it | Where | Size |
 |---|---|---|---|
@@ -353,27 +353,27 @@ would get from flashing the plug over USB - with one area more at the end:
 | `safeboot` | Recovery firmware for future updates | `0x10000` | 832 KiB |
 | `app0` | Tasmota itself | `0xE0000` | 2,880 KiB |
 | `spiffs` | File storage | `0x3B0000` | 316 KiB |
-| `sonoff` | The plug's Sonoff identity (data, subtype `0x40`) | `0x3FF000` | 4 KiB |
+| `sonoff` | The device's Sonoff identity (data, subtype `0x40`) | `0x3FF000` | 4 KiB |
 
 That gives 2,880 KiB of room for firmware instead of the 1,984 KiB the Sonoff
-layout allowed, plus a filesystem the plug never had.
+layout allowed, plus a filesystem the device never had.
 
 The table is built at run time from the one in Tasmota's factory image: the
 filesystem's entry 4 KiB shorter, the `sonoff` entry added, the checksum made
 again, and the result checked against a reviewed hash
 (`safeboot_migration.target_table`); a new Tasmota release whose factory table
 differs stops the firmware update until the repartition is reviewed again. A
-plug converted before, on Tasmota's own table, keeps working as it is: it has no
+device converted before, on Tasmota's own table, keeps working as it is: it has no
 `sonoff` area, and going back to Sonoff's firmware without its backup uses your
 eWeLink account instead.
 
 The `sonoff` area is one sector that says what it holds: the magic `SonoffID`, a
 version, a length and a CRC-32, then the identity as JSON. The identity is
-Sonoff's NVS entries `frame_params`, `data_backups` and, where the plug has
+Sonoff's NVS entries `frame_params`, `data_backups` and, where the device has
 them, `productId`, `channel_params` and `PID` - 300 to 550 bytes, with
 `frame_params`' Wi-Fi name and password taken out. The tool finds it by that
 header, not by the table, so a table that lost the entry (Tasmota's factory
-image written over the plug) still yields it. Nothing Tasmota does writes it:
+image written over the device) still yields it. Nothing Tasmota does writes it:
 its updates, `Reset 1`, `2`, `5` and `6`, and a filesystem formatted or full
 were each seen to leave it as it was. The Partition Wizard does not (see
 [What actually happens](what-happens.md#at-the-end)).
@@ -384,15 +384,15 @@ bytes ESP-IDF's `nvs_partition_gen` makes). On Sonoff's layout the sector is the
 last of `ota_1`, past any firmware written there. The startup firmware wipes the
 settings on its way to the interim Tasmota, so the sector is where going back
 to Sonoff finds the identity then; its checksum shows whether it is whole, and
-only this plug's identity is ever written there.
+only this device's identity is ever written there.
 
-### An Espressif plug on ESPHome
+### An Espressif device on ESPHome
 
-ESPHome keeps Sonoff's partition layout and its settings, the plug's identity
+ESPHome keeps Sonoff's partition layout and its settings, the device's identity
 among them, and the tool writes the `sonoff` sector at the end of `ota_1` too
-([Espressif research](espressif-research.md#a-plugs-identity-and-stores)).
+([Espressif research](espressif-research.md#a-devices-identity-and-stores)).
 
-### A Beken plug
+### A Beken device
 
 OpenBeken and ESPHome are both built for the stock bootloader's own 4 MB table,
 so a conversion writes only the app and the areas Sonoff's firmware leaves empty;
@@ -410,10 +410,10 @@ slot:
 | matter info backup | ESPHome's preferences (FlashDB) | `0x3ee000` | 32 KiB |
 | matter info | Sonoff's system store, kept | `0x3f6000` | 32 KiB |
 
-Nothing of Sonoff's but its app is written over, so the plug keeps its own
+Nothing of Sonoff's but its app is written over, so the device keeps its own
 identity, Wi-Fi and calibration where Sonoff's firmware keeps them: each first
 boot reads them from there, and going back to Sonoff's firmware finds them as
-they were, so a Beken plug needs no `sonoff` area. The two open firmwares keep
+they were, so a Beken device needs no `sonoff` area. The two open firmwares keep
 their own settings in different areas, so neither disturbs the other. Where each
 area came from: [Beken research](beken-research.md#flash-and-layouts) and
 [the ESPHome route](beken-research.md#the-esphome-route-libretiny).
@@ -431,28 +431,28 @@ The user-facing tool sits on top of a set of smaller, single-purpose scripts in
 `tools/autoflash/`, is a package: `cli.py` takes the command line and chooses
 the run; `context.py` holds a run's context; `runner.py` runs its steps, with
 their retries and the evidence of one cut off; `report.py` writes the report.
-Under them, `runs.py` is a run's record on disk, `account.py` the plug in its
+Under them, `runs.py` is a run's record on disk, `account.py` the device in its
 eWeLink account (the one part of a run that reaches eWeLink), `join.py` the
-plug onto the Wi-Fi and found there, `names.py` what its networks are called,
-`wifi.py` where its Wi-Fi details come from, `unlock.py` a converted plug's own
+device onto the Wi-Fi and found there, `names.py` what its networks are called,
+`wifi.py` where its Wi-Fi details come from, `unlock.py` a converted device's own
 passwords and keys, `firewall.py` this computer's ports and firewall rules,
 `errors.py` what stops a run, and `handover.py` the go-ahead before a
-converted plug's first write and an update sent to any ESPHome. The steps are
+converted device's first write and an update sent to any ESPHome. The steps are
 the routes, a package per chip family: `routes/espressif/` holds the S60's -
 `installer.py`, `hub.py`, `tasmota.py`, `mover.py` and `sonoff.py` by where
-the plug is on its way, `source.py` for where a run left one part way,
+the device is on its way, `source.py` for where a run left one part way,
 `evidence.py` for what a step cut off left behind, `bundle.py` for the
 firmware bundle, `images.py` for the ESPHome images it is given,
-`sonoff_firmware.py` for Sonoff's firmware where the plug has
+`sonoff_firmware.py` for Sonoff's firmware where the device has
 no backup - and `routes/beken/` the S61's: `images.py` for the firmware it is
 given, Sonoff's included, `stock.py` for the push from Sonoff's firmware
 through eWeLink, `onward.py` for each converted firmware taking the next,
 `arrived.py` for the checks and the backup, `evidence.py` for what a step cut
-off left behind. `routes/source.py` finds the plug and what it runs when a
+off left behind. `routes/source.py` finds the device and what it runs when a
 run starts, whatever its family, and `routes/__init__.py` holds the start every route
-shares (A0, then the firmware chosen, A3; from Sonoff's firmware, the plug
+shares (A0, then the firmware chosen, A3; from Sonoff's firmware, the device
 found in eWeLink between them, A1, which says its kind) and settles which route a run
-takes, by the plug's kind: a family package gives it the same handful of
+takes, by the device's kind: a family package gives it the same handful of
 names (its `FIRMWARES`, `SOURCES` and `steps_for`, and what the runner needs
 to know of each step), so a second chip family is a second package, not a
 change to the runner. The modules call each
@@ -460,22 +460,22 @@ other's functions by module name (`installer.reach_bridge`), never imported
 bare, so a test patches a function on the one module that defines it.
 `archive/` holds the research
 tools, the bridge firmware source and the custom Tasmota build that got the
-early plugs converted. None of it is needed now, and none of it has been
+early devices converted. None of it is needed now, and none of it has been
 deleted. The research behind all of it - how the update mechanism was worked
 out, the partition analysis, the reviewed migration plan and the manual
 procedure - is in **[archive/docs/reference/](../archive/docs/reference/README.md)**.
 
-The tests check the tool against itself; nothing touches the plug:
+The tests check the tool against itself; nothing touches the device:
 
 ```sh
 python3 tests/run.py
 ```
 
-To try a change against a plug without converting a real one, the emulator in
+To try a change against a device without converting a real one, the emulator in
 `tools/espressif/emulator/` runs the whole conversion against a virtual S60 booting a
 real stock flash dump, in Docker. It has taken a UK S60TPG on stock 1.2.0
 through every stage to the official layout. On a Linux computer with KVM it
-also runs the tool on Windows beside the plug, in a Windows that starts clean
+also runs the tool on Windows beside the device, in a Windows that starts clean
 every run. What it needs, how to set it up, use it and start over, how it
 works, and what had to be changed in the emulator to get there are in
 **[emulator.md](emulator.md)**.
@@ -486,7 +486,7 @@ typed, yes/no questions take their cautious default, and any other question
 stops the run, naming it. `tools/repo/unattended_run.py` runs it on a
 pseudo-terminal, records everything it draws, and rebuilds the final screen,
 colours included, for review. `tools/espressif/emulator/unattended-test.sh` does all of
-that against the emulated plug in one command. How each piece works is in
+that against the emulated device in one command. How each piece works is in
 **[unattended.md](unattended.md)**.
 
 To build the temporary startup firmware yourself instead of using the
@@ -499,7 +499,7 @@ python3 tools/espressif/safeboot/prepare_recovery_safeboot_migration.py
 python3 tools/espressif/safeboot/safeboot_migration_status.py          # says whether the bundle is good
 ```
 
-It needs a full flash dump of a plug for `prepare_safeboot_migration.py`. The
+It needs a full flash dump of a device for `prepare_safeboot_migration.py`. The
 procedure, including which Tasmota commit to check out, is in
 [part-2-safeboot-recovery-contingency.md](../archive/docs/reference/part-2-safeboot-recovery-contingency.md).
 

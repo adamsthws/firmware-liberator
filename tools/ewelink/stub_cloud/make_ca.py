@@ -49,12 +49,12 @@ from cryptography.x509.oid import NameOID
 DISP_HOST = "disp.autoflash-stub.test"
 IOT_HOST = "iot.autoflash-stub.test"
 WILDCARD = "*.autoflash-stub.test"
-# The plug connects to the IoT server dispatch hands it by numeric IP, without
+# The device connects to the IoT server dispatch hands it by numeric IP, without
 # DNS (it inet_aton()s the `IP` field), and the tool's app side does too: so the
 # leaf also carries the router's IP, where the stub listens.
 ROUTER_IP = "192.168.60.1"
 
-# Long-dated so the stub never needs cert renewal; the plug's clock may be
+# Long-dated so the stub never needs cert renewal; the device's clock may be
 # unset at boot, so start well in the past to sidestep a not-yet-valid error.
 NOT_BEFORE = dt.datetime(2020, 1, 1, tzinfo=dt.timezone.utc)
 NOT_AFTER = dt.datetime(2125, 1, 1, tzinfo=dt.timezone.utc)
@@ -191,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="make a new root CA (firmware patched to trust the old one "
                              "must then be rebuilt: emu.sh --fresh)")
     parser.add_argument("--router-ip", default=ROUTER_IP,
-                        help="IP SAN for the leaf (the stub's address the plug dials)")
+                        help="IP SAN for the leaf (the stub's address the device dials)")
     parser.add_argument("--rsa", action="store_true", help="an RSA-1024 CA, as eWeLink's, not an EC one")
     args = parser.parse_args(argv)
 

@@ -16,7 +16,7 @@ import os
 import re
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import __version__, failures, hostsys, kinds, plugs, routes, runs
+from tools.autoflash import __version__, failures, hostsys, kinds, records, routes, runs
 from tools.autoflash import report
 
 if TYPE_CHECKING:
@@ -117,7 +117,7 @@ def stages(ctx: Context) -> dict[str, dict[str, int]]:
         seconds = captures.get(f"{step}.seconds")
         if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
             continue
-        busy = captures.get(f"{step}.plug_busy_seconds")
+        busy = captures.get(f"{step}.device_busy_seconds")
         tries = captures.get(f"{step}.attempts")
         found[step] = {"s": min(int(seconds), 86400),
                        "busy": min(int(busy), 86400) if isinstance(busy, (int, float)) else 0,
@@ -130,10 +130,10 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
     """The run's report as the API takes it, but its proof. `ending`:
     "converted", "failed" or "crashed"."""
     state = ctx.state
-    kind = kinds.by_key(state.input("plug_kind"))
+    kind = kinds.by_key(state.input("device_kind"))
     firmware = routes.recorded_firmware(state)
     espressif = kinds.of_run(state).family == "espressif"
-    record = plugs.read_plug(state.input("plug_mac") or "")
+    record = records.read_device(state.input("device_mac") or "")
     captures = state.data.get("captures", {})
     source = runs.run_source(state)
     product = str(state.input("product_model") or record.get("model") or "").strip().upper()
@@ -170,7 +170,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         "device": kind.key if kind else None,
         "model": product if MODEL.fullmatch(product) else None,
         "stock": stock if VERSION.fullmatch(stock) else None,
-        "device_hash": device_hash(state.input("plug_mac")),
+        "device_hash": device_hash(state.input("device_mac")),
         "firmware": firmware,
         "from": put_back.get("came_from") or source,
         "backup": backup,

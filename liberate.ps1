@@ -11,7 +11,7 @@ run - and no GitHub API, with its hourly limit, is asked.
 The latest release is unpacked into %USERPROFILE%\Firmware-Liberator and started there,
 as start.cmd starts it. Run again, the folder is updated in place: the files
 the release it holds put there are replaced or removed, nothing else -
-captures\, with the plugs' Sonoff backups and an unfinished conversion, and
+captures\, with the devices' Sonoff backups and an unfinished conversion, and
 the portable Python in .python\ stay as they are. A git clone there is left to
 git. It is all one function, so pasted into an open PowerShell it leaves that
 window's settings as they were, and returns rather than closing it.

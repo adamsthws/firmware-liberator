@@ -1,4 +1,4 @@
-"""A run's record on disk (tools/autoflash/runs.py): filed under its plug's
+"""A run's record on disk (tools/autoflash/runs.py): filed under its device's
 MAC, what it ran from, and its secrets removed."""
 import base64
 import tempfile
@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.autoflash import cli, context, credentials, errors, output, plugs, report, routes, runs
+from tools.autoflash import cli, context, credentials, errors, output, records, report, routes, runs
 from tools.autoflash.routes.espressif import bundle
 from tools.autoflash.state import RunState
 
@@ -28,21 +28,21 @@ class FromTasmotasSafebootTests(unittest.TestCase):
         self.assertEqual(set(report.CONVERTED_FROM), {s for f in routes.FAMILIES.values() for s in f.SOURCES})
 
     def test_tasmota_runs_from_t1_until_it_is_left(self):
-        self.assertFalse(runs.plug_runs_tasmota(self.state()))           # its safeboot
-        self.assertTrue(runs.plug_runs_tasmota(self.state(["T1"])))      # Tasmota back
-        self.assertFalse(runs.plug_runs_tasmota(self.state(["T1", "L1"])))  # on the mover
+        self.assertFalse(runs.device_runs_tasmota(self.state()))           # its safeboot
+        self.assertTrue(runs.device_runs_tasmota(self.state(["T1"])))      # Tasmota back
+        self.assertFalse(runs.device_runs_tasmota(self.state(["T1", "L1"])))  # on the mover
 
 
 class RunFilingTests(unittest.TestCase):
-    """A run moves under its plug's MAC once found; older runs are adopted."""
+    """A run moves under its device's MAC once found; older runs are adopted."""
 
     def setUp(self):
-        self.plugs = plugs
+        self.devices = records
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.captures = Path(directory.name)
-        for patch in (mock.patch.object(plugs, "CAPTURES", self.captures),
-                      mock.patch.object(plugs, "PLUGS", self.captures / "plugs"),
+        for patch in (mock.patch.object(records, "CAPTURES", self.captures),
+                      mock.patch.object(records, "DEVICES", self.captures / "devices"),
                       mock.patch.object(runs, "CURRENT_POINTER", self.captures / ".current"),
                       mock.patch.object(output, "say")):
             patch.start()
@@ -51,19 +51,23 @@ class RunFilingTests(unittest.TestCase):
     def test_a_new_run_waits_unidentified_then_moves_under_the_mac(self):
         from types import SimpleNamespace
         name = runs.new_run_name(None)
-        self.assertTrue(name.startswith("plugs/unidentified/runs/"))
+        self.assertTrue(name.startswith("devices/unidentified/runs/"))
         ctx = context.Context(SimpleNamespace(
-            run=name, manifest=bundle.DEFAULT_MANIFEST, dry_run=False, plug_ip=None,
+            run=name, manifest=bundle.DEFAULT_MANIFEST, dry_run=False, device_ip=None,
             email=None, web_user=None, web_password=None, esphome_ota_password=None,
             esphome_web_user=None, esphome_web_password=None, esphome_api_key=None))
-        ctx.state.set_input("plug_ip", "10.0.0.5")
-        ctx.file_under_plug("58:CF:79:01:02:03")
-        self.assertEqual(ctx.dir.parent, self.captures / "plugs/58-cf-79-01-02-03/runs")
-        self.assertEqual(ctx.state.input("plug_ip"), "10.0.0.5")
-        ctx.state.set_input("plug_mac", "58:cf:79:01:02:03")  # saved where it now is
+        ctx.state.set_input("device_ip", "10.0.0.5")
+        ctx.file_under_device("58:CF:79:01:02:03")
+        self.assertEqual(ctx.dir.parent, self.captures / "devices/58-cf-79-01-02-03/runs")
+        self.assertEqual(ctx.state.input("device_ip"), "10.0.0.5")
+        ctx.state.set_input("device_mac", "58:cf:79:01:02:03")  # saved where it now is
         self.assertTrue((ctx.dir / "autoflash-state.json").is_file())
         self.assertFalse((self.captures / name).exists())
-        self.assertEqual(runs.read_current(), ctx.plug)
+        self.assertEqual(runs.read_current(), ctx.run)
+
+    def test_the_last_run_as_a_release_before_2_4_0_wrote_it_down_is_found(self):
+        (self.captures / ".current").write_text("plugs/58-cf-79-01-02-03/runs/20261013-031500\n", encoding="utf-8")
+        self.assertEqual(runs.read_current(), "devices/58-cf-79-01-02-03/runs/20261013-031500")
 
     def test_firmware_passwords_come_from_the_flags_then_the_environment(self):
         from types import SimpleNamespace
@@ -71,7 +75,7 @@ class RunFilingTests(unittest.TestCase):
 
         def args(**over):
             base = dict(run=name, manifest=bundle.DEFAULT_MANIFEST, dry_run=False,
-                        plug_ip=None, email=None, web_user=None, web_password=None,
+                        device_ip=None, email=None, web_user=None, web_password=None,
                         esphome_ota_password=None, esphome_web_user=None, esphome_web_password=None,
                         esphome_api_key=None)
             base.update(over)
@@ -109,7 +113,7 @@ class RunFilingTests(unittest.TestCase):
         name = runs.new_run_name(None)
 
         def args(email=None):
-            return SimpleNamespace(run=name, manifest=bundle.DEFAULT_MANIFEST, dry_run=False, plug_ip=None,
+            return SimpleNamespace(run=name, manifest=bundle.DEFAULT_MANIFEST, dry_run=False, device_ip=None,
                                    email=email, web_user=None, web_password=None, esphome_ota_password=None,
                                    esphome_web_user=None, esphome_web_password=None, esphome_api_key=None)
         for email, given in (("07700 900123", None), (None, "test@test")):
@@ -124,11 +128,11 @@ class RunFilingTests(unittest.TestCase):
 
     def test_older_runs_with_a_mac_are_adopted(self):
         old = RunState.open(self.captures / "conversion-20261011-1431")
-        old.set_input("plug_mac", "58:cf:79:01:02:03")
+        old.set_input("device_mac", "58:cf:79:01:02:03")
         RunState.open(self.captures / "conversion-unknown").save()
         runs.remember_current("conversion-20261011-1431")
         cli.adopt_older_runs()
-        moved = self.captures / "plugs/58-cf-79-01-02-03/runs/conversion-20261011-1431"
+        moved = self.captures / "devices/58-cf-79-01-02-03/runs/conversion-20261011-1431"
         self.assertTrue((moved / "autoflash-state.json").is_file())
         self.assertTrue((self.captures / "conversion-unknown").is_dir())
         self.assertEqual(runs.read_current(), runs.run_name(moved))

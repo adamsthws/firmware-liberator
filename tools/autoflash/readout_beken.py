@@ -14,7 +14,7 @@ AutoflashRevertToStock would refuse, and the download slot could be wrong.
 Each stage leans on the conversion's own helpers, with their retries: the
 firmware is delivered through eWeLink (tools/ewelink/ota_push), the flash read
 in paced, retried chunks (tools/autoflash/openbeken.read_flash), the revert
-served until the device has every byte (routes/beken/onward.serve_to_plug).
+served until the device has every byte (routes/beken/onward.serve_to_device).
 The copy is anonymised (tools/beken/scrub.py) before anything is sent.
 """
 
@@ -25,7 +25,7 @@ import json
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import firewall, hostsys, openbeken, output, plugs, prompts, runs, safety_locks
+from tools.autoflash import firewall, hostsys, openbeken, output, records, prompts, runs, safety_locks
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes.beken import arrived, onward, stock
 from tools.autoflash.runs import ROOT
@@ -83,7 +83,7 @@ def deliver_readout(ctx: Context, name: str, version: str, device: dict[str, Any
     """Send the readout OpenBeken to the device through eWeLink, wrapped under
     the firmware name its updater expects. The first write."""
     container = fota_wrap.wrap(readout_image(), name=name, version=fota_wrap.ANNOUNCED_VERSION)
-    plug_ip = ctx.state.require("plug_ip")[0]
+    device_ip = ctx.state.require("device_ip")[0]
     port = firewall.choose_port(ctx, "delivery_port", firewall.DELIVERY_PORTS, "the firmware")
     firewall.ensure_firewall(ctx)
 
@@ -96,7 +96,7 @@ def deliver_readout(ctx: Context, name: str, version: str, device: dict[str, Any
     with safety_locks.lifted(ROOT, "RECOVERY_LOCK"):
         delivered = ota_push.deliver(
             account=ctx.ewelink, device_id=device["deviceid"], firmware=container, version=fota_wrap.ANNOUNCED_VERSION,
-            listen_ip=ctx.listen_ip(), listen_port=port, device_ip=plug_ip, names=("user1.bin",),
+            listen_ip=ctx.listen_ip(), listen_port=port, device_ip=device_ip, names=("user1.bin",),
             wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False)
     safety_locks.say_lock_back(ROOT, "RECOVERY_LOCK")
     if not delivered.sent:
@@ -130,7 +130,7 @@ def wait_for_openbeken(ctx: Context, wait: float = ARRIVE_WAIT) -> str:
 
 
 def _poll(ctx: Context, look, wait: float):
-    """look(host) until it returns, at the plug's address or wherever its
+    """look(host) until it returns, at the device's address or wherever its
     hardware address moved to; NotBack if the time runs out."""
     import tools.autoflash.join as join
     try:
@@ -171,7 +171,7 @@ def revert_to_sonoff(ctx: Context, host: str, found: Stock) -> None:
             raise Abort(f"the readout firmware would not fetch Sonoff's firmware back: {exc}. The device's own "
                         "data is read; switch it off and on and send its Sonoff firmware again") from exc
 
-    onward.serve_to_plug(ctx, found.rbl, f"Sonoff's firmware {found.version}", fetch,
+    onward.serve_to_device(ctx, found.rbl, f"Sonoff's firmware {found.version}", fetch,
                          unstick=lambda: openbeken.restart(host))
 
 
@@ -211,28 +211,28 @@ def read_out(ctx: Context, name: str, version: str, device: dict[str, Any],
         "a small program that only reads; then the tool puts the device's own",
         "Sonoff firmware back, and its settings and eWeLink pairing are kept.",
         "",
-        "DO NOT UNPLUG IT during the process. If the small program could not start",
-        "at all, the device may need a serial cable to recover. Only go ahead with",
-        "a device you can afford to lose.",
+        "DO NOT CUT ITS POWER during the process. If the small program could not",
+        "start at all, the device may need a serial cable to recover. Only go ahead",
+        "with a device you can afford to lose.",
     ])
     if not prompts.require_word(prompts.CONSENT_WORD, skip=skippable):
         raise NothingWritten("skipped as asked, nothing was sent to it" if skippable else
                              "not confirmed - nothing has been sent to the device")
     output.transient_end()
-    plug_ip = ctx.state.require("plug_ip")[0]
-    if openbeken.is_readout(plug_ip):
+    device_ip = ctx.state.require("device_ip")[0]
+    if openbeken.is_readout(device_ip):
         # A readout stopped part way left it there: eWeLink cannot reach the
         # device on it, and has no need to.
         output.say("The readout firmware is on the device already, from a readout stopped part way.")
-        host = plug_ip
+        host = device_ip
     else:
         deliver_readout(ctx, name, version, device)
         host = wait_for_openbeken(ctx)
     info = openbeken.info(host) or {}
     flash = read_whole_flash(ctx, host)
-    mac = ctx.state.input("plug_mac")
+    mac = ctx.state.input("device_mac")
     if mac:
-        directory, saved = plugs.save_beken_backup(mac, flash[plugs.BEKEN_REGION[0]:], found.rbl, found.version,
+        directory, saved = records.save_beken_backup(mac, flash[records.BEKEN_REGION[0]:], found.rbl, found.version,
                                                    kind="a device being added")
         if saved:
             output.say(f"    The device's own data is kept on this computer, in {runs.display_path(directory)}.")
@@ -263,7 +263,7 @@ def read_and_anonymise(ctx: Context, manifest: dict[str, Any], name: str, versio
 
 def saved_stock(mac: str | None) -> Stock | None:
     """Sonoff's firmware as a readout kept it, beside the device's backup."""
-    backup = plugs.find_backup(mac) if mac else None
+    backup = records.find_backup(mac) if mac else None
     if backup is None or backup.family != "beken":
         return None
     for path in sorted(backup.directory.glob("stock-app-*.rbl")):
@@ -285,8 +285,8 @@ def put_back(ctx: Context, host: str) -> str:
     from tools.ewelink import offered_firmware
     output.say("The device is on the readout firmware, left by a readout stopped part way: "
                "putting its Sonoff firmware back.")
-    mac = ctx.state.input("plug_mac") or hostsys.mac_of(host)
-    device_id = str(plugs.read_plug(mac).get("ewelink_id") or "") if mac else ""
+    mac = ctx.state.input("device_mac") or hostsys.mac_of(host)
+    device_id = str(records.read_device(mac).get("ewelink_id") or "") if mac else ""
     if not device_id:
         device_id = str(readout.device_at(host, ctx.account_devices() or []).get("deviceid") or "")
     found = saved_stock(mac)

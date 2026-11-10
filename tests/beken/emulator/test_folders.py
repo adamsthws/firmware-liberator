@@ -58,7 +58,7 @@ class MigrateTests(unittest.TestCase):
         self.assertIn("while a container uses them", said[0])
 
     def test_a_container_on_the_checkout_alone_does_not_stop_it(self):
-        # The plug's container has the whole checkout at /work, read-only.
+        # The device's container has the whole checkout at /work, read-only.
         self.make("s61-suite")
         self.migrate(mounted=[Path(self.tmp.name), self.emulation / "state-1"])
         self.assertTrue((self.emulation / "beken/suite/made.txt").exists())
@@ -84,8 +84,8 @@ class MigrateTests(unittest.TestCase):
         self.assertTrue((self.emulation / "beken/state/made.txt").exists())
 
     def test_nothing_outside_the_emulators_folders_is_touched(self):
-        # A plug's stock backup cannot be made again.
-        backup = self.captures / "plugs/12-34-56-ab-cd-ef/sonoff-backup"
+        # A device's stock backup cannot be made again.
+        backup = self.captures / "devices/12-34-56-ab-cd-ef/sonoff-backup"
         backup.mkdir(parents=True)
         (backup / "flash.bin").write_bytes(b"stock")
         readout = self.captures / "flash-readout"

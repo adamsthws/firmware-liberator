@@ -1,17 +1,17 @@
 # The mover: a small ESPHome the conversion tool runs for a minute or two,
-# only to change which memory layout a plug has. Not something to keep on a
-# plug, and not for Home Assistant.
+# only to change which memory layout a device has. Not something to keep on a
+# device, and not for Home Assistant.
 #
-# Leaving Tasmota, the plug is on Tasmota's layout, and its running Tasmota
+# Leaving Tasmota, the device is on Tasmota's layout, and its running Tasmota
 # sits across both of the app slots Sonoff's layout has, so nothing it runs
 # can write into either. This is small enough to go in front of it, at
 # 0x20000, Sonoff's first slot: the tool writes it there, with Sonoff's
-# layout last, and the plug starts it. The tool then sends what comes next as
+# layout last, and the device starts it. The tool then sends what comes next as
 # an ordinary update.
 #
 # Like the ESPHome images the tool installs, it is published pre-built with
-# Wi-Fi placeholders the tool writes the plug's Wi-Fi into; it saves nothing,
-# as it never stays. It is the same for any plug with an ESP32-C3 and 4 MB of
+# Wi-Fi placeholders the tool writes the device's Wi-Fi into; it saves nothing,
+# as it never stays. It is the same for any device with an ESP32-C3 and 4 MB of
 # flash: it drives no pins.
 
 esphome:
@@ -47,7 +47,7 @@ esphome:
             }
             // The name every firmware of the conversion goes by, on the home
             // network and as its own network (open): autoflash-recovery- and
-            // the last two bytes of the plug's Wi-Fi MAC. Written over
+            // the last two bytes of the device's Wi-Fi MAC. Written over
             // ESPHome's own name, which is as long, so Wi-Fi gives it as the
             // hostname too.
             uint8_t mac[6];
@@ -78,8 +78,8 @@ wifi:
   reboot_timeout: 0s
   # Two minutes away from the home network, and it raises its own, where the
   # captive portal's page takes new Wi-Fi details - the home network changed
-  # since the plug last joined it, say - while it goes on trying the home one.
-  # Without it a mover that cannot join is a plug only a serial cable reaches.
+  # since the device last joined it, say - while it goes on trying the home one.
+  # Without it a mover that cannot join is a device only a serial cable reaches.
   ap:
     ap_timeout: 2min
 

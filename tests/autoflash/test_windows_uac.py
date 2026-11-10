@@ -120,13 +120,13 @@ class FirewallRuleTests(unittest.TestCase):
             return 0
 
         rule = self.open(allowed)
-        self.assertEqual((rule.kind, rule.plug_ip, rule.ports), ("windows", "192.0.2.50", [8088, 8089]))
+        self.assertEqual((rule.kind, rule.device_ip, rule.ports), ("windows", "192.0.2.50", [8088, 8089]))
         self.assertEqual(rule.detail, {"program": PYTHON, "paused": ["{block-1}"], "name": "Autoflash"})
 
     def test_yes_without_a_result_still_gives_the_rule(self):
         self.assertEqual(self.open(lambda script: 0).detail["paused"], [])
 
-    def test_the_elevated_script_admits_only_the_plug_to_this_python(self):
+    def test_the_elevated_script_admits_only_the_device_to_this_python(self):
         scripts = []
         self.open(lambda script: scripts.append(script) or 0)
         self.assertIn("$program = 'C:\\Users\\O''Brien\\Autoflash\\.python\\python.exe'", scripts[0])
@@ -190,10 +190,10 @@ class ToolTests(unittest.TestCase):
 
     def ctx(self, rules=()):
         return types.SimpleNamespace(state=FakeState(
-            plug_ip="192.0.2.50", firewall_rules=[rule.to_json() for rule in rules]))
+            device_ip="192.0.2.50", firewall_rules=[rule.to_json() for rule in rules]))
 
     def test_it_says_windows_will_ask_before_asking(self):
-        def prompt(plug_ip, ports):
+        def prompt(device_ip, ports):
             self.assertIn("Windows will ask whether to allow the change - choose Yes. This window",
                           self.screen)
             return self.RULE

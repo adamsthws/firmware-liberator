@@ -14,7 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import hostsys, kinds, output, plugs, report, routes, testers
+from tools.autoflash import hostsys, kinds, output, records, report, routes, testers
 from tools.espressif.emulator import fault_suite
 from tools.repo import fault_verdicts, unattended_run
 
@@ -38,7 +38,7 @@ FIELDS = [
     ("Tool", "12.34.56"),
     ("Model", longest(kind.name for kind in kinds.EVERY)),
     ("Stock", "1.12.345"),
-    ("Backup", longest(text for _, text in plugs.BACKUP_OUTCOMES.values())),
+    ("Backup", longest(text for _, text in records.BACKUP_OUTCOMES.values())),
     ("Identity", report.answer(longest(report.SONOFF_IDENTITY.values()))),
     ("Computer", "Ubuntu 24.04.5 LTS (Windows Subsystem for Linux)"),
     ("Python", "3.13.11 (start.sh's)"),
@@ -49,7 +49,7 @@ FIELDS = [
     ("Signal", "-100 dBm"),
     ("Wi-Fi typed", "Yes"),
     ("Setup network", "Yes"),
-    ("Power cycled", "False"),   # a Beken plug's, in place of the two above
+    ("Power cycled", "False"),   # a Beken device's, in place of the two above
     ("Checks", "Not run"),
     ("Meter", "Not retained"),
     ("Emulator", "Yes"),

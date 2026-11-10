@@ -22,13 +22,13 @@
 // then applies the factory trim  x = a*x^2/1e7 + b*x/1e6 + c/1e6  (the same
 // CoolKit quadratic as the S60). OpenBeken's BL0937 driver also measures f
 // (it counts falling edges per second) and scales it as real = f * cal, so for
-// the linear trim every plug we have seen uses (a = c = 0) the OpenBeken
+// the linear trim every device we have seen uses (a = c = 0) the OpenBeken
 // calibration is simply  cal = K_nom * b / 1e6.  A non-zero a or c has no
 // OpenBeken equivalent; we then still use b and say so.
 #define S61_K_CURRENT (1.1 * 1000.0 / 94638.0)
 #define S61_K_VOLTAGE (1.1 * 2040.0 / 15397.0)
 #define S61_K_POWER   (1.21 * 2040.0 * 1000.0 / 1721506.0)
-#define S61_RATED_POWER_W 3840.0f   // 16 A plug (the OpenBeken default PowerMax is 3680)
+#define S61_RATED_POWER_W 3840.0f   // 16 A device (the OpenBeken default PowerMax is 3680)
 
 typedef struct { int32_t a, b, c; } s61_cal_rec_t;
 

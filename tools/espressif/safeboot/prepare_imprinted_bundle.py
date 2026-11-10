@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Build the autoflash bundle from published files, with no flash dump.
 
-The older route froze a full 4 MiB dump of one plug into the bundle, but the
+The older route froze a full 4 MiB dump of one device into the bundle, but the
 migration never reads those frozen copies: preflight reads the partition table,
-NVS and otadata live off the plug and checks the table against the allow-listed
+NVS and otadata live off the device and checks the table against the allow-listed
 hash compiled into the tools. So the bundle needs only firmware:
 
   - the pinned Bluetooth Tasmota image from artifacts/
@@ -11,7 +11,7 @@ hash compiled into the tools. So the bundle needs only firmware:
   - the published imprintable recovery Safeboot, with your Wi-Fi written in
 
 The bundle can be built before the Wi-Fi is known: the autoflash run does that,
-and writes the Wi-Fi in at E1 with `pin_wifi`, once it has read it off the plug.
+and writes the Wi-Fi in at E1 with `pin_wifi`, once it has read it off the device.
 
 Every pinned-artifact, target-table and imprint-provenance check the migration
 server applies is run here too before the manifest is reported as good.
@@ -166,7 +166,7 @@ def build_bundle(
 
     The official files are those of the release pinned now, or of `release`,
     one pinned before (firmware.json's "earlier"): a run past F2 has its app
-    on the plug, and ends on it.
+    on the device, and ends on it.
 
     The recovery image carries the Wi-Fi password, so it is never written:
     the manifest pins its size and SHA-256, and the caller keeps the bytes in
@@ -236,7 +236,7 @@ def build_bundle(
         raise BundleError("factory image has unexpected bytes before/after app0")
 
     # Tasmota's own table, with the entry for the sector that keeps the
-    # plug's Sonoff identity (safeboot_migration.target_table).
+    # device's Sonoff identity (safeboot_migration.target_table).
     try:
         target_table = target_table_of(factory_bytes[TABLE_OFFSET : TABLE_OFFSET + TABLE_SIZE])
     except ValueError as exc:
@@ -373,7 +373,7 @@ def startup_image(ssid: str, password: str, chip: chips.Chip = chips.ESP32C3) ->
     """The startup firmware with these Wi-Fi details written in, in memory only.
 
     Not checked against any bundle and pins nothing: for comparing with a
-    record of the image a plug was actually given.
+    record of the image a device was actually given.
     """
     try:
         return imprint(published_recovery_file(chip).read_bytes(), ssid, password)

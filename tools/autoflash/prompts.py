@@ -661,7 +661,7 @@ def ask_ipv4(
     `must_respond`: the address has to answer a ping.  `check` (which implies
     it): what else is wrong with an address that answered, or nothing when it
     will do.  There is no using an address anyway: the run could not reach
-    the plug there, so it is asked for again, under what was wrong.
+    the device there, so it is asked for again, under what was wrong.
     """
 
     def validate(answer: str) -> tuple[bool, str]:

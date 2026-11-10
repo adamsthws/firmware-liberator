@@ -72,7 +72,7 @@ class PublishedArtifactTests(unittest.TestCase):
 
     def test_info_only_reads(self):
         # No pin is set, nothing is written, and nothing of the network or the
-        # plug's identity is in reach of what it says.
+        # device's identity is in reach of what it says.
         import re
         from tools.autoflash.runs import ROOT
         source = (ROOT / "archive/bridge/main/main.c").read_text(encoding="utf-8")
@@ -153,7 +153,7 @@ class PublishedESPHomeTests(unittest.TestCase):
 
     def test_adopted_each_kinds_config_is_taken_as_a_package_of_a_release(self):
         # A package, so taking a fix is one line; of a release, never a branch,
-        # so nothing pushed here later reaches an adopted plug by itself. A
+        # so nothing pushed here later reaches an adopted device by itself. A
         # rebuilt config names the release it comes out in, which may be the
         # one to come (docs/updating-firmware.md), never one after it.
         from tools.autoflash import kinds

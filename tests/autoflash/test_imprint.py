@@ -141,7 +141,7 @@ class ImprintTests(unittest.TestCase):
     def test_the_firmware_reads_exactly_the_credentials_given(self):
         # The compiled string literal starts at the marker, so that is where the
         # firmware starts reading. Regression: values written after the marker
-        # left the plug looking for "S60-IMPRINT-SSID>Net".
+        # left the device looking for "S60-IMPRINT-SSID>Net".
         ssid_at = find_field(self.image, SSID_MARKER, SSID_FIELD_BYTES)
         pass_at = find_field(self.image, PASSWORD_MARKER, PASSWORD_FIELD_BYTES)
         result = imprint(self.image, "Wonky-2G", "correct horse")

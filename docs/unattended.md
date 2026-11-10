@@ -14,14 +14,14 @@ chmod 600 .env
 
 | Name | What |
 |---|---|
-| `EWELINK_EMAIL` | the eWeLink account the plug is in: its email, or the phone number it was made with, with its country code (`+44 7700 900123`) |
+| `EWELINK_EMAIL` | the eWeLink account the device is in: its email, or the phone number it was made with, with its country code (`+44 7700 900123`) |
 | `EWELINK_PASSWORD` | its password |
 | `AUTOFLASH_SUDO_PASSWORD` | Linux and macOS: your computer's password, only if sudo asks for one (for the temporary firewall rule) |
-| `AUTOFLASH_WIFI_SSID`, `AUTOFLASH_WIFI_PASSWORD` | only for a plug on an ESPHome that cannot say its Wi-Fi password (one of this project's first builds, or whose API has an encryption key not given as `AUTOFLASH_ESPHOME_API_KEY`), when your computer has no Sonoff backup of the plug to take it from: the network it is on, and its password (none for an open network) |
-| `AUTOFLASH_TASMOTA_PASSWORD` | only for a plug on Tasmota with a web password: that password. Without it, the run stops when it finds the plug |
-| `AUTOFLASH_ESPHOME_OTA_PASSWORD` | only for a plug on ESPHome with an update password (the `password:` line under `ota:` in its ESPHome YAML config): that password. Without it, the run stops before the go-ahead to leave ESPHome |
-| `AUTOFLASH_ESPHOME_WEB_USER`, `AUTOFLASH_ESPHOME_WEB_PASSWORD` | only for a plug on ESPHome with a web login (`username:` and `password:` under `web_server:` `auth:` in its ESPHome YAML config): both. Without them, the run stops when it finds the plug |
-| `AUTOFLASH_ESPHOME_API_KEY` | only for a plug on ESPHome with an API encryption key (the `key:` line under `api:` `encryption:` in its ESPHome YAML config): that key. With it the run reads the plug's Wi-Fi details off it, and sends its update encrypted, for which ESPHome asks no update password; without it, a plug that takes only encrypted updates (`encryption:` under `ota:`) stops the run before the go-ahead |
+| `AUTOFLASH_WIFI_SSID`, `AUTOFLASH_WIFI_PASSWORD` | only for a device on an ESPHome that cannot say its Wi-Fi password (one of this project's first builds, or whose API has an encryption key not given as `AUTOFLASH_ESPHOME_API_KEY`), when your computer has no Sonoff backup of the device to take it from: the network it is on, and its password (none for an open network) |
+| `AUTOFLASH_TASMOTA_PASSWORD` | only for a device on Tasmota with a web password: that password. Without it, the run stops when it finds the device |
+| `AUTOFLASH_ESPHOME_OTA_PASSWORD` | only for a device on ESPHome with an update password (the `password:` line under `ota:` in its ESPHome YAML config): that password. Without it, the run stops before the go-ahead to leave ESPHome |
+| `AUTOFLASH_ESPHOME_WEB_USER`, `AUTOFLASH_ESPHOME_WEB_PASSWORD` | only for a device on ESPHome with a web login (`username:` and `password:` under `web_server:` `auth:` in its ESPHome YAML config): both. Without them, the run stops when it finds the device |
+| `AUTOFLASH_ESPHOME_API_KEY` | only for a device on ESPHome with an API encryption key (the `key:` line under `api:` `encryption:` in its ESPHome YAML config): that key. With it the run reads the device's Wi-Fi details off it, and sends its update encrypted, for which ESPHome asks no update password; without it, a device that takes only encrypted updates (`encryption:` under `ota:`) stops the run before the go-ahead |
 
 The same names set in the environment win over the file, and
 `--env-file PATH` reads another file instead. A misspelt name is refused,
@@ -40,7 +40,7 @@ run you sit through there asks you everything, as a real one does, while
 
 ```sh
 python3 tools/repo/unattended_run.py                       # recorded, as below
-python3 tools/repo/unattended_run.py -- --plug-ip 192.168.99.50 --new
+python3 tools/repo/unattended_run.py -- --device-ip 192.168.99.50 --new
 sh start.sh run --unattended                          # the same, unrecorded
 ```
 
@@ -55,11 +55,11 @@ With `--unattended`:
 - PROCEED, before the point of no return, is taken as typed;
 - an unfinished run is carried on, as the menu's first option would (`--new`
   starts afresh instead), and an interrupted step is done again (as in
-  any run, where the plug does not show it finished);
+  any run, where the device does not show it finished);
 - a yes/no question takes its default, the cautious answer: a weak Wi-Fi
   signal, for one, stops the run;
-- any other question stops the run, saying which question it was. Two plugs
-  answering, say, or the Wi-Fi details not readable off the plug.
+- any other question stops the run, saying which question it was. Two devices
+  answering, say, or the Wi-Fi details not readable off the device.
 
 Each answer it gives is shown on the screen, marked `(unattended)`.
 
@@ -81,7 +81,7 @@ terminal (a CI log, say), and is kept in `captures/unattended/<time>/`
 The terminal is the same size as the one running it, or 100x40 with none.
 `--size 120x50` sets it. Exit codes are the run's: 0 finished, 130 stopped
 at a question, 143 stopped by `--timeout`, anything else failed. The run's
-full log is in the run's `run.log`, under `captures/plugs/<MAC>/runs/`, as usual.
+full log is in the run's `run.log`, under `captures/devices/<MAC>/runs/`, as usual.
 
 A line starting `SCREEN:` after the exit code says a stage left something on
 the screen that it should have taken away: a try that failed, still shown
@@ -113,7 +113,7 @@ the same.
 ## In the emulator
 
 `tools/espressif/emulator/unattended-test.sh --fresh` starts the emulator, converts the
-emulated plug this way, prints its final screen and stops the emulator again.
+emulated device this way, prints its final screen and stops the emulator again.
 See "Unattended, for testing" in [emulator.md](emulator.md#unattended-for-testing).
 
 A readout in the emulator is kept unsent. To test sending it, `--api` sends

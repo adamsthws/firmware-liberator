@@ -5,10 +5,10 @@
     python3 tools/repo/prune_captures.py [--days 14] --delete   remove it
 
 Only what is listed in PRUNABLE, every part of it made again by the next run, build
-or prep: an emulator's plug and its computer's copy of the checkout, the suites'
+or prep: an emulator's device and its computer's copy of the checkout, the suites'
 logs, the build caches and the earlier releases' trees. A backup anywhere in them
-is kept, as a plug's stock backup cannot be made again (AGENTS.md); so are the
-starting plugs prep saved, the public dumps and everything not listed. An emulator
+is kept, as a device's stock backup cannot be made again (AGENTS.md); so are the
+starting devices prep saved, the public dumps and everything not listed. An emulator
 running keeps its state.
 """
 
@@ -26,15 +26,15 @@ ROOT = Path(__file__).resolve().parents[2]
 CAPTURES = ROOT / "captures"
 # What may go, by its path in captures/, and what it is.
 PRUNABLE = {
-    "emulation/state": "an Espressif emulator's plug and its computer's copy of the checkout",
-    "emulation/state-*": "an Espressif emulator's plug and its computer's copy of the checkout",
-    "emulation/beken/state": "a Beken emulator's plug and its computer's copy of the checkout",
-    "emulation/beken/state-*": "a Beken emulator's plug and its computer's copy of the checkout",
+    "emulation/state": "an Espressif emulator's device and its computer's copy of the checkout",
+    "emulation/state-*": "an Espressif emulator's device and its computer's copy of the checkout",
+    "emulation/beken/state": "a Beken emulator's device and its computer's copy of the checkout",
+    "emulation/beken/state-*": "a Beken emulator's device and its computer's copy of the checkout",
     "emulation/legacy/*": "an earlier release's tree, for the legacy scenarios",
     "emulation/beken/legacy/*": "an earlier release's tree, for the Beken update scenarios",
     "emulation/*/logs": "a suite's logs",
     "emulation/beken/*/logs": "a Beken suite's logs",
-    "emulation/public-plugs": "the public plugs' check's logs",
+    "emulation/public-devices": "the public devices' check's logs",
     "emulation/device-check": "the emulator check's logs",
     "esphome-build": "ESPHome's build cache",
     "firmware-build": "the firmware build cache",

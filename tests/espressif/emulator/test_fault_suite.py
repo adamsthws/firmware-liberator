@@ -1,5 +1,5 @@
-"""The fault suite's own logic: the names a plug may go by, the saved plugs
-each plug has, and the scenarios it lists."""
+"""The fault suite's own logic: the names a device may go by, the saved devices
+each device has, and the scenarios it lists."""
 
 import json
 import os
@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.autoflash import kinds, plugs, readout
+from tools.autoflash import kinds, records, readout
 from tools.autoflash.routes import espressif
 from tools.espressif.emulator import fault_suite as fs
 from tools.ewelink.stub_cloud import stub_server
@@ -35,11 +35,11 @@ class NameProblemTests(unittest.TestCase):
         # a classic ESP32's, from its Wi-Fi MAC.
         for kind, ok, wrong in ((kinds.SONOFF_S60, "ESP_ABCDF0", "ESP_ABCDEF"),
                                 (kinds.SONOFF_POWCT, "ESP_ABCDEF", "ESP_ABCDF0")):
-            with self.subTest(kind=kind.key), mock.patch.object(fs, "PLUG", kind):
+            with self.subTest(kind=kind.key), mock.patch.object(fs, "DEVICE", kind):
                 self.assertEqual(fs.name_problems(["tasmota-abcdef"], [ok], "tasmota"), ([], None))
                 self.assertEqual(fs.name_problems(["tasmota-abcdef"], [wrong], "tasmota"), ([wrong], None))
 
-    def test_a_name_this_plug_should_never_have(self):
+    def test_a_name_this_device_should_never_have(self):
         unknown, _ = fs.name_problems(["autoflash-recovery-1234", "tasmota-abcdef"], ["tasmota"], "tasmota")
         self.assertEqual(unknown, ["autoflash-recovery-1234", "tasmota"])
 
@@ -70,7 +70,7 @@ class TunerTests(unittest.TestCase):
         with mock.patch.dict(fs.os.environ, {"AUTOFLASH_EMU_CLOUD_COOL_DOWN": "0", "AUTOFLASH_EMU_CLOUD_WORKERS": "6"}):
             return fs.Tuner()
 
-    def test_sends_the_plug_never_asked_for_put_the_pause_back(self):
+    def test_sends_the_device_never_asked_for_put_the_pause_back(self):
         # Seen against the real cloud, with no pause left: two scenarios failing
         # each other's sends, each after a download given up on, and no trouble noted.
         tuner = self.tuner_with_no_pause()
@@ -96,18 +96,18 @@ class TunerTests(unittest.TestCase):
 
 class CloudTurnTests(unittest.TestCase):
     def turns_from_the_start(self, sc):
-        monitor = fs.PlugMonitor(mock.Mock(n=24, state=Path("/nonexistent"), sc=sc, say=lambda _: None))
+        monitor = fs.DeviceMonitor(mock.Mock(n=24, state=Path("/nonexistent"), sc=sc, say=lambda _: None))
         monitor.preheld = True
         with mock.patch.object(monitor, "live_run", return_value=None), \
                 mock.patch.object(monitor, "hold") as hold, \
-                mock.patch.object(fs, "plug_internet"), mock.patch.object(fs, "NO_CLOUD", False), \
+                mock.patch.object(fs, "device_internet"), mock.patch.object(fs, "NO_CLOUD", False), \
                 mock.patch.object(monitor.stop, "wait", side_effect=lambda _: monitor.stop.set()):
             monitor.watching()
         return [call.args[0] for call in hold.call_args_list]
 
-    def test_a_legacy_run_s_plug_is_online_from_the_start_whatever_step_it_stops_at(self):
+    def test_a_legacy_run_s_device_is_online_from_the_start_whatever_step_it_stops_at(self):
         # Seen against the real cloud: its turn held and its way out shut, so
-        # eWeLink showed the plug offline and the old release stopped to ask,
+        # eWeLink showed the device offline and the old release stopped to ask,
         # long before the step under test.
         self.assertEqual(self.turns_from_the_start({"step": "C3", "fault": "legacy"}), ["from the start"])
         self.assertEqual(self.turns_from_the_start({"step": "start", "fault": "legacy"}), ["from the start"])
@@ -115,52 +115,52 @@ class CloudTurnTests(unittest.TestCase):
         self.assertEqual(self.turns_from_the_start({"step": "C3", "fault": "crash"}), [])
 
     def hold_while_never_back(self, **hold):
-        """A turn whose plug never reaches eWeLink; what was said and done."""
+        """A turn whose device never reaches eWeLink; what was said and done."""
         with tempfile.TemporaryDirectory() as state:
             (Path(state) / "logs").mkdir()
             (Path(state) / "logs/uart.log").write_text("", encoding="utf-8")
             said = []
             sc = mock.Mock(n=24, state=Path(state), sc={"step": "C2"}, say=said.append, notes={})
-            monitor = fs.PlugMonitor(sc)
+            monitor = fs.DeviceMonitor(sc)
             clock = [1000.0]
 
             def wait(_):
                 clock[0] += 5
             with mock.patch.object(monitor, "live_run", return_value=None), \
                     mock.patch.object(monitor, "run_text", return_value=""), \
-                    mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                    mock.patch.object(fs, "device_internet"), mock.patch.object(fs.CLOUD, "release"), \
                     mock.patch.object(fs, "cloud_connections", return_value=set()), \
                     mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
                     mock.patch.object(monitor.stop, "wait", side_effect=wait):
                 monitor.hold("from the start", **hold)
         return said, sc
 
-    def test_a_fresh_plug_never_back_at_ewelink_is_switched_off_and_on_once(self):
+    def test_a_fresh_device_never_back_at_ewelink_is_switched_off_and_on_once(self):
         said, sc = self.hold_while_never_back(restart_once=True)
-        self.assertEqual(sc.ex.call_args_list, [mock.call(fs.PLUG_CMD, "restart")])
+        self.assertEqual(sc.ex.call_args_list, [mock.call(fs.DEVICE_CMD, "restart")])
         self.assertTrue(any("switched off and on" in line for line in said))
         self.assertTrue(any("the run goes on" in line for line in said))   # not back after it either
-        self.assertTrue(sc.notes["fresh_plug_restarted"])
+        self.assertTrue(sc.notes["fresh_device_restarted"])
 
-    def test_other_turns_never_switch_the_plug(self):
+    def test_other_turns_never_switch_the_device(self):
         said, sc = self.hold_while_never_back()
         sc.ex.assert_not_called()
         self.assertTrue(any("the run goes on" in line for line in said))
 
-    def test_the_turn_from_the_start_may_switch_its_plug(self):
-        monitor = fs.PlugMonitor(mock.Mock(n=24, state=Path("/nonexistent"), sc={"step": "C2", "fault": "crash"},
+    def test_the_turn_from_the_start_may_switch_its_device(self):
+        monitor = fs.DeviceMonitor(mock.Mock(n=24, state=Path("/nonexistent"), sc={"step": "C2", "fault": "crash"},
                                            say=lambda _: None))
         monitor.preheld = True
         with mock.patch.object(monitor, "live_run", return_value=None), \
                 mock.patch.object(monitor, "hold") as hold, \
-                mock.patch.object(fs, "plug_internet"), mock.patch.object(fs, "NO_CLOUD", False), \
+                mock.patch.object(fs, "device_internet"), mock.patch.object(fs, "NO_CLOUD", False), \
                 mock.patch.object(monitor.stop, "wait", side_effect=lambda _: monitor.stop.set()):
             monitor.watching()
         self.assertEqual(hold.call_args_list, [mock.call("from the start", restart_once=True)])
 
     def test_the_installer_sent_again_while_waiting_for_a_turn_is_answered_by_it(self):
         said = []
-        monitor = fs.PlugMonitor(mock.Mock(n=24, state=Path("/nonexistent"), sc={"step": "C3"}, say=said.append))
+        monitor = fs.DeviceMonitor(mock.Mock(n=24, state=Path("/nonexistent"), sc={"step": "C3"}, say=said.append))
         text = ["=== run started\n"]
         intent = "[11:31:39] Sending the installer again (attempt %d of 3)\n"
         calls = iter(range(1000))
@@ -183,7 +183,7 @@ class CloudTurnTests(unittest.TestCase):
         text.append(intent % 1)
         with mock.patch.object(monitor, "live_run", side_effect=live_run), \
                 mock.patch.object(monitor, "hold", side_effect=hold), \
-                mock.patch.object(fs, "plug_internet"), mock.patch.object(fs, "NO_CLOUD", False), \
+                mock.patch.object(fs, "device_internet"), mock.patch.object(fs, "NO_CLOUD", False), \
                 mock.patch.object(fs.CLOUD, "acquire", side_effect=acquire), \
                 mock.patch.object(monitor.stop, "wait", side_effect=lambda t: next(waits) and monitor.stop.set()):
             monitor.watching()
@@ -191,12 +191,12 @@ class CloudTurnTests(unittest.TestCase):
 
     def test_a_turn_starts_again_when_the_installer_is_sent_again_part_way(self):
         # Seen against the real cloud: sent again with 70 s of a turn left, and
-        # the plug shut off part way through that attempt.
+        # the device shut off part way through that attempt.
         with tempfile.TemporaryDirectory() as state:
             (Path(state) / "logs").mkdir()
             (Path(state) / "logs/uart.log").write_text("", encoding="utf-8")
             said = []
-            monitor = fs.PlugMonitor(mock.Mock(n=24, state=Path(state), sc={"step": "C3"}, say=said.append))
+            monitor = fs.DeviceMonitor(mock.Mock(n=24, state=Path(state), sc={"step": "C3"}, say=said.append))
             text = ["=== run started\n", "Sending the installer again (attempt 1 of 3)\n"]
             clock = [1000.0]
 
@@ -206,7 +206,7 @@ class CloudTurnTests(unittest.TestCase):
                     text.append("Sending the installer again (attempt 2 of 3)\n")
             with mock.patch.object(monitor, "live_run", side_effect=lambda: ("run", "".join(text))), \
                     mock.patch.object(monitor, "run_text", return_value=""), \
-                    mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                    mock.patch.object(fs, "device_internet"), mock.patch.object(fs.CLOUD, "release"), \
                     mock.patch.object(fs, "cloud_connections", return_value=set()), \
                     mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
                     mock.patch.object(monitor.stop, "wait", side_effect=wait):
@@ -217,9 +217,9 @@ class CloudTurnTests(unittest.TestCase):
         self.assertGreaterEqual(clock[0], 1200 + fs.HOLD_AT_MOST)
 
 
-class SavedPlugTests(unittest.TestCase):
+class SavedDeviceTests(unittest.TestCase):
     def stale(self, made, todo):
-        # A saved plug's name from its route; its firmware as prep recorded it.
+        # A saved device's name from its route; its firmware as prep recorded it.
         with tempfile.TemporaryDirectory() as emu:
             start = Path(emu) / "saved" / fs.saved("suite-esphome")
             start.mkdir(parents=True)
@@ -229,7 +229,7 @@ class SavedPlugTests(unittest.TestCase):
                     mock.patch.object(fs, "installs", return_value={"version": "2"}):
                 return fs.stale_starts(todo)
 
-    def test_a_batch_is_told_when_a_saved_plug_is_not_on_this_checkout_s_firmware(self):
+    def test_a_batch_is_told_when_a_saved_device_is_not_on_this_checkout_s_firmware(self):
         # Seen: ESPHome moved on and every esphome> scenario still started from
         # the release before, passing, until the tool began offering it an update.
         todo = [{"route": "esphome>tasmota", "fault": "crash"}]
@@ -248,12 +248,12 @@ class SavedPlugTests(unittest.TestCase):
                 fs.batch()
 
     def untrusting(self, saved: dict[str, dict[str, bytes]], rsa: bool, cas: dict[str, bytes]):
-        """untrusting_starts over saved plugs {name: {path: flash}}, of a plug whose
+        """untrusting_starts over saved devices {name: {path: flash}}, of a device whose
         firmware trusts eWeLink's RSA CA or not, and the stub's CAs {dir: pem}.
         A flash is Sonoff's when it holds b"sonoff", trusting the CAs it holds."""
         with tempfile.TemporaryDirectory() as root:
             emu, repo = Path(root) / "emulation", Path(root) / "repo"
-            source = repo / "captures/plugs/12-34-56-ab-cd-ef/sonoff-backup/flash.bin"
+            source = repo / "captures/devices/12-34-56-ab-cd-ef/sonoff-backup/flash.bin"
             source.parent.mkdir(parents=True)
             source.write_bytes(b"rsa" if rsa else b"ec")
             for name, pem in cas.items():
@@ -270,11 +270,11 @@ class SavedPlugTests(unittest.TestCase):
                                       None if b"sonoff" not in flash else pem is not None and pem in flash):
                 return fs.untrusting_starts()
 
-    def test_a_saved_plug_trusting_a_stub_ca_made_before_the_one_there_now_is_found(self):
-        # Seen: the stub's RSA CA made again the day after the S60's saved plugs,
+    def test_a_saved_device_trusting_a_stub_ca_made_before_the_one_there_now_is_found(self):
+        # Seen: the stub's RSA CA made again the day after the S60's saved devices,
         # whose Sonoff backups turned the stub down (unknown_ca), so a run back
         # to Sonoff's failed its checks.
-        backup = "captures/plugs/12-34-56-ab-cd-ef/sonoff-backup/flash.bin"
+        backup = "captures/devices/12-34-56-ab-cd-ef/sonoff-backup/flash.bin"
         saved = {"stub-suite-tasmota": {"flash.bin": b"tasmota", backup: b"sonoff OLD"},
                  "stub-suite-stockC2-tasmota": {"flash.bin": b"sonoff NEW"},
                  "stub-suite-esphome": {"flash.bin": b"esphome", backup: b"sonoff NEW"},
@@ -283,8 +283,8 @@ class SavedPlugTests(unittest.TestCase):
                          ["stub-suite-tasmota"])
 
     def test_one_trusting_the_other_kind_of_ca_is_found_too(self):
-        # The S60's update plugs, made before emu.sh gave its firmware an RSA CA.
-        saved = {"stub-suite-tasmota-earlier": {"captures/plugs/12-34-56-ab-cd-ef/sonoff-backup/flash.bin":
+        # The S60's update devices, made before emu.sh gave its firmware an RSA CA.
+        saved = {"stub-suite-tasmota-earlier": {"captures/devices/12-34-56-ab-cd-ef/sonoff-backup/flash.bin":
                                                 b"sonoff EC"}}
         self.assertEqual(self.untrusting(saved, True, {"stub-cloud-rsa": b"RSA", "stub-cloud": b"EC"}),
                          ["stub-suite-tasmota-earlier"])
@@ -295,8 +295,8 @@ class SavedPlugTests(unittest.TestCase):
         self.assertEqual(self.untrusting({"stub-suite-stockC2-tasmota": {"flash.bin": b"sonoff EC"}}, False, {}),
                          ["stub-suite-stockC2-tasmota"])
 
-    def test_another_plugs_and_the_real_clouds_saved_plugs_are_left_out(self):
-        backup = "captures/plugs/{}/sonoff-backup/flash.bin"
+    def test_another_devices_and_the_real_clouds_saved_devices_are_left_out(self):
+        backup = "captures/devices/{}/sonoff-backup/flash.bin"
         saved = {"stub-suite-tasmota": {backup.format("12-34-56-ab-cd-ef"): b"sonoff EC"},
                  "stub-suite-tasmota-2d01": {backup.format("12-34-56-e3-2d-01"): b"sonoff OLD"},
                  "suite-tasmota": {backup.format("12-34-56-ab-cd-ef"): b"sonoff COOLKIT"}}
@@ -327,9 +327,9 @@ class SavedPlugTests(unittest.TestCase):
             return fs.kind_of({"route": route, "step": step, "fault": fault, "arg": arg})
         self.assertEqual(kind("sonoff>tasmota", "C2", "outage", 120), "cloud")    # every length at C2
         self.assertEqual(kind("sonoff>esphome", "C2", "token", "login"), "cloud")
-        self.assertEqual(kind("sonoff>tasmota", "C3fb", "plugoff", 180), "cloud")
+        self.assertEqual(kind("sonoff>tasmota", "C3fb", "deviceoff", 180), "cloud")
         self.assertEqual(kind("sonoff>tasmota", "C3fb", "outage", 30), "stub")
-        self.assertEqual(kind("sonoff>tasmota", "C3", "plugoff", 1), "cloud")     # sent again through it
+        self.assertEqual(kind("sonoff>tasmota", "C3", "deviceoff", 1), "cloud")     # sent again through it
         self.assertEqual(kind("sonoff>esphome", "D1", "crash", 60), "stub")
         self.assertEqual(kind("sonoff>tasmota", "C2", "legacy", "v1.2.0"), "cloud")
         self.assertEqual(kind("sonoff>tasmota", "G1", "legacy", "v1.2.0"), "stub")
@@ -411,11 +411,11 @@ class SavedPlugTests(unittest.TestCase):
         self.assertEqual(ran, ["b", "c", "a"])
         self.assertEqual(took.call_args.args, (fs.EMU,))
 
-    def test_runs_that_start_from_no_converted_plug_ask_nothing_of_it(self):
+    def test_runs_that_start_from_no_converted_device_ask_nothing_of_it(self):
         self.assertEqual(self.stale('{"version": "1"}', [{"route": "sonoff>esphome", "fault": "crash"},
                                                          {"route": "esphome>sonoff", "fault": "legacy"}]), [])
 
-    def test_a_starting_plug_is_kept_only_when_its_run_got_there(self):
+    def test_a_starting_device_is_kept_only_when_its_run_got_there(self):
         # All six once listed as saved, each run stopped at "Discovering the device".
         stopped_early = "Stage  2 - Discovering the device - Stopped\nExit code 130"
         self.assertFalse(fs.prepared(stopped_early, None, False))
@@ -426,18 +426,18 @@ class SavedPlugTests(unittest.TestCase):
     def saved_as(self, owner, mac):
         with tempfile.TemporaryDirectory() as emu:
             if owner:
-                (Path(emu) / "saved/stub-suite-tasmota/captures/plugs" / owner).mkdir(parents=True)
+                (Path(emu) / "saved/stub-suite-tasmota/captures/devices" / owner).mkdir(parents=True)
             with mock.patch.object(fs, "EMU", Path(emu)), mock.patch.object(fs, "STUB_CLOUD", True), \
                  mock.patch.object(fs, "MAC", mac):
                 return fs.saved("suite-tasmota")
 
-    def test_the_plug_that_saved_it_has_it(self):
+    def test_the_device_that_saved_it_has_it(self):
         self.assertEqual(self.saved_as("12-34-56-ab-cd-ef", MAC), "stub-suite-tasmota")
 
-    def test_another_plug_has_its_own_beside_it(self):
+    def test_another_device_has_its_own_beside_it(self):
         self.assertEqual(self.saved_as("12-34-56-ab-cd-ef", "12:34:56:00:11:22"), "stub-suite-tasmota-1122")
 
-    def test_one_not_saved_yet_is_the_first_plugs(self):
+    def test_one_not_saved_yet_is_the_first_devices(self):
         self.assertEqual(self.saved_as(None, MAC), "stub-suite-tasmota")
 
 
@@ -449,7 +449,7 @@ class RunWordsTests(unittest.TestCase):
         import re
         source = (Path(__file__).resolve().parents[3] / "tools/autoflash/routes/espressif/installer.py")
         self.assertRegex(source.read_text(encoding="utf-8"), re.compile(fs.STARTS["C3"][0]))
-        self.assertRegex("Backing up the plug's Sonoff firmware - about a minute...", fs.STARTS["C3"][0])  # legacy
+        self.assertRegex("Backing up the device's Sonoff firmware - about a minute...", fs.STARTS["C3"][0])  # legacy
 
     def test_f4_without_the_driver_is_told_by_what_its_reset_says(self):
         from types import SimpleNamespace
@@ -506,23 +506,23 @@ class ScenarioTests(unittest.TestCase):
 
     def test_the_tasmota_update_has_its_own_faults(self):
         ids = {sc["id"] for sc in fs.scenarios()}
-        for wanted in ("update>tasmota:U5:plugoff-1", "update>tasmota:U5@90:plugoff-1", "update>tasmota:U5:double-plugoff-1",
+        for wanted in ("update>tasmota:U5:deviceoff-1", "update>tasmota:U5@90:deviceoff-1", "update>tasmota:U5:double-deviceoff-1",
                        "update>tasmota:U5:cancel-switch", "update>tasmota:U6:outage-30", "update>tasmota:U6:crash-1"):
             self.assertIn(wanted, ids)
 
     def test_the_esphome_update_has_its_own_faults(self):
         ids = {sc["id"] for sc in fs.scenarios()}
-        for wanted in ("update>esphome:U1:plugoff-1", "update>esphome:U1:outage-30", "update>esphome:U2:crash-1"):
+        for wanted in ("update>esphome:U1:deviceoff-1", "update>esphome:U1:outage-30", "update>esphome:U2:crash-1"):
             self.assertIn(wanted, ids)
 
     def test_a_fault_this_computers_network_kept_from_happening_is_its_own_verdict(self):
         # Seen: outage-60 counted as NOT-FIRED twice, this computer's lookup of
-        # eWeLink having failed before the fault, nothing of the plug's.
+        # eWeLink having failed before the fault, nothing of the device's.
         offline = ("no report (stopped at stage 2, Discovering the device: Could not reach eWeLink (eWeLink "
                    "connection failed: [Errno -2] Name or service not known), so every device that answers is listed.)")
         self.assertEqual(fs.no_internet("NOT-FIRED", ["no report", offline]), "NO-INTERNET")
         self.assertEqual(fs.no_internet("FAIL", [offline]), "FAIL")              # pcoff: cut off on purpose
-        self.assertEqual(fs.no_internet("NOT-FIRED", ["no report (stopped at stage 3, Discovering the plug: "
+        self.assertEqual(fs.no_internet("NOT-FIRED", ["no report (stopped at stage 3, Discovering the device: "
                                                       "eWeLink shows it offline)"]), "NOT-FIRED")
 
     def test_the_tuner_does_not_blame_the_cloud_for_this_computers_network(self):
@@ -541,7 +541,7 @@ class ScenarioTests(unittest.TestCase):
 
     def test_a_run_with_no_report_says_where_it_stopped_and_why(self):
         # Seen: "no report" ten times on the real cloud, and why only on screen -
-        # once this computer's own way to eWeLink failing, not the plug.
+        # once this computer's own way to eWeLink failing, not the device.
         self.assertEqual(self.no_report(
             " Stage  2 - Discovering the device       - Underway\n"
             "     Could not reach eWeLink (eWeLink connection failed: [Errno -2] Name or service not known), so\n"
@@ -554,13 +554,13 @@ class ScenarioTests(unittest.TestCase):
 
     def test_a_question_an_unattended_run_cannot_answer_is_named(self):
         self.assertEqual(self.no_report(
-            " Stage  3 of 15 - Discovering the plug        - Underway 22s\n\n"
+            " Stage  3 of 15 - Discovering the device        - Underway 22s\n\n"
             " -- Your S60 did not answer on this network\n"
             "     - 'S60TPG': eWeLink shows it offline - check it is switched on at the wall.\n"
             "     1. Look again\n     4. Quit - stop here\n\n"
             " ! An unattended run cannot answer this, so it stops here:\n     What now\n"
-            " Stage  3 of 15 - Discovering the plug        - Stopped\n"),
-            "no report (stopped at stage 3, Discovering the plug: Your S60 did not answer on this network "
+            " Stage  3 of 15 - Discovering the device        - Stopped\n"),
+            "no report (stopped at stage 3, Discovering the device: Your S60 did not answer on this network "
             "'S60TPG': eWeLink shows it offline - check it is switched on at the wall. What now)")
 
     def test_an_update_counts_as_having_got_there(self):
@@ -576,14 +576,14 @@ class ScenarioTests(unittest.TestCase):
 
     def test_an_updates_earlier_release_is_never_stale(self):
         with mock.patch.object(fs, "converted_start", side_effect=AssertionError("asked")):
-            self.assertEqual(fs.stale_starts([{"route": "update>tasmota", "fault": "plugoff"},
-                                               {"route": "update>esphome", "fault": "plugoff"}]), [])
+            self.assertEqual(fs.stale_starts([{"route": "update>tasmota", "fault": "deviceoff"},
+                                               {"route": "update>esphome", "fault": "deviceoff"}]), [])
 
     def test_the_composite_faults_are_listed(self):
         ids = {sc["id"] for sc in fs.scenarios()}
         for wanted in ("sonoff>tasmota:C3:ownnet-cut", "sonoff>esphome:D1:lostanswer-once",
                        "sonoff>tasmota:D1:seven-advised", "esphome>tasmota:G1:seven-times",
-                       "sonoff>tasmota:F4:nohook-run", "esphome>tasmota:F4rs@90:plugoff-1"):
+                       "sonoff>tasmota:F4:nohook-run", "esphome>tasmota:F4rs@90:deviceoff-1"):
             self.assertIn(wanted, ids)
 
     def test_each_length_only_where_it_leads_somewhere_of_its_own(self):
@@ -639,7 +639,7 @@ class ScenarioTests(unittest.TestCase):
     def test_runs_left_by_the_release_before_a_firmware_update_are_carried_on(self):
         # Its bundle pinned to the firmware the tool installed then
         # (docs/updating-firmware.md): every step from Sonoff, both ways, and
-        # each kind of plug it converted.
+        # each kind of device it converted.
         ids = {sc["id"] for sc in fs.scenarios()}
         for route, steps in fs.LEGACY_STEPS["v2.0.2"].items():
             self.assertEqual(set(steps), {fs.STEP_OF.get(step, step) for step in fs.ROUTES[route][2]} - {"K1"} | {"C2"})
@@ -662,22 +662,22 @@ class ScenarioTests(unittest.TestCase):
         apart = {step: 0.8 * fs.ROUTES[route][2][step] for route, step in fs.BLIP_STEPS}
         self.assertGreaterEqual(sum(gap > 20 for gap in apart.values()), 2, apart)
 
-    def test_how_busy_each_phase_kept_the_plug(self):
+    def test_how_busy_each_phase_kept_the_device(self):
         import json
         import os
         import time
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory)
-            for name, captures, age in (("new", {"E2.plug_busy_seconds": 31.2, "G1.plug_busy_seconds": 12,
+            for name, captures, age in (("new", {"E2.device_busy_seconds": 31.2, "G1.device_busy_seconds": 12,
                                                  "E2.seconds": 40}, 0),
-                                        ("again", {"E2.plug_busy_seconds": 44.0}, 0),
-                                        ("old", {"E2.plug_busy_seconds": 99.0}, 3600)):
-                run = state / "work/captures/plugs/12-34-56-ab-cd-ef/runs" / name
+                                        ("again", {"E2.device_busy_seconds": 44.0}, 0),
+                                        ("old", {"E2.device_busy_seconds": 99.0}, 3600)):
+                run = state / "work/captures/devices/12-34-56-ab-cd-ef/runs" / name
                 run.mkdir(parents=True)
                 path = run / "autoflash-state.json"
                 path.write_text(json.dumps({"captures": captures}))
                 os.utime(path, (time.time() - age, time.time() - age))
-            self.assertEqual(fs.plug_busy(state, time.time() - 60), {"E2": 44.0, "G1": 12})
+            self.assertEqual(fs.device_busy(state, time.time() - 60), {"E2": 44.0, "G1": 12})
 
     def test_an_esphome_factory_image_as_its_builder_makes_one(self):
         image = fs.esphome_factory_image()
@@ -701,14 +701,14 @@ class ScenarioTests(unittest.TestCase):
             self.assertEqual(new[-2:], ["--firmware", "tasmota"])
 
     def test_the_advice_beside_a_question_is_followed_though_the_screen_lost_it(self):
-        # sonoff>esphome:C2:cancel-switch: eWeLink showed the plug offline after
+        # sonoff>esphome:C2:cancel-switch: eWeLink showed the device offline after
         # its update was cut off, the run said to switch it off and on beside
         # "What now", and stopped there - its last screen without the advice.
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp, "scenario.log")
             log.write_text("--- --instance=4\n Stage 2 - Discovering the device - Stopped\n"
                            " Cleaned up. Nothing was left half done. Exiting.\n", encoding="utf-8")
-            runs = Path(tmp, "state/work/captures/plugs/unidentified/runs/20261103-041854")
+            runs = Path(tmp, "state/work/captures/devices/unidentified/runs/20261103-041854")
             runs.mkdir(parents=True)
             (runs / "run.log").write_text(
                 "=== run started ===\n[04:20:00] earlier: switch it off and on\n=== run ended ===\n"
@@ -757,7 +757,7 @@ class ScenarioTests(unittest.TestCase):
 
     def test_a_legacy_tree_goes_in_only_once_the_stub_has_started_from_this_checkout(self):
         # Swapped in as the emulator started, a release from before the
-        # reorganisation took away what the stub reads the plug with: no stub,
+        # reorganisation took away what the stub reads the device with: no stub,
         # and every 2.0.2 run stopped at "Connection refused".
         script = (fs.REPO / "tools/espressif/emulator/unattended-test.sh").read_text(encoding="utf-8")
         self.assertLess(script.index("tmux has-session"), script.index('"$code/" "$STATE/work/"'))
@@ -775,7 +775,7 @@ class ScenarioTests(unittest.TestCase):
 
     def test_the_person_carries_on_when_a_run_log_moves_as_it_looks(self):
         # Seen on a VM: the tool moved a run from unidentified/ under its
-        # plug's MAC between the person's listing and its look at the log,
+        # device's MAC between the person's listing and its look at the log,
         # and the person's thread died with FileNotFoundError.
         import threading
         sc = fs.Scenario(24, {"id": "x", "route": "sonoff>tasmota", "step": "D4", "fault": "cancel",
@@ -799,14 +799,14 @@ class ScenarioTests(unittest.TestCase):
         sc = self.scenario()
         with mock.patch.object(sc, "ex", return_value=mock.Mock(returncode=0)) as ex:
             sc.router("off")
-        ex.assert_called_once_with(fs.PLUG_CMD, "router", "off", timeout=60)
+        ex.assert_called_once_with(fs.DEVICE_CMD, "router", "off", timeout=60)
         self.assertNotIn("not_applied", sc.notes)
         with mock.patch.object(sc, "ex", return_value=mock.Mock(returncode=1)):
             sc.router("off")
-        self.assertEqual(sc.notes["not_applied"], [f"{fs.PLUG_CMD} router off"])
+        self.assertEqual(sc.notes["not_applied"], [f"{fs.DEVICE_CMD} router off"])
 
     def test_each_fault_that_cannot_start_is_noted(self):
-        for fault, arg in (("plugoff", 0), ("crash", "1"), ("cancel", "switch"), ("ctrlc", "once"),
+        for fault, arg in (("deviceoff", 0), ("crash", "1"), ("cancel", "switch"), ("ctrlc", "once"),
                            ("hangup", "1"), ("sleep", 0), ("pcoff", 0), ("weak", 0), ("lossy", 0),
                            ("diskfull", "1"), ("token", "login"), ("lostanswer", "once"), ("seven", "times")):
             with self.subTest(fault=fault):
@@ -819,9 +819,9 @@ class ScenarioTests(unittest.TestCase):
                 self.assertTrue(sc.notes.get("not_applied"))
 
     def test_a_cancel_that_came_as_the_run_finished_leaves_its_firmware_the_one_to_end_on(self):
-        # Seen at K1, a tenth of a second long: the run converted the plug to
+        # Seen at K1, a tenth of a second long: the run converted the device to
         # Tasmota as it was cancelled, no run followed for ESPHome, and the
-        # plug's Tasmota name was taken for a wrong one.
+        # device's Tasmota name was taken for a wrong one.
         sc = self.scenario("cancel", "switch")
         sc.target = "tasmota"
         with mock.patch.object(sc, "run_tool") as runs, mock.patch.object(sc, "finish"):
@@ -854,18 +854,18 @@ class ScenarioTests(unittest.TestCase):
         (Path(tmp) / "logs").mkdir()
         (Path(tmp) / "logs/uart.log").write_text("", encoding="utf-8")
         (Path(tmp) / "work/captures").mkdir(parents=True)
-        monitor = fs.PlugMonitor(sc)
+        monitor = fs.DeviceMonitor(sc)
         monitor.run_text = mock.Mock(return_value=text)
         return monitor
 
     def holding(self, monitor, connections=(), **kwargs):
-        with mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "release"), \
+        with mock.patch.object(fs, "device_internet"), mock.patch.object(fs.CLOUD, "release"), \
                 mock.patch.object(fs, "cloud_connections", return_value=set(connections)), \
                 mock.patch.object(monitor.sc, "say"):
             return monitor.hold("test", **kwargs)
 
     def turn_file_after(self, seconds, connections=(), before=()):
-        """Whether a waiting run's turn file is there `seconds` into a plug's turn."""
+        """Whether a waiting run's turn file is there `seconds` into a device's turn."""
         with tempfile.TemporaryDirectory() as tmp:
             monitor = self.monitor(tmp)
             monitor.turn_file().touch()
@@ -877,15 +877,15 @@ class ScenarioTests(unittest.TestCase):
             def cloud_connections(_n):
                 return looks.pop() if looks else {*before, *connections}
             with mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
-                    mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                    mock.patch.object(fs, "device_internet"), mock.patch.object(fs.CLOUD, "release"), \
                     mock.patch.object(fs, "cloud_connections", side_effect=cloud_connections), \
                     mock.patch.object(monitor.sc, "say"):
                 monitor.hold("test")
             return monitor.turn_file().exists()
 
-    def test_a_run_signs_in_only_once_the_plug_is_back_at_ewelink(self):
+    def test_a_run_signs_in_only_once_the_device_is_back_at_ewelink(self):
         # Seen against the real cloud: a run let in at the start of its turn sent
-        # its command down the last plug's connection, and its plug never asked.
+        # its command down the last device's connection, and its device never asked.
         session = ("192.0.2.80", "50280", "443")
         self.assertTrue(self.turn_file_after(5))
         self.assertTrue(self.turn_file_after(fs.SIGNED_ON_AFTER - 1, [session]))
@@ -893,19 +893,19 @@ class ScenarioTests(unittest.TestCase):
 
     def test_a_run_waits_out_a_session_that_may_drop_again(self):
         # Seen on the real cloud: sessions dropped 12 s after they opened, and a
-        # run let in at 10 s found its plug offline at eWeLink and stopped.
+        # run let in at 10 s found its device offline at eWeLink and stopped.
         self.assertTrue(self.turn_file_after(12, [("192.0.2.81", "2", "443")]))
         # Nor does the first connection, to find its server, which lasts 2 s.
         dispatch = ("192.0.2.80", "1", "443")
-        self.assertNotIn("plug back", " ".join(self.said_in_a_turn([{dispatch}, {dispatch}, set(), set(), set(), set()])))
+        self.assertNotIn("device back", " ".join(self.said_in_a_turn([{dispatch}, {dispatch}, set(), set(), set(), set()])))
 
-    def test_a_connection_from_before_the_turn_is_not_the_plug_back(self):
+    def test_a_connection_from_before_the_turn_is_not_the_device_back(self):
         old = ("192.0.2.80", "50280", "443")
         self.assertTrue(self.turn_file_after(fs.SIGNED_ON_AFTER + 1, before=[old]))
 
-    def test_a_plug_that_never_gets_back_does_not_keep_the_run_waiting(self):
-        self.assertTrue(self.turn_file_after(fs.PLUG_BACK_AT_MOST - 1))
-        self.assertFalse(self.turn_file_after(fs.PLUG_BACK_AT_MOST + 1))
+    def test_a_device_that_never_gets_back_does_not_keep_the_run_waiting(self):
+        self.assertTrue(self.turn_file_after(fs.DEVICE_BACK_AT_MOST - 1))
+        self.assertFalse(self.turn_file_after(fs.DEVICE_BACK_AT_MOST + 1))
 
     def said_waiting(self, waited, got=True):
         """What a run says when a turn takes `waited` seconds to come."""
@@ -930,7 +930,7 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(self.said_waiting(95, got=False), [])
 
     def turn_length(self, texts, fetching=lambda second: False):
-        """How long a plug's turn lasts, connected from its start, its run's log
+        """How long a device's turn lasts, connected from its start, its run's log
         at each second being `texts(second)`, and what it said."""
         session = ("192.0.2.81", "2", "443")
         with tempfile.TemporaryDirectory() as tmp:
@@ -943,15 +943,15 @@ class ScenarioTests(unittest.TestCase):
             monitor.stop.wait = mock.Mock(side_effect=lambda _: clock.__setitem__(0, clock[0] + 0.5))
             first = iter([set()])
             with mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
-                    mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "release"), \
-                    mock.patch.object(fs, "plug_fetching", side_effect=lambda _n: fetching(clock[0] - 1000)), \
+                    mock.patch.object(fs, "device_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                    mock.patch.object(fs, "device_fetching", side_effect=lambda _n: fetching(clock[0] - 1000)), \
                     mock.patch.object(fs, "cloud_connections",
                                       side_effect=lambda _n: next(first, {session})):
                 monitor.hold("test")
         return clock[0] - 1000, said
 
     def test_a_turn_ends_when_a_sent_command_brought_nothing(self):
-        # Seen on the real cloud: 3 minutes of a turn, its plug back on eWeLink
+        # Seen on the real cloud: 3 minutes of a turn, its device back on eWeLink
         # after a power cut, with its command lost and eWeLink not passing it on.
         length, said = self.turn_length(lambda _: "[12:00:00] C2  Stock to recovery bridge")
         self.assertEqual(length, fs.SIGNED_ON_AFTER + fs.TURN_IDLE)
@@ -959,7 +959,7 @@ class ScenarioTests(unittest.TestCase):
 
     def test_a_command_an_earlier_run_sent_does_not_end_a_later_runs_turn(self):
         # Seen: a run cancelled after its send, then one with --new whose turn to
-        # find the plug ended a minute in, its plug cut off as it was looked up.
+        # find the device ended a minute in, its device cut off as it was looked up.
         earlier = "=== run started\n[12:00:00] C2  Stock to recovery bridge\n=== run ended ===\n"
         length, said = self.turn_length(lambda _: earlier + "=== run started\n[12:05:00] A1  Pair the device\n")
         self.assertEqual(length, fs.HOLD_AT_MOST)
@@ -970,18 +970,18 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(length, fs.HOLD_AT_MOST)
         self.assertFalse([line for line in said if "nothing fetched" in line])
 
-    def test_a_turn_stays_while_the_plug_fetches(self):
+    def test_a_turn_stays_while_the_device_fetches(self):
         length, _ = self.turn_length(lambda _: "[12:00:00] C2  Stock", fetching=lambda second: second < 100)
         self.assertAlmostEqual(length, 100 + fs.TURN_IDLE, delta=1.5)
 
-    def test_sending_again_gives_the_plug_as_long_again(self):
+    def test_sending_again_gives_the_device_as_long_again(self):
         def texts(second):
             return "[12:00:00] C2  Stock\n" + ("    Sending the installer again\n" if second >= 50 else "")
         length, _ = self.turn_length(texts)
         self.assertAlmostEqual(length, 50 + fs.TURN_IDLE, delta=1.5)
 
     def said_in_a_turn(self, looks, limit=fs.HOLD_AT_MOST):
-        """What a turn says, the plug's connections at each second being `looks`."""
+        """What a turn says, the device's connections at each second being `looks`."""
         with tempfile.TemporaryDirectory() as tmp:
             monitor = self.monitor(tmp)
             said = []
@@ -991,33 +991,33 @@ class ScenarioTests(unittest.TestCase):
             monitor.stop.wait = mock.Mock(side_effect=lambda _: clock.__setitem__(0, clock[0] + 1))
             looked = iter([set(), *looks])  # the first, from before its way out opens
             with mock.patch.object(fs.time, "time", side_effect=lambda: clock[0]), \
-                    mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "release"), \
+                    mock.patch.object(fs, "device_internet"), mock.patch.object(fs.CLOUD, "release"), \
                     mock.patch.object(fs, "cloud_connections", side_effect=lambda _n: next(looked)):
                 monitor.hold("test", limit=limit)
         return [line.removeprefix("CLOUD: ") for line in said if "turn " not in line]
 
-    def test_a_plug_dropped_as_it_connects_can_be_told_from_one_that_never_tried(self):
+    def test_a_device_dropped_as_it_connects_can_be_told_from_one_that_never_tried(self):
         server, session = ("192.0.2.80", "1", "443"), ("192.0.2.81", "2", "443")
         looks = [set(), {server}, {server}, {session}, set(), set()]
         self.assertEqual(self.said_in_a_turn(looks), [
-            "plug connected to 192.0.2.80", "plug connected to 192.0.2.81",
-            "plug's connection to 192.0.2.80 closed", "plug's connection to 192.0.2.81 closed"])
+            "device connected to 192.0.2.80", "device connected to 192.0.2.81",
+            "device's connection to 192.0.2.80 closed", "device's connection to 192.0.2.81 closed"])
 
-    def test_a_turn_says_when_the_plug_is_back_and_when_it_never_was(self):
+    def test_a_turn_says_when_the_device_is_back_and_when_it_never_was(self):
         session = ("192.0.2.81", "2", "443")
         back = self.said_in_a_turn([set(), *[{session}] * (int(fs.SIGNED_ON_AFTER) + 1)])
-        self.assertEqual(back, ["plug connected to 192.0.2.81", f"plug back after {int(fs.SIGNED_ON_AFTER) + 1}s"])
-        never = self.said_in_a_turn([set()] * (int(fs.PLUG_BACK_AT_MOST) + 2))
-        self.assertEqual(never, [f"plug not back after {int(fs.PLUG_BACK_AT_MOST)}s; the run goes on"])
+        self.assertEqual(back, ["device connected to 192.0.2.81", f"device back after {int(fs.SIGNED_ON_AFTER) + 1}s"])
+        never = self.said_in_a_turn([set()] * (int(fs.DEVICE_BACK_AT_MOST) + 2))
+        self.assertEqual(never, [f"device not back after {int(fs.DEVICE_BACK_AT_MOST)}s; the run goes on"])
 
-    def test_a_connection_after_the_plug_is_back_is_still_said(self):
+    def test_a_connection_after_the_device_is_back_is_still_said(self):
         session, later = ("192.0.2.81", "2", "443"), ("192.0.2.82", "3", "443")
         looks = [*[{session}] * (int(fs.SIGNED_ON_AFTER) + 1), {later}]
         said = self.said_in_a_turn(looks)
-        self.assertIn("plug connected to 192.0.2.82", said)
-        self.assertIn("plug's connection to 192.0.2.81 closed", said)
+        self.assertIn("device connected to 192.0.2.82", said)
+        self.assertIn("device's connection to 192.0.2.81 closed", said)
 
-    def test_a_sign_in_no_plug_needs_does_not_wait_for_the_plug(self):
+    def test_a_sign_in_no_device_needs_does_not_wait_for_the_device(self):
         with tempfile.TemporaryDirectory() as tmp:
             monitor = self.monitor(tmp)
             monitor.turn_file().touch()
@@ -1025,7 +1025,7 @@ class ScenarioTests(unittest.TestCase):
             self.holding(monitor, limit=fs.SIGN_IN_TURN)
             self.assertFalse(monitor.turn_file().exists())
 
-    def test_only_the_plugs_own_way_to_the_internet_counts_as_a_connection(self):
+    def test_only_the_devices_own_way_to_the_internet_counts_as_a_connection(self):
         table = "\n".join((
             "ipv4 2 tcp 6 431947 ESTABLISHED src=192.168.60.50 dst=192.0.2.80 sport=1 dport=443 "
             "src=192.0.2.80 dst=198.18.60.2 sport=443 dport=1 [ASSURED] mark=0 zone=0 use=2",
@@ -1058,7 +1058,7 @@ class ScenarioTests(unittest.TestCase):
             monitor.turn_file().touch()
             monitor.live_run = mock.Mock(return_value=("=== run started 1", "=== run started 1"))
             monitor.stop.wait = mock.Mock(side_effect=lambda _s: monitor.stop.set())
-            with mock.patch.object(fs, "plug_internet"), mock.patch.object(fs.CLOUD, "acquire", return_value=True), \
+            with mock.patch.object(fs, "device_internet"), mock.patch.object(fs.CLOUD, "acquire", return_value=True), \
                     mock.patch.object(monitor, "hold") as hold:
                 monitor.watching()
             hold.assert_called_once_with("a sign-in", limit=fs.SIGN_IN_TURN)
@@ -1124,17 +1124,17 @@ class ScenarioTests(unittest.TestCase):
             sc.fault("weak", 0, 0, None)
         self.assertNotIn("not_applied", sc.notes)
 
-    def test_joining_the_plugs_network_and_failing_is_noted(self):
+    def test_joining_the_devices_network_and_failing_is_noted(self):
         sc = self.scenario("fallback", 1)
         def ex(*args, **_):
             if args[0] == "cat":
-                return mock.Mock(returncode=0, stdout="plug-network\n")
-            return mock.Mock(returncode=1 if args[-2:] == ("join", "plug-network") else 0, stdout="")
+                return mock.Mock(returncode=0, stdout="device-network\n")
+            return mock.Mock(returncode=1 if args[-2:] == ("join", "device-network") else 0, stdout="")
         now = iter([0, 0, 5])
         with mock.patch.object(sc, "ex", side_effect=ex), mock.patch.object(fs.time, "sleep"), \
                 mock.patch.object(fs.time, "time", side_effect=lambda: next(now, 9)):
             sc.fault("fallback", 1, 0, None)
-        self.assertEqual(sc.notes["not_applied"], ["joining plug-network"])
+        self.assertEqual(sc.notes["not_applied"], ["joining device-network"])
         self.assertNotIn("joined_early", sc.notes)
 
     def test_a_conversion_without_its_fault_proves_nothing(self):
@@ -1151,7 +1151,7 @@ class ScenarioTests(unittest.TestCase):
             self.assertTrue(fs.not_fired({"fault": fault, "arg": arg}, {"ctrl_c_logged": False}, True))
             self.assertFalse(fs.not_fired({"fault": fault, "arg": arg}, {"ctrl_c_logged": True}, True))
 
-    def test_a_ctrl_c_from_prep_in_a_saved_plugs_log_is_not_this_faults(self):
+    def test_a_ctrl_c_from_prep_in_a_saved_devices_log_is_not_this_faults(self):
         sc = self.scenario("ctrlc", "once")
         logs = [(1.0, "run.log", f"[01:00:00] {fs.CTRL_C_LOGGED}\n")]
         with mock.patch.object(fs, "run_logs", side_effect=lambda state: logs):
@@ -1163,7 +1163,7 @@ class ScenarioTests(unittest.TestCase):
     def test_a_failure_stands_though_its_fault_never_happened(self):
         self.assertFalse(fs.not_fired({"fault": "outage", "arg": 60}, {"not_applied": ["x"]}, False))
 
-    def test_prep_refuses_an_instance_in_use_and_leaves_the_saved_plugs(self):
+    def test_prep_refuses_an_instance_in_use_and_leaves_the_saved_devices(self):
         with mock.patch.object(fs, "sh", return_value=mock.Mock(stdout="abc123\n")), \
                 mock.patch.object(fs.shutil, "rmtree") as removed, mock.patch.object(fs.subprocess, "call") as call:
             with self.assertRaises(SystemExit) as refused:
@@ -1200,7 +1200,7 @@ class ScenarioTests(unittest.TestCase):
              mock.patch.object(fs.threading, "Thread"), mock.patch.object(sc, "again") as again:
             sc.go_legacy()
         self.assertEqual(again.call_args.kwargs["later"],
-                         ("G1", "plugoff", 1, 0.6 * fs.ROUTES["sonoff>tasmota"][2]["G1"]))
+                         ("G1", "deviceoff", 1, 0.6 * fs.ROUTES["sonoff>tasmota"][2]["G1"]))
 
     def test_the_cut_in_the_update_after_a_legacy_conversion_is_timed_by_an_updates_u5(self):
         sc = fs.Scenario(24, {"id": "x", "route": "sonoff>tasmota", "step": "F4", "fault": "legacy",
@@ -1211,7 +1211,7 @@ class ScenarioTests(unittest.TestCase):
              mock.patch.object(fs.threading, "Thread"), mock.patch.object(sc, "again") as again:
             sc.go_legacy()
         self.assertEqual(again.call_args.kwargs["later"],
-                         ("U5", "plugoff", 1, 0.6 * fs.ROUTES["update>tasmota"][2]["U5"]))
+                         ("U5", "deviceoff", 1, 0.6 * fs.ROUTES["update>tasmota"][2]["U5"]))
 
     def test_an_earlier_releases_own_error_is_not_this_checkouts(self):
         # 1.2.0, killed as G1 began, had stopped on a TimeoutError of its own:
@@ -1219,15 +1219,31 @@ class ScenarioTests(unittest.TestCase):
         sc = fs.Scenario(24, {"id": "x", "route": "sonoff>tasmota", "step": "G1", "fault": "legacy",
                               "arg": "v1.2.0", "at": 40}, "/dev/null")
         old = f"=== run started, tool version 1.2.0 ===\nFAILED: {fs.UNEXPECTED}: TimeoutError\n"
-        log = Path("run.log")
-        sc.earlier_release_wrote = {log: len(old)}
+        # Where that release kept it, and where this checkout's tool, renaming
+        # its records' folder as it carries the run on, has it now.
+        earlier = Path("work/captures/plugs/12-34-56-ab-cd-ef/runs/20261013-031500/run.log")
+        log = Path("work/captures/devices/12-34-56-ab-cd-ef/runs/20261013-031500/run.log")
+        sc.earlier_release_wrote = {fs.filed_as(earlier): len(old)}
         self.assertNotIn(fs.UNEXPECTED, sc.ours(log, old + "=== run started ===\nConverted\n"))
         self.assertIn(fs.UNEXPECTED, sc.ours(log, old + f"FAILED: {fs.UNEXPECTED}: KeyError\n"))
-        self.assertIn(fs.UNEXPECTED, sc.ours(Path("another/run.log"), old))
+        self.assertIn(fs.UNEXPECTED, sc.ours(log.parents[1] / "20261013-040000/run.log", old))
+
+    def test_an_earlier_releases_records_are_read_where_it_keeps_them(self):
+        """captures/plugs/, as releases before 2.4.0 name it, until this
+        checkout's tool has renamed it: a legacy run's log is read from there."""
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp)
+            self.assertEqual(fs.records_under(state / "work"), state / "work/captures/devices")
+            run = state / "work/captures/plugs/12-34-56-ab-cd-ef/runs/20261013-031500"
+            run.mkdir(parents=True)
+            (run / "run.log").write_text("[C2] sent\n", encoding="utf-8")
+            self.assertEqual([text for _, _, text in fs.run_logs(state)], ["[C2] sent\n"])
+            (state / "work/captures/plugs").rename(state / "work/captures/devices")
+            self.assertEqual([text for _, _, text in fs.run_logs(state)], ["[C2] sent\n"])
 
     def test_a_step_with_a_start_of_its_own_needs_no_length(self):
         # F4rs is in STARTS only: its length comes from there.
-        sc = fs.Scenario(24, {"id": "x", "route": "sonoff>tasmota", "step": "F4rs", "fault": "plugoff",
+        sc = fs.Scenario(24, {"id": "x", "route": "sonoff>tasmota", "step": "F4rs", "fault": "deviceoff",
                               "arg": 1, "at": 50}, "/dev/null")
         with mock.patch.object(sc, "run_tool", side_effect=RuntimeError("stop here")), \
              mock.patch.object(fs.threading, "Thread"):
@@ -1254,13 +1270,13 @@ class ScenarioTests(unittest.TestCase):
 
 
 class EndChecksTests(unittest.TestCase):
-    """A converted plug passes only if the report's end-of-run checks did."""
+    """A converted device passes only if the report's end-of-run checks did."""
 
     def verdict(self, checks, relay="Switches (through eWeLink)", target="sonoff", route="esphome>sonoff",
-                result="Converted", runs="--- a run\n", fault="plugoff", arg=1, step="R1", release=None):
+                result="Converted", runs="--- a run\n", fault="deviceoff", arg=1, step="R1", release=None):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            run = tmp / "state/work/captures/plugs" / plugs.folder_name(MAC) / "runs/1/run.log"
+            run = tmp / "state/work/captures/devices" / records.folder_name(MAC) / "runs/1/run.log"
             run.parent.mkdir(parents=True)
             run.write_text("[10:00:00] === run started, tool version 2.3.0 ===\n"
                            f"[10:00:01]     Relay: {relay}\n[10:00:02]     Checks passed: {checks}\n"
@@ -1283,12 +1299,12 @@ class EndChecksTests(unittest.TestCase):
 
     def test_a_run_whose_checks_failed_is_its_own_failure_saying_what_they_found(self):
         # Every run back to Sonoff's firmware before 83c517d: the relay asked
-        # through eWeLink before the plug was there, and judged PASS.
+        # through eWeLink before the device was there, and judged PASS.
         row = self.verdict("False", relay="Could not be checked")
         self.assertEqual(row["verdict"], "FAIL-CHECKS")
         self.assertEqual(row["notes"]["checks"], "Checks passed: False; Relay: Could not be checked")
 
-    def test_a_plug_with_no_backup_must_be_reported_keeping_its_own_identity(self):
+    def test_a_device_with_no_backup_must_be_reported_keeping_its_own_identity(self):
         self.assertEqual(self.verdict("True", route="nobackup>sonoff")["verdict"], "FAIL-IDENTITY")
 
     def test_a_last_run_that_found_nothing_to_convert_has_no_identity_to_report(self):
@@ -1331,7 +1347,7 @@ class EndChecksTests(unittest.TestCase):
         import json
         sc = fs.Scenario(24, {"id": "x", "route": "sonoff>esphome", "step": "I2", "fault": "legacy",
                               "arg": "v2.0.2", "at": 40}, "/dev/null")
-        for answer, release in (({"project_name": fs.PLUG.esphome_project, "project_version": "2026.10.0-1"},
+        for answer, release in (({"project_name": fs.DEVICE.esphome_project, "project_version": "2026.10.0-1"},
                                  "2026.10.0-1"),
                                 ({"project_name": "someone.else", "project_version": "1.0"}, None)):
             with mock.patch.object(sc, "ex", return_value=mock.Mock(stdout=json.dumps(answer) + "\n")) as ex:
@@ -1351,8 +1367,8 @@ class EndChecksTests(unittest.TestCase):
 
 
 class ReadoutScenarioTests(unittest.TestCase):
-    """Readouts (cli.py readout): of a stock plug, faulted where it matters
-    most, and of a converted plug, which must be refused."""
+    """Readouts (cli.py readout): of a stock device, faulted where it matters
+    most, and of a converted device, which must be refused."""
 
     def scenario(self, route="sonoff>readout", step="read", fault="crash", arg=1):
         sc = fs.Scenario(24, {"id": fs.sid(route, step, fault, arg), "route": route, "step": step,
@@ -1363,28 +1379,28 @@ class ReadoutScenarioTests(unittest.TestCase):
     def test_the_readouts_listed_each_on_the_stub(self):
         readouts = [sc for sc in fs.scenarios() if sc["route"].endswith(">readout")]
         self.assertEqual([sc["id"] for sc in readouts], [
-            "sonoff>readout:start:none-unattended", "sonoff>readout:read:plugoff-1", "sonoff>readout:read:outage-30",
-            "sonoff>readout:read:crash-1", "sonoff>readout:back:plugoff-1", "sonoff>readout:back:outage-30",
+            "sonoff>readout:start:none-unattended", "sonoff>readout:read:deviceoff-1", "sonoff>readout:read:outage-30",
+            "sonoff>readout:read:crash-1", "sonoff>readout:back:deviceoff-1", "sonoff>readout:back:outage-30",
             "sonoff>readout:read:crash-1-then-sonoff", "sonoff>readout:read:crash-1-then-readout",
             "sonoff>readout:read:crash-1-then-sonoff-elsewhere",
             "tasmota>readout:start:none-refused"])
         self.assertEqual({fs.kind_of(sc) for sc in readouts}, {"stub"})   # signed in, and the bridge sent, there
 
-    def test_a_readout_is_run_as_one_and_a_refused_one_given_the_plugs_address(self):
+    def test_a_readout_is_run_as_one_and_a_refused_one_given_the_devices_address(self):
         sc = self.scenario()
         with mock.patch.object(fs.subprocess, "call", return_value=0) as call:
             sc.run_tool("readout", fresh=True)
-            sc.run_tool("readout", ["--plug-ip", fs.PLUG_IP], source="suite-tasmota")
+            sc.run_tool("readout", ["--device-ip", fs.DEVICE_IP], source="suite-tasmota")
         stock, converted = (c.args[0] for c in call.call_args_list)
         self.assertIn("--readout", stock)
         self.assertNotIn("--firmware", stock)
         self.assertEqual(stock[-1], "--")   # found as a person without its address finds it
-        self.assertEqual(converted[-3:], ["--", "--plug-ip", fs.PLUG_IP])
+        self.assertEqual(converted[-3:], ["--", "--device-ip", fs.DEVICE_IP])
         script = (fs.REPO / "tools/espressif/emulator/unattended-test.sh").read_text(encoding="utf-8")
         self.assertIn("--readout) driver_args+=(--command readout)", script)
 
     def readout_says(self, restarts=True):
-        """What readout_espressif says from the read to the plug back on Sonoff's
+        """What readout_espressif says from the read to the device back on Sonoff's
         firmware: restarted by its bridge, or (`restarts` False) by the person."""
         from contextlib import ExitStack, nullcontext
         from tools.autoflash import output, prompts, readout_espressif
@@ -1408,7 +1424,7 @@ class ReadoutScenarioTests(unittest.TestCase):
                     (dump, "read_dump", {"return_value": (b"", b"", {})}),
                     (dump, "summary", {"return_value": []}),
                     (dump, "read_info", {"return_value": b""}),
-                    (readout_espressif, "find_bridge", {"return_value": fs.PLUG_IP}),
+                    (readout_espressif, "find_bridge", {"return_value": fs.DEVICE_IP}),
                     (readout_espressif, "firewall", {}), (readout_espressif, "hostsys", {}),
                     (readout_espressif.safety_locks, "lifted", {}),
                     (readout_espressif.safety_locks, "say_lock_back", {}),
@@ -1445,7 +1461,7 @@ class ReadoutScenarioTests(unittest.TestCase):
         self.assertGreater(at, 1.5)
         self.assertLess(at, 4)
 
-    def test_the_person_switches_the_plug_off_and_on_where_the_readout_asks(self):
+    def test_the_person_switches_the_device_off_and_on_where_the_readout_asks(self):
         import threading
         sc = self.scenario()
         stop = threading.Event()
@@ -1462,13 +1478,13 @@ class ReadoutScenarioTests(unittest.TestCase):
         with mock.patch.object(sc, "ex", return_value=mock.Mock(stdout="", returncode=0)) as ex, \
                 mock.patch.object(fs, "run_logs", side_effect=logs), mock.patch.object(stop, "wait"):
             sc.person(stop)
-        self.assertIn(mock.call(fs.PLUG_CMD, "restart"), ex.call_args_list)
+        self.assertIn(mock.call(fs.DEVICE_CMD, "restart"), ex.call_args_list)
         self.assertEqual(sc.notes["switched"], 1)
 
     def test_after_a_crash_the_readout_is_run_again_as_the_run_advised(self):
         sc = self.scenario()
         sc.fired = 1.0   # the crash came while the read was under way
-        # Killed, it said nothing; run again, it found the plug on the bridge.
+        # Killed, it said nothing; run again, it found the device on the bridge.
         advice = ["the device is already running our installer firmware ... switch the device off and on", ""]
         with mock.patch.object(fs.threading, "Thread"), mock.patch.object(fs.time, "sleep"), \
                 mock.patch.object(sc, "run_tool", side_effect=[137, 1, 0]) as runs, \
@@ -1478,7 +1494,7 @@ class ReadoutScenarioTests(unittest.TestCase):
                 mock.patch.object(sc, "ex") as ex, mock.patch.object(sc, "finish_readout") as finish:
             sc.go_readout()
         self.assertEqual([c.args[0] for c in runs.call_args_list], ["readout"] * 3)
-        self.assertEqual(ex.call_args_list, [mock.call(fs.PLUG_CMD, "restart")])
+        self.assertEqual(ex.call_args_list, [mock.call(fs.DEVICE_CMD, "restart")])
         self.assertEqual([code for code, _ in finish.call_args.args[0]], [137, 1, 0])
 
     def test_a_fault_that_never_came_proves_nothing(self):
@@ -1502,14 +1518,14 @@ class ReadoutScenarioTests(unittest.TestCase):
                 mock.patch.object(sc, "keep", side_effect=lambda results, verdict, left: verdict):
             return sc.finish_readout([(0, "Readout kept, not sent")], None)
 
-    def test_a_whole_readout_kept_and_the_plug_back_on_sonoff_passes(self):
+    def test_a_whole_readout_kept_and_the_device_back_on_sonoff_passes(self):
         self.assertEqual(self.verdict(), "PASS")
 
     def test_a_readout_short_of_whole_or_none_fails(self):
         self.assertEqual(self.verdict(kept=["no efuse.bin.xz"]), "FAIL-READOUT")
         self.assertEqual(self.verdict(kept=None), "FAIL-READOUT")
 
-    def test_a_plug_not_back_on_sonoff_fails(self):
+    def test_a_device_not_back_on_sonoff_fails(self):
         self.assertEqual(self.verdict(firmware="installer"), "FAIL-NOT-SONOFF")
 
     def test_a_fault_landed_after_its_phase_is_mistimed(self):
@@ -1525,10 +1541,10 @@ class ReadoutScenarioTests(unittest.TestCase):
                 mock.patch.object(sc, "template_ok", return_value=template), \
                 mock.patch.object(sc, "finish_readout", side_effect=lambda results, special: special) as finish:
             verdict = sc.go_readout_refused()
-        self.assertEqual(run.call_args.args[:2], ("readout", ["--plug-ip", fs.PLUG_IP]))
+        self.assertEqual(run.call_args.args[:2], ("readout", ["--device-ip", fs.DEVICE_IP]))
         return verdict, finish
 
-    def test_a_readout_of_a_converted_plug_must_be_refused_leaving_it_as_it_was(self):
+    def test_a_readout_of_a_converted_device_must_be_refused_leaving_it_as_it_was(self):
         self.assertEqual(self.refused(1)[0], None)   # judged as any: names, leftovers
         self.assertEqual(self.refused(0)[0], "FAIL-NOT-REFUSED")
         self.assertEqual(self.refused(1, sent=True)[0], "FAIL-NOT-REFUSED")
@@ -1538,7 +1554,7 @@ class ReadoutScenarioTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             sc = self.scenario()
             sc.state = Path(tmp)
-            run = Path(tmp, "work/captures/plugs/unidentified/runs/1/run.log")
+            run = Path(tmp, "work/captures/devices/unidentified/runs/1/run.log")
             run.parent.mkdir(parents=True)
             for text, said in (("[1] Readout saved in captures/x/readout.tar, not sent.\n", "Readout kept, not sent"),
                                ("[1] FAILED: the device's memory could not be read\n",
@@ -1553,10 +1569,10 @@ class ReadoutAllScenarioTests(unittest.TestCase):
     readout sent to the API's own code, judged by what the API was asked and
     kept."""
 
-    PLUG = "BASICR4"
+    DEVICE = "BASICR4"
     RUN = ("[10:00:00] Reading out 'Test device 1' (TESTLIGHT) (1 of 3)...\n"
            "[10:00:20] Reading out 'Test device 2' (TESTLIGHT) (2 of 3)...\n"
-           "[10:00:30] Reading out 'Plug (stub)' (BASICR4) (3 of 3)...\n")
+           "[10:00:30] Reading out 'Device (stub)' (BASICR4) (3 of 3)...\n")
     WANTED = '2026-11-09T10:00:01.000Z POST /wanted 140 -> 200 {"wanted":true,"held":[]}'
     HELD = '2026-11-09T10:00:21.000Z POST /wanted 140 -> 200 {"wanted":false,"why":"held","held":[]}'
     LIMITED = '2026-11-09T10:00:40.000Z POST /readout 9000 -> 429 {"error":"too many readouts at once"}'
@@ -1571,12 +1587,12 @@ class ReadoutAllScenarioTests(unittest.TestCase):
         sc.started = 0
         return sc
 
-    def test_each_account_listed_on_the_stub_and_a_fault_in_the_plugs_read(self):
+    def test_each_account_listed_on_the_stub_and_a_fault_in_the_devices_read(self):
         every = [sc for sc in fs.scenarios() if sc["route"] == fs.READOUT_ALL]
         self.assertEqual([sc["id"] for sc in every], [
             "sonoff>readout-all:start:none-mixed", "sonoff>readout-all:start:none-alike",
             "sonoff>readout-all:start:none-enough", "sonoff>readout-all:start:none-many",
-            "sonoff>readout-all:read:plugoff-1", "sonoff>readout-all:read:crash-1"])
+            "sonoff>readout-all:read:deviceoff-1", "sonoff>readout-all:read:crash-1"])
         self.assertEqual({fs.kind_of(sc) for sc in every}, {"stub"})   # the stub lists the other devices
         self.assertTrue(all(sc["account"] in fs.ACCOUNTS and fs.is_readout(sc["route"]) for sc in every))
         for sc in every:
@@ -1601,7 +1617,7 @@ class ReadoutAllScenarioTests(unittest.TestCase):
             sc = self.scenario(account="enough")
             sc.log = str(log)
             with mock.patch.object(fs.subprocess, "call", return_value=0) as call, \
-                    mock.patch.object(fs, "plug_product", return_value=self.PLUG), \
+                    mock.patch.object(fs, "device_product", return_value=self.DEVICE), \
                     mock.patch.dict(os.environ, {"AUTOFLASH_API_ENOUGH": "X"}):
                 sc.run_tool("readout", fresh=True)
                 other = fs.Scenario(26, {"id": "x", "route": "sonoff>readout", "step": "start", "fault": "none",
@@ -1614,9 +1630,9 @@ class ReadoutAllScenarioTests(unittest.TestCase):
             env = options["env"]
             self.assertEqual(json.loads(Path(env["AUTOFLASH_EMU_STUB_OTHERS"]).read_text(encoding="utf-8")),
                              fs.ACCOUNTS["enough"])
-            self.assertEqual(env["AUTOFLASH_API_ENOUGH"], f"{self.PLUG},{fs.ACCOUNTS['enough'][0]['productModel']}")
-            self.assertEqual(env["AUTOFLASH_EMU_STUB_PRODUCT_MODEL"], self.PLUG)
-            # Any other scenario's account is the plug alone, whatever this computer has set.
+            self.assertEqual(env["AUTOFLASH_API_ENOUGH"], f"{self.DEVICE},{fs.ACCOUNTS['enough'][0]['productModel']}")
+            self.assertEqual(env["AUTOFLASH_EMU_STUB_PRODUCT_MODEL"], self.DEVICE)
+            # Any other scenario's account is the device alone, whatever this computer has set.
             (args, ), options = call.call_args_list[1]
             self.assertNotIn("--api", args)
             self.assertNotIn("--all", args)
@@ -1630,14 +1646,14 @@ class ReadoutAllScenarioTests(unittest.TestCase):
 
     def problems(self, requests, run=RUN, finished=True, stored=(), whole=(), kept=()):
         """readout_all_problems' verdicts of one run, the API's store holding
-        `stored` (digests), the plug's readout lacking `whole`."""
+        `stored` (digests), the device's readout lacking `whole`."""
         with tempfile.TemporaryDirectory() as tmp:
             api = Path(tmp)
             (api / "requests.log").write_text("".join(line + "\n" for line in requests), encoding="utf-8")
             for digest in stored:
                 (api / f"readouts__2026-11-09__{digest[:24]}.tar").write_bytes(b"tar")
             with mock.patch.object(fs.fault_verdicts, "readout_problems", return_value=list(whole)):
-                problems, summary = fs.readout_all_problems(run, finished, api, 3, self.PLUG, kept)
+                problems, summary = fs.readout_all_problems(run, finished, api, 3, self.DEVICE, kept)
         return [verdict for verdict, _ in problems], summary
 
     A, B = "a" * 64, "b" * 64
@@ -1647,7 +1663,7 @@ class ReadoutAllScenarioTests(unittest.TestCase):
                                            self.LIMITED, self.taken(self.B)], stored=(self.A, self.B))
         self.assertEqual(verdicts, [])
         self.assertEqual((summary["asked"], summary["wanted"], summary["taken"], summary["429"]), (3, 2, 2, 2))
-        self.assertTrue(summary["plug_whole"])
+        self.assertTrue(summary["device_whole"])
 
     def test_a_device_not_asked(self):
         self.assertEqual(self.problems([self.WANTED, self.taken(self.A), self.HELD], stored=(self.A,))[0],
@@ -1678,7 +1694,7 @@ class ReadoutAllScenarioTests(unittest.TestCase):
         self.assertEqual(self.problems([failed, self.HELD, self.WANTED, self.taken(self.B)], stored=(self.B,))[0],
                          ["FAIL-NOT-SENT"])
 
-    def test_one_taken_but_not_in_the_store_or_the_plugs_not_whole(self):
+    def test_one_taken_but_not_in_the_store_or_the_devices_not_whole(self):
         requests = [self.WANTED, self.taken(self.A), self.HELD, self.WANTED, self.taken(self.B)]
         self.assertEqual(self.problems(requests, stored=(self.A,))[0], ["FAIL-NOT-STORED"])
         self.assertEqual(self.problems(requests, stored=(self.A, self.B), whole=["no efuse.bin.xz"])[0],
@@ -1723,11 +1739,11 @@ class ReadoutAllScenarioTests(unittest.TestCase):
             sc.go_readout_all()
         self.assertEqual(runs.call_args_list[0].kwargs, {"fresh": True})
         self.assertEqual(len(runs.call_args_list), 3)
-        self.assertEqual(ex.call_args_list, [mock.call(fs.PLUG_CMD, "restart")])
+        self.assertEqual(ex.call_args_list, [mock.call(fs.DEVICE_CMD, "restart")])
         self.assertEqual([code for code, _ in finish.call_args.args[0]], [137, 1, 0])
 
     def test_a_fault_that_never_came_proves_nothing(self):
-        sc = self.scenario(step="read", fault="plugoff", arg=1)
+        sc = self.scenario(step="read", fault="deviceoff", arg=1)
         with mock.patch.object(fs.threading, "Thread"), mock.patch.object(sc, "run_readout_all", return_value=(0, "")), \
                 mock.patch.object(sc, "finish_readout_all") as finish:
             sc.go_readout_all()
@@ -1737,7 +1753,7 @@ class ReadoutAllScenarioTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             sc = self.scenario()
             sc.state, sc.log = Path(tmp, "state"), str(Path(tmp, "scenario.log"))
-            run = sc.state / "work/captures/plugs/unidentified/runs/1/run.log"
+            run = sc.state / "work/captures/devices/unidentified/runs/1/run.log"
             run.parent.mkdir(parents=True)
             run.write_text("=== run started ===\n" + self.RUN, encoding="utf-8")
             (run.parent / "readout-1000000001.tar").write_bytes(b"tar")
@@ -1746,7 +1762,7 @@ class ReadoutAllScenarioTests(unittest.TestCase):
             (sc.state / "api-server.out").write_text("Error: column index out of range\n", encoding="utf-8")
             judged = []
             with mock.patch.object(sc, "run_tool", return_value=0), \
-                    mock.patch.object(fs, "plug_product", return_value=self.PLUG), \
+                    mock.patch.object(fs, "device_product", return_value=self.DEVICE), \
                     mock.patch.object(fs.time, "time", return_value=0):
                 code, said = sc.run_readout_all(judged)
             self.assertEqual(code, 0)
@@ -1759,15 +1775,15 @@ class ReadoutAllScenarioTests(unittest.TestCase):
 TH = kinds.SONOFF_TH_ELITE  # its layout leaves Tasmota through a temporary table
 
 
-class PlugRoutesTests(unittest.TestCase):
-    """Each route's steps, as the tool takes them on the plug under test."""
+class DeviceRoutesTests(unittest.TestCase):
+    """Each route's steps, as the tool takes them on the device under test."""
 
     def routes_of(self, kind):
-        with mock.patch.object(fs, "PLUG", kind), mock.patch.object(fs, "ROUTES", fs.routes_for(kind)):
+        with mock.patch.object(fs, "DEVICE", kind), mock.patch.object(fs, "ROUTES", fs.routes_for(kind)):
             return fs.ROUTES, {sc["id"] for sc in fs.scenarios()}
 
     def tool_steps(self, route, kind):
-        """The steps the tool takes on `route` that write to or wait on the plug."""
+        """The steps the tool takes on `route` that write to or wait on the device."""
         source, target = route.split(">")
         source = fs.STARTS_ON.get(source, source)
         if (source, target) == ("tasmota", "esphome") and not fs.layouts.of(kind.layout).needs_temporary:
@@ -1791,34 +1807,34 @@ class PlugRoutesTests(unittest.TestCase):
     def test_the_identity_is_kept_on_each_route_that_keeps_it(self):
         _, ids = self.routes_of(kinds.SONOFF_S60)
         for route in ("sonoff>tasmota", "sonoff>esphome", "esphome>tasmota"):
-            for fault in ("plugoff-1", "crash-1", "corrupt-once"):
+            for fault in ("deviceoff-1", "crash-1", "corrupt-once"):
                 self.assertIn(f"{route}:K1:{fault}", ids)
 
     def test_back_to_sonoff_with_no_backup(self):
         _, ids = self.routes_of(kinds.SONOFF_S60)
-        for wanted in ("nobackup>sonoff:R1:plugoff-1", "nobackup>sonoff:R1@90:plugoff-1",
-                       "nobackup>sonoff:R1:double-plugoff-1", "nobackup>sonoff:R2:outage-30"):
+        for wanted in ("nobackup>sonoff:R1:deviceoff-1", "nobackup>sonoff:R1@90:deviceoff-1",
+                       "nobackup>sonoff:R1:double-deviceoff-1", "nobackup>sonoff:R2:outage-30"):
             self.assertIn(wanted, ids)
 
-    def test_a_plug_on_a_temporary_table_goes_to_esphome_by_the_hub(self):
+    def test_a_device_on_a_temporary_table_goes_to_esphome_by_the_hub(self):
         routes, ids = self.routes_of(TH)
         self.assertNotIn("M1", routes["tasmota>esphome"][2])
-        self.assertIn("tasmota>esphome:D5:plugoff-1", ids)
+        self.assertIn("tasmota>esphome:D5:deviceoff-1", ids)
         for route in ("tasmota>sonoff", "tasmota>esphome"):
             for at in (10, 50, 90):
-                self.assertIn(f"{route}:D5ot@{at}:plugoff-1", ids)
+                self.assertIn(f"{route}:D5ot@{at}:deviceoff-1", ids)
 
     def test_its_own_lengths_on_a_temporary_table(self):
         routes, _ = self.routes_of(TH)
         self.assertEqual(routes["sonoff>tasmota"][2]["E3"], fs.TEMPORARY_TABLE_LENGTHS["E3"])
         self.assertEqual(fs.routes_for(kinds.SONOFF_S60)["sonoff>tasmota"][2]["E3"], 5)
 
-    def test_a_starting_plug_is_made_with_its_own_kinds_firmware(self):
-        # It once was the S60's and the ESP32-C3's whatever the plug, so a
-        # classic ESP32's starting plugs were never found stale.
+    def test_a_starting_device_is_made_with_its_own_kinds_firmware(self):
+        # It once was the S60's and the ESP32-C3's whatever the device, so a
+        # classic ESP32's starting devices were never found stale.
         pins = json.loads((fs.REPO / "artifacts/firmware.json").read_text(encoding="utf-8"))["espressif"]
         for kind in (kinds.SONOFF_S60, kinds.SONOFF_POW_ELITE, TH):
-            with self.subTest(kind.key), mock.patch.object(fs, "PLUG", kind):
+            with self.subTest(kind.key), mock.patch.object(fs, "DEVICE", kind):
                 self.assertEqual(fs.installs("esphome"), {"image": pins[kind.key]["esphome"],
                                                           "bootloader": pins[kind.chip]["bootloader"],
                                                           "mover": pins[kind.chip]["mover"]})
@@ -1835,49 +1851,49 @@ class PlugRoutesTests(unittest.TestCase):
             self.assertFalse([i for i in ids if ":legacy-" in i], kind.key)
         self.assertIn("sonoff>tasmota:C2:legacy-v1.2.0", self.routes_of(kinds.SONOFF_S60)[1])
 
-    def test_the_kind_is_the_plug_records(self):
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(plugs, "PLUGS", Path(tmp)):
-            self.assertIs(fs.plug_kind(MAC), kinds.SONOFF_S60)
-            plugs.plug_dir(MAC).mkdir()
-            (plugs.plug_dir(MAC) / plugs.PLUG_FILE).write_text('{"product_model": "THR320D"}', encoding="utf-8")
-            self.assertIs(fs.plug_kind(MAC), TH)
-        self.assertIs(fs.plug_kind(None), kinds.SONOFF_S60)
+    def test_the_kind_is_the_device_records(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(records, "DEVICES", Path(tmp)):
+            self.assertIs(fs.device_kind(MAC), kinds.SONOFF_S60)
+            records.device_dir(MAC).mkdir()
+            (records.device_dir(MAC) / records.DEVICE_FILE).write_text('{"product_model": "THR320D"}', encoding="utf-8")
+            self.assertIs(fs.device_kind(MAC), TH)
+        self.assertIs(fs.device_kind(None), kinds.SONOFF_S60)
 
     def test_the_start_with_no_backup_is_a_copy_without_it(self):
         with tempfile.TemporaryDirectory() as emu, mock.patch.object(fs, "EMU", Path(emu)), \
                 mock.patch.object(fs, "MAC", MAC):
-            plug = fs.converted_start("tasmota") / "captures/plugs" / plugs.folder_name(MAC)
-            (plug / plugs.BACKUP).mkdir(parents=True)
-            (plug / plugs.BACKUP / "flash.bin").write_bytes(b"stock")
-            (plug / plugs.PLUG_FILE).write_text("{}", encoding="utf-8")
+            device = fs.converted_start("tasmota") / "captures/devices" / records.folder_name(MAC)
+            (device / records.BACKUP).mkdir(parents=True)
+            (device / records.BACKUP / "flash.bin").write_bytes(b"stock")
+            (device / records.DEVICE_FILE).write_text("{}", encoding="utf-8")
             (fs.converted_start("tasmota") / "flash.bin").write_bytes(b"tasmota")
             fs.no_backup_start()
             copy = fs.converted_start("nobackup")
             self.assertEqual((copy / "flash.bin").read_bytes(), b"tasmota")
-            self.assertTrue((copy / "captures/plugs" / plugs.folder_name(MAC) / plugs.PLUG_FILE).is_file())
-            self.assertFalse((copy / "captures/plugs" / plugs.folder_name(MAC) / plugs.BACKUP).exists())
-            self.assertEqual((plug / plugs.BACKUP / "flash.bin").read_bytes(), b"stock")
+            self.assertTrue((copy / "captures/devices" / records.folder_name(MAC) / records.DEVICE_FILE).is_file())
+            self.assertFalse((copy / "captures/devices" / records.folder_name(MAC) / records.BACKUP).exists())
+            self.assertEqual((device / records.BACKUP / "flash.bin").read_bytes(), b"stock")
 
-    def test_the_identity_is_the_plugs_own_as_the_report_words_it(self):
+    def test_the_identity_is_the_devices_own_as_the_report_words_it(self):
         self.assertTrue(fs.kept_identity_reported(["EWeLink account", "Device "]))
         self.assertFalse(fs.kept_identity_reported(["Rebuilt from your eWeLink account"]))
         self.assertFalse(fs.kept_identity_reported([]))
 
-    def test_the_template_is_the_plugs_own(self):
+    def test_the_template_is_the_devices_own(self):
         # Seen: a TH Elite on its own template judged BAD-TEMPLATE, for not being an S60's.
         module = {"Module": {"0": "Sonoff-THR320D"}}
         for kind, name, own in ((TH, "Sonoff-THR320D", True), (TH, kinds.SONOFF_S60.display_name, False),
                                 (kinds.SONOFF_S60, kinds.SONOFF_S60.display_name, True),
                                 (kinds.SONOFF_S60, "Generic", False)):
-            with self.subTest(kind=kind.key, name=name), mock.patch.object(fs, "PLUG", kind):
+            with self.subTest(kind=kind.key, name=name), mock.patch.object(fs, "DEVICE", kind):
                 self.assertEqual(fs.own_template({"NAME": name}, module), own)
-        with mock.patch.object(fs, "PLUG", TH):
+        with mock.patch.object(fs, "DEVICE", TH):
             self.assertFalse(fs.own_template({"NAME": "Sonoff-THR320D"}, {"Module": {"1": "Sonoff Basic"}}))
 
     def test_its_start_counts_as_the_tasmota_one(self):
         with mock.patch.object(fs, "installs", side_effect=lambda target: {"tasmota": {"v": 1}}[target]), \
                 mock.patch.object(fs, "converted_start", return_value=Path("/nonexistent")):
-            self.assertEqual(fs.stale_starts([{"route": "nobackup>sonoff", "fault": "plugoff"}]),
+            self.assertEqual(fs.stale_starts([{"route": "nobackup>sonoff", "fault": "deviceoff"}]),
                              [fs.saved("suite-tasmota-nobackup")])
 
 

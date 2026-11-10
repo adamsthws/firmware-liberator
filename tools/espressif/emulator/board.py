@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""The board around an emulated Espressif plug's chip: its serial port, and its
+"""The board around an emulated Espressif device's chip: its serial port, and its
 power meter, which measures a load while the relay that switches it is on.
 
-plug-supervisor starts QEMU through this (`board.py --chip esp32c3 --kind
+device-supervisor starts QEMU through this (`board.py --chip esp32c3 --kind
 sonoff-s60 -- qemu-system-riscv32 ...`): it adds QEMU's serial ports, each a
 socket it serves, and a QMP monitor, through which it reads the chip's GPIO
 registers. Run from the checkout's copy in the container (/work), as the
@@ -10,7 +10,7 @@ redactor and the cloud stub are, so changing it needs no new image. Python's
 standard library only, as the container has nothing else.
 
 What the chip's UARTs send and receive goes where the firmware has routed
-them, as on the plug's board:
+them, as on the device's board:
 
 - UART0 always reaches the console - the serial log - as its IOMUX pins keep
   their function whatever else it is routed to (ESPHome's driver notes the
@@ -18,7 +18,7 @@ them, as on the plug's board:
 - A UART whose TX the GPIO matrix routes to the meter's input pin is heard by
   the meter; one whose RX takes the meter's output pin, through the matrix or
   that pin's IOMUX function, hears it. The meter's pins come from the kind's
-  Tasmota template (tools/autoflash/kinds.py), which is how the plug is wired.
+  Tasmota template (tools/autoflash/kinds.py), which is how the device is wired.
 
 The meter is the chip the template names: a CSE7766 (the S60, the POW Elite),
 which sends a frame of readings about every 55 ms by itself, or a CSE7761 (the
@@ -31,7 +31,7 @@ its relay: it reads LOAD whatever the relay does.
 The baud rate and frame format a UART is set to are not checked: a firmware
 reading the meter at the wrong speed would still get its frames.
 
-Every input pin idles high (plug-supervisor), but those a kind's board holds
+Every input pin idles high (device-supervisor), but those a kind's board holds
 low (HELD_LOW): a pin the firmware reads to know which board it is on.
 """
 
@@ -88,7 +88,7 @@ TEMPLATE_GPIOS = {"esp32c3": tuple(range(22)), "esp32": (0, 1, 2, 3, 4, 5, 9, 10
 # A current clamp, not a meter in the relay's line: it measures whatever its
 # cable carries, whether or not the relay is on.
 CLAMPS = {"sonoff-powct"}
-# Input pins a kind's board holds low, where plug-supervisor's every input idling
+# Input pins a kind's board holds low, where device-supervisor's every input idling
 # high would read otherwise. Sonoff's POW Elite firmware reads GPIO23, its pull-up
 # on, to tell a POWR316D (low) from a POWR320D (high), whose latching relay it
 # would drive instead (devices/sonoff-pow-elite/README.md).
@@ -109,7 +109,7 @@ class Channel:
 
 @dataclass(frozen=True)
 class Wiring:
-    """The meter as the plug's template wires it."""
+    """The meter as the device's template wires it."""
     chip: str                 # "cse7766" or "cse7761"
     output_pin: int           # the meter's TX: what the SoC receives on
     input_pin: int | None     # the meter's RX: what the SoC sends on
@@ -331,7 +331,7 @@ class Soc:
     uart_signals: tuple[int, ...]           # UnRXD_IN_IDX, which is UnTXD_OUT_IDX too
     iomux_rx: tuple[int | None, ...]        # each UART's RX pin through the IOMUX
     gpio_device: str                        # QEMU's GPIO device, whose properties set the input pins
-    inputs: tuple[int, ...]                 # its gpio_in, gpio_in1 ...: 32 pins each, all high as plug-supervisor sets them
+    inputs: tuple[int, ...]                 # its gpio_in, gpio_in1 ...: 32 pins each, all high as device-supervisor sets them
 
 
 SOCS = {
@@ -344,7 +344,7 @@ SOCS = {
 
 def input_levels(soc: Soc, held_low: tuple[int, ...]) -> list[str]:
     """QEMU's arguments setting the input pins as the board holds them: high but
-    for `held_low`. After plug-supervisor's, which they take the place of."""
+    for `held_low`. After device-supervisor's, which they take the place of."""
     args = []
     for n, high in enumerate(soc.inputs):
         level = high & ~sum(1 << (pin - 32 * n) for pin in held_low if pin // 32 == n)
@@ -573,7 +573,7 @@ def find_kind(key: str) -> kinds.Kind | None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--chip", choices=sorted(SOCS), required=True)
-    parser.add_argument("--kind", default="", help="the plug's kind (kinds.py), whose template wires its meter")
+    parser.add_argument("--kind", default="", help="the device's kind (kinds.py), whose template wires its meter")
     parser.add_argument("--run", type=Path, default=Path("/run/autoflash-emu"))
     parser.add_argument("qemu", nargs=argparse.REMAINDER, help="-- and QEMU's command line")
     args = parser.parse_args(argv)

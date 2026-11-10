@@ -1,4 +1,4 @@
-"""The plug onto the Wi-Fi and found there (tools/autoflash/join.py)."""
+"""The device onto the Wi-Fi and found there (tools/autoflash/join.py)."""
 import contextlib
 import io
 import tempfile
@@ -14,7 +14,7 @@ from tools.autoflash.state import DONE, RunState
 
 
 class NetworkCheckTests(unittest.TestCase):
-    """The plug's live network must be the one the bundle's firmware will join."""
+    """The device's live network must be the one the bundle's firmware will join."""
 
     def setUp(self):
         self.patches = [
@@ -34,13 +34,13 @@ class NetworkCheckTests(unittest.TestCase):
         return SimpleNamespace(device=device, manifest_path=Path("unused"), state=state)
 
     def test_a_matching_network_passes(self):
-        result = join.check_plug_network(self.ctx("Home-2G"))
+        result = join.check_device_network(self.ctx("Home-2G"))
         self.assertEqual(result, {"network": "Home-2G", "signal_dbm": -50})
 
     def test_a_different_network_stops_when_not_rebuilt(self):
         with mock.patch.object(prompts, "ask_yes_no", return_value=False):
             with self.assertRaisesRegex(errors.Abort, "'Guest' but the bundle is set up for 'Home-2G'"):
-                join.check_plug_network(self.ctx("Guest"))
+                join.check_device_network(self.ctx("Guest"))
 
     def test_a_different_network_can_be_fixed_with_its_password(self):
         ctx = self.ctx("Guest")
@@ -48,7 +48,7 @@ class NetworkCheckTests(unittest.TestCase):
         with mock.patch.object(prompts, "ask_yes_no", return_value=True), \
              mock.patch.object(join, "ask_password", return_value="guest pass") as asked, \
              mock.patch.object(join, "bundle_ssid", side_effect=["Home-2G", "Guest"]):
-            result = join.check_plug_network(ctx)
+            result = join.check_device_network(ctx)
         asked.assert_called_once_with("Guest")  # the name is known: only the password is asked
         ctx.adopt_wifi.assert_called_once_with("Guest", "guest pass")
         self.assertEqual(result["network"], "Guest")
@@ -56,25 +56,25 @@ class NetworkCheckTests(unittest.TestCase):
     def test_names_differing_only_in_case_do_not_match(self):
         with mock.patch.object(prompts, "ask_yes_no", return_value=False):
             with self.assertRaises(errors.Abort):
-                join.check_plug_network(self.ctx("home-2g"))
+                join.check_device_network(self.ctx("home-2g"))
 
     def test_no_reported_network_stops_rather_than_guessing(self):
         with self.assertRaisesRegex(errors.Abort, "did not say which Wi-Fi network"):
-            join.check_plug_network(self.ctx(None))
+            join.check_device_network(self.ctx(None))
 
     def test_a_weak_signal_needs_a_deliberate_yes(self):
         with mock.patch.object(prompts, "ask_yes_no", return_value=False):
             with self.assertRaisesRegex(errors.Abort, "weak Wi-Fi signal"):
-                join.check_plug_network(self.ctx("Home-2G", signal=-82))
+                join.check_device_network(self.ctx("Home-2G", signal=-82))
         with mock.patch.object(prompts, "ask_yes_no", return_value=True):
             self.assertEqual(
-                join.check_plug_network(self.ctx("Home-2G", signal=-82))["signal_dbm"], -82
+                join.check_device_network(self.ctx("Home-2G", signal=-82))["signal_dbm"], -82
             )
 
 
 class AdvertSignalTests(unittest.TestCase):
     """From Sonoff's firmware the signal is read at A2, before anything is
-    written, from the plug's own eWeLink advert, opened with its LAN key."""
+    written, from the device's own eWeLink advert, opened with its LAN key."""
 
     def report(self, source="192.0.2.50"):
         from tests.autoflash.test_ewelink_lan import ADVERT
@@ -85,7 +85,7 @@ class AdvertSignalTests(unittest.TestCase):
         from types import SimpleNamespace
         return SimpleNamespace(account_devices=lambda: devices)
 
-    def test_the_plugs_own_advert_gives_its_signal(self):
+    def test_the_devices_own_advert_gives_its_signal(self):
         from tests.autoflash.test_ewelink_lan import ADVERT, KEY
         ctx = self.ctx([{"deviceid": "1000ffffff", "devicekey": "other"},
                         {"deviceid": ADVERT["id"], "devicekey": KEY}])
@@ -99,20 +99,20 @@ class AdvertSignalTests(unittest.TestCase):
         self.assertIsNone(join.advert_signal(self.ctx(None), self.report(), "192.0.2.50"))
 
 
-class PlugFinderTests(unittest.TestCase):
-    """The plug is found at its address, or by its hardware address if it moved."""
+class DeviceFinderTests(unittest.TestCase):
+    """The device is found at its address, or by its hardware address if it moved."""
 
     def finder(self, inputs):
         from types import SimpleNamespace
 
         moved = []
         state = SimpleNamespace(input=lambda key: inputs.get(key))
-        ctx = SimpleNamespace(state=state, set_plug_ip=moved.append)
-        return join.PlugFinder(ctx), moved
+        ctx = SimpleNamespace(state=state, set_device_ip=moved.append)
+        return join.DeviceFinder(ctx), moved
 
-    def test_the_plug_at_its_usual_address_is_found_without_a_sweep(self):
+    def test_the_device_at_its_usual_address_is_found_without_a_sweep(self):
         from tools.autoflash import hostsys
-        finder, moved = self.finder({"plug_ip": "10.0.0.5", "plug_mac": "aa:bb:cc:dd:ee:ff"})
+        finder, moved = self.finder({"device_ip": "10.0.0.5", "device_mac": "aa:bb:cc:dd:ee:ff"})
         with mock.patch.object(hostsys, "ping_ok", return_value=True), \
              mock.patch.object(hostsys, "neighbour_table", return_value={"10.0.0.5": "aa:bb:cc:dd:ee:ff"}), \
              mock.patch.object(hostsys, "find_by_mac") as sweep:
@@ -120,9 +120,9 @@ class PlugFinderTests(unittest.TestCase):
         sweep.assert_not_called()
         self.assertEqual(moved, [])
 
-    def test_a_different_device_at_the_old_address_is_not_mistaken_for_the_plug(self):
+    def test_a_different_device_at_the_old_address_is_not_mistaken_for_the_device(self):
         from tools.autoflash import hostsys
-        finder, moved = self.finder({"plug_ip": "10.0.0.5", "plug_mac": "aa:bb:cc:dd:ee:ff"})
+        finder, moved = self.finder({"device_ip": "10.0.0.5", "device_mac": "aa:bb:cc:dd:ee:ff"})
         with mock.patch.object(hostsys, "ping_ok", return_value=True), \
              mock.patch.object(hostsys, "neighbour_table", return_value={"10.0.0.5": "11:22:33:44:55:66"}), \
              mock.patch.object(hostsys, "find_by_mac", return_value="10.0.0.9"):
@@ -131,7 +131,7 @@ class PlugFinderTests(unittest.TestCase):
 
     def test_sweeps_are_rate_limited(self):
         from tools.autoflash import hostsys
-        finder, _ = self.finder({"plug_ip": "10.0.0.5", "plug_mac": "aa:bb:cc:dd:ee:ff"})
+        finder, _ = self.finder({"device_ip": "10.0.0.5", "device_mac": "aa:bb:cc:dd:ee:ff"})
         with mock.patch.object(hostsys, "ping_ok", return_value=False), \
              mock.patch.object(hostsys, "find_by_mac", return_value=None) as sweep:
             self.assertIsNone(finder.poll())
@@ -139,15 +139,15 @@ class PlugFinderTests(unittest.TestCase):
         self.assertEqual(sweep.call_count, 1)
 
 
-class BusyPlugTests(unittest.TestCase):
-    """A plug still finishing a stopped step is waited for, not misread."""
+class BusyDeviceTests(unittest.TestCase):
+    """A device still finishing a stopped step is waited for, not misread."""
 
     def ctx(self, *, d1_done=True, answers=(), pings=True):
         from types import SimpleNamespace
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         state = RunState.open(Path(directory.name))
-        state.set_input("plug_ip", "10.0.0.63")
+        state.set_input("device_ip", "10.0.0.63")
         if d1_done:
             state.mark("D1", DONE)
         device = mock.Mock(answers=mock.Mock(side_effect=list(answers)))
@@ -161,20 +161,20 @@ class BusyPlugTests(unittest.TestCase):
              mock.patch.object(output, "tell") as told, \
              mock.patch.object(output, "progress"), \
              mock.patch.object(output, "progress_clear"):
-            join.wait_while_plug_busy(ctx)
+            join.wait_while_device_busy(ctx)
         return told
 
-    def test_a_plug_that_answers_is_not_waited_for(self):
+    def test_a_device_that_answers_is_not_waited_for(self):
         ctx, pings = self.ctx(answers=[True])
         self.wait(ctx, pings).assert_not_called()
 
-    def test_a_busy_plug_is_waited_for_until_it_answers(self):
+    def test_a_busy_device_is_waited_for_until_it_answers(self):
         ctx, pings = self.ctx(answers=[False, False, False, True])
         told = self.wait(ctx, pings)
         self.assertEqual(ctx.device.answers.call_count, 4)
         self.assertIn("answering again", told.call_args.args[0])
 
-    def test_a_plug_off_the_network_is_left_to_the_steps(self):
+    def test_a_device_off_the_network_is_left_to_the_steps(self):
         ctx, _ = self.ctx(answers=[False])
         self.wait(ctx, False).assert_not_called()
 
@@ -202,7 +202,7 @@ class NamedWithTheWifiTests(unittest.TestCase):
         from types import SimpleNamespace
         hooked = []
 
-        class Plug:
+        class Device:
             def __init__(self, host, timeout=None):
                 self.host = host
 
@@ -215,9 +215,9 @@ class NamedWithTheWifiTests(unittest.TestCase):
                 hooked.append((self.host, commands))
                 return True
 
-        inputs = {"plug_mac": "12:34:56:ab:cd:ef"}
+        inputs = {"device_mac": "12:34:56:ab:cd:ef"}
         ctx = SimpleNamespace(state=SimpleNamespace(input=inputs.get, is_done=lambda step: step in done))
-        with mock.patch.object(device, "Device", Plug), mock.patch.object(output, "say"):
+        with mock.patch.object(device, "Device", Device), mock.patch.object(output, "say"):
             join.name_with_the_wifi(ctx)
         return hooked
 
@@ -235,12 +235,12 @@ class NamedWithTheWifiTests(unittest.TestCase):
 
 
 class SetupNetworkGoneTests(unittest.TestCase):
-    """Whether the plug's setup network has gone, after the Wi-Fi was sent."""
+    """Whether the device's setup network has gone, after the Wi-Fi was sent."""
 
     def gone(self, answering, visible, network="tasmota-ABCDEF-1234"):
         from types import SimpleNamespace
         clock = iter(range(0, 1000, 2))
-        ctx = SimpleNamespace(state=SimpleNamespace(input={"plug_mac": "12:34:56:ab:cd:ef"}.get))
+        ctx = SimpleNamespace(state=SimpleNamespace(input={"device_mac": "12:34:56:ab:cd:ef"}.get))
         with mock.patch.object(setup_network, "port_open", return_value=answering), \
              mock.patch.object(prompts, "scan_wifi_ssids", return_value=visible), \
              mock.patch.object(time, "monotonic", side_effect=lambda: next(clock)), \
@@ -266,11 +266,11 @@ class SetupNetworkGoneTests(unittest.TestCase):
 
 
 class LocateTests(SetupNetworkTestCase):
-    def test_a_plug_not_found_can_be_set_up_on_its_own_network_instead(self):
+    def test_a_device_not_found_can_be_set_up_on_its_own_network_instead(self):
         ctx = self.ctx()
-        ctx.state.set_input("plug_ip", "192.0.2.50")
+        ctx.state.set_input("device_ip", "192.0.2.50")
         ctx.finder = SimpleNamespace(poll=lambda: None)
-        ctx.set_plug_ip = lambda ip: ctx.state.set_input("plug_ip", ip)
+        ctx.set_device_ip = lambda ip: ctx.state.set_input("device_ip", ip)
         offered = []
 
         def choose(question, options, help_lines=()):
@@ -282,8 +282,8 @@ class LocateTests(SetupNetworkTestCase):
                 mock.patch.object(time, "monotonic", side_effect=iter(range(0, 10_000, 100))), \
                 mock.patch.object(prompts, "wait_for_host", return_value=False), \
                 mock.patch.object(prompts, "ask_choice", side_effect=choose), \
-                mock.patch.object(join, "configure_plug_wifi", return_value="192.0.2.77") as setup:
-            self.assertEqual(join.locate_plug(ctx, setup=True), "192.0.2.77")
+                mock.patch.object(join, "configure_device_wifi", return_value="192.0.2.77") as setup:
+            self.assertEqual(join.locate_device(ctx, setup=True), "192.0.2.77")
         setup.assert_called_once_with(ctx, None)
         self.assertIn("tasmota-ABCDEF-NNNN, or ESP_ABCDF0", offered[2])
 

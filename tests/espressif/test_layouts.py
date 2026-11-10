@@ -31,7 +31,7 @@ class TemporaryTableTests(unittest.TestCase):
         self.assertGreaterEqual(self.rows()["ota_0"][4], 0xC0000)
         self.assertLessEqual(rows[-1][3] + rows[-1][4], 0x400000)
 
-    def test_ota_1_is_where_the_plugs_own_table_has_it(self):
+    def test_ota_1_is_where_the_devices_own_table_has_it(self):
         # The hub's Tasmota runs from there as the one table gives way to the other.
         own = {row[0]: row for row in self.LAYOUT.partitions()}
         self.assertEqual(self.rows()["ota_1"], own["ota_1"])

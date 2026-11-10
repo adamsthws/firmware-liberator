@@ -1,4 +1,4 @@
-"""board.py, the emulated Beken plug's board and its BL0937 meter."""
+"""board.py, the emulated Beken device's board and its BL0937 meter."""
 
 import re
 import unittest

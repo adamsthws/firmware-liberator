@@ -102,7 +102,7 @@ press_any_key() {
 }
 
 repo_tar() {  # $1: this checkout as a tar - the files windows-test.sh listed in /cache/repo-files
-    # Only what git tracks or would, as the plug's emulator copies it: never captures
+    # Only what git tracks or would, as the device's emulator copies it: never captures
     # or .env, which git ignores (the conversion in Windows asks for the eWeLink
     # account, as a real one does). One removed since it was listed is left out.
     tar -C /repo -cf "$1" --null --no-recursion --ignore-failed-read -T /cache/repo-files

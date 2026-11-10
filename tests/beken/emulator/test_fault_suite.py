@@ -1,4 +1,4 @@
-"""The Beken fault suite: its scenarios, and how it tells a plug converted."""
+"""The Beken fault suite: its scenarios, and how it tells a device converted."""
 
 import tempfile
 import threading
@@ -19,9 +19,9 @@ class ScenarioTests(unittest.TestCase):
 
     def test_the_steps_that_write_are_also_faulted_early_and_late(self):
         ids = {sc["id"] for sc in fault_suite.scenarios()}
-        self.assertIn("sonoff>openbeken:B2@10:plugoff-1", ids)
+        self.assertIn("sonoff>openbeken:B2@10:deviceoff-1", ids)
         self.assertIn("openbeken>sonoff:O2@90:crash-1", ids)
-        self.assertNotIn("sonoff>openbeken:K1@10:plugoff-1", ids)   # a check step: 40% only
+        self.assertNotIn("sonoff>openbeken:K1@10:deviceoff-1", ids)   # a check step: 40% only
 
     def test_each_step_faulted_is_one_its_route_takes(self):
         for route, steps in fault_suite.ROUTES.items():
@@ -29,12 +29,12 @@ class ScenarioTests(unittest.TestCase):
 
 
 class EndChecksTests(unittest.TestCase):
-    """A converted plug passes only if the report's end-of-run checks did."""
+    """A converted device passes only if the report's end-of-run checks did."""
 
     def result(self, checks, screen=None, release=None, relay=None):
         from unittest import mock
-        sc = {"id": "sonoff>openbeken:B2:plugoff-1", "route": "sonoff>openbeken", "step": "B2",
-              "fault": "plugoff", "arg": 1, "at": 40}
+        sc = {"id": "sonoff>openbeken:B2:deviceoff-1", "route": "sonoff>openbeken", "step": "B2",
+              "fault": "deviceoff", "arg": 1, "at": 40}
         relay = relay or ("Switches (meter confirms)" if checks == "True" else "Did not switch")
         log = (f"[10:00:00] === run started, tool version 2.3.0 ===\n[10:00:01]     Relay: {relay}\n"
                f"[10:00:02]     Checks passed: {checks}\n[10:00:03] === run ended ===\n")
@@ -43,15 +43,15 @@ class EndChecksTests(unittest.TestCase):
                 tool_log.write_text(screen, encoding="utf-8")   # what the run printed
             return {"result": "PASS", "runs": 1}
         with tempfile.TemporaryDirectory() as tmp:
-            plug = SimpleNamespace(reset=lambda start: None, start=lambda firmware: True, runs=list,
+            device = SimpleNamespace(reset=lambda start: None, start=lambda firmware: True, runs=list,
                                    dhcp_names=lambda: ["openbeken-cdef"], last_log=lambda: log, state=Path(tmp))
             latest = fault_suite.LATEST["openbeken"]
             with mock.patch.object(fault_suite, "OUT", Path(tmp)), mock.patch.object(fault_suite, "MemoryWatch"), \
                     mock.patch.object(fault_suite, "step_scenario", side_effect=step_scenario), \
                     mock.patch.object(fault_suite, "release_of", return_value=release or latest):
-                return fault_suite.run_scenario(plug, sc)
+                return fault_suite.run_scenario(device, sc)
 
-    def test_a_converted_plug_whose_relay_switched_passes(self):
+    def test_a_converted_device_whose_relay_switched_passes(self):
         self.assertEqual(self.result("True")["result"], "PASS")
 
     def test_a_stage_s_failed_try_left_on_the_screen_is_its_own_failure(self):
@@ -65,24 +65,24 @@ class EndChecksTests(unittest.TestCase):
         clean = screen.replace("Stage 6 - Sending OpenBeken - Stopped\n", "")
         self.assertEqual(self.result("True", clean)["result"], "PASS")
 
-    def test_a_converted_plug_must_be_on_this_releases_firmware(self):
+    def test_a_converted_device_must_be_on_this_releases_firmware(self):
         self.assertEqual(self.result("True")["result"], "PASS")
         outcome = self.result("True", release="1.18.300-1")
         self.assertEqual((outcome["result"], outcome["notes"]["release"]), ("FAIL-NOT-LATEST", "openbeken 1.18.300-1"))
 
-    def test_the_plugs_release_is_what_its_firmware_says(self):
+    def test_the_devices_release_is_what_its_firmware_says(self):
         from unittest import mock
-        plug = SimpleNamespace(lease=lambda: "192.0.2.50")
+        device = SimpleNamespace(lease=lambda: "192.0.2.50")
         with mock.patch.object(fault_suite.openbeken, "info", return_value={"build": "Build on ... version 1.18.320-2"}):
-            self.assertEqual(fault_suite.release_of(plug, "openbeken"), "1.18.320-2")
+            self.assertEqual(fault_suite.release_of(device, "openbeken"), "1.18.320-2")
         ours = {"project_name": fault_suite.kinds.SONOFF_S61.esphome_project, "project_version": "2026.10.0-2"}
         with mock.patch.object(fault_suite.esphome, "api_device_info", return_value=ours):
-            self.assertEqual(fault_suite.release_of(plug, "esphome"), "2026.10.0-2")
+            self.assertEqual(fault_suite.release_of(device, "esphome"), "2026.10.0-2")
         with mock.patch.object(fault_suite.esphome, "api_device_info", return_value=dict(ours, project_name="x.y")):
-            self.assertIsNone(fault_suite.release_of(plug, "esphome"))
+            self.assertIsNone(fault_suite.release_of(device, "esphome"))
 
     def test_one_whose_meter_did_not_confirm_the_switch_failed_its_checks(self):
-        """The emulated plug's meter measures a load while the relay is on
+        """The emulated device's meter measures a load while the relay is on
         (tools/beken/emulator/board.py), so a check that saw no change in it
         did not read it."""
         outcome = self.result("True", relay="Switches (meter unchanged)")
@@ -100,13 +100,13 @@ class EarlierAttemptTests(unittest.TestCase):
     def test_a_scenario_run_again_keeps_its_earlier_attempts_logs(self):
         # As the Espressif suite's: a second attempt wrote over the first's.
         from unittest import mock
-        sc = {"id": "sonoff>openbeken:B2:plugoff-1", "route": "sonoff>openbeken", "step": "B2"}
-        plug = mock.Mock(start=mock.Mock(return_value=False))   # a plug that never starts: back at once
+        sc = {"id": "sonoff>openbeken:B2:deviceoff-1", "route": "sonoff>openbeken", "step": "B2"}
+        device = mock.Mock(start=mock.Mock(return_value=False))   # a device that never starts: back at once
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fault_suite, "OUT", Path(tmp)), \
                 mock.patch.object(fault_suite, "MemoryWatch"):
-            folder = Path(tmp) / "logs" / "sonoff-openbeken_B2_plugoff-1"
+            folder = Path(tmp) / "logs" / "sonoff-openbeken_B2_deviceoff-1"
             for attempt in ("first", "second"):
-                fault_suite.run_scenario(plug, sc)
+                fault_suite.run_scenario(device, sc)
                 (folder / "tool.log").write_text(attempt, encoding="utf-8")
             self.assertEqual((folder.with_name(folder.name + ".1") / "tool.log").read_text(encoding="utf-8"), "first")
             self.assertEqual((folder / "tool.log").read_text(encoding="utf-8"), "second")
@@ -115,13 +115,13 @@ class EarlierAttemptTests(unittest.TestCase):
 class UpdateScenarioTests(unittest.TestCase):
     def test_each_firmware_built_here_has_an_update_with_its_own_faults(self):
         ids = {sc["id"] for sc in fault_suite.scenarios()}
-        for wanted in ("outdated>openbeken:U3:plugoff-1", "outdated>openbeken:U3@90:crash-1",
-                       "outdated>openbeken:U4:outage-30", "outdated>openbeken:apply@50:plugoff-1",
-                       "outdated>esphome:U1:plugoff-1", "outdated>esphome:U1@10:crash-1",
-                       "outdated>esphome:U2:crash-1", "outdated>esphome:apply@90:plugoff-1"):
+        for wanted in ("outdated>openbeken:U3:deviceoff-1", "outdated>openbeken:U3@90:crash-1",
+                       "outdated>openbeken:U4:outage-30", "outdated>openbeken:apply@50:deviceoff-1",
+                       "outdated>esphome:U1:deviceoff-1", "outdated>esphome:U1@10:crash-1",
+                       "outdated>esphome:U2:crash-1", "outdated>esphome:apply@90:deviceoff-1"):
             self.assertIn(wanted, ids)
 
-    def test_an_update_starts_from_the_plug_saved_for_its_firmware(self):
+    def test_an_update_starts_from_the_device_saved_for_its_firmware(self):
         self.assertEqual(fault_suite.start_of("outdated>openbeken"), "outdated-openbeken")
         self.assertEqual(fault_suite.start_of("outdated>esphome"), "outdated-esphome")
         self.assertEqual(fault_suite.start_of("esphome>openbeken"), "esphome")
@@ -154,7 +154,7 @@ class BatchResultTests(unittest.TestCase):
 
     def test_a_batch_starts_the_longest_first(self):
         from unittest import mock
-        rows = [{"id": i, "route": "sonoff>openbeken", "step": "B2", "fault": "plugoff", "arg": 1} for i in "abc"]
+        rows = [{"id": i, "route": "sonoff>openbeken", "step": "B2", "fault": "deviceoff", "arg": 1} for i in "abc"]
         ran = []
 
         def run(instance, sc):
@@ -214,21 +214,21 @@ class StepTimingTests(unittest.TestCase):
 
 
 class CheckTests(unittest.TestCase):
-    def test_each_final_firmware_is_installed_then_the_plug_taken_to_the_other(self):
+    def test_each_final_firmware_is_installed_then_the_device_taken_to_the_other(self):
         for way in fault_suite.CHECK_WAYS:
             self.assertEqual(way[0].split(">")[0], "sonoff")
-            self.assertEqual(way[1].split(">")[0], way[0].split(">")[1], "each starts from the plug the one before made")
+            self.assertEqual(way[1].split(">")[0], way[0].split(">")[1], "each starts from the device the one before made")
         self.assertEqual({way[0].split(">")[1] for way in fault_suite.CHECK_WAYS}, {"openbeken", "esphome"})
 
     def test_a_way_that_raises_has_failed_and_says_why(self):
         import io
         from contextlib import redirect_stdout
         from unittest import mock
-        with mock.patch.object(fault_suite, "check_way", side_effect=RuntimeError("the plug did not start")), \
+        with mock.patch.object(fault_suite, "check_way", side_effect=RuntimeError("the device did not start")), \
                 redirect_stdout(io.StringIO()) as out:
             self.assertEqual(fault_suite.check(), 1)
         self.assertIn("FAIL", out.getvalue())
-        self.assertIn("the plug did not start", out.getvalue())
+        self.assertIn("the device did not start", out.getvalue())
 
     def test_only_ways_that_got_to_their_end_pass(self):
         from unittest import mock
@@ -239,10 +239,10 @@ class CheckTests(unittest.TestCase):
         import io
         from contextlib import redirect_stdout
         from unittest import mock
-        plug = mock.Mock(all_runs=list, last_state=dict, dhcp_names=lambda: ["openbeken-cdef"],
+        device = mock.Mock(all_runs=list, last_state=dict, dhcp_names=lambda: ["openbeken-cdef"],
                          last_log=lambda: "[10:00:00] === run started ===\n[10:00:01]     Checks passed: False\n")
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fault_suite, "OUT", Path(tmp)), \
-                mock.patch.object(fault_suite, "Instance", return_value=plug), \
+                mock.patch.object(fault_suite, "Instance", return_value=device), \
                 mock.patch.object(fault_suite, "converted", return_value=True), redirect_stdout(io.StringIO()) as out:
             self.assertEqual(fault_suite.check_way(1, ("sonoff>openbeken",)), 1)
         self.assertIn("FAIL  sonoff>openbeken: Checks passed: False", out.getvalue())
@@ -344,9 +344,9 @@ class NewScenarioTests(unittest.TestCase):
             if not set(steps) & fault_suite.beken.DESTRUCTIVE_STEPS:
                 continue
             for at in (10, 50, 90):
-                self.assertIn(f"{route}:apply@{at}:plugoff-1", ids)
+                self.assertIn(f"{route}:apply@{at}:deviceoff-1", ids)
             for step in set(steps) & fault_suite.beken.DESTRUCTIVE_STEPS:
-                self.assertIn(f"{route}:{step}:double-plugoff-1", ids)
+                self.assertIn(f"{route}:{step}:double-deviceoff-1", ids)
                 self.assertIn(f"{route}:{step}:readdress-new", ids)
 
 
@@ -405,7 +405,7 @@ class FaultAppliedTests(unittest.TestCase):
 
     def instance(self, tmp, says_off=True):
         serial = Path(tmp, "serial.log")
-        serial.write_bytes(b"[plug] switched off; an earlier cut\n")
+        serial.write_bytes(b"[device] switched off; an earlier cut\n")
 
         def power(how):
             self.switched.append(how)
@@ -414,22 +414,22 @@ class FaultAppliedTests(unittest.TestCase):
                     out.write(fault_suite.SWITCHED_OFF + b"; its flash is kept\n")
         self.switched = []
         return SimpleNamespace(state=Path(tmp), power=power, network="a-network", computer="a-computer",
-                               plug="a-plug", lease=lambda: "198.18.62.51")
+                               device="a-device", lease=lambda: "198.18.62.51")
 
-    def test_a_plug_seen_to_stop_is_a_cut(self):
+    def test_a_device_seen_to_stop_is_a_cut(self):
         with tempfile.TemporaryDirectory() as tmp:
             notes = {}
-            fault_suite.inject(self.instance(tmp), "plugoff", 0, notes)
+            fault_suite.inject(self.instance(tmp), "deviceoff", 0, notes)
         self.assertEqual(self.switched, ["off", "on"])
         self.assertNotIn("not_applied", notes)
 
-    def test_a_plug_that_never_says_it_stopped_is_not(self):
+    def test_a_device_that_never_says_it_stopped_is_not(self):
         # Only a line since the switch counts: an earlier cut's is in the log already.
         with tempfile.TemporaryDirectory() as tmp:
             self.assertFalse(fault_suite.cut_power(self.instance(tmp, says_off=False), 0, wait=0.5))
         self.assertEqual(self.switched, ["off", "on"])
 
-    def test_the_apply_cut_does_not_fire_on_a_plug_that_stayed_on(self):
+    def test_the_apply_cut_does_not_fire_on_a_device_that_stayed_on(self):
         from unittest import mock
         with tempfile.TemporaryDirectory() as tmp:
             serial = Path(tmp, "serial.log")
@@ -494,8 +494,8 @@ class FaultAppliedTests(unittest.TestCase):
         self.assertTrue(notes["not_applied"])
 
     def test_what_never_happened_proves_nothing(self):
-        self.assertFalse(fault_suite.not_fired("plugoff", {}))
-        self.assertTrue(fault_suite.not_fired("plugoff", {"not_applied": ["x"]}))
+        self.assertFalse(fault_suite.not_fired("deviceoff", {}))
+        self.assertTrue(fault_suite.not_fired("deviceoff", {"not_applied": ["x"]}))
         self.assertTrue(fault_suite.not_fired("double", {}))
         self.assertFalse(fault_suite.not_fired("double", {"second_cut": True}))
         self.assertTrue(fault_suite.not_fired("readdress", {"moved_from": "a", "moved_to": "a"}))
@@ -504,11 +504,11 @@ class FaultAppliedTests(unittest.TestCase):
         self.assertTrue(fault_suite.not_fired("ctrlc", {"ctrlc_seen": False}))
         self.assertFalse(fault_suite.not_fired("ctrlc", {"ctrlc_seen": True}))
 
-    def test_a_plug_that_stayed_on_is_noted(self):
+    def test_a_device_that_stayed_on_is_noted(self):
         from unittest import mock
         notes = {}
         with mock.patch.object(fault_suite, "cut_power", return_value=False):
-            fault_suite.inject(None, "plugoff", 1, notes)
+            fault_suite.inject(None, "deviceoff", 1, notes)
         self.assertTrue(notes["not_applied"])
 
     def step_result(self, *, is_converted):
@@ -535,7 +535,7 @@ class FaultAppliedTests(unittest.TestCase):
 
 
 class RecoverTests(unittest.TestCase):
-    def test_the_plug_is_switched_off_and_on_only_where_the_run_said_to(self):
+    def test_the_device_is_switched_off_and_on_only_where_the_run_said_to(self):
         for said, cycles in (("[..] FAILED: ... switch the device off and on, then run", 1),
                              ("[..] FAILED: eWeLink could not be reached", 0)):
             powered = []
@@ -566,11 +566,11 @@ class InterimTests(unittest.TestCase):
 
     def test_kept_as_openbeken_nothing_is_written_and_j3_waits_for_its_restart(self):
         # J3 sends no image, so there is no bootloader write to cut; and it
-        # waits for the restart itself, so K1 finds the plug answering at once.
+        # waits for the restart itself, so K1 finds the device answering at once.
         ids = {sc["id"] for sc in fault_suite.scenarios() if sc["route"] == "interim>openbeken"}
         self.assertFalse({i for i in ids if ":apply@" in i or ":K1:" in i})
 
-    def test_the_names_a_plug_asked_dhcp_for(self):
+    def test_the_names_a_device_asked_dhcp_for(self):
         log = ("Nov  3 10:00:01 dnsmasq-dhcp[7]: 3126 DHCPACK(br0) 198.18.0.50 12:34:56:ab:cd:ef\n"
                "Nov  3 10:01:02 dnsmasq-dhcp[7]: 3127 DHCPACK(br0) 198.18.0.50 12:34:56:ab:cd:ef "
                "autoflash-recovery-CDEF\n")
@@ -617,7 +617,7 @@ class ConvertedTests(unittest.TestCase):
 
 
 class RecoveryTests(unittest.TestCase):
-    def test_the_tools_every_ask_to_switch_the_plug_off_and_on_is_heard(self):
+    def test_the_tools_every_ask_to_switch_the_device_off_and_on_is_heard(self):
         from tools.autoflash.routes.beken import arrived, stock
         import inspect
         for module in (arrived, stock):
@@ -628,13 +628,13 @@ class RecoveryTests(unittest.TestCase):
 
 
 class SavingTests(unittest.TestCase):
-    def test_a_saved_plug_keeps_its_flash_and_its_runs_captures_only(self):
+    def test_a_saved_device_keeps_its_flash_and_its_runs_captures_only(self):
         self.assertEqual(fault_suite.keep_for_saving("/x/work", ["captures", "tools", "README.md"]),
                          ["tools", "README.md"])
         self.assertEqual(fault_suite.keep_for_saving("/x/state-1",
                                                      ["flash.bin", "serial.log", "power", "ca.crt"]),
                          ["serial.log", "power", "ca.crt"])
-        self.assertEqual(fault_suite.keep_for_saving("/x/plugs/12-34-56-ab-cd-ef", ["plug.json", "sonoff-backup"]),
+        self.assertEqual(fault_suite.keep_for_saving("/x/devices/12-34-56-ab-cd-ef", ["device.json", "sonoff-backup"]),
                          ["sonoff-backup"])
 
 
@@ -643,20 +643,40 @@ class InstanceTests(unittest.TestCase):
         instance = fault_suite.Instance(3)
         self.assertEqual(instance.command("power", "on"),
                          [str(fault_suite.BK_EMU), "--instance", "3", "power", "on"])
-        self.assertEqual((instance.plug, instance.network, instance.computer),
+        self.assertEqual((instance.device, instance.network, instance.computer),
                          ("autoflash-beken-emu-3", "autoflash-beken-emu-3", "autoflash-beken-emu-computer-3"))
         self.assertEqual(instance.state, fault_suite.REPO / "captures/emulation/beken/state-3")
 
 
 
+class EarlierRecordsTests(unittest.TestCase):
+    def test_runs_a_saved_device_came_with_are_not_this_scenarios_once_their_folder_is_renamed(self):
+        """A device saved by a release before 2.4.0 has its runs under
+        captures/plugs/; this checkout's tool renames that as it starts."""
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = fault_suite.Instance(3)
+            instance.state = Path(tmp)
+            earlier = instance.state / "work/captures/plugs/12-34-56-ab-cd-ef/runs/20261013-031500"
+            earlier.mkdir(parents=True)
+            (earlier / "run.log").write_text("converted\n", encoding="utf-8")
+            instance.before = {fault_suite.filed_as(path) for path in instance.all_runs()}
+            self.assertEqual(len(instance.before), 1)
+            (instance.state / "work/captures/plugs").rename(instance.state / "work/captures/devices")
+            self.assertEqual(instance.runs(), [])
+            new = instance.state / "work/captures/devices/12-34-56-ab-cd-ef/runs/20261110-120000"
+            new.mkdir(parents=True)
+            (new / "run.log").write_text("updated\n", encoding="utf-8")
+            self.assertEqual(instance.runs(), [new / "run.log"])
+
+
 class ReadoutScenarioTests(unittest.TestCase):
-    """Readouts (cli.py readout): of a stock plug, faulted where it matters
-    most, and of a plug on OpenBeken, which must be refused."""
+    """Readouts (cli.py readout): of a stock device, faulted where it matters
+    most, and of a device on OpenBeken, which must be refused."""
 
     def test_the_readouts_listed(self):
         self.assertEqual([sc["id"] for sc in fault_suite.scenarios() if sc["route"].endswith(">readout")], [
-            "sonoff>readout:start:none-unattended", "sonoff>readout:read:plugoff-1", "sonoff>readout:read:outage-30",
-            "sonoff>readout:read:crash-1", "sonoff>readout:back@10:plugoff-1", "sonoff>readout:back@10:outage-30",
+            "sonoff>readout:start:none-unattended", "sonoff>readout:read:deviceoff-1", "sonoff>readout:read:outage-30",
+            "sonoff>readout:read:crash-1", "sonoff>readout:back@10:deviceoff-1", "sonoff>readout:back@10:outage-30",
             "openbeken>readout:start:none-refused"])
 
     def test_a_readout_is_run_as_one_found_by_itself(self):
@@ -665,7 +685,7 @@ class ReadoutScenarioTests(unittest.TestCase):
             fault_suite.Instance(3).tool("readout", Path(tmp, "tool.log"))
             fault_suite.Instance(3).tool("sonoff", Path(tmp, "tool.log"), new=True)
         readout, conversion = (c.args[0][3:] for c in popen.call_args_list)
-        # No --plug-ip: a Beken plug answers no discovery, and is found by its hardware address (a9f1a13).
+        # No --device-ip: a Beken device answers no discovery, and is found by its hardware address (a9f1a13).
         # On a terminal of its own, its screen kept (unattended_run.py adds --unattended).
         self.assertEqual(readout, ["computer", "tools/repo/unattended_run.py", "--command", "readout", "--",
                                    "--env-file", "captures/tool.env"])
@@ -680,7 +700,7 @@ class ReadoutScenarioTests(unittest.TestCase):
         with mock.patch.object(output, "say", side_effect=said.append), mock.patch.object(output, "progress"), \
                 mock.patch.object(output, "progress_clear"), \
                 mock.patch.object(readout_beken.openbeken, "read_flash", return_value=b"\xff" * readout_beken.WHOLE_FLASH), \
-                mock.patch.object(readout_beken.onward, "serve_to_plug"), \
+                mock.patch.object(readout_beken.onward, "serve_to_device"), \
                 mock.patch("tools.ewelink.relay.answers", return_value=True):
             readout_beken.read_whole_flash(mock.Mock(), "192.0.2.50")
             readout_beken.revert_to_sonoff(mock.Mock(), "192.0.2.50", mock.Mock())
@@ -692,7 +712,7 @@ class ReadoutScenarioTests(unittest.TestCase):
             self.assertLess(re.search(begins, log).start(), re.search(ends, log).start(), phase)
 
     def instance(self, tmp, kept=None, answering=False):
-        """A plug whose runs kept `kept` (a readout.tar's bytes, or None)."""
+        """A device whose runs kept `kept` (a readout.tar's bytes, or None)."""
         run = Path(tmp, "runs/1/run.log")
         run.parent.mkdir(parents=True, exist_ok=True)
         run.write_text("[10:00:00] === run started ===\n", encoding="utf-8")
@@ -727,7 +747,7 @@ class ReadoutScenarioTests(unittest.TestCase):
             outcome, tools, _ = self.outcome(self.SC, self.instance(tmp), kept_after=1)
         self.assertEqual((outcome["result"], tools), ("PASS", ["readout"]))
 
-    def test_a_plug_left_on_openbeken_is_put_back_on_sonoff_then_read_out_again(self):
+    def test_a_device_left_on_openbeken_is_put_back_on_sonoff_then_read_out_again(self):
         with tempfile.TemporaryDirectory() as tmp:
             instance = self.instance(tmp, answering=True)
             outcome, tools, notes = self.outcome(self.SC, instance, kept_after=3)
@@ -760,7 +780,7 @@ class ReadoutScenarioTests(unittest.TestCase):
         with mock.patch.object(fault_suite, "finish"):
             return fault_suite.readout_scenario(instance, sc, Path("tool.log"), {})["result"]
 
-    def test_a_readout_of_a_plug_on_openbeken_must_be_refused_leaving_it_as_it_was(self):
+    def test_a_readout_of_a_device_on_openbeken_must_be_refused_leaving_it_as_it_was(self):
         self.assertEqual(self.refused(1, "[10:00:00] FAILED: Device is offline in eWeLink"), "PASS")
         self.assertEqual(self.refused(0), "FAIL-NOT-REFUSED")
         self.assertEqual(self.refused(1, "[10:00:00] Serving only 192.0.2.50 at http://192.0.2.10:8088/user1.bin"),
@@ -779,18 +799,18 @@ class ReadoutScenarioTests(unittest.TestCase):
 
 class RestartImageTests(unittest.TestCase):
     """badimage-restart: an image refused past the times a run sends it again,
-    so the run restarts the plug (on OpenBeken) and sends it whole."""
+    so the run restarts the device (on OpenBeken) and sends it whole."""
 
     def test_spoilt_once_past_the_runs_limit(self):
         from tools.autoflash import runner
         self.assertEqual(fault_suite.SPOILT_PAST_LIMIT, runner.GO_BACK_LIMIT + 1)
 
-    def test_listed_where_the_plug_refusing_it_is_on_openbeken(self):
+    def test_listed_where_the_device_refusing_it_is_on_openbeken(self):
         ids = {sc["id"] for sc in fault_suite.scenarios() if sc["arg"] == "restart"}
         self.assertEqual(ids, {"openbeken>esphome:O1:badimage-restart", "interim>esphome:J2:badimage-restart",
                                "sonoff>esphome:J2:badimage-restart"})
 
-    def test_what_the_run_says_as_it_restarts_the_plug_is_seen(self):
+    def test_what_the_run_says_as_it_restarts_the_device_is_seen(self):
         said = ("O2 was not installed: the device restarted on the firmware it had, after it was sent 2 times: "
                 "the device was restarted. Doing O1 again.")
         self.assertRegex(said, fault_suite.RESTARTED)

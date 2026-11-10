@@ -14,29 +14,29 @@
 #   tools/beken/emulator/beken-emu.sh run DUMP [ARGS...]
 #                             run a BK7238 dump as the emulator's tools do: main.py DUMP
 #                             --with-boot -chip BK7238 --only-uart ARGS
-#   tools/beken/emulator/beken-emu.sh plug
-#                             the public S61s dump as a plug on a home Wi-Fi, on the Beken
+#   tools/beken/emulator/beken-emu.sh device
+#                             the public S61s dump as a device on a home Wi-Fi, on the Beken
 #                             emulator's own Docker network (autoflash-beken-emu, made the first time;
 #                             nothing of the Espressif emulator is on it), until docker stop: its
 #                             radio bridged there through a TAP device, its router .1 - its
-#                             DHCP (the plug at .50-.59), DNS and eWeLink, the local stub -
-#                             in its container (autoflash-beken-emu, plug-net.sh). Its flash, logs
+#                             DHCP (the device at .50-.59), DNS and eWeLink, the local stub -
+#                             in its container (autoflash-beken-emu, device-net.sh). Its flash, logs
 #                             and the stub's CA are kept in captures/emulation/beken/state/,
-#                             so it carries on as it was left (--fresh for a new plug).
-#                             It returns once the plug is in its stub's account
+#                             so it carries on as it was left (--fresh for a new device).
+#                             It returns once the device is in its stub's account
 #   tools/beken/emulator/beken-emu.sh ui [PORT]
-#                             the plug's web page, OpenBeken's or ESPHome's, for this computer's browser,
+#                             the device's web page, OpenBeken's or ESPHome's, for this computer's browser,
 #                             at http://127.0.0.1:PORT/ (8200, or 8200+N) through ui_proxy.py: opened
-#                             straight, a browser's requests lock the emulated plug up
+#                             straight, a browser's requests lock the emulated device up
 #                             (why, in ui_proxy.py)
 #   tools/beken/emulator/beken-emu.sh power off|on|cycle
-#                             the plug's power switch: its flash kept, as a plug unplugged
+#                             the device's power switch: its flash kept, as a device unplugged
 #   tools/beken/emulator/beken-emu.sh computer [COMMAND...]
-#                             a computer on the plug's Wi-Fi: python COMMAND (a shell without
+#                             a computer on the device's Wi-Fi: python COMMAND (a shell without
 #                             one) in the image, as python does, there, with eWeLink the
-#                             plug's stub (AUTOFLASH_EWELINK_API_BASE, its CA trusted) and
-#                             the plug's power switch to hand (AUTOFLASH_EMULATOR_POWER), in
-#                             its own copy of this checkout (the plug's state directory's
+#                             device's stub (AUTOFLASH_EWELINK_API_BASE, its CA trusted) and
+#                             the device's power switch to hand (AUTOFLASH_EMULATOR_POWER), in
+#                             its own copy of this checkout (the device's state directory's
 #                             work/), so its runs' captures are its own:
 #                             tools/beken/emulator/beken-emu.sh computer tools/autoflash/cli.py run
 #   tools/beken/emulator/beken-emu.sh test [ARGS...]
@@ -49,23 +49,23 @@
 #                             which publishes it, into captures/emulation/beken/firmwares/: this
 #                             repository, and the image, never hold Sonoff's firmware
 #
-#   --instance N              another emulated plug beside the first (N = 1-99), for
-#                             plug, ui, power and computer: its own container
+#   --instance N              another emulated device beside the first (N = 1-99), for
+#                             device, ui, power and computer: its own container
 #                             (autoflash-beken-emu-N), network (autoflash-beken-emu-N), state
 #                             (captures/emulation/beken/state-N/) and web page
 #                             port (8200+N), so tests can run side by side
 #   --rebuild                 rebuild the image first
-#   --fresh                   with plug: the plug as new - it and the computers on its
+#   --fresh                   with device: the device as new - it and the computers on its
 #                             Wi-Fi stopped, its state (flash, runs, captures) deleted -
 #                             started again on Sonoff's firmware from the dump
 #
-# The image is ensured first, by python, run, plug, computer and test: as it
+# The image is ensured first, by python, run, device, computer and test: as it
 # is, or pulled, or built where it is not published (image.sh, which says how).
 # AUTOFLASH_BEKEN_EMU_IMAGE names the image (default autoflash-beken-emu),
-# AUTOFLASH_BEKEN_EMU_NETWORK the plug's network (default autoflash-beken-emu,
+# AUTOFLASH_BEKEN_EMU_NETWORK the device's network (default autoflash-beken-emu,
 # or autoflash-beken-emu-N), AUTOFLASH_BEKEN_EMU_COMPUTER a name for the
 # computer's container, AUTOFLASH_BEKEN_EMU_FLASH another whole flash under this
-# checkout (rebuild_dump.py's) for a new plug to start from, and image.sh's
+# checkout (rebuild_dump.py's) for a new device to start from, and image.sh's
 # own (AUTOFLASH_BEKEN_EMU_PUBLISHED, AUTOFLASH_BEKEN_EMU_NO_PULL,
 # AUTOFLASH_BEKEN_EMU_SOURCE_URL) where to get the image. In the container,
 # AUTOFLASH_BEKEN_EMU_DUMP is the dump its tools start from. Its folders are in
@@ -81,7 +81,7 @@ EMU=$ROOT/captures/emulation
 FIRMWARES=$EMU/beken/firmwares
 PUBLIC_DUMP=Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin
 IMAGE=${AUTOFLASH_BEKEN_EMU_IMAGE:-autoflash-beken-emu}
-PLUG=autoflash-beken-emu NETWORK=autoflash-beken-emu STATE=state UI_PORT=8200
+DEVICE=autoflash-beken-emu NETWORK=autoflash-beken-emu STATE=state UI_PORT=8200
 
 usage() { sed -n "2,$(($(grep -n '^set -euo pipefail' "$0" | cut -d: -f1)-1))p" "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 rebuild="" fresh=0 instance=""
@@ -98,13 +98,13 @@ while [ $# -gt 0 ]; do
 done
 if [ -n "$instance" ]; then
     case "$instance" in [1-9]|[1-9][0-9]) ;; *) echo "--instance needs a number, 1-99" >&2; exit 2 ;; esac
-    PLUG=$PLUG-$instance NETWORK=$NETWORK-$instance STATE=$STATE-$instance UI_PORT=$((UI_PORT + instance))
+    DEVICE=$DEVICE-$instance NETWORK=$NETWORK-$instance STATE=$STATE-$instance UI_PORT=$((UI_PORT + instance))
 fi
-[ "$fresh" = 0 ] || [ "${1:-}" = plug ] || { echo "--fresh is for plug" >&2; exit 2; }
+[ "$fresh" = 0 ] || [ "${1:-}" = device ] || { echo "--fresh is for device" >&2; exit 2; }
 NETWORK=${AUTOFLASH_BEKEN_EMU_NETWORK:-$NETWORK}
-PLUG_STATE=$EMU/beken/$STATE
+DEVICE_STATE=$EMU/beken/$STATE
 # An earlier checkout's folders, named after the S61, moved to these once.
-case "${1:-}" in dump|python|run|plug|ui|power|computer|test) python3 -I "$HERE/folders.py" migrate ;; esac
+case "${1:-}" in dump|python|run|device|ui|power|computer|test) python3 -I "$HERE/folders.py" migrate ;; esac
 
 pin() { sed -n "s/^$1 //p" "$HERE/UPSTREAM"; }
 UPSTREAM_REPO=$(pin repo)
@@ -167,8 +167,8 @@ container() {
         -w "$workdir" "$IMAGE" "$@"
 }
 
-# The whole flash a new plug starts from, as its container sees it.
-plug_dump() {
+# The whole flash a new device starts from, as its container sees it.
+device_dump() {
     local own=${AUTOFLASH_BEKEN_EMU_FLASH:-}
     if [ -z "$own" ]; then echo "/opt/beken-emulator/firmwares/$PUBLIC_DUMP"; return; fi
     own=$(realpath "$own")
@@ -176,15 +176,15 @@ plug_dump() {
         *) echo "$own is outside this checkout: put it under captures/" >&2; exit 2 ;; esac
 }
 
-# The plug's network, a /24 of its own: the tool sweeps the network it is on
+# The device's network, a /24 of its own: the tool sweeps the network it is on
 # at its real size, and Docker's default is a /16. Its gateway is .254 and
-# Docker hands out .128 and up, so .1-.127 are the plug's home network's own:
-# its router .1 and the plug's pool (plug-net.sh). Made once, on a subnet
+# Docker hands out .128 and up, so .1-.127 are the device's home network's own:
+# its router .1 and the device's pool (device-net.sh). Made once, on a subnet
 # neither this computer's routes nor another Docker network use, and kept.
 network() {
     if docker network inspect "$NETWORK" >/dev/null 2>&1; then
         [ "$(docker network inspect -f '{{range .IPAM.Config}}{{.IPRange}}{{end}}' "$NETWORK")" = "$(subnet).128/25" ] && return 0
-        echo "The Docker network $NETWORK is not laid out as the plug's home network:" >&2
+        echo "The Docker network $NETWORK is not laid out as the device's home network:" >&2
         echo "remove it (docker network rm $NETWORK) and run this again" >&2
         exit 1
     fi
@@ -196,16 +196,16 @@ network() {
 import ipaddress, sys
 taken = [ipaddress.ip_network(line.strip(), strict=False) for line in sys.stdin
          if line.strip() and line.strip() != "default" and ":" not in line]
-# One a plug: the fault suite runs several side by side, each on its own.
+# One a device: the fault suite runs several side by side, each on its own.
 for candidate in [f"198.18.{n}.0/24" for n in range(61, 128)] + [f"172.31.{n}.0/24" for n in range(61, 128)]:
     if not any(ipaddress.ip_network(candidate).overlaps(network) for network in taken):
         print(candidate)
         break')
-        [ -n "$subnet" ] || { echo "No free /24 for the plug's Docker network: make one, and name it with AUTOFLASH_BEKEN_EMU_NETWORK" >&2; exit 1; }
+        [ -n "$subnet" ] || { echo "No free /24 for the device's Docker network: make one, and name it with AUTOFLASH_BEKEN_EMU_NETWORK" >&2; exit 1; }
         docker network create --subnet "$subnet" --ip-range "${subnet%.*}.128/25" --gateway "${subnet%.*}.254" \
             --label autoflash.emulator=1 "$NETWORK" >/dev/null 2>&1 && return 0
         # Made by another run starting at the same moment - or that subnet taken
-        # by another plug's network made since it was chosen: choose again.
+        # by another device's network made since it was chosen: choose again.
         docker network inspect "$NETWORK" >/dev/null 2>&1 && return 0
         sleep "$attempt"
     done
@@ -213,7 +213,7 @@ for candidate in [f"198.18.{n}.0/24" for n in range(61, 128)] + [f"172.31.{n}.0/
     exit 1
 }
 
-# The plug's network's first three numbers (198.18.61, say).
+# The device's network's first three numbers (198.18.61, say).
 subnet() {
     local cidr
     cidr=$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "$NETWORK")
@@ -230,72 +230,72 @@ case "${1:-}" in
         case "$dump_path" in "$ROOT"/*) dump_path="/work${dump_path#"$ROOT"}" ;;
             *) echo "$dump_path is outside this checkout: put it under captures/" >&2; exit 2 ;; esac
         container /opt/beken-emulator/src/main.py "$dump_path" --with-boot -chip BK7238 --only-uart "$@" ;;
-    plug)
+    device)
         if [ "$fresh" = 1 ]; then
-            # Everything on its Wi-Fi first - the plug and any computer's run - so
+            # Everything on its Wi-Fi first - the device and any computer's run - so
             # nothing writes its state while it goes.
             if docker network inspect "$NETWORK" >/dev/null 2>&1; then
                 mapfile -t running < <(docker ps -q --filter "network=$NETWORK")
                 [ ${#running[@]} -eq 0 ] || docker stop -t 30 "${running[@]}" >/dev/null
             fi
-            case "$PLUG_STATE" in "$EMU"/beken/state*) rm -rf "$PLUG_STATE" ;; esac
-            echo "$PLUG is new: its state is gone; it starts again from the dump." >&2
+            case "$DEVICE_STATE" in "$EMU"/beken/state*) rm -rf "$DEVICE_STATE" ;; esac
+            echo "$DEVICE is new: its state is gone; it starts again from the dump." >&2
         fi
         ensure; dump; network
-        mkdir -p "$PLUG_STATE"
-        starts_from=$(plug_dump)
-        # Measured: the plug 152 MB and its computer 97, plus 100.
+        mkdir -p "$DEVICE_STATE"
+        starts_from=$(device_dump)
+        # Measured: the device 152 MB and its computer 97, plus 100.
         wait_for_room 350
-        docker run -d --rm --name "$PLUG" --network "$NETWORK" --cap-add NET_ADMIN --device /dev/net/tun \
-            -v "$ROOT:/work:ro" -v "$FIRMWARES:/opt/beken-emulator/firmwares:ro" -v "$PLUG_STATE:/state" \
+        docker run -d --rm --name "$DEVICE" --network "$NETWORK" --cap-add NET_ADMIN --device /dev/net/tun \
+            -v "$ROOT:/work:ro" -v "$FIRMWARES:/opt/beken-emulator/firmwares:ro" -v "$DEVICE_STATE:/state" \
             -e AUTOFLASH_BEKEN_EMU_DUMP="$starts_from" \
-            -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e PLUG_TRACE="${PLUG_TRACE:-}" \
-            --entrypoint bash "$IMAGE" /work/tools/beken/emulator/plug-net.sh >/dev/null
-        echo "The plug is starting as $PLUG on $NETWORK, its router at $(subnet).1; its serial output is in" >&2
-        echo "${PLUG_STATE#"$ROOT"/}/serial.log; docker stop $PLUG ends it." >&2
-        # A run needs the plug in its account, which the stub only has once
-        # the plug has registered with it: a minute or two from a new plug.
+            -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e DEVICE_TRACE="${DEVICE_TRACE:-}" \
+            --entrypoint bash "$IMAGE" /work/tools/beken/emulator/device-net.sh >/dev/null
+        echo "The device is starting as $DEVICE on $NETWORK, its router at $(subnet).1; its serial output is in" >&2
+        echo "${DEVICE_STATE#"$ROOT"/}/serial.log; docker stop $DEVICE ends it." >&2
+        # A run needs the device in its account, which the stub only has once
+        # the device has registered with it: a minute or two from a new device.
         for _ in $(seq 120); do
-            grep -qs '"apikey"' "$PLUG_STATE/stub-reported.json" && { echo "$PLUG is online." >&2; exit 0; }
-            docker ps -q --filter "name=^$PLUG\$" | grep -q . || { echo "$PLUG stopped: see its serial.log" >&2; exit 1; }
+            grep -qs '"apikey"' "$DEVICE_STATE/stub-reported.json" && { echo "$DEVICE is online." >&2; exit 0; }
+            docker ps -q --filter "name=^$DEVICE\$" | grep -q . || { echo "$DEVICE stopped: see its serial.log" >&2; exit 1; }
             sleep 5
         done
-        echo "$PLUG has not reached its stub after 10 minutes: see its serial.log" >&2; exit 1 ;;
+        echo "$DEVICE has not reached its stub after 10 minutes: see its serial.log" >&2; exit 1 ;;
     ui)
-        # The plug's address as its router gave it last (its firmware may have
+        # The device's address as its router gave it last (its firmware may have
         # changed, and with it its lease).
-        read -r _ _ lease named _ < <(docker exec "$PLUG" sh -c 'sort -n /run/autoflash-beken-emu/leases | tail -1' 2>/dev/null)
-        [ -n "${lease:-}" ] || { echo "No plug on its Wi-Fi yet: start it (beken-emu.sh plug) and give it a minute" >&2; exit 1; }
+        read -r _ _ lease named _ < <(docker exec "$DEVICE" sh -c 'sort -n /run/autoflash-beken-emu/leases | tail -1' 2>/dev/null)
+        [ -n "${lease:-}" ] || { echo "No device on its Wi-Fi yet: start it (beken-emu.sh device) and give it a minute" >&2; exit 1; }
         # Which firmware, by the name it gave its router: esphome-abcdef, or
         # openbeken-abcdef (OpenBK7238_ABCDEF before its first start's naming;
         # autoflash-recovery-CDEF as the interim firmware).
         case "${named:-}" in
             esphome*) firmware=esphome ;;
             openbeken-*|OpenBK*|autoflash-recovery-*) firmware=openbeken ;;
-            *) echo "The plug at $lease runs neither OpenBeken nor ESPHome (it calls itself ${named:-nothing}): Sonoff's firmware has no page" >&2; exit 1 ;;
+            *) echo "The device at $lease runs neither OpenBeken nor ESPHome (it calls itself ${named:-nothing}): Sonoff's firmware has no page" >&2; exit 1 ;;
         esac
         exec python3 -I "$HERE/ui_proxy.py" --device "$lease" --firmware "$firmware" --listen "127.0.0.1:${2:-$UI_PORT}" ;;
     power)
         case "${2:-}" in
-            off|on) echo "$2" > "$PLUG_STATE/power" ;;
-            cycle) echo off > "$PLUG_STATE/power"; sleep 2; echo on > "$PLUG_STATE/power" ;;
+            off|on) echo "$2" > "$DEVICE_STATE/power" ;;
+            cycle) echo off > "$DEVICE_STATE/power"; sleep 2; echo on > "$DEVICE_STATE/power" ;;
             *) echo "power off, on or cycle" >&2; exit 2 ;;
         esac ;;
     computer)
         shift; ensure; network
-        [ -f "$PLUG_STATE/ca.crt" ] || { echo "No plug yet: start it first (beken-emu.sh plug)" >&2; exit 1; }
+        [ -f "$DEVICE_STATE/ca.crt" ] || { echo "No device yet: start it first (beken-emu.sh device)" >&2; exit 1; }
         # The computer's own copy of this checkout, refreshed each time, its
-        # captures kept: a plug's runs are filed apart from every other's. Only
+        # captures kept: a device's runs are filed apart from every other's. Only
         # what git tracks or would, as emu.sh's (copy_checkout).
-        WORK=$PLUG_STATE/work
+        WORK=$DEVICE_STATE/work
         mkdir -p "$WORK/captures"
         copy_checkout "$ROOT" "$WORK"
-        # The plug's power switch too, so a run can offer to switch it off and on;
+        # The device's power switch too, so a run can offer to switch it off and on;
         # and which terminal it is shown in (VS Code's: output.start_at_top).
-        [ -f "$PLUG_STATE/power" ] || echo on > "$PLUG_STATE/power"
+        [ -f "$DEVICE_STATE/power" ] || echo on > "$DEVICE_STATE/power"
         CONTAINER_OPTIONS=(${AUTOFLASH_BEKEN_EMU_COMPUTER:+--name "$AUTOFLASH_BEKEN_EMU_COMPUTER"}
-                           --network "$NETWORK" -v "$PLUG_STATE/ca.crt:/plug/ca.crt:ro"
-                           -v "$PLUG_STATE/power:/plug/power" -e AUTOFLASH_EMULATOR_POWER=/plug/power
+                           --network "$NETWORK" -v "$DEVICE_STATE/ca.crt:/device/ca.crt:ro"
+                           -v "$DEVICE_STATE/power:/device/power" -e AUTOFLASH_EMULATOR_POWER=/device/power
                            -e TERM_PROGRAM
                            -e AUTOFLASH_EWELINK_API_BASE="https://$(subnet).1" --entrypoint bash)
         container /work/tools/beken/emulator/computer.sh "$@" ;;

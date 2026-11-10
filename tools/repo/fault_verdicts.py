@@ -25,11 +25,11 @@ RELAY = re.compile(r"^\[[\d:]+\] +Relay: +(.+?) *$", re.M)
 # Tasmota, ESPHome and OpenBeken the check needs only the firmware, which the
 # emulator runs: it switches the relay, so anything but True is a failure -
 # "Not run" there is a check never tried. Back on Sonoff's it switches the
-# relay through eWeLink, the stub's or the real one, by the device id the plug's
-# record keeps: "Not run" is a plug with none (one converted before it was
+# relay through eWeLink, the stub's or the real one, by the device id the device's
+# record keeps: "Not run" is a device with none (one converted before it was
 # kept), which the emulator cannot change. False is a failure everywhere: the
 # relay did not switch, or could not be checked, as when eWeLink had not shown
-# the plug online yet.
+# the device online yet.
 PASSING = {"tasmota": {"True"}, "esphome": {"True"}, "openbeken": {"True"}, "sonoff": {"True", "Not run"}}
 
 
@@ -40,10 +40,10 @@ def last_run(log: str) -> str:
 
 def checks_problem(log: str, firmware: str, metered: bool = False) -> str | None:
     """What the end-of-run checks of the last run in `log` said, when they did
-    not pass for a plug on `firmware`: "Checks passed: False; Relay: Did not
-    switch". None when they passed, or the run gave no report (a plug already
+    not pass for a device on `firmware`: "Checks passed: False; Relay: Did not
+    switch". None when they passed, or the run gave no report (a device already
     on the firmware asked for has nothing to check). `metered`: the emulated
-    plug's meter measures a load while its relay is on, so where the check
+    device's meter measures a load while its relay is on, so where the check
     reads the meter (all but Sonoff's firmware) it must confirm the switch."""
     run = last_run(log)
     answers = CHECKS_PASSED.findall(run)
@@ -62,7 +62,7 @@ def checks_problem(log: str, firmware: str, metered: bool = False) -> str | None
 # each .bin in it xz-compressed, and the firmware eWeLink offers under offered/.
 READOUT_FILES = {"espressif": ("manifest.json", "flash.bin.xz", "efuse.bin.xz", "info.txt", "report.json"),
                  "beken": ("manifest.json", "flash.bin.xz", "info.txt")}
-# The flash of every plug the emulators run: 4 MB.
+# The flash of every device the emulators run: 4 MB.
 WHOLE_FLASH = 0x400000
 
 

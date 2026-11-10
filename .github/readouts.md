@@ -11,7 +11,7 @@ it.
 device with [readout_espressif.py](../tools/autoflash/readout_espressif.py) and
 a Beken one with [readout_beken.py](../tools/autoflash/readout_beken.py). A run
 offers it at its first stage when the eWeLink account holds no supported
-device, and `readout` runs it for any device in the account (`--plug-ip` picks
+device, and `readout` runs it for any device in the account (`--device-ip` picks
 one), or for every device in it the tool does not convert (`readout.run_all`,
 offered first where there are two or more). Every readout starts the same way:
 
@@ -37,7 +37,7 @@ anything (`POST /wanted`, `readout.ask_wanted`), with lighter work of its own
 (`first`, or `whole` where a second stage may follow), and the SHA-256 eWeLink
 gives each file it offers. The API keeps three readouts of each model and
 version (`PER_KEY`), each from a different sender, a whole one taking a first
-stage's place too: one sender's ten identical plugs give one readout, alone
+stage's place too: one sender's ten identical devices give one readout, alone
 or in a batch, and three that agree come from three people. One not wanted goes no further:
 nothing is fetched, nothing is sent to the device, and no readout's work is
 done; the owner is offered, still, to leave an address to be told when its
@@ -175,7 +175,7 @@ Nothing is ever sent from the emulator or an unattended run.
 
 The emulator needs the flash as the device has it, not who the device is: its
 eWeLink identity only matters to eWeLink's servers, which an emulated copy
-never meets, as its cloud is the emulator's stub. The public test plugs are
+never meets, as its cloud is the emulator's stub. The public test devices are
 made the same way ([public_dump.py](../tools/espressif/emulator/public_dump.py)),
 and boot and convert in the emulator. A readout keeps all a public dump lacks:
 the device's real partition table, its factory data, its calibration and its

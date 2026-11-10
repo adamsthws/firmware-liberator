@@ -1,5 +1,5 @@
 """The Espressif routes: every step of every direction,
-and what the runner needs to know of each - which write to the plug, which
+and what the runner needs to know of each - which write to the device, which
 may be tried again, what each is called and what it leaves behind.
 """
 
@@ -14,22 +14,22 @@ from tools.autoflash.routes.espressif import bundle, hub, identity, installer, m
 from tools.autoflash.routes.espressif.evidence import ATTEMPTED_EVIDENCE, DESTRUCTIVE_STEPS  # noqa: F401
 from tools.autoflash.routes.espressif import images
 
-# Sonoff's firmware goes back on from the plug's own backup where this computer
-# has it - or else from Sonoff's official firmware and the plug's identity
+# Sonoff's firmware goes back on from the device's own backup where this computer
+# has it - or else from Sonoff's official firmware and the device's identity
 # (sonoff_without_backup).
 SONOFF_FROM_BACKUP = True
 
 
 def sonoff_without_backup(ctx: Context, source: str) -> str | None:
-    """What going back to Sonoff's firmware uses for a plug with no backup on
+    """What going back to Sonoff's firmware uses for a device with no backup on
     this computer, once it is chosen - before anything is written - in words
     for the run; None where there is nothing. Sonoff's official firmware is
-    always to be had; the plug's identity is what may not be. A plug on
+    always to be had; the device's identity is what may not be. A device on
     Tasmota keeps it in a sector this reads; failing that, the eWeLink
-    account's record of the plug rebuilds it. ESPHome, and a plug part way,
+    account's record of the device rebuilds it. ESPHome, and a device part way,
     keep it too - in that sector and in Sonoff's settings - but only the
     interim Tasmota can read them (R1 does): with no record in the account,
-    the run goes on counting on them, as a plug this tool converted has them."""
+    the run goes on counting on them, as a device this tool converted has them."""
     try:
         kept = source in ("tasmota", "untemplated") and identity.kept_in_sector(ctx) is not None
     except (DeviceError, OSError):
@@ -45,23 +45,23 @@ def sonoff_without_backup(ctx: Context, source: str) -> str | None:
     return None
 
 
-# Tasmota to ESPHome without the hub, for a plug found with ESPHome's bootloader
+# Tasmota to ESPHome without the hub, for a device found with ESPHome's bootloader
 # already (source.leaves_tasmota_direct): the steps a run takes, not what it left
-# from, which stays "tasmota" (routes.route_source). Every other plug goes through
-# the hub, so that every plug ends with the same bootloader.
+# from, which stays "tasmota" (routes.route_source). Every other device goes through
+# the hub, so that every device ends with the same bootloader.
 DIRECT_FROM_TASMOTA = "tasmota-direct"
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
-# What a plug of this family may run: the firmware a run installs, by its key.
+# What a device of this family may run: the firmware a run installs, by its key.
 FIRMWARES = {"tasmota": "Tasmota", "esphome": "ESPHome", "sonoff": "Sonoff"}
-# After this step the plug no longer runs its Sonoff firmware.
+# After this step the device no longer runs its Sonoff firmware.
 POINT_OF_NO_RETURN = "C2"
 
 
 def published_version(kind: kinds.Kind, firmware: str) -> str | None:
-    """The release of `firmware` this tool installs on a plug of `kind`: its
+    """The release of `firmware` this tool installs on a device of `kind`: its
     own ESPHome's, and the official Tasmota it pins."""
     return {"esphome": str(images.image_pin(kind)["version"]),
             "tasmota": str(images.chip_of(kind).pin("tasmota")["version"])}.get(firmware)
@@ -73,13 +73,13 @@ def resume_check(ctx: Context) -> None:
 
 
 RESUME_CHECK = resume_check
-# What an update of a plug just converted needs first (runner.bring_up_to_date):
+# What an update of a device just converted needs first (runner.bring_up_to_date):
 # official Tasmota's bundle, of this release rather than the one the run began with.
 PREPARE_UPDATE = {"tasmota": tasmota.prepare_update}
 
 
 # From Sonoff's firmware, after the start every route shares (routes.STOCK_START:
-# A0, the plug found in eWeLink, the firmware chosen): stock Sonoff layout is
+# A0, the device found in eWeLink, the firmware chosen): stock Sonoff layout is
 # still in place through D1 inclusive.
 COMMON_STEPS: list[tuple[str, str, Callable[[Context], dict[str, Any]]]] = [
     ("A5", "Offline preconditions", bundle.step_check),
@@ -94,8 +94,8 @@ HUB_STEPS: list[tuple[str, str, Callable[[Context], dict[str, Any]]]] = [
     ("D4", "Promote to high slot and freeze NVS", hub.step_promote),
     ("D5", "ESPHome's bootloader, once for every firmware", hub.step_bootloader),
 ]
-# The plug's Sonoff identity, kept where Tasmota's layout keeps it, and where it
-# outlasts ESPHome's settings being wiped as the plug leaves ESPHome.
+# The device's Sonoff identity, kept where Tasmota's layout keeps it, and where it
+# outlasts ESPHome's settings being wiped as the device leaves ESPHome.
 KEEP_IDENTITY_STEP = ("K1", "Keep the Sonoff identity at the top of memory", identity.step_keep_identity)
 # Full Tasmota product: repartition to Safeboot layout, then official image.
 TASMOTA_FINAL_STEPS: list[tuple[str, str, Callable[[Context], dict[str, Any]]]] = [
@@ -118,7 +118,7 @@ SONOFF_FINAL_STEPS: list[tuple[str, str, Callable[[Context], dict[str, Any]]]] =
     ("R1", "The device's own Sonoff firmware and settings", sonoff.step_sonoff_restore),
     ("R2", "Sonoff's firmware started and on the Wi-Fi", sonoff.step_sonoff_check),
 ]
-# From a converted plug: Tasmota leaves its layout for the mover; ESPHome, or
+# From a converted device: Tasmota leaves its layout for the mover; ESPHome, or
 # the mover, takes the startup firmware, which takes the Berry Tasmota.
 LEAVE_TASMOTA_STEP = ("L1", "From Tasmota's layout to the mover on Sonoff's", mover.step_leave_tasmota)
 TO_HUB_STEPS: list[tuple[str, str, Callable[[Context], dict[str, Any]]]] = [
@@ -127,7 +127,7 @@ TO_HUB_STEPS: list[tuple[str, str, Callable[[Context], dict[str, Any]]]] = [
 ]
 # What every run of this family begins with, after A0: the checks on this computer.
 START_STEPS = [step for step in COMMON_STEPS if step[0] == "A5"]
-# "midway": a plug a run left part way, found by a new one: on Sonoff's layout,
+# "midway": a device a run left part way, found by a new one: on Sonoff's layout,
 # running the mover, the startup firmware or the interim Tasmota.
 # "committed": one a run left past the commit (E3), on Tasmota's layout with the
 # startup firmware or an official Tasmota not yet set up - which only this
@@ -135,12 +135,12 @@ START_STEPS = [step for step in COMMON_STEPS if step[0] == "A5"]
 # firmware, on Sonoff's layout.
 # "installer": one a run left on this tool's installer (the bridge), part way
 # from Sonoff's firmware: the backup and D1 need only the installer, not eWeLink.
-# "safeboot": a converted plug on Tasmota's own safeboot, its Tasmota missing -
+# "safeboot": a converted device on Tasmota's own safeboot, its Tasmota missing -
 # an upload through Tasmota's page that failed part way (another firmware's
 # whole-flash image, say): official Tasmota goes back on, then on from there.
-# "untemplated": official Tasmota without the plug's template, on a plug this
-# computer knows, not left past a commit by its runs: a converted plug that
-# lost it, which switches nothing.  It leaves Tasmota as any converted plug;
+# "untemplated": official Tasmota without the device's template, on a device this
+# computer knows, not left past a commit by its runs: a converted device that
+# lost it, which switches nothing.  It leaves Tasmota as any converted device;
 # staying on Tasmota, it is given the template.
 SOURCES = ("sonoff", "tasmota", "esphome", "midway", "committed", "installer", "safeboot",
            "untemplated", "outdated")
@@ -187,7 +187,7 @@ def steps_for(firmware: str, source: str = "sonoff") -> list[tuple[str, str, Cal
             rest += steps_for(firmware, "tasmota")[len(START_STEPS):]
         return START_STEPS + rest
     if source == "safeboot":
-        # Tasmota back first, as it was; then on from Tasmota, as any converted plug.
+        # Tasmota back first, as it was; then on from Tasmota, as any converted device.
         return START_STEPS + [TASMOTA_BACK_STEP] + steps_for(firmware, "tasmota")[len(START_STEPS):]
     if source == "untemplated":
         if firmware == "tasmota":
@@ -205,7 +205,7 @@ def steps_for(firmware: str, source: str = "sonoff") -> list[tuple[str, str, Cal
 # for anything, nor C2 or E3, which must happen once.
 # U1 sends ESPHome an update, which it writes to the slot it does not run from;
 # U5 switches Tasmota to its safeboot, which takes app0 again until it holds.
-# I1 too: until the plug restarts it runs Tasmota from ota_1, and writes the
+# I1 too: until the device restarts it runs Tasmota from ota_1, and writes the
 # same checked image again; once it runs ESPHome, I1 finds it and stops.  I2
 # only waits for ESPHome and gives it the calibration again; T1 finds Tasmota
 # back already, or uploads to Tasmota's safeboot only.

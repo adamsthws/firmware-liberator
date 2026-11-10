@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """The Beken fault suite: every direction, every step that writes to or waits
-on the plug, every fault - on emulated Beken plugs side by side (beken-emu.sh
-plug, from the public S61s dump), as tools/espressif/emulator/fault_suite.py
-does for the Espressif plugs.
+on the device, every fault - on emulated Beken devices side by side (beken-emu.sh
+device, from the public S61s dump), as tools/espressif/emulator/fault_suite.py
+does for the Espressif devices.
 
-    fault_suite.py prep                 the starting plugs: one on the interim firmware,
+    fault_suite.py prep                 the starting devices: one on the interim firmware,
                                         one on OpenBeken, one on ESPHome, converted by
                                         the tool from the dump
-    fault_suite.py prep-update          the update scenarios' starting plugs: on OpenBeken
+    fault_suite.py prep-update          the update scenarios' starting devices: on OpenBeken
                                         and on ESPHome as an earlier release converts them
     fault_suite.py check                the final firmware, with no faults: each installed
-                                        from Sonoff's, then each plug taken to the other
+                                        from Sonoff's, then each device taken to the other
                                         (tools/repo/emulator_check.py)
     fault_suite.py list                 every scenario
     fault_suite.py list openbeken       those a new OpenBeken build is checked with
@@ -23,57 +23,57 @@ does for the Espressif plugs.
                                         FILE.1, FILE.2, ... (--times-from DIR: another
                                         machine's suite folders, for their times)
 
-Each scenario: a run of the tool from a starting plug (a fresh dump for
+Each scenario: a run of the tool from a starting device (a fresh dump for
 Sonoff's firmware, a saved one otherwise); when the step under test has been
 going for a share of its usual time (40%, and 10% and 90% at the steps that
 write), the fault; then the tool run again, as a person would - switching the
-plug off and on where the run says to - until the plug is converted, or four
+device off and on where the run says to - until the device is converted, or four
 runs fail. Every scenario also checks the fault landed while its step was
 under way (MISTIMED if not), and that the converting run's report says its
 end-of-run checks passed, the emulated meter confirming the relay switched
 (FAIL-CHECKS if not: tools/repo/fault_verdicts.py),
 that each run left one line a stage on its screen, none of a try that
-failed (FAIL-SCREEN if not), and that a plug converted to OpenBeken or ESPHome
+failed (FAIL-SCREEN if not), and that a device converted to OpenBeken or ESPHome
 runs this checkout's release of it (FAIL-NOT-LATEST if not).
 
-The faults: the plug switched off for 1 or 30 s (plugoff), this computer off
-the plug's Wi-Fi for 30 s (outage), the tool killed and run again after 1 or
+The faults: the device switched off for 1 or 30 s (deviceoff), this computer off
+the device's Wi-Fi for 30 s (outage), the tool killed and run again after 1 or
 180 s (crash), and Ctrl-C (ctrlc); at the steps that write, a power cut and
 another as the tool sends it again (double: in the same run, if it sends its
-command again itself), and the router giving the plug
+command again itself), and the router giving the device
 a new address once the step is done (readdress); and at each route's
-"apply", the plug switched off 10, 50 or 90% of the way through its
-bootloader writing the new firmware in - timed off the plug's own output.
+"apply", the device switched off 10, 50 or 90% of the way through its
+bootloader writing the new firmware in - timed off the device's own output.
 And at each step that sends an image the stock bootloader installs - Sonoff's
 firmware's (B2) and OpenBeken's fetch of ESPHome (J2, O1) - an image it
 refuses (badimage): the tool sends it spoilt once (--simulate-bad-image
-STEP), fetched whole but failing the bootloader's CRC check, so the plug
+STEP), fetched whole but failing the bootloader's CRC check, so the device
 starts the firmware it had again; the scenario passes when the tool sends
-it again by itself and the plug is converted.
+it again by itself and the device is converted.
 
-And readouts (readout_scenarios): of a plug fresh from Sonoff's firmware,
+And readouts (readout_scenarios): of a device fresh from Sonoff's firmware,
 with a fault in the read and as Sonoff's firmware is put back, then what a
-person does until a whole readout.tar is kept and the plug works on Sonoff's
-firmware; and of a plug on OpenBeken, which must be refused.
+person does until a whole readout.tar is kept and the device works on Sonoff's
+firmware; and of a device on OpenBeken, which must be refused.
 
-The routes from the interim firmware start from a plug a run to ESPHome left
-there, found by a new run. A plug converted through the interim firmware is
+The routes from the interim firmware start from a device a run to ESPHome left
+there, found by a new run. A device converted through the interim firmware is
 also checked: by the names it asked DHCP for, it was autoflash-recovery-CDEF
 there from its first request and never OpenBeken's own name; and once ESPHome
 is on it, the interim's settings are erased from its flash (interim_problems).
 
-Each emulator is a plug of its own (beken-emu.sh --instance N: autoflash-beken-emu-N),
+Each emulator is a device of its own (beken-emu.sh --instance N: autoflash-beken-emu-N),
 AUTOFLASH_BEKEN_EMU_WORKERS of them at once (default 2: each takes a core, and the
 tool's runs share what is left). Sonoff's firmware restarts by itself once
-it has an update, in the emulator as on a real plug
+it has an update, in the emulator as on a real device
 (tools/beken/emulator/README.md).
 
 Results: captures/emulation/beken/suite/results.jsonl (AUTOFLASH_BEKEN_EMU_SUITE_DIR
 for another folder), and each scenario's run
-logs and the plug's serial output beside it; a scenario run again keeps its
+logs and the device's serial output beside it; a scenario run again keeps its
 earlier attempts' beside them, numbered (logs/<scenario>.1 the first). A fault that never happened is
 NOT-FIRED, not a pass. Each result's notes say how short of memory the computer
-was; a failure while it was starved prints "memory-starved", as the plug's
+was; a failure while it was starved prints "memory-starved", as the device's
 connections can then fail with nothing wrong.
 """
 from __future__ import annotations
@@ -106,10 +106,10 @@ BK_EMU = REPO / "tools/beken/emulator/beken-emu.sh"
 SAVED = folders.SAVED
 OUT = Path(os.environ.get("AUTOFLASH_BEKEN_EMU_SUITE_DIR", folders.SUITE))
 RESULTS = OUT / "results.jsonl"
-# A made-up eWeLink account: the plug's eWeLink is the local stub, which takes any.
+# A made-up eWeLink account: the device's eWeLink is the local stub, which takes any.
 ACCOUNT = "EWELINK_EMAIL=someone@example.invalid\nEWELINK_PASSWORD=made-up-password\n"
 
-# Each direction's steps that write to or wait on the plug, with how long each
+# Each direction's steps that write to or wait on the device, with how long each
 # took in passing runs (2026-10-30; sonoff>esphome 2026-11-02, seconds): a fault
 # lands at a share of it.
 ROUTES = {
@@ -119,26 +119,26 @@ ROUTES = {
     "openbeken>sonoff": {"O2": 24, "K3": 75},
     "esphome>openbeken": {"E1": 6, "K1": 27, "B4": 12},
     "esphome>sonoff": {"E2": 15, "K3": 80},
-    # A plug a run to ESPHome left on the interim firmware, found by a new run.
+    # A device a run to ESPHome left on the interim firmware, found by a new run.
     # Kept as OpenBeken, J3 waits for its restart: K1 finds it answering.
     "interim>esphome": {"B4": 12, "J2": 14, "K2": 30},
     "interim>openbeken": {"J3": 15, "B4": 12},
     "interim>sonoff": {"B4": 12, "J4": 24, "K3": 75},
-    # A plug on the firmware of the release before, updated (prep_update).
+    # A device on the firmware of the release before, updated (prep_update).
     "outdated>openbeken": {"U3": 14, "U4": 20},
     "outdated>esphome": {"U1": 7, "U2": 20},
 }
-# The release of each firmware a converted plug must end on: this checkout's
+# The release of each firmware a converted device must end on: this checkout's
 # (FAIL-NOT-LATEST) - after an update from an earlier release's, too.
 LATEST = {firmware: beken.published_version(kinds.SONOFF_S61, firmware) for firmware in ("openbeken", "esphome")}
-# The release whose firmware an update's plug is on: any before this checkout's.
+# The release whose firmware an update's device is on: any before this checkout's.
 EARLIER_RELEASE = "v2.3.0"
-# Where its tree keeps the dumps and the plugs its prep saves.
+# Where its tree keeps the dumps and the devices its prep saves.
 EARLIER_FIRMWARES = "captures/emulation/beken-firmwares"
 EARLIER_SAVED = "captures/emulation/s61/saved"
-CORE = [("plugoff", 1), ("plugoff", 30), ("outage", 30), ("crash", 1), ("crash", 180), ("ctrlc", "once")]
+CORE = [("deviceoff", 1), ("deviceoff", 30), ("outage", 30), ("crash", 1), ("crash", 180), ("ctrlc", "once")]
 # At the steps that write, the riskiest moments too: just begun, nearly done.
-TIMING = [("plugoff", 1), ("crash", 1)]
+TIMING = [("deviceoff", 1), ("crash", 1)]
 RUN_LIMIT = 1500       # seconds one run of the tool may take
 RECOVERY_RUNS = 4      # runs after the fault before a scenario fails
 POWER_CYCLE = re.compile(r"switch the (plug|device) off and on", re.IGNORECASE)
@@ -146,19 +146,19 @@ POWER_CYCLE = re.compile(r"switch the (plug|device) off and on", re.IGNORECASE)
 # spoilt (--simulate-bad-image STEP): Sonoff's firmware's, and OpenBeken's
 # fetch of ESPHome.
 BAD_IMAGE_STEPS = {"B2", "J2", "O1"}
-# Those of them where the plug, refusing the image, is on OpenBeken, which the
+# Those of them where the device, refusing the image, is on OpenBeken, which the
 # tool can restart: there the image is spoilt once more than the run sends it
-# again (runner.GO_BACK_LIMIT, 2), so the run restarts the plug - as a person
+# again (runner.GO_BACK_LIMIT, 2), so the run restarts the device - as a person
 # switching it off and on would - and sends it afresh (badimage-restart).
 RESTART_IMAGE_STEPS = {"J2", "O1"}
 SPOILT_PAST_LIMIT = 3
-# What a run says as it restarts a plug that would not take an image.
+# What a run says as it restarts a device that would not take an image.
 RESTARTED = re.compile(r"the device was restarted\. Doing \S+ again")
 # The interim firmware's settings, which it erases before the firmware it
 # fetched starts (tools/beken/openbeken/README.md#the-interim-firmware): its
 # own sector, and the flash variables its Wi-Fi keeps.
 INTERIM_SETTINGS = ((0x3E1000, 0x1000), (0x1E5000, 0x8000))
-# The name a plug asks its router's DHCP for, by its firmware.
+# The name a device asks its router's DHCP for, by its firmware.
 DHCP_NAME = re.compile(r"DHCPACK\(\S+\) \S+ \S+ (\S+)")
 NAME_PREFIX = {"interim": "autoflash-recovery-", "openbeken": "openbeken-", "esphome": "esphome-"}
 # A new OpenBeken build's check: each thing this project's driver and patches
@@ -169,7 +169,7 @@ NAME_PREFIX = {"interim": "autoflash-recovery-", "openbeken": "openbeken-", "esp
 OPENBEKEN_CHECK = ["sonoff>openbeken:B4:crash-1", "sonoff>esphome:J2:badimage-once", "interim>openbeken:J3:crash-1",
                    "interim>sonoff:J4:crash-1", "openbeken>sonoff:O2:crash-1", "esphome>openbeken:K1:crash-1"]
 
-# Readouts (cli.py readout, unattended, docs/readouts.md) of a plug fresh from
+# Readouts (cli.py readout, unattended, docs/readouts.md) of a device fresh from
 # Sonoff's firmware: each phase where the fault matters most, where it starts
 # and ends in the run's log, and how long it lasts in the emulator (seconds).
 # The read is 256 paced chunks of 16 KB - B4 reads 8 of them in 12 s. Putting
@@ -179,10 +179,10 @@ OPENBEKEN_CHECK = ["sonoff>openbeken:B4:crash-1", "sonoff>esphome:J2:badimage-on
 # bootloader's write is the conversions' own, cut in their apply scenarios.
 READOUT_PHASES = {"read": (r"Reading the device's memory", r"\] +Read [\d,]+ bytes\.", 400),
                   "back": (r"Putting the device's Sonoff firmware back", r"eWeLink shows the device online again", 100)}
-READOUT_FAULTS = [("read", "plugoff", 1, 40), ("read", "outage", 30, 40), ("read", "crash", 1, 40),
-                  ("back", "plugoff", 1, 10), ("back", "outage", 30, 10)]
+READOUT_FAULTS = [("read", "deviceoff", 1, 40), ("read", "outage", 30, 40), ("read", "crash", 1, 40),
+                  ("back", "deviceoff", 1, 10), ("back", "outage", 30, 10)]
 READOUT = "readout.tar"
-# Something served to the plug: the readout firmware, or Sonoff's (ota_push, onward).
+# Something served to the device: the readout firmware, or Sonoff's (ota_push, onward).
 SERVED = re.compile(r"\] +Serving ")
 
 
@@ -203,8 +203,8 @@ def scenarios() -> list[dict]:
                         found.append(dict(id=sid(route, step, fault, arg, at), route=route, step=step,
                                           fault=fault, arg=arg, at=at))
                 # A power cut there, then another as the tool sends it again; and the
-                # plug at a new address once it is sent, as a router may give it.
-                for fault, arg in (("double", "plugoff-1"), ("readdress", "new")):
+                # device at a new address once it is sent, as a router may give it.
+                for fault, arg in (("double", "deviceoff-1"), ("readdress", "new")):
                     found.append(dict(id=sid(route, step, fault, arg), route=route, step=step,
                                       fault=fault, arg=arg, at=40))
         # An image the bootloader refuses, sent again.
@@ -214,18 +214,18 @@ def scenarios() -> list[dict]:
         for step in set(steps) & RESTART_IMAGE_STEPS:
             found.append(dict(id=sid(route, step, "badimage", "restart"), route=route, step=step,
                               fault="badimage", arg="restart", at=40))
-        # The plug switched off while its bootloader writes the new firmware in:
-        # timed off the plug's own output, a share of the way through the write.
+        # The device switched off while its bootloader writes the new firmware in:
+        # timed off the device's own output, a share of the way through the write.
         for at in (10, 50, 90) if set(steps) & beken.DESTRUCTIVE_STEPS else ():
-            found.append(dict(id=sid(route, "apply", "plugoff", 1, at), route=route, step="apply",
-                              fault="plugoff", arg=1, at=at))
+            found.append(dict(id=sid(route, "apply", "deviceoff", 1, at), route=route, step="apply",
+                              fault="deviceoff", arg=1, at=at))
     return found + readout_scenarios()
 
 
 def readout_scenarios() -> list[dict]:
-    """A readout of a plug fresh from Sonoff's firmware, unattended; the same
+    """A readout of a device fresh from Sonoff's firmware, unattended; the same
     with a fault in each phase where it matters most (READOUT_FAULTS); and one
-    started on a plug on OpenBeken, which must be refused."""
+    started on a device on OpenBeken, which must be refused."""
     def one(route: str, step: str, fault: str, arg, at: int = 40) -> dict:
         return dict(id=sid(route, step, fault, arg, at), route=route, step=step, fault=fault, arg=arg, at=at)
     return [one("sonoff>readout", "start", "none", "unattended"),
@@ -240,7 +240,7 @@ def route_steps(route: str) -> list[str]:
 
 
 def interim_problems(route: str, names: list[str], flash: bytes | None) -> list[str]:
-    """What a converted plug shows wrong of the interim firmware: from the
+    """What a converted device shows wrong of the interim firmware: from the
     names it asked DHCP for, in order, and its flash once stopped (None when
     the route does not need it). On the interim firmware its name is
     autoflash-recovery-CDEF from its first request - never OpenBeken's own -
@@ -253,7 +253,7 @@ def interim_problems(route: str, names: list[str], flash: bytes | None) -> list[
     if "J2" in steps and any(name.startswith(NAME_PREFIX["openbeken"]) for name in names):
         problems.append("the interim firmware asked DHCP by OpenBeken's own name")
     if target in NAME_PREFIX and not (names and names[-1].startswith(NAME_PREFIX[target])):
-        problems.append(f"the plug's last name was {names[-1] if names else 'none'}, not {target}'s")
+        problems.append(f"the device's last name was {names[-1] if names else 'none'}, not {target}'s")
     if "J2" in steps and flash is not None:
         for start, size in INTERIM_SETTINGS:
             if flash[start:start + size] != b"\xff" * size:
@@ -263,7 +263,7 @@ def interim_problems(route: str, names: list[str], flash: bytes | None) -> list[
 
 def converted(state: dict, route: str) -> bool:
     """Whether a run's record (autoflash-state.json) has every step of the
-    route done: the plug on its new firmware, and checked there."""
+    route done: the device on its new firmware, and checked there."""
     steps = state.get("steps", {})
     return all((steps.get(step) or {}).get("status") == "done" for step in route_steps(route))
 
@@ -279,21 +279,27 @@ def clear(folder: Path) -> None:
     try:
         shutil.rmtree(folder, onerror=writable_then)
     except OSError as exc:
-        raise RuntimeError(f"cannot remove {folder}, so cannot start from a clean plug: {exc}. "
+        raise RuntimeError(f"cannot remove {folder}, so cannot start from a clean device: {exc}. "
                            "If a container left it owned by root, chown it through one.") from exc
 
 
+def filed_as(log: Path) -> Path:
+    """A run's log by its device and run (<mac>/runs/<when>/run.log): the same
+    before and after the records' folder is renamed around it."""
+    return log.relative_to(log.parents[3])
+
+
 class Instance:
-    """One emulated plug, its Wi-Fi and its computer."""
+    """One emulated device, its Wi-Fi and its computer."""
 
     def __init__(self, n: int):
         self.n = n
         # As beken-emu.sh --instance N names them.
-        self.plug = f"autoflash-beken-emu-{n}"
+        self.device = f"autoflash-beken-emu-{n}"
         self.network = f"autoflash-beken-emu-{n}"
         self.computer = f"autoflash-beken-emu-computer-{n}"
         self.state = folders.state(n)
-        self.before: set[Path] = set()   # runs the starting plug came with, not this scenario's
+        self.before: set[Path] = set()   # runs the starting device came with, not this scenario's
         self.env = {key: value for key, value in os.environ.items() if key != "AUTOFLASH_BEKEN_EMU_NETWORK"}
         self.env["AUTOFLASH_BEKEN_EMU_COMPUTER"] = self.computer
 
@@ -305,35 +311,35 @@ class Instance:
                               timeout=timeout, check=check)
 
     def stop(self) -> None:
-        # Long enough for the plug to keep its flash as it stops (plug.py).
-        for name in (self.computer, self.plug):
+        # Long enough for the device to keep its flash as it stops (device.py).
+        for name in (self.computer, self.device):
             subprocess.run(["docker", "stop", "-t", "30", name], capture_output=True)
         # And gone (--rm), before a container of the same name is started again.
         for _ in range(30):
-            found = subprocess.run(["docker", "ps", "-aq", "--filter", f"name=^({self.computer}|{self.plug})$"],
+            found = subprocess.run(["docker", "ps", "-aq", "--filter", f"name=^({self.computer}|{self.device})$"],
                                    capture_output=True, text=True).stdout.strip()
             if not found:
                 return
             time.sleep(1)
 
     def reset(self, start: str) -> None:
-        """The plug as `start` (sonoff: the dump, untouched; else saved by prep)."""
+        """The device as `start` (sonoff: the dump, untouched; else saved by prep)."""
         self.stop()
         clear(self.state)
         if start != "sonoff":
             shutil.copytree(SAVED / start, self.state)
         (self.state / "work/captures").mkdir(parents=True, exist_ok=True)
         (self.state / "work/captures/tool.env").write_text(ACCOUNT, encoding="utf-8")
-        self.before = set(self.all_runs())
+        self.before = {filed_as(path) for path in self.all_runs()}
 
     def dhcp_names(self) -> list[str]:
-        """The names the plug asked its router's DHCP for, in order."""
-        log = subprocess.run(["docker", "exec", self.plug, "cat", "/run/autoflash-beken-emu/dnsmasq.log"],
+        """The names the device asked its router's DHCP for, in order."""
+        log = subprocess.run(["docker", "exec", self.device, "cat", "/run/autoflash-beken-emu/dnsmasq.log"],
                              capture_output=True, text=True).stdout
         return [found.group(1) for found in DHCP_NAME.finditer(log)]
 
     def lease(self) -> str | None:
-        found = subprocess.run(["docker", "exec", self.plug, "sh", "-c",
+        found = subprocess.run(["docker", "exec", self.device, "sh", "-c",
                                 "sort -n /run/autoflash-beken-emu/leases | tail -1"],
                                capture_output=True, text=True).stdout.split()
         return found[2] if len(found) > 2 else None
@@ -360,7 +366,7 @@ class Instance:
         return b'"TZ":{' in self.stub_said()[since:]
 
     def start(self, firmware: str, wait: float = 300) -> bool:
-        self.sh("plug", timeout=600, check=True)
+        self.sh("device", timeout=600, check=True)
         return self.ready(firmware, wait)
 
     def ready(self, firmware: str, wait: float = 300) -> bool:
@@ -388,12 +394,17 @@ class Instance:
                                 stdin=subprocess.DEVNULL)
 
     def all_runs(self) -> list[Path]:
-        return sorted((self.state / "work/captures/plugs").glob("*/runs/*/run.log"),
-                      key=lambda path: path.stat().st_mtime)
+        """Every run's log in the instance. A device saved by a release before
+        2.4.0 has its records in plugs/, until this checkout's tool carries it
+        on and renames them."""
+        captures = self.state / "work/captures"
+        earlier = captures / "plugs"
+        records = earlier if earlier.is_dir() and not (captures / "devices").is_dir() else captures / "devices"
+        return sorted(records.glob("*/runs/*/run.log"), key=lambda path: path.stat().st_mtime)
 
     def runs(self) -> list[Path]:
         """This scenario's runs, oldest first."""
-        return [path for path in self.all_runs() if path not in self.before]
+        return [path for path in self.all_runs() if filed_as(path) not in self.before]
 
     def last_state(self) -> dict:
         logs = self.runs()
@@ -440,13 +451,13 @@ def must(notes: dict, *command: str, **options) -> subprocess.CompletedProcess:
     return done
 
 
-# What the plug says once it has really stopped (plug.py): the switch itself is
-# only a file written, which says nothing of whether the plug saw it.
-SWITCHED_OFF = b"[plug] switched off"
+# What the device says once it has really stopped (device.py): the switch itself is
+# only a file written, which says nothing of whether the device saw it.
+SWITCHED_OFF = b"[device] switched off"
 
 
 def cut_power(instance: Instance, seconds: float, wait: float = 30) -> bool:
-    """The plug off for `seconds`, and on again; False if it never went off."""
+    """The device off for `seconds`, and on again; False if it never went off."""
     serial = instance.state / "serial.log"
     try:
         offset = serial.stat().st_size
@@ -468,9 +479,9 @@ def cut_power(instance: Instance, seconds: float, wait: float = 30) -> bool:
 
 
 def inject(instance: Instance, fault: str, arg, notes: dict) -> None:
-    if fault == "plugoff":
+    if fault == "deviceoff":
         if not cut_power(instance, arg):
-            not_applied(notes, "the plug switched off")
+            not_applied(notes, "the device switched off")
     elif fault == "outage":
         address = subprocess.run(["docker", "inspect", "-f",
                                   "{{(index .NetworkSettings.Networks \"%s\").IPAddress}}" % instance.network,
@@ -494,7 +505,7 @@ def inject(instance: Instance, fault: str, arg, notes: dict) -> None:
 
 
 def recover(instance: Instance, target: str, notes: dict) -> None:
-    """What a person does before running the tool again: switch the plug off
+    """What a person does before running the tool again: switch the device off
     and on, where the last run said to."""
     if POWER_CYCLE.search(instance.last_log()[-3000:]):
         instance.power("cycle")
@@ -509,7 +520,7 @@ APPLY_ENDS = re.compile(rb"ota_erase_dl_rbl erase")
 
 
 class ApplyCut(threading.Thread):
-    """Switch the plug off for a second when its bootloader is `at`% of the
+    """Switch the device off for a second when its bootloader is `at`% of the
     way through writing an image in, whichever run, or restart, that is in."""
 
     def __init__(self, instance: Instance, at: int):
@@ -549,15 +560,15 @@ class ApplyCut(threading.Thread):
 
 
 def readdress(instance: Instance, notes: dict) -> None:
-    """The router forgets the plug's address and gives it another when it next asks."""
+    """The router forgets the device's address and gives it another when it next asks."""
     address = instance.lease() or ""
     last = int(address.rsplit(".", 1)[1]) if address else 50
-    must(notes, "docker", "exec", instance.plug, "/run/autoflash-beken-emu/router", "55" if last < 55 else "50", timeout=60)
+    must(notes, "docker", "exec", instance.device, "/run/autoflash-beken-emu/router", "55" if last < 55 else "50", timeout=60)
     notes["moved_from"] = address
 
 
 def not_fired(fault: str, notes: dict) -> bool:
-    """A plug converted though its fault never happened proves nothing."""
+    """A device converted though its fault never happened proves nothing."""
     return bool(notes.get("not_applied")
                 or (fault == "double" and not notes.get("second_cut"))
                 or (fault == "readdress" and not (notes.get("moved_from") and notes.get("moved_to")
@@ -582,7 +593,7 @@ def finish(run: subprocess.Popen, instance: Instance) -> None:
 
 
 def start_of(route: str) -> str:
-    """The saved plug a route starts from: an update's is for its firmware."""
+    """The saved device a route starts from: an update's is for its firmware."""
     source, target = route.split(">")
     return f"outdated-{target}" if source == "outdated" else source
 
@@ -650,7 +661,7 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
 
 
 def release_of(instance: Instance, firmware: str) -> str | None:
-    """The release of this project's `firmware` the plug runs: OpenBeken's, as
+    """The release of this project's `firmware` the device runs: OpenBeken's, as
     its build string says (openbeken.version); ESPHome's, as its API says
     (project_version).  None where it does not answer as that.  A few tries:
     it may be starting."""
@@ -696,7 +707,7 @@ SENT_AGAIN = re.compile(r"was not installed: the device restarted on the firmwar
 def bad_image_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: dict) -> dict:
     """The step's image sent spoilt, once - each run is asked, as a route may
     reach the step only after a restart, and the tool spoils it once a run's
-    record - and runs again, as a person would, until the plug is converted:
+    record - and runs again, as a person would, until the device is converted:
     which must come from a run that saw the image was not installed and sent
     it again."""
     spoil = ("--simulate-bad-image",
@@ -711,14 +722,14 @@ def bad_image_scenario(instance: Instance, sc: dict, target: str, log: Path, not
                               for path in instance.runs())
     ok = converted(instance.last_state(), sc["route"]) and notes["sent_again"]
     if sc["arg"] == "restart":
-        # Converted by the run that restarted the plug, not by a person's run after.
+        # Converted by the run that restarted the device, not by a person's run after.
         notes["restarted"] = any(RESTARTED.search(path.read_text(encoding="utf-8", errors="replace"))
                                  for path in instance.runs())
         ok = ok and notes["restarted"] and runs == 1
     return dict(result="PASS" if ok else "FAIL", runs=runs)
 
 
-# What the sender says as it sends again a command its plug lost (tools/ewelink/ota_push).
+# What the sender says as it sends again a command its device lost (tools/ewelink/ota_push).
 RESENT = re.compile(r"upgrade command sent again")
 
 
@@ -729,7 +740,7 @@ def cut_as_sent_again(instance: Instance, run: subprocess.Popen, sc: dict, notes
     if not wait_for(run, lambda: len(RESENT.findall(instance.last_log())) > before):
         return False
     time.sleep(ROUTES[sc["route"]][sc["step"]] * sc["at"] / 100)
-    inject(instance, "plugoff", 1, notes)
+    inject(instance, "deviceoff", 1, notes)
     notes["second_cut"] = True
     return True
 
@@ -755,7 +766,7 @@ def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: d
         time.sleep(ROUTES[sc["route"]][sc["step"]] * sc["at"] / 100)
         if re.search(rf"\] {step} done", instance.last_log()):
             notes["mistimed"] = True
-        fault, arg = ("plugoff", 1) if sc["fault"] == "double" else (sc["fault"], sc["arg"])
+        fault, arg = ("deviceoff", 1) if sc["fault"] == "double" else (sc["fault"], sc["arg"])
         inject(instance, fault, arg, notes)
         if fault == "crash":
             run.wait(timeout=60)
@@ -771,7 +782,7 @@ def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: d
         if second and wait_for_step(instance, sc["step"], run):
             # The second cut, as the tool sends the step again.
             time.sleep(ROUTES[sc["route"]][sc["step"]] * sc["at"] / 100)
-            inject(instance, "plugoff", 1, notes)
+            inject(instance, "deviceoff", 1, notes)
             notes["second_cut"] = True
             second = False
         finish(run, instance)
@@ -799,7 +810,7 @@ def readout_problems(instance: Instance) -> list[str] | None:
 
 
 def settle(instance: Instance, since: int, wait: float = 120) -> None:
-    """Until the plug has started on Sonoff's firmware (in eWeLink since the
+    """Until the device has started on Sonoff's firmware (in eWeLink since the
     stub's log was `since` long) or on OpenBeken (answering), or `wait` runs out."""
     deadline = time.monotonic() + wait
     while time.monotonic() < deadline and not (instance.online(since) or instance.answering()):
@@ -807,7 +818,7 @@ def settle(instance: Instance, since: int, wait: float = 120) -> None:
 
 
 def sonoff_works(instance: Instance, wait: float = 300) -> bool:
-    """Whether the plug, switched off and on, starts Sonoff's firmware and is
+    """Whether the device, switched off and on, starts Sonoff's firmware and is
     back in eWeLink: on its Sonoff firmware, and working."""
     since = len(instance.stub_said())
     instance.power("cycle")
@@ -820,11 +831,11 @@ def sonoff_works(instance: Instance, wait: float = 300) -> bool:
 
 
 def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> dict:
-    """A readout of the plug, with the fault in the phase under test; then
-    what a person does, up to RECOVERY_RUNS times: switch the plug off and on
+    """A readout of the device, with the fault in the phase under test; then
+    what a person does, up to RECOVERY_RUNS times: switch the device off and on
     where the run said to, put Sonoff's firmware back with the tool where the
-    plug was left on OpenBeken, else read it out again - until a whole readout
-    is kept. It passes when one is, and the plug works on Sonoff's firmware."""
+    device was left on OpenBeken, else read it out again - until a whole readout
+    is kept. It passes when one is, and the device works on Sonoff's firmware."""
     if sc["route"].split(">")[0] != "sonoff":
         return refused_readout(instance, log, notes)
     run = instance.tool("readout", log)
@@ -862,8 +873,8 @@ def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> di
 
 
 def refused_readout(instance: Instance, log: Path, notes: dict) -> dict:
-    """A readout started on a plug on OpenBeken: it must be refused, nothing
-    served to the plug, which is left answering on its firmware."""
+    """A readout started on a device on OpenBeken: it must be refused, nothing
+    served to the device, which is left answering on its firmware."""
     run = instance.tool("readout", log)
     finish(run, instance)
     said = instance.last_log()
@@ -943,24 +954,24 @@ def batch(ids_file: str | None = None) -> None:
 
 
 def prep() -> None:
-    """The starting plugs, converted by the tool from the dump: on the interim
+    """The starting devices, converted by the tool from the dump: on the interim
     firmware (a run to ESPHome stopped once that has started), on OpenBeken,
     then on ESPHome, each saved with the captures its runs left."""
     instance = Instance(1)
     try:
         instance.reset("sonoff")
         if not instance.start("sonoff"):
-            raise SystemExit("the plug did not come online")
+            raise SystemExit("the device did not come online")
         log = OUT / "prep-interim.log"
         OUT.mkdir(parents=True, exist_ok=True)
         run = instance.tool("esphome", log, new=True)
         if not wait_for_step(instance, "B4", run):
-            raise SystemExit(f"the plug did not start the interim firmware: see {log}")
+            raise SystemExit(f"the device did not start the interim firmware: see {log}")
         subprocess.run(["docker", "kill", instance.computer], capture_output=True)
         save(instance, "interim")
         instance.reset("sonoff")
         if not instance.start("sonoff"):
-            raise SystemExit("the plug did not come online")
+            raise SystemExit("the device did not come online")
         for target, route in (("openbeken", "sonoff>openbeken"), ("esphome", "openbeken>esphome")):
             log = OUT / f"prep-{target}.log"
             OUT.mkdir(parents=True, exist_ok=True)
@@ -972,7 +983,7 @@ def prep() -> None:
                     instance.power("cycle")
                     instance.ready(target)
             else:
-                raise SystemExit(f"the plug was not converted to {target}: see {log}")
+                raise SystemExit(f"the device was not converted to {target}: see {log}")
             save(instance, target)
             instance.start(target)
     finally:
@@ -983,11 +994,11 @@ def save(instance: Instance, firmware: str) -> None:
     instance.stop()
     clear(SAVED / firmware)
     shutil.copytree(instance.state, SAVED / firmware, ignore=keep_for_saving)
-    print(f"saved the plug on {firmware} in {SAVED / firmware}", flush=True)
+    print(f"saved the device on {firmware} in {SAVED / firmware}", flush=True)
 
 
 def prep_update() -> None:
-    """The update scenarios' starting plugs: on OpenBeken and on ESPHome as
+    """The update scenarios' starting devices: on OpenBeken and on ESPHome as
     EARLIER_RELEASE converts them, which no run of this checkout can make. That
     release's own suite makes them, from its tagged files: in its tree, its
     folders are named as that release names them (v2.3.0's after the S61)."""
@@ -1003,13 +1014,13 @@ def prep_update() -> None:
             kept = SAVED / f"outdated-{firmware}"
             clear(kept)
             shutil.copytree(tree / EARLIER_SAVED / firmware, kept)
-            print(f"saved the plug on {EARLIER_RELEASE}'s {firmware} in {kept}", flush=True)
+            print(f"saved the device on {EARLIER_RELEASE}'s {firmware} in {kept}", flush=True)
     finally:
         clear(tree)
 
 
-# The check: two ways, each a final firmware installed, then that plug taken to
-# the other, as tools/espressif/emulator/public_plugs.py's for the S60.
+# The check: two ways, each a final firmware installed, then that device taken to
+# the other, as tools/espressif/emulator/public_devices.py's for the S60.
 CHECK_WAYS = (("sonoff>openbeken", "openbeken>esphome"), ("sonoff>esphome", "esphome>openbeken"))
 
 
@@ -1019,12 +1030,12 @@ def check_way(n: int, routes: tuple[str, ...]) -> int:
     try:
         instance.reset("sonoff")
         if not instance.start("sonoff"):
-            print(f"FAIL  {routes[0]}: the plug did not come online", flush=True)
+            print(f"FAIL  {routes[0]}: the device did not come online", flush=True)
             return 1
         for route in routes:
             target = route.split(">")[1]
             log = OUT / f"check-{route.replace('>', '-')}.log"
-            instance.before = set(instance.all_runs())
+            instance.before = {filed_as(path) for path in instance.all_runs()}
             for attempt in range(RECOVERY_RUNS):
                 instance.tool(target, log, new=attempt == 0).wait(timeout=RUN_LIMIT)
                 if converted(instance.last_state(), route):
@@ -1042,7 +1053,7 @@ def check_way(n: int, routes: tuple[str, ...]) -> int:
                 return 1
             instance.stop()
             if not instance.start(target):
-                print(f"FAIL  {route}: the plug did not start again on {target}", flush=True)
+                print(f"FAIL  {route}: the device did not start again on {target}", flush=True)
                 return 1
         return 0
     finally:
@@ -1068,7 +1079,7 @@ def check() -> int:
 
 
 def keep_for_saving(folder: str, names: list[str]) -> list[str]:
-    """What a saved plug leaves out: its logs and power switch, its stub's
+    """What a saved device leaves out: its logs and power switch, its stub's
     certificates (for its own network's router: each instance makes its own),
     the backup B4 made (so a route that takes B4 has it to do), and of its
     computer's copy of the checkout all but the captures its runs left."""

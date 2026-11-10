@@ -1,4 +1,4 @@
-"""The plug onto the Wi-Fi, and found there: waiting for it to come back on the
+"""The device onto the Wi-Fi, and found there: waiting for it to come back on the
 home network, giving it the Wi-Fi through its own network when it cannot,
 and how good its signal is.
 """
@@ -30,11 +30,11 @@ if TYPE_CHECKING:
 WEAK_SIGNAL_DBM = -75
 
 
-class PlugFinder:
-    """Where the plug is now: its known address, or wherever its hardware address is.
+class DeviceFinder:
+    """Where the device is now: its known address, or wherever its hardware address is.
 
-    The hardware (MAC) address of the plug's Wi-Fi is the same under every
-    firmware, so once recorded it finds the plug after a restart onto a new
+    The hardware (MAC) address of the device's Wi-Fi is the same under every
+    firmware, so once recorded it finds the device after a restart onto a new
     address, so nobody has to reserve one in their router.
     """
 
@@ -45,8 +45,8 @@ class PlugFinder:
         self.last_sweep = 0.0
 
     def poll(self) -> str | None:
-        current = self.ctx.state.input("plug_ip")
-        mac = self.ctx.state.input("plug_mac")
+        current = self.ctx.state.input("device_ip")
+        mac = self.ctx.state.input("device_mac")
         if current and hostsys.ping_ok(current):
             seen = hostsys.neighbour_table().get(current)
             if not mac or seen in (None, mac):
@@ -55,15 +55,15 @@ class PlugFinder:
             self.last_sweep = time.monotonic()
             found = hostsys.find_by_mac(mac, current)
             if found:
-                self.ctx.set_plug_ip(found)
+                self.ctx.set_device_ip(found)
                 return found
         return None
 
 
-def locate_plug(ctx: Context, *, timeout: float = 300.0, setup: bool = False) -> str:
-    """Wait for the plug on the home network; ask only if it cannot be found.
+def locate_device(ctx: Context, *, timeout: float = 300.0, setup: bool = False) -> str:
+    """Wait for the device on the home network; ask only if it cannot be found.
 
-    With `setup`, the plug may instead be waiting on its own setup network,
+    With `setup`, the device may instead be waiting on its own setup network,
     which this computer could not see (not every system can scan): offered as
     a way on, it takes the person through joining it by hand.
     """
@@ -80,9 +80,9 @@ def locate_plug(ctx: Context, *, timeout: float = 300.0, setup: bool = False) ->
     other = None
     if setup:
         other = (f"It is showing its own Wi-Fi network ({names.setup_network_hint(ctx)})",
-                 lambda: configure_plug_wifi(ctx, None))
-    found = prompts.wait_or_ask(ctx.state.input("plug_ip"), what="the device", timeout=60.0, other=other)
-    ctx.set_plug_ip(found)
+                 lambda: configure_device_wifi(ctx, None))
+    found = prompts.wait_or_ask(ctx.state.input("device_ip"), what="the device", timeout=60.0, other=other)
+    ctx.set_device_ip(found)
     return found
 
 
@@ -98,7 +98,7 @@ def user_action_limit() -> float:
 
 
 def wait_until_joined(network: str, marker: str | None = None) -> None:
-    """Block until this computer has joined the plug's network.
+    """Block until this computer has joined the device's network.
 
     With `marker`, the page must mention it (the bridge).  Without, only the web
     port is touched: Tasmota scans for networks on every page request in setup
@@ -118,12 +118,12 @@ def wait_until_joined(network: str, marker: str | None = None) -> None:
     output.say(f"    Connected to {network}.")
 
 
-def configure_plug_wifi(ctx: Context, network: str | None) -> str:
+def configure_device_wifi(ctx: Context, network: str | None) -> str:
     """Give Tasmota, waiting on its setup network, the bundle's Wi-Fi details.
 
     The operator joins the setup network; the details are sent from here.  Tasmota
     saves them only after it has connected with them, so a failure leaves the
-    plug waiting to be set up, never lost.
+    device waiting to be set up, never lost.
     """
     network = network or names.setup_network_hint(ctx)
     credentials = ctx.wifi(why=[
@@ -161,7 +161,7 @@ def configure_plug_wifi(ctx: Context, network: str | None) -> str:
                     break
                 if outcome == "rejected":
                     if prompts.UNATTENDED:
-                        break  # nobody to type others: on to the plug's page, below
+                        break  # nobody to type others: on to the device's page, below
                     output.tell(f"    The device could not connect to '{ssid}' with those details. Type them")
                     output.tell("    again - the network's name exactly as it appears, and its password:")
                     ssid, password = ask_credentials()
@@ -182,7 +182,7 @@ def configure_plug_wifi(ctx: Context, network: str | None) -> str:
             output.tell(f"    The device connected to '{ssid}' and is restarting onto it"
                 + (f" at {address}." if address else "."))
             if address:
-                ctx.set_plug_ip(address)
+                ctx.set_device_ip(address)
         elif outcome == "rejected":
             output.tell(f"    The device could not connect to '{ssid}' with the bundle's details.")
         elif outcome == "gone":
@@ -202,16 +202,16 @@ def configure_plug_wifi(ctx: Context, network: str | None) -> str:
         "Your computer should rejoin your usual Wi-Fi by itself; if it doesn't,",
         "join it now.",
     ])
-    return locate_plug(ctx, timeout=600.0)
+    return locate_device(ctx, timeout=600.0)
 
 
-# How long the plug's setup network must stay gone, nothing answering on it,
+# How long the device's setup network must stay gone, nothing answering on it,
 # to be taken as gone - not a moment's drop as it tests the Wi-Fi.
 SETUP_GONE_AFTER = 15.0
 
 
 def setup_network_gone(ctx: Context, network: str) -> bool:
-    """Whether the plug's setup network has gone: nothing answering on it for
+    """Whether the device's setup network has gone: nothing answering on it for
     SETUP_GONE_AFTER, and not listed by a scan that sees any network (one that
     sees none cannot say)."""
     started = time.monotonic()
@@ -236,13 +236,13 @@ def name_with_the_wifi(ctx: Context) -> None:
     (autoflash-recovery-CDEF part way through, tasmota-abcdef once F4 has
     named it), in the restart onto the Wi-Fi, which costs no other.  One
     with a name of its own keeps it."""
-    if not ctx.state.input("plug_mac"):
+    if not ctx.state.input("device_mac"):
         return
-    plug = device.Device(setup_network.SETUP_HOST, timeout=8.0)
+    client = device.Device(setup_network.SETUP_HOST, timeout=8.0)
     try:
         # The name it goes by: Hostname gives the setting, which for the
         # default is the format it is made from (%s-%04d).
-        status = plug.command("Status 5")
+        status = client.command("Status 5")
     except (DeviceError, OSError):
         return
     net = status.get("StatusNET") if isinstance(status, dict) else None
@@ -250,15 +250,15 @@ def name_with_the_wifi(ctx: Context) -> None:
     if not (isinstance(current, str) and TASMOTA_DEFAULT_NAME_RE.match(current)):
         return
     name = names.final_name(ctx, "tasmota") if ctx.state.is_done("F4") else names.our_setup_network(ctx)
-    if plug.at_next_save([f"Hostname {name}"]):
+    if client.at_next_save([f"Hostname {name}"]):
         output.say(f"    It lost its name with its settings ({current}): it is {name} again once it has the Wi-Fi.")
 
 
-def check_plug_network(ctx: Context) -> dict[str, Any]:
-    """The plug must be on the network the startup firmware will join.
+def check_device_network(ctx: Context) -> dict[str, Any]:
+    """The device must be on the network the startup firmware will join.
 
     After E3 the startup firmware rejoins Wi-Fi by itself, with only the details
-    in the bundle.  The plug's own connection proves a network name works from
+    in the bundle.  The device's own connection proves a network name works from
     where it stands; the bundle must name that network.  The password cannot be
     checked - Tasmota never reports it.
     """
@@ -301,8 +301,8 @@ def check_plug_network(ctx: Context) -> dict[str, Any]:
     return {"network": connected, "signal_dbm": signal}
 
 
-def plug_signal(device: device.Device) -> int | None:
-    """The Wi-Fi signal in dBm that the Tasmota on the plug reports, or None
+def device_signal(device: device.Device) -> int | None:
+    """The Wi-Fi signal in dBm that the Tasmota on the device reports, or None
     when it does not say."""
     try:
         status = device.command("Status 11")
@@ -313,11 +313,11 @@ def plug_signal(device: device.Device) -> int | None:
     return signal if isinstance(signal, int) else None
 
 
-def advert_signal(ctx: Context, report: dict[str, Any], plug_ip: str) -> int | None:
+def advert_signal(ctx: Context, report: dict[str, Any], device_ip: str) -> int | None:
     """The Wi-Fi signal Sonoff's own firmware gives in its eWeLink advert, which
-    is encrypted with the plug's LAN key: opened with the key the account holds
+    is encrypted with the device's LAN key: opened with the key the account holds
     for it.  None when it cannot be read."""
-    ids = {str(value)[3:] for packet in report.get("packets", []) if packet.get("source") == plug_ip
+    ids = {str(value)[3:] for packet in report.get("packets", []) if packet.get("source") == device_ip
            for record in packet.get("records", []) if record.get("type") == "TXT"
            for value in record.get("value") or [] if str(value).startswith("id=")}
     fields = ewelink_lan.advert_fields(report, next(iter(ids))) if len(ids) == 1 else None
@@ -329,7 +329,7 @@ def advert_signal(ctx: Context, report: dict[str, Any], plug_ip: str) -> int | N
 
 
 def note_signal(ctx: Context, signal: int | None, then: list[str]) -> int | None:
-    """Say a reading of the plug's Wi-Fi signal, and ask about a weak one."""
+    """Say a reading of the device's Wi-Fi signal, and ask about a weak one."""
     if signal is not None:
         output.say(f"Wi-Fi signal at the device: {signal} dBm.")
         warn_if_weak_signal(ctx, signal, then)
@@ -357,11 +357,11 @@ def warn_if_weak_signal(ctx: Context, signal: Any, then: list[str]) -> None:
 
 
 def wait_for(ctx: Context, check: Callable[[str], Any], what: str, timeout: float = 240.0) -> Any:
-    """Wait for `check(address)` to answer, finding the plug again by its
+    """Wait for `check(address)` to answer, finding the device again by its
     hardware address if it came back on a new address."""
     started = time.monotonic()
     while time.monotonic() - started < timeout:
-        host = ctx.state.input("plug_ip")
+        host = ctx.state.input("device_ip")
         found = host and check(host)
         if found:
             output.progress_clear()
@@ -375,13 +375,13 @@ def wait_for(ctx: Context, check: Callable[[str], Any], what: str, timeout: floa
     raise Abort(f"{what} did not answer within {timeout / 60:.0f} minutes")
 
 
-# Sending Wi-Fi details through a plug's own network: tried this many times
-# while this computer is still joined to it, as other sends to the plug are.
+# Sending Wi-Fi details through a device's own network: tried this many times
+# while this computer is still joined to it, as other sends to the device are.
 SETUP_SEND_ATTEMPTS = 3
 
 
-def on_a_plug_network() -> bool:
-    """Whether this computer is on a plug's own network now - joined to it
+def on_a_device_network() -> bool:
+    """Whether this computer is on a device's own network now - joined to it
     already, before being asked, say: something answers at its address."""
     return setup_network.page(setup_network.SETUP_HOST, "/", timeout=2.0) is not None
 
@@ -411,15 +411,15 @@ def send_through_own_network(network: str, ssid: str, password: str) -> None:
 
 def set_up_through_own_network(ctx: Context, what: str, check: Callable[[str], Any],
                                networks: tuple[str, ...]) -> tuple[str, str] | None:
-    """A plug on ESPHome (or the mover) that cannot join the home network, set
+    """A device on ESPHome (or the mover) that cannot join the home network, set
     up through its own: it raises one after a while away from the home one,
     whose page takes Wi-Fi details. The details this run has go first - right
-    after a router outage, say - and new ones are asked for only if the plug
+    after a router outage, say - and new ones are asked for only if the device
     does not join with them. `networks`: what its network can be called, its
     name now first. The details it joined with, or None when its network is
     not to be seen."""
     network = prompts.find_ssid(networks, timeout=30)
-    if not network and on_a_plug_network():
+    if not network and on_a_device_network():
         network = networks[0]  # joined already: carried on through it
     if not network:
         return None
@@ -453,19 +453,19 @@ def set_up_through_own_network(ctx: Context, what: str, check: Callable[[str], A
     raise AssertionError("unreachable")
 
 
-# A step keeps the plug busy for about a minute at most, retrying included.
-BUSY_PLUG_WAIT = 120.0
+# A step keeps the device busy for about a minute at most, retrying included.
+BUSY_DEVICE_WAIT = 120.0
 
 
-def wait_while_plug_busy(ctx: Context) -> None:
-    """Give a plug still running a stopped step the time to finish it.
+def wait_while_device_busy(ctx: Context) -> None:
+    """Give a device still running a stopped step the time to finish it.
 
-    A migration step keeps the plug busy, answering nothing else, until it
+    A migration step keeps the device busy, answering nothing else, until it
     succeeds or gives up - for a while after this computer stopped waiting
-    (Ctrl-C, say).  Run again at once, the plug looks unreadable, and the
+    (Ctrl-C, say).  Run again at once, the device looks unreadable, and the
     run would go on as if it were.  It is told apart by answering ping.
     """
-    host = ctx.state.input("plug_ip")
+    host = ctx.state.input("device_ip")
     if (not host or not ctx.state.is_done("D1") or ctx.state.is_done(ctx.steps[-1][0])
             or ctx.state.is_done("I1")):
         return  # not running Tasmota yet, finished, or running ESPHome
@@ -475,7 +475,7 @@ def wait_while_plug_busy(ctx: Context) -> None:
     output.tell("    The device is on the network but not answering yet. It is most likely still")
     output.tell("    finishing the step that was stopped, and gives up within a minute or two.")
     started = time.monotonic()
-    while time.monotonic() - started < BUSY_PLUG_WAIT:
+    while time.monotonic() - started < BUSY_DEVICE_WAIT:
         output.progress(f"waiting for the device to finish... {time.monotonic() - started:.0f}s")
         if device.answers(timeout=3.0):
             output.progress_clear()

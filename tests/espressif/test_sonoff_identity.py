@@ -1,4 +1,4 @@
-"""A plug's Sonoff identity: taken from its settings, kept in its own sector,
+"""A device's Sonoff identity: taken from its settings, kept in its own sector,
 and written into the settings of the next firmware - never its Wi-Fi."""
 import json
 import unittest
@@ -82,7 +82,7 @@ class IdentityTests(unittest.TestCase):
         self.assertNotIn("encrypt_key", frame)
         backups = json.loads(identity.items[1].data)
         self.assertEqual((backups["deviceid"], backups["apikey"]), ("10000e32ab", record["devicekey"]))
-        # A classic ESP32 plug's firmware also keeps its key as encrypt_key.
+        # A classic ESP32 device's firmware also keeps its key as encrypt_key.
         frame = sonoff_identity.from_account(record, ("eu-dispd.coolkit.cc", 443), encrypted=True).frame()
         self.assertEqual((frame["encrypt_key"], frame["is_encrypt"]), (record["devicekey"], True))
         with self.assertRaises(sonoff_identity.IdentityError):

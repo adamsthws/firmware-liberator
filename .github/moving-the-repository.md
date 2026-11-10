@@ -13,7 +13,7 @@ Then, in one commit:
 
 - **`REPOSITORY` in `tools/repo/github_settings.py`**, the address written
   once. Its copies must agree with it, and `tests/repo/test_repository_address.py`
-  fails on GitHub until they do: `public_plugs.py`, `private_backup.py`,
+  fails on GitHub until they do: `public_devices.py`, `private_backup.py`,
   `website/src/site.mjs`, and each device's `esphome.yaml`, whose
   `package_import_url` is where Home Assistant fetches the config from.
   Images already published keep the old address, through the redirect.

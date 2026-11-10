@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve a validated wrapped ESP app to one owned plug.
+"""Serve a validated wrapped ESP app to one owned device.
 
 This is the live, state-changing end of the research workflow.  It remains
 blocked by ``RECOVERY_LOCK`` and also requires an explicit no-rollback
@@ -120,7 +120,7 @@ def main():
     password = os.environ.get("EWELINK_PASSWORD") or ask_secret("eWeLink password: ")
 
     def check(device: dict[str, Any], model: str) -> None:
-        # Only a plug of a kind this tool converts, and only a file wrapped
+        # Only a device of a kind this tool converts, and only a file wrapped
         # for it: another Sonoff on the same account must never be sent it.
         kind = kinds.for_account(device.get("productModel"), model)
         if kind is None and args.readout_model:

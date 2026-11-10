@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import account, errors, hostsys, output, plugs, prompts, readout, readout_beken
+from tools.autoflash import account, errors, hostsys, output, records, prompts, readout, readout_beken
 from tools.autoflash import readout_espressif, runner, runs
 from tools.autoflash.state import RunState
 from tools.espressif import chips
@@ -91,8 +91,8 @@ class PackageTests(unittest.TestCase):
 
 
 class DeviceAtTests(unittest.TestCase):
-    """--plug-ip picks the account device at that address: by discovery, by its
-    hardware address (a Beken plug does no discovery), or the one device there."""
+    """--device-ip picks the account device at that address: by discovery, by its
+    hardware address (a Beken device does no discovery), or the one device there."""
     S61 = {"deviceid": "1000abcdef", "params": {"staMac": "12:34:56:AB:CD:EF"}}
     OTHER = {"deviceid": "2000bbbbbb", "params": {"staMac": "aa:bb:cc:dd:ee:ff"}}
 
@@ -354,7 +354,7 @@ def start_run(test: unittest.TestCase) -> None:
     test.addCleanup(test.tmp.cleanup)
     test.ctx = a_ctx(test.tmp.name)
     asked = account.Asked({"packets": []}, "1.0.0", "SN-NEW-01", "NEWTHING", [], {}, "1000abcdef")
-    filed = mock.patch.object(runs, "file_plug")
+    filed = mock.patch.object(runs, "file_device")
     test.filed = filed.start()
     test.addCleanup(filed.stop)
     for patch in (mock.patch.object(readout, "locate", return_value="192.0.2.77"),
@@ -363,7 +363,7 @@ def start_run(test: unittest.TestCase) -> None:
                   mock.patch.object(hostsys, "mac_of", return_value="12:34:56:ab:cd:ef"),
                   mock.patch.object(account, "ask_ewelink", return_value=asked),
                   mock.patch.object(account, "ask_account", return_value=asked),
-                  mock.patch.object(plugs, "remember_plug"),
+                  mock.patch.object(records, "remember_device"),
                   # Wanted, as the website would say: never asked of it from a test.
                   mock.patch.object(readout, "ask_wanted", return_value=readout.Wanted(True)),
                   mock.patch.object(readout, "notify", return_value=True),
@@ -465,7 +465,7 @@ class RunTests(unittest.TestCase):
         with learned("FWSW-01-NEW-BK7238", "BK7238"), mock.patch.object(readout, "offer", return_value="done"):
             readout.run(self.ctx, device)
         self.assertEqual(self.filed.call_args.args[1], "12:34:56:ab:cd:ef")
-        self.assertEqual(self.ctx.state.input("plug_mac"), "12:34:56:ab:cd:ef")
+        self.assertEqual(self.ctx.state.input("device_mac"), "12:34:56:ab:cd:ef")
 
 
 def kinds_basicr4_model() -> str:
@@ -744,7 +744,7 @@ class ChooseTests(unittest.TestCase):
                 mock.patch.object(readout_espressif, "read_and_anonymise") as read, \
                 mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
                 mock.patch.object(readout, "ask_contact", return_value=None), \
-                mock.patch.object(runs, "hold_plug") as held:
+                mock.patch.object(runs, "hold_device") as held:
             said = readout.run_all(self.ctx, [record("S60TPG", s60.stock_model)])
         held.assert_called_once()   # held as one written to may be, and nothing left behind
         self.assertEqual(readout.ask_wanted.call_args.args[:4], ("S60TPG", s60.stock_model, "1.2.0", "whole"))
@@ -763,7 +763,7 @@ class RunAllTests(unittest.TestCase):
         for patch in (mock.patch.object(prompts, "UNATTENDED", False),
                       mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"),
                       mock.patch.object(readout, "ask_contact", return_value={"email": "me@example.com"}),
-                      mock.patch.object(runs, "hold_plug")):
+                      mock.patch.object(runs, "hold_device")):
             patch.start()
             self.addCleanup(patch.stop)
 
@@ -836,8 +836,8 @@ class RunAllTests(unittest.TestCase):
         seen = []
 
         def each(ctx, device, batch):
-            seen.append(ctx.state.input("plug_ip"))
-            ctx.state.set_input("plug_ip", "192.0.2.77")
+            seen.append(ctx.state.input("device_ip"))
+            ctx.state.set_input("device_ip", "192.0.2.77")
             ctx.state.set_input(readout_espressif.BRIDGE_HOST, "192.0.2.77")
             return "sent"
         with mock.patch.object(readout, "run", side_effect=each):
@@ -854,7 +854,7 @@ class RunAllTests(unittest.TestCase):
                 mock.patch.object(readout_espressif, "read_and_anonymise", return_value=(FILES, True)):
             readout.run_all(self.ctx, [device])
         self.filed.assert_not_called()
-        self.assertEqual(runs.hold_plug.call_args.args[1], "12:34:56:ab:cd:ef")
+        self.assertEqual(runs.hold_device.call_args.args[1], "12:34:56:ab:cd:ef")
 
     def test_a_full_readouts_question_may_pass_its_device_by(self):
         from tools.autoflash import kinds
@@ -991,7 +991,7 @@ class OfferedAtA1Tests(unittest.TestCase):
                 mock.patch.object(prompts, "ask_choice", return_value=3) as asked, \
                 mock.patch.object(readout, "from_run", side_effect=errors.Finished("read")) as read:
             with self.assertRaises(errors.Finished):
-                account.find_account_plug(SimpleNamespace(email=lambda: "me@example.com"), [DEVICE])
+                account.find_account_device(SimpleNamespace(email=lambda: "me@example.com"), [DEVICE])
         self.assertIn("Read-out my device to help add support for it", asked.call_args.args[1])
         self.assertEqual(read.call_args.args[1], [DEVICE])
         self.assertIn("'Hall light' (NEWTHING)", " ".join(shown.call_args.args[1]))
@@ -1001,7 +1001,7 @@ class OfferedAtA1Tests(unittest.TestCase):
                 mock.patch.object(prompts, "section"), \
                 mock.patch.object(prompts, "ask_choice", side_effect=prompts.QuitRun) as asked:
             with self.assertRaises(prompts.QuitRun):
-                account.find_account_plug(SimpleNamespace(email=lambda: "me@example.com"), [])
+                account.find_account_device(SimpleNamespace(email=lambda: "me@example.com"), [])
         self.assertEqual(len(asked.call_args.args[1]), 3)
 
 

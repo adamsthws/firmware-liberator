@@ -11,8 +11,8 @@ from tools.beken import fota_wrap, layouts, rbl
 def a_ctx() -> SimpleNamespace:
     state = SimpleNamespace(_d={}, set_input=lambda k, v: state._d.__setitem__(k, v),
                             input=lambda k: state._d.get(k), require=lambda *k: [state._d[x] for x in k])
-    state._d["plug_ip"] = "192.0.2.60"
-    state._d["plug_mac"] = "12:34:56:ab:cd:ef"
+    state._d["device_ip"] = "192.0.2.60"
+    state._d["device_mac"] = "12:34:56:ab:cd:ef"
     return SimpleNamespace(state=state, dir=None, listen_ip=lambda: "192.0.2.141",
                            email=lambda: "me@example.com", ewelink_env=lambda: {"EWELINK_PASSWORD": "pw"},
                            ewelink=mock.sentinel.account)
@@ -82,7 +82,7 @@ class RoundTripTests(unittest.TestCase):
                 mock.patch.object(rb, "wait_for_openbeken", side_effect=lambda ctx: order.append("wait") or "192.0.2.60"), \
                 mock.patch.object(rb.openbeken, "info", return_value={"build": "obk", "chipset": "BK7238"}), \
                 mock.patch.object(rb, "read_whole_flash", side_effect=lambda ctx, host: order.append("read") or b"\xff" * rb.WHOLE_FLASH), \
-                mock.patch.object(rb.plugs, "save_beken_backup", return_value=(None, False)), \
+                mock.patch.object(rb.records, "save_beken_backup", return_value=(None, False)), \
                 mock.patch.object(rb, "revert_to_sonoff", side_effect=lambda *a: order.append("revert")), \
                 mock.patch.object(rb, "wait_for_sonoff", side_effect=lambda ctx, did: order.append("sonoff") or True):
             flash, info, back = rb.read_out(self.ctx, "FWSW-01-S61-BK7238", "1.0.2", self.device, self.found)
@@ -91,11 +91,11 @@ class RoundTripTests(unittest.TestCase):
 
     def test_revert_uses_the_revert_command_and_the_offered_rbl(self):
         served = {}
-        with mock.patch.object(rb.onward, "serve_to_plug",
+        with mock.patch.object(rb.onward, "serve_to_device",
                                side_effect=lambda ctx, image, what, fetch, unstick=None: served.update(image=image, what=what) or 1.0), \
                 mock.patch.object(rb.openbeken, "command") as command:
             rb.revert_to_sonoff(self.ctx, "192.0.2.60", self.found)
-            fetch = rb.onward.serve_to_plug.call_args.args[3]
+            fetch = rb.onward.serve_to_device.call_args.args[3]
             fetch("http://192.0.2.141:8088/firmware.rbl")
         self.assertEqual(served["image"], b"RBL\0stock")
         command.assert_called_once_with("192.0.2.60", "AutoflashRevertToStock http://192.0.2.141:8088/firmware.rbl")
@@ -108,7 +108,7 @@ class RoundTripTests(unittest.TestCase):
                 mock.patch.object(rb, "wait_for_openbeken") as waited, \
                 mock.patch.object(rb.openbeken, "info", return_value={"build": "obk", "chipset": "BK7238"}), \
                 mock.patch.object(rb, "read_whole_flash", return_value=b"\xff" * rb.WHOLE_FLASH) as read, \
-                mock.patch.object(rb.plugs, "save_beken_backup", return_value=(None, False)), \
+                mock.patch.object(rb.records, "save_beken_backup", return_value=(None, False)), \
                 mock.patch.object(rb, "revert_to_sonoff"), mock.patch.object(rb, "wait_for_sonoff", return_value=True):
             rb.read_out(self.ctx, "FWSW-01-S61-BK7238", "1.0.2", self.device, self.found)
         sent.assert_not_called()
@@ -127,7 +127,7 @@ class PutBackTests(unittest.TestCase):
             self.addCleanup(patch.stop)
         self.ctx = a_ctx()
         self.found = rb.Stock(b"RBL\0stock", "1.0.2", layouts.BEKEN_4M)
-        for patch in (mock.patch.object(rb.plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}),
+        for patch in (mock.patch.object(rb.records, "read_device", return_value={"ewelink_id": "1000abcdef"}),
                       mock.patch.object(rb, "revert_to_sonoff"),
                       mock.patch.object(rb, "wait_for_sonoff", return_value=True)):
             patch.start()
@@ -158,7 +158,7 @@ class PutBackTests(unittest.TestCase):
 
     def test_with_neither_it_stops_having_sent_nothing(self):
         with mock.patch.object(rb, "saved_stock", return_value=None), \
-                mock.patch.object(rb.plugs, "read_plug", return_value={}), \
+                mock.patch.object(rb.records, "read_device", return_value={}), \
                 mock.patch("tools.autoflash.readout.device_at", return_value={}):
             self.ctx.account_devices = lambda: []
             with self.assertRaisesRegex(rb.Abort, "found neither"):
@@ -172,10 +172,10 @@ class PutBackTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "stock-app-1.0.2.rbl").write_bytes(rbl.pack(app, name="app", version="1.0.2"))
             backup = SimpleNamespace(family="beken", directory=Path(tmp))
-            with mock.patch.object(rb.plugs, "find_backup", return_value=backup):
+            with mock.patch.object(rb.records, "find_backup", return_value=backup):
                 found = rb.saved_stock("12:34:56:ab:cd:ef")
         self.assertEqual((found.version, found.layout), ("1.0.2", layouts.BEKEN_4M))
-        with mock.patch.object(rb.plugs, "find_backup", return_value=None):
+        with mock.patch.object(rb.records, "find_backup", return_value=None):
             self.assertIsNone(rb.saved_stock("12:34:56:ab:cd:ef"))
 
 

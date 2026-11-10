@@ -11,7 +11,7 @@ from tools.autoflash import failures, runner
 
 ROOT = Path(__file__).resolve().parents[2]
 # What a step raises to stop the run, as the runner reports it.
-STOPPING = {"Abort", "NothingWritten", "StoppedPartWay", "DeviceError", "PhaseError", "PlugNeverConnected"}
+STOPPING = {"Abort", "NothingWritten", "StoppedPartWay", "DeviceError", "PhaseError", "DeviceNeverConnected"}
 
 
 def literal(node: ast.AST) -> str | None:

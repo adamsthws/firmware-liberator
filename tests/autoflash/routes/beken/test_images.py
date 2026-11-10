@@ -1,4 +1,4 @@
-"""The firmware a Beken plug is given: the published images as pinned,
+"""The firmware a Beken device is given: the published images as pinned,
 Sonoff's own from the public dump, and a kind known only by its official
 update file, refused on any table but its own."""
 import hashlib
@@ -10,7 +10,7 @@ from unittest import mock
 
 from tests.beken import test_layouts
 from tests.autoflash.routes.beken.test_beken import a_context
-from tools.autoflash import errors, kinds, plugs
+from tools.autoflash import errors, kinds, records
 from tools.autoflash.routes.beken import arrived, images, stock
 from tools.beken import fota_wrap, layouts, rbl
 from tools.ewelink import ota_push
@@ -130,8 +130,8 @@ class UntestedKindTests(unittest.TestCase):
         self.image = image
 
     def context(self, tmp, **inputs):
-        ctx = a_context(tmp, plug_kind=self.KIND.key, stock_version="1.0.4", firmware="openbeken", **inputs)
-        ctx.account_plug = SimpleNamespace(device_id="1001234abc")
+        ctx = a_context(tmp, device_kind=self.KIND.key, stock_version="1.0.4", firmware="openbeken", **inputs)
+        ctx.account_device = SimpleNamespace(device_id="1001234abc")
         ctx.account_devices = lambda: [self.DEVICE]
         ctx.consented = False
         return ctx
@@ -148,8 +148,8 @@ class UntestedKindTests(unittest.TestCase):
     def test_b1_logs_what_the_file_says_for_the_next_person(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = self.context(tmp)
-            with mock.patch.object(plugs, "PLUGS", Path(tmp) / "plugs"), mock.patch.object(plugs, "CAPTURES", Path(tmp)):
-                plugs.remember_plug(MAC, ewelink_id="1001234abc")
+            with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), mock.patch.object(records, "CAPTURES", Path(tmp)):
+                records.remember_device(MAC, ewelink_id="1001234abc")
                 result = stock.step_identify(ctx)
         self.assertEqual((result["official_name"], result["official_version"], result["layout"]),
                          (self.KIND.wrapper_model, "1.0.4", "beken-4m"))
@@ -163,8 +163,8 @@ class UntestedKindTests(unittest.TestCase):
         self.use_official(test_layouts.TWO_MB)
         with tempfile.TemporaryDirectory() as tmp:
             ctx = self.context(tmp)
-            with mock.patch.object(plugs, "PLUGS", Path(tmp) / "plugs"), mock.patch.object(plugs, "CAPTURES", Path(tmp)):
-                plugs.remember_plug(MAC, ewelink_id="1001234abc")
+            with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), mock.patch.object(records, "CAPTURES", Path(tmp)):
+                records.remember_device(MAC, ewelink_id="1001234abc")
                 with self.assertRaisesRegex(errors.NothingWritten, "not one this tool knows.*nothing was written"):
                     stock.step_identify(ctx)
 

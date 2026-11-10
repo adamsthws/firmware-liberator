@@ -7,7 +7,7 @@ The stock firmware keeps the home Wi-Fi in two places: ESP-IDF's own
 rewritten to `--ssid` with an empty password,
 and the saved BSSID / AP info is dropped so the firmware scans afresh.
 Everything else (eWeLink keys, calibration, energy history) is kept as is. A
-dump taken after the plug was reset has no `ssid`, `passwd`, `dis_server` or
+dump taken after the device was reset has no `ssid`, `passwd`, `dis_server` or
 `dis_port` in `frame_params`, and starts up waiting to be paired: they are added.
 
 The partition is decoded and rebuilt with ESP-IDF's `nvs_partition_gen`, so
@@ -34,7 +34,7 @@ if __package__ in (None, ""):
 from tools.espressif import ais_records, flashmap  # noqa: E402
 from tools.espressif.inspect_stock_nvs import ENTRIES, PAGE, parse  # noqa: E402
 
-# What a plug that has been paired has in frame_params: where a reset one is
+# What a device that has been paired has in frame_params: where a reset one is
 # given it, eWeLink's own dispatch address, unless the stub's is asked for.
 DISPATCH = ("eu-disp.coolkit.cc", 443)
 INTS = {0x01: "u8", 0x02: "u16", 0x04: "u32", 0x08: "u64",
@@ -155,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("output", type=Path, help="whole-flash copy to write")
     parser.add_argument("--ssid", default="PICSimLabWifi", help="open network to join")
     parser.add_argument("--dis-server", default=None,
-                        help="redirect the plug's dispatch host (cloud-stub mode)")
+                        help="redirect the device's dispatch host (cloud-stub mode)")
     parser.add_argument("--dis-port", type=int, default=None,
                         help="dispatch port to go with --dis-server (default unchanged)")
     args = parser.parse_args(argv)

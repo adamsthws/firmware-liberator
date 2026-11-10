@@ -13,7 +13,7 @@ and when.
 ## What is in scope
 
 - **The conversion tool** - everything in this repository that runs on your
-  computer or is sent to the plug.
+  computer or is sent to the device.
 - **The firmware files it installs** from `artifacts/`, as built by this project.
 - **The repository's workflows**, which update and release it.
 

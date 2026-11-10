@@ -6,7 +6,7 @@ import struct
 import unittest
 
 from tools.espressif import flashmap
-from tools.espressif.emulator import copy_plug
+from tools.espressif.emulator import copy_device
 
 
 def entry(label: bytes, kind: int, subtype: int, offset: int, size: int) -> bytes:
@@ -72,7 +72,7 @@ class Mac(unittest.TestCase):
 
     def test_a_test_copy_of_either_takes_the_new_mac(self):
         for efuse in (flashmap.esp32_efuse("12:34:56:00:00:01"), bytes(1024)):
-            self.assertEqual(flashmap.mac_of_efuse(copy_plug.with_mac(efuse, self.MAC)), self.MAC)
+            self.assertEqual(flashmap.mac_of_efuse(copy_device.with_mac(efuse, self.MAC)), self.MAC)
 
 
 class Esp32C3Efuse(unittest.TestCase):

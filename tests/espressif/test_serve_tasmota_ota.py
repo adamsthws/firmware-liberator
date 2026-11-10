@@ -32,7 +32,7 @@ class FirmwareServerTests(unittest.TestCase):
             connection.close()
 
     def test_shutdown_is_not_held_up_by_an_open_keep_alive_connection(self):
-        # The plug leaves its connection open after the last range. Shutdown
+        # The device leaves its connection open after the last range. Shutdown
         # used to wait on it forever, after every byte had been delivered.
         connection = http.client.HTTPConnection(
             "127.0.0.1", self.server.server_address[1], timeout=2
@@ -125,7 +125,7 @@ class FirmwareServerTests(unittest.TestCase):
 
 
 class OfflineTests(unittest.TestCase):
-    """A plug offline in eWeLink - after a send cut off part way, say - is
+    """A device offline in eWeLink - after a send cut off part way, say - is
     waited for, not refused at once."""
 
     def test_one_that_comes_back_is_sent_to(self):
@@ -163,7 +163,7 @@ class FailureTests(unittest.TestCase):
             sender.report_failure(OSError("EOF occurred in violation of protocol"), sent)
         return err.getvalue()
 
-    def test_before_the_command_it_says_nothing_reached_the_plug(self):
+    def test_before_the_command_it_says_nothing_reached_the_device(self):
         import tools.espressif.serve_tasmota_ota as sender
         said = self.said(sent=False)
         self.assertIn("ERROR: EOF occurred", said)
@@ -180,7 +180,7 @@ class FailureTests(unittest.TestCase):
 
 class AnnouncedVersionTests(unittest.TestCase):
     def test_the_bridge_is_sent_as_the_announced_version(self):
-        # Its own version (4.4.4) stays in the published file; the plug's
+        # Its own version (4.4.4) stays in the published file; the device's
         # updater is told the fixed one, in the command and the wrapper.
         import sys
         from pathlib import Path

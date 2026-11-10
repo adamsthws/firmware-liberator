@@ -50,13 +50,13 @@ cal_P = (1.21·2040·1000/1721506)· b_P/1e6   = 1.433861 · 0.930747 = 1.334562
 (OpenBeken's generic defaults are 0.0118577 / 0.1325301 / 1.5 — same magnitudes,
 which is the independent check that `f` means the same thing in both.) The
 import module applies these with `CFG_SetPowerMeasurementCalibrationFloat` on
-first boot, and sets `PowerMax` to the plug's 3840 W rating. A non-zero `a` or
+first boot, and sets `PowerMax` to the device's 3840 W rating. A non-zero `a` or
 `c` has no OpenBeken equivalent; the module then uses `b` and logs a warning.
 Not yet done: a check against a real metered load on hardware.
 
-**In the emulator** the plug's board gives the BL0937's pulses at the rates this
+**In the emulator** the device's board gives the BL0937's pulses at the rates this
 calibration makes a 100 W load on 230 V (CF 75 Hz, CF1 1794 Hz for the voltage
-and 39 Hz for the current; [the board](../../tools/beken/emulator/README.md#the-plugs-board-boardpy)),
+and 39 Hz for the current; [the board](../../tools/beken/emulator/README.md#the-devices-board-boardpy)),
 and each firmware reads them back: OpenBeken 248-250 V and 103-105 W, ESPHome
 244 V and 103 W, a little high from the firmware's clock in the emulator, and
 0 W with the relay off; Sonoff's firmware 230.22 V, 0.43 A and 100.00 W on, and
@@ -92,8 +92,8 @@ The driver, `bl0937b` (its ops at `0x1657e4`: open `0x41f64`, the measurement
   for readings (`uiActive`).
 
 So in the emulator, whose PWM block never captures anything, it read nothing
-and reported 0 V, 0 A and 0 W, until the plug's board gave its capture
-channels their counts ([the board](../../tools/beken/emulator/README.md#the-plugs-board-boardpy)).
+and reported 0 V, 0 A and 0 W, until the device's board gave its capture
+channels their counts ([the board](../../tools/beken/emulator/README.md#the-devices-board-boardpy)).
 
 ## The S61's wiring (proven OpenBeken template)
 
@@ -136,7 +136,7 @@ and its BL0937 meter's calibration ([above](#energy-meter-calibration-the-stock-
 how its `elecCalibCoef` record reads, the datasheet constants, the 3840 W rating.
 
 The driver, then still the S61's own import module, was built and booted in the
-BekenEmulator on a 4 MB flash shaped like a converted plug (OpenBeken app + the
+BekenEmulator on a 4 MB flash shaped like a converted device (OpenBeken app + the
 stock EF40 at `0x3e0000`, provisioned with a test SSID). On first boot:
 
 ```
@@ -189,7 +189,7 @@ watchdog reboot, not the image: the same RBL applied from a bootloader-only boot
 of the same flash comes up first time.
 
 Reverting was verified in the emulator both ways. Staged by hand on a converted
-plug, the bootloader logs `upgrade(s61v2->1.0.2)`, rewrites `app`, and the stock
+device, the bootloader logs `upgrade(s61v2->1.0.2)`, rewrites `app`, and the stock
 firmware boots with the EasyFlash store intact. And end to end through OpenBeken
 itself - the stock RBL served from the host, `S61RevertToStock <url>` sent over
 HTTP - the log reads `init OTA, startaddr 0x286000` → `Rebooting in 1 seconds` →
