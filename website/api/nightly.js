@@ -11,6 +11,10 @@
 // - The public snapshot is written to the stats bucket: totals only, from
 //   the maintainer's own testing and quarantined reports left out, and no
 //   figure for fewer than SMALLEST reports or devices (snapshot.js).
+// - Before a day is folded, a model's reports that day far above its usual
+//   (SPIKE_SMALLEST or more, and over SPIKE_TIMES its daily average over the
+//   SPIKE_DAYS before) are held for review (held_reports): a flood of
+//   made-up reports of one model, or a real rush the maintainer releases.
 // The work is done in SQL, on the database's side: the free plan gives a
 // Worker 10 ms of its own time, and the job's queries are a fixed few.
 import { ready } from "./database.js";
@@ -21,6 +25,12 @@ export const RAW_DAYS = 365;
 export const COUNTER_DAYS = 7;
 export const SNAPSHOT_KEY = "v1/stats.json";
 export const ARCHIVE_PREFIX = "v1/archive/";
+export const SPIKE_DAYS = 28;
+export const SPIKE_TIMES = 5;
+export const SPIKE_SMALLEST = 25;
+// At most this many models' days held a night, so a night's queries stay few.
+export const SPIKE_MOST = 10;
+export const SPIKE_WHY = "a day far above usual for its model";
 // The count of every readout kept, as index.js names it (READOUTS_EVER; a
 // test holds the two alike).
 export const READOUTS_EVER = "readouts:all";
@@ -105,6 +115,37 @@ export function pruning(db, today) {
   ];
 }
 
+// The (day, model) pairs of the days about to be folded whose reports are far
+// above that model's usual over the SPIKE_DAYS before: two queries, whatever
+// the number of days.
+export async function spikes(db, today) {
+  const { results: days } = await db.prepare(`SELECT day, model, count(*) AS n FROM reports
+    WHERE day IN (${UNFOLDED}) AND tag = 'user' AND quarantined = 0 AND model IS NOT NULL
+    GROUP BY day, model HAVING count(*) >= ?2`).bind(today, SPIKE_SMALLEST).all();
+  if (!days.length) {
+    return [];
+  }
+  const first = days.reduce((earliest, row) => (row.day < earliest ? row.day : earliest), days[0].day);
+  // From the reports themselves, kept a year, so days not yet folded count
+  // towards the usual of a later one folded the same night.
+  const { results: before } = await db.prepare(`SELECT day, model, count(*) AS n FROM reports
+    WHERE tag = 'user' AND quarantined = 0 AND model IS NOT NULL AND day >= ?1 AND day < ?2
+    GROUP BY day, model`).bind(daysBefore(first, SPIKE_DAYS), today).all();
+  const usual = (row) => before.filter((other) => other.model === row.model && other.day < row.day
+    && other.day >= daysBefore(row.day, SPIKE_DAYS)).reduce((sum, other) => sum + other.n, 0) / SPIKE_DAYS;
+  return days.filter((row) => row.n > SPIKE_TIMES * Math.max(usual(row), 1)).slice(0, SPIKE_MOST)
+    .map((row) => ({ day: row.day, model: row.model, n: row.n }));
+}
+
+// The statements holding each spike's reports for review.
+function holding(db, found) {
+  const which = "FROM reports WHERE day = ?1 AND model = ?2 AND tag = 'user' AND quarantined = 0";
+  return found.flatMap(({ day, model }) => [
+    db.prepare(`INSERT OR IGNORE INTO held_reports (id, day, why) SELECT id, day, ?3 ${which}`).bind(day, model, SPIKE_WHY),
+    db.prepare(`UPDATE reports SET quarantined = 1 WHERE id IN (SELECT id ${which})`).bind(day, model),
+  ]);
+}
+
 export async function nightly(env, now = new Date()) {
   if (!(await ready(env.DB))) {
     return { ran: false, why: "the database does not have every migration yet" };
@@ -114,7 +155,8 @@ export async function nightly(env, now = new Date()) {
   const thisMonth = today.slice(0, 7);
   const months = [...new Set([thisMonth, monthBefore(thisMonth), ...results.map((row) => row.day.slice(0, 7))])]
     .sort();
-  await env.DB.batch([...folding(env.DB, today), ...remaking(env.DB, months, today)]);
+  const held = await spikes(env.DB, today);
+  await env.DB.batch([...holding(env.DB, held), ...folding(env.DB, today), ...remaking(env.DB, months, today)]);
   // Readouts never taken as right, and addresses never confirmed, gone after
   // their days (pending.js) - before the store's size is noted below.
   const pruned = await prunePending(env, today);
@@ -131,5 +173,5 @@ export async function nightly(env, now = new Date()) {
   if (!(await env.STATS.head(archive))) {
     await env.STATS.put(archive, text, options);
   }
-  return { ran: true, folded: results.length, months, pruned };
+  return { ran: true, folded: results.length, months, pruned, held };
 }

@@ -258,3 +258,64 @@ test("each night clears readouts never taken as right and addresses never confir
   assert.deepEqual(done.pruned, { readouts: 1, signups: 1 });
   assert.deepEqual(rows(bindings, "SELECT id FROM readouts"), []);
 });
+
+// `n` reports of `model` on `day`, each of a device of its own.
+async function many(db, day, n, model = "S60TPG", changes = {}) {
+  for (let i = 0; i < n; i += 1) {
+    await kept(db, day, { model, device_hash: `${model}-${day}-${i}`, ...changes });
+  }
+}
+
+test("a day far above a model's usual is held for review, and in no figure", async () => {
+  const bindings = env();
+  await many(bindings.DB, "2026-10-20", 2);
+  await night.nightly(bindings, new Date("2026-10-21T03:17:00Z"));   // its usual, counted
+  await many(bindings.DB, "2026-11-09", 30);
+  const ran = await night.nightly(bindings, NIGHT);
+  assert.deepEqual(ran.held, [{ day: "2026-11-09", model: "S60TPG", n: 30 }]);
+  assert.equal(rows(bindings, "SELECT count(*) AS n FROM held_reports WHERE why = ?", night.SPIKE_WHY)[0].n, 30);
+  assert.equal(rows(bindings, "SELECT count(*) AS n FROM reports WHERE quarantined = 1")[0].n, 30);
+  assert.equal(rows(bindings, "SELECT * FROM daily_totals WHERE day = '2026-11-09'").length, 0);
+  const stats = figures(bindings);
+  assert.equal(stats.devices.seen, null, "the two of 2026-10-20 alone: under five");
+  assert.deepEqual(stats.models, [], "the held devices are in no list");
+});
+
+test("a busy model at its usual pace is not held, and five times it is", async () => {
+  const at = (day) => new Date(Date.parse("2026-10-12T00:00:00Z") + day * 86_400_000).toISOString().slice(0, 10);
+  const bindings = env();
+  for (let day = 0; day < night.SPIKE_DAYS; day += 1) {
+    await many(bindings.DB, at(day), 10);   // its usual: 10 a day
+  }
+  await many(bindings.DB, "2026-11-09", 30);
+  assert.deepEqual((await night.nightly(bindings, NIGHT)).held, [], "30 against 10 a day, all folded tonight");
+  await many(bindings.DB, "2026-11-10", 60);
+  assert.deepEqual((await night.nightly(bindings, new Date("2026-11-11T03:17:00Z"))).held,
+    [{ day: "2026-11-10", model: "S60TPG", n: 60 }]);
+});
+
+test("a new model's first day is held only past the smallest a spike can be", async () => {
+  const bindings = env();
+  await many(bindings.DB, "2026-11-09", night.SPIKE_SMALLEST - 1, "NEWONE");
+  assert.deepEqual((await night.nightly(bindings, NIGHT)).held, []);
+  const other = env();
+  await many(other.DB, "2026-11-09", night.SPIKE_SMALLEST, "NEWTWO");
+  assert.equal((await night.nightly(other, NIGHT)).held.length, 1);
+});
+
+test("the maintainer's own testing never makes a spike, and a day counted is never looked at again", async () => {
+  const bindings = env();
+  await many(bindings.DB, "2026-11-09", 40, "S60TPG", { tag: "dev" });
+  assert.deepEqual((await night.nightly(bindings, NIGHT)).held, []);
+  await many(bindings.DB, "2026-11-08", 40);
+  bindings.DB.db.prepare("INSERT INTO folded (day) VALUES ('2026-11-08')").run();
+  assert.deepEqual((await night.nightly(bindings, NIGHT)).held, [], "2026-11-08 was counted already");
+});
+
+test("no more than a fixed few spikes are held a night", async () => {
+  const bindings = env();
+  for (let n = 0; n < night.SPIKE_MOST + 3; n += 1) {
+    await many(bindings.DB, "2026-11-09", night.SPIKE_SMALLEST, `FLOOD${n}`);
+  }
+  assert.equal((await night.nightly(bindings, NIGHT)).held.length, night.SPIKE_MOST);
+});

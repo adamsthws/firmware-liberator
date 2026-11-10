@@ -1,7 +1,7 @@
 // The public figures the nightly job writes (stats.json, CC BY 4.0), which
 // the website's /stats page is built from: totals only, never a report.
-// - The maintainer's own testing (tag "dev", and devices it has seen) and
-//   quarantined reports are left out.
+// - The maintainer's own testing (tag "dev", and devices it has seen),
+//   quarantined reports, and devices with a report held for review are left out.
 // - No figure stands for fewer than SMALLEST: a count below it is null, a
 //   rate is given only over SMALLEST or more, and a row of a list (a model,
 //   a Sonoff version, a tool version) under it is left out, so no one report
@@ -15,6 +15,10 @@ export const SMALLEST = 5;
 // Months of run times given, the latest first.
 export const TIME_MONTHS = 12;
 const NOT_FAILURES = "('declined', 'nothing-to-do')";
+// A device none of whose reports is held for review: a spike's reports made
+// its record before they were held (nightly.js).
+const NOT_HELD = `device_hash NOT IN (SELECT reports.device_hash FROM held_reports
+  JOIN reports ON reports.id = held_reports.id WHERE reports.device_hash IS NOT NULL)`;
 
 const count = (n) => (Number.isInteger(n) && n >= SMALLEST ? n : null);
 // A percentage to one decimal, of `whole` SMALLEST or more.
@@ -43,21 +47,21 @@ export async function snapshot(db, now = new Date()) {
   const today = now.toISOString().slice(0, 10);
   const through = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
   const [devices] = await all(`SELECT count(*) AS seen, sum(conversions > 0) AS converted,
-    sum(first_result = 'converted') AS first_run, sum(back_to_sonoff > 0) AS back FROM devices WHERE dev = 0`);
+    sum(first_result = 'converted') AS first_run, sum(back_to_sonoff > 0) AS back FROM devices WHERE dev = 0 AND ${NOT_HELD}`);
   const [median] = await all(`SELECT runs_to_convert AS value FROM (SELECT runs_to_convert,
       row_number() OVER (ORDER BY runs_to_convert) AS rank, count(*) OVER () AS n
-    FROM devices WHERE dev = 0 AND runs_to_convert IS NOT NULL) WHERE rank = (n + 1) / 2`);
+    FROM devices WHERE dev = 0 AND ${NOT_HELD} AND runs_to_convert IS NOT NULL) WHERE rank = (n + 1) / 2`);
   const [runs] = await all(`SELECT ${OUTCOMES} FROM monthly_totals WHERE tag = 'user'`);
   const months = await all(`SELECT month, ${OUTCOMES} FROM monthly_totals WHERE tag = 'user'
     GROUP BY month ORDER BY month`);
   const newDevices = new Map((await all(`SELECT substr(first_day, 1, 7) AS month, count(*) AS n FROM devices
-    WHERE dev = 0 GROUP BY month`)).map((row) => [row.month, row.n]));
+    WHERE dev = 0 AND ${NOT_HELD} GROUP BY month`)).map((row) => [row.month, row.n]));
   const models = await all(`SELECT model, max(device) AS device, count(*) AS devices,
       sum(conversions > 0) AS converted, sum(first_result = 'converted') AS first_run
-    FROM devices WHERE dev = 0 AND model IS NOT NULL GROUP BY model HAVING count(*) >= ?
+    FROM devices WHERE dev = 0 AND ${NOT_HELD} AND model IS NOT NULL GROUP BY model HAVING count(*) >= ?
     ORDER BY devices DESC, model`, SMALLEST);
   const modelMonths = await all(`SELECT substr(first_day, 1, 7) AS month, model, count(*) AS devices FROM devices
-    WHERE dev = 0 AND model IS NOT NULL GROUP BY month, model HAVING count(*) >= ? ORDER BY month, model`, SMALLEST);
+    WHERE dev = 0 AND ${NOT_HELD} AND model IS NOT NULL GROUP BY month, model HAVING count(*) >= ? ORDER BY month, model`, SMALLEST);
   const routes = await all(`SELECT source, firmware, ${OUTCOMES} FROM monthly_totals
     WHERE tag = 'user' AND firmware != '' GROUP BY source, firmware HAVING sum(n) >= ? ORDER BY runs DESC`, SMALLEST);
   const tools = await all(`SELECT tool, ${OUTCOMES} FROM monthly_totals WHERE tag = 'user'
