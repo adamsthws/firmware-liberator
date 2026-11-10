@@ -37,6 +37,14 @@ class StockFromOfferedTests(unittest.TestCase):
         self.assertEqual(found.rbl, rbl_image)
         self.assertEqual(found.layout.key, layouts.BEKEN_4M.key)
 
+    def test_its_version_is_the_images_own_else_the_offers(self):
+        rbl_image = rbl.pack(s61_app(), name="app", version="1.0.3")
+        listed = [SimpleNamespace(name="user1.bin", version="1.0.2", data=b"fota")]
+        for inside, expected in (("1.0.3", "1.0.3"), ("", "1.0.2")):
+            with self.subTest(inside), \
+                    mock.patch.object(rb.fota_wrap, "unwrap", return_value=[("app", inside, rbl_image)]):
+                self.assertEqual(rb.stock_from_offered(listed).version, expected)
+
     def test_a_file_that_is_not_a_known_table_is_passed_over(self):
         self.assertIsNone(rb.stock_from_offered(self.offered(b"not a fota")))
 
@@ -67,12 +75,17 @@ class RoundTripTests(unittest.TestCase):
         self.addCleanup(patch.stop)
 
     def test_nothing_is_sent_without_proceed(self):
-        with mock.patch.object(rb.prompts, "warning_box"), \
-                mock.patch.object(rb.prompts, "require_word", return_value=False), \
+        asked = mock.Mock()
+        with mock.patch.object(rb.prompts, "warning_box", asked.warning), \
+                mock.patch.object(rb.prompts, "require_word", asked.word), \
                 mock.patch.object(rb, "deliver_readout") as sent:
+            asked.word.return_value = False
             with self.assertRaises(rb.NothingWritten):
                 rb.read_out(self.ctx, "FWSW-01-S61-BK7238", "1.0.2", self.device, self.found)
         sent.assert_not_called()
+        # Warned not to cut its power before being asked.
+        self.assertEqual([call[0] for call in asked.mock_calls], ["warning", "word"])
+        self.assertIn("DO NOT CUT ITS POWER", " ".join(asked.warning.call_args.args[1]))
 
     def test_proceed_runs_the_round_trip_in_order(self):
         order = []
@@ -87,7 +100,22 @@ class RoundTripTests(unittest.TestCase):
                 mock.patch.object(rb, "wait_for_sonoff", side_effect=lambda ctx, did: order.append("sonoff") or True):
             flash, info, back = rb.read_out(self.ctx, "FWSW-01-S61-BK7238", "1.0.2", self.device, self.found)
         self.assertEqual(order, ["deliver", "wait", "read", "revert", "sonoff"])
-        self.assertEqual((len(flash), info["openbeken"], back), (rb.WHOLE_FLASH, "obk", True))
+        self.assertEqual((len(flash), info, back), (rb.WHOLE_FLASH, {"openbeken": "obk", "chipset": "BK7238"}, True))
+
+    def test_the_devices_own_data_is_kept_from_the_whole_flash_read(self):
+        flash = bytes(range(256)) * (rb.WHOLE_FLASH // 256)
+        with mock.patch.object(rb.prompts, "warning_box"), \
+                mock.patch.object(rb.prompts, "require_word", return_value=True), \
+                mock.patch.object(rb, "deliver_readout"), \
+                mock.patch.object(rb, "wait_for_openbeken", return_value="192.0.2.60"), \
+                mock.patch.object(rb.openbeken, "info", return_value={}), \
+                mock.patch.object(rb, "read_whole_flash", return_value=flash), \
+                mock.patch.object(rb.records, "save_beken_backup", return_value=(None, False)) as kept, \
+                mock.patch.object(rb, "revert_to_sonoff"), mock.patch.object(rb, "wait_for_sonoff", return_value=True):
+            rb.read_out(self.ctx, "FWSW-01-S61-BK7238", "1.0.2", self.device, self.found)
+        mac, data, stock, version = kept.call_args.args
+        self.assertEqual((mac, stock, version), ("12:34:56:ab:cd:ef", b"RBL\0stock", "1.0.2"))
+        self.assertEqual(data, flash[rb.records.BEKEN_REGION[0]:])
 
     def test_revert_uses_the_revert_command_and_the_offered_rbl(self):
         served = {}
@@ -165,6 +193,24 @@ class PutBackTests(unittest.TestCase):
                 rb.put_back(self.ctx, "192.0.2.60")
         rb.revert_to_sonoff.assert_not_called()
 
+    def test_a_device_with_no_record_is_found_in_the_account_by_its_address(self):
+        from tools.autoflash import account
+        from tools.ewelink import offered_firmware
+        offered = account.Asked({"packets": []}, "1.0.2", "SN-BK7238-NEW-01", "NEWBK", [],
+                                {"offers": [{"x": 1}]}, "1000abcdef")
+        listed = [{"deviceid": "1000abcdef"}]
+        self.ctx.account_devices = lambda: listed
+        with mock.patch.object(rb, "saved_stock", return_value=None), \
+                mock.patch.object(rb.records, "read_device", return_value={}), \
+                mock.patch("tools.autoflash.readout.device_at", side_effect=lambda host, devices: devices[0]) as at, \
+                mock.patch.object(account, "ask_account", return_value=offered) as asked, \
+                mock.patch.object(offered_firmware, "fetch", return_value=(["file"], [])) as fetched, \
+                mock.patch.object(rb, "stock_from_offered", return_value=self.found):
+            rb.put_back(self.ctx, "192.0.2.60")
+        self.assertEqual(at.call_args.args, ("192.0.2.60", listed))
+        self.assertEqual(asked.call_args.args[1], "1000abcdef")
+        self.assertEqual(fetched.call_args.args, ([{"x": 1}], "1000abcdef"))
+
     def test_the_kept_firmware_is_read_from_the_backup(self):
         import tempfile
         from pathlib import Path
@@ -181,6 +227,9 @@ class PutBackTests(unittest.TestCase):
 
 
 class ReadWholeFlashTests(unittest.TestCase):
+    def test_the_whole_flash_is_the_4_mb_of_the_table_it_reads(self):
+        self.assertEqual(rb.WHOLE_FLASH, layouts.BEKEN_4M.flash_size)
+
     def test_the_reads_start_is_in_the_runs_log(self):
         # On a terminal the wait is shown, not logged: the Beken fault suite
         # times a fault in the read from the log (READOUT_PHASES).
@@ -193,8 +242,9 @@ class ReadWholeFlashTests(unittest.TestCase):
                 mock.patch.object(output, "log_only", side_effect=logged.append), \
                 mock.patch.object(output, "say", side_effect=logged.append), \
                 mock.patch.object(output, "progress_clear"), \
-                mock.patch.object(rb.openbeken, "read_flash", return_value=b"\xff" * rb.WHOLE_FLASH):
-            rb.read_whole_flash(a_ctx(), "192.0.2.60")
+                mock.patch.object(rb.openbeken, "read_flash", return_value=b"\xff" * rb.WHOLE_FLASH) as read:
+            self.assertEqual(rb.read_whole_flash(a_ctx(), "192.0.2.60"), b"\xff" * rb.WHOLE_FLASH)
+        self.assertEqual(read.call_args.args, ("192.0.2.60", 0, rb.WHOLE_FLASH))   # all of it, from the start
         start, end, _ = fault_suite.READOUT_PHASES["read"]
         log = "\n".join(f"[10:00:00] {line}" for line in logged)
         self.assertLess(re.search(start, log).start(), re.search(end, log).start())
