@@ -319,6 +319,15 @@ test("one sender's reports are held to their own limit a day, the rest left for 
   assert.equal((await sendFrom("192.0.2.77", [loose()])).accepted.length, 1, "another sender is not held by it");
 });
 
+test("the per-minute limit counts an IPv6 sender by its /48, as every other limit does", async () => {
+  const keys = [];
+  const bindings = { ...env(), REPORT_LIMIT: { limit: async ({ key }) => { keys.push(key); return { success: true }; } } };
+  for (const from of ["2001:db8:1:2::10", "2001:db8:1:ffff::99", "192.0.2.9"]) {
+    await api.reports(post({ reports: [report()] }, {}, from), bindings, NOW);
+  }
+  assert.deepEqual(keys, ["2001:0db8:0001::/48", "2001:0db8:0001::/48", "192.0.2.9"]);
+});
+
 test("a sender is counted under a keyed hash, never its address", async () => {
   const bindings = env();
   await api.reports(post({ reports: [report()] }, {}, "198.51.100.23"), bindings, NOW);
