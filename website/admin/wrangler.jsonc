@@ -15,8 +15,9 @@
   ],
   "workers_dev": false,
   "preview_urls": false,
-  // No logs or traces: nothing of the view's is worth keeping.
-  "observability": { "enabled": false, "logs": { "enabled": false }, "traces": { "enabled": false } },
+  // Workers Logs and traces, as the API's (../api/wrangler.jsonc), so a
+  // failure of the view can be looked into.
+  "observability": { "enabled": true, "head_sampling_rate": 1, "logs": { "enabled": true, "invocation_logs": true }, "traces": { "enabled": true, "head_sampling_rate": 1 } },
   // The API's database (../api/database.js), read live, and changed only by a
   // held report released or deleted. The same id as ../api/wrangler.jsonc's.
   "d1_databases": [

@@ -474,6 +474,22 @@ test("the full work is asked, whatever the Worker is given", async () => {
   }
 });
 
+test("the API and the admin view log and trace every request, for a failure to be looked into, and say so", () => {
+  for (const file of ["../api/wrangler.jsonc", "../admin/wrangler.jsonc"]) {
+    const config = readFileSync(new URL(file, import.meta.url), "utf8");
+    const setting = config.split("\n").find((line) => line.trim().startsWith('"observability"'));
+    assert.ok(setting, `${file} says nothing of observability`);
+    assert.deepEqual(JSON.parse(setting.trim().replace(/^"observability":\s*/, "").replace(/,$/, "")),
+      { enabled: true, head_sampling_rate: 1, logs: { enabled: true, invocation_logs: true },
+        traces: { enabled: true, head_sampling_rate: 1 } },
+      file);
+  }
+  const told = readFileSync(new URL("../../docs/what-the-tool-sends.md", import.meta.url), "utf8");
+  assert.match(told, /Cloudflare logs\s+each request, with that address, and keeps a trace of it/);
+  assert.match(told, /the rough place and network your address belongs to/);
+  assert.match(told, /for seven days/);
+});
+
 test("the tool does the same work the Worker asks", () => {
   const tool = readFileSync(new URL("../../tools/autoflash/readout.py", import.meta.url), "utf8");
   assert.match(tool, new RegExp(`^PROOF_BITS = ${readout.PROOF_BITS}\\b`, "m"));

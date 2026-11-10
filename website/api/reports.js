@@ -10,8 +10,9 @@
 // forgets the first three, and sends the rest again another time.
 //
 // Kept, and how floods are bounded:
-// - Nothing of the sender: no address (the rate limiter holds it a minute,
-//   never stored), no time of day; a report's day, as a UTC date. For the
+// - Nothing of the sender in what is kept: no address (the rate limiter holds
+//   it a minute; Cloudflare's log of the request, seven days, wrangler.jsonc),
+//   no time of day; a report's day, as a UTC date. For the
 //   figures' model names alone, a keyed hash of the address and the model it
 //   names (namedBy), which ties the sender to nothing else, kept until the
 //   model is vouched for (nightly.js) or VOUCH_KEEP_DAYS pass.
