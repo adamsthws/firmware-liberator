@@ -1,4 +1,5 @@
 """tools/repo/update_firmware.py: what an ESPHome build is given besides its config."""
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -62,6 +63,146 @@ class IncludedFilesTests(unittest.TestCase):
     def test_one_not_there_stops_the_build(self):
         with self.assertRaisesRegex(uf.UpdateError, r"includes \.\./r\.h, which is not there"):
             self.build_with(self.CONFIG, {})
+
+
+class ESPHomeRebuildTests(unittest.TestCase):
+    """An ESPHome build again on the release pinned, in a made-up checkout: one no
+    release has published keeps its version, and every device's config, built or
+    not, is adopted from the release to come."""
+
+    RELEASE = "2099.1.0"
+    BUILT = "2099-01-02 00:00:00 +0000"
+    CONFIG = ('esphome:\n  name: esphome\n  project:\n    name: x.{key}\n    version: "{version}"\n'
+              'dashboard_import:\n  package_import_url: github://someone/repo/devices/{key}/esphome.yaml@v2.0.0\n')
+    # Each build's pin: its section in firmware.json, and its file.
+    BUILDS = {"sonoff-s60": ("espressif", "artifacts/esphome-sonoff-s60-imprintable-{version}.bin"),
+              "sonoff-pow-elite": ("espressif", "artifacts/esphome-sonoff-pow-elite-imprintable-{version}.bin"),
+              "sonoff-s61": ("beken", "artifacts/esphome-sonoff-s61-{version}.rbl")}
+    MOVER = "artifacts/autoflash-mover-esp32c3-1.2.0.bin"
+    BOOTLOADER = "artifacts/esphome-sonoff-s60-bootloader-1.2.0.bin"
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.root = root = Path(folder.name)
+        (root / "artifacts").mkdir()
+        version = f"{self.RELEASE}-2"
+        pins = {"espressif": {"esp32c3": {}}, "beken": {}}
+        rows, sums = [], []
+        for key, (family, pattern) in self.BUILDS.items():
+            file = pattern.format(version=version)
+            (root / file).write_bytes(b"the build before")
+            pins[family][key] = {"esphome": {
+                "file": file, "config": f"devices/{key}/esphome.yaml", "version": version, "esphome": self.RELEASE,
+                "esp_idf": "5.5.9", "libretiny": "9.9.9", "built": "2099-01-01 00:00:00 +0000",
+                "earlier_builds": ["2098-12-01 00:00:00 +0000"], "size": 16, "sha256": "a" * 64}}
+            rows.append(f"| `{Path(file).name}` | {key} | `{'a' * 64}` |")
+            sums.append(f"{'a' * 64}  {Path(file).name}")
+        for name, file in (("mover", self.MOVER), ("bootloader", self.BOOTLOADER)):
+            (root / file).write_bytes(name.encode())
+            pins["espressif"]["esp32c3"][name] = {"file": file, "version": "1.2.0", "esphome": self.RELEASE,
+                                                  "esp_idf": "5.5.9"}
+        (root / "artifacts" / "firmware.json").write_text(json.dumps(pins), encoding="utf-8")
+        (root / "artifacts" / "README.md").write_text("\n".join(rows) + "\n", encoding="utf-8")
+        (root / "artifacts" / "SHA256SUMS").write_text("\n".join(sums) + "\n", encoding="utf-8")
+        (root / ".gitignore").write_text("".join(f"!{pins[family][key]['esphome']['file']}\n"
+                                                 for key, (family, _) in self.BUILDS.items()), encoding="utf-8")
+        (root / "NOTICES.md").write_text(f"`{pins['espressif']['sonoff-pow-elite']['esphome']['file']}` is built.\n",
+                                         encoding="utf-8")
+        (root / "CHANGELOG.md").write_text("# Changelog\n\n## 3.0.0\n\n- First.\n\n## 2.0.0\n\n- Old.\n",
+                                           encoding="utf-8")
+        # A device not ready yet: no build, nothing pinned, its config all the same adopted.
+        for key in (*self.BUILDS, "sonoff-nspanel"):
+            (root / "devices" / key).mkdir(parents=True)
+            (root / "devices" / key / "esphome.yaml").write_text(self.CONFIG.format(key=key, version=version),
+                                                                encoding="utf-8")
+        (root / uf.ESPHOME_BUILDS["mover"][0]).parent.mkdir(parents=True, exist_ok=True)
+        (root / uf.ESPHOME_BUILDS["mover"][0]).write_text(
+            'esphome:\n  name: mover\n  project:\n    name: x.mover\n    version: "1.2.0"\n', encoding="utf-8")
+        for name, value in (("ROOT", root), ("FIRMWARE_JSON", root / "artifacts" / "firmware.json"),
+                            ("SHA256SUMS", root / "artifacts" / "SHA256SUMS"), ("GITIGNORE", root / ".gitignore"),
+                            ("BUILD_CACHE", root / "build"), ("CHANGELOG", root / "CHANGELOG.md"),
+                            ("ARTIFACTS_README", root / "artifacts" / "README.md"), ("NOTICES", root / "NOTICES.md")):
+            mock.patch.object(uf, name, value).start()
+        image = f"app {self.RELEASE}-2 x.sonoff-s61 {self.RELEASE} autoflash_wifi {self.BUILT}".encode()
+        board = {"flash": {"download": f"0x{uf.uf2.DOWNLOAD_OFFSET:06X}+0x{uf.uf2.DOWNLOAD_SIZE:X}"}}
+        self.published = mock.patch.object(uf, "published_by_a_release", return_value=False).start()
+        for name, value in (("released", False), ("stable_release", {"tag_name": self.RELEASE}),
+                            ("esphome_builder", "esphome@sha256:d"), ("check_esphome_internals", None),
+                            ("build", (f"app {self.BUILT}".encode(), b"bootloader")),
+                            ("check_esphome_app", {"esp_idf": "5.5.9"}),
+                            ("build_libretiny", (image, board, "9.9.9")), ("check_rbl", image)):
+            mock.patch.object(uf, name, return_value=value).start()
+        mock.patch.object(uf.shutil, "which", return_value="/usr/bin/docker").start()
+        self.addCleanup(mock.patch.stopall)
+
+    def run_main(self, *argv):
+        with mock.patch("builtins.print"):
+            self.assertEqual(uf.main(["esphome", self.RELEASE, *argv]), 0)
+        return json.loads((self.root / "artifacts" / "firmware.json").read_text(encoding="utf-8"))
+
+    def esphome_pin(self, pins, key):
+        return pins[self.BUILDS[key][0]][key]["esphome"]
+
+    def test_one_never_released_keeps_its_version_and_its_file(self):
+        for key, argv in (("sonoff-s60", ["--no-docs"]), ("sonoff-s61", ["--device", "sonoff-s61", "--no-docs"]),
+                          ("sonoff-pow-elite", ["--device", "sonoff-pow-elite", "--no-docs"])):
+            with self.subTest(key):
+                pin = self.esphome_pin(self.run_main(*argv), key)
+                file = self.BUILDS[key][1].format(version=f"{self.RELEASE}-2")
+                self.assertEqual((pin["version"], pin["file"]), (f"{self.RELEASE}-2", file))
+                self.assertNotEqual((self.root / file).read_bytes(), b"the build before")
+                config = (self.root / "devices" / key / "esphome.yaml").read_text(encoding="utf-8")
+                self.assertIn(f'version: "{self.RELEASE}-2"', config)
+                # No device has the build replaced: a released tool never installed it.
+                self.assertEqual((pin["built"], pin["earlier_builds"]), (self.BUILT, ["2098-12-01 00:00:00 +0000"]))
+                sums = (self.root / "artifacts" / "SHA256SUMS").read_text(encoding="utf-8")
+                self.assertIn(f"{pin['sha256']}  {Path(file).name}", sums)
+
+    def test_one_a_release_published_takes_the_next_version(self):
+        self.published.return_value = True
+        pin = self.esphome_pin(self.run_main("--device", "sonoff-pow-elite", "--no-docs"), "sonoff-pow-elite")
+        self.assertEqual(pin["version"], f"{self.RELEASE}-3")
+        self.assertEqual(pin["earlier_builds"], ["2098-12-01 00:00:00 +0000", "2099-01-01 00:00:00 +0000"])
+
+    def test_a_mover_never_released_keeps_its_version(self):
+        pins = self.run_main("--mover", "--no-docs")
+        self.assertEqual((pins["espressif"]["esp32c3"]["mover"]["version"],
+                          pins["espressif"]["esp32c3"]["mover"]["file"]), ("1.2.0", self.MOVER))
+
+    def test_one_never_released_writes_no_changelog_line_of_its_own(self):
+        for key, argv, texts in (("sonoff-s60", [], "esphome_doc_texts"),
+                                 ("sonoff-s61", ["--device", "sonoff-s61"], "beken_esphome_doc_texts")):
+            with self.subTest(key), mock.patch.object(uf, texts, return_value=({}, None)) as written:
+                self.run_main(*argv)
+            self.assertFalse(written.call_args.kwargs["changelog"], key)
+
+    def test_another_espressif_devices_row_and_notice_say_its_build(self):
+        pin = self.esphome_pin(self.run_main("--device", "sonoff-pow-elite"), "sonoff-pow-elite")
+        readme = (self.root / "artifacts" / "README.md").read_text(encoding="utf-8")
+        self.assertIn(f"| `{Path(pin['file']).name}` | sonoff-pow-elite | `{pin['sha256']}` |", readme)
+        self.assertIn(f"`{pin['file']}`", (self.root / "NOTICES.md").read_text(encoding="utf-8"))
+
+    def test_every_build_folded_writes_no_changelog_line(self):
+        commands = {name: mock.Mock(return_value=0)
+                    for name in ("command_esphome", "command_esphome_beken", "command_esphome_kind")}
+        with mock.patch.multiple(uf, **commands), mock.patch.object(uf, "changelog_with") as line:
+            self.run_main("--every-device")
+        line.assert_not_called()
+
+    def test_every_openbeken_build_folded_writes_no_changelog_line(self):
+        with mock.patch.object(uf, "command_openbeken", return_value=0), \
+                mock.patch.object(uf, "openbeken_pinned", return_value="1.18.320"), \
+                mock.patch.object(uf, "changelog_with") as line, mock.patch("builtins.print"):
+            self.assertEqual(uf.main(["openbeken", "1.18.320", "--every-device"]), 0)
+        line.assert_not_called()
+
+    def test_every_devices_config_is_adopted_from_the_release_to_come(self):
+        # The release workflow holds every config to its tag, a device's not ready yet too.
+        self.run_main("--device", "sonoff-pow-elite", "--no-docs")
+        for key in (*self.BUILDS, "sonoff-nspanel"):
+            config = (self.root / "devices" / key / "esphome.yaml").read_text(encoding="utf-8")
+            self.assertIn(f"devices/{key}/esphome.yaml@v3.0.0\n", config, key)
 
 
 class PublishableTests(unittest.TestCase):

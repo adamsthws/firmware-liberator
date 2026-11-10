@@ -320,6 +320,13 @@ def due(project: str, releases: list[dict[str, Any]], today: dt.datetime, pinned
             "due": newer[-1] if newer else None}
 
 
+def built_versions(pins: dict[str, Any], name: str) -> dict[tuple[str, str], str]:
+    """The version of each device's `name` build ("esphome", "openbeken"), by
+    family and device: what tells whether an update raised any."""
+    return {(family, owner): section[name]["version"] for family in ("espressif", "beken")
+            for owner, section in pins.get(family, {}).items() if "version" in section.get(name, {})}
+
+
 def openbeken_release_of(pin: dict[str, Any]) -> str:
     """The OpenBeken release a pin is built on."""
     return pin.get("release") or pin["version"].split("-")[0]
@@ -542,6 +549,12 @@ def published_by_a_release(path: str) -> bool:
                for tag in tags)
 
 
+def unreleased(pin: dict[str, Any]) -> bool:
+    """Whether `pin`'s build is one no release of the tool has published: built
+    again, it keeps its version, as a version never released is never raised."""
+    return bool(pin) and not published_by_a_release(pin["file"])
+
+
 PROJECT_VERSION = re.compile(r'(^  project:\n(?:    .*\n)*?    version: ")([^"]+)(")', re.MULTILINE)
 
 
@@ -563,11 +576,28 @@ def with_config_version(config: str, version: str) -> str:
 ADOPTION_RELEASE = re.compile(r"^(  package_import_url: \S+@)\S+$", re.MULTILINE)
 
 
+def adoption_tag() -> str:
+    """The tag of the release to come, which every config is adopted from."""
+    return f"v{release_to_come(CHANGELOG.read_text(encoding='utf-8'))}"
+
+
 def as_built(config: str, version: str) -> str:
     """The config as built at this version: named so, and adopted from the
     release it comes out in."""
-    tag = f"v{release_to_come(CHANGELOG.read_text(encoding='utf-8'))}"
+    tag = adoption_tag()
     return ADOPTION_RELEASE.sub(lambda match: match.group(1) + tag, with_config_version(config, version))
+
+
+def adopt_every_config_from_the_release() -> None:
+    """Every device's ESPHome config adopted from the release to come, built now
+    or not: the release workflow holds each one to the release's tag
+    (release_notes.py --adoption-tags), a device not ready yet's too."""
+    tag = adoption_tag()
+    for path in sorted(ROOT.glob("devices/*/esphome.yaml")):
+        config = path.read_text(encoding="utf-8")
+        adopted = ADOPTION_RELEASE.sub(lambda match: match.group(1) + tag, config)
+        if adopted != config:
+            path.write_text(adopted, encoding="utf-8")
 
 
 def app_description(image: bytes) -> dict[str, str]:
@@ -702,7 +732,11 @@ def command_esphome(args: argparse.Namespace) -> int:
     BUILD_CACHE.mkdir(parents=True, exist_ok=True)
     built: dict[str, tuple[str, bytes, bytes, dict[str, str]]] = {}
     for key in ["image", *(["mover"] if args.mover else [])]:
-        version = build_version(release, old_image) if key == "image" else next_minor(chip[key]["version"])
+        # A build no release has published is built again under its own version.
+        if key == "image":
+            version = build_version(release, old_image, folded=unreleased(old_image))
+        else:
+            version = chip[key]["version"] if unreleased(chip[key]) else next_minor(chip[key]["version"])
         app, bootloader = build(builder, ROOT / ESPHOME_BUILDS[key][0], version, BUILD_CACHE)
         described = check_esphome_app(app, f"the {key} built", release)
         built[key] = (version, app, bootloader, described)
@@ -722,7 +756,8 @@ def command_esphome(args: argparse.Namespace) -> int:
     texts, release_version = ({}, None) if args.no_docs else esphome_doc_texts(
         old_image, {"file": ESPHOME_BUILDS["image"][1].format(version=version), "version": version,
                     "esphome": release, "esp_idf": described["esp_idf"], "sha256": sha256_bytes(app)},
-        changelog=not getattr(args, "every", False))
+        # One folded into its version says what changed in that version's own line.
+        changelog=not getattr(args, "every", False) and version != old_image["version"])
 
     for key, (version, app, _bootloader, described) in built.items():
         config_path = ROOT / ESPHOME_BUILDS[key][0]
@@ -739,6 +774,7 @@ def command_esphome(args: argparse.Namespace) -> int:
     elif not new_bootloader:
         print("  the bootloader is byte for byte the published one: kept as it is")
     save_pins(pins)
+    adopt_every_config_from_the_release()
     print("\nfirmware.json, SHA256SUMS, .gitignore and artifacts/ updated: git add the new "
           "files, and git rm the old.")
     by_hand = []
@@ -957,13 +993,15 @@ def command_openbeken_every(args: argparse.Namespace) -> int:
     """Every Beken device's OpenBeken, built on the one release: what the weekly
     update runs, so none is left on an older one."""
     release = stable_release(OPENBEKEN_REPO, args.version)["tag_name"]
-    before = openbeken_pinned(load_pins())
+    pins = load_pins()
+    before, versions = openbeken_pinned(pins), built_versions(pins, "openbeken")
     for device in BEKEN_BUILDS:
         print(f"\n== {device}")
         code = command_openbeken(argparse.Namespace(**{**vars(args), "device": device, "version": release, "every": True}))
         if code:
             return code
-    if not args.dry_run and not args.no_docs:
+    # As for ESPHome, every build folded into its unreleased version adds no line.
+    if not args.dry_run and not args.no_docs and built_versions(load_pins(), "openbeken") != versions:
         texts: dict[Path, str] = {}
         version = changelog_with(moved("OpenBeken", release, before), texts)
         write_texts(texts)
@@ -975,10 +1013,7 @@ def openbeken_doc_texts(device: str, old: dict[str, Any], new: dict[str, Any],
                         changelog: bool = True) -> dict[Path, str]:
     """artifacts/README.md's row and NOTICES.md for a Beken device's new OpenBeken
     image, and the changelog's line unless the caller writes one for every device."""
-    old_name, new_name = Path(old["file"]).name, Path(new["file"]).name
-    readme = substituted(ARTIFACTS_README.read_text(encoding="utf-8"), rf"^\| `{re.escape(old_name)}` \|.*$",
-                         lambda row: row.group(0).replace(old_name, new_name).replace(old["sha256"], new["sha256"]),
-                         f"{old_name}'s row in artifacts/README.md")
+    readme = with_row(ARTIFACTS_README.read_text(encoding="utf-8"), old, new)
     notices = NOTICES.read_text(encoding="utf-8")
     if f"`{old['file']}`" not in notices:
         raise UpdateError(f"could not find {old['file']} in NOTICES.md to update: nothing was changed; --no-docs "
@@ -1016,7 +1051,8 @@ def command_esphome_beken(args: argparse.Namespace) -> int:
     section = beken_section(pins, args.device)
     current = section.get("esphome", {})
     config = (ROOT / config_path).read_text(encoding="utf-8")
-    version = build_version(release, current)
+    # A build no release has published is built again under its own version.
+    version = build_version(release, current, folded=unreleased(current))
     builder = esphome_builder(release)
     print(f"ESPHome {release} for the {args.device}: {builder}")
     BUILD_CACHE.mkdir(parents=True, exist_ok=True)
@@ -1037,14 +1073,16 @@ def command_esphome_beken(args: argparse.Namespace) -> int:
     new = {"file": file_pattern.format(version=version), "version": version, "esphome": release,
            "libretiny": libretiny, "sha256": sha256_bytes(image)}
     # Worked out before anything is written, so a passage not found changes nothing.
+    # One folded into its version says what changed in that version's own line.
     texts = {} if args.no_docs or not current else beken_esphome_doc_texts(
-        args.device, current, new, changelog=not getattr(args, "every", False))[0]
+        args.device, current, new, changelog=not getattr(args, "every", False) and version != current["version"])[0]
     (ROOT / config_path).write_text(as_built(config, version), encoding="utf-8")
     publish(section, "esphome", new["file"], image,
             {"config": config_path, "version": version, "esphome": release, "libretiny": libretiny,
              "builder": builder, **builds_record(firmware, "the ESPHome built", section.get("esphome", {}), version)})
     save_pins(pins)
     write_texts(texts)
+    adopt_every_config_from_the_release()
     print("\nfirmware.json, SHA256SUMS, .gitignore, the config's version and artifacts/ updated: "
           "git add the new file, and git rm the old.")
     left_to_do([*([] if texts else ["artifacts/README.md: the file's row (name, SHA-256)",
@@ -1259,7 +1297,8 @@ def esphome_command(kind: kinds.Kind) -> Callable[[argparse.Namespace], int] | N
 def command_esphome_every(args: argparse.Namespace) -> int:
     """Every device's ESPHome, built with the one release: what the weekly update
     runs, so none is left on an older one."""
-    before = pinned_version(load_pins(), "esphome")
+    pins = load_pins()
+    before, versions = pinned_version(pins, "esphome"), built_versions(pins, "esphome")
     for kind in kinds.READY:
         command = esphome_command(kind)
         if command is None:
@@ -1270,8 +1309,9 @@ def command_esphome_every(args: argparse.Namespace) -> int:
         if code:
             return code
     # One line for them all, as for Tasmota and OpenBeken: each device's own build
-    # writes none when it is one of every device's.
-    if not args.dry_run and not args.no_docs:
+    # writes none when it is one of every device's. Every build folded into its
+    # version, never released, says nothing new: that version's line says it.
+    if not args.dry_run and not args.no_docs and built_versions(load_pins(), "esphome") != versions:
         release = stable_release(ESPHOME_REPO, args.version)["tag_name"]
         texts: dict[Path, str] = {}
         version = changelog_with(moved("ESPHome", release, before), texts)
@@ -1290,7 +1330,8 @@ def command_esphome_kind(args: argparse.Namespace) -> int:
     config_path = ROOT / kind.folder / "esphome.yaml"
     config = config_path.read_text(encoding="utf-8")
     current = section.get("esphome", {})
-    version = build_version(release, current)
+    # A build no release has published is built again under its own version.
+    version = build_version(release, current, folded=unreleased(current))
     builder = esphome_builder(release)
     print(f"ESPHome {release} for the {kind.name}: {builder}")
     check_esphome_internals(builder)
@@ -1300,13 +1341,20 @@ def command_esphome_kind(args: argparse.Namespace) -> int:
     if args.dry_run:
         print("\nBuilt and checked; nothing published (--dry-run).")
         return 0
+    file = f"artifacts/esphome-{kind.key}-imprintable-{version}.bin"
+    # Worked out before anything is written, so a passage not found changes nothing.
+    texts = {} if args.no_docs or not current else kind_esphome_doc_texts(
+        current, {"file": file, "sha256": sha256_bytes(app)})
     config_path.write_text(as_built(config, version), encoding="utf-8")
-    publish(section, "esphome", f"artifacts/esphome-{kind.key}-imprintable-{version}.bin", app,
+    publish(section, "esphome", file, app,
             {"config": f"{kind.folder}/esphome.yaml", "version": version, "esphome": release,
              "esp_idf": described["esp_idf"], "builder": builder,
              **builds_record(app, "the ESPHome built", current, version)})
     save_pins(pins)
-    left_to_do([f"artifacts/README.md: the file's row, {kind.folder}/esphome.md: its release",
+    write_texts(texts)
+    adopt_every_config_from_the_release()
+    left_to_do([*([] if texts else ["artifacts/README.md: the file's row (name, SHA-256)",
+                                    "NOTICES.md: the file's name"]),
                 "python3 tests/run.py, then a conversion in the emulator"])
     return 0
 
@@ -1387,6 +1435,14 @@ def substituted(text: str, pattern: str, replacement, what: str) -> str:
     return new
 
 
+def with_row(readme: str, old: dict[str, Any], new: dict[str, Any]) -> str:
+    """artifacts/README.md with the old file's row saying the new file: its name and SHA-256."""
+    old_name, new_name = Path(old["file"]).name, Path(new["file"]).name
+    return substituted(readme, rf"^\| `{re.escape(old_name)}` \|.*$",
+                       lambda row: row.group(0).replace(old_name, new_name).replace(old["sha256"], new["sha256"]),
+                       f"{old_name}'s row in artifacts/README.md")
+
+
 def tasmota_doc_texts(old: str, new: str) -> tuple[dict[Path, str], str]:
     texts: dict[Path, str] = {}
     version = changelog_with(moved("Tasmota", new, old), texts)
@@ -1400,11 +1456,7 @@ def esphome_doc_texts(old: dict[str, Any], new: dict[str, Any],
     with the same release, a change to the config, which a person describes -
     worked out before anything is written, so a passage not found changes
     nothing."""
-    old_name, new_name = Path(old["file"]).name, Path(new["file"]).name
-    readme = ARTIFACTS_README.read_text(encoding="utf-8")
-    readme = substituted(readme, rf"^\| `{re.escape(old_name)}` \|.*$",
-                         lambda row: row.group(0).replace(old_name, new_name).replace(old["sha256"], new["sha256"]),
-                         f"{old_name}'s row in artifacts/README.md")
+    readme = with_row(ARTIFACTS_README.read_text(encoding="utf-8"), old, new)
     readme = substituted(readme, r"(\(its `project` version is the one in the file name\) with ESPHome )\S+( and\s+ESP-IDF )[\d.]+",
                          lambda m: f"{m.group(1)}{new['esphome']}{m.group(2)}{new['esp_idf']}",
                          "the ESPHome release that builds the image, in artifacts/README.md")
@@ -1428,11 +1480,7 @@ def beken_esphome_doc_texts(device: str, old: dict[str, Any], new: dict[str, Any
                             changelog: bool = True) -> tuple[dict[Path, str], str | None]:
     """artifacts/README.md, NOTICES.md, the device's esphome.md and the changelog
     for a Beken device's new ESPHome image."""
-    old_name, new_name = Path(old["file"]).name, Path(new["file"]).name
-    readme = ARTIFACTS_README.read_text(encoding="utf-8")
-    readme = substituted(readme, rf"^\| `{re.escape(old_name)}` \|.*$",
-                         lambda row: row.group(0).replace(old_name, new_name).replace(old["sha256"], new["sha256"]),
-                         f"{old_name}'s row in artifacts/README.md")
+    readme = with_row(ARTIFACTS_README.read_text(encoding="utf-8"), old, new)
     readme = substituted(readme, rf"built with ESPHome {re.escape(old['esphome'])} on LibreTiny {re.escape(old['libretiny'])}",
                          f"built with ESPHome {new['esphome']} on LibreTiny {new['libretiny']}",
                          "the ESPHome release that builds the image, in artifacts/README.md")
@@ -1463,6 +1511,18 @@ def beken_esphome_doc_texts(device: str, old: dict[str, Any], new: dict[str, Any
         return texts, None
     version = changelog_with(moved("ESPHome", new["esphome"], old["esphome"], kinds.find(device).name), texts)
     return texts, version
+
+
+def kind_esphome_doc_texts(old: dict[str, Any], new: dict[str, Any]) -> dict[Path, str]:
+    """artifacts/README.md's row and NOTICES.md's name for another Espressif
+    device's new ESPHome image. The release and ESP-IDF that build it are the
+    S60's, which its own update writes."""
+    notices = NOTICES.read_text(encoding="utf-8")
+    if f"`{old['file']}`" not in notices:
+        raise UpdateError(f"could not find {old['file']} in NOTICES.md to update: nothing was changed; --no-docs "
+                          "leaves the docs to be written by hand")
+    return {ARTIFACTS_README: with_row(ARTIFACTS_README.read_text(encoding="utf-8"), old, new),
+            NOTICES: notices.replace(f"`{old['file']}`", f"`{new['file']}`")}
 
 
 def left_to_do(items: list[str]) -> None:

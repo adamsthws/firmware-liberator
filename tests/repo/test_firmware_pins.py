@@ -634,6 +634,7 @@ class EveryDeviceUpdatedTests(unittest.TestCase):
         with mock.patch.multiple(uf, **commands), \
                 mock.patch.object(uf, "stable_release", return_value={"tag_name": "2099.1.0"}), \
                 mock.patch.object(uf, "changelog_with", side_effect=lambda entry, texts: lines.append(entry) or "9.9.0"), \
+                mock.patch.object(uf, "built_versions", side_effect=[{"a": "2026.10.0-2"}, {"a": "2099.1.0-1"}]), \
                 mock.patch.object(uf, "write_texts"):
             self.assertEqual(uf.main(["esphome", "2099.1.0", "--every-device"]), 0)
         self.assertEqual(seen, [True] * len(kinds.READY))
@@ -1001,6 +1002,8 @@ class UpdateCommandTests(unittest.TestCase):
                             ("BUILD_CACHE", root / "build")):
             mock.patch.object(uf, name, value).start()
         mock.patch.object(uf.shutil, "which", return_value="/usr/bin/docker").start()
+        # Each build pinned here came out in a release: a new one takes a new version.
+        mock.patch.object(uf, "published_by_a_release", return_value=True).start()
         self.addCleanup(mock.patch.stopall)
 
     @staticmethod
