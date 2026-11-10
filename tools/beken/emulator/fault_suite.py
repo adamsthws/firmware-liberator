@@ -88,6 +88,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from pathlib import Path
 from typing import Callable
 
@@ -925,7 +926,9 @@ def batch(ids_file: str | None = None) -> None:
                 try:
                     outcome = run_scenario(instance, sc)
                 except Exception as exc:  # noqa: BLE001 - one scenario's failure is recorded, not the batch's
-                    outcome = dict(result="ERROR", notes={"error": repr(exc)})
+                    # Where it was raised too, as the Espressif suite keeps it: the error alone
+                    # (a FileNotFoundError, say) does not tell which file.
+                    outcome = dict(result="ERROR", notes={"error": repr(exc), "trace": traceback.format_exc()})
                 with lock:
                     record(sc, outcome)
                     print(f"{outcome['result']:9} {sc['id']}{starved_label(outcome)}", flush=True)
