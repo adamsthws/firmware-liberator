@@ -7,8 +7,9 @@
 //   a Sonoff version, a tool version) under it is left out, so no one report
 //   or device can be picked out.
 // - No model's name is shown before it is vouched for (vouched_models:
-//   VOUCH_SENDERS senders over VOUCH_DAYS days, nightly.js), so no made-up
-//   name can be put on the page by one sender, however many reports it makes.
+//   VOUCH_SENDERS senders from VOUCH_NETWORKS networks over VOUCH_DAYS days,
+//   nightly.js), so no made-up name can be put on the page by one sender,
+//   however many reports it makes.
 // - A run's success is a conversion, over conversions, failures and crashes:
 //   one the person declined, with nothing to do, or that met a device the tool
 //   does not convert yet (counted as "unsupported", and in "wanted"), counts

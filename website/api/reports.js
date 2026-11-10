@@ -55,12 +55,22 @@ const ID = /^[0-9a-f]{32}$/;
 
 // Who named `model`, as model_senders keeps it: a keyed hash (SENDER_KEY) of
 // the model and the sender's address, one a model, so nothing ties one
-// sender's names together. A model's name is shown in the figures only once
-// several have given it, over several days (snapshot.js).
+// sender's names together; and of the model and the network it came from
+// (Cloudflare's ASN), null where none is given. A model's name is shown in the
+// figures only once several have given it, from several networks, over
+// several days (nightly.js).
 export async function namedBy(env, request, model) {
-  return (await keyed(env.SENDER_KEY, `model|${model}|${senderAddress(request)}`)).slice(0, 32);
+  const asn = request.cf?.asn;
+  return {
+    sender: (await keyed(env.SENDER_KEY, `model|${model}|${senderAddress(request)}`)).slice(0, 32),
+    network: Number.isInteger(asn) ? (await keyed(env.SENDER_KEY, `model|${model}|network|${asn}`)).slice(0, 32) : null,
+  };
 }
-const NAMED = "INSERT OR IGNORE INTO model_senders (model, sender, day) VALUES (?, ?, ?)";
+const NAMED = "INSERT OR IGNORE INTO model_senders (model, sender, network, day) VALUES (?, ?, ?, ?)";
+const naming = async (env, request, model, day) => {
+  const { sender, network } = await namedBy(env, request, model);
+  return env.DB.prepare(NAMED).bind(model, sender, network, day);
+};
 const reportsOn = (day) => `reports:${day}`;
 
 // The device as stored: HMAC-SHA256 of the tool's hash under DEVICE_HASH_KEY_PERMANENT.
@@ -241,11 +251,10 @@ export async function reports(request, env, now = new Date()) {
   // The models the reports counted name, each noted once as this sender's.
   const models = [...new Set(kept.filter(([report, , held]) => held === null && report.tag === "user" && report.model)
     .map(([report]) => report.model))];
-  const naming = await Promise.all(models.map(async (model) =>
-    env.DB.prepare(NAMED).bind(model, await namedBy(env, request, model), day)));
+  const namings = await Promise.all(models.map((model) => naming(env, request, model, day)));
   if (kept.length) {
     try {
-      await env.DB.batch([...kept.flatMap(([report, hash, held]) => writes(env.DB, report, hash, day, held)), ...naming]);
+      await env.DB.batch([...kept.flatMap(([report, hash, held]) => writes(env.DB, report, hash, day, held)), ...namings]);
     } catch (error) {
       await release(env.DB, reportsOn(day), 0, kept.length);
       await release(env.DB, sender, 0, kept.length);
@@ -271,7 +280,7 @@ export async function countWanted(env, request, product, day) {
   const statements = [env.DB.prepare(`INSERT INTO wanted_days (day, model, asked) VALUES (?, ?, 1)
     ON CONFLICT (day, model) DO UPDATE SET asked = asked + 1`).bind(day, model)];
   if (env.SENDER_KEY) {
-    statements.push(env.DB.prepare(NAMED).bind(model, await namedBy(env, request, model), day));
+    statements.push(await naming(env, request, model, day));
   }
   await env.DB.batch(statements);
 }

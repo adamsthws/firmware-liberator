@@ -2,9 +2,13 @@
 // live from its database on each load - unlike /stats, which is the public
 // figures, a day old. Behind Cloudflare Access (access.js checks its token on
 // every request); the only changes it makes are a held report released or
-// deleted, each a POST from this view itself. Nothing in it is cached,
-// framed, indexed or scripted.
-import { DAILY_BYTES, DAILY_COUNT, NOTIFY_DAILY, TOTAL_BYTES } from "../api/index.js";
+// deleted, readouts nearly agreeing approved, and the maintainer's switches
+// set, each a POST from this view itself. Nothing in it is cached, framed,
+// indexed or scripted.
+import { release as giveBack } from "../api/counters.js";
+import { AGREEMENT_SETTING, DAILY_BYTES, DAILY_COUNT, MIN_NETWORKS, NOTIFY_DAILY, PER_KEY, STAGES, TOTAL_BYTES }
+  from "../api/index.js";
+import { PENDING } from "../api/pending.js";
 import { DEVICE_DAILY, REPORTS_DAILY } from "../api/reports.js";
 import { verified } from "./access.js";
 import { bytes, columns, esc, FULL, lineChart, meter, number, STYLE, table, tile } from "./render.js";
@@ -50,13 +54,72 @@ export async function handle(request, env, now = Date.now(), fetcher = fetch) {
   if (url.pathname === "/held" && request.method === "POST") {
     return held(request, env);
   }
+  if (url.pathname === "/settings" && request.method === "POST") {
+    return setting(request, env);
+  }
+  if (url.pathname === "/approve" && request.method === "POST") {
+    return approve(request, env);
+  }
   return reply(404, "Not found.", { "Content-Type": "text/plain" });
+}
+
+// Whether a POST came from a form on this view itself.
+const ownForm = (request) => request.headers.get("Origin") === ORIGIN
+  && (request.headers.get("Sec-Fetch-Site") ?? "same-origin") === "same-origin";
+const notOwn = () => reply(403, "Only from the admin view itself.", { "Content-Type": "text/plain" });
+
+// The switches this view sets, each "on" or "off": on when never set.
+export const SWITCHES = { [AGREEMENT_SETTING]: "Email me when readouts come to agree" };
+
+// A switch set: only from a form on this view.
+async function setting(request, env) {
+  if (!ownForm(request)) {
+    return notOwn();
+  }
+  const form = await request.formData();
+  const name = String(form.get("name") ?? "");
+  const value = String(form.get("value") ?? "");
+  if (!Object.hasOwn(SWITCHES, name) || !["on", "off"].includes(value)) {
+    return reply(400, "Not a switch and on or off.", { "Content-Type": "text/plain" });
+  }
+  await env.DB.prepare("INSERT INTO settings (name, value) VALUES (?1, ?2) ON CONFLICT (name) DO UPDATE SET value = ?2")
+    .bind(name, value).run();
+  return new Response(null, { status: 303, headers: { Location: "/#switches", "Cache-Control": "no-store" } });
+}
+
+// Readouts alike, PER_KEY or more of a key and stage, waiting for review only
+// because they came from fewer than MIN_NETWORKS networks (api/index.js).
+export const NEARLY = `SELECT key, stage, fingerprint, count(*) AS n, count(DISTINCT network) AS networks,
+    min(received) AS first, max(received) AS last
+  FROM readouts LEFT JOIN readout_networks ON readout_networks.id = readouts.id
+  WHERE review = 'pending' GROUP BY key, stage, fingerprint HAVING count(*) >= ${PER_KEY} ORDER BY last DESC`;
+
+// Readouts nearly agreeing approved, as readouts.py approve does each: taken
+// as right, and no longer held to the room for those waiting for review.
+// Only from a form on this view.
+async function approve(request, env) {
+  if (!ownForm(request)) {
+    return notOwn();
+  }
+  const form = await request.formData();
+  const [key, stage, fingerprint] = ["key", "stage", "fingerprint"].map((name) => String(form.get(name) ?? ""));
+  if (!/^[A-Za-z0-9._|-]{1,130}$/.test(key) || !STAGES.includes(stage) || !/^[0-9a-f]{64}$/.test(fingerprint)) {
+    return reply(400, "Not readouts' key, stage and fingerprint.", { "Content-Type": "text/plain" });
+  }
+  const { results } = await env.DB.prepare(`UPDATE readouts SET review = 'approved' WHERE key = ?1 AND stage = ?2
+    AND fingerprint = ?3 AND review = 'pending'
+    AND (SELECT count(*) FROM readouts WHERE key = ?1 AND stage = ?2 AND fingerprint = ?3 AND review = 'pending') >= ?4
+    RETURNING bytes`).bind(key, stage, fingerprint, PER_KEY).all();
+  if (results.length) {
+    await giveBack(env.DB, PENDING, results.reduce((total, row) => total + row.bytes, 0), results.length);
+  }
+  return new Response(null, { status: 303, headers: { Location: "/#nearly", "Cache-Control": "no-store" } });
 }
 
 // A held report released or deleted: only from a form on this view.
 async function held(request, env) {
-  if (request.headers.get("Origin") !== ORIGIN || (request.headers.get("Sec-Fetch-Site") ?? "same-origin") !== "same-origin") {
-    return reply(403, "Only from the admin view itself.", { "Content-Type": "text/plain" });
+  if (!ownForm(request)) {
+    return notOwn();
   }
   const form = await request.formData();
   const id = String(form.get("id") ?? "");
@@ -150,6 +213,8 @@ export async function gather(env, now) {
     mail: await all("SELECT day, outcome, code, n FROM mail_days WHERE day >= ? ORDER BY day", since(30)),
     readouts: await all("SELECT review, count(*) AS n, sum(bytes) AS bytes FROM readouts GROUP BY review ORDER BY review"),
     signups: (await all("SELECT count(*) AS n FROM confirmations"))[0]?.n ?? 0,
+    settings: Object.fromEntries((await all("SELECT name, value FROM settings")).map((row) => [row.name, row.value])),
+    nearly: await all(NEARLY),
   };
 }
 
@@ -182,6 +247,12 @@ export async function page(env, who, now, fetcher = fetch) {
   const action = (id, name, label, danger = false) => `<form class="inline" method="post" action="/held">`
     + `<input type="hidden" name="id" value="${esc(id)}"><input type="hidden" name="action" value="${name}">`
     + `<button${danger ? ' class="danger"' : ""}>${label}</button></form>`;
+  const switches = Object.entries(SWITCHES).map(([name, label]) => {
+    const on = data.settings[name] !== "off";
+    return `<form class="inline" method="post" action="/settings"><input type="hidden" name="name" value="${esc(name)}">`
+      + `<input type="hidden" name="value" value="${on ? "off" : "on"}">${esc(label)}: <strong>${on ? "on" : "off"}</strong> `
+      + `<button>${on ? "Turn off" : "Turn on"}</button></form>`;
+  }).join("<br>");
   const sections = [
     `<section class="card"><div class="tiles">`
       + tile("Reports today", number(count(`reports:${data.today}`)), `of ${number(REPORTS_DAILY)} a day`)
@@ -201,6 +272,15 @@ export async function page(env, who, now, fetcher = fetch) {
         ["Words", "text", "text"], ["", (row) => action(row.id, "release", "Release") + " " + action(row.id, "delete", "Delete", true), "html"]],
       data.held, "Nothing held.")
       + `</section>`,
+    `<section class="card" id="nearly"><h2>Nearly agreed</h2><p class="sub">${PER_KEY} or more readouts alike, waiting
+      only because they came from fewer than ${MIN_NETWORKS} networks. Approve them to take them as right now, or leave them
+      for a readout from another network.</p>`
+      + table([["Key", "key"], ["Stage", "stage"], ["Alike", "n", "number"], ["Networks", "networks", "number"],
+        ["Last came", (row) => String(row.last).slice(0, 10)], ["", (row) => `<form class="inline" method="post" action="/approve">`
+          + `<input type="hidden" name="key" value="${esc(row.key)}"><input type="hidden" name="stage" value="${esc(row.stage)}">`
+          + `<input type="hidden" name="fingerprint" value="${esc(row.fingerprint)}"><button>Approve</button></form>`, "html"]],
+      data.nearly, "None.")
+      + `</section>`,
     `<div class="grid2"><section class="card"><h2>The store of readouts</h2><p class="sub">What it holds each night, against its limit.</p>`
       + meter("Held", ever.bytes, TOTAL_BYTES, `${bytes(ever.bytes)} of ${bytes(TOTAL_BYTES)} · ${number(ever.count)} readouts`)
       + lineChart(data.store.map((row) => ({ day: row.day, value: row.bytes })), { limit: TOTAL_BYTES, say: bytes, label: "Readout store by day" })
@@ -212,6 +292,8 @@ export async function page(env, who, now, fetcher = fetch) {
       + columns(mailDays, ["sent", "failed"], "Emails a day")
       + table([["Failed with", "code"], ["Emails", "n", "number"]], codes, "No failures.")
       + `</section></div>`,
+    `<section class="card" id="switches"><h2>Switches</h2><p class="sub">Emails sent to the maintainer's address
+      (ALERTS_RECIPIENT_EMAIL), beside the nightly alert.</p>${switches}</section>`,
     `<section class="card"><h2>This month's use</h2><p class="sub">Against what Workers Paid includes (R2: its own free allowance); past it, it is billed.</p>`
       + (typeof used === "string" ? `<p class="none">${esc(used)}</p>`
         : Object.entries(INCLUDED).map(([what, of]) => meter(what, used[what], of,

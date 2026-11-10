@@ -229,8 +229,14 @@ test("until the database is brought up to date, every path asks the tool to wait
 // A readout from `address` (a sender of its own), its manifest's fields as
 // given: its bytes its own, as two owners' readouts are (the same bytes twice
 // are the same readout sent again).
-const from = (bindings, address, manifest) =>
-  send(post(readoutOf({ ...MANIFEST, owner: address, ...manifest }), { "CF-Connecting-IP": address }), bindings);
+// The network (Cloudflare's ASN) a request came from, as a Worker is given it.
+const onNetwork = (request, asn) => Object.defineProperty(request, "cf", { value: { asn } });
+// Each address on a network of its own, unless one is given.
+const networks = new Map();
+const networkOf = (address) => networks.get(address) ?? networks.set(address, 64496 + networks.size).get(address);
+const from = (bindings, address, manifest, asn = networkOf(address)) =>
+  send(onNetwork(post(readoutOf({ ...MANIFEST, owner: address, ...manifest }), { "CF-Connecting-IP": address }), asn),
+    bindings);
 const rows = async (bindings) =>
   (await bindings.DB.prepare("SELECT * FROM readouts ORDER BY received, id").all()).results;
 
@@ -268,7 +274,8 @@ test("a whole readout takes a first stage's place, as it holds all one does", as
     assert.equal((await from(bindings, address, {})).status, 201);
   }
   assert.equal((await from(bindings, "192.0.2.3", { read: false })).status, 201, "one place left for a first stage");
-  assert.equal((await from(bindings, "192.0.2.4", { read: false })).status, 200, "and then none");
+  // From a network one of those came from: past three, a place is only for another's.
+  assert.equal((await from(bindings, "192.0.2.4", { read: false }, networkOf("192.0.2.3"))).status, 200, "and then none");
   assert.equal((await from(bindings, "192.0.2.4", {})).status, 201, "a whole one has its own third place");
 });
 
@@ -302,6 +309,79 @@ test("one that differs from the others leaves them all for review", async () => 
   assert.deepEqual(after.filter((row) => row.fingerprint === oddPrint).map((row) => row.review), ["rejected"]);
   assert.deepEqual(after.filter((row) => row.fingerprint !== oddPrint).map((row) => row.review),
     ["quorum", "quorum", "quorum"]);
+});
+
+test("three that agree from one network wait for review; two more networks' that agree settle them", async () => {
+  assert.deepEqual([readout.MIN_NETWORKS, readout.MAX_PLACES], [3, 6]);
+  const bindings = env();
+  for (const address of ["192.0.2.1", "192.0.2.2", "192.0.2.3"]) {
+    assert.equal((await from(bindings, address, { firmware: FIRMWARE }, 64500)).status, 201);
+  }
+  assert.deepEqual((await rows(bindings)).map((row) => row.review), ["pending", "pending", "pending"],
+    "one rented server's network, however many address blocks");
+  assert.equal((await from(bindings, "192.0.2.4", { firmware: FIRMWARE }, 64500)).status, 200, "no place: that network has");
+  assert.equal((await from(bindings, "192.0.2.5", { firmware: FIRMWARE }, 64501)).status, 201, "a place past three");
+  assert.deepEqual((await rows(bindings)).map((row) => row.review), Array(4).fill("pending"), "two networks: not enough");
+  assert.equal((await from(bindings, "192.0.2.6", { firmware: FIRMWARE }, 64502)).status, 201);
+  assert.deepEqual((await rows(bindings)).map((row) => row.review), Array(5).fill("quorum"));
+  assert.equal((await from(bindings, "192.0.2.7", { firmware: FIRMWARE }, 64503)).status, 200, "agreed: no more places");
+});
+
+test("three made up on one network cannot keep out the owners who outvote them", async () => {
+  const bindings = env();
+  const made = { ...FIRMWARE, apps: [{ ...FIRMWARE.apps[0], elf_sha256: "9".repeat(64) }] };
+  for (const address of ["198.51.100.1", "198.51.100.2", "198.51.100.3"]) {
+    assert.equal((await from(bindings, address, { firmware: made }, 64999)).status, 201);
+  }
+  for (const [address, asn] of [["192.0.2.1", 64496], ["192.0.2.2", 64497], ["192.0.2.3", 64498]]) {
+    assert.equal((await from(bindings, address, { firmware: FIRMWARE }, asn)).status, 201, address);
+  }
+  const kept = await rows(bindings);
+  assert.deepEqual(kept.filter((row) => row.review === "quorum").length, 3, "the owners' three agree");
+  assert.deepEqual(kept.filter((row) => row.review === "pending").length, 3, "the made-up ones wait, to be deleted");
+  assert.equal((await from(bindings, "192.0.2.9", { firmware: FIRMWARE }, 64510)).status, 200);
+});
+
+test("past three places, a readout without a network is not taken, nor one from a network held", async () => {
+  const bindings = env();
+  const odd = (n) => ({ firmware: { ...FIRMWARE, apps: [{ ...FIRMWARE.apps[0], elf_sha256: String(n).repeat(64) }] } });
+  for (const [n, address] of ["192.0.2.1", "192.0.2.2", "192.0.2.3"].entries()) {
+    await from(bindings, address, odd(n + 3), 64500 + n);
+  }
+  assert.equal((await from(bindings, "192.0.2.4", odd(7), null)).status, 200, "no network given");
+  assert.equal((await from(bindings, "192.0.2.5", odd(7), 64501)).status, 200, "a network one came from");
+  assert.equal((await from(bindings, "192.0.2.6", odd(7), 64503)).status, 201);
+  const asked = (asn) => readout.wanted(onNetwork(question(fresh(ASKED_WHOLE)), asn), bindings, NOW);
+  assert.equal((await (await asked(64504)).json()).wanted, true, "asked first, a new network's would be taken");
+  assert.equal((await (await asked(64503)).json()).why, "held");
+});
+
+test("the maintainer is emailed when readouts come to agree, unless the admin view's switch is off", async () => {
+  const agree = async (bindings) => {
+    for (const address of ["192.0.2.1", "192.0.2.2", "192.0.2.3"]) {
+      await from(bindings, address, { firmware: FIRMWARE });
+    }
+    return bindings.EMAIL.sent;
+  };
+  const told = await agree({ ...env(), ALERTS_RECIPIENT_EMAIL: "maintainer@example.com" });
+  assert.equal(told.length, 1);
+  assert.deepEqual([told[0].to, told[0].from], ["maintainer@example.com", readout.NOTIFY_FROM]);
+  assert.match(told[0].subject, /^Readouts agree: NEWTHING\|SN-NEW-01\|1\.0\.0 \(whole\)$/);
+  const off = { ...env(), ALERTS_RECIPIENT_EMAIL: "maintainer@example.com" };
+  off.DB.db.prepare("INSERT INTO settings (name, value) VALUES (?, 'off')").run(readout.AGREEMENT_SETTING);
+  assert.deepEqual(await agree(off), []);
+  assert.deepEqual(await agree(env()), [], "nowhere to send it");
+});
+
+test("three alike from too few networks send no email: the admin view lists them", async () => {
+  const bindings = { ...env(), ALERTS_RECIPIENT_EMAIL: "maintainer@example.com" };
+  for (const [address, asn] of [["192.0.2.1", 64500], ["192.0.2.2", 64500], ["192.0.2.3", 64501]]) {
+    await from(bindings, address, { firmware: FIRMWARE }, asn);
+  }
+  assert.deepEqual(bindings.EMAIL.sent, []);
+  assert.equal((await from(bindings, "192.0.2.4", { firmware: FIRMWARE }, 64502)).status, 201);
+  assert.deepEqual(bindings.EMAIL.sent.map((message) => message.subject),
+    ["Readouts agree: NEWTHING|SN-NEW-01|1.0.0 (whole)"], "once they agree, from three networks");
 });
 
 test("a readout's row names its sender by a keyed hash a key, never its address", async () => {
@@ -521,6 +601,7 @@ test("every other address is not found, and the site is not this Worker", async 
 });
 
 const ASKED = { format: 1, product: "NEWTHING", model: "SN-NEW-01", version: "1.0.0", stage: "first", firmware: [] };
+const ASKED_WHOLE = { ...ASKED, stage: "whole" };
 
 function question(asked = ASKED, headers = {}, body = Buffer.from(JSON.stringify(asked)), path = "/v1/wanted") {
   return new Request(`https://api.firmwareliberator.com${path}`, {

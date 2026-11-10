@@ -291,11 +291,18 @@ test("who named a model is kept as a keyed hash of it and their address, once a 
   await api.countWanted(bindings, post({}, {}, "198.51.100.23"), "NSPANEL", "2026-11-09");
   await api.reports(post({ reports: [report({ model: "NSPANEL" }), report({ model: "BASICR4" })] }, {}, "198.51.100.23"),
     bindings, NOW);
-  const kept = rows(bindings, "SELECT model, sender, day FROM model_senders ORDER BY model");
+  const kept = rows(bindings, "SELECT model, sender, network, day FROM model_senders ORDER BY model");
   assert.deepEqual(kept.map((row) => [row.model, row.day]), [["BASICR4", "2026-11-09"], ["NSPANEL", "2026-11-09"]],
     "one a model and day, however often given");
   assert.match(kept[0].sender, /^[0-9a-f]{32}$/);
   assert.notEqual(kept[0].sender, kept[1].sender, "nothing ties one sender's models together");
+  assert.deepEqual(kept.map((row) => row.network), [null, null], "no network given");
+  const onNetwork = post({ reports: [report({ model: "MINIR4" })] }, {}, "198.51.100.23");
+  Object.defineProperty(onNetwork, "cf", { value: { asn: 64500 } });
+  await api.reports(onNetwork, bindings, NOW);
+  const [network] = rows(bindings, "SELECT network FROM model_senders WHERE model = 'MINIR4'");
+  assert.match(network.network, /^[0-9a-f]{32}$/);
+  assert.ok(!JSON.stringify(rows(bindings, "SELECT * FROM model_senders")).includes("64500"), "never the ASN itself");
   assert.ok(!JSON.stringify(rows(bindings, "SELECT * FROM model_senders")).includes("198.51.100"));
 });
 

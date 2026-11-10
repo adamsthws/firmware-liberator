@@ -41,12 +41,14 @@ export const SPIKE_WHY = "a day far above usual for its model";
 // test holds the two alike).
 export const READOUTS_EVER = "readouts:all";
 // A model's name is shown in the figures once VOUCH_SENDERS senders have
-// given it, on VOUCH_DAYS days (model_senders, reports.js): so no one sender,
-// nor a few in one evening, can put a made-up name on the public page. Who
+// given it, from VOUCH_NETWORKS networks, on VOUCH_DAYS days (model_senders,
+// reports.js): so no one sender, nor a few in one evening or on one rented
+// server's network, can put a made-up name on the public page. Who
 // gave one is kept VOUCH_KEEP_DAYS at most, a year, as a rare model's owners
 // may come months apart, and not past its vouching.
 export const VOUCH_SENDERS = 3;
 export const VOUCH_DAYS = 3;
+export const VOUCH_NETWORKS = 2;
 export const VOUCH_KEEP_DAYS = 365;
 
 const DAY = 86_400_000;
@@ -172,7 +174,8 @@ export function vouching(db, today) {
   return [
     db.prepare(`INSERT OR IGNORE INTO vouched_models (model, day)
       SELECT model, ?1 FROM model_senders GROUP BY model
-      HAVING count(DISTINCT sender) >= ?2 AND count(DISTINCT day) >= ?3`).bind(today, VOUCH_SENDERS, VOUCH_DAYS),
+      HAVING count(DISTINCT sender) >= ?2 AND count(DISTINCT day) >= ?3 AND count(DISTINCT network) >= ?4`)
+      .bind(today, VOUCH_SENDERS, VOUCH_DAYS, VOUCH_NETWORKS),
     db.prepare("DELETE FROM model_senders WHERE model IN (SELECT model FROM vouched_models) OR day < ?")
       .bind(daysBefore(today, VOUCH_KEEP_DAYS)),
   ];
