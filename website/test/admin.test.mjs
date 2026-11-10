@@ -128,6 +128,58 @@ test("a change comes only from a form on this view itself", async () => {
   assert.deepEqual(rows(db, "SELECT count(*) AS n FROM held_reports"), [{ n: 0 }]);
 });
 
+test("the email when readouts agree is switched off and on from the view, and only from it", async () => {
+  const bindings = env();
+  const set = async (value, headers = { Origin: admin.ORIGIN, "Sec-Fetch-Site": "same-origin" }, name = "email_on_agreement") =>
+    admin.handle(new Request("https://admin.firmwareliberator.com/settings", { method: "POST",
+      body: new URLSearchParams({ name, value }), headers: { "Cf-Access-Jwt-Assertion": await token(), ...headers } }),
+    bindings, NOW, keys);
+  const page = async () => admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  assert.match(await page(), /Email me when readouts come to agree: <strong>on<\/strong> <button>Turn off/, "on unless set");
+  assert.equal((await set("off", { Origin: "https://evil.example" })).status, 403);
+  assert.equal((await set("maybe")).status, 400);
+  assert.equal((await set("off", undefined, "something_else")).status, 400);
+  assert.deepEqual(rows(bindings.DB, "SELECT * FROM settings"), []);
+  const done = await set("off");
+  assert.deepEqual([done.status, done.headers.get("Location")], [303, "/#switches"]);
+  assert.deepEqual(rows(bindings.DB, "SELECT name, value FROM settings"), [{ name: "email_on_agreement", value: "off" }]);
+  assert.match(await page(), /<strong>off<\/strong> <button>Turn on/);
+  await set("on");
+  assert.deepEqual(rows(bindings.DB, "SELECT value FROM settings"), [{ value: "on" }]);
+});
+
+test("readouts alike from too few networks are listed, and approved from the view alone", async () => {
+  const bindings = env();
+  const add = bindings.DB.db.prepare(`INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received)
+    VALUES (?, 'NEWTHING|SN-NEW-01|1.0.0', 'whole', ?, ?, 100, 'readouts/x.tar', '2026-11-09T10:00:00Z')`);
+  for (const n of [1, 2, 3]) {
+    add.run(`r${n}`, `s${n}`, "f".repeat(64));
+    bindings.DB.db.prepare("INSERT INTO readout_networks (id, network) VALUES (?, ?)").run(`r${n}`, n < 3 ? "a" : "b");
+  }
+  add.run("r4", "s4", "e".repeat(64));   // another fingerprint: not one of them
+  bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES ('readouts:pending', NULL, 4, 400)").run();
+  const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  assert.match(html, /Nearly agreed/);
+  assert.match(html, /NEWTHING\|SN-NEW-01\|1\.0\.0<\/td><td>whole<\/td><td class="number">3<\/td><td class="number">2<\/td>/);
+  const approve = async (fields, headers = { Origin: admin.ORIGIN, "Sec-Fetch-Site": "same-origin" }) =>
+    admin.handle(new Request("https://admin.firmwareliberator.com/approve", { method: "POST",
+      body: new URLSearchParams(fields), headers: { "Cf-Access-Jwt-Assertion": await token(), ...headers } }),
+    bindings, NOW, keys);
+  const group = { key: "NEWTHING|SN-NEW-01|1.0.0", stage: "whole", fingerprint: "f".repeat(64) };
+  assert.equal((await approve(group, { Origin: "https://evil.example" })).status, 403);
+  assert.equal((await approve({ ...group, stage: "half" })).status, 400);
+  assert.equal((await approve({ ...group, fingerprint: "e".repeat(64) })).status, 303);
+  assert.deepEqual(rows(bindings.DB, "SELECT review FROM readouts WHERE id = 'r4'"), [{ review: "pending" }],
+    "one alone is not nearly agreed: nothing approved");
+  const done = await approve(group);
+  assert.deepEqual([done.status, done.headers.get("Location")], [303, "/#nearly"]);
+  assert.deepEqual(rows(bindings.DB, "SELECT id, review FROM readouts ORDER BY id"),
+    [{ id: "r1", review: "approved" }, { id: "r2", review: "approved" }, { id: "r3", review: "approved" },
+      { id: "r4", review: "pending" }]);
+  assert.deepEqual(rows(bindings.DB, "SELECT count, bytes FROM counters WHERE name = 'readouts:pending'"),
+    [{ count: 1, bytes: 100 }], "their room given back");
+});
+
 test("a form not of a held report and an action is turned away", async () => {
   const { bindings } = await held();
   for (const body of [{ id: "nope", action: "delete" }, { id: "f".repeat(32), action: "drop" }]) {

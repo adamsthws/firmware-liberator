@@ -180,21 +180,24 @@ test("the devices wanted: /wanted's questions and the runs stopped for want of s
   ]);
 });
 
-test("a model's name is shown once three senders have given it, on three days, and who gave it then forgotten", async () => {
-  assert.deepEqual([night.VOUCH_SENDERS, night.VOUCH_DAYS, night.VOUCH_KEEP_DAYS], [3, 3, 365]);
+test("a model's name is shown once three senders from two networks have given it, on three days, and who gave it then forgotten", async () => {
+  assert.deepEqual([night.VOUCH_SENDERS, night.VOUCH_DAYS, night.VOUCH_NETWORKS, night.VOUCH_KEEP_DAYS], [3, 3, 2, 365]);
   const bindings = env();
-  const gave = bindings.DB.db.prepare("INSERT INTO model_senders (model, sender, day) VALUES (?, ?, ?)");
-  for (const [sender, day] of [["a", "2026-11-01"], ["b", "2026-11-03"], ["c", "2026-11-05"]]) {
-    gave.run("TRUSTED1", sender, day);
+  const gave = bindings.DB.db.prepare("INSERT INTO model_senders (model, sender, network, day) VALUES (?, ?, ?, ?)");
+  for (const [sender, network, day] of [["a", "n1", "2026-11-01"], ["b", "n2", "2026-11-03"], ["c", "n2", "2026-11-05"]]) {
+    gave.run("TRUSTED1", sender, network, day);
   }
   for (const day of ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04"]) {
-    gave.run("ONESENDER", "a", day);   // one sender, however many days
+    gave.run("ONESENDER", "a", "n1", day);   // one sender, however many days
   }
-  for (const sender of ["a", "b", "c", "d"]) {
-    gave.run("ONEEVENING", sender, "2026-11-08");   // many senders, one day
+  for (const [sender, network] of [["a", "n1"], ["b", "n2"], ["c", "n3"], ["d", "n4"]]) {
+    gave.run("ONEEVENING", sender, network, "2026-11-08");   // many senders, one day
   }
-  gave.run("LONGAGO", "z", "2025-11-09");
-  for (const model of ["TRUSTED1", "ONESENDER", "ONEEVENING"]) {
+  for (const [sender, day] of [["a", "2026-11-01"], ["b", "2026-11-03"], ["c", "2026-11-05"]]) {
+    gave.run("ONENETWORK", sender, "n9", day);   // one rented server's network
+  }
+  gave.run("LONGAGO", "z", "n1", "2025-11-09");
+  for (const model of ["TRUSTED1", "ONESENDER", "ONEEVENING", "ONENETWORK"]) {
     for (let n = 0; n < 5; n += 1) {
       await kept(bindings.DB, "2026-11-05", { model, device_hash: `${model}-${n}` });
     }
@@ -204,8 +207,10 @@ test("a model's name is shown once three senders have given it, on three days, a
   assert.deepEqual(figures(bindings).models.map((row) => row.model), ["TRUSTED1"]);
   assert.ok(!JSON.stringify(figures(bindings)).includes("ONESENDER"));
   assert.ok(!JSON.stringify(figures(bindings)).includes("ONEEVENING"));
+  assert.ok(!JSON.stringify(figures(bindings)).includes("ONENETWORK"));
   assert.deepEqual(rows(bindings, "SELECT DISTINCT model FROM model_senders ORDER BY model"),
-    [{ model: "ONEEVENING" }, { model: "ONESENDER" }], "TRUSTED1's vouched for, LONGAGO's past a year: forgotten");
+    [{ model: "ONEEVENING" }, { model: "ONENETWORK" }, { model: "ONESENDER" }],
+    "TRUSTED1's vouched for, LONGAGO's past a year: forgotten");
 });
 
 test("the figures say what they are, how fresh, and for which schema", async () => {
