@@ -30,8 +30,9 @@ write), the fault; then the tool run again, as a person would - switching the
 device off and on where the run says to - until the device is converted, or four
 runs fail. Every scenario also checks the fault landed while its step was
 under way (MISTIMED if not), and that the converting run's report says its
-end-of-run checks passed, the emulated meter confirming the relay switched
-(FAIL-CHECKS if not: tools/repo/fault_verdicts.py),
+end-of-run checks passed, on a device with a meter (the S61) the emulated
+meter confirming the relay switched (FAIL-CHECKS if not:
+tools/repo/fault_verdicts.py),
 that each run left one line a stage on its screen, none of a try that
 failed (FAIL-SCREEN if not), and that a device converted to OpenBeken or ESPHome
 runs this checkout's release of it (FAIL-NOT-LATEST if not).
@@ -265,6 +266,17 @@ def converted(state: dict, route: str) -> bool:
     route done: the device on its new firmware, and checked there."""
     steps = state.get("steps", {})
     return all((steps.get(step) or {}).get("status") == "done" for step in route_steps(route))
+
+
+def metered(state: dict) -> bool:
+    """Whether the end-of-run checks must have the meter confirm the relay
+    switched, by the kind a run's record (autoflash-state.json) says it
+    converted: one with a meter (kinds.Kind.has_meter, the S61) measures the
+    emulated load, one without (the Basic Gen5) has nothing to confirm it. A
+    run that stopped before it knew the kind is held to the meter: the dump's
+    device, the S61, has one."""
+    kind = kinds.by_key((state.get("inputs") or {}).get("device_kind"))
+    return kind.has_meter if kind else True
 
 
 def clear(folder: Path) -> None:
@@ -632,7 +644,7 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         if problems:
             outcome = dict(outcome, result="FAIL")
             notes["interim"] = problems
-        checks = fault_verdicts.checks_problem(instance.last_log(), target, metered=True)
+        checks = fault_verdicts.checks_problem(instance.last_log(), target, metered(instance.last_state()))
         if checks and not problems:
             outcome = dict(outcome, result="FAIL-CHECKS")
             notes["checks"] = checks
@@ -1044,7 +1056,7 @@ def check_way(n: int, routes: tuple[str, ...]) -> int:
                     instance.ready(target)
             problems = [] if converted(instance.last_state(), route) else ["not converted"]
             problems += interim_problems(route, instance.dhcp_names(), None)
-            checks = fault_verdicts.checks_problem(instance.last_log(), target, metered=True)
+            checks = fault_verdicts.checks_problem(instance.last_log(), target, metered(instance.last_state()))
             if checks:
                 problems.append(checks)
             print(f"{'FAIL' if problems else 'PASS'}  {route}{': ' + ', '.join(problems) if problems else ''}", flush=True)

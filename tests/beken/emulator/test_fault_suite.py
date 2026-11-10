@@ -31,7 +31,7 @@ class ScenarioTests(unittest.TestCase):
 class EndChecksTests(unittest.TestCase):
     """A converted device passes only if the report's end-of-run checks did."""
 
-    def result(self, checks, screen=None, release=None, relay=None):
+    def result(self, checks, screen=None, release=None, relay=None, kind=None):
         from unittest import mock
         sc = {"id": "sonoff>openbeken:B2:deviceoff-1", "route": "sonoff>openbeken", "step": "B2",
               "fault": "deviceoff", "arg": 1, "at": 40}
@@ -44,7 +44,8 @@ class EndChecksTests(unittest.TestCase):
             return {"result": "PASS", "runs": 1}
         with tempfile.TemporaryDirectory() as tmp:
             device = SimpleNamespace(reset=lambda start: None, start=lambda firmware: True, runs=list,
-                                   dhcp_names=lambda: ["openbeken-cdef"], last_log=lambda: log, state=Path(tmp))
+                                   dhcp_names=lambda: ["openbeken-cdef"], last_log=lambda: log, state=Path(tmp),
+                                   last_state=lambda: {"inputs": {"device_kind": kind}} if kind else {})
             latest = fault_suite.LATEST["openbeken"]
             with mock.patch.object(fault_suite, "OUT", Path(tmp)), mock.patch.object(fault_suite, "MemoryWatch"), \
                     mock.patch.object(fault_suite, "step_scenario", side_effect=step_scenario), \
@@ -89,6 +90,20 @@ class EndChecksTests(unittest.TestCase):
         self.assertEqual(outcome["result"], "FAIL-CHECKS")
         self.assertEqual(outcome["notes"]["checks"],
                          "the meter did not confirm the switch; Relay: Switches (meter unchanged)")
+
+    def test_only_a_device_with_a_meter_needs_it_to_confirm_the_switch(self):
+        """The Basic Gen5 has no meter: its check says the relay switched with
+        the meter unchanged, and passes. The S61's must still confirm it."""
+        unchanged = "Switches (meter unchanged)"
+        self.assertEqual(self.result("True", relay=unchanged, kind="sonoff-basic-1gs")["result"], "PASS")
+        self.assertEqual(self.result("True", relay=unchanged, kind="sonoff-s61")["result"], "FAIL-CHECKS")
+
+    def test_the_meter_is_demanded_as_the_kind_run_says(self):
+        for kind in fault_suite.kinds.ALL:
+            self.assertEqual(fault_suite.metered({"inputs": {"device_kind": kind.key}}), kind.has_meter, kind.key)
+        # A run that stopped before it knew the kind: held to the S61's meter.
+        self.assertTrue(fault_suite.metered({}))
+        self.assertTrue(fault_suite.metered({"inputs": {}}))
 
     def test_one_whose_checks_failed_is_its_own_failure_saying_what_they_found(self):
         outcome = self.result("False")
@@ -246,6 +261,25 @@ class CheckTests(unittest.TestCase):
                 mock.patch.object(fault_suite, "converted", return_value=True), redirect_stdout(io.StringIO()) as out:
             self.assertEqual(fault_suite.check_way(1, ("sonoff>openbeken",)), 1)
         self.assertIn("FAIL  sonoff>openbeken: Checks passed: False", out.getvalue())
+
+    def way_with_meter_unchanged(self, kind):
+        import io
+        from contextlib import redirect_stdout
+        from unittest import mock
+        log = ("[10:00:00] === run started ===\n[10:00:01]     Relay: Switches (meter unchanged)\n"
+               "[10:00:02]     Checks passed: True\n")
+        device = mock.Mock(all_runs=list, last_state=lambda: {"inputs": {"device_kind": kind}},
+                           dhcp_names=lambda: ["openbeken-cdef"], last_log=lambda: log)
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fault_suite, "OUT", Path(tmp)), \
+                mock.patch.object(fault_suite, "Instance", return_value=device), \
+                mock.patch.object(fault_suite, "converted", return_value=True), redirect_stdout(io.StringIO()) as out:
+            return fault_suite.check_way(1, ("sonoff>openbeken",)), out.getvalue()
+
+    def test_a_way_on_a_device_without_a_meter_passes_with_it_unchanged(self):
+        self.assertEqual(self.way_with_meter_unchanged("sonoff-basic-1gs"), (0, "PASS  sonoff>openbeken\n"))
+        status, said = self.way_with_meter_unchanged("sonoff-s61")
+        self.assertEqual(status, 1)
+        self.assertIn("FAIL  sonoff>openbeken: the meter did not confirm the switch", said)
 
     def test_each_of_its_routes_is_one_the_tool_has(self):
         for way in fault_suite.CHECK_WAYS:
