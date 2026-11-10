@@ -1415,7 +1415,7 @@ class ReportTests(OutputTestCase):
         self.assertTrue(ctx.reported)
         self.assertIn("**Result:** Stopped at stage 1 of", copied[0])
         self.assertIn("timed out", copied[0])
-        self.assertIn("a run that stopped helps", shown.call_args_list[0].args[0])
+        self.assertTrue(any("please open an issue" in str(call) for call in told.call_args_list))
         links.assert_not_called()  # no donation links after a failure
         self.assertFalse(any("hold out my hat" in str(call) for call in told.call_args_list + shown.call_args_list))
 
@@ -1489,7 +1489,7 @@ class ReportTests(OutputTestCase):
         self.assertEqual(fields["Setup network"], "Yes")
         self.assertIn("(resumed)", fields["Time"])
 
-    def test_the_invitation_links_the_thread_and_copies_the_report(self):
+    def test_a_converted_run_shows_its_report_and_asks_nothing_of_anyone(self):
         copied = []
 
         def body():
@@ -1497,11 +1497,10 @@ class ReportTests(OutputTestCase):
                  mock.patch.object(report, "check_hardware", return_value={"Relay": "switches (meter confirms)"}):
                 report.invite_report(self.ctx(), 441, False)
         screen, _ = self.run_with(io.StringIO(), False, body)
-        self.assertIn(report.REPORTS_URL, screen)
-        self.assertIn("adamsthws/firmware-liberator/discussions", report.REPORTS_URL)
-        self.assertIn("Please share how it went", screen)
-        self.assertIn("already on your clipboard", screen)
-        self.assertIn(f"Test reports: {report.REPORTS_URL}", screen)
+        self.assertIn("How it went:", screen)
+        self.assertNotIn("issues/new", screen, "a run that worked needs no issue")
+        self.assertNotIn("discussions", screen)
+        self.assertEqual(copied, [], "nothing to paste anywhere")
         self.assertIn("Throw your friendly neighbourhood dev a biscuit:", screen)
         self.assertGreater(screen.index(report.DONATE_URL), screen.index("Model:"))  # after the report
         # GitHub Sponsors first, and the URLs lined up under one another.
@@ -1510,9 +1509,6 @@ class ReportTests(OutputTestCase):
                       f"     PayPal: {report.DONATE_URL}\n", screen)
         self.assertNotIn("**", screen)                       # the terminal shows no Markdown
         self.assertRegex(screen, r"Model: +S60TPG")
-        self.assertIn("**Model:** S60TPG", copied[0])   # the thread gets bold labels
-        self.assertIn("**Checks:** True", copied[0])
-        self.assertNotIn("Relay", copied[0])
 
 
 

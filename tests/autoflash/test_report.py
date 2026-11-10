@@ -4,6 +4,8 @@ import platform
 import sys
 import time
 import unittest
+import urllib.parse
+from pathlib import Path
 from unittest import mock
 
 from tests.autoflash.routes.espressif.test_espressif import RouteTestCase
@@ -362,6 +364,42 @@ class CheckHardwareTests(unittest.TestCase):
         ctx = SimpleNamespace(device=SimpleNamespace(command=mock.Mock(), wait_reachable=never))
         self.assertEqual(self.run_check(ctx)["Relay"], "could not be checked")
         ctx.device.command.assert_not_called()
+
+class StoppedRunIssueTests(RouteTestCase):
+    """A run that stopped offers an issue for it, its report on the clipboard."""
+
+    def test_a_stopped_run_links_an_issue_and_copies_its_report(self):
+        ctx = self.ctx(firmware="tasmota", plug_kind="sonoff-s60")
+        ctx.last_report_id = "0123456789abcdef0123456789abcdef"
+        ctx.last_failure, ctx.last_failed_step = "the device at 192.0.2.50 did not answer within 30s", ""
+        ctx.run_started, ctx.run_resumed = time.monotonic(), False
+        copied, shown = [], []
+        with mock.patch.object(hostsys, "copy_to_clipboard", side_effect=lambda text: copied.append(text) or True), \
+                mock.patch.object(output, "show_link", lambda url, title=None, indent="    ": shown.append((title, url))), \
+                mock.patch.object(report.report_upload, "send"):
+            report.invite_stopped_report(ctx, "failed")
+        [(title, url)] = shown
+        self.assertEqual(title, "Open an issue")
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+        self.assertEqual(query["template"], [report.ISSUE_FORM])
+        self.assertEqual(query["report"], ["0123456789abcdef0123456789abcdef"])
+        self.assertTrue(query["title"][0].startswith("Stopped at stage"))
+        self.assertNotIn("192.0.2.50", url, "no address in what is sent to GitHub")
+        self.assertIn("**Model:** S60TPF", copied[0], "the report, ready to paste")
+
+    def test_its_link_is_short_and_fills_in_the_forms_own_fields(self):
+        url = report.issue_url("stopped at stage 12 of 18 (Upload): " + "x" * 400, "f" * 32)
+        self.assertLess(len(url), 400, "fits on a line or two")
+        form = (Path(report.ROOT) / ".github" / "ISSUE_TEMPLATE" / report.ISSUE_FORM).read_text(encoding="utf-8")
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+        for field in set(query) - {"template", "title"}:
+            self.assertIn(f"    id: {field}\n", form, field)
+        self.assertNotIn("discussions/1", form, "a run that worked is sent to no thread")
+
+    def test_without_a_report_sent_the_link_still_opens_the_form(self):
+        url = report.issue_url("stopped at stage 3 of 18 (Backup)", None)
+        self.assertNotIn("report=", url)
+        self.assertIn(f"template={report.ISSUE_FORM}", url)
 
 
 if __name__ == "__main__":

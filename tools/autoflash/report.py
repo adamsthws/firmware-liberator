@@ -11,6 +11,7 @@ import re
 import sys
 import textwrap
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -22,8 +23,11 @@ from tools.ewelink import relay as ewelink_relay
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
-# Where people share how their conversion went: the pinned "Test reports" thread.
-REPORTS_URL = "https://github.com/adamsthws/firmware-liberator/discussions/1"
+# Where a run that stopped is told of: a new issue, on the repository's
+# "A conversion went wrong" form (.github/ISSUE_TEMPLATE/bug-report.yml),
+# its title and the report's id filled in from the link (issue_url).
+ISSUE_URL = "https://github.com/adamsthws/firmware-liberator/issues/new"
+ISSUE_FORM = "bug-report.yml"
 # Shown once a conversion has succeeded, after the report, in this order.
 SPONSORS_URL = "https://github.com/sponsors/adamsthws"
 KOFI_URL = "https://ko-fi.com/adamsthws"
@@ -272,7 +276,7 @@ def answer(value: str) -> str:
 
 
 def report_markdown(fields: list[tuple[str, str]]) -> str:
-    """For pasting into the thread, where the labels show in bold."""
+    """For pasting into an issue, where the labels show in bold."""
     return "".join(f"**{label}:** {value}\n" for label, value in fields)
 
 
@@ -521,7 +525,7 @@ def invite_report(ctx: Context, seconds: float, resumed: bool) -> None:
         hardware = check(ctx)
         fields = report_fields(ctx, seconds, resumed, hardware, result=run_result(ctx, "converted"))
     report_upload.send(ctx, "converted", seconds, resumed, hardware)
-    offer_report(ctx, fields, "Please share how it went!")
+    offer_report(ctx, fields, "How it went:")
     output.tell("")
     output.show("You've reached the bit where I hold out my hat!", output.GREEN)
     output.tell("Free software, not free biscuits... Throw your friendly neighbourhood dev a biscuit:")
@@ -548,24 +552,35 @@ def invite_stopped_report(ctx: Context, ending: str) -> None:
     seconds = time.monotonic() - ctx.run_started - output.waited()
     fields = report_fields(ctx, seconds, ctx.run_resumed, result=run_result(ctx, ending))
     report_upload.send(ctx, ending, seconds, ctx.run_resumed)
-    offer_report(ctx, fields, "Please share how it went - a run that stopped helps as much "
-                              "as one that worked.")
+    offer_report(ctx, fields, "How it went:", stopped=run_result(ctx, ending))
 
 
-def offer_report(ctx: Context, fields: list[tuple[str, str]], heading: str) -> None:
+def issue_url(stopped: str, report_id: str | None) -> str:
+    """A new issue on the "A conversion went wrong" form, its title where the
+    run stopped and its report's id filled in: short, so the link fits on a
+    line; the report itself is pasted in."""
+    title = public_text(stopped, 100)
+    query = {"template": ISSUE_FORM, "title": title[:1].upper() + title[1:], **({"report": report_id} if report_id else {})}
+    return f"{ISSUE_URL}?{urllib.parse.urlencode(query, quote_via=urllib.parse.quote)}"
+
+
+def offer_report(ctx: Context, fields: list[tuple[str, str]], heading: str, stopped: str | None = None) -> None:
+    """The run's report on the screen. For a run that stopped (`stopped`: how,
+    as run_result says it), a link to open an issue for it, with the report
+    on the clipboard to paste in: the tool is meant to finish every run, so
+    one it could not is something to fix."""
     ctx.reported = True
-    copied = hostsys.copy_to_clipboard(report_markdown(fields))
     output.tell("")
     output.show(heading, output.GREEN)
-    if copied:
-        output.tell("Paste your results into the thread (they're already on your clipboard):")
-    else:
-        output.tell("Copy your results below and post them in the thread...")
-    output.show_link(REPORTS_URL, "Test reports")
+    if stopped:
+        copied = hostsys.copy_to_clipboard(report_markdown(fields))
+        output.tell("If it should not have stopped there, please open an issue for it, and paste in "
+                    + ("the report, which is on your clipboard:" if copied else "the report below:"))
+        output.show_link(issue_url(stopped, getattr(ctx, "last_report_id", None)), "Open an issue")
     output.tell("")
     for line in report_screen(fields):
         output.tell(line)
-    if any(value == "__" for _, value in fields):
+    if stopped and any(value == "__" for _, value in fields):
         output.tell("")
         output.tell("Fill in the blanks (__) if you know them.")
     testers.ask_for_log(kinds.of_run(ctx.state))

@@ -223,11 +223,8 @@ Start with **[troubleshooting](docs/troubleshooting.md)**
 
 ### How it went
 
-See how it went for others: **[Conversion Reports](https://github.com/adamsthws/firmware-liberator/discussions/1)**
-> Reading the thread is the quickest way to see how it went for others.
-
-Please report back on how it went for you! 
-> A clean conversion, a run that stopped partway - all of it is useful. 
+See how it has gone for others: **[Stats](https://firmwareliberator.com/stats)**
+> How many devices the tool has converted, and how reliably, device by device.
 
 <br>
 
