@@ -105,7 +105,7 @@ NO_CLOUD = os.environ.get("AUTOFLASH_EMU_NO_CLOUD") == "1"
 
 def cloud_workers():
     """How many emulators take the scenarios that need eWeLink: six, as their
-    turns at eWeLink come one at a time and 8 went no faster on 2026-11-07, and
+    turns at eWeLink come one at a time and 8 went no faster, and
     no more than one per core, or they fail falsely. A computer whose memory is
     mostly taken holds fewer (docs/testing.md)."""
     default = 0 if NO_CLOUD else min(6, os.cpu_count() or 1)
@@ -163,7 +163,7 @@ HELPERS = ("serve_safeboot_migration.py", "serve_tasmota_ota.py")
 # Each direction: the saved device it starts from, its target, and the steps that
 # write to or wait on the device, with how long each usually takes (emulator).
 # Each step's usual length in seconds, from passing runs: a fault lands at a
-# share of it. F4 is 10 s from 2026-10-21 (one restart; it was 31 s with two).
+# share of it. F4 is 10 s (one restart; it was 31 s with two).
 # The steps that write firmware are shorter from 2.0.2 - each block checked on
 # the device, not sent back: E2, G1 and L1 by 12 s, R1 (two images) by 25 s - so
 # a fault at 90% of the old lengths landed in the step after.
@@ -183,14 +183,14 @@ ROUTES = {
                        {"C3": 14, "C3fb": 14, "D1": 18, "D4": 31, "D5": 2, "K1": 2, "I1": 30, "I2": 5}),
     # Back to Sonoff with no backup on this computer: from a copy of the device on
     # Tasmota without one (prep), R1 putting Sonoff's firmware, fetched first,
-    # together with the identity the device kept: 53 s in the emulator (2026-11-08,
-    # where 60 s put a fault at 90% a second after it).
+    # together with the identity the device kept: 53 s in the emulator (60 s
+    # would put a fault at 90% a second after it).
     "nobackup>sonoff": ("suite-tasmota-nobackup", "sonoff", {"R1": 53, "R2": 2}),
     # A device on the Tasmota release before this one, updated (prep_update):
     # U5 43-46 s in the emulator, and U6 2 s, as U5 now waits for Tasmota's
-    # boot (2026-11-10, where 12 s put every fault at 40% and 90% after U6).
+    # boot (12 s would put every fault at 40% and 90% after U6).
     "update>tasmota": ("suite-tasmota-earlier", "tasmota", {"U5": 44, "U6": 2}),
-    # A device on our ESPHome of an earlier release of the tool, updated (prep_update).
+    # A device on this project's ESPHome of an earlier release of the tool, updated (prep_update).
     "update>esphome": ("suite-esphome-earlier", "esphome", {"U1": 6, "U2": 72}),
 }
 # The release whose ESPHome update>esphome starts on: any before this checkout's.
@@ -203,7 +203,7 @@ STARTS_ON = {"nobackup": "tasmota"}
 # Tasmota through a temporary table, so never straight to ESPHome: only the
 # hub's Tasmota writes its own table back, as D5 starts (D5ot). Its usual
 # lengths where they differ from the S60's by more than a few seconds, the
-# shorter where runs differed, from its public dump (2026-11-07).
+# shorter where runs differed, from its public dump.
 TEMPORARY_TABLE_LENGTHS = {"C3": 30, "D1": 35, "D4": 38, "D5": 4, "E2": 27, "E3": 18, "F2": 57, "F4": 15,
                            "G1": 37, "H1": 16, "I2": 22, "L1": 46, "X2": 32}
 TEMPORARY_TABLE_TO_ESPHOME = ("L1", "X1", "X2", "D4", "D5", "K1", "I1", "I2")
@@ -270,7 +270,7 @@ STEP_OF = {"C3fb": "C3", "F4rs": "F4", "F4tp": "F4", "D5ot": "D5"}  # the tool's
 # Sonoff's firmware. Their phases are no steps of the tool's: each starts and
 # ends at what the run says, and lasts in the emulator: the read as C3's, which
 # reads the flash through the same bridge; putting Sonoff's firmware back, 5 s
-# (bridge 4.4.6, 2026-11-08): the bridge restarting the device 1.5 s after it is
+# (bridge 4.4.6): the bridge restarting the device 1.5 s after it is
 # asked, Sonoff's firmware answering about 2.5 s later, 4 s in all. The faults
 # where each matters most, at 40%: in the read, and in putting it back just
 # after the restart, as Sonoff's firmware starts. Before 4.4.6 the person
@@ -333,7 +333,7 @@ READOUT_SWITCH = re.compile(r"Switch the device off, wait five seconds, and swit
 # Advice to switch it off and on, from a readout as from a conversion.
 SWITCH_ADVICE = re.compile(r"switch (the device|the device|it) off and on", re.IGNORECASE)
 
-# Each length where it can lead somewhere the others do not (2026-10-21): an
+# Each length where it can lead somewhere the others do not: an
 # outage of 5 s is within every timeout of the tool's (8 s and up) and takes
 # the device off the Wi-Fi, so it covers 1 s; 15 s outlasts the 8-10 s ones but
 # not the 15-20 s ones. A crash's rerun after 1 s finds the step still going,
@@ -721,7 +721,7 @@ def needs_cloud(sc):
 # Where eWeLink's own behaviour is under test: the send through it (C2, and C3fb
 # sending it again), and what a run of an old release does there. Everywhere
 # else a cloud scenario's fault falls once the device has left Sonoff's firmware,
-# and the stub answers for eWeLink as well (each passed there on 2026-11-07); a
+# and the stub answers for eWeLink as well (each has passed there); a
 # real-cloud batch leaves those to it. A device back on Sonoff's
 # firmware after C3 or D1 has the installer sent again through eWeLink: one
 # power cut at each keeps that on the real cloud too. The lengths at C3fb are the
@@ -945,7 +945,7 @@ class Tuner:
         if row["verdict"] == "NO-INTERNET":
             return  # this computer's network, not the cloud's, nor how many at once
         with self.lock:
-            ok = row["verdict"] in ("PASS", "EMULATOR-LIMIT", "NO-TRAFFIC")
+            ok = row["verdict"] in ("PASS", "NO-TRAFFIC")
             if not ok and self.phase != "backing-off":
                 # A failure of the scenario's own - a join, a step - says
                 # nothing of how many at once the cloud allows. Nor does a
@@ -1952,7 +1952,7 @@ class Scenario:
             self.notes["upload_page"] = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page))[-300:]
             self.say(f"LOSTAPP: it answered: {self.notes['upload_page'][-120:]}")
             # The emulated Tasmota 15.6.0 safeboot says the upload worked and
-            # writes nothing (app0 seen unchanged, 2026-10-21); a real one
+            # writes nothing (app0 is unchanged after it); a real one
             # writes the image over Tasmota as it arrives, and checks it only
             # at the end. That, as it is on such a device: the device off, the
             # image where Tasmota was, and on again.
@@ -1992,7 +1992,7 @@ class Scenario:
         """The release of this project's ESPHome the device runs, as its API
         says (project_version), asked from the emulated computer by the tool
         itself (esphome.api_device_info): the device's API is on that network
-        only.  None if it does not answer as ours.  A few tries: it may be
+        only.  None if it does not answer as this project's.  A few tries: it may be
         starting."""
         code = ("import json, sys; sys.path.insert(0, '/work'); from tools.autoflash import esphome; "
                 f"print(json.dumps(esphome.api_device_info({DEVICE_IP!r})))")
@@ -2404,7 +2404,7 @@ class Scenario:
         """What the runs of this checkout's tool left of a stage on their
         screens that they should have taken away (fault_verdicts), kept in the
         notes.  Not an earlier release's (--code= its tree), which is out already;
-        a run that puts this checkout back (--code= this checkout) is ours."""
+        a run that puts this checkout back (--code= this checkout) is this checkout's."""
         runs = ("\n" + Path(self.log).read_text(encoding="utf-8", errors="replace")).split("\n--- ")
         ours = "\n".join(run for run in runs[1:] if not earlier_release_run(run.partition("\n")[0]))
         problems = fault_verdicts.screen_problems(ours)
@@ -2843,7 +2843,7 @@ def batch(ids_file=None):
     AUTOFLASH_EMU_ANY_WORKERS after them."""
     LOGS.mkdir(parents=True, exist_ok=True)
     known = {sc["id"]: sc for sc in scenarios()}
-    done = {i for i, row in latest().items() if row["verdict"] in ("PASS", "EMULATOR-LIMIT", "NO-TRAFFIC")}
+    done = {i for i, row in latest().items() if row["verdict"] in ("PASS", "NO-TRAFFIC")}
     cloud, anywhere = queue.Queue(), queue.Queue()
     ids = read_ids(ids_file) if ids_file else list(known)
     stale = stale_starts(known[i] for i in ids if i not in done)
@@ -2919,7 +2919,7 @@ def stale_starts(todo):
     """The saved converted devices `todo` would start from that prep did not make
     with the firmware this checkout installs. A run from one leaves an older
     firmware than the tool installs, untested for the one it does, and passes."""
-    # A legacy run makes its own device, and Sonoff's firmware is not ours to change.
+    # A legacy run makes its own device, and Sonoff's firmware is not this checkout's to change.
     # An update's device is made from one (prep_update), on the release before on purpose.
     targets = {sc["route"].split(">")[0] for sc in todo if sc["fault"] != "legacy"} - {"sonoff", "update"}
     stale = []
@@ -3062,7 +3062,7 @@ def prep_update():
     """The update scenarios' starting devices, which no run of this checkout can
     make, the tool installing only this release. For update>tasmota, the device
     saved on Tasmota, the release before in its app0; for update>esphome, a
-    device EARLIER_RELEASE's tool converted: a build of ours has the device's Wi-Fi
+    device EARLIER_RELEASE's tool converted: a build of this checkout's has the device's Wi-Fi
     written in, so cannot simply be put in its slot."""
     kept = EMU / "saved" / saved(ROUTES["update>tasmota"][0])
     shutil.rmtree(kept, ignore_errors=True)
