@@ -161,6 +161,23 @@ class ReviewTests(unittest.TestCase):
         _, _, _, asked = self.run_with(["review", "basicr4"], lambda body: [])
         self.assertEqual(asked[0][2]["params"], ["BASICR4|%"])
 
+    def test_rotated_lists_the_keys_taken_as_right_from_both_sides_of_the_time(self):
+        kept = [dict(row) for row in self.ROWS] + [
+            {"id": "2026-11-09-dddddddddddd", "key": "S60TPF|SN-ESP32C3-S60-01|1.0.0", "stage": "whole",
+             "fingerprint": "3" * 64, "object": "readouts/2026-11-09/d.tar", "received": "2026-11-09T09:00:00Z"}]
+        code, lines, _, asked = self.run_with(["rotated", "2026-11-09T10:30:00Z"], lambda body: kept)
+        self.assertEqual(code, 0)
+        self.assertEqual(lines[0], "BASICR4|SN-ESP32C3-BASICR4-01|1.1.0 (whole): 3 taken as right, "
+                                   "sent both sides of 2026-11-09T10:30:00Z")
+        self.assertEqual([line.split()[-1] for line in lines[1:4]], ["before", "after", "after"])
+        self.assertEqual(lines[-1], "1 to look at again", "one key all on one side is left out")
+        self.assertIn("review IN ('quorum', 'approved')", asked[0][2]["sql"])
+
+    def test_rotated_takes_a_time_as_rotate_prints_it(self):
+        code, _, err, asked = self.run_with(["rotated", "yesterday"], lambda body: [])
+        self.assertEqual((code, asked), (2, []))
+        self.assertIn("not a time as rotate prints it", err)
+
     @staticmethod
     def database(review="pending", bytes_=1234):
         """The API's database as settle() asks it: the readout, then the change."""

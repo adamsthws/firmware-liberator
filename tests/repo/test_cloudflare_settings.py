@@ -785,6 +785,8 @@ class ApiAndStatsTests(unittest.TestCase):
         [(_, _, body)] = self.fake.sent
         self.assertEqual(body["name"], "SENDER_KEY")
         self.assertNotIn(body["text"], out.getvalue())
+        self.assertRegex(out.getvalue(), r"python3 tools/repo/readouts.py rotated \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ",
+                         "it says when, and how to find the keys this weakened")
 
     def test_before_the_worker_is_deployed_its_secrets_wait(self):
         self.fake.secrets = None
