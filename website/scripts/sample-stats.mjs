@@ -41,7 +41,8 @@ const OS = [["windows", "11 (build 10.0.22631)"], ["macos", "15.1"], ["linux", "
 
 const dayOf = (date) => date.toISOString().slice(0, 10);
 
-export async function sampleStats(now = new Date("2026-12-01T03:17:00Z"), reports = 640) {
+// The made-up database and the night's snapshot of it: {db, snapshot}.
+export async function sampleDatabase(now = new Date("2026-12-01T03:17:00Z"), reports = 640) {
   const next = random(1794);
   const db = d1();
   const pick = (weights) => {
@@ -77,7 +78,11 @@ export async function sampleStats(now = new Date("2026-12-01T03:17:00Z"), report
   const kept = new Map();
   const STATS = { head: async (key) => (kept.has(key) ? {} : null), put: async (key, text) => kept.set(key, text) };
   await nightly({ DB: db, STATS }, now);
-  return JSON.parse(kept.get(SNAPSHOT_KEY));
+  return { db, snapshot: JSON.parse(kept.get(SNAPSHOT_KEY)) };
+}
+
+export async function sampleStats(now = new Date("2026-12-01T03:17:00Z"), reports = 640) {
+  return (await sampleDatabase(now, reports)).snapshot;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
