@@ -1,0 +1,35 @@
+// admin.firmwareliberator.com: the maintainer's view of what the API holds
+// (index.js), behind Cloudflare Access, which tools/repo/cloudflare_settings.py
+// makes: GitHub sign-in, the maintainer alone. A Worker of its own, apart
+// from the API's and the website's. The website workflow deploys it.
+//
+// Its secret, ANALYTICS_TOKEN, a token that can only read the account's
+// analytics, is set by cloudflare_settings.py apply from .env.infra; without
+// it the view leaves out the month's use.
+{
+  "name": "firmware-liberator-admin",
+  "main": "index.js",
+  "compatibility_date": "2026-11-01",
+  "routes": [
+    { "pattern": "admin.firmwareliberator.com", "custom_domain": true }
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  // No logs or traces: nothing of the view's is worth keeping.
+  "observability": { "enabled": false, "logs": { "enabled": false }, "traces": { "enabled": false } },
+  // The API's database (../api/database.js), read live, and changed only by a
+  // held report released or deleted. The same id as ../api/wrangler.jsonc's.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "firmware-liberator-api",
+      "database_id": "4c2b6c15-fdaf-4457-aad2-5db90250be14" }
+  ],
+  "vars": {
+    // Access's team (its <team>.cloudflareaccess.com) and this application's
+    // audience tag: cloudflare_settings.py apply says both once it has made
+    // the application. Until then nothing is let in.
+    "ACCESS_TEAM": "",
+    "ACCESS_AUD": "",
+    // The account the month's use is read for: not secret.
+    "ACCOUNT_ID": ""
+  }
+}
