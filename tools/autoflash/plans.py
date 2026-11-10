@@ -43,11 +43,8 @@ SONOFF_TABLE_SHA256 = "f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526
 TASMOTA_TABLE_SHA256 = None  # set below from safeboot_migration, the one place it is pinned
 TABLE_ADDRESS = 0x8000
 SONOFF_OTA = (0x20000, 0x210000)
-SONOFF_SLOT_SIZE = 0x1F0000
 SONOFF_OTADATA = 0x1D000
-SONOFF_NVS = 0x9000             # nvs, then Sonoff's "reserve", up to the boot selection
 SONOFF_NVS_END = SONOFF_OTADATA
-SONOFF_PHY = 0x1F000
 OTADATA_SIZE = 0x2000
 TASMOTA_APP0 = 0xE0000
 # Whole writes are held in the device's memory while they are written.
