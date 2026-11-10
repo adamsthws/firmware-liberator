@@ -12,9 +12,9 @@ only those that have run on main, saying which are left: a check required
 before its workflow is there - a new job, or one renamed - would hold every
 pull request back, the firmware-update workflow's too. Run it again once
 they have run. A secret's value cannot be read back, so only its name is
-checked, and one not written here is deleted. `apply` sets each of FROM_ENV from the environment or .env.infra, every
-time, and leaves any other missing one to `secret` - or a Cloudflare
-token to tools/repo/cloudflare_tokens.py, which makes it and sets it.
+checked, and one not written here is deleted. `apply` leaves a missing one
+to `secret` - or a Cloudflare token to tools/repo/cloudflare_tokens.py,
+which makes it and sets it.
 """
 
 from __future__ import annotations
@@ -119,15 +119,7 @@ ENVIRONMENT_BRANCHES = ["main"]
 ENVIRONMENT_SECRETS = {
     "CLOUDFLARE_WORKERS_DEPLOY_TOKEN": "the website workflow's, deploying the three Workers",
     "CLOUDFLARE_SETTINGS_CHECK_TOKEN": "the cloudflare-settings workflow's, reading the settings it checks",
-    "CLOUDFLARE_EMAIL_DESTINATION": "the address the domain's mail is forwarded to, which that workflow checks",
-    "CLOUDFLARE_EMAIL_FORWARD": "the domain's addresses forwarded there, which that workflow checks",
 }
-# Secrets kept in .env.infra rather than made for one job, as a token is: private
-# settings the cloudflare-settings workflow checks against (as
-# tools/repo/cloudflare_settings.py says). GitHub cannot show what a secret
-# holds, so `apply` sets these from .env.infra each time; one left behind there
-# is a difference that workflow finds.
-FROM_ENV = ["CLOUDFLARE_EMAIL_DESTINATION", "CLOUDFLARE_EMAIL_FORWARD"]
 
 MAIN = {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}}
 # The checks main requires: jobs of the unit tests and emulator, leak-scan
@@ -326,8 +318,6 @@ def main(argv: list[str] | None = None) -> int:
         if not args:
             return 0
         for what, _, (method, path, body) in found:
-            if method == "SECRET" and path in FROM_ENV:
-                continue
             if method == "SECRET":
                 made = [key for key, spec in cloudflare_settings.TOKENS.items() if spec.get("variable") == path]
                 print(f"  {what}: left - " + (f"made with python3 tools/repo/cloudflare_tokens.py {made[0]}" if made
@@ -354,9 +344,6 @@ def main(argv: list[str] | None = None) -> int:
                     continue
             api(path, method, body)
             print(f"  {what}: {'removed' if method == 'DELETE' else 'set'}")
-        for name in FROM_ENV:
-            set_secret(name, cloudflare_settings.variable(name).strip())
-            print(f"  environment '{ENVIRONMENT}' secret {name}: set from .env.infra")
     except (SettingsError, cloudflare_settings.SettingsError) as error:
         print(f"github_settings: {error}", file=sys.stderr)
         return 1

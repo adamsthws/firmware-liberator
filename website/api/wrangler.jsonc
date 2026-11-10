@@ -16,8 +16,8 @@
 //   which starts the day's counts again. Until it is set, no readout or
 //   report is taken.
 // - ALERTS_RECIPIENT_EMAIL, the maintainer's address, which the nightly job emails when a
-//   limit was reached (alerts.js): set from CLOUDFLARE_EMAIL_DESTINATION in
-//   .env.infra, the Email Routing destination, never written here.
+//   limit was reached (alerts.js): set by apply from Email Routing's rules,
+//   the address the domain's mail is forwarded to, never written here.
 {
   "name": "firmware-liberator-api",
   "main": "index.js",
