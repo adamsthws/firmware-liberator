@@ -16,7 +16,7 @@ import path from "node:path";
 // tried on 22.23, and is refused on anything older rather than failing later.
 const [major, minor] = process.versions.node.split(".").map(Number);
 if (major < 22 || (major === 22 && minor < 23)) {
-  console.error(`website/api/local.mjs needs Node 22.23 or newer, not ${process.versions.node} (AUTOFLASH_NODE names one)`);
+  console.error(`website/api/local.mjs needs Node 22.23 or newer, not ${process.versions.node}`);
   process.exit(2);
 }
 
