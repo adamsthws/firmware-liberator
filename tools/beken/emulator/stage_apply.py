@@ -11,8 +11,8 @@ the bootloader makes (flash_writethrough: the RDID and the XIP mirror, patch
 `beken-emu.sh run OUT --wifi --wifi-peer ap --wifi-ssid SSID --wifi-pass PASS`,
 shows the installed firmware start afresh and join.
 
-    beken-emu.sh python tools/beken/emulator/stage_apply.py DUMP IMAGE.rbl OUT
-    (env: SECS=120, SSID, PASS, SEED=0 for no credentials; IMAGE "-" boots DUMP as it is)
+    beken-emu.sh python [NAME=VALUE...] tools/beken/emulator/stage_apply.py DUMP IMAGE.rbl OUT
+    (settings: SECS=120, SSID, PASS, SEED=0 for no credentials; IMAGE "-" boots DUMP as it is)
 """
 from __future__ import annotations
 

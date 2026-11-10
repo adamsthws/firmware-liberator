@@ -303,5 +303,82 @@ class OptionTests(unittest.TestCase):
         self.assertEqual(found, ["ensure img --rebuild", "ensure img"])
 
 
+@unittest.skipIf(shutil.which("bash") is None, "no bash")
+class ToolSettingsTests(unittest.TestCase):
+    """A tool's settings (cloud_dial.py's DISPATCH, seed_join.py's SSID, ...) are
+    the NAME=VALUE arguments python and run are given first, as env takes them.
+    Nothing else of the environment reaches the container: a SERVER or PASS set
+    in a shell for something else once did, and changed what a tool did."""
+
+    def docker(self, *args, **env):
+        """What beken-emu.sh ARGS, run with ENV, gives the container: its
+        settings (each -e but the script's own dump) and its command."""
+        with tempfile.TemporaryDirectory() as tmp:
+            checkout(tmp)
+            Path(tmp, "tools/beken/emulator/image.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+            firmwares = Path(tmp, "captures/emulation/beken/firmwares")
+            firmwares.mkdir(parents=True)
+            Path(firmwares, "Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin").touch()
+            Path(tmp, "bin").mkdir()
+            Path(tmp, "bin", "docker").write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n', encoding="utf-8")
+            Path(tmp, "bin", "docker").chmod(0o755)
+            done = subprocess.run(["bash", str(Path(tmp, SCRIPT.relative_to(ROOT))), *args], capture_output=True,
+                                  text=True, timeout=60, cwd=tmp,
+                                  env={**os.environ, **env, "AUTOFLASH_BEKEN_EMU_IMAGE": "img",
+                                       "PATH": f"{tmp}/bin:{os.environ['PATH']}"})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        given = done.stdout.splitlines()
+        image = given.index("img")
+        settings = [given[i + 1] for i in range(image) if given[i] == "-e"]
+        settings.remove("AUTOFLASH_BEKEN_EMU_DUMP=/opt/beken-emulator/firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin")
+        return settings, given[image + 1:]
+
+    def test_a_setting_reaches_the_tool(self):
+        self.assertEqual(self.docker("python", "DISPATCH=http://192.0.2.1:80", "cloud_dial.py"),
+                         (["DISPATCH=http://192.0.2.1:80"], ["cloud_dial.py"]))
+
+    def test_one_set_empty_arrives_empty(self):
+        # cloud_dial.py's DISPATCH= is the factory placeholder, not its default.
+        self.assertEqual(self.docker("python", "DISPATCH=", "cloud_dial.py"), (["DISPATCH="], ["cloud_dial.py"]))
+
+    def test_several_arrive_in_order_spaces_and_all(self):
+        self.assertEqual(self.docker("python", "SSID=My Net", "PASS=a=b", "SECS=40", "seed_join.py"),
+                         (["SSID=My Net", "PASS=a=b", "SECS=40"], ["seed_join.py"]))
+
+    def test_none_given_none_passed(self):
+        self.assertEqual(self.docker("python", "cloud_dial.py"), ([], ["cloud_dial.py"]))
+
+    def test_the_environment_does_not_reach_the_tool(self):
+        self.assertEqual(self.docker("python", "SECS=5", "cloud_dial.py", SERVER="x", PASS="x", DISPATCH="x"),
+                         (["SECS=5"], ["cloud_dial.py"]))
+
+    def test_one_after_the_tool_is_the_tools_argument(self):
+        self.assertEqual(self.docker("python", "cloud_dial.py", "SECS=5"), ([], ["cloud_dial.py", "SECS=5"]))
+        self.assertEqual(self.docker("python", "-c", "x=1", "Y=2"), ([], ["-c", "x=1", "Y=2"]))
+        self.assertEqual(self.docker("python", "SECS=5", "-c", "x=1"), (["SECS=5"], ["-c", "x=1"]))
+
+    def test_a_setting_given_wins_over_the_scripts_own(self):
+        # A dump of your own, in place of the public one the script names.
+        settings, _command = self.docker("python", "AUTOFLASH_BEKEN_EMU_DUMP=/work/captures/own.bin", "seed_join.py")
+        self.assertEqual(settings, ["AUTOFLASH_BEKEN_EMU_DUMP=/work/captures/own.bin"])
+
+    def test_run_takes_them_before_its_dump(self):
+        dump = "captures/emulation/beken/firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin"
+        settings, command = self.docker("run", "BK_MONITOR_RX=1", "SECS=", dump, "--wifi-peer", "auto", "X=1",
+                                        PINS="0 2")
+        self.assertEqual(settings, ["BK_MONITOR_RX=1", "SECS="])
+        self.assertEqual(command[0], "/opt/beken-emulator/src/main.py")
+        self.assertTrue(command[1].endswith("/" + dump), command)
+        self.assertEqual(command[2:], ["--with-boot", "-chip", "BK7238", "--only-uart", "--wifi-peer", "auto", "X=1"])
+
+    def test_run_without_a_dump_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            checkout(tmp)
+            done = subprocess.run(["bash", str(Path(tmp, SCRIPT.relative_to(ROOT))), "run", "SECS=5"],
+                                  capture_output=True, text=True, timeout=60, cwd=tmp)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("run needs a dump", done.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

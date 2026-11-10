@@ -23,8 +23,19 @@ In the container the emulator is at `/opt/beken-emulator`, the tools' default
 `BK_EMU_ROOT`, and the fetched dump is their default `AUTOFLASH_BEKEN_EMU_DUMP`.
 The image's Python has `capstone`, so the static tools run there too. Only
 `decomp.py` needs `angr`, which goes into a virtual environment of your own,
-never the system's Python. The examples below leave out the `beken-emu.sh
-python` prefix and run from `tools/beken`.
+never the system's Python.
+
+The examples below run from `tools/beken`. The static tools are given as
+`python3 TOOL.py`, on your computer with `capstone` or in the container with
+`emulator/beken-emu.sh python` in place of `python3`. The emulator drivers run
+only in the container, so theirs are written out. A driver's settings (its
+`Env` below) go after `python`, before the script, as `NAME=VALUE`, and
+nothing else of your environment reaches the container, so a variable set in
+your shell for something else changes no driver:
+
+```sh
+emulator/beken-emu.sh python DISPATCH= SECS=90 emulator/cloud_dial.py
+```
 
 ## Static analysis
 
@@ -75,8 +86,10 @@ point the other tools at it.
 
 The conversion path's drivers are in [emulator/](emulator/); the pairing
 experiments are in [archive/s61-research/](../../archive/s61-research/) and run
-from there. The addresses quoted are those of the S61's firmware 1.0.2;
-the current drivers find theirs with `stock_points.py`. Each driver works only
+from there, in the container as the drivers do: their examples' `python3` is
+`../../tools/beken/emulator/beken-emu.sh python` there. The addresses quoted
+are those of the S61's firmware 1.0.2; the current drivers find theirs with
+`stock_points.py`. Each driver works only
 inside the emulator, on a dump (the public one, or one of your own device):
 none is ever written to or run on a real device.
 
@@ -91,7 +104,7 @@ none is ever written to or run on a real device.
   real hardware. The firmware then starts the app framework by itself:
   `key_add` registers the button (pins 0 and 2), the provisioned check runs
   and `ais_appfw_task` is created.
-  `python3 emulator/integrity_gate.py`
+  `emulator/beken-emu.sh python emulator/integrity_gate.py`
 
 - **`seed_join.py`** puts the emulated device on a network the way a
   provisioned one joins. It hooks the firmware's own `ef_get_env_blob`
@@ -102,7 +115,7 @@ none is ever written to or run on a real device.
   which gives it 192.168.1.100**. It clears the integrity gate too: with the
   gate in place, seeded credentials leave the device idle. Env
   `SSID`/`PASS`/`CH`/`SECS`.
-  `python3 emulator/seed_join.py`
+  `emulator/beken-emu.sh python emulator/seed_join.py`
 
 - **`cloud_dial.py`** makes the emulated device dial the **eWeLink (CoolKit)
   cloud**. Left alone after the join, the device does **Matter** (`_matterc`):
@@ -121,7 +134,7 @@ none is ever written to or run on a real device.
   account or device but your own. A dump of a device bound to an account would
   add only a faithful server and device secret. Env
   `DISPATCH`/`SSID`/`PASS`/`SECS`/`FORCE_AT`.
-  `python3 emulator/cloud_dial.py`
+  `emulator/beken-emu.sh python emulator/cloud_dial.py`
 
 - **`cloud_online.py`** completes the cloud cycle: the device reaches
   **ONLINE**, then sends heartbeats. It runs the CoolKit stub
@@ -144,7 +157,7 @@ none is ever written to or run on a real device.
 
   Env `SSID`/`PASS`/`SECS`/`FORCE_AT`/`HB`. Its set-up is a `CloudSession`,
   which `cloud_push.py` builds on.
-  `python3 emulator/cloud_online.py`
+  `emulator/beken-emu.sh python emulator/cloud_online.py`
 
 - **`cloud_push.py`** runs a whole S61 conversion the way the tool would drive
   one. The device comes online against the stub (`cloud_online.CloudSession`)
@@ -155,7 +168,8 @@ none is ever written to or run on a real device.
   applies it on the next boot and the new firmware starts. The Wi-Fi is first
   written into a copy of the dump's EasyFlash store, so the new firmware finds
   it as on a provisioned device.
-  `python3 emulator/cloud_push.py image.rbl out.bin --apply` (env `SECS`, `APPLY_SECS`)
+  `emulator/beken-emu.sh python emulator/cloud_push.py image.rbl out.bin --apply`
+  (env `SECS`, `APPLY_SECS`)
 
 - **`stage_apply.py`** is the apply half of a conversion, or of a reversion,
   in one command. It stages an rt_ota `.rbl` (OpenBeken's, the ESPHome
@@ -165,7 +179,8 @@ none is ever written to or run on a real device.
   flash as the run leaves it is saved, so that
   `beken-emu.sh run OUT --wifi --wifi-peer ap ...` can show the installed
   firmware start afresh and join.
-  `python3 emulator/stage_apply.py dump.bin image.rbl out.bin` (env `SECS`, `SSID`, `PASS`, `SEED=0`)
+  `emulator/beken-emu.sh python emulator/stage_apply.py dump.bin image.rbl out.bin`
+  (env `SECS`, `SSID`, `PASS`, `SEED=0`)
 
 ### The pairing experiments (archived)
 
