@@ -972,6 +972,13 @@ Fixed, and each case in the suite since. In 2.3.0:
   ESPHome fetched by OpenBeken (J2, O1), found by OpenBeken's uptime: the suite's
   `--simulate-bad-image STEP` scenarios.
 
+In 2.4.0:
+
+- This computer crashing 10% into an ESPHome update (`outdated>esphome:U1@10:crash-1`)
+  left ESPHome on the plug waiting up to 105 s for the rest of it, its update
+  service taking nothing else meanwhile, and every run started again in that time
+  timed out. The run now waits that out, once, and sends the update again.
+
 ### Attended runs
 
 The fault suites run the tool unattended, so they never see its questions. The
