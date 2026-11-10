@@ -62,6 +62,7 @@ class ParseTests(unittest.TestCase):
         self.assertIsNone(calibration.parse(""))
         # A b term that would not scale a reading: a damaged entry.
         self.assertIsNone(calibration.parse(FACTORY.replace("990000", "0", 1)))
+        self.assertIsNone(calibration.parse(FACTORY.replace("990000", "2000000", 1)))
 
 
 class TasmotaValueTests(unittest.TestCase):
@@ -78,6 +79,10 @@ class TasmotaValueTests(unittest.TestCase):
         # 1912 * 1.02 rounds to 1950, Tasmota's default: it would take the chip's again.
         values = calibration.tasmota_values({**CHIP, "VoltageCal": 1912}, 1.02)
         self.assertEqual(values["VoltageCal"], 1951)
+
+    def test_tasmotas_defaults_are_its_own(self):
+        # include/tasmota.h's HLW_UREF_PULSE, HLW_IREF_PULSE and HLW_PREF_PULSE.
+        self.assertEqual(calibration.TASMOTA_DEFAULTS, {"VoltageCal": 1950, "CurrentCal": 3500, "PowerCal": 12530})
 
     def test_the_board_factor_is_1_02_unless_every_pin_reads_high(self):
         self.assertEqual(calibration.board_factor([1, 1, 1]), 1.0)
@@ -104,6 +109,8 @@ class CalibrateTasmotaTests(unittest.TestCase):
         tasmota = FakeTasmota(pins=(1, 1, 1))
         outcome = calibration.calibrate_tasmota(tasmota, sleep=lambda _: None)
         self.assertEqual(outcome["factor"], 1.0)
+        self.assertEqual([text for text in tasmota.sent if text.startswith("Br gpio.digital_read(")],
+                         ["Br gpio.digital_read(6)", "Br gpio.digital_read(10)", "Br gpio.digital_read(19)"])
         for pin in calibration.BOARD_PINS:
             pulled = tasmota.sent.index(f"Br gpio.pin_mode({pin}, gpio.INPUT_PULLUP)")
             read = tasmota.sent.index(f"Br gpio.digital_read({pin})")
@@ -118,6 +125,29 @@ class CalibrateTasmotaTests(unittest.TestCase):
         outcome = calibration.calibrate_tasmota(tasmota, wait=0, sleep=lambda _: None)
         self.assertEqual(outcome["skipped"], "the meter did not report")
         self.assertEqual(tasmota.settings, before)
+
+    def test_a_meter_slow_to_report_is_waited_for(self):
+        tasmota = FakeTasmota(meter=False)
+        slept = []
+
+        def sleep(seconds):
+            slept.append(seconds)
+            tasmota.meter = len(slept) >= 3   # its readings come a little later
+        outcome = calibration.calibrate_tasmota(tasmota, sleep=sleep)
+        self.assertEqual(outcome["chip"], CHIP)
+        self.assertEqual(len(slept), 3)
+
+    def test_a_setting_tasmota_does_not_take_is_said_not_taken(self):
+        tasmota = FakeTasmota()
+        answer = tasmota.__call__
+
+        def command(text):
+            said = answer(text)
+            if text == "PowerCal 5148":
+                return {"PowerCal": 5047}   # answered, but not with what was asked
+            return said
+        outcome = calibration.calibrate_tasmota(command, sleep=lambda _: None)
+        self.assertEqual(outcome, {"skipped": "Tasmota did not take its calibration", "factor": 1.02})
 
     def test_one_calibrated_by_hand_is_left_as_it_was(self):
         # PowerSet against a meter, say: neither the chip's numbers nor ours.
