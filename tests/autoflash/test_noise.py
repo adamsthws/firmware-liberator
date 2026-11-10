@@ -15,6 +15,11 @@ class X25519Tests(unittest.TestCase):
         point = bytes.fromhex("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c")
         self.assertEqual(noise.x25519(scalar, point).hex(),
                          "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552")
+        # 5.2's second: the point's top bit is set, and is ignored.
+        scalar = bytes.fromhex("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d")
+        point = bytes.fromhex("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493")
+        self.assertEqual(noise.x25519(scalar, point).hex(),
+                         "95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957")
         # 6.1: Alice and Bob agree.
         alice = bytes.fromhex("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")
         bob = bytes.fromhex("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb")
@@ -105,11 +110,31 @@ class HandshakeTests(unittest.TestCase):
             with self.assertRaises(noise.NoiseError):
                 other.read_message(noise.Handshake(self.PSK, b"prologue").write_message())
 
+    def test_each_end_writes_and_reads_only_in_its_turn(self):
+        client = noise.Handshake(self.PSK, b"prologue")
+        device = noise.Handshake(self.PSK, b"prologue", initiator=False)
+        with self.assertRaises(RuntimeError):
+            device.write_message()  # the initiator speaks first
+        with self.assertRaises(RuntimeError):
+            client.read_message(bytes(48))
+        first = client.write_message()
+        with self.assertRaises(RuntimeError):
+            client.write_message()
+        device.read_message(first)
+        second = device.write_message()
+        with self.assertRaises(RuntimeError):
+            device.read_message(second)
+        client.read_message(second)
+        for end in (client, device):
+            with self.assertRaises(RuntimeError):
+                end.write_message()
+
     def test_a_key_as_the_yaml_config_has_it(self):
         text = base64.b64encode(self.PSK).decode()
         for given in (text, f'"{text}"', f"  {text}\n"):
             self.assertEqual(noise.decode_key(given), self.PSK)
-        for wrong, why in (("not base64!", "not base64"), (base64.b64encode(bytes(16)).decode(), "16 bytes")):
+        for wrong, why in (("not base64!", "not base64"), (base64.b64encode(bytes(16)).decode(), "16 bytes"),
+                           (text[:8] + "$" + text[8:], "not base64")):  # never decoded around a stray character
             with self.assertRaisesRegex(ValueError, why):
                 noise.decode_key(wrong)
 
