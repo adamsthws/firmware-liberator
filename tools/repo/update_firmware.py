@@ -44,7 +44,12 @@
         table for it - in this project's build image, check it, and publish it
         in artifacts/
 
-Each writes firmware.json, the published files and SHA256SUMS, and lists what
+    python3 tools/repo/update_firmware.py publishable BASE HEAD
+        that HEAD is one commit on BASE changing only what an update does
+        (PUBLISHABLE below): the firmware-update workflow's check before it
+        pushes one
+
+Each of the others writes firmware.json, the published files and SHA256SUMS, and lists what
 is left to do by hand. Nothing is pushed or committed. docs/updating-firmware.md
 is the whole procedure, and what each check is for.
 """
@@ -1466,10 +1471,51 @@ def left_to_do(items: list[str]) -> None:
         print(f"  - {item}")
 
 
+# What the weekly update's commit may change: the firmware, its pins and
+# sums, the devices' configs and pages, the notes, and the version's one
+# line - never code. The firmware-update workflow builds it in a job that
+# runs the releases' own build tools and so is given no write access; the job
+# that pushes it checks it against this first (`publishable`).
+PUBLISHABLE = re.compile(r"artifacts/[^/]+|devices/[^/]+/[^/]+\.(?:yaml|md)|CHANGELOG\.md|NOTICES\.md|\.gitignore"
+                         r"|tools/autoflash/__init__\.py")
+VERSION_LINE = re.compile(r'[-+]__version__ = "\d+\.\d+\.\d+"')
+
+
+def unpublishable(base: str, head: str, cwd: Path = ROOT) -> list[str]:
+    """Why `head` is not an update to push on top of `base`: one commit on it,
+    changing only what PUBLISHABLE allows. Empty if it is."""
+    if git("rev-parse", "--verify", f"{head}^", cwd=cwd) != git("rev-parse", "--verify", base, cwd=cwd):
+        return [f"{head} is not one commit on {base}"]
+    problems = [f"{path}: an update never changes it"
+                for path in git("diff", "--name-only", "--no-renames", base, head, cwd=cwd).splitlines()
+                if not PUBLISHABLE.fullmatch(path)]
+    version = git("diff", "-U0", base, head, "--", "tools/autoflash/__init__.py", cwd=cwd).splitlines()
+    problems += [f"tools/autoflash/__init__.py: {line!r} is more than the version"
+                 for line in version if line[:1] in "+-" and line[:3] not in ("+++", "---")
+                 and not VERSION_LINE.fullmatch(line)]
+    return problems
+
+
+def command_publishable(args: argparse.Namespace) -> int:
+    problems = unpublishable(args.base, args.head)
+    for problem in problems:
+        print(f"  {problem}", file=sys.stderr)
+    if problems:
+        print("Not pushed: the update changes what it should not.", file=sys.stderr)
+        return 1
+    print(f"{args.head} changes only what an update does.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("check", help="pinned against latest").set_defaults(run=command_check)
+    publishable = commands.add_parser("publishable", help="that HEAD is an update to push on BASE: "
+                                                          "one commit, changing only what an update does")
+    publishable.add_argument("base")
+    publishable.add_argument("head")
+    publishable.set_defaults(run=command_publishable)
     due_parser = commands.add_parser("due", help="what the settled-release rule takes now, as JSON")
     due_parser.add_argument("--today", help="as on this date (YYYY-MM-DD), for a look ahead")
     due_parser.set_defaults(run=command_due)
