@@ -866,7 +866,7 @@ for the interim firmware, above) and none of these applies:
 
 | Verdict | Means |
 |---|---|
-| FAIL-CHECKS | the report's end-of-run checks did not pass, as on the Espressif suite. On OpenBeken and ESPHome, whose relay pin drives the emulated meter's load, the check must also say the meter confirms the switch; back on Sonoff's firmware the relay is switched through the stub's eWeLink |
+| FAIL-CHECKS | the report's end-of-run checks did not pass, as on the Espressif suite. On OpenBeken and ESPHome, whose relay pin drives the emulated meter's load, the check of a device with a meter (the S61) must also say the meter confirms the switch, and one of a device without (the Basic Gen5) only that the relay switched, as its kind in the run's record says; back on Sonoff's firmware the relay is switched through the stub's eWeLink |
 | FAIL-SCREEN | as on the Espressif suite, each run recorded through `tools/repo/unattended_run.py` |
 | FAIL-NOT-LATEST | a device converted to OpenBeken or ESPHome, updated from an earlier release's or not, does not run your checkout's release of it |
 | MISTIMED, NOT-FIRED | as on the Espressif suite |
