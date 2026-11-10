@@ -74,6 +74,26 @@ class RestartTests(unittest.TestCase):
                 self.assertTrue(self.run_restart(device, running))
                 self.assertTrue(any("Restart" in path for _, path in device.asked))
 
+    def test_a_tasmota_that_does_not_say_it_restarts_is_not_waited_for(self):
+        for said in ({"Command": "Unknown"}, "Restart"):
+            with self.subTest(said), mock.patch.object(restart, "Device") as device, \
+                    mock.patch.object(detect, "identify", return_value="tasmota"), \
+                    mock.patch.object(restart.time, "sleep") as slept:
+                device.return_value.command.return_value = said
+                self.assertFalse(restart.restart("192.0.2.77"))
+                slept.assert_not_called()
+
+    def test_it_waits_for_the_device_to_go_before_looking_for_it_back(self):
+        device = self.serve("mover")
+        seen = []
+        answers = iter(["mover", "mover"])
+        with mock.patch.object(detect, "identify", side_effect=lambda host: seen.append("looked") or next(answers)), \
+                mock.patch.object(restart.time, "sleep", side_effect=lambda s: seen.append(s)), \
+                mock.patch.object(output, "say"):
+            self.assertTrue(restart.restart(device.host))
+        # Asked what it runs, then a pause - it answers before it restarts - then looked for.
+        self.assertEqual(seen, ["looked", 5.0, "looked"])
+
     def test_openbeken_by_its_own(self):
         with mock.patch.object(detect, "identify", return_value="interim"), \
                 mock.patch.object(restart.openbeken, "restart", return_value=True) as rebooted, \
@@ -93,6 +113,9 @@ class RestartTests(unittest.TestCase):
         device = self.serve("mover")
         with mock.patch.object(restart, "BACK_WAIT", 0.0):
             self.assertFalse(self.run_restart(device, "mover", back=(None,)))
+        # Nor one silent the whole wait.
+        with mock.patch.object(restart.time, "monotonic", side_effect=[0, 0, 60, 119, 120]):
+            self.assertIs(self.run_restart(device, "mover", back=(None, None, None)), False)
 
 
 if __name__ == "__main__":
