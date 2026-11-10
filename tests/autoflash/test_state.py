@@ -33,6 +33,15 @@ class RunStateTests(unittest.TestCase):
                     mock.patch.object(hostsys, "IS_WINDOWS", False), \
                     self.assertRaises(PermissionError):
                 run.mark("E2", DONE)
+            self.assertEqual([f.name for f in Path(directory).iterdir()], ["autoflash-state.json"],
+                             "nor does a write that failed leave its temporary file")
+
+    def test_the_record_says_when_each_step_was_marked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = RunState.open(Path(directory))
+            run.mark("E3", DONE)
+            again = RunState.open(Path(directory))
+            self.assertRegex(again.data["steps"]["E3"]["at"], r"^\d{4}-\d\d-\d\dT")
 
     def test_a_run_begun_by_a_release_before_2_4_0_is_read_under_todays_names(self):
         import json
