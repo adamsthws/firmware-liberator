@@ -63,10 +63,10 @@ test("a run's report, as the tool makes and sends it, is taken by the Worker and
   const queue = fs.mkdtempSync(path.join(os.tmpdir(), "autoflash-reports-"));
   const { child, port } = await started(folder);
   try {
-    const { kept } = runTool(queue, `http://127.0.0.1:${port}/reports`);
+    const { kept } = runTool(queue, `http://127.0.0.1:${port}/v1/reports`);
     assert.deepEqual(kept, [], "nothing left to send");
     const log = fs.readFileSync(path.join(folder, "requests.log"), "utf8");
-    assert.match(log, /POST \/reports \d+ -> 200 \{"accepted":\["0123456789abcdef0123456789abcdef"\]/);
+    assert.match(log, /POST \/v1\/reports \d+ -> 200 \{"accepted":\["0123456789abcdef0123456789abcdef"\]/);
   } finally {
     child.kill();
     fs.rmSync(folder, { recursive: true, force: true });

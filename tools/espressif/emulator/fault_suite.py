@@ -575,9 +575,9 @@ def api_asks(requests):
         except ValueError:
             answer = {}
         answer = answer if isinstance(answer, dict) else {}
-        if path == "/wanted":
+        if path == "/v1/wanted":
             asks.append([not (status == "200" and answer.get("wanted") is False), str(answer.get("why") or ""), []])
-        elif path == "/readout":
+        elif path == "/v1/readout":
             (asks[-1][2] if asks else unasked).append((int(status), str(answer.get("id") or "")))
     return asks, unasked
 
