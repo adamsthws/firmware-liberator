@@ -7,9 +7,8 @@ Every firmware a device runs during a conversion has a name, used two ways:
   cannot join your Wi-Fi.
 
 Each firmware uses one name for both. This page lists every name, where each
-is set, and everything that has to change to rename them. It was written
-after the 2026-10 renaming, which took the S60 out of every name, so that
-you can do another rename in one pass.
+is set, and everything that has to change to rename them in one pass, as the
+2026-10 renaming did when it took the S60 out of every name.
 
 ## The names
 
@@ -31,15 +30,15 @@ is made from it.
 | after F4 | official Tasmota, converted | `tasmota-abcdef` | given by F4 as its reset saves |
 | L1-M1 | the mover (ESPHome) | `autoflash-recovery-CDEF` | compiled in, written over ESPHome's name at boot |
 | after M1/I2 | ESPHome, converted | `esphome-abcdef` | compiled in (ESPHome's own MAC suffix) |
-| S61, converted | OpenBeken | `openbeken-abcdef` | set by the tool's OpenBeken driver at its first start |
-| S61, J1-J2 | the interim firmware (OpenBeken), on a run to ESPHome | `autoflash-recovery-CDEF` | set by the tool's OpenBeken driver at its first start, from the marker B2 sends after the image |
-| S61, converted | ESPHome | `esphome-abcdef` | compiled in, as the S60's |
+| A Beken device, converted | OpenBeken | `openbeken-abcdef` | set by the tool's OpenBeken driver at its first start |
+| A Beken device, J1-J2 | the interim firmware (OpenBeken), on a run to ESPHome | `autoflash-recovery-CDEF` | set by the tool's OpenBeken driver at its first start, from the marker B2 sends after the image |
+| A Beken device, converted | ESPHome | `esphome-abcdef` | compiled in, as an Espressif device's |
 
 Every converted device's name is its firmware's and the MAC's last three
 bytes, in lower case, and its name inside the firmware is the same: Tasmota's
 device name, OpenBeken's short and full names, ESPHome's friendly name
 (`esphome abcdef`, which ESPHome joins with a space). What device it is goes
-elsewhere: Tasmota's template (`Sonoff-S60`) and ESPHome's comment.
+elsewhere: Tasmota's template and ESPHome's comment (`Sonoff-S60` on an S60).
 
 The devices with a classic ESP32 (POW Elite, POWCT, TH Elite, DUALR3) go by
 the same names as the S60 at every step above, made from the same MAC. Seen
@@ -49,9 +48,9 @@ in the DHCP log and in Tasmota's own `Hostname`, ESPHome's own network
 with the Wi-Fi off, and its mDNS name (`esphome-abcdef.local`). Converted
 Tasmota answers no mDNS: its release builds leave mDNS out.
 
-The names an earlier release used are still recognised (see
-[Old names](#old-names)), and so are the ones Tasmota gives itself where its
-settings are lost (see [Tasmota's own names](#tasmotas-own-names)).
+The tool still recognises the names an earlier release used
+([Old names](#old-names)) and those Tasmota gives itself where its settings
+are lost ([Tasmota's own names](#tasmotas-own-names)).
 
 ## Where each name is set
 
@@ -61,7 +60,7 @@ settings are lost (see [Tasmota's own names](#tasmotas-own-names)).
   `BRIDGE_NAME_FORMAT` (`"autoflash-recovery-%02X%02X"`, from
   `esp_read_mac(..., ESP_MAC_WIFI_STA)`), used for the hostname and the
   network. The page title, which the tool recognises the installer by, is in
-  `INDEX_HTML` ("Autoflash bridge"), and the project and log tag are
+  `INDEX_HEAD` ("Autoflash bridge"), and the project and log tag are
   `autoflash_bridge`.
 - `POST /tasmota-settings` saves the settings record the run sends for the
   interim Tasmota, the name already in it. On the home network the installer
@@ -70,7 +69,8 @@ settings are lost (see [Tasmota's own names](#tasmotas-own-names)).
 - A changed installer is a new version: `PROJECT_VER` in
   [`archive/bridge/CMakeLists.txt`](../archive/bridge/CMakeLists.txt) and
   `BRIDGE_VERSION` in `main.c` (a test keeps them equal). Build and publish it
-  as [`archive/bridge/README.md`](../archive/bridge/README.md) says. The file
+  with `tools/repo/update_firmware.py esp32c3 bridge` and `esp32 bridge`
+  ([updating-firmware.md](updating-firmware.md)). The file
   is `artifacts/autoflash-bridge-esp32c3-<version>.ota` on an ESP32-C3 (the
   wrapper names the S60's model, and a run wraps it again for another) and
   `artifacts/autoflash-bridge-esp32-<version>.bin` on a classic ESP32.
@@ -147,8 +147,9 @@ settings are lost (see [Tasmota's own names](#tasmotas-own-names)).
 - **The two must be the same length**: `autoflash-moving` (16) and
   ESPHome's `-xxxxxx` (7) make 23, as `autoflash-recovery-XXXX` does. A new
   interim name means a new compiled name of the matching length.
-- A changed mover is a new version (`project: version:`), built with
-  `esphome compile` into `artifacts/autoflash-mover-<chip>-<version>.bin`.
+- A changed mover is a new version (`project: version:`), built by
+  `tools/repo/update_firmware.py esphome --mover` into
+  `artifacts/autoflash-mover-<chip>-<version>.bin`.
 
 ### ESPHome, converted
 
@@ -162,10 +163,11 @@ settings are lost (see [Tasmota's own names](#tasmotas-own-names)).
   goes by, so a capitalised one could not be adopted.
 - The file name and `package_import_url` stay as they are: they are built
   into devices converted already, and Home Assistant adopts them by it.
-- Rebuilt as [`devices/sonoff-s60/esphome.md`](../devices/sonoff-s60/esphome.md) says, a new version
-  each time: `artifacts/esphome-<kind>-imprintable-<version>.bin` and its
-  bootloader, then `IMAGE`, its SHA-256 and size in
-  [`tools/autoflash/routes/espressif/images.py`](../tools/autoflash/routes/espressif/images.py).
+- Rebuilt as [`devices/sonoff-s60/esphome.md`](../devices/sonoff-s60/esphome.md)
+  says, a new version each time:
+  `artifacts/esphome-<kind>-imprintable-<version>.bin` and its bootloader,
+  which `update_firmware.py` pins in
+  [`artifacts/firmware.json`](../artifacts/firmware.json).
 - Its Wi-Fi action (`autoflash_wifi`, `WIFI_ACTIONS` in `esphome.py`) and
   the Wi-Fi placeholders (`AUTOFLASH-IMPRINT-SSID>` and `-PASS>`, in
   [`tools/autoflash/imprint.py`](../tools/autoflash/imprint.py)) are in the
@@ -260,8 +262,8 @@ name for a minute after, and the tool never takes it over the real one
 
 ## Old names
 
-A device left part way through by a run of an older checkout goes by the name it
-had then, so the tool still looks for every one: `Sonoff-Setup-XXXX` (the own
+A device left part way through by a run of an older checkout goes by the name
+it had then, so the tool still looks for every one: `Sonoff-Setup-XXXX` (the own
 networks of the first installers, movers and ESPHome builds),
 `S60-OTA-Bridge-XXXX` with the password `s60-ota-bridge` (earlier installers), `s60-ota-bridge` and `sonoff-s60-mover-xxxxxx` (hostnames),
 `sonoff-s60-xxxxxx` (the first ESPHome builds), the "S60 OTA Bridge" page, the
@@ -278,10 +280,9 @@ add today's names to these lists rather than replacing them.
 2. Add the old names to the lists in [Old names](#old-names), in the tool.
 3. Rebuild every firmware whose name changed, each as a new version, and
    publish each artifact: the file in `artifacts/`, its line in `SHA256SUMS`,
-   its row in [`artifacts/README.md`](../artifacts/README.md), the path,
-   SHA-256 and size where the tool pins it (`BRIDGE_OTA`, `images.IMAGE`,
-   `CONTROL_FILES` in `flash_readout.py`), and
-   [`NOTICES.md`](../NOTICES.md).
+   its row in [`artifacts/README.md`](../artifacts/README.md), its pin in
+   [`artifacts/firmware.json`](../artifacts/firmware.json), which
+   `tools/repo/update_firmware.py` writes, and [`NOTICES.md`](../NOTICES.md).
 4. Update the tests that name them: `tests/autoflash/test_names.py`,
    `tests/repo/test_published_artifacts.py`, `tests/autoflash/test_tasmota_settings.py`,
    `tests/autoflash/test_join.py`, `tests/autoflash/routes/espressif/test_installer.py`,

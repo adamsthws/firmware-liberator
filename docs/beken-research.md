@@ -1,28 +1,35 @@
 # Beken research
 
-What is known about the eWeLink firmware on Sonoff's BK7238 devices, and how it was
-found out, so you need not repeat the work. [device-research.md](device-research.md)
-lists the rest, by chip family and by device; [Espressif research](espressif-research.md)
-is laid out the same way.
+What is known about the eWeLink firmware on Sonoff's BK7238 devices, and how
+each thing is known, so you need not repeat the work.
+[device-research.md](device-research.md) lists the rest, by chip family and by
+device; [Espressif research](espressif-research.md) is laid out the same way.
 
 Most of it was worked out on the S61's firmware 1.0.2 in the Beken emulator
-([tools/beken/emulator/](../tools/beken/emulator/README.md)), and holds for every 4 MB
-eWeLink build: [one code path](#one-code-path-for-every-4-mb-ewelink-build). Addresses
-are the S61 1.0.2's; the tools find each one in the firmware itself. Each claim was
-tested in the emulator unless the text says otherwise, and the drivers that produced
-the results are in [tools/beken/](../tools/beken/README.md). Per-device identifiers
-are kept out of this repository; examples use the made-up MAC `12:34:56:ab:cd:ef`.
-The legal footing for studying a device's firmware, the same for every device and
-both chip families, is in [legal.md](legal.md#studying-and-emulating-the-firmware).
+([tools/beken/emulator/](../tools/beken/emulator/README.md)), and holds for
+every 4 MB eWeLink build ([one code path](#one-code-path-for-every-4-mb-ewelink-build)).
+Addresses are the S61 1.0.2's; the tools find each one they need in the
+firmware itself ([from what](../tools/beken/README.md#static-analysis)). A
+claim was tested in the emulator unless the text says otherwise. No real Beken
+device has been converted yet ([Questions still open](#questions-still-open)).
+
+Per-device identifiers stay out of this repository: examples use the made-up
+MAC `12:34:56:ab:cd:ef`, and a device's own UUID, MAC and keys are read from
+its dump when a tool runs and stay in your private `captures/`. The legal
+footing for studying the firmware is in
+[legal.md](legal.md#studying-and-emulating-the-firmware).
 
 ## Devices
 
 ### One code path for every 4 MB eWeLink build
 
-`tools/beken/stock_points.py` finds what the emulator needs in the firmware itself. On
-every file below each point gave one answer, and each firmware reached ONLINE on the
-stub. Apart from the S61's own dump, these ran on the S61's bootloader and settings, so
-they show the firmware comes up, not how a real device's hardware behaves.
+The emulator helps the stock firmware at a few places (the integrity gate,
+the credential read, the cloud dial, the trust anchor), and
+[`tools/beken/stock_points.py`](../tools/beken/stock_points.py) finds each in
+the firmware itself. On every file below, each point gave one answer and the
+firmware reached ONLINE on the stub. Apart from the S61's own dump, the files
+ran on the S61's bootloader and settings, so this shows each firmware comes up,
+not how a real device's hardware behaves.
 
 | Device | Firmware name | Version |
 |---|---|---|
@@ -34,33 +41,41 @@ they show the firmware comes up, not how a real device's hardware behaves.
 
 ### Adding a device from a pin map
 
-The Basic Gen5 is added this way; see
-[its page](../devices/sonoff-basic-1gs/README.md) for what has been run. Pins from
-[one post](https://www.elektroda.com/rtvforum/topic4167932.html) and OpenBeken's list.
-BASIC-1GSP (no published pin map; it has a meter, and forum titles mention a pulse-driven
-latching relay, which a wrong map could harm), S41 (no published pin map) and T6 (one
-unit's pins only, with touch over a UART protocol OpenBeken has no driver for:
-[saltech1's ESPHome work](https://github.com/saltech1/esphome-sonoff-t6-uart)) stay out.
-Pins are never guessed.
+A firmware that comes up is not enough: OpenBeken and ESPHome need the
+device's pins, which are never guessed. The Basic Gen5 was added from a published map,
+[one post](https://www.elektroda.com/rtvforum/topic4167932.html) and OpenBeken's
+list; [its page](../devices/sonoff-basic-1gs/README.md) says what has been run.
+Three devices stay out for want of one:
 
-Basic Gen5, S41 and T6 firmware lacks the `uiActive` string the S61 and BASIC-1GSP have, so
-a check of a device back on Sonoff re-sends `sledOnline` there instead, proven only on the
-stub.
+- **BASIC-1GSP**: no published pin map. It has a meter, and forum titles mention
+  a pulse-driven latching relay, which a wrong map could harm.
+- **S41**: no published pin map.
+- **T6**: one unit's pins only, and its touch panel speaks a UART protocol that
+  OpenBeken has no driver for
+  ([saltech1's ESPHome work](https://github.com/saltech1/esphome-sonoff-t6-uart)).
+
+The Basic Gen5, S41 and T6 firmware lacks the `uiActive` string that the S61's and
+the BASIC-1GSP's have. A check of such a device back on Sonoff's firmware re-sends
+`sledOnline` instead, which has been shown only on the stub.
 
 ### 2 MB devices: on hold
 
-The public door sensor is the one 2 MB device found, and it is a different firmware
-family, not a smaller S61: colink rather than `ais_*`, no Matter, no `EF40` store, and
-plain RBL updates with no FOTA container. Stock's `NET info` at `0x1e1000` holds data
-there, including the MAC, and OpenBeken's 2 MB build writes its config over it, so a
-conversion would destroy it unread. Supporting them needs a route of their own.
+The public door sensor is the one 2 MB device found, and it is a different
+firmware family, not a smaller S61: colink rather than `ais_*`, no Matter, no
+`EF40` store, and plain RBL updates with no FOTA container. Its `NET info` at
+`0x1e1000` holds data, the MAC among it, where OpenBeken's 2 MB build writes
+its config, so a conversion would destroy it unread. These devices need a route
+of their own.
 
 ## Flash and layouts
 
-### Their flash
+<a id="their-flash"></a>
+
+### Partition tables
 
 Each app holds the SDK's partition table as entries of owner, description, start,
-length and options, so it can be read from an update file by its description strings.
+length and options, so the table can be read from an update file by its
+description strings ([`tools/beken/layouts.py`](../tools/beken/layouts.py)).
 
 | Partition | 4 MB (every device [above](#one-code-path-for-every-4-mb-ewelink-build)) | 2 MB (door sensor) |
 |---|---|---|
@@ -70,126 +85,149 @@ length and options, so it can be read from an update file by its description str
 | RF Firmware | `0x3e0000`, `0x1000` | `0x1e0000`, `0x1000` |
 | NET info | `0x3e1000`, `0x1000` | `0x1e1000`, `0x1000` |
 
-Further 4 MB entries, the same in all five files: NVS `0x3e2000`, `0xb000`; KEY
-`0x3ed000`, `0x1000`; matter info backup `0x3ee000`, `0x8000`; matter info `0x3f6000`,
-`0x8000`; matter factory info `0x3fe000`, `0x2000`. The OTA entry's description is
-lowercase `ota`. Stock models in their strings: `SN-BK7238-BASICR5-01`,
-`-BASIC1GSP-01`, `-S41-01`, `-T6C3-01`. A register message takes its model from factory
-data, not those strings, and only the S61's has been seen.
+The 4 MB table has further entries, the same in all five files: NVS `0x3e2000`,
+`0xb000`; KEY `0x3ed000`, `0x1000`; matter info backup `0x3ee000`, `0x8000`;
+matter info `0x3f6000`, `0x8000`; matter factory info `0x3fe000`, `0x2000`. The OTA
+entry's description is lowercase `ota`.
 
-The bootloader holds an RT-Thread FAL table that agrees. The update files' apps, at
-1.35 to 1.41 MB, would not fit a 2 MB table's application partition either. That
-these devices really have 4 MB is inferred from the files, not from a read-out.
+The files' strings name their stock models: `SN-BK7238-BASICR5-01`,
+`-BASIC1GSP-01`, `-S41-01`, `-T6C3-01`. A register message takes its model
+from factory data, not those strings; only the S61's has been seen.
 
-What is known of the Basic Gen5's own flash, and the one read that settles it, is in
-[its research](../devices/sonoff-basic-1gs/research.md).
+The bootloader holds an RT-Thread FAL table that agrees, and the update files'
+apps, at 1.35 to 1.41 MB, would not fit a 2 MB table's application partition.
+That these devices have 4 MB of flash is inferred from the files, not from a
+read-out. What is known of the Basic Gen5's own flash, and the one read that
+settles it, is in [its research](../devices/sonoff-basic-1gs/research.md).
 
-### Flash layout
+### The S61's flash, as dumped
 
-Code regions are stored **CRC-striped**: 32 data bytes then a 2-byte CRC,
-repeating. Un-stripe before searching code for strings or RBL headers. The config
-regions are **not** striped — the firmware reads them as raw physical bytes
-through the flash controller.
+Code regions are stored CRC-striped: 32 data bytes, then a 2-byte CRC,
+repeating. Remove the stripes (`unstripe.py`) before searching code for strings
+or RBL headers. The config regions are not striped: the firmware reads them as
+raw physical bytes through the flash controller.
 
 | Partition  | Offset     | Size      | Notes |
 |------------|------------|-----------|-------|
 | bootloader | `0x000000` | `0x010000`| RT-Thread + FAL + `rt_ota` (`V0.2.8-beken`) |
 | app        | `0x010000` | `0x250000`| the running firmware |
-| download   | `0x286000` | `0x15A000`| staged OTA slot (erased in this dump) |
-| factory TLV| `0x3e0000` | (0x1e0 used)| manufacturing store — MAC + radio calibration |
-| EF40 app   | `0x3e2000` | `0x9000`  | EasyFlash V4 KV store — device config + creds (active write sector `0x3e3000`) |
+| download   | `0x286000` | `0x15A000`| staged OTA slot (erased in this dump: no update staged) |
+| factory TLV| `0x3e0000` | (0x1e0 used)| manufacturing store: MAC and radio calibration |
+| EF40 app   | `0x3e2000` | `0x9000`  | EasyFlash V4 KV store: device config and credentials (active write sector `0x3e3000`) |
 | EF40 sys   | `0x3f6000` | `0x8000`  | EasyFlash V4 CHIP/ENV store |
 
-The three config regions are read raw (un-striped). The OTA app conversion
-(`download`→`app`) **never touches any of them**, so everything below survives a
-conversion to OpenBeken — the basis for both Wi-Fi handover and reversibility.
+The bootloader and the app are given as the bootloader's FAL table gives them,
+with the stripes removed. With its stripes the app's `0x250000` takes `0x275000`
+of flash, from `0x11000` up to the download slot, which is how the SDK's table
+(above) and LibreTiny's ([below](#the-esphome-route-libretiny)) give it.
+
+The `app` partition's own RBL header sits at `0x285f9a`, just before the
+download partition. Overwriting it only makes the bootloader log `App verify
+failed! Need to recovery factory firmware.` and boot the existing app, so leave
+it alone. Both places were found by logging the bootloader's reads through the
+flash controller (`REG_FLASH`, `0x803000`) during boot.
+
+An update copies `download` to `app` and touches none of the three config
+regions, so everything in
+[A device's identity and stores](#a-devices-identity-and-stores) survives a
+conversion: carrying the Wi-Fi across and going back to Sonoff's firmware both
+rest on that.
+
+### Sonoff's layout is the SDK's 4 MB table
+
+The Beken SDK's 4 MB table (`BkDriverFlash.c`, `bk7231_partitions_4M`) is
+Sonoff's layout to the byte: `APPLICATION 0x11000`, `OTA
+0x286000` (the stock download slot), `RF_FIRMWARE 0x3e0000` (the factory record
+with the radio calibration), `NET_PARAM 0x3e1000` (empty on a stock device),
+`MATTER_FLASH 0x3e2000` (the EF40 app store) and `USR_CONFIG 0x3ee000`.
+
+The S61's factory bootloader is the SDK's too, byte for byte: the shipped
+`bootloader_bk7238_uart1_v1.0.15.bin` with the 4 MB FAL table in its tail. The
+table is three 64-byte `01PE` entries (`bootloader 0x0+0x10000`,
+`app 0x10000+0x250000`, `download 0x286000+0x15A000`), each a name, a flash
+device, an offset, a length and a CRC-32 over its first 60 bytes. What that
+means for an open firmware is in
+[OpenBeken on the 4 MB table](#openbeken-on-the-4-mb-table).
 
 ## A device's identity and stores
 
-### `0x3e0000` — factory TLV store (MAC + radio calibration)
+<a id="0x3e0000--factory-tlv-store-mac--radio-calibration"></a>
 
-A nested TLV: `"TLV\0"`, total-len `u32` (480 on the public S61s dump), then
-sections. Each section is a header `tag=0x00 | marker(3) | payload_len u32`, then
-entries `tag(1) | marker(3) | len u32 | value`. Four sections, named as Beken's
-SDK names them (`bk7011_cal_pub.h`,
+### The factory record at `0x3e0000`: MAC and radio calibration
+
+A nested TLV: `"TLV\0"`, a total length as `u32` (480 on the public S61s dump),
+then sections. Each section is a header `tag=0x00 | marker(3) | payload_len u32`,
+then entries `tag(1) | marker(3) | len u32 | value`. There are four sections,
+named here as Beken's SDK names them (`bk7011_cal_pub.h`,
 [beken_freertos_sdk](https://github.com/openshwprojects/beken_freertos_sdk)):
 
-- **`0x111111` TXID (90 B) — device and manufacturing.** ID (`0x01`), the
-  **Wi-Fi/base MAC** (`0x02`, 6 B; examples in this repo use `12:34:56:ab:cd:ef`),
-  THERMAL (`0x03`), CHANNEL (`0x04`), XTAL (`0x05`), **ADC** (`0x06`, 4 B: the SAR
-  ADC's calibration, `{u16 low, u16 high}`) and LPFCAP (`0x07`, 8 B). On the S61s
-  dump the ADC values are the SDK's own defaults (`0x472`, `0x8E9`), so its factory
-  stored none of its own.
-- **`0x222222` TXPWR_TAB (162 B) — TX power.** An enable flag, the 802.11b and
-  802.11g power tables (`0x02`, `0x03`, 14 B each: one value per channel), DIF_GN20,
-  the **BLE** power table (`0x07`, 40 B) and a calibration status; its last 34 bytes
+- **`0x111111` TXID (90 B): the device and its manufacture.** ID (`0x01`), the
+  Wi-Fi/base MAC (`0x02`, 6 B), THERMAL (`0x03`), CHANNEL (`0x04`), XTAL (`0x05`),
+  ADC (`0x06`, 4 B: the SAR ADC's calibration, `{u16 low, u16 high}`) and LPFCAP
+  (`0x07`, 8 B). On the S61s dump the ADC values are the SDK's own defaults
+  (`0x472`, `0x8E9`), so its factory stored none of its own.
+- **`0x222222` TXPWR_TAB (162 B): TX power.** An enable flag, the 802.11b and
+  802.11g power tables (`0x02`, `0x03`, 14 B each: one value a channel), DIF_GN20,
+  the BLE power table (`0x07`, 40 B) and a calibration status. Its last 34 bytes
   are not read here.
-- **`0x333333` CALI_MAIN_TX (132 B)** and **`0x444444` CALI_MAIN_RX (64 B)** — the
+- **`0x333333` CALI_MAIN_TX (132 B)** and **`0x444444` CALI_MAIN_RX (64 B)**: the
   radio's TX and RX DC, gain and phase calibration.
 
-This is the *radio* calibration, distinct from the *energy-meter* one in the EF40
-store below. No firmware this tool installs could make it again, and no step of a
-conversion writes it: the interim and readout OpenBeken write their settings at
-`0x3e1000` and their variables below `0x3e0000` (`rebuild_dump.INTERIM_WRITES`),
-ESPHome (LibreTiny) points the SDK at it (`board_flash.calibration`
-`0x3E0000+0x1000`) and puts nothing of its own there, and tests hold both. Both
-firmwares, built for the 4 MB table, read the radio calibration at `0x3e0000` (an
-upstream 2 MB build would look at `0x1e0000`, find none, and take defaults); neither
-applies the ADC values (OpenBeken's `hal_adc_bk7231.c` and LibreTiny's
-`wiring_analog.c` return the raw sample), and neither device's firmware acts on an
-ADC reading. Both stock firmwares (the S61's 1.0.2, the Basic Gen5's 1.0.4) hold
-only the SDK's own ADC code: its internal temperature sensor's thread
-(`temp_detect`, `tadc_thread_entry`), which compensates the radio and crystal for
-temperature, and its `adc` console command - no overheat watch like the BASICR4's
-(no `TEMP_EVENT` or `TEMPERATURE_CHECK`), by their strings; their code was not
-read. The S61 meters with a BL0937 counting pulses, the Basic Gen5 has no meter,
-and neither OpenBeken's drivers here nor the ESPHome configs give a pin an ADC
-role. The device's
-backup keeps the sector (`config-0x3e0000.bin`, `devices.BEKEN_REGION`). That the
-SDK's closed calibration library reads this sector is inferred from its
-partition table and prototypes, not seen in its code.
+This is the radio's calibration, distinct from the energy meter's in the
+[app store](#the-app-store-at-0x3e2000-settings-and-credentials). No firmware
+the tool installs could make it again, and no step of a conversion writes it:
 
-### `0x3e2000` — EF40 **app** KV store (device config + Wi-Fi creds)
+- The interim and readout OpenBeken write their settings at `0x3e1000` and their
+  variables below `0x3e0000` (`rebuild_dump.INTERIM_WRITES`).
+- ESPHome (LibreTiny) points the SDK at it (`board_flash.calibration`
+  `0x3E0000+0x1000`) and puts nothing of its own there.
 
-EasyFlash V4; sector magic `"EF40"`, nodes are `KV40` records (format below). The
-keys present on this (paired-then-reset, join-unprovisioned) dump — values of
-per-device secrets redacted:
+Tests hold both, and the device's backup keeps the sector (`config-0x3e0000.bin`,
+`records.BEKEN_REGION`).
 
-| Key | Size | What it is | Useful to OpenBeken? |
+Both open firmwares, built for the 4 MB table, read the radio calibration at
+`0x3e0000`; an upstream 2 MB build would look at `0x1e0000`, find none and take
+defaults. That the SDK's closed calibration library reads this sector is inferred
+from its partition table and prototypes, not seen in its code.
+
+Nothing uses the ADC values. Neither open firmware applies them (OpenBeken's
+`hal_adc_bk7231.c` and LibreTiny's `wiring_analog.c` return the raw sample),
+and neither device acts on an ADC reading: the S61 meters with a BL0937
+counting pulses, the Basic Gen5 has no meter, and neither OpenBeken's drivers
+here nor the ESPHome configs give a pin an ADC role. Both stock firmwares (the
+S61's 1.0.2, the Basic Gen5's 1.0.4) hold only the SDK's own ADC code, its
+internal temperature sensor's thread (`temp_detect`, `tadc_thread_entry`),
+which compensates the radio and crystal for temperature, and its `adc` console
+command: no overheat watch like the BASICR4's (no `TEMP_EVENT` or
+`TEMPERATURE_CHECK`). That is read from their strings, not their code.
+
+### The app store at `0x3e2000`: settings and credentials
+
+An EasyFlash V4 store: its sector magic is `"EF40"` and its nodes are `KV40`
+records. [`tools/beken/ef40_dump.py <flash.bin>`](../tools/beken/ef40_dump.py)
+lists every node of a dump, checking each CRC. These are the keys on the public
+dump, a device that was paired, then reset, and never joined a network (values of
+per-device secrets are left out):
+
+| Key | Size | What it is | Of use to an open firmware? |
 |-----|------|-----------|----------------------|
-| `elecCalibCoef` | 80 B | **factory energy-meter calibration** (binary) | **yes — accurate V/A/W out of the box** |
-| `elecCalibFlag` | 1 B | metering calibrated (`01`) | yes |
-| `outlet&conf` | JSON | power-on/startup state, pulse, offBrightness | yes (relay boot behaviour) |
-| `sled&conf` | JSON | status-LED behaviour (`sledOnline`, relayLight) | yes |
-| `elec&app` / `elec&appex` | JSON | over-power / -voltage / -current protection | yes (protection limits) |
-| `elec_region`, `elec_dst_hour` | 1/20 B | meter region + DST | maybe |
-| `wifi-ssid` / `wifi-pass` | ≤32/≤64 B | **plaintext Wi-Fi creds** (provisioned devices only; absent on this dump) | **yes — the handover** |
-| `ssid` / `pass` | 34/66 B | **obfuscated** (NOT plaintext; different encoding — undecoded) | unknown |
-| `apiKey`, `app-apikey`, `domain`, `secureCertSha256`, `factory`, `user` | — | eWeLink cloud identity/certs (per-device; redacted) | no (cloud is dropped) |
-| `timerInfo`, `timer&revision`, `outlet&protect`, `lan&info`, `ota&*`, `recordInfo`, `fabric&list`, `RecoverFlag`, `fc_rssi`, `port` | — | timers / misc eWeLink state | mostly no |
+| `elecCalibCoef` | 80 B | the factory energy-meter calibration (binary) | yes: accurate volts, amps and watts from the first start |
+| `elecCalibFlag` | 1 B | the meter is calibrated (`01`) | yes |
+| `outlet&conf` | JSON | power-on state, pulse, offBrightness | yes (the relay at start-up) |
+| `sled&conf` | JSON | the status LED's behaviour (`sledOnline`, relayLight) | yes |
+| `elec&app` / `elec&appex` | JSON | over-power, over-voltage and over-current protection | yes (the limits) |
+| `elec_region`, `elec_dst_hour` | 1/20 B | the meter's region and daylight saving | maybe |
+| `wifi-ssid` / `wifi-pass` | ≤32/≤64 B | the Wi-Fi credentials, in plain text (a provisioned device only; absent on this dump) | yes: they carry the Wi-Fi across |
+| `ssid` / `pass` | 34/66 B | the same, obfuscated in an encoding not yet decoded | unknown |
+| `apiKey`, `app-apikey`, `domain`, `secureCertSha256`, `factory`, `user` | - | the eWeLink cloud identity and certificates, each device's own | no (the cloud is dropped) |
+| `timerInfo`, `timer&revision`, `outlet&protect`, `lan&info`, `ota&*`, `recordInfo`, `fabric&list`, `RecoverFlag`, `fc_rssi`, `port` | - | timers and other eWeLink state | mostly no |
 
-### `0x3f6000` — EF40 **system/CHIP** ENV
+The `factory` value is the device's own factory credentials, encrypted (base64
+of ciphertext), and the stock firmware does not start with it changed in any
+way, as booting copies of an S61 in the emulator, each with one setting taken
+out, showed ([`tools/beken/scrub.py`](../tools/beken/scrub.py) keeps it so).
 
-Boot/reboot counters (`chip-counters.*`), `chip-factory.uniqueId`, and Matter
-globals (`g/*`). No `f/1/n` fabric/NOC on this dump.
-
-**EF40 enumeration tool:** `tools/beken/ef40_dump.py <flash.bin>` lists every
-KV40 node with CRC validation.
-
-### Wi-Fi credential storage
-
-On a provisioned device the Wi-Fi credentials are stored **in the clear** as EF40 KV
-nodes — no cipher, no transform. Reading them needs no decoder, no pairing and no
-emulator: parse the KV store from a flash dump.
-
-- **Setter `0x488dc`** ("put ssid to wifi-ssid" / "put password to wifi-pass")
-  stores SSID and password **verbatim**: it `memcpy`s the input, takes its length
-  with a plain `strlen` (`0x12214`), and calls config-set `0x5adb4` with the raw
-  buffer as the value, under keys **`wifi-ssid`** / **`wifi-pass`**.
-- **Reader `0x48124`** → config-get `0x5ad84(ctx, "wifi-ssid", out, …)` (via
-  `0x12f438`), returning `0xd8` when the key is absent (the unprovisioned case).
-
-**EF40 KV node format** (verified on real nodes):
+A node's format, checked against real nodes:
 
 ```
 "KV40"(4) | len(4) | crc32(4) | name_len(1)+0xff*3 | value_len(4) | name | value | 0x00 0x00 + 0xff*6
@@ -197,214 +235,110 @@ emulator: parse the KV store from a flash dump.
   crc = zlib.crc32( bytes from the name_len field through the end of value )   # standard crc32
 ```
 
-Because the region is raw (un-striped), nodes can be written in place: craft valid
-`wifi-ssid`/`wifi-pass` nodes and append them to the write sector (`0x3e3000`).
-This is a working, reusable **synthetic-provisioning** technique (both re-parse
-with correct CRC). It writes the creds but does not by itself make the emulated
-device connect — connect is gated on the commissioned/bound state, not on cred
-presence (see [The provisioned state](#the-provisioned-state)).
+As the region is raw, nodes can be written in place: valid `wifi-ssid` and
+`wifi-pass` nodes appended to the write sector (`0x3e3000`) parse with the
+right CRC, and the firmware finds them as on a provisioned device
+(`ef40.provision`, which `stage_apply.py` and `cloud_push.py` use). In the
+emulator the firmware reads them only once it is past
+[the integrity gate](#the-flash-uid-integrity-gate).
 
-The one derived value is the **apikey**: a UUID-format apikey appears in RAM at
-boot with no copy in flash — the writer at `0x427b8` formats it
-character-by-character from a device MAC+serial buffer (memset `0x45ec`). This is
-device identity, unrelated to the plaintext Wi-Fi creds.
+### The system store at `0x3f6000`
 
-#### S60 vs S61 storage
+A second EasyFlash V4 store, the CHIP/ENV one: boot and reboot counters
+(`chip-counters.*`), `chip-factory.uniqueId`, and Matter globals (`g/*`). The
+public dump has no `f/1/n` fabric or NOC in it.
 
-Both devices store Wi-Fi credentials in the clear; only the container differs, so
-the conversion approach transfers even though the parser does not:
+### Wi-Fi credentials
 
-- **S60 (ESP32-C3):** eWeLink config as **plaintext JSON** in NVS —
-  `"apikey":"…"`, `"deviceid":"…"`, `"passwd":"…"`, `"ssid":"…"`.
-- **S61 (BK7238):** plaintext values in the **EF40 KV store**, keys `wifi-ssid` /
-  `wifi-pass`.
+A provisioned device keeps its Wi-Fi credentials in the clear, as the nodes
+`wifi-ssid` and `wifi-pass`, so reading them takes only the store parsed out of
+a flash dump: no decoder, no pairing and no emulator.
 
-The conversion model is identical: read the stock store, pull the plaintext
-SSID/password, re-apply after flashing Tasmota/ESPHome.
+- **The setter, `0x488dc`** (`put ssid to wifi-ssid`, `put password to
+  wifi-pass`), stores both verbatim: it copies its input with `memcpy`, takes its
+  length with a plain `strlen` (`0x12214`), and calls config-set `0x5adb4` with the
+  raw buffer as the value.
+- **The reader, `0x48124`**, calls config-get `0x5ad84(ctx, "wifi-ssid", out, …)`
+  (through `0x12f438`), which returns `0xd8` when the key is absent, as on an
+  unprovisioned device.
+
+The S60 keeps its credentials in the clear too, as JSON in NVS
+(`"apikey":"…"`, `"deviceid":"…"`, `"passwd":"…"`, `"ssid":"…"`), so a
+conversion carries them the same way on both, with a parser for each
+container.
+
+The one derived value is the apikey, the device's identity, unrelated to the
+Wi-Fi. A UUID-format apikey appears in RAM at boot with no copy in flash: the
+writer at `0x427b8` formats it character by character from a buffer of the
+device's MAC and serial (cleared by the memset at `0x45ec`).
 
 ## The cloud
 
-### Cloud protocol and trust
+### Protocol and trust
 
-- Registration: TLS to **`/dispatch/device`** (which server to use), then a
-  **WebSocket at `/api/ws`**.
-- TLS trust is **mbedTLS against an embedded CA**, not leaf-cert pinning (the
-  "pinned session" strings are Matter's CASE sessions). The S60 stub technique
-  therefore applies, and is now carried through end to end: a local stub issues
-  its own CA and the firmware is made to trust it in place of the CoolKit root.
-  The S60's `patch_stock --trust-ca` swaps a small EC P-256 trust anchor in its
-  flash image; the S61 keeps no static CA blob (it assembles its CA in RAM), so
-  the swap is applied where the CA is installed — see
-  [The cloud, completed](#the-cloud-handshake-trust-swap-to-online).
+- **Registration** is a `GET /dispatch/device`, whose answer names the server,
+  then a TLS WebSocket (`wss://`) at `/api/ws`. The dispatch seen in the
+  emulator is plain HTTP, to the factory's placeholder address
+  (`http://8.8.8.8:80`); a paired device's has not been seen.
+- **Trust** is mbedTLS checking against a CA the firmware carries, not a pinned
+  server certificate (its "pinned session" strings are Matter's CASE sessions),
+  so the S60's stub technique applies: a local stub issues its own CA, and the
+  firmware is made to trust it in place of CoolKit's root. Where the S60's
+  `patch_stock --trust-ca` swaps a small EC P-256 trust anchor in the flash
+  image, the S61 keeps no CA in its flash and puts one together in RAM, so the
+  swap is made where the CA is installed ([the handshake](#the-handshake-to-online)).
 
 ### The provisioned state
 
-"Provisioned/commissioned" on this firmware is a cryptographic trust relationship
-with an external authority, not a flag plus credentials. The firmware carries a
-full Matter commissioning stack — `NOC` (node operational certificates), `fabric`
-(110 refs), `PASE` (SPAKE2+ passcode handshake), `CASE` (certificate-authenticated
-sessions), device `attestation`, setup-passcode — plus eWeLink cloud binding
-(`apikey` / `deviceid` / `device_secret`). A provisioned device holds a valid
-fabric (NOC/ICAC chain + operational keys established over CASE) and a cloud
-binding issued by eWeLink.
+On this firmware a provisioned device is one in a cryptographic trust
+relationship with an outside authority, not one with a flag set and credentials
+stored. The firmware carries a full Matter commissioning stack: `NOC` (node operational
+certificates), `fabric` (110 references), `PASE` (the SPAKE2+ passcode handshake),
+`CASE` (certificate-authenticated sessions), device `attestation` and the setup
+passcode. Beside it is the eWeLink cloud binding (`apikey`, `deviceid`,
+`device_secret`). A provisioned device holds a valid fabric (a NOC and ICAC chain,
+with operational keys established over CASE) and a cloud binding issued by
+eWeLink.
 
-The public dump carries only a cloud **identity** (`apiKey`, `app-apikey`,
-`secureCertSha256`); it has no Wi-Fi creds and no Matter fabric. The
-provisioned-vs-idle decision is `0x48cc6` (reads `commission_status` /
-`recover_flag`; status in `[sp+0xc]` = 0/1/2); it is an **event-triggered
-callback** (pointer loaded ~`0x54250`). A stock unprovisioned device does not
-auto-reconnect: with no Wi-Fi creds and no fabric it stays idle, waiting for a
-pairing trigger. On a *provisioned* device the app reads `wifi-ssid`/`wifi-pass`
-through `ef_get_env_blob` (`0x12f438`) about 3.1 s into boot and the station
-connect follows — provided the `app` task is past the
-[integrity gate](#the-flash-uid-integrity-gate-root-cause), which otherwise hangs
-it before the credential read.
+The public dump carries only a cloud identity (`apiKey`, `app-apikey`,
+`secureCertSha256`), with no Wi-Fi credentials or Matter fabric. The check at
+`0x48cc4`, an event-triggered callback whose pointer is loaded near `0x54250`,
+decides between provisioned and idle (the decision is at `0x48cc6`; it reads
+`commission_status` and `recover_flag`, the status in `[sp+0xc]` as 0, 1 or
+2).
 
-A fabric and cloud binding are credentials signed/issued by the commissioner's /
-cloud's private keys; synthesising them locally has not been achieved, because
-forged values do not pass the firmware's cert/signature checks. The practical way
-to a genuinely *cloud*-provisioned image is to pair a real device with the eWeLink
-app, then dump it. (This concerns a *bound* session a server will **accept**. The
-cloud **dial itself** — `GET /dispatch/device` — needs none of it: it is reproduced
-by synthesising the pairing-completion trigger, and the connect machinery it starts
-*can* be driven without a live commissioning session; see
-[The cloud dial, achieved](#the-cloud-dial-synthesise-the-pairing-success-trigger).)
+- **An unprovisioned device**, with no credentials and no fabric, stays idle,
+  waiting for a pairing trigger.
+- **A provisioned device** reads `wifi-ssid` and `wifi-pass` through
+  `ef_get_env_blob` (`0x12f438`) about 3.1 s into boot, and the station connect
+  follows. In the emulator that needs the `app` task to be past
+  [the integrity gate](#the-flash-uid-integrity-gate), which otherwise hangs it
+  before the read.
 
-#### Seeding credentials joins the device
+**What does not work: forging the bound state.** A fabric and a cloud binding
+are signed or issued with the commissioner's and the cloud's private keys, so
+forged values fail the firmware's certificate and signature checks. A dump the
+real cloud would accept comes only from pairing a real device with the eWeLink
+app. The emulator needs none: the cloud dial uses none of the bound state
+([below](#the-cloud-dial)), and a local stub accepts whatever identity it is
+given.
 
-Seeding the stored Wi-Fi credentials puts the emulated device on a network for
-real — the same end state a real provisioning reaches, without the BLE handoff the
-radio-less emulator cannot do. `seed_join.py` hooks the firmware's own
-`ef_get_env_blob` (`0x12f438`) to return a chosen SSID/passphrase for
-`wifi-ssid`/`wifi-pass`, and attaches the fork peer as a WPA2-PSK AP with the same
-creds. The device then runs the genuine sequence: station mode → authenticate →
-associate → **WPA2 four-way handshake** → **IPv4 DHCP → `192.168.1.100`**. The
-Matter `BekenWiFiDriver` connect path runs the same way.
+### The cloud machinery
 
-#### After the Wi-Fi join: Matter by default, eWeLink cloud on a synthesised trigger
+The eWeLink cloud is a set of AIS tasks that `ais_appfw` creates on demand:
 
-Left to itself after the join, the device does **Matter** work — it advertises
-`_matterc._udp` (Matter commissionable) over mDNS and reads the Matter
-fabric/attribute KVS (`g/fidx`, `g/fs/c`, `g/a/...`). It does not *spontaneously*
-dial the eWeLink cloud: the cloud link is created on demand only when the device
-becomes eWeLink-**paired**, so seeding creds reaches the network but not that
-state. That pairing-completion is a single firmware event, however, and
-synthesising it makes the device dial the eWeLink cloud for real — see
-[The cloud dial, achieved](#the-cloud-dial-synthesise-the-pairing-success-trigger).
-The machinery below is what that trigger drives.
-
-#### The eWeLink cloud machinery
-
-Traced from the app layer to its root, the eWeLink cloud is a set of AIS tasks
-created on demand by `ais_appfw`:
-
-| task | entry | role |
+| Task | Entry | Role |
 |------|-------|------|
-| `ais_appfw_task` | `0x319a8` | app-framework state machine (comes up even unbound, reads `wifi-ssid`, then waits) |
-| `ais_link_task` | `0x35aa8` | **cloud link**: dispatch (`/dispatch/device`) → IoT WebSocket (`/api/ws`) |
-| `ais_ws_task` | create near `0x385a4` | WebSocket pump |
-| `ais_httpd_task` | — | LAN control server (`:8081`), online only |
+| `ais_appfw_task` | `0x319a8` | the app framework's state machine (it comes up even unbound, reads `wifi-ssid`, then waits) |
+| `ais_link_task` | `0x35aa8` | the cloud link: dispatch (`/dispatch/device`), then the IoT WebSocket (`/api/ws`) |
+| `ais_ws_task` | created near `0x385a4` | the WebSocket pump |
+| `ais_httpd_task` | - | the LAN control server (`:8081`), only once online |
 
-`ais_link_task` is a **context-driven state machine** (reads the global context
-`*0x4044ac`, state byte at `ctx+0x290`); it is created (via the RTOS create
-`0x1349f0`, name+entry literals at `0x35820`/`0x35824`) by `ais_cloud_start`
-(`0x35744`) when the appfw reaches the eWeLink-**paired** state. Its context does
-**not** have to be rebuilt by pairing — it is already populated at boot (device
-UUID, model, MAC, a factory dispatch URL; see
-[The cloud dial, achieved](#the-cloud-dial-synthesise-the-pairing-success-trigger))
-— so the only thing to supply is the pairing-completion **trigger**, which the pairing
-state machine fires on success and which can be synthesised with a single call. The
-app's own provisioning input is the **`pairingMode` command** (`0x492ae`): a
-JSON-**array** command (cJSON `0x264d6`/`0x265da`/`0x26712`) carried in a session
-object (`session+0x8c` = JSON ptr, `+0x90` = length, `+0x88` = flag), with per-item
-fields **base64/hex-decoded** (`0x12f8b8`) and run through crypto/list operations
-(`0x5b078`, `0x4842e`/`0x48372`/`0x48400`). No eWeLink binding key is read at boot,
-but none is needed for the dial — the dispatch context is factory-resident.
-
-**Assessment.** Reconstructing eWeLink's *full* encoded provisioning command — the
-JSON-array schema plus the base64/hex + crypto the app uses over the session — and
-feeding it to `0x492ae` with a fabricated session would be a sizeable sub-project.
-But that is not needed to reach the cloud: the only thing the full pairing produces
-that the dial depends on is the **completion trigger**, and that is one firmware
-call. Synthesising it (plus seeding Wi-Fi) reaches the eWeLink cloud dial directly
-(`cloud_dial.py`), with no protocol reconstruction and no bound dump. A
-genuinely eWeLink-bound dump is still useful — for a *faithful* dispatch server
-(the factory URL is a placeholder) and a real device-secret — but is no longer
-required to reproduce the dial. **Getting onto the network is done and faithful
-either way.**
-
-#### The eWeLink BLE provisioning protocol
-
-The provisioning input is the **eWeLink BLE provisioning protocol**, now
-reverse-engineered end to end. A BLE write is routed by a **dispatcher**
-(`0x72940`): it looks the message type up in a table at `0x145430` and posts
-`{index, payload, len}` to a queue (`0x134b6c` → queue `*0x402dd0`); a consumer
-task then calls `table[index].handler(payload, len)`. The six commands (named by
-their `[BLE CMD: …]` log strings):
-
-| type | handler | command | purpose |
-|------|---------|---------|---------|
-| `0x02` | `0x725e4` | **AUTH_TOKEN** | app proves it knows the device apikey |
-| `0x04` | `0x727bc` | REQ_SCAN / REQ_AUTH | scan APs; sets state byte `0x40cf14=2` |
-| `0x07` | `0x722a4` | **REQ_CONNECT** | connect to a scanned AP (matches BSSID) |
-| `0x09` | `0x72258` | DEVICE_INFO_REQUEST | device returns its info; state `=5` |
-| `0x0b` | `0x718a0` | **SERVER_INFO_REQUEST** | cloud/dispatch server |
-| `0x0d` | `0x712e0` | **HIDDEN_AP_CONNECT** | Wi-Fi creds (`recv_ssid`) |
-
-**Crypto, solved.** Each data-carrying message is base64-decoded then
-**AES-128-CBC + PKCS#7** decrypted. The AES key and the AUTH_TOKEN "cache" are the
-**same 16-byte secret at RAM `0x40ce90`** (derived from `factory_apikey` at boot; a
-16-byte value, with the apikey UUID in the same page — real device identifiers, not
-reproduced in this document). So the shared secret is **readable from the emulator** — no
-forging. AUTH_TOKEN (`0x725e4`) `memcmp`s the decrypted token
-against that cache (`0x13456c` at `0x726d0`; error `auth_token cmp err,
-recv[%s] cache[%s]`); in the emulator that compare can be read-and-matched or
-forced equal.
-
-**The Wi-Fi message (type `0x0d`) is reconstructed and DRIVEN to a real join.**
-`recv_ssid(r0=packed_buf, r1=tag)`, buf =
-`[ssid_len:1][ssid][pad:1][timeout:1][encflag:1][password…]`; `encflag=1` takes the
-path that copies the password into the connect config (the `encflag=0` plaintext
-path copies only the ssid — a firmware quirk). `recv_ssid` packs a config
-(`method=1` station, ssid@+1, pass@+0x22, bssid@+0xcf) and dispatches it through
-the method dispatcher `0x21eb4`. Driving it in the appfw context (ARM force-call)
-with the password decoder bypassed, **the device associates (WPA2) and gets DHCP
-`192.168.1.100`** — the eWeLink provisioning path, end to end
-(a scratch driver, since retired; `archive/s61-research/ble_provision.py` drives the same handlers through the dispatcher).
-
-**What this reaches, and what it does not.** Driving these messages through the
-dispatcher runs the handlers and connects Wi-Fi (`ble_provision.py`), but does
-not fire the **pairing-completion event**: the handlers share a session state
-machine (session flag `0x40cfe3`, step byte `0x40cf14`) and a field accumulator,
-and the completion is normally posted by the BLE-connection lifecycle, which the
-radio-less emulator does not produce. So after the full message sequence the device
-is on Wi-Fi but still *unpaired* — it keeps emitting the `0xFFF6` eWeLink pairing
-advertisement — and dials nothing. That completion event is, however, a single
-firmware call; synthesising **that** (rather than the entire BLE session) is what
-reaches the cloud, as the next section shows.
-
-#### The cloud dial: synthesise the pairing-success trigger
-
-The addresses in this document are those of S61 1.0.2. The tools find them in each
-firmware: what each is found from is in
-[`tools/beken/README.md`](../tools/beken/README.md#static-analysis).
-
-The emulated device now performs the real eWeLink (CoolKit) cloud handshake. Driven
-end to end by `tools/beken/emulator/cloud_dial.py`: seed Wi-Fi creds (join + DHCP),
-then force-call the firmware's own **start-cloud handler** once Wi-Fi is up. The
-device opens a TCP connection to its dispatch server and sends the CoolKit
-**`GET /dispatch/device`** request, retried with backoff — the genuine first step
-of eWeLink cloud registration. The target is read from the AIS context and is
-**steerable**. The tool **defaults to a local stub on the emulator's own AP gateway
-(`192.168.1.1:80`), so the dial stays on this host and reaches nothing outside it**;
-the firmware's factory placeholder (`8.8.8.8:80`) is used only if you pass
-`DISPATCH=` empty. **Owner's own account only**: never steer this at the real eWeLink
-cloud with anyone's account or device but your own.
-
-**The cloud-dial gate chain.** `ais_link_task` (`0x35aa8`) is created by
-`ais_cloud_start` (`0x35744`) via the RTOS thread-create `0x1349f0` (name/entry
-literals `0x35820`/`0x35824` → entry `0x35aa9`). `ais_cloud_start` has one call
-site, the **start-cloud handler `0x2c204`**:
+`ais_link_task` is a state machine driven by a context: it reads the global
+context `*0x4044ac`, with its state byte at `ctx+0x290`. `ais_cloud_start`
+(`0x35744`) creates it with the RTOS thread-create `0x1349f0` (the name and entry
+literals are at `0x35820` and `0x35824`, giving the entry `0x35aa9`), and
+`ais_cloud_start` has one call site, the start-cloud handler at `0x2c204`:
 
 ```
 0x2c204  if (*0x403e31 != 0 && precond_0x24fd8() == 0)   // precond returns ctx[0x31]
@@ -412,34 +346,58 @@ site, the **start-cloud handler `0x2c204`**:
                  ctx = *0x4044ac;  if (ctx && ctx[0xaeb] == 0)  create ais_link_task
 ```
 
-The start-cloud handler has exactly **three callers — `0x48ffe`, `0x49b76`,
-`0x49ebc` — all inside the eWeLink pairing state machine** (`0x48a84`..`0x49cxx`,
-the `PAIR_EVT_*` / `ewelink pair ok` code). On hardware the dial is kicked off by
-pairing success; force-calling `0x2c204` substitutes for that one event.
+The start-cloud handler has exactly three callers, `0x48ffe`, `0x49b76` and
+`0x49ebc`, all inside the eWeLink pairing state machine (`0x48a84` to `0x49cxx`,
+the `PAIR_EVT_*` and `ewelink pair ok` code), so on a real device pairing
+succeeding starts the dial. Pairing does not build the context: it is filled at
+boot (on the heap, at `0x42c870` for one) with everything the link task needs:
 
-**The AIS context is pre-populated at boot.** The cloud context `*0x4044ac` (heap,
-e.g. `0x42c870`) already holds everything the link task needs, with no pairing:
-
-| offset | field | value in the public dump |
+| Offset | Field | Value in the public dump |
 |--------|-------|--------------------------|
-| `+0x0b` | device UUID | the device's apikey UUID (redacted) |
+| `+0x0b` | device UUID | the device's apikey UUID (left out here) |
 | `+0x30` | model | `SN-BK7238-S61-01` |
-| `+0x51` | MAC | the device MAC (redacted) |
-| `+0x5f` | **dispatch URL** | `http://8.8.8.8:80` (factory placeholder) |
-| `+0x31` | precond byte | `0` (gate passes) |
+| `+0x51` | MAC | the device's MAC (left out here) |
+| `+0x5f` | dispatch URL | `http://8.8.8.8:80`, a factory placeholder |
+| `+0x31` | precondition byte | `0` (the gate passes) |
 
-(The UUID and MAC are real per-device identifiers; they are read from the dump at
-runtime but kept out of this public repo — see the private `captures/` for a
-device's own values.)
+No eWeLink binding key is read at boot, and the dial needs none. So all the
+dial takes from pairing is its trigger, the call of the start-cloud handler,
+and it goes wherever `ctx+0x5f` points.
 
-So the link task is not "spawned cold" — its context is ready at boot; only the
-*trigger* was missing. The factory dispatch URL being a placeholder (not a real
-CoolKit host) is the one reason a bound dump still helps — for a faithful server
-and real device-secret — but the dial mechanism itself is fully reproduced in the emulator.
-Overwriting `ctx+0x5f` points the dial at any server; a local stub then completes
-the exchange (dispatch → `/api/ws`, with the S60 trust-swap for TLS).
+### Joining Wi-Fi by seeding the credentials
 
-**Verified** (`python3 cloud_dial.py`, the default local stub at `192.168.1.1:80`):
+Seeding the stored credentials puts the emulated device on a network for real,
+in the end state a real provisioning reaches, without the BLE exchange an
+emulator with no radio cannot do. [`seed_join.py`](../tools/beken/emulator/seed_join.py)
+hooks the firmware's own `ef_get_env_blob` (`0x12f438`) to return a chosen network
+name and passphrase for `wifi-ssid` and `wifi-pass`, and attaches the fork's peer
+as a WPA2-PSK access point with the same credentials. The device then runs its
+genuine sequence: station mode, authenticate, associate, the WPA2 four-way
+handshake, and IPv4 DHCP, which gives it `192.168.1.100`. Matter's
+`BekenWiFiDriver` connect path runs the same way.
+
+Left to itself after the join, the device does Matter work: it advertises
+`_matterc._udp` (Matter commissionable) over mDNS and reads the Matter fabric
+and attribute store (`g/fidx`, `g/fs/c`, `g/a/...`). It does not dial the
+eWeLink cloud, whose link is created only once the device is eWeLink-paired.
+
+### The cloud dial
+
+Calling the start-cloud handler (`0x2c204`) once Wi-Fi is up stands in for
+pairing succeeding, and makes the device dial the eWeLink cloud for real.
+[`cloud_dial.py`](../tools/beken/emulator/cloud_dial.py) seeds the credentials,
+waits for the join and the DHCP lease, then calls the handler. The device opens
+a TCP connection to its dispatch server and sends CoolKit's
+`GET /dispatch/device`, retrying with a backoff: the genuine first step of
+registration.
+
+The tool overwrites `ctx+0x5f` to point the dial at a local stub on the
+emulator's own access point (`192.168.1.1:80`), so it stays on your computer;
+the factory placeholder (`8.8.8.8:80`) is used only with `DISPATCH=` empty.
+Never steer the dial at the real eWeLink cloud with any account or device but
+your own.
+
+With the default stub, `python3 cloud_dial.py` shows:
 
 ```
 device IP = 192.168.1.100
@@ -448,54 +406,52 @@ TCP 192.168.1.100:62636 <-> 192.168.1.1:80 sends: HTTP GET /dispatch/device HTTP
   (retried t=34.6, 35.7, 37.2, 39.3, 41.9, 45.0, 48.6 — backoff)
 ```
 
-This is the full provisioning outcome on the radio-less emulator: **the device joins
-the emulator's AP and dials the eWeLink cloud.** The only piece not reproduced is the BLE GATT
-link that, on hardware, carries the pairing that *naturally* fires this trigger;
-`cloud_dial.py` synthesises that single completion event instead.
+Only the BLE GATT link is missing from this: on a real device it carries the pairing
+that calls the handler ([BLE](#ble) says how far the pairing itself can be driven).
 
-#### The cloud handshake: trust-swap to ONLINE
+### The handshake to ONLINE
 
-With the dial reproduced, the rest of the eWeLink handshake completes against a
-local stub and the device reaches **ONLINE** — driven end to end by
-`tools/beken/emulator/cloud_online.py` and the CoolKit stub
-(`tools/ewelink/stub_cloud/stub_server.py`, extended with a `--plain` dispatch
-mode). Nothing leaves the host: the netstack relay (`attach_wifi_peer(net_out=True)`)
-is redirected so the factory dispatch IP resolves to loopback — plaintext dispatch
-on one port, TLS IoT on another.
+Past the dial, the handshake completes against a local stub and the device
+reaches ONLINE. [`cloud_online.py`](../tools/beken/emulator/cloud_online.py)
+drives it against the CoolKit stub
+([`tools/ewelink/stub_cloud/stub_server.py`](../tools/ewelink/stub_cloud/stub_server.py),
+with its `--plain` dispatch mode). Nothing leaves your computer: the network
+relay (`attach_wifi_peer(net_out=True)`) sends the factory dispatch address to
+loopback, with plaintext dispatch on one port and the TLS IoT channel on another.
+The stub's side is in [cloud-stub.md](cloud-stub.md#the-beken-emulators-stub).
 
-**The dispatch reply the S61 parser needs (differs from the S60).** The embedded
-cJSON parser in the dispatch handler (`0x34ca0`; parse `0x264d6`, getters
-`0x2669c`/`0x265e2`) is strict in three ways the S60 is not, and each silently makes
-the device re-dispatch until fixed:
+**The dispatch reply.** The cJSON parser in the dispatch handler (`0x34ca0`;
+parse `0x264d6`, getters `0x2669c` and `0x265e2`) is strict in three ways the
+S60's is not, each making the device silently ask for dispatch again:
 
-- the response must be **compact** — whitespace between tokens is rejected;
-- it reads a **`domain`** key (the host it connects to), not only `IP`;
-- **`port` is a string** (`"443"`), formatted via `wss://%.*s:%.*s`.
+- the reply must be compact: whitespace between tokens is rejected;
+- it reads a `domain` key, the host it connects to, not only `IP`;
+- `port` is a string (`"443"`), formatted with `wss://%.*s:%.*s`.
 
-Hand back `{"error":0,"reason":"","IP":...,"domain":...,"port":"443"}` and the device
+Given `{"error":0,"reason":"","IP":...,"domain":...,"port":"443"}`, the device
 accepts dispatch and opens the IoT WebSocket.
 
-**The IoT channel is `wss://` and the cert is verified** (authmode REQUIRED), so a
-self-signed stub cert is rejected with `bad_certificate` — the same trust problem
-the S60 solves with `patch_stock --trust-ca`, fixed the same way: a
-**trust-anchor swap**, not a verify bypass. The baked-in anchor is
-`CN=CoolKit Root CA ECC, O=CoolKit, C=CN` (an EC CA, 510-byte DER). Unlike the S60,
-the S61 keeps no static CA in its image — it **assembles the CA into RAM at
-TLS-setup time** (via snprintf, around `0x3c0b6`) and installs it through
-`mbedtls_x509_crt_parse` (`0x125e4c`; call sites `0x3c0ca`/`0x3c5b8`, both reached
-only for the IoT client). So the swap is applied at that one point: when the
-firmware loads the CoolKit CA into a trust store, `cloud_online.py` substitutes its
-own EC P-256 CA, identified by the CoolKit CN inside the decoded DER so only the
-anchor is touched.
-Every check in the verify path then runs unmodified; only which root is trusted
-changes, and the stub serves a leaf signed by that CA.
+**The trust anchor.** The IoT channel is `wss://` and its certificate is
+verified (authmode REQUIRED), so a stub's self-signed certificate is refused
+with `bad_certificate`. As on the S60, the trust anchor is swapped and the
+verification left alone. The anchor built in is `CN=CoolKit Root CA ECC,
+O=CoolKit, C=CN`, an EC CA of 510 bytes as DER. The S61 keeps no CA in its
+image: it puts the CA together in RAM when it sets TLS up (with snprintf, around
+`0x3c0b6`) and installs it through `mbedtls_x509_crt_parse` (`0x125e4c`; call
+sites `0x3c0ca` and `0x3c5b8`, both reached only for the IoT client).
+`cloud_online.py` swaps at that one point: when the firmware loads the CoolKit
+CA into a trust store, it gives its own EC P-256 CA instead, recognising the
+CoolKit one by the CN in the decoded DER so that nothing else is touched. Every
+check in the verify path then runs unmodified, against the stub's certificate
+signed by that CA.
 
-**Two leaf details the firmware's mbedTLS requires.** The stub leaf must carry a
-**`dNSName` SAN** for the dialled address — an `iPAddress` SAN alone is not matched
-against the name the firmware verifies (it sends SNI `8.8.8.8`) — and a
-**serverAuth EKU**. With those the verification passes.
+**The stub's certificate** needs two things for the firmware's mbedTLS to accept
+it: a `dNSName` SAN for the address dialled (an `iPAddress` SAN alone is not
+matched against the name the firmware verifies, and it sends the SNI `8.8.8.8`),
+and a serverAuth EKU.
 
-**Verified** (`tools/beken/emulator/beken-emu.sh python tools/beken/emulator/cloud_online.py`):
+`tools/beken/emulator/beken-emu.sh python tools/beken/emulator/cloud_online.py`
+shows the whole sequence:
 
 ```
 dispatch -> {"error":0,...,"domain":"8.8.8.8","port":"443"}   (accepted)
@@ -506,179 +462,183 @@ ws -> {"error":0,...,"config":{"hb":1,"hbInterval":10}}        => ONLINE
 ws <- {"action":"query",...,"params":["TZ"]}   (heartbeat / timezone loop, reconnects)
 ```
 
-So the radio-less emulator now runs the **whole** eWeLink cloud sequence — dispatch
-→ TLS IoT WebSocket (trusting that CA) → `register` → ONLINE, then heartbeats. The
-one thing a stub cannot stand in for is a *bound* session the **real** cloud would
-accept (that needs eWeLink's device-secret, from a paired dump); with the trust
-swap, a local stub completes the exchange in the emulator.
+What a stub cannot stand in for is a bound session the real cloud would
+accept, which needs eWeLink's device secret from a paired device's dump.
 
 ## No restart command
 
 As on the S60 ([Espressif research](espressif-research.md#no-restart-command)),
 Sonoff's firmware has no command that only restarts the device, over the cloud or
-on the local network. Read from the public S61 dump's app (un-striped: 32 bytes
-of data, 2 of CRC), strings only:
+on the local network. This is read from the strings of the public S61 dump's app,
+with its stripes removed; no code was read for it.
 
-- **The cloud.** The eWeLink link module's (`ais/src/link.c`) actions are
-  `register`, `upgrade`, `subDevice`, `resetDispatch`, `redirect`, `addNotify`
-  and `notify`. Only `upgrade` restarts the device (`bk_reboot(1)` a second after
-  the update is downloaded: [the FOTA download](#the-coolkit-fota-download-container)).
-- **The local network.** The `/zeroconf/` strings are a live server, not a
-  client or dead code: eWeLink's LAN control on port 8081 (`http://%s:8081`,
-  `/zeroconf/*`, announced as `eWeLink_%s` on `_ewelink`), for the eWeLink app
-  or an iHost to switch the device once it is online. It has no update route and
-  no restart route.
+- **The cloud.** The actions of the eWeLink link module (`ais/src/link.c`) are
+  `register`, `upgrade`, `subDevice`, `resetDispatch`, `redirect`, `addNotify` and
+  `notify`. Only `upgrade` restarts the device, with `bk_reboot(1)` a second after
+  the update is downloaded ([the FOTA container](#the-fota-download-container)).
+- **The local network.** The `/zeroconf/` strings are a live server, not a client
+  or dead code: eWeLink's LAN control on port 8081 (`http://%s:8081`,
+  `/zeroconf/*`, announced as `eWeLink_%s` on `_ewelink`), with which the eWeLink
+  app or an iHost switches the device once it is online. It has no update route
+  and no restart route.
 - `bk_reboot(%d)` is only the log line inside the restart function itself.
 
 ## The update path
 
-The goal is the S60-style conversion to open firmware — here **OpenBeken / ESPHome**
-for the BK7238 — driven through the vendor's own OTA, as the S60 is through the
-CoolKit cloud. The headline: **a third-party, unsigned image is accepted and
-written to the app partition — there is no signature and no secret key anywhere in
-the OTA path.** Images are packed with AES-256 under RT-Thread's *public* default
-key, which the bootloader has compiled in, so the encryption protects nothing; the
-integrity checks are standard CRC-32 and an FNV-1a hash; and the RBL `crypt` field
-is a header *flag* that need only be non-zero.
+A device is converted to OpenBeken or ESPHome through the vendor's own update,
+as the S60 is. The update path holds no signature and no secret key, so a
+third-party, unsigned image is accepted: images are packed with AES-256 under
+RT-Thread's public default key, which the bootloader has compiled in; the
+integrity checks are a standard CRC-32 and an FNV-1a hash; and the RBL's
+`crypt` field is a flag that need only be non-zero
+([the bootloader's checks](#what-the-bootloader-checks)).
 
-### Server redirect and OTA initiation
+The whole chain: push `upgrade` with a `downloadUrl` you control; the device
+downloads the image in its FOTA container and stages it, verbatim, in the
+download partition; on the restart the stock bootloader decompresses and
+applies it. [`fota_wrap.py`](../tools/beken/fota_wrap.py) builds the container
+for any `.rbl`.
 
-The S61 uses the **same CoolKit OTA mechanism as the S60**: the cloud pushes an
+### The `upgrade` command names the server
+
+The cloud pushes
 `{"action":"upgrade","params":{"model","version","binList":[{"downloadUrl",
-"digest","name"}]}}` message over the IoT WebSocket; the device's OTA task
-(`ais_qota_task`, user-agent `FOTA/1.0`) downloads from whatever `downloadUrl` the
-command carries, over HTTP with a ranged `bytes=%lu-%lu` request, independent of
-the WebSocket session. There is **no separate update-server setting** — the command
-dictates the URL, exactly as `tools/ewelink/probe_ota_command.py` relies on for the S60.
+"digest","name"}]}}` over the IoT WebSocket, and the device's OTA task
+(`ais_qota_task`, user agent `FOTA/1.0`) downloads from whatever `downloadUrl` the
+command carries, over HTTP with ranged requests (`bytes=%lu-%lu`), apart from
+the WebSocket session, as the S60 does. There is no update-server setting: the
+command gives the address, which `tools/ewelink/probe_ota_command.py` relies on
+for the S60.
 
-Reproduced on the emulator: with the device ONLINE on the local stub, pushing the
-`upgrade` command (the stub holds the device's socket, so it sends the frame
-directly) makes the device issue `GET <downloadUrl>` with `FOTA/1.0`. Served a 404, it
-fetches without flashing — the safe-probe pattern. So whoever runs the stub can both
-**initiate** the update and **point the server at one they control**.
+In the emulator, with the device ONLINE on the local stub, the stub sends the
+`upgrade` frame down the socket it holds and the device issues
+`GET <downloadUrl>` as `FOTA/1.0`; served a 404, it flashes nothing, which makes
+a safe probe. So whoever runs the stub both starts the update and names the
+server.
 
-### The CoolKit "FOTA" download container
+### The FOTA download container
 
-The OTA download is **not** a raw RBL — `ais_qota_task` expects a CoolKit **FOTA**
-container, decoded from the device's own read offsets and parse code:
+`ais_qota_task` expects not a bare RBL but CoolKit's FOTA container, worked
+out from the device's read offsets and its parsing code:
 
-- the HTTP response must be **`206 Partial Content`** (the client checks the status
-  is 206) and **keep-alive** (it reads several sections on one connection);
-- layout is **header, trailer, descriptors, then payloads** (decoded empirically):
-- **`[0:16]` header**: magic **`0x1beef11e`** (LE) at `+0`, a `u16` at `+12` that
-  sizes a region before the trailer — set it `0` so the trailer sits at `+16` and the
-  descriptor offset base is `16`;
-- **`[16:40]` trailer**: descriptor count at byte `+1` (1–3), a version string at
-  `+2` that must be **lexically greater than the running version** (`"1.0.2"`), and a
-  **CRC32 over the first 20 bytes, stored big-endian** at `+0x14`;
-- **`[40:40+76·n]` descriptors** (76 bytes each), data `[0:0x3c]` + a big-endian CRC32
-  at `+0x3c` over `[0:0x3c]`. In the data region: an **18-byte image-type name at
-  `+0x00`**, a version at `+0x20`, a **big-endian `u32` file-offset at `+0x30`** (the
-  image's absolute offset = this + base `16`), a **big-endian `u32` size at
-  `+0x34`**, and a **big-endian CRC32 of the payload at `+0x38`**. The name selects the handler that **stages to the download partition**;
-  it must be **`"FWSW-01-S61-BK7238"`** (an `strncmp` at `0x2c45d`). A wrong/empty name
-  falls through to a no-op handler that buffers in RAM and never writes flash — which
-  is why early attempts downloaded but staged nothing;
-- **payloads** follow the descriptors, each at the offset its descriptor gives.
+- The HTTP answer must be `206 Partial Content` (the client checks for 206) and
+  keep-alive (it reads several sections on one connection).
+- **`[0:16]`, the header:** the magic `0x1beef11e` (little-endian) at `+0`, and a
+  `u16` at `+12` that sizes a region before the trailer. Set it to `0`, so that
+  the trailer sits at `+16` and descriptor offsets count from `16`.
+- **`[16:40]`, the trailer:** the descriptor count at byte `+1` (1 to 3), a
+  version string at `+2` that must compare greater than the running version
+  (`"1.0.2"`) as text, and a CRC-32 over the trailer's first 20 bytes, big-endian,
+  at `+0x14`.
+- **`[40:40+76·n]`, the descriptors,** 76 bytes each: data in `[0:0x3c]` and a
+  big-endian CRC-32 of it at `+0x3c`. The data holds an 18-byte image-type name at
+  `+0x00`, a version at `+0x20`, a big-endian `u32` file offset at `+0x30` (the
+  image's place in the file is this plus the base `16`), a big-endian `u32` size
+  at `+0x34`, and a big-endian CRC-32 of the payload at `+0x38`.
+- **The payloads** follow, each at the offset its descriptor gives.
 
-The payload's CRC is checked only once the whole payload is in (`0x397ce`), and
-the payload is staged as it arrives, so a wrong one still leaves the image in the
-download partition - but the updater then reports `{"ota":"fail","ota_fail_reason":1}`
-and returns without restarting. Only with it right does the task write
-`ota&state` 4 and post the OTA event (id 1) whose handler (`0x2c738`) waits 1 s
-and calls `bk_reboot(1)`, so the bootloader installs the update straight away;
-with it wrong, the device converts only when it is next switched on.
+The name chooses the handler: `"FWSW-01-S61-BK7238"` (an `strncmp` at
+`0x2c45d`) for the one that stages to the download partition. A wrong or empty
+name falls through to a handler that buffers in RAM and never writes flash, so
+the download completes and nothing is staged.
 
-The CRCs are standard CRC-32 (zlib poly), stored big-endian because the firmware
-byte-swaps the field before comparing. With this container the device (ONLINE on the
-local stub) downloads via ranged `GET`s and **writes the payload verbatim to the
-download partition** — confirmed byte-for-byte (an 8 KB test RBL staged with a
-matching SHA-256; and a 507 KB real OpenBeken `.rbl` staged byte-exact over the
-first 446 KB before the test's time budget ended the download).
+The CRCs are standard CRC-32 (zlib's polynomial), stored big-endian because the
+firmware swaps the field's bytes before comparing.
 
-### Update (RBL) format
+**Nothing transforms the bytes.** The download loop issues its ranged `GET`s,
+copies each chunk into a RAM buffer and calls the image type's write callback,
+which lands in the FAL partition write. (That write was recorded as `0x1349f0`,
+the address this page also gives, twice, for the RTOS thread-create; one of the
+two readings is wrong, and the code has not been checked again. The
+thread-create has more support: two separate traces give it, each with the
+arguments a thread-create takes (a name and entry; an entry, startup and
+period), and it sits among other RTOS calls (`0x1348fc`, `0x13499c`,
+`0x1349b4`).) The
+validate handler that the stock type registers is `movs r0, #0; bx lr`: it
+always succeeds. The only checks are of
+integrity: the FOTA magic, the trailer's and descriptors' CRC-32s, the version
+comparison, and the `digest`, a SHA-256 of the file from the `upgrade` command,
+which whoever pushes the command computes over whatever they serve. The payload
+is written to the download partition as it arrives, byte for byte: an 8 KB test
+RBL and OpenBeken's whole 507 KB `.rbl` both staged with matching bytes.
 
-Images the bootloader applies are `rt_ota` **RBL** containers. The 96-byte header
-is verified byte-for-byte against the dump ([`tools/beken/rbl.py`](../tools/beken/rbl.py)
-reproduces the real `bootloader` and `app` RBL headers exactly, and the body of
-every image the SDK's packer made - the stock app's, OpenBeken's, LibreTiny's):
+**The payload's CRC decides the restart.** It is checked only once the whole
+payload is in (`0x397ce`), by when the image is already in the download partition.
+With it right, the task writes `ota&state` 4 and posts the OTA event (id 1), whose
+handler (`0x2c738`) waits 1 s and calls `bk_reboot(1)`, so the bootloader installs
+the update straight away. With it wrong, the updater reports
+`{"ota":"fail","ota_fail_reason":1}` and returns without restarting, and the
+device converts only when it is next switched on.
 
-| offset | field | notes |
+### The RBL format
+
+The bootloader applies `rt_ota` RBL containers.
+[`tools/beken/rbl.py`](../tools/beken/rbl.py) reproduces the dump's real
+`bootloader` and `app` headers exactly, and the body of every image the SDK's
+packer made: the stock app's, OpenBeken's and LibreTiny's. The header is 96 bytes:
+
+| Offset | Field | Notes |
 |--------|-------|-------|
 | `0x00` | magic | `"RBL\0"` |
-| `0x04` | algo | `u32`: `crypt` nibble (checked as a flag — must be non-zero) + compression nibble (LZMA-family; e.g. app = `0x402`) |
+| `0x04` | algo | `u32`: a `crypt` nibble (checked as a flag: it must be non-zero) and a compression nibble (the app's is `0x402`) |
 | `0x08` | timestamp | |
 | `0x0c` | name[16] | `"app"`, `"bootloader"` |
-| `0x1c` | version[24] | e.g. `"1.0.2"` |
+| `0x1c` | version[24] | `"1.0.2"`, say |
 | `0x34` | sn[24] | |
-| `0x4c` | body CRC32 | **standard CRC-32** of the packaged (compressed) body |
-| `0x50` | raw hash | **FNV-1a-32** of the raw (decompressed) body |
-| `0x54` | size_raw | decompressed size |
-| `0x58` | size_package | packaged size (< size_raw when compressed) |
-| `0x5c` | header CRC32 | **standard zlib CRC32 over bytes `[0:0x5c]`** |
+| `0x4c` | body CRC32 | standard CRC-32 of the packaged (compressed) body |
+| `0x50` | raw hash | FNV-1a-32 of the raw (decompressed) body |
+| `0x54` | size_raw | the decompressed size |
+| `0x58` | size_package | the packaged size (less than size_raw when compressed) |
+| `0x5c` | header CRC32 | standard CRC-32 over bytes `[0:0x5c]` |
 
-The two **CRC** fields (`body CRC32`, `header CRC32`) are the standard CRC-32
-(reflected, polynomial `0xedb88320` — the zlib/PNG one; the bootloader's table
-generator at `0x9674` builds exactly that from a 14-tap array), so they are
-`zlib.crc32`, reproducible offline. The `raw hash` field is **FNV-1a-32** (offset
-basis `0x811c9dc5`, prime `0x01000193`) over the decompressed image — confirmed byte-
-exact against the stock app's stored value (`0x0d89f7b1`). None of these is a
-proprietary "on-chip" hash.
+Both CRC fields are the standard CRC-32 (reflected, polynomial `0xedb88320`, as in
+zlib and PNG; the bootloader's table generator at `0x9674` builds exactly that
+from a 14-tap array), so `zlib.crc32` gives them. The raw hash is FNV-1a-32
+(offset basis `0x811c9dc5`, prime `0x01000193`) over the decompressed image,
+matching the stock app's stored value (`0x0d89f7b1`) exactly. None is a
+proprietary on-chip hash: all can be computed when the image is built.
 
-The bootloader copies `download` → `app`, decompressing and validating CRCs. A
-third-party image is accepted: the `crypt` nibble need only be non-zero (a flag),
-and `rt_ota_custom_verify` is a link-address sanity check, **not** a signature — see
-[the bootloader's gates](#bypassing-fota-stage-directly-and-the-bootloader-gate-chain).
+### What the bootloader checks
 
-### Bypassing FOTA: stage directly, and the bootloader gate chain
+Whether a device takes a third-party image is the bootloader's decision; the
+FOTA container is only how the image arrives. So the quickest test stages an
+RBL straight into a copy of a dump, header at `0x286000` and body after it, and
+boots that ([`stage_apply.py`](../tools/beken/emulator/stage_apply.py)).
 
-The FOTA container is only the cloud **transport**. The question "will the device
-accept and boot a third-party image?" is answered by the **bootloader**, so the
-quickest test stages an `rt_ota` RBL **directly in the download partition** and
-boots, skipping the container.
+On boot the bootloader runs `ota_main`, `rt_ota_check_upgrade`,
+`rt_ota_upgrade` and `copy_fw_from_dl_part`. (It lives in the bootloader
+partition, `0x0` to `0x10000`, at offsets equal to its run-time addresses. Its
+message strings are loaded PC-relative with `adr`, so a search for data words
+referring to them finds nothing; the `__func__` pointers are ordinary
+literals.) Its three gates, in order:
 
-Flash geography (physical offsets, found by logging the reads the bootloader issues
-through the flash controller at `REG_FLASH 0x803000` during boot):
+1. **The `crypt` nibble.** If it is zero, `ota_main` logs `none encryption Not
+   allow!` (`ota_main:125`) and refuses the update. The stock app declares
+   `0x402` and OpenBeken's release RBLs `0x102`; both pass. The only key in the
+   path is RT-Thread's public default AES key (`0123…`), which the SDK's own
+   packer uses.
+2. **`rt_ota_custom_verify`, a check of the link address.** It takes a CRC16 of
+   the vector table and checks that an address field in the image lies in the
+   `app` partition's range, `[0x10000, 0x10000+size)`: the firmware must be linked
+   to run at `0x10000`; one that is not gets `The application must link to
+   the flash 64KB location!`. A real OpenBeken or ESPHome build passes; only a
+   made-up test body fails. Neither this nor anything else in the path is a
+   signature.
+3. **The checksums.** `copy_fw_from_dl_part` reads the staged body from the
+   download partition (`0x7654` and `0x7218`: a bounds check, then the flash
+   device's read method), applies the declared decryption and decompression, and
+   verifies the body CRC-32 over the packaged body and the FNV-1a raw hash over
+   the decompressed image, ending in `part_fw_hash_verify`.
 
-- the **`app` partition's own RBL header** sits at **`0x285f9a`** (just before the
-  download partition) — overwriting it only makes the bootloader log `App verify
-  failed! Need to recovery factory firmware.` and boot the existing app, so leave
-  it alone;
-- the **`download` partition starts at `0x286000`** (erased in the public dump — no
-  update staged). Writing an RBL header at `0x286000` with its body after it stages
-  an update.
+Compression is chosen by the algorithm's compression nibble. The SDK's
+decompressor is an LZMA-family range coder, and a genuine OpenBeken release RBL
+(gzip, nibble `1`, where the stock app uses `4`) decompresses on the stock
+bootloader. The hardware security block at `0x0080b400` fires once at boot and
+has nothing to do with the update.
 
-On boot the bootloader runs `ota_main` → `rt_ota_check_upgrade` →
-`rt_ota_upgrade` → `copy_fw_from_dl_part`. (It lives in the bootloader partition
-`0x0–0x10000`; its message strings are loaded with `adr`, PC-relative, so a
-data-word xref does not find them, but the code is at offset-equals-runtime and the
-`__func__` pointers are ordinary literals.) Three gates, in order:
-
-**Gate 1 — the `crypt` nibble.** `ota_main` reads the RBL algorithm's `crypt`
-nibble and, if it is *zero*, logs **`none encryption Not allow!`** (`ota_main:125`)
-and refuses the update, so it must be non-zero. The only key in play is RT-Thread's
-**public default AES key** (`0123…`), the one the SDK's packer uses — no per-device
-or secret key. The stock app declares `0x402` and OpenBeken's release RBLs `0x102`;
-both satisfy the gate. (The emulator also offers an opt-in to force the branch.)
-
-**Gate 2 — `rt_ota_custom_verify` is a link-address sanity check, not a signature.**
-With a mis-linked image it logs
-**`The application must link to the flash 64KB location!`** (`rt_ota_custom_verify`):
-it CRC16s the vector table and checks that an address field in the image lies within
-the `app` partition range `[0x10000, 0x10000+size)` — i.e. the firmware must be
-**linked to run at `0x10000`**. A real OpenBeken / ESPHome BK7238 build (linked
-there) passes it; only a random test body fails. **No cryptographic signature is
-enforced anywhere in the apply path.**
-
-**Gate 3 — the firmware CRC-32.** `copy_fw_from_dl_part` verifies the body against
-the RBL header's CRC fields using **standard CRC-32** (polynomial `0xedb88320`;
-`body CRC32` over the packaged body, `raw hash` over the decompressed image). These
-are plain `zlib.crc32`, computed offline when building the image — no oracle needed.
-
-### Result: the bootloader erases and writes a third-party image
-
-With gate 1's flag set, gate 2 satisfied (or bypassed for a dummy body — it gates on
-no secret), and gate 3's CRC supplied, the bootloader logs the full apply:
+With all three satisfied, a test image with a made-up body (gate 2 forced, as
+it guards no secret; the emulator can force gate 1's branch too) is applied in
+full:
 
 ```
 OTA firmware(app) upgrade(1.0.2->9.9.9) startup
@@ -686,53 +646,17 @@ The partition 'app' is erasing  →  erase success
 OTA Write: [app] [====================================] 100%
 ```
 
-It **erases the app partition and writes the unsigned, third-party image to it.**
-So the conversion is **feasible** at the firmware level: no signature, no encryption,
-no per-device binding is needed to have an image accepted and flashed.
+### A real OpenBeken image converts
 
-### The apply path
+OpenBeken already ships BK7238 images in this `rt_ota` format, the
+`OpenBK7238_<ver>.rbl` assets of the
+[OpenBK7231T_App releases](https://github.com/openshwprojects/OpenBK7231T_App/releases). Release `1.18.319`'s is a well-formed RBL:
+magic `RBL\0`, name `app`, `algo = 0x102` (crypt flag `2`, compression nibble
+`1`), a body CRC-32 that `zlib.crc32` gives, an FNV-1a raw hash, `size_raw` 750544
+and `size_package` 506976.
 
-`copy_fw_from_dl_part` reads the staged RBL body from the download partition
-(`0x7654`/`0x7218`: bounds-check, then the flash device's read method), applies the
-declared crypt and compression, verifies it against the header, and writes it to the
-`app` partition. What matters for a conversion:
-
-- The only key anywhere in the path is RT-Thread's **public default AES key**
-  (`0123…`), the one the SDK's own packer uses — no per-device or secret key, and no
-  cryptographic **signature**.
-- Compression is selected by the algorithm's compression nibble; the SDK's
-  decompressor is an LZMA-family range coder, and a genuine OpenBeken release RBL
-  (gzip) decompresses on the stock bootloader.
-- Integrity is the header's two **CRC-32**s (`body CRC32` over the packaged body,
-  `header CRC32`) and the **FNV-1a** `raw hash` over the decompressed image — the
-  "Beken on-chip hash" is plain CRC-32 (`0xedb88320`), all reproducible offline.
-- The `0x0080b400` hardware-security block fires once at boot and is unrelated to
-  the OTA payload.
-
-### The download path writes bytes verbatim
-
-Does `ais_qota_task` transform the bytes of the cloud download before storing them?
-It does not. The download loop issues ranged
-`GET`s, copies each chunk into a RAM buffer, and calls the image type's write
-callback, which lands in the FAL partition write (`0x1349f0`); the per-image
-*validate* handler the stock type registers is literally `movs r0, #0; bx lr` (a
-no-op success). The only checks are integrity: the FOTA magic, the trailer and
-descriptor **CRC-32**s, the version-greater-than comparison, and the `digest` (a
-SHA-256 of the file, from the `upgrade` command — which whoever pushes the command
-computes over whatever they serve). **Bytes are written to the download partition verbatim.**
-
-### Proven: a real OpenBeken image converts over OTA
-
-The compression need not be reverse-engineered, because **OpenBeken already ships
-BK7238 OTA images in this exact `rt_ota` format** — the `OpenBK7238_<ver>.rbl` assets
-on the [OpenBK7231T_App releases](https://github.com/openshwprojects/OpenBK7231T_App/releases).
-The `1.18.319` image is a well-formed RBL: magic `RBL\0`, name `app`, `algo = 0x102`
-(crypt flag `2`, **compression nibble `1`** — the stock app uses `4`), `body CRC32`
-a standard `zlib.crc32`, `raw hash` an FNV-1a, `size_raw` 750544, `size_package`
-506976.
-
-Staged directly in the download partition of a dump copy and booted on the **stock
-bootloader with no bypasses**, it passes every firmware gate:
+Staged in the download partition of a copy of the dump and booted on the stock
+bootloader with nothing forced, it passes every gate:
 
 ```
 OTA firmware(app) upgrade(1.0.2->1.18.319) startup
@@ -741,206 +665,195 @@ The partition 'app' erase success
 OTA Write: [====================================] 100%  ← full image written
 ```
 
-So algorithm support, the `crypt` flag, `body CRC32`, **decompression of the whole
-image**, the streaming FNV `raw hash`, `custom_verify` (OpenBeken links at `0x10000`),
-and the final `part_fw_hash_verify` all pass for a genuine third-party conversion
-image, and the bootloader then **boots the freshly-installed OpenBeken** — the emulator
+The bootloader then starts the OpenBeken it has just installed; the emulator
 performs the whole apply itself
 ([how](../tools/beken/emulator/README.md#the-emulator-performs-the-whole-ota-apply)).
+Sent the cloud's way instead, in its FOTA container after a pushed `upgrade`,
+the same image is staged byte for byte and applied on the restart
+([`cloud_push.py`](../tools/beken/emulator/cloud_push.py)). None of it has been
+done on a real device, where the step cannot be undone by running it again.
 
-End to end, then: push `upgrade` with a `downloadUrl` you control → the device downloads
-the FOTA-wrapped OpenBeken `.rbl` and **stages it verbatim** to the download partition
-(confirmed byte-for-byte for the full 507 KB image) → on reboot the stock bootloader
-decompresses and applies it. Nothing in the chain decrypts, signs, or needs a secret.
-`fota_wrap.py` builds the container for any `.rbl`. The remaining step — flashing a
-real device — is irreversible and is not part of this emulator work.
+### OpenBeken on the 4 MB table
+
+OpenBeken's BK7238 build hard-wires `CFG_FLASH_SELECTION_TYPE =
+FLASH_SELECTION_TYPE_2M` (`sys_config_bk7238.h:374`), so an upstream OpenBeken
+uses the SDK's 2 MB table even on the S61's 4 MB chip. Its OTA slot would be at
+`0x132000` and its config (`NET_PARAM`) at `0x1e1000`: both inside the stock app
+partition, and the slot one that the stock `rt_ota` bootloader never looks at.
+
+Built with `FLASH_SELECTION_TYPE_4M` instead, it has
+[Sonoff's own layout](#sonoffs-layout-is-the-sdks-4-mb-table): its OTA download
+lands in the slot the stock bootloader applies from, so both an OpenBeken
+update and a return to stock go through the ordinary `ota_http`; its config
+goes in a sector stock leaves empty; and it reads the device's real radio
+calibration. Two places did not follow the partition table and
+now do: `hal_ota.h` hard-coded the REST `/api/ota` address (`0x132000`), and
+`rest_interface.c` bounded `GET /api/flash` at 2 MB. In the emulator the 4 MB
+build writes its config at `0x3e1000` and `0x1e1000` stays blank.
+
+The build is a `FLASH_SIZE=4M` switch, in two patches kept in
+[`tools/beken/openbeken/`](../tools/beken/openbeken/) and offered upstream as
+OpenBK7231T_App#2290 and beken_freertos_sdk#13
+([upstream-contributions.md](upstream-contributions.md#openbeken-on-a-4-mb-bk7238);
+the recipe is in
+[the driver's notes](../tools/beken/openbeken/README.md#building-bk7238-4-mb-table)).
+
+Packing a whole 4 MB image needs a 4 MB bootloader, which the SDK's packager
+makes from the one it ships (`make_bootloader_4m.py`): the S61's factory
+bootloader, so a 4 MB QIO from the build is a converted device's whole flash,
+and the emulator boots it as one. In that run OpenBeken's `ota_http`
+downloaded to `0x286000` and its own bootloader applied it
+(`upgrade(4M.1220->s61v6)`, `_STREAM_END`, the slot erased). The emulator then
+stayed at the bootloader's banner, but the flash it had written verifies (the app
+matches the RBL header's FNV-1a) and starts s61v6 when loaded afresh: that was the
+emulator's state after a watchdog restart OpenBeken asked for, not the image.
 
 ### Carrying Wi-Fi across the conversion: the OpenBeken config
 
-Like the S60, the conversion should hand the user's Wi-Fi credentials to the new
-firmware so the device rejoins their network with no typing. The stock creds live
-in the EF40 store (above), which the OTA does not overwrite. Two ways to get them
-into OpenBeken were worked out; the **import module is the one to ship**.
+The new firmware should rejoin your network with nothing typed, as on the
+S60. The credentials are in the stock app store, which the update does not
+touch, and there are two ways to give them to OpenBeken.
 
-**OpenBeken's config format (`mainConfig_t`), reverse-engineered and verified
-byte-exact against a real OpenBK7238 1.18.319 config:**
+**What the tool ships: OpenBeken reads them itself.** The driver
+([`tools/beken/openbeken/drv_autoflash.c`](../tools/beken/openbeken/drv_autoflash.c),
+with the S61's table for it,
+[`devices/sonoff-s61/drv_autoflash_sonoff_s61.c`](../devices/sonoff-s61/drv_autoflash_sonoff_s61.c);
+[what it does](../tools/beken/openbeken/README.md#what-the-driver-does-on-first-boot))
+reads the stock EF40 store with `beken_hal_flash_read` on first boot, finds the
+newest `wifi-ssid` and `wifi-pass` whose CRC is good, and calls OpenBeken's own
+`CFG_SetWiFiSSID()` and `CFG_SetWiFiPass()`. The setters make it immune to
+changes of `mainConfig_t`'s layout and checksum between OpenBeken releases, and
+as it only reads the stock store, going back stays open.
 
-- Layout (`src/new_pins.h`): `ident0/1/2 = 'C','F','G'` (ofs 0–2), **`crc` byte
-  at ofs 3**, `version` `int = 5` at ofs 4, then flags/counters, **`wifi_ssid[64]`
-  at `0x14`**, **`wifi_pass[64]` at `0x54`**.
-- `sizeof(mainConfig_t)` on the BK7238 build is **3584** (proven: OpenBeken
-  writes exactly 3584 bytes in one `HAL_Configuration_SaveConfigMemory` burst).
-- Checksum: `Tiny_CRC8` (`src/tiny_crc8.c`) over bytes **`[4 : 3584]`**, result in
-  the `crc` byte. **The shipped binary compiles `char crc` as *signed*, so
-  `crc >>= 1` is an arithmetic (sign-extending) shift** — the plain unsigned
-  CRC-8/MAXIM gives the wrong value (`0xac` vs the real `0x80`) and every seeded
-  config is rejected until this is right. In Python:
+**The fallback, kept as an emulator aid: a config written beforehand.**
+[`wifi_migrate.py`](../tools/beken/wifi_migrate.py) reads the credentials from the
+stock store, builds a `mainConfig_t` holding them and writes it into an OpenBeken
+image. It depends on the format, which is why it does not ship: it broke on
+exactly the signed CRC and the `sizeof` below. The format, checked byte for byte
+against a real OpenBK7238 1.18.319 config:
+
+- **Layout** (`src/new_pins.h`): `ident0/1/2 = 'C','F','G'` at offsets 0 to 2, a
+  `crc` byte at offset 3, `version` (an `int`, 5) at offset 4, then flags and
+  counters, `wifi_ssid[64]` at `0x14` and `wifi_pass[64]` at `0x54`.
+- **Size:** `sizeof(mainConfig_t)` on the BK7238 build is 3584. OpenBeken writes
+  exactly 3584 bytes in one `HAL_Configuration_SaveConfigMemory` burst.
+- **Checksum:** `Tiny_CRC8` (`src/tiny_crc8.c`) over bytes `[4 : 3584]`, kept in
+  the `crc` byte. The shipped binary compiles `char crc` as signed, so `crc >>= 1`
+  is an arithmetic shift that extends the sign. A plain unsigned CRC-8/MAXIM gives
+  the wrong value (`0xac` where the real one is `0x80`), and OpenBeken rejects
+  every config made with it. In Python:
   `crc = ((crc>>1)|0x80) if (crc&0x80) else (crc>>1)`, then `if bit: crc ^= 0x8C`.
-- Stored at the start of `BK_PARTITION_NET_PARAM` — physical **`0x1e1000`** on the
-  standalone BK7238 2 MB build (BK7231N's SDK uses `0x1D1000`).
+- **Place:** the start of `BK_PARTITION_NET_PARAM`, physical `0x1e1000` on the
+  upstream BK7238 2 MB build (BK7231N's SDK uses `0x1D1000`).
 
-**Proven in the emulator:** read `wifi-ssid`/`wifi-pass` from the stock EF40 →
-build a `mainConfig_t` with those creds → write it at `0x1e1000` of a 2 MB-padded
-OpenBK7238 image → boot: `Correct config has been loaded`, `Using SSID [...]`,
-four-way handshake, DHCP lease. End-to-end `wifi_migrate.py` does the whole
-read→build→seed chain.
+In the emulator, a config built so and written at `0x1e1000` of an OpenBK7238
+image padded to 2 MB boots to `Correct config has been loaded`, `Using SSID
+[...]`, the four-way handshake and a DHCP lease.
 
-Emulator gotchas worth remembering: pad the QIO image to the real flash size or
-the `NET_PARAM` write is out of range; set `emu.flash_writethrough = True` so
-config save/read works; UART (incl. the `CFG:` verdict) prints to **stdout**, not
-the `log`/`uart_sink` callbacks; and config writes are AND-without-clean-erase, so
-a *later* re-save corrupts the blob — hook the flash-program path and capture the
-**first** write burst for a clean reference.
+When trying this in the emulator:
 
-#### Partition map: the SDK's 4 MB table *is* Sonoff's layout
+- Pad the QIO image to the real flash size, or the `NET_PARAM` write is out of
+  range.
+- Set `emu.flash_writethrough = True`, so that saving and reading the config
+  work.
+- The UART, the `CFG:` verdict included, prints to stdout, not to the `log` or
+  `uart_sink` callbacks.
+- Config writes are ANDed into the flash with no clean erase, so a later save
+  corrupts the blob. For a clean reference, hook the flash-program path and keep
+  the first burst.
 
-OpenBeken's BK7238 build hard-wires `CFG_FLASH_SELECTION_TYPE =
-FLASH_SELECTION_TYPE_2M` (`sys_config_bk7238.h:374`), so stock OpenBeken uses the
-SDK's **2 MB** partition table even on the S61's 4 MB chip: OTA at `0x132000`,
-NET_PARAM (config) at `0x1e1000` — both *inside* the stock app partition, and its
-OTA slot is one the stock `rt_ota` bootloader never looks at. The SDK's **4 MB
-table** (`BkDriverFlash.c`, `bk7231_partitions_4M`) is, to the byte, the Sonoff
-layout — the same Beken SDK: `APPLICATION 0x11000`, **`OTA 0x286000`** (= the
-stock download slot), **`RF_FIRMWARE 0x3e0000`** (= the factory TLV with the
-radio calibration), `NET_PARAM 0x3e1000` (empty on a stock device), `MATTER_FLASH
-0x3e2000` (= the EF40 app store), `USR_CONFIG 0x3ee000`. Building the S61 image
-with `FLASH_SELECTION_TYPE_4M` therefore makes OpenBeken's **own OTA download
-land in the slot the stock bootloader applies from** (so both OpenBeken updates
-and reversion to stock go through the ordinary `ota_http`), puts its config in a
-dedicated empty sector, and lets it read the device's real radio calibration.
-`hal_ota.h` hard-codes the REST `/api/ota` address separately (`0x132000`), and
-`rest_interface.c` bounds `GET /api/flash` at 2 MB; both now follow the partition
-table. Verified in the emulator: the 4 MB build writes its config at `0x3e1000`
-and `0x1e1000` stays blank.
+### Reversion to stock, and the backup
 
-The build is a `FLASH_SIZE=4M` switch, in two patches kept in
-[`tools/beken/openbeken/`](../tools/beken/openbeken/) and
-offered upstream — OpenBK7231T_App#2290 and beken_freertos_sdk#13, see
-[upstream-contributions.md](upstream-contributions.md#openbeken-on-a-4-mb-bk7238)
-(the recipe is in [the driver's notes](../tools/beken/openbeken/README.md#building-bk7238-4-mb-table)).
-Packing a whole 4 MB image needed a 4 MB bootloader, and that work showed that
-**the S61's factory bootloader is the SDK's shipped
-`bootloader_bk7238_uart1_v1.0.15.bin` with the 4 MB FAL table in its tail**,
-byte for byte — three 64-byte `01PE` entries (`bootloader 0x0+0x10000`, `app
-0x10000+0x250000`, `download 0x286000+0x15A000`; name, flash device, offset,
-length, CRC-32 over the first 60 bytes). The SDK's packager generates that
-bootloader from the shipped one (`make_bootloader_4m.py`), so a 4 MB QIO from
-the build is a converted device's whole flash, and the emulator boots it as such.
-In that run OpenBeken's `ota_http` downloaded to `0x286000` and its own
-bootloader applied it (`upgrade(4M.1220->s61v6)`, `_STREAM_END`, slot erased);
-the emulator then stayed at the bootloader banner, but the persisted flash
-verifies (the written app matches the RBL header's FNV-1a) and boots s61v6 when
-loaded afresh — emulator state after an OpenBeken-initiated watchdog reboot, not
-the image.
-
-#### Reversion to stock, and the backup
-
-The stock bootloader applies whatever valid RBL sits at `0x286000` — including a
-**downgrade**: staging the stock app RBL on a converted device logged `OTA
+The stock bootloader applies any valid RBL at `0x286000`, a downgrade
+included. With the stock app's RBL staged on a converted device it logged `OTA
 firmware(app) upgrade(s61v2->1.0.2)`, erased and wrote `app`, and the stock
-firmware booted (`EasyFlash V4.1.99 is initialize success`) with the EF40
-untouched (same 33 keys, same Wi-Fi creds, same `elecCalibCoef`). The stock app
-RBL is rebuilt from the dump: the app partition holds the *decompressed* image
-(the OTA body is gone), so the un-striped app (`FNV-1a` matches the stored
-`raw_hash 0x0d89f7b1`, i.e. byte-exact) is repackaged with the SDK's own packer
-exactly as the OpenBeken build does —
-`rt_ota_packaging_tool_cli -f app.bin -o app.rbl -p app -c gzip -s aes -k
-0123456789ABCDEF0123456789ABCDEF -i 0123456789ABCDEF -v 1.0.2` — using the same
-public default AES key as every other RBL, which the bootloader accepts.
-`S61RevertToStock <url>` (now `AutoflashRevertToStock`) in the import module
-checks the OTA slot is `0x286000` in both the SDK table and `START_ADR_OF_BK_PARTITION_OTA` (the constant the REST
-OTA path uses), refusing on a 2 MB-table build where the download would land at
-`0x132000`, and hands the URL to OpenBeken's normal OTA download. Run end to end in
-the emulator against a host HTTP server: `init OTA, startaddr 0x286000` → reboot →
-`upgrade(s61v6->1.0.2)` → stock firmware up, EF40 untouched.
+firmware started (`EasyFlash V4.1.99 is initialize success`) with its store
+untouched: the same 33 keys, the same Wi-Fi credentials, the same `elecCalibCoef`.
 
-[`tools/beken/backup.py`](../tools/beken/backup.py) copies the
-per-device region `0x3e0000–0x400000` (factory TLV, EF40 app store, system ENV)
-out of a converted device over `GET /api/flash/<addr>-<len>` (the REST reader's
-`DEFAULT_FLASH_LEN` is raised to 4 MB in the S61 build) into
-`captures/devices/<mac>/sonoff-backup/config-0x3e0000.bin` with a manifest and the
-stock RBL beside it — the S60's layout. Byte-exact against the dump in the
-emulator. With the generic stock app and this region, a device can always be put
-back to stock.
+**The stock app's RBL is rebuilt from the dump.** The app partition holds the
+decompressed image (the OTA body is gone), so the app with its stripes removed,
+whose FNV-1a matches the stored raw hash `0x0d89f7b1`, is packed again as the
+SDK's own packer would, under the same public key as every other RBL's, and
+the bootloader accepts it ([`stock_app.py`](../tools/beken/stock_app.py), and
+the packer's command in
+[the driver's notes](../tools/beken/openbeken/README.md#reverting-to-stock)).
 
-**The robust, update-proof mechanism (the one to ship): an OpenBeken import module**
-(now the driver [`tools/beken/openbeken/drv_autoflash.c`](../tools/beken/openbeken/drv_autoflash.c)
-and the S61's table for it,
-[`devices/sonoff-s61/drv_autoflash_sonoff_s61.c`](../devices/sonoff-s61/drv_autoflash_sonoff_s61.c)).
-On first boot (only when no SSID is set) it reads the stock EF40 store with
-`beken_hal_flash_read`, finds the newest CRC-valid `wifi-ssid`/`wifi-pass`, and
-calls OpenBeken's own `CFG_SetWiFiSSID()`/`CFG_SetWiFiPass()`. Because it uses the
-setters rather than writing the blob, it is **immune to `mainConfig_t` layout/CRC
-changes across OpenBeken releases** — the offline-blob route above is version-
-fragile (it broke on exactly the signed-CRC and `sizeof` details) and is kept only
-as a fallback / emulator aid. The module's EF40 scan + CRC + extract logic is
-validated against the dump; building it into an OpenBeken image and flashing it is
-the remaining on-device step. It also only reads the stock store, so it is fully
-reversible.
+**OpenBeken fetches it with `AutoflashRevertToStock <url>`** (once
+`S61RevertToStock`). It checks that the OTA slot is `0x286000` in both the
+SDK's table and `START_ADR_OF_BK_PARTITION_OTA`, the constant the REST OTA path
+uses, and refuses on a 2 MB-table build, where the download would land at
+`0x132000`; then OpenBeken's normal OTA download fetches it. Against an HTTP
+server on the host: `init OTA, startaddr 0x286000`, a restart,
+`upgrade(s61v6->1.0.2)`, and the stock firmware up with its store untouched.
+
+**The backup** is the device's own region, `0x3e0000` to `0x400000` (the
+factory record, the app store and the system store), which
+[`backup.py`](../tools/beken/backup.py) copies out over
+`GET /api/flash/<addr>-<len>`, whose `DEFAULT_FLASH_LEN` this project's build
+raises to 4 MB ([how it is filed](../tools/beken/openbeken/README.md#backing-up-the-device)).
+In the emulator it matches the dump byte for byte. With the stock app, the same
+for every device of a model, and this region, a device can always be put back
+to stock.
 
 ### The ESPHome route (LibreTiny)
 
-The second open firmware for the S61 is ESPHome on **LibreTiny**, whose 1.13.0
-(the version ESPHome 2026.10.0 pins) has the BK7238. The config,
-[`devices/sonoff-s61/esphome.yaml`](../devices/sonoff-s61/esphome.yaml), is the S60's with the
-S61's wiring and storage, and needs no change to LibreTiny or ESPHome; the
-build, the reversion and the validation are in
-[devices/sonoff-s61/esphome.md](../devices/sonoff-s61/esphome.md). What the
-route rests on:
+The second open firmware is ESPHome on LibreTiny, whose 1.13.0 (the version
+ESPHome 2026.10.0 pins) has the BK7238. The config,
+[`devices/sonoff-s61/esphome.yaml`](../devices/sonoff-s61/esphome.yaml), is the
+S60's with the S61's wiring and storage, and needs no change to LibreTiny or
+ESPHome; the build, the reversion and the validation are in
+[devices/sonoff-s61/esphome.md](../devices/sonoff-s61/esphome.md). The route
+rests on these:
 
-- **The image is the same `rt_ota` format** OpenBeken's is: LibreTiny's build
-  produces `image_bk7238_app.ota.rbl` (name `app`, gzip, AES with RT-Thread's
-  public key), which the stock bootloader applies from the download slot like
-  any other. Staged at `0x286000` through the cloud-pushed `upgrade` (the
-  FOTA container, verbatim), the bootloader logs
-  `upgrade(1.0.2->26.10.29-bk7238)`, `_STREAM_END` with the raw size the
-  build reported, erases and writes `app`, and jumps.
-- **LibreTiny's partition table is the board's `flash` section**, which it
-  wraps over the SDK's (`BkDriverFlash.c`), and PlatformIO's `board_flash.*`
-  overrides reach both the firmware and ltchiptool (the build writes the
-  merged board to `board.json`). So the config carries the S61's layout in
-  `platformio_options`: app `0x11000+0x275000` with `bkrbl_size_app
-  0x250000`, download `0x286000` (ESPHome's own OTA then lands where the stock
-  bootloader looks), calibration `0x3e0000`, FlashDB preferences at
-  `0x3ee000` (the empty 32 KB OpenBeken's 4 MB table calls `USR_CONFIG`),
-  LittleFS at the empty `0x3e1000`. Nothing of the stock stores is touched.
-- **Wi-Fi and calibration come from the stock EF40 store at boot**, read with
-  `lt_flash_read` in a boot lambda (the import module's scan, in C++): there
-  is no image imprinting on this route, as the packaged image cannot be
-  patched, and none is needed. The calibration is applied with
-  [the stock formula](../devices/sonoff-s61/research.md#energy-meter-calibration-the-stock-formula-and-the-openbeken-mapping); ESPHome's `hlw8012` reckons the pulse rate with the BL0937
-  datasheet's 1.218 V where the stock driver uses 1.1 V, so the readings are
-  scaled by that ratio (squared for power) before the trim.
-- **Reversion** is ESPHome's own OTA: LibreTiny writes a UF2's `download`
-  part to the download slot, so a UF2 carrying the stock app RBL (ltchiptool
-  builds one) brings the stock bootloader's apply on the next reboot - and
-  one carrying OpenBeken's 4 MB-table `.rbl` moves the device to OpenBeken,
-  whose `ota_http` of the ESPHome `.rbl` moves it back. Both proven in the
-  emulator: each first boot takes Wi-Fi, calibration and wiring from the
-  stock store, and the two firmwares' own settings live in different sectors
-  (`0x3ee000` ESPHome, `0x3e1000` OpenBeken), so neither disturbs the other.
-- **The emulator needed one change** (in the fork): LibreTiny keeps its
-  FreeRTOS tick on hardware **Timer 0** (the 26 MHz group, for a fine
-  `micros()`; `cores/beken-72xx/base/fixups/clock_rtos.c`), where OpenBeken
-  and the stock firmware use Timer 3. The emulator raised only Timer 3's
-  status, so LibreTiny's timer ISR acknowledged a channel with no handler
-  while `xTaskIncrementTick` never ran: every log line said `0.000`, the
-  first `delay()` never returned, and the Wi-Fi start stalled at `Waiting for
-  init_thread`. It now models the 26 MHz group too (Timer 3 as before):
-  each enabled channel fires at its programmed period, at the slow tick's
-  resolution. The period is not optional: OpenBeken's BK7238 build feeds its
-  interrupt watchdog from a 10 s channel of that group (two key writes with
-  a busy delay between), and a first version that raised every enabled
-  channel on every tick ran that feed back to back and starved OpenBeken
-  right after `Main_Init_Before_Delay`.
+- **The image is the same `rt_ota` format.** LibreTiny's build makes
+  `image_bk7238_app.ota.rbl` (name `app`, gzip, AES with RT-Thread's public key),
+  which the stock bootloader applies from the download slot like any other.
+  Staged at `0x286000` by a pushed `upgrade`, the bootloader logs
+  `upgrade(1.0.2->26.10.29-bk7238)` and `_STREAM_END` with the raw size the build
+  reported, erases and writes `app`, and jumps.
+- **LibreTiny's partition table is the board's `flash` section,** which it wraps
+  over the SDK's (`BkDriverFlash.c`), and PlatformIO's `board_flash.*` overrides
+  reach both the firmware and ltchiptool (the build writes the merged board to
+  `board.json`). So the config carries the S61's layout in `platformio_options`:
+  app `0x11000+0x275000` with `bkrbl_size_app 0x250000`; download `0x286000`, so
+  that ESPHome's own OTA lands where the stock bootloader looks; calibration
+  `0x3e0000`; FlashDB preferences at `0x3ee000`, the empty 32 KB that OpenBeken's
+  4 MB table calls `USR_CONFIG`; LittleFS at the empty `0x3e1000`. Nothing of the
+  stock stores is touched.
+- **Wi-Fi and calibration come from the stock store at boot,** read with
+  `lt_flash_read` in a boot lambda (the OpenBeken driver's scan, in C++), so
+  nothing is written into the packaged image, which could not be patched. The calibration is applied with
+  [the stock formula](../devices/sonoff-s61/research.md#energy-meter-calibration-the-stock-formula-and-the-openbeken-mapping).
+  ESPHome's `hlw8012` reckons the pulse rate with the BL0937 datasheet's 1.218 V
+  where the stock driver uses 1.1 V, so the readings are scaled by that ratio
+  (squared for power) before the trim.
+- **Reversion is ESPHome's own OTA.** LibreTiny writes a UF2's `download` part to
+  the download slot, so a UF2 carrying the stock app's RBL (ltchiptool builds one;
+  [`uf2.py`](../tools/beken/uf2.py) here) brings the stock bootloader's apply on
+  the next restart. One carrying OpenBeken's 4 MB-table `.rbl` moves the device to
+  OpenBeken, whose `ota_http` of the ESPHome `.rbl` moves it back. Both ran in
+  the emulator: each first boot takes Wi-Fi, calibration and wiring from the
+  stock store, and the two keep their settings in different sectors (`0x3ee000`
+  ESPHome, `0x3e1000` OpenBeken), so neither disturbs the other.
+- **The emulator needed its 26 MHz timers.** LibreTiny keeps its FreeRTOS tick on
+  hardware Timer 0 (the 26 MHz group, for a fine `micros()`;
+  `cores/beken-72xx/base/fixups/clock_rtos.c`), where OpenBeken and the stock
+  firmware use Timer 3. With only Timer 3's status raised, LibreTiny's timer
+  ISR acknowledged a channel with no handler while `xTaskIncrementTick` never
+  ran: every log line said `0.000`, the first `delay()` never returned, and the
+  Wi-Fi start stalled at `Waiting for init_thread`. The fork now models the
+  26 MHz group too, each enabled channel firing at its programmed period, at the
+  slow tick's resolution. The period matters: OpenBeken's BK7238 build feeds its
+  interrupt watchdog from a 10 s channel of that group (two key writes with a
+  busy delay between), and raising every enabled channel on every tick ran that
+  feed back to back and starved OpenBeken just after `Main_Init_Before_Delay`.
 
 ## What a backup logs
 
 The backup is taken at B4, through OpenBeken, once the first conversion has put it
-on: the region `0x3e0000`-`0x400000`, with the factory record, the stock stores and
-the system ENV ([how it is read and filed](#reversion-to-stock-and-the-backup)).
-Stock firmware says nothing of its flash, so what a run learns of a device goes in
-its log (`tools/autoflash/routes/beken/`):
+on ([how it is read and filed](#reversion-to-stock-and-the-backup)). Stock
+firmware says nothing of its flash, so what a run learns of a device goes in its
+log (`tools/autoflash/routes/beken/`):
 
 - **At B1**, for a device with no public dump: its official update file's firmware
   name and version, the version the device reports, and the file's whole partition
@@ -951,63 +864,94 @@ its log (`tools/autoflash/routes/beken/`):
 
 ## The stock firmware in the emulator
 
+To bring Sonoff's firmware online the emulator supplies five things, each
+explained below or above: the flash chip's Unique ID ([Boot](#boot)), a pass of
+[the integrity gate](#the-flash-uid-integrity-gate), the Wi-Fi credentials
+([seeding](#joining-wi-fi-by-seeding-the-credentials)),
+[the pairing-success call](#the-cloud-dial) and
+[the trust anchor](#the-handshake-to-online). `cloud_online.StockHooks` puts them
+in, with a raise of Timer 5 ([the button](#the-button)). The rest of this part
+is how the firmware starts and pairs, and how far each pairing route goes with
+no radio.
+
 ### Boot
 
-Stock boot once looped on a watchdog reset. Cause: right after `ais_evt_task`
-starts, the Beken SDK reads the flash chip's **Unique ID** (command `0x4B`, 4
-dummy bytes, 8 data bytes) over the **SPI master at `0x802700`** — a path separate
-from the memory-mapped flash the emulator serves. That controller was unmodelled,
-so its STATUS register never signalled "done", the read spun, and the task
-watchdog reset the chip.
+Right after `ais_evt_task` starts, the Beken SDK reads the flash chip's Unique
+ID (command `0x4B`, 4 dummy bytes, 8 data bytes) over the SPI master at
+`0x802700`, apart from the memory-mapped flash the emulator serves. Upstream's
+emulator does not model that controller: its STATUS register never says
+"done", the read spins, and the task watchdog resets the chip, over and over.
 
-Fixed in the fork by `src/spi_flash.py` (`SpiFlashMaster`): it serves the SPI
-STATUS/DATA registers and answers `0x4B` with a synthetic unique id, plus ~3 lines
-wiring it into the two MMIO hooks in `src/emulator.py`. It engages only while a
-transfer is configured (`CONFIG != 0`), so firmwares that never drive the SPI
-master are unaffected. Result: 0 reboots, RTOS runs, 6/6 regression (SPI-LED
-controllers, OpenBK7238 Wi-Fi/DHCP/HTTP, the S61 dump test).
+The fork models it in `src/spi_flash.py` (`SpiFlashMaster`), which serves the
+SPI STATUS and DATA registers and answers `0x4B` with a made-up id, wired into
+the two MMIO hooks of `src/emulator.py` in about three lines. It acts only
+while a transfer is configured (`CONFIG != 0`), leaving a firmware that never
+drives the SPI master unaffected. With it the firmware boots with no restarts,
+and upstream's regression tests pass 6 of 6 (the SPI-LED controllers,
+OpenBK7238's Wi-Fi, DHCP and HTTP, the S61 dump).
 
 ### What the firmware does at boot
 
-The eWeLink app runs. It boots to `ate_mode_state[0]` (normal, not ATE), runs its
-`ais` event loop, drives its status LED through the **PWM block** (`0x802B00`,
-~290k writes/run), brings up its **BLE stack** (`BLE_STACK_OK`), and initialises
-**EasyFlash V4.1.99**. It then settles into a **quiescent idle**: all AIS tasks
-created and blocked on their event queues, timers and interrupts (SYS/IRQ/FIQ/SVC)
-firing, ~58k idle-loop hits, **zero** Wi-Fi frames transmitted. The central event
-loop is a message pump at `0x23d6c` blocked on a queue receive (`0x134f7c`) from
-the queue whose handle is `*(0x403c0c)+4 = 0x403c10` (created ~0.45 s into boot by
-`0x17700`, stored at `0x16604`); it dispatches event messages 1–9 and otherwise
-waits.
+The eWeLink app boots to `ate_mode_state[0]` (normal, not ATE), runs its
+`ais` event loop, drives its status LED through the PWM block (`0x802B00`,
+about 290,000 writes a run), brings up its BLE stack (`BLE_STACK_OK`) and
+initialises EasyFlash V4.1.99, then settles: every AIS task created and blocked on its event queue,
+timers and interrupts (SYS, IRQ, FIQ, SVC) firing, about 58,000 passes of the idle
+loop, and no Wi-Fi frame sent. The central event loop is a message pump at
+`0x23d6c`, blocked on a queue receive (`0x134f7c`) from the queue whose handle is
+`*(0x403c0c)+4 = 0x403c10` (created about 0.45 s into boot by `0x17700` and stored
+at `0x16604`). It dispatches event messages 1 to 9 and otherwise waits.
 
-The device is **unprovisioned**: its EF40 store has no `wifi-ssid`/`wifi-pass`,
-and its CHIP ENV has no Matter fabric. So it does not try to connect — it waits
-for a **pairing trigger** (the button, or a command from the app over BLE/cloud).
-The `0x7fffffde` RX filter and the "monitor mode … as in EZ pairing" UART line are
-the MAC's **default** filter printed during `rwnxl_init`; they are not an active
-AirKiss sniff (the monitor callback `0x403b20` is NULL at boot — and in any case
-this build only ever registers a stub there, see
-[AirKiss](#airkiss-smartconfig-relay--decoder-stubbed-in-this-build)). BLE does
-not advertise at boot either (0 advertising payloads staged). This is a device
-sitting powered-on-but-untouched.
+The public dump's device is unprovisioned
+([the provisioned state](#the-provisioned-state)), so it waits for a pairing
+trigger: the button, or a command from the app over BLE or the cloud. Two
+things in its output look like activity and are not. The RX filter `0x7fffffde` and the
+UART line "monitor mode … as in EZ pairing" are the MAC's default filter, printed
+during `rwnxl_init`, not an AirKiss sniff: the monitor callback `0x403b20` is NULL
+at boot ([AirKiss](#airkiss-the-decoder-is-a-stub)). And BLE does not advertise at
+boot: no advertising payload is staged.
 
-### The button press (the pairing trigger)
+### The flash-UID integrity gate
 
-On real hardware you press and hold the button for 5 s to put the device into
-pairing. The button's hardware and driver path is understood and can be driven in
-the emulator through the firmware's own code up to **arming the real 5-second
-long-press timer**; what is not yet reached is the app-layer path that turns that
-long-press into pairing entry (the physical long-press drives the relay, not the
-eWeLink pairing trigger — see below).
+Left alone, the emulated app layer never starts: `ais_appfw_task`, the
+button's registration and the provisioned check all wait on the `app` thread,
+which hangs in a check of the device's identity.
 
-#### How the button works on this firmware
+Boot creates every RTOS task through `ais_evt_task`. The `app` task then runs the
+AIS app-start (`0x24430`, then `0x29b54`), which reaches a poll loop at `0x29c38`.
+There it builds `SHA256(hex(flash_uid) + identity_fields)` (the hash is `0x25454`,
+the string comes from `0x19b70`) and compares it with `memcmp` (`0x42788`) against
+a 32-byte value stored at `ctx+0x84`. On a mismatch it branches to `0x29c44`, an
+endless loop of 1-second delays: a deliberate hang. A stack unwind finds the `app`
+task parked there (`0x24430`, `0x29b54`, `0x29c4a`, the delay `0x1349b4`).
 
-The button is a **GPIO 0–5 capture interrupt on the PWM/timer block at
-`0x802B00`** (three groups of `0x40`, two channels each = pins 0–5). It is **not**
-the GPIO `INTEN` bitmask at `0x802884` — which is why earlier attempts driving
-pins 10/11 did nothing; the button interrupt lives on a different peripheral.
+The 16-byte identity is the flash chip's Unique ID: `0x2856c` calls `0x21408`,
+which opens the `flash` device and reads `bk_flash_get_uid` (SPI command `0x4B`).
+The emulator answers with its made-up id (ASCII `S61EMU\0\1`, read as
+`533631454d550001ffff…`), so the hash it computes (`e3f30c7e…`) never matches the
+value stored from the real id (`f009c2a1…`). A real device passes, its own id
+matching its own factory record. The real id is a 128-bit hardware value the
+dump does not hold (the config's `secureCertSha256` and
+`chip-factory.uniqueId*` do not match what the check wants), so the emulator
+passes only if given the real device's id, or with the result forced.
 
-Interrupt chain:
+[`integrity_gate.py`](../tools/beken/emulator/integrity_gate.py) forces it: the
+`memcmp` result at `0x29c3c` reads "equal", as on real hardware. Within about
+3.5 s, with nothing else called, `key_add` registers the button on GPIO pins 0
+and 2, the provisioned check (`0x48cc4`) runs, and `ais_appfw_task` is
+created.
+
+### The button
+
+On a real device you hold the button for 5 s to enter pairing. In the emulator
+the firmware's own code times the hold and fires the long-press action, which
+turns out to drive the relay; the path from a long press to pairing has not
+been found ([Entering pairing](#entering-pairing)).
+
+**The hardware.** The button is a capture interrupt on GPIO 0 to 5, in the PWM and
+timer block at `0x802B00` (three groups of `0x40`, two channels each). It is not
+in the GPIO `INTEN` mask at `0x802884`, so driving pins 10 and 11 there does
+nothing. The chain:
 
 ```
 pin edge
@@ -1022,504 +966,414 @@ pin edge
                       and posts a key event
 ```
 
-#### Registration
+**Registration.** The block's init, `0x1bc18`, registers the ISR
+(`intc_register(9, 0x11, 0x1bfd8)`); it is generic and runs at every boot.
+`key_add` (`0x41f64`) wires the button up, and runs only past the integrity gate:
 
-`key_add` (`0x41f64`) wires the button up:
+- it writes the pin to `0x404c25`, fills the key-id table `0x404bb4` with the pin
+  number and sets the driver flag `0x404c23 = 1`;
+- it registers the callback through `0x3f090` and `0x1c14c`, into the per-pin
+  table `0x4038f4`;
+- it enables the capture interrupt through `0x3f0d0`, `0x12c214` and `0x1c2f0`,
+  which writes the pin's field in the `0x802B00` group register;
+- it creates the key-driver timer thread through `0x3ec6c` (thread-create
+  `0x1349f0`, entry `0x3eba0`, startup `0x217ec`, period `0x64`).
 
-- writes the pin to `0x404c25`, fills the key-id table `0x404bb4` (= the pin
-  number), sets the driver flag `0x404c23 = 1`;
-- registers the callback via `0x3f090` → `0x1c14c` (into the per-pin table
-  `0x4038f4`);
-- enables the capture interrupt via `0x3f0d0` → `0x12c214` → `0x1c2f0` (writes the
-  per-pin field in the `0x802B00` group reg);
-- creates the key-driver timer thread via `0x3ec6c` (`0x1349f0` thread-create,
-  entry `0x3eba0`, startup `0x217ec`, period `0x64`).
+**The key-driver timer thread** (entry `0x3eba0`) times the hold. It blocks on the
+RTOS wait `0x134618` (timeout −1, for ever), which goes to `0x151a8` (`svc #0`,
+waiting on its TCB's signal, `[tcb+0x54]`). On each wake it walks its list of
+software timers once, counting each down and calling those that expire (`blx` at
+`0x3ec18`), and runs the periodic key scan `0x421e0`, which reads the button's pin
+(`[0x404c25]`) and counts the hold. The armed 5-unit timer sits in that list.
 
-The block ISR is registered by the block init `0x1bc18`
-(`intc_register(9, 0x11, 0x1bfd8)`).
+The thread is woken by `rt_thread_resume` (`0x15274`, Thumb veneer `0x134818`),
+called by the giver `0x3ec30`, which the thread's startup `0x217ec` registers on
+the `bk_timer` hardware-timer device (`0x19ed0` device-control,
+`bk_timer_initialize`). `bk_timer` is Timer 5: interrupt-status bit 9 of
+`timer3_5_ctl`, with its period `0x7d00` at `0x802a44`. The emulator's `_pacing`
+raises only Timer 3 (`timer3_5_ctl` bit 7, ICU bit 8), the RTOS tick of the
+OpenBeken and Tuya firmwares, so the giver never runs and the thread is never
+signalled (`wait`=1, `nodeproc`=0 for ever). With Timer 5's status bit raised,
+the thread wakes, the scan runs hundreds of times and the hold is timed
+(`archive/s61-research/long_press.py`). The tools raise bit 9 themselves:
+raising every enabled channel in `_pacing` (as the BK7252 path does) breaks 3
+other BK7238 self-tests that drive Timers 4 and 5 at their own rates.
 
-The long-press is driven by that **key-driver timer thread** (entry `0x3eba0`): it
-waits on a signal (`0x134618`, timeout −1 = forever), then walks a timer list,
-decrements each countdown, and fires expired callbacks (`blx` at `0x3ec18`); the
-periodic scan is `0x421e0`. The armed 5-unit long-press timer sits in that list.
+**A press.** The emulator models `0x802B00` as PWM output only: it keeps the
+capture and PWM interrupt-status bits 30 and 31 in `state.pwmn_stat` (overlaid
+on reads, write-1-to-clear, driving ICU bit 9) and sets them from PWM activity,
+never from a pin's edge, so a press must set the channel's bit itself.
+`archive/s61-research/button_sim.py` does that through the
+[force-call harness](#tools-and-methods):
 
-#### After the long-press: into pairing
-
-The long-press callback posts a key event that the eWeLink **app key task**
-consumes and turns into pairing entry. Pairing then runs through the
-pairing-method dispatcher `0x21eb4` (method byte `0`=airkiss → `airkiss_start`
-`0x21e50`, `1` → `0x21d18`, `2` → `0x21d90`), fed by the config builder `0x74870`
-/ method runner `0x748cc`, driven by `PAIR_EVT_START_{COEXIST,EWELINK,BCM}` (name
-table `0x49c18`) through the AIS appfw state machine (state struct `0x404fb4`,
-state byte `0x404fb8`, functions `0x48a88`..`0x496b8`, appfw loop ~`0x49b40`).
-Reaching pairing starts soft-AP / BLE / AirKiss commissioning; completing a Wi-Fi
-join from there still needs the app + cloud (or a Matter commissioner).
-
-#### Why it is dormant in the emulator
-
-The whole eWeLink app layer — `ais_appfw_task`, the button registration
-(`key_add`), the provisioned-check — never starts because the `app` RT-Thread
-**hangs in a factory device-identity self-check**. See
-[The flash-UID integrity gate](#the-flash-uid-integrity-gate-root-cause) below;
-correcting it makes the firmware boot the app framework and **register the button
-by itself**, in proper RTOS context. The block init `0x1bc18` *does* run at boot
-(it is generic); `key_add` and the key subsystem do not, only because they are
-downstream of the hung app-start.
-
-One emulator-modelling fact still matters for a simulated press:
-
-- **The emulator models `0x802B00` as PWM output only.** The capture/PWM
-  interrupt-status bits 30/31 are kept virtually in `state.pwmn_stat` (overlaid on
-  reads, W1C on writes, driving ICU bit 9) and are set from PWM activity, never
-  from a GPIO-capture edge. So even a fully set-up channel would not see its edge
-  raise the interrupt. Setting `state.pwmn_stat` for the channel is the hook that
-  fires it.
-
-#### The flash-UID integrity gate (root cause)
-
-Boot creates every RTOS task through `ais_evt_task`, then the `app` task runs AIS
-app-start `0x24430` → `0x29b54`, which reaches a poll loop at `0x29c38`: it builds
-`SHA256(hex(flash_uid) + identity_fields)` (hash `0x25454`, string via `0x19b70`)
-and `memcmp`s it (`0x42788`) against a stored 32-byte blob at `ctx+0x84`. On a
-**mismatch it branches to `0x29c44`, an infinite 1-second-delay loop** — a
-deliberate integrity-gate hang, confirmed by a stack unwind that finds the `app`
-task parked there (`0x24430`→`0x29b54`→`0x29c4a`→delay `0x1349b4`).
-
-The 16-byte identity is the SPI flash chip's Unique ID: `0x2856c` → `0x21408`
-opens the `flash` device and reads **`bk_flash_get_uid`** (SPI command `0x4B`).
-The boot fix `spi_flash.py` answers `0x4B` with a *synthetic* UID (ASCII
-`S61EMU\0\1` = `533631454d550001ffff…`), so the computed hash (`e3f30c7e…`) never
-matches the dump's real-UID-derived stored value (`f009c2a1…`) → the app task
-hangs forever → no appfw, no button, no pairing. A real *unprovisioned* device
-passes this gate (its own flash UID matches its own factory cert) and proceeds to
-pairing-ready. The real UID is a 128-bit hardware value not recoverable from the
-dump (the config's `secureCertSha256` / `chip-factory.uniqueId*` do not match the
-runtime target), so a legitimate pass needs the real device's flash UID; otherwise
-the gate must be satisfied as an emulator opt-in.
-
-**Proven effect of clearing the gate** (force the `0x29c3c` memcmp result to
-"equal", the real-HW outcome — [`tools/beken/emulator/integrity_gate.py`](../tools/beken/emulator/integrity_gate.py)):
-within ~3.5 s the firmware takes the verified path, app-start continues,
-**`key_add` runs (the button registers itself on GPIO pins 0 and 2)**, the
-provisioned-check `0x48cc4` runs, and **`ais_appfw_task` is created** — all
-naturally, none force-called.
-
-#### What the simulation achieves (reproducible)
-
-`archive/s61-research/button_sim.py` drives the firmware's genuine key stack using
-the Thumb-bit force-call harness (see [Tools and methods](#tools-and-methods)):
-
-1. force-run the block init `0x1bc18`;
-2. force-run `key_add` (`0x41f64`) with a descriptor
-   `bytes([0,0,PIN,PIN,PIN,PIN,0,0,0,0,0,0])` at scratch `0x403d80`;
-3. "press" = drive the GPIO low and set the channel's capture bit
+1. run the block init `0x1bc18`;
+2. run `key_add` (`0x41f64`) with the descriptor
+   `bytes([0,0,PIN,PIN,PIN,PIN,0,0,0,0,0,0])` at the scratch address `0x403d80`;
+3. press: drive the GPIO low and set the channel's capture bit
    (`state.pwmn_stat |= 1 << (2*GROUP + CH)`, with `GROUP, CH = PIN//2, PIN&1`).
 
-Holding the level low needs the pin kept input-readable: `0x3eb30` decodes the
-per-pin mode (`0x1a198`) from `gpio_cfg` bits 2/3, and the capture config reads the
-non-input path, so the tool forces `gpio_cfg[PIN] = (… | 0x0c) & ~0x1`. A single
-capture edge only debounces to 1, so the press re-triggers ~6 edges like a real
-held button to pass the `> 2` threshold.
-
-Result, entirely through the firmware's own code:
+To hold the level low the pin must stay readable as an input: `0x3eb30`
+decodes the pin's mode (`0x1a198`) from `gpio_cfg` bits 2 and 3, and the
+capture config reads the non-input path, so the tool forces
+`gpio_cfg[PIN] = (… | 0x0c) & ~0x1`. One capture edge debounces only to 1, so
+the press repeats about 6 edges, as a held button does, to pass the `> 2`
+threshold. The firmware's own code does the rest:
 
 ```
 ISR(0x1bfd8) -> handler(0x4203c, r0=pin) -> press_path -> 5s-longpress-timer armed @0x42078 (timer_start r1=5)
 ```
 
-i.e. the real ISR runs, dispatches to the real key handler with the correct pin
-id, the handler runs its real debounce, and arms the real 5-second long-press
-timer.
+That script predates the integrity-gate finding and defaults to pin 3; past
+the gate the firmware registers the button on pins 0 and 2 itself, and
+`long_press.py` holds those.
 
-#### The key-driver timer thread's wake: the `bk_timer` = Timer 5
+**The long-press action** (`0x42250`) posts through `0x3eb6c` and `0x12c180` to
+`bk_gpio_output`: it drives the relay or an LED. It is not the pairing trigger.
 
-The long-press timing is driven by the **key-driver timer thread** (entry
-`0x3eba0`): it blocks on the RTOS wait `0x134618` → `0x151a8` (`svc #0`, waits on
-its TCB signal `[tcb+0x54]`), and on each wake walks its software-timer list once
-and runs the **periodic key-scan `0x421e0`**, which reads the button pin and
-counts the hold. Its wake is `rt_thread_resume` (`0x15274`, Thumb veneer
-`0x134818`) called by the giver `0x3ec30`, registered by the thread startup
-`0x217ec` on the **`bk_timer` hardware-timer device** (`0x19ed0` device-control,
-`bk_timer_initialize`). `bk_timer` is **Timer 5** (int-status bit 9 of
-`timer3_5_ctl`; period `0x7d00` at `0x802a44`).
+### Entering pairing
 
-The emulator's `_pacing` auto-raises only **Timer 3** (`timer3_5_ctl` bit 7,
-ICU bit 8) — that is the RTOS tick on the OpenBK/Tuya firmwares — so Timer 5's
-interrupt was never raised, the giver never ran, and the thread was signalled 0
-times (`wait`=1, `nodeproc`=0 forever). Raise Timer 5's status bit and the giver
-fires, the thread wakes, the scan runs, and the hold is timed — proven with
-`archive/s61-research/long_press.py` (`scan` runs hundreds of times, long-press
-action `0x42250` fires). The script raises `timer3_5_ctl` bit 9 itself because a
-blanket per-enabled-channel raise in `_pacing` (what the BK7252 path does)
-**regresses 3 other BK7238 self-tests** that drive Timers 4/5 at their own rate;
-a clean fork fix needs faithful per-timer-period modelling, not a slow-tick raise.
+Once the gate is passed, the pairing state machine is alive. `ais_appfw_task`
+(entry `0x319a8`) loops at `0x319c4`, waiting about 30 times a second on
+`rt_event_recv` (`0x134da8`, mask 7) for the event object `[0x4040e0]`. Its state
+is the struct `0x404fb4` (state byte `0x404fb8`; functions `0x48a88` to `0x496b8`,
+the loop near `0x49b40`), and it is driven by
+`PAIR_EVT_START_{COEXIST,EWELINK,BCM}` (name table at `0x49c18`).
 
-The long-press action `0x42250` posts through `0x3eb6c` → `0x12c180` →
-`bk_gpio_output` — i.e. it drives the **relay/LED**, and the scan reads pin
-`[0x404c25]`. This is the relay path, not the eWeLink pairing trigger.
+Pairing runs from an appfw state handler to the config builder `0x74870`, the
+method runner `0x748cc` and the method dispatcher `0x21eb4(r0=config)`, which
+reads `config[0]`:
 
-#### Where it currently stops: the appfw pairing event
+| Method | Handler | What it starts |
+|---|---|---|
+| 0, coexist | `0x21e50` (`airkiss_start`) | the soft-AP (`0x21a80`) and the AirKiss sniffer, through the RW task |
+| 1, station | `0x21d18` | station mode (the Wi-Fi mode is set through `0x20e00`) |
+| 2 | `0x21d90` | not traced |
 
-The pairing state machine is **alive and cycling** once the gate is cleared:
-`ais_appfw_task` (entry `0x319a8`) loops at `0x319c4`, waiting (~30 Hz) on
-`rt_event_recv` (`0x134da8`, mask 7) on the event object `[0x4040e0]`. Pairing
-runs an appfw state handler → config builder `0x74870` → method runner `0x748cc`
-→ dispatcher `0x21eb4` (→ AirKiss `0x21e50` / `0x21d18` / `0x21d90`) or
-`Soft_AP_start 0x137c80`. Posting a raw event to the appfw (`rt_event_send`
-`0x134674` to `[0x4040e0]`) wakes it and re-runs `0x748cc`, but it does **not**
-pair: no pairing method/params are configured, so the runner is a no-op.
+The runner `0x74870` hard-codes `config[0]=1`; the coexist method comes from
+another runner, or from the dispatcher's RAM-resident caller `0x3f60c`.
 
-The real trigger sets the method first: the `pairingMode` command handler
-`0x492ae` (which needs a cloud/BLE **session** argument — `arg1+0x88/0x90` — so it
-cannot simply be force-called), or the button long-press's app-layer path. On
-this firmware the physical-button long-press (`0x42250`) drives the relay; the
-eWeLink pairing long-press is a separate app path that still has to be traced to
-where it sets the pairing method and posts `PAIR_EVT_START` (names at `0x49c18`).
+**What does not start it.** Posting a bare event to the appfw (`rt_event_send`
+`0x134674` to `[0x4040e0]`) wakes it and runs `0x748cc` again, but with no
+method or parameters set the runner does nothing. The real triggers, which set
+the method first, are two:
 
-#### Driving the pairing methods: soft-AP and station mode come up
+- **The `pairingMode` command**, registered by name through `0x27568`
+  (`register("pairingMode", 0x492ae)`; its log string `"pairingMode by %d"` is at
+  `0x49548`). The handler `0x492ae` fetches its value with `get_value` (`0x12200`)
+  and then reads a session object given as its first argument: the JSON pointer at
+  `session+0x8c`, its length at `+0x90`, a flag at `+0x88`. The command is a JSON
+  array (cJSON `0x264d6`, `0x265da`, `0x26712`), with each item's fields decoded
+  from base64 or hex (`0x12f8b8`) and run through crypto and list operations
+  (`0x5b078`, `0x4842e`, `0x48372`, `0x48400`). It needs a genuine session from
+  the cloud WebSocket or BLE, so it cannot simply be called, and rebuilding
+  eWeLink's encoded command would be a project of its own that nothing needs:
+  [the cloud dial](#the-cloud-dial) takes one call.
+- **The button's app-layer path.** The long press posts a key event that the app's
+  key task turns into pairing entry. Where that sets the method and posts
+  `PAIR_EVT_START` has not been traced.
 
-The method **dispatcher `0x21eb4(r0=config)`** reads `config[0]`: **0 = coexist**
-(`0x21e50` → soft-AP `0x21a80` **and** the AirKiss sniffer via the RW task),
-**1** (`0x21d18`, station — sets Wi-Fi mode via `0x20e00`), **2** (`0x21d90`). The
-runner `0x74870` hard-codes `config[0]=1`; the coexist/AirKiss method comes from a
-different runner / the RAM-resident `0x21eb4` caller `0x3f60c`.
+**Calling the dispatcher directly** does drive the radio. Called in the appfw
+task's own context (a hook on the loop at `0x319c4` with the force-call harness,
+so that the RTOS and RW-task messaging run in a real task),
+`archive/s61-research/pair_drive.py` shows:
 
-Called in the appfw task's own context (hook loop `0x319c4` + the force-call
-harness, so the RTOS/RW-task messaging runs in a real task), the dispatcher drives
-the emulated radio into the right mode — verified with
-`archive/s61-research/pair_drive.py`:
+- **Method 0** builds the soft-AP, the MAC leaves monitor mode (`RX filter … back
+  to normal reception`) and it sends beacons. The fork's virtual peer reports
+  `device acts as an access point (it sends beacons)`, takes the station role and
+  finds the device's BSS. The network's name is the firmware's default, `JIEWU`
+  (in the image at logical `0x137ed8`), and it is protected by a cipher, so the
+  peer, which joins only open networks, does not finish associating.
+- **Method 1** puts the MAC in station mode, probing and associating; the peer
+  takes the access-point role and registers the device as a station.
 
-- **Method 0 (coexist → soft-AP).** `0x21a80` builds the soft-AP struct, the MAC
-  leaves monitor mode (`RX filter … back to normal reception`) and **transmits
-  beacons**: the fork's virtual peer reports `device acts as an access point (it
-  sends beacons)` and takes the station role, finding the device's BSS. **The
-  soft-AP is observably beaconing** (but beacon-only — no dhcpd, no listener; see
-  [What the soft-AP actually does](#what-the-soft-ap-actually-does-beacon-only-no-dhcpd-no-listener)).
-  The beaconed SSID is the firmware's own default (`JIEWU`, baked in the image at
-  logical `0x137ed8`), cipher-protected — so the auto-peer, which only joins open
-  networks, does not finish associating.
-- **Method 1 (station).** The MAC enters station mode and probes/associates; the
-  peer takes the AP role and registers the device as a station.
-
-So the firmware's pairing-start code runs **and the modelled radio follows it into
-AP / station mode.**
-
-##### What the soft-AP actually does: beacon only (no dhcpd, no listener)
-
-Does a phone join the soft-AP and POST credentials, as in eWeLink's classic AP
-pairing? **No.** The soft-AP in the COEXIST path is a bare beaconing AP in the
-emulator, and it carries no credential-provisioning server in any case.
-
-The coexist handler `0x21e50` runs in two parts. The **first** part is the
-soft-AP bring-up `0x21a80` (build the AP-config struct — `0x219e8`, `0x21920`,
-ending `0x24248`); this completes and the MAC beacons. The **second** part — the
-continuation at `0x21e80` that calls the IP-services/dhcpd setup (`0x21ea4` →
-`0xfdf0c`; the netif-IP config `0xfe4ac` and the role-gated path whose failure
-logs `warning: dhcpd no open`) — sits **behind two RivieraWaves kernel sends**,
-`0xee350`/`0xee35c` (messages `0x64`/`0x65` via `0xee048` → `0xedfb4`). A
-call-sequence trace (method 0) ends exactly there:
-
-```
-disp → coexist_21e50 → softap_21a80 (→219e8→21920→24248) → rw350 → rw35c → ⊥
-```
-
-`0xee35c` never returns into the handler: in the unprovisioned/emulated state
-`0xedfb4` returns -1 (its destination KE task at `*0x417564` is not registered),
-and `0xee35c` is a **blocking retry-with-delay** request (`0x13499c` between
-tries), which the synchronous force-call harness cannot carry through (it yields
-the CPU). So the IP/dhcpd continuation is unreachable in the emulator, and **a dynamic probe
-confirms it**: driving method 0 and watching `0xfe4ac` (netif IP), `0xfdf70` /
-`0xfdfaa` / the `dhcpd no open` site, and the two port-8081 server builders —
-**none fire**; only the beacon path runs. Whether `0xfdf0c`'s role-gated path
-would start a DHCP server for the AP on real hardware is therefore inferred
-(plausible — the dhcpd code is there) but **unobserved**.
-
-Independently, **there is no AP-mode provisioning listener in the firmware at
-all.** The only TCP/WebSocket server is the port-8081 LAN-control endpoint
-(`http://%s:8081`, `ws://%s:8081`, advertised over mDNS `_ewelink._tcp`) — the
-same LAN-control server the S60 opens *once online* (see
-[cloud-stub.md](cloud-stub.md)), gated on the station/online path, never on the
-soft-AP path; there is no `/ap`-style cred-POST endpoint in the image. Credentials
-reach this device over **BLE** (`EwelinkBleServer`, eWeLink + Matter), feeding the
-common sink (`recv ssid/password/timeout` → store `wifi-ssid`/`wifi-pass` →
-`switch wifi`). So the COEXIST soft-AP advertises presence during pairing (and, on
-real hardware, likely stands up an AP IP/dhcpd); it is **not** a self-contained
-credential-provisioning AP. This is why seeding `wifi-ssid`/`wifi-pass` directly
-is the right way to get the emulated device onto a network — it lands in the same
-end state without the BLE handoff the emulator has no radio for.
-
-> **If this project ever implements its own LAN client** (to drive a device on port 8081 once
-> it is online, rather than over the cloud WebSocket), look to **iHost**, which
-> drives eWeLink devices locally. Its "eWeLink Smart Home" add-on would contain a
-> working implementation of the encrypted LAN-control protocol and the device-key
-> handling — a useful reference for the mDNS `_ewelink._tcp` discovery, the port-8081
-> request format, and the AES scheme keyed on the device secret. Note this is a
-> control channel only: the stock LAN endpoint carries no firmware-push route (no
-> `/zeroconf/ota_*`), so OTA still goes through the cloud-dial redirect — the LAN
-> client would be for exercising an online device, not for conversion.
-
-**AirKiss decode is not implemented in this build — `0x403b20` is a stub
-callback.** `0x403b20` is the monitor-mode frame **callback pointer**: the RX
-consumers `0xaaf40` and `0xb37a8` do `bl 0x2220c` (read `*0x403b20`) then
-`blx r3` — they call it as a function, once per received monitor frame. The only
-code that writes it is the register helper `0x221fc`
-(`set_monitor_cb(cb){ if(cb) *0x403b20=cb; }`) and the clear `0x221bc`
-(`*0x403b20=0`). `0x221fc` has exactly two callers, both in the AirKiss start
-handler (`0x12c666` and `0x12c6a4`), and the only non-zero value either stores is
-the literal **`0x12c483`** — which is `bx lr`, a no-op (verified: runtime bytes ==
-flash bytes at `0x12c482`). So the registered AirKiss decoder is a stub: monitor
-frames routed to it are discarded. Confirmed end to end — setting
-`*0x403b20 = 0x12c483` and replaying 11 000+ frames in monitor mode calls the
-callback for every frame (consumer `0xaaf40` → `0x12c482`) with zero faults and no
-decode. eWeLink kept the AirKiss **scaffolding** (the start/stop guards, the
-`monitor (ie.airkiss) is not finish yet` log at `0x137c90`, the register/clear
-helpers) but compiled out the payload decoder — consistent with the move to
-**soft-AP + BLE** provisioning. The coexist RW path (`0xee35c` → msg `0x65`) does
-not change this: its handler `0x12c640` registers the same stub, and in emulation
-the send fails anyway (`0xedfb4` returns -1 because the destination KE task at
-`*0x417564` is not registered in the unprovisioned state). So there is no AirKiss
-decode loop in this firmware to close; the working pairing route is soft-AP
-(above) plus BLE.
-
-Open items (no route ruled out):
-
-- **Confirm BLE/`pairingMode` is the real credential-decode path.** With AirKiss
-  decode stubbed, the remaining provisioning decoders are the soft-AP CoolKit HTTP
-  handler and the BLE/`pairingMode` command (`0x492ae`); trace where each writes
-  the received `wifi-ssid`/`wifi-pass`.
-- **Complete a soft-AP association.** Attach the peer with the device's soft-AP
-  SSID/passphrase (or an open build) so the station link finishes and the CoolKit
-  AP HTTP provisioning exchange can be exercised.
-- **Trace the native pairing-start.** Find the app code that sets the pairing
-  method and posts `PAIR_EVT_START` to the live (cycling) appfw, so pairing starts
-  from the firmware itself rather than a forced dispatcher call — the cleanest
-  end-to-end entry (names at `0x49c18`; `pairingMode` handler `0x492ae` needs a
-  cloud/BLE session arg).
-- **Faithful BK7238 timer model.** Model each enabled Timer 3-5 channel's own
-  period so Timer 5 (`bk_timer`) is raised at its real rate without the slow-tick
-  over-fire that regresses the Zengge/other BK7238 self-tests; then the key-driver
-  thread wakes natively and `long_press.py` / `pair_drive.py` need no
-  manual Timer-5 raise.
-- **Integrity gate, legitimately.** With the real device's flash UID the gate passes
-  for real (`spi_flash.py` already takes `uid=`; its "nothing needs the real value"
-  comment is wrong for the S61), removing the need for the `0x29c3c` bypass.
-
-> Note: the registered button is on **GPIO pins 0 and 2**, not pin 3 —
-> `archive/s61-research/button_sim.py` defaults to pin 3 and predates both the
-> integrity-gate finding and natural registration.
+Pairing starts soft-AP, BLE and AirKiss commissioning; finishing a Wi-Fi join
+from there still takes the app and the cloud, or a Matter commissioner.
 
 ### Pairing and provisioning routes
 
-Each route below is a way to get the device into pairing / onto Wi-Fi. They share
-one dependency: the pairing/commissioning machinery runs only once pairing is
-actively entered (the button, or a command from the app). The button
-([above](#the-button-press-the-pairing-trigger)) is the on-device trigger; the
-other routes are listed with their current stopping point.
+Each route below gives a device its Wi-Fi credentials once pairing has been
+entered. None can be completed in an emulator with no radio, which is why
+the emulated device joins by
+[seeding the credentials](#joining-wi-fi-by-seeding-the-credentials).
 
-#### AirKiss (smartconfig) relay — decoder stubbed in this build
+#### The soft-AP: beacons only
 
-AirKiss would suit a bridge because the phone never associates with the device — it
-broadcasts, the device sniffs. A phone's broadcast is captured off-air and injected
-into the emulated MAC. But **this firmware's AirKiss decoder is a stub**, so there
-is nothing on the device to consume the frames (see
-[Driving the pairing methods](#driving-the-pairing-methods-soft-ap-and-station-mode-come-up)
-for the full trace). The two sub-results are worth keeping separate:
+The firmware has `Soft_AP_start` and `bk_wlan_ap_init`, and the soft-AP is driven
+by command: the device enters COEXIST unconditionally at start
+(`bk_wlan_set_coexist_at_init`) and changes mode on a `pairingMode` command. Its
+status printer is at `0x130c00` (`softap:ssid=%s,channel=%d`), and `0x21a80`
+refers to the `Soft_AP_start` symbol at `0x137c80`. Once an access point is up,
+the emulator's peer takes the station role (the OpenBK7238 access-point self-test
+passes).
 
-- **Delivery is solved (100 %).** `sent == rx` on both a synthetic self-test and a
-  real 7446-frame capture, with full descriptor recycle, once injection is gated
-  on the RX-FIQ handler object (`*0x403c10`) existing — see
-  [Monitor-mode RX injection](#monitor-mode-rx-injection).
-- **There is no decoder to reach.** `0x403b20` is the monitor-frame callback the
-  RX path calls per frame (`0xaaf40`/`0xb37a8`: read `*0x403b20`, `blx` it). The
-  AirKiss start handler (`0x12c666`) registers it via `0x221fc`, but the only
-  non-zero value ever stored is `0x12c483` = `bx lr` (a no-op; runtime bytes ==
-  flash). Proven: setting `*0x403b20 = 0x12c483` and replaying 11 000+ monitor
-  frames calls the stub once per frame, 0 faults, nothing decoded. The scaffolding
-  (`0x223b0` start / `0x221bc` stop, the `monitor (ie.airkiss) is not finish yet`
-  log at `0x137c90`) is all that remains; eWeLink compiled out the EZ decoder in
-  favour of soft-AP + BLE. There is no decoder behind the callback to reach.
+It is not an access point you join to hand over credentials, as in eWeLink's
+older AP pairing:
 
-The delivery pipeline tooling still stands for any future firmware that *does*
-decode: `archive/s61-research/airkiss_capture.sh` (AX200 monitor capture to pcap)
-and `airkiss_replay.py` (replay a pcap into the MAC; `--selftest` checks the
-pipeline, `S61_RX_OBJ_PTR` gates injection on the handler object). Never commit a
-real capture: AirKiss carries the Wi-Fi credentials in the frame lengths.
+- **It carries no provisioning server.** The only TCP or WebSocket server in the
+  image is the LAN control endpoint on port 8081 (`http://%s:8081`,
+  `ws://%s:8081`, advertised over mDNS as `_ewelink._tcp`), the one the S60 opens
+  once online ([cloud-stub.md](cloud-stub.md)). It is gated on the station and
+  online path, never on the soft-AP's, and the image has no endpoint to POST
+  credentials to. Credentials reach this device over BLE (`EwelinkBleServer`, for
+  eWeLink and Matter), feeding one sink: `recv ssid/password/timeout`, store
+  `wifi-ssid` and `wifi-pass`, `switch wifi`.
+- **In the emulator it only beacons.** The coexist handler `0x21e50` runs in two
+  parts. The first brings the soft-AP up (`0x21a80`, building the config through
+  `0x219e8` and `0x21920`, ending at `0x24248`); that completes, and the MAC
+  beacons. The second, from `0x21e80`, calls the IP and DHCP-server setup
+  (`0x21ea4`, then `0xfdf0c`; the netif IP config `0xfe4ac`, and a path gated on
+  the role whose failure logs `warning: dhcpd no open`). Between them are two
+  RivieraWaves kernel sends, `0xee350` and `0xee35c` (messages `0x64` and `0x65`,
+  through `0xee048` to `0xedfb4`), and a trace of the calls ends there:
 
-#### Soft-AP setup network
+  ```
+  disp → coexist_21e50 → softap_21a80 (→219e8→21920→24248) → rw350 → rw35c → ⊥
+  ```
 
-The firmware supports `Soft_AP_start` / `bk_wlan_ap_init` and CoolKit AP HTTP
-provisioning. Soft-AP is **command-driven**: the device enters COEXIST
-unconditionally (`bk_wlan_set_coexist_at_init`) and switches mode on a runtime
-`pairingMode` command. Relevant addresses: status printer `0x130c00`
-(`softap:ssid=%s,channel=%d`), `Soft_AP_start` symbol `0x137c80` referenced by
-`0x21a80`, `"pairingMode by %d"` `0x49548`. The command is registered name→handler
-via `0x27568` (`register("pairingMode", 0x492ae)`); the handler `0x492ae` fetches
-its value via `get_value` `0x12200` and then dereferences a per-command **session**
-(`arg1+0x88/0x90/…`). Reaching soft-AP needs a real `pairingMode` command (from the
-cloud WebSocket or BLE) so the handler runs with a genuine session/params context;
-the on-device equivalent is the button entering pairing. Once an AP is up, the
-emulator's peer takes the station role (device-as-AP is modelled — the OpenBK7238
-AP self-test passes), so HTTP provisioning would run over the emulated link.
+  `0xee35c` never returns to the handler. On an unprovisioned, emulated device
+  `0xedfb4` returns -1, its destination KE task at `*0x417564` not being
+  registered, and `0xee35c` is a blocking request that retries after a delay
+  (`0x13499c`), which the synchronous force-call harness cannot carry through.
+  Watching `0xfe4ac`, `0xfdf70`, `0xfdfaa`, the `dhcpd no open` site and the two
+  builders of the port-8081 server while method 0 runs confirms it: none fires.
+  That a real device gives the soft-AP an address and a DHCP server is likely,
+  the code being there, but has not been seen.
 
-#### BLE commissioning
+So the soft-AP only shows the device is there while it pairs. To drive a
+device over the LAN on port 8081 rather than through the cloud, iHost is the
+reference: its "eWeLink Smart Home" add-on drives eWeLink devices locally, with
+a working client for the mDNS discovery, the request format and the AES scheme
+keyed on the device's secret. That channel only controls: the stock LAN
+endpoint has no firmware route (no `/zeroconf/ota_*`), so a conversion still
+goes through the cloud's `upgrade`.
 
-The device offers `ewelink_ble_pairing` and Matter BLE commissioning. Current
-findings:
+#### AirKiss: the decoder is a stub
 
-- The BLE **controller model answers host commands**: the boot gapm commands
-  (`GAPM_RESET` op 1, `GAPM_SET_DEV_CONFIG` op 3) complete with `gapm_cmp_evt`. So
-  BLE advertising could complete if it were ever issued.
-- **No auto-advertising at boot** (0 `[BLE_ADV]` payloads staged). Advertising
-  starts from the pairing trigger. The Matter CHIP `BLEManagerImpl` /
-  commissioning window (`COMMISSION_OPEN_WINDOW : ECM/BCM`, ~`0x49exx`) and the
-  eWeLink/Matter pairing starter (`ewelink_ble_pairing=%d,
-  matter_ble_commission=%d`, ~`0x48abc`) live in the pairing state machine.
-- **No HCI splice point for a real-phone bridge.** `hci_send_2_controller`
-  (`0xc1da4`) fires once at boot for a vendor command (`r3=0x848`); the GAP flow
-  goes through RivieraWaves **KE messaging in shared memory**, not a serialized
-  HCI boundary. Host and controller are coupled by in-process kernel messages, and
-  the radio is the proprietary RW link layer behind the `0x900000` block +
-  exchange memory. Bridging a real dongle would mean intercepting KE messages and
-  reimplementing the controller's host-facing side.
+AirKiss would suit a relay, as the phone never associates with the device: it
+broadcasts, and the device listens. But this build has nothing behind the
+listening.
+
+`0x403b20` holds the callback for frames received in monitor mode. The RX
+consumers `0xaaf40` and `0xb37a8` do `bl 0x2220c` (which reads `*0x403b20`), then
+`blx r3`, once a frame. Only two pieces of code write it: the register helper
+`0x221fc` (`set_monitor_cb(cb){ if(cb) *0x403b20=cb; }`) and the clear `0x221bc`
+(`*0x403b20=0`). The helper has exactly two callers, both in the AirKiss start
+handler (`0x12c666` and `0x12c6a4`), and the only non-zero value either stores is
+the literal `0x12c483`, which is `bx lr` (the bytes at `0x12c482` are the same in
+RAM as in flash). With `*0x403b20 = 0x12c483` set and more than 11,000 frames
+replayed in monitor mode, the callback is called for every frame (`0xaaf40` to
+`0x12c482`), with no fault and nothing decoded.
+
+eWeLink kept the scaffolding (the start `0x223b0` and stop `0x221bc` with
+their guards, the log `monitor (ie.airkiss) is not finish yet` at `0x137c90`,
+the register and clear helpers) and compiled the decoder out, in keeping with
+its move to soft-AP and BLE. The coexist path changes nothing: its handler
+`0x12c640` registers the same stub, and in the emulator its send (`0xee35c`,
+message `0x65`) fails anyway.
+
+Delivering frames to the callback does work, 100% of them
+([Monitor-mode RX injection](#monitor-mode-rx-injection)), and the capture and
+replay tools (`archive/s61-research/airkiss_capture.sh`, `airkiss_replay.py`;
+[how to use them](../tools/beken/README.md#airkiss-end-to-end-procedure)) stand
+for any firmware that does decode. Never commit a real capture: AirKiss carries
+the Wi-Fi credentials in the lengths of its frames.
+
+#### BLE
+
+BLE is how credentials really arrive, through the eWeLink BLE provisioning
+protocol (the device also offers Matter BLE commissioning), and the protocol is
+understood from end to end.
+
+A BLE write goes to a dispatcher (`0x72940`), which looks the message type up in a
+table at `0x145430` and posts `{index, payload, len}` to a queue (`0x134b6c`, the
+queue `*0x402dd0`). A consumer task then calls `table[index].handler(payload,
+len)`. There are six commands, named here by their `[BLE CMD: …]` log strings:
+
+| Type | Handler | Command | Purpose |
+|------|---------|---------|---------|
+| `0x02` | `0x725e4` | AUTH_TOKEN | the app proves it knows the device's apikey |
+| `0x04` | `0x727bc` | REQ_SCAN / REQ_AUTH | scan for access points; sets the step byte `0x40cf14=2` |
+| `0x07` | `0x722a4` | REQ_CONNECT | connect to a scanned access point (by BSSID) |
+| `0x09` | `0x72258` | DEVICE_INFO_REQUEST | the device returns its info; step `=5` |
+| `0x0b` | `0x718a0` | SERVER_INFO_REQUEST | the cloud's dispatch server |
+| `0x0d` | `0x712e0` | HIDDEN_AP_CONNECT | the Wi-Fi credentials (`recv_ssid`) |
+
+- **The encryption.** Each message that carries data is decoded from base64, then
+  decrypted with AES-128-CBC and PKCS#7 padding. The AES key and AUTH_TOKEN's
+  "cache" are one 16-byte secret at RAM `0x40ce90`, derived from `factory_apikey`
+  at boot (the apikey UUID is in the same page; both are a real device's
+  identifiers and are not given here). So the secret can be read out of the
+  emulator, and nothing has to be forged. AUTH_TOKEN (`0x725e4`) compares the
+  decrypted token with that cache (`memcmp` `0x13456c`, called at `0x726d0`; its
+  error is `auth_token cmp err, recv[%s] cache[%s]`).
+- **The Wi-Fi message, type `0x0d`.** `recv_ssid(r0=packed_buf, r1=tag)` takes
+  `[ssid_len:1][ssid][pad:1][timeout:1][encflag:1][password…]`. With `encflag=1`
+  the password is copied into the connect config; the plain `encflag=0` path
+  copies only the name, a quirk of the firmware. `recv_ssid` packs a config
+  (`method=1` for station, the name at `+1`, the password at `+0x22`, the BSSID at
+  `+0xcf`) and sends it through the method dispatcher `0x21eb4`. Called in the
+  appfw's context with the password decoder bypassed, it makes the device
+  associate (WPA2) and take the DHCP lease `192.168.1.100`.
+- **What driving it reaches.** `archive/s61-research/ble_provision.py` sends
+  the messages through the dispatcher: the handlers run and Wi-Fi connects, but
+  the device is not paired. The handlers share a session state machine (session
+  flag `0x40cfe3`, step byte `0x40cf14`) and a field accumulator, and pairing's
+  completion is posted by the BLE connection's own lifecycle, which an emulator
+  with no radio never produces: after the whole sequence the device is on
+  Wi-Fi, still sends the `0xFFF6` eWeLink pairing advertisement, and dials
+  nothing. That completion is the one call [the cloud dial](#the-cloud-dial)
+  makes.
+
+What the emulator's BLE can and cannot do:
+
+- **The controller model answers the host.** The boot's gapm commands
+  (`GAPM_RESET` op 1, `GAPM_SET_DEV_CONFIG` op 3) complete with `gapm_cmp_evt`,
+  so advertising could complete if asked for.
+- **Nothing advertises at boot** (no `[BLE_ADV]` payload is staged). Advertising
+  starts from the pairing trigger: Matter's CHIP `BLEManagerImpl` and its
+  commissioning window (`COMMISSION_OPEN_WINDOW : ECM/BCM`, near `0x49exx`) and
+  the starter of eWeLink and Matter pairing (`ewelink_ble_pairing=%d,
+  matter_ble_commission=%d`, near `0x48abc`) live in the pairing state machine.
+- **A real phone cannot be bridged in.** `hci_send_2_controller` (`0xc1da4`)
+  fires once at boot, for a vendor command (`r3=0x848`). The GAP flow goes
+  through RivieraWaves KE messages in shared memory, not across a serialised HCI
+  boundary, and the radio is the proprietary RW link layer behind the
+  `0x900000` block and its exchange memory, so bridging a real dongle would mean
+  intercepting KE messages and rewriting the controller's host-facing side.
 
 ### Monitor-mode RX injection
 
-To accept relayed AirKiss frames, the MAC delivers received frames while in
-monitor mode even though the smartconfig path never drives the normal RX-enable
-handshake (it sets the wide-open filter `0x7fffffde` but the scan state machine
-stays out of `HW_ACTIVE`). This delivery is general and correct; note only that in
-*this* firmware the frames reach a stub callback (the EZ decoder is compiled out —
-[see above](#airkiss-smartconfig-relay--decoder-stubbed-in-this-build)), so the
-capability matters for other BK7238 images rather than for decoding this one.
+The fork can deliver received frames while the MAC is in monitor mode, which
+AirKiss needs: the smartconfig path sets the wide-open filter `0x7fffffde` but
+never drives the normal RX-enable handshake, and the scan state machine stays
+out of `HW_ACTIVE`. In this firmware the frames reach a stub, so this matters
+for other BK7238 images.
 
-Implemented in the fork (`src/wifimac.py`) as an **opt-in** so it cannot affect
-normal operation: a flag `monitor_rx_deliver` (default off; env `BK_MONITOR_RX=1`
-or `mac.monitor_rx_deliver = True`). When off, behaviour is identical to upstream
-(the OpenBK7231T Wi-Fi station regression tests pass 3/3 with it off). When on,
-`inject()` and `_rx_flush()` deliver frames if the MAC is `HW_ACTIVE` **or**
-(`monitor` and `monitor_rx_deliver`).
+It is in `src/wifimac.py`, off unless asked for: the flag `monitor_rx_deliver`
+(env `BK_MONITOR_RX=1`, or `mac.monitor_rx_deliver = True`). Off, the emulator
+behaves as upstream's does, and the OpenBK7231T station tests pass 3 of 3. On,
+`inject()` and `_rx_flush()` deliver frames if the MAC is `HW_ACTIVE`, or in
+`monitor` with the flag set.
 
-Delivery is reliable (100 %, `sent == rx`) given two conditions, both handled by
-the replay tool:
+Every frame arrives (`sent == rx`, on a synthetic self-test and on a real
+capture of 7446 frames, every descriptor recycled) given two things the replay
+tool sees to:
 
-- **Gate injection on the RX-FIQ handler object existing.** The firmware sets the
-  monitor RX *filter* very early (~0.15 s) but allocates the handler object
-  `*0x403c10` ~0.4 s later (allocator `0x17700`, store `0x16604`). Frames injected
-  into that gap drive the RX FIQ against a NULL object and hang it in a bogus
-  `memcpy` (`0x427a8`, length read as the unused vector-table word `0xdeadbeef`),
-  so descriptors are never recycled. Gating on `*0x403c10 != 0`
-  (`S61_RX_OBJ_PTR`) reproduces real-hardware ordering (a phone never broadcasts
-  that early).
-- **Inject from the emulator's worker thread** via a `tick` hook, not the main
-  thread (a cross-thread `rx_queue` access otherwise races).
+- **Wait for the RX-FIQ handler object.** The firmware sets the monitor filter
+  very early (about 0.15 s) but allocates the handler object `*0x403c10` about
+  0.4 s later (allocator `0x17700`, stored at `0x16604`). A frame injected in
+  between drives the RX FIQ against a NULL object and hangs it in a bogus `memcpy`
+  (`0x427a8`, its length read from the unused vector-table word `0xdeadbeef`), so
+  descriptors are never recycled. Waiting for `*0x403c10 != 0`
+  (`S61_RX_OBJ_PTR`) gives the order real hardware has, where no phone broadcasts
+  that early.
+- **Inject from the emulator's worker thread,** through a `tick` hook: from the
+  main thread, access to `rx_queue` races.
 
-RX FIQ path (for reference): vector `0x1c` → FreeRTOS context-save stub `0x108c0`
-→ C dispatcher `0x10950` → RAM-resident UMAC glue → ARM veneer `0x3f1520` →
-`0x16618`, which does `if (rtos_is_in_interrupt()) { obj = *0x403c10;
-process(obj); }` (`rtos_is_in_interrupt` = the RAM pair `0x3f0fb4`/`0x3f0f9c`),
-processors `0x17a20` → `0x1744c`. MAC RX interrupts are FIQ (lines 16–22); the
-firmware drives RX off `TIMER_RX_TRIGGER` (bit 17).
+The RX FIQ's path, for reference: vector `0x1c`, the FreeRTOS context-save stub
+`0x108c0`, the C dispatcher `0x10950`, RAM-resident UMAC glue, the ARM veneer
+`0x3f1520`, then `0x16618`, which does `if (rtos_is_in_interrupt()) { obj =
+*0x403c10; process(obj); }` (`rtos_is_in_interrupt` is the RAM pair `0x3f0fb4` and
+`0x3f0f9c`), and the processors `0x17a20` and `0x1744c`. MAC RX interrupts are
+FIQs (lines 16 to 22), and the firmware drives RX from `TIMER_RX_TRIGGER`
+(bit 17).
 
-### The connect path (reference)
+### The connect path
 
-When the device does connect, the path is: `BekenWiFiDriver` connect `0x74bfc`
-("stop monitor, then connect to ssid", gated `if arg3!=0`) → `0x74b90` → `0x223f0`
-(`bk_wlan_sta_init` config + scan/connect start). The config is a
-`network_InitTypeDef_st` (`wifi_mode@0`, `wifi_ssid@1`, `wifi_key@~33`, `dhcp@161`;
-~158 bytes); `sta_init` is `0x21bf8`. Connect first stops monitor via `0x21dbc` →
-`0x20d14` → `sub_ee3c9` → `sub_ee049` → `sub_edfb5`.
+When the device connects, it goes from `BekenWiFiDriver`'s connect, `0x74bfc`
+("stop monitor, then connect to ssid", gated by `if arg3!=0`), to `0x74b90` and
+`0x223f0` (`bk_wlan_sta_init`'s config, and the start of scan and connect). The
+config is a `network_InitTypeDef_st` of about 158 bytes (`wifi_mode@0`,
+`wifi_ssid@1`, `wifi_key@~33`, `dhcp@161`), and `sta_init` is `0x21bf8`. Connect
+first stops monitor mode through `0x21dbc`, `0x20d14`, `sub_ee3c9`, `sub_ee049`
+and `sub_edfb5`.
 
-`sub_edfb5` is the **RivieraWaves RW-task message send**: it builds a message and
-either processes it synchronously (if `in_rw_task()` — `sub_134bed(0x417564)` — and
-a flag bit is clear) or posts it to the RW task and waits on a semaphore for the
-result. Stop-monitor is also queued via `wpa_hostapd_queue_command` (`sub_db0f9`)
-to the wpa_supplicant command queue (handle `*0x417474`, queue `0x421cf8`, cmd
-116), processed by `wpas_thread`. These operations complete only when driven by
-the firmware's real task context and MAC-event sequencing; a mid-run force-call
-from another context does not complete the round-trip. `IsWiFiStationProvisioned`
-is `0x7388e` (reads `wifi-ssid` via `0x5ad84` → `0x12f438`), reached from CHIP
-`DriveStationState` `0x73b28`.
+`sub_edfb5` is the RivieraWaves RW-task message send. It builds a message and
+either handles it at once (when `in_rw_task()`, which is `sub_134bed(0x417564)`,
+and a flag bit is clear) or posts it to the RW task and waits on a semaphore for
+the result. Stop-monitor is also queued with `wpa_hostapd_queue_command`
+(`sub_db0f9`) to the wpa_supplicant command queue (handle `*0x417474`, queue
+`0x421cf8`, command 116), which `wpas_thread` works through. These complete
+only in the firmware's real task context and the MAC's own order of events, so
+a call forced from another context never gets its answer.
+`IsWiFiStationProvisioned` is `0x7388e` (it reads `wifi-ssid` through `0x5ad84`
+and `0x12f438`), reached from CHIP's `DriveStationState`, `0x73b28`.
 
 ## Tools and methods
 
-- **Emulator run:** `src/main.py <dump> --with-boot -chip BK7238 --only-uart
-  --wifi-peer auto` (peer roles: `auto`, `ap --wifi-ssid <x> --wifi-pass <y>`;
-  `--net-out` for the real cloud).
-- **FLASHDBG** (`FLASHDBG=1`, built into `emulator.py`): logs config-region flash
-  ops (read opcode `op=5`); located the live config reads at `0x3e0000`/`0x3f6000`.
-- **RAM dump + search** (`emu.mu.mem_read(0x400000, 1<<20)`): found the decoded
-  apikey UUID and the hardcoded URL template `http://%s-apid.coolkit.%s/...`.
-- **Watchpoints** (`UC_HOOK_MEM_WRITE` / `UC_HOOK_MEM_READ`, scoped to a target
-  buffer): located the apikey formatter `0x427b8` and memset `0x45ec`; general
-  technique for finding the PC and registers that produce/consume a buffer.
-- **Thumb-bit force-call harness:** run a chosen function mid-boot. Save registers,
-  set args, set `LR = 0x5` (trap at `0x4`) and PC odd (`addr | 1` for Thumb), bump
-  `emu._exc_epoch` so the chunked run loop re-reads PC + the Thumb bit; a hook at
-  `0x4` restores registers on return. Set CPSR to `(cpsr & ~0x3f) | 0x1f | 0x20`.
-  This reaches firmware code correctly, but cannot satisfy RTOS/RW-task context
-  that only exists inside the owning task/thread (force-calls into the RW-task
-  message path or the key-driver timer thread park or fault for this reason).
-- **Static analysis on the logical image.** `unstripe.py` removes the CRC
-  stripes to produce `logical.bin`, where CPU address == file offset, so static
-  addresses match runtime. Then: `disasm.py` (capstone disassembly),
-  `xref.py` (BL/BLX callers + data-word refs for an address), `strxref.py`
-  (find code by the log/format string it uses), and `decomp.py` (angr
-  pseudo-C decompiler — no Java/Ghidra needed).
-- **tools/beken** (`tools/beken/`): the static-analysis tools above, plus the
-  provisioning drivers `seed_join.py` (seed creds → Wi-Fi join) and
-  `cloud_dial.py` (seed + synthesise the pairing trigger → **eWeLink cloud
-  dial**). `archive/s61-research/` holds the rest: `ble_provision.py` (drive the
-  eWeLink BLE messages through the dispatcher → Wi-Fi join), `button_sim.py`
-  (button press), `long_press.py`, `pair_drive.py`, and `airkiss_capture.sh` +
-  `airkiss_replay.py` (AirKiss relay). Emulator tools take paths via env
-  `BK_EMU_ROOT` / `AUTOFLASH_BEKEN_EMU_DUMP`; see the folder's README.
+The tools, and how each is run, are in
+[`tools/beken/`](../tools/beken/README.md): the static analysis on the logical
+image (`unstripe.py`, `disasm.py`, `xref.py`, `strxref.py`, `decomp.py`), the
+emulator drivers (`cloud_push.py --apply` runs a whole conversion,
+`stage_apply.py` the apply alone, a reversion's too) and the formats
+(`stock_app.py`, `rbl.py`, `uf2.py`, `backup.py`). Those of the pairing
+experiments are in `archive/s61-research/`. The emulator's tools take their
+paths from the env `BK_EMU_ROOT` and `AUTOFLASH_BEKEN_EMU_DUMP`. The methods
+behind the findings:
 
-### Tools (reproducibility)
+- **Running a dump:** `src/main.py <dump> --with-boot -chip BK7238 --only-uart
+  --wifi-peer auto` (peer roles: `auto`, or `ap --wifi-ssid <x> --wifi-pass <y>`;
+  `--net-out` lets it reach the real cloud).
+- **FLASHDBG** (`FLASHDBG=1`, built into `emulator.py`) logs flash operations on
+  the config regions (read opcode `op=5`). It found the live config reads at
+  `0x3e0000` and `0x3f6000`.
+- **A RAM dump, searched** (`emu.mu.mem_read(0x400000, 1<<20)`), found the decoded
+  apikey UUID and the hard-coded URL template `http://%s-apid.coolkit.%s/...`.
+- **Watchpoints** (`UC_HOOK_MEM_WRITE`, `UC_HOOK_MEM_READ`, on one buffer) find
+  the PC and registers that make or use any buffer: they found the apikey
+  formatter `0x427b8` and the memset `0x45ec`.
+- **Logging the bootloader's flash reads** (through `REG_FLASH`, `0x803000`) found
+  the download partition and the app's RBL header.
+- **The force-call harness** runs a chosen function part way through a boot. Save
+  the registers, set the arguments, set `LR = 0x5` (to trap at `0x4`) and an odd
+  PC (`addr | 1`, for Thumb), and bump `emu._exc_epoch` so that the chunked run
+  loop reads the PC and the Thumb bit again; a hook at `0x4` restores the
+  registers on return. Set CPSR to `(cpsr & ~0x3f) | 0x1f | 0x20`. It reaches
+  firmware code correctly, but cannot supply the RTOS or RW-task context that
+  exists only inside the owning task: calls forced into the RW-task message path
+  or the key-driver timer thread park or fault.
+- **Static analysis** works on the logical image, where a CPU address equals a
+  file offset; `decomp.py` gives angr's pseudo-C with no Java or Ghidra.
 
-[The update path](#the-update-path) was worked out with scratch drivers - `find_dlpart.py` (locate the
-download partition via `0x803000` read logging), `rbl_pack.py`,
-`s61_ota_probe.py` (push `upgrade`, serve a 404, prove the server redirect),
-`s61_ota_flash.py` (build the FOTA container, serve the ranged download, log
-flash writes), `s61_stage_boot.py`, `app_apply_test.py`, `obk_apply_test.py` and
-`boot_qio.py`. What they proved is written up above, and what a conversion needs
-of them is in [`tools/beken/`](../tools/beken/README.md), run in the emulator's
-container:
-
-- `emulator/cloud_push.py IMAGE.rbl OUT.bin --apply` - a whole conversion: the device comes
-  online against the stub (`cloud_online.py`'s `CloudSession`), is pushed an
-  `upgrade` for the image wrapped by `fota_wrap.py`, downloads it in ranges and
-  stages it at `0x286000` (checked byte for byte), and on the next boot the
-  stock bootloader applies it and the new firmware starts.
-- `emulator/stage_apply.py` - the apply alone: an `.rbl` staged in the download slot of a
-  copy of a dump, test credentials seeded, and the stock bootloader booted over
-  it; a reversion's apply too, with the repackaged stock app.
-- `stock_app.py` (the stock app out of a dump, verified, and packed again as
-  the reversion image with `rbl.py`), `uf2.py` (the update file a LibreTiny
-  ESPHome takes), `backup.py`, and the static tools (`unstripe.py`,
-  `disasm.py`, `xref.py`, `strxref.py`, `decomp.py`).
-
-The BK7238 UART transmit register is `0x0080210c`: a test image can write to it to show it has booted. No
-per-device identifier from any run is kept in these notes.
+The BK7238's UART transmit register is `0x0080210c`: a test image can write to it
+to show that it has booted.
 
 ### Rebuilding a whole dump without a serial cable
 
-The stock app is overwritten when OpenBeken goes on, but everything else can be read
-through OpenBeken's `GET /api/flash`, and the computer can fetch the official file
-itself. `tools/beken/rebuild_dump.py` combines them. Proven in the emulator on the S61:
-
-| Region | Rebuilt from 1.1.0, against the stock bootloader's own apply of 1.1.0 |
-|---|---|
-| Bootloader, FAL, radio, factory data | the same |
-| Application, RBL header, download slot | the same |
-| EasyFlash stores | differ: they hold the device's own later history |
-
-It booted to ONLINE and converted to OpenBeken again. It cannot know the flash's unique
-id, or the device's exact old version if the file is newer, though about 680 KB of the old
-app survives conversion and shows whether the versions match. A rebuilt dump holds the
-device's Wi-Fi password and keys, so it stays private. The bootloader fills a short last
-block with `00 00 10 00 80 80 02 29` then zeros.
+[`tools/beken/rebuild_dump.py`](../tools/beken/rebuild_dump.py) makes a device's
+whole stock flash again from OpenBeken's `GET /api/flash` and the official
+file; its README gives
+[the steps and what was shown](../tools/beken/README.md#rebuilding-a-dump). On
+the S61 in the emulator, rebuilt from 1.1.0, everything but the EasyFlash stores
+(which hold the device's own later history) matches the stock bootloader's own
+apply of 1.1.0, and the result booted to ONLINE and converted to OpenBeken
+again. It cannot know the flash's unique id, or the device's exact old version
+if the file is newer, though about 680 KB of the old app survives a conversion
+and shows whether the versions match. The bootloader fills a short last block
+with `00 00 10 00 80 80 02 29`, then zeros.
 
 ## Questions still open
 
-- Whether a real device answers as the emulator does: `/api/flash` returning raw flash on a
-  Beken device, and stock's checks of a rebuilt image.
+- **Whether a real device answers as the emulator does:** `/api/flash` returning
+  raw flash on a Beken device, and stock's checks of a rebuilt image. No real
+  Beken device has been converted.
+- **Where the button's long press becomes pairing**: the app code that sets the
+  pairing method and posts `PAIR_EVT_START` to the appfw (names at `0x49c18`).
+  With it, pairing would start from the firmware itself, not a forced call of
+  the dispatcher.
+- **Where each received credential is written.** BLE's `recv_ssid` and the
+  `pairingMode` command (`0x492ae`) are the decoders left, AirKiss's being a stub;
+  the write of `wifi-ssid` and `wifi-pass` has not been traced from either.
+- **Whether the pairing soft-AP serves DHCP on a real device,** and its
+  passphrase, without which (or an open build) the emulator's peer cannot
+  complete an association.
+- **Timers 3 to 5 at their own periods.** Modelling each enabled channel's
+  period, as the fork does for Timers 0 to 2, would raise Timer 5 (`bk_timer`)
+  at its real rate without breaking the other BK7238 self-tests (Zengge's among
+  them), so the tools need not raise it by hand.
+- **Passing the integrity gate with a real id.** `spi_flash.py` already takes
+  `uid=` (its comment that nothing needs the real value is wrong for the S61), but
+  nothing reads a real device's flash id, so the gate is forced at `0x29c3c`.
+- **The encoding of the `ssid` and `pass` keys** in the app store.
+- **Whether a paired device's dispatch is plain HTTP,** as the factory
+  placeholder's is.

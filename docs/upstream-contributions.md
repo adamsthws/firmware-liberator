@@ -1,27 +1,24 @@
 # Fixes sent upstream
 
-Building this converter meant pushing ESP32/Beken firmware, HTTP clients and OTA
-code harder than most projects do: downloading firmware in pieces, over Wi-Fi
-that is allowed to drop at any moment, with a device that has to survive it. When
-something went wrong and the cause lay elsewhere, this project chased it into
-the project it came from, fixed it there, and sent the fix back.
-
-This page lists those fixes, grouped by what they were about, and how each
-was proven.
+Building this converter pushed ESP32 and Beken firmware, HTTP clients and OTA
+code harder than most projects do: firmware downloaded in pieces, over Wi-Fi
+that may drop at any moment, by a device that has to survive it. Where the
+cause of a failure lay in another project, it was fixed there and the fix sent
+back. This page lists those fixes by topic, and how each was proven.
 
 ## How it started
 
-The conversion runs a Berry script on the device that downloads a firmware image
-in blocks with Tasmota's `webclient`. In testing, a network drop at the wrong
-moment left a device answering nothing - not even its web page - until it was
-switched off and on. The cause was not in that script: Tasmota's HTTP client
+The conversion runs a Berry script on the device that downloads firmware in
+blocks with Tasmota's `webclient`. In testing, a network drop at the wrong
+moment left a device answering nothing, not even its web page, until it was
+switched off and on. The cause was not the script: Tasmota's HTTP client
 waited for the rest of a response body for as long as the connection looked
-open, with no time limit. A server that goes quiet without closing the
+open, with no time limit, and a server that goes quiet without closing the
 connection (its computer sleeps, a cable is pulled, a router restarts) leaves
 it looking open for ever.
 
-That same unbounded wait turned out to have been copied, over the years, into
-several other HTTP clients, and following it led to a few more bugs nearby.
+The same unbounded wait had been copied, over the years, into several other
+HTTP clients, and following it led to a few more bugs nearby.
 
 ## What was sent, by topic
 
@@ -136,11 +133,10 @@ test.
 ## The emulator's Wi-Fi
 
 The [emulator](emulator.md) runs on [lcgamboa's QEMU fork](https://github.com/lcgamboa/qemu),
-the one QEMU that emulates the ESP32-C3's Wi-Fi. Making an emulated device behave
-on its network as a real one does took four changes to that Wi-Fi emulation,
-and one to its pins, each found because something went wrong on the emulator
-where it would not on a device. All five are upstream now, and the emulator runs
-on them:
+the one QEMU that emulates the ESP32-C3's Wi-Fi. Making an emulated device
+behave on its network as a real one does took four changes to that Wi-Fi
+emulation and one to its pins, each found because something went wrong on the
+emulator where it would not on a device. The emulator runs on all five:
 
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|
@@ -150,15 +146,16 @@ on them:
 | QEMU (lcgamboa) | [#16](https://github.com/lcgamboa/qemu/pull/16) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/16?label=) | The signal strength reached the firmware 96 too high: Tasmota reported its Wi-Fi at +71 to +78 dBm |
 | QEMU (lcgamboa) | [#17](https://github.com/lcgamboa/qemu/pull/17) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/17?label=) | Run on its own, every input pin read low, so Tasmota saw its button held and reset itself; the levels can now be set |
 
-Two more are open, and until they merge the emulator carries each as a patch:
+Two more were merged on 7 November 2026. The emulator carries each as a
+patch (`0001`, `0002`) until its pin moves to a commit that has them:
 
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|
 | QEMU (lcgamboa) | [#18](https://github.com/lcgamboa/qemu/pull/18) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/18?label=) | `-monitor` bound its socket and never answered, on any machine: the fork's main loop iterates a context of its own, and the monitor registered with GLib's default. |
 | QEMU (lcgamboa) | [#19](https://github.com/lcgamboa/qemu/pull/19) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/19?label=) | A guest's Wi-Fi could not be taken away from it, so firmware's reconnect and fallback code could not be tested: a property switches the emulated access points off, as a router restarting does. |
 
-#15 let the emulator test what a person does when a device falls back
-to its own setup network: join it, and let the conversion carry on through it.
+#15 let the emulator test what a person does when a device falls back to its
+own setup network: join it, and let the conversion carry on through it.
 
 ## The emulator's classic ESP32
 
@@ -172,12 +169,12 @@ boot and over 40 s for 2,000 small flash reads:
 | QEMU (lcgamboa) | [#20](https://github.com/lcgamboa/qemu/pull/20) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/20?label=) | After a flash operation, only the cache pages whose bytes changed are refreshed: Tasmota boots in about 7 s, and the reads take 14-18 s |
 | QEMU (Espressif) | [#211](https://github.com/espressif/qemu/pull/211) | ![state](https://img.shields.io/github/pulls/detail/state/espressif/qemu/211?label=) | The same change where the code came from, checked with ESP-IDF's own flash and panic test apps: the same results, the cache-disabled fault unchanged, and its flash tests 10-35% faster |
 
-The emulator carries #20 as its patch `0003`, and its own `0004` also leaves a
-window mapped once it is on.
-That makes it two to ten times faster again, quick enough that Tasmota no
-longer outlasts its 5-second task watchdog while it reads flash a lot, which is
-what made it panic on QEMU. But it gives up QEMU's fault for reading flash with
-the cache off, so it stays here.
+The emulator carries #20 as its patch `0003`, until its pin moves past the
+merge. Its own `0004` also leaves a window mapped once it is on, which makes
+it two to ten times faster again: quick enough that Tasmota no longer outlasts
+its 5-second task watchdog while it reads flash a lot, which is what made it
+panic on QEMU. But `0004` gives up QEMU's fault for reading flash with the
+cache off, so it is not offered upstream.
 
 The emulated device's power meter answers over a UART, and Tasmota found none
 on a classic ESP32: the UART held each answer 18 ms, where Tasmota waits 6.
@@ -191,9 +188,9 @@ The emulator carries the first fix as its patch `0006`:
 ## OpenBeken on a 4 MB BK7238
 
 The Sonoff S61 is a Beken BK7238 with 4 MB of flash. OpenBeken's BK7238 build
-assumed the SDK's 2 MB partition table, which on a 4 MB device puts its OTA slot
-and its config inside the stock app partition - where the stock bootloader
-never looks - and the SDK's packager could not produce a 4 MB image at all.
+assumed the SDK's 2 MB partition table, which on a 4 MB device puts its OTA
+slot and its config inside the stock app partition, where the stock bootloader
+never looks, and the SDK's packager could not produce a 4 MB image at all.
 Two changes make the build follow the chip: a `FLASH_SIZE=4M` switch, with the
 OTA slot and the flash size read from the partition table the firmware was
 built with, and a packager that names its outputs by flash size, sizes the
@@ -253,9 +250,9 @@ the emulator, not a POWCT in hand
 
 ## Other people's reports, reproduced on the emulator
 
-With the emulator built, this project went through Tasmota's open reports for
-problems it could reproduce, and picked those an S60 owner could meet. Two came
-from one person changing an ESP32-C3 device's Wi-Fi (discussions
+With the emulator built, Tasmota's open reports were searched for problems it
+could reproduce that the owner of a converted device could meet. Two came from
+one person changing an ESP32-C3 device's Wi-Fi (discussions
 [#24591](https://github.com/arendst/Tasmota/discussions/24591) and
 [#24585](https://github.com/arendst/Tasmota/discussions/24585)), as someone
 might after converting a device. Both were in Tasmota's own setup and settings
@@ -290,7 +287,7 @@ people's code:
 - **Several devices side by side.** Before and after builds ran in parallel on
   separate emulated devices, and a fix could be repeated on two at once.
 - **A hang is cheap.** A test that freezes an emulated device costs a restart,
-  not a trip to the wall socket.
+  not a walk to switch a real one off and on.
 
 It took several fixes to the QEMU fork to get here (see
 [What is changed, and why](../tools/espressif/emulator/README.md#what-is-changed-and-why)): real MAC
@@ -301,9 +298,9 @@ those that belong upstream are [offered back](#the-emulators-wi-fi).
 ### Real hardware
 
 The Tasmota and arduino-esp32 fixes ran again on a real S60, with a second
-smart plug switching its power so a hung test device could be power-cycled
-without a hand on the device. Every hang the emulator showed, the real device
-showed too, and every fix behaved the same on both.
+smart plug switching its power so that a hung S60 could be power-cycled
+without a hand on it. Every hang the emulator showed, the real device showed
+too, and every fix behaved the same on both.
 
 ### Measuring, not guessing
 
@@ -314,11 +311,11 @@ showed too, and every fix behaved the same on both.
   downloads for leaks.
 - **Timing.** Expected times were worked out from the code first, then
   measured, so a result that disagreed showed a misunderstanding.
-- **This project's own mistakes.** When a test turned out to be wrong - an
-  image that was never flashed, a fix that had leaked into a "before" build - it was
-  re-run, and the PRs only report the re-runs.
+- **This project's own mistakes.** When a test turned out to be wrong (an
+  image that was never flashed, a fix that had leaked into a "before" build),
+  it was re-run, and the pull requests report only the re-runs.
 
 ## Related
 
 [How the tool is tested](testing.md): the unit tests, the emulator and the
-fault tests that found these bugs, and what has been run on real devices.
+fault suites that found these bugs, and what has been run on real devices.
