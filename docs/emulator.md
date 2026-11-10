@@ -623,6 +623,7 @@ The tools in `tools/beken` run in its container:
 
 ```sh
 tools/beken/emulator/beken-emu.sh python tools/beken/emulator/seed_join.py
+tools/beken/emulator/beken-emu.sh python SSID=MyNet SECS=60 tools/beken/emulator/seed_join.py   # its settings
 tools/beken/emulator/beken-emu.sh run captures/your-dump.bin --wifi-peer auto
 tools/beken/emulator/beken-emu.sh test -k "Sonoff 4MB"    # upstream's self-tests, under the patches
 tools/beken/emulator/beken-emu.sh device                     # the S61s dump as a device, on a home Wi-Fi of its own

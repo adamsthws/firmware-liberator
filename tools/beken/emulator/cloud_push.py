@@ -5,8 +5,8 @@ the stub pushes it an `upgrade` for a firmware image, and the device downloads i
 and stages it in its download slot - then, with --apply, the stock bootloader
 applies it on the next boot and the new firmware starts.
 
-    beken-emu.sh python tools/beken/emulator/cloud_push.py IMAGE.rbl OUT.bin [--apply]
-    (env: SECS=400, the most the push may take; APPLY_SECS=120 for the apply; SSID, PASS)
+    beken-emu.sh python [NAME=VALUE...] tools/beken/emulator/cloud_push.py IMAGE.rbl OUT.bin [--apply]
+    (settings: SECS=400, the most the push may take; APPLY_SECS=120 for the apply; SSID, PASS)
 
 IMAGE is an rt_ota .rbl: OpenBeken's 4 MB-table build, the ESPHome (LibreTiny)
 build's image_bk7238_app.ota.rbl, or OpenBeken's release. It is wrapped in

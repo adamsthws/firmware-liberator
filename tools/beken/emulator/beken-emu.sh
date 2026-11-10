@@ -6,14 +6,16 @@
 #
 #   tools/beken/emulator/beken-emu.sh [--instance N] [--rebuild] [--fresh] COMMAND [ARGS...]
 #
-#   tools/beken/emulator/beken-emu.sh python ARGS...
+#   tools/beken/emulator/beken-emu.sh python [NAME=VALUE...] ARGS...
 #                             run python in the emulator's container, with this checkout
 #                             at /work (the working directory) and the fetched firmware
-#                             mounted in; the image is ensured first:
-#                             tools/beken/emulator/beken-emu.sh python tools/beken/emulator/seed_join.py
-#   tools/beken/emulator/beken-emu.sh run DUMP [ARGS...]
+#                             mounted in; the image is ensured first. NAME=VALUE, as env
+#                             takes them, are the tool's settings (its docstring's), each
+#                             set in the container, empty too:
+#                             tools/beken/emulator/beken-emu.sh python SSID=MyNet SECS=60 tools/beken/emulator/seed_join.py
+#   tools/beken/emulator/beken-emu.sh run [NAME=VALUE...] DUMP [ARGS...]
 #                             run a BK7238 dump as the emulator's tools do: main.py DUMP
-#                             --with-boot -chip BK7238 --only-uart ARGS
+#                             --with-boot -chip BK7238 --only-uart ARGS, with settings as python's
 #   tools/beken/emulator/beken-emu.sh device
 #                             the public S61s dump as a device on a home Wi-Fi, on the Beken
 #                             emulator's own Docker network (autoflash-beken-emu, made the first time;
@@ -68,9 +70,12 @@
 # checkout (rebuild_dump.py's) for a new device to start from, and image.sh's
 # own (AUTOFLASH_BEKEN_EMU_PUBLISHED, AUTOFLASH_BEKEN_EMU_NO_PULL,
 # AUTOFLASH_BEKEN_EMU_SOURCE_URL) where to get the image. In the container,
-# AUTOFLASH_BEKEN_EMU_DUMP is the dump its tools start from. Its folders are in
-# captures/emulation/beken/ (folders.py, which moves an earlier checkout's
-# there). Tools run as your own user, so what they write in /work is yours.
+# AUTOFLASH_BEKEN_EMU_DUMP is the dump its tools start from (a setting given,
+# AUTOFLASH_BEKEN_EMU_DUMP=/work/captures/your-dump.bin, say, overrides it), and
+# nothing else of your environment is there: a variable set for something else
+# (SERVER, PASS) changes no tool. Its folders are in captures/emulation/beken/
+# (folders.py, which moves an earlier checkout's there). Tools run as your own
+# user, so what they write in /work is yours.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -105,6 +110,19 @@ NETWORK=${AUTOFLASH_BEKEN_EMU_NETWORK:-$NETWORK}
 DEVICE_STATE=$EMU/beken/$STATE
 # An earlier checkout's folders, named after the S61, moved to these once.
 case "${1:-}" in dump|python|run|device|ui|power|computer|test) python3 -I "$HERE/folders.py" migrate ;; esac
+
+# A tool's settings: the NAME=VALUE arguments python and run are given before
+# anything else, as env takes them, each passed into the container (-e
+# NAME=VALUE, empty ones empty). TOOL_SETTINGS holds them; shift past them by
+# its length over two.
+TOOL_SETTINGS=()
+settings() {
+    local arg
+    for arg; do
+        [[ $arg =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || break
+        TOOL_SETTINGS+=(-e "$arg")
+    done
+}
 
 pin() { sed -n "s/^$1 //p" "$HERE/UPSTREAM"; }
 UPSTREAM_REPO=$(pin repo)
@@ -164,7 +182,7 @@ container() {
     exec docker run --rm -i "${tty[@]}" ${CONTAINER_OPTIONS[@]+"${CONTAINER_OPTIONS[@]}"} --user "$(id -u):$(id -g)" \
         -v "${WORK:-$ROOT}:/work" -v "$FIRMWARES:/opt/beken-emulator/firmwares:ro" \
         -e AUTOFLASH_BEKEN_EMU_DUMP="/opt/beken-emulator/firmwares/$PUBLIC_DUMP" \
-        -w "$workdir" "$IMAGE" "$@"
+        ${TOOL_SETTINGS[@]+"${TOOL_SETTINGS[@]}"} -w "$workdir" "$IMAGE" "$@"
 }
 
 # The whole flash a new device starts from, as its container sees it.
@@ -222,11 +240,15 @@ subnet() {
 
 case "${1:-}" in
     dump) dump ;;
-    python) shift; ensure; dump || echo "No public dump: give the tool a dump of your own." >&2; container "$@" ;;
+    python)
+        shift; settings "$@"; shift $((${#TOOL_SETTINGS[@]} / 2))
+        ensure; dump || echo "No public dump: give the tool a dump of your own." >&2
+        container "$@" ;;
     run)
-        [ -n "${2:-}" ] || { echo "run needs a dump" >&2; exit 2; }
+        shift; settings "$@"; shift $((${#TOOL_SETTINGS[@]} / 2))
+        [ -n "${1:-}" ] || { echo "run needs a dump" >&2; exit 2; }
         ensure
-        dump_path=$(realpath "$2"); shift 2
+        dump_path=$(realpath "$1"); shift
         case "$dump_path" in "$ROOT"/*) dump_path="/work${dump_path#"$ROOT"}" ;;
             *) echo "$dump_path is outside this checkout: put it under captures/" >&2; exit 2 ;; esac
         container /opt/beken-emulator/src/main.py "$dump_path" --with-boot -chip BK7238 --only-uart "$@" ;;
