@@ -144,9 +144,12 @@ class OnwardTests(unittest.TestCase):
             self.assertEqual((result["seconds"], result["version"]), (4.0, version))
             self.assertIn(version, what)
             with mock.patch.object(images, "stock_rbl", return_value=(b"RBL stock", "1.0.2")), \
+                    mock.patch.object(handover, "consent_to_leave") as asked, \
                     mock.patch.object(handover, "send_as_esphome_update", return_value=4.0) as sent:
-                onward.step_esphome_to_sonoff(ctx)
+                result = onward.step_esphome_to_sonoff(ctx)
             self.assertEqual(uf2.image_in(sent.call_args.args[1]), ("download", b"RBL stock"))
+            asked.assert_called_once_with(ctx, "ESPHome")   # the go-ahead to leave it
+            self.assertEqual((result["seconds"], result["version"]), (4.0, "1.0.2"))
 
     def test_an_earlier_esphome_is_sent_this_release_the_same_way(self):
         # No go-ahead: an ESPHome update, not a conversion.
@@ -184,6 +187,78 @@ class OnwardTests(unittest.TestCase):
             image, version = images.image(ctx, "esphome")
             self.assertEqual((fetched["image"], result["version"]), (image, version))
             self.assertEqual(self.server.commands, ["ota_http http://192.0.2.2:8088/firmware.rbl"])
+
+
+class ServeToDeviceTests(unittest.TestCase):
+    """The image served to the device: how long it is given to ask for it, to
+    fetch it, and when it is restarted to ask again."""
+
+    def serve(self, served, *, unstick=True):
+        """serve_to_device with the device having fetched `served` bytes at
+        each look (the last for every look after), on a clock moved on only by
+        its pauses: what it returned, and when it asked the device to fetch."""
+        served = list(served)
+        self.clock = 1000.0   # not from 0: times are measured from the start
+        self.closed = []
+        self.fetches = []
+        test = self
+
+        class Server:
+            def __init__(self, address, image, device_ip, say=print, names=(), live=None):
+                pass
+
+            def serve_forever(self):
+                pass
+
+            def unique_bytes_served(self):
+                return served.pop(0) if len(served) > 1 else served[0]
+
+            def shutdown(self):
+                test.closed.append("shutdown")
+
+            def server_close(self):
+                test.closed.append("close")
+
+        def sleep(seconds):
+            self.clock += seconds
+
+        def monotonic():
+            self.clock += 0.001   # a step on each look too, so no loop can spin for ever
+            return self.clock
+
+        self.unstick = mock.Mock(side_effect=[unstick, AssertionError("restarted a second time")])
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(ota_push, "FirmwareServer", Server), \
+                mock.patch.object(onward.firewall, "choose_port", return_value=8088), \
+                mock.patch.object(onward.firewall, "ensure_firewall") as self.opened, \
+                mock.patch.object(onward.output, "say"), mock.patch.object(onward.output, "progress"), \
+                mock.patch.object(onward.output, "progress_clear"), \
+                mock.patch.object(onward.time, "monotonic", side_effect=monotonic), \
+                mock.patch.object(onward.time, "sleep", side_effect=sleep):
+            ctx = a_context(tmp, device_ip="192.0.2.50", firmware="esphome", source="openbeken")
+            return onward.serve_to_device(ctx, b"image", "ESPHome", lambda url: self.fetches.append(self.clock),
+                                          unstick=self.unstick)
+
+    def test_it_is_served_through_the_firewall_and_the_server_closed_after(self):
+        self.serve([5])
+        self.opened.assert_called_once()
+        self.assertEqual(self.closed, ["shutdown", "close"])
+
+    def test_the_time_the_device_took_is_what_is_returned(self):
+        # A device that asks within FIRST_BYTE_WAIT is not restarted.
+        self.assertEqual(self.serve([0] * 5 + [5]), 10.0)
+        self.unstick.assert_not_called()
+
+    def test_a_device_part_way_through_is_never_restarted(self):
+        self.serve([1] * 30 + [5])
+        self.unstick.assert_not_called()
+
+    def test_restarted_once_at_most_then_given_the_whole_wait_again(self):
+        with self.assertRaisesRegex(OSError, "fetched 0 of 5 bytes"):
+            self.serve([0])
+        self.unstick.assert_called_once()
+        self.assertEqual(len(self.fetches), 2)
+        self.assertGreaterEqual(self.clock - self.fetches[1], onward.FETCH_WAIT)
+        self.assertEqual(self.closed, ["shutdown", "close"])
 
 
 class FromTheInterimFirmwareTests(unittest.TestCase):
