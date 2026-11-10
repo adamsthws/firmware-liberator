@@ -169,6 +169,13 @@ done
 # stub starts by reading the plug with this checkout's tools (seen: an older
 # release's tree, swapped in first, had no tools/espressif/inspect_stock_nvs.py).
 if [ -n "$code" ]; then
+    # The emulator's own scripts - the plug's board, the serial log's redactor -
+    # import modules from outside their folder, which the release's tree replaces:
+    # one from before them stopped the plug at its next start, the error lost.
+    # They take this checkout's from a copy in their folder (copy_checkout drops it).
+    kept="$STATE/work/tools/espressif/emulator/checkout"
+    rm -rf "$kept" && mkdir -p "$kept"
+    rsync -a --exclude __pycache__/ --exclude /tools/espressif/emulator/ "$ROOT/tools" "$ROOT/devices" "$kept/"
     rsync -a --delete --exclude /captures --exclude /.venv --exclude /.python --exclude /.git \
           --exclude /.env --exclude __pycache__/ --exclude /tools/espressif/emulator/ "$code/" "$STATE/work/"
 fi
