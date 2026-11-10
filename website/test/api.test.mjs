@@ -381,7 +381,7 @@ test("asked first, a readout that would add nothing is not wanted - nor one its 
 });
 
 test("readouts waiting for review are held to their own room, and given it back once three agree", async () => {
-  assert.equal(readout.PENDING_BYTES, 1024 ** 3);
+  assert.equal(readout.PENDING_BYTES, 10 * 1024 ** 3);
   const bindings = env();
   bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES ('readouts:pending', NULL, 0, ?)")
     .run(readout.PENDING_BYTES - 10);
@@ -419,10 +419,11 @@ test("a device enough readouts of are in is thanked, not kept", async () => {
   assert.equal(bindings.READOUTS.objects.size, 0);
 });
 
-test("what it may keep stays within R2's free 10 GB, with room to spare, and nothing expires", () => {
-  const free = 10 * 1024 ** 3;
-  assert.ok(readout.TOTAL_BYTES <= free - 1.5 * 1024 ** 3, "room for the addresses and to notice before it fills");
-  assert.ok(readout.DAILY_BYTES < readout.TOTAL_BYTES);
+test("what it may keep costs under a dollar a month, a flood takes months to fill it, and nothing expires", () => {
+  const free = 10, perGbMonth = 0.015;   // R2, 2026
+  assert.ok((readout.TOTAL_BYTES / 1024 ** 3 - free) * perGbMonth < 1);
+  assert.ok(readout.TOTAL_BYTES / readout.DAILY_BYTES > 90, "three months of a day's limit, every day");
+  assert.ok(readout.PENDING_BYTES < readout.TOTAL_BYTES / 2, "room left for readouts taken as right");
   const settings = readFileSync(new URL("../../tools/repo/cloudflare_settings.py", import.meta.url), "utf8");
   assert.match(settings, /^READOUTS_LIFECYCLE = \{"rules": \[\]\}$/m);
 });

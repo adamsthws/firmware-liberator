@@ -92,8 +92,8 @@ REDIRECTS = [{
 # (website/api/index.js), as its wrangler.jsonc binds it. Private: a bucket
 # is made with no public access, and nothing here gives it any. Nothing in it
 # expires: a readout is kept only if it adds something, and kept for good, the
-# Worker's limit on the bytes of them all keeping the bucket within R2's free
-# 10 GB (TOTAL_BYTES in website/api/index.js). So it has no lifecycle rule, and one added in
+# Worker's limit on the bytes of them all (TOTAL_BYTES in website/api/index.js)
+# keeping its cost under a dollar a month. So it has no lifecycle rule, and one added in
 # the dashboard is a difference that `apply` takes away.
 READOUTS_BUCKET = "firmware-liberator-readouts"
 READOUTS_LIFECYCLE = {"rules": []}
