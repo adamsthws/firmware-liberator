@@ -64,5 +64,56 @@ class IncludedFilesTests(unittest.TestCase):
             self.build_with(self.CONFIG, {})
 
 
+class PublishableTests(unittest.TestCase):
+    """What the firmware-update workflow's publish job pushes: the build job's
+    commit, made running the releases' own tools, changing only what an update does."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = Path(folder.name)
+        uf.git("init", "-q", cwd=self.repo)
+        self.files({"tools/autoflash/__init__.py": '"""The tool."""\n\n__version__ = "2.4.0"\n',
+                    "artifacts/firmware.json": "{}\n", "tools/repo/lint.py": "print()\n"})
+        self.base = self.commit()
+
+    def files(self, files):
+        for path, text in files.items():
+            (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / path).write_text(text, encoding="utf-8")
+
+    def commit(self):
+        uf.git("add", "-A", cwd=self.repo)
+        uf.git("-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false",
+               "commit", "-q", "--allow-empty", "-m", "c", cwd=self.repo)
+        return uf.git("rev-parse", "HEAD", cwd=self.repo)
+
+    def test_an_update_as_the_workflow_makes_one_is_publishable(self):
+        self.files({"artifacts/firmware.json": '{"new": 1}\n', "artifacts/x-1.bin": "x",
+                    "devices/sonoff-s60/esphome.yaml": "a: 1\n", "devices/sonoff-s60/esphome.md": "#\n",
+                    "CHANGELOG.md": "## 2.4.1\n", "NOTICES.md": "n\n", ".gitignore": "!artifacts/x-1.bin\n",
+                    "tools/autoflash/__init__.py": '"""The tool."""\n\n__version__ = "2.4.1"\n'})
+        self.assertEqual(uf.unpublishable(self.base, self.commit(), cwd=self.repo), [])
+
+    def test_code_is_not(self):
+        self.files({"tools/repo/lint.py": "import os\n", "devices/sonoff-s60/hook.py": "x\n"})
+        problems = uf.unpublishable(self.base, self.commit(), cwd=self.repo)
+        self.assertEqual(sorted(problems), ["devices/sonoff-s60/hook.py: an update never changes it",
+                                            "tools/repo/lint.py: an update never changes it"])
+
+    def test_the_version_file_only_by_its_version(self):
+        self.files({"tools/autoflash/__init__.py": '"""The tool."""\nimport os\n__version__ = "2.4.1"\n'})
+        problems = uf.unpublishable(self.base, self.commit(), cwd=self.repo)
+        self.assertEqual(problems, ["tools/autoflash/__init__.py: '-' is more than the version",
+                                    "tools/autoflash/__init__.py: '+import os' is more than the version"])
+
+    def test_only_one_commit_on_main(self):
+        self.files({"artifacts/firmware.json": "{}\n{}\n"})
+        self.commit()
+        self.files({"artifacts/firmware.json": "{}\n{}\n{}\n"})
+        self.assertEqual(uf.unpublishable(self.base, self.commit(), cwd=self.repo),
+                         [f"{uf.git('rev-parse', 'HEAD', cwd=self.repo)} is not one commit on {self.base}"])
+
+
 if __name__ == "__main__":
     unittest.main()
