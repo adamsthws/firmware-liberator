@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -39,7 +40,7 @@ class Case(unittest.TestCase):
     def setUp(self):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
-        self.queue = Path(folder.name) / "reports"
+        self.queue = Path(folder.name) / "captures" / "reports"  # neither there yet, as in a fresh copy
         for patch in (mock.patch.object(upload, "QUEUE", self.queue),
                       mock.patch.object(upload, "NOTICE", self.queue / "notice-shown"),
                       mock.patch.dict(os.environ, {"AUTOFLASH_NO_REPORT": ""}),
@@ -70,6 +71,20 @@ class EnabledTests(Case):
         # tests/no_network.py, which every test package installs, says so.
         from tests import no_network
         self.assertIn('os.environ["AUTOFLASH_NO_REPORT"] = "1"', Path(no_network.__file__).read_text(encoding="utf-8"))
+
+
+class ApiTests(unittest.TestCase):
+    """What the API takes (website/api/reports.js), as the tool sends it."""
+
+    def constant(self, name):
+        source = (Path(__file__).resolve().parents[2] / "website" / "api" / "reports.js").read_text(encoding="utf-8")
+        return int(re.search(rf"export const {name} = (\d+);", source).group(1))
+
+    def test_its_work_is_as_hard_as_the_api_asks(self):
+        self.assertEqual(upload.PROOF_BITS, self.constant("REPORT_PROOF_BITS"))
+
+    def test_every_report_kept_goes_in_one_sending(self):
+        self.assertLessEqual(upload.KEEP, self.constant("MAX_REPORTS"))
 
 
 class DocumentedTests(unittest.TestCase):
@@ -112,6 +127,16 @@ class BeginTests(Case):
         self.assertEqual(said, [upload.NOTICE_TEXT])
         self.assertIn("--no-report", upload.NOTICE_TEXT)
 
+    def test_the_notice_is_said_once_where_reports_were_kept_before_it(self):
+        self.item("a" * 32)
+        said = []
+        with mock.patch.object(upload, "start_work", return_value=Work()), \
+                mock.patch.object(upload, "post", side_effect=OSError("down")), \
+                mock.patch.object(upload.output, "tell", said.append):
+            upload.begin(self.ctx())
+            upload.begin(self.ctx())
+        self.assertEqual(said, [upload.NOTICE_TEXT])
+
     def test_switched_off_nothing_begins(self):
         ctx = self.ctx(no_report=True)
         with mock.patch.object(upload, "start_work") as start:
@@ -153,6 +178,7 @@ class SendTests(Case):
             upload.send(ctx, "converted", 300, False)
             upload.send(ctx, "failed", 300, False)
         self.assertEqual(payload.call_count, 1)
+        self.assertEqual(ctx.last_report_id, "b" * 32, "for the issue a stopped run can open")
 
     def test_a_report_that_cannot_be_made_never_spoils_the_runs_end(self):
         logged = []
@@ -171,7 +197,7 @@ class SendingTests(Case):
     def test_each_the_api_answered_for_is_forgotten_the_rest_kept(self):
         for name in ("accepted", "duplicate", "rejected", "later", "unanswered"):
             self.item(name.ljust(32, "0"))
-        answer = {"accepted": ["accepted".ljust(32, "0")], "duplicate": ["duplicate".ljust(32, "0")],
+        answer = {"accepted": ["never-kept".ljust(32, "0"), "accepted".ljust(32, "0")], "duplicate": ["duplicate".ljust(32, "0")],
                   "rejected": [{"id": "rejected".ljust(32, "0"), "why": "x"}, {"id": None, "why": "y"}],
                   "later": ["later".ljust(32, "0")]}
         with mock.patch.object(upload, "post", return_value=answer):
@@ -212,10 +238,15 @@ class SendingTests(Case):
         self.assertNotIn("broken", self.ids())
         self.assertEqual(len(self.ids()), upload.KEEP)
 
+    def test_one_thirty_days_old_is_kept_one_a_day_older_is_not(self):
+        self.item("thirty".ljust(32, "0"), made=(TODAY - dt.timedelta(days=30)).isoformat())
+        self.item("thirty-one".ljust(32, "0"), made=(TODAY - dt.timedelta(days=31)).isoformat())
+        self.assertEqual([item["report"]["id"] for item in upload.prune(TODAY)], ["thirty".ljust(32, "0")])
+
     def test_sent_as_the_api_takes_them(self):
         answered = io.BytesIO(json.dumps({"accepted": []}).encode())
         with mock.patch.object(upload.hostsys, "urlopen", return_value=contextlib.nullcontext(answered)) as opened:
-            upload.post([{"id": "f" * 32}], "http://127.0.0.1:9/reports")
+            self.assertEqual(upload.post([{"id": "f" * 32}], "http://127.0.0.1:9/reports"), {"accepted": []})
         request = opened.call_args.args[0]
         self.assertEqual((request.get_method(), request.full_url), ("POST", "http://127.0.0.1:9/reports"))
         self.assertEqual(request.get_header("Content-type"), "application/json")
@@ -237,6 +268,15 @@ class WorkTests(Case):
                 mock.patch.object(upload.subprocess, "Popen") as popen, mock.patch.object(upload.atexit, "register"):
             upload.start_work("0" * 32)
         self.assertEqual(popen.call_args.kwargs["creationflags"], 0x4000 | 0x08000000)
+
+    def test_its_process_is_ended_with_the_tool(self):
+        with mock.patch.object(upload.subprocess, "Popen") as popen, \
+                mock.patch.object(upload.atexit, "register") as register:
+            process = upload.start_work("0" * 32)
+        register.assert_called_once_with(upload.stop, process)
+        popen.return_value.poll.return_value = None
+        upload.stop(process)
+        process.kill.assert_called_once_with()
 
     def test_work_that_failed_or_is_late_is_none(self):
         self.assertIsNone(upload.proof_of(Work(code=1)))
