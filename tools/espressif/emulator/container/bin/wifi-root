@@ -1,6 +1,6 @@
 #!/bin/bash
 # Root half of `wifi`: puts this "computer" on one network or the other.
-#   wifi-root home         the emulated home Wi-Fi: we are its router (DHCP, DNS)
+#   wifi-root home         the emulated home Wi-Fi: this computer is its router (DHCP, DNS)
 #   wifi-root join SSID    the device's own network: this computer is a client of
 #                          the device there, while the home network's router stays
 #                          up - the device may be trying Wi-Fi details on it

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Adam Matthews <52178922+adamsthws@users.noreply.github.com>
 Date: Thu, 29 Oct 2026 14:01:09 +0000
-Subject: [PATCH 4/4] emulator: fire the 26 MHz timer group (TIMER0-2) at each
+Subject: [PATCH] emulator: fire the 26 MHz timer group (TIMER0-2) at each
  channel's period
 
 LibreTiny's BK7231N/BK7238 builds keep their FreeRTOS tick on hardware Timer 0

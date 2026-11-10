@@ -1,9 +1,9 @@
 
   ┌─ Autoflash emulator, for Windows ───────────────────────────────────────┐
   │ Windows is the computer on the simulated home Wi-Fi PICSimLabWifi (its  │
-  │ "Autoflash emulator" adapter is 192.168.60.10). The device is the       │
-  │ emulated stock Sonoff 1.2.0, already paired with your account, at       │
-  │ 192.168.60.50.                                                          │
+  │ "Autoflash emulator" adapter is 192.168.60.10). The device, at          │
+  │ 192.168.60.50, is emulated: it starts on Sonoff's firmware, already     │
+  │ paired with your account.                                               │
   │                                                                         │
   │ Run the conversion on Windows, exactly as on a real device:             │
   │     python tools\autoflash\cli.py run                                   │

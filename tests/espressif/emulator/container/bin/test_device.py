@@ -7,6 +7,14 @@ from pathlib import Path
 DEVICE = Path(__file__).resolve().parents[5] / "tools/espressif/emulator/container/bin/device"
 
 
+class DeviceUsageTests(unittest.TestCase):
+    def test_usage_is_the_header_and_no_code(self):
+        result = subprocess.run(["bash", str(DEVICE), "no-such-command"], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertTrue(result.stdout.startswith("The emulated device's power and serial port.\n"))
+        self.assertTrue(result.stdout.endswith("device router on       the Wi-Fi is back, and the device rejoins by itself\n"))
+
+
 class DeviceRouterTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
