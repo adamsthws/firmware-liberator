@@ -337,8 +337,12 @@ The eWeLink cloud is a set of AIS tasks that `ais_appfw` creates on demand:
 `ais_link_task` is a state machine driven by a context: it reads the global
 context `*0x4044ac`, with its state byte at `ctx+0x290`. `ais_cloud_start`
 (`0x35744`) creates it with the RTOS thread-create `0x1349f0` (the name and entry
-literals are at `0x35820` and `0x35824`, giving the entry `0x35aa9`), and
-`ais_cloud_start` has one call site, the start-cloud handler at `0x2c204`:
+literals are at `0x35820` and `0x35824`, giving the entry `0x35aa9`). That is a
+Thumb veneer to the ARM function `0x14070`, which allocates a stack and a
+`0x5c`-byte control block and copies the task's name into it; 17 call sites
+start tasks through it, the key-driver timer thread's
+([below](#the-button)) among them. `ais_cloud_start` has one call site, the
+start-cloud handler at `0x2c204`:
 
 ```
 0x2c204  if (*0x403e31 != 0 && precond_0x24fd8() == 0)   // precond returns ctx[0x31]
@@ -546,16 +550,17 @@ The CRCs are standard CRC-32 (zlib's polynomial), stored big-endian because the
 firmware swaps the field's bytes before comparing.
 
 **Nothing transforms the bytes.** The download loop issues its ranged `GET`s,
-copies each chunk into a RAM buffer and calls the image type's write callback,
-which lands in the FAL partition write. (That write was recorded as `0x1349f0`,
-the address this page also gives, twice, for the RTOS thread-create; one of the
-two readings is wrong, and the code has not been checked again. The
-thread-create has more support: two separate traces give it, each with the
-arguments a thread-create takes (a name and entry; an entry, startup and
-period), and it sits among other RTOS calls (`0x1348fc`, `0x13499c`,
-`0x1349b4`).) The
-validate handler that the stock type registers is `movs r0, #0; bx lr`: it
-always succeeds. The only checks are of
+copies each chunk into a RAM buffer and calls the image type's write callback.
+The stock type's handlers are a table at `0x165604`: the name match `0x2c45d`,
+the init `0x2c69d`, the write `0x2c629` and, fifth, the validate `0x2c405`. The
+write goes to `0x3ee60`, which checks the offset against the download partition
+(entry 2 of the SDK's partition table, looked up by `0x213f0`), writes the chunk
+through the `flash` device's write (`0x19e64`, shaped like the SDK's
+`ddev_write`), then reads it back
+and compares, writing once more on a mismatch. The app has no FAL code of its
+own: FAL's strings are only in the bootloader. This was read from the
+disassembly of the public S61s dump. The validate handler is
+`movs r0, #0; bx lr`: it always succeeds. The only checks are of
 integrity: the FOTA magic, the trailer's and descriptors' CRC-32s, the version
 comparison, and the `digest`, a SHA-256 of the file from the `upgrade` command,
 which whoever pushes the command computes over whatever they serve. The payload
