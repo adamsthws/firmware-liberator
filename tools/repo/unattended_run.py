@@ -319,6 +319,9 @@ def record(command: list[str], size: tuple[int, int], live: bool,
     import termios
 
     environment = {**os.environ, "COLUMNS": str(size[0]), "LINES": str(size[1])}
+    # The maintainer's own testing: its report, if one is sent (none is in the
+    # emulator), is marked so and left out of the public figures.
+    environment.setdefault("AUTOFLASH_REPORT_TAG", "dev")
     environment.pop("NO_COLOR", None)
     if environment.get("TERM", "dumb") in ("", "dumb"):
         environment["TERM"] = "xterm-256color"

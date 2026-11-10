@@ -1,10 +1,12 @@
 // The API Worker (index.js) on this computer, for emulator runs that send
 // their readouts (tools/espressif/emulator/unattended-test.sh --api): the
 // Worker's own code, with an R2 bucket that keeps what it is given in a folder,
-// its database in that folder too (api.sqlite, local-d1.mjs), and a rate
-// limiter holding READOUT_LIMIT's rule - two a minute from one address, in a
-// fixed minute's window. Never deployed.
+// its database in that folder too (api.sqlite, local-d1.mjs), and rate
+// limiters holding READOUT_LIMIT's and REPORT_LIMIT's rules - two and three a
+// minute from one address, in a fixed minute's window. Never deployed.
 //   node website/api/local.mjs ADDRESS PORT FOLDER [ENOUGH]
+// AUTOFLASH_LOCAL_PROOF_BITS, for a test, lowers the work every path asks
+// (proof-of-work.js's work.bits), so a test's tool need not do the full work.
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -21,6 +23,10 @@ if (major < 22 || (major === 22 && minor < 23)) {
 // After the check: an older Node fails as these are loaded.
 const { default: worker } = await import("./index.js");
 const { d1 } = await import("./local-d1.mjs");
+const { work } = await import("./proof-of-work.js");
+if (process.env.AUTOFLASH_LOCAL_PROOF_BITS) {
+  work.bits = Number(process.env.AUTOFLASH_LOCAL_PROOF_BITS);
+}
 
 const [address, port, folder, enough = ""] = process.argv.slice(2);
 fs.mkdirSync(folder, { recursive: true });
@@ -39,19 +45,23 @@ const READOUTS = {
     fs.writeFileSync(`${file(key)}.meta.json`, JSON.stringify(options ?? {}));
   },
 };
-const windows = new Map();
-const READOUT_LIMIT = {
-  limit: async ({ key }) => {
-    const minute = Math.floor(Date.now() / 60_000);
-    const seen = windows.get(key);
-    const count = seen?.minute === minute ? seen.count + 1 : 1;
-    windows.set(key, { minute, count });
-    return { success: count <= 2 };
-  },
-};
+// Cloudflare's rate limiter, as wrangler.jsonc sets each: `most` a minute.
+function limiter(most) {
+  const windows = new Map();
+  return {
+    limit: async ({ key }) => {
+      const minute = Math.floor(Date.now() / 60_000);
+      const seen = windows.get(key);
+      const count = seen?.minute === minute ? seen.count + 1 : 1;
+      windows.set(key, { minute, count });
+      return { success: count <= most };
+    },
+  };
+}
+const READOUT_LIMIT = limiter(2);
+const REPORT_LIMIT = limiter(3);
 // Brought up to date at each start, as `apply` brings the real one.
 const DB = d1({ file: path.join(folder, "api.sqlite") });
-// A made-up SENDER_KEY: this copy counts its senders as the Worker does.
 // Every email it would send, written to mail.log instead.
 const EMAIL = {
   send: async (message) => {
@@ -59,8 +69,9 @@ const EMAIL = {
     return { messageId: `local-${Date.now()}` };
   },
 };
-const env = { READOUTS, DB, READOUT_LIMIT, EMAIL, INGEST: "on", ENOUGH: enough,
-  SENDER_KEY: "a-made-up-key-for-this-computer" };
+// Made-up keys: this copy counts its senders, and keeps its devices, as the Worker does.
+const env = { READOUTS, DB, READOUT_LIMIT, REPORT_LIMIT, EMAIL, INGEST: "on", ENOUGH: enough,
+  SENDER_KEY: "a-made-up-key-for-this-computer", DEVICE_HASH_KEY_PERMANENT: "another-made-up-key-for-this-computer" };
 
 // Gone once the script that started it is (PARENT, its process id), however it ended.
 if (process.env.PARENT) {

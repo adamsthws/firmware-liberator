@@ -134,6 +134,10 @@ class Context:
         # A converted plug's firmware, chosen at A3 (routes.settle_route).
         self.firmware_choice: routes.FirmwareChoice | None = None
         self.last_failure = ""  # what the last stage to fail said, for the report
+        # The run's report to the project's API (report_upload.py): its id and
+        # the process making its proof of work, once begun.
+        self.report_id: str | None = None
+        self.report_work = None
         self.last_failed_step = ""  # and which it was: a failure may send earlier steps back
         try:
             output.private(bundle_ssid(self.manifest_path), "wifi-name")

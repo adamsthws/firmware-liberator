@@ -36,6 +36,10 @@ KEYS = {
     "AUTOFLASH_ESPHOME_WEB_USER": None,  # a user name, not a secret
     "AUTOFLASH_ESPHOME_WEB_PASSWORD": "esphome-web-password",
     "AUTOFLASH_ESPHOME_API_KEY": "esphome-api-key",
+    # The run's report to the project's API (report_upload.py): "1" sends
+    # none; "dev" marks the maintainer's own testing, left out of the figures.
+    "AUTOFLASH_NO_REPORT": None,
+    "AUTOFLASH_REPORT_TAG": None,
     # Not for a run: opens the maintainer's sealed Sonoff backup
     # (tools/repo/private_backup.py). Known, so a .env holding it still loads.
     "AUTOFLASH_BACKUP_KEY": "backup-key",

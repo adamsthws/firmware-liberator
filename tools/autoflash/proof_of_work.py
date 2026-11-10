@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """The work the project's API asks of what the tool sends it, so a flood
 costs its sender: "<time>:<nonce>" such that the SHA-256 of
 "<time>:<subject>:<nonce>" starts with `bits` zero bits.
@@ -12,6 +13,8 @@ website/api/proof-of-work.js.
 from __future__ import annotations
 
 import hashlib
+import os
+import sys
 import time
 from typing import Callable
 
@@ -44,3 +47,23 @@ def solve(subject: str, bits: int, now: float | None = None,
         nonce += 1
         if tick is not None and not nonce & 0x3FFFF:
             tick()
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    if len(args) != 2 or not args[1].isdigit():
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    # The lowest priority there is, so the run it works beside never waits on
+    # it: on Windows, report_upload.py starts it below normal already.
+    if hasattr(os, "nice"):
+        try:
+            os.nice(19)
+        except OSError:
+            pass
+    print(solve(args[0], int(args[1])), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

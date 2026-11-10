@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import __version__, esphome, hostsys, kinds, openbeken, output, plugs, routes, runs, testers
+from tools.autoflash import __version__, esphome, hostsys, kinds, openbeken, output, plugs, report_upload, routes, runs, testers
 from tools.autoflash.device import DeviceError
 from tools.autoflash.runs import ROOT
 from tools.ewelink import relay as ewelink_relay
@@ -518,7 +518,9 @@ def invite_report(ctx: Context, seconds: float, resumed: bool) -> None:
              "sonoff": check_ewelink_hardware}.get(
         runs.run_firmware(ctx.state), lambda ctx: {})
     with output.working("Generating your report..."):
-        fields = report_fields(ctx, seconds, resumed, check(ctx), result=run_result(ctx, "converted"))
+        hardware = check(ctx)
+        fields = report_fields(ctx, seconds, resumed, hardware, result=run_result(ctx, "converted"))
+    report_upload.send(ctx, "converted", seconds, resumed, hardware)
     offer_report(ctx, fields, "Please share how it went!")
     output.tell("")
     output.show("You've reached the bit where I hold out my hat!", output.GREEN)
@@ -545,6 +547,7 @@ def invite_stopped_report(ctx: Context, ending: str) -> None:
     ending: "failed" or "crashed"."""
     seconds = time.monotonic() - ctx.run_started - output.waited()
     fields = report_fields(ctx, seconds, ctx.run_resumed, result=run_result(ctx, ending))
+    report_upload.send(ctx, ending, seconds, ctx.run_resumed)
     offer_report(ctx, fields, "Please share how it went - a run that stopped helps as much "
                               "as one that worked.")
 
