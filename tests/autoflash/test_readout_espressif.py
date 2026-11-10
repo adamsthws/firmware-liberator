@@ -35,17 +35,22 @@ class BridgeTests(unittest.TestCase):
     def test_proceed_sends_the_bridge_wrapped_as_its_firmware_name(self):
         from tools.autoflash import firewall
         from tools.espressif import analyze_vendor_ota, dump_stock_flash
+        state_then = []
+
+        def found(ctx, *, sent):
+            state_then.append(ctx.state.input(readout.STATE_KEY))   # a stop from here on reads through it
+            return "192.0.2.77"
         with learned(BASICR4.wrapper_model, "ESP32C3"), \
                 mock.patch.object(prompts, "require_word", return_value=True), \
                 mock.patch.object(firewall, "choose_port", return_value=8088), \
                 mock.patch.object(firewall, "ensure_firewall"), \
                 mock.patch.object(safety_locks, "lifted"), mock.patch.object(safety_locks, "say_lock_back"), \
                 mock.patch.object(hostsys, "run_tool", return_value=0) as sent, \
-                mock.patch.object(readout_espressif, "find_bridge", return_value="192.0.2.77"), \
+                mock.patch.object(readout_espressif, "find_bridge", side_effect=found) as waited, \
                 mock.patch.object(dump_stock_flash, "read_dump",
                                   return_value=(wifi_flash(), b"\0" * 124, {"size": 1, "sha256": "ab"})), \
                 mock.patch.object(dump_stock_flash, "summary", return_value=[]), \
-                mock.patch.object(dump_stock_flash, "read_info", return_value=None), \
+                mock.patch.object(dump_stock_flash, "read_info", return_value=b"chip: ESP32-C3"), \
                 mock.patch.object(records, "save_backup", return_value=(Path(self.tmp.name), False)), \
                 mock.patch.object(readout_espressif, "back_on_sonoff"), \
                 mock.patch.object(readout, "offer", return_value="done") as offered:
@@ -55,7 +60,15 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(command[command.index("--readout-model") + 1], BASICR4.wrapper_model)
         wrapped = Path(command[command.index("--firmware") + 1]).read_bytes()
         self.assertEqual(analyze_vendor_ota.analyze(wrapped)["wrapper"]["model"], BASICR4.wrapper_model)
-        self.assertTrue(offered.call_args.args[1]["read"])
+        manifest, files = offered.call_args.args[1:3]
+        self.assertTrue(manifest["read"])
+        for key in ("firmware", "facts", "wifi_blanked", "identity_replaced"):
+            self.assertIn(key, manifest)
+        self.assertEqual(manifest["flash"], {"size": 1, "sha256": "ab", "matches_device": None})
+        self.assertTrue(manifest["wifi_blanked"])
+        self.assertEqual(files["info.txt"], b"chip: ESP32-C3")
+        self.assertEqual(state_then, ["sent"])
+        self.assertIs(waited.call_args.kwargs["sent"], True)
         self.assertTrue(self.ctx.state.input(readout.STATE_KEY))
 
     def test_on_the_reading_program_already_it_reads_through_it_sending_nothing(self):
@@ -104,6 +117,24 @@ class BackOnSonoffTests(unittest.TestCase):
                 mock.patch.object(readout_espressif.installer, "back_on_sonoff", return_value=True):
             self.assertTrue(readout_espressif.back_on_sonoff(self.ctx))
         asked.assert_called_once()
+
+    def switched_back(self, answers):
+        """back_on_sonoff after the person switched it off and on, Sonoff's
+        firmware answering as `answers` says, 200 s passing at each look."""
+        import itertools
+        with mock.patch.object(prompts, "wait_for_key"), \
+                mock.patch.object(readout_espressif.installer, "back_on_sonoff", return_value=answers), \
+                mock.patch.object(readout_espressif.time, "monotonic", side_effect=itertools.count(0, 200)), \
+                mock.patch.object(readout_espressif.time, "sleep"):
+            return readout_espressif.back_on_sonoff(self.ctx)
+
+    def test_switched_back_on_it_is_read_once_sonoff_answers(self):
+        self.assertTrue(self.switched_back(True))
+        self.assertEqual(self.ctx.state.input(readout.STATE_KEY), "read")
+
+    def test_never_answering_as_sonoff_is_said_so(self):
+        self.assertFalse(self.switched_back(False))
+        self.assertNotEqual(self.ctx.state.input(readout.STATE_KEY), "read")
 
     def test_on_its_own_network_the_person_is_asked_to_rejoin_theirs(self):
         self.ctx.state.set_input(readout_espressif.BRIDGE_HOST, readout_espressif.setup_network.SETUP_HOST)
