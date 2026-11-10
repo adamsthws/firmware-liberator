@@ -87,7 +87,7 @@ class EsphomeSafeModeTests(unittest.TestCase):
     """A device answering as the mover that a run left on ESPHome is ESPHome in
     safe mode: waited out, never sent the startup firmware."""
 
-    def running(self, earlier, answers=("mover", "esphome"), by_address=False):
+    def running(self, earlier, answers=("mover", "esphome"), by_address=False, other_device=()):
         from types import SimpleNamespace
 
         directory = tempfile.TemporaryDirectory()
@@ -108,12 +108,15 @@ class EsphomeSafeModeTests(unittest.TestCase):
         ctx = SimpleNamespace(dir=now, state=SimpleNamespace(input=inputs.get),
                               web_password=None, esphome_login=None)
         answers = iter(answers)
-        clock = iter(range(0, 10000, 5))
+        clock = iter(range(80000, 90000, 5))  # as time.monotonic() is: seconds since some moment
+        macs = {run: "12:34:56:ab:cd:01" if index in other_device else "12:34:56:ab:cd:ef"
+                for index, run in enumerate(kept)}
+        self.slept = []
         with mock.patch.object(runs, "run_directories", return_value=kept), \
-                mock.patch.object(records, "mac_of_run", return_value="12:34:56:ab:cd:ef"), \
+                mock.patch.object(records, "mac_of_run", side_effect=macs.get), \
                 mock.patch.object(detect, "identify", side_effect=lambda *a, **k: next(answers)), \
                 mock.patch.object(time, "monotonic", side_effect=lambda: next(clock)), \
-                mock.patch.object(time, "sleep"), \
+                mock.patch.object(time, "sleep", side_effect=self.slept.append), \
                 mock.patch.object(output, "say"):
             if by_address:
                 with mock.patch.object(hostsys, "mac_of", return_value="12:34:56:AB:CD:EF"), \
@@ -125,6 +128,7 @@ class EsphomeSafeModeTests(unittest.TestCase):
     def test_left_on_esphome_it_is_waited_out(self):
         converted = [("esphome", ["D5", "I1", "I2"])]
         self.assertEqual(self.running(converted, answers=("mover", "mover", "esphome")), "esphome")
+        self.assertEqual(self.slept, [5, 5], "a pause between asks")
         # Run again at its address, as the network search finds it.
         self.assertEqual(self.running(converted, answers=("mover", "esphome"), by_address=True), "esphome")
 
@@ -138,6 +142,9 @@ class EsphomeSafeModeTests(unittest.TestCase):
     def test_a_run_that_wrote_nothing_does_not_hide_it(self):
         self.assertEqual(self.running([("esphome", ["D5", "I1", "I2"]), ("tasmota", [])]), "esphome")
 
+    def test_only_this_devices_runs_count(self):
+        self.assertEqual(self.running([("esphome", ["D5", "I1", "I2"])], other_device=(0,)), "midway")
+
     def test_one_that_never_comes_back_stops_the_run(self):
         with self.assertRaises(errors.Abort):
             self.running([("esphome", ["D5", "I1", "I2"])], answers=["mover"] * 1000)
@@ -147,7 +154,8 @@ class PastTheCommitTests(unittest.TestCase):
     """A device left on the startup firmware is on Tasmota's layout if this
     computer's run of it got past the commit - Sonoff's otherwise."""
 
-    def source(self, earlier, safeboot=False, version="15.6.0(safeboot)", running="midway"):
+    def source(self, earlier, safeboot=False, version="15.6.0(safeboot)", running="midway", other_device=(),
+               damaged=(), evidence_made=False):
         import json
         from types import SimpleNamespace
         from unittest import mock
@@ -171,15 +179,21 @@ class PastTheCommitTests(unittest.TestCase):
                 (run / "live" / "commit-server.log").write_text(stopped[0])
             if outcome:
                 (run / "live" / "commit-report.json").write_text(json.dumps({"phase": "commit", "status": outcome}))
+            if index in damaged:
+                (run / "autoflash-state.json").write_text("{not json", encoding="utf-8")
             kept.append(run)
         now = root / "now"
         now.mkdir()
         ctx = SimpleNamespace(dir=now, state=RunState.open(now), evidence=now / "live",
                               device=SimpleNamespace(is_safeboot=lambda: safeboot, firmware_version=lambda: version))
         self.evidence, self.state = ctx.evidence, ctx.state
+        if evidence_made:
+            ctx.evidence.mkdir()
         ctx.state.set_input("device_mac", "12:34:56:ab:cd:ef")
+        macs = {run: "12:34:56:ab:cd:01" if index in other_device else "12:34:56:ab:cd:ef"
+                for index, run in enumerate(kept)}
         with mock.patch.object(runs, "run_directories", return_value=kept), \
-             mock.patch.object(records, "mac_of_run", return_value="12:34:56:ab:cd:ef"), \
+             mock.patch.object(records, "mac_of_run", side_effect=macs.get), \
              mock.patch.object(output, "say"):
             return espressif_source.past_the_commit(ctx, running)
 
@@ -223,6 +237,19 @@ class PastTheCommitTests(unittest.TestCase):
         self.assertEqual(self.source([]), "midway")                           # no record of it
         # The latest run decides: one past the commit, then one that started over.
         self.assertEqual(self.source([(["E3"], None), (["X1"], None)]), "midway")
+
+    def test_only_this_devices_runs_count(self):
+        self.assertEqual(self.source([(["E1", "E2", "E3"], None)], other_device=(0,)), "midway")
+        self.assertEqual(self.source([(["E1", "E2", "E3"], None), (["X1"], None)], other_device=(1,)),
+                         "committed")
+
+    def test_a_record_that_cannot_be_read_is_passed_over(self):
+        self.assertEqual(self.source([(["E1", "E2", "E3"], None), (["X1"], None)], damaged=(1,)), "committed")
+        self.assertEqual(self.source([(["X1"], None)], damaged=(0,)), "midway")
+
+    def test_the_commits_record_is_kept_where_this_run_already_keeps_its_own(self):
+        self.assertEqual(self.source([(["E1", "E2", "E3"], "PASS")], evidence_made=True), "committed")
+        self.assertTrue((self.evidence / "commit-report.json").is_file())
 
     def test_a_run_that_wrote_nothing_does_not_hide_the_one_before(self):
         # Seen: runs stopped at X1, sent to a Tasmota with no update service,
