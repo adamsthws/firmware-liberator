@@ -801,6 +801,22 @@ test("a confirmation that fails to send gives back its place in the day's 500", 
   assert.deepEqual(await read(bindings.DB, "notify:2026-11-07"), { count: 0, bytes: 0 });
 });
 
+test("what tools/repo/api_health.py live asks after a deploy is answered as it expects, counting nothing", async () => {
+  const bindings = env();
+  const page = await readout.default.fetch(new Request("https://api.firmwareliberator.com/confirm?t=not-a-token"), bindings);
+  assert.equal(page.status, 404);
+  assert.match(await page.text(), /Nothing to confirm/);
+  const body = Buffer.from(JSON.stringify({ format: 0, health: "check", nonce: "n-health" }));
+  const proof = proofFor(body, BITS, Math.floor(Date.now() / 1000));
+  const answered = await readout.default.fetch(question(null, { "X-Proof": proof }, body), bindings);
+  assert.equal(answered.status, 400);
+  assert.match((await answered.json()).error, /not a question this tool makes/);
+  assert.equal((await bindings.DB.prepare("SELECT count(*) AS n FROM wanted_days").first()).n, 0);
+  const off = await readout.default.fetch(new Request("https://api.firmwareliberator.com/confirm?t=x"),
+    { ...bindings, INGEST: "off" });
+  assert.equal(off.status, 503, "deployed taking none, as live off expects");
+});
+
 test("the confirmation page shows what a sender named as text, never as markup", async () => {
   const bindings = env();
   await tell({ ...NOTIFY, devices: [{ product: "<img src=x onerror=alert(1)>", model: "-" }] }, bindings);

@@ -243,3 +243,67 @@ class MailTests(unittest.TestCase):
         code, out = mail_run({"viewer": {"zones": []}})
         self.assertEqual(code, 1)
         self.assertIn("give it the zone's Analytics: Read", out)
+
+
+class LiveTests(unittest.TestCase):
+    """What a just-deployed API answers; the Worker's own answers are in website/test/."""
+
+    def answers(self, confirm, wanted, ingest="on"):
+        asked = []
+        def ask(path, body=None):
+            asked.append((path, body))
+            return confirm if path.startswith("/confirm") else wanted
+        with mock.patch.object(health, "ask", side_effect=ask):
+            return health.live_problems(ingest), asked
+
+    def test_a_migrated_worker_taking_requests_passes(self):
+        problems, asked = self.answers((404, "<h1>Nothing to confirm</h1>"),
+                                       (400, '{"error":"that is not a question this tool makes"}'))
+        self.assertEqual(problems, [])
+        body = json.loads(asked[1][1])
+        self.assertNotEqual(body["format"], 1, "a format no tool sends, so nothing is counted")
+
+    def test_the_old_worker_or_a_database_short_of_a_migration_fails_and_says_why(self):
+        problems, _ = self.answers((404, '{"error":"readouts are sent to /readout, by the tool"}'),
+                                   (503, '{"error":"the API is being updated: try again later"}'))
+        self.assertEqual(len(problems), 2)
+        self.assertIn("cloudflare_settings.py apply", problems[1])
+
+    def test_deployed_taking_no_requests_each_answers_503(self):
+        off = (503, '{"error":"not taking requests for now: try again later"}')
+        self.assertEqual(self.answers(off, off, "off")[0], [])
+        self.assertEqual(len(self.answers((404, "Nothing to confirm"), off, "off")[0]), 1)
+
+    def test_the_post_carries_the_light_proof_the_worker_asks(self):
+        sent = {}
+        def urlopen(request, timeout):
+            sent.update(request.headers)
+            sent["body"] = request.data
+            raise health.urllib.error.HTTPError(request.full_url, 400, "", {}, io.BytesIO(b"{}"))
+        with mock.patch.object(health.urllib.request, "urlopen", side_effect=urlopen), \
+                mock.patch.object(health, "light_proof_bits", return_value=4):
+            self.assertEqual(health.ask("/wanted", b'{"format": 0}')[0], 400)
+        self.assertEqual(sent["Content-type"], "application/json")
+        stamp, nonce = sent["X-proof"].split(":")
+        subject = health.proof_of_work.body_subject(sent["body"])
+        digest = health.proof_of_work.hashlib.sha256(f"{stamp}:{subject}:{nonce}".encode()).digest()
+        self.assertEqual(digest[0] >> 4, 0, "four leading zero bits, as asked, for this body")
+
+    def test_it_reads_the_proofs_bits_from_the_worker(self):
+        self.assertEqual(health.light_proof_bits(), 20)
+
+    def test_it_tries_again_while_the_new_version_spreads(self):
+        results = iter([["old"], ["old"], []])
+        with mock.patch.object(health, "live_problems", side_effect=lambda ingest: next(results)), \
+                mock.patch.object(health.time, "sleep"):
+            self.assertEqual(health.live("on", wait=90, every=10), [])
+        with mock.patch.object(health, "live_problems", return_value=["old"]), \
+                mock.patch.object(health.time, "sleep"), \
+                mock.patch.object(health.time, "monotonic", side_effect=[0, 0, 85]):
+            self.assertEqual(health.live("on", wait=90, every=10), ["old"])
+
+    def test_it_is_the_api_deploys_last_step(self):
+        workflow = (Path(health.ROOT) / ".github/workflows/website.yml").read_text(encoding="utf-8")
+        job = workflow[workflow.index("\n  deploy-api:"):workflow.index("\n  deploy-token:")]
+        self.assertLess(job.index("npx wrangler deploy --config api/wrangler.jsonc"),
+                        job.index('run: python3 tools/repo/api_health.py live "$INGEST"'))
