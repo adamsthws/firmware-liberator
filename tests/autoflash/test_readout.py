@@ -2,6 +2,7 @@
 read gives, and what the device said it is), where to and when not, which way
 a device is read, and a run ending on it without a conversion."""
 import contextlib
+import hashlib
 import http.server
 import io
 import lzma
@@ -66,12 +67,17 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(set(files), {"manifest.json", "flash.bin", "efuse.bin", "info.txt", "report.json"})
         self.assertEqual(files["flash.bin"], b"flash bytes")
 
-    def test_the_manifest_comes_first_as_it_is_and_the_firmware_in_xz(self):
+    def test_the_manifest_comes_first_as_it_is_the_device_s_firmware_in_xz_and_the_offered_as_it_is(self):
+        # Uncompressed, the website can check an offered file against its SHA-256.
         offered = [offered_firmware.Offered("user1.bin", "1.1.0", b"\xe9offered app")]
-        names = members(readout.package(MANIFEST, FILES, offered))
+        archive = readout.package(MANIFEST, FILES, offered)
+        names = members(archive)
         self.assertEqual(names[0], "manifest.json")
         self.assertIn("flash.bin.xz", names)
-        self.assertIn("offered/user1.bin.xz", names)
+        self.assertIn("offered/user1.bin", names)
+        with tarfile.open(fileobj=io.BytesIO(archive)) as opened:
+            data = opened.extractfile("offered/user1.bin").read()
+        self.assertEqual(hashlib.sha256(data).hexdigest(), offered[0].sha256)
         self.assertIn("report.json", names)
 
     def test_contact_details_go_in_the_manifest_only_when_given(self):
@@ -594,6 +600,9 @@ class HeldFirmwareTests(unittest.TestCase):
                 readout.run(self.ctx, record("S61STPF", s61.stock_model))
         self.assertEqual(offered_firmware.fetch.call_args.kwargs["skip"], frozenset())
         self.assertEqual(offered.call_args.args[3], [])
+        # Not sent, so named by its SHA-256 alone: no file the website would look for.
+        self.assertEqual(offered.call_args.args[1]["offered"],
+                         [{"file": None, "version": "1.1.0", "sha256": held.sha256, "held": True}])
 
 
 class NotifyTests(unittest.TestCase):
