@@ -87,7 +87,7 @@ class LostUpdateTests(unittest.TestCase):
                 mock.patch.object(handover, "wait_out_lost_update") as waited, \
                 mock.patch.object(output, "progress_clear"):
             try:
-                handover.send_as_esphome_update(ctx, b"image", "ESPHome 1")
+                self.took = handover.send_as_esphome_update(ctx, b"image", "ESPHome 1")
             finally:
                 self.uploads, self.waits = upload.call_count, waited.call_count
 
@@ -102,12 +102,19 @@ class LostUpdateTests(unittest.TestCase):
         self.assertEqual((self.uploads, self.waits), (2, 1))
 
     def test_the_wait_outlasts_the_devices_own(self):
-        clock = iter(range(0, 1000))
+        clock = iter(range(5000, 6000))
         with mock.patch.object(handover.time, "monotonic", side_effect=lambda: next(clock)), \
                 mock.patch.object(handover.time, "sleep"), mock.patch.object(output, "tell"), \
                 mock.patch.object(output, "progress"), mock.patch.object(output, "progress_clear"):
             handover.wait_out_lost_update()
-        self.assertGreater(next(clock), handover.esphome_ota.DEVICE_DATA_TIMEOUT)
+        self.assertGreater(next(clock) - 5000, handover.esphome_ota.DEVICE_DATA_TIMEOUT)
+
+    def test_the_time_sending_leaves_out_the_time_a_question_took(self):
+        # For the report: how long the device was busy, not the person.
+        with mock.patch.object(handover.time, "monotonic", side_effect=[0.0, 100.0, 112.34]), \
+                mock.patch.object(handover.unlock, "ask_esphome_password"):
+            self.send(handover.esphome_ota.NeedsPassword(False), None)
+        self.assertEqual(self.took, 12.3)
 
 
 if __name__ == "__main__":
