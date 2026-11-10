@@ -375,6 +375,16 @@ the zone has its own in `DNS_RECORDS`, and two would void both. Until the
 domain is onboarded, a confirmation fails to send and `/notify` answers
 502, keeping nothing.
 
+Every email the Worker sends goes through
+[mail.js](../website/api/mail.js), which counts what came of it for the day
+in the database: `mail-sent:<day>`, or `mail-failed:<code>:<day>` with Email
+Service's error code - the admin view shows them, and the nightly alert names
+yesterday's failures. An address Email Service has suppressed - it bounced
+for good, or its owner marked one of ours as spam - makes `send()` throw
+`E_RECIPIENT_SUPPRESSED`: `/notify` answers it as any other address, keeps
+nothing and tries it no more that day, and its reminder is not tried again;
+those failures are left out of the alert, as some are expected.
+
 ## Working with them
 
 ```sh

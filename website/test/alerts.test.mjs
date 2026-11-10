@@ -78,6 +78,16 @@ test("an email that cannot be sent leaves the night's work done", async () => {
   assert.match(done.why, /Email Service is down/);
 });
 
+test("yesterday's emails that failed are a line, but for those to a suppressed address", async () => {
+  const bindings = env();
+  count(bindings, "mail-failed:E_RECIPIENT_SUPPRESSED:2026-11-09", "2026-11-09", 4);
+  assert.deepEqual(await alertLines(bindings.DB, TODAY, LIMITS), [], "expected now and then");
+  count(bindings, "mail-failed:E_RATE_LIMIT_EXCEEDED:2026-11-09", "2026-11-09", 2);
+  const lines = await alertLines(bindings.DB, TODAY, LIMITS);
+  assert.deepEqual(lines, ["Emails that could not be sent on 2026-11-09: 2 E_RATE_LIMIT_EXCEEDED "
+    + "(Cloudflare's Email Sending activity log has each)."]);
+});
+
 test("the nightly job is given the API's own limits", async () => {
   const bindings = { ...env(), STATS: { head: async () => null, put: async () => {} } };
   count(bindings, "reports:2026-11-09", "2026-11-09", 1000);

@@ -766,6 +766,41 @@ test("a reminder is counted against the day's emails, and one that fails is trie
   assert.equal(await readout.remind(bindings, at("11T03:47:00")), 1);
 });
 
+const suppressed = () => { throw Object.assign(new Error("Recipient is suppressed"), { code: "E_RECIPIENT_SUPPRESSED" }); };
+
+test("an address that bounced for good, or complained, is answered as any other, kept nowhere, not tried again today",
+  async () => {
+    const bindings = env();
+    bindings.EMAIL.send = async () => suppressed();
+    const response = await tell(NOTIFY, bindings);
+    assert.deepEqual([response.status, await response.json()], [202, { confirming: true }]);
+    assert.equal((await bindings.DB.prepare("SELECT count(*) AS n FROM confirmations").first()).n, 0);
+    assert.deepEqual(await read(bindings.DB, "notify:2026-11-07"), { count: 0, bytes: 0 }, "none of the day's 500");
+    assert.equal((await read(bindings.DB, "mail-failed:E_RECIPIENT_SUPPRESSED:2026-11-07")).count, 1);
+    let tried = 0;
+    bindings.EMAIL.send = async () => { tried += 1; };
+    assert.equal((await tell(NOTIFY, bindings, NOW, { "CF-Connecting-IP": "192.0.2.9" })).status, 202);
+    assert.equal(tried, 0);
+  });
+
+test("a reminder to an address since suppressed is not tried again", async () => {
+  const bindings = env();
+  await tell(NOTIFY, bindings);
+  let tried = 0;
+  bindings.EMAIL.send = async () => { tried += 1; suppressed(); };
+  assert.equal(await readout.remind(bindings, at("08T12:47:00")), 0);
+  assert.equal(await readout.remind(bindings, at("08T13:47:00")), 0);
+  assert.equal(tried, 1);
+  assert.deepEqual(await read(bindings.DB, "notify:2026-11-08"), { count: 0, bytes: 0 });
+});
+
+test("a confirmation that fails to send gives back its place in the day's 500", async () => {
+  const bindings = env();
+  bindings.EMAIL = { send: async () => { throw new Error("E_INTERNAL_SERVER_ERROR"); } };
+  assert.equal((await tell(NOTIFY, bindings)).status, 502);
+  assert.deepEqual(await read(bindings.DB, "notify:2026-11-07"), { count: 0, bytes: 0 });
+});
+
 test("the confirmation page shows what a sender named as text, never as markup", async () => {
   const bindings = env();
   await tell({ ...NOTIFY, devices: [{ product: "<img src=x onerror=alert(1)>", model: "-" }] }, bindings);
