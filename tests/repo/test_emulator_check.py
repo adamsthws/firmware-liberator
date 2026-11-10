@@ -1,7 +1,11 @@
 """Which devices a change checks, and what each device's check runs."""
 
+import hashlib
+import os
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools.autoflash import kinds
 from tools.repo import emulator_check as check
@@ -14,7 +18,7 @@ def keys(changed):
 
 
 class WhichDevicesTests(unittest.TestCase):
-    ALL = {kind.key for kind in kinds.READY} - check.NO_DUMP
+    ALL = {kind.key for kind in kinds.READY} - check.NOTHING_TO_RUN
     ESPRESSIF = {key for key in ALL if check.family_of(kinds.find(key)) == "espressif"}
 
     def test_every_device_with_no_change_named(self):
@@ -25,8 +29,16 @@ class WhichDevicesTests(unittest.TestCase):
             self.assertIn(check.family_of(kind), check.EMULATORS, kind.key)
 
     def test_the_s61s_own_files_check_the_s61_alone(self):
-        for path in ("devices/sonoff-s61/esphome.yaml", "tools/beken/rbl.py"):
-            self.assertEqual(keys([path]), {"sonoff-s61"}, path)
+        self.assertEqual(keys(["devices/sonoff-s61/esphome.yaml"]), {"sonoff-s61"})
+
+    def test_the_basic_gen5_with_no_public_dump_has_a_check_of_its_own(self):
+        self.assertIn("sonoff-basic-1gs", keys(None))
+        self.assertEqual(keys(["devices/sonoff-basic-1gs/esphome.yaml"]), {"sonoff-basic-1gs"})
+
+    def test_the_beken_tools_check_every_beken_device(self):
+        # rebuild_dump.py among them, which makes the Basic Gen5's flash.
+        for path in ("tools/beken/rbl.py", "tools/beken/rebuild_dump.py"):
+            self.assertEqual(keys([path]), {"sonoff-s61", "sonoff-basic-1gs"}, path)
 
     def test_one_devices_config_checks_that_device(self):
         self.assertEqual(keys(["devices/sonoff-powct/esphome.yaml"]), {"sonoff-powct"})
@@ -42,7 +54,7 @@ class WhichDevicesTests(unittest.TestCase):
     def test_a_chips_shared_files_check_the_devices_on_it(self):
         for chip in ("esp32", "esp32c3"):
             found = keys([f"devices/{chip}/mover.yaml"])
-            self.assertEqual(found, {kind.key for kind in kinds.READY if kind.chip == chip} - check.NO_DUMP, chip)
+            self.assertEqual(found, {kind.key for kind in kinds.READY if kind.chip == chip} - check.NOTHING_TO_RUN, chip)
         self.assertNotIn("sonoff-s60", keys(["devices/esp32/mover.yaml"]))
 
     def test_nothing_a_conversion_runs_checks_nothing(self):
@@ -57,16 +69,117 @@ class WaysTests(unittest.TestCase):
         self.assertEqual(check.ESPRESSIF_WAYS, (("tasmota", "esphome"), ("esphome", "tasmota")))
 
     def test_every_device_has_something_to_run_from_or_is_named_as_having_nothing(self):
-        from tools.espressif.emulator import public_dump
-        runs_from = {*public_dump.DUMPS, *public_dump.UPDATES,
-                     "sonoff-s60",   # the published public devices
-                     "sonoff-s61"}   # upstream's public dump (beken-emu.sh)
         for kind in kinds.READY:
-            self.assertTrue(kind.key in runs_from or kind.key in check.NO_DUMP, kind.key)
+            self.assertTrue(kind.key in runs_from() or kind.key in check.NOTHING_TO_RUN, kind.key)
 
-    def test_a_device_named_as_having_no_dump_really_has_none(self):
-        from tools.espressif.emulator import public_dump
-        self.assertFalse(check.NO_DUMP & {*public_dump.DUMPS, *public_dump.UPDATES})
+    def test_a_device_named_as_having_nothing_to_run_really_has_nothing(self):
+        self.assertFalse(check.NOTHING_TO_RUN & runs_from())
+
+    def test_only_a_beken_device_with_no_public_dump_runs_from_a_rebuilt_flash(self):
+        self.assertTrue(check.rebuilt(kinds.find("sonoff-basic-1gs")))
+        self.assertFalse(check.rebuilt(kinds.find("sonoff-s61")))
+
+
+def runs_from():
+    """Each device that has something for its check to start from."""
+    from tools.autoflash.routes.beken import images
+    from tools.espressif.emulator import public_dump
+    return {*public_dump.DUMPS, *public_dump.UPDATES,
+            "sonoff-s60",              # the published public devices
+            *images.PUBLIC_DUMPS,      # upstream's public dump (beken-emu.sh)
+            *images.OFFICIAL_FILES}    # a flash rebuilt from the S61's and its official file
+
+
+class BekenCheckTests(unittest.TestCase):
+    """A Beken device's check: the fault suite's, on the emulators asked for,
+    its logs where an Espressif device's go, from the S61's dump or a flash
+    rebuilt for the device."""
+
+    def run_check(self, key, environ=None):
+        calls = []
+
+        def call(command, env):
+            calls.append((command, env))
+            return 0
+        flash = Path("/nowhere/sonoff-basic-1gs.bin")
+        with mock.patch.dict(os.environ, environ or {}), mock.patch.object(check.subprocess, "run"), \
+                mock.patch.object(check.subprocess, "call", side_effect=call), \
+                mock.patch.object(check, "rebuilt_flash", return_value=flash) as rebuilt:
+            self.assertEqual(check.check_device(kinds.find(key), [3, 4]), 0)
+        ((command, env),) = calls
+        return command, env, rebuilt
+
+    def test_the_basic_gen5_runs_from_its_rebuilt_flash_on_the_emulators_asked_for(self):
+        command, env, rebuilt = self.run_check("sonoff-basic-1gs")
+        self.assertEqual(command[1:], ["check", "--instances", "3,4"])
+        self.assertEqual(env["AUTOFLASH_BEKEN_EMU_FLASH"], "/nowhere/sonoff-basic-1gs.bin")
+        self.assertEqual(env["AUTOFLASH_BEKEN_EMU_SUITE_DIR"], str(check.LOGS / "sonoff-basic-1gs"))
+        rebuilt.assert_called_once()
+
+    def test_the_s61_runs_from_its_public_dump_whatever_flash_was_named(self):
+        command, env, rebuilt = self.run_check("sonoff-s61", {"AUTOFLASH_BEKEN_EMU_FLASH": "captures/other.bin"})
+        self.assertEqual(command[1:], ["check", "--instances", "3,4"])
+        self.assertNotIn("AUTOFLASH_BEKEN_EMU_FLASH", env)
+        self.assertEqual(env["AUTOFLASH_BEKEN_EMU_SUITE_DIR"], str(check.LOGS / "sonoff-s61"))
+        rebuilt.assert_not_called()
+
+
+class WhereTheRebuiltFlashIsTests(unittest.TestCase):
+    def test_in_the_beken_emulators_folders_in_captures_which_git_never_tracks(self):
+        from tools.beken.emulator import folders
+        self.assertEqual(folders.REBUILT, ROOT / "captures/emulation/beken/rebuilt")
+        self.assertIn("captures/", (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines())
+
+
+class RebuiltFlashTests(unittest.TestCase):
+    """The Basic Gen5's flash, made from the S61's public dump and its official
+    file, kept in the Beken emulator's folders under captures/."""
+
+    def setUp(self):
+        from tools.autoflash.routes.beken import images
+        from tools.beken.emulator import folders
+        self.images = images
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dumps, self.rebuilt = Path(tmp.name, "firmwares"), Path(tmp.name, "rebuilt")
+        self.dumps.mkdir()
+        self.dump = b"the S61's dump"
+        url = images.PUBLIC_DUMPS[check.REBUILT_FROM][0]
+        (self.dumps / url.rsplit("/", 1)[1]).write_bytes(self.dump)
+        for patch in (mock.patch.object(images, "DUMPS", self.dumps), mock.patch.object(folders, "REBUILT", self.rebuilt),
+                      mock.patch.object(check, "ROOT", Path(tmp.name)),
+                      mock.patch.dict(images.PUBLIC_DUMPS, {check.REBUILT_FROM: (
+                          url, hashlib.sha256(self.dump).hexdigest())})):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_made_from_the_s61s_dump_and_the_devices_official_file(self):
+        import io
+        from contextlib import redirect_stdout
+        from tools.beken import rebuild_dump
+        kind = kinds.find("sonoff-basic-1gs")
+        with mock.patch.object(self.images, "official_file", return_value=b"official") as official, \
+                mock.patch.object(rebuild_dump, "rebuild", return_value=b"flash") as rebuild, \
+                redirect_stdout(io.StringIO()):
+            out = check.rebuilt_flash(kind)
+        official.assert_called_once_with(kind)
+        rebuild.assert_called_once_with(self.dump, b"official")
+        self.assertEqual(out, self.rebuilt / "sonoff-basic-1gs.bin")
+        self.assertEqual(out.read_bytes(), b"flash")
+        self.assertEqual([path.name for path in self.rebuilt.iterdir()], ["sonoff-basic-1gs.bin"])
+
+    def test_not_from_a_dump_other_than_the_one_pinned(self):
+        url = self.images.PUBLIC_DUMPS[check.REBUILT_FROM][0]
+        (self.dumps / url.rsplit("/", 1)[1]).write_bytes(b"another dump")
+        with self.assertRaisesRegex(SystemExit, "not the public dump"):
+            check.rebuilt_flash(kinds.find("sonoff-basic-1gs"))
+        self.assertFalse(self.rebuilt.exists())
+
+    def test_an_official_file_that_cannot_be_had_stops_the_check_saying_why(self):
+        from tools.autoflash.errors import NothingWritten
+        with mock.patch.object(self.images, "official_file", side_effect=NothingWritten("could not be fetched")), \
+                self.assertRaisesRegex(SystemExit, "could not be fetched"):
+            check.rebuilt_flash(kinds.find("sonoff-basic-1gs"))
 
 
 class SideBySideTests(unittest.TestCase):

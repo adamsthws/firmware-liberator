@@ -851,7 +851,12 @@ release's own suite. `list openbeken` gives the six scenarios a new OpenBeken
 build must pass ([updating-firmware.md](updating-firmware.md#5-test)).
 `check` runs each final firmware with no faults, installed from Sonoff's
 firmware and then each taken to the other, and holds each way to the
-end-of-run checks too.
+end-of-run checks too, on emulators 1 and 2 unless `--instances` names two
+others. It is what `tools/repo/emulator_check.py DEVICE` runs for each Beken
+device: the S61 from its public dump, the Basic Gen5 from a flash rebuilt
+from that dump and the Basic Gen5's official file, each with its logs in
+`captures/emulation/device-check/DEVICE/`. To check both on one computer at
+once, give one of them `--instances 3,4`.
 
 Each emulated device takes a core, so two workers suit a laptop. Sonoff's
 firmware restarts by itself once it has its update, in the emulator as on a

@@ -21,8 +21,11 @@ for you, what a run tells you, and what to do when it does not boot.
 - **Give it a run in CI.** A device the tool converts has its own run of the
   `emulator-check` workflow, from its public dump: each final firmware, then
   each device taken to the other
-  ([emulator_check.py](../tools/repo/emulator_check.py)). One with no dump is
-  named in that file's `NO_DUMP`, or a test fails.
+  ([emulator_check.py](../tools/repo/emulator_check.py)). A Beken device with
+  no public dump has its run from a flash rebuilt from the S61's dump and its
+  official file, once that file is pinned ([its steps](#the-steps-1)). One with
+  nothing to run from is named in that file's `NOTHING_TO_RUN`, or a test
+  fails.
 - **Be plain about what was tested.** The emulator has no relays, buttons, LEDs
   or screens, and of meters only the ones it emulates. A conversion passing
   there says the firmware installs and starts, not that the pins are right.
@@ -305,6 +308,12 @@ Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
 7. **Finish as [for every device](#for-every-device)**. A conversion passing in
    the emulator proves the firmware and the tool's path, not the device's
    hardware or its pin map, as it runs on the S61's bootloader and settings.
+   Its run in CI makes the same flash for itself, from the two files fetched
+   by name and hash, and keeps it in `captures/emulation/beken/rebuilt/`:
+
+   ```sh
+   python -I tools/repo/emulator_check.py sonoff-example
+   ```
 
 The [Sonoff Basic Gen5](../devices/sonoff-basic-1gs/README.md) was the first
 device added this way.
