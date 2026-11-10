@@ -4,6 +4,7 @@ import io
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -17,8 +18,10 @@ from tools.autoflash.state import DONE, RunState
 class BeforeTheRunTests(unittest.TestCase):
     def main(self, *, choosing, more=()):
         """cli.main() for `run`, the question of which run answered by `choosing`.
-        What main() sets for the whole process is put back afterwards."""
+        What main() sets for the whole process is put back afterwards;
+        self.top and self.taller are the window's two calls."""
         screen = io.StringIO()
+        self.top, self.taller = mock.Mock(), mock.Mock()
         with mock.patch("sys.argv", ["cli.py", "run", *more]), mock.patch("sys.stdout", screen), \
                 mock.patch.object(hostsys, "password_asker"), mock.patch.object(prompts, "UNATTENDED"), \
                 mock.patch.object(installer, "SIMULATED_BACKUP_FAILURES"), \
@@ -28,9 +31,9 @@ class BeforeTheRunTests(unittest.TestCase):
                 mock.patch.object(beken_images, "UNKNOWN_TABLE"), \
                 mock.patch.object(cli.signal, "signal"), mock.patch.object(interrupt, "install"), \
                 mock.patch.object(credentials, "load", return_value={}), \
-                mock.patch.object(cli, "adopt_older_runs"), mock.patch.object(output, "start_at_top"), \
+                mock.patch.object(cli, "adopt_older_runs"), mock.patch.object(output, "start_at_top", self.top), \
                 mock.patch.object(records, "take_over_earlier_names", self.taken_over), \
-                mock.patch.object(prompts, "wait_for_taller_window"), \
+                mock.patch.object(prompts, "wait_for_taller_window", self.taller), \
                 mock.patch.object(cli, "resolve_run_name", side_effect=choosing):
             return cli.main(), screen.getvalue()
 
@@ -98,6 +101,71 @@ class BeforeTheRunTests(unittest.TestCase):
         self.main(choosing=choosing)
         self.assertEqual(seen, [True, False])
 
+    def test_a_test_can_have_the_backup_fail_every_round(self):
+        seen = []
+
+        def choosing(*_args, **_kwargs):
+            seen.append(installer.SIMULATED_BACKUP_FAILURES)
+            raise KeyboardInterrupt
+        self.main(choosing=choosing, more=["--simulate-backup-failure"])
+        self.main(choosing=choosing)
+        self.assertEqual(seen, [2 * installer.BACKUP_ROUNDS, 0])
+
+    def test_every_option_of_the_command_line_is_taken(self):
+        # Scripts, the docs and the emulator suites give these: one missing
+        # would stop them at the command line.
+        every = ["--manifest", "m.json", "--device-ip", "192.0.2.50", "--listen-ip", "192.0.2.1",
+                 "--email", "someone@example.com", "--web-user", "admin", "--web-password", "secret",
+                 "--esphome-ota-password", "secret", "--esphome-web-user", "admin",
+                 "--esphome-web-password", "secret", "--esphome-api-key", "key", "--all", "--wifi",
+                 "--no-backup", "--firmware", "esphome", "--esphome", "firmware.ota.bin", "--dry-run",
+                 "--no-report", "--verbose", "--bridge", "bridge"]
+        code, _ = self.main(choosing=KeyboardInterrupt, more=every)
+        self.assertEqual(code, 130)
+
+    def test_replacing_its_own_build_goes_with_no_other_firmware(self):
+        with mock.patch("sys.stderr", io.StringIO()):
+            for more in (["--firmware", "tasmota"], ["--esphome", "firmware.ota.bin"]):
+                with self.subTest(more=more), self.assertRaises(SystemExit):
+                    self.main(choosing=AssertionError("went on"), more=["--replace-own-build", *more])
+        for more in ([], ["--firmware", "esphome"]):
+            with self.subTest(more=more):
+                self.assertEqual(self.main(choosing=KeyboardInterrupt, more=["--replace-own-build", *more])[0], 130)
+
+    def test_only_a_run_at_the_keyboard_waits_for_a_taller_window(self):
+        # An unattended run has nobody to make the window taller: waiting
+        # would hang it.
+        for more, waits, top in (([], True, True), (["--verbose"], False, True),
+                                 (["--unattended"], False, False)):
+            with self.subTest(more=more):
+                self.main(choosing=KeyboardInterrupt, more=more)
+                self.assertEqual(self.taller.called, waits)
+                self.assertEqual(self.top.called, top)
+
+    def test_stopping_and_sudo_are_handled_before_a_run_is_chosen(self):
+        # Being stopped (SIGTERM, Ctrl-C) still runs the cleanup; sudo asks in
+        # the tool's own words.
+        seen = []
+
+        def choosing(*_args, **_kwargs):
+            handlers = {call.args[0]: call.args[1] for call in cli.signal.signal.call_args_list}
+            seen.append((hostsys.password_asker, interrupt.install.called, handlers))
+            raise KeyboardInterrupt
+        self.main(choosing=choosing)
+        asker, installed, handlers = seen[0]
+        self.assertIs(asker, cli.admin_password)
+        self.assertTrue(installed)
+        with self.assertRaises(SystemExit) as stopped:
+            handlers[cli.signal.SIGTERM]()
+        self.assertEqual(stopped.exception.code, 143)
+
+    def test_secrets_are_forgotten_from_this_repositorys_bundle(self):
+        with mock.patch.object(runs, "run_directories", return_value=[]), \
+                mock.patch.object(cli, "forget_stored_password", return_value=False) as forget:
+            self.assertEqual(cli.forget_all_secrets(), [])
+        repository = Path(__file__).resolve().parents[2]
+        self.assertEqual(forget.call_args.args[0], (repository / cli.bundle.DEFAULT_MANIFEST).resolve())
+
     def test_q_there_stops_the_same_way(self):
         code, screen = self.main(choosing=prompts.QuitRun("stopped at an operator prompt"))
         self.assertEqual(code, 130)
@@ -119,12 +187,16 @@ class AnotherDeviceTests(unittest.TestCase):
                                   state=mock.Mock(input=mock.Mock(return_value=None)), keep_sign_in=mock.Mock())
             made.append(ctx)
             return ctx
-        codes, commands = iter(codes), []
+        codes, commands, self.ran = iter(codes), [], []
 
-        def ran(ctx, *_):
-            commands.append(ctx.args.command)
-            return next(codes)
+        def running(kind):
+            def ran(ctx, *_):
+                commands.append(ctx.args.command)
+                self.ran.append(kind)
+                return next(codes)
+            return ran
         top, asked = mock.Mock(), mock.Mock(side_effect=list(answers))
+        self.applied, self.looked = mock.Mock(), mock.Mock(return_value="run-latest")
         with contextlib.ExitStack() as patches:
             for patch in (
                     mock.patch("sys.argv", ["cli.py", command, "--device-ip", "192.0.2.50", *more]),
@@ -143,9 +215,12 @@ class AnotherDeviceTests(unittest.TestCase):
                     mock.patch.object(cli, "resolve_run_name", return_value="run-1"),
                     mock.patch.object(cli, "start_new_run", side_effect=lambda _: next(names)),
                     mock.patch.object(cli, "Context", side_effect=context),
-                    mock.patch.object(routes, "apply_target"),
+                    mock.patch.object(routes, "apply_target", self.applied),
+                    mock.patch.object(cli, "run_to_look_at", self.looked),
+                    mock.patch.object(cli, "cmd_status", return_value=0),
                     mock.patch.object(cli, "refused_for_another_run", return_value=False),
-                    mock.patch.object(cli, "convert", ran), mock.patch.object(cli, "read_out", ran),
+                    mock.patch.object(cli, "convert", running("convert")),
+                    mock.patch.object(cli, "read_out", running("read_out")),
                     mock.patch.object(prompts, "ask_choice", asked)):
                 patches.enter_context(patch)
             code = cli.main()
@@ -165,6 +240,23 @@ class AnotherDeviceTests(unittest.TestCase):
         made[2].keep_sign_in.assert_called_once_with(made[1])
         self.assertEqual(asked.call_args.args, ("What next", ["Convert another device", "Read out a device"]))
         self.assertEqual(top.call_count, 1 + 2)   # each conversion at the top of the window
+        self.assertEqual(self.applied.call_count, 3)   # each run's route settled at its start
+
+    def test_a_readout_is_read_out_and_a_conversion_converted(self):
+        self.main(codes=[0, 0, 0], answers=[self.READ_OUT, self.CONVERT, KeyboardInterrupt()])
+        self.assertEqual(self.ran, ["convert", "read_out", "convert"])
+
+    def test_a_readout_starts_a_run_of_its_own(self):
+        # Never an unfinished conversion carried on.
+        _, made, _, _ = self.main(codes=[1], answers=[], command="readout")
+        self.assertEqual((made[0].run, self.ran), ("run-2", ["read_out"]))
+
+    def test_status_looks_at_the_run_given_else_the_devices_latest(self):
+        self.main(codes=[], answers=[], command="status", more=["--run", "run-9"])
+        self.looked.assert_not_called()
+        _, made, _, _ = self.main(codes=[], answers=[], command="status")
+        self.assertEqual(made[0].run, "run-latest")
+        self.looked.assert_called_once_with("192.0.2.50")
 
     def test_a_conversion_and_a_readout_lead_to_each_other(self):
         code, made, asked, _ = self.main(codes=[0, 0, 0], answers=[self.READ_OUT, self.CONVERT, KeyboardInterrupt()])
@@ -325,11 +417,31 @@ class RunChoiceTests(unittest.TestCase):
         name, menu = self.choose(0)
         menu.assert_not_called()
         self.assertNotEqual(name, "done")
+        self.assertEqual(self.remembered, [name])   # the new run is the current one
+
+    def test_the_current_run_is_offered_first_else_the_latest(self):
+        from unittest import mock
+        for name, age in (("current", 200), ("older", 300), ("newer", 100)):
+            self.run_dir(name, ["A0", "A5", "A1", "A2", "C2"])
+            os.utime(self.root / name, (time.time() - age,) * 2)
+        with mock.patch.object(runs, "read_current", return_value="current"):
+            self.assertEqual(self.choose(0)[0], "current")
+        self.assertEqual(self.choose(0)[0], "newer")
+
+    def test_a_run_is_described_by_its_address_and_mac(self):
+        self.run_dir("half", ["A0"])
+        RunState.open(self.root / "half").set_input("device_mac", "12:34:56:ab:cd:ef")
+        self.assertTrue(cli.describe_run(self.root / "half").startswith(
+            "the device at 10.0.0.54, MAC 12:34:56:ab:cd:ef ("))
 
     def test_continuing_picks_up_the_unfinished_run(self):
         self.run_dir("half", ["A0", "A5", "A1", "A2", "C2"])
+        cli.RUN_CHOICE.clear()
         name, menu = self.choose(0)
         self.assertEqual(name, "half")
+        self.assertEqual(self.remembered, ["half"])
+        self.assertIn("Chosen at the start: continue", " ".join(cli.RUN_CHOICE))   # for its log
+        cli.RUN_CHOICE.clear()
         options = menu.call_args.args[1]
         self.assertIn("carries on at stage 7, Backing up Sonoff firmware", options[0])
         self.assertIn("past the point of no return", options[0])
@@ -407,9 +519,13 @@ class RunChoiceTests(unittest.TestCase):
     def test_other_commands_continue_without_asking(self):
         from unittest import mock
         self.run_dir("half", ["A0"])
+        cli.RUN_CHOICE.clear()
         with mock.patch.object(prompts, "ask_choice") as menu:
             self.assertEqual(cli.resolve_run_name(None, False, None), "half")
         menu.assert_not_called()
+        self.assertEqual(self.remembered, ["half"])
+        self.assertIn("the most recent unfinished run", " ".join(cli.RUN_CHOICE))   # for its log
+        cli.RUN_CHOICE.clear()
 
 
 class StageNumberTests(unittest.TestCase):
@@ -488,7 +604,7 @@ class RemoveRunTests(RunChoiceTests):
     def menu(self, answers, confirm=True):
         from unittest import mock
         with mock.patch.object(prompts, "ask_choice", side_effect=answers) as menu, \
-             mock.patch.object(prompts, "ask_yes_no", return_value=confirm), \
+             mock.patch.object(prompts, "ask_yes_no", return_value=confirm) as self.confirm, \
              mock.patch.object(prompts, "section") as section:
             name = cli.resolve_run_name(None, False, None, ask=True)
         return name, menu, section
@@ -498,6 +614,7 @@ class RemoveRunTests(RunChoiceTests):
         name, _, section = self.menu([2])          # 1 continue, 2 new, 3 remove
         self.assertFalse((self.root / "half").exists())
         self.assertNotEqual(name, "half")
+        self.assertEqual(self.remembered, [name])
         section.assert_not_called()                # not past the point of no return
 
     def test_a_half_converted_device_is_warned_about_before_removal(self):
@@ -511,6 +628,7 @@ class RemoveRunTests(RunChoiceTests):
         self.assertTrue((self.root / "half").exists())
         self.assertEqual(name, "half")
         self.assertEqual(menu.call_count, 2)
+        self.assertIs(self.confirm.call_args.kwargs["default"], False)   # Enter keeps it
 
     def test_with_several_runs_it_asks_which_to_remove(self):
         self.run_dir("first", ["A0", "A5", "A1", "A2", "C2"])
@@ -568,6 +686,15 @@ class SudoPasswordTests(unittest.TestCase):
         for key in ("AUTOFLASH_SUDO_PASSWORD", "AUTOFLASH_EMULATOR_SUDO_PASSWORD"):
             os.environ.pop(key, None)
 
+    def test_the_emulators_password_is_only_for_an_unattended_run(self):
+        os.environ["AUTOFLASH_EMULATOR_SUDO_PASSWORD"] = "emulator"
+        with mock.patch.object(hostsys, "check_sudo_password", return_value=None), \
+                mock.patch.object(prompts, "ask_admin_password", return_value="typed"):
+            with mock.patch.object(prompts, "UNATTENDED", False):
+                self.assertEqual(cli.admin_password(), "typed")
+            with mock.patch.object(prompts, "UNATTENDED", True):
+                self.assertEqual(cli.admin_password(), "emulator")
+
     def test_a_given_one_sudo_accepts_is_used(self):
         os.environ["AUTOFLASH_SUDO_PASSWORD"] = "right"
         with mock.patch.object(hostsys, "check_sudo_password", return_value=None), \
@@ -594,7 +721,7 @@ class ReadoutCommandTests(unittest.TestCase):
         with mock.patch.object(cli.output, "say"), mock.patch.object(cli.output, "tell"), \
                 mock.patch.object(readout, "run_all", return_value="all") as every, \
                 mock.patch.object(readout, "read_out_chosen", return_value="chosen") as chosen:
-            cli.cmd_readout(ctx, None)
+            self.assertEqual(cli.cmd_readout(ctx, None), 0)
         return every, chosen, devices
 
     def test_all_reads_every_device_unasked(self):
