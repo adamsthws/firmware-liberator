@@ -218,7 +218,7 @@ class ESPHomeUpdateTests(RouteTestCase):
         self.assertEqual(update.versions(ctx), ("1.4.0", "1.6.0"))
 
     def test_one_named_as_before_2_4_0_is_offered_it_too(self):
-        # The images published before 2.4.0 call themselves adamsthws.sonoff-s60.
+        # The images published before 3.0.0 call themselves adamsthws.sonoff-s60.
         _, route, offered = self.settle(self.ours(project_name="adamsthws.sonoff-s60"), answer=1)
         self.assertEqual(route, ("esphome", "outdated"))
         self.assertIn("ESPHome, update to 1.6.0", offered)
@@ -236,7 +236,7 @@ class ESPHomeUpdateTests(RouteTestCase):
         for why, info in (("this release", self.ours("1.6.0")), ("a later one", self.ours("1.10.0")),
                           ("another project", self.ours(project_name="someone.else")),
                           ("another kind's", self.ours(project_name="liberator.sonoff-s61")),
-                          ("another kind's, named as before 2.4.0", self.ours(project_name="adamsthws.sonoff-s61")),
+                          ("another kind's, named as before 3.0.0", self.ours(project_name="adamsthws.sonoff-s61")),
                           ("adopted, its API given a key", self.ours(encrypted=True)),
                           ("adopted without a key: not a build published",
                            self.ours(built="2026-11-04 21:19:12 +0000")),

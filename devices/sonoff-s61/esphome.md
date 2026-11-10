@@ -83,7 +83,7 @@ The outputs, in `.esphome/build/esphome/.pioenvs/esphome/`:
   (`change_mode_every: 1`, every 2 s), so each refreshes every 4 s.
 - **SEL is `inverted`.** `hlw8012` drives SEL high for the current, as an
   HLW8012 takes it, but a BL0937 measures the voltage with SEL high, as
-  ESPHome's `hlw8012` page says for this model. Before 2.4.0 SEL was not
+  ESPHome's `hlw8012` page says for this model. Before 3.0.0 SEL was not
   inverted and each reading was the other's: about 20 A whatever the load, and
   a voltage that followed it, 5 V at 100 W. The emulated meter showed it
   ([the emulator's board](../../tools/beken/emulator/README.md#the-devices-board-boardpy)).

@@ -706,7 +706,7 @@ class InstanceTests(unittest.TestCase):
 
 class EarlierRecordsTests(unittest.TestCase):
     def test_runs_a_saved_device_came_with_are_not_this_scenarios_once_their_folder_is_renamed(self):
-        """A device saved by a release before 2.4.0 has its runs under
+        """A device saved by a release before 3.0.0 has its runs under
         captures/plugs/; this checkout's tool renames that as it starts."""
         with tempfile.TemporaryDirectory() as tmp:
             instance = fault_suite.Instance(3)

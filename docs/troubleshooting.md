@@ -98,10 +98,10 @@ are built into macOS and Windows). Without one, type it: `s60-ota-bridge`.
 
 ### Records from an earlier release
 
-**"... captures/plugs (as releases before 2.4.0 named it) and ...
+**"... captures/plugs (as releases before 3.0.0 named it) and ...
 captures/devices both exist"**
 
-Releases before 2.4.0 kept each device's backup and runs in `captures/plugs/`.
+Releases before 3.0.0 kept each device's backup and runs in `captures/plugs/`.
 A newer release renames that folder to `captures/devices/` as it starts, but
 not while both exist, as after running an earlier release again. Nothing has
 been changed. Move each device's folder from

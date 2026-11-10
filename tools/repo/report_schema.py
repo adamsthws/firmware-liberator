@@ -78,7 +78,7 @@ def schema() -> dict[str, Any]:
             "id": string("^[0-9a-f]{32}$", 32),
             "proof": string("^[0-9]{1,12}:[0-9]{1,20}$", 33),
             "tag": words("user", "dev"),
-            "tool": string("^2\\.[0-9]{1,3}\\.[0-9]{1,3}$", 11),
+            "tool": string("^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}$", 11),
             "kind": words("run"),
             "result": words(*report_data.RESULTS),
             "stopped": nullable(record({

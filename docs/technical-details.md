@@ -258,7 +258,7 @@ again**: keep a copy of `captures/devices/` somewhere safe.
 not been used for a while, and removes it with `--delete`. It never removes a
 backup.
 
-Releases before 2.4.0 kept each device's records in `captures/plugs/<MAC>/`,
+Releases before 3.0.0 kept each device's records in `captures/plugs/<MAC>/`,
 with `plug.json` for today's `device.json`. The first time a newer release
 starts, it renames that folder to `captures/devices/` in place, in one step,
 copying or rewriting nothing. It will not while both folders exist, or while a

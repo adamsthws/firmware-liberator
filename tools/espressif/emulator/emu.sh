@@ -106,7 +106,7 @@ efuse_mac() {
 }
 # The device whose flash is in $STATE/flash.bin. From before devices were chosen,
 # that flash came from the dump in captures/emulation/.
-# (An instance left by a checkout before 2.4.0 names it in $STATE/plug.)
+# (An instance left by a checkout before 3.0.0 names it in $STATE/plug.)
 if [ -f "$STATE/plug" ] && [ ! -e "$STATE/device" ]; then mv "$STATE/plug" "$STATE/device"; fi
 if [ -f "$STATE/device" ]; then
     was=$(sed -n 2p "$STATE/device")
@@ -133,7 +133,7 @@ chip=$(PYTHONPATH=$ROOT "$PY" -c 'import sys; from tools.espressif.flashmap impo
 # Another device than last time: its own flash, kept from its last run, comes
 # back, and the one that was running is put by for its next - each with the
 # mode its flash was built for (below).
-# (Kept in plugs/ by a checkout before 2.4.0: the same folder.)
+# (Kept in plugs/ by a checkout before 3.0.0: the same folder.)
 if [ -d "$STATE/plugs" ] && [ ! -e "$STATE/devices" ]; then mv "$STATE/plugs" "$STATE/devices"; fi
 if [ "$mac" != "$was" ]; then
     if [ -n "$was" ] && [ -f "$STATE/flash.bin" ]; then
@@ -178,7 +178,7 @@ try:
         seen.append((float("inf"), model))
 except (OSError, ValueError):
     pass
-# A device kept, or an instance left, by a checkout before 2.4.0 has its
+# A device kept, or an instance left, by a checkout before 3.0.0 has its
 # records in plugs/ until the tool next runs there.
 for runs in (f"{captures}/devices/{device}/runs", f"{saved}/*/captures/*s/{device}/runs",
              f"{states}/state*/work/captures/*s/{device}/runs"):

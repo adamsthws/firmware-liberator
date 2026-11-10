@@ -39,7 +39,7 @@ from pathlib import Path
 
 
 # The namespace every kind's ESPHome project is named in (ESPHome wants one,
-# before a dot): liberator.sonoff-s60. Images before 2.4.0 were named in
+# before a dot): liberator.sonoff-s60. Images before 3.0.0 were named in
 # EARLIER_ESPHOME_NAMESPACES: a device on one still runs this project's.
 ESPHOME_NAMESPACE = "liberator"
 EARLIER_ESPHOME_NAMESPACES = ("adamsthws",)

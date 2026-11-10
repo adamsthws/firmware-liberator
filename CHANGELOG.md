@@ -14,7 +14,13 @@ on that commit, and carries the firmware files the tool installs with
 which `gh release verify vX.Y.Z` and `gh release verify-asset vX.Y.Z FILE`
 check.
 
-## 2.4.0
+## 3.0.0
+
+A major release because an option has gone: the tool's options say "device",
+as its screens do, since it converts much more than smart plugs now.
+
+- `--plug-ip` is `--device-ip`, and the hidden `--plug` is gone (`--run` names
+  a run). A command or script that gives either needs the new name.
 
 - A device can go back to Sonoff's firmware with no backup on your computer. On the
   way to Tasmota or ESPHome the tool keeps the device's Sonoff identity - its eWeLink
@@ -282,11 +288,9 @@ check.
 - A run that stopped offers to open a GitHub issue for it, with its title
   filled in and its report on your clipboard to paste; the end of a run no
   longer asks for its report to be posted in Discussions.
-- The tool's options and the names of what it keeps say "device", as its
-  screens do: it converts much more than smart plugs now. `--plug-ip` is
-  `--device-ip`, and the hidden `--plug` is gone (`--run` names a run). Each
-  device's records are in `captures/devices/<MAC>/`, with `device.json`, where
-  releases up to 2.3.0 kept them in `captures/plugs/<MAC>/` with `plug.json`.
+- The names of what the tool keeps say "device" too. Each device's records
+  are in `captures/devices/<MAC>/`, with `device.json`, where releases up to
+  2.3.0 kept them in `captures/plugs/<MAC>/` with `plug.json`.
   The first time it starts, the tool renames that folder where it is - nothing
   in it is copied or rewritten, a Sonoff backup least of all - and it carries
   on a run an earlier release began. It stops, changing nothing, while a run

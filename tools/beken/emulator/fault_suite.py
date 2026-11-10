@@ -408,7 +408,7 @@ class Instance:
 
     def all_runs(self) -> list[Path]:
         """Every run's log in the instance. A device saved by a release before
-        2.4.0 has its records in plugs/, until this checkout's tool carries it
+        3.0.0 has its records in plugs/, until this checkout's tool carries it
         on and renames them."""
         captures = self.state / "work/captures"
         earlier = captures / "plugs"

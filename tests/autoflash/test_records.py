@@ -120,7 +120,7 @@ MAC = "12:34:56:ab:cd:ef"
 
 
 class EarlierNamesTests(unittest.TestCase):
-    """What a release before 2.4.0 kept as captures/plugs/ and plug.json is
+    """What a release before 3.0.0 kept as captures/plugs/ and plug.json is
     renamed where it is, once, and never while that could lose anything."""
 
     def setUp(self):

@@ -120,7 +120,7 @@ STUB_CLOUD = os.environ.get("AUTOFLASH_EMU_STUB_CLOUD") == "1"
 
 def records_under(root):
     """The tool's records under `root`/captures: devices/, or plugs/ where a
-    release before 2.4.0 keeps them - a legacy run's until this checkout's
+    release before 3.0.0 keeps them - a legacy run's until this checkout's
     tool carries it on and renames them, or a device saved by one."""
     captures = Path(root) / "captures"
     earlier = captures / "plugs"
@@ -323,7 +323,7 @@ API_REQUEST = re.compile(r"^\S+ (\w+) (\S+) \d+ -> (\d+) (.*)$")
 READING_OUT = re.compile(r"Reading out (.*) \((\d+) of (\d+)\)\.\.\.")
 # Where the readout asks for the device to be switched off and on, and waits.
 # The answers read off a run's report, in its log: each the last on its row
-# (report.report_screen).  The labels before 2.4.0 too, for an earlier
+# (report.report_screen).  The labels before 3.0.0 too, for an earlier
 # release's runs.
 REPORT_RESULT = re.compile(r"Result:\s+(.*)")
 REPORT_BACKUP = re.compile(r"(?:Sonoff backup|\bBackup):\s+(.*)")

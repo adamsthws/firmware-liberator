@@ -51,7 +51,7 @@ emulator runs a copy, so the backup is never written.
   `flash.bin` and `efuse.bin` in `captures/emulation/`, is offered too.
 - **Its state between runs.** Each device's emulated flash is kept in
   `captures/emulation/state/`, so each carries on where it was when you switch
-  back to it; `--fresh` puts the chosen one back to its backup. Before 2.4.0
+  back to it; `--fresh` puts the chosen one back to its backup. Before 3.0.0
   an instance kept its other devices' flashes in `plugs/` there and named its
   chosen device in a file called `plug`; `emu.sh` renames both in place.
 - **With no backup at all.** When `captures/devices/` holds none, the

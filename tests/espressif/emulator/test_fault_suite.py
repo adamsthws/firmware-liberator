@@ -1229,7 +1229,7 @@ class ScenarioTests(unittest.TestCase):
         self.assertIn(fs.UNEXPECTED, sc.ours(log.parents[1] / "20261013-040000/run.log", old))
 
     def test_an_earlier_releases_records_are_read_where_it_keeps_them(self):
-        """captures/plugs/, as releases before 2.4.0 name it, until this
+        """captures/plugs/, as releases before 3.0.0 name it, until this
         checkout's tool has renamed it: a legacy run's log is read from there."""
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp)

@@ -32,7 +32,7 @@ from . import kinds, oslock
 ROOT = Path(__file__).resolve().parents[2]
 CAPTURES = ROOT / "captures"
 DEVICES = CAPTURES / "devices"
-# What releases before 2.4.0 called the folder and each device's file, from
+# What releases before 3.0.0 called the folder and each device's file, from
 # when the tool converted only smart plugs: take_over_earlier_names() renames them.
 EARLIER_FOLDER = "plugs"
 EARLIER_FILE = "plug.json"
@@ -57,7 +57,7 @@ class EarlierNames(Exception):
 
 
 def take_over_earlier_names() -> None:
-    """Records kept by a release before 2.4.0, under the names it gave them -
+    """Records kept by a release before 3.0.0, under the names it gave them -
     captures/plugs/, and plug.json in each device's folder - renamed to
     today's.
 
@@ -70,7 +70,7 @@ def take_over_earlier_names() -> None:
     if earlier.is_dir():
         if DEVICES.exists():
             raise EarlierNames(
-                f"{earlier} (as releases before 2.4.0 named it) and {DEVICES} both exist. Move each device's "
+                f"{earlier} (as releases before 3.0.0 named it) and {DEVICES} both exist. Move each device's "
                 f"folder from {earlier.name}/ into {DEVICES.name}/, delete the empty {earlier.name}/, and run again.")
         held = [lock.parent.name.replace("-", ":") for lock in sorted(earlier.glob("*/run.lock"))
                 if oslock.held_elsewhere(lock)]
@@ -92,7 +92,7 @@ def take_over_earlier_names() -> None:
 
 def earlier_run_name(name: str) -> str:
     """A run's name (runs.run_name) as it is now, from one a release before
-    2.4.0 wrote down: plugs/<mac>/runs/<when> is devices/<mac>/runs/<when>."""
+    3.0.0 wrote down: plugs/<mac>/runs/<when> is devices/<mac>/runs/<when>."""
     first, slash, rest = name.partition("/")
     return f"{DEVICES.name}/{rest}" if slash and first == EARLIER_FOLDER else name
 

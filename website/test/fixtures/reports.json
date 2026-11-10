@@ -45,7 +45,7 @@
     {"why": "a stage's number out of range", "set": {"stages.A1.tries": 0}},
     {"why": "a nested key the schema does not name", "set": {"os.hostname": "kitchen-pc"}},
     {"why": "an OS version with a character outside the list", "set": {"os.version": "Ubuntu <b>"}},
-    {"why": "a tool version that is not 2.x", "set": {"tool": "3.0.0"}},
+    {"why": "a tool version that is not x.y.z", "set": {"tool": "3.0"}},
     {"why": "a proof not shaped as one", "set": {"proof": "1794000000:198:1"}}
   ]
 }

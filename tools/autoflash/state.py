@@ -27,7 +27,7 @@ SKIPPED = "skipped"
 # the run's log (output.private) under these labels.
 PRIVATE_INPUTS = {"email": "email", "device_mac": "mac", "device_name": "device-name",
                   "web_user": "web-user"}
-# What a run begun by a release before 2.4.0 calls its inputs, and how each
+# What a run begun by a release before 3.0.0 calls its inputs, and how each
 # step's capture of the device's busy time ends: read under today's names, and
 # saved under them from then on, so such a run is carried on where it stopped.
 EARLIER_INPUTS = {"plug_ip": "device_ip", "plug_mac": "device_mac", "plug_kind": "device_kind"}

@@ -131,7 +131,7 @@ esphome:
 # package. It names the release this image came out in, which cannot change.
 # update_firmware.py writes the release.
 dashboard_import:
-  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-basic-1gs/esphome.yaml@v2.4.0
+  package_import_url: github://adamsthws/firmware-liberator/devices/sonoff-basic-1gs/esphome.yaml@v3.0.0
   import_full_config: false
 
 globals:

@@ -141,7 +141,7 @@ def own_values() -> dict[str, str]:
     except (OSError, ValueError, KeyError):
         pass
     dumps: dict[str, bytes] = {}
-    # Under the names releases before 2.4.0 gave them too (plugs/, plug.json),
+    # Under the names releases before 3.0.0 gave them too (plugs/, plug.json),
     # where the tool has not run since to rename them.
     for device in sorted([*(CAPTURES / "devices").glob("*"), *(CAPTURES / "plugs").glob("*")]):
         record = {}
