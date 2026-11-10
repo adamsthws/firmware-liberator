@@ -6,7 +6,7 @@
 # that breaks either shows before it is merged.
 #
 # The deploy job's environment, website, takes only main (set by
-# tools/repo/github_settings.py) and holds CLOUDFLARE_DEPLOY_TOKEN.
+# tools/repo/github_settings.py) and holds CLOUDFLARE_WORKERS_DEPLOY_TOKEN.
 name: Website
 
 on:
@@ -96,7 +96,7 @@ jobs:
           path: website/dist
       - name: Deploy
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_DEPLOY_TOKEN }}
         run: npx wrangler deploy
 
   deploy-api:
@@ -121,7 +121,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Deploy
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_DEPLOY_TOKEN }}
           # "off" only when run by hand and so chosen; a push has no input.
           INGEST: ${{ inputs.ingest || 'on' }}
         run: |
@@ -159,7 +159,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Deploy
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_DEPLOY_TOKEN }}
         run: npx wrangler deploy --config admin/wrangler.jsonc
       # That it lets no one in unsigned: Access sends a visitor to sign in,
       # and the Worker refuses one Access has not passed.
@@ -192,5 +192,5 @@ jobs:
           persist-credentials: false
       - name: What the deploy token can see
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+          CLOUDFLARE_WORKERS_DEPLOY_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_DEPLOY_TOKEN }}
         run: python3 tools/repo/cloudflare_settings.py deploy-token

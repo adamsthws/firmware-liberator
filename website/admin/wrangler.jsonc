@@ -4,8 +4,8 @@
 // from the API's and the website's. The website workflow deploys it.
 //
 // Its secret, ANALYTICS_TOKEN, a token that can only read the account's
-// analytics, is set by cloudflare_settings.py apply from .env.infra; without
-// it the view leaves out the month's use.
+// analytics, is made and set by tools/repo/cloudflare_tokens.py, and kept
+// nowhere else; without it the view leaves out the month's use.
 {
   "name": "firmware-liberator-admin",
   "main": "index.js",

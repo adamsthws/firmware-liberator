@@ -13,7 +13,7 @@ SNAPSHOT_AGE, or written by a database short of the newest migration
 notices a migration not yet applied.
 
 `usage` reads the account's use from Cloudflare's analytics, with
-CLOUDFLARE_API_TOKEN (CI's read token, which needs Account Analytics: Read):
+CLOUDFLARE_SETTINGS_CHECK_TOKEN (CI's, which needs Account Analytics Read):
 this month's Workers requests, D1 rows and R2 operations to yesterday, and
 what D1 and R2 hold, each against what the account's plan includes a month
 (INCLUDED: Workers Paid since 2026-11-10, and R2's own free allowance). It
@@ -30,8 +30,8 @@ BOUNCE_WARN, Cloudflare's own mark for a sender's good standing (once there
 are MIN_BOUNCES, so one mistyped address among few emails does not), or on
 any complaint: Email Service pauses an account's sending for poor
 reputation. Counts only, as CI's log is public: never an address. With
-CLOUDFLARE_API_TOKEN, CI's read token, which needs the zone's Analytics:
-Read and the account's Email Sending: Read.
+CLOUDFLARE_SETTINGS_CHECK_TOKEN, CI's, which needs the zone's Analytics Read
+and the account's Email Sending Read.
 
 `live` is the website workflow's last step of deploying the API Worker, and
 needs no token. It asks the API what only a deployed, migrated Worker with
@@ -347,6 +347,7 @@ def usage_problems(measures: dict[str, int]) -> list[str]:
 
 def main(argv: list[str] | None = None, now: dt.datetime | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
+    cs.TOKEN_VARIABLE = cs.TOKENS["settings-check-read-only"]["variable"]
     if args not in (["snapshot"], ["usage"], ["mail"], ["live"], ["live", "on"], ["live", "off"]):
         print(__doc__.strip(), file=sys.stderr)
         return 2
