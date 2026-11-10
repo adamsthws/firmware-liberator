@@ -47,6 +47,22 @@ class SonoffFirmwareTests(unittest.TestCase):
         with self.assertRaisesRegex(sonoff_firmware.FirmwareError, "not whole"):
             sonoff_firmware.app_in_file(bytes(damaged), kinds.SONOFF_S60.wrapper_model)
 
+    def test_the_app_is_found_among_several_a_file_holds(self):
+        # Sonoff's files can hold the firmware of several models, a record each.
+        first = self.wrapped(model="FWSW-E32S60-OTHER-ESP32C3")[0x18:0x64]  # another model's
+        own = bytearray(self.wrapped()[0x18:0x64])
+        records_end = 0x18 + 2 * 76
+        struct.pack_into(">I", own, 0x30, records_end)
+        data = bytearray(self.wrapped()[:0x18]) + first + own + SONOFF_APP
+        data[1] = 2
+        self.assertEqual(sonoff_firmware.app_in_file(bytes(data), kinds.SONOFF_S60.wrapper_model), SONOFF_APP)
+
+    def test_an_app_filling_the_slot_fits_and_a_byte_more_does_not(self):
+        size = len(SONOFF_APP)
+        self.assertEqual(sonoff_firmware.checked_app(SONOFF_APP, kinds.SONOFF_S60, size), SONOFF_APP)
+        with self.assertRaisesRegex(sonoff_firmware.FirmwareError, "does not fit"):
+            sonoff_firmware.checked_app(SONOFF_APP, kinds.SONOFF_S60, size - 1)
+
     def test_anything_but_sonoffs_firmware_for_the_chip_is_refused(self):
         for app, kind, why in ((app_image("autoflash_bridge"), kinds.SONOFF_S60, "not Sonoff's"),
                                (SONOFF_APP, kinds.SONOFF_POW_ELITE, "not for"),
@@ -122,6 +138,14 @@ class SonoffFirmwareTests(unittest.TestCase):
             first, second = plans.back_to_sonoff(flash, running=1, layout=layout)
         self.assertEqual(plans.stock_slot(flash, layout), 0)
         self.assertEqual(second.blobs["settings"][:len(settings)], settings)
+
+    def test_settings_filling_their_partition_fit_and_a_byte_more_does_not(self):
+        layout = images.layout_of(kinds.SONOFF_S60)
+        room = layout.otadata - layout.nvs
+        flash = sonoff_firmware.flash_of(images.sonoff_table(), b"\x5a" * room, SONOFF_APP, layout)
+        self.assertEqual(flash[layout.nvs:layout.otadata], b"\x5a" * room)
+        with self.assertRaisesRegex(sonoff_firmware.FirmwareError, "do not fit"):
+            sonoff_firmware.flash_of(images.sonoff_table(), b"\x5a" * (room + 1), SONOFF_APP, layout)
 
 
 if __name__ == "__main__":
