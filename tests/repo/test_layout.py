@@ -68,6 +68,41 @@ class RepositoryRootTests(unittest.TestCase):
                     wrong.append(f"{name}: {href}")
         self.assertEqual(wrong, [])
 
+    def test_what_a_page_names_of_the_code_is_there(self):
+        """Specifics live in the code (CONTRIBUTING.md): a page names where to
+        look, and a rename leaves it pointing nowhere. Each path a page gives
+        in backticks under the project's own folders is there; each
+        UPPER_CASE name a maintainer's or contributor's page gives is in the
+        code. (Device and research pages name firmware's own constants, which
+        this project's code has no reason to hold.)"""
+        own = ("tools/", "tests/", "website/", ".github/", "devices/", "docs/", "artifacts/")
+        # Not the project's: examples of a shape, and paths in another project's tree.
+        elsewhere = {"AGENTS.md": {"tools/a/b.py", "tests/a/test_b.py"},
+                     "tools/beken/emulator/README.md": {"tests/self_test.py", "tests/tapnet.py"}}
+        tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True,
+                                 check=True).stdout.split()
+        there = set(tracked) | {"/".join(name.split("/")[:n]) for name in tracked for n in range(1, name.count("/") + 1)}
+        pages = [name for name in tracked if name.endswith(".md") and not name.startswith("archive/")
+                 and name != "CHANGELOG.md"]   # released sections are history
+        maintainers = [name for name in pages if name.startswith((".github/", "website/"))
+                       or name in ("AGENTS.md", "CONTRIBUTING.md", "docs/testing.md")]
+        code = "\n".join((ROOT / name).read_text(encoding="utf-8", errors="replace") for name in tracked
+                         if not name.endswith(".md") and not name.startswith("artifacts/")
+                         and (ROOT / name).is_file())
+        constant = re.compile(r"[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+")
+        wrong = []
+        for name in pages:
+            text = re.sub(r"```.*?```", "", (ROOT / name).read_text(encoding="utf-8"), flags=re.DOTALL)
+            for quoted in re.findall(r"`([^`\n]+)`", text):
+                path = (quoted.split() or [""])[0].rstrip("/").split("#")[0]
+                if path.startswith(own) and not re.search(r"[<>*{}$]", path) and path not in there \
+                        and path not in elsewhere.get(name, ()) \
+                        and subprocess.run(["git", "check-ignore", "-q", path], cwd=ROOT).returncode:
+                    wrong.append(f"{name}: `{quoted}` is not there")
+                if name in maintainers and constant.fullmatch(quoted) and quoted not in code:
+                    wrong.append(f"{name}: `{quoted}` is in no code")
+        self.assertEqual(wrong, [])
+
     def test_every_windows_path_names_a_file(self):
         """`tools\\...\\name.ext` in the PowerShell, batch and prose: Windows runs them
         from the checkout root (C:\\Autoflash\\repo in the emulator's VM)."""
