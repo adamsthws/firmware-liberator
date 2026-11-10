@@ -171,6 +171,10 @@ check.
   whole minute on end, the minute it takes to keep it. One that stopped answering
   part way, switched off say, was said done all the same; it is now waited for,
   and its minute starts again once it answers.
+- An ESPHome update cut off part way - this computer crashing, say - and sent
+  again at once is waited for, about two minutes, while the plug still waits
+  for the rest of the first, then sent again: every try in that time timed out,
+  and the run stopped.
 - A stage that passes leaves just its line on the screen. What it showed while
   under way stayed above it: a try that failed on the network and was tried
   again, drawn as a stage stopped and then run a second time; instructions to

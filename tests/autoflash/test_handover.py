@@ -76,5 +76,39 @@ class ConsentTests(unittest.TestCase):
         self.assertFalse(interrupt.pending())
 
 
+class LostUpdateTests(unittest.TestCase):
+    """A plug still held by an update cut off part way is waited for, once."""
+
+    def send(self, *outcomes):
+        from types import SimpleNamespace
+        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda key: "192.0.2.50"),
+                              esphome_password=None, esphome_key=None)
+        with mock.patch.object(handover.esphome_ota, "upload", side_effect=outcomes) as upload, \
+                mock.patch.object(handover, "wait_out_lost_update") as waited, \
+                mock.patch.object(output, "progress_clear"):
+            try:
+                handover.send_as_esphome_update(ctx, b"image", "ESPHome 1")
+            finally:
+                self.uploads, self.waits = upload.call_count, waited.call_count
+
+    def test_it_waits_for_the_lost_update_and_sends_again(self):
+        self.send(handover.esphome_ota.Busy("its update service did not answer"), None)
+        self.assertEqual((self.uploads, self.waits), (2, 1))
+
+    def test_still_held_after_the_wait_it_stops(self):
+        busy = handover.esphome_ota.Busy("its update service did not answer")
+        with self.assertRaises(errors.Abort):
+            self.send(busy, busy)
+        self.assertEqual((self.uploads, self.waits), (2, 1))
+
+    def test_the_wait_outlasts_the_plugs_own(self):
+        clock = iter(range(0, 1000))
+        with mock.patch.object(handover.time, "monotonic", side_effect=lambda: next(clock)), \
+                mock.patch.object(handover.time, "sleep"), mock.patch.object(output, "tell"), \
+                mock.patch.object(output, "progress"), mock.patch.object(output, "progress_clear"):
+            handover.wait_out_lost_update()
+        self.assertGreater(next(clock), handover.esphome_ota.PLUG_DATA_TIMEOUT)
+
+
 if __name__ == "__main__":
     unittest.main()

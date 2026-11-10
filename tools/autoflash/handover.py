@@ -36,6 +36,18 @@ def consent_to_leave(ctx: Context, what: str) -> None:
     ctx.consented = True
 
 
+def wait_out_lost_update() -> None:
+    """Until ESPHome on the plug has given up an update cut off part way,
+    which holds its update service till then."""
+    output.tell("    The device's update service does not answer: it is most likely still waiting for")
+    output.tell("    the rest of an update that was cut off, and gives it up within two minutes.")
+    started = time.monotonic()
+    while (waited := time.monotonic() - started) < esphome_ota.PLUG_DATA_TIMEOUT + 15:
+        output.progress(f"waiting for the device to give it up... {waited:.0f}s")
+        time.sleep(1.0)
+    output.progress_clear()
+
+
 def send_as_esphome_update(ctx: Context, image: bytes, what: str, port: int = esphome_ota.PORT) -> float:
     """`image` as an ordinary ESPHome update, to the ESPHome (or the mover) at
     the plug's address, on `port` - ESPHome's own on an Espressif plug,
@@ -48,6 +60,7 @@ def send_as_esphome_update(ctx: Context, image: bytes, what: str, port: int = es
 
     # Asked before the go-ahead (unlock_esphome); here again only for a plug
     # that changed since, or a run sending it once more.
+    waited = False
     while True:
         try:
             esphome_ota.upload(host, image, port=port, progress=progress, password=ctx.esphome_password,
@@ -59,6 +72,15 @@ def send_as_esphome_update(ctx: Context, image: bytes, what: str, port: int = es
         except (esphome_ota.NeedsEncryption, esphome_ota.WrongKey):
             output.progress_clear()
             unlock.ask_esphome_key(ctx, host)
+        except esphome_ota.Busy as exc:
+            # Seen in the emulator: this computer crashed at 10% of an update and
+            # ran again at once, and every send timed out until the plug gave the
+            # lost one up.
+            if waited:
+                raise Abort(f"sending {what} to the device failed: {exc}") from exc
+            output.progress_clear()
+            wait_out_lost_update()
+            waited = True
         except (esphome_ota.OTAError, OSError) as exc:
             raise Abort(f"sending {what} to the device failed: {exc}") from exc
         finally:
