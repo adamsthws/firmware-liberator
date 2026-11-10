@@ -7,14 +7,16 @@
 //   a Sonoff version, a tool version) under it is left out, so no one report
 //   or device can be picked out, nor a made-up name shown by a few reports.
 // - A run's success is a conversion, over conversions, failures and crashes:
-//   one the person declined, or with nothing to do, counts apart.
+//   one the person declined, with nothing to do, or that met a device the tool
+//   does not convert yet (counted as "unsupported", and in "wanted"), counts
+//   apart; the device figures are of devices the tool converts.
 import { LATEST_MIGRATION } from "./database.js";
 
 export const FORMAT = 1;
 export const SMALLEST = 5;
 // Months of run times given, the latest first.
 export const TIME_MONTHS = 12;
-const NOT_FAILURES = "('declined', 'nothing-to-do')";
+const NOT_FAILURES = "('declined', 'nothing-to-do', 'unsupported-device')";
 // A device none of whose reports is held for review: a spike's reports made
 // its record before they were held (nightly.js).
 const NOT_HELD = `device_hash NOT IN (SELECT reports.device_hash FROM held_reports
@@ -29,7 +31,8 @@ const OUTCOMES = `sum(n) AS runs,
   sum(CASE WHEN result = 'converted' THEN n ELSE 0 END) AS converted,
   sum(CASE WHEN result = 'failed' AND error NOT IN ${NOT_FAILURES} THEN n ELSE 0 END) AS failed,
   sum(CASE WHEN result = 'crashed' THEN n ELSE 0 END) AS crashed,
-  sum(CASE WHEN result = 'failed' AND error IN ${NOT_FAILURES} THEN n ELSE 0 END) AS declined,
+  sum(CASE WHEN result = 'failed' AND error IN ('declined', 'nothing-to-do') THEN n ELSE 0 END) AS declined,
+  sum(CASE WHEN result = 'failed' AND error = 'unsupported-device' THEN n ELSE 0 END) AS unsupported,
   sum(CASE WHEN result = 'updated' THEN n ELSE 0 END) AS updated,
   sum(CASE WHEN result = 'put-back' THEN n ELSE 0 END) AS put_back`;
 
@@ -38,7 +41,8 @@ const success = (row) => rate(row.converted, row.converted + row.failed + row.cr
 function outcomes(row) {
   return {
     runs: count(row.runs), converted: count(row.converted), failed: count(row.failed), crashed: count(row.crashed),
-    declined: count(row.declined), updated: count(row.updated), putBack: count(row.put_back), success: success(row),
+    declined: count(row.declined), unsupported: count(row.unsupported), updated: count(row.updated),
+    putBack: count(row.put_back), success: success(row),
   };
 }
 
@@ -47,10 +51,12 @@ export async function snapshot(db, now = new Date()) {
   const today = now.toISOString().slice(0, 10);
   const through = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
   const [devices] = await all(`SELECT count(*) AS seen, sum(conversions > 0) AS converted,
-    sum(first_result = 'converted') AS first_run, sum(back_to_sonoff > 0) AS back FROM devices WHERE dev = 0 AND ${NOT_HELD}`);
+    sum(first_result = 'converted') AS first_run, sum(back_to_sonoff > 0) AS back FROM devices
+    WHERE dev = 0 AND ${NOT_HELD} AND device IS NOT NULL`);
   const [median] = await all(`SELECT runs_to_convert AS value FROM (SELECT runs_to_convert,
       row_number() OVER (ORDER BY runs_to_convert) AS rank, count(*) OVER () AS n
-    FROM devices WHERE dev = 0 AND ${NOT_HELD} AND runs_to_convert IS NOT NULL) WHERE rank = (n + 1) / 2`);
+    FROM devices WHERE dev = 0 AND ${NOT_HELD} AND device IS NOT NULL AND runs_to_convert IS NOT NULL)
+    WHERE rank = (n + 1) / 2`);
   const [runs] = await all(`SELECT ${OUTCOMES} FROM monthly_totals WHERE tag = 'user'`);
   const months = await all(`SELECT month, ${OUTCOMES} FROM monthly_totals WHERE tag = 'user'
     GROUP BY month ORDER BY month`);
