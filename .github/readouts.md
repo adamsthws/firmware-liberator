@@ -80,8 +80,12 @@ settings, which is what the devices not converted yet stop for.
 ## Its format
 
 A readout is a tar with `manifest.json` first and uncompressed, so the API
-reads the manifest without unpacking anything. Each `.bin` in it is
-xz-compressed. The files are those
+reads the manifest without unpacking anything. Each `.bin` read from the
+device is xz-compressed; the files eWeLink offers, under `offered/`, are not,
+so the API checks each against the SHA-256 the manifest gives it, and turns
+the readout away if one is missing or differs. Only a file checked so is
+marked held (`readouts/firmware/`), so no readout can have the tool leave out
+a file the store does not have. The files are those
 [docs/readouts.md](../docs/readouts.md#what-is-in-one) lists, and
 `readout.package` and the two `read_and_anonymise` functions write them.
 
@@ -89,7 +93,7 @@ The API relies on this much of the manifest: its `format`, its `product`,
 `stock_model` and `version` (together the readout's key), whether the memory
 was `read`, and what every genuine readout of that key shares - `firmware`
 and `layout` for a whole one, the SHA-256 of each `offered` file for a first
-stage. A change to any of these is a change to both sides.
+stage - and each `offered` file's `file`, where it is in the tar. A change to any of these is a change to both sides.
 
 ## Where it goes
 

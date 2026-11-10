@@ -183,6 +183,53 @@ export function manifestOf(body) {
   }
 }
 
+// The files of a readout's tar, by name, each its bytes: null if it is not
+// a tar that holds together.
+export function filesOf(body) {
+  const bytes = new Uint8Array(body);
+  const decoder = new TextDecoder();
+  const field = (at, start, end) => decoder.decode(bytes.subarray(at + start, at + end)).replace(/\0.*$/s, "");
+  const files = new Map();
+  for (let at = 0; at + 512 <= bytes.length;) {
+    const name = field(at, 0, 100);
+    if (!name) {
+      break;   // the empty blocks that end it
+    }
+    const size = /^[0-7]+$/.test(field(at, 124, 136).trim()) ? parseInt(field(at, 124, 136).trim(), 8) : NaN;
+    if (!Number.isSafeInteger(size) || at + 512 + size > bytes.length) {
+      return null;
+    }
+    const prefix = field(at, 257, 263) === "ustar" ? field(at, 345, 500) : "";
+    if (["", "0"].includes(field(at, 156, 157))) {   // a file, not a directory or a link
+      files.set(prefix ? `${prefix}/${name}` : name, bytes.subarray(at + 512, at + 512 + size));
+    }
+    at += 512 + Math.ceil(size / 512) * 512;
+  }
+  return files;
+}
+
+// The SHA-256s of the offered files a readout holds, each checked against
+// the one its manifest gives it: null if one it names is not in it, or is
+// not what it says. Only these are marked held (keep), so no readout can have
+// the tool leave out of later ones a file the store does not have.
+async function offeredIn(body, manifest) {
+  const listed = (Array.isArray(manifest.offered) ? manifest.offered : [])
+    .filter((item) => item?.file !== null && item?.file !== undefined).slice(0, MAX_FIRMWARE);
+  if (!listed.length) {
+    return [];
+  }
+  const files = filesOf(body);
+  const found = [];
+  for (const item of listed) {
+    const data = typeof item.file === "string" ? files?.get(item.file) : undefined;
+    if (!data || typeof item.sha256 !== "string" || hex(await sha256(data)) !== item.sha256) {
+      return null;
+    }
+    found.push(item.sha256);
+  }
+  return found;
+}
+
 // The product models enough readouts of are in (ENOUGH), upper-case.
 function enoughOf(env) {
   return String(env.ENOUGH || "").split(",").map((model) => model.trim().toUpperCase()).filter(Boolean);
@@ -431,6 +478,10 @@ export async function readout(request, env, now = new Date()) {
   if (!manifest || !fits(manifest.product, PRODUCT)) {
     return answer(400, { error: "that is not a readout this tool makes" });
   }
+  const offered = await offeredIn(body, manifest);
+  if (!offered) {
+    return answer(400, { error: "a file the readout names is not in it, or is not the file it says" });
+  }
   const day = now.toISOString().slice(0, 10);
   // Its reference, which its sender is shown, and where it is kept.
   const id = `${day}-${digest.slice(0, 12)}`;
@@ -496,7 +547,7 @@ export async function readout(request, env, now = new Date()) {
     return answer(200, { enough: true });
   }
   try {
-    await keep(env, key, body, manifest, id);
+    await keep(env, key, body, manifest, id, offered);
   } catch (error) {
     // Nothing of it left behind: a mark left would say a file is held that
     // is not, and nothing would ever delete it.
@@ -513,8 +564,8 @@ export async function readout(request, env, now = new Date()) {
   return answer(201, { id });
 }
 
-// A readout, with the marks of what it holds.
-async function keep(env, key, body, manifest, id) {
+// A readout, with the marks of the offered files it holds (offeredIn).
+async function keep(env, key, body, manifest, id, offered) {
   await env.READOUTS.put(key, body, {
     httpMetadata: { contentType: "application/x-tar" },
     customMetadata: {
@@ -527,12 +578,10 @@ async function keep(env, key, body, manifest, id) {
   // Each file it holds marked, once - the first readout to hold one keeps the
   // mark - and listed by the readout, so deleting it deletes its marks too:
   // listed first, so a mark is never written that its readout does not list.
-  for (const item of Array.isArray(manifest.offered) ? manifest.offered.slice(0, MAX_FIRMWARE) : []) {
-    if (typeof item?.sha256 === "string" && /^[0-9a-f]{64}$/.test(item.sha256) && !item.held
-        && !(await isHeld(env, firmwareKey(item.sha256)))) {
-      await env.DB.prepare("INSERT OR IGNORE INTO readout_firmware (readout, sha) VALUES (?1, ?2)")
-        .bind(id, item.sha256).run();
-      await env.READOUTS.put(firmwareKey(item.sha256), id, { customMetadata: { readout: key } });
+  for (const sha of offered) {
+    if (!(await isHeld(env, firmwareKey(sha)))) {
+      await env.DB.prepare("INSERT OR IGNORE INTO readout_firmware (readout, sha) VALUES (?1, ?2)").bind(id, sha).run();
+      await env.READOUTS.put(firmwareKey(sha), id, { customMetadata: { readout: key } });
     }
   }
 }

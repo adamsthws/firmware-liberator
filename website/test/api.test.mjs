@@ -1,5 +1,6 @@
 // What api/index.js, the project's API Worker, takes and turns away.
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -25,6 +26,13 @@ const MANIFEST = { format: 1, product: "NEWTHING", stock_model: "SN-NEW-01", ver
   read: true };
 const readoutOf = (manifest = MANIFEST, extra = {}) =>
   tar({ "manifest.json": JSON.stringify(manifest), "flash.bin.xz": "\xfd7zXZ", ...extra });
+
+// Offered files, as a readout holds them: its manifest's list, and the files.
+function offering(...contents) {
+  const offered = contents.map((content, index) => ({ file: `offered/user${index + 1}.bin`, version: "1.1.0",
+    sha256: createHash("sha256").update(content).digest("hex") }));
+  return { offered, files: Object.fromEntries(offered.map((item, index) => [item.file, contents[index]])) };
+}
 
 // The tool's work (proof_of_work.solve, by way of readout.proof), made easy for a test.
 // Easier work than a real readout's, so the tests are quick: set on the module
@@ -200,9 +208,8 @@ test("a readout cut off part way through being kept leaves nothing of it behind"
     }
     return put(...args);
   };
-  const offered = [{ file: "offered/user1.bin", version: "1.1.0", sha256: "a".repeat(64) },
-    { file: "offered/user2.bin", version: "1.1.0", sha256: "b".repeat(64) }];
-  await assert.rejects(send(post(readoutOf({ ...MANIFEST, offered })), bindings), /R2 down/);
+  const { offered, files } = offering("one app", "another app");
+  await assert.rejects(send(post(readoutOf({ ...MANIFEST, offered }, files)), bindings), /R2 down/);
   assert.deepEqual([...bindings.READOUTS.objects.keys()], [], "its tar or a mark is left");
   assert.deepEqual(bindings.DB.db.prepare("SELECT * FROM readout_firmware").all(), []);
   assert.deepEqual(bindings.DB.db.prepare("SELECT * FROM readouts").all(), []);
@@ -313,13 +320,51 @@ test("a readout's row names its sender by a keyed hash a key, never its address"
 
 test("an offered file a readout holds is marked, and one it left out is not", async () => {
   const bindings = env();
-  const offered = [{ file: "offered/user1.bin", version: "1.1.0", sha256: "a".repeat(64) },
-    { file: null, version: "1.1.0", sha256: "b".repeat(64), held: true }];
-  assert.equal((await send(post(readoutOf({ ...MANIFEST, offered })), bindings)).status, 201);
+  const { offered: [one], files } = offering("an app");
+  const offered = [one, { file: null, version: "1.1.0", sha256: "b".repeat(64), held: true }];
+  assert.equal((await send(post(readoutOf({ ...MANIFEST, offered }, files)), bindings)).status, 201);
   const keys = [...bindings.READOUTS.objects.keys()];
-  assert.ok(keys.includes(`readouts/firmware/${"a".repeat(64)}`));
+  assert.ok(keys.includes(`readouts/firmware/${one.sha256}`));
   assert.ok(!keys.includes(`readouts/firmware/${"b".repeat(64)}`));
   assert.ok(!keys.some((key) => key.startsWith("readouts/held/")), "what is held is the readouts table's");
+});
+
+test("a readout naming an offered file it does not hold, or one that is not what it says, is turned away", async () => {
+  // Else one made-up readout could mark a real file held, and every genuine
+  // readout after it would leave that file out.
+  const real = "f".repeat(64);
+  const { offered: [one], files } = offering("an app");
+  for (const [offered, extra] of [
+    [[{ file: "offered/user1.bin", version: "1.1.0", sha256: real }], {}],
+    [[{ file: "offered/user1.bin", version: "1.1.0", sha256: real }], { "offered/user1.bin": "something else" }],
+    [[{ ...one, file: "offered/user2.bin" }], files],
+    [[{ ...one, file: 7 }], files]]) {
+    const bindings = env();
+    const response = await send(post(readoutOf({ ...MANIFEST, offered }, extra)), bindings);
+    assert.equal(response.status, 400, JSON.stringify(offered));
+    assert.deepEqual([...bindings.READOUTS.objects.keys()], []);
+    assert.deepEqual(await read(bindings.DB, "readouts:2026-11-07"), { count: 0, bytes: 0 });
+  }
+});
+
+test("the Worker finds the offered files in a readout the tool itself packs", () => {
+  const made = spawnSync(process.env.AUTOFLASH_PYTHON || "python3", ["-c", `
+import base64, sys
+from tools.autoflash import readout
+from tools.ewelink import offered_firmware
+item = offered_firmware.Offered("a-name-long-enough-that-a-ustar-header-splits-it-into-a-prefix-and-a-name-"
+                                "of-its-own-as-python-writes-one/user1.bin", "1.1.0", b"\\xe9offered app")
+manifest = {"format": 1, "product": "NEWTHING", "offered": [{"file": "offered/" + item.name, "sha256": item.sha256}]}
+sys.stdout.write(base64.b64encode(readout.package(manifest, {"flash.bin": b"flash"}, [item])).decode())
+`], { cwd: new URL("../../", import.meta.url).pathname, encoding: "utf8" });
+  assert.equal(made.status, 0, made.stderr);
+  const body = Buffer.from(made.stdout, "base64");
+  const files = readout.filesOf(body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength));
+  const [name] = [...files.keys()].filter((key) => key.startsWith("offered/"));
+  assert.match(name, /^offered\/a-name-long-enough-.*\/user1\.bin$/);
+  assert.equal(createHash("sha256").update(files.get(name)).digest("hex"),
+    createHash("sha256").update(Buffer.from("\xe9offered app", "latin1")).digest("hex"));
+  assert.ok(files.has("flash.bin.xz"));
 });
 
 test("asked first, a readout that would add nothing is not wanted - nor one its sender sent", async () => {
@@ -548,10 +593,10 @@ test("without its SENDER_KEY no readout is taken", async () => {
 
 test("asked first, the files held already are named, wanted or not", async () => {
   const bindings = env();
-  const offered = [{ file: "offered/user1.bin", version: "1.1.0", sha256: "a".repeat(64) }];
-  await send(post(readoutOf({ ...MANIFEST, product: "OTHERTHING", offered })), bindings);
-  const answer = await ask({ ...ASKED, firmware: ["a".repeat(64), "c".repeat(64)] }, bindings);
-  assert.deepEqual(answer, { wanted: true, held: ["a".repeat(64)] });
+  const { offered, files } = offering("an app");
+  await send(post(readoutOf({ ...MANIFEST, product: "OTHERTHING", offered }, files)), bindings);
+  const answer = await ask({ ...ASKED, firmware: [offered[0].sha256, "c".repeat(64)] }, bindings);
+  assert.deepEqual(answer, { wanted: true, held: [offered[0].sha256] });
   bindings.READOUTS.objects.set(`readouts/firmware/${"c".repeat(64)}`, { size: 1 });
   assert.deepEqual((await ask({ ...ASKED, firmware: ["c".repeat(64)] }, bindings)).held, ["c".repeat(64)]);
 });
