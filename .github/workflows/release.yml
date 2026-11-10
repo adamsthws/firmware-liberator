@@ -25,7 +25,10 @@ concurrency:
   group: release
 
 jobs:
+  # Only main is released: run by hand from another branch, nothing is, as
+  # every job below waits on a version from this one.
   version:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
