@@ -42,7 +42,7 @@ release's, with a 302 so no browser keeps it past the next release.
 sitemap, so a search doesn't land someone on a superseded procedure; they
 must not be blocked in `robots.txt`, or crawlers would never see the
 `noindex`. `llms.txt` is a short guide to the site for AI tools, written by
-hand: add a page to it when a page matters to someone converting a plug.
+hand: add a page to it when a page matters to someone converting a device.
 Its list of devices follows the tool: `tests/repo/test_site.py` fails until
 each device the tool knows has its line there, in the tool's order, with its
 status from `devices/status.json` and the firmware it converts to. The same

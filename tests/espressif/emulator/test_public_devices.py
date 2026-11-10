@@ -1,30 +1,30 @@
-"""public_plugs.py, the public plugs each final firmware is tried on, and their runs."""
+"""public_devices.py, the public devices each final firmware is tried on, and their runs."""
 
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from tools.espressif.emulator import public_plugs
+from tools.espressif.emulator import public_devices
 
 
-class PublicPlugsTests(unittest.TestCase):
-    def test_a_kept_plug_counts_as_stopped_only_after_its_step(self):
+class PublicDevicesTests(unittest.TestCase):
+    def test_a_kept_device_counts_as_stopped_only_after_its_step(self):
         with tempfile.TemporaryDirectory() as directory:
             saved = Path(directory)
-            run = saved / "captures/plugs/12-34-56-ab-cd-ef/runs/1"
+            run = saved / "captures/devices/12-34-56-ab-cd-ef/runs/1"
             run.mkdir(parents=True)
-            (saved / "captures/.autoflash-current").write_text("plugs/12-34-56-ab-cd-ef/runs/1\n")
+            (saved / "captures/.autoflash-current").write_text("devices/12-34-56-ab-cd-ef/runs/1\n")
             (saved / "flash.bin").write_bytes(b"")
             (run / "autoflash-state.json").write_text(json.dumps({"steps": {"E3": {"status": "attempted"}}}))
-            self.assertFalse(public_plugs.step_done(saved, "E3"))
+            self.assertFalse(public_devices.step_done(saved, "E3"))
             (run / "autoflash-state.json").write_text(json.dumps({"steps": {"E3": {"status": "done"}}}))
-            self.assertTrue(public_plugs.step_done(saved, "E3"))
+            self.assertTrue(public_devices.step_done(saved, "E3"))
 
     def test_each_final_firmware_is_installed_then_left(self):
-        self.assertEqual({way[0][1] for way in public_plugs.WAYS}, {"tasmota", "esphome"})
-        for (_, first, kept), (source, second, _) in public_plugs.WAYS:
-            self.assertEqual(source, kept)   # from the plug its own first run made
+        self.assertEqual({way[0][1] for way in public_devices.WAYS}, {"tasmota", "esphome"})
+        for (_, first, kept), (source, second, _) in public_devices.WAYS:
+            self.assertEqual(source, kept)   # from the device its own first run made
             self.assertNotEqual(second, first)
 
     def test_each_way_goes_on_without_waiting_for_the_other(self):
@@ -56,10 +56,10 @@ class PublicPlugsTests(unittest.TestCase):
                 (saved / start).mkdir()
                 (saved / start / "flash-mode").write_text("public\n")
             out = io.StringIO()
-            with mock.patch.object(public_plugs, "SAVED", saved), \
-                    mock.patch.object(public_plugs, "LOGS", saved / "logs"), \
-                    mock.patch.object(public_plugs, "run", side_effect=fake_run), redirect_stdout(out):
-                code = public_plugs.command_test(argparse.Namespace(instances=[1, 2]))
+            with mock.patch.object(public_devices, "SAVED", saved), \
+                    mock.patch.object(public_devices, "LOGS", saved / "logs"), \
+                    mock.patch.object(public_devices, "run", side_effect=fake_run), redirect_stdout(out):
+                code = public_devices.command_test(argparse.Namespace(instances=[1, 2]))
         self.assertEqual(code, 1)
         self.assertLess(events.index(("start", "public-on-esphome")),
                         events.index(("end", "public-pre-final-tasmota")))

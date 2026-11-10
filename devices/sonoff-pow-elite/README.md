@@ -14,7 +14,7 @@
 
 Sonoff's DIN-rail power meter and switch with a small display, the **POWR316D**.
 Its stock model, below, is also the 20 A POWR320D's, whose relay is a latching one
-on other pins: the tool converts a plug eWeLink calls a POWR316D, and no other.
+on other pins: the tool converts a device eWeLink calls a POWR316D, and no other.
 
 | | |
 |---|---|

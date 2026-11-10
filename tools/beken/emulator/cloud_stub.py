@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""The emulated Beken plug's eWeLink: the local stub (tools/ewelink/stub_cloud),
-served on its router's address for the plug and for the tool alike, as
-beken-emu.sh plug runs it (plug-net.sh).
+"""The emulated Beken device's eWeLink: the local stub (tools/ewelink/stub_cloud),
+served on its router's address for the device and for the tool alike, as
+beken-emu.sh device runs it (device-net.sh).
 
     python3 -I -B cloud_stub.py --state DIR --bind ADDRESS --flash DIR/flash.bin
 
 Dispatch is plaintext on :80, as the S61's factory dispatch URL is; the IoT
 WebSocket and the account API are TLS on :443, under a CA of our own made once
-into DIR (ca.crt, with the leaf beside it), which the plug is made to trust
+into DIR (ca.crt, with the leaf beside it), which the device is made to trust
 (cloud_online.StockHooks' trust-anchor swap) and the tool is given
-(SSL_CERT_FILE). The plug's identity is what it says as it registers; its
+(SSL_CERT_FILE). The device's identity is what it says as it registers; its
 hardware address, which eWeLink's record carries, is read from its flash.
 
 Its model is what the firmware it first started holds, not what it says as it
@@ -49,7 +49,7 @@ HEARTBEAT = 145
 
 def certificates(state: Path, address: str) -> tuple[Path, Path]:
     """The leaf and its key in `state`, made with their CA for `address` - and
-    made again for another (a plug started on another network): the plug
+    made again for another (a device started on another network): the device
     checks the leaf names the address it dialled."""
     leaf, key, made_for = state / "leaf.crt", state / "leaf.key", state / "certs-for"
     try:
@@ -74,7 +74,7 @@ def model_in(app: bytes) -> str:
 
 
 def device(flash: Path, state: Path) -> dict:
-    """The account record's part the plug's register does not give. Its model is
+    """The account record's part the device's register does not give. Its model is
     kept in `state` the first time, from the Sonoff firmware it started on: the
     stub may next start with another firmware on the flash."""
     kept = state / "model"
@@ -97,11 +97,11 @@ def device(flash: Path, state: Path) -> dict:
 
 
 def offered(flash: Path, state: Path, model: str) -> SimpleNamespace | None:
-    """The update file the stub offers the plug, as eWeLink offers a real one
-    its official file (query_ota.latest_offer): the plug's own stock app as the
+    """The update file the stub offers the device, as eWeLink offers a real one
+    its official file (query_ota.latest_offer): the device's own stock app as the
     RBL its bootloader applies, in the FOTA container its updater takes, named
     as its kind's are. A readout reverts with it, a run back to Sonoff with no
-    backup fetches it. Made once into `state`, from the Sonoff firmware the plug
+    backup fetches it. Made once into `state`, from the Sonoff firmware the device
     first started on: it may next start with another firmware on the flash.
     None where the flash holds no stock app this can read."""
     kept, kept_version = state / "offered.fota", state / "offered.version"
@@ -119,7 +119,7 @@ def offered(flash: Path, state: Path, model: str) -> SimpleNamespace | None:
 
 
 def remember(stub: ss.Stub, path: Path, model: str = "") -> None:
-    """What plugs have said of themselves, kept in `path` across restarts: an
+    """What devices have said of themselves, kept in `path` across restarts: an
     eWeLink account keeps its devices while they run another firmware. Their
     model is the record's `model`, whatever they say."""
     try:

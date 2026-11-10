@@ -1,6 +1,6 @@
-"""The kinds of plug the tool converts, and what is each one's own.
+"""The kinds of device the tool converts, and what is each one's own.
 
-What differs from one kind of plug to the next is kept here: how eWeLink and
+What differs from one kind of device to the next is kept here: how eWeLink and
 its stock firmware name it, the model its maker's updater wants a file
 wrapped for, its wiring for Tasmota, what its ESPHome calls itself, and what
 a person calls it.  The firmware published for a kind is pinned where it is
@@ -9,19 +9,19 @@ used, each file named for the kind it is for: its installer
 bootloader built with it (routes.espressif.images.IMAGE and BOOTLOADER), and
 its maker's partition table (SONOFF_TABLE there).  The final firmware's names are the
 same for every kind - tasmota-abcdef, esphome-abcdef, openbeken-abcdef - so the
-kind is told by what else each firmware says, which renaming the plug
+kind is told by what else each firmware says, which renaming the device
 leaves alone: Tasmota's template, ESPHome's comment, and the answer
 OpenBeken's driver gives (openbeken.kind).
 
-A run keeps the kind it converts (its "plug_kind"): from the eWeLink account
+A run keeps the kind it converts (its "device_kind"): from the eWeLink account
 (A1), from what the stock firmware says it is (A2), or from a converted
 Tasmota's template.  The kind names its chip family, which is whose steps the
 run takes (tools/autoflash/routes).  Official Tasmota's template is named after the kind,
 and ESPHome's comment by the image made for it; every firmware part way
 through a conversion is the tool's own, the same for every kind.
 
-Espressif plugs have one route (tools/autoflash/routes/espressif), whichever
-chip they have (tools/espressif/chips.py). Beken plugs have another.
+Espressif devices have one route (tools/autoflash/routes/espressif), whichever
+chip they have (tools/espressif/chips.py). Beken devices have another.
 docs/adding-a-device.md says how to add a kind.
 
 How far each kind is proven is kept in devices/status.json, alone: the READMEs'
@@ -40,7 +40,7 @@ from pathlib import Path
 
 # The namespace every kind's ESPHome project is named in (ESPHome wants one,
 # before a dot): liberator.sonoff-s60. Images before 2.4.0 were named in
-# EARLIER_ESPHOME_NAMESPACES: a plug on one still runs this project's.
+# EARLIER_ESPHOME_NAMESPACES: a device on one still runs this project's.
 ESPHOME_NAMESPACE = "liberator"
 EARLIER_ESPHOME_NAMESPACES = ("adamsthws",)
 
@@ -93,7 +93,7 @@ STATUSES = {key: Status(value) for key, value in json.loads(STATUS_FILE.read_tex
 
 @dataclass(frozen=True, eq=False)
 class Kind:
-    """A kind of plug the tool converts."""
+    """A kind of device the tool converts."""
 
     # In file names (esphome-sonoff-s60-imprintable-*.bin) and a run's record.
     key: str
@@ -117,24 +117,24 @@ class Kind:
     # Its wiring, as a Tasmota template gives it; none for a kind Tasmota does not run on.
     tasmota_gpio: tuple[int, ...]
     # The names its own network had in earlier ESPHome builds: the first with
-    # the last two bytes of the plug's MAC.
+    # the last two bytes of the device's MAC.
     esphome_legacy_setup_prefix: str
     esphome_legacy_prefix: str
     # Its ESPHome's friendly name in releases before its comment said the kind.
     esphome_legacy_friendly_name: str = ""
-    # For a Beken plug: the command its OpenBeken (built with this project's
+    # For a Beken device: the command its OpenBeken (built with this project's
     # driver, tools/beken/openbeken/) takes to fetch and apply Sonoff's
     # firmware again, checking the slot it goes to first; "" for a kind that
     # has none.
     openbeken_revert: str = ""
-    # Whether its conversion uses eWeLink's LAN API, so the plug must answer
+    # Whether its conversion uses eWeLink's LAN API, so the device must answer
     # eWeLink's discovery on the network (LAN Control on in the app). The S61's
     # goes through eWeLink alone, and the account's record of its hardware
     # address finds it on the network.
     uses_lan_control: bool = True
-    # Whether another plug's stock firmware calls itself the same, with other
+    # Whether another device's stock firmware calls itself the same, with other
     # wiring (the POW Elite's 16 A and 20 A): only eWeLink's product model then
-    # says it is this kind, and a plug it does not name is not converted.
+    # says it is this kind, and a device it does not name is not converted.
     product_model_decides: bool = False
     # Whether it has a power meter: the report says how its calibration went.
     has_meter: bool = False
@@ -175,7 +175,7 @@ class Kind:
     @property
     def esphome_project(self) -> str:
         """The project its ESPHome is built as (devices/<kind>/esphome.yaml),
-        which the plug says through its API, with the project's version."""
+        which the device says through its API, with the project's version."""
         return f"{ESPHOME_NAMESPACE}.{self.key}"
 
     @property
@@ -186,7 +186,7 @@ class Kind:
 
     @property
     def display_name(self) -> str:
-        """What the firmware the tool installs says the plug is (Sonoff-S60):
+        """What the firmware the tool installs says the device is (Sonoff-S60):
         Tasmota's template and ESPHome's comment.  One for every model of the
         kind, so one image serves them all."""
         return f"{self.maker}-{self.short}"
@@ -210,7 +210,7 @@ class Kind:
     def names_its_esphome(self, title: str | None, comment: str | None) -> bool:
         """Whether an ESPHome, by its page's comment and title, is the one the
         tool installs on this kind: its comment is the kind's
-        (devices/<kind>/esphome.yaml: Sonoff-S61), whatever the plug was
+        (devices/<kind>/esphome.yaml: Sonoff-S61), whatever the device was
         renamed - or, from a release before the comment, its friendly name
         is, alone or with the MAC suffix its page shows (Sonoff S60 abcdef)."""
         if (comment or "").strip().lower() == self.display_name.lower():
@@ -228,7 +228,7 @@ SONOFF_S60 = Kind(
     name="Sonoff S60",
     maker="Sonoff",
     short="S60",
-    # S60TP and the plug-type letter: the UK's S60TPG, Europe's S60TPF.
+    # S60TP and the device-type letter: the UK's S60TPG, Europe's S60TPF.
     product=re.compile(r"S60TP[A-Z]"),
     stock_model="SN-ESP32C3-S60-01",
     wrapper_model="FWSW-E32S60-S60-ESP32C3FN4",
@@ -253,7 +253,7 @@ SONOFF_S61 = Kind(
     name="Sonoff S61",
     maker="Sonoff",
     short="S61",
-    # The S61S (iPlug Gen2): S61STP and the plug-type letter, Europe's S61STPF.
+    # The S61S (iPlug Gen2): S61STP and the device-type letter, Europe's S61STPF.
     product=re.compile(r"S61STP[A-Z]"),
     stock_model="SN-BK7238-S61-01",
     # The descriptor name in the FOTA container its stock updater stages (tools/beken/fota_wrap.py).
@@ -505,7 +505,7 @@ EVERY = (SONOFF_S60, SONOFF_S61, SONOFF_POW_ELITE, SONOFF_POWCT, SONOFF_TH_ELITE
 # Every kind the tool converts.
 READY = tuple(kind for kind in EVERY if kind.ready)
 # Being worked on: not converted yet. For the emulator, this variable has the
-# tool take them as it does the others: never for a real plug.
+# tool take them as it does the others: never for a real device.
 NOT_READY_YET = tuple(kind for kind in EVERY if not kind.ready)
 ALL = READY + (NOT_READY_YET if os.environ.get("AUTOFLASH_NOT_READY_YET") else ())
 
@@ -552,7 +552,7 @@ def for_esphome(title: str | None, comment: str | None) -> Kind | None:
 
 
 def names(attribute: str = "name") -> str:
-    """Every kind, as a person calls them (Sonoff S60): for before the plug is known."""
+    """Every kind, as a person calls them (Sonoff S60): for before the device is known."""
     all_of_them = [getattr(kind, attribute) for kind in ALL]
     return ", ".join(all_of_them[:-1]) + " or " + all_of_them[-1]
 
@@ -566,4 +566,4 @@ def name_words() -> set[str]:
 def of_run(state) -> Kind:
     """The kind a run converts (`state`: its RunState): as it recorded once
     known, else the first the tool knows - the only one, so far."""
-    return by_key(state.input("plug_kind")) or ALL[0]
+    return by_key(state.input("device_kind")) or ALL[0]

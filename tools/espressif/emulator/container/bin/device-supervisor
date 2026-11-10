@@ -1,8 +1,8 @@
 #!/bin/bash
-# Keeps the emulated plug powered: runs QEMU while /run/autoflash-emu/power says "on",
+# Keeps the emulated device powered: runs QEMU while /run/autoflash-emu/power says "on",
 # and starts it again after it is killed (that is what a power cut looks like).
-# QEMU runs through the plug's board (tools/espressif/emulator/board.py, from the
-# checkout's copy), which serves its serial ports and gives the plug its power
+# QEMU runs through the device's board (tools/espressif/emulator/board.py, from the
+# checkout's copy), which serves its serial ports and gives the device its power
 # meter; the console's output goes through the redactor before it reaches the log.
 #
 # -no-reboot: the fork keeps its peripherals running across a guest software
@@ -16,7 +16,7 @@ RUN=/run/autoflash-emu
 LOG=/state/logs/uart.log
 . "$RUN/env"
 
-# The chip the plug's flash is for (emu.sh). A classic ESP32 boots from flash by
+# The chip the device's flash is for (emu.sh). A classic ESP32 boots from flash by
 # its strapping pins, which the fork takes as a value; every input idles high,
 # as with pull-ups, so an active-low button does not read as held.
 case "${CHIP:-esp32c3}" in
@@ -47,7 +47,7 @@ while true; do
         sleep 0.3
         continue
     fi
-    echo "===== plug powered on $(date '+%F %T') =====" >> "$LOG"
+    echo "===== device powered on $(date '+%F %T') =====" >> "$LOG"
     router=()
     [ -e "$RUN/router-off" ] && router=(-global "driver=esp32_wifi,property=access-points-off,value=on")
     python3 -I -B /work/tools/espressif/emulator/board.py --chip "${CHIP:-esp32c3}" --kind "${KIND:-}" -- \
@@ -66,9 +66,9 @@ while true; do
     rm -f "$RUN/qemu.pid"
     if [ -f "$RUN/power-cut" ]; then
         rm -f "$RUN/power-cut"
-        echo "===== plug powered off $(date '+%F %T') =====" >> "$LOG"
+        echo "===== device powered off $(date '+%F %T') =====" >> "$LOG"
         sleep 1   # off long enough to count as a power cut
     else
-        echo "===== plug restarted itself $(date '+%F %T') =====" >> "$LOG"
+        echo "===== device restarted itself $(date '+%F %T') =====" >> "$LOG"
     fi
 done

@@ -36,7 +36,7 @@ export function slug(path) {
 export const address = (pathname) => pathname.replace(/\.html$/, "").replace(/\/index$/, "/");
 
 // Retired work stays readable but out of search results: a search must not
-// land someone on a superseded procedure for a mains-voltage plug.
+// land someone on a superseded procedure for a mains-voltage device.
 export const retired = (address) => /^\/?archive(\/|$)/.test(address);
 
 // What a search result says of a page: its first paragraph as plain text, cut

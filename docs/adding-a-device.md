@@ -49,7 +49,7 @@ test fails until it is. What holds for its whole chip family goes in
   has the device's real partition table, settings and factory data, so what you
   test is what the device has. An owner's [readout](readouts.md) is one.
 - **Failing that, eWeLink's public update file for it.** It runs on another
-  plug's flash (a *donor*), which tests the firmware but not the device's own
+  device's flash (a *donor*), which tests the firmware but not the device's own
   layout. Some firmware will not get far this way: see
   [When it does not boot](#when-it-does-not-boot).
 - **Its wiring**, as a Tasmota template and an ESPHome config. Blakadder's
@@ -72,7 +72,7 @@ dump is ever committed. Tooling fetches it at run time.
    ```
 
    This replaces the device's identity with a made-up one under
-   `captures/plugs/`. For an update file, use the model its firmware calls itself
+   `captures/devices/`. For an update file, use the model its firmware calls itself
    (`strings` finds it, in the shape `SN-...`, `E32-...` or `ESP32D0-...`), and
    give it its eWeLink kind (`uiid`) where it is not the donor's. The donor's
    user settings (`user_usual`) are another firmware's: where the device's own
@@ -91,7 +91,7 @@ dump is ever committed. Tooling fetches it at run time.
    online (step 6 runs this and shows what it logged):
 
    ```sh
-   tools/espressif/emulator/emu.sh --stub-cloud --fresh --plug 12:34:56:e3:2d:NN
+   tools/espressif/emulator/emu.sh --stub-cloud --fresh --device 12:34:56:e3:2d:NN
    ```
 
 4. **Add its partition layout**, if new, to
@@ -112,23 +112,23 @@ dump is ever committed. Tooling fetches it at run time.
    the image. `artifacts/` changes only this way:
 
    ```sh
-   .venv/bin/python tools/repo/update_firmware.py esphome --plug sonoff-example
+   .venv/bin/python tools/repo/update_firmware.py esphome --device sonoff-example
    ```
 
 6. **Convert it both ways**, each from a fresh copy:
 
    ```sh
    tools/espressif/emulator/unattended-test.sh --stub-cloud --fresh \
-       --plug=12:34:56:e3:2d:NN --save=example-tas -- --firmware tasmota
+       --device=12:34:56:e3:2d:NN --save=example-tas -- --firmware tasmota
    tools/espressif/emulator/unattended-test.sh --stub-cloud --fresh \
-       --plug=12:34:56:e3:2d:NN --save=example-esp -- --firmware esphome
+       --device=12:34:56:e3:2d:NN --save=example-esp -- --firmware esphome
    ```
 
    Then go back to Sonoff from each:
 
    ```sh
    tools/espressif/emulator/unattended-test.sh --stub-cloud \
-       --plug=12:34:56:e3:2d:NN --from=example-tas -- --firmware sonoff
+       --device=12:34:56:e3:2d:NN --from=example-tas -- --firmware sonoff
    ```
 
 7. **Run the tests**, and add the ones the device needs: `tests/autoflash/test_kinds.py`
@@ -140,7 +140,7 @@ dump is ever committed. Tooling fetches it at run time.
    to build a device's, or if its chip has no Tasmota that follows.
 
    A device the tool converts has its own run of the `emulator-check` workflow, from
-   its public dump: each final firmware, then each plug taken to the other
+   its public dump: each final firmware, then each device taken to the other
    ([emulator_check.py](../tools/repo/emulator_check.py)). One with no dump is named
    in that file's `NO_DUMP`, or a test fails.
 
@@ -166,11 +166,11 @@ by address.
 | Bluetooth start-up skipped | QEMU has no Bluetooth; the functions calling `esp_bt_controller_init` return at once | `patch_stock.py` |
 | DPORT stall skipped (classic ESP32, ESP-IDF 4) | a workaround for a silicon bug QEMU does not have; the other core can be too slow to answer | `patch_stock.py` |
 | eWeLink's CA replaced with the stub's | the stub has to be trusted. RSA where the firmware's is RSA, or its stack overflows checking an EC signature | `patch_stock.py`, `make_ca.py` |
-| Wi-Fi and cloud settings rewritten | points the plug at the emulator's network and stub | `rewrite_nvs.py` |
+| Wi-Fi and cloud settings rewritten | points the device at the emulator's network and stub | `rewrite_nvs.py` |
 | Chip revision (ESP32-C3) | taken from the app's header, or its bootloader refuses to start it | `public_dump.py` |
 
 Set `psram_mb` on the kind if its stock firmware stops at start-up without its
-external RAM. Run the emulated plug with up to one emulator per core: more gives
+external RAM. Run the emulated device with up to one emulator per core: more gives
 false failures.
 
 ### What a run tells you
@@ -282,8 +282,8 @@ fetches the official file at run time, by the name and hash it pins.
    pin both images:
 
    ```sh
-   .venv/bin/python tools/repo/update_firmware.py openbeken --plug sonoff-example
-   .venv/bin/python tools/repo/update_firmware.py esphome --plug sonoff-example
+   .venv/bin/python tools/repo/update_firmware.py openbeken --device sonoff-example
+   .venv/bin/python tools/repo/update_firmware.py esphome --device sonoff-example
    ```
 
 5. **Convert it in the emulator**, from a whole flash made from its official file
@@ -357,15 +357,15 @@ dial, the trust-anchor swap - goes where
 so another version or model needs nothing moved
 ([one code path](beken-research.md#one-code-path-for-every-4-mb-ewelink-build)).
 It needs a whole flash to run from; the app of a BK7238 official file runs on
-another plug's bootloader and settings
+another device's bootloader and settings
 ([rebuild_dump.py](../tools/beken/README.md#rebuilding-a-dump)), but only the
 device's own whole flash has its factory data.
 
-To try one in the emulator, make its whole flash and start a plug from it:
+To try one in the emulator, make its whole flash and start a device from it:
 
 ```sh
 python3 tools/beken/rebuild_dump.py S61-DUMP.bin OFFICIAL.bin captures/device.bin
-AUTOFLASH_BEKEN_EMU_FLASH=captures/device.bin tools/beken/emulator/beken-emu.sh --fresh plug
+AUTOFLASH_BEKEN_EMU_FLASH=captures/device.bin tools/beken/emulator/beken-emu.sh --fresh device
 ```
 
 This proves the firmware and the tool's path, not the device's hardware. The

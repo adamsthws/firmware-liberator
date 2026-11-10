@@ -25,7 +25,7 @@ class RunIsolatedTests(unittest.TestCase):
 
 class FirmwareOfferTests(unittest.TestCase):
     """Asked as query_ota.latest_offer asks, with a version older than any,
-    the stub offers the plug its own firmware, and serves it to its id."""
+    the stub offers the device its own firmware, and serves it to its id."""
 
     def setUp(self):
         from tools.ewelink.stub_cloud.firmware import Update
@@ -92,7 +92,7 @@ class OnlineTests(unittest.TestCase):
     """The app watching a device is told when it comes and goes, as at eWeLink."""
 
     def test_a_device_registering_is_said_to_be_online_to_its_watchers(self):
-        # Seen: a plug back after a power cut was never said to be online, so the
+        # Seen: a device back after a power cut was never said to be online, so the
         # sender did not send again the command it had lost, and waited 300 s.
         app = mock.Mock()
         handler = stub_server.Handler.__new__(stub_server.Handler)
@@ -113,12 +113,12 @@ class OnlineTests(unittest.TestCase):
 
 
 class OtherDevicesTests(unittest.TestCase):
-    """The account's other devices, none emulated, listed beside the plug."""
+    """The account's other devices, none emulated, listed beside the device."""
 
     OTHER = {"deviceid": "1000000102", "name": "Hall panel", "productModel": "NSPanel",
              "model": "E32-MSW-NX", "uiid": 133, "fwVersion": "1.5.0"}
 
-    def test_listed_after_the_plug_offline_with_their_own_record(self):
+    def test_listed_after_the_device_offline_with_their_own_record(self):
         stub = stub_server.Stub("192.0.2.1", 443, 10, {"deviceid": "1000abcdef", "devicekey": "k"},
                                 others=[self.OTHER])
         mine, other = [entry["itemData"] for entry in stub.device_thing()["data"]["thingList"]]
@@ -128,7 +128,7 @@ class OtherDevicesTests(unittest.TestCase):
         self.assertEqual((other["extra"], other["params"]), ({"uiid": 133, "model": "E32-MSW-NX"},
                                                              {"fwVersion": "1.5.0"}))
 
-    def test_listed_before_the_plug_registers_too(self):
+    def test_listed_before_the_device_registers_too(self):
         stub = stub_server.Stub("192.0.2.1", 443, 10, {"staMac": "12:34:56:ab:cd:ef"}, others=[self.OTHER])
         self.assertEqual([entry["itemData"]["deviceid"] for entry in stub.device_thing()["data"]["thingList"]],
                          ["1000000102"])
@@ -148,13 +148,13 @@ class OtherDevicesTests(unittest.TestCase):
 
 
 class AccountDeviceTests(unittest.TestCase):
-    """A plug whose identity the stub is not given - the S61's, sealed in its
+    """A device whose identity the stub is not given - the S61's, sealed in its
     store - is listed as it registers, as eWeLink lists it."""
 
     def stub(self, device=None):
         return stub_server.Stub("192.0.2.1", 443, 10, device)
 
-    def test_nothing_listed_before_the_plug_registers(self):
+    def test_nothing_listed_before_the_device_registers(self):
         stub = self.stub({"staMac": "12:34:56:ab:cd:ef", "model": "SN-BK7238-S61-01"})
         self.assertEqual(stub.device_thing()["error"], 404)
 
@@ -169,7 +169,7 @@ class AccountDeviceTests(unittest.TestCase):
         self.assertEqual(item["params"]["fwVersion"], "1.0.2")
         self.assertEqual(stub.account_login()["data"]["user"]["apikey"], "made-up-apikey")
 
-    def test_the_relay_is_off_until_the_plug_reports_it(self):
+    def test_the_relay_is_off_until_the_device_reports_it(self):
         # The POW Elite's and POWCT's firmware reports its relay only when it changes.
         stub = self.stub({"deviceid": "1000abcdef", "devicekey": "k"})
         params = lambda: stub.device_thing()["data"]["thingList"][0]["itemData"]["params"]

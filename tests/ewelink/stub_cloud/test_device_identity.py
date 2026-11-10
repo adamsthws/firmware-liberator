@@ -1,4 +1,4 @@
-"""device_identity.py, the plug's identity the stub reads from its dump."""
+"""device_identity.py, the device's identity the stub reads from its dump."""
 
 import subprocess
 import sys
@@ -37,7 +37,7 @@ class ProductModelTests(unittest.TestCase):
     def test_another_kinds_product_model_is_refused(self):
         with mock.patch.object(device_identity, "frame_params", return_value=dict(self.FRAME)):
             with self.assertRaises(SystemExit):
-                device_identity.identity(b"", "apikey", product_model="NOT-A-PLUG")
+                device_identity.identity(b"", "apikey", product_model="NOT-A-DEVICE")
 
 
 class AisIdentityTests(unittest.TestCase):

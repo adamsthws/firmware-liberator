@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert a plug over the air: from its stock eWeLink firmware to Tasmota or
+"""Convert a device over the air: from its stock eWeLink firmware to Tasmota or
 ESPHome, from either of those to the other, or back to its stock firmware.
 
 This orchestrates the reviewed tools in tools/.  It reimplements no validator,
@@ -7,7 +7,7 @@ no Berry phase and no safety gate: every destructive action still runs the same
 audited program, behind the same locks, judged by the same host-side evidence.
 What it removes is console pasting, transcription error and lost place.
 
-Every step records itself in captures/<plug>/autoflash-state.json, so an
+Every step records itself in captures/<device>/autoflash-state.json, so an
 interrupted run resumes where it stopped.
 """
 
@@ -34,7 +34,7 @@ from tools.autoflash import (  # noqa: E402
     interrupt,
     join,
     output,
-    plugs,
+    records,
     prompts,
     readout,
     report,
@@ -55,15 +55,15 @@ from tools.espressif.safeboot.prepare_imprinted_bundle import forget_stored_pass
 
 
 def adopt_older_runs() -> None:
-    """Move runs kept straight under captures/ to their plug's directory, when
+    """Move runs kept straight under captures/ to their device's directory, when
     they know its MAC.  Those that do not stay where they are, still listed."""
     pointer = runs.read_current()
-    for directory in [d for d in runs.run_directories() if d.parent == plugs.CAPTURES]:
+    for directory in [d for d in runs.run_directories() if d.parent == records.CAPTURES]:
         try:
-            mac = RunState.open(directory).input("plug_mac")
-            if not mac or not plugs.MAC_RE.match(mac):
+            mac = RunState.open(directory).input("device_mac")
+            if not mac or not records.MAC_RE.match(mac):
                 continue
-            target = plugs.runs_dir(mac) / directory.name
+            target = records.runs_dir(mac) / directory.name
             if target.exists():
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -88,13 +88,13 @@ def run_is_complete(directory: Path) -> bool:
 
 
 def describe_run(directory: Path) -> str:
-    """Where a run stopped, briefly: the plug, the step, when, and how far in."""
+    """Where a run stopped, briefly: the device, the step, when, and how far in."""
     import datetime as dt
 
     state = RunState.open(directory)
-    where = state.input("plug_ip") or "a device not yet found"
-    mac = plugs.mac_of_run(directory) or state.input("plug_mac")
-    if mac and state.input("plug_ip"):
+    where = state.input("device_ip") or "a device not yet found"
+    mac = records.mac_of_run(directory) or state.input("device_mac")
+    if mac and state.input("device_ip"):
         where += f", MAC {mac}"
     # The step after the last one done: a run of an earlier version has no
     # record of a step added since, which is not where it stopped.
@@ -117,19 +117,19 @@ def describe_run(directory: Path) -> str:
         details.append("when its window was closed")
     if routes.past_the_point_of_no_return(state):
         details.append("past the point of no return")
-    if not state.input("plug_ip"):
+    if not state.input("device_ip"):
         return f"a run that had not found its device yet ({', '.join(details)})"
     return f"the device at {where} ({', '.join(details)})"
 
 
-def run_to_look_at(plug_ip: str | None) -> str | None:
+def run_to_look_at(device_ip: str | None) -> str | None:
     """The run `status` and `cleanup` report on: the latest one of the device
-    at `plug_ip` when one is given, else the current run, else the latest."""
+    at `device_ip` when one is given, else the current run, else the latest."""
     directories = runs.run_directories()
-    if plug_ip:
+    if device_ip:
         def at_address(directory: Path) -> bool:
             try:
-                return RunState.open(directory).input("plug_ip") == plug_ip
+                return RunState.open(directory).input("device_ip") == device_ip
             except (OSError, ValueError):
                 return False
         matching = [d for d in directories if at_address(d)]
@@ -137,8 +137,8 @@ def run_to_look_at(plug_ip: str | None) -> str | None:
     return runs.read_current() or (runs.run_name(directories[-1]) if directories else None)
 
 
-def wrote_to_plug(directory: Path) -> bool:
-    """Whether a run wrote to its plug: a step that writes begun, unless it
+def wrote_to_device(directory: Path) -> bool:
+    """Whether a run wrote to its device: a step that writes begun, unless it
     failed before writing."""
     try:
         state = RunState.open(directory)
@@ -151,30 +151,30 @@ def wrote_to_plug(directory: Path) -> bool:
 
 
 def superseded(directory: Path, directories: list[Path]) -> bool:
-    """Whether a later run of the same plug (in `directories`, oldest first)
-    wrote to it: the plug is no longer as this run left it, so carrying this
+    """Whether a later run of the same device (in `directories`, oldest first)
+    wrote to it: the device is no longer as this run left it, so carrying this
     one on would take it for what it was - seen asking for the Wi-Fi to
     leave a Tasmota a later run had already replaced."""
-    def plug(run: Path) -> str | None:
+    def device(run: Path) -> str | None:
         try:
-            return plugs.mac_of_run(run) or RunState.open(run).input("plug_mac")
+            return records.mac_of_run(run) or RunState.open(run).input("device_mac")
         except (OSError, ValueError):
             return None
-    mac = plug(directory)
+    mac = device(directory)
     later = directories[directories.index(directory) + 1:]
-    return bool(mac) and any(plug(run) == mac and wrote_to_plug(run) for run in later)
+    return bool(mac) and any(device(run) == mac and wrote_to_device(run) for run in later)
 
 
-def start_new_run(plug_ip: str | None) -> str:
-    name = runs.new_run_name(plug_ip)
+def start_new_run(device_ip: str | None) -> str:
+    name = runs.new_run_name(device_ip)
     runs.remember_current(name)
     return name
 
 
 # The answer to the unfinished-run menu.  The menu is answered before the run's
 # log exists and leaves the screen once answered, so it is held here and
-# written into the log when it opens - otherwise a plug left part converted by
-# "start a new plug" leaves no trace of how.
+# written into the log when it opens - otherwise a device left part converted by
+# "start a new device" leaves no trace of how.
 RUN_CHOICE: list[str] = []
 
 
@@ -185,33 +185,33 @@ def log_run_choice() -> None:
 
 
 def resolve_run_name(
-    requested: str | None, force_new: bool, plug_ip: str | None, ask: bool = False
+    requested: str | None, force_new: bool, device_ip: str | None, ask: bool = False
 ) -> str:
     """Work out which conversion this is, without asking for an identifier.
 
     One in-flight operation, remembered in a well-known place.  With `ask` - a
     `run` - an unfinished conversion is offered back rather than resumed
-    silently, so starting the next plug is never mistaken for finishing the
+    silently, so starting the next device is never mistaken for finishing the
     last.  Nothing opaque is ever typed by the operator.
     """
     if requested:
         runs.remember_current(requested)
         return requested
     if force_new:
-        return start_new_run(plug_ip)
+        return start_new_run(device_ip)
 
     directories = runs.run_directories()
     unfinished = [d for d in directories if not run_is_complete(d) and not superseded(d, directories)]
-    if plug_ip and not ask:
+    if device_ip and not ask:
         # Not asked, for one device: only a run of that device is carried on.
-        unfinished = [d for d in unfinished if RunState.open(d).input("plug_ip") == plug_ip]
+        unfinished = [d for d in unfinished if RunState.open(d).input("device_ip") == device_ip]
     if ask:
         # Offered back only once it has written to its device: one stopped
         # before - at a question, say, after "Convert another device" - loses
         # nothing by starting afresh, and asking about it would be noise.
-        unfinished = [d for d in unfinished if wrote_to_plug(d)]
+        unfinished = [d for d in unfinished if wrote_to_device(d)]
     if not unfinished:
-        return start_new_run(plug_ip)
+        return start_new_run(device_ip)
 
     pointer = runs.read_current()
     # Most recently touched first, so the likely answer is option 1.
@@ -252,7 +252,7 @@ def resolve_run_name(
             output.transient_end()
             RUN_CHOICE.append("Chosen at the start: a new conversion. Left unfinished, on record:")
             RUN_CHOICE.extend(f"    {describe_run(d)}" for d in unfinished)
-            return start_new_run(plug_ip)
+            return start_new_run(device_ip)
         target = unfinished[0] if len(unfinished) == 1 else unfinished[prompts.ask_choice(
             "Which run should be removed",
             [describe_run(d)[0].upper() + describe_run(d)[1:] for d in unfinished],
@@ -260,7 +260,7 @@ def resolve_run_name(
         if remove_run(target):
             unfinished.remove(target)
         output.transient_end()  # the menu and the removal: shown again, or gone
-    return start_new_run(plug_ip)
+    return start_new_run(device_ip)
 
 
 def remove_run(directory: Path) -> bool:
@@ -296,8 +296,8 @@ def remove_run(directory: Path) -> bool:
 
 
 def cmd_status(ctx: Context) -> int:
-    output.say(f"Device:    {ctx.plug}")
-    output.say(f"Address:   {ctx.state.input('plug_ip') or '(not set)'}")
+    output.say(f"Device:    {ctx.run}")
+    output.say(f"Address:   {ctx.state.input('device_ip') or '(not set)'}")
     output.say(f"Manifest:  {ctx.manifest_path}")
     output.say(f"State:     {ctx.state.path}")
     available = routes.update_available(ctx)
@@ -318,12 +318,12 @@ def cmd_step(ctx: Context, step: str) -> int:
     if step not in routes.STEP_INDEX:
         output.say(f"unknown step {step}; known: {', '.join(s for s, _, _ in routes.STEPS)}")
         return 2
-    join.wait_while_plug_busy(ctx)
+    join.wait_while_device_busy(ctx)
     return runner.execute_with_retries(ctx, step)
 
 
 def cmd_run(ctx: Context) -> int:
-    # Asleep part way, this computer would leave the plug waiting on it.
+    # Asleep part way, this computer would leave the device waiting on it.
     output.say(f"This computer is {awake.keep_awake()} while the run works.")
     try:
         return runner.run_steps(ctx)
@@ -343,7 +343,7 @@ def cmd_readout(ctx: Context, saved: Path | None) -> int:
     devices = ctx.account_devices()
     if not devices:
         raise Abort("a readout needs the device in an eWeLink account, and none was found in this one")
-    given = ctx.args.plug_ip
+    given = ctx.args.device_ip
     if given:
         output.tell(readout.run(ctx, readout.device_at(given, devices), given))
     elif getattr(ctx.args, "all", False):
@@ -374,27 +374,27 @@ def cmd_cleanup(ctx: Context) -> int:
             output.say(f"  {item}")
     else:
         output.say("No stored secrets were found.")
-    if plugs.backups():
-        output.say(f"Kept the Sonoff firmware backups in {runs.display_path(plugs.PLUGS)}/*/{plugs.BACKUP};")
+    if records.backups():
+        output.say(f"Kept the Sonoff firmware backups in {runs.display_path(records.DEVICES)}/*/{records.BACKUP};")
         output.say("they hold the Wi-Fi password too. Delete them yourself if you will not want them.")
     return 0
 
 
 def refused_for_another_run(command: str, ctx: Context) -> bool:
-    """Another run working on this plug - or, to clean up, on any - is asked
+    """Another run working on this device - or, to clean up, on any - is asked
     about first: before this one's log, report, firewall rule or safety locks
     are touched, which are the other run's too. True when refused (and said)."""
-    mac = ctx.state.input("plug_mac")
+    mac = ctx.state.input("device_mac")
     if command in ("run", "step") and mac:
         try:
-            plugs.hold(mac, runs.run_name(ctx.dir))
-        except plugs.PlugBusy as busy:
+            records.hold(mac, runs.run_name(ctx.dir))
+        except records.DeviceBusy as busy:
             output.tell(f"Stopped before anything was done: another run is converting this device ({mac}) "
                  f"right now{f' - {busy}' if str(busy) else ''}. Let it finish, or stop it first, "
                  "then run this again.")
             return True
     if command == "cleanup":
-        busy = plugs.busy()
+        busy = records.busy()
         if busy:
             output.tell(f"Not cleaning up: a run is converting a device right now ({'; '.join(busy)}), and "
                  "its firewall rule and secrets are in use. Let it finish, or stop it first, then "
@@ -454,7 +454,7 @@ def stopped_report(ctx: Context, code: int | None, ending: str | None) -> str | 
 def handle_signals() -> None:
     """Being stopped, or the terminal being closed, must still run the cleanup
     in the finally blocks: the stored secrets and the firewall rule.  SIGPIPE
-    is left as Python sets it, so a plug that hangs up on a write raises
+    is left as Python sets it, so a device that hangs up on a write raises
     BrokenPipeError, which the code talking to it handles, rather than ending
     the run with no cleanup (main handles a closed pipe on the output)."""
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
@@ -470,15 +470,10 @@ def _main() -> int:
     parser.add_argument("--version", action="version", version=f"Autoflash {__version__}")
     parser.add_argument("command", choices=["run", "status", "step", "list", "cleanup", "readout"])
     parser.add_argument("step_id", nargs="?")
-    parser.add_argument(
-        "--run",
-        "--plug",
-        dest="run",
-        help=argparse.SUPPRESS,  # power-user escape hatch; never needed normally
-    )
+    parser.add_argument("--run", help=argparse.SUPPRESS)  # power-user escape hatch; never needed normally
     parser.add_argument("--new", action="store_true", help="start a fresh run, never resume")
     parser.add_argument("--manifest", type=Path, default=bundle.DEFAULT_MANIFEST)
-    parser.add_argument("--plug-ip")
+    parser.add_argument("--device-ip")
     parser.add_argument(
         "--listen-ip",
         help="workstation address the device fetches from; derived from the device's "
@@ -532,7 +527,7 @@ def _main() -> int:
     parser.add_argument("--simulate-no-sonoff-firmware", action="store_true",
                         help=argparse.SUPPRESS)  # testing: Sonoff's firmware not to be had, without a backup
     parser.add_argument("--simulate-no-identity", action="store_true",
-                        help=argparse.SUPPRESS)  # testing: the plug keeps no Sonoff identity, in no account
+                        help=argparse.SUPPRESS)  # testing: the device keeps no Sonoff identity, in no account
     parser.add_argument("--simulate-bad-image", nargs="?", const="B2", metavar="STEP",
                         help=argparse.SUPPRESS)  # testing: the S61's image STEP sends is refused by its bootloader
     parser.add_argument("--simulate-unknown-table", action="store_true",
@@ -551,6 +546,12 @@ def _main() -> int:
 
     try:
         given = credentials.load(args.env_file)
+        try:
+            records.take_over_earlier_names()
+        except records.EarlierNames as exc:
+            raise Abort(str(exc)) from exc
+        if args.run:
+            args.run = records.earlier_run_name(args.run)
         adopt_older_runs()
         if args.command == "run" and not args.unattended:
             output.start_at_top()
@@ -560,15 +561,15 @@ def _main() -> int:
             args.run = args.run or "-"
         elif args.command in ("status", "cleanup") and not args.run:
             # Report on the latest run; never start a new one just to look.
-            args.run = run_to_look_at(args.plug_ip)
+            args.run = run_to_look_at(args.device_ip)
             if not args.run:
-                output.say(f"No conversion recorded for the device at {args.plug_ip}."
-                           if args.plug_ip else "No conversions recorded yet.")
+                output.say(f"No conversion recorded for the device at {args.device_ip}."
+                           if args.device_ip else "No conversions recorded yet.")
                 return 0
         elif args.command == "readout":
-            args.run = start_new_run(args.plug_ip)  # never a conversion carried on
+            args.run = start_new_run(args.device_ip)  # never a conversion carried on
         else:
-            args.run = resolve_run_name(args.run, args.new, args.plug_ip,
+            args.run = resolve_run_name(args.run, args.new, args.device_ip,
                                         ask=args.command == "run" and not args.unattended)
         ctx = Context(args)
         routes.apply_target(routes.recorded_firmware(ctx.state), routes.route_source(ctx.state),
@@ -595,8 +596,8 @@ def _main() -> int:
             done = sum(1 for step, _, _ in steps if state.is_done(step))
             mark = "verified" if run_is_complete(directory) else "in progress"
             output.say(f"  {runs.run_name(directory):<55} {done}/{len(steps)} steps  {mark}"
-                f"  {state.input('plug_ip') or ''}")
-        for backup in plugs.backups():
+                f"  {state.input('device_ip') or ''}")
+        for backup in records.backups():
             output.say(f"  Sonoff backup: {backup.describe()} in {runs.display_path(backup.directory)}")
         return 0
 
@@ -651,7 +652,7 @@ def what_next(last: str) -> str | None:
 def next_device(args: argparse.Namespace, previous: Context) -> Context:
     """The next device's run: a new one, found afresh - not the address the
     last was given - with the eWeLink account the last one signed in to."""
-    args.run, args.plug_ip, args.new = start_new_run(None), None, True
+    args.run, args.device_ip, args.new = start_new_run(None), None, True
     ctx = Context(args)
     ctx.keep_sign_in(previous)
     routes.apply_target(routes.recorded_firmware(ctx.state), routes.route_source(ctx.state),

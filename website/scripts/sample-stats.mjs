@@ -56,7 +56,7 @@ export async function sampleDatabase(now = new Date("2026-12-01T03:17:00Z"), rep
     const day = dayOf(new Date(now.getTime() - (ago + 1) * 86_400_000));
     const [model, device, family, , success] = pick(DEVICES);
     const unsupported = device === null;
-    const plug = `${model}-${Math.floor(next() * 400)}`;
+    const unit = `${model}-${Math.floor(next() * 400)}`;
     const ok = !unsupported && next() < success;
     const [step, error] = unsupported ? ["A2", "unsupported-device"] : FAILURES[Math.floor(next() * FAILURES.length)];
     const [osFamily, osVersion] = OS[Math.floor(next() * (next() < 0.5 ? 1 : OS.length))];
@@ -70,7 +70,7 @@ export async function sampleDatabase(now = new Date("2026-12-01T03:17:00Z"), rep
       seconds: Math.round(240 + next() * 420), os: { family: osFamily, version: osVersion },
       python: { version: "3.12.4", source: next() < 0.6 ? "portable" : "system" },
     };
-    await db.batch(writes(db, report, plug, day));
+    await db.batch(writes(db, report, unit, day));
   }
   for (const [model, asked] of [["NSPANEL", 41], ["MINIR4", 27], ["M5-2C", 12], ["BASICR4", 9]]) {
     db.db.prepare("INSERT INTO wanted_days (day, model, asked) VALUES (?, ?, ?)").run(dayOf(now), model, asked);

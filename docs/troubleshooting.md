@@ -2,8 +2,8 @@
 
 Every problem listed here actually happened while the tool was being built. The
 screen only shows a line per stage, so when one stops, the full story is in
-the run's log, `captures/plugs/<MAC>/runs/<date>/run.log` - the tool prints its path, and it is
-safe to share: what identifies you, your network or your plug is written as
+the run's log, `captures/devices/<MAC>/runs/<date>/run.log` - the tool prints its path, and it is
+safe to share: what identifies you, your network or your device is written as
 `<email>`, `<wifi-name>`, `<device-id>` and so on. Running
 again with `--verbose` shows the same detail as it happens. The run's own
 record is in `autoflash-state.json` in the same directory, with the phase evidence
@@ -13,7 +13,7 @@ First thing to try, always: start it again - `start.cmd` on Windows, `sh
 start.sh` on macOS or Linux (or `python3 -m tools.autoflash run`; the
 examples below use that form, and the start scripts take the same options).
 
-It picks up where it stopped. Re-running is safe - every step checks the plug
+It picks up where it stopped. Re-running is safe - every step checks the device
 before writing anything.
 
 ---
@@ -22,12 +22,12 @@ before writing anything.
 
 **"the device did not fetch the ... instructions from this computer"**
 
-The plug could not reach your computer. The tool adds a firewall rule itself
+The device could not reach your computer. The tool adds a firewall rule itself
 when it can see a firewall (ufw or firewalld on Linux, Windows Defender
 Firewall, the macOS firewall), so this usually means a firewall it cannot see -
 security software, or rules managed some other way - or that the addition was
 declined. The message shows the command for the firewall it found. Nothing
-was written; run again once the plug can get through.
+was written; run again once the device can get through.
 
 On Windows the tool's rule names Python itself, so Windows Security does not
 ask whether Python may use networks. If it was asked once before and "Cancel"
@@ -38,11 +38,11 @@ question. Running the terminal as administrator does not help and is not
 needed: the tool asks for administrator rights itself, only for its firewall
 rule.
 
-What the tool cannot change, it says, before it starts and again if the plug
+What the tool cannot change, it says, before it starts and again if the device
 cannot connect:
 
 - **Other security software** (Norton, McAfee, Bitdefender and the like)
-  often has a firewall of its own, which can block the plug whatever Windows'
+  often has a firewall of its own, which can block the device whatever Windows'
   firewall allows. Allow Python in there, or pause it for the conversion.
 - **A computer managed by an organisation** can have its firewall set, by
   Group Policy, to ignore rules added on the computer itself. Ask whoever
@@ -78,17 +78,17 @@ python3 -m tools.autoflash run --listen-ip 192.168.99.20
 
 Stay on one connection from the rebuild onwards, ideally wired.
 
-**Joining the plug's network: "waiting for this computer to join"**
+**Joining the device's network: "waiting for this computer to join"**
 
-The tool carries on as soon as the plug answers at 192.168.4.1, so it waits
+The tool carries on as soon as the device answers at 192.168.4.1, so it waits
 until the computer has actually joined. If the computer keeps dropping off the
-plug's network, close any setup page the system opened by itself: on Tasmota's
-setup network every page view makes the plug scan for networks, which briefly
+device's network, close any setup page the system opened by itself: on Tasmota's
+setup network every page view makes the device scan for networks, which briefly
 takes its own network away.
 
 If your home network itself uses 192.168.4.x addresses and the computer also
 has a wired connection, the two clash; unplug the cable while joined to the
-plug's network.
+device's network.
 
 **An earlier installer's password is not on the clipboard**
 
@@ -98,98 +98,98 @@ into macOS and Windows). Without one, type it: `s60-ota-bridge`.
 
 ## The router rule (no longer used)
 
-The tool no longer touches your router. The plug downloads the tool's firmware
+The tool no longer touches your router. The device downloads the tool's firmware
 straight from your computer, so there is nothing to redirect - whether or not Sonoff is
-offering the plug an update. If you are following an older guide that told you to
+offering the device an update. If you are following an older guide that told you to
 add a destination-NAT rule, you can skip that step entirely.
 [router-rules.md](router-rules.md) keeps the old instructions, says why the rule
-was dropped, and covers a simpler rule that stops a stock plug installing Sonoff
+was dropped, and covers a simpler rule that stops a stock device installing Sonoff
 updates.
 
-## A plug from another region
+## A device from another region
 
 The UK S60TPG and the European S60TPF have both been converted (see
-[What you need](../README.md#what-you-need)). A plug from
-another region is expected to work the same way, and the tool checks the plug
+[What you need](../README.md#what-you-need)). A device from
+another region is expected to work the same way, and the tool checks the device
 at two points rather than assuming:
 
-- **"... is a ..., which this tool does not convert"** - the plug reports a
+- **"... is a ..., which this tool does not convert"** - the device reports a
   different firmware family. The run stops here and nothing has been written;
-  the plug is still on its Sonoff firmware.
+  the device is still on its Sonoff firmware.
 - **The read-only check before the rewrite (step E1) stops the run** - the
-  plug's memory layout is not the one the S60TPG has. By then the plug runs
+  device's memory layout is not the one the S60TPG has. By then the device runs
   Tasmota and keeps working; only the move to the official layout is refused.
   Leave it as it is and report it rather than forcing past the check.
 
 Either way, please open an
 [issue](https://github.com/adamsthws/firmware-liberator/issues/new?template=bug-report.yml)
-for it, from the link the tool shows when it stops. A plug from another region
+for it, from the link the tool shows when it stops. A device from another region
 that converts cleanly needs nothing more: its run's report already tells the
 project ([what the tool sends](what-the-tool-sends.md)).
 
-## The plug can't be found
+## The device can't be found
 
 **"Your device did not answer on this network"**
 
-The tool lists each plug in your eWeLink account that it converts, with what
+The tool lists each device in your eWeLink account that it converts, with what
 it found:
 
-- **"eWeLink shows it offline"** - the plug is switched off at the wall, or
+- **"eWeLink shows it offline"** - the device is switched off at the wall, or
   not on Wi-Fi. Switch it on and wait for the app to show it online.
-- **"answers at ..., but eWeLink shows it offline"** (under *"Your plug is
+- **"answers at ..., but eWeLink shows it offline"** (under *"Your device is
   on this network but cannot reach the internet"* when it is the only
-  problem) - the plug is on your network but cannot reach the internet,
+  problem) - the device is on your network but cannot reach the internet,
   usually because the router keeps it LAN-only. The conversion is sent to
-  the plug through eWeLink, so allow it internet access, wait for the app to
+  the device through eWeLink, so allow it internet access, wait for the app to
   show it online, then choose *Look again*. You can block it again once it
   runs Tasmota.
-- **"is at ... but does not answer on the network"** - the plug is on your
-  network but LAN Control is off. Turn it on in the plug's settings in the
+- **"is at ... but does not answer on the network"** - the device is on your
+  network but LAN Control is off. Turn it on in the device's settings in the
   eWeLink app, then choose *Look again*.
 - **"is online in eWeLink but was not seen on this computer's network"** -
-  your computer is on a different network from the plug, such as the 5 GHz
+  your computer is on a different network from the device, such as the 5 GHz
   or guest Wi-Fi, a different router, or a VPN. The message names the network
-  the plug is on.
+  the device is on.
 
 **"No supported device in the eWeLink account ..."**
 
-The plug is in a different eWeLink account. The message lists what the
+The device is in a different eWeLink account. The message lists what the
 account does have; choose *Use a different eWeLink account*.
 
 **"Could not reach eWeLink"**
 
-The tool could not sign in to see your account, so it lists every Sonoff plug
+The tool could not sign in to see your account, so it lists every Sonoff device
 that answers on the network instead. The next stage needs eWeLink too, and
-checks there that the plug you chose is one it converts, so check your
+checks there that the device you chose is one it converts, so check your
 computer's internet connection first.
 
 **"did not answer within 180s"**
 
 - Check it is actually powered on. This has caught everyone at least once.
-- Its address may have changed. The tool records the plug's hardware address
+- Its address may have changed. The tool records the device's hardware address
   at the start and finds it again on a new address by itself; it only asks
-  when the plug cannot be found at all. Your router's device list shows it
+  when the device cannot be found at all. Your router's device list shows it
   under a name starting `tasmota-`.
 - Your Wi-Fi may have gone, a router restarting, say. Part way through, the
-  plug has no network of its own to fall back on: it keeps trying yours and
+  device has no network of its own to fall back on: it keeps trying yours and
   rejoins within seconds of it coming back, and the tool waits for it.
 
-**The plug's own network**
+**The device's own network**
 
-Wherever the tool asks you to join the plug's own network, it names it. Part
+Wherever the tool asks you to join the device's own network, it names it. Part
 way through a conversion - on the installer, the mover, the startup firmware,
-or Tasmota not yet set up - the plug goes by `autoflash-recovery-` and the
+or Tasmota not yet set up - the device goes by `autoflash-recovery-` and the
 last four characters of its hardware address, such as
 `autoflash-recovery-CDEF`, in your router's list, and the installer's and the
 mover's own networks are called that too - as is Tasmota's, when it was
-installed through the installer's own network. Once converted, the plug is named
+installed through the installer's own network. Once converted, the device is named
 for its firmware and the last six characters of its hardware address -
 `tasmota-abcdef` or `esphome-abcdef` - and so is its own network. A Tasmota
 that started from its own defaults names it after itself instead, such as
 `tasmota-ABCDEF-1234`; sometimes it shows up as `ESP_` and six characters one
 higher, such as `ESP_ABCDF0` - the same network, and the tool looks for both.
-All of them are open, with no password, and the plug's page on them is at
-`http://192.168.4.1`. (A plug an earlier release left part way, or converted,
+All of them are open, with no password, and the device's page on them is at
+`http://192.168.4.1`. (A device an earlier release left part way, or converted,
 may show the name it gave: `Sonoff-Setup-XXXX` for its installer, mover or
 ESPHome, or `S60-OTA-Bridge-XXXX` for an older installer, with the password
 `s60-ota-bridge`. The tool looks for those too, and gives the password when it
@@ -200,7 +200,7 @@ sees one.)
 **"Device is offline; refusing to send" straight after a complete download**
 
 That means it worked. The installer firmware does not talk to eWeLink, so the
-cloud reports the plug offline, and the tool refuses to send the update twice.
+cloud reports the device offline, and the tool refuses to send the update twice.
 The tool checks for the installer's `autoflash-recovery-XXXX` network and, when it
 can see it, carries on by itself. If your computer's Wi-Fi is off it cannot
 look; turn it on and run again.
@@ -208,7 +208,7 @@ look; turn it on and run again.
 **"Device model is ..., not one this tool converts"**
 
 Another Sonoff on the same account answered. The tool converts only the S60
-and S61, and stops before sending anything. Run again and choose your plug from the list.
+and S61, and stops before sending anything. Run again and choose your device from the list.
 
 **"Empty reply from server" when you try `curl` yourself**
 
@@ -227,9 +227,9 @@ The tool already does this.
 The installer saves the Wi-Fi details it joined with into Tasmota's settings, so
 Tasmota starts with them and joins your network by itself. If the details
 stop working (say the router restarted onto another channel and refuses the
-plug), Tasmota keeps retrying them and never opens its setup network.
+device), Tasmota keeps retrying them and never opens its setup network.
 
-Switch the plug off and on 7 times in a row, leaving it on for only 2-3
+Switch the device off and on 7 times in a row, leaving it on for only 2-3
 seconds each time, then leave it on. Tasmota counts quick restarts like that,
 clears its settings on the seventh, and opens its setup network as on a
 first install. The tool, still waiting, carries on with the setup network.
@@ -238,10 +238,10 @@ first install. The tool, still waiting, carries on with the setup network.
 
 **The upload finishes suspiciously fast and nothing changes**
 
-A firmware upload to this plug takes tens of seconds. If it "succeeds" in under
+A firmware upload to this device takes tens of seconds. If it "succeeds" in under
 ten, it did not write anything. Tasmota needs the file's size passed in the
 request, and silently commits nothing without it. The tool sends it; if you are
-uploading by hand, use the plug's own web page rather than a bare `curl`.
+uploading by hand, use the device's own web page rather than a bare `curl`.
 
 **"the device refused the upload"**
 
@@ -251,19 +251,19 @@ tool named, not the `.factory.bin`.
 
 ## When a migration stage stops
 
-The stages that check, stage and rewrite the plug's memory run on the plug
-itself, and report back to your computer. When one stops, the plug says why,
+The stages that check, stage and rewrite the device's memory run on the device
+itself, and report back to your computer. When one stops, the device says why,
 and the tool shows it:
 
 **"... did not pass: the device says: ..."**
 
-The plug's own reason. Two kinds:
+The device's own reason. Two kinds:
 
 - **One of its checks refused** - "NVS changed since preflight", "source table
-  changed", and the like. Nothing was written. Something changed on the plug
+  changed", and the like. Nothing was written. Something changed on the device
   between stages; run again, and the earlier checks are done again first. If
   the same refusal comes back, report it rather than forcing past it.
-- **"... returned HTTP -1 after N attempts"** - the plug could not reach your
+- **"... returned HTTP -1 after N attempts"** - the device could not reach your
   computer. Usually security software or a firewall that changed mid-run, the
   computer going to sleep, or a weak Wi-Fi signal (the tool warns when it is
   below -75 dBm). These stages are safe to repeat, so the tool tries them
@@ -272,29 +272,29 @@ The plug's own reason. Two kinds:
 **"the device stopped the ... without reaching this computer"** or **"the device
 has sent nothing for 2 minutes"**
 
-The plug lost its connection to your computer, so its reason could not arrive.
-The tool then reads the plug's own console and shows the last lines, marked
-`The device's console:`, and gives the plug's reason from there ("its console
+The device lost its connection to your computer, so its reason could not arrive.
+The tool then reads the device's own console and shows the last lines, marked
+`The device's console:`, and gives the device's reason from there ("its console
 says: ..."). Then as above.
 
 **How long it waits**
 
-A stage keeps the plug busy for under a minute, and while it does the plug
-answers nothing else. Kept busy for much longer, a real plug stops answering
+A stage keeps the device busy for under a minute, and while it does the device
+answers nothing else. Kept busy for much longer, a real device stops answering
 until it is switched off and on (its energy meter's readings pile up), so the
-plug never spends more than 20 seconds in all trying a request again. If its
+device never spends more than 20 seconds in all trying a request again. If its
 Wi-Fi drops - a router restarting, say - the stage stops, and the tool waits up
-to 5 minutes for the plug to answer again, then runs it again by itself (three
-tries in all). The tool checks on the plug whenever it goes quiet, so a plug
+to 5 minutes for the device to answer again, then runs it again by itself (three
+tries in all). The tool checks on the device whenever it goes quiet, so a device
 that has stopped is noticed within about 20 seconds; no stage is waited on for
 more than 5 minutes in all. Waiting for you - to join a network, say - has no
 time limit.
 
 **"The device is not answering at all"**
 
-A plug can be left answering nothing - not even its web page - though it
+A device can be left answering nothing - not even its web page - though it
 still answers ping: kept busy too long, or left waiting on your computer when
-the tool was stopped mid-stage. Part way through, the tool restarts a plug that
+the tool was stopped mid-stage. Part way through, the tool restarts a device that
 has stopped getting anywhere by itself, where the firmware on it has a way to;
 Sonoff's own firmware has none
 ([Espressif research](espressif-research.md#no-restart-command)). Give it two
@@ -305,8 +305,8 @@ carries on where it stopped. Then run the tool again.
 
 **"The device is on the network but not answering yet"**
 
-A stage stopped part way (Ctrl-C, say) keeps the plug busy until it gives up,
-for up to a minute - and while busy, the plug answers nothing else. Run again straight away and the tool waits for it, then
+A stage stopped part way (Ctrl-C, say) keeps the device busy until it gives up,
+for up to a minute - and while busy, the device answers nothing else. Run again straight away and the tool waits for it, then
 carries on.
 
 ## Slots and restarts
@@ -321,24 +321,24 @@ fast" entry above.
 **A step says it was interrupted**
 
 The tool marks a step before it starts writing, so an interrupted run is
-visible rather than silent. It checks the plug: where the plug shows the step
+visible rather than silent. It checks the device: where the device shows the step
 finished, it moves on; otherwise it does the step again by itself, which
-is safe, as every step checks the plug before it writes anything and refuses
+is safe, as every step checks the device before it writes anything and refuses
 if it is not as expected.
 
 ## After the rebuild
 
-**The plug is broadcasting its own Wi-Fi network**
+**The device is broadcasting its own Wi-Fi network**
 
 Normally Tasmota joins your Wi-Fi by itself after the rebuild: the temporary
 startup firmware saves your details where it reads them. If it could not (it
-saves nothing when its own settings write fails, and the plug then behaves as
+saves nothing when its own settings write fails, and the device then behaves as
 before), Tasmota starts up asking to be configured. The tool names its setup
 network; join it (open, no password) and the tool sends your Wi-Fi details
 itself. If your computer cannot see Wi-Fi networks, the tool cannot spot it
-either: when it asks what to do about a plug it cannot find, choose *It is
+either: when it asks what to do about a device it cannot find, choose *It is
 showing its own Wi-Fi network*.
-If the plug cannot connect with them it says so and leaves the plug waiting -
+If the device cannot connect with them it says so and leaves the device waiting -
 nothing is saved - and you can set the Wi-Fi up at `http://192.168.4.1`.
 
 **Safeboot is showing instead of Tasmota**
@@ -347,49 +347,49 @@ Safeboot is the small recovery firmware. Seeing it after the rebuild is normal;
 seeing it after the whole run has finished is not. It means the full Tasmota
 was never installed - re-run and let the tool redo that step.
 
-It is also what a converted plug shows after another firmware's whole-flash
+It is also what a converted device shows after another firmware's whole-flash
 image - an ESPHome `factory.bin`, say - was uploaded through Tasmota's own
 *Firmware Upgrade* page. Tasmota switches to Safeboot for a file that big,
 which writes it over Tasmota - whether it then says "Upload Failed" or
-"Upload Successful" - so the plug comes back on Safeboot every time, even
+"Upload Successful" - so the device comes back on Safeboot every time, even
 switched off and on; `SetOption78` makes no difference. Its settings are
-still there. Run the tool on the computer that converted the plug, or with
-`--plug-ip` and the plug's address: it sees Tasmota's own Safeboot, puts
+still there. Run the tool on the computer that converted the device, or with
+`--device-ip` and the device's address: it sees Tasmota's own Safeboot, puts
 official Tasmota back with those settings, and goes on to the firmware you
 choose - or stops there, if you choose Tasmota. By hand, upload the ordinary
 `tasmota32c3.bin` (not a `factory.bin`) on Safeboot's *Firmware Upgrade*
 page.
 
-To move a converted plug to ESPHome, run the tool and choose ESPHome rather
+To move a converted device to ESPHome, run the tool and choose ESPHome rather
 than uploading ESPHome yourself: Tasmota's layout has a single place for its
-firmware, and the tool moves the plug to one ESPHome can update itself in.
+firmware, and the tool moves the device to one ESPHome can update itself in.
 
 Note that Safeboot has no Wi-Fi setup of its own. It relies on settings already
-saved on the plug. That is why the conversion uses a temporary version with
+saved on the device. That is why the conversion uses a temporary version with
 Wi-Fi details built in, and swaps it for the official one at the very end.
 
 ## The worst case
 
 **Power was lost while the memory layout was being rewritten**
 
-If the plug does not come back at all after that step, Wi-Fi recovery is not
-possible. The plug would need opening and a USB-serial adapter connected to the
+If the device does not come back at all after that step, Wi-Fi recovery is not
+possible. The device would need opening and a USB-serial adapter connected to the
 chip inside. See
 [reference/recovery-1.1.1.md](../archive/docs/reference/recovery-1.1.1.md).
 
 This is the risk you accepted at the start, and it is the only failure in this
 process that cannot be fixed by running the tool again.
 
-## A converted plug that has lost your Wi-Fi
+## A converted device that has lost your Wi-Fi
 
-After a new router or a changed Wi-Fi password, the plug cannot join any more.
+After a new router or a changed Wi-Fi password, the device cannot join any more.
 
 - **ESPHome** opens its own network by itself after a minute and a half
   without your Wi-Fi (its name, such as `esphome-abcdef`). Join it, and its page
   asks for your Wi-Fi. It keeps trying your Wi-Fi meanwhile, so after a router
   restart it simply rejoins. It opens that network only once each time it
   starts: if it has done so already - your router was off for more than a
-  minute since, say - switch the plug off and on, and it opens it again a
+  minute since, say - switch the device off and on, and it opens it again a
   minute and a half later. (A fault of ESPHome 2026.10, which builds the
   ESPHome the tool installs; ESPHome 2026.11 opens it every time.)
 - **Tasmota** keeps trying your Wi-Fi and never opens a network by itself, so
@@ -398,41 +398,41 @@ After a new router or a changed Wi-Fi password, the plug cannot join any more.
   `tasmota-abcdef`, or `ESP_` and six characters). Join it, browse to `http://192.168.4.1`
   and choose your Wi-Fi.
 
-## A converted plug that switches nothing
+## A converted device that switches nothing
 
 Tasmota answers and stays on your Wi-Fi, but has no relay or power meter: in
 Home Assistant's Tasmota integration it shows only a restart button and its
 Wi-Fi. This happens when Tasmota restarts six times in a row, each within 10
 seconds of starting: it takes that for a boot loop and goes over to its fallback
-module, which knows nothing of your plug. A plug converted by 2.1.2 or later has
-its own template as that fallback and goes on switching. For a plug converted
+module, which knows nothing of your device. A device converted by 2.1.2 or later has
+its own template as that fallback and goes on switching. For a device converted
 earlier, the check below puts the template back and makes it the fallback.
-Or, in the plug's web page under **Tools → Console**:
+Or, in the device's web page under **Tools → Console**:
 
 ```
 Backlog Template {"NAME":"Sonoff S60TPG","GPIO":[1,1,1,1,224,544,1,3104,1,32,1,0,0,0,0,0,0,0,1,1,1,1],"FLAG":0,"BASE":1}; Module2 0; Module 0
 ```
 
-(`S60TPF` in the name for a European plug: the pins are the same.)
+(`S60TPF` in the name for a European device: the pins are the same.)
 
-## An ESPHome plug with no page and no relay
+## An ESPHome device with no page and no relay
 
 If ESPHome is stopped within a minute of starting ten times in a row - by
 switching it off and on, say - it takes that for a boot loop and starts in safe
 mode: on your Wi-Fi with only its update service, no page, no relay, nothing in
 Home Assistant. After five minutes it restarts as itself, with nothing lost;
 leave it switched on. If you run the tool meanwhile, it says so and waits for
-the plug.
+the device.
 
-## Checking a finished plug at any time
+## Checking a finished device at any time
 
 ```sh
-python3 -m tools.autoflash step H1 --plug-ip 192.168.99.50
+python3 -m tools.autoflash step H1 --device-ip 192.168.99.50
 ```
 
-Reads four areas of the plug's memory - the bootloader, the memory map, Safeboot
+Reads four areas of the device's memory - the bootloader, the memory map, Safeboot
 and Tasmota - and compares them against the known files, and checks Tasmota
-has the plug's template, as its fallback module too. It only reads, with one
-exception: a plug without its template (which switches nothing) gets it back,
-keeping its other settings, and a plug without it as the fallback gets that. Safe
+has the device's template, as its fallback module too. It only reads, with one
+exception: a device without its template (which switches nothing) gets it back,
+keeping its other settings, and a device without it as the fallback gets that. Safe
 to run whenever you want reassurance.

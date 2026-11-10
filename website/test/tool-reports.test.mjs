@@ -38,8 +38,8 @@ from tools.autoflash.state import RunState
 
 queue, bits = Path(sys.argv[1]), int(sys.argv[2])
 state = RunState.open(Path(tempfile.mkdtemp()) / "run")
-for key, value in {"product_model": "S60TPF", "stock_version": "1.2.0", "plug_kind": "sonoff-s60",
-                   "firmware": "tasmota", "plug_mac": "12:34:56:ab:cd:ef"}.items():
+for key, value in {"product_model": "S60TPF", "stock_version": "1.2.0", "device_kind": "sonoff-s60",
+                   "firmware": "tasmota", "device_mac": "12:34:56:ab:cd:ef"}.items():
     state.set_input(key, value)
 ctx = SimpleNamespace(state=state, last_failure="", last_failed_step="", args=SimpleNamespace())
 with mock.patch.object(upload, "QUEUE", queue), mock.patch.object(upload, "PROOF_BITS", bits):

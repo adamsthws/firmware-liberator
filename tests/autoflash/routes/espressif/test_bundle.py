@@ -35,7 +35,7 @@ class StartChoiceTests(unittest.TestCase):
                                wifi=lambda: ("Home-2G", "password"))
 
     def test_a5_asks_nothing_about_wifi(self):
-        # The details are read off the plug at E1, so A5 has nothing to ask.
+        # The details are read off the device at E1, so A5 has nothing to ask.
         from unittest import mock
         with mock.patch.object(bundle, "validate_bundle", return_value={}), \
              mock.patch.object(hostsys, "check_sha256sums", return_value=[]), \
@@ -61,7 +61,7 @@ class StartChoiceTests(unittest.TestCase):
         self.assertTrue(validate.call_args.kwargs["current_only"])
 
     def test_a_run_carried_on_past_f2_keeps_a_bundle_of_a_release_pinned_before(self):
-        # The plug runs the app that bundle holds: G1's Safeboot and H1's
+        # The device runs the app that bundle holds: G1's Safeboot and H1's
         # check must be that release's too.
         from unittest import mock
         ctx = self.ctx()
@@ -73,10 +73,10 @@ class StartChoiceTests(unittest.TestCase):
         self.assertFalse(validate.call_args.kwargs["current_only"])
         rebuild.assert_not_called()
 
-    def test_a_bundle_built_again_past_f2_is_of_the_release_on_the_plug(self):
+    def test_a_bundle_built_again_past_f2_is_of_the_release_on_the_device(self):
         # 1.2.0's bundle, of the release pinned before, was made from another
         # startup firmware: built again of the release pinned now, H1 found
-        # the plug's Safeboot and app differing (the fault suite's
+        # the device's Safeboot and app differing (the fault suite's
         # legacy-v1.2.0 at H1).
         import json
         import tempfile
@@ -91,9 +91,9 @@ class StartChoiceTests(unittest.TestCase):
             ctx = self.ctx()
             ctx.manifest_path = manifest
             ctx.state.mark("A5", state.DONE, result={})
-            self.assertIsNone(bundle.release_on_the_plug(ctx))
+            self.assertIsNone(bundle.release_on_the_device(ctx))
             ctx.state.mark("F2", state.DONE, result={})
-            self.assertEqual(bundle.release_on_the_plug(ctx), earlier)
+            self.assertEqual(bundle.release_on_the_device(ctx), earlier)
             with mock.patch.object(bundle, "build_bundle") as build, \
                  mock.patch.object(bundle, "validate_bundle"), mock.patch.object(output, "say"):
                 bundle.make_bundle(ctx, problem="built from a different startup firmware")
@@ -101,7 +101,7 @@ class StartChoiceTests(unittest.TestCase):
             manifest.write_text(json.dumps({"schema": 1, "artifacts": {
                 name: {"size": file["size"], "sha256": file["sha256"]}
                 for name, file in OFFICIAL_TASMOTA["files"].items()}}))
-            self.assertIsNone(bundle.release_on_the_plug(ctx))
+            self.assertIsNone(bundle.release_on_the_device(ctx))
 
     def test_a_run_carried_on_keeps_a_bundle_this_version_can_use(self):
         from unittest import mock
@@ -113,7 +113,7 @@ class StartChoiceTests(unittest.TestCase):
         rebuild.assert_not_called()
 
     def test_a5_builds_a_missing_bundle_without_asking_for_wifi(self):
-        # A first run: the bundle is built with no Wi-Fi; E1 adds it, read off the plug.
+        # A first run: the bundle is built with no Wi-Fi; E1 adds it, read off the device.
         from unittest import mock
         with mock.patch.object(bundle, "validate_bundle",
                                side_effect=[ValueError("no manifest"), {}]), \

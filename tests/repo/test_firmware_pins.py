@@ -29,7 +29,7 @@ S60_ESPHOME = {"image": ESPRESSIF["sonoff-s60"]["esphome"], "mover": ESPRESSIF["
 
 class LayoutTests(unittest.TestCase):
     """Each family's pins are kept alike: by what they belong to (a chip, which
-    every plug on it shares, or a device), then by firmware."""
+    every device on it shares, or a device), then by firmware."""
 
     FAMILIES = {"espressif": {chip.key for chip in chips.ALL}, "beken": {uf.READOUT_BUILD}}
 
@@ -70,7 +70,7 @@ class LayoutTests(unittest.TestCase):
 
 
 class FileNameTests(unittest.TestCase):
-    """A published file a chip's plugs share names the chip, and a device's own
+    """A published file a chip's devices share names the chip, and a device's own
     names the device, so the two chips' are told apart by name. Those published
     before the rule keep their names - published files never change - each only
     while it is that exact build: the build that replaces one is named by the
@@ -269,38 +269,38 @@ class DocumentedTests(unittest.TestCase):
 
 
 class BekenPinTests(unittest.TestCase):
-    """The Beken plugs' images: OpenBeken and ESPHome on LibreTiny, rt_ota images
-    pinned under "beken" by plug."""
+    """The Beken devices' images: OpenBeken and ESPHome on LibreTiny, rt_ota images
+    pinned under "beken" by device."""
 
     def test_each_file_is_the_one_pinned_and_in_sha256sums(self):
         sums = (ROOT / "artifacts" / "SHA256SUMS").read_text().splitlines()
-        for plug, section in PINS.get("beken", {}).items():
-            self.assertEqual(set(section), set(uf.BEKEN_BUILDS[plug]), plug)
+        for device, section in PINS.get("beken", {}).items():
+            self.assertEqual(set(section), set(uf.BEKEN_BUILDS[device]), device)
             for key, pin in section.items():
                 data = (ROOT / pin["file"]).read_bytes()
-                self.assertEqual((len(data), sha256_bytes(data)), (pin["size"], pin["sha256"]), (plug, key))
+                self.assertEqual((len(data), sha256_bytes(data)), (pin["size"], pin["sha256"]), (device, key))
                 self.assertIn(f"{pin['sha256']}  {Path(pin['file']).name}", sums)
-                self.assertEqual(rbl.header(data).name, "app", (plug, key))
-                self.assertLessEqual(len(data), uf2.DOWNLOAD_SIZE, (plug, key))
+                self.assertEqual(rbl.header(data).name, "app", (device, key))
+                self.assertLessEqual(len(data), uf2.DOWNLOAD_SIZE, (device, key))
 
     def test_each_build_is_what_firmware_json_says(self):
-        for plug, section in PINS.get("beken", {}).items():
+        for device, section in PINS.get("beken", {}).items():
             if "openbeken" in section:
                 pin = section["openbeken"]
                 self.assertEqual(rbl.header((ROOT / pin["file"]).read_bytes()).version, pin["version"])
-                # Built with the driver and the plug's table, each as it is now.
-                self.assertEqual(list(pin["sources"]), uf.openbeken_sources(plug), plug)
+                # Built with the driver and the device's table, each as it is now.
+                self.assertEqual(list(pin["sources"]), uf.openbeken_sources(device), device)
                 for path, digest in pin["sources"].items():
                     self.assertEqual(sha256_bytes((ROOT / path).read_bytes()), digest, path)
                 for patch, digest in pin["patches"].items():
                     self.assertEqual(sha256_bytes((uf.OPENBEKEN_DIR / patch).read_bytes()), digest, patch)
                 # Built with every patch kept there - the module needs the hook one.
-                self.assertEqual(set(pin["patches"]), set(uf.OPENBEKEN_PATCHES), plug)
+                self.assertEqual(set(pin["patches"]), set(uf.OPENBEKEN_PATCHES), device)
                 self.assertEqual({path.name for path in uf.OPENBEKEN_DIR.glob("*.patch")}, set(uf.OPENBEKEN_PATCHES))
             if "esphome" in section:
                 pin = section["esphome"]
                 config = (ROOT / pin["config"]).read_text(encoding="utf-8")
-                self.assertEqual(uf.config_version(config), pin["version"], plug)
+                self.assertEqual(uf.config_version(config), pin["version"], device)
                 firmware = rbl.unpack((ROOT / pin["file"]).read_bytes())
                 self.assertIn(pin["version"].encode("ascii"), firmware)
                 self.assertIn(pin["esphome"].encode("ascii"), firmware)
@@ -366,7 +366,7 @@ class BekenPinTests(unittest.TestCase):
     def test_the_docs_name_each_file(self):
         readme = (ROOT / "artifacts/README.md").read_text(encoding="utf-8")
         notices = (ROOT / "NOTICES.md").read_text(encoding="utf-8")
-        for plug, section in PINS.get("beken", {}).items():
+        for device, section in PINS.get("beken", {}).items():
             for key, pin in section.items():
                 row = next((line for line in readme.splitlines()
                             if line.startswith(f"| `{Path(pin['file']).name}` |")), "")
@@ -377,7 +377,7 @@ class BekenPinTests(unittest.TestCase):
                 else:
                     self.assertIn(f"ESPHome {pin['esphome']}", notices)
                     self.assertIn(f"LibreTiny {pin['libretiny']}", notices)
-                    esphome_readme = (ROOT / f"devices/{plug}/esphome.md").read_text(encoding="utf-8")
+                    esphome_readme = (ROOT / f"devices/{device}/esphome.md").read_text(encoding="utf-8")
                     self.assertIn(f"ESPHome {pin['esphome']} built the current", esphome_readme)
 
 
@@ -399,7 +399,7 @@ class OpenBekenModuleTests(unittest.TestCase):
                                "\textern void Autoflash_Init(void);\n\tAutoflash_Init();\n"
                                "\n#if ENABLE_LITTLEFS\n")
 
-    def test_a_plug_is_built_with_the_driver_and_its_own_table(self):
+    def test_a_device_is_built_with_the_driver_and_its_own_table(self):
         self.assertEqual(uf.openbeken_sources("sonoff-s61"),
                          ["tools/beken/openbeken/drv_autoflash.c", "tools/beken/openbeken/drv_autoflash.h",
                           "devices/sonoff-s61/drv_autoflash_sonoff_s61.c"])
@@ -422,8 +422,8 @@ class OpenBekenModuleTests(unittest.TestCase):
         self.assertEqual(uf.module_init(driver), "Autoflash_Init")
         self.assertIn(kinds.SONOFF_S61.openbeken_revert, uf.module_commands(driver))
 
-    def test_the_driver_names_no_plug(self):
-        # What is one plug's is in its table: the driver and its header hold
+    def test_the_driver_names_no_device(self):
+        # What is one device's is in its table: the driver and its header hold
         # no Beken kind's names and none of a table's addresses.
         for name in uf.OPENBEKEN_DRIVER:
             driver = (uf.OPENBEKEN_DIR / name).read_text(encoding="utf-8").lower()
@@ -526,7 +526,7 @@ class UpdateHelperTests(unittest.TestCase):
             uf.check_tasmota_files({"factory": blank, "safeboot": b"", "app": b""})
 
     def test_a_factory_image_on_tasmotas_own_table_is_the_layout_the_conversion_writes(self):
-        # The conversion adds the entry for the plug's Sonoff identity to it
+        # The conversion adds the entry for the device's Sonoff identity to it
         # (safeboot_migration.target_table); a factory image already carrying
         # that, or any other, is not Tasmota's.
         from tests.espressif.safeboot.test_safeboot_migration import partition_sector
@@ -568,7 +568,7 @@ class ESPHomeDocTests(unittest.TestCase):
 
 
 class BekenESPHomeDocTests(unittest.TestCase):
-    """What an update of a Beken plug's ESPHome writes, to a made-up one."""
+    """What an update of a Beken device's ESPHome writes, to a made-up one."""
 
     def setUp(self):
         from unittest import mock
@@ -586,7 +586,7 @@ class BekenESPHomeDocTests(unittest.TestCase):
         self.assertIn("built with ESPHome 2099.1.0 on LibreTiny 9.9.9", readme)
         page = self.texts[uf.ROOT / "devices/sonoff-s61/esphome.md"]
         self.assertIn(f"ESPHome 2099.1.0 built the current image, `{self.new['file']}`,", page)
-        self.assertIn("update_firmware.py esphome 2099.1.0 --plug sonoff-s61", page)
+        self.assertIn("update_firmware.py esphome 2099.1.0 --device sonoff-s61", page)
         self.assertIn("ESPHome for the Sonoff S61 moved to [2099.1.0]", " ".join(self.texts[uf.CHANGELOG].split()))
 
     def test_the_notices_change_the_s61s_paragraph_and_not_the_s60s(self):
@@ -620,11 +620,11 @@ class EveryDeviceUpdatedTests(unittest.TestCase):
     def test_every_device_is_built_by_one_run(self):
         from unittest import mock
         ran = []
-        commands = {name: mock.Mock(side_effect=lambda args, name=name: ran.append((name, args.plug)) or 0)
+        commands = {name: mock.Mock(side_effect=lambda args, name=name: ran.append((name, args.device)) or 0)
                     for name in ("command_esphome", "command_esphome_beken", "command_esphome_kind")}
         with mock.patch.multiple(uf, **commands):
             self.assertEqual(uf.main(["esphome", "2099.1.0", "--every-device", "--no-docs"]), 0)
-        self.assertEqual({plug or "sonoff-s60" for _, plug in ran}, {kind.key for kind in kinds.READY})
+        self.assertEqual({device or "sonoff-s60" for _, device in ran}, {kind.key for kind in kinds.READY})
 
     def test_every_device_gets_one_changelog_line_and_none_of_its_own(self):
         from unittest import mock
@@ -678,7 +678,7 @@ class EveryDeviceUpdatedTests(unittest.TestCase):
     def test_it_is_not_asked_for_one_device(self):
         import contextlib
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            uf.main(["esphome", "--every-device", "--plug", "sonoff-s61"])
+            uf.main(["esphome", "--every-device", "--device", "sonoff-s61"])
 
 
 class OpenBekenRefTests(unittest.TestCase):
@@ -769,9 +769,9 @@ class OpenBekenEveryDeviceTests(unittest.TestCase):
         built = []
         with mock.patch.object(uf, "stable_release", return_value={"tag_name": "1.18.321"}), \
                 mock.patch.object(uf, "command_openbeken",
-                                  side_effect=lambda args: built.append((args.plug, args.version)) or 0):
+                                  side_effect=lambda args: built.append((args.device, args.version)) or 0):
             self.assertEqual(uf.main(["openbeken", "1.18.321", "--every-device", "--dry-run"]), 0)
-        self.assertEqual(built, [(plug, "1.18.321") for plug in uf.BEKEN_BUILDS])
+        self.assertEqual(built, [(device, "1.18.321") for device in uf.BEKEN_BUILDS])
 
     def test_each_projects_version_is_given_alike(self):
         from unittest import mock
@@ -785,8 +785,8 @@ class OpenBekenEveryDeviceTests(unittest.TestCase):
             uf.main(["openbeken", "--release", "1.18.321"])
 
     def test_every_beken_device_has_its_openbeken_pinned(self):
-        for plug in uf.BEKEN_BUILDS:
-            self.assertIn("release", PINS["beken"][plug]["openbeken"], plug)
+        for device in uf.BEKEN_BUILDS:
+            self.assertIn("release", PINS["beken"][device]["openbeken"], device)
 
 
 class OpenBekenDocTests(unittest.TestCase):
@@ -918,9 +918,9 @@ class ChangelogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, self.write(tmp, "# Changelog\n\nRules.\n\n## 2.1.0\n\n- Old.\n", "2.1.0"), \
              mock.patch.object(uf, "released", return_value=True):
             texts = {}
-            self.assertEqual(uf.changelog_with("A converted plug ends on Tasmota 16.1.0.", texts), "2.2.0")
+            self.assertEqual(uf.changelog_with("A converted device ends on Tasmota 16.1.0.", texts), "2.2.0")
             changelog, version = texts[uf.CHANGELOG], texts[uf.VERSION_FILE]
-        self.assertIn("## 2.2.0\n\n- A converted plug ends on Tasmota 16.1.0.\n\n## 2.1.0\n\n- Old.", changelog)
+        self.assertIn("## 2.2.0\n\n- A converted device ends on Tasmota 16.1.0.\n\n## 2.1.0\n\n- Old.", changelog)
         self.assertIn('__version__ = "2.2.0"', version)
 
     def test_before_it_the_line_joins_the_release_to_come(self):

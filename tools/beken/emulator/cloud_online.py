@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Complete the eWeLink cloud cycle: the emulated S61 comes ONLINE against a stub.
 
-Builds on cloud_dial.py (which gets the plug to dial GET /dispatch/device) by
+Builds on cloud_dial.py (which gets the device to dial GET /dispatch/device) by
 standing up the local CoolKit stub (tools/ewelink/stub_cloud/stub_server.py) on
 loopback and bridging the emulator's netstack to it, then driving the whole
 handshake:
@@ -9,7 +9,7 @@ handshake:
     GET /dispatch/device   -> stub answers {error:0, IP, domain, port} (itself)
     wss:// connect, GET /api/ws, TLS handshake  -> WebSocket upgrade (RFC 6455)
     {"action":"register", ...}   -> stub answers {error:0, config:{hb,...}}
-    => the plug is ONLINE on the eWeLink IoT channel (then heartbeats / TZ query).
+    => the device is ONLINE on the eWeLink IoT channel (then heartbeats / TZ query).
 
 Dispatch is plaintext (the S61's factory dispatch URL is http://...:80), but the
 IoT WebSocket is wss:// and the firmware verifies the server certificate against
@@ -25,7 +25,7 @@ changes, and the stub serves a leaf signed by that CA. Our CA/leaf are EC P-256
 (made with openssl); the leaf carries a DNS and an IP SAN for the dialled IoT
 address and serverAuth EKU, which the firmware's mbedTLS requires.
 
-The bridge is the netstack's own relay (attach_wifi_peer(net_out=True)): the plug
+The bridge is the netstack's own relay (attach_wifi_peer(net_out=True)): the device
 dials a placeholder public IP (its factory dispatch host, off its own subnet so
 it routes through the gateway), which we redirect to the loopback stub -
 plaintext dispatch on one port, TLS IoT on another. Everything stays on this
@@ -40,7 +40,7 @@ found in the firmware itself (stock_points.py).
   tools/beken/emulator/beken-emu.sh python tools/beken/emulator/cloud_online.py
 
 The set-up is a CloudSession, which cloud_push.py builds on to push an
-`upgrade` once the plug is online.
+`upgrade` once the device is online.
 """
 
 import base64
@@ -163,9 +163,9 @@ class StockHooks:
 
     They go in at `points` (stock_points.find), given here or to `attach`
     before that app runs. Each acts only while `active`: another firmware the
-    plug is converted to runs other code there (tools/beken/emulator/plug.py turns them
+    device is converted to runs other code there (tools/beken/emulator/device.py turns them
     off when it starts one). `boot()` starts the clock for the trigger again,
-    as each boot of the plug needs."""
+    as each boot of the device needs."""
 
     def __init__(self, emu, ssid, password, ca_pem, force_at, netlog, points=None):
         self.emu, self.netlog = emu, netlog
@@ -194,14 +194,14 @@ class StockHooks:
         b = self._read(address, n); z = b.find(0); return b[:z if z >= 0 else n]
 
     def attach(self, points):
-        """Put the hooks in, at the places given. Once: a plug's next boot is a new emulator."""
+        """Put the hooks in, at the places given. Once: a device's next boot is a new emulator."""
         self.points = points
         mu = self.emu.mu
         on = lambda f: (lambda m, a, s, u: f(m, a, s, u) if self.active else None)  # noqa: E731
         mu.hook_add(UC_HOOK_CODE, on(lambda m, a, s, u: mu.reg_write(UC_ARM_REG_R0, 0)), None,
                     points.after_memcmp, points.after_memcmp)
 
-        def ef_get(m, a, s, u):   # the Wi-Fi credentials, as a provisioned plug's store gives them
+        def ef_get(m, a, s, u):   # the Wi-Fi credentials, as a provisioned device's store gives them
             key = self._string(mu.reg_read(UC_ARM_REG_R0)); buf = mu.reg_read(UC_ARM_REG_R1)
             outp = mu.reg_read(UC_ARM_REG_R3)
             val = self._ssid if key == b"wifi-ssid" else (self._password if key == b"wifi-pass" else None)
@@ -271,7 +271,7 @@ class StockHooks:
                 return
             st["forced"] = True
             self.netlog.append("[pairing-success trigger @%.1f]" % (time.time() - self._started))
-            # What the firmware runs once a joined plug's network is up: its LAN
+            # What the firmware runs once a joined device's network is up: its LAN
             # service published, then the cloud started.
             st["next"] = [points.start_cloud]
             force_thumb(points.lan_publish)
@@ -292,10 +292,10 @@ class StockHooks:
 class CloudSession:
     """The emulated S61 and its eWeLink stub, set up and not yet running.
 
-    `routes` maps more (address, port) pairs the plug dials to loopback ports:
+    `routes` maps more (address, port) pairs the device dials to loopback ports:
     cloud_push.py adds its firmware server so. `flash_writethrough` models the
-    flash writes the plug makes of itself (an OTA download, the bootloader's
-    apply). `stub.heard` can be wrapped before `run` to act on what the plug sends."""
+    flash writes the device makes of itself (an OTA download, the bootloader's
+    apply). `stub.heard` can be wrapped before `run` to act on what the device sends."""
 
     def __init__(self, dump=DUMP, *, ssid=SSID, password=PW, heartbeat=HB, force_at=FORCE_AT,
                  routes=None, flash_writethrough=False):
@@ -352,7 +352,7 @@ class CloudSession:
         self.swap, self.dial = self.hooks.swap, self.hooks.dial
 
     def run(self, secs, until=None):
-        """Run the plug for `secs` seconds, or until `until()` is true (asked
+        """Run the device for `secs` seconds, or until `until()` is true (asked
         every 2 s), then stop it."""
         self.hooks.boot()
         self._started = time.time()
@@ -373,7 +373,7 @@ class CloudSession:
                 any("ws ->" in ln and '"config"' in ln and '"error":0' in ln for ln in log))
 
     def flash(self):
-        """The flash as the plug left it: its writes included, with flash_writethrough."""
+        """The flash as the device left it: its writes included, with flash_writethrough."""
         emu = self.emu
         return bytes(emu.physical_flash if emu.physical_flash is not None else emu.raw_flash)
 
@@ -396,7 +396,7 @@ def main():
     print("  --- verdict ---", flush=True)
     print("  dispatch answered: %s | websocket open: %s | register: %s | online (error:0+config): %s"
           % (dispatched, wsopen, reg, online), flush=True)
-    print("  %s" % ("PASS: the plug trusts our CA, completed the eWeLink cloud handshake and is ONLINE."
+    print("  %s" % ("PASS: the device trusts our CA, completed the eWeLink cloud handshake and is ONLINE."
                     if (wsopen and reg and online) else
                     "INCOMPLETE: see the stub log + netstack trace below."), flush=True)
     if not (wsopen and reg and online):

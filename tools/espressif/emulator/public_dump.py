@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""A plug for the emulator from a public dump of a stock one, for the kinds of
-plug no one here owns.
+"""A device for the emulator from a public dump of a stock one, for the kinds of
+device no one here owns.
 
     python tools/espressif/emulator/public_dump.py KIND
     python tools/espressif/emulator/public_dump.py --remove KIND
 
 The dump is fetched from where it is published, checked against its hash and
-filed as a test copy's backup (copy_plug.py), under a MAC made up for the kind:
-emu.sh --plug MAC runs it. Nothing of it reaches this repository, and no image
+filed as a test copy's backup (copy_device.py), under a MAC made up for the kind:
+emu.sh --device MAC runs it. Nothing of it reaches this repository, and no image
 holds it (AGENTS.md).
 
-A public dump is of someone's real plug, and some hold its eWeLink identity: it
+A public dump is of someone's real device, and some hold its eWeLink identity: it
 is replaced with a made-up one on the way in, so that no run can ever speak as
-that plug, whatever it reaches.
+that device, whatever it reaches.
 """
 
 from __future__ import annotations
@@ -31,9 +31,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import kinds, plugs  # noqa: E402
+from tools.autoflash import kinds, records  # noqa: E402
 from tools.espressif import ais_records, build_vendor_ota, flashmap  # noqa: E402
-from tools.espressif.emulator import appimage, copy_plug, rewrite_nvs  # noqa: E402
+from tools.espressif.emulator import appimage, copy_device, rewrite_nvs  # noqa: E402
 from tools.espressif.inspect_stock_nvs import parse  # noqa: E402
 
 COMMIT = "4d3556605da2ce101382a01b6fb7d84e68c3df2a"
@@ -95,9 +95,9 @@ def fetched(dump: "Dump | Update") -> bytes:
 
 @dataclass(frozen=True)
 class Update:
-    """eWeLink's public firmware update for a plug no whole dump of which is
-    published: run on a stock plug of the same chip's flash in place of that
-    one's firmware. It tests the firmware, not the plug's real layout, which is
+    """eWeLink's public firmware update for a device no whole dump of which is
+    published: run on a stock device of the same chip's flash in place of that
+    one's firmware. It tests the firmware, not the device's real layout, which is
     why a real one with another stops before anything is written over Sonoff's."""
     file: str
     sha256: str
@@ -148,7 +148,7 @@ UPDATES = {
 
 
 def identities(frame: dict, dump: Dump) -> dict[bytes, bytes]:
-    """What of the plug's own eWeLink identity to replace, and with what. The
+    """What of the device's own eWeLink identity to replace, and with what. The
     two keys are often one value, which then stays one."""
     new = {frame["deviceid"].encode(): dump.deviceid.encode(), frame["apikey"].encode(): dump.apikey.encode()}
     if frame.get("encrypt_key"):
@@ -160,7 +160,7 @@ def identities(frame: dict, dump: Dump) -> dict[bytes, bytes]:
 KEPT_SPACES = {"frame_params", "nvs.net80211", "phy", "misc", "data_backups", "user_usual", "user_unusual"}
 
 def factory_record(update: Update) -> bytes:
-    """The record a plug of `update`'s kind would have been given at the
+    """The record a device of `update`'s kind would have been given at the
     factory (tools/espressif/ais_records.py), with the test copy's made-up
     identity."""
     octets = bytes.fromhex(update.mac.replace(":", ""))
@@ -171,12 +171,12 @@ def factory_record(update: Update) -> bytes:
         "sap_mac": ":".join(f"{b:02X}" for b in softap)}, update.uiid)
 
 
-# A paired plug's home network, made up: rewrite_nvs points it at the emulator's.
+# A paired device's home network, made up: rewrite_nvs points it at the emulator's.
 HOME_WIFI = ("home-wifi", "made-up-password")
 
 
 def ais_rows(update: Update) -> tuple[tuple[str, str, str, str], ...]:
-    """The ais SDK's records of a plug of `update`'s kind that has been made
+    """The ais SDK's records of a device of `update`'s kind that has been made
     and paired, as rows for the NVS generator. The donor's settings, in
     another SDK's places, mean nothing to its firmware."""
     paired = ais_records.pair_record(*HOME_WIFI, *rewrite_nvs.DISPATCH)
@@ -186,7 +186,7 @@ def ais_rows(update: Update) -> tuple[tuple[str, str, str, str], ...]:
 
 def anonymised(flash: bytes, dump: "Dump | Update", stock_model: str | None = None, uiid: int = 0,
                user_settings: str = "", added: tuple[tuple[str, str, str, str], ...] = ()) -> bytes:
-    """The dump with the plug's identity replaced throughout its settings - and,
+    """The dump with the device's identity replaced throughout its settings - and,
     given `stock_model`, what it calls itself, given `uiid` its kind's number, and
     given `user_settings` those for its user settings. `added` are more settings,
     as rows for the NVS generator."""
@@ -196,7 +196,7 @@ def anonymised(flash: bytes, dump: "Dump | Update", stock_model: str | None = No
     frame = next(json.loads(value.data.split(b"\0", 1)[0]) for (space, key), value in values.items()
                  if names[space] == "frame_params" and key == "content")
     replaced = identities(frame, dump)
-    # The eWeLink account it was paired to, made up as the stub's is (the plug's
+    # The eWeLink account it was paired to, made up as the stub's is (the device's
     # own apikey). Kept, it is someone's account, and the stub's would differ
     # from it: the DualR3's firmware, seeing a new account, puts its user
     # settings back to their defaults.
@@ -234,7 +234,7 @@ def anonymised(flash: bytes, dump: "Dump | Update", stock_model: str | None = No
     out = bytearray(flash)
     out[partition.offset:partition.offset + partition.size] = new
     if any(old in out for old in replaced):
-        # A copy somewhere else in the flash: rather no plug than a real identity.
+        # A copy somewhere else in the flash: rather no device than a real identity.
         for old, new_value in replaced.items():
             if len(old) != len(new_value):  # the model, from the settings: not an identity
                 continue
@@ -258,7 +258,7 @@ def c_lui(register: int, upper: int) -> bytes:
 
 
 def table_moved(flash: bytes, to: int) -> bytes:
-    """An S60 flash as a plug built for its partition table at `to` would have
+    """An S60 flash as a device built for its partition table at `to` would have
     it: its bootloader reading it there and nothing where it was. The settings
     partition, which covers `to` on the S60, starts after it instead and keeps
     its end; nothing else moves. A real one's layout past the table is not
@@ -300,7 +300,7 @@ def table_moved(flash: bytes, to: int) -> bytes:
 
 
 def with_update(donor: bytes, update: Update) -> bytes:
-    """The donor plug's flash with the update's firmware in place of its own,
+    """The donor device's flash with the update's firmware in place of its own,
     and started."""
     firmware = fetched(update)
     app = firmware[build_vendor_ota.WRAPPER_SIZE:]
@@ -320,7 +320,7 @@ def with_update(donor: bytes, update: Update) -> bytes:
 
 def make(key: str) -> Path:
     dump = DUMPS.get(key) or UPDATES[key]
-    target = plugs.PLUGS / plugs.folder_name(dump.mac)
+    target = records.DEVICES / records.folder_name(dump.mac)
     if target.exists():
         return target
     if isinstance(dump, Update):
@@ -340,7 +340,7 @@ def make(key: str) -> Path:
         dump.mac, flashmap.min_chip_revision(flash, flashmap.app_slots(flash)[0])))
     (backup / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     (backup / "README.txt").write_text(f"{report['note']}\nA test copy, for the emulator.\n", encoding="utf-8")
-    (target / "plug.json").write_text(json.dumps({
+    (target / "device.json").write_text(json.dumps({
         "backed_up": time.strftime("%Y-%m-%d"), "ewelink_name": "Emulator test copy",
         "mac": dump.mac, "stock_version": "", "test_copy_of": dump.url,
         "product_model": kinds.find(key).example_product_model if kinds.find(key) else "",
@@ -355,12 +355,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("kind", choices=sorted({*DUMPS, *UPDATES}))
     parser.add_argument("--remove", action="store_true", help="delete the test copy")
     args = parser.parse_args(argv)
+    try:
+        records.take_over_earlier_names()
+    except records.EarlierNames as error:
+        sys.exit(str(error))
     mac = (DUMPS.get(args.kind) or UPDATES[args.kind]).mac
     if args.remove:
-        copy_plug.remove(mac)
+        copy_device.remove(mac)
         print(f"Removed the test copy of {args.kind}.")
         return 0
-    print(f"{make(args.kind)}: run it with tools/espressif/emulator/emu.sh --plug {mac}")
+    print(f"{make(args.kind)}: run it with tools/espressif/emulator/emu.sh --device {mac}")
     return 0
 
 

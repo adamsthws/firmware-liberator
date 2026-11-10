@@ -102,7 +102,7 @@ class PinnedReleaseTests(unittest.TestCase):
            "tasmota_types.h (TSettings offsets), tasmota.h (SettingsTextIndex), "
            "settings_text_size, CFG_HOLDER and SettingsDelta between the template's "
            "release and the new firmware; then capture a new template with "
-           "tools/espressif/capture_tasmota_template.py from a plug running that release, test "
+           "tools/espressif/capture_tasmota_template.py from a device running that release, test "
            "it with --verify, and update artifacts/ and SHA256SUMS. Until then D1 gives "
            "Tasmota its Wi-Fi by hand. See archive/docs/reference/automatic-wifi.md.")
 

@@ -5,10 +5,10 @@ it was found out, so you need not repeat the work. [device-research.md](device-r
 lists the rest, by chip family and by device; [Beken research](beken-research.md) is
 laid out the same way.
 
-"Emulator" below means the plug ran under QEMU against the stub cloud
-([emulator.md](emulator.md)). Nothing here has been run on a real plug unless it says
+"Emulator" below means the device ran under QEMU against the stub cloud
+([emulator.md](emulator.md)). Nothing here has been run on a real device unless it says
 so. The emulator has no relays, meters, buttons or screens, so it cannot prove a
-device's wiring. The legal footing for studying a plug's firmware, the same for every
+device's wiring. The legal footing for studying a device's firmware, the same for every
 device and both chip families, is in [legal.md](legal.md#studying-and-emulating-the-firmware).
 
 ## Devices
@@ -64,7 +64,7 @@ Each backup logs the fuses (below), so a run says so too.
 
 `ota_1` is at `0x210000` in all three, and all are 4 MB. These are a pattern to guess
 from, not something to assume: the Dual R3 was first guessed as S60 style, and a
-real one's boot log showed TH style. A real plug's table is compared with the one
+real one's boot log showed TH style. A real device's table is compared with the one
 its kind expects, by hash, after its backup, and a run with another stops before
 anything of Sonoff's is written over.
 
@@ -102,7 +102,7 @@ the stub's, so the firmware keeps the mode.
 
 There is no room for the 715 KB mover between `ota_0` at `0x60000` and Tasmota's app at
 `0xE0000`: 512 KB. It is not smaller flash: the boot log shows 4 MB, with a 256 KB `nvs`
-pushing `ota_0` up. So these plugs leave through a temporary table: `nvs` `0x9000`,
+pushing `ota_0` up. So these devices leave through a temporary table: `nvs` `0x9000`,
 `0x14000`; `otadata` `0x1D000`; `phy` `0x1F000`; `ota_0` `0x20000`, `0x1F0000`; `ota_1`
 `0x210000`, `0x1A9000`. The mover goes at `0x20000`, in Tasmota's Safeboot area, the
 interim Tasmota in `ota_1`, and the Tasmota of the hub then writes the real table last.
@@ -113,15 +113,15 @@ plan was built by hand, not timed, and a cut mid-write while leaving was not rea
 
 ### One bootloader
 
-Every plug ends with ESPHome's bootloader, however it got Tasmota. Leaving Tasmota never
-writes it: stage D5 does, from the interim Tasmota. A plug going from Tasmota to ESPHome
+Every device ends with ESPHome's bootloader, however it got Tasmota. Leaving Tasmota never
+writes it: stage D5 does, from the interim Tasmota. A device going from Tasmota to ESPHome
 takes the direct route only if it has that bootloader already, read by its hash, and
 otherwise goes through the interim Tasmota. Tasmota's own bootloader starts the mover:
 seen in a POW Elite's boot log, in the emulator.
 
 Leaving Tasmota, Berry has about 28 KB free on the full build. A whole write held a
 classic ESP32's 26 KB bootloader twice, and stopped there. It now compares the hash on
-the plug first, as every conversion has already put that bootloader in place.
+the device first, as every conversion has already put that bootloader in place.
 
 ### Converting a table at 0xC000
 
@@ -141,7 +141,7 @@ likeliest way, inferred and not yet tried: the bridge writes a copy of the
 0xC000 table's entries at 0x8000 first, and reads it back. Sonoff's bootloader
 and app never read that sector, so a power cut there costs nothing. The
 interim Tasmota then starts and sees the same partitions, and D5 puts
-ESPHome's bootloader in place as on any plug, after which the device is laid
+ESPHome's bootloader in place as on any device, after which the device is laid
 out as any other converted one. Leaving Sonoff, the stale copy at 0xC000 goes
 before the Tasmota layout's `nvs` (0x9000-0xDFFF) takes that range; going back,
 the backup restores both. It needs a bridge built with dangerous flash writes
@@ -152,11 +152,11 @@ overwrite it, and the conversion must refuse. Custom Tasmota or ESPHome builds
 for 0xC000 would also work, but would not be the official images, and the
 Partition Wizard would write a table nothing reads.
 
-## A plug's identity and stores
+## A device's identity and stores
 
-What makes a plug the device its eWeLink account knows is a few entries of Sonoff's
+What makes a device the device its eWeLink account knows is a few entries of Sonoff's
 NVS, 300 to 550 bytes: `frame_params/content` and `data_backups/content` on every
-Espressif plug, `productId/productId` on the S60, `channel_params/content` and
+Espressif device, `productId/productId` on the S60, `channel_params/content` and
 `PID/content` on the POWCT. The POW Elite also caches eWeLink's server
 certificates (`wss_ca1` to `wss_ca4`, about 5.9 KB), which are not identity. Neither
 is the Wi-Fi (`nvs.net80211`, `frame_params`' `ssid` and `passwd`), the histories,
@@ -169,18 +169,18 @@ On a real S60, against its account record: `frame_params.deviceid` is the record
 server and port, and the Wi-Fi. So `sonoff_identity.from_account` rebuilds
 `frame_params` and `data_backups` from the record, with the account region's
 dispatch server (`eu-dispd.coolkit.cc`), `encrypt_key` and `is_encrypt` on a
-classic ESP32 plug as their dumps have them, and no `sha256`.
+classic ESP32 device as their dumps have them, and no `sha256`.
 
 In the emulator, against the stub, the S60's firmware 1.2.0 registers and reports
 its state the same with `sha256` as it was, without it, and as 64 zeros; and with
 `frame_params` cut to `init`, `uiid`, `deviceid`, `apikey` and `model`, no
 `productId`, `data_backups` or user settings. `sha256` is sent neither in dispatch
 nor in register, so nothing there checks it. Whether the real eWeLink accepts a
-plug rebuilt this way has not been tried.
+device rebuilt this way has not been tried.
 
 The ESPHome route keeps Sonoff's layout and NVS, identity included; the Tasmota
 route shrinks the NVS to 20 KB, which loses it. So the tool keeps it in a sector of
-its own at `0x3FF000` ([technical-details.md](technical-details.md#an-espressif-plug-on-tasmota)).
+its own at `0x3FF000` ([technical-details.md](technical-details.md#an-espressif-device-on-tasmota)).
 What was seen of it in the emulator:
 
 | What | S60 | POW Elite |
@@ -226,7 +226,7 @@ as well, and is not used. On Tasmota's layout it is the better place: the filesy
 keeps its 320 KB, the Wizard's only offer there ("Resize FS") refuses every size
 ("last `app` partition has no firmware"), and after a factory image it is reached only
 by an update of 0x2D0000 bytes, as Tasmota's page upload stops 4 KB short of `app0`'s
-end. But every plug passes through Sonoff's layout, where `0x3AF000` is inside the
+end. But every device passes through Sonoff's layout, where `0x3AF000` is inside the
 interim Tasmota the hub runs from `ota_1` on an ESP32-C3 (`tasmota32c3-bluetooth.bin`,
 ending at `0x3C92C0`; a classic ESP32's ends at `0x377230`). On the S60, writing it
 there damaged the running image, and every way back writes that image over it again,
@@ -346,7 +346,7 @@ Sonoff SDK than the S60's: its components are `ais_*` (`ais_factory`, `ais_ota`,
   attenuation's offset, 75 to 142 mV on ADC1, not 0 mV. The emulated NSPanel then
   sends eWeLink `"temperature": -2`, with no other effect seen
   ([the NSPanel's research](../devices/sonoff-nspanel/research.md#its-room-temperature)).
-  A Beken plug's ADC is in [Beken research](beken-research.md#0x3e0000--factory-tlv-store-mac--radio-calibration).
+  A Beken device's ADC is in [Beken research](beken-research.md#0x3e0000--factory-tlv-store-mac--radio-calibration).
 - **Its JSON parser takes only compact JSON** (`"error":0`, not `"error": 0`): with
   spaces its dispatch failed silently, over and over.
 - **It turns down an EC CA** where it pins eWeLink's RSA one (`unknown_ca`).
@@ -367,9 +367,9 @@ Sonoff SDK than the S60's: its components are `ais_*` (`ais_factory`, `ais_ota`,
 
 ## No restart command
 
-Sonoff's firmware has no command that only restarts the plug, over the eWeLink
-cloud or on the local network: a plug left on it that has stopped answering is
-switched off and on by hand. Every other firmware a conversion leaves a plug on
+Sonoff's firmware has no command that only restarts the device, over the eWeLink
+cloud or on the local network: a device left on it that has stopped answering is
+switched off and on by hand. Every other firmware a conversion leaves a device on
 part way can be restarted by the tool
 ([`restart.py`](../tools/autoflash/restart.py)).
 
@@ -379,7 +379,7 @@ disassembled), on a copy of its dump:
 - **The cloud.** The WebSocket's `action` values, listed together at file
   offset `0x39a84`, are the whole set: `register`, `update`, `upgrade`, `date`,
   `notify`, `addNotify`, `deleteNotify`, `testNotify`, `resetDispatch` and
-  `redirect`. Only `upgrade` restarts the plug, after writing new firmware;
+  `redirect`. Only `upgrade` restarts the device, after writing new firmware;
   `resetDispatch` and `redirect` reconnect it to the cloud, and need it
   connected to begin with.
 - **The local network.** eWeLink's LAN control: `/zeroconf/` on port 8081,
@@ -401,13 +401,13 @@ is no such token. The S61's firmware is the same:
 
 ## The update path
 
-A stock plug takes its conversion as an update: an app inside Sonoff's 100-byte
+A stock device takes its conversion as an update: an app inside Sonoff's 100-byte
 wrapper, which its updater refuses unless the wrapper names its own firmware
 ([below](#learning-the-firmware-name)).
 
 The emulator cannot run Sonoff's official update file as eWeLink serves it: every
 Sonoff app it runs has Bluetooth start-up skipped and the stub's CA swapped in. So
-the stub offers the plug's own app made so (`stub_cloud/firmware.py`), as eWeLink's
+the stub offers the device's own app made so (`stub_cloud/firmware.py`), as eWeLink's
 latest, to `ota/query` with an older version, and serves it to the device's id;
 fetching, unwrapping and checking it is the same code as against eWeLink.
 
@@ -458,7 +458,7 @@ Some of it has limits:
 
 - **PSRAM.** The chip's fuses say whether PSRAM is in its package. PSRAM on a chip of
   its own is not looked for: that would drive pins a board without it may use for
-  something else. So "no" in the package does not mean the plug has none. An ESP32-C3
+  something else. So "no" in the package does not mean the device has none. An ESP32-C3
   cannot have any.
 - **Pin levels.** Levels are read from the chip's input registers, and nothing about a
   pin is changed. Pins whose input is off (`gpio input off`) read 0 whatever is on them,
@@ -475,14 +475,14 @@ revision 0.0. What a real chip answers has not been seen yet.
 - **The emulator**: the stock firmware under QEMU against the stub cloud
   ([emulator.md](emulator.md)); a device with no whole dump runs its update file on a
   donor's flash, as the table above says.
-- **Reading a plug and its firmware**, in [`tools/espressif/`](../tools/espressif/README.md):
+- **Reading a device and its firmware**, in [`tools/espressif/`](../tools/espressif/README.md):
   `flashmap.py` (what a dump holds: its chip, partition table and MAC), `layouts.py`
-  (the tables Sonoff's firmware comes on), `sonoff_identity.py` (a plug's identity,
+  (the tables Sonoff's firmware comes on), `sonoff_identity.py` (a device's identity,
   and `from_account`), `device_facts.py` (what a backup logs), and
   `build_vendor_ota.py` / `analyze_vendor_ota.py` (the 100-byte wrapper a stock
   updater takes).
 - **eWeLink**: `tools/ewelink/firmware_name.py` (the firmware name), the stub's
-  `stub_cloud/firmware.py` (the plug's own app offered as eWeLink's latest), and
+  `stub_cloud/firmware.py` (the device's own app offered as eWeLink's latest), and
   `firmware_findings.py` (what Sonoff's firmware says of its hardware, a detector
   each).
 - **Reading an update file's code**, as the BASICR4's was read. Strip the 100-byte
@@ -497,7 +497,7 @@ revision 0.0. What a real chip answers has not been seen yet.
   `spi_flash_mmap(0, 0x1000, ...)` (`lui a5,0x8` or `0xc`); the app description
   (the first segment's start) says the ESP-IDF version. PlatformIO's toolchain
   (`~/.platformio/packages/toolchain-riscv32-esp`) has both tools.
-- **Watching a running emulated plug**: gdb on the plug QEMU runs, without restarting
+- **Watching a running emulated device**: gdb on the device QEMU runs, without restarting
   it ([the emulator's README](../tools/espressif/emulator/README.md#debugging)).
 
 ## Questions still open

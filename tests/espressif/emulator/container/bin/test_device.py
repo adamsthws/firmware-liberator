@@ -4,10 +4,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-PLUG = Path(__file__).resolve().parents[5] / "tools/espressif/emulator/container/bin/plug"
+DEVICE = Path(__file__).resolve().parents[5] / "tools/espressif/emulator/container/bin/device"
 
 
-class PlugRouterTests(unittest.TestCase):
+class DeviceRouterTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -15,10 +15,10 @@ class PlugRouterTests(unittest.TestCase):
         self.run_dir = self.dir / "run"
         self.run_dir.mkdir()
         (self.run_dir / "qemu.pid").write_text(str(os.getpid()), encoding="utf-8")
-        self.plug = self.dir / "plug"
-        self.plug.write_text(PLUG.read_text(encoding="utf-8").replace("/run/autoflash-emu", str(self.run_dir)),
+        self.device = self.dir / "device"
+        self.device.write_text(DEVICE.read_text(encoding="utf-8").replace("/run/autoflash-emu", str(self.run_dir)),
                              encoding="utf-8")
-        self.plug.chmod(0o755)
+        self.device.chmod(0o755)
         bin_dir = self.dir / "bin"
         bin_dir.mkdir()
         # QEMU's monitor, as a client sees it: what it was sent is kept.
@@ -28,7 +28,7 @@ class PlugRouterTests(unittest.TestCase):
         self.env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
 
     def router(self, state, answer):
-        return subprocess.run([str(self.plug), "router", state], env={**self.env, "ANSWER": answer},
+        return subprocess.run([str(self.device), "router", state], env={**self.env, "ANSWER": answer},
                               capture_output=True, text=True, check=False)
 
     def test_off_taken(self):
@@ -55,7 +55,7 @@ class PlugRouterTests(unittest.TestCase):
     def test_a_command_echoed_is_not_an_answer(self):
         self.assertNotEqual(self.router("off", "qom-get wifi access-points-off true\r\n").returncode, 0)
 
-    def test_with_the_plug_switched_off_the_next_start_is_left_to_take_it(self):
+    def test_with_the_device_switched_off_the_next_start_is_left_to_take_it(self):
         (self.run_dir / "qemu.pid").unlink()
         result = self.router("off", "")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -65,14 +65,14 @@ class PlugRouterTests(unittest.TestCase):
     def test_a_restart_with_the_router_off_names_the_fork_s_device(self):
         # QEMU ignores a -global for a type that does not exist. esp32c3_wifi is
         # only the NIC model: the device is esp32_wifi on both chips.
-        supervisor = PLUG.with_name("plug-supervisor").read_text(encoding="utf-8")
+        supervisor = DEVICE.with_name("device-supervisor").read_text(encoding="utf-8")
         self.assertIn("driver=esp32_wifi,property=access-points-off,value=on", supervisor)
 
     def test_each_adc_reading_a_kind_gives_is_a_property_of_the_forks_adc(self):
         # Silently ignored too, were the type or a property name wrong.
         from tools.autoflash import kinds
-        emulator = PLUG.parents[2]
-        supervisor = PLUG.with_name("plug-supervisor").read_text(encoding="utf-8")
+        emulator = DEVICE.parents[2]
+        supervisor = DEVICE.with_name("device-supervisor").read_text(encoding="utf-8")
         self.assertIn("driver=misc.esp32c3.saradc,property=", supervisor)
         patch = (emulator / "patches/0005-esp32c3-saradc-channel-readings.patch").read_text(encoding="utf-8")
         readings = [name for kind in kinds.EVERY for name, _ in kind.adc_readings]

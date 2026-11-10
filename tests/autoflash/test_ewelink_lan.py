@@ -28,7 +28,7 @@ class AesTests(unittest.TestCase):
 class AdvertTests(unittest.TestCase):
     """Sonoff's firmware gives its Wi-Fi signal in its encrypted advert."""
 
-    def test_the_advert_opens_with_the_plugs_key(self):
+    def test_the_advert_opens_with_the_devices_key(self):
         state = ewelink_lan.advert_state(ADVERT, KEY)
         self.assertEqual(state["fwVersion"], "1.2.0")
         self.assertEqual(ewelink_lan.signal(state), -61)

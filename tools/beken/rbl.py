@@ -7,7 +7,7 @@ RT-Thread's public default key.  The header carries the body's CRC-32, the
 FNV-1a hash and size of the firmware before packing, the packed size, and
 its own CRC-32.  Nothing in it is secret, so a tool can make one: the
 conversion makes the stock app's this way, from the public S61 dump, when a
-plug is to go back to Sonoff's firmware (stock_app.py).
+device is to go back to Sonoff's firmware (stock_app.py).
 
     pack(firmware, name="app", version="1.0.2")  -> the RBL
     header(rbl)                                   -> its fields

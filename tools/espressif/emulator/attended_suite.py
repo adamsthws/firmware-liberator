@@ -9,18 +9,18 @@ A scenario is a JSON file in tools/espressif/emulator/attended/ (an S60's,
 in the Espressif emulator) or tools/beken/emulator/attended/ (an S61's):
 
     {"about": "what it shows",
-     "start": "fresh" | a saved plug (unattended-test.sh --from),
+     "start": "fresh" | a saved device (unattended-test.sh --from),
      "prep": [...], "args": [...], "size": "100x40", "minutes": 30,
      "answers": [{"when": regex, "type": keys, "times": n, "optional": bool}, ...],
      "expect": {"exit": 0, "result": "Converted", "screen": true},
      "again": {"answers": [...], "args": [...], "expect": {...}}}
 
-`again`: the tool run once more on the plug as the first run left it, with
+`again`: the tool run once more on the device as the first run left it, with
 no --new - a run stopped part way, offered back ("did not finish") - judged
 as the first is.
 
-`prep`, before the run, on the plug (Espressif only): ["convert", FIRMWARE]
-first, if at all (the plug converted to it, unattended); "sudo forgets" (sudo
+`prep`, before the run, on the device (Espressif only): ["convert", FIRMWARE]
+first, if at all (the device converted to it, unattended); "sudo forgets" (sudo
 remembers no password in the emulator, so it asks again at every use - the
 end of the run too); ["tasmota password", PASSWORD] (Tasmota's web password
 set); ["locked esphome", "login" | "login and updates"] (this project's
@@ -40,7 +40,7 @@ The verdict, from the recording alone (judge):
     FAIL-SCREEN       the screen it ended on (unattended_run.stage_problems)
 
     tools/espressif/emulator/attended_suite.py list
-    tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers N] --plug MAC
+    tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers N] --device MAC
 
 Its results, and each run's recording, go to captures/emulation/attended/<time>/.
 Run on a computer with the emulators (docs/emulator.md); each scenario runs
@@ -79,7 +79,7 @@ LOCKED_KEY = base64.b64encode(bytes(range(32))).decode()
 LOCKED_LOGIN = ("admin", "test-login-1")
 RESULT = re.compile(r"Result:\s+(\S.*?)(?:\s{2,}|$)", re.M)
 QUIT_FIRST = [{"when": "Which device is this run for|Press any key", "type": "q\r"}]
-PLUG = "192.168.60.50"
+DEVICE = "192.168.60.50"
 
 
 def scenarios() -> dict[str, tuple[str, dict[str, Any]]]:
@@ -234,21 +234,21 @@ def _entries(node: Any):
 
 
 def wrapper(n: int, scenario: dict[str, Any], *more: str, mac: str) -> list[str]:
-    return [str(ROOT / "tools/espressif/emulator/unattended-test.sh"), f"--instance={n}", f"--plug={mac}",
+    return [str(ROOT / "tools/espressif/emulator/unattended-test.sh"), f"--instance={n}", f"--device={mac}",
             "--stub-cloud", *more]
 
 
 def prepare(n: int, scenario: dict[str, Any], folder: Path, log, mac: str) -> bool:
-    """The plug as the scenario starts it, before its run: from where it says,
+    """The device as the scenario starts it, before its run: from where it says,
     then the tool quit at its first question with the emulator kept, for
-    what `prep` does to the plug. False when that could not be done."""
+    what `prep` does to the device. False when that could not be done."""
     start = scenario.get("start", "fresh")
     actions = [action for action in scenario.get("prep", []) if action != "sudo forgets"]
     first = ["--fresh"] if start == "fresh" else [f"--from={start}"]
     if not actions:
         return True   # its run starts it, from where it says
     if actions[0][0] == "convert":
-        # Converted first, unattended: a plug saved on one firmware, wanted on another.
+        # Converted first, unattended: a device saved on one firmware, wanted on another.
         code = subprocess.call(wrapper(n, scenario, *first, "--timeout=40", "--", "--new", "--firmware",
                                        actions[0][1], mac=mac), stdout=log, stderr=subprocess.STDOUT)
         log.write(f"PREP converted to {actions[0][1]}: exit {code}\n")
@@ -265,10 +265,10 @@ def prepare(n: int, scenario: dict[str, Any], folder: Path, log, mac: str) -> bo
     for action in actions:
         kind, value = action
         if kind == "tasmota password":
-            for _ in range(12):   # the plug may still be starting
+            for _ in range(12):   # the device may still be starting
                 # As the tool sends Tasmota a command: a plain request was hung up on.
                 said = in_container(n, "from tools.autoflash.device import Device; "
-                                    f"print(Device('{PLUG}').command('Backlog WebPassword {value}; Restart 1', "
+                                    f"print(Device('{DEVICE}').command('Backlog WebPassword {value}; Restart 1', "
                                     "timeout=20))")
                 log.write(f"PREP tasmota password: {said}\n")
                 if "Traceback" not in said:   # Backlog answers {}
@@ -281,14 +281,14 @@ def prepare(n: int, scenario: dict[str, Any], folder: Path, log, mac: str) -> bo
             image = build_locked(value)
             target = ROOT / f"captures/emulation/state-{n}/work/locked.ota.bin"
             shutil.copyfile(image, target)
-            said = in_container(n, f"from tools.autoflash import esphome_ota; esphome_ota.upload('{PLUG}', "
+            said = in_container(n, f"from tools.autoflash import esphome_ota; esphome_ota.upload('{DEVICE}', "
                                 "open('locked.ota.bin', 'rb').read()); print('sent')")
             target.unlink(missing_ok=True)
             log.write(f"PREP locked esphome ({value}): {said}\n")
-            # A minute on its new release, or a power cut takes the plug back to the one it had.
+            # A minute on its new release, or a power cut takes the device back to the one it had.
             time.sleep(90)
             check = in_container(n, "import urllib.request, urllib.error\ntry:\n urllib.request.urlopen("
-                                 f"'http://{PLUG}/', timeout=5); print(200)\n"
+                                 f"'http://{DEVICE}/', timeout=5); print(200)\n"
                                  "except urllib.error.HTTPError as e: print(e.code)\nexcept Exception: print('down')")
             log.write(f"PREP its page answers: {check}\n")
             if check != "401":
@@ -328,7 +328,7 @@ def run_espressif(n: int, name: str, scenario: dict[str, Any], folder: Path, mac
 
 
 def run_again(n: int, scenario: dict[str, Any], folder: Path, mac: str) -> tuple[int, Path | None]:
-    """The tool once more on emulator `n`'s plug as the first run left it:
+    """The tool once more on emulator `n`'s device as the first run left it:
     no --new, so a run left unfinished is offered back."""
     again = scenario["again"]
     with open(folder / "harness.log", "a", encoding="utf-8") as log:
@@ -352,7 +352,7 @@ def run_beken(n: int, name: str, scenario: dict[str, Any], folder: Path, mac: st
     emu = str(ROOT / "tools/beken/emulator/beken-emu.sh")
     state = ROOT / f"captures/emulation/beken/state-{n}"
     with open(folder / "harness.log", "a", encoding="utf-8") as log:
-        subprocess.call([emu, "--instance", str(n), "--fresh", "plug"], stdout=log, stderr=subprocess.STDOUT,
+        subprocess.call([emu, "--instance", str(n), "--fresh", "device"], stdout=log, stderr=subprocess.STDOUT,
                         timeout=1200)
         (state / "work/captures").mkdir(parents=True, exist_ok=True)
         shutil.copyfile(run_answers(scenario, folder), state / "work/captures/answers.json")
@@ -416,8 +416,8 @@ def main() -> int:
     parser.add_argument("command", choices=["list", "run"])
     parser.add_argument("names", nargs="*", help="the scenarios to run (default: all)")
     parser.add_argument("--workers", type=int, default=1, help="scenarios at once, each on an emulator of its own")
-    parser.add_argument("--plug", help="the backed-up S60 the Espressif scenarios start from, its MAC "
-                        "as emu.sh --plug takes it")
+    parser.add_argument("--device", help="the backed-up S60 the Espressif scenarios start from, its MAC "
+                        "as emu.sh --device takes it")
     args = parser.parse_args()
     found = scenarios()
     if args.command == "list":
@@ -428,16 +428,16 @@ def main() -> int:
     unknown = [name for name in chosen if name not in found]
     if unknown:
         parser.error(f"no such scenario: {', '.join(unknown)}")
-    if not args.plug and any(found[name][0] == "espressif" for name in chosen):
-        parser.error("an S60's scenarios need --plug: the backed-up plug the emulator runs a copy of")
+    if not args.device and any(found[name][0] == "espressif" for name in chosen):
+        parser.error("an S60's scenarios need --device: the backed-up device the emulator runs a copy of")
     results = RESULTS / datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     results.mkdir(parents=True)
     lines = []
     # The S61's on their own, after the S60's: its emulator is slow, and run
-    # beside three S60s a readout's plug was not found in time.
+    # beside three S60s a readout's device was not found in time.
     for family, workers in (("espressif", max(1, args.workers)), ("beken", 1)):
         with concurrent.futures.ThreadPoolExecutor(workers) as pool:
-            jobs = [pool.submit(run_one, FIRST_INSTANCE + index, name, *found[name], results, args.plug)
+            jobs = [pool.submit(run_one, FIRST_INSTANCE + index, name, *found[name], results, args.device)
                     for index, name in enumerate(chosen) if found[name][0] == family]
             for job in concurrent.futures.as_completed(jobs):
                 lines.append(job.result())

@@ -252,9 +252,9 @@
         "app_commit": "ce1abad8dc931720167a7628840adae30b92afaf",
         "sdk_commit": "f5a64d4cda03bac6d885f4f30c27bbd3435c5e3a",
         "sources": {
-          "tools/beken/openbeken/drv_autoflash.c": "40493ee47420d0966384825b9aaad145bca8a3f3705f76cfb40580c4a7e5b48b",
-          "tools/beken/openbeken/drv_autoflash.h": "d34d0b265cfaa8dd3eebd85c1ce088fb1034a0ad458d0bb9a7aa54679093fa3d",
-          "devices/sonoff-s61/drv_autoflash_sonoff_s61.c": "82526a220d8646417d38fe84a4366fa3b4b047c3dec9c61a6371db424932f427"
+          "tools/beken/openbeken/drv_autoflash.c": "9a94d9c09d383abf0e12e1256bafd1d7e02568711228e9d9199e8fc68db8d293",
+          "tools/beken/openbeken/drv_autoflash.h": "29ccfdfd9cd9a8874275784fa41222a91d4cffadfce9740a74bc3913f0e6a23f",
+          "devices/sonoff-s61/drv_autoflash_sonoff_s61.c": "bf0eb0ff7eefacb2f0b41bda41ccee3b9fdcbd0b5d665c6292e31b99876f663e"
         },
         "patches": {
           "openbk7231t_app-bk7238-4m-flash.patch": "257b02a72a217d1644d35051dc3ba97f8522154fa25b4f67e6c0b44e63aada58",
@@ -262,8 +262,8 @@
           "beken_freertos_sdk-4m-pack-profile.patch": "9d9e35179e947107b8664da51f1e75c3dbc5a575682f7fe5e59792222e2e7fe8"
         },
         "builder": "ubuntu@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c with tools/beken/openbeken/build.Dockerfile 4b04244bb63658a1",
-        "size": 510416,
-        "sha256": "db09fe6b97cebfa4cef729bb6198db2219bc8b60bb918846003a2ea53472fcd2"
+        "size": 510432,
+        "sha256": "4faef4259545557d2eee7e12499cb24c89c51e443cb987d7ad90d5f7d0bf68c1"
       },
       "esphome": {
         "file": "artifacts/esphome-sonoff-s61-2026.10.0-3.rbl",
@@ -290,8 +290,8 @@
         "app_commit": "ce1abad8dc931720167a7628840adae30b92afaf",
         "sdk_commit": "f5a64d4cda03bac6d885f4f30c27bbd3435c5e3a",
         "sources": {
-          "tools/beken/openbeken/drv_autoflash.c": "40493ee47420d0966384825b9aaad145bca8a3f3705f76cfb40580c4a7e5b48b",
-          "tools/beken/openbeken/drv_autoflash.h": "d34d0b265cfaa8dd3eebd85c1ce088fb1034a0ad458d0bb9a7aa54679093fa3d",
+          "tools/beken/openbeken/drv_autoflash.c": "9a94d9c09d383abf0e12e1256bafd1d7e02568711228e9d9199e8fc68db8d293",
+          "tools/beken/openbeken/drv_autoflash.h": "29ccfdfd9cd9a8874275784fa41222a91d4cffadfce9740a74bc3913f0e6a23f",
           "devices/sonoff-basic-1gs/drv_autoflash_sonoff_basic_1gs.c": "147b462777fdd8e15532a3b9d731dc2c2065fc43307d5336aa4ceaa023cce9e6"
         },
         "patches": {
@@ -300,8 +300,8 @@
           "beken_freertos_sdk-4m-pack-profile.patch": "9d9e35179e947107b8664da51f1e75c3dbc5a575682f7fe5e59792222e2e7fe8"
         },
         "builder": "ubuntu@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c with tools/beken/openbeken/build.Dockerfile 4b04244bb63658a1",
-        "size": 509664,
-        "sha256": "574664aa093c73fe65572f3debbfb4da557864cb9750b14f2a76c6bf20ff00fa"
+        "size": 509680,
+        "sha256": "5129951d1e89b06f4c5c7e39a0d01b081010d338c562d78c6e422f7175965952"
       },
       "esphome": {
         "file": "artifacts/esphome-sonoff-basic-1gs-2026.10.0-2.rbl",
@@ -326,8 +326,8 @@
         "app_commit": "ce1abad8dc931720167a7628840adae30b92afaf",
         "sdk_commit": "f5a64d4cda03bac6d885f4f30c27bbd3435c5e3a",
         "sources": {
-          "tools/beken/openbeken/drv_autoflash.c": "40493ee47420d0966384825b9aaad145bca8a3f3705f76cfb40580c4a7e5b48b",
-          "tools/beken/openbeken/drv_autoflash.h": "d34d0b265cfaa8dd3eebd85c1ce088fb1034a0ad458d0bb9a7aa54679093fa3d",
+          "tools/beken/openbeken/drv_autoflash.c": "9a94d9c09d383abf0e12e1256bafd1d7e02568711228e9d9199e8fc68db8d293",
+          "tools/beken/openbeken/drv_autoflash.h": "29ccfdfd9cd9a8874275784fa41222a91d4cffadfce9740a74bc3913f0e6a23f",
           "tools/beken/openbeken/drv_autoflash_readout.c": "4e45d77d02316db8a95ac50e36abf695697fe426b4741a779bd5afbb1e6126d8"
         },
         "patches": {
@@ -337,7 +337,7 @@
         },
         "builder": "ubuntu@sha256:24737cef17f4e22b1977df7d9a05e77c4e28b7da5b8911f8d8ccda136bf3573c with tools/beken/openbeken/build.Dockerfile 4b04244bb63658a1",
         "size": 509600,
-        "sha256": "69dda9c26aff53de3e97bf92a4c4b2d4a16f7cd6c16cea22bc84c7d55c69d956"
+        "sha256": "811a8437129eea92b4c29c60e5c56e623fd32ca7b1629625d91e295a901bd572"
       }
     }
   }

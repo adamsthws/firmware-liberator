@@ -1,4 +1,4 @@
-"""The kinds of plug the tool converts, and what is each one's own."""
+"""The kinds of device the tool converts, and what is each one's own."""
 import json
 import os
 import re
@@ -54,7 +54,7 @@ class KnownByTests(unittest.TestCase):
         self.assertIsNone(kinds.for_tasmota(None))
 
     def test_a_tasmota_template_only_naming_the_kind_in_passing_is_not_its(self):
-        # A name holding S60 is not enough: another plug's, or the user's own.
+        # A name holding S60 is not enough: another device's, or the user's own.
         for name in ("Sonoff S600", "Sonoff S60ZBTPF", "Sonoff-S60 v2", "My S60 lamp", "Sonoff-S61"):
             with self.subTest(name=name):
                 self.assertIsNone(kinds.for_tasmota(name))
@@ -66,7 +66,7 @@ class KnownByTests(unittest.TestCase):
 
 
 class NamesTests(unittest.TestCase):
-    def test_every_firmware_says_what_plug_it_is_alike(self):
+    def test_every_firmware_says_what_device_it_is_alike(self):
         # One for every model of the kind: one image serves them all.
         self.assertEqual((S60.display_name, kinds.SONOFF_S61.display_name), ("Sonoff-S60", "Sonoff-S61"))
         self.assertEqual(json.loads(S60.tasmota_template())["NAME"], "Sonoff-S60")
@@ -101,7 +101,7 @@ class NamesTests(unittest.TestCase):
         self.assertEqual(kinds.on_chip(None), ())
 
     def test_each_kinds_firmware_says_what_the_tool_looks_for(self):
-        # What each firmware says it is, in the plug's own files, against what
+        # What each firmware says it is, in the device's own files, against what
         # the tool tells the kind by: a kind added with one of them missed is
         # never recognised once converted.
         for kind in kinds.ALL:
@@ -119,7 +119,7 @@ class NamesTests(unittest.TestCase):
                 self.assertIn(f'.stock_model = "{kind.stock_model}",', table)
                 self.assertIn(kind, kinds.on_chip(kind.chip.upper()))
 
-    def test_before_the_plug_is_known_every_kind_is_named(self):
+    def test_before_the_device_is_known_every_kind_is_named(self):
         self.assertIn("Sonoff S60, Sonoff S61", kinds.names())
         self.assertRegex(kinds.names("short"), r"^S60, S61.* or \S+$")
         self.assertLessEqual({"sonoff", "s60", "s61"}, kinds.name_words())
@@ -133,7 +133,7 @@ class RunTests(unittest.TestCase):
 
     def test_a_run_converts_the_kind_it_recorded(self):
         state = self.state()
-        state.set_input("plug_kind", "sonoff-s60")
+        state.set_input("device_kind", "sonoff-s60")
         self.assertIs(kinds.of_run(state), S60)
 
     def test_one_that_recorded_none_the_first_the_tool_knows(self):
@@ -221,7 +221,7 @@ class MeterTests(unittest.TestCase):
     def test_a_meters_wiring_is_the_template_tasmota_publishes_for_it(self):
         # Tasmota 16.0.0's drivers give these (xnrg_19_cse7761, xdrv_87_esp32_sonoff_tm1621),
         # as Blakadder's templates do the POW Elite's and the Dual R3's. Which CSE7761 RX
-        # a template uses, Rx 1 (7328) or Rx 2 (7329), tells Tasmota which plug's meter it is.
+        # a template uses, Rx 1 (7328) or Rx 2 (7329), tells Tasmota which device's meter it is.
         # The POWCT's is xnrg_19's, with its status LED as Led1 (288) on GPIO13; xdrv_87's
         # copy still has Led_i (320) there, which Sonoff's own firmware shows is wrong.
         published = {
@@ -237,10 +237,10 @@ class MeterTests(unittest.TestCase):
 
 
 class TemplateNameTests(unittest.TestCase):
-    """Tasmota's template is named as every firmware names the plug."""
+    """Tasmota's template is named as every firmware names the device."""
 
     def test_the_wiring_is_the_tested_s60tpg_template(self):
-        # Byte for byte the template proven on the UK plugs, apart from the name.
+        # Byte for byte the template proven on the UK devices, apart from the name.
         self.assertEqual(
             kinds.SONOFF_S60.tasmota_template(),
             '{"NAME":"Sonoff-S60","GPIO":[1,1,1,1,224,544,1,3104,1,32,1,0,0,0,0,0,0,0,'

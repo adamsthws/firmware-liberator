@@ -1,27 +1,27 @@
 #!/bin/bash
-# Runs as root in the Beken emulator's container (beken-emu.sh plug): puts the
-# emulated plug on its Docker network as a plug on a home Wi-Fi, with
-# this container as that Wi-Fi's router, then runs the plug as your user
+# Runs as root in the Beken emulator's container (beken-emu.sh device): puts the
+# emulated device on its Docker network as a device on a home Wi-Fi, with
+# this container as that Wi-Fi's router, then runs the device as your user
 # until the container stops.
 #
-# The plug's radio is tap0 (the fork's --net-tap), bridged with the
-# container's eth0, so the plug's frames are on the network as they are. The
+# The device's radio is tap0 (the fork's --net-tap), bridged with the
+# container's eth0, so the device's frames are on the network as they are. The
 # router is .1 (the network leaves it free: its gateway is .254, and Docker
-# hands out .128 and up): DHCP, the plug's addresses .50-.59, as a home
+# hands out .128 and up): DHCP, the device's addresses .50-.59, as a home
 # router's pool; DNS, every name this router; and eWeLink, the local stub
-# (tools/beken/emulator/cloud_stub.py), which every connection the plug makes off the
+# (tools/beken/emulator/cloud_stub.py), which every connection the device makes off the
 # network is sent to. Nothing reaches the internet. The tool, on a computer
-# on the same network (beken-emu.sh computer), finds the plug as on a home
+# on the same network (beken-emu.sh computer), finds the device as on a home
 # Wi-Fi, and the stub's account API at the router.
 set -euo pipefail
 
 : "${HOST_UID:?}" "${HOST_GID:?}"
-STATE=${PLUG_STATE:-/state}
-RUN=${PLUG_NET_RUN:-/run/autoflash-beken-emu}
+STATE=${DEVICE_STATE:-/state}
+RUN=${DEVICE_NET_RUN:-/run/autoflash-beken-emu}
 mkdir -p "$RUN"
 
 read -r address prefix < <(ip -4 -o address show dev eth0 | awk '{split($4, a, "/"); print a[1], a[2]; exit}')
-[ -n "$address" ] && [ "$prefix" = 24 ] || { echo "plug-net: eth0 is not on a /24" >&2; exit 1; }
+[ -n "$address" ] && [ "$prefix" = 24 ] || { echo "device-net: eth0 is not on a /24" >&2; exit 1; }
 net=${address%.*}
 router=$net.1
 
@@ -33,11 +33,11 @@ ip link set tap0 master br0
 ip link set tap0 up
 ip link set br0 up
 ip address add "$router/24" dev br0
-# The plug's connections off the network: to the stub, whatever address it dialled.
+# The device's connections off the network: to the stub, whatever address it dialled.
 iptables -t nat -A PREROUTING -i br0 -s "$net.48/28" ! -d "$net.0/24" -j DNAT --to-destination "$router"
 
 # The router's DHCP and DNS, as a script that can start them again with the
-# pool from another first address - the plug's own forgotten, as a router may
+# pool from another first address - the device's own forgotten, as a router may
 # forget it (the fault suite's readdress): $RUN/router [FIRST], .50 by default.
 cat > "$RUN/router" <<ROUTER
 #!/bin/sh
@@ -54,7 +54,7 @@ chmod +x "$RUN/router"
 "$RUN/router"
 
 as_you() { setpriv --reuid="$HOST_UID" --regid="$HOST_GID" --clear-groups env HOME=/tmp "$@"; }
-as_you python /work/tools/beken/emulator/plug.py --state "$STATE" --prepare
+as_you python /work/tools/beken/emulator/device.py --state "$STATE" --prepare
 # The stub binds the router's ports 80 and 443, so it runs as root; what it
 # makes in the state directory is yours.
 python3 -I -B /work/tools/beken/emulator/cloud_stub.py --state "$STATE" --bind "$router" --flash "$STATE/flash.bin" \
@@ -62,7 +62,7 @@ python3 -I -B /work/tools/beken/emulator/cloud_stub.py --state "$STATE" --bind "
 for _ in $(seq 50); do [ -f "$STATE/ca.crt" ] && break; sleep 0.2; done
 touch "$STATE/serial.log"
 chown "$HOST_UID:$HOST_GID" "$STATE"/ca.crt "$STATE"/leaf.* "$STATE/stub.log" "$STATE/serial.log"
-echo "The plug's router, and its eWeLink, is $router." >&2
+echo "The device's router, and its eWeLink, is $router." >&2
 
 exec setpriv --reuid="$HOST_UID" --regid="$HOST_GID" --clear-groups \
-    env HOME=/tmp python /work/tools/beken/emulator/plug.py --state "$STATE" >> "$STATE/serial.log" 2>&1
+    env HOME=/tmp python /work/tools/beken/emulator/device.py --state "$STATE" >> "$STATE/serial.log" 2>&1

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """The update file the stub offers a device, as eWeLink offers the latest
-firmware: the Sonoff app of the plug's own stock dump, made to run under QEMU
+firmware: the Sonoff app of the device's own stock dump, made to run under QEMU
 and trust the stub as every Sonoff app the emulator runs is (patch_stock.py),
-in Sonoff's update wrapper. A run with no backup fetches it to put the plug
+in Sonoff's update wrapper. A run with no backup fetches it to put the device
 back on Sonoff's firmware, as it fetches the real file from eWeLink.
 
 emu.sh makes it on your computer, where patch_stock has what it needs, into
@@ -43,7 +43,7 @@ def version_tuple(version: str) -> tuple[int, ...]:
 
 
 def kind_of(model: str | None, product: str | None) -> kinds.Kind | None:
-    """The kind of a plug whose firmware calls itself `model`, eWeLink's
+    """The kind of a device whose firmware calls itself `model`, eWeLink's
     product model for it `product`: by the product model first, as the tool
     takes it, for a kind whose firmware's name is not its own (the DualR3's,
     E32-2SW-P0); else by that name."""
@@ -52,7 +52,7 @@ def kind_of(model: str | None, product: str | None) -> kinds.Kind | None:
 
 
 def update_of(flash: bytes, ca_pem: bytes | None, product: str | None = None) -> Update:
-    """The update file for the plug whose stock flash this is, eWeLink's
+    """The update file for the device whose stock flash this is, eWeLink's
     product model for it `product` where known."""
     patched = patch_stock.patch(flash, ca_pem)
     slot = next(slot for slot in flashmap.app_slots(patched)
@@ -80,10 +80,10 @@ def read(path: Path) -> Update | None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("flash", type=Path, help="the plug's stock dump")
+    parser.add_argument("flash", type=Path, help="the device's stock dump")
     parser.add_argument("output", type=Path)
     parser.add_argument("--trust-ca", type=Path, default=None, help="the stub's CA, for the firmware to trust")
-    parser.add_argument("--product", default="", help="eWeLink's product model for the plug, e.g. DUALR3")
+    parser.add_argument("--product", default="", help="eWeLink's product model for the device, e.g. DUALR3")
     args = parser.parse_args(argv)
     update = update_of(args.flash.read_bytes(), args.trust_ca.read_bytes() if args.trust_ca else None, args.product)
     args.output.write_bytes(update.data)

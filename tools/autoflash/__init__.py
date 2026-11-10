@@ -1,4 +1,4 @@
-"""Autoflash: a plug converted over the air, between its stock firmware,
+"""Autoflash: a device converted over the air, between its stock firmware,
 Tasmota and ESPHome.
 
 The modules here orchestrate the reviewed tools in tools/; they do not

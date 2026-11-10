@@ -117,10 +117,10 @@ the ESP-IDF source for the version each build names.
 ## Data files
 
 `artifacts/tasmota-settings-template-15.6.0.0.bin` is Tasmota 15.6.0's default
-settings, with no network details in them, captured from a converted plug.
+settings, with no network details in them, captured from a converted device.
 
 `artifacts/sonoff-s60-partition-table.bin` is the standard ESP-IDF partition
-table every S60 ships with, read from a stock plug: a list of partition names,
+table every S60 ships with, read from a stock device: a list of partition names,
 offsets and sizes, with no code or settings in it. Why the project keeps it is
 in [`docs/legal.md`](docs/legal.md).
 

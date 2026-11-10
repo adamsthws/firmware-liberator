@@ -1,15 +1,15 @@
-"""What a plug on the network is running, and finding the converted ones.
+"""What a device on the network is running, and finding the converted ones.
 
-A plug still on Sonoff's firmware is found through eWeLink, as ever; one this
+A device still on Sonoff's firmware is found through eWeLink, as ever; one this
 tool converted is found here, by what answers: Tasmota's command interface
-naming the template of a kind of plug this tool converts (kinds), ESPHome's
+naming the template of a kind of device this tool converts (kinds), ESPHome's
 page with the relay the ESPHome made for it names - each, behind its web
 login, once given that - or OpenBeken whose driver, built in by
-this tool, says what kind of plug it is on.  Midway through a conversion a
-plug can also be running the mover (an ESPHome with no page, which says what
+this tool, says what kind of device it is on.  Midway through a conversion a
+device can also be running the mover (an ESPHome with no page, which says what
 it is at /mover from 1.2.0, and before that has only its update service),
 the startup firmware (a Tasmota safeboot), or the interim firmware
-(the OpenBeken a run to ESPHome on a Beken plug installs first, which its
+(the OpenBeken a run to ESPHome on a Beken device installs first, which its
 module says it is), which a run carrying on recognises.
 """
 
@@ -90,7 +90,7 @@ class Found:
 
     def describe(self) -> str:
         if self.firmware == "locked":
-            # Which plug it is at all, it says only once given its password.
+            # Which device it is at all, it says only once given its password.
             return f"the Tasmota at {self.host}, which has a web password (asked for next)"
         if self.firmware == "esphome-login":
             return f"the ESPHome at {self.host}, which has a web login (asked for next)"
@@ -112,11 +112,11 @@ def _tasmota(host: str, timeout: float,
     of this tool's answers.
 
     A safeboot is the startup firmware: it answers no commands, so says
-    nothing more (converted_plugs takes only one with a MAC this computer
+    nothing more (converted_devices takes only one with a MAC this computer
     knows).  A Tasmota on Sonoff's partition table is one part way through a
     conversion (the Berry Tasmota the routes pass through), whatever its
     template; official Tasmota on its own layout counts only with the
-    template of a kind of plug this tool converts, which names the kind.
+    template of a kind of device this tool converts, which names the kind.
 
     A Tasmota with a web password is given `password` - only once it has
     said it is a Tasmota that wants one, so the password goes to nothing else
@@ -166,11 +166,11 @@ def _tasmota(host: str, timeout: float,
         return "hub", name, None
     template = _template_name(device)
     if template is None:
-        # Not a Tasmota without the plug's template: one too busy to say.
+        # Not a Tasmota without the device's template: one too busy to say.
         raise Unreadable(host)
     kind = kinds.for_tasmota(template)
     if kind is None:
-        return None  # a Tasmota, but not on a plug this tool converts
+        return None  # a Tasmota, but not on a device this tool converts
     return "tasmota", name, kind.key
 
 
@@ -185,7 +185,7 @@ class Locked(RuntimeError):
 def _template_name(device: Device) -> str | None:
     """The name of the template Tasmota runs ("" for none), or None if it would
     not say.  Asked again, then as its module, which names the template too
-    ({"Module": {"0": name}}): a plug just started, or answering other
+    ({"Module": {"0": name}}): a device just started, or answering other
     questions, can take longer than one ask allows."""
     for command in ("Template", "Template", "Module", "Module"):
         try:
@@ -203,7 +203,7 @@ def _template_name(device: Device) -> str | None:
 
 def _esphome(host: str, timeout: float, login: tuple[str, str] | None) -> str | None:
     """"esphome" if this tool's ESPHome answers at `host` - one with the relay
-    the ESPHome made for each kind of plug names, or which says it is one of
+    the ESPHome made for each kind of device names, or which says it is one of
     those kinds, its relay renamed by its owner; "esphome-login" for an
     ESPHome behind a web login that `login` (user name, password) is not;
     "other" for any other ESPHome; None for no ESPHome page.
@@ -229,8 +229,8 @@ def _esphome(host: str, timeout: float, login: tuple[str, str] | None) -> str | 
     return "other"
 
 
-def openbeken_plug(host: str, timeout: float = 3.0) -> Found | None:
-    """An OpenBeken at `host` the tool installed on a kind of plug, as it says
+def openbeken_device(host: str, timeout: float = 3.0) -> Found | None:
+    """An OpenBeken at `host` the tool installed on a kind of device, as it says
     (openbeken.kind): "interim" for the interim firmware, a run to ESPHome's
     part way, as it says too (openbeken.is_interim); "readout" for the
     readout firmware, on a device of no kind (openbeken.is_readout); None for
@@ -243,10 +243,10 @@ def openbeken_plug(host: str, timeout: float = 3.0) -> Found | None:
     if kind is None:
         if openbeken.is_readout(host, timeout):
             return Found(host, "readout", name=name)
-        return None  # an OpenBeken, but not on a plug this tool converts
+        return None  # an OpenBeken, but not on a device this tool converts
     interim = openbeken.is_interim(host, timeout)
     if interim is None:
-        return None  # asked again later, never taken for the plug's own OpenBeken
+        return None  # asked again later, never taken for the device's own OpenBeken
     return Found(host, "interim" if interim else "openbeken", name=name, kind=kind.key)
 
 
@@ -285,7 +285,7 @@ def identify(host: str, *, timeout: float = 3.0, password: str | None = None,
     if _port_open(host, 80, timeout):
         if _is_mover(host, timeout):
             return "mover"
-        on_openbeken = openbeken_plug(host, timeout)
+        on_openbeken = openbeken_device(host, timeout)
         if on_openbeken:
             return on_openbeken.firmware
         if _is_installer(host, timeout):
@@ -321,23 +321,23 @@ def _subnets_to_search(addresses: Iterable[str], lan: dict[str, int]) -> set[str
     return set(subnets.values())
 
 
-def converted_plugs(near: str, *, others: Callable[[], dict[str, int]] | None = None,
+def converted_devices(near: str, *, others: Callable[[], dict[str, int]] | None = None,
                     known_macs: set[str] = frozenset(), timeout: float = 2.0,
                     password: str | None = None,
                     esphome_login: tuple[str, str] | None = None) -> list[Found]:
-    """The plugs on the network running Tasmota or ESPHome, found by asking every
+    """The devices on the network running Tasmota or ESPHome, found by asking every
     device on the network of `near` (an address on it) what it is.  If none is
     there, this computer's other networks - `others`, as hostsys.lan_networks
     gives them, asked for only then - are swept too, side by side with `near`'s
-    again: the plug need not be on the network this computer's internet goes
-    through (a laptop on Ethernet with the plug on its Wi-Fi; the emulator's
+    again: the device need not be on the network this computer's internet goes
+    through (a laptop on Ethernet with the device on its Wi-Fi; the emulator's
     link on Windows).  A Tasmota
-    safeboot counts only with one of `known_macs`: a plug this computer was
+    safeboot counts only with one of `known_macs`: a device this computer was
     converting, left on the startup firmware - any Tasmota mid-update looks
     the same; and a mover before 1.2.0 likewise, as any ESPHome without a web
     page (one since says it is the mover).  A Tasmota whose web password `password` is not is "locked",
     and an ESPHome whose web login `esphome_login` is not "esphome-login":
-    whether it is a plug this tool converts each says only once given its own."""
+    whether it is a device this tool converts each says only once given its own."""
     seen = hostsys.sweep(near)
     found = _ask_neighbours(seen, known_macs, timeout, password, esphome_login)
     if found or others is None:
@@ -353,14 +353,14 @@ def converted_plugs(near: str, *, others: Callable[[], dict[str, int]] | None = 
 def _ask_neighbours(seen: dict[str, str], known_macs: set[str], timeout: float, password: str | None,
                     esphome_login: tuple[str, str] | None) -> list[Found]:
     """Every device the sweep saw, or the neighbour table holds, asked what it
-    is: the plugs, sorted by address."""
+    is: the devices, sorted by address."""
     neighbours = {**seen, **hostsys.neighbour_table()}
 
     def ask(item: tuple[str, str]) -> Found | None:
         host, mac = item
         if not _port_open(host, 80, timeout):
             # A mover before 1.2.0 has no web server, only ESPHome's update
-            # service - as has any ESPHome built without one: only a plug this
+            # service - as has any ESPHome built without one: only a device this
             # computer knows.
             if (hostsys.normalise_mac(mac) in known_macs
                     and esphome_ota.probe(host, timeout=timeout) is not None):
@@ -371,7 +371,7 @@ def _ask_neighbours(seen: dict[str, str], known_macs: set[str], timeout: float, 
             return None if found == "other" else Found(host, found, mac)
         if _is_mover(host, timeout):
             return Found(host, "midway", mac, "the mover")   # it says it is
-        on_openbeken = openbeken_plug(host, timeout)
+        on_openbeken = openbeken_device(host, timeout)
         if on_openbeken:
             on_openbeken.mac = mac
             return on_openbeken
@@ -381,15 +381,15 @@ def _ask_neighbours(seen: dict[str, str], known_macs: set[str], timeout: float, 
             found = _tasmota(host, timeout, password)
         except Unreadable:
             # Left out this time - it is looked for again - rather than taken
-            # for a Tasmota without the plug's template yet, and sent the wrong way.
+            # for a Tasmota without the device's template yet, and sent the wrong way.
             return None
         except Locked:
             return Found(host, "locked", mac)
         known = hostsys.normalise_mac(mac) in known_macs
         if not found:
             # Official Tasmota put on by a run stopped before it gave it the
-            # plug's template, or one that lost it since: any Tasmota, so only
-            # a plug this computer knows.
+            # device's template, or one that lost it since: any Tasmota, so only
+            # a device this computer knows.
             if known and answers_as_tasmota(host, timeout):
                 return Found(host, "untemplated", mac)
             return None

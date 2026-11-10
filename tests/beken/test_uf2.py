@@ -22,7 +22,7 @@ class Uf2Tests(unittest.TestCase):
                 self.assertTrue(flags & uf2.FLAG_FAMILY_ID)
         self.assertEqual(struct.unpack_from("<I", blocks[-1], 16)[0], 3)  # the last piece's size
         self.assertEqual(uf2.image_in(data), ("download", image))
-        # The first block says what the file is, for the plug to check.
+        # The first block says what the file is, for the device to check.
         self.assertIn(b"generic-bk7238", blocks[0])
         self.assertIn(b"openbeken-s61", blocks[0])
         self.assertIn(b"1.0.0", blocks[0])

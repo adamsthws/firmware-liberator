@@ -1,5 +1,5 @@
-"""What a step cut off left on the plug, and whether a step recorded done
-still holds: judged by what the plug answers as."""
+"""What a step cut off left on the device, and whether a step recorded done
+still holds: judged by what the device answers as."""
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -12,7 +12,7 @@ from tools.autoflash.routes.beken import evidence
 
 
 class EvidenceInstalledTests(unittest.TestCase):
-    def test_a_plug_still_on_the_interim_firmware_did_not_take_esphome(self):
+    def test_a_device_still_on_the_interim_firmware_did_not_take_esphome(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp, firmware="esphome", source="sonoff")
             for running, expected in (
@@ -24,7 +24,7 @@ class EvidenceInstalledTests(unittest.TestCase):
 
 
 class StillInstalledTests(unittest.TestCase):
-    """A power cut while the image is written leaves the plug on the firmware
+    """A power cut while the image is written leaves the device on the firmware
     it was leaving, its step recorded done (seen in the fault suite)."""
 
     def judge(self, *answers):
@@ -34,15 +34,15 @@ class StillInstalledTests(unittest.TestCase):
             return evidence.still_installed(SimpleNamespace(), wait=60)
 
     def test_still_on_the_firmware_it_left_is_doubted(self):
-        ok, message = self.judge((False, "The plug still answers as OpenBeken: the image was not applied."))
+        ok, message = self.judge((False, "The device still answers as OpenBeken: the image was not applied."))
         self.assertFalse(ok)
-        self.assertEqual(message, "the plug still answers as OpenBeken: the image was not applied")
+        self.assertEqual(message, "the device still answers as OpenBeken: the image was not applied")
 
     def test_on_the_new_firmware_it_stands(self):
-        self.assertTrue(self.judge((True, "The plug answers as ESPHome."))[0])
+        self.assertTrue(self.judge((True, "The device answers as ESPHome."))[0])
 
-    def test_a_plug_not_answering_yet_is_waited_for_then_left_be(self):
-        waiting = (None, "The plug does not answer as the new firmware yet.")
+    def test_a_device_not_answering_yet_is_waited_for_then_left_be(self):
+        waiting = (None, "The device does not answer as the new firmware yet.")
         self.assertTrue(self.judge(waiting, waiting, waiting)[0])
 
     def test_the_onward_steps_are_checked_on_resume(self):

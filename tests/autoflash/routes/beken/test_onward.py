@@ -32,7 +32,7 @@ class OnwardTests(unittest.TestCase):
             self.addCleanup(patch.stop)
 
     def served(self, ctx, step, fetched):
-        """Run `step` with the firmware server stood in for: what the plug was told to fetch."""
+        """Run `step` with the firmware server stood in for: what the device was told to fetch."""
         class Server:
             def __init__(self, address, image, device_ip, say=print, names=("user1.bin", "user2.bin"), live=None):
                 self.image = image
@@ -59,13 +59,13 @@ class OnwardTests(unittest.TestCase):
         # OpenBeken's as Tasmota gives it, ESPHome's from its sensor: a weak one asked about first.
         order = []
         with tempfile.TemporaryDirectory() as tmp:
-            ctx = a_context(tmp, plug_ip="192.0.2.50", firmware="esphome", source="openbeken")
+            ctx = a_context(tmp, device_ip="192.0.2.50", firmware="esphome", source="openbeken")
             ctx.device = SimpleNamespace(command=lambda cmd: {"StatusSTS": {"Wifi": {"Signal": -85}}})
             with mock.patch.object(onward.join, "warn_if_weak_signal",
                                    side_effect=lambda ctx, signal, then: order.append(("weak?", signal))), \
                     mock.patch.object(onward.handover, "consent_to_leave",
                                       side_effect=lambda ctx, what: order.append(("go-ahead", what))), \
-                    mock.patch.object(onward, "serve_to_plug", return_value=1.0), \
+                    mock.patch.object(onward, "serve_to_device", return_value=1.0), \
                     mock.patch.object(onward.openbeken, "info", return_value=None), \
                     mock.patch.object(onward.join.output, "say"):
                 self.assertEqual(onward.step_openbeken_to_esphome(ctx)["signal_dbm"], -85)
@@ -76,14 +76,14 @@ class OnwardTests(unittest.TestCase):
 
     def test_openbeken_fetches_esphome_by_url(self):
         with tempfile.TemporaryDirectory() as tmp:
-            ctx = a_context(tmp, plug_ip=self.server.host, firmware="esphome", source="openbeken")
+            ctx = a_context(tmp, device_ip=self.server.host, firmware="esphome", source="openbeken")
             fetched = {}
             result = self.served(ctx, onward.step_openbeken_to_esphome, fetched)
             image, version = images.image(ctx, "esphome")
             self.assertEqual(fetched["image"], image)
             self.assertEqual(result["version"], version)
             self.assertEqual(self.server.commands, ["ota_http http://192.0.2.2:8088/firmware.rbl"])
-            # Served under the name the plug is sent to fetch (it was once 404).
+            # Served under the name the device is sent to fetch (it was once 404).
             self.assertIn("firmware.rbl", fetched["names"])
             # Its progress logged, never drawn over the stage line.
             self.assertIs(fetched["live"], False)
@@ -112,14 +112,14 @@ class OnwardTests(unittest.TestCase):
         restarts = []
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(ota_push, "FirmwareServer", Server), \
                 mock.patch.object(onward, "FIRST_BYTE_WAIT", 0.0), mock.patch.object(onward.time, "sleep"):
-            ctx = a_context(tmp, plug_ip=self.server.host, firmware="esphome", source="openbeken")
-            onward.serve_to_plug(ctx, b"image", "ESPHome", asked.append,
+            ctx = a_context(tmp, device_ip=self.server.host, firmware="esphome", source="openbeken")
+            onward.serve_to_device(ctx, b"image", "ESPHome", asked.append,
                                  unstick=lambda: restarts.append(1) or True)
         self.assertEqual((len(asked), len(restarts)), (2, 1))
 
     def test_openbeken_fetches_sonoffs_firmware_through_the_modules_command(self):
         with tempfile.TemporaryDirectory() as tmp:
-            ctx = a_context(tmp, plug_ip=self.server.host, firmware="sonoff", source="openbeken")
+            ctx = a_context(tmp, device_ip=self.server.host, firmware="sonoff", source="openbeken")
             fetched = {}
             with mock.patch.object(images, "stock_rbl", return_value=(b"RBL stock", "1.0.2")):
                 result = self.served(ctx, onward.step_openbeken_to_sonoff, fetched)
@@ -174,7 +174,7 @@ class OnwardTests(unittest.TestCase):
     def test_the_interim_firmware_fetches_esphome_without_asking_again(self):
         # The go-ahead was given at B2, before Sonoff's firmware was replaced.
         with tempfile.TemporaryDirectory() as tmp:
-            ctx = a_context(tmp, plug_ip=self.server.host, firmware="esphome", source="sonoff")
+            ctx = a_context(tmp, device_ip=self.server.host, firmware="esphome", source="sonoff")
             ctx.consented = False
             fetched = {}
             with mock.patch.object(onward.handover, "consent_to_leave") as asked, \
@@ -187,7 +187,7 @@ class OnwardTests(unittest.TestCase):
 
 
 class FromTheInterimFirmwareTests(unittest.TestCase):
-    """A plug left on the interim firmware, found by a run with no record of
+    """A device left on the interim firmware, found by a run with no record of
     the one that left it there."""
 
     def setUp(self):
@@ -236,7 +236,7 @@ class FromTheInterimFirmwareTests(unittest.TestCase):
     def test_to_esphome_it_fetches_esphome_once_the_go_ahead_is_given(self):
         # This run gave none before (no B2 of its own): asked, of the interim firmware.
         with tempfile.TemporaryDirectory() as tmp:
-            ctx = a_context(tmp, plug_ip=self.server.host, firmware="esphome", source="interim")
+            ctx = a_context(tmp, device_ip=self.server.host, firmware="esphome", source="interim")
             ctx.consented = False
             said = self.going_ahead(ctx, onward.step_interim_to_esphome)
             self.assertIn("the device's interim firmware is replaced", said)
@@ -245,7 +245,7 @@ class FromTheInterimFirmwareTests(unittest.TestCase):
 
     def test_to_sonoffs_firmware_it_fetches_it_as_openbeken_would(self):
         with tempfile.TemporaryDirectory() as tmp:
-            ctx = a_context(tmp, plug_ip=self.server.host, firmware="sonoff", source="interim")
+            ctx = a_context(tmp, device_ip=self.server.host, firmware="sonoff", source="interim")
             ctx.consented = False
             said = self.going_ahead(ctx, onward.step_interim_to_sonoff)
             self.assertIn("the device's interim firmware is replaced", said)
@@ -256,10 +256,10 @@ class FromTheInterimFirmwareTests(unittest.TestCase):
                                  (False, "The device still answers as the interim firmware: the image was not "
                                          "applied."))
 
-    def test_to_openbeken_it_is_kept_as_the_plugs_own_and_restarted(self):
+    def test_to_openbeken_it_is_kept_as_the_devices_own_and_restarted(self):
         # Nothing sent: it is the OpenBeken the run would install.
         with tempfile.TemporaryDirectory() as tmp:
-            ctx = a_context(tmp, plug_ip=self.server.host, firmware="openbeken", source="interim")
+            ctx = a_context(tmp, device_ip=self.server.host, firmware="openbeken", source="interim")
             with mock.patch.object(onward.output, "say") as said:
                 self.assertEqual(onward.step_interim_to_openbeken(ctx), {"restarted": True})
             self.assertEqual(self.server.commands, ["AutoflashInterim off", "reboot"])
@@ -272,7 +272,7 @@ class FromTheInterimFirmwareTests(unittest.TestCase):
     def test_one_that_will_not_be_renamed_stops_the_run(self):
         self.server.kind = None   # a module without the command
         with tempfile.TemporaryDirectory() as tmp:
-            ctx = a_context(tmp, plug_ip=self.server.host, firmware="openbeken", source="interim")
+            ctx = a_context(tmp, device_ip=self.server.host, firmware="openbeken", source="interim")
             with self.assertRaisesRegex(errors.Abort, "would not take its new name"):
                 onward.step_interim_to_openbeken(ctx)
 
@@ -283,27 +283,27 @@ class FromTheInterimFirmwareTests(unittest.TestCase):
             self.assertEqual(routes.ask_firmware("interim", ["openbeken", "esphome", "sonoff"]), "esphome")
         self.assertIn("left part way through a conversion", " ".join(section.call_args.args[1]))
 
-    def test_with_plug_ip_it_is_found_with_its_kind(self):
-        # As the search finds it: the plug's kind is its import module's to say
-        # (an OpenBeken at --plug-ip was taken for Sonoff's firmware before).
+    def test_with_device_ip_it_is_found_with_its_kind(self):
+        # As the search finds it: the device's kind is its import module's to say
+        # (an OpenBeken at --device-ip was taken for Sonoff's firmware before).
         from tools.autoflash.routes import source
         for interim, running in ((True, "interim"), (False, "openbeken")):
             with self.subTest(running=running), tempfile.TemporaryDirectory() as tmp:
                 self.server.interim = interim
                 run = state.RunState.open(Path(tmp) / "run")
-                run.set_input("plug_ip", self.server.host)
+                run.set_input("device_ip", self.server.host)
                 ctx = SimpleNamespace(state=run, web_password=None, esphome_login=None,
-                                      set_plug_ip=lambda ip: run.set_input("plug_ip", ip))
+                                      set_device_ip=lambda ip: run.set_input("device_ip", ip))
                 with mock.patch.object(source.unlock, "identify", return_value=running), \
                         mock.patch.object(source.hostsys, "mac_of", return_value=None), \
                         mock.patch.object(source.output, "say"):
                     self.assertEqual(source.find_current_firmware(ctx), running)
-                self.assertEqual(run.input("plug_kind"), "sonoff-s61")
+                self.assertEqual(run.input("device_kind"), "sonoff-s61")
         # Answering otherwise the second time: never guessed at.
         with tempfile.TemporaryDirectory() as tmp:
             run = state.RunState.open(Path(tmp) / "run")
-            run.set_input("plug_ip", self.server.host)
-            ctx = SimpleNamespace(state=run, web_password=None, esphome_login=None, set_plug_ip=lambda ip: None)
+            run.set_input("device_ip", self.server.host)
+            ctx = SimpleNamespace(state=run, web_password=None, esphome_login=None, set_device_ip=lambda ip: None)
             with mock.patch.object(source.unlock, "identify", return_value="interim"), \
                     mock.patch.object(source.hostsys, "mac_of", return_value=None):
                 with self.assertRaisesRegex(errors.Abort, "did not say twice alike"):
@@ -326,7 +326,7 @@ class OpenBekenUpdateTests(unittest.TestCase):
         self.published = images.PINS["sonoff-s61"]["openbeken"]["version"]
 
     def ctx(self, run="run", **inputs):
-        ctx = a_context(Path(self.tmp) / run, plug_ip=self.server.host, **inputs)
+        ctx = a_context(Path(self.tmp) / run, device_ip=self.server.host, **inputs)
         ctx.firmware_given, ctx.replace_own_build = inputs.get("given"), False
         return ctx
 
@@ -373,7 +373,7 @@ class OpenBekenUpdateTests(unittest.TestCase):
     def test_it_is_fetched_by_the_earlier_release_unasked(self):
         # No go-ahead and no backup: an OpenBeken update, not a conversion.
         ctx = self.ctx(firmware="openbeken", source="outdated")
-        with mock.patch.object(onward, "serve_to_plug", return_value=4.0) as served, \
+        with mock.patch.object(onward, "serve_to_device", return_value=4.0) as served, \
                 mock.patch.object(handover, "consent_to_leave", side_effect=AssertionError("asked")):
             result = onward.step_openbeken_update(ctx)
         image, version = images.image(ctx, "openbeken")

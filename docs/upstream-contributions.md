@@ -2,7 +2,7 @@
 
 Building this converter meant pushing ESP32/Beken firmware, HTTP clients and OTA
 code harder than most projects do: downloading firmware in pieces, over Wi-Fi
-that is allowed to drop at any moment, with a plug that has to survive it. When
+that is allowed to drop at any moment, with a device that has to survive it. When
 something went wrong and the cause lay elsewhere, this project chased it into
 the project it came from, fixed it there, and sent the fix back.
 
@@ -11,9 +11,9 @@ was proven.
 
 ## How it started
 
-The conversion runs a Berry script on the plug that downloads a firmware image
+The conversion runs a Berry script on the device that downloads a firmware image
 in blocks with Tasmota's `webclient`. In testing, a network drop at the wrong
-moment left a plug answering nothing - not even its web page - until it was
+moment left a device answering nothing - not even its web page - until it was
 switched off and on. The cause was not in that script: Tasmota's HTTP client
 waited for the rest of a response body for as long as the connection looked
 open, with no time limit. A server that goes quiet without closing the
@@ -136,10 +136,10 @@ test.
 ## The emulator's Wi-Fi
 
 The [emulator](emulator.md) runs on [lcgamboa's QEMU fork](https://github.com/lcgamboa/qemu),
-the one QEMU that emulates the ESP32-C3's Wi-Fi. Making an emulated plug behave
+the one QEMU that emulates the ESP32-C3's Wi-Fi. Making an emulated device behave
 on its network as a real one does took four changes to that Wi-Fi emulation,
 and one to its pins, each found because something went wrong on the emulator
-where it would not on a plug. All five are upstream now, and the emulator runs
+where it would not on a device. All five are upstream now, and the emulator runs
 on them:
 
 | Project | Pull request | Status | What it fixes |
@@ -157,12 +157,12 @@ Two more are open, and until they merge the emulator carries each as a patch:
 | QEMU (lcgamboa) | [#18](https://github.com/lcgamboa/qemu/pull/18) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/18?label=) | `-monitor` bound its socket and never answered, on any machine: the fork's main loop iterates a context of its own, and the monitor registered with GLib's default. |
 | QEMU (lcgamboa) | [#19](https://github.com/lcgamboa/qemu/pull/19) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/19?label=) | A guest's Wi-Fi could not be taken away from it, so firmware's reconnect and fallback code could not be tested: a property switches the emulated access points off, as a router restarting does. |
 
-#15 let the emulator test what a person does when a plug falls back
+#15 let the emulator test what a person does when a device falls back
 to its own setup network: join it, and let the conversion carry on through it.
 
 ## The emulator's classic ESP32
 
-Plugs with a classic ESP32 run on the same fork, whose ESP32 cache emulation
+Devices with a classic ESP32 run on the same fork, whose ESP32 cache emulation
 comes from Espressif's QEMU. Each flash operation made it throw away and
 retranslate the code of a whole 4 MB cache window, so Tasmota took about 10 s to
 boot and over 40 s for 2,000 small flash reads:
@@ -179,7 +179,7 @@ longer outlasts its 5-second task watchdog while it reads flash a lot, which is
 what made it panic on QEMU. But it gives up QEMU's fault for reading flash with
 the cache off, so it stays here.
 
-The emulated plug's power meter answers over a UART, and Tasmota found none
+The emulated device's power meter answers over a UART, and Tasmota found none
 on a classic ESP32: the UART held each answer 18 ms, where Tasmota waits 6.
 The emulator carries the first fix as its patch `0006`:
 
@@ -191,7 +191,7 @@ The emulator carries the first fix as its patch `0006`:
 ## OpenBeken on a 4 MB BK7238
 
 The Sonoff S61 is a Beken BK7238 with 4 MB of flash. OpenBeken's BK7238 build
-assumed the SDK's 2 MB partition table, which on a 4 MB plug puts its OTA slot
+assumed the SDK's 2 MB partition table, which on a 4 MB device puts its OTA slot
 and its config inside the stock app partition - where the stock bootloader
 never looks - and the SDK's packager could not produce a 4 MB image at all.
 Two changes make the build follow the chip: a `FLASH_SIZE=4M` switch, with the
@@ -231,7 +231,7 @@ release is out.
 |---|---|---|---|
 | Tasmota | [#25163](https://github.com/arendst/Tasmota/pull/25163) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25163?label=) | Berry's `webclient` logged a connection timeout's error code as its time: "Connection timeout after -1 ms" |
 | Tasmota | [#25169](https://github.com/arendst/Tasmota/pull/25169) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25169?label=) | Its setup network went out under the chip's default name (`ESP_` and its MAC) for its first tenth of a second, which phones and computers then list beside the real one |
-| Tasmota | [#25241](https://github.com/arendst/Tasmota/pull/25241) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25241?label=) | The Partition Wizard's "Resize FS to max" and safeboot migration deleted any data partition after the file system, so the plug's Sonoff identity kept there was dropped and then written over; now such a partition is listed and deleted only when the user confirms (`coredump` still goes), and the free-space row shows the right offset |
+| Tasmota | [#25241](https://github.com/arendst/Tasmota/pull/25241) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25241?label=) | The Partition Wizard's "Resize FS to max" and safeboot migration deleted any data partition after the file system, so the device's Sonoff identity kept there was dropped and then written over; now such a partition is listed and deleted only when the user confirms (`coredump` still goes), and the free-space row shows the right offset |
 | ESPHome | [#21672](https://github.com/esphome/esphome/pull/21672) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/esphome/21672?label=) | An `api` action with an array variable that also responds did not compile; this project's calibration action, which takes a list of floats, had to go without an answer |
 | ESPHome | [#22163](https://github.com/esphome/esphome/pull/22163) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/esphome/22163?label=) | A friendly name always joined the MAC suffix with a space: an option to choose, so this project's can read `esphome-abcdef` as the hostname does |
 | ESPHome | [esphome.io #8011](https://github.com/esphome/esphome.io/pull/8011) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/esphome.io/8011?label=) | The documentation for #22163's option, and what `name_add_mac_suffix` does to the friendly name |
@@ -242,7 +242,7 @@ release is out.
 
 Sonoff's own POWCT firmware lights its status LED, on GPIO13, by driving the
 pin high with the relay; Tasmota's two copies of its template disagreed on it,
-and ESPHome's page for the plug has it inverted. Found from the firmware and
+and ESPHome's page for the device has it inverted. Found from the firmware and
 the emulator, not a POWCT in hand
 ([devices/sonoff-powct](../devices/sonoff-powct/README.md#the-status-leds-polarity)):
 
@@ -255,10 +255,10 @@ the emulator, not a POWCT in hand
 
 With the emulator built, this project went through Tasmota's open reports for
 problems it could reproduce, and picked those an S60 owner could meet. Two came
-from one person changing an ESP32-C3 plug's Wi-Fi (discussions
+from one person changing an ESP32-C3 device's Wi-Fi (discussions
 [#24591](https://github.com/arendst/Tasmota/discussions/24591) and
 [#24585](https://github.com/arendst/Tasmota/discussions/24585)), as someone
-might after converting a plug. Both were in Tasmota's own setup and settings
+might after converting a device. Both were in Tasmota's own setup and settings
 pages, beside [#25169](https://github.com/arendst/Tasmota/pull/25169) above.
 
 | Project | Pull request | Status | What it fixes |
@@ -277,19 +277,19 @@ results are in each pull request. "It compiles" was never enough.
 Most of the testing ran on this project's [emulator](emulator.md): a real
 Sonoff S60 flash dump, booted in QEMU with emulated Wi-Fi, behind an emulated
 home router. It was built so the converter could be tested end to end without
-risking a plug, and it turned out to be just as good a test bed for other
+risking a device, and it turned out to be just as good a test bed for other
 people's code:
 
 - **Firmware runs unmodified.** Tasmota builds, plain Arduino sketches and
-  ESP-IDF code all run on it as they would on the plug, so a test exercises
+  ESP-IDF code all run on it as they would on the device, so a test exercises
   the code that ships.
 - **The network can misbehave on purpose.** A small test server sends whole
   bodies, bodies of unknown length, chunked bodies, bodies in pieces seconds
   apart, and bodies that stop part way with the connection left open, over
-  plain HTTP or TLS. The emulated router can be restarted under the plug.
-- **Several plugs side by side.** Before and after builds ran in parallel on
-  separate emulated plugs, and a fix could be repeated on two at once.
-- **A hang is cheap.** A test that freezes an emulated plug costs a restart,
+  plain HTTP or TLS. The emulated router can be restarted under the device.
+- **Several devices side by side.** Before and after builds ran in parallel on
+  separate emulated devices, and a fix could be repeated on two at once.
+- **A hang is cheap.** A test that freezes an emulated device costs a restart,
   not a trip to the wall socket.
 
 It took several fixes to the QEMU fork to get here (see
@@ -301,8 +301,8 @@ those that belong upstream are [offered back](#the-emulators-wi-fi).
 ### Real hardware
 
 The Tasmota and arduino-esp32 fixes ran again on a real S60, with a second
-smart plug switching its power so a hung test plug could be power-cycled
-without a hand on the plug. Every hang the emulator showed, the real plug
+smart plug switching its power so a hung test device could be power-cycled
+without a hand on the device. Every hang the emulator showed, the real device
 showed too, and every fix behaved the same on both.
 
 ### Measuring, not guessing
@@ -321,4 +321,4 @@ showed too, and every fix behaved the same on both.
 ## Related
 
 [How the tool is tested](testing.md): the unit tests, the emulator and the
-fault tests that found these bugs, and what has been run on real plugs.
+fault tests that found these bugs, and what has been run on real devices.

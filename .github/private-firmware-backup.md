@@ -1,11 +1,11 @@
 # The maintainer's sealed Sonoff backup
 
-This page is for the project's maintainer. Nobody converting a plug needs it,
+This page is for the project's maintainer. Nobody converting a device needs it,
 and nothing here is part of a conversion.
 
-The emulator ([emulator.md](../docs/emulator.md)) boots a real plug's Sonoff backup:
-Sonoff's firmware, with that plug's eWeLink keys and the Wi-Fi it was set up on.
-The project has exactly one, and can never make another - every plug it had is
+The emulator ([emulator.md](../docs/emulator.md)) boots a real device's Sonoff backup:
+Sonoff's firmware, with that device's eWeLink keys and the Wi-Fi it was set up on.
+The project has exactly one, and can never make another - every device it had is
 converted. `tools/repo/private_backup.py` keeps a copy of it off the maintainer's
 computer without it ever being public: sealed on the maintainer's side, then
 kept in a **private** package on GitHub's container registry. It is not in the
@@ -15,8 +15,8 @@ repository - not its history, a clone, a fork or a release - so
 ## What is sealed, and how
 
 The backup directory as a conversion filed it,
-`captures/plugs/<MAC>/sonoff-backup/` - `flash.bin`, `efuse.bin`, `report.json`,
-`README.txt` - and the plug's record beside it (`plug.json`: its eWeLink
+`captures/devices/<MAC>/sonoff-backup/` - `flash.bin`, `efuse.bin`, `report.json`,
+`README.txt` - and the device's record beside it (`device.json`: its eWeLink
 device and model, which the emulator's cloud stub gives as eWeLink would), in
 a tar with a manifest of each file's size and SHA-256,
 compressed with xz (4.2 MB to 1.0 MB: a flash image is mostly empty) and then
@@ -69,13 +69,13 @@ gh auth refresh -h github.com -s write:packages,read:packages
 
 ## The emulator restores it by itself
 
-When the emulator finds no Sonoff backup in `captures/plugs/`
-(`tools/espressif/emulator/choose_plug.py`), it runs `restore`: the sealed backup is
-fetched, opened and filed in `captures/plugs/<MAC>/sonoff-backup/`, its plug's
+When the emulator finds no Sonoff backup in `captures/devices/`
+(`tools/espressif/emulator/choose_device.py`), it runs `restore`: the sealed backup is
+fetched, opened and filed in `captures/devices/<MAC>/sonoff-backup/`, its device's
 record beside it, as a conversion files one. A copy there already is used as
 it is, and one that differs from the sealed backup is never written over: the
-emulator stops and says so. A test copy asked for with `--plug` is then made
-from it (`copy_plug.py`), so the fault suite, `public_plugs.py make` and every
+emulator stops and says so. A test copy asked for with `--device` is then made
+from it (`copy_device.py`), so the fault suite, `public_devices.py make` and every
 other emulator run start from an empty `captures/`. On the maintainer's
 computer that makes `captures/` a working copy, safe to delete
 ([technical-details.md](../docs/technical-details.md#what-captures-holds)).
@@ -83,7 +83,7 @@ computer that makes `captures/` a working copy, safe to delete
 ## Commands
 
 ```sh
-B=captures/plugs/<MAC>/sonoff-backup
+B=captures/devices/<MAC>/sonoff-backup
 python3 tools/repo/private_backup.py seal "$B" sonoff-backup.sealed     # the sealed copy
 python3 tools/repo/private_backup.py verify sonoff-backup.sealed "$B"   # opens to exactly it? writes nothing
 python3 tools/repo/private_backup.py upload sonoff-backup.sealed        # into the package, then checks it is private
@@ -123,7 +123,7 @@ its first run, or `restore` does. Its `flash.bin` must have SHA-256
 ## On GitHub's side, one day
 
 Nothing opens the backup on GitHub's side today. It is needed only to make the
-public starting plugs again ([emulator.md](../docs/emulator.md#public-plugs)) and for
+public starting devices again ([emulator.md](../docs/emulator.md#public-devices)) and for
 the whole fault suite, which run on the maintainer's machines. A workflow that
 does - on runners of the maintainer's own, say - needs:
 
@@ -141,4 +141,4 @@ does - on runners of the maintainer's own, say - needs:
   no packages at all.
 
 The workflow unseals into the runner's own `captures/` and nowhere else, and
-publishes nothing made from it but what `sanitise_plug.py` has shown public.
+publishes nothing made from it but what `sanitise_device.py` has shown public.

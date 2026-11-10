@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Make a copy of a stock flash dump that boots under QEMU.
 
-Whatever the plug, two things are done to every app slot holding Sonoff's
+Whatever the device, two things are done to every app slot holding Sonoff's
 firmware: its Bluetooth start-up is skipped (BLUETOOTH, below), and with
 --trust-ca the coolkit CA it pins is swapped for ours. Each slot is then
 re-sealed (checksum and SHA-256) so the bootloader accepts it. The source dump
@@ -35,7 +35,7 @@ EC_PUBLIC_KEY = bytes.fromhex("06072a8648ce3d0201")
 
 # QEMU (Espressif's and the lcgamboa fork) emulates no Bluetooth: the
 # controller's clock setup fails, and the app aborts or faults there. Bluetooth
-# is only for first-time pairing in the eWeLink app, which a plug being
+# is only for first-time pairing in the eWeLink app, which a device being
 # converted has done already, so the app's own functions that start it are made
 # to return 0 at once, as if they had: what uses it then finds it was never
 # advertising. They are found by what they call (bluetooth_starters).
@@ -326,7 +326,7 @@ def trusts(flash: bytes, ca_pem: bytes | None) -> bool | None:
 
 def holds_sonoff_firmware(app: bytes) -> bool:
     """Whether an app slot holds Sonoff's firmware, which uses Bluetooth - not
-    the conversion's installer in the other slot of a plug backed up on it."""
+    the conversion's installer in the other slot of a device backed up on it."""
     return app[0] == appimage.MAGIC and BT_INIT_NAME in app
 
 

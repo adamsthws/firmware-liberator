@@ -1,9 +1,9 @@
 # Device names: where each comes from, and how to change them
 
-Every firmware a plug runs during a conversion has a name, used two ways:
+Every firmware a device runs during a conversion has a name, used two ways:
 
 - its **hostname**, which your router shows in its list of devices;
-- the name of its **own network** (its SSID), which the plug raises when it
+- the name of its **own network** (its SSID), which the device raises when it
   cannot join your Wi-Fi.
 
 Each firmware uses one name for both. This page lists every name, where each
@@ -13,10 +13,10 @@ you can do another rename in one pass.
 
 ## The names
 
-The examples are for a plug whose Wi-Fi MAC is `12:34:56:ab:cd:ef` (made
+The examples are for a device whose Wi-Fi MAC is `12:34:56:ab:cd:ef` (made
 up): `CDEF` is the last two bytes, upper case; `abcdef` is the last three,
-lower case. Each plug works out its own, so no two plugs share a name.
-The Wi-Fi MAC is the one on the plug's label and in the eWeLink app: the
+lower case. Each device works out its own, so no two devices share a name.
+The Wi-Fi MAC is the one on the device's label and in the eWeLink app: the
 chip's own (base) MAC, which its Wi-Fi uses on your network, on an ESP32-C3
 and a classic ESP32 alike. Its own network's MAC is one more, and no name
 is made from it.
@@ -35,13 +35,13 @@ is made from it.
 | S61, J1-J2 | the interim firmware (OpenBeken), on a run to ESPHome | `autoflash-recovery-CDEF` | set by the tool's OpenBeken driver at its first start, from the marker B2 sends after the image |
 | S61, converted | ESPHome | `esphome-abcdef` | compiled in, as the S60's |
 
-Every converted plug's name is its firmware's and the MAC's last three
+Every converted device's name is its firmware's and the MAC's last three
 bytes, in lower case, and its name inside the firmware is the same: Tasmota's
 device name, OpenBeken's short and full names, ESPHome's friendly name
-(`esphome abcdef`, which ESPHome joins with a space). What plug it is goes
+(`esphome abcdef`, which ESPHome joins with a space). What device it is goes
 elsewhere: Tasmota's template (`Sonoff-S60`) and ESPHome's comment.
 
-The plugs with a classic ESP32 (POW Elite, POWCT, TH Elite, DUALR3) go by
+The devices with a classic ESP32 (POW Elite, POWCT, TH Elite, DUALR3) go by
 the same names as the S60 at every step above, made from the same MAC. Seen
 in the emulator on 9 November 2026 on all four, from Sonoff's firmware to
 Tasmota and to ESPHome, and on between the two: each firmware's hostname
@@ -153,15 +153,15 @@ settings are lost (see [Tasmota's own names](#tasmotas-own-names)).
 ### ESPHome, converted
 
 - [`devices/sonoff-s60/esphome.yaml`](../devices/sonoff-s60/esphome.yaml), and
-  each plug's own `devices/<plug>/esphome.yaml` alike: `name: esphome`
+  each device's own `devices/<device>/esphome.yaml` alike: `name: esphome`
   with `name_add_mac_suffix: true` gives `esphome-abcdef`; `on_boot` sets
   its own network to `App.get_name()`. `friendly_name: esphome` gives
   `esphome abcdef` (ESPHome joins them with a space); `comment` says what
-  plug it is, which the tool tells it by. All lower case: ESPHome refuses a
-  name with capitals, and the dashboard adopts the plug under the name it
+  device it is, which the tool tells it by. All lower case: ESPHome refuses a
+  name with capitals, and the dashboard adopts the device under the name it
   goes by, so a capitalised one could not be adopted.
 - The file name and `package_import_url` stay as they are: they are built
-  into plugs converted already, and Home Assistant adopts them by it.
+  into devices converted already, and Home Assistant adopts them by it.
 - Rebuilt as [`devices/sonoff-s60/esphome.md`](../devices/sonoff-s60/esphome.md) says, a new version
   each time: `artifacts/esphome-<kind>-imprintable-<version>.bin` and its
   bootloader, then `IMAGE`, its SHA-256 and size in
@@ -202,42 +202,42 @@ All in [`tools/autoflash/names.py`](../tools/autoflash/names.py) unless said:
   own default name, given the Wi-Fi on its setup network, is named again in
   that restart (the same Berry driver as F4's).
 - `tasmota_at_home()` (`installer.py`) and `note_setup_network()`: the interim name is never
-  kept as the plug's own.
+  kept as the device's own.
 - [`tools/autoflash/setup_network.py`](../tools/autoflash/setup_network.py):
   `BRIDGE_PAGE_MARKERS`, the installer's page title, old and new.
 - [`tools/autoflash/kinds.py`](../tools/autoflash/kinds.py): per kind of
-  plug, ESPHome's old names (`esphome_legacy_setup_prefix`,
+  device, ESPHome's old names (`esphome_legacy_setup_prefix`,
   `esphome_legacy_prefix`), and the friendly name its ESPHome had before its
   comment said the kind (`esphome_legacy_friendly_name`). The tool never tells
-  a plug's kind by its name, which you may change: it tells Tasmota by its
+  a device's kind by its name, which you may change: it tells Tasmota by its
   template, ESPHome by its comment, OpenBeken by its driver's answer to
   `AutoflashKind`
   ([`tools/beken/openbeken/`](../tools/beken/openbeken/README.md)).
 - [`tools/beken/openbeken/drv_autoflash.c`](../tools/beken/openbeken/drv_autoflash.c):
-  `autoflash_name()`, both the Beken plugs' OpenBeken names - `openbeken-%02x%02x%02x`, and
+  `autoflash_name()`, both the Beken devices' OpenBeken names - `openbeken-%02x%02x%02x`, and
   `autoflash-recovery-%02X%02X` as the interim firmware, which is also how
   the driver knows itself the interim firmware (`AutoflashInterim`): a new
-  interim name is a new OpenBeken build, and a plug left on the old one is
+  interim name is a new OpenBeken build, and a device left on the old one is
   no longer taken for the interim firmware.
 - [`tools/autoflash/prompts.py`](../tools/autoflash/prompts.py):
   `find_ssid()` takes a network by the names in the order given, with
   `PROVISIONAL_PREFIX` (`ESP_`) last and looked at again.
 - [`tools/autoflash/output.py`](../tools/autoflash/output.py): the patterns
-  that keep a plug's name out of the report you share.
+  that keep a device's name out of the report you share.
 - [`tools/espressif/flash_readout.py`](../tools/espressif/flash_readout.py): the names it waits
-  for while reading a stock plug.
+  for while reading a stock device.
 
 ## Tasmota's own names
 
 Tasmota's compiled default, `%s-%04d` - its MQTT topic (`tasmota_ABCDEF`,
 written `tasmota-ABCDEF`) and four decimal digits of the chip ID - gives
-`tasmota-ABCDEF-1234`. The plug has it only where its settings are gone: in
+`tasmota-ABCDEF-1234`. The device has it only where its settings are gone: in
 a Tasmota whose settings were erased by switching it off and on 7 times, and
 while it tests the Wi-Fi it is given on its setup network after that. The
 setup network itself then has that name, and the tool looks for it.
 
 For a moment as Tasmota turns its own network on, before it names it, the
-network goes out as `ESP_` and the plug's access-point MAC (the Wi-Fi MAC
+network goes out as `ESP_` and the device's access-point MAC (the Wi-Fi MAC
 plus one: `ESP_ABCDF0`); on a classic ESP32, as `ESP_` and the Wi-Fi MAC
 (`ESP_ABCDEF`). Tasmota's `WifiManagerBegin()` turns the access
 point on first (`WifiSetMode(WIFI_AP_STA)`, which ends with `delay(100)`)
@@ -253,14 +253,14 @@ merged change and from the commit before it, on a TH Elite): 7 of 8 starts
 without it went out as `ESP_ABCDEF` first, none of 8 with it, and the setup
 page still worked. That is a change to Tasmota
 ([#25169](https://github.com/arendst/Tasmota/pull/25169), merged into
-`development` on 22 October 2026, after 16.0.0), so it reaches plugs only
+`development` on 22 October 2026, after 16.0.0), so it reaches devices only
 with a Tasmota release that has it. Until then a computer can list that
 name for a minute after, and the tool never takes it over the real one
 (`find_ssid()`).
 
 ## Old names
 
-A plug left part way through by a run of an older checkout goes by the name it
+A device left part way through by a run of an older checkout goes by the name it
 had then, so the tool still looks for every one: `Sonoff-Setup-XXXX` (the own
 networks of the first installers, movers and ESPHome builds),
 `S60-OTA-Bridge-XXXX` with the password `s60-ota-bridge` (earlier installers), `s60-ota-bridge` and `sonoff-s60-mover-xxxxxx` (hostnames),
@@ -287,17 +287,17 @@ add today's names to these lists rather than replacing them.
    `tests/autoflash/test_join.py`, `tests/autoflash/routes/espressif/test_installer.py`,
    `test_mover.py` and `test_tasmota.py` beside it, `tests/espressif/test_flash_readout.py`.
 5. Update the pages that name them: [`troubleshooting.md`](troubleshooting.md)
-   ("The plug's own network"), [`what-happens.md`](what-happens.md),
+   ("The device's own network"), [`what-happens.md`](what-happens.md),
    [`technical-details.md`](technical-details.md), the ESPHome and
    installer READMEs, and the changelog.
 6. Test every name in the emulator, as [`testing.md`](testing.md) says: each
    firmware's hostname is in the emulator's DHCP log
    (`/run/autoflash-emu/dnsmasq.log` in the container), the network it
    raises in `/run/autoflash-emu/softap`, and every network that went out in
-   the plug's serial log (`esp32_wifi: guest SoftAP <name> up`). Run every route
+   the device's serial log (`esp32_wifi: guest SoftAP <name> up`). Run every route
    from stock and between the firmwares, and the routes through each
    firmware's own network (the fault suite's `fallback` scenarios). Run one
-   plug with another MAC too, so a name made from the MAC is seen to follow
-   it: a copy of a backed-up plug under `captures/plugs/<mac>/` with the new
+   device with another MAC too, so a name made from the MAC is seen to follow
+   it: a copy of a backed-up device under `captures/devices/<mac>/` with the new
    MAC in `efuse.bin` (bytes `0x18`-`0x1D`, in reverse order) and
-   `test_copy_of` in its `plug.json`.
+   `test_copy_of` in its `device.json`.

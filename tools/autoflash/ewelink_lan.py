@@ -1,6 +1,6 @@
-"""What a stock plug says of itself in its eWeLink LAN advert.
+"""What a stock device says of itself in its eWeLink LAN advert.
 
-On the network the plug advertises `_ewelink._tcp` over mDNS. Its TXT record
+On the network the device advertises `_ewelink._tcp` over mDNS. Its TXT record
 carries its state - switch, power readings, Wi-Fi signal - encrypted with its
 LAN key: AES-128-CBC, keyed with the MD5 of the device key, the IV in the
 record (`iv`) and the ciphertext in base64, split over `data1` to `data4`.

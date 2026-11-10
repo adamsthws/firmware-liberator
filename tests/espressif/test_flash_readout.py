@@ -18,7 +18,7 @@ class FindBridgeTests(unittest.TestCase):
             clock=lambda: next(ticks), sleep=lambda s: None,
         )
 
-    def test_found_where_the_plug_was(self):
+    def test_found_where_the_device_was(self):
         self.assertEqual(self.run_find({"192.0.2.50"}), "192.0.2.50")
 
     def test_found_by_hardware_address_when_moved(self):
@@ -64,7 +64,7 @@ class DeliverTests(unittest.TestCase):
             (root / safety_locks.DIR).mkdir(parents=True)
             (root / safety_locks.DIR / "RECOVERY_LOCK").write_text("lock")
             seen = {}
-            sender = FakeSender(root, seen, lines=("  Cloud: the plug went offline\n",))
+            sender = FakeSender(root, seen, lines=("  Cloud: the device went offline\n",))
             with mock.patch.object(flash_readout, "ROOT", root), \
                  mock.patch.object(flash_readout.subprocess, "Popen", side_effect=sender), \
                  mock.patch("builtins.print"):
@@ -82,7 +82,7 @@ class DeliverTests(unittest.TestCase):
 
 class CloudChatterTests(unittest.TestCase):
     def test_routine_cloud_lines_are_hidden_but_problems_are_not(self):
-        self.assertTrue(flash_readout.is_cloud_chatter("  Cloud: the plug went offline - expected while it restarts\n"))
+        self.assertTrue(flash_readout.is_cloud_chatter("  Cloud: the device went offline - expected while it restarts\n"))
         self.assertTrue(flash_readout.is_cloud_chatter("  Cloud: upgrade command accepted\n"))
         self.assertFalse(flash_readout.is_cloud_chatter("  Cloud: upgrade command rejected (error 406)\n"))
         self.assertFalse(flash_readout.is_cloud_chatter("  Complete firmware byte coverage observed\n"))
@@ -92,7 +92,7 @@ class CloudChatterTests(unittest.TestCase):
             root = Path(tmp)
             (root / safety_locks.DIR).mkdir(parents=True)
             (root / safety_locks.DIR / "RECOVERY_LOCK").write_text("lock")
-            sender = FakeSender(root, {}, lines=("  Cloud: the plug is back online\n", "Serving\n"))
+            sender = FakeSender(root, {}, lines=("  Cloud: the device is back online\n", "Serving\n"))
             with mock.patch.object(flash_readout, "ROOT", root), \
                  mock.patch.object(flash_readout.subprocess, "Popen", side_effect=sender), \
                  mock.patch("builtins.print") as printed:
@@ -113,7 +113,7 @@ class SenderOutputTests(unittest.TestCase):
         self.assertEqual(flash_readout.sender_line_kind(self.REQUEST.replace("206", "403")), "show")
         self.assertEqual(flash_readout.sender_line_kind("  Complete firmware byte coverage observed\n"), "show")
 
-    def test_progress_line_reports_how_far_the_plug_has_got(self):
+    def test_progress_line_reports_how_far_the_device_has_got(self):
         progress = flash_readout.SenderProgress(869332)
         with mock.patch("sys.stdout") as out:
             progress.update(self.SERVED)

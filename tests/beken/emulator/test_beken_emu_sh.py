@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "tools" / "beken" / "emulator" / "beken-emu.sh"
 IMAGE_SH = ROOT / "tools" / "beken" / "emulator" / "image.sh"
-PLUG_NET = ROOT / "tools" / "beken" / "emulator" / "plug-net.sh"
+DEVICE_NET = ROOT / "tools" / "beken" / "emulator" / "device-net.sh"
 
 
 @unittest.skipIf(shutil.which("bash") is None, "no bash")
@@ -37,20 +37,20 @@ class ContainerIsExecedTests(unittest.TestCase):
 
 
 @unittest.skipIf(shutil.which("bash") is None, "no bash")
-class PlugDumpTests(unittest.TestCase):
+class DeviceDumpTests(unittest.TestCase):
     def dump(self, own):
-        function = re.search(r"^plug_dump\(\) \{.*?^\}", SCRIPT.read_text(encoding="utf-8"), re.S | re.M).group(0)
+        function = re.search(r"^device_dump\(\) \{.*?^\}", SCRIPT.read_text(encoding="utf-8"), re.S | re.M).group(0)
         with tempfile.TemporaryDirectory() as tmp:
             root = os.path.realpath(tmp)
             Path(root, "captures").mkdir()
             Path(root, "captures", "device.bin").touch()
-            script = f"set -u\nROOT={root} PUBLIC_DUMP=dump.bin\n{function}\nplug_dump\n"
+            script = f"set -u\nROOT={root} PUBLIC_DUMP=dump.bin\n{function}\ndevice_dump\n"
             env = {**os.environ, "AUTOFLASH_BEKEN_EMU_FLASH": own.format(root=root)}
             if not own:
                 del env["AUTOFLASH_BEKEN_EMU_FLASH"]
             return subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=60, env=env, cwd=tmp)
 
-    def test_a_new_plug_starts_from_the_public_dump(self):
+    def test_a_new_device_starts_from_the_public_dump(self):
         self.assertEqual(self.dump("").stdout.strip(), "/opt/beken-emulator/firmwares/dump.bin")
 
     def test_or_from_a_flash_under_the_checkout_as_the_container_sees_it(self):
@@ -116,10 +116,10 @@ class ImageLockTests(unittest.TestCase):
 
 
 @unittest.skipIf(shutil.which("bash") is None, "no bash")
-class PlugNetRouterTests(unittest.TestCase):
-    """plug-net.sh makes the container the plug's home router: .1 on the
-    network, the plug's pool where Docker hands out nothing, and every
-    connection the plug makes off the network sent to the stub there."""
+class DeviceNetRouterTests(unittest.TestCase):
+    """device-net.sh makes the container the device's home router: .1 on the
+    network, the device's pool where Docker hands out nothing, and every
+    connection the device makes off the network sent to the stub there."""
 
     def commands(self, address="198.18.61.130/24", then=None):
         with tempfile.TemporaryDirectory() as tmp:
@@ -132,32 +132,32 @@ class PlugNetRouterTests(unittest.TestCase):
                       "  '-4 -o address show dev eth0') echo '2: eth0    inet %s brd x scope global eth0';;\n"
                       "esac\n" % address,
                 "iptables": record, "dnsmasq": record, "setpriv": record, "chown": record,
-                # The stub makes its CA, which plug-net.sh waits for.
+                # The stub makes its CA, which device-net.sh waits for.
                 "python3": record + "touch %s/ca.crt %s/leaf.crt %s/leaf.key\n" % (state, state, state),
             }
             for name, text in fakes.items():
                 Path(tmp, name).write_text(text, encoding="utf-8")
                 Path(tmp, name).chmod(0o755)
-            done = subprocess.run(["bash", str(PLUG_NET)], capture_output=True, text=True, timeout=60,
+            done = subprocess.run(["bash", str(DEVICE_NET)], capture_output=True, text=True, timeout=60,
                                   env={**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}",
-                                       "PLUG_NET_RUN": str(Path(tmp, "run")), "PLUG_STATE": str(state),
+                                       "DEVICE_NET_RUN": str(Path(tmp, "run")), "DEVICE_STATE": str(state),
                                        "HOST_UID": "1000", "HOST_GID": "1000"})
             if then is not None:
-                Path(tmp, "run", "leases").write_text("1 12:34:56:ab:cd:ef 198.18.61.50 plug *\n", encoding="utf-8")
+                Path(tmp, "run", "leases").write_text("1 12:34:56:ab:cd:ef 198.18.61.50 device *\n", encoding="utf-8")
                 calls.write_text("", encoding="utf-8")
                 subprocess.run(["sh", str(Path(tmp, "run", "router")), *then], capture_output=True, timeout=30,
                                env={**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}"})
                 self.leases = Path(tmp, "run", "leases").read_text(encoding="utf-8")
             return done, calls.read_text(encoding="utf-8") if calls.exists() else ""
 
-    def test_the_router_starts_again_forgetting_the_plugs_address(self):
+    def test_the_router_starts_again_forgetting_the_devices_address(self):
         # As a router may, when a device restarts: the fault suite's readdress.
         done, calls = self.commands(then=["55"])
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("--dhcp-range=198.18.61.55,198.18.61.59,", calls)
         self.assertEqual(self.leases, "")
 
-    def test_the_container_is_the_plugs_router_and_cloud(self):
+    def test_the_container_is_the_devices_router_and_cloud(self):
         done, calls = self.commands()
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("ip address add 198.18.61.1/24 dev br0", calls)
@@ -176,7 +176,7 @@ class PlugNetRouterTests(unittest.TestCase):
 
 @unittest.skipIf(shutil.which("bash") is None, "no bash")
 class NetworkRaceTests(unittest.TestCase):
-    """Plugs started side by side may choose the same free subnet: the one
+    """Devices started side by side may choose the same free subnet: the one
     whose create loses chooses again (seen with eight at once on a VM)."""
 
     def make(self, creates_fail):
@@ -224,7 +224,7 @@ class OptionTests(unittest.TestCase):
     def run_script(self, *args, before=None, lease=""):
         """beken-emu.sh ARGS, run from a copy of its checkout in a temporary
         directory, so what it does to captures/ is done there; Docker a fake
-        that says what it was asked, and gives the plug LEASE (a line of its
+        that says what it was asked, and gives the device LEASE (a line of its
         router's leases), and ui_proxy.py one that says how it was started."""
         with tempfile.TemporaryDirectory() as tmp:
             checkout(tmp)
@@ -245,14 +245,14 @@ class OptionTests(unittest.TestCase):
             self.left = sorted(str(path.relative_to(tmp)) for path in Path(tmp, "captures").rglob("*"))
             return done, calls.read_text(encoding="utf-8") if calls.exists() else ""
 
-    def test_an_instance_is_its_own_plug(self):
+    def test_an_instance_is_its_own_device(self):
         done, calls = self.run_script("--instance", "2", "ui")
         self.assertEqual(done.returncode, 1, done.stderr)
         self.assertIn("exec autoflash-beken-emu-2 ", calls)
 
     def test_an_instance_out_of_range_is_refused(self):
         for instance in ("0", "100", "x"):
-            done, calls = self.run_script("--instance", instance, "plug")
+            done, calls = self.run_script("--instance", instance, "device")
             self.assertEqual(done.returncode, 2, instance)
             self.assertIn("1-99", done.stderr)
             self.assertEqual(calls, "", instance)
@@ -270,14 +270,14 @@ class OptionTests(unittest.TestCase):
         self.assertEqual(done.returncode, 1, done.stderr)
         self.assertIn("exec autoflash-beken-emu-99 ", calls)
 
-    def test_fresh_is_for_plug_alone(self):
+    def test_fresh_is_for_device_alone(self):
         done, calls = self.run_script("--fresh", "power", "on")
         self.assertEqual(done.returncode, 2)
-        self.assertIn("--fresh is for plug", done.stderr)
+        self.assertIn("--fresh is for device", done.stderr)
         self.assertEqual(calls, "")
 
     def test_the_old_spellings_are_gone(self):
-        for args in (("reset",), ("ensure", "--rebuild"), ("--bogus", "plug")):
+        for args in (("reset",), ("ensure", "--rebuild"), ("--bogus", "device")):
             done, calls = self.run_script(*args)
             self.assertEqual(done.returncode, 2, args)
             self.assertIn("--instance N", done.stdout, args)
@@ -286,7 +286,7 @@ class OptionTests(unittest.TestCase):
     def test_an_earlier_checkouts_folders_are_moved_on_first_use(self):
         def old(tmp):
             Path(tmp, "captures/emulation/s61/autoflash-s61-2").mkdir(parents=True)
-            Path(tmp, "captures/emulation/s61/autoflash-s61-2/flash.bin").write_bytes(b"plug")
+            Path(tmp, "captures/emulation/s61/autoflash-s61-2/flash.bin").write_bytes(b"device")
         done, _calls = self.run_script("--instance", "2", "ui", before=old)
         self.assertIn("s61/autoflash-s61-2 to beken/state-2", done.stderr)
         self.assertEqual(self.left, ["captures/emulation", "captures/emulation/beken",

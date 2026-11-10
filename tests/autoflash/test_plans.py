@@ -1,4 +1,4 @@
-"""Plans: what the plug is to write, checked before anything is sent."""
+"""Plans: what the device is to write, checked before anything is sent."""
 import struct
 import unittest
 from pathlib import Path
@@ -26,7 +26,7 @@ def stock_flash(stock_slot=0, app_size=0x163874):
 
 
 class PlanTests(unittest.TestCase):
-    def test_every_plan_stays_inside_the_time_a_plug_may_be_busy(self):
+    def test_every_plan_stays_inside_the_time_a_device_may_be_busy(self):
         image = images.published_image()
         for plan in (plans.bootloader(images.published_bootloader()), plans.esphome(image),
                      plans.leave_tasmota(images.mover_for("Home", "pw"), images.sonoff_table())):
@@ -66,7 +66,7 @@ class PlanTests(unittest.TestCase):
         with self.assertRaisesRegex(plans.PlanError, "do not fit"):
             plans.leave_tasmota(b"\xe9" * 1000, images.sonoff_table(), settings=b"\x01" * 0x15000)
 
-    def test_a_plug_on_tasmotas_own_table_leaves_it_too(self):
+    def test_a_device_on_tasmotas_own_table_leaves_it_too(self):
         # Converted before the identity was kept: the plan checks for the table it has.
         own = plans.leave_tasmota(b"\xe9" * 1000, images.sonoff_table(),
                                   tasmota_table=safeboot_migration.OFFICIAL_TABLE_SHA256)
@@ -112,7 +112,7 @@ class PlanTests(unittest.TestCase):
         with self.assertRaisesRegex(plans.PlanError, "Sonoff's partition table"):
             plans.leave_tasmota(images.mover_for("Home", "pw", chips.ESP32), layout.table, layout)
 
-    def test_from_the_temporary_table_each_step_leaves_a_plug_that_starts(self):
+    def test_from_the_temporary_table_each_step_leaves_a_device_that_starts(self):
         layout = layouts.SONOFF_TH_ELITE
         plan = plans.own_table_from_temporary(images.sonoff_table(kinds.SONOFF_TH_ELITE), layout)
         self.assertEqual((plan.table_sha256, plan.final_table_sha256(), plan.running, plan.restart),
@@ -147,7 +147,7 @@ class PlanTests(unittest.TestCase):
                                                  safeboot_migration.LOW_REGIONS_SIZE),
                                       plans.Write("table", plans.TABLE_ADDRESS, whole=True)])
         self.assertEqual(plan.final_table_sha256(), plans.SONOFF_TABLE_SHA256)
-        # The settings are the plug's own: what was copied cannot be known here.
+        # The settings are the device's own: what was copied cannot be known here.
         self.assertEqual(plan.expected()["step0"], "copied")
         self.assertLessEqual(plan.busy_estimate(), plans.BUSY_LIMIT)
         again = plans.Plan.from_bundle(plan.bundle())
@@ -217,7 +217,7 @@ class BackToSonoffTests(unittest.TestCase):
         self.assertEqual(second.steps[-1], plans.Write("otadata", plans.SONOFF_OTADATA, whole=True))
         self.assertEqual(second.blobs["otadata"], plans.otadata_selecting(1))
 
-    def test_it_never_writes_the_slot_the_plug_runs_from(self):
+    def test_it_never_writes_the_slot_the_device_runs_from(self):
         with self.assertRaisesRegex(plans.PlanError, "running from"):
             self.plans_for(stock_slot=1, running=1)
 
@@ -232,7 +232,7 @@ class BackToSonoffTests(unittest.TestCase):
 
 
 class PlanCheckTests(unittest.TestCase):
-    """Plan.check, the last word before a plan reaches the plug: each refusal
+    """Plan.check, the last word before a plan reaches the device: each refusal
     for its own reason, and each limit allowed up to it and refused past it."""
 
     FLASH = 0x400000
@@ -269,7 +269,7 @@ class PlanCheckTests(unittest.TestCase):
                      "x: a slice is outside it")
         self.allowed(self.plan(plans.Write("a", 0x20000, start=SECTOR, length=100), a=data))
 
-    def test_a_whole_write_held_in_the_plugs_memory(self):
+    def test_a_whole_write_held_in_the_devices_memory(self):
         self.allowed(self.plan(plans.Write("a", 0x20000, whole=True), a=b"\xe9" * plans.WHOLE_LIMIT))
         self.refused(self.plan(plans.Write("a", 0x20000, whole=True), a=b"\xe9" * (plans.WHOLE_LIMIT + 1)),
                      "x: a is too big to write whole")
@@ -309,7 +309,7 @@ class PlanCheckTests(unittest.TestCase):
         self.allowed(self.plan(plans.Copy(0x20000, 0x9000, SECTOR), plans.Erase(0x21000, SECTOR)))
         self.allowed(self.plan(plans.Copy(0x21000, 0x9000, SECTOR), plans.Erase(0x20000, SECTOR)))
 
-    def test_a_plan_keeping_the_plug_busy_too_long(self):
+    def test_a_plan_keeping_the_device_busy_too_long(self):
         from unittest import mock
         plan = self.plan(plans.Write("a", 0x20000), a=b"\xe9" * 0x100000)
         with mock.patch.object(plans, "BUSY_LIMIT", plan.busy_estimate()):

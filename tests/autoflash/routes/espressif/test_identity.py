@@ -1,4 +1,4 @@
-"""The plug's Sonoff identity: found in the sector Tasmota's layout keeps it
+"""The device's Sonoff identity: found in the sector Tasmota's layout keeps it
 in, and kept there on the way to Tasmota (K1)."""
 import tempfile
 import unittest
@@ -6,10 +6,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tests.autoflash.test_device import FakePlug
+from tests.autoflash.test_device import FakeDevice
 from tests.autoflash.test_plans import stock_flash
 from tests.espressif.test_sonoff_identity import sonoff_nvs
-from tools.autoflash import kinds, output, plans, plugs
+from tools.autoflash import kinds, output, plans, records
 from tools.autoflash.device import DeviceError
 from tools.autoflash.routes import espressif
 from tools.autoflash.routes.espressif import hub, identity, images
@@ -40,7 +40,7 @@ class Fixture(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__("shutil").rmtree(self.tmp))
-        for patch in (mock.patch.object(plugs, "PLUGS", self.tmp / "plugs"),
+        for patch in (mock.patch.object(records, "DEVICES", self.tmp / "devices"),
                       mock.patch.object(output, "say"), mock.patch.object(output, "tell"),
                       mock.patch.object(output, "log_only")):
             patch.start()
@@ -48,14 +48,14 @@ class Fixture(unittest.TestCase):
 
     def ctx(self, flash, **inputs):
         state = RunState.open(self.tmp / "run")
-        for key, value in {"plug_kind": "sonoff-s60", "plug_mac": MAC, **inputs}.items():
+        for key, value in {"device_kind": "sonoff-s60", "device_mac": MAC, **inputs}.items():
             state.set_input(key, value)
-        return SimpleNamespace(state=state, device=FakePlug(flash), dry_run=False,
+        return SimpleNamespace(state=state, device=FakeDevice(flash), dry_run=False,
                                wifi=lambda: ("Home-2G", "pw"), account_devices=lambda: [],
                                ewelink_region=lambda: "eu")
 
     def back_up(self, nvs=None):
-        directory = plugs.backup_dir(MAC)
+        directory = records.backup_dir(MAC)
         directory.mkdir(parents=True)
         flash, _ = stock_flash()
         flash = bytearray(flash)
@@ -95,8 +95,8 @@ class KeptOnTasmotaTests(Fixture):
 
 
 class NoIdentityAnywhereTests(Fixture):
-    def test_a_test_can_have_a_plug_keep_none_and_its_account_hold_none(self):
-        # cli.py --simulate-no-identity: a plug that does keep one, and is in
+    def test_a_test_can_have_a_device_keep_none_and_its_account_hold_none(self):
+        # cli.py --simulate-no-identity: a device that does keep one, and is in
         # its account, taken for one that is neither - for the emulator's
         # attended run back to Sonoff, which puts it back where it came from.
         ctx = self.ctx(on_tasmota(sector=sonoff_identity.to_sector(IDENTITY)))
@@ -110,7 +110,7 @@ class NoIdentityAnywhereTests(Fixture):
 
 
 class KeepIdentityTests(Fixture):
-    """K1: from the backup on this computer, else the plug's own settings."""
+    """K1: from the backup on this computer, else the device's own settings."""
 
     def run_k1(self, ctx):
         with mock.patch.object(hub, "sonoff_layout_back"), \
@@ -125,7 +125,7 @@ class KeepIdentityTests(Fixture):
         self.assertEqual(plan.steps, [plans.Write("identity", sonoff_identity.SECTOR_AT, whole=True)])
         self.assertEqual(sonoff_identity.from_sector(plan.blobs["identity"]), IDENTITY)
 
-    def test_from_the_plugs_own_settings_with_no_backup(self):
+    def test_from_the_devices_own_settings_with_no_backup(self):
         flash, _ = stock_flash()
         flash = bytearray(flash)
         flash[0x9000:0x19000] = sonoff_nvs()
@@ -137,7 +137,7 @@ class KeepIdentityTests(Fixture):
         result, plan = self.run_k1(self.ctx(b"\xff" * 0x400000))
         self.assertEqual((result, plan), ({"kept": False}, None))
 
-    def test_a_plug_that_does_not_answer_is_not_taken_for_one_that_holds_none(self):
+    def test_a_device_that_does_not_answer_is_not_taken_for_one_that_holds_none(self):
         ctx = self.ctx(b"\xff" * 0x400000)
         with mock.patch.object(ctx.device, "read_nvs", side_effect=DeviceError("timed out")), \
                 self.assertRaises(DeviceError):

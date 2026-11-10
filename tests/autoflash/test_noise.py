@@ -84,22 +84,22 @@ class HandshakeTests(unittest.TestCase):
         self.assertEqual(sending.encrypt(b"\x00\x00\x10\x00"), self.SECOND)
 
     def test_as_the_responder_too(self):
-        plug = noise.Handshake(self.PSK, self.PROLOGUE, initiator=False, ephemeral=self.RESPONDER)
-        plug.read_message(self.MESSAGE1)
-        self.assertEqual(plug.write_message(), self.MESSAGE2)
-        sending, receiving = plug.split()
+        device = noise.Handshake(self.PSK, self.PROLOGUE, initiator=False, ephemeral=self.RESPONDER)
+        device.read_message(self.MESSAGE1)
+        self.assertEqual(device.write_message(), self.MESSAGE2)
+        sending, receiving = device.split()
         self.assertEqual(receiving.decrypt(self.FIRST), b"\x00")
         self.assertEqual(sending.encrypt(b"\x41"), self.REPLY)
 
     def test_two_ends_with_the_same_key_agree_and_another_key_is_refused(self):
         client = noise.Handshake(self.PSK, b"prologue")
-        plug = noise.Handshake(self.PSK, b"prologue", initiator=False)
-        plug.read_message(client.write_message())
-        client.read_message(plug.write_message())
-        (to_plug, from_plug), (plug_sends, plug_receives) = client.split(), plug.split()
+        device = noise.Handshake(self.PSK, b"prologue", initiator=False)
+        device.read_message(client.write_message())
+        client.read_message(device.write_message())
+        (to_device, from_device), (device_sends, device_receives) = client.split(), device.split()
         for size in (0, 1, 1024, 3000):
-            self.assertEqual(plug_receives.decrypt(to_plug.encrypt(b"x" * size)), b"x" * size)
-            self.assertEqual(from_plug.decrypt(plug_sends.encrypt(b"y" * size)), b"y" * size)
+            self.assertEqual(device_receives.decrypt(to_device.encrypt(b"x" * size)), b"x" * size)
+            self.assertEqual(from_device.decrypt(device_sends.encrypt(b"y" * size)), b"y" * size)
         for psk, prologue in ((bytes(32), b"prologue"), (self.PSK, b"changed")):
             other = noise.Handshake(psk, prologue, initiator=False)
             with self.assertRaises(noise.NoiseError):
@@ -136,12 +136,12 @@ class FrameTests(unittest.TestCase):
         with self.assertRaisesRegex(noise.NoiseError, noise.WRONG_KEY_REASON):
             noise.handshake_reply(client, b"\x01" + noise.WRONG_KEY_REASON.encode())
         # A reply that does not check out says the same: another key.
-        plug = noise.Handshake(bytes(range(32)), b"", initiator=False)
-        plug.read_message(noise.Handshake(bytes(range(32)), b"").write_message())
+        device = noise.Handshake(bytes(range(32)), b"", initiator=False)
+        device.read_message(noise.Handshake(bytes(range(32)), b"").write_message())
         client = noise.Handshake(bytes(32), b"")
         client.write_message()
         with self.assertRaisesRegex(noise.NoiseError, noise.WRONG_KEY_REASON):
-            noise.handshake_reply(client, bytes([noise.HANDSHAKE_OK]) + plug.write_message())
+            noise.handshake_reply(client, bytes([noise.HANDSHAKE_OK]) + device.write_message())
 
 
 if __name__ == "__main__":

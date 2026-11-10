@@ -1,6 +1,6 @@
 # The Espressif emulator
 
-How the emulator for Espressif plugs, the ESP32-C3 and the classic ESP32, is put
+How the emulator for Espressif devices, the ESP32-C3 and the classic ESP32, is put
 together and what it changes, for working on it. How to use it is in
 [docs/emulator.md](../../../docs/emulator.md).
 
@@ -11,9 +11,9 @@ together and what it changes, for working on it. How to use it is in
                                  │  container autoflash-emu ("your computer")
  ┌───────────────────────────────┼──────────────────────────────────────────┐
  │  browser-forward ─────────────┘                                          │
- │  autoflash/cli.py, nmcli stand-in, wifi / plug commands                  │
+ │  autoflash/cli.py, nmcli stand-in, wifi / device commands                  │
  │        │                                                                 │
- │  tap0 192.168.60.1/24 ── dnsmasq (DHCP + DNS; plug fixed at .50)         │
+ │  tap0 192.168.60.1/24 ── dnsmasq (DHCP + DNS; device fixed at .50)         │
  │        │                    └─ internet: only with --cloud (iptables)    │
  │  QEMU (lcgamboa fork) ── emulated Wi-Fi ── open AP PICSimLabWifi         │
  │        └─ flash.bin / efuse.bin in captures/emulation/state/             │
@@ -44,7 +44,7 @@ together and what it changes, for working on it. How to use it is in
   of `emu.Dockerfile`, and says the release to publish the archive as,
   `emulator-source-qemu-<commit>`: each named after the upstream project the
   archive is of. `UPSTREAM` has held the pin since the image that brought the
-  plug's board ([below](#the-plugs-board-boardpy)), at the same commit, so
+  device's board ([below](#the-devices-board-boardpy)), at the same commit, so
   that move needed no new release. QEMU is
   GPL-2.0: the archive is its unmodified source, and this project's changes
   to it are the patches in `tools/espressif/emulator/patches/`, so a change to the
@@ -58,26 +58,26 @@ together and what it changes, for working on it. How to use it is in
   `--rebuild`, always builds). Either way it runs only an image labelled
   with its own checkout's hash.
 - **The home network.** `tap0` is the home network, and the container is its
-  router: dnsmasq hands out addresses (the plug's MAC always gets
+  router: dnsmasq hands out addresses (the device's MAC always gets
   192.168.60.50), and mDNS discovery works as on a real LAN. Without
   `--cloud`, iptables stops everything in the container reaching the
   internet, so the cloned identity cannot be used by mistake.
 - **Wi-Fi scans.** The tool lists networks with `nmcli`; a stand-in reports
-  the fork's access points, plus the plug's own network while it is
+  the fork's access points, plus the device's own network while it is
   broadcasting one.
-- **The browser.** `browser-forward` takes localhost:8080 to the plug,
+- **The browser.** `browser-forward` takes localhost:8080 to the device,
   wherever it is (see the Referer check below).
 - **The firewall and sudo.** As on a typical Linux desktop, ufw is on and
   blocks incoming connections, and sudo asks for your password (`autoflash`). So
-  the conversion has to add its temporary rule for the plug, through sudo,
+  the conversion has to add its temporary rule for the device, through sudo,
   and remove it again, and any exit path that leaves it behind shows up. ufw
-  allows only what the emulator itself needs: the plug's DHCP and DNS, and
+  allows only what the emulator itself needs: the device's DHCP and DNS, and
   port 8080 for your browser. The tool checks for ufw with
   `systemctl is-active ufw`; the container has no systemd, so a stand-in
   answers from ufw's own setting. The emulator's `wifi` command needs no
   password, as a desktop's Wi-Fi menu does not. `--no-firewall` leaves ufw
   off.
-- **Power.** `plug-supervisor` keeps QEMU running and starts it again when it
+- **Power.** `device-supervisor` keeps QEMU running and starts it again when it
   exits, which is how a power cut looks.
 
 ## What is changed, and why
@@ -98,7 +98,7 @@ half-changed.
   `esp_bt_controller_init` is found as the one function holding the address of
   its own name, for its asserts: through an `l32r` from a literal pool on a
   classic ESP32, a `lui` and `addi` on an ESP32-C3. Bluetooth is only used for
-  first-time pairing in the eWeLink app, which a plug being converted has
+  first-time pairing in the eWeLink app, which a device being converted has
   already done.
 - **The DPORT stall is skipped, on a classic ESP32.** An ESP32 before revision
   3 has a bug in reading DPORT registers, so its firmware stops the other core
@@ -109,7 +109,7 @@ half-changed.
   `0x3FF000E8`); it, and the `_end` function straight after it, return at once.
   Firmware on ESP-IDF 5 is left alone: its `esp_ipc_isr` uses the same
   registers to stop a core it needs stopped.
-- **With `--stub-cloud`, the plug trusts the stub.** eWeLink's CA, pinned in
+- **With `--stub-cloud`, the device trusts the stub.** eWeLink's CA, pinned in
   the firmware, is found by its issuer (the older RSA `coolkit` one, or the
   newer `CoolKit Root CA ECC`) and replaced, in its fixed 1040-byte slot, with
   the stub's own CA. That CA is EC P-256, as an RSA-2048 one would not fit.
@@ -127,15 +127,15 @@ half-changed.
   joins in two places: ESP-IDF's `nvs.net80211` (`sta.ssid`, `sta.pswd`) and
   Sonoff's own `frame_params` (`ssid`, `passwd`). Both are rewritten to
   `PICSimLabWifi` with no password, so the real home Wi-Fi is not in the
-  emulated plug at all. The partition is rebuilt with ESP-IDF's
+  emulated device at all. The partition is rebuilt with ESP-IDF's
   `nvs_partition_gen`, which adds `sta.apinfo`, `sta.pmk` and `sta.apsw` itself.
-  A dump taken after the plug was reset has no network or dispatch address in
+  A dump taken after the device was reset has no network or dispatch address in
   `frame_params`, and would wait to be paired: they are added.
 - **The eFuse dump needs no conversion.** QEMU's ESP32-C3 eFuse file is the
   read registers `EFUSE_RD_WR_DIS_REG` to `EFUSE_RD_SYS_PART2_DATA7_REG` in
   order, which is what `efuse.bin` holds; it is only padded to 1024 bytes. A
   classic ESP32's is its four blocks' read registers, 124 bytes, used whole.
-  The plug's MAC comes from it.
+  The device's MAC comes from it.
 - **A test copy's eFuses hold its MAC and little else.** `public_dump.py`
   writes them, as a public dump has none. An ESP32-C3's also carries the wafer
   revision its app's header asks for (byte 14, the lowest chip revision it runs
@@ -157,13 +157,13 @@ change, and regenerate them. What they do:
   as [lcgamboa/qemu #18](https://github.com/lcgamboa/qemu/pull/18).
 - **`0002-access-points-off.patch` - the router can be restarted.** The fork's
   access points live inside QEMU, so blocking traffic outside it only cuts the
-  plug off from the computer; its Wi-Fi stays up. While the device's
-  `access-points-off` property is set (`plug router off`, over QEMU's monitor),
-  they send no beacons and answer nothing, and deauthenticate the plug - a few
+  device off from the computer; its Wi-Fi stays up. While the device's
+  `access-points-off` property is set (`device router off`, over QEMU's monitor),
+  they send no beacons and answer nothing, and deauthenticate the device - a few
   times, and again whenever it sends data, as a real access point does to a
-  station that is not joined. The plug sees its Wi-Fi go within a second or two,
+  station that is not joined. The device sees its Wi-Fi go within a second or two,
   retries as a real one does ("Connect failed with AP timeout"), and rejoins
-  within seconds of `plug router on`. To cut the plug off from the computer
+  within seconds of `device router on`. To cut the device off from the computer
   instead, block its traffic in the container
   (`iptables -I INPUT -s 192.168.60.50 -j DROP`). Offered upstream as
   [lcgamboa/qemu #19](https://github.com/lcgamboa/qemu/pull/19).
@@ -190,7 +190,7 @@ change, and regenerate them. What they do:
   overheating and refused updates (`"error": 407`). The properties `adc1_ch0` to
   `adc1_ch4` hold each ADC1 channel's raw 12-bit sample; a kind's
   `adc_readings` ([kinds.py](../../autoflash/kinds.py)) sets them, through
-  `plug-supervisor`. Not offered upstream yet.
+  `device-supervisor`. Not offered upstream yet.
 - **ADC calibration in the eFuses.** A real ESP32-C3 leaves Espressif with its
   ADC measured, in eFuse block 2: an init code (the offset) and the reading at a
   known voltage, for each attenuation, under `BLK_VERSION_MAJOR = 1`. Without it
@@ -208,7 +208,7 @@ change, and regenerate them. What they do:
   (`flashmap.esp32_efuse`) holds no calibration, so `esp_adc_cal` reads a raw 0 as
   its attenuation's offset, 75 to 142 mV. Only the NSPanel's firmware reads its ADC,
   for the room temperature it reports (-2 °C here). A believable one would take
-  properties like 0005's on `misc.esp32.sens`, and `plug-supervisor` setting them;
+  properties like 0005's on `misc.esp32.sens`, and `device-supervisor` setting them;
   no conversion needs it.
 - **`0006-esp32-uart-rx-timeout-ref-tick.patch` - a classic ESP32 hears a
   short answer in time.** A UART hands what it received to the firmware when
@@ -239,9 +239,9 @@ region accessed".
 Worth trying in the same rebuild, but not needed: `-icount shift=3,sleep=off`
 for the classic ESP32 alone, which runs the firmware's clock by the
 instructions it runs rather than by the wall's. When the computer starves the
-emulator, a plug's clock now jumps ahead, and its own timeouts fire on the jump:
+emulator, a device's clock now jumps ahead, and its own timeouts fire on the jump:
 Tasmota's web server dropped an upload part way once, 5 s with no data; the
-tool now gets past that, by restarting the plug and sending the upload again.
+tool now gets past that, by restarting the device and sending the upload again.
 Under `-icount`, the 2,000-read Berry command no longer tripped Tasmota's
 5-second task watchdog (4 runs of 4). But with `sleep=off` the clock also races
 ahead while the firmware is idle, waiting for the computer, so its timeouts may
@@ -264,18 +264,18 @@ operations were quick.
 What else the emulator needed from the fork is
 [upstream now](../../../docs/upstream-contributions.md#the-emulators-wi-fi): real addresses on
 the wire, frames written only where the hardware would put them, a signal
-strength with its minus sign, and the computer joining the plug's own network
-while the plug also tries the home one, on a link of its own with its own MAC
+strength with its minus sign, and the computer joining the device's own network
+while the device also tries the home one, on a link of its own with its own MAC
 (02:53:36:30:00:02).
 
-### How QEMU is run (`container/bin/plug-supervisor`)
+### How QEMU is run (`container/bin/device-supervisor`)
 
 - **The chip's QEMU.** `emu.sh` passes the chip it read from the flash, and
   the PSRAM the kind asks for, as `CHIP` and `PSRAM`; the supervisor picks the
   binary, machine, eFuse device and Wi-Fi device from the first, and gives the
-  second as `-m` ([Classic ESP32 plugs](../../../docs/emulator.md#classic-esp32-plugs)).
-- **`softap-status`: the plug's own network is visible.** QEMU's output passes
-  through it, and it keeps the name of the network the plug broadcasts, from the
+  second as `-m` ([Classic ESP32 devices](../../../docs/emulator.md#classic-esp32-devices)).
+- **`softap-status`: the device's own network is visible.** QEMU's output passes
+  through it, and it keeps the name of the network the device broadcasts, from the
   fork's `guest SoftAP` lines, in a file the `nmcli` stand-in and `wifi join` read.
 - **`gpio_in`: the button is not held down.** Run on its own, the fork drives no
   input pins, so they all read low. The S60's button (GPIO9) is active low, so
@@ -293,19 +293,19 @@ while the plug also tries the home one, on a link of its own with its own MAC
   one left behind. QEMU now exits on a reset and is started again, so every
   restart is a clean power-on. Nothing in the conversion depends on the
   reset type.
-- **Through the plug's board.** QEMU is started by `board.py`, which serves
-  its serial ports and its power meter ([below](#the-plugs-board-boardpy)).
-- **Only ARP requests for the plug reach it** (a `tc` filter on `tap0`, in
-  `entrypoint.sh`). When the plug does not answer, the conversion tool looks
+- **Through the device's board.** QEMU is started by `board.py`, which serves
+  its serial ports and its power meter ([below](#the-devices-board-boardpy)).
+- **Only ARP requests for the device reach it** (a `tc` filter on `tap0`, in
+  `entrypoint.sh`). When the device does not answer, the conversion tool looks
   for it by pinging every address on the network, and that burst of ARP
-  requests stops the fork's Wi-Fi receiving for good: the plug keeps sending,
-  but hears nothing until it is restarted. A real plug ignores requests for
+  requests stops the fork's Wi-Fi receiving for good: the device keeps sending,
+  but hears nothing until it is restarted. A real device ignores requests for
   other addresses anyway.
 
-### The plug's board (`board.py`)
+### The device's board (`board.py`)
 
-A plug's power meter is a chip on its board, beside the ESP32: QEMU has none,
-so `board.py` is that board. `plug-supervisor` starts QEMU through it, from
+A device's power meter is a chip on its board, beside the ESP32: QEMU has none,
+so `board.py` is that board. `device-supervisor` starts QEMU through it, from
 the checkout's copy in the container (`/work`), as the redactor and the cloud
 stub are run: changing it needs no new image. It gives QEMU every UART as a
 socket it serves (`-chardev socket` and `-serial chardev:`), and a QMP monitor
@@ -314,7 +314,7 @@ firmware's reads would: the output and output-enable registers every 100 ms,
 the GPIO matrix's routing every second.
 
 - **The wiring is the kind's Tasmota template** (`kinds.py`; `emu.sh` passes
-  the kind it finds by the plug's product model as `PLUG_KIND`): Relay1 and
+  the kind it finds by the device's product model as `DEVICE_KIND`): Relay1 and
   Relay2, and the meter's pins, CSE7766 RX or CSE7761 TX and RX. A UART hears
   the meter when its RX signal takes the meter's output pin - through the
   matrix, or that pin's IOMUX function (U2RXD's is GPIO16, the POW Elite's
@@ -364,8 +364,8 @@ the GPIO matrix's routing every second.
 Tasmota serves every page except `/` only when the `Referer` names its own
 address - a guard against other sites driving it. A browser at
 localhost:8080 names localhost, so a plain port forward got empty replies on
-every menu. The forward rewrites `Host`, `Referer` and `Origin` to the plug's
-address, sends a redirect that names the plug back through localhost, and
+every menu. The forward rewrites `Host`, `Referer` and `Origin` to the device's
+address, sends a redirect that names the device back through localhost, and
 gives each request its own connection.
 
 ## What a classic ESP32 needed
@@ -405,7 +405,7 @@ Each of these is general, not per device:
   (`hbreak`): the bootloader overwrites software breakpoints in IRAM when it
   loads the app. For the bridge's symbols, build its ELF with
   `pio run -e autoflash-bridge` in `archive/bridge`.
-- **gdb on a plug already running**, with no restart: start QEMU's gdb server
+- **gdb on a device already running**, with no restart: start QEMU's gdb server
   through its monitor, and reach it through the container, as its network is not
   the host's:
 

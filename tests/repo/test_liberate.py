@@ -1,6 +1,6 @@
 """liberate.sh and liberate.ps1, the README's one line: the latest release is
 fetched, updated in place and started, and nothing of the user's - above
-all captures/, with the plugs' Sonoff backups - is ever touched. Against a
+all captures/, with the devices' Sonoff backups - is ever touched. Against a
 GitHub of their own, on a port it picked. And start.cmd, which starts it on
 Windows as liberate.ps1 does."""
 
@@ -152,7 +152,7 @@ class LiberateTests:
         self.github.releases = {"v1.0.0": release({"tools/old.py": "old", "tools/gone/deeper/x.py": "x",
                                            "docs/a.md": "a", "docs/b.md": "b"})}
         self.assertEqual(self.run_script().returncode, 0)
-        backup = self.folder / "captures/plugs/12-34-56-ab-cd-ef/sonoff-backup/flash.bin"
+        backup = self.folder / "captures/devices/12-34-56-ab-cd-ef/sonoff-backup/flash.bin"
         backup.parent.mkdir(parents=True)
         backup.write_text("irreplaceable", encoding="utf-8")
         (self.folder / ".python").mkdir()

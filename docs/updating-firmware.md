@@ -1,6 +1,6 @@
 # Updating the firmware the tool installs
 
-A converted plug ends on official Tasmota, OpenBeken or this project's
+A converted device ends on official Tasmota, OpenBeken or this project's
 ESPHome. Tasmota and ESPHome follow their projects' releases, a little
 behind: the repository's `firmware-update` workflow takes each once it has
 settled, tests it and releases it, by itself ([below](#by-itself)). Doing it
@@ -8,7 +8,7 @@ by hand takes the same steps ([after that](#by-hand)).
 
 ## What follows a release, and what does not
 
-| Firmware | On the plug | Follows | Pinned in |
+| Firmware | On the device | Follows | Pinned in |
 |---|---|---|---|
 | Official Tasmota: `tasmota32c3.bin`, `tasmota32c3-safeboot.bin` (and `tasmota32c3.factory.bin`, for its partition table); the classic ESP32's `tasmota32*.bin`, at the same release | for good | every Tasmota release | [`firmware.json`](../artifacts/firmware.json) |
 | ESPHome for each device (`artifacts/esphome-*`) | for good | every ESPHome release, every device's built together (`esphome --every-device`) | `firmware.json` |
@@ -17,33 +17,33 @@ by hand takes the same steps ([after that](#by-hand)).
 | OpenBeken for each Beken device (`artifacts/openbeken-*.rbl`) | for good | every OpenBeken release, every Beken device's built together (`openbeken --every-device`), its six scenarios run | `firmware.json` |
 | The Berry Tasmota, the recovery Safeboot, the settings template, the bridge | minutes | no | [`artifacts/README.md`](../artifacts/README.md) says where, and how each is changed |
 
-A new pin reaches plugs already converted. Running the tool on a plug with an
-earlier release of its firmware offers this one as an update, and the plug
-takes it, so treat a pin bump as a change to plugs in use as well as to new
+A new pin reaches devices already converted. Running the tool on a device with an
+earlier release of its firmware offers this one as an update, and the device
+takes it, so treat a pin bump as a change to devices in use as well as to new
 conversions ([Changing firmware later](what-happens.md#changing-firmware-later)).
-A plug adopted into Home Assistant keeps to the release it names, and the tool
+A device adopted into Home Assistant keeps to the release it names, and the tool
 leaves it alone: `firmware.json` records when each published ESPHome image was
-built (`built`, `earlier_builds`), and the tool updates only a plug that reports
+built (`built`, `earlier_builds`), and the tool updates only a device that reports
 one of those times.
 
 The official Tasmota files are not kept in this repository: each run downloads
 them from the release's own page on GitHub and checks them against
-`firmware.json`. The ESPHome builds are kept in it: the run writes the plug's
+`firmware.json`. The ESPHome builds are kept in it: the run writes the device's
 Wi-Fi into a copy of each.
 
 `firmware.json` keeps both chip families alike, `espressif` and `beken`, each
 by what a pin belongs to and then by firmware. A chip (`espressif.esp32c3`,
-`espressif.esp32`) holds what every plug on it shares: official Tasmota, the
+`espressif.esp32`) holds what every device on it shares: official Tasmota, the
 mover and its bootloader, the bridge, the recovery Safeboot. A device
 (`espressif.sonoff-s60`, `beken.sonoff-s61`) holds its own: its ESPHome, its
 OpenBeken, its partition table. `beken.readout` is the OpenBeken a
 [readout](readouts.md) installs. `tests/repo/test_firmware_pins.py` holds the
 two families to that one shape.
 
-**The interim firmware** - everything a plug runs only part way through a
+**The interim firmware** - everything a device runs only part way through a
 conversion - stays as it is. Each has been through every fault the suite puts
 in its way, a change to one means all of that again, and none of it is left
-on a plug. The Tasmota they are made from is `INTERIM_TASMOTA_COMMIT` in
+on a device. The Tasmota they are made from is `INTERIM_TASMOTA_COMMIT` in
 `tools/espressif/safeboot/safeboot_migration.py`, which need not be the official release's: the
 recovery Safeboot saves the Wi-Fi in its release's settings record, and the
 official release takes that record and moves it on to its own layout, as
@@ -58,14 +58,14 @@ ESP32-C3's, wrapped for the S60's stock updater, and `esp32 bridge` the classic
 ESP32's. Each builds in Docker, and replaces the file before it in `artifacts/`.
 
 **The bootloader** is written in about a second, and a power cut in that
-second leaves a plug that has to be opened - the only step of a conversion
+second leaves a device that has to be opened - the only step of a conversion
 that can. So a new ESPHome release brings a new app, and the published
 bootloader stays, unless the new one fixes something an S60 needs (an ESP32-C3
 with no secure boot or flash encryption); the bootloader of ESP-IDF 5.x starts
 the apps of later 5.x releases. Replacing it is a decision of its own:
-`--new-bootloader`, then the whole fault suite and real plugs.
+`--new-bootloader`, then the whole fault suite and real devices.
 
-**A file's name says what it belongs to**: a chip's, shared by every plug on
+**A file's name says what it belongs to**: a chip's, shared by every device on
 it, names the chip (`autoflash-mover-esp32-1.1.0.bin`), and a device's own
 names the device (`esphome-sonoff-s60-imprintable-*.bin`). The ESP32-C3's
 mover, bootloader, bridge, recovery Safeboot and settings template were
@@ -203,7 +203,7 @@ builds:
   second build on ESPHome 2026.10.0, the number starting again at 1 on a new
   release), its `package_import_url` is set to the release it will
   come out in, the top of `CHANGELOG.md` or the next after it, and it is built.
-  A plug adopted into Home Assistant keeps to that release until its owner
+  A device adopted into Home Assistant keeps to that release until its owner
   names a newer one, and the release workflow refuses a version whose configs
   name a release that is not out: rebuild them if the version changes first;
 - the app is an ESP32-C3 app that fits Sonoff's slot, says it is that ESPHome
@@ -227,32 +227,32 @@ that made the published one, it comes out the same.
 #### For a Beken device
 
 ```sh
-python3 tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-s61
+python3 tools/repo/update_firmware.py esphome 2026.10.0 --device sonoff-s61
 ```
 
-`esphome --plug sonoff-s61` builds `devices/sonoff-s61/esphome.yaml` in
+`esphome --device sonoff-s61` builds `devices/sonoff-s61/esphome.yaml` in
 ESPHome's image for the release, as the S60's is built, and takes
 `image_bk7238_app.ota.rbl`: checked as an rt_ota app that fits the slot, says
 its version, project and ESPHome release, and has the Wi-Fi action in it,
 with the build's download partition where the stock bootloader looks. Its
-first boot reads the plug's Wi-Fi and calibration from the stock store, so
+first boot reads the device's Wi-Fi and calibration from the stock store, so
 the image holds no placeholders and nothing is written into it. The config's
 version is raised and the image published as the S60's is, with its docs. Its
-images are pinned under `beken` in `firmware.json`, by plug, as the Espressif
+images are pinned under `beken` in `firmware.json`, by device, as the Espressif
 devices' are under `espressif`; the Basic Gen5's
 are built the same way, from `devices/sonoff-basic-1gs/`
-(`--plug sonoff-basic-1gs`).
+(`--device sonoff-basic-1gs`).
 
 ### 3. OpenBeken
 
-OpenBeken is built for the Beken devices only: an rt_ota image the plug's stock
+OpenBeken is built for the Beken devices only: an rt_ota image the device's stock
 bootloader applies from its download slot
 ([devices/sonoff-s61/](../devices/sonoff-s61/README.md)), pinned under `beken` in
-`firmware.json`, by plug.
+`firmware.json`, by device.
 
-A change to what the OpenBeken driver does on first boot reaches only plugs
-converted after it: an updated plug keeps its settings, so the import does not
-run again. A fix that updated plugs need goes in what the driver does on every
+A change to what the OpenBeken driver does on first boot reaches only devices
+converted after it: an updated device keeps its settings, so the import does not
+run again. A fix that updated devices need goes in what the driver does on every
 start ([the driver's notes](../tools/beken/openbeken/README.md#updating)).
 
 ```sh
@@ -267,7 +267,7 @@ SDK, applies this project's patches
 offered upstream, and the hook before an OTA's restart the driver uses),
 adds this project's OpenBeken driver
 (`tools/beken/openbeken/drv_autoflash.c` and `drv_autoflash.h`) and the
-plug's table for it (`devices/sonoff-s61/drv_autoflash_sonoff_s61.c`) to
+device's table for it (`devices/sonoff-s61/drv_autoflash_sonoff_s61.c`) to
 the build and to start-up as [its notes](../tools/beken/openbeken/README.md)
 say, and builds `OpenBK7238` with `FLASH_SIZE=4M` in this project's build
 image (`tools/beken/openbeken/build.Dockerfile`, Ubuntu 24.04: the SDK's own
@@ -321,23 +321,23 @@ python3 tests/run.py
 
 **The emulator**, from just before the final firmware: nothing before it
 changes, and it was tested by the fault suite when it last did. Two public
-plugs ([emulator.md](emulator.md#public-plugs)) - one after E3 on the way to
+devices ([emulator.md](emulator.md#public-devices)) - one after E3 on the way to
 Tasmota, one after D5 on the way to ESPHome - are taken to their final
-firmware (F2 to H1, and I1 and I2), and the plugs that makes are then taken
+firmware (F2 to H1, and I1 and I2), and the devices that makes are then taken
 each to the other (L1 to I2, and X1 to H1): every step that writes, starts,
 checks or runs code on the final firmware, in four or five minutes on two
 emulators - one for each way, each going on to its second run as soon as its
-first is done. The plugs hold nothing of Sonoff's, so no cloud is needed, real or
+first is done. The devices hold nothing of Sonoff's, so no cloud is needed, real or
 stub, nor an account:
 
 ```sh
-python -I tools/espressif/emulator/public_plugs.py test
+python -I tools/espressif/emulator/public_devices.py test
 ```
 
 All four must convert. The repository's `emulator-check` workflow runs the
 same for each device a change could affect (`tools/repo/emulator_check.py`, which
 has every device the tool converts), with the unit tests, on GitHub's own runners, from the published public
-plugs and emulator image, whenever the tool or its firmware changes. The faults are not put in their way: they test the
+devices and emulator image, whenever the tool or its firmware changes. The faults are not put in their way: they test the
 tool's own recovery, which a new final firmware does not change. Where the
 recovery leans on the firmware's own behaviour, a major release (16 to 17,
 say) or release notes touching its Wi-Fi, settings, updates or Berry, run
@@ -352,11 +352,11 @@ it keeps its settings and its Wi-Fi's (`0x3e1000`, and its flash variables
 at `0x1e5000`), how its HTTP OTA ends in a restart. A commit can move either
 with the build still passing and the image still holding each command, and
 the interim firmware would then leave its settings behind for ESPHome or a
-later OpenBeken to find. The starting plugs are made again with the new
+later OpenBeken to find. The starting devices are made again with the new
 image, then six scenarios run, each doing once something the driver or the
 hook does - the Wi-Fi taken from Sonoff's firmware, the interim firmware
 named, fetching ESPHome and erasing itself, kept as OpenBeken, each way back
-to Sonoff's firmware - where a pass also checks the names the plug asked
+to Sonoff's firmware - where a pass also checks the names the device asked
 DHCP for and, after ESPHome, that the interim's settings are gone
 ([testing.md](testing.md#the-beken-fault-suite)):
 
@@ -370,9 +370,9 @@ AUTOFLASH_BEKEN_EMU_SUITE_DIR=captures/emulation/beken/suite-openbeken AUTOFLASH
 
 All six must pass.
 
-**A real plug**, converted from Sonoff to each firmware and between them,
+**A real device**, converted from Sonoff to each firmware and between them,
 before the release: an emulator does not show real flash, radios or timings
-([testing.md](testing.md#real-plugs)).
+([testing.md](testing.md#real-devices)).
 
 ### 6. Release
 

@@ -21,7 +21,7 @@ FIRMWARE = json.loads((ROOT / "artifacts" / "firmware.json").read_text(encoding=
 
 @dataclass(frozen=True)
 class Chip:
-    key: str             # as kinds.Kind.chip, and tasmota.arch() on the plug
+    key: str             # as kinds.Kind.chip, and tasmota.arch() on the device
     label: str           # what a person calls it
     chip_id: int         # in an ESP image's header
     bootloader_at: int   # where its ROM looks for the bootloader
@@ -35,7 +35,7 @@ class Chip:
 
     @property
     def pins(self) -> dict[str, Any]:
-        """What firmware.json pins for it: what every plug on it shares."""
+        """What firmware.json pins for it: what every device on it shares."""
         return FIRMWARE["espressif"].get(self.key, {})
 
     def pin(self, name: str) -> dict[str, Any]:
@@ -64,7 +64,7 @@ class Chip:
 
     @property
     def interim_name(self) -> str:
-        """The Tasmota a plug runs part way through, in the bundle."""
+        """The Tasmota a device runs part way through, in the bundle."""
         return f"{self.tasmota_prefix}-{self.interim_build}.bin"
 
 

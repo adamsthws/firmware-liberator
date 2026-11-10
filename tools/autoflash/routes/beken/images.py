@@ -1,9 +1,9 @@
-"""The firmware a Beken plug is given: the OpenBeken and ESPHome images
-published in artifacts/ and pinned in firmware.json under "beken", by plug,
-and Sonoff's own firmware for a plug going back, made from the public dump
+"""The firmware a Beken device is given: the OpenBeken and ESPHome images
+published in artifacts/ and pinned in firmware.json under "beken", by device,
+and Sonoff's own firmware for a device going back, made from the public dump
 of its stock flash when it is needed - never published here (AGENTS.md).
 
-Each is an rt_ota image the plug's stock bootloader applies from its download
+Each is an rt_ota image the device's stock bootloader applies from its download
 slot (tools/beken/rbl.py); the stock firmware's updater takes one wrapped in a
 FOTA container (tools/beken/fota_wrap.py), OpenBeken fetches one by URL, and
 an ESPHome takes one inside a UF2 (tools/beken/uf2.py).
@@ -31,14 +31,14 @@ if TYPE_CHECKING:
 PINS = json.loads((ROOT / "artifacts" / "firmware.json").read_text(encoding="utf-8")).get("beken", {})
 # The version the FOTA container says it is (the S60's bridge is sent the same way).
 FOTA_VERSION = fota_wrap.ANNOUNCED_VERSION
-# The firmware a run to these installs from Sonoff's first, to back the plug
+# The firmware a run to these installs from Sonoff's first, to back the device
 # up through (only OpenBeken reads it out), then has fetch the one chosen.
 # The person, who did not choose it, is told of the interim firmware alone.
 INTERIM = {"esphome": "openbeken"}
 INTERIM_NAME = "the interim firmware"
 # Testing only (run --simulate-bad-image [STEP[:N]]): the step whose image is
 # sent spoilt, the first N times a run sends it (once, without N) - one byte of
-# the RBL's body changed, so the plug fetches it whole and an update's own CRC
+# the RBL's body changed, so the device fetches it whole and an update's own CRC
 # (made after) passes, but its bootloader, checking the body's CRC in the RBL's
 # header, refuses to install it.
 SPOIL_STEP: str | None = None
@@ -146,7 +146,7 @@ def pin(kind: kinds.Kind, firmware: str) -> dict:
 
 
 def image(ctx: Context, firmware: str) -> tuple[bytes, str]:
-    """The published image of `firmware` for the run's kind of plug, checked
+    """The published image of `firmware` for the run's kind of device, checked
     against its pin - or, for ESPHome, one built by hand (--esphome), checked
     as an rt_ota app.  The image and its version."""
     kind = kinds.of_run(ctx.state)
@@ -157,7 +157,7 @@ def image(ctx: Context, firmware: str) -> tuple[bytes, str]:
             header = rbl.header(data)
             rbl.unpack(data)
         except rbl.RblError as exc:
-            raise Abort(f"{own} is not an rt_ota image for the plug: {exc}") from exc
+            raise Abort(f"{own} is not an rt_ota image for the device: {exc}") from exc
         if header.name != "app":
             raise Abort(f"{own} is an rt_ota {header.name!r} image, not an app")
         output.say(f"Using the ESPHome built by hand at {own} ({header.version}).")
@@ -174,8 +174,8 @@ def image(ctx: Context, firmware: str) -> tuple[bytes, str]:
 
 
 def stock_rbl(kind: kinds.Kind) -> tuple[bytes, str]:
-    """Sonoff's own firmware for a plug of `kind`, as the rt_ota image its
-    bootloader applies: made from the public dump of a stock plug, fetched
+    """Sonoff's own firmware for a device of `kind`, as the rt_ota image its
+    bootloader applies: made from the public dump of a stock device, fetched
     once (DUMPS) and checked against its pinned hash - or, for a kind with
     none, its official update file's.  The image and Sonoff's version of it."""
     if kind.key in OFFICIAL_FILES:

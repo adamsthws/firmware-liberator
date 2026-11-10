@@ -1,14 +1,14 @@
 """Make the emulated S61 dial the eWeLink (CoolKit) cloud.
 
 This is the whole provisioning outcome, reproduced on the radio-less emulator: the
-plug joins our AP and then performs the real CoolKit cloud handshake
+device joins our AP and then performs the real CoolKit cloud handshake
 (`GET /dispatch/device` over TCP to its dispatch server), steerable at any server
 we choose.
 
 Two things have to be synthesised, because the emulator has no BLE radio:
 
 1. Wi-Fi credentials. The firmware reads `wifi-ssid`/`wifi-pass` from EasyFlash
-   (`ef_get_env_blob`); hooking that call feeds our SSID/pass, so the plug
+   (`ef_get_env_blob`); hooking that call feeds our SSID/pass, so the device
    associates (WPA2) and gets a DHCP lease. (Same technique as `seed_join.py`.)
 
 2. The pairing-success trigger. The cloud dial is gated on a chain that normally
@@ -37,7 +37,7 @@ factory placeholder in place.
 Each place named here is found in the firmware itself (stock_points.py).
 
 Owner's own account only: never point this at the real eWeLink cloud with anyone's
-account or plug but your own. The default dials a local stub and leaves the host.
+account or device but your own. The default dials a local stub and leaves the host.
 
 Verified 2026-10-27: the default dials our AP gateway `192.168.1.1:80`; `DISPATCH=`
 leaves the factory `8.8.8.8:80`. Either way the netstack logs
@@ -184,5 +184,5 @@ print("  CoolKit dispatch requests (%d):" % len(dials), flush=True)
 for t, s in dials[:12]:
     print("    %5.1fs  %s" % (t, s[:120]), flush=True)
 ok = ip not in (None, b"\x00\x00\x00\x00", b"\xff\xff\xff\xff") and len(dials) > 0
-print("  %s: the plug joined our AP and dialled the eWeLink cloud (GET /dispatch/device)." % ("PASS" if ok else "FAIL"), flush=True)
+print("  %s: the device joined our AP and dialled the eWeLink cloud (GET /dispatch/device)." % ("PASS" if ok else "FAIL"), flush=True)
 os._exit(0)

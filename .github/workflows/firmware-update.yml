@@ -267,7 +267,7 @@ jobs:
             echo
             echo '<details><summary>update_firmware.py</summary>'; echo; echo '```'; cat update.txt; echo '```'; echo '</details>'
             echo
-            echo "- [ ] Converted a real plug with it (optional: the workflow merges without)"
+            echo "- [ ] Converted a real device with it (optional: the workflow merges without)"
           } > body.md
           cat body.md >> "$GITHUB_STEP_SUMMARY"
           if [ "$DRY_RUN" = true ]; then

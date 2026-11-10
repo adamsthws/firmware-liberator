@@ -8,7 +8,7 @@ from unittest import mock
 
 class StockHooksTests(unittest.TestCase):
     """The help Sonoff's firmware is given to come online is at the places found
-    in it: with another firmware started there (plug.py turns it off), none of
+    in it: with another firmware started there (device.py turns it off), none of
     it may touch the CPU, or it would corrupt that firmware's run."""
 
     # As found in S61 1.0.2.

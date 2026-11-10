@@ -25,7 +25,7 @@ sh start.sh readout
 ```
 
 On Windows, run `start.cmd readout`. If your account holds more than one
-device, the tool asks which; `--plug-ip <address>` picks it beforehand.
+device, the tool asks which; `--device-ip <address>` picks it beforehand.
 
 ### Every device at once
 

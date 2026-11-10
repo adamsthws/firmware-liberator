@@ -1,5 +1,5 @@
-"""A plug on Tasmota, or its startup firmware, as tools/autoflash/device.py
-asks it things: requests held by a busy plug, uploads refused, its web
+"""A device on Tasmota, or its startup firmware, as tools/autoflash/device.py
+asks it things: requests held by a busy device, uploads refused, its web
 password, its flash read, its settings backed up, and its restarts seen."""
 import base64
 import http.server
@@ -20,7 +20,7 @@ from tools.autoflash.device import Device, DeviceError
 
 
 class BusyTasmota(http.server.ThreadingHTTPServer):
-    """Answers as a Tasmota plug does - /slow only after `delay` seconds, as
+    """Answers as a Tasmota device does - /slow only after `delay` seconds, as
     while Berry runs, or once `release` is set - and notes whether the client
     closed a request first."""
     daemon_threads = True
@@ -66,7 +66,7 @@ class BusyTasmotaHandler(http.server.BaseHTTPRequestHandler):
             self.reply(200, b"<title>Tasmota</title>")
 
 
-# Long enough that a plug told to answer late answers only once released: a
+# Long enough that a device told to answer late answers only once released: a
 # test that checks what happens before the answer does not race it.
 NOT_YET = 60
 
@@ -94,31 +94,31 @@ class HeldRequestTests(unittest.TestCase):
         self.server = server
         return Device(f"127.0.0.1:{server.server_address[1]}")
 
-    def test_a_request_the_plug_has_not_answered_is_held_open_not_closed(self):
-        # Closing it is what leaves a busy plug's web server stuck for good.
-        plug = self.start(delay=NOT_YET)
+    def test_a_request_the_device_has_not_answered_is_held_open_not_closed(self):
+        # Closing it is what leaves a busy device's web server stuck for good.
+        client = self.start(delay=NOT_YET)
         with self.assertRaises(TimeoutError):
-            plug._get("/slow", {}, timeout=0.3)
+            client._get("/slow", {}, timeout=0.3)
         self.assertEqual(device.held_requests(), 1)
         self.server.release.set()
         self.assertTrue(self.server.answered.wait(10))
         self.assertTrue(held_ends(), "the answered request was still held")
         self.assertEqual(self.server.closed_unanswered, [False])
 
-    def test_a_plug_with_requests_held_is_not_sent_more_than_a_few(self):
-        plug = self.start(delay=NOT_YET)
+    def test_a_device_with_requests_held_is_not_sent_more_than_a_few(self):
+        client = self.start(delay=NOT_YET)
         for _ in range(device.MOST_HELD + 2):
             with self.assertRaises(TimeoutError):
-                plug._get("/slow", {}, timeout=0.2)
-        self.assertEqual(device.held_requests(plug.host), device.MOST_HELD)
+                client._get("/slow", {}, timeout=0.2)
+        self.assertEqual(device.held_requests(client.host), device.MOST_HELD)
         self.server.release.set()
         self.assertTrue(held_ends(), "the answered requests were still held")
         self.assertEqual(self.server.closed_unanswered, [False] * device.MOST_HELD)
-        self.assertEqual(plug._get("/slow", {}, timeout=5), "late")  # answered: sent again
+        self.assertEqual(client._get("/slow", {}, timeout=5), "late")  # answered: sent again
 
-    def test_a_held_request_is_kept_alive_and_ends_when_the_plug_restarts(self):
-        # The commit restarts the plug, cutting off the reply to the request that
-        # started it: that hold must end, or it counts against the plug for ever.
+    def test_a_held_request_is_kept_alive_and_ends_when_the_device_restarts(self):
+        # The commit restarts the device, cutting off the reply to the request that
+        # started it: that hold must end, or it counts against the device for ever.
         import struct
         listener = socket.socket()
         listener.bind(("127.0.0.1", 0))
@@ -126,39 +126,39 @@ class HeldRequestTests(unittest.TestCase):
         self.addCleanup(listener.close)
         accepted = []
         threading.Thread(target=lambda: accepted.append(listener.accept()[0]), daemon=True).start()
-        plug = Device(f"127.0.0.1:{listener.getsockname()[1]}")
+        client = Device(f"127.0.0.1:{listener.getsockname()[1]}")
         with mock.patch.object(device, "_keep_alive", wraps=device._keep_alive) as kept:
             with self.assertRaises(TimeoutError):
-                plug._get("/cm", {"cmnd": "Br autoflash_busy(600000)"}, timeout=0.3)
+                client._get("/cm", {"cmnd": "Br autoflash_busy(600000)"}, timeout=0.3)
         kept.assert_called_once()
         self.assertTrue(kept.call_args.args[0].getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE))
-        self.assertEqual(device.held_requests(plug.host), 1)
-        # A restarted plug refuses the old connection: here, reset at once.
+        self.assertEqual(device.held_requests(client.host), 1)
+        # A restarted device refuses the old connection: here, reset at once.
         connection = accepted[0]
         connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
         connection.close()
         self.assertTrue(held_ends(), "the cut-off request was still held")
 
     def test_the_web_page_check_still_says_no_at_once(self):
-        plug = self.start(delay=NOT_YET)
+        client = self.start(delay=NOT_YET)
         self.server.slow_page = True
-        self.assertFalse(plug.answers(timeout=0.3))
-        self.assertFalse(self.server.answered.is_set())  # no, before the plug answered
+        self.assertFalse(client.answers(timeout=0.3))
+        self.assertFalse(self.server.answered.is_set())  # no, before the device answered
         self.server.release.set()
         self.assertTrue(self.server.answered.wait(10))
 
     def test_errors_reach_the_caller_as_before(self):
-        plug = self.start()
+        client = self.start()
         with self.assertRaises(urllib.error.HTTPError) as caught:
-            plug._get("/missing", {}, timeout=5)
+            client._get("/missing", {}, timeout=5)
         self.assertEqual(caught.exception.code, 404)
         self.assertEqual(caught.exception.read(), b"not found")
-        self.assertTrue(plug.answers(timeout=5))  # any answer is an answer
-        self.assertEqual(plug.command("Status"), {"Status": {}})
+        self.assertTrue(client.answers(timeout=5))  # any answer is an answer
+        self.assertEqual(client.command("Status"), {"Status": {}})
 
     def test_a_redirect_is_followed(self):
-        plug = self.start()
-        self.assertEqual(plug._get("/moved", {}, timeout=5), '{"Status":{}}')
+        client = self.start()
+        self.assertEqual(client._get("/moved", {}, timeout=5), '{"Status":{}}')
 
     def test_nobody_there_is_a_url_error_and_nothing_is_held(self):
         with socket.socket() as spare:
@@ -182,7 +182,7 @@ class HeldRequestTests(unittest.TestCase):
 
 
 class BerryFireTests(unittest.TestCase):
-    """A phase that restarts the plug cuts its own reply off: that is no reply,
+    """A phase that restarts the device cuts its own reply off: that is no reply,
     not a crash (the E3 traceback on macOS)."""
 
     def test_a_reply_cut_off_is_no_reply(self):
@@ -206,8 +206,8 @@ class BerryFireTests(unittest.TestCase):
 class RebootDetectionTests(unittest.TestCase):
     """A restart soon after another must still be seen - the D4 hang."""
 
-    class Plug:
-        """Answers like a plug that reboots once, after `polls_until_reboot`."""
+    class Rebooting:
+        """Answers like a device that reboots once, after `polls_until_reboot`."""
 
         def __init__(self, uptime_before, uptime_after, reboots=True):
             from tools.autoflash.device import Device
@@ -240,22 +240,22 @@ class RebootDetectionTests(unittest.TestCase):
         def uptime(self):
             return self.uptime_after if self.polls > 4 and self.reboots else self.uptime_before + self.polls
 
-    def wait(self, plug, **kwargs):
+    def wait(self, client, **kwargs):
         import tools.autoflash.device as device_module
         with mock.patch.object(device_module.time, "sleep"):
-            return plug.device.wait_for_reboot(timeout=0.5, settle=0, **kwargs)
+            return client.device.wait_for_reboot(timeout=0.5, settle=0, **kwargs)
 
     def test_a_restart_with_higher_uptime_than_before_is_seen(self):
-        # D1 had just restarted the plug: uptime 15s before the upload, and by
+        # D1 had just restarted the device: uptime 15s before the upload, and by
         # the time it was back on Wi-Fi after the next restart, 40s.
-        plug = self.Plug(uptime_before=15, uptime_after=40)
-        self.wait(plug, started_at="2026-10-06T13:25:45#2", before=15)
+        client = self.Rebooting(uptime_before=15, uptime_after=40)
+        self.wait(client, started_at="2026-10-06T13:25:45#2", before=15)
 
     def test_no_restart_is_not_mistaken_for_one_just_because_uptime_is_low(self):
         from tools.autoflash.device import DeviceError
-        plug = self.Plug(uptime_before=15, uptime_after=0, reboots=False)
+        client = self.Rebooting(uptime_before=15, uptime_after=0, reboots=False)
         with self.assertRaises(DeviceError):
-            self.wait(plug, started_at="2026-10-06T13:25:45#2")
+            self.wait(client, started_at="2026-10-06T13:25:45#2")
 
     class Clock:
         """Time that passes only as the code under test sleeps."""
@@ -274,7 +274,7 @@ class RebootDetectionTests(unittest.TestCase):
         with mock.patch.object(device_module, "time", clock):
             return device.wait_for_reboot(timeout=60, settle=0, **kwargs)
 
-    def test_a_restart_answered_late_on_a_plug_with_no_clock_is_seen(self):
+    def test_a_restart_answered_late_on_a_device_with_no_clock_is_seen(self):
         # F4's Reset 4 at 10s of uptime, just as Tasmota counted the boot: with
         # no clock both boots read "#1", and the request the restart cut off
         # held the first answer back until the new boot was 14s up.
@@ -296,7 +296,7 @@ class RebootDetectionTests(unittest.TestCase):
 
         self.wait_on_clock(Fake("10.0.0.5"), clock, started_at="#1", before=10)
 
-    def test_a_plug_with_no_clock_that_does_not_restart_is_still_waited_for(self):
+    def test_a_device_with_no_clock_that_does_not_restart_is_still_waited_for(self):
         from tools.autoflash.device import Device, DeviceError
         clock = self.Clock()
         start = clock.now
@@ -336,10 +336,10 @@ class RebootDetectionTests(unittest.TestCase):
 class BootIdentityTests(unittest.TestCase):
     """started_at: Tasmota counts a boot once it has been up 10 s, so a count
     read before then is waited out - it went up by one in the same boot, and
-    an upload cut off was taken for one the plug took and booted."""
+    an upload cut off was taken for one the device took and booted."""
 
     def boots(self, *uptimes):
-        """What started_at says of a plug answering Status 1 with each uptime in
+        """What started_at says of a device answering Status 1 with each uptime in
         turn, its boot counted from 10 s on; and how long it waited."""
         answers = iter(uptimes)
         slept = []
@@ -349,10 +349,10 @@ class BootIdentityTests(unittest.TestCase):
             return {"StatusPRM": {"Uptime": f"0T00:00:{uptime:02d}", "StartupUTC": "",
                                   "BootCount": 3 if uptime >= 10 else 2}}
 
-        plug = Device("192.0.2.50")
-        with mock.patch.object(plug, "command", side_effect=command), \
+        client = Device("192.0.2.50")
+        with mock.patch.object(client, "command", side_effect=command), \
              mock.patch.object(device.time, "sleep", side_effect=slept.append):
-            return plug.started_at(), slept
+            return client.started_at(), slept
 
     def test_a_boot_not_counted_yet_is_waited_for(self):
         self.assertEqual(self.boots(9, 11), ("#3", [2]))
@@ -370,10 +370,10 @@ class AtNextSaveTests(unittest.TestCase):
 
     def test_the_commands_go_in_a_driver_for_save_before_restart(self):
         from tools.autoflash.device import Device
-        plug = Device("192.0.2.1")
+        client = Device("192.0.2.1")
         sent = []
-        plug.command = lambda c, timeout=None: sent.append(c) or {"Br": "nil" if len(sent) == 1 else "AutoflashAtSave"}
-        self.assertTrue(plug.at_next_save(["Hostname x", 'Template {"NAME":"S60"}']))
+        client.command = lambda c, timeout=None: sent.append(c) or {"Br": "nil" if len(sent) == 1 else "AutoflashAtSave"}
+        self.assertTrue(client.at_next_save(["Hostname x", 'Template {"NAME":"S60"}']))
         self.assertEqual(sent[1], "Br classname(autoflash_at_save)")
         self.assertTrue(sent[0].startswith("Br import global class AutoflashAtSave"))
         self.assertIn("def save_before_restart()", sent[0])
@@ -381,12 +381,12 @@ class AtNextSaveTests(unittest.TestCase):
 
     def test_a_firmware_without_berry_says_no(self):
         from tools.autoflash.device import Device
-        plug = Device("192.0.2.1")
-        plug.command = lambda c, timeout=None: {"Command": "Unknown"}
-        self.assertFalse(plug.at_next_save(["Hostname x"]))
+        client = Device("192.0.2.1")
+        client.command = lambda c, timeout=None: {"Command": "Unknown"}
+        self.assertFalse(client.at_next_save(["Hostname x"]))
         # And Berry that would not take it: its error, not the class, comes back.
-        plug.command = lambda c, timeout=None: {"Br": "[syntax_error] input:1: strict: ..."}
-        self.assertFalse(plug.at_next_save(["Hostname x"]))
+        client.command = lambda c, timeout=None: {"Br": "[syntax_error] input:1: strict: ..."}
+        self.assertFalse(client.at_next_save(["Hostname x"]))
 
     def test_a_quote_cannot_reach_the_berry(self):
         from tools.autoflash.device import Device
@@ -398,14 +398,14 @@ class AtNextSaveTests(unittest.TestCase):
         # the driver again: in the emulator, again and again until Tasmota's
         # stack overflowed and it restarted unsaved, its settings lost.
         from tools.autoflash.device import Device
-        plug = Device("192.0.2.1")
+        client = Device("192.0.2.1")
         sent = []
-        plug.command = lambda c, timeout=None: sent.append(c) or {"Br": "AutoflashAtSave"}
-        plug.at_next_save(["Hostname x"])
+        client.command = lambda c, timeout=None: sent.append(c) or {"Br": "AutoflashAtSave"}
+        client.at_next_save(["Hostname x"])
         self.assertIn("if self.done return end self.done=true", sent[0])
         for command in ("SaveData 1", "Backlog Hostname x; Module 0", "Restart 1", "Reset 4"):
             with self.assertRaises(ValueError):
-                plug.at_next_save([command])
+                client.at_next_save([command])
 
 
 class FakeTasmota(http.server.ThreadingHTTPServer):
@@ -436,7 +436,7 @@ class FakeTasmotaHandler(http.server.BaseHTTPRequestHandler):
             self.reply(b"BACKUP")
         elif path == "/cs":
             server.referer = self.headers.get("Referer")
-            # As a real plug frames it: "<index>}1<reset>}1<lines>}1".
+            # As a real device frames it: "<index>}1<reset>}1<lines>}1".
             self.reply(b"47}11}100:00:00.255 Autoflash recovery Wi-Fi defaults active\n"
                        b"00:00:00.316 Autoflash recovery: Wi-Fi settings saved for the next firmware}1")
         else:
@@ -470,7 +470,7 @@ class SettingsBackupTests(unittest.TestCase):
         self.assertTrue(self.server.referer)  # without one the page closes the connection
 
     def test_answering_is_checked_without_a_console_command(self):
-        # A command's output would push the plug's own last words out of its
+        # A command's output would push the device's own last words out of its
         # short console log; the main page leaves nothing there.
         self.assertTrue(self.device.answers())
         self.assertFalse(Device("127.0.0.1:1").answers(timeout=0.5))
@@ -504,20 +504,20 @@ class UploadRefusalTests(unittest.TestCase):
 
     def test_a_refused_upload_raises(self):
         from unittest import mock
-        plug = Device("192.0.2.1")
-        with mock.patch.object(plug, "_get"), \
-             mock.patch.object(plug, "_request", return_value=REFUSED_PAGE.encode()):
+        client = Device("192.0.2.1")
+        with mock.patch.object(client, "_get"), \
+             mock.patch.object(client, "_request", return_value=REFUSED_PAGE.encode()):
             with self.assertRaises(device.UploadRefused) as raised:
-                plug._upload("/up", "tasmota32c3.bin", b"\xe9" * 16, 10)
+                client._upload("/up", "tasmota32c3.bin", b"\xe9" * 16, 10)
         self.assertEqual(raised.exception.reason, "Not enough space")
         self.assertIsInstance(raised.exception, DeviceError)
 
     def test_a_taken_upload_returns_its_page(self):
         from unittest import mock
-        plug = Device("192.0.2.1")
-        with mock.patch.object(plug, "_get"), \
-             mock.patch.object(plug, "_request", return_value=TAKEN_PAGE.encode()):
-            self.assertIn("Successful", plug._upload("/up", "tasmota32c3.bin", b"\xe9" * 16, 10))
+        client = Device("192.0.2.1")
+        with mock.patch.object(client, "_get"), \
+             mock.patch.object(client, "_request", return_value=TAKEN_PAGE.encode()):
+            self.assertIn("Successful", client._upload("/up", "tasmota32c3.bin", b"\xe9" * 16, 10))
 
 
 class VersionFromPageTests(unittest.TestCase):
@@ -526,10 +526,10 @@ class VersionFromPageTests(unittest.TestCase):
 
     def version(self, footer):
         from unittest import mock
-        plug = Device("192.0.2.1")
+        client = Device("192.0.2.1")
         page = f"<h3>SAFEBOOT</h3>...<div style='text-align:right;font-size:11px;'><hr/>{footer}</div>"
-        with mock.patch.object(plug, "_get", return_value=page):
-            return plug.version_from_page()
+        with mock.patch.object(client, "_get", return_value=page):
+            return client.version_from_page()
 
     def test_tasmotas_own(self):
         self.assertEqual(self.version("<a href='https://bit.ly/tasmota' target='_blank'>Tasmota 15.6.0 "
@@ -548,9 +548,9 @@ class StartAppTests(unittest.TestCase):
 
     def test_the_switch_its_page_has(self):
         from unittest import mock
-        plug = Device("192.0.2.1")
-        with mock.patch.object(plug, "_get", return_value="false") as get:
-            self.assertEqual(plug.start_app(), "false")
+        client = Device("192.0.2.1")
+        with mock.patch.object(client, "_get", return_value="false") as get:
+            self.assertEqual(client.start_app(), "false")
         self.assertEqual(get.call_args.args[:2], ("/u4", {"u4": "ota", "api": ""}))
 
 
@@ -603,19 +603,19 @@ class LockedTasmotaHandler(BusyTasmotaHandler):
 
 
 class WebPasswordTests(unittest.TestCase):
-    """A plug on Tasmota with a web password: given it, every page is
-    reached; without it, the plug says so, in words saying what to do."""
+    """A device on Tasmota with a web password: given it, every page is
+    reached; without it, the device says so, in words saying what to do."""
 
     def setUp(self):
-        self.plug = LockedTasmota()
-        self.addCleanup(self.plug.stop)
+        self.client = LockedTasmota()
+        self.addCleanup(self.client.stop)
 
     def test_it_says_when_it_wants_one_and_runs_nothing_to_say_it(self):
-        self.assertTrue(Device(self.plug.host).wants_password())
-        self.assertTrue(Device(self.plug.host, password="not-it-9").wants_password())
-        self.assertFalse(Device(self.plug.host, password=LockedTasmota.PASSWORD).wants_password())
-        self.assertEqual({path.partition("?")[0] for path, _ in self.plug.seen}, {"/cm"})
-        self.assertFalse([path for path, _ in self.plug.seen if "cmnd=" in path])
+        self.assertTrue(Device(self.client.host).wants_password())
+        self.assertTrue(Device(self.client.host, password="not-it-9").wants_password())
+        self.assertFalse(Device(self.client.host, password=LockedTasmota.PASSWORD).wants_password())
+        self.assertEqual({path.partition("?")[0] for path, _ in self.client.seen}, {"/cm"})
+        self.assertFalse([path for path, _ in self.client.seen if "cmnd=" in path])
 
     def test_nobody_answering_is_neither(self):
         with socket.socket() as spare:
@@ -626,24 +626,24 @@ class WebPasswordTests(unittest.TestCase):
 
     def test_a_command_refused_for_it_says_how_to_give_it(self):
         with self.assertRaisesRegex(device.NeedsPassword, "not given: give it with --web-password"):
-            Device(self.plug.host).command("Status 0")
+            Device(self.client.host).command("Status 0")
         with self.assertRaisesRegex(device.NeedsPassword, "the one given is not it"):
-            Device(self.plug.host, password="not-it-9").command("Status 0")
+            Device(self.client.host, password="not-it-9").command("Status 0")
 
     def test_given_it_every_page_is_reached_its_query_holding_it_only_for_commands(self):
-        plug = Device(self.plug.host, password=LockedTasmota.PASSWORD)  # no user: Tasmota's admin
-        self.assertEqual(plug.command("Status 0"), LockedTasmota.STATUS)
-        self.assertIn("Tasmota", plug._get("/", {}, 5))
+        client = Device(self.client.host, password=LockedTasmota.PASSWORD)  # no user: Tasmota's admin
+        self.assertEqual(client.command("Status 0"), LockedTasmota.STATUS)
+        self.assertIn("Tasmota", client._get("/", {}, 5))
         basic = "Basic " + base64.b64encode(f"admin:{LockedTasmota.PASSWORD}".encode()).decode()
-        self.assertEqual({authorization for _, authorization in self.plug.seen}, {basic})
-        commands = [path for path, _ in self.plug.seen if path.startswith("/cm?")]
-        pages = [path for path, _ in self.plug.seen if not path.startswith("/cm?")]
+        self.assertEqual({authorization for _, authorization in self.client.seen}, {basic})
+        commands = [path for path, _ in self.client.seen if path.startswith("/cm?")]
+        pages = [path for path, _ in self.client.seen if not path.startswith("/cm?")]
         self.assertTrue(commands and all(f"password={LockedTasmota.PASSWORD}" in path for path in commands))
         self.assertTrue(pages and all(LockedTasmota.PASSWORD not in path for path in pages))
 
 
-class FakePlug:
-    """A plug's flash, read as the tool reads it through Berry."""
+class FakeDevice:
+    """A device's flash, read as the tool reads it through Berry."""
 
     def __init__(self, flash: bytes):
         self.flash = bytearray(flash)
@@ -669,18 +669,18 @@ class DeviceReadTests(unittest.TestCase):
             asked.append(size)
             return '"' + flash[address:address + size].hex() + '"'
 
-        plug = device.Device("192.0.2.50")
-        with mock.patch.object(plug, "berry_value", side_effect=berry_value):
-            self.assertEqual(plug.read_region(100, 2000), flash[100:2100])
+        client = device.Device("192.0.2.50")
+        with mock.patch.object(client, "berry_value", side_effect=berry_value):
+            self.assertEqual(client.read_region(100, 2000), flash[100:2100])
         self.assertEqual(asked, [512, 512, 512, 464])
-        with mock.patch.object(plug, "berry_value", return_value="unknown"):
+        with mock.patch.object(client, "berry_value", return_value="unknown"):
             with self.assertRaises(device.DeviceError):
-                plug.read_region(0, 4)
+                client.read_region(0, 4)
 
     def test_an_nvs_is_read_but_for_its_unused_pages(self):
-        plug = FakePlug(bytes(0x9000) + sonoff_nvs())
-        self.assertEqual(plug.read_nvs(0x9000, 0x10000), sonoff_nvs())
-        self.assertEqual(sum(1 for _, length in plug.reads if length == 0x1000), 1)
+        client = FakeDevice(bytes(0x9000) + sonoff_nvs())
+        self.assertEqual(client.read_nvs(0x9000, 0x10000), sonoff_nvs())
+        self.assertEqual(sum(1 for _, length in client.reads if length == 0x1000), 1)
 
 
 if __name__ == "__main__":

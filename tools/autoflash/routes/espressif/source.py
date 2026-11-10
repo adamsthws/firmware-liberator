@@ -1,7 +1,7 @@
-"""What an Espressif plug runs when a run starts, where what it answers as
+"""What an Espressif device runs when a run starts, where what it answers as
 does not say: part way, past the commit or not, as this computer's runs
 left it; ESPHome in safe mode; Tasmota's own safeboot.  And whether one on
-Tasmota leaves it for ESPHome without the hub.  The plug is found, whatever
+Tasmota leaves it for ESPHome without the hub.  The device is found, whatever
 its family, by routes/source.py.
 """
 
@@ -14,7 +14,7 @@ import shutil
 import time
 from typing import TYPE_CHECKING
 
-from tools.autoflash import kinds, output, plugs, runs, unlock
+from tools.autoflash import kinds, output, records, runs, unlock
 from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort
 from tools.autoflash.routes.espressif import evidence
@@ -26,17 +26,17 @@ if TYPE_CHECKING:
 
 
 def past_the_commit(ctx: Context, running: str) -> str:
-    """"committed" for a plug part way that a run of this computer's left past
+    """"committed" for a device part way that a run of this computer's left past
     its commit: on Tasmota's layout, not Sonoff's, so the way on is official
     Tasmota first - never the hub's steps, which need Sonoff's two slots.
-    An official Tasmota without the plug's template is one too, if a run left
+    An official Tasmota without the device's template is one too, if a run left
     it so; any other is "untemplated", never "midway": the hub's steps begin
     by sending ESPHome an update, which no Tasmota takes."""
     if running not in ("midway", "untemplated"):
         return running
-    mac = ctx.state.input("plug_mac")
+    mac = ctx.state.input("device_mac")
     for directory in reversed(runs.run_directories()):
-        if directory.resolve() == ctx.dir.resolve() or plugs.mac_of_run(directory) != mac:
+        if directory.resolve() == ctx.dir.resolve() or records.mac_of_run(directory) != mac:
             continue
         try:
             state = RunState.open(directory)
@@ -49,8 +49,8 @@ def past_the_commit(ctx: Context, running: str) -> str:
                 continue
         committed = state.is_done("E3") or report.get("status") == "PASS"
         # Stopped as the commit ran (seen in the fault suite: Ctrl-C a second
-        # after the plug fetched the new table), with no report: it finished if
-        # the plug fetched the table and runs the startup firmware now, which
+        # after the device fetched the new table), with no report: it finished if
+        # the device fetched the table and runs the startup firmware now, which
         # starts only once the new layout is in place - as E3's own check says.
         finished_alone = (not committed and state.status("E3") == ATTEMPTED
                           and evidence.table_fetched(directory / "live") and ctx.device.is_safeboot())
@@ -83,9 +83,9 @@ def past_the_commit(ctx: Context, running: str) -> str:
 
 
 def leaves_tasmota_direct(ctx: Context) -> bool:
-    """Whether a plug on Tasmota, going to ESPHome, can skip the hub: only with
-    ESPHome's bootloader on it already, as the hub is where a plug gets it. One
-    that will not say goes through the hub, which is right for any plug; and so
+    """Whether a device on Tasmota, going to ESPHome, can skip the hub: only with
+    ESPHome's bootloader on it already, as the hub is where a device gets it. One
+    that will not say goes through the hub, which is right for any device; and so
     does one with a temporary table, which only the hub's Tasmota can replace."""
     kind = kinds.of_run(ctx.state)
     if images.layout_of(kind).needs_temporary:
@@ -110,11 +110,11 @@ ESPHOME_SAFE_MODE_WAIT = 400.0
 
 
 def left_on_esphome(ctx: Context) -> bool:
-    """Whether this computer's latest run of the plug that wrote to it left
+    """Whether this computer's latest run of the device that wrote to it left
     it on ESPHome, checked (I2): one past that, the mover is gone for good."""
-    mac = ctx.state.input("plug_mac")
+    mac = ctx.state.input("device_mac")
     for directory in reversed(runs.run_directories()):
-        if directory.resolve() == ctx.dir.resolve() or plugs.mac_of_run(directory) != mac:
+        if directory.resolve() == ctx.dir.resolve() or records.mac_of_run(directory) != mac:
             continue
         try:
             state = RunState.open(directory)
@@ -127,12 +127,12 @@ def left_on_esphome(ctx: Context) -> bool:
 
 
 def esphome_safe_mode(ctx: Context, running: str) -> str:
-    """What a plug that answers as the mover runs: ESPHome in safe mode, if
+    """What a device that answers as the mover runs: ESPHome in safe mode, if
     a run left it on ESPHome, waited out until it restarts as itself - taken
     for part way, it was sent the startup firmware, even to stay on ESPHome."""
     if not left_on_esphome(ctx):
         return running
-    host = ctx.state.input("plug_ip")
+    host = ctx.state.input("device_ip")
     output.say("    It answers only ESPHome's update service, though this computer left it on")
     output.say("    ESPHome: ESPHome in safe mode, after starting ten times in a row, each")
     output.say("    stopped within a minute. It restarts as itself within five minutes.")
@@ -154,7 +154,7 @@ def esphome_safe_mode(ctx: Context, running: str) -> str:
 
 
 def wrote_nothing(state: RunState) -> bool:
-    """Whether a run wrote nothing to the plug: no step that writes done or
+    """Whether a run wrote nothing to the device: no step that writes done or
     part way, and each that failed stopped before writing."""
     steps = state.data.get("steps", {})
     return all(state.status(step) == PENDING
@@ -171,9 +171,9 @@ OFFICIAL_SAFEBOOT_RE = re.compile(r"\(\s*[a-z0-9]+-safeboot\s*\)", re.IGNORECASE
 
 
 def tasmota_missing(ctx: Context, running: str) -> str:
-    """"safeboot" for a plug part way by the look of it - a safeboot answering -
+    """"safeboot" for a device part way by the look of it - a safeboot answering -
     that no run of this computer's left past the commit, and whose safeboot is
-    Tasmota's own: a converted plug, on Tasmota's layout, not starting its
+    Tasmota's own: a converted device, on Tasmota's layout, not starting its
     Tasmota (its own upload of another firmware failed part way, say, or it
     was switched to its safeboot). Taken for part way, it went down steps that
     need Sonoff's layout, and stopped at D4."""

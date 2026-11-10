@@ -413,7 +413,7 @@ class MigrationValidationTests(unittest.TestCase):
                              expected, done)
 
     def test_a_sector_a_power_cut_came_in_is_written_again(self):
-        # Seen in the fault suite: the plug switched off during G1 left the
+        # Seen in the fault suite: the device switched off during G1 left the
         # sector being written erased and part written - and every later
         # restore refused, the conversion stuck for good.
         from tools.espressif.safeboot.serve_safeboot_migration import restore_resume_point
@@ -476,7 +476,7 @@ class MigrationValidationTests(unittest.TestCase):
         send_chunks(state, "factory-sha", b"".join(self.digests(partition)))
         self.assertEqual(state.restore_from(), 2)
 
-    def test_unproven_without_a_commit_report_the_plugs_check_stands(self):
+    def test_unproven_without_a_commit_report_the_devices_check_stands(self):
         state, _ = self.unproven_state(commit=False)
         self.assertIsNone(state.commit_evidence)
 
@@ -499,7 +499,7 @@ class MigrationValidationTests(unittest.TestCase):
                                "http://192.0.2.10:8089", fixture.evidence_dir, 7200,
                                recovery_unproven=True)
 
-    def test_the_plug_is_told_where_to_carry_on(self):
+    def test_the_device_is_told_where_to_carry_on(self):
         with tempfile.TemporaryDirectory() as directory:
             fixture = MigrationFixture(Path(directory))
             recovery = fixture.enable_recovery()
@@ -515,8 +515,8 @@ class MigrationValidationTests(unittest.TestCase):
             self.assertEqual(state.restore_from(), 1)
 
     def test_restore_accepts_commit_evidence_of_any_age(self):
-        # A plug left on the recovery Safeboot must still be finishable later:
-        # the restore closure re-checks the live plug before it writes.
+        # A device left on the recovery Safeboot must still be finishable later:
+        # the restore closure re-checks the live device before it writes.
         with tempfile.TemporaryDirectory() as directory:
             fixture = MigrationFixture(Path(directory))
             recovery = fixture.enable_recovery()
@@ -544,7 +544,7 @@ class MigrationValidationTests(unittest.TestCase):
             return fixture.state("restore")
 
     def test_a_lost_commit_report_falls_back_to_the_staging_record(self):
-        # The commit reports as the plug restarts; the emulated plug cut off
+        # The commit reports as the device restarts; the emulated device cut off
         # then left no report, but the image the commit copied was staged here.
         with tempfile.TemporaryDirectory() as directory:
             fixture = MigrationFixture(Path(directory))
@@ -586,7 +586,7 @@ class MigrationValidationTests(unittest.TestCase):
         fixture.write_preflight_evidence(nvs_hash)
         return fixture, fixture.state("stage")
 
-    def test_a_failure_from_the_plug_ends_the_phase_with_its_reason(self):
+    def test_a_failure_from_the_device_ends_the_phase_with_its_reason(self):
         with tempfile.TemporaryDirectory() as directory:
             fixture, state = self.staging(directory)
             state.receive_failure(
@@ -628,7 +628,7 @@ class MigrationValidationTests(unittest.TestCase):
             self.assertEqual(evidence["rollback"], "true")
             self.assertNotIn("reason", evidence)
 
-    def test_waiting_stops_when_the_plug_falls_silent(self):
+    def test_waiting_stops_when_the_device_falls_silent(self):
         import tools.espressif.safeboot.serve_safeboot_migration as server_module
         with tempfile.TemporaryDirectory() as directory:
             _, state = self.staging(directory)
@@ -637,13 +637,13 @@ class MigrationValidationTests(unittest.TestCase):
                 server = mock.Mock()
                 self.assertEqual(server_module.wait_for_result(server, state, 900, 360), "silent")
 
-    def test_a_plug_still_talking_is_given_the_whole_wait(self):
+    def test_a_device_still_talking_is_given_the_whole_wait(self):
         import tools.espressif.safeboot.serve_safeboot_migration as server_module
         with tempfile.TemporaryDirectory() as directory:
             _, state = self.staging(directory)
             clock = iter(range(0, 10_000, 30))
             server = mock.Mock()
-            # Every request is the plug asking for something: never silent.
+            # Every request is the device asking for something: never silent.
             server.handle_request.side_effect = lambda: setattr(state, "last_heard", now[0])
             now = [0]
 
@@ -675,7 +675,7 @@ class MigrationValidationTests(unittest.TestCase):
                 self.assertIn("window.over()", source, phase)
                 self.assertIn("window.done()", source, phase)
                 # Not set_timeouts(): a connect timeout above the default 2s left
-                # the emulated plug's web server dead once a phase gave up
+                # the emulated device's web server dead once a phase gave up
                 # (the HTTP timeout alone did not); the default 2s is enough.
                 self.assertNotIn("set_timeouts", source, phase)
                 # No request with the Wi-Fi down: webclient can crash then
@@ -685,7 +685,7 @@ class MigrationValidationTests(unittest.TestCase):
                     if "webclient()" in line or ("get_body(" in line and "def get_body" not in line):
                         above = "\n".join(lines[max(0, number - 2):number])
                         self.assertIn('if tasmota.wifi("up")', above, f"{phase} line {number + 1}")
-                self.assertIn("the plug's Wi-Fi went down and was not back", source, phase)
+                self.assertIn("the device's Wi-Fi went down and was not back", source, phase)
             # Stage, commit and restore read their downloads by hand, giving
             # up on one that goes silent: webclient's get_string() waits for
             # ever on a reply that stops part way (arendst/Tasmota#25139).
@@ -715,7 +715,7 @@ class MigrationValidationTests(unittest.TestCase):
                 fixture.state("stage")
 
     def test_a_request_abandoned_part_way_does_not_stall_the_server(self):
-        # The plug's network went mid-POST in the emulator: the server sat on
+        # The device's network went mid-POST in the emulator: the server sat on
         # the half-read body, and never got back to its idle check.
         import socket
         import time as clock
@@ -757,8 +757,8 @@ class MigrationValidationTests(unittest.TestCase):
                 server.server_close()
 
     def test_a_request_cut_off_by_an_outage_does_not_hold_up_the_next(self):
-        # After a network outage the plug's abandoned requests are still open
-        # here, each waited on for up to MigrationHandler.timeout. The plug's
+        # After a network outage the device's abandoned requests are still open
+        # here, each waited on for up to MigrationHandler.timeout. The device's
         # next request must be answered meanwhile, not after them: it gives up
         # on a reply within 5 seconds (emulator, ESPHome run with an outage).
         import select
@@ -852,7 +852,7 @@ class MigrationValidationTests(unittest.TestCase):
 
 
 class ChunkBodyTests(unittest.TestCase):
-    """Each chunk goes to the plug with its SHA-256, which the plug checks
+    """Each chunk goes to the device with its SHA-256, which the device checks
     before writing it - asking again for one damaged on its way."""
 
     def test_the_hash_follows_the_hex(self):
@@ -915,7 +915,7 @@ class PlanPhaseTests(unittest.TestCase):
             rendered = state.render_berry().decode()
             self.assertIn("def copy_region", rendered)
             # Run again once its table is written, it must not copy the old
-            # settings back over what the plug has saved since.
+            # settings back over what the device has saved since.
             self.assertIn("if !table_written copy_region(step) end", rendered)
             state.receive_report("plan", self.report(state))
             self.assertEqual((state.complete, state.result_status), (True, "PASS"))
@@ -944,7 +944,7 @@ class PlanPhaseTests(unittest.TestCase):
                              ["plan-esphome-report.json"])
 
     def test_nothing_it_writes_is_sent_back(self):
-        # Each write's hash, read back on the plug, is in its report; the
+        # Each write's hash, read back on the device, is in its report; the
         # bytes no longer cross the network a second time.
         with tempfile.TemporaryDirectory() as directory:
             state = self.state(MigrationFixture(Path(directory)))

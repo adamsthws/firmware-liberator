@@ -5,27 +5,27 @@ What an assistant needs to know, beyond [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Private things never reach the repository
 
 The repository is public; the tool handles Wi-Fi passwords, eWeLink accounts
-and plugs' identities.
+and devices' identities.
 
 - **Never read or change `.env`.** **`captures/` is private.**
 - **Examples use made-up identifiers**, e.g. MAC `12:34:56:ab:cd:ef`, address
-  `192.0.2.50` (`192.168.99.50` where people read it) - never a real plug's,
+  `192.0.2.50` (`192.168.99.50` where people read it) - never a real device's,
   network's or account's.
   [Addresses](CONTRIBUTING.md#keeping-private-things-out)
 - **The leak scan** (`tools/repo/leak_scan.py`, run by `.githooks/`) stops a
   commit or push holding one: take it out, never `--no-verify`. A new
   made-up example goes in `tools/repo/leak-scan-allow`.
   [More](docs/technical-details.md#keeping-secrets-out-of-git)
-- **A plug's stock Sonoff backup cannot be made again**: never overwrite,
+- **A device's stock Sonoff backup cannot be made again**: never overwrite,
   move or delete one.
-- **No third party's proprietary firmware** (Sonoff's images, a plug's dump)
+- **No third party's proprietary firmware** (Sonoff's images, a device's dump)
   is committed, released or built into a published image. Tooling that
   needs one fetches it at run time from where it is published, as
   `tools/beken/emulator/beken-emu.sh dump` does.
 
-## Real plugs and the emulator
+## Real devices and the emulator
 
-- **Ask before doing anything to a real plug**: a conversion is not undone
+- **Ask before doing anything to a real device**: a conversion is not undone
   by running it again.
 - **Stop each emulator** (`docker stop`) when a test batch ends, and run no
   more at once than there are cores, or they fail falsely.
@@ -91,10 +91,10 @@ and plugs' identities.
   uses a port it picked, and touches nothing computer-wide.
 - **Where things go**: `tools/autoflash/` the tool, `tools/repo/` the
   repository's plumbing, `tools/espressif/` and `tools/beken/` each chip
-  family's tooling, `tools/ewelink/` eWeLink, `devices/<plug>/` one plug's
+  family's tooling, `tools/ewelink/` eWeLink, `devices/<device>/` one device's
   own, `tests/` mirroring `tools/`, `docs/` prose for users and contributors,
   `.github/` pages for the maintainer alone (servers, API, accounts: kept off
-  the website), `website/` the website built from them, `archive/` retired work (still linted). A plug's ESPHome config path is its `package_import_url`:
+  the website), `website/` the website built from them, `archive/` retired work (still linted). A device's ESPHome config path is its `package_import_url`:
   moving one means a new image.
 
 ## Firmware and releases

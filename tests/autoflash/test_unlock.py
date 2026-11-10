@@ -1,4 +1,4 @@
-"""A converted plug's own passwords and keys (tools/autoflash/unlock.py)."""
+"""A converted device's own passwords and keys (tools/autoflash/unlock.py)."""
 import base64
 import unittest
 from unittest import mock
@@ -7,10 +7,10 @@ from tools.autoflash import errors, esphome, esphome_ota, handover, output, prom
 
 
 class NoAnswerTests(unittest.TestCase):
-    """A password check the plug gives no answer to is asked again by itself,
+    """A password check the device gives no answer to is asked again by itself,
     with what was typed, before the person is asked again."""
 
-    def test_it_asks_the_plug_again_then_the_person(self):
+    def test_it_asks_the_device_again_then_the_person(self):
         answers = iter([None, None, False])
         checks = []
 
@@ -23,16 +23,16 @@ class NoAnswerTests(unittest.TestCase):
              mock.patch.object(output, "say"), mock.patch.object(output, "tell"), \
              mock.patch.object(output, "transient_begin"), mock.patch.object(output, "transient_end"):
             self.assertEqual(unlock.secret_or_retry("t", [], [secret], lambda: None, still="")[1], "typed-once")
-        asked.assert_called_once()                       # not again for the plug's silence
+        asked.assert_called_once()                       # not again for the device's silence
         self.assertEqual(checks, ["typed-once"] * 3)     # nor typed again
 
-    def test_a_plug_that_never_answers_comes_back_to_the_person(self):
+    def test_a_device_that_never_answers_comes_back_to_the_person(self):
         with mock.patch.object(unlock.time, "sleep"), mock.patch.object(output, "say"):
             self.assertIsNone(unlock.answered(lambda: None))
 
 
 class EsphomeUpdatePasswordTests(unittest.TestCase):
-    """A plug on ESPHome with an update password, or taking only encrypted
+    """A device on ESPHome with an update password, or taking only encrypted
     updates, made with its API encryption key: asked for what it wants before
     the go-ahead where someone can type it - or tried again without, once its
     owner has removed that - and stopped, saying what to give, where nobody
@@ -57,7 +57,7 @@ class EsphomeUpdatePasswordTests(unittest.TestCase):
                       mock.patch.object(prompts, "ask_secret", side_effect=AssertionError("asked"))):
             patch.start()
             self.addCleanup(patch.stop)
-        # ESPHome on the plug wants this update password, until its owner
+        # ESPHome on the device wants this update password, until its owner
         # removes it (None); has an API key (`key`), so takes encrypted
         # updates too - only those, while `encrypted`.
         self.wanted, self.encrypted, self.key = "s3cret-71", False, None
@@ -86,7 +86,7 @@ class EsphomeUpdatePasswordTests(unittest.TestCase):
 
     def ctx(self, password=None, key=None):
         from types import SimpleNamespace
-        inputs = {"plug_ip": "192.0.2.50"}
+        inputs = {"device_ip": "192.0.2.50"}
         state = SimpleNamespace(input=inputs.get, set_input=inputs.__setitem__, is_done=lambda step: False)
         return SimpleNamespace(state=state, esphome_password=password, esphome_key=key)
 
@@ -95,7 +95,7 @@ class EsphomeUpdatePasswordTests(unittest.TestCase):
         with mock.patch.object(prompts, "ask_choice", return_value=0) as menu, \
                 mock.patch.object(prompts, "ask_secret", side_effect=["not-it-9", "s3cret-71"]) as asked:
             unlock.unlock_esphome(ctx)
-        self.assertEqual(asked.call_count, 2)  # the wrong one refused on the plug
+        self.assertEqual(asked.call_count, 2)  # the wrong one refused on the device
         self.assertEqual(ctx.esphome_password, "s3cret-71")
         self.assertEqual(menu.call_args.args[1], [  # no key to offer: it takes no encrypted updates
             "Type its update password", "Try again without one - once you have removed it yourself"])
@@ -109,7 +109,7 @@ class EsphomeUpdatePasswordTests(unittest.TestCase):
         unlock.unlock_esphome(ctx)
         self.assertEqual(ctx.esphome_password, "s3cret-71")
         self.wanted = None
-        unlock.unlock_esphome(self.ctx())  # and a plug with none asks nothing
+        unlock.unlock_esphome(self.ctx())  # and a device with none asks nothing
 
     def test_unattended_without_it_the_run_stops_saying_what_to_give(self):
         with mock.patch.object(prompts, "UNATTENDED", True):
@@ -171,7 +171,7 @@ class EsphomeUpdatePasswordTests(unittest.TestCase):
                                                                        self.KEY_TEXT]):
             unlock.unlock_esphome(ctx)
         self.assertEqual(menu.call_args.args[1][0], "Type its API encryption key")
-        self.assertEqual(ctx.esphome_key, self.KEY)  # the first, another key, refused on the plug
+        self.assertEqual(ctx.esphome_key, self.KEY)  # the first, another key, refused on the device
         output.tell.assert_any_call("    That is not its API encryption key.")
         with mock.patch.object(prompts, "UNATTENDED", True):
             with self.assertRaisesRegex(errors.Abort,
@@ -205,7 +205,7 @@ class EsphomeUpdatePasswordTests(unittest.TestCase):
             unlock.unlock_esphome(ctx)  # gone on without it: the update needs no key
         self.assertEqual(menu.call_args.args[1], ["Type its API encryption key", "Go on without it"])
         self.assertIsNone(ctx.esphome_key)
-        # One given for a plug whose API is not encrypted is not needed.
+        # One given for a device whose API is not encrypted is not needed.
         self.key = None
         ctx = self.ctx(key=self.KEY)
         unlock.unlock_esphome(ctx)

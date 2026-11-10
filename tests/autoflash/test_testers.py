@@ -17,7 +17,7 @@ WANTING = [kind for kind in kinds.READY if kind.status is kinds.Status.TESTERS_W
 
 def a_run(tmp: str, kind: kinds.Kind) -> SimpleNamespace:
     state = RunState.open(Path(tmp))
-    for key, value in {"plug_kind": kind.key, "plug_ip": "192.0.2.96", "stock_version": "1.2.0"}.items():
+    for key, value in {"device_kind": kind.key, "device_ip": "192.0.2.96", "stock_version": "1.2.0"}.items():
         state.set_input(key, value)
     return SimpleNamespace(state=state, bridge=Path("bridge.ota"), dir=Path(tmp), listen_ip=lambda: "192.0.2.141",
                            email=lambda: "me@example.com", ewelink_env=lambda: {}, helper_env=lambda: {},
@@ -86,7 +86,7 @@ class WarningTests(unittest.TestCase):
     def test_declined_nothing_is_sent(self):
         self.assertEqual(self.bridge(kinds.SONOFF_POW_ELITE, lambda word: False), (["proceed"], False))
 
-    def test_a_converted_plug_leaving_its_firmware_is_told_too_and_asked_once(self):
+    def test_a_converted_device_leaving_its_firmware_is_told_too_and_asked_once(self):
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.object(prompts, "require_word", return_value=True) as asked:
             ctx = a_run(tmp, kinds.SONOFF_TH_ELITE)
