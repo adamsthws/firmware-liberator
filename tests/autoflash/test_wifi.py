@@ -80,7 +80,9 @@ class WifiFromDeviceTests(unittest.TestCase):
         # Seen in the fault suite: a Wi-Fi blip as G1 began, and the run
         # asked the person to type the Wi-Fi details the device holds.
         import urllib.error
-        for drops, expected in ((1, ("Home-2G", "a good password")), (5, None)):
+        for drops, expected in ((1, ("Home-2G", "a good password")),
+                                (wifi.WIFI_READ_TRIES - 1, ("Home-2G", "a good password")),   # the last try
+                                (wifi.WIFI_READ_TRIES, None)):
             ctx = self.ctx()
             answers = ctx.device.command
             left = [drops]
@@ -96,6 +98,17 @@ class WifiFromDeviceTests(unittest.TestCase):
             with mock.patch.object(output, "say"):
                 self.assertEqual(wifi.read_wifi_from_device(ctx), expected, drops)
             self.assertEqual(ctx.device.wait_reachable.call_count, min(drops, wifi.WIFI_READ_TRIES - 1))
+
+    def test_what_is_read_is_kept_out_of_the_log(self):
+        with mock.patch.object(output, "private") as private:
+            self.assertEqual(self.read(), ("Home-2G", "a good password"))
+        self.assertEqual({c.args for c in private.call_args_list},
+                         {("Home-2G", "wifi-name"), ("a good password", "wifi-password")})
+        # On another network than its first slot's, both names are said: both kept out.
+        with mock.patch.object(output, "private") as private:
+            self.assertIsNone(self.read(connected="Guest"))
+        self.assertEqual({c.args for c in private.call_args_list},
+                         {("Guest", "wifi-name"), ("Home-2G", "wifi-name"), ("a good password", "wifi-password")})
 
     def test_each_reason_for_not_reading_them_is_said(self):
         for kwargs, words in (({"connected": None}, "did not say which network"),
@@ -153,6 +166,11 @@ class BackupWifiTests(unittest.TestCase):
         self.assertIsNone(self.found(joined="Guest")[0])
         self.assertIsNone(self.found()[0])
 
+    def test_what_is_read_from_the_backup_is_kept_out_of_the_log(self):
+        with mock.patch.object(output, "private") as private:
+            self.found(joined="Guest")
+        self.assertEqual(private.call_args_list, [mock.call("Home-2G", "wifi-name"), mock.call("pw", "wifi-password")])
+
     def test_no_backup_gives_nothing(self):
         with mock.patch.object(records, "find_backup", return_value=None):
             self.assertIsNone(wifi.wifi_from_backup(self.ctx()))
@@ -177,6 +195,13 @@ class BackupWifiTests(unittest.TestCase):
                 mock.patch.object(wifi, "wifi_from_backup") as backup:
             self.assertEqual(context.Context.wifi(ctx), ("Home-5", "pw5"))
         backup.assert_not_called()
+
+    def test_what_esphome_gives_is_kept_out_of_the_log(self):
+        with mock.patch.object(esphome, "api_wifi_details", return_value=("Home-5", "pw5")), \
+                mock.patch.object(output, "private") as private:
+            self.assertEqual(wifi.wifi_from_esphome(self.ctx()), ("Home-5", "pw5"))
+        self.assertEqual(private.call_args_list, [mock.call("Home-5", "wifi-name"), mock.call("pw5", "wifi-password")])
+        self.assertIn("'Home-5'", output.say.call_args.args[0])
 
     def test_an_encrypted_api_is_offered_its_key_before_the_wifi_is_asked(self):
         key = bytes(range(32))
@@ -213,12 +238,16 @@ class BackupWifiTests(unittest.TestCase):
 class SonoffBackupWifiTests(unittest.TestCase):
     """The Wi-Fi Sonoff's firmware was set up with, as its backup holds it."""
 
-    def read(self, content):
+    def read(self, content, *, namespace="frame_params", key="content"):
         from tools.espressif.inspect_stock_nvs import Value
-        value = Value(namespace=3, key="content", kind=0x21, chunks={0: content})
+        value = Value(namespace=3, key=key, kind=0x21, chunks={0: content})
+        flash = bytes(range(256)) * 0x200
         with mock.patch.object(inspect_stock_nvs, "parse",
-                               return_value=({3: "frame_params"}, {(3, "content"): value})):
-            return wifi.sonoff_backup_wifi(b"")
+                               return_value=({3: namespace}, {(3, key): value})) as parse:
+            found = wifi.sonoff_backup_wifi(flash)
+        # Its NVS partition, where Sonoff's firmware keeps it.
+        self.assertEqual(parse.call_args.args[0], flash[0x9000:0x19000])
+        return found
 
     def test_the_name_and_password_come_from_frame_params(self):
         self.assertEqual(self.read(b'{"ssid":"Home-2G","passwd":"pw","model":"SN-ESP32C3-S60-01"}\x00'),
@@ -229,6 +258,11 @@ class SonoffBackupWifiTests(unittest.TestCase):
 
     def test_no_network_gives_nothing(self):
         self.assertIsNone(self.read(b'{"ssid":"","passwd":""}\x00'))
+
+    def test_only_frame_params_content_is_read(self):
+        content = b'{"ssid":"Home-2G","passwd":"pw"}\x00'
+        self.assertIsNone(self.read(content, namespace="user_unusual"))
+        self.assertIsNone(self.read(content, key="other"))
 
 
 if __name__ == "__main__":
