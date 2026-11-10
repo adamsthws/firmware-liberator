@@ -48,6 +48,19 @@ class ArrivedTests(unittest.TestCase):
                 with self.assertRaisesRegex(errors.Abort, "has not answered.*switch the device off and on"):
                     arrived.step_openbeken_check(ctx, wait=10)
 
+    def test_k1_times_the_last_look_and_a_restart_asked_for_is_done_with_once_found(self):
+        clock = iter([100.0, 110.0, 115.04])
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, device_ip=self.server.host)
+            ctx.state.set_input("restart_asked", True)
+            found = {"build": "OpenBK7238 1.0.0", "shortName": "openbeken-abcdef", "interim": False}
+            with mock.patch.object(arrived.join, "wait_for", return_value=found), \
+                    mock.patch.object(openbeken, "calibration_state", return_value="stock store"), \
+                    mock.patch.object(arrived.time, "monotonic", side_effect=lambda: next(clock)):
+                result = arrived.step_openbeken_check(ctx)
+            self.assertEqual(result["seconds"], 5.0)
+            self.assertIsNone(ctx.state.input("restart_asked"))
+
     def test_k1_says_the_meter_calibration_was_not_carried_over_or_cannot_say(self):
         for calibration, said in (("missing", "missing"), (None, "not the stock store's"),
                                   # An OpenBeken whose driver predates the command.
@@ -190,6 +203,17 @@ class ArrivedTests(unittest.TestCase):
                     arrived.step_esphome_check(ctx, wait=1000)
             self.assertEqual(back.exception.step, "O1")
 
+    def test_k2_waits_for_esphome_to_answer_with_its_relay(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, firmware="esphome")
+            with mock.patch.object(arrived.esphome, "is_esphome", return_value=True), \
+                    mock.patch.object(arrived.esphome, "relay", side_effect=[None, False]) as relay, \
+                    mock.patch.object(arrived.esphome, "calibration_state", return_value=None), \
+                    mock.patch.object(arrived.join.time, "sleep"), \
+                    mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(50_000, 150_000, 100))):
+                arrived.step_esphome_check(ctx, wait=1000)
+            self.assertEqual(relay.call_count, 2)
+
     def test_without_b2_a_device_on_sonoffs_firmware_is_only_waited_for(self):
         # Nothing this run sent to go back to: asked again, as before.
         with tempfile.TemporaryDirectory() as tmp:
@@ -266,16 +290,19 @@ class ArrivedTests(unittest.TestCase):
             return answer
 
         env = {arrived.EMULATED_POWER: str(switch)} if switch else {}
+        clock = iter([100.0, 110.0, 120.0, 125.04])  # K2's start, each look's, and when it answered
         with mock.patch.object(arrived.join, "wait_for", side_effect=look), \
+                mock.patch.object(arrived.time, "monotonic", side_effect=lambda: next(clock)), \
                 mock.patch.object(arrived.esphome, "calibration_state", return_value=None), \
                 mock.patch.object(arrived.prompts, "ask_choice", side_effect=choose), \
                 mock.patch.object(arrived.prompts, "section"), \
                 mock.patch.object(arrived.output, "transient_begin"), mock.patch.object(arrived.output, "transient_end"), \
-                mock.patch.object(arrived.time, "sleep"), mock.patch.dict(arrived.os.environ, env, clear=False), \
+                mock.patch.object(arrived.time, "sleep") as self.slept, \
+                mock.patch.dict(arrived.os.environ, env, clear=False), \
                 mock.patch.object(records, "DEVICES", ctx.state.path.parent / "devices"):
             if not switch:
                 arrived.os.environ.pop(arrived.EMULATED_POWER, None)
-            arrived.step_esphome_check(ctx)
+            self.result = arrived.step_esphome_check(ctx)
         return offered, len(looks)
 
     def test_an_attended_run_waits_for_the_device_switched_off_and_on_then_looks_again(self):
@@ -285,6 +312,8 @@ class ArrivedTests(unittest.TestCase):
             self.assertEqual((len(offered[0]), looks), (1, 2))   # no emulator: one choice, and q
             # Counted for the report, by whom.
             self.assertEqual(ctx.state.input("power_cycles"), {"by hand": 1})
+            # Timed from the look that found it, not from before the person was asked.
+            self.assertEqual(self.result, {"seconds": 5.0, "calibration": None})
 
     def test_in_the_emulator_the_tool_can_switch_the_device_off_and_on(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -303,6 +332,8 @@ class ArrivedTests(unittest.TestCase):
                 offered, looks = self.not_back_then_back(ctx, [1], switch=switch)
             self.assertEqual(len(offered[0]), 2)
             self.assertEqual((written, looks), (["off", "on"], 2))
+            self.slept.assert_called_once_with(arrived.EMULATED_OFF)  # off long enough to stop it
+            self.assertEqual(ctx.state.input("power_cycles"), {"by the tool": 1})
             self.assertEqual(switch.read_text(encoding="utf-8"), "on\n")
 
     def test_q_at_the_question_stops_the_run(self):
@@ -322,6 +353,7 @@ class ArrivedTests(unittest.TestCase):
                     mock.patch.object(images, "stock_rbl", return_value=(b"RBL stock", "1.0.2")):
                 result = arrived.step_backup(ctx)
                 self.assertEqual(result, {"outcome": "saved", "stage_outcome": "complete"})
+                self.assertIs(ctx.state.data["captures"]["B4.flash_matched"], True)
                 found = records.find_backup(MAC)
                 self.assertEqual((found.family, found.version), ("beken", "1.0.2"))
                 self.assertEqual((found.directory / records.BEKEN_BACKUP_BIN).read_bytes(), region)
@@ -391,9 +423,17 @@ class ArrivedTests(unittest.TestCase):
                     mock.patch.object(arrived.backup, "factory_mac", return_value="aa:bb:cc:dd:ee:ff"):
                 self.assertEqual(arrived.step_backup(ctx)["outcome"], "unreadable")
                 self.assertIsNone(records.find_backup(MAC))
+                self.assertIs(ctx.state.data["captures"]["B4.flash_matched"], False)
             ctx.args.no_backup = True
             with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), mock.patch.object(records, "CAPTURES", Path(tmp)):
                 self.assertEqual(arrived.step_backup(ctx)["outcome"], "not wanted")
+
+    def test_b4_with_no_hardware_address_takes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, device_ip=self.server.host, device_mac=None)
+            with mock.patch.object(arrived, "_back_up") as backed_up:
+                self.assertEqual(arrived.step_backup(ctx), {"outcome": "not taken", "stage_outcome": "skipped"})
+            backed_up.assert_not_called()
 
     def test_b4_on_a_run_to_esphome_reads_through_the_interim_firmware(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -421,11 +461,13 @@ class ArrivedTests(unittest.TestCase):
             with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), mock.patch.object(records, "CAPTURES", Path(tmp)), \
                     mock.patch.object(detect, "identify", return_value=None), \
                     mock.patch.object(arrived.ewelink_relay, "answers", side_effect=[False, None, True]) as asked, \
-                    mock.patch.object(arrived.time, "sleep"), \
-                    mock.patch.object(arrived.time, "monotonic", side_effect=iter(range(0, 10000, 5))):
+                    mock.patch.object(arrived.time, "sleep") as slept, \
+                    mock.patch.object(arrived.time, "monotonic", side_effect=iter(range(50_000, 60_000, 5))):
                 records.remember_device(MAC, ewelink_id="1001234abc")
-                self.assertEqual(arrived.step_sonoff_check(ctx)["confirmed_by"], "eWeLink")
+                result = arrived.step_sonoff_check(ctx)
+                self.assertEqual(result, {"seconds": 30, "confirmed_by": "eWeLink"})
                 self.assertEqual(asked.call_count, 3)
+                self.assertEqual(slept.call_count, 2)  # a pause before asking eWeLink again
                 self.assertEqual(asked.call_args.kwargs["device_id"], "1001234abc")
 
     def test_k3_waits_for_ewelink_to_show_the_device_online(self):
@@ -437,14 +479,14 @@ class ArrivedTests(unittest.TestCase):
                     mock.patch.object(detect, "identify", return_value=None), \
                     mock.patch.object(arrived.ewelink_relay, "answers", return_value=True), \
                     mock.patch.object(arrived.time, "sleep"), \
-                    mock.patch.object(arrived.time, "monotonic", side_effect=iter(range(0, 10000, 5))):
+                    mock.patch.object(arrived.time, "monotonic", side_effect=iter(range(50_000, 60_000, 5))):
                 records.remember_device(MAC, ewelink_id="1001234abc")
                 self.assertEqual(arrived.step_sonoff_check(ctx)["confirmed_by"], "eWeLink")
             # Still answering as the firmware it was to leave: not back.
             with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), mock.patch.object(records, "CAPTURES", Path(tmp)), \
                     mock.patch.object(detect, "identify", return_value="openbeken"), \
                     mock.patch.object(arrived.time, "sleep"), \
-                    mock.patch.object(arrived.time, "monotonic", side_effect=iter(range(0, 10000, 100))):
+                    mock.patch.object(arrived.time, "monotonic", side_effect=iter(range(50_000, 60_000, 100))):
                 with self.assertRaisesRegex(errors.Abort, "still answers"):
                     arrived.step_sonoff_check(ctx, wait=50)
             # Never shown online: an unattended run stops, saying to switch it off and on.
@@ -452,9 +494,45 @@ class ArrivedTests(unittest.TestCase):
             with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), mock.patch.object(records, "CAPTURES", Path(tmp)), \
                     mock.patch.object(detect, "identify", return_value=None), \
                     mock.patch.object(arrived.time, "sleep"), mock.patch.object(arrived.prompts, "UNATTENDED", True), \
-                    mock.patch.object(arrived.time, "monotonic", side_effect=iter(range(0, 10000, 100))):
+                    mock.patch.object(arrived.time, "monotonic", side_effect=iter(range(50_000, 60_000, 100))):
                 with self.assertRaisesRegex(errors.Abort, "has not shown.*switch the device off and on"):
                     arrived.step_sonoff_check(ctx, wait=50)
+
+
+    def k3_waiting(self, ctx, tmp, wait=50):
+        with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), \
+                mock.patch.object(detect, "identify", return_value=None), \
+                mock.patch.object(arrived.ewelink_relay, "answers", return_value=True), \
+                mock.patch.object(arrived.time, "sleep") as self.slept, \
+                mock.patch.object(arrived.prompts, "UNATTENDED", True), \
+                mock.patch.object(arrived.time, "monotonic", side_effect=iter(range(50_000, 60_000, 5))):
+            return arrived.step_sonoff_check(ctx, wait=wait)
+
+    def test_k3_takes_only_this_device_online_as_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.k3_context(tmp)
+            ctx.account_devices = lambda: [{"deviceid": "1001234abc", "online": False},
+                                           {"deviceid": "1009999999", "online": True}]
+            with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"):
+                records.remember_device(MAC, ewelink_id="1001234abc")
+            with self.assertRaisesRegex(errors.Abort, "has not shown"):
+                self.k3_waiting(ctx, tmp)
+
+    def test_k3_waits_through_an_account_that_does_not_answer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.k3_context(tmp)
+            answers = iter([None, [{"deviceid": "1001234abc", "online": True}]])
+            ctx.account_devices = lambda: next(answers)
+            with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"):
+                records.remember_device(MAC, ewelink_id="1001234abc")
+            self.assertEqual(self.k3_waiting(ctx, tmp)["confirmed_by"], "eWeLink")
+
+    def test_k3_without_its_ewelink_id_does_not_wait_on_ewelink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.k3_context(tmp)
+            with mock.patch.object(arrived.output, "tell"):
+                self.assertEqual(self.k3_waiting(ctx, tmp)["confirmed_by"], "nothing answering")
+            self.slept.assert_not_called()
 
 
 if __name__ == "__main__":
