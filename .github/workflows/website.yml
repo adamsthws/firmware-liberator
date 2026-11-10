@@ -13,6 +13,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Daily, after the API's nightly job (03:17 UTC) has written the figures:
+  # /stats and llms.txt are built from them (website/src/stats.mjs).
+  schedule:
+    - cron: "30 4 * * *"
   # The dependabot-merge workflow starts it after merging: a merge by a
   # workflow's own token does not start another workflow. Run by hand, it
   # can deploy the API taking no requests (website/README.md, Stopping the API).
@@ -55,8 +59,12 @@ jobs:
         env:
           ASTRO_TELEMETRY_DISABLED: "1"
       # What was built, as search engines read it: the sitemap, each page's
-      # address and description (checks/built.mjs).
+      # address and description (checks/built.mjs). The daily build must have
+      # the night's figures too: one without them fails, where it is seen,
+      # rather than publish a page of none.
       - run: npm run check
+        env:
+          REQUIRE_STATS: ${{ github.event_name == 'schedule' && '1' || '' }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: site
@@ -93,7 +101,9 @@ jobs:
 
   deploy-api:
     needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Not on the daily build: it changes nothing of the API, and a stopped API
+    # (Run workflow, ingest off) must stay stopped until the next push.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment:
