@@ -293,6 +293,11 @@ check.
 - In the emulators the same: `emu.sh --device MAC` and `--device-dir`, the
   `device off`, `on` and `cycle` commands in the Espressif emulator's
   terminal, and `beken-emu.sh device`. Both emulators' images are new.
+- The `README.txt` saved beside an Espressif device's Sonoff backup is true of
+  any of them. It told every owner their device was an S60: an ESP32-C3 in a
+  welded case, to be written back with `esptool.py --chip esp32c3`. It now
+  says the tool writes the backup back over the air, and gives the command
+  that suits either chip.
 
 ## 2.3.0
 
