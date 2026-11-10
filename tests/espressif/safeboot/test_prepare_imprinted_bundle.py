@@ -138,7 +138,7 @@ class MemoryOnlyBundleTests(unittest.TestCase):
 
 @unittest.skipUnless(HAVE_OFFICIAL, "needs the official release files from a real bundle")
 class BundleWithoutWifiTests(unittest.TestCase):
-    """A5 builds the bundle with no Wi-Fi; E1 writes in what it reads off the plug."""
+    """A5 builds the bundle with no Wi-Fi; E1 writes in what it reads off the device."""
 
     def setUp(self):
         keep_memory_artifacts_to_the_test(self)

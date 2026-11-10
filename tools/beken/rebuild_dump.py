@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Make a BK7238 plug's whole stock flash again, with no serial cable, to run it
+"""Make a BK7238 device's whole stock flash again, with no serial cable, to run it
 in the emulator: a device with no public dump can be added this way.
 
-A plug's own bootloader, partition table, radio calibration and settings are
+A device's own bootloader, partition table, radio calibration and settings are
 read from it once it runs OpenBeken (GET /api/flash, backup.read_flash), and
 its stock app, which the conversion overwrote, comes from the model's official
 OTA file. This puts the two together as the stock bootloader would have left
@@ -15,7 +15,7 @@ them after applying that file:
     the rest   as read, less what the interim firmware wrote (INTERIM_WRITES)
 
 Proven on the S61, whose public dump is the answer: see README.md, "Rebuilding
-a dump". What is read carries the plug's Wi-Fi password and eWeLink identity,
+a dump". What is read carries the device's Wi-Fi password and eWeLink identity,
 and the result is Sonoff's firmware: neither ever goes in this repository.
 
     python3 tools/beken/rebuild_dump.py READOUT.bin OFFICIAL.bin OUT.bin [--compare DUMP.bin]
@@ -42,7 +42,7 @@ FAL_ENTRY = 64
 BOOTLOADER_PHYSICAL = 0x11000
 # What this project's OpenBeken, built for the 4 MB table, writes outside the
 # app and the download slot when it is first started, as a range of physical
-# flash: its own store, its boot counters and its config. Read a plug soon
+# flash: its own store, its boot counters and its config. Read a device soon
 # after its conversion: one left to run may have written more.
 INTERIM_WRITES = ((0x1E5000, 0x1ED000), (0x262004, 0x262008), (0x26A000, 0x26A008), (0x3E1000, 0x3E2000))
 # The 4 MB table's download partition: INTERIM_WRITES is known for that build only.
@@ -135,7 +135,7 @@ def erase(flash: bytearray, start: int, end: int) -> None:
 
 
 def rebuild(readout: bytes, official: bytes, interim_writes: tuple[tuple[int, int], ...] | None = None) -> bytes:
-    """The stock flash of the plug `readout` was read from, running `official`.
+    """The stock flash of the device `readout` was read from, running `official`.
     `interim_writes` is where the firmware it runs wrote: given for any table
     but the 4 MB one, whose build is INTERIM_WRITES."""
     table = partitions(readout)
@@ -150,7 +150,7 @@ def rebuild(readout: bytes, official: bytes, interim_writes: tuple[tuple[int, in
     if rbl.header(image).name != "app":
         raise RebuildError(f"the official file's image is for {rbl.header(image).name!r}, not the app")
     if len(firmware) > app.length - rbl.HEADER or len(image) > download.length:
-        raise RebuildError("the official firmware does not fit this plug's partitions")
+        raise RebuildError("the official firmware does not fit this device's partitions")
 
     flash = bytearray(readout)
     # The bootloader erases as far as the firmware it writes: as far as the
@@ -175,7 +175,7 @@ def rebuild(readout: bytes, official: bytes, interim_writes: tuple[tuple[int, in
 
 
 def _interim_size(readout: bytes, tail: int) -> int:
-    """How much the firmware the plug now runs takes of the app partition, by
+    """How much the firmware the device now runs takes of the app partition, by
     the RBL header in its last bytes: 0 if it has none."""
     logical = b"".join(readout[start:start + BLOCK] for start in range(tail, tail + STRIPED_BLOCK * 3, STRIPED_BLOCK))
     try:
@@ -187,8 +187,8 @@ def _interim_size(readout: bytes, tail: int) -> int:
 def surviving_old_app(readout: bytes, official: bytes) -> tuple[int, int]:
     """(bytes equal, bytes compared) of the old stock app that outlived the
     conversion against the official firmware: the interim firmware is shorter,
-    so the rest of what the plug ran is still there. All equal says the file
-    is the version the plug ran; little equal, that it is another."""
+    so the rest of what the device ran is still there. All equal says the file
+    is the version the device ran; little equal, that it is another."""
     table = partitions(readout)
     app = table["app"]
     firmware = stripe(rbl.unpack(official_image(official)))
@@ -206,7 +206,7 @@ def compare(flash: bytes, other: bytes, regions: tuple[tuple[str, int, int], ...
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("readout", type=Path, help="the plug's whole flash, read over OpenBeken's REST API")
+    parser.add_argument("readout", type=Path, help="the device's whole flash, read over OpenBeken's REST API")
     parser.add_argument("official", type=Path, help="the model's official OTA file")
     parser.add_argument("out", type=Path, help="where the rebuilt flash is written")
     parser.add_argument("--compare", type=Path, help="a real dump to compare it with, region by region")
@@ -221,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
     args.out.write_bytes(flash)
     print("%s: %d bytes. Of the old app that survived, %d of %d bytes match the official file%s."
           % (args.out, len(flash), same, compared,
-             "" if same == compared else ": the plug ran another version"))
+             "" if same == compared else ": the device ran another version"))
     if args.compare:
         for name, start, end, differ in compare(flash, args.compare.read_bytes()):
             print("  0x%06x-0x%06x %-26s %s" % (start, end, name, "same" if not differ else "%d bytes differ" % differ))

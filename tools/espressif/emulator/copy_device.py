@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""A test copy of a backed-up plug under another MAC, for the emulator: the
+"""A test copy of a backed-up device under another MAC, for the emulator: the
 same flash, the new MAC in its eFuses - so every name made from the MAC
 (autoflash-recovery-XXXX, tasmota-xxxxxx, ...) can be seen to follow it.
 
-    python -I tools/espressif/emulator/copy_plug.py --from MAC --to MAC
-    python -I tools/espressif/emulator/copy_plug.py --remove MAC
+    python -I tools/espressif/emulator/copy_device.py --from MAC --to MAC
+    python -I tools/espressif/emulator/copy_device.py --remove MAC
 
-The original is only read. The copy goes in captures/plugs/<new mac>/, marked
-as a test copy (plug.json's test_copy_of); --remove deletes only such a copy.
+The original is only read. The copy goes in captures/devices/<new mac>/, marked
+as a test copy (device.json's test_copy_of); --remove deletes only such a copy.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import plugs  # noqa: E402
+from tools.autoflash import records  # noqa: E402
 from tools.espressif import flashmap  # noqa: E402
 
 # Where an ESP32-C3's base MAC sits in the eFuse read registers, last byte first.
@@ -40,14 +40,14 @@ def with_mac(efuse: bytes, mac: str) -> bytes:
 
 
 def copy(source_mac: str, mac: str) -> Path:
-    source = plugs.PLUGS / plugs.folder_name(source_mac) / "sonoff-backup"
-    target = plugs.PLUGS / plugs.folder_name(mac)
+    source = records.DEVICES / records.folder_name(source_mac) / "sonoff-backup"
+    target = records.DEVICES / records.folder_name(mac)
     if not (source / "flash.bin").is_file():
-        raise SystemExit(f"No backed-up plug {source_mac} ({source})")
+        raise SystemExit(f"No backed-up device {source_mac} ({source})")
     if target.exists():
         raise SystemExit(f"{target} is there already")
     efuse = with_mac((source / "efuse.bin").read_bytes(), mac)
-    if plugs.mac_from_efuse(efuse) != mac:
+    if records.mac_from_efuse(efuse) != mac:
         raise SystemExit(f"{mac} did not read back from the new eFuses")
     backup = target / "sonoff-backup"
     backup.mkdir(parents=True)
@@ -58,7 +58,7 @@ def copy(source_mac: str, mac: str) -> Path:
     report["note"] = f"Emulator test copy of {source_mac}: the same flash, another MAC in its eFuses."
     (backup / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     (backup / "README.txt").write_text((source / "README.txt").read_text().replace(source_mac, mac))
-    (target / "plug.json").write_text(json.dumps({
+    (target / "device.json").write_text(json.dumps({
         "backed_up": time.strftime("%Y-%m-%d"), "ewelink_name": "Emulator test copy",
         "mac": mac, "stock_version": report.get("stock_version", ""), "test_copy_of": source_mac,
     }, indent=2) + "\n")
@@ -68,13 +68,13 @@ def copy(source_mac: str, mac: str) -> Path:
 
 
 def remove(mac: str) -> None:
-    target = plugs.PLUGS / plugs.folder_name(mac)
+    target = records.DEVICES / records.folder_name(mac)
     try:
-        record = json.loads((target / "plug.json").read_text())
+        record = json.loads((target / "device.json").read_text())
     except (OSError, ValueError):
         raise SystemExit(f"{target} is not a test copy made by this tool") from None
     if not record.get("test_copy_of"):
-        raise SystemExit(f"{target} is a real plug's backup, not a test copy: left alone")
+        raise SystemExit(f"{target} is a real device's backup, not a test copy: left alone")
     for path in (target / "sonoff-backup").glob("*"):
         path.chmod(0o600)
     shutil.rmtree(target)
@@ -82,10 +82,14 @@ def remove(mac: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--from", dest="source", help="the backed-up plug to copy")
+    parser.add_argument("--from", dest="source", help="the backed-up device to copy")
     parser.add_argument("--to", help="the copy's MAC")
     parser.add_argument("--remove", help="a test copy to delete")
     args = parser.parse_args()
+    try:
+        records.take_over_earlier_names()
+    except records.EarlierNames as error:
+        sys.exit(str(error))
     if args.remove:
         remove(args.remove.lower().replace("-", ":"))
         print(f"Removed the test copy {args.remove}.")
@@ -93,7 +97,7 @@ def main() -> int:
     if not (args.source and args.to):
         parser.error("--from and --to, or --remove")
     target = copy(args.source.lower().replace("-", ":"), args.to.lower().replace("-", ":"))
-    print(f"Test copy made: {target} (emu.sh --plug {args.to})")
+    print(f"Test copy made: {target} (emu.sh --device {args.to})")
     return 0
 
 

@@ -1,5 +1,5 @@
 """The run's context: its arguments, state and record, the secrets held in
-memory for it, and the plug and servers it talks through.
+memory for it, and the device and servers it talks through.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from tools.autoflash import (
     noise,
     output,
     phases,
-    plugs,
+    records,
     prompts,
     routes,
     runs,
@@ -50,16 +50,16 @@ from tools.ewelink.get_device_key import (API, SESSION_ENV, Account, EwelinkErro
 class Context:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
-        self.plug = args.run
-        self.dir = plugs.CAPTURES / self.plug
+        self.run = args.run
+        self.dir = records.CAPTURES / self.run
         self.evidence = self.dir / "live"
         self.state = RunState.open(self.dir)
-        # Given by hand with --manifest; else the bundle for the plug's chip,
+        # Given by hand with --manifest; else the bundle for the device's chip,
         # known only once its kind is (bundle.default_manifest).
         self._manifest = None if args.manifest == bundle.DEFAULT_MANIFEST else (ROOT / args.manifest).resolve()
         self.dry_run = args.dry_run
         # Research only: a different bridge, after which the run stops (see
-        # archive/docs/reference/automatic-wifi.md).  The plug goes back to stock on a power cycle.
+        # archive/docs/reference/automatic-wifi.md).  The device goes back to stock on a power cycle.
         self.bridge = Path(getattr(args, "bridge", None) or installer.BRIDGE_OTA)
         self.research_bridge = self.bridge != installer.BRIDGE_OTA
         # Optional path to an ESPHome application firmware.ota.bin. When set,
@@ -70,8 +70,8 @@ class Context:
         # --firmware: which to install, instead of being asked (--unattended needs it).
         self.replace_own_build = getattr(args, "replace_own_build", False)
         self.firmware_given = "esphome" if esphome or self.replace_own_build else getattr(args, "firmware", None)
-        if args.plug_ip:
-            self.state.set_input("plug_ip", args.plug_ip)
+        if args.device_ip:
+            self.state.set_input("device_ip", args.device_ip)
         # An account given in advance is checked now: eWeLink is not asked
         # with one that cannot be an account.
         for given in (args.email, credentials.get("EWELINK_EMAIL")):
@@ -82,7 +82,7 @@ class Context:
             self.remember_email(args.email)
         if args.web_user:
             self.state.set_input("web_user", args.web_user)
-        # The plug's Tasmota web password, if it has one: given, or asked for
+        # The device's Tasmota web password, if it has one: given, or asked for
         # when it is found wanting one (ask_web_password). Held in memory only.
         self.web_password = args.web_password or credentials.get("AUTOFLASH_TASMOTA_PASSWORD")
         output.private(self.web_password, "tasmota-password")
@@ -112,26 +112,26 @@ class Context:
         self._given_email = account_name(given_email) if given_email else None
         # The run's one sign-in to the account, held in memory only.
         self.ewelink = Account(self._sign_in)
-        self._finder: join.PlugFinder | None = None
-        # The go-ahead to replace the plug's firmware, given in this run.
+        self._finder: join.DeviceFinder | None = None
+        # The go-ahead to replace the device's firmware, given in this run.
         self.consented = False
-        # The step a step found had not taken on the plug (errors.GoBack),
+        # The step a step found had not taken on the device (errors.GoBack),
         # which the run goes back to next.
         self.go_back: str | None = None
-        # The account's record of the plug A1 chose, for its plug.json.
-        self.account_plug: account.AccountPlug | None = None
+        # The account's record of the device A1 chose, for its device.json.
+        self.account_device: account.AccountDevice | None = None
         # Held only in memory: the Wi-Fi details, and the recovery image built
         # from them.  Neither is ever written to disk.
         self._wifi: tuple[str, str] | None = None
         self._recovery: bytes | None = None
-        # For the report: the phase runner a step used (its plug-busy time), when
+        # For the report: the phase runner a step used (its device-busy time), when
         # this session started, and whether the report has been offered.
         self.last_runner: PhaseRunner | None = None
         self.run_started = time.monotonic()
         self.run_resumed = False
         self.reported = False
         self.stage_begun = False  # a stage begun this run: a report worth asking for
-        # A converted plug's firmware, chosen at A3 (routes.settle_route).
+        # A converted device's firmware, chosen at A3 (routes.settle_route).
         self.firmware_choice: routes.FirmwareChoice | None = None
         self.last_failure = ""  # what the last stage to fail said, for the report
         # The run's report to the project's API (report_upload.py): its id and
@@ -152,26 +152,26 @@ class Context:
 
     def held_wifi(self) -> tuple[str, str] | None:
         """The Wi-Fi details this run holds already - typed, or read off the
-        plug - asking nothing; None when it holds none."""
+        device - asking nothing; None when it holds none."""
         return self._wifi
 
     def wifi(self, why: list[str] | None = None) -> tuple[str, str]:
-        """The Wi-Fi name and password: read from the plug where it can be.
+        """The Wi-Fi name and password: read from the device where it can be.
 
-        From D1 the plug runs Tasmota connected to the home network, so the
+        From D1 the device runs Tasmota connected to the home network, so the
         details are read from there rather than typed - and they are known to
         work, which typed ones are not until F2 tries them.  ESPHome gives
         them too (its Wi-Fi action); from an ESPHome or mover
-        that does not, they come from the plug's Sonoff backup, when this
-        computer has one and the plug is on that network still.  Asking is the
+        that does not, they come from the device's Sonoff backup, when this
+        computer has one and the device is on that network still.  Asking is the
         fallback, with `why` saying what it is for; `--wifi` forces it.
         """
         forced = getattr(self.args, "wifi", False)
         # ESPHome, or the mover, says nothing of its Wi-Fi password: only a
         # Tasmota can be read.
-        readable = runs.plug_runs_tasmota(self.state)
+        readable = runs.device_runs_tasmota(self.state)
         if self._wifi is None and not forced and readable:
-            found = wifi.read_wifi_from_plug(self)
+            found = wifi.read_wifi_from_device(self)
             if found is not None:
                 self.adopt_wifi(*found)
                 # A run stopped at the question earlier must not report it as typed.
@@ -183,7 +183,7 @@ class Context:
                 self.state.set_input("wifi_typed", False)
         if self._wifi is None and not forced and self.esphome_api_locked and not prompts.UNATTENDED:
             # ESPHome gives them, its API unlocked: its key typed instead.
-            found = unlock.ask_esphome_key(self, self.state.input("plug_ip"), wifi=True) and wifi.wifi_from_esphome(self)
+            found = unlock.ask_esphome_key(self, self.state.input("device_ip"), wifi=True) and wifi.wifi_from_esphome(self)
             if found:
                 self.adopt_wifi(*found)
                 self.state.set_input("wifi_typed", False)
@@ -241,7 +241,7 @@ class Context:
                 output.say(f"    {first}; preparing the firmware bundle again...")
                 try:
                     _, image = build_bundle(ssid, password, self.manifest_path.parent, chip=chips.of(kinds.of_run(self.state).chip),
-                                            release=bundle.release_on_the_plug(self))
+                                            release=bundle.release_on_the_device(self))
                 except BundleError as exc:
                     raise Abort(f"the bundle could not be prepared: {exc}") from exc
         self.remember_wifi(ssid, password, image)
@@ -353,7 +353,7 @@ class Context:
         """The eWeLink account, chosen once per run: its email, or the phone
         number it was made with.
 
-        The last account used on this computer is offered first; a plug in
+        The last account used on this computer is offered first; a device in
         another account needs that account's instead.
         """
         email = self.state.input("email") or self._given_email
@@ -388,12 +388,12 @@ class Context:
             settings.pop("ewelink_region", None)  # the last account's
             runs.save_settings(settings)
 
-    def file_under_plug(self, mac: str) -> None:
-        """Move this run under its plug's MAC (plugs.py), once the plug is
+    def file_under_device(self, mac: str) -> None:
+        """Move this run under its device's MAC (records.py), once the device is
         known and before anything is written to it."""
-        if plugs.mac_of_run(self.dir) == plugs.folder_name(mac).replace("-", ":"):
+        if records.mac_of_run(self.dir) == records.folder_name(mac).replace("-", ":"):
             return
-        target = plugs.runs_dir(mac) / self.dir.name
+        target = records.runs_dir(mac) / self.dir.name
         suffix = 2
         while target.exists():
             target, suffix = target.with_name(f"{self.dir.name}-{suffix}"), suffix + 1
@@ -407,12 +407,12 @@ class Context:
         output.move_log(move)
         self.dir, self.evidence = target, target / "live"
         self.state.path = target / "autoflash-state.json"
-        self.plug = runs.run_name(target)
-        runs.remember_current(self.plug)
+        self.run = runs.run_name(target)
+        runs.remember_current(self.run)
         output.say(f"This run's record is now in {runs.display_path(target)}.")
 
     def listen_ip(self) -> str:
-        """This computer's address as the plug sees it, worked out afresh each time.
+        """This computer's address as the device sees it, worked out afresh each time.
 
         Remembering it went wrong when a cable was unplugged mid-run: the tool
         kept offering an address the computer no longer had.  --listen-ip still
@@ -420,15 +420,15 @@ class Context:
         """
         if self.args.listen_ip:
             return self.args.listen_ip
-        plug_ip = self.state.input("plug_ip")
-        if not plug_ip:
+        device_ip = self.state.input("device_ip")
+        if not device_ip:
             raise Abort("the device address is not known yet, so this computer's "
                         "address cannot be worked out; pass --listen-ip")
         try:
-            derived = hostsys.local_ip_towards(plug_ip)
+            derived = hostsys.local_ip_towards(device_ip)
         except OSError as exc:
             raise Abort(
-                f"could not work out how this computer reaches {plug_ip} ({exc}); "
+                f"could not work out how this computer reaches {device_ip} ({exc}); "
                 "check you are on the same network as the device, or pass --listen-ip"
             ) from exc
         address = ipaddress.ip_address(derived)
@@ -445,10 +445,10 @@ class Context:
             self.state.set_input("listen_ip", derived)
         return derived
 
-    def set_plug_ip(self, address: str) -> None:
-        if address != self.state.input("plug_ip"):
+    def set_device_ip(self, address: str) -> None:
+        if address != self.state.input("device_ip"):
             output.say(f"The device is now at {address}.")
-            self.state.set_input("plug_ip", address)
+            self.state.set_input("device_ip", address)
 
     @property
     def steps(self) -> list[tuple[str, str, Any]]:
@@ -456,16 +456,16 @@ class Context:
         return routes.steps_of(self.state)
 
     @property
-    def finder(self) -> join.PlugFinder:
+    def finder(self) -> join.DeviceFinder:
         if self._finder is None:
-            self._finder = join.PlugFinder(self)
+            self._finder = join.DeviceFinder(self)
         return self._finder
 
     @property
     def device(self) -> device.Device:
-        host = self.state.input("plug_ip")
+        host = self.state.input("device_ip")
         if not host:
-            raise Abort("plug_ip is not set; pass --plug-ip")
+            raise Abort("device_ip is not set; pass --device-ip")
         return device.Device(
             host,
             user=self.state.input("web_user"),

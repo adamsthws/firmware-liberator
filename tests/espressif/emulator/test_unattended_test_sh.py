@@ -20,14 +20,14 @@ class InstanceTests(unittest.TestCase):
             # --keep with --save is refused next, before anything is started.
             done = self.run_script(f"--instance={instance}", "--keep", "--save=x")
             self.assertEqual(done.returncode, 2, instance)
-            self.assertIn("--save turns the plug off", done.stderr, instance)
+            self.assertIn("--save turns the device off", done.stderr, instance)
 
     def test_others_are_refused(self):
         for instance in ("0", "05", "100", "x"):
             done = self.run_script(f"--instance={instance}", "--keep", "--save=x")
             self.assertEqual(done.returncode, 2, instance)
             self.assertIn("--instance=N", done.stdout, instance)  # the usage
-            self.assertNotIn("--save turns the plug off", done.stderr, instance)
+            self.assertNotIn("--save turns the device off", done.stderr, instance)
 
 
 class ApiTests(unittest.TestCase):

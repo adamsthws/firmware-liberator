@@ -25,7 +25,7 @@ Sonoff's settings name the device to eWeLink (frame_params: deviceid, apikey,
 encrypt_key, devicekey; on the ais SDK its factory record's deviceid and
 factory_apikey, whose SHA-256 is worked out again). Each is replaced throughout the flash by a made-up
 value of the same length and form, as tools/espressif/emulator/public_dump.py
-makes the public test plugs, which boot and convert in the emulator: the
+makes the public test devices, which boot and convert in the emulator: the
 identity only matters to eWeLink's servers, which an emulated copy never meets.
 
 Each settings entry changed has its checksums made good again, so the copy

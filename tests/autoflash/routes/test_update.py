@@ -20,8 +20,8 @@ class ReplaceOwnBuildTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         state = RunState.open(Path(directory.name))
-        state.set_input("plug_ip", "192.0.2.50")
-        state.set_input("plug_kind", "sonoff-s60")
+        state.set_input("device_ip", "192.0.2.50")
+        state.set_input("device_kind", "sonoff-s60")
         ctx = SimpleNamespace(state=state, esphome_key=None)
         info = {"project_name": kinds.SONOFF_S60.esphome_project, "built": "someone's own", "encrypted": True}
         result = {}

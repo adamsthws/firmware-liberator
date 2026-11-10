@@ -1,4 +1,4 @@
-"""A Beken plug's backup as tools/beken/backup.py takes it: the MAC from the
+"""A Beken device's backup as tools/beken/backup.py takes it: the MAC from the
 factory TLV, and a first backup never overwritten."""
 import contextlib
 import hashlib
@@ -73,27 +73,27 @@ class BackupTests(unittest.TestCase):
             return self.response(flash[a - 0x3E0000:a - 0x3E0000 + n])
 
         with mock.patch.object(backup.urllib.request, "urlopen", urlopen):
-            got = backup.read_flash("http://plug/", 0x3E0000, len(flash))
+            got = backup.read_flash("http://device/", 0x3E0000, len(flash))
         self.assertEqual(got, flash)
-        self.assertEqual(urls, ["http://plug/api/flash/3e0000-4000", "http://plug/api/flash/3e4000-2000"])
+        self.assertEqual(urls, ["http://device/api/flash/3e0000-4000", "http://device/api/flash/3e4000-2000"])
 
     def test_a_failed_or_short_read_is_tried_again(self):
         self.quick()
         answers = [OSError("timed out"), self.response(b"\x01" * 10), self.response(b"\x01" * 0x4000)]
         with mock.patch.object(backup.urllib.request, "urlopen", side_effect=answers) as urlopen:
-            self.assertEqual(backup.read_flash("http://plug", 0x3E0000, 0x4000), b"\x01" * 0x4000)
+            self.assertEqual(backup.read_flash("http://device", 0x3E0000, 0x4000), b"\x01" * 0x4000)
         self.assertEqual(urlopen.call_count, 3)
 
     def test_a_read_that_keeps_failing_names_where(self):
         self.quick()
         with mock.patch.object(backup.urllib.request, "urlopen", side_effect=OSError("down")) as urlopen:
             with self.assertRaises(RuntimeError) as caught:
-                backup.read_flash("http://plug", 0x3E0000, 0x8000)
+                backup.read_flash("http://device", 0x3E0000, 0x8000)
         self.assertIn("0x3e0000", str(caught.exception))
         self.assertEqual(urlopen.call_count, 4)      # four tries, then given up: no later chunk asked for
 
     def run_main(self, tmp, region, stock_rbl=None):
-        argv = ["backup.py", "--plug", "http://plug", "--captures", str(tmp)]
+        argv = ["backup.py", "--device", "http://device", "--captures", str(tmp)]
         if stock_rbl:
             argv += ["--stock-rbl", str(stock_rbl)]
         with mock.patch.object(backup, "read_flash", return_value=region) as read, \
@@ -101,17 +101,17 @@ class BackupTests(unittest.TestCase):
             code = backup.main()
         return code, read, log.getvalue()
 
-    def test_the_backup_is_filed_under_the_plugs_mac_with_its_manifest(self):
+    def test_the_backup_is_filed_under_the_devices_mac_with_its_manifest(self):
         tmp = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
         region = factory_tlv([(0x02, b"\x11\x11\x11", self.MAC_BYTES)]).ljust(0x20000, b"\xff")
         rbl = tmp / "stock_app_1.0.2.rbl"
         rbl.write_bytes(b"RBL\x00" + bytes(200))
-        backup = tmp / "plugs" / "12-34-56-ab-cd-ef" / "sonoff-backup"
-        backup.mkdir(parents=True)       # the plug's directory may be there already, with no backup in it
+        backup = tmp / "devices" / "12-34-56-ab-cd-ef" / "sonoff-backup"
+        backup.mkdir(parents=True)       # the device's directory may be there already, with no backup in it
         code, read, _log = self.run_main(tmp, region, rbl)
         self.assertEqual(code, 0)
-        read.assert_called_once_with("http://plug", 0x3E0000, 0x20000)
+        read.assert_called_once_with("http://device", 0x3E0000, 0x20000)
         self.assertEqual((backup / "config-0x3e0000.bin").read_bytes(), region)
         self.assertEqual((backup / "stock-app-1.0.2.rbl").read_bytes(), rbl.read_bytes())
         manifest = json.loads((backup / "backup.json").read_text(encoding="utf-8"))
@@ -126,7 +126,7 @@ class BackupTests(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
         region = factory_tlv([(0x02, b"\x11\x11\x11", self.MAC_BYTES)]).ljust(0x20000, b"\xff")
-        backup = tmp / "plugs" / "12-34-56-ab-cd-ef" / "sonoff-backup"
+        backup = tmp / "devices" / "12-34-56-ab-cd-ef" / "sonoff-backup"
         backup.mkdir(parents=True)
         (backup / "config-0x3e0000.bin").write_bytes(b"the first backup")
         code, _read, log = self.run_main(tmp, region)

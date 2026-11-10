@@ -25,11 +25,11 @@ from tools.espressif.safeboot.safeboot_migration import OFFICIAL_TASMOTA_VERSION
 
 
 class PrepareUpdateTests(RouteTestCase):
-    """Before a plug converted on an earlier release is updated in the same
+    """Before a device converted on an earlier release is updated in the same
     run, its bundle is built again of this release (prepare_update)."""
 
     def prepare(self, *, own_bundle=False, fetched=True):
-        ctx = self.ctx(run=f"prepare-{own_bundle}-{fetched}", plug_kind="sonoff-s60")
+        ctx = self.ctx(run=f"prepare-{own_bundle}-{fetched}", device_kind="sonoff-s60")
         ctx.manifest_path = Path(tempfile.mkdtemp()) / "manifest.json"
         self.addCleanup(shutil.rmtree, ctx.manifest_path.parent, ignore_errors=True)
         default = ctx.manifest_path if not own_bundle else Path("/elsewhere/manifest.json")
@@ -42,14 +42,14 @@ class PrepareUpdateTests(RouteTestCase):
     def test_the_bundle_is_built_again_of_this_release(self):
         prepared, built = self.prepare()
         self.assertTrue(prepared)
-        self.assertIsNone(built.call_args.kwargs["release"])   # this release's, not the plug's
+        self.assertIsNone(built.call_args.kwargs["release"])   # this release's, not the device's
 
     def test_not_a_bundle_of_the_persons_own(self):
         prepared, built = self.prepare(own_bundle=True)
         self.assertFalse(prepared)
         built.assert_not_called()
 
-    def test_this_release_not_fetched_leaves_the_plug_on_its_own(self):
+    def test_this_release_not_fetched_leaves_the_device_on_its_own(self):
         self.assertFalse(self.prepare(fetched=False)[0])
 
 
@@ -59,7 +59,7 @@ class TasmotaUpdateTests(RouteTestCase):
     other Tasmota is not."""
 
     def settle(self, release, *, given=None, answer=0, run="run"):
-        ctx = self.ctx(given=given, run=run, plug_kind="sonoff-s60")
+        ctx = self.ctx(given=given, run=run, device_kind="sonoff-s60")
         with mock.patch.object(routes.source, "find_current_firmware", return_value="tasmota"), \
                 mock.patch.dict(update.RELEASE, tasmota=lambda ctx: release), \
                 mock.patch.object(routes, "sonoff_backup_exists", return_value=True), \
@@ -79,7 +79,7 @@ class TasmotaUpdateTests(RouteTestCase):
         self.assertEqual(route, ("tasmota", "outdated"))
         self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A3", "A5", "U5", "U6"])
         self.assertEqual(update.versions(ctx), ("15.6.0", OFFICIAL_TASMOTA_VERSION))
-        self.assertTrue(runs.plug_runs_tasmota(ctx.state))
+        self.assertTrue(runs.device_runs_tasmota(ctx.state))
 
     def test_asked_for_on_the_command_line_it_is_updated_unasked(self):
         _, route, offered = self.settle("15.6.0", given="tasmota")
@@ -103,7 +103,7 @@ class TasmotaUpdateTests(RouteTestCase):
             ctx = SimpleNamespace(device=SimpleNamespace(firmware_version=lambda version=version: version))
             self.assertEqual(update.tasmota_release(ctx), release, version)
 
-    def plug(self, safeboot_after=1):
+    def outdated_tasmota(self, safeboot_after=1):
         """A Tasmota that goes to its safeboot on Restart 3, after `safeboot_after` asks."""
         commands = []
         asks = iter([False] * safeboot_after + [True] * 100)
@@ -115,7 +115,7 @@ class TasmotaUpdateTests(RouteTestCase):
         return ctx, commands
 
     def test_it_is_switched_to_its_safeboot_and_given_this_release_there(self):
-        ctx, commands = self.plug()
+        ctx, commands = self.outdated_tasmota()
         with mock.patch.object(tasmota, "install_official", return_value=("uploaded", "rejoined the network")) \
                 as installed, mock.patch.object(tasmota.time, "sleep"):
             result = tasmota.step_tasmota_update(ctx)
@@ -124,19 +124,19 @@ class TasmotaUpdateTests(RouteTestCase):
         self.assertEqual(result["outcome"], "rejoined the network")
 
     def test_left_on_its_safeboot_it_is_given_it_from_there(self):
-        ctx, commands = self.plug(safeboot_after=0)
+        ctx, commands = self.outdated_tasmota(safeboot_after=0)
         with mock.patch.object(tasmota, "install_official", return_value=("uploaded", "rejoined the network")):
             tasmota.step_tasmota_update(ctx)
         self.assertEqual(commands, [])
 
     def test_one_that_lost_its_settings_is_left_to_the_person(self):
-        ctx, _ = self.plug()
+        ctx, _ = self.outdated_tasmota()
         with mock.patch.object(tasmota, "install_official", return_value=("uploaded", "raised its own network")), \
                 mock.patch.object(tasmota.time, "sleep"), self.assertRaisesRegex(errors.Abort, "lost its settings"):
             tasmota.step_tasmota_update(ctx)
 
     def test_the_check_waits_for_the_new_release_then_checks_the_meter(self):
-        ctx, _ = self.plug()
+        ctx, _ = self.outdated_tasmota()
         answers = iter(["15.6.0", None, OFFICIAL_TASMOTA_VERSION])
         with mock.patch.dict(update.RELEASE, tasmota=lambda ctx: next(answers)), \
                 mock.patch.object(tasmota, "calibrate_tasmota_meter", return_value={"changed": False}) as meter, \
@@ -146,7 +146,7 @@ class TasmotaUpdateTests(RouteTestCase):
         meter.assert_called_once()
 
     def test_a_try_cut_off_is_judged_by_the_release_it_runs(self):
-        ctx, _ = self.plug()
+        ctx, _ = self.outdated_tasmota()
         for release, finished in ((OFFICIAL_TASMOTA_VERSION, True), ("15.6.0", False), (None, None)):
             with mock.patch.dict(update.RELEASE, tasmota=lambda ctx, release=release: release):
                 self.assertIs(evidence.ATTEMPTED_EVIDENCE["U5"](ctx)[0], finished, release)
@@ -154,7 +154,7 @@ class TasmotaUpdateTests(RouteTestCase):
 
 
 class ConversionWifiTests(unittest.TestCase):
-    """G1 needs the Wi-Fi the plug was converted with, proven against the
+    """G1 needs the Wi-Fi the device was converted with, proven against the
     commit's record of the startup firmware - never the bundle's say-so."""
 
     def setUp(self):
@@ -193,22 +193,22 @@ class ConversionWifiTests(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
-    def run_with(self, on_plug, typed=()):
+    def run_with(self, on_device, typed=()):
         from unittest import mock
         answers = iter(typed)
-        with mock.patch.object(wifi, "read_wifi_from_plug", return_value=on_plug), \
+        with mock.patch.object(wifi, "read_wifi_from_device", return_value=on_device), \
              mock.patch.object(prompts, "ask_text", side_effect=lambda *_, **__: next(answers)), \
              mock.patch.object(prompts, "ask_secret", side_effect=lambda *_: next(answers)) as asked:
             tasmota.conversion_wifi(self.ctx)
         return asked
 
-    def test_the_plugs_own_details_are_used_when_they_match(self):
+    def test_the_devices_own_details_are_used_when_they_match(self):
         asked = self.run_with(("Home", "right"))
         asked.assert_not_called()
         self.pin.assert_not_called()
         self.ctx.remember_wifi.assert_called_once_with("Home", "right", b"Home/right")
 
-    def test_changed_wifi_on_the_plug_asks_for_the_conversions(self):
+    def test_changed_wifi_on_the_device_asks_for_the_conversions(self):
         asked = self.run_with(("NewNet", "new"), typed=["Home", "wrong", "Home", "right"])
         self.assertEqual(asked.call_count, 2)  # a wrong password is asked again
         self.ctx.remember_wifi.assert_called_once_with("Home", "right", b"Home/right")
@@ -219,7 +219,7 @@ class ConversionWifiTests(unittest.TestCase):
         self.run_with(("Home", "right"))
         self.pin.assert_called_once_with(Path("unused"), "Home", "right")
 
-    def test_the_plugs_new_details_are_never_pinned(self):
+    def test_the_devices_new_details_are_never_pinned(self):
         self.run_with(("NewNet", "new"), typed=["Home", "right"])
         for call in self.pin.call_args_list:
             self.assertNotEqual(call.args[1:], ("NewNet", "new"))
@@ -228,13 +228,13 @@ class ConversionWifiTests(unittest.TestCase):
         # Seen in the emulator: typed at D5 (--wifi), and asked for again at G1.
         self.ctx.args.wifi = True
         self.ctx.held_wifi = lambda: ("Home", "right")
-        with mock.patch.object(wifi, "read_wifi_from_plug") as read:
+        with mock.patch.object(wifi, "read_wifi_from_device") as read:
             asked = self.run_with(None)
         asked.assert_not_called()
         read.assert_not_called()
         self.ctx.remember_wifi.assert_called_once_with("Home", "right", b"Home/right")
 
-    def test_details_held_that_do_not_match_go_on_to_the_plugs(self):
+    def test_details_held_that_do_not_match_go_on_to_the_devices(self):
         self.ctx.held_wifi = lambda: ("NewNet", "new")
         asked = self.run_with(("Home", "right"))
         asked.assert_not_called()
@@ -242,7 +242,7 @@ class ConversionWifiTests(unittest.TestCase):
 
     def test_with_wifi_typed_and_none_held_they_are_asked(self):
         self.ctx.args.wifi = True
-        with mock.patch.object(wifi, "read_wifi_from_plug") as read:
+        with mock.patch.object(wifi, "read_wifi_from_device") as read:
             asked = self.run_with(None, typed=["Home", "right"])
         read.assert_not_called()
         self.assertEqual(asked.call_count, 1)
@@ -271,7 +271,7 @@ def no_lock_records(root, name):
 
 
 class CommitEvidenceTests(unittest.TestCase):
-    """E3 interrupted after the plug reported is finished, not a question."""
+    """E3 interrupted after the device reported is finished, not a question."""
 
     def ctx(self, report):
         import json
@@ -295,7 +295,7 @@ class CommitEvidenceTests(unittest.TestCase):
         self.assertIs(finished, False)
 
     def no_report(self, *, fetched, safeboot=False, slot=None):
-        # The emulated plug's PASS report lost on its way (the commit with the
+        # The emulated device's PASS report lost on its way (the commit with the
         # network cut as it finished): it then restarts into the startup firmware.
         from unittest import mock
         ctx = self.ctx(None)
@@ -330,7 +330,7 @@ class CommitEvidenceTests(unittest.TestCase):
         self.assertIsNot(finished, True)  # never taken as the commit's
 
     def test_a_passed_commit_supersedes_the_high_slot_check(self):
-        # After the commit the plug runs from slot 0 of the new layout: asking
+        # After the commit the device runs from slot 0 of the new layout: asking
         # to redo D4 then would put the interim Tasmota back over it.
         from types import SimpleNamespace
         from unittest import mock
@@ -358,14 +358,14 @@ class CommitEvidenceTests(unittest.TestCase):
         from unittest import mock
 
         ctx = self.ctx({"phase": "commit", "status": "PASS"})
-        with mock.patch.object(join, "check_plug_network") as network, \
+        with mock.patch.object(join, "check_device_network") as network, \
              mock.patch.object(output, "say"):
             result = tasmota.step_commit(ctx)
         network.assert_not_called()
         self.assertTrue(result["already_written"])
 
     def test_a_commit_refused_as_changed_sends_the_run_back_to_its_checks(self):
-        # After a power cut mid-commit the plug's settings and staged copy have
+        # After a power cut mid-commit the device's settings and staged copy have
         # changed: the commit, run again as it was, is refused every time.
         import json
         from unittest import mock
@@ -379,10 +379,10 @@ class CommitEvidenceTests(unittest.TestCase):
         ctx.state = RunState.open(ctx.evidence)
         for step in ("E1", "E2"):
             ctx.state.mark(step, "done")
-        refused = 'THE PLUG SAYS: migration_refused: NVS changed since preflight'
+        refused = 'THE DEVICE SAYS: migration_refused: NVS changed since preflight'
         ctx.phase_runner = lambda: mock.Mock(run=mock.Mock(return_value=(1, refused)))
-        with mock.patch.object(join, "check_plug_network"), \
-             mock.patch.object(hub, "plug_back_on_wifi"), \
+        with mock.patch.object(join, "check_device_network"), \
+             mock.patch.object(hub, "device_back_on_wifi"), \
              mock.patch.object(hub, "sonoff_layout_back"), \
              mock.patch.object(hostsys, "replace_file"), \
              mock.patch.object(safety_locks, "lifted", no_lock_records), \
@@ -448,7 +448,7 @@ class CommitEvidenceTests(unittest.TestCase):
 
     def test_a_power_cut_in_the_commit_is_recovered_from_and_tried_again(self):
         result, tries, recoveries, state = self.commit_tries(
-            [PhaseError("the plug stopped the commit without reaching this computer"), {"exit": 0}])
+            [PhaseError("the device stopped the commit without reaching this computer"), {"exit": 0}])
         self.assertEqual((result, tries, recoveries), ({"exit": 0}, 2, 1))
         self.assertEqual(state.data["captures"]["E3.attempts"], 2)
         self.assertEqual(tasmota.COMMIT_ATTEMPTS, 3)
@@ -463,7 +463,7 @@ class CommitEvidenceTests(unittest.TestCase):
             {"exit": 0}])
         self.assertEqual((result, tries), ({"exit": 0}, 3))
 
-    def test_the_plug_refusing_connections_while_it_comes_back_is_another_try(self):
+    def test_the_device_refusing_connections_while_it_comes_back_is_another_try(self):
         import urllib.error
         result, tries, _, _ = self.commit_tries(
             [urllib.error.URLError(ConnectionRefusedError(111, "Connection refused")), {"exit": 0}])
@@ -485,8 +485,8 @@ class CommitEvidenceTests(unittest.TestCase):
             self.assertIs(result, failure)
             self.assertEqual((tries, recoveries), (1, 0))
 
-    def test_a_commit_the_plug_finished_after_its_window_closed_is_not_tried(self):
-        # Seen in the fault suite: the window closed as the commit ran; the plug
+    def test_a_commit_the_device_finished_after_its_window_closed_is_not_tried(self):
+        # Seen in the fault suite: the window closed as the commit ran; the device
         # finished it, and the run carried on at E3 ran its network check on
         # the startup firmware, which cannot say its network - and went back
         # to E1 with no way forward.
@@ -500,7 +500,7 @@ class CommitEvidenceTests(unittest.TestCase):
         ctx = SimpleNamespace(evidence=evidence, state=RunState.open(evidence),
                               device=mock.Mock(is_safeboot=mock.Mock(return_value=True)))
         with mock.patch.object(tasmota, "commit_once") as commit, \
-             mock.patch.object(hub, "plug_back_on_wifi"), \
+             mock.patch.object(hub, "device_back_on_wifi"), \
              mock.patch.object(output, "say"):
             result = tasmota.step_commit(ctx)
         commit.assert_not_called()
@@ -509,17 +509,17 @@ class CommitEvidenceTests(unittest.TestCase):
         # tried as ever.
         ctx.device.is_safeboot.return_value = False
         with mock.patch.object(tasmota, "commit_once", return_value={"exit": 0}) as commit, \
-             mock.patch.object(hub, "plug_back_on_wifi"), \
+             mock.patch.object(hub, "device_back_on_wifi"), \
              mock.patch.object(output, "say"):
             self.assertEqual(tasmota.step_commit(ctx), {"exit": 0})
         commit.assert_called_once()
 
     def test_a_commit_that_finished_unseen_is_not_done_again(self):
-        # The cut came after the final table: the plug runs the startup firmware.
+        # The cut came after the final table: the device runs the startup firmware.
         result, tries, recoveries, _ = self.commit_tries([PhaseError("timed out")], recovered=True)
         self.assertEqual((result, tries, recoveries), ({"exit": 0, "finished_unseen": True}, 1, 1))
 
-    def test_a_temporary_table_gives_way_to_the_plugs_own_before_anything_else(self):
+    def test_a_temporary_table_gives_way_to_the_devices_own_before_anything_else(self):
         from types import SimpleNamespace
         from unittest import mock
         from tools.autoflash import plans as plan_module
@@ -529,7 +529,7 @@ class CommitEvidenceTests(unittest.TestCase):
         for table, planned in ((layout.temporary_sha256, True), (layout.table_sha256, False)):
             device = mock.Mock(sha_region=mock.Mock(side_effect=[table]))
             ctx = SimpleNamespace(dry_run=False, device=device,
-                                  state=SimpleNamespace(input={"plug_kind": "sonoff-th-elite"}.get))
+                                  state=SimpleNamespace(input={"device_kind": "sonoff-th-elite"}.get))
             with mock.patch.object(hub, "run_plan") as run_plan, \
                  mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
                 hub.sonoff_layout_back(ctx)
@@ -562,7 +562,7 @@ class CommitEvidenceTests(unittest.TestCase):
             if planned:
                 self.assertEqual(run_plan.call_args.args[1].name, "sonoff_layout")
 
-    def test_a_plug_asking_to_be_set_up_is_set_up_before_the_commit(self):
+    def test_a_device_asking_to_be_set_up_is_set_up_before_the_commit(self):
         # After a power cut mid-commit, Tasmota may have lost its settings and be
         # waiting on its own network: the run used to stop on "No route to host".
         from types import SimpleNamespace
@@ -574,21 +574,21 @@ class CommitEvidenceTests(unittest.TestCase):
                                   device=mock.Mock())
             with mock.patch.object(prompts, "find_ssid", return_value=setup), \
                  mock.patch.object(names, "setup_networks", return_value=("tasmota-ABCDEF-",)), \
-                 mock.patch.object(join, "configure_plug_wifi") as configure, \
-                 mock.patch.object(join, "locate_plug") as locate, \
+                 mock.patch.object(join, "configure_device_wifi") as configure, \
+                 mock.patch.object(join, "locate_device") as locate, \
                  mock.patch.object(output, "tell"):
-                hub.plug_back_on_wifi(ctx)
+                hub.device_back_on_wifi(ctx)
             self.assertEqual(configure.called, expected == "configure", (on_wifi, setup))
             self.assertEqual(locate.called, expected == "locate", (on_wifi, setup))
             if expected == "configure":
                 configure.assert_called_once_with(ctx, setup)
-            # On the network is not answering yet: switched back on, the plug
+            # On the network is not answering yet: switched back on, the device
             # answers ping before its web server is up.
             ctx.device.wait_reachable.assert_called_once()
 
 
 class TasmotaBackTests(unittest.TestCase):
-    """T1: a plug on Tasmota's own safeboot, its Tasmota missing, given
+    """T1: a device on Tasmota's own safeboot, its Tasmota missing, given
     official Tasmota back - its settings kept - before going on."""
 
     def back(self, *, safeboot=True, starts=False, outcome="rejoined the network",
@@ -611,10 +611,10 @@ class TasmotaBackTests(unittest.TestCase):
         result, installed, state = self.back()
         self.assertTrue(installed)
         self.assertEqual(result["name"], "tasmota-abcdef")
-        self.assertEqual(state.input("plug_kind"), "s60")
+        self.assertEqual(state.input("device_kind"), "s60")
 
     def started(self, versions, refused=False):
-        """tasmota_started_again, the plug's version each look in turn, 3 s apart."""
+        """tasmota_started_again, the device's version each look in turn, 3 s apart."""
         from types import SimpleNamespace
         from unittest import mock
         clock = [0.0]
@@ -647,7 +647,7 @@ class TasmotaBackTests(unittest.TestCase):
         _, installed, _ = self.back(safeboot=False)
         self.assertFalse(installed)
 
-    def test_back_but_not_a_plug_this_tool_converts(self):
+    def test_back_but_not_a_device_this_tool_converts(self):
         with self.assertRaisesRegex(errors.Abort, "not set up as a device this tool converts"):
             self.back(found=None)
 
@@ -658,7 +658,7 @@ class TasmotaBackTests(unittest.TestCase):
 
 class BegunByAnEarlierVersionTests(unittest.TestCase):
     """A run of 1.2.0 carried on by this version: it had no D5 (ESPHome's
-    bootloader), which needs the plug as it is before the commit."""
+    bootloader), which needs the device as it is before the commit."""
 
     def ctx(self, done=(), e3=None):
         from types import SimpleNamespace
@@ -714,8 +714,8 @@ class BegunByAnEarlierVersionTests(unittest.TestCase):
                          (False, False, ["--i-confirm-normal-app-is-stable", "--recovery-unproven"]))
 
     def gate(self, checks):
-        """G1's check that the plug runs official Tasmota, given what each ask of
-        the plug gives: (whether it passed, and how many times it was asked)."""
+        """G1's check that the device runs official Tasmota, given what each ask of
+        the device gives: (whether it passed, and how many times it was asked)."""
         from unittest import mock
         ctx = self.ctx()
         ctx.device = mock.Mock()
@@ -736,7 +736,7 @@ class BegunByAnEarlierVersionTests(unittest.TestCase):
         self.assertEqual(self.gate([reset] * 5), (False, 3))
 
     def test_g1s_check_refused_stops_at_once(self):
-        self.assertEqual(self.gate([(False, "app0 on the plug no longer matches the pinned image")]), (False, 1))
+        self.assertEqual(self.gate([(False, "app0 on the device no longer matches the pinned image")]), (False, 1))
         self.assertEqual(self.gate([device.DeviceError("no Berry console")]), (False, 1))
 
     def verified(self, kept, template=True):
@@ -764,15 +764,15 @@ class BegunByAnEarlierVersionTests(unittest.TestCase):
     def test_h1_takes_the_kept_bootloader(self):
         self.assertEqual(sorted(self.verified(kept=True)), ["app0", "safeboot", "table"])
 
-    def test_h1_sets_the_fallback_alone_on_a_plug_converted_before(self):
-        # Seen: a converted plug restarted six times in a row went over to
+    def test_h1_sets_the_fallback_alone_on_a_device_converted_before(self):
+        # Seen: a converted device restarted six times in a row went over to
         # Tasmota's fallback module, Generic, and switched nothing.
         self.verified(kept=True, template="fallback")
         self.assertFalse(self.given)  # no restart for it
         self.assertEqual(self.sent, ["Module2 0"])
 
-    def test_h1_puts_the_plugs_template_in_again_without_it(self):
-        # Seen: a run completed on a plug with none, which switched nothing.
+    def test_h1_puts_the_devices_template_in_again_without_it(self):
+        # Seen: a run completed on a device with none, which switched nothing.
         self.verified(kept=True)
         self.assertFalse(self.given)
         self.verified(kept=True, template=False)
@@ -821,7 +821,7 @@ class ConfigureStepTests(unittest.TestCase):
         self.assertIn("joined your Wi-Fi by itself", " ".join(str(c.args[0]) for c in said.call_args_list))
 
     def test_it_is_named_as_every_converted_tasmota_with_one_restart(self):
-        # tasmota-abcdef, whatever the plug: its own network takes the name too.
+        # tasmota-abcdef, whatever the device: its own network takes the name too.
         from types import SimpleNamespace
         from unittest import mock
         sent = []
@@ -829,7 +829,7 @@ class ConfigureStepTests(unittest.TestCase):
                                  uptime_seconds=lambda: 10, wait_for_reboot=lambda **_: 1.0,
                                  command=self.console(sent, "tasmota-abcdef"), is_safeboot=lambda: False,
                                  at_next_save=lambda commands, timeout=None: False)
-        inputs = {"product_model": "S60TPF", "plug_mac": "12:34:56:ab:cd:ef"}
+        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef"}
         ctx = SimpleNamespace(finder=SimpleNamespace(poll=lambda: "192.0.2.51"), device=device,
                               state=SimpleNamespace(input=inputs.get))
         with mock.patch.object(output, "say"):
@@ -846,7 +846,7 @@ class ConfigureStepTests(unittest.TestCase):
                                  uptime_seconds=lambda: 10, wait_for_reboot=lambda **_: 1.0,
                                  command=self.console(sent, "tasmota-abcdef"), is_safeboot=lambda: False,
                                  at_next_save=lambda commands, timeout=None: self.fail("hooked to a reset"))
-        inputs = {"product_model": "S60TPF", "plug_mac": "12:34:56:ab:cd:ef", "source": "untemplated"}
+        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef", "source": "untemplated"}
         ctx = SimpleNamespace(finder=SimpleNamespace(poll=lambda: "192.0.2.51"), device=device,
                               state=SimpleNamespace(input=inputs.get))
         with mock.patch.object(output, "say"):
@@ -857,7 +857,7 @@ class ConfigureStepTests(unittest.TestCase):
         self.assertEqual(result["template"], "applied")
 
     def test_tasmotas_fallback_module_counts_as_part_of_the_template(self):
-        # Generic as the fallback: six quick restarts and the plug switches nothing.
+        # Generic as the fallback: six quick restarts and the device switches nothing.
         import json
         from types import SimpleNamespace
         template = kinds.SONOFF_S60.tasmota_template()
@@ -870,7 +870,7 @@ class ConfigureStepTests(unittest.TestCase):
         self.assertTrue(tasmota.template_in_place(device, template))
 
     def test_a_template_not_kept_stops_the_step(self):
-        # Seen: a run completed on a plug left with no template, which
+        # Seen: a run completed on a device left with no template, which
         # switched nothing - Home Assistant showed its restart button alone.
         from types import SimpleNamespace
         from unittest import mock
@@ -878,7 +878,7 @@ class ConfigureStepTests(unittest.TestCase):
                                  uptime_seconds=lambda: 10, wait_for_reboot=lambda **_: 1.0,
                                  command=self.console([], "tasmota-abcdef", takes=False),
                                  is_safeboot=lambda: False, at_next_save=lambda commands, timeout=None: False)
-        inputs = {"product_model": "S60TPF", "plug_mac": "12:34:56:ab:cd:ef"}
+        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef"}
         ctx = SimpleNamespace(finder=SimpleNamespace(poll=lambda: "192.0.2.51"), device=device,
                               state=SimpleNamespace(input=inputs.get))
         with mock.patch.object(output, "say"), self.assertRaises(errors.Abort):
@@ -908,7 +908,7 @@ class ConfigureStepTests(unittest.TestCase):
                                  uptime_seconds=lambda: 10, wait_for_reboot=lambda **_: 1.0,
                                  command=command, is_safeboot=lambda: False,
                                  at_next_save=lambda commands, timeout=None: hooked.append(commands) or True)
-        inputs = {"product_model": "S60TPF", "plug_mac": "12:34:56:ab:cd:ef"}
+        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef"}
         ctx = SimpleNamespace(finder=SimpleNamespace(poll=lambda: "192.0.2.51"), device=device,
                               state=SimpleNamespace(input=inputs.get))
         with mock.patch.object(output, "say"), mock.patch.object(tasmota, "back_after_reset") as back, \
@@ -922,7 +922,7 @@ class ConfigureStepTests(unittest.TestCase):
 
 
     def test_tried_again_once_the_settings_are_in_place_it_resets_nothing(self):
-        # A busy plug took the template but answered too slowly: resetting
+        # A busy device took the template but answered too slowly: resetting
         # again would restart it again, every try.
         import json
         from types import SimpleNamespace
@@ -942,7 +942,7 @@ class ConfigureStepTests(unittest.TestCase):
         device = SimpleNamespace(wait_reachable=lambda **_: None, command=command, is_safeboot=lambda: False,
                                  started_at=lambda: "t", uptime_seconds=lambda: 10,
                                  wait_for_reboot=lambda **_: 1.0, at_next_save=lambda commands, timeout=None: False)
-        inputs = {"product_model": "S60TPF", "plug_mac": "12:34:56:ab:cd:ef"}
+        inputs = {"product_model": "S60TPF", "device_mac": "12:34:56:ab:cd:ef"}
         ctx = SimpleNamespace(finder=SimpleNamespace(poll=lambda: "192.0.2.51"), device=device,
                               state=SimpleNamespace(input=inputs.get))
         with mock.patch.object(output, "say"):
@@ -959,7 +959,7 @@ class ConfigureStepTests(unittest.TestCase):
 
 class OfficialTasmotaSeenTests(unittest.TestCase):
     """F2 - official Tasmota is seen running only from what it says it is: a
-    plug restarting does not answer its page for a moment (seen in the fault
+    device restarting does not answer its page for a moment (seen in the fault
     suite taken for Tasmota, while it came back on the startup firmware)."""
 
     def wait(self, versions, setup=None):
@@ -1043,7 +1043,7 @@ class BackAfterResetTests(unittest.TestCase):
         ctx = SimpleNamespace(device=device, state=SimpleNamespace(input=lambda key: None))
         with mock.patch.object(prompts, "find_ssid", return_value=setup) as looked, \
              mock.patch.object(names, "setup_networks", return_value=("tasmota-ABCDEF-1234",)), \
-             mock.patch.object(join, "configure_plug_wifi") as configured, \
+             mock.patch.object(join, "configure_device_wifi") as configured, \
              mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
             try:
                 tasmota.back_after_reset(ctx, "boot", 12)
@@ -1116,7 +1116,7 @@ class StalledUploadTests(unittest.TestCase):
         result, events, by_hand, told = self.upload([TimeoutError("stalled"), TimeoutError("stalled"), None])
         self.assertEqual([e for e in events if e == "Restart 1"], ["Restart 1"] * 2)
         self.assertEqual(len([e for e in events if isinstance(e, tuple)]), 3)
-        # sent again only once the plug was seen to go for its restart
+        # sent again only once the device was seen to go for its restart
         restart = events.index("Restart 1")
         self.assertEqual(events[restart + 1:restart + 4], ["reachable"] * 3)
         self.assertTrue(result.startswith("http:"))
@@ -1129,7 +1129,7 @@ class StalledUploadTests(unittest.TestCase):
         self.assertTrue(by_hand)
         self.assertEqual(result, "manual")
 
-    def test_a_plug_too_stuck_to_restart_is_switched_off_and_on(self):
+    def test_a_device_too_stuck_to_restart_is_switched_off_and_on(self):
         _, _, _, told = self.upload([TimeoutError("stalled"), None], restart_answers=False)
         self.assertIn("switch it off and on", told)
 
@@ -1174,7 +1174,7 @@ class StartupSettingsReportTests(unittest.TestCase):
         self.assertIn("Tasmota: settings not saved, read-back failed (4354).", text)
 
     def test_the_startup_firmware_from_before_its_rename_is_read_too(self):
-        # A plug a run from an older checkout left on the startup firmware.
+        # A device a run from an older checkout left on the startup firmware.
         note, text = self.report(["00:00:00.300 S60 recovery: settings not saved, NVS wipe failed (-1)"])
         self.assertEqual(note, "S60 recovery: settings not saved, NVS wipe failed (-1)")
         self.assertIn("Tasmota: settings not saved, NVS wipe failed (-1).", text)

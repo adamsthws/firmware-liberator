@@ -5,8 +5,8 @@
 //   knows the mover even while its update service is busy or stuck - the one
 //   thing it otherwise goes by.
 // - POST /restart answers 200, then the mover restarts - as switching the
-//   plug off and on would, so the tool need not ask anyone to. A mover
-//   restarted starts again: nothing on the plug changes.
+//   device off and on would, so the tool need not ask anyone to. A mover
+//   restarted starts again: nothing on the device changes.
 //
 // They are on the small web server the captive portal brings in, which
 // otherwise runs only while the mover's own network is up: started here, it

@@ -1,4 +1,4 @@
-"""What a backup says about a plug, for the run's log: enough to add a device
+"""What a backup says about a device, for the run's log: enough to add a device
 the tool has not met from one person's report. None of it is secret: no Wi-Fi,
 account or identity is read, and the MAC is left out. What only the chip itself
 can say comes from the bridge's GET /info, where it has one.

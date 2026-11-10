@@ -1,6 +1,6 @@
-# A virtual Espressif plug and the computer that converts it, in one container.
+# A virtual Espressif device and the computer that converts it, in one container.
 #
-# The container is "your computer on the home Wi-Fi": it runs the emulated plug
+# The container is "your computer on the home Wi-Fi": it runs the emulated device
 # (lcgamboa's QEMU fork, which emulates the Wi-Fi of the ESP32-C3 and of the
 # classic ESP32), a small router
 # for the emulated home network, and the conversion tool. Start it with

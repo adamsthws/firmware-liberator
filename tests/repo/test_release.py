@@ -71,7 +71,7 @@ class AdoptionTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         self.assertIn("release_notes.py --adoption-tags", workflow)
 
-    def test_each_plug_with_an_esphome_config_names_one(self):
+    def test_each_device_with_an_esphome_config_names_one(self):
         tags = release_notes.adoption_tags()
         self.assertTrue(tags)
         for tag in tags:

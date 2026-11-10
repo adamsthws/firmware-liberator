@@ -1,14 +1,14 @@
-"""The ESPHome images an Espressif plug is given, as firmware.json pins them:
+"""The ESPHome images an Espressif device is given, as firmware.json pins them:
 this project's own ESPHome for each kind, its bootloader, the mover, and
-the partition tables a plug leaves Tasmota for.
+the partition tables a device leaves Tasmota for.
 
 The run installs a pre-built ESPHome (artifacts/esphome-sonoff-s60-imprintable-*.bin,
 from devices/sonoff-s60/esphome.yaml) rather than asking anyone to build one: building it
 takes gigabytes of tools and minutes of compiling. Like the recovery Safeboot,
-it holds placeholders instead of a Wi-Fi name and password, and the plug's own
+it holds placeholders instead of a Wi-Fi name and password, and the device's own
 Wi-Fi is written into them in memory (imprint.py) - so the image on disk never
-holds it, and the plug joins the home network by itself when it starts.
-A Beken plug's images are routes/beken/images.py's; the plug once it runs
+holds it, and the device joins the home network by itself when it starts.
+A Beken device's images are routes/beken/images.py's; the device once it runs
 ESPHome, whatever its family, is tools/autoflash/esphome.py's.
 """
 
@@ -26,7 +26,7 @@ from tools.espressif import chips, layouts
 # What each is, as firmware.json pins it: tools/repo/update_firmware.py writes it,
 # docs/updating-firmware.md says when.
 FIRMWARE = json.loads((ROOT / "artifacts" / "firmware.json").read_text(encoding="utf-8"))
-# By chip (what its plugs share) and by kind (each one's own), as Beken's are.
+# By chip (what its devices share) and by kind (each one's own), as Beken's are.
 PINS = FIRMWARE["espressif"]
 # The published image, the ESPHome made for the Sonoff S60 (kinds.SONOFF_S60),
 # pinned: a changed file is refused, never used unseen.
@@ -36,9 +36,9 @@ IMAGE_SIZE = PINS[kinds.SONOFF_S60.key]["esphome"]["size"]
 # ESPHome's bootloader, from the same build, put in place of Sonoff's: Sonoff's
 # (ESP-IDF 4.4) starts ESPHome but cannot roll back an update that fails to
 # start ("Bootloader too old for OTA rollback").  It is all that sits before
-# the partition table at 0x8000, and the one part the plug cannot start without.
+# the partition table at 0x8000, and the one part the device cannot start without.
 # It is replaced only when that is the point: a power cut in the second it
-# takes to write leaves a plug that has to be opened.
+# takes to write leaves a device that has to be opened.
 BOOTLOADER = chips.ESP32C3.file("bootloader")
 BOOTLOADER_SHA256 = chips.ESP32C3.pin("bootloader")["sha256"]
 BOOTLOADER_SIZE = chips.ESP32C3.pin("bootloader")["size"]
@@ -56,7 +56,7 @@ class ImageError(ValueError):
 
 
 def check_app(image: bytes, label: str, chip: chips.Chip = chips.ESP32C3) -> None:
-    """Refuse anything but an app for the plug's chip that fits Sonoff's slot."""
+    """Refuse anything but an app for the device's chip that fits Sonoff's slot."""
     if len(image) > SLOT_SIZE:
         raise ImageError(f"{label} is {len(image):,} bytes; the device's app slot holds {SLOT_SIZE:,}")
     if len(image) < 64 or image[0] != 0xE9:
@@ -114,7 +114,7 @@ def bootloader_file(chip: chips.Chip = chips.ESP32C3) -> tuple[Path, int, str]:
 
 
 def published_bootloader(chip: chips.Chip = chips.ESP32C3) -> bytes:
-    """The pinned bootloader, checked to be one for this plug."""
+    """The pinned bootloader, checked to be one for this device."""
     path, size, digest = bootloader_file(chip)
     bootloader = path.read_bytes()
     if len(bootloader) != size or hashlib.sha256(bootloader).hexdigest() != digest:
@@ -130,11 +130,11 @@ def published_bootloader(chip: chips.Chip = chips.ESP32C3) -> bytes:
 
 
 # The mover (devices/esp32c3/mover.yaml): a small ESPHome, run only while a
-# plug leaves Tasmota, that takes the next firmware as an ESPHome update.
+# device leaves Tasmota, that takes the next firmware as an ESPHome update.
 MOVER = chips.ESP32C3.file("mover")
 MOVER_SHA256 = chips.ESP32C3.pin("mover")["sha256"]
 MOVER_SIZE = chips.ESP32C3.pin("mover")["size"]
-# Sonoff's partition table, as a stock S60 has it: written back when a plug
+# Sonoff's partition table, as a stock S60 has it: written back when a device
 # leaves Tasmota's layout.
 SONOFF_TABLE = ROOT / "artifacts" / "sonoff-s60-partition-table.bin"
 
@@ -154,7 +154,7 @@ def mover_for(ssid: str, password: str, chip: chips.Chip = chips.ESP32C3) -> byt
 
 
 def interim_of(kind: kinds.Kind) -> Path:
-    """The bundle's Tasmota for a plug of `kind` to run part way through."""
+    """The bundle's Tasmota for a device of `kind` to run part way through."""
     chip = chip_of(kind)
     return chip.bundle_file(chip.interim_name)
 
@@ -172,7 +172,7 @@ def sonoff_table(kind: kinds.Kind = kinds.SONOFF_S60) -> bytes:
 
 
 def leaving_table(kind: kinds.Kind = kinds.SONOFF_S60) -> bytes:
-    """The table a plug of `kind` leaves Tasmota for: Sonoff's, or a temporary one."""
+    """The table a device of `kind` leaves Tasmota for: Sonoff's, or a temporary one."""
     layout = layout_of(kind)
     table = layout.temporary_table() if layout.needs_temporary else sonoff_table(kind)
     if hashlib.sha256(table).hexdigest() != layout.leaving_sha256:

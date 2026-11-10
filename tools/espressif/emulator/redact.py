@@ -74,7 +74,7 @@ def secrets(flash: bytes) -> dict[bytes, str]:
 
 def redactor(flash: bytes):
     table = secrets(flash)
-    # No secrets (a public plug's flash, say) would join to an empty pattern,
+    # No secrets (a public device's flash, say) would join to an empty pattern,
     # which matches everywhere and has no label.
     pattern = table and re.compile(b"|".join(re.escape(s) for s in sorted(table, key=len, reverse=True)))
 

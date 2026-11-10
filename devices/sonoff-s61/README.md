@@ -13,10 +13,10 @@
 ## The device
 
 Sonoff's Beken smart plug, sold as the **S61S** (iPlug Gen2, Matter over
-Wi-Fi), model **S61STPF** for the European plug. The firmware calls itself
+Wi-Fi), model **S61STPF** for the European device. The firmware calls itself
 `S61`; its board id is `FWSW-01-S61-BK`, and the module is the `WBBK_01P_V1.3`.
 This folder holds or links everything specific to the S61; the tooling it shares
-with other Beken plugs is in [`tools/beken/`](../../tools/beken/).
+with other Beken devices is in [`tools/beken/`](../../tools/beken/).
 
 | | |
 |---|---|
@@ -44,7 +44,7 @@ which its author checked on hardware, and which agrees with the stock driver.
   installs `artifacts/openbeken-sonoff-s61-<version>.rbl`, built and pinned by
   `tools/repo/update_firmware.py` ([docs/updating-firmware.md](../../docs/updating-firmware.md)).
 - **ESPHome** (LibreTiny): [`esphome.yaml`](esphome.yaml), the path converted
-  plugs name as their `package_import_url`; what it reports, how to change it, how
+  devices name as their `package_import_url`; what it reports, how to change it, how
   it differs from the S60's, the reversion and what the emulator validated:
   [`esphome.md`](esphome.md). The tool installs
   `artifacts/esphome-sonoff-s61-<version>.rbl`, built the same way.
@@ -72,10 +72,10 @@ which its author checked on hardware, and which agrees with the stock driver.
   From Sonoff's firmware a run to OpenBeken is B1, B2 (sent through eWeLink),
   K1, B4; a run to ESPHome is B1, B2 (OpenBeken as the interim firmware), J1,
   B4 (the backup through it), J2 (it fetches ESPHome), K2. A run back to
-  Sonoff's firmware ends with K3: eWeLink shows the plug online, and it
+  Sonoff's firmware ends with K3: eWeLink shows the device online, and it
   answers there. What each step does:
-  [the run, step by step](../../docs/what-happens.md#a-beken-plug-the-s61).
+  [the run, step by step](../../docs/what-happens.md#a-beken-device-the-s61).
 - **Research**: [`research.md`](research.md), the S61's own: its meter's
   calibration, its wiring, and what OpenBeken did on it in the emulator. What was found out about its firmware, which the
-  other 4 MB Beken plugs share, is in
+  other 4 MB Beken devices share, is in
   [`docs/beken-research.md`](../../docs/beken-research.md).

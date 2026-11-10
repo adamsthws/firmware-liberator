@@ -105,7 +105,7 @@ class DumpStockFlashTests(unittest.TestCase):
         self.assertEqual(dump_stock_flash.check(bytes(flash(seqs=(1, None))))["otadata_selects"], "ota_0")
 
     def test_real_otadata_crc(self):
-        # A record read from a plug: sequence 20 with its stored CRC.
+        # A record read from a device: sequence 20 with its stored CRC.
         record = struct.pack("<I", 20) + b"\xff" * 24 + struct.pack("<I", 0x20843F37)
         self.assertEqual(dump_stock_flash.selected_ota_slot(record + b"\xff" * 0x1FE0, 2), 1)
 
@@ -128,14 +128,14 @@ class ReadInfoTests(unittest.TestCase):
         for effect in (urllib.error.HTTPError("http://192.0.2.51/info", 404, "Not Found", {}, None),
                        urllib.error.URLError("no route"), TimeoutError(), ConnectionResetError(),
                        http.client.BadStatusLine("x"), http.client.IncompleteRead(b""),
-                       [(b"<html>a plug's page</html>", {})]):
+                       [(b"<html>a device's page</html>", {})]):
             self.assertIsNone(self.answers(effect), effect)
 
 
-class PlugHashTests(unittest.TestCase):
-    """A backup is checked byte for byte against the plug's own hash of its flash."""
+class DeviceHashTests(unittest.TestCase):
+    """A backup is checked byte for byte against the device's own hash of its flash."""
 
-    def read(self, on_plug):
+    def read(self, on_device):
         import hashlib
         import urllib.error
         from unittest import mock
@@ -148,26 +148,26 @@ class PlugHashTests(unittest.TestCase):
 
         def fetch(host, path, timeout=60.0):
             if path == "/flash-sha256":
-                if on_plug is None:
+                if on_device is None:
                     raise urllib.error.HTTPError(path, 404, "Not Found", {}, None)
-                return (on_plug(hashlib.sha256(image).hexdigest()) + "\n").encode(), {}
+                return (on_device(hashlib.sha256(image).hexdigest()) + "\n").encode(), {}
             return answers[path]
 
         with mock.patch.object(dump_stock_flash, "fetch", side_effect=fetch):
             return dump_stock_flash.read_dump("bridge")
 
-    def test_a_backup_that_matches_the_plug_says_so(self):
+    def test_a_backup_that_matches_the_device_says_so(self):
         _, _, report = self.read(lambda digest: digest.upper())
-        self.assertIs(report["matches_plug"], True)
+        self.assertIs(report["matches_device"], True)
 
-    def test_a_backup_that_differs_from_the_plug_is_refused(self):
+    def test_a_backup_that_differs_from_the_device_is_refused(self):
         from tools.espressif.dump_stock_flash import IncompleteDump
         with self.assertRaises(IncompleteDump):
             self.read(lambda digest: "0" * 64)
 
     def test_an_older_bridge_leaves_it_unchecked(self):
         _, _, report = self.read(None)
-        self.assertIsNone(report["matches_plug"])
+        self.assertIsNone(report["matches_device"])
 
 
 if __name__ == "__main__":

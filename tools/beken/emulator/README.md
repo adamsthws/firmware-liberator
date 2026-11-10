@@ -1,28 +1,28 @@
 # The Beken emulator
 
-How the emulator for Beken plugs, the BK7238, is put together and what it changes,
+How the emulator for Beken devices, the BK7238, is put together and what it changes,
 for working on it. How to use it is in
 [docs/emulator.md](../../../docs/emulator.md#the-beken-emulator).
 
 ## How it fits together
 
-`beken-emu.sh plug` runs the public S61s dump as a plug provisioned on a home
+`beken-emu.sh device` runs the public S61s dump as a device provisioned on a home
 Wi-Fi, on a Docker network of its own (`autoflash-beken-emu`, apart from the
-Espressif emulator and everything else). The fork's `--net-tap` puts the plug's
-radio on a TAP device, which `plug-net.sh` bridges with the container's
-interface; the container is that Wi-Fi's router, `.1`: DHCP (the plug at
+Espressif emulator and everything else). The fork's `--net-tap` puts the device's
+radio on a TAP device, which `device-net.sh` bridges with the container's
+interface; the container is that Wi-Fi's router, `.1`: DHCP (the device at
 `.50`-`.59`), DNS (every name the router), and eWeLink, the local stub
-(`tools/beken/emulator/cloud_stub.py`), which every connection the plug makes off the
-network is sent to - nothing reaches the internet. `tools/beken/emulator/plug.py` is
-the plug itself: it boots from its flash, kept in
+(`tools/beken/emulator/cloud_stub.py`), which every connection the device makes off the
+network is sent to - nothing reaches the internet. `tools/beken/emulator/device.py` is
+the device itself: it boots from its flash, kept in
 `captures/emulation/beken/state/` with its logs and the stub's CA, so it
 carries on across firmware - each restart the firmware asks for a boot of its
-own, from the bootloader, as on a real plug - and Sonoff's firmware is helped
+own, from the bootloader, as on a real device - and Sonoff's firmware is helped
 online (`cloud_online.StockHooks`) only while it is the one that starts.
 
 Each command first ensures the image: one labelled with the hash of what it is built
 from (`image.sh tag`: `UPSTREAM`, `patches/`, `requirements.txt`,
-`bk-emu.Dockerfile`), pulled from `ghcr.io/adamsthws/autoflash-beken-emu:<hash>`,
+`beken-emu.Dockerfile`), pulled from `ghcr.io/adamsthws/autoflash-beken-emu:<hash>`,
 which the `beken-emulator-image` workflow publishes for every version pushed,
 or built where it is not published - from the upstream source archive on this
 repository's release
@@ -49,11 +49,11 @@ patch does and why, how to change them, and how the pin moves, is
 - The **SAR ADC** is modelled (`src/emulator.py`, `src/periph.py`): a channel no
   one set reads 330 raw (about 1.06 V); `--adc CH:VALUE` or `--adc P23:1.65V` on
   `main.py` sets one. Channels 7 and up (7 is the internal temperature sensor)
-  give no samples unless set. `beken-emu.sh` sets none, and the Beken plugs need
+  give no samples unless set. `beken-emu.sh` sets none, and the Beken devices need
   none: unlike the ESP32-C3's BASICR4 (`adc_readings` in `tools/autoflash/kinds.py`),
   neither firmware acts on a reading ([Beken research](../../../docs/beken-research.md#0x3e0000--factory-tlv-store-mac--radio-calibration)).
-- The plug's **power meter**, a BL0937, is on the plug's board, outside the
-  emulator: `board.py` ([below](#the-plugs-board-boardpy)). Nothing else on the
+- The device's **power meter**, a BL0937, is on the device's board, outside the
+  emulator: `board.py` ([below](#the-devices-board-boardpy)). Nothing else on the
   board is: no button, and the relay and LEDs are only the pins the firmware
   drives.
 
@@ -68,16 +68,16 @@ python /opt/beken-emulator/src/main.py <S61 dump>.bin --with-boot -chip BK7238 -
 Always pass `--only-uart`. Without it the emulator logs every MMIO access
 (300k+ lines) and runs so slowly it never progresses past init.
 
-## The plug's board (`board.py`)
+## The device's board (`board.py`)
 
 The S61's meter is a chip beside the BK7238, so `board.py` is that board.
 BekenEmulator has a BL0937 of its own (`set_energy_meter`), which toggles the
 pins on its 2 ms tick - 250 Hz at most, where the voltage needs 1.8 kHz - and
-follows no relay; `plug.py` leaves it unset. `plug.py` attaches it
+follows no relay; `device.py` leaves it unset. `device.py` attaches it
 to the emulator it builds, from the checkout's copy in the container
-(`/work`), as `plug.py` itself is run: changing it needs no new image. It is
+(`/work`), as `device.py` itself is run: changing it needs no new image. It is
 the Beken counterpart of the Espressif emulator's
-[`board.py`](../../espressif/emulator/README.md#the-plugs-board-boardpy).
+[`board.py`](../../espressif/emulator/README.md#the-devices-board-boardpy).
 
 - **The wiring is the S61's** (`WIRING`, as
   `devices/sonoff-s61/drv_autoflash_sonoff_s61.c` and `esphome.yaml` have it,
@@ -219,7 +219,7 @@ commit's worth, with its reasoning in its header.
   network, which is the device's router itself and reachable only through
   port forwards. The device is then a station on the host's network, given
   its address by that network's DHCP server and reached at it by every
-  protocol: how `beken-emu.sh plug` puts the plug on a Docker network of its
+  protocol: how `beken-emu.sh device` puts the device on a Docker network of its
   own, where `beken-emu.sh computer` reaches it. The built-in network's own options are refused
   beside it.
 
@@ -238,13 +238,6 @@ SHA-256 into `UPSTREAM`, and says the release to publish it as,
 attached, then publish: releases are immutable); then rework whatever patches
 no longer apply.
 
-**With the next image**, whatever brings it - a patch, or a new pin - three
-things change that would each be a new image on their own, so they wait for
-it, and `tests/repo/test_emulator_images.py` fails until they are done:
-`bk-emu.Dockerfile` becomes `beken-emu.Dockerfile`, named after the image as
-`beken-emu.sh` is (`image.sh` takes either); `UPSTREAM`, `requirements.txt` and
-the Dockerfile name the script `beken-emu.sh` (`image.sh source` writes
-`UPSTREAM` so); and the five patches take the name form above. The release
-holding today's archive keeps its earlier name, `emulator-source-beken-d9a3772`,
-after the family; `image.sh` names the next by the upstream project, and its
-exception for that one goes with that pin.
+The release holding today's archive keeps its earlier name,
+`emulator-source-beken-d9a3772`, after the family; `image.sh` names the next by
+the upstream project, and its exception for that one goes with that pin.

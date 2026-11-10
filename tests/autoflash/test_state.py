@@ -34,25 +34,43 @@ class RunStateTests(unittest.TestCase):
                     self.assertRaises(PermissionError):
                 run.mark("E2", DONE)
 
+    def test_a_run_begun_by_a_release_before_2_4_0_is_read_under_todays_names(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "autoflash-state.json"
+            path.write_text(json.dumps({
+                "schema": 1, "run_id": "0a1b2c", "created_utc": "", "updated_utc": "", "steps": {},
+                "inputs": {"plug_ip": "192.0.2.50", "plug_mac": "12:34:56:ab:cd:ef", "plug_kind": "sonoff-s60",
+                           "firmware": "tasmota"},
+                "captures": {"E2.plug_busy_seconds": 41.5, "D4.signal_dbm": -60}}), encoding="utf-8")
+            run = RunState.open(Path(directory))
+            self.assertEqual((run.input("device_ip"), run.input("device_mac"), run.input("device_kind")),
+                             ("192.0.2.50", "12:34:56:ab:cd:ef", "sonoff-s60"))
+            self.assertEqual(run.data["captures"], {"E2.device_busy_seconds": 41.5, "D4.signal_dbm": -60})
+            run.save()   # and kept so, for the next step
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(sorted(saved["inputs"]), ["device_ip", "device_kind", "device_mac", "firmware"])
+            self.assertEqual(sorted(saved["captures"]), ["D4.signal_dbm", "E2.device_busy_seconds"])
+
     def test_state_survives_reload_and_records_steps(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             state = RunState.open(root)
-            state.set_input("plug_ip", "192.0.2.99")
+            state.set_input("device_ip", "192.0.2.99")
             state.mark("A1", DONE, note="paired")
             state.capture("D1.upload_seconds", 41)
 
             reopened = RunState.open(root)
-            self.assertEqual(reopened.input("plug_ip"), "192.0.2.99")
+            self.assertEqual(reopened.input("device_ip"), "192.0.2.99")
             self.assertTrue(reopened.is_done("A1"))
             self.assertEqual(reopened.data["captures"]["D1.upload_seconds"], 41)
 
     def test_require_reports_every_missing_input(self):
         with tempfile.TemporaryDirectory() as directory:
             state = RunState.open(Path(directory))
-            state.set_input("plug_ip", "")
-            with self.assertRaisesRegex(ValueError, "plug_ip.*listen_ip|listen_ip"):
-                state.require("plug_ip", "listen_ip")
+            state.set_input("device_ip", "")
+            with self.assertRaisesRegex(ValueError, "device_ip.*listen_ip|listen_ip"):
+                state.require("device_ip", "listen_ip")
 
     def test_failed_step_is_not_skipped_on_resume(self):
         with tempfile.TemporaryDirectory() as directory:

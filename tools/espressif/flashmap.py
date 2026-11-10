@@ -1,6 +1,6 @@
-"""What a whole-flash dump of an Espressif plug holds, read from the dump itself:
+"""What a whole-flash dump of an Espressif device holds, read from the dump itself:
 which chip it is for, where its partition table says things are, and how to
-read the MAC from its eFuses. No plug's layout is assumed.
+read the MAC from its eFuses. No device's layout is assumed.
 """
 
 from __future__ import annotations
@@ -129,7 +129,7 @@ def esp32c3_efuse(mac: str, revision: int = 0) -> bytes:
 
 
 def mac_of_efuse(efuse: bytes) -> str:
-    """The plug's MAC from its eFuse file, whichever chip's it is."""
+    """The device's MAC from its eFuse file, whichever chip's it is."""
     if len(efuse) == ESP32_EFUSE_SIZE:
         raw = efuse[4:8][::-1]
         raw = efuse[8:10][::-1] + raw

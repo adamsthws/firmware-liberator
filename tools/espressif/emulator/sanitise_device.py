@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Make a saved plug public: nothing of Sonoff's, or of the real plug's, in it.
+"""Make a saved device public: nothing of Sonoff's, or of the real device's, in it.
 
-    python -I tools/espressif/emulator/sanitise_plug.py SAVED OUT --stock DUMP_DIR
+    python -I tools/espressif/emulator/sanitise_device.py SAVED OUT --stock DUMP_DIR
 
-SAVED is a plug kept with unattended-test.sh --save, on the made-up MAC of a
-test copy (copy_plug.py), carried at least as far as D5: past it the plug runs
+SAVED is a device kept with unattended-test.sh --save, on the made-up MAC of a
+test copy (copy_device.py), carried at least as far as D5: past it the device runs
 none of Sonoff's code - the bridge and the interim Tasmota have taken its app
 slots, D5 its bootloader - so from there on the final firmware can be tested
 with nothing of Sonoff's at all (docs/updating-firmware.md). DUMP_DIR is the
-real plug's Sonoff backup (flash.bin, efuse.bin), only read, to prove the
+real device's Sonoff backup (flash.bin, efuse.bin), only read, to prove the
 result holds nothing of it.
 
 The flash is rebuilt from blank, and only what is shown to be public is
@@ -48,9 +48,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import imprint, plugs, tasmota_settings as ts  # noqa: E402
+from tools.autoflash import imprint, records, tasmota_settings as ts  # noqa: E402
 from tools.autoflash.routes.espressif import images  # noqa: E402
-from tools.espressif.emulator.copy_plug import MAC_AT  # noqa: E402
+from tools.espressif.emulator.copy_device import MAC_AT  # noqa: E402
 from tools.espressif.inspect_stock_nvs import parse as parse_nvs  # noqa: E402
 from tools.autoflash.sonoff_secrets import PUBLIC_FIELDS, sonoff_values  # noqa: E402,F401
 from tools.espressif.safeboot.safeboot_migration import (  # noqa: E402
@@ -111,7 +111,7 @@ def nvs_rows_of_interim_tasmota(nvs: bytes) -> tuple[list[tuple[str, str, str, s
     record = next((value.data for (ns, key), value in values.items()
                    if names.get(ns) == "main" and key == "Settings"), None)
     if record is None:
-        raise Refused("the plug's settings hold no Tasmota record (main/Settings)")
+        raise Refused("the device's settings hold no Tasmota record (main/Settings)")
     settings = record[:ts.SIZE]
     wifi = [ts.text(settings, index) for index in (ts.SET_STASSID1, ts.SET_STAPWD1,
                                                    ts.SET_STASSID2, ts.SET_STAPWD2)]
@@ -144,7 +144,7 @@ def sanitise_flash(flash: bytes) -> tuple[bytes, dict[str, str]]:
 
     bootloader = images.published_bootloader()
     if flash[:len(bootloader)] != bootloader:
-        raise Refused("its bootloader is not the published one: carry the plug past D5 first, "
+        raise Refused("its bootloader is not the published one: carry the device past D5 first, "
                       "which writes it in place of Sonoff's")
     out[:len(bootloader)] = bootloader
     proof["bootloader"] = f"{images.BOOTLOADER.relative_to(ROOT)}, byte for byte"
@@ -206,7 +206,7 @@ def sanitise_flash(flash: bytes) -> tuple[bytes, dict[str, str]]:
 
 
 def sanitise_efuse(efuse: bytes, mac: str) -> bytes:
-    if plugs.mac_from_efuse(efuse) != mac:
+    if records.mac_from_efuse(efuse) != mac:
         raise Refused("the eFuses are not the test copy's")
     out = bytearray(EFUSE_SIZE)
     out[EFUSE_BLOCK0[0]:EFUSE_BLOCK0[1]] = efuse[EFUSE_BLOCK0[0]:EFUSE_BLOCK0[1]]
@@ -215,7 +215,7 @@ def sanitise_efuse(efuse: bytes, mac: str) -> bytes:
             for bit in range(first, first + count):
                 at, mask = block + bit // 8, 1 << (bit % 8)
                 out[at] |= efuse[at] & mask
-    if plugs.mac_from_efuse(bytes(out)) != mac or out[MAC_AT] != efuse[MAC_AT]:
+    if records.mac_from_efuse(bytes(out)) != mac or out[MAC_AT] != efuse[MAC_AT]:
         raise Refused("the MAC did not survive")
     return bytes(out)
 
@@ -223,12 +223,12 @@ def sanitise_efuse(efuse: bytes, mac: str) -> bytes:
 # -- what the computer keeps -------------------------------------------------
 
 def sanitise_captures(source: Path, target: Path, mac: str) -> list[str]:
-    """The current run's state and reports, the plug's record, the locks."""
-    folder = plugs.folder_name(mac)
+    """The current run's state and reports, the device's record, the locks."""
+    folder = records.folder_name(mac)
     current = (source / ".autoflash-current").read_text(encoding="utf-8").strip()
     run = source / current
-    if not current.startswith(f"plugs/{folder}/runs/") or not (run / "autoflash-state.json").is_file():
-        raise Refused("the saved captures have no current run of this plug")
+    if not current.startswith(f"devices/{folder}/runs/") or not (run / "autoflash-state.json").is_file():
+        raise Refused("the saved captures have no current run of this device")
     kept = []
     for path in sorted(run.rglob("*")):
         relative = path.relative_to(run).as_posix()
@@ -242,10 +242,10 @@ def sanitise_captures(source: Path, target: Path, mac: str) -> list[str]:
     state["inputs"]["email"] = PLACEHOLDER_EMAIL
     state["inputs"]["stock_backup"] = ""
     state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
-    record = json.loads((source / f"plugs/{folder}/plug.json").read_text(encoding="utf-8"))
+    record = json.loads((source / f"devices/{folder}/device.json").read_text(encoding="utf-8"))
     record["ewelink_id"], record["ewelink_name"] = PLACEHOLDER_DEVICE
-    (target / f"plugs/{folder}/plug.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
-    kept.append(f"plugs/{folder}/plug.json")
+    (target / f"devices/{folder}/device.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    kept.append(f"devices/{folder}/device.json")
     (target / ".autoflash-current").write_text(current + "\n", encoding="utf-8")
     kept.append(".autoflash-current")
     locks = source / ".safety-locks"
@@ -267,7 +267,7 @@ def mac_forms(mac: str) -> set[bytes]:
 
 
 def local_identities() -> set[bytes]:
-    """The eWeLink account and the real plugs' eWeLink devices, where this
+    """The eWeLink account and the real devices' eWeLink devices, where this
     computer has them."""
     found: set[bytes] = set()
     try:
@@ -282,7 +282,7 @@ def local_identities() -> set[bytes]:
         email = None
     if email:
         found.add(email.encode())
-    for record in (ROOT / "captures/plugs").glob("*/plug.json"):
+    for record in (ROOT / "captures/devices").glob("*/device.json"):
         try:
             data = json.loads(record.read_text())
         except ValueError:
@@ -324,25 +324,25 @@ def prove(out: Path, stock: bytes, real_mac: str, explain: bool = False) -> dict
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("saved", type=Path, help="a plug kept with unattended-test.sh --save")
-    parser.add_argument("out", type=Path, help="where the public plug goes (must not exist)")
+    parser.add_argument("saved", type=Path, help="a device kept with unattended-test.sh --save")
+    parser.add_argument("out", type=Path, help="where the public device goes (must not exist)")
     parser.add_argument("--stock", type=Path, required=True,
-                        help="the real plug's Sonoff backup directory (flash.bin, efuse.bin), only read")
+                        help="the real device's Sonoff backup directory (flash.bin, efuse.bin), only read")
     parser.add_argument("--explain", action="store_true",
                         help="refused: say which of Sonoff's settings each value found came from (never the value)")
     args = parser.parse_args(argv)
     if args.out.exists():
         raise SystemExit(f"{args.out} is there already")
     stock = (args.stock / "flash.bin").read_bytes()
-    real_mac = plugs.mac_from_efuse((args.stock / "efuse.bin").read_bytes())
+    real_mac = records.mac_from_efuse((args.stock / "efuse.bin").read_bytes())
     captures = args.saved / "captures"
-    backups = [p for p in (captures / "plugs").glob("*/sonoff-backup/efuse.bin")]
+    backups = [p for p in (captures / "devices").glob("*/sonoff-backup/efuse.bin")]
     if len(backups) != 1:
-        raise SystemExit("the saved plug should hold one plug's captures")
+        raise SystemExit("the saved device should hold one device's captures")
     efuse = backups[0].read_bytes()
-    mac = plugs.mac_from_efuse(efuse)
+    mac = records.mac_from_efuse(efuse)
     if mac == real_mac:
-        raise SystemExit("the saved plug is the real one: save a test copy's (copy_plug.py)")
+        raise SystemExit("the saved device is the real one: save a test copy's (copy_device.py)")
 
     tmp = Path(tempfile.mkdtemp(prefix="autoflash-public-", dir=args.out.parent))
     try:
@@ -373,7 +373,7 @@ def main(argv: list[str] | None = None) -> int:
     except BaseException:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
-    print(f"Public plug written to {args.out}:")
+    print(f"Public device written to {args.out}:")
     for label, said in proof.items():
         print(f"  {label:10} {said}")
     print(f"  checked {checked['files']} files for {checked['dump_blocks_sought']:,} blocks of the dump "

@@ -1,4 +1,4 @@
-"""The proxy in front of the emulated plug's OpenBeken page keeps the plug
+"""The proxy in front of the emulated device's OpenBeken page keeps the device
 almost idle: one request at a time, reads kept, actions passed through."""
 
 import http.client
@@ -12,12 +12,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from tools.beken.emulator import ui_proxy
 
 
-class FakePlug(ThreadingHTTPServer):
+class FakeDevice(ThreadingHTTPServer):
     """OpenBeken as the proxy sees it: every answer closes its connection."""
     daemon_threads = True
 
     def __init__(self):
-        super().__init__(("127.0.0.1", 0), FakePlugHandler)
+        super().__init__(("127.0.0.1", 0), FakeDeviceHandler)
         self.requests: list[str] = []
         self.open = 0
         self.most_open = 0
@@ -25,7 +25,7 @@ class FakePlug(ThreadingHTTPServer):
         self.release = threading.Event()   # ends ESPHome's event stream
 
 
-class FakePlugHandler(BaseHTTPRequestHandler):
+class FakeDeviceHandler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
@@ -43,7 +43,7 @@ class FakePlugHandler(BaseHTTPRequestHandler):
             self.server.requests.append(self.path)
             self.server.open += 1
             self.server.most_open = max(self.server.most_open, self.server.open)
-        time.sleep(0.05)   # the emulated plug is slow
+        time.sleep(0.05)   # the emulated device is slow
         body = f"page {self.path}".encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
@@ -56,11 +56,11 @@ class FakePlugHandler(BaseHTTPRequestHandler):
 
 class UiProxyTests(unittest.TestCase):
     def setUp(self):
-        self.plug = FakePlug()
-        threading.Thread(target=self.plug.serve_forever, daemon=True).start()
-        self.addCleanup(self.plug.server_close)
-        self.addCleanup(self.plug.shutdown)
-        self.proxy = ui_proxy.UiProxy(("127.0.0.1", 0), self.plug.server_address[:2], min_gap=0.0)
+        self.device = FakeDevice()
+        threading.Thread(target=self.device.serve_forever, daemon=True).start()
+        self.addCleanup(self.device.server_close)
+        self.addCleanup(self.device.shutdown)
+        self.proxy = ui_proxy.UiProxy(("127.0.0.1", 0), self.device.server_address[:2], min_gap=0.0)
         threading.Thread(target=self.proxy.serve_forever, daemon=True).start()
         self.addCleanup(self.proxy.server_close)
         self.addCleanup(self.proxy.shutdown)
@@ -74,31 +74,31 @@ class UiProxyTests(unittest.TestCase):
         finally:
             connection.close()
 
-    def test_a_browsers_parallel_requests_reach_the_plug_one_at_a_time(self):
+    def test_a_browsers_parallel_requests_reach_the_device_one_at_a_time(self):
         threads = [threading.Thread(target=self.get, args=(f"/page{n}",)) for n in range(8)]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join()
-        self.assertEqual(len(self.plug.requests), 8)
-        self.assertEqual(self.plug.most_open, 1)
+        self.assertEqual(len(self.device.requests), 8)
+        self.assertEqual(self.device.most_open, 1)
 
     def test_the_pages_polling_is_answered_from_the_cache(self):
         for _ in range(5):
             status, how, body = self.get("/index?state=1")
             self.assertEqual((status, body), (200, b"page /index?state=1"))
-        self.assertEqual(self.plug.requests, ["/index?state=1"])
+        self.assertEqual(self.device.requests, ["/index?state=1"])
         self.assertEqual(how, "cache")
 
-    def test_an_action_always_reaches_the_plug(self):
+    def test_an_action_always_reaches_the_device(self):
         for _ in range(3):
             self.assertEqual(self.get("/index?tgl=1")[1], "live")
-        self.assertEqual(self.plug.requests, ["/index?tgl=1"] * 3)
+        self.assertEqual(self.device.requests, ["/index?tgl=1"] * 3)
 
-    def test_the_last_good_page_is_shown_when_the_plug_does_not_answer(self):
+    def test_the_last_good_page_is_shown_when_the_device_does_not_answer(self):
         self.get("/index")
         self.proxy.cache_ttl = 0.0
-        # Nothing listening there now: as a plug whose connections are all taken.
+        # Nothing listening there now: as a device whose connections are all taken.
         with socket.socket() as spare:
             spare.bind(("127.0.0.1", 0))
             self.proxy.device = spare.getsockname()
@@ -109,19 +109,19 @@ class UiProxyTests(unittest.TestCase):
     def test_the_root_is_answered_here(self):
         status, _, _ = self.get("/")
         self.assertEqual(status, 302)
-        self.assertEqual(self.plug.requests, [])
+        self.assertEqual(self.device.requests, [])
 
 
 class EsphomeTests(unittest.TestCase):
     """ESPHome's page: its event stream passed straight through, one at a time."""
 
     def setUp(self):
-        self.plug = FakePlug()
-        threading.Thread(target=self.plug.serve_forever, daemon=True).start()
-        self.addCleanup(self.plug.server_close)
-        self.addCleanup(self.plug.shutdown)
-        self.addCleanup(self.plug.release.set)
-        self.proxy = ui_proxy.UiProxy(("127.0.0.1", 0), self.plug.server_address[:2], firmware="esphome",
+        self.device = FakeDevice()
+        threading.Thread(target=self.device.serve_forever, daemon=True).start()
+        self.addCleanup(self.device.server_close)
+        self.addCleanup(self.device.shutdown)
+        self.addCleanup(self.device.release.set)
+        self.proxy = ui_proxy.UiProxy(("127.0.0.1", 0), self.device.server_address[:2], firmware="esphome",
                                       min_gap=0.0)
         threading.Thread(target=self.proxy.serve_forever, daemon=True).start()
         self.addCleanup(self.proxy.server_close)

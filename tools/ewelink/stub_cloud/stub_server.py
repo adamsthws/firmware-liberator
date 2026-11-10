@@ -3,37 +3,37 @@
 
 This is self-hosting (see docs/cloud-stub.md): our own device, redirected to our
 own domain, served our own cert under the CA we made it trust. It speaks just
-enough of eWeLink for the plug to come online and for the conversion tool to
+enough of eWeLink for the device to come online and for the conversion tool to
 drive it - nothing reaches, forges or impersonates the real cloud.
 
 One TLS socket on `:443` wears every hat, routed by request:
 
-  POST /dispatch/device   the plug's dispatch: the IoT server to connect to -
-                          ourselves, as a numeric IP (the plug does no DNS here).
-  GET  /api/ws            the IoT channel, a minimal RFC 6455 server. The plug
+  POST /dispatch/device   the device's dispatch: the IoT server to connect to -
+                          ourselves, as a numeric IP (the device does no DNS here).
+  GET  /api/ws            the IoT channel, a minimal RFC 6455 server. The device
                           registers, reports state and asks the date; we answer
                           error:0 (+ a heartbeat config on register) so it is
                           online. The tool's app side connects here too, and its
-                          commands for the plug (an OTA upgrade) are relayed.
+                          commands for the device (an OTA upgrade) are relayed.
   GET  /dispatch/app      the tool's dispatch: the same IoT server.
   /v2/user/login, /v2/device/thing, /v2/device/ota/query
-                          the account API the tool reads the plug's LAN key,
+                          the account API the tool reads the device's LAN key,
                           model and version from (the key is the one in the dump
                           we booted, from --device-json). Asked with a version
-                          older than the plug's, the OTA query offers its own
+                          older than the device's, the OTA query offers its own
                           firmware, as eWeLink offers the latest (firmware.py).
   GET  /ota/user1.bin     that firmware, to the device's id, as eWeLink serves it.
 
 Stdlib only, so it runs under the emulator image's plain python3. Every message
 is logged with secret values redacted, so one run is also the capture that pins
 the protocol. Run inside the instance container, bound to the router address
-the plug uses:
+the device uses:
 
     python3 stub_server.py --bind 192.168.60.1 --cert server.crt --key server.key \\
         --device-json stub-device.json
 
 With `--plain` it serves plaintext HTTP/WS instead of TLS and needs no cert. An
-emulated Beken plug's dispatch is plaintext (its factory dispatch URL is
+emulated Beken device's dispatch is plaintext (its factory dispatch URL is
 `http://...:80`); its IoT WebSocket is still `wss://` and verifies the server
 cert, so a run serves dispatch plaintext and the IoT channel over TLS and swaps
 the firmware's trust anchor. See tools/beken/emulator/cloud_online.py.
@@ -61,7 +61,7 @@ if __package__ in (None, ""):  # run as a script, isolated: the repository root,
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"  # RFC 6455 magic
 # Never shown in cleartext in the log: they identify the account or device, or
 # are the LAN-control key itself (devicekey/encrypt_key/apikey let one command
-# the plug locally).
+# the device locally).
 SECRET_KEYS = {"apikey", "deviceid", "devicekey", "encrypt_key", "at", "rt",
                "selfApikey", "finalUserApikey", "flashCipher", "ssid", "bssid",
                "staMac", "password", "token"}
@@ -137,7 +137,7 @@ def read_frame(sock: socket.socket) -> tuple[int, bytes]:
 # The real cloud passes an app's command (e.g. an OTA "upgrade") to the device
 # and the device's replies back. Device and app each hold their own WebSocket to
 # us, so we route between them by deviceid. This is what lets the conversion's
-# serve_tasmota_ota drive the online plug (verification test 4c).
+# serve_tasmota_ota drive the online device (verification test 4c).
 
 class Conn:
     """A WebSocket peer with a lock, so either thread can send to it safely."""
@@ -189,7 +189,7 @@ def _unsubscribe(app: Conn) -> None:
 def _tell_watchers(deviceid: str, online: bool) -> None:
     """The apps watching a device told it came online or went offline, as
     eWeLink tells them (sysmsg): a sender waits on that to send again a command
-    its plug lost (tools/ewelink/ota_push.Resending)."""
+    its device lost (tools/ewelink/ota_push.Resending)."""
     for app in _subscribers_of(deviceid):
         try:
             app.send(wire({"action": "sysmsg", "deviceid": deviceid, "params": {"online": online}}))
@@ -229,11 +229,11 @@ class Stub:
         self.update = update  # firmware.Update the OTA query offers, or None
         self.iot_port = iot_port
         self.hb_interval = hb_interval
-        self.device = device  # the account-API view of this plug, or None
+        self.device = device  # the account-API view of this device, or None
         # The account's other devices, none of them emulated: listed as eWeLink
         # lists an account's every device, offered no firmware, never online.
         self.others = list(others or [])
-        # What the plug says of itself (firmware version, model, the params of
+        # What the device says of itself (firmware version, model, the params of
         # its updates) in its own dispatch, register and update messages: the
         # account API reports that, as the real cloud does, rather than
         # anything assumed about the dump.
@@ -263,7 +263,7 @@ class Stub:
             seen["apikey"] = msg["apikey"]
 
     def dispatch_response(self) -> dict:
-        # The plug connects to this host by numeric IP without DNS (it
+        # The device connects to this host by numeric IP without DNS (it
         # inet_aton()s the field), so hand back an address, not a hostname.
         # The S60 reads `IP`; the S61 reads `domain` (the same numeric address,
         # unless --iot-domain gives a name) - include both so either firmware
@@ -280,7 +280,7 @@ class Stub:
                 "port": self.iot_port}
 
     # -- tool-facing account API (touchpoint A) ---------------------------------
-    # The tool already has this plug's key because it is in the flash dump we
+    # The tool already has this device's key because it is in the flash dump we
     # booted; the stub just hands back that same local value. Nothing is fetched
     # from or sent to the real cloud.
 
@@ -294,8 +294,8 @@ class Stub:
         return token is not None and token == self.access_token
 
     def account_device(self) -> dict | None:
-        """This plug's account record: --device-json's, its identity filled in
-        from the plug's own register where that does not give it - as the
+        """This device's account record: --device-json's, its identity filled in
+        from the device's own register where that does not give it - as the
         S61's, whose identity is sealed in its store, does not."""
         d = dict(self.device or {})
         if not d.get("deviceid"):
@@ -316,18 +316,18 @@ class Stub:
             return {"error": 404, "msg": "no device configured in the stub"}
         seen = self.reported.get(d["deviceid"], {})
         model = seen.get("model") or d.get("model")
-        # eWeLink's record holds the relay's state from the plug's earlier
+        # eWeLink's record holds the relay's state from the device's earlier
         # reports; this one starts each run with none, and the POW Elite's and
-        # POWCT's firmware reports it only when it changes. So until the plug
+        # POWCT's firmware reports it only when it changes. So until the device
         # reports it, it is off, in the shape those two take. Once reported it
-        # is only the plug's own: the TH Elite's 1.0.2 reports one switch, and
+        # is only the device's own: the TH Elite's 1.0.2 reports one switch, and
         # answers a list with 400.
         params = {**seen.get("params", {}), "model": model}
         if "switch" not in params and "switches" not in params:
             params["switches"] = [{"switch": "off", "outlet": 0}]
-        if seen.get("fwVersion"):  # unknown until the plug has said, as at eWeLink
+        if seen.get("fwVersion"):  # unknown until the device has said, as at eWeLink
             params["fwVersion"] = seen["fwVersion"]
-        if d.get("staMac"):  # eWeLink has it from the plug; this one never says it here
+        if d.get("staMac"):  # eWeLink has it from the device; this one never says it here
             params.setdefault("staMac", d["staMac"])
         item = {"itemData": {
             "deviceid": d["deviceid"], "devicekey": d["devicekey"],
@@ -338,8 +338,8 @@ class Stub:
             "params": params,
         }}
         # The product model (S60TPG/S60TPF) only when known: eWeLink names it,
-        # the dump does not, so it is what eWeLink gave this plug before (see
-        # emu.sh). Without it the tool leaves the report's plug model blank and
+        # the dump does not, so it is what eWeLink gave this device before (see
+        # emu.sh). Without it the tool leaves the report's device model blank and
         # names the Tasmota template plainly "Sonoff S60".
         if d.get("productModel"):
             item["itemData"]["productModel"] = d["productModel"]
@@ -363,7 +363,7 @@ class Stub:
     def ota_query(self, body: bytes = b"") -> dict:
         """What eWeLink offers: nothing to a device asking with its own version
         (the conversion only reads this; it delivers firmware over LAN), and the
-        plug's own firmware to one asking with an older one, as query_ota's
+        device's own firmware to one asking with an older one, as query_ota's
         latest_offer does."""
         from tools.ewelink.stub_cloud.firmware import FILE_NAME, version_tuple
         try:
@@ -527,7 +527,7 @@ class Handler(socketserver.BaseRequestHandler):
         conn = Conn(sock, peer)
         role: str | None = None   # "device" or "app", from the first message
         deviceid: str | None = None
-        sock.settimeout(None)  # long-lived: the plug speaks every heartbeat interval
+        sock.settimeout(None)  # long-lived: the device speaks every heartbeat interval
         log(peer, "websocket open")
         try:
             while True:
@@ -573,8 +573,8 @@ class Handler(socketserver.BaseRequestHandler):
             deviceid = msg["deviceid"]
             _register_device(deviceid, conn)
             _tell_watchers(deviceid, True)
-            # Whether it is the account's device - the plug's own id and key -
-            # without logging either: a plug put back on Sonoff's firmware
+            # Whether it is the account's device - the device's own id and key -
+            # without logging either: a device put back on Sonoff's firmware
             # with an identity rebuilt is seen to be itself.
             account = self.stub.device or {}
             if account.get("deviceid"):
@@ -640,7 +640,7 @@ class TLSServer(socketserver.ThreadingTCPServer):
 
 
 class PlainServer(socketserver.ThreadingTCPServer):
-    """Plaintext variant for an emulated Beken plug, which dials http://...:80."""
+    """Plaintext variant for an emulated Beken device, which dials http://...:80."""
     allow_reuse_address = True
     daemon_threads = True
 
@@ -652,18 +652,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cert")
     parser.add_argument("--key")
     parser.add_argument("--plain", action="store_true",
-                        help="serve plaintext HTTP/WS, no TLS (an emulated Beken plug dials "
+                        help="serve plaintext HTTP/WS, no TLS (an emulated Beken device dials "
                              "http://...:80 with the factory dispatch URL)")
     parser.add_argument("--iot-host", default="192.168.60.1",
-                        help="IoT server handed back by dispatch: a numeric IP (the plug "
+                        help="IoT server handed back by dispatch: a numeric IP (the device "
                              "does no DNS for it) that the cert's IP SAN covers")
     parser.add_argument("--iot-port", type=int, default=443)
     parser.add_argument("--iot-domain", default="",
-                        help="the hostname dispatch gives as `domain` (eWeLink gives one there), for a plug "
+                        help="the hostname dispatch gives as `domain` (eWeLink gives one there), for a device "
                              "that connects by it (default: --iot-host)")
     parser.add_argument("--hb-interval", type=int, default=145)
     parser.add_argument("--device-json", type=Path, default=None,
-                        help="JSON of this plug's account-API view (deviceid, "
+                        help="JSON of this device's account-API view (deviceid, "
                              "devicekey, model, ...) for the tool-facing API")
     parser.add_argument("--firmware", type=Path, default=Path("/state/stub-firmware.bin"),
                         help="the update file the OTA query offers, as emu.sh makes it (firmware.py)")
@@ -682,7 +682,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:  # noqa: BLE001 - the stub serves the rest without it
         log("the firmware to offer could not be read:", exc)
         update = None
-    log(f"offering the plug's own firmware, {update.version}, to a query with an older version" if update
+    log(f"offering the device's own firmware, {update.version}, to a query with an older version" if update
         else "no firmware to offer")
     Handler.stub = Stub(args.iot_host, args.iot_port, args.hb_interval, device, update, args.iot_domain, others)
     if args.plain:

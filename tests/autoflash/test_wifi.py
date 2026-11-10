@@ -1,4 +1,4 @@
-"""Where a run's Wi-Fi details come from (tools/autoflash/wifi.py): the plug,
+"""Where a run's Wi-Fi details come from (tools/autoflash/wifi.py): the device,
 or its backup."""
 import base64
 import tempfile
@@ -6,13 +6,13 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.autoflash import context, credentials, esphome, output, plugs, prompts, wifi
+from tools.autoflash import context, credentials, esphome, output, records, prompts, wifi
 from tools.espressif import inspect_stock_nvs
 from tools.espressif.safeboot import prepare_imprinted_bundle
 
 
-class WifiFromPlugTests(unittest.TestCase):
-    """The Wi-Fi details come off the plug, so nobody types them."""
+class WifiFromDeviceTests(unittest.TestCase):
+    """The Wi-Fi details come off the device, so nobody types them."""
 
     def setUp(self):
         from tools.autoflash import tasmota_settings as ts
@@ -41,16 +41,16 @@ class WifiFromPlugTests(unittest.TestCase):
 
     def read(self, **kwargs):
         with mock.patch.object(output, "say"):
-            return wifi.read_wifi_from_plug(self.ctx(**kwargs))
+            return wifi.read_wifi_from_device(self.ctx(**kwargs))
 
     def test_the_connected_network_and_its_password_are_read(self):
         self.assertEqual(self.read(), ("Home-2G", "a good password"))
 
-    def test_a_plug_on_another_network_than_its_first_slot_is_not_used(self):
+    def test_a_device_on_another_network_than_its_first_slot_is_not_used(self):
         # Tasmota holds two networks; only the one it is actually on is proven.
         self.assertIsNone(self.read(connected="Guest"))
 
-    def test_a_plug_that_will_not_say_or_will_not_give_its_backup_falls_back(self):
+    def test_a_device_that_will_not_say_or_will_not_give_its_backup_falls_back(self):
         for kwargs in ({"connected": None}, {"fail": "command"}, {"fail": "download"},
                        {"backup": b"not a settings record"}):
             self.assertIsNone(self.read(**kwargs), kwargs)
@@ -68,7 +68,7 @@ class WifiFromPlugTests(unittest.TestCase):
     def test_the_flag_forces_typing_them_instead(self):
         ctx = self.ctx(forced=True)
         ctx._wifi = None
-        with mock.patch.object(wifi, "read_wifi_from_plug") as read, \
+        with mock.patch.object(wifi, "read_wifi_from_device") as read, \
              mock.patch.object(prompts, "section"), mock.patch.object(output, "say"):
             try:
                 context.Context.wifi(ctx)
@@ -76,9 +76,9 @@ class WifiFromPlugTests(unittest.TestCase):
                 pass  # it goes on to the asking path, which needs a real bundle
         read.assert_not_called()
 
-    def test_a_plug_the_network_keeps_from_answering_is_asked_again(self):
+    def test_a_device_the_network_keeps_from_answering_is_asked_again(self):
         # Seen in the fault suite: a Wi-Fi blip as G1 began, and the run
-        # asked the person to type the Wi-Fi details the plug holds.
+        # asked the person to type the Wi-Fi details the device holds.
         import urllib.error
         for drops, expected in ((1, ("Home-2G", "a good password")), (5, None)):
             ctx = self.ctx()
@@ -94,7 +94,7 @@ class WifiFromPlugTests(unittest.TestCase):
             ctx.device.command = command
             ctx.device.wait_reachable = mock.Mock()
             with mock.patch.object(output, "say"):
-                self.assertEqual(wifi.read_wifi_from_plug(ctx), expected, drops)
+                self.assertEqual(wifi.read_wifi_from_device(ctx), expected, drops)
             self.assertEqual(ctx.device.wait_reachable.call_count, min(drops, wifi.WIFI_READ_TRIES - 1))
 
     def test_each_reason_for_not_reading_them_is_said(self):
@@ -102,21 +102,21 @@ class WifiFromPlugTests(unittest.TestCase):
                               ({"fail": "command"}, "did not answer as Tasmota"),
                               ({"connected": "Guest"}, "not the network in its first slot")):
             with mock.patch.object(output, "say") as said:
-                self.assertIsNone(wifi.read_wifi_from_plug(self.ctx(**kwargs)))
+                self.assertIsNone(wifi.read_wifi_from_device(self.ctx(**kwargs)))
             self.assertIn(words, " ".join(str(c.args[0]) for c in said.call_args_list), kwargs)
 
 
 class BackupWifiTests(unittest.TestCase):
-    """From a plug whose firmware cannot say its Wi-Fi password (ESPHome, the
+    """From a device whose firmware cannot say its Wi-Fi password (ESPHome, the
     mover), the details come from its Sonoff backup on this computer - when
-    the bundle, or the network ESPHome is on, shows they are the plug's still."""
+    the bundle, or the network ESPHome is on, shows they are the device's still."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         (Path(self.tmp.name) / "flash.bin").write_bytes(b"\xff" * 0x20000)
         backup = mock.Mock(directory=Path(self.tmp.name))
-        for patch in (mock.patch.object(plugs, "find_backup", return_value=backup),
+        for patch in (mock.patch.object(records, "find_backup", return_value=backup),
                       mock.patch.object(wifi, "sonoff_backup_wifi", return_value=("Home-2G", "pw")),
                       mock.patch.object(output, "say"), mock.patch.object(output, "tell")):
             patch.start()
@@ -124,7 +124,7 @@ class BackupWifiTests(unittest.TestCase):
 
     def ctx(self, **inputs):
         from types import SimpleNamespace
-        inputs = {"plug_mac": "12:34:56:ab:cd:ef", "plug_ip": "192.0.2.50", **inputs}
+        inputs = {"device_mac": "12:34:56:ab:cd:ef", "device_ip": "192.0.2.50", **inputs}
         state = SimpleNamespace(input=inputs.get, set_input=inputs.__setitem__, is_done=lambda step: False)
         return SimpleNamespace(state=state, manifest_path=Path("unused"), args=SimpleNamespace(wifi=False),
                                _wifi=None, _recovery=None, esphome_key=None, esphome_api_locked=False)
@@ -154,17 +154,17 @@ class BackupWifiTests(unittest.TestCase):
         self.assertIsNone(self.found()[0])
 
     def test_no_backup_gives_nothing(self):
-        with mock.patch.object(plugs, "find_backup", return_value=None):
+        with mock.patch.object(records, "find_backup", return_value=None):
             self.assertIsNone(wifi.wifi_from_backup(self.ctx()))
 
-    def test_a_plug_on_esphome_has_them_read_before_dotenv_or_asking(self):
+    def test_a_device_on_esphome_has_them_read_before_dotenv_or_asking(self):
         ctx = self.ctx(source="esphome")
         ctx.adopt_wifi = mock.Mock(side_effect=lambda ssid, password: setattr(ctx, "_wifi", (ssid, password)))
         # .env names another network: taken first, it would be the answer.
         with mock.patch.object(wifi, "wifi_from_esphome", return_value=None), \
                 mock.patch.object(wifi, "wifi_from_backup", return_value=("Home-2G", "pw")), \
                 mock.patch.object(credentials, "get", return_value="Elsewhere"), \
-                mock.patch.object(wifi, "read_wifi_from_plug") as off_tasmota:
+                mock.patch.object(wifi, "read_wifi_from_device") as off_tasmota:
             self.assertEqual(context.Context.wifi(ctx), ("Home-2G", "pw"))
         off_tasmota.assert_not_called()  # a Tasmota is not what runs
         ctx.adopt_wifi.assert_called_once_with("Home-2G", "pw")

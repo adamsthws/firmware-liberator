@@ -2,11 +2,11 @@
 
 Three layers, each catching what the one before cannot:
 
-1. **Unit tests** - fast, no plug: the pieces on their own.
-2. **The emulator** - a virtual S60 running the plug's real Sonoff firmware
+1. **Unit tests** - fast, no device: the pieces on their own.
+2. **The emulator** - a virtual S60 running the device's real Sonoff firmware
    ([emulator.md](emulator.md)): whole conversions, and every fault the
    suite below puts in their way.
-3. **Real plugs** - what no emulator shows: real flash, real radios, real
+3. **Real devices** - what no emulator shows: real flash, real radios, real
    timings.
 
 ## Unit tests
@@ -24,8 +24,8 @@ passes only after another.
 
 They cover the decisions the tool makes - which
 route to take, what to ask, when to try again, what counts as done - with the
-plug and the network stood in for; and the parts that have to be exact - the
-plans the plug carries out, the update protocols, image checks and pins, what
+device and the network stood in for; and the parts that have to be exact - the
+plans the device carries out, the update protocols, image checks and pins, what
 is kept and what never is. Every bug found below has a test that fails without
 its fix. The `emulator-check` workflow runs them on Python 3.12.10 - the
 portable Python the start scripts install, which most conversions run on -
@@ -81,7 +81,7 @@ When you write a test, keep it safe to run this way:
   port, a file outside the test's own temporary directory - unless the tests
   sharing it are in `TOGETHER`, with the reason.
 - **Nothing beyond this computer**: stub what the code under test asks of
-  a plug, eWeLink or anything else on the network. A made-up address on a
+  a device, eWeLink or anything else on the network. A made-up address on a
   private network can be a real device where the tests run, so any
   connection beyond loopback fails the test that made it, even where the
   code catches the error (`tests/no_network.py`, which each test package
@@ -102,7 +102,7 @@ Neither measure below is a gate, and no number is a target: a test written
 to raise one tends to test the stand-ins, not the tool. They say where to
 look - a decision no test takes both ways, or a check whose reason no test
 asks about - and you decide what is worth a test there. What only the
-emulator or a plug can show is tested there.
+emulator or a device can show is tested there.
 
 **Coverage** says what the tests run. The `emulator-check` workflow writes
 it into its summary, by file; to see it on your computer, with what each
@@ -194,48 +194,48 @@ it, and the workflow runs it - and `git commit --no-verify` skips them all.
 ## The emulators
 
 Each chip family's emulator runs a conversion with nobody at the keyboard
-([unattended.md](unattended.md)), on an emulated plug of its own; how to set
+([unattended.md](unattended.md)), on an emulated device of its own; how to set
 each up is in [emulator.md](emulator.md).
 
 ### The Espressif emulator
 
 ```sh
-tools/espressif/emulator/unattended-test.sh --fresh --plug=MAC -- --firmware esphome
+tools/espressif/emulator/unattended-test.sh --fresh --device=MAC -- --firmware esphome
 ```
 
 Several run side by side with `--instance=N` (1-99), each its own container,
-plug and network. Only the eWeLink stages (up to C2) cannot: every emulated
-plug is a copy of the same real one, and eWeLink keeps one connection per
-plug - so those run one at a time.
+device and network. Only the eWeLink stages (up to C2) cannot: every emulated
+device is a copy of the same real one, and eWeLink keeps one connection per
+device - so those run one at a time.
 
-A plug can be kept as a run left it, with what your computer recorded about
+A device can be kept as a run left it, with what your computer recorded about
 it (its backup, its runs), and started from again:
 
 ```sh
-tools/espressif/emulator/unattended-test.sh --fresh --plug=MAC --save=on-tasmota -- --firmware tasmota
-tools/espressif/emulator/unattended-test.sh --from=on-tasmota --plug=MAC -- --firmware esphome
+tools/espressif/emulator/unattended-test.sh --fresh --device=MAC --save=on-tasmota -- --firmware tasmota
+tools/espressif/emulator/unattended-test.sh --from=on-tasmota --device=MAC -- --firmware esphome
 ```
 
-That is how every direction is tested: from a plug the tool converted, the
+That is how every direction is tested: from a device the tool converted, the
 kind a person converting it again would have.
 
 ### The Beken emulator
 
 ```sh
-tools/beken/emulator/beken-emu.sh --fresh plug
+tools/beken/emulator/beken-emu.sh --fresh device
 tools/beken/emulator/beken-emu.sh computer tools/autoflash/cli.py run --unattended --env-file captures/tool.env --firmware esphome
 ```
 
-`beken-emu.sh computer` runs the tool on the plug's Wi-Fi, in its own copy of this
-checkout (the plug's `work/`), so the env file is that copy's
-`captures/tool.env`: a made-up eWeLink account, as the plug's eWeLink is the
+`beken-emu.sh computer` runs the tool on the device's Wi-Fi, in its own copy of this
+checkout (the device's `work/`), so the env file is that copy's
+`captures/tool.env`: a made-up eWeLink account, as the device's eWeLink is the
 local stub, which takes any (the fault suite writes one there). Several run side
-by side with `--instance N` (1-99), given to both commands: each its own plug,
+by side with `--instance N` (1-99), given to both commands: each its own device,
 network and stub, so nothing is shared, eWeLink included.
 
-A plug carries on as the last run left it, its flash kept, until `--fresh`
+A device carries on as the last run left it, its flash kept, until `--fresh`
 starts it again on Sonoff's firmware, so a second run converts it on from where
-the first ended. The fault suite's `prep` keeps plugs on each firmware to start
+the first ended. The fault suite's `prep` keeps devices on each firmware to start
 from ([below](#the-beken-fault-suite)).
 
 ## The fault suites
@@ -251,25 +251,25 @@ every direction - 1,606 scenarios on an S60:
 - **Directions:** Sonoff to Tasmota, Sonoff to ESPHome, Tasmota to ESPHome,
   Tasmota to Sonoff, ESPHome to Tasmota, ESPHome to Sonoff, and official Tasmota
   updated from the release before. And Tasmota to Sonoff on a computer with
-  no backup of the plug (`nobackup>sonoff`), faulted where it differs, at R1
-  and R2: Sonoff's firmware is put together with the identity the plug kept.
-- **Steps:** each step that writes to the plug or waits on it, K1 (the Sonoff
+  no backup of the device (`nobackup>sonoff`), faulted where it differs, at R1
+  and R2: Sonoff's firmware is put together with the identity the device kept.
+- **Steps:** each step that writes to the device or waits on it, K1 (the Sonoff
   identity kept at the top of the flash) among them. A test holds each
   direction's steps to the tool's own.
 - **Faults:**
   - the network gone (the router off) for 5, 15, 30, 60, 120 or 180 s, or
     weak - one packet in ten lost - for a minute;
-  - the plug's power off for 1, 5, 30 or 180 s;
+  - the device's power off for 1, 5, 30 or 180 s;
   - the computer crashing - the tool and what it serves killed outright -
-    and started again 1 or 180 s later (and 60 s, where the plug raises a
+    and started again 1 or 180 s later (and 60 s, where the device raises a
     network of its own); asleep for 10 minutes (and 2, at the riskiest steps
-    and where the plug raises a network of its own); or switched off for 30 s
+    and where the device raises a network of its own); or switched off for 30 s
     or 2 minutes, and its run started again;
   - Ctrl-C once; Ctrl-C twice, then carrying on, starting again from the
     beginning (`--new`), or choosing the other firmware; the terminal window
     closed;
   - a packet changed on its way, its checksum made good, so that only the
-    tool's and the plug's own checks can tell - at each step but R2, which
+    tool's and the device's own checks can tell - at each step but R2, which
     only sees that Sonoff's firmware takes a connection, and sends nothing
     to change;
   - the tool's own handling, the same at every step, so tried at the riskiest
@@ -277,8 +277,8 @@ every direction - 1,606 scenarios on an S60:
     run started while the first works, which must be refused without
     disturbing it; Ctrl-C twice apart, or at the question it asks;
   - the disk filling during the backup;
-  - the plug falling back to its own setup network, and the person joining
-    it before being asked: the run must find the plug there and carry on by
+  - the device falling back to its own setup network, and the person joining
+    it before being asked: the run must find the device there and carry on by
     itself.
 - **Faults that take two things at once** (`composite_scenarios()`):
   - Tasmota sent through the installer's own network (the home Wi-Fi gone
@@ -287,102 +287,102 @@ every direction - 1,606 scenarios on an S60:
     given the Wi-Fi (`ownnet-cut`, `ownnet-dropupload`, `ownnet-dropsetup`);
   - the installer's answer to the upload never arriving, though the upload
     took (`lostanswer-once`);
-  - the plug switched off and on 7 times, which erases a Tasmota's settings:
+  - the device switched off and on 7 times, which erases a Tasmota's settings:
     at D4, F4 and once converted (G1), and when the run advises it, for a
     Tasmota that cannot join the home Wi-Fi (`seven-times`, `seven-advised`);
   - F4's Berry driver refused, so F4 falls back to two restarts
     (`nohook-run`), and a power cut or crash at F4's reset itself, at 10, 50
     and 90% of it (step `F4rs`); and that fallback cut off by a second's
-    power cut as the plug restarts to save the template it sent (`nohook-cut`,
+    power cut as the device restarts to save the template it sent (`nohook-cut`,
     step `F4tp`), which can leave it without one.
-- **A plug on a temporary table given its own** (step `D5ot`, only on a plug
+- **A device on a temporary table given its own** (step `D5ot`, only on a device
   whose layout needs one, such as the TH Elite's): a power cut or crash as D5
-  writes the plug's own table back, at 10, 50 and 90% of it.
+  writes the device's own table back, at 10, 50 and 90% of it.
 - **Runs left by an earlier release** (`legacy-v1.2.0`): release 1.2.0 itself
   - its tagged files, with only `tools/espressif/emulator/legacy/v1.2.0.patch` on top,
-  which points it at the cloud stub - converting a plug fresh from Sonoff,
+  which points it at the cloud stub - converting a device fresh from Sonoff,
   killed at 40% of each of its steps; then your checkout's tool over the same
-  captures, as a person who updated their checkout would run it. And a plug
+  captures, as a person who updated their checkout would run it. And a device
   1.2.0 converted to Tasmota, then taken to ESPHome or back to Sonoff (step
-  `start`). And 1.2.0 killed at F4, then the plug switched off part way
+  `start`). And 1.2.0 killed at F4, then the device switched off part way
   through G1 of the run after (`legacy-v1.2.0+G1off`): G1 writes over 1.2.0's
   startup firmware without checking it, which it cannot rebuild, and the next
   run must carry on after the sectors already written. And the same for the
   release before the firmware the tool installs last changed (`legacy-v2.0.2`),
   whose runs - their bundle pinned to the firmware before - your checkout
   must finish with its own: killed at each of its steps, to Tasmota and to
-  ESPHome, and each kind of plug it converted, taken on from there
+  ESPHome, and each kind of device it converted, taken on from there
   ([updating-firmware.md](updating-firmware.md)). A run that release had
   already installed its own Tasmota or ESPHome in - Tasmota from F2, ESPHome
   from I1 - finishes, then is updated to your checkout's release in the same
-  run: it is **FAIL-NOT-LATEST** if the plug ends on any other (its ESPHome
-  release asked of its API from the emulated computer). And each release killed at F4, then the plug switched off part
+  run: it is **FAIL-NOT-LATEST** if the device ends on any other (its ESPHome
+  release asked of its API from the emulated computer). And each release killed at F4, then the device switched off part
   way through that update's upload (`legacy-v1.2.0+U5off`,
   `legacy-v2.0.2+U5off`). `unattended-test.sh --code=DIR` runs the tool from
   another tree.
-- **A converted plug left on Tasmota's own safeboot** (`lostapp-factory`): an
+- **A converted device left on Tasmota's own safeboot** (`lostapp-factory`): an
   ESPHome factory image - bootloader, partition table and app, for a serial
   flasher - uploaded through Tasmota's page, as a person who once asked
   about it had done: Tasmota switches to its safeboot for a file that big,
-  which writes it over Tasmota, and the plug starts the safeboot from then on. Then the tool,
+  which writes it over Tasmota, and the device starts the safeboot from then on. Then the tool,
   to Tasmota, ESPHome or Sonoff. And one only switched to its safeboot, its
   Tasmota unharmed (`lostapp-switched`), which must be started again, never
   written over (FAIL-REPLACED).
-- **A converted plug that lost its template** (`notemplate-generic`): the
+- **A converted device that lost its template** (`notemplate-generic`): the
   saved Tasmota given Tasmota's generic template and an MQTT host, as a person
-  might, so it switches nothing - as a user's plug did. Then the tool, to
-  Tasmota, ESPHome or Sonoff: it must recognise the plug as one that lost its
+  might, so it switches nothing - as a user's device did. Then the tool, to
+  Tasmota, ESPHome or Sonoff: it must recognise the device as one that lost its
   template (FAIL-NOT-UNTEMPLATED), never send it the hub's steps, whose first
   is an ESPHome update no Tasmota takes (FAIL-X1-ON-TASMOTA), and when staying
   on Tasmota, give it the template alone, with the MQTT host kept
   (FAIL-SETTINGS-LOST).
-- **A converted plug in a boot loop** (`bootloop-fallback`, to Tasmota):
+- **A converted device in a boot loop** (`bootloop-fallback`, to Tasmota):
   Tasmota started a sixth time in a row within 10 s of the last start goes
-  over to its fallback module - Generic, unless the plug's template is set
-  there - and switches nothing, as a user's plug did. The plug is put on its
+  over to its fallback module - Generic, unless the device's template is set
+  there - and switches nothing, as a user's device did. The device is put on its
   fallback module just as Tasmota would, since the emulator loses Tasmota's
   count of those starts at every restart; it must still run its template
   (BAD-TEMPLATE). Restarting it for real would also cost its settings:
   Tasmota counts each start that ends before 8 s as a quick power cycle, and
   at the seventh erases everything, its Wi-Fi too.
-- **A converted plug in ESPHome's safe mode** (`safemode-ten`): the saved
+- **A converted device in ESPHome's safe mode** (`safemode-ten`): the saved
   ESPHome switched off as soon as it answers, until it starts in safe mode -
   ESPHome stopped within a minute of starting ten times in a row does, its
   count kept in flash, so the emulator keeps it too. Safe mode has only Wi-Fi
   and the update service for five minutes, as the mover has. Then the tool,
-  to ESPHome, Tasmota or Sonoff: it must recognise the plug as ESPHome in safe
+  to ESPHome, Tasmota or Sonoff: it must recognise the device as ESPHome in safe
   mode and wait for it (FAIL-TAKEN-FOR-MOVER), never take it for one left
   part way - on a run staying on ESPHome, that mistake sent it the startup
   firmware.
 - **A Berry phase riding out the network by itself** (`blips-3`,
   `lossy-phase`, at E2, G1, I1, L1 and R1): two 3 s outages from 10% to 90%
   of the phase - further apart than its 20 s of retrying - or one packet in
-  ten lost for all of it. The plug must convert without the tool trying the
+  ten lost for all of it. The device must convert without the tool trying the
   step again: a phase given up and started over from its first block passes
   everywhere else, but is FAIL-RETRIED here. Each scenario also keeps how
-  long each phase kept the plug busy (`plug_busy`), and `report` lists the
+  long each phase kept the device busy (`device_busy`), and `report` lists the
   longest: a real S60TPG once stopped answering after 70-90 s busy, though an
   S60TPF in the test reports was busy for two minutes without harm.
 - **Readouts** (`sonoff>readout`, `tasmota>readout`: `readout` takes no step
-  of the tool's, so their phases are timed from what it says): a plug fresh
+  of the tool's, so their phases are timed from what it says): a device fresh
   from Sonoff's firmware read out unattended, found as a person who does not
-  know its address would have it found; then the same with the plug switched
+  know its address would have it found; then the same with the device switched
   off for a second, or the network gone for 30 s, at 40% of the read (12 s, as
   C3 reads the flash through the same bridge) and of putting Sonoff's firmware
-  back (about 10 s in the emulator: the person switching the plug off and on
+  back (about 10 s in the emulator: the person switching the device off and on
   as the readout asks, 6 s in, then Sonoff's firmware answering; the fault
   lands about 7 s in, as that firmware starts), and the computer crashing
-  mid-read. After each, the readout is run again as a person would, the plug
+  mid-read. After each, the readout is run again as a person would, the device
   switched off and on where the run says to. It **passes** when a run kept
   `readout.tar`, unsent, holding every file
   [readouts.md](readouts.md#what-is-in-one) lists for an Espressif device,
-  with the whole flash its own hash check matched (FAIL-READOUT), and the plug
+  with the whole flash its own hash check matched (FAIL-READOUT), and the device
   answers as Sonoff's firmware at the end (FAIL-NOT-SONOFF). And a readout of a
-  plug converted to Tasmota, given its address: it must stop before anything
-  is sent to the plug (FAIL-NOT-REFUSED), which keeps its Tasmota and template
+  device converted to Tasmota, given its address: it must stop before anything
+  is sent to the device (FAIL-NOT-REFUSED), which keeps its Tasmota and template
   (FAIL-DISTURBED).
 - **A readout of every device** (`sonoff>readout-all`, on the stub only):
-  `readout --all` unattended, on a plug fresh from Sonoff's firmware among
+  `readout --all` unattended, on a device fresh from Sonoff's firmware among
   made-up devices the stub lists beside it (`AUTOFLASH_EMU_STUB_OTHERS`, none
   of them emulated, so each gets only the first stage), every readout sent to
   the API Worker's own code (`unattended-test.sh --api`), in a container of its
@@ -390,11 +390,11 @@ every direction - 1,606 scenarios on an S60:
   the computer running the suite - its Node, its firewall - comes into it.
   The accounts: two other devices (`mixed`); three alike in
   product, firmware model and version - of which the API keeps one from one
-  sender - and one not (`alike`); the plug's
+  sender - and one not (`alike`); the device's
   product and one other's in the API's `ENOUGH` (`enough`); and seven, quick
   first stages enough to reach the API's two readouts a minute (`many`: NOT-FIRED
-  if no run was answered 429). And in `mixed`, the plug switched off for a
-  second or the computer crashing at 40% of the plug's read, which is last, so
+  if no run was answered 429). And in `mixed`, the device switched off for a
+  second or the computer crashing at 40% of the device's read, which is last, so
   the run stops there; it is then run again, as a person would, until a run
   finishes. Each run is judged by what the API answered and kept - its
   `requests.log` and its store, copied beside the scenario's log
@@ -404,45 +404,45 @@ every direction - 1,606 scenarios on an S60:
   was sent until answered 201, a 429 sent again, but the device a stopped run
   stopped on (FAIL-NOT-SENT); none answered not wanted was sent
   (FAIL-SENT-UNWANTED); each readout answered 201 is in the API's store
-  (FAIL-NOT-STORED), the plug's holding every file of a whole readout
+  (FAIL-NOT-STORED), the device's holding every file of a whole readout
   (FAIL-READOUT); and the run kept no readout unsent (FAIL-KEPT-UNSENT). It
   **passes** when that holds for every run, the last run finished
-  (FAIL-NOT-FINISHED), and the plug answers as Sonoff's firmware at the end
+  (FAIL-NOT-FINISHED), and the device answers as Sonoff's firmware at the end
   (FAIL-NOT-SONOFF).
 - **When:** at 40% of the step's usual time; at the riskiest steps also at 10%
   and 90%, and two faults running.
 
-Each scenario converts a saved plug and brings the fault while the step under
+Each scenario converts a saved device and brings the fault while the step under
 test is under way - checked from the run's own log, or marked MISTIMED. Then
-the tool is run again, as a person would - switching the plug off and on, or
-joining the plug's own network, where the run says to - until the plug is
-converted, or four runs have failed. A scenario **passes** when the plug ends
+the tool is run again, as a person would - switching the device off and on, or
+joining the device's own network, where the run says to - until the device is
+converted, or four runs have failed. A scenario **passes** when the device ends
 up converted and checked - Tasmota read back against the official files,
 ESPHome answering and confirmed, Sonoff's firmware back on the network - and
 the run left no firewall rule or helper behind. It is **BAD-NAME** when the
-plug went by a name it never should (the names are made from its MAC:
+device went by a name it never should (the names are made from its MAC:
 [device-names.md](device-names.md)), on the home network or as a network of
 its own, or did not end under its converted name; every name it had is kept
 with the result. It is **FAIL-UNEXPECTED** when a run stopped with
 "something unexpected went wrong" - an error the tool did not see coming, a
-bug whatever the fault - even if the next run converts the plug. It is
-**BAD-TEMPLATE** when a plug converted to Tasmota does not answer with the
-plug's template - a Tasmota that switches nothing; **FAIL-ASKED-AGAIN** when a
+bug whatever the fault - even if the next run converts the device. It is
+**BAD-TEMPLATE** when a device converted to Tasmota does not answer with the
+device's template - a Tasmota that switches nothing; **FAIL-ASKED-AGAIN** when a
 run asked for the go-ahead twice, as a step tried again by itself once did;
-and **FAIL-BACKUP-LINE** when a run from a converted plug reported no Sonoff
+and **FAIL-BACKUP-LINE** when a run from a converted device reported no Sonoff
 backup though the run that converted it took one, or reported one on a
 computer without. It is **FAIL-IDENTITY** when a run back to Sonoff with no
-backup did not report the identity as the plug's own.
+backup did not report the identity as the device's own.
 
-It is **FAIL-CHECKS** when the report of the run that converted the plug says
+It is **FAIL-CHECKS** when the report of the run that converted the device says
 its end-of-run checks did not pass: `Checks: False`, the relay not
 switching or never answering, as every run back to Sonoff's firmware did when
-it asked eWeLink to switch the relay before the plug had got there. The
+it asked eWeLink to switch the relay before the device had got there. The
 result keeps the check's own `Relay` line. On Tasmota and ESPHome the check
 needs only the firmware, which the emulator runs, so `Checks: Not run`
 fails there too; back on Sonoff's firmware the relay is switched, and the
-meter read, through eWeLink by the device id the plug's record keeps, and `Not run` - a plug
-with none kept - is no failure. A run with no report, of a plug already on the
+meter read, through eWeLink by the device id the device's record keeps, and `Not run` - a device
+with none kept - is no failure. A run with no report, of a device already on the
 firmware asked for, has nothing to judge (`tools/repo/fault_verdicts.py`).
 
 It is **FAIL-SCREEN** when a run of this checkout's tool left on its screen
@@ -467,23 +467,23 @@ shortest window; `tests/repo/test_report_answers.py` reads the longest report
 back with the suites' own patterns; and `tests/autoflash/test_cli.py` checks
 the run-again menu names the stage its line showed.
 
-The emulated computer's list of networks keeps one the plug put out for a
+The emulated computer's list of networks keeps one the device put out for a
 minute after it has gone or been renamed, as a real computer's does (the
 emulator's `nmcli`; a number of seconds in `/run/autoflash-emu/scan-cache`
 in the container changes it, 0 for only what is on air now). A run then sees
 what a person would: the installer's network still listed as Tasmota starts,
 or `ESP_` and the access-point MAC for a moment as Tasmota names its own.
 
-To run the suite on another plug - so that names made from the MAC can be
+To run the suite on another device - so that names made from the MAC can be
 seen to follow it - make a test copy of a backed-up one with another MAC, and
-give that to `--plug`; its saved starting plugs are its own (the MAC's last
+give that to `--device`; its saved starting devices are its own (the MAC's last
 four digits after the name). Against the stub only: the real eWeLink closes
 a copy's connection as soon as it registers with a MAC its record of the
-plug does not have, so it is never seen online:
+device does not have, so it is never seen online:
 
 ```sh
-python -I tools/espressif/emulator/copy_plug.py --from MAC --to 12:34:56:ab:cd:ef
-python -I tools/espressif/emulator/copy_plug.py --remove 12:34:56:ab:cd:ef
+python -I tools/espressif/emulator/copy_device.py --from MAC --to 12:34:56:ab:cd:ef
+python -I tools/espressif/emulator/copy_device.py --remove 12:34:56:ab:cd:ef
 ```
 
 A test copy of another device, from its public dump ([adding a
@@ -493,17 +493,17 @@ from the copy's record, and its results go to a folder of their own
 temporary table, Tasmota to ESPHome goes through the hub, as the tool takes
 it there, with `D5ot` added and that device's own step lengths; on any device
 but the S60 the runs of earlier releases and `update>esphome` are left out,
-as those releases knew no other plug. The TH Elite has 1,672 scenarios.
+as those releases knew no other device. The TH Elite has 1,672 scenarios.
 
 ```sh
-tools/espressif/emulator/fault_suite.py --plug=MAC prep           # the starting plugs (eWeLink)
+tools/espressif/emulator/fault_suite.py --device=MAC prep           # the starting devices (eWeLink)
 tools/espressif/emulator/fault_suite.py list > all.txt            # every scenario: cloud, stub or any
 AUTOFLASH_EMU_ANY_WORKERS=3 \
-    tools/espressif/emulator/fault_suite.py --plug=MAC batch all.txt   # what has not passed yet
+    tools/espressif/emulator/fault_suite.py --device=MAC batch all.txt   # what has not passed yet
 tools/espressif/emulator/fault_suite.py report
 ```
 
-`batch` refuses to start from a converted plug `prep` made with other firmware
+`batch` refuses to start from a converted device `prep` made with other firmware
 than this checkout installs: run `prep` again after a firmware change.
 
 `batch` starts the longest scenarios first, by how long each took when it last
@@ -523,56 +523,56 @@ tools/espressif/emulator/fault_suite.py share all.txt 4 4 6 --times-from second/
 tools/beken/emulator/fault_suite.py share beken.txt 2 2 2
 ```
 
-The update scenarios (`update>tasmota`, `update>esphome`) start from a plug no run
+The update scenarios (`update>tasmota`, `update>esphome`) start from a device no run
 can make, since the tool installs only the current release. `prep-update` makes
-them: for Tasmota from the plug `prep` saved on it, with the previous release
+them: for Tasmota from the device `prep` saved on it, with the previous release
 firmware.json pins in its app slot, fetched from Tasmota's releases; for ESPHome
-by converting a plug with the tool as an earlier release of this project shipped.
+by converting a device with the tool as an earlier release of this project shipped.
 
 Against the real cloud, the cloud scenarios run side by side on six emulators
 (`AUTOFLASH_EMU_CLOUD_WORKERS` for another number; one per core on a computer
 with fewer, and the rest of the scenarios' `AUTOFLASH_EMU_ANY_WORKERS` come on
 top). More go no faster: eight took as long as six over the 75 real-cloud scenarios, as
 their turns at eWeLink come one at a time. Fewer on a computer whose memory is
-mostly taken: there four had the plugs' memory swapped out, and their
+mostly taken: there four had the devices' memory swapped out, and their
 connections to eWeLink timed out where nothing was wrong. They
-take turns only at eWeLink, as their plugs are all one device there and each login ends the one
-before. A plug is shut off from eWeLink but in its turn, and a run waits for
+take turns only at eWeLink, as their devices are all one device there and each login ends the one
+before. A device is shut off from eWeLink but in its turn, and a run waits for
 its turn before it logs in (`AUTOFLASH_EMULATOR_CLOUD_TURN`, set by the suite):
-without that, a waiting run saw the plug whose turn it was as its own and sent
-it the installer. The turn ends once the plug has left Sonoff's firmware. Runs
+without that, a waiting run saw the device whose turn it was as its own and sent
+it the installer. The turn ends once the device has left Sonoff's firmware. Runs
 from an old release (`legacy`) know no such wait, and hold a turn from the start
 of their first run instead.
 
 A batch against the real cloud runs only the scenarios where eWeLink's own
 behaviour is under test (`cloud` in the list, 75 of them): the send through it
 at C2 at every length of each fault, sending it again at C3fb, a power cut at C3
-and D1 that leaves the plug back on Sonoff's firmware, and a run of an old
+and D1 that leaves the device back on Sonoff's firmware, and a run of an old
 release killed at C2. The rest that need a cloud (`stub`, 169) have their fault
-once the plug has left Sonoff's firmware, so the stub answers for eWeLink as
+once the device has left Sonoff's firmware, so the stub answers for eWeLink as
 well - or are readouts, whose send through eWeLink is C2's: a real-cloud batch
 says how many it left out, and `--stub-cloud batch` runs them.
 
 Add `--stub-cloud` to `prep` and `batch` to give each emulator its own local
 eWeLink stand-in instead of the shared real cloud: no cloud lock, so every
 scenario runs in parallel on `AUTOFLASH_EMU_STUB_WORKERS` emulators, and no eWeLink
-account is needed. Its starting plugs (`stub-suite-*`) and results
-(`captures/emulation/suite-stub/`) are its own: a stub plug's flash is the
+account is needed. Its starting devices (`stub-suite-*`) and results
+(`captures/emulation/suite-stub/`) are its own: a stub device's flash is the
 other kind, and a stub run's passes are not the real cloud's. See
-[cloud-stub.md](cloud-stub.md). A stub plug's Sonoff firmware, on it and in
+[cloud-stub.md](cloud-stub.md). A stub device's Sonoff firmware, on it and in
 its backup, trusts the stub's CA as it was when `prep` made it, so `batch`
 also refuses one whose firmware does not trust the CA the stub serves that
-plug now (`captures/emulation/stub-cloud*/`, made again only if gone): it
+device now (`captures/emulation/stub-cloud*/`, made again only if gone): it
 would turn the stub down and never come online, and fail its checks. Run
-`prep` again, and `prep-update` for an `-earlier` plug.
+`prep` again, and `prep-update` for an `-earlier` device.
 
 ```sh
-AUTOFLASH_EMU_STUB_WORKERS=3 tools/espressif/emulator/fault_suite.py --plug=MAC --stub-cloud prep
-AUTOFLASH_EMU_STUB_WORKERS=3 tools/espressif/emulator/fault_suite.py --plug=MAC --stub-cloud batch all.txt
+AUTOFLASH_EMU_STUB_WORKERS=3 tools/espressif/emulator/fault_suite.py --device=MAC --stub-cloud prep
+AUTOFLASH_EMU_STUB_WORKERS=3 tools/espressif/emulator/fault_suite.py --device=MAC --stub-cloud batch all.txt
 ```
 
 Results, a log per scenario and what each failure leaves (its run records and
-the plug's serial output) are kept in `captures/emulation/suite/`, and every
+the device's serial output) are kept in `captures/emulation/suite/`, and every
 run's screen recording in `<scenario>-screens/run-N.raw`: all it drew, where
 the log has only the screen it ended on (`cat` it in a terminal, or feed it to
 `unattended_run.Screen`). A scenario run again keeps those of its earlier
@@ -581,26 +581,26 @@ attempts beside them, numbered in order: `<scenario>.log.1` and
 fault never happened because this computer could not reach eWeLink (its name not
 found, its network down) is NO-INTERNET, not NOT-FIRED: a batch runs it again,
 and the cloud is not blamed for it. On the real cloud,
-`connections.log` has every plug's connections opening and closing, with times,
-looked at every 2 s (`AUTOFLASH_EMU_CONNECTION_LOG`, 0 for none): whether two plugs
-were on eWeLink at once, or a session dropped with no other plug about.
+`connections.log` has every device's connections opening and closing, with times,
+looked at every 2 s (`AUTOFLASH_EMU_CONNECTION_LOG`, 0 for none): whether two devices
+were on eWeLink at once, or a session dropped with no other device about.
 
-**One real-cloud run a day.** Every emulated plug is the same device to eWeLink,
+**One real-cloud run a day.** Every emulated device is the same device to eWeLink,
 so a real-cloud batch is one device reconnecting every minute or two for hours.
 One run of the 75 is fine; after several hundred real-cloud scenarios in a day,
 eWeLink starts dropping the device's sessions seconds after they open, more and
-more often, and the plug then stays away about five minutes. Runs find it
+more often, and the device then stays away about five minutes. Runs find it
 offline and stop at "Discovering the device" (NOT-FIRED), and `connections.log`
 shows sessions closing within 15 s with nothing sent. Stop the batch for an hour
 and run it again: it carries on with what has not passed.
 
 **Several machines.** The scenarios that do not need eWeLink (every step after
-D1) run on any machine with Docker: copy the repository and the saved plugs
+D1) run on any machine with Docker: copy the repository and the saved devices
 (`captures/emulation/saved/`), give each machine part of the list, and set
-`AUTOFLASH_EMU_NO_CLOUD=1` there - only one machine may let its plugs reach eWeLink.
+`AUTOFLASH_EMU_NO_CLOUD=1` there - only one machine may let its devices reach eWeLink.
 
 **How many at once.** Each emulator converting takes about half a CPU core
-and 120 MB. Past one per core the plugs slow down enough for their timeouts to
+and 120 MB. Past one per core the devices slow down enough for their timeouts to
 fail where nothing is wrong, so keep the load at or under the number of
 cores. A batch can be scaled while it runs: started with
 `AUTOFLASH_EMU_MOST_WORKERS` above its workers, only the number written in
@@ -609,29 +609,29 @@ the last ones stop once their scenario ends.
 Both suites also hold the next scenario back while this computer's load is
 over 1.5 a core (`tools/repo/cpu_load.py`), up to half an hour, saying so: on
 8 November unit tests run beside a batch took a 6-core computer's load to 28,
-and fresh plugs never reached eWeLink. Run the unit tests elsewhere, or between
+and fresh devices never reached eWeLink. Run the unit tests elsewhere, or between
 batches, all the same.
 
-**The cloud, one plug at a time.** Every emulated plug is a copy of the same
-real one, and eWeLink keeps one connection per plug, so two online at once
-knock each other off. A plug's way to the internet is shut - its connections
+**The cloud, one device at a time.** Every emulated device is a copy of the same
+real one, and eWeLink keeps one connection per device, so two online at once
+knock each other off. A device's way to the internet is shut - its connections
 reset at both ends, so eWeLink lets go of them at once - and opened only for a
 turn: when its run is about to need the cloud (the eWeLink steps, or the
-installer sent again), until the plug has downloaded the installer and
+installer sent again), until the device has downloaded the installer and
 started it - typically 30-60 s: Sonoff's firmware that loses eWeLink part way
 through the download gives it up. A run that ends
 gives up its turn too, and a later run has to ask for one again. So does one
-whose plug has fetched nothing for a minute since its command went out: eWeLink
+whose device has fetched nothing for a minute since its command went out: eWeLink
 does not pass a lost command on again, so the turn is of no more use. Turns are given by how long the run can
-wait: finding the plug in eWeLink first, then a plug back on Sonoff's
-firmware part way, then the rest, and last a C2 scenario's plug, whose turn
-starts before its run does. Between two plugs' turns there is a short pause
-(5 s) while eWeLink lets go of the last one. A run signs in only once its plug
+wait: finding the device in eWeLink first, then a device back on Sonoff's
+firmware part way, then the rest, and last a C2 scenario's device, whose turn
+starts before its run does. Between two devices' turns there is a short pause
+(5 s) while eWeLink lets go of the last one. A run signs in only once its device
 has kept a connection to the internet open for 15 s, a minute at most, as eWeLink
 can still count the last turn's connection as the device and pass a command
-down it to no one. A fresh plug not back in that minute, at its run's start with
+down it to no one. A fresh device not back in that minute, at its run's start with
 nothing yet sent to it, is switched off and on once, as a person would, and
-waited for again (noted as `fresh_plug_restarted`): on 8 November such plugs'
+waited for again (noted as `fresh_device_restarted`): on 8 November such devices'
 every dial to eWeLink timed out, and their runs stopped at A1 to ask, the fault
 never come. The suite can feel out how many
 at once the cloud allows - one more at a time while the cloud scenarios pass,
@@ -641,14 +641,14 @@ trouble (`AUTOFLASH_EMU_CLOUD_MOST`, `AUTOFLASH_EMU_CLOUD_BACK_OFF`,
 
 #### What it cannot show
 
-- **Timings.** The emulated plug is slower than a real one, and its flash
+- **Timings.** The emulated device is slower than a real one, and its flash
   never wears or fails: the one real moment of risk, a power cut while the
   bootloader or partition table is written (well under a second), is not
   something it can measure.
 - **Radio.** Its Wi-Fi is a network cable with a Wi-Fi driver on top: a weak
-  signal is lost packets, not a plug at the edge of range.
+  signal is lost packets, not a device at the edge of range.
 
-Every network a plug raises of its own - Tasmota's, ESPHome's, the mover's and
+Every network a device raises of its own - Tasmota's, ESPHome's, the mover's and
 the installer's - can be joined from the emulated computer, as a person's
 laptop or phone would join it ([emulator.md](emulator.md)).
 
@@ -673,30 +673,30 @@ fixed code. The latest result of each:
 Five had the Wi-Fi drop more than once in one Berry phase: the phase's 20
 seconds of retries are counted from its first failure and never begun again,
 so a later drop found them spent and the phase stopped. The run tried the
-step again, and each plug converted; but a phase should ride out short drops
+step again, and each device converted; but a phase should ride out short drops
 by itself. [#5](https://github.com/adamsthws/firmware-liberator/pull/5) fixed it: the
 retries now count only time spent failing. With it, 38 scenarios of drops,
 packet loss and a weak signal at every phase that moves data, run three times
 over, all passed but one, whose drops came just before its phase began - as
-G1 checked the plug, then as it was started. Those are fixed too (below). The
+G1 checked the device, then as it was started. Those are fixed too (below). The
 two with nothing to corrupt are a packet changed during R2, the check that
 Sonoff's firmware is back: it carries no data to change.
 
-The longest one phase kept the plug busy was 86 seconds (L1, on a weak
+The longest one phase kept the device busy was 86 seconds (L1, on a weak
 signal). A real S60TPG once stopped answering after 70-90 seconds busy, while
 an S60TPF converted after two minutes: so how long is recorded and reported,
 not judged.
 
 Then a few against the real eWeLink, on a day when some of its EU servers for
-plugs turned connections away - four of six in the morning, one by midday:
+devices turned connections away - four of six in the morning, one by midday:
 fresh conversions to each firmware, and two faults at C2. Sonoff to ESPHome
 converted (2 min 45 s), and Sonoff to Tasmota on its third run after an
-outage at C2; a fresh Sonoff to Tasmota never got the installer to the plug,
-in four tries, as the plug's connection to eWeLink, or the test computer's,
+outage at C2; a fresh Sonoff to Tasmota never got the installer to the device,
+in four tries, as the device's connection to eWeLink, or the test computer's,
 kept failing. The run put some of that down to the test computer's firewall
 (fixed, below).
 
-**2.0.2.** Its steps that write firmware check each block on the plug rather
+**2.0.2.** Its steps that write firmware check each block on the device rather
 than sending it back, so they are shorter (below), and every fault the suite
 times by them was retimed. Before release, 301 scenarios were run on it, on
 the four machines in about an hour: every one at E2, G1, I1, L1 and R1, where
@@ -705,7 +705,7 @@ the retimed ones once their faults were placed by the new lengths, and the one
 whose 1.2.0 run - which the scenario stops at G1 - first stopped by itself
 before it got there, at its F4, when run again.
 
-Between them, those steps kept the plug busy 18 seconds where they took 31,
+Between them, those steps kept the device busy 18 seconds where they took 31,
 over two runs of 52 scenarios of drops, loss, a weak signal and corrupted
 packets at each. The longest any phase kept it busy was 78 seconds, on a
 weak signal for a minute of it.
@@ -716,21 +716,21 @@ same two with nothing to corrupt.
 
 #### Still open
 
-- **An update command ignored.** Now and then the stock plug, back on eWeLink
+- **An update command ignored.** Now and then the stock device, back on eWeLink
   after a send cut off part way and a restart, ignores the next update command
-  (the run says "the plug never connected"); the run after it goes through.
+  (the run says "the device never connected"); the run after it goes through.
   Once, two in a row. Every such scenario passed when run again.
 - **A download of the installer that stalls.** Twice, after a short outage
   during the first send to ESPHome, each later download of the installer began
   and stalled part way. Both passed when run again; not yet explained.
-- **Discovery right after A1.** Twice in about 70 fresh plugs, a plug found in
+- **Discovery right after A1.** Twice in about 70 fresh devices, a device found in
   eWeLink at A1 did not answer the LAN discovery at A2 for half a minute. Both
   passed when run again.
-- **More than one emulator per core.** Then the emulated plug can slow down
+- **More than one emulator per core.** Then the emulated device can slow down
   enough to fail where nothing is wrong - once leaving it unable to reach the
   tool until it restarted - so run the suite at one per core or fewer.
   On 22 October it happened once at one per core, on a VM whose host was
-  busy: after a fault at E2, the plug's own requests to the tool stalled
+  busy: after a fault at E2, the device's own requests to the tool stalled
   at G1 and none got through for four runs, while it still answered. Run
   again, it passed.
 - **A Tasmota that stopped.** Once, the interim Tasmota, testing the Wi-Fi
@@ -743,26 +743,26 @@ same two with nothing to corrupt.
 
 Each fixed, with a test, and the scenario run again. On 22 October:
 
-- A request the plug or the network dropped part way through a step - a
+- A request the device or the network dropped part way through a step - a
   connection reset in an outage, a reply cut off by a power cut, none in time
   - was put as "something unexpected went wrong", though the step was then
   tried again as for any network trouble: 32 scenarios, 23 of them at the
   final check (H1), the rest during the backup (C3) or F4. It now says the
-  connection to the plug was lost.
-- A plug D1 had just restarted onto the Wi-Fi was taken, as it started up,
+  connection to the device was lost.
+- A device D1 had just restarted onto the Wi-Fi was taken, as it started up,
   for one that had lost its settings: the network a Tasmota shows for a
   moment at start-up was taken for its setup network, and the run waited 15
-  minutes for it to be joined, then crashed: 6 scenarios. The plug is now
+  minutes for it to be joined, then crashed: 6 scenarios. The device is now
   given a minute first, and an error in that check stops only its step.
 - Against the real eWeLink, a send of the installer that failed before the
-  plug was told to fetch it - eWeLink dropping the tool's connection -
+  device was told to fetch it - eWeLink dropping the tool's connection -
   was put down to the computer's firewall. It now says what happened.
 - Wi-Fi drops just before a phase began, rather than during it: G1's check
-  that the plug runs official Tasmota stopped the step as if it had failed;
-  the command that starts a phase, lost before it reached the plug, left the
-  run waiting on a plug that never began; and reading the Wi-Fi details off
-  the plug, timed out once, had the person asked to type them. Each is now
-  asked or sent again once the plug answers.
+  that the device runs official Tasmota stopped the step as if it had failed;
+  the command that starts a phase, lost before it reached the device, left the
+  run waiting on a device that never began; and reading the Wi-Fi details off
+  the device, timed out once, had the person asked to type them. Each is now
+  asked or sent again once the device answers.
 
 In the October 18-19 regression:
 
@@ -771,20 +771,20 @@ In the October 18-19 regression:
   It now gives up after a minute, and the run tries again.
 - A power cut while the official startup firmware was written back (G1) left
   one sector half written, and every later run refused to go on: stuck for
-  good, with the plug on Tasmota. That sector is now written again.
-- A run stopped as the commit ran, whose plug finished the commit by itself,
-  carried on by checking the plug's network on the startup firmware - which
+  good, with the device on Tasmota. That sector is now written again.
+- A run stopped as the commit ran, whose device finished the commit by itself,
+  carried on by checking the device's network on the startup firmware - which
   cannot say it - and was sent back to the start with no way forward.
 - Tasmota sent through the installer's own network joined your Wi-Fi by
   itself, with the settings an earlier, cut-off try had left, while the run
   waited a quarter of an hour for a setup network it never raised.
-- After the installer could not be sent again (the plug offline in eWeLink),
+- After the installer could not be sent again (the device offline in eWeLink),
   the run asked for the installer's own network, never raised.
-- A Tasmota plug too busy to say its template in time was taken for one not
+- A Tasmota device too busy to say its template in time was taken for one not
   yet set up as an S60, and sent down a route that never finished.
 - ESPHome's page arriving with a byte changed stopped the run as "something
   unexpected", where a dropped connection is asked again.
-- A plug switched on as the run starts was asked about at once; it is now
+- A device switched on as the run starts was asked about at once; it is now
   waited for a minute. An upload to the installer that stalls is noticed after
   two minutes, not five.
 
@@ -797,76 +797,76 @@ In the rounds before it, from 16 October:
   now set up through its own network.
 - Just after a restart Tasmota could not yet say which slot it runs from
   (D4), was taken for one in the wrong slot, and sent another upload.
-- An upload Tasmota refused went unnoticed; X2's plug back on the mover or
+- An upload Tasmota refused went unnoticed; X2's device back on the mover or
   ESPHome, and official Tasmota not running yet, were missed - each now seen
   and sent again.
 - A run stopped as the firewall rule was added left the rule behind, and the
   next took it for one the computer had before.
-- With two plugs converted at once, one run put back a safety lock the other
+- With two devices converted at once, one run put back a safety lock the other
   had lifted.
-- A commit the plug finished after its run was stopped was not seen by a run
+- A commit the device finished after its run was stopped was not seen by a run
   started again from the beginning.
 
 Before that:
 
-- Asked for the firmware the plug already ran (a run stopped during its last
+- Asked for the firmware the device already ran (a run stopped during its last
   check, then started from the beginning), a run said it had crashed, and went
   on saying so.
 - ESPHome sent as an update confirms itself only after a minute running; a
-  power cut before then took the plug back to the firmware before - which the
-  run then waited on for good, or left the plug on after saying it was done.
+  power cut before then took the device back to the firmware before - which the
+  run then waited on for good, or left the device on after saying it was done.
 - A safety lock moved aside while a step ran was not put back when the
   computer itself stopped, and every later run failed.
 - Sonoff's firmware, written back, does not try its network again if it was
-  gone while it first started: the run now says to switch the plug off and on.
-- A plug restarting, or left on the startup firmware, was missed by a run
+  gone while it first started: the run now says to switch the device off and on.
+- A device restarting, or left on the startup firmware, was missed by a run
   started from the beginning, and taken for one still on Sonoff's firmware.
-- A plug switched off and on after the installer was sent goes back to
+- A device switched off and on after the installer was sent goes back to
   Sonoff's firmware, as the installer means it to; the run then waited for
   the installer for a quarter of an hour, and stopped. It now sends it again.
 - Started again from the beginning after the layout was rebuilt for Tasmota,
   a run took the startup firmware for the ESPHome route's, on Sonoff's
-  layout, and sent the plug round steps it could never finish.
+  layout, and sent the device round steps it could never finish.
 - Tried again after an upload of the interim Tasmota cut off by the network
   (D4), the next upload hung without a word: Tasmota still held the cut one.
-  The plug is now restarted first - and also before the upload is sent again
+  The device is now restarted first - and also before the upload is sent again
   within the step, which hung for ten minutes in the same way once that was added.
-- On a busy plug, setting Tasmota up (F4) gave up on a slow answer, then
-  restarted the plug again on every try, and left the next step asking a
-  plug not answering yet - which asked the person for the Wi-Fi.
+- On a busy device, setting Tasmota up (F4) gave up on a slow answer, then
+  restarted the device again on every try, and left the next step asking a
+  device not answering yet - which asked the person for the Wi-Fi.
 - With the tool stopped part way through sending the installer, the
-  plug stays away from eWeLink; the run refused at once and blamed the
+  device stays away from eWeLink; the run refused at once and blamed the
   firewall. It now waits for it, then says to switch it off and on.
-- A power cut, or Ctrl-C then a run started again, during D1 left a plug
+- A power cut, or Ctrl-C then a run started again, during D1 left a device
   with no network at all: the installer refused to start once Sonoff's slot,
   half written, was no longer bootable - and only a serial cable could
-  recover it. Installer 4.4.3 starts regardless; a run finds the plug on it
+  recover it. Installer 4.4.3 starts regardless; a run finds the device on it
   and carries on; and an upload to it that stops is tried again by itself.
-- A Wi-Fi outage just as the plug started Sonoff's firmware again left it off
+- A Wi-Fi outage just as the device started Sonoff's firmware again left it off
   the Wi-Fi for good, and the run said only to wait. It now says to switch
-  the plug off and on when nothing has answered for two minutes.
+  the device off and on when nothing has answered for two minutes.
 - Once, official Tasmota's upload to the startup firmware (F2) began and never
   finished. A stall is now noticed after two minutes and the upload tried
   again from a restart, three times in all - checked by cutting the traffic
   mid-upload, once and twice running.
 - A power cut while the memory layout was rebuilt for Tasmota cost Tasmota
-  its settings - the rebuild wrote over where it kept them - so the plug came
+  its settings - the rebuild wrote over where it kept them - so the device came
   back waiting on its setup network, and the next run stopped for good. The
-  settings are now moved aside first; cuts timed off the plug's own output at
+  settings are now moved aside first; cuts timed off the device's own output at
   each point of the rebuild, then each way on from there (Tasmota, ESPHome,
   Sonoff's firmware), all came back with the settings and were converted -
   and the run now carries on by itself, trying the commit up to three times.
 
 ### The Beken fault suite
 
-`tools/beken/emulator/fault_suite.py` does the same for the Beken plugs, on
-emulated ones started from the public S61s dump (`beken-emu.sh --instance N plug`,
-[its README](../tools/beken/emulator/README.md)): each its own plug on a home
+`tools/beken/emulator/fault_suite.py` does the same for the Beken devices, on
+emulated ones started from the public S61s dump (`beken-emu.sh --instance N device`,
+[its README](../tools/beken/emulator/README.md)): each its own device on a home
 Wi-Fi of its own, with the local eWeLink stub, so nothing reaches the internet
 and every scenario can run side by side.
 
 ```sh
-tools/beken/emulator/fault_suite.py prep      # the starting plugs: on the interim firmware, OpenBeken, ESPHome
+tools/beken/emulator/fault_suite.py prep      # the starting devices: on the interim firmware, OpenBeken, ESPHome
 tools/beken/emulator/fault_suite.py prep-update   # and on an earlier release's OpenBeken and ESPHome
 tools/beken/emulator/fault_suite.py list > beken.txt
 AUTOFLASH_BEKEN_EMU_WORKERS=2 tools/beken/emulator/fault_suite.py batch beken.txt   # what has not passed yet
@@ -874,41 +874,41 @@ tools/beken/emulator/fault_suite.py report
 ```
 
 Every direction between Sonoff's firmware, OpenBeken and ESPHome, and from a
-plug a run to ESPHome left on the interim firmware to each of them; at each
-step that writes to or waits on the plug, at 40% of its usual length, the
-plug switched off for 1 or 30 s, this computer off the plug's Wi-Fi for
+device a run to ESPHome left on the interim firmware to each of them; at each
+step that writes to or waits on the device, at 40% of its usual length, the
+device switched off for 1 or 30 s, this computer off the device's Wi-Fi for
 30 s, the tool killed and run again after 1 or 180 s, and Ctrl-C - and at
 the steps that write, a power cut and a kill at 10% and 90% too, a power cut
-and another as the tool sends the step again, and the plug's router giving
-it a new address once the step is done. Each route also has the plug
+and another as the tool sends the step again, and the device's router giving
+it a new address once the step is done. Each route also has the device
 switched off 10, 50 and 90% of the way through its bootloader writing the
-new firmware in, timed off the plug's own output: the moment a real plug is
+new firmware in, timed off the device's own output: the moment a real device is
 likeliest to be left unable to start. And each step that sends an image the
 stock bootloader installs - Sonoff's firmware's (B2), OpenBeken's fetch of
 ESPHome (J2, O1) - has one it refuses: sent spoilt once
-(`--simulate-bad-image STEP`, one byte of its body changed), the plug fetches
+(`--simulate-bad-image STEP`, one byte of its body changed), the device fetches
 it whole but starts the firmware it had again, and the scenario passes only
-when the tool saw that and sent the image again by itself. A plug converted
+when the tool saw that and sent the image again by itself. A device converted
 through the interim firmware passes only if, by the names it asked its
 router's DHCP for, it was `autoflash-recovery-CDEF` there from its first
 request and never OpenBeken's own name, and - once ESPHome is on it - the
-interim's settings are gone from its flash. And a plug on the firmware of an
+interim's settings are gone from its flash. And a device on the firmware of an
 earlier release is updated, to OpenBeken and to ESPHome, with the same faults:
-`prep-update` makes those plugs, through that release's own suite. And
+`prep-update` makes those devices, through that release's own suite. And
 readouts, as the Espressif suite's, but for a Beken device: below. 288
 scenarios; `list openbeken`
 gives the six a new OpenBeken build must pass
 ([updating-firmware.md](updating-firmware.md#5-test)).
 Then the
-tool is run again as a person would, switching the plug off and on where it
+tool is run again as a person would, switching the device off and on where it
 says to, up to four times; the scenario passes when the run's record has
 every step of its route done, and the report's end-of-run checks passed as on
 the Espressif suite (FAIL-CHECKS: OpenBeken and ESPHome switch their relay pin
-in the emulator, and the emulated plug's meter measures a load while the relay
+in the emulator, and the emulated device's meter measures a load while the relay
 is on, so their check must also say the meter confirms the switch; back on
 Sonoff's firmware the relay is switched through the stub's eWeLink), and its screen, as on the
 Espressif suite (FAIL-SCREEN: each run is recorded through
-`tools/repo/unattended_run.py`), and the release it ends on: a plug converted to
+`tools/repo/unattended_run.py`), and the release it ends on: a device converted to
 OpenBeken or ESPHome must run your checkout's (FAIL-NOT-LATEST), updated from an
 earlier release's or not. `check` holds each way to the end-of-run
 checks too. Results are in `captures/emulation/beken/suite/`
@@ -916,33 +916,33 @@ checks too. Results are in `captures/emulation/beken/suite/`
 
 The readouts (`sonoff>readout`, `openbeken>readout`) are the Espressif
 suite's, for a Beken device, which the readout finds by its hardware address
-as it answers no discovery: a plug fresh from Sonoff's firmware read out
-unattended; the same with the plug switched off for a second, or this
+as it answers no discovery: a device fresh from Sonoff's firmware read out
+unattended; the same with the device switched off for a second, or this
 computer off its Wi-Fi for 30 s, at 40% of the read (about 400 s: the whole
 4 MB in 256 paced chunks, where B4 reads 8 in 12 s) and at 10% of putting
 Sonoff's firmware back (100 s, as O2 and K3 take: the fault lands while the
 readout OpenBeken fetches it, the part only the readout has), and the tool
-killed mid-read. After each, as a person would: the plug switched off and on
+killed mid-read. After each, as a person would: the device switched off and on
 where the run says to; Sonoff's firmware put back with the tool (`run
---firmware sonoff`) where the plug was left on OpenBeken; otherwise the readout
+--firmware sonoff`) where the device was left on OpenBeken; otherwise the readout
 run again. It passes when a run kept `readout.tar`, unsent, holding every
 file [readouts.md](readouts.md#what-is-in-one) lists for a Beken device and
-the whole 4 MB flash (FAIL-READOUT), and the plug, switched off and on, starts
-Sonoff's firmware and is back in eWeLink (FAIL-NOT-SONOFF). A readout of a plug
-on OpenBeken must fail without serving the plug anything (FAIL-NOT-REFUSED),
+the whole 4 MB flash (FAIL-READOUT), and the device, switched off and on, starts
+Sonoff's firmware and is back in eWeLink (FAIL-NOT-SONOFF). A readout of a device
+on OpenBeken must fail without serving the device anything (FAIL-NOT-REFUSED),
 which still answers on OpenBeken (FAIL-DISTURBED).
 
-Each emulated plug takes a core, so two workers suit a laptop. Sonoff's
+Each emulated device takes a core, so two workers suit a laptop. Sonoff's
 firmware restarts by itself once it has its update, in the emulator as on a
-real plug, so the switch off and on the tool asks for comes only after a
+real device, so the switch off and on the tool asks for comes only after a
 fault.
 
 #### What it cannot show
 
 - **Timings.** The emulator runs the real firmware far slower than a chip, so a
   step's length, and the moment of risk while the bootloader writes the new
-  firmware in, are the emulator's, not a real plug's.
-- **Radio.** The plug's Wi-Fi is a TAP device bridged onto a Docker network: a
+  firmware in, are the emulator's, not a real device's.
+- **Radio.** The device's Wi-Fi is a TAP device bridged onto a Docker network: a
   fault takes the computer off it, but there is no signal to weaken.
 - **The wiring.** Only the meter is wired to its pins, measuring a load while
   the relay pin is driven high; no relay or button is there, so a scenario
@@ -959,7 +959,7 @@ recorded on this page yet.
 
 #### Still open
 
-- **A real plug.** No real Beken plug has been converted: whether one answers as
+- **A real device.** No real Beken device has been converted: whether one answers as
   the emulator does - OpenBeken's `/api/flash` returning its raw flash, and Sonoff's
   checks of a rebuilt image - is not known
   ([Beken research](beken-research.md#questions-still-open)).
@@ -968,7 +968,7 @@ recorded on this page yet.
 
 Fixed, and each case in the suite since. In 2.3.0:
 
-- An image the stock bootloader would not install left the plug on the firmware
+- An image the stock bootloader would not install left the device on the firmware
   it had, and the run asked you to switch it off and on again and again. The run
   now sends the image again by itself (twice at most), and the same goes for
   ESPHome fetched by OpenBeken (J2, O1), found by OpenBeken's uptime: the suite's
@@ -977,15 +977,15 @@ Fixed, and each case in the suite since. In 2.3.0:
 In 2.4.0:
 
 - This computer crashing 10% into an ESPHome update (`outdated>esphome:U1@10:crash-1`)
-  left ESPHome on the plug waiting up to 105 s for the rest of it, its update
+  left ESPHome on the device waiting up to 105 s for the rest of it, its update
   service taking nothing else meanwhile, and every run started again in that time
   timed out. The run now waits that out, once, and sends the update again.
 - After the stock bootloader refused ESPHome a third time
   (`sonoff>esphome:J2:badimage-restart`, `interim>esphome:J2:badimage-restart`),
   the run restarted the interim firmware but never saw it back: it waited for an
-  uptime below the one before, and the plug, only just restarted by the refusal,
+  uptime below the one before, and the device, only just restarted by the refusal,
   had been up for less than it takes to start again. A restart is now also told
-  by the plug going quiet once asked, then answering again: the emulated plug's
+  by the device going quiet once asked, then answering again: the emulated device's
   clock runs faster than the wall's, so its uptime cannot be set against the time
   since it was asked.
 
@@ -998,11 +998,11 @@ answer can be given - then the screen is judged at every answer and at the end.
 
 ```sh
 tools/espressif/emulator/attended_suite.py list
-tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers 3] --plug MAC
+tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers 3] --device MAC
 ```
 
 A scenario is a file in `tools/espressif/emulator/attended/` (an S60's) or
-`tools/beken/emulator/attended/` (an S61's): where the plug starts, what is
+`tools/beken/emulator/attended/` (an S61's): where the device starts, what is
 done to it first (a Tasmota web password, an ESPHome with a web login and
 encrypted updates, sudo remembering no password), the run's options, the
 answers, and how the run should end - and, for a run stopped part way, a second
@@ -1016,19 +1016,19 @@ every answer used, and is otherwise:
 | FAIL-UNUSED | an answer was never typed: its question is no longer asked |
 | FAIL-QUESTION | as a question was answered: no "(q to quit)" on it, a row the terminal wrapped itself, or a question shown twice - an earlier try left on the screen |
 | FAIL-SCREEN | the screen it ended on, as FAIL-SCREEN above |
-| HARNESS | it could not be run - the plug not prepared, say: its `harness.log` says why |
+| HARNESS | it could not be run - the device not prepared, say: its `harness.log` says why |
 
 Results and recordings go to `captures/emulation/attended/<time>/`.
 `tests/espressif/emulator/test_attended_suite.py` checks every answer still
 matches a question the tool asks, so a question reworded fails in the unit
 tests first.
 
-## Real plugs
+## Real devices
 
-Real plugs are converted with each one powered through a second smart plug,
+Real devices are converted with each one powered through a second smart plug,
 so its power can be cut on purpose. So far, Tasmota to ESPHome and back has
 been run on a real S60TPG: every write read back, the final check of the
-Tasmota plug matching all four regions, and the relay and power meter checked
+Tasmota device matching all four regions, and the relay and power meter checked
 through each firmware.
 
 ## Related

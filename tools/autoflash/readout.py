@@ -36,7 +36,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING
 
-from tools.autoflash import __version__, account, hostsys, kinds, output, plugs, prompts, runs
+from tools.autoflash import __version__, account, hostsys, kinds, output, records, prompts, runs
 from tools.autoflash import proof_of_work, readout_beken, readout_espressif
 from tools.autoflash.errors import Abort, Finished, NothingWritten
 from tools.ewelink import discover_ewelink, firmware_name, offered_firmware
@@ -71,7 +71,7 @@ STATE_KEY = "readout"
 # What the run's record keeps of the one device being read out, with
 # readout_espressif.BRIDGE_HOST: cleared before the next, when every device is
 # read out in one run.
-DEVICE_KEYS = ("plug_ip", "plug_mac", "stock_version", "product_model", STATE_KEY, "readout_sent")
+DEVICE_KEYS = ("device_ip", "device_mac", "stock_version", "product_model", STATE_KEY, "readout_sent")
 
 
 class WebsiteFull(NothingWritten):
@@ -115,7 +115,7 @@ def describe(device: dict[str, Any]) -> str:
 
 def unknown_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The account's devices of a kind this tool does not convert yet."""
-    return [device for device in devices if account.account_plug(device) is None]
+    return [device for device in devices if account.account_device(device) is None]
 
 
 def answering_ids(report: dict[str, Any]) -> dict[str, str]:
@@ -131,8 +131,8 @@ def answering_ids(report: dict[str, Any]) -> dict[str, str]:
 
 
 def device_at(address: str, devices: list[dict[str, Any]]) -> dict[str, Any]:
-    """The account's device at `address` (--plug-ip): the one answering eWeLink's
-    discovery there, else the one whose hardware address is there (a Beken plug
+    """The account's device at `address` (--device-ip): the one answering eWeLink's
+    discovery there, else the one whose hardware address is there (a Beken device
     does no LAN Control, so it answers no discovery - it is found by its MAC, as
     the conversion finds it), else the one device the account holds."""
     try:
@@ -156,7 +156,7 @@ def device_at(address: str, devices: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def lan_free(device: dict[str, Any]) -> bool:
-    """Whether the account's `device` does no LAN Control (a Beken plug), so
+    """Whether the account's `device` does no LAN Control (a Beken device), so
     answers no local discovery. The account record's model says the chip
     family before anything is read."""
     model = str((device.get("extra") or {}).get("model") or device.get("productModel") or "")
@@ -169,7 +169,7 @@ def lan_free(device: dict[str, Any]) -> bool:
 def record_mac(device: dict[str, Any]) -> str | None:
     """The hardware address eWeLink's record of `device` gives it, if any."""
     mac = hostsys.normalise_mac(str((device.get("params") or {}).get("staMac") or ""))
-    return mac if plugs.MAC_RE.match(mac) else None
+    return mac if records.MAC_RE.match(mac) else None
 
 
 def locate(ctx: Context, device: dict[str, Any]) -> str:
@@ -199,7 +199,7 @@ def locate(ctx: Context, device: dict[str, Any]) -> str:
         "The device did not answer here. Its address",
         help_lines=["Check LAN Control is on for it in the eWeLink app. Its address is in your",
                     "router's device list, or the app's device information."],
-        check=account.plug_at({wanted}))
+        check=account.device_at({wanted}))
     output.transient_end()
     return address
 
@@ -244,23 +244,23 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
     first_only = not reads_out(device)
     ip = None if first_only else address or locate(ctx, device)
     if ip:
-        ctx.state.set_input("plug_ip", ip)
+        ctx.state.set_input("device_ip", ip)
     mac = (hostsys.mac_of(ip) if ip else None) or (device.get("params") or {}).get("staMac")
-    if mac and plugs.MAC_RE.match(hostsys.normalise_mac(mac)):
+    if mac and records.MAC_RE.match(hostsys.normalise_mac(mac)):
         mac = hostsys.normalise_mac(mac)
-        ctx.state.set_input("plug_mac", mac)
+        ctx.state.set_input("device_mac", mac)
         if batch is None:
             # Under the device's own folder, as a conversion's run is: its log, the
             # readout kept unsent, and the backup beside them.
-            runs.file_plug(ctx, mac, None)
+            runs.file_device(ctx, mac, None)
         elif not first_only:
             # A run of several devices stays where it is; one written to is held
             # all the same, so no other run converts it meanwhile.
-            runs.hold_plug(ctx, mac)
-        plugs.remember_plug(mac, ewelink_name=str(device.get("name") or "").strip() or None,
+            runs.hold_device(ctx, mac)
+        records.remember_device(mac, ewelink_name=str(device.get("name") or "").strip() or None,
                             ewelink_id=str(device.get("deviceid") or "") or None,
                             model=str(device.get("productModel") or "") or None)
-    # A device that does no LAN Control (a Beken plug) is asked of eWeLink by
+    # A device that does no LAN Control (a Beken device) is asked of eWeLink by
     # its account id.
     # So is one a readout stopped part way left on its reading program (the
     # bridge), which answers no discovery either.

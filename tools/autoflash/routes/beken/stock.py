@@ -1,7 +1,7 @@
-"""From Sonoff's firmware: what the plug reports of itself (B1), and the new
+"""From Sonoff's firmware: what the device reports of itself (B1), and the new
 firmware sent to it through eWeLink (B2) - the one write Sonoff's firmware
-takes, after which the plug's stock bootloader applies the image and the new
-firmware starts, reading the plug's Wi-Fi from the stock store it leaves untouched.
+takes, after which the device's stock bootloader applies the image and the new
+firmware starts, reading the device's Wi-Fi from the stock store it leaves untouched.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import re
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import account, detect, firewall, join, kinds, output, plugs, prompts, runs, testers
+from tools.autoflash import account, detect, firewall, join, kinds, output, records, prompts, runs, testers
 from tools.autoflash.errors import Abort, NothingWritten, StoppedPartWay
 from tools.autoflash.routes.beken import images
 from tools.beken import fota_wrap, interim_marker
@@ -23,21 +23,21 @@ if TYPE_CHECKING:
 
 # The stock updater fetches the file in ranges, at its own pace: a few minutes.
 DELIVERY_WAIT = 300.0
-# How the plug turns an update down while one cut off part way still holds its
+# How the device turns an update down while one cut off part way still holds its
 # updater (error 410, relayed by eWeLink): until it is switched off and on.
 BUSY = re.compile(r"\berror 410\b")
 
 
 def account_record(ctx: Context) -> dict[str, Any]:
-    """The plug's record in the owner's eWeLink account, found by the device
+    """The device's record in the owner's eWeLink account, found by the device
     id A1 kept for it."""
     device_id = ""
-    found = getattr(ctx, "account_plug", None)
+    found = getattr(ctx, "account_device", None)
     if found is not None:
         device_id = found.device_id
     if not device_id:
-        mac = ctx.state.input("plug_mac")
-        device_id = str(plugs.read_plug(mac).get("ewelink_id") or "") if mac else ""
+        mac = ctx.state.input("device_mac")
+        device_id = str(records.read_device(mac).get("ewelink_id") or "") if mac else ""
     if not device_id:
         raise Abort("the device's eWeLink device id is not known: start again with --new, so the device is found "
                     "in the account first")
@@ -68,7 +68,7 @@ def note_official_file(kind: kinds.Kind, reported_version: str) -> dict[str, Any
 
 
 def step_identify(ctx: Context) -> dict[str, Any]:
-    """B1 - what the plug reports of itself, through eWeLink: its model and
+    """B1 - what the device reports of itself, through eWeLink: its model and
     firmware, which must be the kind's."""
     device = account_record(ctx)
     try:
@@ -82,7 +82,7 @@ def step_identify(ctx: Context) -> dict[str, Any]:
     if kind is None:
         raise Abort(f"the device is a {identity['model']}, which this tool does not convert yet. Nothing was written")
     official = note_official_file(kind, identity["version"])
-    ctx.state.set_input("plug_kind", kind.key)
+    ctx.state.set_input("device_kind", kind.key)
     ctx.state.set_input("stock_version", identity["version"])
     ctx.state.set_input("product_model", product)
     prompts.section("What the device reported", quiet=True, body=[
@@ -126,33 +126,33 @@ def payload(ctx: Context, firmware: str, image: bytes) -> bytes:
 
 
 def answers_as(ctx: Context) -> str:
-    """What the plug answers as once B2's firmware has started (detect.identify)."""
+    """What the device answers as once B2's firmware has started (detect.identify)."""
     firmware = first_firmware(ctx)[0]
     return "interim" if firmware != runs.run_firmware(ctx.state) else firmware
 
 
 def step_push(ctx: Context) -> dict[str, Any]:
-    """B2 - the new firmware, sent to the plug through eWeLink - the interim
-    firmware, on a run that has one.  The first write: once the plug has it, its bootloader replaces Sonoff's
+    """B2 - the new firmware, sent to the device through eWeLink - the interim
+    firmware, on a run that has one.  The first write: once the device has it, its bootloader replaces Sonoff's
     firmware on the next start, and there is no going back but the way this
     tool offers (Sonoff's firmware fetched again, from the public dump)."""
     kind = kinds.of_run(ctx.state)
     firmware, shown = first_firmware(ctx)
-    plug_ip, stock_version = ctx.state.require("plug_ip", "stock_version")
+    device_ip, stock_version = ctx.state.require("device_ip", "stock_version")
     device = account_record(ctx)
     image, version = images.image(ctx, firmware)
     container = fota_wrap.wrap(payload(ctx, firmware, image), name=kind.wrapper_model, version=images.FOTA_VERSION)
     listen_ip = ctx.listen_ip()
     port = firewall.choose_port(ctx, "delivery_port", firewall.DELIVERY_PORTS, "the firmware")
     firewall.ensure_firewall(ctx)
-    # Checked again here: nothing reaches the plug but past this, a resumed run too.
+    # Checked again here: nothing reaches the device but past this, a resumed run too.
     if kind.key in images.OFFICIAL_FILES:
         images.official(kind)
     if not getattr(ctx, "consented", False):  # once a run: not again when sent again (errors.GoBack)
         output.transient_begin()
         prompts.warning_box("Before going on", [
             "From here the device's Sonoff firmware is replaced, so the eWeLink app",
-            "will no longer control it. DO NOT UNPLUG IT during the process.",
+            "will no longer control it. DO NOT CUT ITS POWER during the process.",
             *testers.notice(kind),
         ])
         if not prompts.require_word(prompts.CONSENT_WORD):
@@ -160,12 +160,12 @@ def step_push(ctx: Context) -> dict[str, Any]:
         output.transient_end()  # agreed: the note and the question have done their job
         ctx.consented = True
     if ctx.dry_run:
-        output.say(f"[dry-run] would send {shown} {version} ({len(container):,} bytes wrapped) to {plug_ip}")
+        output.say(f"[dry-run] would send {shown} {version} ({len(container):,} bytes wrapped) to {device_ip}")
         return {"dry_run": True, "firmware": firmware, "version": version}
 
     def check(found: dict[str, Any], model: str) -> None:
-        # Only the plug A1 found, as it was at B1: another device on the
-        # account, or a plug updated since, is never sent this.
+        # Only the device A1 found, as it was at B1: another device on the
+        # account, or a device updated since, is never sent this.
         if model != kind.stock_model:
             raise EwelinkError(f"the device's model is {model}, not the {kind.name}'s {kind.stock_model}")
         reported = str((found.get("params") or {}).get("fwVersion"))
@@ -176,7 +176,7 @@ def step_push(ctx: Context) -> dict[str, Any]:
     started = time.monotonic()
     delivered = ota_push.deliver(
         account=ctx.ewelink, device_id=device["deviceid"], firmware=container, version=images.FOTA_VERSION,
-        listen_ip=listen_ip, listen_port=port, device_ip=plug_ip, names=("user1.bin",),
+        listen_ip=listen_ip, listen_port=port, device_ip=device_ip, names=("user1.bin",),
         wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False)
     if not delivered.sent:
         raise Abort(f"the firmware was not sent: {delivered.error or 'eWeLink did not take the command'}. "
@@ -186,7 +186,7 @@ def step_push(ctx: Context) -> dict[str, Any]:
                     "part way. Switch the device off and on - it keeps its Sonoff firmware - then run the same "
                     "command again")
     if not delivered.complete:
-        # Sent, and some of it may be on the plug: the plug says what it runs
+        # Sent, and some of it may be on the device: the device says what it runs
         # when the step is asked about (evidence_pushed). A power cut part way
         # is the usual cause, not something unexpected.
         raise StoppedPartWay(
@@ -200,9 +200,9 @@ def step_push(ctx: Context) -> dict[str, Any]:
 
 
 def evidence_pushed(ctx: Context) -> tuple[bool | None, str]:
-    """Whether a push cut off got through: the plug answers as the firmware it
+    """Whether a push cut off got through: the device answers as the firmware it
     was sent (it restarted into it), or as nothing this tool knows yet."""
-    host = ctx.state.input("plug_ip")
+    host = ctx.state.input("device_ip")
     shown = first_firmware(ctx)[1]
     running = detect.identify(host, timeout=3.0) if host else None
     if running == answers_as(ctx):

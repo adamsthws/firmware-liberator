@@ -1,5 +1,5 @@
 """The FOTA container tools/beken/fota_wrap.py wraps an image in for the stock
-updater, its server, and the eWeLink command that sends a plug to it."""
+updater, its server, and the eWeLink command that sends a device to it."""
 import contextlib
 import hashlib
 import http.client
@@ -31,7 +31,7 @@ class FotaWrapTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             fota.wrap(bytes(200))
 
-    def test_the_announced_version_is_one_the_plug_takes(self):
+    def test_the_announced_version_is_one_the_device_takes(self):
         # The stock updater fetches only a version newer than its own 1.0.2,
         # compared as text: OpenBeken's own 1.0.0 was refused, nothing fetched.
         self.assertGreater(fota.ANNOUNCED_VERSION, "1.0.2")
@@ -50,7 +50,7 @@ class FotaWrapTests(unittest.TestCase):
         self.assertEqual(desc[0x20:0x30], b"1.18.319".ljust(16, b"\x00"))
         self.assertEqual(struct.unpack_from(">I", desc, 0x30)[0], 116 - 16)   # payload at 116, base 16
         self.assertEqual(struct.unpack_from(">I", desc, 0x34)[0], len(self.RBL))
-        # Without it the plug stages the payload but reports the update failed,
+        # Without it the device stages the payload but reports the update failed,
         # and never restarts to install it.
         self.assertEqual(struct.unpack_from(">I", desc, 0x38)[0], zlib.crc32(self.RBL))
         self.assertEqual(struct.unpack_from(">I", desc, 0x3C)[0], zlib.crc32(desc[:0x3C]))
@@ -71,7 +71,7 @@ class FotaWrapTests(unittest.TestCase):
             with self.assertRaises(ValueError, msg=repr(version)):
                 fota.wrap(self.RBL, version=version)
 
-    def test_the_server_answers_each_range_as_the_plug_fetches(self):
+    def test_the_server_answers_each_range_as_the_device_fetches(self):
         container = fota.wrap(self.RBL)
         srv = fota.server(container, "127.0.0.1", 0)
         self.addCleanup(srv.server_close)
@@ -92,19 +92,19 @@ class FotaWrapTests(unittest.TestCase):
                 self.assertEqual(body, container[want[0]:want[1] + 1], rng)
         for status, content_range, will_close, body in got:
             self.assertEqual(status, 206)
-            self.assertFalse(will_close)       # keep-alive: the plug reads every range on one connection
+            self.assertFalse(will_close)       # keep-alive: the device reads every range on one connection
             self.assertEqual(content_range, "bytes %d-%d/%d" % (
                 int(content_range.split()[1].split("-")[0]),
                 int(content_range.split()[1].split("-")[0]) + len(body) - 1, len(container)))
 
-    def test_the_response_head_is_what_the_plugs_parser_reads(self):
+    def test_the_response_head_is_what_the_devices_parser_reads(self):
         container = fota.wrap(self.RBL)
         srv = fota.server(container, "127.0.0.1", 0)
         self.addCleanup(srv.server_close)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         self.addCleanup(srv.shutdown)
         with contextlib.redirect_stderr(io.StringIO()), socket.create_connection(srv.server_address, timeout=10) as s:
-            s.sendall(b"GET /user1.bin HTTP/1.1\r\nHost: plug\r\nRange: bytes=16-39\r\n\r\n")
+            s.sendall(b"GET /user1.bin HTTP/1.1\r\nHost: device\r\nRange: bytes=16-39\r\n\r\n")
             got = b""
             while b"\r\n\r\n" not in got or len(got) < got.index(b"\r\n\r\n") + 4 + 24:
                 got += s.recv(4096)
@@ -157,7 +157,7 @@ class FotaWrapTests(unittest.TestCase):
 
 
 class UpgradeCommandTests(unittest.TestCase):
-    def test_the_command_names_the_plug_the_container_and_its_digest(self):
+    def test_the_command_names_the_device_the_container_and_its_digest(self):
         register = {"action": "register", "deviceid": "1000abcdef", "apikey": "made-up-key",
                     "model": "SN-BK7238-S61-01"}
         command = fota.upgrade_command(register, "http://8.8.8.8:8080/user1.bin", "ab" * 32, "9.9.9")

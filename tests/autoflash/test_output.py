@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.autoflash import context, hostsys, join, output, phases, plugs, prompts, report, routes
+from tools.autoflash import context, hostsys, join, output, phases, records, prompts, report, routes
 from tools.autoflash.state import RunState
 
 
@@ -282,9 +282,9 @@ class ConciseTests(OutputTestCase):
                  mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, rows))), \
                  mock.patch.object(prompts, "ping_ok", side_effect=[False, False, True]), \
                  mock.patch("builtins.input", side_effect=["10.0.0.1", "10.0.0.2", "10.0.0.3"]):
-                output.stage_begin(3, "Discovering the plug")
+                output.stage_begin(3, "Discovering the device")
                 output.transient_begin()
-                self.assertEqual(prompts.ask_ipv4("The plug's address", help_lines=["Where to look."],
+                self.assertEqual(prompts.ask_ipv4("The device's address", help_lines=["Where to look."],
                                                   must_respond=True), "10.0.0.3")
                 output.transient_end()
                 output.stage_end("complete")
@@ -303,9 +303,9 @@ class ConciseTests(OutputTestCase):
         now = [100.0]
         def body():
             with mock.patch.object(output.time, "monotonic", side_effect=lambda: now[0]):
-                output.stage_begin(3, "Discovering the plug")
+                output.stage_begin(3, "Discovering the device")
                 now[0] += 5                     # working
-                output.before_input("The plug's address: ")
+                output.before_input("The device's address: ")
                 now[0] += 60                    # the person thinking
                 self.assertEqual(output.waited(), 60)
                 output.answered("192.0.2.50")
@@ -313,16 +313,16 @@ class ConciseTests(OutputTestCase):
                 self.assertEqual(output.waited(), 60)
                 output.stage_end("complete")
         screen, log = self.run_with(FakeTerminal(), False, body)
-        self.assertIn("Discovering the plug - complete (10s)", log)
+        self.assertIn("Discovering the device - complete (10s)", log)
 
     def test_a_question_left_unanswered_is_not_the_next_runs_wait(self):
         now = [100.0]
         with mock.patch.object(output.time, "monotonic", side_effect=lambda: now[0]):
-            output.before_input("The plug's address: ")   # never answered
+            output.before_input("The device's address: ")   # never answered
             now[0] += 1000
             def body():
-                output.stage_begin(3, "Discovering the plug")
-                output.before_input("The plug's address: ")
+                output.stage_begin(3, "Discovering the device")
+                output.before_input("The device's address: ")
                 now[0] += 60
                 self.assertEqual(output.waited(), 60)
                 output.answered("192.0.2.50")
@@ -333,7 +333,7 @@ class ConciseTests(OutputTestCase):
         def body():
             with mock.patch.object(output, "colour_ok", return_value=True), \
                  mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
-                output.stage_begin(3, "Discovering the plug")
+                output.stage_begin(3, "Discovering the device")
                 output.transient_begin()
                 before = sys.stdout.getvalue()
                 output._tick()  # while the block's note is still being worked out
@@ -421,7 +421,7 @@ class ConciseTests(OutputTestCase):
     def test_a_checked_address_must_pass_with_no_using_it_anyway(self):
         asked = []
         def check(address):
-            return [] if address == "10.0.0.3" else [f"{address} is not the plug."]
+            return [] if address == "10.0.0.3" else [f"{address} is not the device."]
         def answer(prompt):
             asked.append(prompt)
             return {0: "10.0.0.1", 1: "10.0.0.2"}.get(len(asked) - 1, "10.0.0.3")
@@ -429,12 +429,12 @@ class ConciseTests(OutputTestCase):
         with mock.patch("sys.stdout", stdout), \
              mock.patch.object(prompts, "ping_ok", side_effect=lambda a, *k: a != "10.0.0.1"), \
              mock.patch("builtins.input", side_effect=answer):
-            self.assertEqual(prompts.ask_ipv4("The plug's address", check=check), "10.0.0.3")
+            self.assertEqual(prompts.ask_ipv4("The device's address", check=check), "10.0.0.3")
         self.assertEqual(len(asked), 3)                     # three addresses, nothing else
         self.assertNotIn("Use it anyway", "".join(asked))
         screen = stdout.getvalue()
         self.assertIn("Nothing at 10.0.0.1 answered a ping.", screen)
-        self.assertIn("10.0.0.2 is not the plug.", screen)
+        self.assertIn("10.0.0.2 is not the device.", screen)
 
     def test_no_clock_under_an_address_while_it_is_pinged(self):
         # Its line and the gap after it made a try two rows taller: in a short
@@ -445,7 +445,7 @@ class ConciseTests(OutputTestCase):
             return address == "10.0.0.2"
         with mock.patch.object(prompts, "ping_ok", side_effect=ping), \
              mock.patch("builtins.input", side_effect=["10.0.0.1", "10.0.0.2"]):
-            self.assertEqual(prompts.ask_ipv4("The plug's address", must_respond=True), "10.0.0.2")
+            self.assertEqual(prompts.ask_ipv4("The device's address", must_respond=True), "10.0.0.2")
         self.assertEqual(held, [True, True])
         self.assertFalse(output._s.held)
 
@@ -454,7 +454,7 @@ class ConciseTests(OutputTestCase):
             with mock.patch.object(output, "colour_ok", return_value=True), \
                  mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 6))), \
                  mock.patch("builtins.input", side_effect=["maybe", "192.0.2.50", "n"]):
-                output.stage_begin(3, "Discovering the plug")
+                output.stage_begin(3, "Discovering the device")
                 output.transient_begin()
                 self.assertFalse(prompts.ask_yes_no("Use it anyway?", default=False))
                 output.transient_end()
@@ -536,7 +536,7 @@ class ConciseTests(OutputTestCase):
 
     def test_a_try_inside_a_block_can_be_taken_off(self):
         def body():
-            output.stage_begin(3, "Discovering the plug")
+            output.stage_begin(3, "Discovering the device")
             output.transient_begin()
             output.show("Where to look.")
             mark = output.mark()
@@ -545,14 +545,14 @@ class ConciseTests(OutputTestCase):
             output.show("Asked again")
             output.transient_end()
             output.stage_end("complete")
-        self.assertEqual(self.drawn(body), ["Stage 3 - Discovering the plug - Complete"])
+        self.assertEqual(self.drawn(body), ["Stage 3 - Discovering the device - Complete"])
 
     def test_a_question_asked_as_its_block_began_keeps_its_block_when_asked_again(self):
         # Seen: a yes/no question answered wrongly first, with nothing shown
         # between its block's start and the question, stayed on the screen
         # once answered - the rewind closed the block it was asked in.
         def body():
-            output.stage_begin(3, "Discovering the plug")
+            output.stage_begin(3, "Discovering the device")
             output.show("A note")
             output.transient_begin()
             mark = output.mark()
@@ -563,12 +563,12 @@ class ConciseTests(OutputTestCase):
             output.show("Use it anyway (y/N): y")
             output.transient_end()
             output.stage_end("stopped")
-        self.assertEqual(self.drawn(body), ["Stage 3 - Discovering the plug - Underway", "", "A note",
-                                            "Stage 3 - Discovering the plug - Stopped"])
+        self.assertEqual(self.drawn(body), ["Stage 3 - Discovering the device - Underway", "", "A note",
+                                            "Stage 3 - Discovering the device - Stopped"])
 
     def test_going_back_past_a_block_s_start_closes_it(self):
         def body():
-            output.stage_begin(3, "Discovering the plug")
+            output.stage_begin(3, "Discovering the device")
             output.stage_end("complete")
             mark = output.mark()
             output.stage_begin(4, "Choosing the firmware")
@@ -578,7 +578,7 @@ class ConciseTests(OutputTestCase):
             self.assertEqual(output._s.blocks, [])
             output.stage_begin(4, "Choosing the firmware")
             output.stage_end("complete")
-        self.assertEqual(self.drawn(body), ["Stage 3 - Discovering the plug - Complete",
+        self.assertEqual(self.drawn(body), ["Stage 3 - Discovering the device - Complete",
                                             "Stage 4 - Choosing the firmware - Complete"])
 
     def test_a_stage_that_ends_takes_off_every_block_still_open(self):
@@ -620,7 +620,7 @@ class ConciseTests(OutputTestCase):
 
     def test_a_note_said_after_a_wait_stands_apart_its_own_lines_together(self):
         # Seen in the fault suites' screens: notes of different moments - the
-        # plug gone back to Sonoff's firmware, then nothing answering - ran on
+        # device gone back to Sonoff's firmware, then nothing answering - ran on
         # as one.
         def body():
             output.stage_begin(7, "Backing up Sonoff firmware")
@@ -713,7 +713,7 @@ class ConciseTests(OutputTestCase):
                  mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
                 output.stage_begin(5, "Sending interim firmware")
                 output.transient_begin()
-                prompts.warning_box("Before going on", ["DO NOT UNPLUG IT during the process."])
+                prompts.warning_box("Before going on", ["DO NOT CUT ITS POWER during the process."])
                 with mock.patch("builtins.input", side_effect=pressed), self.assertRaises(KeyboardInterrupt):
                     prompts.require_word(prompts.CONSENT_WORD)
                 output.stage_end("stopped")
@@ -770,11 +770,11 @@ class ConciseTests(OutputTestCase):
 
     def test_quiet_sections_are_logged_only(self):
         def body():
-            prompts.section("What the plug reported", ["Firmware now 1.2.0"], quiet=True)
+            prompts.section("What the device reported", ["Firmware now 1.2.0"], quiet=True)
             prompts.section("Join the device's setup network", ["Connect to it now."])
         screen, log = self.run_with(io.StringIO(), False, body)
-        self.assertNotIn("What the plug reported", screen)
-        self.assertIn("What the plug reported", log)
+        self.assertNotIn("What the device reported", screen)
+        self.assertIn("What the device reported", log)
         self.assertIn("Join the device's setup network", screen)
 
     def test_the_warning_is_a_short_note(self):
@@ -947,7 +947,7 @@ class FallbackScreenTests(OutputTestCase):
                  mock.patch.object(setup_network, "send_wifi", return_value=("saved", "192.0.2.77")), \
                  mock.patch.object(join, "name_with_the_wifi"), \
                  mock.patch.object(time, "sleep"):
-                join.configure_plug_wifi(ctx, "tasmota-5A3C1F-7340")
+                join.configure_device_wifi(ctx, "tasmota-5A3C1F-7340")
         screen, _ = self.run_with(io.StringIO(), False, body)
         for words in ("Join the device's setup network", "tasmota-5A3C1F-7340", "(open - no password)",
                       "stay on its network for about 20 seconds",
@@ -981,12 +981,12 @@ class FallbackScreenTests(OutputTestCase):
                  mock.patch.object(join, "name_with_the_wifi"), \
                  mock.patch.object(join, "setup_network_gone", return_value=gone), \
                  mock.patch.object(time, "sleep"):
-                join.configure_plug_wifi(ctx, "tasmota-5A3C1F-7340")
+                join.configure_device_wifi(ctx, "tasmota-5A3C1F-7340")
                 self.asked = asked.called
         screen, _ = self.run_with(io.StringIO(), False, body)
         return sent, screen
 
-    def test_no_word_from_the_plug_it_is_sent_again(self):
+    def test_no_word_from_the_device_it_is_sent_again(self):
         from tools.autoflash import setup_network
         sent, screen = self.send([setup_network.SetupError("no answer"), ("unknown", None),
                                   ("saved", "192.0.2.77")])
@@ -995,7 +995,7 @@ class FallbackScreenTests(OutputTestCase):
         self.assertIn("restarting onto it", screen)
 
     def test_no_word_and_its_network_gone_it_is_looked_for_at_home(self):
-        # Seen in the fault suite: the plug took them, saved them and restarted
+        # Seen in the fault suite: the device took them, saved them and restarted
         # onto the Wi-Fi before its answer was asked for. Sent again, the run
         # waited a quarter of an hour for this computer to join a network gone.
         sent, screen = self.send([("unknown", None)], gone=True)
@@ -1009,7 +1009,7 @@ class FallbackScreenTests(OutputTestCase):
         self.assertEqual(sent, ["Home-2G", "Home-New"])
         self.assertTrue(self.asked)
 
-    def test_unattended_rejected_details_go_to_the_plugs_page(self):
+    def test_unattended_rejected_details_go_to_the_devices_page(self):
         sent, screen = self.send([("rejected", None)], unattended=True)
         self.assertEqual(sent, ["Home-2G"])
         self.assertFalse(self.asked)
@@ -1068,7 +1068,7 @@ class ReportTests(OutputTestCase):
         from tools.autoflash.state import RunState
         state = RunState.open(Path(self.tmp.name) / "run")
         for key, value in {"product_model": "S60TPG", "stock_version": "1.2.0",
-                           "email": "me@example.com", "plug_ip": "192.0.2.50",
+                           "email": "me@example.com", "device_ip": "192.0.2.50",
                            "device_name": "tasmota-1A2B3C-4567", **inputs}.items():
             state.set_input(key, value)
         state.capture("D1.upload_route", "home network")
@@ -1088,27 +1088,27 @@ class ReportTests(OutputTestCase):
         self.assertEqual(fields["Wi-Fi typed"], "No")
         self.assertEqual(fields["Setup network"], "No")
 
-    def test_a_run_from_a_converted_plug_takes_the_model_and_stock_firmware_from_its_record(self):
+    def test_a_run_from_a_converted_device_takes_the_model_and_stock_firmware_from_its_record(self):
         # Back to Sonoff from OpenBeken: neither Sonoff's firmware nor
-        # eWeLink was asked, but the plug's record has both.
-        ctx = self.ctx(plug_kind="sonoff-s61", product_model="", stock_version="", firmware="sonoff",
-                       source="openbeken", plug_mac="12:34:56:ab:cd:ef")
-        with mock.patch.object(plugs, "read_plug", return_value={"model": "S61STPF", "stock_version": "1.3.0"}) as read:
+        # eWeLink was asked, but the device's record has both.
+        ctx = self.ctx(device_kind="sonoff-s61", product_model="", stock_version="", firmware="sonoff",
+                       source="openbeken", device_mac="12:34:56:ab:cd:ef")
+        with mock.patch.object(records, "read_device", return_value={"model": "S61STPF", "stock_version": "1.3.0"}) as read:
             fields = dict(report.report_fields(ctx, 441, False))
         read.assert_called_with("12:34:56:ab:cd:ef")
         self.assertEqual(fields["Model"], "S61STPF")
         self.assertEqual(fields["Stock"], "1.3.0")
-        with mock.patch.object(plugs, "read_plug", return_value={}):
+        with mock.patch.object(records, "read_device", return_value={}):
             fields = dict(report.report_fields(ctx, 441, False))
         self.assertEqual((fields["Model"], fields["Stock"]), ("Sonoff S61", "__"))
         # On Sonoff's route the kind is only a default until eWeLink has been asked.
-        with mock.patch.object(plugs, "read_plug", return_value={}):
-            fields = dict(report.report_fields(self.ctx(plug_kind="sonoff-s61", product_model="", stock_version="",
+        with mock.patch.object(records, "read_device", return_value={}):
+            fields = dict(report.report_fields(self.ctx(device_kind="sonoff-s61", product_model="", stock_version="",
                                                         source="sonoff"), 441, False))
         self.assertEqual(fields["Model"], "__")
         # What the run itself found comes first.
-        with mock.patch.object(plugs, "read_plug", return_value={"model": "S61STPF", "stock_version": "1.3.0"}):
-            fields = dict(report.report_fields(self.ctx(plug_kind="sonoff-s61", product_model="S61STPE",
+        with mock.patch.object(records, "read_device", return_value={"model": "S61STPF", "stock_version": "1.3.0"}):
+            fields = dict(report.report_fields(self.ctx(device_kind="sonoff-s61", product_model="S61STPE",
                                                         stock_version="1.2.0", source="sonoff"), 441, False))
         self.assertEqual((fields["Model"], fields["Stock"]), ("S61STPE", "1.2.0"))
 
@@ -1119,7 +1119,7 @@ class ReportTests(OutputTestCase):
 
     def test_an_s61_report_says_whether_it_was_power_cycled(self):
         self.assertNotIn("Power cycled", dict(report.report_fields(self.ctx(), 441, False)))  # an S60's
-        s61 = dict(plug_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="sonoff")
+        s61 = dict(device_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="sonoff")
         self.assertEqual(dict(report.report_fields(self.ctx(**s61), 441, False))["Power cycled"], "False")
         ctx = self.ctx(**s61, power_cycles={"by hand": 1})
         self.assertEqual(dict(report.report_fields(ctx, 441, False))["Power cycled"], "True")
@@ -1128,26 +1128,26 @@ class ReportTests(OutputTestCase):
         # OpenBeken's holds the MAC's last three bytes; the model says the rest.
         for firmware, kind in (("tasmota", "sonoff-s60"), ("esphome", "sonoff-s60"), ("openbeken", "sonoff-s61"),
                                ("esphome", "sonoff-s61")):
-            fields = report.report_fields(self.ctx(plug_kind=kind, firmware=firmware, source="sonoff",
+            fields = report.report_fields(self.ctx(device_kind=kind, firmware=firmware, source="sonoff",
                                                    device_name="Sonoff-S61-abcdef"), 441, False)
             self.assertFalse([label for label, _ in fields if label.startswith("Name in")], firmware)
             self.assertNotIn("abcdef", "".join(value for _, value in fields), firmware)
 
     def test_an_openbeken_run_checks_the_relay_and_meter_as_tasmotas_does(self):
-        ctx = self.ctx(plug_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="esphome")
+        ctx = self.ctx(device_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="esphome")
         with mock.patch.object(report, "check_hardware", return_value={"Relay": "works"}) as checked, \
                 mock.patch.object(report, "offer_report"), mock.patch.object(output, "show_links"):
             report.invite_report(ctx, 441, False)
         checked.assert_called_once_with(ctx)
 
     def test_a_run_back_to_sonoff_checks_the_relay_through_ewelink(self):
-        ctx = self.ctx(plug_kind="sonoff-s61", product_model="S61STPF", firmware="sonoff", source="openbeken",
-                       plug_mac="12:34:56:ab:cd:ef")
+        ctx = self.ctx(device_kind="sonoff-s61", product_model="S61STPF", firmware="sonoff", source="openbeken",
+                       device_mac="12:34:56:ab:cd:ef")
         ctx.email = lambda: "someone@example.invalid"
         ctx.ewelink = mock.sentinel.account
         ctx.account_devices = lambda: [{"deviceid": "1000abcdef", "online": True,
                                         "params": {"switches": [{"outlet": 0, "switch": "off"}]}}]
-        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+        with mock.patch.object(records, "read_device", return_value={"ewelink_id": "1000abcdef"}), \
                 mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
                 mock.patch.object(report.ewelink_relay, "check_relay", return_value=report.ewelink_relay.RelayCheck(True, True)) as switched, \
                 mock.patch.object(report, "offer_report") as offered, mock.patch.object(output, "show_links"):
@@ -1155,7 +1155,7 @@ class ReportTests(OutputTestCase):
         self.assertEqual(switched.call_args.kwargs["device_id"], "1000abcdef")
         fields = dict(offered.call_args.args[1])
         self.assertEqual(fields["Checks"], "True")
-        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+        with mock.patch.object(records, "read_device", return_value={"ewelink_id": "1000abcdef"}), \
                 mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
                 mock.patch.object(report.ewelink_relay, "check_relay", return_value=report.ewelink_relay.RelayCheck(True, False)):
             self.assertEqual(report.check_ewelink_hardware(ctx)["Relay"], "did not switch")
@@ -1165,7 +1165,7 @@ class ReportTests(OutputTestCase):
         ctx = self.ewelink_ctx([True])
         checked = report.ewelink_relay.RelayCheck(True, True, {"Voltage": 230.08, "Power": 99.99},
                                                   {"Voltage": 0.0, "Power": 0.0})
-        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+        with mock.patch.object(records, "read_device", return_value={"ewelink_id": "1000abcdef"}), \
                 mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
                 mock.patch.object(report.ewelink_relay, "check_relay", return_value=checked), \
                 mock.patch.object(output, "say") as said:
@@ -1180,7 +1180,7 @@ class ReportTests(OutputTestCase):
     def test_a_dualr3_driving_a_motor_says_both_answers(self):
         ctx = self.ewelink_ctx([True])
         ctx.account_devices = lambda: [{"deviceid": "1000abcdef", "online": True, "params": {"workMode": 2}}]
-        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+        with mock.patch.object(records, "read_device", return_value={"ewelink_id": "1000abcdef"}), \
                 mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
                 mock.patch.object(output, "say") as said:
             report.check_ewelink_hardware(ctx)
@@ -1191,7 +1191,7 @@ class ReportTests(OutputTestCase):
     def ewelink_ctx(self, seen: list[bool]):
         """A run back to Sonoff on an S60, whose account shows the device as
         `seen` says, one look at a time (then as the last)."""
-        ctx = self.ctx(firmware="sonoff", source="tasmota", plug_mac="12:34:56:ab:cd:ef")
+        ctx = self.ctx(firmware="sonoff", source="tasmota", device_mac="12:34:56:ab:cd:ef")
         ctx.email = lambda: "someone@example.invalid"
         ctx.ewelink = mock.sentinel.account
         looks = iter(seen)
@@ -1216,7 +1216,7 @@ class ReportTests(OutputTestCase):
             return [{"deviceid": "1000abcdef", "online": True, "params": state["params"]}]
         ctx.account_devices = account_devices
         reached = lambda **kwargs: report.ewelink_relay.RelayCheck(True, True) if state["params"] else None  # noqa: E731
-        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+        with mock.patch.object(records, "read_device", return_value={"ewelink_id": "1000abcdef"}), \
                 mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
                 mock.patch.object(report.ewelink_relay, "check_relay", side_effect=reached), \
                 mock.patch.object(report.time, "sleep") as slept:
@@ -1229,7 +1229,7 @@ class ReportTests(OutputTestCase):
         # not be (seen in the emulator, every run back to Sonoff).
         ctx = self.ewelink_ctx([False, False, True])
         reached = lambda **kwargs: report.ewelink_relay.RelayCheck(True, True) if self.online else None  # noqa: E731
-        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+        with mock.patch.object(records, "read_device", return_value={"ewelink_id": "1000abcdef"}), \
                 mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
                 mock.patch.object(report.ewelink_relay, "check_relay", side_effect=reached), \
                 mock.patch.object(report.time, "sleep") as slept:
@@ -1239,7 +1239,7 @@ class ReportTests(OutputTestCase):
     def test_a_device_never_back_in_ewelink_is_not_switched_and_the_wait_ends(self):
         ctx = self.ewelink_ctx([False])
         clock = iter(range(0, 10_000, 30))
-        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+        with mock.patch.object(records, "read_device", return_value={"ewelink_id": "1000abcdef"}), \
                 mock.patch.object(report.ewelink_relay, "check_relay") as switched, \
                 mock.patch.object(report.time, "monotonic", side_effect=lambda: next(clock)), \
                 mock.patch.object(report.time, "sleep"):
@@ -1249,7 +1249,7 @@ class ReportTests(OutputTestCase):
     def test_ewelink_out_of_reach_is_not_waited_for(self):
         ctx = self.ewelink_ctx([False])
         ctx.account_devices = lambda: None
-        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+        with mock.patch.object(records, "read_device", return_value={"ewelink_id": "1000abcdef"}), \
                 mock.patch.object(report.ewelink_relay, "check_relay") as switched, \
                 mock.patch.object(report.time, "sleep") as slept:
             self.assertEqual(report.check_ewelink_hardware(ctx)["Relay"], "could not be checked")
@@ -1264,7 +1264,7 @@ class ReportTests(OutputTestCase):
         ctx.account_devices = lambda: [{"deviceid": "1000abcdef", "online": True,
                                         "params": {"workMode": 2, "motorTurn": 0}}]
         clock = iter(range(0, 10_000, 30))
-        with mock.patch.object(plugs, "read_plug", return_value={"ewelink_id": "1000abcdef"}), \
+        with mock.patch.object(records, "read_device", return_value={"ewelink_id": "1000abcdef"}), \
                 mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
                 mock.patch.object(report.ewelink_relay, "check_relay") as switched, \
                 mock.patch.object(report.time, "monotonic", side_effect=lambda: next(clock)), \
@@ -1280,15 +1280,15 @@ class ReportTests(OutputTestCase):
         espressif_only = ("Busy", "Wi-Fi typed", "Setup network")
         fields = dict(report.report_fields(self.ctx(), 441, False))
         self.assertTrue(all(label in fields for label in espressif_only))
-        s61 = self.ctx(plug_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="sonoff")
+        s61 = self.ctx(device_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="sonoff")
         fields = dict(report.report_fields(s61, 441, False))
         self.assertFalse(any(label in fields for label in espressif_only))
         self.assertEqual(fields["Model"], "S61STPF")
 
-    def test_the_report_has_each_stages_time_and_how_long_the_plug_was_busy(self):
+    def test_the_report_has_each_stages_time_and_how_long_the_device_was_busy(self):
         ctx = self.ctx()
-        for key, value in {"E2.seconds": 36, "E2.plug_busy_seconds": 34.2, "E2.attempts": 2,
-                           "G1.seconds": 43, "G1.plug_busy_seconds": 61, "G1.attempts": 1,
+        for key, value in {"E2.seconds": 36, "E2.device_busy_seconds": 34.2, "E2.attempts": 2,
+                           "G1.seconds": 43, "G1.device_busy_seconds": 61, "G1.attempts": 1,
                            "E1.signal_dbm": -61}.items():
             ctx.state.capture(key, value)
         fields = dict(report.report_fields(ctx, 441, False))
@@ -1420,12 +1420,12 @@ class ReportTests(OutputTestCase):
         self.assertFalse(any("hold out my hat" in str(call) for call in told.call_args_list + shown.call_args_list))
 
     def test_the_report_says_how_the_backup_went_but_not_where_it_is(self):
-        mac_path = "captures/plugs/58-cf-79-01-02-03/sonoff-backup"
+        mac_path = "captures/devices/58-cf-79-01-02-03/sonoff-backup"
         for outcome, said in (("saved", "Completed"), ("failed", "Failed"),
                               ("existing", "Earlier run's")):
             with self.subTest(outcome=outcome):
                 ctx = self.ctx(backup_outcome=outcome, stock_backup=mac_path,
-                               plug_mac="58:cf:79:01:02:03")
+                               device_mac="58:cf:79:01:02:03")
                 fields = dict(report.report_fields(ctx, 441, False))
                 self.assertEqual(fields["Backup"], said)
                 markdown = report.report_markdown(list(fields.items()))
@@ -1435,14 +1435,14 @@ class ReportTests(OutputTestCase):
         self.assertEqual(dict(report.report_fields(self.ctx(backup_outcome=""), 441, False))["Backup"],
                          "Not taken")
 
-    def test_a_run_from_a_converted_plug_reports_its_backup_from_before(self):
-        # Seen: "Not taken" in the report of a run whose log said the plug
+    def test_a_run_from_a_converted_device_reports_its_backup_from_before(self):
+        # Seen: "Not taken" in the report of a run whose log said the device
         # was backed up already - a run from Tasmota never reaches C3.
         from unittest import mock
-        ctx = self.ctx(source="tasmota", plug_mac="12:34:56:ab:cd:ef")
-        with mock.patch.object(plugs, "find_backup", return_value=object()):
+        ctx = self.ctx(source="tasmota", device_mac="12:34:56:ab:cd:ef")
+        with mock.patch.object(records, "find_backup", return_value=object()):
             self.assertEqual(dict(report.report_fields(ctx, 441, False))["Backup"], "Earlier run's")
-        with mock.patch.object(plugs, "find_backup", return_value=None):
+        with mock.patch.object(records, "find_backup", return_value=None):
             self.assertEqual(dict(report.report_fields(ctx, 441, False))["Backup"], "Not taken")
 
     def test_hardware_that_was_not_checked_says_so(self):
@@ -1467,13 +1467,13 @@ class ReportTests(OutputTestCase):
             self.assertEqual(report.checks_passed({"Relay": relay, "Power meter": "on: 0 V, 0 W"}), passed, relay)
         self.assertEqual(report.checks_passed({}), "not run")
 
-    def test_the_plug_page_is_the_plug_or_the_emulators_forward(self):
+    def test_the_device_page_is_the_device_or_the_emulators_forward(self):
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("AUTOFLASH_EMULATOR_URL", None)
-            self.assertEqual(report.plug_page_url("192.0.2.50"), "http://192.0.2.50")   # no trailing slash
-            self.assertIsNone(report.plug_page_url(None))
+            self.assertEqual(report.device_page_url("192.0.2.50"), "http://192.0.2.50")   # no trailing slash
+            self.assertIsNone(report.device_page_url(None))
         with mock.patch.dict(os.environ, {"AUTOFLASH_EMULATOR_URL": "http://localhost:8080"}):
-            self.assertEqual(report.plug_page_url("192.168.60.50"), "http://localhost:8080")
+            self.assertEqual(report.device_page_url("192.168.60.50"), "http://localhost:8080")
 
     def test_the_report_holds_nothing_private(self):
         markdown = report.report_markdown(report.report_fields(self.ctx(), 441, False))
@@ -1747,24 +1747,24 @@ class StageGapTests(OutputTestCase):
 
     def test_a_message_under_the_stage_line_has_a_blank_line_above_it(self):
         def body():
-            output.stage_begin(3, "Discovering the plug")
+            output.stage_begin(3, "Discovering the device")
             output.show("Looking for it on your network...")
             output.stage_end("complete")
         rows = self.screen(body)
-        self.assertTrue(rows[0].startswith("Stage 3 - Discovering the plug - Underway"))
+        self.assertTrue(rows[0].startswith("Stage 3 - Discovering the device - Underway"))
         self.assertEqual(rows[1:3], ["", "Looking for it on your network..."])
-        self.assertTrue(rows[3].startswith("Stage 3 - Discovering the plug - Complete"))
+        self.assertTrue(rows[3].startswith("Stage 3 - Discovering the device - Complete"))
 
     def test_a_section_s_own_blank_line_is_the_gap(self):
         def body():
             output.stage_begin(4, "Querying Sonoff firmware")
-            prompts.section("What the plug reported", ["Firmware now 1.2.0"])
+            prompts.section("What the device reported", ["Firmware now 1.2.0"])
         rows = self.screen(body)
-        self.assertEqual(rows[1:3], ["", "-- What the plug reported"])
+        self.assertEqual(rows[1:3], ["", "-- What the device reported"])
 
     def test_a_question_has_the_gap_too(self):
         def body():
-            output.stage_begin(3, "Discovering the plug")
+            output.stage_begin(3, "Discovering the device")
             output.before_input("eWeLink account email: ")
             sys.stdout.write("eWeLink account email: ")
             output.answered("someone@example.com")
@@ -1774,7 +1774,7 @@ class StageGapTests(OutputTestCase):
 
     def test_the_gap_leaves_the_screen_with_an_answered_question(self):
         def body():
-            output.stage_begin(3, "Discovering the plug")
+            output.stage_begin(3, "Discovering the device")
             output.transient_begin()
             prompts.warning_box("Before going on", ["One line."])
             output.before_input("Type PROCEED to go ahead: ")
@@ -1783,7 +1783,7 @@ class StageGapTests(OutputTestCase):
             output.transient_end()
             output.show("Sending the bridge...")   # the stage still under way
         rows = self.screen(body, colour=True)
-        self.assertTrue(rows[0].startswith("Stage 3 - Discovering the plug - Underway"))
+        self.assertTrue(rows[0].startswith("Stage 3 - Discovering the device - Underway"))
         self.assertEqual(rows[1:3], ["", "Sending the bridge..."])
         self.assertNotIn("Before going on", "\n".join(rows))
 
@@ -1815,7 +1815,7 @@ class StageGapTests(OutputTestCase):
 
     def test_piped_output_gets_the_gap_too(self):
         def body():
-            output.stage_begin(3, "Discovering the plug")
+            output.stage_begin(3, "Discovering the device")
             output.show("Found it.")
         with mock.patch("sys.stdout", io.StringIO()) as piped:
             output.start(self.log, verbose=False)
@@ -1870,7 +1870,7 @@ class MarginTests(OutputTestCase):
 
 class ToolSaidTests(unittest.TestCase):
     """What a helper tool said decides the advice: a part-served download is
-    the plug's Wi-Fi going, not the firewall."""
+    the device's Wi-Fi going, not the firewall."""
 
     def test_it_finds_text_in_the_tools_kept_lines(self):
         from tools.autoflash import output
@@ -1900,7 +1900,7 @@ class ScrubTests(PrivacyTestCase):
             "ESPHome 1.4.0 is Sonoff S60 1a2b3c.": "ESPHome 1.4.0 is <device-name>.",
             "OpenBeken answered, named 'openbeken-1a2b3c'; ESPHome is esphome 1a2b3c.":
                 "OpenBeken answered, named '<device-name>'; ESPHome is <device-name>.",
-            "the plug's address is AA:BB:CC:12:34:56": "the plug's address is <mac>",
+            "the device's address is AA:BB:CC:12:34:56": "the device's address is <mac>",
             '{"apikey": "abc-123", "at": "token", "action": "update"}':
                 '{"apikey": "<redacted>", "at": "<redacted>", "action": "update"}',
             "[sudo] password for someone: ": "[sudo] password for <user>: ",
@@ -1912,9 +1912,9 @@ class ScrubTests(PrivacyTestCase):
             self.assertEqual(output.scrub(line), expected)
 
     def test_what_is_needed_to_follow_a_run_stays(self):
-        for line in ("The plug is at 192.0.2.50; this computer is 10.0.0.2 and 172.16.4.1",
+        for line in ("The device is at 192.0.2.50; this computer is 10.0.0.2 and 172.16.4.1",
                      "Tasmota 15.6.0(release-tasmota), template tasmota-settings-template-15.6.0.0.bin",
-                     "Stage 3 - Discovering the plug - Complete (4s)",
+                     "Stage 3 - Discovering the device - Complete (4s)",
                      "Sonoff S60 Device model S60TPG"):
             self.assertEqual(output.scrub(line), line)
 
@@ -1926,9 +1926,9 @@ class ScrubTests(PrivacyTestCase):
     def test_values_the_run_learns_are_replaced(self):
         output.private("Home & Garden 2G", "wifi-name")
         output.private("hunter22", "wifi-password")
-        output.private("Kitchen", "plug-name")
+        output.private("Kitchen", "device-name")
         self.assertEqual(output.scrub("joined 'Home & Garden 2G' with hunter22; Kitchen answered"),
-                         "joined '<wifi-name>' with <wifi-password>; <plug-name> answered")
+                         "joined '<wifi-name>' with <wifi-password>; <device-name> answered")
 
     def test_too_short_to_replace_safely_is_not_registered(self):
         output.private("ab", "wifi-name")
@@ -1944,12 +1944,12 @@ class LogFileTests(PrivacyTestCase):
             log = Path(directory) / "run.log"
             output.private("Home-2G", "wifi-name")
             output.start(log, verbose=True)
-            output.show("Network check: the plug is on 'Home-2G'; account someone@gmail.com")
+            output.show("Network check: the device is on 'Home-2G'; account someone@gmail.com")
             output.answered("someone@gmail.com")
             output.finish()
             written = log.read_text()
         self.assertIn("'Home-2G'", screen.getvalue())
-        self.assertIn("Network check: the plug is on '<wifi-name>'; account <email>", written)
+        self.assertIn("Network check: the device is on '<wifi-name>'; account <email>", written)
         self.assertIn("-> <email>", written)
         self.assertNotIn("Home-2G", written)
         self.assertNotIn("someone@gmail.com", written)
@@ -1958,7 +1958,7 @@ class LogFileTests(PrivacyTestCase):
         with tempfile.TemporaryDirectory() as directory:
             state = RunState.open(Path(directory))
             state.set_input("device_name", "kitchen-plug")
-            state.set_input("plug_ip", "192.0.2.50")
+            state.set_input("device_ip", "192.0.2.50")
             output._private.clear()
             RunState.open(Path(directory))  # as a new run reads it back
         self.assertEqual(output.scrub("kitchen-plug at 192.0.2.50"), "<device-name> at 192.0.2.50")

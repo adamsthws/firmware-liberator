@@ -36,7 +36,7 @@ class CredentialsFileTests(unittest.TestCase):
         self.assertEqual(credentials.get("EWELINK_PASSWORD"), "pass word#1")
         self.assertIsNone(credentials.get("AUTOFLASH_SUDO_PASSWORD"))  # empty is not given
 
-    def test_the_wifi_for_a_plug_on_esphome_can_be_given(self):
+    def test_the_wifi_for_a_device_on_esphome_can_be_given(self):
         given = self.load("AUTOFLASH_WIFI_SSID=Home-2G\nAUTOFLASH_WIFI_PASSWORD=a pass\n")
         self.assertEqual(given, ["AUTOFLASH_WIFI_PASSWORD", "AUTOFLASH_WIFI_SSID"])
         self.assertEqual(credentials.get("AUTOFLASH_WIFI_PASSWORD"), "a pass")

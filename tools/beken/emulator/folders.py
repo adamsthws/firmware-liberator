@@ -2,8 +2,8 @@
 """Where the Beken emulator keeps what it makes, in captures/emulation/beken/,
 laid out as the Espressif emulator's is in captures/emulation/:
 
-    state/, state-N/    a plug (beken-emu.sh plug, --instance N) and its computer's copy
-    saved/              the starting plugs the fault suite's prep saved
+    state/, state-N/    a device (beken-emu.sh device, --instance N) and its computer's copy
+    saved/              the starting devices the fault suite's prep saved
     legacy/<release>/   an earlier release's tree, for the update scenarios
     suite/, suite-*/    the fault suite's results and logs
     firmwares/          the public dumps fetched from upstream (beken-emu.sh dump)
@@ -32,7 +32,7 @@ BEKEN = EMU / "beken"
 
 
 def state(instance: int | None = None) -> Path:
-    """A plug's state: beken-emu.sh's, or with --instance N its Nth's."""
+    """A device's state: beken-emu.sh's, or with --instance N its Nth's."""
     return BEKEN / ("state" if instance is None else f"state-{instance}")
 
 
@@ -49,9 +49,9 @@ def old_names(emulation: Path) -> list[tuple[Path, Path]]:
     old = emulation / "s61"
     if old.is_dir():
         for path in sorted(old.iterdir()):
-            plug = re.fullmatch(r"autoflash-s61(?:-(\d+))?", path.name)
-            if plug:
-                moves.append((path, beken / ("state" if plug.group(1) is None else f"state-{plug.group(1)}")))
+            device = re.fullmatch(r"autoflash-s61(?:-(\d+))?", path.name)
+            if device:
+                moves.append((path, beken / ("state" if device.group(1) is None else f"state-{device.group(1)}")))
             elif path.name == "saved":
                 moves.append((path, beken / "saved"))
             elif path.name.startswith("earlier-"):

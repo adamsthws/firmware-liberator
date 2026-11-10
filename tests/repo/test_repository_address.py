@@ -1,6 +1,6 @@
 """The repository's address, written once as github_settings.REPOSITORY, is
 where the repository is: every ESPHome image carries it as the address Home
-Assistant adopts the plug's config from, so a move must change it, and every
+Assistant adopts the device's config from, so a move must change it, and every
 copy of it with it."""
 
 import json
@@ -9,7 +9,7 @@ import re
 import unittest
 from pathlib import Path
 
-from tools.espressif.emulator import public_plugs
+from tools.espressif.emulator import public_devices
 from tools.repo import private_backup
 from tools.repo.github_settings import REPOSITORY
 
@@ -53,7 +53,7 @@ class RepositoryAddressTests(unittest.TestCase):
                 self.assertEqual(found, {REPOSITORY})
 
     def test_every_copy_of_it_is_the_same(self):
-        self.assertEqual(public_plugs.REPOSITORY, REPOSITORY)
+        self.assertEqual(public_devices.REPOSITORY, REPOSITORY)
         self.assertEqual(private_backup.REPOSITORY, REPOSITORY)
         # The website's own copy: tests/repo/test_site.py.
 

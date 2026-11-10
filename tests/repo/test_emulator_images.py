@@ -1,10 +1,10 @@
-"""The two emulators' images, kept alike: what changes only with each one's
-next image, and fails here once that image comes without it.
+"""The two emulators' images, kept alike.
 
 What an image is built from is hashed into its tag (image.sh tag), so a change
-to any of it, a comment included, is a new image for every computer. What
-would make the two emulators alike there waits for the next image either way,
-and each test below lets the old form be only while the image is today's.
+to any of it, a comment included, is a new image for every computer. A change
+that would only make the two emulators alike there waits for that image's
+next: write its test to let the old form be while `image.sh tag` is today's
+tag, so it fails once an image comes without it.
 """
 
 import re
@@ -16,9 +16,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 EMULATORS = {"espressif": ROOT / "tools/espressif/emulator", "beken": ROOT / "tools/beken/emulator"}
-# Each image's tag as it was when these were written: its old forms are let be
-# only while it is.
-TODAY = {"espressif": "c17c5cfa4cc8a4be", "beken": "8bbdc03c5453c55d"}
 PIN_FIELDS = ("repo", "commit", "archive", "sha256")
 # A patch: its place in the order, then a few lowercase words saying what it does.
 PATCH_NAME = re.compile(r"^\d{4}(-[a-z0-9]+){1,7}\.patch$")
@@ -39,22 +36,14 @@ def upstream(folder: Path) -> dict[str, str]:
 
 @unittest.skipUnless(shutil.which("bash") and shutil.which("sha256sum"), "needs bash and sha256sum")
 class NextImageTests(unittest.TestCase):
-    def changed(self, family: str) -> bool:
-        return image_sh(EMULATORS[family], "tag") != TODAY[family]
-
     def test_each_upstream_pin_is_in_the_one_form(self):
-        """repo, commit, archive and sha256 in UPSTREAM, as the Beken emulator has
-        them; the Espressif emulator kept its pin in emu.Dockerfile, which its
-        next pin (image.sh pin) moves."""
+        """repo, commit, archive and sha256 in UPSTREAM, and nowhere else."""
         for family, folder in EMULATORS.items():
-            if family == "espressif" and not self.changed(family):
-                continue
             with self.subTest(family=family):
                 self.assertEqual(tuple(upstream(folder)), PIN_FIELDS, "UPSTREAM: image.sh pin writes it")
                 self.assertRegex(upstream(folder)["commit"], r"^[0-9a-f]{40}$")
         dockerfile = (EMULATORS["espressif"] / "emu.Dockerfile").read_text(encoding="utf-8")
-        if upstream(EMULATORS["espressif"]):
-            self.assertNotRegex(dockerfile, r"(?m)^ARG QEMU_SOURCE_SHA256=", "pinned twice: UPSTREAM is the pin")
+        self.assertNotRegex(dockerfile, r"(?m)^ARG QEMU_SOURCE_SHA256=", "pinned twice: UPSTREAM is the pin")
 
     def test_each_source_release_is_named_after_its_upstream_project(self):
         """emulator-source-<the archive's project>-<commit>: the Beken one's was
@@ -75,23 +64,18 @@ class NextImageTests(unittest.TestCase):
         beken-emu.Dockerfile for autoflash-beken-emu."""
         beken = EMULATORS["beken"]
         self.assertTrue((beken / "beken-emu.sh").is_file())
-        self.assertFalse((beken / "bk-emu.sh").exists())
+        self.assertTrue((beken / "beken-emu.Dockerfile").is_file())
+        self.assertTrue((EMULATORS["espressif"] / "emu.sh").is_file())
         self.assertTrue((EMULATORS["espressif"] / "emu.Dockerfile").is_file())
-        if not self.changed("beken"):
-            return
-        self.assertTrue((beken / "beken-emu.Dockerfile").is_file(), "rename bk-emu.Dockerfile with this image")
-        self.assertFalse((beken / "bk-emu.Dockerfile").exists(), "rename bk-emu.Dockerfile with this image")
+        self.assertEqual(sorted(path.name for path in beken.glob("bk-emu*")), [])
         hashed = [beken / "UPSTREAM", beken / "requirements.txt", beken / "beken-emu.Dockerfile",
                   *sorted((beken / "patches").glob("*.patch"))]
         self.assertEqual([path.name for path in hashed if "bk-emu" in path.read_text(encoding="utf-8")], [],
                          "names the script by its earlier name: beken-emu.sh")
 
     def test_each_patch_is_named_alike(self):
-        """NNNN-what-it-does.patch, as the Espressif emulator's are: the Beken
-        ones were git format-patch's names, renamed with the next image."""
+        """NNNN-what-it-does.patch, numbered in the order they are applied."""
         for family, folder in EMULATORS.items():
-            if family == "beken" and not self.changed(family):
-                continue
             with self.subTest(family=family):
                 names = sorted(path.name for path in (folder / "patches").glob("*.patch"))
                 self.assertTrue(names)
@@ -130,7 +114,7 @@ class PinHelperTests(unittest.TestCase):
         self.assertNotEqual(image_sh(folder, "tag"), before)
 
     def test_a_new_beken_pin_names_its_release_after_upstream(self):
-        folder = self.copy("beken", ("image.sh", "UPSTREAM", "requirements.txt", "bk-emu.Dockerfile", "patches"))
+        folder = self.copy("beken", ("image.sh", "UPSTREAM", "requirements.txt", "beken-emu.Dockerfile", "patches"))
         self.assertEqual(image_sh(folder, "release"), "emulator-source-beken-d9a3772")
         text = (folder / "UPSTREAM").read_text(encoding="utf-8")
         (folder / "UPSTREAM").write_text(re.sub(r"(?m)^sha256 .*$", "sha256 " + "0" * 64, text), encoding="utf-8")

@@ -1,7 +1,7 @@
-"""What the plug runs when a run starts, whatever its chip family: found on
+"""What the device runs when a run starts, whatever its chip family: found on
 the network by what it answers as, or known from where an earlier run left
 it.  It is asked before the family is known - an OpenBeken is found as a
-Tasmota is - so is shared; where an Espressif plug was left part way is
+Tasmota is - so is shared; where an Espressif device was left part way is
 Espressif's to say (routes/espressif/source.py).
 """
 
@@ -11,7 +11,7 @@ import functools
 import time
 from typing import TYPE_CHECKING
 
-from tools.autoflash import detect, esphome, hostsys, kinds, output, plugs, prompts, runs, unlock
+from tools.autoflash import detect, esphome, hostsys, kinds, output, records, prompts, runs, unlock
 from tools.autoflash.device import PASSWORD_HINT
 from tools.autoflash.errors import Abort
 from tools.autoflash.routes.espressif import source as espressif_source
@@ -22,16 +22,16 @@ if TYPE_CHECKING:
 
 
 def known_macs() -> set[str]:
-    """The MACs of the plugs this computer has records of: their backups and their runs."""
+    """The MACs of the devices this computer has records of: their backups and their runs."""
     return {name.replace("-", ":") for name in
-            (path.name for path in plugs.PLUGS.glob("*")) if plugs.MAC_RE.match(name)}
+            (path.name for path in records.DEVICES.glob("*")) if records.MAC_RE.match(name)}
 
 
 def find_current_firmware(ctx: Context) -> str:
-    """What the plug runs now: Tasmota, ESPHome or OpenBeken if it is one this
+    """What the device runs now: Tasmota, ESPHome or OpenBeken if it is one this
     tool can find converted on the network, else Sonoff's firmware (found
-    later, through eWeLink).  With --plug-ip, the plug at that address."""
-    given = ctx.state.input("plug_ip")
+    later, through eWeLink).  With --device-ip, the device at that address."""
+    given = ctx.state.input("device_ip")
     if given:
         running = identify_once_restarted(ctx, given)
         if running == "locked":
@@ -46,16 +46,16 @@ def find_current_firmware(ctx: Context) -> str:
         mac = hostsys.mac_of(given)
         if running is None and mac and hostsys.normalise_mac(mac) in known_macs() \
                 and detect.answers_as_tasmota(given):
-            # A Tasmota without the plug's template, as the search finds it.
+            # A Tasmota without the device's template, as the search finds it.
             running = "untemplated"
         if running in ("openbeken", "interim"):
             # Its kind is its import module's to say, as the search finds it.
-            found = detect.openbeken_plug(given)
+            found = detect.openbeken_device(given)
             if not found or found.firmware != running:
                 raise Abort(f"the device at {given} did not say twice alike what it runs: run the same command "
                             "again")
             found.mac = mac
-            adopt_plug(ctx, found)
+            adopt_device(ctx, found)
             return running
         if running == "installer":
             left_by = installer_left_by(ctx, given, mac)
@@ -63,18 +63,18 @@ def find_current_firmware(ctx: Context) -> str:
                 running = installer_back(given, left_by)
         if running == "readout":
             # On no route: settle_route puts Sonoff's firmware back.
-            adopt_plug(ctx, detect.Found(given, running, mac))
+            adopt_device(ctx, detect.Found(given, running, mac))
             return running
         if running is None and mac is None:
             # Nothing there at all, not even on the network, so not a device on
-            # Sonoff's firmware to ask eWeLink about (seen on a real plug switched
+            # Sonoff's firmware to ask eWeLink about (seen on a real device switched
             # off: the run went on to eWeLink's discovery, and its report said it
             # was converting from Sonoff). An S61 on Sonoff's answers nothing
             # here but is on the network, so is still asked of eWeLink.
             raise Abort(f"nothing answers at {given}: check the device is switched on and on your Wi-Fi, "
                         "then run the same command again")
         if running in ("tasmota", "esphome", "midway", "installer", "untemplated"):
-            adopt_plug(ctx, detect.Found(given, running, mac))
+            adopt_device(ctx, detect.Found(given, running, mac))
             if mover:
                 running = espressif_source.esphome_safe_mode(ctx, running)
             return espressif_source.past_the_commit(ctx, running)
@@ -85,23 +85,23 @@ def find_current_firmware(ctx: Context) -> str:
     output.tell("Looking for supported devices on your network...")
     known = known_macs()
     # The network this computer's internet goes through first; its other
-    # Ethernet and Wi-Fi networks, read once, only if no plug is there.
+    # Ethernet and Wi-Fi networks, read once, only if no device is there.
     lan = functools.cache(hostsys.lan_networks)
 
     def search() -> list[detect.Found]:
         try:
-            return detect.converted_plugs(hostsys.local_ip_towards("192.0.2.1"), others=lan,
+            return detect.converted_devices(hostsys.local_ip_towards("192.0.2.1"), others=lan,
                                           known_macs=known, password=ctx.web_password,
                                           esphome_login=ctx.esphome_login)
         except OSError:
             return []
 
     def open_ones(found: list[detect.Found]) -> list[detect.Found]:
-        return [plug for plug in found if plug.firmware not in unlock.LOCKED]
+        return [device for device in found if device.firmware not in unlock.LOCKED]
 
     found = search()
     if not open_ones(found) and converted_here(ctx):
-        # A plug this computer converted, or left part way, may be restarting -
+        # A device this computer converted, or left part way, may be restarting -
         # a run stopped and started again at once finds it mid-restart.
         output.tell("    None answered. One this computer converted may be restarting: looking "
             f"again for up to {RESTART_GRACE:.0f} seconds...")
@@ -111,18 +111,18 @@ def find_current_firmware(ctx: Context) -> str:
             found = search()
     output.transient_end()
     # A Tasmota with a web password, or an ESPHome with a web login, says
-    # whether it is a plug this tool converts only once given it: offered,
+    # whether it is a device this tool converts only once given it: offered,
     # and it asked for if chosen, when someone can type it.
-    locked = [plug for plug in found if plug.firmware in unlock.LOCKED]
+    locked = [device for device in found if device.firmware in unlock.LOCKED]
     found = open_ones(found)
     if locked and prompts.UNATTENDED:
-        ours = [plug for plug in locked if plug.mac and hostsys.normalise_mac(plug.mac) in known]
+        ours = [device for device in locked if device.mac and hostsys.normalise_mac(device.mac) in known]
         if ours and not found:
-            # A plug this computer converted: the one the run is for, surely.
+            # A device this computer converted: the one the run is for, surely.
             raise Abort(unlock.locked_out(ctx, ours[0]))
         for kind, given, what, hint in (("locked", ctx.web_password, "password", PASSWORD_HINT),
                                         ("esphome-login", ctx.esphome_login, "login", unlock.ESPHOME_LOGIN_HINT)):
-            hosts = [plug.host for plug in locked if plug.firmware == kind]
+            hosts = [device.host for device in locked if device.firmware == kind]
             if hosts:
                 output.tell(f"    Left out, for its web {what}{' (not the one given)' if given else ''}: "
                      f"the {'Tasmota' if kind == 'locked' else 'ESPHome'} at {', '.join(hosts)}. "
@@ -138,8 +138,8 @@ def find_current_firmware(ctx: Context) -> str:
         offered = found + locked
         output.transient_begin()
         choice = prompts.ask_choice("Which device is this run for",
-                            [found_plug.describe()[0].upper() + found_plug.describe()[1:]
-                             for found_plug in offered] + [stock])
+                            [found_device.describe()[0].upper() + found_device.describe()[1:]
+                             for found_device in offered] + [stock])
         output.transient_end()
         if choice == len(offered):
             return "sonoff"
@@ -150,16 +150,16 @@ def find_current_firmware(ctx: Context) -> str:
         left_by = installer_left_by(ctx, chosen.host, chosen.mac)
         if left_by:
             return installer_back(chosen.host, left_by)
-    adopt_plug(ctx, chosen)
+    adopt_device(ctx, chosen)
     if chosen.firmware == "midway" and chosen.name == "the mover":
         return espressif_source.past_the_commit(ctx, espressif_source.esphome_safe_mode(ctx, chosen.firmware))
     return espressif_source.past_the_commit(ctx, chosen.firmware)
 
 
 def identify_once_restarted(ctx: Context, host: str) -> str | None:
-    """What the plug at `host` runs.  Silent, a plug this computer converted
+    """What the device at `host` runs.  Silent, a device this computer converted
     may be restarting - never to be taken for one on Sonoff's firmware, as
-    the search below waits for it too.  A MAC says which plug it is, where
+    the search below waits for it too.  A MAC says which device it is, where
     the network still shows one."""
     running = unlock.identify(ctx, host)
     if running is not None or detect.answers_as_tasmota(host):
@@ -191,7 +191,7 @@ def installer_left_by(ctx: Context, host: str, mac: str | None) -> str | None:
     """Who left this tool's installer running at `host`, where it is no
     conversion to carry on: "a readout stopped part way", or "no run of this
     computer's". None for a conversion's: this computer's latest run on the
-    plug converting it and unfinished, or none at all but no Sonoff firmware
+    device converting it and unfinished, or none at all but no Sonoff firmware
     left to start. A readout never writes into Sonoff's slot, so its installer
     always has Sonoff's firmware to fall back to: only a conversion's upload
     takes it away. So no readout's is ever carried on as a conversion, whatever
@@ -222,13 +222,13 @@ def installer_back(host: str, left_by: str) -> str:
 
 
 def last_run(ctx: Context, mac: str) -> str | None:
-    """What this computer's latest run on the plug `mac`, before this one, was:
+    """What this computer's latest run on the device `mac`, before this one, was:
     "readout", or "conversion" while unfinished; None for a finished one, or
     none. A run that got nowhere - stopped before it knew where it went - is
     passed over."""
     from tools.autoflash import readout, routes
     for directory in reversed(runs.run_directories()):
-        if directory.resolve() == ctx.dir.resolve() or plugs.mac_of_run(directory) != mac:
+        if directory.resolve() == ctx.dir.resolve() or records.mac_of_run(directory) != mac:
             continue
         try:
             state = RunState.open(directory)
@@ -243,7 +243,7 @@ def last_run(ctx: Context, mac: str) -> str | None:
 
 
 def converted_here(ctx: Context) -> bool:
-    """Whether this computer has a record of converting a plug, other than this run."""
+    """Whether this computer has a record of converting a device, other than this run."""
     for directory in runs.run_directories():
         if directory.resolve() == ctx.dir.resolve():
             continue
@@ -256,17 +256,17 @@ def converted_here(ctx: Context) -> bool:
 
 
 def kind_left_part_way(ctx: Context) -> str | None:
-    """The kind this computer's latest run of the plug recorded. What a plug runs
+    """The kind this computer's latest run of the device recorded. What a device runs
     part way - the installer, the mover, the startup firmware, the routes'
-    Tasmota, a Tasmota without the plug's template - looks the same on every
-    kind of plug, and says nothing; a run taking one for the first
+    Tasmota, a Tasmota without the device's template - looks the same on every
+    kind of device, and says nothing; a run taking one for the first
     kind the tool knows sent it that chip's firmware."""
-    mac = ctx.state.input("plug_mac")
+    mac = ctx.state.input("device_mac")
     for directory in reversed(runs.run_directories()):
-        if directory.resolve() == ctx.dir.resolve() or plugs.mac_of_run(directory) != mac:
+        if directory.resolve() == ctx.dir.resolve() or records.mac_of_run(directory) != mac:
             continue
         try:
-            kind = RunState.open(directory).input("plug_kind")
+            kind = RunState.open(directory).input("device_kind")
         except (OSError, ValueError):
             continue
         if kind:
@@ -274,22 +274,22 @@ def kind_left_part_way(ctx: Context) -> str | None:
     return None
 
 
-def adopt_plug(ctx: Context, found: "detect.Found") -> None:
-    """This run is for the plug `found`: its address, and its MAC to file it by."""
-    ctx.set_plug_ip(found.host)
+def adopt_device(ctx: Context, found: "detect.Found") -> None:
+    """This run is for the device `found`: its address, and its MAC to file it by."""
+    ctx.set_device_ip(found.host)
     mac = found.mac or hostsys.mac_of(found.host)
-    if mac and plugs.MAC_RE.match(mac):
+    if mac and records.MAC_RE.match(mac):
         mac = hostsys.normalise_mac(mac)
-        ctx.state.set_input("plug_mac", mac)
-        runs.file_plug(ctx, mac, None)
+        ctx.state.set_input("device_mac", mac)
+        runs.file_device(ctx, mac, None)
     kind = found.kind
     if kind is None and found.firmware == "esphome":
         # Every kind's ESPHome looks the same but for its comment: an S61's
         # run must never take the S60's way.
         named = kinds.for_esphome(*esphome.title(found.host))
         kind = named.key if named else None
-    if kind is None and found.firmware in ("midway", "installer", "untemplated") and ctx.state.input("plug_mac"):
+    if kind is None and found.firmware in ("midway", "installer", "untemplated") and ctx.state.input("device_mac"):
         kind = kind_left_part_way(ctx)
     if kind:
-        ctx.state.set_input("plug_kind", kind)
+        ctx.state.set_input("device_kind", kind)
     output.say(f"    This run is for {found.describe()}.")

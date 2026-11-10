@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """The fault suite: every direction, every step that writes to or waits on the
-plug, every fault - on emulators side by side, on one machine or several
+device, every fault - on emulators side by side, on one machine or several
 (docs/testing.md).
 
-    fault_suite.py --plug MAC prep        the starting plugs (needs the cloud)
+    fault_suite.py --device MAC prep        the starting devices (needs the cloud)
     fault_suite.py list                   every scenario, and whether it needs the cloud
-    fault_suite.py --plug MAC batch [FILE]
+    fault_suite.py --device MAC batch [FILE]
                                           the scenarios in FILE (one id a line; every
                                           scenario without), skipping those passed
     fault_suite.py report                 the latest result of each
@@ -16,19 +16,19 @@ on AUTOFLASH_EMU_STUB_WORKERS emulators (from AUTOFLASH_EMU_FIRST_INSTANCE,
 default 1). Without it the real cloud is used and the cloud scenarios take
 turns, as below.
 
-Each scenario: a conversion from a saved plug; when the step under test has
+Each scenario: a conversion from a saved device; when the step under test has
 been going for a share of its usual time (40%, or 10% and 90% at the riskiest
 steps), the fault; then the tool run again, as a person would - switching the
-plug off and on, or joining its own network, where the run says to - until
-the plug is converted, or four runs fail. Every scenario also checks the fault
+device off and on, or joining its own network, where the run says to - until
+the device is converted, or four runs fail. Every scenario also checks the fault
 landed while its step was under way (MISTIMED if not), that the run left
 no firewall rule and no helper behind, and that the converting run's report
 says its end-of-run checks passed (FAIL-CHECKS if not: tools/repo/fault_verdicts.py),
 and that each run of this checkout's tool left one line a stage on its screen,
 none of a try that failed (FAIL-SCREEN if not).
-And readouts (readout_scenarios, go_readout): of a plug fresh from Sonoff's
+And readouts (readout_scenarios, go_readout): of a device fresh from Sonoff's
 firmware, faulted in the read and as Sonoff's firmware is put back, until a
-whole readout.tar is kept and the plug is back on Sonoff's; of a plug on
+whole readout.tar is kept and the device is back on Sonoff's; of a device on
 Tasmota, which must be refused; and of every device in an account
 (readout_all_scenarios, go_readout_all), on the stub, each sent to the API's
 own code (in a container beside the emulator) and judged by what it
@@ -36,7 +36,7 @@ answered and kept.
 
 How many at once, from the environment:
     AUTOFLASH_EMU_CLOUD_WORKERS     emulators for the scenarios that need eWeLink (from
-                                    instance 1); each run and its plug use the cloud only
+                                    instance 1); each run and its device use the cloud only
                                     in its turn, and are side by side otherwise. Six
                                     unless set, or one per core on a computer with fewer
     AUTOFLASH_EMU_CLOUD_MOST        try up to this many, one more at a time while they
@@ -46,26 +46,26 @@ How many at once, from the environment:
     AUTOFLASH_EMU_CLOUD_PAUSE_UP=1  start at AUTOFLASH_EMU_CLOUD_COOL_DOWN and add 5 s
                                     whenever two of the last four fail with the cloud to
                                     blame
-    AUTOFLASH_EMU_CLOUD_COOL_DOWN   seconds between two plugs' turns at the cloud (5)
+    AUTOFLASH_EMU_CLOUD_COOL_DOWN   seconds between two devices' turns at the cloud (5)
     AUTOFLASH_EMU_ANY_WORKERS       emulators for the rest, after those
-    AUTOFLASH_EMU_CONNECTION_LOG    seconds between looks at every plug's connections,
+    AUTOFLASH_EMU_CONNECTION_LOG    seconds between looks at every device's connections,
                                     logged to connections.log on the real cloud (2; 0 for
                                     none)
     AUTOFLASH_EMU_MOST_WORKERS      start up to this many of those instead, of which the
                                     number in <AUTOFLASH_EMU_SUITE_DIR>/workers take
                                     scenarios when that file is there: a batch scaled
                                     while it runs
-    AUTOFLASH_EMU_NO_CLOUD=1        a machine whose plugs never reach the internet: only
+    AUTOFLASH_EMU_NO_CLOUD=1        a machine whose devices never reach the internet: only
                                     the scenarios that do not need it
     AUTOFLASH_EMU_SUITE_DIR         where results go (captures/emulation/suite; with
                                     --stub-cloud, captures/emulation/suite-stub)
 
 Results: results.jsonl, a log per scenario, and what a failure leaves (its
-run records and the plug's serial output). A fault that never happened is
+run records and the device's serial output). A fault that never happened is
 NOT-FIRED, not a pass; NO-INTERNET when it never happened because this computer
-could not reach eWeLink, which says nothing of the tool or the plug, and is run
+could not reach eWeLink, which says nothing of the tool or the device, and is run
 again. Each row's notes say how short of memory the computer
-was; a failure while it was starved prints "memory-starved", as the plug's
+was; a failure while it was starved prints "memory-starved", as the device's
 connections can then fail with nothing wrong.
 """
 import hashlib
@@ -85,7 +85,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
-from tools.autoflash import kinds, plugs  # noqa: E402
+from tools.autoflash import kinds, records  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.report import SONOFF_IDENTITY  # noqa: E402
 from tools.repo import cpu_load, fault_verdicts, scenario_times  # noqa: E402
@@ -99,7 +99,7 @@ EMU = REPO / "captures/emulation"
 OUT = Path(os.environ.get("AUTOFLASH_EMU_SUITE_DIR", EMU / "suite"))
 RESULTS = OUT / "results.jsonl"
 LOGS = OUT / "logs"
-# A machine whose plugs never get a turn at the cloud.
+# A machine whose devices never get a turn at the cloud.
 NO_CLOUD = os.environ.get("AUTOFLASH_EMU_NO_CLOUD") == "1"
 
 
@@ -113,44 +113,59 @@ def cloud_workers():
 
 
 # Each emulator serves its own local eWeLink stub (emu.sh --stub-cloud): the
-# plugs never share a cloud, so nothing is serialised and every scenario can run
+# devices never share a cloud, so nothing is serialised and every scenario can run
 # in parallel. Set by --stub-cloud; see docs/cloud-stub.md.
 STUB_CLOUD = os.environ.get("AUTOFLASH_EMU_STUB_CLOUD") == "1"
 
 
+def records_under(root):
+    """The tool's records under `root`/captures: devices/, or plugs/ where a
+    release before 2.4.0 keeps them - a legacy run's until this checkout's
+    tool carries it on and renames them, or a device saved by one."""
+    captures = Path(root) / "captures"
+    earlier = captures / "plugs"
+    return earlier if earlier.is_dir() and not (captures / "devices").is_dir() else captures / "devices"
+
+
+def filed_as(log):
+    """A run's log by its device and run (<mac>/runs/<when>/run.log): the same
+    before and after the records' folder is renamed around it."""
+    return log.relative_to(log.parents[3])
+
+
 def saved(name):
-    """A saved starting plug's name. A stub run's are kept apart from the real
+    """A saved starting device's name. A stub run's are kept apart from the real
     cloud's: their flash is the other kind (emu.sh), so each would be refused,
-    or replaced, by a batch of the other. Each plug has its own (a test copy
-    under another MAC: tools/espressif/emulator/copy_plug.py): one saved from another
-    plug - its run records filed under that plug's MAC - is that plug's, and
+    or replaced, by a batch of the other. Each device has its own (a test copy
+    under another MAC: tools/espressif/emulator/copy_device.py): one saved from another
+    device - its run records filed under that device's MAC - is that device's, and
     this one's goes beside it, its MAC's last four digits after the name."""
     base = f"stub-{name}" if STUB_CLOUD else name
-    plugs_saved = EMU / "saved" / base / "captures/plugs"
-    owners = {d.name for d in plugs_saved.iterdir() if d.name != "unidentified"} if plugs_saved.is_dir() else set()
+    devices_saved = records_under(EMU / "saved" / base)
+    owners = {d.name for d in devices_saved.iterdir() if d.name != "unidentified"} if devices_saved.is_dir() else set()
     if MAC and owners and MAC.replace(":", "-").lower() not in owners:
         return f"{base}-{MAC.replace(':', '').lower()[-4:]}"
     return base
 
 
-MAC = None  # --plug: the backed-up plug the emulators run copies of
-PLUG_IP = "192.168.60.50"
-PLUG_URL = f"http://{PLUG_IP}"
-# An MQTT host for a plug set up by its owner (notemplate): nobody's (RFC 5737).
+MAC = None  # --device: the backed-up device the emulators run copies of
+DEVICE_IP = "192.168.60.50"
+DEVICE_URL = f"http://{DEVICE_IP}"
+# An MQTT host for a device set up by its owner (notemplate): nobody's (RFC 5737).
 NOTEMPLATE_MQTT_HOST = "192.0.2.10"
 APP0_OFFSET = 0xE0000  # Tasmota's own firmware, on its layout (tools/espressif/safeboot/safeboot_migration.py)
-PLUG_CMD = "/opt/autoflash-emu/bin/plug"
+DEVICE_CMD = "/opt/autoflash-emu/bin/device"
 ESPHOME_OTA_PORT = 3232
 MAX_RUNS = 4
 TOOL = "tools/autoflash/cli.py"
 HELPERS = ("serve_safeboot_migration.py", "serve_tasmota_ota.py")
 
-# Each direction: the saved plug it starts from, its target, and the steps that
-# write to or wait on the plug, with how long each usually takes (emulator).
+# Each direction: the saved device it starts from, its target, and the steps that
+# write to or wait on the device, with how long each usually takes (emulator).
 # Each step's usual length in seconds, from passing runs: a fault lands at a
 # share of it. F4 is 10 s from 2026-10-21 (one restart; it was 31 s with two).
 # The steps that write firmware are shorter from 2.0.2 - each block checked on
-# the plug, not sent back: E2, G1 and L1 by 12 s, R1 (two images) by 25 s - so
+# the device, not sent back: E2, G1 and L1 by 12 s, R1 (two images) by 25 s - so
 # a fault at 90% of the old lengths landed in the step after.
 ROUTES = {
     "tasmota>esphome": ("suite-tasmota", "esphome", {"L1": 23, "M1": 8, "I2": 5}),
@@ -166,24 +181,24 @@ ROUTES = {
                         "E3": 5, "F2": 35, "F4": 10, "G1": 21, "H1": 2}),
     "sonoff>esphome": ("suite-stockC2-esphome", "esphome",
                        {"C3": 14, "C3fb": 14, "D1": 18, "D4": 31, "D5": 2, "K1": 2, "I1": 30, "I2": 5}),
-    # Back to Sonoff with no backup on this computer: from a copy of the plug on
+    # Back to Sonoff with no backup on this computer: from a copy of the device on
     # Tasmota without one (prep), R1 putting Sonoff's firmware, fetched first,
-    # together with the identity the plug kept: 53 s in the emulator (2026-11-08,
+    # together with the identity the device kept: 53 s in the emulator (2026-11-08,
     # where 60 s put a fault at 90% a second after it).
     "nobackup>sonoff": ("suite-tasmota-nobackup", "sonoff", {"R1": 53, "R2": 2}),
-    # A plug on the Tasmota release before this one, updated (prep_update):
+    # A device on the Tasmota release before this one, updated (prep_update):
     # U5 43-46 s in the emulator, and U6 2 s, as U5 now waits for Tasmota's
     # boot (2026-11-10, where 12 s put every fault at 40% and 90% after U6).
     "update>tasmota": ("suite-tasmota-earlier", "tasmota", {"U5": 44, "U6": 2}),
-    # A plug on our ESPHome of an earlier release of the tool, updated (prep_update).
+    # A device on our ESPHome of an earlier release of the tool, updated (prep_update).
     "update>esphome": ("suite-esphome-earlier", "esphome", {"U1": 6, "U2": 72}),
 }
 # The release whose ESPHome update>esphome starts on: any before this checkout's.
 EARLIER_RELEASE = "v2.3.0"
-# A route's name says what its plug starts on, but for these.
+# A route's name says what its device starts on, but for these.
 STARTS_ON = {"nobackup": "tasmota"}
 
-# The lengths above are the S60's. A plug whose own layout has ota_0 elsewhere
+# The lengths above are the S60's. A device whose own layout has ota_0 elsewhere
 # than where the mover goes (the TH Elite's: Layout.needs_temporary) leaves
 # Tasmota through a temporary table, so never straight to ESPHome: only the
 # hub's Tasmota writes its own table back, as D5 starts (D5ot). Its usual
@@ -196,10 +211,10 @@ TEMPORARY_TABLE_TO_ESPHOME = ("L1", "X1", "X2", "D4", "D5", "K1", "I1", "I2")
 S60_ONLY_ROUTES = {"update>esphome"}
 
 
-def plug_kind(mac):
-    """The kind of the plug the emulators run copies of, by its record's product
+def device_kind(mac):
+    """The kind of the device the emulators run copies of, by its record's product
     model: an S60 unless that says otherwise."""
-    record = plugs.read_plug(mac) if mac else {}
+    record = records.read_device(mac) if mac else {}
     return kinds.for_account(record.get("product_model"), None) or kinds.SONOFF_S60
 
 
@@ -221,28 +236,28 @@ def routes_for(kind):
     return routes
 
 
-PLUG = kinds.SONOFF_S60  # --plug's kind (main)
-# Past D1 a stock route needs the cloud no more: it starts from a plug saved
+DEVICE = kinds.SONOFF_S60  # --device's kind (main)
+# Past D1 a stock route needs the cloud no more: it starts from a device saved
 # there (prep), on the interim Tasmota, so any machine can run it.
 AFTER_D1 = {"sonoff>tasmota": "suite-afterD1-tasmota", "sonoff>esphome": "suite-afterD1-esphome"}
 CLOUD_STEPS = {"C2", "C3", "C3fb", "D1"}
-# C2 goes through eWeLink: from a fresh stock plug.
+# C2 goes through eWeLink: from a fresh stock device.
 C2_ROUTES = {"sonoff>tasmota": "tasmota", "sonoff>esphome": "esphome"}
 OTHER = {"tasmota": "esphome", "esphome": "tasmota"}
 
 # Where a step's work starts, if not at its own line, and how long it lasts from
-# there. A run from a saved plug finds it back on Sonoff's firmware at C3 (the
-# emulator starting is the plug switched on) and sends the installer again
+# there. A run from a saved device finds it back on Sonoff's firmware at C3 (the
+# emulator starting is the device switched on) and sends the installer again
 # first: the backup itself starts at its own line. C3fb is the fault in that
 # finding and sending again, at C3's own line.
-# F4rs is the moment F4's reset restarts the plug and saves the defaults it
-# rebuilt, with the plug's name and template put in (one restart): a fault
+# F4rs is the moment F4's reset restarts the device and saves the defaults it
+# rebuilt, with the device's name and template put in (one restart): a fault
 # there may cut it off before the save, or after.
 # F4tp is the restart after F4's fallback sent the template itself (the
-# reset's save did not take it): cut off before Tasmota saves, the plug comes
+# reset's save did not take it): cut off before Tasmota saves, the device comes
 # back without it.
 # The tool says "device"; the releases legacy runs use, "plug".
-# D5ot is a plug on a temporary table given its own (TEMPORARY_TABLE_LENGTHS):
+# D5ot is a device on a temporary table given its own (TEMPORARY_TABLE_LENGTHS):
 # one plan of a few seconds, then a restart.
 STARTS = {"C3": (r"Backing up the (?:plug|device)'s Sonoff firmware", 12), "C3fb": (r"\] C3  ", 14),
           "F4rs": (r"Settings reset to Tasmota's defaults", 3), "F4tp": (r"Template applied as", 2),
@@ -251,35 +266,35 @@ STARTS = {"C3": (r"Backing up the (?:plug|device)'s Sonoff firmware", 12), "C3fb
 NOHOOK_RESET = re.compile(r"Settings reset to Tasmota's defaults, keeping the Wi-Fi; the (?:plug|device)")
 STEP_OF = {"C3fb": "C3", "F4rs": "F4", "F4tp": "F4", "D5ot": "D5"}  # the tool's own name for a step
 
-# Readouts (cli.py readout, unattended, docs/readouts.md) of a plug fresh from
+# Readouts (cli.py readout, unattended, docs/readouts.md) of a device fresh from
 # Sonoff's firmware. Their phases are no steps of the tool's: each starts and
 # ends at what the run says, and lasts in the emulator: the read as C3's, which
 # reads the flash through the same bridge; putting Sonoff's firmware back, 5 s
-# (bridge 4.4.6, 2026-11-08): the bridge restarting the plug 1.5 s after it is
+# (bridge 4.4.6, 2026-11-08): the bridge restarting the device 1.5 s after it is
 # asked, Sonoff's firmware answering about 2.5 s later, 4 s in all. The faults
 # where each matters most, at 40%: in the read, and in putting it back just
 # after the restart, as Sonoff's firmware starts. Before 4.4.6 the person
-# switched the plug off and on, 10 s in all, and the phase was 18 s; at 18 s the
+# switched the device off and on, 10 s in all, and the phase was 18 s; at 18 s the
 # restart's phase was over before the fault (NOT-FIRED). Where the bridge will
 # not restart, the person is still asked.
 BACK = r"Restarting it into its Sonoff firmware|Read\. Now put it back on its Sonoff firmware"
 STARTS.update({"read": (r"Reading the device's memory", 12), "back": (BACK, 5)})
 ENDS = {"read": BACK, "back": r"It is back on its Sonoff firmware"}
-READOUT_FAULTS = [("read", "plugoff", 1), ("read", "outage", 30), ("read", "crash", 1),
-                  ("back", "plugoff", 1), ("back", "outage", 30)]
+READOUT_FAULTS = [("read", "deviceoff", 1), ("read", "outage", 30), ("read", "crash", 1),
+                  ("back", "deviceoff", 1), ("back", "outage", 30)]
 # A readout cut off mid-read, the bridge still running, and the tool run again
-# before the plug is switched off and on: to Sonoff's firmware, or the readout;
+# before the device is switched off and on: to Sonoff's firmware, or the readout;
 # and (elsewhere) to Sonoff's firmware with this computer's records of the
-# plug's runs gone, as on another computer. The bridge is the conversions'
+# device's runs gone, as on another computer. The bridge is the conversions'
 # installer too, but only the readout's.
 READOUT_THEN = ("sonoff", "readout", "sonoff-elsewhere")
 READOUT = "readout.tar"
-# A readout of every device in the account (cli.py readout --all), the plug
+# A readout of every device in the account (cli.py readout --all), the device
 # fresh from Sonoff's firmware among devices the stub lists beside it, none of
 # them emulated (AUTOFLASH_EMU_STUB_OTHERS): each sent to the API Worker's own
 # code (unattended-test.sh --api). The accounts, by name: two first-stage
 # devices; three alike (product, model, version: of which the API keeps one
-# from one sender) and one not; two whose first is in the API's ENOUGH, with the plug; and
+# from one sender) and one not; two whose first is in the API's ENOUGH, with the device; and
 # seven, enough quick first stages to reach the API's two readouts a minute.
 # Made up, as docs/cloud-stub.md asks.
 READOUT_ALL = "sonoff>readout-all"
@@ -298,15 +313,15 @@ ACCOUNTS = {
     "enough": [other_device(1, "TESTLIGHT"), other_device(2, "TESTSWITCH")],
     "many": [other_device(n, f"TESTMODEL{n}") for n in range(1, 8)],
 }
-# The faults in the emulated plug's read (READOUT_FAULTS), after the other
+# The faults in the emulated device's read (READOUT_FAULTS), after the other
 # devices' first stages: the run stops there, and is run again.
-READOUT_ALL_FAULTS = [("read", "plugoff", 1), ("read", "crash", 1)]
+READOUT_ALL_FAULTS = [("read", "deviceoff", 1), ("read", "crash", 1)]
 # A line of the API's requests.log (website/api/local.mjs): when, the method,
 # the path, the body's length, and the answer's status and body.
 API_REQUEST = re.compile(r"^\S+ (\w+) (\S+) \d+ -> (\d+) (.*)$")
 # What the readout of every device says as it starts on each one.
 READING_OUT = re.compile(r"Reading out (.*) \((\d+) of (\d+)\)\.\.\.")
-# Where the readout asks for the plug to be switched off and on, and waits.
+# Where the readout asks for the device to be switched off and on, and waits.
 # The answers read off a run's report, in its log: each the last on its row
 # (report.report_screen).  The labels before 2.4.0 too, for an earlier
 # release's runs.
@@ -316,16 +331,16 @@ REPORT_IDENTITY = re.compile(r"(?:Sonoff identity|\bIdentity):\s+(.*)")
 REPORT_UNFINISHED = re.compile(r"(?:Converted from|From):\s+Unfinished (?:conversion|run)")
 READOUT_SWITCH = re.compile(r"Switch the device off, wait five seconds, and switch it on again")
 # Advice to switch it off and on, from a readout as from a conversion.
-SWITCH_ADVICE = re.compile(r"switch (the plug|the device|it) off and on", re.IGNORECASE)
+SWITCH_ADVICE = re.compile(r"switch (the device|the device|it) off and on", re.IGNORECASE)
 
 # Each length where it can lead somewhere the others do not (2026-10-21): an
 # outage of 5 s is within every timeout of the tool's (8 s and up) and takes
-# the plug off the Wi-Fi, so it covers 1 s; 15 s outlasts the 8-10 s ones but
+# the device off the Wi-Fi, so it covers 1 s; 15 s outlasts the 8-10 s ones but
 # not the 15-20 s ones. A crash's rerun after 1 s finds the step still going,
 # after 180 s finished and any fallback network up; after 60 s - finished, no
 # fallback yet - is a place of its own only where there is one (FALLBACK_STEPS).
 CORE = ([("outage", s) for s in (5, 15, 30, 60, 120, 180)]
-        + [("plugoff", s) for s in (1, 5, 30, 180)]
+        + [("deviceoff", s) for s in (1, 5, 30, 180)]
         + [("crash", s) for s in (1, 180)]
         + [("cancel", "continue"), ("cancel", "new"), ("ctrlc", "once")])
 NEW = [("hangup", "continue"), ("sleep", 600), ("weak", 60),
@@ -350,13 +365,13 @@ CRITICAL = {"D4", "E3", "F2", "F4", "R1", "U5", "X2"}
 # wherever a fallback network may come up during it.
 OWN_HANDLING = [("second", "run"), ("ctrlc", "countdown"), ("ctrlc", "apart")]
 OWN_HANDLING_STEPS = CRITICAL | {"C2", "L1", "X1"}
-TIMING_FAULTS = [("plugoff", 1), ("outage", 30), ("crash", 1)]
-DOUBLE_FAULTS = [("double", "plugoff-1"), ("double", "outage-30")]
+TIMING_FAULTS = [("deviceoff", 1), ("outage", 30), ("crash", 1)]
+DOUBLE_FAULTS = [("double", "deviceoff-1"), ("double", "outage-30")]
 
 
 def fault_wait(arg):
     """How long a run that ended before its fault did waits for the fault: a
-    plug off for 180 s, its run finished, was asked for its template while off."""
+    device off for 180 s, its run finished, was asked for its template while off."""
     return max(120, arg + 60) if isinstance(arg, int) else 120
 
 
@@ -412,42 +427,42 @@ def composite_scenarios():
         then the run cut off just after the upload, or this computer back on
         the home network during the upload, or while Tasmota is given the Wi-Fi.
     lostanswer-once (D1): the upload takes, its answer never arrives.
-    seven-times (D4, F4, G1): the plug switched off and on 7 times, which
+    seven-times (D4, F4, G1): the device switched off and on 7 times, which
         erases a Tasmota's settings; seven-advised (D1): Tasmota cannot join
         the home Wi-Fi, and that is done when the run advises it.
     nohook-run (F4): Tasmota will not take F4's name and template at the save.
-    nohook-cut (F4tp): that, and the plug switched off for a second at 10, 50
+    nohook-cut (F4tp): that, and the device switched off for a second at 10, 50
         and 90% of the restart after F4 sent the template itself.
     F4rs: a power cut or crash at F4's reset, at 10, 50 and 90% of it.
     legacy-v1.2.0, legacy-v2.0.2 (LEGACY_STEPS): a run of that release
         (legacy_tree) killed at 40% of each of its steps from Sonoff, then
         this checkout's tool, over the same captures, as a person updating
         their checkout would - its bundle and pins that release's; and (step
-        "start") a plug that release converted, then taken on by this one.
+        "start") a device that release converted, then taken on by this one.
     blips-3, lossy-phase (BLIP_STEPS): two 3 s outages from 10% to 90% of a
         Berry phase, or one packet in ten lost for all of it: converted with
         no step tried again, or FAIL-RETRIED.
-    lostapp-factory: a converted plug's Tasmota written over by an ESPHome
+    lostapp-factory: a converted device's Tasmota written over by an ESPHome
         factory image uploaded through Tasmota's page (go_lostapp), then the
         tool, to Tasmota, ESPHome or Sonoff; lostapp-switched: only switched
         to its safeboot, its Tasmota unharmed, which must be started again,
         never replaced.
-    notemplate-generic: a converted plug's template replaced with Tasmota's
+    notemplate-generic: a converted device's template replaced with Tasmota's
         generic one, and an MQTT host set, as a person might (go_notemplate);
         then the tool, to Tasmota, ESPHome or Sonoff.
-    bootloop-fallback: a plug converted to Tasmota, then put on its
+    bootloop-fallback: a device converted to Tasmota, then put on its
         fallback module, as Tasmota does in a boot loop (go_bootloop): it
         must still run its own template (BAD-TEMPLATE).
-    safemode-ten: a plug converted to ESPHome, switched off within a minute
+    safemode-ten: a device converted to ESPHome, switched off within a minute
         of starting ten times, which ESPHome takes for a boot loop and starts
         in safe mode (go_safemode); then the tool, to ESPHome, Tasmota or
-        Sonoff: it must know the plug for ESPHome in safe mode, not the mover
+        Sonoff: it must know the device for ESPHome in safe mode, not the mover
         (FAIL-TAKEN-FOR-MOVER).
-    D5ot, on a plug with a temporary table only (TEMPORARY_TABLE_LENGTHS): a
+    D5ot, on a device with a temporary table only (TEMPORARY_TABLE_LENGTHS): a
         power cut or crash as its own table is written back, at 10, 50 and
         90% of it.
 
-    The legacy ones need an S60: the releases they run knew no other plug."""
+    The legacy ones need an S60: the releases they run knew no other device."""
     def one(route, step, fault, arg, at=40):
         return dict(id=sid(route, step, fault, arg, at), route=route, step=step, fault=fault, arg=arg, at=at)
 
@@ -463,29 +478,29 @@ def composite_scenarios():
         yield one(route, "F4", "nohook", "run")
         for at in (10, 50, 90):
             yield one(route, "F4tp", "nohook", "cut", at)
-        for at, fault, arg in ((10, "plugoff", 1), (50, "plugoff", 1), (90, "plugoff", 1),
-                               (50, "plugoff", 5), (50, "crash", 1)):
+        for at, fault, arg in ((10, "deviceoff", 1), (50, "deviceoff", 1), (90, "deviceoff", 1),
+                               (50, "deviceoff", 5), (50, "crash", 1)):
             yield one(route, "F4rs", fault, arg, at)
-    if PLUG is kinds.SONOFF_S60:
+    if DEVICE is kinds.SONOFF_S60:
         for tag, routes in LEGACY_STEPS.items():
             for route, steps in routes.items():
                 for step in steps:
                     yield one(route, step, "legacy", tag)
             for route in LEGACY_STARTS[tag]:
                 yield one(route, "start", "legacy", tag)
-        # Killed at F4, past its commit; then the plug switched off part way
+        # Killed at F4, past its commit; then the device switched off part way
         # through G1 of the run after, writing over 1.2.0's startup firmware,
         # which it cannot rebuild.
         yield one("sonoff>tasmota", "F4", "legacy", "v1.2.0+G1off")
-        # Killed at F4; then the plug switched off part way through U5 of the
+        # Killed at F4; then the device switched off part way through U5 of the
         # run after, which updates the release it began with to this one's
         # once it is converted (runner.bring_up_to_date).
         for tag in LEGACY_STEPS:
             yield one("sonoff>tasmota", "F4", "legacy", f"{tag}+U5off")
-    if layouts.of(PLUG.layout).needs_temporary:
+    if layouts.of(DEVICE.layout).needs_temporary:
         for route in ("tasmota>sonoff", "tasmota>esphome"):
-            for at, fault, arg in ((10, "plugoff", 1), (50, "plugoff", 1), (90, "plugoff", 1),
-                                   (50, "plugoff", 30), (50, "crash", 1)):
+            for at, fault, arg in ((10, "deviceoff", 1), (50, "deviceoff", 1), (90, "deviceoff", 1),
+                                   (50, "deviceoff", 30), (50, "crash", 1)):
                 yield one(route, "D5ot", fault, arg, at)
     for route in ("tasmota>tasmota", "tasmota>esphome", "tasmota>sonoff"):
         yield one(route, "start", "lostapp", "factory")
@@ -505,9 +520,9 @@ def composite_scenarios():
 
 
 def readout_scenarios():
-    """A readout of a plug fresh from Sonoff's firmware, unattended (go_readout);
+    """A readout of a device fresh from Sonoff's firmware, unattended (go_readout);
     the same with a fault in each phase where it matters most (READOUT_FAULTS);
-    and one started on a plug on Tasmota, which must be refused."""
+    and one started on a device on Tasmota, which must be refused."""
     yield dict(id=sid("sonoff>readout", "start", "none", "unattended"), route="sonoff>readout", step="start",
                fault="none", arg="unattended", at=40)
     for step, fault, arg in READOUT_FAULTS:
@@ -522,7 +537,7 @@ def readout_scenarios():
 
 def readout_all_scenarios():
     """A readout of every device in each account (ACCOUNTS), unattended
-    (go_readout_all); and in the mixed one, with a fault in the plug's read."""
+    (go_readout_all); and in the mixed one, with a fault in the device's read."""
     for account in ACCOUNTS:
         yield dict(id=sid(READOUT_ALL, "start", "none", account), route=READOUT_ALL, step="start",
                    fault="none", arg=account, at=40, account=account)
@@ -536,11 +551,11 @@ def is_readout(route):
     return route.partition(">")[2] in ("readout", "readout-all")
 
 
-def plug_product():
-    """eWeLink's product model for the emulated plug: its record's (a public
+def device_product():
+    """eWeLink's product model for the emulated device: its record's (a public
     dump's test copy has one), else its kind's example. The stub lists it so
     (AUTOFLASH_EMU_STUB_PRODUCT_MODEL), a product the tool asks /wanted of."""
-    return ((plugs.read_plug(MAC) if MAC else {}).get("product_model") or PLUG.example_product_model).upper()
+    return ((records.read_device(MAC) if MAC else {}).get("product_model") or DEVICE.example_product_model).upper()
 
 
 def api_asks(requests):
@@ -567,17 +582,17 @@ def api_asks(requests):
     return asks, unasked
 
 
-def readout_all_problems(run, finished, api, account, plug, kept=()):
+def readout_all_problems(run, finished, api, account, device, kept=()):
     """What one run of a readout of every device did wrong, from its log
     (`run`), whether it finished, and what the API was asked and kept (`api`,
     its folder): [(verdict, why)], [] for nothing; and a summary. `account`
-    is how many devices the account holds, `plug` the emulated plug's product
+    is how many devices the account holds, `device` the emulated device's product
     model, `kept` the readouts the run kept unsent. Judged by the API's own
     answers, never its rules: every device asked /wanted once, all of them in
     a finished run (FAIL-NOT-ASKED); every one wanted sent until taken - 201,
     after nothing but 429s - but the one a stopped run stopped on
     (FAIL-NOT-SENT); none not wanted sent (FAIL-SENT-UNWANTED); each taken in
-    the API's store (FAIL-NOT-STORED), the plug's whole (FAIL-READOUT); and
+    the API's store (FAIL-NOT-STORED), the device's whole (FAIL-READOUT); and
     none kept unsent (FAIL-KEPT-UNSENT)."""
     problems = []
     devices = [(who, int(total)) for who, _, total in READING_OUT.findall(run)]
@@ -609,7 +624,7 @@ def readout_all_problems(run, finished, api, account, plug, kept=()):
         kept_as = [name for name in stored if day and digest and name.startswith(f"readouts__{day}__{digest}")]
         if not kept_as:
             problems.append(("FAIL-NOT-STORED", f"{who}: taken as {sent[-1][1]!r}, not in the API's store"))
-        elif who.endswith(f"({plug})"):
+        elif who.endswith(f"({device})"):
             whole = True
             missing = fault_verdicts.readout_problems((api / kept_as[0]).read_bytes(), "espressif")
             if missing:
@@ -619,11 +634,11 @@ def readout_all_problems(run, finished, api, account, plug, kept=()):
     problems += [("FAIL-KEPT-UNSENT", f"{name} kept unsent, though the API was there") for name in kept]
     summary = {"devices": len(devices), "asked": len(asks), "wanted": sum(1 for ask in asks if ask[0]),
                "taken": sum(1 for ask in asks if ask[2] and ask[2][-1][0] == 201),
-               "429": sum(1 for ask in asks for status, _ in ask[2] if status == 429), "plug_whole": whole}
+               "429": sum(1 for ask in asks for status, _ in ask[2] if status == 429), "device_whole": whole}
     return problems, summary
 
 
-# The steps that run a Berry phase on the plug (stage, restore, plan), each on
+# The steps that run a Berry phase on the device (stage, restore, plan), each on
 # one way it is taken: a phase must ride out blips and a weak signal by
 # itself, never needing the step tried again (PR #5: one early blip used up
 # the retrying, and a later one failed on its first try). In I1 and R1 the
@@ -646,7 +661,7 @@ LEGACY_STEPS = {
                "sonoff>esphome": {"C2": 20, "C3": 14, "D1": 18, "D4": 31, "D5": 2, "I1": 30,
                                   "I2": 5}},
 }
-# Plugs each release converted, then taken on by this checkout ("start").
+# Devices each release converted, then taken on by this checkout ("start").
 # Before 2.0.0 the tool installed only Tasmota.
 LEGACY_STARTS = {
     "v1.2.0": ("tasmota>esphome", "tasmota>sonoff"),
@@ -657,7 +672,7 @@ LEGACY_TOOL = "tools/s60_autoflash.py"  # its name until 2.0.0
 LEGACY_TOOLS = (LEGACY_TOOL, "tools/autoflash_cli.py")  # and until the reorganisation
 # What a run says when an error it did not expect stops it (tools.autoflash.cli._main).
 UNEXPECTED = "something unexpected went wrong"
-LEGACY_NAMED = {"G1", "H1"}  # killed past its F4: the plug keeps the name that release gave it
+LEGACY_NAMED = {"G1", "H1"}  # killed past its F4: the device keeps the name that release gave it
 _legacy_lock = threading.Lock()
 
 
@@ -705,13 +720,13 @@ def needs_cloud(sc):
 
 # Where eWeLink's own behaviour is under test: the send through it (C2, and C3fb
 # sending it again), and what a run of an old release does there. Everywhere
-# else a cloud scenario's fault falls once the plug has left Sonoff's firmware,
+# else a cloud scenario's fault falls once the device has left Sonoff's firmware,
 # and the stub answers for eWeLink as well (each passed there on 2026-11-07); a
-# real-cloud batch leaves those to it. A plug back on Sonoff's
+# real-cloud batch leaves those to it. A device back on Sonoff's
 # firmware after C3 or D1 has the installer sent again through eWeLink: one
 # power cut at each keeps that on the real cloud too. The lengths at C3fb are the
 # shortest and longest of each fault, where its outcome on the stub differed.
-REAL_CLOUD_C3FB = {("plugoff", 1), ("plugoff", 180), ("outage", 5), ("outage", 180), ("crash", 1),
+REAL_CLOUD_C3FB = {("deviceoff", 1), ("deviceoff", 180), ("outage", 5), ("outage", 180), ("crash", 1),
                    ("ctrlc", "once")}
 
 
@@ -724,7 +739,7 @@ def cloud_matters(sc):
         return True
     if sc["step"] == "C3fb":
         return (sc["fault"], sc["arg"]) in REAL_CLOUD_C3FB
-    return (sc["fault"], sc["arg"]) == ("plugoff", 1) and sc["step"] in ("C3", "D1")
+    return (sc["fault"], sc["arg"]) == ("deviceoff", 1) and sc["step"] in ("C3", "D1")
 
 
 def kind_of(sc):
@@ -733,16 +748,16 @@ def kind_of(sc):
 
 
 def starts_online(sc):
-    # A plug fresh from Sonoff, its first run looking it up in eWeLink at once.
+    # A device fresh from Sonoff, its first run looking it up in eWeLink at once.
     return sc.get("step") == "C2" or sc.get("fault") == "legacy"
 
 
-# -- the cloud: one plug at a time ----------------------------------------------
-# Shut: the plug's TCP to the internet answered with a reset, and eWeLink's to
+# -- the cloud: one device at a time ----------------------------------------------
+# Shut: the device's TCP to the internet answered with a reset, and eWeLink's to
 # it, so each end lets go of their connection at once and the next turn starts
 # clean. Only dropped, eWeLink kept the dead connection a while, and an update
 # command sent in a turn soon after could go down it, never to arrive. The
-# rest of the plug's way out is dropped.
+# rest of the device's way out is dropped.
 SHUT = [["FORWARD", "-s", "192.168.60.50", "-o", "eth0", "-j", "DROP"],
         ["FORWARD", "-s", "192.168.60.50", "-o", "eth0", "-p", "tcp", "-j", "REJECT",
          "--reject-with", "tcp-reset"],
@@ -750,9 +765,9 @@ SHUT = [["FORWARD", "-s", "192.168.60.50", "-o", "eth0", "-j", "DROP"],
          "--reject-with", "tcp-reset"]]
 
 
-def plug_internet(n, on):
-    """The plug's own way to the internet (eWeLink), on or off: off for every
-    plug but the one whose turn it is, as every emulated plug is the same one."""
+def device_internet(n, on):
+    """The device's own way to the internet (eWeLink), on or off: off for every
+    device but the one whose turn it is, as every emulated device is the same one."""
     if on:
         script = "; ".join(f"while iptables -D {' '.join(rule)} 2>/dev/null; do :; done" for rule in SHUT)
     else:
@@ -765,11 +780,11 @@ ESTABLISHED = re.compile(r"\btcp\b.*\bESTABLISHED src=192\.168\.60\.50 "
                          r"dst=(?!10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.)(\S+) sport=(\d+) dport=(\d+)")
 
 
-# The plug's connection to this computer: what a run serves it.
+# The device's connection to this computer: what a run serves it.
 FETCHING = re.compile(r"\btcp\b.*\bESTABLISHED src=192\.168\.60\.50 dst=192\.168\.60\.1 ")
 
 
-def plug_fetching(n):
+def device_fetching(n):
     return bool(FETCHING.search(sh("docker", "exec", name(n), "cat", "/proc/net/nf_conntrack").stdout))
 
 
@@ -777,7 +792,7 @@ CONNECTION = re.compile(r"\btcp\s+\d+\s+\d+\s+(\w+) src=192\.168\.60\.50 dst=(\S
 
 
 def connection_changes(seen, emulator, conntrack, at):
-    """Lines for what an emulator's plug opened and closed since `seen`, which it
+    """Lines for what an emulator's device opened and closed since `seen`, which it
     updates: each connection once as it is seen, and again once no longer up.
     Its many short ones to this computer only when they are up."""
     lines, live = [], {}
@@ -795,8 +810,8 @@ def connection_changes(seen, emulator, conntrack, at):
 
 
 def log_connections(path, every, stop):
-    """Every plug's connections, with times, for the whole batch: what a turn's log
-    shows of its own plug, of all of them, between turns too."""
+    """Every device's connections, with times, for the whole batch: what a turn's log
+    shows of its own device, of all of them, between turns too."""
     seen = {}
     with open(path, "a", encoding="utf-8") as out:
         while not stop.wait(every):
@@ -813,21 +828,21 @@ def log_connections(path, every, stop):
 
 
 def cloud_connections(n):
-    """The plug's open connections to the internet, as its emulator's firewall
+    """The device's open connections to the internet, as its emulator's firewall
     tracks them. Sonoff's firmware prints nothing when it signs on to eWeLink."""
     out = sh("docker", "exec", name(n), "cat", "/proc/net/nf_conntrack").stdout
     return {m.groups() for m in ESTABLISHED.finditer(out)}
 
 
 class CloudQueue:
-    """Turns at the cloud, one plug at a time, by how long the run can wait:
-    finding the plug in eWeLink (A1, A2: about a minute) first, then a plug
+    """Turns at the cloud, one device at a time, by how long the run can wait:
+    finding the device in eWeLink (A1, A2: about a minute) first, then a device
     that went back to Sonoff's firmware part way (FALLEN: three minutes), then
     the rest (FRESH), and last a C2 scenario's turn before its run starts
     (STARTING), which can wait for ever."""
     FINDING, FALLEN, FRESH, STARTING = -1, 0, 1, 2  # STARTING: a scenario not under way yet
 
-    # Every emulated plug is the same eWeLink device: the last one's connection,
+    # Every emulated device is the same eWeLink device: the last one's connection,
     # cut on its side, stays open at eWeLink a while, and the next to connect
     # is not seen online. A pause between turns lets eWeLink let go of it.
     COOL_DOWN = float(os.environ.get("AUTOFLASH_EMU_CLOUD_COOL_DOWN", "5"))
@@ -887,13 +902,13 @@ class Tuner:
     (then the pause lowered) a step after every WINDOW cloud scenarios with no
     trouble, and the last step taken back at the first trouble - then held.
     Trouble: a cloud scenario that did not pass with the cloud to blame -
-    eWeLink saying the plug is offline or the login gone, or a turn held to
+    eWeLink saying the device is offline or the login gone, or a turn held to
     its limit for nothing."""
     WINDOW = 4
     NOT_THE_CLOUD = re.compile(r"stopped part way|did not request every firmware byte")
     TROUBLE = re.compile(r"offline in eWeLink|eWeLink shows it offline|access token|"
                          r"turn given up after 2[34]\ds")
-    # A send the plug never asked for: the command went down the last turn's
+    # A send the device never asked for: the command went down the last turn's
     # connection, whatever became of an earlier download in the scenario.
     COMMAND_LOST = re.compile(r"no firmware bytes were transferred")
 
@@ -934,7 +949,7 @@ class Tuner:
             if not ok and self.phase != "backing-off":
                 # A failure of the scenario's own - a join, a step - says
                 # nothing of how many at once the cloud allows. Nor does a
-                # download the plug began and gave up: that is its network, and
+                # download the device began and gave up: that is its network, and
                 # Sonoff's firmware stays away from eWeLink after one, which
                 # would read as the cloud's fault.
                 try:
@@ -987,32 +1002,32 @@ BOOTS = re.compile(r"(?P<sonoff>\[BUILD TIME\]|colinkTcp|tmp ip = )|(?P<bridge>a
                    r"(?P<tasmota>Project tasmota)|(?P<esphome>\[I\]\[app)")
 INTENT = re.compile(r"\] (?:A1|A2|C2)  |Sending the installer again")
 HOLD_AT_MOST = 240.0
-# A step after C2 under way: its plug has left Sonoff's firmware, so the turn is free.
+# A step after C2 under way: its device has left Sonoff's firmware, so the turn is free.
 PAST_THE_CLOUD = re.compile(r"\] (?!A\d|C2\b)[A-Z]\d\w*  ")
-# A sign-in with no plug needing the cloud: time for it and the list it asks for.
+# A sign-in with no device needing the cloud: time for it and the list it asks for.
 SIGN_IN_TURN = 15.0
-# A plug's turn lets its run sign in once the plug is back at eWeLink. Until
+# A device's turn lets its run sign in once the device is back at eWeLink. Until
 # then eWeLink can still count the last turn's connection as the device, and
 # what the run sends goes down it to no one, seen failing two scenarios in turn.
 # Seen: the first connection, to find its server, lasts 2 s; the next is its
 # session, which may drop again within seconds - 12 of 91 did before 20 s, 4 of
-# them after 10 s - and a run let in on one finds its plug offline and stops. A
-# plug that does not get there leaves the run to find that out.
+# them after 10 s - and a run let in on one finds its device offline and stops. A
+# device that does not get there leaves the run to find that out.
 SIGNED_ON_AFTER = 15.0
-PLUG_BACK_AT_MOST = 60.0
-# A run's command that this long has not brought its plug to fetch anything has
+DEVICE_BACK_AT_MOST = 60.0
+# A run's command that this long has not brought its device to fetch anything has
 # been lost, and eWeLink does not pass one on again: the turn is of no more use
-# (seen: 3 minutes of one, with the plug back on eWeLink after a power cut).
+# (seen: 3 minutes of one, with the device back on eWeLink after a power cut).
 TURN_IDLE = 60.0
 SENT = re.compile(r"\] C2  |Sending the installer again|upgrade command sent again")
 # Where a run asks for a turn before it signs in (get_device_key.wait_for_turn).
 TURN_FILE = "captures/cloud-turn"
 
 
-def plug_busy(state, since):
+def device_busy(state, since):
     """Each Berry step's longest busy time, from the runs since `since`."""
     busy = {}
-    for path in (state / "work/captures/plugs").glob("*/runs/*/autoflash-state.json"):
+    for path in records_under(state / "work").glob("*/runs/*/autoflash-state.json"):
         try:
             if path.stat().st_mtime < since:
                 continue
@@ -1020,7 +1035,7 @@ def plug_busy(state, since):
         except (OSError, ValueError):
             continue
         for key, seconds in captures.items():
-            if key.endswith(".plug_busy_seconds") and isinstance(seconds, (int, float)):
+            if key.endswith(".device_busy_seconds") and isinstance(seconds, (int, float)):
                 step = key.split(".")[0]
                 busy[step] = max(busy.get(step, 0), round(seconds, 1))
     return busy
@@ -1028,7 +1043,7 @@ def plug_busy(state, since):
 
 def run_logs(state):
     found = []
-    for log in (state / "work/captures/plugs").glob("*/runs/*/run.log"):
+    for log in records_under(state / "work").glob("*/runs/*/run.log"):
         try:  # a scenario starting replaces the captures under it
             found.append((log.stat().st_mtime, log, log.read_text(errors="replace")))
         except FileNotFoundError:
@@ -1036,8 +1051,8 @@ def run_logs(state):
     return sorted(found, key=lambda f: f[0])
 
 
-class PlugMonitor:
-    """The plug's way to the cloud, for one scenario: shut, but for a turn each
+class DeviceMonitor:
+    """The device's way to the cloud, for one scenario: shut, but for a turn each
     time the tool is about to need it."""
 
     def __init__(self, scenario):
@@ -1045,7 +1060,7 @@ class PlugMonitor:
         self.stop = threading.Event()
 
     def start(self):
-        if not STUB_CLOUD:  # a stub per instance: its plug never needs a turn
+        if not STUB_CLOUD:  # a stub per instance: its device never needs a turn
             threading.Thread(target=self.watch, daemon=True).start()
         return self
 
@@ -1066,13 +1081,13 @@ class PlugMonitor:
     def watch(self):
         self.turn_file().unlink(missing_ok=True)  # the last scenario's run, killed while it waited
         # Shut first, and kept shut whatever goes wrong below.
-        plug_internet(self.n, False)
+        device_internet(self.n, False)
         while not self.stop.is_set():
             try:
                 self.watching()
                 return
             except Exception as exc:  # noqa: BLE001
-                plug_internet(self.n, False)
+                device_internet(self.n, False)
                 self.sc.say(f"CLOUD: watcher error {exc!r}; carrying on")
                 self.stop.wait(1.0)
 
@@ -1082,7 +1097,7 @@ class PlugMonitor:
         if live:
             handled[live[0]] = len(INTENT.findall(live[1]))
         if starts_online(self.sc.sc) and not NO_CLOUD and not getattr(self, "started_online", False):
-            # A fresh plug, as a real one is, online from the start: A1 gives it
+            # A fresh device, as a real one is, online from the start: A1 gives it
             # about a minute to show in eWeLink, less than a turn asked for
             # then and Sonoff's firmware reconnecting take. Held through C2.
             self.started_online = True
@@ -1095,7 +1110,7 @@ class PlugMonitor:
             if live:
                 handled[live[0]] = len(INTENT.findall(live[1]))
         while not self.stop.is_set():
-            plug_internet(self.n, False)
+            device_internet(self.n, False)
             live = self.live_run()
             if live:
                 run, text = live
@@ -1120,21 +1135,21 @@ class PlugMonitor:
         return len(INTENT.findall(live[1])) if live and live[0] == run else None
 
     def connections_seen(self, seen, before, now):
-        """The plug's connections begun in this turn, each with when it was
+        """The device's connections begun in this turn, each with when it was
         first seen, saying which came and went: nothing else shows them."""
         live = cloud_connections(self.n) - before
         for connection in sorted(live - seen.keys()):
-            self.sc.say(f"CLOUD: plug connected to {connection[0]}")
+            self.sc.say(f"CLOUD: device connected to {connection[0]}")
         for connection in sorted(seen.keys() - live):
-            self.sc.say(f"CLOUD: plug's connection to {connection[0]} closed")
+            self.sc.say(f"CLOUD: device's connection to {connection[0]} closed")
         return {connection: seen.get(connection, now) for connection in live}
 
     def hold(self, why, limit=HOLD_AT_MOST, run=None, restart_once=False):
-        """Gives the plug its way out until the run ends, the plug leaves
+        """Gives the device its way out until the run ends, the device leaves
         Sonoff's firmware or `limit` runs out; returns how many times `run`
         had asked by then, all of them answered by this turn. `restart_once`:
-        a plug not back at eWeLink in PLUG_BACK_AT_MOST is switched off and on
-        once, as a person would, and waited for again (a fresh plug's, with
+        a device not back at eWeLink in DEVICE_BACK_AT_MOST is switched off and on
+        once, as a person would, and waited for again (a fresh device's, with
         nothing yet sent to it)."""
         uart = self.state / "logs/uart.log"
         pos = uart.stat().st_size if uart.exists() else 0
@@ -1142,11 +1157,11 @@ class PlugMonitor:
         # Asked for again while it waited: this turn is theirs too.
         asked = self.intents(run)
         steps_from = len(self.run_text())
-        watched = plug_first = limit > SIGN_IN_TURN  # a short turn is a sign-in no plug needs
+        watched = device_first = limit > SIGN_IN_TURN  # a short turn is a sign-in no device needs
         before = cloud_connections(self.n) if watched else set()
         first_seen = {}
         looked = 0.0
-        plug_internet(self.n, True)
+        device_internet(self.n, True)
         self.sc.say(f"CLOUD: turn taken ({why})")
         since = time.time()
         opened = opened_at = since
@@ -1159,44 +1174,44 @@ class PlugMonitor:
                 if watched and now - looked >= 1:
                     looked = now
                     first_seen = self.connections_seen(first_seen, before, now)
-                    if plug_first and any(now - seen >= SIGNED_ON_AFTER for seen in first_seen.values()):
-                        plug_first, back_at = False, now
-                        self.sc.say(f"CLOUD: plug back after {now - opened_at:.0f}s")
-                    elif plug_first and now - opened_at >= PLUG_BACK_AT_MOST and restart_once:
-                        # Seen against the real cloud: a fresh plug's every TLS
+                    if device_first and any(now - seen >= SIGNED_ON_AFTER for seen in first_seen.values()):
+                        device_first, back_at = False, now
+                        self.sc.say(f"CLOUD: device back after {now - opened_at:.0f}s")
+                    elif device_first and now - opened_at >= DEVICE_BACK_AT_MOST and restart_once:
+                        # Seen against the real cloud: a fresh device's every TLS
                         # dial to eWeLink timing out, the run then stopping at
                         # A1 to ask, its fault never come (NOT-FIRED).
                         restart_once = False
-                        self.sc.say(f"CLOUD: plug not back after {now - opened_at:.0f}s; switched off and on, "
+                        self.sc.say(f"CLOUD: device not back after {now - opened_at:.0f}s; switched off and on, "
                                     "as a person would, and waited for again")
-                        self.sc.notes["fresh_plug_restarted"] = True
-                        self.sc.ex(PLUG_CMD, "restart")
+                        self.sc.notes["fresh_device_restarted"] = True
+                        self.sc.ex(DEVICE_CMD, "restart")
                         before, first_seen = cloud_connections(self.n), {}
                         opened_at = time.time()
-                    elif plug_first and now - opened_at >= PLUG_BACK_AT_MOST:
-                        plug_first, back_at = False, now
-                        self.sc.say(f"CLOUD: plug not back after {now - opened_at:.0f}s; the run goes on")
+                    elif device_first and now - opened_at >= DEVICE_BACK_AT_MOST:
+                        device_first, back_at = False, now
+                        self.sc.say(f"CLOUD: device not back after {now - opened_at:.0f}s; the run goes on")
                     if back_at is not None:
                         # This run's sends: one before it, cancelled say, is not this turn's to wait on.
                         text = self.run_text()
                         sent = len(SENT.findall(text, max(text.rfind("=== run started"), 0)))
-                        if sent > sent_seen or (sent and plug_fetching(self.n)):
+                        if sent > sent_seen or (sent and device_fetching(self.n)):
                             sent_seen, idle_from = sent, now
                         if sent and now - max(idle_from, back_at) >= TURN_IDLE:
                             self.sc.say(f"CLOUD: nothing fetched for {TURN_IDLE:.0f}s; the turn is free")
                             break
-                if not plug_first:
+                if not device_first:
                     self.turn_file().unlink(missing_ok=True)
                 if time.time() - opened > 2:
-                    # Again now and then: a plug's emulator started in the
+                    # Again now and then: a device's emulator started in the
                     # turn (a fresh one) starts with its way shut.
-                    plug_internet(self.n, True)
+                    device_internet(self.n, True)
                     opened = time.time()
                 now_asked = self.intents(run)
                 if asked is not None and now_asked is not None and now_asked > asked:
                     # The installer sent again part way through: a whole turn
                     # from here. Seen: a turn running out as it was sent again
-                    # went with the plug shut off, the download never begun.
+                    # went with the device shut off, the download never begun.
                     asked = now_asked
                     since = time.time()
                     self.sc.say("CLOUD: turn renewed (asked again)")
@@ -1206,7 +1221,7 @@ class PlugMonitor:
                 text = self.run_text()
                 now_ended = text.count("=== run ended ===")
                 if now_ended < ended:
-                    # A fresh plug's emulator wiped the last scenario's runs
+                    # A fresh device's emulator wiped the last scenario's runs
                     # after this turn began: counted from here.
                     ended = now_ended
                     steps_from = 0
@@ -1218,7 +1233,7 @@ class PlugMonitor:
                     break
                 self.stop.wait(0.5)
         finally:
-            plug_internet(self.n, False)
+            device_internet(self.n, False)
             CLOUD.release(self.n)
             self.sc.say(f"CLOUD: turn given up after {time.time() - since:.0f}s")
         return asked
@@ -1240,7 +1255,7 @@ FIRED_NOTE = {("ownnet", "cut"): "cut_after_upload", ("ownnet", "dropupload"): "
 
 
 def not_fired(sc, notes, converted):
-    """A plug converted though its fault never happened proves nothing. A failure
+    """A device converted though its fault never happened proves nothing. A failure
     stands whatever happened: it may be a real one, or a brick."""
     if not converted:
         return False
@@ -1268,9 +1283,9 @@ def corrupt_filter(value, mask, every=20):
             "action pedit ex munge offset 64 u8 set 0x5a pipe action csum ip4h tcp").split()
 
 
-# The plug unable to reach this computer, though it answers: rare, and until it
+# The device unable to reach this computer, though it answers: rare, and until it
 # restarts. Looked at when a scenario fails with it (probe, below), before the
-# plug is used again - never while a run is using it.
+# device is used again - never while a run is using it.
 STRANDED = re.compile(r"did not fetch the \w+ instructions|returned HTTP -1")
 
 # What the run tells the person to join, and to go back from (the run's log).
@@ -1296,7 +1311,7 @@ class Scenario:
     def ours(self, log, text):
         """What this checkout's runs wrote to a run log: past what an earlier
         release's run (go_legacy), carried on in the same run, wrote first."""
-        return text[self.earlier_release_wrote.get(log, 0):]
+        return text[self.earlier_release_wrote.get(filed_as(log), 0):]
 
     def say(self, text):
         with open(self.log, "a", encoding="utf-8") as f:
@@ -1313,7 +1328,7 @@ class Scenario:
         place for the runs after, until another `code`. A release before 2.0.0
         had no --firmware: Tasmota only."""
         args = [str(REPO / "tools/espressif/emulator/unattended-test.sh"), f"--instance={self.n}",
-                f"--plug={MAC}", "--keep"]
+                f"--device={MAC}", "--keep"]
         every = self.sc.get("route") == READOUT_ALL
         if target == "readout":
             args.append("--readout")
@@ -1332,12 +1347,12 @@ class Scenario:
                  *(["--all"] if every and target == "readout" else []), *extra]
         env = dict(os.environ)
         # The account's other devices, and the API's ENOUGH, are a readout of
-        # every device's own: any other scenario's account is the plug alone.
+        # every device's own: any other scenario's account is the device alone.
         for setting in ("AUTOFLASH_EMU_STUB_OTHERS", "AUTOFLASH_API_ENOUGH"):
             env.pop(setting, None)
         if every:
             env["AUTOFLASH_EMU_STUB_OTHERS"] = str(self.others_file())
-            env["AUTOFLASH_EMU_STUB_PRODUCT_MODEL"] = plug_product()
+            env["AUTOFLASH_EMU_STUB_PRODUCT_MODEL"] = device_product()
             env["AUTOFLASH_API_ENOUGH"] = ",".join(self.enough())
         if not STUB_CLOUD and not NO_CLOUD:
             env["AUTOFLASH_EMULATOR_CLOUD_TURN"] = f"/work/{TURN_FILE}"
@@ -1399,7 +1414,7 @@ class Scenario:
         self.say("FAULT done")
 
     def ctrl_c_lines(self):
-        """In every run log the plug has: a saved plug's carries on from the Ctrl-C
+        """In every run log the device has: a saved device's carries on from the Ctrl-C
         that stopped prep's run, so what counts is any more since the fault."""
         return sum(text.count(CTRL_C_LOGGED) for _, _, text in run_logs(self.state))
 
@@ -1416,7 +1431,7 @@ class Scenario:
         return result
 
     def router(self, state):
-        self.must(PLUG_CMD, "router", state)
+        self.must(DEVICE_CMD, "router", state)
 
     def signal(self, sig, *patterns, must=True):
         """To whichever of them are running; the run may have ended by a later
@@ -1427,10 +1442,10 @@ class Scenario:
             self.not_applied(f"{sig} to a run not running")
 
     def fault(self, fault, arg, since, headers):
-        p = PLUG_CMD
+        p = DEVICE_CMD
         if fault == "outage":
             self.router("off"); time.sleep(arg); self.router("on")
-        elif fault == "plugoff":
+        elif fault == "deviceoff":
             self.must(p, "off"); time.sleep(arg); self.must(p, "on")
         elif fault == "crash":
             self.signal("KILL", *HELPERS, TOOL)
@@ -1464,7 +1479,7 @@ class Scenario:
             self.signal("CONT", "tools/repo/unattended_run.py", *HELPERS, TOOL, must=False)
             self.offline(False)
         elif fault == "fallback":
-            # The home network gone long enough for the plug to raise its own;
+            # The home network gone long enough for the device to raise its own;
             # the person joins that as soon as it appears, before being asked.
             self.router("off")
             ends = time.time() + arg
@@ -1587,7 +1602,7 @@ class Scenario:
                 time.sleep(1)
             self.ex("iptables", "-D", *rule)
         elif fault == "seven" and arg == "times":
-            self.must(PLUG_CMD, "cycle", "7", timeout=300)
+            self.must(DEVICE_CMD, "cycle", "7", timeout=300)
             self.notes["seven_times"] = True
         elif fault == "seven" and arg == "advised":
             # Tasmota sent through the installer cannot join the home Wi-Fi
@@ -1599,8 +1614,8 @@ class Scenario:
             self.say("FAULT: the home Wi-Fi gone after the upload")
             if self.when_said(since, "Switch the device off and on 7 times", lambda: None, limit=900):
                 time.sleep(10)  # a person reads it
-                self.say("PERSON: switching the plug off and on 7 times")
-                self.must(PLUG_CMD, "cycle", "7", timeout=300)
+                self.say("PERSON: switching the device off and on 7 times")
+                self.must(DEVICE_CMD, "cycle", "7", timeout=300)
                 self.notes["seven_times"] = True
             self.router("on")
         elif fault == "nohook":
@@ -1625,17 +1640,17 @@ class Scenario:
     def drop_join(self):
         time.sleep(3)  # part way
         self.must("/opt/autoflash-emu/bin/wifi-root", "home", timeout=60)
-        self.say("FAULT: this computer back on the home network, off the plug's")
+        self.say("FAULT: this computer back on the home network, off the device's")
         self.notes["dropped_off"] = True
         self.dropped = True  # the person stand-in joins again when asked
 
     def offline(self, off):
-        """The computer off the network: nothing between it and the plug, and
-        no internet - the plug's own way to the internet is left as it is."""
+        """The computer off the network: nothing between it and the device, and
+        no internet - the device's own way to the internet is left as it is."""
         rules = [("INPUT", "-s", "192.168.60.50"), ("OUTPUT", "-d", "192.168.60.50"),
                  ("OUTPUT", "-o", "eth0")]
         # The router is in the same container, and stays up: its address
-        # leases and names still answer the plug.
+        # leases and names still answer the device.
         router = [("INPUT", "-s", "192.168.60.50", "-p", "udp", "-m", "multiport", "--dports", "53,67"),
                   ("OUTPUT", "-d", "192.168.60.50", "-p", "udp", "-m", "multiport", "--sports", "53,67")]
         for (chain, *match), action in [(r, "DROP") for r in rules] + [(r, "ACCEPT") for r in router]:
@@ -1660,7 +1675,7 @@ class Scenario:
         return f"no report ({why})" if why else "no report"
 
     def person(self, stop):
-        """As a person at the computer would: join the plug's own network when
+        """As a person at the computer would: join the device's own network when
         the run says to - again if dropped off it, while the run still asks -
         and go back to the home one when it says that, or when the network it
         is on goes (as a computer's Wi-Fi does by itself)."""
@@ -1670,7 +1685,7 @@ class Scenario:
         joined = None
         wanted = None  # (log, the name told) while the run asks for a join
         gone_since = None
-        silent = 0  # looks in a row the plug has not answered on its network
+        silent = 0  # looks in a row the device has not answered on its network
         while not stop.is_set():
             if getattr(self, "dropped", False):
                 joined = self.joined = None
@@ -1689,7 +1704,7 @@ class Scenario:
                     gone_since = None
             if joined and on_air and wanted:
                 # Dropped off a network that came back by the same name - the
-                # plug restarted on it (the installer into Tasmota, say), too
+                # device restarted on it (the installer into Tasmota, say), too
                 # quickly to be seen gone: joined again while the run asks.
                 gateway = self.ex("cat", "/run/autoflash-emu/gateway").stdout.strip() or "192.168.4.1"
                 silent = 0 if self.ex("ping", "-c1", "-W1", gateway).returncode == 0 else silent + 1
@@ -1700,7 +1715,7 @@ class Scenario:
             else:
                 silent = 0
             # As run_logs read it: the tool moves a run filed as unidentified
-            # under its plug's MAC once it knows it, so the path may be gone.
+            # under its device's MAC once it knows it, so the path may be gone.
             for written, log, text in run_logs(self.state):
                 if written < self.started:
                     continue
@@ -1725,8 +1740,8 @@ class Scenario:
                     switched[log] = asked
                     stop.wait(30)  # a person reads it, and gets up
                     if not stop.is_set():
-                        self.ex(PLUG_CMD, "restart")
-                        self.say("PERSON: switched the plug off and on, as the run said")
+                        self.ex(DEVICE_CMD, "restart")
+                        self.say("PERSON: switched the device off and on, as the run said")
                         self.notes.setdefault("switched", 0)
                         self.notes["switched"] += 1
                 asked = len(READOUT_SWITCH.findall(text))
@@ -1734,8 +1749,8 @@ class Scenario:
                     told[log] = asked
                     stop.wait(5)  # it says what to do, and waits until it is done
                     if not stop.is_set():
-                        self.ex(PLUG_CMD, "restart")
-                        self.say("PERSON: switched the plug off and on, as the readout said")
+                        self.ex(DEVICE_CMD, "restart")
+                        self.say("PERSON: switched the device off and on, as the readout said")
                         self.notes["switched"] = self.notes.get("switched", 0) + 1
                 if wanted and wanted[0] == log and text.rstrip().endswith("=== run ended ==="):
                     wanted = None  # the run that asked is over
@@ -1756,7 +1771,7 @@ class Scenario:
             self.ex("/opt/autoflash-emu/bin/wifi-root", "home", timeout=60)
 
     def probe(self):
-        """What the network shows while the plug is asked to connect here: does
+        """What the network shows while the device is asked to connect here: does
         its SYN reach this computer, and what comes back."""
         import urllib.parse
         out = []
@@ -1785,12 +1800,12 @@ class Scenario:
         LOGS.mkdir(parents=True, exist_ok=True)
         (LOGS / (key(self.sc["id"]) + "-probe.txt")).write_text("\n".join(out))
         self.notes["probed"] = True
-        self.say("PROBE: the plug not reaching this computer, looked at")
+        self.say("PROBE: the device not reaching this computer, looked at")
 
     def go(self):
-        monitor = PlugMonitor(self)
+        monitor = DeviceMonitor(self)
         if starts_online(self.sc) and not NO_CLOUD and not STUB_CLOUD:
-            # The turn before the run, not beside it: A1 looks the plug up in
+            # The turn before the run, not beside it: A1 looks the device up in
             # eWeLink within seconds of starting, and finds it offline if it
             # is still waiting for its turn then.
             self.say("CLOUD: waiting for a turn before starting")
@@ -1811,7 +1826,7 @@ class Scenario:
         finally:
             attending.set()
             monitor.stop.set()
-            plug_internet(self.n, False)
+            device_internet(self.n, False)
             CLOUD.release(self.n)
 
     def go_watched(self):
@@ -1846,7 +1861,7 @@ class Scenario:
             delay = 0.3
         fault, arg = sc["fault"], sc["arg"]
         first_fault = ((arg.split("-")[0], int(arg.split("-")[1])) if fault == "double" else
-                       ("plugoff", 1) if (fault, arg) == ("nohook", "cut") else (fault, arg))
+                       ("deviceoff", 1) if (fault, arg) == ("nohook", "cut") else (fault, arg))
         stop = threading.Event()
         since = time.time()
         injector = threading.Thread(target=self.inject, args=(since, None, delay, stop, *first_fault),
@@ -1865,26 +1880,26 @@ class Scenario:
         return self.again(results, target, extra, delay, first_fault)
 
     def go_legacy(self):
-        """An earlier release's run (sc["arg"]) on a plug fresh from Sonoff,
+        """An earlier release's run (sc["arg"]) on a device fresh from Sonoff,
         killed at 40% of the step under test - or, at "start", let convert it
         to the route's first firmware - then this checkout's tool again and
-        again, as a person would, until the plug is converted (to the route's
+        again, as a person would, until the device is converted (to the route's
         target)."""
         sc = self.sc
         step, (source, self.target) = sc["step"], sc["route"].split(">")
-        # "+G1off": the plug switched off, too, part way through G1 of the
+        # "+G1off": the device switched off, too, part way through G1 of the
         # first run after - G1 then writing over that release's startup
         # firmware, unproven (step_restore), and carrying on after a cut.
         # That G1 is this checkout's, and as long as its.  "+U5off": part way
         # through U5, the update to this release that run goes on to once the
-        # plug is converted - as long as an update's (update>tasmota).
+        # device is converted - as long as an update's (update>tasmota).
         tag, _, then = sc["arg"].partition("+")
         steps = LEGACY_STEPS[tag].get(sc["route"], {})
         later = None
         if then:
             later_step = then.removesuffix("off")
             lengths = ROUTES[sc["route"]][2] | ROUTES["update>tasmota"][2]
-            later = (later_step, "plugoff", 1, 0.6 * lengths[later_step])
+            later = (later_step, "deviceoff", 1, 0.6 * lengths[later_step])
         old = legacy_tree(tag)
         stop = threading.Event()
         if step != "start":
@@ -1895,7 +1910,7 @@ class Scenario:
         results = [(self.run_tool(first, fresh=True, code=old), None)]
         results[-1] = (results[-1][0], self.screen_result())
         stop.set()
-        self.earlier_release_wrote = {log: len(text) for _, log, text in run_logs(self.state)}
+        self.earlier_release_wrote = {filed_as(log): len(text) for _, log, text in run_logs(self.state)}
         if step == "start":
             if "Converted" not in results[-1][1]:
                 return self.finish(results, "OLD-RUN-FAILED")
@@ -1906,15 +1921,15 @@ class Scenario:
         return self.again(results, self.target, [], code=REPO, later=later)
 
     def go_lostapp(self):
-        """A converted plug on Tasmota, and what was asked on Reddit: another
+        """A converted device on Tasmota, and what was asked on Reddit: another
         firmware's whole-flash image (ESPHome's factory.bin) uploaded through
         Tasmota's page, which switches to its safeboot for a file that big,
         whose upload takes the image, writes it over Tasmota and refuses it at
-        the end. The plug then starts the safeboot, even switched off and on.
-        Then the tool, as a person would run it, until the plug is converted."""
+        the end. The device then starts the safeboot, even switched off and on.
+        Then the tool, as a person would run it, until the device is converted."""
         sc = self.sc
         self.target = sc["route"].split(">")[1]
-        # The emulator up with the converted plug: asked for what it runs, a
+        # The emulator up with the converted device: asked for what it runs, a
         # run says there is nothing to do.
         results = [(self.run_tool("tasmota", source="suite-tasmota"), None)]
         results[-1] = (results[-1][0], self.screen_result())
@@ -1922,24 +1937,24 @@ class Scenario:
             return self.finish(results, "NOT-FIRED")
         factory = self.state / "work/captures/esphome-factory.bin"
         factory.write_bytes(esphome_factory_image())
-        plug = "http://192.168.60.50"
-        # From the plug's own page, as a browser on it is: Tasmota turns away
+        device = "http://192.168.60.50"
+        # From the device's own page, as a browser on it is: Tasmota turns away
         # a request without (CSRF protection).
-        page_of = ["curl", "-s", "-e", f"{plug}/"]
+        page_of = ["curl", "-s", "-e", f"{device}/"]
         self.say("LOSTAPP: Tasmota switched to its safeboot, as its page does for a large file")
-        self.ex(*page_of, "-m", "10", f"{plug}/u4?u4=fct&api=")
+        self.ex(*page_of, "-m", "10", f"{device}/u4?u4=fct&api=")
         if not self.until_page("/", "safeboot", 120):
             return self.finish(results, "NOT-FIRED")
         if sc["arg"] == "factory":  # "switched": its Tasmota left as it is
             self.say(f"LOSTAPP: ESPHome's factory image ({factory.stat().st_size} bytes) uploaded to it")
             page = self.ex(*page_of, "-m", "300", "-F", "u2=@/work/captures/esphome-factory.bin",
-                           f"{plug}/u2?fsz={factory.stat().st_size}", timeout=320).stdout
+                           f"{device}/u2?fsz={factory.stat().st_size}", timeout=320).stdout
             self.notes["upload_page"] = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page))[-300:]
             self.say(f"LOSTAPP: it answered: {self.notes['upload_page'][-120:]}")
             # The emulated Tasmota 15.6.0 safeboot says the upload worked and
             # writes nothing (app0 seen unchanged, 2026-10-21); a real one
             # writes the image over Tasmota as it arrives, and checks it only
-            # at the end. That, as it is on such a plug: the plug off, the
+            # at the end. That, as it is on such a device: the device off, the
             # image where Tasmota was, and on again.
             sh("docker", "stop", name(self.n), timeout=120)
             with open(self.state / "flash.bin", "r+b") as flash:
@@ -1947,10 +1962,10 @@ class Scenario:
                 flash.write(factory.read_bytes())
             self.say("LOSTAPP: off; the image written over Tasmota (app0), as a real safeboot does; on again")
             sh(str(REPO / "tools/espressif/emulator/emu.sh"), *(["--stub-cloud"] if STUB_CLOUD else ["--cloud", "--yes"]),
-               "--detach", f"--plug={MAC}", f"--instance={self.n}", timeout=300)
+               "--detach", f"--device={MAC}", f"--instance={self.n}", timeout=300)
         else:
             self.say("LOSTAPP: switched off and on")
-            self.ex(PLUG_CMD, "restart")
+            self.ex(DEVICE_CMD, "restart")
             time.sleep(5)
         if not self.until_page("/", "safeboot", 120):
             self.say("LOSTAPP: not on its safeboot after all")
@@ -1960,27 +1975,27 @@ class Scenario:
         return self.again(results, self.target, [])
 
     def tasmota(self, command):
-        """What the plug's Tasmota answers to `command`, as JSON - or None."""
-        out = self.ex("curl", "-s", "-m", "10", "-G", "-e", f"{PLUG_URL}/",
-                      "--data-urlencode", f"cmnd={command}", f"{PLUG_URL}/cm").stdout
+        """What the device's Tasmota answers to `command`, as JSON - or None."""
+        out = self.ex("curl", "-s", "-m", "10", "-G", "-e", f"{DEVICE_URL}/",
+                      "--data-urlencode", f"cmnd={command}", f"{DEVICE_URL}/cm").stdout
         try:
             return json.loads(out)
         except ValueError:
             return None
 
     def release_of(self, firmware):
-        """The release of `firmware` the plug runs: official Tasmota's, or this
+        """The release of `firmware` the device runs: official Tasmota's, or this
         project's ESPHome's; None if it does not answer as that."""
         return self.tasmota_release() if firmware == "tasmota" else self.esphome_release()
 
     def esphome_release(self):
-        """The release of this project's ESPHome the plug runs, as its API
+        """The release of this project's ESPHome the device runs, as its API
         says (project_version), asked from the emulated computer by the tool
-        itself (esphome.api_device_info): the plug's API is on that network
+        itself (esphome.api_device_info): the device's API is on that network
         only.  None if it does not answer as ours.  A few tries: it may be
         starting."""
         code = ("import json, sys; sys.path.insert(0, '/work'); from tools.autoflash import esphome; "
-                f"print(json.dumps(esphome.api_device_info({PLUG_IP!r})))")
+                f"print(json.dumps(esphome.api_device_info({DEVICE_IP!r})))")
         for _ in range(3):
             said = self.ex("python3", "-c", code, as_tool=True).stdout.strip().splitlines()
             try:
@@ -1988,21 +2003,21 @@ class Scenario:
             except ValueError:
                 info = None
             if isinstance(info, dict):
-                if info.get("project_name") != PLUG.esphome_project:
+                if info.get("project_name") != DEVICE.esphome_project:
                     return None   # not this project's ESPHome
                 return info.get("project_version") or None
             time.sleep(5)
         return None
 
     def tasmota_release(self):
-        """The release of official Tasmota the plug runs, as its version says
+        """The release of official Tasmota the device runs, as its version says
         (16.0.0(release-tasmota32)); None if it does not answer as one."""
         version = ((self.tasmota("Status 2") or {}).get("StatusFWR") or {}).get("Version", "")
         found = re.match(r"(\d+(?:\.\d+)+)\(release-tasmota", version)
         return found.group(1) if found else None
 
     def template_ok(self):
-        """Whether the plug runs Tasmota with its own template, asked a few
+        """Whether the device runs Tasmota with its own template, asked a few
         times: it may still be starting."""
         for _ in range(6):
             template, module = self.tasmota("Template"), self.tasmota("Module")
@@ -2013,11 +2028,11 @@ class Scenario:
         return False
 
     def go_notemplate(self):
-        """A converted plug on Tasmota whose template a person replaced with
+        """A converted device on Tasmota whose template a person replaced with
         Tasmota's generic one - which switches nothing (firmware-liberator discussion
         #8) - having set it up for themselves (an MQTT host). Then the tool:
         to Tasmota it gives the template alone, the MQTT host kept; to the
-        others it leaves Tasmota as from any converted plug, never by X1."""
+        others it leaves Tasmota as from any converted device, never by X1."""
         self.target = self.sc["route"].split(">")[1]
         results = [(self.run_tool("tasmota", source="suite-tasmota"), None)]
         results[-1] = (results[-1][0], self.screen_result())
@@ -2033,22 +2048,22 @@ class Scenario:
             if isinstance(template, dict) and template.get("NAME") == "Generic":
                 break
         else:
-            self.say("NOTEMPLATE: the plug did not take the generic template")
+            self.say("NOTEMPLATE: the device did not take the generic template")
             return self.finish(results, "NOT-FIRED")
-        results[-1] = (results[-1][0], "on Tasmota, without the plug's template")
+        results[-1] = (results[-1][0], "on Tasmota, without the device's template")
         return self.again(results, self.target, [])
 
     def go_bootloop(self):
-        """A plug converted to Tasmota, then put through what Tasmota does
+        """A device converted to Tasmota, then put through what Tasmota does
         at the sixth start in a row within 10 s of the last: taking that for
         a boot loop, it goes over to its fallback module - Generic, unless
-        the plug's own template is set there - keeping its Wi-Fi. Left on
-        Generic, the plug switches nothing (firmware-liberator discussion #8).
+        the device's own template is set there - keeping its Wi-Fi. Left on
+        Generic, the device switches nothing (firmware-liberator discussion #8).
 
         Done here as Tasmota would, by `Module` to the fallback `Module2`
         names: Tasmota counts those starts in RTC memory, which the emulator
-        loses at every restart (plug-supervisor starts QEMU afresh). The
-        restarts themselves would also do harm a real plug may not: each
+        loses at every restart (device-supervisor starts QEMU afresh). The
+        restarts themselves would also do harm a real device may not: each
         start ending before 8 s counts as a quick power cycle, kept in flash,
         and at the seventh Tasmota erases every setting, its Wi-Fi too."""
         route = self.sc["route"]
@@ -2065,17 +2080,17 @@ class Scenario:
         fallback = self.tasmota("Module2")
         fallback = fallback.get("Module2") if isinstance(fallback, dict) else None
         if not isinstance(fallback, dict) or len(fallback) != 1:
-            self.say(f"BOOTLOOP: the plug did not say its fallback module ({fallback})")
+            self.say(f"BOOTLOOP: the device did not say its fallback module ({fallback})")
             return self.finish(results, "NOT-FIRED")
         (number, name), = fallback.items()
         self.notes["fallback_module"] = name
-        self.say(f"BOOTLOOP: the plug goes over to its fallback module, {name} ({number})")
+        self.say(f"BOOTLOOP: the device goes over to its fallback module, {name} ({number})")
         self.tasmota(f"Module {number}")
-        time.sleep(15)  # Module restarts the plug; template_ok waits on from there
+        time.sleep(15)  # Module restarts the device; template_ok waits on from there
         return self.finish(results, None)
 
     def ports_open(self, *ports):
-        """Which of `ports` the plug takes a connection on now."""
+        """Which of `ports` the device takes a connection on now."""
         probe = ("import socket, sys\n"
                  "for port in sys.argv[1:]:\n"
                  "    try:\n"
@@ -2087,7 +2102,7 @@ class Scenario:
         return {int(port) for port in out.split()}
 
     def go_safemode(self):
-        """A plug converted to ESPHome, then switched off within a minute of
+        """A device converted to ESPHome, then switched off within a minute of
         starting ten times in a row: ESPHome takes that for a boot loop and
         starts in safe mode - Wi-Fi and its update service only, no page, no
         relay - for five minutes, then restarts as itself. All the network
@@ -2117,7 +2132,7 @@ class Scenario:
             if cuts == 12:
                 self.say("SAFEMODE: still starting normally after 12 cuts")
                 return self.finish(results, "NOT-FIRED")
-            self.ex(PLUG_CMD, "off"); time.sleep(1); self.ex(PLUG_CMD, "on")
+            self.ex(DEVICE_CMD, "off"); time.sleep(1); self.ex(DEVICE_CMD, "on")
             cuts += 1
         self.notes["safemode_cuts"] = cuts
         self.say(f"SAFEMODE: in safe mode after {cuts} cuts: its update service only")
@@ -2125,18 +2140,18 @@ class Scenario:
         return self.again(results, self.target, [])
 
     def go_readout(self):
-        """A readout of a plug fresh from Sonoff's firmware, found as a person
+        """A readout of a device fresh from Sonoff's firmware, found as a person
         without its address would have it found, with the fault in the phase
-        under test (READOUT_FAULTS) - the person switching the plug off and on
+        under test (READOUT_FAULTS) - the person switching the device off and on
         when the readout asks (person). Then the readout run again, as a
-        person would, switching the plug off and on where the run says to,
-        until a whole readout is kept and the plug is back on Sonoff's
-        firmware, or MAX_RUNS runs. Or (tasmota>readout) a readout of a plug
-        on Tasmota, at its address: refused, the plug left as it was."""
+        person would, switching the device off and on where the run says to,
+        until a whole readout is kept and the device is back on Sonoff's
+        firmware, or MAX_RUNS runs. Or (tasmota>readout) a readout of a device
+        on Tasmota, at its address: refused, the device left as it was."""
         sc = self.sc
         if sc["route"].split(">")[0] != "sonoff":
             return self.go_readout_refused()
-        self.target = "sonoff"   # what the plug must end on, by name too
+        self.target = "sonoff"   # what the device must end on, by name too
         fault, arg = sc["fault"], sc["arg"]
         stop = threading.Event()
         injector = None
@@ -2155,12 +2170,12 @@ class Scenario:
             if fault == "crash":
                 time.sleep(arg)
         if sc.get("then"):
-            # Run again at once, the plug not switched off and on: on the bridge still.
-            self.say(f"PERSON: ran the tool again ({sc['then']}) before switching the plug off and on")
+            # Run again at once, the device not switched off and on: on the bridge still.
+            self.say(f"PERSON: ran the tool again ({sc['then']}) before switching the device off and on")
             target, _, where = sc["then"].partition("-")
             if where == "elsewhere":
-                self.ex("sh", "-c", "rm -rf /state/work/captures/plugs/*/runs", as_tool=True)
-                self.say("records of the plug's runs taken away, as on another computer")
+                self.ex("sh", "-c", "rm -rf /state/work/captures/devices/*/runs /state/work/captures/plugs/*/runs", as_tool=True)
+                self.say("records of the device's runs taken away, as on another computer")
             results.append((self.run_tool(target), None))
             results[-1] = (results[-1][0], self.readout_result())
             # Its report says where it converted from; any stage of the
@@ -2170,8 +2185,8 @@ class Scenario:
                 return self.finish_readout(results, "FAIL-TAKEN-FOR-CONVERSION")
         while not self.readout_done() and len(results) < MAX_RUNS:
             if SWITCH_ADVICE.search(self.last_said()):
-                self.say("following the run's advice: the plug switched off and on")
-                self.ex(PLUG_CMD, "restart")
+                self.say("following the run's advice: the device switched off and on")
+                self.ex(DEVICE_CMD, "restart")
                 time.sleep(5)
                 if self.readout_done():
                     break  # read already: it only had to be put back
@@ -2180,11 +2195,11 @@ class Scenario:
         return self.finish_readout(results, None)
 
     def go_readout_refused(self):
-        """A readout of a plug converted to Tasmota, at its address: it must
-        stop before anything is sent to the plug (FAIL-NOT-REFUSED), which
+        """A readout of a device converted to Tasmota, at its address: it must
+        stop before anything is sent to the device (FAIL-NOT-REFUSED), which
         keeps its Tasmota and template (FAIL-DISTURBED)."""
         self.target = "tasmota"
-        results = [(self.run_tool("readout", ["--plug-ip", PLUG_IP], source=ROUTES["tasmota>sonoff"][0]), None)]
+        results = [(self.run_tool("readout", ["--device-ip", DEVICE_IP], source=ROUTES["tasmota>sonoff"][0]), None)]
         results[-1] = (results[-1][0], self.readout_result())
         sent = any("serve_tasmota_ota.py" in t for m, _, t in run_logs(self.state) if m >= self.started)
         if results[-1][0] == 0 or sent:
@@ -2193,11 +2208,11 @@ class Scenario:
 
     def go_readout_all(self):
         """A readout of every device in the account (cli.py readout --all) the
-        stub lists for the scenario (ACCOUNTS), the plug fresh from Sonoff's
+        stub lists for the scenario (ACCOUNTS), the device fresh from Sonoff's
         firmware among them, each readout sent to the API's own code - with
-        the fault, where there is one, in the plug's read. Then, as a person
+        the fault, where there is one, in the device's read. Then, as a person
         would, the readout of every device run again until one finishes,
-        switching the plug off and on where the run says to, or MAX_RUNS runs."""
+        switching the device off and on where the run says to, or MAX_RUNS runs."""
         sc = self.sc
         self.target = "sonoff"
         fault, arg = sc["fault"], sc["arg"]
@@ -2219,13 +2234,13 @@ class Scenario:
                 time.sleep(arg)
         while results[-1][0] != 0 and len(results) < MAX_RUNS:
             if SWITCH_ADVICE.search(self.last_said()):
-                self.say("following the run's advice: the plug switched off and on")
-                self.ex(PLUG_CMD, "restart")
+                self.say("following the run's advice: the device switched off and on")
+                self.ex(DEVICE_CMD, "restart")
                 time.sleep(5)
             results.append(self.run_readout_all(judged))
         if SWITCH_ADVICE.search(self.last_said()) and self.firmware_now(wait=120) != "sonoff":
-            self.say("following the run's advice: the plug switched off and on")
-            self.ex(PLUG_CMD, "restart")
+            self.say("following the run's advice: the device switched off and on")
+            self.ex(DEVICE_CMD, "restart")
         return self.finish_readout_all(results, judged, None)
 
     def run_readout_all(self, judged, fresh=False):
@@ -2248,7 +2263,7 @@ class Scenario:
             if (self.state / "api-server.out").exists():
                 shutil.copy(self.state / "api-server.out", api / "api-server.out")
         problems, summary = readout_all_problems(run, code == 0, api, len(ACCOUNTS[self.sc["account"]]) + 1,
-                                                 plug_product(), kept)
+                                                 device_product(), kept)
         judged.append({"code": code, "problems": problems, **summary})
         if problems:
             self.say(f"READOUT-ALL: {problems}")
@@ -2263,14 +2278,14 @@ class Scenario:
 
     def enough(self):
         """The API's ENOUGH (AUTOFLASH_API_ENOUGH): in the enough account, the
-        plug's product model and its first other device's."""
+        device's product model and its first other device's."""
         if self.sc.get("account") != "enough":
             return []
-        return [plug_product(), ACCOUNTS["enough"][0]["productModel"]]
+        return [device_product(), ACCOUNTS["enough"][0]["productModel"]]
 
     def finish_readout_all(self, results, judged, special):
         """A readout of every device's verdict: each run as readout_all_problems
-        judges it, a finished run at the end, and the plug on working Sonoff
+        judges it, a finished run at the end, and the device on working Sonoff
         firmware; in the many account, NOT-FIRED where the API never answered
         429, as its limit was never reached."""
         self.ended = True
@@ -2319,15 +2334,15 @@ class Scenario:
         """What the newest readout.tar this scenario's runs kept lacks of a whole
         readout (fault_verdicts.readout_problems), or None when none kept one."""
         kept = sorted((path.stat().st_mtime, path) for path in
-                      (self.state / "work/captures/plugs").glob(f"*/runs/*/{READOUT}"))
+                      records_under(self.state / "work").glob(f"*/runs/*/{READOUT}"))
         kept = [path for written, path in kept if written >= self.started]
         return fault_verdicts.readout_problems(kept[-1].read_bytes(), "espressif") if kept else None
 
     def firmware_now(self, wait=0):
-        """What the plug answers as, as the tool tells (detect.identify), looked
+        """What the device answers as, as the tool tells (detect.identify), looked
         at until it is Sonoff's firmware or `wait` seconds are up."""
         probe = (f"import sys; sys.path.insert(0, '/work'); from tools.autoflash import detect; "
-                 f"print(detect.identify({PLUG_IP!r}))")
+                 f"print(detect.identify({DEVICE_IP!r}))")
         deadline = time.time() + wait
         while True:
             found = self.ex("/opt/venv/bin/python", "-c", probe, timeout=60, as_tool=True).stdout.strip()
@@ -2336,13 +2351,13 @@ class Scenario:
             time.sleep(5)
 
     def readout_done(self):
-        """A whole readout kept, and the plug back on Sonoff's firmware: given
+        """A whole readout kept, and the device back on Sonoff's firmware: given
         two minutes, as it may be starting."""
         return self.readout_kept() == [] and self.firmware_now(wait=120) == "sonoff"
 
     def finish_readout(self, results, special):
-        """A readout scenario's verdict: a whole readout kept and the plug on
-        working Sonoff firmware, or for one refused, the plug as it was."""
+        """A readout scenario's verdict: a whole readout kept and the device on
+        working Sonoff firmware, or for one refused, the device as it was."""
         self.ended = True
         left = self.leftovers()
         names, networks = self.names_seen()
@@ -2375,7 +2390,7 @@ class Scenario:
         return self.keep(results, special or "PASS", left)
 
     def until_page(self, path, words, limit):
-        """Whether the plug's page `path` says `words`, in any case, within `limit` seconds."""
+        """Whether the device's page `path` says `words`, in any case, within `limit` seconds."""
         deadline = time.time() + limit
         while time.time() < deadline:
             page = self.ex("curl", "-s", "-m", "5", "-e", "http://192.168.60.50/",
@@ -2408,8 +2423,8 @@ class Scenario:
         return re.sub(r"\s+", " ", screen + "\n" + own)
 
     def again(self, results, target, extra, delay=None, first_fault=None, code=None, later=None):
-        """The tool run again, as a person would - switching the plug off and
-        on, or joining its own network, where the run says to - until the plug
+        """The tool run again, as a person would - switching the device off and
+        on, or joining its own network, where the run says to - until the device
         is converted, or MAX_RUNS runs in all. `code`: the first of them from
         there (run_tool), and the rest after it. `later`: (step, fault, arg,
         delay), a fault in the first of them too (noted as later_fired)."""
@@ -2418,12 +2433,12 @@ class Scenario:
         first = len(results)
         while "Converted" not in results[-1][1] and len(results) < MAX_RUNS:
             said = self.last_said()
-            if re.search(r"switch (the plug|the device|it) off and on", said):
-                self.say("following the run's advice: the plug switched off and on")
-                self.ex(PLUG_CMD, "restart")
+            if re.search(r"switch (the device|the device|it) off and on", said):
+                self.say("following the run's advice: the device switched off and on")
+                self.ex(DEVICE_CMD, "restart")
                 time.sleep(5)
             elif "this computer did not join" in said:
-                # Asked for the plug's own network, which the person stand-in
+                # Asked for the device's own network, which the person stand-in
                 # could not join (it was not there), and nothing else to try.
                 self.notes["needs_join"] = True
                 break
@@ -2453,13 +2468,13 @@ class Scenario:
                 # Refused, as it should be: started again for the other one, as it says.
                 self.notes["switch_refused"] = True
                 extra = ["--new"]
-        # What the plug must end on: the last run's target. A run cancelled as it
-        # finished converted the plug as it was asked, and none followed for `target`.
+        # What the device must end on: the last run's target. A run cancelled as it
+        # finished converted the device as it was asked, and none followed for `target`.
         self.target_final = target if len(results) > first else self.target
         return self.finish(results, None)
 
     def names_seen(self):
-        """The names the plug went by on the home network (DHCP, in order,
+        """The names the device went by on the home network (DHCP, in order,
         repeats folded) and the networks it put out (its serial log)."""
         dhcp = self.ex("sh", "-c", "grep DHCPACK /run/autoflash-emu/dnsmasq.log 2>/dev/null"
                                    " | grep ' 192.168.60.50 '").stdout
@@ -2480,7 +2495,7 @@ class Scenario:
         return names, networks
 
     def backup_whole(self):
-        backups = list((self.state / "work/captures/plugs").glob("*/sonoff-backup/flash.bin"))
+        backups = list(records_under(self.state / "work").glob("*/sonoff-backup/flash.bin"))
         return bool(backups) and all(b.stat().st_size == 4 * 1024 * 1024 for b in backups)
 
     def leftovers(self):
@@ -2503,16 +2518,16 @@ class Scenario:
         names, networks = self.names_seen()
         self.notes["names"], self.notes["networks"] = names, networks
         unknown, final = name_problems(names, networks, getattr(self, "target_final", self.target))
-        # How long each Berry phase kept the plug busy, the longest try of
+        # How long each Berry phase kept the device busy, the longest try of
         # each (the run's report: "Device busy"). Kept, not judged: a real
         # S60TPG once stopped answering at 70-90 s, an S60TPF was fine at 2
         # minutes (report, test-reports discussion) - report lists the longest.
-        self.notes["plug_busy"] = plug_busy(self.state, self.started)
+        self.notes["device_busy"] = device_busy(self.state, self.started)
         if fault == "legacy" and sc["step"] in LEGACY_NAMED and final and re.match(r"^tasmota-[0-9A-F]{6}-\d{4}$", final):
-            final = None  # set up by that release's F4, under Tasmota's own name, as it left every plug
+            final = None  # set up by that release's F4, under Tasmota's own name, as it left every device
         if fault == "legacy" and arg.endswith("+G1off"):
             # Whether the restore after the cut carried on after sectors it had
-            # written, or the cut came before it wrote any (the plug says).
+            # written, or the cut came before it wrote any (the device says).
             uart = self.state / "logs/uart.log"
             with open(uart, "rb") as log:
                 log.seek(getattr(self, "uart_from", 0))
@@ -2529,7 +2544,7 @@ class Scenario:
         converted_from_untemplated = "Converting the device from Tasmota without the device's template" in ours
         target_final = getattr(self, "target_final", self.target)
         template_bad = converted and target_final == "tasmota" and not self.template_ok()
-        # The report of the last run, from a converted plug (its backup taken
+        # The report of the last run, from a converted device (its backup taken
         # by the run that converted it): not a legacy release's.
         last_run = re.sub(r"\x1b\[[0-9;]*m", "", Path(self.log).read_text(
             encoding="utf-8", errors="replace").split("--- ")[-1])
@@ -2540,7 +2555,7 @@ class Scenario:
         # None to look at when the last run found nothing to convert: it makes no report.
         identity = (REPORT_IDENTITY.findall(last_run)
                     if "nothing to convert" not in results[-1][1] else None)
-        # The report's end-of-run checks, from the run that converted the plug.
+        # The report's end-of-run checks, from the run that converted the device.
         logs = run_logs(self.state)
         checks = fault_verdicts.checks_problem(logs[-1][2], target_final) if converted and logs else None
         if checks:
@@ -2550,7 +2565,7 @@ class Scenario:
                 special = "MISTIMED"
             elif any(UNEXPECTED in self.ours(p, t) for m, p, t in run_logs(self.state) if m >= self.started):
                 # A run stopped by an error the tool did not see coming - a bug,
-                # whatever the fault - though the next run may convert the plug
+                # whatever the fault - though the next run may convert the device
                 # (seen: a report that could not be made, KeyError: 'safeboot').
                 # Not an earlier release's, which is out already (1.2.0's
                 # TimeoutError as G1 starts).
@@ -2558,7 +2573,7 @@ class Scenario:
             elif fault == "corrupt" and not self.notes.get("corrupted_packets"):
                 special = "NO-TRAFFIC"
             elif fault == "lostapp" and (arg == "switched") == ("Official Tasmota (app0) uploaded" in "".join(
-                    t for m, _, t in run_logs(self.state) if m >= self.started)):  # not the saved plug's own
+                    t for m, _, t in run_logs(self.state) if m >= self.started)):  # not the saved device's own
                 # Its own Tasmota, there all along, written over - or none there, not put back.
                 special = "FAIL-REPLACED" if arg == "switched" else "FAIL-NOT-PUT-BACK"
             elif fault in ("blips", "lossy") and converted and (len(results) > 1 or any(
@@ -2609,12 +2624,12 @@ class Scenario:
                 special = "FAIL-CHECKS"  # its relay did not switch, or was never checked
             elif converted and template_bad:
                 special = "BAD-TEMPLATE"  # a Tasmota that switches nothing
-            elif converted and backup_line and backup_line != plugs.BACKUP_OUTCOMES["not taken" if no_backup else "existing"][1]:
+            elif converted and backup_line and backup_line != records.BACKUP_OUTCOMES["not taken" if no_backup else "existing"][1]:
                 special = "FAIL-BACKUP-LINE"  # its backup is on this computer, or none is
             elif converted and no_backup and identity is not None and not kept_identity_reported(identity):
-                special = "FAIL-IDENTITY"  # not the identity the plug kept
+                special = "FAIL-IDENTITY"  # not the identity the device kept
             elif converted and (unknown or final):
-                # A name this plug should never have, or not its converted
+                # A name this device should never have, or not its converted
                 # one at the end (docs/device-names.md).
                 special = "BAD-NAME"
                 self.notes["bad_names"] = unknown + ([final] if final else [])
@@ -2625,13 +2640,13 @@ class Scenario:
         # Every setup network can be joined (lcgamboa/qemu #15,
         # and the bridge's open since 4.4.3): none is beyond the emulator.
         verdict = special or ("PASS" if converted else "BRICK" if self.bricked() else
-                              # Asked for the plug's own network to be joined: right only
-                              # where the plug really is on it - each is looked at.
+                              # Asked for the device's own network to be joined: right only
+                              # where the device really is on it - each is looked at.
                               "NEEDS-JOIN" if self.notes.get("needs_join") else "FAIL")
         return self.keep(results, no_internet(verdict, [r for _, r in results]), left)
 
     def bricked(self):
-        """Whether the plug's serial output ends as a plug that cannot start does."""
+        """Whether the device's serial output ends as a device that cannot start does."""
         uart = self.state / "logs/uart.log"
         tail = uart.read_text(errors="replace")[-20000:] if uart.exists() else ""
         return "invalid header" in tail or "No bootable app" in tail or "ets_main.c" in tail
@@ -2662,7 +2677,7 @@ class Scenario:
                     self.say(f"PROBE: failed: {exc!r}")
             keep = LOGS / (key(sc["id"]) + "-evidence")
             keep_earlier(keep)
-            shutil.copytree(self.state / "work/captures/plugs", keep, dirs_exist_ok=True,
+            shutil.copytree(records_under(self.state / "work"), keep, dirs_exist_ok=True,
                             ignore=shutil.ignore_patterns("*.bin"))
             uart = self.state / "logs/uart.log"
             if uart.exists():
@@ -2673,7 +2688,7 @@ class Scenario:
 
 # The release each firmware a legacy run ends on must be: this checkout's
 # (FAIL-NOT-LATEST).
-LATEST = {"tasmota": OFFICIAL_TASMOTA_VERSION, "esphome": espressif_routes.published_version(PLUG, "esphome")}
+LATEST = {"tasmota": OFFICIAL_TASMOTA_VERSION, "esphome": espressif_routes.published_version(DEVICE, "esphome")}
 
 
 def earlier_release_run(header):
@@ -2686,17 +2701,17 @@ def earlier_release_run(header):
 
 
 def name_problems(names, networks, target):
-    """The names (DHCP) and networks the plug had that this plug should never
-    have, and - when the last name is not the converted plug's - that name.
-    A plug's names are made from its MAC (docs/device-names.md); those of
-    earlier releases are allowed, for a plug saved by one."""
+    """The names (DHCP) and networks the device had that this device should never
+    have, and - when the last name is not the converted device's - that name.
+    A device's names are made from its MAC (docs/device-names.md); those of
+    earlier releases are allowed, for a device saved by one."""
     raw = (MAC or "").replace(":", "").replace("-", "").lower()
     if len(raw) != 12:
         return [], None
     two, three = raw[-4:].upper(), raw[-6:]
     # ESP-IDF's default access point name: from the access-point MAC (the
     # Wi-Fi MAC plus one) on an ESP32-C3, from the Wi-Fi MAC on a classic ESP32.
-    ap = f"{(int(raw, 16) + (PLUG.chip != 'esp32')) & 0xFFFFFFFFFFFF:012X}"[-6:]
+    ap = f"{(int(raw, 16) + (DEVICE.chip != 'esp32')) & 0xFFFFFFFFFFFF:012X}"[-6:]
     allowed = {"espressif", f"autoflash-recovery-{two}", f"tasmota-{three}", f"esphome-{three}", f"ESP_{ap}",
                f"Sonoff-Setup-{two}", f"sonoff-s60-{three}", "s60-ota-bridge", f"sonoff-s60-mover-{three}",
                f"S60-OTA-Bridge-{two}"}
@@ -2712,13 +2727,13 @@ def name_problems(names, networks, target):
 
 
 def own_template(template, module):
-    """Whether Tasmota's answers to Template and Module are the plug's own
+    """Whether Tasmota's answers to Template and Module are the device's own
     template, in use (module 0)."""
-    return PLUG.names_its_tasmota(str(template.get("NAME"))) and "0" in (module.get("Module") or {})
+    return DEVICE.names_its_tasmota(str(template.get("NAME"))) and "0" in (module.get("Module") or {})
 
 
 def kept_identity_reported(lines):
-    """Whether the last of a report's "Sonoff identity" lines says the plug's
+    """Whether the last of a report's "Sonoff identity" lines says the device's
     own: the report starts each answer with a capital."""
     return bool(lines) and lines[-1].strip().lower() == SONOFF_IDENTITY["kept"].lower()
 
@@ -2727,7 +2742,7 @@ def key(scenario_id):
     return scenario_id.replace(">", "-to-").replace(":", "_").replace("@", "_at")
 
 
-# This computer, not its plug, cut off from eWeLink: the name not found, the
+# This computer, not its device, cut off from eWeLink: the name not found, the
 # network down. Seen on a test machine once in 75 scenarios, before the fault.
 COMPUTER_OFFLINE = re.compile(r"Could not reach eWeLink \(eWeLink connection failed: [^)]*?"
                               r"(?:Name or service not known|Temporary failure in name resolution|"
@@ -2833,10 +2848,10 @@ def batch(ids_file=None):
     ids = read_ids(ids_file) if ids_file else list(known)
     stale = stale_starts(known[i] for i in ids if i not in done)
     if stale:
-        raise SystemExit(f"Saved plugs not on the firmware this checkout installs: {', '.join(stale)}. Run prep.")
+        raise SystemExit(f"Saved devices not on the firmware this checkout installs: {', '.join(stale)}. Run prep.")
     untrusting = untrusting_starts() if STUB_CLOUD else []
     if untrusting:
-        raise SystemExit(f"Saved plugs not trusting the stub's CA as it is now: {', '.join(untrusting)}. "
+        raise SystemExit(f"Saved devices not trusting the stub's CA as it is now: {', '.join(untrusting)}. "
                          "Run prep (prep-update for an -earlier one).")
     stub_only = 0
     # The longest first, so the batch does not end on one started last (scenario_times).
@@ -2887,12 +2902,12 @@ def batch(ids_file=None):
 
 
 def installs(target):
-    """What firmware.json pins that the plug under test (PLUG) converted to
+    """What firmware.json pins that the device under test (DEVICE) converted to
     `target` is made with: its kind's ESPHome, its chip's everything else."""
     espressif = json.loads((REPO / "artifacts/firmware.json").read_text(encoding="utf-8"))["espressif"]
-    chip = espressif[PLUG.chip]
+    chip = espressif[DEVICE.chip]
     if target == "esphome":
-        return {"image": espressif[PLUG.key]["esphome"], "bootloader": chip["bootloader"], "mover": chip["mover"]}
+        return {"image": espressif[DEVICE.key]["esphome"], "bootloader": chip["bootloader"], "mover": chip["mover"]}
     return chip[target]
 
 
@@ -2901,11 +2916,11 @@ def converted_start(target):
 
 
 def stale_starts(todo):
-    """The saved converted plugs `todo` would start from that prep did not make
+    """The saved converted devices `todo` would start from that prep did not make
     with the firmware this checkout installs. A run from one leaves an older
     firmware than the tool installs, untested for the one it does, and passes."""
-    # A legacy run makes its own plug, and Sonoff's firmware is not ours to change.
-    # An update's plug is made from one (prep_update), on the release before on purpose.
+    # A legacy run makes its own device, and Sonoff's firmware is not ours to change.
+    # An update's device is made from one (prep_update), on the release before on purpose.
     targets = {sc["route"].split(">")[0] for sc in todo if sc["fault"] != "legacy"} - {"sonoff", "update"}
     stale = []
     for target in sorted(targets):
@@ -2919,9 +2934,9 @@ def stale_starts(todo):
 
 
 def stub_ca():
-    """The CA the stub serves this plug, as emu.sh chooses it: an RSA one for
+    """The CA the stub serves this device, as emu.sh chooses it: an RSA one for
     a firmware trusting eWeLink's RSA CA. None while it is not made yet."""
-    source = REPO / "captures/plugs" / MAC.replace(":", "-").lower() / "sonoff-backup/flash.bin"
+    source = records_under(REPO) / MAC.replace(":", "-").lower() / "sonoff-backup/flash.bin"
     try:
         rsa = holds_rsa_ca(source.read_bytes())
         return (EMU / ("stub-cloud-rsa" if rsa else "stub-cloud") / "ca.crt").read_bytes()
@@ -2930,7 +2945,7 @@ def stub_ca():
 
 
 def untrusting_starts():
-    """This plug's saved stub plugs holding a Sonoff firmware - on the plug, or
+    """This device's saved stub devices holding a Sonoff firmware - on the device, or
     in its backup, which a run back to Sonoff's writes - that does not trust
     the CA the stub serves it now: made before that CA was made again, or
     before emu.sh chose an RSA one for it. It turns the stub down
@@ -2941,8 +2956,8 @@ def untrusting_starts():
     for kept in sorted((EMU / "saved").glob("stub-*")):
         name = kept.name.removeprefix("stub-").removesuffix(f"-{last4}")
         if saved(name) != kept.name:
-            continue   # another plug's
-        for flash in [kept / "flash.bin", *kept.glob("captures/plugs/*/sonoff-backup/flash.bin")]:
+            continue   # another device's
+        for flash in [kept / "flash.bin", *records_under(kept).glob("*/sonoff-backup/flash.bin")]:
             try:
                 trusted = trusts(flash.read_bytes(), pem)
             except (OSError, ValueError):
@@ -2954,19 +2969,19 @@ def untrusting_starts():
 
 
 def prepared(said, stop_after, stopped):
-    """Whether a starting plug's run got where it was meant to: stopped once
-    `stop_after` was done, or else converted. Saved whatever happened, a plug
+    """Whether a starting device's run got where it was meant to: stopped once
+    `stop_after` was done, or else converted. Saved whatever happened, a device
     whose run stopped at the start was once listed as saved, and its
     scenarios all failed."""
     return stopped if stop_after else any(found.startswith("Converted") for found in REPORT_RESULT.findall(said))
 
 
 def make_start(save, args, stop_after=None):
-    """One starting plug, saved as `save`: a run with `args`, stopped once
+    """One starting device, saved as `save`: a run with `args`, stopped once
     `stop_after` is done, or else converted."""
     n = int(os.environ.get("AUTOFLASH_EMU_PREP_INSTANCE", "1"))
     # A run that could not start would count as one that failed, and take the
-    # plug saved before it away.
+    # device saved before it away.
     if sh("docker", "ps", "-q", "--filter", f"name=^{name(n)}$").stdout.strip():
         raise SystemExit(f"{name(n)} is running: stop it, or choose another with AUTOFLASH_EMU_PREP_INSTANCE")
     unattended = str(REPO / "tools/espressif/emulator/unattended-test.sh")
@@ -2981,24 +2996,24 @@ def make_start(save, args, stop_after=None):
 
     log = OUT / f"prep-{save}.log"
     log.parent.mkdir(parents=True, exist_ok=True)
-    # A fresh plug has the cloud from the start, as a C2 scenario's does.
+    # A fresh device has the cloud from the start, as a C2 scenario's does.
     fresh = "--fresh" in args
     sc = Scenario(n, {"id": "prep", "step": "C2" if fresh else "", "fault": "prep", "arg": ""}, log)
-    monitor = PlugMonitor(sc).start()
+    monitor = DeviceMonitor(sc).start()
     since = time.time()
     stopped = threading.Event()
     if stop_after:
         threading.Thread(target=stopped_after, args=(stop_after, sc, since, stopped), daemon=True).start()
     stub = ["--stub-cloud"] if STUB_CLOUD else []
     with open(log, "w", encoding="utf-8") as out:
-        subprocess.call([unattended, f"--instance={n}", f"--plug={MAC}", f"--save={saved(save)}",
+        subprocess.call([unattended, f"--instance={n}", f"--device={MAC}", f"--save={saved(save)}",
                          *stub, *args], stdout=out, stderr=subprocess.STDOUT)
     monitor.stop.set()
-    plug_internet(n, False)
+    device_internet(n, False)
     CLOUD.release(n)
     kept = EMU / "saved" / saved(save)
     if not prepared(log.read_text(encoding="utf-8", errors="replace"), stop_after, stopped.is_set()):
-        # Not the plug it should be: none rather than one every scenario
+        # Not the device it should be: none rather than one every scenario
         # from it would start wrong.
         shutil.rmtree(kept, ignore_errors=True)
         raise SystemExit(f"{saved(save)} NOT MADE: its run did not get there - see {log}")
@@ -3006,7 +3021,7 @@ def make_start(save, args, stop_after=None):
 
 
 def prep():
-    """The starting plugs, saved: one converted to each firmware; a stock plug
+    """The starting devices, saved: one converted to each firmware; a stock device
     stopped just after C2 (the installer sent, before the backup) for each;
     and one of those carried on as far as D1 (on the interim Tasmota), so the
     steps after D1 need no cloud; and the one on Tasmota with no backup."""
@@ -3021,12 +3036,12 @@ def prep():
 
 
 def no_backup_start():
-    """The plug saved on Tasmota, copied without its Sonoff backup: a computer
+    """The device saved on Tasmota, copied without its Sonoff backup: a computer
     that never had one. The copy leaves it out; nothing is deleted."""
     kept = converted_start("nobackup")
     shutil.rmtree(kept, ignore_errors=True)
     shutil.copytree(converted_start("tasmota"), kept, symlinks=True,
-                    ignore=shutil.ignore_patterns(plugs.BACKUP))
+                    ignore=shutil.ignore_patterns(records.BACKUP))
     print(kept.name, "saved", flush=True)
 
 
@@ -3044,10 +3059,10 @@ def earlier_tasmota():
 
 
 def prep_update():
-    """The update scenarios' starting plugs, which no run of this checkout can
-    make, the tool installing only this release. For update>tasmota, the plug
+    """The update scenarios' starting devices, which no run of this checkout can
+    make, the tool installing only this release. For update>tasmota, the device
     saved on Tasmota, the release before in its app0; for update>esphome, a
-    plug EARLIER_RELEASE's tool converted: a build of ours has the plug's Wi-Fi
+    device EARLIER_RELEASE's tool converted: a build of ours has the device's Wi-Fi
     written in, so cannot simply be put in its slot."""
     kept = EMU / "saved" / saved(ROUTES["update>tasmota"][0])
     shutil.rmtree(kept, ignore_errors=True)
@@ -3078,22 +3093,22 @@ def report():
     for r in rows.values():
         if r["verdict"] != "PASS":
             print(f"  {r['verdict']:16} {r['id']}  runs={r.get('runs')}  {r.get('results', r.get('error'))}{starved_label(r)}")
-    # The plug kept busiest by one Berry phase (plug_busy): a real S60TPG once
+    # The device kept busiest by one Berry phase (device_busy): a real S60TPG once
     # stopped answering at 70-90 s, so the longest are worth a look.
     busiest = sorted(((max(busy.values()), r["id"], step) for r in rows.values()
-                      for busy in [r.get("notes", {}).get("plug_busy") or {}] if busy
+                      for busy in [r.get("notes", {}).get("device_busy") or {}] if busy
                       for step, s in busy.items() if s == max(busy.values())), reverse=True)[:10]
     if busiest:
-        print("Longest the plug was kept busy by one phase:")
+        print("Longest the device was kept busy by one phase:")
         for seconds, scenario, step in busiest:
             print(f"  {seconds:6.1f}s  {step:3}  {scenario}")
 
 
 def main():
     import argparse
-    global MAC, PLUG, ROUTES, STUB_CLOUD, OUT, RESULTS, LOGS
+    global MAC, DEVICE, ROUTES, STUB_CLOUD, OUT, RESULTS, LOGS
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--plug", help="the backed-up plug's MAC, as emu.sh --plug takes it")
+    parser.add_argument("--device", help="the backed-up device's MAC, as emu.sh --device takes it")
     parser.add_argument("--stub-cloud", action="store_true",
                         help="each emulator serves its own local eWeLink stub (offline, fully "
                              "parallel, no cloud lock); the default uses the real cloud")
@@ -3120,14 +3135,14 @@ def main():
         # take a stub run's passes for its own.
         OUT = EMU / "suite-stub"
         RESULTS, LOGS = OUT / "results.jsonl", OUT / "logs"
-    if args.command in ("prep", "prep-update", "batch") and not args.plug:
-        parser.error("--plug is needed: the backed-up plug the emulators run copies of")
-    MAC = args.plug
-    PLUG = plug_kind(MAC)
-    ROUTES = routes_for(PLUG)
-    if PLUG is not kinds.SONOFF_S60 and "AUTOFLASH_EMU_SUITE_DIR" not in os.environ:
+    if args.command in ("prep", "prep-update", "batch") and not args.device:
+        parser.error("--device is needed: the backed-up device the emulators run copies of")
+    MAC = args.device
+    DEVICE = device_kind(MAC)
+    ROUTES = routes_for(DEVICE)
+    if DEVICE is not kinds.SONOFF_S60 and "AUTOFLASH_EMU_SUITE_DIR" not in os.environ:
         # Its scenarios share the S60's names, not their passes.
-        OUT = OUT.with_name(f"{OUT.name}-{PLUG.key}")
+        OUT = OUT.with_name(f"{OUT.name}-{DEVICE.key}")
         RESULTS, LOGS = OUT / "results.jsonl", OUT / "logs"
     {"prep": prep, "prep-update": prep_update, "list": listing, "report": report,
      "batch": lambda: batch(args.file)}[args.command]()

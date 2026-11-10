@@ -17,7 +17,7 @@ Home Assistant's ESPHome builder can adopt a converted device from this config:
 ## Changing it
 
 Edit `esphome.yaml`, then build and publish it with
-`python3 tools/repo/update_firmware.py esphome --plug sonoff-minir4`. Keep the
+`python3 tools/repo/update_firmware.py esphome --device sonoff-minir4`. Keep the
 `WiFi Signal` sensor's and `Relay` switch's names, the `autoflash_wifi` action and
 the two `AUTOFLASH-IMPRINT-` placeholders: the tool uses each
 ([the S60's page](../sonoff-s60/esphome.md) says how).

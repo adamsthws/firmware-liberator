@@ -171,7 +171,7 @@ class DeviceKeyTests(unittest.TestCase):
 
 
 class DispatchTests(unittest.TestCase):
-    def test_a_rebuilt_plug_asks_its_regions_dispatch_server(self):
+    def test_a_rebuilt_device_asks_its_regions_dispatch_server(self):
         with mock.patch.object(get_device_key, "_STUB_API_BASE", ""):
             self.assertEqual(get_device_key.dispatch_server("eu"), ("eu-dispd.coolkit.cc", 443))
             self.assertEqual(get_device_key.dispatch_server("cn"), ("cn-dispd.coolkit.cn", 443))

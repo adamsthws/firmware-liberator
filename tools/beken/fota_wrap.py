@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Wrap an rt_ota .rbl (e.g. an OpenBeken BK7238 build) in the CoolKit "FOTA"
 download container the S61's OTA client (ais_qota_task) expects, so it can be
-served to the plug through the eWeLink `upgrade` command the same way the S60 is
+served to the device through the eWeLink `upgrade` command the same way the S60 is
 converted - see docs/beken-research.md#the-update-path.
 
 The stock bootloader accepts a genuine third-party rt_ota image (no signature, no
@@ -24,14 +24,14 @@ version-greater-than check, the `upgrade` command's digest (SHA-256 of the file)
 and, once the payload is in, its CRC-32 against the descriptor's. The payload is
 staged as it arrives, so one whose CRC does not match is still in the download
 slot - but the updater reports the update failed (`"ota":"fail"`) and does not
-restart, and the bootloader applies it only when the plug is next switched on.
+restart, and the bootloader applies it only when the device is next switched on.
 
 Usage:
     fota_wrap.py IN.rbl [-o OUT.fota] [--name NAME] [--version VER]
                      [--serve [HOST:PORT]]
 
 With --serve it hosts the container over HTTP (206 ranged, keep-alive) exactly as
-the plug fetches it, and prints the `upgrade` command params (downloadUrl + digest)
+the device fetches it, and prints the `upgrade` command params (downloadUrl + digest)
 to push over the IoT WebSocket (see tools/ewelink/probe_ota_command.py for the S60 push).
 Standard library only.
 """
@@ -94,7 +94,7 @@ def wrap(rbl: bytes, name: str = STAGING_NAME, version: str | None = None) -> by
 def unwrap(container: bytes) -> list[tuple[str, str, bytes]]:
     """The images in a FOTA container, this tool's or one of Sonoff's official
     files (whose u16 @12 is not 0): (name, version, payload) for each, with
-    every CRC checked as the plug checks it."""
+    every CRC checked as the device checks it."""
     if len(container) < 16 or struct.unpack_from("<I", container, 0)[0] != 0x1beef11e:
         raise ValueError("not a FOTA container (no 0x1beef11e magic)")
     base = 16 + struct.unpack_from("<H", container, 12)[0]
@@ -117,9 +117,9 @@ def unwrap(container: bytes) -> list[tuple[str, str, bytes]]:
 
 def upgrade_command(register: dict, url: str, digest: str, version: str,
                     name: str = "user1.bin") -> dict:
-    """The eWeLink `upgrade` command that sends the plug to `url` for the FOTA
+    """The eWeLink `upgrade` command that sends the device to `url` for the FOTA
     container whose SHA-256 is `digest`: what the cloud pushes over the IoT
-    WebSocket, addressed to the plug as its `register` message named itself."""
+    WebSocket, addressed to the device as its `register` message named itself."""
     return {"action": "upgrade", "deviceid": register["deviceid"], "apikey": register.get("apikey", ""),
             "userAgent": "app", "sequence": str(int(time.time() * 1000)),
             "params": {"model": register.get("model", ""), "version": version,
@@ -134,7 +134,7 @@ def server(container: bytes, host: str, port: int, *, quiet: bool = False):
     import socketserver
 
     class Handler(http.server.BaseHTTPRequestHandler):
-        protocol_version = "HTTP/1.1"          # keep-alive: the plug reads several ranges per connection
+        protocol_version = "HTTP/1.1"          # keep-alive: the device reads several ranges per connection
 
         def log_message(self, *a):
             print("  [ota] %s %s" % (self.command, self.headers.get("Range", "-")), file=sys.stderr)

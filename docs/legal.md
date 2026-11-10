@@ -1,16 +1,16 @@
 # Staying on the right side of copyright
 
-This project lets you back up the Sonoff firmware on a plug you own, and put
+This project lets you back up the Sonoff firmware on a device you own, and put
 it back later. Sonoff's firmware is Sonoff's copyright, so this page sets out
 what the project does, and deliberately does not do, to keep that use lawful.
 It is not legal advice.
 
 ## The short version
 
-- The backup is of **your plug**, is kept **on your computer**, and is only
-  ever written back to **the same plug**.
+- The backup is of **your device**, is kept **on your computer**, and is only
+  ever written back to **the same device**.
 - The project **never distributes Sonoff's firmware**, in whole or in part.
-- The tool updates through the plug's **ordinary update mechanism**, started
+- The tool updates through the device's **ordinary update mechanism**, started
   from **your own eWeLink account**. It breaks no encryption, signature or other
   protection.
 
@@ -39,19 +39,19 @@ device the project works with, now or later.
 
 ## What the project does
 
-### The backup stays with you and your plug
+### The backup stays with you and your device
 
-- The backup is read from the plug during a conversion and saved under
-  `captures/plugs/<MAC>/sonoff-backup/`
+- The backup is read from the device during a conversion and saved under
+  `captures/devices/<MAC>/sonoff-backup/`
   ([Your Sonoff backup](technical-details.md#your-sonoff-backup)).
   `captures/` is Git-ignored, so a backup cannot be committed by accident.
 - Each backup is filed under the MAC address read from the chip's own eFuses,
   not one reported over the network.
-- **Back to Sonoff's firmware** only writes a plug's own backup to that plug, and
+- **Back to Sonoff's firmware** only writes a device's own backup to that device, and
   is only offered when that backup is on the computer doing it. It is never
-  used to put one plug's firmware onto another. Each backup also holds that
-  plug's eWeLink device id and keys, which belong to that plug alone.
-- The backup is written once and kept read-only. Converting a plug again keeps
+  used to put one device's firmware onto another. Each backup also holds that
+  device's eWeLink device id and keys, which belong to that device alone.
+- The backup is written once and kept read-only. Converting a device again keeps
   its first backup.
 
 ### No Sonoff firmware is distributed
@@ -62,10 +62,10 @@ device the project works with, now or later.
   ([NOTICES.md](../NOTICES.md) lists their sources and
   licences).
 - One of those data files, `artifacts/sonoff-s60-partition-table.bin`, was read
-  from a stock plug. It is the standard ESP-IDF partition table every S60
+  from a stock device. It is the standard ESP-IDF partition table every S60
   ships with: a short, fixed-format list of partition names, offsets and
   sizes, with no code or settings in it. The tool needs it to check that a
-  plug's layout is the one it expects, and to put that layout back when a plug
+  device's layout is the one it expects, and to put that layout back when a device
   returns to Sonoff's firmware.
 - The docs describe the firmware format in prose and tables. They do not list
   Sonoff's code or data.
@@ -74,11 +74,11 @@ device the project works with, now or later.
   of your backup so it runs under QEMU. It checks the bytes it replaces are as
   expected, but carries none of Sonoff's code beyond those few instructions,
   and never changes the backup itself.
-- The emulator's **public plugs**, which test the firmware a conversion ends
-  on, hold nothing of Sonoff's: they are made from plugs past the point where
-  Sonoff's firmware has been replaced, and `tools/espressif/emulator/sanitise_plug.py`
+- The emulator's **public devices**, which test the firmware a conversion ends
+  on, hold nothing of Sonoff's: they are made from devices past the point where
+  Sonoff's firmware has been replaced, and `tools/espressif/emulator/sanitise_device.py`
   shows each holds no part of the backup it came from
-  ([emulator.md](emulator.md#public-plugs)).
+  ([emulator.md](emulator.md#public-devices)).
 - The maintainer keeps their own backup off their computer, as any owner may
   back up their own: encrypted on their side, in a private package only they
   can reach, never in the repository, a release or anything public.
@@ -88,26 +88,26 @@ device the project works with, now or later.
 The tool does not 'get around' technological
 protection measures.
 
-- It sends the plug the same kind of upgrade command Sonoff's servers send,
-  from the plug owner's own eWeLink account. The plug runs every check it
+- It sends the device the same kind of upgrade command Sonoff's servers send,
+  from the device owner's own eWeLink account. The device runs every check it
   normally does, including the SHA-256 check on the firmware it downloads
   ([How it works](what-happens.md)).
-- The plug's firmware is not encrypted and does not check signatures, and the
+- The device's firmware is not encrypted and does not check signatures, and the
   tool does not disable or work around any such feature.
 - The optional router rules ([router-rules.md](router-rules.md)) keep a stock
-  plug as it is by stopping it from installing updates. They do not defeat
+  device as it is by stopping it from installing updates. They do not defeat
   anything.
 
 
 ### Studying and emulating the firmware
 
-Some of the project's work is research: reading a plug's own firmware to learn how
+Some of the project's work is research: reading a device's own firmware to learn how
 it stores Wi-Fi credentials and how it pairs, so a bridge firmware can keep the
 owner's Wi-Fi through a conversion. This is the observing, testing and
 decompiling-for-interoperability the exceptions above allow, and it is written to
 hold for any device the project adds, not one in particular.
 
-- The dumps studied are **the owner's own plugs**, read from hardware the owner
+- The dumps studied are **the owner's own devices**, read from hardware the owner
   bought. No vendor firmware, no decompiled listing, and no data or key taken from
   one is published: the research notes describe the firmware in prose, tables,
   addresses and offsets only - facts and ideas, not the vendor's code.
@@ -116,15 +116,15 @@ hold for any device the project adds, not one in particular.
   dump. A change the emulator needs to boot that copy - for example standing in for
   a hardware check the emulator cannot reproduce - is made **only inside the
   emulator, on the owner's own dump, and is never written to or run on a real
-  plug**. It removes no protection from a device, and distributes nothing.
+  device**. It removes no protection from a device, and distributes nothing.
 - Any exchange with the vendor's cloud is made with the owner's own account and the
-  owner's own plug. The published tooling points at a local stub by default.
+  owner's own device. The published tooling points at a local stub by default.
 
 
 ### Signing in to eWeLink
 
 - The tool signs in to eWeLink as you, with your own account, to talk to your
-  own plugs. It does not keep your password or the access token
+  own devices. It does not keep your password or the access token
   ([How your eWeLink account is handled](technical-details.md#how-your-ewelink-account-is-handled)).
 - The application id it signs in with is the public one used by the
   open-source SonoffLAN integration. It is not taken from Sonoff's own app.
@@ -139,9 +139,9 @@ independent and not an official installer
 ## What this project asks of you
 
 - **Do not share your backup.** It is Sonoff's firmware, and it also holds your
-  Wi-Fi password and your plug's eWeLink keys in plain text.
+  Wi-Fi password and your device's eWeLink keys in plain text.
 - **Do not attach a Sonoff backup, or any part of one, to an issue or pull request.**
   Describe what you see instead, for example the offsets and sizes involved,
   the Sonoff version and the log lines. A pull request that adds Sonoff
   firmware or code taken from it will not be accepted.
-- **Use a backup only on the plug it came from.**
+- **Use a backup only on the device it came from.**

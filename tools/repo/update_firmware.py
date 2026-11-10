@@ -20,15 +20,15 @@
         artifacts/; --mover builds the mover too; --every-device builds every
         device's, as the weekly update does
 
-    python3 tools/repo/update_firmware.py esphome [VERSION] --plug sonoff-s61
-        the same for a Beken plug's ESPHome (devices/sonoff-s61/esphome.yaml, on
+    python3 tools/repo/update_firmware.py esphome [VERSION] --device sonoff-s61
+        the same for a Beken device's ESPHome (devices/sonoff-s61/esphome.yaml, on
         LibreTiny): the rt_ota image its build makes, checked and published
 
-    python3 tools/repo/update_firmware.py esphome [VERSION] --plug KIND
-        the same for another Espressif plug's ESPHome (KIND's folder's esphome.yaml)
+    python3 tools/repo/update_firmware.py esphome [VERSION] --device KIND
+        the same for another Espressif device's ESPHome (KIND's folder's esphome.yaml)
 
     python3 tools/repo/update_firmware.py esp32 [tasmota] [bridge] [recovery] [mover] [template] [tables]
-        what the conversion of any plug with a classic ESP32 needs, each in a
+        what the conversion of any device with a classic ESP32 needs, each in a
         Docker image: official Tasmota's ESP32 files pinned from the release the
         ESP32-C3's are, the bridge and the recovery Safeboot built from this
         repository's sources, the mover and its bootloader with ESPHome
@@ -37,10 +37,10 @@
         the same for the ESP32-C3: its bridge, built from this repository's
         sources and wrapped for the S60's stock updater, and its mover
 
-    python3 tools/repo/update_firmware.py openbeken [VERSION] [--plug sonoff-s61] [--every-device]
-        build OpenBeken for a Beken plug - upstream at that stable release (default:
+    python3 tools/repo/update_firmware.py openbeken [VERSION] [--device sonoff-s61] [--every-device]
+        build OpenBeken for a Beken device - upstream at that stable release (default:
         the commit pinned, else the latest release), this project's patches (the 4 MB
-        table, the hook before an OTA's restart), its driver and the plug's
+        table, the hook before an OTA's restart), its driver and the device's
         table for it - in this project's build image, check it, and publish it
         in artifacts/
 
@@ -105,7 +105,7 @@ TASMOTA_FILES = {
     "safeboot": "tasmota32c3-safeboot.bin",
     "app": "tasmota32c3.bin",
 }
-# What a chip's plugs share is published under a name that says the chip, as
+# What a chip's devices share is published under a name that says the chip, as
 # a device's own says the device, so that the two chips' are told apart by
 # name; tests/repo/test_firmware_pins.py holds every published file to it.
 CHIP_FILES = {
@@ -117,13 +117,13 @@ CHIP_FILES = {
 
 
 def chip_file(chip: chips.Chip, name: str, **fields: str) -> str:
-    """Where `name`, shared by `chip`'s plugs, is published; a field not given
+    """Where `name`, shared by `chip`'s devices, is published; a field not given
     is left to fill ({version})."""
     return CHIP_FILES[name].format_map({"version": "{version}", **fields, "chip": chip.key})
 
 
 def mover_config(chip: chips.Chip) -> str:
-    """A chip's mover, from its own folder: it is the same for any plug on it."""
+    """A chip's mover, from its own folder: it is the same for any device on it."""
     return f"devices/{chip.key}/mover.yaml"
 
 
@@ -137,15 +137,15 @@ BOOTLOADER_FILE = chip_file(chips.ESP32C3, "bootloader")
 # Downloads ESPHome's builds need (ESP-IDF and its tools, a gigabyte or so),
 # kept between builds. captures/ is never committed.
 BUILD_CACHE = ROOT / "captures" / "esphome-build"
-# The Beken plugs' firmware: each ends on OpenBeken or on ESPHome built on
+# The Beken devices' firmware: each ends on OpenBeken or on ESPHome built on
 # LibreTiny, both rt_ota images the stock bootloader applies from the download
 # slot (devices/sonoff-s61/). OpenBeken is built from upstream at a pinned
 # commit with this project's patches (tools/beken/openbeken/: the 4 MB table,
 # offered upstream, and a hook before an OTA's restart, which the driver uses),
-# this project's driver (OPENBEKEN_DRIVER, beside the patches) and the plug's
+# this project's driver (OPENBEKEN_DRIVER, beside the patches) and the device's
 # table for it, in a build image of this project's (build.Dockerfile): the
 # SDK's own toolchain wants a newer GLIBC than OpenBeken's image has. Each
-# plug: its table and its ESPHome config, and the files their builds are
+# device: its table and its ESPHome config, and the files their builds are
 # published as.
 OPENBEKEN_REPO = "openshwprojects/OpenBK7231T_App"
 OPENBEKEN_DIR = ROOT / "tools" / "beken" / "openbeken"
@@ -377,7 +377,7 @@ def check_tasmota_files(files: dict[str, bytes], chip: chips.Chip = chips.ESP32C
     """Refuse a release whose files for `chip` would not fit the conversion.
 
     The conversion writes the partition table it was reviewed with (the
-    factory image's, with the entry for the plug's Sonoff identity added:
+    factory image's, with the entry for the device's Sonoff identity added:
     safeboot_migration.target_table), the Safeboot into its partition and the
     app into app0, and at the end compares each with these files.
     """
@@ -477,7 +477,7 @@ def command_tasmota(args: argparse.Namespace) -> int:
         print(f"CHANGELOG.md says so, under {release_version}.")
     left_to_do(["README.md and docs/: any line naming the Tasmota release installed",
                 "python3 -m unittest discover -s tests",
-                "the emulator runs in docs/updating-firmware.md, then a real plug"])
+                "the emulator runs in docs/updating-firmware.md, then a real device"])
     return 0
 
 
@@ -559,7 +559,7 @@ def with_config_version(config: str, version: str) -> str:
 
 # The release the config names for Home Assistant to adopt it from.  A release
 # tag, never a branch: published, it cannot change, so nothing pushed here later
-# reaches a plug adopted from it unless its owner names a newer one.
+# reaches a device adopted from it unless its owner names a newer one.
 ADOPTION_RELEASE = re.compile(r"^(  package_import_url: \S+@)\S+$", re.MULTILINE)
 
 
@@ -663,7 +663,7 @@ def build_time(firmware: bytes, label: str) -> str:
 
 
 def builds_record(firmware: bytes, label: str, old: dict[str, Any], version: str) -> dict[str, Any]:
-    """An ESPHome image's build time, and those of the earlier versions: a plug
+    """An ESPHome image's build time, and those of the earlier versions: a device
     on one of those is offered this one.  A rebuild of a version replaces it."""
     earlier = list(old.get("earlier_builds", []))
     if old.get("built") and old.get("version") != version and old["built"] not in earlier:
@@ -756,19 +756,19 @@ def command_esphome(args: argparse.Namespace) -> int:
         if old_image["esphome"] == release:
             by_hand.append("what the change to the config does, in CHANGELOG.md and devices/sonoff-s60/esphome.md")
     left_to_do(by_hand + ["python3 -m unittest discover -s tests (tests/repo/test_firmware_pins.py checks the docs)",
-                          "the emulator runs in docs/updating-firmware.md, then a real plug"])
+                          "the emulator runs in docs/updating-firmware.md, then a real device"])
     return 0
 
 
-# -- the Beken plugs' firmware ---------------------------------------------------
+# -- the Beken devices' firmware ---------------------------------------------------
 
 
-def beken_section(pins: dict[str, Any], plug: str) -> dict[str, Any]:
-    return pins.setdefault("beken", {}).setdefault(plug, {})
+def beken_section(pins: dict[str, Any], device: str) -> dict[str, Any]:
+    return pins.setdefault("beken", {}).setdefault(device, {})
 
 
 def espressif_section(pins: dict[str, Any], owner: str) -> dict[str, Any]:
-    """What firmware.json pins for one Espressif chip (what its plugs share) or device."""
+    """What firmware.json pins for one Espressif chip (what its devices share) or device."""
     return pins.setdefault("espressif", {}).setdefault(owner, {})
 
 
@@ -780,11 +780,11 @@ def git(*args: str, cwd: Path) -> str:
     return result.stdout.strip()
 
 
-def openbeken_sources(plug: str) -> list[str]:
-    """What a plug's OpenBeken is built with beyond upstream and the patches:
-    the driver, then the plug's table for it."""
+def openbeken_sources(device: str) -> list[str]:
+    """What a device's OpenBeken is built with beyond upstream and the patches:
+    the driver, then the device's table for it."""
     return ([(OPENBEKEN_DIR / name).relative_to(ROOT).as_posix() for name in OPENBEKEN_DRIVER]
-            + [BEKEN_BUILDS[plug]["openbeken"][0]])
+            + [BEKEN_BUILDS[device]["openbeken"][0]])
 
 
 def module_init(source: str) -> str:
@@ -801,7 +801,7 @@ def module_commands(source: str) -> list[str]:
 
 
 def with_module(makefile: str, main: str, sources: list[str], init: str) -> tuple[str, str]:
-    """platforms/obk_main.mk and src/user_main.c with the driver and the plug's
+    """platforms/obk_main.mk and src/user_main.c with the driver and the device's
     table (`sources`, in src/driver/) built and run at start-up, as
     tools/beken/openbeken/README.md says to add them: listed beside the other
     drivers, and called once the config is loaded."""
@@ -895,10 +895,10 @@ def check_rbl(image: bytes, label: str, version: str | None, needles: list[bytes
 
 
 def command_openbeken(args: argparse.Namespace) -> int:
-    file_pattern = BEKEN_BUILDS[args.plug]["openbeken"][1]
-    sources = openbeken_sources(args.plug)
+    file_pattern = BEKEN_BUILDS[args.device]["openbeken"][1]
+    sources = openbeken_sources(args.device)
     pins = load_pins()
-    section = beken_section(pins, args.plug)
+    section = beken_section(pins, args.device)
     current = section.get("openbeken", {})
     wanted = openbeken_ref(args.version, current)
     driver = (ROOT / sources[0]).read_text(encoding="utf-8")
@@ -911,7 +911,7 @@ def command_openbeken(args: argparse.Namespace) -> int:
     # a version never released is never raised.
     folded = bool(current) and not published_by_a_release(current["file"])
     version = build_version(release, current, folded=folded)
-    print(f"OpenBeken {version} for the {args.plug}: {OPENBEKEN_REPO} at {commit[:7]}, built in {builder}")
+    print(f"OpenBeken {version} for the {args.device}: {OPENBEKEN_REPO} at {commit[:7]}, built in {builder}")
     for path in sources:
         target = source / "src" / "driver" / Path(path).name
         if target.exists():
@@ -935,7 +935,7 @@ def command_openbeken(args: argparse.Namespace) -> int:
     # Worked out before anything is written, so a passage not found changes nothing.
     # One folded into its version says what changed in that version's own line.
     texts = {} if args.no_docs or not current else openbeken_doc_texts(
-        args.plug, current, record, changelog=not getattr(args, "every", False) and version != current["version"])
+        args.device, current, record, changelog=not getattr(args, "every", False) and version != current["version"])
     publish(section, "openbeken", record["file"], image, {
         "version": version, "release": release, "app_commit": commit, "sdk_commit": sdk_commit,
         "sources": {path: sha256_bytes((ROOT / path).read_bytes()) for path in sources},
@@ -946,7 +946,7 @@ def command_openbeken(args: argparse.Namespace) -> int:
     print("\nfirmware.json, SHA256SUMS, .gitignore and artifacts/ updated: git add the new file, and git rm the old.")
     left_to_do([*([] if texts else ["artifacts/README.md: the file's row (name, SHA-256)",
                                     "NOTICES.md: the file's name, the OpenBeken commit and the SDK's",
-                                    "CHANGELOG.md: the plug's OpenBeken is this version"]),
+                                    "CHANGELOG.md: the device's OpenBeken is this version"]),
                 "python3 tests/run.py (tests/repo/test_firmware_pins.py checks the docs)",
                 "the emulator: tools/beken/emulator/fault_suite.py prep, then the six scenarios "
                 "(docs/updating-firmware.md)"])
@@ -958,9 +958,9 @@ def command_openbeken_every(args: argparse.Namespace) -> int:
     update runs, so none is left on an older one."""
     release = stable_release(OPENBEKEN_REPO, args.version)["tag_name"]
     before = openbeken_pinned(load_pins())
-    for plug in BEKEN_BUILDS:
-        print(f"\n== {plug}")
-        code = command_openbeken(argparse.Namespace(**{**vars(args), "plug": plug, "version": release, "every": True}))
+    for device in BEKEN_BUILDS:
+        print(f"\n== {device}")
+        code = command_openbeken(argparse.Namespace(**{**vars(args), "device": device, "version": release, "every": True}))
         if code:
             return code
     if not args.dry_run and not args.no_docs:
@@ -971,7 +971,7 @@ def command_openbeken_every(args: argparse.Namespace) -> int:
     return 0
 
 
-def openbeken_doc_texts(plug: str, old: dict[str, Any], new: dict[str, Any],
+def openbeken_doc_texts(device: str, old: dict[str, Any], new: dict[str, Any],
                         changelog: bool = True) -> dict[Path, str]:
     """artifacts/README.md's row and NOTICES.md for a Beken device's new OpenBeken
     image, and the changelog's line unless the caller writes one for every device."""
@@ -988,7 +988,7 @@ def openbeken_doc_texts(plug: str, old: dict[str, Any], new: dict[str, Any],
     notices = notices.replace(old["app_commit"], new["app_commit"]).replace(old["sdk_commit"], new["sdk_commit"])
     texts = {ARTIFACTS_README: readme, NOTICES: notices}
     if changelog:
-        found = kinds.find(plug)
+        found = kinds.find(device)
         changelog_with(moved("OpenBeken", new["release"], openbeken_release_of(old),
                              found.name if found else "readout build"), texts)
     return texts
@@ -1010,15 +1010,15 @@ def build_libretiny(builder: str, config_path: Path, version: str, workdir: Path
 
 
 def command_esphome_beken(args: argparse.Namespace) -> int:
-    config_path, file_pattern = BEKEN_BUILDS[args.plug]["esphome"]
+    config_path, file_pattern = BEKEN_BUILDS[args.device]["esphome"]
     release = stable_release(ESPHOME_REPO, args.version)["tag_name"]
     pins = load_pins()
-    section = beken_section(pins, args.plug)
+    section = beken_section(pins, args.device)
     current = section.get("esphome", {})
     config = (ROOT / config_path).read_text(encoding="utf-8")
     version = build_version(release, current)
     builder = esphome_builder(release)
-    print(f"ESPHome {release} for the {args.plug}: {builder}")
+    print(f"ESPHome {release} for the {args.device}: {builder}")
     BUILD_CACHE.mkdir(parents=True, exist_ok=True)
     image, board, libretiny = build_libretiny(builder, ROOT / config_path, version, BUILD_CACHE)
     project = re.search(r"^    name: (\S+)", config, re.MULTILINE).group(1)
@@ -1038,7 +1038,7 @@ def command_esphome_beken(args: argparse.Namespace) -> int:
            "libretiny": libretiny, "sha256": sha256_bytes(image)}
     # Worked out before anything is written, so a passage not found changes nothing.
     texts = {} if args.no_docs or not current else beken_esphome_doc_texts(
-        args.plug, current, new, changelog=not getattr(args, "every", False))[0]
+        args.device, current, new, changelog=not getattr(args, "every", False))[0]
     (ROOT / config_path).write_text(as_built(config, version), encoding="utf-8")
     publish(section, "esphome", new["file"], image,
             {"config": config_path, "version": version, "esphome": release, "libretiny": libretiny,
@@ -1049,16 +1049,16 @@ def command_esphome_beken(args: argparse.Namespace) -> int:
           "git add the new file, and git rm the old.")
     left_to_do([*([] if texts else ["artifacts/README.md: the file's row (name, SHA-256)",
                                     "NOTICES.md: the file's name, the ESPHome release and LibreTiny version",
-                                    f"devices/{args.plug}/esphome.md: the ESPHome release that built the current image",
-                                    "CHANGELOG.md: the plug's ESPHome is this version"]),
+                                    f"devices/{args.device}/esphome.md: the ESPHome release that built the current image",
+                                    "CHANGELOG.md: the device's ESPHome is this version"]),
                 "python3 tests/run.py (tests/repo/test_firmware_pins.py checks the docs)",
                 "the emulator: tools/beken/emulator/fault_suite.py prep, then the scenarios it should pass"])
     return 0
 
 
-# -- the other Espressif plugs' firmware -----------------------------------------
-# What a plug of each chip needs is the same but for its ESPHome. Pinned in
-# firmware.json under "espressif", by the chip's key, and each plug's own
+# -- the other Espressif devices' firmware -----------------------------------------
+# What a device of each chip needs is the same but for its ESPHome. Pinned in
+# firmware.json under "espressif", by the chip's key, and each device's own
 # (its ESPHome, its partition table) under its kind's, as Beken's are.
 ESP32_INTERIM_TAG = "v15.6.0"  # the release the settings template's layout is checked against
 ESP32_INTERIM = chips.ESP32.interim_name  # small enough for the smallest stock slot, a TH Elite's
@@ -1131,7 +1131,7 @@ def esp32_bridge(pins: dict[str, Any]) -> None:
 
 def esp32c3_bridge(pins: dict[str, Any]) -> None:
     """Wrapped for the S60's stock updater, as the file is sent; for another
-    kind of plug the run wraps the same app again for its model."""
+    kind of device the run wraps the same app again for its model."""
     app, version = built_bridge("autoflash-bridge", chips.ESP32C3)
     try:
         wrapped = build_vendor_ota.build_wrapper(app, version=version)
@@ -1200,7 +1200,7 @@ def esp32c3_mover(pins: dict[str, Any]) -> None:
 
 def esp32_template(pins: dict[str, Any]) -> None:
     """The settings template of the interim Tasmota: its record as it starts with
-    no settings, read from its /dl on an emulated plug into
+    no settings, read from its /dl on an emulated device into
     captures/firmware-build/ (docs/adding-a-device.md), with nothing of any network."""
     record = (FIRMWARE_BUILD_CACHE / "template-esp32.bin").read_bytes()
     template = tasmota_settings.make_template(record)
@@ -1213,7 +1213,7 @@ def esp32_template(pins: dict[str, Any]) -> None:
 
 def esp32_tables(pins: dict[str, Any]) -> None:
     """Sonoff's partition tables for the layouts that are not the S60's, from
-    the public dumps of plugs on them: they hold nothing of any one plug."""
+    the public dumps of devices on them: they hold nothing of any one device."""
     from tools.espressif.emulator import public_dump
     for key, dump in (("sonoff-nspanel", "sonoff-nspanel"), ("sonoff-th-elite", "sonoff-th-elite")):
         layout = layouts.of(key)
@@ -1265,7 +1265,7 @@ def command_esphome_every(args: argparse.Namespace) -> int:
         if command is None:
             raise UpdateError(f"no way to build {kind.name}'s ESPHome: esphome_command says how each is built")
         print(f"\n== {kind.name}")
-        code = command(argparse.Namespace(**{**vars(args), "plug": None if command is command_esphome else kind.key,
+        code = command(argparse.Namespace(**{**vars(args), "device": None if command is command_esphome else kind.key,
                                              "every": True}))
         if code:
             return code
@@ -1281,8 +1281,8 @@ def command_esphome_every(args: argparse.Namespace) -> int:
 
 
 def command_esphome_kind(args: argparse.Namespace) -> int:
-    """ESPHome for an Espressif plug other than the S60, from its folder."""
-    kind = kinds.find(args.plug)
+    """ESPHome for an Espressif device other than the S60, from its folder."""
+    kind = kinds.find(args.device)
     chip = chips.of(kind.chip)
     release = stable_release(ESPHOME_REPO, args.version)["tag_name"]
     pins = load_pins()
@@ -1424,10 +1424,10 @@ def esphome_doc_texts(old: dict[str, Any], new: dict[str, Any],
     return texts, version
 
 
-def beken_esphome_doc_texts(plug: str, old: dict[str, Any], new: dict[str, Any],
+def beken_esphome_doc_texts(device: str, old: dict[str, Any], new: dict[str, Any],
                             changelog: bool = True) -> tuple[dict[Path, str], str | None]:
-    """artifacts/README.md, NOTICES.md, the plug's esphome.md and the changelog
-    for a Beken plug's new ESPHome image."""
+    """artifacts/README.md, NOTICES.md, the device's esphome.md and the changelog
+    for a Beken device's new ESPHome image."""
     old_name, new_name = Path(old["file"]).name, Path(new["file"]).name
     readme = ARTIFACTS_README.read_text(encoding="utf-8")
     readme = substituted(readme, rf"^\| `{re.escape(old_name)}` \|.*$",
@@ -1454,14 +1454,14 @@ def beken_esphome_doc_texts(plug: str, old: dict[str, Any], new: dict[str, Any],
                             f"[LibreTiny {new['libretiny']}](https://github.com/libretiny-eu/libretiny/tree/v{new['libretiny']})",
                             "the image's LibreTiny in NOTICES.md")
     texts[NOTICES] = notices[:start] + paragraph
-    page = ROOT / "devices" / plug / "esphome.md"
+    page = ROOT / "devices" / device / "esphome.md"
     text = substituted(page.read_text(encoding="utf-8"), rf"ESPHome \S+ built the current image, `{re.escape(old['file'])}`,",
                        f"ESPHome {new['esphome']} built the current image, `{new['file']}`,", f"{page.name}'s release")
-    texts[page] = substituted(text, r"update_firmware.py esphome \S+ --plug",
-                              f"update_firmware.py esphome {new['esphome']} --plug", f"{page.name}'s command")
+    texts[page] = substituted(text, r"update_firmware.py esphome \S+ --device",
+                              f"update_firmware.py esphome {new['esphome']} --device", f"{page.name}'s command")
     if not changelog:
         return texts, None
-    version = changelog_with(moved("ESPHome", new["esphome"], old["esphome"], kinds.find(plug).name), texts)
+    version = changelog_with(moved("ESPHome", new["esphome"], old["esphome"], kinds.find(device).name), texts)
     return texts, version
 
 
@@ -1531,21 +1531,21 @@ def main(argv: list[str] | None = None) -> int:
                               help="publish this build's bootloader where it differs (see the docs first)")
     build_parser.add_argument("--dry-run", action="store_true", help="build and check, publish nothing")
     build_parser.add_argument("--no-docs", action="store_true", help="leave the docs to be written by hand")
-    build_parser.add_argument("--plug", choices=sorted(kind.key for kind in kinds.EVERY if kind is not kinds.SONOFF_S60),
-                              help="another plug's ESPHome instead of the S60's")
+    build_parser.add_argument("--device", choices=sorted(kind.key for kind in kinds.EVERY if kind is not kinds.SONOFF_S60),
+                              help="another device's ESPHome instead of the S60's")
     build_parser.add_argument("--every-device", action="store_true",
                               help="every device's ESPHome, as the weekly update builds them")
     build_parser.set_defaults(run=command_esphome)
-    esp32 = commands.add_parser("esp32", help="what any plug with a classic ESP32 needs")
+    esp32 = commands.add_parser("esp32", help="what any device with a classic ESP32 needs")
     esp32.add_argument("parts", nargs="*", help=f"of {', '.join(ESP32_PARTS)} (default: all of them)")
     esp32.set_defaults(run=command_chip)
-    esp32c3 = commands.add_parser("esp32c3", help="what the ESP32-C3's plugs need beyond the other commands")
+    esp32c3 = commands.add_parser("esp32c3", help="what the ESP32-C3's devices need beyond the other commands")
     esp32c3.add_argument("parts", nargs="*", help=f"of {', '.join(ESP32C3_PARTS)} (default: all of them)")
     esp32c3.set_defaults(run=command_chip)
-    openbeken = commands.add_parser("openbeken", help="build and publish OpenBeken for a Beken plug")
+    openbeken = commands.add_parser("openbeken", help="build and publish OpenBeken for a Beken device")
     openbeken.add_argument("version", nargs="?", help="e.g. 1.18.321, a stable release to move to (default: "
                                                       "the commit pinned, else the latest release)")
-    openbeken.add_argument("--plug", choices=sorted(BEKEN_BUILDS), default="sonoff-s61")
+    openbeken.add_argument("--device", choices=sorted(BEKEN_BUILDS), default="sonoff-s61")
     openbeken.add_argument("--dry-run", action="store_true", help="build and check, publish nothing")
     openbeken.add_argument("--no-docs", action="store_true", help="leave the docs to be written by hand")
     openbeken.add_argument("--every-device", action="store_true",
@@ -1555,11 +1555,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "openbeken" and args.every_device:
         args.run = command_openbeken_every
     if args.command == "esphome" and args.every_device:
-        if args.plug or args.mover:
-            parser.error("--every-device builds every device's own ESPHome: not with --plug or --mover")
+        if args.device or args.mover:
+            parser.error("--every-device builds every device's own ESPHome: not with --device or --mover")
         args.run = command_esphome_every
-    elif args.command == "esphome" and args.plug:
-        args.run = command_esphome_beken if args.plug in BEKEN_BUILDS else command_esphome_kind
+    elif args.command == "esphome" and args.device:
+        args.run = command_esphome_beken if args.device in BEKEN_BUILDS else command_esphome_kind
     if shutil.which("docker") is None and args.command in ("esphome", "openbeken", "esp32", "esp32c3"):
         print("Firmware is built in Docker images: Docker is needed.", file=sys.stderr)
         return 2

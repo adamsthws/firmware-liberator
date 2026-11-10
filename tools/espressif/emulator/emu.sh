@@ -1,17 +1,17 @@
 #!/bin/bash
-# Start a virtual Espressif plug and a "computer" to convert it from, in Docker.
+# Start a virtual Espressif device and a "computer" to convert it from, in Docker.
 #
-#   tools/espressif/emulator/emu.sh            plug offline: nothing reaches the internet
-#   tools/espressif/emulator/emu.sh --cloud    plug and tool online (real plug must be unplugged)
+#   tools/espressif/emulator/emu.sh            device offline: nothing reaches the internet
+#   tools/espressif/emulator/emu.sh --cloud    device and tool online (real device must be unplugged)
 #   tools/espressif/emulator/emu.sh --stub-cloud  a local eWeLink stub serves this instance alone, so
-#                                    it comes online with no real cloud; the plug stays
+#                                    it comes online with no real cloud; the device stays
 #                                    offline (docs/cloud-stub.md). Not with --cloud.
-#   tools/espressif/emulator/emu.sh --yes      with --cloud: the real plug is known to be unplugged; don't ask
-#   tools/espressif/emulator/emu.sh --plug MAC which backed-up plug to run; asked when there are several
-#   tools/espressif/emulator/emu.sh --plug-dir DIR  a plug with no Sonoff backup: a public one
-#                                    (sanitise_plug.py), whose own flash and eFuses are in DIR
-#   tools/espressif/emulator/emu.sh --fresh    put the plug back to its Sonoff backup, and forget the run and the account
-#   tools/espressif/emulator/emu.sh --pcap     also record the plug's Wi-Fi traffic (captures/emulation/state/logs)
+#   tools/espressif/emulator/emu.sh --yes      with --cloud: the real device is known to be unplugged; don't ask
+#   tools/espressif/emulator/emu.sh --device MAC which backed-up device to run; asked when there are several
+#   tools/espressif/emulator/emu.sh --device-dir DIR  a device with no Sonoff backup: a public one
+#                                    (sanitise_device.py), whose own flash and eFuses are in DIR
+#   tools/espressif/emulator/emu.sh --fresh    put the device back to its Sonoff backup, and forget the run and the account
+#   tools/espressif/emulator/emu.sh --pcap     also record the device's Wi-Fi traffic (captures/emulation/state/logs)
 #   tools/espressif/emulator/emu.sh --rebuild  rebuild the image first
 #   tools/espressif/emulator/emu.sh --detach   start in the background; join: docker exec -it -u ubuntu autoflash-emu tmux attach -t autoflash
 #   tools/espressif/emulator/emu.sh --no-firewall  without the "computer's" firewall (ufw), on by default
@@ -21,12 +21,12 @@
 #                                    container (autoflash-emu-N), state (state-N) and browser
 #                                    port (8080+N), so tests can run side by side
 #
-# Runs a plug from its Sonoff backup, which every conversion keeps in
-# captures/plugs/<MAC>/sonoff-backup/ (or a dump in captures/emulation/; see
-# docs/emulator.md). The backup is only read: the plug runs a copy. Everything
+# Runs a device from its Sonoff backup, which every conversion keeps in
+# captures/devices/<MAC>/sonoff-backup/ (or a dump in captures/emulation/; see
+# docs/emulator.md). The backup is only read: the device runs a copy. Everything
 # the emulator writes stays in captures/emulation/state/, which is private and
 # Git-ignored (from a Windows checkout under WSL: ~/.local/share/autoflash-emu/state,
-# on WSL's own disk); each plug's flash is kept there between runs.
+# on WSL's own disk); each device's flash is kept there between runs.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
@@ -35,7 +35,7 @@ ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 EMU=$ROOT/captures/emulation
 STATE=$EMU/state
 # A Windows checkout under WSL (/mnt/c, reached through 9p) is far too slow for
-# the plug's flash: a write can take 100 ms, and the bridge then trips its
+# the device's flash: a write can take 100 ms, and the bridge then trips its
 # interrupt watchdog while flashing Tasmota. Its state lives on WSL's own disk.
 case "$ROOT" in /mnt/[a-z]/*) STATE=$HOME/.local/share/autoflash-emu/state ;; esac
 PY=$ROOT/.venv/bin/python
@@ -46,13 +46,13 @@ PY=$ROOT/.venv/bin/python
 IMAGE=${AUTOFLASH_EMU_IMAGE:-autoflash-emu}
 NAME=autoflash-emu PORT=8080 LINK_PORT=7860
 
-cloud=0 fresh=0 pcap=0 rebuild=0 firewall=1 windows=0 yes=0 stub=0 tty=-it plug="" plug_dir="" instance=""
+cloud=0 fresh=0 pcap=0 rebuild=0 firewall=1 windows=0 yes=0 stub=0 tty=-it device="" device_dir="" instance=""
 while [ $# -gt 0 ]; do
     arg=$1
     case "$arg" in
-    --plug) [ $# -ge 2 ] || { echo "--plug needs a MAC address" >&2; exit 2; }; plug=$2; shift ;;
-    --plug=*) plug=${arg#--plug=} ;;
-    --plug-dir=*) plug_dir=$(cd "${arg#--plug-dir=}" && pwd) ;;
+    --device) [ $# -ge 2 ] || { echo "--device needs a MAC address" >&2; exit 2; }; device=$2; shift ;;
+    --device=*) device=${arg#--device=} ;;
+    --device-dir=*) device_dir=$(cd "${arg#--device-dir=}" && pwd) ;;
     --instance) [ $# -ge 2 ] || { echo "--instance needs a number, 1-99" >&2; exit 2; }; instance=$2; shift ;;
     --instance=*) instance=${arg#--instance=} ;;
     --cloud) cloud=1 ;;
@@ -98,84 +98,90 @@ if docker ps -q --filter "name=^$NAME$" | grep -q .; then
     exit 1
 fi
 
-# -- which plug ------------------------------------------------------------------
+# -- which device ------------------------------------------------------------------
 # shellcheck disable=SC2174  # each folder named is made 0700; its parents need not be
-mkdir -p -m 0700 "$STATE" "$STATE/logs" "$STATE/plugs"
+mkdir -p -m 0700 "$STATE" "$STATE/logs" "$STATE/devices"
 efuse_mac() {
     PYTHONPATH=$ROOT "$PY" -c 'import sys; from tools.espressif.flashmap import mac_of_efuse; print(mac_of_efuse(open(sys.argv[1],"rb").read()))' "$1"
 }
-# The plug whose flash is in $STATE/flash.bin. From before plugs were chosen,
+# The device whose flash is in $STATE/flash.bin. From before devices were chosen,
 # that flash came from the dump in captures/emulation/.
-if [ -f "$STATE/plug" ]; then
-    was=$(sed -n 2p "$STATE/plug")
+# (An instance left by a checkout before 2.4.0 names it in $STATE/plug.)
+if [ -f "$STATE/plug" ] && [ ! -e "$STATE/device" ]; then mv "$STATE/plug" "$STATE/device"; fi
+if [ -f "$STATE/device" ]; then
+    was=$(sed -n 2p "$STATE/device")
 elif [ -f "$EMU/efuse.bin" ]; then
     was=$(efuse_mac "$EMU/efuse.bin")
 else
     was=""
 fi
-if [ -n "$plug_dir" ]; then
-    # A public plug: nothing of Sonoff's anywhere. What reads the Sonoff
+if [ -n "$device_dir" ]; then
+    # A public device: nothing of Sonoff's anywhere. What reads the Sonoff
     # backup - the stub's device identity, the log's redaction - is given the
-    # plug's own flash, in which they find nothing; it cannot go back to Sonoff.
-    [ -f "$plug_dir/flash.bin" ] && [ -f "$plug_dir/efuse.bin" ] || {
-        echo "--plug-dir: $plug_dir has no flash.bin and efuse.bin" >&2; exit 2; }
-    [ "$fresh" = 0 ] || { echo "--fresh: a public plug has no Sonoff backup to go back to" >&2; exit 2; }
-    printf '%s\n%s\n' "$plug_dir" "$(efuse_mac "$plug_dir/efuse.bin")" > "$STATE/plug"
+    # device's own flash, in which they find nothing; it cannot go back to Sonoff.
+    [ -f "$device_dir/flash.bin" ] && [ -f "$device_dir/efuse.bin" ] || {
+        echo "--device-dir: $device_dir has no flash.bin and efuse.bin" >&2; exit 2; }
+    [ "$fresh" = 0 ] || { echo "--fresh: a public device has no Sonoff backup to go back to" >&2; exit 2; }
+    printf '%s\n%s\n' "$device_dir" "$(efuse_mac "$device_dir/efuse.bin")" > "$STATE/device"
 else
-    "$PY" -I "$ROOT/tools/espressif/emulator/choose_plug.py" --out "$STATE/plug" ${plug:+--plug "$plug"} || exit $?
+    "$PY" -I "$ROOT/tools/espressif/emulator/choose_device.py" --out "$STATE/device" ${device:+--device "$device"} || exit $?
 fi
-SRC=$(sed -n 1p "$STATE/plug")
-mac=$(sed -n 2p "$STATE/plug")
+SRC=$(sed -n 1p "$STATE/device")
+mac=$(sed -n 2p "$STATE/device")
 # The chip it is for, from its flash: which QEMU runs it.
 chip=$(PYTHONPATH=$ROOT "$PY" -c 'import sys; from tools.espressif.flashmap import chip_of; print(chip_of(open(sys.argv[1],"rb").read(0x2000)))' "$SRC/flash.bin")
-# Another plug than last time: its own flash, kept from its last run, comes
+# Another device than last time: its own flash, kept from its last run, comes
 # back, and the one that was running is put by for its next - each with the
 # mode its flash was built for (below).
+# (Kept in plugs/ by a checkout before 2.4.0: the same folder.)
+if [ -d "$STATE/plugs" ] && [ ! -e "$STATE/devices" ]; then mv "$STATE/plugs" "$STATE/devices"; fi
 if [ "$mac" != "$was" ]; then
     if [ -n "$was" ] && [ -f "$STATE/flash.bin" ]; then
-        mv "$STATE/flash.bin" "$STATE/plugs/${was//:/-}.bin"
-        if [ -f "$STATE/.flash-mode" ]; then mv "$STATE/.flash-mode" "$STATE/plugs/${was//:/-}.mode"; fi
+        mv "$STATE/flash.bin" "$STATE/devices/${was//:/-}.bin"
+        if [ -f "$STATE/.flash-mode" ]; then mv "$STATE/.flash-mode" "$STATE/devices/${was//:/-}.mode"; fi
     fi
-    if [ -f "$STATE/plugs/${mac//:/-}.bin" ]; then
-        mv "$STATE/plugs/${mac//:/-}.bin" "$STATE/flash.bin"
+    if [ -f "$STATE/devices/${mac//:/-}.bin" ]; then
+        mv "$STATE/devices/${mac//:/-}.bin" "$STATE/flash.bin"
         rm -f "$STATE/.flash-mode"
-        if [ -f "$STATE/plugs/${mac//:/-}.mode" ]; then mv "$STATE/plugs/${mac//:/-}.mode" "$STATE/.flash-mode"; fi
+        if [ -f "$STATE/devices/${mac//:/-}.mode" ]; then mv "$STATE/devices/${mac//:/-}.mode" "$STATE/.flash-mode"; fi
     fi
 fi
 # A stub run's flash differs from a cloud run's: it trusts the stub's CA and
-# points dispatch at the stub. A plug's flash is the plug as the last run left
+# points dispatch at the stub. A device's flash is the device as the last run left
 # it, so it is never thrown away to switch: --fresh does that, knowingly.
 # (A flash from before modes were recorded is a cloud one.)
-# A public plug's runs nothing of Sonoff's, so it is the same either way.
-mode=plain; [ "$stub" = 1 ] && mode=stub; [ -n "$plug_dir" ] && mode=public
+# A public device's runs nothing of Sonoff's, so it is the same either way.
+mode=plain; [ "$stub" = 1 ] && mode=stub; [ -n "$device_dir" ] && mode=public
 built_for=$(cat "$STATE/.flash-mode" 2>/dev/null || echo plain)
 if [ "$fresh" = 0 ] && [ -f "$STATE/flash.bin" ] && [ "$built_for" != "$mode" ]; then
     want=$([ "$stub" = 1 ] && echo "--stub-cloud" || echo "a run without --stub-cloud")
-    echo "This instance's plug was set up for $([ "$built_for" = stub ] && echo "the local stub" || echo "the real cloud")," >&2
+    echo "This instance's device was set up for $([ "$built_for" = stub ] && echo "the local stub" || echo "the real cloud")," >&2
     echo "not for $want. Add --fresh to put it back to its Sonoff backup, or use another --instance." >&2
     exit 1
 fi
-# The plug's product model (S60TPG UK, say) is eWeLink's name for it,
+# The device's product model (S60TPG UK, say) is eWeLink's name for it,
 # given when it was paired, and is not in its dump. The stub reports the one
-# eWeLink gave this plug in the tool's own records of earlier runs (a real
-# conversion's, a kept plug's, an instance's), or
+# eWeLink gave this device in the tool's own records of earlier runs (a real
+# conversion's, a kept device's, an instance's), or
 # AUTOFLASH_EMU_STUB_PRODUCT_MODEL; with neither, none - and the run's report
 # leaves it blank rather than guess.
 product_seen() {
     "$PY" -I - "$ROOT/captures" "$EMU/saved" "$(dirname "$STATE")" "${mac//:/-}" <<'EOF'
 import glob, json, os, re, sys
-captures, saved, states, plug = sys.argv[1:]
+captures, saved, states, device = sys.argv[1:]
 seen = []
 # A test copy of a public dump says what it is a copy of (public_dump.py).
 try:
-    with open(f"{captures}/plugs/{plug}/plug.json") as f:
+    with open(f"{captures}/devices/{device}/device.json") as f:
         model = str(json.load(f).get("product_model") or "").strip().upper()
     if model:
         seen.append((float("inf"), model))
 except (OSError, ValueError):
     pass
-for runs in (f"{captures}/plugs/{plug}/runs", f"{saved}/*/captures/plugs/{plug}/runs",
-             f"{states}/state*/work/captures/plugs/{plug}/runs"):
+# A device kept, or an instance left, by a checkout before 2.4.0 has its
+# records in plugs/ until the tool next runs there.
+for runs in (f"{captures}/devices/{device}/runs", f"{saved}/*/captures/*s/{device}/runs",
+             f"{states}/state*/work/captures/*s/{device}/runs"):
     for path in glob.glob(f"{runs}/*/autoflash-state.json"):
         try:
             with open(path) as f:
@@ -205,14 +211,14 @@ ensure=(ensure "$IMAGE")
 [ "$rebuild" = 0 ] || ensure+=(--rebuild)
 "$ROOT/tools/espressif/emulator/image.sh" "${ensure[@]}"
 
-# -- the plug's flash and eFuses ---------------------------------------------
+# -- the device's flash and eFuses ---------------------------------------------
 if [ "$fresh" = 1 ]; then
     rm -rf "$STATE/flash.bin" "$STATE/work/captures" "$STATE/.flash-mode"
-    echo "The plug is back to its Sonoff backup; the previous run and eWeLink account are forgotten."
+    echo "The device is back to its Sonoff backup; the previous run and eWeLink account are forgotten."
 fi
 if [ "$stub" = 1 ]; then
     # Our own CA + leaf for the stub domain (once; kept stable - it is flashed in).
-    # The plug's own identity is read from its dump inside the container, so the
+    # The device's own identity is read from its dump inside the container, so the
     # LAN key stays on that network (see entrypoint.sh).
     # A firmware trusting eWeLink's RSA CA is given an RSA one: a classic ESP32's has
     # the stack only for that, and the BASICR4's turns down an EC one (unknown_ca).
@@ -241,7 +247,7 @@ if [ ! -f "$STATE/flash.bin" ]; then
     echo "$mode" > "$STATE/.flash-mode"
 fi
 # The firmware the stub offers as eWeLink's latest, for a run going back to
-# Sonoff's with no backup: the plug's own, made as the plug's is (firmware.py).
+# Sonoff's with no backup: the device's own, made as the device's is (firmware.py).
 if [ "$stub" = 1 ]; then
     "$PY" -I "$ROOT/$STUB_DIR/firmware.py" "$SRC/flash.bin" "$STATE/stub-firmware.bin" \
         --trust-ca "$STUB_CA/ca.crt" --product "$product" || rm -f "$STATE/stub-firmware.bin"
@@ -272,28 +278,28 @@ copy_checkout "$ROOT" "$STATE/work"
 # user's would (it downloads the official files: --cloud or --stub-cloud).
 # The eWeLink account email last used here (captures/settings.json) is offered
 # to save typing it - but not with --fresh, which starts as a new user would.
-# Not to a public plug's run, which is kept as public (--plug-dir).
-if [ "$fresh" = 0 ] && [ -z "$plug_dir" ] && [ ! -f "$STATE/work/captures/settings.json" ] \
+# Not to a public device's run, which is kept as public (--device-dir).
+if [ "$fresh" = 0 ] && [ -z "$device_dir" ] && [ ! -f "$STATE/work/captures/settings.json" ] \
         && [ -f "$ROOT/captures/settings.json" ]; then
     cp "$ROOT/captures/settings.json" "$STATE/work/captures/"
 fi
 
 # -- the cloud ----------------------------------------------------------------
 if [ "$cloud" = 1 ] && [ "$yes" = 1 ]; then
-    echo "  --yes: the real plug is taken to be unplugged, as it must be while this runs."
+    echo "  --yes: the real device is taken to be unplugged, as it must be while this runs."
 elif [ "$cloud" = 1 ]; then
     cat <<EOF
 
-  The emulated plug is a clone of your real plug: same eWeLink device id,
+  The emulated device is a clone of your real device: same eWeLink device id,
   keys and MAC. Online at the same time, the two fight over
   one device in your eWeLink account, and an upgrade the conversion sends
-  could reach the real plug instead.
+  could reach the real device instead.
 
-  Unplug the real plug now, and keep it unplugged while this runs.
+  Unplug the real device now, and keep it unplugged while this runs.
 
 EOF
     read -r -p "  Type 'unplugged' once it is: " answer
-    [ "$answer" = unplugged ] || { echo "Not confirmed; start without --cloud for an offline plug."; exit 1; }
+    [ "$answer" = unplugged ] || { echo "Not confirmed; start without --cloud for an offline device."; exit 1; }
 fi
 
 # Your browser, and with --windows the wire windows_link.py connects to.
@@ -312,9 +318,9 @@ stubvol=()
 # held only while this runs (systemd-inhibit), changing no setting.
 awake=()
 if [ "$tty" = -it ] && systemd-inhibit --what=sleep:idle true 2>/dev/null; then
-    awake=(systemd-inhibit --what=sleep:idle --who="Autoflash emulator" --why="the emulated plug's conversion" --mode=block)
+    awake=(systemd-inhibit --what=sleep:idle --who="Autoflash emulator" --why="the emulated device's conversion" --mode=block)
 fi
-# Capped: the plug, its router and the tool used about 80 MB between them, on
+# Capped: the device, its router and the tool used about 80 MB between them, on
 # an ESP32-C3.
 # The emulator's own Docker network, a /24 (AUTOFLASH_EMU_NETWORK names another).
 # The conversion tool in the container sweeps the network it is on at its real
@@ -343,11 +349,11 @@ for candidate in ("198.18.60.0/24", "172.31.60.0/24", "10.231.60.0/24"):
         docker network inspect "$NETWORK" >/dev/null
 fi
 model=${product:-$(product_seen)}
-# Some stock firmware stops at start-up without the external RAM its plug has.
+# Some stock firmware stops at start-up without the external RAM its device has.
 psram=$(PYTHONPATH=$ROOT "$PY" -c 'import sys
 from tools.autoflash import kinds
 print(next((k.psram_mb for k in kinds.EVERY if k.psram_mb and k.product_of(sys.argv[1])), ""))' "$model")
-# Its kind, whose wiring the plug's board (board.py) takes its meter from.
+# Its kind, whose wiring the device's board (board.py) takes its meter from.
 kind=$(PYTHONPATH=$ROOT "$PY" -c 'import sys
 from tools.autoflash import kinds
 print(next((k.key for k in kinds.EVERY if k.product_of(sys.argv[1])), ""))' "$model")
@@ -358,7 +364,7 @@ kind = next((k for k in kinds.EVERY if k.adc_readings and k.product_of(sys.argv[
 print(" ".join(f"{name}={value}" for name, value in kind.adc_readings) if kind else "")' "$model")
 # QEMU for the dual-core ESP32 takes more than the 256 MB the ESP32-C3's stays
 # in: over it, the kernel kills QEMU part way through a download, which looks
-# like the plug restarting. Measured through every classic ESP32's conversions it
+# like the device restarting. Measured through every classic ESP32's conversions it
 # peaked at 250 MB, so 350 MB is its limit.
 memory=256m; [ "$chip" = esp32 ] && memory=350m
 # What one was measured to use with its computer (C3 146 MB, classic ESP32 249 MB), plus 100.
@@ -370,8 +376,8 @@ exec "${awake[@]}" docker run --rm $tty --name "$NAME" --hostname autoflash-emu-
     --sysctl net.ipv4.ip_forward="$(( cloud || windows ))" \
     "${publish[@]}" "${dev[@]}" \
     -v "$STATE:/state" -v "$SRC/flash.bin:/secrets/stock-flash.bin:ro" "${stubvol[@]}" \
-    -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e PLUG_MAC="$mac" -e CHIP="$chip" -e PSRAM="$psram" -e ADC="$adc" \
-    -e PLUG_KIND="$kind" -e CLOUD="$cloud" -e PCAP="$pcap" -e FIREWALL="$firewall" -e WINDOWS="$windows" \
+    -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e DEVICE_MAC="$mac" -e CHIP="$chip" -e PSRAM="$psram" -e ADC="$adc" \
+    -e DEVICE_KIND="$kind" -e CLOUD="$cloud" -e PCAP="$pcap" -e FIREWALL="$firewall" -e WINDOWS="$windows" \
     -e STUB_CLOUD="$stub" -e STUB_CLOUD_DIR="$STUB_DIR" -e STUB_PRODUCT_MODEL="$product" \
     -e AUTOFLASH_EMULATOR_URL="http://localhost:$PORT" \
     "$IMAGE"

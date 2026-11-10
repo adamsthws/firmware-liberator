@@ -7,10 +7,10 @@ for every device the tool converts, so a new one has it by being added.
         change since COMMIT could affect, or every one that has something to run
         from (NO_DUMP names those that have not)
     python -I tools/repo/emulator_check.py DEVICE [--instances 1,2]
-        its check: each final firmware installed, then each plug taken to the
+        its check: each final firmware installed, then each device taken to the
         other, two ways side by side (a way goes on as soon as its own run is
         done). Nothing here needs a secret or an account: an S60 starts from the
-        published public plugs, any other Espressif device from its public dump
+        published public devices, any other Espressif device from its public dump
         on the cloud stub, and an S61 from upstream's public dump.
 """
 
@@ -54,7 +54,7 @@ def family_of(kind: kinds.Kind) -> str:
 def affected(kind: kinds.Kind, changed: list[str]) -> bool:
     """Whether a change to these paths could change how `kind` converts."""
     family = family_of(kind)
-    # A chip's folder holds what every plug on it shares: its mover.
+    # A chip's folder holds what every device on it shares: its mover.
     own = (f"devices/{kind.key}/", f"devices/{kind.chip}/", f"tools/{family}/", *SHARED)
     return any(path.startswith(own) for path in changed)
 
@@ -74,18 +74,18 @@ def jobs(changed: list[str] | None) -> list[dict[str, str]]:
 
 def check_public_dump(kind: kinds.Kind, instances: list[int]) -> int:
     """An Espressif device from its public dump, on the cloud stub."""
-    from tools.espressif.emulator import public_dump, public_plugs
+    from tools.espressif.emulator import public_dump, public_devices
 
     public_dump.make(kind.key)
     dump = public_dump.DUMPS.get(kind.key) or public_dump.UPDATES[kind.key]
-    stub = ("--stub-cloud", f"--plug={dump.mac}")
+    stub = ("--stub-cloud", f"--device={dump.mac}")
 
     def way(instance: int, firmwares: tuple[str, ...]) -> int:
         saved = None
         for firmware in firmwares:
             keep = f"check-{kind.key}-{instance}-{firmware}"
             log = LOGS / kind.key / f"{instance}-{firmware}.log"
-            converted, said = public_plugs.run(instance, saved, firmware, keep, log,
+            converted, said = public_devices.run(instance, saved, firmware, keep, log,
                                                extra=(*stub, *(() if saved else ("--fresh",))))
             start = f"on {saved.rsplit('-', 1)[1]}" if saved else "from Sonoff's"
             print(f"{'PASS' if converted else 'FAIL'}  {kind.key} {start} to {firmware}: {said}", flush=True)
@@ -95,12 +95,12 @@ def check_public_dump(kind: kinds.Kind, instances: list[int]) -> int:
         return 0
 
     try:
-        return sum(public_plugs.side_by_side([lambda i=instance, w=firmwares: way(i, w) for firmwares, instance
+        return sum(public_devices.side_by_side([lambda i=instance, w=firmwares: way(i, w) for firmwares, instance
                                               in zip(ESPRESSIF_WAYS, instances)]))
     finally:
         for instance in instances:
             for firmware in ("tasmota", "esphome"):
-                subprocess.run(["rm", "-rf", str(public_plugs.SAVED / f"check-{kind.key}-{instance}-{firmware}")],
+                subprocess.run(["rm", "-rf", str(public_devices.SAVED / f"check-{kind.key}-{instance}-{firmware}")],
                                check=False)
 
 
@@ -111,12 +111,12 @@ def check_device(kind: kinds.Kind, instances: list[int]) -> int:
     from tools.espressif.emulator import public_dump
     if kind.key in public_dump.DUMPS or kind.key in public_dump.UPDATES:
         return check_public_dump(kind, instances)
-    # The public plugs, made from a plug's own backup, hold nothing of Sonoff's.
-    plugs = str(ROOT / "tools/espressif/emulator/public_plugs.py")
+    # The public devices, made from a device's own backup, hold nothing of Sonoff's.
+    devices = str(ROOT / "tools/espressif/emulator/public_devices.py")
     numbers = ["--instances", ",".join(map(str, instances))]
     fetched = (ROOT / "captures/emulation/saved/public-pre-final-esphome").exists() or \
-        subprocess.call([sys.executable, "-I", plugs, *numbers, "fetch"]) == 0
-    return subprocess.call([sys.executable, "-I", plugs, *numbers, "test"]) if fetched else 1
+        subprocess.call([sys.executable, "-I", devices, *numbers, "fetch"]) == 0
+    return subprocess.call([sys.executable, "-I", devices, *numbers, "test"]) if fetched else 1
 
 
 def main(argv: list[str] | None = None) -> int:

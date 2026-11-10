@@ -1,4 +1,4 @@
-"""cloud_stub.py, the emulated plug's eWeLink."""
+"""cloud_stub.py, the emulated device's eWeLink."""
 
 import json
 import sys
@@ -12,7 +12,7 @@ from unittest import mock
 class CloudStubTests(unittest.TestCase):
     """The S61's stub serves a leaf for its own router's address."""
 
-    def test_a_plug_started_on_another_network_is_served_a_leaf_for_it(self):
+    def test_a_device_started_on_another_network_is_served_a_leaf_for_it(self):
         made = []
 
         def make_certs(folder, address):
@@ -35,7 +35,7 @@ class CloudStubTests(unittest.TestCase):
 
 
 class StubMemoryTests(unittest.TestCase):
-    def test_what_a_plug_said_of_itself_is_kept_across_a_restart(self):
+    def test_what_a_device_said_of_itself_is_kept_across_a_restart(self):
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.dict(sys.modules, {"cloud_online": SimpleNamespace(_make_certs=None)}):
             sys.modules.pop("cloud_stub", None)
@@ -87,7 +87,7 @@ class StubModelTests(unittest.TestCase):
             with mock.patch.object(self.stub.stock_points, "app_of_flash", side_effect=ValueError):
                 self.assertEqual(self.stub.device(flash, Path(tmp))["model"], "SN-BK7238-S61-01")
 
-    def test_what_the_plug_says_of_its_model_gives_way(self):
+    def test_what_the_device_says_of_its_model_gives_way(self):
         import stub_server
         with tempfile.TemporaryDirectory() as tmp:
             stub = stub_server.Stub("192.0.2.1", 443, 10)
@@ -98,7 +98,7 @@ class StubModelTests(unittest.TestCase):
 
 
 class StubOfferTests(unittest.TestCase):
-    """The stub offers the plug its own Sonoff firmware, as eWeLink offers a real
+    """The stub offers the device its own Sonoff firmware, as eWeLink offers a real
     one its official file: what a readout reverts with, and a run back to Sonoff
     with no backup fetches. Made once, from the stock firmware it first started."""
 
@@ -134,7 +134,7 @@ class StubOfferTests(unittest.TestCase):
             with mock.patch.object(self.stub.stock_app, "stock_rbl", side_effect=ValueError):
                 self.assertIsNone(self.stub.offered(flash, Path(tmp), "SN-BK7238-S61-01"))
 
-    def test_the_plug_asking_as_one_behind_is_offered_it_and_given_it(self):
+    def test_the_device_asking_as_one_behind_is_offered_it_and_given_it(self):
         import stub_server
         update = SimpleNamespace(version="1.0.2", data=b"the fota")
         stub = stub_server.Stub("192.0.2.1", 443, 10, {"model": "SN-BK7238-S61-01"}, update)

@@ -55,14 +55,14 @@ class PruneTests(unittest.TestCase):
             self.assertFalse(path.exists(), path)
 
     def test_a_backup_is_kept_wherever_it_is(self):
-        backup = self.make("emulation/state-3/work/captures/plugs/12-34-56-ab-cd-ef/sonoff-backup/flash.bin")
+        backup = self.make("emulation/state-3/work/captures/devices/12-34-56-ab-cd-ef/sonoff-backup/flash.bin")
         other = self.make("emulation/state-3/flash.bin")
         self.run_it("--delete")
         self.assertTrue(backup.exists())
         self.assertFalse(other.exists())
 
     def test_what_is_not_listed_is_never_touched(self):
-        kept = [self.make("plugs/12-34-56-ab-cd-ef/sonoff-backup/flash.bin"), self.make("emulation/saved/suite-esphome/flash.bin"),
+        kept = [self.make("devices/12-34-56-ab-cd-ef/sonoff-backup/flash.bin"), self.make("emulation/saved/suite-esphome/flash.bin"),
                 self.make("emulation/beken/firmwares/dump.bin"),
                 self.make("emulation/beken/saved/openbeken/flash.bin"), self.make("settings.json"),
                 self.make("emulation/public-dumps/d.bin")]

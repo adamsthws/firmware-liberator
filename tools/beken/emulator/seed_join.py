@@ -1,6 +1,6 @@
 """Seed Wi-Fi credentials and join our emulated AP — the faithful way.
 
-A stock S61 boots unprovisioned and waits. This makes it a *provisioned* plug by
+A stock S61 boots unprovisioned and waits. This makes it a *provisioned* device by
 answering the firmware's own credential read: it hooks `ef_get_env_blob`
 (EasyFlash V4) and, for the keys `wifi-ssid` / `wifi-pass`, returns the
 SSID/passphrase we choose (exactly as a real provisioning store would have left
@@ -8,12 +8,12 @@ them). Nothing else is forced — the firmware then runs its normal provisioned
 boot path.
 
 The fork's virtual peer is attached as a WPA2-PSK access point with the same
-SSID/passphrase, so the plug performs the real sequence end to end:
+SSID/passphrase, so the device performs the real sequence end to end:
 
     read creds -> station mode -> authenticate -> associate -> WPA2 four-way
     handshake -> IPv4 DHCP -> gets an address on our network
 
-Verified 2026-10-27: the plug associates (`encrypted` link), DHCP hands it
+Verified 2026-10-27: the device associates (`encrypted` link), DHCP hands it
 192.168.1.100, and it then begins its post-join activity (Matter `_matterc` mDNS;
 the eWeLink cloud dispatch needs the eWeLink identity too — see the main doc).
 
@@ -24,9 +24,9 @@ the BekenEmulator fork.
   $(tools/beken/emulator/beken-emu.sh python) tools/beken/emulator/seed_join.py
   SSID=MyNet PASS=mypassword CH=6 SECS=40 python3 seed_join.py
 
-SECS=0 runs the plug until it is stopped.
+SECS=0 runs the device until it is stopped.
 
-TAP=tap0 bridges the plug to that TAP device (the fork's --net-tap) instead of
+TAP=tap0 bridges the device to that TAP device (the fork's --net-tap) instead of
 the emulator's own network: the host's DHCP server gives it its address, and
 the summary reports what that network saw.
 """
@@ -108,7 +108,7 @@ mac.tick = types.MethodType(hooked_tick, mac)
 
 w = threading.Thread(target=emu.run, daemon=True); w.start()
 if SECS <= 0:
-    # As long as it is wanted: a plug on a network (beken-emu.sh plug).
+    # As long as it is wanted: a device on a network (beken-emu.sh device).
     w.join()
 time.sleep(SECS)
 try:
@@ -132,12 +132,12 @@ if TAP:
     # The host's network gave the address: its DHCP server's log has it.
     stats = net.summary()
     ok = encrypted and stats["to_host"] and stats["to_device"]
-    print("  bridged to %s: %d frames to the host, %d to the plug" % (TAP, stats["to_host"], stats["to_device"]))
-    print("  %s: the plug associated (WPA2) and %s traffic with the host's network."
+    print("  bridged to %s: %d frames to the host, %d to the device" % (TAP, stats["to_host"], stats["to_device"]))
+    print("  %s: the device associated (WPA2) and %s traffic with the host's network."
           % ("PASS" if ok else "INCOMPLETE", "exchanged" if ok else "did NOT exchange"), flush=True)
 else:
     ok = got and encrypted
-    print("  %s: the plug associated (WPA2) and %s an IP on our network."
+    print("  %s: the device associated (WPA2) and %s an IP on our network."
           % ("PASS" if ok else "INCOMPLETE", "got" if got else "did NOT get"), flush=True)
 pat = re.compile(r"DHCP:|four-way|associated|authenticated|got 192|device IP", re.I)
 for ln in netlog:

@@ -1,7 +1,7 @@
-"""A plug running ESPHome, whatever its chip family: its web page, its
+"""A device running ESPHome, whatever its chip family: its web page, its
 entities' REST paths and its native API (signal, Wi-Fi, device info, the
-actions this project's builds add).  The images an Espressif plug is given
-are routes/espressif/images.py's, a Beken plug's routes/beken/images.py's.
+actions this project's builds add).  The images an Espressif device is given
+are routes/espressif/images.py's, a Beken device's routes/beken/images.py's.
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ from . import noise
 # Its web page (web_server version 3) and REST paths, named after each entity's
 # name in devices/sonoff-s60/esphome.yaml: /switch/Relay, /sensor/Voltage, /sensor/Power.
 
-# Web logins (web_server's auth:), each for the plug it was given for
-# (use_login), answering only that plug's own request for one: Basic, or
+# Web logins (web_server's auth:), each for the device it was given for
+# (use_login), answering only that device's own request for one: Basic, or
 # Digest from ESPHome 2027.1 (and before it, with type: digest).
 _LOGINS = urllib.request.HTTPPasswordMgrWithDefaultRealm()
 
@@ -58,7 +58,7 @@ class _Digest(_Quietly, urllib.request.HTTPDigestAuthHandler):
 
 
 def _opener() -> urllib.request.OpenerDirector:
-    # Straight to the plug: a proxy set for the internet has no route to it.
+    # Straight to the device: a proxy set for the internet has no route to it.
     # A new one each time: urllib's Digest handler stops answering for good
     # once one login has failed.
     return urllib.request.build_opener(urllib.request.ProxyHandler({}), _Digest(_LOGINS), _Basic(_LOGINS))
@@ -109,9 +109,9 @@ def page(host: str, timeout: float = 4.0) -> str | None:
 
 
 def title(host: str, timeout: float = 4.0) -> tuple[str | None, str | None]:
-    """The plug's ESPHome name and comment, as its web page shows them: the
+    """The device's ESPHome name and comment, as its web page shows them: the
     friendly name with the MAC suffix name_add_mac_suffix adds (esphome
-    abcdef), and what plug it is (Sonoff-S61) - in the first event its page
+    abcdef), and what device it is (Sonoff-S61) - in the first event its page
     is sent (/events, "ping"); None for either that does not come."""
     def text(value: object) -> str | None:
         return value if isinstance(value, str) and value else None
@@ -156,7 +156,7 @@ SIGNAL_SENSOR = "WiFi Signal"
 
 
 def signal(host: str, key: bytes | None = None) -> int | None:
-    """The plug's Wi-Fi signal in dBm: from its Wi-Fi signal sensor, else from
+    """The device's Wi-Fi signal in dBm: from its Wi-Fi signal sensor, else from
     its native API (encrypted with `key`, where it is); None when neither
     gives it."""
     reading = sensor_signal(host)
@@ -164,7 +164,7 @@ def signal(host: str, key: bytes | None = None) -> int | None:
 
 
 def sensor_signal(host: str) -> int | None:
-    """The plug's Wi-Fi signal in dBm, from its Wi-Fi signal sensor: None from
+    """The device's Wi-Fi signal in dBm, from its Wi-Fi signal sensor: None from
     an ESPHome built without one (ours at first), or before its first
     reading."""
     value = _state(host, "/sensor/" + urllib.parse.quote(SIGNAL_SENSOR))
@@ -240,7 +240,7 @@ def _fields(payload: bytes) -> dict[int, int | bytes]:
 
 
 class ApiLocked(Exception):
-    """ESPHome's API on the plug is encrypted, and no key was given - or
+    """ESPHome's API on the device is encrypted, and no key was given - or
     (`wrong`) the key given is not its own."""
 
     def __init__(self, wrong: bool = False) -> None:
@@ -251,7 +251,7 @@ class ApiLocked(Exception):
 
 class _Api:
     """A connection to ESPHome's native API, hello said: encrypted with `key`
-    (32 bytes) where the plug's API is encrypted - one that is not is spoken
+    (32 bytes) where the device's API is encrypted - one that is not is spoken
     to plainly, key or none.  ApiLocked when its API is encrypted and no key
     was given (once the first message comes), or not its own."""
 
@@ -298,7 +298,7 @@ class _Api:
 
     def send(self, *messages: tuple[int, bytes]) -> None:
         """Each (kind, payload) as a message of its own, in one write.  A write
-        the plug has already hung up on is left to the read that follows: what
+        the device has already hung up on is left to the read that follows: what
         it said before hanging up ("Bad indicator byte" to a plain hello, from
         an encrypted API) is still there to read."""
         if self.ciphers is None:
@@ -334,7 +334,7 @@ class _Api:
         return int.from_bytes(message[:2], "big"), message[4:]
 
     def messages(self):
-        """Each message the plug sends, (kind, payload), until the time is up,
+        """Each message the device sends, (kind, payload), until the time is up,
         pings answered."""
         while time.monotonic() < self.deadline:
             kind, payload = self._message()
@@ -382,7 +382,7 @@ def api_access(host: str, key: bytes | None = None, port: int = API_PORT,
 
 
 def api_signal(host: str, port: int = API_PORT, timeout: float = 8.0, key: bytes | None = None) -> int | None:
-    """The plug's Wi-Fi signal in dBm from ESPHome's native API: asked for its
+    """The device's Wi-Fi signal in dBm from ESPHome's native API: asked for its
     logs with its configuration, ESPHome prints it ("Signal strength: -50 dB").
     None from an ESPHome whose API is encrypted and `key` is not its key, or
     that does not say."""
@@ -455,7 +455,7 @@ _LIST, _LISTED, _ACTION, _CALL, _ANSWER = 11, 19, 41, 42, 131
 
 def api_wifi_details(host: str, port: int = API_PORT, timeout: float = 8.0,
                      key: bytes | None = None) -> tuple[str, str] | None:
-    """The Wi-Fi the plug is on, name and password, from ESPHome itself - its
+    """The Wi-Fi the device is on, name and password, from ESPHome itself - its
     Wi-Fi action, which ours has. None from an ESPHome without
     it; ApiLocked from one whose API is encrypted and `key` is not its key."""
     details = _action_answer(host, WIFI_ACTIONS, b"", port, timeout, key)
@@ -465,13 +465,13 @@ def api_wifi_details(host: str, port: int = API_PORT, timeout: float = 8.0,
     return None
 
 
-# Our ESPHome's action that takes the plug's factory calibration.
+# Our ESPHome's action that takes the device's factory calibration.
 CALIBRATION_ACTION = "autoflash_calibration"
 
 
 def api_give_calibration(host: str, coefficients: list[float], port: int = API_PORT,
                          timeout: float = 8.0, key: bytes | None = None) -> bool:
-    """The plug's factory calibration (its 18 numbers) given to ESPHome; its
+    """The device's factory calibration (its 18 numbers) given to ESPHome; its
     Calibration sensor then says what it made of it (calibration_state).
     False from an ESPHome without the action; ApiLocked as api_wifi_details."""
     # One argument, a list of floats: each its own field 8, as ESPHome sends them.
@@ -528,7 +528,7 @@ def _action_answer(host: str, names: tuple[str, ...], arguments: bytes, port: in
 
 def meter(host: str) -> dict[str, float]:
     """The meter's voltage and power, as check_hardware's readings: each only
-    if the plug has a reading (none, until its meter has reported). A device
+    if the device has a reading (none, until its meter has reported). A device
     with two channels names its power Power 1 and Power 2 (the Dual R3): the
     first is its relay's, the one switched."""
     readings = {}

@@ -193,8 +193,8 @@ sh -c "$(curl -fsSL https://github.com/adamsthws/firmware-liberator/releases/lat
 E.g. you close the window, lose your Wi-Fi, run out of time - it doesn't matter. Run the
 same command again - the one line above, or `start.cmd` / `sh start.sh` in the folder.
 
-> It remembers which plug it was working on and what it had done. Where a step
-was interrupted, it checks the plug to work out where to resume from.
+> It remembers which device it was working on and what it had done. Where a step
+was interrupted, it checks the device to work out where to resume from.
 
 <br>
 
@@ -205,7 +205,7 @@ was interrupted, it checks the plug to work out where to resume from.
   
 \- and -
 
-- A full backup of the plug's Sonoff firmware to restore later.
+- A full backup of the device's Sonoff firmware to restore later.
 
 - Once flashed, ESPHome, Tasmota and OpenBeken recieve thier updates as normal.
 
@@ -250,7 +250,7 @@ What is sent, once you agree:
 ## Documentation
 
 - **[what-happens](docs/what-happens.md)** - how it works and what
-  happens to the plug, step by step.
+  happens to the device, step by step.
 - **[technical-details](docs/technical-details.md)** - the firmware
   bundle, secrets handling, memory layout, technical notes.
 - **[troubleshooting](docs/troubleshooting.md)** - problems met so far
@@ -259,7 +259,7 @@ What is sent, once you agree:
   an emulated device.
 - **[unattended](docs/unattended.md)** - running a conversion with
   nobody at the keyboard - for testing.
-- **[testing](docs/testing.md)** - unit tests, the emulator, fault injectio, and real plugs.
+- **[testing](docs/testing.md)** - unit tests, the emulator, fault injection, and real devices.
 - **[updating-firmware](docs/updating-firmware.md)** - how the
   Tasmota and ESPHome the tool installs are updated.
 - **[readouts](docs/readouts.md)** - what a readout of a device holds, and
@@ -293,7 +293,7 @@ A big thank you to [HG0161](https://github.com/HG0161) and the
 
 Thanks to [lcgamboa](https://github.com/lcgamboa) for the
 [QEMU fork](https://github.com/lcgamboa/qemu) that emulates the ESP32, and to [openshwprojects](https://github.com/openshwprojects) for the
-[Beken emulator](https://github.com/openshwprojects/BekenEmulator). Every conversion is tested against them before it reaches a real plug.
+[Beken emulator](https://github.com/openshwprojects/BekenEmulator). Every conversion is tested against them before it reaches a real device.
 
 Thanks to [p1otr](https://github.com/p1otr) for the ESPHome option and its
 S60 config.
@@ -304,11 +304,11 @@ S60 config.
 
 Thankyou for making such excellent devices. Please keep this update method open. Letting owners run their own firmware is a win for you as much as for them.
 
-**It sells plugs**
-> Tasmota began life as *Sonoff-Tasmota*: a great many people first bought Sonoff because they could reflash it, and the home-automation community still recommends the brand for that reason. Every plug this tool supports is one more reason to choose Sonoff over an alternative.
+**It sells devices**
+> Tasmota began life as *Sonoff-Tasmota*: a great many people first bought Sonoff because they could reflash it, and the home-automation community still recommends the brand for that reason. Every device this tool supports is one more reason to choose Sonoff over an alternative.
 
 **It costs you less**
-> A converted plug never calls your servers. You keep the sale and drop the years of cloud traffic, accounts and app support that would have come with it. Sell more, support less.
+> A converted device never calls your servers. You keep the sale and drop the years of cloud traffic, accounts and app support that would have come with it. Sell more, support less.
 
 **The owners support themselves**
 > Someone who installs their own firmware takes on its upkeep. Tasmota, ESPHome and OpenBeken are maintained by their own communities.

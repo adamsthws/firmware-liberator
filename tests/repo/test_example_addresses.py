@@ -10,19 +10,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 ADDRESS = re.compile(r"(?<![0-9.])192\.168\.(\d+)\.\d+")
 SUBNETS = {
-    "4",    # the setup networks plugs really make
+    "4",    # the setup networks devices really make
     "60",   # the Espressif emulator's network
     "99",   # examples people read
     "122",  # libvirt's bridge, which discovery leaves out
 }
-# Where the Beken emulator's built-in network, which its plug really joins, is used or described.
+# Where the Beken emulator's built-in network, which its device really joins, is used or described.
 BEKEN_EMULATOR_SUBNET = "1"
 BEKEN_EMULATOR_FILES = {
     "devices/sonoff-s61/research.md",
     "docs/beken-research.md",
     "tools/beken/README.md",
     "tools/beken/emulator/cloud_dial.py",
-    "tools/beken/emulator/patches/0005-emulator-bridge-the-Wi-Fi-peer-to-a-host-TAP-device-.patch",
+    "tools/beken/emulator/patches/0005-wifi-peer-bridged-to-host-tap.patch",
     "tools/beken/emulator/seed_join.py",
 }
 

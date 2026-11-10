@@ -1,4 +1,4 @@
-"""The go-ahead before a converted plug's first write (tools/autoflash/handover.py)."""
+"""The go-ahead before a converted device's first write (tools/autoflash/handover.py)."""
 import unittest
 from unittest import mock
 
@@ -33,7 +33,7 @@ class ConsentTests(unittest.TestCase):
         self.assertEqual(asked.call_count, 1)
 
     def test_refused_it_says_nothing_was_written(self):
-        # A run stopped there does not say what the plug is (past_the_commit).
+        # A run stopped there does not say what the device is (past_the_commit).
         from types import SimpleNamespace
         with mock.patch.object(prompts, "require_word", return_value=False), \
              mock.patch.object(prompts, "warning_box"), self.assertRaises(errors.NothingWritten):
@@ -77,7 +77,7 @@ class ConsentTests(unittest.TestCase):
 
 
 class LostUpdateTests(unittest.TestCase):
-    """A plug still held by an update cut off part way is waited for, once."""
+    """A device still held by an update cut off part way is waited for, once."""
 
     def send(self, *outcomes):
         from types import SimpleNamespace
@@ -101,13 +101,13 @@ class LostUpdateTests(unittest.TestCase):
             self.send(busy, busy)
         self.assertEqual((self.uploads, self.waits), (2, 1))
 
-    def test_the_wait_outlasts_the_plugs_own(self):
+    def test_the_wait_outlasts_the_devices_own(self):
         clock = iter(range(0, 1000))
         with mock.patch.object(handover.time, "monotonic", side_effect=lambda: next(clock)), \
                 mock.patch.object(handover.time, "sleep"), mock.patch.object(output, "tell"), \
                 mock.patch.object(output, "progress"), mock.patch.object(output, "progress_clear"):
             handover.wait_out_lost_update()
-        self.assertGreater(next(clock), handover.esphome_ota.PLUG_DATA_TIMEOUT)
+        self.assertGreater(next(clock), handover.esphome_ota.DEVICE_DATA_TIMEOUT)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ Subject: [PATCH] emulator: bridge the Wi-Fi peer to a host TAP device
 The built-in network (src/netstack.py) is the device's whole world: it is its
 router, DHCP server and DNS, and the host reaches it only through 127.0.0.1
 port forwards, one port at a time. That cannot put the device on a real LAN
-beside other machines, as a plug on a home Wi-Fi is - reached at its own
+beside other machines, as a device on a home Wi-Fi is - reached at its own
 address by any tool, by every protocol, with the LAN's own router handing
 out its address.
 

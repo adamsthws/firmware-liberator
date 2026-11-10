@@ -1,4 +1,4 @@
-"""Sonoff's own firmware for a plug with no backup: the file eWeLink offers
+"""Sonoff's own firmware for a device with no backup: the file eWeLink offers
 it, else the public one, checked, and the flash made from it."""
 import hashlib
 import struct

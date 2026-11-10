@@ -42,7 +42,7 @@ class CheckStepTests(RouteTestCase):
 
     def test_joined_already_it_stops_waiting_on_the_home_wifi(self):
         with mock.patch.object(esphome, "is_esphome", return_value=False), \
-                mock.patch.object(join, "on_a_plug_network", return_value=True), \
+                mock.patch.object(join, "on_a_device_network", return_value=True), \
                 mock.patch.object(time, "sleep") as slept, \
                 mock.patch.object(join, "set_up_through_own_network", return_value=("Home", "pw")):
             mover.step_esphome_check(self.ctx(firmware="esphome"), wait=600)
@@ -135,7 +135,7 @@ class ESPHomeUpdateTests(RouteTestCase):
     update; any other ESPHome is not."""
 
     def settle(self, info, *, given=None, answer=0, run="run", **inputs):
-        ctx = self.ctx(given=given, run=run, plug_kind="sonoff-s60", **inputs)
+        ctx = self.ctx(given=given, run=run, device_kind="sonoff-s60", **inputs)
         with mock.patch.object(routes.source, "find_current_firmware", return_value="esphome"), \
                 mock.patch.object(esphome, "api_device_info", return_value=info), \
                 mock.patch.object(espressif, "published_version", return_value="1.6.0"), \
@@ -188,13 +188,13 @@ class ESPHomeUpdateTests(RouteTestCase):
                     self.settle(info, given="esphome", run=why)
 
     def test_not_with_an_esphome_built_by_hand(self):
-        ctx = self.ctx(given="esphome", plug_kind="sonoff-s60")
+        ctx = self.ctx(given="esphome", device_kind="sonoff-s60")
         ctx.esphome_firmware = Path("own.bin")
         with mock.patch.object(esphome, "api_device_info", return_value=self.ours()):
             self.assertFalse(update.outdated(ctx, "esphome", "1.6.0"))
 
     def test_status_says_an_update_is_available_and_records_nothing(self):
-        ctx = self.ctx(plug_kind="sonoff-s60", firmware="esphome", source="sonoff")
+        ctx = self.ctx(device_kind="sonoff-s60", firmware="esphome", source="sonoff")
         with mock.patch.object(esphome, "api_device_info", return_value=self.ours()), \
                 mock.patch.object(espressif, "published_version", return_value="1.6.0"):
             self.assertEqual(routes.update_available(ctx),
@@ -202,8 +202,8 @@ class ESPHomeUpdateTests(RouteTestCase):
         self.assertIsNone(ctx.state.input("update_from"))
 
     def test_status_shows_it_with_the_run(self):
-        ctx = self.ctx(plug_kind="sonoff-s60", firmware="esphome", source="sonoff")
-        ctx.plug, ctx.manifest_path = "12:34:56:ab:cd:ef", "manifest.json"
+        ctx = self.ctx(device_kind="sonoff-s60", firmware="esphome", source="sonoff")
+        ctx.run, ctx.manifest_path = "12:34:56:ab:cd:ef", "manifest.json"
         with mock.patch.object(routes, "update_available", return_value="1.6.0 is available"), \
                 contextlib.redirect_stdout(io.StringIO()) as shown:
             self.assertEqual(cli.cmd_status(ctx), 0)
@@ -216,13 +216,13 @@ class ESPHomeUpdateTests(RouteTestCase):
                                     ("no firmware chosen", None, self.ours()),
                                     ("back on Sonoff's", "sonoff", self.ours())):
             with self.subTest(why):
-                ctx = self.ctx(run=why, plug_kind="sonoff-s60", firmware=firmware, source="sonoff")
+                ctx = self.ctx(run=why, device_kind="sonoff-s60", firmware=firmware, source="sonoff")
                 with mock.patch.object(esphome, "api_device_info", return_value=info), \
                         mock.patch.object(espressif, "published_version", return_value="1.6.0"):
                     self.assertIsNone(routes.update_available(ctx))
 
-    def test_status_survives_a_plug_that_fails_when_asked(self):
-        ctx = self.ctx(plug_kind="sonoff-s60", firmware="esphome", source="sonoff")
+    def test_status_survives_a_device_that_fails_when_asked(self):
+        ctx = self.ctx(device_kind="sonoff-s60", firmware="esphome", source="sonoff")
         with mock.patch.object(esphome, "api_device_info", side_effect=OSError("no route")), \
                 mock.patch.object(espressif, "published_version", return_value="1.6.0"):
             self.assertIsNone(routes.update_available(ctx))
@@ -230,7 +230,7 @@ class ESPHomeUpdateTests(RouteTestCase):
     OWN = "2026-11-04 21:19:12 +0000"
 
     def replacing(self, info, *, word=True, **inputs):
-        ctx = self.ctx(given="esphome", run=str(id(info)) + str(word), plug_kind="sonoff-s60", **inputs)
+        ctx = self.ctx(given="esphome", run=str(id(info)) + str(word), device_kind="sonoff-s60", **inputs)
         ctx.replace_own_build = True
         with mock.patch.object(routes.source, "find_current_firmware", return_value="esphome"), \
                 mock.patch.object(esphome, "api_device_info", **(
@@ -282,14 +282,14 @@ class ESPHomeUpdateTests(RouteTestCase):
         warned.assert_not_called()
 
     def test_any_other_firmware_is_not_replaced(self):
-        ctx = self.ctx(given="esphome", plug_kind="sonoff-s60")
+        ctx = self.ctx(given="esphome", device_kind="sonoff-s60")
         with self.assertRaisesRegex(errors.Abort, "does not answer as that: it runs Tasmota"):
             update.replace_own_build(ctx, "tasmota", "16.0.0")
 
     def test_the_update_is_only_done_once_the_published_build_answers(self):
-        # Often the same version: an own build that kept running, or a plug that
+        # Often the same version: an own build that kept running, or a device that
         # went back to it, must not pass for the release sent.
-        ctx = self.ctx(plug_kind="sonoff-s60", firmware="esphome", replaced_build=self.OWN)
+        ctx = self.ctx(device_kind="sonoff-s60", firmware="esphome", replaced_build=self.OWN)
         with mock.patch.object(esphome, "api_device_info", return_value=self.ours("1.6.0", built=self.OWN)):
             self.assertEqual(update.esphome_release(ctx), update.OWN_BUILD)
         with mock.patch.object(esphome, "api_device_info", return_value=self.ours("1.6.0")):
@@ -298,7 +298,7 @@ class ESPHomeUpdateTests(RouteTestCase):
     def test_a_refused_update_points_to_the_option_for_an_own_build_alone(self):
         for info, says in ((self.ours("1.6.0", built=self.OWN), True), (self.ours("1.6.0"), False),
                            (esphome.ApiLocked(), True), (None, False)):
-            ctx = self.ctx(given="esphome", run=f"hint{id(info)}", plug_kind="sonoff-s60")
+            ctx = self.ctx(given="esphome", run=f"hint{id(info)}", device_kind="sonoff-s60")
             with self.subTest(info=info), mock.patch.object(esphome, "api_device_info", **(
                     {"side_effect": info} if isinstance(info, BaseException) else {"return_value": info})):
                 with self.assertRaises(routes.NothingToDo) as stopped:
@@ -329,10 +329,10 @@ class ESPHomeUpdateTests(RouteTestCase):
         self.assertFalse(update.older("16.0.0(release-tasmota32)", "16.0.0"))
 
     def check(self, versions, confirm=0.0, wait=60.0):
-        """`versions`: what the plug answers, in turn; the last, from then on.
+        """`versions`: what the device answers, in turn; the last, from then on.
         Time passes only as the run sleeps."""
         ctx = self.ctx(source="outdated", firmware="esphome", update_from="1.4.0", update_to="1.6.0",
-                       plug_kind="sonoff-s60")
+                       device_kind="sonoff-s60")
         clock = [0.0]
         said = list(versions)
 
@@ -358,12 +358,12 @@ class ESPHomeUpdateTests(RouteTestCase):
         self.assertEqual(self.check(["1.6.0"], confirm=70.0)["to"], "1.6.0")
 
     def test_one_not_answering_during_its_minute_is_not_taken_to_have_kept_it(self):
-        # Only a plug seen to run the new release a whole minute on end has kept it.
+        # Only a device seen to run the new release a whole minute on end has kept it.
         with self.assertRaisesRegex(errors.Abort, "not been seen to run for a minute"):
             self.check(["1.6.0"] * 6 + [None], confirm=60.0)
 
-    def test_the_minute_starts_again_once_a_plug_that_stopped_answering_is_back(self):
-        # update>esphome:U2:plugoff-180: switched off 24 s into the minute, back
+    def test_the_minute_starts_again_once_a_device_that_stopped_answering_is_back(self):
+        # update>esphome:U2:deviceoff-180: switched off 24 s into the minute, back
         # three minutes later; said done before, unseen.
         answers = ["1.6.0"] * 5 + [None] * 38 + ["1.6.0"]
         with mock.patch.object(output, "say") as said:
@@ -376,7 +376,7 @@ class ESPHomeUpdateTests(RouteTestCase):
 
     def test_a_send_cut_off_is_judged_by_the_release_it_runs(self):
         ctx = self.ctx(source="outdated", firmware="esphome", update_from="1.4.0", update_to="1.6.0",
-                       plug_kind="sonoff-s60")
+                       device_kind="sonoff-s60")
         for version, finished in (("1.6.0", True), ("1.4.0", False), (None, None)):
             with mock.patch.object(esphome, "api_device_info", return_value=self.ours(version) if version else None):
                 self.assertIs(evidence.ATTEMPTED_EVIDENCE["U1"](ctx)[0], finished, version)
@@ -393,7 +393,7 @@ class ESPHomeUpdateTests(RouteTestCase):
 
     def test_the_wifi_is_read_from_esphome_not_tasmota(self):
         ctx = self.ctx(source="outdated", firmware="esphome")
-        self.assertFalse(runs.plug_runs_tasmota(ctx.state))
+        self.assertFalse(runs.device_runs_tasmota(ctx.state))
 
 
 class CarriedOffTasmotaTests(Fixture):
@@ -406,7 +406,7 @@ class CarriedOffTasmotaTests(Fixture):
         self.assertNotIn(b"Home-2G", settings)  # nothing of the Wi-Fi
         self.assertEqual(len(settings) % nvs_image.PAGE, 0)
 
-    def test_a_plug_converted_before_carries_its_backups(self):
+    def test_a_device_converted_before_carries_its_backups(self):
         self.back_up()
         settings = mover.settings_to_carry(self.ctx(on_tasmota()), images.layout_of(kinds.SONOFF_S60))
         self.assertEqual(sonoff_identity.from_nvs(settings + b"\xff" * (0x10000 - len(settings))), IDENTITY)
@@ -424,7 +424,7 @@ class CarriedOffTasmotaTests(Fixture):
 
 
 class EsphomeSignalTests(unittest.TestCase):
-    """On the way to ESPHome the signal is read too, off the Tasmota the plug
+    """On the way to ESPHome the signal is read too, off the Tasmota the device
     still runs, before what then has to join the Wi-Fi on its own is written."""
 
     def setUp(self):
@@ -455,7 +455,7 @@ class EsphomeSignalTests(unittest.TestCase):
                 raise status
             return status
 
-        inputs = {"plug_ip": "192.168.60.50"}
+        inputs = {"device_ip": "192.168.60.50"}
         state = SimpleNamespace(input=inputs.get, set_input=inputs.__setitem__)
         return SimpleNamespace(state=state, wifi=lambda: ("Home-2G", "pass"), esphome_firmware=None,
                                dry_run=False, device=SimpleNamespace(command=command))
@@ -478,7 +478,7 @@ class EsphomeSignalTests(unittest.TestCase):
         self.run_plan.assert_not_called()
         self.consent.assert_not_called()  # asked first, before the go-ahead to leave Tasmota
 
-    def test_a_plug_that_does_not_say_is_installed_all_the_same(self):
+    def test_a_device_that_does_not_say_is_installed_all_the_same(self):
         from tools.autoflash.device import DeviceError
         for status in ({"StatusSTS": {}}, DeviceError("no answer")):
             self.run_plan.reset_mock()
@@ -499,7 +499,7 @@ ORIGINAL_TABLE_WRITTEN = mover.table_written
 
 
 class LeaveTasmotaStoppedTests(unittest.TestCase):
-    """L1's plan stopped with Sonoff's table in place: the plug is restarted
+    """L1's plan stopped with Sonoff's table in place: the device is restarted
     into the mover only if the plan got as far as writing it."""
 
     def setUp(self):
@@ -509,7 +509,7 @@ class LeaveTasmotaStoppedTests(unittest.TestCase):
                       mock.patch.object(hub, "run_plan", self.run_plan),
                       mock.patch.object(handover, "consent_to_leave"),
                       mock.patch.object(join, "note_signal"),
-                      mock.patch.object(join, "plug_signal"),
+                      mock.patch.object(join, "device_signal"),
                       mock.patch.object(mover, "wait_for_mover"),
                       mock.patch.object(mover, "table_written", return_value=True),
                       mock.patch.object(esphome_ota, "probe", return_value=None),
@@ -524,12 +524,12 @@ class LeaveTasmotaStoppedTests(unittest.TestCase):
     def ctx(self, slot):
         from types import SimpleNamespace
         device = mock.Mock(current_ota=mock.Mock(return_value=slot))
-        inputs = {"plug_ip": "192.168.60.50"}
+        inputs = {"device_ip": "192.168.60.50"}
         state = SimpleNamespace(input=inputs.get)
         return SimpleNamespace(state=state, wifi=lambda: ("Home-2G", "pass"), dry_run=False,
                                      device=device)
 
-    def test_a_plan_stopped_after_its_writes_restarts_the_plug_into_the_mover(self):
+    def test_a_plan_stopped_after_its_writes_restarts_the_device_into_the_mover(self):
         ctx = self.ctx(0)
         self.assertEqual(mover.step_leave_tasmota(ctx)["restarted_after"], "a stopped report")
         ctx.device.command.assert_called_once_with("Restart 99")
@@ -555,7 +555,7 @@ class LeaveTasmotaStoppedTests(unittest.TestCase):
 
 class BerryFromStartupTests(unittest.TestCase):
     """X2 - the startup firmware confirms itself only once used: switched off
-    and on before then, the plug starts the firmware it ran before (seen in the
+    and on before then, the device starts the firmware it ran before (seen in the
     fault suite, a power cut early in X2), which once passed for Tasmota."""
 
     def x2(self, running, versions=("15.6.0.1(f5b34a2-bluetooth)",)):
@@ -600,7 +600,7 @@ class BerryFromStartupTests(unittest.TestCase):
 
     def test_an_upload_cut_off_is_not_cleared_by_a_restart(self):
         # Restarted before it has been used, the startup firmware starts what
-        # the plug ran before.
+        # the device ran before.
         self.x2("startup")
         self.assertEqual(self.upload.call_args.kwargs, {"restart_to_retry": False})
 
@@ -612,7 +612,7 @@ class BerryFromStartupTests(unittest.TestCase):
 class MoverOwnNetworkTests(unittest.TestCase):
     """A mover that cannot join the home Wi-Fi raises its own network, and is
     set up through it - with the details the run has first, new ones only if
-    those fail - not left as a plug only a serial cable reaches."""
+    those fail - not left as a device only a serial cable reaches."""
 
     def wait(self, answers, network=None, sends=(None,), joined_already=False, unattended=False):
         from types import SimpleNamespace
@@ -636,7 +636,7 @@ class MoverOwnNetworkTests(unittest.TestCase):
         self.home_waits = 0
         with mock.patch.object(join, "wait_for", side_effect=wait_for) as waited, \
              mock.patch.object(prompts, "find_ssid", return_value=network), \
-             mock.patch.object(join, "on_a_plug_network", return_value=joined_already), \
+             mock.patch.object(join, "on_a_device_network", return_value=joined_already), \
              mock.patch.object(join, "ask_credentials", return_value=("NewHome", "pw")), \
              mock.patch.object(prompts, "UNATTENDED", unattended), \
              mock.patch.object(join, "wait_until_joined"), \

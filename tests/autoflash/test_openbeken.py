@@ -117,7 +117,7 @@ class OpenBekenTests(unittest.TestCase):
     def test_an_openbeken_the_tool_did_not_install_is_no_kind(self):
         self.server.kind = None   # no import module: AutoflashKind unknown
         self.assertIsNone(openbeken.kind(self.server.host, openbeken.info(self.server.host)))
-        self.server.kind = "another-plug"
+        self.server.kind = "another-device"
         self.assertIsNone(openbeken.kind(self.server.host, openbeken.info(self.server.host)))
 
     def test_only_an_openbeken_on_a_chip_of_ours_is_asked(self):
@@ -144,7 +144,7 @@ class OpenBekenTests(unittest.TestCase):
         self.assertEqual(openbeken.calibration_state(self.server.host), "missing")
         self.server.calibration = None   # neither: not applied, or changed by its owner since
         self.assertEqual(openbeken.calibration_state(self.server.host), "not the stock store's")
-        # A module from before the command, or a plug not answering: it cannot say.
+        # A module from before the command, or a device not answering: it cannot say.
         self.server.kind = None
         self.assertIsNone(openbeken.calibration_state(self.server.host))
         self.assertIsNone(openbeken.calibration_state("127.0.0.1:1", timeout=0.5))

@@ -1,8 +1,8 @@
-"""The board around an emulated Beken plug's chip: its power meter, a BL0937,
+"""The board around an emulated Beken device's chip: its power meter, a BL0937,
 which measures a load while the relay that switches it is on.
 
-plug.py attaches it to the emulator it builds (`attach`). It runs from the
-checkout's copy in the container (/work), as plug.py does, so changing it
+device.py attaches it to the emulator it builds (`attach`). It runs from the
+checkout's copy in the container (/work), as device.py does, so changing it
 needs no new image.
 
 The BL0937 reports by pulses, on two of the chip's GPIOs: CF at a rate that
@@ -216,7 +216,7 @@ class Board:
 
 
 def attach(emu, kind: str, load: Load = LOAD, seconds_per_insn: float | None = None) -> Board | None:
-    """Wire the board of the plug `kind` to `emu` before it runs: its meter
+    """Wire the board of the device `kind` to `emu` before it runs: its meter
     set between each chunk of instructions (the emulator's _pacing, whose
     GPIO interrupt sync then follows), and the idle loop skipped only while
     neither output is due to change. None for a kind with no board here."""

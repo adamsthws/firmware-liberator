@@ -3,10 +3,10 @@ set -eu
 
 usage() {
     cat >&2 <<'EOF'
-Usage: sudo ./tools/espressif/check_ota_firewall.sh INTERFACE PLUG_IP WORKSTATION_IP VENDOR_OTA_IP [PORT]
+Usage: sudo ./tools/espressif/check_ota_firewall.sh INTERFACE DEVICE_IP WORKSTATION_IP VENDOR_OTA_IP [PORT]
 
 Run only after creating the source-specific DNAT and MASQUERADE rules.
-The plug must be switched off and the local OTA server must not be running.
+The device must be switched off and the local OTA server must not be running.
 
 Example:
   sudo ./tools/espressif/check_ota_firewall.sh wlo1 192.168.99.50 192.168.99.20 203.0.113.10 8088
@@ -48,7 +48,7 @@ if ip -4 address show dev "$interface" | grep -Fq " $test_source/"; then
     exit 2
 fi
 if ping -c 1 -W 1 "$test_source" >/dev/null 2>&1; then
-    echo "$test_source replied. Switch the plug off and check for an IP conflict." >&2
+    echo "$test_source replied. Switch the device off and check for an IP conflict." >&2
     exit 2
 fi
 
@@ -59,14 +59,14 @@ trap cleanup EXIT INT TERM
 
 ip address add "$test_source/32" dev "$interface"
 
-echo "Test 1/3: check that plug-source traffic is intercepted"
+echo "Test 1/3: check that device-source traffic is intercepted"
 if curl --silent --output /dev/null \
     --interface "$test_source" --connect-timeout 5 --max-time 8 \
     "http://$target:$port/" 2>/dev/null; then
-    echo "FAIL: plug-source traffic reached the vendor endpoint." >&2
+    echo "FAIL: device-source traffic reached the vendor endpoint." >&2
     exit 1
 else
-    echo "PASS: the plug-source request was redirected away from the vendor endpoint."
+    echo "PASS: the device-source request was redirected away from the vendor endpoint."
 fi
 
 echo "Test 2/3: check that normal workstation traffic is not intercepted"
@@ -79,8 +79,8 @@ else
     exit 1
 fi
 
-echo "Test 3/3: remove the temporary plug address"
+echo "Test 3/3: remove the temporary device address"
 cleanup
 echo "PASS: the temporary test address was removed."
 echo "OVERALL INTERCEPTION PREFLIGHT: PASS"
-echo "Switch the plug back on when ready."
+echo "Switch the device back on when ready."

@@ -1,10 +1,10 @@
-"""OpenBeken on a converted plug: what the tool asks of it over HTTP.
+"""OpenBeken on a converted device: what the tool asks of it over HTTP.
 
 OpenBeken answers on port 80: GET /api/info says what it is (its chipset,
 build, name and MAC); POST /api/cmnd runs one of its console commands and
 answers with a JSON envelope; GET /api/flash/<start>-<length>, both in hex,
 reads flash as raw bytes (the S61 build reads the whole 4 MB).  Every
-address and command goes to a plug that has already answered as OpenBeken.
+address and command goes to a device that has already answered as OpenBeken.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from typing import Any
 from . import kinds
 
 PORT = 80
-# One request per 16 KiB, paced: the plug's HTTP server is single-threaded and
+# One request per 16 KiB, paced: the device's HTTP server is single-threaded and
 # its TCP stack keeps each closed connection a while, so few, larger, spaced
 # requests are what it copes with (tools/beken/backup.py found the pace).
 FLASH_CHUNK = 0x4000
@@ -54,7 +54,7 @@ def info(host: str, timeout: float = 4.0) -> dict[str, Any] | None:
 
 
 def kind(host: str, found: dict[str, Any], timeout: float = 4.0) -> kinds.Kind | None:
-    """The kind of plug the OpenBeken at `host` (its /api/info `found`) is
+    """The kind of device the OpenBeken at `host` (its /api/info `found`) is
     on, when the tool installed it: its driver answers AutoflashKind
     for its own kind alone - its name says nothing, being alike on every
     firmware and the user's to change.  None for an OpenBeken the tool did
@@ -104,7 +104,7 @@ def calibration_state(host: str, timeout: float = 4.0) -> str | None:
     """Where the meter's calibration on the OpenBeken at `host` - one the tool
     installed (kind) - came from, as its driver says (AutoflashCalibration):
     the stock store's, missing from it, or neither (CALIBRATION_CHANGED: not
-    applied, or calibrated by the plug's owner since).  None from an OpenBeken
+    applied, or calibrated by the device's owner since).  None from an OpenBeken
     whose driver predates the command, or that does not answer."""
     for asked, state in CALIBRATION_STATES.items():
         try:
@@ -121,7 +121,7 @@ def calibration_state(host: str, timeout: float = 4.0) -> str | None:
 
 def set_interim(host: str, interim: bool, timeout: float = 10.0) -> None:
     """The OpenBeken at `host` made the interim firmware (autoflash-recovery-CDEF),
-    or the plug's OpenBeken for good (openbeken-abcdef), as its driver
+    or the device's OpenBeken for good (openbeken-abcdef), as its driver
     names each; its DHCP and mDNS names follow on its next start."""
     command(host, f"AutoflashInterim {'on' if interim else 'off'}", timeout)
 
@@ -197,14 +197,14 @@ RESTART_WAIT = 120.0
 def restart(host: str, wait: float = RESTART_WAIT) -> bool:
     """Restart OpenBeken, and say whether it has, answering again, within
     `wait` seconds: its uptime back below what it was, or answering again
-    after it stopped. Its uptime alone missed a plug that had only just
+    after it stopped. Its uptime alone missed a device that had only just
     restarted - its bootloader refusing an image - which had been up for
     less than it takes to start and join the Wi-Fi again."""
     before = (info(host) or {}).get("uptime_s")
     try:
         command(host, "reboot", timeout=5.0)
     except (OSError, CommandError):
-        pass   # the plug may restart before it answers
+        pass   # the device may restart before it answers
     gone = False
     deadline = time.monotonic() + wait
     while time.monotonic() < deadline:

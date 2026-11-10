@@ -1,42 +1,42 @@
 # ESPHome for the Sonoff S60
 
 [`esphome.yaml`](esphome.yaml) is the ESPHome the conversion installs when you choose
-ESPHome at the start. You do not need to build it to convert a plug: the tool
+ESPHome at the start. You do not need to build it to convert a device: the tool
 installs the pre-built image in [`../../artifacts/`](../../artifacts/README.md) and
-writes your plug's Wi-Fi into it, in memory only.
+writes your device's Wi-Fi into it, in memory only.
 
-It is also the config Home Assistant uses when it adopts a converted plug
+It is also the config Home Assistant uses when it adopts a converted device
 (`dashboard_import`), so it is one self-contained file. It includes no files
 of its own (system headers only) and no partition file: an app image does not
-contain the partition table, and the plug keeps Sonoff's.
+contain the partition table, and the device keeps Sonoff's.
 
 ## What it reports
 
 Power, voltage and current are corrected as Sonoff's own firmware corrects
 them, and the diagnostic `Calibration` sensor says how:
 
-- `stock NVS, factor 1.02` (or `1.00`): the plug's factory calibration, read
+- `stock NVS, factor 1.02` (or `1.00`): the device's factory calibration, read
   at start-up from what Sonoff's firmware left in its memory, and the factor
   its board calls for, read from three of its pins.
 - `from backup, factor 1.02` (or `1.00`): the calibration has gone from
-  Sonoff's memory - on a plug converted through Tasmota, whose new layout clears
-  it - so the conversion tool restored it from the plug's Sonoff backup.
+  Sonoff's memory - on a device converted through Tasmota, whose new layout clears
+  it - so the conversion tool restored it from the device's Sonoff backup.
 - `missing, factor 1.02` (or `1.00`): no factory calibration is left, and the
   tool had no backup to restore it from, so only the board's factor applies.
-  That costs little: on the plugs examined so far the factory calibration
+  That costs little: on the devices examined so far the factory calibration
   changes nothing below 300 W.
 
-`Energy` is what the meter has counted since the plug started, in Wh,
+`Energy` is what the meter has counted since the device started, in Wh,
 calibrated the same way. `Daily energy`, `Monthly energy`, `Yearly energy` and
 `Total energy` are counted from the same pulses, so they agree with it, and
 are kept through restarts and updates; the first three start again at
-midnight, on the first of the month and on 1 January. On a plug updated from
+midnight, on the first of the month and on 1 January. On a device updated from
 an earlier build, they carry on from where they were.
 
 ## Adopted into Home Assistant
 
-Home Assistant's ESPHome builder can adopt a converted plug. It uses this config,
-at the release the plug's firmware came from, and your plug keeps that config until
+Home Assistant's ESPHome builder can adopt a converted device. It uses this config,
+at the release the device's firmware came from, and your device keeps that config until
 you choose a newer release: [how it works, how to take a fix and how to customise
 it](../../docs/home-assistant-adoption.md).
 
@@ -51,12 +51,12 @@ lines in `SHA256SUMS` and `firmware.json`. ESPHome 2026.10.0 built the current
 image.
 
 The command keeps the published bootloader unless you pass `--new-bootloader`:
-a different one is written to every plug on its next route through D5 or L1,
-and a power cut in that second leaves a plug that has to be opened. A change
+a different one is written to every device on its next route through D5 or L1,
+and a power cut in that second leaves a device that has to be opened. A change
 to the config's app alone leaves the bootloader the same.
 
 Keep the name of the `WiFi Signal` sensor: the tool reads it, by that name,
-before it changes the firmware of a plug on ESPHome. If a plug's ESPHome has no
+before it changes the firmware of a device on ESPHome. If a device's ESPHome has no
 such sensor (an early build, or one from a config without it), the tool
 asks the native API for the configuration dump instead, which prints the
 signal. If the API has an encryption key, the tool does not read the signal
@@ -64,25 +64,25 @@ there.
 
 Keep the names of the four energy totals: each boot finds
 what each had saved by its name, and Home Assistant keeps its history by it.
-Keep the `autoflash_calibration` action's name too: the tool gives the plug's
+Keep the `autoflash_calibration` action's name too: the tool gives the device's
 factory calibration through it.
 
 The `autoflash_wifi` action (`s60_wifi` on the earliest builds) gives the tool the
-plug's Wi-Fi name and password when the plug leaves ESPHome: the next
+device's Wi-Fi name and password when the device leaves ESPHome: the next
 firmware needs them written in, and ESPHome gives them no other way. Keep its
 name. Anything that can use the API can call it - anything on your home
-network, while the API has no encryption key - just as it could send the plug
+network, while the API has no encryption key - just as it could send the device
 new firmware while OTA has no password. Giving the API a key closes it; the
-tool then takes the details from the plug's Sonoff backup, if your computer
+tool then takes the details from the device's Sonoff backup, if your computer
 has it, or asks you for them.
 
 If you add an update password later (`password:` under `ota:`), the tool asks
-for it when it takes the plug off ESPHome, or you can give it with
+for it when it takes the device off ESPHome, or you can give it with
 `--esphome-ota-password` or as `AUTOFLASH_ESPHOME_OTA_PASSWORD`.
-If the plug has an API encryption key (`encryption:` under `api:`), the tool
+If the device has an API encryption key (`encryption:` under `api:`), the tool
 asks for it, or you can give it with `--esphome-api-key` or as
-`AUTOFLASH_ESPHOME_API_KEY`. The tool then reads the plug through the encrypted
-API, and sends its update encrypted where the plug takes that - as it must
+`AUTOFLASH_ESPHOME_API_KEY`. The tool then reads the device through the encrypted
+API, and sends its update encrypted where the device takes that - as it must
 where `encryption:` is under `ota:`.
 
 The last `on_boot` lambda also saves the Wi-Fi in use under the one fixed key
@@ -90,18 +90,18 @@ ESPHome looks in when a build has no network of its own at start-up. A build
 that has one - this image, once the tool writes the Wi-Fi in - saves it under a
 key made from its config and ESPHome version instead. A build of this config
 with no Wi-Fi in it, such as Home Assistant's ESPHome builder makes when it
-adopts the plug, would otherwise find nothing saved, and raise its own network
+adopts the device, would otherwise find nothing saved, and raise its own network
 rather than join yours. Keep it.
 
 Keep the two `AUTOFLASH-IMPRINT-` placeholders as they are (`S60-IMPRINT-` on
 the earliest builds): the tool finds and fills them, and refuses an image in which either
 appears more than once.
 
-The plug is named `esphome` and ESPHome's MAC suffix (`esphome-abcdef`), as
-every ESPHome the conversion installs is, whatever the plug, and its own
+The device is named `esphome` and ESPHome's MAC suffix (`esphome-abcdef`), as
+every ESPHome the conversion installs is, whatever the device, and its own
 network has that name too; its friendly name is `esphome` and the same suffix
 (`esphome abcdef`: ESPHome joins them with a space). Its comment, `Sonoff-S60`,
-says what plug it is, and the tool identifies the plug by it.
+says what device it is, and the tool identifies the device by it.
 
 [`archive/esphome-prototype/FINDINGS.md`](../../archive/esphome-prototype/FINDINGS.md) records how this route was
 worked out and tested.

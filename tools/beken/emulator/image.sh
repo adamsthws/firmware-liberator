@@ -65,10 +65,8 @@ else
     RELEASE=$(release_of "$ARCHIVE" "$UPSTREAM_COMMIT")
 fi
 ARCHIVE_URL=${AUTOFLASH_BEKEN_EMU_SOURCE_URL:-https://github.com/adamsthws/firmware-liberator/releases/download/$RELEASE/$ARCHIVE}
-# Named after the image, autoflash-beken-emu, as beken-emu.sh is; until the
-# image next changes, by its earlier name (tests/repo/test_emulator_images.py).
+# Named after the image, autoflash-beken-emu, as beken-emu.sh is.
 DOCKERFILE=beken-emu.Dockerfile
-[ -f "$HERE/$DOCKERFILE" ] || DOCKERFILE=bk-emu.Dockerfile
 
 tag() {
     (cd "$HERE" && find UPSTREAM requirements.txt "$DOCKERFILE" patches -type f -print0 \

@@ -33,7 +33,7 @@ PARTITION_MAGIC = 0x50AA
 MD5_MAGIC = 0xEBEB
 
 SOURCE_TABLE_SHA256 = "f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf"
-# Tasmota's own table, in its factory image: plugs converted before the
+# Tasmota's own table, in its factory image: devices converted before the
 # identity was kept have it (target_table).
 OFFICIAL_TABLE_SHA256 = "619e5a9b645198b25d04949997221f587776965dfd13cbceddf9862c53e655c1"
 TARGET_TABLE_SHA256 = "32993d6fc6af861fff9686c15f4b53144e20ae3493a123f36f96ef1f0e79e93f"
@@ -56,7 +56,7 @@ OFFICIAL_PARTITIONS = (
 )
 # The table a conversion writes: Tasmota's, its filesystem one sector shorter,
 # and that sector at the top of the flash a data partition of its own, where
-# the plug's Sonoff identity is kept (tools/espressif/sonoff_identity.py). Its
+# the device's Sonoff identity is kept (tools/espressif/sonoff_identity.py). Its
 # subtype is one of those ESP-IDF leaves for custom data; nothing Tasmota does
 # reads or writes it.
 IDENTITY_PARTITION = ("sonoff", 0x01, 0x40, 0x3FF000, 0x001000, 0x0)
@@ -103,7 +103,7 @@ INTERIM_PARTITIONS = (
 )
 INTERIM_TABLE_SHA256 = "cfb1e1c46fa209a6c1eada92123a02847ab8e72f67c0044afbcb1c29ead4c936"
 
-# The official Tasmota release a converted plug ends on, as firmware.json pins
+# The official Tasmota release a converted device ends on, as firmware.json pins
 # it: tools/repo/update_firmware.py writes it, docs/updating-firmware.md says when.
 # The files come from the release's own page on GitHub, which keeps them as
 # they were released (tasmota/install, where they were taken from up to 15.6.0,
@@ -277,7 +277,7 @@ def require_exact_partitions(
 
 def require_tasmota_table(report: dict[str, Any]) -> None:
     """A Tasmota table this tool converts to: the one with the identity's sector,
-    or Tasmota's own, which a run begun before that sector, or a plug converted
+    or Tasmota's own, which a run begun before that sector, or a device converted
     by an earlier version, has. Either, with the reviewed bytes."""
     for entries, sha256 in ((TARGET_PARTITIONS, TARGET_TABLE_SHA256), (OFFICIAL_PARTITIONS, OFFICIAL_TABLE_SHA256)):
         if tuple(partition_tuple(entry) for entry in report["entries"]) == tuple(entries):

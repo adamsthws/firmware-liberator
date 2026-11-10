@@ -20,9 +20,9 @@ Home Assistant's ESPHome builder can adopt a converted device from this config:
 ## Changing it
 
 Edit `esphome.yaml`, then build and publish it with
-`python3 tools/repo/update_firmware.py esphome --plug sonoff-basic-1gs`. Keep the
+`python3 tools/repo/update_firmware.py esphome --device sonoff-basic-1gs`. Keep the
 `WiFi Signal` sensor's and `Relay` switch's names and the `autoflash_wifi` action:
 the tool uses each.
 
 ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-basic-1gs-2026.10.0-2.rbl`,
-with `tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-basic-1gs`.
+with `tools/repo/update_firmware.py esphome 2026.10.0 --device sonoff-basic-1gs`.

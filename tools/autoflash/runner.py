@@ -30,7 +30,7 @@ from tools.autoflash import (
 )
 from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort, NothingWritten, StoppedPartWay
-from tools.autoflash.phases import PhaseError, PlugNeverConnected
+from tools.autoflash.phases import PhaseError, DeviceNeverConnected
 from tools.autoflash.prompts import QuitRun
 from tools.autoflash.routes import update
 from tools.autoflash.routes.espressif import tasmota
@@ -53,14 +53,14 @@ def execute(ctx: Context, step: str) -> int:
         return _execute(ctx, step)
     finally:
         # For the report, however the stage ended: its time without the
-        # keyboard waits, and how long a Berry phase kept the plug busy.
+        # keyboard waits, and how long a Berry phase kept the device busy.
         ctx.state.capture(f"{step}.seconds",
                           round(time.monotonic() - started - (output.waited() - waited)))
         busy = getattr(ctx.last_runner, "busy_seconds", None)
         if busy is not None:
-            # The longest of its tries: how near the plug came to stopping.
-            before = ctx.state.data.get("captures", {}).get(f"{step}.plug_busy_seconds")
-            ctx.state.capture(f"{step}.plug_busy_seconds",
+            # The longest of its tries: how near the device came to stopping.
+            before = ctx.state.data.get("captures", {}).get(f"{step}.device_busy_seconds")
+            ctx.state.capture(f"{step}.device_busy_seconds",
                               max(busy, before) if isinstance(before, (int, float)) else busy)
 
 
@@ -82,7 +82,7 @@ def _execute(ctx: Context, step: str) -> int:
     except errors.GoBack as back:
         captures = ctx.state.data.get("captures", {})
         times = int(captures.get(f"{back.step}.sent_again") or 0) + 1
-        host = ctx.state.input("plug_ip")
+        host = ctx.state.input("device_ip")
         if times > GO_BACK_LIMIT and not captures.get(f"{back.step}.restarted") and host \
                 and restart.restart(host):
             # Once for a step: the device, answering but not taking it, restarted
@@ -118,7 +118,7 @@ def _execute(ctx: Context, step: str) -> int:
         output.tell(str(done))
         ctx.finished = done
         return 0
-    except PlugNeverConnected as exc:
+    except DeviceNeverConnected as exc:
         ctx.state.mark(step, FAILED, error=str(exc))
         output.stage_end("stopped")
         prompts.section(f"{step} could not start", firewall.firewall_hint(ctx))
@@ -128,7 +128,7 @@ def _execute(ctx: Context, step: str) -> int:
         return 1
     except (Abort, DeviceError, ValueError, PhaseError) as exc:
         # A phase that ended with no result may have got as far as writing:
-        # where the plug can show whether the step finished, the step stays
+        # where the device can show whether the step finished, the step stays
         # "attempted" and the next run asks it.
         if not (isinstance(exc, (PhaseError, StoppedPartWay)) and step in routes.FAMILY.ATTEMPTED_EVIDENCE):
             ctx.state.mark(step, FAILED, error=str(exc),
@@ -139,10 +139,10 @@ def _execute(ctx: Context, step: str) -> int:
         output.tell(f"FAILED: {exc}")
         return 1
     except Exception as exc:  # noqa: BLE001 - recorded and explained, not a bare traceback
-        # The plug or the network dropping a request part way - a reset, a
+        # The device or the network dropping a request part way - a reset, a
         # reply cut off, no answer - is no surprise, and worth another go.
         message = connection_lost(exc) if isinstance(exc, errors.NETWORK_ERRORS) else unexpected(exc)
-        # As above: whether it got as far as writing is for the plug to say.
+        # As above: whether it got as far as writing is for the device to say.
         if step not in routes.FAMILY.ATTEMPTED_EVIDENCE:
             ctx.state.mark(step, FAILED, error=message)
         output.stage_end("stopped")
@@ -167,13 +167,13 @@ def _execute(ctx: Context, step: str) -> int:
 
 ATTEMPTS = 3
 RETRY_PAUSE = 10.0
-# A step a later one found had not taken on the plug (errors.GoBack) is done
+# A step a later one found had not taken on the device (errors.GoBack) is done
 # again this many times in a run; one that still does not take stops the run.
 GO_BACK_LIMIT = 2
-# A router restart takes a minute or two.  The plug gives up on a step within
+# A router restart takes a minute or two.  The device gives up on a step within
 # about a minute - busier for longer, it stops answering for good (its energy
 # meter's readings pile up) - so this computer does the waiting, between tries.
-PLUG_BACK_WAIT = 300.0
+DEVICE_BACK_WAIT = 300.0
 
 
 def execute_with_retries(ctx: Context, step: str) -> int:
@@ -184,7 +184,7 @@ def execute_with_retries(ctx: Context, step: str) -> int:
             ctx.state.capture(f"{step}.attempts", attempt)
         if code != 1 or step not in routes.FAMILY.RETRY_STEPS or attempt == ATTEMPTS:
             return code
-        # A step the plug is asked about later (ATTEMPTED_EVIDENCE) keeps no
+        # A step the device is asked about later (ATTEMPTED_EVIDENCE) keeps no
         # error in its record, so what it failed with is taken from this run.
         error = str(ctx.state.data.get("steps", {}).get(step, {}).get("error", "")
                     or ctx.last_failure)
@@ -193,7 +193,7 @@ def execute_with_retries(ctx: Context, step: str) -> int:
         output.tell(f"    That may have been the network - trying again in {RETRY_PAUSE:.0f}s "
              f"(attempt {attempt + 1} of {ATTEMPTS}).")
         time.sleep(RETRY_PAUSE)
-        wait_for_plug_back(ctx, step)
+        wait_for_device_back(ctx, step)
         # The try that failed off the screen, and the note that it is tried
         # again: the stage keeps one line, as one that passed first time does.
         # The log keeps them, and the report the number of tries.
@@ -202,14 +202,14 @@ def execute_with_retries(ctx: Context, step: str) -> int:
     return code
 
 
-PLUG_BACK_HINT_AFTER = 45.0
+DEVICE_BACK_HINT_AFTER = 45.0
 ERASED_LOOK_EVERY = 30.0
 # Well over the time a Tasmota restarting onto the Wi-Fi takes to answer there.
 ERASED_SETTLE = 60.0
 
 
 def answers_within(device: device.Device, seconds: float) -> bool:
-    """Whether the plug answers within `seconds`, asked every few."""
+    """Whether the device answers within `seconds`, asked every few."""
     started = time.monotonic()
     while (elapsed := time.monotonic() - started) < seconds:
         output.progress(f"waiting for the device, in case it is starting up... {elapsed:.0f}s")
@@ -226,13 +226,13 @@ def set_up_if_erased(ctx: Context, step: str) -> bool:
     settings - switched off and on 7 times, say, or an earlier run's advice
     taken late - so it is set up through that network again; and, past F4, as
     its template went with them, F4 sets it up again too.  True when it was:
-    the step then goes on with the plug back.  Seen in the fault suite: G1
-    asked for Wi-Fi details for a plug it could not reach, run after run."""
+    the step then goes on with the device back.  Seen in the fault suite: G1
+    asked for Wi-Fi details for a device it could not reach, run after run."""
     # Every route reaches these steps on such a Tasmota: from stock through D1,
     # from ESPHome or back to Sonoff through the mover and the startup firmware.
-    if step not in routes.FAMILY.ERASED_CHECK_STEPS or not ctx.state.input("plug_mac"):
+    if step not in routes.FAMILY.ERASED_CHECK_STEPS or not ctx.state.input("device_mac"):
         return False
-    if ctx.state.input("plug_ip") and ctx.device.answers(timeout=3.0):
+    if ctx.state.input("device_ip") and ctx.device.answers(timeout=3.0):
         return False
     network = prompts.find_ssid(names.setup_networks(ctx), timeout=10)
     if not network:
@@ -243,7 +243,7 @@ def set_up_if_erased(ctx: Context, step: str) -> bool:
     # settings, and the run waited 15 minutes for a network gone at once.  So
     # it is given the time to start; not answering then, with its network
     # still there, it has lost them.
-    if ctx.state.input("plug_ip") and answers_within(ctx.device, ERASED_SETTLE):
+    if ctx.state.input("device_ip") and answers_within(ctx.device, ERASED_SETTLE):
         return False
     network = prompts.find_ssid(names.setup_networks(ctx), timeout=10)
     if not network:
@@ -251,7 +251,7 @@ def set_up_if_erased(ctx: Context, step: str) -> bool:
     output.progress_clear()
     output.tell("    The device is not on your Wi-Fi but on its own setup network: its settings were")
     output.tell("    erased (switched off and on 7 times, say), so it is set up through that again.")
-    join.configure_plug_wifi(ctx, network)
+    join.configure_device_wifi(ctx, network)
     if ctx.state.is_done("F4"):
         device = ctx.device
         device.wait_reachable(timeout=120)
@@ -263,17 +263,17 @@ def set_up_if_erased(ctx: Context, step: str) -> bool:
     return True
 
 
-def wait_for_plug_back(ctx: Context, step: str | None = None) -> None:
-    """Before a step is tried again, wait for a plug running Tasmota to answer:
+def wait_for_device_back(ctx: Context, step: str | None = None) -> None:
+    """Before a step is tried again, wait for a device running Tasmota to answer:
     after a router restart it is back within a minute or two."""
-    if not ctx.state.input("plug_ip") or not ctx.state.is_done("D1"):
+    if not ctx.state.input("device_ip") or not ctx.state.is_done("D1"):
         return
     device = ctx.device
-    host = ctx.state.input("plug_ip")
+    host = ctx.state.input("device_ip")
     esphome_route = runs.run_firmware(ctx.state) == "esphome"
 
     def back() -> bool:
-        # On the way to ESPHome the plug may already have switched to it.
+        # On the way to ESPHome the device may already have switched to it.
         return device.answers(timeout=3.0) or (esphome_route and esphome.is_esphome(host, 3.0))
 
     if back():
@@ -282,16 +282,16 @@ def wait_for_plug_back(ctx: Context, step: str | None = None) -> None:
     started = time.monotonic()
     looked = started
     hinted = False
-    while (now := time.monotonic()) - started < PLUG_BACK_WAIT:
-        # Part way through, the plug runs a Tasmota holding your Wi-Fi details,
+    while (now := time.monotonic()) - started < DEVICE_BACK_WAIT:
+        # Part way through, the device runs a Tasmota holding your Wi-Fi details,
         # which keeps trying them and never opens a network of its own - all but
         # F4's official Tasmota, which may not have them yet (F4 looks for its
         # setup network itself), and one that has lost its settings, looked for.
-        if not hinted and step != "F4" and now - started > PLUG_BACK_HINT_AFTER:
+        if not hinted and step != "F4" and now - started > DEVICE_BACK_HINT_AFTER:
             output.progress_clear()
             output.tell("    At this stage the device has no setup network of its own unless its settings")
             output.tell("    were erased: it rejoins your Wi-Fi by itself as soon as it can. Check your")
-            output.tell("    router is on and the device is plugged in; this keeps waiting.")
+            output.tell("    router is on and the device has power; this keeps waiting.")
             hinted = True
         if step and now - looked >= ERASED_LOOK_EVERY:
             looked = now
@@ -304,14 +304,14 @@ def wait_for_plug_back(ctx: Context, step: str | None = None) -> None:
             return
         time.sleep(3.0)
     output.progress_clear()
-    output.tell(f"    It has not answered for {PLUG_BACK_WAIT / 60:.0f} minutes - trying anyway.")
+    output.tell(f"    It has not answered for {DEVICE_BACK_WAIT / 60:.0f} minutes - trying anyway.")
 
 
 def confirm_skip(ctx: Context, step: str, title: str) -> bool:
-    """Trust the checklist only as far as the plug agrees with it: a step the
-    plug disagrees with is done again, unasked, as an interrupted step not
-    shown finished is - every step checks the plug before it writes anything,
-    and refuses if it is not as expected, and the plug's own record of what a
+    """Trust the checklist only as far as the device agrees with it: a step the
+    device disagrees with is done again, unasked, as an interrupted step not
+    shown finished is - every step checks the device before it writes anything,
+    and refuses if it is not as expected, and the device's own record of what a
     step wrote changes under no later step.  Asked, nobody could answer better."""
     verifier = routes.FAMILY.STEP_VERIFIERS.get(step)
     if verifier is None:
@@ -349,7 +349,7 @@ def tell_how_to_carry_on() -> None:
 
 
 def connection_lost(exc: BaseException) -> str:
-    """A request the network or the plug dropped: in full in the log, in a line on screen."""
+    """A request the network or the device dropped: in full in the log, in a line on screen."""
     output.log_only(traceback.format_exc().rstrip())
     return f"the connection to the device was lost ({type(exc).__name__}: {exc})"
 
@@ -389,8 +389,8 @@ def stop_here_after_ctrl_c(step: str) -> bool:
 
 
 def rerun_on_tasmota(ctx: Context) -> int:
-    """A plug kept on Tasmota: its meter calibrated, as F4 would have, if it
-    is not - a plug converted before the tool did, or whose calibration was
+    """A device kept on Tasmota: its meter calibrated, as F4 would have, if it
+    is not - a device converted before the tool did, or whose calibration was
     lost with its settings.  One calibrated by hand is left as it is."""
     try:
         unlock.unlock_tasmota(ctx)
@@ -403,7 +403,7 @@ def rerun_on_tasmota(ctx: Context) -> int:
 
 
 def bring_up_to_date(ctx: Context) -> bool:
-    """Whether a plug the run's route has just taken to its firmware goes on
+    """Whether a device the run's route has just taken to its firmware goes on
     to that firmware's update, in the same run: when it runs an earlier
     release than this version installs - begun by an earlier version, which
     had installed its own release before the run stopped (official Tasmota,
@@ -441,8 +441,8 @@ def run_steps(ctx: Context) -> int:
     output.tell("and this computer on, until the last stage says complete.")
     output.tell("")
     try:
-        if ctx.state.input("plug_mac"):
-            runs.hold_plug(ctx, ctx.state.input("plug_mac"))  # a run carried on: its plug is known
+        if ctx.state.input("device_mac"):
+            runs.hold_device(ctx, ctx.state.input("device_mac"))  # a run carried on: its device is known
         firmware, _ = routes.settle_route(ctx, defer=True)
         unlock.unlock_tasmota(ctx)
     except routes.NothingToDo as nothing:
@@ -461,7 +461,7 @@ def run_steps(ctx: Context) -> int:
         except Abort as refused:
             output.tell(f"Stopped before anything was done: {refused}.")
             return 2
-    join.wait_while_plug_busy(ctx)
+    join.wait_while_device_busy(ctx)
     # By index: A3 lengthens the route as it chooses the firmware.
     index = 0
     # Where the screen was as each step began, for going back to it (GoBack).
@@ -470,7 +470,7 @@ def run_steps(ctx: Context) -> int:
     brought_up = False
     while True:
         if index >= len(routes.STEPS):
-            # The route done: a plug on an earlier release of its firmware
+            # The route done: a device on an earlier release of its firmware
             # goes on to that firmware's update, once (bring_up_to_date).
             if brought_up or not bring_up_to_date(ctx):
                 break
@@ -502,7 +502,7 @@ def run_steps(ctx: Context) -> int:
                     finished, reason = None, f"The check itself could not run: {exc}"
                 output.tell(f"    {reason}")
             if finished is True:
-                # The plug itself shows the step completed: nothing to decide.
+                # The device itself shows the step completed: nothing to decide.
                 output.transient_end()
                 ctx.state.mark(step, DONE, note="the device showed it had completed")
                 output.stage_end("already done")
@@ -568,7 +568,7 @@ def run_steps(ctx: Context) -> int:
         output.show("Update complete!" if updated else "Conversion complete!", output.GREEN)
     if updated:
         output.tell(f"The device is running {routes.FIRMWARES[firmware]} {update.versions(ctx)[1]}...")
-        url = report.plug_page_url(ctx.state.input("plug_ip"))
+        url = report.device_page_url(ctx.state.input("device_ip"))
         if url:
             output.show_link(url, "Your device")
     elif firmware == "sonoff":
@@ -576,7 +576,7 @@ def run_steps(ctx: Context) -> int:
         output.tell("had: it is back in the eWeLink app.")
     else:
         output.tell(f"The device is running {'official ' if firmware == 'tasmota' else ''}{routes.FIRMWARES[firmware]}...")
-        url = report.plug_page_url(ctx.state.input("plug_ip"))
+        url = report.device_page_url(ctx.state.input("device_ip"))
         if url:
             output.show_link(url, "Your device")
     report.invite_report(ctx, time.monotonic() - started - output.waited(), resumed)

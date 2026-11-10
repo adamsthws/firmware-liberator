@@ -1,4 +1,4 @@
-"""From Sonoff's firmware: what the plug reports through eWeLink (B1), and
+"""From Sonoff's firmware: what the device reports through eWeLink (B1), and
 the new firmware sent to it (B2)."""
 import tempfile
 import unittest
@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from tests.autoflash.routes.beken.test_beken import a_context
-from tools.autoflash import detect, errors, kinds, plugs
+from tools.autoflash import detect, errors, kinds, records
 from tools.autoflash.routes.beken import images, stock
 from tools.beken import fota_wrap, interim_marker, rbl
 from tools.ewelink import ota_push
@@ -27,22 +27,22 @@ class FromStockTests(unittest.TestCase):
         self.noted = noted.start()
         self.addCleanup(noted.stop)
 
-    def test_b1_takes_the_plugs_identity_from_its_account_record(self):
+    def test_b1_takes_the_devices_identity_from_its_account_record(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp)
             ctx.account_devices = lambda: [{"deviceid": "other"}, self.DEVICE]
-            plugs_dir = Path(tmp) / "plugs"
-            with mock.patch.object(plugs, "PLUGS", plugs_dir), mock.patch.object(plugs, "CAPTURES", Path(tmp)):
-                plugs.remember_plug(MAC, ewelink_id="1001234abc")
+            devices_dir = Path(tmp) / "devices"
+            with mock.patch.object(records, "DEVICES", devices_dir), mock.patch.object(records, "CAPTURES", Path(tmp)):
+                records.remember_device(MAC, ewelink_id="1001234abc")
                 with mock.patch.object(stock.prompts, "section"):
                     result = stock.step_identify(ctx)
             self.assertEqual(result, {"stock_version": "1.0.2", "model": "SN-BK7238-S61-01", "product": "S61STPF",
                                       "signal_dbm": None, "firmware_name": "FWSW-01-S61-BK7238"})
             self.noted.assert_called_once_with(S61, {}, "", "S61STPF", "SN-BK7238-S61-01")
             self.assertEqual(ctx.state.input("stock_version"), "1.0.2")
-            # Another model on the account is never the plug.
+            # Another model on the account is never the device.
             ctx.account_devices = lambda: [dict(self.DEVICE, extra={"model": "SN-ESP32-MINIR4"})]
-            with mock.patch.object(plugs, "PLUGS", plugs_dir), mock.patch.object(plugs, "CAPTURES", Path(tmp)):
+            with mock.patch.object(records, "DEVICES", devices_dir), mock.patch.object(records, "CAPTURES", Path(tmp)):
                 with self.assertRaisesRegex(errors.Abort, "does not convert"):
                     stock.step_identify(ctx)
 
@@ -52,8 +52,8 @@ class FromStockTests(unittest.TestCase):
                 ctx = a_context(tmp)
                 device = dict(self.DEVICE, params={"fwVersion": "1.0.2", "rssi": rssi})
                 ctx.account_devices = lambda device=device: [device]
-                with mock.patch.object(plugs, "PLUGS", Path(tmp) / "plugs"), mock.patch.object(plugs, "CAPTURES", Path(tmp)):
-                    plugs.remember_plug(MAC, ewelink_id="1001234abc")
+                with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), mock.patch.object(records, "CAPTURES", Path(tmp)):
+                    records.remember_device(MAC, ewelink_id="1001234abc")
                     with mock.patch.object(stock.prompts, "section"), \
                             mock.patch.object(stock.join.prompts, "section"), \
                             mock.patch.object(stock.join.output, "transient_begin"), \
@@ -70,7 +70,7 @@ class FromStockTests(unittest.TestCase):
     def test_b2_wraps_the_image_and_sends_it_through_ewelink(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp, stock_version="1.0.2", firmware="openbeken")
-            ctx.account_plug = SimpleNamespace(device_id="1001234abc")
+            ctx.account_device = SimpleNamespace(device_id="1001234abc")
             ctx.account_devices = lambda: [self.DEVICE]
             sent = {}
 
@@ -96,14 +96,14 @@ class FromStockTests(unittest.TestCase):
                              ("1001234abc", "127.0.0.1", "192.0.2.2", 8088))
             self.assertEqual(sent["names"], ("user1.bin",))
             self.assertIs(sent["live"], False)   # what it fetches is logged, never drawn over the stage line
-            # The plug must be as it was at B1: another model, or firmware, is refused before sending.
+            # The device must be as it was at B1: another model, or firmware, is refused before sending.
             with self.assertRaisesRegex(EwelinkError, "1.0.3"):
                 sent["check_device"](dict(self.DEVICE, params={"fwVersion": "1.0.3"}), "SN-BK7238-S61-01")
 
     def test_b2_on_a_run_to_esphome_sends_the_interim_firmware(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp, stock_version="1.0.2", firmware="esphome")
-            ctx.account_plug = SimpleNamespace(device_id="1001234abc")
+            ctx.account_device = SimpleNamespace(device_id="1001234abc")
             ctx.account_devices = lambda: [self.DEVICE]
             sent = {}
 
@@ -138,7 +138,7 @@ class FromStockTests(unittest.TestCase):
                 self.assertEqual(stock.evidence_pushed(ctx),
                                  (True, "The device answers as the interim firmware: the firmware was delivered "
                                         "and installed."))
-            # The plug's own OpenBeken would be another firmware than the one sent.
+            # The device's own OpenBeken would be another firmware than the one sent.
             with mock.patch.object(detect, "identify", return_value="openbeken"):
                 self.assertIsNone(stock.evidence_pushed(ctx)[0])
 
@@ -162,7 +162,7 @@ class FromStockTests(unittest.TestCase):
 
     def test_spoilt_as_many_times_as_asked_then_sent_whole(self):
         # --simulate-bad-image O1:3: past the times a run sends an image again,
-        # so the run restarts the plug before sending it whole.
+        # so the run restarts the device before sending it whole.
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp, firmware="esphome")
             image = b"RBL" + bytes(rbl.HEADER) + b"x" * 64
@@ -176,7 +176,7 @@ class FromStockTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp, stock_version="1.0.2", firmware="esphome")
             ctx.consented = False   # the go-ahead not given yet in this run
-            ctx.account_plug = SimpleNamespace(device_id="1001234abc")
+            ctx.account_device = SimpleNamespace(device_id="1001234abc")
             ctx.account_devices = lambda: [self.DEVICE]
             common = [mock.patch.object(stock.firewall, "choose_port", return_value=8088),
                       mock.patch.object(stock.firewall, "ensure_firewall"),
@@ -202,7 +202,7 @@ class FromStockTests(unittest.TestCase):
                 # part way in the fault suite), and the step left attempted.
                 with self.assertRaisesRegex(errors.StoppedPartWay, "fetched 100 of .*switch it off and on"):
                     stock.step_push(ctx)
-            # Turned down while an update cut off part way holds the plug's
+            # Turned down while an update cut off part way holds the device's
             # updater (seen in the fault suite): switching it off and on frees it.
             refused = ota_push.Delivery(sent=True, complete=False,
                                         error="Cloud rejected upgrade command: error 410")
@@ -211,7 +211,7 @@ class FromStockTests(unittest.TestCase):
                 with self.assertRaisesRegex(errors.Abort, "Switch the device off and on"):
                     stock.step_push(ctx)
 
-    def test_the_evidence_of_a_push_is_what_the_plug_answers_as(self):
+    def test_the_evidence_of_a_push_is_what_the_device_answers_as(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp, firmware="openbeken")
             for running, verdict in (("openbeken", True), ("sonoff", False), (None, None), ("esphome", None),
@@ -220,11 +220,11 @@ class FromStockTests(unittest.TestCase):
                     self.assertEqual(stock.evidence_pushed(ctx)[0], verdict, running)
 
 
-class BusyPlugTests(unittest.TestCase):
-    """A plug whose updater an update cut off part way still holds answers a
+class BusyDeviceTests(unittest.TestCase):
+    """A device whose updater an update cut off part way still holds answers a
     new one with error 410: through ota_push.deliver to the step's advice."""
 
-    def test_the_plugs_410_reaches_the_step_as_switch_it_off_and_on(self):
+    def test_the_devices_410_reaches_the_step_as_switch_it_off_and_on(self):
         from tools.autoflash.routes.beken import stock
         from tools.ewelink import ota_push, relay
         device = {"deviceid": "1000abcdef", "apikey": "made-up", "devicekey": "made-up", "online": True,

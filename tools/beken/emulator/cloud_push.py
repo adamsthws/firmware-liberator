@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A whole S61 conversion in the emulator, the way the tool would drive one: the
-plug comes online against the local eWeLink stub (cloud_online.CloudSession),
-the stub pushes it an `upgrade` for a firmware image, and the plug downloads it
+device comes online against the local eWeLink stub (cloud_online.CloudSession),
+the stub pushes it an `upgrade` for a firmware image, and the device downloads it
 and stages it in its download slot - then, with --apply, the stock bootloader
 applies it on the next boot and the new firmware starts.
 
@@ -12,18 +12,18 @@ IMAGE is an rt_ota .rbl: OpenBeken's 4 MB-table build, the ESPHome (LibreTiny)
 build's image_bk7238_app.ota.rbl, or OpenBeken's release. It is wrapped in
 CoolKit's FOTA container (fota_wrap.py) and served from a placeholder public
 address the stub's relay sends to this host, as the cloud's download is: the
-plug fetches it in ranges, checks the `upgrade` command's digest, and writes it
+device fetches it in ranges, checks the `upgrade` command's digest, and writes it
 to 0x286000 verbatim. OUT is the flash it leaves - checked to hold the image,
 byte for byte, where the bootloader looks - and with --apply the flash after
 the apply.
 
-The plug's Wi-Fi credentials are written into a copy of the dump's EasyFlash
+The device's Wi-Fi credentials are written into a copy of the dump's EasyFlash
 store first (stage_apply.stage), so the firmware it ends on finds them there
-as on a provisioned plug; the dump itself is never written.
+as on a provisioned device; the dump itself is never written.
 
 Proven with it (2026-10-28, as scratch drivers; the notes in
 docs/beken-research.md "Firmware update and conversion"): the descriptor
-name FWSW-01-S61-BK7238 selects the staging handler, the plug's HTTP client
+name FWSW-01-S61-BK7238 selects the staging handler, the device's HTTP client
 wants 206 answers, and nothing in the chain checks a signature.
 """
 from __future__ import annotations
@@ -48,7 +48,7 @@ OTA_PORT = 8080   # the firmware server's port at the placeholder address
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Push an rt_ota image to the emulated S61 through the eWeLink stub.")
     ap.add_argument("image", type=Path, help="the .rbl to convert to")
-    ap.add_argument("out", type=Path, help="where the flash is written as the plug leaves it")
+    ap.add_argument("out", type=Path, help="where the flash is written as the device leaves it")
     ap.add_argument("--apply", action="store_true", help="then boot it, for the stock bootloader to apply it")
     ap.add_argument("--dump", type=Path, default=Path(cloud_online.DUMP), help="the stock dump (default: AUTOFLASH_BEKEN_EMU_DUMP)")
     args = ap.parse_args(argv)
@@ -71,8 +71,8 @@ def main(argv: list[str] | None = None) -> int:
                                         routes={(cloud_online.DISPATCH_IP, OTA_PORT): server.server_address[1]})
     url = "http://%s:%d/user1.bin" % (cloud_online.DISPATCH_IP, OTA_PORT)
 
-    # Once the plug is online and reports its state, push the upgrade, as the
-    # cloud does when the app asks for one: through the plug's own connection.
+    # Once the device is online and reports its state, push the upgrade, as the
+    # cloud does when the app asks for one: through the device's own connection.
     registered: dict = {}
     pushed: list[str] = []
     heard = session.stub.heard
@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
         return answer
     session.stub.heard = heard_and_push
 
-    # Until the image is staged: the download is the plug's, in 2 KB ranges, and
+    # Until the image is staged: the download is the device's, in 2 KB ranges, and
     # takes minutes in the emulator.
     session.run(secs, until=lambda: stage_apply.staged(session.flash(), rbl))
     out = session.flash()

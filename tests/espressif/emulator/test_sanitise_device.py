@@ -1,5 +1,5 @@
-"""The public plug: only what is shown to be public goes in, and the proof finds
-anything of Sonoff's or the real plug's that would have."""
+"""The public device: only what is shown to be public goes in, and the proof finds
+anything of Sonoff's or the real device's that would have."""
 
 import importlib.util
 import json
@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.autoflash import plugs, tasmota_settings as ts
-from tools.espressif.emulator import sanitise_plug as sp
+from tools.autoflash import records, tasmota_settings as ts
+from tools.espressif.emulator import sanitise_device as sp
 from tools.autoflash.routes.espressif import images
 
 HAS_NVS_GEN = importlib.util.find_spec("esp_idf_nvs_partition_gen") is not None
@@ -31,7 +31,7 @@ class EfuseTests(unittest.TestCase):
         efuse = bytearray(b"\xff" * sp.EFUSE_SIZE)
         efuse[0x18:0x1E] = bytes.fromhex(TEST_MAC.replace(":", ""))[::-1]
         kept = sp.sanitise_efuse(bytes(efuse), TEST_MAC)
-        self.assertEqual(plugs.mac_from_efuse(kept), TEST_MAC)
+        self.assertEqual(records.mac_from_efuse(kept), TEST_MAC)
         self.assertEqual(kept[:0x18], b"\xff" * 0x18)                 # BLOCK0's settings
         bit = lambda block, n: kept[block + n // 8] >> (n % 8) & 1  # noqa: E731
         for n in (114, 117, 120, 128, 183, 184, 185):                # revision, package, flash
@@ -44,13 +44,13 @@ class EfuseTests(unittest.TestCase):
             self.assertEqual(bit(0x30, n), 0, n)
         self.assertEqual(kept[0x50:], bytes(sp.EFUSE_SIZE - 0x50))
 
-    def test_another_plugs_efuses_are_refused(self):
+    def test_another_devices_efuses_are_refused(self):
         with self.assertRaises(sp.Refused):
             sp.sanitise_efuse(efuse_for(REAL_MAC), TEST_MAC)
 
 
 class FlashTests(unittest.TestCase):
-    def test_a_plug_before_d5_is_refused(self):
+    def test_a_device_before_d5_is_refused(self):
         # Sonoff's bootloader is still there: nothing is taken from it.
         flash = bytearray(b"\xff" * sp.FLASH_SIZE)
         flash[:4] = b"\xe9\x03\x02\x20"

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stage an rt_ota .rbl in the S61's download slot and boot the stock bootloader
-over it in the emulator - the second half of a conversion, the one the plug does
+over it in the emulator - the second half of a conversion, the one the device does
 by itself after the cloud-pushed download, and the whole of a reversion's apply.
 
 A copy of a dump is made with the image at 0x286000 (the slot erased first), and
@@ -47,7 +47,7 @@ def stage(flash: bytearray, image: bytes | None, credentials: dict[str, bytes] |
 
 def staged(flash: bytes, image: bytes) -> bool:
     """Whether `image` is in the download slot, byte for byte, where the stock
-    bootloader applies it from - as the plug stages a download, verbatim."""
+    bootloader applies it from - as the device stages a download, verbatim."""
     start, end = DOWNLOAD_SLOT
     return len(image) <= end - start and flash[start:start + len(image)] == image
 

@@ -2,7 +2,7 @@
 Start Autoflash, the conversion tool, on Windows - what start.cmd in the
 repository's root runs, from a double-click or a terminal:
 
-    .\start.cmd                 convert a plug (the same as: start.cmd run)
+    .\start.cmd                 convert a device (the same as: start.cmd run)
     .\start.cmd run --verbose   any of the tool's own commands and options
 
 It runs the tool on python.org's portable Python, unpacked into .python\ in

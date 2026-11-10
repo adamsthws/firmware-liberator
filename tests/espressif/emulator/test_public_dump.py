@@ -150,7 +150,7 @@ def donor_rows(update: public_dump.Update) -> dict[tuple[str, str], str]:
 
 class OwnSettings(unittest.TestCase):
     def test_the_account_it_was_paired_to_is_the_stubs(self):
-        # The stub's account's apikey is the plug's own; another, the DualR3's
+        # The stub's account's apikey is the device's own; another, the DualR3's
         # firmware takes for a new owner, and puts its settings back to defaults.
         update = public_dump.Update("u.bin", "0" * 64, 0xAC, "donor", "OWN")
         rows = donor_rows(update)

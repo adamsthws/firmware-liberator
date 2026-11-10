@@ -1,4 +1,4 @@
-"""The safety locks, lifted by more than one run at once (two plugs) - put
+"""The safety locks, lifted by more than one run at once (two devices) - put
 back only when the last is done, and never left lifted by a run that died."""
 import subprocess
 import sys

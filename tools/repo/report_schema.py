@@ -27,7 +27,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import failures, kinds, plugs, report, report_data, routes  # noqa: E402
+from tools.autoflash import failures, kinds, records, report, report_data, routes  # noqa: E402
 
 PATH = ROOT / "website" / "api" / "report-schema.json"
 MAX_BYTES = 8192
@@ -93,7 +93,7 @@ def schema() -> dict[str, Any]:
             "device_hash": nullable(string("^[0-9a-f]{64}$", 64)),
             "firmware": nullable(words(*routes.FIRMWARES)),
             "from": words(*sources),
-            "backup": words(*plugs.BACKUP_OUTCOMES),
+            "backup": words(*records.BACKUP_OUTCOMES),
             "identity": nullable(words("backup", "kept", "account")),
             "os": record({"family": words(*report_data.OS_FAMILIES),
                           "version": string(f"^{report_data.OS_VERSION.pattern}$", 48)}),

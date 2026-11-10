@@ -1,21 +1,21 @@
 # The tool's OpenBeken driver
 
 The tool's OpenBeken driver, [`drv_autoflash.c`](drv_autoflash.c), runs in the
-OpenBeken the tool installs on a Beken plug. On the first boot after a conversion
-it reads the plug's **stock** Wi-Fi credentials from the untouched EasyFlash store
-and applies them through OpenBeken's own config API, so the plug rejoins your
+OpenBeken the tool installs on a Beken device. On the first boot after a conversion
+it reads the device's **stock** Wi-Fi credentials from the untouched EasyFlash store
+and applies them through OpenBeken's own config API, so the device rejoins your
 network with no typing and no second device. It also carries the meter's factory
-calibration over, applies the plug's wiring, answers the tool's questions, marks
-the interim firmware and takes the plug back to Sonoff's firmware.
+calibration over, applies the device's wiring, answers the tool's questions, marks
+the interim firmware and takes the device back to Sonoff's firmware.
 
-The driver serves any eWeLink plug on a Beken chip that keeps its stock rt_ota
-bootloader: it reads whatever is specific to one plug from that plug's table
+The driver serves any eWeLink device on a Beken chip that keeps its stock rt_ota
+bootloader: it reads whatever is specific to one device from that device's table
 ([`drv_autoflash.h`](drv_autoflash.h) has its fields): its kind and stock model,
 where its stock store, download slot and OpenBeken's settings sit, its wiring, the
 relay's channel, and how its meter's calibration reads. A build carries one table,
-for the plug it is built for; the driver itself names no plug. An image that
-carries several tables and tells the plug by its stock store's model at run time
-waits for a plug that needs it. The tables:
+for the device it is built for; the driver itself names no device. An image that
+carries several tables and tells the device by its stock store's model at run time
+waits for a device that needs it. The tables:
 
 - [`devices/sonoff-s61/drv_autoflash_sonoff_s61.c`](../../../devices/sonoff-s61/drv_autoflash_sonoff_s61.c):
   the S61's, with its BL0937 meter's calibration
@@ -37,7 +37,7 @@ on are in
 
 Three edits against `openshwprojects/OpenBK7231T_App`, here for the S61:
 
-1. Copy `drv_autoflash.c`, `drv_autoflash.h` and the plug's table
+1. Copy `drv_autoflash.c`, `drv_autoflash.h` and the device's table
    (`drv_autoflash_sonoff_s61.c`) to `src/driver/`.
 2. Add the two `.c` files to the build list in `platforms/obk_main.mk`,
    beside the other drivers:
@@ -68,30 +68,30 @@ Only when OpenBeken has no Wi-Fi SSID yet (so your later changes are never
 touched), it reads the stock EasyFlash store and:
 
 1. imports **`wifi-ssid` / `wifi-pass`** via `CFG_SetWiFiSSID/Pass()`;
-2. carries the **factory meter calibration** over, on a plug whose table has a
+2. carries the **factory meter calibration** over, on a device whose table has a
    meter: on the S61, `elecCalibCoef`'s per-quantity trim `b/1e6` times the stock
    driver's datasheet constants gives OpenBeken's `cal` for current, voltage and
-   power exactly, and `PowerMax` becomes the plug's 3840 W;
-3. applies the **plug's wiring** from its table, and `SetStartValue <relay
+   power exactly, and `PowerMax` becomes the device's 3840 W;
+3. applies the **device's wiring** from its table, and `SetStartValue <relay
    channel> -1`, so the relay restores its last state after a power cut (what the
-   tool sets on Tasmota and ESPHome too); and names the plug as the conversion
+   tool sets on Tasmota and ESPHome too); and names the device as the conversion
    does on every firmware, `openbeken-abcdef` (the last three bytes of its MAC),
    both its short name (its mDNS hostname and its name in Home Assistant) and its
    full one (its DHCP hostname).
 
 The driver also registers `AutoflashKind`, which the tool uses to tell what
-plug an OpenBeken is on, because every firmware it installs is named alike and
+device an OpenBeken is on, because every firmware it installs is named alike and
 you may rename it: `AutoflashKind sonoff-s61` answers OK on an S61, any other
 kind an error, and an OpenBeken without the driver does not know the command. It
 changes nothing. The tool asks this only of an OpenBeken on a chip that one of
-the plugs it supports has (BK7238).
+the devices it supports has (BK7238).
 
 `AutoflashCalibration` says where the meter's calibration came from, for the
 run's report: `AutoflashCalibration stock` answers OK when OpenBeken's current,
 voltage and power calibration is what the first boot takes from the stock store,
 `AutoflashCalibration missing` when the store holds none (or none valid), and
 both an error otherwise - when it was not applied, or you have calibrated the
-plug yourself since - and on a plug with no meter. It works the calibration out
+device yourself since - and on a device with no meter. It works the calibration out
 from the store again each time, so it holds after a restart, and changes
 nothing. The tool asks it once OpenBeken has started (K1), and its report says
 `Meter: Retained` for `stock` and `Not retained` for either of the others, as
@@ -109,7 +109,7 @@ split from the S61's table it was `drv_sonoff_s61_import.c`, with the commands
 ## The interim firmware
 
 A run to ESPHome from Sonoff's firmware installs this same OpenBeken first,
-to back the plug up through it, then has it fetch ESPHome. The tool tells it
+to back the device up through it, then has it fetch ESPHome. The tool tells it
 that it is the interim firmware with a marker sent in the same update: B2 sends
 the image, `0xff` to the next 4 KB boundary (from the image's start) and one
 4 KB sector -
@@ -128,10 +128,10 @@ it gives): 345 reads of 28 bytes. Found, it checks the marker is for the app
 running: the FNV-1a hash of the app partition's first `size_raw` bytes, read
 raw from `0x11000` with its CRC stripes (32 bytes, then 2 of CRC) skipped -
 the hash the bootloader checked the app against once it wrote it. For that
-app, it names the plug `autoflash-recovery-CDEF` (the MAC's last two bytes,
+app, it names the device `autoflash-recovery-CDEF` (the MAC's last two bytes,
 upper case, as the S60's interim firmwares are named), short and full name,
 saves the config, and only then erases the marker, so a power cut between
-leaves it to be found again. The plug asks for its first address under that
+leaves it to be found again. The device asks for its first address under that
 name. A marker for any other app - from an update that did not install, sent
 with another image, left by anything but the install it came with - is erased
 and changes nothing: the bootloader installs an image before any app starts,
@@ -141,13 +141,13 @@ changes, and the app is not read.
 That name is the record of it being the interim firmware. The driver keeps no
 flag in OpenBeken's config: upstream may give its flags and unused bytes a
 meaning, and a config from a later OpenBeken could then read as interim. A name
-set through the setters survives any change of the config's layout. A plug you
+set through the setters survives any change of the config's layout. A device you
 have renamed is your own, and no longer the interim firmware.
 
 `AutoflashInterim` answers OK on the interim firmware and an error on any
 other; an OpenBeken without the driver, or with one from before it, does not
-know the command. `AutoflashInterim off` makes it the plug's OpenBeken for
-good (`openbeken-abcdef`), for a run that finds a plug left on it and is to
+know the command. `AutoflashInterim off` makes it the device's OpenBeken for
+good (`openbeken-abcdef`), for a run that finds a device left on it and is to
 end on OpenBeken; `AutoflashInterim on` makes it the interim firmware, for the
 run that sent it as one when the marker did not arrive (its update cut off in
 its last few kilobytes, after the whole image). The DHCP and mDNS names follow
@@ -172,12 +172,12 @@ the interim firmware, so there is none to erase.
 
 ## Building (BK7238, 4 MB table)
 
-OpenBeken's BK7238 build hard-wires the SDK's 2 MB partition table. The plugs the
+OpenBeken's BK7238 build hard-wires the SDK's 2 MB partition table. The devices the
 tool converts are on Sonoff's 4 MB table, and the SDK's 4 MB table is that layout:
 built with it, OpenBeken's OTA slot becomes the stock download partition
 (`0x286000`) that the stock bootloader applies from - so both OpenBeken updates
 and reversion to stock work through the ordinary `ota_http` - its config moves to
-the dedicated empty `0x3e1000`, and it reads the plug's real radio calibration at
+the dedicated empty `0x3e1000`, and it reads the device's real radio calibration at
 `0x3e0000`.
 
 Two patches, kept here and offered upstream as
@@ -239,14 +239,14 @@ docker run --rm -v "$(pwd)":/app ubuntu:24.04 bash -c '
   make APP_VERSION=s61 APP_NAME=OpenBK7238 FLASH_SIZE=4M OpenBK7238'
 ```
 
-`tools/repo/update_firmware.py openbeken` does all of the above for each plug -
+`tools/repo/update_firmware.py openbeken` does all of the above for each device -
 clone, patches, driver and table, build in [`build.Dockerfile`](build.Dockerfile) -
-and publishes the image as `artifacts/openbeken-<plug>-<version>.rbl`, the
+and publishes the image as `artifacts/openbeken-<device>-<version>.rbl`, the
 OpenBeken and SDK commits pinned in `firmware.json`
 ([docs/updating-firmware.md](../../../docs/updating-firmware.md#3-openbeken)).
 By hand, `output/s61/OpenBK7238_4M_s61.rbl` is the `rt_ota` image for the **OTA
 conversion**: wrap it in the CoolKit FOTA container with
-[`fota_wrap.py`](../fota_wrap.py) to push it to a stock plug.
+[`fota_wrap.py`](../fota_wrap.py) to push it to a stock device.
 `OpenBK7238_4M_QIO_s61.bin` beside it is a whole 4 MB flash - bootloader included
 - for the emulator or a UART flash.
 
@@ -255,20 +255,20 @@ What the builds were seen to do in the emulator, on the S61's dump, is in
 
 ## Updating
 
-A plug on an earlier release of this OpenBeken is updated by the tool
+A device on an earlier release of this OpenBeken is updated by the tool
 (`--firmware openbeken`; tools/autoflash/routes/update.py): it answers
 `AutoflashKind` for its kind and gives its release in its build string
 (`make APP_VERSION=`), and fetches the published image by `ota_http` into
 the download slot, as any OpenBeken update. Its settings stay: the hook
 erases them only on the interim firmware, and the driver's first-boot
 import, finding a Wi-Fi SSID set, imports nothing again - so what a later
-driver does on first boot reaches only a plug converted with it. An
+driver does on first boot reaches only a device converted with it. An
 upstream build is for the 2 MB table and has no driver, so it is not an
-update for these plugs.
+update for these devices.
 
 ## Reverting to stock
 
-On a converted plug the stock `rt_ota` bootloader is still in place and applies
+On a converted device the stock `rt_ota` bootloader is still in place and applies
 any valid RBL it finds at `0x286000` - downgrades included. With the 4 MB-table
 build that is OpenBeken's own OTA slot, so reversion is an ordinary OTA download
 of a **stock app RBL**:
@@ -279,7 +279,7 @@ AutoflashRevertToStock http://<tool>/stock_app_1.0.2.rbl
 
 The command first checks the OTA slot really is `0x286000` and refuses otherwise
 (a 2 MB-table build would write inside the app partition, where the stock
-bootloader never looks). The stock EasyFlash store is never touched, so the plug
+bootloader never looks). The stock EasyFlash store is never touched, so the device
 comes back with its own Wi-Fi, calibration and identity.
 
 The S61's stock app RBL is rebuilt from a dump - the app partition holds only the
@@ -290,7 +290,7 @@ does (`-c gzip -s aes`, RT-Thread's public key): the same body byte for byte,
 and the header's version, serial and time as the dump's own header has them.
 `stock_app.stock_rbl(dump)` does both, with nothing but Python; the conversion
 tool makes the image this way, from the public S61 dump, when an S61 goes back.
-A plug with no public dump, such as the Basic Gen5, goes back on eWeLink's
+A device with no public dump, such as the Basic Gen5, goes back on eWeLink's
 official file instead (`tools/autoflash/routes/beken/images.py`).
 The SDK's packer gives the same file:
 
@@ -301,23 +301,23 @@ sdk/beken_freertos_sdk/tools/rtt_ota/rt_ota_packaging_tool_cli \
     -k 0123456789ABCDEF0123456789ABCDEF -i 0123456789ABCDEF -v 1.0.2
 ```
 
-## Backing up the plug
+## Backing up the device
 
 [`backup.py`](../backup.py) copies the per-device region
 `0x3e0000–0x400000` (factory TLV with MAC and radio calibration, EasyFlash app
-store with Wi-Fi creds and `elecCalibCoef`, system ENV) out of a converted plug
+store with Wi-Fi creds and `elecCalibCoef`, system ENV) out of a converted device
 over OpenBeken's `GET /api/flash/<addr>-<len>`, and files it the way the S60
 conversion files its backup - never overwriting one that exists:
 
 ```
-captures/plugs/<mac-with-dashes>/sonoff-backup/
+captures/devices/<mac-with-dashes>/sonoff-backup/
     config-0x3e0000.bin    the 128 KiB region, as read
     stock-app-1.0.2.rbl    the stock app, repackaged (with --stock-rbl)
     backup.json            offsets, hashes, when, how to restore
 ```
 
 ```sh
-python3 ../backup.py --plug http://<plug> --stock-rbl stock_app_1.0.2.rbl
+python3 ../backup.py --device http://<device> --stock-rbl stock_app_1.0.2.rbl
 ```
 
 Byte-exact against the S61's dump in the emulator.

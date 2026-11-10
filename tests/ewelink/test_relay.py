@@ -4,8 +4,8 @@ from unittest import mock
 from tools.ewelink import relay
 
 
-class Plug:
-    """The cloud's socket as the app sees it, with a plug behind it that
+class Device:
+    """The cloud's socket as the app sees it, with a device behind it that
     reports each switch it is sent - or, `obeys` False, none."""
 
     def __init__(self, obeys=True, error=0, reports=False, knows_readings=True, meter=False):
@@ -25,7 +25,7 @@ class Plug:
         if not self.obeys:
             raise relay.socket.timeout
         if "uiActive" in last["params"]:   # its readings asked for: answered, then sent
-            if not self.knows_readings:    # a plug with no meter says nothing
+            if not self.knows_readings:    # a device with no meter says nothing
                 raise relay.socket.timeout
             self.answered += 1
             if self.answered == 1:
@@ -38,7 +38,7 @@ class Plug:
         if "sledOnline" in last["params"]:
             return {"error": 0, "deviceid": "1000abcdef", "sequence": last["sequence"]}
         self.on = last["params"]["switches"][0]["switch"] == "on"
-        if self.reports:   # its new state, as some plugs say it
+        if self.reports:   # its new state, as some devices say it
             return {"action": "update", "deviceid": "1000abcdef",
                     "params": {"switches": [{"outlet": 0, "switch": "on" if self.on else "off"}]}}
         return {"error": 0, "deviceid": "1000abcdef", "sequence": last["sequence"]}   # the S61's answer
@@ -47,36 +47,36 @@ class Plug:
         pass
 
 
-DEVICE = {"deviceid": "1000abcdef", "apikey": "made-up", "devicekey": "made-up", "online": True,
+RECORD = {"deviceid": "1000abcdef", "apikey": "made-up", "devicekey": "made-up", "online": True,
           "params": {"switches": [{"outlet": 0, "switch": "off"}]}}
 
 
 class RelayTests(unittest.TestCase):
-    def check(self, plug, device=DEVICE, ask=relay.check_relay, sockets=None, **more):
-        """Asked of `plug`, or of `sockets` one connection at a time."""
+    def check(self, device, record=RECORD, ask=relay.check_relay, sockets=None, **more):
+        """Asked of `device`, or of `sockets` one connection at a time."""
         if ask is relay.check_relay:
             more.setdefault("say", lambda *a: None)
-        connect = {"side_effect": sockets} if sockets else {"return_value": plug}
+        connect = {"side_effect": sockets} if sockets else {"return_value": device}
         account = relay.Account(lambda: ("eu", {"at": "t", "user": {"apikey": "a"}}))
-        with mock.patch.object(relay, "get_devices", return_value=[device]), \
+        with mock.patch.object(relay, "get_devices", return_value=[record]), \
                 mock.patch.object(relay, "READING_SETTLE", 0), \
                 mock.patch.object(relay, "api_json", return_value={"domain": "192.0.2.1", "port": 443}), \
                 mock.patch.object(relay.WebSocket, "connect", **connect):
             return ask(account=account, device_id="1000abcdef", **more)
 
-    def test_a_plug_that_answers_is_there_and_nothing_on_it_changes(self):
-        plug = Plug()
-        self.assertIs(self.check(plug, ask=relay.answers), True)
-        self.assertEqual([m["params"] for m in plug.sent if m.get("action") == "update"], [{"uiActive": 60}])
-        self.assertFalse(plug.on)
+    def test_a_device_that_answers_is_there_and_nothing_on_it_changes(self):
+        device = Device()
+        self.assertIs(self.check(device, ask=relay.answers), True)
+        self.assertEqual([m["params"] for m in device.sent if m.get("action") == "update"], [{"uiActive": 60}])
+        self.assertFalse(device.on)
 
-    def test_a_plug_with_no_meter_is_asked_to_keep_its_leds_setting(self):
-        plug = Plug(knows_readings=False)
-        device = {**DEVICE, "params": {**DEVICE["params"], "sledOnline": "off"}}
-        self.assertIs(self.check(plug, device, ask=relay.answers), True)
-        self.assertEqual([m["params"] for m in plug.sent if m.get("action") == "update"],
+    def test_a_device_with_no_meter_is_asked_to_keep_its_leds_setting(self):
+        device = Device(knows_readings=False)
+        record = {**RECORD, "params": {**RECORD["params"], "sledOnline": "off"}}
+        self.assertIs(self.check(device, record, ask=relay.answers), True)
+        self.assertEqual([m["params"] for m in device.sent if m.get("action") == "update"],
                          [{"uiActive": 60}, {"sledOnline": "off"}])
-        self.assertFalse(plug.on)
+        self.assertFalse(device.on)
 
     def test_a_dualr3_driving_a_motor_says_so(self):
         self.assertTrue(relay.motor_mode({"workMode": 2, "motorTurn": 0}))
@@ -84,22 +84,22 @@ class RelayTests(unittest.TestCase):
         self.assertFalse(relay.motor_mode({"switch": "on"}))
 
     def test_with_no_led_setting_reported_nothing_more_is_sent(self):
-        plug = Plug(knows_readings=False)
-        self.assertIs(self.check(plug, ask=relay.answers), False)
-        self.assertEqual([m["params"] for m in plug.sent if m.get("action") == "update"], [{"uiActive": 60}])
+        device = Device(knows_readings=False)
+        self.assertIs(self.check(device, ask=relay.answers), False)
+        self.assertEqual([m["params"] for m in device.sent if m.get("action") == "update"], [{"uiActive": 60}])
 
-    def test_a_plug_refusing_the_question_is_there(self):
+    def test_a_device_refusing_the_question_is_there(self):
         # The DualR3's Sonoff firmware answers uiActive with error 400: its own
-        # refusal, which eWeLink passes on, and only a plug there sends.
-        plug = Plug(error=400)
-        self.assertIs(self.check(plug, ask=relay.answers), True)
-        self.assertEqual([m["params"] for m in plug.sent if m.get("action") == "update"], [{"uiActive": 60}])
+        # refusal, which eWeLink passes on, and only a device there sends.
+        device = Device(error=400)
+        self.assertIs(self.check(device, ask=relay.answers), True)
+        self.assertEqual([m["params"] for m in device.sent if m.get("action") == "update"], [{"uiActive": 60}])
 
-    def test_a_plug_online_still_from_before_does_not_answer(self):
-        # eWeLink keeps a plug that restarted online until its heartbeats are
+    def test_a_device_online_still_from_before_does_not_answer(self):
+        # eWeLink keeps a device that restarted online until its heartbeats are
         # missed: what is sent to it meanwhile goes to no one.
-        self.assertIs(self.check(Plug(obeys=False), ask=relay.answers), False)
-        self.assertIs(self.check(Plug(error=504), ask=relay.answers), False)
+        self.assertIs(self.check(Device(obeys=False), ask=relay.answers), False)
+        self.assertIs(self.check(Device(error=504), ask=relay.answers), False)
 
     def test_whether_it_answers_is_not_known_without_ewelink(self):
         account = relay.Account(mock.Mock(side_effect=relay.EwelinkError("no route")))
@@ -114,16 +114,16 @@ class RelayTests(unittest.TestCase):
         def devices(_region, token):
             if token == "old":
                 raise relay.SessionEnded("eWeLink ended the sign-in")
-            return [DEVICE]
+            return [RECORD]
         with mock.patch.object(relay, "get_devices", devices), \
                 mock.patch.object(relay, "api_json", return_value={"domain": "192.0.2.1", "port": 443}), \
-                mock.patch.object(relay.WebSocket, "connect", return_value=Plug()):
+                mock.patch.object(relay.WebSocket, "connect", return_value=Device()):
             self.assertIs(relay.answers(account=account, device_id="1000abcdef"), True)
             self.assertIs(relay.answers(account=account, device_id="1000abcdef"), True)
         self.assertEqual(sign_in.call_count, 2)
 
     def test_a_websocket_refusing_the_token_is_a_sign_in_ended(self):
-        class Refusing(Plug):
+        class Refusing(Device):
             def receive_json(self, timeout=None):
                 return {"error": 401}
         with mock.patch.object(relay, "api_json", return_value={"domain": "192.0.2.1", "port": 443}), \
@@ -132,20 +132,20 @@ class RelayTests(unittest.TestCase):
             relay.app_socket("eu", {"at": "old", "user": {"apikey": "a"}})
 
     def test_the_relay_is_switched_over_and_back(self):
-        plug = Plug()
-        self.assertEqual(self.check(plug)[:2], (True, True))
-        switched = [m["params"] for m in plug.sent if "switches" in m.get("params", {})]
+        device = Device()
+        self.assertEqual(self.check(device)[:2], (True, True))
+        switched = [m["params"] for m in device.sent if "switches" in m.get("params", {})]
         self.assertEqual(switched, [{"switches": [{"switch": "on", "outlet": 0}]},
                                     {"switches": [{"switch": "off", "outlet": 0}]}])
-        self.assertFalse(plug.on)   # as it was
+        self.assertFalse(device.on)   # as it was
 
     def test_a_report_of_the_new_state_confirms_a_switch_too(self):
-        self.assertEqual(self.check(Plug(reports=True))[:2], (True, True))
+        self.assertEqual(self.check(Device(reports=True))[:2], (True, True))
 
-    def test_a_query_from_the_plug_passed_on_meanwhile_is_not_its_report(self):
+    def test_a_query_from_the_device_passed_on_meanwhile_is_not_its_report(self):
         # Seen in the emulator: as Sonoff's firmware came back it asked the cloud
         # for its settings, a query whose params are a list of their names.
-        class Asking(Plug):
+        class Asking(Device):
             def receive_json(self, timeout=None):
                 if self.sent[-1].get("action") == "update" and not getattr(self, "asked", False):
                     self.asked = True
@@ -153,63 +153,63 @@ class RelayTests(unittest.TestCase):
                 return super().receive_json(timeout)
         self.assertEqual(self.check(Asking(reports=True))[:2], (True, True))
 
-    def test_a_switch_the_plug_never_reports_is_not_confirmed(self):
+    def test_a_switch_the_device_never_reports_is_not_confirmed(self):
         with mock.patch.object(relay, "SWITCH_WAIT", 0.2), mock.patch.object(relay, "RESTORE_WAIT", 0.5), \
                 mock.patch.object(relay.time, "sleep"):
-            self.assertEqual(self.check(Plug(obeys=False))[:2], (False, False))
+            self.assertEqual(self.check(Device(obeys=False))[:2], (False, False))
 
-    def test_a_plug_that_drops_off_as_it_switches_is_switched_back_once_it_returns(self):
-        # Seen in the emulator: the plug confirmed the first switch, closed its
+    def test_a_device_that_drops_off_as_it_switches_is_switched_back_once_it_returns(self):
+        # Seen in the emulator: the device confirmed the first switch, closed its
         # connection, and the switch back reached no one; the relay was left over.
-        class Dropping(Plug):
+        class Dropping(Device):
             def receive_json(self, timeout=None):
                 if self.sent[-1].get("action") == "update" and len(self.sent) > 2:
                     raise relay.socket.timeout       # the switch back, sent as it went
                 return super().receive_json(timeout)
-        first, again = Dropping(), Plug()
+        first, again = Dropping(), Device()
         again.on = True
         with mock.patch.object(relay.time, "sleep"), mock.patch.object(relay, "SWITCH_WAIT", 0.2):
             self.assertEqual(self.check(first, sockets=[first, again])[:2], (True, True))
         self.assertFalse(again.on)   # as it was
 
-    def test_a_plug_that_never_returns_is_given_up_on(self):
+    def test_a_device_that_never_returns_is_given_up_on(self):
         with mock.patch.object(relay, "SWITCH_WAIT", 0.2), mock.patch.object(relay, "RESTORE_WAIT", 0.5), \
                 mock.patch.object(relay.time, "sleep"):
-            self.assertEqual(self.check(Plug(obeys=False))[:2], (False, False))
+            self.assertEqual(self.check(Device(obeys=False))[:2], (False, False))
 
     def test_a_switch_turned_down_is_not_confirmed(self):
         with mock.patch.object(relay, "RESTORE_WAIT", 0.5), mock.patch.object(relay.time, "sleep"):
-            self.assertEqual(self.check(Plug(error=504))[:2], (False, False))
+            self.assertEqual(self.check(Device(error=504))[:2], (False, False))
 
-    def test_an_offline_plug_is_not_tried(self):
-        plug = Plug()
-        self.assertIsNone(self.check(plug, {**DEVICE, "online": False}))
-        self.assertEqual(plug.sent, [])
+    def test_an_offline_device_is_not_tried(self):
+        device = Device()
+        self.assertIsNone(self.check(device, {**RECORD, "online": False}))
+        self.assertEqual(device.sent, [])
 
     def test_the_meter_is_read_after_each_switch_as_the_app_asks(self):
-        plug = Plug(meter=True)
-        checked = self.check(plug)
+        device = Device(meter=True)
+        checked = self.check(device)
         self.assertEqual(checked, relay.RelayCheck(True, True, {"Voltage": 230.08, "Power": 99.99},
                                                    {"Voltage": 0.0, "Power": 0.0}))
-        asked = [m["params"] for m in plug.sent if m.get("action") == "update"]
+        asked = [m["params"] for m in device.sent if m.get("action") == "update"]
         self.assertEqual(asked, [{"switches": [{"switch": "on", "outlet": 0}]}, {"uiActive": 60},
                                  {"switches": [{"switch": "off", "outlet": 0}]}, {"uiActive": 60}])
 
-    def test_a_plug_on_already_is_read_on_after_its_switch_back(self):
-        plug = Plug(meter=True)
-        plug.on = True
-        device = {**DEVICE, "params": {"switches": [{"outlet": 0, "switch": "on"}]}}
-        checked = self.check(plug, device)
+    def test_a_device_on_already_is_read_on_after_its_switch_back(self):
+        device = Device(meter=True)
+        device.on = True
+        record = {**RECORD, "params": {"switches": [{"outlet": 0, "switch": "on"}]}}
+        checked = self.check(device, record)
         self.assertEqual((checked.on["Power"], checked.off["Power"]), (99.99, 0.0))
-        self.assertTrue(plug.on)   # as it was
+        self.assertTrue(device.on)   # as it was
 
-    def test_a_plug_sending_no_readings_has_none(self):
+    def test_a_device_sending_no_readings_has_none(self):
         with mock.patch.object(relay, "READING_WAIT", 0.2):
-            self.assertEqual(self.check(Plug()), relay.RelayCheck(True, True, None, None))
+            self.assertEqual(self.check(Device()), relay.RelayCheck(True, True, None, None))
 
-    def test_a_plug_refusing_to_send_readings_is_not_waited_for(self):
+    def test_a_device_refusing_to_send_readings_is_not_waited_for(self):
         # The DualR3's Sonoff firmware refuses uiActive (error 400).
-        class Refusing(Plug):
+        class Refusing(Device):
             def receive_json(self, timeout=None):
                 last = self.sent[-1]
                 if "uiActive" in last.get("params", {}):

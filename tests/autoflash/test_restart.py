@@ -9,8 +9,8 @@ from unittest import mock
 from tools.autoflash import detect, output, restart
 
 
-class Plug(http.server.ThreadingHTTPServer):
-    """What answers at a plug's address: a mover (POST /restart), or a Tasmota
+class Device(http.server.ThreadingHTTPServer):
+    """What answers at a device's address: a mover (POST /restart), or a Tasmota
     (/cm?cmnd=Restart 1, refused without a Referer as Tasmota refuses it)."""
 
     def __init__(self, kind, restarts=True):
@@ -47,32 +47,32 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 class RestartTests(unittest.TestCase):
     def serve(self, kind, restarts=True):
-        plug = Plug(kind, restarts)
-        threading.Thread(target=plug.serve_forever, daemon=True).start()
-        self.addCleanup(plug.server_close)
-        self.addCleanup(plug.shutdown)
-        return plug
+        device = Device(kind, restarts)
+        threading.Thread(target=device.serve_forever, daemon=True).start()
+        self.addCleanup(device.server_close)
+        self.addCleanup(device.shutdown)
+        return device
 
-    def run_restart(self, plug, running, back=(None, "x")):
+    def run_restart(self, device, running, back=(None, "x")):
         with mock.patch.object(detect, "identify", side_effect=[running, *back]), \
                 mock.patch.object(restart.time, "sleep"), mock.patch.object(output, "say"):
-            return restart.restart(plug.host)
+            return restart.restart(device.host)
 
     def test_a_mover_is_restarted_by_its_route(self):
-        plug = self.serve("mover")
-        self.assertTrue(self.run_restart(plug, "mover"))
-        self.assertIn(("POST", "/restart"), plug.asked)
+        device = self.serve("mover")
+        self.assertTrue(self.run_restart(device, "mover"))
+        self.assertIn(("POST", "/restart"), device.asked)
 
     def test_a_mover_before_1_2_0_cannot_be(self):
-        plug = self.serve("mover", restarts=False)
-        self.assertFalse(self.run_restart(plug, "mover"))
+        device = self.serve("mover", restarts=False)
+        self.assertFalse(self.run_restart(device, "mover"))
 
     def test_tasmota_and_its_safeboot_are_restarted_by_command(self):
         for running in ("tasmota", "hub", "startup"):
             with self.subTest(running):
-                plug = self.serve("tasmota")
-                self.assertTrue(self.run_restart(plug, running))
-                self.assertTrue(any("Restart" in path for _, path in plug.asked))
+                device = self.serve("tasmota")
+                self.assertTrue(self.run_restart(device, running))
+                self.assertTrue(any("Restart" in path for _, path in device.asked))
 
     def test_openbeken_by_its_own(self):
         with mock.patch.object(detect, "identify", return_value="interim"), \
@@ -90,9 +90,9 @@ class RestartTests(unittest.TestCase):
                 asked.assert_not_called()
 
     def test_one_that_does_not_answer_again_is_not_taken_as_restarted(self):
-        plug = self.serve("mover")
+        device = self.serve("mover")
         with mock.patch.object(restart, "BACK_WAIT", 0.0):
-            self.assertFalse(self.run_restart(plug, "mover", back=(None,)))
+            self.assertFalse(self.run_restart(device, "mover", back=(None,)))
 
 
 if __name__ == "__main__":

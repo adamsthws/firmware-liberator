@@ -6,8 +6,8 @@ from defaults with no Wi-Fi and raises its setup network.  A record carrying the
 home Wi-Fi therefore lets a freshly installed Tasmota join it straight away.
 
 The record here is a *template*: Tasmota's own defaults with the Wi-Fi fields
-blanked, captured once from a plug running the same release.  The bridge fills
-in the Wi-Fi it joined with, so the password never leaves the plug.
+blanked, captured once from a device running the same release.  The bridge fills
+in the Wi-Fi it joined with, so the password never leaves the device.
 
 Layout: tasmota/include/tasmota_types.h and tasmota.h at commit db3ae7e.
 Algorithms: settings.ino (GetCfgCrc32, SettingsUpdateText, SettingsBufferXor).
@@ -47,9 +47,9 @@ HOSTNAME_MAX = 32                # TasmotaGlobal.hostname[33]
 
 # A template is only used with the firmware its layout was checked against.
 #
-# It was captured from a converted plug running official Tasmota 15.6.0
+# It was captured from a converted device running official Tasmota 15.6.0
 # (safeboot_migration.INTERIM_TASMOTA_COMMIT, the release the interim firmware
-# is made from - not the one a converted plug ends on, which firmware.json
+# is made from - not the one a converted device ends on, which firmware.json
 # pins), and is installed into the Berry Tasmota D1 uploads (safeboot_migration
 # PINNED_ARTIFACTS["bluetooth"], 15.6.0.1 built from f5b34a2).  At those two
 # commits the record layout, text pool order and size, cfg_holder, CRC and the

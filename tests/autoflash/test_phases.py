@@ -1,5 +1,5 @@
-"""A phase on the plug (tools/autoflash/phases.py): its program loaded and
-fetched, waited on only while the plug may still be working on it, its
+"""A phase on the device (tools/autoflash/phases.py): its program loaded and
+fetched, waited on only while the device may still be working on it, its
 failures said, and the server's lines made readable.
 
 PhaseRunner starts the plan server (serve_safeboot_migration.py) where it is
@@ -48,7 +48,7 @@ class LoaderTests(unittest.TestCase):
             self.assertIn(fragment, compact)
 
     def test_short_loader_tries_the_fetch_again_until_it_is_answered(self):
-        # Under packet loss one connection timed out and the plug ran nothing
+        # Under packet loss one connection timed out and the device ran nothing
         # (lossy-phase, HTP: Connection timeout): each try a new connection,
         # the first answered taken; ten of 2 s each, inside FETCH_DEADLINE.
         compact = short_loader(self.URL)
@@ -70,7 +70,7 @@ class LoaderTests(unittest.TestCase):
         self.assertEqual(found.group("token"), "d2_fjQTqh4KzfHDFSefx")
 
     def started(self, *outcomes):
-        """How many times the start was sent, the plug answering each time."""
+        """How many times the start was sent, the device answering each time."""
         from unittest import mock
         device = mock.Mock(berry=mock.Mock(side_effect=list(outcomes)), answers=mock.Mock(return_value=True))
         runner = PhaseRunner(repo_root=Path("."), manifest=Path("m.json"), evidence_dir=Path("live"),
@@ -80,9 +80,9 @@ class LoaderTests(unittest.TestCase):
             runner._start('autoflash_restore("token")')
         return device.berry.call_count
 
-    def test_a_start_that_never_reached_the_plug_is_sent_again(self):
+    def test_a_start_that_never_reached_the_device_is_sent_again(self):
         # Seen in the fault suite: a Wi-Fi blip as G1's start went, and the
-        # plug never began - the step failed, to go through on the next try.
+        # device never began - the step failed, to go through on the next try.
         import urllib.error
         dropped = urllib.error.URLError(ConnectionRefusedError(111, "Connection refused"))
         self.assertEqual(self.started(dropped, None), 2)
@@ -112,7 +112,7 @@ class LoaderTests(unittest.TestCase):
 
 
 class FetchCheckTests(unittest.TestCase):
-    """A phase stops within seconds when the plug never fetches its program."""
+    """A phase stops within seconds when the device never fetches its program."""
 
     class Process:
         def __init__(self):
@@ -133,7 +133,7 @@ class FetchCheckTests(unittest.TestCase):
         from tools.autoflash import phases
         runner = phases.PhaseRunner.__new__(phases.PhaseRunner)
         runner.log = mock.Mock()
-        runner._plug_answers = mock.Mock(side_effect=list(answers))
+        runner._device_answers = mock.Mock(side_effect=list(answers))
         runner._start = mock.Mock()
         return runner
 
@@ -148,14 +148,14 @@ class FetchCheckTests(unittest.TestCase):
         from tools.autoflash import phases
         process, runner = self.Process(), self.runner()
         with mock.patch.object(phases, "FETCH_DEADLINE", 1.0):
-            with self.assertRaises(phases.PlugNeverConnected):
+            with self.assertRaises(phases.DeviceNeverConnected):
                 runner._require_fetch(process, [], self.Reader(), "preflight")
         self.assertTrue(process.terminated)
-        runner._start.assert_not_called()  # it was answered: the plug ran it, and could not reach us
+        runner._start.assert_not_called()  # it was answered: the device ran it, and could not reach us
 
     def test_a_start_lost_on_the_way_is_sent_again_not_failed(self):
         # Seen in the fault suite: L1's start sent as a Wi-Fi blip began, lost
-        # in it, and the step failed as a firewall - the plug answering.
+        # in it, and the step failed as a firewall - the device answering.
         from unittest import mock
         from tools.autoflash import phases
         captured, runner = [], self.runner()
@@ -212,7 +212,7 @@ class FetchCheckTests(unittest.TestCase):
         runner = self.runner(answers=[True] * 10)
         runner._unanswered, runner._start_code = True, ("loader",)
         with mock.patch.object(phases, "FETCH_DEADLINE", 1.0):
-            with self.assertRaises(phases.PlugNeverConnected):
+            with self.assertRaises(phases.DeviceNeverConnected):
                 runner._require_fetch(self.Process(), [], self.Reader(), "plan")
         self.assertEqual(runner._start.call_count, phases.START_TRIES - 1)
 
@@ -231,29 +231,29 @@ class FetchCheckTests(unittest.TestCase):
                     captured.append('  [10.0.0.5] "GET /berry/plan.be HTTP/1.1" 200 -')
         with mock.patch.object(phases, "FETCH_DEADLINE", 2.0):
             runner._require_fetch(self.Process(), captured, Reader(), "plan")
-        runner._plug_answers.assert_not_called()
+        runner._device_answers.assert_not_called()
 
 
 class PhaseFailureTests(unittest.TestCase):
-    """A phase that does not pass says why: the plug's words, or the timeout's."""
+    """A phase that does not pass says why: the device's words, or the timeout's."""
 
-    def test_the_plugs_reason_is_given(self):
+    def test_the_devices_reason_is_given(self):
         from tools.autoflash.phases import failure_reason
-        captured = "STAGE RESULT: FAIL\nTHE PLUG SAYS: migration_refused: GET /chunk/safeboot/2 returned HTTP -1\n"
+        captured = "STAGE RESULT: FAIL\nTHE DEVICE SAYS: migration_refused: GET /chunk/safeboot/2 returned HTTP -1\n"
         self.assertEqual(failure_reason(captured),
                          "the device says: migration_refused: GET /chunk/safeboot/2 returned HTTP -1")
 
     def test_a_timeout_is_given(self):
         from tools.autoflash.phases import failure_reason
         self.assertIn("sent nothing for 6 minutes",
-                      failure_reason("TIMEOUT: the plug has sent nothing for 6 minutes, and gave no reason."))
+                      failure_reason("TIMEOUT: the device has sent nothing for 6 minutes, and gave no reason."))
 
     def test_nothing_known_is_none(self):
         from tools.autoflash.phases import failure_reason
         self.assertIsNone(failure_reason("  [10.0.0.63] \"GET /berry/stage.be HTTP/1.1\" 200 -"))
 
     def test_the_step_abort_carries_the_reason(self):
-        error = phases.phase_failed("stage", 4, "THE PLUG SAYS: flash is not exactly 4 MiB")
+        error = phases.phase_failed("stage", 4, "THE DEVICE SAYS: flash is not exactly 4 MiB")
         self.assertEqual(str(error), "stage did not pass: the device says: flash is not exactly 4 MiB")
         # The server's own marker now, and the old one a log of an earlier version holds.
         error = phases.phase_failed("stage", 4, "THE DEVICE SAYS: flash is not exactly 4 MiB")
@@ -267,10 +267,10 @@ class PhaseFailureTests(unittest.TestCase):
         shown = []
         runner.log = shown.append
         runner.device = mock.Mock(console_log=mock.Mock(return_value=lines))
-        return runner._show_plug_console(), shown
+        return runner._show_device_console(), shown
 
-    def test_the_plugs_console_is_read_for_its_own_words(self):
-        # As the emulated plug logged it, cut off from the computer mid-stage.
+    def test_the_devices_console_is_read_for_its_own_words(self):
+        # As the emulated device logged it, cut off from the computer mid-stage.
         said, shown = self.console([
             "13:56:01.000 WIF: Connected",
             "13:56:03.251 AUTOFLASH STAGE: 65536/811824 bytes",
@@ -295,7 +295,7 @@ class PhaseFailureTests(unittest.TestCase):
         self.assertIsNone(said)
         self.assertEqual(len(shown), 2)  # still shown, for whoever reads the log
 
-    def test_a_plug_stuck_after_a_phase_is_to_be_switched_off_and_on(self):
+    def test_a_device_stuck_after_a_phase_is_to_be_switched_off_and_on(self):
         # Tasmota waits for ever on a download cut off part way, answering
         # nothing; switching it off and on is the way out, and safe here.
         from unittest import mock
@@ -304,23 +304,23 @@ class PhaseFailureTests(unittest.TestCase):
             runner = PhaseRunner.__new__(PhaseRunner)
             shown = []
             runner.log = shown.append
-            runner._plug_answers = mock.Mock(return_value=answers)
+            runner._device_answers = mock.Mock(return_value=answers)
             runner._advise_if_stuck()
             self.assertEqual(any("switch it off" in line for line in shown), advised, answers)
 
-    def test_a_plug_that_cannot_answer_adds_nothing(self):
+    def test_a_device_that_cannot_answer_adds_nothing(self):
         from unittest import mock
         from tools.autoflash.phases import PhaseRunner
         runner = PhaseRunner.__new__(PhaseRunner)
         shown = []
         runner.log = shown.append
         runner.device = mock.Mock(console_log=mock.Mock(side_effect=OSError("unreachable")))
-        runner._show_plug_console()
+        runner._show_device_console()
         self.assertEqual(shown, [])
 
 
 class PhaseWaitTests(unittest.TestCase):
-    """A phase is waited on only while the plug may still be working on it."""
+    """A phase is waited on only while the device may still be working on it."""
 
     class Server:
         def __init__(self, exits_after=None):
@@ -341,49 +341,49 @@ class PhaseWaitTests(unittest.TestCase):
         from unittest import mock
         from tools.autoflash import phases
         runner = phases.PhaseRunner.__new__(phases.PhaseRunner)
-        runner._plug_answers = mock.Mock(side_effect=answers)
+        runner._device_answers = mock.Mock(side_effect=answers)
         clock = iter(range(1000, 100_000, 2))
         with mock.patch.object(phases.time, "monotonic", side_effect=lambda: next(clock)):
             return runner._wait("stage", server, exec_timeout, lambda: 1000 - heard_ago), runner
 
-    def test_a_plug_that_answers_after_going_quiet_has_stopped(self):
+    def test_a_device_that_answers_after_going_quiet_has_stopped(self):
         from tools.autoflash.phases import PhaseError
         with self.assertRaisesRegex(PhaseError, "stopped the stage without reaching this computer"):
             self.wait(self.Server(), answers=[True])
 
-    def test_a_busy_plug_is_waited_on(self):
+    def test_a_busy_device_is_waited_on(self):
         # Not answering: still at it (or offline, riding out a router restart).
         code, runner = self.wait(self.Server(exits_after=40), answers=[False] * 100)
         self.assertEqual(code, 0)
-        self.assertGreater(runner._plug_answers.call_count, 1)
+        self.assertGreater(runner._device_answers.call_count, 1)
 
-    def test_a_plug_still_sending_is_not_disturbed(self):
+    def test_a_device_still_sending_is_not_disturbed(self):
         code, runner = self.wait(self.Server(exits_after=20), answers=[True] * 100, heard_ago=-10_000)
         self.assertEqual(code, 0)
-        runner._plug_answers.assert_not_called()
+        runner._device_answers.assert_not_called()
 
     def test_no_verdict_while_a_start_that_never_arrived_waits_to_go_again(self):
-        # Seen in the fault suite: a blip took the plug off its Wi-Fi for 18 s
+        # Seen in the fault suite: a blip took the device off its Wi-Fi for 18 s
         # as the start went; this check failed the step just before it went again.
         from unittest import mock
         from tools.autoflash import phases
         runner = phases.PhaseRunner.__new__(phases.PhaseRunner)
         runner._resending = True
-        runner._plug_answers = mock.Mock(return_value=True)
+        runner._device_answers = mock.Mock(return_value=True)
         clock = iter(range(1000, 100_000, 2))
         with mock.patch.object(phases.time, "monotonic", side_effect=lambda: next(clock)):
             self.assertEqual(runner._wait("restore", self.Server(exits_after=30), 540.0, lambda: 0), 0)
-        runner._plug_answers.assert_not_called()
+        runner._device_answers.assert_not_called()
 
     def test_a_start_lost_on_the_way_is_sent_again_not_failed(self):
         # Seen in the fault suite: L1's start sent as a Wi-Fi blip began. The
-        # plug answered 40 s on, never having run it, and the step failed.
+        # device answered 40 s on, never having run it, and the step failed.
         from unittest import mock
         from tools.autoflash import phases
         runner = phases.PhaseRunner.__new__(phases.PhaseRunner)
         shown = []
         runner.log = shown.append
-        runner._plug_answers = mock.Mock(side_effect=[True] + [False] * 100)  # then busy running it
+        runner._device_answers = mock.Mock(side_effect=[True] + [False] * 100)  # then busy running it
         runner._start_code = ("autoflash_run()",)
         runner._unanswered = True
         sent = []
@@ -396,13 +396,13 @@ class PhaseWaitTests(unittest.TestCase):
 
     def test_a_start_cut_off_on_the_way_is_sent_again_though_taken_for_sent(self):
         # Seen in the fault suite: L1's start cut off by a Wi-Fi blip, its
-        # request ending as if sent. The plug asked for nothing after it.
+        # request ending as if sent. The device asked for nothing after it.
         from unittest import mock
         from tools.autoflash import phases
         for asked, again in ((900, ["autoflash_run()"]), (None, ["autoflash_run()"]), (1100, [])):
             runner = phases.PhaseRunner.__new__(phases.PhaseRunner)
             runner.log = lambda line: None
-            runner._plug_answers = mock.Mock(side_effect=[True] + [False] * 100)
+            runner._device_answers = mock.Mock(side_effect=[True] + [False] * 100)
             runner._start_code, runner._started_at = ("autoflash_run()",), 1000
             sent = []
             runner._start = sent.append
@@ -420,7 +420,7 @@ class PhaseWaitTests(unittest.TestCase):
         from tools.autoflash import phases
         runner = phases.PhaseRunner.__new__(phases.PhaseRunner)
         runner.log = lambda line: None
-        runner._plug_answers = mock.Mock(return_value=True)
+        runner._device_answers = mock.Mock(return_value=True)
         runner._start_code = ("autoflash_run()",)
         runner._unanswered = True
         runner._start = mock.Mock()
@@ -456,11 +456,11 @@ class PhaseWaitTests(unittest.TestCase):
         from tools.autoflash import phases
         runner = phases.PhaseRunner.__new__(phases.PhaseRunner)
         runner._started_at = 1_000_000.0  # sent again just now: not quiet yet
-        runner._plug_answers = mock.Mock(return_value=True)
+        runner._device_answers = mock.Mock(return_value=True)
         clock = iter(range(1000, 1060, 2))
         with mock.patch.object(phases.time, "monotonic", side_effect=lambda: next(clock)):
             self.assertEqual(runner._wait("restore", self.Server(exits_after=25), 540.0, lambda: 0), 0)
-        runner._plug_answers.assert_not_called()
+        runner._device_answers.assert_not_called()
 
     def test_the_backstop_still_ends_it(self):
         from tools.autoflash.phases import PhaseError
@@ -468,7 +468,7 @@ class PhaseWaitTests(unittest.TestCase):
             self.wait(self.Server(), answers=[False] * 1000, exec_timeout=60.0)
 
     def test_starting_does_not_wait_for_a_reply(self):
-        # The commit restarts the plug: its reply never comes, and the result
+        # The commit restarts the device: its reply never comes, and the result
         # is already in - this used to cost a minute per conversion.
         import threading
         from unittest import mock
@@ -483,7 +483,7 @@ class PhaseWaitTests(unittest.TestCase):
 
 
     def started_again(self, phase, arm, lost):
-        """The commands a plug is sent when its start goes again: by `lost`,
+        """The commands a device is sent when its start goes again: by `lost`,
         given the runner and its start, standing in for what notices."""
         import time as real_time
         from unittest import mock
@@ -494,7 +494,7 @@ class PhaseWaitTests(unittest.TestCase):
         sent = []
         runner.device = mock.Mock()
         runner._require_fetch = mock.Mock()
-        runner._plug_back = mock.Mock(return_value=True)
+        runner._device_back = mock.Mock(return_value=True)
         runner.device.berry.side_effect = lambda code, timeout: sent.append(code) or lost(runner, code)
 
         def wait(*args):
@@ -507,7 +507,7 @@ class PhaseWaitTests(unittest.TestCase):
         return url, sent
 
     def test_a_start_sent_again_fetches_its_instructions_again_first(self):
-        # Seen in the fault suite: K1's plug switched off just after it fetched
+        # Seen in the fault suite: K1's device switched off just after it fetched
         # its instructions. Restarted, it had lost them, and answered the start,
         # sent again as it came back, with "'autoflash_run' undeclared".
         import urllib.error
@@ -517,7 +517,7 @@ class PhaseWaitTests(unittest.TestCase):
                 gone = []
 
                 def lost(runner, code):
-                    if code == start and not gone:   # the plug off as the start went
+                    if code == start and not gone:   # the device off as the start went
                         gone.append(code)
                         raise urllib.error.URLError("no route to host")
                 url, sent = self.started_again(phase, arm, lost)
@@ -525,7 +525,7 @@ class PhaseWaitTests(unittest.TestCase):
                 self.assertEqual(sent[1], start)       # off as it went
                 self.assertIn(url, sent[2])            # back: fetched again,
                 self.assertEqual(sent[3], start)       # then started, a command of its own
-                self.assertNotIn(start, sent[2])       # never in one: the plug runs out of stack
+                self.assertNotIn(start, sent[2])       # never in one: the device runs out of stack
 
 
 class PhaseRunTests(unittest.TestCase):
@@ -585,11 +585,11 @@ sys.exit({code})
         log = (self.root / "live" / "plan-move-server.log").read_text(encoding="utf-8")
         self.assertIn("joined <wifi-name>", log)
         self.assertNotIn("Home-2G-made-up", log)
-        self.assertIsNotNone(runner.busy_seconds)  # the plug's last request came after the start
+        self.assertIsNotNone(runner.busy_seconds)  # the device's last request came after the start
         sent = [c.args[0] for c in self.device.berry.call_args_list]
         self.assertIn("compile(", sent[0])
         # Started by a short command of its own, not from the loader's line:
-        # the plan, run from there, overflowed the plug's stack.
+        # the plan, run from there, overflowed the device's stack.
         self.assertEqual(sent[1:], [f"{phases.START_NAME}()"])
 
     def test_a_server_with_no_loader_stops_the_phase_with_what_it_said(self):
@@ -621,7 +621,7 @@ sys.exit({code})
         self.device.berry_fire.assert_not_called()
         self.device.berry.assert_not_called()
 
-    def test_a_failed_phase_carries_the_plugs_own_reason(self):
+    def test_a_failed_phase_carries_the_devices_own_reason(self):
         self.device.console_log.return_value = [
             'RSL: RESULT = {"Br":"[migration_refused] the staged image did not verify"}']
         (code, said), _ = self.run_phase("stage", [self.loader(), self.FETCH], code=3, recovery=b"image")

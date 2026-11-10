@@ -26,7 +26,7 @@ import json
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import firewall, hostsys, names, output, plugs, prompts, readout, runs, safety_locks
+from tools.autoflash import firewall, hostsys, names, output, records, prompts, readout, runs, safety_locks
 from tools.autoflash import setup_network
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes.espressif import installer
@@ -56,8 +56,8 @@ def read_and_anonymise(ctx: Context, manifest: dict[str, Any], chip: chips.Chip,
     manifest["firmware"] = firmware_of(flash)
     manifest["facts"] = device_facts.lines(flash, efuse, device_facts.parse_info(info) if info else None)
     manifest["flash"] = {"size": report["size"], "sha256": report["sha256"],
-                         "matches_device": report.get("matches_plug")}
-    saved, fresh = plugs.save_backup(flash, efuse, report, version, kind=readout.describe(device))
+                         "matches_device": report.get("matches_device")}
+    saved, fresh = records.save_backup(flash, efuse, report, version, kind=readout.describe(device))
     if fresh:
         output.say(f"    Kept on this computer too, in {runs.display_path(saved)}: private, as it holds")
         output.say("    your Wi-Fi password. Going back to Sonoff's firmware later can use it.")
@@ -122,17 +122,17 @@ def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, *,
     # Before anything else: a rule a run stopped part way left is taken over
     # here, and removed as this run ends.
     firewall.ensure_firewall(ctx)
-    plug_ip = ctx.state.input("plug_ip")
-    if plug_ip and installer.bridge_answers(plug_ip):
+    device_ip = ctx.state.input("device_ip")
+    if device_ip and installer.bridge_answers(device_ip):
         # A readout stopped part way left it there: read through it.
         output.say("The reading program is on the device already, from a readout stopped part way.")
         ctx.state.set_input(readout.STATE_KEY, "sent")
-        return read_through(ctx, plug_ip)
+        return read_through(ctx, device_ip)
     with safety_locks.lifted(ROOT, "RECOVERY_LOCK"):
         code = hostsys.run_tool(hostsys.python_script(
             "tools/espressif/serve_tasmota_ota.py",
             "--listen-ip", ctx.listen_ip(), "--listen-port", str(port),
-            "--device-ip", ctx.state.input("plug_ip"), "--firmware", str(wrapped),
+            "--device-ip", ctx.state.input("device_ip"), "--firmware", str(wrapped),
             "--email", ctx.email(), "--region", ctx.ewelink_region(), "--expected-current-version", version,
             "--mdns-capture", str(ctx.dir / "mdns.json"),
             "--i-understand-stock-has-no-automatic-rollback", "--readout-model", name, unbuffered=True),

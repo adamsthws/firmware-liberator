@@ -1,6 +1,6 @@
 # The tool's unit tests, then the firmware a conversion ends on, run on the
 # emulator for each device a change could affect (tools/repo/emulator_check.py):
-# each final firmware installed, then each plug taken to the other. Nothing of
+# each final firmware installed, then each device taken to the other. Nothing of
 # Sonoff's is kept here, no cloud and no secret: it runs on any runner, and a pull
 # request from a fork runs it as it is.
 name: Final firmware on the emulator
@@ -203,10 +203,10 @@ jobs:
         with:
           name: emulator-logs-${{ matrix.device }}
           path: |
-            captures/emulation/public-plugs/
+            captures/emulation/public-devices/
             captures/emulation/device-check/
             captures/emulation/beken/suite/check-*.log
-            captures/emulation/state-*/work/captures/plugs/*/runs/*/run.log
+            captures/emulation/state-*/work/captures/devices/*/runs/*/run.log
           if-no-files-found: ignore
           retention-days: 30
 

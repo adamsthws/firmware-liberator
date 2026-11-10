@@ -98,7 +98,7 @@ class KnownTests(unittest.TestCase):
 class CalibrationTests(unittest.TestCase):
     def test_each_beken_esphome_keeps_the_factory_calibration_where_the_sdk_reads_it(self):
         # LibreTiny points the SDK's radio calibration at board_flash.calibration:
-        # it is the plug's own sector, and nothing else of ESPHome's is there.
+        # it is the device's own sector, and nothing else of ESPHome's is there.
         start, length = next((at, size) for name, at, size in layouts.BEKEN_4M.partitions if name == "RF Firmware")
         root = Path(__file__).resolve().parents[2]
         for kind in kinds.EVERY:

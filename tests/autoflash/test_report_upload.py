@@ -156,7 +156,7 @@ class SendTests(Case):
 
     def test_a_report_that_cannot_be_made_never_spoils_the_runs_end(self):
         logged = []
-        with mock.patch.object(upload.report_data, "payload", side_effect=KeyError("plug_kind")), \
+        with mock.patch.object(upload.report_data, "payload", side_effect=KeyError("device_kind")), \
                 mock.patch.object(upload.output, "log_only", logged.append):
             self.assertIsNone(upload.send(self.ctx(), "converted", 300, False))
         self.assertIn("could not be kept", logged[0])

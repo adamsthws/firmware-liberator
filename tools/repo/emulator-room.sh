@@ -44,7 +44,7 @@ copy_checkout() {
 }
 
 # wait_for_room MB - until this computer has MB free and the cores for one more
-# emulator: one started on a starved computer fails for that alone, its plug
+# emulator: one started on a starved computer fails for that alone, its device
 # stopping mid-download. MB is what that emulator was measured to need, plus
 # 100 (docs/emulator.md); AUTOFLASH_EMULATOR_MIN_FREE_MB stands for it. After
 # AUTOFLASH_EMULATOR_ROOM_WAIT seconds (default 600) it starts anyway, saying

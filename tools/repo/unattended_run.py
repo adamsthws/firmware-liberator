@@ -11,7 +11,7 @@ is rebuilt from the recording and printed, colours and all.
 
 The eWeLink account comes from .env (see .env.example), as does this
 computer's sudo password where sudo would ask for one.  Anything after `--`
-goes to the run itself: --plug-ip, --new, --verbose and so on. --command
+goes to the run itself: --device-ip, --new, --verbose and so on. --command
 readout makes a readout instead (cli.py readout --unattended), as the fault
 suites' readout scenarios do.
 
@@ -427,7 +427,7 @@ def main() -> int:
                         help="what to type at each question, for --attended: a JSON list of "
                         '{"when": regex, "type": text, "times": n}, "\\r" for Enter')
     parser.add_argument("run_options", nargs=argparse.REMAINDER,
-                        help="after --: options for the run itself, e.g. -- --plug-ip 192.168.99.50")
+                        help="after --: options for the run itself, e.g. -- --device-ip 192.168.99.50")
     args = parser.parse_args()
     if not hasattr(os, "fork"):
         print("This needs Linux or macOS. On Windows, start.cmd run --unattended "

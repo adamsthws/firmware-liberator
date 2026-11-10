@@ -100,7 +100,7 @@ _s = _State()
 
 # ------------------------------------------------------------------ privacy
 # The log is meant to be shared when asking for help, so what identifies the
-# person, their network or their plug is replaced before it is written: the
+# person, their network or their device is replaced before it is written: the
 # values the run learns (private()), and anything shaped like one of them
 # (_PATTERNS) - a helper's output can carry them before the run knows them.
 # The screen is left alone: it is theirs.  Addresses on the home network stay,
@@ -118,7 +118,7 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # one is signed in with (and eWeLink's answer repeats).
     (re.compile(r"(?<![\w+])\+[1-9]\d{6,14}\b"), "<phone>"),
     (re.compile(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b"), "<mac>"),
-    # An eWeLink device id; and a converted plug's name, which ends with the
+    # An eWeLink device id; and a converted device's name, which ends with the
     # MAC's (tasmota-abcdef, esphome-abcdef, openbeken-abcdef, ESPHome's
     # friendly name as its page shows it: esphome abcdef), and Tasmota's
     # default one; and ESPHome's friendly name as earlier builds gave it

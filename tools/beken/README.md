@@ -1,6 +1,6 @@
 # Beken tooling
 
-The tooling for Beken (BK72xx) plugs, worked out on the Sonoff S61 - see
+The tooling for Beken (BK72xx) devices, worked out on the Sonoff S61 - see
 [docs/beken-research.md](../../docs/beken-research.md). Not part of
 the Autoflash tool itself: these drive the **BekenEmulator** with this project's
 patches, read and write the flash formats a conversion passes through, or
@@ -79,8 +79,8 @@ run from there.
   hardware, whose UID the emulator's synthetic one can't match) and shows the
   firmware then boot the app framework naturally: `key_add` registers the button,
   the provisioned-check runs, and `ais_appfw_task` is created. This operates only
-  inside the emulator, on a dump of the owner's own plug; it is never written to or
-  run on a real plug.
+  inside the emulator, on a dump of the owner's own device; it is never written to or
+  run on a real device.
   `python3 emulator/integrity_gate.py`
 
 - **`long_press.py`** (archived) — with the gate cleared, drive the button long-press end
@@ -107,13 +107,13 @@ run from there.
   (station) `| airkiss`. Env `SSID`/`PASS`, `SECS`, `FIRE_AT`.
 
 - **`cloud_push.py`** — a whole S61 conversion, the way the tool would drive
-  one: the plug online against the stub (`cloud_online.CloudSession`), pushed an
+  one: the device online against the stub (`cloud_online.CloudSession`), pushed an
   eWeLink `upgrade` for an rt_ota `.rbl` wrapped by `fota_wrap.py` and served
-  from a placeholder public address the relay sends to this host; the plug
+  from a placeholder public address the relay sends to this host; the device
   downloads it in ranges and stages it at `0x286000`, checked byte for byte,
   and with `--apply` the next boot has the stock bootloader apply it and the new
-  firmware start. The plug's Wi-Fi is written into a copy of the dump's
-  EasyFlash store first, so that firmware finds it as on a provisioned plug.
+  firmware start. The device's Wi-Fi is written into a copy of the dump's
+  EasyFlash store first, so that firmware finds it as on a provisioned device.
   `python3 emulator/cloud_push.py image.rbl out.bin --apply` (env `SECS`, `APPLY_SECS`)
 
 - **`stage_apply.py`** — the apply half of a conversion, or of a reversion, in
@@ -125,11 +125,11 @@ run from there.
   installed firmware start afresh and join.
   `python3 emulator/stage_apply.py dump.bin image.rbl out.bin` (env `SECS`, `SSID`, `PASS`, `SEED=0`)
 
-- **`seed_join.py`** — put the emulated plug on a network the faithful way.
+- **`seed_join.py`** — put the emulated device on a network the faithful way.
   Hooks the firmware's own `ef_get_env_blob` (EasyFlash V4) and returns
   the tool's SSID/passphrase for `wifi-ssid`/`wifi-pass` — making it a provisioned
-  plug at the credential read, with nothing else forced. Attaches the fork peer as a
-  WPA2-PSK AP with the same creds; the plug then does the real sequence (station →
+  device at the credential read, with nothing else forced. Attaches the fork peer as a
+  WPA2-PSK AP with the same creds; the device then does the real sequence (station →
   associate → WPA2 four-way → **IPv4 DHCP → 192.168.1.100**). This corrects the old
   "seeding creds leaves it idle" result — that was the integrity gate, which this
   clears too. Env `SSID`/`PASS`/`CH`/`SECS`.
@@ -141,12 +141,12 @@ run from there.
   `0x72940`, so its own consumer task runs the handlers in context (driving them
   directly corrupts the shared state; the dispatcher does not). Data fields are
   injected plaintext past the AES (the key is the device apikey at RAM `0x40ce90`).
-  The handlers run and the plug joins the tool's AP (WPA2 + DHCP). This exercises
+  The handlers run and the device joins the tool's AP (WPA2 + DHCP). This exercises
   the real eWeLink provisioning path, but does not by itself dial the cloud — that
   needs the pairing-completion trigger (`cloud_dial.py`). Env `SEQ`/`SSID`/`PASS`/`SECS`.
   `python3 ble_provision.py`
 
-- **`cloud_dial.py`** — the full provisioning outcome: the emulated plug dials
+- **`cloud_dial.py`** — the full provisioning outcome: the emulated device dials
   the **eWeLink (CoolKit) cloud**. Seeds Wi-Fi creds (join + DHCP), then synthesises
   the pairing-success trigger by force-calling the firmware's own start-cloud
   handler (the single call the pairing state machine makes on success).
@@ -156,10 +156,10 @@ run from there.
   local stub on the emulator's AP gateway (`http://192.168.1.1:80`), so the dial
   stays on this host.** `DISPATCH` steers it elsewhere; `DISPATCH=` keeps the factory
   placeholder. **Owner's own account only:** never point it at the real eWeLink cloud
-  with anyone's account or plug but your own. Env `DISPATCH`/`SSID`/`PASS`/`SECS`/`FORCE_AT`.
+  with anyone's account or device but your own. Env `DISPATCH`/`SSID`/`PASS`/`SECS`/`FORCE_AT`.
   `python3 emulator/cloud_dial.py`
 
-- **`cloud_online.py`** — complete the eWeLink cloud cycle: the plug reaches
+- **`cloud_online.py`** — complete the eWeLink cloud cycle: the device reaches
   **ONLINE**. Stands up the CoolKit stub (`tools/ewelink/stub_cloud/stub_server.py`,
   `--plain` dispatch mode) on loopback and bridges the netstack relay to it
   (plaintext dispatch + TLS IoT, fully contained — nothing leaves the host), seeds
@@ -197,7 +197,7 @@ run from there.
 
 1. Pick an SSID/password to provision to (a real or throwaway network).
 2. `sudo ./airkiss_capture.sh <router-channel> wlp1s0 airkiss.pcap`
-3. On the phone: eWeLink app → add the plug → Wi-Fi/quick (AirKiss) pairing →
+3. On the phone: eWeLink app → add the device → Wi-Fi/quick (AirKiss) pairing →
    enter that SSID/password → start. Let it run ~30-60 s, Ctrl-C the capture.
 4. `python3 airkiss_replay.py airkiss.pcap --ssid <SSID> --pass <PASS>`
 5. Watch whether the firmware leaves monitor mode, probes/associates, gets DHCP.
@@ -228,13 +228,13 @@ signed-char `Tiny_CRC8`, the `0x1e1000` config offset).
   partition of an OpenBeken image. Version-fragile (depends on the exact config
   format); prefer the OpenBeken driver below.
   `python3 wifi_migrate.py --stock stock.bin --obk OpenBK7238_QIO.bin --out converted.bin`
-- **`openbeken/drv_autoflash.c`**, with each plug's table for it
+- **`openbeken/drv_autoflash.c`**, with each device's table for it
   (`devices/sonoff-s61/drv_autoflash_sonoff_s61.c`) — **the dependable mechanism to ship.**
   An OpenBeken driver that, on first boot, reads the stock EF40 creds with
   `beken_hal_flash_read` and sets them via OpenBeken's own
   `CFG_SetWiFiSSID()`/`CFG_SetWiFiPass()` — so it survives OpenBeken config-format
   changes across releases — then carries the factory meter calibration over and
-  applies the plug's wiring. Reads the stock store only (reversible). Build recipe
+  applies the device's wiring. Reads the stock store only (reversible). Build recipe
   and the `AutoflashRevertToStock` command in [`openbeken/`](openbeken/README.md).
 - **`devices/sonoff-s61/esphome.md`** — the **ESPHome route**: how
   [`devices/sonoff-s61/esphome.yaml`](../../devices/sonoff-s61/esphome.yaml) (LibreTiny) reads
@@ -254,20 +254,20 @@ signed-char `Tiny_CRC8`, the `0x1e1000` config offset).
 - **`uf2.py`** — the UF2 an ESPHome built on LibreTiny takes as an update,
   with an RBL in its `download` part for the stock bootloader to apply: byte
   for byte what `ltchiptool uf2 write --legacy IMAGE=device:download` writes
-  for the S61's board. How a plug on ESPHome goes to OpenBeken or back to stock.
-- **`backup.py`** — copy a converted plug's per-device flash region
+  for the S61's board. How a device on ESPHome goes to OpenBeken or back to stock.
+- **`backup.py`** — copy a converted device's per-device flash region
   (factory TLV, EasyFlash store, system ENV; `0x3e0000-0x400000`) out over
-  OpenBeken's REST API into `captures/plugs/<mac>/sonoff-backup/`, the S60's
-  layout, never overwriting. `python3 backup.py --plug http://<plug> --stock-rbl stock_app_1.0.2.rbl`
+  OpenBeken's REST API into `captures/devices/<mac>/sonoff-backup/`, the S60's
+  layout, never overwriting. `python3 backup.py --device http://<device> --stock-rbl stock_app_1.0.2.rbl`
 
 ## Rebuilding a dump
 
-**`rebuild_dump.py`** makes a BK7238 plug's whole stock flash again with no
+**`rebuild_dump.py`** makes a BK7238 device's whole stock flash again with no
 serial cable, so a device with no public dump can be run in the emulator. Not
 part of the tool's run: see the steps below. Everything it reads or writes is
 private, and the result is Sonoff's firmware, so it stays under `captures/`.
 
-1. Convert the plug to OpenBeken with the stock updater, which overwrites the
+1. Convert the device to OpenBeken with the stock updater, which overwrites the
    start of the stock app.
 2. Read the whole flash with `GET /api/flash/<start>-<len>` (`backup.read_flash`).
 3. Get the model's official OTA file: a FOTA container around an RBL of LZMA
@@ -275,22 +275,22 @@ private, and the result is Sonoff's firmware, so it stays under `captures/`.
 4. `python3 tools/beken/rebuild_dump.py READOUT.bin OFFICIAL.bin OUT.bin [--compare DUMP.bin]`
 
 It was tried on the S61 in the emulator, with the public dump as the answer.
-Reading over REST gave the plug's flash byte for byte. Each region of the result:
+Reading over REST gave the device's flash byte for byte. Each region of the result:
 
 | Region | Against the public dump |
 |--------|-------------------------|
 | bootloader and partition table, radio calibration, stale sectors in the app partition, user config | the same |
 | OpenBeken's config sector and other writes (`INTERIM_WRITES`) | the same once they are erased |
-| app | that of the official file, byte for byte as the stock bootloader writes it. The file's version need not be the plug's: the public file is 1.1.0, the dump 1.0.2 |
+| app | that of the official file, byte for byte as the stock bootloader writes it. The file's version need not be the device's: the public file is 1.1.0, the dump 1.0.2 |
 | RBL header, download slot | that of the official file, as the bootloader leaves them. They come from the file, so match only at the same version |
-| EasyFlash stores | differ: the plug's own history since the dump (Wi-Fi details, `ota&state`, the eWeLink keys, a Matter id) |
+| EasyFlash stores | differ: the device's own history since the dump (Wi-Fi details, `ota&state`, the eWeLink keys, a Matter id) |
 
 The rebuilt flash boots in the emulator to the point the public dump reaches:
 through the stock bootloader, onto Wi-Fi and ONLINE on the local stub, under the
 usual patches. With 1.1.0 from the public file it reports `romVersion` 1.1.0,
 and `cloud_push.py --apply` then converts it to OpenBeken as it does the dump.
 
-Whether the file is the version the plug ran shows in the output: OpenBeken is
+Whether the file is the version the device ran shows in the output: OpenBeken is
 shorter than the stock app, so the rest of the old app is still in the flash to
 compare with. The emulator's help goes where `stock_points.py` finds it, so
 another version or model needs nothing moved: each BK7238 official file of the
@@ -299,14 +299,14 @@ S61's generation, on the S61's bootloader and settings, comes ONLINE on the stub
 1.0.6, T6 1.0.3 rebuilt). The door sensor's firmware is another stack: its points
 are not found, and the tools refuse it by name.
 
-Not proven: any of it on a real plug, including that the REST read returns the
+Not proven: any of it on a real device, including that the REST read returns the
 raw striped flash there as it does in the emulator. The flash's unique ID is not
 read at all: the integrity gate, which checks it, stays patched. Only this
 project's OpenBeken build was read, soon after its first start: `INTERIM_WRITES`
 assumes those places were blank before it, as they are on the S61, and another
 model's may not be.
 
-A plug on another table needs more. The official apps carry the SDK's table,
+A device on another table needs more. The official apps carry the SDK's table,
 though not the bootloader's FAL one: the S41, T6 and Basic Gen5's (`BASIC-1GS`,
 `BASIC-1GSP`) are the S61's 4 MB one. The 2 MB door sensor's puts `NET info` at
 `0x1e1000`, where it holds data, and OpenBeken's 2 MB build writes its config
@@ -343,13 +343,13 @@ The addresses here are S61 1.0.2's.
   a soft-AP** (the peer sees an access point), **method 1 enters station mode** and
   associates. So pairing mode is observably entered.
 - **On a network, the faithful way:** `seed_join.py` seeds
-  `wifi-ssid`/`wifi-pass` at the firmware's own `ef_get_env_blob` and the plug
+  `wifi-ssid`/`wifi-pass` at the firmware's own `ef_get_env_blob` and the device
   connects for real — associate → WPA2 four-way → **IPv4 DHCP → 192.168.1.100**.
   This corrects the main doc's old "seeding leaves it idle" note (that was the
   integrity gate). `ble_provision.py` reaches the same Wi-Fi join via the real
   eWeLink BLE provisioning messages, driven through the firmware's dispatcher.
-- **Cloud dial achieved:** `cloud_dial.py` gets the plug to dial
-  the **eWeLink cloud**. Left alone after the join the plug does **Matter**
+- **Cloud dial achieved:** `cloud_dial.py` gets the device to dial
+  the **eWeLink cloud**. Left alone after the join the device does **Matter**
   (`_matterc`); the eWeLink cloud link is created only on pairing success. That
   trigger is one firmware call (the start-cloud handler `0x2c204`, whose only
   callers are in the pairing state machine) — synthesising it, with the AIS cloud

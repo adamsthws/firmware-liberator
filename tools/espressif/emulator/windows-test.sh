@@ -1,15 +1,15 @@
 #!/bin/bash
-# Test the conversion on Windows from a Linux machine: the emulated plug in
+# Test the conversion on Windows from a Linux machine: the emulated device in
 # Docker as usual (emu.sh --windows), and beside it Windows Server 2025 (Server
 # Core) in a container of its own (windows/vm.Dockerfile) - one layer of KVM, nothing
-# nested. Windows is wired onto the plug's home network, you work in it in a
+# nested. Windows is wired onto the device's home network, you work in it in a
 # browser (noVNC) or over Remote Desktop, and every run starts from a clean copy of it.
 #
 #   tools/espressif/emulator/windows-test.sh [--cloud|--stub-cloud] [--fresh] [--no-firewall] [--rebuild]
-#       [--plug=MAC] [--classic-console] [--first-run] [--rebuild-layer=installed|rig|tool]
+#       [--device=MAC] [--classic-console] [--first-run] [--rebuild-layer=installed|rig|tool]
 #
 # Options as emu.sh's (a conversion from stock needs --cloud, or --stub-cloud with a
-# plug a Linux run converted against the stub: docs/emulator.md); which backed-up plug runs
+# device a Linux run converted against the stub: docs/emulator.md); which backed-up device runs
 # is asked first when there are several. The conversion runs in
 # OpenConsole, Windows Terminal's own console, as on Windows 11; with
 # --classic-console in Windows' classic one, as on Windows 10. Windows is kept
@@ -59,10 +59,10 @@ fi
 cap_mb=$(( ram_mb + 1024 ))
 SSH_PORT=${AUTOFLASH_EMU_WINDOWS_SSH_PORT:-2222}
 
-emu_flags=() rebuild=0 console=openconsole from=tool rebuild_layer="" fresh=0 plug=""
+emu_flags=() rebuild=0 console=openconsole from=tool rebuild_layer="" fresh=0 device=""
 for arg in "$@"; do
     case "$arg" in
-    --plug=*) plug=${arg#--plug=} ;;
+    --device=*) device=${arg#--device=} ;;
     --first-run) from=rig ;;
     --rebuild-layer=installed|--rebuild-layer=rig|--rebuild-layer=tool) rebuild_layer=${arg#*=} ;;
     --classic-console) console=classic ;;
@@ -95,7 +95,7 @@ on_battery() {  # true on a laptop running on its battery
     return $battery
 }
 if on_battery; then
-    say "This computer is running on its battery. Plug it in: a Windows install or a"
+    say "This computer is running on its battery. Connect its charger: a Windows install or a"
     say "conversion cut off by a flat battery has to start again."
 fi
 
@@ -129,11 +129,11 @@ if [ "$(uname -s)" != Linux ] || [ ! -e /dev/kvm ]; then
     say "tools/espressif/emulator/windows-bootstrap.ps1 (docs/emulator.md, \"On a Windows computer\")."
     exit 1
 fi
-# Which plug, asked now rather than after Windows has started.
+# Which device, asked now rather than after Windows has started.
 chosen=$(mktemp)
-python3 -I "$ROOT/tools/espressif/emulator/choose_plug.py" --out "$chosen" ${plug:+--plug "$plug"} ||
+python3 -I "$ROOT/tools/espressif/emulator/choose_device.py" --out "$chosen" ${device:+--device "$device"} ||
     { rm -f "$chosen"; exit 1; }
-emu_flags+=("--plug=$(sed -n 2p "$chosen")")
+emu_flags+=("--device=$(sed -n 2p "$chosen")")
 rm -f "$chosen"
 
 sudo_steps=() user_steps=() plan=()
@@ -293,7 +293,7 @@ for name in autoflash-emu autoflash-win; do
         exit 1
     fi
 done
-# Its own output stays: with --cloud it asks you to confirm the real plug is unplugged.
+# Its own output stays: with --cloud it asks you to confirm the real device is unplugged.
 "$ROOT/tools/espressif/emulator/emu.sh" --windows --detach "${emu_flags[@]}"
 routed=0
 stop_all() {
@@ -304,11 +304,11 @@ stop_all() {
 }
 trap stop_all EXIT
 emu_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' autoflash-emu)
-# The plug's own address, http://192.168.60.50 - the link the conversion ends
-# with - reachable from this computer's browser: a route to the plug's network
+# The device's own address, http://192.168.60.50 - the link the conversion ends
+# with - reachable from this computer's browser: a route to the device's network
 # through the emulator, for as long as this runs. Set by a container on the
 # host's network, so without sudo; the emulator forwards only this computer's
-# connections to the plug (entrypoint.sh). Not over a route of this
+# connections to the device (entrypoint.sh). Not over a route of this
 # computer's own to that network, which would be its real one.
 host_route() {  # replace|del
     docker run --rm --network host --cap-add NET_ADMIN --entrypoint ip autoflash-emu \
@@ -321,7 +321,7 @@ bridge=br-$(docker network inspect -f '{{.Id}}' "$NETWORK" | cut -c1-12)
 if [ -z "$existing" ] || [[ $existing == *"dev docker0"* ]] || [[ $existing == *"dev $bridge"* ]]; then
     host_route replace && routed=1
 fi
-[ "$routed" = 1 ] || say "This computer has a network of its own at 192.168.60.0/24, so the plug's page is at http://localhost:8080 only."
+[ "$routed" = 1 ] || say "This computer has a network of its own at 192.168.60.0/24, so the device's page is at http://localhost:8080 only."
 docker rm -f autoflash-win >/dev/null 2>&1 || true
 # The key windows-ssh.sh logs on with, made once and kept with the disks.
 if [ ! -f "$CACHE/ssh/id_ed25519" ]; then
@@ -331,7 +331,7 @@ fi
 vm -d --name autoflash-win --network "$NETWORK" --stop-timeout 150 -e "LINK_HOST=$emu_ip" -e "CONSOLE=$console" -e "LAYER=$from" -e "FRESH=$fresh" \
     -p 127.0.0.1:3389:3389 -p 127.0.0.1:5900:5900 -p 127.0.0.1:6080:6080 -p "127.0.0.1:$SSH_PORT:22" -- run >/dev/null
 
-[ "$routed" = 1 ] && say "The plug's page is at http://192.168.60.50, as the conversion's last link says (or http://localhost:8080)."
+[ "$routed" = 1 ] && say "The device's page is at http://192.168.60.50, as the conversion's last link says (or http://localhost:8080)."
 say "Windows is starting (about a minute). Open it in your browser:"
 say "    http://localhost:6080    (copy and paste: the clipboard in noVNC's side panel)"
 say "or with Remote Desktop, localhost:3389, user autoflash, password $PASSWORD, e.g."
@@ -339,7 +339,7 @@ say "    xfreerdp /v:localhost /u:autoflash /p:$PASSWORD /cert:ignore /clipboard
 say "or a VNC viewer on localhost:5900, or SSH (PowerShell) from another terminal:"
 say "    tools/espressif/emulator/windows-ssh.sh     (windows-ssh.sh log -f follows the run's log)"
 say "Windows opens the link and a window to run the conversion in."
-say "This terminal is the emulator: plug restart, plug log, ... -"
+say "This terminal is the emulator: device restart, device log, ... -"
 say "leaving it (exit, or Ctrl-b d) shuts Windows down too."
 read -r -p "Press Enter to open the emulator here. " _
 # Its own client, not docker attach: a container started detached takes no

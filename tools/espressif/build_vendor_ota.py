@@ -3,7 +3,7 @@
 
 This tool only reads and writes local files. It cannot contact or update a
 device. Its output still requires separate compatibility and rollback review
-before it is safe to serve to a plug.
+before it is safe to serve to a device.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ except ModuleNotFoundError:
 
 
 # The model the wrapper names, which the stock updater checks: the Sonoff
-# S60's, the one plug the bridge is wrapped for so far (--model for another).
+# S60's, the one device the bridge is wrapped for so far (--model for another).
 DEFAULT_MODEL = kinds.SONOFF_S60.wrapper_model
 APP_DESC_MAGIC = 0xABCD5432
 # esp_app_desc_t follows the image header (24) and first segment header (8).

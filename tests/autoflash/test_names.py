@@ -1,4 +1,4 @@
-"""What a plug's networks are called (tools/autoflash/names.py): its own setup
+"""What a device's networks are called (tools/autoflash/names.py): its own setup
 network, and the names a person finds it by."""
 import tempfile
 import unittest
@@ -15,13 +15,13 @@ class SetupNetworkTestCase(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         state = RunState.open(Path(directory.name))
         if mac:
-            state.set_input("plug_mac", mac)
+            state.set_input("device_mac", mac)
         return SimpleNamespace(state=state)
 
 
 class NamesTests(SetupNetworkTestCase):
-    def test_this_plugs_names_are_known_from_its_mac(self):
-        # Converted: its name, whatever the plug. Started from its defaults:
+    def test_this_devices_names_are_known_from_its_mac(self):
+        # Converted: its name, whatever the device. Started from its defaults:
         # Tasmota's own name. And ESP-IDF's default - the hotspot's MAC, one more.
         self.assertEqual(names.setup_networks(self.ctx()), ("tasmota-abcdef", "tasmota-ABCDEF-", "ESP_ABCDF0"))
         self.assertEqual(names.setup_network_hint(self.ctx()),
@@ -29,7 +29,7 @@ class NamesTests(SetupNetworkTestCase):
         self.assertEqual(names.final_name(self.ctx(), "tasmota"), "tasmota-abcdef")
         self.assertEqual(names.final_name(self.ctx(), "esphome"), "esphome-abcdef")
         # Every firmware of this project's part way through: one name, from
-        # the last two bytes of the plug's own MAC.
+        # the last two bytes of the device's own MAC.
         self.assertEqual(names.our_setup_network(self.ctx()), "autoflash-recovery-CDEF")
         self.assertEqual(names.mover_network_hint(self.ctx()), "autoflash-recovery-CDEF")
         # And by the names they had before: the installer before 4.4.4 and
@@ -48,7 +48,7 @@ class NamesTests(SetupNetworkTestCase):
         # Seen in the emulator on the POW Elite and TH Elite: ESP_ and the
         # Wi-Fi MAC itself, not the hotspot's.
         ctx = self.ctx()
-        ctx.state.set_input("plug_kind", "sonoff-pow-elite")
+        ctx.state.set_input("device_kind", "sonoff-pow-elite")
         self.assertEqual(names.setup_networks(ctx)[2], "ESP_ABCDEF")
         self.assertEqual(names.setup_network_hint(ctx), "tasmota-abcdef, tasmota-ABCDEF-NNNN, or ESP_ABCDEF")
 
@@ -58,14 +58,14 @@ class NamesTests(SetupNetworkTestCase):
         # network listed - for ESPHome's own.
         for mac, wanted in (("12:34:56:ab:cd:ef", ("esphome-abcdef",)), (None, ("esphome-",))):
             ctx = self.ctx(mac=mac)
-            ctx.state.set_input("plug_kind", "sonoff-pow-elite")
+            ctx.state.set_input("device_kind", "sonoff-pow-elite")
             self.assertEqual(names.esphome_networks(ctx), wanted)
             self.assertIsNone(prompts._best_ssid(["HomeWifi", "Neighbour"], names.esphome_networks(ctx)))
 
     def test_one_more_carries_into_the_next_byte(self):
         self.assertEqual(names.setup_networks(self.ctx("12-34-56-AB-FF-FF"))[2], "ESP_AC0000")
 
-    def test_without_the_mac_any_plugs_will_do(self):
+    def test_without_the_mac_any_devices_will_do(self):
         self.assertEqual(names.setup_networks(self.ctx(mac=None)), ("tasmota-",))
         self.assertEqual(names.setup_network_hint(self.ctx(mac=None)), "tasmota-xxxxxx or tasmota-XXXXXX-NNNN")
         self.assertEqual(names.esphome_network_hint(self.ctx(mac=None)), "esphome-xxxxxx")

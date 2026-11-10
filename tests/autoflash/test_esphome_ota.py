@@ -13,7 +13,7 @@ KEY = bytes(range(32))
 
 
 class Sealed:
-    """The plug's end of an encrypted session, as ota_esphome_noise.cpp reads
+    """The device's end of an encrypted session, as ota_esphome_noise.cpp reads
     and writes it: each answer byte in a frame of its own, each value the
     client sends (type, size, checksum) in exactly one, and data in frames of
     at most 1024 bytes."""
@@ -260,7 +260,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(ota.wants("127.0.0.1", key=bytes(32), port=fake.port), ota.KEY)
         self.assertEqual(fake.received, [])
 
-    def test_a_plug_still_holding_a_lost_update_is_told_apart(self):
+    def test_a_device_still_holding_a_lost_update_is_told_apart(self):
         # Its update service on another session: the connection is taken (the
         # stack's backlog) and the handshake goes unanswered.
         held = socket.socket()

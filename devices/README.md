@@ -24,7 +24,7 @@ published image, or has been converted on a real one.
 | [M5 1-gang](sonoff-m5-1c/README.md), [2-gang](sonoff-m5-2c/README.md), [3-gang](sonoff-m5-3c/README.md) | Not supported yet | Goes quiet, and never starts its Wi-Fi | a whole dump of one that is not the locked Matter version |
 
 To work on one in the emulator, set `AUTOFLASH_NOT_READY_YET=1`, and build its
-ESPHome with `tools/repo/update_firmware.py esphome --plug KEY`. A device becomes
+ESPHome with `tools/repo/update_firmware.py esphome --device KEY`. A device becomes
 **Readout wanted** once its readout runs in the emulator and leaves it on its
 Sonoff firmware; **Testers wanted** once it converts both ways there, and its image
 is published.

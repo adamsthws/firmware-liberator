@@ -24,7 +24,7 @@ class EndChecksTests(unittest.TestCase):
 
     def test_checks_that_failed_say_what_the_relay_check_said(self):
         # As every Espressif run back to Sonoff's firmware ended before 83c517d:
-        # the relay asked through eWeLink before the plug was there.
+        # the relay asked through eWeLink before the device was there.
         log = run_log("    Relay: Could not be checked", "    Device model:   S60TPG", "    Checks passed: False")
         self.assertEqual(fault_verdicts.checks_problem(log, "sonoff"),
                          "Checks passed: False; Relay: Could not be checked")
@@ -36,7 +36,7 @@ class EndChecksTests(unittest.TestCase):
             self.assertEqual(fault_verdicts.checks_problem(log, firmware),
                              "Checks passed: Not run; Relay: not said", firmware)
 
-    def test_a_metered_plug_needs_its_meter_to_confirm_the_switch(self):
+    def test_a_metered_device_needs_its_meter_to_confirm_the_switch(self):
         """As the Beken suite asks: its emulated S61 measures a load while the
         relay is on (tools/beken/emulator/board.py)."""
         unchanged = run_log("    Relay: Switches (meter unchanged)", "    Checks passed: True")
@@ -124,7 +124,7 @@ class ScreenTests(unittest.TestCase):
     RULE = "=" * 72
 
     def recorded(self, *rows):
-        return (f"--- run\nThe emulated plug is up; converting it unattended...\n{self.RULE}\n"
+        return (f"--- run\nThe emulated device is up; converting it unattended...\n{self.RULE}\n"
                 f"The screen at the end of the run (100x40):\n{self.RULE}\n" + "".join(f"{row}\n" for row in rows)
                 + f"{self.RULE}\nExit code 0 - finished\n")
 

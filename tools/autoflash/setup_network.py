@@ -1,6 +1,6 @@
-"""Talking to the plug while this computer is on the plug's own Wi-Fi network.
+"""Talking to the device while this computer is on the device's own Wi-Fi network.
 
-Twice in a run the plug has no Wi-Fi details and makes a network of its own:
+Twice in a run the device has no Wi-Fi details and makes a network of its own:
 the recovery bridge after the first install, and Tasmota after each fresh
 install. The operator joins it; everything after that happens here, so nobody
 has to open a second terminal or type into a setup page.
@@ -22,18 +22,18 @@ from typing import Callable
 
 SETUP_HOST = "192.168.4.1"
 # How the installer's page names it: the tool's name from 4.4.4, the S60's
-# before - which a plug a run of an older checkout left on it still shows.
+# before - which a device a run of an older checkout left on it still shows.
 BRIDGE_PAGE_MARKERS = ("Autoflash bridge", "S60 OTA Bridge")
 BRIDGE_SUCCESS = "Upload verified"
 # Tasmota's own wording (language/en_GB.h at the pinned release).
 TASMOTA_REJECTED = "check your credentials"
 TASMOTA_SUCCESS = "successful wifi connection"
 TASMOTA_SAVED = "configuration saved"
-# The success page links to the plug's address on the home network.
+# The success page links to the device's address on the home network.
 NEW_ADDRESS_RE = re.compile(r"http://(\d{1,3}(?:\.\d{1,3}){3})")
 
-# The plug's network is not the internet: never let a configured proxy take
-# these requests, or the failure looks like the plug being absent.
+# The device's network is not the internet: never let a configured proxy take
+# these requests, or the failure looks like the device being absent.
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
@@ -216,7 +216,7 @@ def send_wifi(
     them only if it connects; the page is left alone meanwhile, because every
     request for it runs a Wi-Fi scan that would interrupt the test.  Then one
     request for the Wi-Fi page gives the verdict - and on success makes the
-    plug restart onto the home network, naming its address there.
+    device restart onto the home network, naming its address there.
 
     Returns ("saved", address or None), ("rejected", None) when Tasmota could
     not connect - nothing is saved then - or ("unknown", None).

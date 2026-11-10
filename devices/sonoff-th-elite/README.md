@@ -34,7 +34,7 @@ Pins from [ESPHome's page](https://devices.esphome.io/devices/sonoff-thr320d/) a
 - **Tasmota**: the official release, unchanged, given the template in
   [`tools/autoflash/kinds.py`](../../tools/autoflash/kinds.py).
 - **ESPHome**: [`esphome.yaml`](esphome.yaml); [`esphome.md`](esphome.md) says what it reports.
-- **Flash layout**: its own ([`artifacts/sonoff-th-elite-partition-table.bin`](../../artifacts/README.md)), with smaller app slots, so it runs a smaller Tasmota part way through. Its first app slot leaves no room in front of Tasmota for the small firmware that moves a plug off it, so a TH Elite leaving Tasmota, for ESPHome or for Sonoff's firmware, spends a short time on a temporary layout table, and always goes through the full Tasmota that writes its own table back. A power cut then does no harm: run the tool again and it carries on.
+- **Flash layout**: its own ([`artifacts/sonoff-th-elite-partition-table.bin`](../../artifacts/README.md)), with smaller app slots, so it runs a smaller Tasmota part way through. Its first app slot leaves no room in front of Tasmota for the small firmware that moves a device off it, so a TH Elite leaving Tasmota, for ESPHome or for Sonoff's firmware, spends a short time on a temporary layout table, and always goes through the full Tasmota that writes its own table back. A power cut then does no harm: run the tool again and it carries on.
 - **Calibration**: none, as it has no meter.
 - **Back to Sonoff**: the tool writes back the device's own backup, taken before
   anything of Sonoff's is written over; without it, Sonoff's official firmware for

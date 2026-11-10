@@ -1,4 +1,4 @@
-"""What a backup says about a plug, for the run's log."""
+"""What a backup says about a device, for the run's log."""
 
 import struct
 import unittest

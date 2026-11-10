@@ -24,12 +24,12 @@ KEYS = {
     "EWELINK_EMAIL": None,  # an email is scrubbed from the log anyway
     "EWELINK_PASSWORD": "ewelink-password",
     "AUTOFLASH_SUDO_PASSWORD": "sudo-password",
-    # Only for a plug on an ESPHome that cannot say its Wi-Fi password (one
+    # Only for a device on an ESPHome that cannot say its Wi-Fi password (one
     # of this project's first builds, or whose API has an encryption key):
     # no password given means an open network.
     "AUTOFLASH_WIFI_SSID": "wifi-name",
     "AUTOFLASH_WIFI_PASSWORD": "wifi-password",
-    # Only for a plug on Tasmota with a web password, or on ESPHome with an
+    # Only for a device on Tasmota with a web password, or on ESPHome with an
     # update password, a web login or an API encryption key.
     "AUTOFLASH_TASMOTA_PASSWORD": "tasmota-password",
     "AUTOFLASH_ESPHOME_OTA_PASSWORD": "esphome-password",

@@ -323,7 +323,7 @@ class BoardTests(unittest.TestCase):
         self.assertIn("driver=esp32.gpio,property=gpio_in,value=0xff7fffff", args)
         self.assertIn("driver=esp32.gpio,property=gpio_in1,value=0xff", args)
 
-    def test_other_boards_leave_the_inputs_as_plug_supervisor_sets_them(self):
+    def test_other_boards_leave_the_inputs_as_device_supervisor_sets_them(self):
         for chip, kind in (("esp32c3", "sonoff-s60"), ("esp32", "sonoff-th-elite")):
             with tempfile.TemporaryDirectory() as tmp:
                 args = board.Board(chip, board.find_kind(kind), Path(tmp), None).qemu_args()

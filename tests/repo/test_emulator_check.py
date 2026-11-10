@@ -59,7 +59,7 @@ class WaysTests(unittest.TestCase):
     def test_every_device_has_something_to_run_from_or_is_named_as_having_nothing(self):
         from tools.espressif.emulator import public_dump
         runs_from = {*public_dump.DUMPS, *public_dump.UPDATES,
-                     "sonoff-s60",   # the published public plugs
+                     "sonoff-s60",   # the published public devices
                      "sonoff-s61"}   # upstream's public dump (beken-emu.sh)
         for kind in kinds.READY:
             self.assertTrue(kind.key in runs_from or kind.key in check.NO_DUMP, kind.key)
@@ -73,12 +73,12 @@ class SideBySideTests(unittest.TestCase):
     def test_a_job_that_raises_has_failed_and_says_why(self):
         import io
         from contextlib import redirect_stdout
-        from tools.espressif.emulator import public_plugs
+        from tools.espressif.emulator import public_devices
 
         def broken():
             raise RuntimeError("the emulator did not start")
         with redirect_stdout(io.StringIO()) as out:
-            self.assertEqual(public_plugs.side_by_side([lambda: 0, broken]), [0, 1])
+            self.assertEqual(public_devices.side_by_side([lambda: 0, broken]), [0, 1])
         self.assertIn("the emulator did not start", out.getvalue())
 
 

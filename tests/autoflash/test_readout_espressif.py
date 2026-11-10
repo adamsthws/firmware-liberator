@@ -6,7 +6,7 @@ from unittest import mock
 
 from tests.autoflash.test_readout import learned, record, start_run
 from tests.espressif.test_scrub import flash as wifi_flash
-from tools.autoflash import account, errors, hostsys, kinds, plugs, prompts, readout, readout_espressif, safety_locks
+from tools.autoflash import account, errors, hostsys, kinds, records, prompts, readout, readout_espressif, safety_locks
 
 # A kind a whole readout is for (Readout wanted) that the tool does not convert:
 # the bridge has never run on a real one.
@@ -46,7 +46,7 @@ class BridgeTests(unittest.TestCase):
                                   return_value=(wifi_flash(), b"\0" * 124, {"size": 1, "sha256": "ab"})), \
                 mock.patch.object(dump_stock_flash, "summary", return_value=[]), \
                 mock.patch.object(dump_stock_flash, "read_info", return_value=None), \
-                mock.patch.object(plugs, "save_backup", return_value=(Path(self.tmp.name), False)), \
+                mock.patch.object(records, "save_backup", return_value=(Path(self.tmp.name), False)), \
                 mock.patch.object(readout_espressif, "back_on_sonoff"), \
                 mock.patch.object(readout, "offer", return_value="done") as offered:
             self.assertEqual(readout.run(self.ctx, DEVICE), "done")
@@ -61,7 +61,7 @@ class BridgeTests(unittest.TestCase):
     def test_on_the_reading_program_already_it_reads_through_it_sending_nothing(self):
         from tools.autoflash import firewall
         from tools.espressif import dump_stock_flash
-        self.ctx.state.set_input("plug_ip", "192.0.2.77")
+        self.ctx.state.set_input("device_ip", "192.0.2.77")
         with mock.patch.object(prompts, "require_word", return_value=True), \
                 mock.patch.object(firewall, "choose_port", return_value=8088), \
                 mock.patch.object(firewall, "ensure_firewall") as firewalled, \
@@ -82,7 +82,7 @@ class BridgeTests(unittest.TestCase):
 
 
 class BackOnSonoffTests(unittest.TestCase):
-    """A readout's end: the plug restarted by its bridge, else switched off
+    """A readout's end: the device restarted by its bridge, else switched off
     and on by the person."""
 
     def setUp(self):

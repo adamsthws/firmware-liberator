@@ -1,4 +1,4 @@
-"""What the plug runs when a run starts, whatever its family
+"""What the device runs when a run starts, whatever its family
 (tools/autoflash/routes/source.py): found by address or by a search of the
 network, waited for if it may be restarting, and unlocked if it asks."""
 import tempfile
@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import detect, device, errors, esphome, hostsys, output, plugs, prompts, routes, runs
+from tools.autoflash import detect, device, errors, esphome, hostsys, output, records, prompts, routes, runs
 from tools.autoflash import unlock
 from tools.autoflash.routes import source
 from tools.autoflash.routes.espressif import source as espressif_source
@@ -16,21 +16,21 @@ from tools.autoflash.state import RunState
 
 
 class KindLeftPartWayTests(unittest.TestCase):
-    """A plug left part way says nothing of its kind: the last run of it does."""
+    """A device left part way says nothing of its kind: the last run of it does."""
 
     def setUp(self):
         import tempfile
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        patches = (mock.patch.object(plugs, "CAPTURES", self.root), mock.patch.object(plugs, "PLUGS", self.root / "plugs"),
+        patches = (mock.patch.object(records, "CAPTURES", self.root), mock.patch.object(records, "DEVICES", self.root / "devices"),
                    mock.patch.object(output, "say"))
         for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
 
     def run_of(self, mac, name, **inputs):
-        directory = self.root / "plugs" / mac.replace(":", "-") / plugs.RUNS / name
+        directory = self.root / "devices" / mac.replace(":", "-") / records.RUNS / name
         directory.mkdir(parents=True)
         state = RunState.open(directory)
         for key, value in inputs.items():
@@ -41,81 +41,81 @@ class KindLeftPartWayTests(unittest.TestCase):
         from types import SimpleNamespace
         here = self.root / "here"
         here.mkdir()
-        ctx = SimpleNamespace(state=RunState.open(here), dir=here, set_plug_ip=lambda host: None)
-        with mock.patch.object(runs, "file_plug"), mock.patch.object(hostsys, "mac_of", return_value=None):
-            source.adopt_plug(ctx, detect.Found("192.0.2.50", firmware, "12:34:56:ab:cd:ef", name, kind))
-        return ctx.state.input("plug_kind")
+        ctx = SimpleNamespace(state=RunState.open(here), dir=here, set_device_ip=lambda host: None)
+        with mock.patch.object(runs, "file_device"), mock.patch.object(hostsys, "mac_of", return_value=None):
+            source.adopt_device(ctx, detect.Found("192.0.2.50", firmware, "12:34:56:ab:cd:ef", name, kind))
+        return ctx.state.input("device_kind")
 
     def test_the_mover_is_the_kind_its_last_run_was(self):
-        self.run_of("12:34:56:ab:cd:ef", "1", plug_kind="sonoff-th-elite")
+        self.run_of("12:34:56:ab:cd:ef", "1", device_kind="sonoff-th-elite")
         self.assertEqual(self.adopted("midway", "the mover"), "sonoff-th-elite")
 
     def test_the_installer_is_the_kind_its_last_run_was(self):
         # Found again by a run with --new, it was taken for an S60 and sent
         # the S60's interim, which a POW Elite's installer refused.
-        self.run_of("12:34:56:ab:cd:ef", "1", plug_kind="sonoff-pow-elite")
+        self.run_of("12:34:56:ab:cd:ef", "1", device_kind="sonoff-pow-elite")
         self.assertEqual(self.adopted("installer", "the installer"), "sonoff-pow-elite")
 
     def test_tasmota_without_its_template_is_the_kind_its_last_run_was(self):
         # Taken for an S60, a TH Elite's was sent the S60's plan, which it refused.
-        self.run_of("12:34:56:ab:cd:ef", "1", plug_kind="sonoff-th-elite")
+        self.run_of("12:34:56:ab:cd:ef", "1", device_kind="sonoff-th-elite")
         self.assertEqual(self.adopted("untemplated"), "sonoff-th-elite")
 
-    def test_another_plugs_run_says_nothing_of_it(self):
-        self.run_of("12:34:56:ab:cd:00", "1", plug_kind="sonoff-th-elite")
+    def test_another_devices_run_says_nothing_of_it(self):
+        self.run_of("12:34:56:ab:cd:00", "1", device_kind="sonoff-th-elite")
         self.assertIsNone(self.adopted("midway", "the mover"))
 
     def test_what_it_says_itself_comes_first(self):
-        self.run_of("12:34:56:ab:cd:ef", "1", plug_kind="sonoff-th-elite")
+        self.run_of("12:34:56:ab:cd:ef", "1", device_kind="sonoff-th-elite")
         self.assertEqual(self.adopted("midway", "the hub", "sonoff-pow-elite"), "sonoff-pow-elite")
 
 
 class UntemplatedByAddressTests(unittest.TestCase):
-    """--plug-ip at a Tasmota without the plug's template: found as the
-    network search finds it, on a plug this computer knows."""
+    """--device-ip at a Tasmota without the device's template: found as the
+    network search finds it, on a device this computer knows."""
 
     def found(self, known):
         from types import SimpleNamespace
-        inputs = {"plug_ip": "192.0.2.137"}
+        inputs = {"device_ip": "192.0.2.137"}
         ctx = SimpleNamespace(state=SimpleNamespace(input=inputs.get), web_password=None, esphome_login=None)
         with mock.patch.object(detect, "identify", return_value=None), \
                 mock.patch.object(detect, "answers_as_tasmota", return_value=True), \
                 mock.patch.object(hostsys, "mac_of", return_value="12:34:56:AB:CD:EF"), \
                 mock.patch.object(source, "known_macs", return_value=known), \
-                mock.patch.object(source, "adopt_plug"), \
+                mock.patch.object(source, "adopt_device"), \
                 mock.patch.object(espressif_source, "past_the_commit", side_effect=lambda ctx, running: running):
             return source.find_current_firmware(ctx)
 
-    def test_a_known_plug_is_untemplated(self):
+    def test_a_known_device_is_untemplated(self):
         self.assertEqual(self.found({"12:34:56:ab:cd:ef"}), "untemplated")
 
     def test_any_other_tasmota_is_not_taken_for_one(self):
         self.assertEqual(self.found(set()), "sonoff")
 
 
-class AdoptPlugTests(unittest.TestCase):
-    def test_the_kind_a_found_plug_says_is_kept_for_the_run(self):
+class AdoptDeviceTests(unittest.TestCase):
+    def test_the_kind_a_found_device_says_is_kept_for_the_run(self):
         from types import SimpleNamespace
         inputs = {}
         ctx = SimpleNamespace(state=SimpleNamespace(set_input=inputs.__setitem__, input=inputs.get),
-                              set_plug_ip=lambda ip: inputs.__setitem__("plug_ip", ip))
+                              set_device_ip=lambda ip: inputs.__setitem__("device_ip", ip))
         found = detect.Found("192.0.2.137", "tasmota", None, "tasmota-ABCDEF-1234",
                                            "sonoff-s60")
         with mock.patch.object(hostsys, "mac_of", return_value=None), \
              mock.patch.object(output, "say"):
-            source.adopt_plug(ctx, found)
-        self.assertEqual(inputs["plug_kind"], "sonoff-s60")
+            source.adopt_device(ctx, found)
+        self.assertEqual(inputs["device_kind"], "sonoff-s60")
 
     def adopt_esphome(self, title, comment=None):
         from types import SimpleNamespace
         inputs = {}
         ctx = SimpleNamespace(state=SimpleNamespace(set_input=inputs.__setitem__, input=inputs.get),
-                              set_plug_ip=lambda ip: inputs.__setitem__("plug_ip", ip))
+                              set_device_ip=lambda ip: inputs.__setitem__("device_ip", ip))
         with mock.patch.object(hostsys, "mac_of", return_value=None), \
              mock.patch.object(source.esphome, "title", return_value=(title, comment)), \
              mock.patch.object(output, "say"):
-            source.adopt_plug(ctx, detect.Found("192.0.2.137", "esphome"))
-        return inputs.get("plug_kind")
+            source.adopt_device(ctx, detect.Found("192.0.2.137", "esphome"))
+        return inputs.get("device_kind")
 
     def test_an_esphome_is_the_kind_its_name_says(self):
         # Every kind's ESPHome looks the same but for its comment (its name in
@@ -130,7 +130,7 @@ class AdoptPlugTests(unittest.TestCase):
 
 
 class FirmwareSearchCase(unittest.TestCase):
-    """find_current_firmware with the plug and the network stood in for."""
+    """find_current_firmware with the device and the network stood in for."""
 
     def setUp(self):
         self.private = mock.Mock()
@@ -141,9 +141,9 @@ class FirmwareSearchCase(unittest.TestCase):
                       mock.patch.object(output, "private", self.private),
                       mock.patch.object(prompts, "UNATTENDED", False),
                       mock.patch.object(prompts, "answered_unattended"),
-                      mock.patch.object(source, "adopt_plug"),
+                      mock.patch.object(source, "adopt_device"),
                       mock.patch.object(source, "converted_here", return_value=False),
-                      mock.patch.object(plugs, "PLUGS", Path("/nonexistent/plugs")),
+                      mock.patch.object(records, "DEVICES", Path("/nonexistent/devices")),
                       mock.patch.object(hostsys, "local_ip_towards", return_value="192.0.2.110"),
                       mock.patch.object(hostsys, "mac_of", return_value="12:34:56:ab:cd:ef"),
                       # A question no test expects fails it, rather than waiting on a keyboard.
@@ -151,14 +151,14 @@ class FirmwareSearchCase(unittest.TestCase):
                       mock.patch.object(prompts, "ask_secret", side_effect=AssertionError("asked"))):
             patch.start()
             self.addCleanup(patch.stop)
-        # The plug's Tasmota wants this password, and none other - until it is
-        # cleared on the plug (None).
+        # The device's Tasmota wants this password, and none other - until it is
+        # cleared on the device (None).
         self.wanted = "s3cret-71"
 
-        def plug(host, user=None, password=None, timeout=10.0):
+        def fake_device(host, user=None, password=None, timeout=10.0):
             return mock.Mock(host=host, wants_password=mock.Mock(
                 side_effect=lambda *_: self.wanted is not None and password != self.wanted))
-        patch = mock.patch.object(device, "Device", side_effect=plug)
+        patch = mock.patch.object(device, "Device", side_effect=fake_device)
         patch.start()
         self.addCleanup(patch.stop)
 
@@ -169,8 +169,8 @@ class FirmwareSearchCase(unittest.TestCase):
         return SimpleNamespace(state=state, web_password=None, esphome_login=None)
 
 
-class RestartingPlugTests(FirmwareSearchCase):
-    """A plug given by address that does not answer yet: waited for if this
+class RestartingDeviceTests(FirmwareSearchCase):
+    """A device given by address that does not answer yet: waited for if this
     computer converted it, never taken for one on Sonoff's firmware."""
 
     def setUp(self):
@@ -186,16 +186,16 @@ class RestartingPlugTests(FirmwareSearchCase):
                 mock.patch.object(hostsys, "mac_of", return_value=mac), \
                 mock.patch.object(detect, "identify", side_effect=answers) as asked, \
                 mock.patch.object(source.time, "monotonic", side_effect=clock or (lambda: 0.0)):
-            return source.find_current_firmware(self.ctx(plug_ip="192.0.2.137")), asked.call_count
+            return source.find_current_firmware(self.ctx(device_ip="192.0.2.137")), asked.call_count
 
-    def test_a_plug_it_converted_is_waited_for(self):
+    def test_a_device_it_converted_is_waited_for(self):
         self.assertEqual(self.find([None, None, "esphome"]), ("esphome", 3))
 
     def test_with_no_mac_to_go_on_any_conversion_here_is_reason_to_wait(self):
         source.converted_here.return_value = True
         self.assertEqual(self.find([None, "esphome"], known=False, mac=None), ("esphome", 2))
 
-    def test_a_plug_it_never_converted_is_not(self):
+    def test_a_device_it_never_converted_is_not(self):
         self.assertEqual(self.find([None], known=False), ("sonoff", 1))
 
     def test_it_stops_waiting_after_the_grace_and_goes_to_sonoffs_route(self):
@@ -210,19 +210,19 @@ class RestartingPlugTests(FirmwareSearchCase):
 
 
 class TasmotaWebPasswordTests(FirmwareSearchCase):
-    """A plug on Tasmota with a web password: asked for it, before anything
+    """A device on Tasmota with a web password: asked for it, before anything
     needs it, where someone can type it; stopped, saying what to give, where
-    nobody can.  Each try is checked on the plug."""
+    nobody can.  Each try is checked on the device."""
 
-    def test_a_plug_given_by_address_is_asked_for_it_then_found(self):
-        ctx = self.ctx(plug_ip="192.0.2.137")
+    def test_a_device_given_by_address_is_asked_for_it_then_found(self):
+        ctx = self.ctx(device_ip="192.0.2.137")
         answers = {None: "locked", "s3cret-71": "tasmota"}
         with mock.patch.object(detect, "identify",
                                side_effect=lambda host, password=None, **_: answers[password]), \
                 mock.patch.object(prompts, "ask_choice", return_value=0) as menu, \
                 mock.patch.object(prompts, "ask_secret", side_effect=["not-it-9", "s3cret-71"]) as asked:
             self.assertEqual(source.find_current_firmware(ctx), "tasmota")
-        self.assertEqual(asked.call_count, 2)  # the wrong one refused on the plug
+        self.assertEqual(asked.call_count, 2)  # the wrong one refused on the device
         self.assertEqual(menu.call_args.args[1][0], "Type its web password")
         self.assertIn("once you have removed it yourself", menu.call_args.args[1][1])
         self.assertEqual(ctx.web_password, "s3cret-71")
@@ -233,7 +233,7 @@ class TasmotaWebPasswordTests(FirmwareSearchCase):
                 mock.patch.object(detect, "identify", return_value="locked"), \
                 mock.patch.object(prompts, "ask_secret") as asked:
             with self.assertRaisesRegex(errors.Abort, "web password.*--web-password.*AUTOFLASH_TASMOTA_PASSWORD"):
-                source.find_current_firmware(self.ctx(plug_ip="192.0.2.137"))
+                source.find_current_firmware(self.ctx(device_ip="192.0.2.137"))
         asked.assert_not_called()
 
     def test_asked_again_until_it_takes_one_or_the_run_is_stopped(self):
@@ -241,18 +241,18 @@ class TasmotaWebPasswordTests(FirmwareSearchCase):
                 mock.patch.object(prompts, "ask_choice", side_effect=[0, 0, prompts.QuitRun("quit")]), \
                 mock.patch.object(prompts, "ask_secret", return_value="not-it-9") as asked:
             with self.assertRaises(prompts.QuitRun):
-                source.find_current_firmware(self.ctx(plug_ip="192.0.2.137"))
+                source.find_current_firmware(self.ctx(device_ip="192.0.2.137"))
         self.assertEqual(asked.call_count, 2)
 
     def test_trying_again_once_it_is_cleared_goes_on_without_one(self):
-        ctx = self.ctx(plug_ip="192.0.2.137")
+        ctx = self.ctx(device_ip="192.0.2.137")
 
         choices = []
 
         def try_again(*_):
             choices.append(1)
             if len(choices) == 2:
-                self.wanted = None  # cleared on the plug before choosing again
+                self.wanted = None  # cleared on the device before choosing again
             return 1
         answers = {None: "locked", "s3cret-71": "tasmota"}
         with mock.patch.object(detect, "identify",
@@ -267,55 +267,55 @@ class TasmotaWebPasswordTests(FirmwareSearchCase):
 
     def test_found_on_the_network_it_is_offered_and_asked_for_once_chosen(self):
         locked = detect.Found("192.0.2.42", "locked", "12:34:56:ab:cd:ef")
-        with mock.patch.object(detect, "converted_plugs", return_value=[locked]), \
+        with mock.patch.object(detect, "converted_devices", return_value=[locked]), \
                 mock.patch.object(detect, "identify", return_value="tasmota") as identify, \
                 mock.patch.object(prompts, "ask_choice", side_effect=[0, 0]) as menu, \
                 mock.patch.object(prompts, "ask_secret", return_value="s3cret-71"):
             self.assertEqual(source.find_current_firmware(self.ctx()), "tasmota")
-        self.assertIn("web password", menu.call_args_list[0].args[1][0])  # the plug, then its password
+        self.assertIn("web password", menu.call_args_list[0].args[1][0])  # the device, then its password
         identify.assert_called_with("192.0.2.42", password="s3cret-71", esphome_login=None)
-        chosen = source.adopt_plug.call_args.args[1]
+        chosen = source.adopt_device.call_args.args[1]
         self.assertEqual((chosen.host, chosen.firmware), ("192.0.2.42", "tasmota"))
 
     def test_unattended_one_found_locked_is_left_out_and_named(self):
         found = [detect.Found("192.0.2.137", "tasmota", "12:34:56:ab:cd:ef", "tasmota-ABCDEF"),
                  detect.Found("192.0.2.42", "locked", "aa:bb:cc:dd:ee:ff")]
         with mock.patch.object(prompts, "UNATTENDED", True), \
-                mock.patch.object(detect, "converted_plugs", return_value=found), \
+                mock.patch.object(detect, "converted_devices", return_value=found), \
                 mock.patch.object(prompts, "ask_choice") as menu:
             self.assertEqual(source.find_current_firmware(self.ctx()), "tasmota")
-        menu.assert_not_called()  # the one S60 that answered is the plug, as before
-        self.assertEqual(source.adopt_plug.call_args.args[1].host, "192.0.2.137")
+        menu.assert_not_called()  # the one S60 that answered is the device, as before
+        self.assertEqual(source.adopt_device.call_args.args[1].host, "192.0.2.137")
         told = " ".join(str(call.args[0]) for call in output.tell.call_args_list)
         self.assertIn("192.0.2.42", told)
         self.assertIn("--web-password", told)
 
-    def test_unattended_a_plug_this_computer_converted_found_locked_stops_the_run(self):
+    def test_unattended_a_device_this_computer_converted_found_locked_stops_the_run(self):
         # Gone on to Sonoff's route instead, the run would fail later, and less clearly.
         locked = [detect.Found("192.0.2.42", "locked", "12:34:56:ab:cd:ef")]
         with tempfile.TemporaryDirectory() as directory:
             (Path(directory) / "12-34-56-ab-cd-ef").mkdir()
             with mock.patch.object(prompts, "UNATTENDED", True), \
-                    mock.patch.object(plugs, "PLUGS", Path(directory)), \
-                    mock.patch.object(detect, "converted_plugs", return_value=locked):
+                    mock.patch.object(records, "DEVICES", Path(directory)), \
+                    mock.patch.object(detect, "converted_devices", return_value=locked):
                 with self.assertRaisesRegex(errors.Abort, "192.0.2.42 has a web password.*--web-password"):
                     source.find_current_firmware(self.ctx())
-            # One it does not know is only named: the plug may be on Sonoff's firmware still.
+            # One it does not know is only named: the device may be on Sonoff's firmware still.
             with mock.patch.object(prompts, "UNATTENDED", True), \
-                    mock.patch.object(plugs, "PLUGS", Path(directory) / "none"), \
-                    mock.patch.object(detect, "converted_plugs", return_value=locked):
+                    mock.patch.object(records, "DEVICES", Path(directory) / "none"), \
+                    mock.patch.object(detect, "converted_devices", return_value=locked):
                 self.assertEqual(source.find_current_firmware(self.ctx()), "sonoff")
 
     def test_a_run_carried_on_from_tasmota_is_asked_before_any_step(self):
-        ctx = self.ctx(plug_ip="192.0.2.137", source="tasmota")
+        ctx = self.ctx(device_ip="192.0.2.137", source="tasmota")
         ctx.device = mock.Mock(wants_password=mock.Mock(return_value=True))
         with mock.patch.object(prompts, "ask_choice", return_value=0), \
                 mock.patch.object(prompts, "ask_secret", return_value="s3cret-71"):
             unlock.unlock_tasmota(ctx)
         self.assertEqual(ctx.web_password, "s3cret-71")
-        # Past L1 the plug runs only firmware this tool put on; from ESPHome, none of the plug's Tasmota.
+        # Past L1 the device runs only firmware this tool put on; from ESPHome, none of the device's Tasmota.
         for inputs in ({"source": "tasmota", "done": ("L1",)}, {"source": "esphome"}, {}):
-            ctx = self.ctx(plug_ip="192.0.2.137", **inputs)
+            ctx = self.ctx(device_ip="192.0.2.137", **inputs)
             ctx.device = mock.Mock()
             unlock.unlock_tasmota(ctx)
             ctx.device.wants_password.assert_not_called()
@@ -323,20 +323,20 @@ class TasmotaWebPasswordTests(FirmwareSearchCase):
 
 class DiscoverySearchTests(FirmwareSearchCase):
     """The run searches the network its internet goes through first, and reads
-    this computer's other networks only if no plug is there - once, however
-    often it looks again while a plug it converted restarts."""
+    this computer's other networks only if no device is there - once, however
+    often it looks again while a device it converted restarts."""
 
     def found(self):
         return [detect.Found("192.0.2.137", "tasmota", "12:34:56:ab:cd:ef", "tasmota-ABCDEF")]
 
-    def test_the_default_network_first_its_others_not_read_when_the_plug_is_there(self):
+    def test_the_default_network_first_its_others_not_read_when_the_device_is_there(self):
         searched = []
 
         def search(near, *, others=None, **_):
             searched.append(near)
             return self.found()
         with mock.patch.object(prompts, "UNATTENDED", True), \
-                mock.patch.object(detect, "converted_plugs", side_effect=search), \
+                mock.patch.object(detect, "converted_devices", side_effect=search), \
                 mock.patch.object(hostsys, "lan_networks", return_value={"10.0.5.9": 24}) as lan:
             self.assertEqual(source.find_current_firmware(self.ctx()), "tasmota")
         self.assertEqual(searched, ["192.0.2.110"])   # local_ip_towards: the default network
@@ -352,7 +352,7 @@ class DiscoverySearchTests(FirmwareSearchCase):
         with mock.patch.object(prompts, "UNATTENDED", True), \
                 mock.patch.object(source, "converted_here", return_value=True), \
                 mock.patch.object(time, "sleep"), \
-                mock.patch.object(detect, "converted_plugs", side_effect=search), \
+                mock.patch.object(detect, "converted_devices", side_effect=search), \
                 mock.patch.object(hostsys, "lan_networks", return_value={"10.0.5.9": 24}) as lan:
             self.assertEqual(source.find_current_firmware(self.ctx()), "tasmota")
         self.assertEqual(looks, [{"10.0.5.9": 24}] * 3)
@@ -360,10 +360,10 @@ class DiscoverySearchTests(FirmwareSearchCase):
 
 
 class EsphomeWebLoginTests(unittest.TestCase):
-    """A plug on ESPHome with a web login (web_server's auth:): asked for it,
+    """A device on ESPHome with a web login (web_server's auth:): asked for it,
     user name and password, before anything needs it, where someone can type
     it; stopped, saying what to give, where nobody can.  Each try is checked
-    on the plug's page."""
+    on the device's page."""
 
     LOGIN = ("admin", "w3b-pass")
 
@@ -376,9 +376,9 @@ class EsphomeWebLoginTests(unittest.TestCase):
                       mock.patch.object(output, "private", self.private),
                       mock.patch.object(prompts, "UNATTENDED", False),
                       mock.patch.object(prompts, "answered_unattended"),
-                      mock.patch.object(source, "adopt_plug"),
+                      mock.patch.object(source, "adopt_device"),
                       mock.patch.object(source, "converted_here", return_value=False),
-                      mock.patch.object(plugs, "PLUGS", Path("/nonexistent/plugs")),
+                      mock.patch.object(records, "DEVICES", Path("/nonexistent/devices")),
                       mock.patch.object(hostsys, "local_ip_towards", return_value="192.0.2.110"),
                       mock.patch.object(hostsys, "mac_of", return_value="12:34:56:ab:cd:ef"),
                       # A question no test expects fails it, rather than waiting on a keyboard.
@@ -387,7 +387,7 @@ class EsphomeWebLoginTests(unittest.TestCase):
                       mock.patch.object(prompts, "ask_secret", side_effect=AssertionError("asked"))):
             patch.start()
             self.addCleanup(patch.stop)
-        # The plug's page wants this login, and none other - until removed (None).
+        # The device's page wants this login, and none other - until removed (None).
         self.wanted, self.given = self.LOGIN, None
         for patch in (mock.patch.object(esphome, "use_login",
                                         side_effect=lambda host, *login: setattr(self, "given", login)),
@@ -405,14 +405,14 @@ class EsphomeWebLoginTests(unittest.TestCase):
     def identify(self, host, password=None, esphome_login=None, **_):
         return "esphome" if not self.wanted or esphome_login == self.wanted else "esphome-login"
 
-    def test_a_plug_given_by_address_is_asked_for_it_then_found(self):
-        ctx = self.ctx(plug_ip="192.0.2.50")
+    def test_a_device_given_by_address_is_asked_for_it_then_found(self):
+        ctx = self.ctx(device_ip="192.0.2.50")
         with mock.patch.object(detect, "identify", side_effect=self.identify), \
                 mock.patch.object(prompts, "ask_choice", return_value=0) as menu, \
                 mock.patch.object(prompts, "ask_text", return_value="admin"), \
                 mock.patch.object(prompts, "ask_secret", side_effect=["not-it-9", "w3b-pass"]) as asked:
             self.assertEqual(source.find_current_firmware(ctx), "esphome")
-        self.assertEqual(asked.call_count, 2)  # the wrong one refused on the plug
+        self.assertEqual(asked.call_count, 2)  # the wrong one refused on the device
         self.assertEqual(menu.call_args.args[1][0], "Type its web login")
         self.assertEqual(ctx.esphome_login, self.LOGIN)
         self.private.assert_any_call("w3b-pass", "esphome-web-password")  # kept out of the log
@@ -422,10 +422,10 @@ class EsphomeWebLoginTests(unittest.TestCase):
                 mock.patch.object(detect, "identify", side_effect=self.identify):
             with self.assertRaisesRegex(errors.Abort, "web login: give it with --esphome-web-user.*"
                                         "AUTOFLASH_ESPHOME_WEB_PASSWORD"):
-                source.find_current_firmware(self.ctx(plug_ip="192.0.2.50"))
+                source.find_current_firmware(self.ctx(device_ip="192.0.2.50"))
 
     def test_trying_again_once_it_is_removed_goes_on_without_one(self):
-        ctx = self.ctx(plug_ip="192.0.2.50")
+        ctx = self.ctx(device_ip="192.0.2.50")
         choices = []
 
         def try_again(*_):
@@ -441,21 +441,21 @@ class EsphomeWebLoginTests(unittest.TestCase):
 
     def test_found_on_the_network_it_is_offered_and_asked_for_once_chosen(self):
         locked = detect.Found("192.0.2.42", "esphome-login", "12:34:56:ab:cd:ef")
-        with mock.patch.object(detect, "converted_plugs", return_value=[locked]), \
+        with mock.patch.object(detect, "converted_devices", return_value=[locked]), \
                 mock.patch.object(detect, "identify", side_effect=self.identify), \
                 mock.patch.object(prompts, "ask_choice", side_effect=[0, 0]) as menu, \
                 mock.patch.object(prompts, "ask_text", return_value="admin"), \
                 mock.patch.object(prompts, "ask_secret", return_value="w3b-pass"):
             self.assertEqual(source.find_current_firmware(self.ctx()), "esphome")
-        self.assertIn("web login", menu.call_args_list[0].args[1][0])  # the plug, then its login
-        chosen = source.adopt_plug.call_args.args[1]
+        self.assertIn("web login", menu.call_args_list[0].args[1][0])  # the device, then its login
+        chosen = source.adopt_device.call_args.args[1]
         self.assertEqual((chosen.host, chosen.firmware), ("192.0.2.42", "esphome"))
 
     def test_unattended_one_found_with_a_login_is_left_out_and_named(self):
         found = [detect.Found("192.0.2.137", "tasmota", "12:34:56:ab:cd:ef", "tasmota-ABCDEF"),
                  detect.Found("192.0.2.42", "esphome-login", "aa:bb:cc:dd:ee:ff")]
         with mock.patch.object(prompts, "UNATTENDED", True), \
-                mock.patch.object(detect, "converted_plugs", return_value=found):
+                mock.patch.object(detect, "converted_devices", return_value=found):
             self.assertEqual(source.find_current_firmware(self.ctx()), "tasmota")
         told = " ".join(str(call.args[0]) for call in output.tell.call_args_list)
         self.assertIn("the ESPHome at 192.0.2.42", told)
@@ -465,13 +465,13 @@ class EsphomeWebLoginTests(unittest.TestCase):
 class NothingAnsweringTests(unittest.TestCase):
     """A device given by its address with nothing at all there - not on the
     network - stops the run there, saying so, rather than being taken for one
-    on Sonoff's and sent to eWeLink (seen on a real plug switched off,
+    on Sonoff's and sent to eWeLink (seen on a real device switched off,
     2026-11-07)."""
 
     def run_on(self, mac, known):
         with tempfile.TemporaryDirectory() as tmp:
             state = RunState.open(Path(tmp) / "run")
-            state.set_input("plug_ip", "192.0.2.52")
+            state.set_input("device_ip", "192.0.2.52")
             ctx = SimpleNamespace(state=state)
             with mock.patch.object(source, "identify_once_restarted", return_value=None), \
                     mock.patch.object(source.hostsys, "mac_of", return_value=mac), \
@@ -495,8 +495,8 @@ class ReadoutFirmwareTests(FirmwareSearchCase):
 
     def test_given_by_address_it_is_taken_as_that(self):
         with mock.patch.object(detect, "identify", return_value="readout"):
-            self.assertEqual(source.find_current_firmware(self.ctx(plug_ip="192.0.2.137")), "readout")
-        self.assertEqual(source.adopt_plug.call_args.args[1].firmware, "readout")
+            self.assertEqual(source.find_current_firmware(self.ctx(device_ip="192.0.2.137")), "readout")
+        self.assertEqual(source.adopt_device.call_args.args[1].firmware, "readout")
 
     def test_never_taken_for_tasmota_without_its_template(self):
         # As a fault run found it: an OpenBeken not told apart, at a MAC this
@@ -507,7 +507,7 @@ class ReadoutFirmwareTests(FirmwareSearchCase):
                 mock.patch.object(detect.openbeken, "is_openbeken", return_value=True), \
                 mock.patch.object(source, "known_macs", return_value={"12:34:56:ab:cd:ef"}), \
                 mock.patch.object(source, "RESTART_GRACE", 0.0):   # not waited for as restarting
-            self.assertNotEqual(source.find_current_firmware(self.ctx(plug_ip="192.0.2.137")), "untemplated")
+            self.assertNotEqual(source.find_current_firmware(self.ctx(device_ip="192.0.2.137")), "untemplated")
 
 
 class InstallerFoundTests(FirmwareSearchCase):
@@ -525,7 +525,7 @@ class InstallerFoundTests(FirmwareSearchCase):
                 mock.patch.object(installer, "restart_into_sonoff", return_value=restarts) as self.restarted, \
                 mock.patch.object(espressif_source, "past_the_commit", side_effect=lambda ctx, running: running), \
                 mock.patch.object(source, "last_run", return_value=last) as self.asked:
-            return source.find_current_firmware(self.ctx(plug_ip="192.0.2.137"))
+            return source.find_current_firmware(self.ctx(device_ip="192.0.2.137"))
 
     def test_left_by_a_readout_it_is_restarted_into_sonoff(self):
         self.assertEqual(self.find("readout"), "sonoff")
@@ -550,9 +550,9 @@ class InstallerFoundTests(FirmwareSearchCase):
         with self.assertRaisesRegex(errors.Abort, "left by a readout stopped part way.*nothing was done. "
                                                   "Switch it off and on"):
             self.find("readout", restarts=False)
-        source.adopt_plug.assert_not_called()
+        source.adopt_device.assert_not_called()
 
-    def test_the_last_run_on_that_plug_says_what_it_was(self):
+    def test_the_last_run_on_that_device_says_what_it_was(self):
         from tools.autoflash import readout, routes
         with tempfile.TemporaryDirectory() as tmp:
             runs_made = []
@@ -569,7 +569,7 @@ class InstallerFoundTests(FirmwareSearchCase):
             here = SimpleNamespace(dir=Path(tmp) / "now")
             macs = dict(runs_made)
             with mock.patch.object(runs, "run_directories", return_value=[path for path, _ in runs_made]), \
-                    mock.patch.object(plugs, "mac_of_run", side_effect=lambda path: macs.get(path)):
+                    mock.patch.object(records, "mac_of_run", side_effect=lambda path: macs.get(path)):
                 self.assertEqual(source.last_run(here, "12:34:56:ab:cd:ef"), "readout")
                 self.assertEqual(source.last_run(here, "aa:bb:cc:dd:ee:ff"), "conversion")
                 with mock.patch.object(routes, "steps_of", return_value=[("A1", "", None)]), \

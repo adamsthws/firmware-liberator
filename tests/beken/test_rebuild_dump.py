@@ -16,7 +16,7 @@ TABLE_2M = (("bootloader", "beken_onchip_crc", 0, 0x10000), ("app", "beken_onchi
             ("download", "beken_onchip", 0x132000, 0xAE000))
 TAIL_4M, TAIL_2M = 0x285F9A, 0x131F9A
 OFFICIAL_APP = bytes(range(251)) * 200 + b"odd"   # a short last block
-SETTINGS = b"the plug's own settings"
+SETTINGS = b"the device's own settings"
 
 
 def entry(name, device, offset, length):
@@ -46,7 +46,7 @@ def official_file(firmware=OFFICIAL_APP):
 
 
 def a_readout(table=TABLE_4M, size=SIZE_4M, tail=TAIL_4M, interim_size=0x4000, old_app_end=0x60000):
-    """A plug's flash after its conversion: its bootloader; the interim firmware
+    """A device's flash after its conversion: its bootloader; the interim firmware
     over the start of the old stock app, whose end survives; the interim
     firmware's header; its image left in the download slot."""
     flash = bytearray(b"\xff" * size)
@@ -163,7 +163,7 @@ class RebuildTests(unittest.TestCase):
         self.assertEqual(self.flash[0x287000:0x286000 + len(self.image)], self.image[0x1000:])
         self.assertEqual(set(self.flash[0x286000 + len(self.image):0x3E0000]), {0xFF})
 
-    def test_what_the_plug_keeps_is_kept_and_the_interim_firmware_s_writes_are_not(self):
+    def test_what_the_device_keeps_is_kept_and_the_interim_firmware_s_writes_are_not(self):
         self.assertEqual(self.flash[:0x10000], a_readout_4m()[:0x10000])
         self.assertEqual(self.flash[0x3E0000:0x3E0000 + len(SETTINGS)], SETTINGS)
         self.assertEqual(self.flash[0x3E2000:0x3E2000 + len(SETTINGS)], SETTINGS)
@@ -179,7 +179,7 @@ class RebuildTests(unittest.TestCase):
         self.assertEqual(flash[TAIL_2M:TAIL_2M + 102], rd.stripe(self.image[:96]))
         self.assertEqual(flash[0x133000:0x132000 + len(self.image)], self.image[0x1000:])
 
-    def test_a_firmware_too_big_for_the_plug_is_refused(self):
+    def test_a_firmware_too_big_for_the_device_is_refused(self):
         readout = bytes(a_readout(TABLE_2M, 0x200000, TAIL_2M))
         too_big = rbl.pack(b"\0" * 0x110000, version="1")
         with self.assertRaisesRegex(rd.RebuildError, "does not fit"):
@@ -191,7 +191,7 @@ class RebuildTests(unittest.TestCase):
 
 
 class SurvivingAppTests(unittest.TestCase):
-    def test_the_old_app_s_end_says_whether_the_file_is_the_version_the_plug_ran(self):
+    def test_the_old_app_s_end_says_whether_the_file_is_the_version_the_device_ran(self):
         readout = bytes(a_readout(old_app_end=len(OFFICIAL_APP)))
         same, compared = rd.surviving_old_app(readout, official_file())
         self.assertGreater(compared, 0)

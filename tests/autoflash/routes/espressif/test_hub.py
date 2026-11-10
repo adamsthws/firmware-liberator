@@ -28,7 +28,7 @@ class PromoteTests(unittest.TestCase):
         device = SimpleNamespace(host="192.168.60.50",
             wait_reachable=lambda **_: None, started_at=lambda: "t", uptime_seconds=lambda: 10,
             current_ota=lambda: next(slots), wait_for_reboot=lambda **_: events.append("rebooted"),
-            # What the plug is told, in order; a status read changes nothing.
+            # What the device is told, in order; a status read changes nothing.
             command=lambda c, timeout=None: {} if c.startswith("Status") else events.append(c))
         ctx = SimpleNamespace(device=device, state=state, dry_run=False)
         with mock.patch.object(hub, "upload_or_prompt", side_effect=lambda *a: events.append("upload")), \
@@ -56,9 +56,9 @@ class RefusedUploadTests(unittest.TestCase):
 
     def upload(self, outcomes, boots=None, answers=True, restarts=True, **kwargs):
         """upload_or_prompt with each upload's outcome from `outcomes`, and the
-        boot the plug says it is on, in turn, from `boots` (one boot throughout
+        boot the device says it is on, in turn, from `boots` (one boot throughout
         if not given); a restart asked for is seen if `restarts`.  What the
-        plug was sent, in order, is in self.events."""
+        device was sent, in order, is in self.events."""
         from types import SimpleNamespace
         from tools.autoflash.device import DeviceError
         tries = iter(outcomes)
@@ -105,7 +105,7 @@ class RefusedUploadTests(unittest.TestCase):
         self.assertTrue(result.startswith("http:"))
         self.assertEqual(self.events, ["upload", "upload"])
 
-    def test_an_upload_cut_off_from_a_plug_that_will_not_restart_is_left_to_the_person(self):
+    def test_an_upload_cut_off_from_a_device_that_will_not_restart_is_left_to_the_person(self):
         result, sent, by_hand, _ = self.upload([TimeoutError("timed out")], restarts=False)
         self.assertEqual((result, sent, by_hand), ("manual", 1, True))
 
@@ -114,7 +114,7 @@ class RefusedUploadTests(unittest.TestCase):
         result, sent, by_hand, _ = self.upload([ConnectionResetError("reset")], boots=["boot 1", "boot 2"])
         self.assertEqual((result, sent, by_hand), ("http:answer lost", 1, False))
 
-    def test_an_upload_cut_off_from_a_plug_that_does_not_answer_is_left_to_the_person(self):
+    def test_an_upload_cut_off_from_a_device_that_does_not_answer_is_left_to_the_person(self):
         result, sent, by_hand, _ = self.upload([TimeoutError("timed out")], answers=False)
         self.assertEqual((result, sent, by_hand), ("manual", 1, True))
 

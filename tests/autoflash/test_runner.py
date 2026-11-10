@@ -1,5 +1,5 @@
 """Running a run's steps (tools/autoflash/runner.py): a step done is skipped
-only as far as the plug agrees, one that may pass is tried again, and one
+only as far as the device agrees, one that may pass is tried again, and one
 that fails says why."""
 import contextlib
 import errno
@@ -18,7 +18,7 @@ from tools.autoflash.state import ATTEMPTED, DONE, FAILED, RunState
 
 
 class ConfirmSkipTests(unittest.TestCase):
-    """A step recorded as done is skipped only as far as the plug agrees."""
+    """A step recorded as done is skipped only as far as the device agrees."""
 
     def skip(self, verifier):
         from types import SimpleNamespace
@@ -30,13 +30,13 @@ class ConfirmSkipTests(unittest.TestCase):
             skipped = runner.confirm_skip(SimpleNamespace(), "D1", "Install Tasmota")
         return skipped, asked, said.call_args.args[0] if said.called else ""
 
-    def test_a_plug_that_disagrees_has_the_step_done_again_unasked(self):
-        # Asked "run E3 again?", a person converting their plug could not
-        # answer better than the step's own checks of the plug.
-        skipped, asked, said = self.skip(lambda ctx: (False, "the plug says otherwise"))
+    def test_a_device_that_disagrees_has_the_step_done_again_unasked(self):
+        # Asked "run E3 again?", a person converting their device could not
+        # answer better than the step's own checks of the device.
+        skipped, asked, said = self.skip(lambda ctx: (False, "the device says otherwise"))
         self.assertFalse(skipped)
         asked.assert_not_called()
-        self.assertIn("the plug says otherwise: doing it again", said)
+        self.assertIn("the device says otherwise: doing it again", said)
 
     def test_f2_is_doubted_only_on_the_recovery_firmware_where_doing_it_again_helps(self):
         # Anywhere else F2 would wait for a recovery firmware that never comes.
@@ -53,7 +53,7 @@ class ConfirmSkipTests(unittest.TestCase):
         asked.assert_not_called()
         self.assertIn("recorded as done", said)
 
-    def test_a_step_the_plug_agrees_with_is_skipped(self):
+    def test_a_step_the_device_agrees_with_is_skipped(self):
         skipped, asked, said = self.skip(lambda ctx: (True, ""))
         self.assertTrue(skipped)
         asked.assert_not_called()
@@ -97,23 +97,23 @@ class RunStepsTests(unittest.TestCase):
         codes = codes or {}
         ran = []
         stand_ins = {
-            "restore_left_locks": mock.Mock(), "hold_plug": mock.Mock(), "unlock_tasmota": mock.Mock(),
+            "restore_left_locks": mock.Mock(), "hold_device": mock.Mock(), "unlock_tasmota": mock.Mock(),
             "settle_route": mock.Mock(return_value=("tasmota", "sonoff")), "apply_target": mock.Mock(),
-            "bundle_of_this_version": mock.Mock(), "wait_while_plug_busy": mock.Mock(),
+            "bundle_of_this_version": mock.Mock(), "wait_while_device_busy": mock.Mock(),
             "begin_stage": mock.Mock(), "confirm_skip": mock.Mock(return_value=skip),
             "execute_with_retries": mock.Mock(side_effect=lambda ctx, step: ran.append(step) or codes.get(step, 0)),
             "stop_here_after_ctrl_c": mock.Mock(return_value=False), "close_firewall_rules": mock.Mock(),
             "bring_up_to_date": mock.Mock(return_value=False),
             "tell_how_to_carry_on": mock.Mock(), "invite_report": mock.Mock(),
-            "plug_page_url": mock.Mock(return_value=None), "rerun_on_tasmota": mock.Mock(return_value=0),
+            "device_page_url": mock.Mock(return_value=None), "rerun_on_tasmota": mock.Mock(return_value=0),
             "ask_choice": mock.Mock(return_value=answer),
             "say": mock.Mock(), "tell": mock.Mock(), "section": mock.Mock(),
             "output": mock.Mock(waited=mock.Mock(return_value=0.0)),
         } | overrides
-        owners = {"restore_left_locks": safety_locks, "hold_plug": runs, "unlock_tasmota": unlock,
+        owners = {"restore_left_locks": safety_locks, "hold_device": runs, "unlock_tasmota": unlock,
                   "settle_route": routes, "apply_target": routes, "begin_stage": routes,
-                  "bundle_of_this_version": bundle, "wait_while_plug_busy": join,
-                  "close_firewall_rules": firewall, "invite_report": report, "plug_page_url": report,
+                  "bundle_of_this_version": bundle, "wait_while_device_busy": join,
+                  "close_firewall_rules": firewall, "invite_report": report, "device_page_url": report,
                   "ask_choice": prompts, "section": prompts, "say": output, "tell": output,
                   "run_source": runs}
         with contextlib.ExitStack() as patches:
@@ -187,7 +187,7 @@ class RunStepsTests(unittest.TestCase):
         self.assertIn("Dry run complete: nothing was written", shown)
         self.assertNotIn("Conversion complete", shown)
 
-    def test_a_plug_put_back_ends_saying_so_not_converted(self):
+    def test_a_device_put_back_ends_saying_so_not_converted(self):
         self.state.set_input("put_back", {"came_from": "esphome", "why": "no identity"})
         code, _, stand_ins = self.run_steps()
         self.assertEqual(code, 0)
@@ -208,7 +208,7 @@ class RunStepsTests(unittest.TestCase):
             self.run_steps(settle_route=mock.Mock(side_effect=press), execute_with_retries=mock.Mock(side_effect=press))
 
     def test_a_route_refused_stops_before_anything_is_done(self):
-        code, ran, stand_ins = self.run_steps(settle_route=mock.Mock(side_effect=errors.Abort("no plug")))
+        code, ran, stand_ins = self.run_steps(settle_route=mock.Mock(side_effect=errors.Abort("no device")))
         self.assertEqual((code, ran), (2, []))
         stand_ins["apply_target"].assert_not_called()
 
@@ -245,7 +245,7 @@ class RunStepsTests(unittest.TestCase):
         code, ran, _ = self.run_steps(bundle_of_this_version=mock.Mock(side_effect=errors.Abort("changed")))
         self.assertEqual((code, ran), (2, []))
 
-    def test_an_interrupted_step_the_plug_shows_finished_is_not_run_again(self):
+    def test_an_interrupted_step_the_device_shows_finished_is_not_run_again(self):
         self.state.mark("S2", ATTEMPTED)
         code, ran, stand_ins = self.run_steps(check=lambda ctx: (True, "it answers as Tasmota"))
         self.assertEqual((code, ran), (0, ["S1", "S3"]))
@@ -343,9 +343,9 @@ class RetryTests(unittest.TestCase):
         self.assertEqual((code, runs), (0, 2))
 
     def test_a_wifi_drop_is_tried_again(self):
-        # The plug now gives up after 20s, and this computer waits out the rest.
+        # The device now gives up after 20s, and this computer waits out the rest.
         code, runs = self.run_with("E2", ["stage did not pass: the device says: migration_refused: "
-                                          "the plug's Wi-Fi went down and was not back within "
+                                          "the device's Wi-Fi went down and was not back within "
                                           "20 seconds", None])
         self.assertEqual((code, runs), (0, 2))
 
@@ -387,7 +387,7 @@ class RetryTests(unittest.TestCase):
             self.addCleanup(directory.cleanup)
             state = RunState.open(Path(directory.name))
             title, _ = routes.STEP_INDEX[step]
-            failing = mock.Mock(side_effect=PhaseError("the plug stopped the commit without reaching this computer"))
+            failing = mock.Mock(side_effect=PhaseError("the device stopped the commit without reaching this computer"))
             with mock.patch.dict(routes.STEP_INDEX, {step: (title, failing)}), \
                  mock.patch.object(routes, "begin_stage"), \
                  mock.patch.object(output, "stage_end"), \
@@ -399,7 +399,7 @@ class RetryTests(unittest.TestCase):
 class StageTimingTests(unittest.TestCase):
     """Every stage's time is kept for the report, however it ends."""
 
-    def test_a_stage_that_fails_has_its_time_and_the_plugs_busy_time_kept(self):
+    def test_a_stage_that_fails_has_its_time_and_the_devices_busy_time_kept(self):
         from types import SimpleNamespace
         from unittest import mock
 
@@ -410,7 +410,7 @@ class StageTimingTests(unittest.TestCase):
 
         def stage(context):
             context.last_runner = SimpleNamespace(busy_seconds=41.5)
-            raise PhaseError("the plug stopped the stage without reaching this computer")
+            raise PhaseError("the device stopped the stage without reaching this computer")
         title, _ = routes.STEP_INDEX["E2"]
         with mock.patch.dict(routes.STEP_INDEX, {"E2": (title, stage)}), \
              mock.patch.object(routes, "begin_stage"), \
@@ -419,23 +419,23 @@ class StageTimingTests(unittest.TestCase):
             self.assertEqual(runner.execute(ctx, "E2"), 1)
         captures = state.data["captures"]
         self.assertIsInstance(captures["E2.seconds"], int)
-        self.assertEqual(captures["E2.plug_busy_seconds"], 41.5)
+        self.assertEqual(captures["E2.device_busy_seconds"], 41.5)
         self.assertIn("without reaching", ctx.last_failure)
 
-        # A quicker try after it keeps the longest: how near the plug came to stopping.
+        # A quicker try after it keeps the longest: how near the device came to stopping.
         def quicker(context):
             context.last_runner = SimpleNamespace(busy_seconds=3.0)
-            raise PhaseError("the plug did not fetch the stage instructions")
+            raise PhaseError("the device did not fetch the stage instructions")
         with mock.patch.dict(routes.STEP_INDEX, {"E2": (title, quicker)}), \
              mock.patch.object(routes, "begin_stage"), \
              mock.patch.object(output, "stage_end"), \
              mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
             runner.execute(ctx, "E2")
-        self.assertEqual(state.data["captures"]["E2.plug_busy_seconds"], 41.5)
+        self.assertEqual(state.data["captures"]["E2.device_busy_seconds"], 41.5)
 
 
 class GoBackTests(unittest.TestCase):
-    """A step that finds an earlier one did not take on the plug sends the run
+    """A step that finds an earlier one did not take on the device sends the run
     back to it, unasked, a few times at most."""
 
     def setUp(self):
@@ -480,7 +480,7 @@ class GoBackRestartTests(unittest.TestCase):
 
     def setUp(self):
         GoBackTests.setUp(self)
-        self.state.set_input("plug_ip", "192.0.2.77")
+        self.state.set_input("device_ip", "192.0.2.77")
         self.state.capture("E1.sent_again", runner.GO_BACK_LIMIT)
 
     def test_the_device_restarted_the_step_is_sent_afresh(self):
@@ -536,7 +536,7 @@ class ScreenTests(unittest.TestCase):
         terminal = Terminal()
         handlers = {step: (routes.STEP_INDEX[step][0], handler) for step, handler in stages}
         handlers["E3"] = (routes.STEP_INDEX["E3"][0], lambda ctx: {})
-        with mock.patch("sys.stdout", terminal), mock.patch("sys.stdin", io.StringIO()),              mock.patch.dict(os.environ, {"NO_COLOR": ""}), mock.patch.object(output, "colour_ok", return_value=True),              mock.patch("shutil.get_terminal_size", return_value=os.terminal_size(self.SIZE)),              mock.patch.dict(routes.STEP_INDEX, handlers),              mock.patch.object(runner, "set_up_if_erased"), mock.patch.object(runner, "wait_for_plug_back"),              mock.patch.object(runner.time, "sleep"), mock.patch.object(firewall, "firewall_hint", return_value=[]):
+        with mock.patch("sys.stdout", terminal), mock.patch("sys.stdin", io.StringIO()),              mock.patch.dict(os.environ, {"NO_COLOR": ""}), mock.patch.object(output, "colour_ok", return_value=True),              mock.patch("shutil.get_terminal_size", return_value=os.terminal_size(self.SIZE)),              mock.patch.dict(routes.STEP_INDEX, handlers),              mock.patch.object(runner, "set_up_if_erased"), mock.patch.object(runner, "wait_for_device_back"),              mock.patch.object(runner.time, "sleep"), mock.patch.object(firewall, "firewall_hint", return_value=[]):
             output.start(self.log, verbose=False)
             try:
                 for step, _ in stages:
@@ -550,7 +550,7 @@ class ScreenTests(unittest.TestCase):
         return screen.render(colour=False)
 
     def test_a_try_that_failed_is_gone_once_the_stage_is_tried_again(self):
-        # As a run on 2026-11-08 left it: the plug's console line under the
+        # As a run on 2026-11-08 left it: the device's console line under the
         # stage, the stage stopped, the note it would be tried again - and
         # the stage again under them all.
         tries = iter([PhaseError("the device stopped the stage without reaching this computer"), None])
@@ -594,7 +594,7 @@ class ScreenTests(unittest.TestCase):
 
     def test_every_way_a_stage_ends_leaves_one_line_before_the_next(self):
         from tools.autoflash.errors import Abort
-        from tools.autoflash.phases import PlugNeverConnected
+        from tools.autoflash.phases import DeviceNeverConnected
 
         def raising(exc, note=True):
             def stage(ctx):
@@ -607,7 +607,7 @@ class ScreenTests(unittest.TestCase):
             "passed, with a note": lambda ctx: output.tell("    A note") or {},
             "skipped": lambda ctx: {"stage_outcome": "skipped"},
             "refused": raising(Abort("the device refused")),
-            "never connected": raising(PlugNeverConnected("the device never connected")),
+            "never connected": raising(DeviceNeverConnected("the device never connected")),
             "went wrong": raising(KeyError("unexpected")),
             "network": raising(ConnectionResetError("connection reset")),
             "went back": raising(errors.GoBack("E1", "ESPHome was not installed", "not installed")),
@@ -623,7 +623,7 @@ class ScreenTests(unittest.TestCase):
 
 
 class BringUpToDateTests(unittest.TestCase):
-    """A plug the route has just taken to its firmware, but on an earlier
+    """A device the route has just taken to its firmware, but on an earlier
     release of it than this version installs, goes on to that firmware's
     update in the same run (bring_up_to_date)."""
 
@@ -633,7 +633,7 @@ class BringUpToDateTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         state = RunState.open(Path(directory.name))
-        state.set_input("plug_kind", "sonoff-s60" if family_name == "espressif" else "sonoff-s61")
+        state.set_input("device_kind", "sonoff-s60" if family_name == "espressif" else "sonoff-s61")
         ctx = SimpleNamespace(state=state, dry_run=dry_run, esphome_firmware=None)
         routes.apply_target(firmware, "sonoff", family)
         self.addCleanup(routes.apply_target, "tasmota", "sonoff")
@@ -656,7 +656,7 @@ class BringUpToDateTests(unittest.TestCase):
                 published = family.published_version(runner.kinds.of_run(ctx.state), firmware)
                 self.assertEqual(update.versions(ctx), ("0.0.1", published))
 
-    def test_a_plug_on_this_release_is_left_as_it_is(self):
+    def test_a_device_on_this_release_is_left_as_it_is(self):
         published = routes.FAMILIES["espressif"].published_version(runner.kinds.SONOFF_S60, "esphome")
         brought, _, prepare, _ = self.bring("espressif", "esphome", published)
         self.assertFalse(brought)
@@ -668,13 +668,13 @@ class BringUpToDateTests(unittest.TestCase):
         self.assertFalse(brought)
         self.assertNotIn("U5", routes.STEP_INDEX)
 
-    def test_nor_a_plug_back_on_sonoff_nor_a_dry_run(self):
+    def test_nor_a_device_back_on_sonoff_nor_a_dry_run(self):
         self.assertFalse(self.bring("espressif", "sonoff", "0.0.1")[0])
         self.assertFalse(self.bring("espressif", "esphome", "0.0.1", dry_run=True)[0])
 
     def test_the_run_goes_on_to_the_update_once_its_route_is_done(self):
         # As a run resumed after it stopped part way through the update: its
-        # route done, the plug still on the earlier release.
+        # route done, the device still on the earlier release.
         ran = []
 
         def bring(ctx):
@@ -688,8 +688,8 @@ class BringUpToDateTests(unittest.TestCase):
         self.assertEqual((code, ran), (0, ["S1", "S2", "S3", "U9"]))
 
 
-class PlugBackTests(unittest.TestCase):
-    """Before a step is tried again, a plug that is not answering is waited for."""
+class DeviceBackTests(unittest.TestCase):
+    """Before a step is tried again, a device that is not answering is waited for."""
 
     def wait(self, answers, d1_done=True, step=None):
         from types import SimpleNamespace
@@ -697,7 +697,7 @@ class PlugBackTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         state = RunState.open(Path(directory.name))
-        state.set_input("plug_ip", "10.0.0.63")
+        state.set_input("device_ip", "10.0.0.63")
         if d1_done:
             state.mark("D1", DONE)
         device = mock.Mock(answers=mock.Mock(side_effect=list(answers)))
@@ -707,19 +707,19 @@ class PlugBackTests(unittest.TestCase):
              mock.patch.object(output, "tell") as told, \
              mock.patch.object(output, "progress"), \
              mock.patch.object(output, "progress_clear"):
-            runner.wait_for_plug_back(SimpleNamespace(state=state, device=device), step)
+            runner.wait_for_device_back(SimpleNamespace(state=state, device=device), step)
         return device, told
 
-    def test_an_answering_plug_is_tried_again_at_once(self):
+    def test_an_answering_device_is_tried_again_at_once(self):
         device, told = self.wait([True])
         told.assert_not_called()
 
-    def test_a_plug_back_after_a_router_restart_is_tried_again_then(self):
+    def test_a_device_back_after_a_router_restart_is_tried_again_then(self):
         device, told = self.wait([False] * 30 + [True])
         self.assertEqual(device.answers.call_count, 31)
         self.assertIn("answering again", told.call_args.args[0])
 
-    def test_a_long_wait_says_the_plug_has_no_network_of_its_own_now(self):
+    def test_a_long_wait_says_the_device_has_no_network_of_its_own_now(self):
         said = lambda told: " ".join(call.args[0] for call in told.call_args_list)
         device, told = self.wait([False] * 30 + [True], step="E2")
         self.assertIn("no setup network of its own", said(told))
@@ -769,8 +769,8 @@ class UnexpectedErrorTests(unittest.TestCase):
         self.assertIn("Traceback", logged.call_args.args[0])
         self.assertIn("something unexpected went wrong: KeyError", told.call_args.args[0])
 
-    def test_the_look_for_a_plug_that_lost_its_settings_stops_the_step_not_the_run(self):
-        # Seen in the fault suite: not joined to the plug's network in time,
+    def test_the_look_for_a_device_that_lost_its_settings_stops_the_step_not_the_run(self):
+        # Seen in the fault suite: not joined to the device's network in time,
         # its Abort crashed the run, put as "something unexpected went wrong".
         from unittest import mock
         gave_up = errors.Abort("this computer did not join tasmota-ABCDEF-1234 within 15 minutes")
@@ -783,7 +783,7 @@ class UnexpectedErrorTests(unittest.TestCase):
     def test_a_request_the_network_dropped_is_no_surprise_and_is_tried_again(self):
         # Seen in the fault suite: an outage reset H1's read of a region part
         # way, and the run said "something unexpected went wrong" - then
-        # converted the plug on the next try.
+        # converted the device on the next try.
         import http.client
         for error in (ConnectionResetError(104, "Connection reset by peer"), http.client.IncompleteRead(b""),
                       http.client.RemoteDisconnected("Remote end closed connection without response"),
@@ -799,7 +799,7 @@ class UnexpectedErrorTests(unittest.TestCase):
 
     def test_a_step_that_writes_stays_attempted(self):
         # Whether the commit got as far as writing is for the next run to find
-        # out from the plug - so it must not be recorded as failed.
+        # out from the device - so it must not be recorded as failed.
         code, state, *_ = self.run_step("E3", RuntimeError("boom"))
         self.assertEqual(code, 1)
         self.assertEqual(state.status("E3"), "attempted")
@@ -840,7 +840,7 @@ class ErasedTasmotaTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest import mock
         done = {"D1", "F4"} if f4_done else {"D1"}
-        inputs = {"plug_mac": "12:34:56:ab:cd:ef", "plug_ip": "192.0.2.51", "product_model": "S60TPG"}
+        inputs = {"device_mac": "12:34:56:ab:cd:ef", "device_ip": "192.0.2.51", "product_model": "S60TPG"}
         # Answers in turn, the last for every ask after; a network in turn likewise.
         replies = list(answers) if isinstance(answers, list) else [answers]
         device = SimpleNamespace(answers=lambda timeout=None: replies.pop(0) if len(replies) > 1 else replies[0],
@@ -850,7 +850,7 @@ class ErasedTasmotaTests(unittest.TestCase):
         clock = iter(range(0, 10_000, 5))
         with mock.patch.object(prompts, "find_ssid", side_effect=network if isinstance(network, list)
                                else lambda *a, **k: network) as looked, \
-             mock.patch.object(join, "configure_plug_wifi") as by_hand, \
+             mock.patch.object(join, "configure_device_wifi") as by_hand, \
              mock.patch.object(tasmota, "template_in_place", return_value=in_place), \
              mock.patch.object(tasmota, "step_configure") as configured, \
              mock.patch.object(time, "monotonic", side_effect=lambda: next(clock)), \
@@ -861,7 +861,7 @@ class ErasedTasmotaTests(unittest.TestCase):
         return result, looked, by_hand, configured
 
     def test_one_just_starting_up_is_left_alone(self):
-        # Seen in the fault suite: D1 had just restarted the plug onto the
+        # Seen in the fault suite: D1 had just restarted the device onto the
         # Wi-Fi, and the network it showed for a moment as it started
         # (ESP_ and its access-point MAC) was taken for its setup network.
         result, looked, by_hand, _ = self.run_it(answers=[False, False, False, True], network="ESP_ABCDF0")
@@ -885,7 +885,7 @@ class ErasedTasmotaTests(unittest.TestCase):
 
     def test_on_its_own_network_it_is_set_up_through_it_and_f4_again(self):
         # Seen in the fault suite: switched off and on 7 times during G1, the
-        # run asked for Wi-Fi details for a plug it could not reach, run after run.
+        # run asked for Wi-Fi details for a device it could not reach, run after run.
         result, _, by_hand, configured = self.run_it()
         self.assertTrue(result)
         by_hand.assert_called_once()
@@ -911,13 +911,13 @@ class ErasedTasmotaTests(unittest.TestCase):
         # seen in the fault suite, G1 there was never helped.
         from types import SimpleNamespace
         from unittest import mock
-        inputs = {"plug_mac": "12:34:56:ab:cd:ef", "plug_ip": "192.0.2.51", "product_model": "S60TPG"}
+        inputs = {"device_mac": "12:34:56:ab:cd:ef", "device_ip": "192.0.2.51", "product_model": "S60TPG"}
         ctx = SimpleNamespace(device=SimpleNamespace(answers=lambda timeout=None: False,
                                                      wait_reachable=lambda timeout=None: None),
                               state=SimpleNamespace(input=inputs.get, is_done=lambda s: s == "F4",
                                                     capture=lambda *a: None))
         with mock.patch.object(prompts, "find_ssid", return_value="tasmota-ABCDEF-1234"), \
-             mock.patch.object(join, "configure_plug_wifi") as by_hand, \
+             mock.patch.object(join, "configure_device_wifi") as by_hand, \
              mock.patch.object(tasmota, "template_in_place", return_value=True), \
              mock.patch.object(runner, "ERASED_SETTLE", 0.0), \
              mock.patch.object(output, "tell"), mock.patch.object(output, "progress_clear"):

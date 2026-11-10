@@ -1,6 +1,6 @@
 """The hub every route but Tasmota to ESPHome passes through: the Berry
 Tasmota in the high slot on Sonoff's layout, ESPHome's bootloader in place
-(D4, D5), and the plans the plug carries out from there.
+(D4, D5), and the plans the device carries out from there.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def upload_or_prompt(ctx: "Context", path: Path, what: str, restart_to_retry: bo
     identical, so offer that and carry on.
 
     An upload cut off and not taken is sent again after a restart
-    (clear_cut_off_upload), unless `restart_to_retry` is False: to a plug that
+    (clear_cut_off_upload), unless `restart_to_retry` is False: to a device that
     a restart would take off the firmware being uploaded to.
     """
     device = ctx.device
@@ -48,7 +48,7 @@ def upload_or_prompt(ctx: "Context", path: Path, what: str, restart_to_retry: bo
             time.sleep(5)
         except errors.NETWORK_ERRORS as exc:
             # Cut off on the way - the Wi-Fi going, say.  Sent again only once
-            # the plug shows it did not take it: an upload taken is booted, and
+            # the device shows it did not take it: an upload taken is booted, and
             # another would write the other slot and boot that instead.
             took = upload_took(device, booted)
             if took:
@@ -72,7 +72,7 @@ def upload_or_prompt(ctx: "Context", path: Path, what: str, restart_to_retry: bo
 
 
 def boot_of(device: device.Device) -> str | None:
-    """Which boot the plug is on (device.started_at), or None if it cannot say."""
+    """Which boot the device is on (device.started_at), or None if it cannot say."""
     try:
         return device.started_at()
     except (DeviceError, OSError):
@@ -80,7 +80,7 @@ def boot_of(device: device.Device) -> str | None:
 
 
 def upload_took(device: device.Device, booted: str | None) -> bool | None:
-    """After an upload cut off: whether the plug took it - restarted, on
+    """After an upload cut off: whether the device took it - restarted, on
     another boot than `booted` - once it answers again; None where that cannot
     be told (it does not answer, or could not say which boot it was on)."""
     if booted is None:
@@ -121,7 +121,7 @@ def upload_or_prompt_by_hand(ctx: "Context", path: Path, what: str, exc: Excepti
 def running_slot(device: device.Device, timeout: float = 60.0) -> int:
     """Which slot Tasmota runs from, once it can say: just after a restart its
     Berry is not up, and the slot reads as unknown (seen in the fault suite,
-    taken for "not slot 1", and another upload sent into a plug starting)."""
+    taken for "not slot 1", and another upload sent into a device starting)."""
     deadline = time.monotonic() + timeout
     while True:
         try:
@@ -145,7 +145,7 @@ def step_promote(ctx: Context) -> dict[str, Any]:
     # The first reading of a run from an ESPHome that gives none (no signal
     # sensor, an encrypted API; the startup firmware gives none either), and
     # another of every other run through here.
-    ctx.state.capture("D4.signal_dbm", join.note_signal(ctx, join.plug_signal(device), [
+    ctx.state.capture("D4.signal_dbm", join.note_signal(ctx, join.device_signal(device), [
         "From here the device restarts several times, and each time it has to",
         "rejoin your Wi-Fi on its own; a weak signal makes that less certain."]))
     slot = running_slot(device)
@@ -192,12 +192,12 @@ def step_promote(ctx: Context) -> dict[str, Any]:
     return {"current_ota": after, "uploads": uploads}
 
 
-def plug_back_on_wifi(ctx: Context) -> None:
-    """Before E1 or E3 asks the plug anything: find it, or bring it back.
+def device_back_on_wifi(ctx: Context) -> None:
+    """Before E1 or E3 asks the device anything: find it, or bring it back.
 
     A power cut while the commit writes can cost Tasmota its settings: it comes
     back on its old layout, asking to be set up on its own network.  Found on
-    the network is not yet answering: a plug just switched back on answers
+    the network is not yet answering: a device just switched back on answers
     ping a few seconds before its web server, so that is waited for too.
     """
     if not ctx.finder.poll():
@@ -205,16 +205,16 @@ def plug_back_on_wifi(ctx: Context) -> None:
         if setup:
             output.tell(f"    The device is not on your Wi-Fi: it is asking to be set up on {setup},")
             output.tell("    as Tasmota does when it has lost its settings - after a power cut, say.")
-            join.configure_plug_wifi(ctx, setup)
+            join.configure_device_wifi(ctx, setup)
         else:
-            join.locate_plug(ctx, setup=True)
+            join.locate_device(ctx, setup=True)
     ctx.device.wait_reachable(timeout=120)
 
 
 def sonoff_layout_back(ctx: Context) -> None:
-    """A commit stopped part way - by a power cut, say - leaves the plug on the
+    """A commit stopped part way - by a power cut, say - leaves the device on the
     interim layout, its settings moved aside (safeboot_migration says why), and
-    a plug that left Tasmota may be on a temporary table (Layout.temporary_table).
+    a device that left Tasmota may be on a temporary table (Layout.temporary_table).
     Every check and plan expects Sonoff's: put back first, then a restart."""
     if ctx.dry_run:
         return
@@ -245,7 +245,7 @@ UPLOAD_ATTEMPTS = 3
 
 
 def run_plan(ctx: Context, plan: plans.Plan) -> dict[str, Any]:
-    """Have the plug carry out `plan` (tools/autoflash/plans.py)."""
+    """Have the device carry out `plan` (tools/autoflash/plans.py)."""
     if ctx.dry_run:
         output.say(f"[dry-run] would write {plan.title}: {plan.summary()}")
         return {"dry_run": True, "plan": plan.name}
@@ -261,10 +261,10 @@ def step_bootloader(ctx: Context) -> dict[str, Any]:
     that fails to start.  Skipped when it is already in place."""
     if ctx.state.status("E3") != PENDING:
         # A run begun before this step was (1.2.0's), carried on by this
-        # version once its commit had begun: the plug may no longer have the
+        # version once its commit had begun: the device may no longer have the
         # layout and the Tasmota this needs, and never will on this route.
         # Its bootloader stays Sonoff's, as runs of that version left every
-        # plug; the next change of firmware, by way of this step, puts ESPHome's on.
+        # device; the next change of firmware, by way of this step, puts ESPHome's on.
         output.say("Left as it is: this run was begun by an earlier version of this tool, which")
         output.say("kept Sonoff's bootloader, and is past the commit that step needs to come before.")
         ctx.state.set_input("bootloader_kept", "sonoff")

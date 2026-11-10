@@ -6,7 +6,7 @@
 
 ## Where it stops
 
-Its stock firmware starts in the emulator, run on another plug's flash as no dump of one is published, with the factory and pair records a paired one has (its firmware is Sonoff's newer "ais" SDK: [research](../../docs/espressif-research.md#sonoffs-ais-sdk)), and comes online as a paired one does. A conversion has not been tried on it yet. See [what is holding each one up](../README.md).
+Its stock firmware starts in the emulator, run on another device's flash as no dump of one is published, with the factory and pair records a paired one has (its firmware is Sonoff's newer "ais" SDK: [research](../../docs/espressif-research.md#sonoffs-ais-sdk)), and comes online as a paired one does. A conversion has not been tried on it yet. See [what is holding each one up](../README.md).
 
 **A readout is safe, and wanted**: its partition table is the S60's (published from a real one by
 [smeso/esp32-ptm216b](https://github.com/smeso/esp32-ptm216b)), so the bridge

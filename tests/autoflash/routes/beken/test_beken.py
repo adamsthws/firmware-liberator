@@ -1,4 +1,4 @@
-"""The Beken routes: every direction one move, the plug's own store never
+"""The Beken routes: every direction one move, the device's own store never
 written, the backup after the first conversion, through OpenBeken."""
 import tempfile
 import unittest
@@ -75,7 +75,7 @@ class RouteTests(unittest.TestCase):
     def test_an_s61_run_takes_these_steps(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = state.RunState.open(Path(tmp) / "run")
-            run.set_input("plug_kind", "sonoff-s61")
+            run.set_input("device_kind", "sonoff-s61")
             self.assertIs(routes.family_of(run), beken)
             run.set_input("firmware", "openbeken")
             self.assertEqual([s for s, _, _ in routes.steps_of(run)][-2:], ["K1", "B4"])
@@ -83,13 +83,13 @@ class RouteTests(unittest.TestCase):
 
 def a_context(tmp, **inputs):
     run = state.RunState.open(Path(tmp) / "run")
-    for key, value in {"plug_kind": "sonoff-s61", "plug_ip": "127.0.0.1", "plug_mac": MAC, **inputs}.items():
+    for key, value in {"device_kind": "sonoff-s61", "device_ip": "127.0.0.1", "device_mac": MAC, **inputs}.items():
         run.set_input(key, value)
     return SimpleNamespace(state=run, dry_run=False, finder=SimpleNamespace(poll=lambda: None),
                            esphome_password=None, esphome_key=None, esphome_firmware=None,
                            args=SimpleNamespace(no_backup=False), consented=True,
                            listen_ip=lambda: "192.0.2.2", email=lambda: "owner@example.com",
-                           ewelink_env=lambda: {"EWELINK_PASSWORD": "pw"}, ewelink=mock.sentinel.account, account_plug=None,
+                           ewelink_env=lambda: {"EWELINK_PASSWORD": "pw"}, ewelink=mock.sentinel.account, account_device=None,
                            account_devices=lambda: None,
                            # OpenBeken answering Tasmota's Status 11, its Wi-Fi signal in it.
                            device=SimpleNamespace(command=lambda cmd: {"StatusSTS": {"Wifi": {"Signal": -60}}}))

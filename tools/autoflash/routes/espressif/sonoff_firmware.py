@@ -1,13 +1,13 @@
-"""Sonoff's own firmware for a plug with no backup on this computer: the
+"""Sonoff's own firmware for a device with no backup on this computer: the
 official file eWeLink offers the device, else the same file as the
 FlashDumps project keeps it in public; and the flash a backup would have
-held, made from it, the kind's layout and the plug's identity.
+held, made from it, the kind's layout and the device's identity.
 
 eWeLink is asked as query_ota.latest_offer asks, with the device's own id and
 a version older than any, so it offers the latest firmware; the file is fetched
 as the device fetches it (firmware_name.read_head). Neither its link nor the
 device's id is logged or kept. Whichever it comes from, the app in it is
-checked as an ESP image for the plug's chip, whole, and Sonoff's.
+checked as an ESP image for the device's chip, whole, and Sonoff's.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ def app_in_file(data: bytes, name: str) -> bytes:
 
 
 def checked_app(app: bytes, kind: kinds.Kind, slot_size: int) -> bytes:
-    """`app`, if it is a whole ESP image of Sonoff's firmware for the plug's chip."""
+    """`app`, if it is a whole ESP image of Sonoff's firmware for the device's chip."""
     try:
         image = parse_esp_image(app)
     except (ValueError, struct.error) as exc:

@@ -26,7 +26,7 @@ class WifiFallbackTests(unittest.TestCase):
             ctx, ssid, password, image)
         ctx.adopt_wifi = lambda ssid, password: context.Context.adopt_wifi(ctx, ssid, password)
         self.patches = [
-            mock.patch.object(wifi, "read_wifi_from_plug", return_value=found),
+            mock.patch.object(wifi, "read_wifi_from_device", return_value=found),
             mock.patch.object(context, "bundle_ssid", return_value=bundle_for),
             mock.patch.object(output, "say"),
         ]
@@ -35,7 +35,7 @@ class WifiFallbackTests(unittest.TestCase):
         self.addCleanup(lambda: [patch.stop() for patch in self.patches])
         return ctx
 
-    def test_details_read_off_the_plug_are_pinned_without_asking_or_downloading(self):
+    def test_details_read_off_the_device_are_pinned_without_asking_or_downloading(self):
         ctx = self.ctx(found=("Home-2G", "pw"))
         with mock.patch.object(context, "recovery_image",
                                side_effect=prepare_imprinted_bundle.BundleError("no Wi-Fi details yet")), \
@@ -49,8 +49,8 @@ class WifiFallbackTests(unittest.TestCase):
         asked.assert_not_called()
         shown.assert_not_called()
 
-    def test_details_read_off_the_plug_are_not_reported_as_typed(self):
-        # A run stopped at the question, then resumed and read off the plug,
+    def test_details_read_off_the_device_are_not_reported_as_typed(self):
+        # A run stopped at the question, then resumed and read off the device,
         # must not keep the earlier "typed" mark.
         ctx = self.ctx(found=("Home-2G", ""))
         recorded = {}
@@ -212,7 +212,7 @@ class NextDeviceSignInTests(unittest.TestCase):
         menu.assert_not_called()
         asked.assert_not_called()
 
-    def test_a_run_from_a_converted_plug_had_none_to_keep(self):
+    def test_a_run_from_a_converted_device_had_none_to_keep(self):
         from types import SimpleNamespace
         last = SimpleNamespace(state=SimpleNamespace(input={}.get), _ewelink_password=None,
                                ewelink=context.Account(mock.Mock()))

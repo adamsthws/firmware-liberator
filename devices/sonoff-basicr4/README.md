@@ -67,7 +67,7 @@ pins with it on the mains.**
   change: the likeliest way is for the bridge to write a copy of its table at
   0x8000 first, which Sonoff's bootloader and app never read, after which the
   interim Tasmota starts and the tool's usual steps put ESPHome's bootloader
-  and table in place, as on any plug
+  and table in place, as on any device
   ([research](../../docs/espressif-research.md#converting-a-table-at-0xc000)).
   It waits on a readout of a real one: how long its bootloader is (it must end
   below 0x8000) and the rest of its table.

@@ -23,7 +23,7 @@ def emulator_folder(script: str, temp: str) -> Path:
 
 
 def under_an_earlier_release(script: str, temp: str) -> Path:
-    """The script where the plug's supervisor runs it under an earlier
+    """The script where the device's supervisor runs it under an earlier
     release's tool (unattended-test.sh --code): that release's tools/ around it -
     one from before the reorganisation has no tools/autoflash or flashmap -
     and this checkout's kept in its folder."""
@@ -57,13 +57,13 @@ class RedactTests(unittest.TestCase):
         self.assertEqual(apply(b"key hunter22\n"), b"key <redacted:user_usual.pw>\n")
 
     def test_flash_with_no_secrets_passes_lines_through(self):
-        # A public plug's flash has no Sonoff NVS: the log is kept, not lost.
+        # A public device's flash has no Sonoff NVS: the log is kept, not lost.
         apply = redact.redactor(b"\xff" * 0x400000)
         self.assertEqual(apply(b"boot line\n"), b"boot line\n")
         self.assertEqual(apply(b"0x3fc8a000: 0x00000000 0x12345678\n"), b"")
 
     def test_it_runs_under_an_earlier_releases_tool(self):
-        # Its import failing stopped the plug at every start, after an earlier
+        # Its import failing stopped the device at every start, after an earlier
         # release's run swapped its tree in, and nothing reached the log.
         with tempfile.TemporaryDirectory() as temp:
             script = under_an_earlier_release("redact.py", temp)
@@ -75,7 +75,7 @@ class RedactTests(unittest.TestCase):
 
     def test_it_runs_after_an_earlier_releases_tool(self):
         # The kept copy emptied by the next copy of the checkout: taken for a
-        # copy still, it stopped the plug at every start, as the first had.
+        # copy still, it stopped the device at every start, as the first had.
         with tempfile.TemporaryDirectory() as temp:
             script = after_an_earlier_release("redact.py", temp)
             Path(temp, "flash.bin").write_bytes(b"\xff" * 0x400000)

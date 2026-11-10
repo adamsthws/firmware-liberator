@@ -1,5 +1,5 @@
-"""A converted plug's own locks - Tasmota's web password, ESPHome's update
-password, web login and API key - asked for when the plug wants them, held
+"""A converted device's own locks - Tasmota's web password, ESPHome's update
+password, web login and API key - asked for when the device wants them, held
 in memory only.
 """
 
@@ -18,28 +18,28 @@ if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
 
-# Found on the network, but saying whether it is a plug this tool converts
+# Found on the network, but saying whether it is a device this tool converts
 # only once given its web password (Tasmota) or web login (ESPHome).
 LOCKED = ("locked", "esphome-login")
 
 
 def identify(ctx: Context, host: str) -> str | None:
-    """detect.identify, with the plug's web password and web login, where known."""
+    """detect.identify, with the device's web password and web login, where known."""
     return detect.identify(host, password=ctx.web_password, esphome_login=ctx.esphome_login)
 
 
-def locked_out(ctx: Context, plug: detect.Found) -> str:
-    """Why an unattended run stops at `plug`, locked: what to give."""
-    if plug.firmware == "esphome-login":
-        return (f"ESPHome on the device at {plug.host} has a web login"
+def locked_out(ctx: Context, found: detect.Found) -> str:
+    """Why an unattended run stops at `found`, locked: what to give."""
+    if found.firmware == "esphome-login":
+        return (f"ESPHome on the device at {found.host} has a web login"
                 f"{', and the one given is not it' if ctx.esphome_login else ''}: {ESPHOME_LOGIN_HINT}")
-    return str(NeedsPassword(plug.host, bool(ctx.web_password)))
+    return str(NeedsPassword(found.host, bool(ctx.web_password)))
 
 
 @dataclass
 class Secret:
-    """A secret a plug can be given: what it is called, ask() to have it
-    typed (kept out of the log), and check(value): False once the plug takes
+    """A secret a device can be given: what it is called, ask() to have it
+    typed (kept out of the log), and check(value): False once the device takes
     it, True if it does not, None if it did not answer - or a ValueError
     saying why it is not one at all (a key that is not base64, say)."""
     kind: str
@@ -55,15 +55,15 @@ def typed_secret(prompt: str, label: str) -> Callable[[], str]:
     return ask
 
 
-# A check the plug gave no answer to is asked again this many times, this far
-# apart, before the person is: a plug busy or slow to answer one moment
+# A check the device gave no answer to is asked again this many times, this far
+# apart, before the person is: a device busy or slow to answer one moment
 # answers the next, and asking again is all they could choose.
 NO_ANSWER_TRIES = 3
 NO_ANSWER_PAUSE = 5.0
 
 
 def answered(check: Callable[[], bool | None]) -> bool | None:
-    """check(), asked again while the plug gives no answer (None), up to
+    """check(), asked again while the device gives no answer (None), up to
     NO_ANSWER_TRIES times more."""
     answer = check()
     for _ in range(NO_ANSWER_TRIES):
@@ -78,7 +78,7 @@ def answered(check: Callable[[], bool | None]) -> bool | None:
 def secret_or_retry(title: str, lines: list[str], secrets: list[Secret],
                     retry: Callable[[], bool | None], *, still: str,
                     last: str | None = None) -> tuple[Secret | None, Any]:
-    """What the plug takes now: one of `secrets`, typed - or, the last
+    """What the device takes now: one of `secrets`, typed - or, the last
     choice, none, once its owner has removed what it wanted, `retry()` saying
     as a check does whether it takes that (`still`, while it does not).
     `last`: that choice in other words.  Asked until it takes one, or the run
@@ -122,8 +122,8 @@ def password_or_retry(title: str, lines: list[str], check: Callable[[str | None]
 
 def ask_web_password(ctx: Context, host: str) -> None:
     """The web password of the Tasmota at `host`, which wants one this run
-    does not have: typed, each try checked on the plug, or none once it has
-    been cleared on the plug.  Held in memory for this run only, as the Wi-Fi
+    does not have: typed, each try checked on the device, or none once it has
+    been cleared on the device.  Held in memory for this run only, as the Wi-Fi
     password is."""
     wrong = bool(ctx.web_password)
     if prompts.UNATTENDED:
@@ -178,7 +178,7 @@ def esphome_update_check(host: str, password: str | None, key: bytes | None) -> 
 
 def ask_esphome_password(ctx: Context, host: str) -> None:
     """The update password of ESPHome at `host`, which wants one this run does
-    not have: typed, each try checked on the plug, or none once its owner has
+    not have: typed, each try checked on the device, or none once its owner has
     removed it - or, from an ESPHome that takes encrypted updates too, its
     API encryption key, with which it asks for no password.  Held in memory
     for this run only."""
@@ -210,7 +210,7 @@ def ask_esphome_password(ctx: Context, host: str) -> None:
 
 def ask_esphome_key(ctx: Context, host: str, *, wifi: bool = False) -> bool:
     """The API encryption key of ESPHome at `host`, typed, each try checked
-    on the plug: for its updates, when it takes only encrypted ones - or none,
+    on the device: for its updates, when it takes only encrypted ones - or none,
     once its owner has removed that - or, `wifi`, to unlock its API, which then
     gives its Wi-Fi details (they are typed otherwise).  Held in memory for
     this run only.  Returns whether it was given."""
@@ -256,7 +256,7 @@ def wants_key(host: str, password: str | None) -> bool | None:
 
 def ask_esphome_login(ctx: Context, host: str) -> None:
     """The web login of ESPHome at `host` (web_server's auth:), which wants
-    one this run does not have: typed, each try checked on the plug, or none
+    one this run does not have: typed, each try checked on the device, or none
     once its owner has removed it.  Held in memory for this run only."""
     wrong = ctx.esphome_login is not None
     if prompts.UNATTENDED:
@@ -287,9 +287,9 @@ def ask_esphome_login(ctx: Context, host: str) -> None:
 
 
 def check_esphome_key(ctx: Context, host: str) -> None:
-    """An API encryption key given in advance, checked on the plug's API:
-    asked for again, or gone on without, when it is not the plug's.  One
-    given for a plug whose API is plain is not needed, and left unused."""
+    """An API encryption key given in advance, checked on the device's API:
+    asked for again, or gone on without, when it is not the device's.  One
+    given for a device whose API is plain is not needed, and left unused."""
     if ctx.esphome_key is None:
         return
     access = esphome.api_access(host, ctx.esphome_key)
@@ -311,14 +311,14 @@ def check_esphome_key(ctx: Context, host: str) -> None:
 
 
 def unlock_esphome(ctx: Context) -> None:
-    """What ESPHome on the plug wants, known before the go-ahead - so that
-    nothing is asked once the plug is being changed: an API encryption key
+    """What ESPHome on the device wants, known before the go-ahead - so that
+    nothing is asked once the device is being changed: an API encryption key
     given, checked; then for its updates, its update password, when it has
     one (or its key, which does instead where it takes encrypted updates
     too), or its key, when it takes only encrypted updates.  Each given
     (--esphome-ota-password, --esphome-api-key, or their AUTOFLASH_ names), or
     asked for."""
-    host = ctx.state.input("plug_ip")
+    host = ctx.state.input("device_ip")
     if not host:
         return
     check_esphome_key(ctx, host)
@@ -329,26 +329,26 @@ def unlock_esphome(ctx: Context) -> None:
         ask_esphome_password(ctx, host)
 
 
-def unlocked(ctx: Context, plug: detect.Found) -> detect.Found:
-    """`plug`, a Tasmota with a web password or an ESPHome with a web login,
+def unlocked(ctx: Context, found: detect.Found) -> detect.Found:
+    """`found`, a Tasmota with a web password or an ESPHome with a web login,
     as what it is once given it."""
-    if plug.firmware == "esphome-login":
-        ask_esphome_login(ctx, plug.host)
-        if identify(ctx, plug.host) != "esphome":
-            raise Abort(f"the ESPHome at {plug.host} did not answer as a device this tool converts")
-        return detect.Found(plug.host, "esphome", plug.mac)
-    ask_web_password(ctx, plug.host)
-    running = identify(ctx, plug.host)
+    if found.firmware == "esphome-login":
+        ask_esphome_login(ctx, found.host)
+        if identify(ctx, found.host) != "esphome":
+            raise Abort(f"the ESPHome at {found.host} did not answer as a device this tool converts")
+        return detect.Found(found.host, "esphome", found.mac)
+    ask_web_password(ctx, found.host)
+    running = identify(ctx, found.host)
     if running in ("mover", "startup", "hub"):
         running = "midway"
     if running not in ("tasmota", "midway"):
-        raise Abort(f"the Tasmota at {plug.host} did not answer as a device this tool converts")
-    return detect.Found(plug.host, running, plug.mac)
+        raise Abort(f"the Tasmota at {found.host} did not answer as a device this tool converts")
+    return detect.Found(found.host, running, found.mac)
 
 
 def unlock_tasmota(ctx: Context) -> None:
-    """The plug's own Tasmota web password, when it has one, known before any
-    step asks the plug for anything: on a run from Tasmota, until the plug
+    """The device's own Tasmota web password, when it has one, known before any
+    step asks the device for anything: on a run from Tasmota, until the device
     leaves it (L1) - every firmware after that is one this tool put on.  A
     run carried on was not asked yet, nor one given the wrong password."""
     source = runs.run_source(ctx.state)
@@ -358,6 +358,6 @@ def unlock_tasmota(ctx: Context) -> None:
         return
     if source == "safeboot" and not ctx.state.is_done("T1"):
         return  # its safeboot first: T1 asks for it there
-    host = ctx.state.input("plug_ip")
+    host = ctx.state.input("device_ip")
     if host and ctx.device.wants_password() is True:
         ask_web_password(ctx, host)

@@ -17,7 +17,7 @@ from tools.autoflash import hostsys, redirect_test
 class FirewallCommandTests(unittest.TestCase):
     """The add and remove commands must undo each other exactly."""
 
-    def test_ufw_rule_admits_only_the_plug_on_both_ports(self):
+    def test_ufw_rule_admits_only_the_device_on_both_ports(self):
         add, remove = hostsys.firewall_commands("ufw", "192.0.2.50", [8088, 8089])
         self.assertEqual(add, ["ufw", "allow", "from", "192.0.2.50", "to", "any", "port",
                                "8088,8089", "proto", "tcp", "comment", "Autoflash"])
@@ -30,7 +30,7 @@ class FirewallCommandTests(unittest.TestCase):
         self.assertEqual(add[1].replace("--add-", "--remove-"), remove[1])
         self.assertIn("source address=192.0.2.50", add[1])
 
-    def test_windows_rule_is_named_per_plug_and_removed_by_name(self):
+    def test_windows_rule_is_named_per_device_and_removed_by_name(self):
         add, remove = hostsys.firewall_commands("windows", "192.0.2.50", [8088, 8089])
         self.assertIn("name=Autoflash 192.0.2.50", add)
         self.assertIn("remoteip=192.0.2.50", add)
@@ -137,7 +137,7 @@ class WindowsFirewallTests(unittest.TestCase):
                 mock.patch.object(hostsys, "interface_towards", return_value=interface):
             return hostsys.windows_firewall("192.0.2.50")
 
-    def test_the_plugs_network_decides_which_profile_counts(self):
+    def test_the_devices_network_decides_which_profile_counts(self):
         state = self.read(self.STATE)
         self.assertTrue(state["enabled"])
         self.assertTrue(state["local_rules"])          # Private takes local rules...
@@ -459,7 +459,7 @@ class SystemCommandTests(unittest.TestCase):
 
 
 class RedirectTestTests(unittest.TestCase):
-    """The router-rule test: borrow the plug's address, try both sources, give it back."""
+    """The router-rule test: borrow the device's address, try both sources, give it back."""
 
     def run_test(self, reaches):
         calls = []
@@ -471,7 +471,7 @@ class RedirectTestTests(unittest.TestCase):
         with mock.patch.object(hostsys, "local_addresses", return_value={"192.0.2.20"}), \
              mock.patch.object(hostsys, "ping_ok", return_value=False):
             try:
-                redirect_test.run(interface="eth0", plug_ip="192.0.2.50", own_ip="192.0.2.20",
+                redirect_test.run(interface="eth0", device_ip="192.0.2.50", own_ip="192.0.2.20",
                                   vendor_ip="203.0.113.10", vendor_port=8088, log=lambda _: None,
                                   elevated=elevated, connect=lambda src, *_: reaches[src])
                 result = None
@@ -493,11 +493,11 @@ class RedirectTestTests(unittest.TestCase):
         error, _ = self.run_test({"192.0.2.50": False, "192.0.2.20": False})
         self.assertIn("cannot tell", str(error))
 
-    def test_a_plug_still_powered_stops_the_test(self):
+    def test_a_device_still_powered_stops_the_test(self):
         with mock.patch.object(hostsys, "local_addresses", return_value=set()), \
              mock.patch.object(hostsys, "ping_ok", return_value=True):
-            with self.assertRaisesRegex(redirect_test.RedirectTestError, "unplug"):
-                redirect_test.run(interface="eth0", plug_ip="192.0.2.50", own_ip="192.0.2.20",
+            with self.assertRaisesRegex(redirect_test.RedirectTestError, "switch the device off first"):
+                redirect_test.run(interface="eth0", device_ip="192.0.2.50", own_ip="192.0.2.20",
                                   vendor_ip="203.0.113.10", vendor_port=8088,
                                   elevated=lambda _: self.fail("must not borrow the address"))
 
@@ -756,7 +756,7 @@ class NetworkOfTests(unittest.TestCase):
         self.assertEqual(self.width("10.20.5.9", {"10.20.5.9": 16}), ("10.20.4.0/22", 1022))
 
     def test_an_address_on_another_of_its_networks_takes_that_ones_size(self):
-        # The plug's address, on the computer's /23: the plug's half of it, not a /24.
+        # The device's address, on the computer's /23: the device's half of it, not a /24.
         self.assertEqual(self.width("10.20.4.200", {"10.20.5.9": 23, "192.0.2.10": 24}), ("10.20.4.0/23", 510))
 
     def test_a_network_this_computer_does_not_know_is_a_24(self):
@@ -802,7 +802,7 @@ class SweepTests(unittest.TestCase):
 
     def test_what_was_seen_counts_though_the_table_dropped_it_since(self):
         # The kernel drops entries not renewed for 5 s once its table is full:
-        # a plug seen early in a wide sweep is kept from the reads along the way.
+        # a device seen early in a wide sweep is kept from the reads along the way.
         tables = [{"10.20.4.37": "12:34:56:ab:cd:ef"}, {"10.20.6.8": "12:34:56:ab:cd:01"}]
         reads = threading.Event()
         calls = []
@@ -833,7 +833,7 @@ class SweepTests(unittest.TestCase):
 
 
 class FindByMacTests(unittest.TestCase):
-    def test_a_plug_the_sweep_saw_is_found_though_the_table_dropped_it(self):
+    def test_a_device_the_sweep_saw_is_found_though_the_table_dropped_it(self):
         with mock.patch.object(hostsys, "neighbour_table", return_value={}), \
                 mock.patch.object(hostsys, "sweep", return_value={"10.20.4.37": "12:34:56:ab:cd:ef"}):
             self.assertEqual(hostsys.find_by_mac("12:34:56:ab:cd:ef", "10.20.5.9"), "10.20.4.37")

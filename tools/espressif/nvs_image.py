@@ -1,6 +1,6 @@
 """An ESP-IDF NVS partition, written as ESP-IDF's nvs_partition_gen writes one
 (format version 2), with Python's standard library alone: the tool builds a
-plug's settings with it where it has no copy of them to write back.
+device's settings with it where it has no copy of them to write back.
 """
 
 from __future__ import annotations

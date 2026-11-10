@@ -11,21 +11,21 @@ Wi-Fi from the stock store at boot ([how it differs](#how-it-differs-from-the-s6
 ## What it reports
 
 The same entities, actions, calibration handling and energy totals as
-[the S60's](../sonoff-s60/esphome.md#what-it-reports), so the two plugs look alike in
+[the S60's](../sonoff-s60/esphome.md#what-it-reports), so the two devices look alike in
 Home Assistant. The `Calibration` sensor says `stock store`, `from backup` (given
 through `autoflash_calibration`, nine numbers) or `missing`.
 
 ## Adopted into Home Assistant
 
-Home Assistant's ESPHome builder can adopt a converted plug. It uses this config,
-at the release the plug's firmware came from, and your plug keeps that config until
+Home Assistant's ESPHome builder can adopt a converted device. It uses this config,
+at the release the device's firmware came from, and your device keeps that config until
 you choose a newer release: [how it works, how to take a fix and how to customise
 it](../../docs/home-assistant-adoption.md).
 
 ## Changing it
 
 Edit `esphome.yaml`, then build and publish it with
-`python3 tools/repo/update_firmware.py esphome --plug sonoff-s61`
+`python3 tools/repo/update_firmware.py esphome --device sonoff-s61`
 ([docs/updating-firmware.md](../../docs/updating-firmware.md)). Keep the names of
 the `WiFi Signal` sensor, the `Relay` switch, the four energy totals and the
 `autoflash_wifi` and `autoflash_calibration` actions: the tool and Home Assistant use
@@ -33,7 +33,7 @@ each, as [the S60's page](../sonoff-s60/esphome.md#changing-it) says. This image
 no `AUTOFLASH-IMPRINT-` placeholders.
 
 ESPHome 2026.10.0 built the current image, `artifacts/esphome-sonoff-s61-2026.10.0-3.rbl`,
-with `tools/repo/update_firmware.py esphome 2026.10.0 --plug sonoff-s61`.
+with `tools/repo/update_firmware.py esphome 2026.10.0 --device sonoff-s61`.
 
 To build it by hand, as you would the S60's image: in ESPHome's own Docker image,
 with the config alone in a directory. The first build fetches LibreTiny, its Beken
@@ -49,19 +49,19 @@ The outputs, in `.esphome/build/esphome/.pioenvs/esphome/`:
 
 - `image_bk7238_app.ota.rbl` - the **rt_ota update** (about 500 KB) for the
   conversion: wrapped with [`../fota_wrap.py`](../../tools/beken/fota_wrap.py) it is
-  what the stock plug downloads; staged in OpenBeken's `ota_http` it converts
-  an OpenBeken plug. The stock bootloader applies it from the download slot.
+  what the stock device downloads; staged in OpenBeken's `ota_http` it converts
+  an OpenBeken device. The stock bootloader applies it from the download slot.
 - `firmware.uf2` - LibreTiny's flasher/OTA image, which ESPHome's own OTA
-  (and Home Assistant's ESPHome builder) send to a plug already on ESPHome.
+  (and Home Assistant's ESPHome builder) send to a device already on ESPHome.
 - `board.json` - the layout the build used; check it says `download:
   0x286000+0x15A000` and `kvs: 0x3EE000+0x8000`.
 
 ## How it differs from the S60's
 
 - **Wi-Fi from the stock store, not written into the image.** The S60's image
-  has two placeholders the tool fills with the plug's Wi-Fi. The S61's image is
+  has two placeholders the tool fills with the device's Wi-Fi. The S61's image is
   an rt_ota update (gzip, AES with RT-Thread's public key), which cannot be
-  patched in place, and does not need to be: the plug's Wi-Fi is still in the
+  patched in place, and does not need to be: the device's Wi-Fi is still in the
   stock EasyFlash store at `0x3e2000`, which no conversion touches. At boot
   (priority 1000, before Wi-Fi) the config reads `wifi-ssid` / `wifi-pass` from
   it with `lt_flash_read`, the way the tool's OpenBeken driver does, and sets
@@ -85,7 +85,7 @@ The outputs, in `.esphome/build/esphome/.pioenvs/esphome/`:
   says for this model. Before 2.4.0 it was not, and each reading was the
   other's: about 20 A whatever the load, and a voltage that followed it, 5 V
   at 100 W. The emulated meter showed it
-  ([the emulator's board](../../tools/beken/emulator/README.md#the-plugs-board-boardpy)).
+  ([the emulator's board](../../tools/beken/emulator/README.md#the-devices-board-boardpy)).
 - **The flash layout.** LibreTiny's generic BK7238 board is the SDK's 2 MB
   layout. The config overrides it through `platformio_options` (PlatformIO's
   `board_flash.*` / `board_build.*` overrides) to the S61's stock bootloader
@@ -95,12 +95,12 @@ The outputs, in `.esphome/build/esphome/.pioenvs/esphome/`:
   through it too - the radio calibration at `0x3e0000`, ESPHome's preferences
   (FlashDB) in the empty 32 KB at `0x3ee000`, and the unused LittleFS in the
   sector at `0x3e1000`, where the interim firmware left its settings. The stock EasyFlash stores at `0x3e2000` and
-  `0x3f6000` are left alone, so the plug can always go back to stock.
-- **No backup reader.** On the S60, the tool backs a plug up from its stock
+  `0x3f6000` are left alone, so the device can always go back to stock.
+- **No backup reader.** On the S60, the tool backs a device up from its stock
   firmware; the S61's stock firmware has no way to read its store out, and
   ESPHome reads no flash. So the tool installs OpenBeken first, as the
   interim firmware, takes the backup through its flash reads (`/api/flash`),
-  and has it fetch this image: nothing in it reads the plug out, and nothing
+  and has it fetch this image: nothing in it reads the device out, and nothing
   on the network can after the conversion.
 
 Nothing in the S61 route needs a LibreTiny or ESPHome change: ESPHome 2026.10.0
@@ -108,7 +108,7 @@ pins LibreTiny 1.13.0, which has the BK7238.
 
 ## Reverting to stock, and to OpenBeken
 
-A plug on ESPHome takes updates through ESPHome's OTA as UF2 files, and
+A device on ESPHome takes updates through ESPHome's OTA as UF2 files, and
 LibreTiny writes a UF2's `download` part to the download slot. So a UF2 that
 carries the stock app RBL (rebuilt from a dump with
 [`../stock_app.py`](../../tools/beken/stock_app.py) and the SDK packer, as the
@@ -123,7 +123,7 @@ ltchiptool uf2 write -o stock_revert.uf2 -b board.json -L 1.13.0 \
     -F "sonoff-stock:1.0.2" --legacy "stock_app_1.0.2.rbl=device:download"
 ```
 
-The same with OpenBeken's 4 MB-table `.rbl` moves the plug to OpenBeken, and
+The same with OpenBeken's 4 MB-table `.rbl` moves the device to OpenBeken, and
 OpenBeken's ordinary `ota_http <url of the ESPHome .rbl>` brings it back: its
 4 MB-table build downloads into the same slot. The stock EasyFlash store is
 never touched, so whichever firmware comes up reads its Wi-Fi, calibration
@@ -137,10 +137,10 @@ other's.
 ## Validated in the emulator
 
 All in the BekenEmulator fork on a 4 MB flash shaped like the project owner's
-plug (stock firmware, provisioned with a test network), with no bypass of any
-check the plug makes:
+device (stock firmware, provisioned with a test network), with no bypass of any
+check the device makes:
 
-1. **The conversion**, the way the tool drives it: the plug on the local
+1. **The conversion**, the way the tool drives it: the device on the local
    eWeLink stub is pushed an `upgrade` command; it fetches the FOTA-wrapped
    `.rbl` in ranged requests and stages it verbatim at `0x286000`.
 2. **The apply and first boot**: booted from that flash, the stock bootloader

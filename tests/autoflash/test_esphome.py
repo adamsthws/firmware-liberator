@@ -1,4 +1,4 @@
-"""ESPHome on a converted plug, as the tool asks it: its page and title, its
+"""ESPHome on a converted device, as the tool asks it: its page and title, its
 signal, and its native API, plain and encrypted."""
 import unittest
 import time
@@ -8,7 +8,7 @@ from tools.autoflash import esphome
 
 
 class ESPHomePageTests(unittest.TestCase):
-    """ESPHome's page, as the plug serves it with web_server's local: true."""
+    """ESPHome's page, as the device serves it with web_server's local: true."""
 
     def serve(self, body, headers):
         import http.server
@@ -55,7 +55,7 @@ class ESPHomePageTests(unittest.TestCase):
 
 
 class ESPHomeTitleTests(unittest.TestCase):
-    """The name an ESPHome's page shows, which says the kind of plug: read
+    """The name an ESPHome's page shows, which says the kind of device: read
     from its event stream, which a real ESPHome never closes."""
 
     def serve(self, events, then_hold=True):
@@ -106,7 +106,7 @@ class ESPHomeTitleTests(unittest.TestCase):
 
 class SignalSensorTests(unittest.TestCase):
     """An ESPHome built with the Wi-Fi signal sensor (as ours is) gives the
-    plug's signal; one without it gives nothing, and the run goes on."""
+    device's signal; one without it gives nothing, and the run goes on."""
 
     def serve(self, pages):
         import http.server
@@ -315,7 +315,7 @@ class WifiActionTests(unittest.TestCase):
 
 
 class CalibrationActionTests(unittest.TestCase):
-    """Our ESPHome takes the plug's factory calibration through its
+    """Our ESPHome takes the device's factory calibration through its
     calibration action, called with the 18 numbers as a list of floats and
     no answer wanted."""
 
@@ -416,14 +416,14 @@ class EncryptedApiTests(unittest.TestCase):
             assert hello == b""
             first = noise.read_frame(read)
             connection.sendall(noise.frame(b"\x01sonoff-s60\x0012:34:56:AB:CD:EF\x00"))
-            plug = noise.Handshake(self.KEY, b"NoiseAPIInit\x00\x00", initiator=False)
+            device = noise.Handshake(self.KEY, b"NoiseAPIInit\x00\x00", initiator=False)
             try:
-                plug.read_message(first[1:])
+                device.read_message(first[1:])
             except noise.NoiseError:
                 connection.sendall(noise.frame(b"\x01" + noise.WRONG_KEY_REASON.encode()))
                 return
-            connection.sendall(noise.frame(b"\x00" + plug.write_message()))
-            sending, receiving = plug.split()
+            connection.sendall(noise.frame(b"\x00" + device.write_message()))
+            sending, receiving = device.split()
             while True:
                 message = receiving.decrypt(noise.read_frame(read))
                 for answer, payload in answers.get(int.from_bytes(message[:2], "big"), []):
@@ -473,7 +473,7 @@ class EncryptedApiTests(unittest.TestCase):
         self.assertIsNone(esphome.api_signal("127.0.0.1", self.serve(), timeout=3.0))  # just none
 
     def test_locked_even_when_it_hangs_up_before_the_question(self):
-        # A plug quicker than the tool: it answers the plain hello and hangs up
+        # A device quicker than the tool: it answers the plain hello and hangs up
         # before the next write, which is refused - its answer is still read.
         import time
         send = esphome._Api.send

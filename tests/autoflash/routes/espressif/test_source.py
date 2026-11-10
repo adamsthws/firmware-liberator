@@ -1,6 +1,6 @@
-"""Where an Espressif plug was left, when a run starts
+"""Where an Espressif device was left, when a run starts
 (tools/autoflash/routes/espressif/source.py): past the commit or not,
-ESPHome in safe mode, and a plug on Tasmota with ESPHome's bootloader
+ESPHome in safe mode, and a device on Tasmota with ESPHome's bootloader
 already leaving it for ESPHome without the hub."""
 import hashlib
 import tempfile
@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.autoflash.routes.espressif.test_espressif import RouteTestCase
-from tools.autoflash import detect, errors, handover, hostsys, join, output, plugs, routes, runs, unlock
+from tools.autoflash import detect, errors, handover, hostsys, join, output, records, routes, runs, unlock
 from tools.autoflash.device import DeviceError
 from tools.autoflash.routes import espressif, source, update
 from tools.autoflash.routes.espressif import images, mover, source as espressif_source
@@ -19,24 +19,24 @@ from tools.espressif import chips
 
 
 class LeavingTasmotaForESPHomeTests(RouteTestCase):
-    """Every plug ends with ESPHome's bootloader: only a plug that has it skips
+    """Every device ends with ESPHome's bootloader: only a device that has it skips
     the hub, which writes it, and the choice is kept for the rest of the run."""
 
     def settle(self, *, direct):
-        ctx = self.ctx(given="esphome", run=str(direct), plug_kind="sonoff-pow-elite")
-        ctx.device = mock.Mock(sha_region=mock.Mock(return_value=self.ON_PLUG[direct]))
+        ctx = self.ctx(given="esphome", run=str(direct), device_kind="sonoff-pow-elite")
+        ctx.device = mock.Mock(sha_region=mock.Mock(return_value=self.ON_DEVICE[direct]))
         with mock.patch.object(routes.source, "find_current_firmware", return_value="tasmota"), \
                 mock.patch.object(update, "outdated", return_value=False), \
                 mock.patch.object(routes, "sonoff_backup_exists", return_value=True):
             routes.settle_route(ctx)
         return ctx
 
-    ON_PLUG = {True: hashlib.sha256(images.published_bootloader(chips.ESP32)).hexdigest(), False: "0" * 64}
+    ON_DEVICE = {True: hashlib.sha256(images.published_bootloader(chips.ESP32)).hexdigest(), False: "0" * 64}
 
     def names(self, state):
         return [step for step, _, _ in routes.steps_of(state)]
 
-    def test_a_plug_with_esphomes_bootloader_goes_straight_to_esphome(self):
+    def test_a_device_with_esphomes_bootloader_goes_straight_to_esphome(self):
         ctx = self.settle(direct=True)
         self.assertEqual(self.names(ctx.state), ["A0", "A3", "A5", "L1", "M1", "I2"])
 
@@ -49,23 +49,23 @@ class LeavingTasmotaForESPHomeTests(RouteTestCase):
         steps = self.names(self.settle(direct=False).state)
         self.assertEqual(steps, ["A0", "A3", "A5", "L1", "X1", "X2", "D4", "D5", "K1", "I1", "I2"])
 
-    def test_a_plug_that_will_not_say_goes_through_the_hub(self):
-        ctx = self.ctx(plug_kind="sonoff-pow-elite")
+    def test_a_device_that_will_not_say_goes_through_the_hub(self):
+        ctx = self.ctx(device_kind="sonoff-pow-elite")
         for failure in (DeviceError("no Berry"), OSError("gone")):
             ctx.device = mock.Mock(sha_region=mock.Mock(side_effect=failure))
             self.assertFalse(espressif_source.leaves_tasmota_direct(ctx))
 
     def test_a_layout_on_a_temporary_table_needs_the_hub_to_leave_it(self):
         # M1 would leave it there for good, whatever bootloader it has.
-        ctx = self.ctx(plug_kind="sonoff-th-elite")
-        ctx.device = mock.Mock(sha_region=mock.Mock(return_value=self.ON_PLUG[True]))
+        ctx = self.ctx(device_kind="sonoff-th-elite")
+        ctx.device = mock.Mock(sha_region=mock.Mock(return_value=self.ON_DEVICE[True]))
         self.assertFalse(espressif_source.leaves_tasmota_direct(ctx))
 
-    def test_a_rerun_takes_the_way_it_began_and_does_not_ask_the_plug_again(self):
+    def test_a_rerun_takes_the_way_it_began_and_does_not_ask_the_device_again(self):
         for direct, next_step in ((True, "M1"), (False, "X1")):
             ctx = self.settle(direct=direct)
             ctx.device.sha_region.reset_mock()
-            ctx.device.sha_region.return_value = self.ON_PLUG[not direct]  # by now the plug says otherwise
+            ctx.device.sha_region.return_value = self.ON_DEVICE[not direct]  # by now the device says otherwise
             self.assertEqual(routes.settle_route(ctx), ("esphome", "tasmota"))
             ctx.device.sha_region.assert_not_called()
             steps = self.names(ctx.state)
@@ -84,7 +84,7 @@ class LeavingTasmotaForESPHomeTests(RouteTestCase):
 
 
 class EsphomeSafeModeTests(unittest.TestCase):
-    """A plug answering as the mover that a run left on ESPHome is ESPHome in
+    """A device answering as the mover that a run left on ESPHome is ESPHome in
     safe mode: waited out, never sent the startup firmware."""
 
     def running(self, earlier, answers=("mover", "esphome"), by_address=False):
@@ -93,7 +93,7 @@ class EsphomeSafeModeTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
-        records = []
+        kept = []
         for index, (firmware, done) in enumerate(earlier):
             run = root / f"run{index}"
             run.mkdir()
@@ -101,23 +101,23 @@ class EsphomeSafeModeTests(unittest.TestCase):
             state.set_input("firmware", firmware)
             for step in done:
                 state.mark(step, "done")
-            records.append(run)
+            kept.append(run)
         now = root / "now"
         now.mkdir()
-        inputs = {"plug_ip": "192.0.2.137", "plug_mac": "12:34:56:ab:cd:ef"}
+        inputs = {"device_ip": "192.0.2.137", "device_mac": "12:34:56:ab:cd:ef"}
         ctx = SimpleNamespace(dir=now, state=SimpleNamespace(input=inputs.get),
                               web_password=None, esphome_login=None)
         answers = iter(answers)
         clock = iter(range(0, 10000, 5))
-        with mock.patch.object(runs, "run_directories", return_value=records), \
-                mock.patch.object(plugs, "mac_of_run", return_value="12:34:56:ab:cd:ef"), \
+        with mock.patch.object(runs, "run_directories", return_value=kept), \
+                mock.patch.object(records, "mac_of_run", return_value="12:34:56:ab:cd:ef"), \
                 mock.patch.object(detect, "identify", side_effect=lambda *a, **k: next(answers)), \
                 mock.patch.object(time, "monotonic", side_effect=lambda: next(clock)), \
                 mock.patch.object(time, "sleep"), \
                 mock.patch.object(output, "say"):
             if by_address:
                 with mock.patch.object(hostsys, "mac_of", return_value="12:34:56:AB:CD:EF"), \
-                        mock.patch.object(source, "adopt_plug"), \
+                        mock.patch.object(source, "adopt_device"), \
                         mock.patch.object(espressif_source, "past_the_commit", side_effect=lambda ctx, running: running):
                     return source.find_current_firmware(ctx)
             return espressif_source.esphome_safe_mode(ctx, "midway")
@@ -144,7 +144,7 @@ class EsphomeSafeModeTests(unittest.TestCase):
 
 
 class PastTheCommitTests(unittest.TestCase):
-    """A plug left on the startup firmware is on Tasmota's layout if this
+    """A device left on the startup firmware is on Tasmota's layout if this
     computer's run of it got past the commit - Sonoff's otherwise."""
 
     def source(self, earlier, safeboot=False, version="15.6.0(safeboot)", running="midway"):
@@ -155,7 +155,7 @@ class PastTheCommitTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
-        records = []
+        kept = []
         for index, (done, outcome, *stopped) in enumerate(earlier):
             run = root / f"run{index}"
             (run / "live").mkdir(parents=True)
@@ -166,26 +166,26 @@ class PastTheCommitTests(unittest.TestCase):
                     state.mark(step[:-1], "failed", **({"nothing_written": True} if step[-1] == "!" else {}))
                 else:
                     state.mark(step, "done")
-            if stopped:  # stopped as E3 ran: what its server saw of the plug
+            if stopped:  # stopped as E3 ran: what its server saw of the device
                 state.mark("E3", ATTEMPTED)
                 (run / "live" / "commit-server.log").write_text(stopped[0])
             if outcome:
                 (run / "live" / "commit-report.json").write_text(json.dumps({"phase": "commit", "status": outcome}))
-            records.append(run)
+            kept.append(run)
         now = root / "now"
         now.mkdir()
         ctx = SimpleNamespace(dir=now, state=RunState.open(now), evidence=now / "live",
                               device=SimpleNamespace(is_safeboot=lambda: safeboot, firmware_version=lambda: version))
         self.evidence, self.state = ctx.evidence, ctx.state
-        ctx.state.set_input("plug_mac", "12:34:56:ab:cd:ef")
-        with mock.patch.object(runs, "run_directories", return_value=records), \
-             mock.patch.object(plugs, "mac_of_run", return_value="12:34:56:ab:cd:ef"), \
+        ctx.state.set_input("device_mac", "12:34:56:ab:cd:ef")
+        with mock.patch.object(runs, "run_directories", return_value=kept), \
+             mock.patch.object(records, "mac_of_run", return_value="12:34:56:ab:cd:ef"), \
              mock.patch.object(output, "say"):
             return espressif_source.past_the_commit(ctx, running)
 
     def test_a_run_that_committed_and_did_not_finish(self):
         self.assertEqual(self.source([(["E1", "E2", "E3"], None)]), "committed")
-        # Stopped as the plug restarted: the report says so, the record not yet.
+        # Stopped as the device restarted: the report says so, the record not yet.
         self.assertEqual(self.source([(["E1", "E2"], "PASS")]), "committed")
         # And G1 has that run's record of the startup firmware it put on.
         self.assertTrue((self.evidence / "commit-report.json").is_file())
@@ -226,7 +226,7 @@ class PastTheCommitTests(unittest.TestCase):
 
     def test_a_run_that_wrote_nothing_does_not_hide_the_one_before(self):
         # Seen: runs stopped at X1, sent to a Tasmota with no update service,
-        # stood between a plug and the record of the run that knew it.
+        # stood between a device and the record of the run that knew it.
         self.assertEqual(self.source([(["E1", "E2", "E3"], None), (["X1!"], None)]), "committed")
         self.assertEqual(self.source([(["E1", "E2", "E3"], None), ([], None)]), "committed")
         # One that may have written something decides, as before.
@@ -234,7 +234,7 @@ class PastTheCommitTests(unittest.TestCase):
 
     def test_x1_finding_no_update_service_says_nothing_was_written(self):
         from types import SimpleNamespace
-        inputs = {"plug_ip": "192.0.2.137", "source": "tasmota"}
+        inputs = {"device_ip": "192.0.2.137", "source": "tasmota"}
         ctx = SimpleNamespace(state=SimpleNamespace(input=inputs.get), dry_run=False,
                               wifi=lambda why=None: ("wifi", "password"))
         with mock.patch.object(unlock, "identify", return_value="tasmota"), \
@@ -246,7 +246,7 @@ class PastTheCommitTests(unittest.TestCase):
         sent.assert_not_called()
 
     def test_a_tasmota_without_its_template_is_never_sent_the_hubs_steps(self):
-        # Seen: a converted plug that had lost its template, taken for part
+        # Seen: a converted device that had lost its template, taken for part
         # way, was sent X1 - an ESPHome update - and waited 4 minutes for an
         # update service no Tasmota has (firmware-liberator discussion #8).
         self.assertEqual(self.source([(["E3", "F2", "F4", "G1", "H1"], None)], running="untemplated"),
@@ -262,8 +262,8 @@ class PastTheCommitTests(unittest.TestCase):
         self.assertEqual(espressif.steps_for("sonoff", "untemplated"), espressif.steps_for("sonoff", "tasmota"))
 
 
-    def test_a_commit_the_plug_finished_after_its_run_was_stopped(self):
-        # Seen in the fault suite: Ctrl-C a second after the plug fetched the
+    def test_a_commit_the_device_finished_after_its_run_was_stopped(self):
+        # Seen in the fault suite: Ctrl-C a second after the device fetched the
         # new table; it finished alone, and a --new run took it for the
         # ESPHome route's, whose steps need Sonoff's layout.
         fetched = "GET /target-table HTTP/1.1 200\n"

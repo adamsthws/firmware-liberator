@@ -1,6 +1,6 @@
 """Back to Sonoff's firmware (tools/autoflash/routes/espressif/sonoff.py): with
 no backup on this computer (R1), the flash its backup would have held, put
-together; and a plug whose Sonoff firmware ran from its second slot."""
+together; and a device whose Sonoff firmware ran from its second slot."""
 import json
 import unittest
 from unittest import mock
@@ -8,7 +8,7 @@ from unittest import mock
 from tests.autoflash.routes.espressif.test_identity import Fixture, IDENTITY, MAC, settings_of
 from tests.autoflash.routes.espressif.test_sonoff_firmware import SONOFF_APP
 from tests.espressif.test_sonoff_identity import FRAME
-from tools.autoflash import errors, output, plans, plugs
+from tools.autoflash import errors, output, plans, records
 from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import NothingWritten
 from tools.autoflash.routes.espressif import hub, images, sonoff, sonoff_firmware
@@ -29,7 +29,7 @@ class RebuiltTests(Fixture):
         first, second = (call.args[1] for call in run.call_args_list)
         return result, fetched, first, second
 
-    def test_from_the_identity_the_plug_kept(self):
+    def test_from_the_identity_the_device_kept(self):
         flash = bytearray(b"\xff" * 0x400000)
         flash[0x8000:0x9000] = images.sonoff_table()
         flash[0x9000:0x19000] = sonoff_identity.nvs(IDENTITY, 0x10000)
@@ -55,7 +55,7 @@ class RebuiltTests(Fixture):
         self.assertEqual(fetched.call_args.args[2], IDENTITY)
         self.assertEqual(ctx.state.data["captures"]["R1.rebuilt"]["identity"], "kept")
 
-    def test_from_the_account_record_when_the_plug_kept_none(self):
+    def test_from_the_account_record_when_the_device_kept_none(self):
         ctx = self.ctx(b"\xff" * 0x400000)
         record = {"deviceid": "10000e32ab", "devicekey": "made-up-key", "params": {"staMac": MAC.upper()},
                   "extra": {"model": "SN-ESP32C3-S60-01", "uiid": 190}}
@@ -66,9 +66,9 @@ class RebuiltTests(Fixture):
                          ("10000e32ab", "made-up-key", get_device_key.dispatch_server("eu")[0]))
         self.assertEqual(ctx.state.data["captures"]["R1.rebuilt"]["identity"], "account")
 
-    def test_a_plug_that_does_not_answer_is_not_taken_for_one_that_kept_none(self):
+    def test_a_device_that_does_not_answer_is_not_taken_for_one_that_kept_none(self):
         # Seen in the fault suite: switched off as R1 read the identity, it was
-        # rebuilt from the account, the plug's own passed by.
+        # rebuilt from the account, the device's own passed by.
         ctx = self.ctx(b"\xff" * 0x400000)
         ctx.account_devices = mock.Mock(side_effect=AssertionError("not the account"))
         with mock.patch.object(ctx.device, "read_nvs", side_effect=DeviceError("timed out")), \
@@ -113,17 +113,17 @@ class RebuiltTests(Fixture):
 
 
 class SonoffInTheHubsSlotTests(unittest.TestCase):
-    """A plug whose Sonoff firmware ran from its second slot has it there in its
+    """A device whose Sonoff firmware ran from its second slot has it there in its
     backup, the slot the hub runs from (the public S60 dump: seen stopping at R1)."""
 
     def restore(self, stock_slot, slots):
         from types import SimpleNamespace
         device = mock.Mock()
-        ctx = SimpleNamespace(state=SimpleNamespace(input={"plug_kind": "sonoff-s60", "plug_mac": "12:34:56:ab:cd:ef"}.get,
+        ctx = SimpleNamespace(state=SimpleNamespace(input={"device_kind": "sonoff-s60", "device_mac": "12:34:56:ab:cd:ef"}.get,
                                                     capture=lambda key, value: None),
                               device=device, dry_run=False)
         with mock.patch.object(sonoff, "sonoff_backup", return_value=b"backup"), \
-             mock.patch.object(plugs, "find_backup", return_value="its backup"), \
+             mock.patch.object(records, "find_backup", return_value="its backup"), \
              mock.patch.object(plans, "stock_slot", return_value=stock_slot), \
              mock.patch.object(plans, "back_to_sonoff", return_value=("first", "second")) as planned, \
              mock.patch.object(hub, "running_slot", side_effect=slots), \

@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.autoflash import cli, credentials, hostsys, interrupt, output, prompts, routes, runs
+from tools.autoflash import cli, credentials, hostsys, interrupt, output, prompts, records, routes, runs
 from tools.autoflash.routes.beken import images as beken_images
 from tools.autoflash.routes.espressif import identity, installer, sonoff_firmware
 from tools.autoflash.state import DONE, RunState
@@ -29,9 +29,26 @@ class BeforeTheRunTests(unittest.TestCase):
                 mock.patch.object(cli.signal, "signal"), mock.patch.object(interrupt, "install"), \
                 mock.patch.object(credentials, "load", return_value={}), \
                 mock.patch.object(cli, "adopt_older_runs"), mock.patch.object(output, "start_at_top"), \
+                mock.patch.object(records, "take_over_earlier_names", self.taken_over), \
                 mock.patch.object(prompts, "wait_for_taller_window"), \
                 mock.patch.object(cli, "resolve_run_name", side_effect=choosing):
             return cli.main(), screen.getvalue()
+
+    def setUp(self):
+        self.taken_over = mock.Mock()
+
+    def test_records_an_earlier_release_kept_are_renamed_before_a_run_is_chosen(self):
+        seen = []
+        code, _ = self.main(choosing=lambda run, *_args, **_kwargs: seen.append(
+            (run, self.taken_over.call_count)) or (_ for _ in ()).throw(KeyboardInterrupt),
+            more=["--run", "plugs/12-34-56-ab-cd-ef/runs/20261013-031500"])
+        self.assertEqual(seen, [("devices/12-34-56-ab-cd-ef/runs/20261013-031500", 1)])
+
+    def test_records_that_cannot_be_renamed_stop_it_before_anything_else(self):
+        self.taken_over.side_effect = records.EarlierNames("captures/plugs and captures/devices both exist.")
+        code, screen = self.main(choosing=AssertionError("went on"))
+        self.assertEqual(code, 2)
+        self.assertIn("REFUSING: captures/plugs and captures/devices both exist.", screen)
 
     def test_ctrl_c_at_the_first_question_stops_without_a_traceback(self):
         # Seen: Ctrl-C at "A conversion did not finish last time. What now"
@@ -71,7 +88,7 @@ class BeforeTheRunTests(unittest.TestCase):
         self.main(choosing=choosing)
         self.assertEqual(seen, [True, False])
 
-    def test_a_test_can_have_a_plug_with_no_identity_anywhere(self):
+    def test_a_test_can_have_a_device_with_no_identity_anywhere(self):
         seen = []
 
         def choosing(*_args, **_kwargs):
@@ -98,7 +115,7 @@ class AnotherDeviceTests(unittest.TestCase):
         made, names = [], iter(f"run-{number}" for number in range(2, 9))
 
         def context(args):
-            ctx = SimpleNamespace(args=args, run=args.run, plug_ip=args.plug_ip, dir=Path("unused"),
+            ctx = SimpleNamespace(args=args, run=args.run, device_ip=args.device_ip, dir=Path("unused"),
                                   state=mock.Mock(input=mock.Mock(return_value=None)), keep_sign_in=mock.Mock())
             made.append(ctx)
             return ctx
@@ -110,7 +127,7 @@ class AnotherDeviceTests(unittest.TestCase):
         top, asked = mock.Mock(), mock.Mock(side_effect=list(answers))
         with contextlib.ExitStack() as patches:
             for patch in (
-                    mock.patch("sys.argv", ["cli.py", command, "--plug-ip", "192.0.2.50", *more]),
+                    mock.patch("sys.argv", ["cli.py", command, "--device-ip", "192.0.2.50", *more]),
                     mock.patch("sys.stdout", io.StringIO()),
                     mock.patch.object(hostsys, "password_asker"), mock.patch.object(prompts, "UNATTENDED"),
                     mock.patch.object(installer, "SIMULATED_BACKUP_FAILURES"),
@@ -121,6 +138,7 @@ class AnotherDeviceTests(unittest.TestCase):
                     mock.patch.object(cli.signal, "signal"), mock.patch.object(interrupt, "install"),
                     mock.patch.object(credentials, "load", return_value={}),
                     mock.patch.object(cli, "adopt_older_runs"), mock.patch.object(output, "start_at_top", top),
+                    mock.patch.object(records, "take_over_earlier_names"),
                     mock.patch.object(prompts, "wait_for_taller_window"),
                     mock.patch.object(cli, "resolve_run_name", return_value="run-1"),
                     mock.patch.object(cli, "start_new_run", side_effect=lambda _: next(names)),
@@ -142,7 +160,7 @@ class AnotherDeviceTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual([ctx.run for ctx in made], ["run-1", "run-2", "run-3"])
         # The address was the first device's: the next is found afresh.
-        self.assertEqual([ctx.plug_ip for ctx in made], ["192.0.2.50", None, None])
+        self.assertEqual([ctx.device_ip for ctx in made], ["192.0.2.50", None, None])
         made[1].keep_sign_in.assert_called_once_with(made[0])
         made[2].keep_sign_in.assert_called_once_with(made[1])
         self.assertEqual(asked.call_args.args, ("What next", ["Convert another device", "Read out a device"]))
@@ -182,7 +200,7 @@ class StoppedReportTests(unittest.TestCase):
         self.assertEqual(self.ask(1, None, begun=True), "failed")
 
     def test_one_stopped_before_any_stage_does_not(self):
-        # Seen: a wrong --plug-ip, stopped at once, still asked for its report.
+        # Seen: a wrong --device-ip, stopped at once, still asked for its report.
         self.assertIsNone(self.ask(2, None, begun=False))
 
     def test_a_crash_asks_however_early(self):
@@ -203,13 +221,13 @@ class PipeTests(unittest.TestCase):
                                        cwd=ROOT, **kwargs)
 
     def test_a_device_hanging_up_on_a_write_raises_rather_than_ending_the_run(self):
-        # A plug restarting under an update closes the connection a check of it
+        # A device restarting under an update closes the connection a check of it
         # is writing to; ended there, the run cleans up nothing.
         done = self.child(
             "import socket\n"
             "cli.handle_signals()\n"
-            "ours, plugs = socket.socketpair()\n"
-            "plugs.close()\n"
+            "ours, devices = socket.socketpair()\n"
+            "devices.close()\n"
             "try:\n"
             "    for _ in range(4):\n"
             "        ours.sendall(bytes(65536))\n"
@@ -247,12 +265,12 @@ class RunToLookAtTests(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
-    def run_at(self, name, plug_ip):
-        RunState.open(self.root / name).set_input("plug_ip", plug_ip)
+    def run_at(self, name, device_ip):
+        RunState.open(self.root / name).set_input("device_ip", device_ip)
         return runs.run_name(self.root / name)
 
     def test_given_an_address_it_is_that_devices_latest_run(self):
-        # Seen: status --plug-ip told of the current run, another device's.
+        # Seen: status --device-ip told of the current run, another device's.
         self.run_at("1-first", "10.0.0.51")
         latest = self.run_at("2-again", "10.0.0.51")
         self.current = self.run_at("3-other", "10.0.0.60")
@@ -291,7 +309,7 @@ class RunChoiceTests(unittest.TestCase):
 
     def run_dir(self, name, done):
         state = RunState.open(self.root / name)
-        state.set_input("plug_ip", "10.0.0.54")
+        state.set_input("device_ip", "10.0.0.54")
         for step in done:
             state.mark(step, DONE)
         return name
@@ -316,7 +334,7 @@ class RunChoiceTests(unittest.TestCase):
         self.assertIn("carries on at stage 7, Backing up Sonoff firmware", options[0])
         self.assertIn("past the point of no return", options[0])
 
-    def test_starting_a_new_plug_leaves_the_unfinished_run_alone(self):
+    def test_starting_a_new_device_leaves_the_unfinished_run_alone(self):
         self.leaving_tasmota("half")
         name, menu = self.choose(1)
         self.assertNotEqual(name, "half")
@@ -325,7 +343,7 @@ class RunChoiceTests(unittest.TestCase):
 
     def test_the_answer_reaches_the_new_runs_log(self):
         # The menu is gone from the screen once answered and comes before the
-        # log opens: a part-converted plug left behind must still show in it.
+        # log opens: a part-converted device left behind must still show in it.
         from unittest import mock
         self.run_dir("past", ["A0", "A5", "A1", "A2", "C2"])
         cli.RUN_CHOICE.clear()
@@ -341,12 +359,12 @@ class RunChoiceTests(unittest.TestCase):
     def leaving_tasmota(self, name):
         """A run that wrote to its device, short of the point of no return:
         one from Tasmota to ESPHome, past L1."""
-        self.plug_run(name, "12:34:56:ab:cd:ef", ["A0", "A3", "A5", "L1"], source="tasmota", firmware="esphome")
+        self.device_run(name, "12:34:56:ab:cd:ef", ["A0", "A3", "A5", "L1"], source="tasmota", firmware="esphome")
 
-    def plug_run(self, name, mac, done, **inputs):
+    def device_run(self, name, mac, done, **inputs):
         self.run_dir(name, done)
         state = RunState.open(self.root / name)
-        for key, value in {"plug_mac": mac, **inputs}.items():
+        for key, value in {"device_mac": mac, **inputs}.items():
             state.set_input(key, value)
 
     def test_a_run_that_wrote_nothing_to_its_device_is_not_offered(self):
@@ -359,19 +377,19 @@ class RunChoiceTests(unittest.TestCase):
                 menu.assert_not_called()
                 self.assertNotEqual(name, "quiet")
 
-    def test_a_run_a_later_run_of_the_same_plug_wrote_over_is_not_offered(self):
+    def test_a_run_a_later_run_of_the_same_device_wrote_over_is_not_offered(self):
         # Seen: a run stopped as it left Tasmota, carried on after a later run
         # had put ESPHome on - asking for the Wi-Fi to leave a Tasmota long gone.
-        self.plug_run("1-stale", "12:34:56:ab:cd:ef", ["A0", "A5", "A1", "A2", "C2"])
-        self.plug_run("2-later", "12:34:56:ab:cd:ef", ["A0", "A5", "L1"], source="tasmota", firmware="esphome")
-        self.plug_run("3-other", "12:34:56:ab:cd:01", ["A0", "A5", "A1", "A2", "C2"])
+        self.device_run("1-stale", "12:34:56:ab:cd:ef", ["A0", "A5", "A1", "A2", "C2"])
+        self.device_run("2-later", "12:34:56:ab:cd:ef", ["A0", "A5", "L1"], source="tasmota", firmware="esphome")
+        self.device_run("3-other", "12:34:56:ab:cd:01", ["A0", "A5", "A1", "A2", "C2"])
         _, menu = self.choose(0)
         self.assertEqual(len(menu.call_args.args[1]), 4)   # 2-later, 3-other, a new one, remove one
         self.assertNotIn("1-stale", " ".join(menu.call_args.args[1]))
 
     def test_a_later_run_that_wrote_nothing_leaves_it_offered(self):
-        self.plug_run("1-stale", "12:34:56:ab:cd:ef", ["A0", "A5", "A1", "A2", "C2"])
-        self.plug_run("2-later", "12:34:56:ab:cd:ef", ["A0"])
+        self.device_run("1-stale", "12:34:56:ab:cd:ef", ["A0", "A5", "A1", "A2", "C2"])
+        self.device_run("2-later", "12:34:56:ab:cd:ef", ["A0"])
         _, menu = self.choose(0)
         # The first offered, with a new run and removing one; the later, which
         # wrote nothing, not.
@@ -410,7 +428,7 @@ class StageNumberTests(unittest.TestCase):
 
     def carries_on_at(self, name, inputs, done):
         state = RunState.open(self.root / name)
-        for key, value in {"plug_ip": "192.0.2.50", **inputs}.items():
+        for key, value in {"device_ip": "192.0.2.50", **inputs}.items():
             state.set_input(key, value)
         for step in done:
             state.mark(step, DONE)
@@ -443,7 +461,7 @@ class StageNumberTests(unittest.TestCase):
                     for route_source, extra in ways:
                         steps = [step for step, _, _ in routes.steps_for(firmware, route_source, family)]
                         for index, step in enumerate(steps):
-                            inputs = {"plug_kind": self.KIND[name], "source": source, "firmware": firmware, **extra}
+                            inputs = {"device_kind": self.KIND[name], "source": source, "firmware": firmware, **extra}
                             with self.subTest(route=f"{name} {route_source}>{firmware}", step=step):
                                 self.assertEqual(
                                     self.carries_on_at(f"{name}-{route_source}-{firmware}-{step}", inputs,
@@ -453,19 +471,19 @@ class StageNumberTests(unittest.TestCase):
         self.assertGreater(checked, 100)
 
     def test_a_run_stopped_before_its_firmware_was_chosen(self):
-        # From Sonoff's firmware, found in eWeLink; from a converted plug, the
+        # From Sonoff's firmware, found in eWeLink; from a converted device, the
         # prerequisites read: both carry on at "Choosing the firmware".
         for name, family in routes.FAMILIES.items():
             for source, done in (("sonoff", ["A0", "A1"]), ("esphome", ["A0"])):
                 with self.subTest(family=name, source=source):
-                    said = self.carries_on_at(f"{name}-{source}", {"plug_kind": self.KIND[name], "source": source},
+                    said = self.carries_on_at(f"{name}-{source}", {"device_kind": self.KIND[name], "source": source},
                                               done)
                     self.assertEqual(said, self.as_shown(None, source, family, "A3"))
                     self.assertTrue(said.endswith("Choosing the firmware"), said)
 
 
 class RemoveRunTests(RunChoiceTests):
-    """Unfinished runs can be removed from the menu, with care for half-converted plugs."""
+    """Unfinished runs can be removed from the menu, with care for half-converted devices."""
 
     def menu(self, answers, confirm=True):
         from unittest import mock
@@ -482,7 +500,7 @@ class RemoveRunTests(RunChoiceTests):
         self.assertNotEqual(name, "half")
         section.assert_not_called()                # not past the point of no return
 
-    def test_a_half_converted_plug_is_warned_about_before_removal(self):
+    def test_a_half_converted_device_is_warned_about_before_removal(self):
         self.run_dir("past", ["A0", "A5", "A1", "A2", "C2"])
         _, _, section = self.menu([2])
         self.assertIn("part-converted", section.call_args.args[0])
@@ -571,7 +589,7 @@ class ReadoutCommandTests(unittest.TestCase):
         from types import SimpleNamespace
         from tools.autoflash import readout
         devices = [{"deviceid": "1000abcdef"}, {"deviceid": "1000fedcba"}]
-        ctx = SimpleNamespace(args=SimpleNamespace(**{"plug_ip": None, "all": False, **args}),
+        ctx = SimpleNamespace(args=SimpleNamespace(**{"device_ip": None, "all": False, **args}),
                               account_devices=lambda: devices)
         with mock.patch.object(cli.output, "say"), mock.patch.object(cli.output, "tell"), \
                 mock.patch.object(readout, "run_all", return_value="all") as every, \

@@ -1,13 +1,13 @@
-"""Sending an eWeLink plug new firmware: the one way its stock firmware takes
+"""Sending an eWeLink device new firmware: the one way its stock firmware takes
 any, and the first write of every conversion.
 
-The cloud passes the plug an `upgrade` command naming where to fetch the file
-and its SHA-256; the plug fetches it from this computer in ranges and checks
+The cloud passes the device an `upgrade` command naming where to fetch the file
+and its SHA-256; the device fetches it from this computer in ranges and checks
 it, then installs it and restarts.  deliver() does the whole exchange for one
-plug: signs in to the owner's eWeLink account, finds the plug, waits for it to
+device: signs in to the owner's eWeLink account, finds the device, waits for it to
 be online, opens the cloud's WebSocket as the app does, serves the file to the
-plug's address alone, sends the command and watches the delivery.  The file
-is whatever the plug's updater takes - an ESP32-C3 app wrapped for the S60
+device's address alone, sends the command and watches the delivery.  The file
+is whatever the device's updater takes - an ESP32-C3 app wrapped for the S60
 (tools/espressif/serve_tasmota_ota.py checks one), a FOTA container for the
 S61 (tools/beken/fota_wrap.py) - and is checked before it comes here.
 """
@@ -34,7 +34,7 @@ from tools.ewelink.relay import app_socket  # noqa: E402
 from tools.ewelink.websocket_minimal import WebSocket, WebSocketError  # noqa: E402
 
 
-# The body is sent in pieces this size, and a plug may take this long to take
+# The body is sent in pieces this size, and a device may take this long to take
 # the next one (seconds).
 PIECE = 16 * 1024
 SEND_STALL = 60.0
@@ -44,7 +44,7 @@ class FirmwareHandler(http.server.BaseHTTPRequestHandler):
     """Serve the wrapped Tasmota binary, including Range request support."""
     server_version = "TasmotaOTA/1.0"
     protocol_version = "HTTP/1.1"  # keep-alive by default
-    # The plug holds its keep-alive connection open after the last range. With
+    # The device holds its keep-alive connection open after the last range. With
     # no idle limit the handler waits on it forever, and shutdown() - which
     # waits for the handler - never returns.
     timeout = 10
@@ -100,7 +100,7 @@ class FirmwareHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Accept-Ranges", "bytes")
         self.end_headers()
         # Sent a piece at a time, each counted once it is out, so a download
-        # cut off part way says how far it got. A plug may pause between
+        # cut off part way says how far it got. A device may pause between
         # pieces to write its flash: longer than the idle limit (timeout).
         self.connection.settimeout(SEND_STALL)
         for start in range(0, len(chunk), PIECE):
@@ -136,7 +136,7 @@ class FirmwareServer(http.server.ThreadingHTTPServer):
         self.say = say
         self.bytes_served = 0
         self.served_ranges: list[tuple[int, int]] = []
-        self.last_asked = 0.0  # when the plug last asked for or took anything
+        self.last_asked = 0.0  # when the device last asked for or took anything
         # One updating progress line on a terminal; full per-request lines in
         # logs and tests, and to `say` whenever live is False (a caller that
         # keeps the terminal to itself, as Autoflash does).
@@ -186,7 +186,7 @@ CLOUD_PRIVATE_KEYS = {"apikey", "deviceid", "at", "ssid", "bssid", "ip", "mac", 
 def describe_cloud(message: dict[str, Any], seq: str) -> str | None:
     """One plain line for a cloud message during delivery, or None to stay quiet.
 
-    The upgrade reply, the plug going offline or coming back, and what the plug
+    The upgrade reply, the device going offline or coming back, and what the device
     reports about itself are what matter here; account and device identifiers
     are never printed.
     """
@@ -209,8 +209,8 @@ def describe_cloud(message: dict[str, Any], seq: str) -> str | None:
     return f"Cloud: {action or 'message'}{error}{detail}"
 
 
-# How long a plug offline in eWeLink is waited for before the send is refused.
-# After a send cut off part way, the plug stays away about 300 s, then restarts
+# How long a device offline in eWeLink is waited for before the send is refused.
+# After a send cut off part way, the device stays away about 300 s, then restarts
 # by itself and is back some 18 s later (seen on the real cloud, 2026-11-06).
 OFFLINE_WAIT = 330.0
 
@@ -228,19 +228,19 @@ def until_online(device: dict, look_again, *, sleep=time.sleep, say=print) -> di
     return device
 
 
-# Said when a send failed before the upgrade command went out: the plug was
+# Said when a send failed before the upgrade command went out: the device was
 # never asked to fetch the installer, so it never came - which the run must
 # not blame on this computer's firewall (tools.autoflash.routes.espressif.installer.bridge_failure_advice).
 NOT_SENT = "The upgrade command was not sent: nothing reached the device."
 
-# A command the plug lost is not passed on again by eWeLink: seen after a power
-# cut part way through the download, the plug back online and nothing more asked
-# for. It is sent again, this many times in all: when the plug comes back and has
-# not asked for the file after RESEND_SETTLE seconds, or, with the plug online all
+# A command the device lost is not passed on again by eWeLink: seen after a power
+# cut part way through the download, the device back online and nothing more asked
+# for. It is sent again, this many times in all: when the device comes back and has
+# not asked for the file after RESEND_SETTLE seconds, or, with the device online all
 # along as far as eWeLink says and nothing asked for since the command, after
 # RESEND_QUIET seconds: a command that never reached it. One that did, cut off
-# part way, waits for the plug to be back - sent again sooner, it went to a plug
-# still starting, a send wasted (seen on the S61). Only then: a plug fetching is
+# part way, waits for the device to be back - sent again sooner, it went to a device
+# still starting, a send wasted (seen on the S61). Only then: a device fetching is
 # left alone, and it checks the file's SHA-256 whatever it is sent. A send again has RESEND_WAIT seconds, if the first's are nearly up.
 COMMAND_SENDS = 3
 RESEND_SETTLE = 8.0
@@ -250,8 +250,8 @@ RESEND_WAIT = 60.0
 
 @dataclass
 class Resending:
-    """Whether a command sent has been lost, from what eWeLink says of the plug
-    and when the plug last asked this computer for anything."""
+    """Whether a command sent has been lost, from what eWeLink says of the device
+    and when the device last asked this computer for anything."""
     sent_at: float
     away: bool = False       # offline in eWeLink since the command
     back_at: float | None = None
@@ -274,7 +274,7 @@ class Resending:
 @dataclass
 class Delivery:
     """How a send went: whether the command went out, whether every byte of the
-    file reached the plug, how long it took, and what went wrong if it did."""
+    file reached the device, how long it took, and what went wrong if it did."""
     sent: bool = False
     complete: bool = False
     seconds: float = 0.0
@@ -288,11 +288,11 @@ def deliver(*, account: Account, device_id: str,
             names: tuple[str, ...] = ("user1.bin", "user2.bin"), wait: float = 120.0,
             check_device: Callable[[dict[str, Any], str], None] | None = None,
             say: Callable[[str], None] = print, live: bool | None = None) -> Delivery:
-    """Send `firmware` to the plug `device_id` through eWeLink, as `version` of
-    its model.  `check_device(device, model)` may refuse the plug (EwelinkError)
+    """Send `firmware` to the device `device_id` through eWeLink, as `version` of
+    its model.  `check_device(device, model)` may refuse the device (EwelinkError)
     once eWeLink says what it is; nothing is sent before it has passed.
     `live`: the progress line on the terminal (FirmwareServer).
-    Failures before the command goes out leave `sent` False: the plug was
+    Failures before the command goes out leave `sent` False: the device was
     never asked for anything.  Ctrl-C after every byte was served is a
     delivery completed; before, one interrupted."""
     result = Delivery()
@@ -308,7 +308,7 @@ def deliver(*, account: Account, device_id: str,
         if check_device is not None:
             check_device(device, str(model))
         # Offline a while after a send cut off part way (this computer stopped
-        # mid-download, say): the plug keeps its firmware and comes back to
+        # mid-download, say): the device keeps its firmware and comes back to
         # eWeLink in its own time - or, seen in the emulator, only once it is
         # switched off and on.  Waited for, not refused at once.
         device = until_online(device, lambda: select_device(get_devices(region, session["at"]), device_id),

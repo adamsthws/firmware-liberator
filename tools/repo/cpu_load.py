@@ -1,7 +1,7 @@
 """Whether this computer has the processor time to start another emulated
-plug. One started on a machine already overloaded has its own connections time
+device. One started on a machine already overloaded has its own connections time
 out with nothing wrong: on 2026-11-08 unit tests run beside a batch took the
-laptop to a load of 28 on 6 cores, and fresh plugs never reached eWeLink. So
+laptop to a load of 28 on 6 cores, and fresh devices never reached eWeLink. So
 both fault suites wait, before starting a scenario, while the machine is that
 busy; what is running already carries on.
 """
@@ -13,7 +13,7 @@ from typing import Callable
 
 # Overloaded above this many runnable tasks a core, over the last minute. A
 # batch with an emulator on each core keeps the load near one a core: the line
-# is well above that, and well under what starved the plugs.
+# is well above that, and well under what starved the devices.
 PER_CORE = 1.5
 # The longest a scenario is held back (seconds): load from something else that
 # does not go away must not stop the batch for good.

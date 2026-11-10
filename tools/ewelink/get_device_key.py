@@ -50,7 +50,7 @@ if _STUB_API_BASE:
 
 def dispatch_server(region: str) -> tuple[str, int]:
     """Where a device of an account in `region` asks which server to connect to,
-    as a paired plug keeps it (frame_params' dis_server and dis_port). A stand-in
+    as a paired device keeps it (frame_params' dis_server and dis_port). A stand-in
     for eWeLink (AUTOFLASH_EWELINK_API_BASE) answers devices at its disp. name."""
     if _STUB_API_BASE:
         host = urllib.parse.urlsplit(_STUB_API_BASE).hostname or ""
@@ -176,8 +176,8 @@ def api_json(url: str, *, body: bytes | None = None, headers: dict[str, str] | N
 
 
 def wait_for_turn() -> None:
-    """In the fault suite, whose emulated plugs are all one eWeLink device, a
-    sign-in ends another run's and can reach another's plug: so a run leaves
+    """In the fault suite, whose emulated devices are all one eWeLink device, a
+    sign-in ends another run's and can reach another's device: so a run leaves
     this file and signs in once the suite has removed it, giving it the turn."""
     if _TURN_FILE:
         turn = Path(_TURN_FILE)
