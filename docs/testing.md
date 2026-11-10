@@ -519,7 +519,7 @@ own). It writes `all.txt.1`, `all.txt.2`, ..., one for each machine to `batch`,
 and says about how long each takes:
 
 ```sh
-tools/espressif/emulator/fault_suite.py share all.txt 4 4 6 --times-from alice/ --times-from brenda/
+tools/espressif/emulator/fault_suite.py share all.txt 4 4 6 --times-from second/ --times-from third/
 tools/beken/emulator/fault_suite.py share beken.txt 2 2 2
 ```
 
@@ -608,8 +608,8 @@ cores. A batch can be scaled while it runs: started with
 the last ones stop once their scenario ends.
 Both suites also hold the next scenario back while this computer's load is
 over 1.5 a core (`tools/repo/cpu_load.py`), up to half an hour, saying so: on
-8 November unit tests run beside a batch took the laptop to 28 on 6 cores, and
-fresh plugs never reached eWeLink. Run the unit tests elsewhere, or between
+8 November unit tests run beside a batch took a 6-core computer's load to 28,
+and fresh plugs never reached eWeLink. Run the unit tests elsewhere, or between
 batches, all the same.
 
 **The cloud, one plug at a time.** Every emulated plug is a copy of the same
