@@ -279,7 +279,8 @@ and the store has limits it is never let past:
   every entry and kept as first made. Nothing expires under `notify/`: an
   address stays until its owner removes it, or it is removed by hand. 500
   addresses a day at most. The confirmations are sent by Cloudflare Email
-  Service, which sends to any address only on Workers Paid; its binding
+  Service, which sends to any address only on Workers Paid (the account's
+  plan since 2026-11-10); its binding
   (`EMAIL`) unbound, `/notify` takes no address (503).
 - **Removing an address.** `/forget` is the one path a person opens: a GET
   of the link shows what it will do and a button, and only the POST that
@@ -304,7 +305,9 @@ and the store has limits it is never let past:
   its hostname (`tools/repo/cloudflare_settings.py`) blocks an address sending
   more than 5 requests in 10 seconds, for 10 seconds: a flood never reaches the
   Worker, where every request, even one turned away, counts against the
-  account's 100,000 a day on Workers' free plan. Then two readouts a minute
+  account's Workers Paid allowance: 10 million a month included, then billed
+  by the million, so a flood past the rule costs money rather than taking the
+  API down. Then two readouts a minute
   from one address, held by Cloudflare's rate limiter only. 100 readouts and
   250 MB a day from everyone; past that, the next waits until the next day.
   The day's are counted in the API's database
@@ -356,9 +359,11 @@ says which token does what.
 `/notify`'s confirmations go through Cloudflare Email Service, the Worker's
 `EMAIL` binding, from `updates@firmwareliberator.com` (`NOTIFY_FROM` in
 [index.js](../website/api/index.js)). It sends to any address only on Workers
-Paid (3,000 emails a month included, then $0.35 per 1,000), and only from a
-domain onboarded for sending: in the dashboard, Compute, Email Service,
-Email Sending, Onboard Domain, for `firmwareliberator.com`. That adds its own
+Paid (3,000 emails a month included, then $0.35 per 1,000); the sign-up
+limits bound what it can cost, at most 500 confirmations a day, about 15,000
+a month - some $4 past those included. It sends only from a domain onboarded
+for sending: in the dashboard, Compute, Email Service, Email Sending, Onboard
+Domain, for `firmwareliberator.com`. That adds its own
 DNS records - MX on its bounce subdomain, SPF, DKIM, and DMARC on
 `_dmarc.firmwareliberator.com` - which `cloudflare_settings.py` does not make
 or check yet: a difference it reports in them after onboarding is that, not

@@ -2,7 +2,7 @@
 """Whether the project's API is well, as the cloudflare-settings workflow checks it daily.
 
     python3 tools/repo/api_health.py snapshot    the public figures are fresh, and of today's schema
-    python3 tools/repo/api_health.py usage       the account is well within Cloudflare's free plan
+    python3 tools/repo/api_health.py usage       the account is well within what its plan includes
 
 `snapshot` needs no token: it reads the public figures the API Worker writes
 each night (website/api/nightly.js), and fails if they are missing, older than
@@ -12,11 +12,12 @@ notices a migration not yet applied.
 
 `usage` reads the account's use from Cloudflare's analytics, with
 CLOUDFLARE_API_TOKEN (CI's read token, which needs Account Analytics: Read):
-yesterday's Workers requests and D1 rows, the month's R2 operations, and
-what D1 and R2 hold, each against the free plan's limit. It fails at
-WARN_AT of any, long before a limit is reached: on the free plan, past one,
-every Worker on the account fails until the next day, and on Workers Paid
-it would be billed. Any error Cloudflare's analytics give is said in full.
+this month's Workers requests, D1 rows and R2 operations to yesterday, and
+what D1 and R2 hold, each against what the account's plan includes a month
+(INCLUDED: Workers Paid since 2026-11-10, and R2's own free allowance). It
+fails at WARN_AT of any, so the maintainer hears long before a bill: past
+what is included, each is billed, not stopped. Any error Cloudflare's
+analytics give is said in full.
 """
 
 from __future__ import annotations
@@ -44,11 +45,13 @@ DATABASE_JS = ROOT / "website" / "api" / "database.js"
 WARN_AT = 0.5
 GRAPHQL = f"{cs.API}/graphql"
 
-# The free plan's limits, as Cloudflare's pricing pages give them (2026).
-LIMITS = {
-    "Workers requests a day": 100_000,
-    "D1 rows read a day": 5_000_000,
-    "D1 rows written a day": 100_000,
+# What the account's plan includes, as Cloudflare's pricing pages give it
+# (2026): Workers Paid's allowance a month for Workers and D1, and R2's own
+# free allowance, which Workers Paid leaves as it is.
+INCLUDED = {
+    "Workers requests this month": 10_000_000,
+    "D1 rows read this month": 25_000_000_000,
+    "D1 rows written this month": 50_000_000,
     "D1 storage, bytes": 5 * 1000 ** 3,
     "R2 storage, bytes": 10 * 1000 ** 3,
     "R2 Class A operations this month": 1_000_000,
@@ -118,10 +121,12 @@ def graphql(query: str, variables: dict[str, Any]) -> dict[str, Any]:
 
 
 USAGE_QUERY = """
-query Usage($account: string!, $day: Date!, $from: Time!, $to: Time!, $month: Time!) {
+query Usage($account: string!, $day: Date!, $firstDay: Date!, $from: Time!, $to: Time!, $month: Time!) {
   viewer { accounts(filter: {accountTag: $account}) {
-    workers: workersInvocationsAdaptive(limit: 10000, filter: {date: $day}) { sum { requests } }
-    d1: d1AnalyticsAdaptiveGroups(limit: 10000, filter: {date: $day}) { sum { rowsRead rowsWritten } }
+    workers: workersInvocationsAdaptive(limit: 10000, filter: {date_geq: $firstDay, date_leq: $day}) {
+      sum { requests } }
+    d1: d1AnalyticsAdaptiveGroups(limit: 10000, filter: {date_geq: $firstDay, date_leq: $day}) {
+      sum { rowsRead rowsWritten } }
     d1Storage: d1StorageAdaptiveGroups(limit: 10000, filter: {date: $day}) {
       max { databaseSizeBytes } dimensions { databaseId } }
     r2Storage: r2StorageAdaptiveGroups(limit: 10000, filter: {datetime_geq: $from, datetime_lt: $to}) {
@@ -144,7 +149,7 @@ def held(rows: list[dict[str, Any]] | None, keys: tuple[str, ...], by: str) -> i
 
 
 def used(data: dict[str, Any]) -> dict[str, int]:
-    """Each of LIMITS' measures, from the analytics' answer."""
+    """Each of INCLUDED's measures, from the analytics' answer."""
     accounts = data["viewer"]["accounts"]
     if not accounts:
         raise HealthError("the token sees no account: give it this account's Account Analytics: Read")
@@ -157,9 +162,9 @@ def used(data: dict[str, Any]) -> dict[str, int]:
         if action not in FREE:
             by_class["B" if action in CLASS_B else "A"] += int((row.get("sum") or {}).get("requests") or 0)
     return {
-        "Workers requests a day": total(account.get("workers"), "sum", "requests"),
-        "D1 rows read a day": total(account.get("d1"), "sum", "rowsRead"),
-        "D1 rows written a day": total(account.get("d1"), "sum", "rowsWritten"),
+        "Workers requests this month": total(account.get("workers"), "sum", "requests"),
+        "D1 rows read this month": total(account.get("d1"), "sum", "rowsRead"),
+        "D1 rows written this month": total(account.get("d1"), "sum", "rowsWritten"),
         "D1 storage, bytes": held(account.get("d1Storage"), ("databaseSizeBytes",), "databaseId"),
         "R2 storage, bytes": held(account.get("r2Storage"), ("payloadSize", "metadataSize"), "bucketName"),
         "R2 Class A operations this month": by_class["A"],
@@ -173,16 +178,18 @@ def usage(now: dt.datetime) -> dict[str, int]:
         raise HealthError(f"the token cannot see the zone {cs.ZONE}")
     yesterday = (now - dt.timedelta(days=1)).date()
     start = dt.datetime.combine(yesterday, dt.time(), dt.timezone.utc)
-    month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    # The month that yesterday is in: on the 1st, the whole of the month before.
+    month = start.replace(day=1)
     stamp = lambda moment: moment.strftime("%Y-%m-%dT%H:%M:%SZ")
     return used(graphql(USAGE_QUERY, {"account": zones[0]["account"]["id"], "day": yesterday.isoformat(),
+                                      "firstDay": month.date().isoformat(),
                                       "from": stamp(start), "to": stamp(start + dt.timedelta(days=1)),
                                       "month": stamp(month)}))
 
 
 def usage_problems(measures: dict[str, int]) -> list[str]:
     return [f"{what}: {measures[what]:,} of {limit:,} ({measures[what] / limit:.0%}), past {WARN_AT:.0%}"
-            for what, limit in LIMITS.items() if measures.get(what, 0) >= WARN_AT * limit]
+            for what, limit in INCLUDED.items() if measures.get(what, 0) >= WARN_AT * limit]
 
 
 def main(argv: list[str] | None = None, now: dt.datetime | None = None) -> int:
@@ -197,10 +204,10 @@ def main(argv: list[str] | None = None, now: dt.datetime | None = None) -> int:
             good = f"The public figures at {SNAPSHOT_URL} are fresh, of schema {latest_migration()}."
         else:
             measures = usage(now)
-            for what, limit in LIMITS.items():
+            for what, limit in INCLUDED.items():
                 print(f"  {what}: {measures[what]:,} of {limit:,} ({measures[what] / limit:.1%})")
             problems = usage_problems(measures)
-            good = f"Every measure is under {WARN_AT:.0%} of the free plan's limit."
+            good = f"Every measure is under {WARN_AT:.0%} of what the plan includes."
     except (HealthError, cs.SettingsError) as error:
         print(f"api_health: {error}", file=sys.stderr)
         return 1

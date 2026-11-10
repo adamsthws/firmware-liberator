@@ -89,12 +89,12 @@ class UsageTests(unittest.TestCase):
     def test_well_within_each_limit_passes_and_says_each(self):
         code, out = run("usage", analytics=analytics())
         self.assertEqual(code, 0, out)
-        for what in health.LIMITS:
+        for what in health.INCLUDED:
             self.assertIn(what, out)
 
-    def test_half_of_any_limit_fails(self):
-        cases = {"requests": 50_000, "rows_read": 2_500_000, "rows_written": 50_000, "d1_bytes": 2_500_000_000,
-                 "r2_bytes": 5_000_000_000, "class_a": 500_000, "class_b": 5_000_000}
+    def test_half_of_anything_included_fails(self):
+        cases = {"requests": 5_000_000, "rows_read": 12_500_000_000, "rows_written": 25_000_000,
+                 "d1_bytes": 2_500_000_000, "r2_bytes": 5_000_000_000, "class_a": 500_000, "class_b": 5_000_000}
         for key, value in cases.items():
             code, out = run("usage", analytics=analytics(**{key: value}))
             self.assertEqual(code, 1, key)
@@ -127,14 +127,22 @@ class UsageTests(unittest.TestCase):
             self.assertEqual(health.main(["usage"], now=NOW), 1)
         self.assertIn("unknown field d1StorageAdaptiveGroups", out.getvalue())
 
-    def test_it_asks_for_yesterday_and_this_month(self):
+    def test_it_asks_for_this_month_to_yesterday(self):
         asked = {}
         with mock.patch.object(health.cs, "api", return_value=[{"account": {"id": "a1"}}]), \
                 mock.patch.object(health, "graphql", side_effect=lambda query, variables: asked.update(variables)
                                   or analytics()):
             health.usage(NOW)
-        self.assertEqual(asked, {"account": "a1", "day": "2026-11-09", "from": "2026-11-09T00:00:00Z",
-                                 "to": "2026-11-10T00:00:00Z", "month": "2026-11-01T00:00:00Z"})
+        self.assertEqual(asked, {"account": "a1", "day": "2026-11-09", "firstDay": "2026-11-01",
+                                 "from": "2026-11-09T00:00:00Z", "to": "2026-11-10T00:00:00Z",
+                                 "month": "2026-11-01T00:00:00Z"})
+        # On the 1st, the month before, whole.
+        asked.clear()
+        with mock.patch.object(health.cs, "api", return_value=[{"account": {"id": "a1"}}]), \
+                mock.patch.object(health, "graphql", side_effect=lambda query, variables: asked.update(variables)
+                                  or analytics()):
+            health.usage(dt.datetime(2026, 12, 1, 6, 0, tzinfo=dt.timezone.utc))
+        self.assertEqual((asked["firstDay"], asked["day"]), ("2026-11-01", "2026-11-30"))
 
 
 class WorkflowTests(unittest.TestCase):

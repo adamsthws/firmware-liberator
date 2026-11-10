@@ -191,7 +191,7 @@ test("nothing is done before the database has every migration", async () => {
   assert.equal(bindings.STATS.objects.size, 0);
 });
 
-test("a night costs a fixed few queries, well within D1's 50", async () => {
+test("a night costs a fixed few queries, well within even the free plan's 50", async () => {
   const bindings = env();
   for (let day = 1; day <= 9; day += 1) {
     await kept(bindings.DB, `2026-11-0${day}`);

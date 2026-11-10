@@ -25,7 +25,7 @@
 // - One no run of the tool's would write (review.js) is held for review:
 //   answered as accepted, kept quarantined, counted nowhere.
 // - A request costs a fixed few database queries however many reports it
-//   carries (D1 allows 50 a request on the free plan): the duplicates, the
+//   carries (D1 allows 1,000 a request on Workers Paid, 50 on the free plan): the duplicates, the
 //   devices' counts for the day, the day's count, and one batch to write.
 import { answer } from "./answer.js";
 import { release, reserve, reserveUpTo } from "./counters.js";

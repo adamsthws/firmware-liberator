@@ -113,9 +113,12 @@ D1_MIGRATIONS_TABLE = ("CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRI
 # Before the API Worker (website/api/index.js) runs at all: more than
 # RATE_LIMIT_REQUESTS from one address in 10 seconds is blocked for 10 seconds,
 # so a flood never reaches the Worker, where every request, even one it turns
-# away, counts against the account's 100,000 a day on Workers' free plan; past
-# that, every Worker on the account fails until the next day. A real readout is
-# one request. The free plan allows one such rule, of 10-second periods, by
+# away, runs its code and is counted. The account is on Workers Paid (since
+# 2026-11-10): what is past its allowance a month is billed, not stopped, so
+# a flood costs money; on the free plan, past 100,000 a day, the API (any
+# Worker that runs code) would fail until the next day, while the website,
+# static files alone, which are free and unlimited, would still be served.
+# A real readout is one request. The free plan allows one such rule, of 10-second periods, by
 # address and data centre.
 API_HOST = f"api.{ZONE}"
 RATE_LIMIT_PHASE = "http_ratelimit"
