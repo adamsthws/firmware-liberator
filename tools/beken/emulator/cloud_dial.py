@@ -40,11 +40,15 @@ Owner's own account only: never point this at the real eWeLink cloud with anyone
 account or device but your own. The default dials a local stub and never leaves the host.
 
 The default dials the AP's gateway `192.168.1.1:80`; `DISPATCH=` leaves the
-factory `8.8.8.8:80`. Either way the netstack logs
-`TCP connect .. -> ..:80` + `HTTP GET /dispatch/device`, retried with backoff.
+factory `8.8.8.8:80`. Either way the tool prints the dispatch URL it found, the
+one it repointed it to and the moment it fired the trigger, then each dispatch
+request the device sent, as the netstack logged it
+(`[NET] TCP <device> <-> <server>:80 sends: HTTP GET /dispatch/device ...`),
+retried with backoff.
 
   tools/beken/emulator/beken-emu.sh python tools/beken/emulator/cloud_dial.py              # local stub (default)
-  DISPATCH= tools/beken/emulator/beken-emu.sh python tools/beken/emulator/cloud_dial.py    # factory placeholder
+  tools/beken/emulator/beken-emu.sh python DISPATCH= tools/beken/emulator/cloud_dial.py    # factory placeholder
+  tools/beken/emulator/beken-emu.sh python DISPATCH=http://192.0.2.1:80 tools/beken/emulator/cloud_dial.py
 """
 import os
 import sys
@@ -184,5 +188,11 @@ print("  CoolKit dispatch requests (%d):" % len(dials), flush=True)
 for t, s in dials[:12]:
     print("    %5.1fs  %s" % (t, s[:120]), flush=True)
 ok = ip not in (None, b"\x00\x00\x00\x00", b"\xff\xff\xff\xff") and len(dials) > 0
-print("  %s: the device joined the emulator's AP and dialled the eWeLink cloud (GET /dispatch/device)." % ("PASS" if ok else "FAIL"), flush=True)
+target = DISPATCH or "its factory http://8.8.8.8:80"
+if ok:
+    print("  PASS: the device joined the emulator's AP and sent its eWeLink dispatch request"
+          " (GET /dispatch/device) to %s." % target, flush=True)
+else:
+    print("  FAIL: the device did not both join the emulator's AP and send its eWeLink dispatch request"
+          " (GET /dispatch/device) to %s." % target, flush=True)
 os._exit(0)
