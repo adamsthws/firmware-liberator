@@ -81,6 +81,15 @@ class FakeCloudflare:
         self.analytics = [{"site_tag": "t1", "site_token": cs.beacon_token(), "auto_install": False,
                            "rules": [copy.deepcopy(ALL_MEASURED)],
                            "ruleset": {"id": "rs1", "zone_tag": "z1", "zone_name": cs.ZONE, "enabled": False}}]
+        # Beyond what is written there: zone rulesets in phases it does not keep (Cloudflare's own
+        # managed ones are always listed besides), Worker routes, and the Workers' custom domains,
+        # as the wrangler.jsonc files make them.
+        self.other_rulesets = []
+        self.routes = []
+        self.refused = set()   # paths this token is refused: a 403
+
+        self.custom_domains = [{"id": f"cd{n}", "hostname": host, "service": worker, "zone_name": cs.ZONE}
+                               for n, (host, worker) in enumerate(sorted(cs.custom_domains()))]
         self.sent = []
         self.ids = iter(range(100, 1000))
 
@@ -89,13 +98,23 @@ class FakeCloudflare:
         return self.rulesets.get(ENTRYPOINT)
 
     def __call__(self, path, method="GET", body=None, ok_missing=False, ok_forbidden=False, whole=False):
+        if path in self.refused:
+            if method == "GET" and ok_forbidden:
+                return None
+            raise cs.SettingsError(f"{method} {path}: HTTP 403: Authentication error", 403)
         if path == QUERY and body["sql"] == "SELECT name FROM d1_migrations ORDER BY id":   # a read
             if self.migrations is None:
                 raise cs.SettingsError(f"POST {QUERY}: HTTP 400: no such table: d1_migrations: SQLITE_ERROR")
             return [{"results": [{"name": name} for name in self.migrations], "success": True}]
         if method != "GET":
             self.sent.append((method, path, body))
-            if path == f"{ZONE}/dns_records":
+            if method == "DELETE" and path.startswith(f"{ZONE}/rulesets/"):
+                self.other_rulesets = [r for r in self.other_rulesets if r["id"] != path.rsplit("/", 1)[1]]
+            elif method == "DELETE" and path.startswith(f"{ZONE}/workers/routes/"):
+                self.routes = [r for r in self.routes if r["id"] != path.rsplit("/", 1)[1]]
+            elif method == "DELETE" and path.startswith("/accounts/a1/workers/domains/"):
+                self.custom_domains = [d for d in self.custom_domains if d["id"] != path.rsplit("/", 1)[1]]
+            elif path == f"{ZONE}/dns_records":
                 # Cloudflare writes a CAA record's content from its data, and lists a TXT record's quoted.
                 if "data" in body:
                     content = f'{body["data"]["flags"]} {body["data"]["tag"]} "{body["data"]["value"]}"'
@@ -204,6 +223,19 @@ class FakeCloudflare:
             return copy.deepcopy(self.policies[path.split("/")[-2]])
         if path == f"{DATABASES}?name={cs.D1_DATABASE}":
             return copy.deepcopy(self.databases)
+        if path == f"{ZONE}/rulesets":
+            return [{"id": "m1", "kind": "managed", "phase": "ddos_l7", "name": "DDoS L7 ruleset"},
+                    *({"id": f"z{n}", "kind": "zone", "phase": entrypoint.split("/")[-2], "name": "default"}
+                      for n, entrypoint in enumerate(self.rulesets)),
+                    *copy.deepcopy(self.other_rulesets)]
+        if path == f"{ZONE}/workers/routes":
+            assert ok_forbidden
+            return copy.deepcopy(self.routes)
+        if path == BUCKETS:
+            assert ok_forbidden
+            return {"buckets": [{"name": name} for name in sorted(self.buckets)]}
+        if path == f"/accounts/a1/workers/domains?zone_name={cs.ZONE}":
+            return copy.deepcopy(self.custom_domains)
         if path == "/accounts/a1/workers/scripts":
             return [{"id": name, "tag": f"t{n + 1}"} for n, name in enumerate(self.workers)]
         if path == f"{ZONE}/dns_records?per_page=500":
@@ -1056,6 +1088,90 @@ class WebAnalyticsTests(unittest.TestCase):
         self.fake.readable.add(f"{ANALYTICS}/list")
         self.assertIn("can read the account's settings (Web Analytics sites): it should be refused",
                       run(self.fake, "ci")[1])
+
+
+class UnwrittenTests(unittest.TestCase):
+    """Nothing of the project's is there that nothing here says should be: the
+    account holds other projects' too, and Cloudflare's own rulesets."""
+
+    def setUp(self):
+        self.fake = FakeCloudflare()
+
+    def said(self, *args):
+        return run(self.fake, *args)[1]
+
+    def test_what_is_written_and_what_is_not_the_projects_is_no_difference(self):
+        self.fake.buckets |= {cs.READOUTS_BUCKET, cs.STATS_BUCKET, "another-projects-bucket"}
+        out = self.said()
+        for what in ("zone ruleset", "Worker route", "R2 bucket", "Worker another-site", "custom domain"):
+            self.assertNotIn(what, out)
+
+    def test_a_ruleset_in_a_phase_not_kept_here_is_deleted(self):
+        self.fake.other_rulesets = [{"id": "x1", "kind": "zone", "phase": "http_request_transform", "name": "x"}]
+        self.assertIn("zone ruleset http_request_transform: is not written here", self.said())
+        self.said("apply")
+        self.assertIn(("DELETE", f"{ZONE}/rulesets/x1", None), self.fake.sent)
+
+    def test_a_worker_route_is_deleted(self):
+        self.fake.routes = [{"id": "rt1", "pattern": f"{cs.ZONE}/admin*", "script": "another-site"}]
+        self.assertIn(f"Worker route {cs.ZONE}/admin*: is not written here", self.said())
+        self.said("apply")
+        self.assertIn(("DELETE", f"{ZONE}/workers/routes/rt1", None), self.fake.sent)
+
+    def test_a_custom_domain_no_wrangler_config_names_is_deleted(self):
+        self.assertIn((f"api.{cs.ZONE}", cs.API_WORKER), cs.custom_domains())
+        self.fake.custom_domains.append({"id": "cd9", "hostname": f"old.{cs.ZONE}", "service": cs.API_WORKER})
+        self.fake.custom_domains[0]["service"] = "another-site"
+        out = self.said()
+        self.assertIn(f"Worker custom domain old.{cs.ZONE}: points at {cs.API_WORKER}, which no wrangler.jsonc says",
+                      out)
+        self.assertIn("points at another-site", out)
+        self.said("apply")
+        self.assertIn(("DELETE", "/accounts/a1/workers/domains/cd9", None), self.fake.sent)
+
+    def test_a_projects_worker_or_bucket_not_written_here_is_left_to_be_deleted_by_hand(self):
+        self.fake.workers.append("firmware-liberator-old")
+        self.fake.buckets |= {"firmware-liberator-old"}
+        out = self.said()
+        self.assertIn("Worker firmware-liberator-old: is not written here", out)
+        self.assertIn("R2 bucket firmware-liberator-old: is not written here", out)
+        _, applied = run(self.fake, "apply")
+        self.assertIn("Worker firmware-liberator-old: left - delete it", applied)
+        self.assertIn("R2 bucket firmware-liberator-old: left - empty and delete it", applied)
+        self.assertFalse([sent for sent in self.fake.sent if "firmware-liberator-old" in sent[1]])
+
+    def test_a_check_the_token_is_refused_is_a_difference_never_a_pass(self):
+        self.fake.refused = {f"{ZONE}/rulesets", f"{ZONE}/workers/routes", BUCKETS}
+        code, out = run(self.fake, "ci")
+        self.assertEqual(code, 1)
+        self.assertIn("zone rulesets: cannot be checked: this token is refused them", out)
+        self.assertIn("Worker routes: cannot be checked", out)
+        self.assertIn("R2 buckets: cannot be checked", out)
+        _, applied = run(self.fake, "apply")
+        self.assertIn("Worker routes: left - give it Workers Routes: Read, or Edit", applied)
+
+    def test_each_permission_asked_for_is_in_the_tokens_lists(self):
+        for permission in ("Transform Rules", "Workers Routes", "Workers R2 Storage"):
+            self.assertTrue(any(name.startswith(permission) for scope in cs.READ_TOKEN_PERMISSIONS.values()
+                                for name in scope), permission)
+            self.assertTrue(any(name.startswith(permission) for scope in cs.APPLY_TOKEN_PERMISSIONS.values()
+                                for name in scope), permission)
+
+    def test_a_change_apply_is_refused_is_left_and_the_rest_still_made(self):
+        self.fake.other_rulesets = [{"id": "x1", "kind": "zone", "phase": "http_request_origin", "name": "x"}]
+        self.fake.refused = {f"{ZONE}/rulesets/x1"}
+        code, applied = run(self.fake, "apply")
+        self.assertEqual(code, 1)
+        self.assertIn("zone ruleset http_request_origin: left - this token is refused it", applied)
+        # What came after it in the list was still made.
+        refused_at = applied.index("zone ruleset http_request_origin: left")
+        self.assertGreater(applied.index(f"{cs.READOUTS_BUCKET}: set"), refused_at)
+        self.assertIn(("PATCH", f"{ZONE}/dnssec", {"status": "active"}), self.fake.sent)
+
+    def test_ci_leaves_the_workers_to_the_hand_check(self):
+        self.fake.workers = []
+        out = self.said("ci")
+        self.assertIn("Workers and their custom domains: not checked", out)
 
 
 class StoppingTheApiTests(unittest.TestCase):
