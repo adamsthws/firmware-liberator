@@ -88,7 +88,7 @@ class RunStepsTests(unittest.TestCase):
         self.state = RunState.open(self.root)
 
     def run_steps(self, *, codes=None, check=None, answer=0, unattended=False, skip=True, dry_run=False,
-                  **overrides):
+                  research_bridge=False, **overrides):
         """run_steps over STEPS, each step's code from `codes` (0 if not
         given), S2's evidence if interrupted, and the operator's answer:
         what it returned, the steps it ran, and the stand-ins, each of which
@@ -124,7 +124,8 @@ class RunStepsTests(unittest.TestCase):
                                                   {} if check is None else {"S2": check}, clear=True))
             patches.enter_context(mock.patch.object(prompts, "UNATTENDED", unattended))
             patches.enter_context(mock.patch.object(prompts, "answered_unattended"))
-            code = runner.run_steps(SimpleNamespace(state=self.state, research_bridge=False, dry_run=dry_run))
+            code = runner.run_steps(SimpleNamespace(state=self.state, research_bridge=research_bridge,
+                                                    bridge=SimpleNamespace(name="the bridge"), dry_run=dry_run))
         return code, ran, stand_ins
 
     def test_a_step_gone_back_to_is_drawn_afresh_with_nothing_of_why(self):
@@ -179,6 +180,35 @@ class RunStepsTests(unittest.TestCase):
         stand_ins["invite_report"].assert_called_once()
         stand_ins["bundle_of_this_version"].assert_not_called()  # a new run's bundle is the one built
 
+    def test_before_the_first_step_the_locks_are_restored_tasmota_unlocked_and_the_device_let_settle(self):
+        _, _, stand_ins = self.run_steps()
+        stand_ins["restore_left_locks"].assert_called_once()
+        stand_ins["unlock_tasmota"].assert_called_once()
+        stand_ins["wait_while_device_busy"].assert_called_once()
+        # A converted device's firmware is chosen at A3, not before the run starts.
+        self.assertIs(stand_ins["settle_route"].call_args.kwargs.get("defer"), True)
+
+    def test_the_report_is_offered_the_runs_time_without_the_keyboard_waits(self):
+        clock = iter([100.0])
+        with mock.patch.object(time, "monotonic", side_effect=lambda: next(clock, 160.0)):
+            _, _, stand_ins = self.run_steps(output=mock.Mock(waited=mock.Mock(return_value=20.0)))
+        self.assertEqual(stand_ins["invite_report"].call_args.args[1], 40.0)
+
+    def test_an_update_ends_saying_it_was_an_update(self):
+        with mock.patch.object(update, "versions", return_value=("14.0.0", "15.0.0")):
+            _, _, stand_ins = self.run_steps(run_source=mock.Mock(return_value="outdated"))
+        shown = " ".join(str(call.args[0]) for call in stand_ins["output"].show.call_args_list)
+        self.assertIn("Update complete!", shown)
+        self.assertNotIn("Conversion complete", shown)
+
+    def test_a_research_bridge_stops_the_run_once_it_is_installed(self):
+        with mock.patch.object(routes.FAMILY, "POINT_OF_NO_RETURN", "S2"), \
+                mock.patch.object(runner.names, "our_setup_network", return_value="autoflash-setup"):
+            code, ran, stand_ins = self.run_steps(research_bridge=True)
+        self.assertEqual((code, ran), (0, ["S1", "S2"]))
+        stand_ins["close_firewall_rules"].assert_called_once()
+        stand_ins["invite_report"].assert_not_called()
+
     def test_a_dry_run_ends_saying_nothing_was_written_and_asks_for_no_report(self):
         code, ran, stand_ins = self.run_steps(dry_run=True)
         self.assertEqual((code, ran), (0, ["S1", "S2", "S3"]))
@@ -221,6 +251,18 @@ class RunStepsTests(unittest.TestCase):
         self.assertEqual(code, 0)
         stand_ins["rerun_on_tasmota"].assert_called_once()
         stand_ins["invite_report"].assert_not_called()
+        stand_ins["close_firewall_rules"].assert_called_once()
+
+    def test_a_run_ended_by_choice_on_tasmota_but_not_kept_on_it_checks_no_meter(self):
+        # A readout chosen instead (errors.Finished): the run just ends.
+        def read_out(ctx, step):
+            ctx.finished = errors.Finished("read out")
+            return 0
+        code, _, stand_ins = self.run_steps(execute_with_retries=mock.Mock(side_effect=read_out),
+                                            run_source=mock.Mock(return_value="tasmota"))
+        self.assertEqual(code, 0)
+        stand_ins["rerun_on_tasmota"].assert_not_called()
+        stand_ins["close_firewall_rules"].assert_called_once()
 
     def test_nothing_to_do_on_tasmota_checks_its_meter(self):
         code, ran, stand_ins = self.run_steps(settle_route=mock.Mock(side_effect=routes.NothingToDo("on Tasmota")),
@@ -362,6 +404,21 @@ class RetryTests(unittest.TestCase):
         code, runs = self.run_with("E3", ["timed out", None])
         self.assertEqual((code, runs), (1, 1))
 
+    def test_a_step_done_keeps_what_it_found_and_its_tries(self):
+        from types import SimpleNamespace
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        state = RunState.open(Path(directory.name))
+        ctx = SimpleNamespace(state=state, dry_run=False)
+        title, _ = routes.STEP_INDEX["E1"]
+        with mock.patch.dict(routes.STEP_INDEX, {"E1": (title, mock.Mock(return_value={"read": 7}))}), \
+                mock.patch.object(routes, "begin_stage"), mock.patch.object(output, "stage_end"), \
+                mock.patch.object(output, "say"):
+            self.assertEqual(runner.execute_with_retries(ctx, "E1"), 0)
+        self.assertTrue(ctx.stage_begun)   # a report is worth asking for (cli.main)
+        self.assertEqual(state.data["captures"]["E1.read"], 7)
+        self.assertEqual(state.data["captures"]["E1.attempts"], 1)
+
     def test_a_dry_run_records_no_step_it_only_said_it_would_do(self):
         # Carried on for real, the run must do them: nothing was written.
         from types import SimpleNamespace
@@ -463,6 +520,15 @@ class GoBackTests(unittest.TestCase):
         ended.assert_called_once_with("not installed")   # not "stopped": the run goes on
         self.assertIn("Doing E1 again", told.call_args.args[0])
 
+    def test_up_to_the_limit_it_is_sent_again_without_a_restart(self):
+        self.state.set_input("device_ip", "192.0.2.77")
+        self.state.capture("E1.sent_again", runner.GO_BACK_LIMIT - 1)
+        with mock.patch.object(runner.restart, "restart") as restarted:
+            code, _, _ = self.execute()
+        restarted.assert_not_called()
+        self.assertEqual((code, self.ctx.go_back), (0, "E1"))
+        self.assertEqual(self.state.data["captures"]["E1.sent_again"], runner.GO_BACK_LIMIT)
+
     def test_one_that_still_does_not_take_stops_the_run(self):
         self.state.capture("E1.sent_again", runner.GO_BACK_LIMIT)
         code, ended, _ = self.execute()
@@ -484,10 +550,12 @@ class GoBackRestartTests(unittest.TestCase):
         self.state.capture("E1.sent_again", runner.GO_BACK_LIMIT)
 
     def test_the_device_restarted_the_step_is_sent_afresh(self):
+        self.state.mark("E1", DONE)
         with mock.patch.object(runner.restart, "restart", return_value=True) as restarted:
             code, ended, told = self.execute()
         restarted.assert_called_once_with("192.0.2.77")
         self.assertEqual((code, self.ctx.go_back), (0, "E1"))
+        self.assertEqual((self.state.status("E1"), self.state.status("E2")), ("pending", "pending"))
         self.assertEqual(self.state.data["captures"]["E1.sent_again"], 0)
         self.assertIn("the device was restarted. Doing E1 again", told.call_args.args[0])
 
@@ -701,12 +769,13 @@ class DeviceBackTests(unittest.TestCase):
         if d1_done:
             state.mark("D1", DONE)
         device = mock.Mock(answers=mock.Mock(side_effect=list(answers)))
-        clock = iter(range(0, 100_000, 3))
+        clock = iter(range(1000, 100_000, 3))   # not from 0: times are measured from the start
         with mock.patch.object(time, "monotonic", side_effect=lambda: next(clock)), \
              mock.patch.object(time, "sleep"), \
              mock.patch.object(output, "tell") as told, \
              mock.patch.object(output, "progress"), \
-             mock.patch.object(output, "progress_clear"):
+             mock.patch.object(output, "progress_clear"), \
+             mock.patch.object(runner, "set_up_if_erased", return_value=False) as self.looked:
             runner.wait_for_device_back(SimpleNamespace(state=state, device=device), step)
         return device, told
 
@@ -722,7 +791,7 @@ class DeviceBackTests(unittest.TestCase):
     def test_a_long_wait_says_the_device_has_no_network_of_its_own_now(self):
         said = lambda told: " ".join(call.args[0] for call in told.call_args_list)
         device, told = self.wait([False] * 30 + [True], step="E2")
-        self.assertIn("no setup network of its own", said(told))
+        self.assertEqual(said(told).count("no setup network of its own"), 1)
         device, told = self.wait([False] * 5 + [True], step="E2")
         self.assertNotIn("no setup network", said(told))  # back before it was worth saying
         # F4's official Tasmota may not have the Wi-Fi yet, so may have one.
@@ -733,6 +802,12 @@ class DeviceBackTests(unittest.TestCase):
         device, told = self.wait([False] * 1000)
         self.assertIn("trying anyway", told.call_args.args[0])
         self.assertLess(device.answers.call_count, 1000)
+
+    def test_while_it_waits_it_looks_for_a_device_that_lost_its_settings_now_and_then(self):
+        # Each look scans for Wi-Fi networks: every ERASED_LOOK_EVERY seconds, not every ask.
+        self.wait([False] * 1000, step="G1")
+        self.assertTrue(self.looked.called)
+        self.assertLessEqual(self.looked.call_count, runner.DEVICE_BACK_WAIT / runner.ERASED_LOOK_EVERY)
 
     def test_before_tasmota_nothing_is_waited_for(self):
         device, _ = self.wait([], d1_done=False)
@@ -827,6 +902,23 @@ class UnexpectedErrorTests(unittest.TestCase):
             state.mark(send, "done")
             self.assertFalse(runner.stopped_mid_send(SimpleNamespace(state=state, consented=True)))
 
+    def test_a_step_that_writes_and_is_refused_part_way_is_not_taken_for_one_that_wrote_nothing(self):
+        # Marked attempted, nothing_written False, before it starts: a refusal
+        # then must not let the next run treat it as never begun.
+        code, state, *_ = self.run_step("E2", errors.Abort("the device refused"))
+        self.assertEqual((code, state.status("E2")), (1, FAILED))
+        self.assertIs(state.data["steps"]["E2"]["nothing_written"], False)
+
+    def test_a_device_that_never_connected_stops_the_step_with_the_firewall_hint(self):
+        from tools.autoflash.phases import DeviceNeverConnected
+        with mock.patch.object(prompts, "section") as shown, \
+                mock.patch.object(firewall, "firewall_hint", return_value=["the hint"]):
+            code, state, ended, _, told = self.run_step("E1", DeviceNeverConnected("the device never connected"))
+        self.assertEqual((code, state.status("E1")), (1, FAILED))
+        ended.assert_called_once_with("stopped")
+        self.assertEqual(shown.call_args.args[1], ["the hint"])
+        self.assertEqual(told.call_args.args[0], "FAILED: the device never connected")
+
     def test_ctrl_c_is_not_swallowed(self):
         with self.assertRaises(KeyboardInterrupt):
             self.run_step("E1", KeyboardInterrupt())
@@ -843,10 +935,11 @@ class ErasedTasmotaTests(unittest.TestCase):
         inputs = {"device_mac": "12:34:56:ab:cd:ef", "device_ip": "192.0.2.51", "product_model": "S60TPG"}
         # Answers in turn, the last for every ask after; a network in turn likewise.
         replies = list(answers) if isinstance(answers, list) else [answers]
+        self.waited, self.captured = [], {}
         device = SimpleNamespace(answers=lambda timeout=None: replies.pop(0) if len(replies) > 1 else replies[0],
-                                 wait_reachable=lambda timeout=None: None)
+                                 wait_reachable=lambda timeout=None: self.waited.append(timeout))
         ctx = SimpleNamespace(device=device, state=SimpleNamespace(
-            input=inputs.get, is_done=lambda s: s in done, capture=lambda *a: None))
+            input=inputs.get, is_done=lambda s: s in done, capture=self.captured.__setitem__))
         clock = iter(range(0, 10_000, 5))
         with mock.patch.object(prompts, "find_ssid", side_effect=network if isinstance(network, list)
                                else lambda *a, **k: network) as looked, \
@@ -890,6 +983,17 @@ class ErasedTasmotaTests(unittest.TestCase):
         self.assertTrue(result)
         by_hand.assert_called_once()
         configured.assert_called_once()
+        self.assertTrue(self.waited)   # back on the Wi-Fi before its template is looked at
+        self.assertEqual(self.captured, {"F4.again_after_erase": True})   # for the report
+
+    def test_a_device_answering_once_started_up_is_left_alone(self):
+        clock = iter(range(1000, 100_000, 5))   # times are measured from the start
+        device = mock.Mock(answers=mock.Mock(side_effect=[False, False, True]))
+        with mock.patch.object(time, "monotonic", side_effect=lambda: next(clock)), \
+                mock.patch.object(time, "sleep"), mock.patch.object(output, "progress"), \
+                mock.patch.object(output, "progress_clear"):
+            self.assertTrue(runner.answers_within(device, runner.ERASED_SETTLE))
+        self.assertEqual(device.answers.call_count, 3)
 
     def test_its_template_still_there_needs_no_f4(self):
         _, _, by_hand, configured = self.run_it(in_place=True)
