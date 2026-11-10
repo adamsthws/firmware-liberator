@@ -26,6 +26,16 @@ class NoAnswerTests(unittest.TestCase):
         asked.assert_called_once()                       # not again for the device's silence
         self.assertEqual(checks, ["typed-once"] * 3)     # nor typed again
 
+    def test_nothing_typed_is_never_taken_for_the_secret(self):
+        typed = iter(["", "right"])
+        secret = unlock.Secret("web password", lambda: next(typed), lambda value: value != "right")
+        with mock.patch.object(prompts, "ask_choice", return_value=0) as asked, \
+             mock.patch.object(prompts, "section"), mock.patch.object(output, "say"), \
+             mock.patch.object(output, "tell"), \
+             mock.patch.object(output, "transient_begin"), mock.patch.object(output, "transient_end"):
+            self.assertEqual(unlock.secret_or_retry("t", [], [secret], lambda: None, still="")[1], "right")
+        self.assertEqual(asked.call_count, 2)
+
     def test_a_device_that_never_answers_comes_back_to_the_person(self):
         with mock.patch.object(unlock.time, "sleep"), mock.patch.object(output, "say"):
             self.assertIsNone(unlock.answered(lambda: None))
