@@ -1,9 +1,11 @@
 import http.server
 import tempfile
 import threading
+import time
 import unittest
 import urllib.parse
 from pathlib import Path
+from unittest import mock
 
 from tools.autoflash import setup_network
 
@@ -20,6 +22,9 @@ class FakeDevice(http.server.ThreadingHTTPServer):
         self.wifi: dict[str, str] = {}
         self.page_views = 0  # each one is a Wi-Fi scan on a real device
         self.settings: tuple[dict, bytes] | None = None
+        self.root_views = 0
+        self.headers: list = []  # each POST's
+        self.asked: list[tuple[float, str]] = []  # when each Wi-Fi page was asked, and how
 
     @property
     def host(self) -> str:
@@ -43,10 +48,12 @@ class FakeDeviceHandler(http.server.BaseHTTPRequestHandler):
         device: FakeDevice = self.server
         url = urllib.parse.urlsplit(self.path)
         if url.path == "/":
+            device.root_views += 1
             self.reply("<title>Autoflash bridge</title>" if device.behaviour == "bridge"
                        else "<title>Tasmota</title>")
             return
         if url.path == "/wi":
+            device.asked.append((time.monotonic(), url.query))
             query = urllib.parse.parse_qs(url.query, keep_blank_values=True)
             if "save" in query:
                 device.wifi = {"ssid": query["s1"][0], "password": query["p1"][0]}
@@ -66,6 +73,7 @@ class FakeDeviceHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         device: FakeDevice = self.server
         url = urllib.parse.urlsplit(self.path)
+        device.headers.append(self.headers)
         if url.path == "/tasmota-settings":
             if device.behaviour == "bridge-v4":
                 self.reply("Nothing matches the given URI", 404)
@@ -82,6 +90,9 @@ class FakeDeviceHandler(http.server.BaseHTTPRequestHandler):
             return
         length = int(self.headers["Content-Length"])
         device.uploaded = self.rfile.read(length)
+        if device.behaviour == "bridge-refuses":
+            self.reply("The image is not for this chip.\n")
+            return
         self.reply("Upload verified. Rebooting into the new application...\n")
 
 
@@ -97,8 +108,18 @@ class SetupNetworkTests(unittest.TestCase):
         device = self.start("bridge")
         self.assertTrue(setup_network.wait_for_page(
             setup_network.BRIDGE_PAGE_MARKERS[0], host=device.host, timeout=5, poll=0.1))
-        self.assertFalse(setup_network.wait_for_page(
-            setup_network.BRIDGE_PAGE_MARKERS[0], host="127.0.0.1:9", timeout=0.3, poll=0.1))
+        self.assertIs(setup_network.wait_for_page(
+            setup_network.BRIDGE_PAGE_MARKERS[0], host="127.0.0.1:9", timeout=0.3, poll=0.1), False)
+
+    def test_a_page_without_the_marker_is_asked_again_only_each_poll(self):
+        # Each look at a device's page on its own network is a Wi-Fi scan.
+        device = self.start("tasmota")
+        ticks = []
+        self.assertIs(setup_network.wait_for_page(
+            setup_network.BRIDGE_PAGE_MARKERS[0], host=device.host, timeout=0.5, poll=0.2,
+            tick=ticks.append), False)
+        self.assertLessEqual(device.root_views, 4)
+        self.assertEqual(len(ticks), device.root_views)
 
     def test_the_bridge_is_known_by_its_page_under_either_title(self):
         # 4.4.4's, and 4.4.3's before it: a device a run of an older checkout left
@@ -116,6 +137,32 @@ class SetupNetworkTests(unittest.TestCase):
             reply = setup_network.upload_to_bridge(image, host=device.host, timeout=10)
         self.assertIn("Upload verified", reply)
         self.assertEqual(device.uploaded, bytes(range(256)) * 300)
+        # As the documented curl command sends it.
+        (headers,) = device.headers
+        self.assertEqual(headers["Content-Type"], "application/octet-stream")
+        self.assertIsNone(headers["Accept-Encoding"])
+        self.assertIsNone(headers["Expect"])
+
+    def test_an_image_the_bridge_does_not_verify_is_refused(self):
+        device = self.start("bridge-refuses")  # a 200, but not its word that it took it
+        with tempfile.TemporaryDirectory() as directory:
+            image = Path(directory) / "tasmota.bin"
+            image.write_bytes(b"\xe9" * 1024)
+            with self.assertRaisesRegex(setup_network.SetupError, "not for this chip"):
+                setup_network.upload_to_bridge(image, host=device.host, timeout=10)
+
+    def test_the_bridge_is_on_port_80_and_each_connection_is_closed(self):
+        connection = mock.MagicMock()
+        connection.getresponse.return_value.status = 200
+        connection.getresponse.return_value.read.return_value = b"Upload verified. Tasmota settings saved."
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(setup_network.http.client, "HTTPConnection", return_value=connection) as made:
+            image = Path(directory) / "tasmota.bin"
+            image.write_bytes(b"\xe9" * 16)
+            setup_network.upload_to_bridge(image, host="192.0.2.50")
+            setup_network.send_tasmota_settings(b"T", host="192.0.2.50", layout={})
+        self.assertEqual([call.args[:2] for call in made.call_args_list], [("192.0.2.50", 80)] * 2)
+        self.assertEqual(connection.close.call_count, 2)
 
     def test_an_upload_the_bridge_stops_taking_is_given_up(self):
         # The network gone part way: noticed after the stall limit, not left
@@ -152,6 +199,13 @@ class SetupNetworkTests(unittest.TestCase):
         # which on a real device scans and knocks the computer off its network.
         self.assertEqual(device.page_views, 2)
 
+    def test_the_page_is_left_alone_while_tasmota_tests_the_details(self):
+        # Asked meanwhile, it would scan, and break the test of the Wi-Fi.
+        device = self.start("tasmota")
+        setup_network.send_wifi("Home", "pw", host=device.host, settle=0.3, poll=0.05)
+        (saved, _), (verdict, _) = device.asked[:2]
+        self.assertGreaterEqual(verdict - saved, 0.3)
+
     def test_a_failed_connection_is_reported_not_saved(self):
         device = self.start("tasmota-rejects")
         outcome = setup_network.send_wifi(
@@ -161,8 +215,9 @@ class SetupNetworkTests(unittest.TestCase):
     def test_no_verdict_within_the_time_is_unknown(self):
         device = self.start("tasmota-silent")  # keeps answering "trying to connect"
         outcome = setup_network.send_wifi(
-            "Home", "pw", host=device.host, settle=0.0, poll=0.05, timeout=0.3)
+            "Home", "pw", host=device.host, settle=0.0, poll=0.1, timeout=0.3)
         self.assertEqual(outcome, ("unknown", None))
+        self.assertLessEqual(device.page_views, 5)  # asked again each poll, not as fast as it answers
 
     def test_no_setup_page_is_an_error(self):
         with self.assertRaises(setup_network.SetupError):
@@ -174,6 +229,7 @@ class SetupNetworkTests(unittest.TestCase):
         reply = setup_network.send_tasmota_settings(b"T" * 4096, host=device.host, layout=layout)
         self.assertIn("saved", reply)
         self.assertEqual(device.settings, (layout, b"T" * 4096))
+        self.assertEqual(device.headers[0]["Content-Type"], "application/octet-stream")
 
     def test_a_bridge_that_cannot_save_says_why(self):
         for behaviour, words in (("bridge-v4", "older than v5"), ("bridge-not-joined", "not joined")):
@@ -186,7 +242,10 @@ class SetupNetworkTests(unittest.TestCase):
         hostname, port = device.host.split(":")
         self.assertTrue(setup_network.port_open(hostname, int(port)))
         self.assertEqual(device.page_views, 0)
-        self.assertFalse(setup_network.port_open("127.0.0.1", 9, timeout=0.3))
+        self.assertIs(setup_network.port_open("127.0.0.1", 9, timeout=0.3), False)
+        with mock.patch.object(setup_network.socket, "create_connection") as connect:
+            setup_network.port_open("192.0.2.50")
+        self.assertEqual(connect.call_args.args[0], ("192.0.2.50", 80))
 
 
 if __name__ == "__main__":
