@@ -92,6 +92,11 @@ class ESPHomeTitleTests(unittest.TestCase):
         self.assertEqual(esphome.title(host, timeout=10), ("esphome abcdef", "Sonoff-S61"))
         self.assertLess(time.monotonic() - started, 5)
 
+    def test_the_title_is_read_from_the_ping_not_an_event_before_it(self):
+        host = self.serve(b'event: state\ndata: {"id":"switch-relay","state":"ON"}\n\n'
+                          b'event: ping\ndata: {"title":"esphome abcdef","comment":""}\n\n')
+        self.assertEqual(esphome.title(host, timeout=10), ("esphome abcdef", None))   # no comment: none
+
     def test_a_stream_with_no_title_says_none(self):
         host = self.serve(b"event: state\ndata: {}\n\n" * 25, then_hold=False)
         self.assertEqual(esphome.title(host, timeout=5), (None, None))
@@ -307,6 +312,14 @@ class WifiActionTests(unittest.TestCase):
                           (self.call(1), _frame(131, b"\x08\x01\x10\x01\x20\x07")))  # its data a number
         self.assertIsNone(esphome.api_wifi_details("127.0.0.1", port, timeout=2.0))
 
+    def test_an_answer_to_another_call_is_passed_over(self):
+        from tools.autoflash.esphome import _frame, _varint
+        other = b'{"ssid":"Elsewhere","password":"x"}'
+        port = self.serve((self.LIST, self.listed((b"s60_wifi", 1))),
+                          (self.call(1), _frame(131, b"\x08\x02\x10\x01\x22" + _varint(len(other)) + other)
+                           + self.answer(True, b'{"ssid":"Home-2G","password":"pw"}')))
+        self.assertEqual(esphome.api_wifi_details("127.0.0.1", port, timeout=3.0), ("Home-2G", "pw"))
+
     def test_an_encrypted_api_says_so(self):
         port = self.serve((b"", b"\x01\x00\x08Bad indicator"))
         with self.assertRaises(esphome.ApiLocked) as locked:
@@ -498,6 +511,90 @@ class EncryptedApiTests(unittest.TestCase):
         self.assertEqual(esphome.api_access("127.0.0.1", bytes(32), self.serve()), esphome.API_KEY)
         self.assertEqual(esphome.api_access("127.0.0.1", self.KEY, self.serve(plain_first=True)),
                          esphome.API_PLAIN)
+
+
+class ApiConversationTests(unittest.TestCase):
+    """Each question put to ESPHome's API, as the device hears it: hello and
+    connect first, its pings answered, and a goodbye at the end."""
+
+    def serve(self, request, answer):
+        """A fake ESPHome API that waits for `request`, pings, sends `answer`,
+        then keeps all it is sent until the client hangs up."""
+        import socket
+        import threading
+        from tools.autoflash.esphome import _frame
+        server = socket.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        self.addCleanup(server.close)
+        heard = bytearray()
+
+        def run():
+            connection, _ = server.accept()
+            with connection:
+                connection.settimeout(5)
+                sent = False
+                while True:
+                    try:
+                        chunk = connection.recv(4096)
+                    except OSError:
+                        return
+                    if not chunk:
+                        return
+                    heard.extend(chunk)
+                    if not sent and request in heard:
+                        connection.sendall(_frame(7) + answer)
+                        sent = True
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        return server.getsockname()[1], thread, heard
+
+    @staticmethod
+    def kinds(heard):
+        from tools.autoflash.esphome import _read_varint
+        data, at, kinds = bytes(heard), 0, []
+
+        def read(size):
+            nonlocal at
+            at += size
+            return data[at - size:at]
+        while at < len(data):
+            assert read(1) == b"\x00"
+            size, kind = _read_varint(read), _read_varint(read)
+            read(size)
+            kinds.append(kind)
+        return kinds
+
+    def test_each_question_says_hello_answers_pings_and_says_goodbye(self):
+        from tools.autoflash.esphome import _frame
+        hello_answer = _frame(2, b"\x08\x01\x10\x0a")
+        log = ApiSignalTests.log(b"[C][wifi:1297]:   SSID: 'Home'\n  Signal strength: -61 dB")
+        info = DeviceInfoTests.info()
+        listed = WifiActionTests.listed((b"autoflash_wifi", 1))
+        answer = WifiActionTests.answer(True, b'{"ssid":"Home-2G","password":"pw"}')
+        for name, ask, request, reply, kinds in (
+                ("access", esphome.api_access, b"\x00\x00\x03", hello_answer, []),
+                ("signal", esphome.api_wifi, b"\x00\x04\x1c", log, [28]),
+                ("info", esphome.api_device_info, b"\x00\x00\x09", info, [9]),
+                ("action", esphome.api_wifi_details, b"\x00\x00\x0b", listed + answer, [11, 42])):
+            with self.subTest(name):
+                port, thread, heard = self.serve(request, reply)
+                self.assertIsNotNone(ask("127.0.0.1", port=port, timeout=3.0))
+                thread.join(5)
+                self.assertEqual(self.kinds(heard), [1, 3] + kinds[:1] + [8] + kinds[1:] + [5])
+
+    def test_it_is_asked_on_esphomes_api_port(self):
+        with mock.patch.object(esphome.socket, "create_connection", side_effect=OSError("refused")) as dialled:
+            self.assertIsNone(esphome.api_wifi("192.0.2.50"))
+        self.assertEqual(dialled.call_args.args[0], ("192.0.2.50", 6053))
+
+    def test_numbers_and_messages_are_read_as_protobuf_writes_them(self):
+        from tools.autoflash.esphome import _fields, _varint
+        self.assertEqual(_varint(300), b"\xac\x02")
+        self.assertEqual(_fields(b"\x08\xac\x02\x12\x02ab"), {1: 300, 2: b"ab"})
+        with self.assertRaisesRegex(ValueError, "cut short"):
+            _fields(b"\x12\x05ab")
 
 
 class DeviceInfoTests(unittest.TestCase):
