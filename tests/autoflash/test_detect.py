@@ -35,7 +35,8 @@ class FakeTasmota:
         return {"NAME": self.module}
 
     def sha_region(self, address, length, timeout=None):
-        return self.table
+        # The partition table's hash: what is at 0x8000, 4 KB, says the layout.
+        return self.table if (address, length) == (0x8000, 0x1000) else None
 
 
 class TasmotaTests(unittest.TestCase):
@@ -99,6 +100,12 @@ class TasmotaTests(unittest.TestCase):
                 return answers(command)
             fake.command = busy
             self.assertEqual(self.found_busy(fake), ([], None), failure)
+
+    def test_a_page_that_answers_the_command_but_not_as_tasmota_is_no_tasmota(self):
+        fake = FakeTasmota(version="15.6.0(release-tasmota32)", table=TASMOTA_TABLE)
+        answers = fake.command
+        fake.command = lambda command: {"Command": "Unknown"} if command.startswith("Status") else answers(command)
+        self.assertIsNone(self.kind(fake))
 
     def test_a_page_that_answers_no_to_the_command_is_no_tasmota(self):
         import io
@@ -214,14 +221,22 @@ class TasmotaTests(unittest.TestCase):
                 mock.patch.object(detect.hostsys, "sweep"), \
                 mock.patch.object(detect.hostsys, "neighbour_table",
                                   return_value={"192.0.2.137": "12:34:56:ab:cd:ef"}), \
-                mock.patch.object(detect, "_port_open", return_value=True), \
+                mock.patch.object(detect, "_port_open", side_effect=lambda host, port, timeout: port == 80), \
                 mock.patch.object(detect.esphome, "page", return_value="other"), \
+                mock.patch.object(detect.esphome_ota, "probe", return_value=None), \
                 mock.patch.object(detect, "_is_mover", return_value=False), \
                 mock.patch.object(detect, "_is_installer", return_value=False):  # nothing real asked
             found = detect.converted_devices("192.0.2.1")
-        self.assertEqual([(f.host, f.firmware, f.kind) for f in found],
-                         [("192.0.2.137", "tasmota", "sonoff-s60")])
+            self.assertEqual(detect.identify("192.0.2.137"), "tasmota")   # its web page, on port 80
+        self.assertEqual([(f.host, f.firmware, f.name, f.kind) for f in found],
+                         [("192.0.2.137", "tasmota", "tasmota-ABCDEF-1234", "sonoff-s60")])
         self.assertTrue(found[0].describe().startswith("the device at 192.0.2.137"))
+
+    def test_sonoffs_firmware_is_known_by_its_lan_port(self):
+        with mock.patch.object(detect, "_port_open", side_effect=lambda host, port, timeout: port == 8081), \
+                mock.patch.object(detect.esphome, "page", return_value=None), \
+                mock.patch.object(detect.esphome_ota, "probe", return_value=None):
+            self.assertEqual(detect.identify("192.0.2.137"), "sonoff")
 
     def test_a_tasmota_not_yet_set_up_is_taken_only_with_a_mac_this_computer_knows(self):
         # Official Tasmota, put on by a run stopped before it gave it the S60's
