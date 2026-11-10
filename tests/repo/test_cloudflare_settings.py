@@ -22,6 +22,8 @@ ADMIN_SECRETS = f"/accounts/a1/workers/scripts/{cs.ADMIN_WORKER}/secrets"
 ACCESS = "/accounts/a1/access"
 QUERY = f"{DATABASES}/u1/query"
 ADDRESSES = "/accounts/a1/email/routing/addresses"
+ANALYTICS = "/accounts/a1/rum/site_info"
+ALL_MEASURED = {"id": "ru1", "host": "*", "paths": ["*"], "inclusive": True, "is_paused": False, "priority": 1000}
 DESTINATION = "owner@example.com"
 FORWARD = "hello, Press"
 # What Email Routing says it needs, as it lists them: a TXT record whole, a host with its final dot.
@@ -74,6 +76,11 @@ class FakeCloudflare:
         self.policies = {"app1": [{"id": "p1", **cs.admin_policy_body("g1", DESTINATION)}]}
         self.admin_vars = {"ACCESS_TEAM": "team1", "ACCESS_AUD": "aud1", "ACCOUNT_ID": "a1"}
         self.sending = []   # the zone's domains onboarded for Email Service's sending
+        # The account's Web Analytics sites: the zone's one, as the pages' beacon tag names it.
+        # Each starts with the one rule Cloudflare makes, every host and path measured.
+        self.analytics = [{"site_tag": "t1", "site_token": cs.beacon_token(), "auto_install": False,
+                           "rules": [copy.deepcopy(ALL_MEASURED)],
+                           "ruleset": {"id": "rs1", "zone_tag": "z1", "zone_name": cs.ZONE, "enabled": False}}]
         self.sent = []
         self.ids = iter(range(100, 1000))
 
@@ -117,6 +124,13 @@ class FakeCloudflare:
                 self.r2_dev = body["enabled"]
             elif path == DATABASES:
                 self.databases.append({"name": body["name"], "uuid": "u1"})
+            elif path == ANALYTICS:
+                self.analytics.append({"site_tag": "t2", "site_token": "f" * 32, "rules": [copy.deepcopy(ALL_MEASURED)],
+                                       "ruleset": {"id": "rs2", "zone_tag": body["zone_tag"]}, **body})
+                return copy.deepcopy(self.analytics[-1])
+            elif path.startswith(f"{ANALYTICS}/"):
+                site = next(s for s in self.analytics if s["site_tag"] == path.rsplit("/", 1)[1])
+                site.update(body)
             elif path == SENDING:
                 self.sending.append({"tag": "s1", "name": body["name"], "enabled": True})
                 return copy.deepcopy(self.sending[-1])
@@ -162,6 +176,10 @@ class FakeCloudflare:
         if path in {template.format(account="a1", zone="z1") for _, template in cs.CI_REFUSED + cs.DEPLOY_REFUSED}:
             assert ok_forbidden
             return {} if path in self.readable else None
+        if path == f"{ANALYTICS}/list?per_page=100":   # as Cloudflare lists them: without their rules
+            return [{k: v for k, v in site.items() if k != "rules"} for site in self.analytics]
+        if path.startswith(f"{ANALYTICS}/"):
+            return copy.deepcopy(next(s for s in self.analytics if s["site_tag"] == path.rsplit("/", 1)[1]))
         if path == f"{STATS}/domains/custom":
             return {"domains": copy.deepcopy(self.stats_domains)}
         if path == f"{STATS}/domains/managed":
@@ -973,6 +991,72 @@ class AdminAccessTests(unittest.TestCase):
         self.assertIn("https://admin.firmwareliberator.com/", job)
         self.assertIn("needs: [deploy, deploy-api, deploy-admin]", workflow)
         self.assertIn(cs.ADMIN_WORKER, cs.DEPLOY_WORKERS)
+
+
+class WebAnalyticsTests(unittest.TestCase):
+    """Web Analytics: the zone's one site, the pages' tag naming it, not injected by Cloudflare."""
+
+    def setUp(self):
+        self.fake = FakeCloudflare()
+        self.fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09"}]
+        run(self.fake, "apply")
+        self.fake.sent.clear()
+
+    def test_the_pages_carry_the_beacon_tag_once(self):
+        page = cs.ANALYTICS_PAGE.read_text(encoding="utf-8")
+        self.assertEqual(len(cs.ANALYTICS_BEACON.findall(page)), 1)
+        self.assertEqual(page.count("static.cloudflareinsights.com/beacon.min.js"), 1)
+
+    def test_automatic_setup_turned_on_by_hand_is_turned_off(self):
+        self.fake.analytics[0]["auto_install"] = True
+        code, out = run(self.fake, "apply")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.fake.sent, [("PUT", f"{ANALYTICS}/t1", {"auto_install": False, "zone_tag": "z1"})])
+        self.assertEqual(run(self.fake)[0], 0)
+
+    def test_none_is_made_and_its_token_left_to_put_in_the_page(self):
+        self.fake.analytics = []
+        code, out = run(self.fake, "apply")
+        self.assertEqual(code, 1)
+        self.assertEqual(self.fake.sent, [("POST", ANALYTICS, {"zone_tag": "z1", "auto_install": False})])
+        self.assertIn(f"website/src/layouts/Page.astro: set the beacon tag's token to {'f' * 32}", out)
+
+    def test_another_sites_token_in_the_page_is_left_to_the_maintainer(self):
+        self.fake.analytics[0]["site_token"] = "e" * 32
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn(f"carries another site's token: Web Analytics' site for {cs.ZONE} is {'e' * 32}", out)
+
+    def test_a_rule_or_a_second_site_is_left_to_the_dashboard(self):
+        self.fake.analytics[0]["rules"].append({**ALL_MEASURED, "id": "ru2", "paths": ["/private*"],
+                                                "inclusive": False})
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn("Web Analytics' rules: narrow what is measured ([('*', ['/private*'])])", out)
+        self.fake.analytics[0]["rules"] = [{**ALL_MEASURED, "is_paused": True}]
+        self.assertIn("narrow what is measured", run(self.fake)[1])
+        self.fake.analytics = [self.fake.analytics[0], {**self.fake.analytics[0], "site_tag": "t2"}]
+        self.assertIn("has 2 sites for", run(self.fake)[1])
+
+    def test_another_zones_site_is_not_this_ones(self):
+        self.fake.analytics.append({"site_tag": "t9", "site_token": "9" * 32, "auto_install": True, "rules": [],
+                                    "ruleset": {"zone_tag": "o1", "zone_name": "example.com"}})
+        self.assertEqual(run(self.fake, "apply")[0], 0)
+        self.assertEqual(self.fake.sent, [])
+
+    def test_ci_never_asks_for_it(self):
+        fake = self.fake
+
+        def no_rum(path, *args, **kwargs):
+            if "/rum/" in path:   # only the read CI's token must be refused, to show it is
+                self.assertEqual((path, kwargs.get("ok_forbidden")), (f"{ANALYTICS}/list", True))
+            return fake(path, *args, **kwargs)
+        code, out = run(no_rum, "ci")
+        self.assertIn("Web Analytics: not checked", out)
+        self.fake.readable.add(f"{ANALYTICS}/list")
+        self.assertIn("can read the account's settings (Web Analytics sites): it should be refused",
+                      run(self.fake, "ci")[1])
+
 
 class StoppingTheApiTests(unittest.TestCase):
     """The website workflow, run by hand, can deploy the API taking nothing."""
