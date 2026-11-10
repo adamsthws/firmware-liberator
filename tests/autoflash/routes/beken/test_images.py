@@ -50,6 +50,10 @@ class ImagesTests(unittest.TestCase):
             own.write_bytes(b"not an image")
             with self.assertRaisesRegex(errors.Abort, "not an rt_ota image"):
                 images.image(ctx, "esphome")
+            # Its header right, its body cut short: the whole image is checked.
+            own.write_bytes(rbl.pack(b"an esphome", version="26.10.30-bk7238")[:-1])
+            with self.assertRaisesRegex(errors.Abort, "not an rt_ota image"):
+                images.image(ctx, "esphome")
 
     def test_the_stock_firmware_comes_from_the_public_dump_fetched_once(self):
         app = b"stock app" * 2000
@@ -72,14 +76,16 @@ class ImagesTests(unittest.TestCase):
                 fetched.append(1)
                 return dump
 
-        with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch.object(images, "DUMPS", Path(tmp)), \
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(images, "DUMPS", Path(directory) / "emulator" / "dumps"), \
                 mock.patch.dict(images.PUBLIC_DUMPS, {"sonoff-s61": ("http://example.test/dump.bin",
                                                                       hashlib.sha256(dump).hexdigest())}), \
                 mock.patch.object(images.hostsys, "urlopen", return_value=Reply()), \
                 mock.patch.object(images.output, "say"):
             packed, version = images.stock_rbl(S61)
             self.assertEqual((rbl.unpack(packed), version), (app, "1.0.2"))
+            tmp = images.DUMPS   # made on first use, and kept there under the dump's own name
+            self.assertEqual([path.name for path in Path(tmp).iterdir()], ["dump.bin"])
             packed_again, _ = images.stock_rbl(S61)  # from the file kept, not fetched again
             self.assertEqual(packed_again, packed)
             self.assertEqual(fetched, [1])
