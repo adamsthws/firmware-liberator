@@ -71,6 +71,30 @@ class SecretPromptTests(unittest.TestCase):
             line.feed(char)
         self.assertEqual(line.value, "abc")
 
+    def test_only_a_character_added_is_revealed(self):
+        # An edit or a control key shows no character: revealing one then
+        # would show the one before it.
+        from tools.autoflash.prompts import SecretLine
+        line = SecretLine()
+        line.feed("a")
+        line.feed("b")
+        self.assertEqual([line.feed(char) for char in ("\x7f", "\x01", "\x15")], [False, False, False])
+
+    def test_typing_ahead_is_dropped_before_a_password_is_asked(self):
+        order = []
+        with mock.patch.object(prompts, "discard_typed_ahead", side_effect=lambda: order.append("dropped")), \
+             mock.patch.object(prompts, "_ask_secret", side_effect=lambda *_: order.append("asked") or "secret"):
+            self.assertEqual(prompts.ask_secret("Password: "), "secret")
+        self.assertEqual(order, ["dropped", "asked"])
+
+    def test_ctrl_c_at_a_password_stops_as_ctrl_c(self):
+        with mock.patch.object(prompts, "UNATTENDED", False), \
+             mock.patch.object(prompts, "_read_secret", side_effect=KeyboardInterrupt), \
+             mock.patch.object(prompts.output, "after_secret") as shown, \
+             mock.patch("sys.stdout", io.StringIO()), self.assertRaises(KeyboardInterrupt):
+            prompts._ask_secret("Password: ")
+        self.assertNotIn("*", shown.call_args.args[0])
+
     @unittest.skipIf(sys.platform == "win32", "needs a POSIX pseudo-terminal")
     def test_a_real_terminal_never_keeps_a_readable_character(self):
         import pty
@@ -193,6 +217,25 @@ class QuitOptionTests(unittest.TestCase):
 
     def test_quitting_a_standalone_tool_is_a_clean_exit(self):
         self.assertTrue(issubclass(prompts.QuitRun, SystemExit))
+        stopped = prompts.QuitRun("stopped at an operator prompt")
+        self.assertEqual((stopped.code, stopped.reason), ("Stopped.", "stopped at an operator prompt"))
+
+    def test_enter_takes_the_default_and_anything_typed_replaces_it(self):
+        replies = iter(["", "other", "", "q"])
+        with mock.patch("builtins.input", side_effect=lambda _: next(replies)), \
+             mock.patch.object(prompts, "_emit"), mock.patch.object(prompts, "_retry"):
+            self.assertEqual(prompts.ask_text("Name", default="kept"), "kept")
+            self.assertEqual(prompts.ask_text("Name", default="kept"), "other")
+            with self.assertRaises(prompts.QuitRun):   # no default: Enter is no answer
+                prompts.ask_text("Name")
+
+    def test_a_section_is_shown_unless_it_is_quiet(self):
+        with mock.patch.object(output, "show") as shown, mock.patch.object(output, "detail") as logged:
+            prompts.section("Shown", ["a line"])
+            prompts.section("Logged", ["a line"], quiet=True)
+        self.assertIn(mock.call("-- Shown"), shown.call_args_list)
+        self.assertIn(mock.call("-- Logged"), logged.call_args_list)
+        self.assertNotIn(mock.call("-- Logged"), shown.call_args_list)
 
 
 class SearchTests(SetupNetworkTestCase):
@@ -256,6 +299,15 @@ class UnattendedPromptTests(unittest.TestCase):
     def test_no_key_is_waited_for(self):
         with mock.patch("builtins.input", side_effect=AssertionError("read the keyboard")):
             prompts.wait_for_key()
+
+    def test_no_key_is_waited_for_unattended_on_a_terminal_nor_with_either_end_piped(self):
+        for unattended, stdin, stdout in ((True, True, True), (False, True, False), (False, False, True)):
+            with self.subTest(unattended=unattended, stdin=stdin, stdout=stdout), \
+                    mock.patch.object(prompts, "UNATTENDED", unattended), \
+                    mock.patch.object(prompts.sys.stdin, "isatty", return_value=stdin), \
+                    mock.patch.object(self.screen, "isatty", return_value=stdout, create=True), \
+                    mock.patch.object(prompts, "discard_typed_ahead", side_effect=AssertionError("waited")):
+                prompts._wait_for_key()
 
     def test_a_yes_no_question_takes_its_cautious_default(self):
         self.assertFalse(prompts.ask_yes_no("Carry on anyway", default=False))
@@ -516,6 +568,31 @@ class AdminPasswordTests(unittest.TestCase):
         third = screens[2]
         self.assertEqual(third.count("That password was not accepted"), 1, third)
         self.assertNotIn("*********", third)   # neither wrong try left
+
+
+class AdminPasswordTriesTests(unittest.TestCase):
+    """sudo stops after three wrong passwords, and some systems lock the
+    account for a while after a few: three tries, no more."""
+
+    def ask(self, accepted):
+        asked = []
+        with mock.patch("sys.stdout", io.StringIO()), \
+             mock.patch.object(prompts, "ask_secret", side_effect=lambda _: asked.append(1) or f"try-{len(asked)}"), \
+             mock.patch.object(prompts.hostsys, "check_sudo_password",
+                               side_effect=lambda value: None if value == accepted else "refused"), \
+             mock.patch.object(prompts, "_retry"):
+            try:
+                return prompts.ask_admin_password(), len(asked)
+            except OSError:
+                return None, len(asked)
+            finally:
+                output.finish()
+
+    def test_the_password_sudo_accepts_is_given(self):
+        self.assertEqual(self.ask("try-2"), ("try-2", 2))
+
+    def test_three_refused_give_up(self):
+        self.assertEqual(self.ask(None), (None, 3))
 
 
 class SecretFieldTests(unittest.TestCase):
