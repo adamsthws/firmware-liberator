@@ -23,18 +23,18 @@ is rebuilt and named. Earlier files are in `git log --all -- artifacts/`.
 | `autoflash-mover-esp32-1.1.0.bin` | The mover for a classic ESP32 | `5a4ae1ff9c0d1052ff7aab8965252749eac395fb4a1ae6b3b6f1c379513ccbcf` |
 | `esphome-sonoff-s60-bootloader-1.2.0.bin` | [ESPHome's bootloader](#esphome-for-espressif-devices) for an ESP32-C3: it replaces Sonoff's when ESPHome is installed, so ESPHome can roll back an update that fails to start | `3792bb665916d69c410c9fd10f69d1a6968e61f2a9e4969829a1c49f9ea6f433` |
 | `esphome-esp32-bootloader-1.1.0.bin` | ESPHome's bootloader for a classic ESP32 | `b52ccf9f4602c83db673d44e84d391c44fed6d24329d4fefb9fc0d72a95a0d4f` |
-| `esphome-sonoff-s60-imprintable-2026.10.0-2.bin` | [ESPHome for the S60](#esphome-for-espressif-devices), installed instead of the final Tasmota when ESPHome is chosen, with placeholders for the device's Wi-Fi | `6c638efbc9697fe9b648db1f597cd772ef2bcb977ac3fded4d450aaa9eb73bc2` |
-| `esphome-sonoff-pow-elite-imprintable-2026.10.0-2.bin` | ESPHome for the POW Elite, the same way | `2711dcbea8e5e49fd5e694cfc099aa12ade86a5b2a755a55d1c9eda65373b658` |
-| `esphome-sonoff-powct-imprintable-2026.10.0-3.bin` | ESPHome for the POW Ring (POWCT), the same way | `fa53430d85068a541d3a3740ec2c21ec3f1722717bc896699c3869faaa4d0ec4` |
-| `esphome-sonoff-th-elite-imprintable-2026.10.0-2.bin` | ESPHome for the TH Elite, the same way | `a4a8f6031d700f017c36f3a93700ae664a5ce4a871c428cc806b3b65f1397aa6` |
-| `esphome-sonoff-dualr3-imprintable-2026.10.0-2.bin` | ESPHome for the Dual R3, the same way | `79a5825de37ad30a866bd3388c15cf9d79fcb9287c45c10cf87cca57e83ef819` |
+| `esphome-sonoff-s60-imprintable-2026.10.0-2.bin` | [ESPHome for the S60](#esphome-for-espressif-devices), installed instead of the final Tasmota when ESPHome is chosen, with placeholders for the device's Wi-Fi | `78a9796bdc169e1f208e2ebe93766d9be9a3c69ab33d3b9bdc79e05b3188fcab` |
+| `esphome-sonoff-pow-elite-imprintable-2026.10.0-2.bin` | ESPHome for the POW Elite, the same way | `1a462e946c051e8c735cdb53f0b8100e28203c488f697e5a548d8a2c29d4cc0d` |
+| `esphome-sonoff-powct-imprintable-2026.10.0-3.bin` | ESPHome for the POW Ring (POWCT), the same way | `d75f9b4e4a7ed58a95cb1ad6a08fa4a0bfce5f03af3b65443fa924506a11c31f` |
+| `esphome-sonoff-th-elite-imprintable-2026.10.0-2.bin` | ESPHome for the TH Elite, the same way | `6783373bce2d8941b7e20080a85360a24f6a57e72e57ad72a7a2d511f3983d0a` |
+| `esphome-sonoff-dualr3-imprintable-2026.10.0-2.bin` | ESPHome for the Dual R3, the same way | `3923e646cea3bd5e39692e2a92b39234677ebd94f0454d1487554fbfa0712c2a` |
 | `sonoff-s60-partition-table.bin` | [Sonoff's partition table](#sonoffs-partition-tables) of the S60, and of every device on its layout | `f63f66bbf23b9e291c7eb5dcf24be820190dacf4bf52af515d9664526a4f4daf` |
 | `sonoff-nspanel-partition-table.bin` | Sonoff's partition table of the NSPanel: the S60's without its unused `reserve` entry | `3c6436bcbd529015fcb3fd98565b7753199910b3dba30c9d6ccce77d08e09d70` |
 | `sonoff-th-elite-partition-table.bin` | Sonoff's partition table of the TH Elite, with a larger NVS and smaller app slots | `36d7dc76c5d2459ea174e48aaa19ff93dcb8130c43b124bba409d78b9c01c1b6` |
 | `openbeken-sonoff-s61-1.18.320-2.rbl` | [OpenBeken for the S61](#beken-devices), with the 4 MB table, the hook before an OTA's restart, the tool's OpenBeken driver and the S61's table for it; a run to ESPHome sends it as the interim firmware, with a marker for its app after it | `4faef4259545557d2eee7e12499cb24c89c51e443cb987d7ad90d5f7d0bf68c1` |
-| `esphome-sonoff-s61-2026.10.0-3.rbl` | ESPHome for the S61, on LibreTiny. Nothing is written into it: its first boot reads the device's Wi-Fi and meter calibration from the stock store | `ccf824eddbf6d05256bc681e819304f875e40fd0c59865966d208ac396141eb8` |
+| `esphome-sonoff-s61-2026.10.0-3.rbl` | ESPHome for the S61, on LibreTiny. Nothing is written into it: its first boot reads the device's Wi-Fi and meter calibration from the stock store | `f1a5e519ba079e4d45a8a77f7ca81cadb8398e21fd1914dda86addbac84f59f7` |
 | `openbeken-sonoff-basic-1gs-1.18.320-1.rbl` | OpenBeken for the Basic Gen5, built as the S61's with that device's table for the driver | `5129951d1e89b06f4c5c7e39a0d01b081010d338c562d78c6e422f7175965952` |
-| `esphome-sonoff-basic-1gs-2026.10.0-2.rbl` | ESPHome for the Basic Gen5, built as the S61's less its meter. No real one has been converted | `55d3aeddd9fa5b9b6bc00ef9e285bfd3d6c41843144422095b6ee2fede517340` |
+| `esphome-sonoff-basic-1gs-2026.10.0-2.rbl` | ESPHome for the Basic Gen5, built as the S61's less its meter. No real one has been converted | `92f00bd1476d44110c63f61d1da955c804e81e79f5f0eefec85083595fb8fa0d` |
 | `openbeken-readout-1.18.320-1.rbl` | OpenBeken for a [readout](../docs/readouts.md) of a Beken device the tool does not convert yet (`tools/autoflash/readout.py`): the S61's, with a table that sets no pins, so nothing is driven on hardware nobody has mapped. It joins the device's Wi-Fi, serves the whole flash to be read, and takes Sonoff's firmware back | `811a8437129eea92b4c29c60e5c56e623fd32ca7b1629625d91e295a901bd572` |
 
 ## The bridge
