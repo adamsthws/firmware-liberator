@@ -16,8 +16,9 @@ With CLOUDFLARE_API_TOKEN, in the environment or .env.infra (as
 .env.infra.example shows; not .env, whose names are the tool's): to check, a token
 allowed to read the zone, its settings, DNS records, single redirects, rate
 limiting rules and Email Routing rules, and the account's R2 buckets, D1
-databases, Email Routing addresses, Workers' secrets and Access (the admin
-view's sign-in); to apply, one allowed to edit them all. With
+databases, Email Routing addresses, Workers' secrets, Access (the admin
+view's sign-in) and Web Analytics sites; to apply, one allowed to edit
+them all. With
 CLOUDFLARE_EMAIL_DESTINATION and CLOUDFLARE_EMAIL_FORWARD too, the same
 way: the address mail is forwarded to, and the domain's addresses forwarded
 there. They are private, so never written here. `apply` changes only what differs. The Workers, and the domains
@@ -217,6 +218,17 @@ WORKER_SECRETS = {API_WORKER: ("API_", API_SECRETS), ADMIN_WORKER: ("ADMIN_", AD
 ACCESS_APP = {"name": "FirmwareLiberator admin", "domain": ADMIN_HOST, "type": "self_hosted",
               "session_duration": "24h", "auto_redirect_to_identity": True, "app_launcher_visible": False}
 
+# The website's visits are counted by Cloudflare Web Analytics, without
+# cookies: a site of the account's, for the zone, whose beacon tag every page
+# carries (website/src/layouts/Page.astro, the site's token in it - public,
+# as every page shows it). Cloudflare injecting the tag itself (auto_install)
+# would count each visit twice, so it is off; its one rule is Cloudflare's
+# own, every host and path measured.
+# A token reading these reads every account setting, so CI's is refused them,
+# and only the apply token checks them.
+ANALYTICS_PAGE = ROOT / "website" / "src" / "layouts" / "Page.astro"
+ANALYTICS_BEACON = re.compile(r"""data-cf-beacon='\{"token": "([0-9a-f]{32})"\}'""")
+
 # Mail to the domain is received by Cloudflare's Email Routing, which made
 # and keeps its own DNS records: MX, its DKIM key and SPF. They are checked
 # against the list Email Routing gives of what it needs, so its key is not
@@ -378,6 +390,7 @@ REFUSED = [
     ("the zone's SSL certificates", "/zones/{zone}/ssl/certificate_packs"),
     ("the account's KV namespaces", "/accounts/{account}/storage/kv/namespaces"),
     ("the account's D1 databases", "/accounts/{account}/d1/database"),
+    ("the account's settings (Web Analytics sites)", "/accounts/{account}/rum/site_info/list"),
 ]
 CI_REFUSED = [*REFUSED,
               ("the API Worker's settings and bindings",
@@ -665,6 +678,47 @@ def stats_differences(account: str, zone_id: str) -> list[tuple[str, str, Any]]:
     return found
 
 
+def beacon_token() -> str:
+    """The Web Analytics site token every page's beacon tag carries."""
+    found = ANALYTICS_BEACON.findall(ANALYTICS_PAGE.read_text(encoding="utf-8"))
+    if len(found) != 1:
+        raise SettingsError(f"{ANALYTICS_PAGE.relative_to(ROOT)} should carry Web Analytics' beacon tag, once")
+    return found[0]
+
+
+def analytics_differences(account: str, zone_id: str) -> list[tuple[str, str, Any]]:
+    """Web Analytics: one site for the zone, the one the pages' tag names,
+    which Cloudflare does not inject the tag for, measuring every path: its
+    rules only the one Cloudflare starts it with, every host and path in."""
+    path = f"/accounts/{account}/rum/site_info"
+    sites = [site for site in api(f"{path}/list?per_page=100") or []
+             if (site.get("ruleset") or {}).get("zone_tag") == zone_id]
+    page = str(ANALYTICS_PAGE.relative_to(ROOT))
+    if not sites:
+        def create() -> list[str]:
+            made = api(path, "POST", {"zone_tag": zone_id, "auto_install": False})
+            return [f"{page}: set the beacon tag's token to {made['site_token']}, and commit it"]
+        return [("Web Analytics", f"has no site for {ZONE}", create)]
+    if len(sites) > 1:
+        return [("Web Analytics", f"has {len(sites)} sites for {ZONE}: it should have one", None)]
+    # The list leaves out a site's rules; the site itself has them.
+    site, found = api(f"{path}/{sites[0]['site_tag']}"), []
+    if site.get("site_token") != beacon_token():
+        found.append((page, f"carries another site's token: Web Analytics' site for {ZONE} is "
+                      f"{site.get('site_token')}", f"set the beacon tag's token to {site.get('site_token')}, "
+                      "and commit it"))
+    if site.get("auto_install"):
+        found.append(("Web Analytics' automatic setup", "is on: the pages carry the tag, so it should be off",
+                      ("PUT", f"{path}/{site['site_tag']}", {"auto_install": False, "zone_tag": zone_id})))
+    narrowed = [rule for rule in site.get("rules") or []
+                if (rule.get("host"), rule.get("paths"), rule.get("inclusive"), rule.get("is_paused"))
+                != ("*", ["*"], True, False)]
+    if narrowed:
+        found.append(("Web Analytics' rules", f"narrow what is measured ({[(r.get('host'), r.get('paths')) for r in narrowed]}"
+                      "): there should be none but every host and path in", None))
+    return found
+
+
 def put_secret(account: str, name: str, value: str, worker: str = API_WORKER) -> None:
     """Set a Worker's secret `name`; its value goes in the request's body
     alone, never a command line or the screen."""
@@ -892,11 +946,13 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
         print(f"  {API_WORKER} and {ADMIN_WORKER} secrets: not checked - CI's token is refused the Workers' settings")
         print(f"  Access for {ADMIN_HOST}: not checked - CI's token has no reach into Access, whose policy "
               "holds the maintainer's address")
+        print("  Web Analytics: not checked - CI's token is refused it, which reads every account setting")
     else:
         found += database_differences(zones[0]["account"]["id"])
         found += secret_differences(zones[0]["account"]["id"])
         found += secret_differences(zones[0]["account"]["id"], ADMIN_WORKER)
         found += access_differences(zones[0]["account"]["id"])
+        found += analytics_differences(zones[0]["account"]["id"], zones[0]["id"])
     found += email_differences(zone, zones[0]["account"]["id"])
     found += sending_differences(zone)
     found += dns_differences(zone)
