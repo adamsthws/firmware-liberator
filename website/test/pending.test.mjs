@@ -28,12 +28,12 @@ async function kept(env, id, review, received, bytes = 100, marks = []) {
 }
 
 test("a readout never taken as right is deleted after its days, with its marks, its bytes given back", async () => {
-  assert.equal(PENDING_DAYS, 30);
+  assert.equal(PENDING_DAYS, 180);
   const env = { DB: d1(), READOUTS: bucket() };
-  await kept(env, "old-pending", "pending", "2026-10-01T10:00:00Z", 100, ["a".repeat(64)]);
-  await kept(env, "old-rejected", "rejected", "2026-10-02T10:00:00Z", 50);
-  await kept(env, "old-right", "quorum", "2026-10-01T10:00:00Z", 70);
-  await kept(env, "new-pending", "pending", "2026-11-05T10:00:00Z", 30);
+  await kept(env, "old-pending", "pending", "2026-05-01T10:00:00Z", 100, ["a".repeat(64)]);
+  await kept(env, "old-rejected", "rejected", "2026-05-02T10:00:00Z", 50);
+  await kept(env, "old-right", "quorum", "2026-05-01T10:00:00Z", 70);
+  await kept(env, "new-pending", "pending", "2026-06-01T10:00:00Z", 30);
   const done = await prunePending(env, "2026-11-09");
   assert.equal(done.readouts, 2);
   const left = (await env.DB.prepare("SELECT id FROM readouts ORDER BY id").all()).results.map((row) => row.id);

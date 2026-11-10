@@ -181,7 +181,7 @@ test("the devices wanted: /wanted's questions and the runs stopped for want of s
 });
 
 test("a model's name is shown once three senders have given it, on three days, and who gave it then forgotten", async () => {
-  assert.deepEqual([night.VOUCH_SENDERS, night.VOUCH_DAYS, night.VOUCH_KEEP_DAYS], [3, 3, 90]);
+  assert.deepEqual([night.VOUCH_SENDERS, night.VOUCH_DAYS, night.VOUCH_KEEP_DAYS], [3, 3, 365]);
   const bindings = env();
   const gave = bindings.DB.db.prepare("INSERT INTO model_senders (model, sender, day) VALUES (?, ?, ?)");
   for (const [sender, day] of [["a", "2026-11-01"], ["b", "2026-11-03"], ["c", "2026-11-05"]]) {
@@ -193,7 +193,7 @@ test("a model's name is shown once three senders have given it, on three days, a
   for (const sender of ["a", "b", "c", "d"]) {
     gave.run("ONEEVENING", sender, "2026-11-08");   // many senders, one day
   }
-  gave.run("LONGAGO", "z", "2026-08-01");
+  gave.run("LONGAGO", "z", "2025-11-09");
   for (const model of ["TRUSTED1", "ONESENDER", "ONEEVENING"]) {
     for (let n = 0; n < 5; n += 1) {
       await kept(bindings.DB, "2026-11-05", { model, device_hash: `${model}-${n}` });
@@ -205,7 +205,7 @@ test("a model's name is shown once three senders have given it, on three days, a
   assert.ok(!JSON.stringify(figures(bindings)).includes("ONESENDER"));
   assert.ok(!JSON.stringify(figures(bindings)).includes("ONEEVENING"));
   assert.deepEqual(rows(bindings, "SELECT DISTINCT model FROM model_senders ORDER BY model"),
-    [{ model: "ONEEVENING" }, { model: "ONESENDER" }], "TRUSTED1's vouched for, LONGAGO's past 90 days: forgotten");
+    [{ model: "ONEEVENING" }, { model: "ONESENDER" }], "TRUSTED1's vouched for, LONGAGO's past a year: forgotten");
 });
 
 test("the figures say what they are, how fresh, and for which schema", async () => {
@@ -320,7 +320,7 @@ test("each night notes how much the store of readouts holds", async () => {
 test("each night clears readouts never taken as right and addresses never confirmed (pending.js)", async () => {
   const bindings = { ...env(), READOUTS: { ...bucket(), delete: async () => {} } };
   bindings.DB.db.prepare(`INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, review)
-    VALUES ('old', 'K', 'whole', 's', 'f', 1, 'readouts/x/old.tar', '2026-09-01T00:00:00Z', 'pending')`).run();
+    VALUES ('old', 'K', 'whole', 's', 'f', 1, 'readouts/x/old.tar', '2026-05-01T00:00:00Z', 'pending')`).run();
   bindings.DB.db.prepare(`INSERT INTO confirmations (token, who, email, devices, day, sent)
     VALUES ('t', 'w', 'e', '[]', '2026-10-01', '2026-10-01T12:00:00Z')`).run();
   const done = await night.nightly(bindings, NIGHT);
