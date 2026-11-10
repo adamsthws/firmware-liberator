@@ -37,6 +37,7 @@ class RebuiltTests(Fixture):
         result, fetched, first, second = self.restore(ctx)
         self.assertEqual(fetched.call_args.args[2], IDENTITY)
         self.assertEqual(ctx.state.data["captures"]["R1.rebuilt"]["identity"], "kept")
+        self.assertEqual(ctx.state.data["captures"]["R1.identity"], "kept")   # for the report
         self.assertEqual(first.steps[0].address, 0x20000)
         written = settings_of(second.blobs["settings"])
         frame = json.loads(written[("frame_params", "content")])
@@ -65,6 +66,7 @@ class RebuiltTests(Fixture):
         self.assertEqual((frame["deviceid"], frame["apikey"], frame["dis_server"]),
                          ("10000e32ab", "made-up-key", get_device_key.dispatch_server("eu")[0]))
         self.assertEqual(ctx.state.data["captures"]["R1.rebuilt"]["identity"], "account")
+        self.assertEqual(ctx.state.data["captures"]["R1.identity"], "account")
 
     def test_a_device_that_does_not_answer_is_not_taken_for_one_that_kept_none(self):
         # Seen in the fault suite: switched off as R1 read the identity, it was
@@ -110,6 +112,7 @@ class RebuiltTests(Fixture):
         with mock.patch.object(sonoff, "rebuilt", side_effect=AssertionError("not with a backup")):
             result, _, _, second = self.restore(ctx)
         self.assertEqual(result["from"], "backup")
+        self.assertEqual(ctx.state.data["captures"]["R1.identity"], "backup")
 
 
 class SonoffInTheHubsSlotTests(unittest.TestCase):
