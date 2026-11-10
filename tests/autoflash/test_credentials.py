@@ -41,6 +41,14 @@ class CredentialsFileTests(unittest.TestCase):
         self.assertEqual(given, ["AUTOFLASH_WIFI_PASSWORD", "AUTOFLASH_WIFI_SSID"])
         self.assertEqual(credentials.get("AUTOFLASH_WIFI_PASSWORD"), "a pass")
 
+    def test_a_file_read_again_holds_only_what_it_says_now(self):
+        self.load("EWELINK_EMAIL=me@example.com\nEWELINK_PASSWORD=old-pass\n")
+        self.assertEqual(self.load("EWELINK_EMAIL=me@example.com\n"), ["EWELINK_EMAIL"])
+        self.assertIsNone(credentials.get("EWELINK_PASSWORD"))
+
+    def test_the_default_file_is_the_one_at_the_repositorys_root(self):
+        self.assertEqual(credentials.ENV_FILE, Path(__file__).resolve().parents[2] / ".env")
+
     def test_the_environment_wins_over_the_file(self):
         self.load("EWELINK_EMAIL=file@example.com\n")
         os.environ["EWELINK_EMAIL"] = "shell@example.com"
