@@ -81,7 +81,7 @@ function env({ allowed = true, enough = "" } = {}) {
 }
 
 function post(body, headers = {}) {
-  return new Request("https://api.firmwareliberator.com/readout", {
+  return new Request("https://api.firmwareliberator.com/v1/readout", {
     method: "POST",
     body,
     headers: { "Content-Type": "application/x-tar", "Content-Length": String(body.byteLength),
@@ -139,7 +139,7 @@ test("one proof keeps one readout: another device's needs work of its own", asyn
 
 test("anything but a readout the tool makes is turned away", async () => {
   const cases = [
-    [new Request("https://api.firmwareliberator.com/readout"), 405],
+    [new Request("https://api.firmwareliberator.com/v1/readout"), 405],
     [post(readoutOf(), { "Content-Type": "application/octet-stream" }), 415],
     [post(Buffer.from("not a tar")), 400],
     [post(tar({ "flash.bin.xz": "x" })), 400],
@@ -218,7 +218,7 @@ test("a readout cut off part way through being kept leaves nothing of it behind"
 
 test("until the database is brought up to date, every path asks the tool to wait", async () => {
   const bindings = { ...env(), DB: d1({ migrated: false }) };
-  for (const path of ["/readout", "/wanted", "/notify"]) {
+  for (const path of ["/v1/readout", "/v1/wanted", "/v1/notify"]) {
     const response = await worker.fetch(new Request(`https://api.firmwareliberator.com${path}`, { method: "POST" }),
       bindings);
     assert.equal(response.status, 503, path);
@@ -477,18 +477,7 @@ test("the tool does the same work the Worker asks", () => {
   const tool = readFileSync(new URL("../../tools/autoflash/readout.py", import.meta.url), "utf8");
   assert.match(tool, new RegExp(`^PROOF_BITS = ${readout.PROOF_BITS}\\b`, "m"));
   assert.match(tool, new RegExp(`^LIGHT_PROOF_BITS = ${readout.LIGHT_PROOF_BITS}\\b`, "m"));
-  assert.match(tool, /UPLOAD_URL = "https:\/\/api\.firmwareliberator\.com\/readout"/);
-});
-
-test("the firewall before the Worker lets through its paths, and no others", () => {
-  const settings = readFileSync(new URL("../../tools/repo/cloudflare_settings.py", import.meta.url), "utf8");
-  const [, written] = /^API_METHODS = \{([^}]*)\}$/m.exec(settings);
-  const paths = [...written.matchAll(/"(\/[a-z]+)": \(([^)]*)\)/g)].map(([, path, methods]) =>
-    [path, methods.split(",").map((method) => method.trim().replaceAll('"', "")).filter(Boolean)]);
-  assert.deepEqual(paths.map(([path]) => path).sort(), Object.keys(readout.ROUTES).sort());
-  // A GET only where a person opens a link: the removal page.
-  assert.deepEqual(paths.filter(([, methods]) => methods.includes("GET")).map(([path]) => path).sort(),
-    ["/confirm", "/forget"]);
+  
 });
 
 test("its pages cannot be put inside another site's, and no answer is read as other than it is", async () => {
@@ -516,7 +505,7 @@ test("every other address is not found, and the site is not this Worker", async 
 
 const ASKED = { format: 1, product: "NEWTHING", model: "SN-NEW-01", version: "1.0.0", stage: "first", firmware: [] };
 
-function question(asked = ASKED, headers = {}, body = Buffer.from(JSON.stringify(asked)), path = "/wanted") {
+function question(asked = ASKED, headers = {}, body = Buffer.from(JSON.stringify(asked)), path = "/v1/wanted") {
   return new Request(`https://api.firmwareliberator.com${path}`, {
     method: "POST",
     body,
@@ -639,7 +628,7 @@ test("anything but the tool's question is turned away", async () => {
   const bindings = env();
   const json = (value) => Buffer.from(JSON.stringify(value));
   const badly = [
-    [new Request("https://api.firmwareliberator.com/wanted"), 405],
+    [new Request("https://api.firmwareliberator.com/v1/wanted"), 405],
     [question(ASKED, { "Content-Type": "text/plain" }), 415],
     [question(ASKED, {}, json({ ...ASKED, product: "" })), 400],
     [question(ASKED, {}, json({ ...ASKED, product: "NEW|THING" })), 400],
@@ -660,7 +649,7 @@ test("anything but the tool's question is turned away", async () => {
 
 test("the Worker sends each path to its own", async () => {
   const signUp = { format: 1, email: "me@example.com", devices: [{ product: "NEWTHING", model: "SN-NEW-01" }] };
-  for (const [path, value, status] of [["/wanted", ASKED, 200], ["/notify", signUp, 202]]) {
+  for (const [path, value, status] of [["/v1/wanted", ASKED, 200], ["/v1/notify", signUp, 202]]) {
     const body = Buffer.from(JSON.stringify(fresh(value)));
     const now = proofFor(body, BITS, Math.floor(Date.now() / 1000));   // fetch() checks it against the clock
     const response = await worker.fetch(question(value, { "X-Proof": now }, body, path), env());
@@ -700,7 +689,7 @@ const NOTIFY = { format: 1, email: " Me@Example.com ", devices: [
 const tell = (value, bindings, now = NOW, headers = {}) => {
   const body = Buffer.from(JSON.stringify(fresh(value)));
   const proof = proofFor(body, BITS, Math.floor(now.getTime() / 1000));   // made as it is asked
-  return readout.notify(question(value, { "X-Proof": proof, ...headers }, body, "/notify"), bindings, now);
+  return readout.notify(question(value, { "X-Proof": proof, ...headers }, body, "/v1/notify"), bindings, now);
 };
 const linkIn = (message) => /https:\/\/api\.firmwareliberator\.com\/confirm\?t=([0-9a-f]{32})/.exec(message.text);
 const confirmBy = (token, bindings) => readout.confirm(new Request("https://api.firmwareliberator.com/confirm",

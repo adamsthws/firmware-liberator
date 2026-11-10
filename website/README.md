@@ -15,7 +15,7 @@ beside the code that sets them, with the reason for each.
 | Piece | What it is | Where it is written down |
 |---|---|---|
 | The site | The Markdown pages, and `/stats`, built into files and served by the Worker `firmware-liberator` | `src/`, `astro.config.mjs`, `public/`, `wrangler.jsonc` |
-| The API | `api.firmwareliberator.com`: a Worker of its own, which takes the reports and readouts the tool sends | `api/` ([api/index.js](api/index.js) says how each path is guarded) |
+| The API | `api.firmwareliberator.com`: a Worker of its own, which takes the reports and readouts the tool sends | `api/` ([api/openapi.json](api/openapi.json) describes each path; [api/index.js](api/index.js) says how each is guarded) |
 | The admin view | `admin.firmwareliberator.com`: the maintainer's view of what the API holds, behind Cloudflare Access | `admin/` |
 | The zone and the account | DNS, redirects, rate-limiting, firewall and cache rules, the two buckets, the database, email, Access, Web Analytics | [tools/repo/cloudflare_settings.py](../tools/repo/cloudflare_settings.py) |
 | The repository's side | The `website` environment, its secrets and the branch it takes | [tools/repo/github_settings.py](../tools/repo/github_settings.py) |
@@ -31,11 +31,31 @@ is in [.github/readouts.md](../.github/readouts.md).
 |---|---|---|
 | A page | Its Markdown file | Push: the website workflow builds and deploys it |
 | How pages are addressed, linked or described | `src/site.mjs` | `npm test`, push |
-| A limit or a path of the API | `api/` (and `API_METHODS` in `cloudflare_settings.py` for a path) | `npm test`, push; `apply` for the firewall rule |
+| A limit or a path of the API | `api/`, and `api/openapi.json` (below) | `npm test`, push; `apply` for the firewall rule, made from `openapi.json` |
 | The API's database | A new file in `api/migrations/` (`api/database.js` says how one is written) | Run `apply`, then push |
 | A DNS record, rule, bucket or other Cloudflare setting | `cloudflare_settings.py` | Run `apply` (below), then push |
 | A secret or setting of the `website` environment | `github_settings.py` | `python3 tools/repo/github_settings.py apply`, or `... secret NAME` |
 | A Cloudflare token's permissions | The dashboard, and the token's list in `cloudflare_settings.py` | Run the script's check |
+
+### Changing the API
+
+`api/openapi.json` describes the API (OpenAPI 3.1): each path, what it
+takes, and every answer it gives. `test/openapi.test.mjs` holds the Worker to
+it both ways - every answer it gives is described, every one described is
+given - and the tool's own requests too; the firewall rule in front of the API
+is made from its paths.
+
+A path under `/v1/` keeps working for every version of the tool released
+against it, so a change to one may only widen what it takes and narrow what
+it answers (adding a field to an answer is fine: the tool ignores one it does
+not know). A change that cannot goes under `/v2/`, beside `/v1/`, until no
+tool still in use asks the old. `/confirm` and `/forget` are in no version:
+they are links in emails, which must keep working.
+
+Each description released is kept in `test/fixtures/openapi/`, named by its
+`info.version` and never changed once out, and the test holds every later one
+compatible with it. A release that changes the API raises `info.version`
+and adds its description there, with its SHA-256 in the test's `WRITTEN`.
 
 ## Pages and addresses
 
@@ -183,8 +203,8 @@ hand:
 ```sh
 curl -sI https://firmwareliberator.com/             # 200
 curl -sI https://firmwareliberator.com/liberate.sh  # 302
-curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/readout  # 403: only a POST gets through
-curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.firmwareliberator.com/reports  # 415: the Worker answers
+curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/v1/readout  # 403: only a POST gets through
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.firmwareliberator.com/v1/reports  # 415: the Worker answers
 curl -s -o /dev/null -w '%{http_code}\n' https://api.firmwareliberator.com/         # 403
 curl -s https://stats.firmwareliberator.com/v1/stats.json | head -c 120   # after the first night
 ```

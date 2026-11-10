@@ -40,7 +40,7 @@ function env({ allowed = true, key = KEY } = {}) {
 
 function post(body, headers = {}, from = "192.0.2.9") {
   const bytes = Buffer.from(typeof body === "string" ? body : JSON.stringify(body));
-  return new Request("https://api.firmwareliberator.com/reports", {
+  return new Request("https://api.firmwareliberator.com/v1/reports", {
     method: "POST", body: bytes,
     headers: { "Content-Type": "application/json", "Content-Length": String(bytes.byteLength),
       "CF-Connecting-IP": from, ...headers },
@@ -214,7 +214,7 @@ test("a write that fails gives back its places in the day's count", async () => 
 test("anything but reports as the tool sends them is turned away, before any is looked at", async () => {
   const many = Array.from({ length: api.MAX_REPORTS + 1 }, () => ({}));
   const cases = [
-    [new Request("https://api.firmwareliberator.com/reports"), 405],
+    [new Request("https://api.firmwareliberator.com/v1/reports"), 405],
     [post({ reports: [report()] }, { "Content-Type": "text/plain" }), 415],
     [post({ reports: [report()] }, { "Content-Length": "x" }), 411],
     [post({ reports: [report()] }, { "Content-Length": String(api.MAX_BODY + 1) }), 413],
@@ -270,7 +270,6 @@ test("the tool does the same work the Worker asks of a report", () => {
   assert.equal(api.REPORT_PROOF_BITS, 24);
   const sender = readFileSync(new URL("../../tools/autoflash/report_upload.py", import.meta.url), "utf8");
   assert.match(sender, new RegExp(`^PROOF_BITS = ${api.REPORT_PROOF_BITS}$`, "m"));
-  assert.match(sender, /^UPLOAD_URL = "https:\/\/api\.firmwareliberator\.com\/reports"$/m);
 });
 
 test("each question /wanted is asked is counted by its model and day, within a limit", async () => {

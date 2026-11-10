@@ -799,7 +799,7 @@ class ApiAndStatsTests(unittest.TestCase):
         for path in cs.API_PATHS:
             self.assertIn(f'"{path}"', expression)
         self.assertIn('(http.request.method in {"POST"} and http.request.uri.path in '
-                      '{"/readout" "/wanted" "/notify" "/reports"})', expression)
+                      '{"/v1/wanted" "/v1/readout" "/v1/notify" "/v1/reports"})', expression)
         self.assertIn('(http.request.method in {"GET" "POST"} and http.request.uri.path in {"/confirm" "/forget"})',
                       expression)
         self.assertEqual(cs.FIREWALL_RULES[0]["action"], "block")

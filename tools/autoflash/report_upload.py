@@ -38,7 +38,7 @@ from tools.autoflash.runs import ROOT
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
-UPLOAD_URL = "https://api.firmwareliberator.com/reports"
+UPLOAD_URL = "https://api.firmwareliberator.com/v1/reports"
 # The work the Worker asks of each report (reports.js's REPORT_PROOF_BITS).
 PROOF_BITS = 24
 QUEUE = ROOT / "captures" / "reports"

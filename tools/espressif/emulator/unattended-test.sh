@@ -276,7 +276,7 @@ if [ "$api" = 1 ]; then
             echo "The API's container did not start:" >&2; docker logs "$api_name" >&2 2>&1; exit 1; }
         sleep 1
     done
-    AUTOFLASH_READOUT_URL=http://$api_address:8080/readout
+    AUTOFLASH_READOUT_URL=http://$api_address:8080/v1/readout
     echo "Readouts go to the API's own code here: http://$api_address:8080 (its container $api_name), kept in ${STATE#"$ROOT/"}/api/"
 fi
 [ -n "${AUTOFLASH_READOUT_URL:-}" ] && stub_env+=(-e AUTOFLASH_READOUT_URL="$AUTOFLASH_READOUT_URL")
