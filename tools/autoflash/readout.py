@@ -541,8 +541,8 @@ def sent_in_batch(ctx: Context, data: bytes, device: dict[str, Any], back: bool)
 def proof(data: bytes, now: float | None = None, bits: int | None = None,
           tick: Callable[[], None] | None = None) -> str:
     """The work the Worker asks of each readout, for its body: about 17
-    million tries, 20 seconds on a recent laptop, but an older or smaller
-    computer may take minutes (proof_of_work.solve)."""
+    million tries, some tens of seconds on a recent computer, but an older or
+    smaller one may take minutes (proof_of_work.solve)."""
     return proof_of_work.solve(proof_of_work.body_subject(data), PROOF_BITS if bits is None else bits, now, tick)
 
 
