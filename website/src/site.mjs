@@ -10,7 +10,8 @@ export const SITE = "https://firmwareliberator.com";
 export const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 // Every Markdown file git tracks, so a link to one never leaves the site
-// and nothing untracked is ever built in. Not GitHub's own templates.
+// and nothing untracked is ever built in. Nothing under .github/: GitHub's
+// own templates, and the pages for the maintainer alone.
 // Everything else - the tool, a config, LICENSE - is linked to on GitHub.
 export const PAGES = execFileSync("git", ["ls-files", "-z", "--", "*.md"], { cwd: ROOT, encoding: "utf-8" })
   .split("\0")
@@ -32,11 +33,14 @@ export function slug(path) {
 }
 
 // A built page's address as readers use it: Astro's "file" format calls the
-// front page /index, and the Worker redirects from .html.
+// front page /index, and the Worker redirects from .html, the form the old
+// GitHub Pages site's addresses took.
 export const address = (pathname) => pathname.replace(/\.html$/, "").replace(/\/index$/, "/");
 
 // Retired work stays readable but out of search results: a search must not
-// land someone on a superseded procedure for a mains-voltage device.
+// land someone on a superseded procedure for a mains-voltage device. They are
+// marked noindex and left out of the sitemap, and never blocked in
+// robots.txt: a crawler kept out would not see the noindex.
 export const retired = (address) => /^\/?archive(\/|$)/.test(address);
 
 // What a search result says of a page: its first paragraph as plain text, cut

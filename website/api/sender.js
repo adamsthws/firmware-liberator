@@ -3,8 +3,8 @@
 // /64 at least, often a /56 or a /48, and one rented server as easily a /48:
 // 65,536 /64s, each of which would otherwise seem another sender. A few homes
 // on one provider may share a /48 and be counted as one, which the limits
-// allow for. Never stored as it is: index.js and reports.js keep only a keyed
-// hash of it.
+// allow for. One with many IPv4 addresses still seems many. Never stored as
+// it is: index.js and reports.js keep only a keyed hash of it.
 
 // The sender's address from Cloudflare's header, IPv6 cut to its /48.
 export function senderAddress(request) {

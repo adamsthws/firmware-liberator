@@ -47,7 +47,7 @@
   ],
   // Cloudflare Email Service (Workers Paid): the confirmation an address
   // given to /notify is sent, from NOTIFY_FROM on the domain onboarded for it
-  // (.github/readouts.md), and the nightly job's alerts to ALERTS_RECIPIENT_EMAIL
+  // (cloudflare_settings.py's SENDING_DOMAIN), and the nightly job's alerts to ALERTS_RECIPIENT_EMAIL
   // (alerts.js). Unbound, /notify takes no address, and no alert is sent.
   "send_email": [
     { "name": "EMAIL" }
