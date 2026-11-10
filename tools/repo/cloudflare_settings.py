@@ -121,11 +121,11 @@ D1_MIGRATIONS_TABLE = ("CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRI
 # Before the API Worker (website/api/index.js) runs at all: more than
 # RATE_LIMIT_REQUESTS from one address in 10 seconds is blocked for 10 seconds,
 # so a flood never reaches the Worker, where every request, even one it turns
-# away, runs its code and is counted. The account is on Workers Paid (since
-# 2026-11-10): what is past its allowance a month is billed, not stopped, so
-# a flood costs money; on the free plan, past 100,000 a day, the API (any
-# Worker that runs code) would fail until the next day, while the website,
-# static files alone, which are free and unlimited, would still be served.
+# away, runs its code and is counted. The account is on Workers Paid: what is
+# past its allowance a month is billed, not stopped, so a flood costs money;
+# on the free plan, past 100,000 a day, the API (any Worker that runs code)
+# would fail until the next day, while the website, static files alone,
+# which are free and unlimited, would still be served.
 # A real readout is one request. The free plan allows one such rule, of 10-second periods, by
 # address and data centre.
 API_HOST = f"api.{ZONE}"
@@ -274,7 +274,7 @@ DNS_RECORDS = [
     # (dashboard, Email, DMARC Management).
     {"type": "TXT", "name": f"_dmarc.{ZONE}",
      "content": "v=DMARC1; p=quarantine; rua=mailto:06eff54c46654ef69afd474e0d4cece5@dmarc-reports.cloudflare.net"},
-    # Proves the domain is ours to Google Search Console.
+    # Proves to Google Search Console that the domain is this site's.
     {"type": "TXT", "name": ZONE, "content": "google-site-verification=K7JzvlKuELWLFIHNqGRPc_D_ZWduaiq_TIj-jr0yve4"},
     # Verifies the domain for adamsthws' GitHub Pages, so no one else's
     # Pages site can claim it.
@@ -453,7 +453,7 @@ DEPLOY_POLICIES = in_order([(frozenset(DEPLOY_ZONE_PERMISSIONS), frozenset({ZONE
 
 # What each of CI's tokens must be refused, each a sign of permissions it was
 # never meant to have. CI's read token needs none of it to check the
-# settings, and each was refused it when written down (2026-11-08), so a
+# settings, and each was refused it when written down, so a
 # failure there is a change. Both read the zone's DNS records: CI's to check
 # them, the deploy token as it edits its Workers' custom domains there. The
 # deploy token edits its Workers, so it may read those too; its value lives
@@ -986,7 +986,7 @@ def access_differences(account: str) -> list[tuple[str, str, Any]]:
         # A token made before the admin view: the rest is still checked.
         return [("Access", "cannot be checked: this token is not allowed Access",
                  "give the apply token Access: Organizations, Identity Providers, and Groups: Edit and "
-                 "Access: Apps and Policies: Edit (website/README.md), then run this again")]
+                 "Access: Apps and Policies: Edit (APPLY_TOKEN_PERMISSIONS), then run this again")]
     team_domain = (organisation or {}).get("auth_domain") or ""
     if not team_domain.endswith(".cloudflareaccess.com"):
         return [("Access", "has no Zero Trust organisation",
@@ -1130,7 +1130,8 @@ def main(argv: list[str] | None = None) -> int:
         for what, how, _ in found:
             print(f"  {what}: {how}")
         if found:
-            print("Change the deploy token in the dashboard (website/README.md).")
+            print("Change the deploy token in the dashboard (DEPLOY_ZONE_PERMISSIONS and DEPLOY_WORKERS_PERMISSIONS "
+                  "in tools/repo/cloudflare_settings.py).")
             return 1
         print(f"The deploy token sees {ZONE}, its Workers and no more.")
         return 0

@@ -1,14 +1,14 @@
 """Make the emulated S61 dial the eWeLink (CoolKit) cloud.
 
 This is the whole provisioning outcome, reproduced on the radio-less emulator: the
-device joins our AP and then performs the real CoolKit cloud handshake
-(`GET /dispatch/device` over TCP to its dispatch server), steerable at any server
-we choose.
+device joins the emulator's AP and then performs the real CoolKit cloud
+handshake (`GET /dispatch/device` over TCP to its dispatch server), steerable
+at any server.
 
 Two things have to be synthesised, because the emulator has no BLE radio:
 
 1. Wi-Fi credentials. The firmware reads `wifi-ssid`/`wifi-pass` from EasyFlash
-   (`ef_get_env_blob`); hooking that call feeds our SSID/pass, so the device
+   (`ef_get_env_blob`); hooking that call feeds it the AP's SSID/pass, so the device
    associates (WPA2) and gets a DHCP lease. (Same technique as `seed_join.py`.)
 
 2. The pairing-success trigger. The cloud dial is gated on a chain that normally
@@ -22,10 +22,10 @@ Two things have to be synthesised, because the emulator has no BLE radio:
                      dispatch URL (at Points.url_offset)
 
    Driving the BLE provisioning MESSAGES through the dispatcher (see
-   `ble_provision.py`) runs the handlers and connects Wi-Fi, but never fires
-   the pairing-FINISH event, so the device stays unpaired and dials nothing. We
-   synthesise that event directly by force-calling the start-cloud handler once
-   Wi-Fi is up.
+   archive/s61-research/ble_provision.py) runs the handlers and connects Wi-Fi,
+   but never fires the pairing-FINISH event, so the device stays unpaired and
+   dials nothing. This tool synthesises that event directly by force-calling
+   the start-cloud handler once Wi-Fi is up.
 
 The AIS context is already fully populated at boot: device UUID, model, the MAC,
 and a factory-default dispatch URL `http://8.8.8.8:80`. By default this tool
@@ -37,14 +37,14 @@ factory placeholder in place.
 Each place named here is found in the firmware itself (stock_points.py).
 
 Owner's own account only: never point this at the real eWeLink cloud with anyone's
-account or device but your own. The default dials a local stub and leaves the host.
+account or device but your own. The default dials a local stub and never leaves the host.
 
-Verified 2026-10-27: the default dials our AP gateway `192.168.1.1:80`; `DISPATCH=`
-leaves the factory `8.8.8.8:80`. Either way the netstack logs
+The default dials the AP's gateway `192.168.1.1:80`; `DISPATCH=` leaves the
+factory `8.8.8.8:80`. Either way the netstack logs
 `TCP connect .. -> ..:80` + `HTTP GET /dispatch/device`, retried with backoff.
 
-  $(tools/beken/emulator/beken-emu.sh python) tools/beken/emulator/cloud_dial.py              # local stub (default)
-  DISPATCH= $(tools/beken/emulator/beken-emu.sh python) tools/beken/emulator/cloud_dial.py    # factory placeholder
+  tools/beken/emulator/beken-emu.sh python tools/beken/emulator/cloud_dial.py              # local stub (default)
+  DISPATCH= tools/beken/emulator/beken-emu.sh python tools/beken/emulator/cloud_dial.py    # factory placeholder
 """
 import os
 import sys
@@ -184,5 +184,5 @@ print("  CoolKit dispatch requests (%d):" % len(dials), flush=True)
 for t, s in dials[:12]:
     print("    %5.1fs  %s" % (t, s[:120]), flush=True)
 ok = ip not in (None, b"\x00\x00\x00\x00", b"\xff\xff\xff\xff") and len(dials) > 0
-print("  %s: the device joined our AP and dialled the eWeLink cloud (GET /dispatch/device)." % ("PASS" if ok else "FAIL"), flush=True)
+print("  %s: the device joined the emulator's AP and dialled the eWeLink cloud (GET /dispatch/device)." % ("PASS" if ok else "FAIL"), flush=True)
 os._exit(0)

@@ -636,6 +636,7 @@ class DeployTokenReachTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("another-site", out)
         self.assertIn("can see other zones (example.com)", out)
+        self.assertIn("(DEPLOY_ZONE_PERMISSIONS and DEPLOY_WORKERS_PERMISSIONS in tools/repo/cloudflare_settings.py)", out)
 
     def test_each_read_it_should_be_refused_fails_where_it_works(self):
         for what, template in cs.DEPLOY_REFUSED:
@@ -930,7 +931,7 @@ class AdminAccessTests(unittest.TestCase):
         code, out = run(self.fake, "apply")
         self.assertEqual(code, 1)
         self.assertIn("Access: cannot be checked: this token is not allowed Access", out)
-        self.assertIn("Access: Apps and Policies: Edit", out)
+        self.assertIn("Access: Apps and Policies: Edit (APPLY_TOKEN_PERMISSIONS)", out)
         self.assertFalse(self.fake.r2_dev, "what it can set, it sets")
 
     def test_with_no_github_app_kept_it_says_how_to_make_one_with_its_callback(self):
