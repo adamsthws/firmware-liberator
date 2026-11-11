@@ -69,7 +69,7 @@ test("a day unfolded after a report of it is quarantined is counted again withou
 test("run and step times are a month's median and 90th percentile", async () => {
   const bindings = env();
   for (let n = 1; n <= 10; n += 1) {
-    await kept(bindings.DB, "2026-11-03", { seconds: n * 100, stages: { A1: { s: n, busy: 0, tries: 1 } } });
+    await kept(bindings.DB, "2026-11-03", { seconds: n * 100, stages: { A1: { s: n, busy: 0, tries: 1, wait: 0 } } });
   }
   await kept(bindings.DB, "2026-11-03", { seconds: 99999, result: "failed",
     stopped: { step: "D4", error: "other", text: "" } });   // not a conversion: not a run's time
@@ -89,7 +89,8 @@ test("reports a year old go once counted; a limit's day counts go after a week, 
   counter.run("readouts:all", null);
   await night.nightly(bindings, NIGHT);
   assert.deepEqual(rows(bindings, "SELECT day FROM reports"), [{ day: "2025-11-11" }]);
-  assert.equal(rows(bindings, "SELECT * FROM report_extras").length, 1, "extras go with their report");
+  assert.deepEqual(rows(bindings, "SELECT DISTINCT id FROM report_stages"), rows(bindings, "SELECT id FROM reports"),
+    "stages go with their report");
   assert.equal(rows(bindings, "SELECT n FROM daily_totals WHERE day = '2025-11-09'")[0].n, 1, "its total stays");
   assert.deepEqual(rows(bindings, "SELECT name FROM counters ORDER BY name"),
     [{ name: "readouts:all" }, { name: "reports:2026-11-04" }]);
@@ -105,8 +106,8 @@ test("pruning never deletes a report whose day is not yet counted, however old",
 test("a readout's report is deleted after a year, with no totals to wait for", async () => {
   const bindings = env();
   const insert = bindings.DB.db.prepare(`INSERT INTO readout_reports (id, day, tag, tool, result, os_family,
-    os_version, python_version, python_source, seconds, converted_here) VALUES (?, ?, 'user', '3.0.0', 'accepted',
-    'linux', 'Ubuntu 24.04', '3.12.3', 'venv', 60, 0)`);
+    os_version, os_arch, python_version, python_source, seconds, converted_here) VALUES (?, ?, 'user', '3.0.0',
+    'accepted', 'linux', 'Ubuntu 24.04', 'x86-64', '3.12.3', 'venv', 60, 0)`);
   insert.run("a".repeat(32), "2024-01-01");
   insert.run("b".repeat(32), "2026-11-01");
   await bindings.DB.batch(night.pruning(bindings.DB, "2026-11-10"));

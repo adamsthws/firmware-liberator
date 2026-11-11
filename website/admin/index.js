@@ -143,7 +143,7 @@ export const remove = (db, id) => [
   db.prepare(`DELETE FROM devices WHERE device_hash = (SELECT device_hash FROM reports WHERE id = ?1
     AND id IN (SELECT id FROM held_reports)) AND NOT EXISTS (SELECT 1 FROM reports
     WHERE device_hash = devices.device_hash AND id != ?1)`).bind(id),
-  db.prepare("DELETE FROM report_extras WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
+  db.prepare("DELETE FROM report_stages WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM reports WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM held_reports WHERE id = ?").bind(id),
 ];
@@ -207,9 +207,8 @@ export async function gather(env, now) {
     held: await all(`SELECT held_reports.id, held_reports.day, why, model, tool, result, step, error, text, tag
       FROM held_reports JOIN reports ON reports.id = held_reports.id ORDER BY held_reports.day DESC LIMIT 100`),
     recent: await all(`SELECT day, tag, tool, result, step, error, text, model, firmware, source, os_family, seconds, quarantined,
-        json_extract(extras, '$.where') AS crash_at, json_extract(extras, '$.firmware_name') AS firmware_name,
-        json_extract(extras, '$.firmware_name_expected') AS name_expected
-      FROM reports LEFT JOIN report_extras USING (id) ORDER BY day DESC LIMIT 40`),
+        crash_site AS crash_at, firmware_name, firmware_name_expected AS name_expected
+      FROM reports ORDER BY day DESC LIMIT 40`),
     week: await all(`SELECT day, count(*) AS runs, sum(result = 'converted') AS converted, sum(quarantined) AS held
       FROM reports WHERE day >= ? GROUP BY day ORDER BY day`, since(13)),
     store: await all("SELECT day, readouts, bytes FROM store_days WHERE day >= ? ORDER BY day", since(180)),
