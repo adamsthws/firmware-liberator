@@ -1185,6 +1185,11 @@ class ScenarioTests(unittest.TestCase):
     def test_a_failure_stands_though_its_fault_never_happened(self):
         self.assertFalse(fs.not_fired({"fault": "outage", "arg": 60}, {"not_applied": ["x"]}, False))
 
+    def test_a_saved_device_is_made_with_no_api_beside_it(self):
+        # A conversion sends no readout: an API beside it would be a container for nothing.
+        import inspect
+        self.assertIn('"--no-api"', inspect.getsource(fs.make_start))
+
     def test_prep_refuses_an_instance_in_use_and_leaves_the_saved_devices(self):
         with mock.patch.object(fs, "sh", return_value=mock.Mock(stdout="abc123\n")), \
                 mock.patch.object(fs.shutil, "rmtree") as removed, mock.patch.object(fs.subprocess, "call") as call:
@@ -1647,7 +1652,7 @@ class ReadoutAllScenarioTests(unittest.TestCase):
                 other.run_tool("readout")
             (args, ), options = call.call_args_list[0]
             self.assertIn("--readout", args)
-            self.assertIn("--api", args)
+            self.assertNotIn("--no-api", args)   # sent to the API, which judges them
             self.assertEqual(args[args.index("--"):], ["--", "--all"])
             env = options["env"]
             self.assertEqual(json.loads(Path(env["AUTOFLASH_EMU_STUB_OTHERS"]).read_text(encoding="utf-8")),
@@ -1656,12 +1661,12 @@ class ReadoutAllScenarioTests(unittest.TestCase):
             self.assertEqual(env["AUTOFLASH_EMU_STUB_PRODUCT_MODEL"], self.DEVICE)
             # Any other scenario's account is the device alone, whatever this computer has set.
             (args, ), options = call.call_args_list[1]
-            self.assertNotIn("--api", args)
+            self.assertIn("--no-api", args)   # kept unsent, for readout_problems
             self.assertNotIn("--all", args)
             self.assertNotIn("AUTOFLASH_API_ENOUGH", options["env"])
             self.assertNotIn("AUTOFLASH_EMU_STUB_OTHERS", options["env"])
         script = (fs.REPO / "tools/espressif/emulator/unattended-test.sh").read_text(encoding="utf-8")
-        self.assertIn("--api) api=1", script)
+        self.assertIn("--no-api) api=0", script)
         self.assertIn('"${AUTOFLASH_API_ENOUGH:-}"', script)
         self.assertIn('cp "$AUTOFLASH_EMU_STUB_OTHERS"',
                       (fs.REPO / "tools/espressif/emulator/emu.sh").read_text(encoding="utf-8"))

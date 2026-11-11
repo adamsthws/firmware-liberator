@@ -1,9 +1,11 @@
-"""The emulators' shared shell: their copy of the checkout, and waiting for room."""
+"""The emulators' shared shell: their copy of the checkout, waiting for room, and
+the API's own code beside them."""
 
 import os
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -154,3 +156,55 @@ class WaitForRoomTests(unittest.TestCase):
     def test_where_proc_says_nothing_it_does_not_wait(self):
         done = bash("wait_for_room 350", {"AUTOFLASH_EMULATOR_MEMINFO": "/nonexistent", "AUTOFLASH_EMULATOR_LOADAVG": "/nonexistent"})
         self.assertEqual((done.returncode, done.stderr), (0, ""))
+
+
+@unittest.skipIf(shutil.which("bash") is None, "no bash")
+class LocalApiTests(unittest.TestCase):
+    """The API's own code in a container beside an emulated computer, for its
+    readouts: both emulators start it so. Docker here a fake that says what it
+    was asked, its API container up at 192.0.2.7."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.tmp = Path(temp.name)
+        self.calls = self.tmp / "calls"
+        (self.tmp / "bin").mkdir()
+        (self.tmp / "bin" / "docker").write_text(
+            '#!/bin/sh\necho "$*" >> %s\n'
+            'case "$1 $2" in "logs "*) echo "API on 0.0.0.0:8080" ;; "inspect -f")\n'
+            '  case "$3" in *Running*) echo true ;; *IPAddress*) echo 192.0.2.7 ;; esac ;; esac\n' % self.calls,
+            encoding="utf-8")
+        (self.tmp / "bin" / "docker").chmod(0o755)
+        self.env = {"PATH": f"{self.tmp}/bin:{os.environ['PATH']}", "ROOT": str(ROOT)}
+
+    def asked(self):
+        return self.calls.read_text(encoding="utf-8").splitlines() if self.calls.exists() else []
+
+    def test_it_starts_on_the_network_given_and_says_where_readouts_go(self):
+        folder = self.tmp / "state" / "api"
+        done = bash(f'local_api_start emu-3-api emu-net "{folder}" X; echo "$LOCAL_API_READOUT_URL"', self.env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), "http://192.0.2.7:8080/v1/readout")
+        self.assertTrue(folder.is_dir())
+        run = next(line for line in self.asked() if line.startswith("run "))
+        self.assertIn("--name emu-3-api --network emu-net", run)
+        self.assertIn(f"-v {ROOT}/website:/website:ro -v {folder}:/api", run)
+        self.assertTrue(run.endswith("node /website/api/local.mjs 0.0.0.0 8080 /api X"), run)
+        self.assertEqual(self.asked()[0], "rm -f emu-3-api")   # one a killed run left goes first
+
+    def test_it_is_stopped_with_what_it_said_kept(self):
+        log = self.tmp / "api-server.out"
+        done = bash(f'local_api_stop emu-3-api "{log}"', self.env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("API on", log.read_text(encoding="utf-8"))
+        self.assertEqual(self.asked(), ["logs emu-3-api", "rm -f emu-3-api"])
+
+    def test_it_goes_once_the_container_beside_it_stops(self):
+        done = bash("local_api_goes_with emu-3 emu-3-api", self.env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        for _ in range(100):   # a watcher of its own, in the background
+            if "rm -f emu-3-api" in self.asked():
+                break
+            time.sleep(0.1)
+        self.assertEqual(self.asked(), ["inspect emu-3", "wait emu-3", "rm -f emu-3-api"])

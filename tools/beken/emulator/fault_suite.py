@@ -396,11 +396,12 @@ class Instance:
     def tool(self, target: str, log: Path, new: bool = False, more: tuple[str, ...] = ()) -> subprocess.Popen:
         """A run of the tool to `target`, or a readout (target "readout"), on a
         terminal of its own as a person's (tools/repo/unattended_run.py): the
-        screen it ends on is printed after it, for FAIL-SCREEN."""
-        args = (["computer", "tools/repo/unattended_run.py", "--command", "readout", "--",
+        screen it ends on is printed after it, for FAIL-SCREEN. A readout is
+        kept unsent (--no-api), for readout_problems to judge."""
+        args = (["--no-api", "computer", "tools/repo/unattended_run.py", "--command", "readout", "--",
                  "--env-file", "captures/tool.env"]
                 if target == "readout" else
-                ["computer", "tools/repo/unattended_run.py", "--", "--env-file", "captures/tool.env",
+                ["--no-api", "computer", "tools/repo/unattended_run.py", "--", "--env-file", "captures/tool.env",
                  "--firmware", target] + (["--new"] if new else [])) + list(more)
         out = open(log, "a", encoding="utf-8")
         return subprocess.Popen(self.command(*args), env=self.env, stdout=out, stderr=subprocess.STDOUT,

@@ -14,6 +14,11 @@ for working on it. How to use it is in
   router).
 - **eWeLink** is the local stub (`cloud_stub.py`): every connection leaving
   the network reaches it, not the internet.
+- **The API** the tool's readouts go to is the project's own code
+  (`website/api/local.mjs`) in a container of its own on the device's network,
+  `autoflash-beken-emu-api`, started by the first `computer` and removed by a
+  watcher once the device's container stops (`tools/repo/emulator-room.sh`), as
+  the Espressif emulator's.
 - **The device** is `device.py`. It boots from its flash, kept in
   `captures/emulation/beken/state/`, so it carries on across firmware, each
   restart the firmware asks for being a boot from the bootloader, as on a real

@@ -143,6 +143,7 @@ tools/espressif/emulator/emu.sh --detach   # start in the background; join: dock
 tools/espressif/emulator/emu.sh --no-firewall  # without the "computer's" firewall, which is on by default
 tools/espressif/emulator/emu.sh --windows  # Windows is the computer (see "On Windows"; started by emu.ps1 and windows-test.sh)
 tools/espressif/emulator/emu.sh --instance 2  # a second emulator beside the first (see "Several at once")
+tools/espressif/emulator/emu.sh --no-api   # readouts kept unsent, not sent to the API beside it
 ```
 
 A conversion needs a cloud, as the upgrade to the bridge firmware is sent
@@ -178,6 +179,16 @@ In the emulator (`AUTOFLASH_EMULATOR_URL`) the tool's final link points at
 http://localhost:8080, and its warning that sudo may ask for a password gives
 the emulator's (`AUTOFLASH_EMULATOR_SUDO_PASSWORD`); on a real computer it
 never knows one.
+
+**Readouts go to the API beside it.** A readout made in the emulator is sent
+to the project's API in its own code
+([`website/api/local.mjs`](../website/api/local.mjs)), in a container next to
+the emulator (`autoflash-emu-api`, `autoflash-emu-N-api` for instance N) that
+goes when it stops, so you see both sides: what the tool says, and what the API
+was asked and kept, in the state's `api/` (`captures/emulation/state/api/`).
+`AUTOFLASH_API_ENOUGH` is its `ENOUGH`, the products it has enough readouts of.
+`--no-api` keeps readouts on the computer, unsent. Nothing a run in either
+emulator sends reaches the project's own API.
 
 #### Stopping
 
@@ -659,7 +670,12 @@ across firmware as a real device does. Like the Espressif emulator, it
 the tool finds the device as on a home network and its eWeLink is the stub. It
 works in its own copy of this checkout (the device's `work/`), with captures of
 its own; an unattended run takes its eWeLink account, a made-up one the stub
-accepts, from `work/captures/`.
+accepts, from `work/captures/`. Its readouts go to the API's own code, as the
+[Espressif emulator's](#using-it) do: in a container beside the device
+(`autoflash-beken-emu-api`, `autoflash-beken-emu-N-api`), started with the
+first computer and gone with the device, so a second readout finds the first's;
+what it was asked and kept is in the state's `api/`. `beken-emu.sh --no-api
+computer` keeps them unsent.
 
 **Restarts.** Sonoff's firmware, having fetched, staged and CRC-checked a new
 image, restarts a second later and the bootloader installs it, as on a real

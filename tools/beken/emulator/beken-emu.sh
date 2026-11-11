@@ -41,6 +41,10 @@
 #                             its own copy of this checkout (the device's state directory's
 #                             work/), so its runs' captures are its own:
 #                             tools/beken/emulator/beken-emu.sh computer tools/autoflash/cli.py run
+#                             Its readouts go to the API's own code (website/api/local.mjs) in a
+#                             container beside the device (autoflash-beken-emu-api, or
+#                             autoflash-beken-emu-N-api), started with the first computer and gone
+#                             with the device; what it was asked and kept is in the state's api/
 #   tools/beken/emulator/beken-emu.sh test [ARGS...]
 #                             upstream's own self-tests (tests/self_test.py ARGS,
 #                             -k PATTERN selects by name), under the patches; they run
@@ -57,6 +61,7 @@
 #                             (captures/emulation/beken/state-N/) and web page
 #                             port (8200+N), so tests can run side by side
 #   --rebuild                 rebuild the image first
+#   --no-api                  with computer: its readouts kept unsent, not sent to the API
 #   --fresh                   with device: the device as new - it and the computers on its
 #                             Wi-Fi stopped, its state (flash, runs, captures) deleted -
 #                             started again on Sonoff's firmware from the dump
@@ -89,13 +94,14 @@ IMAGE=${AUTOFLASH_BEKEN_EMU_IMAGE:-autoflash-beken-emu}
 DEVICE=autoflash-beken-emu NETWORK=autoflash-beken-emu STATE=state UI_PORT=8200
 
 usage() { sed -n "2,$(($(grep -n '^set -euo pipefail' "$0" | cut -d: -f1)-1))p" "$0" | sed 's/^# \{0,1\}//'; exit 2; }
-rebuild="" fresh=0 instance=""
+rebuild="" fresh=0 api=1 instance=""
 while [ $# -gt 0 ]; do
     case "$1" in
     --instance) [ $# -ge 2 ] || { echo "--instance needs a number, 1-99" >&2; exit 2; }; instance=$2; shift ;;
     --instance=*) instance=${1#--instance=} ;;
     --rebuild) rebuild=--rebuild ;;
     --fresh) fresh=1 ;;
+    --no-api) api=0 ;;
     --*) usage ;;
     *) break ;;
     esac
@@ -315,10 +321,23 @@ case "${1:-}" in
         # The device's power switch too, so a run can offer to switch it off and on;
         # and which terminal it is shown in (VS Code's: output.start_at_top).
         [ -f "$DEVICE_STATE/power" ] || echo on > "$DEVICE_STATE/power"
+        # The API's own code for its readouts (emulator-room.sh), one a device,
+        # kept as long as the device runs, so a second computer's readout finds
+        # the first's; none with --no-api, the readouts kept unsent.
+        readout_url=""
+        if [ "$api" = 1 ]; then
+            if docker ps -q --filter "name=^$DEVICE-api\$" | grep -q .; then
+                readout_url=$(local_api_readout_url "$DEVICE-api")
+            else
+                local_api_start "$DEVICE-api" "$NETWORK" "$DEVICE_STATE/api" "${AUTOFLASH_API_ENOUGH:-}"
+                local_api_goes_with "$DEVICE" "$DEVICE-api"
+                readout_url=$LOCAL_API_READOUT_URL
+            fi
+        fi
         CONTAINER_OPTIONS=(${AUTOFLASH_BEKEN_EMU_COMPUTER:+--name "$AUTOFLASH_BEKEN_EMU_COMPUTER"}
                            --network "$NETWORK" -v "$DEVICE_STATE/ca.crt:/device/ca.crt:ro"
                            -v "$DEVICE_STATE/power:/device/power" -e AUTOFLASH_EMULATOR_POWER=/device/power
-                           -e TERM_PROGRAM
+                           -e TERM_PROGRAM -e AUTOFLASH_READOUT_URL="$readout_url"
                            -e AUTOFLASH_EWELINK_API_BASE="https://$(subnet).1" --entrypoint bash)
         container /work/tools/beken/emulator/computer.sh "$@" ;;
     test) shift; ensure; firmwares; container /opt/beken-emulator/tests/self_test.py "$@" ;;

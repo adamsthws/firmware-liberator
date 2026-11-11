@@ -303,6 +303,63 @@ class OptionTests(unittest.TestCase):
         self.assertEqual(found, ["ensure img --rebuild", "ensure img"])
 
 
+@unittest.skipIf(shutil.which("bash") is None or shutil.which("rsync") is None or shutil.which("git") is None,
+                 "no bash, rsync or git")
+class ComputerApiTests(unittest.TestCase):
+    """The computer's readouts go to the API's own code in a container beside
+    the device, one a device, so both sides of a readout are seen here; with
+    --no-api, kept unsent. Docker a fake that says what it was asked."""
+
+    def run_computer(self, *options, api_running=False):
+        with tempfile.TemporaryDirectory() as tmp:
+            checkout(tmp)
+            shutil.copy2(ROOT / "tools/beken/emulator/computer.sh", Path(tmp, "tools/beken/emulator/computer.sh"))
+            Path(tmp, "tools/beken/emulator/image.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+            git = ["git", "-C", tmp, "-c", "user.name=t", "-c", "user.email=t@example.com"]
+            subprocess.run([*git, "init", "--quiet"], check=True)
+            subprocess.run([*git, "add", "."], check=True)
+            state = Path(tmp, "captures/emulation/beken/state")
+            state.mkdir(parents=True)
+            (state / "ca.crt").write_text("ca\n", encoding="utf-8")
+            calls = Path(tmp, "calls")
+            Path(tmp, "bin").mkdir()
+            Path(tmp, "bin", "docker").write_text(
+                '#!/bin/sh\necho "$*" >> %s\n'
+                'case "$*" in\n'
+                '  "network inspect -f {{range .IPAM.Config}}{{.IPRange}}{{end}} "*) echo 198.18.61.128/25 ;;\n'
+                '  "network inspect -f {{range .IPAM.Config}}{{.Subnet}}{{end}} "*) echo 198.18.61.0/24 ;;\n'
+                '  "ps -q --filter name=^autoflash-beken-emu-api$") %s ;;\n'
+                '  "logs "*) echo "API on 0.0.0.0:8080" ;;\n'
+                '  "inspect -f {{.State.Running}} "*) echo true ;;\n'
+                '  "inspect -f {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}} "*) echo 192.0.2.7 ;;\n'
+                'esac\n' % (calls, "echo abc123" if api_running else ":"), encoding="utf-8")
+            Path(tmp, "bin", "docker").chmod(0o755)
+            done = subprocess.run(["bash", str(Path(tmp, SCRIPT.relative_to(ROOT))), *options, "computer", "x.py"],
+                                  capture_output=True, text=True, timeout=60,
+                                  env={**os.environ, "PATH": f"{tmp}/bin:{os.environ['PATH']}"})
+            self.assertEqual(done.returncode, 0, done.stderr)
+            asked = calls.read_text(encoding="utf-8").splitlines()
+            return asked, next(line for line in asked if line.startswith("run --rm -i"))
+
+    def test_by_default_its_readouts_go_to_the_api_beside_the_device(self):
+        asked, computer = self.run_computer()
+        api = next(line for line in asked if line.startswith("run -d --name autoflash-beken-emu-api"))
+        self.assertIn("--network autoflash-beken-emu ", api)
+        self.assertIn("node /website/api/local.mjs 0.0.0.0 8080 /api", api)
+        self.assertIn("-e AUTOFLASH_READOUT_URL=http://192.0.2.7:8080/v1/readout", computer)
+
+    def test_a_second_computer_finds_the_first_ones_api(self):
+        # One a device: a second readout finds the first's, as on the website.
+        asked, computer = self.run_computer(api_running=True)
+        self.assertFalse([line for line in asked if line.startswith("run -d")])
+        self.assertIn("-e AUTOFLASH_READOUT_URL=http://192.0.2.7:8080/v1/readout", computer)
+
+    def test_no_api_keeps_its_readouts_unsent(self):
+        asked, computer = self.run_computer("--no-api")
+        self.assertFalse([line for line in asked if "local.mjs" in line])
+        self.assertIn("-e AUTOFLASH_READOUT_URL= ", computer)
+
+
 @unittest.skipIf(shutil.which("bash") is None, "no bash")
 class ToolSettingsTests(unittest.TestCase):
     """A tool's settings (cloud_dial.py's DISPATCH, seed_join.py's SSID, ...) are

@@ -23,12 +23,12 @@
 #   tools/espressif/emulator/unattended-test.sh --answers=FILE  a run as a person sits through it: its
 #                                                   questions asked, and answered as FILE says
 #                                                   (unattended_run.py --attended --answers)
-#   tools/espressif/emulator/unattended-test.sh --api        readouts sent to the API Worker's own code
-#                                                   (website/api/local.mjs), in a container of
-#                                                   its own beside the emulator, not kept unsent:
-#                                                   what it was asked and kept is in the
-#                                                   instance's state, api/; AUTOFLASH_API_ENOUGH
-#                                                   its ENOUGH
+#   tools/espressif/emulator/unattended-test.sh --no-api     readouts kept unsent: by default they go to
+#                                                   the API Worker's own code (website/api/local.mjs),
+#                                                   in a container of its own beside the emulator,
+#                                                   started afresh each run: what it was asked
+#                                                   and kept is in the instance's state, api/;
+#                                                   AUTOFLASH_API_ENOUGH its ENOUGH
 #   tools/espressif/emulator/unattended-test.sh --size=COLUMNSxROWS  the terminal the run gets (100x40):
 #                                                   a short window's, say, for what the run says of it
 #   tools/espressif/emulator/unattended-test.sh --timeout=MINUTES  stop the run after that long, its
@@ -44,12 +44,15 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
+# shellcheck source=/dev/null
+. "$ROOT/tools/repo/emulator-room.sh"
 STATE=$ROOT/captures/emulation/state
 case "$ROOT" in /mnt/[a-z]/*) STATE=$HOME/.local/share/autoflash-emu/state ;; esac
 NAME=autoflash-emu PORT=8080
 DEVICE=192.168.60.50
 
-emu_args=(--detach) keep=0 stub=0 run_args=() from="" save="" device_mac="" code="" driver_args=() answers_file="" api=0
+# emu.sh's own API would outlive this run: the run starts one of its own (below).
+emu_args=(--detach --no-api) keep=0 stub=0 run_args=() from="" save="" device_mac="" code="" driver_args=() answers_file="" api=1
 size=100x40
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -64,7 +67,7 @@ while [ $# -gt 0 ]; do
     --save=*) save=${1#--save=} ;;
     --code=*) code=$(cd "${1#--code=}" && pwd) ;;
     --readout) driver_args+=(--command readout) ;;
-    --api) api=1 ;;
+    --no-api) api=0 ;;
     --timeout=*) driver_args+=(--timeout "${1#--timeout=}") ;;
     --size=*) size=${1#--size=} ;;
     --answers=*) answers_file=$(cd "$(dirname "${1#--answers=}")" && pwd)/$(basename "${1#--answers=}") ;;
@@ -142,16 +145,13 @@ if [ -n "$from" ] || [[ " ${emu_args[*]} " == *" --fresh "* ]] || \
         [ -z "$(docker ps -q -f "name=^$NAME\$")" ]; then
     "$ROOT/tools/espressif/emulator/emu.sh" "${emu_args[@]}" >/dev/null
 fi
-# The API Worker's own code for --api, in a container on the emulator's network,
-# beside the emulated computer: nothing of this computer's - its firewall, its
-# Node - comes between them. local.mjs needs Node 22.23 or newer.
-API_IMAGE=node:22.23.4-bookworm-slim@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d
+# The API's own code (emulator-room.sh's local_api_start), this run's alone:
+# not the one emu.sh would start, which outlives the run.
 api_name=$NAME-api
 # shellcheck disable=SC2329  # run by the exit traps below
 stop_api() {
     [ "$api" = 1 ] || return 0
-    docker logs "$api_name" > "$STATE/api-server.out" 2>&1 || true
-    docker rm -f "$api_name" >/dev/null 2>&1 || true
+    local_api_stop "$api_name" "$STATE/api-server.out"
 }
 # shellcheck disable=SC2329  # run by the exit trap below
 keep_device() {
@@ -258,28 +258,18 @@ stub_env=()
                              -e OPENSSL_CONF=/stub-cloud/openssl.cnf)
 # A device not ready yet is taken only when this says so (tools/autoflash/kinds.py).
 [ -n "${AUTOFLASH_NOT_READY_YET:-}" ] && stub_env+=(-e AUTOFLASH_NOT_READY_YET=1)
-# Readouts sent to the API Worker's own code (--api), at its container's address
-# on the emulator's network, or to a test server of yours; else kept unsent
-# (readout.upload_url). The container goes as this script ends (stop_api).
+# Readouts sent to the API's own code, at its container's address on the
+# emulator's network, or to a test server of yours (AUTOFLASH_READOUT_URL);
+# with --no-api, kept unsent (readout.upload_url) - also by an emulator that
+# emu.sh gave an API of its own. The container goes as this script ends (stop_api).
 if [ "$api" = 1 ]; then
-    docker rm -f "$api_name" >/dev/null 2>&1 || true   # one a killed run left
     rm -rf "$STATE/api" "$STATE/api-server.out"
-    mkdir -p "$STATE/api"
     network=$(docker inspect -f '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}}' "$NAME" | awk '{print $1}')
-    docker run -d --name "$api_name" --network "$network" --user "$(id -u):$(id -g)" \
-        -v "$ROOT/website:/website:ro" -v "$STATE/api:/api" -e AUTOFLASH_LOCAL_PROOF_BITS \
-        "$API_IMAGE" node /website/api/local.mjs 0.0.0.0 8080 /api "${AUTOFLASH_API_ENOUGH:-}" >/dev/null
-    api_address=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$api_name")
-    waited=0
-    until docker logs "$api_name" 2>&1 | grep -q '^API on'; do
-        [ "$(docker inspect -f '{{.State.Running}}' "$api_name" 2>/dev/null)" = true ] && [ $((waited += 1)) -le 60 ] || {
-            echo "The API's container did not start:" >&2; docker logs "$api_name" >&2 2>&1; exit 1; }
-        sleep 1
-    done
-    AUTOFLASH_READOUT_URL=http://$api_address:8080/v1/readout
-    echo "Readouts go to the API's own code here: http://$api_address:8080 (its container $api_name), kept in ${STATE#"$ROOT/"}/api/"
+    local_api_start "$api_name" "$network" "$STATE/api" "${AUTOFLASH_API_ENOUGH:-}"
+    AUTOFLASH_READOUT_URL=${AUTOFLASH_READOUT_URL:-$LOCAL_API_READOUT_URL}
+    echo "Readouts go to the API's own code here: ${LOCAL_API_READOUT_URL%/v1/readout} (its container $api_name), kept in ${STATE#"$ROOT/"}/api/"
 fi
-[ -n "${AUTOFLASH_READOUT_URL:-}" ] && stub_env+=(-e AUTOFLASH_READOUT_URL="$AUTOFLASH_READOUT_URL")
+stub_env+=(-e AUTOFLASH_READOUT_URL="${AUTOFLASH_READOUT_URL:-}")
 # The emulator's Wi-Fi, for a run from an ESPHome that cannot say what it is
 # (one of this project's first builds); and the emulated device's passwords,
 # for one given one to test with, as this script's environment has them.

@@ -292,7 +292,7 @@ READOUT = "readout.tar"
 # A readout of every device in the account (cli.py readout --all), the device
 # fresh from Sonoff's firmware among devices the stub lists beside it, none of
 # them emulated (AUTOFLASH_EMU_STUB_OTHERS): each sent to the API Worker's own
-# code (unattended-test.sh --api). The accounts, by name: two first-stage
+# code (unattended-test.sh's, by default). The accounts, by name: two first-stage
 # devices; three alike (product, model, version: of which the API keeps one
 # from one sender) and one not; two whose first is in the API's ENOUGH, with the device; and
 # seven, enough quick first stages to reach the API's two readouts a minute.
@@ -1334,8 +1334,10 @@ class Scenario:
         every = self.sc.get("route") == READOUT_ALL
         if target == "readout":
             args.append("--readout")
-        if every:
-            args.append("--api")
+        # Kept unsent, for readout_problems to judge, but a readout of every
+        # device's, which the API's side judges (readout_all_problems).
+        if not every:
+            args.append("--no-api")
         if STUB_CLOUD:
             args.append("--stub-cloud")
         if fresh:
@@ -3011,7 +3013,8 @@ def make_start(save, args, stop_after=None):
         threading.Thread(target=stopped_after, args=(stop_after, sc, since, stopped), daemon=True).start()
     stub = ["--stub-cloud"] if STUB_CLOUD else []
     with open(log, "w", encoding="utf-8") as out:
-        subprocess.call([unattended, f"--instance={n}", f"--device={MAC}", f"--save={saved(save)}",
+        # A conversion: no readout to send, so no API beside it (--no-api).
+        subprocess.call([unattended, f"--instance={n}", f"--device={MAC}", f"--save={saved(save)}", "--no-api",
                          *stub, *args], stdout=out, stderr=subprocess.STDOUT)
     monitor.stop.set()
     device_internet(n, False)
