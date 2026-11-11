@@ -194,7 +194,6 @@ class SendTests(Case):
             upload.send(ctx, "converted", 300, False)
             upload.send(ctx, "failed", 300, False)
         self.assertEqual(payload.call_count, 1)
-        self.assertEqual(ctx.last_report_id, "b" * 32, "for the issue a stopped run can open")
 
     def test_a_report_that_cannot_be_made_never_spoils_the_runs_end(self):
         logged = []

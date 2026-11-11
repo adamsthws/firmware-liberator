@@ -314,9 +314,10 @@ as its screens do, since it converts much more than smart plugs now.
   [what the tool sends](docs/what-the-tool-sends.md) says what a report holds.
   A report that could not be sent is kept on your computer and sent the next
   time, for up to 30 days.
-- A run that failed offers to open a GitHub issue for it, with its title
-  filled in and its report on your clipboard to paste; one you stop yourself
-  does not. The end of a run no longer asks for its report to be posted in
+- A run that failed ends with where to open an issue for it,
+  firmwareliberator.com/issues, and where its log is, in place of the links to
+  support the project; one you stop yourself does not. A run that worked no
+  longer says where its log is, a device wanting testers' included. The end of a run no longer asks for its report to be posted in
   Discussions, nor links to them when a run fails.
 - The names of what the tool keeps say "device" too. Each device's records
   are in `captures/devices/<MAC>/`, with `device.json`, where releases up to

@@ -358,6 +358,8 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertEqual(rule["action_parameters"]["from_value"]["target_url"], {"value": cs.ISSUES})
         self.assertIn(f'http.host eq "{cs.ZONE}"', rule["expression"])
         self.assertIn(f'"{cs.ISSUES_PATH}"', rule["expression"])
+        from tools.autoflash import report
+        self.assertEqual(report.ISSUES_URL, f"https://{cs.ZONE}{cs.ISSUES_PATH}")   # what the tool shows
 
     def test_a_lifecycle_rule_added_by_hand_is_taken_away_as_readouts_are_kept_for_good(self):
         fake = FakeCloudflare()

@@ -11,7 +11,6 @@ import re
 import sys
 import textwrap
 import time
-import urllib.parse
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
@@ -23,12 +22,11 @@ from tools.ewelink import relay as ewelink_relay
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
-# Where a run that stopped is told of: a new issue, on the repository's
-# "A conversion went wrong" form (.github/ISSUE_TEMPLATE/bug-report.yml),
-# its title and the report's id filled in from the link (issue_url).
-ISSUE_URL = "https://github.com/adamsthws/firmware-liberator/issues/new"
-ISSUE_FORM = "bug-report.yml"
-# Shown once a conversion has succeeded, after the report, in this order.
+# Where a run that failed is told to open an issue: the repository's issues,
+# by a short address of the website's, one line on the screen
+# (tools/repo/cloudflare_settings.py, ISSUES).
+ISSUES_URL = "https://firmwareliberator.com/issues"
+# Shown once a run has succeeded, after the report, in this order.
 SPONSORS_URL = "https://github.com/sponsors/adamsthws"
 KOFI_URL = "https://ko-fi.com/adamsthws"
 DONATE_URL = "https://www.paypal.me/adamsthws"
@@ -240,11 +238,6 @@ def briefly(result: str) -> str:
     or "Crashed" alone, not where or why (run_result)."""
     head, at, _ = result.partition(" at ")
     return head if at and head in ("Stopped", "Crashed") else result
-
-
-def report_markdown(fields: list[tuple[str, str]]) -> str:
-    """For pasting into an issue, where the labels show in bold."""
-    return "".join(f"**{label}:** {value}\n" for label, value in fields)
 
 
 # Where each answer goes on the screen: the device's on the right, the result,
@@ -517,7 +510,8 @@ def invite_report(ctx: Context, seconds: float, resumed: bool) -> None:
 
 def hold_out_hat() -> None:
     """The links to support the project, under the report of a run that
-    finished: a conversion's, or a readout's (readout.end)."""
+    finished: a conversion's, or a readout's (readout.end). A run that failed
+    has the way to open an issue there instead (ask_for_an_issue)."""
     output.tell("")
     output.show("You've reached the bit where I hold out my hat!", output.GREEN)
     output.tell("Free software, not free biscuits... Throw your friendly neighbourhood dev a biscuit:")
@@ -555,35 +549,24 @@ def invite_stopped_report(ctx: Context, ending: str) -> None:
     offer_report(ctx, fields, stopped=run_result(ctx, ending))
 
 
-def issue_url(stopped: str, report_id: str | None) -> str:
-    """A new issue on the "A conversion went wrong" form, its title where the
-    run stopped and its report's id filled in: short, so the link fits on a
-    line; the report itself is pasted in."""
-    title = public_text(stopped, 100)
-    query = {"template": ISSUE_FORM, "title": title[:1].upper() + title[1:], **({"report": report_id} if report_id else {})}
-    return f"{ISSUE_URL}?{urllib.parse.urlencode(query, quote_via=urllib.parse.quote)}"
-
-
-def offer_issue(stopped: str) -> None:
-    """A link to open an issue for a run that failed with no report to offer
-    (cli.stopped_report): `stopped`, as run_result says it, for its title."""
+def ask_for_an_issue() -> None:
+    """Where the links to support the project would be, for a run that failed
+    or crashed - not one stopped by choice: the way to open an issue, and the
+    run's log, which one needs. The tool is meant to finish every run, so one
+    it could not is something to fix."""
     output.tell("")
-    output.tell("If it should not have stopped there, please open an issue:")
-    output.show_link(issue_url(stopped, None), "Open an issue")
+    output.tell("If it should not have stopped, please open an issue here:")
+    output.show_link(ISSUES_URL)
+    output.tell("")
+    output.tell("This run's log:")
+    output.tell(f"    {output.log_path() or testers.LOG_ELSEWHERE}")
 
 
 def offer_report(ctx: Context, fields: list[tuple[str, str]], stopped: str | None = None) -> None:
-    """The run's report on the screen. For a run that stopped (`stopped`: how,
-    as run_result says it), a link to open an issue for it, with the report
-    on the clipboard to paste in: the tool is meant to finish every run, so
-    one it could not is something to fix."""
+    """The run's report on the screen, under what the run said last. For a run
+    that stopped (`stopped`: how, as run_result says it), the way to open an
+    issue for it after it (ask_for_an_issue)."""
     ctx.reported = True
-    output.tell("")
-    if stopped:
-        copied = hostsys.copy_to_clipboard(report_markdown(fields))
-        output.tell("If it should not have stopped there, please open an issue, and paste in "
-                    + ("the report, which is on your clipboard:" if copied else "the report below:"))
-        output.show_link(issue_url(stopped, getattr(ctx, "last_report_id", None)), "Open an issue")
     output.tell("")
     if stopped:
         # Where and why, said in full when it stopped, and in the issue's
@@ -596,7 +579,5 @@ def offer_report(ctx: Context, fields: list[tuple[str, str]], stopped: str | Non
     for line in report_screen([(label, briefly(value) if label == "Result" else value) for label, value in fields
                                if label not in LOG_ONLY]):
         output.tell(line)
-    if stopped and any(value == "__" for _, value in fields):
-        output.tell("")
-        output.tell("Fill in the blanks (__) if you know them.")
-    testers.show_log(kinds.of_run(ctx.state))
+    if stopped:
+        ask_for_an_issue()

@@ -14,7 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import hostsys, kinds, output, records, report, routes, testers
+from tools.autoflash import kinds, output, records, report, routes
 from tools.espressif.emulator import fault_suite
 from tools.repo import fault_verdicts, unattended_run
 
@@ -66,9 +66,7 @@ def shown(fields, columns, rows=report.output.GOOD_ROWS, stopped=None):
     ctx = SimpleNamespace(reported=False, state=mock.Mock(input=mock.Mock(return_value=None)))
     with mock.patch("sys.stdout", terminal), \
             mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((columns, rows))), \
-            mock.patch.object(output, "colour_ok", return_value=False), \
-            mock.patch.object(hostsys, "copy_to_clipboard", return_value=False), \
-            mock.patch.object(testers, "show_log"):
+            mock.patch.object(output, "colour_ok", return_value=False):
         output.start(log, verbose=False)
         try:
             report.offer_report(ctx, fields, stopped)
