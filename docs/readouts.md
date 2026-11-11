@@ -28,6 +28,11 @@ sh start.sh readout
 On Windows, run `start.cmd readout`. If your account holds more than one
 device, the tool asks which; `--device-ip <address>` picks one beforehand.
 
+As a conversion does, a readout shows each of its stages on a line of its
+own, the line under way turning until it is done
+([`STAGES`](../tools/autoflash/readout.py) lists them). One that comes from a
+conversion run carries on from that run's stage 2.
+
 The tool first asks eWeLink what the device runs and which firmware it would
 be offered, then asks the website whether a readout would add anything. The
 website keeps three readouts of each model and firmware version, each from a

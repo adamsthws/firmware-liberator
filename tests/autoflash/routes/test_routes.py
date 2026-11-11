@@ -86,6 +86,13 @@ class FamilyTests(unittest.TestCase):
                       for firmware in family.FIRMWARES if firmware != "sonoff")
         self.assertEqual(layouts[0][1], longest)
 
+    def test_a_run_from_sonoff_lays_its_stages_out_for_the_readout_it_may_turn_into(self):
+        # Seen in an attended emulator run: a run's readout (readout.from_run)
+        # drew its stages a column wider than the run's own above them.
+        from tools.autoflash import readout
+        routes.apply_target(None, "sonoff", espressif)
+        self.assertGreaterEqual(routes.stage_layout()[0], max(len(name) for _, name in readout.STAGES))
+
     def test_a_converted_devices_stages_are_laid_out_alike_before_and_after_its_firmware_is_chosen(self):
         # Seen in the emulator, from ESPHome to Tasmota: stages 1 and 2
         # drawn for a route of two, the rest for one of fifteen.

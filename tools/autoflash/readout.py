@@ -74,6 +74,54 @@ STATE_KEY = "readout"
 DEVICE_KEYS = ("device_ip", "device_mac", "stock_version", "product_model", STATE_KEY, "readout_sent")
 
 
+# The stage lines a readout shows on screen, in order, as a conversion shows
+# its route's steps - not the readout's two stages above, which are what it
+# reads. The first is the account's, once; the rest are each device's,
+# numbered again for each device of several (run_all). A readout a run turns
+# into (from_run) has done the first as that run's stage 2, and numbers on
+# from there.
+STAGES = (
+    ("account", "Querying eWeLink for devices"),
+    ("locate", "Locating the device on your network"),
+    ("probe", "Probing the device"),
+    ("fetch", "Fetching the eWeLink firmware"),
+    ("read", "Reading the device's memory"),
+    ("restore", "Restoring Sonoff's firmware"),
+    ("save", "Saving the readout"),
+)
+STAGE_KEYS = [key for key, _ in STAGES]
+# The number this readout's first stage, "account", takes (lay_out_stages).
+_first_stage = 1
+
+
+def lay_out_stages(first: int = 1) -> None:
+    """Number the readout's stages from `first` - 2 in a run's readout, whose
+    stage 2 found the account's devices (from_run) - its names' column as
+    wide as the longest, or the run's, where that is wider."""
+    global _first_stage
+    _first_stage = first
+    output.set_stage_width(max(output.stage_width(), *(len(name) for _, name in STAGES)),
+                           max(output.most_stages(), first + len(STAGES) - 1))
+
+
+def begin(key: str) -> None:
+    """The readout's stage `key` under way, the one before it ended first."""
+    output.stage_end("complete")
+    output.stage_begin(_first_stage + STAGE_KEYS.index(key), dict(STAGES)[key])
+
+
+def skip(key: str) -> None:
+    """The readout's stage `key` passed over: nothing for it to do."""
+    begin(key)
+    output.stage_end("skipped")
+
+
+def restoring() -> None:
+    """Reading done, the device's Sonoff firmware next: each chip's readout
+    says when (readout_espressif, readout_beken)."""
+    begin("restore")
+
+
 class WebsiteFull(NothingWritten):
     """The website has taken all the readouts it can, today or until its store
     has room: a readout of every device ends there, the rest not read."""
@@ -236,13 +284,35 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
     """Read out the account's `device` and offer to send it. What the run ends
     by saying; Abort before anything was sent to the device, or after, with
     what to do. In a `batch`, it is sent as it is made, unasked, and what is
-    returned is what became of it."""
+    returned is what became of it.
+
+    Under the readout's stage lines (STAGES): the one under way when it stops
+    ends as stopped, with what it showed left under it - or skipped, for one
+    device of several passed by."""
+    try:
+        said = _run(ctx, device, address, batch)
+    except NothingWritten:
+        output.stage_end("skipped" if batch is not None else "stopped")
+        raise
+    except BaseException:
+        output.stage_end("stopped")
+        raise
+    output.stage_end("complete")
+    return said
+
+
+def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch | None) -> str:
     ctx.state.set_input(STATE_KEY, "started")
     # One the account says can have only the first stage is not looked for on
     # the network at all: that stage is eWeLink's to tell, so it works for a
     # device that answers no discovery (a Matter one, say), and asks nothing of it.
     first_only = not reads_out(device)
-    ip = None if first_only else address or locate(ctx, device)
+    if first_only or address:
+        skip("locate")
+        ip = None if first_only else address
+    else:
+        begin("locate")
+        ip = locate(ctx, device)
     if ip:
         ctx.state.set_input("device_ip", ip)
     mac = (hostsys.mac_of(ip) if ip else None) or (device.get("params") or {}).get("staMac")
@@ -264,20 +334,21 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
     # its account id.
     # So is one a readout stopped part way left on its reading program (the
     # bridge), which answers no discovery either.
+    begin("probe")
     on_bridge = ip is not None and not lan_free(device) and readout_espressif.installer.bridge_answers(ip)
-    if first_only:
-        asked = ask_first_stage(ctx, device)
-    elif lan_free(device) or on_bridge:
-        asked = account.ask_account(ctx, str(device.get("deviceid") or ""))
-    else:
-        try:
+    try:
+        if first_only:
+            asked = ask_first_stage(ctx, device)
+        elif lan_free(device) or on_bridge:
+            asked = account.ask_account(ctx, str(device.get("deviceid") or ""))
+        else:
             asked = account.ask_ewelink(ctx, ip)
-        except account.NotOnSonoff as exc:
-            # One the account still lists, converted since: nothing gone wrong,
-            # and none of Sonoff's firmware left on it to read.
-            running = f"runs {detect.NAMES[exc.firmware]} now, not Sonoff's firmware, which is what a readout reads"
-            return f"not read out: it {running}." if batch is not None else \
-                f"Nothing was read out: the device at {ip} {running}."
+    except account.NotOnSonoff as exc:
+        # One the account still lists, converted since: nothing gone wrong,
+        # and none of Sonoff's firmware left on it to read.
+        running = f"runs {detect.NAMES[exc.firmware]} now, not Sonoff's firmware, which is what a readout reads"
+        return f"not read out: it {running}." if batch is not None else \
+            f"Nothing was read out: the device at {ip} {running}."
     learned, problems = firmware_name.learn(asked.latest.get("offers") or [], asked.deviceid,
                                             asked.product, asked.model)
     for problem in problems:
@@ -292,6 +363,13 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
     ctx.state.set_input("stock_version", asked.version)
     ctx.state.set_input("product_model", asked.product)
     whole = whole_readout(listed, learned)
+    prompts.section("What the device reported", [
+        f"Model            {asked.model or 'not given'}",
+        f"Product          {asked.product or 'not given'}",
+        f"Firmware now     {asked.version}",
+        f"Firmware name    {learned.name if learned else 'not learned'}",
+    ])
+    begin("fetch")
     # Before the firmware eWeLink offers it is fetched, anything is sent to it,
     # or the readout's own work is done: whether it would add anything at all,
     # and which of the files eWeLink offers it are held already.
@@ -335,15 +413,14 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
     manifest["offered"] += [{"file": None, "version": version, "sha256": digest, "held": True}
                             for digest, version in offered_digests(offers, versions=True)
                             if digest in answer.held and all(item.sha256 != digest for item in updates)]
-    prompts.section("What the device reported", [
-        f"Model            {asked.model or 'not given'}",
-        f"Product          {asked.product or 'not given'}",
-        f"Firmware now     {asked.version}",
-        f"Firmware name    {learned.name if learned else 'not learned'}",
-    ])
     chip = readout_espressif.BRIDGE_CHIPS.get(learned.chip) if learned and whole else None
     beken_stock = (readout_beken.stock_from_offered(updates)
                    if learned and whole and learned.chip.startswith("BK") else None)
+    if chip is not None or beken_stock is not None:
+        begin("read")
+    else:
+        skip("read")
+        skip("restore")
     if chip is not None:
         files, back = readout_espressif.read_and_anonymise(ctx, manifest, chip, learned.name, asked.version, device,
                                                            known=known is not None, skippable=batch is not None)
@@ -362,7 +439,9 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
             why = f"there is no bridge for its chip ({learned.chip or 'not named'}) yet"
         output.say(f"    Its memory cannot be read from here: {why}. The readout still helps.")
         manifest["read"] = False
+        begin("save")
         return offer(ctx, manifest, None, sent, batch=batch, device=device)
+    begin("save")
     return offer(ctx, manifest, files, sent, back=back, batch=batch, device=device)
 
 
@@ -752,7 +831,11 @@ def run_all(ctx: Context, devices: list[dict[str, Any]]) -> str:
 
 
 def from_run(ctx: Context, devices: list[dict[str, Any]]) -> None:
-    """A1's way out to a readout: run it, then end the run (errors.Finished)."""
+    """A1's way out to a readout: run it, then end the run (errors.Finished).
+    The run's stage 2, which found the account's devices, ends first, and the
+    readout's stages carry on from 3: its first, the account's, is done."""
+    output.stage_end("complete")
+    lay_out_stages(first=2)
     raise Finished(read_out_chosen(ctx, devices))
 
 

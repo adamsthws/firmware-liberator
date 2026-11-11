@@ -340,9 +340,16 @@ def cmd_readout(ctx: Context, saved: Path | None) -> int:
         output.tell(f"Sent, thank you! Its reference is {readout.send_saved(saved)}.")
         return 0
     output.say("Signing in to eWeLink to see which devices are in the account...")
-    devices = ctx.account_devices()
-    if not devices:
-        raise Abort("a readout needs the device in an eWeLink account, and none was found in this one")
+    readout.lay_out_stages()
+    readout.begin("account")
+    try:
+        devices = ctx.account_devices()
+        if not devices:
+            raise Abort("a readout needs the device in an eWeLink account, and none was found in this one")
+    except BaseException:
+        output.stage_end("stopped")
+        raise
+    output.stage_end("complete")
     given = ctx.args.device_ip
     if given:
         output.tell(readout.run(ctx, readout.device_at(given, devices), given))
