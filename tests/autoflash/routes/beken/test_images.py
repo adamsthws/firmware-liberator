@@ -111,6 +111,7 @@ class UntestedKindTests(unittest.TestCase):
                       mock.patch.object(stock.firewall, "ensure_firewall"),
                       mock.patch.object(stock.account, "note_firmware_name", return_value=""),
                       mock.patch.object(stock, "offered_latest", return_value={}),
+                      mock.patch.object(images, "latest_offer", return_value={"problem": "none offered here"}),
                       mock.patch.object(stock.prompts, "section"),
                       mock.patch.object(stock.output, "transient_begin"),
                       mock.patch.object(stock.output, "transient_end"),
@@ -140,6 +141,7 @@ class UntestedKindTests(unittest.TestCase):
         ctx = a_context(tmp, device_kind=self.KIND.key, stock_version="1.0.4", firmware="openbeken", **inputs)
         ctx.account_device = SimpleNamespace(device_id="1001234abc")
         ctx.account_devices = lambda: [self.DEVICE]
+        ctx.ewelink = SimpleNamespace(held=("eu", {"at": "token"}), use=lambda call: call("eu", {"at": "token"}))
         ctx.consented = False
         return ctx
 
@@ -271,7 +273,7 @@ class UntestedKindTests(unittest.TestCase):
                 self.assertEqual((found.image, found.source), (self.image, images.PUBLIC_COPY))
                 self.assertIn(why, logged.call_args.args[0])
 
-    def test_ewelink_is_asked_once_a_run_with_the_devices_own_id_and_only_when_signed_in(self):
+    def test_ewelink_is_asked_once_a_run_with_the_devices_own_id_signing_in_if_need_be(self):
         _, data = self.offered()
         asked = []
 
@@ -293,13 +295,40 @@ class UntestedKindTests(unittest.TestCase):
                                   fetch(offers, deviceid, get=download)):
             ctx = self.context(tmp)
             ctx.ewelink = SimpleNamespace(held=None, use=lambda call: call("eu", {"at": "token"}))
-            self.assertIsNone(images.offered_file(ctx), "no sign-in asked for this")
-            del ctx.offered_sonoff_file
-            ctx.ewelink.held = ("eu", {"at": "token"})
             self.assertEqual(images.offered_file(ctx), data)
             self.assertEqual(images.offered_file(ctx), data)
         self.assertEqual(asked, [{"deviceid": "1001234abc", "model": self.KIND.stock_model}])
         self.assertEqual(fetched, [("https://example.com/user1.bin", "1001234abc")], "user1.bin alone, once")
+
+    def test_the_stub_is_all_a_run_against_it_reaches(self):
+        image, data = self.offered()
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict("os.environ", {"AUTOFLASH_EWELINK_API_BASE": "https://apia.example.test"}), \
+                mock.patch.object(images, "official_file", side_effect=AssertionError("not reached")):
+            ctx = self.context(tmp)
+            with mock.patch.object(images, "offered_file", return_value=data):
+                self.assertEqual(images.official(self.KIND, ctx).source, images.OFFERED)
+                self.assertEqual(images.stock_rbl(self.KIND, ctx),
+                                 (image, "1.0.6"))
+            with mock.patch.object(images, "offered_file", return_value=None):
+                with self.assertRaisesRegex(errors.NothingWritten, "could not be fetched from eWeLink"):
+                    images.official(self.KIND, ctx)
+                with self.assertRaisesRegex(errors.Abort, "could not be fetched from eWeLink"):
+                    images.stock_rbl(S61, ctx)
+
+    def test_a_device_with_no_id_kept_is_found_in_the_account_by_its_mac(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), \
+                mock.patch.object(records, "CAPTURES", Path(tmp)):
+            ctx = self.context(tmp, device_mac=MAC)
+            ctx.account_device = None
+            ctx.account_devices = lambda: [{"deviceid": "other", "params": {"staMac": "12:34:56:AB:CD:00"}},
+                                           {"deviceid": "1001234abc", "params": {"staMac": MAC.upper()}}]
+            self.assertEqual(images.device_id(ctx), "1001234abc")
+            ctx.account_devices = lambda: None   # eWeLink not reached
+            self.assertEqual(images.device_id(ctx), "")
+            records.remember_device(MAC, ewelink_id="1001234def")
+            self.assertEqual(images.device_id(ctx), "1001234def", "the one this computer keeps")
 
     def test_the_backup_logs_whether_the_flash_matched(self):
         for matched, words in ((True, "was read at 0x3e0000: it matches"), (False, "was not read at 0x3e0000")):

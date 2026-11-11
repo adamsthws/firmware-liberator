@@ -390,6 +390,13 @@ identity is the one the device keeps, or else rebuilt from your eWeLink
 account, which knows the device's id, key, model and kind while the device is
 still in it. The run says which it used.
 
+On a Beken device, going back sends Sonoff's official firmware for your
+device the same way: downloaded from eWeLink as the device itself would, or
+else from a public copy the tool knows by its hash.
+
+On either, the tool signs in to your eWeLink account for this if the run has
+not yet.
+
 Sonoff's firmware is offered either way. Once you choose it, and before
 anything is written, the tool finds where the identity will come from. On
 Tasmota it reads the one the device keeps, or else signs in to your eWeLink

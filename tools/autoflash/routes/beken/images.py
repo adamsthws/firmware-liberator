@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import struct
 import urllib.parse
 from dataclasses import dataclass
@@ -123,20 +124,36 @@ def official_file(kind: kinds.Kind) -> bytes:
 def offered_file(ctx: Context) -> bytes | None:
     """The update file eWeLink offers the run's device, as the device fetches
     it, asked with its own id as query_ota.latest_offer asks; fetched once a
-    run. None where it offers none, eWeLink is not reached, the device's id is
-    not known, or the run has not signed in to eWeLink: going back to Sonoff's
-    firmware asks for no password for this. Neither the link nor the id is logged."""
+    run, signing in to eWeLink first where the run has not yet. None where it
+    offers none, eWeLink is not reached, or the device is not found in the
+    account. Neither the link nor the id is logged."""
     if not hasattr(ctx, "offered_sonoff_file"):
         ctx.offered_sonoff_file = _offered_file(ctx)
     return ctx.offered_sonoff_file
 
 
-def _offered_file(ctx: Context) -> bytes | None:
+def device_id(ctx: Context) -> str:
+    """The device's eWeLink id: the one A1 found or this computer keeps for
+    it, else by its Wi-Fi MAC in the account's records, as the Espressif
+    route finds it (identity.account_record). "" where none is found."""
     found = getattr(ctx, "account_device", None)
-    mac = ctx.state.input("device_mac")
-    deviceid = (found.device_id if found is not None else "") or (
-        str(records.read_device(mac).get("ewelink_id") or "") if mac else "")
-    if not deviceid or not getattr(ctx.ewelink, "held", None):
+    if found is not None and found.device_id:
+        return found.device_id
+    mac = hostsys.normalise_mac(str(ctx.state.input("device_mac") or ""))
+    kept = str(records.read_device(mac).get("ewelink_id") or "") if mac else ""
+    if kept or not mac:
+        return kept
+    for device in ctx.account_devices() or []:
+        sta_mac = (device.get("params") or {}).get("staMac")
+        if sta_mac and hostsys.normalise_mac(str(sta_mac)) == mac:
+            return str(device.get("deviceid") or "")
+    return ""
+
+
+def _offered_file(ctx: Context) -> bytes | None:
+    deviceid = device_id(ctx)
+    if not deviceid:
+        output.log_only(f"    Sonoff's firmware: {OFFERED}: the device is not found in the eWeLink account")
         return None
     query = {"deviceid": deviceid, "model": kinds.of_run(ctx.state).stock_model}
     try:
@@ -187,11 +204,23 @@ def from_ewelink(ctx: Context | None, kind: kinds.Kind) -> Official | None:
         return None
 
 
+def against_stub() -> bool:
+    """Whether the run is against a stand-in for eWeLink (the emulator's),
+    which is all it reaches, as on the Espressif route (sonoff_firmware)."""
+    return bool(os.environ.get("AUTOFLASH_EWELINK_API_BASE"))
+
+
 def official(kind: kinds.Kind, ctx: Context | None = None) -> Official:
     """A kind's official update file: the one eWeLink offers the run's device,
     as on the Espressif route, else the public copy this tool pins by hash;
     either refused as checked() says."""
-    return from_ewelink(ctx, kind) or checked(kind, official_file(kind), PUBLIC_COPY)
+    found = from_ewelink(ctx, kind)
+    if found is not None:
+        return found
+    if against_stub():
+        raise NothingWritten(f"Sonoff's firmware for the {kind.name} could not be fetched from eWeLink. "
+                             "Nothing was written")
+    return checked(kind, official_file(kind), PUBLIC_COPY)
 
 
 def first_firmware(firmware: str) -> str:
@@ -244,6 +273,8 @@ def stock_rbl(kind: kinds.Kind, ctx: Context | None = None) -> tuple[bytes, str]
     if offered is not None:
         output.log_only(f"    Sonoff's firmware {offered.version}: from {OFFERED}")
         return offered.image, offered.version
+    if against_stub():
+        raise Abort(f"Sonoff's firmware for the {kind.name} could not be fetched from eWeLink")
     if kind.key in OFFICIAL_FILES:
         try:
             found = official(kind)
