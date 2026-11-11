@@ -1,8 +1,8 @@
 """A kind whose status is "Testers wanted" (devices/status.json): converted in
 the emulator, or added from its official file and a published pin map, but no
 real one reported yet.  The go-ahead before a run's first
-write says so, the same words for every such kind, and the run's log is asked
-for with its report.  A proven kind's go-ahead says nothing of it.
+write says so, the same words for every such kind.  A proven kind's go-ahead
+says nothing of it.
 """
 
 from __future__ import annotations
@@ -28,11 +28,3 @@ def notice(kind: kinds.Kind) -> list[str]:
         "one yet. This run's log:",
         str(output.log_path() or LOG_ELSEWHERE),
     ]
-
-
-def ask_for_log(kind: kinds.Kind) -> None:
-    """With the run's report: its log as well, for a kind still wanting testers."""
-    if wanted(kind):
-        output.tell("")
-        output.tell(f"No real {kind.name} had been reported converted: please attach this run's log too,")
-        output.tell(f"    {output.log_path() or LOG_ELSEWHERE}")

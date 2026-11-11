@@ -293,10 +293,12 @@ def hyperlink(url: str, title: str | None = None, width: int = 0) -> str:
     terminal that does not take the sequence still has it to pick out or
     copy.  Only the URL is the link: the title stays outside it, coloured
     wherever colour is, as some terminals repaint link text in their own
-    colour.  `width`: the title padded to it, so the URLs of a list line up.
+    colour; a URL with no title is coloured itself, so it looks a link as the
+    rest do.  `width`: the title padded to it, so the URLs of a list line up.
     """
     link = f"\x1b]8;;{url}\x1b\\{url}\x1b]8;;\x1b\\" if links_ok() else url
-    return f"{styled(title + ':', BOLD, _purple())}{' ' * (width - len(title))} {link}" if title else link
+    return (f"{styled(title + ':', BOLD, _purple())}{' ' * (width - len(title))} {link}" if title
+            else styled(link, BOLD, _purple()))
 
 
 def _purple() -> str:

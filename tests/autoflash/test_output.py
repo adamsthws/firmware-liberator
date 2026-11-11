@@ -1551,15 +1551,10 @@ class ReportTests(OutputTestCase):
         ctx = self.ctx()
         ctx.last_failure, ctx.run_resumed, ctx.reported = "timed out", False, False
         ctx.run_started = time.monotonic() - 60
-        copied = []
-        with mock.patch.object(hostsys, "copy_to_clipboard",
-                               side_effect=lambda text: copied.append(text) or True), \
-             mock.patch.object(output, "tell") as told, mock.patch.object(output, "show") as shown, \
+        with mock.patch.object(output, "tell") as told, mock.patch.object(output, "show") as shown, \
              mock.patch.object(output, "show_link"), mock.patch.object(output, "show_links") as links:
             report.invite_stopped_report(ctx, "failed")
         self.assertTrue(ctx.reported)
-        self.assertIn("**Result:** Stopped at stage 1 of", copied[0])
-        self.assertIn("timed out", copied[0])
         self.assertTrue(any("please open an issue" in str(call) for call in told.call_args_list))
         links.assert_not_called()  # no donation links after a failure
         self.assertFalse(any("hold out my hat" in str(call) for call in told.call_args_list + shown.call_args_list))
@@ -1573,9 +1568,9 @@ class ReportTests(OutputTestCase):
                                device_mac="58:cf:79:01:02:03")
                 fields = dict(report.report_fields(ctx))
                 self.assertEqual(fields["Backup"], said)
-                markdown = report.report_markdown(list(fields.items()))
-                self.assertNotIn("58", markdown.split("Backup")[1].splitlines()[0])
-                self.assertNotIn("sonoff-backup", markdown)
+                shown = "\n".join(f"{label}: {value}" for label, value in fields.items())
+                self.assertNotIn("58", shown.split("Backup")[1].splitlines()[0])
+                self.assertNotIn("sonoff-backup", shown)
         # A run from before the backup existed.
         self.assertEqual(dict(report.report_fields(self.ctx(backup_outcome="")))["Backup"],
                          "Not taken")
@@ -1621,9 +1616,9 @@ class ReportTests(OutputTestCase):
             self.assertEqual(report.device_page_url("192.168.60.50"), "http://localhost:8080")
 
     def test_the_report_holds_nothing_private(self):
-        markdown = report.report_markdown(report.report_fields(self.ctx()))
+        shown = "\n".join(report.report_screen(report.report_fields(self.ctx()), columns=100))
         for private in ("me@example.com", "192.0.2.50", "tasmota-1A2B3C-4567", "1001234abc"):
-            self.assertNotIn(private, markdown)
+            self.assertNotIn(private, shown)
 
     def test_fallbacks_and_unknown_models_are_reported_as_such(self):
         ctx = self.ctx(product_model="", wifi_typed=True)
@@ -1634,18 +1629,15 @@ class ReportTests(OutputTestCase):
         self.assertEqual(fields["Setup network"], "Yes")
 
     def test_a_converted_run_shows_its_report_and_asks_nothing_of_anyone(self):
-        copied = []
-
         def body():
-            with mock.patch.object(hostsys, "copy_to_clipboard", side_effect=lambda text: copied.append(text) or True), \
-                 mock.patch.object(report, "check_hardware", return_value={"Relay": "switches (meter confirms)"}):
+            with mock.patch.object(report, "check_hardware", return_value={"Relay": "switches (meter confirms)"}):
                 report.invite_report(self.ctx(), 441, False)
         screen, _ = self.run_with(io.StringIO(), False, body)
         self.assertNotIn("How it went", screen, "the report under what the run said, with no heading")
         self.assertIn("Result:", screen)
-        self.assertNotIn("issues/new", screen, "a run that worked needs no issue")
+        self.assertNotIn(report.ISSUES_URL, screen, "a run that worked needs no issue")
+        self.assertNotIn("This run's log:", screen)
         self.assertNotIn("discussions", screen)
-        self.assertEqual(copied, [], "nothing to paste anywhere")
         self.assertIn("Throw your friendly neighbourhood dev a biscuit:", screen)
         self.assertGreater(screen.index(report.DONATE_URL), screen.index("Model:"))  # after the report
         # GitHub Sponsors first, and the URLs lined up under one another.
@@ -1678,7 +1670,18 @@ class LinkTests(OutputTestCase):
              mock.patch.object(output, "IS_WINDOWS", True), \
              mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("WT_SESSION", None)
-            self.assertEqual(output.hyperlink(self.URL), self.URL)
+            text = output.hyperlink(self.URL)
+        self.assertNotIn("\x1b]8;;", text)                    # coloured, not a link
+        self.assertEqual(output.ANSI_RE.sub("", text), self.URL)
+
+    def test_a_link_with_no_title_is_purple_itself_as_the_titled_ones_titles_are(self):
+        def body():
+            with self.links_on():
+                output.show_link(self.URL)
+        screen, log = self.run_with(FakeTerminal(), False, body)
+        self.assertIn(f"{output.PURPLE}\x1b]8;;{self.URL}", screen)
+        self.assertEqual(output.ANSI_RE.sub("", screen).strip(), self.URL)
+        self.assertIn(f"    {self.URL}\n", log)
 
     def links_on(self):
         stack = contextlib.ExitStack()

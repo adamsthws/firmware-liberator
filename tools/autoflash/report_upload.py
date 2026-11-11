@@ -278,7 +278,6 @@ def send(ctx: Context, ending: str, seconds: float, resumed: bool,
     if not report_id or not enabled(ctx):
         return None
     ctx.report_id = None   # one report a run
-    ctx.last_report_id = report_id   # for the issue a stopped run can open (report.issue_url)
     try:
         payload = report_data.payload(ctx, report_id, seconds, resumed, ending, hardware)
         keep({"report": payload, "proof": None, "made": dt.date.today().isoformat()})

@@ -777,7 +777,7 @@ def convert(ctx: Context, given: list[str]) -> int:
             except Exception as exc:  # noqa: BLE001 - never let the report hide how it ended
                 output.log_only(f"The report could not be made: {type(exc).__name__}: {exc}")
         elif issue_alone(ctx, code, ending):
-            report.offer_issue(report.run_result(ctx, "failed"))
+            report.ask_for_an_issue()
         elif how := stopped_by(ctx, code, ending):
             try:
                 report.send_cancelled_report(ctx, how)
