@@ -939,6 +939,20 @@
         "download"
       ]
     },
+    "firmware_name": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Z][A-Z0-9_]*(-[A-Z0-9_]+)*$",
+      "maxLength": 64
+    },
+    "firmware_name_expected": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
     "begun_on": {
       "type": [
         "string",
@@ -992,6 +1006,8 @@
     "ctrl_c_carried_on",
     "launcher",
     "install",
+    "firmware_name",
+    "firmware_name_expected",
     "begun_on",
     "back_after_power_cycle"
   ],

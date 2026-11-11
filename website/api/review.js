@@ -51,7 +51,8 @@ export function heldFor(report) {
     return written.some(holdsHeldWords) ? "words no report would hold" : null;
   }
   const stopped = report.stopped;
-  const written = [report.model, report.stock, report.os.version, report.python.version, stopped?.text, stopped?.where];
+  const written = [report.model, report.stock, report.os.version, report.python.version, stopped?.text, stopped?.where,
+    report.firmware_name];
   if (written.some(holdsHeldWords)) {
     return "words no report would hold";
   }

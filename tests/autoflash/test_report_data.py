@@ -96,6 +96,18 @@ class PayloadTests(RouteTestCase):
         self.assertIn(data["os"]["arch"], report_data.ARCHES)
         self.assertEqual(data["stages"]["A1"]["wait"], 75)
 
+    def test_the_firmware_name_the_device_checks_is_sent_and_whether_it_is_the_tools(self):
+        from tools.autoflash import kinds
+        for name, expected in ((kinds.SONOFF_S60.wrapper_model, True), ("FWSW-E32S60B-S60-ESP32C3FN4", False)):
+            with self.subTest(name=name):
+                ctx = self.ctx(run=f"name-{expected}", firmware="tasmota", device_kind="sonoff-s60")
+                ctx.state.capture("A2.firmware_name", name)
+                data = self.payload(ctx)
+                self.assertEqual((data["firmware_name"], data["firmware_name_expected"]), (name, expected))
+        ctx = self.ctx(run="name-none", firmware="tasmota", device_kind="sonoff-s60")
+        ctx.state.capture("A2.firmware_name", "")   # not learned
+        self.assertEqual((self.payload(ctx)["firmware_name"], self.payload(ctx)["firmware_name_expected"]), (None, None))
+
     def test_the_version_that_began_a_run_is_sent_only_when_another_carried_it_on(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
         ctx.state.set_input("begun_on", "2.4.0")

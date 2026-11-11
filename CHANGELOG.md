@@ -295,9 +295,9 @@ as its screens do, since it converts much more than smart plugs now.
   the firmware it went to and from, and how far it got - for a run you stop,
   the stage and how you stopped it, and for a conversion, how many devices
   this computer has converted; with what helps find a fault, such as where in
-  the tool's code it went wrong, the device's chip and flash, and Wi-Fi or
-  Ethernet, a VPN or a firewall on your side - never anything of you, your
-  computer or your network. Each device read out sends one too, as its
+  the tool's code it went wrong, the device's chip, flash and firmware name,
+  and Wi-Fi or Ethernet, a VPN or a firewall on your side - never anything of
+  you, your computer or your network. Each device read out sends one too, as its
   readout ends: how it ended (accepted by the website, not needed, kept, and
   so on), never the readout itself. Reports from everyone add up to the figures
   on [firmwareliberator.com/stats](https://firmwareliberator.com/stats).

@@ -201,7 +201,7 @@ test("what a report says beyond the reports' columns is kept beside it, as it ca
   assert.deepEqual(JSON.parse(extras), {
     where: "KeyError at tools/autoflash/report.py:212", arch: "x86-64", chip: FIXTURE.chip, computer: FIXTURE.computer,
     ewelink_region: "eu", ctrl_c_carried_on: 0, launcher: "start.sh", install: "download", begun_on: null,
-    back_after_power_cycle: null,
+    back_after_power_cycle: null, firmware_name: "FWSW-E32S60-S60-ESP32C3FN4", firmware_name_expected: true,
   });
 });
 
