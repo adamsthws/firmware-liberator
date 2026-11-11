@@ -210,8 +210,7 @@ down too, so a report of one already has its name.
    filenames of the
    [public update files](https://github.com/openshwprojects/FlashDumps/tree/4d3556605da2ce101382a01b6fb7d84e68c3df2a/IoT/zOTAz/eWeLink),
    matching eWeLink's product model, then the model the stock firmware names. It
-   gives no name unless exactly one fits. A Beken device's run asks only this
-   list.
+   gives no name unless exactly one fits.
 
 The S60's name read from eWeLink matched its `wrapper_model`.
 [What eWeLink answers to each way of asking](espressif-research.md#learning-the-firmware-name)
