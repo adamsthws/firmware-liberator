@@ -1863,6 +1863,14 @@ class WorkingTests(OutputTestCase):
         self.assertEqual(rendered(text), ["Conversion complete!", "", "Please share how it went!"])
         self.assertNotIn("Generating", log)
 
+    def test_a_run_ended_just_after_its_clock_was_drawn_leaves_no_gap_above_the_next_ones_first_line(self):
+        def ended_after_a_wait():
+            output._s.waited = True   # as the stage clock drawn under its last note leaves it
+
+        self.run_with(FakeTerminal(), False, ended_after_a_wait)
+        text, _ = self.run_with(FakeTerminal(), False, lambda: output.show("Conversion complete!"))
+        self.assertEqual(rendered(text), ["Conversion complete!"])
+
     def test_nothing_is_drawn_where_the_screen_is_not_a_terminal(self):
         def body():
             with output.working("Generating your report..."):
