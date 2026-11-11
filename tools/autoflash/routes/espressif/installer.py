@@ -449,8 +449,7 @@ def require_known_layout(ctx: Context) -> None:
             output.log_only(f"    {line}")
     if not known:
         raise Abort("this device's memory is not laid out as this tool expects, so nothing has been written "
-                    "over its Sonoff firmware: switch it off and on to go back to it. Please report this "
-                    "with the device's model")
+                    "over its Sonoff firmware: switch it off and on to go back to it")
 
 
 def step_backup(ctx: Context) -> dict[str, Any]:
