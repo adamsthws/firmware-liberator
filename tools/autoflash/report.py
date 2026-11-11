@@ -15,7 +15,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import __version__, esphome, hostsys, kinds, openbeken, output, records, report_upload, routes, runs, testers
+from tools.autoflash import __version__, esphome, hostsys, kinds, output, records, report_upload, routes, runs, testers
 from tools.autoflash.device import DeviceError
 from tools.autoflash.runs import ROOT
 from tools.ewelink import relay as ewelink_relay
@@ -208,41 +208,14 @@ def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
         # firmware: an emulated Beken device never restarts by itself; a real one may.
         *([("Power cycled", "true" if ctx.state.input("power_cycles") else "false")] if not espressif else []),
         ("Checks", checks_passed(hardware)),
-        # Only for a device with a meter, once the run knows what it is and
-        # where it is going: whether its readings are calibrated as Sonoff's
-        # firmware had them.
-        *([("Meter", meter_calibration(captures, firmware))] if kind.has_meter and firmware else []),
+        # Not how the meter's calibration went: a device's readings a few
+        # percent out is no news to the person converting it. The report
+        # sent holds it (report_data.meter_word), the log why.
     ]
     return [(label, answer(value)) for label, value in fields]
 
 
 SONOFF_IDENTITY = {"backup": "backup", "kept": "device", "account": "eWeLink account"}
-
-
-def meter_calibration(captures: dict[str, Any], firmware: str | None) -> str:
-    """How the run left the meter's calibration, from what its steps found:
-    Tasmota's (`<step>.meter`: changed, factory, or skipped and why), ESPHome's
-    (`<step>.meter`: what its Calibration sensor said, or skipped), or a Beken
-    device's ESPHome or OpenBeken (`<step>.calibration`, OpenBeken's in the
-    same words, openbeken.calibration_state).  The last step's word counts: an
-    update checks it again."""
-    if firmware == "sonoff":
-        return "retained"   # Sonoff's firmware, with its own
-    found: Any = None
-    for key, value in captures.items():
-        if key.endswith(".meter") or key.endswith(".calibration"):
-            found = value
-    if isinstance(found, dict) and "skipped" in found:
-        return "not retained"   # why is in the log
-    if isinstance(found, dict) and "changed" in found:
-        return "retained"
-    state = found.get("calibration") if isinstance(found, dict) else found
-    if isinstance(state, str) and state:
-        # What ESPHome's Calibration sensor said: from the backup or Sonoff's
-        # own store, or "missing" - or OpenBeken's driver, that its
-        # calibration is not the stock store's either.
-        return "not retained" if state.startswith(("missing", openbeken.CALIBRATION_CHANGED)) else "retained"
-    return "not checked"
 
 
 def checks_passed(hardware: dict[str, str]) -> str:
@@ -277,7 +250,7 @@ def report_markdown(fields: list[tuple[str, str]]) -> str:
 # the run's and this computer's on the left.  The answers a fault suite reads
 # off the screen are on the right, each the last on its row, but the result,
 # read up to the gap after it (tools/espressif/emulator/fault_suite.py).
-RIGHT = ("Firmware", "From", "Model", "Backup", "Identity", "Signal", "Checks", "Meter")
+RIGHT = ("Firmware", "From", "Model", "Backup", "Identity", "Signal", "Checks")
 # Those of RIGHT a fault suite reads, which stay there, last on their rows.
 SUITES_READ = ("From", "Backup", "Identity", "Checks")
 # Columns each side needs at the least, else one column, as Markdown has it.

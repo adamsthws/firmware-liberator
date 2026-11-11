@@ -210,12 +210,11 @@ as its screens do, since it converts much more than smart plugs now.
   the run carries on by itself, or at once with Enter; q stops it there.
 - The report at the end is half as tall: two columns on the screen - the device on
   the right, the result, the run and the computer on the left - with shorter labels (Model,
-  Backup, Checks, OS, Liberator for the tool's version...) and answers (the meter
-  "Retained" or "Not retained", Python's "(venv)"). From gives Sonoff's firmware
-  with its version, "Sonoff 1.2.0", in place of a line of its own. A device with a power meter says whether its calibration
-  carried over, which was said on the screen, where it worried more than it
-  helped. The run's time, each stage's and how long it kept the device busy are no
-  longer shown: the report the tool sends holds them. A stopped run's result says
+  Backup, Checks, OS, Liberator for the tool's version...) and answers (Python's
+  "(venv)"). From gives Sonoff's firmware with its version, "Sonoff 1.2.0", in
+  place of a line of its own. Whether a power meter's calibration carried over
+  is no longer said on the screen, where it worried more than it helped. The run's time, each stage's and how long it kept the device busy are no
+  longer shown: the report the tool sends holds them, and the meter's. A stopped run's result says
   "Stopped", where and why being said as it stopped, and in the report copied for
   an issue. A run stopped before any stage
   began no longer asks for a report.
@@ -281,12 +280,12 @@ as its screens do, since it converts much more than smart plugs now.
   started, and a restart could be seen where there was none.
 - OpenBeken for the Sonoff S61 rebuilt with
   [1.18.320](https://github.com/openshwprojects/OpenBK7231T_App/releases/tag/1.18.320).
-- A Sonoff S61 converted to OpenBeken says in the report whether its meter's
-  factory calibration carried over, "Retained" or "Not retained", as on ESPHome:
-  it said "Not checked". OpenBeken's driver answers `AutoflashCalibration`,
+- A Sonoff S61 converted to OpenBeken says in the report the tool sends whether
+  its meter's factory calibration carried over, as on ESPHome: it said it was
+  not checked. OpenBeken's driver answers `AutoflashCalibration`,
   working out again what it takes from Sonoff's store and comparing it with
-  OpenBeken's calibration, so it says "Not retained" too once you calibrate the
-  device yourself.
+  OpenBeken's calibration, so it says it was not carried over once you calibrate
+  the device yourself.
 - ESPHome on the Sonoff S61 reads its voltage and current the right way round.
   Its meter, a BL0937, measures the voltage while its SEL pin is high, where
   ESPHome sets it high to measure the current, so each showed the other: about

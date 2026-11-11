@@ -67,8 +67,8 @@ PYTHON_WORDS = (*PYTHON_SOURCES.values(), "other")
 # The end-of-run relay check (report.check_hardware and its kin), by how
 # their Relay answer starts: anything else was not run or could not be.
 CHECKS = ("passed", "failed", "not-run")
-# How the run left the meter's calibration, from what its steps found
-# (report.meter_calibration reads the same): Sonoff's own, Tasmota carrying
+# How the run left the meter's calibration, from what its steps found:
+# Sonoff's own, Tasmota carrying
 # Sonoff's over (with its factory figures or not), skipped, ESPHome's
 # Calibration sensor's source, or not checked.
 METER_WORDS = ("sonoff", "carried", "carried-factory", "skipped", "stock-nvs", "from-backup", "missing",

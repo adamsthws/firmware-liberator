@@ -73,46 +73,12 @@ class EndingTests(RouteTestCase):
         self.assertEqual((fields["Result"], fields["From"], fields["Firmware"]),
                          ("Put back on ESPHome", "ESPHome", "ESPHome"))
 
-    def test_a_device_with_a_meter_says_how_its_calibration_went(self):
-        # Said here, not on the screen: a device's readings a few percent out is
-        # no news to the person converting it, and a clue to someone helping.
-        # In a word: why not is in the log.
-        for firmware, key, found, said in (
-                ("tasmota", "F4.meter", {"changed": True, "factory": True, "factor": 1.02}, "Retained"),
-                ("tasmota", "F4.meter", {"changed": False, "factory": False, "factor": 1.02}, "Retained"),
-                ("tasmota", "F4.meter", {"skipped": "the meter did not report"}, "Not retained"),
-                ("esphome", "I2.meter", {"calibration": "from backup, factor 1.02"}, "Retained"),
-                ("esphome", "I2.meter", {"calibration": "missing"}, "Not retained"),
-                ("esphome", "I2.meter", {"skipped": "ESPHome did not take it"}, "Not retained"),
-                ("esphome", "K2.calibration", "from backup", "Retained"),   # an S61's ESPHome (arrived.py)
-                ("esphome", None, None, "Not checked"),
-                ("sonoff", None, None, "Retained")):
-            with self.subTest(firmware=firmware, found=found):
-                ctx = self.ctx(firmware=firmware, run=f"meter-{firmware}-{key}-{said}")
-                if key:
-                    ctx.state.capture(key, found)
-                self.assertEqual(dict(report.report_fields(ctx))["Meter"], said)
-
-    def test_an_s61_on_openbeken_says_how_its_calibration_went(self):
-        # Its driver says, at K1 (arrived.py), in the words of ESPHome's sensor.
-        for found, said in (("stock store", "Retained"), ("missing", "Not retained"),
-                            ("not the stock store's", "Not retained"), (None, "Not checked")):
-            with self.subTest(found=found):
-                ctx = self.ctx(firmware="openbeken", run=f"meter-openbeken-{said}")
-                ctx.state.set_input("device_kind", "sonoff-s61")
-                ctx.state.capture("K1.calibration", found)
-                self.assertEqual(dict(report.report_fields(ctx))["Meter"], said)
-
-    def test_a_run_stopped_before_it_knew_the_device_says_nothing_of_a_meter(self):
-        # Seen: stopped at once on a wrong --device-ip, "Meter calibration: Not
-        # checked" under "Device model: __".
-        ctx = self.ctx(run="never-known", stock_version="")
-        self.assertNotIn("Meter", dict(report.report_fields(ctx)))
-
-    def test_a_device_with_no_meter_says_nothing_of_one(self):
-        ctx = self.ctx(firmware="tasmota", run="no-meter")
-        ctx.state.set_input("device_kind", "sonoff-th-elite")
-        ctx.state.capture("F4.meter", {"skipped": "this device's calibration is not read yet"})
+    def test_the_meter_is_not_in_it(self):
+        # A device's readings a few percent out is no news to the person
+        # converting it: the report sent holds how its calibration went.
+        ctx = self.ctx(firmware="tasmota", run="meter-tasmota")
+        ctx.state.set_input("device_kind", "sonoff-pow-elite")
+        ctx.state.capture("F4.meter", {"changed": True, "factory": True, "factor": 1.02})
         self.assertNotIn("Meter", dict(report.report_fields(ctx)))
 
     def test_on_the_screen_the_device_is_on_the_right_the_result_and_run_on_the_left(self):
@@ -205,12 +171,11 @@ class ReportColumnTests(unittest.TestCase):
         # Seen on an S61: its device answers ran two rows below this computer's.
         fields = [("Result", "Converted"), ("Liberator", "2.4.0"), ("Firmware", "OpenBeken"), ("OS", "Ubuntu"),
                   ("From", "Sonoff 1.0.2"), ("Python", "3.12"), ("Model", "S61STPF"),
-                  ("Retries", "None"), ("Backup", "Completed"),
-                  ("Signal", "-45 dBm"), ("Checks", "True"), ("Meter", "Not checked")]
+                  ("Backup", "Completed"), ("Signal", "-45 dBm"), ("Checks", "True"), ("Extra", "Not checked")]
         rows = report.report_screen(fields, columns=100)
         self.assertEqual(len(rows), 6, "\n".join(rows))
-        meter = next(row for row in rows if "Meter:" in row)
-        self.assertLess(meter.index("Meter:"), 20)   # on the left now
+        extra = next(row for row in rows if "Extra:" in row)
+        self.assertLess(extra.index("Extra:"), 20)   # on the left now
         checks = next(row for row in rows if "Checks:" in row)
         self.assertTrue(checks.rstrip().endswith("True"))   # a suite's, still last on its row
 
