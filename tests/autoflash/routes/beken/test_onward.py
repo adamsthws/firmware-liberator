@@ -480,7 +480,7 @@ class OpenBekenUpdateTests(unittest.TestCase):
     def test_its_report_says_it_was_updated_from_an_earlier_openbeken(self):
         ctx = self.ctx(firmware="openbeken", source="outdated")
         with mock.patch.object(routes, "STEPS", []), mock.patch.object(routes, "ROUTE", ("openbeken", "outdated")):
-            fields = dict(report.report_fields(ctx, 60.0, False, result=report.run_result(ctx, "converted")))
+            fields = dict(report.report_fields(ctx, result=report.run_result(ctx, "converted")))
         self.assertEqual((fields["Result"], fields["From"]), ("Updated", "OpenBeken, earlier release"))
 
 
