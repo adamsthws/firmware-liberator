@@ -103,7 +103,8 @@ or [beken-research.md](beken-research.md).
    ```
 
    This puts it under `captures/devices/`, with a made-up identity in place of
-   the device's. For an update file, give it the model its firmware calls
+   the device's. After a change to how it makes copies, run it again: a copy
+   that differs from what it makes now is made again. For an update file, give it the model its firmware calls
    itself (`strings` finds it, in the shape `SN-...`, `E32-...` or
    `ESP32D0-...`), and its eWeLink kind (`uiid`) where that is not the donor's.
    The donor's user settings (`user_usual`) are another firmware's: where the

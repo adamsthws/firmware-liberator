@@ -318,26 +318,42 @@ def with_update(donor: bytes, update: Update) -> bytes:
     return bytes(flash)
 
 
-def make(key: str) -> Path:
-    dump = DUMPS.get(key) or UPDATES[key]
-    target = records.DEVICES / records.folder_name(dump.mac)
-    if target.exists():
-        return target
+def built(dump: "Dump | Update") -> tuple[bytes, bytes]:
+    """The test copy's flash and eFuses, made from the fetched dump: the same
+    bytes each time, for the same recipe."""
     if isinstance(dump, Update):
         donor = S60_DUMP if dump.donor == "s60" else DUMPS[dump.donor]
         flash = with_update(fetched(donor), dump)
     else:
         flash = anonymised(fetched(dump), dump)
-    chip = flashmap.chip_of(flash)
     if len(flash) != FLASH_SIZE:
         raise SystemExit(f"{dump.url} is not a whole flash")
+    # An emulated C3 is the revision its firmware needs, or its bootloader stops there.
+    efuse = flashmap.esp32_efuse(dump.mac) if flashmap.chip_of(flash) == "esp32" else flashmap.esp32c3_efuse(
+        dump.mac, flashmap.min_chip_revision(flash, flashmap.app_slots(flash)[0]))
+    return flash, efuse
+
+
+def make(key: str) -> Path:
+    """The kind's test copy, made again where one made before differs from what
+    this makes now: an earlier recipe's, which its firmware may not start on."""
+    dump = DUMPS.get(key) or UPDATES[key]
+    target = records.DEVICES / records.folder_name(dump.mac)
+    flash, efuse = built(dump)
     backup = target / "sonoff-backup"
+    if target.exists():
+        try:
+            if (backup / "flash.bin").read_bytes() == flash and (backup / "efuse.bin").read_bytes() == efuse:
+                return target
+        except OSError:
+            pass
+        copy_device.remove(dump.mac)  # a real device's backup is left alone: it stops here
+        print(f"{target} was made by an earlier version of this; it is made again "
+              "(emu.sh --fresh puts an emulator that ran it on the new one).", file=sys.stderr)
     backup.mkdir(parents=True, mode=0o700)
     report = {"note": f"From the public dump {dump.url}, its identity made up."}
     (backup / "flash.bin").write_bytes(flash)
-    # An emulated C3 is the revision its firmware needs, or its bootloader stops there.
-    (backup / "efuse.bin").write_bytes(flashmap.esp32_efuse(dump.mac) if chip == "esp32" else flashmap.esp32c3_efuse(
-        dump.mac, flashmap.min_chip_revision(flash, flashmap.app_slots(flash)[0])))
+    (backup / "efuse.bin").write_bytes(efuse)
     (backup / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     (backup / "README.txt").write_text(f"{report['note']}\nA test copy, for the emulator.\n", encoding="utf-8")
     (target / "device.json").write_text(json.dumps({

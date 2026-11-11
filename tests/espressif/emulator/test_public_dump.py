@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import struct
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from tools.espressif import ais_records, flashmap
@@ -173,6 +175,49 @@ class OwnSettings(unittest.TestCase):
         rows = donor_rows(dualr3)
         self.assertEqual(json.loads(rows["user_usual", "content"]).get("deviceMode"), 1)
         self.assertEqual(json.loads(rows["frame_params", "content"])["uiid"], 126)
+
+
+
+class Make(unittest.TestCase):
+    """A test copy is what the recipe makes now, never one an earlier one made."""
+
+    def setUp(self):
+        devices = tempfile.TemporaryDirectory()
+        self.addCleanup(devices.cleanup)
+        patcher = mock.patch.object(public_dump.records, "DEVICES", Path(devices.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.flash = b"\x11" * public_dump.FLASH_SIZE
+
+    def make(self) -> Path:
+        with mock.patch.object(public_dump, "built", return_value=(self.flash, b"efuse")), \
+                mock.patch("sys.stderr"):
+            return public_dump.make("sonoff-basicr4")
+
+    def flash_of(self, target: Path) -> bytes:
+        return (target / "sonoff-backup" / "flash.bin").read_bytes()
+
+    def test_one_as_the_recipe_makes_it_is_kept(self):
+        target = self.make()
+        made = (target / "device.json").stat().st_mtime_ns
+        self.assertEqual(self.make(), target)
+        self.assertEqual((target / "device.json").stat().st_mtime_ns, made)
+
+    def test_one_an_earlier_recipe_made_is_made_again(self):
+        target = self.make()
+        self.flash = b"\x22" * public_dump.FLASH_SIZE
+        self.make()
+        self.assertEqual(self.flash_of(target), self.flash)
+        self.assertEqual(json.loads((target / "device.json").read_text(encoding="utf-8"))["test_copy_of"], BASICR4.url)
+
+    def test_a_real_devices_backup_in_its_place_is_left_alone(self):
+        target = public_dump.records.DEVICES / public_dump.records.folder_name(BASICR4.mac)
+        (target / "sonoff-backup").mkdir(parents=True)
+        (target / "sonoff-backup" / "flash.bin").write_bytes(b"stock")
+        (target / "device.json").write_text(json.dumps({"mac": BASICR4.mac}), encoding="utf-8")
+        with self.assertRaises(SystemExit):
+            self.make()
+        self.assertEqual(self.flash_of(target), b"stock")
 
 
 if __name__ == "__main__":
