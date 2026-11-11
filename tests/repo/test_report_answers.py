@@ -43,8 +43,6 @@ FIELDS = [
     ("Computer", "Ubuntu 24.04.5 LTS (Windows Subsystem for Linux)"),
     ("Python", "3.13.11 (start.sh's)"),
     ("Time", "1h 12m 34s (resumed)"),
-    ("Stage times", ", ".join(f"{number}=1m24s" for number in range(1, 16))),
-    ("Busy", ", ".join(f"{number}=85s" for number in range(4, 15))),
     ("Retries", "4 (2 retries), 12 (1 retry)"),
     ("Signal", "-100 dBm"),
     ("Wi-Fi typed", "Yes"),

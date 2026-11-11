@@ -117,16 +117,6 @@ def run_result(ctx: Context, ending: str) -> str:
     return f"{head} at {where}" + (f": {public_text(reason)}" if reason else "")
 
 
-def stage_timings(ctx: Context, key: str) -> str:
-    """Each stage's `key` capture as "10=36s, 14=43s", by stage number - with no
-    space inside a pair, so the screen never wraps one across two lines."""
-    captures = ctx.state.data.get("captures", {})
-    timings = [f"{number}={output.elapsed(captures[f'{step}.{key}']).replace(' ', '')}"
-               for number, (step, _, _) in enumerate(routes.STEPS, 1)
-               if isinstance(captures.get(f"{step}.{key}"), (int, float))]
-    return ", ".join(timings) or "not recorded"  # a run from before they were
-
-
 # What a run's starting point is called in its report: one for each of SOURCES.
 CONVERTED_FROM = {"sonoff": "Sonoff", "tasmota": "Tasmota", "esphome": "ESPHome", "openbeken": "OpenBeken",
                   "midway": "unfinished run", "committed": "unfinished run",
@@ -206,14 +196,12 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
         ("Computer", computer_description()),
         ("Python", python_description()),
         ("Time", took),
-        # By stage number.  Busy is how long a Berry stage kept the device from
-        # anything else: at 70-90s a real S60TPG stops answering for good.
-        ("Stage times", stage_timings(ctx, "seconds")),
-        # Only where the route has them: a Berry stage's busy time, the Wi-Fi
-        # typed or a setup network joined are an Espressif route's.
-        *([("Busy", stage_timings(ctx, "device_busy_seconds"))] if espressif else []),
+        # Each stage's time and how long it kept the device busy are not shown:
+        # the report sent carries them (report_data.stages).
         ("Retries", ", ".join(retried) or "none"),
         ("Signal", f"{signal} dBm" if isinstance(signal, int) else "not recorded"),
+        # Only where the route has them: the Wi-Fi typed or a setup network
+        # joined are an Espressif route's.
         *([("Wi-Fi typed", "yes" if ctx.state.input("wifi_typed") else "no"),
            ("Setup network", "yes" if joined else "no")] if espressif else []),
         # Whether the device had to be switched off and on to start its new
@@ -281,10 +269,10 @@ def report_markdown(fields: list[tuple[str, str]]) -> str:
 
 
 # Where each answer goes on the screen: the device's on the right, the run's and
-# this computer's on the left, and these across the whole width.  The answers a
+# this computer's on the left, and the result across the whole width, above them.  The answers a
 # fault suite reads off the screen are on the right or across it, each the last
 # on its row (tools/espressif/emulator/fault_suite.py).
-WIDE = ("Result", "Stage times", "Busy")
+WIDE = ("Result",)
 RIGHT = ("Firmware", "From", "Model", "Stock", "Backup", "Identity", "Signal", "Checks", "Meter")
 # Those of RIGHT a fault suite reads, which stay there, last on their rows.
 SUITES_READ = ("From", "Backup", "Identity", "Checks")
@@ -320,10 +308,9 @@ def report_screen(fields: list[tuple[str, str]], columns: int | None = None) -> 
     left, right = cells(left), cells(right)
     wide = [(label, value) for label, value in fields if label in WIDE]
     width = max(len(label) for label, _ in fields) + 1
-    lines = [f"{margin}{label + ':':<{width}} {value}" for label, value in wide if label == "Result"]
+    lines = [f"{margin}{label + ':':<{width}} {value}" for label, value in wide]
     lines += [(margin + f"{one:<{side}}{gap}{two}").rstrip()
               for one, two in itertools.zip_longest(left, right, fillvalue="")]
-    lines += [f"{margin}{label + ':':<{width}} {value}" for label, value in wide if label != "Result"]
     return lines
 
 

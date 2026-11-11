@@ -110,13 +110,12 @@ class EndingTests(RouteTestCase):
         # Half the rows of one column; the answers a fault suite reads off the
         # screen - the device's - each the last on its row.
         fields = [("Result", "Converted"), ("Firmware", "Tasmota"), ("Tool", "2.4.0"), ("Backup", "Completed"),
-                  ("Computer", "Ubuntu 24.04.5 LTS"), ("Checks", "True"), ("Stage times", "1=0s, 2=6s")]
+                  ("Computer", "Ubuntu 24.04.5 LTS"), ("Checks", "True")]
         rows = report.report_screen(fields, columns=100)
         self.assertEqual(rows[0].split(), ["Result:", "Converted"])
         self.assertEqual(rows[1].split(), ["Tool:", "2.4.0", "Firmware:", "Tasmota"])
         self.assertTrue(rows[2].rstrip().endswith("Backup:   Completed"), rows)
-        self.assertEqual(rows[-1].split()[0], "Stage")
-        self.assertEqual(len(rows), 5)
+        self.assertEqual(len(rows), 4)
 
     def test_a_long_answer_wraps_within_its_column_under_itself(self):
         fields = [("Result", "Converted"), ("Tool", "2.4.0"),
@@ -181,9 +180,9 @@ class ReportColumnTests(unittest.TestCase):
         fields = [("Result", "Converted"), ("Tool", "2.4.0"), ("Firmware", "OpenBeken"), ("Computer", "Ubuntu"),
                   ("From", "Sonoff"), ("Python", "3.12"), ("Model", "S61STPF"), ("Time", "1m 19s"),
                   ("Stock", "1.0.2"), ("Retries", "None"), ("Backup", "Completed"), ("Power cycled", "False"),
-                  ("Signal", "-45 dBm"), ("Checks", "True"), ("Meter", "Not checked"), ("Stage times", "1=0s")]
+                  ("Signal", "-45 dBm"), ("Checks", "True"), ("Meter", "Not checked")]
         rows = report.report_screen(fields, columns=100)
-        body = rows[1:-1]   # between the result and the stage times
+        body = rows[1:]   # under the result
         self.assertEqual(len(body), 7, "\n".join(rows))
         meter = next(row for row in rows if "Meter:" in row)
         self.assertLess(meter.index("Meter:"), 20)   # on the left now

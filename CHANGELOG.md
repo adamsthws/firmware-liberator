@@ -211,7 +211,9 @@ as its screens do, since it converts much more than smart plugs now.
   Stock, Backup, Checks...) and answers (the meter "Retained" or "Not retained",
   Python's "(venv)"). A device with a power meter says whether its calibration
   carried over, which was said on the screen, where it worried more than it
-  helped. A run stopped before any stage began no longer asks for a report.
+  helped. Each stage's time and how long it kept the device busy are no longer
+  shown: the report the tool sends holds them. A run stopped before any stage
+  began no longer asks for a report.
 - A device the tool converted is asked which firmware it is to have where one on
   Sonoff's firmware is: at "Choosing the firmware", once the list of what has
   to be in place has been read - not before the first stage, ahead of it. An

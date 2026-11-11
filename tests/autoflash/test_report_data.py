@@ -91,6 +91,15 @@ class PayloadTests(RouteTestCase):
             ctx.state.capture(key, value)
         self.assertEqual(self.payload(ctx)["signal"], -61)
 
+    def test_each_stages_time_and_how_long_it_kept_the_device_busy_are_sent(self):
+        # The screen's report leaves them out (report.report_fields): only this has them.
+        ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
+        for key, value in {"E2.seconds": 36, "E2.device_busy_seconds": 34.2, "E2.attempts": 2,
+                           "G1.seconds": 43}.items():
+            ctx.state.capture(key, value)
+        self.assertEqual(self.payload(ctx)["stages"], {"E2": {"s": 36, "busy": 34, "tries": 2},
+                                                       "G1": {"s": 43, "busy": 0, "tries": 1}})
+
     def test_whether_the_setup_network_was_joined(self):
         for captures, joined in (({}, False),
                                  ({"D1.upload_route": "bridge network"}, True),

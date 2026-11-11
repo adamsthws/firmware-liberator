@@ -2519,7 +2519,7 @@ class Scenario:
         self.notes["names"], self.notes["networks"] = names, networks
         unknown, final = name_problems(names, networks, getattr(self, "target_final", self.target))
         # How long each Berry phase kept the device busy, the longest try of
-        # each (the run's report: "Device busy"). Kept, not judged: a real
+        # each (the report the run sends, as each stage's "busy"). Kept, not judged: a real
         # S60TPG once stopped answering at 70-90 s, an S60TPF was fine at 2
         # minutes (report, test-reports discussion) - report lists the longest.
         self.notes["device_busy"] = device_busy(self.state, self.started)

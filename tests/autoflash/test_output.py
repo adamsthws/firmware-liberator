@@ -1299,8 +1299,8 @@ class ReportTests(OutputTestCase):
         slept.assert_not_called()
 
     def test_a_report_gives_only_what_its_route_has(self):
-        # Busy time, the Wi-Fi typed and a setup network joined are an Espressif route's.
-        espressif_only = ("Busy", "Wi-Fi typed", "Setup network")
+        # The Wi-Fi typed and a setup network joined are an Espressif route's.
+        espressif_only = ("Wi-Fi typed", "Setup network")
         fields = dict(report.report_fields(self.ctx(), 441, False))
         self.assertTrue(all(label in fields for label in espressif_only))
         s61 = self.ctx(device_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="sonoff")
@@ -1308,7 +1308,8 @@ class ReportTests(OutputTestCase):
         self.assertFalse(any(label in fields for label in espressif_only))
         self.assertEqual(fields["Model"], "S61STPF")
 
-    def test_the_report_has_each_stages_time_and_how_long_the_device_was_busy(self):
+    def test_the_report_shows_retries_but_not_each_stages_time_or_how_long_the_device_was_busy(self):
+        # The report sent carries those (report_data.stages).
         ctx = self.ctx()
         for key, value in {"E2.seconds": 36, "E2.device_busy_seconds": 34.2, "E2.attempts": 2,
                            "G1.seconds": 43, "G1.device_busy_seconds": 61, "G1.attempts": 1,
@@ -1316,8 +1317,8 @@ class ReportTests(OutputTestCase):
             ctx.state.capture(key, value)
         fields = dict(report.report_fields(ctx, 441, False))
         number = {step: n for n, (step, _, _) in enumerate(routes.STEPS, 1)}
-        self.assertEqual(fields["Stage times"], f"{number['E2']}=36s, {number['G1']}=43s")
-        self.assertEqual(fields["Busy"], f"{number['E2']}=34s, {number['G1']}=1m01s")
+        self.assertNotIn("Stage times", fields)
+        self.assertNotIn("Busy", fields)
         self.assertEqual(fields["Retries"], f"{number['E2']} (1 retry)")
         self.assertEqual(fields["Signal"], "-61 dBm")
 
@@ -1338,9 +1339,8 @@ class ReportTests(OutputTestCase):
             ctx.state.capture(key, value)
         self.assertEqual(dict(report.report_fields(ctx, 441, False))["Signal"], "-71 dBm")
 
-    def test_a_run_from_before_the_timings_says_so(self):
+    def test_a_run_with_no_retries_says_so(self):
         fields = dict(report.report_fields(self.ctx(), 441, False))
-        self.assertEqual(fields["Stage times"], "Not recorded")
         self.assertEqual(fields["Retries"], "None")
 
     def test_the_result_says_where_and_why_a_run_stopped(self):
