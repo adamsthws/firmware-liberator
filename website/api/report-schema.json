@@ -801,6 +801,8 @@
         "stock-nvs",
         "from-backup",
         "missing",
+        "stock-store",
+        "changed",
         "reported",
         "not-checked",
         null
