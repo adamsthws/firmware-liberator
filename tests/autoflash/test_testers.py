@@ -67,7 +67,7 @@ class WarningTests(unittest.TestCase):
                 self.assertEqual(self.bridge(kind, lambda word: True), (["proceed"], True))
                 self.assertEqual(self.box.call_count, 1)
                 self.assertIn("The conversion for this particular device has not been proven on a real", self.said())
-                self.assertIn("Please report your result so it can be marked as a", self.said())
+                self.assertNotIn("report", self.said().lower())   # the run's report is sent by itself
 
     def test_the_words_are_the_same_for_every_kind(self):
         said = {tuple(line for line in testers.notice(kind) if not line.startswith("/") and "run.log" not in line)
