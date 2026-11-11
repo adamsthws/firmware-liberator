@@ -8,10 +8,12 @@
 //   or device can be picked out.
 // - Devices a computer converted (perComputer): from each converted device's
 //   number on the computer that first converted it (device_places), the
-//   computers that converted at least k devices are the devices numbered k,
-//   so those that converted exactly k are that less those numbered k + 1.
-//   A computer is the tool's records on it, never named: a fresh download
-//   counts again.
+//   computers that converted at least k devices are the devices numbered k -
+//   or, as a computer whose earlier conversions sent no report (--no-report)
+//   is at k all the same, the most numbered k or more - so those that
+//   converted exactly k are that less the same for k + 1. Never more than
+//   there are; fewer where reports are missing. A computer is the tool's
+//   records on it, never named: a fresh download counts again.
 // - No model's name is shown before it is vouched for (vouched_models:
 //   VOUCH_SENDERS senders from VOUCH_NETWORKS networks over VOUCH_DAYS days,
 //   nightly.js), so no made-up name can be put on the page by one sender,
@@ -111,8 +113,15 @@ export async function snapshot(db, now = new Date()) {
   const places = new Map((await all(`SELECT place, count(*) AS n FROM device_places
     JOIN devices USING (device_hash) WHERE devices.dev = 0 AND ${NOT_HELD} GROUP BY place`))
     .map((row) => [row.place, row.n]));
-  const counted = [...places.keys()].sort((a, b) => a - b)
-    .map((place) => ({ devices: place, computers: Math.max(0, places.get(place) - (places.get(place + 1) ?? 0)) }))
+  const reached = new Map();   // k: the computers that converted at least k
+  let most = 0;
+  for (const place of [...places.keys()].sort((a, b) => b - a)) {
+    most = Math.max(most, places.get(place));
+    reached.set(place, most);
+  }
+  const atLeast = (k) => [...reached].filter(([place]) => place >= k).reduce((top, [, n]) => Math.max(top, n), 0);
+  const counted = [...reached.keys()].sort((a, b) => a - b)
+    .map((place) => ({ devices: place, computers: reached.get(place) - atLeast(place + 1) }))
     .filter((row) => row.computers >= SMALLEST);
   return {
     format: FORMAT,
@@ -141,7 +150,7 @@ export async function snapshot(db, now = new Date()) {
     tools: tools.map((row) => ({ tool: row.tool, ...outcomes(row) })),
     failures: failures.map((row) => ({ step: row.step || null, error: row.error, runs: row.runs })),
     cancellations: cancellations.map((row) => ({ step: row.step || null, runs: row.runs })),
-    perComputer: { computers: count(places.get(1) ?? 0), rows: counted },
+    perComputer: { computers: count(atLeast(1)), rows: counted },
     stock: stock.map((row) => ({ model: row.model, stock: row.stock, runs: row.runs, converted: count(row.converted),
       success: rate(row.converted, row.runs) })),
     computers: computers.map((row) => ({ os: row.os_family, python: row.python_source, runs: row.runs })),
