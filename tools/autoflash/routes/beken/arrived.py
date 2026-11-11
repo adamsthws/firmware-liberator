@@ -287,7 +287,7 @@ def _back_up(ctx: Context, mac: str) -> str:
         return "unreadable"
     note_flash(ctx, True)
     try:
-        stock, stock_version = images.stock_rbl(kind)
+        stock, stock_version = images.stock_rbl(kind, ctx)
     except Abort as exc:
         output.tell(f"    {exc}: the device's data is kept, without Sonoff's firmware beside it.")
         stock, stock_version = None, str(ctx.state.input("stock_version") or "")

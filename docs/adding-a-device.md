@@ -247,7 +247,10 @@ Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
 
 - **eWeLink's official update file for it**, from
   [FlashDumps](https://github.com/openshwprojects/FlashDumps), which publishes
-  it. A whole-flash dump of the device, where there is one, has its factory data
+  it. A run uses the file eWeLink offers the device first, as on the Espressif
+  route, and this copy, pinned by hash in `OFFICIAL_FILES`
+  ([images.py](../tools/autoflash/routes/beken/images.py)), where eWeLink
+  offers none that passes the same checks. A whole-flash dump of the device, where there is one, has its factory data
   too; without one, the file's app runs on the S61's bootloader and settings.
 - **A pin map you can trust**, such as an OpenBeken template its author checked
   on hardware. A device stays out without one

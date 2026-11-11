@@ -258,6 +258,7 @@ SONOFF_S61 = Kind(
     stock_model="SN-BK7238-S61-01",
     # The descriptor name in the FOTA container its stock updater stages (tools/beken/fota_wrap.py).
     wrapper_model="FWSW-01-S61-BK7238",
+    layout="beken-4m",
     tasmota_gpio=(),  # Tasmota does not run on the BK7238: OpenBeken does
     # devices/sonoff-s61/esphome.yaml; no earlier builds, so no older names.
     esphome_legacy_setup_prefix="",
