@@ -4,7 +4,6 @@ import platform
 import sys
 import time
 import unittest
-import urllib.parse
 from pathlib import Path
 from unittest import mock
 
@@ -427,46 +426,60 @@ class CheckHardwareTests(unittest.TestCase):
         ctx.device.command.assert_not_called()
 
 class StoppedRunIssueTests(RouteTestCase):
-    """A run that stopped offers an issue for it, its report on the clipboard."""
+    """A run that failed has the way to open an issue, and its log, where the
+    links to support the project would be."""
 
-    def test_a_stopped_run_links_an_issue_and_copies_its_report(self):
+    def ended(self, ctx, ending):
+        lines = []
+        with mock.patch.object(output, "tell", side_effect=lambda text="": lines.append(text)), \
+                mock.patch.object(output, "show", side_effect=lambda text, *_: lines.append(text)), \
+                mock.patch.object(output, "show_link", lambda url, title=None, indent="    ": lines.append(("link", url))), \
+                mock.patch.object(output, "show_links", lambda links, **_: lines.append(("links", links))), \
+                mock.patch.object(output, "log_path", return_value=Path("/runs/run.log")), \
+                mock.patch.object(report.report_upload, "send"):
+            report.invite_stopped_report(ctx, ending)
+        return lines
+
+    def test_a_stopped_run_gives_the_short_issues_address_and_its_log_after_its_report(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
-        ctx.last_report_id = "0123456789abcdef0123456789abcdef"
         ctx.last_failure, ctx.last_failed_step = "the device at 192.0.2.50 did not answer within 30s", ""
         ctx.run_started, ctx.run_resumed = time.monotonic(), False
-        copied, shown = [], []
-        with mock.patch.object(hostsys, "copy_to_clipboard", side_effect=lambda text: copied.append(text) or True), \
-                mock.patch.object(output, "show_link", lambda url, title=None, indent="    ": shown.append((title, url))), \
-                mock.patch.object(report.report_upload, "send"):
-            report.invite_stopped_report(ctx, "failed")
-        [(title, url)] = shown
-        self.assertEqual(title, "Open an issue")
-        query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
-        self.assertEqual(query["template"], [report.ISSUE_FORM])
-        self.assertEqual(query["report"], ["0123456789abcdef0123456789abcdef"])
-        self.assertTrue(query["title"][0].startswith("Stopped at stage"))
-        self.assertNotIn("192.0.2.50", url, "no address in what is sent to GitHub")
-        self.assertIn("**Model:** S60TPF", copied[0], "the report, ready to paste")
+        lines = self.ended(ctx, "failed")
+        text = [line for line in lines if isinstance(line, str)]
+        result = next(index for index, line in enumerate(text) if line.lstrip().startswith("Result:"))
+        asked = text.index("If it should not have stopped, please open an issue here:")
+        self.assertLess(result, asked, "the report first, then the way to open an issue")
+        self.assertIn(("link", report.ISSUES_URL), lines)
+        self.assertEqual(text[text.index("This run's log:") + 1], f"    {Path('/runs/run.log')}")
+        self.assertFalse([line for line in lines if isinstance(line, tuple) and line[0] == "links"],
+                         "no links to support the project after a failure")
+        self.assertFalse([line for line in text if "192.0.2.50" in line or "How it went" in line])
+
+    def test_a_run_that_worked_shows_no_log_even_of_a_kind_wanting_testers(self):
+        ctx = self.ctx(firmware="tasmota", device_kind="sonoff-powct")
+        lines = []
+        with mock.patch.object(output, "tell", side_effect=lambda text="": lines.append(text)), \
+                mock.patch.object(output, "show_link") as link:
+            report.offer_report(ctx, [("Result", "Converted")])
+        self.assertNotIn("This run's log:", lines)
+        link.assert_not_called()
 
     def test_a_run_the_person_stopped_sends_its_report_and_shows_none(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
         ctx.run_started, ctx.run_resumed = time.monotonic(), False
         with mock.patch.object(output, "tell") as told, mock.patch.object(output, "show_link") as link, \
-                mock.patch.object(hostsys, "copy_to_clipboard") as copied, \
                 mock.patch.object(report.report_upload, "send") as sent:
             report.send_cancelled_report(ctx, "window-closed")
         (to, ending, _seconds, resumed), = [c.args for c in sent.call_args_list]
         self.assertEqual((to, ending, resumed, ctx.stopped_by), (ctx, "cancelled", False, "window-closed"))
         told.assert_not_called()
         link.assert_not_called()
-        copied.assert_not_called()
 
     def test_a_stopped_run_sends_its_report_too(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
         ctx.last_failure, ctx.last_failed_step = "the device did not answer within 30s", ""
         ctx.run_started, ctx.run_resumed = time.monotonic(), True
-        with mock.patch.object(hostsys, "copy_to_clipboard", return_value=True), \
-                mock.patch.object(output, "show_link"), mock.patch.object(output, "tell"), \
+        with mock.patch.object(output, "show_link"), mock.patch.object(output, "tell"), \
                 mock.patch.object(report.report_upload, "send") as sent:
             report.invite_stopped_report(ctx, "crashed")
         (to, ending, _seconds, resumed), = [c.args for c in sent.call_args_list]
@@ -475,20 +488,6 @@ class StoppedRunIssueTests(RouteTestCase):
     def test_a_title_just_short_enough_is_kept_whole(self):
         self.assertEqual(report.public_text("x" * 240), "x" * 240)
         self.assertEqual(report.public_text("x" * 241), "x" * 237 + "...")
-
-    def test_its_link_is_short_and_fills_in_the_forms_own_fields(self):
-        url = report.issue_url("stopped at stage 12 of 18 (Upload): " + "x" * 400, "f" * 32)
-        self.assertLess(len(url), 400, "fits on a line or two")
-        form = (Path(report.ROOT) / ".github" / "ISSUE_TEMPLATE" / report.ISSUE_FORM).read_text(encoding="utf-8")
-        query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
-        for field in set(query) - {"template", "title"}:
-            self.assertIn(f"    id: {field}\n", form, field)
-        self.assertNotIn("discussions/1", form, "a run that worked is sent to no thread")
-
-    def test_without_a_report_sent_the_link_still_opens_the_form(self):
-        url = report.issue_url("stopped at stage 3 of 18 (Backup)", None)
-        self.assertNotIn("report=", url)
-        self.assertIn(f"template={report.ISSUE_FORM}", url)
 
 
 if __name__ == "__main__":
