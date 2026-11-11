@@ -145,8 +145,7 @@ def converted_from(ctx: Context, firmware: str | None, stock_version: str = "") 
     return (f"{routes.FIRMWARES[firmware]}, " if source == "outdated" and firmware else "") + CONVERTED_FROM[source]
 
 
-def report_fields(ctx: Context, seconds: float, resumed: bool,
-                  hardware: dict[str, str] | None = None,
+def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
                   result: str = "converted") -> list[tuple[str, str]]:
     """This run's answers for a Test reports post, as (label, value) - nothing private.
 
@@ -172,7 +171,6 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
               or captures.get("D1.resumed") is True
               or (captures.get("D1.upload_route") == "home network" and captures.get("D1.wifi") != "preset")
               or captures.get("F4.wifi_route") == "setup network")
-    took = output.elapsed(seconds) + (" (resumed)" if resumed else "")
     retries = {number: captures[f"{step}.attempts"] - 1 for number, (step, _, _) in enumerate(routes.STEPS, 1)
                if isinstance(captures.get(f"{step}.attempts"), int) and captures[f"{step}.attempts"] > 1}
     retried = [f"{number} ({count} {'retry' if count == 1 else 'retries'})"
@@ -198,9 +196,8 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
           if espressif and firmware == "sonoff" else []),
         ("OS", computer_description()),
         ("Python", python_description()),
-        ("Time", took),
-        # Each stage's time and how long it kept the device busy are not shown:
-        # the report sent carries them (report_data.stages).
+        # How long it took, each stage's time and how long it kept the device
+        # busy are not shown: the report sent carries them (report_data).
         ("Retries", ", ".join(retried) or "none"),
         ("Signal", f"{signal} dBm" if isinstance(signal, int) else "not recorded"),
         # Only where the route has them: the Wi-Fi typed or a setup network
@@ -264,16 +261,22 @@ def answer(value: str) -> str:
     return value[:1].upper() + value[1:]
 
 
+def briefly(result: str) -> str:
+    """A result as the screen's report shows it: a stopped run's as "Stopped"
+    or "Crashed" alone, not where or why (run_result)."""
+    head, at, _ = result.partition(" at ")
+    return head if at and head in ("Stopped", "Crashed") else result
+
+
 def report_markdown(fields: list[tuple[str, str]]) -> str:
     """For pasting into an issue, where the labels show in bold."""
     return "".join(f"**{label}:** {value}\n" for label, value in fields)
 
 
-# Where each answer goes on the screen: the device's on the right, the run's and
-# this computer's on the left, and the result across the whole width, above them.  The answers a
-# fault suite reads off the screen are on the right or across it, each the last
-# on its row (tools/espressif/emulator/fault_suite.py).
-WIDE = ("Result",)
+# Where each answer goes on the screen: the device's on the right, the result,
+# the run's and this computer's on the left.  The answers a fault suite reads
+# off the screen are on the right, each the last on its row, but the result,
+# read up to the gap after it (tools/espressif/emulator/fault_suite.py).
 RIGHT = ("Firmware", "From", "Model", "Backup", "Identity", "Signal", "Checks", "Meter")
 # Those of RIGHT a fault suite reads, which stay there, last on their rows.
 SUITES_READ = ("From", "Backup", "Identity", "Checks")
@@ -282,18 +285,15 @@ SIDE = 34
 
 
 def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
-                  right: tuple[str, ...] = RIGHT, below: list[tuple[str, str]] = (),
-                  wide: tuple[str, ...] = WIDE) -> list[str]:
+                  right: tuple[str, ...] = RIGHT, below: list[tuple[str, str]] = ()) -> list[str]:
     """For the terminal: plain labels, lined up, in two columns where the
     window is wide enough - half the rows - else one. `right`: the labels
     of the right-hand column, the device's - a conversion's (RIGHT), or a
-    readout's (readout.report_fields). `wide`: the labels on rows of their
-    own above the columns, the whole width (WIDE); one left out of it goes
-    in the left-hand column, as the rest. `below`: (label, value) pairs each on
+    readout's (readout.report_fields); the rest on the left. `below`: (label, value) pairs each on
     a row of its own under them, the window's whole width to fit a list in
     before it wraps - between the words a value's no-break spaces do not join.
-    Every value on the left starts in one column: those under the labels of
-    the left-hand column, the wide ones above it, and those below."""
+    Every value on the left starts in one column: those of the left-hand
+    column and those below."""
     margin, gap = "    ", "   "
     columns = columns or output.terminal_size((100, 24)).columns
     side = (columns - len(margin) - len(gap) - 2) // 2
@@ -318,18 +318,16 @@ def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
             rows.append(f"{label + ':':<{width}} {lines[0]}")
             rows.extend(" " * (width + 1) + line for line in lines[1:])
         return rows
-    left = [(label, value) for label, value in fields if label not in wide + right]
+    left = [(label, value) for label, value in fields if label not in right]
     right = [(label, value) for label, value in fields if label in right]
     # The columns ending together: the device's answers at the bottom that
     # no fault suite reads go left when its column is the longer (an S61's,
     # with fewer of this computer's).
     while len(right) > len(left) + 1 and right[-1][0] not in SUITES_READ:
         left.append(right.pop())
-    above = [(label, value) for label, value in fields if label in wide]
-    width = max(len(label) for label, _ in [*left, *above, *under]) + 1
+    width = max(len(label) for label, _ in [*left, *under]) + 1
     left, right = cells(left, width), cells(right)
-    lines = [f"{margin}{label + ':':<{width}} {value}" for label, value in above]
-    lines += [(margin + f"{one:<{side}}{gap}{two}").rstrip()
+    lines = [(margin + f"{one:<{side}}{gap}{two}").rstrip()
               for one, two in itertools.zip_longest(left, right, fillvalue="")]
     return lines + rows_under(width)
 
@@ -534,7 +532,7 @@ def invite_report(ctx: Context, seconds: float, resumed: bool) -> None:
         records.number_conversion(mac)   # whether a report is sent or not, so the count stays true
     with output.working("Generating your report..."):
         hardware = check(ctx)
-        fields = report_fields(ctx, seconds, resumed, hardware, result=run_result(ctx, "converted"))
+        fields = report_fields(ctx, hardware, result=run_result(ctx, "converted"))
     report_upload.send(ctx, "converted", seconds, resumed, hardware)
     offer_report(ctx, fields, "How it went:")
     hold_out_hat()
@@ -575,7 +573,7 @@ def invite_stopped_report(ctx: Context, ending: str) -> None:
     it is.  Not one the operator stopped - that says nothing about the tool.
     ending: "failed" or "crashed"."""
     seconds = time.monotonic() - ctx.run_started - output.waited()
-    fields = report_fields(ctx, seconds, ctx.run_resumed, result=run_result(ctx, ending))
+    fields = report_fields(ctx, result=run_result(ctx, ending))
     report_upload.send(ctx, ending, seconds, ctx.run_resumed)
     offer_report(ctx, fields, "How it went:", stopped=run_result(ctx, ending))
 
@@ -611,7 +609,12 @@ def offer_report(ctx: Context, fields: list[tuple[str, str]], heading: str, stop
                     + ("the report, which is on your clipboard:" if copied else "the report below:"))
         output.show_link(issue_url(stopped, getattr(ctx, "last_report_id", None)), "Open an issue")
     output.tell("")
-    for line in report_screen(fields):
+    if stopped:
+        # Where and why, said in full when it stopped, and in the issue's
+        # report: here one word, so the result fits beside the firmware. In
+        # full in the log, for the suites (fault_suite.REPORT_RESULT_FULL).
+        output.log_only(f"    Result in full: {answer(stopped)}")
+    for line in report_screen([(label, briefly(value) if label == "Result" else value) for label, value in fields]):
         output.tell(line)
     if stopped and any(value == "__" for _, value in fields):
         output.tell("")

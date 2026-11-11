@@ -1210,7 +1210,7 @@ class ReportTests(OutputTestCase):
         return SimpleNamespace(state=state)
 
     def test_the_report_is_filled_in_from_the_run(self):
-        fields = dict(report.report_fields(self.ctx(), 441, False))
+        fields = dict(report.report_fields(self.ctx()))
         self.assertEqual(fields["Result"], "Converted")
         self.assertEqual(fields["Model"], "S60TPG")
         self.assertNotIn("Device type / region", fields)  # the model says it
@@ -1218,7 +1218,7 @@ class ReportTests(OutputTestCase):
         self.assertNotIn("Stock", fields)
         self.assertNotIn("Python", fields["OS"])
         self.assertRegex(fields["Python"], r"^3\.\d+\.\d+ \(")
-        self.assertEqual(fields["Time"], "7m 21s")
+        self.assertNotIn("Time", fields)   # in the report sent, not this one
         self.assertEqual(fields["Wi-Fi typed"], "No")
         self.assertEqual(fields["Setup network"], "No")
 
@@ -1228,42 +1228,42 @@ class ReportTests(OutputTestCase):
         ctx = self.ctx(device_kind="sonoff-s61", product_model="", stock_version="", firmware="sonoff",
                        source="openbeken", device_mac="12:34:56:ab:cd:ef")
         with mock.patch.object(records, "read_device", return_value={"model": "S61STPF", "stock_version": "1.3.0"}) as read:
-            fields = dict(report.report_fields(ctx, 441, False))
+            fields = dict(report.report_fields(ctx))
         read.assert_called_with("12:34:56:ab:cd:ef")
         self.assertEqual(fields["Model"], "S61STPF")
         self.assertEqual(fields["From"], "OpenBeken")
         with mock.patch.object(records, "read_device", return_value={}):
-            fields = dict(report.report_fields(ctx, 441, False))
+            fields = dict(report.report_fields(ctx))
         self.assertEqual(fields["Model"], "Sonoff S61")
         # On Sonoff's route the kind is only a default until eWeLink has been asked.
         with mock.patch.object(records, "read_device", return_value={}):
             fields = dict(report.report_fields(self.ctx(device_kind="sonoff-s61", product_model="", stock_version="",
-                                                        source="sonoff"), 441, False))
+                                                        source="sonoff")))
         self.assertEqual(fields["Model"], "__")
         # What the run itself found comes first.
         with mock.patch.object(records, "read_device", return_value={"model": "S61STPF", "stock_version": "1.3.0"}):
             fields = dict(report.report_fields(self.ctx(device_kind="sonoff-s61", product_model="S61STPE",
-                                                        stock_version="1.2.0", source="sonoff"), 441, False))
+                                                        stock_version="1.2.0", source="sonoff")))
         self.assertEqual((fields["Model"], fields["From"]), ("S61STPE", "Sonoff 1.2.0"))
 
     def test_a_run_stopped_before_its_firmware_is_chosen_names_none(self):
-        self.assertEqual(dict(report.report_fields(self.ctx(), 441, False))["Firmware"], "Not chosen")
-        chosen = dict(report.report_fields(self.ctx(firmware="esphome"), 441, False))
+        self.assertEqual(dict(report.report_fields(self.ctx()))["Firmware"], "Not chosen")
+        chosen = dict(report.report_fields(self.ctx(firmware="esphome")))
         self.assertEqual(chosen["Firmware"], "ESPHome")
 
     def test_an_s61_report_says_whether_it_was_power_cycled(self):
-        self.assertNotIn("Power cycled", dict(report.report_fields(self.ctx(), 441, False)))  # an S60's
+        self.assertNotIn("Power cycled", dict(report.report_fields(self.ctx())))  # an S60's
         s61 = dict(device_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="sonoff")
-        self.assertEqual(dict(report.report_fields(self.ctx(**s61), 441, False))["Power cycled"], "False")
+        self.assertEqual(dict(report.report_fields(self.ctx(**s61)))["Power cycled"], "False")
         ctx = self.ctx(**s61, power_cycles={"by hand": 1})
-        self.assertEqual(dict(report.report_fields(ctx, 441, False))["Power cycled"], "True")
+        self.assertEqual(dict(report.report_fields(ctx))["Power cycled"], "True")
 
     def test_no_report_gives_the_name_the_firmware_gave_the_device(self):
         # OpenBeken's holds the MAC's last three bytes; the model says the rest.
         for firmware, kind in (("tasmota", "sonoff-s60"), ("esphome", "sonoff-s60"), ("openbeken", "sonoff-s61"),
                                ("esphome", "sonoff-s61")):
             fields = report.report_fields(self.ctx(device_kind=kind, firmware=firmware, source="sonoff",
-                                                   device_name="Sonoff-S61-abcdef"), 441, False)
+                                                   device_name="Sonoff-S61-abcdef"))
             self.assertFalse([label for label, _ in fields if label.startswith("Name in")], firmware)
             self.assertNotIn("abcdef", "".join(value for _, value in fields), firmware)
 
@@ -1423,10 +1423,10 @@ class ReportTests(OutputTestCase):
     def test_a_report_gives_only_what_its_route_has(self):
         # The Wi-Fi typed and a setup network joined are an Espressif route's.
         espressif_only = ("Wi-Fi typed", "Setup network")
-        fields = dict(report.report_fields(self.ctx(), 441, False))
+        fields = dict(report.report_fields(self.ctx()))
         self.assertTrue(all(label in fields for label in espressif_only))
         s61 = self.ctx(device_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="sonoff")
-        fields = dict(report.report_fields(s61, 441, False))
+        fields = dict(report.report_fields(s61))
         self.assertFalse(any(label in fields for label in espressif_only))
         self.assertEqual(fields["Model"], "S61STPF")
 
@@ -1437,7 +1437,7 @@ class ReportTests(OutputTestCase):
                            "G1.seconds": 43, "G1.device_busy_seconds": 61, "G1.attempts": 1,
                            "E1.signal_dbm": -61}.items():
             ctx.state.capture(key, value)
-        fields = dict(report.report_fields(ctx, 441, False))
+        fields = dict(report.report_fields(ctx))
         number = {step: n for n, (step, _, _) in enumerate(routes.STEPS, 1)}
         self.assertNotIn("Stage times", fields)
         self.assertNotIn("Busy", fields)
@@ -1447,22 +1447,22 @@ class ReportTests(OutputTestCase):
     def test_on_the_way_to_esphome_the_signal_is_from_its_install(self):
         ctx = self.ctx(firmware="esphome")
         ctx.state.capture("I1.signal_dbm", -58)
-        self.assertEqual(dict(report.report_fields(ctx, 441, False))["Signal"], "-58 dBm")
+        self.assertEqual(dict(report.report_fields(ctx))["Signal"], "-58 dBm")
 
     def test_from_tasmota_to_esphome_the_signal_is_from_leaving_tasmota(self):
         ctx = self.ctx(firmware="esphome", source="tasmota")
         ctx.state.capture("L1.signal_dbm", -63)
-        self.assertEqual(dict(report.report_fields(ctx, 441, False))["Signal"], "-63 dBm")
+        self.assertEqual(dict(report.report_fields(ctx))["Signal"], "-63 dBm")
 
     def test_with_several_readings_the_report_gives_the_lowest(self):
         ctx = self.ctx()
         for key, value in {"A2.signal_dbm": -48, "D4.signal_dbm": -71, "E1.signal_dbm": -55,
                            "I1.signal_dbm": None}.items():
             ctx.state.capture(key, value)
-        self.assertEqual(dict(report.report_fields(ctx, 441, False))["Signal"], "-71 dBm")
+        self.assertEqual(dict(report.report_fields(ctx))["Signal"], "-71 dBm")
 
     def test_a_run_with_no_retries_says_so(self):
-        fields = dict(report.report_fields(self.ctx(), 441, False))
+        fields = dict(report.report_fields(self.ctx()))
         self.assertEqual(fields["Retries"], "None")
 
     def test_the_result_says_where_and_why_a_run_stopped(self):
@@ -1571,13 +1571,13 @@ class ReportTests(OutputTestCase):
             with self.subTest(outcome=outcome):
                 ctx = self.ctx(backup_outcome=outcome, stock_backup=mac_path,
                                device_mac="58:cf:79:01:02:03")
-                fields = dict(report.report_fields(ctx, 441, False))
+                fields = dict(report.report_fields(ctx))
                 self.assertEqual(fields["Backup"], said)
                 markdown = report.report_markdown(list(fields.items()))
                 self.assertNotIn("58", markdown.split("Backup")[1].splitlines()[0])
                 self.assertNotIn("sonoff-backup", markdown)
         # A run from before the backup existed.
-        self.assertEqual(dict(report.report_fields(self.ctx(backup_outcome=""), 441, False))["Backup"],
+        self.assertEqual(dict(report.report_fields(self.ctx(backup_outcome="")))["Backup"],
                          "Not taken")
 
     def test_a_run_from_a_converted_device_reports_its_backup_from_before(self):
@@ -1586,12 +1586,12 @@ class ReportTests(OutputTestCase):
         from unittest import mock
         ctx = self.ctx(source="tasmota", device_mac="12:34:56:ab:cd:ef")
         with mock.patch.object(records, "find_backup", return_value=object()):
-            self.assertEqual(dict(report.report_fields(ctx, 441, False))["Backup"], "Earlier run's")
+            self.assertEqual(dict(report.report_fields(ctx))["Backup"], "Earlier run's")
         with mock.patch.object(records, "find_backup", return_value=None):
-            self.assertEqual(dict(report.report_fields(ctx, 441, False))["Backup"], "Not taken")
+            self.assertEqual(dict(report.report_fields(ctx))["Backup"], "Not taken")
 
     def test_hardware_that_was_not_checked_says_so(self):
-        fields = dict(report.report_fields(self.ctx(), 441, False))
+        fields = dict(report.report_fields(self.ctx()))
         self.assertEqual(fields["Checks"], "Not run")
         self.assertNotIn("Relay", fields)
         self.assertNotIn("Power meter", fields)
@@ -1599,7 +1599,7 @@ class ReportTests(OutputTestCase):
         self.assertNotIn("__", fields.values())
 
     def test_every_answer_starts_with_a_capital_and_only_that_changes(self):
-        fields = dict(report.report_fields(self.ctx(), 441, False, {"Relay": "switches (meter confirms)"}))
+        fields = dict(report.report_fields(self.ctx(), {"Relay": "switches (meter confirms)"}))
         self.assertEqual(fields["Checks"], "True")
         self.assertEqual(fields["Model"], "S60TPG")
 
@@ -1621,18 +1621,17 @@ class ReportTests(OutputTestCase):
             self.assertEqual(report.device_page_url("192.168.60.50"), "http://localhost:8080")
 
     def test_the_report_holds_nothing_private(self):
-        markdown = report.report_markdown(report.report_fields(self.ctx(), 441, False))
+        markdown = report.report_markdown(report.report_fields(self.ctx()))
         for private in ("me@example.com", "192.0.2.50", "tasmota-1A2B3C-4567", "1001234abc"):
             self.assertNotIn(private, markdown)
 
     def test_fallbacks_and_unknown_models_are_reported_as_such(self):
         ctx = self.ctx(product_model="", wifi_typed=True)
         ctx.state.capture("F4.wifi_route", "setup network")
-        fields = dict(report.report_fields(ctx, 60, True))
+        fields = dict(report.report_fields(ctx))
         self.assertEqual(fields["Model"], "__")
         self.assertEqual(fields["Wi-Fi typed"], "Yes")
         self.assertEqual(fields["Setup network"], "Yes")
-        self.assertIn("(resumed)", fields["Time"])
 
     def test_a_converted_run_shows_its_report_and_asks_nothing_of_anyone(self):
         copied = []

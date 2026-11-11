@@ -82,7 +82,7 @@ def run(instance: int, source: str | None, firmware: str, save: str | None, log:
             stop_at(instance, stop_after, started, process)
         code = process.wait()
     text = log.read_text(encoding="utf-8", errors="replace")
-    result = re.findall(r"Result:\s+(.+)", text)
+    result = re.findall(r"Result:\s+(\S.*?)(?:\s{2,}|$)", text, re.M)   # up to the gap before the next column
     if stop_after:
         return step_done(SAVED / save, stop_after), f"stopped after {stop_after}"
     return code == 0 and bool(result) and result[-1].startswith("Converted"), (result[-1] if result else f"exit {code}")

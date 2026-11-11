@@ -323,9 +323,11 @@ API_REQUEST = re.compile(r"^\S+ (\w+) (\S+) \d+ -> (\d+) (.*)$")
 READING_OUT = re.compile(r"Reading out (.*) \((\d+) of (\d+)\)\.\.\.")
 # Where the readout asks for the device to be switched off and on, and waits.
 # The answers read off a run's report, in its log: each the last on its row
-# (report.report_screen).  The labels before 3.0.0 too, for an earlier
-# release's runs.
-REPORT_RESULT = re.compile(r"Result:\s+(.*)")
+# (report.report_screen), but the result, up to the gap after it.  A stopped
+# run's says only "Stopped" or "Crashed" there: where and why in full are in
+# the tool's own log alone (run.log), as REPORT_RESULT_FULL.  The labels before 3.0.0 too, for an earlier release's runs.
+REPORT_RESULT = re.compile(r"Result:\s+(\S.*?)(?:\s{2,}|$)", re.M)
+REPORT_RESULT_FULL = re.compile(r"Result in full:\s+(.*)")
 REPORT_BACKUP = re.compile(r"(?:Sonoff backup|\bBackup):\s+(.*)")
 REPORT_IDENTITY = re.compile(r"(?:Sonoff identity|\bIdentity):\s+(.*)")
 REPORT_UNFINISHED = re.compile(r"(?:Converted from|From):\s+Unfinished (?:conversion|run)")
@@ -1667,6 +1669,9 @@ class Scenario:
         if "there is nothing to convert" in clean:
             return "Converted (already: nothing to convert)"
         found = REPORT_RESULT.findall(clean)
+        if found and found[-1].strip() in ("Stopped", "Crashed"):
+            logs = run_logs(self.state)
+            found = (REPORT_RESULT_FULL.findall(logs[-1][2]) if logs else []) or found
         if found and found[-1].strip() == "Updated":
             return "Converted (updated)"   # an update's report says so, and it counts the same
         if found:

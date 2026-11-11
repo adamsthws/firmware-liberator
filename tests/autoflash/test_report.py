@@ -15,12 +15,12 @@ from tools.autoflash.state import DONE
 
 class EndingTests(RouteTestCase):
     def test_the_report_says_esphome(self):
-        fields = dict(report.report_fields(self.ctx(firmware="esphome"), 300, False))
+        fields = dict(report.report_fields(self.ctx(firmware="esphome")))
         self.assertEqual(fields["Firmware"], "ESPHome")
         # A run of 1.x, from before there was a choice, installed Tasmota.
         legacy = self.ctx(run="tasmota-run")
         legacy.state.mark("D1", DONE)
-        self.assertEqual(dict(report.report_fields(legacy, 300, False))["Firmware"], "Tasmota")
+        self.assertEqual(dict(report.report_fields(legacy))["Firmware"], "Tasmota")
 
     def test_it_says_whether_a_setup_network_was_joined(self):
         for captures, joined in (({}, "No"),
@@ -32,23 +32,21 @@ class EndingTests(RouteTestCase):
             with self.subTest(captures):
                 ctx = self.ctx(run=f"run-{len(captures)}-{joined}-{sorted(captures)}", firmware="tasmota")
                 ctx.state.data["captures"] = captures
-                self.assertEqual(dict(report.report_fields(ctx, 300, False))["Setup network"].lower(), joined.lower())
+                self.assertEqual(dict(report.report_fields(ctx))["Setup network"].lower(), joined.lower())
 
     def test_a_run_that_never_found_its_device_does_not_say_it_was_on_sonoff(self):
         # Seen on a real device switched off: the report said "Converted from: Sonoff".
         never = self.ctx(stock_version="")
-        self.assertEqual(dict(report.report_fields(never, 300, False))["From"], "__")
-        self.assertEqual(dict(report.report_fields(self.ctx(run="found", source="sonoff"), 300, False))
+        self.assertEqual(dict(report.report_fields(never))["From"], "__")
+        self.assertEqual(dict(report.report_fields(self.ctx(run="found", source="sonoff")))
                          ["From"], "Sonoff 1.2.0")
 
     def test_from_sonoff_gives_its_version_and_from_another_firmware_none(self):
         # A converted device's record keeps its backup's Sonoff version: not
         # what it ran, so not given with Tasmota's name.
-        fields = dict(report.report_fields(self.ctx(run="from-sonoff", source="sonoff", stock_version=""),
-                                           300, False))
+        fields = dict(report.report_fields(self.ctx(run="from-sonoff", source="sonoff", stock_version="")))
         self.assertEqual(fields["From"], "Sonoff")   # stopped before it was read: not asked for
-        fields = dict(report.report_fields(self.ctx(run="from-tasmota", source="tasmota", firmware="esphome"),
-                                           300, False))
+        fields = dict(report.report_fields(self.ctx(run="from-tasmota", source="tasmota", firmware="esphome")))
         self.assertEqual(fields["From"], "Tasmota")
         self.assertNotIn("Stock", fields)
 
@@ -59,19 +57,19 @@ class EndingTests(RouteTestCase):
                 ctx = self.ctx(firmware="sonoff", source="tasmota", run=f"sonoff-{taken}")
                 if taken:
                     ctx.state.capture("R1.identity", taken)
-                self.assertEqual(dict(report.report_fields(ctx, 300, False))["Identity"], said)
+                self.assertEqual(dict(report.report_fields(ctx))["Identity"], said)
         # Left out of every other run's report, whatever it read.
         for firmware in ("tasmota", "esphome"):
             ctx = self.ctx(firmware=firmware, run=f"to-{firmware}")
             ctx.state.capture("R1.identity", "backup")
-            self.assertNotIn("Identity", dict(report.report_fields(ctx, 300, False)))
+            self.assertNotIn("Identity", dict(report.report_fields(ctx)))
 
     def test_a_device_put_back_says_so_and_where_it_came_from(self):
         # Sonoff's firmware could not be put together (sonoff.put_back): not
         # "Converted", and from the firmware it began on, not "part way".
         ctx = self.ctx(firmware="esphome", source="midway", run="put-back")
         ctx.state.set_input("put_back", {"came_from": "esphome", "why": "no identity"})
-        fields = dict(report.report_fields(ctx, 300, False, result=report.run_result(ctx, "converted")))
+        fields = dict(report.report_fields(ctx, result=report.run_result(ctx, "converted")))
         self.assertEqual((fields["Result"], fields["From"], fields["Firmware"]),
                          ("Put back on ESPHome", "ESPHome", "ESPHome"))
 
@@ -93,7 +91,7 @@ class EndingTests(RouteTestCase):
                 ctx = self.ctx(firmware=firmware, run=f"meter-{firmware}-{key}-{said}")
                 if key:
                     ctx.state.capture(key, found)
-                self.assertEqual(dict(report.report_fields(ctx, 300, False))["Meter"], said)
+                self.assertEqual(dict(report.report_fields(ctx))["Meter"], said)
 
     def test_an_s61_on_openbeken_says_how_its_calibration_went(self):
         # Its driver says, at K1 (arrived.py), in the words of ESPHome's sensor.
@@ -103,37 +101,36 @@ class EndingTests(RouteTestCase):
                 ctx = self.ctx(firmware="openbeken", run=f"meter-openbeken-{said}")
                 ctx.state.set_input("device_kind", "sonoff-s61")
                 ctx.state.capture("K1.calibration", found)
-                self.assertEqual(dict(report.report_fields(ctx, 300, False))["Meter"], said)
+                self.assertEqual(dict(report.report_fields(ctx))["Meter"], said)
 
     def test_a_run_stopped_before_it_knew_the_device_says_nothing_of_a_meter(self):
         # Seen: stopped at once on a wrong --device-ip, "Meter calibration: Not
         # checked" under "Device model: __".
         ctx = self.ctx(run="never-known", stock_version="")
-        self.assertNotIn("Meter", dict(report.report_fields(ctx, 300, False)))
+        self.assertNotIn("Meter", dict(report.report_fields(ctx)))
 
     def test_a_device_with_no_meter_says_nothing_of_one(self):
         ctx = self.ctx(firmware="tasmota", run="no-meter")
         ctx.state.set_input("device_kind", "sonoff-th-elite")
         ctx.state.capture("F4.meter", {"skipped": "this device's calibration is not read yet"})
-        self.assertNotIn("Meter", dict(report.report_fields(ctx, 300, False)))
+        self.assertNotIn("Meter", dict(report.report_fields(ctx)))
 
-    def test_on_the_screen_the_device_is_on_the_right_the_run_on_the_left(self):
+    def test_on_the_screen_the_device_is_on_the_right_the_result_and_run_on_the_left(self):
         # Half the rows of one column; the answers a fault suite reads off the
         # screen - the device's - each the last on its row.
         fields = [("Result", "Converted"), ("Firmware", "Tasmota"), ("Liberator", "2.4.0"), ("Backup", "Completed"),
                   ("OS", "Ubuntu 24.04.5 LTS"), ("Checks", "True")]
         rows = report.report_screen(fields, columns=100)
-        self.assertEqual(rows[0].split(), ["Result:", "Converted"])
-        self.assertEqual(rows[1].split(), ["Liberator:", "2.4.0", "Firmware:", "Tasmota"])
-        self.assertTrue(rows[2].rstrip().endswith("Backup:   Completed"), rows)
-        self.assertEqual(len(rows), 4)
+        self.assertEqual([row.split() for row in rows], [["Result:", "Converted", "Firmware:", "Tasmota"],
+                                                         ["Liberator:", "2.4.0", "Backup:", "Completed"],
+                                                         ["OS:", "Ubuntu", "24.04.5", "LTS", "Checks:", "True"]])
 
     def test_a_long_answer_wraps_within_its_column_under_itself(self):
         fields = [("Result", "Converted"), ("Liberator", "2.4.0"),
                   ("Firmware", "Tasmota with a long name that takes more than one line of its column")]
         rows = report.report_screen(fields, columns=100)
         side = (100 - 4 - 3 - 2) // 2
-        right = [row[4 + side + 3:] for row in rows[1:]]
+        right = [row[4 + side + 3:] for row in rows]
         self.assertEqual(right[0], "Firmware: Tasmota with a long name that takes")
         self.assertTrue(all(len(row) <= side for row in right), rows)
         self.assertEqual(right[1:], [" " * 10 + "more than one line of its column"])
@@ -150,11 +147,11 @@ class EndingTests(RouteTestCase):
                           for value in ("Read out", "3.0.0", "Ubuntu", "BASICR4 1.1.0", "S60TPG 1.2.0") if value in row}
                 self.assertEqual(len(starts), 1, "\n".join(rows))
 
-    def test_a_label_left_out_of_wide_goes_at_the_top_of_the_left_hand_column(self):
-        fields = [("Result", "Read out"), ("Liberator", "3.0.0"), ("Devices", "2"), ("Accepted", "1")]
-        rows = report.report_screen(fields, columns=100, right=("Devices", "Accepted"), wide=())
-        self.assertEqual([row.split() for row in rows],
-                         [["Result:", "Read", "out", "Devices:", "2"], ["Liberator:", "3.0.0", "Accepted:", "1"]])
+    def test_a_stopped_runs_result_is_one_word_on_screen(self):
+        for result, shown in (("Stopped at stage 6 of 15 (Installing Tasmota): it went quiet", "Stopped"),
+                              ("Crashed at the end: KeyError at tools/autoflash/report.py:212", "Crashed"),
+                              ("Converted", "Converted"), ("Put back on Sonoff", "Put back on Sonoff")):
+            self.assertEqual(report.briefly(result), shown)
 
     def test_a_window_too_narrow_for_two_has_one_column(self):
         fields = [("Result", "Converted"), ("Firmware", "Tasmota"), ("Liberator", "2.4.0")]
@@ -207,12 +204,11 @@ class ReportColumnTests(unittest.TestCase):
     def test_the_columns_end_together(self):
         # Seen on an S61: its device answers ran two rows below this computer's.
         fields = [("Result", "Converted"), ("Liberator", "2.4.0"), ("Firmware", "OpenBeken"), ("OS", "Ubuntu"),
-                  ("From", "Sonoff 1.0.2"), ("Python", "3.12"), ("Model", "S61STPF"), ("Time", "1m 19s"),
+                  ("From", "Sonoff 1.0.2"), ("Python", "3.12"), ("Model", "S61STPF"),
                   ("Retries", "None"), ("Backup", "Completed"),
                   ("Signal", "-45 dBm"), ("Checks", "True"), ("Meter", "Not checked")]
         rows = report.report_screen(fields, columns=100)
-        body = rows[1:]   # under the result
-        self.assertEqual(len(body), 6, "\n".join(rows))
+        self.assertEqual(len(rows), 6, "\n".join(rows))
         meter = next(row for row in rows if "Meter:" in row)
         self.assertLess(meter.index("Meter:"), 20)   # on the left now
         checks = next(row for row in rows if "Checks:" in row)

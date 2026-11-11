@@ -41,7 +41,6 @@ FIELDS = [
     ("Identity", report.answer(longest(report.SONOFF_IDENTITY.values()))),
     ("OS", "Ubuntu 24.04.5 LTS (Windows Subsystem for Linux)"),
     ("Python", "3.13.11 (start.sh's)"),
-    ("Time", "1h 12m 34s (resumed)"),
     ("Retries", "4 (2 retries), 12 (1 retry)"),
     ("Signal", "-100 dBm"),
     ("Wi-Fi typed", "Yes"),
@@ -59,8 +58,9 @@ READ = {
 }
 
 
-def shown(fields, columns, rows=report.output.GOOD_ROWS):
-    """The screen and the log of a report offered in a window of that size."""
+def shown(fields, columns, rows=report.output.GOOD_ROWS, stopped=None):
+    """The screen and the log of a report offered in a window of that size:
+    a stopped run's (`stopped`: its result in full) or a finished one's."""
     directory = tempfile.TemporaryDirectory()
     log = Path(directory.name) / "run.log"
     terminal = Terminal()
@@ -72,7 +72,7 @@ def shown(fields, columns, rows=report.output.GOOD_ROWS):
             mock.patch.object(testers, "show_log"):
         output.start(log, verbose=False)
         try:
-            report.offer_report(ctx, fields, "Please share how it went!")
+            report.offer_report(ctx, fields, "Please share how it went!", stopped)
         finally:
             output.finish()
     screen = unattended_run.Screen(columns, 200)
@@ -84,18 +84,23 @@ def shown(fields, columns, rows=report.output.GOOD_ROWS):
 
 class ReportAnswerTests(unittest.TestCase):
     def test_every_answer_a_suite_checks_is_read_back_whole(self):
+        # A stopped run's result as the screen has it, one word; in full in the log alone.
+        full = dict(FIELDS)["Result"]
+        expected = {**dict(FIELDS), "Result": "Stopped"}
         for columns in (80, 100, 160):
-            _, log = shown(FIELDS, columns)
+            _, log = shown(FIELDS, columns, stopped=full)
             for label, pattern in READ.items():
                 with self.subTest(columns=columns, label=label):
                     found = pattern.findall(log)
-                    self.assertEqual([answer.strip() for answer in found], [dict(FIELDS)[label]], log)
+                    self.assertEqual([answer.strip() for answer in found], [expected[label]], log)
+            self.assertEqual(fault_suite.REPORT_RESULT_FULL.findall(log), [full])
 
-    def test_every_answer_a_suite_checks_is_on_the_right_or_across(self):
-        # So it is the last on its row in two columns (report.report_screen).
-        self.assertLessEqual(set(READ), set(report.SUITES_READ) | set(report.WIDE))
+    def test_every_answer_a_suite_checks_is_on_the_right_but_the_result(self):
+        # So it is the last on its row in two columns (report.report_screen):
+        # the result, on the left, is read up to the gap after it.
+        self.assertLessEqual(set(READ), {*report.SUITES_READ, "Result"})
         self.assertLessEqual(set(report.SUITES_READ), set(report.RIGHT))
-        self.assertLessEqual(set(report.RIGHT) | set(report.WIDE), set(dict(FIELDS)))
+        self.assertLessEqual({*report.RIGHT, "Result"}, set(dict(FIELDS)))
 
     def test_every_field_the_report_can_have_is_here(self):
         # Read from report.report_fields: a field added there is added to

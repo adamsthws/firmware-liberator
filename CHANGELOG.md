@@ -209,13 +209,15 @@ as its screens do, since it converts much more than smart plugs now.
   Menus no longer number a Quit option, and q quits at every one. After a Ctrl-C,
   the run carries on by itself, or at once with Enter; q stops it there.
 - The report at the end is half as tall: two columns on the screen - the device on
-  the right, the run and the computer on the left - with shorter labels (Model,
+  the right, the result, the run and the computer on the left - with shorter labels (Model,
   Backup, Checks, OS, Liberator for the tool's version...) and answers (the meter
   "Retained" or "Not retained", Python's "(venv)"). From gives Sonoff's firmware
   with its version, "Sonoff 1.2.0", in place of a line of its own. A device with a power meter says whether its calibration
   carried over, which was said on the screen, where it worried more than it
-  helped. Each stage's time and how long it kept the device busy are no longer
-  shown: the report the tool sends holds them. A run stopped before any stage
+  helped. The run's time, each stage's and how long it kept the device busy are no
+  longer shown: the report the tool sends holds them. A stopped run's result says
+  "Stopped", where and why being said as it stopped, and in the report copied for
+  an issue. A run stopped before any stage
   began no longer asks for a report.
 - A device the tool converted is asked which firmware it is to have where one on
   Sonoff's firmware is: at "Choosing the firmware", once the list of what has

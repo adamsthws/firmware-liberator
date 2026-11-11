@@ -240,8 +240,7 @@ def end(ctx: Context, said: str) -> None:
     output.tell("")
     output.show("How it went:", output.GREEN)
     output.tell("")
-    # The result at the top of the left-hand column, beside the device count.
-    for line in report.report_screen(report_fields(done), right=REPORT_RIGHT, below=report_devices(done), wide=()):
+    for line in report.report_screen(report_fields(done), right=REPORT_RIGHT, below=report_devices(done)):
         output.tell(line)
     report.hold_out_hat()
 
