@@ -579,4 +579,4 @@ def offer_report(ctx: Context, fields: list[tuple[str, str]], heading: str, stop
     if stopped and any(value == "__" for _, value in fields):
         output.tell("")
         output.tell("Fill in the blanks (__) if you know them.")
-    testers.ask_for_log(kinds.of_run(ctx.state))
+    testers.show_log(kinds.of_run(ctx.state))

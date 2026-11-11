@@ -69,7 +69,7 @@ def shown(fields, columns, rows=report.output.GOOD_ROWS):
             mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((columns, rows))), \
             mock.patch.object(output, "colour_ok", return_value=False), \
             mock.patch.object(hostsys, "copy_to_clipboard", return_value=False), \
-            mock.patch.object(testers, "ask_for_log"):
+            mock.patch.object(testers, "show_log"):
         output.start(log, verbose=False)
         try:
             report.offer_report(ctx, fields, "Please share how it went!")
