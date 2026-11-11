@@ -15,7 +15,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import __version__, esphome, hostsys, kinds, openbeken, output, records, report_upload, routes, runs, testers
+from tools.autoflash import __version__, esphome, hostsys, kinds, output, records, report_upload, routes, runs, testers
 from tools.autoflash.device import DeviceError
 from tools.autoflash.runs import ROOT
 from tools.ewelink import relay as ewelink_relay
@@ -145,8 +145,7 @@ def converted_from(ctx: Context, firmware: str | None, stock_version: str = "") 
     return (f"{routes.FIRMWARES[firmware]}, " if source == "outdated" and firmware else "") + CONVERTED_FROM[source]
 
 
-def report_fields(ctx: Context, seconds: float, resumed: bool,
-                  hardware: dict[str, str] | None = None,
+def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
                   result: str = "converted") -> list[tuple[str, str]]:
     """This run's answers for a Test reports post, as (label, value) - nothing private.
 
@@ -172,7 +171,6 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
               or captures.get("D1.resumed") is True
               or (captures.get("D1.upload_route") == "home network" and captures.get("D1.wifi") != "preset")
               or captures.get("F4.wifi_route") == "setup network")
-    took = output.elapsed(seconds) + (" (resumed)" if resumed else "")
     retries = {number: captures[f"{step}.attempts"] - 1 for number, (step, _, _) in enumerate(routes.STEPS, 1)
                if isinstance(captures.get(f"{step}.attempts"), int) and captures[f"{step}.attempts"] > 1}
     retried = [f"{number} ({count} {'retry' if count == 1 else 'retries'})"
@@ -193,14 +191,14 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
         ("Backup", records.BACKUP_OUTCOMES[ctx.state.input("backup_outcome")
                                       or ("existing" if routes.sonoff_backup_exists(ctx) else "not taken")][1]),
         # Where going back to Sonoff's firmware took the device's identity from:
-        # only on such a run (sonoff.step_sonoff_restore).
+        # only on such a run (sonoff.step_sonoff_restore), and in its log, not on
+        # the screen (LOG_ONLY).
         *([("Identity", SONOFF_IDENTITY.get(captures.get("R1.identity"), "not read"))]
           if espressif and firmware == "sonoff" else []),
         ("OS", computer_description()),
         ("Python", python_description()),
-        ("Time", took),
-        # Each stage's time and how long it kept the device busy are not shown:
-        # the report sent carries them (report_data.stages).
+        # How long it took, each stage's time and how long it kept the device
+        # busy are not shown: the report sent carries them (report_data).
         ("Retries", ", ".join(retried) or "none"),
         ("Signal", f"{signal} dBm" if isinstance(signal, int) else "not recorded"),
         # Only where the route has them: the Wi-Fi typed or a setup network
@@ -211,41 +209,14 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
         # firmware: an emulated Beken device never restarts by itself; a real one may.
         *([("Power cycled", "true" if ctx.state.input("power_cycles") else "false")] if not espressif else []),
         ("Checks", checks_passed(hardware)),
-        # Only for a device with a meter, once the run knows what it is and
-        # where it is going: whether its readings are calibrated as Sonoff's
-        # firmware had them.
-        *([("Meter", meter_calibration(captures, firmware))] if kind.has_meter and firmware else []),
+        # Not how the meter's calibration went: a device's readings a few
+        # percent out is no news to the person converting it. The report
+        # sent holds it (report_data.meter_word), the log why.
     ]
     return [(label, answer(value)) for label, value in fields]
 
 
 SONOFF_IDENTITY = {"backup": "backup", "kept": "device", "account": "eWeLink account"}
-
-
-def meter_calibration(captures: dict[str, Any], firmware: str | None) -> str:
-    """How the run left the meter's calibration, from what its steps found:
-    Tasmota's (`<step>.meter`: changed, factory, or skipped and why), ESPHome's
-    (`<step>.meter`: what its Calibration sensor said, or skipped), or a Beken
-    device's ESPHome or OpenBeken (`<step>.calibration`, OpenBeken's in the
-    same words, openbeken.calibration_state).  The last step's word counts: an
-    update checks it again."""
-    if firmware == "sonoff":
-        return "retained"   # Sonoff's firmware, with its own
-    found: Any = None
-    for key, value in captures.items():
-        if key.endswith(".meter") or key.endswith(".calibration"):
-            found = value
-    if isinstance(found, dict) and "skipped" in found:
-        return "not retained"   # why is in the log
-    if isinstance(found, dict) and "changed" in found:
-        return "retained"
-    state = found.get("calibration") if isinstance(found, dict) else found
-    if isinstance(state, str) and state:
-        # What ESPHome's Calibration sensor said: from the backup or Sonoff's
-        # own store, or "missing" - or OpenBeken's driver, that its
-        # calibration is not the stock store's either.
-        return "not retained" if state.startswith(("missing", openbeken.CALIBRATION_CHANGED)) else "retained"
-    return "not checked"
 
 
 def checks_passed(hardware: dict[str, str]) -> str:
@@ -254,7 +225,7 @@ def checks_passed(hardware: dict[str, str]) -> str:
     relay = hardware.get("Relay", "not checked")
     if relay in ("not checked", "motor mode"):
         return "not run"
-    return "true" if relay.startswith("switches") else "false"
+    return "pass" if relay.startswith("switches") else "fail"
 
 
 def answer(value: str) -> str:
@@ -264,36 +235,42 @@ def answer(value: str) -> str:
     return value[:1].upper() + value[1:]
 
 
+def briefly(result: str) -> str:
+    """A result as the screen's report shows it: a stopped run's as "Stopped"
+    or "Crashed" alone, not where or why (run_result)."""
+    head, at, _ = result.partition(" at ")
+    return head if at and head in ("Stopped", "Crashed") else result
+
+
 def report_markdown(fields: list[tuple[str, str]]) -> str:
     """For pasting into an issue, where the labels show in bold."""
     return "".join(f"**{label}:** {value}\n" for label, value in fields)
 
 
-# Where each answer goes on the screen: the device's on the right, the run's and
-# this computer's on the left, and the result across the whole width, above them.  The answers a
-# fault suite reads off the screen are on the right or across it, each the last
-# on its row (tools/espressif/emulator/fault_suite.py).
-WIDE = ("Result",)
-RIGHT = ("Firmware", "From", "Model", "Backup", "Identity", "Signal", "Checks", "Meter")
+# Where each answer goes on the screen: the device's on the right, the result,
+# the run's and this computer's on the left.  The answers a fault suite reads
+# off the screen are on the right, each the last on its row, but the result,
+# read up to the gap after it (tools/espressif/emulator/fault_suite.py).
+RIGHT = ("Firmware", "From", "Model", "Backup", "Signal", "Checks")
 # Those of RIGHT a fault suite reads, which stay there, last on their rows.
-SUITES_READ = ("From", "Backup", "Identity", "Checks")
+SUITES_READ = ("From", "Backup", "Checks")
+# Answers the run's log has, for the fault suite and someone helping, and the
+# screen does not: where an identity came from is nothing the person needs.
+LOG_ONLY = ("Identity",)
 # Columns each side needs at the least, else one column, as Markdown has it.
 SIDE = 34
 
 
 def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
-                  right: tuple[str, ...] = RIGHT, below: list[tuple[str, str]] = (),
-                  wide: tuple[str, ...] = WIDE) -> list[str]:
+                  right: tuple[str, ...] = RIGHT, below: list[tuple[str, str]] = ()) -> list[str]:
     """For the terminal: plain labels, lined up, in two columns where the
     window is wide enough - half the rows - else one. `right`: the labels
     of the right-hand column, the device's - a conversion's (RIGHT), or a
-    readout's (readout.report_fields). `wide`: the labels on rows of their
-    own above the columns, the whole width (WIDE); one left out of it goes
-    in the left-hand column, as the rest. `below`: (label, value) pairs each on
+    readout's (readout.report_fields); the rest on the left. `below`: (label, value) pairs each on
     a row of its own under them, the window's whole width to fit a list in
     before it wraps - between the words a value's no-break spaces do not join.
-    Every value on the left starts in one column: those under the labels of
-    the left-hand column, the wide ones above it, and those below."""
+    Every value on the left starts in one column: those of the left-hand
+    column and those below."""
     margin, gap = "    ", "   "
     columns = columns or output.terminal_size((100, 24)).columns
     side = (columns - len(margin) - len(gap) - 2) // 2
@@ -318,18 +295,16 @@ def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
             rows.append(f"{label + ':':<{width}} {lines[0]}")
             rows.extend(" " * (width + 1) + line for line in lines[1:])
         return rows
-    left = [(label, value) for label, value in fields if label not in wide + right]
+    left = [(label, value) for label, value in fields if label not in right]
     right = [(label, value) for label, value in fields if label in right]
     # The columns ending together: the device's answers at the bottom that
     # no fault suite reads go left when its column is the longer (an S61's,
     # with fewer of this computer's).
     while len(right) > len(left) + 1 and right[-1][0] not in SUITES_READ:
         left.append(right.pop())
-    above = [(label, value) for label, value in fields if label in wide]
-    width = max(len(label) for label, _ in [*left, *above, *under]) + 1
+    width = max(len(label) for label, _ in [*left, *under]) + 1
     left, right = cells(left, width), cells(right)
-    lines = [f"{margin}{label + ':':<{width}} {value}" for label, value in above]
-    lines += [(margin + f"{one:<{side}}{gap}{two}").rstrip()
+    lines = [(margin + f"{one:<{side}}{gap}{two}").rstrip()
               for one, two in itertools.zip_longest(left, right, fillvalue="")]
     return lines + rows_under(width)
 
@@ -534,9 +509,9 @@ def invite_report(ctx: Context, seconds: float, resumed: bool) -> None:
         records.number_conversion(mac)   # whether a report is sent or not, so the count stays true
     with output.working("Generating your report..."):
         hardware = check(ctx)
-        fields = report_fields(ctx, seconds, resumed, hardware, result=run_result(ctx, "converted"))
+        fields = report_fields(ctx, hardware, result=run_result(ctx, "converted"))
     report_upload.send(ctx, "converted", seconds, resumed, hardware)
-    offer_report(ctx, fields, "How it went:")
+    offer_report(ctx, fields)
     hold_out_hat()
 
 
@@ -575,9 +550,9 @@ def invite_stopped_report(ctx: Context, ending: str) -> None:
     it is.  Not one the operator stopped - that says nothing about the tool.
     ending: "failed" or "crashed"."""
     seconds = time.monotonic() - ctx.run_started - output.waited()
-    fields = report_fields(ctx, seconds, ctx.run_resumed, result=run_result(ctx, ending))
+    fields = report_fields(ctx, result=run_result(ctx, ending))
     report_upload.send(ctx, ending, seconds, ctx.run_resumed)
-    offer_report(ctx, fields, "How it went:", stopped=run_result(ctx, ending))
+    offer_report(ctx, fields, stopped=run_result(ctx, ending))
 
 
 def issue_url(stopped: str, report_id: str | None) -> str:
@@ -597,21 +572,29 @@ def offer_issue(stopped: str) -> None:
     output.show_link(issue_url(stopped, None), "Open an issue")
 
 
-def offer_report(ctx: Context, fields: list[tuple[str, str]], heading: str, stopped: str | None = None) -> None:
+def offer_report(ctx: Context, fields: list[tuple[str, str]], stopped: str | None = None) -> None:
     """The run's report on the screen. For a run that stopped (`stopped`: how,
     as run_result says it), a link to open an issue for it, with the report
     on the clipboard to paste in: the tool is meant to finish every run, so
     one it could not is something to fix."""
     ctx.reported = True
     output.tell("")
-    output.show(heading, output.GREEN)
     if stopped:
         copied = hostsys.copy_to_clipboard(report_markdown(fields))
         output.tell("If it should not have stopped there, please open an issue, and paste in "
                     + ("the report, which is on your clipboard:" if copied else "the report below:"))
         output.show_link(issue_url(stopped, getattr(ctx, "last_report_id", None)), "Open an issue")
     output.tell("")
-    for line in report_screen(fields):
+    if stopped:
+        # Where and why, said in full when it stopped, and in the issue's
+        # report: here one word, so the result fits beside the firmware. In
+        # full in the log, for the suites (fault_suite.REPORT_RESULT_FULL).
+        output.log_only(f"    Result in full: {answer(stopped)}")
+    for label, value in fields:
+        if label in LOG_ONLY:
+            output.log_only(f"    {label}: {value}")
+    for line in report_screen([(label, briefly(value) if label == "Result" else value) for label, value in fields
+                               if label not in LOG_ONLY]):
         output.tell(line)
     if stopped and any(value == "__" for _, value in fields):
         output.tell("")
