@@ -110,6 +110,7 @@ class UntestedKindTests(unittest.TestCase):
         for patch in (mock.patch.object(stock.firewall, "choose_port", return_value=8088),
                       mock.patch.object(stock.firewall, "ensure_firewall"),
                       mock.patch.object(stock.account, "note_firmware_name", return_value=""),
+                      mock.patch.object(stock, "offered_latest", return_value={}),
                       mock.patch.object(stock.prompts, "section"),
                       mock.patch.object(stock.output, "transient_begin"),
                       mock.patch.object(stock.output, "transient_end"),

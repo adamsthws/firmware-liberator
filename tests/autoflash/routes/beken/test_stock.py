@@ -16,6 +16,7 @@ from tools.ewelink.get_device_key import EwelinkError
 
 S61 = kinds.SONOFF_S61
 MAC = "12:34:56:ab:cd:ef"
+OFFERED_LATEST = stock.offered_latest   # itself, as the tests below stand it in for B1
 
 
 class FromStockTests(unittest.TestCase):
@@ -26,6 +27,9 @@ class FromStockTests(unittest.TestCase):
         noted = mock.patch.object(stock.account, "note_firmware_name", return_value="FWSW-01-S61-BK7238")
         self.noted = noted.start()
         self.addCleanup(noted.stop)
+        offered = mock.patch.object(stock, "offered_latest", return_value={"offers": [{"binList": []}]})
+        self.offered = offered.start()
+        self.addCleanup(offered.stop)
 
     def test_b1_takes_the_devices_identity_from_its_account_record(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -38,7 +42,11 @@ class FromStockTests(unittest.TestCase):
                     result = stock.step_identify(ctx)
             self.assertEqual(result, {"stock_version": "1.0.2", "model": "SN-BK7238-S61-01", "product": "S61STPF",
                                       "signal_dbm": None, "firmware_name": "FWSW-01-S61-BK7238"})
-            self.noted.assert_called_once_with(S61, {}, "", "S61STPF", "SN-BK7238-S61-01")
+            # The firmware name from eWeLink's offer, asked with the device's own id.
+            self.noted.assert_called_once_with(S61, {"offers": [{"binList": []}]}, "1001234abc", "S61STPF",
+                                               "SN-BK7238-S61-01")
+            self.offered.assert_called_once_with(ctx, {"deviceid": "1001234abc", "model": "SN-BK7238-S61-01",
+                                                       "version": "1.0.2"})
             self.assertEqual([ctx.state.input(key) for key in ("device_kind", "stock_version", "product_model")],
                              [S61.key, "1.0.2", "S61STPF"])
             # Another model on the account is never the device.
@@ -46,6 +54,27 @@ class FromStockTests(unittest.TestCase):
             with mock.patch.object(records, "DEVICES", devices_dir), mock.patch.object(records, "CAPTURES", Path(tmp)):
                 with self.assertRaisesRegex(errors.Abort, "does not convert"):
                     stock.step_identify(ctx)
+
+    def test_b1_asks_ewelink_for_the_latest_offer_and_goes_on_without_it(self):
+        identity = {"deviceid": "1001234abc", "model": "SN-BK7238-S61-01", "version": "1.0.2"}
+        asked = []
+
+        def latest(region, token, query):
+            asked.append((region, token, query))
+            return {"offers": ["the offer"]}
+
+        def use(call):
+            return call("eu", {"at": "token"})
+
+        def unreachable(call):
+            raise EwelinkError("eWeLink could not be reached")
+
+        ctx = SimpleNamespace(ewelink=SimpleNamespace(use=use))
+        with mock.patch.object(stock, "latest_offer", latest):
+            self.assertEqual(OFFERED_LATEST(ctx, identity), {"offers": ["the offer"]})
+            self.assertEqual(asked, [("eu", "token", identity)])
+            ctx.ewelink.use = unreachable
+            self.assertEqual(OFFERED_LATEST(ctx, identity), {"problem": "EwelinkError"})
 
     def test_b1_reads_the_wifi_signal_the_device_gave_ewelink_and_asks_about_a_weak_one(self):
         for rssi, asked in ((-61, False), (-85, True)):

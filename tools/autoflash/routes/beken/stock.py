@@ -16,7 +16,7 @@ from tools.autoflash.routes.beken import images
 from tools.beken import fota_wrap, interim_marker
 from tools.ewelink import ota_push
 from tools.ewelink.get_device_key import EwelinkError
-from tools.ewelink.query_ota import ota_identity
+from tools.ewelink.query_ota import latest_offer, ota_identity
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -77,8 +77,8 @@ def step_identify(ctx: Context) -> dict[str, Any]:
         raise Abort(str(exc)) from exc
     kind = kinds.for_stock_model(identity["model"])
     product = str(device.get("productModel") or "").strip().upper()
-    # This route asks eWeLink for no update file, so only the public list can say.
-    name = account.note_firmware_name(kind, {}, "", product, identity["model"])
+    name = account.note_firmware_name(kind, offered_latest(ctx, identity), identity["deviceid"], product,
+                                      identity["model"])
     if kind is None:
         raise Abort(f"the device is a {identity['model']}, which this tool does not convert yet. Nothing was written")
     official = note_official_file(kind, identity["version"])
@@ -101,6 +101,15 @@ def step_identify(ctx: Context) -> dict[str, Any]:
         "rejoin your Wi-Fi on its own; a weak signal makes that less certain."])
     return {"stock_version": identity["version"], "model": identity["model"], "product": product,
             "signal_dbm": signal, "firmware_name": name, **official}
+
+
+def offered_latest(ctx: Context, identity: dict[str, str]) -> dict[str, Any]:
+    """eWeLink's offer of the latest firmware to this device, as query_ota.latest_offer
+    gives it, to read the firmware name from: {"problem": ...} where eWeLink is not reached."""
+    try:
+        return ctx.ewelink.use(lambda region, session: latest_offer(region, session["at"], identity))
+    except EwelinkError as exc:
+        return {"problem": type(exc).__name__}
 
 
 def account_signal(device: dict[str, Any]) -> int | None:
