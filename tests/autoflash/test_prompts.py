@@ -377,7 +377,8 @@ class CountdownKeyTests(unittest.TestCase):
         # "in 20 s" stood still above it.
         from tools.autoflash import runner
         import inspect
-        self.assertIn('countdown_carry_on("Carrying on to the next stage")', inspect.getsource(runner))
+        # The longest it says (ask_after_ctrl_c's); before a question, "Carrying on".
+        self.assertIn('], "Carrying on to the next stage")', inspect.getsource(runner))
         with mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))), \
                 mock.patch.object(output, "colour_ok", return_value=True), \
                 mock.patch("sys.stdout", io.StringIO()):
@@ -388,6 +389,87 @@ class CountdownKeyTests(unittest.TestCase):
     def test_how_to_quit_is_said_as_at_every_question(self):
         self.ask("\r")
         self.assertIn(b"\x1b[2m(q to quit)\x1b[0m", self.written)   # in grey, never a number
+
+
+class CtrlCFirstTests(unittest.TestCase):
+    """A Ctrl-C pressed while nothing was asking is asked about before the
+    next question, not after it.  Seen: pressed while the run looked for
+    devices, "You pressed Ctrl-C" came only once the device was chosen and a
+    key pressed, at the end of the first stage."""
+
+    # Each kind of question, and an answer it takes the first time.
+    KINDS = {
+        "text": (lambda: prompts.ask_text("eWeLink account email"), "you@example.com"),
+        "yes or no": (lambda: prompts.ask_yes_no("Use it anyway"), "y"),
+        "choice": (lambda: prompts.ask_choice("Which device is this run for", ["a", "b"]), "1"),
+        "word": (lambda: prompts.require_word(prompts.CONSENT_WORD), "proceed"),
+        "key": (lambda: prompts.wait_for_key(), None),
+        "password": (lambda: prompts.ask_secret("Wi-Fi password: "), "hunter22"),
+    }
+
+    def ask(self, kind, *, carry_on=True, unattended=False):
+        from tools.autoflash import interrupt
+        self.addCleanup(interrupt.clear)
+        interrupt._state["first"] = 1.0   # pressed earlier, not yet asked about
+        order = []
+        question, answer = self.KINDS[kind]
+
+        def asked(*_args, **_kwargs):
+            order.append("question")
+            return answer
+
+        def about_ctrl_c(_question):
+            order.append("ctrl-c")
+            return carry_on
+        with mock.patch.object(prompts.sys.stdin, "isatty", return_value=True), \
+             mock.patch.object(prompts.sys.stdout, "isatty", return_value=True), \
+             mock.patch.object(prompts, "UNATTENDED", unattended), \
+             mock.patch.object(prompts, "countdown_carry_on", side_effect=about_ctrl_c), \
+             mock.patch.object(prompts, "discard_typed_ahead"), mock.patch.object(prompts, "_emit"), \
+             mock.patch.object(prompts, "section"), mock.patch.object(prompts.output, "tell"), \
+             mock.patch.object(prompts, "_read_answer", side_effect=asked), \
+             mock.patch.object(prompts, "_wait_for_key", side_effect=asked), \
+             mock.patch.object(prompts, "_ask_secret", side_effect=asked):
+            try:
+                question()
+            except KeyboardInterrupt:
+                order.append("stopped")
+            except prompts.QuitRun:
+                order.append("unattended")
+        return order, interrupt.pending()
+
+    def test_asked_about_before_every_kind_of_question(self):
+        for kind in self.KINDS:
+            with self.subTest(kind=kind):
+                self.assertEqual(self.ask(kind), (["ctrl-c", "question"], False))
+
+    def test_stopping_there_stops_before_the_question(self):
+        for kind in self.KINDS:
+            with self.subTest(kind=kind):
+                self.assertEqual(self.ask(kind, carry_on=False), (["ctrl-c", "stopped"], False))
+
+    def test_every_kind_of_question_asks_it_first(self):
+        # A new kind of question asks about it too, or this fails. The
+        # countdown is the question about it.
+        import ast
+        readers = {"_raw", "_read_answer", "_ask_secret", "_wait_for_key", "setcbreak", "getwch", "input"}
+        not_questions = {"discard_typed_ahead", "countdown_carry_on"}
+        tree = ast.parse(Path(prompts.__file__).read_text(encoding="utf-8"))
+        missing = []
+        for function in tree.body:
+            if not isinstance(function, ast.FunctionDef) or function.name.startswith("_") \
+                    or function.name in not_questions:
+                continue
+            names = {node.id if isinstance(node, ast.Name) else node.attr for node in ast.walk(function)
+                     if isinstance(node, (ast.Name, ast.Attribute))}
+            if readers & names and "_ctrl_c_first" not in names:
+                missing.append(function.name)
+        self.assertEqual(missing, [])
+
+    def test_an_unattended_run_leaves_it_to_the_end_of_the_stage(self):
+        order, pending = self.ask("word", unattended=True)
+        self.assertNotIn("ctrl-c", order)
+        self.assertTrue(pending)
 
 
 class QuestionScreenTests(unittest.TestCase):

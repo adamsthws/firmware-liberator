@@ -369,15 +369,10 @@ def stop_here_after_ctrl_c(step: str) -> bool:
     run stops here only if the person says so - by itself it carries on."""
     if not interrupt.pending():
         return False
-    interrupt.clear()
-    output.transient_begin()
-    prompts.section("You pressed Ctrl-C", [
+    if not prompts.ask_after_ctrl_c([
         "The stage that was under way is done, and everything is recorded, so",
         "stopping here is safe: running this again picks up where it left off.",
-    ])
-    carry_on = prompts.countdown_carry_on("Carrying on to the next stage")
-    output.transient_end()
-    if not carry_on:
+    ], "Carrying on to the next stage"):
         output.log_only(f"Stopped after {step}, as asked after Ctrl-C.")
         # Said on the screen too, as a Ctrl-C at any other moment is: the
         # person is told how to carry on, not only that it was tidied up.

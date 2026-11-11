@@ -245,6 +245,10 @@ as its screens do, since it converts much more than smart plugs now.
   screen, and their codes became part of the answer.
 - A Ctrl-C pressed before the first stage, while the tool looks for devices, no
   longer leaves "! Are you sure?" on the screen for the rest of the run.
+- A Ctrl-C pressed while nothing is being asked is asked about before the next
+  question, not after it: pressed while the tool looked for devices, "You
+  pressed Ctrl-C" came only once a device was chosen and a key pressed, at the
+  end of the first stage.
 - The countdown after Ctrl-C counts down in an 80-column window too: its words fit
   one row ("Carrying on to the next stage in 20 s, or press Enter now"). On two,
   only the second was redrawn, and "in 20 s" stood still above it.

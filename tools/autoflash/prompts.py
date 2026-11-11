@@ -252,6 +252,7 @@ class SecretLine:
 
 
 def ask_secret(prompt: str, reveal_seconds: float = 1.0) -> str:
+    _ctrl_c_first()
     discard_typed_ahead()
     with interrupt.asking():
         return _ask_secret(prompt, reveal_seconds)
@@ -435,6 +436,7 @@ def _ask_secret_windows(prompt: str, reveal_seconds: float) -> str:
 
 def wait_for_key(prompt: str = "Press any key to continue", *,
                  until: Callable[[], bool] | None = None) -> None:
+    _ctrl_c_first()
     with interrupt.asking():
         _wait_for_key(prompt, until=until)
 
@@ -526,6 +528,7 @@ def ask_text(
     private: str | None = None,
 ) -> str:
     """`private`: the answer is kept out of the log, written as <private>."""
+    _ctrl_c_first()
     if help_lines:
         _emit(help_lines)
     if example:
@@ -550,6 +553,7 @@ def ask_yes_no(
     help_lines: Sequence[str] = (),
     default: bool | None = None,
 ) -> bool:
+    _ctrl_c_first()
     if help_lines:
         _emit(help_lines)
     hint = {True: "Y/n", False: "y/N", None: "y/n"}[default]
@@ -574,6 +578,7 @@ def ask_choice(question: str, options: Sequence[str], *, help_lines: Sequence[st
     q stops the run cleanly, as at every question (hint_to_quit): no option is
     numbered for it.
     """
+    _ctrl_c_first()
     if help_lines:
         _emit(help_lines)
     shown = list(options)
@@ -590,6 +595,35 @@ def ask_choice(question: str, options: Sequence[str], *, help_lines: Sequence[st
         if 1 <= chosen <= len(options):
             return chosen - 1
         _retry(mark, [f"Choose a number between 1 and {len(shown)}."])
+
+
+def ask_after_ctrl_c(why_safe: Sequence[str], carrying_on: str) -> bool:
+    """A Ctrl-C pressed while nothing was asking, asked about at a point where
+    stopping is safe: True to carry on, by itself after a countdown, as the
+    press may have been a mistake.  `why_safe` says why stopping here loses
+    nothing."""
+    interrupt.clear()
+    output.transient_begin()
+    section("You pressed Ctrl-C", why_safe)
+    carry_on = countdown_carry_on(carrying_on)
+    output.transient_end()
+    return carry_on
+
+
+def _ctrl_c_first() -> None:
+    """Before a question, a Ctrl-C pressed since the last one is asked about:
+    stopping at a question is safe, as a Ctrl-C there stops at once.  Seen:
+    pressed while the run looked for devices, it was asked about only at the
+    end of the first stage, after the questions in between were answered.
+    An unattended run's is asked about at the end of the stage, as before."""
+    if UNATTENDED or not interrupt.pending() or not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return
+    if not ask_after_ctrl_c([
+        "Nothing is under way, so stopping here is safe: running this again",
+        "picks up where it left off.",
+    ], "Carrying on"):
+        output.log_only("Stopped at a question, as asked after Ctrl-C.")
+        raise KeyboardInterrupt
 
 
 def countdown_carry_on(question: str, *, seconds: float = interrupt.CARRY_ON_AFTER) -> bool:
@@ -906,6 +940,7 @@ def require_word(word: str, *, skip: bool = False) -> bool:
 
     With `skip` - one device among several - s passes this one by (False),
     and q still quits the run (QuitRun), as it does everywhere."""
+    _ctrl_c_first()
     output.tell("")
     question = f"Type {word.upper()} to go ahead"
     if UNATTENDED:
