@@ -389,6 +389,21 @@ class ArrivedTests(unittest.TestCase):
                 self.assertEqual(arrived.step_backup(ctx)["outcome"], "existing")
                 self.assertEqual(ctx.state.input("backup_outcome"), "existing")
 
+    def test_b4_without_sonoffs_firmware_says_only_what_it_backed_up(self):
+        from tests.autoflash.test_openbeken import FLASH
+        region = FLASH[:0x20000] if len(FLASH) >= 0x20000 else FLASH
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, device_ip=self.server.host, stock_version="1.0.2")
+            with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), mock.patch.object(records, "CAPTURES", Path(tmp)), \
+                    mock.patch.object(records, "BEKEN_REGION", (0x3E0000, len(region))), \
+                    mock.patch.object(arrived.backup, "factory_mac", return_value=MAC), \
+                    mock.patch.object(images, "stock_rbl", side_effect=errors.Abort("not fetched")), \
+                    mock.patch.object(arrived.output, "say") as said:
+                self.assertEqual(arrived.step_backup(ctx)["outcome"], "saved")
+            backed_up = [call.args[0] for call in said.call_args_list if "Backed up" in call.args[0]]
+            self.assertEqual(len(backed_up), 1)
+            self.assertNotIn("Sonoff's firmware", backed_up[0])
+
     def b4_reading(self, tmp, reads):
         ctx = a_context(tmp, device_ip=self.server.host, stock_version="1.0.2")
         with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), mock.patch.object(records, "CAPTURES", Path(tmp)), \
