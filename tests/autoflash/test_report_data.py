@@ -284,6 +284,9 @@ class WordTests(RouteTestCase):
                 ("esphome", {"U2.meter": "stock NVS, factor 1.02"}, "stock-nvs"),
                 ("esphome", {"U2.meter": "from backup, factor 1.00"}, "from-backup"),
                 ("esphome", {"U2.meter": "missing"}, "missing"),
+                # An S61's OpenBeken (openbeken.calibration_state): Sonoff's store, or changed since.
+                ("openbeken", {"K1.calibration": "stock store"}, "stock-store"),
+                ("openbeken", {"K1.calibration": "not the stock store's"}, "changed"),
                 ("esphome", {"K3.calibration": {"calibration": "something new"}}, "reported"),
                 ("esphome", {}, "not-checked")):
             self.assertEqual(report_data.meter_word(captures, firmware), word, captures)
