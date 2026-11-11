@@ -282,40 +282,56 @@ SIDE = 34
 
 
 def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
-                  right: tuple[str, ...] = RIGHT) -> list[str]:
+                  right: tuple[str, ...] = RIGHT, below: list[tuple[str, str]] = (),
+                  wide: tuple[str, ...] = WIDE) -> list[str]:
     """For the terminal: plain labels, lined up, in two columns where the
     window is wide enough - half the rows - else one. `right`: the labels
     of the right-hand column, the device's - a conversion's (RIGHT), or a
-    readout's (readout.report_fields)."""
+    readout's (readout.report_fields). `wide`: the labels on rows of their
+    own above the columns, the whole width (WIDE); one left out of it goes
+    in the left-hand column, as the rest. `below`: (label, value) pairs each on
+    a row of its own under them, the window's whole width to fit a list in
+    before it wraps - between the words a value's no-break spaces do not join.
+    Every value on the left starts in one column: those under the labels of
+    the left-hand column, the wide ones above it, and those below."""
     margin, gap = "    ", "   "
     columns = columns or output.terminal_size((100, 24)).columns
     side = (columns - len(margin) - len(gap) - 2) // 2
-    if side < SIDE:
-        width = max(len(label) for label, _ in fields) + 1
-        return [f"{margin}{label + ':':<{width}} {value}" for label, value in fields]
+    under = list(below)
 
-    def cells(column: list[tuple[str, str]]) -> list[str]:
-        width = max((len(label) for label, _ in column), default=0) + 1
+    def rows_under(width: int) -> list[str]:
+        rows = []
+        for label, value in under:
+            lines = textwrap.wrap(value, max(20, columns - len(margin) - width - 2)) or [""]
+            rows.append(f"{margin}{label + ':':<{width}} {lines[0]}".replace("\u00a0", " "))
+            rows.extend(f"{margin}{'':<{width}} {line}".replace("\u00a0", " ") for line in lines[1:])
+        return rows
+    if side < SIDE:
+        width = max(len(label) for label, _ in [*fields, *under]) + 1
+        return [f"{margin}{label + ':':<{width}} {value}" for label, value in fields] + rows_under(width)
+
+    def cells(column: list[tuple[str, str]], width: int = 0) -> list[str]:
+        width = width or max((len(label) for label, _ in column), default=0) + 1
         rows = []
         for label, value in column:
             lines = textwrap.wrap(value, side - width - 1) or [""]
             rows.append(f"{label + ':':<{width}} {lines[0]}")
             rows.extend(" " * (width + 1) + line for line in lines[1:])
         return rows
-    left = [(label, value) for label, value in fields if label not in WIDE + right]
+    left = [(label, value) for label, value in fields if label not in wide + right]
     right = [(label, value) for label, value in fields if label in right]
     # The columns ending together: the device's answers at the bottom that
     # no fault suite reads go left when its column is the longer (an S61's,
     # with fewer of this computer's).
     while len(right) > len(left) + 1 and right[-1][0] not in SUITES_READ:
         left.append(right.pop())
-    left, right = cells(left), cells(right)
-    wide = [(label, value) for label, value in fields if label in WIDE]
-    width = max(len(label) for label, _ in fields) + 1
-    lines = [f"{margin}{label + ':':<{width}} {value}" for label, value in wide]
+    above = [(label, value) for label, value in fields if label in wide]
+    width = max(len(label) for label, _ in [*left, *above, *under]) + 1
+    left, right = cells(left, width), cells(right)
+    lines = [f"{margin}{label + ':':<{width}} {value}" for label, value in above]
     lines += [(margin + f"{one:<{side}}{gap}{two}").rstrip()
               for one, two in itertools.zip_longest(left, right, fillvalue="")]
-    return lines
+    return lines + rows_under(width)
 
 
 # Long enough for the CSE7766 and Tasmota's energy driver to report a new
