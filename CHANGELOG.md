@@ -202,10 +202,13 @@ check.
   the run carries on by itself, or at once with Enter; q stops it there.
 - The report at the end is half as tall: two columns on the screen - the device on
   the right, the run and the computer on the left - with shorter labels (Model,
-  Stock, Backup, Checks...) and answers (the meter "Retained" or "Not retained",
-  Python's "(venv)"). A device with a power meter says whether its calibration
+  Backup, Checks, OS, Liberator for the tool's version...) and answers (the meter
+  "Retained" or "Not retained", Python's "(venv)"). From gives Sonoff's firmware
+  with its version, "Sonoff 1.2.0", in place of a line of its own. A device with a power meter says whether its calibration
   carried over, which was said on the screen, where it worried more than it
-  helped. A run stopped before any stage began no longer asks for a report.
+  helped. Each stage's time and how long it kept the device busy are no longer
+  shown: the report the tool sends holds them. A run stopped before any stage
+  began no longer asks for a report.
 - A device the tool converted is asked which firmware it is to have where one on
   Sonoff's firmware is: at "Choosing the firmware", once the list of what has
   to be in place has been read - not before the first stage, ahead of it. An
