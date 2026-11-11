@@ -105,6 +105,29 @@ class StageProblemsTests(unittest.TestCase):
                                        "Stage 10 - Updating the bootloader - Complete"),
                          ["Stage 9 - Preparing memory layout: left underway when the next stage began"])
 
+    def test_each_run_of_a_sitting_is_looked_at_on_its_own(self):
+        # Seen in attended emulator runs: a readout after a readout was taken
+        # for one done twice, and the next run's start for two blank rows.
+        run = ["Stage 1 - Querying eWeLink for devices - Complete", "", "Readout saved, not sent.", "",
+               "    1. Convert a device", "    2. Read out another device", "", "What next (q to quit): 2"]
+        self.assertEqual(self.problems(*run, *[""] * 40, *run[:-1], "What next (q to quit): q"), [])
+        # Within one run, as before.
+        self.assertEqual(self.problems(*run[:1], *run), ["Stage 1 - Querying eWeLink for devices: shown complete, "
+                                                         "after an earlier outcome - its first go was left on the "
+                                                         "screen"])
+
+    def test_each_device_of_a_readout_of_several_has_its_own_stages(self):
+        # As the fault suite's readout --all scenarios showed (FAIL-SCREEN):
+        # the second device's stages were taken for the first's shown twice.
+        def device(number):
+            return [f"Reading out 'Test device {number}' (TESTLIGHT) ({number} of 2)...",
+                    "Stage 2 - Locating the device on your network - Complete",
+                    "Stage 3 - Probing the device                  - Complete", ""]
+        self.assertEqual(self.problems("Stage 1 - Querying eWeLink for devices        - Complete", "",
+                                       *device(1), *device(2), "Readout complete!"), [])
+        # Within one device, as before.
+        self.assertEqual(len(self.problems(*device(1)[:3], *device(1)[1:])), 2)
+
     def test_two_blank_rows_together_are_found(self):
         self.assertEqual(self.problems("Stage 1 - Checking - Complete", "", "", "Done"),
                          ["two blank rows one after another"])
