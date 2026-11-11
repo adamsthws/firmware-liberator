@@ -627,8 +627,9 @@ def _main() -> int:
             break
         args.command = command
         ctx = next_device(args, ctx)
-        if command == "run":
-            output.start_at_top()
+        # Either at the top of the window: a readout under the last device's
+        # left its "Readout saved in" above the next one's.
+        output.start_at_top()
         code = read_out(ctx) if command == "readout" else convert(ctx, given)
     return code
 
