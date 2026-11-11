@@ -460,7 +460,7 @@ class RunTests(unittest.TestCase):
             self.assertEqual(readout.run(self.ctx, s60, batch=readout.Batch(None)), "")
         wanted.assert_not_called()
         self.assertEqual([outcome for _, outcome, _ in ended(self.ctx)], [readout.CONVERTED_SINCE] * 2)
-        self.assertEqual(readout.outcome_said(readout.readouts(self.ctx)[0]), "not read out: it runs ESPHome now")
+        self.assertEqual(readout.readouts(self.ctx)[0].detail, "ESPHome")
 
     def test_each_wait_is_a_stage_of_its_own(self):
         # Seen in attended emulator runs: with no stage line, the window stayed
@@ -1187,17 +1187,68 @@ class ReportTests(unittest.TestCase):
                            readout.KEPT, "a test run"),
             readout.Became("'Porch' (NEWTHING)", "NEWTHING", "SN-NEW-01", "2.0.0", None, readout.UNNEEDED)]
 
-    def test_the_screen_names_each_device_and_how_it_ended(self):
-        fields = dict(readout.report_fields(self.DONE, 75.0))
+    def test_it_counts_the_devices_those_accepted_and_those_not_needed_and_gives_no_time(self):
+        fields = dict(readout.report_fields(self.DONE))
         self.assertEqual((fields["Result"], fields["Devices"], fields["Accepted"], fields["Not needed"]),
                          ("Read out", "3", "1", "1"))
-        self.assertEqual(fields["Device 1"], "'Kitchen' (BASICR4) 1.1.0: its memory read, accepted, reference r-1")
-        self.assertEqual(fields["Device 2"], "'Hall light' (NEWTHING) 2.0.0: what eWeLink says, kept, not sent "
-                                             "(a test run)")
-        self.assertEqual(fields["Device 3"], "'Porch' (NEWTHING) 2.0.0: not needed: one like it is in already")
-        alone = dict(readout.report_fields(self.DONE[:1], 75.0))
-        self.assertIn("Device", alone)   # one device, not numbered
-        self.assertEqual(dict(readout.report_fields(self.DONE[2:], 1.0))["Result"], "Nothing read out")
+        self.assertNotIn("Time", fields)
+        self.assertEqual(dict(readout.report_fields(self.DONE[2:]))["Result"], "Not needed")   # one: how it ended
+
+    def test_those_kept_unsent_are_counted_on_the_right_only_where_there_are_any(self):
+        lines = report.report_screen(readout.report_fields(self.DONE), columns=100, right=readout.REPORT_RIGHT)
+        at = {label: line.index(label) for line in lines for label in ("Devices:", "Not sent:") if label in line}
+        self.assertEqual(at["Not sent:"], at["Devices:"], "\n".join(lines))   # in the right-hand column
+        self.assertTrue(any(line.rstrip().endswith("Not sent:   1") for line in lines))
+        self.assertNotIn("Not sent", dict(readout.report_fields([self.DONE[0], self.DONE[2]])))
+
+    def test_one_device_is_named_by_its_model_and_version_alone(self):
+        self.assertEqual(readout.report_devices(self.DONE[:1]), [("Device", "BASICR4\u00a01.1.0")])
+        shown = repr(readout.report_fields(self.DONE[:1])) + repr(readout.report_devices(self.DONE[:1]))
+        for left_out in ("Kitchen", "r-1", "memory"):   # its name in the account, its reference
+            self.assertNotIn(left_out, shown)
+
+    def test_several_are_listed_by_how_each_ended_each_model_and_version_once(self):
+        done = [*self.DONE,
+                readout.Became("'Garage' (BASICR4)", "BASICR4", "SN-ESP32C3-BASICR4-01", "1.1.0", True,
+                               readout.ACCEPTED, "r-2"),
+                readout.Became("'Shed' (BASICR4)", "BASICR4", "SN-ESP32C3-BASICR4-01", "1.2.0", True,
+                               readout.ACCEPTED, "r-3")]
+        self.assertEqual(dict(readout.report_fields(done))["Accepted"], "3")   # each device counted
+        self.assertEqual(readout.report_devices(done), [("Accepted", "BASICR4\u00a01.1.0, BASICR4\u00a01.2.0"),
+                                                        ("Not needed", "NEWTHING\u00a02.0.0"),
+                                                        ("Not sent", "NEWTHING\u00a02.0.0")])
+
+    def test_the_counts_are_on_the_right_and_the_lists_under_the_rest_wrapping_between_devices_alone(self):
+        many = [readout.Became(f"'D{n}'", f"MODEL{n}", "", "1.0.0", True, readout.ACCEPTED) for n in range(12)]
+        lines = report.report_screen(readout.report_fields(many), columns=80, right=readout.REPORT_RIGHT,
+                                     below=readout.report_devices(many))
+        self.assertTrue(any(line.rstrip().endswith("Accepted:   12") for line in lines), "\n".join(lines))
+        at = next(index for index, line in enumerate(lines) if line.lstrip().startswith("Accepted:"))
+        self.assertTrue(all("Devices:" not in line for line in lines[at:]), "under the columns")
+        listed = " ".join(line.split(":", 1)[-1] for line in lines[at:])
+        self.assertEqual(listed.split(), " ".join(f"MODEL{n} 1.0.0," for n in range(12)).rstrip(",").split())
+        for line in lines[at:]:
+            self.assertLessEqual(len(line), 80)
+            self.assertRegex(line.rstrip(), r"(MODEL\d+ 1\.0\.0,?|Accepted:)$", "never inside a device's name")
+
+    def shown_by_end(self, done):
+        shown = []
+        with mock.patch.object(output, "tell", side_effect=lambda text="": shown.append(text)), \
+                mock.patch.object(output, "show", side_effect=lambda text, *_: shown.append(text)), \
+                mock.patch.object(output, "show_links"), \
+                mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
+            readout.end(SimpleNamespace(readouts=done), "")
+        return shown
+
+    def test_the_result_is_beside_the_device_count_and_each_count_beside_a_row_of_the_left(self):
+        for done, counts in ((self.DONE, ["Devices:", "Accepted:", "needed:", "sent:"]),   # some kept unsent
+                             ([self.DONE[0], self.DONE[2]], ["Devices:", "Accepted:", "needed:"])):
+            with self.subTest(counts=len(counts)):
+                shown = self.shown_by_end(done)
+                rows = [next(line for line in shown if label in line)
+                        for label in ("Result:", "Liberator:", "OS:", "Python:")]
+                self.assertEqual([line.split()[-2] for line in rows[:len(counts)]], counts, "\n".join(shown))
+                self.assertEqual(rows[0].index("Result:"), rows[1].index("Liberator:"))
 
     def test_it_ends_as_a_conversion_does(self):
         shown = []
@@ -1205,13 +1256,13 @@ class ReportTests(unittest.TestCase):
                 mock.patch.object(output, "show", side_effect=lambda text, *_: shown.append(text)), \
                 mock.patch.object(output, "show_links", side_effect=lambda links, **_: shown.append(links)), \
                 mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
-            readout.end(SimpleNamespace(readouts=self.DONE), "Switch the device off and on once more.", 75.0)
+            readout.end(SimpleNamespace(readouts=self.DONE), "Switch the device off and on once more.")
         text = [item for item in shown if isinstance(item, str)]
         order = [text.index(line) for line in ("Readout complete!", "Switch the device off and on once more.",
                                                "How it went:", "You've reached the bit where I hold out my hat!")]
         self.assertEqual(order, sorted(order))
-        self.assertTrue(any("Accepted:" in line for line in text))
-        self.assertTrue(any("Not needed:" in line for line in text))
+        self.assertTrue(any(line.lstrip().startswith("Accepted:") and "BASICR4 1.1.0" in line for line in text))
+        self.assertTrue(any(line.lstrip().startswith("Not needed:") for line in text))
         self.assertEqual(shown[-1][0][0], report.SPONSORS_URL)
         self.assertFalse([line for line in text if "Readout saved in" in line])
 

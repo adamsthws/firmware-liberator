@@ -33,10 +33,10 @@ own, the line under way turning until it is done
 ([`STAGES`](../tools/autoflash/readout.py) lists them). One that comes from a
 conversion run carries on from that run's stage 2.
 
-It ends as a conversion does, with a report of how it went - the device, its
-firmware version, and whether the website accepted its readout, with its
-reference - and anything left for you to do, such as switching the device off
-and on once more. Like a conversion, each device's readout also sends the
+It ends as a conversion does, with a report of how it went - each device by
+its model and firmware version, under whether the website accepted its readout
+(its reference is in the run's log) - and anything left for you to do, such as
+switching the device off and on once more. Like a conversion, each device's readout also sends the
 project a short, anonymous report of how it went, without the readout itself:
 [what the tool sends](what-the-tool-sends.md).
 
@@ -73,8 +73,8 @@ After one question about a way to reach you, each device is read out in turn,
 the quick readouts first, each sent as soon as it is ready. At a device's
 PROCEED, type s to skip just that device, or q to quit, as at any question.
 
-At the end, one report covers every device: how many readouts were sent, and
-what became of each - sent (with its reference), not needed (one like it is in
+At the end, one report covers every device, listing each model and firmware
+version once under what became of it - accepted, not needed (one like it is in
 already), or not read out because the website has taken all it can for today,
 takes 20 readouts a day from one place, or can take no more for a few weeks. Each readout gets its own puzzle ([Sending it](#sending-it)).
 If you added your email address, you are told when support for any of these
