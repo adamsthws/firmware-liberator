@@ -135,6 +135,7 @@ export function pruning(db, today) {
     db.prepare("DELETE FROM reports WHERE day < ? AND day IN (SELECT day FROM folded)").bind(daysBefore(today, RAW_DAYS)),
     // A readout's report as long, with no totals of its own to wait for.
     db.prepare("DELETE FROM readout_reports WHERE day < ?").bind(daysBefore(today, RAW_DAYS)),
+    db.prepare("DELETE FROM report_extras WHERE id NOT IN (SELECT id FROM reports)"),
     db.prepare("DELETE FROM counters WHERE day IS NOT NULL AND day < ?").bind(daysBefore(today, COUNTER_DAYS)),
   ];
 }

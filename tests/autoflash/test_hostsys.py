@@ -786,6 +786,72 @@ class LanAddressesTests(unittest.TestCase):
             self.assertEqual(hostsys.lan_networks(), {"192.0.2.10": 24})
 
 
+class ConnectionTests(unittest.TestCase):
+    """What carries this computer to the device's network, and whether a VPN is
+    up, for the run's report: read from the system's own words."""
+
+    def test_linux_tells_wifi_from_ethernet_by_the_interfaces_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name, parts in (("wlp2s0", ["wireless", "device"]), ("enp3s0", ["device"]), ("br0", [])):
+                for part in parts:
+                    (root / name / part).mkdir(parents=True)
+                (root / name).mkdir(exist_ok=True)
+            self.assertEqual([hostsys.connection_linux(root / name) for name in ("wlp2s0", "enp3s0", "br0")],
+                             ["wifi", "ethernet", "other"])
+
+    def test_macos_reads_the_hardware_port(self):
+        ports = ("Hardware Port: Wi-Fi\nDevice: en0\nEthernet Address: 12:34:56:ab:cd:01\n\n"
+                 "Hardware Port: USB 10/100/1000 LAN\nDevice: en5\nEthernet Address: 12:34:56:ab:cd:02\n\n"
+                 "Hardware Port: Thunderbolt Bridge\nDevice: bridge0\nEthernet Address: 12:34:56:ab:cd:03\n")
+        self.assertEqual([hostsys.connection_mac(ports, name) for name in ("en0", "en5", "bridge0", "utun3")],
+                         ["wifi", "ethernet", "other", "other"])
+
+    def test_windows_reads_the_adapters_type(self):
+        self.assertEqual([hostsys.connection_windows(kind) for kind in (71, 6, 53, None)],
+                         ["wifi", "ethernet", "other", None])
+
+    def test_a_vpn_is_a_tunnel_carrying_ipv4(self):
+        links = ("2: wlp2s0: <BROADCAST,UP> mtu 1500 state UP link/ether 12:34:56:ab:cd:01 brd ff:ff:ff:ff:ff:ff\n"
+                 "3: wg0: <POINTOPOINT,NOARP,UP> mtu 1420 state UNKNOWN link/none\n")
+        lan = "1: lo    inet 127.0.0.1/8 scope host lo\n2: wlp2s0    inet 192.0.2.10/24 brd 192.0.2.255\n"
+        self.assertFalse(hostsys.vpn_linux(lan, links))
+        self.assertTrue(hostsys.vpn_linux(lan + "3: wg0    inet 10.8.0.2/24 scope global wg0\n", links))
+        own = ("en0: flags=8863<UP,BROADCAST,RUNNING> mtu 1500\n\tether 12:34:56:ab:cd:01\n\tinet 192.0.2.10 netmask 0xffffff00\n"
+               "utun0: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> mtu 1380\n\tinet6 fe80::1%utun0 prefixlen 64\n")
+        self.assertFalse(hostsys.vpn_mac(own), "macOS's own utuns carry IPv6 alone")
+        self.assertTrue(hostsys.vpn_mac(own + "utun4: flags=8051<UP,POINTOPOINT,RUNNING> mtu 1280\n"
+                                              "\tinet 100.64.0.7 --> 100.64.0.7 netmask 0xffffffff\n"))
+        up, down = hostsys.IF_OPER_STATUS_UP, 2
+        lan_rows = [("192.0.2.10", 24, 71, up, 6, 3), ("127.0.0.1", 8, 24, up, 0, 1),
+                    ("169.254.9.9", 16, 53, up, 0, 9), ("10.8.0.2", 24, 53, down, 0, 7)]
+        self.assertFalse(hostsys.vpn_windows(lan_rows))
+        self.assertTrue(hostsys.vpn_windows([*lan_rows, ("10.8.0.2", 24, 53, up, 0, 8)]), "Wintun")
+        self.assertTrue(hostsys.vpn_windows([*lan_rows, ("10.9.0.2", 24, 23, up, 6, 10)]), "PPP")
+
+    def test_administrator_rights_asked_for_are_noted(self):
+        self.addCleanup(setattr, hostsys, "asked_for_admin", False)
+        hostsys.asked_for_admin = False
+        with mock.patch.object(hostsys, "IS_WINDOWS", False), mock.patch.object(hostsys, "sudo_will_ask", return_value=False), \
+                mock.patch.object(hostsys, "password_asker", lambda: "x"), \
+                mock.patch.object(hostsys.subprocess, "run", return_value=mock.Mock(returncode=0, stdout="")), \
+                mock.patch.object(hostsys.output, "log_only"):
+            hostsys.elevated_output(["true"])
+        self.assertTrue(hostsys.asked_for_admin)
+
+    def test_the_note_on_other_security_software_is_noted_when_given(self):
+        self.addCleanup(setattr, hostsys, "security_note_shown", False)
+        hostsys.security_note_shown = False
+        with mock.patch.object(hostsys, "IS_MAC", False), mock.patch.object(hostsys, "IS_WINDOWS", True), \
+                mock.patch.object(hostsys, "windows_firewall", return_value={"others": []}):
+            self.assertEqual(hostsys.security_software_note(), [])
+        self.assertFalse(hostsys.security_note_shown)
+        with mock.patch.object(hostsys, "IS_MAC", False), mock.patch.object(hostsys, "IS_WINDOWS", True), \
+                mock.patch.object(hostsys, "windows_firewall", return_value={"others": ["Example AV"]}):
+            self.assertTrue(hostsys.security_software_note())
+        self.assertTrue(hostsys.security_note_shown)
+
+
 class NetworkOfTests(unittest.TestCase):
     """A sweep covers the network as this computer has it, no wider than a /22."""
 

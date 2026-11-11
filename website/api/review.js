@@ -51,12 +51,12 @@ export function heldFor(report) {
     return written.some(holdsHeldWords) ? "words no report would hold" : null;
   }
   const stopped = report.stopped;
-  const written = [report.model, report.stock, report.os.version, report.python.version, stopped?.text];
+  const written = [report.model, report.stock, report.os.version, report.python.version, stopped?.text, stopped?.where];
   if (written.some(holdsHeldWords)) {
     return "words no report would hold";
   }
   if ((report.result === "cancelled") !== STOPPED_BY.has(stopped?.error)
-      || (report.result === "cancelled" && stopped.text)) {
+      || (report.result === "cancelled" && (stopped.text || stopped.where))) {
     return "a stopped run not as the tool writes one";
   }
   if (stopped?.text && !stopped.text.endsWith("...") && !["other", "crash"].includes(stopped.error)

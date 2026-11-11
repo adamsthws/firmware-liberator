@@ -836,7 +836,7 @@ class StockLayoutTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest import mock
         from tools.autoflash.routes.espressif import installer
-        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda name: None))
+        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda name: None, set_input=lambda name, value: None))
         with mock.patch.object(installer, "reach_bridge", return_value="192.0.2.51"), \
                 mock.patch.object(installer, "bridge_info", return_value={}), \
                 mock.patch.object(installer.dump_stock_flash, "read_table", return_value=table):
@@ -852,6 +852,32 @@ class StockLayoutTests(unittest.TestCase):
             self.run_gate(b"\xff" * 0x1000)
 
 
+class HardwareNoteTests(unittest.TestCase):
+    """C3 - the chip's revision and the flash chip, kept for the run's report."""
+
+    def noted(self, info, backup=None):
+        from types import SimpleNamespace
+        from tools.autoflash.routes.espressif import installer
+        kept = {}
+        ctx = SimpleNamespace(state=SimpleNamespace(set_input=kept.__setitem__))
+        installer.note_hardware(ctx, info, backup)
+        return kept["hardware"]
+
+    def test_as_the_installer_says_them(self):
+        self.assertEqual(self.noted({"chip revision": "0.4", "flash id": "C84016", "flash chip size": "4194304"}),
+                         {"revision": "0.4", "flash_id": "c84016", "flash_mb": 4})
+
+    def test_the_size_from_the_backup_where_the_installer_says_none_and_nothing_made_up(self):
+        import tempfile
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "flash.bin").write_bytes(b"\xff" * 0x800000)
+            backup = SimpleNamespace(directory=Path(tmp))
+            self.assertEqual(self.noted({"chip revision": "three", "flash id": "not readable"}, backup),
+                             {"revision": None, "flash_id": None, "flash_mb": 8})
+        self.assertEqual(self.noted({}), {"revision": None, "flash_id": None, "flash_mb": None})
+
+
 class BridgeInfoTests(unittest.TestCase):
     """C3 - what only the chip can say goes in the log, and costs a run nothing."""
 
@@ -862,7 +888,7 @@ class BridgeInfoTests(unittest.TestCase):
         from unittest import mock
         from tools.autoflash.routes.espressif import installer
         self.installer = installer
-        self.ctx = SimpleNamespace(state=SimpleNamespace(input=lambda name: None))
+        self.ctx = SimpleNamespace(state=SimpleNamespace(input=lambda name: None, set_input=lambda name, value: None))
         self.logged = []
         for patch in (mock.patch.object(installer.output, "log_only", self.logged.append),
                       mock.patch.object(installer.output, "progress_clear"),

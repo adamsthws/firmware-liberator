@@ -89,6 +89,7 @@ test("reports a year old go once counted; a limit's day counts go after a week, 
   counter.run("readouts:all", null);
   await night.nightly(bindings, NIGHT);
   assert.deepEqual(rows(bindings, "SELECT day FROM reports"), [{ day: "2025-11-11" }]);
+  assert.equal(rows(bindings, "SELECT * FROM report_extras").length, 1, "extras go with their report");
   assert.equal(rows(bindings, "SELECT n FROM daily_totals WHERE day = '2025-11-09'")[0].n, 1, "its total stays");
   assert.deepEqual(rows(bindings, "SELECT name FROM counters ORDER BY name"),
     [{ name: "readouts:all" }, { name: "reports:2026-11-04" }]);

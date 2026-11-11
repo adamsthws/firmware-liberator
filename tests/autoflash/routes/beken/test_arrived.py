@@ -17,6 +17,27 @@ from tools.autoflash.routes.beken import arrived, images, onward
 MAC = "12:34:56:ab:cd:ef"
 
 
+class PowerCycleTimingTests(unittest.TestCase):
+    def test_how_long_a_device_took_to_answer_once_back_on_is_kept_the_longest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, firmware="openbeken")
+            looks = iter([arrived.NotBack(), "found", arrived.NotBack(), "found"])
+
+            def look(_restarted):
+                found = next(looks)
+                if isinstance(found, Exception):
+                    raise found
+                return found
+            # Said back on at 100 s, found at 141; then at 200, found at 210.
+            clock = iter([100.0, 141.0, 200.0, 210.0])
+            with mock.patch.object(arrived.prompts, "section"), mock.patch.object(arrived.prompts, "ask_choice", return_value=0), \
+                    mock.patch.object(arrived.output, "transient_begin"), mock.patch.object(arrived.output, "transient_end"), \
+                    mock.patch.object(arrived.time, "monotonic", side_effect=lambda: next(clock)):
+                self.assertEqual(arrived.until_back(ctx, look, "OpenBeken", "advice"), "found")
+                self.assertEqual(arrived.until_back(ctx, look, "OpenBeken", "advice"), "found")
+            self.assertEqual(ctx.state.input("back_after_power_cycle"), 41)
+
+
 class ArrivedTests(unittest.TestCase):
     def setUp(self):
         self.server = FakeOpenBeken()
@@ -290,7 +311,9 @@ class ArrivedTests(unittest.TestCase):
             return answer
 
         env = {arrived.EMULATED_POWER: str(switch)} if switch else {}
-        clock = iter([100.0, 110.0, 120.0, 125.04])  # K2's start, each look's, and when it answered
+        # K2's start, the first look's, when the person said it was back on, the
+        # next look's, when that look found it, and when K2 had its answer.
+        clock = iter([100.0, 110.0, 115.0, 120.0, 122.0, 125.04])
         with mock.patch.object(arrived.join, "wait_for", side_effect=look), \
                 mock.patch.object(arrived.time, "monotonic", side_effect=lambda: next(clock)), \
                 mock.patch.object(arrived.esphome, "calibration_state", return_value=None), \
@@ -314,6 +337,8 @@ class ArrivedTests(unittest.TestCase):
             self.assertEqual(ctx.state.input("power_cycles"), {"by hand": 1})
             # Timed from the look that found it, not from before the person was asked.
             self.assertEqual(self.result, {"seconds": 5.0, "calibration": None})
+            # And for the report, from the person saying it was back on.
+            self.assertEqual(ctx.state.input("back_after_power_cycle"), 7)
 
     def test_in_the_emulator_the_tool_can_switch_the_device_off_and_on(self):
         with tempfile.TemporaryDirectory() as tmp:

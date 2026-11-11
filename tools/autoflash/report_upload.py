@@ -34,7 +34,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import __version__, hostsys, output, proof_of_work, report_data
+from tools.autoflash import __version__, hostsys, interrupt, output, proof_of_work, report_data
 from tools.autoflash.runs import ROOT
 
 if TYPE_CHECKING:
@@ -209,7 +209,10 @@ def in_background(work: Any) -> threading.Thread:
 
 def begin(ctx: Context) -> None:
     """At a conversion run's start: its report's id and work begun, any kept
-    from before sent, and the notice said the first time on this computer."""
+    from before sent, and the notice said the first time on this computer.
+    What its report counts of this run alone starts again here."""
+    hostsys.asked_for_admin = hostsys.security_note_shown = False
+    interrupt.reset_carried_on()
     if not enabled(ctx):
         return
     ctx.report_id = secrets.token_hex(16)

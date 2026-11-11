@@ -202,7 +202,8 @@ fi
 # Ctrl-C (which the tool handles itself).
 trap ':' INT
 status=0
-"$python" "$here/tools/autoflash/cli.py" "$@" || status=$?
+# How it was started, for the run's report (report_data.LAUNCHERS).
+AUTOFLASH_LAUNCHER=start.sh "$python" "$here/tools/autoflash/cli.py" "$@" || status=$?
 trap - INT
 offer_removal
 exit "$status"

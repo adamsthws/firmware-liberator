@@ -68,7 +68,8 @@ def ensure_firewall(ctx: Context) -> None:
 
     The rule admits only the device's address on the two ports the tool listens
     on, and is recorded so it can be removed when the tool exits, however it
-    exits; a resumed run adds it again.
+    exits; a resumed run adds it again.  How it went is kept for the run's
+    report (firewall_outcome: one of report_data.FIREWALL_OUTCOMES).
     """
     device_ip = ctx.state.input("device_ip")
     ports = firewall_ports(ctx)
@@ -82,6 +83,7 @@ def ensure_firewall(ctx: Context) -> None:
     for line in advice:
         output.say(line)
     if hostsys.local_rules_ignored(device_ip):
+        ctx.state.set_input("firewall_outcome", "managed")
         prompts.section("This computer's firewall is managed by an organisation", [
             "It is set (by Group Policy) to ignore rules added on the computer itself,",
             "so the device cannot be let in from here. Ask whoever manages it, or use",
@@ -91,6 +93,7 @@ def ensure_firewall(ctx: Context) -> None:
         return
     kind = hostsys.active_firewall()
     if kind is None:
+        ctx.state.set_input("firewall_outcome", "none")
         return
     program = hostsys.python_program() if kind in ("windows", "macos") else None
     add, _ = hostsys.firewall_commands(kind, device_ip, ports, program)
@@ -118,6 +121,7 @@ def ensure_firewall(ctx: Context) -> None:
                 rules.append(rule)
                 ctx.state.set_input("firewall_rules", [r.to_json() for r in rules])
     except OSError:
+        ctx.state.set_input("firewall_outcome", "failed")
         output.transient_end()
         prompts.section("The firewall rule could not be added", [
             "Add it yourself, in another window, with:",
@@ -132,6 +136,7 @@ def ensure_firewall(ctx: Context) -> None:
         ])
         return
     output.transient_end()
+    ctx.state.set_input("firewall_outcome", "there" if rule is not None and rule.detail.get("preexisting") else "added")
     if rule is not None:
         output.say("The rule was already there, so it is left in place afterwards."
             if rule.detail.get("preexisting") else

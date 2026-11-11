@@ -100,5 +100,32 @@ class EmulatorPasswordTests(unittest.TestCase):
         self.assertIn("In the emulator, the password is: autoflash", lines)
 
 
+class FirewallOutcomeTests(unittest.TestCase):
+    """How letting the device through went is kept for the run's report."""
+
+    def outcome(self, *, active="ufw", ignored=False, opened=None, refused=False):
+        state = FakeState([])
+        state.inputs["device_ip"] = "192.0.2.50"
+        ctx = types.SimpleNamespace(state=state)
+        rule = opened or hostsys.FirewallRule("ufw", "192.0.2.50", [8088, 8089])
+        with mock.patch.object(firewall, "firewall_ports", return_value=[8088, 8089]), \
+                mock.patch.object(hostsys, "firewall_advice", return_value=[]), \
+                mock.patch.object(hostsys, "local_rules_ignored", return_value=ignored), \
+                mock.patch.object(hostsys, "active_firewall", return_value=active), \
+                mock.patch.object(hostsys, "firewall_commands", return_value=(["add"], ["remove"])), \
+                mock.patch.object(hostsys, "open_firewall", side_effect=OSError("no") if refused else None,
+                                  return_value=rule), \
+                mock.patch.object(prompts, "section"), mock.patch.object(output, "say"), \
+                mock.patch.object(output, "transient_begin"), mock.patch.object(output, "transient_end"):
+            firewall.ensure_firewall(ctx)
+        return state.input("firewall_outcome")
+
+    def test_each_way_it_can_go_is_named(self):
+        there = hostsys.FirewallRule("ufw", "192.0.2.50", [8088, 8089], {"preexisting": True})
+        self.assertEqual([self.outcome(active=None), self.outcome(), self.outcome(opened=there),
+                          self.outcome(refused=True), self.outcome(ignored=True)],
+                         ["none", "added", "there", "failed", "managed"])
+
 if __name__ == "__main__":
     unittest.main()
+

@@ -62,6 +62,48 @@ class PayloadTests(RouteTestCase):
         self.assertIsNone(nth(firmware="tasmota", source="outdated"), "nor an update")
         self.assertIsNone(nth(firmware="tasmota", ending="failed"))
 
+    def test_a_crash_says_where_in_the_tools_code_and_nothing_made_up(self):
+        ctx = self.ctx(firmware="esphome", device_kind="sonoff-s60")
+        ctx.crash_site = "KeyError at tools/autoflash/report.py:212"
+        self.assertEqual(self.payload(ctx, "crashed", failure="KeyError: x")["stopped"]["where"], ctx.crash_site)
+        ctx.crash_site = "KeyError at /home/someone/x.py:1"   # never sent: not the tool's own
+        self.assertIsNone(self.payload(ctx, "crashed", failure="KeyError: x")["stopped"]["where"])
+
+    def test_what_the_run_and_this_computer_say_of_themselves(self):
+        from types import SimpleNamespace
+        ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60", device_ip="192.0.2.50")
+        ctx.ewelink = SimpleNamespace(held=("eu", {"at": "token"}))
+        ctx.state.set_input("hardware", {"revision": "0.4", "flash_id": "c84016", "flash_mb": 4})
+        ctx.state.set_input("firewall_outcome", "added")
+        ctx.state.set_input("back_after_power_cycle", 41)
+        ctx.state.capture("A1.seconds", 12)
+        ctx.state.capture("A1.waited", 75)
+        with mock.patch.dict(report_data.os.environ, {"AUTOFLASH_LAUNCHER": "start.cmd"}), \
+                mock.patch.object(report_data.hostsys, "connection_towards", return_value="wifi") as towards, \
+                mock.patch.object(report_data.hostsys, "vpn_active", return_value=False), \
+                mock.patch.object(report_data.hostsys, "lan_networks", return_value={"192.0.2.10": 24}), \
+                mock.patch.object(report_data.hostsys, "asked_for_admin", True), \
+                mock.patch.object(report_data.hostsys, "security_note_shown", False), \
+                mock.patch.object(report_data.interrupt, "carried_on", return_value=2):
+            data = self.payload(ctx)
+        towards.assert_called_once_with("192.0.2.50")
+        self.assertEqual(data["chip"], {"revision": "0.4", "flash_id": "c84016", "flash_mb": 4})
+        self.assertEqual(data["computer"], {"connection": "wifi", "vpn": False, "networks": 1, "security_note": False,
+                                            "firewall": "added", "admin": True})
+        self.assertEqual((data["ewelink_region"], data["ctrl_c_carried_on"], data["launcher"], data["back_after_power_cycle"]),
+                         ("eu", 2, "start.cmd", 41))
+        self.assertIn(data["install"], report_data.INSTALLS)
+        self.assertIn(data["os"]["arch"], report_data.ARCHES)
+        self.assertEqual(data["stages"]["A1"]["wait"], 75)
+
+    def test_the_version_that_began_a_run_is_sent_only_when_another_carried_it_on(self):
+        ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
+        ctx.state.set_input("begun_on", "2.4.0")
+        self.assertIsNone(report_data.payload(ctx, REPORT_ID, 1, False, "converted")["begun_on"], "not resumed")
+        self.assertEqual(report_data.payload(ctx, REPORT_ID, 1, True, "converted")["begun_on"], "2.4.0")
+        ctx.state.set_input("begun_on", report_data.__version__)
+        self.assertIsNone(report_data.payload(ctx, REPORT_ID, 1, True, "converted")["begun_on"], "the same version")
+
     def test_a_run_the_person_stopped_says_where_and_how_with_no_words(self):
         ctx = self.ctx(firmware="esphome", device_kind="sonoff-s60")
         for how in report_data.STOPPED_BY:
@@ -70,7 +112,8 @@ class PayloadTests(RouteTestCase):
                 data = self.payload(ctx, "cancelled")
                 self.assertEqual(data["result"], "cancelled")
                 # The stage it stopped at: the first not done.
-                self.assertEqual(data["stopped"], {"step": report_data.stopped_step(ctx), "error": how, "text": ""})
+                self.assertEqual(data["stopped"], {"step": report_data.stopped_step(ctx), "error": how, "text": "",
+                                                   "where": None})
                 self.assertIsNotNone(data["stopped"]["step"])
 
     def test_a_failure_is_classed_by_the_words_sent_but_for_words_cut_short(self):
@@ -121,8 +164,8 @@ class PayloadTests(RouteTestCase):
         for key, value in {"E2.seconds": 36, "E2.device_busy_seconds": 34.2, "E2.attempts": 2,
                            "G1.seconds": 43}.items():
             ctx.state.capture(key, value)
-        self.assertEqual(self.payload(ctx)["stages"], {"E2": {"s": 36, "busy": 34, "tries": 2},
-                                                       "G1": {"s": 43, "busy": 0, "tries": 1}})
+        self.assertEqual(self.payload(ctx)["stages"], {"E2": {"s": 36, "busy": 34, "tries": 2, "wait": 0},
+                                                       "G1": {"s": 43, "busy": 0, "tries": 1, "wait": 0}})
 
     def test_whether_the_setup_network_was_joined(self):
         for captures, joined in (({}, False),

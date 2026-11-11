@@ -74,6 +74,7 @@ def until_back(ctx: Context, look: Callable[[bool], T], what: str, advice: str,
     (restart_asked), so a run that stopped to ask - an unattended one, or a
     person who quit there - takes it as done when it is run again."""
     restarted = bool(ctx.state.input("restart_asked"))
+    asked_back = None   # when the person said it was back on, to time its return
     while True:
         try:
             found = look(restarted)
@@ -89,6 +90,10 @@ def until_back(ctx: Context, look: Callable[[bool], T], what: str, advice: str,
                 raise Abort(advice) from exc
         else:
             ctx.state.set_input("restart_asked", None)
+            if asked_back is not None:
+                # For the report: the longest a device took to answer once back on.
+                took = round(time.monotonic() - asked_back)
+                ctx.state.set_input("back_after_power_cycle", max(took, ctx.state.input("back_after_power_cycle") or 0))
             return found
         output.transient_begin()
         prompts.section(f"{what} has not answered yet", [
@@ -109,6 +114,7 @@ def until_back(ctx: Context, look: Callable[[bool], T], what: str, advice: str,
         if chosen == 1:
             power_cycle_emulated(Path(switch))
         restarted = True
+        asked_back = time.monotonic()
 
 
 def power_cycle_emulated(switch: Path) -> None:

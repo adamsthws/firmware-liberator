@@ -39,7 +39,8 @@ CARRY_ON_AFTER = 30.0
 
 _lock = threading.Lock()
 _state: dict[str, Any] = {"first": None, "asking": 0, "closed": False,
-                         "deferring": 0, "deferred": False, "shown_by": None, "logged_by": None}
+                         "deferring": 0, "deferred": False, "shown_by": None, "logged_by": None,
+                         "carried_on": 0}
 NOTICE_TITLE = "! Are you sure?"
 
 
@@ -125,6 +126,19 @@ def pending() -> bool:
 
 def clear() -> None:
     _state["first"] = None
+
+
+def note_carried_on() -> None:
+    """A Ctrl-C asked about, and the run carried on: counted for its report."""
+    _state["carried_on"] += 1
+
+
+def carried_on() -> int:
+    return _state["carried_on"]
+
+
+def reset_carried_on() -> None:
+    _state["carried_on"] = 0
 
 
 @contextmanager

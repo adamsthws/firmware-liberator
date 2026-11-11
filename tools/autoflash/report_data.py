@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import hashlib
 import os
+import platform
 import re
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import __version__, failures, hostsys, kinds, records, routes, runs
+from tools.autoflash import __version__, failures, hostsys, interrupt, kinds, records, routes, runs
 from tools.autoflash import report
+from tools.ewelink.get_device_key import API
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -36,6 +38,25 @@ STOPPED_BY = ("quit", "ctrl-c", "window-closed")
 # report can claim.
 NTH_DEVICE_LIMIT = 1_000_000
 OS_FAMILIES = ("windows", "macos", "linux")
+# The processor, as platform.machine() names it: which portable Pythons are used.
+ARCHES = ("x86-64", "arm64", "other")
+# Where an unexpected error came from in the tool's code (runner.crash_site).
+CRASH_SITE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,59} at tools/[A-Za-z0-9_./-]{1,120}\.py:[0-9]{1,6}")
+# How letting the device through this computer's firewall went (firewall.ensure_firewall):
+# no firewall in the way, a rule added, one there already, adding it failed,
+# or an organisation's policy that ignores rules added here.
+FIREWALL_OUTCOMES = ("none", "added", "there", "failed", "managed")
+# What carries this computer to the device's network (hostsys.connection_towards).
+CONNECTIONS = ("wifi", "ethernet", "other")
+# How the tool was started (AUTOFLASH_LAUNCHER, set by start.sh and start.cmd),
+# and from what: a git clone, or a download.
+LAUNCHERS = ("start.sh", "start.cmd", "other")
+INSTALLS = ("git", "download")
+# eWeLink's regions, for a run that signed in.
+EWELINK_REGIONS = tuple(API)
+# The most a count or time sent can be: no figure needs more.
+CTRL_C_LIMIT, NETWORKS_LIMIT, WAIT_LIMIT = 99, 64, 7 * 86400
+TOOL_VERSION = re.compile(r"\d{1,3}\.\d{1,3}\.\d{1,3}")
 # Where the Python came from, by report.python_description's word for it;
 # "other" for one it has since learnt.
 PYTHON_SOURCES = {"portable": "portable", "start.sh's": "start-sh", "venv": "venv", "system": "system"}
@@ -85,7 +106,9 @@ def os_info() -> dict[str, str]:
     family = "windows" if hostsys.IS_WINDOWS else "macos" if hostsys.IS_MAC else "linux"
     words = re.sub(r"^(Windows|macOS|Linux) ", "", report.computer_description()).strip()
     words = "".join(char for char in words if OS_VERSION.fullmatch(char))[:48].strip()
-    return {"family": family, "version": words or "unknown"}
+    machine = platform.machine().lower()
+    arch = "x86-64" if machine in ("x86_64", "amd64") else "arm64" if machine in ("arm64", "aarch64") else "other"
+    return {"family": family, "version": words or "unknown", "arch": arch}
 
 
 def python_info() -> dict[str, str]:
@@ -134,7 +157,7 @@ def stopped_step(ctx: Context) -> str | None:
 
 def stages(ctx: Context) -> dict[str, dict[str, int]]:
     """Each step the run timed: its seconds, how long it kept the device busy,
-    and how many times it was tried."""
+    how many times it was tried, and how long it waited on the person."""
     captures = ctx.state.data.get("captures", {})
     found = {}
     for step, _, _ in routes.STEPS:
@@ -143,9 +166,12 @@ def stages(ctx: Context) -> dict[str, dict[str, int]]:
             continue
         busy = captures.get(f"{step}.device_busy_seconds")
         tries = captures.get(f"{step}.attempts")
+        waited = captures.get(f"{step}.waited")
         found[step] = {"s": min(int(seconds), 86400),
                        "busy": min(int(busy), 86400) if isinstance(busy, (int, float)) else 0,
-                       "tries": min(tries, 99) if isinstance(tries, int) and tries > 0 else 1}
+                       "tries": min(tries, 99) if isinstance(tries, int) and tries > 0 else 1,
+                       # How long the person took over its questions.
+                       "wait": min(max(int(waited), 0), WAIT_LIMIT) if isinstance(waited, (int, float)) else 0}
     return found
 
 
@@ -211,17 +237,20 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
     elif ending == "cancelled":
         # Where people stop, and how: no words, as nothing went wrong.
         result = ending
-        stopped = {"step": stopped_step(ctx), "error": getattr(ctx, "stopped_by", None) or "quit", "text": ""}
+        stopped = {"step": stopped_step(ctx), "error": getattr(ctx, "stopped_by", None) or "quit", "text": "",
+                   "where": None}
     else:
         reason = ctx.last_failure or ""
         text = plain(reason)
         result = ending
         # Classed by the words sent, as the API checks them (website/api/review.js),
         # but for words cut short, where the whole reason says more.
+        site = getattr(ctx, "crash_site", None)
         stopped = {"step": stopped_step(ctx),
                    "error": "crash" if ending == "crashed"
                    else failures.classify(reason if text.endswith("...") else text),
-                   "text": text}
+                   "text": text,
+                   "where": site if isinstance(site, str) and CRASH_SITE.fullmatch(site) else None}
     joined = (captures.get("D1.upload_route") == "bridge network" or captures.get("D1.resumed") is True
               or (captures.get("D1.upload_route") == "home network" and captures.get("D1.wifi") != "preset")
               or captures.get("F4.wifi_route") == "setup network")
@@ -231,6 +260,13 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
     nth = record.get(records.CONVERTED_NUMBER)
     if result != "converted" or not converted_to_another(ctx) or not isinstance(nth, int) or isinstance(nth, bool):
         nth = None
+    # The version that began a run another carried on: where resuming goes wrong.
+    begun = state.input("begun_on")
+    if not resumed or not isinstance(begun, str) or not TOOL_VERSION.fullmatch(begun) or begun == __version__:
+        begun = None
+    # The longest a device took to answer once switched off and on (arrived.until_back).
+    back = state.input("back_after_power_cycle")
+    back = min(back, WAIT_LIMIT) if isinstance(back, int) and not isinstance(back, bool) and back >= 0 else None
     return {
         "format": FORMAT,
         "id": report_id,
@@ -261,4 +297,46 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         "checks": checks_word(hardware),
         "meter": meter_word(captures, firmware) if kinds.of_run(state).has_meter else None,
         "nth_device": nth,
+        "chip": chip_info(state),
+        "computer": computer_info(state),
+        "ewelink_region": ewelink_region(ctx),
+        "ctrl_c_carried_on": min(interrupt.carried_on(), CTRL_C_LIMIT),
+        "launcher": os.environ.get("AUTOFLASH_LAUNCHER") if os.environ.get("AUTOFLASH_LAUNCHER") in LAUNCHERS
+        else "other",
+        "install": "git" if (runs.ROOT / ".git").exists() else "download",
+        "begun_on": begun,
+        "back_after_power_cycle": back,
     }
+
+
+def chip_info(state: Any) -> dict[str, Any]:
+    """The chip's revision, the flash chip's ID and size, as the installer
+    said them (installer.note_hardware): an Espressif run's alone."""
+    found = state.input("hardware") or {}
+    revision, flash_id, size = found.get("revision"), found.get("flash_id"), found.get("flash_mb")
+    return {"revision": revision if isinstance(revision, str) and re.fullmatch(r"\d{1,3}\.\d{1,3}", revision) else None,
+            "flash_id": flash_id if isinstance(flash_id, str) and re.fullmatch(r"[0-9a-f]{6}", flash_id) else None,
+            "flash_mb": size if isinstance(size, int) and not isinstance(size, bool) and 0 < size <= 128 else None}
+
+
+def computer_info(state: Any) -> dict[str, Any]:
+    """What on this computer's side may get in a run's way: what carries it to
+    the device's network, a VPN, how many networks it is on, the note on other
+    security software shown, the firewall rule, administrator rights asked
+    for. Asked of the system as the report is made; nothing is sent anywhere."""
+    device_ip = state.input("device_ip")
+    connection = hostsys.connection_towards(device_ip) if device_ip else None
+    firewall = state.input("firewall_outcome")
+    return {"connection": connection if connection in CONNECTIONS else None,
+            "vpn": hostsys.vpn_active(),
+            "networks": min(len(hostsys.lan_networks()), NETWORKS_LIMIT),
+            "security_note": bool(hostsys.security_note_shown),
+            "firewall": firewall if firewall in FIREWALL_OUTCOMES else None,
+            "admin": bool(hostsys.asked_for_admin)}
+
+
+def ewelink_region(ctx: Context) -> str | None:
+    """The region of the eWeLink account the run signed in to, if it did."""
+    held = getattr(getattr(ctx, "ewelink", None), "held", None)
+    region = held[0] if isinstance(held, tuple) and held else None
+    return region if region in EWELINK_REGIONS else None

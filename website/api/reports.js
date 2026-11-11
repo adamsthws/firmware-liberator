@@ -113,6 +113,14 @@ const READOUT = `INSERT OR IGNORE INTO readout_reports (id, day, tag, tool, resu
   converted_here, quarantined)
   VALUES (${Array(20).fill("?").join(", ")})`;
 const HOLD = "INSERT OR IGNORE INTO held_reports (id, day, why) VALUES (?, ?, ?)";
+// What a report says beyond the columns of `reports` (migration 0014), kept
+// with it, as it came: the schema bounds every one.
+const EXTRAS = "INSERT OR IGNORE INTO report_extras (id, extras) VALUES (?, ?)";
+const extras = (report) => JSON.stringify({
+  where: report.stopped?.where ?? null, arch: report.os.arch, chip: report.chip, computer: report.computer,
+  ewelink_region: report.ewelink_region, ctrl_c_carried_on: report.ctrl_c_carried_on, launcher: report.launcher,
+  install: report.install, begun_on: report.begun_on, back_after_power_cycle: report.back_after_power_cycle,
+});
 // A converted device's number on the computer that first converted it: the
 // first given is kept.
 const PLACE = "INSERT INTO device_places (device_hash, place) VALUES (?, ?) ON CONFLICT (device_hash) DO NOTHING";
@@ -159,8 +167,10 @@ export function writes(db, report, hash, day, held = null) {
     report.python.version, report.python.source, report.seconds, Number(report.resumed),
     JSON.stringify(report.stages), report.signal, flag(report.wifi_typed), flag(report.setup_network),
     flag(report.power_cycled), report.checks, report.meter, Number(held !== null))];
+  // Last: DEVICE reads changes() of the report's own INSERT, just before it.
+  const more = db.prepare(EXTRAS).bind(report.id, extras(report));
   if (held !== null) {
-    return [...statements, db.prepare(HOLD).bind(report.id, day, held)];
+    return [...statements, db.prepare(HOLD).bind(report.id, day, held), more];
   }
   // A run the person stopped makes no device's record: those count the runs
   // that ran to an end (how many to convert one, how its first ended).
@@ -174,7 +184,7 @@ export function writes(db, report, hash, day, held = null) {
       statements.push(db.prepare(PLACE).bind(hash, report.nth_device));
     }
   }
-  return statements;
+  return [...statements, more];
 }
 
 export async function reports(request, env, now = new Date()) {
