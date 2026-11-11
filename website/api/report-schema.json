@@ -342,11 +342,20 @@
             "type": "string",
             "pattern": "^[A-Za-z0-9 ._()+/-]{1,48}$",
             "maxLength": 48
+          },
+          "arch": {
+            "type": "string",
+            "enum": [
+              "x86-64",
+              "arm64",
+              "other"
+            ]
           }
         },
         "required": [
           "family",
-          "version"
+          "version",
+          "arch"
         ],
         "additionalProperties": false
       },
@@ -511,12 +520,21 @@
           "type": "string",
           "pattern": "^[ -~]*$",
           "maxLength": 200
+        },
+        "where": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,59} at tools/[A-Za-z0-9_./-]{1,120}\\.py:[0-9]{1,6}$",
+          "maxLength": 200
         }
       },
       "required": [
         "step",
         "error",
-        "text"
+        "text",
+        "where"
       ],
       "additionalProperties": false
     },
@@ -645,11 +663,20 @@
           "type": "string",
           "pattern": "^[A-Za-z0-9 ._()+/-]{1,48}$",
           "maxLength": 48
+        },
+        "arch": {
+          "type": "string",
+          "enum": [
+            "x86-64",
+            "arm64",
+            "other"
+          ]
         }
       },
       "required": [
         "family",
-        "version"
+        "version",
+        "arch"
       ],
       "additionalProperties": false
     },
@@ -711,12 +738,18 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 99
+          },
+          "wait": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 604800
           }
         },
         "required": [
           "s",
           "busy",
-          "tries"
+          "tries",
+          "wait"
         ],
         "additionalProperties": false
       }
@@ -780,6 +813,147 @@
       ],
       "minimum": 1,
       "maximum": 1000000
+    },
+    "chip": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]{1,3}\\.[0-9]{1,3}$",
+          "maxLength": 7
+        },
+        "flash_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{6}$",
+          "maxLength": 6
+        },
+        "flash_mb": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 128
+        }
+      },
+      "required": [
+        "revision",
+        "flash_id",
+        "flash_mb"
+      ],
+      "additionalProperties": false
+    },
+    "computer": {
+      "type": "object",
+      "properties": {
+        "connection": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "wifi",
+            "ethernet",
+            "other",
+            null
+          ]
+        },
+        "vpn": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "networks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "security_note": {
+          "type": "boolean"
+        },
+        "firewall": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "none",
+            "added",
+            "there",
+            "failed",
+            "managed",
+            null
+          ]
+        },
+        "admin": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "connection",
+        "vpn",
+        "networks",
+        "security_note",
+        "firewall",
+        "admin"
+      ],
+      "additionalProperties": false
+    },
+    "ewelink_region": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "cn",
+        "as",
+        "us",
+        "eu",
+        null
+      ]
+    },
+    "ctrl_c_carried_on": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 99
+    },
+    "launcher": {
+      "type": "string",
+      "enum": [
+        "start.sh",
+        "start.cmd",
+        "other"
+      ]
+    },
+    "install": {
+      "type": "string",
+      "enum": [
+        "git",
+        "download"
+      ]
+    },
+    "begun_on": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$",
+      "maxLength": 11
+    },
+    "back_after_power_cycle": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 604800
     }
   },
   "required": [
@@ -811,7 +985,15 @@
     "power_cycled",
     "checks",
     "meter",
-    "nth_device"
+    "nth_device",
+    "chip",
+    "computer",
+    "ewelink_region",
+    "ctrl_c_carried_on",
+    "launcher",
+    "install",
+    "begun_on",
+    "back_after_power_cycle"
   ],
   "additionalProperties": false
 }

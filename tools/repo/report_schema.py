@@ -73,7 +73,8 @@ def schema() -> dict[str, Any]:
     }
     machine = {
         "os": record({"family": words(*report_data.OS_FAMILIES),
-                      "version": string(f"^{report_data.OS_VERSION.pattern}$", 48)}),
+                      "version": string(f"^{report_data.OS_VERSION.pattern}$", 48),
+                      "arch": words(*report_data.ARCHES)}),
         "python": record({"version": string("^([0-9]{1,4}(\\.[0-9]{1,4}){1,3}|unknown)$", 19),
                           "source": words(*report_data.PYTHON_WORDS)}),
         "seconds": integer(0, 7 * 86400),
@@ -121,6 +122,8 @@ def schema() -> dict[str, Any]:
                 # How a run failed, or for one the person stopped, how they did.
                 "error": words(*failures.CLASSES, *report_data.STOPPED_BY),
                 "text": string("^[ -~]*$", report_data.TEXT_LIMIT),
+                # Where in the tool's code an unexpected error came from.
+                "where": nullable(string(f"^{report_data.CRASH_SITE.pattern}$", 200)),
             })),
             "family": nullable(words(*routes.FAMILIES)),
             "device": nullable(words(*(kind.key for kind in kinds.EVERY))),
@@ -135,7 +138,8 @@ def schema() -> dict[str, Any]:
             "resumed": {"type": "boolean"},
             "stages": {"type": "object", "maxProperties": 64, "propertyNames": string(step, 3),
                        "additionalProperties": record({"s": integer(0, 86400), "busy": integer(0, 86400),
-                                                       "tries": integer(1, 99)})},
+                                                       "tries": integer(1, 99),
+                                                       "wait": integer(0, report_data.WAIT_LIMIT)})},
             "signal": nullable(integer(-127, 0)),
             "wifi_typed": {"type": ["boolean", "null"]},
             "setup_network": {"type": ["boolean", "null"]},
@@ -144,6 +148,21 @@ def schema() -> dict[str, Any]:
             "meter": nullable(words(*report_data.METER_WORDS)),
             # Not capped: the bound only keeps the number a sane one.
             "nth_device": nullable(integer(1, report_data.NTH_DEVICE_LIMIT)),
+            "chip": record({"revision": nullable(string("^[0-9]{1,3}\\.[0-9]{1,3}$", 7)),
+                            "flash_id": nullable(string("^[0-9a-f]{6}$", 6)),
+                            "flash_mb": nullable(integer(1, 128))}),
+            "computer": record({"connection": nullable(words(*report_data.CONNECTIONS)),
+                                "vpn": {"type": ["boolean", "null"]},
+                                "networks": integer(0, report_data.NETWORKS_LIMIT),
+                                "security_note": {"type": "boolean"},
+                                "firewall": nullable(words(*report_data.FIREWALL_OUTCOMES)),
+                                "admin": {"type": "boolean"}}),
+            "ewelink_region": nullable(words(*report_data.EWELINK_REGIONS)),
+            "ctrl_c_carried_on": integer(0, report_data.CTRL_C_LIMIT),
+            "launcher": words(*report_data.LAUNCHERS),
+            "install": words(*report_data.INSTALLS),
+            "begun_on": nullable(string(f"^{report_data.TOOL_VERSION.pattern}$", 11)),
+            "back_after_power_cycle": nullable(integer(0, report_data.WAIT_LIMIT)),
         }),
     }
 

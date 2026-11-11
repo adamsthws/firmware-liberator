@@ -140,7 +140,7 @@ test("a device's record: its first run, the runs to its first conversion, and wh
   const bindings = env();
   const hash = hashOf(4);
   const failed = { device_hash: hash, result: "failed", firmware: "tasmota",
-    stopped: { step: "D4", error: "upload-cut", text: "the delivery stopped part way" } };
+    stopped: { step: "D4", error: "upload-cut", text: "the delivery stopped part way", where: null } };
   await send(bindings, [report(failed), report({ ...failed, resumed: true })]);
   await send(bindings, [report({ device_hash: hash })]);   // converted, to Tasmota
   const later = new Date("2026-11-12T09:00:00Z");
@@ -172,7 +172,7 @@ test("a run the person stopped is kept, but makes no device's record", async () 
   // Those count the runs that ran to an end: how many to convert one, how its first ended.
   const bindings = env();
   const hash = hashOf(6);
-  await send(bindings, [report({ device_hash: hash, result: "cancelled", stopped: { step: "D1", error: "quit", text: "" } })]);
+  await send(bindings, [report({ device_hash: hash, result: "cancelled", stopped: { step: "D1", error: "quit", text: "", where: null } })]);
   assert.deepEqual(rows(bindings, "SELECT result, step, error, text FROM reports"),
     [{ result: "cancelled", step: "D1", error: "quit", text: "" }]);
   assert.equal(rows(bindings, "SELECT * FROM devices").length, 0);
@@ -183,13 +183,26 @@ test("a run the person stopped is kept, but makes no device's record", async () 
 
 test("a converted device keeps the number the first computer to convert it gave it", async () => {
   const bindings = env();
-  const failed = { result: "failed", nth_device: null, stopped: { step: "D4", error: "upload-cut", text: "" } };
+  const failed = { result: "failed", nth_device: null, stopped: { step: "D4", error: "upload-cut", text: "", where: null } };
   await send(bindings, [report({ device_hash: hashOf(7), ...failed })]);
   await send(bindings, [report({ device_hash: hashOf(7), nth_device: 3 })]);
   await send(bindings, [report({ device_hash: hashOf(7), nth_device: 1, firmware: "esphome", from: "tasmota" })]);
   await send(bindings, [report({ device_hash: hashOf(8), nth_device: 2, firmware: "sonoff", from: "tasmota" })]);
   assert.deepEqual(rows(bindings, "SELECT device_hash, place FROM device_places"), [{ device_hash: keyed(hashOf(7)), place: 3 }],
     "a conversion's alone, the first kept; going back to Sonoff's is none");
+});
+
+test("what a report says beyond the reports' columns is kept beside it, as it came", async () => {
+  const bindings = env();
+  const crashed = report({ result: "crashed", stopped: { step: "K1", error: "crash", text: "",
+    where: "KeyError at tools/autoflash/report.py:212" } });
+  await send(bindings, [crashed]);
+  const [{ extras }] = rows(bindings, "SELECT extras FROM report_extras WHERE id = ?", crashed.id);
+  assert.deepEqual(JSON.parse(extras), {
+    where: "KeyError at tools/autoflash/report.py:212", arch: "x86-64", chip: FIXTURE.chip, computer: FIXTURE.computer,
+    ewelink_region: "eu", ctrl_c_carried_on: 0, launcher: "start.sh", install: "download", begun_on: null,
+    back_after_power_cycle: null,
+  });
 });
 
 test("a report with no device is kept, with no device record", async () => {
@@ -333,14 +346,14 @@ test("who named a model is kept as a keyed hash of it and their address, once a 
 test("a report held for review, or the maintainer's own, vouches for no model", async () => {
   const bindings = env();
   await send(bindings, [report({ model: "NEWDEV", tag: "dev" }),
-    report({ model: "NEWDEV", result: "failed", stopped: { step: "D4", error: "upload-cut", text: "buy cheap watches" } })]);
+    report({ model: "NEWDEV", result: "failed", stopped: { step: "D4", error: "upload-cut", text: "buy cheap watches", where: null } })]);
   assert.deepEqual(rows(bindings, "SELECT * FROM model_senders"), []);
 });
 
 test("a report no run would write is answered as accepted, held for review, and counted nowhere", async () => {
   const bindings = env();
   const junk = report({ device_hash: hashOf(9), result: "failed",
-    stopped: { step: "D4", error: "upload-cut", text: "buy cheap watches at example dot com" } });
+    stopped: { step: "D4", error: "upload-cut", text: "buy cheap watches at example dot com", where: null } });
   const answer = await send(bindings, [junk]);
   assert.deepEqual(answer.accepted, [junk.id], "its sender learns nothing");
   assert.deepEqual(rows(bindings, "SELECT quarantined FROM reports"), [{ quarantined: 1 }]);
@@ -352,7 +365,7 @@ test("a report no run would write is answered as accepted, held for review, and 
 test("a report the tool writes is never held", async () => {
   const bindings = env();
   await send(bindings, [report({ device_hash: hashOf(10) }), report({ result: "failed",
-    stopped: { step: "D4", error: "upload-cut", text: "the delivery stopped part way: the device fetched 1 of 2" } })]);
+    stopped: { step: "D4", error: "upload-cut", text: "the delivery stopped part way: the device fetched 1 of 2", where: null } })]);
   assert.deepEqual(rows(bindings, "SELECT quarantined FROM reports"), [{ quarantined: 0 }, { quarantined: 0 }]);
   assert.equal(rows(bindings, "SELECT * FROM held_reports").length, 0);
 });

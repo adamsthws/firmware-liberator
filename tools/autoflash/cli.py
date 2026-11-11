@@ -745,6 +745,7 @@ def convert(ctx: Context, given: list[str]) -> int:
     except Exception as exc:  # noqa: BLE001 - recorded and explained, not a bare traceback
         message = runner.unexpected(exc)
         ctx.last_failure = message
+        ctx.crash_site = runner.crash_site(exc)
         output.stage_end("stopped")
         output.tell(f"FAILED: {message}")
         runner.tell_how_to_carry_on()

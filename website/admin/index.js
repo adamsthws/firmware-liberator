@@ -143,6 +143,7 @@ export const remove = (db, id) => [
   db.prepare(`DELETE FROM devices WHERE device_hash = (SELECT device_hash FROM reports WHERE id = ?1
     AND id IN (SELECT id FROM held_reports)) AND NOT EXISTS (SELECT 1 FROM reports
     WHERE device_hash = devices.device_hash AND id != ?1)`).bind(id),
+  db.prepare("DELETE FROM report_extras WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM reports WHERE id = ? AND id IN (SELECT id FROM held_reports)").bind(id),
   db.prepare("DELETE FROM held_reports WHERE id = ?").bind(id),
 ];
@@ -205,8 +206,9 @@ export async function gather(env, now) {
     today, counters, devices, lastFolded: folded?.day ?? null,
     held: await all(`SELECT held_reports.id, held_reports.day, why, model, tool, result, step, error, text, tag
       FROM held_reports JOIN reports ON reports.id = held_reports.id ORDER BY held_reports.day DESC LIMIT 100`),
-    recent: await all(`SELECT day, tag, tool, result, step, error, text, model, firmware, source, os_family, seconds, quarantined
-      FROM reports ORDER BY day DESC LIMIT 40`),
+    recent: await all(`SELECT day, tag, tool, result, step, error, text, model, firmware, source, os_family, seconds, quarantined,
+        json_extract(extras, '$.where') AS crash_at
+      FROM reports LEFT JOIN report_extras USING (id) ORDER BY day DESC LIMIT 40`),
     week: await all(`SELECT day, count(*) AS runs, sum(result = 'converted') AS converted, sum(quarantined) AS held
       FROM reports WHERE day >= ? GROUP BY day ORDER BY day`, since(13)),
     store: await all("SELECT day, readouts, bytes FROM store_days WHERE day >= ? ORDER BY day", since(180)),
@@ -302,7 +304,8 @@ export async function page(env, who, now, fetcher = fetch) {
     `<section class="card"><h2>The latest reports</h2><p class="sub">The newest 40, held ones marked. At most ${number(DEVICE_DAILY)} a day of one device are taken.</p>`
       + table([["Day", "day"], ["Tag", "tag"], ["Tool", "tool"], ["Result", (row) => row.result + (row.quarantined ? " (held)" : "")],
         ["Stopped", (row) => [row.step, row.error].filter(Boolean).join(" ")], ["Model", "model"], ["To", "firmware"], ["From", "source"],
-        ["System", "os_family"], ["Seconds", "seconds", "number"], ["Words", "text", "text"]], data.recent, "No reports yet.")
+        ["System", "os_family"], ["Seconds", "seconds", "number"], ["Words", "text", "text"], ["Went wrong at", "crash_at", "text"]],
+        data.recent, "No reports yet.")
       + `</section>`,
   ];
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`

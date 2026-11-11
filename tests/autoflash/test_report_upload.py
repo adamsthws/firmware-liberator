@@ -137,6 +137,18 @@ class BeginTests(Case):
             upload.begin(self.ctx())
         self.assertEqual(said, [upload.NOTICE_TEXT])
 
+    def test_what_a_report_counts_of_one_run_starts_again_with_each(self):
+        # Several devices in one sitting ("what next"): one run's counts are not the next one's.
+        from tools.autoflash import interrupt
+        self.addCleanup(interrupt.reset_carried_on)
+        upload.hostsys.asked_for_admin = upload.hostsys.security_note_shown = True
+        interrupt.note_carried_on()
+        with mock.patch.object(upload, "start_work") as start:
+            upload.begin(self.ctx(no_report=True))   # so even with reports off
+        start.assert_not_called()
+        self.assertEqual((upload.hostsys.asked_for_admin, upload.hostsys.security_note_shown, interrupt.carried_on()),
+                         (False, False, 0))
+
     def test_switched_off_nothing_begins(self):
         ctx = self.ctx(no_report=True)
         with mock.patch.object(upload, "start_work") as start:

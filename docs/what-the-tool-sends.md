@@ -17,9 +17,12 @@ stages people choose to stop at, and which devices people want supported next: s
   about it, with any addresses taken out. If you stop it yourself, the stage
   you stopped at and how: q at a question, Ctrl-C, or closing the window.
   Nothing else is asked of you, and a run you stop before its first stage
-  sends no report.
-- **The device:** its kind and model (such as Sonoff S60, S60TPF), and the
-  version of Sonoff's firmware it had.
+  sends no report. If the tool itself went wrong, the place in its own code
+  where it did (such as `KeyError at tools/autoflash/report.py:212`), never
+  any of your values.
+- **The device:** its kind and model (such as Sonoff S60, S60TPF), the
+  version of Sonoff's firmware it had, and on an Espressif device its chip's
+  revision and its flash chip's maker code and size.
 - **The conversion:** the firmware it went from and to, whether a backup of
   Sonoff's firmware was taken, whether the power meter kept its calibration,
   and, going back to Sonoff's firmware, where the eWeLink identity came from
@@ -32,14 +35,24 @@ stages people choose to stop at, and which devices people want supported next: s
   of its Sonoff firmware, whether its whole memory was read, and how long it
   took. Never the readout itself, nor its reference.
 - **How the run went:** how long it and each stage took, how long each stage
-  kept the device busy, how often a stage was tried again, the device's Wi-Fi
-  signal strength, and whether the run carried on an earlier one, you typed
-  your Wi-Fi details in (not the details themselves), your computer joined the
-  device's own setup network, the device had to be switched off and on, and
-  its relay switched in the check at the end.
-- **The tool and your computer:** the tool's version, your operating system
-  and its version (such as Windows 11 or Ubuntu 24.04), and the Python
-  version the tool ran on, its own or one already on your computer. For a
+  waited for your answers, how long each stage kept the device busy, how
+  often a stage was tried again, the device's Wi-Fi signal strength, and
+  whether the run carried on an earlier one (and the tool's version that
+  began it, if another), you typed your Wi-Fi details in (not the details
+  themselves), your computer joined the device's own setup network, the
+  device had to be switched off and on (and how long it took to answer once
+  back on), and its relay switched in the check at the end. Also how often
+  you pressed Ctrl-C and then carried on.
+- **The tool and your computer:** the tool's version, how you started it
+  (`start.sh` or `start.cmd`) and whether from a download or a git clone,
+  your operating system, its version (such as Windows 11 or Ubuntu 24.04) and
+  your processor's kind (x86-64 or ARM), and the Python version the tool ran
+  on, its own or one already on your computer. What may have got in the way
+  on your computer's side: whether it reaches the device's network over Wi-Fi
+  or Ethernet, whether a VPN was on, how many networks it is on, whether the
+  tool added a firewall rule or asked for administrator rights, and whether
+  it pointed out other security software (never which). The region of your
+  eWeLink account (Europe, the Americas, Asia or China), if the run signed in to it. For a
   conversion, how many devices the tool has converted on your computer, this
   one included; for a readout, how many it has converted there so far:
   counted from its own records there, so deleting them starts the count

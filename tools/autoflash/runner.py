@@ -5,12 +5,15 @@ it was cut off, and what is said when the run stops.
 from __future__ import annotations
 
 import errno
+import re
 import textwrap
 import time
 import traceback
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from tools.autoflash import (
+    __version__,
     device,
     errors,
     esphome,
@@ -51,6 +54,8 @@ def execute(ctx: Context, step: str) -> int:
         # keyboard waits, and how long a Berry phase kept the device busy.
         ctx.state.capture(f"{step}.seconds",
                           round(time.monotonic() - started - (output.waited() - waited)))
+        # And the keyboard's own: where people take their time.
+        ctx.state.capture(f"{step}.waited", round(output.waited() - waited))
         busy = getattr(ctx.last_runner, "busy_seconds", None)
         if busy is not None:
             # The longest of its tries: how near the device came to stopping.
@@ -132,6 +137,7 @@ def _execute(ctx: Context, step: str) -> int:
         output.stage_end("stopped")
         ctx.last_failure = str(exc)
         ctx.last_failed_step = step
+        ctx.crash_site = None
         output.tell(f"FAILED: {exc}")
         return 1
     except Exception as exc:  # noqa: BLE001 - recorded and explained, not a bare traceback
@@ -144,6 +150,8 @@ def _execute(ctx: Context, step: str) -> int:
         output.stage_end("stopped")
         ctx.last_failure = message
         ctx.last_failed_step = step
+        # Where in the tool's code, for its report: no surprise from the network.
+        ctx.crash_site = None if isinstance(exc, errors.NETWORK_ERRORS) else crash_site(exc)
         output.tell(f"FAILED: {message}")
         return 1
     # A step may end its stage otherwise: "skipped" or "already done".
@@ -348,6 +356,23 @@ def connection_lost(exc: BaseException) -> str:
     return f"the connection to the device was lost ({type(exc).__name__}: {exc})"
 
 
+def crash_site(exc: BaseException) -> str | None:
+    """Where in this tool's own code an unexpected error came from, for the
+    run's report: its kind and the last of the tool's lines it passed
+    ("KeyError at tools/autoflash/report.py:212") - code alone, never a value."""
+    tools = (runs.ROOT / "tools").resolve()
+    site = None
+    for frame in traceback.extract_tb(exc.__traceback__):
+        try:
+            path = Path(frame.filename).resolve().relative_to(tools.parent)
+        except ValueError:
+            continue
+        if path.parts[0] == "tools" and frame.lineno:
+            site = f"{path.as_posix()}:{frame.lineno}"
+    kind = type(exc).__name__
+    return f"{kind} at {site}" if site and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,59}", kind) else None
+
+
 def unexpected(exc: BaseException) -> str:
     """An error nothing here anticipated: in full in the log, in a line on screen."""
     output.log_only(traceback.format_exc().rstrip())
@@ -456,6 +481,10 @@ def run_steps(ctx: Context) -> int:
     routes.apply_target(firmware, routes.route_source(ctx.state), routes.family_of(ctx.state))
     ctx.state.set_input("stopped_by", None)
     resumed = any(ctx.state.is_done(step) for step, _, _ in routes.STEPS)
+    if not resumed:
+        # For its report, when another version carries it on: one begun before
+        # this was recorded says nothing.
+        ctx.state.set_input("begun_on", __version__)
     ctx.run_started, ctx.run_resumed = started, resumed
     if resumed and routes.FAMILY.RESUME_CHECK is not None:
         try:

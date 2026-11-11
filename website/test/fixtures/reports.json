@@ -7,35 +7,69 @@
       "device": "sonoff-s60", "model": "S60TPG", "stock": "1.2.0",
       "device_hash": "a5b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1", "firmware": "tasmota",
       "from": "sonoff", "backup": "saved", "identity": null,
-      "os": {"family": "linux", "version": "Ubuntu 24.04.1 LTS"},
+      "os": {"family": "linux", "version": "Ubuntu 24.04.1 LTS", "arch": "x86-64"},
       "python": {"version": "3.12.4", "source": "venv"}, "seconds": 512, "resumed": false,
-      "stages": {"A1": {"s": 12, "busy": 0, "tries": 1}, "D4": {"s": 61, "busy": 43, "tries": 2}},
+      "stages": {"A1": {"s": 12, "busy": 0, "tries": 1, "wait": 40}, "D4": {"s": 61, "busy": 43, "tries": 2, "wait": 0}},
       "signal": -61, "wifi_typed": false, "setup_network": true, "power_cycled": null,
-      "checks": "passed", "meter": "carried", "nth_device": 1
+      "checks": "passed", "meter": "carried", "nth_device": 1,
+      "chip": {"revision": "0.4", "flash_id": "204016", "flash_mb": 4},
+      "computer": {"connection": "wifi", "vpn": false, "networks": 1, "security_note": false, "firewall": "added",
+        "admin": true},
+      "ewelink_region": "eu", "ctrl_c_carried_on": 0, "launcher": "start.sh", "install": "download",
+      "begun_on": null, "back_after_power_cycle": null
     },
     {
       "format": 1, "id": "fedcba9876543210fedcba9876543210", "proof": "1794000000:2293", "tag": "dev",
       "tool": "2.4.0", "kind": "run", "result": "failed",
-      "stopped": {"step": "B2", "error": "unsupported-device", "text": "the device is a NEWTHING, which this tool does not convert yet. Nothing was written"},
+      "stopped": {"step": "B2", "error": "unsupported-device", "text": "the device is a NEWTHING, which this tool does not convert yet. Nothing was written", "where": null},
       "family": null, "device": null, "model": "NEWTHING", "stock": null, "device_hash": null, "firmware": null,
       "from": "sonoff", "backup": "not taken", "identity": null,
-      "os": {"family": "windows", "version": "11 (build 10.0.22631)"},
+      "os": {"family": "windows", "version": "11 (build 10.0.22631)", "arch": "arm64"},
       "python": {"version": "unknown", "source": "other"}, "seconds": 0, "resumed": true, "stages": {},
       "signal": null, "wifi_typed": null, "setup_network": null, "power_cycled": null,
-      "checks": "not-run", "meter": null, "nth_device": null
+      "checks": "not-run", "meter": null, "nth_device": null,
+      "chip": {"revision": null, "flash_id": null, "flash_mb": null},
+      "computer": {"connection": null, "vpn": null, "networks": 0, "security_note": true, "firewall": null,
+        "admin": false},
+      "ewelink_region": null, "ctrl_c_carried_on": 2, "launcher": "other", "install": "git",
+      "begun_on": "2.3.0", "back_after_power_cycle": null
     },
     {
       "format": 1, "id": "cccccccccccccccccccccccccccccccc", "proof": "1794000000:41", "tag": "user",
       "tool": "3.0.0", "kind": "run", "result": "cancelled",
-      "stopped": {"step": "D1", "error": "quit", "text": ""}, "family": "espressif",
+      "stopped": {"step": "D1", "error": "quit", "text": "", "where": null}, "family": "espressif",
       "device": "sonoff-s60", "model": "S60TPF", "stock": "1.2.0",
       "device_hash": "b6c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2", "firmware": "esphome",
       "from": "sonoff", "backup": "saved", "identity": null,
-      "os": {"family": "macos", "version": "15.1"},
+      "os": {"family": "macos", "version": "15.1", "arch": "arm64"},
       "python": {"version": "3.12.4", "source": "portable"}, "seconds": 200, "resumed": false,
-      "stages": {"A1": {"s": 12, "busy": 0, "tries": 1}},
+      "stages": {"A1": {"s": 12, "busy": 0, "tries": 1, "wait": 95}},
       "signal": -58, "wifi_typed": false, "setup_network": false, "power_cycled": null,
-      "checks": "not-run", "meter": null, "nth_device": null
+      "checks": "not-run", "meter": null, "nth_device": null,
+      "chip": {"revision": null, "flash_id": null, "flash_mb": null},
+      "computer": {"connection": "ethernet", "vpn": true, "networks": 2, "security_note": false, "firewall": "none",
+        "admin": false},
+      "ewelink_region": "us", "ctrl_c_carried_on": 1, "launcher": "start.sh", "install": "download",
+      "begun_on": null, "back_after_power_cycle": null
+    },
+    {
+      "format": 1, "id": "dddddddddddddddddddddddddddddddd", "proof": "1794000000:77", "tag": "user",
+      "tool": "3.0.0", "kind": "run", "result": "crashed",
+      "stopped": {"step": "K1", "error": "crash", "text": "something unexpected went wrong: KeyError: 'model'",
+        "where": "KeyError at tools/autoflash/routes/beken/arrived.py:212"},
+      "family": "beken", "device": "sonoff-s61", "model": "S61STPF", "stock": "1.0.2",
+      "device_hash": "c7d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3", "firmware": "openbeken",
+      "from": "sonoff", "backup": "saved", "identity": null,
+      "os": {"family": "windows", "version": "11 (build 10.0.26100)", "arch": "x86-64"},
+      "python": {"version": "3.12.4", "source": "portable"}, "seconds": 300, "resumed": false,
+      "stages": {"K1": {"s": 30, "busy": 0, "tries": 1, "wait": 0}},
+      "signal": null, "wifi_typed": null, "setup_network": null, "power_cycled": true,
+      "checks": "not-run", "meter": null, "nth_device": null,
+      "chip": {"revision": null, "flash_id": null, "flash_mb": null},
+      "computer": {"connection": "wifi", "vpn": false, "networks": 1, "security_note": false, "firewall": "there",
+        "admin": false},
+      "ewelink_region": "as", "ctrl_c_carried_on": 0, "launcher": "start.cmd", "install": "download",
+      "begun_on": null, "back_after_power_cycle": 41
     }
   ],
   "invalid": [
@@ -62,7 +96,14 @@
     {"why": "a proof not shaped as one", "set": {"proof": "1794000000:198:1"}},
     {"why": "a device numbered 0 on its computer", "set": {"nth_device": 0}},
     {"why": "a device numbered past any computer's", "set": {"nth_device": 1000001}},
-    {"why": "a device's number as words", "set": {"nth_device": "3"}}
+    {"why": "a device's number as words", "set": {"nth_device": "3"}},
+    {"why": "a crash's place outside the tool's code", "set": {"stopped": {"step": "D4", "error": "crash", "text": "", "where": "KeyError at /home/someone/x.py:1"}}},
+    {"why": "a flash ID not six hex digits", "set": {"chip.flash_id": "c8401"}},
+    {"why": "a connection not in the list", "set": {"computer.connection": "5g"}},
+    {"why": "a region eWeLink does not have", "set": {"ewelink_region": "mars"}},
+    {"why": "a processor not in the list", "set": {"os.arch": "riscv"}},
+    {"why": "a stage's wait as words", "set": {"stages.A1.wait": "long"}},
+    {"why": "a version begun on not x.y.z", "set": {"begun_on": "2.4"}}
   ],
   "readoutValid": [
     {
@@ -71,14 +112,16 @@
       "device": "sonoff-basicr4", "model": "BASICR4", "stock_model": "SN-ESP32C3-BASICR4-01", "stock": "1.1.0",
       "whole": true,
       "device_hash": "b5b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1",
-      "os": {"family": "linux", "version": "Ubuntu 24.04.5 LTS"}, "python": {"version": "3.12.3", "source": "venv"},
+      "os": {"family": "linux", "version": "Ubuntu 24.04.5 LTS", "arch": "x86-64"},
+      "python": {"version": "3.12.3", "source": "venv"},
       "seconds": 75, "converted_here": 3
     },
     {
       "format": 1, "id": "2123456789abcdef0123456789abcdef", "proof": "1794000000:198", "tag": "dev",
       "tool": "3.0.0", "kind": "readout", "result": "failed", "error": "other", "family": null,
       "device": null, "model": null, "stock_model": null, "stock": null, "whole": null, "device_hash": null,
-      "os": {"family": "windows", "version": "11 (build 26100)"}, "python": {"version": "unknown", "source": "other"},
+      "os": {"family": "windows", "version": "11 (build 26100)", "arch": "arm64"},
+      "python": {"version": "unknown", "source": "other"},
       "seconds": 0, "converted_here": 0
     }
   ],

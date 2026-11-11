@@ -6,6 +6,7 @@ uploaded through it - steps C2, C3 and D1.
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 import urllib.error
 import urllib.request
@@ -413,6 +414,20 @@ def bridge_info(ctx: Context) -> dict[str, str]:
     return device_facts.parse_info(body) if body else {}
 
 
+def note_hardware(ctx: Context, info: dict[str, str], backup: records.Backup | None) -> None:
+    """The chip's revision, the flash chip's ID and its size, as the installer
+    says them (or the size from the backup), kept for the run's report: a
+    batch with another flash chip, or a new revision, shows in the figures."""
+    revision, flash_id, size = info.get("chip revision", ""), info.get("flash id", "").lower(), info.get("flash chip size", "")
+    if not size.isdigit() and backup is not None:
+        size = str((backup.directory / "flash.bin").stat().st_size)
+    ctx.state.set_input("hardware", {
+        "revision": revision if re.fullmatch(r"\d{1,3}\.\d{1,3}", revision) else None,
+        "flash_id": flash_id if re.fullmatch(r"[0-9a-f]{6}", flash_id) else None,
+        "flash_mb": int(size) // 0x100000 if size.isdigit() and 0 < int(size) // 0x100000 <= 128 else None,
+    })
+
+
 def log_device_facts(ctx: Context, directory: Path, shown: bool, info: dict[str, str] | None = None) -> None:
     """What the backup and the installer say about the device, in the log, to add
     a device from a report of one: on the screen too when the device is one to report."""
@@ -442,6 +457,7 @@ def require_known_layout(ctx: Context) -> None:
         return
     known = hashlib.sha256(table).hexdigest() == layouts.of(kinds.of_run(ctx.state).layout).table_sha256
     info = bridge_info(ctx)
+    note_hardware(ctx, info, backup)
     if backup:
         log_device_facts(ctx, backup.directory, shown=not known, info=info)
     else:
