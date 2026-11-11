@@ -282,18 +282,17 @@ SIDE = 34
 
 
 def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
-                  right: tuple[str, ...] = RIGHT, below: tuple[str, ...] = ()) -> list[str]:
+                  right: tuple[str, ...] = RIGHT, below: list[tuple[str, str]] = ()) -> list[str]:
     """For the terminal: plain labels, lined up, in two columns where the
     window is wide enough - half the rows - else one. `right`: the labels
     of the right-hand column, the device's - a conversion's (RIGHT), or a
-    readout's (readout.report_fields). `below`: labels each on a row of its
-    own under them, the window's whole width to fit a list in before it
-    wraps - between the words a value's no-break spaces do not join."""
+    readout's (readout.report_fields). `below`: (label, value) pairs each on
+    a row of its own under them, the window's whole width to fit a list in
+    before it wraps - between the words a value's no-break spaces do not join."""
     margin, gap = "    ", "   "
     columns = columns or output.terminal_size((100, 24)).columns
     side = (columns - len(margin) - len(gap) - 2) // 2
-    under = [(label, value) for label, value in fields if label in below]
-    fields = [(label, value) for label, value in fields if label not in below]
+    under = list(below)
 
     def rows_under(width: int) -> list[str]:
         rows = []

@@ -775,7 +775,7 @@ class ReadoutCommandTests(unittest.TestCase):
                 mock.patch.object(cli.output, "stage_begin", begin), mock.patch.object(cli.output, "stage_end", end), \
                 mock.patch.object(readout, "run_all", return_value="all") as every, \
                 mock.patch.object(readout, "read_out_chosen", return_value="chosen") as chosen, \
-                mock.patch.object(readout, "end", side_effect=lambda ctx, said, seconds:
+                mock.patch.object(readout, "end", side_effect=lambda ctx, said:
                                   self.happened.append(f"report, after: {said}")):
             self.assertEqual(cli.cmd_readout(ctx, None), 0)
         return every, chosen, devices

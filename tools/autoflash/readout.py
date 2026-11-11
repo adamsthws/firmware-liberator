@@ -180,10 +180,8 @@ class Became:
 SAID = {ACCEPTED: "Accepted", UNNEEDED: "Not needed", KEPT: "Kept, not sent", WEBSITE_FULL: "Website full",
         CONVERTED_SINCE: "Converted since", SKIPPED: "Skipped", NOT_READ: "Not read out", CANCELLED: "Stopped",
         FAILED: "Failed", CRASHED: "Crashed"}
-# The report's right-hand column, and the rows under it, each the window's
-# width to list devices in (report.report_screen).
-REPORT_RIGHT = ("Devices",)
-REPORT_BELOW = ("Device", *SAID.values())
+# The report's right-hand column (report.report_screen).
+REPORT_RIGHT = ("Devices", "Accepted", "Not needed")
 
 
 def named(item: Became) -> str:
@@ -192,32 +190,39 @@ def named(item: Became) -> str:
     return "\u00a0".join(part for part in (item.product or item.model or "unknown", item.version) if part)
 
 
-def report_fields(done: list[Became], seconds: float) -> list[tuple[str, str]]:
-    """The readout's report for the screen, as (label, value), as short as it
-    can be: one device named by its model and firmware version; several,
-    under how each ended - each model and version once, however many of it
-    were read out. What else became of each is in the log."""
-    alone = len(done) == 1
+def report_fields(done: list[Became]) -> list[tuple[str, str]]:
+    """The readout's report for the screen, as (label, value): how it ended,
+    the tool and this computer, and how many devices were read out, how many
+    the website accepted and how many it did not need."""
     fields = [
-        ("Result", SAID[done[0].outcome] if alone else
+        ("Result", SAID[done[0].outcome] if len(done) == 1 else
          "read out" if any(item.outcome in (ACCEPTED, KEPT) for item in done) else "nothing read out"),
         ("Liberator", __version__),
         ("OS", report.computer_description()),
         ("Python", report.python_description()),
-        ("Time", output.elapsed(seconds)),
         ("Devices", str(len(done))),
+        ("Accepted", str(sum(item.outcome == ACCEPTED for item in done))),
+        ("Not needed", str(sum(item.outcome == UNNEEDED for item in done))),
     ]
-    if alone:
-        fields.append(("Device", named(done[0])))
-    else:
-        for outcome, label in SAID.items():
-            these = dict.fromkeys(named(item) for item in done if item.outcome == outcome)
-            if these:
-                fields.append((label, ", ".join(these)))
     return [(label, report.answer(value)) for label, value in fields]
 
 
-def end(ctx: Context, said: str, seconds: float) -> None:
+def report_devices(done: list[Became]) -> list[tuple[str, str]]:
+    """The devices under the report, as (label, value), as short as can be:
+    one by its model and firmware version; several listed under how each
+    ended, each model and version once however many were read out. What
+    else became of each is in the log."""
+    if len(done) == 1:
+        return [("Device", named(done[0]))]
+    listed = []
+    for outcome, label in SAID.items():
+        these = dict.fromkeys(named(item) for item in done if item.outcome == outcome)
+        if these:
+            listed.append((label, ", ".join(these)))
+    return listed
+
+
+def end(ctx: Context, said: str) -> None:
     """The end of a readout that finished, as a conversion's: what the person
     is still to do (`said`), then the report - one for every device read out
     in the sitting - and the links to support the project."""
@@ -231,7 +236,7 @@ def end(ctx: Context, said: str, seconds: float) -> None:
     output.tell("")
     output.show("How it went:", output.GREEN)
     output.tell("")
-    for line in report.report_screen(report_fields(done, seconds), right=REPORT_RIGHT, below=REPORT_BELOW):
+    for line in report.report_screen(report_fields(done), right=REPORT_RIGHT, below=report_devices(done)):
         output.tell(line)
     report.hold_out_hat()
 
@@ -1014,10 +1019,8 @@ def from_run(ctx: Context, devices: list[dict[str, Any]]) -> None:
     readout's stages carry on from 3: its first, the account's, is done."""
     output.stage_end("complete")
     lay_out_stages(first=2)
-    started, waited = time.monotonic(), output.waited()
     ctx.readouts = []
-    said = read_out_chosen(ctx, devices)
-    end(ctx, said, time.monotonic() - started - (output.waited() - waited))
+    end(ctx, read_out_chosen(ctx, devices))
     # Said already, with the report: the run has nothing more to say.
     raise Finished("")
 

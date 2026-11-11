@@ -24,7 +24,6 @@ import json  # noqa: E402
 import os  # noqa: E402
 import shutil  # noqa: E402
 import signal  # noqa: E402
-import time  # noqa: E402
 
 from tools.autoflash import (  # noqa: E402
     __version__,
@@ -340,7 +339,6 @@ def cmd_readout(ctx: Context, saved: Path | None) -> int:
     if saved:
         output.tell(f"Sent, thank you! Its reference is {readout.send_saved(saved)}.")
         return 0
-    started, waited = time.monotonic(), output.waited()
     ctx.readouts = []
     report_upload.announce(ctx)   # each readout sends its report (readout.run)
     runner.say_what_to_expect("readout")
@@ -362,8 +360,7 @@ def cmd_readout(ctx: Context, saved: Path | None) -> int:
         said = readout.run_all(ctx, devices)
     else:
         said = readout.read_out_chosen(ctx, devices)
-    # Its time without the keyboard waits, as a conversion's report has it.
-    readout.end(ctx, said, time.monotonic() - started - (output.waited() - waited))
+    readout.end(ctx, said)
     return 0
 
 

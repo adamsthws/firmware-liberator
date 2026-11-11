@@ -1187,11 +1187,16 @@ class ReportTests(unittest.TestCase):
                            readout.KEPT, "a test run"),
             readout.Became("'Porch' (NEWTHING)", "NEWTHING", "SN-NEW-01", "2.0.0", None, readout.UNNEEDED)]
 
+    def test_it_counts_the_devices_those_accepted_and_those_not_needed_and_gives_no_time(self):
+        fields = dict(readout.report_fields(self.DONE))
+        self.assertEqual((fields["Result"], fields["Devices"], fields["Accepted"], fields["Not needed"]),
+                         ("Read out", "3", "1", "1"))
+        self.assertNotIn("Time", fields)
+        self.assertEqual(dict(readout.report_fields(self.DONE[2:]))["Result"], "Not needed")   # one: how it ended
+
     def test_one_device_is_named_by_its_model_and_version_alone(self):
-        fields = dict(readout.report_fields(self.DONE[:1], 75.0))
-        self.assertEqual((fields["Result"], fields["Devices"], fields["Device"]),
-                         ("Accepted", "1", "BASICR4\u00a01.1.0"))
-        shown = "\n".join(f"{label}: {value}" for label, value in fields.items())
+        self.assertEqual(readout.report_devices(self.DONE[:1]), [("Device", "BASICR4\u00a01.1.0")])
+        shown = repr(readout.report_fields(self.DONE[:1])) + repr(readout.report_devices(self.DONE[:1]))
         for left_out in ("Kitchen", "r-1", "memory"):   # its name in the account, its reference
             self.assertNotIn(left_out, shown)
 
@@ -1201,18 +1206,16 @@ class ReportTests(unittest.TestCase):
                                readout.ACCEPTED, "r-2"),
                 readout.Became("'Shed' (BASICR4)", "BASICR4", "SN-ESP32C3-BASICR4-01", "1.2.0", True,
                                readout.ACCEPTED, "r-3")]
-        fields = readout.report_fields(done, 75.0)
-        self.assertEqual(dict(fields)["Result"], "Read out")
-        self.assertEqual(dict(fields)["Devices"], "5")
-        self.assertEqual(fields[-3:], [("Accepted", "BASICR4\u00a01.1.0, BASICR4\u00a01.2.0"),
-                                       ("Not needed", "NEWTHING\u00a02.0.0"),
-                                       ("Kept, not sent", "NEWTHING\u00a02.0.0")])
-        self.assertEqual(dict(readout.report_fields(self.DONE[2:], 1.0))["Result"], "Not needed")
+        self.assertEqual(dict(readout.report_fields(done))["Accepted"], "3")   # each device counted
+        self.assertEqual(readout.report_devices(done), [("Accepted", "BASICR4\u00a01.1.0, BASICR4\u00a01.2.0"),
+                                                        ("Not needed", "NEWTHING\u00a02.0.0"),
+                                                        ("Kept, not sent", "NEWTHING\u00a02.0.0")])
 
-    def test_the_lists_go_under_the_rest_wrapping_between_devices_alone(self):
+    def test_the_counts_are_on_the_right_and_the_lists_under_the_rest_wrapping_between_devices_alone(self):
         many = [readout.Became(f"'D{n}'", f"MODEL{n}", "", "1.0.0", True, readout.ACCEPTED) for n in range(12)]
-        lines = report.report_screen(readout.report_fields(many, 75.0), columns=80, right=readout.REPORT_RIGHT,
-                                     below=readout.REPORT_BELOW)
+        lines = report.report_screen(readout.report_fields(many), columns=80, right=readout.REPORT_RIGHT,
+                                     below=readout.report_devices(many))
+        self.assertTrue(any(line.rstrip().endswith("Accepted:   12") for line in lines), "\n".join(lines))
         at = next(index for index, line in enumerate(lines) if line.lstrip().startswith("Accepted:"))
         self.assertTrue(all("Devices:" not in line for line in lines[at:]), "under the columns")
         listed = " ".join(line.split(":", 1)[-1] for line in lines[at:])
@@ -1227,7 +1230,7 @@ class ReportTests(unittest.TestCase):
                 mock.patch.object(output, "show", side_effect=lambda text, *_: shown.append(text)), \
                 mock.patch.object(output, "show_links", side_effect=lambda links, **_: shown.append(links)), \
                 mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
-            readout.end(SimpleNamespace(readouts=self.DONE), "Switch the device off and on once more.", 75.0)
+            readout.end(SimpleNamespace(readouts=self.DONE), "Switch the device off and on once more.")
         text = [item for item in shown if isinstance(item, str)]
         order = [text.index(line) for line in ("Readout complete!", "Switch the device off and on once more.",
                                                "How it went:", "You've reached the bit where I hold out my hat!")]
