@@ -741,10 +741,12 @@ class ReadoutScenarioTests(unittest.TestCase):
             fault_suite.Instance(3).tool("sonoff", Path(tmp, "tool.log"), new=True)
         readout, conversion = (c.args[0][3:] for c in popen.call_args_list)
         # No --device-ip: a Beken device answers no discovery, and is found by its hardware address (a9f1a13).
-        # On a terminal of its own, its screen kept (unattended_run.py adds --unattended).
-        self.assertEqual(readout, ["computer", "tools/repo/unattended_run.py", "--command", "readout", "--",
-                                   "--env-file", "captures/tool.env"])
-        self.assertEqual(conversion[1:3] + conversion[-3:],
+        # On a terminal of its own, its screen kept (unattended_run.py adds --unattended); the
+        # readout kept unsent, for readout_problems, not sent to the API beside the device.
+        self.assertEqual(readout, ["--no-api", "computer", "tools/repo/unattended_run.py", "--command", "readout",
+                                   "--", "--env-file", "captures/tool.env"])
+        self.assertEqual(conversion[:2], ["--no-api", "computer"])
+        self.assertEqual(conversion[2:4] + conversion[-3:],
                          ["tools/repo/unattended_run.py", "--", "--firmware", "sonoff", "--new"])
 
     def test_each_phase_is_timed_from_what_the_readout_says(self):

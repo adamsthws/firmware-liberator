@@ -62,5 +62,32 @@ class InstanceTests(unittest.TestCase):
             self.assertIn("--instance needs a number, 1-99", done.stderr, instance)
 
 
+
+class ApiTests(unittest.TestCase):
+    """Its computer's readouts go to the API's own code beside it, for both
+    sides of a readout to be seen here, unless told --no-api; the API goes
+    with the emulator (emulator-room.sh's local_api_goes_with)."""
+
+    def setUp(self):
+        self.text = SCRIPT.read_text(encoding="utf-8")
+
+    def test_the_api_starts_beside_it_before_it_and_goes_with_it(self):
+        start = self.text.index('local_api_start "$NAME-api" "$NETWORK" "$STATE/api"')
+        self.assertLess(start, self.text.index('exec "${awake[@]}" docker run'))
+        self.assertIn('local_api_goes_with "$NAME" "$NAME-api"', self.text)
+        self.assertIn('api_env=(-e AUTOFLASH_READOUT_URL="$LOCAL_API_READOUT_URL")', self.text)
+        self.assertIn('-e AUTOFLASH_EMULATOR_URL="http://localhost:$PORT" "${api_env[@]}"', self.text)
+
+    def test_no_api_leaves_it_out_and_windows_has_none(self):
+        self.assertIn("--no-api) api=0 ;;", self.text)
+        self.assertIn('if [ "$api" = 1 ] && [ "$windows" = 0 ]; then', self.text)
+
+    @unittest.skipIf(shutil.which("bash") is None, "no bash")
+    def test_no_api_is_in_its_usage(self):
+        done = subprocess.run(["bash", str(SCRIPT), "--bogus"], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 2)
+        self.assertIn("--no-api", done.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

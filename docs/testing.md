@@ -428,7 +428,7 @@ says, as it takes no step of the tool's:
   records of the device's runs, as on another computer. None may be taken for
   an unfinished conversion (FAIL-TAKEN-FOR-CONVERSION).
 - After each, the readout is run again as a person would, and **passes** when
-  a run kept `readout.tar`, unsent, holding every file
+  a run kept `readout.tar`, unsent (the suite gives it no API, `--no-api`), holding every file
   [readouts.md](readouts.md#what-is-in-one) lists for an Espressif device,
   the whole flash matching its own hash check (FAIL-READOUT), and the device
   ends answering as Sonoff's firmware (FAIL-NOT-SONOFF, or BRICK if its serial
@@ -441,7 +441,7 @@ says, as it takes no step of the tool's:
 `readout --all` unattended on a device fresh from Sonoff's firmware, among
 made-up devices the stub lists beside it (`AUTOFLASH_EMU_STUB_OTHERS`), which,
 not emulated, get only the first stage. Readouts go to the API Worker's own
-code (`unattended-test.sh --api`, [how](unattended.md#in-the-emulator)) in
+code ([as `unattended-test.sh` sends them](unattended.md#in-the-emulator)) in
 its own container beside the emulated computer, so nothing of the suite's
 computer, such as its Node or firewall, comes into it. The accounts:
 
@@ -828,7 +828,7 @@ discovery.
   run says to, Sonoff's firmware put back with the tool
   (`run --firmware sonoff`) where the device was left on OpenBeken, and
   otherwise the readout run again. It passes when a run kept `readout.tar`,
-  unsent, holding every file [readouts.md](readouts.md#what-is-in-one) lists
+  unsent (the suite gives it no API, `--no-api`), holding every file [readouts.md](readouts.md#what-is-in-one) lists
   for a Beken device and the whole 4 MB flash (FAIL-READOUT), and the device,
   switched off and on, starts Sonoff's firmware and is back in eWeLink
   (FAIL-NOT-SONOFF).

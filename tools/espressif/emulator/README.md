@@ -47,6 +47,11 @@ together and what it changes, for working on it. How to use it is in
   does not. `--no-firewall` leaves ufw off.
 - **Power.** `device-supervisor` restarts QEMU whenever it exits, as a power
   cut looks.
+- **The API** the tool's readouts go to is the project's own code
+  (`website/api/local.mjs`) in a container of its own on the same Docker
+  network, `autoflash-emu-api`, started before the emulator and removed by a
+  watcher once the emulator's container stops (`tools/repo/emulator-room.sh`);
+  `unattended-test.sh` starts one of its own each run instead.
 
 ## The image
 
