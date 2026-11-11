@@ -294,7 +294,8 @@ def _back_up(ctx: Context, mac: str) -> str:
     directory, saved = records.save_beken_backup(mac, region, stock, stock_version, kind=kind.name)
     if not saved:
         return "existing"
-    output.say(f"    Backed up the device's own data ({len(region):,} bytes) and Sonoff's firmware to "
+    beside = " and Sonoff's firmware" if stock is not None else ""
+    output.say(f"    Backed up the device's own data ({len(region):,} bytes){beside} to "
                f"{directory.relative_to(records.CAPTURES.parent)}.")
     return "saved"
 
