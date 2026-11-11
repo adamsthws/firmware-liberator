@@ -1209,7 +1209,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(dict(readout.report_fields(done))["Accepted"], "3")   # each device counted
         self.assertEqual(readout.report_devices(done), [("Accepted", "BASICR4\u00a01.1.0, BASICR4\u00a01.2.0"),
                                                         ("Not needed", "NEWTHING\u00a02.0.0"),
-                                                        ("Kept, not sent", "NEWTHING\u00a02.0.0")])
+                                                        ("Not sent", "NEWTHING\u00a02.0.0")])
 
     def test_the_counts_are_on_the_right_and_the_lists_under_the_rest_wrapping_between_devices_alone(self):
         many = [readout.Became(f"'D{n}'", f"MODEL{n}", "", "1.0.0", True, readout.ACCEPTED) for n in range(12)]

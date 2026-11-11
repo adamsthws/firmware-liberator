@@ -177,7 +177,7 @@ class Became:
 
 
 # Each outcome as the report on the screen says it (report_fields), in this order.
-SAID = {ACCEPTED: "Accepted", UNNEEDED: "Not needed", KEPT: "Kept, not sent", WEBSITE_FULL: "Website full",
+SAID = {ACCEPTED: "Accepted", UNNEEDED: "Not needed", KEPT: "Not sent", WEBSITE_FULL: "Website full",
         CONVERTED_SINCE: "Converted since", SKIPPED: "Skipped", NOT_READ: "Not read out", CANCELLED: "Stopped",
         FAILED: "Failed", CRASHED: "Crashed"}
 # The report's right-hand column (report.report_screen).
