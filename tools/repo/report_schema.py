@@ -161,6 +161,9 @@ def schema() -> dict[str, Any]:
             "ctrl_c_carried_on": integer(0, report_data.CTRL_C_LIMIT),
             "launcher": words(*report_data.LAUNCHERS),
             "install": words(*report_data.INSTALLS),
+            # The name the device's own updater checks, and whether it is the tool's for its kind.
+            "firmware_name": nullable(string(f"^{report_data.A_NAME.pattern}$", report_data.FIRMWARE_NAME_LIMIT)),
+            "firmware_name_expected": {"type": ["boolean", "null"]},
             "begun_on": nullable(string(f"^{report_data.TOOL_VERSION.pattern}$", 11)),
             "back_after_power_cycle": nullable(integer(0, report_data.WAIT_LIMIT)),
         }),

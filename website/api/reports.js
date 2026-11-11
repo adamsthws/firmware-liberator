@@ -120,6 +120,7 @@ const extras = (report) => JSON.stringify({
   where: report.stopped?.where ?? null, arch: report.os.arch, chip: report.chip, computer: report.computer,
   ewelink_region: report.ewelink_region, ctrl_c_carried_on: report.ctrl_c_carried_on, launcher: report.launcher,
   install: report.install, begun_on: report.begun_on, back_after_power_cycle: report.back_after_power_cycle,
+  firmware_name: report.firmware_name, firmware_name_expected: report.firmware_name_expected,
 });
 // A converted device's number on the computer that first converted it: the
 // first given is kept.

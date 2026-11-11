@@ -19,6 +19,7 @@ from typing import Any, TYPE_CHECKING
 
 from tools.autoflash import __version__, failures, hostsys, interrupt, kinds, records, routes, runs
 from tools.autoflash import report
+from tools.ewelink.firmware_name import A_NAME
 from tools.ewelink.get_device_key import API
 
 if TYPE_CHECKING:
@@ -52,6 +53,8 @@ CONNECTIONS = ("wifi", "ethernet", "other")
 # and from what: a git clone, or a download.
 LAUNCHERS = ("start.sh", "start.cmd", "other")
 INSTALLS = ("git", "download")
+# The longest firmware name a report carries: Sonoff's run to 30 or so.
+FIRMWARE_NAME_LIMIT = 64
 # eWeLink's regions, for a run that signed in.
 EWELINK_REGIONS = tuple(API)
 # The most a count or time sent can be: no figure needs more.
@@ -304,9 +307,25 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         "launcher": os.environ.get("AUTOFLASH_LAUNCHER") if os.environ.get("AUTOFLASH_LAUNCHER") in LAUNCHERS
         else "other",
         "install": "git" if (runs.ROOT / ".git").exists() else "download",
+        **firmware_name_info(state, captures),
         "begun_on": begun,
         "back_after_power_cycle": back,
     }
+
+
+def firmware_name_info(state: Any, captures: dict[str, Any]) -> dict[str, Any]:
+    """The name the device's own updater checks, as the run learned it
+    (account.note_firmware_name, kept as its step's firmware_name), and
+    whether it is the name this tool wraps its firmware under for that kind:
+    one that is not may turn the update down."""
+    name = None
+    for key, value in captures.items():
+        if key.endswith(".firmware_name") and isinstance(value, str) and value:
+            name = value
+    if name is None or len(name) > FIRMWARE_NAME_LIMIT or not A_NAME.fullmatch(name):
+        return {"firmware_name": None, "firmware_name_expected": None}
+    kind = kinds.by_key(state.input("device_kind"))
+    return {"firmware_name": name, "firmware_name_expected": name == kind.wrapper_model if kind else None}
 
 
 def chip_info(state: Any) -> dict[str, Any]:

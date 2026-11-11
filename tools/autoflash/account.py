@@ -470,9 +470,10 @@ def note_firmware_name(kind: kinds.Kind | None, latest: dict[str, Any], deviceid
     output.log_only(f"    Firmware name: {learned.name}, from {learned.source}; "
                     f"its chip: {learned.chip or 'not named'}")
     if kind is not None and learned.name != kind.wrapper_model:
+        # The run's report says so (report_data.firmware_name_info): nothing to ask of anyone.
         output.tell(f"    Firmware name: {learned.source} says {learned.name}, but this tool wraps "
                     f"firmware for this device as {kind.wrapper_model}. The conversion goes on: if "
-                    "the device turns the update down, its firmware stays as it is. Please report this")
+                    "the device turns the update down, its firmware stays as it is.")
     return learned.name
 
 
