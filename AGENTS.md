@@ -75,6 +75,10 @@ and devices' identities.
 
 - **Python's standard library only**, 3.10 or newer. Open text files with
   `encoding=`. Packages go only into `.venv`, never the system's.
+- **The chip families behave alike**: a feature or fix for one family's
+  route is made for every family it applies to, the same way; a difference
+  that must stay says why beside it.
+  [More](CONTRIBUTING.md#code)
 - **Take the idiomatic design**: the usual way of the language and the code
   around it, over a clever one.
 - **Before a commit**: `python3 tests/run.py` and `python3 tools/repo/lint.py`
