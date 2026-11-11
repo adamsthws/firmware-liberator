@@ -387,5 +387,17 @@ class DeviceLockTests(unittest.TestCase):
             other.wait()
 
 
+class ConvertedHereTests(unittest.TestCase):
+    """How many devices this computer has converted, as a readout's report says."""
+
+    def test_the_highest_number_given_none_for_none(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(records, "DEVICES", Path(tmp)):
+            self.assertEqual(records.converted_here(), 0)
+            self.assertEqual(records.number_conversion("12:34:56:ab:cd:01"), 1)
+            self.assertEqual(records.number_conversion("12:34:56:ab:cd:02"), 2)
+            self.assertEqual(records.number_conversion("12:34:56:ab:cd:01"), 1, "a device keeps its number")
+            self.assertEqual(records.converted_here(), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

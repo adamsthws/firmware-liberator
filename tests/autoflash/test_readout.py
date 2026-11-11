@@ -457,7 +457,7 @@ class RunTests(unittest.TestCase):
             self.assertEqual(readout.run(self.ctx, s60), "")   # nothing for the owner to do
             self.assertEqual(readout.run(self.ctx, s60, batch=readout.Batch(None)), "")
         wanted.assert_not_called()
-        self.assertEqual([outcome for _, outcome, _ in ended(self.ctx)], [readout.CONVERTED] * 2)
+        self.assertEqual([outcome for _, outcome, _ in ended(self.ctx)], [readout.CONVERTED_SINCE] * 2)
         self.assertEqual(readout.outcome_said(readout.readouts(self.ctx)[0]), "not read out: it runs ESPHome now")
 
     def test_each_wait_is_a_stage_of_its_own(self):
@@ -524,6 +524,39 @@ class RunTests(unittest.TestCase):
         self.assertEqual(ended_with.call_args.args[1], "read")
         self.assertEqual(str(finished.exception), "")
         self.assertEqual(laid_out.call_args.args[0], max(len(name) for _, name in readout.STAGES))
+
+    def test_each_readout_sends_one_report_however_it_ends(self):
+        # One a readout, sent as it ends, so a sitting of several sends one
+        # each, all of one kind.
+        from tools.autoflash import kinds, report_upload
+        s60 = record("S60TPG", kinds.SONOFF_S60.stock_model)
+        # (raised, batch, its outcome, whether its error is classed)
+        cases = ((None, None, readout.ACCEPTED, False),
+                 (errors.Abort("the device stopped answering"), None, readout.FAILED, True),
+                 (prompts.QuitRun("q"), None, readout.CANCELLED, False),
+                 (errors.NothingWritten("skipped as asked"), readout.Batch(None), readout.SKIPPED, False),
+                 (RuntimeError("a bug"), None, readout.CRASHED, False))
+        for raised, batch, outcome, classed in cases:
+            sent = []
+            with self.subTest(outcome=outcome), \
+                    mock.patch.object(report_upload, "begin_readout", side_effect=lambda ctx: sent.append("begun")), \
+                    mock.patch.object(report_upload, "send_readout",
+                                      side_effect=lambda ctx, became, seconds: sent.append(
+                                          (became.outcome, became.error, became.mac))), \
+                    mock.patch.object(firmware_name, "learn", return_value=(None, ["no offer"])), \
+                    mock.patch.object(account, "ask_ewelink", return_value=S60_ASKED), \
+                    mock.patch.object(runs, "hold_device"), \
+                    mock.patch.object(readout_espressif, "read_and_anonymise",
+                                      side_effect=raised, return_value=({}, True)), \
+                    mock.patch.object(readout, "send", return_value="r-1"), \
+                    mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                    mock.patch.object(readout, "ask_contact", return_value=None):
+                try:
+                    readout.run(self.ctx, s60, batch=batch)
+                except BaseException:   # noqa: BLE001 - each as the readout ends it
+                    pass
+                classified = readout.failures.classify("the device stopped answering") if classed else None
+                self.assertEqual(sent, ["begun", (outcome, classified, "12:34:56:ab:cd:ef")])
 
     def test_a_device_converted_since_ends_its_stages_there(self):
         from tools.autoflash import kinds
@@ -968,7 +1001,7 @@ class RunAllTests(unittest.TestCase):
         self.assertEqual(len(manifests), 2)
         self.assertEqual([manifest["contact"] for manifest in manifests], [{"email": "me@example.com"}] * 2)
         readout.ask_contact.assert_called_once()
-        self.assertEqual((said, ended(self.ctx)), ("", [(HALL, readout.SENT, "r-1"), (PORCH, readout.SENT, "r-2")]))
+        self.assertEqual((said, ended(self.ctx)), ("", [(HALL, readout.ACCEPTED, "r-1"), (PORCH, readout.ACCEPTED, "r-2")]))
 
     def test_the_first_stage_ones_go_before_a_full_readout(self):
         from tools.autoflash import kinds
@@ -1113,25 +1146,16 @@ class ReportTests(unittest.TestCase):
     read out in the sitting, then the links to support the project."""
 
     DONE = [readout.Became("'Kitchen' (BASICR4)", "BASICR4", "SN-ESP32C3-BASICR4-01", "1.1.0", True,
-                           readout.SENT, "r-1"),
+                           readout.ACCEPTED, "r-1"),
             readout.Became("'Hall light' (NEWTHING)", "NEWTHING", "SN-NEW-01", "2.0.0", False,
                            readout.KEPT, "a test run"),
             readout.Became("'Porch' (NEWTHING)", "NEWTHING", "SN-NEW-01", "2.0.0", None, readout.UNNEEDED)]
 
-    def test_what_could_be_sent_is_anonymous_and_counts_those_sent(self):
-        data = readout.report_data(self.DONE, 75.0)
-        self.assertEqual((data["kind"], data["sent"], data["seconds"]), ("readout", 1, 75))
-        self.assertEqual(data["devices"][0], {"product": "BASICR4", "model": "SN-ESP32C3-BASICR4-01",
-                                              "version": "1.1.0", "whole": True, "outcome": readout.SENT})
-        shown = json.dumps(data)
-        for private in ("Kitchen", "Hall light", "r-1"):   # names in the account, a reference
-            self.assertNotIn(private, shown)
-        json.loads(shown)   # as it could be sent
-
     def test_the_screen_names_each_device_and_how_it_ended(self):
         fields = dict(readout.report_fields(self.DONE, 75.0))
-        self.assertEqual((fields["Result"], fields["Devices"], fields["Sent"]), ("Read out", "3", "1"))
-        self.assertEqual(fields["Device 1"], "'Kitchen' (BASICR4) 1.1.0: its memory read, sent, reference r-1")
+        self.assertEqual((fields["Result"], fields["Devices"], fields["Accepted"], fields["Not needed"]),
+                         ("Read out", "3", "1", "1"))
+        self.assertEqual(fields["Device 1"], "'Kitchen' (BASICR4) 1.1.0: its memory read, accepted, reference r-1")
         self.assertEqual(fields["Device 2"], "'Hall light' (NEWTHING) 2.0.0: what eWeLink says, kept, not sent "
                                              "(a test run)")
         self.assertEqual(fields["Device 3"], "'Porch' (NEWTHING) 2.0.0: not needed: one like it is in already")
@@ -1150,7 +1174,8 @@ class ReportTests(unittest.TestCase):
         order = [text.index(line) for line in ("Readout complete!", "Switch the device off and on once more.",
                                                "How it went:", "You've reached the bit where I hold out my hat!")]
         self.assertEqual(order, sorted(order))
-        self.assertTrue(any("Sent:" in line and "Device 1:" not in line for line in text))
+        self.assertTrue(any("Accepted:" in line for line in text))
+        self.assertTrue(any("Not needed:" in line for line in text))
         self.assertEqual(shown[-1][0][0], report.SPONSORS_URL)
         self.assertFalse([line for line in text if "Readout saved in" in line])
 
@@ -1182,7 +1207,7 @@ class OfferTests(unittest.TestCase):
     def test_an_email_goes_with_it(self):
         sent, said, _ = self.offer(0, " me@example.com ")
         self.assertEqual(json.loads(sent["manifest.json"])["contact"], {"email": "me@example.com"})
-        self.assertEqual((said, self.became.outcome, self.became.detail), ("", readout.SENT, "r-1"))
+        self.assertEqual((said, self.became.outcome, self.became.detail), ("", readout.ACCEPTED, "r-1"))
 
     def test_without_contact_nothing_is_asked_or_sent_of_it(self):
         sent, _, kept = self.offer(1)

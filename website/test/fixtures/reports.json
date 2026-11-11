@@ -1,5 +1,5 @@
 {
-  "$comment": "Reports both validators must agree on: tools/repo/report_schema.py (tests/repo/test_report_schema.py) and website/api/report-schema.js (website/test/report-schema.test.mjs). Each invalid one is the first valid one with one change: `set` a value, or `drop` a key, at a dotted path.",
+  "$comment": "Reports both validators must agree on: tools/repo/report_schema.py (tests/repo/test_report_schema.py) and website/api/report-schema.js (website/test/report-schema.test.mjs). Each invalid one is the first valid one with one change: `set` a value, or `drop` a key, at a dotted path. The readout ones are a readout's reports (the schema's \"readout\"), each invalid one the first readoutValid with one change.",
   "valid": [
     {
       "format": 1, "id": "0123456789abcdef0123456789abcdef", "proof": "1794000000:198", "tag": "user",
@@ -63,5 +63,36 @@
     {"why": "a device numbered 0 on its computer", "set": {"nth_device": 0}},
     {"why": "a device numbered past any computer's", "set": {"nth_device": 1000001}},
     {"why": "a device's number as words", "set": {"nth_device": "3"}}
+  ],
+  "readoutValid": [
+    {
+      "format": 1, "id": "1123456789abcdef0123456789abcdef", "proof": "1794000000:198", "tag": "user",
+      "tool": "3.0.0", "kind": "readout", "result": "accepted", "error": null, "family": "espressif",
+      "device": "sonoff-basicr4", "model": "BASICR4", "stock_model": "SN-ESP32C3-BASICR4-01", "stock": "1.1.0",
+      "whole": true,
+      "device_hash": "b5b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1",
+      "os": {"family": "linux", "version": "Ubuntu 24.04.5 LTS"}, "python": {"version": "3.12.3", "source": "venv"},
+      "seconds": 75, "converted_here": 3
+    },
+    {
+      "format": 1, "id": "2123456789abcdef0123456789abcdef", "proof": "1794000000:198", "tag": "dev",
+      "tool": "3.0.0", "kind": "readout", "result": "failed", "error": "other", "family": null,
+      "device": null, "model": null, "stock_model": null, "stock": null, "whole": null, "device_hash": null,
+      "os": {"family": "windows", "version": "11 (build 26100)"}, "python": {"version": "unknown", "source": "other"},
+      "seconds": 0, "converted_here": 0
+    }
+  ],
+  "readoutInvalid": [
+    {"why": "a key the schema does not name: the device's name in the account", "set": {"name": "Kitchen"}},
+    {"why": "the reference a readout was sent under", "set": {"reference": "r-1"}},
+    {"why": "a missing key", "drop": "converted_here"},
+    {"why": "a run's kind", "set": {"kind": "run"}},
+    {"why": "a result no readout has", "set": {"result": "converted"}},
+    {"why": "an error no class names", "set": {"error": "the bridge did not answer"}},
+    {"why": "a model not as the tool writes one", "set": {"stock_model": "sn-esp32c3"}},
+    {"why": "a count below none", "set": {"converted_here": -1}},
+    {"why": "a count past any sane one", "set": {"converted_here": 1000001}},
+    {"why": "whole as a word", "set": {"whole": "yes"}},
+    {"why": "a run's field", "set": {"stopped": null}}
   ]
 }

@@ -37,8 +37,13 @@ from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING
 
 from tools.autoflash import __version__, account, detect, hostsys, kinds, output, records, prompts, runs
-from tools.autoflash import proof_of_work, readout_beken, readout_espressif, report
+from tools.autoflash import failures, proof_of_work, readout_beken, readout_espressif, report, report_upload
 from tools.autoflash.errors import Abort, Finished, NothingWritten
+# How a device's readout ended (Became.outcome): its report's result, sent as
+# each readout ends (report_upload.send_readout), and on the screen's at the end.
+from tools.autoflash.report_data import (
+    ACCEPTED, CANCELLED, CONVERTED_SINCE, CRASHED, FAILED, KEPT, NOT_NEEDED as UNNEEDED, NOT_READ, SKIPPED,
+    WEBSITE_FULL)
 from tools.ewelink import discover_ewelink, firmware_name, offered_firmware
 from tools.ewelink.get_device_key import is_email
 
@@ -147,22 +152,12 @@ class Batch:
 # What a device not back on its Sonoff firmware still needs, said as the run ends.
 SWITCH_OFF_AND_ON = "Switch the device off and on once more: it then starts its Sonoff firmware again."
 
-# How a device's readout ended, as the report at the end says it (report_fields).
-SENT = "sent"                  # the website wanted it, and took it
-KEPT = "kept"                  # made, and kept on this computer unsent
-UNNEEDED = "not needed"        # the website has readouts like it already
-WEBSITE_FULL = "website full"  # the website could take no more for now
-CONVERTED = "converted"        # it runs another firmware now: none of Sonoff's to read
-SKIPPED = "skipped"            # passed by as asked, one device of several
-NOT_READ = "not read"          # stopped before it was made
-
-
 @dataclass
 class Became:
-    """One device's readout, for the report at the end: filled in as it goes
-    (run), and how it ended. `name` and `detail` are for the screen alone -
-    the device's name in the account, and the reference it was sent under -
-    never for a report that is sent (report_data)."""
+    """One device's readout: filled in as it goes (run), and how it ended,
+    for its report (report_data.readout_payload) and the screen's at the end.
+    `name` and `detail` are for the screen alone - the device's name in the
+    account, and the reference it was sent under - never for a report."""
     name: str
     product: str = ""
     model: str = ""
@@ -171,6 +166,8 @@ class Became:
     outcome: str = NOT_READ
     detail: str = ""            # the firmware it runs now, the reference, or why it was kept
     back: bool = True           # its Sonoff firmware answered again
+    mac: str | None = None      # for its report's device hash, as a conversion's sends
+    error: str | None = None    # how a failed one failed (failures.classify)
 
     @classmethod
     def of(cls, device: dict[str, Any], **ended: Any) -> Became:
@@ -180,46 +177,38 @@ class Became:
 
 
 def outcome_said(item: Became) -> str:
-    """How a device's readout ended, as its report says it."""
+    """How a device's readout ended, as the report on the screen says it."""
     detail = f" ({item.detail})" if item.detail else ""
-    return {SENT: f"sent, reference {item.detail}" if item.detail else "sent",
+    return {ACCEPTED: f"accepted, reference {item.detail}" if item.detail else "accepted",
             KEPT: f"kept, not sent{detail}",
             UNNEEDED: "not needed: one like it is in already",
             WEBSITE_FULL: "not read out: the website could take no more for now",
-            CONVERTED: f"not read out: it runs {item.detail or 'another firmware'} now",
+            CONVERTED_SINCE: f"not read out: it runs {item.detail or 'another firmware'} now",
             SKIPPED: "skipped",
-            NOT_READ: f"not read out{detail}"}[item.outcome]
+            NOT_READ: f"not read out{detail}",
+            CANCELLED: f"stopped{detail}",
+            FAILED: f"failed{detail}",
+            CRASHED: f"crashed{detail}"}[item.outcome]
+
 
 # The report's right-hand column, the devices' (report.report_screen).
-REPORT_RIGHT = ("Devices", "Sent", "Device", *(f"Device {number}" for number in range(1, 100)))
-
-
-def report_data(done: list[Became], seconds: float) -> dict[str, Any]:
-    """A readout's report as it could be sent, as a conversion's is
-    (report_upload): one for every device the sitting read out, and how
-    many were sent - wanted by the website, and taken. Anonymous: no
-    device's name, nor any reference. Not sent yet."""
-    return {
-        "kind": "readout", "tool": __version__, "os": report.computer_description(),
-        "python": report.python_description(), "seconds": round(seconds),
-        "sent": sum(item.outcome == SENT for item in done),
-        "devices": [{"product": item.product, "model": item.model, "version": item.version,
-                     "whole": item.whole, "outcome": item.outcome} for item in done],
-    }
+REPORT_RIGHT = ("Devices", "Accepted", "Not needed", "Device", *(f"Device {number}" for number in range(1, 100)))
 
 
 def report_fields(done: list[Became], seconds: float) -> list[tuple[str, str]]:
-    """The readout's report for the screen, as (label, value): report_data's,
-    each device named as the account names it, with its reference."""
-    data = report_data(done, seconds)
+    """The readout's report for the screen, as (label, value): one for every
+    device read out in the sitting, how many the website accepted and how
+    many it did not need, then each device named as the account names it,
+    with its reference."""
     fields = [
-        ("Result", "read out" if any(item.outcome in (SENT, KEPT) for item in done) else "nothing read out"),
-        ("Liberator", data["tool"]),
-        ("OS", data["os"]),
-        ("Python", data["python"]),
+        ("Result", "read out" if any(item.outcome in (ACCEPTED, KEPT) for item in done) else "nothing read out"),
+        ("Liberator", __version__),
+        ("OS", report.computer_description()),
+        ("Python", report.python_description()),
         ("Time", output.elapsed(seconds)),
         ("Devices", str(len(done))),
-        ("Sent", str(data["sent"])),
+        ("Accepted", str(sum(item.outcome == ACCEPTED for item in done))),
+        ("Not needed", str(sum(item.outcome == UNNEEDED for item in done))),
     ]
     for number, item in enumerate(done, 1):
         read = {True: "its memory read, ", False: "what eWeLink says, ", None: ""}[item.whole]
@@ -234,7 +223,7 @@ def end(ctx: Context, said: str, seconds: float) -> None:
     in the sitting - and the links to support the project."""
     done = readouts(ctx)
     output.tell("")
-    if any(item.outcome in (SENT, KEPT) for item in done):
+    if any(item.outcome in (ACCEPTED, KEPT) for item in done):
         output.show("Readout complete!", output.GREEN)
     if said:
         for line in said.splitlines():
@@ -414,18 +403,35 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
     Under the readout's stage lines (STAGES): the one under way when it stops
     ends as stopped, with what it showed left under it - or skipped, for one
     device of several passed by."""
-    ctx.readout = Became.of(device)
-    readouts(ctx).append(ctx.readout)
+    ctx.readout = this = Became.of(device)
+    readouts(ctx).append(this)
+    # Its own report, sent as it ends however it ends: one a readout.
+    report_upload.begin_readout(ctx)
+    started, waited = time.monotonic(), output.waited()
     try:
         said = _run(ctx, device, address, batch)
-    except NothingWritten:
-        if batch is not None and ctx.readout.outcome == NOT_READ:
-            ctx.readout.outcome = SKIPPED
+    except NothingWritten as exc:
+        if this.outcome == NOT_READ:
+            # One of several passed by at its question; one alone not
+            # confirmed there, which the person chose.
+            this.outcome = SKIPPED if batch is not None else CANCELLED
+            this.detail = this.detail or str(exc)
         output.stage_end("skipped" if batch is not None else "stopped")
         raise
-    except BaseException:
+    except (prompts.QuitRun, KeyboardInterrupt):
+        this.outcome = CANCELLED
         output.stage_end("stopped")
         raise
+    except Abort as exc:
+        this.outcome, this.error = FAILED, failures.classify(str(exc))
+        output.stage_end("stopped")
+        raise
+    except BaseException:
+        this.outcome = CRASHED
+        output.stage_end("stopped")
+        raise
+    finally:
+        report_upload.send_readout(ctx, this, time.monotonic() - started - (output.waited() - waited))
     output.stage_end("complete")
     return said
 
@@ -447,6 +453,7 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
     mac = (hostsys.mac_of(ip) if ip else None) or (device.get("params") or {}).get("staMac")
     if mac and records.MAC_RE.match(hostsys.normalise_mac(mac)):
         mac = hostsys.normalise_mac(mac)
+        ctx.readout.mac = mac
         ctx.state.set_input("device_mac", mac)
         if batch is None:
             # Under the device's own folder, as a conversion's run is: its log, the
@@ -475,7 +482,7 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
     except account.NotOnSonoff as exc:
         # One the account still lists, converted since: nothing gone wrong,
         # and none of Sonoff's firmware left on it to read.
-        ctx.readout.outcome, ctx.readout.detail = CONVERTED, detect.NAMES[exc.firmware]
+        ctx.readout.outcome, ctx.readout.detail = CONVERTED_SINCE, detect.NAMES[exc.firmware]
         return ""
     ctx.readout.product = asked.product or ctx.readout.product
     ctx.readout.model = asked.model or ctx.readout.model
@@ -745,7 +752,7 @@ def sent(ctx: Context, data: bytes, url: str, path: Path, back: bool) -> str:
                     "with this tool's readout --send") from exc
     path.unlink(missing_ok=True)
     ended = became(ctx)
-    ended.outcome, ended.detail = (UNNEEDED, "") if reference == ENOUGH else (SENT, reference)
+    ended.outcome, ended.detail = (UNNEEDED, "") if reference == ENOUGH else (ACCEPTED, reference)
     return "" if back else SWITCH_OFF_AND_ON
 
 
@@ -772,7 +779,7 @@ def sent_in_batch(ctx: Context, data: bytes, device: dict[str, Any], back: bool)
             todo.append(f"{ended.name}: its readout is kept in {path}: send it later with this tool's "
                         "readout --send.")
         else:
-            ended.outcome, ended.detail = (UNNEEDED, "") if reference == ENOUGH else (SENT, reference)
+            ended.outcome, ended.detail = (UNNEEDED, "") if reference == ENOUGH else (ACCEPTED, reference)
     if not back:
         todo.append(f"{ended.name}: {SWITCH_OFF_AND_ON[0].lower()}{SWITCH_OFF_AND_ON[1:]}")
     return "\n".join(todo)

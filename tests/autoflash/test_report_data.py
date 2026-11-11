@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import unittest
 from unittest import mock
 
 from tests.autoflash.routes.espressif.test_espressif import RouteTestCase
@@ -153,6 +154,46 @@ class PayloadTests(RouteTestCase):
             self.assertEqual(self.payload(ctx)["tag"], "dev")
         with mock.patch.dict("os.environ", {"AUTOFLASH_REPORT_TAG": "anything else"}):
             self.assertEqual(self.payload(ctx)["tag"], "user")
+
+
+class ReadoutPayloadTests(unittest.TestCase):
+    """A readout's report, one for each device's readout: nothing of its name
+    in the account nor its reference, how many devices this computer has
+    converted, and every value one the schema's "readout" allows."""
+
+    def became(self, **changes):
+        from tools.autoflash import readout
+        return readout.Became(**{"name": "'Kitchen' (BASICR4)", "product": "BASICR4", "model": "SN-ESP32C3-BASICR4-01",
+                                 "version": "1.1.0", "whole": True, "outcome": report_data.ACCEPTED,
+                                 "detail": "r-1", "mac": "12:34:56:ab:cd:ef", **changes})
+
+    def payload(self, **changes):
+        with mock.patch.object(report_data.records, "converted_here", return_value=4):
+            return report_data.readout_payload("a" * 32, self.became(**changes), 75.4)
+
+    def test_it_says_what_the_readout_was_and_nothing_of_whose(self):
+        sent = self.payload()
+        self.assertEqual({key: sent[key] for key in ("kind", "result", "error", "family", "device", "model",
+                                                     "stock_model", "stock", "whole", "seconds", "converted_here")},
+                         {"kind": "readout", "result": "accepted", "error": None, "family": "espressif",
+                          "device": "sonoff-basicr4", "model": "BASICR4", "stock_model": "SN-ESP32C3-BASICR4-01",
+                          "stock": "1.1.0", "whole": True, "seconds": 75, "converted_here": 4})
+        self.assertEqual(sent["device_hash"], report_data.device_hash("12:34:56:ab:cd:ef"))
+        shown = json.dumps(sent)
+        for private in ("Kitchen", "r-1", "12:34:56"):
+            self.assertNotIn(private, shown)
+
+    def test_every_result_fits_the_schema(self):
+        schema = report_schema.current()["readout"]
+        for result in report_data.READOUT_RESULTS:
+            sent = {**self.payload(outcome=result, error="other"), "proof": "1794000000:198"}
+            self.assertEqual(report_schema.validate(schema, sent), [], result)
+            self.assertEqual(sent["error"], "other" if result == report_data.FAILED else None, result)
+
+    def test_what_is_not_as_the_tool_writes_it_is_sent_as_not_known(self):
+        sent = self.payload(product="a product", model="", version="v1", mac=None, whole=None)
+        self.assertEqual([sent[key] for key in ("model", "stock_model", "stock", "device_hash", "whole", "device")],
+                         [None] * 6)
 
 
 class WordTests(RouteTestCase):

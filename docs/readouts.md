@@ -34,8 +34,11 @@ own, the line under way turning until it is done
 conversion run carries on from that run's stage 2.
 
 It ends as a conversion does, with a report of how it went - the device, its
-firmware version, and whether its readout was sent, with its reference - and
-anything left for you to do, such as switching the device off and on once more.
+firmware version, and whether the website accepted its readout, with its
+reference - and anything left for you to do, such as switching the device off
+and on once more. Like a conversion, each device's readout also sends the
+project a short, anonymous report of how it went, without the readout itself:
+[what the tool sends](what-the-tool-sends.md).
 
 The tool first asks eWeLink what the device runs and which firmware it would
 be offered, then asks the website whether a readout would add anything. The

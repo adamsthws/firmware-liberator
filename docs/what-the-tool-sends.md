@@ -1,7 +1,8 @@
 # What the tool sends
 
 Each time you run a conversion, the tool sends the project a short report of
-how it went. Nothing in it says who you are, where you are, or which network
+how it went; each device you [read out](readouts.md) sends one too, as its
+readout ends. Nothing in it says who you are, where you are, or which network
 you are on.
 
 Together, reports show which devices convert well, which fail and where, the
@@ -23,6 +24,13 @@ stages people choose to stop at, and which devices people want supported next: s
   Sonoff's firmware was taken, whether the power meter kept its calibration,
   and, going back to Sonoff's firmware, where the eWeLink identity came from
   (the backup, the device or your account), never the identity itself.
+- **A readout's report** (one for each device read out): how it ended -
+  accepted by the website, kept on your computer unsent, not needed (one like
+  it is in already), turned away as the website was full, not read as the
+  device now runs other firmware, skipped, stopped by you, or failed, with
+  the kind of problem - the device's kind, its model and the name and version
+  of its Sonoff firmware, whether its whole memory was read, and how long it
+  took. Never the readout itself, nor its reference.
 - **How the run went:** how long it and each stage took, how long each stage
   kept the device busy, how often a stage was tried again, the device's Wi-Fi
   signal strength, and whether the run carried on an earlier one, you typed
@@ -33,8 +41,9 @@ stages people choose to stop at, and which devices people want supported next: s
   and its version (such as Windows 11 or Ubuntu 24.04), and the Python
   version the tool ran on, its own or one already on your computer. For a
   conversion, how many devices the tool has converted on your computer, this
-  one included: counted from its own records there, so deleting them starts
-  the count again. Nothing that names your computer is sent.
+  one included; for a readout, how many it has converted there so far:
+  counted from its own records there, so deleting them starts the count
+  again. Nothing that names your computer is sent.
 - **For counting:** a random number, so a report sent twice counts once, and
   a mark telling a maintainer's test run from everyone else's.
 
@@ -113,4 +122,5 @@ sent, delete its file there.
 
 A [readout](readouts.md), which helps add support for a device, is sent only
 if you agree when the tool offers one; [its own page](readouts.md#what-is-in-one)
-says what it holds.
+says what it holds. The short report of how a readout went, above, is not the
+readout: it is sent as a conversion's report is, and turned off the same way.

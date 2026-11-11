@@ -216,6 +216,14 @@ def number_conversion(mac: str) -> int:
     number = read_device(mac).get(CONVERTED_NUMBER)
     if isinstance(number, int) and not isinstance(number, bool):
         return number
+    number = converted_here() + 1
+    remember_device(mac, **{CONVERTED_NUMBER: number})
+    return number
+
+
+def converted_here() -> int:
+    """How many devices this computer has converted, as number_conversion
+    numbers them: the highest number given, 0 for none."""
     taken = [0]
     for path in DEVICES.glob(f"*/{DEVICE_FILE}"):
         try:
@@ -224,8 +232,7 @@ def number_conversion(mac: str) -> int:
             continue
         if isinstance(value, int) and not isinstance(value, bool):
             taken.append(value)
-    remember_device(mac, **{CONVERTED_NUMBER: max(taken) + 1})
-    return max(taken) + 1
+    return max(taken)
 
 
 # How a run's backup went, by the outcome its backup step records

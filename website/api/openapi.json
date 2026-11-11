@@ -349,7 +349,7 @@
     "/v1/reports": {
       "post": {
         "operationId": "reports",
-        "summary": "The reports of the tool's runs: the latest, with any it could not send before",
+        "summary": "The reports of the tool's runs, and of each device's readout: the latest, with any it could not send before",
         "description": "Each report carries its own proof of work, made for its id. Every report sent is answered in one of the four lists: the tool forgets those accepted, duplicate or rejected, and sends those left for later again another time.",
         "requestBody": {
           "required": true,
@@ -367,7 +367,14 @@
                     "minItems": 1,
                     "maxItems": 99,
                     "items": {
-                      "$ref": "report-schema.json"
+                      "anyOf": [
+                        {
+                          "$ref": "report-schema.json"
+                        },
+                        {
+                          "$ref": "report-schema.json#/readout"
+                        }
+                      ]
                     }
                   }
                 }

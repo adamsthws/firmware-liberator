@@ -14,10 +14,10 @@ from tools.repo import report_schema
 FIXTURES = json.loads((report_schema.ROOT / "website/test/fixtures/reports.json").read_text(encoding="utf-8"))
 
 
-def changed(item: dict) -> dict:
-    """The first valid report with one change at a dotted path (as
+def changed(item: dict, base: str = "valid") -> dict:
+    """The first of FIXTURES[base] with one change at a dotted path (as
     website/test/report-schema.test.mjs makes it)."""
-    report = copy.deepcopy(FIXTURES["valid"][0])
+    report = copy.deepcopy(FIXTURES[base][0])
 
     def at(path: str) -> tuple[dict, str]:
         *keys, last = path.split(".")
@@ -53,6 +53,24 @@ class ReportSchemaTests(unittest.TestCase):
             self.assertEqual(report_schema.validate(schema, report), [], report["id"])
         for item in FIXTURES["invalid"]:
             self.assertNotEqual(report_schema.validate(schema, changed(item)), [], item["why"])
+
+    def test_a_readouts_reports_are_held_to_its_own_and_agree_with_the_workers(self):
+        schema = report_schema.current()
+        for report in FIXTURES["readoutValid"]:
+            self.assertEqual(report_schema.validate(schema["readout"], report), [], report["id"])
+            self.assertNotEqual(report_schema.validate(schema, report), [], "a readout's is no run's")
+        for item in FIXTURES["readoutInvalid"]:
+            self.assertNotEqual(report_schema.validate(schema["readout"], changed(item, "readoutValid")), [],
+                                item["why"])
+
+    def test_a_readouts_report_as_the_tool_makes_it_fits(self):
+        from tools.autoflash import readout, report_data
+        made = readout.Became("'Kitchen' (BASICR4)", "BASICR4", "SN-ESP32C3-BASICR4-01", "1.1.0", True,
+                              readout.ACCEPTED, "r-1", mac="12:34:56:ab:cd:ef")
+        for outcome in report_data.READOUT_RESULTS:
+            made.outcome, made.error = outcome, "other" if outcome == report_data.FAILED else None
+            sent = {**report_data.readout_payload("0" * 32, made, 75.0), "proof": "1794000000:198"}
+            self.assertEqual(report_schema.validate(report_schema.current()["readout"], sent), [], outcome)
 
     def test_the_failure_patterns_are_the_tools_in_words_both_languages_read_alike(self):
         from tools.autoflash import failures

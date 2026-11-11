@@ -395,3 +395,60 @@ test("what everyone's day has no room for is given back to the sender's", async 
   const [sender] = rows(bindings, "SELECT count FROM counters WHERE name LIKE 'report-sender:%'");
   assert.equal(sender.count, 1, "only the one kept");
 });
+
+// A readout's report, each device's as its readout ends ("kind": "readout").
+const READOUT = JSON.parse(readFileSync(new URL("./fixtures/reports.json", import.meta.url), "utf8")).readoutValid[0];
+function readoutReport(changes = {}) {
+  const id = changes.id ?? randomBytes(16).toString("hex");
+  return { ...structuredClone(READOUT), ...changes, id, proof: changes.proof ?? proofFor(id) };
+}
+
+test("a readout's report is kept apart from the runs', its device a keyed hash, and makes no device's record", async () => {
+  const bindings = env();
+  const sent = readoutReport({ device_hash: hashOf(7) });
+  assert.deepEqual(await send(bindings, [sent]),
+    { status: 200, accepted: [sent.id], duplicate: [], rejected: [], later: [] });
+  const [kept] = rows(bindings, "SELECT * FROM readout_reports");
+  assert.deepEqual([kept.id, kept.day, kept.result, kept.model, kept.stock_model, kept.whole, kept.converted_here],
+    [sent.id, "2026-11-09", "accepted", "BASICR4", "SN-ESP32C3-BASICR4-01", 1, 3]);
+  assert.equal(kept.device_hash, keyed(hashOf(7)));
+  assert.deepEqual(rows(bindings, "SELECT id FROM reports"), [], "no run's report");
+  assert.deepEqual(rows(bindings, "SELECT * FROM devices"), [], "a readout counts no run of its device");
+  assert.ok(!Object.values(kept).some((value) => String(value).includes("15:30")), "no time of day");
+});
+
+test("a readout's report and a run's share their ids, the day's counts and a device's limit", async () => {
+  const bindings = env();
+  const sent = readoutReport();
+  await send(bindings, [sent]);
+  const again = await send(bindings, [sent, report({ id: sent.id })]);
+  assert.deepEqual([again.accepted, again.duplicate], [[], [sent.id, sent.id]]);
+  assert.deepEqual(await read(bindings.DB, "reports:2026-11-09"), { count: 1, bytes: 0 });
+  const hash = hashOf(8);
+  const many = await send(bindings, [
+    ...Array.from({ length: api.DEVICE_DAILY - 1 }, () => report({ device_hash: hash })),
+    readoutReport({ device_hash: hash }), readoutReport({ device_hash: hash })]);
+  assert.equal(many.accepted.length, api.DEVICE_DAILY);
+  assert.match(many.rejected[0].why, /reports of one device in a day/);
+});
+
+test("a readout's report is held to the readout's schema, not a run's", async () => {
+  const bindings = env();
+  const runs = await send(bindings, [readoutReport({ stopped: null })]);
+  assert.equal(runs.rejected.length, 1, "a run's field");
+  const named = await send(bindings, [readoutReport({ name: "Kitchen" })]);
+  assert.equal(named.rejected.length, 1, "nothing of the device's name in the account");
+  const asRun = await send(bindings, [report({ kind: "readout" })]);
+  assert.equal(asRun.rejected.length, 1, "a run's report called a readout's");
+});
+
+test("a readout's report with words no report would hold is held for review, and counted nowhere", async () => {
+  const bindings = env();
+  const words = JSON.parse(readFileSync(new URL("../api/held-words.json", import.meta.url), "utf8")).words;
+  const word = words.find((each) => /^[a-z]{4,}$/.test(each)).toUpperCase();   // a model's shape
+  const sent = readoutReport({ model: word });
+  const answer = await send(bindings, [sent]);
+  assert.deepEqual(answer.accepted, [sent.id]);
+  assert.deepEqual(rows(bindings, "SELECT quarantined FROM readout_reports"), [{ quarantined: 1 }]);
+  assert.deepEqual(rows(bindings, "SELECT id FROM held_reports"), [{ id: sent.id }]);
+});

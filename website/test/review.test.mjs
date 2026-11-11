@@ -87,3 +87,13 @@ test("a run the person stopped is taken only as the tool writes one", () => {
   assert.equal(heldFor(stopped("cancelled", "device-lost")), held, "a failure's class");
   assert.equal(heldFor(stopped("failed", "quit")), held, "a way of stopping on a failure");
 });
+
+test("a readout's report the tool writes is never held; one with words no report would hold is", () => {
+  for (const report of FIXTURES.readoutValid) {
+    assert.equal(heldFor(report), null, report.id);
+  }
+  const word = WORDS.words.find((each) => /^[a-z]{4,}$/.test(each)).toUpperCase();
+  for (const field of ["model", "stock_model", "stock"]) {
+    assert.equal(heldFor({ ...FIXTURES.readoutValid[0], [field]: word }), "words no report would hold", field);
+  }
+});
