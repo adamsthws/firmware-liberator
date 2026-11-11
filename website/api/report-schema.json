@@ -166,6 +166,249 @@
     "sonoff-m5-2c": "Sonoff M5 2-gang",
     "sonoff-m5-3c": "Sonoff M5 3-gang"
   },
+  "readout": {
+    "type": "object",
+    "properties": {
+      "format": {
+        "type": "integer",
+        "enum": [
+          1
+        ]
+      },
+      "id": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{32}$",
+        "maxLength": 32
+      },
+      "proof": {
+        "type": "string",
+        "pattern": "^[0-9]{1,12}:[0-9]{1,20}$",
+        "maxLength": 33
+      },
+      "tag": {
+        "type": "string",
+        "enum": [
+          "user",
+          "dev"
+        ]
+      },
+      "tool": {
+        "type": "string",
+        "pattern": "^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}$",
+        "maxLength": 11
+      },
+      "kind": {
+        "type": "string",
+        "enum": [
+          "readout"
+        ]
+      },
+      "result": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "kept",
+          "not-needed",
+          "website-full",
+          "converted-since",
+          "skipped",
+          "not-read",
+          "cancelled",
+          "failed",
+          "crashed"
+        ]
+      },
+      "error": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "device-not-found",
+          "device-no-answer",
+          "device-lost",
+          "device-busy",
+          "weak-signal",
+          "network-join",
+          "computer-network",
+          "unsupported-device",
+          "unexpected-firmware",
+          "unexpected-layout",
+          "upload-cut",
+          "not-taken",
+          "settings-lost",
+          "identity",
+          "backup",
+          "download",
+          "integrity",
+          "preparation",
+          "ewelink-unreachable",
+          "ewelink-account",
+          "ewelink-refused",
+          "credentials",
+          "bad-option",
+          "unsafe-state",
+          "no-room",
+          "declined",
+          "nothing-to-do",
+          "crash",
+          "other",
+          null
+        ]
+      },
+      "family": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "espressif",
+          "beken",
+          null
+        ]
+      },
+      "device": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "sonoff-s60",
+          "sonoff-s61",
+          "sonoff-pow-elite",
+          "sonoff-powct",
+          "sonoff-th-elite",
+          "sonoff-dualr3",
+          "sonoff-basic-1gs",
+          "sonoff-nspanel",
+          "sonoff-basicr4",
+          "sonoff-minir4",
+          "sonoff-m5-1c",
+          "sonoff-m5-2c",
+          "sonoff-m5-3c",
+          null
+        ]
+      },
+      "model": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^[A-Z0-9][A-Z0-9-]{0,23}$",
+        "maxLength": 24
+      },
+      "stock_model": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^[A-Z0-9][A-Z0-9-]{0,23}$",
+        "maxLength": 24
+      },
+      "stock": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^\\d{1,4}(\\.\\d{1,4}){1,3}$",
+        "maxLength": 19
+      },
+      "whole": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "device_hash": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^[0-9a-f]{64}$",
+        "maxLength": 64
+      },
+      "os": {
+        "type": "object",
+        "properties": {
+          "family": {
+            "type": "string",
+            "enum": [
+              "windows",
+              "macos",
+              "linux"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9 ._()+/-]{1,48}$",
+            "maxLength": 48
+          }
+        },
+        "required": [
+          "family",
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "python": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^([0-9]{1,4}(\\.[0-9]{1,4}){1,3}|unknown)$",
+            "maxLength": 19
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "portable",
+              "start-sh",
+              "venv",
+              "system",
+              "other"
+            ]
+          }
+        },
+        "required": [
+          "version",
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "seconds": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 604800
+      },
+      "converted_here": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 1000000
+      }
+    },
+    "required": [
+      "format",
+      "id",
+      "proof",
+      "tag",
+      "tool",
+      "kind",
+      "result",
+      "error",
+      "family",
+      "device",
+      "model",
+      "stock_model",
+      "stock",
+      "whole",
+      "device_hash",
+      "os",
+      "python",
+      "seconds",
+      "converted_here"
+    ],
+    "additionalProperties": false
+  },
   "type": "object",
   "properties": {
     "format": {

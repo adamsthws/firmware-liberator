@@ -1,6 +1,9 @@
 // /reports: the reports the tool sends at the end of each run, unless told not
 // to (tools/autoflash/report_data.py makes them), kept for the project's own
 // figures: how many devices it has converted, and how reliably, by device.
+// A readout sends one too for each device as its readout ends ("kind":
+// "readout", held to the schema's "readout"), kept apart (readout_reports):
+// how readouts end, and how many devices the computers making them converted.
 //
 // POST {"reports": [<report>, ...]} (application/json): the run's report, with
 // any the tool could not send before. Each is held to report-schema.json, and
@@ -83,12 +86,15 @@ async function keyed(secret, hash) {
   return hex(new Uint8Array(await crypto.subtle.sign("HMAC", keys.get(secret), new TextEncoder().encode(hash))));
 }
 
+// Whether `report` is a readout's: held to the schema's "readout", and kept apart.
+export const isReadout = (report) => report?.kind === "readout";
+
 // Why `report` is turned away, or null.
 async function problem(report, now, bits) {
   if (new TextEncoder().encode(JSON.stringify(report)).length > schema.maxBytes) {
     return `larger than ${schema.maxBytes} bytes`;
   }
-  const [first] = validate(schema, report);
+  const [first] = validate(isReadout(report) ? schema.readout : schema, report);
   if (first) {
     return first;
   }
@@ -102,6 +108,10 @@ const INSERT = `INSERT OR IGNORE INTO reports (id, day, tag, tool, kind, result,
   model, stock, device_hash, firmware, source, backup, identity, os_family, os_version, python_version, python_source,
   seconds, resumed, stages, signal, wifi_typed, setup_network, power_cycled, checks, meter, quarantined)
   VALUES (${Array(32).fill("?").join(", ")})`;
+const READOUT = `INSERT OR IGNORE INTO readout_reports (id, day, tag, tool, result, error, family, device, model,
+  stock_model, stock, whole, device_hash, os_family, os_version, python_version, python_source, seconds,
+  converted_here, quarantined)
+  VALUES (${Array(20).fill("?").join(", ")})`;
 const HOLD = "INSERT OR IGNORE INTO held_reports (id, day, why) VALUES (?, ?, ?)";
 // A converted device's number on the computer that first converted it: the
 // first given is kept.
@@ -133,6 +143,14 @@ const flag = (value) => (value === null ? null : Number(value));
 // The statements that write one report, with its device's record, or for
 // one held (`held`: why), only it, quarantined, and why it is held.
 export function writes(db, report, hash, day, held = null) {
+  if (isReadout(report)) {
+    // A readout's report makes no device's record: those count runs.
+    const statement = db.prepare(READOUT).bind(
+      report.id, day, report.tag, report.tool, report.result, report.error, report.family, report.device,
+      report.model, report.stock_model, report.stock, flag(report.whole), hash, report.os.family, report.os.version,
+      report.python.version, report.python.source, report.seconds, report.converted_here, Number(held !== null));
+    return held === null ? [statement] : [statement, db.prepare(HOLD).bind(report.id, day, held)];
+  }
   const stopped = report.stopped ?? {};
   const statements = [db.prepare(INSERT).bind(
     report.id, day, report.tag, report.tool, report.kind, report.result, stopped.step ?? null,
@@ -216,20 +234,26 @@ export async function reports(request, env, now = new Date()) {
     return answer(200, outcome);
   }
   const marks = valid.map(() => "?").join(", ");
-  const { results: held } = await env.DB.prepare(`SELECT id FROM reports WHERE id IN (${marks})`)
-    .bind(...valid.map((report) => report.id)).all();
+  const ids = valid.map((report) => report.id);
+  const { results: held } = await env.DB.prepare(
+    `SELECT id FROM reports WHERE id IN (${marks}) UNION ALL SELECT id FROM readout_reports WHERE id IN (${marks})`)
+    .bind(...ids, ...ids).all();
   const known = new Set(held.map((row) => row.id));
   outcome.duplicate.push(...valid.filter((report) => known.has(report.id)).map((report) => report.id));
   const fresh = valid.filter((report) => !known.has(report.id));
   const hashes = await Promise.all(fresh.map((report) =>
     (report.device_hash ? keyed(env.DEVICE_HASH_KEY_PERMANENT, report.device_hash) : null)));
-  // Each device's reports today, and those this request adds, held to DEVICE_DAILY.
+  // Each device's reports today, a run's or a readout's, and those this
+  // request adds, held to DEVICE_DAILY.
   const named = [...new Set(hashes.filter(Boolean))];
   const today = new Map();
   if (named.length) {
+    const some = named.map(() => "?").join(", ");
     const { results } = await env.DB.prepare(
-      `SELECT device_hash, COUNT(*) AS n FROM reports WHERE day = ? AND device_hash IN (${named.map(() => "?").join(", ")})
-       GROUP BY device_hash`).bind(day, ...named).all();
+      `SELECT device_hash, COUNT(*) AS n FROM (
+         SELECT device_hash FROM reports WHERE day = ? AND device_hash IN (${some})
+         UNION ALL SELECT device_hash FROM readout_reports WHERE day = ? AND device_hash IN (${some}))
+       GROUP BY device_hash`).bind(day, ...named, day, ...named).all();
     for (const row of results) {
       today.set(row.device_hash, row.n);
     }

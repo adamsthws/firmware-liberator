@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """The schema every report sent to the API is held to, written from the
-tool's own constants (tools/autoflash/report_data.py and those it draws on).
+tool's own constants (tools/autoflash/report_data.py and those it draws on):
+a run's, the file's own, and a readout's, under "readout", which a report
+with "kind": "readout" is held to instead.
 
     python3 tools/repo/report_schema.py          write website/api/report-schema.json
     python3 tools/repo/report_schema.py check    say whether it is as written here
@@ -62,6 +64,21 @@ def schema() -> dict[str, Any]:
     sources = [*report.CONVERTED_FROM, *(family.DIRECT_FROM_TASMOTA for family in routes.FAMILIES.values()
                                          if hasattr(family, "DIRECT_FROM_TASMOTA"))]
     step = "^[A-Z][0-9]{1,2}$"
+    shared = {
+        "format": {"type": "integer", "enum": [report_data.FORMAT]},
+        "id": string("^[0-9a-f]{32}$", 32),
+        "proof": string("^[0-9]{1,12}:[0-9]{1,20}$", 33),
+        "tag": words("user", "dev"),
+        "tool": string("^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}$", 11),
+    }
+    machine = {
+        "os": record({"family": words(*report_data.OS_FAMILIES),
+                      "version": string(f"^{report_data.OS_VERSION.pattern}$", 48)}),
+        "python": record({"version": string("^([0-9]{1,4}(\\.[0-9]{1,4}){1,3}|unknown)$", 19),
+                          "source": words(*report_data.PYTHON_WORDS)}),
+        "seconds": integer(0, 7 * 86400),
+    }
+    model = nullable(string(f"^{report_data.MODEL.pattern}$", 24))
     return {
         "$comment": "Written by tools/repo/report_schema.py: change that, not this.",
         "maxBytes": MAX_BYTES,
@@ -76,12 +93,27 @@ def schema() -> dict[str, Any]:
         # only a cancelled run's), for the API to hold any other pairing.
         "stoppedBy": list(report_data.STOPPED_BY),
         "deviceNames": {kind.key: kind.name for kind in kinds.EVERY},
+        # One device's readout's report (report_data.readout_payload): held
+        # to this instead where its "kind" is "readout".
+        "readout": record({
+            **shared,
+            "kind": words("readout"),
+            "result": words(*report_data.READOUT_RESULTS),
+            # How a failed one failed, in the tool's own classes.
+            "error": nullable(words(*failures.CLASSES)),
+            "family": nullable(words(*routes.FAMILIES)),
+            "device": nullable(words(*(kind.key for kind in kinds.EVERY))),
+            "model": model,
+            "stock_model": model,
+            "stock": nullable(string(f"^{report_data.VERSION.pattern}$", 19)),
+            "whole": {"type": ["boolean", "null"]},
+            "device_hash": nullable(string("^[0-9a-f]{64}$", 64)),
+            **machine,
+            # How many devices this computer has converted: bounded only to keep it sane.
+            "converted_here": integer(0, report_data.NTH_DEVICE_LIMIT),
+        }),
         **record({
-            "format": {"type": "integer", "enum": [report_data.FORMAT]},
-            "id": string("^[0-9a-f]{32}$", 32),
-            "proof": string("^[0-9]{1,12}:[0-9]{1,20}$", 33),
-            "tag": words("user", "dev"),
-            "tool": string("^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}$", 11),
+            **shared,
             "kind": words("run"),
             "result": words(*report_data.RESULTS),
             "stopped": nullable(record({
@@ -92,18 +124,14 @@ def schema() -> dict[str, Any]:
             })),
             "family": nullable(words(*routes.FAMILIES)),
             "device": nullable(words(*(kind.key for kind in kinds.EVERY))),
-            "model": nullable(string(f"^{report_data.MODEL.pattern}$", 24)),
+            "model": model,
             "stock": nullable(string(f"^{report_data.VERSION.pattern}$", 19)),
             "device_hash": nullable(string("^[0-9a-f]{64}$", 64)),
             "firmware": nullable(words(*routes.FIRMWARES)),
             "from": words(*sources),
             "backup": words(*records.BACKUP_OUTCOMES),
             "identity": nullable(words("backup", "kept", "account")),
-            "os": record({"family": words(*report_data.OS_FAMILIES),
-                          "version": string(f"^{report_data.OS_VERSION.pattern}$", 48)}),
-            "python": record({"version": string("^([0-9]{1,4}(\\.[0-9]{1,4}){1,3}|unknown)$", 19),
-                              "source": words(*report_data.PYTHON_WORDS)}),
-            "seconds": integer(0, 7 * 86400),
+            **machine,
             "resumed": {"type": "boolean"},
             "stages": {"type": "object", "maxProperties": 64, "propertyNames": string(step, 3),
                        "additionalProperties": record({"s": integer(0, 86400), "busy": integer(0, 86400),

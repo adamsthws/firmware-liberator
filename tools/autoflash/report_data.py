@@ -21,6 +21,7 @@ from tools.autoflash import report
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
+    from tools.autoflash.readout import Became
 
 FORMAT = 1
 DEVICE_PREFIX = "firmware-liberator device:"
@@ -48,6 +49,22 @@ CHECKS = ("passed", "failed", "not-run")
 # Calibration sensor's source, or not checked.
 METER_WORDS = ("sonoff", "carried", "carried-factory", "skipped", "stock-nvs", "from-backup", "missing",
                "reported", "not-checked")
+# How a device's readout ended (readout.Became), as its report says it: the
+# website took it; it was kept unsent; the website had readouts like it, or
+# could take no more; the device runs another firmware now; it was passed by
+# (one of several), the person stopped it, or it failed or crashed.
+ACCEPTED = "accepted"
+KEPT = "kept"
+NOT_NEEDED = "not-needed"
+WEBSITE_FULL = "website-full"
+CONVERTED_SINCE = "converted-since"
+SKIPPED = "skipped"
+NOT_READ = "not-read"
+CANCELLED = "cancelled"
+FAILED = "failed"
+CRASHED = "crashed"
+READOUT_RESULTS = (ACCEPTED, KEPT, NOT_NEEDED, WEBSITE_FULL, CONVERTED_SINCE, SKIPPED, NOT_READ, CANCELLED,
+                   FAILED, CRASHED)
 TEXT_LIMIT = 200
 MODEL = re.compile(r"[A-Z0-9][A-Z0-9-]{0,23}")
 VERSION = re.compile(r"\d{1,4}(\.\d{1,4}){1,3}")
@@ -139,6 +156,36 @@ def converted_to_another(ctx: Context) -> bool:
     state = ctx.state
     return (not state.input("put_back") and runs.run_source(state) != "outdated"
             and routes.recorded_firmware(state) not in (None, "sonoff"))
+
+
+def readout_payload(report_id: str, became: Became, seconds: float) -> dict[str, Any]:
+    """One device's readout's report as the API takes it, but its proof: one
+    report a readout, sent as it ends (readout.run). Nothing of the device's
+    name in the account, nor the reference its readout was sent under; for
+    how many one person converts, how many devices this computer has
+    converted (records.converted_here)."""
+    kind = kinds.for_account(became.product, became.model, among=kinds.EVERY)
+    product, stock_model = became.product.strip().upper(), became.model.strip().upper()
+    return {
+        "format": FORMAT,
+        "id": report_id,
+        "tag": "dev" if os.environ.get("AUTOFLASH_REPORT_TAG") == "dev" else "user",
+        "tool": __version__,
+        "kind": "readout",
+        "result": became.outcome,
+        "error": became.error if became.outcome == FAILED else None,
+        "family": kind.family if kind else None,
+        "device": kind.key if kind else None,
+        "model": product if MODEL.fullmatch(product) else None,
+        "stock_model": stock_model if MODEL.fullmatch(stock_model) else None,
+        "stock": became.version if VERSION.fullmatch(became.version) else None,
+        "whole": became.whole,
+        "device_hash": device_hash(became.mac),
+        "os": os_info(),
+        "python": python_info(),
+        "seconds": max(0, min(int(seconds), 7 * 86400)),
+        "converted_here": min(records.converted_here(), NTH_DEVICE_LIMIT),
+    }
 
 
 def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending: str,

@@ -9,9 +9,9 @@ const read = (path) => JSON.parse(readFileSync(new URL(path, import.meta.url), "
 const schema = read("../api/report-schema.json");
 const fixtures = read("./fixtures/reports.json");
 
-// The first valid report with one change at a dotted path.
-function changed({ set, drop }) {
-  const report = structuredClone(fixtures.valid[0]);
+// The first of fixtures[base] with one change at a dotted path.
+function changed({ set, drop }, base = "valid") {
+  const report = structuredClone(fixtures[base][0]);
   const at = (path) => {
     const keys = path.split(".");
     let node = report;
@@ -40,6 +40,16 @@ test("every valid report fits", () => {
 test("every invalid one is turned away", () => {
   for (const item of fixtures.invalid) {
     assert.notDeepEqual(validate(schema, changed(item)), [], item.why);
+  }
+});
+
+test("a readout's report is held to the schema's readout, and agrees with the tool's", () => {
+  for (const report of fixtures.readoutValid) {
+    assert.deepEqual(validate(schema.readout, report), [], report.id);
+    assert.notDeepEqual(validate(schema, report), [], "a readout's is no run's");
+  }
+  for (const item of fixtures.readoutInvalid) {
+    assert.notDeepEqual(validate(schema.readout, changed(item, "readoutValid")), [], item.why);
   }
 });
 
