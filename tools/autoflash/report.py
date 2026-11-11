@@ -532,6 +532,14 @@ def report_ending(code: int | None, ending: str | None) -> str | None:
     return "failed" if code not in (None, 0, 130) else None
 
 
+def send_cancelled_report(ctx: Context, how: str) -> None:
+    """A run the person stopped (`how`: one of report_data.STOPPED_BY) sends
+    its report too, and shows none: the stages people stop at say which
+    worry them. Nothing is asked of them."""
+    ctx.stopped_by = how
+    report_upload.send(ctx, "cancelled", time.monotonic() - ctx.run_started - output.waited(), ctx.run_resumed)
+
+
 def invite_stopped_report(ctx: Context, ending: str) -> None:
     """A run that failed asks for its report too: the runs that fail say most
     about what to fix, and leaving them out would make the tool look better than

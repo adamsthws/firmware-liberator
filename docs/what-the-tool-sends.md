@@ -4,8 +4,8 @@ Each time you run a conversion, the tool sends the project a short report of
 how it went. Nothing in it says who you are, where you are, or which network
 you are on.
 
-Together, reports show which devices convert well, which fail and where, and
-which people want supported next: see the
+Together, reports show which devices convert well, which fail and where, the
+stages people choose to stop at, and which devices people want supported next: see the
 **[stats page](https://firmwareliberator.com/stats)**.
 
 ## What a report holds
@@ -13,7 +13,10 @@ which people want supported next: see the
 - **How the run ended:** converted, updated, put back on the firmware the
   device came from, or stopped; if stopped, at which stage, the kind of
   problem (such as "the device stopped answering"), and the tool's message
-  about it, with any addresses taken out.
+  about it, with any addresses taken out. If you stop it yourself, the stage
+  you stopped at and how: q at a question, Ctrl-C, or closing the window.
+  Nothing else is asked of you, and a run you stop before its first stage
+  sends no report.
 - **The device:** its kind and model (such as Sonoff S60, S60TPF), and the
   version of Sonoff's firmware it had.
 - **The conversion:** the firmware it went from and to, whether a backup of

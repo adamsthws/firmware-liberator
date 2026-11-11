@@ -37,6 +37,9 @@ const DEVICES = [
 ];
 const FAILURES = [["D4", "upload-cut"], ["E1", "unexpected-layout"], ["B2", "device-no-answer"], ["F4", "network-join"],
   ["A2", "ewelink-account"]];
+// Where a run the person stopped stopped, and how: one in five failures, by its
+// number, so the rest of the sample is as it was.
+const CANCELS = [["D1", "quit"], ["C3", "ctrl-c"], ["A3", "quit"], ["E1", "window-closed"]];
 const OS = [["windows", "11 (build 10.0.22631)"], ["macos", "15.1"], ["linux", "Ubuntu 24.04.1 LTS"]];
 
 const dayOf = (date) => date.toISOString().slice(0, 10);
@@ -58,7 +61,9 @@ export async function sampleDatabase(now = new Date("2026-12-01T03:17:00Z"), rep
     const unsupported = device === null;
     const unit = `${model}-${Math.floor(next() * 400)}`;
     const ok = !unsupported && next() < success;
-    const [step, error] = unsupported ? ["A2", "unsupported-device"] : FAILURES[Math.floor(next() * FAILURES.length)];
+    const cancelled = !ok && !unsupported && n % 5 === 0;
+    const [step, error] = unsupported ? ["A2", "unsupported-device"] : cancelled ? CANCELS[(n / 5) % CANCELS.length]
+      : FAILURES[Math.floor(next() * FAILURES.length)];
     const [osFamily, osVersion] = OS[Math.floor(next() * (next() < 0.5 ? 1 : OS.length))];
     const firmware = unsupported ? null : family === "beken" ? (next() < 0.6 ? "openbeken" : "esphome")
       : (next() < 0.55 ? "tasmota" : "esphome");
@@ -66,7 +71,7 @@ export async function sampleDatabase(now = new Date("2026-12-01T03:17:00Z"), rep
       ...structuredClone(FIXTURE), id: Math.floor(next() * 2 ** 52).toString(16).padStart(32, "0").slice(-32),
       tag: next() < 0.03 ? "dev" : "user", model, device, family, firmware,
       stock: family === "beken" ? "1.17.1" : next() < 0.7 ? "1.2.0" : "1.1.0",
-      result: ok ? "converted" : "failed", stopped: ok ? null : { step, error, text: "" },
+      result: ok ? "converted" : cancelled ? "cancelled" : "failed", stopped: ok ? null : { step, error, text: "" },
       seconds: Math.round(240 + next() * 420), os: { family: osFamily, version: osVersion },
       python: { version: "3.12.4", source: next() < 0.6 ? "portable" : "system" },
     };

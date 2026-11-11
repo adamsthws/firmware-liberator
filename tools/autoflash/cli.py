@@ -467,6 +467,19 @@ def issue_alone(ctx: Context, code: int | None, ending: str | None) -> bool:
             and stopped_report(ctx, code, ending) is None)
 
 
+def stopped_by(ctx: Context, code: int | None, ending: str | None) -> str | None:
+    """How the person stopped the run, for its report (report_data.STOPPED_BY),
+    or None for one they did not stop, or stopped before any stage began
+    (which run, say), as a failure that early sends none either."""
+    if ending != "cancelled" and code != 130:
+        return None
+    if not getattr(ctx, "stage_begun", False) or getattr(ctx, "reported", False):
+        return None
+    if ending == "cancelled":   # Ctrl-C, or the window closed
+        return "window-closed" if ctx.state.input("stopped_by") == "window" else "ctrl-c"
+    return getattr(ctx, "stopped_by", None) or "quit"
+
+
 def handle_signals() -> None:
     """Being stopped, or the terminal being closed, must still run the cleanup
     in the finally blocks: the stored secrets and the firewall rule.  SIGPIPE
@@ -761,6 +774,11 @@ def convert(ctx: Context, given: list[str]) -> int:
                 output.log_only(f"The report could not be made: {type(exc).__name__}: {exc}")
         elif issue_alone(ctx, code, ending):
             report.offer_issue(report.run_result(ctx, "failed"))
+        elif how := stopped_by(ctx, code, ending):
+            try:
+                report.send_cancelled_report(ctx, how)
+            except Exception as exc:  # noqa: BLE001 - never let the report hide how it ended
+                output.log_only(f"The report could not be made: {type(exc).__name__}: {exc}")
         output.finish()
 
 
