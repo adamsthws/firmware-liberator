@@ -556,7 +556,7 @@ def offer_issue(stopped: str) -> None:
     """A link to open an issue for a run that failed with no report to offer
     (cli.stopped_report): `stopped`, as run_result says it, for its title."""
     output.tell("")
-    output.tell("If it should not have stopped there, please open an issue for it:")
+    output.tell("If it should not have stopped there, please open an issue:")
     output.show_link(issue_url(stopped, None), "Open an issue")
 
 
@@ -570,7 +570,7 @@ def offer_report(ctx: Context, fields: list[tuple[str, str]], heading: str, stop
     output.show(heading, output.GREEN)
     if stopped:
         copied = hostsys.copy_to_clipboard(report_markdown(fields))
-        output.tell("If it should not have stopped there, please open an issue for it, and paste in "
+        output.tell("If it should not have stopped there, please open an issue, and paste in "
                     + ("the report, which is on your clipboard:" if copied else "the report below:"))
         output.show_link(issue_url(stopped, getattr(ctx, "last_report_id", None)), "Open an issue")
     output.tell("")
