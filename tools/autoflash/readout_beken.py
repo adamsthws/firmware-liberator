@@ -29,7 +29,7 @@ import json
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import firewall, hostsys, openbeken, output, records, prompts, runs, safety_locks
+from tools.autoflash import firewall, hostsys, openbeken, output, records, prompts, readout, runs, safety_locks
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes.beken import arrived, onward, stock
 from tools.autoflash.runs import ROOT
@@ -240,6 +240,7 @@ def read_out(ctx: Context, name: str, version: str, device: dict[str, Any],
                                                    kind="a device being added")
         if saved:
             output.say(f"    The device's own data is kept on this computer, in {runs.display_path(directory)}.")
+    readout.restoring()
     revert_to_sonoff(ctx, host, found)
     back = wait_for_sonoff(ctx, device["deviceid"])
     return flash, {"openbeken": str(info.get("build") or ""), "chipset": str(info.get("chipset") or "")}, back

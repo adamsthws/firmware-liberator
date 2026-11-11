@@ -648,7 +648,7 @@ class ScreenTests(unittest.TestCase):
             output.tell("    A note while it runs again")   # its line drawn, as it was then
             return {}
         screen = self.screen([("E2", stage)])
-        self.assertIn("Staging startup firmware     - Retrying", output.ANSI_RE.sub("", self.drawn))
+        self.assertRegex(output.ANSI_RE.sub("", self.drawn), r"Staging startup firmware +- Retrying")
         self.assertNotIn("Retrying", screen)   # once done, it says Complete like any other
 
     def test_the_last_try_stays_to_say_why_the_run_stopped(self):

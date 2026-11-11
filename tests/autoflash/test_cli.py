@@ -723,13 +723,35 @@ class ReadoutCommandTests(unittest.TestCase):
         from types import SimpleNamespace
         from tools.autoflash import readout
         devices = [{"deviceid": "1000abcdef"}, {"deviceid": "1000fedcba"}]
+        self.happened = []
+        under_way = []
+
+        def begin(number, name):
+            under_way.append(True)
+            self.happened.append(f"Stage {number} - {name}")
+
+        def end(outcome):
+            if under_way:   # as output: an end with no stage under way draws nothing
+                under_way.clear()
+                self.happened.append(outcome)
+
+        def account_devices():
+            self.happened.append("signed in")
+            return devices
         ctx = SimpleNamespace(args=SimpleNamespace(**{"device_ip": None, "all": False, **args}),
-                              account_devices=lambda: devices)
+                              account_devices=account_devices)
         with mock.patch.object(cli.output, "say"), mock.patch.object(cli.output, "tell"), \
+                mock.patch.object(cli.output, "stage_begin", begin), mock.patch.object(cli.output, "stage_end", end), \
                 mock.patch.object(readout, "run_all", return_value="all") as every, \
                 mock.patch.object(readout, "read_out_chosen", return_value="chosen") as chosen:
             self.assertEqual(cli.cmd_readout(ctx, None), 0)
         return every, chosen, devices
+
+    def test_the_sign_in_is_the_readout_s_first_stage(self):
+        # Seen: a readout chosen after "What next" left the window blank for
+        # the sign-in's few seconds, as if nothing were happening.
+        self.read()
+        self.assertEqual(self.happened, ["Stage 1 - Querying eWeLink for devices", "signed in", "complete"])
 
     def test_all_reads_every_device_unasked(self):
         every, chosen, devices = self.read(all=True)

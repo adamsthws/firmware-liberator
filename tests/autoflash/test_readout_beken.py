@@ -24,6 +24,14 @@ def s61_app() -> bytes:
     return an_app(layouts.BEKEN_4M.partitions)
 
 
+def setUpModule():
+    # The readout's stage lines are its tests' (test_readout): here, where
+    # the read ends and putting Sonoff's firmware back begins.
+    patch = mock.patch.object(rb.readout, "restoring")
+    patch.start()
+    unittest.addModuleCleanup(patch.stop)
+
+
 class StockFromOfferedTests(unittest.TestCase):
     def offered(self, data):
         return [SimpleNamespace(name="user1.bin", version="1.0.2", data=data)]
@@ -97,9 +105,10 @@ class RoundTripTests(unittest.TestCase):
                 mock.patch.object(rb, "read_whole_flash", side_effect=lambda ctx, host: order.append("read") or b"\xff" * rb.WHOLE_FLASH), \
                 mock.patch.object(rb.records, "save_beken_backup", return_value=(None, False)), \
                 mock.patch.object(rb, "revert_to_sonoff", side_effect=lambda *a: order.append("revert")), \
-                mock.patch.object(rb, "wait_for_sonoff", side_effect=lambda ctx, did: order.append("sonoff") or True):
+                mock.patch.object(rb, "wait_for_sonoff", side_effect=lambda ctx, did: order.append("sonoff") or True), \
+                mock.patch.object(rb.readout, "restoring", side_effect=lambda: order.append("restoring stage")):
             flash, info, back = rb.read_out(self.ctx, "FWSW-01-S61-BK7238", "1.0.2", self.device, self.found)
-        self.assertEqual(order, ["deliver", "wait", "read", "revert", "sonoff"])
+        self.assertEqual(order, ["deliver", "wait", "read", "restoring stage", "revert", "sonoff"])
         self.assertEqual((len(flash), info, back), (rb.WHOLE_FLASH, {"openbeken": "obk", "chipset": "BK7238"}, True))
 
     def test_the_devices_own_data_is_kept_from_the_whole_flash_read(self):

@@ -30,6 +30,28 @@ DEVICE = {"deviceid": "1000abcdef", "name": "Hall light", "productModel": "NEWTH
           "extra": {"model": "SN-ESP32C3-NEW-01", "uiid": 77}, "params": {"fwVersion": "1.0.0"}}
 
 
+def record_stages(test: unittest.TestCase) -> list[str]:
+    """The readout's stage lines as `test` draws them: "N Name" as each
+    begins and its outcome as it ends, as output draws them - an end with no
+    stage under way draws nothing. Numbered from 1, as a readout on its own."""
+    stages: list[str] = []
+    under_way = []
+
+    def begin(number, name):
+        under_way.append(True)
+        stages.append(f"{number} {name}")
+
+    def end(outcome):
+        if under_way:
+            under_way.clear()
+            stages.append(outcome)
+    for patch in (mock.patch.object(output, "stage_begin", begin), mock.patch.object(output, "stage_end", end),
+                  mock.patch.object(readout, "_first_stage", 1)):
+        patch.start()
+        test.addCleanup(patch.stop)
+    return stages
+
+
 def record(product: str, model: str) -> dict:
     """The account's record of a device eWeLink knows as `product`, its firmware as `model`."""
     return {**DEVICE, "productModel": product, "extra": {**DEVICE["extra"], "model": model}}
@@ -362,6 +384,7 @@ def start_run(test: unittest.TestCase) -> None:
     for patch in (mock.patch.object(prompts, "section"), mock.patch.object(prompts, "warning_box")):
         patch.start()
         test.addCleanup(patch.stop)
+    test.stages = record_stages(test)
     test.tmp = tempfile.TemporaryDirectory()
     test.addCleanup(test.tmp.cleanup)
     test.ctx = a_ctx(test.tmp.name)
@@ -383,6 +406,15 @@ def start_run(test: unittest.TestCase) -> None:
                                     return_value=([offered_firmware.Offered("user1.bin", "1.1.0", b"\xe9")], []))):
         patch.start()
         test.addCleanup(patch.stop)
+
+
+def s60_asked() -> account.Asked:
+    """What an S60 on Sonoff's firmware says, through eWeLink: a kind read in full."""
+    from tools.autoflash import kinds
+    return account.Asked({"packets": []}, "1.2.0", kinds.SONOFF_S60.stock_model, "S60TPG", [], {}, "1000abcdef")
+
+
+S60_ASKED = s60_asked()
 
 
 def learned(name: str, chip: str):
@@ -419,6 +451,76 @@ class RunTests(unittest.TestCase):
             self.assertEqual(readout.run(self.ctx, s60, batch=readout.Batch(None)),
                              "not read out: it runs ESPHome now, not Sonoff's firmware, which is what a readout reads.")
         wanted.assert_not_called()
+
+    def test_each_wait_is_a_stage_of_its_own(self):
+        # Seen in attended emulator runs: with no stage line, the window stayed
+        # blank while the readout looked for the device and asked it what it was.
+        with learned("FWSW-01-NEW-BK7238", "BK7238"), mock.patch.object(readout, "offer", return_value="done"):
+            readout.run(self.ctx, DEVICE)
+        self.assertEqual(self.stages, [
+            "2 Locating the device on your network", "skipped",   # one eWeLink alone describes
+            "3 Probing the device", "complete",
+            "4 Fetching the eWeLink firmware", "complete",
+            "5 Reading the device's memory", "skipped",           # no reading program for its chip
+            "6 Restoring Sonoff's firmware", "skipped",
+            "7 Saving the readout", "complete"])
+
+    def test_one_read_in_full_restores_its_firmware_in_a_stage_of_its_own(self):
+        from tools.autoflash import kinds
+        s60 = record("S60TPG", kinds.SONOFF_S60.stock_model)
+
+        def read(*_args, **_kwargs):
+            readout.restoring()   # as each chip's readout says, between the two
+            return {}, True
+        with mock.patch.object(firmware_name, "learn", return_value=(None, ["no offer"])), \
+                mock.patch.object(account, "ask_ewelink", return_value=S60_ASKED), \
+                mock.patch.object(runs, "hold_device"), \
+                mock.patch.object(readout_espressif, "read_and_anonymise", side_effect=read), \
+                mock.patch.object(readout, "offer", return_value="done"):
+            readout.run(self.ctx, s60)
+        self.assertEqual(self.stages[6:], ["5 Reading the device's memory", "complete",
+                                           "6 Restoring Sonoff's firmware", "complete",
+                                           "7 Saving the readout", "complete"])
+        self.assertEqual(self.stages[:2], ["2 Locating the device on your network", "complete"])
+
+    def test_the_stage_under_way_stops_with_the_readout(self):
+        from tools.autoflash import kinds
+        s60 = record("S60TPG", kinds.SONOFF_S60.stock_model)
+        with mock.patch.object(firmware_name, "learn", return_value=(None, ["no offer"])), \
+                mock.patch.object(account, "ask_ewelink", return_value=S60_ASKED), \
+                mock.patch.object(runs, "hold_device"):
+            for batch, raised, ended in ((None, errors.NothingWritten("not confirmed"), "stopped"),
+                                         (readout.Batch(None), errors.NothingWritten("skipped as asked"), "skipped"),
+                                         (None, errors.Abort("the read did not come through"), "stopped")):
+                with self.subTest(raised=raised), mock.patch.object(readout_espressif, "read_and_anonymise",
+                                                                    side_effect=raised):
+                    self.stages.clear()
+                    with self.assertRaises(type(raised)):
+                        readout.run(self.ctx, s60, batch=batch)
+                    self.assertEqual(self.stages[-2:], ["5 Reading the device's memory", ended])
+
+    def test_a_run_s_readout_ends_the_run_s_stage_and_carries_on_from_it(self):
+        # Seen in an attended emulator run: the run's "Discovering the device"
+        # stayed under way through the whole readout it turned into.
+        output.stage_begin(2, "Discovering the device")
+        width = mock.patch.object(output, "set_stage_width")
+        laid_out = width.start()
+        self.addCleanup(width.stop)
+        with mock.patch.object(readout, "read_out_chosen",
+                               side_effect=lambda *_: readout.begin("locate") or "read"), \
+                self.assertRaises(errors.Finished):
+            readout.from_run(self.ctx, [DEVICE])
+        self.assertEqual(self.stages, ["2 Discovering the device", "complete",
+                                       "3 Locating the device on your network"])
+        self.assertEqual(laid_out.call_args.args[0], max(len(name) for _, name in readout.STAGES))
+
+    def test_a_device_converted_since_ends_its_stages_there(self):
+        from tools.autoflash import kinds
+        converted = account.NotOnSonoff("esphome", "192.0.2.77 is running ESPHome, not Sonoff's firmware")
+        with mock.patch.object(account, "ask_ewelink", side_effect=converted), mock.patch.object(runs, "hold_device"):
+            readout.run(self.ctx, record("S60TPG", kinds.SONOFF_S60.stock_model))
+        self.assertEqual(self.stages, ["2 Locating the device on your network", "complete",
+                                       "3 Probing the device", "complete"])
 
     def test_a_kind_the_tool_knows_takes_its_own_name_when_ewelink_gives_none(self):
         from tools.autoflash import kinds
