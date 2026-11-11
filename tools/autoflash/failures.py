@@ -93,7 +93,8 @@ PATTERNS = [(name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
                    r"|did not complete within|did not print|nothing was armed"),
     ("unexpected-firmware", r"did not answer as a device this tool converts|Berry|did not say twice alike"
                             r"|did not say which slot|it is not the one this tool installs"
-                            r"|metadata just written|redirected .* too many times"),
+                            r"|metadata just written|redirected .* too many times"
+                            r"|official update file for the .* is for "),
     ("preparation", r"cannot be used|could not be prepared|cannot be prepared|could not be set up for"),
     ("device-not-found", r"nothing answers at|could not tell which device"),
     ("device-no-answer", r"did not answer within|did not restart within|did not answer\b"),

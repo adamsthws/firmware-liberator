@@ -226,8 +226,9 @@ taken after the first conversion, through OpenBeken (step `B4`). It holds:
   keeps its Wi-Fi, meter calibration and eWeLink identity in, and the system
   store, none of which a conversion changes;
 - `stock-app-<version>.rbl` - Sonoff's firmware, the same for every device of
-  the kind (made from a public dump, or its official update file), as the
-  image the bootloader installs to go back;
+  the kind (from the update file eWeLink offers the device, else made from a
+  public dump or the official update file's public copy), as the image the
+  bootloader installs to go back;
 - `backup.json` - what the backup is: offsets, hashes and when;
 - `README.txt` - how to use it.
 

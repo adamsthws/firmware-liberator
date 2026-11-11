@@ -162,7 +162,8 @@ class UntestedKindTests(unittest.TestCase):
                          (self.KIND.wrapper_model, "1.0.4", "beken-4m"))
         logs = self.logs()
         self.assertIn(self.KIND.wrapper_model, logs)
-        self.assertIn("version 1.0.4; the device reports 1.0.4", logs)
+        self.assertIn("version 1.0.4, from the public copy of Sonoff's update file (FlashDumps); "
+                      "the device reports 1.0.4", logs)
         self.assertIn("ota 0x286000+0x15a000", logs)
         self.assertIn("Flash size: the stock firmware does not say; the table is for 4 MB", logs)
 
@@ -239,6 +240,66 @@ class UntestedKindTests(unittest.TestCase):
         self.use_official(test_layouts.TWO_MB)
         with self.assertRaisesRegex(errors.Abort, "not one this tool knows"):
             images.stock_rbl(self.KIND)
+
+    def offered(self, table=test_layouts.FOUR_MB, name=None, version="1.0.6"):
+        """A file as eWeLink would offer the device: its image, and the file."""
+        image = rbl.pack(test_layouts.an_app(table), name="app", version=version)
+        return image, fota_wrap.wrap(image, name=name or self.KIND.wrapper_model, version=version)
+
+    def test_the_file_ewelink_offers_comes_first_as_on_the_espressif_route(self):
+        image, data = self.offered()
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = self.context(tmp)
+            with mock.patch.object(images, "offered_file", return_value=data):
+                found = images.official(self.KIND, ctx)
+                self.assertEqual((found.image, found.version, found.source), (image, "1.0.6", images.OFFERED))
+                self.assertEqual(images.stock_rbl(self.KIND, ctx), (image, "1.0.6"))
+            # None offered: the public copy, as before.
+            with mock.patch.object(images, "offered_file", return_value=None):
+                found = images.official(self.KIND, ctx)
+                self.assertEqual((found.image, found.source), (self.image, images.PUBLIC_COPY))
+                self.assertEqual(images.stock_rbl(self.KIND, ctx), (self.image, "1.0.4"))
+
+    def test_an_offered_file_that_fails_the_checks_gives_way_to_the_public_copy(self):
+        for table, name, why in ((test_layouts.TWO_MB, None, "partition table"),
+                                 (test_layouts.FOUR_MB, "FWSW-01-S61-BK7238", "is for FWSW-01-S61-BK7238")):
+            _, data = self.offered(table, name)
+            with self.subTest(why=why), tempfile.TemporaryDirectory() as tmp, \
+                    mock.patch.object(images, "offered_file", return_value=data), \
+                    mock.patch.object(images.output, "log_only") as logged:
+                found = images.official(self.KIND, self.context(tmp))
+                self.assertEqual((found.image, found.source), (self.image, images.PUBLIC_COPY))
+                self.assertIn(why, logged.call_args.args[0])
+
+    def test_ewelink_is_asked_once_a_run_with_the_devices_own_id_and_only_when_signed_in(self):
+        _, data = self.offered()
+        asked = []
+
+        def latest(region, token, query):
+            asked.append(query)
+            return {"offers": [{"version": "1.0.6", "binList": [
+                {"name": "user2.bin", "downloadUrl": "https://example.com/user2.bin"},
+                {"name": "user1.bin", "downloadUrl": "https://example.com/user1.bin"}]}]}
+
+        fetched = []
+
+        def download(url, deviceid):
+            fetched.append((url, deviceid))
+            return data
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(images, "latest_offer", latest), \
+                mock.patch.object(images.offered_firmware, "fetch",
+                                  lambda offers, deviceid, fetch=images.offered_firmware.fetch:
+                                  fetch(offers, deviceid, get=download)):
+            ctx = self.context(tmp)
+            ctx.ewelink = SimpleNamespace(held=None, use=lambda call: call("eu", {"at": "token"}))
+            self.assertIsNone(images.offered_file(ctx), "no sign-in asked for this")
+            del ctx.offered_sonoff_file
+            ctx.ewelink.held = ("eu", {"at": "token"})
+            self.assertEqual(images.offered_file(ctx), data)
+            self.assertEqual(images.offered_file(ctx), data)
+        self.assertEqual(asked, [{"deviceid": "1001234abc", "model": self.KIND.stock_model}])
+        self.assertEqual(fetched, [("https://example.com/user1.bin", "1001234abc")], "user1.bin alone, once")
 
     def test_the_backup_logs_whether_the_flash_matched(self):
         for matched, words in ((True, "was read at 0x3e0000: it matches"), (False, "was not read at 0x3e0000")):

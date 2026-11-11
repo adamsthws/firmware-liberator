@@ -171,7 +171,7 @@ def step_openbeken_to_sonoff(ctx: Context, leaving: str = "OpenBeken") -> dict[s
     signal = read_signal(ctx, "OpenBeken")
     handover.consent_to_leave(ctx, leaving)
     kind = kinds.of_run(ctx.state)
-    stock, version = images.stock_rbl(kind)
+    stock, version = images.stock_rbl(kind, ctx)
     if ctx.dry_run:
         return {"dry_run": True, "version": version}
     host = ctx.state.input("device_ip")
@@ -216,7 +216,7 @@ def step_esphome_to_sonoff(ctx: Context) -> dict[str, Any]:
     signal = read_signal(ctx, "ESPHome")
     handover.consent_to_leave(ctx, "ESPHome")
     kind = kinds.of_run(ctx.state)
-    stock, version = images.stock_rbl(kind)
+    stock, version = images.stock_rbl(kind, ctx)
     if ctx.dry_run:
         return {"dry_run": True, "version": version}
     data = uf2.write(stock, name="sonoff-stock", version=version)

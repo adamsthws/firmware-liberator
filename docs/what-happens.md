@@ -257,7 +257,9 @@ whichever firmware you choose.
    of a kind the tool converts. For a device with no public dump, the
    partition table in Sonoff's official update file is checked too, and the
    run stops before anything is written unless it is the one the tool's
-   firmware is built for.
+   firmware is built for. That file is the one eWeLink offers your device,
+   or, if eWeLink offers none that passes the checks, a public copy the tool
+   knows by its hash.
 5. **Send the new firmware through eWeLink**, wrapped as Sonoff's updates are,
    from your computer, after a temporary firewall rule if your firewall is on.
    *This is the point of no return,* and the one place the tool asks you to
@@ -276,9 +278,10 @@ whichever firmware you choose.
    Sonoff's stores and the system store (`0x3e0000`-`0x400000`), checked
    against the MAC in the factory record and kept under it in
    `captures/devices/` ([what it holds](technical-details.md#a-beken-devices)).
-   Sonoff's firmware goes beside it, made from the public dump of a stock
-   device of its kind or from Sonoff's official update file, since step 5
-   wrote over the device's own. A device backed up before is not read again;
+   Sonoff's firmware goes beside it, since step 5 wrote over the device's own:
+   from the update file eWeLink offers your device, or else made from the
+   public dump of a stock device of its kind or the official update file's
+   public copy. A device backed up before is not read again;
    `--no-backup` skips the step.
 
 A run to OpenBeken ends there. For **ESPHome**:

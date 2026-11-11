@@ -50,7 +50,7 @@ def account_record(ctx: Context) -> dict[str, Any]:
     raise Abort(f"the device is no longer in the eWeLink account {ctx.email()}; add it again in the app")
 
 
-def note_official_file(kind: kinds.Kind, reported_version: str) -> dict[str, Any]:
+def note_official_file(ctx: Context, kind: kinds.Kind, reported_version: str) -> dict[str, Any]:
     """What a kind with no public dump is known by, checked and logged for the
     next person: its official update file's partition table, firmware name and
     version. Refused here (images.official), a run writes nothing. Stock firmware
@@ -58,8 +58,8 @@ def note_official_file(kind: kinds.Kind, reported_version: str) -> dict[str, Any
     has read the device's own data where the table has it (arrived._back_up)."""
     if kind.key not in images.OFFICIAL_FILES:
         return {}
-    found = images.official(kind)
-    output.log_only(f"    Official update file: {found.name}, version {found.version}; "
+    found = images.official(kind, ctx)
+    output.log_only(f"    Official update file: {found.name}, version {found.version}, from {found.source}; "
                     f"the device reports {reported_version}")
     output.log_only(f"    Its partition table: {found.layout.key}: " + ", ".join(map(str, found.table)))
     output.log_only(f"    Flash size: the stock firmware does not say; the table is for "
@@ -81,7 +81,7 @@ def step_identify(ctx: Context) -> dict[str, Any]:
                                       identity["model"])
     if kind is None:
         raise Abort(f"the device is a {identity['model']}, which this tool does not convert yet. Nothing was written")
-    official = note_official_file(kind, identity["version"])
+    official = note_official_file(ctx, kind, identity["version"])
     ctx.state.set_input("device_kind", kind.key)
     ctx.state.set_input("stock_version", identity["version"])
     ctx.state.set_input("product_model", product)
@@ -156,7 +156,7 @@ def step_push(ctx: Context) -> dict[str, Any]:
     firewall.ensure_firewall(ctx)
     # Checked again here: nothing reaches the device but past this, a resumed run too.
     if kind.key in images.OFFICIAL_FILES:
-        images.official(kind)
+        images.official(kind, ctx)
     if not getattr(ctx, "consented", False):  # once a run: not again when sent again (errors.GoBack)
         output.transient_begin()
         prompts.warning_box("Before going on", [

@@ -19,11 +19,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from tools.autoflash import hostsys, kinds, output
+from tools.autoflash import hostsys, kinds, output, records
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.runs import ROOT
 from tools.beken import fota_wrap, layouts
 from tools.beken import rbl, stock_app
+from tools.ewelink import offered_firmware
+from tools.ewelink.get_device_key import EwelinkError
+from tools.ewelink.query_ota import latest_offer
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -72,7 +75,8 @@ PUBLIC_DUMPS = {
 }
 # A kind with no public dump: eWeLink's official update file for it, as another
 # project publishes them, by name and hash. What it goes back to, and whose
-# partition table says what its flash should be (official).
+# partition table says what its flash should be (official), where eWeLink
+# offers the device none that passes the same checks.
 OFFICIAL_FILES_AT = ("https://raw.githubusercontent.com/openshwprojects/FlashDumps/"
                      "9d9d67ae87aa780aed8856140362670d9c0e5642/IoT/zOTAz/eWeLink/")
 OFFICIAL_FILES = {
@@ -80,6 +84,8 @@ OFFICIAL_FILES = {
                          "0df1f696e9c03b076fda5b6ef103b9a658ba3ec495afa2b013586c1c40e32d25"),
 }
 DUMPS = ROOT / "captures" / "emulation" / "beken" / "firmwares"
+OFFERED = "the file eWeLink offers the device"
+PUBLIC_COPY = "the public copy of Sonoff's update file (FlashDumps)"
 
 
 @dataclass(frozen=True)
@@ -90,6 +96,7 @@ class Official:
     version: str
     layout: layouts.Layout
     table: tuple[layouts.Partition, ...]
+    source: str                  # where it came from: OFFERED or PUBLIC_COPY
 
 
 def official_file(kind: kinds.Kind) -> bytes:
@@ -113,11 +120,43 @@ def official_file(kind: kinds.Kind) -> bytes:
     return data
 
 
-def official(kind: kinds.Kind) -> Official:
-    """A kind's official update file, refused unless its partition table is the
-    one this kind is known to be on: everything a conversion writes or reads
-    goes where that table says."""
-    data = official_file(kind)
+def offered_file(ctx: Context) -> bytes | None:
+    """The update file eWeLink offers the run's device, as the device fetches
+    it, asked with its own id as query_ota.latest_offer asks; fetched once a
+    run. None where it offers none, eWeLink is not reached, the device's id is
+    not known, or the run has not signed in to eWeLink: going back to Sonoff's
+    firmware asks for no password for this. Neither the link nor the id is logged."""
+    if not hasattr(ctx, "offered_sonoff_file"):
+        ctx.offered_sonoff_file = _offered_file(ctx)
+    return ctx.offered_sonoff_file
+
+
+def _offered_file(ctx: Context) -> bytes | None:
+    found = getattr(ctx, "account_device", None)
+    mac = ctx.state.input("device_mac")
+    deviceid = (found.device_id if found is not None else "") or (
+        str(records.read_device(mac).get("ewelink_id") or "") if mac else "")
+    if not deviceid or not getattr(ctx.ewelink, "held", None):
+        return None
+    query = {"deviceid": deviceid, "model": kinds.of_run(ctx.state).stock_model}
+    try:
+        asked = ctx.ewelink.use(lambda region, session: latest_offer(region, session["at"], query))
+    except EwelinkError:  # eWeLink not reached
+        return None
+    # Its user1.bin alone: a user2.bin is the same firmware for the other slot.
+    offers = [{**offer, "binList": sorted(offer.get("binList") or [],
+                                          key=lambda item: item.get("name") != "user1.bin")[:1]}
+              for offer in asked.get("offers") or []]
+    files, problems = offered_firmware.fetch(offers, deviceid)
+    for problem in problems:
+        output.log_only(f"    Sonoff's firmware: {OFFERED}: {problem}")
+    return files[0].data if files else None
+
+
+def checked(kind: kinds.Kind, data: bytes, source: str) -> Official:
+    """An official update file for `kind`, refused unless it holds the kind's
+    firmware alone, whole, on the partition table this kind is known to be on:
+    everything a conversion writes or reads goes where that table says."""
     try:
         ((name, version, image),) = fota_wrap.unwrap(data)
         app = rbl.unpack(image)
@@ -127,10 +166,32 @@ def official(kind: kinds.Kind) -> Official:
     except (ValueError, rbl.RblError) as exc:
         raise NothingWritten(f"the official update file for the {kind.name} was refused: {exc}. Its device may not "
                              "be laid out as this tool expects, so nothing was written") from exc
+    if name != kind.wrapper_model:
+        raise NothingWritten(f"the official update file for the {kind.name} is for {name}, not "
+                             f"{kind.wrapper_model}. Nothing was written")
     if layout.key != kind.layout:
         raise NothingWritten(f"the official update file for the {kind.name} has the {layout.key} partition table, "
                              f"not the {kind.layout} one expected. Nothing was written")
-    return Official(image, name, version, layout, table)
+    return Official(image, name, version, layout, table, source)
+
+
+def from_ewelink(ctx: Context | None, kind: kinds.Kind) -> Official | None:
+    """The file eWeLink offers the device, if it passes checked(); why not, logged."""
+    data = offered_file(ctx) if ctx is not None else None
+    if data is None:
+        return None
+    try:
+        return checked(kind, data, OFFERED)
+    except NothingWritten as exc:
+        output.log_only(f"    Sonoff's firmware: {OFFERED}: {exc}")
+        return None
+
+
+def official(kind: kinds.Kind, ctx: Context | None = None) -> Official:
+    """A kind's official update file: the one eWeLink offers the run's device,
+    as on the Espressif route, else the public copy this tool pins by hash;
+    either refused as checked() says."""
+    return from_ewelink(ctx, kind) or checked(kind, official_file(kind), PUBLIC_COPY)
 
 
 def first_firmware(firmware: str) -> str:
@@ -173,11 +234,16 @@ def image(ctx: Context, firmware: str) -> tuple[bytes, str]:
     return data, str(pinned["version"])
 
 
-def stock_rbl(kind: kinds.Kind) -> tuple[bytes, str]:
+def stock_rbl(kind: kinds.Kind, ctx: Context | None = None) -> tuple[bytes, str]:
     """Sonoff's own firmware for a device of `kind`, as the rt_ota image its
-    bootloader applies: made from the public dump of a stock device, fetched
-    once (DUMPS) and checked against its pinned hash - or, for a kind with
-    none, its official update file's.  The image and Sonoff's version of it."""
+    bootloader applies: from the file eWeLink offers the run's device, where
+    it passes checked(); else made from the public dump of a stock device,
+    fetched once (DUMPS) and checked against its pinned hash - or, for a kind
+    with none, its official update file's.  The image and Sonoff's version of it."""
+    offered = from_ewelink(ctx, kind)
+    if offered is not None:
+        output.log_only(f"    Sonoff's firmware {offered.version}: from {OFFERED}")
+        return offered.image, offered.version
     if kind.key in OFFICIAL_FILES:
         try:
             found = official(kind)
