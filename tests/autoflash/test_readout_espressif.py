@@ -52,9 +52,15 @@ class BridgeTests(unittest.TestCase):
                 mock.patch.object(dump_stock_flash, "summary", return_value=[]), \
                 mock.patch.object(dump_stock_flash, "read_info", return_value=b"chip: ESP32-C3"), \
                 mock.patch.object(records, "save_backup", return_value=(Path(self.tmp.name), False)), \
-                mock.patch.object(readout_espressif, "back_on_sonoff"), \
+                mock.patch.object(readout_espressif, "back_on_sonoff",
+                                  side_effect=lambda ctx: self.stages.append("back on Sonoff's")) as back, \
                 mock.patch.object(readout, "offer", return_value="done") as offered:
             self.assertEqual(readout.run(self.ctx, DEVICE), "done")
+        back.assert_called_once()
+        # Putting Sonoff's firmware back is a stage of its own, after the read.
+        at = self.stages.index("6 Restoring Sonoff's firmware")
+        self.assertEqual(self.stages[at - 2:at + 2], ["5 Reading the device's memory", "complete",
+                                                      "6 Restoring Sonoff's firmware", "back on Sonoff's"])
         command = sent.call_args.args[0]
         self.assertEqual(command[1], "-u")  # each line of the sender's in the log as it comes
         self.assertEqual(command[command.index("--readout-model") + 1], BASICR4.wrapper_model)

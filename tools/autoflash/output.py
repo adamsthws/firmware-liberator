@@ -678,6 +678,16 @@ def set_stage_width(width: int, most: int = 0) -> None:
     _s.name_width, _s.most_stages = width, most
 
 
+def stage_width() -> int:
+    """The stage names' column, as set_stage_width() left it."""
+    return _s.name_width
+
+
+def most_stages() -> int:
+    """The most stages the run may have, as set_stage_width() left it."""
+    return _s.most_stages
+
+
 def stage_begin(number: int, name: str) -> None:
     """No total: a run from Sonoff's firmware learns its route only part way
     through, and every stage line says the same either way."""

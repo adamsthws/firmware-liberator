@@ -66,6 +66,7 @@ def read_and_anonymise(ctx: Context, manifest: dict[str, Any], chip: chips.Chip,
     manifest["wifi_blanked"], manifest["identity_replaced"] = blanked, replaced
     files = {"flash.bin": scrubbed, "efuse.bin": efuse, "info.txt": info or b"",
              "report.json": json.dumps(report, indent=2).encode()}
+    readout.restoring()
     return files, back_on_sonoff(ctx)
 
 

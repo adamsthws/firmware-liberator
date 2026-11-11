@@ -428,16 +428,21 @@ def stage_layout() -> tuple[int, int]:
     have.  The rest of the route is known only once A3 has chosen the
     firmware - from Sonoff's firmware, once A1 has found the kind of device -
     so every stage line is laid out for the longest route there could be:
-    from Sonoff's, on any device; from a converted device, in its family."""
+    from Sonoff's, on any device, or the readout A1 may turn it into
+    (readout.from_run); from a converted device, in its family."""
+    turns_into: list[str] = []
     if ROUTE[1] == "sonoff":
+        from tools.autoflash import readout  # it builds on the routes
         possible = [(firmware, family, steps_for(firmware, "sonoff", family)) for family in FAMILIES.values()
                     for firmware in family.FIRMWARES if firmware != "sonoff"]
+        turns_into = [name for _, name in readout.STAGES]
     else:
         sources = set(FAMILY.SOURCES) - {"sonoff"} | {getattr(FAMILY, "DIRECT_FROM_TASMOTA", "outdated")}
         possible = [(firmware, FAMILY, steps_for(firmware, start, FAMILY))
                     for firmware in FAMILY.FIRMWARES for start in sources if routable(firmware, start)]
-    return (max(len(_stage_name(name, title, firmware, family))
-                for firmware, family, steps in possible for name, title, _ in steps),
+    return (max(*(len(name) for name in turns_into),
+                *(len(_stage_name(name, title, firmware, family))
+                  for firmware, family, steps in possible for name, title, _ in steps)),
             max(len(steps) for _, _, steps in possible))
 
 
