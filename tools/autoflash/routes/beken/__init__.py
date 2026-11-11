@@ -178,6 +178,6 @@ PLAIN_DESCRIPTION = {
 STEP_VERIFIERS: dict[str, Callable[["Context"], tuple[bool, str]]] = {
     **{step: evidence.still_installed for step in ("J2", "J4", "O1", "O2", "E1", "E2")},
     "U1": update.still_updated, "U3": update.still_updated}
-# Sonoff's firmware goes back on from the public dump (images.stock_rbl), not
-# the device's backup - which B4 takes first, from OpenBeken, where there is none.
+# Sonoff's firmware goes back on from eWeLink's offer or a public copy
+# (images.stock_rbl), not the device's backup - which B4 takes first, from OpenBeken, where there is none.
 SONOFF_FROM_BACKUP = False
