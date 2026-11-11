@@ -308,6 +308,18 @@ class StoppedReportTests(unittest.TestCase):
     def test_nor_twice(self):
         self.assertIsNone(self.ask(1, None, begun=True, reported=True))
 
+    def test_one_failed_with_no_report_is_given_the_issue_link_alone(self):
+        from types import SimpleNamespace
+
+        def alone(code, ending, begun=False, reported=False):
+            return cli.issue_alone(SimpleNamespace(reported=reported, stage_begun=begun), code, ending)
+        self.assertTrue(alone(2, None))                     # failed before any stage
+        self.assertFalse(alone(1, None, begun=True))         # its report carries the link
+        self.assertFalse(alone(1, "crashed"))                # so does a crash's
+        for code, ending in ((130, None), (130, "cancelled"), (0, None), (None, None)):
+            with self.subTest(code=code, ending=ending):
+                self.assertFalse(alone(code, ending))        # stopped by choice, or finished
+
 
 class PipeTests(unittest.TestCase):
     """Each in a process of its own: what it does to signals stays there."""

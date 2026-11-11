@@ -375,6 +375,18 @@ class RunStepsTests(unittest.TestCase):
         stand_ins["close_firewall_rules"].assert_called_once()
 
 
+class CarryOnTests(unittest.TestCase):
+    def test_how_to_carry_on_links_nowhere(self):
+        # The report sent says how it went: no Discussions to ask in, and the
+        # issue link comes with the stopped run's report (report.offer_report).
+        with mock.patch.object(output, "tell") as told, mock.patch.object(output, "show_links") as links, \
+                mock.patch.object(output, "show_link") as link:
+            runner.tell_how_to_carry_on()
+        links.assert_not_called()
+        link.assert_not_called()
+        self.assertNotIn("discussion", " ".join(str(c.args) for c in told.call_args_list).lower())
+
+
 class RetryTests(unittest.TestCase):
     """Safe steps that failed for a reason that may pass are run again."""
 
