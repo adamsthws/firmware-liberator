@@ -161,11 +161,15 @@ class ReportLabelTests(unittest.TestCase):
     def test_the_checks_are_read_however_the_report_said_them(self):
         # Shorter, and in two columns, since 3.0.0; an earlier release's runs
         # (the legacy scenarios) say it as before.
-        for log in ("[10:00:02]     Checks passed: False\n",
-                    "[10:00:02]     Setup network: No                      Checks:   False\n"):
+        for log, said in (("[10:00:02]     Checks passed: False\n", "False"),
+                          ("[10:00:02]     Setup network: No                      Checks:   False\n", "False"),
+                          ("[10:00:02]     Setup network: No                      Checks:   Fail\n", "Fail")):
             with self.subTest(log=log):
                 self.assertEqual(fault_verdicts.checks_problem(log, "tasmota"),
-                                 "Checks passed: False; Relay: not said")
+                                 f"Checks passed: {said}; Relay: not said")
+        # Pass, as 3.0.0 says it, as True did before.
+        self.assertIsNone(fault_verdicts.checks_problem(
+            "[10:00:02]     Setup network: No                      Checks:   Pass\n", "tasmota"))
 
 
 if __name__ == "__main__":

@@ -2559,11 +2559,14 @@ class Scenario:
         backup_line = (line[-1].strip() if line and not sc["route"].startswith("sonoff>")
                        and fault != "legacy" else None)
         no_backup = sc["route"].startswith("nobackup>")
-        # None to look at when the last run found nothing to convert: it makes no report.
-        identity = (REPORT_IDENTITY.findall(last_run)
-                    if "nothing to convert" not in results[-1][1] else None)
         # The report's end-of-run checks, from the run that converted the device.
         logs = run_logs(self.state)
+        # Where the identity came from, in the run's log alone (report.LOG_ONLY);
+        # on the screen too before 3.0.0. None to look at when the last run
+        # found nothing to convert: it makes no report.
+        identity = ((REPORT_IDENTITY.findall(fault_verdicts.last_run(logs[-1][2])) if logs else [])
+                    or REPORT_IDENTITY.findall(last_run)
+                    if "nothing to convert" not in results[-1][1] else None)
         checks = fault_verdicts.checks_problem(logs[-1][2], target_final) if converted and logs else None
         if checks:
             self.notes["checks"] = checks

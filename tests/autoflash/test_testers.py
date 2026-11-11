@@ -101,7 +101,7 @@ class LogTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(hostsys, "copy_to_clipboard", return_value=False), \
                 mock.patch.object(output, "show"), mock.patch.object(output, "show_link"), \
                 mock.patch.object(output, "tell") as told:
-            report.offer_report(a_run(tmp, kind), [("Device", kind.name)], "Please share how it went!")
+            report.offer_report(a_run(tmp, kind), [("Device", kind.name)])
         return " ".join(str(call.args[0]) for call in told.call_args_list if call.args)
 
     def test_the_report_shows_where_the_log_of_a_kind_wanting_testers_is(self):

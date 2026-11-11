@@ -71,7 +71,7 @@ def shown(fields, columns, rows=report.output.GOOD_ROWS, stopped=None):
             mock.patch.object(testers, "show_log"):
         output.start(log, verbose=False)
         try:
-            report.offer_report(ctx, fields, "Please share how it went!", stopped)
+            report.offer_report(ctx, fields, stopped)
         finally:
             output.finish()
     screen = unattended_run.Screen(columns, 200)
@@ -94,10 +94,15 @@ class ReportAnswerTests(unittest.TestCase):
                     self.assertEqual([answer.strip() for answer in found], [expected[label]], log)
             self.assertEqual(fault_suite.REPORT_RESULT_FULL.findall(log), [full])
 
+    def test_where_the_identity_came_from_is_in_the_log_not_on_the_screen(self):
+        screen, log = shown(FIELDS, 100)
+        self.assertNotIn("Identity", screen)
+        self.assertEqual(fault_suite.REPORT_IDENTITY.findall(log), [dict(FIELDS)["Identity"]])
+
     def test_every_answer_a_suite_checks_is_on_the_right_but_the_result(self):
         # So it is the last on its row in two columns (report.report_screen):
         # the result, on the left, is read up to the gap after it.
-        self.assertLessEqual(set(READ), {*report.SUITES_READ, "Result"})
+        self.assertLessEqual(set(READ), {*report.SUITES_READ, *report.LOG_ONLY, "Result"})
         self.assertLessEqual(set(report.SUITES_READ), set(report.RIGHT))
         self.assertLessEqual({*report.RIGHT, "Result"}, set(dict(FIELDS)))
 

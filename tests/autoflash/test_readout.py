@@ -1261,9 +1261,11 @@ class ReportTests(unittest.TestCase):
                 mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
             readout.end(SimpleNamespace(readouts=self.DONE), "Switch the device off and on once more.")
         text = [item for item in shown if isinstance(item, str)]
+        result = next(line for line in text if line.lstrip().startswith("Result:"))
         order = [text.index(line) for line in ("Readout complete!", "Switch the device off and on once more.",
-                                               "How it went:", "You've reached the bit where I hold out my hat!")]
+                                               result, "You've reached the bit where I hold out my hat!")]
         self.assertEqual(order, sorted(order))
+        self.assertNotIn("How it went:", text)
         self.assertTrue(any(line.lstrip().startswith("Accepted:") and "BASICR4 1.1.0" in line for line in text))
         self.assertTrue(any(line.lstrip().startswith("Not needed:") for line in text))
         self.assertEqual(shown[-1][0][0], report.SPONSORS_URL)

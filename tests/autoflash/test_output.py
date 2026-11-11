@@ -1299,7 +1299,7 @@ class ReportTests(OutputTestCase):
             report.invite_report(ctx, 441, False)
         self.assertEqual(switched.call_args.kwargs["device_id"], "1000abcdef")
         fields = dict(offered.call_args.args[1])
-        self.assertEqual(fields["Checks"], "True")
+        self.assertEqual(fields["Checks"], "Pass")
         with mock.patch.object(records, "read_device", return_value={"ewelink_id": "1000abcdef"}), \
                 mock.patch.object(report.ewelink_relay, "answers", return_value=True), \
                 mock.patch.object(report.ewelink_relay, "check_relay", return_value=report.ewelink_relay.RelayCheck(True, False)):
@@ -1317,7 +1317,7 @@ class ReportTests(OutputTestCase):
             hardware = report.check_ewelink_hardware(ctx)
         self.assertEqual(hardware, {"Relay": "switches (meter confirms)",
                                     "Power meter": "on: 230.08 V, 99.99 W; off: 0 V, 0 W"})
-        self.assertEqual(report.checks_passed(hardware), "true")
+        self.assertEqual(report.checks_passed(hardware), "pass")
         lines = [c.args[0] for c in said.call_args_list]
         self.assertIn("    Relay: Switches (meter confirms)", lines)
         self.assertIn("    Power meter: On: 230.08 V, 99.99 W; off: 0 V, 0 W", lines)
@@ -1600,15 +1600,15 @@ class ReportTests(OutputTestCase):
 
     def test_every_answer_starts_with_a_capital_and_only_that_changes(self):
         fields = dict(report.report_fields(self.ctx(), {"Relay": "switches (meter confirms)"}))
-        self.assertEqual(fields["Checks"], "True")
+        self.assertEqual(fields["Checks"], "Pass")
         self.assertEqual(fields["Model"], "S60TPG")
 
     def test_the_checks_pass_when_the_relay_switches_whatever_the_meter_says(self):
         # What each check found goes to the log; the report gives one answer,
         # the same for any kind of device.
-        for relay, passed in (("switches (meter confirms)", "true"), ("switches (meter unchanged)", "true"),
-                              ("switches (through eWeLink)", "true"), ("did not switch", "false"),
-                              ("could not be checked", "false"), ("not checked", "not run")):
+        for relay, passed in (("switches (meter confirms)", "pass"), ("switches (meter unchanged)", "pass"),
+                              ("switches (through eWeLink)", "pass"), ("did not switch", "fail"),
+                              ("could not be checked", "fail"), ("not checked", "not run")):
             self.assertEqual(report.checks_passed({"Relay": relay, "Power meter": "on: 0 V, 0 W"}), passed, relay)
         self.assertEqual(report.checks_passed({}), "not run")
 
@@ -1641,7 +1641,8 @@ class ReportTests(OutputTestCase):
                  mock.patch.object(report, "check_hardware", return_value={"Relay": "switches (meter confirms)"}):
                 report.invite_report(self.ctx(), 441, False)
         screen, _ = self.run_with(io.StringIO(), False, body)
-        self.assertIn("How it went:", screen)
+        self.assertNotIn("How it went", screen, "the report under what the run said, with no heading")
+        self.assertIn("Result:", screen)
         self.assertNotIn("issues/new", screen, "a run that worked needs no issue")
         self.assertNotIn("discussions", screen)
         self.assertEqual(copied, [], "nothing to paste anywhere")

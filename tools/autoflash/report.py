@@ -191,7 +191,8 @@ def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
         ("Backup", records.BACKUP_OUTCOMES[ctx.state.input("backup_outcome")
                                       or ("existing" if routes.sonoff_backup_exists(ctx) else "not taken")][1]),
         # Where going back to Sonoff's firmware took the device's identity from:
-        # only on such a run (sonoff.step_sonoff_restore).
+        # only on such a run (sonoff.step_sonoff_restore), and in its log, not on
+        # the screen (LOG_ONLY).
         *([("Identity", SONOFF_IDENTITY.get(captures.get("R1.identity"), "not read"))]
           if espressif and firmware == "sonoff" else []),
         ("OS", computer_description()),
@@ -224,7 +225,7 @@ def checks_passed(hardware: dict[str, str]) -> str:
     relay = hardware.get("Relay", "not checked")
     if relay in ("not checked", "motor mode"):
         return "not run"
-    return "true" if relay.startswith("switches") else "false"
+    return "pass" if relay.startswith("switches") else "fail"
 
 
 def answer(value: str) -> str:
@@ -250,9 +251,12 @@ def report_markdown(fields: list[tuple[str, str]]) -> str:
 # the run's and this computer's on the left.  The answers a fault suite reads
 # off the screen are on the right, each the last on its row, but the result,
 # read up to the gap after it (tools/espressif/emulator/fault_suite.py).
-RIGHT = ("Firmware", "From", "Model", "Backup", "Identity", "Signal", "Checks")
+RIGHT = ("Firmware", "From", "Model", "Backup", "Signal", "Checks")
 # Those of RIGHT a fault suite reads, which stay there, last on their rows.
-SUITES_READ = ("From", "Backup", "Identity", "Checks")
+SUITES_READ = ("From", "Backup", "Checks")
+# Answers the run's log has, for the fault suite and someone helping, and the
+# screen does not: where an identity came from is nothing the person needs.
+LOG_ONLY = ("Identity",)
 # Columns each side needs at the least, else one column, as Markdown has it.
 SIDE = 34
 
@@ -507,7 +511,7 @@ def invite_report(ctx: Context, seconds: float, resumed: bool) -> None:
         hardware = check(ctx)
         fields = report_fields(ctx, hardware, result=run_result(ctx, "converted"))
     report_upload.send(ctx, "converted", seconds, resumed, hardware)
-    offer_report(ctx, fields, "How it went:")
+    offer_report(ctx, fields)
     hold_out_hat()
 
 
@@ -548,7 +552,7 @@ def invite_stopped_report(ctx: Context, ending: str) -> None:
     seconds = time.monotonic() - ctx.run_started - output.waited()
     fields = report_fields(ctx, result=run_result(ctx, ending))
     report_upload.send(ctx, ending, seconds, ctx.run_resumed)
-    offer_report(ctx, fields, "How it went:", stopped=run_result(ctx, ending))
+    offer_report(ctx, fields, stopped=run_result(ctx, ending))
 
 
 def issue_url(stopped: str, report_id: str | None) -> str:
@@ -568,14 +572,13 @@ def offer_issue(stopped: str) -> None:
     output.show_link(issue_url(stopped, None), "Open an issue")
 
 
-def offer_report(ctx: Context, fields: list[tuple[str, str]], heading: str, stopped: str | None = None) -> None:
+def offer_report(ctx: Context, fields: list[tuple[str, str]], stopped: str | None = None) -> None:
     """The run's report on the screen. For a run that stopped (`stopped`: how,
     as run_result says it), a link to open an issue for it, with the report
     on the clipboard to paste in: the tool is meant to finish every run, so
     one it could not is something to fix."""
     ctx.reported = True
     output.tell("")
-    output.show(heading, output.GREEN)
     if stopped:
         copied = hostsys.copy_to_clipboard(report_markdown(fields))
         output.tell("If it should not have stopped there, please open an issue, and paste in "
@@ -587,7 +590,11 @@ def offer_report(ctx: Context, fields: list[tuple[str, str]], heading: str, stop
         # report: here one word, so the result fits beside the firmware. In
         # full in the log, for the suites (fault_suite.REPORT_RESULT_FULL).
         output.log_only(f"    Result in full: {answer(stopped)}")
-    for line in report_screen([(label, briefly(value) if label == "Result" else value) for label, value in fields]):
+    for label, value in fields:
+        if label in LOG_ONLY:
+            output.log_only(f"    {label}: {value}")
+    for line in report_screen([(label, briefly(value) if label == "Result" else value) for label, value in fields
+                               if label not in LOG_ONLY]):
         output.tell(line)
     if stopped and any(value == "__" for _, value in fields):
         output.tell("")

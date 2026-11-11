@@ -85,11 +85,11 @@ class EndingTests(RouteTestCase):
         # Half the rows of one column; the answers a fault suite reads off the
         # screen - the device's - each the last on its row.
         fields = [("Result", "Converted"), ("Firmware", "Tasmota"), ("Liberator", "2.4.0"), ("Backup", "Completed"),
-                  ("OS", "Ubuntu 24.04.5 LTS"), ("Checks", "True")]
+                  ("OS", "Ubuntu 24.04.5 LTS"), ("Checks", "Pass")]
         rows = report.report_screen(fields, columns=100)
         self.assertEqual([row.split() for row in rows], [["Result:", "Converted", "Firmware:", "Tasmota"],
                                                          ["Liberator:", "2.4.0", "Backup:", "Completed"],
-                                                         ["OS:", "Ubuntu", "24.04.5", "LTS", "Checks:", "True"]])
+                                                         ["OS:", "Ubuntu", "24.04.5", "LTS", "Checks:", "Pass"]])
 
     def test_a_long_answer_wraps_within_its_column_under_itself(self):
         fields = [("Result", "Converted"), ("Liberator", "2.4.0"),
@@ -171,13 +171,13 @@ class ReportColumnTests(unittest.TestCase):
         # Seen on an S61: its device answers ran two rows below this computer's.
         fields = [("Result", "Converted"), ("Liberator", "2.4.0"), ("Firmware", "OpenBeken"), ("OS", "Ubuntu"),
                   ("From", "Sonoff 1.0.2"), ("Python", "3.12"), ("Model", "S61STPF"),
-                  ("Backup", "Completed"), ("Signal", "-45 dBm"), ("Checks", "True"), ("Extra", "Not checked")]
+                  ("Backup", "Completed"), ("Signal", "-45 dBm"), ("Checks", "Pass"), ("Extra", "Not checked")]
         rows = report.report_screen(fields, columns=100)
         self.assertEqual(len(rows), 6, "\n".join(rows))
         extra = next(row for row in rows if "Extra:" in row)
         self.assertLess(extra.index("Extra:"), 20)   # on the left now
         checks = next(row for row in rows if "Checks:" in row)
-        self.assertTrue(checks.rstrip().endswith("True"))   # a suite's, still last on its row
+        self.assertTrue(checks.rstrip().endswith("Pass"))   # a suite's, still last on its row
 
 
 class ComputerDescriptionTests(unittest.TestCase):

@@ -238,8 +238,6 @@ def end(ctx: Context, said: str) -> None:
         for line in said.splitlines():
             output.tell(line)
     output.tell("")
-    output.show("How it went:", output.GREEN)
-    output.tell("")
     for line in report.report_screen(report_fields(done), right=REPORT_RIGHT, below=report_devices(done)):
         output.tell(line)
     report.hold_out_hat()
