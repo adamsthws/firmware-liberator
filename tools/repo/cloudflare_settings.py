@@ -70,9 +70,16 @@ API = "https://api.cloudflare.com/client/v4"
 # which every browser of the last decade outgrew, is refused.
 SETTINGS = {"always_use_https": "on", "min_tls_version": "1.2", "email_obfuscation": "on"}
 
+# The repository's issues on GitHub (github_settings.REPOSITORY), where the
+# tool sends someone whose run failed by the short address ISSUES_PATH
+# (report.ISSUES_URL): a line on the screen, not a GitHub link that wraps.
+ISSUES = "https://github.com/adamsthws/firmware-liberator/issues"
+ISSUES_PATH = "/issues"
+
 # www.firmwareliberator.com, which wrangler.jsonc also points at the Worker,
 # is sent on to firmwareliberator.com, keeping the path and query, so the
-# site has one address. Cloudflare runs this before the Worker.
+# site has one address; and its ISSUES_PATH to ISSUES, for a while (302) so
+# the repository can move. Cloudflare runs these before the Worker.
 REDIRECT_PHASE = "http_request_dynamic_redirect"
 REDIRECTS = [{
     "ref": "www-to-apex",
@@ -83,6 +90,17 @@ REDIRECTS = [{
         "status_code": 301,
         "target_url": {"expression": f'concat("https://{ZONE}", http.request.uri.path)'},
         "preserve_query_string": True,
+    }},
+    "enabled": True,
+}, {
+    "ref": "issues-to-github",
+    "description": f"{ZONE}{ISSUES_PATH} to the repository's issues on GitHub",
+    "expression": f'(http.host eq "{ZONE}" and http.request.uri.path in {{"{ISSUES_PATH}" "{ISSUES_PATH}/"}})',
+    "action": "redirect",
+    "action_parameters": {"from_value": {
+        "status_code": 302,
+        "target_url": {"value": ISSUES},
+        "preserve_query_string": False,
     }},
     "enabled": True,
 }]
