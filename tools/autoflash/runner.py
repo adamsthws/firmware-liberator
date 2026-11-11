@@ -41,12 +41,6 @@ from tools.autoflash.state import ATTEMPTED, DONE, FAILED, PENDING
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
-# Where people ask for help: a discussion or issue of their own, so the
-# reports thread stays a record of runs.
-DISCUSSIONS_URL = "https://github.com/adamsthws/firmware-liberator/discussions"
-ISSUES_URL = "https://github.com/adamsthws/firmware-liberator/issues/new"
-
-
 def execute(ctx: Context, step: str) -> int:
     ctx.last_runner = None
     started, waited = time.monotonic(), output.waited()
@@ -345,8 +339,6 @@ def tell_how_to_carry_on() -> None:
     output.tell("    start.cmd (double-click it, or .\\start.cmd in a terminal)" if hostsys.IS_WINDOWS else "    sh start.sh")
     if output.log_path():
         output.tell(f"What happened, in full: {runs.display_path(output.log_path())}")
-    output.tell("Stuck? Start a discussion or open an issue:")
-    output.show_links([(DISCUSSIONS_URL, "Start a discussion"), (ISSUES_URL, "Open an issue")])
 
 
 def connection_lost(exc: BaseException) -> str:

@@ -459,6 +459,14 @@ def stopped_report(ctx: Context, code: int | None, ending: str | None) -> str | 
     return reported
 
 
+def issue_alone(ctx: Context, code: int | None, ending: str | None) -> bool:
+    """Whether a run that failed with no report to offer (stopped_report:
+    before any stage began) is still given the way to open an issue, which a
+    report's offer carries. Never one stopped by choice, nor one that finished."""
+    return (report.report_ending(code, ending) == "failed" and not ctx.reported
+            and stopped_report(ctx, code, ending) is None)
+
+
 def handle_signals() -> None:
     """Being stopped, or the terminal being closed, must still run the cleanup
     in the finally blocks: the stored secrets and the firewall rule.  SIGPIPE
@@ -751,6 +759,8 @@ def convert(ctx: Context, given: list[str]) -> int:
                 report.invite_stopped_report(ctx, reported)
             except Exception as exc:  # noqa: BLE001 - never let the report hide how it ended
                 output.log_only(f"The report could not be made: {type(exc).__name__}: {exc}")
+        elif issue_alone(ctx, code, ending):
+            report.offer_issue(report.run_result(ctx, "failed"))
         output.finish()
 
 

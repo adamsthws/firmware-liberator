@@ -552,6 +552,14 @@ def issue_url(stopped: str, report_id: str | None) -> str:
     return f"{ISSUE_URL}?{urllib.parse.urlencode(query, quote_via=urllib.parse.quote)}"
 
 
+def offer_issue(stopped: str) -> None:
+    """A link to open an issue for a run that failed with no report to offer
+    (cli.stopped_report): `stopped`, as run_result says it, for its title."""
+    output.tell("")
+    output.tell("If it should not have stopped there, please open an issue for it:")
+    output.show_link(issue_url(stopped, None), "Open an issue")
+
+
 def offer_report(ctx: Context, fields: list[tuple[str, str]], heading: str, stopped: str | None = None) -> None:
     """The run's report on the screen. For a run that stopped (`stopped`: how,
     as run_result says it), a link to open an issue for it, with the report

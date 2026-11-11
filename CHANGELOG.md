@@ -300,9 +300,10 @@ as its screens do, since it converts much more than smart plugs now.
   [what the tool sends](docs/what-the-tool-sends.md) says what a report holds.
   A report that could not be sent is kept on your computer and sent the next
   time, for up to 30 days.
-- A run that stopped offers to open a GitHub issue for it, with its title
-  filled in and its report on your clipboard to paste; the end of a run no
-  longer asks for its report to be posted in Discussions.
+- A run that failed offers to open a GitHub issue for it, with its title
+  filled in and its report on your clipboard to paste; one you stop yourself
+  does not. The end of a run no longer asks for its report to be posted in
+  Discussions, nor links to them when a run fails.
 - The names of what the tool keeps say "device" too. Each device's records
   are in `captures/devices/<MAC>/`, with `device.json`, where releases up to
   2.3.0 kept them in `captures/plugs/<MAC>/` with `plug.json`.
