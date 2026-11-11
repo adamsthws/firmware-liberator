@@ -673,6 +673,17 @@ class ScreenTests(unittest.TestCase):
                          ["Complete", "Complete"], screen)
         self.assertIn("trying again", self.log.read_text(encoding="utf-8"))  # the log keeps it
 
+    def test_a_run_that_turned_into_a_readout_says_nothing_after_its_report(self):
+        # readout.from_run has shown the readout's ending and report: an empty
+        # Finished adds no line under them.
+        for said in ("", "Read out instead."):
+            def stage(ctx):
+                raise errors.Finished(said)
+            with self.subTest(said=said):
+                rows = [row.strip() for row in self.screen([("E2", stage)]).splitlines() if row.strip()]
+                self.assertEqual("Read out instead." in rows, bool(said))
+                self.assertEqual(len(rows), 3 if said else 2)   # E2's and E3's lines, and what it said
+
     def test_a_stage_tried_again_says_retrying_while_it_runs(self):
         tries = iter([PhaseError("the device stopped the stage without reaching this computer"), None])
 

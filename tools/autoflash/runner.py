@@ -109,8 +109,9 @@ def _execute(ctx: Context, step: str) -> int:
     except errors.Finished as done:
         ctx.state.mark(step, FAILED, error=str(done), nothing_written=True)
         output.stage_end("complete")
-        output.tell("")
-        output.tell(str(done))
+        if str(done):   # a readout the run turned into has said its own (readout.from_run)
+            output.tell("")
+            output.tell(str(done))
         ctx.finished = done
         return 0
     except DeviceNeverConnected as exc:

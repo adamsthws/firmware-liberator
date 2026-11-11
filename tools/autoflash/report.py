@@ -281,9 +281,12 @@ SUITES_READ = ("From", "Backup", "Identity", "Checks")
 SIDE = 34
 
 
-def report_screen(fields: list[tuple[str, str]], columns: int | None = None) -> list[str]:
+def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
+                  right: tuple[str, ...] = RIGHT) -> list[str]:
     """For the terminal: plain labels, lined up, in two columns where the
-    window is wide enough - half the rows - else one."""
+    window is wide enough - half the rows - else one. `right`: the labels
+    of the right-hand column, the device's - a conversion's (RIGHT), or a
+    readout's (readout.report_fields)."""
     margin, gap = "    ", "   "
     columns = columns or output.terminal_size((100, 24)).columns
     side = (columns - len(margin) - len(gap) - 2) // 2
@@ -299,8 +302,8 @@ def report_screen(fields: list[tuple[str, str]], columns: int | None = None) -> 
             rows.append(f"{label + ':':<{width}} {lines[0]}")
             rows.extend(" " * (width + 1) + line for line in lines[1:])
         return rows
-    left = [(label, value) for label, value in fields if label not in WIDE + RIGHT]
-    right = [(label, value) for label, value in fields if label in RIGHT]
+    left = [(label, value) for label, value in fields if label not in WIDE + right]
+    right = [(label, value) for label, value in fields if label in right]
     # The columns ending together: the device's answers at the bottom that
     # no fault suite reads go left when its column is the longer (an S61's,
     # with fewer of this computer's).
@@ -514,6 +517,12 @@ def invite_report(ctx: Context, seconds: float, resumed: bool) -> None:
         fields = report_fields(ctx, seconds, resumed, hardware, result=run_result(ctx, "converted"))
     report_upload.send(ctx, "converted", seconds, resumed, hardware)
     offer_report(ctx, fields, "How it went:")
+    hold_out_hat()
+
+
+def hold_out_hat() -> None:
+    """The links to support the project, under the report of a run that
+    finished: a conversion's, or a readout's (readout.end)."""
     output.tell("")
     output.show("You've reached the bit where I hold out my hat!", output.GREEN)
     output.tell("Free software, not free biscuits... Throw your friendly neighbourhood dev a biscuit:")

@@ -774,7 +774,9 @@ class ReadoutCommandTests(unittest.TestCase):
         with mock.patch.object(cli.output, "say"), told, \
                 mock.patch.object(cli.output, "stage_begin", begin), mock.patch.object(cli.output, "stage_end", end), \
                 mock.patch.object(readout, "run_all", return_value="all") as every, \
-                mock.patch.object(readout, "read_out_chosen", return_value="chosen") as chosen:
+                mock.patch.object(readout, "read_out_chosen", return_value="chosen") as chosen, \
+                mock.patch.object(readout, "end", side_effect=lambda ctx, said, seconds:
+                                  self.happened.append(f"report, after: {said}")):
             self.assertEqual(cli.cmd_readout(ctx, None), 0)
         return every, chosen, devices
 
@@ -792,6 +794,10 @@ class ReadoutCommandTests(unittest.TestCase):
         said = " ".join(item.removeprefix("told: ") for item in self.happened[:at])
         self.assertIn("A readout usually takes under 10 minutes.", said)
         self.assertIn("until the last stage says complete", said)
+
+    def test_it_ends_with_the_report(self):
+        self.read()
+        self.assertEqual(self.happened[-1], "report, after: chosen")   # what is left to do, then the report
 
     def test_all_reads_every_device_unasked(self):
         every, chosen, devices = self.read(all=True)
