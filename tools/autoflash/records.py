@@ -203,6 +203,31 @@ def remember_device(mac: str, **details: Any) -> None:
     path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+# A device's number among those converted on this computer, in the order each
+# was first converted here (device.json): for the report, which says how many
+# devices one computer converts without saying which computer.
+CONVERTED_NUMBER = "converted_number"
+
+
+def number_conversion(mac: str) -> int:
+    """The device's number among those converted on this computer, given it at
+    its first conversion here: one more than the highest any device has. Not
+    capped, and only from this tool's records: deleting them starts again."""
+    number = read_device(mac).get(CONVERTED_NUMBER)
+    if isinstance(number, int) and not isinstance(number, bool):
+        return number
+    taken = [0]
+    for path in DEVICES.glob(f"*/{DEVICE_FILE}"):
+        try:
+            value = json.loads(path.read_text(encoding="utf-8")).get(CONVERTED_NUMBER)
+        except (OSError, ValueError, AttributeError):
+            continue
+        if isinstance(value, int) and not isinstance(value, bool):
+            taken.append(value)
+    remember_device(mac, **{CONVERTED_NUMBER: max(taken) + 1})
+    return max(taken) + 1
+
+
 # How a run's backup went, by the outcome its backup step records
 # ("backup_outcome"): what its stage line says, and what the report says.
 BACKUP_OUTCOMES = {

@@ -293,8 +293,9 @@ as its screens do, since it converts much more than smart plugs now.
   page says for this chip.
 - Each run sends the project an anonymous report of how it went: the device,
   the firmware it went to and from, and how far it got - for a run you stop,
-  the stage and how you stopped it - never anything of you, your computer or
-  your network. Reports from everyone add up to the figures
+  the stage and how you stopped it, and for a conversion, how many devices
+  this computer has converted - never anything of you, your computer or your
+  network. Reports from everyone add up to the figures
   on [firmwareliberator.com/stats](https://firmwareliberator.com/stats).
   `--no-report`, or `AUTOFLASH_NO_REPORT=1` in `.env`, stops it, and the tool
   says so once, the first time it runs on a computer;

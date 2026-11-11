@@ -49,6 +49,18 @@ class PayloadTests(RouteTestCase):
         self.assertEqual(data["stopped"]["text"], "the device at <address> did not answer within 30s  caf")
         self.assertEqual(self.payload(ctx, "crashed", failure="KeyError: x")["stopped"]["error"], "crash")
 
+    def test_a_conversion_gives_the_devices_number_on_this_computer_and_nothing_else_does(self):
+        def nth(ending="converted", **kwargs):
+            ctx = self.ctx(device_kind="sonoff-s60", device_mac=MAC, **kwargs)
+            with mock.patch.object(report_data.records, "read_device", return_value={"converted_number": 4}):
+                return self.payload(ctx, ending, failure="the device did not answer" if ending != "converted" else "")[
+                    "nth_device"]
+        self.assertEqual(nth(firmware="tasmota"), 4)
+        self.assertEqual(nth(firmware="esphome", source="tasmota"), 4, "from another firmware too")
+        self.assertIsNone(nth(firmware="sonoff", source="tasmota"), "back to Sonoff's is no conversion")
+        self.assertIsNone(nth(firmware="tasmota", source="outdated"), "nor an update")
+        self.assertIsNone(nth(firmware="tasmota", ending="failed"))
+
     def test_a_run_the_person_stopped_says_where_and_how_with_no_words(self):
         ctx = self.ctx(firmware="esphome", device_kind="sonoff-s60")
         for how in report_data.STOPPED_BY:

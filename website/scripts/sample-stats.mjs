@@ -72,6 +72,8 @@ export async function sampleDatabase(now = new Date("2026-12-01T03:17:00Z"), rep
       tag: next() < 0.03 ? "dev" : "user", model, device, family, firmware,
       stock: family === "beken" ? "1.17.1" : next() < 0.7 ? "1.2.0" : "1.1.0",
       result: ok ? "converted" : cancelled ? "cancelled" : "failed", stopped: ok ? null : { step, error, text: "" },
+      // One to four devices a computer, as real ones would be numbered (fewer 2s than 1s, and so on), by the run's number.
+      nth_device: ok && firmware ? [1, 1, 1, 1, 2, 2, 2, 3, 3, 4][n % 10] : null,
       seconds: Math.round(240 + next() * 420), os: { family: osFamily, version: osVersion },
       python: { version: "3.12.4", source: next() < 0.6 ? "portable" : "system" },
     };

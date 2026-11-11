@@ -103,6 +103,9 @@ const INSERT = `INSERT OR IGNORE INTO reports (id, day, tag, tool, kind, result,
   seconds, resumed, stages, signal, wifi_typed, setup_network, power_cycled, checks, meter, quarantined)
   VALUES (${Array(32).fill("?").join(", ")})`;
 const HOLD = "INSERT OR IGNORE INTO held_reports (id, day, why) VALUES (?, ?, ?)";
+// A converted device's number on the computer that first converted it: the
+// first given is kept.
+const PLACE = "INSERT INTO device_places (device_hash, place) VALUES (?, ?) ON CONFLICT (device_hash) DO NOTHING";
 
 // The device's record, brought up to date by one report: only where that
 // report was written just before (changes(), in the same transaction), so a
@@ -149,6 +152,9 @@ export function writes(db, report, hash, day, held = null) {
     const backToSonoff = report.result === "converted" && report.firmware === "sonoff";
     statements.push(db.prepare(DEVICE).bind(hash, report.model, report.device, day, report.result, Number(converted),
       Number(backToSonoff), report.firmware, report.stock, Number(report.tag === "dev")));
+    if (converted && report.nth_device !== null) {
+      statements.push(db.prepare(PLACE).bind(hash, report.nth_device));
+    }
   }
   return statements;
 }

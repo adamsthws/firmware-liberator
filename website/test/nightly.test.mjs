@@ -178,6 +178,19 @@ test("a run the person stopped is no failure: counted apart, with the stages peo
   assert.deepEqual(cancellations, [{ step: "C3", runs: 5 }, { step: "D1", runs: 5 }], "by stage, however stopped");
 });
 
+test("computers by how many devices each converted, from each device's number on its computer", async () => {
+  const bindings = env();
+  // Seven computers converted one device or more, six two or more, five three: 1, 1, 5 exactly.
+  const numbers = [...Array(7).fill(1), ...Array(6).fill(2), ...Array(5).fill(3)];
+  for (const [n, place] of numbers.entries()) {
+    await kept(bindings.DB, "2026-11-05", { device_hash: `device-${n}`, nth_device: place });
+  }
+  await kept(bindings.DB, "2026-11-05", { device_hash: "tested", tag: "dev", nth_device: 1 });   // the maintainer's
+  await night.nightly(bindings, NIGHT);
+  const { perComputer } = figures(bindings);
+  assert.deepEqual(perComputer, { computers: 7, rows: [{ devices: 3, computers: 5 }] }, "under five left out");
+});
+
 test("the devices wanted: /wanted's questions and the runs stopped for want of support", async () => {
   const bindings = env();
   const ask = bindings.DB.db.prepare("INSERT INTO wanted_days (day, model, asked) VALUES (?, ?, ?)");

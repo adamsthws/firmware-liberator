@@ -64,6 +64,11 @@ const view = figures && {
     label: row.step ? `Stage ${row.step}` : "Before any stage", value: row.runs,
     tip: `${row.runs.toLocaleString("en")} runs stopped by the person${row.step ? ` at ${row.step}` : ""}`,
   })),
+  // Figures from before devices were numbered on their computer have none.
+  perComputer: (figures.perComputer?.rows ?? []).map((row) => ({
+    label: `${row.devices} ${row.devices === 1 ? "device" : "devices"}`, value: row.computers,
+    tip: `${row.computers.toLocaleString("en")} computers converted ${row.devices} ${row.devices === 1 ? "device" : "devices"}`,
+  })),
   computers: Object.entries(figures.computers.reduce((sum, row) => ({ ...sum, [row.os]: (sum[row.os] ?? 0) + row.runs }), {}))
     .sort(([, a], [, b]) => b - a).map(([os, runs]) => ({ label: OS[os] ?? os, value: runs })),
   times: figures.times.filter((row) => row.month === figures.times[0]?.month).map((row) => ({
@@ -116,6 +121,13 @@ const view = figures && {
         <h2>Devices</h2>
         <p class="sub">Devices seen, by model, with how many converted on their first run and in the end.</p>
         {view.models.length ? <RankedBars rows={view.models} label="Devices seen, by model" /> : <p class="none">Not enough devices yet.</p>}
+      </section>
+
+      <section class="card">
+        <h2>Devices per computer</h2>
+        <p class="sub">How many devices each computer has converted, by the tool's own records on it: two people on
+          one computer count as one, and a fresh download of the tool counts again.</p>
+        {view.perComputer.length ? <RankedBars rows={view.perComputer} label="Computers, by devices converted" /> : <p class="none">Not enough devices yet.</p>}
       </section>
 
       <section class="card">

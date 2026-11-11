@@ -114,6 +114,8 @@ def schema() -> dict[str, Any]:
             "power_cycled": {"type": ["boolean", "null"]},
             "checks": words(*report_data.CHECKS),
             "meter": nullable(words(*report_data.METER_WORDS)),
+            # Not capped: the bound only keeps the number a sane one.
+            "nth_device": nullable(integer(1, report_data.NTH_DEVICE_LIMIT)),
         }),
     }
 

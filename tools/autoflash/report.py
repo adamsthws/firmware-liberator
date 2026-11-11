@@ -512,6 +512,10 @@ def invite_report(ctx: Context, seconds: float, resumed: bool) -> None:
     check = {"esphome": check_esphome_hardware, "tasmota": check_hardware, "openbeken": check_hardware,
              "sonoff": check_ewelink_hardware}.get(
         runs.run_firmware(ctx.state), lambda ctx: {})
+    from tools.autoflash import report_data   # it reads this module's words
+    mac = ctx.state.input("device_mac")
+    if mac and records.MAC_RE.match(mac) and report_data.converted_to_another(ctx):
+        records.number_conversion(mac)   # whether a report is sent or not, so the count stays true
     with output.working("Generating your report..."):
         hardware = check(ctx)
         fields = report_fields(ctx, seconds, resumed, hardware, result=run_result(ctx, "converted"))

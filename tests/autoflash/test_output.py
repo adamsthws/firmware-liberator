@@ -1274,6 +1274,17 @@ class ReportTests(OutputTestCase):
             report.invite_report(ctx, 441, False)
         checked.assert_called_once_with(ctx)
 
+    def test_a_conversion_is_numbered_on_this_computer_whether_its_report_is_sent_or_not(self):
+        with tempfile.TemporaryDirectory() as devices, mock.patch.object(records, "DEVICES", Path(devices)), \
+                mock.patch.object(report, "check_hardware", return_value={}), mock.patch.object(report, "offer_report"), \
+                mock.patch.object(report.report_upload, "send"), mock.patch.object(output, "show_links"):
+            for firmware, mac in (("tasmota", "12:34:56:ab:cd:01"), ("sonoff", "12:34:56:ab:cd:02"),
+                                  ("tasmota", "12:34:56:ab:cd:03")):
+                report.invite_report(self.ctx(run=f"number-{mac}", firmware=firmware, device_mac=mac), 441, False)
+            numbers = [records.read_device(mac).get(records.CONVERTED_NUMBER)
+                       for mac in ("12:34:56:ab:cd:01", "12:34:56:ab:cd:02", "12:34:56:ab:cd:03")]
+        self.assertEqual(numbers, [1, None, 2], "back to Sonoff's is no conversion")
+
     def test_a_run_back_to_sonoff_checks_the_relay_through_ewelink(self):
         ctx = self.ctx(device_kind="sonoff-s61", product_model="S61STPF", firmware="sonoff", source="openbeken",
                        device_mac="12:34:56:ab:cd:ef")

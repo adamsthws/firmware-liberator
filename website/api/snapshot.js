@@ -6,6 +6,12 @@
 //   rate is given only over SMALLEST or more, and a row of a list (a model,
 //   a Sonoff version, a tool version) under it is left out, so no one report
 //   or device can be picked out.
+// - Devices a computer converted (perComputer): from each converted device's
+//   number on the computer that first converted it (device_places), the
+//   computers that converted at least k devices are the devices numbered k,
+//   so those that converted exactly k are that less those numbered k + 1.
+//   A computer is the tool's records on it, never named: a fresh download
+//   counts again.
 // - No model's name is shown before it is vouched for (vouched_models:
 //   VOUCH_SENDERS senders from VOUCH_NETWORKS networks over VOUCH_DAYS days,
 //   nightly.js), so no made-up name can be put on the page by one sender,
@@ -102,6 +108,12 @@ export async function snapshot(db, now = new Date()) {
   const times = await all(`SELECT month, device, firmware, source, n, p50, p90 FROM monthly_times
     WHERE tag = 'user' AND n >= ? AND month IN (SELECT DISTINCT month FROM monthly_times ORDER BY month DESC LIMIT ?)
     ORDER BY month DESC, n DESC`, SMALLEST, TIME_MONTHS);
+  const places = new Map((await all(`SELECT place, count(*) AS n FROM device_places
+    JOIN devices USING (device_hash) WHERE devices.dev = 0 AND ${NOT_HELD} GROUP BY place`))
+    .map((row) => [row.place, row.n]));
+  const counted = [...places.keys()].sort((a, b) => a - b)
+    .map((place) => ({ devices: place, computers: Math.max(0, places.get(place) - (places.get(place + 1) ?? 0)) }))
+    .filter((row) => row.computers >= SMALLEST);
   return {
     format: FORMAT,
     generated: now.toISOString().slice(0, 16) + "Z",
@@ -129,6 +141,7 @@ export async function snapshot(db, now = new Date()) {
     tools: tools.map((row) => ({ tool: row.tool, ...outcomes(row) })),
     failures: failures.map((row) => ({ step: row.step || null, error: row.error, runs: row.runs })),
     cancellations: cancellations.map((row) => ({ step: row.step || null, runs: row.runs })),
+    perComputer: { computers: count(places.get(1) ?? 0), rows: counted },
     stock: stock.map((row) => ({ model: row.model, stock: row.stock, runs: row.runs, converted: count(row.converted),
       success: rate(row.converted, row.runs) })),
     computers: computers.map((row) => ({ os: row.os_family, python: row.python_source, runs: row.runs })),

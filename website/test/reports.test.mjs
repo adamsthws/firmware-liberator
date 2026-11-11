@@ -181,6 +181,17 @@ test("a run the person stopped is kept, but makes no device's record", async () 
   assert.deepEqual(record, { first_result: "converted", runs: 1, runs_to_convert: 1 });
 });
 
+test("a converted device keeps the number the first computer to convert it gave it", async () => {
+  const bindings = env();
+  const failed = { result: "failed", nth_device: null, stopped: { step: "D4", error: "upload-cut", text: "" } };
+  await send(bindings, [report({ device_hash: hashOf(7), ...failed })]);
+  await send(bindings, [report({ device_hash: hashOf(7), nth_device: 3 })]);
+  await send(bindings, [report({ device_hash: hashOf(7), nth_device: 1, firmware: "esphome", from: "tasmota" })]);
+  await send(bindings, [report({ device_hash: hashOf(8), nth_device: 2, firmware: "sonoff", from: "tasmota" })]);
+  assert.deepEqual(rows(bindings, "SELECT device_hash, place FROM device_places"), [{ device_hash: keyed(hashOf(7)), place: 3 }],
+    "a conversion's alone, the first kept; going back to Sonoff's is none");
+});
+
 test("a report with no device is kept, with no device record", async () => {
   const bindings = env();
   await send(bindings, [report({ device_hash: null })]);

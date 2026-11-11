@@ -31,7 +31,10 @@ stages people choose to stop at, and which devices people want supported next: s
   its relay switched in the check at the end.
 - **The tool and your computer:** the tool's version, your operating system
   and its version (such as Windows 11 or Ubuntu 24.04), and the Python
-  version the tool ran on, its own or one already on your computer.
+  version the tool ran on, its own or one already on your computer. For a
+  conversion, how many devices the tool has converted on your computer, this
+  one included: counted from its own records there, so deleting them starts
+  the count again. Nothing that names your computer is sent.
 - **For counting:** a random number, so a report sent twice counts once, and
   a mark telling a maintainer's test run from everyone else's.
 
@@ -71,8 +74,9 @@ or after a year. The server never stores the address itself.
 - **Each report** is deleted after a year, leaving only totals made from it,
   such as "so many S60s converted in November".
 - **Each device's record**, so it is still counted once, is kept for as long
-  as the project runs: when it was first seen, how its first run ended, and
-  how many times it has been converted.
+  as the project runs: when it was first seen, how its first run ended, how
+  many times it has been converted, and that count from the computer that
+  first converted it.
 
 ## What it is used for
 
