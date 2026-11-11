@@ -308,6 +308,24 @@ class StoppedReportTests(unittest.TestCase):
     def test_nor_twice(self):
         self.assertIsNone(self.ask(1, None, begun=True, reported=True))
 
+    def test_a_run_the_person_stopped_says_how_for_its_report(self):
+        from types import SimpleNamespace
+        from unittest import mock
+
+        def how(code, ending, begun=True, window=False, at_stage_end=None):
+            state = mock.Mock(input=mock.Mock(side_effect=lambda key: "window" if window and key == "stopped_by"
+                                              else None))
+            ctx = SimpleNamespace(reported=False, stage_begun=begun, state=state, stopped_by=at_stage_end)
+            return cli.stopped_by(ctx, code, ending)
+        self.assertEqual(how(130, None), "quit")                              # q at a question
+        self.assertEqual(how(130, None, at_stage_end="ctrl-c"), "ctrl-c")     # confirmed at a stage's end
+        self.assertEqual(how(None, "cancelled"), "ctrl-c")                    # at once
+        self.assertEqual(how(None, "cancelled", window=True), "window-closed")
+        self.assertIsNone(how(130, None, begun=False))   # before any stage, as a failure that early
+        for code, ending in ((1, None), (1, "crashed"), (0, None), (None, None)):
+            with self.subTest(code=code, ending=ending):
+                self.assertIsNone(how(code, ending))     # not stopped by the person
+
     def test_one_failed_with_no_report_is_given_the_issue_link_alone(self):
         from types import SimpleNamespace
 

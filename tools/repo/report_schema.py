@@ -72,6 +72,9 @@ def schema() -> dict[str, Any]:
         # What the stats page and admin view call each failure class and each
         # device kind, in the tool's own words (failures.CLASSES, kinds).
         "failureClasses": dict(failures.CLASSES),
+        # How the person stopped a cancelled run, its stopped "error" (and
+        # only a cancelled run's), for the API to hold any other pairing.
+        "stoppedBy": list(report_data.STOPPED_BY),
         "deviceNames": {kind.key: kind.name for kind in kinds.EVERY},
         **record({
             "format": {"type": "integer", "enum": [report_data.FORMAT]},
@@ -83,7 +86,8 @@ def schema() -> dict[str, Any]:
             "result": words(*report_data.RESULTS),
             "stopped": nullable(record({
                 "step": nullable(string(step, 3)),
-                "error": words(*failures.CLASSES),
+                # How a run failed, or for one the person stopped, how they did.
+                "error": words(*failures.CLASSES, *report_data.STOPPED_BY),
                 "text": string("^[ -~]*$", report_data.TEXT_LIMIT),
             })),
             "family": nullable(words(*routes.FAMILIES)),

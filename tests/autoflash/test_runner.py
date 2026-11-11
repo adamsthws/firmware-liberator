@@ -145,8 +145,9 @@ class RunStepsTests(unittest.TestCase):
                                                   {} if check is None else {"S2": check}, clear=True))
             patches.enter_context(mock.patch.object(prompts, "UNATTENDED", unattended))
             patches.enter_context(mock.patch.object(prompts, "answered_unattended"))
-            code = runner.run_steps(SimpleNamespace(state=self.state, research_bridge=research_bridge,
-                                                    bridge=SimpleNamespace(name="the bridge"), dry_run=dry_run))
+            self.ctx = SimpleNamespace(state=self.state, research_bridge=research_bridge,
+                                       bridge=SimpleNamespace(name="the bridge"), dry_run=dry_run)
+            code = runner.run_steps(self.ctx)
         return code, ran, stand_ins
 
     def test_a_step_gone_back_to_is_drawn_afresh_with_nothing_of_why(self):
@@ -373,6 +374,7 @@ class RunStepsTests(unittest.TestCase):
         code, ran, stand_ins = self.run_steps(stop_here_after_ctrl_c=mock.Mock(side_effect=lambda step: step == "S1"))
         self.assertEqual((code, ran), (130, ["S1"]))
         stand_ins["close_firewall_rules"].assert_called_once()
+        self.assertEqual(self.ctx.stopped_by, "ctrl-c")   # for its report, not a quit at a question
 
 
 class CarryOnTests(unittest.TestCase):

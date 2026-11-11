@@ -49,6 +49,17 @@ class PayloadTests(RouteTestCase):
         self.assertEqual(data["stopped"]["text"], "the device at <address> did not answer within 30s  caf")
         self.assertEqual(self.payload(ctx, "crashed", failure="KeyError: x")["stopped"]["error"], "crash")
 
+    def test_a_run_the_person_stopped_says_where_and_how_with_no_words(self):
+        ctx = self.ctx(firmware="esphome", device_kind="sonoff-s60")
+        for how in report_data.STOPPED_BY:
+            with self.subTest(how=how):
+                ctx.stopped_by = how
+                data = self.payload(ctx, "cancelled")
+                self.assertEqual(data["result"], "cancelled")
+                # The stage it stopped at: the first not done.
+                self.assertEqual(data["stopped"], {"step": report_data.stopped_step(ctx), "error": how, "text": ""})
+                self.assertIsNotNone(data["stopped"]["step"])
+
     def test_a_failure_is_classed_by_the_words_sent_but_for_words_cut_short(self):
         ctx = self.ctx(firmware="esphome", device_kind="sonoff-s60")
         # The API checks the words sent read as their class (website/api/review.js).

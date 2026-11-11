@@ -162,6 +162,22 @@ test("a run declined, or with nothing to do, is not a failure", async () => {
   assert.deepEqual(failures, [{ step: "A3", error: "device-lost", runs: 5 }]);
 });
 
+test("a run the person stopped is no failure: counted apart, with the stages people stop at", async () => {
+  const bindings = env();
+  const cancelled = (step, error) => ({ result: "cancelled", stopped: { step, error, text: "" } });
+  for (let n = 0; n < 5; n += 1) {
+    await kept(bindings.DB, "2026-11-05");
+    await kept(bindings.DB, "2026-11-05", cancelled("D1", n % 2 ? "quit" : "ctrl-c"));
+    await kept(bindings.DB, "2026-11-05", cancelled("C3", "window-closed"));
+  }
+  await kept(bindings.DB, "2026-11-05", cancelled("A3", "quit"));   // fewer than five: not shown
+  await night.nightly(bindings, NIGHT);
+  const { runs, failures, cancellations } = figures(bindings);
+  assert.deepEqual([runs.runs, runs.converted, runs.failed, runs.cancelled, runs.success], [16, 5, null, 11, 100]);
+  assert.deepEqual(failures, []);
+  assert.deepEqual(cancellations, [{ step: "C3", runs: 5 }, { step: "D1", runs: 5 }], "by stage, however stopped");
+});
+
 test("the devices wanted: /wanted's questions and the runs stopped for want of support", async () => {
   const bindings = env();
   const ask = bindings.DB.db.prepare("INSERT INTO wanted_days (day, model, asked) VALUES (?, ?, ?)");

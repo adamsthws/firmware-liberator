@@ -59,6 +59,11 @@ const view = figures && {
     value: row.runs, note: row.step ? `at stage ${row.step}` : "",
     tip: `${row.runs.toLocaleString("en")} runs stopped${row.step ? ` at ${row.step}` : ""}: ${classes[row.error] ?? row.error}`,
   })),
+  // Figures from before people's stops were sent have none.
+  cancellations: (figures.cancellations ?? []).slice(0, 10).map((row) => ({
+    label: row.step ? `Stage ${row.step}` : "Before any stage", value: row.runs,
+    tip: `${row.runs.toLocaleString("en")} runs stopped by the person${row.step ? ` at ${row.step}` : ""}`,
+  })),
   computers: Object.entries(figures.computers.reduce((sum, row) => ({ ...sum, [row.os]: (sum[row.os] ?? 0) + row.runs }), {}))
     .sort(([, a], [, b]) => b - a).map(([os, runs]) => ({ label: OS[os] ?? os, value: runs })),
   times: figures.times.filter((row) => row.month === figures.times[0]?.month).map((row) => ({
@@ -103,7 +108,8 @@ const view = figures && {
         {figures.months.length ? <MonthColumns months={figures.months} /> : <p class="none">Not enough runs yet.</p>}
         <DataTable caption="The figures, as a table" rows={figures.months}
           columns={[["Month", "month"], ["Runs", "runs", true], ["Converted", "converted", true], ["Failed", "failed", true],
-            ["Crashed", "crashed", true], ["New devices", "newDevices", true]]} />
+            ["Crashed", "crashed", true], ["Stopped by the person", "cancelled", true],
+            ["New devices", "newDevices", true]]} />
       </section>
 
       <section class="card">
@@ -136,6 +142,13 @@ const view = figures && {
         <h2>Where runs stop</h2>
         <p class="sub">The commonest reasons a run stopped, in the tool's words, and the stage it stopped at.</p>
         {view.failures.length ? <RankedBars rows={view.failures} label="Runs stopped, by reason" /> : <p class="none">Not enough runs yet.</p>}
+      </section>
+
+      <section class="card">
+        <h2>Where people stop</h2>
+        <p class="sub">The stages people chose to stop a run at: a question answered with q, Ctrl-C, or the window
+          closed.</p>
+        {view.cancellations.length ? <RankedBars rows={view.cancellations} label="Runs stopped by the person, by stage" /> : <p class="none">Not enough runs yet.</p>}
       </section>
 
       <div class="pair">

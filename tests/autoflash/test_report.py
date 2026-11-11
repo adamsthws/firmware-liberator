@@ -469,6 +469,19 @@ class StoppedRunIssueTests(RouteTestCase):
         self.assertNotIn("192.0.2.50", url, "no address in what is sent to GitHub")
         self.assertIn("**Model:** S60TPF", copied[0], "the report, ready to paste")
 
+    def test_a_run_the_person_stopped_sends_its_report_and_shows_none(self):
+        ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
+        ctx.run_started, ctx.run_resumed = time.monotonic(), False
+        with mock.patch.object(output, "tell") as told, mock.patch.object(output, "show_link") as link, \
+                mock.patch.object(hostsys, "copy_to_clipboard") as copied, \
+                mock.patch.object(report.report_upload, "send") as sent:
+            report.send_cancelled_report(ctx, "window-closed")
+        (to, ending, _seconds, resumed), = [c.args for c in sent.call_args_list]
+        self.assertEqual((to, ending, resumed, ctx.stopped_by), (ctx, "cancelled", False, "window-closed"))
+        told.assert_not_called()
+        link.assert_not_called()
+        copied.assert_not_called()
+
     def test_a_stopped_run_sends_its_report_too(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
         ctx.last_failure, ctx.last_failed_step = "the device did not answer within 30s", ""

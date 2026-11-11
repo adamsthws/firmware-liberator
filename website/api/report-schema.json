@@ -146,6 +146,11 @@
     "crash": "an error the tool did not anticipate",
     "other": "not classed yet"
   },
+  "stoppedBy": [
+    "quit",
+    "ctrl-c",
+    "window-closed"
+  ],
   "deviceNames": {
     "sonoff-s60": "Sonoff S60",
     "sonoff-s61": "Sonoff S61",
@@ -204,7 +209,8 @@
         "updated",
         "put-back",
         "failed",
-        "crashed"
+        "crashed",
+        "cancelled"
       ]
     },
     "stopped": {
@@ -252,7 +258,10 @@
             "declined",
             "nothing-to-do",
             "crash",
-            "other"
+            "other",
+            "quit",
+            "ctrl-c",
+            "window-closed"
           ]
         },
         "text": {

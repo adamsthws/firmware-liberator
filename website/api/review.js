@@ -12,9 +12,13 @@
 //   claim a class of their own: the tool classes the very words it sends by
 //   the same patterns (report-schema.json's failurePatterns, written from
 //   tools/autoflash/failures.py). Words cut short ("...") are not checked.
+// - A run the person stopped ("cancelled") that is not as the tool writes
+//   one: with words, or without one of its ways of stopping (stoppedBy), or
+//   one of those on a run that did not end so.
 import words from "./held-words.json" with { type: "json" };
 import schema from "./report-schema.json" with { type: "json" };
 
+const STOPPED_BY = new Set(schema.stoppedBy);
 const PATTERNS = schema.failurePatterns.map(([name, pattern]) => [name, new RegExp(pattern, "i")]);
 const SINGLE = new Set(words.words.filter((word) => !word.includes(" ")));
 const PHRASES = words.words.filter((word) => word.includes(" "));
@@ -45,6 +49,10 @@ export function heldFor(report) {
   const written = [report.model, report.stock, report.os.version, report.python.version, stopped?.text];
   if (written.some(holdsHeldWords)) {
     return "words no report would hold";
+  }
+  if ((report.result === "cancelled") !== STOPPED_BY.has(stopped?.error)
+      || (report.result === "cancelled" && stopped.text)) {
+    return "a stopped run not as the tool writes one";
   }
   if (stopped?.text && !stopped.text.endsWith("...") && !["other", "crash"].includes(stopped.error)
       && classify(stopped.text) === "other") {
