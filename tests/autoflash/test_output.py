@@ -633,6 +633,68 @@ class ConciseTests(OutputTestCase):
                                 "note 0", "", "note 1", "", "note 2",   # each said after a wait
                                 "Stage 8 - Installing interim firmware - Stopped"])
 
+    def test_the_stage_s_one_line_turns_above_what_it_shows(self):
+        # Seen in an attended emulator run: the line was drawn again, turning,
+        # under the device's report, two "Stage 2" lines until the stage ended.
+        def body():
+            output.stage_begin(2, "Discovering the device")
+            prompts.section("What the device reported", ["Model    SN-ESP32C3-BASICR4-01"])
+            output.tick()
+            screen.append(rendered(terminal.getvalue()))
+            output.stage_end("complete")
+        screen, terminal = [], FakeTerminal()
+        with mock.patch.object(output, "colour_ok", return_value=True), \
+             mock.patch.object(output, "spinner_frames", return_value="|/-\\"), \
+             mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
+            self.run_with(terminal, False, body)
+        rows = screen[0]
+        self.assertEqual(sum("Discovering the device" in row for row in rows), 1, "\n".join(rows))
+        self.assertRegex(rows[0], r"^Stage 2 - Discovering the device - Underway [|/\\-]$")
+        self.assertEqual(rows[-1], "Model SN-ESP32C3-BASICR4-01")
+
+    def test_a_ctrl_c_notice_goes_under_what_the_stage_shows_and_off_before_the_next_note(self):
+        from tools.autoflash import interrupt
+        self.addCleanup(interrupt.clear)
+
+        def body():
+            output.stage_begin(2, "Discovering the device")
+            output.tell("    note 0")
+            interrupt._state["first"] = time.monotonic()   # as a first Ctrl-C leaves it
+            output.tick()
+            screen.append(rendered(terminal.getvalue()))
+            interrupt.clear()
+            output.tell("    note 1")
+            screen.append(rendered(terminal.getvalue()))
+            output.stage_end("stopped")
+        screen, terminal = [], FakeTerminal()
+        with mock.patch.object(output, "colour_ok", return_value=True), \
+             mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
+            self.run_with(terminal, False, body)
+        drawn, after = screen
+        self.assertEqual(sum("Discovering the device" in row for row in drawn), 1, "\n".join(drawn))
+        self.assertEqual(drawn[-4:], ["note 0", "", interrupt.NOTICE_TITLE,
+                                      f"Press Ctrl-C again within {interrupt.GRACE:.0f} seconds to stop now."])
+        self.assertEqual(after[-2:], ["", "note 1"])   # said after a wait: a gap, as any note
+        self.assertFalse([row for row in after if "Ctrl-C" in row], "\n".join(after))
+
+    def test_out_of_reach_the_stage_s_line_turns_under_what_it_shows(self):
+        # Pushed past the window's top by what the stage shows, the line
+        # cannot be reached: it is drawn again under the last note, as before.
+        def body():
+            output.stage_begin(2, "Discovering the device")
+            for n in range(12):
+                output.tell(f"    note {n}")
+            output.tick()
+            screen.append(rendered(terminal.getvalue()))
+            output.stage_end("stopped")
+        screen, terminal = [], FakeTerminal()
+        with mock.patch.object(output, "colour_ok", return_value=True), \
+             mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 10))):
+            self.run_with(terminal, False, body)
+        rows = screen[0]
+        self.assertEqual(sum("Discovering the device" in row for row in rows), 2, "\n".join(rows))
+        self.assertTrue(rows[-1].startswith("Stage 2 - Discovering the device - Underway"), rows[-1])
+
     def test_a_note_said_after_a_wait_stands_apart_its_own_lines_together(self):
         # Seen in the fault suites' screens: notes of different moments - the
         # device gone back to Sonoff's firmware, then nothing answering - ran on
@@ -1645,12 +1707,16 @@ class LinkTests(OutputTestCase):
 
 def rendered(text):
     """The rows a terminal shows once `text` is written to it: carriage
-    returns, erasing a row or its end, and moving up a row applied."""
+    returns, erasing a row or its end, and moving the cursor up or down
+    (A, B; F, E to the row's start) applied."""
     import re
     rows, row, col = [""], 0, 0
-    for token in re.findall(r"\x1b\[1F|\x1b\[2K|\x1b\[K|\x1b\[[0-9;?]*[A-Za-z]|\x1b\]8;;[^\x1b]*\x1b\\|[\s\S]", text):
-        if token == "\x1b[1F":
-            row, col = max(0, row - 1), 0
+    for token in re.findall(r"\x1b\[2K|\x1b\[K|\x1b\[[0-9;?]*[A-Za-z]|\x1b\]8;;[^\x1b]*\x1b\\|[\s\S]", text):
+        move = re.fullmatch(r"\x1b\[(\d*)([ABEF])", token)
+        if move:
+            count = int(move.group(1) or 1)
+            row = max(0, row - count) if move.group(2) in "AF" else min(len(rows) - 1, row + count)
+            col = 0 if move.group(2) in "EF" else col
         elif token == "\x1b[2K":
             rows[row] = ""
         elif token == "\x1b[K":

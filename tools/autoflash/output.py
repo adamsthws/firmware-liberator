@@ -375,6 +375,7 @@ def before_input(prompt: str = "") -> None:
     """Called just before reading the keyboard: the question must start on its own line."""
     with _lock:
         _break()
+        _settle_stage_line()
         _show_keys()
         _gap("?")
         # A question stands apart from the options or text above it.
@@ -611,6 +612,8 @@ def _erase(rows: int) -> bool:
     if _s.live:
         sys.stdout.write(_clear_notice() + "\r\x1b[K")  # a stage line drawn since, and its notice
         _s.live = 0
+    elif _s.notice_rows:
+        sys.stdout.write(_clear_notice())   # a Ctrl-C notice under the notes
     # Up a row and erase it, row by row.  Not one erase-to-end from the top:
     # when the rows start on the screen's first that clears the whole screen,
     # which tmux (scroll-on-clear) and some terminals first copy into the
@@ -631,6 +634,7 @@ def hold():
     row the block does not count."""
     with _lock:
         before, _s.held = _s.held, True
+        _settle_stage_line()
     try:
         yield
     finally:
@@ -729,6 +733,7 @@ def stage_end(outcome: str) -> None:
             return
         while _s.blocks:
             transient_end()
+        _settle_stage_line()   # a stage that stopped leaves it, above why
         if outcome in PASSED and _s.stage_mark is not None and _s.rows > _s.stage_mark.rows:
             # Taller than the window, it has to stay.
             if _erase(_s.rows - _s.stage_mark.rows):
@@ -1007,16 +1012,59 @@ def spinner_frames() -> str:
     return BRAILLE_FRAMES
 
 
+def _stage_line(spinner: str = "") -> tuple[str, str]:
+    """The stage's underway line, plain and as shown: with `spinner`, and a
+    space after it so the terminal's cursor sits clear of it."""
+    tail = f" {spinner} " if spinner else ""
+    line = f"{MARGIN}{_s.stage_screen} - {_s.status}{tail}"
+    shown = f"{MARGIN}{_s.stage_screen} - {styled(_s.status, BOLD)}{tail}"
+    if _clip(line) != line:
+        line = shown = _clip(line)
+    return line, shown
+
+
+def _rows_up_to_stage_line() -> int | None:
+    """How many rows up from the cursor the stage's line is, left above what
+    the stage shows (_break), when it can be redrawn there: nothing drawn at
+    the cursor, a terminal that moves the cursor, and the line still in the
+    window - with room for a Ctrl-C notice under the cursor, which may scroll
+    it - as the cursor cannot go up into the scrollback."""
+    if _s.underway_row is None or _s.live or not (sys.stdout.isatty() and colour_ok()):
+        return None
+    up = _s.rows - _s.underway_row
+    if up < 1 or up + len(interrupt.notice()) >= terminal_size((100, 24)).lines:
+        return None
+    return up
+
+
+def _settle_stage_line() -> None:
+    """The stage's line above what it shows, without its spinner: nothing
+    turns while a question waits, or once the stage is over."""
+    up = _rows_up_to_stage_line()
+    if up is not None:
+        sys.stdout.write(_clear_notice() + f"\x1b[{up}A\r{_stage_line()[1]}\x1b[K\x1b[{up}B\r")
+        sys.stdout.flush()
+
+
 def _draw_stage() -> None:
     frames = spinner_frames()
     spinner = frames[int(_stage_seconds() / SPIN_EVERY) % len(frames)]
-    # A space after the spinner: the terminal's cursor sits clear of it.
-    line = f"{MARGIN}{_s.stage_screen} - {_s.status} {spinner} "
-    shown = f"{MARGIN}{_s.stage_screen} - {styled(_s.status, BOLD)} {spinner} "
-    if _clip(line) != line:
-        line = shown = _clip(line)
+    line, shown = _stage_line(spinner)
     if _s.live and not _s.live_is_stage:
         _break()
+    up = _rows_up_to_stage_line()
+    if up is not None:
+        # One line a stage: the one left above what it shows turns, in place,
+        # the cursor back under the last note after.  A Ctrl-C notice goes
+        # under the notes, the cursor's empty row the gap above it.
+        rows = _notice_rows()[1:] if _s.draws_notice else []
+        notice = "".join(f"\n{row}\x1b[K" for row in rows) + (f"\x1b[{len(rows)}A\r" if rows else "")
+        clear = _clear_notice() if len(rows) < _s.notice_rows else ""
+        sys.stdout.write(clear + f"\x1b[{up}A\r{shown}\x1b[K\x1b[{up}B\r" + notice)
+        sys.stdout.flush()
+        _s.notice_rows = len(rows)
+        _s.waited = True   # time has passed: a note said next stands apart (_print)
+        return
     # Below it, a first Ctrl-C's notice while it lasts (interrupt.notice),
     # the cursor back at the end of the stage line after it.
     # Each row written over the last draw's, not erased first, so it does
@@ -1099,21 +1147,21 @@ def _rows(text: str) -> int:
 
 def _break() -> None:
     """Finish an unfinished line so the next output starts on a fresh one."""
+    if not _s.live and _s.notice_rows:
+        sys.stdout.write(_clear_notice())   # a Ctrl-C notice under the notes (_draw_stage)
     if _s.live:
         if _s.live_is_stage and _s.underway_row is not None and _s.rows > _s.underway_row:
-            # Left once above what the stage showed already: drawn again under
-            # each note, it would take two rows a note (the line and a gap) and
-            # say nothing new.  The clock goes on under the last note.
+            # Left once above what the stage showed already, but out of the
+            # cursor's reach (_rows_up_to_stage_line), so its clock went on
+            # under the last note: taken off again, not left under each note,
+            # which would take two rows a note and say nothing new.
             sys.stdout.write(_clear_notice() + "\r\x1b[K")
             _s.waited = True
         elif _s.live_is_stage:
             # The underway line stays, without its spinner: only the stage
             # under way now has one, on the line drawn for it last.
             _s.underway_row = _s.rows
-            line = f"{MARGIN}{_s.stage_screen} - {_s.status}"
-            shown = f"{MARGIN}{_s.stage_screen} - {styled(_s.status, BOLD)}"
-            if _clip(line) != line:
-                line = shown = _clip(line)
+            line, shown = _stage_line()
             sys.stdout.write(_clear_notice() + "\r" + shown + " " * max(0, _s.live - len(line)) + "\n")
             _counted(1)
             _s.after_stage = True

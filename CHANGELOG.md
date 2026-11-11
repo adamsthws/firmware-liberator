@@ -251,6 +251,10 @@ as its screens do, since it converts much more than smart plugs now.
   question, not after it: pressed while the tool looked for devices, "You
   pressed Ctrl-C" came only once a device was chosen and a key pressed, at the
   end of the first stage.
+- A stage that shows notes keeps one line: its spinner turns on the line above
+  them. It was drawn again, turning, under the last note, so the stage showed
+  twice until it ended - unless the notes fill the window, where the line above
+  is out of reach.
 - The countdown after Ctrl-C counts down in an 80-column window too: its words fit
   one row ("Carrying on to the next stage in 20 s, or press Enter now"). On two,
   only the second was redrawn, and "in 20 s" stood still above it.
