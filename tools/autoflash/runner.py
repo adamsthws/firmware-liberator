@@ -424,12 +424,13 @@ def bring_up_to_date(ctx: Context) -> bool:
 WHAT_TO_EXPECT_WIDTH = 76
 
 
-def say_what_to_expect(opening: str) -> None:
-    """Above a run's first stage: `opening`, how long it takes, then what the
-    run's stages are like and what to leave alone meanwhile - the same for a
-    conversion and a readout (cli.cmd_readout)."""
+def say_what_to_expect(run: str) -> None:
+    """Above a run's first stage: how long `run` - "conversion", "readout"
+    (cli.cmd_readout) - takes, what its stages are like and what to leave
+    alone meanwhile."""
     output.tell("")
-    for row in textwrap.wrap(f"{opening} Some stages take a minute or two with little to see - that's "
+    for row in textwrap.wrap(f"A {run} usually takes under 10 minutes. Some stages take a minute or two "
+                             "with little to see - that's "
                              "normal. Keep the device powered, and this computer on, until the last stage "
                              "says complete.", WHAT_TO_EXPECT_WIDTH):
         output.tell(row)
@@ -439,7 +440,7 @@ def say_what_to_expect(opening: str) -> None:
 def run_steps(ctx: Context) -> int:
     started = time.monotonic()
     safety_locks.restore_left_locks(ROOT)  # a resumed run skips A5, which looks too
-    say_what_to_expect("A conversion usually takes under 10 minutes, and an update less.")
+    say_what_to_expect("conversion")
     try:
         if ctx.state.input("device_mac"):
             runs.hold_device(ctx, ctx.state.input("device_mac"))  # a run carried on: its device is known

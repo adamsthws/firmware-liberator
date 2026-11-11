@@ -71,23 +71,23 @@ class ConfirmSkipTests(unittest.TestCase):
 
 class WhatToExpectTests(unittest.TestCase):
     """Above a run's first stage, a conversion's or a readout's: one note,
-    its opening the only difference."""
+    the kind of run the only difference."""
 
-    def said(self, opening):
+    def said(self, run):
         rows = []
         with mock.patch.object(runner.output, "tell", side_effect=lambda text="": rows.append(text)):
-            runner.say_what_to_expect(opening)
+            runner.say_what_to_expect(run)
         return rows
 
     def test_the_same_note_for_a_conversion_and_a_readout(self):
-        conversion = self.said("A conversion usually takes under 10 minutes, and an update less.")
-        readout = self.said("A readout usually takes under 10 minutes.")
+        conversion, readout = self.said("conversion"), self.said("readout")
+        self.assertTrue(" ".join(conversion).strip().startswith("A conversion usually takes under 10 minutes. "))
         for rows in (conversion, readout):
             self.assertEqual((rows[0], rows[-1]), ("", ""))   # a blank row above and below
             self.assertTrue(" ".join(rows).strip().endswith("until the last stage says complete."))
             # Fits an 80-column window with the margin, unwrapped by it.
             self.assertLessEqual(max(len(row) for row in rows), 80 - len(runner.output.MARGIN))
-        self.assertEqual(" ".join(conversion).split(" less. ", 1)[1], " ".join(readout).split(" minutes. ", 1)[1])
+        self.assertEqual(" ".join(conversion).split(" minutes. ", 1)[1], " ".join(readout).split(" minutes. ", 1)[1])
 
 
 class RunStepsTests(unittest.TestCase):
