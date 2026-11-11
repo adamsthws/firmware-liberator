@@ -30,6 +30,15 @@ class DeviceLayoutTests(unittest.TestCase):
         patch.start()
         self.addCleanup(patch.stop)
 
+    def test_each_device_converted_here_is_numbered_once_in_turn_with_no_cap(self):
+        self.assertEqual(records.number_conversion("12:34:56:ab:cd:01"), 1)
+        self.assertEqual(records.number_conversion("12:34:56:ab:cd:02"), 2)
+        self.assertEqual(records.number_conversion("12:34:56:ab:cd:01"), 1, "converted again: the same")
+        records.remember_device("12:34:56:ab:cd:03", model="S60TPF")   # seen, never converted
+        records.remember_device("12:34:56:ab:cd:04", **{records.CONVERTED_NUMBER: 57})
+        self.assertEqual(records.number_conversion("12:34:56:ab:cd:03"), 58)
+        self.assertEqual(records.read_device("12:34:56:ab:cd:03")["model"], "S60TPF", "the rest of its record kept")
+
     def test_a_mac_names_a_folder_windows_can_hold(self):
         self.assertEqual(self.records.folder_name("AA:BB:CC:DD:EE:0F"), "aa-bb-cc-dd-ee-0f")
         self.assertEqual(self.records.folder_name("aa-bb-cc-dd-ee-0f"), "aa-bb-cc-dd-ee-0f")

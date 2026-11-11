@@ -11,7 +11,7 @@
       "python": {"version": "3.12.4", "source": "venv"}, "seconds": 512, "resumed": false,
       "stages": {"A1": {"s": 12, "busy": 0, "tries": 1}, "D4": {"s": 61, "busy": 43, "tries": 2}},
       "signal": -61, "wifi_typed": false, "setup_network": true, "power_cycled": null,
-      "checks": "passed", "meter": "carried"
+      "checks": "passed", "meter": "carried", "nth_device": 1
     },
     {
       "format": 1, "id": "fedcba9876543210fedcba9876543210", "proof": "1794000000:2293", "tag": "dev",
@@ -22,7 +22,7 @@
       "os": {"family": "windows", "version": "11 (build 10.0.22631)"},
       "python": {"version": "unknown", "source": "other"}, "seconds": 0, "resumed": true, "stages": {},
       "signal": null, "wifi_typed": null, "setup_network": null, "power_cycled": null,
-      "checks": "not-run", "meter": null
+      "checks": "not-run", "meter": null, "nth_device": null
     },
     {
       "format": 1, "id": "cccccccccccccccccccccccccccccccc", "proof": "1794000000:41", "tag": "user",
@@ -35,7 +35,7 @@
       "python": {"version": "3.12.4", "source": "portable"}, "seconds": 200, "resumed": false,
       "stages": {"A1": {"s": 12, "busy": 0, "tries": 1}},
       "signal": -58, "wifi_typed": false, "setup_network": false, "power_cycled": null,
-      "checks": "not-run", "meter": null
+      "checks": "not-run", "meter": null, "nth_device": null
     }
   ],
   "invalid": [
@@ -59,6 +59,9 @@
     {"why": "a nested key the schema does not name", "set": {"os.hostname": "kitchen-pc"}},
     {"why": "an OS version with a character outside the list", "set": {"os.version": "Ubuntu <b>"}},
     {"why": "a tool version that is not x.y.z", "set": {"tool": "3.0"}},
-    {"why": "a proof not shaped as one", "set": {"proof": "1794000000:198:1"}}
+    {"why": "a proof not shaped as one", "set": {"proof": "1794000000:198:1"}},
+    {"why": "a device numbered 0 on its computer", "set": {"nth_device": 0}},
+    {"why": "a device numbered past any computer's", "set": {"nth_device": 1000001}},
+    {"why": "a device's number as words", "set": {"nth_device": "3"}}
   ]
 }

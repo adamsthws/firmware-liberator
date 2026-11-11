@@ -178,6 +178,43 @@ test("a run the person stopped is no failure: counted apart, with the stages peo
   assert.deepEqual(cancellations, [{ step: "C3", runs: 5 }, { step: "D1", runs: 5 }], "by stage, however stopped");
 });
 
+test("computers by how many devices each converted, from each device's number on its computer", async () => {
+  const bindings = env();
+  // Seven computers converted one device or more, six two or more, five three: 1, 1, 5 exactly.
+  const numbers = [...Array(7).fill(1), ...Array(6).fill(2), ...Array(5).fill(3)];
+  for (const [n, place] of numbers.entries()) {
+    await kept(bindings.DB, "2026-11-05", { device_hash: `device-${n}`, nth_device: place });
+  }
+  await kept(bindings.DB, "2026-11-05", { device_hash: "tested", tag: "dev", nth_device: 1 });   // the maintainer's
+  await night.nightly(bindings, NIGHT);
+  const { perComputer } = figures(bindings);
+  assert.deepEqual(perComputer, { computers: 7, rows: [{ devices: 3, computers: 5 }] }, "under five left out");
+});
+
+test("a computer whose earlier conversions sent no report counts at every number below its own", async () => {
+  // --no-report for its first nineteen: its twentieth still says it converted twenty.
+  const bindings = env();
+  for (let n = 0; n < 5; n += 1) {
+    await kept(bindings.DB, "2026-11-05", { device_hash: `heavy-${n}`, nth_device: 20 });
+  }
+  await night.nightly(bindings, NIGHT);
+  assert.deepEqual(figures(bindings).perComputer, { computers: 5, rows: [{ devices: 20, computers: 5 }] });
+});
+
+test("with reports missing, the computers counted are never more than there are", async () => {
+  // Five converted one device each, five twenty with only the twentieth reported: no
+  // report ties a device to its computer, so the first devices may be the heavy ones'.
+  const bindings = env();
+  for (let n = 0; n < 5; n += 1) {
+    await kept(bindings.DB, "2026-11-05", { device_hash: `heavy-${n}`, nth_device: 20 });
+    await kept(bindings.DB, "2026-11-05", { device_hash: `one-${n}`, nth_device: 1 });
+  }
+  await night.nightly(bindings, NIGHT);
+  const { perComputer } = figures(bindings);
+  assert.ok(perComputer.computers >= 5 && perComputer.computers <= 10, perComputer.computers);
+  assert.deepEqual(perComputer.rows, [{ devices: 20, computers: 5 }]);
+});
+
 test("the devices wanted: /wanted's questions and the runs stopped for want of support", async () => {
   const bindings = env();
   const ask = bindings.DB.db.prepare("INSERT INTO wanted_days (day, model, asked) VALUES (?, ?, ?)");
