@@ -44,5 +44,7 @@ RUN python3 -m venv /opt/venv
 COPY container/ /opt/autoflash-emu/
 RUN chmod 0755 /opt/autoflash-emu/bin/* /opt/autoflash-emu/entrypoint.sh /opt/autoflash-emu/udhcpc.script \
     && ln -s /opt/autoflash-emu/bin/* /usr/local/bin/
-ENV PATH=/opt/venv/bin:$PATH
+# A UTF-8 locale: without one the tmux client takes the terminal for ASCII
+# and draws every other character as _, the tool's spinner among them.
+ENV PATH=/opt/venv/bin:$PATH LANG=C.UTF-8
 ENTRYPOINT ["/opt/autoflash-emu/entrypoint.sh"]
