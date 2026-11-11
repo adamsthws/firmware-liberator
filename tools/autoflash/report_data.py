@@ -17,7 +17,7 @@ import platform
 import re
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import __version__, failures, hostsys, interrupt, kinds, records, routes, runs
+from tools.autoflash import __version__, failures, hostsys, interrupt, kinds, openbeken, records, routes, runs
 from tools.autoflash import report
 from tools.ewelink.firmware_name import A_NAME
 from tools.ewelink.get_device_key import API
@@ -68,11 +68,12 @@ PYTHON_WORDS = (*PYTHON_SOURCES.values(), "other")
 # their Relay answer starts: anything else was not run or could not be.
 CHECKS = ("passed", "failed", "not-run")
 # How the run left the meter's calibration, from what its steps found:
-# Sonoff's own, Tasmota carrying
-# Sonoff's over (with its factory figures or not), skipped, ESPHome's
-# Calibration sensor's source, or not checked.
+# Sonoff's own, Tasmota carrying Sonoff's over (with its factory figures or
+# not), skipped, ESPHome's Calibration sensor's source, OpenBeken's driver's
+# (openbeken.calibration_state: Sonoff's store, or changed since), or not
+# checked.
 METER_WORDS = ("sonoff", "carried", "carried-factory", "skipped", "stock-nvs", "from-backup", "missing",
-               "reported", "not-checked")
+               "stock-store", "changed", "reported", "not-checked")
 # How a device's readout ended (readout.Became), as its report says it: the
 # website took it; it was kept unsent; the website had readouts like it, or
 # could take no more; the device runs another firmware now; it was passed by
@@ -135,7 +136,9 @@ def meter_word(captures: dict[str, Any], firmware: str | None) -> str:
     said = found.get("calibration") if isinstance(found, dict) else found
     if isinstance(said, str) and said:
         return next((word for start, word in (("stock NVS", "stock-nvs"), ("from backup", "from-backup"),
-                                              ("missing", "missing")) if said.startswith(start)), "reported")
+                                              ("missing", "missing"), ("stock store", "stock-store"),
+                                              (openbeken.CALIBRATION_CHANGED, "changed"))
+                     if said.startswith(start)), "reported")
     return "not-checked"
 
 
