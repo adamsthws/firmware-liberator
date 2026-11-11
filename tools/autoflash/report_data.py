@@ -25,8 +25,11 @@ if TYPE_CHECKING:
 FORMAT = 1
 DEVICE_PREFIX = "firmware-liberator device:"
 # "put-back": the run ended with the device on the firmware it came from
-# (report.run_result's "put back on ...").
-RESULTS = ("converted", "updated", "put-back", "failed", "crashed")
+# (report.run_result's "put back on ..."); "cancelled": the person stopped it.
+RESULTS = ("converted", "updated", "put-back", "failed", "crashed", "cancelled")
+# How the person stopped a cancelled run, sent as its stopped "error": q at a
+# question, Ctrl-C (at once, or confirmed at a stage's end), or its window closed.
+STOPPED_BY = ("quit", "ctrl-c", "window-closed")
 OS_FAMILIES = ("windows", "macos", "linux")
 # Where the Python came from, by report.python_description's word for it;
 # "other" for one it has since learnt.
@@ -128,7 +131,8 @@ def stages(ctx: Context) -> dict[str, dict[str, int]]:
 def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending: str,
             hardware: dict[str, str] | None = None) -> dict[str, Any]:
     """The run's report as the API takes it, but its proof. `ending`:
-    "converted", "failed" or "crashed"."""
+    "converted", "failed", "crashed" or "cancelled" (how: ctx.stopped_by,
+    one of STOPPED_BY)."""
     state = ctx.state
     kind = kinds.by_key(state.input("device_kind"))
     firmware = routes.recorded_firmware(state)
@@ -144,6 +148,10 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
     if ending == "converted":
         result = "put-back" if put_back else "updated" if source == "outdated" else "converted"
         stopped = None
+    elif ending == "cancelled":
+        # Where people stop, and how: no words, as nothing went wrong.
+        result = ending
+        stopped = {"step": stopped_step(ctx), "error": getattr(ctx, "stopped_by", None) or "quit", "text": ""}
     else:
         reason = ctx.last_failure or ""
         text = plain(reason)

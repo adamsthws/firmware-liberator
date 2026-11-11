@@ -141,7 +141,9 @@ export function writes(db, report, hash, day, held = null) {
   if (held !== null) {
     return [...statements, db.prepare(HOLD).bind(report.id, day, held)];
   }
-  if (hash !== null) {
+  // A run the person stopped makes no device's record: those count the runs
+  // that ran to an end (how many to convert one, how its first ended).
+  if (hash !== null && report.result !== "cancelled") {
     // A conversion is to another firmware than Sonoff's; back to Sonoff's is counted apart.
     const converted = report.result === "converted" && report.firmware !== "sonoff";
     const backToSonoff = report.result === "converted" && report.firmware === "sonoff";

@@ -75,3 +75,15 @@ test("the list says where it is from, under which licence", () => {
   const notices = readFileSync(new URL("../../NOTICES.md", import.meta.url), "utf8");
   assert.ok(notices.includes(WORDS.source), "credited in NOTICES.md");
 });
+
+test("a run the person stopped is taken only as the tool writes one", () => {
+  const stopped = (result, error, text = "") => ({ ...structuredClone(FIXTURES.valid[0]), result,
+    stopped: { step: "D1", error, text } });
+  for (const how of SCHEMA.stoppedBy) {
+    assert.equal(heldFor(stopped("cancelled", how)), null, how);
+  }
+  const held = "a stopped run not as the tool writes one";
+  assert.equal(heldFor(stopped("cancelled", "quit", "I was worried")), held, "with words");
+  assert.equal(heldFor(stopped("cancelled", "device-lost")), held, "a failure's class");
+  assert.equal(heldFor(stopped("failed", "quit")), held, "a way of stopping on a failure");
+});

@@ -13,7 +13,8 @@
 // - A run's success is a conversion, over conversions, failures and crashes:
 //   one the person declined, with nothing to do, or that met a device the tool
 //   does not convert yet (counted as "unsupported", and in "wanted"), counts
-//   apart; the device figures are of devices the tool converts.
+//   apart, as does one the person stopped ("cancelled", with the stages
+//   people stop at); the device figures are of devices the tool converts.
 import { LATEST_MIGRATION } from "./database.js";
 
 export const FORMAT = 1;
@@ -40,7 +41,8 @@ const OUTCOMES = `sum(n) AS runs,
   sum(CASE WHEN result = 'failed' AND error IN ('declined', 'nothing-to-do') THEN n ELSE 0 END) AS declined,
   sum(CASE WHEN result = 'failed' AND error = 'unsupported-device' THEN n ELSE 0 END) AS unsupported,
   sum(CASE WHEN result = 'updated' THEN n ELSE 0 END) AS updated,
-  sum(CASE WHEN result = 'put-back' THEN n ELSE 0 END) AS put_back`;
+  sum(CASE WHEN result = 'put-back' THEN n ELSE 0 END) AS put_back,
+  sum(CASE WHEN result = 'cancelled' THEN n ELSE 0 END) AS cancelled`;
 
 const success = (row) => rate(row.converted, row.converted + row.failed + row.crashed);
 
@@ -48,7 +50,7 @@ function outcomes(row) {
   return {
     runs: count(row.runs), converted: count(row.converted), failed: count(row.failed), crashed: count(row.crashed),
     declined: count(row.declined), unsupported: count(row.unsupported), updated: count(row.updated),
-    putBack: count(row.put_back), success: success(row),
+    putBack: count(row.put_back), cancelled: count(row.cancelled), success: success(row),
   };
 }
 
@@ -81,6 +83,10 @@ export async function snapshot(db, now = new Date()) {
   const failures = await all(`SELECT step, error, sum(n) AS runs FROM monthly_totals
     WHERE tag = 'user' AND result IN ('failed', 'crashed') AND error NOT IN ${NOT_FAILURES}
     GROUP BY step, error HAVING sum(n) >= ? ORDER BY runs DESC, step, error`, SMALLEST);
+  // The stages people stop a run at, whichever way they stopped it.
+  const cancellations = await all(`SELECT step, sum(n) AS runs FROM monthly_totals
+    WHERE tag = 'user' AND result = 'cancelled'
+    GROUP BY step HAVING sum(n) >= ? ORDER BY runs DESC, step`, SMALLEST);
   const unsupported = new Map((await all(`SELECT model, sum(n) AS n FROM monthly_totals
     WHERE tag = 'user' AND error = 'unsupported-device' AND ${VOUCHED} GROUP BY model`))
     .map((row) => [row.model, row.n]));
@@ -122,6 +128,7 @@ export async function snapshot(db, now = new Date()) {
     routes: routes.map((row) => ({ from: row.source, firmware: row.firmware, ...outcomes(row) })),
     tools: tools.map((row) => ({ tool: row.tool, ...outcomes(row) })),
     failures: failures.map((row) => ({ step: row.step || null, error: row.error, runs: row.runs })),
+    cancellations: cancellations.map((row) => ({ step: row.step || null, runs: row.runs })),
     stock: stock.map((row) => ({ model: row.model, stock: row.stock, runs: row.runs, converted: count(row.converted),
       success: rate(row.converted, row.runs) })),
     computers: computers.map((row) => ({ os: row.os_family, python: row.python_source, runs: row.runs })),

@@ -534,6 +534,7 @@ def run_steps(ctx: Context) -> int:
             redone.update(name for name, _, _ in routes.STEPS[index:here])
             continue
         if code == 0 and stop_here_after_ctrl_c(step):
+            ctx.stopped_by = "ctrl-c"   # for its report (cli.stopped_by)
             firewall.close_firewall_rules(ctx)
             return 130
         if code == 0 and step == routes.FAMILY.POINT_OF_NO_RETURN and ctx.research_bridge:

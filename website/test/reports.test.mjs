@@ -168,6 +168,19 @@ test("a device's record follows it across days, back to Sonoff's firmware too", 
     runs_to_convert: 1, conversions: 2, back_to_sonoff: 1, firmware: "esphome", dev: 1 });
 });
 
+test("a run the person stopped is kept, but makes no device's record", async () => {
+  // Those count the runs that ran to an end: how many to convert one, how its first ended.
+  const bindings = env();
+  const hash = hashOf(6);
+  await send(bindings, [report({ device_hash: hash, result: "cancelled", stopped: { step: "D1", error: "quit", text: "" } })]);
+  assert.deepEqual(rows(bindings, "SELECT result, step, error, text FROM reports"),
+    [{ result: "cancelled", step: "D1", error: "quit", text: "" }]);
+  assert.equal(rows(bindings, "SELECT * FROM devices").length, 0);
+  await send(bindings, [report({ device_hash: hash })]);
+  const [record] = rows(bindings, "SELECT first_result, runs, runs_to_convert FROM devices");
+  assert.deepEqual(record, { first_result: "converted", runs: 1, runs_to_convert: 1 });
+});
+
 test("a report with no device is kept, with no device record", async () => {
   const bindings = env();
   await send(bindings, [report({ device_hash: null })]);

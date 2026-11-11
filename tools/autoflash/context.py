@@ -134,6 +134,8 @@ class Context:
         # A converted device's firmware, chosen at A3 (routes.settle_route).
         self.firmware_choice: routes.FirmwareChoice | None = None
         self.last_failure = ""  # what the last stage to fail said, for the report
+        # How the person stopped the run, for its report (report_data.STOPPED_BY).
+        self.stopped_by: str | None = None
         # The run's report to the project's API (report_upload.py): its id and
         # the process making its proof of work, once begun.
         self.report_id: str | None = None
