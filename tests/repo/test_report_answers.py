@@ -35,12 +35,11 @@ FIELDS = [
      + ("the device did not answer in time " * 8)[:240].rstrip()),
     ("Firmware", longest(routes.FIRMWARES.values())),
     ("From", report.answer(f"{longest(routes.FIRMWARES.values())}, {report.CONVERTED_FROM['outdated']}")),
-    ("Tool", "12.34.56"),
+    ("Liberator", "12.34.56"),
     ("Model", longest(kind.name for kind in kinds.EVERY)),
-    ("Stock", "1.12.345"),
     ("Backup", longest(text for _, text in records.BACKUP_OUTCOMES.values())),
     ("Identity", report.answer(longest(report.SONOFF_IDENTITY.values()))),
-    ("Computer", "Ubuntu 24.04.5 LTS (Windows Subsystem for Linux)"),
+    ("OS", "Ubuntu 24.04.5 LTS (Windows Subsystem for Linux)"),
     ("Python", "3.13.11 (start.sh's)"),
     ("Time", "1h 12m 34s (resumed)"),
     ("Retries", "4 (2 retries), 12 (1 retry)"),
@@ -50,7 +49,6 @@ FIELDS = [
     ("Power cycled", "False"),   # a Beken device's, in place of the two above
     ("Checks", "Not run"),
     ("Meter", "Not retained"),
-    ("Emulator", "Yes"),
 ]
 # What the suites read: the answer, by the pattern each reads it with.
 READ = {

@@ -39,7 +39,18 @@ class EndingTests(RouteTestCase):
         never = self.ctx(stock_version="")
         self.assertEqual(dict(report.report_fields(never, 300, False))["From"], "__")
         self.assertEqual(dict(report.report_fields(self.ctx(run="found", source="sonoff"), 300, False))
-                         ["From"], "Sonoff")
+                         ["From"], "Sonoff 1.2.0")
+
+    def test_from_sonoff_gives_its_version_and_from_another_firmware_none(self):
+        # A converted device's record keeps its backup's Sonoff version: not
+        # what it ran, so not given with Tasmota's name.
+        fields = dict(report.report_fields(self.ctx(run="from-sonoff", source="sonoff", stock_version=""),
+                                           300, False))
+        self.assertEqual(fields["From"], "Sonoff")   # stopped before it was read: not asked for
+        fields = dict(report.report_fields(self.ctx(run="from-tasmota", source="tasmota", firmware="esphome"),
+                                           300, False))
+        self.assertEqual(fields["From"], "Tasmota")
+        self.assertNotIn("Stock", fields)
 
     def test_a_run_back_to_sonoff_says_where_the_identity_came_from(self):
         for taken, said in (("backup", "Backup"), ("kept", "Device"),
@@ -109,16 +120,16 @@ class EndingTests(RouteTestCase):
     def test_on_the_screen_the_device_is_on_the_right_the_run_on_the_left(self):
         # Half the rows of one column; the answers a fault suite reads off the
         # screen - the device's - each the last on its row.
-        fields = [("Result", "Converted"), ("Firmware", "Tasmota"), ("Tool", "2.4.0"), ("Backup", "Completed"),
-                  ("Computer", "Ubuntu 24.04.5 LTS"), ("Checks", "True")]
+        fields = [("Result", "Converted"), ("Firmware", "Tasmota"), ("Liberator", "2.4.0"), ("Backup", "Completed"),
+                  ("OS", "Ubuntu 24.04.5 LTS"), ("Checks", "True")]
         rows = report.report_screen(fields, columns=100)
         self.assertEqual(rows[0].split(), ["Result:", "Converted"])
-        self.assertEqual(rows[1].split(), ["Tool:", "2.4.0", "Firmware:", "Tasmota"])
+        self.assertEqual(rows[1].split(), ["Liberator:", "2.4.0", "Firmware:", "Tasmota"])
         self.assertTrue(rows[2].rstrip().endswith("Backup:   Completed"), rows)
         self.assertEqual(len(rows), 4)
 
     def test_a_long_answer_wraps_within_its_column_under_itself(self):
-        fields = [("Result", "Converted"), ("Tool", "2.4.0"),
+        fields = [("Result", "Converted"), ("Liberator", "2.4.0"),
                   ("Firmware", "Tasmota with a long name that takes more than one line of its column")]
         rows = report.report_screen(fields, columns=100)
         side = (100 - 4 - 3 - 2) // 2
@@ -128,9 +139,9 @@ class EndingTests(RouteTestCase):
         self.assertEqual(right[1:], [" " * 10 + "more than one line of its column"])
 
     def test_a_window_too_narrow_for_two_has_one_column(self):
-        fields = [("Result", "Converted"), ("Firmware", "Tasmota"), ("Tool", "2.4.0")]
+        fields = [("Result", "Converted"), ("Firmware", "Tasmota"), ("Liberator", "2.4.0")]
         self.assertEqual([row.split()[0] for row in report.report_screen(fields, columns=60)],
-                         ["Result:", "Firmware:", "Tool:"])
+                         ["Result:", "Firmware:", "Liberator:"])
 
     def test_the_hardware_check_switches_through_esphome(self):
         relay = {"on": True}
@@ -177,13 +188,13 @@ class EndingTests(RouteTestCase):
 class ReportColumnTests(unittest.TestCase):
     def test_the_columns_end_together(self):
         # Seen on an S61: its device answers ran two rows below this computer's.
-        fields = [("Result", "Converted"), ("Tool", "2.4.0"), ("Firmware", "OpenBeken"), ("Computer", "Ubuntu"),
-                  ("From", "Sonoff"), ("Python", "3.12"), ("Model", "S61STPF"), ("Time", "1m 19s"),
-                  ("Stock", "1.0.2"), ("Retries", "None"), ("Backup", "Completed"), ("Power cycled", "False"),
+        fields = [("Result", "Converted"), ("Liberator", "2.4.0"), ("Firmware", "OpenBeken"), ("OS", "Ubuntu"),
+                  ("From", "Sonoff 1.0.2"), ("Python", "3.12"), ("Model", "S61STPF"), ("Time", "1m 19s"),
+                  ("Retries", "None"), ("Backup", "Completed"),
                   ("Signal", "-45 dBm"), ("Checks", "True"), ("Meter", "Not checked")]
         rows = report.report_screen(fields, columns=100)
         body = rows[1:]   # under the result
-        self.assertEqual(len(body), 7, "\n".join(rows))
+        self.assertEqual(len(body), 6, "\n".join(rows))
         meter = next(row for row in rows if "Meter:" in row)
         self.assertLess(meter.index("Meter:"), 20)   # on the left now
         checks = next(row for row in rows if "Checks:" in row)

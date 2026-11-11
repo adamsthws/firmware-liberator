@@ -126,11 +126,13 @@ CONVERTED_FROM = {"sonoff": "Sonoff", "tasmota": "Tasmota", "esphome": "ESPHome"
                   "outdated": "earlier release"}   # of the run's firmware, named before it
 
 
-def converted_from(ctx: Context, firmware: str | None) -> str:
+def converted_from(ctx: Context, firmware: str | None, stock_version: str = "") -> str:
     """What the device ran at the run's start, for its report: "__", to fill in,
     for a run that stopped before it found that out (the device not on the
     network at all) - not Sonoff's, which runs.run_source takes when none is
-    recorded, for a run of 1.x."""
+    recorded, for a run of 1.x.  Sonoff's firmware with its version
+    (`stock_version`), where the run learned it; another's without, as the
+    version a converted device's record keeps is its backup's, not what it ran."""
     if ctx.state.input("replaced_build"):
         return "its own build"
     source = (ctx.state.input("put_back") or {}).get("came_from") or runs.run_source(ctx.state)
@@ -138,6 +140,8 @@ def converted_from(ctx: Context, firmware: str | None) -> str:
              or any(map(ctx.state.is_done, ctx.state.data.get("steps", {}))))
     if not found:
         return "__"
+    if source == "sonoff":
+        return f"{CONVERTED_FROM[source]} {stock_version}".rstrip()
     return (f"{routes.FIRMWARES[firmware]}, " if source == "outdated" and firmware else "") + CONVERTED_FROM[source]
 
 
@@ -181,10 +185,9 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
     fields = [
         ("Result", result),
         ("Firmware", routes.FIRMWARES[firmware] if firmware else "not chosen"),
-        ("From", converted_from(ctx, firmware)),
-        ("Tool", __version__),
+        ("From", converted_from(ctx, firmware, stock_version)),
+        ("Liberator", __version__),
         ("Model", model or "__"),
-        ("Stock", stock_version or "__"),
         # How it went, never where it is or which device: the path holds the MAC.
         # A run from a converted device takes none: one is there or not.
         ("Backup", records.BACKUP_OUTCOMES[ctx.state.input("backup_outcome")
@@ -193,7 +196,7 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
         # only on such a run (sonoff.step_sonoff_restore).
         *([("Identity", SONOFF_IDENTITY.get(captures.get("R1.identity"), "not read"))]
           if espressif and firmware == "sonoff" else []),
-        ("Computer", computer_description()),
+        ("OS", computer_description()),
         ("Python", python_description()),
         ("Time", took),
         # Each stage's time and how long it kept the device busy are not shown:
@@ -213,8 +216,6 @@ def report_fields(ctx: Context, seconds: float, resumed: bool,
         # firmware had them.
         *([("Meter", meter_calibration(captures, firmware))] if kind.has_meter and firmware else []),
     ]
-    if os.environ.get("AUTOFLASH_EMULATOR_URL"):
-        fields.append(("Emulator", "yes"))
     return [(label, answer(value)) for label, value in fields]
 
 
@@ -273,7 +274,7 @@ def report_markdown(fields: list[tuple[str, str]]) -> str:
 # fault suite reads off the screen are on the right or across it, each the last
 # on its row (tools/espressif/emulator/fault_suite.py).
 WIDE = ("Result",)
-RIGHT = ("Firmware", "From", "Model", "Stock", "Backup", "Identity", "Signal", "Checks", "Meter")
+RIGHT = ("Firmware", "From", "Model", "Backup", "Identity", "Signal", "Checks", "Meter")
 # Those of RIGHT a fault suite reads, which stay there, last on their rows.
 SUITES_READ = ("From", "Backup", "Identity", "Checks")
 # Columns each side needs at the least, else one column, as Markdown has it.

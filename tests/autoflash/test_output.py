@@ -1193,14 +1193,15 @@ class ReportTests(OutputTestCase):
         self.assertEqual(fields["Result"], "Converted")
         self.assertEqual(fields["Model"], "S60TPG")
         self.assertNotIn("Device type / region", fields)  # the model says it
-        self.assertEqual(fields["Stock"], "1.2.0")
-        self.assertNotIn("Python", fields["Computer"])
+        self.assertEqual(fields["From"], "Sonoff 1.2.0")
+        self.assertNotIn("Stock", fields)
+        self.assertNotIn("Python", fields["OS"])
         self.assertRegex(fields["Python"], r"^3\.\d+\.\d+ \(")
         self.assertEqual(fields["Time"], "7m 21s")
         self.assertEqual(fields["Wi-Fi typed"], "No")
         self.assertEqual(fields["Setup network"], "No")
 
-    def test_a_run_from_a_converted_device_takes_the_model_and_stock_firmware_from_its_record(self):
+    def test_a_run_from_a_converted_device_takes_the_model_from_its_record(self):
         # Back to Sonoff from OpenBeken: neither Sonoff's firmware nor
         # eWeLink was asked, but the device's record has both.
         ctx = self.ctx(device_kind="sonoff-s61", product_model="", stock_version="", firmware="sonoff",
@@ -1209,10 +1210,10 @@ class ReportTests(OutputTestCase):
             fields = dict(report.report_fields(ctx, 441, False))
         read.assert_called_with("12:34:56:ab:cd:ef")
         self.assertEqual(fields["Model"], "S61STPF")
-        self.assertEqual(fields["Stock"], "1.3.0")
+        self.assertEqual(fields["From"], "OpenBeken")
         with mock.patch.object(records, "read_device", return_value={}):
             fields = dict(report.report_fields(ctx, 441, False))
-        self.assertEqual((fields["Model"], fields["Stock"]), ("Sonoff S61", "__"))
+        self.assertEqual(fields["Model"], "Sonoff S61")
         # On Sonoff's route the kind is only a default until eWeLink has been asked.
         with mock.patch.object(records, "read_device", return_value={}):
             fields = dict(report.report_fields(self.ctx(device_kind="sonoff-s61", product_model="", stock_version="",
@@ -1222,7 +1223,7 @@ class ReportTests(OutputTestCase):
         with mock.patch.object(records, "read_device", return_value={"model": "S61STPF", "stock_version": "1.3.0"}):
             fields = dict(report.report_fields(self.ctx(device_kind="sonoff-s61", product_model="S61STPE",
                                                         stock_version="1.2.0", source="sonoff"), 441, False))
-        self.assertEqual((fields["Model"], fields["Stock"]), ("S61STPE", "1.2.0"))
+        self.assertEqual((fields["Model"], fields["From"]), ("S61STPE", "Sonoff 1.2.0"))
 
     def test_a_run_stopped_before_its_firmware_is_chosen_names_none(self):
         self.assertEqual(dict(report.report_fields(self.ctx(), 441, False))["Firmware"], "Not chosen")
