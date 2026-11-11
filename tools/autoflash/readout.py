@@ -176,44 +176,44 @@ class Became:
                    model=str((device.get("extra") or {}).get("model") or ""), **ended)
 
 
-def outcome_said(item: Became) -> str:
-    """How a device's readout ended, as the report on the screen says it."""
-    detail = f" ({item.detail})" if item.detail else ""
-    return {ACCEPTED: f"accepted, reference {item.detail}" if item.detail else "accepted",
-            KEPT: f"kept, not sent{detail}",
-            UNNEEDED: "not needed: one like it is in already",
-            WEBSITE_FULL: "not read out: the website could take no more for now",
-            CONVERTED_SINCE: f"not read out: it runs {item.detail or 'another firmware'} now",
-            SKIPPED: "skipped",
-            NOT_READ: f"not read out{detail}",
-            CANCELLED: f"stopped{detail}",
-            FAILED: f"failed{detail}",
-            CRASHED: f"crashed{detail}"}[item.outcome]
+# Each outcome as the report on the screen says it (report_fields), in this order.
+SAID = {ACCEPTED: "Accepted", UNNEEDED: "Not needed", KEPT: "Kept, not sent", WEBSITE_FULL: "Website full",
+        CONVERTED_SINCE: "Converted since", SKIPPED: "Skipped", NOT_READ: "Not read out", CANCELLED: "Stopped",
+        FAILED: "Failed", CRASHED: "Crashed"}
+# The report's right-hand column, and the rows under it, each the window's
+# width to list devices in (report.report_screen).
+REPORT_RIGHT = ("Devices",)
+REPORT_BELOW = ("Device", *SAID.values())
 
 
-# The report's right-hand column, the devices' (report.report_screen).
-REPORT_RIGHT = ("Devices", "Accepted", "Not needed", "Device", *(f"Device {number}" for number in range(1, 100)))
+def named(item: Became) -> str:
+    """A device as the report on the screen names it: its model and firmware
+    version alone, kept together on a row (no-break spaces)."""
+    return "\u00a0".join(part for part in (item.product or item.model or "unknown", item.version) if part)
 
 
 def report_fields(done: list[Became], seconds: float) -> list[tuple[str, str]]:
-    """The readout's report for the screen, as (label, value): one for every
-    device read out in the sitting, how many the website accepted and how
-    many it did not need, then each device named as the account names it,
-    with its reference."""
+    """The readout's report for the screen, as (label, value), as short as it
+    can be: one device named by its model and firmware version; several,
+    under how each ended - each model and version once, however many of it
+    were read out. What else became of each is in the log."""
+    alone = len(done) == 1
     fields = [
-        ("Result", "read out" if any(item.outcome in (ACCEPTED, KEPT) for item in done) else "nothing read out"),
+        ("Result", SAID[done[0].outcome] if alone else
+         "read out" if any(item.outcome in (ACCEPTED, KEPT) for item in done) else "nothing read out"),
         ("Liberator", __version__),
         ("OS", report.computer_description()),
         ("Python", report.python_description()),
         ("Time", output.elapsed(seconds)),
         ("Devices", str(len(done))),
-        ("Accepted", str(sum(item.outcome == ACCEPTED for item in done))),
-        ("Not needed", str(sum(item.outcome == UNNEEDED for item in done))),
     ]
-    for number, item in enumerate(done, 1):
-        read = {True: "its memory read, ", False: "what eWeLink says, ", None: ""}[item.whole]
-        fields.append(("Device" if len(done) == 1 else f"Device {number}",
-                       f"{item.name} {item.version}".rstrip() + f": {read}{outcome_said(item)}"))
+    if alone:
+        fields.append(("Device", named(done[0])))
+    else:
+        for outcome, label in SAID.items():
+            these = dict.fromkeys(named(item) for item in done if item.outcome == outcome)
+            if these:
+                fields.append((label, ", ".join(these)))
     return [(label, report.answer(value)) for label, value in fields]
 
 
@@ -231,7 +231,7 @@ def end(ctx: Context, said: str, seconds: float) -> None:
     output.tell("")
     output.show("How it went:", output.GREEN)
     output.tell("")
-    for line in report.report_screen(report_fields(done, seconds), right=REPORT_RIGHT):
+    for line in report.report_screen(report_fields(done, seconds), right=REPORT_RIGHT, below=REPORT_BELOW):
         output.tell(line)
     report.hold_out_hat()
 
@@ -770,6 +770,7 @@ def sent(ctx: Context, data: bytes, url: str, path: Path, back: bool) -> str:
     path.unlink(missing_ok=True)
     ended = became(ctx)
     ended.outcome, ended.detail = (UNNEEDED, "") if reference == ENOUGH else (ACCEPTED, reference)
+    output.log_only(f"    The readout: {ended.outcome}" + (f", reference {reference}." if ended.detail else "."))
     return "" if back else SWITCH_OFF_AND_ON
 
 
@@ -797,6 +798,8 @@ def sent_in_batch(ctx: Context, data: bytes, device: dict[str, Any], back: bool)
                         "readout --send.")
         else:
             ended.outcome, ended.detail = (UNNEEDED, "") if reference == ENOUGH else (ACCEPTED, reference)
+            output.log_only(f"    {ended.name}'s readout: {ended.outcome}"
+                            + (f", reference {reference}." if ended.detail else "."))
     if not back:
         todo.append(f"{ended.name}: {SWITCH_OFF_AND_ON[0].lower()}{SWITCH_OFF_AND_ON[1:]}")
     return "\n".join(todo)

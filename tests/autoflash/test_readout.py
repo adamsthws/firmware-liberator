@@ -460,7 +460,7 @@ class RunTests(unittest.TestCase):
             self.assertEqual(readout.run(self.ctx, s60, batch=readout.Batch(None)), "")
         wanted.assert_not_called()
         self.assertEqual([outcome for _, outcome, _ in ended(self.ctx)], [readout.CONVERTED_SINCE] * 2)
-        self.assertEqual(readout.outcome_said(readout.readouts(self.ctx)[0]), "not read out: it runs ESPHome now")
+        self.assertEqual(readout.readouts(self.ctx)[0].detail, "ESPHome")
 
     def test_each_wait_is_a_stage_of_its_own(self):
         # Seen in attended emulator runs: with no stage line, the window stayed
@@ -1187,17 +1187,39 @@ class ReportTests(unittest.TestCase):
                            readout.KEPT, "a test run"),
             readout.Became("'Porch' (NEWTHING)", "NEWTHING", "SN-NEW-01", "2.0.0", None, readout.UNNEEDED)]
 
-    def test_the_screen_names_each_device_and_how_it_ended(self):
-        fields = dict(readout.report_fields(self.DONE, 75.0))
-        self.assertEqual((fields["Result"], fields["Devices"], fields["Accepted"], fields["Not needed"]),
-                         ("Read out", "3", "1", "1"))
-        self.assertEqual(fields["Device 1"], "'Kitchen' (BASICR4) 1.1.0: its memory read, accepted, reference r-1")
-        self.assertEqual(fields["Device 2"], "'Hall light' (NEWTHING) 2.0.0: what eWeLink says, kept, not sent "
-                                             "(a test run)")
-        self.assertEqual(fields["Device 3"], "'Porch' (NEWTHING) 2.0.0: not needed: one like it is in already")
-        alone = dict(readout.report_fields(self.DONE[:1], 75.0))
-        self.assertIn("Device", alone)   # one device, not numbered
-        self.assertEqual(dict(readout.report_fields(self.DONE[2:], 1.0))["Result"], "Nothing read out")
+    def test_one_device_is_named_by_its_model_and_version_alone(self):
+        fields = dict(readout.report_fields(self.DONE[:1], 75.0))
+        self.assertEqual((fields["Result"], fields["Devices"], fields["Device"]),
+                         ("Accepted", "1", "BASICR4\u00a01.1.0"))
+        shown = "\n".join(f"{label}: {value}" for label, value in fields.items())
+        for left_out in ("Kitchen", "r-1", "memory"):   # its name in the account, its reference
+            self.assertNotIn(left_out, shown)
+
+    def test_several_are_listed_by_how_each_ended_each_model_and_version_once(self):
+        done = [*self.DONE,
+                readout.Became("'Garage' (BASICR4)", "BASICR4", "SN-ESP32C3-BASICR4-01", "1.1.0", True,
+                               readout.ACCEPTED, "r-2"),
+                readout.Became("'Shed' (BASICR4)", "BASICR4", "SN-ESP32C3-BASICR4-01", "1.2.0", True,
+                               readout.ACCEPTED, "r-3")]
+        fields = readout.report_fields(done, 75.0)
+        self.assertEqual(dict(fields)["Result"], "Read out")
+        self.assertEqual(dict(fields)["Devices"], "5")
+        self.assertEqual(fields[-3:], [("Accepted", "BASICR4\u00a01.1.0, BASICR4\u00a01.2.0"),
+                                       ("Not needed", "NEWTHING\u00a02.0.0"),
+                                       ("Kept, not sent", "NEWTHING\u00a02.0.0")])
+        self.assertEqual(dict(readout.report_fields(self.DONE[2:], 1.0))["Result"], "Not needed")
+
+    def test_the_lists_go_under_the_rest_wrapping_between_devices_alone(self):
+        many = [readout.Became(f"'D{n}'", f"MODEL{n}", "", "1.0.0", True, readout.ACCEPTED) for n in range(12)]
+        lines = report.report_screen(readout.report_fields(many, 75.0), columns=80, right=readout.REPORT_RIGHT,
+                                     below=readout.REPORT_BELOW)
+        at = next(index for index, line in enumerate(lines) if line.lstrip().startswith("Accepted:"))
+        self.assertTrue(all("Devices:" not in line for line in lines[at:]), "under the columns")
+        listed = " ".join(line.split(":", 1)[-1] for line in lines[at:])
+        self.assertEqual(listed.split(), " ".join(f"MODEL{n} 1.0.0," for n in range(12)).rstrip(",").split())
+        for line in lines[at:]:
+            self.assertLessEqual(len(line), 80)
+            self.assertRegex(line.rstrip(), r"(MODEL\d+ 1\.0\.0,?|Accepted:)$", "never inside a device's name")
 
     def test_it_ends_as_a_conversion_does(self):
         shown = []
@@ -1210,8 +1232,8 @@ class ReportTests(unittest.TestCase):
         order = [text.index(line) for line in ("Readout complete!", "Switch the device off and on once more.",
                                                "How it went:", "You've reached the bit where I hold out my hat!")]
         self.assertEqual(order, sorted(order))
-        self.assertTrue(any("Accepted:" in line for line in text))
-        self.assertTrue(any("Not needed:" in line for line in text))
+        self.assertTrue(any(line.lstrip().startswith("Accepted:") and "BASICR4 1.1.0" in line for line in text))
+        self.assertTrue(any(line.lstrip().startswith("Not needed:") for line in text))
         self.assertEqual(shown[-1][0][0], report.SPONSORS_URL)
         self.assertFalse([line for line in text if "Readout saved in" in line])
 
