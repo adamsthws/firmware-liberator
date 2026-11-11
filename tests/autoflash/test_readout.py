@@ -402,6 +402,8 @@ def start_run(test: unittest.TestCase) -> None:
     test.filed = filed.start()
     test.addCleanup(filed.stop)
     for patch in (mock.patch.object(readout, "locate", return_value="192.0.2.77"),
+                  # A first stage's look for its MAC alone: found nowhere, unless a test says.
+                  mock.patch.object(readout, "answering_at", return_value=None),
                   # On Sonoff's firmware, not a readout's reading program left on it.
                   mock.patch.object(readout_espressif.installer, "bridge_answers", return_value=False),
                   mock.patch.object(hostsys, "mac_of", return_value="12:34:56:ab:cd:ef"),
@@ -466,12 +468,45 @@ class RunTests(unittest.TestCase):
         with learned("FWSW-01-NEW-BK7238", "BK7238"), mock.patch.object(readout, "offer", return_value="done"):
             readout.run(self.ctx, DEVICE)
         self.assertEqual(self.stages, [
-            "2 Locating the device on your network", "skipped",   # one eWeLink alone describes
+            "2 Locating the device on your network", "complete",   # for its MAC: eWeLink's record has none
             "3 Probing the device", "complete",
             "4 Fetching the eWeLink firmware", "complete",
             "5 Reading the device's memory", "skipped",           # no reading program for its chip
             "6 Restoring Sonoff's firmware", "skipped",
             "7 Saving the readout", "complete"])
+
+    def test_a_first_stage_device_eWeLink_gives_no_mac_for_is_looked_for_never_asked_for(self):
+        # Its report names it by its MAC, so a readout and a later conversion
+        # of the device are known as one.
+        with learned("FWSW-01-NEW-BK7238", "BK7238"), mock.patch.object(readout, "offer", return_value="done"), \
+                mock.patch.object(readout, "answering_at", return_value="192.0.2.88") as looked, \
+                mock.patch.object(prompts, "ask_ipv4") as asked:
+            readout.run(self.ctx, DEVICE)
+        looked.assert_called_once_with(DEVICE)
+        asked.assert_not_called()
+        self.assertEqual(hostsys.mac_of.call_args.args, ("192.0.2.88",))
+        self.assertEqual(readout.readouts(self.ctx)[-1].mac, "12:34:56:ab:cd:ef")
+        self.assertIsNone(self.ctx.state.input("device_ip"), "its address is not the readout's")
+
+    def test_one_found_nowhere_is_read_out_all_the_same_with_no_mac(self):
+        with learned("FWSW-01-NEW-BK7238", "BK7238"), mock.patch.object(readout, "offer", return_value="done"), \
+                mock.patch.object(prompts, "ask_ipv4") as asked:
+            self.assertEqual(readout.run(self.ctx, DEVICE), "done")
+        asked.assert_not_called()
+        self.assertIsNone(readout.readouts(self.ctx)[-1].mac)
+
+    def test_one_whose_mac_eWeLink_gives_or_that_answers_no_discovery_is_not_looked_for(self):
+        given = {**DEVICE, "params": {**DEVICE["params"], "staMac": "12:34:56:AB:CD:01"}}
+        lan_free = {**DEVICE, "productModel": "NEWBK", "extra": {"model": "SN-BK7238-NEW-01"}}
+        for device in (given, lan_free):
+            self.stages.clear()
+            with self.subTest(device=device["productModel"]), learned("FWSW-01-NEW-BK7238", "BK7238"), \
+                    mock.patch.object(readout, "offer", return_value="done"), \
+                    mock.patch.object(readout, "answering_at") as looked:
+                readout.run(self.ctx, device)
+                looked.assert_not_called()
+                self.assertEqual(self.stages[:2], ["2 Locating the device on your network", "skipped"])
+        self.assertEqual(readout.readouts(self.ctx)[0].mac, "12:34:56:ab:cd:01")
 
     def test_one_read_in_full_restores_its_firmware_in_a_stage_of_its_own(self):
         from tools.autoflash import kinds
@@ -899,8 +934,9 @@ class FirstStageTests(unittest.TestCase):
     def setUp(self):
         start_run(self)
 
-    def test_it_is_not_looked_for_on_the_network(self):
-        # So a device answering no discovery - a Matter one, say - is read out too.
+    def test_it_needs_no_address_and_is_never_asked_for_one(self):
+        # So a device answering no discovery - a Matter one, say - is read out
+        # too. Its MAC alone may be looked for, for its report (RunTests).
         with learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"), mock.patch.object(readout, "offer", return_value="done"):
             readout.run(self.ctx, DEVICE)
         readout.locate.assert_not_called()

@@ -71,8 +71,12 @@ stages people choose to stop at, and which devices people want supported next: s
 
 ## How your device is recognised
 
-So that a device converted twice counts as one, the tool turns its hardware
-address into a code on your computer with a one-way hash, and sends only that.
+So that a device converted twice counts as one, and a readout of it and its
+conversion are known as the same device, the tool turns its hardware address
+into a code on your computer with a one-way hash, and sends only that. A
+readout takes the address from your eWeLink account's record of the device,
+or where that has none, looks for the device on your network to learn it; one
+it cannot find is sent with no code.
 The server hashes it again with a secret key that never leaves it. What is
 stored cannot be turned back into your device's address, and is linked to
 nothing about you.

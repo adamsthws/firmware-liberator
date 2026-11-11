@@ -333,6 +333,17 @@ def record_mac(device: dict[str, Any]) -> str | None:
     return mac if records.MAC_RE.match(mac) else None
 
 
+def answering_at(device: dict[str, Any]) -> str | None:
+    """Where `device` answers eWeLink's discovery with its id, or None."""
+    wanted = str(device.get("deviceid") or "")
+    output.say("Looking for it on your network...")
+    try:
+        report = discover_ewelink.discover(6.0, wanted={wanted})
+    except OSError:
+        report = {"packets": []}
+    return answering_ids(report).get(wanted)
+
+
 def locate(ctx: Context, device: dict[str, Any]) -> str:
     """The device's address on this network: the one answering eWeLink's
     discovery with its id, else typed by the person. A device that does no
@@ -340,12 +351,7 @@ def locate(ctx: Context, device: dict[str, Any]) -> str:
     if lan_free(device):
         return locate_by_mac(device)
     wanted = str(device.get("deviceid") or "")
-    output.say("Looking for it on your network...")
-    try:
-        report = discover_ewelink.discover(6.0, wanted={wanted})
-    except OSError:
-        report = {"packets": []}
-    found = answering_ids(report).get(wanted)
+    found = answering_at(device)
     if found:
         return found
     # Not answering as Sonoff's firmware - on the program a readout stopped
@@ -442,15 +448,26 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
     # the network at all: that stage is eWeLink's to tell, so it works for a
     # device that answers no discovery (a Matter one, say), and asks nothing of it.
     first_only = not reads_out(device)
-    if first_only or address:
+    ip = seen = None   # `seen`: where a first-stage device answered, for its MAC alone
+    if address:
         skip("locate")
-        ip = None if first_only else address
-    else:
+        ip, seen = (None, address) if first_only else (address, None)
+    elif not first_only:
         begin("locate")
         ip = locate(ctx, device)
+    elif record_mac(device) is None and not lan_free(device):
+        # Its report names the device by its MAC, as a conversion's does, so
+        # a readout and a later conversion of it are known as one: where
+        # eWeLink's record gives none, looked for on the network - never
+        # asked for, as this stage needs no address.
+        begin("locate")
+        seen = answering_at(device)
+    else:
+        skip("locate")
     if ip:
         ctx.state.set_input("device_ip", ip)
-    mac = (hostsys.mac_of(ip) if ip else None) or (device.get("params") or {}).get("staMac")
+    looked_at = ip or seen
+    mac = (hostsys.mac_of(looked_at) if looked_at else None) or (device.get("params") or {}).get("staMac")
     if mac and records.MAC_RE.match(hostsys.normalise_mac(mac)):
         mac = hostsys.normalise_mac(mac)
         ctx.readout.mac = mac
