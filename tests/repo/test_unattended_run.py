@@ -105,6 +105,17 @@ class StageProblemsTests(unittest.TestCase):
                                        "Stage 10 - Updating the bootloader - Complete"),
                          ["Stage 9 - Preparing memory layout: left underway when the next stage began"])
 
+    def test_each_run_of_a_sitting_is_looked_at_on_its_own(self):
+        # Seen in attended emulator runs: a readout after a readout was taken
+        # for one done twice, and the next run's start for two blank rows.
+        run = ["Stage 1 - Querying eWeLink for devices - Complete", "", "Readout saved, not sent.", "",
+               "    1. Convert a device", "    2. Read out another device", "", "What next (q to quit): 2"]
+        self.assertEqual(self.problems(*run, *[""] * 40, *run[:-1], "What next (q to quit): q"), [])
+        # Within one run, as before.
+        self.assertEqual(self.problems(*run[:1], *run), ["Stage 1 - Querying eWeLink for devices: shown complete, "
+                                                         "after an earlier outcome - its first go was left on the "
+                                                         "screen"])
+
     def test_two_blank_rows_together_are_found(self):
         self.assertEqual(self.problems("Stage 1 - Checking - Complete", "", "", "Done"),
                          ["two blank rows one after another"])

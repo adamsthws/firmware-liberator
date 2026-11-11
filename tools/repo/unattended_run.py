@@ -209,6 +209,12 @@ class Screen:
 STAGE_ROW = re.compile(r"^ *Stage +(?P<number>\d+) - (?P<name>.+?) +- (?P<outcome>[A-Z][a-z]+(?: [a-z]+)*)", re.M)
 
 
+# "What next", answered: a run that finished asks it (cli.what_next), and the
+# next run in the sitting starts at the top of the window, the last one's
+# rows scrolled up above it with a window of blank rows (output.start_at_top).
+NEXT_RUN = re.compile(r"(?m)^ *What next\b.*$")
+
+
 # What a stage's line says while it runs: "Retrying" for a step done again.
 UNDER_WAY = ("Underway", "Retrying")
 # What a stage that passed ends with: all it showed is taken off the screen.
@@ -229,7 +235,18 @@ def stage_problems(screen: str) -> list[str]:
     - a stage that passed still has its "Underway" line above its outcome:
       what it showed under that line - notes, instructions, a part that went
       again - was left on the screen;
-    - two blank rows follow one another."""
+    - two blank rows follow one another.
+
+    Each run of a sitting is looked at on its own (NEXT_RUN): the next one's
+    stages are its own, not the last one's done again."""
+    problems: list[str] = []
+    for run in NEXT_RUN.split(screen):
+        problems += [problem for problem in _run_problems(run) if problem not in problems]
+    return problems
+
+
+def _run_problems(screen: str) -> list[str]:
+    """stage_problems() of one run's rows."""
     problems: list[str] = []
     underway: str | None = None
     ended: set[str] = set()
