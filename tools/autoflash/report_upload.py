@@ -71,7 +71,7 @@ def enabled(ctx: Context) -> bool:
         return False
     if os.environ.get("AUTOFLASH_NO_REPORT", "").strip().lower() in ("1", "yes", "true", "on"):
         return False
-    return not os.environ.get("AUTOFLASH_EMULATOR_URL")
+    return not hostsys.emulated()
 
 
 def start_work(report_id: str) -> subprocess.Popen[str]:

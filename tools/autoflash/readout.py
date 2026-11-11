@@ -273,7 +273,7 @@ def upload_url() -> str | None:
     given = os.environ.get("AUTOFLASH_READOUT_URL")
     if given:
         return given
-    if os.environ.get("AUTOFLASH_EMULATOR_URL") or prompts.UNATTENDED:
+    if hostsys.emulated() or prompts.UNATTENDED:
         return None
     return UPLOAD_URL
 
