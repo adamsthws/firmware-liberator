@@ -60,7 +60,10 @@ emulator runs a copy, so the backup is never written.
   (`copy_device.py`), given the backup's key and a login that can read the
   package. `AUTOFLASH_EMU_NO_RESTORE=1` says not to fetch it.
 - **A device you do not own.** `public_dump.py` makes a test copy from a public
-  dump or an update file ([below](#classic-esp32-devices)).
+  dump or an update file ([below](#classic-esp32-devices)). Run again, it makes
+  a copy again where an earlier version of it made that copy otherwise, as the
+  firmware may not start on the old one; `--fresh` puts an emulator on the new
+  copy.
 
 **The backup is private**, holding the home Wi-Fi password and the device's
 eWeLink keys in cleartext. Keep it, and everything the emulator writes, under
