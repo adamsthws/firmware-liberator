@@ -308,7 +308,7 @@ class CloudflareSettingsTests(unittest.TestCase):
         code, out = run(fake)
         self.assertEqual((code, fake.sent), (1, []))
         self.assertIn("always_use_https: is off, should be on", out)
-        self.assertIn("redirects: are [], should be ['www-to-apex']", out)
+        self.assertIn("redirects: are [], should be ['www-to-apex', 'issues-to-github']", out)
         self.assertIn(f"{cs.READOUTS_BUCKET}: does not exist", out)
         self.assertIn("rate limits: are [], should be ['api-flood']", out)
         self.assertIn("Email Routing: is off", out)
@@ -350,6 +350,14 @@ class CloudflareSettingsTests(unittest.TestCase):
         for host in (cs.ZONE, f"www.{cs.ZONE}"):
             self.assertIn(f'{{ "pattern": "{host}", "custom_domain": true }}', config)
         self.assertEqual(cs.REDIRECTS[0]["expression"], f'(http.host eq "www.{cs.ZONE}")')
+
+    def test_the_short_issues_address_goes_to_the_repositorys_issues(self):
+        from tools.repo import github_settings
+        self.assertEqual(cs.ISSUES, f"https://github.com/{github_settings.REPOSITORY}/issues")
+        rule = next(rule for rule in cs.REDIRECTS if rule["ref"] == "issues-to-github")
+        self.assertEqual(rule["action_parameters"]["from_value"]["target_url"], {"value": cs.ISSUES})
+        self.assertIn(f'http.host eq "{cs.ZONE}"', rule["expression"])
+        self.assertIn(f'"{cs.ISSUES_PATH}"', rule["expression"])
 
     def test_a_lifecycle_rule_added_by_hand_is_taken_away_as_readouts_are_kept_for_good(self):
         fake = FakeCloudflare()
