@@ -246,6 +246,13 @@ class AnotherDeviceTests(unittest.TestCase):
         self.main(codes=[0, 0, 0], answers=[self.READ_OUT, self.CONVERT, KeyboardInterrupt()])
         self.assertEqual(self.ran, ["convert", "read_out", "convert"])
 
+    def test_whichever_is_next_starts_at_the_top_of_the_window(self):
+        # Seen: a readout after a readout began under the last one's
+        # "Readout saved in ...".
+        _, _, _, top = self.main(codes=[0, 0, 0], answers=[self.READ_OUT, self.READ_OUT, KeyboardInterrupt()],
+                                 command="readout")
+        self.assertEqual((self.ran, top.call_count), (["read_out"] * 3, 2))
+
     def test_a_readout_starts_a_run_of_its_own(self):
         # Never an unfinished conversion carried on.
         _, made, _, _ = self.main(codes=[1], answers=[], command="readout")
