@@ -138,6 +138,18 @@ class EndingTests(RouteTestCase):
         self.assertTrue(all(len(row) <= side for row in right), rows)
         self.assertEqual(right[1:], [" " * 10 + "more than one line of its column"])
 
+    def test_every_value_on_the_left_starts_in_one_column_those_below_too(self):
+        # A readout's report: its devices listed under the rest, with longer
+        # labels than the left-hand column's own.
+        fields = [("Result", "Read out"), ("Liberator", "3.0.0"), ("OS", "Ubuntu"), ("Devices", "2")]
+        below = [("Accepted", "BASICR4\u00a01.1.0"), ("Not needed", "S60TPG\u00a01.2.0")]
+        for columns in (100, 60):   # two columns, and one
+            with self.subTest(columns=columns):
+                rows = report.report_screen(fields, columns=columns, right=("Devices",), below=below)
+                starts = {row.index(value) for row in rows
+                          for value in ("Read out", "3.0.0", "Ubuntu", "BASICR4 1.1.0", "S60TPG 1.2.0") if value in row}
+                self.assertEqual(len(starts), 1, "\n".join(rows))
+
     def test_a_window_too_narrow_for_two_has_one_column(self):
         fields = [("Result", "Converted"), ("Firmware", "Tasmota"), ("Liberator", "2.4.0")]
         self.assertEqual([row.split()[0] for row in report.report_screen(fields, columns=60)],

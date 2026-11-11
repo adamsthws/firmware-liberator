@@ -288,7 +288,9 @@ def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
     of the right-hand column, the device's - a conversion's (RIGHT), or a
     readout's (readout.report_fields). `below`: (label, value) pairs each on
     a row of its own under them, the window's whole width to fit a list in
-    before it wraps - between the words a value's no-break spaces do not join."""
+    before it wraps - between the words a value's no-break spaces do not join.
+    Every value on the left starts in one column: those under the labels of
+    the left-hand column, the wide ones above it, and those below."""
     margin, gap = "    ", "   "
     columns = columns or output.terminal_size((100, 24)).columns
     side = (columns - len(margin) - len(gap) - 2) // 2
@@ -302,11 +304,11 @@ def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
             rows.extend(f"{margin}{'':<{width}} {line}".replace("\u00a0", " ") for line in lines[1:])
         return rows
     if side < SIDE:
-        width = max(len(label) for label, _ in fields) + 1
+        width = max(len(label) for label, _ in [*fields, *under]) + 1
         return [f"{margin}{label + ':':<{width}} {value}" for label, value in fields] + rows_under(width)
 
-    def cells(column: list[tuple[str, str]]) -> list[str]:
-        width = max((len(label) for label, _ in column), default=0) + 1
+    def cells(column: list[tuple[str, str]], width: int = 0) -> list[str]:
+        width = width or max((len(label) for label, _ in column), default=0) + 1
         rows = []
         for label, value in column:
             lines = textwrap.wrap(value, side - width - 1) or [""]
@@ -320,13 +322,13 @@ def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
     # with fewer of this computer's).
     while len(right) > len(left) + 1 and right[-1][0] not in SUITES_READ:
         left.append(right.pop())
-    left, right = cells(left), cells(right)
     wide = [(label, value) for label, value in fields if label in WIDE]
-    width = max(len(label) for label, _ in fields) + 1
+    width = max(len(label) for label, _ in [*left, *wide, *under]) + 1
+    left, right = cells(left, width), cells(right)
     lines = [f"{margin}{label + ':':<{width}} {value}" for label, value in wide]
     lines += [(margin + f"{one:<{side}}{gap}{two}").rstrip()
               for one, two in itertools.zip_longest(left, right, fillvalue="")]
-    return lines + rows_under(max((len(label) for label, _ in [*fields, *under]), default=0) + 1)
+    return lines + rows_under(width)
 
 
 # Long enough for the CSE7766 and Tasmota's energy driver to report a new
