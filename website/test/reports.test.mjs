@@ -62,7 +62,9 @@ test("a report the tool makes is kept, on the day it came in, and nothing of whe
   assert.equal(kept.id, sent.id);
   assert.equal(kept.day, "2026-11-09");
   assert.equal(kept.model, "S60TPG");
-  assert.deepEqual(JSON.parse(kept.stages), sent.stages);
+  const stages = rows(bindings, "SELECT stage, seconds, busy, tries, wait FROM report_stages WHERE id = ? ORDER BY stage", sent.id);
+  assert.deepEqual(stages, Object.entries(sent.stages).sort()
+    .map(([stage, { s, busy, tries, wait }]) => ({ stage, seconds: s, busy, tries, wait })), "a row a stage");
   assert.ok(!Object.values(kept).some((value) => String(value).includes("15:30")), "no time of day");
 });
 
@@ -150,7 +152,7 @@ test("a device's record: its first run, the runs to its first conversion, and wh
   assert.deepEqual(record, {
     device_hash: keyed(hash), model: "S60TPG", device: "sonoff-s60", first_day: "2026-11-09", last_day: "2026-11-12",
     first_result: "failed", converted_day: "2026-11-09", runs: 5, runs_to_convert: 3, conversions: 2,
-    back_to_sonoff: 1, firmware: "sonoff", stock: "1.2.0", dev: 0,
+    back_to_sonoff: 1, firmware: "sonoff", stock: "1.2.0", place: 1, dev: 0,
   });
 });
 
@@ -188,20 +190,28 @@ test("a converted device keeps the number the first computer to convert it gave 
   await send(bindings, [report({ device_hash: hashOf(7), nth_device: 3 })]);
   await send(bindings, [report({ device_hash: hashOf(7), nth_device: 1, firmware: "esphome", from: "tasmota" })]);
   await send(bindings, [report({ device_hash: hashOf(8), nth_device: 2, firmware: "sonoff", from: "tasmota" })]);
-  assert.deepEqual(rows(bindings, "SELECT device_hash, place FROM device_places"), [{ device_hash: keyed(hashOf(7)), place: 3 }],
+  assert.deepEqual(rows(bindings, "SELECT device_hash, place FROM devices ORDER BY place"),
+    [{ device_hash: keyed(hashOf(8)), place: null }, { device_hash: keyed(hashOf(7)), place: 3 }],
     "a conversion's alone, the first kept; going back to Sonoff's is none");
 });
 
-test("what a report says beyond the reports' columns is kept beside it, as it came", async () => {
+test("each field of a report is kept in a column of its own, a nested one's flattened", async () => {
   const bindings = env();
   const crashed = report({ result: "crashed", stopped: { step: "K1", error: "crash", text: "",
     where: "KeyError at tools/autoflash/report.py:212" } });
   await send(bindings, [crashed]);
-  const [{ extras }] = rows(bindings, "SELECT extras FROM report_extras WHERE id = ?", crashed.id);
-  assert.deepEqual(JSON.parse(extras), {
-    where: "KeyError at tools/autoflash/report.py:212", arch: "x86-64", chip: FIXTURE.chip, computer: FIXTURE.computer,
-    ewelink_region: "eu", ctrl_c_carried_on: 0, launcher: "start.sh", install: "download", begun_on: null,
-    back_after_power_cycle: null, firmware_name: "FWSW-E32S60-S60-ESP32C3FN4", firmware_name_expected: true,
+  const [kept] = rows(bindings, `SELECT crash_site, os_arch, chip_revision, flash_id, flash_mb, connection, vpn,
+    networks, security_note, firewall, admin, ewelink_region, ctrl_c_carried_on, launcher, install, begun_on,
+    back_after_power_cycle, firmware_name, firmware_name_expected FROM reports WHERE id = ?`, crashed.id);
+  const { chip, computer } = FIXTURE;
+  const flag = (value) => (value === null ? null : Number(value));
+  assert.deepEqual(kept, {
+    crash_site: "KeyError at tools/autoflash/report.py:212", os_arch: "x86-64", chip_revision: chip.revision,
+    flash_id: chip.flash_id, flash_mb: chip.flash_mb, connection: computer.connection, vpn: flag(computer.vpn),
+    networks: computer.networks, security_note: Number(computer.security_note), firewall: computer.firewall,
+    admin: Number(computer.admin), ewelink_region: "eu", ctrl_c_carried_on: 0, launcher: "start.sh",
+    install: "download", begun_on: null, back_after_power_cycle: null, firmware_name: "FWSW-E32S60-S60-ESP32C3FN4",
+    firmware_name_expected: 1,
   });
 });
 
@@ -424,6 +434,7 @@ test("a readout's report is kept apart from the runs', its device a keyed hash, 
   const [kept] = rows(bindings, "SELECT * FROM readout_reports");
   assert.deepEqual([kept.id, kept.day, kept.result, kept.model, kept.stock_model, kept.whole, kept.converted_here],
     [sent.id, "2026-11-09", "accepted", "BASICR4", "SN-ESP32C3-BASICR4-01", 1, 3]);
+  assert.equal(kept.os_arch, sent.os.arch);
   assert.equal(kept.device_hash, keyed(hashOf(7)));
   assert.deepEqual(rows(bindings, "SELECT id FROM reports"), [], "no run's report");
   assert.deepEqual(rows(bindings, "SELECT * FROM devices"), [], "a readout counts no run of its device");

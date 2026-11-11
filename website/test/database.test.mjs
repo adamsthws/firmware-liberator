@@ -12,7 +12,7 @@ import { d1, migrate, migration, migrations } from "../api/local-d1.mjs";
 // file, whose hash goes here once it is final.
 const WRITTEN = {
   "0001_counters.sql": "db8a1672da5fc1b696fb61412d7c7d5ebfbffffab60e88e555ab23a1eed08f23",
-  "0002_reports.sql": "c732a202e30db87d5744f390e846828718a000160c4cc205075de30732093078",
+  "0002_reports.sql": "37482333b96ae06e90b22ddc585744b8aa31d16a12d0852b0873b5cf5751157c",
   "0003_totals.sql": "aa0200ac16c5e5e40e927121ac6388f35c2a05256ec7c14afe300f1d3ddef563",
   "0004_readouts.sql": "eff10d3be7755b62a242aa940ca197b3e34221032c0074087292a4f2bc2faedc",
   "0005_held_reports.sql": "08b89131937fcd4bd97e33644212c2404f4bbff56c25423eea22271307d84f50",
@@ -22,9 +22,7 @@ const WRITTEN = {
   "0009_mail_days.sql": "cd65431a174bfa5a3299fbf63aa7960a675b7b3fc2f460acfc3d331aa4ba0465",
   "0010_model_senders.sql": "430681629148038603e98a5d0410e098b65936fd7ac80757e730b525e94e1ab4",
   "0011_networks_and_settings.sql": "5ce944c5534eb3315feb64bd43524931eabcdd5a3a0d114238b1ce4c2a51d402",
-  "0012_device_places.sql": "17ec6b605c45956aa532b9de60e07cbbaed1e3e15c7c4e899bc7164c2037adc5",
-  "0013_readout_reports.sql": "a8f2bef09c3284b3f4117efbdc80753db95143d084bce53862c0f1368af63d09",
-  "0014_report_extras.sql": "9b708502b5847781c9f3707d1595da937814ad588bcaabe7a37b94c0b6521f17",
+  "0012_readout_reports.sql": "e769c9d5e980df7556a2d1d9061af90b45eee41d9826da5467b3dfc1d5940f7f",
 };
 
 test("the migrations are numbered one after another, from 0001", () => {

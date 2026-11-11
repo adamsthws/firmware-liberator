@@ -108,9 +108,9 @@ function remaking(db, months, today) {
         coalesce(firmware, '') AS firmware, source, seconds AS value FROM ${reports} AND result = 'converted'`,
         "month, tag, device, firmware, source")}`),
     of(`INSERT INTO monthly_steps (month, tag, tool, step, n, p50, p90)
-      ${percentiles(`SELECT substr(day, 1, 7) AS month, tag, tool, step.key AS step,
-        json_extract(step.value, '$.s') AS value FROM reports, json_each(reports.stages) AS step
-        WHERE quarantined = 0 AND day < ?1 AND ${inMonths}`, "month, tag, tool, step")}`),
+      ${percentiles(`SELECT substr(day, 1, 7) AS month, tag, tool, stage AS step, report_stages.seconds AS value
+        FROM reports JOIN report_stages USING (id) WHERE quarantined = 0 AND day < ?1 AND ${inMonths}`,
+        "month, tag, tool, step")}`),
     of(`INSERT INTO monthly_environment (month, tag, os_family, python_source, n)
       SELECT substr(day, 1, 7), tag, os_family, python_source, count(*) FROM ${reports}
       GROUP BY substr(day, 1, 7), tag, os_family, python_source`),
@@ -132,10 +132,12 @@ export function pruning(db, today) {
         CASE WHEN name GLOB 'mail-failed:*' THEN substr(name, 13, length(name) - 12 - length(day) - 1) ELSE '' END,
         count
       FROM counters WHERE day < ?1 AND (name GLOB 'mail-sent:*' OR name GLOB 'mail-failed:*:*')`).bind(today),
+    // A report's stages first, while the report still says whose they are.
+    db.prepare(`DELETE FROM report_stages WHERE id IN
+      (SELECT id FROM reports WHERE day < ? AND day IN (SELECT day FROM folded))`).bind(daysBefore(today, RAW_DAYS)),
     db.prepare("DELETE FROM reports WHERE day < ? AND day IN (SELECT day FROM folded)").bind(daysBefore(today, RAW_DAYS)),
     // A readout's report as long, with no totals of its own to wait for.
     db.prepare("DELETE FROM readout_reports WHERE day < ?").bind(daysBefore(today, RAW_DAYS)),
-    db.prepare("DELETE FROM report_extras WHERE id NOT IN (SELECT id FROM reports)"),
     db.prepare("DELETE FROM counters WHERE day IS NOT NULL AND day < ?").bind(daysBefore(today, COUNTER_DAYS)),
   ];
 }

@@ -104,35 +104,51 @@ async function problem(report, now, bits) {
   return null;
 }
 
-const INSERT = `INSERT OR IGNORE INTO reports (id, day, tag, tool, kind, result, step, error, text, family, device,
-  model, stock, device_hash, firmware, source, backup, identity, os_family, os_version, python_version, python_source,
-  seconds, resumed, stages, signal, wifi_typed, setup_network, power_cycled, checks, meter, quarantined)
-  VALUES (${Array(32).fill("?").join(", ")})`;
+const flag = (value) => (value === null ? null : Number(value));
+
+// Each column of `reports` and, in order, the report's value for it.
+const COLUMNS = (report, hash, day, held) => {
+  const stopped = report.stopped ?? {};
+  return {
+    id: report.id, day, tag: report.tag, tool: report.tool, kind: report.kind, result: report.result,
+    step: stopped.step ?? null, error: stopped.error ?? null, text: stopped.text ?? null, family: report.family,
+    device: report.device, model: report.model, stock: report.stock, device_hash: hash, firmware: report.firmware,
+    source: report.from, backup: report.backup, identity: report.identity, os_family: report.os.family,
+    os_version: report.os.version, os_arch: report.os.arch, python_version: report.python.version,
+    python_source: report.python.source, seconds: report.seconds, resumed: Number(report.resumed),
+    signal: report.signal, wifi_typed: flag(report.wifi_typed), setup_network: flag(report.setup_network),
+    power_cycled: flag(report.power_cycled), checks: report.checks, meter: report.meter,
+    crash_site: stopped.where ?? null, chip_revision: report.chip.revision, flash_id: report.chip.flash_id,
+    flash_mb: report.chip.flash_mb, connection: report.computer.connection, vpn: flag(report.computer.vpn),
+    networks: report.computer.networks, security_note: Number(report.computer.security_note),
+    firewall: report.computer.firewall, admin: Number(report.computer.admin), ewelink_region: report.ewelink_region,
+    ctrl_c_carried_on: report.ctrl_c_carried_on, launcher: report.launcher, install: report.install,
+    begun_on: report.begun_on, back_after_power_cycle: report.back_after_power_cycle,
+    firmware_name: report.firmware_name, firmware_name_expected: flag(report.firmware_name_expected),
+    quarantined: Number(held !== null),
+  };
+};
+const NAMES = Object.keys(COLUMNS({ os: {}, python: {}, chip: {}, computer: {} }, null, null, null));
+const INSERT = `INSERT OR IGNORE INTO reports (${NAMES.join(", ")}) VALUES (${NAMES.map(() => "?").join(", ")})`;
+// The report's stages, one row each, from its `stages` as JSON.
+const STAGES = `INSERT OR IGNORE INTO report_stages (id, stage, seconds, busy, tries, wait)
+  SELECT ?1, key, json_extract(value, '$.s'), json_extract(value, '$.busy'), json_extract(value, '$.tries'),
+    json_extract(value, '$.wait') FROM json_each(?2)`;
 const READOUT = `INSERT OR IGNORE INTO readout_reports (id, day, tag, tool, result, error, family, device, model,
-  stock_model, stock, whole, device_hash, os_family, os_version, python_version, python_source, seconds,
+  stock_model, stock, whole, device_hash, os_family, os_version, os_arch, python_version, python_source, seconds,
   converted_here, quarantined)
-  VALUES (${Array(20).fill("?").join(", ")})`;
+  VALUES (${Array(21).fill("?").join(", ")})`;
 const HOLD = "INSERT OR IGNORE INTO held_reports (id, day, why) VALUES (?, ?, ?)";
-// What a report says beyond the columns of `reports` (migration 0014), kept
-// with it, as it came: the schema bounds every one.
-const EXTRAS = "INSERT OR IGNORE INTO report_extras (id, extras) VALUES (?, ?)";
-const extras = (report) => JSON.stringify({
-  where: report.stopped?.where ?? null, arch: report.os.arch, chip: report.chip, computer: report.computer,
-  ewelink_region: report.ewelink_region, ctrl_c_carried_on: report.ctrl_c_carried_on, launcher: report.launcher,
-  install: report.install, begun_on: report.begun_on, back_after_power_cycle: report.back_after_power_cycle,
-  firmware_name: report.firmware_name, firmware_name_expected: report.firmware_name_expected,
-});
-// A converted device's number on the computer that first converted it: the
-// first given is kept.
-const PLACE = "INSERT INTO device_places (device_hash, place) VALUES (?, ?) ON CONFLICT (device_hash) DO NOTHING";
 
 // The device's record, brought up to date by one report: only where that
 // report was written just before (changes(), in the same transaction), so a
-// report sent twice at the same moment counts once.
+// report sent twice at the same moment counts once. Its place, a converted
+// device's number on the computer that first converted it: the first given
+// is kept.
 const DEVICE = `INSERT INTO devices (device_hash, model, device, first_day, last_day, first_result, converted_day, runs,
-    runs_to_convert, conversions, back_to_sonoff, firmware, stock, dev)
+    runs_to_convert, conversions, back_to_sonoff, firmware, stock, place, dev)
   SELECT ?1, ?2, ?3, ?4, ?4, ?5, CASE WHEN ?6 THEN ?4 END, 1, CASE WHEN ?6 THEN 1 END, ?6, ?7,
-    CASE WHEN ?6 OR ?7 THEN ?8 END, ?9, ?10
+    CASE WHEN ?6 OR ?7 THEN ?8 END, ?9, CASE WHEN ?6 THEN ?11 END, ?10
   WHERE changes() = 1
   ON CONFLICT (device_hash) DO UPDATE SET
     model = coalesce(excluded.model, devices.model),
@@ -145,9 +161,8 @@ const DEVICE = `INSERT INTO devices (device_hash, model, device, first_day, last
     back_to_sonoff = devices.back_to_sonoff + excluded.back_to_sonoff,
     firmware = coalesce(excluded.firmware, devices.firmware),
     stock = coalesce(devices.stock, excluded.stock),
+    place = coalesce(devices.place, excluded.place),
     dev = max(devices.dev, excluded.dev)`;
-
-const flag = (value) => (value === null ? null : Number(value));
 
 // The statements that write one report, with its device's record, or for
 // one held (`held`: why), only it, quarantined, and why it is held.
@@ -157,35 +172,23 @@ export function writes(db, report, hash, day, held = null) {
     const statement = db.prepare(READOUT).bind(
       report.id, day, report.tag, report.tool, report.result, report.error, report.family, report.device,
       report.model, report.stock_model, report.stock, flag(report.whole), hash, report.os.family, report.os.version,
-      report.python.version, report.python.source, report.seconds, report.converted_here, Number(held !== null));
+      report.os.arch, report.python.version, report.python.source, report.seconds, report.converted_here,
+      Number(held !== null));
     return held === null ? [statement] : [statement, db.prepare(HOLD).bind(report.id, day, held)];
   }
-  const stopped = report.stopped ?? {};
-  const statements = [db.prepare(INSERT).bind(
-    report.id, day, report.tag, report.tool, report.kind, report.result, stopped.step ?? null,
-    stopped.error ?? null, stopped.text ?? null, report.family, report.device, report.model, report.stock, hash,
-    report.firmware, report.from, report.backup, report.identity, report.os.family, report.os.version,
-    report.python.version, report.python.source, report.seconds, Number(report.resumed),
-    JSON.stringify(report.stages), report.signal, flag(report.wifi_typed), flag(report.setup_network),
-    flag(report.power_cycled), report.checks, report.meter, Number(held !== null))];
-  // Last: DEVICE reads changes() of the report's own INSERT, just before it.
-  const more = db.prepare(EXTRAS).bind(report.id, extras(report));
-  if (held !== null) {
-    return [...statements, db.prepare(HOLD).bind(report.id, day, held), more];
-  }
+  const statements = [db.prepare(INSERT).bind(...Object.values(COLUMNS(report, hash, day, held)))];
   // A run the person stopped makes no device's record: those count the runs
   // that ran to an end (how many to convert one, how its first ended).
-  if (hash !== null && report.result !== "cancelled") {
+  if (held === null && hash !== null && report.result !== "cancelled") {
     // A conversion is to another firmware than Sonoff's; back to Sonoff's is counted apart.
     const converted = report.result === "converted" && report.firmware !== "sonoff";
     const backToSonoff = report.result === "converted" && report.firmware === "sonoff";
+    // Just after the report's own INSERT: DEVICE reads its changes().
     statements.push(db.prepare(DEVICE).bind(hash, report.model, report.device, day, report.result, Number(converted),
-      Number(backToSonoff), report.firmware, report.stock, Number(report.tag === "dev")));
-    if (converted && report.nth_device !== null) {
-      statements.push(db.prepare(PLACE).bind(hash, report.nth_device));
-    }
+      Number(backToSonoff), report.firmware, report.stock, Number(report.tag === "dev"), report.nth_device));
   }
-  return [...statements, more];
+  statements.push(db.prepare(STAGES).bind(report.id, JSON.stringify(report.stages)));
+  return held === null ? statements : [...statements, db.prepare(HOLD).bind(report.id, day, held)];
 }
 
 export async function reports(request, env, now = new Date()) {
