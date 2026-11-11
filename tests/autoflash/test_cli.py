@@ -740,7 +740,8 @@ class ReadoutCommandTests(unittest.TestCase):
             return devices
         ctx = SimpleNamespace(args=SimpleNamespace(**{"device_ip": None, "all": False, **args}),
                               account_devices=account_devices)
-        with mock.patch.object(cli.output, "say"), mock.patch.object(cli.output, "tell"), \
+        told = mock.patch.object(cli.output, "tell", side_effect=lambda text="": self.happened.append(f"told: {text}"))
+        with mock.patch.object(cli.output, "say"), told, \
                 mock.patch.object(cli.output, "stage_begin", begin), mock.patch.object(cli.output, "stage_end", end), \
                 mock.patch.object(readout, "run_all", return_value="all") as every, \
                 mock.patch.object(readout, "read_out_chosen", return_value="chosen") as chosen:
@@ -751,7 +752,16 @@ class ReadoutCommandTests(unittest.TestCase):
         # Seen: a readout chosen after "What next" left the window blank for
         # the sign-in's few seconds, as if nothing were happening.
         self.read()
-        self.assertEqual(self.happened, ["Stage 1 - Querying eWeLink for devices", "signed in", "complete"])
+        at = self.happened.index("Stage 1 - Querying eWeLink for devices")
+        self.assertEqual(self.happened[at:at + 3], ["Stage 1 - Querying eWeLink for devices", "signed in", "complete"])
+
+    def test_what_to_expect_is_said_above_the_first_stage(self):
+        # As a conversion says it above its own.
+        self.read()
+        at = self.happened.index("Stage 1 - Querying eWeLink for devices")
+        said = " ".join(item.removeprefix("told: ") for item in self.happened[:at])
+        self.assertIn("A readout usually takes under 10 minutes.", said)
+        self.assertIn("until the last stage says complete", said)
 
     def test_all_reads_every_device_unasked(self):
         every, chosen, devices = self.read(all=True)

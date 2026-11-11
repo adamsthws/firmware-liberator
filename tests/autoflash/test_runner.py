@@ -69,6 +69,27 @@ class ConfirmSkipTests(unittest.TestCase):
             self.assertIn("could not re-check", said)
 
 
+class WhatToExpectTests(unittest.TestCase):
+    """Above a run's first stage, a conversion's or a readout's: one note,
+    its opening the only difference."""
+
+    def said(self, opening):
+        rows = []
+        with mock.patch.object(runner.output, "tell", side_effect=lambda text="": rows.append(text)):
+            runner.say_what_to_expect(opening)
+        return rows
+
+    def test_the_same_note_for_a_conversion_and_a_readout(self):
+        conversion = self.said("A conversion usually takes under 10 minutes, and an update less.")
+        readout = self.said("A readout usually takes under 10 minutes.")
+        for rows in (conversion, readout):
+            self.assertEqual((rows[0], rows[-1]), ("", ""))   # a blank row above and below
+            self.assertTrue(" ".join(rows).strip().endswith("until the last stage says complete."))
+            # Fits an 80-column window with the margin, unwrapped by it.
+            self.assertLessEqual(max(len(row) for row in rows), 80 - len(runner.output.MARGIN))
+        self.assertEqual(" ".join(conversion).split(" less. ", 1)[1], " ".join(readout).split(" minutes. ", 1)[1])
+
+
 class RunStepsTests(unittest.TestCase):
     def test_a_full_disk_is_said_plainly_and_any_other_error_is_unexpected(self):
         for code in (errno.ENOSPC, errno.EDQUOT, errno.EFBIG):

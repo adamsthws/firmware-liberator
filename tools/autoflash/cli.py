@@ -339,6 +339,7 @@ def cmd_readout(ctx: Context, saved: Path | None) -> int:
     if saved:
         output.tell(f"Sent, thank you! Its reference is {readout.send_saved(saved)}.")
         return 0
+    runner.say_what_to_expect("A readout usually takes under 10 minutes.")
     output.say("Signing in to eWeLink to see which devices are in the account...")
     readout.lay_out_stages()
     readout.begin("account")

@@ -5,6 +5,7 @@ it was cut off, and what is said when the run stops.
 from __future__ import annotations
 
 import errno
+import textwrap
 import time
 import traceback
 from typing import TYPE_CHECKING
@@ -427,14 +428,26 @@ def bring_up_to_date(ctx: Context) -> bool:
     return True
 
 
+# Wide enough for an 80-column window, past the margin, and the same in a wider one.
+WHAT_TO_EXPECT_WIDTH = 76
+
+
+def say_what_to_expect(opening: str) -> None:
+    """Above a run's first stage: `opening`, how long it takes, then what the
+    run's stages are like and what to leave alone meanwhile - the same for a
+    conversion and a readout (cli.cmd_readout)."""
+    output.tell("")
+    for row in textwrap.wrap(f"{opening} Some stages take a minute or two with little to see - that's "
+                             "normal. Keep the device powered, and this computer on, until the last stage "
+                             "says complete.", WHAT_TO_EXPECT_WIDTH):
+        output.tell(row)
+    output.tell("")
+
+
 def run_steps(ctx: Context) -> int:
     started = time.monotonic()
     safety_locks.restore_left_locks(ROOT)  # a resumed run skips A5, which looks too
-    output.tell("")
-    output.tell("A conversion usually takes under 10 minutes, and an update less. Some stages")
-    output.tell("take a minute or two with little to see - that's normal. Keep the device powered,")
-    output.tell("and this computer on, until the last stage says complete.")
-    output.tell("")
+    say_what_to_expect("A conversion usually takes under 10 minutes, and an update less.")
     try:
         if ctx.state.input("device_mac"):
             runs.hold_device(ctx, ctx.state.input("device_mac"))  # a run carried on: its device is known
