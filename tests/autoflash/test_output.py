@@ -1,6 +1,7 @@
 import contextlib
 import io
 import os
+import signal
 import re
 import subprocess
 import sys
@@ -737,6 +738,32 @@ class ConciseTests(OutputTestCase):
         rows = [row for row in rendered(text) if row]
         self.assertEqual(rows, ["Stage 5 - Sending interim firmware - Stopped", "Stopped with Ctrl-C."])
         self.assertIn("Before going on", log)   # the log keeps it
+
+    def test_a_ctrl_c_notice_outside_a_stage_goes_with_its_block(self):
+        # Seen: Ctrl-C while the run looked for devices, before any stage,
+        # left "! Are you sure?" on the screen for the rest of the run - the
+        # signal handler wrote it uncounted, so the block was taken off short.
+        from tools.autoflash import interrupt
+        self.addCleanup(interrupt._state.update, dict(interrupt._state))
+        interrupt._state.update(first=None, asking=0, deferring=0, deferred=False)
+
+        def body():
+            with mock.patch.object(output, "colour_ok", return_value=True), \
+                 mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))), \
+                 mock.patch.object(interrupt.sys, "stderr", screen):
+                output.show("A note before the block.")
+                output.transient_begin()
+                output.tell("Looking for supported devices on your network...")
+                interrupt._on_interrupt(signal.SIGINT, None)
+                output.tell("A question, and its answer.")
+                output.transient_end()
+                output.stage_begin(1, "Confirming prerequisites")
+                output.stage_end("complete")
+        screen = FakeTerminal()
+        text, _ = self.run_with(screen, False, body)
+        self.assertIn(interrupt.NOTICE_TITLE, text)   # it was shown
+        rows = [row for row in rendered(text) if row]
+        self.assertEqual(rows, ["A note before the block.", "Stage 1 - Confirming prerequisites - Complete"])
 
     def test_without_cursor_control_the_question_stays(self):
         def body():

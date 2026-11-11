@@ -953,11 +953,25 @@ def _notice_rows() -> list[str]:
 
 def _notice_text() -> str | None:
     """What a first Ctrl-C writes out where the ticker does not draw it: an
-    unfinished line ended first.  Called from the signal handler, so it
-    takes no lock."""
+    unfinished line ended first.  Its rows are counted as any others, so a
+    block it lands in takes it off with the rest (seen: written uncounted
+    before the first stage, it stayed for the whole run).  Called from the
+    signal handler, so it takes no lock: it only adds to the count."""
     if _notice_drawn():
         return None
-    return ("\n" if _s.live else "") + "".join(f"{row}\n" for row in _notice_rows())
+    rows = _notice_rows()
+    if not rows:
+        return None
+    start = ""
+    if _s.live:
+        # As _break(): a stage line stays, a wait's goes and is drawn again
+        # under the notice.
+        start = "\n" if _s.live_is_stage else "\r" + " " * _s.live + "\r"
+        _counted(1 if _s.live_is_stage else 0)
+        _s.live = 0
+    _counted(len(rows))
+    _s.after_blank = False
+    return start + "".join(f"{row}\n" for row in rows)
 
 
 def _tick() -> None:

@@ -264,14 +264,21 @@ class NoticeWrittenTests(unittest.TestCase):
                 mock.patch.object(interrupt.time, "monotonic", return_value=1000.0), \
                 mock.patch.multiple(output._s, draws_notice=True, concise=True, ticker=object(), paused=False,
                                     held=False, stage="Stage 1 - Confirming prerequisites", blocks=[(0, False)],
-                                    live=0):
+                                    live=0, live_is_stage=False, rows=0, after_blank=False):
             interrupt._state["first"] = 1000.0
             try:
                 self.assertEqual(output._notice_text(),
                                  f"\n{output.BOLD}{output.YELLOW} ! Are you sure?{output.RESET}\n"
                                  "     Press Ctrl-C again within 10 seconds to stop now.\n")
-                output._s.live = 20   # an unfinished line is ended first
+                self.assertEqual(output._s.rows, 3)   # counted, so its block takes it off
+                # An unfinished line is ended first, as _break() ends it: a
+                # stage line stays above the notice, a wait's is wiped.
+                output._s.live, output._s.live_is_stage = 20, True
                 self.assertTrue(output._notice_text().startswith("\n\n"))
+                self.assertEqual((output._s.rows, output._s.live), (7, 0))
+                output._s.live, output._s.live_is_stage = 20, False
+                self.assertTrue(output._notice_text().startswith("\r" + " " * 20 + "\r\n"))
+                self.assertEqual((output._s.rows, output._s.live), (10, 0))
                 output._s.blocks = []
                 output._s.live = 0
                 self.assertIsNone(output._notice_text())   # the ticker draws it

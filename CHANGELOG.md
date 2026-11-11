@@ -243,6 +243,8 @@ as its screens do, since it converts much more than smart plugs now.
 - The arrow keys move along a typed answer on Linux and macOS. The terminal used
   to echo them: the up arrow moved the cursor into the rows above, garbling the
   screen, and their codes became part of the answer.
+- A Ctrl-C pressed before the first stage, while the tool looks for devices, no
+  longer leaves "! Are you sure?" on the screen for the rest of the run.
 - The countdown after Ctrl-C counts down in an 80-column window too: its words fit
   one row ("Carrying on to the next stage in 20 s, or press Enter now"). On two,
   only the second was redrawn, and "in 20 s" stood still above it.
