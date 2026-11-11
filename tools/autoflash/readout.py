@@ -36,7 +36,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING
 
-from tools.autoflash import __version__, account, hostsys, kinds, output, records, prompts, runs
+from tools.autoflash import __version__, account, detect, hostsys, kinds, output, records, prompts, runs
 from tools.autoflash import proof_of_work, readout_beken, readout_espressif
 from tools.autoflash.errors import Abort, Finished, NothingWritten
 from tools.ewelink import discover_ewelink, firmware_name, offered_firmware
@@ -270,7 +270,14 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
     elif lan_free(device) or on_bridge:
         asked = account.ask_account(ctx, str(device.get("deviceid") or ""))
     else:
-        asked = account.ask_ewelink(ctx, ip)
+        try:
+            asked = account.ask_ewelink(ctx, ip)
+        except account.NotOnSonoff as exc:
+            # One the account still lists, converted since: nothing gone wrong,
+            # and none of Sonoff's firmware left on it to read.
+            running = f"runs {detect.NAMES[exc.firmware]} now, not Sonoff's firmware, which is what a readout reads"
+            return f"not read out: it {running}." if batch is not None else \
+                f"Nothing was read out: the device at {ip} {running}."
     learned, problems = firmware_name.learn(asked.latest.get("offers") or [], asked.deviceid,
                                             asked.product, asked.model)
     for problem in problems:

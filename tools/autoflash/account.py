@@ -11,8 +11,9 @@ from dataclasses import dataclass
 from typing import Any, Callable, TYPE_CHECKING
 
 from tools.ewelink import discover_ewelink, firmware_name
-from tools.autoflash import hostsys, join, kinds, output, records, prompts, runs, setup_network
-from tools.autoflash.errors import Abort
+from tools.autoflash import (detect, esphome, hostsys, join, kinds, openbeken, output, records, prompts, runs,
+                             setup_network)
+from tools.autoflash.errors import Abort, NothingWritten
 from tools.ewelink.query_ota import ota_endpoints
 
 if TYPE_CHECKING:
@@ -412,12 +413,21 @@ def find_ewelink_devices(timeout: float = 6.0) -> list[tuple[str, str]]:
     return sorted(found.items())
 
 
+class NotOnSonoff(NothingWritten):
+    """The device answers, on another firmware than Sonoff's: `firmware`, as
+    detect.NAMES has it. A readout says so as an answer, not a failure."""
+
+    def __init__(self, firmware: str, message: str) -> None:
+        super().__init__(message)
+        self.firmware = firmware
+
+
 def already_converting(device_ip: str) -> None:
     """Stop with the real reason when the device no longer runs Sonoff's firmware.
 
-    eWeLink shows a device part way through a conversion as offline, and it does
-    not answer eWeLink discovery; "check LAN Control" would send its owner the
-    wrong way.
+    eWeLink shows a device part way through a conversion, or converted, as
+    offline, and it does not answer eWeLink discovery; "check LAN Control"
+    would send its owner the wrong way.
     """
     body = setup_network.page(device_ip, timeout=3.0)
     if body is None:
@@ -430,11 +440,18 @@ def already_converting(device_ip: str) -> None:
             "back to its Sonoff firmware, and a new conversion can start"
         )
     if "tasmota" in body.lower():
-        raise Abort(
+        raise NotOnSonoff(
+            "tasmota",
             f"{device_ip} is running Tasmota, not Sonoff's firmware. If that is this "
             "device, part way through an earlier conversion, run this again and "
             "choose to continue that conversion"
         )
+    for firmware, answers in (("esphome", esphome.is_esphome), ("openbeken", openbeken.is_openbeken)):
+        if answers(device_ip, 3.0):
+            raise NotOnSonoff(
+                firmware,
+                f"{device_ip} is running {detect.NAMES[firmware]}, not Sonoff's firmware: it is "
+                "converted already. Run this again, and the tool finds it on your network as a converted device")
 
 
 def note_firmware_name(kind: kinds.Kind | None, latest: dict[str, Any], deviceid: str, product: str, model: str) -> str:
