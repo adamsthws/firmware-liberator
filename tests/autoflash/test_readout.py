@@ -1231,6 +1231,28 @@ class ReportTests(unittest.TestCase):
             self.assertLessEqual(len(line), 80)
             self.assertRegex(line.rstrip(), r"(MODEL\d+ 1\.0\.0,?|Accepted:)$", "never inside a device's name")
 
+    def shown_by_end(self, done):
+        shown = []
+        with mock.patch.object(output, "tell", side_effect=lambda text="": shown.append(text)), \
+                mock.patch.object(output, "show", side_effect=lambda text, *_: shown.append(text)), \
+                mock.patch.object(output, "show_links"), \
+                mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
+            readout.end(SimpleNamespace(readouts=done), "")
+        return shown
+
+    def test_with_some_kept_unsent_the_four_counts_line_up_with_the_four_rows_beside_them(self):
+        shown = self.shown_by_end(self.DONE)
+        rows = [next(line for line in shown if label in line) for label in ("Result:", "Liberator:", "OS:", "Python:")]
+        self.assertEqual([line.split()[-2] for line in rows], ["Devices:", "Accepted:", "needed:", "sent:"],
+                         "\n".join(shown))
+        self.assertEqual(rows[0].index("Result:"), rows[1].index("Liberator:"))
+
+    def test_with_none_kept_unsent_the_result_has_a_row_of_its_own_above_the_counts(self):
+        shown = self.shown_by_end([self.DONE[0], self.DONE[2]])
+        result = next(line for line in shown if "Result:" in line)
+        self.assertNotIn("Devices:", result)
+        self.assertIn("Devices:", shown[shown.index(result) + 1])
+
     def test_it_ends_as_a_conversion_does(self):
         shown = []
         with mock.patch.object(output, "tell", side_effect=lambda text="": shown.append(text)), \

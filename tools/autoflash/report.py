@@ -282,11 +282,14 @@ SIDE = 34
 
 
 def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
-                  right: tuple[str, ...] = RIGHT, below: list[tuple[str, str]] = ()) -> list[str]:
+                  right: tuple[str, ...] = RIGHT, below: list[tuple[str, str]] = (),
+                  wide: tuple[str, ...] = WIDE) -> list[str]:
     """For the terminal: plain labels, lined up, in two columns where the
     window is wide enough - half the rows - else one. `right`: the labels
     of the right-hand column, the device's - a conversion's (RIGHT), or a
-    readout's (readout.report_fields). `below`: (label, value) pairs each on
+    readout's (readout.report_fields). `wide`: the labels on rows of their
+    own above the columns, the whole width (WIDE); one left out of it goes
+    in the left-hand column, as the rest. `below`: (label, value) pairs each on
     a row of its own under them, the window's whole width to fit a list in
     before it wraps - between the words a value's no-break spaces do not join.
     Every value on the left starts in one column: those under the labels of
@@ -315,17 +318,17 @@ def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
             rows.append(f"{label + ':':<{width}} {lines[0]}")
             rows.extend(" " * (width + 1) + line for line in lines[1:])
         return rows
-    left = [(label, value) for label, value in fields if label not in WIDE + right]
+    left = [(label, value) for label, value in fields if label not in wide + right]
     right = [(label, value) for label, value in fields if label in right]
     # The columns ending together: the device's answers at the bottom that
     # no fault suite reads go left when its column is the longer (an S61's,
     # with fewer of this computer's).
     while len(right) > len(left) + 1 and right[-1][0] not in SUITES_READ:
         left.append(right.pop())
-    wide = [(label, value) for label, value in fields if label in WIDE]
-    width = max(len(label) for label, _ in [*left, *wide, *under]) + 1
+    above = [(label, value) for label, value in fields if label in wide]
+    width = max(len(label) for label, _ in [*left, *above, *under]) + 1
     left, right = cells(left, width), cells(right)
-    lines = [f"{margin}{label + ':':<{width}} {value}" for label, value in wide]
+    lines = [f"{margin}{label + ':':<{width}} {value}" for label, value in above]
     lines += [(margin + f"{one:<{side}}{gap}{two}").rstrip()
               for one, two in itertools.zip_longest(left, right, fillvalue="")]
     return lines + rows_under(width)

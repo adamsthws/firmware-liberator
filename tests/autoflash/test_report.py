@@ -150,6 +150,12 @@ class EndingTests(RouteTestCase):
                           for value in ("Read out", "3.0.0", "Ubuntu", "BASICR4 1.1.0", "S60TPG 1.2.0") if value in row}
                 self.assertEqual(len(starts), 1, "\n".join(rows))
 
+    def test_a_label_left_out_of_wide_goes_at_the_top_of_the_left_hand_column(self):
+        fields = [("Result", "Read out"), ("Liberator", "3.0.0"), ("Devices", "2"), ("Accepted", "1")]
+        rows = report.report_screen(fields, columns=100, right=("Devices", "Accepted"), wide=())
+        self.assertEqual([row.split() for row in rows],
+                         [["Result:", "Read", "out", "Devices:", "2"], ["Liberator:", "3.0.0", "Accepted:", "1"]])
+
     def test_a_window_too_narrow_for_two_has_one_column(self):
         fields = [("Result", "Converted"), ("Firmware", "Tasmota"), ("Liberator", "2.4.0")]
         self.assertEqual([row.split()[0] for row in report.report_screen(fields, columns=60)],
