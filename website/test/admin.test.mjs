@@ -102,7 +102,8 @@ test("a held report deleted goes, with its device's record if nothing else of it
   const { db, junk } = await held();
   await db.batch(admin.remove(db, junk.id));
   assert.deepEqual(rows(db, "SELECT count(*) AS n FROM reports"), [{ n: 1 }]);
-  assert.deepEqual(rows(db, "SELECT count(*) AS n FROM report_extras"), [{ n: 1 }], "its extras go with it");
+  assert.deepEqual(rows(db, "SELECT DISTINCT id FROM report_stages"), rows(db, "SELECT id FROM reports"),
+    "its stages go with it");
   assert.deepEqual(rows(db, "SELECT device_hash FROM devices ORDER BY device_hash"), [{ device_hash: "device-1" }]);
   assert.deepEqual(rows(db, "SELECT * FROM folded"), [{ day: "2026-11-09" }], "nothing to count again");
 });

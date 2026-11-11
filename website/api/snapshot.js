@@ -7,7 +7,7 @@
 //   a Sonoff version, a tool version) under it is left out, so no one report
 //   or device can be picked out.
 // - Devices a computer converted (perComputer): from each converted device's
-//   number on the computer that first converted it (device_places), the
+//   number on the computer that first converted it (devices.place), the
 //   computers that converted at least k devices are the devices numbered k -
 //   or, as a computer whose earlier conversions sent no report (--no-report)
 //   is at k all the same, the most numbered k or more - so those that
@@ -110,8 +110,8 @@ export async function snapshot(db, now = new Date()) {
   const times = await all(`SELECT month, device, firmware, source, n, p50, p90 FROM monthly_times
     WHERE tag = 'user' AND n >= ? AND month IN (SELECT DISTINCT month FROM monthly_times ORDER BY month DESC LIMIT ?)
     ORDER BY month DESC, n DESC`, SMALLEST, TIME_MONTHS);
-  const places = new Map((await all(`SELECT place, count(*) AS n FROM device_places
-    JOIN devices USING (device_hash) WHERE devices.dev = 0 AND ${NOT_HELD} GROUP BY place`))
+  const places = new Map((await all(`SELECT place, count(*) AS n FROM devices
+    WHERE place IS NOT NULL AND dev = 0 AND ${NOT_HELD} GROUP BY place`))
     .map((row) => [row.place, row.n]));
   const reached = new Map();   // k: the computers that converted at least k
   let most = 0;

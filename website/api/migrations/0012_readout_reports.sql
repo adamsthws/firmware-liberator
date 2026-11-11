@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS readout_reports (
   device_hash TEXT,
   os_family TEXT NOT NULL,
   os_version TEXT NOT NULL,
+  os_arch TEXT NOT NULL,
   python_version TEXT NOT NULL,
   python_source TEXT NOT NULL,
   seconds INTEGER NOT NULL,
