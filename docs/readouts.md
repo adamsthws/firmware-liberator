@@ -36,6 +36,10 @@ second one from you, however many of that device you have. The tool stops
 there, though you can still leave your email address to hear when the device
 is supported.
 
+A readout is of Sonoff's firmware. Your eWeLink account still lists a device
+after you convert it, so if you choose one that now runs Tasmota, ESPHome or
+OpenBeken, the tool says so and reads nothing.
+
 Otherwise the tool downloads the offered firmware as the device would, except
 any file the website already has, sending nothing to the device. For a
 device the tool has not seen before, that is the whole readout.
