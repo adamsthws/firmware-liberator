@@ -138,6 +138,12 @@ eWeLink accounts and devices' identities.
   `tests/beken/`; `tests/run.py <directory>` runs one of them); `docs/` prose only;
   and `archive/` the work that got the project here and is no longer used,
   kept for the reasoning, linted like the rest.
+- The chip families behave alike. A feature or fix for one family's route
+  (Espressif, Beken, and any family added later) is made for every family it
+  applies to, in the same way: the same sources tried in the same order, the
+  same questions asked, the same things checked, logged and reported, with
+  parallel code named and laid out alike. Where a family cannot do the same,
+  say why in a comment beside the difference.
 - Docs, comments and commit messages match the existing ones: plain,
   compact sentences saying what something does and why.
 
