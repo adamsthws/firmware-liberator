@@ -1,5 +1,5 @@
-// The API Worker (index.js) on this computer, for emulator runs that send
-// their readouts (tools/espressif/emulator/unattended-test.sh --api): the
+// The API Worker (index.js) on this computer, where both emulators' runs send
+// their readouts (tools/repo/emulator-room.sh's local_api_start): the
 // Worker's own code, with an R2 bucket that keeps what it is given in a folder,
 // its database in that folder too (api.sqlite, local-d1.mjs), and rate
 // limiters holding READOUT_LIMIT's and REPORT_LIMIT's rules - two and three a

@@ -549,7 +549,7 @@ All in the emulator, on an S60 unless said.
 - **A readout of every device in an account** works, each readout sent to the
   API Worker's own code (`website/api/index.js` under Node, its R2 bucket a
   folder) through `AUTOFLASH_READOUT_URL`
-  ([`unattended-test.sh --api`](unattended.md#in-the-emulator); its rate
+  ([as `unattended-test.sh` sends them](unattended.md#in-the-emulator); its rate
   limit is the Worker's, two a minute from one address). With a BASICR4 or
   MINIR4 stand-in and three to six others (an NSPanel, an S60TPG-M, which is
   a Matter variant the tool has not seen, and made-up models), twelve runs,

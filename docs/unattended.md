@@ -123,12 +123,12 @@ typed. In the emulator, `unattended-test.sh --answers=FILE` does the same.
 converts its device this way, prints the final screen and stops it
 ([Unattended, for testing](emulator.md#unattended-for-testing)).
 
-A readout made in the emulator is kept unsent. To test sending one, `--api`
-sends it to the API Worker's own code
+A readout made in the emulator is sent to the API Worker's own code
 ([`website/api/local.mjs`](../website/api/local.mjs)), run in its own
-container on the emulator's network from a pinned Node image, with `ENOUGH`
-from `AUTOFLASH_API_ENOUGH`; what it was asked and kept is under `api/` in the
-instance's state directory. With `AUTOFLASH_EMU_STUB_OTHERS` listing other
+container on the emulator's network from a pinned Node image, started afresh
+for each run, with `ENOUGH` from `AUTOFLASH_API_ENOUGH`; what it was asked and
+kept is under `api/` in the instance's state directory. `--no-api` keeps it
+unsent instead. With `AUTOFLASH_EMU_STUB_OTHERS` listing other
 devices in the account ([cloud-stub.md](cloud-stub.md)), it also tests a
 readout of every device.
 

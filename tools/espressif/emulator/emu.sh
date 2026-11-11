@@ -17,6 +17,10 @@
 #   tools/espressif/emulator/emu.sh --no-firewall  without the "computer's" firewall (ufw), on by default
 #   tools/espressif/emulator/emu.sh --windows  Windows is the computer, wired in by windows_link.py
 #                                    (from Windows, start it all with tools/espressif/emulator/emu.ps1)
+#   tools/espressif/emulator/emu.sh --no-api   readouts kept unsent: by default they go to the API's own
+#                                    code (website/api/local.mjs) in a container beside the emulator
+#                                    (autoflash-emu-api, or autoflash-emu-N-api), gone with it; what it
+#                                    was asked and kept is in the state's api/
 #   tools/espressif/emulator/emu.sh --instance N  another emulator beside the first (N = 1-99): its own
 #                                    container (autoflash-emu-N), state (state-N) and browser
 #                                    port (8080+N), so tests can run side by side
@@ -46,7 +50,7 @@ PY=$ROOT/.venv/bin/python
 IMAGE=${AUTOFLASH_EMU_IMAGE:-autoflash-emu}
 NAME=autoflash-emu PORT=8080 LINK_PORT=7860
 
-cloud=0 fresh=0 pcap=0 rebuild=0 firewall=1 windows=0 yes=0 stub=0 tty=-it device="" device_dir="" instance=""
+cloud=0 fresh=0 pcap=0 rebuild=0 firewall=1 windows=0 yes=0 stub=0 api=1 tty=-it device="" device_dir="" instance=""
 while [ $# -gt 0 ]; do
     arg=$1
     case "$arg" in
@@ -64,7 +68,8 @@ while [ $# -gt 0 ]; do
     --detach) tty=-dt ;;
     --no-firewall) firewall=0 ;;
     --windows) windows=1 ;;
-    *) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    --no-api) api=0 ;;
+    *) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
     esac
     shift
 done
@@ -370,6 +375,15 @@ memory=256m; [ "$chip" = esp32 ] && memory=350m
 # What one was measured to use with its computer (C3 146 MB, classic ESP32 249 MB), plus 100.
 room=250; [ "$chip" = esp32 ] && room=350
 wait_for_room "$room"
+# The API's own code beside it, for the tool's readouts (emulator-room.sh), as
+# long as the emulator runs. Not for Windows as the computer: the tool runs
+# there, out of this environment's reach.
+api_env=()
+if [ "$api" = 1 ] && [ "$windows" = 0 ]; then
+    local_api_start "$NAME-api" "$NETWORK" "$STATE/api" "${AUTOFLASH_API_ENOUGH:-}"
+    local_api_goes_with "$NAME" "$NAME-api"
+    api_env=(-e AUTOFLASH_READOUT_URL="$LOCAL_API_READOUT_URL")
+fi
 exec "${awake[@]}" docker run --rm $tty --name "$NAME" --hostname autoflash-emu-computer \
     --memory "${AUTOFLASH_EMU_MEMORY:-$memory}" --cpus "${AUTOFLASH_EMU_CPUS:-2}" \
     --network "$NETWORK" --cap-add NET_ADMIN --device /dev/net/tun \
@@ -379,5 +393,5 @@ exec "${awake[@]}" docker run --rm $tty --name "$NAME" --hostname autoflash-emu-
     -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e DEVICE_MAC="$mac" -e CHIP="$chip" -e PSRAM="$psram" -e ADC="$adc" \
     -e DEVICE_KIND="$kind" -e CLOUD="$cloud" -e PCAP="$pcap" -e FIREWALL="$firewall" -e WINDOWS="$windows" \
     -e STUB_CLOUD="$stub" -e STUB_CLOUD_DIR="$STUB_DIR" -e STUB_PRODUCT_MODEL="$product" \
-    -e AUTOFLASH_EMULATOR_URL="http://localhost:$PORT" \
+    -e AUTOFLASH_EMULATOR_URL="http://localhost:$PORT" "${api_env[@]}" \
     "$IMAGE"
