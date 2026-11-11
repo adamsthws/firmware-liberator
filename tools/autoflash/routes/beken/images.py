@@ -126,10 +126,10 @@ def official(kind: kinds.Kind) -> Official:
         layout, table = layouts.known(app)
     except (ValueError, rbl.RblError) as exc:
         raise NothingWritten(f"the official update file for the {kind.name} was refused: {exc}. Its device may not "
-                             "be laid out as this tool expects, so nothing was written. Please report this") from exc
+                             "be laid out as this tool expects, so nothing was written") from exc
     if layout.key != kind.layout:
         raise NothingWritten(f"the official update file for the {kind.name} has the {layout.key} partition table, "
-                             f"not the {kind.layout} one expected. Nothing was written. Please report this")
+                             f"not the {kind.layout} one expected. Nothing was written")
     return Official(image, name, version, layout, table)
 
 
