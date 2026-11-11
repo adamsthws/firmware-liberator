@@ -209,7 +209,7 @@ def finish() -> None:
             _s.log.close()
         _s.log = _s.log_path = None
         _s.concise = False
-        _s.stage = None
+        _s.stage = _s.underway_row = None
         _s.blocks = []
         _s.next_retrying = False
         _s.name_width = 0
@@ -762,7 +762,7 @@ def stage_end(outcome: str) -> None:
                 _s.after_blank = False
             else:
                 _print(text, stage=True)
-        _s.stage, _s.stage_mark = None, None
+        _s.stage, _s.stage_mark, _s.underway_row = None, None, None
 
 
 def progress(text: str = "") -> None:
@@ -1024,12 +1024,12 @@ def _stage_line(spinner: str = "") -> tuple[str, str]:
 
 
 def _rows_up_to_stage_line() -> int | None:
-    """How many rows up from the cursor the stage's line is, left above what
-    the stage shows (_break), when it can be redrawn there: nothing drawn at
+    """How many rows up from the cursor the stage under way's line is, left
+    above what it shows (_break), when it can be redrawn there: nothing drawn at
     the cursor, a terminal that moves the cursor, and the line still in the
     window - with room for a Ctrl-C notice under the cursor, which may scroll
     it - as the cursor cannot go up into the scrollback."""
-    if _s.underway_row is None or _s.live or not (sys.stdout.isatty() and colour_ok()):
+    if _s.stage is None or _s.underway_row is None or _s.live or not (sys.stdout.isatty() and colour_ok()):
         return None
     up = _s.rows - _s.underway_row
     if up < 1 or up + len(interrupt.notice()) >= terminal_size((100, 24)).lines:

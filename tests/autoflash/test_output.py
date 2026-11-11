@@ -677,6 +677,27 @@ class ConciseTests(OutputTestCase):
         self.assertEqual(after[-2:], ["", "note 1"])   # said after a wait: a gap, as any note
         self.assertFalse([row for row in after if "Ctrl-C" in row], "\n".join(after))
 
+    def test_a_question_after_the_stage_ended_leaves_its_line_be(self):
+        # Seen in an attended emulator run: "What next", after a stage that had
+        # shown notes, drew it "Underway" again over its "Complete"; and the
+        # next run's first question drew it among that run's own rows.
+        def body():
+            output.stage_begin(2, "Discovering the device")
+            output.tell("    note 0")
+            output.tick()
+            output.stage_end("complete")
+            output.tell("Readout saved.")
+            output.tell("    1. Convert another device")
+            output.before_input("What next")
+            output.after_input()
+            screen.append(rendered(terminal.getvalue()))
+        screen, terminal = [], FakeTerminal()
+        with mock.patch.object(output, "colour_ok", return_value=True), \
+             mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
+            self.run_with(terminal, False, body)
+        self.assertFalse([row for row in screen[0] if "Underway" in row], "\n".join(screen[0]))
+        self.assertIn("Stage 2 - Discovering the device - Complete", screen[0])
+
     def test_out_of_reach_the_stage_s_line_turns_under_what_it_shows(self):
         # Pushed past the window's top by what the stage shows, the line
         # cannot be reached: it is drawn again under the last note, as before.
