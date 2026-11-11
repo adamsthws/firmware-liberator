@@ -16,6 +16,7 @@
       "computer": {"connection": "wifi", "vpn": false, "networks": 1, "security_note": false, "firewall": "added",
         "admin": true},
       "ewelink_region": "eu", "ctrl_c_carried_on": 0, "launcher": "start.sh", "install": "download",
+      "firmware_name": "FWSW-E32S60-S60-ESP32C3FN4", "firmware_name_expected": true,
       "begun_on": null, "back_after_power_cycle": null
     },
     {
@@ -32,6 +33,7 @@
       "computer": {"connection": null, "vpn": null, "networks": 0, "security_note": true, "firewall": null,
         "admin": false},
       "ewelink_region": null, "ctrl_c_carried_on": 2, "launcher": "other", "install": "git",
+      "firmware_name": null, "firmware_name_expected": null,
       "begun_on": "2.3.0", "back_after_power_cycle": null
     },
     {
@@ -50,6 +52,7 @@
       "computer": {"connection": "ethernet", "vpn": true, "networks": 2, "security_note": false, "firewall": "none",
         "admin": false},
       "ewelink_region": "us", "ctrl_c_carried_on": 1, "launcher": "start.sh", "install": "download",
+      "firmware_name": "FWSW-E32S60-S60-NEWNAME", "firmware_name_expected": false,
       "begun_on": null, "back_after_power_cycle": null
     },
     {
@@ -69,6 +72,7 @@
       "computer": {"connection": "wifi", "vpn": false, "networks": 1, "security_note": false, "firewall": "there",
         "admin": false},
       "ewelink_region": "as", "ctrl_c_carried_on": 0, "launcher": "start.cmd", "install": "download",
+      "firmware_name": "FWSW-01-S61-BK7238", "firmware_name_expected": true,
       "begun_on": null, "back_after_power_cycle": 41
     }
   ],
@@ -103,7 +107,9 @@
     {"why": "a region eWeLink does not have", "set": {"ewelink_region": "mars"}},
     {"why": "a processor not in the list", "set": {"os.arch": "riscv"}},
     {"why": "a stage's wait as words", "set": {"stages.A1.wait": "long"}},
-    {"why": "a version begun on not x.y.z", "set": {"begun_on": "2.4"}}
+    {"why": "a version begun on not x.y.z", "set": {"begun_on": "2.4"}},
+    {"why": "a firmware name not as Sonoff writes one", "set": {"firmware_name": "fwsw-e32s60"}},
+    {"why": "whether the name is expected, as a word", "set": {"firmware_name_expected": "yes"}}
   ],
   "readoutValid": [
     {

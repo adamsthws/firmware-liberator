@@ -370,6 +370,7 @@ class FirmwareNameTests(unittest.TestCase):
         self.assertEqual(name, "FWSW-E32S60B-S60-ESP32C3FN4")
         self.assertIn("FWSW-E32S60B-S60-ESP32C3FN4", told[0])
         self.assertIn(kinds.SONOFF_S60.wrapper_model, told[0])
+        self.assertNotIn("report", told[0].lower(), "the run's report carries it: nothing asked")
 
     def test_an_unknown_device_has_no_name_to_differ_from(self):
         name, logged, told = self.note(None, "FWSW-E32R9-NEW-ESP32C3")

@@ -21,8 +21,9 @@ stages people choose to stop at, and which devices people want supported next: s
   where it did (such as `KeyError at tools/autoflash/report.py:212`), never
   any of your values.
 - **The device:** its kind and model (such as Sonoff S60, S60TPF), the
-  version of Sonoff's firmware it had, and on an Espressif device its chip's
-  revision and its flash chip's maker code and size.
+  version of Sonoff's firmware it had, the name its own updater checks an
+  update against (and whether it is the one the tool expects), and on an
+  Espressif device its chip's revision and its flash chip's maker code and size.
 - **The conversion:** the firmware it went from and to, whether a backup of
   Sonoff's firmware was taken, whether the power meter kept its calibration,
   and, going back to Sonoff's firmware, where the eWeLink identity came from
