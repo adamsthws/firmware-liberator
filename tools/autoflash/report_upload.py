@@ -1,7 +1,9 @@
 """Each run's report, sent to the project's API when the run ends
 (website/api/reports.js), so how well the tool converts each device can be
 counted: what report_data.py makes, never anything of the person, their
-computer or their network.
+computer or their network. A readout sends one too, for each device, as its
+readout ends (begin_readout, send_readout): one kind of readout report,
+however many devices a sitting reads out.
 
 - On by default; off with --no-report, AUTOFLASH_NO_REPORT=1 (the environment
   or .env), in the emulator, and for a dry or simulated run. The first time
@@ -215,6 +217,14 @@ def begin(ctx: Context) -> None:
         ctx.report_work = start_work(ctx.report_id)
     except OSError as error:   # made at the end, or the next start, instead
         output.log_only(f"The report's work could not be begun: {error}")
+    announce(ctx)
+
+
+def announce(ctx: Context) -> None:
+    """At a run's start, a conversion's or a readout's: the notice said the
+    first time on this computer, and any report kept from before sent."""
+    if not enabled(ctx):
+        return
     if not NOTICE.exists():
         output.tell(NOTICE_TEXT)
         try:
@@ -224,6 +234,37 @@ def begin(ctx: Context) -> None:
             pass   # said again next time: no harm
     if any(QUEUE.glob("*.json")):
         in_background(lambda: send_kept(dt.date.today()))
+
+
+def begin_readout(ctx: Context) -> None:
+    """At each device's readout's start (readout.run): its report's id, and
+    its work begun as a conversion's is."""
+    ctx.readout_report_id = None
+    if not enabled(ctx):
+        return
+    ctx.readout_report_id = secrets.token_hex(16)
+    try:
+        ctx.readout_report_work = start_work(ctx.readout_report_id)
+    except OSError as error:   # made as it is sent instead
+        ctx.readout_report_work = None
+        output.log_only(f"The readout's report's work could not be begun: {error}")
+
+
+def send_readout(ctx: Context, became: Any, seconds: float) -> threading.Thread | None:
+    """As a device's readout ends, however it ends: its report kept, then sent
+    beside the run, with any kept from before. One a readout."""
+    report_id = getattr(ctx, "readout_report_id", None)
+    if not report_id or not enabled(ctx):
+        return None
+    ctx.readout_report_id = None
+    try:
+        keep({"report": report_data.readout_payload(report_id, became, seconds), "proof": None,
+              "made": dt.date.today().isoformat()})
+    except Exception as error:  # noqa: BLE001 - a report is never worth spoiling a readout for
+        output.log_only(f"The readout's report could not be kept: {type(error).__name__}: {error}")
+        return None
+    work = getattr(ctx, "readout_report_work", None)
+    return in_background(lambda: send_kept(dt.date.today(), {report_id: work}))
 
 
 def send(ctx: Context, ending: str, seconds: float, resumed: bool,

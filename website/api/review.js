@@ -45,6 +45,11 @@ export function holdsHeldWords(text) {
 
 // Why a report (one that fits the schema) is held for review, or null.
 export function heldFor(report) {
+  if (report.kind === "readout") {
+    // No words of its own but the names the device and computer gave.
+    const written = [report.model, report.stock_model, report.stock, report.os.version, report.python.version];
+    return written.some(holdsHeldWords) ? "words no report would hold" : null;
+  }
   const stopped = report.stopped;
   const written = [report.model, report.stock, report.os.version, report.python.version, stopped?.text];
   if (written.some(holdsHeldWords)) {

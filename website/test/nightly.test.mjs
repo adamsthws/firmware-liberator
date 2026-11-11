@@ -101,6 +101,17 @@ test("pruning never deletes a report whose day is not yet counted, however old",
   assert.equal(rows(bindings, "SELECT * FROM reports").length, 1);
 });
 
+test("a readout's report is deleted after a year, with no totals to wait for", async () => {
+  const bindings = env();
+  const insert = bindings.DB.db.prepare(`INSERT INTO readout_reports (id, day, tag, tool, result, os_family,
+    os_version, python_version, python_source, seconds, converted_here) VALUES (?, ?, 'user', '3.0.0', 'accepted',
+    'linux', 'Ubuntu 24.04', '3.12.3', 'venv', 60, 0)`);
+  insert.run("a".repeat(32), "2024-01-01");
+  insert.run("b".repeat(32), "2026-11-01");
+  await bindings.DB.batch(night.pruning(bindings.DB, "2026-11-10"));
+  assert.deepEqual(rows(bindings, "SELECT id FROM readout_reports"), [{ id: "b".repeat(32) }]);
+});
+
 test("a night counts an old report before it deletes it", async () => {
   const bindings = env();
   await kept(bindings.DB, "2024-01-01");

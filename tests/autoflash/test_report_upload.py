@@ -193,6 +193,51 @@ class SendTests(Case):
         post.assert_not_called()
 
 
+class ReadoutTests(Case):
+    """A readout's report: one for each device's readout, begun as it starts and
+    sent as it ends, through the same queue as a run's."""
+
+    def test_each_readout_begins_its_report_and_sends_it_once_as_it_ends(self):
+        ctx = SimpleNamespace(args=SimpleNamespace())
+        posted = []
+
+        def post(reports, url=None):
+            posted.append(reports)
+            return {"accepted": [report["id"] for report in reports]}
+        made = SimpleNamespace(name="'Kitchen' (BASICR4)")
+        with mock.patch.object(upload, "start_work", return_value=Work("7:8")), \
+                mock.patch.object(upload.report_data, "readout_payload",
+                                  side_effect=lambda report_id, became, seconds: {"id": report_id, "kind": "readout"}) as payload, \
+                mock.patch.object(upload, "post", post):
+            upload.begin_readout(ctx)
+            first = ctx.readout_report_id
+            upload.send_readout(ctx, made, 60)
+            upload.send_readout(ctx, made, 60)   # one a readout
+            upload.begin_readout(ctx)
+            upload.send_readout(ctx, made, 60)
+        self.assertEqual(payload.call_count, 2)
+        self.assertEqual(payload.call_args_list[0].args, (first, made, 60))
+        self.assertEqual([[report["proof"] for report in reports] for reports in posted], [["7:8"], ["7:8"]])
+        self.assertNotEqual(posted[0][0]["id"], posted[1][0]["id"])
+        self.assertEqual(self.ids(), [], "forgotten once taken")
+
+    def test_switched_off_none_is_begun_or_sent(self):
+        ctx = SimpleNamespace(args=SimpleNamespace(no_report=True))
+        with mock.patch.object(upload, "start_work") as work, mock.patch.object(upload, "post") as post:
+            upload.begin_readout(ctx)
+            self.assertIsNone(upload.send_readout(ctx, SimpleNamespace(), 60))
+        work.assert_not_called()
+        post.assert_not_called()
+
+    def test_a_readout_says_the_notice_and_sends_those_kept_as_a_run_does(self):
+        self.item("c" * 32)
+        with mock.patch.object(upload, "post", return_value={"accepted": ["c" * 32]}) as post, \
+                contextlib.redirect_stdout(io.StringIO()), mock.patch.object(upload.output, "tell") as told:
+            upload.announce(SimpleNamespace(args=SimpleNamespace()))
+        told.assert_called_once_with(upload.NOTICE_TEXT)
+        post.assert_called_once()
+
+
 class SendingTests(Case):
     def test_each_the_api_answered_for_is_forgotten_the_rest_kept(self):
         for name in ("accepted", "duplicate", "rejected", "later", "unanswered"):
