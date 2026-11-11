@@ -160,8 +160,11 @@ class WhereTests(unittest.TestCase):
             self.assertEqual(readout.upload_url(), readout.UPLOAD_URL)
 
     def test_never_from_the_emulator_or_unattended(self):
-        with mock.patch.dict(os.environ, {"AUTOFLASH_EMULATOR_URL": "http://127.0.0.1:1"}, clear=True):
-            self.assertIsNone(readout.upload_url())
+        # Either chip family's: the Beken one's computer has only its device's power switch.
+        for name, value in (("AUTOFLASH_EMULATOR_URL", "http://127.0.0.1:1"),
+                            ("AUTOFLASH_EMULATOR_POWER", "/device/power")):
+            with mock.patch.dict(os.environ, {name: value}, clear=True):
+                self.assertIsNone(readout.upload_url(), name)
         with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(prompts, "UNATTENDED", True):
             self.assertIsNone(readout.upload_url())
 

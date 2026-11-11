@@ -45,6 +45,17 @@ IS_LINUX = SYSTEM == "Linux"
 
 MAC_RE = re.compile(r"([0-9a-fA-F]{1,2}[:-]){5}[0-9a-fA-F]{1,2}")
 
+# What each chip family's emulator gives the computer the tool runs on there:
+# the Espressif one, where your browser reaches the device's page (emu.sh); the
+# Beken one, the device's power switch (beken-emu.sh computer).
+EMULATOR_MARKS = ("AUTOFLASH_EMULATOR_URL", "AUTOFLASH_EMULATOR_POWER")
+
+
+def emulated() -> bool:
+    """Whether this run is in an emulator, either chip family's: its device is
+    no one's, so nothing it says may reach the project's website as if it were."""
+    return any(os.environ.get(name) for name in EMULATOR_MARKS)
+
 Runner = Callable[..., subprocess.CompletedProcess]
 
 

@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import proof_of_work, report_upload as upload
+from tools.autoflash import hostsys, proof_of_work, report_upload as upload
 
 TODAY = dt.date(2026, 11, 10)
 
@@ -47,7 +47,8 @@ class Case(unittest.TestCase):
                       mock.patch.object(upload, "in_background", lambda work: work())):
             patch.start()
             self.addCleanup(patch.stop)
-        os.environ.pop("AUTOFLASH_EMULATOR_URL", None)
+        for name in hostsys.EMULATOR_MARKS:
+            os.environ.pop(name, None)
 
     def item(self, report_id, made="2026-11-09", proof="1:2"):
         upload.keep({"report": {"id": report_id, "format": 1}, "proof": proof, "made": made})
@@ -64,8 +65,11 @@ class EnabledTests(Case):
         for value in ("1", "yes", "TRUE", "on"):
             with mock.patch.dict(os.environ, {"AUTOFLASH_NO_REPORT": value}):
                 self.assertFalse(upload.enabled(SimpleNamespace(args=SimpleNamespace())), value)
-        with mock.patch.dict(os.environ, {"AUTOFLASH_EMULATOR_URL": "http://127.0.0.1:8100"}):
-            self.assertFalse(upload.enabled(SimpleNamespace(args=SimpleNamespace())), "never from the emulator")
+        # Either chip family's: the Beken one's computer has only its device's power switch.
+        for name, value in (("AUTOFLASH_EMULATOR_URL", "http://127.0.0.1:8100"),
+                            ("AUTOFLASH_EMULATOR_POWER", "/device/power")):
+            with mock.patch.dict(os.environ, {name: value}):
+                self.assertFalse(upload.enabled(SimpleNamespace(args=SimpleNamespace())), name)
 
     def test_the_tests_themselves_send_none(self):
         # tests/no_network.py, which every test package installs, says so.
