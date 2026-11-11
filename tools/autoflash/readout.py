@@ -240,11 +240,8 @@ def end(ctx: Context, said: str) -> None:
     output.tell("")
     output.show("How it went:", output.GREEN)
     output.tell("")
-    fields = report_fields(done)
-    # Four counts, where some were kept unsent: the result at the top of the
-    # left-hand column, so its four rows and theirs line up, with no gap.
-    wide = () if "Not sent" in dict(fields) else report.WIDE
-    for line in report.report_screen(fields, right=REPORT_RIGHT, below=report_devices(done), wide=wide):
+    # The result at the top of the left-hand column, beside the device count.
+    for line in report.report_screen(report_fields(done), right=REPORT_RIGHT, below=report_devices(done), wide=()):
         output.tell(line)
     report.hold_out_hat()
 

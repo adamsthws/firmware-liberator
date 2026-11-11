@@ -1240,18 +1240,15 @@ class ReportTests(unittest.TestCase):
             readout.end(SimpleNamespace(readouts=done), "")
         return shown
 
-    def test_with_some_kept_unsent_the_four_counts_line_up_with_the_four_rows_beside_them(self):
-        shown = self.shown_by_end(self.DONE)
-        rows = [next(line for line in shown if label in line) for label in ("Result:", "Liberator:", "OS:", "Python:")]
-        self.assertEqual([line.split()[-2] for line in rows], ["Devices:", "Accepted:", "needed:", "sent:"],
-                         "\n".join(shown))
-        self.assertEqual(rows[0].index("Result:"), rows[1].index("Liberator:"))
-
-    def test_with_none_kept_unsent_the_result_has_a_row_of_its_own_above_the_counts(self):
-        shown = self.shown_by_end([self.DONE[0], self.DONE[2]])
-        result = next(line for line in shown if "Result:" in line)
-        self.assertNotIn("Devices:", result)
-        self.assertIn("Devices:", shown[shown.index(result) + 1])
+    def test_the_result_is_beside_the_device_count_and_each_count_beside_a_row_of_the_left(self):
+        for done, counts in ((self.DONE, ["Devices:", "Accepted:", "needed:", "sent:"]),   # some kept unsent
+                             ([self.DONE[0], self.DONE[2]], ["Devices:", "Accepted:", "needed:"])):
+            with self.subTest(counts=len(counts)):
+                shown = self.shown_by_end(done)
+                rows = [next(line for line in shown if label in line)
+                        for label in ("Result:", "Liberator:", "OS:", "Python:")]
+                self.assertEqual([line.split()[-2] for line in rows[:len(counts)]], counts, "\n".join(shown))
+                self.assertEqual(rows[0].index("Result:"), rows[1].index("Liberator:"))
 
     def test_it_ends_as_a_conversion_does(self):
         shown = []
