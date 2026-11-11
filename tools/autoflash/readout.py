@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING
 
 from tools.autoflash import __version__, account, detect, hostsys, kinds, output, records, prompts, runs
-from tools.autoflash import proof_of_work, readout_beken, readout_espressif
+from tools.autoflash import proof_of_work, readout_beken, readout_espressif, report
 from tools.autoflash.errors import Abort, Finished, NothingWritten
 from tools.ewelink import discover_ewelink, firmware_name, offered_firmware
 from tools.ewelink.get_device_key import is_email
@@ -142,6 +142,130 @@ class Batch:
     """A readout of one device among several in one run (run_all): the
     owner's contact details, asked once for them all."""
     contact: dict[str, str] | None = None
+
+
+# What a device not back on its Sonoff firmware still needs, said as the run ends.
+SWITCH_OFF_AND_ON = "Switch the device off and on once more: it then starts its Sonoff firmware again."
+
+# How a device's readout ended, as the report at the end says it (report_fields).
+SENT = "sent"                  # the website wanted it, and took it
+KEPT = "kept"                  # made, and kept on this computer unsent
+UNNEEDED = "not needed"        # the website has readouts like it already
+WEBSITE_FULL = "website full"  # the website could take no more for now
+CONVERTED = "converted"        # it runs another firmware now: none of Sonoff's to read
+SKIPPED = "skipped"            # passed by as asked, one device of several
+NOT_READ = "not read"          # stopped before it was made
+
+
+@dataclass
+class Became:
+    """One device's readout, for the report at the end: filled in as it goes
+    (run), and how it ended. `name` and `detail` are for the screen alone -
+    the device's name in the account, and the reference it was sent under -
+    never for a report that is sent (report_data)."""
+    name: str
+    product: str = ""
+    model: str = ""
+    version: str = ""
+    whole: bool | None = None   # its whole memory read; False: what it and eWeLink say alone
+    outcome: str = NOT_READ
+    detail: str = ""            # the firmware it runs now, the reference, or why it was kept
+    back: bool = True           # its Sonoff firmware answered again
+
+    @classmethod
+    def of(cls, device: dict[str, Any], **ended: Any) -> Became:
+        """A readout of the account's `device`, as far as its record says."""
+        return cls(describe(device), product=str(device.get("productModel") or ""),
+                   model=str((device.get("extra") or {}).get("model") or ""), **ended)
+
+
+def outcome_said(item: Became) -> str:
+    """How a device's readout ended, as its report says it."""
+    detail = f" ({item.detail})" if item.detail else ""
+    return {SENT: f"sent, reference {item.detail}" if item.detail else "sent",
+            KEPT: f"kept, not sent{detail}",
+            UNNEEDED: "not needed: one like it is in already",
+            WEBSITE_FULL: "not read out: the website could take no more for now",
+            CONVERTED: f"not read out: it runs {item.detail or 'another firmware'} now",
+            SKIPPED: "skipped",
+            NOT_READ: f"not read out{detail}"}[item.outcome]
+
+# The report's right-hand column, the devices' (report.report_screen).
+REPORT_RIGHT = ("Devices", "Sent", "Device", *(f"Device {number}" for number in range(1, 100)))
+
+
+def report_data(done: list[Became], seconds: float) -> dict[str, Any]:
+    """A readout's report as it could be sent, as a conversion's is
+    (report_upload): one for every device the sitting read out, and how
+    many were sent - wanted by the website, and taken. Anonymous: no
+    device's name, nor any reference. Not sent yet."""
+    return {
+        "kind": "readout", "tool": __version__, "os": report.computer_description(),
+        "python": report.python_description(), "seconds": round(seconds),
+        "sent": sum(item.outcome == SENT for item in done),
+        "devices": [{"product": item.product, "model": item.model, "version": item.version,
+                     "whole": item.whole, "outcome": item.outcome} for item in done],
+    }
+
+
+def report_fields(done: list[Became], seconds: float) -> list[tuple[str, str]]:
+    """The readout's report for the screen, as (label, value): report_data's,
+    each device named as the account names it, with its reference."""
+    data = report_data(done, seconds)
+    fields = [
+        ("Result", "read out" if any(item.outcome in (SENT, KEPT) for item in done) else "nothing read out"),
+        ("Liberator", data["tool"]),
+        ("OS", data["os"]),
+        ("Python", data["python"]),
+        ("Time", output.elapsed(seconds)),
+        ("Devices", str(len(done))),
+        ("Sent", str(data["sent"])),
+    ]
+    for number, item in enumerate(done, 1):
+        read = {True: "its memory read, ", False: "what eWeLink says, ", None: ""}[item.whole]
+        fields.append(("Device" if len(done) == 1 else f"Device {number}",
+                       f"{item.name} {item.version}".rstrip() + f": {read}{outcome_said(item)}"))
+    return [(label, report.answer(value)) for label, value in fields]
+
+
+def end(ctx: Context, said: str, seconds: float) -> None:
+    """The end of a readout that finished, as a conversion's: what the person
+    is still to do (`said`), then the report - one for every device read out
+    in the sitting - and the links to support the project."""
+    done = readouts(ctx)
+    output.tell("")
+    if any(item.outcome in (SENT, KEPT) for item in done):
+        output.show("Readout complete!", output.GREEN)
+    if said:
+        for line in said.splitlines():
+            output.tell(line)
+    output.tell("")
+    output.show("How it went:", output.GREEN)
+    output.tell("")
+    for line in report.report_screen(report_fields(done, seconds), right=REPORT_RIGHT):
+        output.tell(line)
+    report.hold_out_hat()
+
+
+def readouts(ctx: Context) -> list[Became]:
+    """This sitting's readouts so far, one for each device, in the order read."""
+    if getattr(ctx, "readouts", None) is None:
+        ctx.readouts = []
+    return ctx.readouts
+
+
+def became_of(ctx: Context, device: dict[str, Any]) -> Became:
+    """`device`'s readout in this sitting's: the last, or a new one where run()
+    made none (it never began)."""
+    done = readouts(ctx)
+    if not done or done[-1].name != describe(device):
+        done.append(Became.of(device))
+    return done[-1]
+
+
+def became(ctx: Context) -> Became:
+    """The readout under way (run), or one of its own for offer() called alone."""
+    return getattr(ctx, "readout", None) or Became("")
 
 
 def upload_url() -> str | None:
@@ -281,17 +405,22 @@ def locate_by_mac(device: dict[str, Any]) -> str:
 
 
 def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch: Batch | None = None) -> str:
-    """Read out the account's `device` and offer to send it. What the run ends
-    by saying; Abort before anything was sent to the device, or after, with
-    what to do. In a `batch`, it is sent as it is made, unasked, and what is
-    returned is what became of it.
+    """Read out the account's `device` and offer to send it. What the person
+    is still to do, for the run to end by saying ("" for nothing): what
+    became of it goes in the report at the end (readouts, report_fields).
+    Abort before anything was sent to the device, or after, with what to do.
+    In a `batch`, it is sent as it is made, unasked.
 
     Under the readout's stage lines (STAGES): the one under way when it stops
     ends as stopped, with what it showed left under it - or skipped, for one
     device of several passed by."""
+    ctx.readout = Became.of(device)
+    readouts(ctx).append(ctx.readout)
     try:
         said = _run(ctx, device, address, batch)
     except NothingWritten:
+        if batch is not None and ctx.readout.outcome == NOT_READ:
+            ctx.readout.outcome = SKIPPED
         output.stage_end("skipped" if batch is not None else "stopped")
         raise
     except BaseException:
@@ -346,9 +475,11 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
     except account.NotOnSonoff as exc:
         # One the account still lists, converted since: nothing gone wrong,
         # and none of Sonoff's firmware left on it to read.
-        running = f"runs {detect.NAMES[exc.firmware]} now, not Sonoff's firmware, which is what a readout reads"
-        return f"not read out: it {running}." if batch is not None else \
-            f"Nothing was read out: the device at {ip} {running}."
+        ctx.readout.outcome, ctx.readout.detail = CONVERTED, detect.NAMES[exc.firmware]
+        return ""
+    ctx.readout.product = asked.product or ctx.readout.product
+    ctx.readout.model = asked.model or ctx.readout.model
+    ctx.readout.version = asked.version
     learned, problems = firmware_name.learn(asked.latest.get("offers") or [], asked.deviceid,
                                             asked.product, asked.model)
     for problem in problems:
@@ -379,12 +510,12 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
                             offered_digests(offers))
     if not answer.wanted:
         full = {"full": FULL_TODAY, "store-full": STORE_FULL, "limit": LIMIT_TODAY}.get(answer.why)
+        ctx.readout.outcome, ctx.readout.detail = (WEBSITE_FULL, full) if full else (UNNEEDED, "")
         if full and batch is not None:
             raise WebsiteFull(full)
-        said = full or NOT_NEEDED
         if batch is not None:
-            return said
-        return single_not_wanted(said, asked)
+            return ""
+        return single_not_wanted(full or NOT_NEEDED, asked)
     manifest = {
         "format": FORMAT, "tool": __version__, "product": asked.product, "stock_model": asked.model,
         "version": asked.version, "brand": str(device.get("brandName") or ""),
@@ -438,9 +569,10 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
         else:
             why = f"there is no bridge for its chip ({learned.chip or 'not named'}) yet"
         output.say(f"    Its memory cannot be read from here: {why}. The readout still helps.")
-        manifest["read"] = False
+        manifest["read"] = ctx.readout.whole = False
         begin("save")
         return offer(ctx, manifest, None, sent, batch=batch, device=device)
+    ctx.readout.whole, ctx.readout.back = True, back
     begin("save")
     return offer(ctx, manifest, files, sent, back=back, batch=batch, device=device)
 
@@ -560,12 +692,13 @@ def ask_contact(when_supported: bool = False) -> dict[str, str] | None:
 def offer(ctx: Context, manifest: dict[str, Any], files: dict[str, bytes] | None = None,
           updates: list[offered_firmware.Offered] | tuple = (), *, back: bool = True,
           batch: Batch | None = None, device: dict[str, Any] | None = None) -> str:
-    """Make the readout, ask, and send it; what the run ends by saying.
+    """Make the readout, ask, and send it; what the person is still to do.
     `files`: the anonymised flash and its companions, or None if not read.
     `back`: whether the device answered as its Sonoff firmware again.
     In a `batch` it is sent unasked, and kept under `device`'s id if not."""
     if batch is not None:
         return sent_in_batch(ctx, package(manifest, files, updates, batch.contact), device or {}, back)
+    ended = became(ctx)
     path = ctx.dir / NAME
 
     def keep(contact: dict[str, str] | None = None) -> bytes:
@@ -586,51 +719,63 @@ def offer(ctx: Context, manifest: dict[str, Any], files: dict[str, bytes] | None
         ])
         if url is None:
             keep()
-            output.say("    Not sent from a test run.")
-            return f"Readout saved in {path}, not sent."
+            output.say(f"    Not sent from a test run: kept in {path}.")
+            ended.outcome, ended.detail = KEPT, "a test run"
+            return "" if back else SWITCH_OFF_AND_ON
         try:
             contact = ask_contact()
         except prompts.QuitRun:
             keep()
-            return f"Not sent. The readout is kept in {path}, if you would like to send it later."
-        said = sent(keep(contact), url, path, back)
+            ended.outcome, ended.detail = KEPT, "as asked"
+            return (f"The readout is kept in {path}, if you would like to send it later."
+                    + ("" if back else f" {SWITCH_OFF_AND_ON}"))
+        said = sent(ctx, keep(contact), url, path, back)
         if contact and notify(contact["email"], [(manifest.get("product", ""), manifest.get("stock_model", ""))]):
-            said += f" {CONFIRM_SENT}"
+            said = f"{said} {CONFIRM_SENT}".strip()
         return said
 
 
-def sent(data: bytes, url: str, path: Path, back: bool) -> str:
-    """offer()'s readout sent to `url`; what the run ends by saying."""
+def sent(ctx: Context, data: bytes, url: str, path: Path, back: bool) -> str:
+    """offer()'s readout sent to `url`; what the person is still to do. Its
+    reference is the report's to say (became)."""
     try:
         reference = send(data, url)
     except (OSError, ValueError) as exc:
         raise Abort(f"the readout could not be sent ({exc}). It is kept in {path}: send it later "
                     "with this tool's readout --send") from exc
     path.unlink(missing_ok=True)
-    return (f"Sent, thank you! Its reference is {reference}: quote it if you post about this device. "
-            + ("The device is running its Sonoff firmware as before." if back else
-               "Switch the device off and on once more: it then starts its Sonoff firmware again."))
+    ended = became(ctx)
+    ended.outcome, ended.detail = (UNNEEDED, "") if reference == ENOUGH else (SENT, reference)
+    return "" if back else SWITCH_OFF_AND_ON
 
 
 def sent_in_batch(ctx: Context, data: bytes, device: dict[str, Any], back: bool) -> str:
-    """A readout made in a batch, sent; what became of it. Kept, if not sent,
+    """A readout made in a batch, sent; what the person is still to do with
+    it (what became of it goes in the report: became). Kept, if not sent,
     under the device's id, beside the others."""
     path = ctx.dir / f"readout-{device.get('deviceid') or 'device'}.tar"
     url = upload_url()
-    again = "" if back else " Switch it off and on once more: it then starts its Sonoff firmware again."
+    ended = became(ctx)
+    todo = []
     if url is None:
         path.write_bytes(data)
         os.chmod(path, 0o600)
-        return f"saved in {path}, not sent from a test run.{again}"
-    try:
-        reference = send(data, url)
-    except (OSError, ValueError) as exc:
-        path.write_bytes(data)
-        os.chmod(path, 0o600)
-        return f"not sent ({exc}): kept in {path}, to send later with this tool's readout --send.{again}"
-    if reference == ENOUGH:
-        return f"not needed, as enough readouts of this device are in already.{again}"
-    return f"sent, reference {reference}.{again}"
+        output.say(f"    Not sent from a test run: kept in {path}.")
+        ended.outcome, ended.detail = KEPT, "a test run"
+    else:
+        try:
+            reference = send(data, url)
+        except (OSError, ValueError) as exc:
+            path.write_bytes(data)
+            os.chmod(path, 0o600)
+            ended.outcome, ended.detail = KEPT, f"not sent: {exc}"
+            todo.append(f"{ended.name}: its readout is kept in {path}: send it later with this tool's "
+                        "readout --send.")
+        else:
+            ended.outcome, ended.detail = (UNNEEDED, "") if reference == ENOUGH else (SENT, reference)
+    if not back:
+        todo.append(f"{ended.name}: {SWITCH_OFF_AND_ON[0].lower()}{SWITCH_OFF_AND_ON[1:]}")
+    return "\n".join(todo)
 
 
 def proof(data: bytes, now: float | None = None, bits: int | None = None,
@@ -704,17 +849,17 @@ def notify(email: str, devices: list[tuple[str, str]]) -> bool:
 
 def single_not_wanted(said: str, asked: account.Asked) -> str:
     """A lone readout the website does not want: offered, still, to be told
-    when the device's status changes. What the run ends by saying."""
+    when the device's status changes. What the person is still to do."""
     output.tell(f"    {said[0].upper()}{said[1:]}")
     if upload_url() is None or prompts.UNATTENDED:
-        return said[0].upper() + said[1:]
+        return ""
     try:
         contact = ask_contact(when_supported=True)
     except prompts.QuitRun:
         contact = None
     if contact and notify(contact["email"], [(asked.product, asked.model)]):
-        return f"Nothing was read or sent. {CONFIRM_SENT} Thank you!"
-    return "Nothing was read or sent. Thank you!"
+        return CONFIRM_SENT
+    return ""
 
 
 def send(data: bytes, url: str = UPLOAD_URL, timeout: float = 120.0) -> str:
@@ -804,30 +949,36 @@ def run_all(ctx: Context, devices: list[dict[str, Any]]) -> str:
                                              for device in ordered]):
         # Every device, its readout wanted or not: told when any one's changes.
         output.tell(f"    {CONFIRM_SENT}")
-    became = []
+    todo = []
     for number, device in enumerate(ordered, 1):
         output.tell(f"Reading out {describe(device)} ({number} of {len(ordered)})...")
         for key in (*DEVICE_KEYS, readout_espressif.BRIDGE_HOST):
             ctx.state.set_input(key, None)
+        left = ordered[number:]
         try:
-            became.append(f"{describe(device)}: {run(ctx, device, batch=Batch(contact))}")
+            said = run(ctx, device, batch=Batch(contact))
         except prompts.QuitRun:
-            left = [describe(other) for other in ordered[number - 1:]]
-            return "\n".join(["Stopped as asked. What became of each readout:", *became,
-                              f"Not read out: {', '.join(left)}."])
+            became_of(ctx, device).detail = "stopped as asked"
+            readouts(ctx).extend(Became.of(other, detail="stopped as asked") for other in left)
+            break
         except WebsiteFull as exc:
-            left = [describe(other) for other in ordered[number - 1:]]
-            return "\n".join(["What became of each readout:", *became, f"{', '.join(left)}: {exc}"])
+            became_of(ctx, device).outcome = WEBSITE_FULL
+            readouts(ctx).extend(Became.of(other, outcome=WEBSITE_FULL, detail=str(exc)) for other in left)
+            break
         except NothingWritten as exc:
-            became.append(f"{describe(device)}: not read out - {exc}.")
+            this = became_of(ctx, device)
+            this.detail = this.detail or str(exc)
         except Abort as exc:
             if reads_out(device):
-                left = [describe(other) for other in ordered[number:]]
-                raise Abort("\n".join([f"{describe(device)}: {exc}", *became,
-                                        *([f"Not read out yet: {', '.join(left)}."] if left else [])])) from exc
-            became.append(f"{describe(device)}: not read out - {exc}.")
-        output.tell(f"    {became[-1]}")
-    return "\n".join(["Thank you! What became of each readout:", *became])
+                # One that fails part way stops the rest: it may need seeing to.
+                raise Abort("\n".join([f"{describe(device)}: {exc}", *todo,
+                                        *([f"Not read out yet: {', '.join(map(describe, left))}."]
+                                          if left else [])])) from exc
+            became_of(ctx, device).detail = str(exc)
+        else:
+            if said:
+                todo.append(said)
+    return "\n".join(todo)
 
 
 def from_run(ctx: Context, devices: list[dict[str, Any]]) -> None:
@@ -836,7 +987,12 @@ def from_run(ctx: Context, devices: list[dict[str, Any]]) -> None:
     readout's stages carry on from 3: its first, the account's, is done."""
     output.stage_end("complete")
     lay_out_stages(first=2)
-    raise Finished(read_out_chosen(ctx, devices))
+    started, waited = time.monotonic(), output.waited()
+    ctx.readouts = []
+    said = read_out_chosen(ctx, devices)
+    end(ctx, said, time.monotonic() - started - (output.waited() - waited))
+    # Said already, with the report: the run has nothing more to say.
+    raise Finished("")
 
 
 def send_saved(path: Path) -> str:
