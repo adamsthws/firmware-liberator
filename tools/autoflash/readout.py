@@ -181,7 +181,7 @@ SAID = {ACCEPTED: "Accepted", UNNEEDED: "Not needed", KEPT: "Not sent", WEBSITE_
         CONVERTED_SINCE: "Converted since", SKIPPED: "Skipped", NOT_READ: "Not read out", CANCELLED: "Stopped",
         FAILED: "Failed", CRASHED: "Crashed"}
 # The report's right-hand column (report.report_screen).
-REPORT_RIGHT = ("Devices", "Accepted", "Not needed")
+REPORT_RIGHT = ("Devices", "Accepted", "Not needed", "Not sent")
 
 
 def named(item: Became) -> str:
@@ -193,7 +193,8 @@ def named(item: Became) -> str:
 def report_fields(done: list[Became]) -> list[tuple[str, str]]:
     """The readout's report for the screen, as (label, value): how it ended,
     the tool and this computer, and how many devices were read out, how many
-    the website accepted and how many it did not need."""
+    the website accepted, how many it did not need, and how many were kept
+    unsent, where any were."""
     fields = [
         ("Result", SAID[done[0].outcome] if len(done) == 1 else
          "read out" if any(item.outcome in (ACCEPTED, KEPT) for item in done) else "nothing read out"),
@@ -204,6 +205,9 @@ def report_fields(done: list[Became]) -> list[tuple[str, str]]:
         ("Accepted", str(sum(item.outcome == ACCEPTED for item in done))),
         ("Not needed", str(sum(item.outcome == UNNEEDED for item in done))),
     ]
+    kept = sum(item.outcome == KEPT for item in done)
+    if kept:
+        fields.append(("Not sent", str(kept)))
     return [(label, report.answer(value)) for label, value in fields]
 
 

@@ -1194,6 +1194,13 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn("Time", fields)
         self.assertEqual(dict(readout.report_fields(self.DONE[2:]))["Result"], "Not needed")   # one: how it ended
 
+    def test_those_kept_unsent_are_counted_on_the_right_only_where_there_are_any(self):
+        lines = report.report_screen(readout.report_fields(self.DONE), columns=100, right=readout.REPORT_RIGHT)
+        at = {label: line.index(label) for line in lines for label in ("Devices:", "Not sent:") if label in line}
+        self.assertEqual(at["Not sent:"], at["Devices:"], "\n".join(lines))   # in the right-hand column
+        self.assertTrue(any(line.rstrip().endswith("Not sent:   1") for line in lines))
+        self.assertNotIn("Not sent", dict(readout.report_fields([self.DONE[0], self.DONE[2]])))
+
     def test_one_device_is_named_by_its_model_and_version_alone(self):
         self.assertEqual(readout.report_devices(self.DONE[:1]), [("Device", "BASICR4\u00a01.1.0")])
         shown = repr(readout.report_fields(self.DONE[:1])) + repr(readout.report_devices(self.DONE[:1]))
