@@ -161,6 +161,13 @@ class LayoutTests(unittest.TestCase):
     def test_a_dual_r3_is_laid_out_as_a_real_ones_boot_log_shows(self):
         self.assertEqual(kinds.SONOFF_DUALR3.layout, "sonoff-th-elite")
 
+    def test_each_beken_kind_is_on_a_beken_table(self):
+        from tools.beken import layouts as beken_layouts
+        for kind in kinds.EVERY:
+            if kind.family == "beken":
+                with self.subTest(kind=kind.key):
+                    self.assertEqual(beken_layouts.of(kind.layout).key, kind.layout)
+
 
 class BasicR4Tests(unittest.TestCase):
     """Its pins as published: Blakadder's template, which ESPHome's device page
