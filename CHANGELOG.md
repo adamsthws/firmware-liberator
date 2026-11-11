@@ -111,6 +111,12 @@ as its screens do, since it converts much more than smart plugs now.
 - The Sonoff Basic Gen5 (BASIC-1GS). It has no public dump, so the tool checks
   the partition table in eWeLink's official update file before writing anything,
   and logs what the run learns. Beken devices on any other table are refused.
+- On a Beken device, Sonoff's firmware - what a run checks before writing, keeps
+  beside the backup and puts back - and the firmware name its updater checks
+  come first from the file eWeLink offers the device, as on an Espressif one,
+  and from a public copy only where eWeLink offers none the tool can use. Going
+  back to Sonoff's firmware signs in to your eWeLink account for this if the run
+  has not yet.
 - A readout is safe on the Sonoff BASICR4 and MINIR4, whose firmware is a
   newer Sonoff SDK. The BASICR4 keeps its partition table at 0xC000, where the
   bridge did not look: bridge 4.4.6 takes it from there without writing
