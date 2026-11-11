@@ -9,7 +9,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.autoflash import account, errors, hostsys, kinds, output, records, prompts, runs, setup_network
+from tools.autoflash import (account, errors, esphome, hostsys, kinds, openbeken, output, records, prompts, runs,
+                             setup_network)
 from tools.autoflash.routes.espressif import bundle
 from tools.autoflash.state import RunState
 from tools.ewelink import discover_ewelink, firmware_name
@@ -387,7 +388,8 @@ class FirmwareNameTests(unittest.TestCase):
 class AlreadyConvertingTests(unittest.TestCase):
     """A device part way through a conversion is not a LAN Control problem."""
 
-    def silent_discover(self, page):
+    def silent_discover(self, page, running=None):
+        """`running`: "esphome" or "openbeken", if that answers at the address."""
         from types import SimpleNamespace
         from unittest import mock
 
@@ -398,6 +400,8 @@ class AlreadyConvertingTests(unittest.TestCase):
         ctx = SimpleNamespace(dir=Path(directory.name), state=state)
         with mock.patch.object(discover_ewelink, "discover", return_value={"packets": []}), \
              mock.patch.object(setup_network, "page", return_value=page), \
+             mock.patch.object(esphome, "is_esphome", return_value=running == "esphome"), \
+             mock.patch.object(openbeken, "is_openbeken", return_value=running == "openbeken"), \
              mock.patch.object(hostsys, "security_software_note", return_value=None), \
              mock.patch.object(prompts, "section"):
             return account.step_discover(ctx)
@@ -409,6 +413,18 @@ class AlreadyConvertingTests(unittest.TestCase):
     def test_tasmota_is_named(self):
         with self.assertRaisesRegex(errors.Abort, "running Tasmota, not Sonoff's firmware"):
             self.silent_discover("<title>Tasmota</title>")
+
+    def test_a_converted_device_says_what_it_runs(self):
+        # The eWeLink account still lists a device converted since.
+        for running, name in (("esphome", "ESPHome"), ("openbeken", "OpenBeken")):
+            with self.subTest(running), self.assertRaises(account.NotOnSonoff) as raised:
+                self.silent_discover("<html></html>", running)
+            self.assertEqual(raised.exception.firmware, running)
+            self.assertIn(f"running {name}, not Sonoff's firmware: it is converted already", str(raised.exception))
+
+    def test_another_page_keeps_the_lan_control_advice(self):
+        with self.assertRaisesRegex(errors.Abort, "LAN Control"):
+            self.silent_discover("<html></html>")
 
     def test_no_page_keeps_the_lan_control_advice(self):
         with self.assertRaisesRegex(errors.Abort, "LAN Control"):

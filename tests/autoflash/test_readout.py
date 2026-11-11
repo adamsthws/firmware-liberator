@@ -406,6 +406,20 @@ class RunTests(unittest.TestCase):
         self.assertEqual(manifest["offered"][0]["version"], "1.1.0")
         self.assertNotIn("1000abcdef", json.dumps(manifest))
 
+    def test_a_device_converted_since_is_not_read_out_and_that_is_no_failure(self):
+        # Still in the eWeLink account, on ESPHome now: answered, not raised.
+        from tools.autoflash import kinds
+        s60 = record("S60TPG", kinds.SONOFF_S60.stock_model)
+        converted = account.NotOnSonoff("esphome", "192.0.2.77 is running ESPHome, not Sonoff's firmware")
+        with mock.patch.object(account, "ask_ewelink", side_effect=converted), \
+                mock.patch.object(runs, "hold_device"), mock.patch.object(readout, "ask_wanted") as wanted:
+            self.assertEqual(readout.run(self.ctx, s60),
+                             "Nothing was read out: the device at 192.0.2.77 runs ESPHome now, not Sonoff's "
+                             "firmware, which is what a readout reads.")
+            self.assertEqual(readout.run(self.ctx, s60, batch=readout.Batch(None)),
+                             "not read out: it runs ESPHome now, not Sonoff's firmware, which is what a readout reads.")
+        wanted.assert_not_called()
+
     def test_a_kind_the_tool_knows_takes_its_own_name_when_ewelink_gives_none(self):
         from tools.autoflash import kinds
         s60 = account.Asked({"packets": []}, "1.2.0", kinds.SONOFF_S60.stock_model, "S60TPG", [], {}, "1000abcdef")

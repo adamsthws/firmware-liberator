@@ -56,7 +56,9 @@ as its screens do, since it converts much more than smart plugs now.
   with your device's model, to be told when its support changes, once you
   confirm it from an email sent to it (and reminded once, the next day); every such email has a link to remove it. Its first stage only reads: what the device and
   eWeLink say it is, and the firmware eWeLink offers it; nothing is sent to the
-  device, and a device the tool has not seen gets that alone. Its second stage
+  device, and a device the tool has not seen gets that alone. One the account
+  still lists but that runs Tasmota, ESPHome or OpenBeken now is not read: the
+  tool says what it runs. A readout's second stage
   reads the whole memory, and is only for a device the tool lists as Supported,
   Testers wanted or Readout wanted, under that kind's own firmware name. On an
   ESP32-C3 or classic ESP32 that is through the bridge, kept in the spare slot only
