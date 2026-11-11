@@ -73,6 +73,13 @@ class NextImageTests(unittest.TestCase):
         self.assertEqual([path.name for path in hashed if "bk-emu" in path.read_text(encoding="utf-8")], [],
                          "names the script by its earlier name: beken-emu.sh")
 
+    def test_the_espressif_image_speaks_utf8(self):
+        """Its tmux session is the terminal a run is watched in: with no UTF-8
+        locale the tmux client draws the spinner's braille as a still _.  The
+        Beken emulator has no tmux, and Python writes UTF-8 without a locale."""
+        dockerfile = (EMULATORS["espressif"] / "emu.Dockerfile").read_text(encoding="utf-8")
+        self.assertRegex(dockerfile, r"(?m)^ENV .*\bLANG=C\.UTF-8\b")
+
     def test_each_patch_is_named_alike(self):
         """NNNN-what-it-does.patch, numbered in the order they are applied."""
         for family, folder in EMULATORS.items():
