@@ -210,6 +210,7 @@ def finish() -> None:
         _s.log = _s.log_path = None
         _s.concise = False
         _s.stage = _s.underway_row = None
+        _s.waited = False
         _s.blocks = []
         _s.next_retrying = False
         _s.name_width = 0
