@@ -30,6 +30,10 @@ RESULTS = ("converted", "updated", "put-back", "failed", "crashed", "cancelled")
 # How the person stopped a cancelled run, sent as its stopped "error": q at a
 # question, Ctrl-C (at once, or confirmed at a stage's end), or its window closed.
 STOPPED_BY = ("quit", "ctrl-c", "window-closed")
+# The highest number a device converted on one computer can have in a report
+# (records.number_conversion): no cap on what people convert, only on what a
+# report can claim.
+NTH_DEVICE_LIMIT = 1_000_000
 OS_FAMILIES = ("windows", "macos", "linux")
 # Where the Python came from, by report.python_description's word for it;
 # "other" for one it has since learnt.
@@ -128,6 +132,15 @@ def stages(ctx: Context) -> dict[str, dict[str, int]]:
     return found
 
 
+def converted_to_another(ctx: Context) -> bool:
+    """Whether the run converted the device to a firmware other than Sonoff's:
+    what the API counts as a conversion (website/api/reports.js) - not an
+    update, a device put back, or one taken back to Sonoff's."""
+    state = ctx.state
+    return (not state.input("put_back") and runs.run_source(state) != "outdated"
+            and routes.recorded_firmware(state) not in (None, "sonoff"))
+
+
 def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending: str,
             hardware: dict[str, str] | None = None) -> dict[str, Any]:
     """The run's report as the API takes it, but its proof. `ending`:
@@ -166,6 +179,11 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
               or (captures.get("D1.upload_route") == "home network" and captures.get("D1.wifi") != "preset")
               or captures.get("F4.wifi_route") == "setup network")
     backup = state.input("backup_outcome") or ("existing" if routes.sonoff_backup_exists(ctx) else "not taken")
+    # For a conversion, the device's number among those converted on this
+    # computer (records.number_conversion): how many one computer converts.
+    nth = record.get(records.CONVERTED_NUMBER)
+    if result != "converted" or not converted_to_another(ctx) or not isinstance(nth, int) or isinstance(nth, bool):
+        nth = None
     return {
         "format": FORMAT,
         "id": report_id,
@@ -195,4 +213,5 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         "power_cycled": bool(state.input("power_cycles")) if not espressif else None,
         "checks": checks_word(hardware),
         "meter": meter_word(captures, firmware) if kinds.of_run(state).has_meter else None,
+        "nth_device": nth,
     }
