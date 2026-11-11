@@ -1104,14 +1104,15 @@ class ReportTests(OutputTestCase):
         self.assertEqual(fields["Result"], "Converted")
         self.assertEqual(fields["Model"], "S60TPG")
         self.assertNotIn("Device type / region", fields)  # the model says it
-        self.assertEqual(fields["Stock"], "1.2.0")
-        self.assertNotIn("Python", fields["Computer"])
+        self.assertEqual(fields["From"], "Sonoff 1.2.0")
+        self.assertNotIn("Stock", fields)
+        self.assertNotIn("Python", fields["OS"])
         self.assertRegex(fields["Python"], r"^3\.\d+\.\d+ \(")
         self.assertEqual(fields["Time"], "7m 21s")
         self.assertEqual(fields["Wi-Fi typed"], "No")
         self.assertEqual(fields["Setup network"], "No")
 
-    def test_a_run_from_a_converted_device_takes_the_model_and_stock_firmware_from_its_record(self):
+    def test_a_run_from_a_converted_device_takes_the_model_from_its_record(self):
         # Back to Sonoff from OpenBeken: neither Sonoff's firmware nor
         # eWeLink was asked, but the device's record has both.
         ctx = self.ctx(device_kind="sonoff-s61", product_model="", stock_version="", firmware="sonoff",
@@ -1120,10 +1121,10 @@ class ReportTests(OutputTestCase):
             fields = dict(report.report_fields(ctx, 441, False))
         read.assert_called_with("12:34:56:ab:cd:ef")
         self.assertEqual(fields["Model"], "S61STPF")
-        self.assertEqual(fields["Stock"], "1.3.0")
+        self.assertEqual(fields["From"], "OpenBeken")
         with mock.patch.object(records, "read_device", return_value={}):
             fields = dict(report.report_fields(ctx, 441, False))
-        self.assertEqual((fields["Model"], fields["Stock"]), ("Sonoff S61", "__"))
+        self.assertEqual(fields["Model"], "Sonoff S61")
         # On Sonoff's route the kind is only a default until eWeLink has been asked.
         with mock.patch.object(records, "read_device", return_value={}):
             fields = dict(report.report_fields(self.ctx(device_kind="sonoff-s61", product_model="", stock_version="",
@@ -1133,7 +1134,7 @@ class ReportTests(OutputTestCase):
         with mock.patch.object(records, "read_device", return_value={"model": "S61STPF", "stock_version": "1.3.0"}):
             fields = dict(report.report_fields(self.ctx(device_kind="sonoff-s61", product_model="S61STPE",
                                                         stock_version="1.2.0", source="sonoff"), 441, False))
-        self.assertEqual((fields["Model"], fields["Stock"]), ("S61STPE", "1.2.0"))
+        self.assertEqual((fields["Model"], fields["From"]), ("S61STPE", "Sonoff 1.2.0"))
 
     def test_a_run_stopped_before_its_firmware_is_chosen_names_none(self):
         self.assertEqual(dict(report.report_fields(self.ctx(), 441, False))["Firmware"], "Not chosen")
@@ -1299,8 +1300,8 @@ class ReportTests(OutputTestCase):
         slept.assert_not_called()
 
     def test_a_report_gives_only_what_its_route_has(self):
-        # Busy time, the Wi-Fi typed and a setup network joined are an Espressif route's.
-        espressif_only = ("Busy", "Wi-Fi typed", "Setup network")
+        # The Wi-Fi typed and a setup network joined are an Espressif route's.
+        espressif_only = ("Wi-Fi typed", "Setup network")
         fields = dict(report.report_fields(self.ctx(), 441, False))
         self.assertTrue(all(label in fields for label in espressif_only))
         s61 = self.ctx(device_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="sonoff")
@@ -1308,7 +1309,8 @@ class ReportTests(OutputTestCase):
         self.assertFalse(any(label in fields for label in espressif_only))
         self.assertEqual(fields["Model"], "S61STPF")
 
-    def test_the_report_has_each_stages_time_and_how_long_the_device_was_busy(self):
+    def test_the_report_shows_retries_but_not_each_stages_time_or_how_long_the_device_was_busy(self):
+        # The report sent carries those (report_data.stages).
         ctx = self.ctx()
         for key, value in {"E2.seconds": 36, "E2.device_busy_seconds": 34.2, "E2.attempts": 2,
                            "G1.seconds": 43, "G1.device_busy_seconds": 61, "G1.attempts": 1,
@@ -1316,8 +1318,8 @@ class ReportTests(OutputTestCase):
             ctx.state.capture(key, value)
         fields = dict(report.report_fields(ctx, 441, False))
         number = {step: n for n, (step, _, _) in enumerate(routes.STEPS, 1)}
-        self.assertEqual(fields["Stage times"], f"{number['E2']}=36s, {number['G1']}=43s")
-        self.assertEqual(fields["Busy"], f"{number['E2']}=34s, {number['G1']}=1m01s")
+        self.assertNotIn("Stage times", fields)
+        self.assertNotIn("Busy", fields)
         self.assertEqual(fields["Retries"], f"{number['E2']} (1 retry)")
         self.assertEqual(fields["Signal"], "-61 dBm")
 
@@ -1338,9 +1340,8 @@ class ReportTests(OutputTestCase):
             ctx.state.capture(key, value)
         self.assertEqual(dict(report.report_fields(ctx, 441, False))["Signal"], "-71 dBm")
 
-    def test_a_run_from_before_the_timings_says_so(self):
+    def test_a_run_with_no_retries_says_so(self):
         fields = dict(report.report_fields(self.ctx(), 441, False))
-        self.assertEqual(fields["Stage times"], "Not recorded")
         self.assertEqual(fields["Retries"], "None")
 
     def test_the_result_says_where_and_why_a_run_stopped(self):
