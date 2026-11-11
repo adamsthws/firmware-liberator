@@ -702,5 +702,18 @@ class SecretFieldTests(unittest.TestCase):
             self.assertTrue(prompts._secret_field_below(prompt), prompt)
 
 
+class CtrlCCarriedOnTests(unittest.TestCase):
+    def test_a_ctrl_c_carried_on_from_is_counted_for_the_report_and_one_stopped_at_is_not(self):
+        from tools.autoflash import interrupt
+        interrupt.reset_carried_on()
+        self.addCleanup(interrupt.reset_carried_on)
+        for carry_on in (True, False, True):
+            with mock.patch.object(prompts, "countdown_carry_on", return_value=carry_on), \
+                    mock.patch.object(prompts, "section"), mock.patch.object(output, "transient_begin"), \
+                    mock.patch.object(output, "transient_end"):
+                prompts.ask_after_ctrl_c(["safe"], "Carrying on")
+        self.assertEqual(interrupt.carried_on(), 2)
+
 if __name__ == "__main__":
     unittest.main()
+

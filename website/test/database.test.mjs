@@ -24,6 +24,7 @@ const WRITTEN = {
   "0011_networks_and_settings.sql": "5ce944c5534eb3315feb64bd43524931eabcdd5a3a0d114238b1ce4c2a51d402",
   "0012_device_places.sql": "17ec6b605c45956aa532b9de60e07cbbaed1e3e15c7c4e899bc7164c2037adc5",
   "0013_readout_reports.sql": "a8f2bef09c3284b3f4117efbdc80753db95143d084bce53862c0f1368af63d09",
+  "0014_report_extras.sql": "9b708502b5847781c9f3707d1595da937814ad588bcaabe7a37b94c0b6521f17",
 };
 
 test("the migrations are numbered one after another, from 0001", () => {

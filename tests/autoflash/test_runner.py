@@ -370,6 +370,15 @@ class RunStepsTests(unittest.TestCase):
         self.assertEqual((code, ran), (130, ["S1", "S2"]))
         stand_ins["close_firewall_rules"].assert_not_called()
 
+    def test_a_run_begun_here_records_its_version_and_one_carried_on_does_not(self):
+        # For its report: another version carrying a run on is where resuming goes wrong.
+        self.run_steps()
+        self.assertEqual(self.state.input("begun_on"), runner.__version__)
+        self.state.set_input("begun_on", None)
+        self.state.mark("S1", DONE)
+        self.run_steps()   # carried on, begun before versions were recorded: unknown
+        self.assertIsNone(self.state.input("begun_on"))
+
     def test_a_ctrl_c_confirmed_after_a_stage_stops_there(self):
         code, ran, stand_ins = self.run_steps(stop_here_after_ctrl_c=mock.Mock(side_effect=lambda step: step == "S1"))
         self.assertEqual((code, ran), (130, ["S1"]))
@@ -490,6 +499,50 @@ class RetryTests(unittest.TestCase):
 
 class StageTimingTests(unittest.TestCase):
     """Every stage's time is kept for the report, however it ends."""
+
+    def test_a_stage_keeps_how_long_it_waited_on_the_person_apart_from_its_own_time(self):
+        from types import SimpleNamespace
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        state = RunState.open(Path(directory.name))
+        waited = iter([100.0, 145.0, 145.0])   # at its start, then twice at its end: 45 s at its questions
+        with mock.patch.object(output, "waited", side_effect=lambda: next(waited)), \
+                mock.patch.object(runner, "_execute", return_value=0):
+            runner.execute(SimpleNamespace(state=state), "E1")
+        self.assertEqual(state.data["captures"]["E1.waited"], 45)
+
+    def test_where_an_unexpected_error_came_from_is_the_tools_own_code_alone(self):
+        from tools.autoflash import records as tool_code
+        try:
+            tool_code.folder_name("../etc")   # raises in the tool's code
+        except ValueError as exc:
+            site = runner.crash_site(exc)
+        self.assertRegex(site, r"^ValueError at tools/autoflash/records\.py:\d+$")
+        try:
+            raise KeyError("only this test's code")
+        except KeyError as exc:
+            self.assertIsNone(runner.crash_site(exc), "no line of the tool's")
+
+    def test_a_stage_that_fails_unexpectedly_keeps_where_and_one_that_is_refused_does_not(self):
+        from types import SimpleNamespace
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        state = RunState.open(Path(directory.name))
+        ctx = SimpleNamespace(state=state, dry_run=False, last_failure="", crash_site="stale")
+        title, _ = routes.STEP_INDEX["E1"]
+        for raised, expected in ((KeyError("model"), r"^KeyError at tools/autoflash/"), (errors.Abort("refused"), None)):
+            def handler(_ctx, raised=raised):
+                raise raised   # from a test, so the tool's last line is the runner's
+            with self.subTest(raised=type(raised).__name__), \
+                    mock.patch.dict(routes.STEP_INDEX, {"E1": (title, handler)}), \
+                    mock.patch.object(routes, "begin_stage"), mock.patch.object(output, "stage_end"), \
+                    mock.patch.object(output, "say"), mock.patch.object(output, "tell"), \
+                    mock.patch.object(output, "log_only"):
+                self.assertEqual(runner.execute(ctx, "E1"), 1)
+                if expected:
+                    self.assertRegex(ctx.crash_site, expected)
+                else:
+                    self.assertIsNone(ctx.crash_site)
 
     def test_a_stage_that_fails_has_its_time_and_the_devices_busy_time_kept(self):
         from types import SimpleNamespace

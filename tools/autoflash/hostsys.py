@@ -395,13 +395,15 @@ def lan_networks_windows(adapters: list[tuple[str, int, int, int, int]]) -> dict
     interface type cannot tell: a TAP-Windows adapter, the emulator's link,
     says "virtual" (53) as Wintun's does, behind WireGuard and Tailscale; but
     TAP has a MAC and Wintun, carrying IP alone, none."""
-    return {address: prefix for address, prefix, kind, status, mac_length in adapters
+    return {address: prefix for address, prefix, kind, status, mac_length, *_ in adapters
             if mac_length == 6 and status == IF_OPER_STATUS_UP and prefix < 32
             and kind not in (IF_TYPE_PPP, IF_TYPE_SOFTWARE_LOOPBACK, IF_TYPE_TUNNEL)}
 
 
-def _windows_adapters() -> list[tuple[str, int, int, int, int]]:
-    """Each IPv4 address of each adapter, from GetAdaptersAddresses: one call in
+def _windows_adapters() -> list[tuple[str, int, int, int, int, int]]:
+    """Each IPv4 address of each adapter, as (address, prefix length, interface
+    type, operational status, length of the hardware address, interface
+    index), from GetAdaptersAddresses: one call in
     this process, where PowerShell's Get-NetAdapter starts .NET and asks WMI
     (8 s on the emulator's Windows). Raises OSError if Windows refuses."""
     import ctypes
@@ -448,7 +450,7 @@ def _windows_adapters() -> list[tuple[str, int, int, int, int]]:
             sockaddr = ctypes.string_at(unicast.contents.Address.lpSockaddr, 8)   # sockaddr_in
             rows.append((socket.inet_ntoa(sockaddr[4:8]), unicast.contents.OnLinkPrefixLength,
                          adapter.contents.IfType, adapter.contents.OperStatus,
-                         adapter.contents.PhysicalAddressLength))
+                         adapter.contents.PhysicalAddressLength, adapter.contents.IfIndex))
             unicast = unicast.contents.Next
         adapter = adapter.contents.Next
     return rows
@@ -474,6 +476,118 @@ def interface_towards(target: str) -> str | None:
         if completed and completed.returncode == 0 and completed.stdout.strip():
             return completed.stdout.strip().splitlines()[0]
     return None
+
+
+# -- what the run's report says of this computer's networks --------------------
+
+# Interface types (ipifcons.h) of an Ethernet and a Wi-Fi adapter.
+IF_TYPE_ETHERNET, IF_TYPE_WIFI = 6, 71
+
+
+def connection_towards(target: str) -> str | None:
+    """What carries this computer to `target`'s network: "wifi", "ethernet",
+    "other" (a VM's or container's bridge, a tunnel), or None if it cannot be
+    told. Asks the system only; sends nothing."""
+    try:
+        if IS_WINDOWS:
+            return _windows_connection(target)
+        name = interface_towards(target)
+        if name is None:
+            return None
+        if IS_LINUX:
+            return connection_linux(Path("/sys/class/net") / name)
+        if IS_MAC:
+            completed = _run(["networksetup", "-listallhardwareports"])
+            if completed and completed.returncode == 0:
+                return connection_mac(completed.stdout, name)
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def connection_linux(interface: Path) -> str:
+    """From the interface's folder in /sys/class/net: a Wi-Fi one has its
+    wireless side; any other with hardware under it is Ethernet."""
+    if (interface / "wireless").exists() or (interface / "phy80211").exists():
+        return "wifi"
+    return "ethernet" if (interface / "device").exists() else "other"
+
+
+def connection_mac(ports: str, name: str) -> str:
+    """From `networksetup -listallhardwareports`: the hardware port `name` is."""
+    for port, device in re.findall(r"Hardware Port:\s*(.+)\nDevice:\s*(\S+)", ports):
+        if device == name:
+            return ("wifi" if re.search(r"Wi-?Fi|AirPort", port)
+                    else "ethernet" if re.search(r"Ethernet|\bLAN\b", port) else "other")
+    return "other"
+
+
+def connection_windows(kind: int | None) -> str | None:
+    if kind is None:
+        return None
+    return "wifi" if kind == IF_TYPE_WIFI else "ethernet" if kind == IF_TYPE_ETHERNET else "other"
+
+
+def _windows_connection(target: str) -> str | None:
+    import ctypes
+    import ctypes.wintypes as wt
+    index = wt.DWORD()
+    # The address as Windows holds it: network order, in a DWORD.
+    if ctypes.WinDLL("iphlpapi").GetBestInterface(wt.DWORD(int.from_bytes(socket.inet_aton(target), "little")),
+                                                  ctypes.byref(index)):
+        return None
+    return connection_windows({row[5]: row[2] for row in _windows_adapters()}.get(index.value))
+
+
+def vpn_active() -> bool | None:
+    """Whether a VPN's tunnel carries IPv4 here (as lan_networks tells them
+    from networks a device can be on), or None if it cannot be told."""
+    if IS_LINUX:
+        addresses = _run(["ip", "-o", "-4", "address"])
+        links = _run(["ip", "-o", "link"])
+        if addresses and links and addresses.returncode == 0 and links.returncode == 0:
+            return vpn_linux(addresses.stdout, links.stdout)
+    elif IS_MAC:
+        completed = _run(["ifconfig"])
+        if completed and completed.returncode == 0:
+            return vpn_mac(completed.stdout)
+    elif IS_WINDOWS:
+        try:
+            return vpn_windows(_windows_adapters())
+        except OSError:
+            pass
+    return None
+
+
+def vpn_linux(addresses: str, links: str) -> bool:
+    """An IPv4 address on a link/none (WireGuard, a tun) or link/ppp interface."""
+    kinds = {name.split("@")[0]: kind for name, kind in re.findall(r"^\d+:\s+(\S+?):\s.*?\blink/(\S+)", links, re.M)}
+    return any(kinds.get(name) in ("none", "ppp") for name in re.findall(r"^\d+:\s+(\S+)\s+inet\s", addresses, re.M))
+
+
+def vpn_mac(ifconfig: str) -> bool:
+    """An IPv4 address on a point-to-point interface (a utun, ppp or ipsec
+    tunnel): macOS's own utuns carry IPv6 alone."""
+    for block in re.split(r"\n(?=\S)", ifconfig):
+        flags = re.match(r"\S+:\s+flags=\S*<([^>]*)>", block)
+        if flags and "POINTOPOINT" in flags.group(1).split(",") and re.search(r"^\s+inet\s", block, re.M):
+            return True
+    return False
+
+
+def vpn_windows(adapters: list[tuple[str, int, int, int, int, int]]) -> bool:
+    """An adapter that is up with an IPv4 address and no hardware address
+    (Wintun: WireGuard, Tailscale), or a PPP or tunnel one, not a self-given
+    169.254 address."""
+    return any(status == IF_OPER_STATUS_UP and not address.startswith("169.254.")
+               and kind != IF_TYPE_SOFTWARE_LOOPBACK and (mac_length == 0 or kind in (IF_TYPE_PPP, IF_TYPE_TUNNEL))
+               for address, _, kind, status, mac_length, *_ in adapters)
+
+
+# Whether this run asked for administrator rights, and showed the note on other
+# security software: for its report (report_upload.begin sets them back).
+asked_for_admin = False
+security_note_shown = False
 
 
 # -- finding a device by its hardware address ------------------------------------
@@ -727,7 +841,9 @@ def check_sha256sums(listing: Path) -> list[str]:
 
 def elevated(command: Sequence[str]) -> int:
     """Run `command` with administrator rights, using the system's own prompt."""
+    global asked_for_admin
     if IS_WINDOWS:
+        asked_for_admin = True
         program, *arguments = command
         # One command line, quoted the Windows way: given a list, Start-Process
         # joins it with spaces and no quotes, so "name=Autoflash 1.2.3.4"
@@ -807,8 +923,10 @@ def elevated_output(command: Sequence[str]) -> tuple[int, str]:
     and the output module is told, so its question is counted on screen.
     Windows has no capture here.
     """
+    global asked_for_admin
     if IS_WINDOWS:
         return elevated(command), ""
+    asked_for_admin = True
     output.log_only("administrator rights requested: " + " ".join(command))
     asks = sudo_will_ask()
     if password_asker is not None:
@@ -1049,11 +1167,15 @@ def security_software_note() -> list[str]:
     """For when the device does not answer at all: other security software can
     drop its answers before Windows' own firewall sees them, and on macOS the
     terminal app may not be allowed onto the local network."""
+    global security_note_shown
     if IS_MAC:
-        return mac_local_network_note()
+        note = mac_local_network_note()
+        security_note_shown = security_note_shown or bool(note)
+        return note
     others = windows_firewall()["others"] if IS_WINDOWS else []
     if not others:
         return []
+    security_note_shown = True
     return [f"Security software besides Windows' own firewall is installed: {', '.join(others)}.",
             "If the device is on and set up as above, it may be dropping the device's",
             "answers - pausing it while you convert the device is the quickest test."]

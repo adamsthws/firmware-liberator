@@ -607,6 +607,8 @@ def ask_after_ctrl_c(why_safe: Sequence[str], carrying_on: str) -> bool:
     section("You pressed Ctrl-C", why_safe)
     carry_on = countdown_carry_on(carrying_on)
     output.transient_end()
+    if carry_on:
+        interrupt.note_carried_on()
     return carry_on
 
 

@@ -136,6 +136,9 @@ class Context:
         self.last_failure = ""  # what the last stage to fail said, for the report
         # How the person stopped the run, for its report (report_data.STOPPED_BY).
         self.stopped_by: str | None = None
+        # Where in the tool's code the last stage to fail went wrong, for an
+        # unexpected error (runner.crash_site).
+        self.crash_site: str | None = None
         # The run's report to the project's API (report_upload.py): its id and
         # the process making its proof of work, once begun.
         self.report_id: str | None = None
