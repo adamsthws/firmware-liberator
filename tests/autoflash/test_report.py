@@ -597,6 +597,15 @@ class StoppedRunIssueTests(RouteTestCase):
         self.assertEqual(lines[-2:], ["This run's log:", f"    {Path('/runs/run.log')}"])
         self.assertFalse([line for line in lines if "Report ID" in line or "clipboard" in line], lines)
 
+    def test_a_failed_runs_log_in_the_checkout_is_named_from_there(self):
+        # As "What happened, in full" names it: absolute, it ran past an 80-wide window.
+        lines = []
+        log = report.ROOT / "captures/devices/123456abcdef/runs/1/run.log"
+        with mock.patch.object(output, "tell", side_effect=lambda text="": lines.append(text)), \
+                mock.patch.object(output, "show_link"), mock.patch.object(output, "log_path", return_value=log):
+            report.ask_for_an_issue()
+        self.assertEqual(lines[-1], "    captures/devices/123456abcdef/runs/1/run.log")
+
     def test_a_run_that_worked_leaves_the_clipboard_alone_and_shows_no_report_id(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
         ctx.last_report_id = "0123456789abcdef"

@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import errors, firewall, handover, hostsys, kinds, output, prompts, report, testers
+from tools.autoflash import errors, firewall, handover, hostsys, kinds, output, prompts, report, runs, testers
 from tools.autoflash.routes.espressif import installer
 from tools.autoflash.state import RunState
 
@@ -105,6 +105,11 @@ class LogTests(unittest.TestCase):
             report.offer_report(a_run(tmp, kinds.SONOFF_POWCT), [("Device", kinds.SONOFF_POWCT.name)])
         self.assertNotIn("This run's log:", " ".join(str(call.args[0]) for call in told.call_args_list if call.args))
 
+    def test_its_log_in_the_checkout_is_named_from_there(self):
+        log = runs.ROOT / "captures/devices/123456abcdef/runs/1/run.log"
+        with mock.patch.object(output, "log_path", return_value=log):
+            said = testers.notice(kinds.SONOFF_POWCT)
+        self.assertEqual(said[-1], "captures/devices/123456abcdef/runs/1/run.log")
 
 
 if __name__ == "__main__":
