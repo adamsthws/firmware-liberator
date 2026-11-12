@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 from pathlib import Path
@@ -972,6 +973,24 @@ class NeighbourTableTests(unittest.TestCase):
         with mock.patch.object(hostsys, "IS_LINUX", False), mock.patch.object(hostsys, "IS_WINDOWS", True), \
                 mock.patch.object(hostsys, "_run", return_value=mock.Mock(returncode=0, stdout=arp)):
             self.assertEqual(hostsys.neighbour_table(), {"192.168.60.50": "12:34:56:ab:cd:ef"})
+
+
+
+class ClipboardTests(unittest.TestCase):
+    def test_a_tool_that_stays_behind_holding_the_selection_does_not_hold_the_run(self):
+        # As xclip and xsel do: the copy is theirs once they have read it, but
+        # they keep running, and their output with them.
+        with tempfile.TemporaryDirectory() as tmp:
+            tool = Path(tmp) / "xclip"
+            tool.write_text("#!/bin/sh\ncat > /dev/null\n( sleep 30 ) &\nexit 0\n", encoding="utf-8")
+            tool.chmod(0o755)
+            with mock.patch.object(hostsys, "IS_WINDOWS", False), mock.patch.object(hostsys, "IS_MAC", False), \
+                    mock.patch.object(hostsys.shutil, "which",
+                                      side_effect=lambda name: str(tool) if name == "xclip" else None), \
+                    mock.patch.dict(hostsys.os.environ, {"PATH": f"{tmp}:/usr/bin:/bin"}):
+                started = time.monotonic()
+                self.assertTrue(hostsys.copy_to_clipboard("the report"))
+            self.assertLess(time.monotonic() - started, 3)
 
 
 if __name__ == "__main__":
