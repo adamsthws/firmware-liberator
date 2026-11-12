@@ -26,7 +26,8 @@ ADDRESSES = "/accounts/a1/email/routing/addresses"
 ANALYTICS = "/accounts/a1/rum/site_info"
 ALL_MEASURED = {"id": "ru1", "host": "*", "paths": ["*"], "inclusive": True, "is_paused": False, "priority": 1000}
 DESTINATION = "owner@example.com"
-FORWARDED = ["hello", "press"]
+# Besides the published ones (cs.FORWARDED): addresses `email` sets, never shown.
+FORWARDED = ["hello", "press", *cs.FORWARDED]
 APPLY_VALUE = "made-up-apply-token-value-0123456789abcdef"
 # What Email Routing says it needs, as it lists them: a TXT record whole, a host with its final dot.
 ROUTING_DNS = [{"type": "MX", "name": cs.ZONE, "content": "route1.mx.cloudflare.net.", "priority": 50},
@@ -458,13 +459,30 @@ class CloudflareSettingsTests(unittest.TestCase):
         fake.sent.clear()
         code, out = run(fake, "apply")
         self.assertEqual(code, 1)
-        self.assertIn("email rule 3: does not forward one of the domain's addresses to one address", out)
+        self.assertIn("email rule 5: does not forward one of the domain's addresses to one address", out)
         self.assertIn("email rules: forward to 2 addresses: there should be one", out)
         self.assertIn("email catch-all: forwards as written nowhere", out)
         for private in ("@example.", "hello", "press", "sales"):
             self.assertNotIn(private, out.lower())
         # Which, and to whom, only `email` changes; the catch-all apply puts back.
         self.assertEqual(fake.sent, [("PUT", f"{ZONE}/email/routing/rules/catch_all", cs.EMAIL_CATCH_ALL)])
+
+    def test_a_published_address_not_forwarded_is_forwarded_where_the_others_are(self):
+        fake = FakeCloudflare()
+        fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09T18:39:03Z"}]
+        fake.email_rules = [rule for rule in fake.email_rules if rule["matchers"][0]["value"] != f"privacy@{cs.ZONE}"]
+        code, out = run(fake, "apply")
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"privacy@{cs.ZONE}: is not forwarded", out)
+        self.assertIn((f"privacy@{cs.ZONE}", [DESTINATION]),
+                      [(r["matchers"][0]["value"], r["actions"][0]["value"]) for r in fake.email_rules])
+        self.assertNotIn(DESTINATION, out.lower(), "to whom is never shown")
+        self.assertEqual(run(fake)[0], 0)
+
+    def test_the_published_addresses_are_the_ones_the_docs_give(self):
+        privacy = (cs.ROOT / "docs" / "privacy.md").read_text(encoding="utf-8")
+        self.assertIn(f"privacy@{cs.ZONE}", privacy)
+        self.assertIn("privacy", cs.FORWARDED)
 
     def test_no_forwarding_is_left_to_email_which_asks(self):
         fake = FakeCloudflare()
@@ -483,16 +501,23 @@ class CloudflareSettingsTests(unittest.TestCase):
         code, out = run(fake, "email", answers=["\x1b[200~New@Example.com\x1b[201~", "Contact, press ,contact"])
         self.assertEqual(code, 0, out)
         self.assertEqual(sorted((r["matchers"][0]["value"], r["actions"][0]["value"]) for r in fake.email_rules),
-                         [(f"contact@{cs.ZONE}", ["new@example.com"]), (f"press@{cs.ZONE}", ["new@example.com"])])
+                         [(f"{name}@{cs.ZONE}", ["new@example.com"]) for name in ("contact", "press", "privacy")])
         self.assertTrue(fake.routing)
         self.assertEqual(fake.addresses, [{"email": "new@example.com", "verified": None}])
         self.assertIn(("PUT", SECRETS, {"name": "ALERTS_RECIPIENT_EMAIL", "text": "new@example.com",
                                         "type": "secret_text"}), fake.sent)
-        for private in ("example.com", "contact", "press"):
+        for private in ("example.com", "press"):
             self.assertNotIn(private, out.lower())
 
+    def test_email_with_no_other_addresses_forwards_the_published_ones(self):
+        fake = FakeCloudflare()
+        code, out = run(fake, "email", answers=["new@example.com", ""])
+        self.assertEqual(code, 0, out)
+        self.assertEqual(sorted(r["matchers"][0]["value"] for r in fake.email_rules),
+                         [f"{name}@{cs.ZONE}" for name in sorted(cs.FORWARDED)])
+
     def test_email_changes_nothing_given_no_address_or_no_terminal(self):
-        for args in ({"answers": ["not an address", "contact"]}, {"answers": ["new@example.com", "a b"]}, {}):
+        for args in ({"answers": ["not an address", "press"]}, {"answers": ["new@example.com", "a b"]}, {}):
             with self.subTest(args=args):
                 fake = FakeCloudflare()
                 with mock.patch("sys.stderr", io.StringIO()):
