@@ -49,7 +49,7 @@ CLASSES = {
 # (class, pattern), tried in order: the first to match the words a run
 # stopped with is its class. Specific before general.
 PATTERNS = [(name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
-    ("declined", r"^not confirmed|was not confirmed|requires an explicit confirmation"),
+    ("declined", r"^not confirmed|was not confirmed|requires an explicit confirmation|^skipped as asked"),
     ("nothing-to-do", r"already runs Sonoff's firmware: there is nothing to convert"),
     ("crash", r"^something unexpected went wrong"),
     ("no-room", r"has no room to save"),
@@ -63,26 +63,28 @@ PATTERNS = [(name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
                      r"|bundle has changed since|already running our installer"
                      r"|is running Tasmota, not Sonoff's firmware|so the installer has to be sent again"),
     ("backup", r"backup cannot be written back|backup could not be read|no backup of|found neither with a backup"
-               r"|cannot be put back without a backup"),
+               r"|cannot be put back without a backup|--simulate-backup-failure"),
     ("identity", r"identity cannot be kept"),
     ("integrity", r"checksums failed|does not match the pinned|hash differs|is not the file firmware\.json pins"
                   r"|refusing to send it|rt_ota"),
     ("download", r"could not be fetched|no public dump of|no \S+ image is published|image is missing"
-                 r"|public dump holds no"),
+                 r"|public dump holds no|the download was cut off"),
     ("ewelink-unreachable", r"eWeLink could not be reached"),
     ("ewelink-refused", r"official update file for the .* was refused|firmware was not sent:"
                         r"|readout firmware was not sent"),
     ("bad-option", r"--replace-own-build|needs to be told which firmware|cannot go to |cannot switch to"
-                   r"|not sent from a test run|eWeLink account given"),
+                   r"|not sent from a test run|^not from a test run|eWeLink account given"),
     ("ewelink-account", r"eWeLink account|eWeLink query failed|did not answer the eWeLink discovery"),
     ("computer-network", r"this computer reaches|this computer's address|are all in use on this computer"
                          r"|--listen-ip|readout could not be sent|did not fetch the \S+ instructions"
-                         r"|without reaching this computer"),
+                         r"|without reaching this computer|firewall rule|^sudo |the website answered"),
     ("network-join", r"did not join|cannot join it|has not answered on your Wi-Fi|did not answer on your Wi-Fi"
                      r"|neither rejoined|did not come back after its settings were reset"
-                     r"|did not say which Wi-Fi network|but the bundle is set up for"),
+                     r"|did not say which Wi-Fi network|but the bundle is set up for"
+                     r"|has not shown the device online again"),
     ("settings-lost", r"lost its settings|did not keep its template"),
-    ("unexpected-layout", r"not laid out as this tool expects|partition table|memory could not be read"),
+    ("unexpected-layout", r"not laid out as this tool expects|partition table|memory could not be read"
+                          r"|short read of the device's flash|bytes were read"),
     ("not-taken", r"did not take|did not hold|still running from slot|keeps going back to the mover"
                   r"|still answers as the firmware it was to leave|has not been seen to run"
                   r"|did not come back after the upload|has not started ESPHome|did not switch to its safeboot"
@@ -90,7 +92,8 @@ PATTERNS = [(name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
                   r"|still on its Sonoff firmware, so nothing was read|would not fetch Sonoff's firmware back"
                   r"|refused to fetch Sonoff's firmware|after it was sent \d+ times"),
     ("upload-cut", r"stopped part way|was not uploaded|to the device failed|could not be sent to the device"
-                   r"|did not complete within|did not print|nothing was armed"),
+                   r"|did not complete within|did not print|nothing was armed|delivery failed"
+                   r"|the device fetched \S+ of \S+ bytes"),
     ("unexpected-firmware", r"did not answer as a device this tool converts|Berry|did not say twice alike"
                             r"|did not say which slot|it is not the one this tool installs"
                             r"|metadata just written|redirected .* too many times"
