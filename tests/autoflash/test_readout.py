@@ -1277,8 +1277,8 @@ class ReportTests(unittest.TestCase):
         self.assertIn(["Failed:", "MINIR4", "1.2.0"], rows)
         self.assertEqual(rows[-1], ["Report", "ID:", "b" * 32], copied[0])   # the one that failed
         self.assertFalse(copied[0].startswith(" "), "its margin taken off")
-        at = shown.index(f"Report ID: {'b' * 32}")
-        self.assertEqual(shown[at + 1], "This report is on your clipboard, ready to paste.")
+        at = shown.index(f"    Report ID: {'b' * 32}")
+        self.assertEqual(shown[at + 1], "    This report is on your clipboard, ready to paste.")
 
     def test_one_that_finished_leaves_the_clipboard_alone_and_shows_no_report_id(self):
         done = [readout.Became("'Kitchen'", "BASICR4", "", "1.1.0", True, readout.ACCEPTED, report_id="a" * 32)]

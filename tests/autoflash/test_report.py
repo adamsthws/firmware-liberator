@@ -575,14 +575,14 @@ class StoppedRunIssueTests(RouteTestCase):
                 mock.patch.object(hostsys, "copy_to_clipboard", side_effect=lambda text: copied.append(text) or True):
             lines = self.ended(ctx, "failed")
         link = lines.index(("link", report.ISSUES_URL))   # the general address: the id is pasted in
-        self.assertEqual(lines[link + 1:link + 3], ["Report ID: 0123456789abcdef0123456789abcdef",
-                                                    "This report is on your clipboard, ready to paste."])
+        self.assertEqual(lines[link + 1:link + 3], ["    Report ID: 0123456789abcdef0123456789abcdef",
+                                                    "    This report is on your clipboard, ready to paste."])
         self.assertFalse([line for line in lines[:link] if "Report ID" in str(line)], "not under the report")
         self.assertTrue(copied[0].startswith("Result: Stopped at stage"), copied[0])   # in full
         self.assertIn("\nLiberator:", copied[0])   # the report as shown, its margin taken off
         self.assertTrue(copied[0].rstrip().endswith("Report ID: 0123456789abcdef0123456789abcdef"), copied[0])
         with mock.patch.object(hostsys, "copy_to_clipboard", return_value=False):
-            self.assertNotIn("This report is on your clipboard, ready to paste.", self.ended(ctx, "failed"))
+            self.assertNotIn("    This report is on your clipboard, ready to paste.", self.ended(ctx, "failed"))
 
     def test_a_run_that_worked_leaves_the_clipboard_alone_and_shows_no_report_id(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")

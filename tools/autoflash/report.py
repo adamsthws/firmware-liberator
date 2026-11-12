@@ -721,10 +721,11 @@ def ask_for_an_issue(copy: str, report_id: str | None = None) -> None:
     output.tell("")
     output.tell("If it should not have stopped, please open an issue here:")
     output.show_link(ISSUES_URL)
+    # Under the link, as far in.
     if report_id:
-        output.tell(f"{REPORT_ID}: {report_id}")
+        output.tell(f"    {REPORT_ID}: {report_id}")
     if hostsys.copy_to_clipboard(copy):
-        output.tell("This report is on your clipboard, ready to paste.")
+        output.tell("    This report is on your clipboard, ready to paste.")
     output.tell("")
     output.tell("This run's log:")
     output.tell(f"    {output.log_path() or testers.LOG_ELSEWHERE}")
