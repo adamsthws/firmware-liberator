@@ -1192,20 +1192,22 @@ class ReportTests(unittest.TestCase):
 
     def test_it_counts_the_devices_those_accepted_and_those_not_needed_and_gives_no_time(self):
         fields = dict(readout.report_fields(self.DONE))
-        self.assertEqual((fields["Result"], fields["Devices"], fields["Accepted"], fields["Not needed"]),
-                         ("Read out", "3", "1", "1"))
+        self.assertEqual((fields["Devices"], fields["Accepted"], fields["Not needed"]), ("3", "1", "1"))
         self.assertNotIn("Time", fields)
-        self.assertEqual(dict(readout.report_fields(self.DONE[2:]))["Result"], "Not needed")   # one: how it ended
+        # How it ended is said above the report, and each device's under it.
+        self.assertNotIn("Result", fields)
 
     def test_those_kept_unsent_are_counted_on_the_right_only_where_there_are_any(self):
-        lines = report.report_screen(readout.report_fields(self.DONE), columns=100, right=readout.REPORT_RIGHT)
+        lines = report.report_screen(readout.report_fields(self.DONE), columns=100, right=readout.REPORT_RIGHT,
+                                     balance=False)
         at = {label: line.index(label) for line in lines for label in ("Devices:", "Not sent:") if label in line}
         self.assertEqual(at["Not sent:"], at["Devices:"], "\n".join(lines))   # in the right-hand column
         self.assertTrue(any(line.rstrip().endswith("Not sent:   1") for line in lines))
         self.assertNotIn("Not sent", dict(readout.report_fields([self.DONE[0], self.DONE[2]])))
 
-    def test_one_device_is_named_by_its_model_and_version_alone(self):
-        self.assertEqual(readout.report_devices(self.DONE[:1]), [("Device", "BASICR4\u00a01.1.0")])
+    def test_one_device_is_named_by_its_model_and_version_alone_under_how_it_ended(self):
+        self.assertEqual(readout.report_devices(self.DONE[:1]), [("Accepted", "BASICR4\u00a01.1.0")])
+        self.assertEqual(readout.report_devices(self.DONE[2:]), [("Not needed", "NEWTHING\u00a02.0.0")])
         shown = repr(readout.report_fields(self.DONE[:1])) + repr(readout.report_devices(self.DONE[:1]))
         for left_out in ("Kitchen", "r-1", "memory"):   # its name in the account, its reference
             self.assertNotIn(left_out, shown)
@@ -1243,19 +1245,22 @@ class ReportTests(unittest.TestCase):
             readout.end(SimpleNamespace(readouts=done), "", failed=failed)
         return shown
 
-    def test_the_result_is_beside_the_device_count_and_each_count_beside_a_row_of_the_left(self):
+    def test_the_counts_stay_together_on_the_right_beside_the_rows_of_the_left(self):
         for done, counts in ((self.DONE, ["Devices:", "Accepted:", "needed:", "sent:"]),   # some kept unsent
                              ([self.DONE[0], self.DONE[2]], ["Devices:", "Accepted:", "needed:"])):
             with self.subTest(counts=len(counts)):
                 shown = self.shown_by_end(done)
-                rows = [next(line for line in shown if label in line)
-                        for label in ("Result:", "Liberator:", "OS:", "Python:")]
-                self.assertEqual([line.split()[-2] for line in rows[:len(counts)]], counts, "\n".join(shown))
-                self.assertEqual(rows[0].index("Result:"), rows[1].index("Liberator:"))
+                self.assertFalse([line for line in shown if "Result:" in line], "said above it")
+                rows = [next(line for line in shown if label in line) for label in ("Liberator:", "OS:", "Python:")]
+                self.assertEqual([line.split()[-2] for line in rows], counts[:3], "\n".join(shown))
+                labels = ("Devices:", "Accepted:", "Not needed:", "Not sent:")
+                at = {line.index(label, 20) for line in shown for label in labels if label in line[20:]}
+                self.assertEqual(len(at), 1, "\n".join(shown))   # in one column
 
     def test_one_device_s_report_shows_its_id_as_a_conversion_s_does(self):
         one = [readout.Became("'Hall'", "BASICR4", "", "1.1.0", True, readout.ACCEPTED, report_id="a" * 32)]
-        self.assertIn(f"Report ID:  {'a' * 32}", " ".join(self.shown_by_end(one)))
+        row = next(line for line in self.shown_by_end(one) if "Report ID:" in line)
+        self.assertEqual(row.split(), ["Report", "ID:", "a" * 32])
         several = [*one, readout.Became("'Porch'", "MINIR4", "", "1.2.0", True, readout.UNNEEDED, report_id="b" * 32)]
         self.assertFalse([line for line in self.shown_by_end(several) if "Report ID" in line], "one for each: none")
 
@@ -1265,7 +1270,13 @@ class ReportTests(unittest.TestCase):
         self.assertIn("If it should not have stopped, please open an issue here:", shown)
         self.assertNotIn("You've reached the bit where I hold out my hat!", shown)
         self.assertNotIn("Readout complete!", shown)
-        self.assertIn("Failed", next(line for line in shown if "Result:" in line))
+        self.assertNotIn("Nothing was read out.", shown, "its FAILED line says how it ended")
+        self.assertEqual(next(line for line in shown if "BASICR4" in line).split(), ["Failed:", "BASICR4", "1.1.0"])
+
+    def test_one_that_read_nothing_out_says_so_above_its_report(self):
+        shown = self.shown_by_end(self.DONE[2:])
+        self.assertIn("Nothing was read out.", shown)
+        self.assertNotIn("Readout complete!", shown)
 
     def test_it_ends_as_a_conversion_does(self):
         shown = []
@@ -1275,9 +1286,9 @@ class ReportTests(unittest.TestCase):
                 mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
             readout.end(SimpleNamespace(readouts=self.DONE), "Switch the device off and on once more.")
         text = [item for item in shown if isinstance(item, str)]
-        result = next(line for line in text if line.lstrip().startswith("Result:"))
+        first = next(line for line in text if line.lstrip().startswith("Liberator:"))
         order = [text.index(line) for line in ("Readout complete!", "Switch the device off and on once more.",
-                                               result, "You've reached the bit where I hold out my hat!")]
+                                               first, "You've reached the bit where I hold out my hat!")]
         self.assertEqual(order, sorted(order))
         self.assertNotIn("How it went:", text)
         self.assertTrue(any(line.lstrip().startswith("Accepted:") and "BASICR4 1.1.0" in line for line in text))
