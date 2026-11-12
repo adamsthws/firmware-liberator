@@ -20,7 +20,7 @@ def a_kind(key, family):
                       maker="Nobody", short="MU", product=re.compile("MU"),
                       stock_model="MU-01", wrapper_model="MU", tasmota_gpio=(),
                       esphome_legacy_setup_prefix="", esphome_legacy_prefix="", layout="made-up",
-                      has_meter=False, has_relay=True)
+                      has_meter=False, has_relay=True, sensors=())
 
 
 class FamilyTests(unittest.TestCase):
