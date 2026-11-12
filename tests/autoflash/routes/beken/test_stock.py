@@ -128,6 +128,7 @@ class FromStockTests(unittest.TestCase):
     def test_b2_wraps_the_image_and_sends_it_through_ewelink(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp, stock_version="1.0.2", firmware="openbeken")
+            del ctx.consented   # the go-ahead not given yet in this run
             ctx.account_device = SimpleNamespace(device_id="1001234abc")
             ctx.account_devices = lambda: [self.DEVICE]
             sent = {}
@@ -139,13 +140,18 @@ class FromStockTests(unittest.TestCase):
 
             with mock.patch.object(stock.firewall, "choose_port", return_value=8088), \
                     mock.patch.object(stock.firewall, "ensure_firewall") as opened, \
-                    mock.patch.object(stock.prompts, "warning_box"), \
+                    mock.patch.object(stock.prompts, "warning_box") as warned, \
                     mock.patch.object(stock.prompts, "require_word", return_value=True), \
                     mock.patch.object(stock.output, "say"), \
+                    mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), \
                     mock.patch.object(stock.time, "monotonic", side_effect=[100.0, 109.54]), \
                     mock.patch.object(ota_push, "deliver", side_effect=deliver):
                 result = stock.step_push(ctx)
             opened.assert_called_once_with(ctx)   # its port let through before the device asks
+            # As C2's: what is backed up, and the risk.
+            lines = warned.call_args.args[1]
+            self.assertIn("Its own data is backed up to this computer once the new firmware runs.", lines)
+            self.assertIn("Only go ahead with a device you can afford to lose.", lines)
             self.assertEqual(result["seconds"], 9.5)
             image, version = images.image(ctx, "openbeken")
             self.assertEqual(result["firmware"], "openbeken")
