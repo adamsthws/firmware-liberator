@@ -1583,7 +1583,11 @@ class ReadoutScenarioTests(unittest.TestCase):
             sc.state = Path(tmp)
             run = Path(tmp, "work/captures/devices/unidentified/runs/1/run.log")
             run.parent.mkdir(parents=True)
-            for text, said in (("[1] Readout saved in captures/x/readout.tar, not sent.\n", "Readout kept, not sent"),
+            # Seen: every kept readout taken for none, once the screen no longer
+            # said where it was saved.
+            for text, said in (("[1]     Not sent from a test run: kept in /work/x/readout.tar.\n",
+                                "Readout kept, not sent"),
+                               ("[1] Readout saved in captures/x/readout.tar, not sent.\n", "Readout kept, not sent"),
                                ("[1] FAILED: the device's memory could not be read\n",
                                 "Stopped: the device's memory could not be read"),
                                ("[1] Reading the device's memory\n", "no readout")):

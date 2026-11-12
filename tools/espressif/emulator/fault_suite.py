@@ -2333,7 +2333,8 @@ class Scenario:
         logs = run_logs(self.state)
         run = fault_verdicts.last_run(logs[-1][2]) if logs else ""
         failed = re.findall(r"FAILED: (.*)", run)
-        if re.search(r"Readout saved in .*, not sent\.", run):
+        # As the tool logs it, or before 3.0.0 said it on the screen too.
+        if re.search(r"Not sent from a test run: kept in |Readout saved in .*, not sent\.", run):
             return "Readout kept, not sent"
         return f"Stopped: {failed[-1].strip()}" if failed else "no readout"
 
