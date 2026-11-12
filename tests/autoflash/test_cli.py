@@ -799,6 +799,30 @@ class ReadoutCommandTests(unittest.TestCase):
         self.read()
         self.assertEqual(self.happened[-1], "report, after: chosen")   # what is left to do, then the report
 
+    def failed(self, began):
+        from types import SimpleNamespace
+        from tools.autoflash import readout
+        from tools.autoflash.errors import Abort
+        ctx = SimpleNamespace(args=SimpleNamespace(verbose=False, send=None), dir=Path("/nonexistent/run"),
+                              readouts=[readout.Became("'Hall'", "BASICR4", "", "1.1.0", True, readout.FAILED)]
+                              if began else [])
+        with mock.patch.object(cli.output, "start"), mock.patch.object(cli.output, "finish"), \
+                mock.patch.object(cli.output, "tell") as told, \
+                mock.patch.object(cli.firewall, "release_firewall"), mock.patch.object(cli.runs, "forget_run_secrets"), \
+                mock.patch.object(cli, "cmd_readout", side_effect=Abort("the device stopped answering")), \
+                mock.patch.object(readout, "end") as ended:
+            self.assertEqual(cli.read_out(ctx), 1)
+        told.assert_any_call("FAILED: the device stopped answering")
+        return ended
+
+    def test_one_that_failed_ends_with_its_report_and_the_way_to_open_an_issue(self):
+        # As a conversion that failed does: seen, an S61's readout ending at
+        # "FAILED" with nothing under it.
+        self.failed(began=True).assert_called_once_with(mock.ANY, "", failed=True)
+
+    def test_one_that_failed_before_reaching_a_device_has_no_report(self):
+        self.failed(began=False).assert_not_called()
+
     def test_all_reads_every_device_unasked(self):
         every, chosen, devices = self.read(all=True)
         self.assertEqual(every.call_args.args[1], devices)

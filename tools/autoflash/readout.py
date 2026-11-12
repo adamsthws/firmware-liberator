@@ -226,10 +226,11 @@ def report_devices(done: list[Became]) -> list[tuple[str, str]]:
     return listed
 
 
-def end(ctx: Context, said: str) -> None:
-    """The end of a readout that finished, as a conversion's: what the person
-    is still to do (`said`), then the report - one for every device read out
-    in the sitting - and the links to support the project."""
+def end(ctx: Context, said: str, failed: bool = False) -> None:
+    """The end of a readout, as a conversion's: what the person is still to do
+    (`said`), then the report - one for every device read out in the sitting -
+    and the links to support the project; or for one that `failed`, the way to
+    open an issue in their place (report.ask_for_an_issue)."""
     done = readouts(ctx)
     output.tell("")
     if any(item.outcome in (ACCEPTED, KEPT) for item in done):
@@ -240,7 +241,10 @@ def end(ctx: Context, said: str) -> None:
     output.tell("")
     for line in report.report_screen(report_fields(done), right=REPORT_RIGHT, below=report_devices(done)):
         output.tell(line)
-    report.hold_out_hat()
+    if failed:
+        report.ask_for_an_issue()
+    else:
+        report.hold_out_hat()
 
 
 def readouts(ctx: Context) -> list[Became]:
