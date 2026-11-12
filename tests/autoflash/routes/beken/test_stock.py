@@ -167,6 +167,24 @@ class FromStockTests(unittest.TestCase):
             with self.assertRaisesRegex(EwelinkError, "1.0.3"):
                 sent["check_device"](dict(self.DEVICE, params={"fwVersion": "1.0.3"}), "SN-BK7238-S61-01")
 
+    def test_b2_on_a_run_to_esphome_refuses_before_writing_if_esphomes_image_would_be(self):
+        # Refused only at J2, it would leave the device on the interim firmware.
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, stock_version="1.0.2", firmware="esphome")
+            ctx.account_device = SimpleNamespace(device_id="1001234abc")
+            ctx.account_devices = lambda: [self.DEVICE]
+            real = images.image
+
+            def image(ctx, firmware):
+                if firmware == "esphome":
+                    raise errors.Abort("the published esphome image is missing: gone")
+                return real(ctx, firmware)
+            with mock.patch.object(images, "image", side_effect=image), \
+                    mock.patch.object(ota_push, "deliver", side_effect=AssertionError("nothing sent")), \
+                    mock.patch.object(stock.firewall, "ensure_firewall"):
+                with self.assertRaisesRegex(errors.Abort, "esphome image is missing"):
+                    stock.step_push(ctx)
+
     def test_b2_on_a_run_to_esphome_sends_the_interim_firmware(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp, stock_version="1.0.2", firmware="esphome")
