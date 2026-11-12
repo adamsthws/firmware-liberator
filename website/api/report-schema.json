@@ -743,13 +743,23 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 604800
+          },
+          "setup_network": {
+            "type": "boolean"
+          },
+          "power_cycles": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 99
           }
         },
         "required": [
           "s",
           "busy",
           "tries",
-          "wait"
+          "wait",
+          "setup_network",
+          "power_cycles"
         ],
         "additionalProperties": false
       }

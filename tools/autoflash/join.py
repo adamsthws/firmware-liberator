@@ -118,10 +118,16 @@ def wait_until_joined(network: str, marker: str | None = None) -> None:
     output.say(f"    Connected to {network}.")
 
 
-# Set in the run's record once this computer is sent to a device's own network
-# - Tasmota's setup network, or ESPHome's or the mover's - for the report
-# (report.own_network_joined).
-OWN_NETWORK = "own_network_joined"
+# How many times this computer was sent to a device's own network - Tasmota's
+# setup network, or ESPHome's or the mover's - kept in the run's record for the
+# report (report.own_network_joined), and by step (runner.execute).
+OWN_NETWORK = "own_network_joins"
+
+
+def note_own_network(ctx: Context) -> None:
+    """Counted, for the report: this computer sent to a device's own network."""
+    joins = ctx.state.input(OWN_NETWORK)
+    ctx.state.set_input(OWN_NETWORK, joins + 1 if isinstance(joins, int) else 1)
 
 
 def configure_device_wifi(ctx: Context, network: str | None) -> str:
@@ -151,7 +157,7 @@ def configure_device_wifi(ctx: Context, network: str | None) -> str:
             "it, join it again.",
         ])
         wait_until_joined(network)
-        ctx.state.set_input(OWN_NETWORK, True)
+        note_own_network(ctx)
         outcome = "manual"
         if credentials is not None:
             name_with_the_wifi(ctx)
@@ -430,7 +436,7 @@ def set_up_through_own_network(ctx: Context, what: str, check: Callable[[str], A
         network = networks[0]  # joined already: carried on through it
     if not network:
         return None
-    ctx.state.set_input(OWN_NETWORK, True)
+    note_own_network(ctx)
     output.tell(f"    {what} cannot join your Wi-Fi, so it has raised its own network, {network}.")
     ssid, password = ctx.wifi(why=[
         f"{what} cannot join your Wi-Fi, and is waiting on its own network for its",

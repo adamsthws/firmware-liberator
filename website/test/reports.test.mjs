@@ -71,9 +71,11 @@ test("a report the tool makes is kept, on the day it came in, and nothing of whe
   assert.equal(kept.id, sent.id);
   assert.equal(kept.day, "2026-11-09");
   assert.equal(kept.model, "S60TPG");
-  const stages = rows(bindings, "SELECT stage, seconds, busy, tries, wait FROM report_stages WHERE id = ? ORDER BY stage", sent.id);
+  const stages = rows(bindings, `SELECT stage, seconds, busy, tries, wait, setup_network, power_cycles
+    FROM report_stages WHERE id = ? ORDER BY stage`, sent.id);
   assert.deepEqual(stages, Object.entries(sent.stages).sort()
-    .map(([stage, { s, busy, tries, wait }]) => ({ stage, seconds: s, busy, tries, wait })), "a row a stage");
+    .map(([stage, { s, busy, tries, wait, setup_network, power_cycles }]) =>
+      ({ stage, seconds: s, busy, tries, wait, setup_network: Number(setup_network), power_cycles })), "a row a stage");
   assert.ok(!Object.values(kept).some((value) => String(value).includes("15:30")), "no time of day");
 });
 

@@ -68,8 +68,11 @@ CREATE INDEX IF NOT EXISTS reports_day ON reports (day);
 CREATE INDEX IF NOT EXISTS reports_device_day ON reports (device_hash, day) WHERE device_hash IS NOT NULL;
 
 -- A report's stages, one row each, as its `stages` gives them: the stage's
--- ID, its time and the device's busy time in seconds, its tries, and the
--- seconds the tool waited on the person. Deleted with its report.
+-- ID, its time and the device's busy time in seconds, its tries, the seconds
+-- the tool waited on the person, whether the computer joined the device's own
+-- network in it (1/0), and how many times the person switched the device off
+-- and on in it: where those, never meant to be needed, keep being needed.
+-- Deleted with its report.
 CREATE TABLE IF NOT EXISTS report_stages (
   id TEXT NOT NULL,
   stage TEXT NOT NULL,
@@ -77,6 +80,8 @@ CREATE TABLE IF NOT EXISTS report_stages (
   busy INTEGER NOT NULL,
   tries INTEGER NOT NULL,
   wait INTEGER NOT NULL,
+  setup_network INTEGER NOT NULL,
+  power_cycles INTEGER NOT NULL,
   PRIMARY KEY (id, stage)
 ) WITHOUT ROWID;
 

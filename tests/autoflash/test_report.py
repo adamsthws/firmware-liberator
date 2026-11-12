@@ -40,7 +40,7 @@ class EndingTests(RouteTestCase):
 
     def test_a_beken_device_set_up_through_its_own_network_is_logged(self):
         ctx = self.ctx(run="beken-own", firmware="esphome", device_kind="sonoff-s61")
-        ctx.state.set_input(join.OWN_NETWORK, True)
+        ctx.state.set_input(join.OWN_NETWORK, 1)
         self.assertEqual(dict(report.report_fields(ctx))["Setup network"].lower(), "yes")
         self.assertIn("Setup network", report.LOG_ONLY)   # in the log, not on the screen
 

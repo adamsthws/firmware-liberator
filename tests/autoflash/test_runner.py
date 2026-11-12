@@ -528,6 +528,29 @@ class StageTimingTests(unittest.TestCase):
             runner.execute(SimpleNamespace(state=state), "E1")
         self.assertEqual(state.data["captures"]["E1.waited"], 45)
 
+    def test_a_setup_network_joined_or_a_power_cycle_is_counted_against_its_stage_over_its_tries(self):
+        from types import SimpleNamespace
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        state = RunState.open(Path(directory.name))
+        state.set_input("power_cycles", {"by hand": 1})   # an earlier stage's
+
+        def joins_and_cycles(ctx, _step):
+            join.note_own_network(ctx)
+            ctx.state.set_input("power_cycles", {"by hand": ctx.state.input("power_cycles")["by hand"] + 1})
+            return 0
+
+        ctx = SimpleNamespace(state=state)
+        with mock.patch.object(runner, "_execute", side_effect=joins_and_cycles):
+            runner.execute(ctx, "F4")
+            runner.execute(ctx, "F4")   # tried again
+        with mock.patch.object(runner, "_execute", return_value=0):
+            runner.execute(ctx, "G1")   # neither
+        captures = state.data["captures"]
+        self.assertEqual((captures[f"F4.{join.OWN_NETWORK}"], captures["F4.power_cycles"]), (2, 2))
+        self.assertNotIn("G1.power_cycles", captures)
+        self.assertNotIn(f"G1.{join.OWN_NETWORK}", captures)
+
     def test_where_an_unexpected_error_came_from_is_the_tools_own_code_alone(self):
         from tools.autoflash import records as tool_code
         try:

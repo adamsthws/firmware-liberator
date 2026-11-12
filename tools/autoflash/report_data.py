@@ -163,7 +163,10 @@ def stopped_step(ctx: Context) -> str | None:
 
 def stages(ctx: Context) -> dict[str, dict[str, int]]:
     """Each step the run timed: its seconds, how long it kept the device busy,
-    how many times it was tried, and how long it waited on the person."""
+    how many times it was tried, how long it waited on the person, whether
+    this computer joined a device's own network in it, and how many times the
+    person was asked to switch the device off and on: where the setup network
+    and power cycles, which a run should never need, keep being needed."""
     captures = ctx.state.data.get("captures", {})
     found = {}
     for step, _, _ in routes.STEPS:
@@ -173,11 +176,14 @@ def stages(ctx: Context) -> dict[str, dict[str, int]]:
         busy = captures.get(f"{step}.device_busy_seconds")
         tries = captures.get(f"{step}.attempts")
         waited = captures.get(f"{step}.waited")
+        cycles = captures.get(f"{step}.power_cycles")
         found[step] = {"s": min(int(seconds), 86400),
                        "busy": min(int(busy), 86400) if isinstance(busy, (int, float)) else 0,
                        "tries": min(tries, 99) if isinstance(tries, int) and tries > 0 else 1,
                        # How long the person took over its questions.
-                       "wait": min(max(int(waited), 0), WAIT_LIMIT) if isinstance(waited, (int, float)) else 0}
+                       "wait": min(max(int(waited), 0), WAIT_LIMIT) if isinstance(waited, (int, float)) else 0,
+                       "setup_network": report.own_network_at(ctx.state, step),
+                       "power_cycles": min(cycles, 99) if isinstance(cycles, int) and cycles > 0 else 0}
     return found
 
 

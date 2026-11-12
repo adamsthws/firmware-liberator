@@ -176,8 +176,19 @@ class PayloadTests(RouteTestCase):
         for key, value in {"E2.seconds": 36, "E2.device_busy_seconds": 34.2, "E2.attempts": 2,
                            "G1.seconds": 43}.items():
             ctx.state.capture(key, value)
-        self.assertEqual(self.payload(ctx)["stages"], {"E2": {"s": 36, "busy": 34, "tries": 2, "wait": 0},
-                                                       "G1": {"s": 43, "busy": 0, "tries": 1, "wait": 0}})
+        self.assertEqual(self.payload(ctx)["stages"], {
+            "E2": {"s": 36, "busy": 34, "tries": 2, "wait": 0, "setup_network": False, "power_cycles": 0},
+            "G1": {"s": 43, "busy": 0, "tries": 1, "wait": 0, "setup_network": False, "power_cycles": 0}})
+
+    def test_each_stage_says_whether_it_needed_the_setup_network_or_a_power_cycle(self):
+        ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
+        for key, value in {"D1.seconds": 90, "D1.upload_route": "bridge network", "E3.seconds": 50,
+                           "E3.power_cycles": 2, "F4.seconds": 70, f"F4.{join.OWN_NETWORK}": 1,
+                           "G1.seconds": 43}.items():
+            ctx.state.capture(key, value)
+        stages = self.payload(ctx)["stages"]
+        self.assertEqual({step: (stage["setup_network"], stage["power_cycles"]) for step, stage in stages.items()},
+                         {"D1": (True, 0), "E3": (False, 2), "F4": (True, 0), "G1": (False, 0)})
 
     def test_whether_the_setup_network_was_joined(self):
         for captures, joined in (({}, False),
@@ -198,7 +209,7 @@ class PayloadTests(RouteTestCase):
     def test_a_beken_device_set_up_through_its_own_network_says_so(self):
         ctx = self.ctx(run="beken-own", firmware="esphome", device_kind="sonoff-s61")
         self.assertIs(self.payload(ctx)["setup_network"], False)
-        ctx.state.set_input(join.OWN_NETWORK, True)
+        ctx.state.set_input(join.OWN_NETWORK, 1)
         self.assertIs(self.payload(ctx)["setup_network"], True)
 
     def test_what_is_asked_of_each_family(self):

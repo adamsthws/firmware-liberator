@@ -39,17 +39,32 @@ from tools.autoflash.prompts import QuitRun
 from tools.autoflash.routes import update
 from tools.autoflash.routes.espressif import tasmota
 from tools.autoflash.runs import ROOT
-from tools.autoflash.state import ATTEMPTED, DONE, FAILED, PENDING
+from tools.autoflash.state import ATTEMPTED, DONE, FAILED, PENDING, RunState
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
+def asked_of_the_run(state: RunState) -> dict[str, int]:
+    """What a run should never need, counted so far, by its step's capture:
+    this computer sent to a device's own network (join.note_own_network), and
+    the device switched off and on (arrival.power_cycle)."""
+    return {join.OWN_NETWORK: int(state.input(join.OWN_NETWORK) or 0),
+            "power_cycles": sum((state.input("power_cycles") or {}).values())}
+
+
 def execute(ctx: Context, step: str) -> int:
     ctx.last_runner = None
     started, waited = time.monotonic(), output.waited()
+    asked = asked_of_the_run(ctx.state)
     try:
         return _execute(ctx, step)
     finally:
+        # Each counted against the step it happened in, over all its tries:
+        # where they keep being needed (report_data.stages).
+        for key, count in asked_of_the_run(ctx.state).items():
+            if count > asked[key]:
+                before = ctx.state.data.get("captures", {}).get(f"{step}.{key}") or 0
+                ctx.state.capture(f"{step}.{key}", before + count - asked[key])
         # For the report, however the stage ended: its time without the
         # keyboard waits, and how long a Berry phase kept the device busy.
         ctx.state.capture(f"{step}.seconds",

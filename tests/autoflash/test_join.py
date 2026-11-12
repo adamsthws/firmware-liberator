@@ -252,7 +252,7 @@ class OwnNetworkRecordedTests(SetupNetworkTestCase):
                 mock.patch.object(join, "send_through_own_network"), mock.patch.object(join, "wait_for"):
             self.assertEqual(join.set_up_through_own_network(ctx, "ESPHome", bool, ("esphome-abcdef",)),
                              ("Home", "pw"))
-        self.assertIs(ctx.state.input(join.OWN_NETWORK), True)
+        self.assertEqual(ctx.state.input(join.OWN_NETWORK), 1)
 
     def test_its_network_not_seen_is_not_recorded(self):
         ctx = self.ctx()
@@ -268,7 +268,7 @@ class OwnNetworkRecordedTests(SetupNetworkTestCase):
                 mock.patch.object(join, "wait_until_joined"), \
                 mock.patch.object(join, "locate_device", return_value="192.0.2.50"):
             self.assertEqual(join.configure_device_wifi(ctx, "tasmota-ABCDEF-1234"), "192.0.2.50")
-        self.assertIs(ctx.state.input(join.OWN_NETWORK), True)
+        self.assertEqual(ctx.state.input(join.OWN_NETWORK), 1)
 
 
 class UserActionWaitTests(unittest.TestCase):
