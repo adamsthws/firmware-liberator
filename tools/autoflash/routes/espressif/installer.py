@@ -605,10 +605,12 @@ def back_up_stock(ctx: Context, host: str) -> str:
     known = ctx.state.input("device_mac")
     output.say("Backing up the device's Sonoff firmware - about a minute...")
     first = True
-    rounds = 0
+    rounds = reads = 0
     while True:
         problem = ""
         for _ in range(2):
+            reads += 1
+            ctx.state.capture("C3.attempts", reads)   # its retries, for the report, as B4's are
             if not first:
                 # Read where the installer is now: when the home network goes
                 # it raises its own, where it is read once this computer has
