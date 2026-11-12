@@ -323,6 +323,7 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
                     if ctx.state.is_done(step) and isinstance(captures.get(f"{step}.fetched_at"), int)), None)
 
     highest: list[int] = []   # the highest uptime OpenBeken has answered with here
+    has_relay = kinds.of_run(ctx.state).has_relay
 
     def restarted_since_sent(uptime: int) -> bool:
         before = captures.get(f"{sent_by}.uptime_before")
@@ -331,7 +332,9 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
                 or uptime < time.time() - captures[f"{sent_by}.fetched_at"] - RESTART_SLACK)
 
     def check(host: str) -> bool:
-        if esphome.is_esphome(host, timeout=3.0) and esphome.relay(host) is not None:
+        # Its relay answering too, where it has one: ESPHome's web server is up
+        # before its switch is.
+        if esphome.is_esphome(host, timeout=3.0) and (not has_relay or esphome.relay(host) is not None):
             return True
         if sent_by:
             uptime = (openbeken.info(host, timeout=3.0) or {}).get("uptime_s")
@@ -355,6 +358,9 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
         "run the same command again to check it"), sent_by=sent_by)
     seconds = round(time.monotonic() - started, 1)
     host = ctx.state.input("device_ip")
+    if not kinds.of_run(ctx.state).has_meter:
+        output.say(f"    ESPHome answered after {seconds}s.")
+        return {"seconds": seconds}
     calibration = esphome.calibration_state(host)
     output.say(f"    ESPHome answered after {seconds}s; its meter calibration: {calibration or 'not said'}.")
     return {"seconds": seconds, "calibration": calibration}
