@@ -1,5 +1,7 @@
 """From Sonoff's firmware: what the device reports through eWeLink (B1), and
 the new firmware sent to it (B2)."""
+import dataclasses
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -49,11 +51,34 @@ class FromStockTests(unittest.TestCase):
                                                        "version": "1.0.2"})
             self.assertEqual([ctx.state.input(key) for key in ("device_kind", "stock_version", "product_model")],
                              [S61.key, "1.0.2", "S61STPF"])
-            # Another model on the account is never the device.
-            ctx.account_devices = lambda: [dict(self.DEVICE, extra={"model": "SN-ESP32-MINIR4"})]
+            # Another model on the account is never the device: by its product
+            # model, or its firmware's, as A2 tells an Espressif one.
+            ctx.account_devices = lambda: [dict(self.DEVICE, productModel="MINIR4", extra={"model": "SN-ESP32-MINIR4"})]
             with mock.patch.object(records, "DEVICES", devices_dir), mock.patch.object(records, "CAPTURES", Path(tmp)):
                 with self.assertRaisesRegex(errors.Abort, "does not convert"):
                     stock.step_identify(ctx)
+
+    def test_b1_tells_a_kind_by_its_product_model_where_that_decides(self):
+        twin = dataclasses.replace(S61, key="made-up-twin", product=re.compile(r"S61TWIN"), product_model_decides=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, device_kind=None)
+            ctx.account_devices = lambda: [dict(self.DEVICE, productModel="S61TWIN")]
+            with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), \
+                    mock.patch.object(records, "CAPTURES", Path(tmp)), \
+                    mock.patch.object(stock.kinds.for_account, "__defaults__", ((twin, S61),)), \
+                    mock.patch.object(stock.prompts, "section"):
+                records.remember_device(MAC, ewelink_id="1001234abc")
+                stock.step_identify(ctx)
+            self.assertEqual(ctx.state.input("device_kind"), "made-up-twin")
+
+    def test_b1_finds_the_device_by_its_wifi_mac_with_no_id_kept(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, device_kind=None)
+            ctx.account_devices = lambda: [{"deviceid": "other"},
+                                           dict(self.DEVICE, params={"fwVersion": "1.0.2", "staMac": MAC.upper()})]
+            with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), \
+                    mock.patch.object(records, "CAPTURES", Path(tmp)), mock.patch.object(stock.prompts, "section"):
+                self.assertEqual(stock.account_record(ctx)["deviceid"], "1001234abc")
 
     def test_b1_asks_ewelink_for_the_latest_offer_and_goes_on_without_it(self):
         identity = {"deviceid": "1001234abc", "model": "SN-BK7238-S61-01", "version": "1.0.2"}
