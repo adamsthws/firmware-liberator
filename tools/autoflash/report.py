@@ -710,12 +710,13 @@ def clipboard_text(lines: list[str], result: str | None = None) -> str:
     return (f"Result: {result}\n" if result else "") + textwrap.dedent("\n".join(lines)).strip("\n") + "\n"
 
 
-def ask_for_an_issue(copy: str, report_id: str | None = None) -> None:
+def ask_for_an_issue(copy: str | None = None, report_id: str | None = None) -> None:
     """Where the links to support the project would be, for a run that failed
     or crashed - not one stopped by choice: the way to open an issue, its
     report's ID under it where one was sent, the report on the clipboard to
     paste in (`copy`, clipboard_text) and said so where it took, and the
-    run's log, which one needs. The tool is meant to finish every run, so one
+    run's log, which one needs. A run that failed before any stage began has
+    no report (cli.issue_alone): nothing is copied. The tool is meant to finish every run, so one
     it could not is something to fix. A run that worked leaves the clipboard
     alone."""
     output.tell("")
@@ -724,7 +725,7 @@ def ask_for_an_issue(copy: str, report_id: str | None = None) -> None:
     # Under the link, as far in.
     if report_id:
         output.tell(f"    {REPORT_ID}: {report_id}")
-    if hostsys.copy_to_clipboard(copy):
+    if copy and hostsys.copy_to_clipboard(copy):
         output.tell("    This report is on your clipboard, ready to paste.")
     output.tell("")
     output.tell("This run's log:")

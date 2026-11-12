@@ -584,6 +584,19 @@ class StoppedRunIssueTests(RouteTestCase):
         with mock.patch.object(hostsys, "copy_to_clipboard", return_value=False):
             self.assertNotIn("    This report is on your clipboard, ready to paste.", self.ended(ctx, "failed"))
 
+    def test_a_run_failed_before_any_stage_has_the_issue_link_and_its_log_and_copies_nothing(self):
+        # cli.issue_alone: no report to offer, so none to copy or to name.
+        lines = []
+        with mock.patch.object(output, "tell", side_effect=lambda text="": lines.append(text)), \
+                mock.patch.object(output, "show_link", lambda url, title=None, indent="    ": lines.append(url)), \
+                mock.patch.object(output, "log_path", return_value=Path("/runs/run.log")), \
+                mock.patch.object(hostsys, "copy_to_clipboard") as copied:
+            report.ask_for_an_issue()
+        copied.assert_not_called()
+        self.assertIn(report.ISSUES_URL, lines)
+        self.assertEqual(lines[-2:], ["This run's log:", f"    {Path('/runs/run.log')}"])
+        self.assertFalse([line for line in lines if "Report ID" in line or "clipboard" in line], lines)
+
     def test_a_run_that_worked_leaves_the_clipboard_alone_and_shows_no_report_id(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
         ctx.last_report_id = "0123456789abcdef"
