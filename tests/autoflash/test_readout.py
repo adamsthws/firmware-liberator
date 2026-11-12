@@ -1263,6 +1263,7 @@ class ReportTests(unittest.TestCase):
         with mock.patch.object(report.hostsys, "copy_to_clipboard",
                                side_effect=lambda text: copied.append(text) or True):
             shown = self.shown_by_end(failed, failed=True)
+        self.assertNotIn("Readout complete!", shown, "one read before it: its FAILED line still says how it ended")
         rows = [row.split() for row in copied[0].splitlines()]
         self.assertIn(["Failed:", "MINIR4", "1.2.0"], rows)
         self.assertEqual(rows[-1], ["Report", "ID:", "b" * 32], copied[0])   # the one that failed
