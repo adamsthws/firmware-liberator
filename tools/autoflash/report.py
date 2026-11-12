@@ -320,9 +320,10 @@ LOAD_WATTS, IDLE_WATTS = 1.0, 0.5
 
 
 def describe_hardware(switched: bool, restored: bool,
-                      on: dict[str, Any] | None, off: dict[str, Any] | None) -> dict[str, str]:
+                      on: dict[str, Any] | None, off: dict[str, Any] | None, metered: bool = True) -> dict[str, str]:
     """The report's Relay and Power meter lines, from the relay's
-    replies and the meter read with it on and with it off.
+    replies and the meter read with it on and with it off; the Relay line
+    alone for a device with no meter (`metered` False).
 
     The relay answering both commands proves the firmware drives it; a reading
     that drops when it is off - the voltage, where the meter is on the switched
@@ -350,15 +351,29 @@ def describe_hardware(switched: bool, restored: bool,
             or (p_on is not None and p_off is not None and p_on >= LOAD_WATTS and p_off < IDLE_WATTS))
     if not (switched and restored):
         relay = "did not switch"
+    elif not metered:
+        return {"Relay": "switches"}
     elif seen:
         relay = "switches (meter confirms)"
     else:
         relay = "switches (meter unchanged)"
+    if not metered:
+        return {"Relay": relay}
     return {
         "Relay": relay,
         "Power meter": "no readings" if on is None and off is None
                        else f"on: {reading(on)}; off: {reading(off)}",
     }
+
+
+def has_meter(ctx: Context) -> bool:
+    """Whether the run's kind of device has a power meter: a check of one
+    without leaves the meter out, neither read nor shown."""
+    return kinds.of_run(ctx.state).has_meter
+
+
+def checking(metered: bool) -> str:
+    return "Checking the relay and power meter..." if metered else "Checking the relay..."
 
 
 def check_hardware(ctx: Context) -> dict[str, str]:
@@ -378,13 +393,17 @@ def check_hardware(ctx: Context) -> dict[str, str]:
     def switch(on: bool) -> bool:
         return state(device.command(f"Power {'ON' if on else 'OFF'}")) == ("ON" if on else "OFF")
 
+    metered = has_meter(ctx)
+
     def meter() -> dict[str, Any] | None:
+        if not metered:
+            return None
         time.sleep(METER_SETTLE)
         status = device.command("Status 10")
         energy = status.get("StatusSNS", {}).get("ENERGY") if isinstance(status, dict) else None
         return energy if isinstance(energy, dict) else None
 
-    output.say("Checking the relay and power meter...")
+    output.say(checking(metered))
     try:
         waited = device.wait_reachable(timeout=ANSWER_WAIT)
         if waited >= 1:
@@ -396,18 +415,25 @@ def check_hardware(ctx: Context) -> dict[str, str]:
         second = meter()
     except (DeviceError, OSError, ValueError) as exc:
         output.say(f"    The device did not answer the check: {exc}")
-        return said(UNCHECKED)
+        return said(UNCHECKED, metered)
     on, off = (second, first) if was_on else (first, second)
-    return said(describe_hardware(switched, restored, on, off))
+    return said(describe_hardware(switched, restored, on, off, metered))
+
+
+def for_device(result: dict[str, str], metered: bool) -> dict[str, str]:
+    """`result` for a device with a meter or without (`metered`): one without
+    has no Power meter line at all, as "not checked" would say it has one."""
+    return result if metered else {label: value for label, value in result.items() if label != "Power meter"}
 
 
 # What a check the device did not answer found.
 UNCHECKED = {"Relay": "could not be checked", "Power meter": "could not be checked"}
 
 
-def said(result: dict[str, str]) -> dict[str, str]:
+def said(result: dict[str, str], metered: bool = True) -> dict[str, str]:
     """`result`, each of its answers shown: every check says them, whatever it
-    found, as a fault suite reads them off the screen."""
+    found, as a fault suite reads them off the screen (for_device's)."""
+    result = for_device(result, metered)
     for label, value in result.items():
         output.say(f"    {label}: {answer(value)}")
     return result
@@ -416,7 +442,8 @@ def said(result: dict[str, str]) -> dict[str, str]:
 def check_esphome_hardware(ctx: Context) -> dict[str, str]:
     """check_hardware's two switches and two readings, through ESPHome's web API."""
     host = ctx.state.input("device_ip")
-    output.say("Checking the relay and power meter...")
+    metered = has_meter(ctx)
+    output.say(checking(metered))
     started = time.monotonic()
     was_on = esphome.relay(host)
     while was_on is None and time.monotonic() - started < ANSWER_WAIT:   # still starting, perhaps
@@ -424,15 +451,19 @@ def check_esphome_hardware(ctx: Context) -> dict[str, str]:
         was_on = esphome.relay(host)
     if was_on is None:
         output.say(f"    The device did not answer the check within {ANSWER_WAIT:.0f}s.")
-        return said(UNCHECKED)
+        return said(UNCHECKED, metered)
+
+    def meter() -> dict[str, Any] | None:
+        if not metered:
+            return None
+        time.sleep(METER_SETTLE)
+        return esphome.meter(host) or None
     switched = esphome.switch_relay(host, not was_on)
-    time.sleep(METER_SETTLE)
-    first = esphome.meter(host) or None
+    first = meter()
     restored = esphome.switch_relay(host, was_on)
-    time.sleep(METER_SETTLE)
-    second = esphome.meter(host) or None
+    second = meter()
     on, off = (second, first) if was_on else (first, second)
-    return said(describe_hardware(switched, restored, on, off))
+    return said(describe_hardware(switched, restored, on, off, metered))
 
 
 def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
@@ -440,13 +471,14 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
     Sonoff's firmware, through eWeLink as the app switches it and asks for
     its readings.  One that sends none (no meter, or the DualR3, which
     refuses the asking) has its relay checked alone."""
+    metered = has_meter(ctx)
     device_id = str(records.read_device(ctx.state.input("device_mac") or "").get("ewelink_id") or "")
     if not device_id:
-        return {"Relay": "not checked", "Power meter": "not checked"}
+        return for_device({"Relay": "not checked", "Power meter": "not checked"}, metered)
     output.say("Checking the relay through eWeLink...")
     record = wait_until_online(ctx, device_id)
     if record is not None and ewelink_relay.motor_mode(record.get("params") or {}):
-        return said({"Relay": "motor mode", "Power meter": "not checked"})
+        return said({"Relay": "motor mode", "Power meter": "not checked"}, metered)
     if record is not None:
         checked = ewelink_relay.check_relay(
             account=ctx.ewelink, device_id=device_id, say=output.say)
@@ -455,11 +487,12 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
                    "could not be switched there. Check the eWeLink app.")
         checked = None
     if checked is None:
-        return said({"Relay": "could not be checked", "Power meter": "not checked"})
+        return said({"Relay": "could not be checked", "Power meter": "not checked"}, metered)
     if checked.on is None and checked.off is None:
-        return said({"Relay": "switches (through eWeLink)" if checked.switched and checked.restored
-                     else "did not switch", "Power meter": "not checked"})
-    return said(describe_hardware(checked.switched, checked.restored, checked.on, checked.off))
+        relay = "switches (through eWeLink)" if checked.switched and checked.restored else "did not switch"
+        return said({"Relay": relay, "Power meter": "not checked"}, metered)
+    return said(describe_hardware(checked.switched, checked.restored, checked.on, checked.off, metered),
+                metered)
 
 
 def wait_until_online(ctx: Context, device_id: str) -> dict[str, Any] | None:
