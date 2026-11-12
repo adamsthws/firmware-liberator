@@ -413,9 +413,14 @@ class ArrivedTests(unittest.TestCase):
                 self.assertEqual((found.directory / "stock-app-1.0.2.rbl").read_bytes(), b"RBL stock")
                 manifest = json.loads((found.directory / records.BEKEN_MANIFEST).read_text())
                 self.assertEqual(manifest["regions"][records.BEKEN_BACKUP_BIN]["sha256"], hashlib.sha256(region).hexdigest())
-                # Taken once: a second run keeps the first.
-                self.assertEqual(arrived.step_backup(ctx)["outcome"], "existing")
+                # Taken once: a second run keeps the first, and says where it is.
+                with mock.patch.object(arrived.output, "say") as said:
+                    self.assertEqual(arrived.step_backup(ctx)["outcome"], "existing")
+                self.assertIn(found.directory.name, said.call_args.args[0])
                 self.assertEqual(ctx.state.input("backup_outcome"), "existing")
+                # None wanted is asked first, as C3 asks it.
+                ctx.args.no_backup = True
+                self.assertEqual(arrived.step_backup(ctx)["outcome"], "not wanted")
 
     def test_b4_without_sonoffs_firmware_says_only_what_it_backed_up(self):
         from tests.autoflash.test_openbeken import FLASH
