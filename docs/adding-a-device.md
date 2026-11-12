@@ -23,7 +23,7 @@ for you, what a run tells you, and what to do when it does not boot.
   each device taken to the other
   ([emulator_check.py](../tools/repo/emulator_check.py)). A Beken device with
   no public dump has its run from a flash rebuilt from the S61's dump and its
-  official file, once that file is pinned ([its steps](#the-steps-1)). One with
+  official file, once that file is pinned ([its steps](#the-steps-beken)). One with
   nothing to run from is named in that file's `NOTHING_TO_RUN`, or a test
   fails.
 - **Be plain about what was tested.** The emulator has no relays, buttons, LEDs
@@ -75,7 +75,7 @@ or [beken-research.md](beken-research.md).
 
 ## An Espressif device
 
-### What you need
+### What you need (Espressif)
 
 - **A whole-flash dump of the device on stock firmware, if you can find one.**
   [FlashDumps](https://github.com/openshwprojects/FlashDumps) has several, and
@@ -85,14 +85,14 @@ or [beken-research.md](beken-research.md).
 - **Failing that, eWeLink's public update file for it.** It runs on another
   device's flash (a *donor*), which tests the firmware but not the device's own
   layout. Some firmware will not get far this way: see
-  [When it does not boot](#when-it-does-not-boot).
+  [When it does not boot](#when-it-does-not-boot-espressif).
 - **Its wiring**, as a Tasmota template and an ESPHome config. Blakadder's
   template list and ESPHome's device list are the usual sources.
 - **A device that is not locked.** Secure boot or flash encryption rules a
   device out: a dump that looks encrypted, or eWeLink's newer FOTA container for
   ESP firmware, is the sign. Matter versions of a device are usually locked.
 
-### The steps
+### The steps (Espressif)
 
 1. **Make a test copy.** Add the device to `DUMPS` or `UPDATES` in
    [public_dump.py](../tools/espressif/emulator/public_dump.py), with the file's
@@ -161,7 +161,7 @@ or [beken-research.md](beken-research.md).
 7. **Finish as [for every device](#for-every-device)**: the tests, what was
    tested, and what you found out.
 
-### What the emulator does for you
+### What the emulator does for you (Espressif)
 
 No device needs a patch of its own for these: each is found in the firmware,
 not listed by address. The scripts are in `tools/espressif/emulator/`, except
@@ -178,7 +178,7 @@ not listed by address. The scripts are in `tools/espressif/emulator/`, except
 Set `psram_mb` on the kind if its stock firmware stops at start-up without its
 external RAM.
 
-### What a run tells you
+### What a run tells you (Espressif)
 
 Every backup logs what it found in the run's `run.log`, and on the screen too
 when the partition table is not one the tool knows: the chip and its revision,
@@ -227,7 +227,7 @@ To use the name in your own code, call `firmware_name.learn()` in
 [firmware_name.py](../tools/ewelink/firmware_name.py). It returns the name, its
 chip and where it came from.
 
-### When it does not boot
+### When it does not boot (Espressif)
 
 Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
 
@@ -245,7 +245,7 @@ Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
 
 ## A Beken device
 
-### What you need
+### What you need (Beken)
 
 - **eWeLink's official update file for it**, from
   [FlashDumps](https://github.com/openshwprojects/FlashDumps), which publishes
@@ -262,13 +262,13 @@ Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
   among them, are another firmware family, on hold
   ([why](beken-research.md#2-mb-devices-on-hold)).
 
-### The steps
+### The steps (Beken)
 
 1. **Make a test copy.** Build a whole flash from the S61's public dump and the
    device's official file, and run
    [stock_points.py](../tools/beken/stock_points.py) on the file: it names each
    point the emulator needs that it cannot find
-   ([below](#what-the-emulator-does-for-you-1)).
+   ([below](#what-the-emulator-does-for-you-beken)).
 
    ```sh
    python3 tools/beken/rebuild_dump.py S61-DUMP.bin OFFICIAL.bin captures/device.bin
@@ -348,7 +348,7 @@ reasons, and with these questions left open:
   is what the device runs, so the tool goes by it, but nobody has read the
   flash of one of these
   ([the evidence](../devices/sonoff-basic-1gs/research.md#its-flash-size)).
-- **After the conversion the tool can tell** ([below](#what-a-run-tells-you-1)).
+- **After the conversion the tool can tell** ([below](#what-a-run-tells-you-beken)).
 - **You are told.** The go-ahead at B2 says no real one has been proven yet and
   asks for the run's result, as on every device wanting testers; `PROCEED` goes
   on as on any other.
@@ -365,7 +365,7 @@ the stub.
 | `S41STPB` (S41s, US) | `FWSW-01-S41-BK7238`, `SN-BK7238-S41-01` | none published. Built from the S61's source tree (`BK7238_S61_S41`), which does not make its pins the S61's | no |
 | T6 `T6-1C/2C/3C-120M` (TX Gen2) | `FWSW-06-SWITCHES-BK7238`, `SN-BK7238-T6C3-01` | [one two-pad unit's](https://github.com/saltech1/esphome-sonoff-t6-uart): relays P6 and P26, LED P9. No third relay is known, and its touch pads talk over a UART protocol (P1), which OpenBeken has no driver for | no |
 
-### What the emulator does for you
+### What the emulator does for you (Beken)
 
 The emulator's help for Sonoff's Beken firmware (the integrity gate, the cloud
 dial, the trust-anchor swap) goes where
@@ -383,7 +383,7 @@ comes from its sealed factory data, so it says it is an S61
 (`cloud_stub.py`). Whether a real one reports that model is not known: if not,
 B1 stops with nothing written and the model in the log.
 
-### What a run tells you
+### What a run tells you (Beken)
 
 Stock Beken firmware says nothing of its flash, so each run logs what it learns
 in `run.log`: at B1, the official file's firmware name, version and whole
@@ -395,7 +395,7 @@ the flash matching the table
 firmware name from the public file list
 ([as above](#learning-the-firmware-name)).
 
-### When it does not boot
+### When it does not boot (Beken)
 
 `stock_points.py` names each point it cannot find in a firmware. The door
 sensor's firmware is another stack: its points are not found, and the tools

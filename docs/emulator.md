@@ -25,7 +25,7 @@ through every stage, to the official Tasmota on the official layout; how far
 each classic ESP32 device gets is in
 [espressif-research.md](espressif-research.md#devices).
 
-### What you need
+### What you need (Espressif)
 
 - **Docker,** on Linux, macOS, or Windows through WSL 2. Everything runs in
   containers; nothing is installed on the host.
@@ -126,7 +126,7 @@ They hold a lock (`systemd-inhibit`) and change no setting, so the lock goes
 however they exit. A flat battery cannot be held off, so on a laptop running
 on its battery `windows-test.sh` tells you to put it on mains power.
 
-### Using it
+### Using it (Espressif)
 
 On Linux or macOS (for Windows, see [On Windows](#on-windows)):
 
@@ -589,7 +589,7 @@ keep one open with `emu.sh --detach`.
                         br0 192.168.60.1 (dnsmasq, ufw) ── tap0 ── QEMU (device .50)
 ```
 
-### Known gaps
+### Known gaps (Espressif)
 
 - **Open networks only.** The fork's access points have no WPA2, so the home
   network has no password. Every setup network the conversion makes is open
@@ -619,7 +619,7 @@ this project's patches, as a container image. It boots the public S61s dump,
 or a whole flash you give it, and runs Sonoff's firmware onto its Wi-Fi and
 eWeLink as a real device would.
 
-### What you need
+### What you need (Beken)
 
 - **Docker.** Each command first pulls the emulator's image, or builds it where
   it is not published.
@@ -631,7 +631,7 @@ eWeLink as a real device would.
   checkout at `/work`, as your own user; give a tool there a dump of your own
   by its path under `captures/`.
 
-### Using it
+### Using it (Beken)
 
 The tools in `tools/beken` run in its container:
 
@@ -671,7 +671,7 @@ the tool finds the device as on a home network and its eWeLink is the stub. It
 works in its own copy of this checkout (the device's `work/`), with captures of
 its own; an unattended run takes its eWeLink account, a made-up one the stub
 accepts, from `work/captures/`. Its readouts go to the API's own code, as the
-[Espressif emulator's](#using-it) do: in a container beside the device
+[Espressif emulator's](#using-it-espressif) do: in a container beside the device
 (`autoflash-beken-emu-api`, `autoflash-beken-emu-N-api`), started with the
 first computer and gone with the device, so a second readout finds the first's;
 what it was asked and kept is in the state's `api/`. `beken-emu.sh --no-api
@@ -705,13 +705,13 @@ first time they run, unless a container is using one.
 **Another model.** `AUTOFLASH_BEKEN_EMU_FLASH` names another whole flash under
 this checkout for a new device to start from, such as one `rebuild_dump.py`
 made for another model
-([adding a Beken device](adding-a-device.md#what-the-emulator-does-for-you-1)).
+([adding a Beken device](adding-a-device.md#what-the-emulator-does-for-you-beken)).
 The emulator check does so for the Sonoff Basic Gen5
 (`tools/repo/emulator_check.py sonoff-basic-1gs`). The emulated board stays
 the S61's whatever the flash; the check holds a device with no meter only to
 its relay switching, not to a meter seeing it.
 
-### Known gaps
+### Known gaps (Beken)
 
 - **No Bluetooth.** The BLE controller's registers are modelled, but there is no
   radio: nothing is sent, and no phone can pair with the device over BLE.
