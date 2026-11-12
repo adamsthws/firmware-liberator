@@ -11,18 +11,23 @@ from tools.autoflash import failures, runner
 
 ROOT = Path(__file__).resolve().parents[2]
 # What a step raises to stop the run, as the runner reports it.
-STOPPING = {"Abort", "NothingWritten", "StoppedPartWay", "DeviceError", "PhaseError", "DeviceNeverConnected"}
+# An OSError too: the runner reports a step's as it does an Abort.
+STOPPING = {"Abort", "NothingWritten", "StoppedPartWay", "DeviceError", "PhaseError", "DeviceNeverConnected",
+            "OSError"}
 
 
-def literal(node: ast.AST) -> str | None:
-    """A message as the code writes it, each value it fills in as {}."""
+def literals(node: ast.AST) -> list[str]:
+    """Each message the code may write there, each value it fills in as {}:
+    both of an if-else's."""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
+        return [node.value]
     if isinstance(node, ast.JoinedStr):
-        return "".join(part.value if isinstance(part, ast.Constant) else "{}" for part in node.values)
+        return ["".join(part.value if isinstance(part, ast.Constant) else "{}" for part in node.values)]
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        return (literal(node.left) or "{}") + (literal(node.right) or "{}")
-    return None
+        return [left + right for left in literals(node.left) or ["{}"] for right in literals(node.right) or ["{}"]]
+    if isinstance(node, ast.IfExp):
+        return literals(node.body) + literals(node.orelse)
+    return []
 
 
 def raised() -> list[tuple[str, str]]:
@@ -34,8 +39,7 @@ def raised() -> list[tuple[str, str]]:
                 continue
             func = node.exc.func
             name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
-            message = literal(node.exc.args[0]) if name in STOPPING else None
-            if message is not None:
+            for message in literals(node.exc.args[0]) if name in STOPPING else []:
                 found.append((f"{path.relative_to(ROOT)}:{node.lineno}", message))
     return found
 
@@ -82,6 +86,8 @@ class ClassifyTests(unittest.TestCase):
             "Tasmota 15.0.1 is on the device, but its template is gone: it lost its settings.": "settings-lost",
             "the device's memory could not be read (timeout). Switch it off and on": "unexpected-layout",
             "this device cannot go to OpenBeken: a S60TPG takes Tasmota or ESPHome": "bad-option",
+            # Passed to arrived.until_back, which stops the run with it: no raise to find.
+            "eWeLink has not shown the device online again, answering there.": "network-join",
         }
         for message, expected in cases.items():
             self.assertEqual(failures.classify(message), expected, message)

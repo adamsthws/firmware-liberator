@@ -4,7 +4,7 @@
   "failurePatterns": [
     [
       "declined",
-      "^not confirmed|was not confirmed|requires an explicit confirmation"
+      "^not confirmed|was not confirmed|requires an explicit confirmation|^skipped as asked"
     ],
     [
       "nothing-to-do",
@@ -44,7 +44,7 @@
     ],
     [
       "backup",
-      "backup cannot be written back|backup could not be read|no backup of|found neither with a backup|cannot be put back without a backup"
+      "backup cannot be written back|backup could not be read|no backup of|found neither with a backup|cannot be put back without a backup|--simulate-backup-failure"
     ],
     [
       "identity",
@@ -56,7 +56,7 @@
     ],
     [
       "download",
-      "could not be fetched|no public dump of|no \\S+ image is published|image is missing|public dump holds no"
+      "could not be fetched|no public dump of|no \\S+ image is published|image is missing|public dump holds no|the download was cut off"
     ],
     [
       "ewelink-unreachable",
@@ -68,7 +68,7 @@
     ],
     [
       "bad-option",
-      "--replace-own-build|needs to be told which firmware|cannot go to |cannot switch to|not sent from a test run|eWeLink account given"
+      "--replace-own-build|needs to be told which firmware|cannot go to |cannot switch to|not sent from a test run|^not from a test run|eWeLink account given"
     ],
     [
       "ewelink-account",
@@ -76,11 +76,11 @@
     ],
     [
       "computer-network",
-      "this computer reaches|this computer's address|are all in use on this computer|--listen-ip|readout could not be sent|did not fetch the \\S+ instructions|without reaching this computer"
+      "this computer reaches|this computer's address|are all in use on this computer|--listen-ip|readout could not be sent|did not fetch the \\S+ instructions|without reaching this computer|firewall rule|^sudo |the website answered"
     ],
     [
       "network-join",
-      "did not join|cannot join it|has not answered on your Wi-Fi|did not answer on your Wi-Fi|neither rejoined|did not come back after its settings were reset|did not say which Wi-Fi network|but the bundle is set up for"
+      "did not join|cannot join it|has not answered on your Wi-Fi|did not answer on your Wi-Fi|neither rejoined|did not come back after its settings were reset|did not say which Wi-Fi network|but the bundle is set up for|has not shown the device online again"
     ],
     [
       "settings-lost",
@@ -88,7 +88,7 @@
     ],
     [
       "unexpected-layout",
-      "not laid out as this tool expects|partition table|memory could not be read"
+      "not laid out as this tool expects|partition table|memory could not be read|short read of the device's flash|bytes were read"
     ],
     [
       "not-taken",
@@ -96,7 +96,7 @@
     ],
     [
       "upload-cut",
-      "stopped part way|was not uploaded|to the device failed|could not be sent to the device|did not complete within|did not print|nothing was armed"
+      "stopped part way|was not uploaded|to the device failed|could not be sent to the device|did not complete within|did not print|nothing was armed|delivery failed|the device fetched \\S+ of \\S+ bytes"
     ],
     [
       "unexpected-firmware",
