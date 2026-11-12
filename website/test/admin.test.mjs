@@ -68,8 +68,8 @@ test("without Access's token, nothing: no page, no change", async () => {
 async function held(text = "buy cheap watches") {
   const bindings = env();
   const db = bindings.DB;
-  const ok = { ...structuredClone(FIXTURE), id: randomBytes(16).toString("hex") };
-  const junk = { ...structuredClone(FIXTURE), id: randomBytes(16).toString("hex"), result: "failed",
+  const ok = { ...structuredClone(FIXTURE), id: randomBytes(8).toString("hex") };
+  const junk = { ...structuredClone(FIXTURE), id: randomBytes(8).toString("hex"), result: "failed",
     stopped: { step: "D4", error: "upload-cut", text } };
   await db.batch(writes(db, ok, "device-1", "2026-11-09"));
   await db.batch([...writes(db, junk, "device-2", "2026-11-09", "words that read as none of the tool's messages"),
@@ -184,7 +184,7 @@ test("readouts alike from too few networks are listed, and approved from the vie
 
 test("a form not of a held report and an action is turned away", async () => {
   const { bindings } = await held();
-  for (const body of [{ id: "nope", action: "delete" }, { id: "f".repeat(32), action: "drop" }]) {
+  for (const body of [{ id: "nope", action: "delete" }, { id: "f".repeat(16), action: "drop" }]) {
     const response = await admin.handle(new Request("https://admin.firmwareliberator.com/held", {
       method: "POST", body: new URLSearchParams(body),
       headers: { "Cf-Access-Jwt-Assertion": await token(), Origin: admin.ORIGIN } }), bindings, NOW, keys);

@@ -396,7 +396,7 @@
                 },
                 "example": {
                   "accepted": [
-                    "0123456789abcdef0123456789abcdef"
+                    "0123456789abcdef"
                   ],
                   "duplicate": [],
                   "rejected": [],
@@ -892,7 +892,7 @@
       },
       "ReportId": {
         "type": "string",
-        "pattern": "^[0-9a-f]{32}$"
+        "pattern": "^[0-9a-f]{16}$"
       },
       "ReportsTaken": {
         "type": "object",

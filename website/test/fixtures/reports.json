@@ -2,7 +2,7 @@
   "$comment": "Reports both validators must agree on: tools/repo/report_schema.py (tests/repo/test_report_schema.py) and website/api/report-schema.js (website/test/report-schema.test.mjs). Each invalid one is the first valid one with one change: `set` a value, or `drop` a key, at a dotted path. The readout ones are a readout's reports (the schema's \"readout\"), each invalid one the first readoutValid with one change.",
   "valid": [
     {
-      "format": 1, "id": "0123456789abcdef0123456789abcdef", "proof": "1794000000:198", "tag": "user",
+      "format": 1, "id": "0123456789abcdef", "proof": "1794000000:198", "tag": "user",
       "tool": "2.4.0", "kind": "run", "result": "converted", "stopped": null, "family": "espressif",
       "device": "sonoff-s60", "model": "S60TPG", "stock": "1.2.0",
       "device_hash": "a5b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1", "firmware": "tasmota",
@@ -20,7 +20,7 @@
       "begun_on": null, "back_after_power_cycle": null
     },
     {
-      "format": 1, "id": "fedcba9876543210fedcba9876543210", "proof": "1794000000:2293", "tag": "dev",
+      "format": 1, "id": "fedcba9876543210", "proof": "1794000000:2293", "tag": "dev",
       "tool": "2.4.0", "kind": "run", "result": "failed",
       "stopped": {"step": "B2", "error": "unsupported-device", "text": "the device is a NEWTHING, which this tool does not convert yet. Nothing was written", "where": null},
       "family": null, "device": null, "model": "NEWTHING", "stock": null, "device_hash": null, "firmware": null,
@@ -37,7 +37,7 @@
       "begun_on": "2.3.0", "back_after_power_cycle": null
     },
     {
-      "format": 1, "id": "cccccccccccccccccccccccccccccccc", "proof": "1794000000:41", "tag": "user",
+      "format": 1, "id": "cccccccccccccccc", "proof": "1794000000:41", "tag": "user",
       "tool": "3.0.0", "kind": "run", "result": "cancelled",
       "stopped": {"step": "D1", "error": "quit", "text": "", "where": null}, "family": "espressif",
       "device": "sonoff-s60", "model": "S60TPF", "stock": "1.2.0",
@@ -56,7 +56,7 @@
       "begun_on": null, "back_after_power_cycle": null
     },
     {
-      "format": 1, "id": "dddddddddddddddddddddddddddddddd", "proof": "1794000000:77", "tag": "user",
+      "format": 1, "id": "dddddddddddddddd", "proof": "1794000000:77", "tag": "user",
       "tool": "3.0.0", "kind": "run", "result": "crashed",
       "stopped": {"step": "K1", "error": "crash", "text": "something unexpected went wrong: KeyError: 'model'",
         "where": "KeyError at tools/autoflash/routes/beken/arrived.py:212"},
@@ -80,7 +80,7 @@
     {"why": "a key the schema does not name", "set": {"email": "me@example.com"}},
     {"why": "a missing key", "drop": "checks"},
     {"why": "another format", "set": {"format": 2}},
-    {"why": "an ID not 32 hex digits", "set": {"id": "0123456789ABCDEF0123456789ABCDEF"}},
+    {"why": "an ID not 16 hex digits", "set": {"id": "0123456789ABCDEF"}},
     {"why": "a word not in the list", "set": {"result": "exploded"}},
     {"why": "a pattern with a newline after it", "set": {"model": "S60TPG\n"}},
     {"why": "a model too long", "set": {"model": "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}},
@@ -113,7 +113,7 @@
   ],
   "readoutValid": [
     {
-      "format": 1, "id": "1123456789abcdef0123456789abcdef", "proof": "1794000000:198", "tag": "user",
+      "format": 1, "id": "1123456789abcdef", "proof": "1794000000:198", "tag": "user",
       "tool": "3.0.0", "kind": "readout", "result": "accepted", "error": null, "family": "espressif",
       "device": "sonoff-basicr4", "model": "BASICR4", "stock_model": "SN-ESP32C3-BASICR4-01", "stock": "1.1.0",
       "whole": true,
@@ -123,7 +123,7 @@
       "seconds": 75, "converted_here": 3
     },
     {
-      "format": 1, "id": "2123456789abcdef0123456789abcdef", "proof": "1794000000:198", "tag": "dev",
+      "format": 1, "id": "2123456789abcdef", "proof": "1794000000:198", "tag": "dev",
       "tool": "3.0.0", "kind": "readout", "result": "failed", "error": "other", "family": null,
       "device": null, "model": null, "stock_model": null, "stock": null, "whole": null, "device_hash": null,
       "os": {"family": "windows", "version": "11 (build 26100)", "arch": "arm64"},

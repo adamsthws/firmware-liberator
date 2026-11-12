@@ -119,7 +119,7 @@ class BeginTests(Case):
         ctx = self.ctx()
         with mock.patch.object(upload, "start_work", return_value=Work()) as start, contextlib.redirect_stdout(io.StringIO()):
             upload.begin(ctx)
-        self.assertRegex(ctx.report_id, r"^[0-9a-f]{32}$")
+        self.assertRegex(ctx.report_id, r"^[0-9a-f]{16}$")
         start.assert_called_once_with(ctx.report_id)
 
     def test_the_notice_is_said_once_on_a_computer(self):

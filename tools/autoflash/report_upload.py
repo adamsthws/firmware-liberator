@@ -41,6 +41,11 @@ if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
 UPLOAD_URL = "https://api.firmwareliberator.com/v1/reports"
+# A report's ID, random: 64 bits, 16 hex digits - short, as a run that failed
+# shows it to paste into an issue, and still unlikely to come again (about
+# one in 30 million among a million reports), as the API takes a report sent
+# twice once, by its ID.
+REPORT_ID_BYTES = 8
 # The work the Worker asks of each report (reports.js's REPORT_PROOF_BITS).
 PROOF_BITS = 24
 QUEUE = ROOT / "captures" / "reports"
@@ -215,7 +220,7 @@ def begin(ctx: Context) -> None:
     interrupt.reset_carried_on()
     if not enabled(ctx):
         return
-    ctx.report_id = secrets.token_hex(16)
+    ctx.report_id = secrets.token_hex(REPORT_ID_BYTES)
     try:
         ctx.report_work = start_work(ctx.report_id)
     except OSError as error:   # made at the end, or the next start, instead
@@ -245,7 +250,7 @@ def begin_readout(ctx: Context) -> None:
     ctx.readout_report_id = None
     if not enabled(ctx):
         return
-    ctx.readout_report_id = secrets.token_hex(16)
+    ctx.readout_report_id = secrets.token_hex(REPORT_ID_BYTES)
     try:
         ctx.readout_report_work = start_work(ctx.readout_report_id)
     except OSError as error:   # made as it is sent instead
