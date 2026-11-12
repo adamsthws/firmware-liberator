@@ -33,7 +33,8 @@
   {
    "when": "Type .+ to go ahead",
    "type": "PROCEED\r",
-   "times": 3
+   "times": 3,
+   "optional": true
   },
   {
    "when": "\\(y/N[^)]*\\)|\\(Y/n[^)]*\\)",
