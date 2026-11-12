@@ -348,6 +348,29 @@ def record_mac(device: dict[str, Any]) -> str | None:
     return mac if records.MAC_RE.match(mac) else None
 
 
+# How long a device is looked for by its hardware address before its address
+# is asked for, and how often: one sweep misses a device slow to answer ARP -
+# its Wi-Fi asleep, or a busy computer's emulated one (seen: an S61 beside
+# another emulator, missed by a sweep's 2.5 s) - as the conversion's own
+# search looks again (join.locate_device).
+LOOK_FOR = 30.0
+LOOK_AGAIN = 5.0
+
+
+def found_by_mac(mac: str) -> str | None:
+    """Where the hardware address `mac` is on this computer's networks, looked
+    for again every LOOK_AGAIN seconds until LOOK_FOR is up."""
+    networks = sorted(hostsys.lan_networks())
+    if not networks:
+        return None
+    started = time.monotonic()
+    while True:
+        found = hostsys.find_by_mac(mac, networks)
+        if found or time.monotonic() - started >= LOOK_FOR:
+            return found
+        time.sleep(LOOK_AGAIN)
+
+
 def answering_at(device: dict[str, Any]) -> str | None:
     """Where `device` answers eWeLink's discovery with its id, or None."""
     wanted = str(device.get("deviceid") or "")
@@ -372,8 +395,7 @@ def locate(ctx: Context, device: dict[str, Any]) -> str:
     # Not answering as Sonoff's firmware - on the program a readout stopped
     # part way left on it, say: where its hardware address is.
     mac = record_mac(device)
-    networks = sorted(hostsys.lan_networks()) if mac else []
-    found = hostsys.find_by_mac(mac, networks) if networks else None
+    found = found_by_mac(mac) if mac else None
     if found:
         return found
     output.transient_begin()
@@ -393,8 +415,7 @@ def locate_by_mac(device: dict[str, Any]) -> str:
     mac = record_mac(device)
     if mac:
         output.say("Looking for it on your network by its hardware address...")
-        networks = sorted(hostsys.lan_networks())
-        found = hostsys.find_by_mac(mac, networks) if networks else None
+        found = found_by_mac(mac)
         if found:
             return found
 
