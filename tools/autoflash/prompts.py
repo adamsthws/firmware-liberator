@@ -18,7 +18,7 @@ import select
 import socket
 import sys
 import time
-from typing import Callable, Iterable, Sequence
+from typing import Callable, Iterable, Mapping, Sequence
 
 from . import hostsys, interrupt, output
 
@@ -572,11 +572,14 @@ def ask_yes_no(
         _retry(mark, ["Please answer y or n."])
 
 
-def ask_choice(question: str, options: Sequence[str], *, help_lines: Sequence[str] = ()) -> int:
+def ask_choice(question: str, options: Sequence[str], *, help_lines: Sequence[str] = (),
+               shortcuts: Mapping[str, int] | None = None) -> int:
     """Returns the zero-based index of the chosen option.
 
     q stops the run cleanly, as at every question (hint_to_quit): no option is
-    numbered for it.
+    numbered for it. `shortcuts`: other answers taken, in any case, each for
+    an option's index - "y" for a yes, say, or "" for Enter alone; the
+    question says which.
     """
     _ctrl_c_first()
     if help_lines:
@@ -587,6 +590,8 @@ def ask_choice(question: str, options: Sequence[str], *, help_lines: Sequence[st
     mark = output.mark()
     while True:
         answer = _raw(question, None)
+        if shortcuts and answer.lower() in shortcuts:
+            return shortcuts[answer.lower()]
         try:
             chosen = int(answer)
         except ValueError:

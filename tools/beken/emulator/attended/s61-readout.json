@@ -37,15 +37,6 @@
    "optional": true
   },
   {
-   "when": "Add a way to reach you",
-   "type": "2\r"
-  },
-  {
-   "when": "Your email address",
-   "type": "someone@example.invalid\r",
-   "optional": true
-  },
-  {
    "when": "What next",
    "type": "q\r"
   },

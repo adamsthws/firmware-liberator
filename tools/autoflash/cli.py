@@ -42,6 +42,7 @@ from tools.autoflash import (  # noqa: E402
     routes,
     runner,
     runs,
+    signup,
 )
 from tools.autoflash.context import Context  # noqa: E402
 from tools.autoflash.errors import Abort  # noqa: E402
@@ -663,6 +664,7 @@ def _main() -> int:
         # left its "Readout saved in" above the next one's.
         output.start_at_top()
         code = read_out(ctx) if command == "readout" else convert(ctx, given)
+    signup.ask_on_exit()
     return code
 
 
@@ -678,7 +680,10 @@ def what_next(last: str) -> str | None:
                else ["Convert a device", "Read out another device"])
     try:
         return ("run", "readout")[prompts.ask_choice("What next", options)]
-    except (QuitRun, KeyboardInterrupt):
+    except QuitRun:
+        return None
+    except KeyboardInterrupt:
+        signup.stopped()
         return None
 
 
@@ -702,6 +707,7 @@ def read_out(ctx: Context) -> int:
         output.tell("Stopped.")
         return 130
     except KeyboardInterrupt:
+        signup.stopped()
         output.tell("Stopped with Ctrl-C. If the device was being read, switch it off and on: it starts "
                     "its Sonoff firmware again.")
         return 130
@@ -753,6 +759,7 @@ def convert(ctx: Context, given: list[str]) -> int:
         code, ending = 1, "crashed"
         return code
     except KeyboardInterrupt:
+        signup.stopped()
         closed = interrupt.window_closed()
         try:
             ctx.state.set_input("stopped_by", "window" if closed else "ctrl-c")

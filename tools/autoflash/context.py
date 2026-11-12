@@ -26,6 +26,7 @@ from tools.autoflash import (
     prompts,
     routes,
     runs,
+    signup,
     unlock,
     wifi,
 )
@@ -295,6 +296,7 @@ class Context:
             output.tell(f"    Could not reach eWeLink ({exc}), so every device that answers is listed.")
             return None
         account.keep_account_private(devices)
+        signup.saw_devices(devices)
         return devices
 
     def _sign_in(self) -> tuple[str, dict[str, Any]]:
@@ -386,6 +388,7 @@ class Context:
 
     def remember_email(self, email: str) -> None:
         email = account_name(email)
+        signup.saw_account(email)
         self.state.set_input("email", email)
         settings = runs.load_settings()
         if settings.get("ewelink_email") != email:

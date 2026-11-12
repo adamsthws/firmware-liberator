@@ -142,7 +142,29 @@ sent, delete its file there.
 
 ## Readouts are separate
 
-A [readout](readouts.md), which helps add support for a device, is sent only
-if you agree when the tool offers one; [its own page](readouts.md#what-is-in-one)
-says what it holds. The short report of how a readout went, above, is not the
+A [readout](readouts.md), which helps add support for a device, is made only
+when you choose one; [its own page](readouts.md#what-is-in-one) says what it
+holds. The short report of how a readout went, above, is not the
 readout: it is sent as a conversion's report is, and turned off the same way.
+
+## Your email address
+
+As it exits, the tool asks whether you would like an email as more devices
+are supported, offering your eWeLink account's address if it is one. You can
+also sign up on the website's [notify page](https://firmwareliberator.com/notify).
+
+Given in the tool, your address goes with the models of the devices in your
+eWeLink account, and the references of any readouts you sent then, so you
+can also hear when one of your own devices' support changes, and be asked to
+try a test version of it. Once you have given it, the tool does not ask again
+on that computer: each later run adds the devices and readouts it saw to your
+address, without asking. A device is never taken off, as one gone from your
+eWeLink account has most likely been converted. Once you remove your address,
+or if you never confirmed it, nothing more is kept or sent to it; to sign up
+again, use the [notify page](https://firmwareliberator.com/notify).
+
+You are sent an email with a link to confirm the address, and once more the
+next day if you have not. Nothing is kept unless you follow that link: an
+address never confirmed is deleted after 7 days. Once confirmed, it is stored
+privately, apart from reports and readouts, and used only for these emails.
+Every one has a link to remove your address, which asks you to confirm first.

@@ -34,10 +34,10 @@ import urllib.error
 from dataclasses import dataclass
 import urllib.request
 from pathlib import Path
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable, Iterable, TYPE_CHECKING
 
 from tools.autoflash import __version__, account, detect, hostsys, kinds, output, records, prompts, runs
-from tools.autoflash import failures, proof_of_work, readout_beken, readout_espressif, report, report_upload
+from tools.autoflash import failures, proof_of_work, readout_beken, readout_espressif, report, report_upload, signup
 from tools.autoflash.errors import Abort, Finished, NothingWritten
 # How a device's readout ended (Became.outcome): its report's result, sent as
 # each readout ends (report_upload.send_readout), and on the screen's at the end.
@@ -45,7 +45,6 @@ from tools.autoflash.report_data import (
     ACCEPTED, CANCELLED, CONVERTED_SINCE, CRASHED, FAILED, KEPT, NOT_NEEDED as UNNEEDED, NOT_READ, SKIPPED,
     WEBSITE_FULL)
 from tools.ewelink import discover_ewelink, firmware_name, offered_firmware
-from tools.ewelink.get_device_key import is_email
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -144,9 +143,7 @@ class Wanted:
 
 @dataclass(frozen=True)
 class Batch:
-    """A readout of one device among several in one run (run_all): the
-    owner's contact details, asked once for them all."""
-    contact: dict[str, str] | None = None
+    """A readout of one device among several in one run (run_all)."""
 
 
 # What a device not back on its Sonoff firmware still needs, said as the run ends.
@@ -557,7 +554,9 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
             raise WebsiteFull(full)
         if batch is not None:
             return ""
-        return single_not_wanted(full or NOT_NEEDED, asked)
+        said = full or NOT_NEEDED
+        output.tell(f"    {said[0].upper()}{said[1:]}")
+        return ""
     manifest = {
         "format": FORMAT, "tool": __version__, "product": asked.product, "stock_model": asked.model,
         "version": asked.version, "brand": str(device.get("brandName") or ""),
@@ -667,15 +666,13 @@ NAME = "readout.tar"
 
 
 def package(manifest: dict[str, Any], files: dict[str, bytes] | None = None,
-            updates: list[offered_firmware.Offered] | tuple = (), contact: dict[str, str] | None = None) -> bytes:
+            updates: list[offered_firmware.Offered] | tuple = ()) -> bytes:
     """The readout as sent: a tar of manifest.json first; the firmware eWeLink
     offers the device, under offered/, as it is; and `files` - the anonymised
     flash and its companions (flash.bin, efuse.bin, info.txt, report.json),
     already anonymised by the chip family that read them. Each of those .bin
     is xz-compressed (flash.bin.xz), so the tar stays readable without
     unpacking it."""
-    if contact:
-        manifest = {**manifest, "contact": contact}
     out = {"manifest.json": json.dumps(manifest, indent=2).encode()}
     out.update({f"offered/{item.name}": item.data for item in updates})
     for name, data in (files or {}).items():
@@ -690,91 +687,33 @@ def package(manifest: dict[str, Any], files: dict[str, bytes] | None = None,
     return buffer.getvalue()
 
 
-# What the owner is told their address is kept for, wherever it is asked.
-CONTACT_HELP = ["You will be emailed when your device's support changes, and may be asked to",
-                "try it. You are first sent an email to confirm: nothing is kept unless you",
-                "do. Your address is kept for that alone, and every such email has a link",
-                "to stop them."]
-# What the owner is told once an address is given.
-CONFIRM_SENT = "Check your inbox: follow the link in the email just sent to confirm your address."
-# Devices one sign-up may name, as the website takes them (MAX_DEVICES).
+# Devices, and readouts, one sign-up may name, as the website takes them
+# (MAX_DEVICES, MAX_READOUTS).
 NOTIFY_MOST = 20
-
-
-def ask_contact(when_supported: bool = False) -> dict[str, str] | None:
-    """How the owner may be reached about the device, if they choose to say:
-    {"email": ...}, or None. Quit stops the run unsent. `when_supported`: no
-    readout goes, only the wish to be told when the device's status changes."""
-    if prompts.UNATTENDED:
-        prompts.answered_unattended("Contact details", "Submit without contact information")
-        return None
-    output.transient_begin()
-    if when_supported:
-        choice = prompts.ask_choice("Be told when this device is supported", [
-            "Add an email address",
-            "No, thank you",
-        ], help_lines=CONTACT_HELP)
-    else:
-        choice = prompts.ask_choice("Add a way to reach you", [
-            "Add an email address",
-            "Submit without contact information",
-        ], help_lines=CONTACT_HELP)
-    contact = None
-    if choice == 0:
-        contact = {"email": prompts.ask_text("Your email address", private="email", validate=lambda text: (
-            is_email(text), "That does not look like an email address."))}
-    output.transient_end()
-    if contact:
-        contact = {key: value.strip() for key, value in contact.items()}
-        if not when_supported:
-            output.say("    Your contact details go with it.")
-    return contact
 
 
 def offer(ctx: Context, manifest: dict[str, Any], files: dict[str, bytes] | None = None,
           updates: list[offered_firmware.Offered] | tuple = (), *, back: bool = True,
           batch: Batch | None = None, device: dict[str, Any] | None = None) -> str:
-    """Make the readout, ask, and send it; what the person is still to do.
-    `files`: the anonymised flash and its companions, or None if not read.
-    `back`: whether the device answered as its Sonoff firmware again.
-    In a `batch` it is sent unasked, and kept under `device`'s id if not."""
+    """Make the readout and send it, unasked: the docs say what it holds, and
+    a question here would only stop the readout part way. What the person is
+    still to do. `files`: the anonymised flash and its companions, or None if
+    not read. `back`: whether the device answered as its Sonoff firmware
+    again. In a `batch` it is kept, if not sent, under `device`'s id."""
+    data = package(manifest, files, updates)
     if batch is not None:
-        return sent_in_batch(ctx, package(manifest, files, updates, batch.contact), device or {}, back)
-    ended = became(ctx)
+        return sent_in_batch(ctx, data, device or {}, back)
     path = ctx.dir / NAME
-
-    def keep(contact: dict[str, str] | None = None) -> bytes:
-        data = package(manifest, files, updates, contact)
-        path.write_bytes(data)
-        os.chmod(path, 0o600)
-        return data
-
+    path.write_bytes(data)
+    os.chmod(path, 0o600)
     url = upload_url()
-    contents = ["- the device's firmware readout, anonymised;"] if files or updates else []
-    # The offer and its question go together once answered: what the run then
-    # says - sent, or not - is the answer.  Left if sending fails, to say what.
+    if url is None:
+        output.say(f"    Not sent from a test run: kept in {path}.")
+        ended = became(ctx)
+        ended.outcome, ended.detail = KEPT, "a test run"
+        return "" if back else SWITCH_OFF_AND_ON
     with output.until_done():
-        prompts.section("Send this firmware readout, to help add support for this device?", [
-            "What is sent:",
-            *contents,
-            "- what the device and eWeLink said it is, and this tool's version.",
-        ])
-        if url is None:
-            keep()
-            output.say(f"    Not sent from a test run: kept in {path}.")
-            ended.outcome, ended.detail = KEPT, "a test run"
-            return "" if back else SWITCH_OFF_AND_ON
-        try:
-            contact = ask_contact()
-        except prompts.QuitRun:
-            keep()
-            ended.outcome, ended.detail = KEPT, "as asked"
-            return (f"The readout is kept in {path}, if you would like to send it later."
-                    + ("" if back else f" {SWITCH_OFF_AND_ON}"))
-        said = sent(ctx, keep(contact), url, path, back)
-        if contact and notify(contact["email"], [(manifest.get("product", ""), manifest.get("stock_model", ""))]):
-            said = f"{said} {CONFIRM_SENT}".strip()
-        return said
+        return sent(ctx, data, url, path, back)
 
 
 def sent(ctx: Context, data: bytes, url: str, path: Path, back: bool) -> str:
@@ -788,6 +727,7 @@ def sent(ctx: Context, data: bytes, url: str, path: Path, back: bool) -> str:
     path.unlink(missing_ok=True)
     ended = became(ctx)
     ended.outcome, ended.detail = (UNNEEDED, "") if reference == ENOUGH else (ACCEPTED, reference)
+    signup.sent_readout(ended.detail)
     output.log_only(f"    The readout: {ended.outcome}" + (f", reference {reference}." if ended.detail else "."))
     return "" if back else SWITCH_OFF_AND_ON
 
@@ -816,6 +756,7 @@ def sent_in_batch(ctx: Context, data: bytes, device: dict[str, Any], back: bool)
                         "readout --send.")
         else:
             ended.outcome, ended.detail = (UNNEEDED, "") if reference == ENOUGH else (ACCEPTED, reference)
+            signup.sent_readout(ended.detail)
             output.log_only(f"    {ended.name}'s readout: {ended.outcome}"
                             + (f", reference {reference}." if ended.detail else "."))
     if not back:
@@ -877,34 +818,24 @@ def ask_wanted(product: str, model: str, version: str, stage: str, firmware: lis
     return Wanted(answer.get("wanted") is not False, str(answer.get("why") or ""), held)
 
 
-def notify(email: str, devices: list[tuple[str, str]]) -> bool:
-    """Ask the website to tell `email` when any of these devices' status
-    changes ((product, firmware model) each), wanted as readouts or not.
-    Whether it was taken; never raises."""
+def notify(email: str, devices: Iterable[tuple[str, str]], readouts: Iterable[str] = (), *,
+           update: bool = False) -> bool:
+    """Ask the website to email `email` as more devices are supported, and
+    of these devices' changes ((product, firmware model) each): the owner's
+    eWeLink account's, none where it was never seen; with `readouts`, the
+    references of those they sent. `update`: a later sitting's, added only
+    to an address confirmed already, never emailed if it is not. Whether it
+    was taken; never raises."""
     named = [{"product": product, "model": model or "-"} for product, model in dict.fromkeys(devices) if product]
-    if not named or upload_url() is None:
+    if upload_url() is None:
         return False
     try:
-        light_post("/notify", {"format": FORMAT, "email": email, "devices": named[:NOTIFY_MOST]})
+        light_post("/notify", {"format": FORMAT, "email": email, "devices": named[:NOTIFY_MOST],
+                               "readouts": list(dict.fromkeys(readouts))[:NOTIFY_MOST], "update": update})
     except (OSError, ValueError) as exc:
-        output.log_only(f"    Asking to be told of a change: not taken ({exc}).")
+        output.log_only(f"    Asking to be emailed: not taken ({exc}).")
         return False
     return True
-
-
-def single_not_wanted(said: str, asked: account.Asked) -> str:
-    """A lone readout the website does not want: offered, still, to be told
-    when the device's status changes. What the person is still to do."""
-    output.tell(f"    {said[0].upper()}{said[1:]}")
-    if upload_url() is None or prompts.UNATTENDED:
-        return ""
-    try:
-        contact = ask_contact(when_supported=True)
-    except prompts.QuitRun:
-        contact = None
-    if contact and notify(contact["email"], [(asked.product, asked.model)]):
-        return CONFIRM_SENT
-    return ""
 
 
 def send(data: bytes, url: str = UPLOAD_URL, timeout: float = 120.0) -> str:
@@ -971,29 +902,6 @@ def run_all(ctx: Context, devices: list[dict[str, Any]]) -> str:
     by, and q quits, as everywhere. One that fails part way stops the rest, as
     it may need seeing to."""
     ordered = sorted(devices, key=reads_out)
-    output.transient_begin()
-    prompts.section(f"Read out {len(ordered)} devices, to help add support for them", [
-        *(f"- {describe(device)}: " + ("its whole memory, once you agree" if reads_out(device) else
-                                       "what it and eWeLink say, and the firmware eWeLink offers it")
-          for device in ordered),
-        "",
-        "Only a device the website has no readout like - its model and firmware",
-        "version - is read. Each readout is anonymised, and sent on its own as it",
-        "is made.",
-    ])
-    contact = None
-    if upload_url() is not None:
-        try:
-            contact = ask_contact()
-        except prompts.QuitRun:
-            output.transient_end()
-            return "Nothing was read out or sent."
-    output.transient_end()
-    if contact and notify(contact["email"], [(str(device.get("productModel") or ""),
-                                              str((device.get("extra") or {}).get("model") or ""))
-                                             for device in ordered]):
-        # Every device, its readout wanted or not: told when any one's changes.
-        output.tell(f"    {CONFIRM_SENT}")
     todo = []
     for number, device in enumerate(ordered, 1):
         output.tell(f"Reading out {describe(device)} ({number} of {len(ordered)})...")
@@ -1001,7 +909,7 @@ def run_all(ctx: Context, devices: list[dict[str, Any]]) -> str:
             ctx.state.set_input(key, None)
         left = ordered[number:]
         try:
-            said = run(ctx, device, batch=Batch(contact))
+            said = run(ctx, device, batch=Batch())
         except prompts.QuitRun:
             became_of(ctx, device).detail = "stopped as asked"
             readouts(ctx).extend(Became.of(other, detail="stopped as asked") for other in left)
@@ -1039,8 +947,11 @@ def from_run(ctx: Context, devices: list[dict[str, Any]]) -> None:
 
 
 def send_saved(path: Path) -> str:
-    """readout --send: a readout kept from before."""
+    """readout --send: a readout kept from before. Its reference goes with
+    the email sign-up, as one sent as it was made does."""
     url = upload_url()
     if url is None:
         raise Abort("readouts are not sent from a test run")
-    return send(path.read_bytes(), url)
+    reference = send(path.read_bytes(), url)
+    signup.sent_readout("" if reference == ENOUGH else reference)
+    return reference

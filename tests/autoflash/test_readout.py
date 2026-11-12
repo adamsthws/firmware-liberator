@@ -111,9 +111,7 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(data).hexdigest(), offered[0].sha256)
         self.assertIn("report.json", names)
 
-    def test_contact_details_go_in_the_manifest_only_when_given(self):
-        given = json.loads(unpacked(readout.package(MANIFEST, None, (), {"email": "me@example.com"}))["manifest.json"])
-        self.assertEqual(given["contact"], {"email": "me@example.com"})
+    def test_no_contact_goes_in_it(self):
         self.assertNotIn("contact", json.loads(unpacked(readout.package(MANIFEST, None))["manifest.json"]))
 
     def test_not_read_only_what_it_said_goes(self):
@@ -460,7 +458,7 @@ class RunTests(unittest.TestCase):
         with mock.patch.object(account, "ask_ewelink", side_effect=converted), \
                 mock.patch.object(runs, "hold_device"), mock.patch.object(readout, "ask_wanted") as wanted:
             self.assertEqual(readout.run(self.ctx, s60), "")   # nothing for the owner to do
-            self.assertEqual(readout.run(self.ctx, s60, batch=readout.Batch(None)), "")
+            self.assertEqual(readout.run(self.ctx, s60, batch=readout.Batch()), "")
         wanted.assert_not_called()
         self.assertEqual([outcome for _, outcome, _ in ended(self.ctx)], [readout.CONVERTED_SINCE] * 2)
         self.assertEqual(readout.readouts(self.ctx)[0].detail, "ESPHome")
@@ -536,7 +534,7 @@ class RunTests(unittest.TestCase):
                 mock.patch.object(account, "ask_ewelink", return_value=S60_ASKED), \
                 mock.patch.object(runs, "hold_device"):
             for batch, raised, ended in ((None, errors.NothingWritten("not confirmed"), "stopped"),
-                                         (readout.Batch(None), errors.NothingWritten("skipped as asked"), "skipped"),
+                                         (readout.Batch(), errors.NothingWritten("skipped as asked"), "skipped"),
                                          (None, errors.Abort("the read did not come through"), "stopped")):
                 with self.subTest(raised=raised), mock.patch.object(readout_espressif, "read_and_anonymise",
                                                                     side_effect=raised):
@@ -572,7 +570,7 @@ class RunTests(unittest.TestCase):
         cases = ((None, None, readout.ACCEPTED, False),
                  (errors.Abort("the device stopped answering"), None, readout.FAILED, True),
                  (prompts.QuitRun("q"), None, readout.CANCELLED, False),
-                 (errors.NothingWritten("skipped as asked"), readout.Batch(None), readout.SKIPPED, False),
+                 (errors.NothingWritten("skipped as asked"), readout.Batch(), readout.SKIPPED, False),
                  (RuntimeError("a bug"), None, readout.CRASHED, False))
         for raised, batch, outcome, classed in cases:
             sent = []
@@ -587,8 +585,7 @@ class RunTests(unittest.TestCase):
                     mock.patch.object(readout_espressif, "read_and_anonymise",
                                       side_effect=raised, return_value=({}, True)), \
                     mock.patch.object(readout, "send", return_value="r-1"), \
-                    mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
-                    mock.patch.object(readout, "ask_contact", return_value=None):
+                    mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"):
                 try:
                     readout.run(self.ctx, s60, batch=batch)
                 except BaseException:   # noqa: BLE001 - each as the readout ends it
@@ -696,11 +693,6 @@ class RunTests(unittest.TestCase):
         self.assertEqual(self.ctx.state.input("device_mac"), "12:34:56:ab:cd:ef")
 
 
-def kinds_basicr4_model() -> str:
-    from tools.autoflash import kinds
-    return kinds.SONOFF_BASICR4.stock_model
-
-
 class NotWantedTests(unittest.TestCase):
     """A readout that would add nothing, or one the day has no room for:
     nothing more is done - but the owner may still ask to be told."""
@@ -713,54 +705,45 @@ class NotWantedTests(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
-    def run_basicr4(self, contact=None):
+    def run_basicr4(self):
         from tools.autoflash import kinds
         basicr4 = kinds.SONOFF_BASICR4
         asked = account.Asked({"packets": []}, "1.1.0", basicr4.stock_model, "BASICR4", [], {}, "1000abcdef")
         with learned(basicr4.wrapper_model, "ESP32C3"), \
                 mock.patch.multiple(account, ask_ewelink=mock.Mock(return_value=asked),
                                     ask_account=mock.Mock(return_value=asked)), \
-                mock.patch.object(readout, "ask_contact", return_value=contact) as asked, \
                 mock.patch.object(readout_espressif, "read_and_anonymise") as read, \
                 mock.patch.object(readout, "offer") as offered:
             said = readout.run(self.ctx, record("BASICR4", basicr4.stock_model))
         read.assert_not_called()
         offered.assert_not_called()
         offered_firmware.fetch.assert_not_called()
-        return said, asked
+        return said
 
     def test_nothing_is_fetched_sent_to_it_or_sent_in_and_it_asks_as_a_whole_readout(self):
-        said, _ = self.run_basicr4()
+        said = self.run_basicr4()
         self.assertEqual((said, ended(self.ctx)[-1][1]), ("", readout.UNNEEDED))   # the report says so
         product, model, version, stage, _ = readout.ask_wanted.call_args.args
         self.assertEqual((product, version, stage), ("BASICR4", "1.1.0", "whole"))
 
-    def test_the_owner_may_still_ask_to_be_told_when_it_is_supported(self):
-        said, asked = self.run_basicr4({"email": "me@example.com"})
-        self.assertTrue(asked.call_args.kwargs["when_supported"])
-        readout.notify.assert_called_once_with("me@example.com", [("BASICR4", kinds_basicr4_model())])
-        self.assertIn(readout.CONFIRM_SENT, said)
-
-    def test_why_is_shown_before_it_is_asked(self):
-        # On the screen, not the log alone: else the owner is asked for an
-        # address with no word of why nothing is read.
-        self.run_basicr4(None)
+    def test_why_is_shown_and_nothing_asked(self):
+        # On the screen, not the log alone; the email question waits for the
+        # tool's exit (signup).
+        with mock.patch.object(prompts, "ask_choice") as asked:
+            self.assertEqual(self.run_basicr4(), "")
+        asked.assert_not_called()
+        readout.notify.assert_not_called()
         self.assertIn("    Not needed: the website has what it needs of this device already.",
                       [call.args[0] for call in output.tell.call_args_list])
 
-    def test_or_not(self):
-        said, _ = self.run_basicr4(None)
-        readout.notify.assert_not_called()
-        self.assertEqual(said, "")   # nothing left to do
-
     def test_in_a_batch_it_says_so_and_the_rest_go_on(self):
-        with mock.patch.object(readout, "ask_contact", return_value=None), learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"):
+        with learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"):
             said = readout.run_all(self.ctx, [DEVICE, {**DEVICE, "deviceid": "1000fedcba", "name": "Porch"}])
         self.assertEqual((said, ended(self.ctx)), ("", [(HALL, readout.UNNEEDED, ""), (PORCH, readout.UNNEEDED, "")]))
 
     def test_a_sender_at_its_daily_limit_ends_a_batch_there_too(self):
         readout.ask_wanted.return_value = readout.Wanted(False, "limit")
-        with mock.patch.object(readout, "ask_contact", return_value=None), learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"):
+        with learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"):
             said = readout.run_all(self.ctx, [DEVICE, {**DEVICE, "deviceid": "1000fedcba", "name": "Porch"}])
         self.assertEqual(readout.ask_wanted.call_count, 1)
         self.assertEqual((said, ended(self.ctx)), ("", [(HALL, readout.WEBSITE_FULL, readout.LIMIT_TODAY),
@@ -768,7 +751,7 @@ class NotWantedTests(unittest.TestCase):
 
     def test_a_full_day_ends_a_batch_there(self):
         readout.ask_wanted.return_value = readout.Wanted(False, "full")
-        with mock.patch.object(readout, "ask_contact", return_value=None), learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"):
+        with learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"):
             said = readout.run_all(self.ctx, [DEVICE, {**DEVICE, "deviceid": "1000fedcba", "name": "Porch"}])
         self.assertEqual(readout.ask_wanted.call_count, 1)
         self.assertEqual((said, ended(self.ctx)), ("", [(HALL, readout.WEBSITE_FULL, readout.FULL_TODAY),
@@ -776,24 +759,12 @@ class NotWantedTests(unittest.TestCase):
 
     def test_a_full_store_ends_a_batch_there_and_says_a_day_will_not_do(self):
         readout.ask_wanted.return_value = readout.Wanted(False, "store-full")
-        with mock.patch.object(readout, "ask_contact", return_value=None), learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"):
+        with learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"):
             said = readout.run_all(self.ctx, [DEVICE, {**DEVICE, "deviceid": "1000fedcba", "name": "Porch"}])
         self.assertEqual(readout.ask_wanted.call_count, 1)
         self.assertEqual((said, ended(self.ctx)), ("", [(HALL, readout.WEBSITE_FULL, readout.STORE_FULL),
                                                          (PORCH, readout.WEBSITE_FULL, readout.STORE_FULL)]))
         self.assertNotIn("tomorrow", readout.STORE_FULL)
-
-
-class NotWantedFromATestRunTests(unittest.TestCase):
-    def test_from_a_test_run_nothing_is_asked(self):
-        start_run(self)
-        readout.ask_wanted.return_value = readout.Wanted(False, "held")
-        with mock.patch.object(readout, "upload_url", return_value=None), \
-                mock.patch.object(prompts, "UNATTENDED", False), \
-                mock.patch.object(readout, "ask_contact") as asked:
-            said = readout.single_not_wanted(readout.NOT_NEEDED, mock.Mock(product="BASICR4", model="m"))
-        asked.assert_not_called()
-        self.assertEqual(said, "")
 
 
 class HeldFirmwareTests(unittest.TestCase):
@@ -847,17 +818,28 @@ class HeldFirmwareTests(unittest.TestCase):
 
 
 class NotifyTests(unittest.TestCase):
-    """An owner's address, to be told when their devices' status changes."""
+    """An owner's address, to be emailed as more devices are supported."""
 
-    def test_one_request_naming_each_device_once(self):
+    def test_one_request_naming_each_device_and_readout_once(self):
         with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
                 mock.patch.object(readout, "light_post", return_value={}) as posted:
             self.assertTrue(readout.notify("me@example.com", [("NSPanel", "E32-MSW-NX"), ("NSPanel", "E32-MSW-NX"),
-                                                              ("NEWTHING", ""), ("", "x")]))
-        path, value = posted.call_args.args
+                                                              ("NEWTHING", ""), ("", "x")],
+                                           ["2026-11-07-0123456789ab", "2026-11-07-0123456789ab"]))
+            path, value = posted.call_args.args
+            readout.notify("me@example.com", [], update=True)
         self.assertEqual((path, value["email"]), ("/notify", "me@example.com"))
         self.assertEqual(value["devices"], [{"product": "NSPanel", "model": "E32-MSW-NX"},
                                             {"product": "NEWTHING", "model": "-"}])
+        self.assertEqual(value["readouts"], ["2026-11-07-0123456789ab"])
+        self.assertIs(value["update"], False)   # a sign-up: confirmed by email if it is not yet
+        self.assertIs(posted.call_args.args[1]["update"], True)
+
+    def test_with_no_device_seen_it_still_asks(self):
+        with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                mock.patch.object(readout, "light_post", return_value={}) as posted:
+            self.assertTrue(readout.notify("me@example.com", []))
+        self.assertEqual((posted.call_args.args[1]["devices"], posted.call_args.args[1]["readouts"]), ([], []))
 
     def test_never_from_a_test_run_and_never_raises(self):
         with mock.patch.object(readout, "upload_url", return_value=None):
@@ -867,42 +849,32 @@ class NotifyTests(unittest.TestCase):
                 mock.patch.object(output, "log_only"):
             self.assertFalse(readout.notify("me@example.com", [("NSPanel", "x")]))
 
-    def test_a_batch_asks_once_for_every_device_wanted_or_not(self):
-        start_run(self)
-        with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
-                mock.patch.object(prompts, "UNATTENDED", False), \
-                mock.patch.object(readout, "ask_contact", return_value={"email": "me@example.com"}), \
-                mock.patch.object(readout, "run", return_value="sent"):
-            readout.run_all(self.ctx, [DEVICE, {**DEVICE, "deviceid": "1000fedcba", "productModel": "OTHER"}])
-        readout.notify.assert_called_once()
-        self.assertEqual(readout.notify.call_args.args[1], [("NEWTHING", "SN-ESP32C3-NEW-01"),
-                                                            ("OTHER", "SN-ESP32C3-NEW-01")])
-
-    def test_a_batch_with_an_address_says_to_confirm_it(self):
-        start_run(self)
-        with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
-                mock.patch.object(prompts, "UNATTENDED", False), \
-                mock.patch.object(readout, "ask_contact", return_value={"email": "me@example.com"}), \
-                mock.patch.object(readout, "run", return_value="sent"):
-            readout.run_all(self.ctx, [DEVICE, {**DEVICE, "deviceid": "1000fedcba"}])
-        self.assertIn(f"    {readout.CONFIRM_SENT}", [call.args[0] for call in output.tell.call_args_list])
-
-    def test_at_most_twenty_devices_in_one_sign_up(self):
+    def test_at_most_twenty_devices_and_readouts_in_one_sign_up(self):
         with mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
                 mock.patch.object(readout, "light_post", return_value={}) as posted:
-            readout.notify("me@example.com", [(f"P{n}", "m") for n in range(30)])
+            readout.notify("me@example.com", [(f"P{n}", "m") for n in range(30)],
+                           [f"2026-11-07-{n:012x}" for n in range(30)])
         self.assertEqual(len(posted.call_args.args[1]["devices"]), readout.NOTIFY_MOST)
+        self.assertEqual(len(posted.call_args.args[1]["readouts"]), readout.NOTIFY_MOST)
 
-    def test_a_readout_sent_with_an_address_asks_too(self):
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(prompts, "section"), \
-                mock.patch.object(output, "say"), mock.patch.object(prompts, "UNATTENDED", False), \
+    def test_a_readout_sent_again_is_remembered_for_the_sign_up(self):
+        with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
-                mock.patch.object(readout, "ask_contact", return_value={"email": "me@example.com"}), \
-                mock.patch.object(readout, "send", return_value="r-1"), \
-                mock.patch.object(readout, "notify", return_value=True) as told:
-            said = readout.offer(a_ctx(tmp), MANIFEST, None)
-        told.assert_called_once_with("me@example.com", [("NEWTHING", "SN-ESP32C3-NEW-01")])
-        self.assertEqual(said, readout.CONFIRM_SENT)
+                mock.patch.object(readout, "send", side_effect=["2026-11-07-0123456789ab", readout.ENOUGH]), \
+                mock.patch.object(readout.signup, "SITTING", readout.signup.Sitting()):
+            kept = Path(tmp) / readout.NAME
+            kept.write_bytes(b"a readout")
+            readout.send_saved(kept)
+            readout.send_saved(kept)   # one the website has enough of: no reference
+            self.assertEqual(list(readout.signup.SITTING.readouts), ["2026-11-07-0123456789ab"])
+
+    def test_a_readout_taken_is_remembered_for_the_sign_up(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(output, "say"), \
+                mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                mock.patch.object(readout, "send", return_value="2026-11-07-0123456789ab"), \
+                mock.patch.object(readout.signup, "SITTING", readout.signup.Sitting()):
+            readout.offer(a_ctx(tmp), MANIFEST, None)
+            self.assertEqual(list(readout.signup.SITTING.readouts), ["2026-11-07-0123456789ab"])
 
 
 class ProofProgressTests(unittest.TestCase):
@@ -1001,7 +973,6 @@ class ChooseTests(unittest.TestCase):
                 learned(s60.wrapper_model, "ESP32C3"), \
                 mock.patch.object(readout_espressif, "read_and_anonymise") as read, \
                 mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
-                mock.patch.object(readout, "ask_contact", return_value=None), \
                 mock.patch.object(runs, "hold_device") as held:
             said = readout.run_all(self.ctx, [record("S60TPG", s60.stock_model)])
         held.assert_called_once()   # held as one written to may be, and nothing left behind
@@ -1020,7 +991,6 @@ class RunAllTests(unittest.TestCase):
         self.other = {**DEVICE, "deviceid": "1000fedcba", "name": "Porch"}
         for patch in (mock.patch.object(prompts, "UNATTENDED", False),
                       mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"),
-                      mock.patch.object(readout, "ask_contact", return_value={"email": "me@example.com"}),
                       mock.patch.object(runs, "hold_device")):
             patch.start()
             self.addCleanup(patch.stop)
@@ -1035,11 +1005,12 @@ class RunAllTests(unittest.TestCase):
         self.read = read
         return said, [json.loads(unpacked(call.args[0])["manifest.json"]) for call in sent.call_args_list]
 
-    def test_each_is_sent_on_its_own_with_the_contact_asked_once(self):
-        said, manifests = self.run_all([DEVICE, self.other])
+    def test_each_is_sent_on_its_own_and_nothing_asked(self):
+        with mock.patch.object(prompts, "ask_choice") as asked:
+            said, manifests = self.run_all([DEVICE, self.other])
+        asked.assert_not_called()
         self.assertEqual(len(manifests), 2)
-        self.assertEqual([manifest["contact"] for manifest in manifests], [{"email": "me@example.com"}] * 2)
-        readout.ask_contact.assert_called_once()
+        self.assertFalse([manifest for manifest in manifests if "contact" in manifest])
         self.assertEqual((said, ended(self.ctx)), ("", [(HALL, readout.ACCEPTED, "r-1"), (PORCH, readout.ACCEPTED, "r-2")]))
 
     def test_the_first_stage_ones_go_before_a_full_readout(self):
@@ -1172,12 +1143,6 @@ class RunAllTests(unittest.TestCase):
             work = hashlib.sha256(f"{stamp}:{digest}:{nonce}".encode()).digest()
             bits = readout.LIGHT_PROOF_BITS if path == "/wanted" else 8
             self.assertLess(int.from_bytes(work, "big"), 1 << (256 - bits))
-
-    def test_quit_at_the_contact_question_reads_nothing(self):
-        with mock.patch.object(readout, "ask_contact", side_effect=prompts.QuitRun("q")), \
-                mock.patch.object(readout, "run") as each:
-            self.assertEqual(readout.run_all(self.ctx, [DEVICE, self.other]), "Nothing was read out or sent.")
-        each.assert_not_called()
 
 
 class ReportTests(unittest.TestCase):
@@ -1312,68 +1277,44 @@ class ReportTests(unittest.TestCase):
 
 
 class OfferTests(unittest.TestCase):
-    def offer(self, choice, typed=None):
-        """offer() with the contact menu answered `choice` (index; None: Quit) and
-        `typed` typed: what was sent, and what the run ends by saying."""
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(prompts, "section"), \
-                mock.patch.object(output, "transient_begin"), mock.patch.object(output, "transient_end"), \
+    def offer(self, url="http://127.0.0.1:9/readout"):
+        """offer() to `url`: what was sent, what the run ends by saying, and
+        whether a copy was left behind."""
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(prompts, "section") as shown, \
                 mock.patch.object(output, "say"), mock.patch.object(prompts, "UNATTENDED", False), \
-                mock.patch.object(prompts, "ask_choice",
-                                  side_effect=prompts.QuitRun("q") if choice is None else None,
-                                  return_value=choice) as menu, \
-                mock.patch.object(prompts, "ask_text", return_value=typed) as asked, \
-                mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
+                mock.patch.object(prompts, "ask_choice") as menu, mock.patch.object(prompts, "ask_text") as typed, \
+                mock.patch.object(readout, "upload_url", return_value=url), \
                 mock.patch.object(readout, "send", return_value="r-1") as sent:
             ctx = a_ctx(tmp)
             ctx.readout = self.became = readout.Became("'Hall light' (NEWTHING)")
             said = readout.offer(ctx, MANIFEST, None)
             kept = (Path(tmp) / readout.NAME).exists()
-        self.menu, self.asked = menu, asked
+        self.asked = [question for question in (shown, menu, typed) if question.called]
         return (unpacked(sent.call_args.args[0]) if sent.called else None), said, kept
 
-    def test_the_menu_offers_an_email_or_none(self):
-        self.offer(1)
-        self.assertEqual(self.menu.call_args.args[1], ["Add an email address", "Submit without contact information"])
-
-    def test_an_email_goes_with_it(self):
-        sent, said, _ = self.offer(0, " me@example.com ")
-        self.assertEqual(json.loads(sent["manifest.json"])["contact"], {"email": "me@example.com"})
+    def test_it_is_sent_unasked(self):
+        # The docs say what a readout holds: a question here only stops it
+        # part way, and the email question waits for the tool's exit.
+        sent, said, kept = self.offer()
+        self.assertEqual(self.asked, [])
+        self.assertFalse(kept)  # sent: no copy is left behind
+        self.assertEqual(json.loads(sent["manifest.json"])["product"], MANIFEST["product"])
         self.assertEqual((said, self.became.outcome, self.became.detail), ("", readout.ACCEPTED, "r-1"))
 
-    def test_without_contact_nothing_is_asked_or_sent_of_it(self):
-        sent, _, kept = self.offer(1)
-        self.assertFalse(kept)  # sent: no copy is left behind
-        self.assertNotIn("contact", json.loads(sent["manifest.json"]))
-        self.asked.assert_not_called()
-
-    def test_quit_keeps_it_unsent(self):
-        sent, said, kept = self.offer(None)
+    def test_from_a_test_run_it_is_kept_unsent(self):
+        sent, _, kept = self.offer(None)
         self.assertIsNone(sent)
         self.assertTrue(kept)
-        self.assertIn("is kept in", said)   # where, to send it later
-        self.assertEqual((self.became.outcome, self.became.detail), (readout.KEPT, "as asked"))
-
-    def test_what_is_typed_is_checked(self):
-        with mock.patch.object(prompts, "UNATTENDED", False), \
-                mock.patch.object(prompts, "ask_choice", return_value=0), \
-                mock.patch.object(prompts, "ask_text", return_value="me@example.com") as asked, \
-                mock.patch.object(output, "say"):
-            self.assertEqual(readout.ask_contact(), {"email": "me@example.com"})
-        valid = asked.call_args.kwargs["validate"]
-        self.assertTrue(valid("me@example.com")[0])
-        for typed in ("not an email", "a@b.c", "test@test"):
-            self.assertFalse(valid(typed)[0], typed)
+        self.assertEqual((self.became.outcome, self.became.detail), (readout.KEPT, "a test run"))
 
     def test_the_owner_is_never_asked_for_their_wifi_password(self):
         # Where the settings hold none, the copy goes as it is: a question
         # here only makes people hesitate to send it.
         flash = b"\xff" * 0x20000
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(prompts, "section") as shown, \
-                mock.patch.object(prompts, "ask_secret") as asked, mock.patch.object(output, "say"), \
-                mock.patch.object(readout, "upload_url", return_value=None):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(prompts, "ask_secret") as asked, \
+                mock.patch.object(output, "say"), mock.patch.object(readout, "upload_url", return_value=None):
             readout.offer(a_ctx(tmp), MANIFEST, {"flash.bin": flash})
         asked.assert_not_called()
-        self.assertIn("- the device's firmware readout, anonymised;", shown.call_args.args[1])
 
 
 class OfferedAtA1Tests(unittest.TestCase):
@@ -1413,9 +1354,7 @@ class EndsTheRunTests(unittest.TestCase):
 
 
 class OfferScreenTests(unittest.TestCase):
-    """The offer to send and its question go together once answered: what the
-    run then says is the answer.  Seen in an attended readout recorded in the
-    emulator: the offer - a question - was left with nothing under it."""
+    """A readout that cannot be sent says why, and where it is kept."""
 
     def offer(self, url, sending=None):
         from tests.autoflash.test_unlock import drawn
@@ -1424,7 +1363,6 @@ class OfferScreenTests(unittest.TestCase):
         def body(look):
             with tempfile.TemporaryDirectory() as tmp, mock.patch.object(prompts, "UNATTENDED", False), \
                     mock.patch.object(readout, "upload_url", return_value=url), \
-                    mock.patch.object(readout, "ask_contact", return_value=None), \
                     mock.patch.object(readout, "send", side_effect=sending or (lambda data, url: "r-1")):
                 try:
                     said["end"] = readout.offer(a_ctx(tmp), MANIFEST, None)
@@ -1433,16 +1371,8 @@ class OfferScreenTests(unittest.TestCase):
         _, final = drawn(body)
         return final, said["end"]
 
-    def test_taken_off_once_answered(self):
-        for url in (None, "http://127.0.0.1:9/readout"):   # a test run's, and one sent
-            with self.subTest(url=url):
-                final, said = self.offer(url)
-                self.assertNotIn("Send this firmware readout", final)
-                self.assertEqual(said, "")   # what became of it is the report's to say
-
     def test_left_when_sending_fails_to_say_what(self):
-        final, said = self.offer("http://127.0.0.1:9/readout", sending=OSError("no route"))
-        self.assertIn("Send this firmware readout", final)
+        _, said = self.offer("http://127.0.0.1:9/readout", sending=OSError("no route"))
         self.assertIn("could not be sent", said)
 
 

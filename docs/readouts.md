@@ -45,8 +45,7 @@ be offered, then asks the website whether a readout would add anything. The
 website keeps three readouts of each model and firmware version, each from a
 different person, so a device like three already sent in is not needed, nor a
 second one from you, however many of that device you have. The tool stops
-there, though you can still leave your email address to hear when the device
-is supported.
+there.
 
 A readout is of Sonoff's firmware. Your eWeLink account still lists a device
 after you convert it, so if you choose one that now runs Tasmota, ESPHome or
@@ -69,16 +68,14 @@ beforehand) is to read out every one, including those the tool converts: one
 may run a firmware version the website has no readout of, and new firmware is
 where a conversion most likely meets something it is not ready for.
 
-After one question about a way to reach you, each device is read out in turn,
-the quick readouts first, each sent as soon as it is ready. At a device's
+Each device is read out in turn, the quick readouts first, each sent as soon
+as it is ready. At a device's
 PROCEED, type s to skip just that device, or q to quit, as at any question.
 
 At the end, one report covers every device, listing each model and firmware
 version once under what became of it - accepted, not needed (one like it is in
 already), or not read out because the website has taken all it can for today,
 takes 20 readouts a day from one place, or can take no more for a few weeks. Each readout gets its own puzzle ([Sending it](#sending-it)).
-If you added your email address, you are told when support for any of these
-devices changes, whether or not its readout was needed.
 
 ## What happens to your device
 
@@ -140,11 +137,8 @@ firmware.
 
 ## Sending it
 
-The tool shows what goes ("the device's firmware readout, anonymised") and
-asks you to add an email address, to hear when support for the device
-changes, send it without one, or quit and keep it unsent.
-
-Before it sends, your computer works out a small puzzle, which lets the
+The tool sends the readout as soon as it is made, without asking: this page
+says what it holds. Before it sends, your computer works out a small puzzle, which lets the
 server turn away floods without a password. It usually takes 10 to 30
 seconds, sometimes a minute or two, by luck and your computer's speed, while
 the tool shows it is still working. If the website is busy
@@ -154,7 +148,7 @@ to a minute and a half.
 Once it is sent, the tool gives you the readout's reference to quote if you
 post about the device.
 
-A readout you did not send, or that could not be sent, stays in the run's
+A readout that could not be sent stays in the run's
 folder as `readout.tar` (`readout-<device id>.tar` when every device was read
 out at once). To send it later, run:
 
@@ -168,7 +162,7 @@ The readout goes to the project's server at `api.firmwareliberator.com`,
 which stores it privately, never publishes it, and uses it only to add
 support for the device. It is kept for good, since a readout of one firmware
 version can help with the device's later versions too. Nothing about you is
-stored with it but the contact information you chose to give. Cloudflare,
+stored with it. Cloudflare,
 which runs the server, logs each request with your internet address for
 seven days, so that the maintainer can look into a failure.
 
@@ -176,14 +170,3 @@ Past the server's daily limit, yours stays unsent on your computer, to send
 the next day. One of a device the project has enough readouts of already is
 thanked for and not stored.
 
-### Your email address
-
-If you give your email address, you are sent an email with a link to confirm
-it, and once more the next day if you have not. Nothing is kept unless you
-follow that link: an address never confirmed is deleted after 7 days.
-
-Once confirmed, the address is stored privately with your device's model,
-apart from the readout, and used only to email you when that model's support
-changes, such as when it becomes supported or a test version is ready to try.
-Every such email has a link to remove your address, which asks you to confirm
-first.
