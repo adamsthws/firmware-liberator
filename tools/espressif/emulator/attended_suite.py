@@ -12,7 +12,7 @@ in the Espressif emulator) or tools/beken/emulator/attended/ (an S61's):
      "start": "fresh" | a saved device (unattended-test.sh --from),
      "prep": [...], "args": [...], "size": "100x40", "minutes": 30,
      "answers": [{"when": regex, "type": keys, "times": n, "optional": bool}, ...],
-     "expect": {"exit": 0, "result": "Converted", "screen": true},
+     "expect": {"exit": 0, "result": "Converted", "screen": true, "shows": [regex, ...]},
      "again": {"answers": [...], "args": [...], "expect": {...}}}
 
 `again`: the tool run once more on the device as the first run left it, with
@@ -27,7 +27,11 @@ set); ["locked esphome", "login" | "login and updates"] (this project's
 ESPHome with a web login, admin and "test-login-1", and the made-up API
 encryption key LOCKED_KEY; and with "updates", taking only encrypted
 updates). An answer is typed at its question only (unattended_run.Answer);
-one `optional` need not be asked.
+one `optional` need not be asked. In place of `type`, an answer can switch
+the device ("power": "off") or signal the run ("signal": "TERM").
+`command`: "readout" for a readout, not a conversion; `api_enough`: true
+for the API beside the emulator to have enough readouts of the device's
+product already (AUTOFLASH_API_ENOUGH), so a readout of it is not needed.
 
 The verdict, from the recording alone (judge):
     PASS              ended as expected, every answer typed, nothing wrong
@@ -38,7 +42,10 @@ The verdict, from the recording alone (judge):
     FAIL-QUESTION     as a question was answered: no "(q to quit)" on it, a
                       row the terminal wrapped itself, or a question shown
                       twice - an earlier try left on the screen
-    FAIL-SCREEN       the screen it ended on (unattended_run.stage_problems)
+    FAIL-SCREEN       the screen it ended on: its stages (unattended_run.stage_problems),
+                      its report and how it ended (end_problems, with what the
+                      run put on the clipboard), a row the terminal wrapped
+                      itself, or a line `expect`'s `shows` wants not on it
 
     tools/espressif/emulator/attended_suite.py list
     tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers N] --device MAC
@@ -118,10 +125,12 @@ def question_problems(screen: unattended_run.Screen, wrapped_before: int) -> lis
 
 
 def judge(scenario: dict[str, Any], raw: bytes, answers: list[dict[str, Any]], code: int,
-          size: tuple[int, int] = SIZE, result: str | None = None) -> list[str]:
+          size: tuple[int, int] = SIZE, result: str | None = None, clipboard: str | None = None) -> list[str]:
     """The verdicts of a run, from its recording (screen.raw), the answers as
-    the recorder kept them (answers.json, with typed_at), its exit code and
-    its report's Result (result.txt): empty for a PASS."""
+    the recorder kept them (answers.json, with typed_at), its exit code, its
+    report's Result (result.txt) and what it put on the clipboard
+    (clipboard.txt; "" for nothing, None where that is not known): empty
+    for a PASS."""
     expect = scenario.get("expect", {})
     verdicts = []
     final = screen_at(raw, len(raw), size)
@@ -134,9 +143,11 @@ def judge(scenario: dict[str, Any], raw: bytes, answers: list[dict[str, Any]], c
         verdicts.append(f"FAIL-RESULT: exit {code}, not {expect.get('exit', 0)}")
     if expect.get("result") and not (result or "").startswith(expect["result"]):
         verdicts.append(f"FAIL-RESULT: Result {result or 'none'!r}, not {expect['result']!r}")
-    given = {(item["when"], item["type"]): item for item in scenario["answers"]}
+    # Keyed as the recorder keeps them: an answer that switches the device or
+    # signals the run types nothing.
+    given = {(item["when"], item.get("type", "")): item for item in scenario["answers"]}
     for answer in answers:
-        if not answer["typed_at"] and not given.get((answer["when"], answer["type"]), {}).get("optional"):
+        if not answer["typed_at"] and not given.get((answer["when"], answer.get("type", "")), {}).get("optional"):
             verdicts.append(f"FAIL-UNUSED: {answer['when']!r}")
     wrapped = 0
     # A key typed anywhere (a Ctrl-C as a stage shows) answers no question.
@@ -150,6 +161,12 @@ def judge(scenario: dict[str, Any], raw: bytes, answers: list[dict[str, Any]], c
         # another device scrolls the last one up into it, with blank rows.
         window = "\n".join(text.rstrip("\n").split("\n")[-size[1]:])
         verdicts += [f"FAIL-SCREEN: {problem}" for problem in unattended_run.stage_problems(window)]
+        verdicts += [f"FAIL-SCREEN: {problem}" for problem in unattended_run.end_problems(text, clipboard)]
+        if final.wrapped > wrapped:
+            verdicts.append("FAIL-SCREEN: a row the terminal wrapped itself, after the last answer")
+    for wanted in expect.get("shows", []):
+        if not re.search(wanted, text, re.M):
+            verdicts.append(f"FAIL-SCREEN: not shown: {wanted!r}")
     return verdicts
 
 
@@ -230,9 +247,22 @@ def _entries(node: Any):
             yield from _entries(value)
 
 
+def run_environment(scenario: dict[str, Any], mac: str) -> dict[str, str]:
+    """The environment the scenario's run goes on in: the API told it has
+    enough of the device's product (`api_enough`), as fault_suite.enough."""
+    import os
+    from tools.autoflash import kinds, records
+    environment = dict(os.environ)
+    if scenario.get("api_enough"):
+        environment["AUTOFLASH_API_ENOUGH"] = (records.read_device(mac).get("product_model")
+                                               or kinds.SONOFF_S60.example_product_model).upper()
+    return environment
+
+
 def wrapper(n: int, scenario: dict[str, Any], *more: str, mac: str) -> list[str]:
+    readout = ["--readout"] if scenario.get("command") == "readout" else []
     return [str(ROOT / "tools/espressif/emulator/unattended-test.sh"), f"--instance={n}", f"--device={mac}",
-            "--stub-cloud", *more]
+            "--stub-cloud", *readout, *more]
 
 
 def prepare(n: int, scenario: dict[str, Any], folder: Path, log, mac: str) -> bool:
@@ -246,7 +276,7 @@ def prepare(n: int, scenario: dict[str, Any], folder: Path, log, mac: str) -> bo
         return True   # its run starts it, from where it says
     if actions[0][0] == "convert":
         # Converted first, unattended: a device saved on one firmware, wanted on another.
-        code = subprocess.call(wrapper(n, scenario, *first, "--timeout=40", "--", "--new", "--firmware",
+        code = subprocess.call(wrapper(n, {}, *first, "--timeout=40", "--", "--new", "--firmware",
                                        actions[0][1], mac=mac), stdout=log, stderr=subprocess.STDOUT)
         log.write(f"PREP converted to {actions[0][1]}: exit {code}\n")
         docker("stop", f"autoflash-emu-{n}")
@@ -257,7 +287,7 @@ def prepare(n: int, scenario: dict[str, Any], folder: Path, log, mac: str) -> bo
             return True
     quit_first = folder / "quit-first.json"
     quit_first.write_text(json.dumps(QUIT_FIRST), encoding="utf-8")
-    subprocess.call(wrapper(n, scenario, *first, "--keep", "--timeout=8", f"--answers={quit_first}",
+    subprocess.call(wrapper(n, {}, *first, "--keep", "--timeout=8", f"--answers={quit_first}",
                             "--", "--new", mac=mac), stdout=log, stderr=subprocess.STDOUT)
     for action in actions:
         kind, value = action
@@ -315,7 +345,7 @@ def run_espressif(n: int, name: str, scenario: dict[str, Any], folder: Path, mac
                           mac=mac)
         log.write("--- " + " ".join(command[1:]) + "\n")
         log.flush()
-        out = subprocess.run(command, capture_output=True, text=True)
+        out = subprocess.run(command, capture_output=True, text=True, env=run_environment(scenario, mac))
         stop.set()
         log.write(out.stdout + out.stderr)
         docker("stop", f"autoflash-emu-{n}")
@@ -329,13 +359,13 @@ def run_again(n: int, scenario: dict[str, Any], folder: Path, mac: str) -> tuple
     no --new, so a run left unfinished is offered back."""
     again = scenario["again"]
     with open(folder / "harness.log", "a", encoding="utf-8") as log:
-        command = wrapper(n, scenario, f"--timeout={again.get('minutes', 30)}",
+        command = wrapper(n, {"command": scenario.get("command")} | again, f"--timeout={again.get('minutes', 30)}",
                           f"--size={scenario.get('size', '100x40')}",
                           f"--answers={run_answers(again, folder, 'again-answers-given.json')}", "--",
                           *again.get("args", []), mac=mac)
         log.write("--- " + " ".join(command[1:]) + "\n")
         log.flush()
-        out = subprocess.run(command, capture_output=True, text=True)
+        out = subprocess.run(command, capture_output=True, text=True, env=run_environment(scenario | again, mac))
         log.write(out.stdout + out.stderr)
         docker("stop", f"autoflash-emu-{n}")
     found = re.search(r"Exit code (-?\d+)", out.stdout)
@@ -374,14 +404,17 @@ def judged(scenario: dict[str, Any], folder: Path, code: int, recording: Path | 
     """A run's verdicts, its recording kept in `folder` (names `prefix`ed)."""
     if recording is None or not (recording / "screen.raw").exists():
         return [f"HARNESS: no run to judge (exit {code}); see harness.log"]
-    for item in ("screen.raw", "screen.txt", "answers.json", "result.txt"):
+    for item in ("screen.raw", "screen.txt", "answers.json", "result.txt", "clipboard.txt"):
+        (folder / f"{prefix}{item}").unlink(missing_ok=True)
         if (recording / item).exists():
             shutil.copyfile(recording / item, folder / f"{prefix}{item}")
     size = tuple(int(part) for part in scenario.get("size", "100x40").split("x"))
-    result = folder / f"{prefix}result.txt"
+    result, copied = folder / f"{prefix}result.txt", folder / f"{prefix}clipboard.txt"
+    # The recorder's stand-in keeps what was copied: no file, nothing was.
     return judge(scenario, (folder / f"{prefix}screen.raw").read_bytes(),
                  json.loads((folder / f"{prefix}answers.json").read_text(encoding="utf-8")), code, size,
-                 result.read_text(encoding="utf-8").strip() if result.exists() else None)
+                 result.read_text(encoding="utf-8").strip() if result.exists() else None,
+                 copied.read_text(encoding="utf-8") if copied.exists() else "")
 
 
 def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: Path, mac: str) -> str:
