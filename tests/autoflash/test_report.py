@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from tests.autoflash.routes.espressif.test_espressif import RouteTestCase
-from tools.autoflash import esphome, hostsys, output, prompts, report
+from tools.autoflash import esphome, hostsys, join, output, prompts, report
 from tools.autoflash.state import DONE
 
 # A run's state, as the relay check reads its kind from: the S60's, with a meter.
@@ -27,16 +27,17 @@ class EndingTests(RouteTestCase):
         self.assertEqual(dict(report.report_fields(legacy))["Firmware"], "Tasmota")
 
     def test_it_says_whether_a_setup_network_was_joined(self):
-        for captures, joined in (({}, "No"),
-                                 ({"D1.upload_route": "bridge network"}, "Yes"),
-                                 ({"D1.resumed": True}, "Yes"),
-                                 ({"D1.upload_route": "home network"}, "Yes"),
-                                 ({"D1.upload_route": "home network", "D1.wifi": "preset"}, "No"),
-                                 ({"F4.wifi_route": "setup network"}, "Yes")):
-            with self.subTest(captures):
-                ctx = self.ctx(run=f"run-{len(captures)}-{joined}-{sorted(captures)}", firmware="tasmota")
-                ctx.state.data["captures"] = captures
-                self.assertEqual(dict(report.report_fields(ctx))["Setup network"].lower(), joined.lower())
+        for joins, joined in ((None, "no"), ([], "no"), ([join.NOT_GIVEN], "yes")):
+            with self.subTest(joins):
+                ctx = self.ctx(run=f"run-{joins}", firmware="tasmota")
+                ctx.state.set_input(join.OWN_NETWORK, joins)
+                self.assertEqual(dict(report.report_fields(ctx))["Setup network"].lower(), joined)
+
+    def test_a_beken_device_set_up_through_its_own_network_is_logged(self):
+        ctx = self.ctx(run="beken-own", firmware="esphome", device_kind="sonoff-s61")
+        ctx.state.set_input(join.OWN_NETWORK, [join.NOT_JOINED])
+        self.assertEqual(dict(report.report_fields(ctx))["Setup network"].lower(), "yes")
+        self.assertIn("Setup network", report.LOG_ONLY)   # in the log, not on the screen
 
     def test_a_run_that_never_found_its_device_does_not_say_it_was_on_sonoff(self):
         # Seen on a real device switched off: the report said "Converted from: Sonoff".

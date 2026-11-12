@@ -132,9 +132,10 @@ const COLUMNS = (report, hash, day, held) => {
 const NAMES = Object.keys(COLUMNS({ os: {}, python: {}, chip: {}, computer: {} }, null, null, null));
 const INSERT = `INSERT OR IGNORE INTO reports (${NAMES.join(", ")}) VALUES (${NAMES.map(() => "?").join(", ")})`;
 // The report's stages, one row each, from its `stages` as JSON.
-const STAGES = `INSERT OR IGNORE INTO report_stages (id, stage, seconds, busy, tries, wait)
+const STAGES = `INSERT OR IGNORE INTO report_stages (id, stage, seconds, busy, tries, wait, setup_network, power_cycles)
   SELECT ?1, key, json_extract(value, '$.s'), json_extract(value, '$.busy'), json_extract(value, '$.tries'),
-    json_extract(value, '$.wait') FROM json_each(?2)`;
+    json_extract(value, '$.wait'), json_extract(value, '$.setup_network'), json_extract(value, '$.power_cycles')
+  FROM json_each(?2)`;
 const READOUT = `INSERT OR IGNORE INTO readout_reports (id, day, tag, tool, result, error, family, device, model,
   stock_model, stock, whole, device_hash, os_family, os_version, os_arch, python_version, python_source, seconds,
   converted_here, quarantined)
