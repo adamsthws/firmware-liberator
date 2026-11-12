@@ -223,7 +223,8 @@ as its screens do, since it converts much more than smart plugs now.
   readout's report lists each device under how it ended. From gives Sonoff's firmware with its version, "Sonoff 1.2.0", in
   place of a line of its own. Whether a power meter's calibration carried over
   is no longer said on the screen, where it worried more than it helped, nor
-  where going back to Sonoff's firmware took the device's eWeLink identity from. The run's time, each stage's and how long it kept the device busy are no
+  where going back to Sonoff's firmware took the device's eWeLink identity from,
+  nor whether the Wi-Fi was typed in or a setup network joined. The run's time, each stage's and how long it kept the device busy are no
   longer shown: the report the tool sends holds them, and the meter's. A stopped run's result says
   "Stopped", where and why being said as it stopped, and in the report copied for
   an issue. A run stopped before any stage
