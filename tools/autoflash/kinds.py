@@ -136,8 +136,12 @@ class Kind:
     # wiring (the POW Elite's 16 A and 20 A): only eWeLink's product model then
     # says it is this kind, and a device it does not name is not converted.
     product_model_decides: bool = False
-    # Whether it has a power meter: the report says how its calibration went.
+    # Whether it has a power meter: the report says how its calibration went,
+    # and the end-of-run check reads it (report.check_hardware).
     has_meter: bool = False
+    # Whether it has a relay, which the end-of-run check switches: a device
+    # without one has no such check, nor a Checks line in its report.
+    has_relay: bool = True
     # Whether its meter is calibrated as the S60's (tools/autoflash/calibration.py).
     calibrated_as_s60: bool = False
     # Its stock partition table (tools/espressif/layouts.py), by key.

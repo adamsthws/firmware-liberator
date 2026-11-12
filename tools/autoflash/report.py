@@ -211,7 +211,8 @@ def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
         # Whether the device had to be switched off and on to start its new
         # firmware: an emulated Beken device never restarts by itself; a real one may.
         *([("Power cycled", "true" if ctx.state.input("power_cycles") else "false")] if not espressif else []),
-        ("Checks", checks_passed(hardware)),
+        # Only on a device with a relay to switch, all the check does.
+        *([("Checks", checks_passed(hardware))] if kind.has_relay else []),
         # Not how the meter's calibration went: a device's readings a few
         # percent out is no news to the person converting it. The report
         # sent holds it (report_data.meter_word), the log why.
@@ -525,15 +526,16 @@ def wait_until_online(ctx: Context, device_id: str) -> dict[str, Any] | None:
 def invite_report(ctx: Context, seconds: float, resumed: bool) -> None:
     """Ask for a report, with this run's details ready to paste."""
     # OpenBeken takes Tasmota's commands (Power, Status 10): the same check.
+    # A device with no relay has nothing to switch, so no check.
     check = {"esphome": check_esphome_hardware, "tasmota": check_hardware, "openbeken": check_hardware,
-             "sonoff": check_ewelink_hardware}.get(
-        runs.run_firmware(ctx.state), lambda ctx: {})
+             "sonoff": check_ewelink_hardware}.get(runs.run_firmware(ctx.state)) \
+        if kinds.of_run(ctx.state).has_relay else None
     from tools.autoflash import report_data   # it reads this module's words
     mac = ctx.state.input("device_mac")
     if mac and records.MAC_RE.match(mac) and report_data.converted_to_another(ctx):
         records.number_conversion(mac)   # whether a report is sent or not, so the count stays true
     with output.working("Generating your report..."):
-        hardware = check(ctx)
+        hardware = check(ctx) if check else {}
         fields = report_fields(ctx, hardware, result=run_result(ctx, "converted"))
     report_upload.send(ctx, "converted", seconds, resumed, hardware)
     offer_report(ctx, fields)
