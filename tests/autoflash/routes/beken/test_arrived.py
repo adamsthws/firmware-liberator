@@ -28,7 +28,9 @@ class ArrivedTests(unittest.TestCase):
         self.addCleanup(self.server.shutdown)
         for patch in (mock.patch.object(arrived.output, "say"), mock.patch.object(arrived.output, "progress"),
                       mock.patch.object(arrived.output, "progress_clear"), mock.patch.object(arrived.output, "tell"),
-                      mock.patch.object(openbeken.time, "sleep")):
+                      mock.patch.object(openbeken.time, "sleep"),
+                      # ESPHome's own network not to be seen, unless a test says so.
+                      mock.patch.object(arrived.join, "set_up_through_own_network", return_value=None)):
             patch.start()
             self.addCleanup(patch.stop)
 
@@ -216,6 +218,17 @@ class ArrivedTests(unittest.TestCase):
                     mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(50_000, 150_000, 100))):
                 arrived.step_esphome_check(ctx, wait=1000)
             self.assertEqual(relay.call_count, 2)
+
+    def test_k2_sets_up_an_esphome_that_cannot_join_through_its_own_network(self):
+        # As the Espressif route's I2.
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, firmware="esphome")
+            with mock.patch.object(arrived.join, "wait_for", side_effect=errors.Abort("not on your Wi-Fi")), \
+                    mock.patch.object(arrived.join, "set_up_through_own_network", return_value=("Home", "pw")) as own, \
+                    mock.patch.object(arrived.esphome, "calibration_state", return_value=None):
+                result = arrived.step_esphome_check(ctx, wait=1000)
+            self.assertEqual(result["set_up_through"], "its own network")
+            self.assertEqual(own.call_args.args[1], "ESPHome")
 
     def test_k2_of_a_device_with_no_relay_waits_for_esphome_alone(self):
         with tempfile.TemporaryDirectory() as tmp:

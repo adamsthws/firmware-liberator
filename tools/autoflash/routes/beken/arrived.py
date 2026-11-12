@@ -13,7 +13,7 @@ from __future__ import annotations
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import detect, esphome, join, kinds, openbeken, output, records, runs
+from tools.autoflash import detect, esphome, join, kinds, names, openbeken, output, records, runs
 from tools.autoflash.errors import Abort
 from tools.autoflash.routes import arrival
 from tools.autoflash.routes.arrival import NotBack, NotTaken, until_back
@@ -262,26 +262,32 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
                 highest[:] = [max([uptime, *highest])]
         return False
 
-    def look(_restarted: bool) -> bool:
+    def look(_restarted: bool) -> dict[str, Any]:
         nonlocal started
         started = time.monotonic()
         try:
-            return join.wait_for(ctx, check, "ESPHome on your Wi-Fi", timeout=wait)
+            join.wait_for(ctx, check, "ESPHome on your Wi-Fi", timeout=wait)
+            return {}
         except Abort as exc:
+            # As the Espressif route's I2: one that cannot join your Wi-Fi raises
+            # its own network after a while, where it takes the details.
+            if join.set_up_through_own_network(ctx, "ESPHome", esphome.is_esphome, names.esphome_networks(ctx)):
+                return {"set_up_through": "its own network"}
             raise NotBack from exc
 
-    until_back(ctx, look, "ESPHome", (
-        "ESPHome has not answered on your Wi-Fi. The device installs it as it restarts, then reads its "
-        "Wi-Fi from the device's own store and joins; if it has not, "
+    found = until_back(ctx, look, "ESPHome", (
+        "ESPHome has not answered on your Wi-Fi, and its own network "
+        f"({names.esphome_network_hint(ctx)}) is not to be seen either. The device installs it as it "
+        "restarts, then reads its Wi-Fi from the device's own store and joins; if it has not, "
         "switch the device off and on, then run the same command again to check it"), sent_by=sent_by)
     seconds = round(time.monotonic() - started, 1)
     host = ctx.state.input("device_ip")
     if not kinds.of_run(ctx.state).has_meter:
         output.say(f"    ESPHome answered after {seconds}s.")
-        return {"seconds": seconds}
+        return {"seconds": seconds, **found}
     calibration = esphome.calibration_state(host)
     output.say(f"    ESPHome answered after {seconds}s; its meter calibration: {calibration or 'not said'}.")
-    return {"seconds": seconds, "calibration": calibration}
+    return {"seconds": seconds, "calibration": calibration, **found}
 
 
 def step_sonoff_check(ctx: Context, wait: float = arrival.SONOFF_WAIT) -> dict[str, Any]:
