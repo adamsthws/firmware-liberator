@@ -204,7 +204,7 @@ tools/espressif/emulator/unattended-test.sh --fresh --device=MAC -- --firmware e
 ```
 
 `--instance=N` (1-99) runs several side by side, their eWeLink stages (up to
-C2) taking turns on the real cloud ([below](#running-it)). Every direction is
+C2) taking turns on the real cloud ([below](#running-it-espressif)). Every direction is
 tested from a device the tool converted, kept with what your computer
 recorded about it (`--save`) and started from again (`--from`):
 
@@ -222,7 +222,7 @@ tools/beken/emulator/beken-emu.sh computer tools/autoflash/cli.py run --unattend
 
 The tool runs in the device's own copy of this checkout (`work/`), so the env
 file is that copy's `captures/tool.env`, a made-up eWeLink account for the
-local stub ([more](emulator.md#using-it-1); the fault suite writes one there).
+local stub ([more](emulator.md#using-it-beken); the fault suite writes one there).
 `--instance N`, given to both commands, runs several side by side with
 nothing shared. A device keeps its flash from run to run until `--fresh`, and
 the fault suite's `prep` keeps devices on each firmware to start from
@@ -269,7 +269,7 @@ Both suites run a batch the same way:
 
 `tools/espressif/emulator/fault_suite.py` has 1,616 scenarios on an S60.
 
-#### What it covers
+#### What it covers (Espressif)
 
 **Directions.** The six conversions between Sonoff's firmware, Tasmota and
 ESPHome (`sonoff>tasmota`, `sonoff>esphome`, `tasmota>esphome`,
@@ -478,7 +478,7 @@ table, Tasmota to ESPHome goes through the hub, as the tool takes it, with
 the runs of earlier releases and `update>esphome` are left out. The TH Elite
 has 1,681 scenarios.
 
-#### Running it
+#### Running it (Espressif)
 
 ```sh
 tools/espressif/emulator/fault_suite.py --device=MAC prep           # the starting devices (eWeLink)
@@ -600,7 +600,7 @@ run on any machine with Docker, given the repository, the saved devices
 `AUTOFLASH_EMU_NO_CLOUD=1`. Only one machine may let its devices reach
 eWeLink.
 
-#### Reading its results
+#### Reading its results (Espressif)
 
 Everything is kept in `captures/emulation/suite/`: the results
 (`results.jsonl`), a log per scenario, what each failure leaves (its run
@@ -668,7 +668,7 @@ name each. The unit tests find most of these first, without the emulator:
 | `tests/repo/test_report_answers.py` | the longest report, read back with the suites' own patterns |
 | `tests/autoflash/test_cli.py` | the run-again menu names the stage its line showed |
 
-#### What it cannot show
+#### What it cannot show (Espressif)
 
 - **Timings.** The emulated device is slower than a real one, and its flash
   never wears or fails. It cannot measure the one real moment of risk, a
@@ -687,12 +687,12 @@ is on air now), so a run sees what a person would: the installer's network
 still listed as Tasmota starts, or `ESP_` and the access-point MAC for a
 moment as Tasmota names its own.
 
-#### What whole runs have shown
+#### What whole runs have shown (Espressif)
 
 The current code passes the whole suite: the 1,541 scenarios on the stub, and
 the 75 cloud ones against the real eWeLink, where two NOT-FIRED, eWeLink
 having dropped the device's sessions, passed when run again after an hour's
-pause ([one real-cloud run a day](#running-it)). Run across several
+pause ([one real-cloud run a day](#running-it-espressif)). Run across several
 computers, with the Beken suite and the attended runs beside it, that took
 about ten hours.
 
@@ -701,10 +701,10 @@ whole run. In runs of the drop, packet-loss and weak-signal scenarios, made
 once the firmware-writing steps checked each block on the device instead of
 sending it back, the longest was 78 seconds, on a weak signal for a minute of
 it. That is close to the 70-90 s after which a real S60TPG once stopped
-answering ([above](#what-it-covers)), which is why `report` lists each
+answering ([above](#what-it-covers-espressif)), which is why `report` lists each
 scenario's longest.
 
-#### Still open
+#### Still open (Espressif)
 
 - **An update command ignored.** Now and then the stock device, back on
   eWeLink after a send cut off part way and a restart, ignores the next
@@ -728,7 +728,7 @@ scenario's longest.
   hour, not even restarting when its setup network's three minutes were up.
   It passed when run again, and is unexplained.
 
-#### What it has found
+#### What it has found (Espressif)
 
 Each fault the suite has found is fixed, with a unit test that fails without
 the fix, and its scenario was run again; the [changelog](../CHANGELOG.md)
@@ -779,7 +779,7 @@ emulated ones started from the public S61s dump
 own with the local eWeLink stub, so nothing reaches the internet and every
 scenario can run side by side. It has 291 scenarios.
 
-#### What it covers
+#### What it covers (Beken)
 
 **Directions.** Every direction between Sonoff's firmware, OpenBeken and
 ESPHome; from the interim firmware, where a run to ESPHome left a device, to
@@ -836,7 +836,7 @@ discovery.
   (FAIL-NOT-REFUSED), and the device must still answer on OpenBeken
   (FAIL-DISTURBED).
 
-#### Running it
+#### Running it (Beken)
 
 ```sh
 tools/beken/emulator/fault_suite.py prep      # the starting devices: on the interim firmware, OpenBeken, ESPHome
@@ -862,7 +862,7 @@ Each emulated device takes a core, so two workers suit a laptop. Sonoff's
 firmware restarts by itself once it has its update, in the emulator as on a
 device, so the tool asks for a switch off and on only after a fault.
 
-#### Reading its results
+#### Reading its results (Beken)
 
 Results are in `captures/emulation/beken/suite/`
 (`AUTOFLASH_BEKEN_EMU_SUITE_DIR` names another folder). A scenario passes
@@ -877,7 +877,7 @@ for the interim firmware, above) and none of these applies:
 | MISTIMED, NOT-FIRED | as on the Espressif suite |
 | NOT-READY | the emulated device could not be started for the scenario |
 
-#### What it cannot show
+#### What it cannot show (Beken)
 
 - **Timings.** The emulator runs the real firmware far slower than a chip, so
   a step's length, and the moment of risk as the bootloader writes the new
@@ -886,21 +886,21 @@ for the interim firmware, above) and none of these applies:
   network: a fault takes the computer off it, with no signal to weaken.
 - **The wiring.** Only the meter is wired, with no relay or button, so a pass
   says the firmware reads a meter on the pins its config names, not that
-  those are the device's ([emulator.md](emulator.md#known-gaps-1)).
+  those are the device's ([emulator.md](emulator.md#known-gaps-beken)).
 
-#### What whole runs have shown
+#### What whole runs have shown (Beken)
 
 The current code passes all 291 scenarios, every direction end to end in the
 emulator, faults and all, from the public dump of a real S61.
 
-#### Still open
+#### Still open (Beken)
 
 - **A real device.** No real Beken device has been converted, so whether one
   answers as the emulator does (OpenBeken's `/api/flash` returning its raw
   flash, and Sonoff's checks of a rebuilt image) is not known
   ([Beken research](beken-research.md#questions-still-open)).
 
-#### What it has found
+#### What it has found (Beken)
 
 Each fault found is fixed, and its case is in the suite. What they showed
 about the firmware and the emulator:
@@ -963,7 +963,7 @@ tests first.
 The S60 is the only device tested for real, and the only one
 [Supported](../devices/README.md); every other is tested in the emulator alone,
 and no real Beken device has been converted
-([still open](#still-open-1)). A real device under test is powered through a
+([still open](#still-open-beken)). A real device under test is powered through a
 second smart plug, so its power can be cut on purpose. Tasmota to ESPHome and
 back has run on a real S60TPG: every write read back, the final check of the
 device on Tasmota matching all four regions, and the relay and power meter
