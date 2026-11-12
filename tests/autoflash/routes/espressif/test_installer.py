@@ -665,8 +665,9 @@ class StockBackupTests(unittest.TestCase):
         patch.start()
         self.addCleanup(patch.stop)
         self.inputs = {"stock_version": "1.2.0", "device_mac": self.MAC}
+        self.captures = {}
         state = SimpleNamespace(input=lambda key, default=None: self.inputs.get(key, default),
-                                set_input=self.inputs.__setitem__)
+                                set_input=self.inputs.__setitem__, capture=self.captures.__setitem__)
         self.ctx = SimpleNamespace(state=state, args=SimpleNamespace(no_backup=False))
         unread = mock.patch.object(installer, "require_known_layout")  # its own tests: StockLayoutTests
         self.layout_checked = unread.start()
@@ -739,6 +740,7 @@ class StockBackupTests(unittest.TestCase):
         # The reads only read: another round is what the person would choose.
         self.assertEqual(self.back_up([OSError("a"), OSError("b"), self.dump]), [])
         self.assertIn("stock_backup", self.inputs)
+        self.assertEqual(self.captures["C3.attempts"], 3)   # its retries in the report, as B4's are
 
     def test_after_every_round_fails_the_person_may_carry_on_without(self):
         (options,) = self.back_up(self.failing())

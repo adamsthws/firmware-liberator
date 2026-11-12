@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING, TypeVar
 
-from tools.autoflash import detect, esphome, join, kinds, openbeken, output, records, prompts
+from tools.autoflash import detect, esphome, join, kinds, openbeken, output, records, prompts, runs
 from tools.autoflash.errors import Abort, GoBack
 from tools.autoflash.routes.beken import images, onward
 from tools.beken import backup
@@ -236,8 +236,8 @@ def _read_region_with_retries(ctx: Context, host: str) -> bytes:
             return _read_region(host)
         except OSError as exc:
             output.progress_clear()
-            output.tell(f"    The device's own data could not be read ({exc}) - trying again in "
-                        f"{BACKUP_PAUSE:.0f}s (attempt {attempt + 1} of {BACKUP_TRIES}).")
+            output.say(f"    The device's own data could not be read ({exc}) - trying again in "
+                       f"{BACKUP_PAUSE:.0f}s (attempt {attempt + 1} of {BACKUP_TRIES}).")
         time.sleep(BACKUP_PAUSE)
         started = time.monotonic()
         while (waited := time.monotonic() - started) < ARRIVAL_WAIT and not openbeken.info(host, timeout=3.0):
@@ -259,11 +259,18 @@ def note_flash(ctx: Context, matched: bool) -> None:
 
 
 def _back_up(ctx: Context, mac: str) -> str:
-    if records.find_backup(mac):
-        output.say("    The device's own data is backed up already.")
-        return "existing"
+    """How the backup went, a records.BACKUP_OUTCOMES key: as the Espressif
+    route's C3 (installer.backup_not_needed) asks, none wanted before one kept.
+    Unlike C3, a failed read carries on without asking: C3's is the last before
+    Sonoff's firmware is written over, while the device keeps what B4 reads,
+    for the next run to back up."""
     if getattr(getattr(ctx, "args", None), "no_backup", False):
+        output.say("    No backup of the device's own data (--no-backup).")
         return "not wanted"
+    existing = records.find_backup(mac)
+    if existing:
+        output.say(f"    The device's own data is backed up already, in {runs.display_path(existing.directory)}.")
+        return "existing"
     kind = kinds.of_run(ctx.state)
     host = ctx.state.input("device_ip")
     try:
