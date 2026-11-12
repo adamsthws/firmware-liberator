@@ -24,16 +24,15 @@ if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
 # Where a run that failed is told to open an issue: the repository's issues,
-# by a short address of the website's, one line on the screen; with its
-# report's id after it, a new issue naming that report
+# by a short address of the website's, one line on the screen
 # (tools/repo/cloudflare_settings.py, ISSUES).
 ISSUES_URL = "https://firmwareliberator.com/issues"
-# The width the report is laid out at on the clipboard (copy_report), so one
-# pasted anywhere reads the same, whatever window it came from.
+# The width the report is laid out at on the clipboard (clipboard_text), so
+# one pasted anywhere reads the same, whatever window it came from.
 CLIPBOARD_COLUMNS = 100
-# The label of the report's id, under the rest of the report on the screen:
-# someone pasting the report into an issue names it, and it is in the issue's
-# address a failed run shows.
+# The label of the report's id, which a run that failed shows under where to
+# open an issue, and puts under its report on the clipboard: an issue pasted
+# from it names its report.
 REPORT_ID = "Report ID"
 # Shown once a run has succeeded, after the report, in this order.
 SPONSORS_URL = "https://github.com/sponsors/adamsthws"
@@ -703,31 +702,29 @@ def invite_stopped_report(ctx: Context, ending: str) -> None:
     offer_report(ctx, fields, stopped=run_result(ctx, ending))
 
 
-def issue_url(report_id: str | None) -> str:
-    """Where to open an issue for a run: naming its report, where one was sent."""
-    return f"{ISSUES_URL}/{report_id}" if report_id else ISSUES_URL
+def clipboard_text(lines: list[str], result: str | None = None) -> str:
+    """A report as it goes on the clipboard: as shown (`lines`, laid out
+    CLIPBOARD_COLUMNS wide, its report's ID under it), its margin taken off;
+    a conversion's starting with its `result` in full, which its screen
+    says above it instead."""
+    return (f"Result: {result}\n" if result else "") + textwrap.dedent("\n".join(lines)).strip("\n") + "\n"
 
 
-def copy_report(lines: list[str], result: str | None = None) -> None:
-    """Every run's report, a conversion's or a readout's, finished or not, on
-    the clipboard as shown (`lines`, laid out CLIPBOARD_COLUMNS wide), and
-    said so: to paste into an issue or wherever it is shared. A conversion's
-    starts with its `result` in full, which its screen says above it."""
-    text = textwrap.dedent("\n".join(lines)).strip("\n") + "\n"
-    if hostsys.copy_to_clipboard((f"Result: {result}\n" if result else "") + text):
-        output.tell("")
-        output.tell("This report is on your clipboard, ready to paste.")
-
-
-def ask_for_an_issue(report_id: str | None = None) -> None:
+def ask_for_an_issue(copy: str, report_id: str | None = None) -> None:
     """Where the links to support the project would be, for a run that failed
-    or crashed - not one stopped by choice: the way to open an issue, naming
-    its report (`report_id`) where one was sent, and the run's log, which one
-    needs. The tool is meant to finish every run, so one it could not is
-    something to fix."""
+    or crashed - not one stopped by choice: the way to open an issue, its
+    report's ID under it where one was sent, the report on the clipboard to
+    paste in (`copy`, clipboard_text) and said so where it took, and the
+    run's log, which one needs. The tool is meant to finish every run, so one
+    it could not is something to fix. A run that worked leaves the clipboard
+    alone."""
     output.tell("")
     output.tell("If it should not have stopped, please open an issue here:")
-    output.show_link(issue_url(report_id))
+    output.show_link(ISSUES_URL)
+    if report_id:
+        output.tell(f"{REPORT_ID}: {report_id}")
+    if hostsys.copy_to_clipboard(copy):
+        output.tell("This report is on your clipboard, ready to paste.")
     output.tell("")
     output.tell("This run's log:")
     output.tell(f"    {output.log_path() or testers.LOG_ELSEWHERE}")
@@ -742,11 +739,10 @@ def offer_report(ctx: Context, fields: list[tuple[str, str]], stopped: str | Non
     for label, value in fields:
         if label in LOG_ONLY:
             output.log_only(f"    {label}: {value}")
-    report_id = getattr(ctx, "last_report_id", None)
     shown = [(label, value) for label, value in fields if label not in LOG_ONLY]
-    below = [(REPORT_ID, report_id)] if report_id else []
-    for line in report_screen(shown, below=below):
+    for line in report_screen(shown):
         output.tell(line)
-    copy_report(report_screen(shown, CLIPBOARD_COLUMNS, below=below), dict(fields).get("Result"))
     if stopped:
-        ask_for_an_issue(report_id)
+        report_id = getattr(ctx, "last_report_id", None)
+        copy = report_screen(shown, CLIPBOARD_COLUMNS, below=[(REPORT_ID, report_id)] if report_id else ())
+        ask_for_an_issue(clipboard_text(copy, dict(fields).get("Result")), report_id)

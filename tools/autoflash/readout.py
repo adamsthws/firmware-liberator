@@ -241,16 +241,15 @@ def end(ctx: Context, said: str, failed: bool = False) -> None:
         for line in said.splitlines():
             output.tell(line)
     output.tell("")
-    # One device's report's id, as a conversion's; several each have one, sent
-    # alike, and the one that failed names the issue.
-    sent = [item.report_id for item in done if item.report_id]
-    below = [*report_devices(done), *([(report.REPORT_ID, sent[0])] if len(done) == 1 and sent else [])]
-    for line in report.report_screen(report_fields(done), right=REPORT_RIGHT, below=below, balance=False):
+    for line in report.report_screen(report_fields(done), right=REPORT_RIGHT, below=report_devices(done),
+                                     balance=False):
         output.tell(line)
-    report.copy_report(report.report_screen(report_fields(done), report.CLIPBOARD_COLUMNS, right=REPORT_RIGHT,
-                                            below=below, balance=False))
     if failed:
-        report.ask_for_an_issue(next((item.report_id for item in done if item.outcome in (FAILED, CRASHED)), None))
+        # The report's id of the device that failed, as a conversion's that did.
+        report_id = next((item.report_id for item in done if item.outcome in (FAILED, CRASHED)), None)
+        copy = report.report_screen(report_fields(done), report.CLIPBOARD_COLUMNS, right=REPORT_RIGHT, balance=False,
+                                    below=[*report_devices(done), *([(report.REPORT_ID, report_id)] if report_id else [])])
+        report.ask_for_an_issue(report.clipboard_text(copy), report_id)
     else:
         report.hold_out_hat()
 

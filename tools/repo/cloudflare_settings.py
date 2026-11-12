@@ -73,18 +73,13 @@ SETTINGS = {"always_use_https": "on", "min_tls_version": "1.2", "email_obfuscati
 # The repository's issues on GitHub (github_settings.REPOSITORY), where the
 # tool sends someone whose run failed by the short address ISSUES_PATH
 # (report.ISSUES_URL): a line on the screen, not a GitHub link that wraps.
-# With the run's report's id after it, ISSUES_PATH/<id>, a new issue on the
-# form ISSUE_FORM, its "report" field filled in with that id.
 ISSUES = "https://github.com/adamsthws/firmware-liberator/issues"
 ISSUES_PATH = "/issues"
-ISSUE_FORM = "bug-report.yml"
 
 # www.firmwareliberator.com, which wrangler.jsonc also points at the Worker,
 # is sent on to firmwareliberator.com, keeping the path and query, so the
-# site has one address; and its ISSUES_PATH to ISSUES, and ISSUES_PATH/<id>
-# to a new issue naming that report, each for a while (302) so the
-# repository can move. Cloudflare runs these before the Worker, the first
-# that matches alone.
+# site has one address; and its ISSUES_PATH to ISSUES, for a while (302) so
+# the repository can move. Cloudflare runs these before the Worker.
 REDIRECT_PHASE = "http_request_dynamic_redirect"
 REDIRECTS = [{
     "ref": "www-to-apex",
@@ -105,19 +100,6 @@ REDIRECTS = [{
     "action_parameters": {"from_value": {
         "status_code": 302,
         "target_url": {"value": ISSUES},
-        "preserve_query_string": False,
-    }},
-    "enabled": True,
-}, {
-    "ref": "issue-for-a-report",
-    "description": f"{ZONE}{ISSUES_PATH}/<report id> to a new issue naming that report",
-    "expression": (f'(http.host eq "{ZONE}" and http.request.uri.path wildcard "{ISSUES_PATH}/*"'
-                   f' and http.request.uri.path ne "{ISSUES_PATH}/")'),
-    "action": "redirect",
-    "action_parameters": {"from_value": {
-        "status_code": 302,
-        "target_url": {"expression": f'wildcard_replace(http.request.uri.path, "{ISSUES_PATH}/*", '
-                                     f'"{ISSUES}/new?template={ISSUE_FORM}&report=${{1}}")'},
         "preserve_query_string": False,
     }},
     "enabled": True,

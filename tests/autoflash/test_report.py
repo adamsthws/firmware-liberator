@@ -565,30 +565,34 @@ class StoppedRunIssueTests(RouteTestCase):
                          "no links to support the project after a failure")
         self.assertFalse([line for line in text if "192.0.2.50" in line or "How it went" in line])
 
-    def test_its_reports_id_is_under_the_report_and_in_the_issues_address(self):
+    def test_a_failed_runs_report_id_is_under_where_to_open_an_issue_then_the_clipboard_said(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
         ctx.last_failure, ctx.last_failed_step = "the device did not answer within 30s", ""
         ctx.run_started, ctx.run_resumed = time.monotonic(), False
         ctx.last_report_id = "0123456789abcdef0123456789abcdef"
-        with mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
-            lines = self.ended(ctx, "failed")
-        self.assertIn(("link", f"{report.ISSUES_URL}/0123456789abcdef0123456789abcdef"), lines)
-        row = next(line for line in lines if isinstance(line, str) and "Report ID:" in line)
-        self.assertEqual(row.split(), ["Report", "ID:", "0123456789abcdef0123456789abcdef"])   # whole, on one row
-
-    def test_every_run_puts_its_report_on_the_clipboard_and_says_so(self):
-        ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
-        ctx.last_failure, ctx.last_failed_step = "the device did not answer within 30s", ""
-        ctx.run_started, ctx.run_resumed = time.monotonic(), False
         copied = []
-        with mock.patch.object(hostsys, "copy_to_clipboard", side_effect=lambda text: copied.append(text) or True):
+        with mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))), \
+                mock.patch.object(hostsys, "copy_to_clipboard", side_effect=lambda text: copied.append(text) or True):
             lines = self.ended(ctx, "failed")
-        self.assertTrue(copied[0].startswith("Result: Stopped at stage"), copied[0])   # in full, as the screen has it not
+        link = lines.index(("link", report.ISSUES_URL))   # the general address: the id is pasted in
+        self.assertEqual(lines[link + 1:link + 3], ["Report ID: 0123456789abcdef0123456789abcdef",
+                                                    "This report is on your clipboard, ready to paste."])
+        self.assertFalse([line for line in lines[:link] if "Report ID" in str(line)], "not under the report")
+        self.assertTrue(copied[0].startswith("Result: Stopped at stage"), copied[0])   # in full
         self.assertIn("\nLiberator:", copied[0])   # the report as shown, its margin taken off
-        told = lines.index("This report is on your clipboard, ready to paste.")
-        self.assertLess(told, lines.index("If it should not have stopped, please open an issue here:"))
+        self.assertTrue(copied[0].rstrip().endswith("Report ID: 0123456789abcdef0123456789abcdef"), copied[0])
         with mock.patch.object(hostsys, "copy_to_clipboard", return_value=False):
             self.assertNotIn("This report is on your clipboard, ready to paste.", self.ended(ctx, "failed"))
+
+    def test_a_run_that_worked_leaves_the_clipboard_alone_and_shows_no_report_id(self):
+        ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
+        ctx.last_report_id = "0123456789abcdef0123456789abcdef"
+        lines = []
+        with mock.patch.object(output, "tell", side_effect=lambda text="": lines.append(text)), \
+                mock.patch.object(hostsys, "copy_to_clipboard") as copied:
+            report.offer_report(ctx, [("Result", "Converted"), ("Liberator", "3.0.0")])
+        copied.assert_not_called()
+        self.assertFalse([line for line in lines if "Report ID" in line or "clipboard" in line], lines)
 
     def test_a_run_that_worked_shows_no_log_even_of_a_kind_wanting_testers(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-powct")

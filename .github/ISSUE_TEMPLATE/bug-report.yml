@@ -12,7 +12,7 @@ body:
     id: report
     attributes:
       label: The report's ID
-      description: Filled in when you open this from the link the tool shows, and on the report it shows. It lets the maintainer find this run's report, which says nothing about you.
+      description: The tool shows it where it says to open an issue, and it is under the report on your clipboard. It lets the maintainer find this run's report, which says nothing about you.
   - type: textarea
     id: run_report
     attributes:

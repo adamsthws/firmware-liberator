@@ -1257,13 +1257,6 @@ class ReportTests(unittest.TestCase):
                 at = {line.index(label, 20) for line in shown for label in labels if label in line[20:]}
                 self.assertEqual(len(at), 1, "\n".join(shown))   # in one column
 
-    def test_one_device_s_report_shows_its_id_as_a_conversion_s_does(self):
-        one = [readout.Became("'Hall'", "BASICR4", "", "1.1.0", True, readout.ACCEPTED, report_id="a" * 32)]
-        row = next(line for line in self.shown_by_end(one) if "Report ID:" in line)
-        self.assertEqual(row.split(), ["Report", "ID:", "a" * 32])
-        several = [*one, readout.Became("'Porch'", "MINIR4", "", "1.2.0", True, readout.UNNEEDED, report_id="b" * 32)]
-        self.assertFalse([line for line in self.shown_by_end(several) if "Report ID" in line], "one for each: none")
-
     def test_one_that_failed_has_the_way_to_open_an_issue_where_the_links_to_support_the_project_go(self):
         failed = [readout.Became("'Hall'", "BASICR4", "", "1.1.0", True, readout.FAILED)]
         shown = self.shown_by_end(failed, failed=True)
@@ -1273,14 +1266,26 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn("Nothing was read out.", shown, "its FAILED line says how it ended")
         self.assertEqual(next(line for line in shown if "BASICR4" in line).split(), ["Failed:", "BASICR4", "1.1.0"])
 
-    def test_its_report_goes_on_the_clipboard_too(self):
+    def test_one_that_failed_puts_its_report_and_the_failed_ones_id_on_the_clipboard(self):
+        failed = [readout.Became("'Kitchen'", "BASICR4", "", "1.1.0", True, readout.ACCEPTED, report_id="a" * 32),
+                  readout.Became("'Hall'", "MINIR4", "", "1.2.0", True, readout.FAILED, report_id="b" * 32)]
         copied = []
         with mock.patch.object(report.hostsys, "copy_to_clipboard",
                                side_effect=lambda text: copied.append(text) or True):
-            shown = self.shown_by_end(self.DONE)
-        self.assertIn("Accepted:   BASICR4 1.1.0", copied[0])
+            shown = self.shown_by_end(failed, failed=True)
+        rows = [row.split() for row in copied[0].splitlines()]
+        self.assertIn(["Failed:", "MINIR4", "1.2.0"], rows)
+        self.assertEqual(rows[-1], ["Report", "ID:", "b" * 32], copied[0])   # the one that failed
         self.assertFalse(copied[0].startswith(" "), "its margin taken off")
-        self.assertIn("This report is on your clipboard, ready to paste.", shown)
+        at = shown.index(f"Report ID: {'b' * 32}")
+        self.assertEqual(shown[at + 1], "This report is on your clipboard, ready to paste.")
+
+    def test_one_that_finished_leaves_the_clipboard_alone_and_shows_no_report_id(self):
+        done = [readout.Became("'Kitchen'", "BASICR4", "", "1.1.0", True, readout.ACCEPTED, report_id="a" * 32)]
+        with mock.patch.object(report.hostsys, "copy_to_clipboard") as copied:
+            shown = self.shown_by_end(done)
+        copied.assert_not_called()
+        self.assertFalse([line for line in shown if "Report ID" in line or "clipboard" in line], shown)
 
     def test_one_that_read_nothing_out_says_so_above_its_report(self):
         shown = self.shown_by_end(self.DONE[2:])
