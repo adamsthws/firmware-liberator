@@ -6,12 +6,12 @@ firmware starts, reading the device's Wi-Fi from the stock store it leaves untou
 
 from __future__ import annotations
 
-import re
 import time
 from typing import Any, TYPE_CHECKING
 
 from tools.autoflash import account, detect, firewall, join, kinds, output, prompts, records, runs, testers
 from tools.autoflash.errors import Abort, NothingWritten, StoppedPartWay
+from tools.autoflash.routes import arrival
 from tools.autoflash.routes.beken import images
 from tools.beken import fota_wrap, interim_marker
 from tools.ewelink import ota_push
@@ -23,9 +23,6 @@ if TYPE_CHECKING:
 
 # The stock updater fetches the file in ranges, at its own pace: a few minutes.
 DELIVERY_WAIT = 300.0
-# How the device turns an update down while one cut off part way still holds its
-# updater (error 410, relayed by eWeLink): until it is switched off and on.
-BUSY = re.compile(r"\berror 410\b")
 
 
 def account_record(ctx: Context) -> dict[str, Any]:
@@ -191,21 +188,27 @@ def step_push(ctx: Context) -> dict[str, Any]:
         if reported != stock_version:
             raise EwelinkError(f"the device reports firmware {reported}, not the {stock_version} it reported at B1")
 
-    output.say(f"Sending {shown} {version} ({len(image):,} bytes; {len(container):,} wrapped) through eWeLink...")
-    started = time.monotonic()
-    delivered = ota_push.deliver(
-        account=ctx.ewelink, device_id=device["deviceid"], firmware=container, version=images.FOTA_VERSION,
-        # One file, not the two an Espressif device is offered (one for each app
-        # slot): a Beken device has one app, which its bootloader replaces.
-        listen_ip=listen_ip, listen_port=port, device_ip=device_ip, names=("user1.bin",),
-        wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False)
-    if not delivered.sent:
-        raise Abort(f"the firmware was not sent: {delivered.error or 'eWeLink did not take the command'}. "
-                    f"{ota_push.NOT_SENT}")
-    if BUSY.search(delivered.error or ""):
-        raise Abort("the device turned the new firmware down: it is still busy with an update that was cut off "
-                    "part way. Switch the device off and on - it keeps its Sonoff firmware - then run the same "
-                    "command again")
+    while True:
+        output.say(f"Sending {shown} {version} ({len(image):,} bytes; {len(container):,} wrapped) through eWeLink...")
+        started = time.monotonic()
+        delivered = ota_push.deliver(
+            account=ctx.ewelink, device_id=device["deviceid"], firmware=container, version=images.FOTA_VERSION,
+            # One file, not the two an Espressif device is offered (one for each app
+            # slot): a Beken device has one app, which its bootloader replaces.
+            listen_ip=listen_ip, listen_port=port, device_ip=device_ip, names=("user1.bin",),
+            wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False)
+        if not delivered.sent:
+            raise Abort(f"the firmware was not sent: {delivered.error or 'eWeLink did not take the command'}. "
+                        f"{ota_push.NOT_SENT}")
+        if not ota_push.busy(delivered.error):
+            break
+        # Busy with an update cut off part way: switched off and on, then sent
+        # again, as the Espressif route's C2 does (installer.step_bridge).
+        if prompts.UNATTENDED:
+            raise Abort(arrival.BUSY)
+        arrival.power_cycle(ctx, "The firmware was turned down", arrival.BUSY_LINES, "send it again")
+        if not arrival.online_in_ewelink(ctx, device["deviceid"]):
+            raise Abort(arrival.BUSY)
     if not delivered.complete:
         # Sent, and some of it may be on the device: the device says what it runs
         # when the step is asked about (evidence_pushed). A power cut part way

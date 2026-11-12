@@ -38,7 +38,9 @@ from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.runs import ROOT
 from tools.autoflash.state import ATTEMPTED, DONE, FAILED
 from tools.espressif.safeboot.safeboot_migration import pinned_artifacts
+from tools.autoflash.routes import arrival
 from tools.autoflash.routes.espressif import images
+from tools.ewelink import ota_push
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -87,6 +89,13 @@ def bridge_failure_advice(ctx: Context, reported: list[str], started: bool) -> l
             "way - most likely its Wi-Fi dropped: a router restarting, or a weak",
             "signal. It keeps its Sonoff firmware, so nothing is lost; run this",
             "again once its Wi-Fi is steady.",
+        ]
+    if output.tool_said(f"error {ota_push.BUSY}"):
+        return [
+            "The device turned the installer down: it is still busy with an update",
+            "that was cut off part way. It keeps its Sonoff firmware, so nothing is",
+            "lost: switch the device off and on, wait for it to show online in the",
+            "eWeLink app, and run this again.",
         ]
     if output.tool_said("offline in eWeLink"):
         return [
@@ -150,24 +159,26 @@ def step_bridge(ctx: Context) -> dict[str, Any]:
         output.transient_end()  # agreed: the note and the question have done their job
         ctx.consented = True
 
-    started = time.monotonic()
-    with safety_locks.lifted(ROOT, "RECOVERY_LOCK"):
-        code = hostsys.run_tool(
-            hostsys.python_script(
-                "tools/espressif/serve_tasmota_ota.py",
-                "--listen-ip", listen_ip, "--listen-port", str(port),
-                "--device-ip", device_ip,
-                "--firmware", str(bridge_file(ctx)),
-                "--email", email, "--region", ctx.ewelink_region(), "--expected-current-version", version,
-                "--mdns-capture", str(ctx.dir / "mdns.json"),
-                "--i-understand-stock-has-no-automatic-rollback",
-                # Each line as it comes, so the run's log has when eWeLink said what.
-                unbuffered=True),
-            interactive=True,
-            env=env,
-        )
-    safety_locks.say_lock_back(ROOT, "RECOVERY_LOCK")
-    if code != 0:
+    while True:
+        started = time.monotonic()
+        with safety_locks.lifted(ROOT, "RECOVERY_LOCK"):
+            code = hostsys.run_tool(
+                hostsys.python_script(
+                    "tools/espressif/serve_tasmota_ota.py",
+                    "--listen-ip", listen_ip, "--listen-port", str(port),
+                    "--device-ip", device_ip,
+                    "--firmware", str(bridge_file(ctx)),
+                    "--email", email, "--region", ctx.ewelink_region(), "--expected-current-version", version,
+                    "--mdns-capture", str(ctx.dir / "mdns.json"),
+                    "--i-understand-stock-has-no-automatic-rollback",
+                    # Each line as it comes, so the run's log has when eWeLink said what.
+                    unbuffered=True),
+                interactive=True,
+                env=env,
+            )
+        safety_locks.say_lock_back(ROOT, "RECOVERY_LOCK")
+        if code == 0:
+            return {"seconds": round(time.monotonic() - started, 1)}
         # The sender can fail after the device already has everything - the cloud
         # reporting it offline is exactly what a successful install looks like.
         installed, reason = evidence_bridge_installed(ctx)
@@ -177,15 +188,32 @@ def step_bridge(ctx: Context) -> dict[str, Any]:
         reported = output.tool_problems()
         # Some of it served means the device reached this computer: not the
         # firewall, but its Wi-Fi going part way (a router restarting, say).
-        started = output.tool_said("Served /user") or output.tool_said("did not request every")
-        if started:
+        begun = output.tool_said("Served /user") or output.tool_said("did not request every")
+        if begun:
             ctx.state.set_input(DOWNLOADED_FROM, listen_ip)
-        prompts.section("The bridge was not delivered", [
+        advice = bridge_failure_advice(ctx, reported, begun)
+        if not prompts.UNATTENDED and not begun and needs_power_cycle(ctx):
+            # Switched off and on, then sent again, as the Beken route's B2 does.
+            arrival.power_cycle(ctx, "The installer was not delivered", (
+                *(["The sender reported:", *(f"  {line}" for line in reported), ""] if reported else []),
+                *advice), "send it again")
+            device_id = str(records.read_device(ctx.state.input("device_mac") or "").get("ewelink_id") or "")
+            if not device_id or arrival.online_in_ewelink(ctx, device_id):
+                continue
+        prompts.section("The installer was not delivered", [
             *(["The sender reported:", *(f"  {line}" for line in reported), ""] if reported else []),
-            *bridge_failure_advice(ctx, reported, started),
+            *advice,
         ])
-        raise Abort("bridge delivery stopped part way" if started else "bridge delivery failed")
-    return {"seconds": round(time.monotonic() - started, 1)}
+        raise Abort("bridge delivery stopped part way" if begun else "bridge delivery failed")
+
+
+def needs_power_cycle(ctx: Context) -> bool:
+    """Whether the installer was not delivered for want of the device being
+    switched off and on: busy with an update cut off part way
+    (ota_push.busy), away from eWeLink since, or not asking for it though it
+    fetched part of it from here before."""
+    return (output.tool_said(f"error {ota_push.BUSY}") or output.tool_said("offline in eWeLink")
+            or ctx.state.input(DOWNLOADED_FROM) == ctx.listen_ip())
 
 
 def bridge_on_home_network(ctx: Context, *, timeout: float = 60.0, tasmota: bool = False) -> str | None:
