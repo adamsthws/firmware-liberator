@@ -103,8 +103,9 @@ class ReadoutTests(unittest.TestCase):
         self.assertEqual(fault_verdicts.readout_problems(kept("beken", read=False), "beken"),
                          ["the manifest says the memory was not read"])
         self.assertEqual(fault_verdicts.readout_problems(
-            readout.package({"format": 1, "read": True, "flash": {"size": len(FLASH)}},
-                            {"flash.bin": FLASH, "info.txt": b"{}"}, OFFERED, {"email": "someone@example.com"}),
+            readout.package({"format": 1, "read": True, "flash": {"size": len(FLASH)},
+                             "contact": {"email": "someone@example.com"}},
+                            {"flash.bin": FLASH, "info.txt": b"{}"}, OFFERED),
             "beken"), ["a contact in it, from an unattended run"])
 
     def test_the_manifest_first_as_the_api_reads_it(self):
