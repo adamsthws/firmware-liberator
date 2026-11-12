@@ -32,7 +32,7 @@ from typing import Any, TYPE_CHECKING
 from tools.autoflash import firewall, hostsys, openbeken, output, records, prompts, readout, runs, safety_locks
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes import arrival
-from tools.autoflash.routes.beken import images, onward, stock
+from tools.autoflash.routes.beken import images, onward
 from tools.autoflash.runs import ROOT
 from tools.beken import fota_wrap, layouts, rbl, scrub
 from tools.ewelink import ota_push
@@ -97,19 +97,25 @@ def deliver_readout(ctx: Context, name: str, version: str, device: dict[str, Any
         if reported != version:
             raise ota_push.EwelinkError(f"the device reports firmware {reported}, not the {version} it reported")
 
-    output.say("Sending the readout firmware through eWeLink...")
-    with safety_locks.lifted(ROOT, "RECOVERY_LOCK"):
-        delivered = ota_push.deliver(
-            account=ctx.ewelink, device_id=device["deviceid"], firmware=container, version=fota_wrap.ANNOUNCED_VERSION,
-            listen_ip=ctx.listen_ip(), listen_port=port, device_ip=device_ip, names=("user1.bin",),
-            wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False)
-    safety_locks.say_lock_back(ROOT, "RECOVERY_LOCK")
-    if not delivered.sent:
-        raise NothingWritten(f"the readout firmware was not sent: {delivered.error or 'eWeLink did not take it'}. "
-                             f"{ota_push.NOT_SENT}")
-    if stock.BUSY.search(delivered.error or ""):
-        raise Abort("the device turned the firmware down: it is still busy with an update cut off part way. "
-                    "Switch the device off and on - it keeps its Sonoff firmware - then run this again")
+    while True:
+        output.say("Sending the readout firmware through eWeLink...")
+        with safety_locks.lifted(ROOT, "RECOVERY_LOCK"):
+            delivered = ota_push.deliver(
+                account=ctx.ewelink, device_id=device["deviceid"], firmware=container,
+                version=fota_wrap.ANNOUNCED_VERSION, listen_ip=ctx.listen_ip(), listen_port=port, device_ip=device_ip,
+                names=("user1.bin",), wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False)
+        safety_locks.say_lock_back(ROOT, "RECOVERY_LOCK")
+        if not delivered.sent:
+            raise NothingWritten(f"the readout firmware was not sent: {delivered.error or 'eWeLink did not take it'}. "
+                                 f"{ota_push.NOT_SENT}")
+        if not ota_push.busy(delivered.error):
+            break
+        # As a conversion's B2 and C2: switched off and on, then sent again.
+        if prompts.UNATTENDED:
+            raise Abort(arrival.BUSY)
+        arrival.power_cycle(ctx, "The firmware was turned down", arrival.BUSY_LINES, "send it again")
+        if not arrival.online_in_ewelink(ctx, device["deviceid"]):
+            raise Abort(arrival.BUSY)
     if not delivered.complete:
         raise OSError(f"the device fetched {delivered.bytes_served:,} of {len(container):,} bytes before the "
                       f"delivery stopped ({delivered.error or 'it stopped asking'})")

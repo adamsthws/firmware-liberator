@@ -299,9 +299,21 @@ class FromStockTests(unittest.TestCase):
             refused = ota_push.Delivery(sent=True, complete=False,
                                         error="Cloud rejected upgrade command: error 410")
             with mock.patch.object(stock.prompts, "require_word", return_value=True), \
+                    mock.patch.object(stock.prompts, "UNATTENDED", True), \
                     mock.patch.object(ota_push, "deliver", return_value=refused):
                 with self.assertRaisesRegex(errors.Abort, "Switch the device off and on"):
                     stock.step_push(ctx)
+            # Attended, the person switches it off and on, it is counted, and it is
+            # sent again once eWeLink shows it online - as C2 does.
+            whole = ota_push.Delivery(sent=True, complete=True, bytes_served=100, seconds=9.5)
+            with mock.patch.object(stock.prompts, "require_word", return_value=True), \
+                    mock.patch.object(ota_push, "deliver", side_effect=[refused, whole]) as sent, \
+                    mock.patch.object(stock.arrival.prompts, "section"), \
+                    mock.patch.object(stock.arrival.prompts, "ask_choice", return_value=0), \
+                    mock.patch.object(stock.arrival, "online_in_ewelink", return_value=True):
+                self.assertIn("seconds", stock.step_push(ctx))
+            self.assertEqual(sent.call_count, 2)
+            self.assertEqual(ctx.state.input("power_cycles"), {"by hand": 1})
 
     def test_the_evidence_of_a_push_is_what_the_device_answers_as(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -317,7 +329,6 @@ class BusyDeviceTests(unittest.TestCase):
     new one with error 410: through ota_push.deliver to the step's advice."""
 
     def test_the_devices_410_reaches_the_step_as_switch_it_off_and_on(self):
-        from tools.autoflash.routes.beken import stock
         from tools.ewelink import ota_push, relay
         device = {"deviceid": "1000abcdef", "apikey": "made-up", "devicekey": "made-up", "online": True,
                   "extra": {"model": "SN-BK7238-S61-01"}, "params": {"fwVersion": "1.0.2"}}
@@ -345,7 +356,7 @@ class BusyDeviceTests(unittest.TestCase):
                                          firmware=b"image", version="9.9.9", listen_ip="127.0.0.1",
                                          listen_port=0, device_ip="127.0.0.1", wait=5, say=lambda *a: None)
         self.assertTrue(delivered.sent, delivered.error)
-        self.assertRegex(delivered.error or "", stock.BUSY)
+        self.assertTrue(ota_push.busy(delivered.error), delivered.error)
 
 
 if __name__ == "__main__":

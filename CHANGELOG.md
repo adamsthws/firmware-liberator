@@ -198,6 +198,11 @@ as its screens do, since it converts much more than smart plugs now.
   is; the run stopped. The report says whether it had to be, on either family.
 - A Beken device whose ESPHome cannot join your Wi-Fi is given it through
   ESPHome's own network, as an Espressif device is.
+- A device that turns the first firmware down while an update cut off part way
+  still holds it (eWeLink's error 410), or that has left eWeLink since, has you
+  switch it off and on, then is sent it again once eWeLink shows it online, on
+  either chip family; the run stopped. A readout of a Beken device does the
+  same.
 - `--dry-run` writes nothing on either chip family: it goes through the steps
   that only read and stops before the first that writes. On an Espressif device
   it went on to send the installer, replacing Sonoff's firmware.

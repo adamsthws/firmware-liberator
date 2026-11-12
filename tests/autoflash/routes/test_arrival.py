@@ -51,6 +51,34 @@ class UntilBackTests(unittest.TestCase):
             self.assertEqual(shown.call_args.args[1], ["its own line"])
 
 
+class PowerCycleTests(unittest.TestCase):
+    def test_asked_and_counted_by_whom_the_emulators_switch_used_where_there_is_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, firmware="openbeken")
+            switch = Path(tmp) / "power"
+            with mock.patch.object(arrival.prompts, "section"), \
+                    mock.patch.object(arrival.prompts, "ask_choice", side_effect=[0, 1]) as asked, \
+                    mock.patch.object(arrival.output, "transient_begin"), mock.patch.object(arrival.output, "transient_end"), \
+                    mock.patch.object(arrival.output, "say"), mock.patch.object(arrival.time, "sleep"), \
+                    mock.patch.dict(arrival.os.environ, {arrival.EMULATED_POWER: str(switch)}):
+                arrival.power_cycle(ctx, "Title", ("a line",), "send it again")
+                arrival.power_cycle(ctx, "Title", ("a line",), "send it again")
+            self.assertEqual(asked.call_args.args[1], ["Send it again - the device is back on",
+                                                       "Power-cycle the emulated device, then send it again"])
+            self.assertEqual(ctx.state.input("power_cycles"), {"by hand": 1, "by the tool": 1})
+            self.assertEqual(switch.read_text(encoding="utf-8"), "on\n")
+
+
+class OnlineInEwelinkTests(unittest.TestCase):
+    def test_waits_for_the_device_online_and_gives_up_at_once_without_ewelink(self):
+        answers = iter([[{"deviceid": "1001234abc", "online": False}], [{"deviceid": "1001234abc", "online": True}]])
+        ctx = SimpleNamespace(account_devices=lambda: next(answers))
+        with mock.patch.object(arrival.time, "sleep"), mock.patch.object(arrival.output, "progress"), \
+                mock.patch.object(arrival.output, "progress_clear"):
+            self.assertTrue(arrival.online_in_ewelink(ctx, "1001234abc"))
+            self.assertFalse(arrival.online_in_ewelink(SimpleNamespace(account_devices=lambda: None), "1001234abc"))
+
+
 class BackOnSonoffTests(unittest.TestCase):
     """R2 and K3 alike: on the Wi-Fi, and in eWeLink."""
 

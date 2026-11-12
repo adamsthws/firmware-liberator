@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import http.server
 import json
+import re
 import socket
 import sys
 import threading
@@ -269,6 +270,17 @@ class Resending:
         if self.back_at is not None:
             return quiet >= RESEND_SETTLE and now - self.back_at >= RESEND_SETTLE
         return not self.away and asked_at <= self.sent_at and quiet >= RESEND_QUIET
+
+
+# A device's answer to an update while one cut off part way still holds its
+# updater: refused until it is switched off and on (seen on the Beken S61; the
+# S60, cut off, leaves eWeLink instead, so this is looked for whatever the device).
+BUSY = 410
+
+
+def busy(error: str | None) -> bool:
+    """Whether a send was refused as the device being busy (BUSY)."""
+    return bool(re.search(rf"\berror {BUSY}\b", error or ""))
 
 
 @dataclass

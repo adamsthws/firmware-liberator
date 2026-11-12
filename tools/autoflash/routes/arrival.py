@@ -90,22 +90,30 @@ def until_back(ctx: Context, look: Callable[[bool], T], what: str, advice: str,
                 took = round(time.monotonic() - asked_back)
                 ctx.state.set_input("back_after_power_cycle", max(took, ctx.state.input("back_after_power_cycle") or 0))
             return found
-        output.transient_begin()
-        prompts.section(f"{what} has not answered yet", list(lines))
-        options = ["Look for it again - the device is back on"]
-        switch = os.environ.get(EMULATED_POWER)
-        if switch:
-            options.append("Power-cycle the emulated device, then look for it again")
-        chosen = prompts.ask_choice("Once it is back on, choose", options)
-        output.transient_end()
-        counted = dict(ctx.state.input("power_cycles") or {})
-        who = "by the tool" if chosen == 1 else "by hand"
-        counted[who] = counted.get(who, 0) + 1
-        ctx.state.set_input("power_cycles", counted)
-        if chosen == 1:
-            power_cycle_emulated(Path(switch))
+        power_cycle(ctx, f"{what} has not answered yet", lines, "look for it again")
         restarted = True
         asked_back = time.monotonic()
+
+
+def power_cycle(ctx: Context, title: str, lines: tuple[str, ...], then: str) -> None:
+    """The person at the keyboard asked to switch the device off and on, and
+    to say when it is back on, for the run to `then` ("look for it again") -
+    or, in the emulator, to have it switched; q stops the run (QuitRun).
+    Each is counted, by whom (power_cycles), for the report."""
+    output.transient_begin()
+    prompts.section(title, list(lines))
+    options = [f"{then[0].upper()}{then[1:]} - the device is back on"]
+    switch = os.environ.get(EMULATED_POWER)
+    if switch:
+        options.append(f"Power-cycle the emulated device, then {then}")
+    chosen = prompts.ask_choice("Once it is back on, choose", options)
+    output.transient_end()
+    counted = dict(ctx.state.input("power_cycles") or {})
+    who = "by the tool" if chosen == 1 else "by hand"
+    counted[who] = counted.get(who, 0) + 1
+    ctx.state.set_input("power_cycles", counted)
+    if chosen == 1:
+        power_cycle_emulated(Path(switch))
 
 
 def power_cycle_emulated(switch: Path) -> None:
@@ -136,6 +144,35 @@ NOT_BACK = ("Sonoff's firmware has not answered on your Wi-Fi, nor shown online 
             "network it was on and reports to eWeLink by itself; if the app still shows it offline, "
             "switch the device off and on, then run the same command again to check it. If that network has "
             "changed, add the device again in the eWeLink app")
+
+
+# Asked of the person when a send is refused as the device being busy
+# (ota_push.busy): with an update cut off part way, until it restarts.
+BUSY_LINES = (
+    "The device turned the firmware down: it is still busy with an update that",
+    "was cut off part way. Switch it off and on - at the socket, off for a few",
+    "seconds - and it keeps its Sonoff firmware, ready for the send again.",
+)
+BUSY = ("the device turned the new firmware down: it is still busy with an update that was cut off "
+        "part way. Switch the device off and on - it keeps its Sonoff firmware - then run the same "
+        "command again")
+
+
+def online_in_ewelink(ctx: Context, device_id: str, wait: float = SONOFF_WAIT) -> bool:
+    """Whether eWeLink shows the device online within `wait`, as it does a
+    minute or so after it is switched back on: a send through eWeLink reaches
+    it only then.  False at once where eWeLink cannot be reached."""
+    started = time.monotonic()
+    while True:
+        devices = ctx.account_devices()
+        if any(found.get("deviceid") == device_id and found.get("online") for found in devices or []):
+            output.progress_clear()
+            return True
+        if devices is None or time.monotonic() - started >= wait:
+            output.progress_clear()
+            return False
+        output.progress(f"waiting for eWeLink to show the device online... {time.monotonic() - started:.0f}s")
+        time.sleep(SONOFF_LOOK_EVERY)
 
 
 def on_wifi(ctx: Context, running: str | None) -> bool:
