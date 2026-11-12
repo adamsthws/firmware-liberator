@@ -19,7 +19,8 @@ def a_kind(key, family):
     return kinds.Kind(key=key, family=family, chip="made-up", ecosystem="ewelink", name="Made Up",
                       maker="Nobody", short="MU", product=re.compile("MU"),
                       stock_model="MU-01", wrapper_model="MU", tasmota_gpio=(),
-                      esphome_legacy_setup_prefix="", esphome_legacy_prefix="")
+                      esphome_legacy_setup_prefix="", esphome_legacy_prefix="", layout="made-up",
+                      has_meter=False, has_relay=True)
 
 
 class FamilyTests(unittest.TestCase):

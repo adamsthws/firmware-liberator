@@ -120,6 +120,16 @@ class Kind:
     # the last two bytes of the device's MAC.
     esphome_legacy_setup_prefix: str
     esphome_legacy_prefix: str
+    # Its stock partition table, by key: tools/espressif/layouts.py's for an
+    # Espressif device, tools/beken/layouts.py's for a Beken one. These three
+    # have no default, so a new kind cannot take one meant for another.
+    layout: str
+    # Whether it has a power meter: the report says how its calibration went,
+    # and the end-of-run check reads it (report.check_hardware).
+    has_meter: bool
+    # Whether it has a relay, which the end-of-run check switches: a device
+    # without one has no such check, nor a Checks line in its report.
+    has_relay: bool
     # Its ESPHome's friendly name in releases before its comment said the kind.
     esphome_legacy_friendly_name: str = ""
     # For a Beken device: the command its OpenBeken (built with this project's
@@ -136,16 +146,8 @@ class Kind:
     # wiring (the POW Elite's 16 A and 20 A): only eWeLink's product model then
     # says it is this kind, and a device it does not name is not converted.
     product_model_decides: bool = False
-    # Whether it has a power meter: the report says how its calibration went,
-    # and the end-of-run check reads it (report.check_hardware).
-    has_meter: bool = False
-    # Whether it has a relay, which the end-of-run check switches: a device
-    # without one has no such check, nor a Checks line in its report.
-    has_relay: bool = True
     # Whether its meter is calibrated as the S60's (tools/autoflash/calibration.py).
     calibrated_as_s60: bool = False
-    # Its stock partition table (tools/espressif/layouts.py), by key.
-    layout: str = "sonoff-dual-ota"
     # eWeLink's name for one, for the emulator's cloud stub to give.
     example_product_model: str = ""
     # The external RAM (MB, as QEMU's -m takes it) its stock firmware stops
@@ -243,10 +245,12 @@ SONOFF_S60 = Kind(
     # that sonoff-s60- and the MAC's last three bytes.
     esphome_legacy_setup_prefix="Sonoff-Setup-",
     esphome_legacy_prefix="sonoff-s60-",
+    layout="sonoff-dual-ota",
+    has_meter=True,
+    has_relay=True,
     esphome_legacy_friendly_name="Sonoff S60",
     calibrated_as_s60=True,
     example_product_model="S60TPG",
-    has_meter=True,
 )
 
 SONOFF_S61 = Kind(
@@ -262,15 +266,16 @@ SONOFF_S61 = Kind(
     stock_model="SN-BK7238-S61-01",
     # The descriptor name in the FOTA container its stock updater stages (tools/beken/fota_wrap.py).
     wrapper_model="FWSW-01-S61-BK7238",
-    layout="beken-4m",
     tasmota_gpio=(),  # Tasmota does not run on the BK7238: OpenBeken does
     # devices/sonoff-s61/esphome.yaml; no earlier builds, so no older names.
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",
+    layout="beken-4m",
+    has_meter=True,
+    has_relay=True,
     openbeken_revert="AutoflashRevertToStock",
     uses_lan_control=False,
     example_product_model="S61STPF",
-    has_meter=True,
 )
 
 # Known from eWeLink's official update file and a pin map, not from a dump of one
@@ -290,9 +295,11 @@ SONOFF_BASIC_1GS = Kind(
     tasmota_gpio=(),  # Tasmota does not run on the BK7238: OpenBeken does
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",
+    layout="beken-4m",
+    has_meter=False,
+    has_relay=True,
     openbeken_revert="AutoflashRevertToStock",
     uses_lan_control=False,
-    layout="beken-4m",
     example_product_model="BASIC-1GS",
     # docs/adding-a-device.md#a-beken-device
 )
@@ -316,9 +323,11 @@ SONOFF_POW_ELITE = Kind(
                   9184, 9248, 9216, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",
+    layout="sonoff-dual-ota",
+    has_meter=True,
+    has_relay=True,
     product_model_decides=True,
     example_product_model="POWR316D",
-    has_meter=True,
 )
 
 SONOFF_POWCT = Kind(
@@ -343,8 +352,10 @@ SONOFF_POWCT = Kind(
                   7329, 7296, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",
-    example_product_model="POWCT",
+    layout="sonoff-dual-ota",
     has_meter=True,
+    has_relay=True,
+    example_product_model="POWCT",
 )
 
 SONOFF_NSPANEL = Kind(
@@ -367,6 +378,8 @@ SONOFF_NSPANEL = Kind(
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",
     layout="sonoff-nspanel",
+    has_meter=False,
+    has_relay=True,
     example_product_model="NSPANEL",
 )
 
@@ -390,8 +403,10 @@ SONOFF_TH_ELITE = Kind(
                   3840, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",
-    product_model_decides=True,
     layout="sonoff-th-elite",
+    has_meter=False,
+    has_relay=True,
+    product_model_decides=True,
     example_product_model="THR320D",
 )
 
@@ -418,6 +433,9 @@ SONOFF_BASICR4 = Kind(
     tasmota_gpio=(0, 0, 0, 0, 224, 0, 544, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",
+    layout="sonoff-dual-ota",
+    has_meter=False,
+    has_relay=True,
     product_model_decides=True,
     example_product_model="BASICR4",
     # Its stock firmware watches a thermistor on GPIO3 (ADC1 channel 3) and, read
@@ -445,6 +463,9 @@ SONOFF_MINIR4 = Kind(
                   0, 0, 0, 0, 0, 0),
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",
+    layout="sonoff-dual-ota",
+    has_meter=False,
+    has_relay=True,
     product_model_decides=True,
     example_product_model="MINIR4",
 )
@@ -466,11 +487,12 @@ SONOFF_DUALR3 = Kind(
                   160, 161, 0, 0, 0, 0, 0, 0),
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",
-    product_model_decides=True,
     # A real one's boot log: laid out as the TH Elite is, not as the POW Elite.
     layout="sonoff-th-elite",
-    example_product_model="DUALR3",
     has_meter=True,
+    has_relay=True,
+    product_model_decides=True,
+    example_product_model="DUALR3",
 )
 
 
@@ -491,6 +513,9 @@ def _sonoff_m5(gang: int, gpio: tuple[int, ...]) -> Kind:
         tasmota_gpio=gpio,
         esphome_legacy_setup_prefix="",
         esphome_legacy_prefix="",
+        layout="sonoff-dual-ota",
+        has_meter=False,
+        has_relay=True,
         product_model_decides=True,
         example_product_model=f"M5-{gang}C-120",
     )
