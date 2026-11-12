@@ -294,9 +294,17 @@ A run to OpenBeken ends there. For **ESPHome**:
 
 ## At the end
 
-On an Espressif device converted to Tasmota, the tool reads back four parts of
-the device's memory, calculates a fingerprint of each, and compares it with
-the file that part came from:
+Every run that converts a device, on either chip family, ends by switching its
+relay to the other state and back, reading the meter after each, through the
+firmware now on it: Tasmota, OpenBeken or ESPHome, or eWeLink for Sonoff's own.
+Whatever is plugged in is switched for a few seconds, and the device ends as
+it started. The report says whether the relay switched.
+
+A Beken device's bootloader checks each new firmware's checksum before it
+installs it, and the tool reads nothing back. On an Espressif device converted
+to Tasmota, the tool also reads back four parts of the device's memory,
+calculates a fingerprint of each, and compares it with the file that part came
+from:
 
 - the bootloader
 - the memory layout table
@@ -324,7 +332,8 @@ alone. Two things do not:
   the filesystem can now write over it in the same way.
 
 Either way, your backup or your eWeLink account can still take the device
-back to Sonoff's firmware.
+back to Sonoff's firmware. (Tasmota does not run on a Beken device, so none
+of this applies there.)
 
 ## Changing firmware later
 
@@ -370,9 +379,9 @@ the first half, checks them, and switches to them.
   installs ESPHome's bootloader, so that every device the tool converts ends
   with the same one.
 - **A device whose layout puts its first app slot too near Tasmota** (the TH
-  Elite and Dual R3) has no room for the mover there. Its mover goes where the
-  S60's does, under a temporary layout table with the first app slot moved
-  there. The second slot is in the same place in both, so the full Tasmota
+  Elite and Dual R3) has no room for the mover there. Its mover goes where
+  it goes on Sonoff's usual layout, under a temporary layout table with the
+  first app slot moved there. The second slot is in the same place in both, so the full Tasmota
   runs from that and writes the device's own layout table, last, as before.
 - **A device left part way** - running the mover, the startup firmware or the
   full Tasmota on Sonoff's layout - is recognised when you run the tool again,
@@ -397,9 +406,9 @@ else from a public copy the tool knows by its hash.
 On either, the tool signs in to your eWeLink account for this if the run has
 not yet.
 
-Sonoff's firmware is offered either way. Once you choose it, and before
-anything is written, the tool finds where the identity will come from. On
-Tasmota it reads the one the device keeps, or else signs in to your eWeLink
+On an Espressif device, Sonoff's firmware is offered either way. Once you
+choose it, and before anything is written, the tool finds where the identity
+will come from. On Tasmota it reads the one the device keeps, or else signs in to your eWeLink
 account; with neither, it stops there. From ESPHome the kept identity can be
 read only part way through, so the tool checks your account and otherwise
 counts on the one every device this tool converted keeps. If there is none
@@ -410,9 +419,14 @@ Sonoff's firmware then starts with its own settings: names, timers and energy
 history start afresh, and the meter's factory calibration comes back only
 with the backup.
 
+On a Beken device there is nothing to find or put together: no conversion
+writes to the store Sonoff's firmware keeps its identity, Wi-Fi and meter
+calibration in, so Sonoff's firmware reads them from there as before. The
+tool then waits for the device to be back in your eWeLink account.
+
 ### Keeping a firmware, or updating it
 
-**Tasmota, kept.** On Tasmota, the tool also offers to keep it
+**Tasmota, kept.** On Tasmota, which runs on Espressif devices only, the tool also offers to keep it
 (`--firmware tasmota` chooses that in advance). That changes only the meter,
 which the tool calibrates as step 10 does if it is not calibrated already (on
 a device converted before the tool did that, say). A meter calibrated by hand,
@@ -431,9 +445,9 @@ tool offers the release it installs (`--firmware esphome` chooses it in
 advance), sent as Home Assistant would send an update, with your Wi-Fi read
 from the device and written in. ESPHome
 writes it into the half of its memory it is not running from and starts it,
-keeping its settings. On an S60, a power cut before the new release has run
-for a minute takes the device back to the release it had, so the tool waits
-that minute out. The device reports its release, and when it was built,
+keeping its settings. On an Espressif device, a power cut before the new
+release has run for a minute takes the device back to the release it had, so
+the tool waits that minute out. The device reports its release, and when it was built,
 through its native API.
 
 A device adopted into an ESPHome dashboard, with an encryption key or
@@ -457,8 +471,8 @@ layout.
 ### Passwords and encryption keys
 
 If your device's firmware has a password - a Tasmota web password, or an
-ESPHome update password or web login, set in Home Assistant, say - the tool
-asks for it: a web password or login when it finds the device, ESPHome's
+ESPHome update password or web login, set in Home Assistant, say, on either
+chip family - the tool asks for it: a web password or login when it finds the device, ESPHome's
 update password before the go-ahead to leave ESPHome. If you have removed the
 password on the device meanwhile, choose to try again without one. Each try is
 checked on the device before anything is written. A password you type is held
@@ -480,19 +494,20 @@ lists.
 
 ### The Wi-Fi signal
 
-On Tasmota, the tool reads the Wi-Fi signal first, before anything is
-changed. On ESPHome it also reads it before anything is written: from its
-Wi-Fi signal sensor, which this project's ESPHome has, or else from what
-ESPHome prints of its configuration when asked through its native API
-(encrypted, with its key, where it has one). On an ESPHome that gives neither,
-the tool reads the signal once the full Tasmota is running, as the startup
-firmware cannot report it either.
+Whatever the device runs, the tool reads its Wi-Fi signal before anything is
+written. Tasmota and OpenBeken report it when asked. ESPHome reports it from
+its Wi-Fi signal sensor, which this project's ESPHome has, or else from what
+it prints of its configuration when asked through its native API (encrypted,
+with its key, where it has one). On an Espressif device whose ESPHome gives
+neither, the tool reads the signal once the full Tasmota is running, as the
+startup firmware cannot report it either.
 
 ## Safety, and why you can believe the checks
 
 - **Nothing is trusted.** Every firmware file is checked against a known
-  fingerprint before use, and the finished device is read back and compared
-  with the official release.
+  fingerprint before use. An Espressif device converted to Tasmota is read
+  back and compared with the official release; a Beken device's bootloader
+  checks each firmware's checksum before installing it.
 - **The risky step needs you to type PROCEED**, not a y/n, below a warning
   that spells out the risk.
 - **The device checks too.** Every stage that writes refuses to run unless the
