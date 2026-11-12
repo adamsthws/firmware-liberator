@@ -43,7 +43,7 @@ for key, value in {"product_model": "S60TPF", "stock_version": "1.2.0", "device_
     state.set_input(key, value)
 ctx = SimpleNamespace(state=state, last_failure="", last_failed_step="", args=SimpleNamespace())
 with mock.patch.object(upload, "QUEUE", queue), mock.patch.object(upload, "PROOF_BITS", bits):
-    ctx.report_id = "0123456789abcdef0123456789abcdef"
+    ctx.report_id = "0123456789abcdef"
     ctx.report_work = upload.start_work(ctx.report_id)
     upload.send(ctx, "converted", 300, False, {"Relay": "switches (meter confirms)"}).join(120)
 print(json.dumps({"kept": sorted(path.name for path in queue.glob("*.json"))}))
@@ -66,7 +66,7 @@ test("a run's report, as the tool makes and sends it, is taken by the Worker and
     const { kept } = runTool(queue, `http://127.0.0.1:${port}/v1/reports`);
     assert.deepEqual(kept, [], "nothing left to send");
     const log = fs.readFileSync(path.join(folder, "requests.log"), "utf8");
-    assert.match(log, /POST \/v1\/reports \d+ -> 200 \{"accepted":\["0123456789abcdef0123456789abcdef"\]/);
+    assert.match(log, /POST \/v1\/reports \d+ -> 200 \{"accepted":\["0123456789abcdef"\]/);
   } finally {
     child.kill();
     fs.rmSync(folder, { recursive: true, force: true });
@@ -78,10 +78,10 @@ test("with no API to answer, the report is kept, its work done, to send at the n
   const queue = fs.mkdtempSync(path.join(os.tmpdir(), "autoflash-reports-"));
   try {
     const { kept } = runTool(queue, "http://127.0.0.1:9/reports");
-    assert.deepEqual(kept, ["0123456789abcdef0123456789abcdef.json"]);
+    assert.deepEqual(kept, ["0123456789abcdef.json"]);
     const item = JSON.parse(fs.readFileSync(path.join(queue, kept[0]), "utf8"));
     assert.match(item.proof, /^\d+:\d+$/);
-    assert.equal(item.report.id, "0123456789abcdef0123456789abcdef");
+    assert.equal(item.report.id, "0123456789abcdef");
   } finally {
     fs.rmSync(queue, { recursive: true, force: true });
   }

@@ -54,7 +54,8 @@ export const REPORT_PROOF_AGE = 31 * 86400;
 export const WANTED_COUNTED = 2000;
 const MODEL = new RegExp(schema.properties.model.pattern);
 
-const ID = /^[0-9a-f]{32}$/;
+// A report's ID, as the schema has it (report_upload.REPORT_ID_BYTES).
+export const ID = new RegExp(schema.properties.id.pattern);
 
 // Who named `model`, as model_senders keeps it: a keyed hash (SENDER_KEY) of
 // the model and the sender's address, one a model, so nothing ties one

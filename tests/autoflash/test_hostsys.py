@@ -987,10 +987,16 @@ class ClipboardTests(unittest.TestCase):
             with mock.patch.object(hostsys, "IS_WINDOWS", False), mock.patch.object(hostsys, "IS_MAC", False), \
                     mock.patch.object(hostsys.shutil, "which",
                                       side_effect=lambda name: str(tool) if name == "xclip" else None), \
-                    mock.patch.dict(hostsys.os.environ, {"PATH": f"{tmp}:/usr/bin:/bin"}):
+                    mock.patch.dict(hostsys.os.environ, {"PATH": f"{tmp}:/usr/bin:/bin", "AUTOFLASH_NO_CLIPBOARD": ""}):
                 started = time.monotonic()
                 self.assertTrue(hostsys.copy_to_clipboard("the report"))
             self.assertLess(time.monotonic() - started, 3)
+
+    def test_none_where_told_to_leave_the_clipboard_alone(self):
+        with mock.patch.dict(hostsys.os.environ, {"AUTOFLASH_NO_CLIPBOARD": "1"}), \
+                mock.patch.object(hostsys.subprocess, "run") as ran:
+            self.assertFalse(hostsys.copy_to_clipboard("the report"))
+        ran.assert_not_called()
 
 
 if __name__ == "__main__":

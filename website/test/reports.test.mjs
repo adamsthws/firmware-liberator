@@ -25,7 +25,7 @@ function proofFor(id, time = NOW.getTime() / 1000, bits = BITS) {
 
 // A report as the tool makes it, with a fresh id and its proof.
 function report(changes = {}, proofTime) {
-  const id = changes.id ?? randomBytes(16).toString("hex");
+  const id = changes.id ?? randomBytes(8).toString("hex");
   const made = { ...structuredClone(FIXTURE), ...changes, id };
   return { ...made, proof: changes.proof ?? proofFor(id, proofTime) };
 }
@@ -422,7 +422,7 @@ test("what everyone's day has no room for is given back to the sender's", async 
 // A readout's report, each device's as its readout ends ("kind": "readout").
 const READOUT = JSON.parse(readFileSync(new URL("./fixtures/reports.json", import.meta.url), "utf8")).readoutValid[0];
 function readoutReport(changes = {}) {
-  const id = changes.id ?? randomBytes(16).toString("hex");
+  const id = changes.id ?? randomBytes(8).toString("hex");
   return { ...structuredClone(READOUT), ...changes, id, proof: changes.proof ?? proofFor(id) };
 }
 

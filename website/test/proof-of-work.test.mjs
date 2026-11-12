@@ -6,11 +6,11 @@ import { bodySubject, proven, reportSubject } from "../api/proof-of-work.js";
 const NOW = 1794000000;
 const BITS = 12;
 const AGE = 60;
-const REPORT_ID = "0123456789abcdef0123456789abcdef";
+const REPORT_ID = "0123456789abcdef";
 
 // Made by the tool (tests/autoflash/test_proof_of_work.py, VECTORS).
 const vectors = async () => [
-  [reportSubject(REPORT_ID), "1794000000:198"],
+  [reportSubject(REPORT_ID), "1794000000:4905"],
   [await bodySubject(new TextEncoder().encode("readout")), "1794000000:2293"],
 ];
 
