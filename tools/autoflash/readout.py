@@ -247,6 +247,8 @@ def end(ctx: Context, said: str, failed: bool = False) -> None:
     below = [*report_devices(done), *([(report.REPORT_ID, sent[0])] if len(done) == 1 and sent else [])]
     for line in report.report_screen(report_fields(done), right=REPORT_RIGHT, below=below, balance=False):
         output.tell(line)
+    report.copy_report(report.report_screen(report_fields(done), report.CLIPBOARD_COLUMNS, right=REPORT_RIGHT,
+                                            below=below, balance=False))
     if failed:
         report.ask_for_an_issue(next((item.report_id for item in done if item.outcome in (FAILED, CRASHED)), None))
     else:

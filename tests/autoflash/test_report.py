@@ -494,6 +494,20 @@ class StoppedRunIssueTests(RouteTestCase):
         row = next(line for line in lines if isinstance(line, str) and "Report ID:" in line)
         self.assertEqual(row.split(), ["Report", "ID:", "0123456789abcdef0123456789abcdef"])   # whole, on one row
 
+    def test_every_run_puts_its_report_on_the_clipboard_and_says_so(self):
+        ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
+        ctx.last_failure, ctx.last_failed_step = "the device did not answer within 30s", ""
+        ctx.run_started, ctx.run_resumed = time.monotonic(), False
+        copied = []
+        with mock.patch.object(hostsys, "copy_to_clipboard", side_effect=lambda text: copied.append(text) or True):
+            lines = self.ended(ctx, "failed")
+        self.assertTrue(copied[0].startswith("Result: Stopped at stage"), copied[0])   # in full, as the screen has it not
+        self.assertIn("\nLiberator:", copied[0])   # the report as shown, its margin taken off
+        told = lines.index("This report is on your clipboard, ready to paste.")
+        self.assertLess(told, lines.index("If it should not have stopped, please open an issue here:"))
+        with mock.patch.object(hostsys, "copy_to_clipboard", return_value=False):
+            self.assertNotIn("This report is on your clipboard, ready to paste.", self.ended(ctx, "failed"))
+
     def test_a_run_that_worked_shows_no_log_even_of_a_kind_wanting_testers(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-powct")
         lines = []

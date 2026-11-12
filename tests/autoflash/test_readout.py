@@ -1273,6 +1273,15 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn("Nothing was read out.", shown, "its FAILED line says how it ended")
         self.assertEqual(next(line for line in shown if "BASICR4" in line).split(), ["Failed:", "BASICR4", "1.1.0"])
 
+    def test_its_report_goes_on_the_clipboard_too(self):
+        copied = []
+        with mock.patch.object(report.hostsys, "copy_to_clipboard",
+                               side_effect=lambda text: copied.append(text) or True):
+            shown = self.shown_by_end(self.DONE)
+        self.assertIn("Accepted:   BASICR4 1.1.0", copied[0])
+        self.assertFalse(copied[0].startswith(" "), "its margin taken off")
+        self.assertIn("This report is on your clipboard, ready to paste.", shown)
+
     def test_one_that_read_nothing_out_says_so_above_its_report(self):
         shown = self.shown_by_end(self.DONE[2:])
         self.assertIn("Nothing was read out.", shown)

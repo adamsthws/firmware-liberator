@@ -51,8 +51,10 @@ def refuse(sock: socket.socket, address: object) -> None:
 def install() -> None:
     """Refuse every connection beyond loopback from here on, once; and have
     the tool send no report of a run (tools/autoflash/report_upload.py), nor
-    start the work for one, where a test runs it."""
+    start the work for one, nor put anything on the clipboard of whoever runs
+    the tests (hostsys.copy_to_clipboard), where a test runs it."""
     os.environ["AUTOFLASH_NO_REPORT"] = "1"
+    os.environ["AUTOFLASH_NO_CLIPBOARD"] = "1"
     if getattr(socket.socket, "no_network", False):
         return
     connect, connect_ex, sendto, run = (socket.socket.connect, socket.socket.connect_ex, socket.socket.sendto,

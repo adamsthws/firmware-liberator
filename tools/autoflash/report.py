@@ -27,6 +27,9 @@ if TYPE_CHECKING:
 # report's id after it, a new issue naming that report
 # (tools/repo/cloudflare_settings.py, ISSUES).
 ISSUES_URL = "https://firmwareliberator.com/issues"
+# The width the report is laid out at on the clipboard (copy_report), so one
+# pasted anywhere reads the same, whatever window it came from.
+CLIPBOARD_COLUMNS = 100
 # The label of the report's id, under the rest of the report on the screen:
 # someone pasting the report into an issue names it, and it is in the issue's
 # address a failed run shows.
@@ -591,6 +594,17 @@ def issue_url(report_id: str | None) -> str:
     return f"{ISSUES_URL}/{report_id}" if report_id else ISSUES_URL
 
 
+def copy_report(lines: list[str], result: str | None = None) -> None:
+    """Every run's report, a conversion's or a readout's, finished or not, on
+    the clipboard as shown (`lines`, laid out CLIPBOARD_COLUMNS wide), and
+    said so: to paste into an issue or wherever it is shared. A conversion's
+    starts with its `result` in full, which its screen says above it."""
+    text = textwrap.dedent("\n".join(lines)).strip("\n") + "\n"
+    if hostsys.copy_to_clipboard((f"Result: {result}\n" if result else "") + text):
+        output.tell("")
+        output.tell("This report is on your clipboard, ready to paste.")
+
+
 def ask_for_an_issue(report_id: str | None = None) -> None:
     """Where the links to support the project would be, for a run that failed
     or crashed - not one stopped by choice: the way to open an issue, naming
@@ -615,8 +629,10 @@ def offer_report(ctx: Context, fields: list[tuple[str, str]], stopped: str | Non
         if label in LOG_ONLY:
             output.log_only(f"    {label}: {value}")
     report_id = getattr(ctx, "last_report_id", None)
-    for line in report_screen([(label, value) for label, value in fields if label not in LOG_ONLY],
-                              below=[(REPORT_ID, report_id)] if report_id else ()):
+    shown = [(label, value) for label, value in fields if label not in LOG_ONLY]
+    below = [(REPORT_ID, report_id)] if report_id else []
+    for line in report_screen(shown, below=below):
         output.tell(line)
+    copy_report(report_screen(shown, CLIPBOARD_COLUMNS, below=below), dict(fields).get("Result"))
     if stopped:
         ask_for_an_issue(report_id)

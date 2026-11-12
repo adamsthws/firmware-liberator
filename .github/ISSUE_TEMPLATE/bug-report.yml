@@ -17,7 +17,8 @@ body:
     id: run_report
     attributes:
       label: The run's report
-      description: The report the tool showed at the end of the run, copied from the screen.
+      description: The report the tool showed at the end of the run. It is put on your clipboard for you to paste here.
+      render: text
   - type: textarea
     id: what
     attributes:

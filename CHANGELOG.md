@@ -325,7 +325,9 @@ as its screens do, since it converts much more than smart plugs now.
   support the project; one you stop yourself does not. A readout that failed
   does the same under its report, which says "Failed". A run that worked no
   longer says where its log is, a device wanting testers' included. The report
-  on the screen ends with its ID, for an issue to name it. The end of a run no longer asks for its report to be posted in
+  on the screen ends with its ID, for an issue to name it, and every run's
+  report, a conversion's or a readout's, finished or not, is put on the
+  clipboard to paste, and the run says so. The end of a run no longer asks for its report to be posted in
   Discussions, nor links to them when a run fails.
 - The names of what the tool keeps say "device" too. Each device's records
   are in `captures/devices/<MAC>/`, with `device.json`, where releases up to

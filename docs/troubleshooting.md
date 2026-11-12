@@ -18,7 +18,7 @@ beside it.
 [issue](https://github.com/adamsthws/firmware-liberator/issues/new?template=bug-report.yml)
 for it, so the fix helps everyone after you. When a run fails, the tool ends
 with where to open one, [firmwareliberator.com/issues](https://firmwareliberator.com/issues),
-and where its log is. The log is safe to share: it writes what identifies
+and where its log is; its report, as every run's, is on your clipboard to paste in. The log is safe to share: it writes what identifies
 you, your network or your device as `<email>`, `<wifi-name>`, `<device-id>`
 and so on. To ask a question, start a
 [discussion](https://github.com/adamsthws/firmware-liberator/discussions) of

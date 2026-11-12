@@ -788,7 +788,11 @@ def wifi_menu_hint() -> str:
 
 
 def copy_to_clipboard(text: str) -> bool:
-    """Put `text` on the clipboard.  False when no clipboard tool is available."""
+    """Put `text` on the clipboard.  False when no clipboard tool is available,
+    or AUTOFLASH_NO_CLIPBOARD is set: the tests' (tests/no_network.py), or
+    anyone's who would rather the tool left their clipboard alone."""
+    if os.environ.get("AUTOFLASH_NO_CLIPBOARD"):
+        return False
     if IS_WINDOWS:
         candidates = [["clip"]]
     elif IS_MAC:
