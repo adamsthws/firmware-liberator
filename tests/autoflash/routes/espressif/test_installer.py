@@ -149,6 +149,24 @@ class BackOnSonoffTests(unittest.TestCase):
         sent = ["Upgrade command sent with owner-controlled private-LAN URLs."]
         self.assertEqual(self.advice(sent, downloaded_from="192.0.2.10", listen_ip="192.0.2.11"), "FIREWALL")
 
+    def test_a_device_busy_with_an_update_cut_off_is_to_be_switched_off_and_on(self):
+        # The Beken S61 answers so (error 410); the S60 leaves eWeLink instead.
+        advice = self.advice(["Cloud: upgrade command rejected (error 410)"])
+        self.assertIn("still busy with an update", advice)
+        self.assertIn("switch the device off and on", advice)
+
+    def test_what_a_switch_off_and_on_would_fix(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        for said, downloaded_from, expected in ((["rejected (error 410)"], None, True),
+                                                (["Device is offline in eWeLink; refusing"], None, True),
+                                                (["Upgrade command sent"], "192.0.2.10", True),
+                                                (["Upgrade command sent"], None, False)):
+            state = SimpleNamespace(input=lambda key, d=downloaded_from: d if key == installer.DOWNLOADED_FROM else None)
+            ctx = SimpleNamespace(state=state, listen_ip=lambda: "192.0.2.10")
+            with mock.patch.object(output, "tool_said", side_effect=lambda text, s=said: any(text in x for x in s)):
+                self.assertIs(installer.needs_power_cycle(ctx), expected, said)
+
     def test_offline_and_cut_off_sends_keep_their_own_advice(self):
         self.assertIn("eWeLink does not see the device", self.advice(["Device is offline in eWeLink; refusing"]))
         self.assertIn("stopped part way", self.advice(["Served /user1.bin"], started=True))
@@ -967,7 +985,7 @@ class BridgeInfoTests(unittest.TestCase):
 class DeliveryPortTests(unittest.TestCase):
     """The bridge is served on 8088 unless something else has it."""
 
-    def run_bridge(self, busy, sends=1):
+    def run_bridge(self, busy, sends=1, codes=(0,)):
         from types import SimpleNamespace
         from unittest import mock
         with tempfile.TemporaryDirectory() as directory:
@@ -988,7 +1006,7 @@ class DeliveryPortTests(unittest.TestCase):
                                    lambda c: opened.append(firewall.firewall_ports(c))), \
                  mock.patch.object(prompts, "warning_box"), \
                  mock.patch.object(prompts, "require_word", return_value=True) as asked, \
-                 mock.patch.object(hostsys, "run_tool", return_value=0) as run_tool, \
+                 mock.patch.object(hostsys, "run_tool", side_effect=list(codes) * sends) as run_tool, \
                  mock.patch.object(output, "say"):
                 try:
                     for _ in range(sends):
@@ -1003,6 +1021,25 @@ class DeliveryPortTests(unittest.TestCase):
                 # Lifted here, under this root: its record says so.
                 self.assertTrue((root / "captures" / ".safety-locks" / "RECOVERY_LOCK.guard").exists())
             return port, opened, state.input("delivery_port"), error
+
+    def test_not_delivered_for_want_of_a_switch_off_and_on_it_is_asked_for_and_sent_again(self):
+        # As the Beken route's B2 asks (arrival.power_cycle), counted for the report.
+        from unittest import mock
+        with mock.patch.object(installer, "evidence_bridge_installed", return_value=(False, "")), \
+                mock.patch.object(installer, "needs_power_cycle", return_value=True), \
+                mock.patch.object(installer, "bridge_failure_advice", return_value=["switch it off and on"]), \
+                mock.patch.object(output, "tool_problems", return_value=[]), \
+                mock.patch.object(installer.arrival, "power_cycle") as asked, \
+                mock.patch.object(installer.arrival, "online_in_ewelink", return_value=True):
+            self.run_bridge(busy=set(), codes=(1, 0))
+        asked.assert_called_once()
+        self.assertIn("seconds", self.result)
+        with mock.patch.object(installer, "evidence_bridge_installed", return_value=(False, "")), \
+                mock.patch.object(installer, "needs_power_cycle", return_value=True), \
+                mock.patch.object(prompts, "UNATTENDED", True), mock.patch.object(prompts, "section"), \
+                mock.patch.object(installer.arrival, "power_cycle") as asked:
+            self.assertEqual(self.run_bridge(busy=set(), codes=(1,))[3], "bridge delivery failed")
+        asked.assert_not_called()   # unattended: it stops, saying to
 
     def test_sent_again_in_the_same_run_the_go_ahead_is_not_asked_again(self):
         # The device back on Sonoff's firmware after a power cut, the installer is

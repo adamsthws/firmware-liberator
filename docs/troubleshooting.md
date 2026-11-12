@@ -222,6 +222,14 @@ looks for the installer on your network, then for its
 either. If your computer's Wi-Fi is off it cannot look for that network; turn
 it on and run again.
 
+**Asked to switch the device off and on before anything is installed**
+
+The first send did not reach the device, or it turned it down, in a way only a
+restart fixes: an update cut off part way earlier still holds it, or has left
+it away from eWeLink. It keeps its Sonoff firmware. Switch it off and on at
+the socket, choose to send it again, and the tool waits for eWeLink to show it
+online first.
+
 **"Device model is ..., not one this tool converts"**
 
 Another Sonoff on the same account answered, and the tool stopped before
