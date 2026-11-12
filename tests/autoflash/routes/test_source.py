@@ -1,6 +1,7 @@
 """What the device runs when a run starts, whatever its family
 (tools/autoflash/routes/source.py): found by address or by a search of the
 network, waited for if it may be restarting, and unlocked if it asks."""
+import contextlib
 import tempfile
 import time
 import unittest
@@ -353,6 +354,25 @@ class DiscoverySearchTests(FirmwareSearchCase):
             self.assertEqual(source.find_current_firmware(self.ctx()), "tasmota")
         self.assertEqual(searched, ["192.0.2.110"])   # local_ip_towards: the default network
         lan.assert_not_called()
+
+    def test_it_looks_with_the_stages_spinner_turning(self):
+        # Seen: "Looking for supported devices on your network..." still for
+        # its 5-10 s, as if nothing were happening.
+        waits = []
+
+        def search(near, **_):
+            waits.append(("searched", near))
+            return self.found()
+
+        @contextlib.contextmanager
+        def working(text):
+            waits.append(text)
+            yield
+        with mock.patch.object(prompts, "UNATTENDED", True), \
+                mock.patch.object(output, "working", working), \
+                mock.patch.object(detect, "converted_devices", side_effect=search):
+            self.assertEqual(source.find_current_firmware(self.ctx()), "tasmota")
+        self.assertEqual(waits, ["Looking for supported devices on your network...", ("searched", "192.0.2.110")])
 
     def test_the_other_networks_are_read_once_however_often_it_looks(self):
         looks = []

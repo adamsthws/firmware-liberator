@@ -79,10 +79,6 @@ def find_current_firmware(ctx: Context) -> str:
                 running = espressif_source.esphome_safe_mode(ctx, running)
             return espressif_source.past_the_commit(ctx, running)
         return "sonoff"
-    # On screen while it looks - 5-10 s, before any stage line and its clock -
-    # and taken off again once it has looked.
-    output.transient_begin()
-    output.tell("Looking for supported devices on your network...")
     known = known_macs()
     # The network this computer's internet goes through first; its other
     # Ethernet and Wi-Fi networks, read once, only if no device is there.
@@ -99,17 +95,18 @@ def find_current_firmware(ctx: Context) -> str:
     def open_ones(found: list[detect.Found]) -> list[detect.Found]:
         return [device for device in found if device.firmware not in unlock.LOCKED]
 
-    found = search()
+    # On screen while it looks - 5-10 s, before any stage line and its clock -
+    # with the stages' spinner, and taken off again once it has looked.
+    with output.working("Looking for supported devices on your network..."):
+        found = search()
     if not open_ones(found) and converted_here(ctx):
         # A device this computer converted, or left part way, may be restarting -
         # a run stopped and started again at once finds it mid-restart.
-        output.tell("    None answered. One this computer converted may be restarting: looking "
-            f"again for up to {RESTART_GRACE:.0f} seconds...")
-        started = time.monotonic()
-        while not open_ones(found) and time.monotonic() - started < RESTART_GRACE:
-            time.sleep(5)
-            found = search()
-    output.transient_end()
+        with output.working(f"None answered: looking again for {RESTART_GRACE:.0f} s, in case one is restarting..."):
+            started = time.monotonic()
+            while not open_ones(found) and time.monotonic() - started < RESTART_GRACE:
+                time.sleep(5)
+                found = search()
     # A Tasmota with a web password, or an ESPHome with a web login, says
     # whether it is a device this tool converts only once given it: offered,
     # and it asked for if chosen, when someone can type it.
