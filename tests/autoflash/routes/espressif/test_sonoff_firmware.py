@@ -100,25 +100,15 @@ class SonoffFirmwareTests(unittest.TestCase):
             self.assertEqual(sonoff_firmware.offered(ctx, IDENTITY), b"file")
         self.assertEqual(tokens, ["old", "new"])
 
-    def test_else_the_newest_public_copy_for_the_device(self):
-        listed = ["SONOFF_S60TPG-UK_(FWSW-E32S60-S60-ESP32C3FN4)_ESP32-C3_v1.1.0_user1.bin",
-                  "SONOFF_S60TPG-UK_(FWSW-E32S60-S60-ESP32C3FN4)_ESP32-C3_v1.2.0_user1.bin",
-                  "SONOFF_POWR316D_(FWSW-E32POWP-POWPRO-ESP32D0WDV3)_ESP32_v2.0.0_user1.bin"]
-        with mock.patch.object(sonoff_firmware.firmware_name, "public_files", return_value=listed), \
-                mock.patch.object(sonoff_firmware, "fetch", return_value=b"file") as fetched:
-            self.assertEqual(sonoff_firmware.public(kinds.SONOFF_S60), b"file")
-        self.assertTrue(fetched.call_args.args[0].endswith("ESP32-C3_v1.2.0_user1.bin"))
-        self.assertIn(sonoff_firmware.firmware_name.PUBLIC_COMMIT, fetched.call_args.args[0])
-
     def test_the_stub_is_all_a_run_against_it_reaches(self):
         ctx = SimpleNamespace(ewelink=Account(mock.Mock(side_effect=EwelinkError("not reached"))))
         layout = images.layout_of(kinds.SONOFF_S60)
         with mock.patch.dict("os.environ", {"AUTOFLASH_EWELINK_API_BASE": "https://apia.example.test"}), \
-                mock.patch.object(sonoff_firmware, "public", side_effect=AssertionError("not reached")):
+                mock.patch.object(sonoff_firmware.public_copies, "fetch", side_effect=AssertionError("not reached")):
             with self.assertRaisesRegex(sonoff_firmware.FirmwareError, "could not be fetched"):
                 sonoff_firmware.official_app(ctx, kinds.SONOFF_S60, IDENTITY, layout)
         with mock.patch.dict("os.environ", {"AUTOFLASH_EWELINK_API_BASE": ""}), \
-                mock.patch.object(sonoff_firmware, "public", return_value=self.wrapped()), \
+                mock.patch.object(sonoff_firmware.public_copies, "fetch", return_value=self.wrapped()), \
                 mock.patch.object(sonoff_firmware.output, "log_only") as logged:
             app, where = sonoff_firmware.official_app(ctx, kinds.SONOFF_S60, IDENTITY, layout)
         self.assertEqual((app, where), (SONOFF_APP, "the public copy of Sonoff's update file (FlashDumps)"))
@@ -129,7 +119,7 @@ class SonoffFirmwareTests(unittest.TestCase):
         # cli.py --simulate-no-sonoff-firmware: nothing asked of eWeLink or the public copy.
         ctx = SimpleNamespace(ewelink=Account(mock.Mock(side_effect=AssertionError("not asked"))))
         with mock.patch.object(sonoff_firmware, "SIMULATE_NONE", True), \
-                mock.patch.object(sonoff_firmware, "public", side_effect=AssertionError("not asked")), \
+                mock.patch.object(sonoff_firmware.public_copies, "fetch", side_effect=AssertionError("not asked")), \
                 self.assertRaisesRegex(sonoff_firmware.FirmwareError, "could not be fetched"):
             sonoff_firmware.official_app(ctx, kinds.SONOFF_S60, IDENTITY, images.layout_of(kinds.SONOFF_S60))
 

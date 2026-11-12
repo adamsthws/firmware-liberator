@@ -52,6 +52,9 @@ NOTHING_TO_RUN: set[str] = set()
 # The Beken device whose public dump gives a rebuilt flash its bootloader,
 # radio data and settings (rebuilt_flash).
 REBUILT_FROM = "sonoff-s61"
+# That dump, as upstream BekenEmulator publishes it and beken-emu.sh dump
+# fetches it into folders.FIRMWARES, by its name and SHA-256.
+S61_DUMP = ("Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin", "0f858068b7b6c4107119e6afdf7a6eb05349234e726028602dbcf63b92ad6df3")
 # An Espressif device's two ways, each a final firmware then the other.
 ESPRESSIF_WAYS = (("tasmota", "esphome"), ("esphome", "tasmota"))
 
@@ -114,10 +117,9 @@ def check_public_dump(kind: kinds.Kind, instances: list[int]) -> int:
 
 
 def rebuilt(kind: kinds.Kind) -> bool:
-    """Whether a Beken device's check starts from a rebuilt flash: one with no
-    public dump of its own, but an official update file pinned."""
-    from tools.autoflash.routes.beken import images
-    return kind.key not in images.PUBLIC_DUMPS and kind.key in images.OFFICIAL_FILES
+    """Whether a Beken device's check starts from a rebuilt flash: any but the
+    S61, whose public dump it is rebuilt from."""
+    return kind.family == "beken" and kind.key != REBUILT_FROM
 
 
 def rebuilt_flash(kind: kinds.Kind) -> Path:
@@ -129,18 +131,17 @@ def rebuilt_flash(kind: kinds.Kind) -> Path:
     it is never older than what it is made from."""
     import hashlib
 
-    from tools.autoflash.errors import NothingWritten
-    from tools.autoflash.routes.beken import images
+    from tools.autoflash.routes import public_copies
     from tools.beken import rebuild_dump
     from tools.beken.emulator import folders
 
-    url, digest = images.PUBLIC_DUMPS[REBUILT_FROM]
-    dump = (images.DUMPS / url.rsplit("/", 1)[1]).read_bytes()
+    name, digest = S61_DUMP
+    dump = (folders.FIRMWARES / name).read_bytes()
     if hashlib.sha256(dump).hexdigest() != digest:
-        raise SystemExit(f"{images.DUMPS / url.rsplit('/', 1)[1]} is not the public dump this tool pins")
+        raise SystemExit(f"{folders.FIRMWARES / name} is not the public dump this tool pins")
     try:
-        flash = rebuild_dump.rebuild(dump, images.official_file(kind))
-    except NothingWritten as exc:
+        flash = rebuild_dump.rebuild(dump, public_copies.fetch(kind))
+    except public_copies.Unavailable as exc:
         raise SystemExit(f"{exc}.") from exc
     out = folders.REBUILT / f"{kind.key}.bin"
     out.parent.mkdir(parents=True, exist_ok=True)
