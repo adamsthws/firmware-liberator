@@ -74,7 +74,7 @@ Until now, the established way to flash a device was to open it, perform some so
 > (Done automatically and removed when the tool finishes).
 
 - **A supported device**
-> More coming soon.  
+> More coming soon: **[get an email as more devices are supported](https://firmwareliberator.com/notify)**.  
 > **[How you can help](#how-you-can-help)**: if your Sonoff isn't listed, the tool can read it out and send it in, so support for it can be added.
 
 | Status | Device | Models |

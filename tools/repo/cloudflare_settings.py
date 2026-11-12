@@ -161,10 +161,12 @@ RATE_LIMITS = [{
 FIREWALL_PHASE = "http_request_firewall_custom"
 # The paths and the methods each takes, as the API's description gives them
 # (website/api/openapi.json, which website/test/openapi.test.mjs holds the
-# Worker to): a POST from the tool, and for /confirm and /forget, opened from
-# the link in an email, a GET too.
+# Worker to): a POST from the tool; for /confirm and /forget, opened from the
+# link in an email, a GET too; and for /v1/notify the OPTIONS a browser asks
+# before the website's sign-up page posts to it.
 API_DESCRIPTION = ROOT / "website" / "api" / "openapi.json"
-API_METHODS = {path: tuple(method.upper() for method in ("get", "post", "put", "patch", "delete") if method in item)
+API_METHODS = {path: tuple(method.upper() for method in ("get", "post", "put", "patch", "delete", "options")
+                           if method in item)
                for path, item in json.loads(API_DESCRIPTION.read_text(encoding="utf-8"))["paths"].items()}
 API_PATHS = tuple(API_METHODS)
 

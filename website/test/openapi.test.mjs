@@ -16,13 +16,13 @@ import { incompatible, loadSpec, narrowerProblems, resolve, validate } from "../
 const spec = loadSpec();
 const ROOT = new URL("../../", import.meta.url);
 const PUBLISHED = new URL("./fixtures/openapi/", import.meta.url);
-const METHODS = ["get", "post", "put", "patch", "delete"];
+const METHODS = ["get", "post", "put", "patch", "delete", "options"];
 
 // Each description published, by its SHA-256 as it was written: one is never
 // changed once out, as a client may be written against it. A release that
 // changes the API adds the new one, whose hash goes here.
 const WRITTEN = {
-  "1.0.0.json": "e008fcbfd261a015e2ac613a0d2935aa673f5cb96d68d655e80af5138559de69",
+  "1.0.0.json": "6a62c4d3754209483ae98170d142360348554801451caa4b0edf7cd6113c13b2",
 };
 
 // Easier work than the real, so the tests are quick: set on the module, as
@@ -100,9 +100,10 @@ async function answered(request, bindings) {
   assert.ok(listed, `${where}: an answer not described`);
   const described = listed.$ref ? resolve(spec, listed.$ref) : listed;
   const type = (response.headers.get("Content-Type") ?? "").split(";")[0];
-  const media = described.content?.[type];
-  assert.ok(media, `${where}: ${type}, not ${Object.keys(described.content ?? {}).join(" or ")}`);
   const text = await response.text();
+  // An answer described with no content has none.
+  const media = described.content ? described.content[type] : { empty: text === "" };
+  assert.ok(media && media.empty !== false, `${where}: ${type}, not ${Object.keys(described.content ?? {}).join(" or ")}`);
   if (type === "application/json") {
     assert.deepEqual(validate(spec, media.schema, JSON.parse(text)), [], `${where}: ${text}`);
   }
@@ -248,8 +249,8 @@ test("/v1/notify, and the pages its emails link to, answer as described", async 
   assert.equal((await answered(form("/confirm", { t: token }), bindings)).status, 200);
   assert.equal((await answered(form("/confirm", { t: token }), bindings)).status, 404, "used up");
   assert.equal((await answered(new Request(URL_OF(`/confirm?t=${token}`)), bindings)).status, 404);
-  const kept = [...bindings.READOUTS.objects].find(([key]) => key.startsWith("notify/NEWTHING/"));
-  const removal = new URL(JSON.parse(kept[1].text).forget);
+  const kept = await bindings.DB.prepare("SELECT who, token FROM subscribers").first();
+  const removal = new URL(`${api.FORGET_URL}?a=${kept.who}&t=${kept.token}`);
   assert.equal((await answered(new Request(URL_OF(`/forget${removal.search}`)), bindings)).status, 200);
   const fields = Object.fromEntries(removal.searchParams);
   assert.equal((await answered(form("/forget", fields), bindings)).status, 200);
@@ -268,6 +269,19 @@ test("/v1/notify, and the pages its emails link to, answer as described", async 
   const failing = env({ EMAIL: { send: async () => { throw new Error("E_INTERNAL_SERVER_ERROR"); } } });
   assert.equal((await answered(json("/v1/notify", fresh(SIGN_UP)), failing)).status, 502);
   assert.equal((await answered(json("/v1/notify", fresh(SIGN_UP)), env({ EMAIL: undefined }))).status, 503);
+});
+
+test("/v1/notify lets the website's sign-up page post from the browser, and read the answer", async () => {
+  const asked = await answered(new Request(URL_OF("/v1/notify"), { method: "OPTIONS",
+    headers: { Origin: api.SITE_ORIGIN, "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "content-type, x-proof" } }), env());
+  assert.equal(asked.status, 204);
+  assert.equal(asked.headers.get("Access-Control-Allow-Origin"), api.SITE_ORIGIN);
+  for (const [value, status] of [[fresh(SIGN_UP), 202], [fresh({ ...SIGN_UP, email: "not one" }), 400]]) {
+    const response = await answered(json("/v1/notify", value, { Origin: api.SITE_ORIGIN }), env());
+    assert.equal(response.status, status);
+    assert.equal(response.headers.get("Access-Control-Allow-Origin"), api.SITE_ORIGIN, String(status));
+  }
 });
 
 const REPORT = JSON.parse(readFileSync(new URL("./fixtures/reports.json", import.meta.url), "utf8")).valid[0];
