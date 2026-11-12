@@ -246,10 +246,11 @@ RIGHT = ("Firmware", "From", "Model", "Backup", "Signal", "Checks")
 # Answers the run's log has, for the fault suites and someone helping, and the
 # screen does not: how the run ended, which the line above the report says
 # ("Conversion complete!", "FAILED: ..."), in full where it stopped; where an
-# identity came from, nothing the person needs; and whether the Wi-Fi was
-# typed or a setup network joined, which in every run anyone reported
-# neither was.
-LOG_ONLY = ("Result", "Identity", "Wi-Fi typed", "Setup network")
+# identity came from, nothing the person needs; whether the Wi-Fi was typed
+# or a setup network joined, which in every run anyone reported neither was;
+# and whether a Beken device was switched off and on, which the run asked of
+# the person itself.
+LOG_ONLY = ("Result", "Identity", "Wi-Fi typed", "Setup network", "Power cycled")
 # Columns each side needs at the least, else one column, as Markdown has it.
 SIDE = 34
 

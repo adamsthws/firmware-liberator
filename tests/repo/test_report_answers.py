@@ -103,11 +103,11 @@ class ReportAnswerTests(unittest.TestCase):
         self.assertEqual(said, dict(FIELDS)["Result"])   # the last run's, in full
         self.assertEqual(fault_suite.REPORT_RESULT.findall(f"Result: {said}\nExit code 2 - failed\n"), [said])
 
-    def test_the_identity_the_wi_fi_typed_and_a_setup_network_are_in_the_log_not_on_the_screen(self):
+    def test_what_the_person_does_not_need_is_in_the_log_alone(self):
         screen, log = shown(FIELDS, 100)
         self.assertNotIn("Identity", screen)
         self.assertEqual(fault_suite.REPORT_IDENTITY.findall(log), [dict(FIELDS)["Identity"]])
-        for label in ("Wi-Fi typed", "Setup network"):
+        for label in ("Wi-Fi typed", "Setup network", "Power cycled"):
             self.assertNotIn(label, screen)
             self.assertIn(f"    {label}: {dict(FIELDS)[label]}\n", log)
 
