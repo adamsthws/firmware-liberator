@@ -724,7 +724,8 @@ class MoverOwnNetworkTests(unittest.TestCase):
                 raise setup_network.SetupError(outcome)
 
         adopted = []
-        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda key: "12:34:56:ab:cd:ef"),
+        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda key: "12:34:56:ab:cd:ef",
+                                                    set_input=lambda key, value: None),
                               _wifi=("Home", "pw0"), wifi=lambda why=None: ("Home", "pw0"),
                               adopt_wifi=lambda ssid, pw: adopted.append((ssid, pw)))
         self.home_waits = 0

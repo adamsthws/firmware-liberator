@@ -192,6 +192,13 @@ check.
   is; the run stopped. The report says whether it had to be, on either family.
 - A Beken device whose ESPHome cannot join your Wi-Fi is given it through
   ESPHome's own network, as an Espressif device is.
+- The report sent says whether your computer joined a network the device
+  raised itself on either family, and now also when ESPHome or the mover was
+  set up through its own network; it said so only for an Espressif device's
+  installer or Tasmota. Each stage in it also says whether that was needed
+  there and why - the device never given your Wi-Fi details, given them but
+  not joining, or its settings lost - and how many times the device was
+  switched off and on during it, so a stage that keeps needing either shows.
 - A device that turns the first firmware down while an update cut off part way
   still holds it (eWeLink's error 410), or that has left eWeLink since, has you
   switch it off and on, then is sent it again once eWeLink shows it online, on

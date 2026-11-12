@@ -638,7 +638,7 @@ def configure_tasmota(ctx: Context) -> dict[str, Any]:
             route = "setup network"
             output.tell("    Official Tasmota did not join your Wi-Fi by itself, so it is set up")
             output.tell("    through its own network instead.")
-            join.configure_device_wifi(ctx, setup)
+            join.configure_device_wifi(ctx, setup, join.NOT_JOINED)
         else:
             route = "located"
             join.locate_device(ctx, setup=True)
@@ -739,7 +739,7 @@ def back_after_reset(ctx: Context, booted: str | None, uptime: int | None) -> No
             "off and on, then run this again")
     output.tell("    The device restarted without its Wi-Fi details - cut off just after the")
     output.tell("    reset, say - and raised its own network, so it is set up through that.")
-    join.configure_device_wifi(ctx, setup)
+    join.configure_device_wifi(ctx, setup, join.SETTINGS_LOST)
     ctx.device.wait_reachable(timeout=300)
 
 

@@ -1131,7 +1131,7 @@ class FallbackScreenTests(OutputTestCase):
                  mock.patch.object(setup_network, "send_wifi", return_value=("saved", "192.0.2.77")), \
                  mock.patch.object(join, "name_with_the_wifi"), \
                  mock.patch.object(time, "sleep"):
-                join.configure_device_wifi(ctx, "tasmota-5A3C1F-7340")
+                join.configure_device_wifi(ctx, "tasmota-5A3C1F-7340", join.NOT_GIVEN)
         screen, _ = self.run_with(io.StringIO(), False, body)
         for words in ("Join the device's setup network", "tasmota-5A3C1F-7340", "(open - no password)",
                       "stay on its network for about 20 seconds",
@@ -1165,7 +1165,7 @@ class FallbackScreenTests(OutputTestCase):
                  mock.patch.object(join, "name_with_the_wifi"), \
                  mock.patch.object(join, "setup_network_gone", return_value=gone), \
                  mock.patch.object(time, "sleep"):
-                join.configure_device_wifi(ctx, "tasmota-5A3C1F-7340")
+                join.configure_device_wifi(ctx, "tasmota-5A3C1F-7340", join.NOT_GIVEN)
                 self.asked = asked.called
         screen, _ = self.run_with(io.StringIO(), False, body)
         return sent, screen
@@ -1505,13 +1505,15 @@ class ReportTests(OutputTestCase):
         slept.assert_not_called()
 
     def test_a_report_gives_only_what_its_route_has(self):
-        # The Wi-Fi typed and a setup network joined are an Espressif route's.
-        espressif_only = ("Wi-Fi typed", "Setup network")
+        # The Wi-Fi typed is an Espressif route's; a device's own network
+        # joined, either family's.
         fields = dict(report.report_fields(self.ctx()))
-        self.assertTrue(all(label in fields for label in espressif_only))
+        self.assertIn("Wi-Fi typed", fields)
+        self.assertIn("Setup network", fields)
         s61 = self.ctx(device_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="sonoff")
         fields = dict(report.report_fields(s61))
-        self.assertFalse(any(label in fields for label in espressif_only))
+        self.assertNotIn("Wi-Fi typed", fields)
+        self.assertIn("Setup network", fields)
         self.assertEqual(fields["Model"], "S61STPF")
 
     def test_the_report_shows_retries_but_not_each_stages_time_or_how_long_the_device_was_busy(self):
@@ -1706,7 +1708,7 @@ class ReportTests(OutputTestCase):
 
     def test_fallbacks_and_unknown_models_are_reported_as_such(self):
         ctx = self.ctx(product_model="", wifi_typed=True)
-        ctx.state.capture("F4.wifi_route", "setup network")
+        ctx.state.set_input(join.OWN_NETWORK, [join.NOT_JOINED])
         fields = dict(report.report_fields(ctx))
         self.assertEqual(fields["Model"], "__")
         self.assertEqual(fields["Wi-Fi typed"], "Yes")

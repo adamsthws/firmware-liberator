@@ -205,7 +205,7 @@ def device_back_on_wifi(ctx: Context) -> None:
         if setup:
             output.tell(f"    The device is not on your Wi-Fi: it is asking to be set up on {setup},")
             output.tell("    as Tasmota does when it has lost its settings - after a power cut, say.")
-            join.configure_device_wifi(ctx, setup)
+            join.configure_device_wifi(ctx, setup, join.SETTINGS_LOST)
         else:
             join.locate_device(ctx, setup=True)
     ctx.device.wait_reachable(timeout=120)
