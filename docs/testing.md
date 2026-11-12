@@ -946,7 +946,7 @@ otherwise it is:
 
 | Verdict | Means |
 |---|---|
-| FAIL-RESULT | it ended with another exit code, or its report another Result |
+| FAIL-RESULT | it ended with another exit code, or its report another Result (as the run's log has it: `result.txt`) |
 | FAIL-UNANSWERED | it stopped at a question no answer covers: new, or reworded |
 | FAIL-UNUSED | an answer was never typed: its question is no longer asked |
 | FAIL-QUESTION | something was wrong as a question was answered: no "(q to quit)" on it, a row the terminal wrapped itself, or a question shown twice (an earlier try left on the screen) |

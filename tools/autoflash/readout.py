@@ -192,13 +192,12 @@ def named(item: Became) -> str:
 
 
 def report_fields(done: list[Became]) -> list[tuple[str, str]]:
-    """The readout's report for the screen, as (label, value): how it ended,
-    the tool and this computer, and how many devices were read out, how many
-    the website accepted, how many it did not need, and how many were kept
-    unsent, where any were."""
+    """The readout's report for the screen, as (label, value): the tool and
+    this computer, and how many devices were read out, how many the website
+    accepted, how many it did not need, and how many were kept unsent, where
+    any were. How it ended is the line above it (end), and each device's
+    under it (report_devices)."""
     fields = [
-        ("Result", SAID[done[0].outcome] if len(done) == 1 else
-         "read out" if any(item.outcome in (ACCEPTED, KEPT) for item in done) else "nothing read out"),
         ("Liberator", __version__),
         ("OS", report.computer_description()),
         ("Python", report.python_description()),
@@ -214,11 +213,9 @@ def report_fields(done: list[Became]) -> list[tuple[str, str]]:
 
 def report_devices(done: list[Became]) -> list[tuple[str, str]]:
     """The devices under the report, as (label, value), as short as can be:
-    one by its model and firmware version; several listed under how each
-    ended, each model and version once however many were read out. What
-    else became of each is in the log."""
-    if len(done) == 1:
-        return [("Device", named(done[0]))]
+    each by its model and firmware version, under how it ended, each model and
+    version once however many were read out. What else became of each is in
+    the log."""
     listed = []
     for outcome, label in SAID.items():
         these = dict.fromkeys(named(item) for item in done if item.outcome == outcome)
@@ -234,8 +231,12 @@ def end(ctx: Context, said: str, failed: bool = False) -> None:
     open an issue in their place (report.ask_for_an_issue)."""
     done = readouts(ctx)
     output.tell("")
+    # How it ended, above the report, as a conversion's says: one that failed
+    # has its FAILED line above already.
     if any(item.outcome in (ACCEPTED, KEPT) for item in done):
         output.show("Readout complete!", output.GREEN)
+    elif not failed:
+        output.show("Nothing was read out.")
     if said:
         for line in said.splitlines():
             output.tell(line)
@@ -244,7 +245,7 @@ def end(ctx: Context, said: str, failed: bool = False) -> None:
     # alike, and the one that failed names the issue.
     sent = [item.report_id for item in done if item.report_id]
     below = [*report_devices(done), *([(report.REPORT_ID, sent[0])] if len(done) == 1 and sent else [])]
-    for line in report.report_screen(report_fields(done), right=REPORT_RIGHT, below=below):
+    for line in report.report_screen(report_fields(done), right=REPORT_RIGHT, below=below, balance=False):
         output.tell(line)
     if failed:
         report.ask_for_an_issue(next((item.report_id for item in done if item.outcome in (FAILED, CRASHED)), None))

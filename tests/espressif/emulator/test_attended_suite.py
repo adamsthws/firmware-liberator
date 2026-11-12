@@ -30,17 +30,17 @@ class JudgeTests(unittest.TestCase):
     SCENARIO = {"answers": [{"when": "Which firmware", "type": "1\r"}],
                 "expect": {"exit": 0, "result": "Converted"}}
 
-    def judge(self, raw, marks, code=0, scenario=None, answers=None):
+    def judge(self, raw, marks, code=0, scenario=None, answers=None, result="Converted"):
         scenario = scenario or self.SCENARIO
         answers = answers or [{"when": item["when"], "type": item["type"], "typed_at": marks[i:i + 1]}
                               for i, item in enumerate(scenario["answers"])]
-        return attended_suite.judge(scenario, raw, answers, code)
+        return attended_suite.judge(scenario, raw, answers, code, result=result)
 
     def test_a_run_as_it_should_be_passes(self):
         raw, marks = recording(" Stage 1 - Choosing the firmware - Underway\n\n     1. Tasmota\n",
                                f" Which firmware would you like {HINT}: ", "|", "1\n",
                                "\x1b[1F\x1b[2K" * 4, " Stage 1 - Choosing the firmware - Complete\n\n",
-                               "     Result:        Converted\n")
+                               " Conversion complete!\n")
         self.assertEqual(self.judge(raw, marks), [])
 
     def test_a_question_without_the_hint_or_shown_twice_is_a_question_fault(self):
@@ -67,10 +67,12 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(self.judge(b" done\r\n", [], scenario=scenario), [])
 
     def test_the_report_must_say_what_was_expected(self):
-        raw, _ = recording("     Result:        Put back on ESPHome                   Firmware: ESPHome\n")
+        raw, _ = recording(" Sonoff's firmware could not be put back, so the device is back on ESPHome.\n")
         scenario = {"answers": [], "expect": {"result": "Converted"}}
-        self.assertEqual(self.judge(raw, [], scenario=scenario),
+        self.assertEqual(self.judge(raw, [], scenario=scenario, result="Put back on ESPHome"),
                          ["FAIL-RESULT: Result 'Put back on ESPHome', not 'Converted'"])
+        self.assertEqual(self.judge(raw, [], scenario=scenario, result=None),   # a run that made no report
+                         ["FAIL-RESULT: Result 'none', not 'Converted'"])
 
     def test_a_key_typed_anywhere_answers_no_question(self):
         scenario = {"answers": [{"when": "Stage 4", "type": "\x03", "anywhere": True}], "expect": {}}

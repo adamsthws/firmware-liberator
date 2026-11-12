@@ -81,28 +81,35 @@ def shown(fields, columns, rows=report.output.GOOD_ROWS, stopped=None):
 
 class ReportAnswerTests(unittest.TestCase):
     def test_every_answer_a_suite_checks_is_read_back_whole(self):
-        # A stopped run's result as the screen has it, one word; in full in the log alone.
-        full = dict(FIELDS)["Result"]
-        expected = {**dict(FIELDS), "Result": "Stopped"}
-        for columns in (80, 100, 160):
-            _, log = shown(FIELDS, columns, stopped=full)
-            for label, pattern in READ.items():
-                with self.subTest(columns=columns, label=label):
-                    found = pattern.findall(log)
-                    self.assertEqual([answer.strip() for answer in found], [expected[label]], log)
-            self.assertEqual(fault_suite.REPORT_RESULT_FULL.findall(log), [full])
+        # The result in full, in the log alone; each answer wherever its column puts it.
+        beken = [(label, value) for label, value in FIELDS if label not in ("Wi-Fi typed", "Setup network")]
+        for fields in (FIELDS, beken):   # the checks on the right; on the left, an S61's
+            for columns in (80, 100, 160):
+                screen, log = shown(fields, columns, stopped=dict(fields)["Result"])
+                self.assertNotIn("Result:", screen)
+                for label, pattern in READ.items():
+                    with self.subTest(columns=columns, label=label, power_cycled="Wi-Fi typed" not in dict(fields)):
+                        found = pattern.findall(log)
+                        self.assertEqual([answer.strip() for answer in found], [dict(fields)[label]], log)
+
+    def test_the_harness_says_the_result_the_log_has(self):
+        with tempfile.TemporaryDirectory() as root, mock.patch.object(unattended_run, "ROOT", Path(root)):
+            run = Path(root, "captures/devices/123456abcdef/runs/1/run.log")
+            run.parent.mkdir(parents=True)
+            _, log = shown(FIELDS, 100, stopped=dict(FIELDS)["Result"])
+            run.write_text("=== run started ===\n[10:00:00]     Result: Converted\n"
+                           "=== run started ===\n" + log, encoding="utf-8")
+            said = unattended_run.logged_result(0)
+        self.assertEqual(said, dict(FIELDS)["Result"])   # the last run's, in full
+        self.assertEqual(fault_suite.REPORT_RESULT.findall(f"Result: {said}\nExit code 2 - failed\n"), [said])
 
     def test_where_the_identity_came_from_is_in_the_log_not_on_the_screen(self):
         screen, log = shown(FIELDS, 100)
         self.assertNotIn("Identity", screen)
         self.assertEqual(fault_suite.REPORT_IDENTITY.findall(log), [dict(FIELDS)["Identity"]])
 
-    def test_every_answer_a_suite_checks_is_on_the_right_but_the_result(self):
-        # So it is the last on its row in two columns (report.report_screen):
-        # the result, on the left, is read up to the gap after it.
-        self.assertLessEqual(set(READ), {*report.SUITES_READ, *report.LOG_ONLY, "Result"})
-        self.assertLessEqual(set(report.SUITES_READ), set(report.RIGHT))
-        self.assertLessEqual({*report.RIGHT, "Result"}, set(dict(FIELDS)))
+    def test_every_answer_on_the_screen_is_one_of_those_here(self):
+        self.assertLessEqual({*report.RIGHT, *report.LOG_ONLY}, set(dict(FIELDS)))
 
     def test_every_field_the_report_can_have_is_here(self):
         # Read from report.report_fields: a field added there is added to

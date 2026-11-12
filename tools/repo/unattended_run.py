@@ -19,6 +19,8 @@ Saved, under captures/unattended/<time>/ unless --save says otherwise:
     screen.ansi   the final screen, with its colours: `cat` or `less -R` it
     screen.txt    the same without colours, to read or compare anywhere
     screen.raw    every byte written, as written: `cat` replays it in a terminal
+    result.txt    how the run ended, as its report has it in the run's log
+                  (its Result): the screen says it above the report instead
 
 Linux and macOS only (Windows has no pseudo-terminal of this kind); there,
 start.cmd run --unattended runs a conversion just as unattended, unrecorded.
@@ -425,6 +427,24 @@ def tool_command(command: str, extra: list[str], attended: bool = False) -> list
     return [sys.executable, str(TOOL), command, *([] if attended else ["--unattended"]), *extra]
 
 
+# The report's Result, as the run's log has it (report.LOG_ONLY): "Converted",
+# or where and why the run stopped. A run's log is
+# captures/devices/<device>/runs/<run>/run.log (plugs/ before 3.0.0).
+LOGGED_RESULT = re.compile(r"^\[[\d:]+\] +Result: +(\S.*?) *$", re.M)
+
+
+def logged_result(since: float) -> str | None:
+    """How the run that wrote a run log since `since` ended, by its report's
+    Result in that log, the newest such; None for a run that made no report."""
+    logs = [path for folder in ("devices", "plugs") for path in (ROOT / "captures" / folder).glob("*/runs/*/run.log")
+            if path.stat().st_mtime >= since]
+    if not logs:
+        return None
+    text = max(logs, key=lambda path: path.stat().st_mtime).read_text(encoding="utf-8", errors="replace")
+    found = LOGGED_RESULT.findall(text[text.rfind("=== run started"):])
+    return found[-1] if found else None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -460,7 +480,9 @@ def main() -> int:
     command = tool_command(args.command, extra, attended=args.attended)
     answers = Answer.load(args.answers) if args.answers else []
 
+    started = time.time()
     code, written = record(command, size, live, args.timeout * 60 if args.timeout else None, answers)
+    result = logged_result(started)
 
     screen = Screen(*size)
     screen.feed(codecs.decode(written, "utf-8", errors="replace"))
@@ -475,6 +497,8 @@ def main() -> int:
             [{"when": answer.when.pattern, "type": answer.type, "typed_at": answer.typed_at,
               **({"anywhere": True} if answer.anywhere else {})} for answer in answers],
             indent=1), encoding="utf-8")
+    if result:
+        (save / "result.txt").write_text(result + "\n", encoding="utf-8")
 
     shown = save.resolve()
     with contextlib.suppress(ValueError):
@@ -489,6 +513,8 @@ def main() -> int:
         print(rule)
     outcome = {0: "finished", 130: "stopped at a question, or by Ctrl-C",
                143: "stopped by --timeout"}.get(code, "failed")
+    if result:
+        print(f"Result: {result}")
     print(f"Exit code {code} - {outcome}")
     for problem in stage_problems(screen.render(colour=False)):
         print(f"SCREEN: {problem}")

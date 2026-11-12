@@ -217,7 +217,10 @@ as its screens do, since it converts much more than smart plugs now.
 - The report at the end is half as tall: two columns on the screen - the device on
   the right, the result, the run and the computer on the left - with shorter labels (Model,
   Backup, Checks, OS, Liberator for the tool's version...) and answers (Python's
-  "(venv)", the checks "Pass" or "Fail"), and no heading of its own. From gives Sonoff's firmware with its version, "Sonoff 1.2.0", in
+  "(venv)", the checks "Pass" or "Fail"), and no heading of its own, nor a
+  Result: the line above it says how the run ended ("Conversion complete!",
+  "FAILED: ..."), as a readout's now does for each way one ends, and a
+  readout's report lists each device under how it ended. From gives Sonoff's firmware with its version, "Sonoff 1.2.0", in
   place of a line of its own. Whether a power meter's calibration carried over
   is no longer said on the screen, where it worried more than it helped, nor
   where going back to Sonoff's firmware took the device's eWeLink identity from. The run's time, each stage's and how long it kept the device busy are no

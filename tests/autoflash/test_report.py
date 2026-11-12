@@ -117,11 +117,9 @@ class EndingTests(RouteTestCase):
                           for value in ("Read out", "3.0.0", "Ubuntu", "BASICR4 1.1.0", "S60TPG 1.2.0") if value in row}
                 self.assertEqual(len(starts), 1, "\n".join(rows))
 
-    def test_a_stopped_runs_result_is_one_word_on_screen(self):
-        for result, shown in (("Stopped at stage 6 of 15 (Installing Tasmota): it went quiet", "Stopped"),
-                              ("Crashed at the end: KeyError at tools/autoflash/report.py:212", "Crashed"),
-                              ("Converted", "Converted"), ("Put back on Sonoff", "Put back on Sonoff")):
-            self.assertEqual(report.briefly(result), shown)
+    def test_with_nothing_on_the_left_the_right_hand_column_still_shows(self):
+        self.assertEqual([row.split() for row in report.report_screen([("Firmware", "Tasmota")], columns=100)],
+                         [["Firmware:", "Tasmota"]])
 
     def test_a_window_too_narrow_for_two_has_one_column(self):
         fields = [("Result", "Converted"), ("Firmware", "Tasmota"), ("Liberator", "2.4.0")]
@@ -181,17 +179,19 @@ class EndingTests(RouteTestCase):
 
 
 class ReportColumnTests(unittest.TestCase):
-    def test_the_columns_end_together(self):
-        # Seen on an S61: its device answers ran two rows below this computer's.
-        fields = [("Result", "Converted"), ("Liberator", "2.4.0"), ("Firmware", "OpenBeken"), ("OS", "Ubuntu"),
-                  ("From", "Sonoff 1.0.2"), ("Python", "3.12"), ("Model", "S61STPF"),
-                  ("Backup", "Completed"), ("Signal", "-45 dBm"), ("Checks", "Pass"), ("Extra", "Not checked")]
+    def test_the_columns_end_together_or_the_left_one_row_longer(self):
+        # Seen on an S61: its device answers ran a row below this computer's.
+        fields = [("Liberator", "2.4.0"), ("Firmware", "OpenBeken"), ("OS", "Ubuntu"),
+                  ("From", "Sonoff 1.0.2"), ("Python", "3.12"), ("Model", "S61STPF"), ("Retries", "None"),
+                  ("Backup", "Completed"), ("Power cycled", "False"), ("Signal", "-45 dBm"), ("Checks", "Pass")]
         rows = report.report_screen(fields, columns=100)
         self.assertEqual(len(rows), 6, "\n".join(rows))
-        extra = next(row for row in rows if "Extra:" in row)
-        self.assertLess(extra.index("Extra:"), 20)   # on the left now
         checks = next(row for row in rows if "Checks:" in row)
-        self.assertTrue(checks.rstrip().endswith("Pass"))   # a suite's, still last on its row
+        self.assertLess(checks.index("Checks:"), 20, "\n".join(rows))   # on the left now
+        self.assertEqual(rows[-1].split(), ["Checks:", "Pass"])
+        # As many each side: each stays where it is.
+        rows = report.report_screen(fields[:-1], columns=100)
+        self.assertLess(20, next(row for row in rows if "Signal:" in row).index("Signal:"))
 
 
 class ComputerDescriptionTests(unittest.TestCase):
@@ -473,9 +473,10 @@ class StoppedRunIssueTests(RouteTestCase):
         ctx.run_started, ctx.run_resumed = time.monotonic(), False
         lines = self.ended(ctx, "failed")
         text = [line for line in lines if isinstance(line, str)]
-        result = next(index for index, line in enumerate(text) if line.lstrip().startswith("Result:"))
+        first = next(index for index, line in enumerate(text) if line.lstrip().startswith("Liberator:"))
         asked = text.index("If it should not have stopped, please open an issue here:")
-        self.assertLess(result, asked, "the report first, then the way to open an issue")
+        self.assertLess(first, asked, "the report first, then the way to open an issue")
+        self.assertFalse([line for line in text if "Result:" in line], "the FAILED line above says how it ended")
         self.assertIn(("link", report.ISSUES_URL), lines)   # no report sent: none to name
         self.assertEqual(text[text.index("This run's log:") + 1], f"    {Path('/runs/run.log')}")
         self.assertFalse([line for line in lines if isinstance(line, tuple) and line[0] == "links"],
@@ -498,7 +499,7 @@ class StoppedRunIssueTests(RouteTestCase):
         lines = []
         with mock.patch.object(output, "tell", side_effect=lambda text="": lines.append(text)), \
                 mock.patch.object(output, "show_link") as link:
-            report.offer_report(ctx, [("Result", "Converted")])
+            report.offer_report(ctx, [("Result", "Converted"), ("Liberator", "3.0.0")])
         self.assertNotIn("This run's log:", lines)
         link.assert_not_called()
 

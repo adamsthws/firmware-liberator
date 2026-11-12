@@ -238,29 +238,22 @@ def answer(value: str) -> str:
     return value[:1].upper() + value[1:]
 
 
-def briefly(result: str) -> str:
-    """A result as the screen's report shows it: a stopped run's as "Stopped"
-    or "Crashed" alone, not where or why (run_result)."""
-    head, at, _ = result.partition(" at ")
-    return head if at and head in ("Stopped", "Crashed") else result
-
-
-# Where each answer goes on the screen: the device's on the right, the result,
-# the run's and this computer's on the left.  The answers a fault suite reads
-# off the screen are on the right, each the last on its row, but the result,
-# read up to the gap after it (tools/espressif/emulator/fault_suite.py).
+# Where each answer goes on the screen: the device's on the right, the run's
+# and this computer's on the left.  The fault suites read each answer up to
+# the gap after it, wherever it is (tools/espressif/emulator/fault_suite.py).
 RIGHT = ("Firmware", "From", "Model", "Backup", "Signal", "Checks")
-# Those of RIGHT a fault suite reads, which stay there, last on their rows.
-SUITES_READ = ("From", "Backup", "Checks")
-# Answers the run's log has, for the fault suite and someone helping, and the
-# screen does not: where an identity came from is nothing the person needs.
-LOG_ONLY = ("Identity",)
+# Answers the run's log has, for the fault suites and someone helping, and the
+# screen does not: how the run ended, which the line above the report says
+# ("Conversion complete!", "FAILED: ..."), in full where it stopped; and where
+# an identity came from, nothing the person needs.
+LOG_ONLY = ("Result", "Identity")
 # Columns each side needs at the least, else one column, as Markdown has it.
 SIDE = 34
 
 
 def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
-                  right: tuple[str, ...] = RIGHT, below: list[tuple[str, str]] = ()) -> list[str]:
+                  right: tuple[str, ...] = RIGHT, below: list[tuple[str, str]] = (),
+                  balance: bool = True) -> list[str]:
     """For the terminal: plain labels, lined up, in two columns where the
     window is wide enough - half the rows - else one. `right`: the labels
     of the right-hand column, the device's - a conversion's (RIGHT), or a
@@ -295,12 +288,13 @@ def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
         return rows
     left = [(label, value) for label, value in fields if label not in right]
     right = [(label, value) for label, value in fields if label in right]
-    # The columns ending together: the device's answers at the bottom that
-    # no fault suite reads go left when its column is the longer (an S61's,
-    # with fewer of this computer's).
-    while len(right) > len(left) + 1 and right[-1][0] not in SUITES_READ:
+    # The columns ending together, or the left one row longer, which looks the
+    # better: the device's answers at the bottom go left while its column is the
+    # longer (an S61's, with fewer of this computer's). Not where `balance` is
+    # off - a readout's counts, which stay together.
+    while balance and len(right) > len(left):
         left.append(right.pop())
-    width = max(len(label) for label, _ in [*left, *under]) + 1
+    width = max((len(label) for label, _ in [*left, *under]), default=0) + 1
     left, right = cells(left, width), cells(right)
     lines = [(margin + f"{one:<{side}}{gap}{two}").rstrip()
               for one, two in itertools.zip_longest(left, right, fillvalue="")]
@@ -612,17 +606,12 @@ def offer_report(ctx: Context, fields: list[tuple[str, str]], stopped: str | Non
     issue for it after it (ask_for_an_issue)."""
     ctx.reported = True
     output.tell("")
-    if stopped:
-        # Where and why, said in full when it stopped, and in the issue's
-        # report: here one word, so the result fits beside the firmware. In
-        # full in the log, for the suites (fault_suite.REPORT_RESULT_FULL).
-        output.log_only(f"    Result in full: {answer(stopped)}")
     for label, value in fields:
         if label in LOG_ONLY:
             output.log_only(f"    {label}: {value}")
     report_id = getattr(ctx, "last_report_id", None)
-    for line in report_screen([(label, briefly(value) if label == "Result" else value) for label, value in fields
-                               if label not in LOG_ONLY], below=[(REPORT_ID, report_id)] if report_id else ()):
+    for line in report_screen([(label, value) for label, value in fields if label not in LOG_ONLY],
+                              below=[(REPORT_ID, report_id)] if report_id else ()):
         output.tell(line)
     if stopped:
         ask_for_an_issue(report_id)
