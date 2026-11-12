@@ -229,8 +229,8 @@ def end(ctx: Context, said: str, failed: bool = False) -> None:
     done = readouts(ctx)
     output.tell("")
     # How it ended, above the report, as a conversion's says: one that failed
-    # has its FAILED line above already.
-    if any(item.outcome in (ACCEPTED, KEPT) for item in done):
+    # has its FAILED line above already, even with a device read before it.
+    if not failed and any(item.outcome in (ACCEPTED, KEPT) for item in done):
         output.show("Readout complete!", output.GREEN)
     elif not failed:
         output.show("Nothing was read out.")
