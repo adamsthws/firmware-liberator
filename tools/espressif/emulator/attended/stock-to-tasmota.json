@@ -58,6 +58,11 @@
    "type": "y\r",
    "times": 3,
    "optional": true
+  },
+  {
+   "when": "\\[[Yy]/n\\]",
+   "type": "n\r",
+   "optional": true
   }
  ],
  "expect": {

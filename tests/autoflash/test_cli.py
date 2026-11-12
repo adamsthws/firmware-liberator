@@ -34,11 +34,13 @@ class BeforeTheRunTests(unittest.TestCase):
                 mock.patch.object(cli, "adopt_older_runs"), mock.patch.object(output, "start_at_top", self.top), \
                 mock.patch.object(records, "take_over_earlier_names", self.taken_over), \
                 mock.patch.object(prompts, "wait_for_taller_window", self.taller), \
-                mock.patch.object(cli, "resolve_run_name", side_effect=choosing):
+                mock.patch.object(cli, "resolve_run_name", side_effect=choosing), \
+                mock.patch.object(cli.signup, "ask_on_exit", self.exit_question):
             return cli.main(), screen.getvalue()
 
     def setUp(self):
         self.taken_over = mock.Mock()
+        self.exit_question = mock.Mock()
 
     def test_records_an_earlier_release_kept_are_renamed_before_a_run_is_chosen(self):
         seen = []
@@ -171,6 +173,14 @@ class BeforeTheRunTests(unittest.TestCase):
         self.assertEqual(code, 130)
         self.assertIn("Stopped. Nothing was changed.", screen)
 
+    def test_no_email_question_where_the_run_never_began(self):
+        # q or Ctrl-C at the first question, or REFUSING: nothing was used yet.
+        self.main(choosing=prompts.QuitRun("q"))
+        self.main(choosing=KeyboardInterrupt)
+        self.taken_over.side_effect = records.EarlierNames("captures/plugs and captures/devices both exist.")
+        self.main(choosing=AssertionError("went on"))
+        self.exit_question.assert_not_called()
+
 
 class AnotherDeviceTests(unittest.TestCase):
     """A conversion or a readout that finished asks what is next - another
@@ -196,6 +206,7 @@ class AnotherDeviceTests(unittest.TestCase):
                 return next(codes)
             return ran
         top, asked = mock.Mock(), mock.Mock(side_effect=list(answers))
+        self.exit_question = mock.Mock()
         self.applied, self.looked = mock.Mock(), mock.Mock(return_value="run-latest")
         with contextlib.ExitStack() as patches:
             for patch in (
@@ -221,9 +232,12 @@ class AnotherDeviceTests(unittest.TestCase):
                     mock.patch.object(cli, "refused_for_another_run", return_value=False),
                     mock.patch.object(cli, "convert", running("convert")),
                     mock.patch.object(cli, "read_out", running("read_out")),
-                    mock.patch.object(prompts, "ask_choice", asked)):
+                    mock.patch.object(prompts, "ask_choice", asked),
+                    mock.patch.object(cli.signup, "SITTING", cli.signup.Sitting()),
+                    mock.patch.object(cli.signup, "ask_on_exit", self.exit_question)):
                 patches.enter_context(patch)
             code = cli.main()
+            self.stopped = cli.signup.SITTING.stopped
         self.commands = commands
         return code, made, asked, top
 
@@ -279,12 +293,56 @@ class AnotherDeviceTests(unittest.TestCase):
                     self.assertEqual((ended, len(made)), (code, 1))
                     asked.assert_not_called()
 
+    def test_the_email_question_comes_once_as_the_sitting_ends_however_it_ends(self):
+        for codes, answers in (([0, 0], [self.CONVERT, prompts.QuitRun("q")]), ([1], []), ([130], [])):
+            with self.subTest(codes=codes):
+                self.main(codes=codes, answers=answers)
+                self.exit_question.assert_called_once_with()
+
+    def test_not_after_ctrl_c_at_what_next(self):
+        self.main(codes=[0], answers=[KeyboardInterrupt()])
+        self.assertTrue(self.stopped)   # ask_on_exit then asks nothing
+        self.main(codes=[0], answers=[prompts.QuitRun("q")])
+        self.assertFalse(self.stopped)
+
+    def test_the_email_question_comes_after_a_readout_sent_again_too(self):
+        self.main(codes=[0], answers=[], command="readout", more=["--send", "readout.tar"])
+        self.exit_question.assert_called_once_with()
+
     def test_not_asked_unattended_nor_after_a_readout_sent_again(self):
         for command, more in (("run", ["--unattended"]), ("readout", ["--send", "readout.tar"])):
             with self.subTest(command=command):
                 code, made, asked, _ = self.main(codes=[0], answers=[], command=command, more=more)
                 self.assertEqual((code, len(made)), (0, 1))
                 asked.assert_not_called()
+
+
+class CtrlCEndsTheSittingTests(unittest.TestCase):
+    """Ctrl-C that stops a readout or a conversion stops the sitting: no
+    email question after it (signup), as it was a way out."""
+
+    def stopped_by(self, run, command):
+        from types import SimpleNamespace
+        ctx = SimpleNamespace(args=SimpleNamespace(verbose=False, send=None, unattended=False), dir=Path("/x"),
+                              state=mock.Mock(), readouts=[])
+        with mock.patch.object(cli.signup, "SITTING", cli.signup.Sitting()), \
+                mock.patch.object(cli.output, "start"), mock.patch.object(cli.output, "finish"), \
+                mock.patch.object(cli.output, "tell"), mock.patch.object(cli.output, "say"), \
+                mock.patch.object(cli.output, "log_only"), mock.patch.object(cli.output, "stage_end"), \
+                mock.patch.object(cli.firewall, "release_firewall"), mock.patch.object(cli.firewall, "say_quit"), \
+                mock.patch.object(cli.runs, "forget_run_secrets"), mock.patch.object(cli, "log_run_choice"), \
+                mock.patch.object(cli.report_upload, "begin"), mock.patch.object(cli, "stopped_report", return_value=None), \
+                mock.patch.object(cli, "issue_alone", return_value=False), mock.patch.object(cli, "stopped_by", return_value=None), \
+                mock.patch.object(cli.runner, "stopped_mid_send", return_value=False), \
+                mock.patch.object(cli, command, side_effect=KeyboardInterrupt):
+            self.assertEqual(run(ctx), 130)
+            return cli.signup.SITTING.stopped
+
+    def test_in_a_readout(self):
+        self.assertTrue(self.stopped_by(cli.read_out, "cmd_readout"))
+
+    def test_in_a_conversion(self):
+        self.assertTrue(self.stopped_by(lambda ctx: cli.convert(ctx, []), "cmd_run"))
 
 
 class StoppedReportTests(unittest.TestCase):
