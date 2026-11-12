@@ -194,6 +194,7 @@ class SendTests(Case):
             upload.send(ctx, "converted", 300, False)
             upload.send(ctx, "failed", 300, False)
         self.assertEqual(payload.call_count, 1)
+        self.assertEqual(ctx.last_report_id, "b" * 32, "its id kept, for the screen's report and an issue")
 
     def test_a_report_that_cannot_be_made_never_spoils_the_runs_end(self):
         logged = []
@@ -235,6 +236,7 @@ class ReadoutTests(Case):
         self.assertEqual([[report["proof"] for report in reports] for reports in posted], [["7:8"], ["7:8"]])
         self.assertNotEqual(posted[0][0]["id"], posted[1][0]["id"])
         self.assertEqual(self.ids(), [], "forgotten once taken")
+        self.assertEqual(made.report_id, posted[1][0]["id"], "its id on it, for the screen and an issue")
 
     def test_switched_off_none_is_begun_or_sent(self):
         ctx = SimpleNamespace(args=SimpleNamespace(no_report=True))
