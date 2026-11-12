@@ -32,7 +32,7 @@ from typing import Any, TYPE_CHECKING
 from tools.autoflash import firewall, hostsys, openbeken, output, records, prompts, readout, runs, safety_locks
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes import arrival
-from tools.autoflash.routes.beken import onward, stock
+from tools.autoflash.routes.beken import images, onward, stock
 from tools.autoflash.runs import ROOT
 from tools.beken import fota_wrap, layouts, rbl, scrub
 from tools.ewelink import ota_push
@@ -269,17 +269,8 @@ def read_and_anonymise(ctx: Context, manifest: dict[str, Any], name: str, versio
 
 def saved_stock(mac: str | None) -> Stock | None:
     """Sonoff's firmware as a readout kept it, beside the device's backup."""
-    backup = records.find_backup(mac) if mac else None
-    if backup is None or backup.family != "beken":
-        return None
-    for path in sorted(backup.directory.glob("stock-app-*.rbl")):
-        data = path.read_bytes()
-        try:
-            layout, _table = layouts.known(rbl.unpack(data))
-        except (ValueError, rbl.RblError, layouts.LayoutError):
-            continue
-        return Stock(data, path.stem.removeprefix("stock-app-"), layout)
-    return None
+    kept = images.backup_copy(mac)
+    return Stock(*kept) if kept else None
 
 
 def put_back(ctx: Context, host: str) -> str:

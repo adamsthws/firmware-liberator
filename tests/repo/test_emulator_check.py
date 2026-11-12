@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from tools.autoflash import kinds
+from tools.autoflash.routes import public_copies
 from tools.repo import emulator_check as check
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -82,12 +83,12 @@ class WaysTests(unittest.TestCase):
 
 def runs_from():
     """Each device that has something for its check to start from."""
-    from tools.autoflash.routes.beken import images
     from tools.espressif.emulator import public_dump
     return {*public_dump.DUMPS, *public_dump.UPDATES,
             "sonoff-s60",              # the published public devices
-            *images.PUBLIC_DUMPS,      # upstream's public dump (beken-emu.sh)
-            *images.OFFICIAL_FILES}    # a flash rebuilt from the S61's and its official file
+            check.REBUILT_FROM,        # upstream's public dump (beken-emu.sh)
+            # a flash rebuilt from the S61's and its official file
+            *(kind.key for kind in kinds.EVERY if kind.family == "beken")}
 
 
 class BekenCheckTests(unittest.TestCase):
@@ -136,20 +137,16 @@ class RebuiltFlashTests(unittest.TestCase):
     file, kept in the Beken emulator's folders under captures/."""
 
     def setUp(self):
-        from tools.autoflash.routes.beken import images
         from tools.beken.emulator import folders
-        self.images = images
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.dumps, self.rebuilt = Path(tmp.name, "firmwares"), Path(tmp.name, "rebuilt")
         self.dumps.mkdir()
         self.dump = b"the S61's dump"
-        url = images.PUBLIC_DUMPS[check.REBUILT_FROM][0]
-        (self.dumps / url.rsplit("/", 1)[1]).write_bytes(self.dump)
-        for patch in (mock.patch.object(images, "DUMPS", self.dumps), mock.patch.object(folders, "REBUILT", self.rebuilt),
+        (self.dumps / check.S61_DUMP[0]).write_bytes(self.dump)
+        for patch in (mock.patch.object(folders, "FIRMWARES", self.dumps), mock.patch.object(folders, "REBUILT", self.rebuilt),
                       mock.patch.object(check, "ROOT", Path(tmp.name)),
-                      mock.patch.dict(images.PUBLIC_DUMPS, {check.REBUILT_FROM: (
-                          url, hashlib.sha256(self.dump).hexdigest())})):
+                      mock.patch.object(check, "S61_DUMP", (check.S61_DUMP[0], hashlib.sha256(self.dump).hexdigest()))):
             patch.start()
             self.addCleanup(patch.stop)
 
@@ -158,7 +155,7 @@ class RebuiltFlashTests(unittest.TestCase):
         from contextlib import redirect_stdout
         from tools.beken import rebuild_dump
         kind = kinds.find("sonoff-basic-1gs")
-        with mock.patch.object(self.images, "official_file", return_value=b"official") as official, \
+        with mock.patch.object(public_copies, "fetch", return_value=b"official") as official, \
                 mock.patch.object(rebuild_dump, "rebuild", return_value=b"flash") as rebuild, \
                 redirect_stdout(io.StringIO()):
             out = check.rebuilt_flash(kind)
@@ -169,15 +166,13 @@ class RebuiltFlashTests(unittest.TestCase):
         self.assertEqual([path.name for path in self.rebuilt.iterdir()], ["sonoff-basic-1gs.bin"])
 
     def test_not_from_a_dump_other_than_the_one_pinned(self):
-        url = self.images.PUBLIC_DUMPS[check.REBUILT_FROM][0]
-        (self.dumps / url.rsplit("/", 1)[1]).write_bytes(b"another dump")
+        (self.dumps / check.S61_DUMP[0]).write_bytes(b"another dump")
         with self.assertRaisesRegex(SystemExit, "not the public dump"):
             check.rebuilt_flash(kinds.find("sonoff-basic-1gs"))
         self.assertFalse(self.rebuilt.exists())
 
     def test_an_official_file_that_cannot_be_had_stops_the_check_saying_why(self):
-        from tools.autoflash.errors import NothingWritten
-        with mock.patch.object(self.images, "official_file", side_effect=NothingWritten("could not be fetched")), \
+        with mock.patch.object(public_copies, "fetch", side_effect=public_copies.Unavailable("could not be fetched")), \
                 self.assertRaisesRegex(SystemExit, "could not be fetched"):
             check.rebuilt_flash(kinds.find("sonoff-basic-1gs"))
 

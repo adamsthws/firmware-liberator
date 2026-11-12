@@ -61,15 +61,15 @@ which its author checked on hardware, and which agrees with the stock driver.
 - **Calibration**: the factory values (`elecCalibCoef`) in the stock store, read
   on first boot by OpenBeken's driver and by ESPHome
   ([how they apply](research.md#energy-meter-calibration-the-stock-formula-and-the-openbeken-mapping)).
-- **Back to Sonoff**: Sonoff's firmware, made from the public dump of a stock S61
-  that upstream BekenEmulator publishes, the dump the emulator and its tests also
-  run; this repository holds no Sonoff firmware
-  ([`tools/beken/emulator/`](../../tools/beken/emulator/)).
+- **Back to Sonoff**: Sonoff's firmware as the device's backup keeps it, else
+  the update file eWeLink offers the device, else its public copy
+  ([`public_copies.py`](../../tools/autoflash/routes/public_copies.py)); this
+  repository holds no Sonoff firmware.
 - **How it is converted**: by the tool's Beken route,
   [`tools/autoflash/routes/beken/`](../../tools/autoflash/routes/beken/).
   Sonoff's firmware takes the first firmware as an update pushed through
   eWeLink; OpenBeken and ESPHome each take the next firmware as an update of
-  their own; Sonoff's firmware comes back from the public dump. The backup is
+  their own; Sonoff's firmware comes back as **Back to Sonoff** says. The backup is
   taken through OpenBeken's flash reads after the first conversion, so a run to
   ESPHome installs OpenBeken first, as the interim firmware, to take it.
   [The run, step by step](../../docs/what-happens.md#a-beken-device) gives each

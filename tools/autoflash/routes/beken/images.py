@@ -15,16 +15,16 @@ import hashlib
 import json
 import os
 import struct
-import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from tools.autoflash import hostsys, kinds, output, records
 from tools.autoflash.errors import Abort, NothingWritten
+from tools.autoflash.routes import public_copies
 from tools.autoflash.runs import ROOT
 from tools.beken import fota_wrap, layouts
-from tools.beken import rbl, stock_app
+from tools.beken import rbl
 from tools.ewelink import offered_firmware
 from tools.ewelink.get_device_key import EwelinkError
 from tools.ewelink.query_ota import latest_offer
@@ -67,26 +67,9 @@ def as_sent(ctx: Context, step: str, image: bytes) -> bytes:
     return bytes(spoilt)
 
 
-PUBLIC_DUMPS = {
-    "sonoff-s61": (
-        "https://raw.githubusercontent.com/openshwprojects/BekenEmulator/d9a3772a26fa92158be72faf46855726ef8e21d7"
-        "/firmwares/Sonoff_S61s_EUPlug_WBBK_01P_V1.3.bin",
-        "0f858068b7b6c4107119e6afdf7a6eb05349234e726028602dbcf63b92ad6df3",
-    ),
-}
-# A kind with no public dump: eWeLink's official update file for it, as another
-# project publishes them, by name and hash. What it goes back to, and whose
-# partition table says what its flash should be (official), where eWeLink
-# offers the device none that passes the same checks.
-OFFICIAL_FILES_AT = ("https://raw.githubusercontent.com/openshwprojects/FlashDumps/"
-                     "9d9d67ae87aa780aed8856140362670d9c0e5642/IoT/zOTAz/eWeLink/")
-OFFICIAL_FILES = {
-    "sonoff-basic-1gs": ("SONOFF_BASIC-1GS_(FWSW-01-BASICR5-BK7238)_BK7238_v1.0.4_user1.bin",
-                         "0df1f696e9c03b076fda5b6ef103b9a658ba3ec495afa2b013586c1c40e32d25"),
-}
-DUMPS = ROOT / "captures" / "emulation" / "beken" / "firmwares"
 OFFERED = "the file eWeLink offers the device"
-PUBLIC_COPY = "the public copy of Sonoff's update file (FlashDumps)"
+PUBLIC_COPY = public_copies.SOURCE
+BACKUP = "the device's own backup"
 
 
 @dataclass(frozen=True)
@@ -98,27 +81,6 @@ class Official:
     layout: layouts.Layout
     table: tuple[layouts.Partition, ...]
     source: str                  # where it came from: OFFERED or PUBLIC_COPY
-
-
-def official_file(kind: kinds.Kind) -> bytes:
-    """A kind's official update file: fetched once (DUMPS), checked against its hash."""
-    name, digest = OFFICIAL_FILES[kind.key]
-    path = DUMPS / name
-    data = path.read_bytes() if path.is_file() else b""
-    if hashlib.sha256(data).hexdigest() == digest:
-        return data
-    output.say(f"Fetching eWeLink's official update file for the {kind.name} ({name})...")
-    try:
-        data = hostsys.download(OFFICIAL_FILES_AT + urllib.parse.quote(name), timeout=120, say=output.detail)
-    except OSError as exc:
-        raise NothingWritten(f"eWeLink's official update file for the {kind.name} could not be fetched: {exc}. "
-                             "Nothing was written") from exc
-    if hashlib.sha256(data).hexdigest() != digest:
-        raise NothingWritten(f"the official update file fetched for the {kind.name} is not the one this tool "
-                             "knows (its hash differs): refused. Nothing was written")
-    DUMPS.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
-    return data
 
 
 def offered_file(ctx: Context) -> bytes | None:
@@ -220,7 +182,10 @@ def official(kind: kinds.Kind, ctx: Context | None = None) -> Official:
     if against_stub():
         raise NothingWritten(f"Sonoff's firmware for the {kind.name} could not be fetched from eWeLink. "
                              "Nothing was written")
-    return checked(kind, official_file(kind), PUBLIC_COPY)
+    try:
+        return checked(kind, public_copies.fetch(kind), PUBLIC_COPY)
+    except public_copies.Unavailable as exc:
+        raise NothingWritten(f"{exc}. Nothing was written") from exc
 
 
 def first_firmware(firmware: str) -> str:
@@ -263,44 +228,50 @@ def image(ctx: Context, firmware: str) -> tuple[bytes, str]:
     return data, str(pinned["version"])
 
 
+def backup_copy(mac: str | None) -> tuple[bytes, str, layouts.Layout] | None:
+    """Sonoff's firmware as the device's backup keeps it beside its data (B4,
+    or a readout): the rt_ota image, its version and its partition table's
+    layout - where the file is there, whole as the backup's manifest says,
+    and an app on a table this tool knows."""
+    backup = records.find_backup(mac) if mac else None
+    if backup is None or backup.family != "beken":
+        return None
+    try:
+        regions = json.loads((backup.directory / records.BEKEN_MANIFEST).read_text(encoding="utf-8"))["regions"]
+    except (OSError, ValueError, KeyError):
+        regions = {}
+    for path in sorted(backup.directory.glob("stock-app-*.rbl")):
+        data = path.read_bytes()
+        if (regions.get(path.name) or {}).get("sha256") not in (None, hashlib.sha256(data).hexdigest()):
+            continue
+        try:
+            layout, _table = layouts.known(rbl.unpack(data))
+        except (ValueError, rbl.RblError, layouts.LayoutError):
+            continue
+        return data, path.stem.removeprefix("stock-app-"), layout
+    return None
+
+
 def stock_rbl(kind: kinds.Kind, ctx: Context | None = None) -> tuple[bytes, str]:
     """Sonoff's own firmware for a device of `kind`, as the rt_ota image its
-    bootloader applies: from the file eWeLink offers the run's device, where
-    it passes checked(); else made from the public dump of a stock device,
-    fetched once (DUMPS) and checked against its pinned hash - or, for a kind
-    with none, its official update file's.  The image and Sonoff's version of it."""
+    bootloader applies, from the first of these to have it, as the Espressif
+    route goes back: the device's own backup (backup_copy), the file eWeLink
+    offers the device, then the public copy this tool pins
+    (public_copies) - the last two as checked() says.  The image and
+    Sonoff's version of it."""
+    kept = backup_copy(ctx.state.input("device_mac")) if ctx is not None else None
+    if kept is not None and kept[2].key == kind.layout:
+        output.log_only(f"    Sonoff's firmware {kept[1]}: from {BACKUP}")
+        return kept[0], kept[1]
     offered = from_ewelink(ctx, kind)
     if offered is not None:
         output.log_only(f"    Sonoff's firmware {offered.version}: from {OFFERED}")
         return offered.image, offered.version
     if against_stub():
         raise Abort(f"Sonoff's firmware for the {kind.name} could not be fetched from eWeLink")
-    if kind.key in OFFICIAL_FILES:
-        try:
-            found = official(kind)
-        except NothingWritten as exc:
-            raise Abort(str(exc)) from exc
-        output.log_only(f"    Sonoff's firmware {found.version}: from {PUBLIC_COPY}")
-        return found.image, found.version
     try:
-        url, digest = PUBLIC_DUMPS[kind.key]
-    except KeyError:
-        raise Abort(f"no public dump of a {kind.name}'s stock firmware is known: it cannot go back") from None
-    path = DUMPS / url.rsplit("/", 1)[1]
-    data = path.read_bytes() if path.is_file() else b""
-    if hashlib.sha256(data).hexdigest() != digest:
-        output.say(f"Fetching the public {kind.name} stock dump ({url.rsplit('/', 1)[1]}, 4 MB)...")
-        try:
-            data = hostsys.download(url, timeout=120, say=output.detail)
-        except OSError as exc:
-            raise Abort(f"the public dump of the {kind.name}'s stock firmware could not be fetched: {exc}") from exc
-        if hashlib.sha256(data).hexdigest() != digest:
-            raise Abort("the public dump fetched is not the one this tool knows (its hash differs): refusing it")
-        DUMPS.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
-    try:
-        image, version = stock_app.stock_rbl(data)
-    except stock_app.DumpError as exc:
-        raise Abort(f"the public dump holds no stock app this tool can use: {exc}") from exc
-    output.log_only(f"    Sonoff's firmware {version}: from the public dump of a {kind.name}")
-    return image, version
+        found = official(kind)
+    except NothingWritten as exc:
+        raise Abort(str(exc)) from exc
+    output.log_only(f"    Sonoff's firmware {found.version}: from {PUBLIC_COPY}")
+    return found.image, found.version

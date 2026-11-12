@@ -1,6 +1,6 @@
 """Sonoff's own firmware for a device with no backup on this computer: the
 official file eWeLink offers the device, else the same file as the
-FlashDumps project keeps it in public; and the flash a backup would have
+FlashDumps project keeps it in public, pinned (public_copies); and the flash a backup would have
 held, made from it, the kind's layout and the device's identity.
 
 eWeLink is asked as query_ota.latest_offer asks, with the device's own id and
@@ -13,7 +13,6 @@ checked as an ESP image for the device's chip, whole, and Sonoff's.
 from __future__ import annotations
 
 import os
-import re
 import struct
 import urllib.parse
 import urllib.request
@@ -21,6 +20,7 @@ import zlib
 from typing import Any, TYPE_CHECKING
 
 from tools.autoflash import hostsys, kinds, output, plans
+from tools.autoflash.routes import public_copies
 from tools.espressif import chips
 from tools.espressif.analyze_vendor_ota import WRAPPER_SIZE, parse_esp_image
 from tools.espressif.sonoff_identity import Identity
@@ -32,12 +32,9 @@ if TYPE_CHECKING:
     from tools.autoflash.context import Context
     from tools.espressif.layouts import Layout
 
-PUBLIC_FILES = ("https://raw.githubusercontent.com/openshwprojects/FlashDumps/"
-                f"{firmware_name.PUBLIC_COMMIT}/IoT/zOTAz/eWeLink")
 TIMEOUT = 60.0
 FLASH_SIZE = 0x400000
 SONOFF_PROJECT = b"esp32_fw"   # the project name in Sonoff's app description (plans.stock_slot)
-VERSION = re.compile(r"_v(\d+(?:\.\d+)*)_user1\.bin$")
 
 
 class FirmwareError(ValueError):
@@ -104,20 +101,6 @@ def offered(ctx: Context, identity: Identity) -> bytes | None:
     return None
 
 
-def public(kind: kinds.Kind) -> bytes | None:
-    """The newest public file for this kind of device, by the firmware name in
-    its filename; None when the list has none."""
-    listed = []
-    for file in firmware_name.public_files():
-        found = firmware_name.PUBLIC_FILE.fullmatch(file)
-        version = VERSION.search(file)
-        if found and version and kind.wrapper_model in found.group("names").split("+"):
-            listed.append((tuple(int(part) for part in version.group(1).split(".")), file))
-    if not listed:
-        return None
-    return fetch(f"{PUBLIC_FILES}/{urllib.parse.quote(max(listed)[1])}")
-
-
 # Testing (cli.py --simulate-no-sonoff-firmware): Sonoff's firmware never to
 # be had, as with eWeLink and the public copy both out of reach.
 SIMULATE_NONE = False
@@ -130,7 +113,7 @@ def official_app(ctx: Context, kind: kinds.Kind, identity: Identity, layout: Lay
     sources = [("the file eWeLink offers the device", lambda: offered(ctx, identity))]
     # A run against a stand-in for eWeLink (the emulator's) reaches nothing else.
     if not os.environ.get("AUTOFLASH_EWELINK_API_BASE"):
-        sources.append(("the public copy of Sonoff's update file (FlashDumps)", lambda: public(kind)))
+        sources.append((public_copies.SOURCE, lambda: public_copies.fetch(kind)))
     # Each source passed over is logged as it is, as the Beken route's are
     # (images.from_ewelink): the next one may still give it.
     for where, get in sources:
@@ -139,7 +122,7 @@ def official_app(ctx: Context, kind: kinds.Kind, identity: Identity, layout: Lay
             if data is not None:
                 return checked_app(app_in_file(data, kind.wrapper_model), kind, layout.slot_size), where
             output.log_only(f"    Sonoff's firmware: {where}: there is none")
-        except (FirmwareError, OSError, ValueError) as exc:
+        except (FirmwareError, public_copies.Unavailable, OSError, ValueError) as exc:
             output.log_only(f"    Sonoff's firmware: {where}: {exc}")
     raise FirmwareError("Sonoff's firmware for this device could not be fetched - from eWeLink, or "
                         "from the public copy of it")

@@ -108,13 +108,18 @@ as its screens do, since it converts much more than smart plugs now.
 - A run stopped with Ctrl-C while it sent a device its firmware through eWeLink
   says to wait about 3 minutes before running again: the device stays away from
   eWeLink a few minutes after that, and a run started at once did not find it.
-- The Sonoff Basic Gen5 (BASIC-1GS). It has no public dump, so the tool checks
-  the partition table in eWeLink's official update file before writing anything,
+- The Sonoff Basic Gen5 (BASIC-1GS). The tool checks the partition table in
+  eWeLink's official update file before writing anything, on every Beken device,
   and logs what the run learns. Beken devices on any other table are refused.
 - On a Beken device, Sonoff's firmware - what a run checks before writing, keeps
   beside the backup and puts back - and the firmware name its updater checks
   come first from the file eWeLink offers the device, as on an Espressif one,
   and from a public copy only where eWeLink offers none the tool can use. Going
+  back takes the copy kept beside the device's backup before either, as an
+  Espressif device's own backup comes first. Either family's public copy is
+  Sonoff's update file as FlashDumps publishes it, pinned by hash, for every
+  device; an Espressif device took the newest listed, unpinned, and an S61 one
+  made from a device's dump. Going
   back to Sonoff's firmware signs in to your eWeLink account for this if the run
   has not yet.
 - A readout is safe on the Sonoff BASICR4 and MINIR4, whose firmware is a

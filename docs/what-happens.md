@@ -254,12 +254,11 @@ goes through eWeLink
 whichever firmware you choose.
 
 4. **Ask eWeLink what the device runs**: its model and firmware must be those
-   of a kind the tool converts. For a device with no public dump, the
-   partition table in Sonoff's official update file is checked too, and the
-   run stops before anything is written unless it is the one the tool's
-   firmware is built for. That file is the one eWeLink offers your device,
-   or, if eWeLink offers none that passes the checks, a public copy the tool
-   knows by its hash.
+   of a kind the tool converts. The partition table in Sonoff's official
+   update file is checked too, and the run stops before anything is written
+   unless it is the one the tool's firmware is built for. That file is the
+   one eWeLink offers your device, or, if eWeLink offers none that passes the
+   checks, a public copy the tool knows by its hash.
 5. **Send the new firmware through eWeLink**, wrapped as Sonoff's updates are,
    from your computer, after a temporary firewall rule if your firewall is on.
    *This is the point of no return,* and the one place the tool asks you to
@@ -279,9 +278,8 @@ whichever firmware you choose.
    against the MAC in the factory record and kept under it in
    `captures/devices/` ([what it holds](technical-details.md#a-beken-devices)).
    Sonoff's firmware goes beside it, since step 5 wrote over the device's own:
-   from the update file eWeLink offers your device, or else made from the
-   public dump of a stock device of its kind or the official update file's
-   public copy. A device backed up before is not read again;
+   from the update file eWeLink offers your device, or else the public copy
+   of it the tool knows by its hash. A device backed up before is not read again;
    `--no-backup` skips the step.
 
 A run to OpenBeken ends there. For **ESPHome**:
@@ -414,9 +412,12 @@ identity is the one the device keeps, or else rebuilt from your eWeLink
 account, which knows the device's id, key, model and kind while the device is
 still in it. The run says which it used.
 
-On a Beken device, going back sends Sonoff's official firmware for your
-device the same way: downloaded from eWeLink as the device itself would, or
-else from a public copy the tool knows by its hash.
+On a Beken device, going back sends Sonoff's firmware the same way: the copy
+kept beside the device's backup, else the file eWeLink offers the device,
+else the public copy of it. Its own data stays on the device.
+
+On either, a public copy is Sonoff's update file as the FlashDumps project
+publishes it, pinned by its hash, and checked as the file eWeLink offers is.
 
 On either, the tool signs in to your eWeLink account for this if the run has
 not yet.

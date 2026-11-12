@@ -11,8 +11,9 @@ from unittest import mock
 from tests.beken import test_layouts
 from tests.autoflash.routes.beken.test_beken import a_context
 from tools.autoflash import errors, kinds, records
+from tools.autoflash.routes import public_copies
 from tools.autoflash.routes.beken import arrived, images, stock
-from tools.beken import fota_wrap, layouts, rbl
+from tools.beken import fota_wrap, rbl
 from tools.ewelink import ota_push
 
 
@@ -55,47 +56,6 @@ class ImagesTests(unittest.TestCase):
             with self.assertRaisesRegex(errors.Abort, "not an rt_ota image"):
                 images.image(ctx, "esphome")
 
-    def test_the_stock_firmware_comes_from_the_public_dump_fetched_once(self):
-        app = b"stock app" * 2000
-        header = rbl.Header(algo=0x402, timestamp=5, name="app", version="1.0.2", sn=b"sn", body_crc32=0,
-                            raw_hash=rbl.fnv1a32(app), size_raw=len(app), size_package=0).pack()
-        logical = bytearray(b"\xff" * (0x25FFA0 + 200))
-        logical[0x10000:0x10000 + len(app)] = app
-        logical[0x25FFA0:0x25FFA0 + 96] = header
-        dump = b"".join(bytes(logical[i:i + 32]).ljust(32, b"\xff") + b"\0\0" for i in range(0, len(logical), 32))
-        fetched = []
-
-        class Reply:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_):
-                return False
-
-            def read(self):
-                fetched.append(1)
-                return dump
-
-        with tempfile.TemporaryDirectory() as directory, \
-                mock.patch.object(images, "DUMPS", Path(directory) / "emulator" / "dumps"), \
-                mock.patch.dict(images.PUBLIC_DUMPS, {"sonoff-s61": ("http://example.test/dump.bin",
-                                                                      hashlib.sha256(dump).hexdigest())}), \
-                mock.patch.object(images.hostsys, "urlopen", return_value=Reply()), \
-                mock.patch.object(images.output, "say"), mock.patch.object(images.output, "log_only") as logged:
-            packed, version = images.stock_rbl(S61)
-            self.assertEqual((rbl.unpack(packed), version), (app, "1.0.2"))
-            logged.assert_called_once_with("    Sonoff's firmware 1.0.2: from the public dump of a Sonoff S61")
-            tmp = images.DUMPS   # made on first use, and kept there under the dump's own name
-            self.assertEqual([path.name for path in Path(tmp).iterdir()], ["dump.bin"])
-            packed_again, _ = images.stock_rbl(S61)  # from the file kept, not fetched again
-            self.assertEqual(packed_again, packed)
-            self.assertEqual(fetched, [1])
-            # A dump that is not the one known is refused, fetched or kept.
-            (Path(tmp) / "dump.bin").write_bytes(b"something else")
-            with mock.patch.dict(images.PUBLIC_DUMPS, {"sonoff-s61": ("http://example.test/dump.bin", "0" * 64)}):
-                with self.assertRaisesRegex(errors.Abort, "hash differs"):
-                    images.stock_rbl(S61)
-
 
 class UntestedKindTests(unittest.TestCase):
     """A kind with no public dump, no real one of which has been converted: its
@@ -131,9 +91,9 @@ class UntestedKindTests(unittest.TestCase):
         image = rbl.pack(test_layouts.an_app(table), name="app", version="1.0.4")
         data = fota_wrap.wrap(image, name=self.KIND.wrapper_model, version="1.0.4")
         (Path(self.tmp.name) / "official.bin").write_bytes(data)
-        for patch in (mock.patch.dict(images.OFFICIAL_FILES, {self.KIND.key: ("official.bin",
-                                                                              hashlib.sha256(data).hexdigest())}),
-                      mock.patch.object(images, "DUMPS", Path(self.tmp.name))):
+        for patch in (mock.patch.dict(public_copies.COPIES, {self.KIND.key: ("official.bin",
+                                                                             hashlib.sha256(data).hexdigest())}),
+                      mock.patch.object(public_copies, "KEPT", Path(self.tmp.name))):
             patch.start()
             self.addCleanup(patch.stop)
         self.image = image
@@ -194,15 +154,16 @@ class UntestedKindTests(unittest.TestCase):
 
     def test_a_table_known_but_not_this_kinds_is_refused(self):
         other = kinds.Kind(**{**vars(self.KIND), "layout": "another"})
-        with mock.patch.dict(images.OFFICIAL_FILES, {other.key: images.OFFICIAL_FILES[self.KIND.key]}), \
+        with mock.patch.dict(public_copies.COPIES, {other.key: public_copies.COPIES[self.KIND.key]}), \
                 self.assertRaisesRegex(errors.NothingWritten, "not the another one"):
             images.official(other)
 
     def test_a_file_that_is_not_the_one_known_is_refused(self):
-        with mock.patch.dict(images.OFFICIAL_FILES, {self.KIND.key: ("official.bin", "0" * 64)}), \
-                mock.patch.object(images.hostsys, "download", side_effect=OSError("no network")):
+        with mock.patch.dict(public_copies.COPIES, {self.KIND.key: ("official.bin", "0" * 64)}), \
+                mock.patch.object(public_copies.hostsys, "download", side_effect=OSError("no network")), \
+                mock.patch.object(images, "offered_file", return_value=None):
             with self.assertRaisesRegex(errors.NothingWritten, "could not be fetched.*Nothing was written"):
-                images.official_file(self.KIND)
+                images.official(self.KIND)
 
     def test_b2_asks_first_and_declined_writes_nothing(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(ota_push, "deliver") as sent, \
@@ -238,6 +199,22 @@ class UntestedKindTests(unittest.TestCase):
 
     def test_going_back_sends_the_official_files_image(self):
         self.assertEqual(images.stock_rbl(self.KIND), (self.image, "1.0.4"))
+
+    def test_going_back_takes_the_devices_own_backup_first_as_the_espressif_route_does(self):
+        image, data = self.offered()
+        kept = rbl.pack(test_layouts.an_app(test_layouts.FOUR_MB), name="app", version="1.0.2")
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), \
+                mock.patch.object(records, "CAPTURES", Path(tmp)):
+            ctx = self.context(tmp, device_mac=MAC)
+            records.save_beken_backup(MAC, b"own data", kept, "1.0.2", kind=self.KIND.name)
+            with mock.patch.object(images, "offered_file", side_effect=AssertionError("not asked")):
+                self.assertEqual(images.stock_rbl(self.KIND, ctx), (kept, "1.0.2"))
+            self.assertIn("Sonoff's firmware 1.0.2: from the device's own backup", self.logs())
+            # One that is not whole, as its manifest says: eWeLink's file next.
+            (records.find_backup(MAC).directory / "stock-app-1.0.2.rbl").chmod(0o600)
+            (records.find_backup(MAC).directory / "stock-app-1.0.2.rbl").write_bytes(kept[:-1] + b"x")
+            with mock.patch.object(images, "offered_file", return_value=data):
+                self.assertEqual(images.stock_rbl(self.KIND, ctx), (image, "1.0.6"))
 
     def test_going_back_is_refused_on_another_table(self):
         self.use_official(test_layouts.TWO_MB)
@@ -305,7 +282,7 @@ class UntestedKindTests(unittest.TestCase):
         image, data = self.offered()
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.dict("os.environ", {"AUTOFLASH_EWELINK_API_BASE": "https://apia.example.test"}), \
-                mock.patch.object(images, "official_file", side_effect=AssertionError("not reached")):
+                mock.patch.object(public_copies, "fetch", side_effect=AssertionError("not reached")):
             ctx = self.context(tmp)
             with mock.patch.object(images, "offered_file", return_value=data):
                 self.assertEqual(images.official(self.KIND, ctx).source, images.OFFERED)
@@ -338,15 +315,6 @@ class UntestedKindTests(unittest.TestCase):
                 arrived.note_flash(ctx, matched)
                 self.assertIs(ctx.state.data["captures"]["B4.flash_matched"], matched)
                 self.assertIn(words, self.logged.call_args.args[0])
-
-    def test_every_official_file_names_its_kinds_firmware_and_a_known_table(self):
-        for key, (name, digest) in images.OFFICIAL_FILES.items():
-            kind = kinds.find(key)
-            with self.subTest(kind=key):
-                if name != "official.bin":
-                    self.assertIn(f"({kind.wrapper_model})", name)
-                self.assertIs(layouts.of(kind.layout), layouts.BEKEN_4M)
-                self.assertEqual(len(digest), 64)
 
 
 if __name__ == "__main__":

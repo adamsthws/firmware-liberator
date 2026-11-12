@@ -51,7 +51,8 @@ now or later.
   device, never one device's firmware onto another. Each backup also holds
   that device's eWeLink device id and keys, which belong to it alone. Without
   a backup, the tool uses Sonoff's published firmware (as eWeLink offers it,
-  or a public dump), fetched at run time, with the device's own identity.
+  or the public copy of eWeLink's update file), fetched at run time, with the
+  device's own identity.
 - The backup is written once and kept read-only. Converting a device again
   keeps its first backup.
 
