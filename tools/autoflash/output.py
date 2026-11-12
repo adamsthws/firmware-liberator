@@ -201,6 +201,10 @@ def finish() -> None:
     if _s.ticker is not None:
         _s.ticker.join(2.0)
         _s.ticker = None
+    # A run ended with a stage still under way - stopped by a signal no
+    # handler ends it for, as SIGTERM's exit is - shows it stopped, its
+    # question and notes taken off, as one stopped by Ctrl-C does.
+    stage_end("stopped")
     with _lock:
         _break()
         _show_keys()

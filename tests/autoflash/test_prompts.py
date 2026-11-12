@@ -530,6 +530,7 @@ class QuestionScreenTests(unittest.TestCase):
                 answer = {question}
                 output.transient_end()
                 open({str(result)!r}, "w").write(json.dumps(answer))
+                output.stage_end("stopped")   # what it showed left, as a run stopped there leaves it
                 output.finish()
             """)
             # Typed once the question is up - its quit hint drawn - not as soon
@@ -579,9 +580,10 @@ class QuestionScreenTests(unittest.TestCase):
                     rows = [row for row in asked[0].render(colour=False).splitlines() if row.strip()]
                     self.assertEqual((rows[-2].strip(), rows[-1].strip()), ("Wi-Fi password for 'Home' (q to quit):", ">"))
                 rows = [row for row in end.render(colour=False).splitlines() if row.strip()]
-                self.assertEqual(len(rows), 2, "\n".join(rows))
+                self.assertEqual(len(rows), 3, "\n".join(rows))
                 self.assertTrue(unattended_run.STAGE_ROW.match(rows[0]), rows[0])
                 self.assertEqual(rows[1].strip(), self.NOTE)
+                self.assertTrue(rows[2].rstrip().endswith("- Stopped"), rows[2])
 
 
     def test_a_wifi_password_typed_differently_is_asked_afresh(self):
@@ -605,7 +607,7 @@ class QuestionScreenTests(unittest.TestCase):
             ("account email", "you@exampl.com" + "\x1b[D" * 4 + "e" + "\x1b[A\x1b[B\r")])
         self.assertEqual((code, answer), (0, "you@example.com"), end.render(colour=False))
         rows = [row for row in end.render(colour=False).splitlines() if row.strip()]
-        self.assertEqual(len(rows), 2, "\n".join(rows))
+        self.assertEqual(len(rows), 3, "\n".join(rows))
         self.assertEqual(rows[1].strip(), self.NOTE)
 
     def test_an_answer_is_not_recalled_by_the_next_question(self):

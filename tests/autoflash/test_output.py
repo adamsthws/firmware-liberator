@@ -851,6 +851,28 @@ class ConciseTests(OutputTestCase):
                 self.assertFalse([row for row in rows if "Its address" in row or "hardware address" in row], rows)
                 self.assertNotIn(("", ""), list(zip(rows, rows[1:])), rows)
 
+    def test_a_run_that_ends_with_its_stage_under_way_shows_it_stopped_and_its_question_gone(self):
+        # Seen in the emulator: SIGTERM at the firmware question (its SystemExit
+        # ends no stage) left the stage "Underway" and the question waiting.
+        def pressed(prompt):
+            screen.write(prompt)
+            raise SystemExit(143)
+
+        def body():
+            with mock.patch.object(output, "colour_ok", return_value=True), \
+                 mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
+                output.stage_begin(2, "Choosing the firmware")
+                output.transient_begin()
+                output.show("-- Choose the device's new firmware")
+                output.tell("    1. Tasmota")
+                with mock.patch("builtins.input", side_effect=pressed), self.assertRaises(SystemExit):
+                    prompts.ask_choice("Which firmware would you like", ["Tasmota", "ESPHome"])
+        screen = FakeTerminal()
+        text, _ = self.run_with(screen, False, body)
+        rows = rendered(text)
+        self.assertEqual(rows[-1], "Stage 2 - Choosing the firmware - Stopped", rows)
+        self.assertFalse([row for row in rows if "firmware would you like" in row or "Tasmota" in row], rows)
+
     def test_a_ctrl_c_notice_outside_a_stage_goes_with_its_block(self):
         # Seen: Ctrl-C while the run looked for devices, before any stage,
         # left "! Are you sure?" on the screen for the rest of the run - the
@@ -1989,11 +2011,11 @@ class StageGapTests(OutputTestCase):
         def body():
             output.stage_begin(3, "Discovering the device")
             output.before_input("eWeLink account email: ")
-            sys.stdout.write("eWeLink account email: ")
+            sys.stdout.write("eWeLink account email: someone@example.com\n")   # as input() echoes it
             output.answered("someone@example.com")
         rows = self.screen(body)
         self.assertEqual(rows[1], "")
-        self.assertEqual(rows[2], "eWeLink account email:")
+        self.assertEqual(rows[2], "eWeLink account email: someone@example.com")
 
     def test_the_gap_leaves_the_screen_with_an_answered_question(self):
         def body():
