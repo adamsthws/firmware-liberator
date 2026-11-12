@@ -572,9 +572,10 @@ def step_discover(ctx: Context) -> dict[str, Any]:
         f"Model            {model}",
         f"Product          {product or 'not given'}",
         f"Firmware now     {version}",
+        # Only an Espressif device's own report says this (its LAN API's).
         f"Update offered   {offered}",
         "",
-        "The device fetches our firmware straight from this computer, so no",
+        "The device fetches its new firmware straight from this computer, so no",
         "router rule is needed.",
     ])
     # The earliest reading of a run from Sonoff's firmware: before anything is

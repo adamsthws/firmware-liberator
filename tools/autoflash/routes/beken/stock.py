@@ -10,7 +10,7 @@ import re
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import account, detect, firewall, join, kinds, output, prompts, runs, testers
+from tools.autoflash import account, detect, firewall, join, kinds, output, prompts, records, runs, testers
 from tools.autoflash.errors import Abort, NothingWritten, StoppedPartWay
 from tools.autoflash.routes.beken import images
 from tools.beken import fota_wrap, interim_marker
@@ -154,10 +154,21 @@ def step_push(ctx: Context) -> dict[str, Any]:
     if kind.key in images.OFFICIAL_FILES:
         images.official(kind, ctx)
     if not getattr(ctx, "consented", False):  # once a run: not again when sent again (errors.GoBack)
+        mac = ctx.state.input("device_mac")
+        backup = records.find_backup(mac) if mac else None
+        # As C2 says it, of the backup B4 takes once the new firmware runs (arrived._back_up).
+        if getattr(getattr(ctx, "args", None), "no_backup", False):
+            kept = "No backup of its own data is kept (--no-backup)."
+        elif backup:
+            kept = f"Its own data is backed up already ({backup.taken or 'earlier'})."
+        else:
+            kept = "Its own data is backed up to this computer once the new firmware runs."
         output.transient_begin()
         prompts.warning_box("Before going on", [
             "From here the device's Sonoff firmware is replaced, so the eWeLink app",
             "will no longer control it. DO NOT CUT ITS POWER during the process.",
+            kept,
+            "Only go ahead with a device you can afford to lose.",
             *testers.notice(kind),
         ])
         if not prompts.require_word(prompts.CONSENT_WORD):
