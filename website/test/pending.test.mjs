@@ -48,7 +48,7 @@ test("an address never confirmed is deleted after its days", async () => {
   assert.equal(SIGNUP_DAYS, 7);
   const env = { DB: d1(), READOUTS: bucket() };
   for (const [token, day] of [["a".repeat(32), "2026-11-01"], ["b".repeat(32), "2026-11-03"]]) {
-    await env.DB.prepare("INSERT INTO confirmations (token, who, email, devices, day, sent) VALUES (?1, 'w', 'e', '[]', ?2, ?2 || 'T12:00:00Z')")
+    await env.DB.prepare("INSERT INTO confirmations (token, who, email, devices, readouts, day, sent) VALUES (?1, 'w', 'e', '[]', '[]', ?2, ?2 || 'T12:00:00Z')")
       .bind(token, day).run();
   }
   assert.equal((await prunePending(env, "2026-11-09")).signups, 1);

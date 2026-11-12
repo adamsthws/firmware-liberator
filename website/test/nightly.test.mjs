@@ -392,8 +392,8 @@ test("each night clears readouts never taken as right and addresses never confir
   const bindings = { ...env(), READOUTS: { ...bucket(), delete: async () => {} } };
   bindings.DB.db.prepare(`INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, review)
     VALUES ('old', 'K', 'whole', 's', 'f', 1, 'readouts/x/old.tar', '2026-05-01T00:00:00Z', 'pending')`).run();
-  bindings.DB.db.prepare(`INSERT INTO confirmations (token, who, email, devices, day, sent)
-    VALUES ('t', 'w', 'e', '[]', '2026-10-01', '2026-10-01T12:00:00Z')`).run();
+  bindings.DB.db.prepare(`INSERT INTO confirmations (token, who, email, devices, readouts, day, sent)
+    VALUES ('t', 'w', 'e', '[]', '[]', '2026-10-01', '2026-10-01T12:00:00Z')`).run();
   const done = await night.nightly(bindings, NIGHT);
   assert.deepEqual(done.pruned, { readouts: 1, signups: 1 });
   assert.deepEqual(rows(bindings, "SELECT id FROM readouts"), []);

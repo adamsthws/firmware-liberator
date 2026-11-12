@@ -2,8 +2,8 @@
 // .github/readouts.md). A Worker of its own, apart from the website's, so
 // nothing sent here can touch the site. Six paths, as openapi.json describes
 // them: four a POST from the tool, under /v1/ - /v1/reports (reports.js, which
-// says how it is guarded), and three for readouts - and /confirm and /forget,
-// which a person opens from an email.
+// says how it is guarded), and three for readouts and sign-ups - and /confirm
+// and /forget, which a person opens from an email.
 // Every one answers 503 while INGEST is not "on". A sender is counted by its
 // address, an IPv6 one by its /48 (sender.js).
 // - /v1/wanted: whether a readout of a device would add anything, asked before
@@ -15,9 +15,12 @@
 //   something: fewer than PER_KEY readouts of that model and version at that
 //   stage are held (a whole one taking a first stage's place too), and its
 //   sender has had fewer than SENDER_DAILY kept today.
-// - /v1/notify: an owner's email address and their devices' models, to be told
-//   when a device's status changes, whether or not a readout was wanted. The
-//   address is sent a link to confirm it, and nothing is kept until it is.
+// - /v1/notify: an owner's email address, to be emailed as more devices are
+//   supported, with their devices' models and the readouts they sent, so
+//   their own devices' news can be sent them too. The website's sign-up page
+//   (SITE_ORIGIN) posts an address alone to it from the browser, its script
+//   doing the same work. Either way the address is sent a link to confirm
+//   it, and nothing is kept until it is.
 // - /confirm: that link; /forget: the link to stop, one an address. A GET of
 //   either shows a page asking first; only the POST it sends acts, so a mail
 //   scanner following one does nothing.
@@ -59,10 +62,9 @@
 // - A device enough readouts of are in, by eWeLink's product model in ENOUGH
 //   (a comma-separated variable in wrangler.jsonc), is not wanted at all.
 // - The same readout sent again the same day is the one already stored.
-// - The addresses under notify/ have no expiry: they are kept until the
-//   device's status changes and they are written to, or until removed on
-//   request, by its owner through /forget. No address or other detail of a
-//   sender is kept here: a sender's day count is named by a keyed hash of its
+// - A confirmed address (subscribers, in the database) has no expiry: it is
+//   kept until its owner removes it through /forget. No address or other
+//   detail of a sender is kept but the one they gave: a sender's day count is named by a keyed hash of its
 //   address (SENDER_KEY, a Worker secret), deleted with the day's counts.
 //   Cloudflare's own log of each request (wrangler.jsonc), kept seven days,
 //   holds its address.
@@ -81,9 +83,12 @@ export const QUESTION_MAX_BYTES = 4096;
 // email. Email Service includes 3,000 a month on Workers Paid, then $0.35 a
 // 1,000 (2026), so a month of full days, some 15,000, is about $4.
 export const NOTIFY_DAILY = 500;
-// The most offered files a /wanted question names, and devices a /notify.
+// The most offered files a /wanted question names, and devices and readouts
+// a /notify: an eWeLink account's devices, and a sitting's readouts, rarely
+// more.
 export const MAX_FIRMWARE = 8;
 export const MAX_DEVICES = 20;
+export const MAX_READOUTS = 20;
 // Sign-ups to be told of a change one sender may ask for a day, and one
 // address may be sent a confirmation for: so nobody can have many strangers
 // emailed, or one stranger many times.
@@ -306,7 +311,6 @@ function enoughOf(env) {
 const PRINTABLE = /^[\x20-\x7e]+$/;
 const text = (value, most = 64) => typeof value === "string" && value.length > 0 && value.length <= most
   && PRINTABLE.test(value);
-const part = (value) => encodeURIComponent(String(value));
 
 // The names a device goes by, as the tool sends them: its eWeLink product
 // model, written as a report's model is (report-schema.json) in either case;
@@ -689,7 +693,6 @@ async function keep(env, key, body, manifest, id, offered) {
     customMetadata: {
       tool: String(manifest.tool || "").replace(/[^\x20-\x7e]/g, "").slice(0, 16),
       product: manifest.product.slice(0, 40),
-      contact: String(Boolean(manifest.contact)),
       read: String(manifest.read === true),
     },
   });
@@ -705,71 +708,108 @@ async function keep(env, key, body, manifest, id, offered) {
 }
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const isAddress = (email) => text(email, 254) && EMAIL.test(email);
 const WHO = /^[0-9a-f]{64}$/;
 const TOKEN = /^[0-9a-f]{32}$/;
+// A readout's reference, as readout() makes it.
+const READOUT_ID = /^\d{4}-\d{2}-\d{2}-[0-9a-f]{12}$/;
 export const FORGET_URL = "https://api.firmwareliberator.com/forget";
-
-// One address's index: its removal token and the products it was given
-// for, so /forget removes them all with no listing.
-const whoKey = (who) => `notify/_who/${who}.json`;
-async function indexOf(env, who) {
-  const found = await env.READOUTS.get(whoKey(who));
-  if (!found) {
-    return null;
+// The website, whose sign-up page (/notify) posts to /v1/notify from the
+// browser: the one origin let read its answers (CORS).
+export const SITE_ORIGIN = "https://firmwareliberator.com";
+const CORS = { "Access-Control-Allow-Origin": SITE_ORIGIN };
+// The website's sign-up page, for one who removed their address and wants
+// it back.
+export const SIGNUP_PAGE = `${SITE_ORIGIN}/notify`;
+// A sign-up: {"format": 1, "email", "devices": [{"product", "model"}],
+// "readouts": [<reference>], "update": true|false} - from the tool, the
+// devices in the owner's eWeLink account, supported or not, [] where none was
+// seen, and the readouts the owner sent that sitting; from the website's page,
+// the address alone. "update": the tool's sending of a later sitting's, with
+// the address given before, which only adds to a confirmed address.
+// Not kept as given: signUp says what is. Its answers carry CORS, so the
+// page can read them; the browser asks first, with OPTIONS (preflight).
+export async function notify(request, env, now = new Date()) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: { ...CORS, "Access-Control-Allow-Methods": "POST",
+      "Access-Control-Allow-Headers": "Content-Type, X-Proof", "Access-Control-Max-Age": "86400" } });
   }
-  try {
-    return JSON.parse(await found.text());
-  } catch {
-    return null;
+  const answered = request.method === "POST" ? await signUpAsked(request, env, now)
+    : answer(405, { error: "asked with POST" }, { Allow: "POST, OPTIONS" });
+  for (const [name, value] of Object.entries(CORS)) {
+    answered.headers.set(name, value);
   }
+  return answered;
 }
 
-// An owner's email address, to be told when any of their devices' status
-// changes: {"format": 1, "email", "devices": [{"product", "model"}]}. Not
-// kept as given: the address is sent a link to confirm it (/confirm), and
-// only once its owner follows it is it kept, under
-// notify/<product>/<the address's SHA-256>.json, one a product and address,
-// until removed (/forget, by the link each such email carries). Asked and
-// never confirmed, it is deleted after SIGNUP_DAYS (pending.js). Answers 202
-// alike whether or not a confirmation was sent, so nobody learns from it
-// whether an address was asked for before.
-export async function notify(request, env, now = new Date()) {
+async function signUpAsked(request, env, now) {
   const asked = await question(request, env, now, "request");
   if (asked instanceof Response) {
     return asked;
   }
-  const devices = asked.devices;
+  const { devices, readouts = [], update = false } = asked;
   const email = typeof asked.email === "string" ? asked.email.trim() : "";
-  if (!text(email, 254) || !EMAIL.test(email) || !Array.isArray(devices) || !devices.length
-      || devices.length > MAX_DEVICES
-      || !devices.every((device) => fits(device?.product, PRODUCT) && fits(device?.model ?? "-", FIRMWARE_MODEL))) {
+  if (!isAddress(email) || typeof update !== "boolean" || !Array.isArray(devices) || devices.length > MAX_DEVICES
+      || !devices.every((device) => fits(device?.product, PRODUCT) && fits(device?.model ?? "-", FIRMWARE_MODEL))
+      || !Array.isArray(readouts) || readouts.length > MAX_READOUTS
+      || !readouts.every((id) => typeof id === "string" && READOUT_ID.test(id))) {
     return answer(400, { error: "that is not a request this tool makes" });
   }
+  const named = [...new Map(devices.map((device) => {
+    const each = { product: device.product.toUpperCase(), model: device.model ?? "-" };
+    return [`${each.product}|${each.model}`, each];
+  })).values()];
+  const taken = await signUp(env, request, now, email, named, [...new Set(readouts)], update);
+  return taken.error ? answer(taken.status, { error: taken.error }, taken.headers)
+    : answer(202, { confirming: true });
+}
+
+// An address given, by the tool or the sign-up page: sent a link to confirm
+// it (/confirm), and only once its owner follows it is it kept (subscribers),
+// with the devices and readouts it named, until removed (/forget, by the link
+// every email to it carries). Asked and never confirmed, it is deleted after
+// SIGNUP_DAYS (pending.js). One confirmed already is sent nothing, and only
+// takes what it named; with `update`, one not confirmed is sent nothing either. Answered alike whether or not a confirmation was sent,
+// so nobody learns whether an address was given before. {status} when taken,
+// or {status, error, headers}.
+async function signUp(env, request, now, email, devices, readouts, update = false) {
+  const later = (status, error, after) => ({ status, error, headers: after ? { "Retry-After": after } : {} });
   if (!env.EMAIL) {
-    return answer(503, { error: "not taking addresses yet: try again another time" }, { "Retry-After": "86400" });
+    return later(503, "not taking addresses yet: try again another time", "86400");
   }
   const day = now.toISOString().slice(0, 10);
   const sender = await keyedHash(env, `notify|${day}|${addressOf(request)}`);
   if (!sender) {
-    return answer(503, { error: "the API is being set up: try again later" }, { "Retry-After": "3600" });
+    return later(503, "the API is being set up: try again later", "3600");
   }
   if (!(await reserve(env.DB, `notify-sender:${sender}:${day}`, day, { most: NOTIFY_SENDER_DAILY }))) {
-    return answer(503, { error: `${NOTIFY_SENDER_DAILY} a day from one address: try again tomorrow` },
-      { "Retry-After": "86400" });
+    return later(503, `${NOTIFY_SENDER_DAILY} a day from one address: try again tomorrow`, "86400");
   }
   const who = hex(await sha256(new TextEncoder().encode(email.toLowerCase())));
+  // An address confirmed already takes the devices and readouts named, with
+  // no email: the tool sends them each sitting once its owner has signed up.
+  if (await env.DB.prepare("SELECT 1 AS n FROM subscribers WHERE who = ?").bind(who).first("n")) {
+    await keepAddress(env, { who, email, devices, readouts }, now);
+    return { status: 202 };
+  }
+  // An update for an address not confirmed - removed by its owner, or never
+  // confirmed, so deleted - starts nothing: no email, nothing kept. Else each
+  // later sitting would email it again, one who left included.
+  if (update) {
+    return { status: 202 };
+  }
   // One confirmation an address a day, however many ask for it.
   if (!(await reserve(env.DB, `notify-to:${who}:${day}`, day, { most: 1 }))) {
-    return answer(202, { confirming: true });
+    return { status: 202 };
   }
   if (!(await reserve(env.DB, notifyOn(day), day, { most: NOTIFY_DAILY }))) {
-    return answer(503, { error: "enough for today: try again tomorrow" }, { "Retry-After": "86400" });
+    return later(503, "enough for today: try again tomorrow", "86400");
   }
   const token = hex(crypto.getRandomValues(new Uint8Array(16)));
-  const named = devices.map((device) => ({ product: device.product.toUpperCase(), model: device.model ?? "-" }));
-  await env.DB.prepare("INSERT INTO confirmations (token, who, email, devices, day, sent) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
-    .bind(token, who, email, JSON.stringify(named), day, now.toISOString()).run();
-  const mailed = await sendMail(env, confirmation(email, named, token), day);
+  await env.DB.prepare(`INSERT INTO confirmations (token, who, email, devices, readouts, day, sent)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`)
+    .bind(token, who, email, JSON.stringify(devices), JSON.stringify(readouts), day, now.toISOString()).run();
+  const mailed = await sendMail(env, confirmation(email, devices, token), day);
   if (!mailed.sent) {
     await env.DB.prepare("DELETE FROM confirmations WHERE token = ?").bind(token).run();
     await release(env.DB, notifyOn(day));
@@ -777,28 +817,31 @@ export async function notify(request, env, now = new Date()) {
     // answered as any other, so nobody learns that of it; it is not tried
     // again today.
     if (mailed.code === SUPPRESSED) {
-      return answer(202, { confirming: true });
+      return { status: 202 };
     }
     await release(env.DB, `notify-to:${who}:${day}`);
-    return answer(502, { error: "the confirmation could not be sent: try again later" });
+    return later(502, "the confirmation could not be sent: try again later");
   }
-  return answer(202, { confirming: true });
+  return { status: 202 };
 }
+
+const productsOf = (devices) => [...new Set(devices.map((device) => device.product))];
 
 // The email asking an address's owner to confirm it, or, given the day it was
 // asked for, asking once more.
 function confirmation(email, devices, token, given = null) {
   const reminder = given !== null;
-  const products = [...new Set(devices.map((device) => device.product))];
+  const products = productsOf(devices);
   return {
     to: email,
     from: NOTIFY_FROM,
-    subject: `${reminder ? "Reminder - confirm" : "Confirm"}: tell me when my device is supported`,
+    subject: `${reminder ? "Reminder - confirm" : "Confirm"}: email me as more devices are supported`,
     text: [
-      `Someone - we hope you - asked Firmware Liberator${reminder ? ` on ${given}` : ""} to email this address when the`,
-      `support for these devices changes: ${products.join(", ")}.`,
+      `Someone - we hope you - asked Firmware Liberator${reminder ? ` on ${given}` : ""} to email this address as more`,
+      products.length ? `devices are supported, and when the support for these changes: ${products.join(", ")}.`
+        : "devices are supported.",
       "",
-      `To be told, confirm it here: ${CONFIRM_URL}?t=${token}`,
+      `To be emailed, confirm it here: ${CONFIRM_URL}?t=${token}`,
       "",
       reminder
         ? `This is the only reminder. If it was not you, do nothing: unless it is confirmed, the address is deleted`
@@ -821,14 +864,15 @@ export async function remind(env, now = new Date()) {
   const before = new Date(now.getTime() - REMIND_AFTER_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const { results } = await env.DB.prepare(`SELECT confirmations.* FROM confirmations
     LEFT JOIN counters ON counters.name = 'notify-remind:' || confirmations.who AND counters.count > 0
-    WHERE confirmations.sent <= ?1 AND counters.name IS NULL ORDER BY confirmations.sent LIMIT ?2`)
+    WHERE confirmations.sent <= ?1 AND counters.name IS NULL
+      AND confirmations.who NOT IN (SELECT who FROM subscribers)
+    ORDER BY confirmations.sent LIMIT ?2`)
     .bind(before, REMIND_EACH_RUN).all();
   let sent = 0;
   for (const signup of results) {
     // The counter outlives the sign-up (pruning in nightly.js, SIGNUP_DAYS in
     // pending.js), so a run twice reminds nobody twice.
-    if (await env.READOUTS.head(whoKey(signup.who))
-        || !(await reserve(env.DB, `notify-remind:${signup.who}`, today, { most: 1 }))) {
+    if (!(await reserve(env.DB, `notify-remind:${signup.who}`, today, { most: 1 }))) {
       continue;
     }
     if (!(await reserve(env.DB, notifyOn(today), today, { most: NOTIFY_DAILY }))) {
@@ -868,40 +912,39 @@ export async function confirm(request, env, now = new Date()) {
     return page(404, "Nothing to confirm",
       `<p>This link is not one we know, or it has been used, or more than ${SIGNUP_DAYS} days have passed.</p>`);
   }
-  const devices = JSON.parse(signup.devices);
-  const products = [...new Set(devices.map((device) => device.product))];
+  const products = productsOf(JSON.parse(signup.devices));
   if (request.method === "GET") {
-    return page(200, "Be told when your device is supported?",
-      `<p>Firmware Liberator will email you when the support for these changes: ${escape(products.join(", "))}.
+    return page(200, "Be emailed as more devices are supported?",
+      `<p>Firmware Liberator will email you as more devices are supported${products.length
+        ? `, and when the support for these changes: ${escape(products.join(", "))}` : ""}.
 Every such email has a link to stop them.</p>
 <form method="post" action="/confirm"><input type="hidden" name="t" value="${token}">
 <button type="submit">Yes, email me</button></form>`);
   }
-  await keepAddress(env, signup.email, signup.who, devices, now);
-  await env.DB.prepare("DELETE FROM confirmations WHERE token = ?").bind(token).run();
-  return page(200, "Confirmed", "<p>You will be emailed when your device's support changes. Thank you for helping.</p>");
+  await keepAddress(env, { ...signup, devices: JSON.parse(signup.devices), readouts: JSON.parse(signup.readouts) },
+    now, env.DB.prepare("DELETE FROM confirmations WHERE token = ?").bind(token));
+  return page(200, "Confirmed", "<p>You will be emailed as more devices are supported. Thank you for helping.</p>");
 }
 
-// A confirmed address, kept for each product, with its one removal link.
-async function keepAddress(env, email, who, devices, now) {
-  const products = [...new Set(devices.map((device) => device.product))];
-  // One token an address, kept as it was first made: every email sent it
-  // carries the same link.
-  const before = await indexOf(env, who);
-  const token = TOKEN.test(before?.token ?? "") ? before.token : hex(crypto.getRandomValues(new Uint8Array(16)));
-  const forget = `${FORGET_URL}?a=${who}&t=${token}`;
-  await env.READOUTS.put(whoKey(who), JSON.stringify({ token,
-    products: [...new Set([...(Array.isArray(before?.products) ? before.products : []), ...products])] }),
-  { httpMetadata: { contentType: "application/json" } });
-  for (const product of products) {
-    const models = [...new Set(devices.filter((device) => device.product === product).map((device) => device.model))];
-    await env.READOUTS.put(`notify/${part(product)}/${who}.json`,
-      JSON.stringify({ email, product, models, since: now.toISOString(), forget }),
-      // Its address, models and removal link in its metadata too: tools/repo/readouts.py notify lists
-      // them without fetching each one.
-      { httpMetadata: { contentType: "application/json" },
-        customMetadata: { product, email, models: models.join(",").slice(0, 512), forget } });
-  }
+// A confirmed address, kept once, with its one removal token, kept as it was
+// first made so every email sent it carries the same link. Its devices and
+// readouts are added to those kept, never taken away: a device gone from the
+// owner's eWeLink account was most likely converted, not given away. Each
+// device keeps when it was first and last named. `also`: a statement run in
+// the same batch (the confirmation used up).
+async function keepAddress(env, { who, email, devices, readouts }, now, also = null) {
+  const at = now.toISOString();
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO subscribers (who, email, token, since, updated) VALUES (?1, ?2, ?3, ?4, ?4)
+      ON CONFLICT (who) DO UPDATE SET email = excluded.email, updated = excluded.updated`)
+      .bind(who, email, hex(crypto.getRandomValues(new Uint8Array(16))), at),
+    ...devices.map((device) => env.DB.prepare(`INSERT INTO subscriber_devices (who, product, model, first_seen,
+      last_seen) VALUES (?1, ?2, ?3, ?4, ?4) ON CONFLICT (who, product, model) DO UPDATE SET last_seen = excluded.last_seen`)
+      .bind(who, device.product, device.model, at)),
+    ...readouts.map((id) => env.DB.prepare("INSERT OR IGNORE INTO subscriber_readouts (who, readout) VALUES (?1, ?2)")
+      .bind(who, id)),
+    ...(also ? [also] : []),
+  ]);
 }
 
 // Text put in a page's HTML, from wherever it came.
@@ -920,9 +963,8 @@ button{font:inherit;padding:.5rem 1rem}</style></head><body><h1>${escape(title)}
     "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" } });
 }
 
-// Whether `token` is the one `who`'s index holds, compared in fixed time.
-function sameToken(index, token) {
-  const kept = String(index?.token ?? "");
+// Whether `token` is the one `kept` holds, compared in fixed time.
+function sameToken(kept, token) {
   if (!TOKEN.test(kept) || !TOKEN.test(token)) {
     return false;
   }
@@ -933,36 +975,38 @@ function sameToken(index, token) {
   return differ === 0;
 }
 
-// The link in each email to an address given (?a=<its SHA-256>&t=<token>):
-// a GET shows what it would do and a button, and only the POST that button
+// The link in each email to an address kept (?a=<its SHA-256>&t=<token>): a
+// GET shows what it would do and a button, and only the POST that button
 // sends removes the address - a mail scanner following the link removes
-// nothing. Every product it was given for goes, and its index.
+// nothing. Its devices and readouts go with it. A mail program's one-click
+// unsubscribe (RFC 8058: the List-Unsubscribe and List-Unsubscribe-Post
+// headers each update email carries, .github/readouts.md) POSTs to the link
+// itself, "List-Unsubscribe=One-Click" its body: the link's own a and t.
 export async function forget(request, env) {
   let who, token;
+  const url = new URL(request.url);
   if (request.method === "GET") {
-    const url = new URL(request.url);
     [who, token] = [url.searchParams.get("a") ?? "", url.searchParams.get("t") ?? ""];
   } else if (request.method === "POST") {
     const form = new URLSearchParams(await request.text());
-    [who, token] = [form.get("a") ?? "", form.get("t") ?? ""];
+    [who, token] = [form.get("a") ?? url.searchParams.get("a") ?? "", form.get("t") ?? url.searchParams.get("t") ?? ""];
   } else {
     return answer(405, { error: "opened from the link in an email" }, { Allow: "GET, POST" });
   }
-  const index = WHO.test(who) ? await indexOf(env, who) : null;
-  if (!index || !sameToken(index, token)) {
+  const kept = WHO.test(who) ? await env.DB.prepare("SELECT token FROM subscribers WHERE who = ?").bind(who)
+    .first("token") : null;
+  if (!sameToken(String(kept ?? ""), token)) {
     return page(404, "Nothing to remove",
       "<p>This link is not one we know, or the address it was for has been removed already.</p>");
   }
   if (request.method === "GET") {
     return page(200, "Stop these emails?",
-      `<p>Your email address will be removed from Firmware Liberator's list, for every device you gave it
-for. You will not be emailed about them again.</p>
+      `<p>Your email address will be removed from Firmware Liberator's list. You will not be emailed again.</p>
 <form method="post" action="/forget"><input type="hidden" name="a" value="${who}">
 <input type="hidden" name="t" value="${token}"><button type="submit">Remove my address</button></form>`);
   }
-  for (const product of Array.isArray(index.products) ? index.products.slice(0, MAX_DEVICES) : []) {
-    await env.READOUTS.delete(`notify/${part(String(product))}/${who}.json`);
-  }
-  await env.READOUTS.delete(whoKey(who));
-  return page(200, "Removed", "<p>Your email address is off the list. Thank you for helping.</p>");
+  await env.DB.batch(["subscriber_devices", "subscriber_readouts", "subscribers"].map((table) =>
+    env.DB.prepare(`DELETE FROM ${table} WHERE who = ?`).bind(who)));
+  return page(200, "Removed", `<p>Your email address is off the list. Thank you for helping.</p>
+<p>Changed your mind? <a href="${SIGNUP_PAGE}">Sign up again</a>.</p>`);
 }
