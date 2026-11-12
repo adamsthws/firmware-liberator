@@ -8,6 +8,11 @@ body:
         Thank you for reporting it. [docs/troubleshooting.md](https://github.com/adamsthws/firmware-liberator/blob/main/docs/troubleshooting.md) covers what has happened before - worth a look first.
 
         A run that **worked** needs nothing more: its report tells the project how it went ([what the tool sends](https://firmwareliberator.com/docs/what-the-tool-sends)).
+  - type: input
+    id: report
+    attributes:
+      label: The report's ID
+      description: Filled in when you open this from the link the tool shows, and on the report it shows. It lets the maintainer find this run's report, which says nothing about you.
   - type: textarea
     id: run_report
     attributes:

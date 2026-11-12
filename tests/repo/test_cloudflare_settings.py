@@ -308,7 +308,7 @@ class CloudflareSettingsTests(unittest.TestCase):
         code, out = run(fake)
         self.assertEqual((code, fake.sent), (1, []))
         self.assertIn("always_use_https: is off, should be on", out)
-        self.assertIn("redirects: are [], should be ['www-to-apex', 'issues-to-github']", out)
+        self.assertIn("redirects: are [], should be ['www-to-apex', 'issues-to-github', 'issue-for-a-report']", out)
         self.assertIn(f"{cs.READOUTS_BUCKET}: does not exist", out)
         self.assertIn("rate limits: are [], should be ['api-flood']", out)
         self.assertIn("Email Routing: is off", out)
@@ -360,6 +360,18 @@ class CloudflareSettingsTests(unittest.TestCase):
         self.assertIn(f'"{cs.ISSUES_PATH}"', rule["expression"])
         from tools.autoflash import report
         self.assertEqual(report.ISSUES_URL, f"https://{cs.ZONE}{cs.ISSUES_PATH}")   # what the tool shows
+
+    def test_the_short_issues_address_with_a_reports_id_opens_the_form_naming_it(self):
+        rule = next(rule for rule in cs.REDIRECTS if rule["ref"] == "issue-for-a-report")
+        target = rule["action_parameters"]["from_value"]["target_url"]["expression"]
+        self.assertIn(f'"{cs.ISSUES}/new?template={cs.ISSUE_FORM}&report=${{1}}"', target)
+        form = (Path(__file__).resolve().parents[2] / ".github/ISSUE_TEMPLATE" / cs.ISSUE_FORM).read_text(encoding="utf-8")
+        self.assertIn("    id: report\n", form, "the field the id fills in")
+        # The bare address is the rule before's: this one needs something after the slash.
+        self.assertIn(f'wildcard "{cs.ISSUES_PATH}/*"', rule["expression"])
+        self.assertIn(f'ne "{cs.ISSUES_PATH}/"', rule["expression"])
+        refs = [rule["ref"] for rule in cs.REDIRECTS]
+        self.assertLess(refs.index("issues-to-github"), refs.index("issue-for-a-report"))
 
     def test_a_lifecycle_rule_added_by_hand_is_taken_away_as_readouts_are_kept_for_good(self):
         fake = FakeCloudflare()
