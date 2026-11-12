@@ -143,6 +143,7 @@ class Context:
         # the process making its proof of work, once begun.
         self.report_id: str | None = None
         self.report_work = None
+        self.last_report_id: str | None = None   # the one sent: on the screen's report, for an issue
         self.last_failed_step = ""  # and which it was: a failure may send earlier steps back
         try:
             output.private(bundle_ssid(self.manifest_path), "wifi-name")

@@ -168,6 +168,7 @@ class Became:
     back: bool = True           # its Sonoff firmware answered again
     mac: str | None = None      # for its report's device hash, as a conversion's sends
     error: str | None = None    # how a failed one failed (failures.classify)
+    report_id: str | None = None   # its report's, once kept to send (report_upload.send_readout)
 
     @classmethod
     def of(cls, device: dict[str, Any], **ended: Any) -> Became:
@@ -239,10 +240,14 @@ def end(ctx: Context, said: str, failed: bool = False) -> None:
         for line in said.splitlines():
             output.tell(line)
     output.tell("")
-    for line in report.report_screen(report_fields(done), right=REPORT_RIGHT, below=report_devices(done)):
+    # One device's report's id, as a conversion's; several each have one, sent
+    # alike, and the one that failed names the issue.
+    sent = [item.report_id for item in done if item.report_id]
+    below = [*report_devices(done), *([(report.REPORT_ID, sent[0])] if len(done) == 1 and sent else [])]
+    for line in report.report_screen(report_fields(done), right=REPORT_RIGHT, below=below):
         output.tell(line)
     if failed:
-        report.ask_for_an_issue()
+        report.ask_for_an_issue(next((item.report_id for item in done if item.outcome in (FAILED, CRASHED)), None))
     else:
         report.hold_out_hat()
 

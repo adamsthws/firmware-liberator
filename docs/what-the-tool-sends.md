@@ -59,7 +59,11 @@ stages people choose to stop at, and which devices people want supported next: s
   counted from its own records there, so deleting them starts the count
   again. Nothing that names your computer is sent.
 - **For counting:** a random number, so a report sent twice counts once, and
-  a mark telling a maintainer's test run from everyone else's.
+  a mark telling a maintainer's test run from everyone else's. The number is
+  the report's ID: the tool shows it under its report at the end of the run,
+  and in the address it gives to open an issue when a run fails, so the issue
+  names its report. An issue is public: one that names a report lets anyone
+  see that report's details beside it.
 
 ## What a report never holds
 

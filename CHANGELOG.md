@@ -309,10 +309,12 @@ check.
   A report that could not be sent is kept on your computer and sent the next
   time, for up to 30 days.
 - A run that failed ends with where to open an issue for it,
-  firmwareliberator.com/issues, and where its log is, in place of the links to
+  firmwareliberator.com/issues/ and its report's ID, which fills it in on the
+  issue, and where its log is, in place of the links to
   support the project; one you stop yourself does not. A readout that failed
   does the same under its report, which says "Failed". A run that worked no
-  longer says where its log is, a device wanting testers' included. The end of a run no longer asks for its report to be posted in
+  longer says where its log is, a device wanting testers' included. The report
+  on the screen ends with its ID, for an issue to name it. The end of a run no longer asks for its report to be posted in
   Discussions, nor links to them when a run fails.
 - The tool's options and the names of what it keeps say "device", as its
   screens do: it converts much more than smart plugs now. `--plug-ip` is
