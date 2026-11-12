@@ -51,9 +51,9 @@ def rebuilt(ctx: Context, kind: kinds.Kind) -> tuple[bytes, str]:
         flash = sonoff_firmware.flash_of(images.sonoff_table(kind), settings, app, layout)
     except (sonoff_firmware.FirmwareError, sonoff_identity.IdentityError, images.ImageError) as exc:
         raise NothingWritten(f"Sonoff's firmware cannot be put back without a backup: {exc}") from exc
-    output.say("There is no backup of the device's Sonoff firmware on this computer, so it is put")
-    output.say(f"together: Sonoff's firmware from {source}, and its identity from {where},")
-    output.say("with the Wi-Fi it is on now.")
+    output.say("There is no backup of the device's Sonoff firmware on this computer, so it")
+    output.say(f"is put together: Sonoff's firmware from {source}, and its identity from")
+    output.say(f"{where}, with the Wi-Fi it is on now.")
     ctx.state.capture("R1.rebuilt", {"firmware": source, "identity": "kept" if kept else "account"})
     ctx.state.capture("R1.identity", "kept" if kept else "account")
     return flash, where
@@ -116,8 +116,8 @@ def out_of_sonoffs_slot(ctx: Context, backup: bytes, kind: kinds.Kind) -> int:
     running = hub.running_slot(device)
     if running != plans.stock_slot(backup, images.layout_of(kind)):
         return running
-    output.say("The device's Sonoff firmware goes back in the half of its memory Tasmota runs from,")
-    output.say("so Tasmota moves to the other half first.")
+    output.say("The device's Sonoff firmware goes back in the half of its memory Tasmota")
+    output.say("runs from, so Tasmota moves to the other half first.")
     booted, uptime = device.started_at(), device.uptime_seconds()
     hub.upload_or_prompt(ctx, images.interim_of(kind), "Berry Tasmota")
     device.wait_for_reboot(timeout=300, started_at=booted, before=uptime)

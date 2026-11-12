@@ -253,8 +253,9 @@ def set_up_if_erased(ctx: Context, step: str) -> bool:
     if not network:
         return False
     output.progress_clear()
-    output.tell("    The device is not on your Wi-Fi but on its own setup network: its settings were")
-    output.tell("    erased (switched off and on 7 times, say), so it is set up through that again.")
+    output.tell("    The device is not on your Wi-Fi but on its own setup network: its")
+    output.tell("    settings were erased (switched off and on 7 times, say), so it is set up")
+    output.tell("    through that again.")
     join.configure_device_wifi(ctx, network)
     if ctx.state.is_done("F4"):
         device = ctx.device
@@ -293,9 +294,9 @@ def wait_for_device_back(ctx: Context, step: str | None = None) -> None:
         # setup network itself), and one that has lost its settings, looked for.
         if not hinted and step != "F4" and now - started > DEVICE_BACK_HINT_AFTER:
             output.progress_clear()
-            output.tell("    At this stage the device has no setup network of its own unless its settings")
-            output.tell("    were erased: it rejoins your Wi-Fi by itself as soon as it can. Check your")
-            output.tell("    router is on and the device has power; this keeps waiting.")
+            output.tell("    At this stage the device has no setup network of its own unless its")
+            output.tell("    settings were erased: it rejoins your Wi-Fi by itself as soon as it can.")
+            output.tell("    Check your router is on and the device has power; this keeps waiting.")
             hinted = True
         if step and now - looked >= ERASED_LOOK_EVERY:
             looked = now
