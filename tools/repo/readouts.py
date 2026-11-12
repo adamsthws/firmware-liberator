@@ -2,8 +2,9 @@
 """The readouts people have sent, in the R2 bucket the API Worker keeps them in.
 
     python3 tools/repo/readouts.py [prefix]        list them (prefix: readouts/)
-    python3 tools/repo/readouts.py notify [PRODUCT]  who asked to be told when a
-                                                    device's status changes
+    python3 tools/repo/readouts.py notify [PRODUCT]  who asked to be emailed as
+                                                    more devices are supported
+                                                    (of a product: its owners)
     python3 tools/repo/readouts.py review [PRODUCT]  the readouts waiting for review
     python3 tools/repo/readouts.py approve ID        one taken as right
     python3 tools/repo/readouts.py reject ID         one taken as wrong: its place
@@ -16,7 +17,7 @@
                                                     tag), and whom to tell of each
 
 Each line is a readout's key, size, when it came in and what the Worker noted
-of it: the tool, the product, whether it holds a whole read and a contact.
+of it: the tool, the product, and whether it holds a whole read.
 Under readouts/ only the readouts are listed, not the marks of what is held
 beside them; a prefix given lists everything under it.
 
@@ -30,12 +31,14 @@ rotate SENDER_KEY` printed it): two of its three could be one sender's, as a
 new key makes every sender look new. The API's database is read with the
 maintainer's CLOUDFLARE_READOUTS_REVIEW_TOKEN (D1 is refused to CI's).
 
-`notify` lists each address given for a product (eWeLink's product model),
-with the firmware models it was given with and when: whom to write to when
-that device's status changes (.github/readouts.md), and the link each email
-to them carries for them to remove their address themselves. `changes` is the
-same for each device whose status in devices/status.json differs from REF's:
-run it when a release changes one. Never from CI, whose logs are public.
+`notify` lists each address confirmed, from the API's database: its
+devices (eWeLink's product model and the firmware model, as the tool last
+saw the owner's account), the readouts it sent, when it was confirmed, and
+the link each email to it carries for its owner to remove it. Given a
+product, only that product's owners. Everyone listed is emailed when a new
+device is supported (.github/readouts.md). `changes` lists each device whose
+status in devices/status.json differs from REF's, with its owners: run it
+when a release changes one. Never from CI, whose logs are public.
 Fetch one with `npx wrangler r2 object get <bucket>/<key> --remote --file
 readout.tar`, from website/, with CLOUDFLARE_API_TOKEN, as wrangler names it,
 set to the same token. It is CLOUDFLARE_READOUTS_REVIEW_TOKEN, in the
@@ -77,7 +80,7 @@ def objects(prefix: str) -> Iterator[dict[str, Any]]:
 def describe(item: dict[str, Any]) -> str:
     noted = item.get("custom_metadata") or {}
     return "  ".join(shown(part) for part in [item["key"], f"{item.get('size', 0):>10}", item.get("last_modified", ""),
-                     *(f"{key}={noted[key]}" for key in ("tool", "product", "read", "contact") if key in noted)])
+                     *(f"{key}={noted[key]}" for key in ("tool", "product", "read") if key in noted)])
 
 
 def shown(value: Any) -> str:
@@ -162,17 +165,33 @@ def settle(action: str, reference: str) -> int:
     return 0
 
 
-def subscriber(item: dict[str, Any]) -> str:
-    noted = item.get("custom_metadata") or {}
-    return "  ".join(shown(part) for part in [noted.get("product", item["key"].split("/")[1]),
-                                              noted.get("email", "?"), noted.get("models", "") or "-",
-                                              item.get("last_modified", ""),
-                                              noted.get("forget", "(no removal link)")])
+# The link each email to an address carries for its owner to remove it, as
+# website/api/index.js's FORGET_URL (tests/repo/test_readouts.py holds them alike).
+FORGET_URL = "https://api.firmwareliberator.com/forget"
+# Each confirmed address, with its devices ("PRODUCT:model", by spaces) and
+# readouts, as website/api/migrations/0008_confirmations.sql keeps them.
+SUBSCRIBERS = """SELECT who, email, token, since,
+  (SELECT group_concat(product || ':' || model, ' ') FROM subscriber_devices d WHERE d.who = s.who) AS devices,
+  (SELECT group_concat(readout, ' ') FROM subscriber_readouts r WHERE r.who = s.who) AS readouts
+  FROM subscribers s"""
 
 
-def subscribers(prefix: str = "notify/") -> Iterator[dict[str, Any]]:
-    """Each address given, one a product: not the index each address has."""
-    return (item for item in objects(prefix) if not item["key"].startswith("notify/_who/"))
+def subscriber(row: dict[str, Any]) -> str:
+    return "  ".join(shown(part) for part in [row.get("email", "?"), row.get("devices") or "-",
+                                              row.get("readouts") or "-", row.get("since", ""),
+                                              f"{FORGET_URL}?a={row.get('who')}&t={row.get('token')}"])
+
+
+def subscribers(product: str | None = None) -> list[dict[str, Any]]:
+    """Each confirmed address, or only `product`'s owners."""
+    if product:
+        return query(f"{SUBSCRIBERS} WHERE who IN (SELECT who FROM subscriber_devices WHERE product = ?1) "
+                     "ORDER BY since", [product.upper()])
+    return query(f"{SUBSCRIBERS} ORDER BY since")
+
+
+def products_of(row: dict[str, Any]) -> list[str]:
+    return [device.partition(":")[0] for device in (row.get("devices") or "").split()]
 
 
 def statuses(ref: str | None = None) -> dict[str, str]:
@@ -201,17 +220,18 @@ def changes(ref: str | None) -> int:
     if not changed:
         print(f"No device's status changed since {ref}.")
         return 0
-    given = list(subscribers())
+    given = subscribers()
     told = 0
     for kind in changed:
         print(f"{kind.name}: {before.get(kind.key, 'not listed')} -> {now.get(kind.key)}")
-        theirs = [item for item in given if kind.product_of(item["key"].split("/")[1])]
-        for item in theirs:
-            print("    " + subscriber(item))
+        theirs = [row for row in given if any(kind.product_of(product) for product in products_of(row))]
+        for row in theirs:
+            print("    " + subscriber(row))
         told += len(theirs)
         if not theirs:
-            print("    nobody asked to be told")
-    print(f"{len(changed)} changed since {ref}, {told} to tell")
+            print("    no owner on the list")
+    print(f"{len(changed)} changed since {ref}, {told} owners to tell; {len(given)} on the list for news of any "
+          "device")
     return 0
 
 
@@ -242,25 +262,30 @@ def main(argv: list[str] | None = None) -> int:
         if len(args) > 2:
             print(__doc__.strip(), file=sys.stderr)
             return 2
-        prefix, show, what = (f"notify/{args[1].upper()}/" if len(args) == 2 else "notify/"), subscriber, "addresses"
-    elif len(args) > 1 or args[:1] in (["-h"], ["--help"]):
+        try:
+            rows = subscribers(args[1] if len(args) == 2 else None)
+        except cs.SettingsError as error:
+            print(f"readouts: {error}", file=sys.stderr)
+            return 1
+        for row in rows:
+            print(subscriber(row))
+        print(f"{len(rows)} addresses")
+        return 0
+    if len(args) > 1 or args[:1] in (["-h"], ["--help"]):
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    else:
-        prefix, show, what = (args[0] if args else "readouts/"), describe, "in " + cs.READOUTS_BUCKET
+    prefix = args[0] if args else "readouts/"
     count = 0
     try:
         for item in objects(prefix):
             if not args and not item["key"].endswith(".tar"):
                 continue   # the marks of what is held
-            if item["key"].startswith("notify/_who/"):
-                continue   # an address's index: its products and removal token
-            print(show(item))
+            print(describe(item))
             count += 1
     except cs.SettingsError as error:
         print(f"readouts: {error}", file=sys.stderr)
         return 1
-    print(f"{count} {what}")
+    print(f"{count} in {cs.READOUTS_BUCKET}")
     return 0
 
 

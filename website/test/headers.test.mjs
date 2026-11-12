@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { NOTIFY_URL } from "../public/assets/notify.mjs";
 
 const file = readFileSync(new URL("../public/_headers", import.meta.url), "utf8");
 const layout = readFileSync(new URL("../src/layouts/Page.astro", import.meta.url), "utf8");
@@ -55,4 +56,5 @@ test("each origin the layout loads from is one the policy allows", () => {
     assert.ok(csp[directive].includes(origin), `${origin} in ${directive}`);
   }
   assert.ok(csp["connect-src"].includes("https://cloudflareinsights.com"), "where the beacon reports");
+  assert.ok(csp["connect-src"].includes(new URL(NOTIFY_URL).origin), "where the sign-up page sends an address");
 });

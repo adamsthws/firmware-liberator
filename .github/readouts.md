@@ -123,9 +123,12 @@ let past, and only a readout that adds something is kept:
   network cannot keep out the owners who would outvote them.
 - A kept readout is kept for good, in a private bucket that nothing serves:
   an old one may help with a device's later versions.
-- An owner may ask to be told when a device's status changes. The address is
-  kept only once its owner confirms it from an email, and until they remove
-  it with the link every such email carries.
+- Anyone may ask to be emailed as more devices are supported: the tool asks
+  as it exits, and the website's sign-up page (`/notify`) asks too, its
+  script sending the address to the same `/v1/notify` with the same work.
+  The tool's sign-up names the owner's devices and the readouts they sent. The address is kept only once its owner confirms it
+  from an email, in the API's database, once an address, and until they
+  remove it with the link every such email carries.
 - Nothing of a sender is stored but the contact they chose to give. Senders
   are counted under a keyed hash, never by address.
 
@@ -147,7 +150,8 @@ When it fails:
 2. Many bounces at once from mistyped or made-up addresses mean someone is
    giving them: lower `NOTIFY_SENDER_DAILY` or `NOTIFY_DAILY` until it stops.
 3. After a complaint, remove that address from the list (its `/forget` link,
-   or by hand under `notify/`). Leave it suppressed, so it is never written
+   or by hand: its rows in `subscribers`, `subscriber_devices` and
+   `subscriber_readouts`). Leave it suppressed, so it is never written
    to again, unless its owner asks to be told once more.
 
 ## Rotating SENDER_KEY
@@ -201,20 +205,29 @@ token. Putting or deleting an object needs one that can edit the bucket.
       --command "UPDATE counters SET count = count - <n>, bytes = bytes - <bytes> WHERE name = 'readouts:all'"
   ```
 
-- **When a release changes a device's status**, write to everyone who asked
-  to be told about it.
+- **When a release changes a device's status**, write to the people on the
+  list.
   1. Run `python3 tools/repo/readouts.py changes` on your own computer, never
      in CI, whose logs are public. It lists each device whose status differs
-     from the latest release's, with each address given for it and its
-     removal link (`readouts.py notify <PRODUCT>` lists one product's).
+     from the latest release's, with the owners of it on the list and each
+     one's removal link. `readouts.py notify` lists everyone, for news of a
+     newly supported device; `readouts.py notify <PRODUCT>` one product's
+     owners.
   2. Send each person their own message, never one with every address in
-     view, with their own removal link in it (and as its `List-Unsubscribe`
-     header, where the sender allows).
+     view, with their own removal link in it and in two headers, so their
+     mail program offers one-click unsubscribe (RFC 8058, which Gmail and
+     Yahoo expect of a list): `List-Unsubscribe: <the link>` and
+     `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. `/forget` takes
+     that program's POST to the link.
   3. Say why they are hearing from you: an address may have been given by
      someone other than its owner.
 
-  An address stays on the list after it is written to, for the device's next
-  change, until its owner removes it.
+  An address stays on the list after it is written to, until its owner
+  removes it. Its devices are every one its owner's eWeLink account held
+  when the tool ran, each with when it was first and last seen (a device
+  is never taken off: one gone from the account was most likely
+  converted), and its readouts the ones they sent: the owners to ask to
+  try a build.
 
 Keep what you fetch under `captures/`: like any dump, it never goes into the
 repository. [Adding a device](../docs/adding-a-device.md) takes it from

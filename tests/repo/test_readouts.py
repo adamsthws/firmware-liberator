@@ -42,7 +42,7 @@ def run(fake, *args):
 
 class ReadoutsTests(unittest.TestCase):
     def test_every_page_is_listed(self):
-        keys = [f"readouts/2026-11-07/{n:024x}.tar" for n in range(5)] + ["notify/NSPANEL/" + "b" * 64 + ".json"]
+        keys = [f"readouts/2026-11-07/{n:024x}.tar" for n in range(5)] + ["other/thing.json"]
         fake = FakeBucket(keys)
         code, out = run(fake)
         self.assertEqual(code, 0)
@@ -58,23 +58,32 @@ class ReadoutsTests(unittest.TestCase):
         self.assertIn("2 in", run(FakeBucket(keys[1:]), "readouts/")[1])
         self.assertIn("1 in", run(FakeBucket(keys), "readouts/held/")[1])
 
-    def test_who_asked_to_be_told_of_a_product(self):
-        class Subscribers(FakeBucket):
-            def __call__(self, path, **kwargs):
-                answer = super().__call__(path, **kwargs)
-                for item in answer.get("result", []) if isinstance(answer, dict) else []:
-                    item["custom_metadata"] = {"product": "NSPANEL", "email": "me@example.com",
-                                               "models": "E32-MSW-NX"}
-                return answer
-        fake = Subscribers(["notify/NSPANEL/" + "b" * 64 + ".json", "notify/BASICR4/" + "c" * 64 + ".json"])
-        code, out = run(fake, "notify", "nspanel")
-        self.assertEqual(code, 0)
-        self.assertEqual(out.splitlines(), ["NSPANEL  me@example.com  E32-MSW-NX  2026-11-07T10:00:00Z  "
-                                            "(no removal link)", "1 addresses"])
-        self.assertEqual(fake.asked[0]["prefix"], "notify/NSPANEL/")
+    def test_who_asked_to_be_emailed_and_a_products_owners(self):
+        asked = []
+
+        def query(sql, params=None):
+            asked.append((sql, params))
+            return [{"who": "b" * 64, "email": "me@example.com", "token": "0" * 32, "since": "2026-11-07T10:00:00Z",
+                     "devices": "NSPANEL:E32-MSW-NX BASICR4:-", "readouts": None}]
+        out = io.StringIO()
+        with mock.patch.object(readouts, "query", query), redirect_stdout(out):
+            self.assertEqual(readouts.main(["notify", "nspanel"]), 0)
+        self.assertEqual(out.getvalue().splitlines(), [
+            "me@example.com  NSPANEL:E32-MSW-NX BASICR4:-  -  2026-11-07T10:00:00Z  "
+            f"https://api.firmwareliberator.com/forget?a={'b' * 64}&t={'0' * 32}", "1 addresses"])
+        self.assertIn("WHERE who IN (SELECT who FROM subscriber_devices WHERE product = ?1)", asked[0][0])
+        self.assertEqual(asked[0][1], ["NSPANEL"])
+        with mock.patch.object(readouts, "query", query), redirect_stdout(io.StringIO()):
+            readouts.main(["notify"])
+        self.assertNotIn("WHERE who IN", asked[1][0], "everyone, for news of any device")
+
+    def test_the_removal_link_is_the_apis_own(self):
+        from pathlib import Path
+        worker = Path(readouts.__file__).resolve().parents[2] / "website/api/index.js"
+        self.assertIn(f'export const FORGET_URL = "{readouts.FORGET_URL}";', worker.read_text(encoding="utf-8"))
 
     def test_a_prefix_narrows_it(self):
-        self.assertIn("1 in", run(FakeBucket(["readouts/a.tar", "notify/B/c.json"]), "notify/")[1])
+        self.assertIn("1 in", run(FakeBucket(["readouts/a.tar", "other/c.json"]), "other/")[1])
 
     def test_an_api_error_is_said_plainly(self):
         def refused(*args, **kwargs):
@@ -89,14 +98,11 @@ class ChangesTests(unittest.TestCase):
     """The devices whose status changed since a release, and whom to tell."""
 
     def changes(self, before, now, given):
-        items = [{"key": f"notify/{product}/{n:064x}.json", "last_modified": "2026-11-09T10:00:00Z",
-                  "custom_metadata": {"product": product, "email": email, "models": "-",
-                                      "forget": f"https://api.firmwareliberator.com/forget?a={n:064x}&t={'0' * 32}"}}
-                 for n, (product, email) in enumerate(given)]
-        items.append({"key": "notify/_who/" + "e" * 64 + ".json"})
+        rows = [{"who": f"{n:064x}", "email": email, "token": "0" * 32, "since": "2026-11-09T10:00:00Z",
+                 "devices": f"{product}:-", "readouts": None} for n, (product, email) in enumerate(given)]
         out = io.StringIO()
         with mock.patch.object(readouts, "statuses", side_effect=lambda ref=None: now if ref is None else before), \
-                mock.patch.object(readouts, "objects", return_value=items), redirect_stdout(out):
+                mock.patch.object(readouts, "query", return_value=rows), redirect_stdout(out):
             code = readouts.main(["changes", "v2.3.0"])
         return code, out.getvalue().splitlines()
 
@@ -106,10 +112,10 @@ class ChangesTests(unittest.TestCase):
                                    [("BASICR4", "me@example.com"), ("S60TPG", "you@example.com")])
         self.assertEqual(code, 0)
         self.assertEqual(lines[0], "Sonoff BASICR4: not-supported -> readout-wanted")
-        self.assertIn("BASICR4  me@example.com", lines[1])
+        self.assertIn("me@example.com  BASICR4:-", lines[1])
         self.assertIn("https://api.firmwareliberator.com/forget?a=", lines[1])
         self.assertNotIn("you@example.com", "\n".join(lines), "the S60's did not change")
-        self.assertEqual(lines[-1], "1 changed since v2.3.0, 1 to tell")
+        self.assertEqual(lines[-1], "1 changed since v2.3.0, 1 owners to tell; 2 on the list for news of any device")
 
     def test_nothing_changed_says_so(self):
         code, lines = self.changes({"sonoff-s60": "supported"}, {"sonoff-s60": "supported"}, [])

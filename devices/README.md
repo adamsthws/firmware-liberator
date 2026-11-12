@@ -13,6 +13,9 @@ badges).
 | **Readout wanted** | `readout-wanted` | It does not convert yet, but a readout of it through the bridge is proven in the emulator to leave it on its Sonoff firmware | Turns a conversion down; reads it out in full |
 | **Not supported yet** | `not-supported` | Neither | Turns it down, as it does a device it does not know; its readout is only what Sonoff's own firmware and eWeLink say ([docs/readouts.md](../docs/readouts.md)) |
 
+To hear when one becomes supported, [get an email as more devices are
+supported](https://firmwareliberator.com/notify).
+
 ## Not converted yet
 
 These devices' configs and templates are kept so that the work is not lost.

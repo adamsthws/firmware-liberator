@@ -21,7 +21,7 @@ export const PAGES = execFileSync("git", ["ls-files", "-z", "--", "*.md"], { cwd
 export const PICTURES = ["docs/*.svg", "docs/*.png"];
 // The pages built from no Markdown file, by their address: checks/built.mjs
 // holds them to what it holds every page to.
-export const EXTRA_PAGES = ["stats"];
+export const EXTRA_PAGES = ["stats", "notify"];
 
 export const pages = () => new Set(PAGES);
 

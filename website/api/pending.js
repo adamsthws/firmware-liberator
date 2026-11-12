@@ -4,8 +4,8 @@
 //   approval, or rejected - are deleted PENDING_DAYS after they came in, with
 //   the marks of the offered files they held, giving back their bytes and
 //   places, so made-up readouts cannot fill the store or a key's places.
-// - Addresses given to /notify and never confirmed are deleted SIGNUP_DAYS
-//   after they were given.
+// - Addresses given to /v1/notify and never confirmed are deleted
+//   SIGNUP_DAYS after they were given.
 import { release } from "./counters.js";
 
 // Half a year: a rare device's owners may come months apart, and a readout
