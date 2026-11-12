@@ -339,16 +339,16 @@ class BadImageScenarioTests(unittest.TestCase):
                                  "interim>esphome:J2:badimage-once"})
 
     def test_it_hears_the_run_send_the_image_again(self):
-        # Matched against what the run says as it goes back (arrived.until_back).
+        # Matched against what the run says as it goes back (arrival.until_back).
         from unittest import mock
         from tools.autoflash import errors
-        from tools.autoflash.routes.beken import arrived
+        from tools.autoflash.routes import arrival
 
         def look(restarted):
-            raise arrived.NotTaken
+            raise arrival.NotTaken
         ctx = SimpleNamespace(state=SimpleNamespace(input=lambda key: None, set_input=lambda key, value: None))
-        with mock.patch.object(arrived.prompts, "UNATTENDED", True), self.assertRaises(errors.GoBack) as back:
-            arrived.until_back(ctx, look, "OpenBeken", "advice", sent_by="B2")
+        with mock.patch.object(arrival.prompts, "UNATTENDED", True), self.assertRaises(errors.GoBack) as back:
+            arrival.until_back(ctx, look, "OpenBeken", "advice", sent_by="B2")
         self.assertRegex(back.exception.reason, fault_suite.SENT_AGAIN)
 
 
@@ -673,9 +673,10 @@ class ConvertedTests(unittest.TestCase):
 
 class RecoveryTests(unittest.TestCase):
     def test_the_tools_every_ask_to_switch_the_device_off_and_on_is_heard(self):
+        from tools.autoflash.routes import arrival
         from tools.autoflash.routes.beken import arrived, stock
         import inspect
-        for module in (arrived, stock):
+        for module in (arrival, arrived, stock):
             for line in inspect.getsource(module).splitlines():
                 if "off and on" in line and ("plug" in line or "device" in line):
                     self.assertRegex(line, fault_suite.POWER_CYCLE)

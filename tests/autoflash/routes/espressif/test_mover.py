@@ -34,9 +34,20 @@ class CheckStepTests(RouteTestCase):
 
     def test_waiting_in_vain_points_at_the_wifi(self):
         with mock.patch.object(esphome, "is_esphome", return_value=False), \
-                mock.patch.object(time, "sleep"):
+                mock.patch.object(time, "sleep"), mock.patch.object(prompts, "UNATTENDED", True):
             with self.assertRaisesRegex(errors.Abort, "esphome-xxxxxx"):
                 mover.step_esphome_check(self.ctx(firmware="esphome"), wait=0.05)
+
+    def test_not_back_the_person_is_asked_to_switch_it_off_and_on_and_it_is_counted(self):
+        # As the Beken route's K2 asks (arrival.until_back).
+        ctx = self.ctx(firmware="esphome")
+        with mock.patch.object(esphome, "is_esphome", side_effect=lambda *a, **k: ctx.state.input("power_cycles")
+                               is not None), \
+                mock.patch.object(time, "sleep"), mock.patch.object(mover, "calibrate_esphome_meter", return_value={}), \
+                mock.patch.object(prompts, "section"), mock.patch.object(prompts, "ask_choice", return_value=0) as asked:
+            self.assertIn("seconds", mover.step_esphome_check(ctx, wait=0.05))
+        asked.assert_called_once()
+        self.assertEqual(ctx.state.input("power_cycles"), {"by hand": 1})
 
     def test_on_its_own_network_it_is_set_up_through_that(self):
         with mock.patch.object(esphome, "is_esphome", return_value=False), \

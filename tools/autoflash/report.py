@@ -212,9 +212,9 @@ def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
         # joined are an Espressif route's.
         *([("Wi-Fi typed", "yes" if ctx.state.input("wifi_typed") else "no"),
            ("Setup network", "yes" if joined else "no")] if espressif else []),
-        # Whether the device had to be switched off and on to start its new
-        # firmware: an emulated Beken device never restarts by itself; a real one may.
-        *([("Power cycled", "true" if ctx.state.input("power_cycles") else "false")] if not espressif else []),
+        # Whether the device had to be switched off and on for its new firmware
+        # to come back (arrival.until_back), on either family.
+        ("Power cycled", "true" if ctx.state.input("power_cycles") else "false"),
         # Only where there is something to check (checks_apply).
         *([("Checks", checks_passed(hardware))] if checks_apply(kind, firmware) else []),
         # Not how the meter's calibration went: a device's readings a few
@@ -270,7 +270,7 @@ RIGHT = ("Firmware", "From", "Model", "Backup", "Signal", "Checks")
 # ("Conversion complete!", "FAILED: ..."), in full where it stopped; where an
 # identity came from, nothing the person needs; whether the Wi-Fi was typed
 # or a setup network joined, which in every run anyone reported neither was;
-# and whether a Beken device was switched off and on, which the run asked of
+# and whether the device was switched off and on, which the run asked of
 # the person itself.
 LOG_ONLY = ("Result", "Identity", "Wi-Fi typed", "Setup network", "Power cycled")
 # Columns each side needs at the least, else one column, as Markdown has it.

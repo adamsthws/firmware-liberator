@@ -4,22 +4,21 @@ ESPHome, K3 Sonoff's own firmware) - and, on OpenBeken, the device's own data
 backed up (B4), which only OpenBeken can read out.
 
 A device that has not come back on its new firmware is the person's to switch
-off and on, then looked for again (until_back); an unattended run stops there,
-saying to.
+off and on, then looked for again (arrival.until_back); an unattended run
+stops there, saying to.
 """
 
 from __future__ import annotations
 
-import os
 import time
-from pathlib import Path
-from typing import Any, Callable, TYPE_CHECKING, TypeVar
+from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import detect, esphome, join, kinds, openbeken, output, records, prompts, runs
-from tools.autoflash.errors import Abort, GoBack
+from tools.autoflash import detect, esphome, join, kinds, openbeken, output, records, runs
+from tools.autoflash.errors import Abort
+from tools.autoflash.routes import arrival
+from tools.autoflash.routes.arrival import NotBack, NotTaken, until_back
 from tools.autoflash.routes.beken import images, onward
 from tools.beken import backup
-from tools.ewelink import relay as ewelink_relay
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -28,102 +27,14 @@ if TYPE_CHECKING:
 # a minute or two: after three, whatever was under way has finished, and the
 # person is asked to switch the device off and on (until_back).
 ARRIVAL_WAIT = 180.0
-# How long eWeLink takes to show a device back on Sonoff's firmware online,
-# before the same question.
-CLOUD_WAIT = 180.0
 # Tries at reading the device's own data before going on without a backup: the
 # pause, then up to ARRIVAL_WAIT for the device to answer, lets a dropped network
 # come back between them.
 BACKUP_TRIES = 3
 BACKUP_PAUSE = 10.0
-# The emulated device's power switch, where the run has one: a file holding off or
-# on (tools/beken/emulator/beken-emu.sh computer), offered as a choice of its own.
-EMULATED_POWER = "AUTOFLASH_EMULATOR_POWER"
-EMULATED_OFF = 3.0   # seconds off: long enough for the emulator to stop the device
 # An OpenBeken's uptime set against the time since it fetched an image: this
 # much shorter, and it started after the fetch, not before (step_esphome_check).
 RESTART_SLACK = 10
-
-T = TypeVar("T")
-
-
-class NotBack(Exception):
-    """The device did not answer as its new firmware in the time waited."""
-
-
-class NotTaken(Exception):
-    """Restarted, the device started the firmware it was leaving: the image it
-    was sent was not installed, and will not be by waiting."""
-
-
-def until_back(ctx: Context, look: Callable[[bool], T], what: str, advice: str,
-               sent_by: str | None = None) -> T:
-    """look(restarted), and again each time the person at the keyboard says
-    the device is back on after a restart - `restarted` then True - until it
-    finds the device or they stop (q).  An unattended run stops at the first
-    NotBack, with `advice` as the reason.  Each switch off and on is counted,
-    by whom (power_cycles), for the report: normally none is needed, as
-    every firmware restarts by itself once it has its update.
-
-    `sent_by`: the step that sent the image.  A look after a restart that
-    finds the device on the firmware it was leaving (NotTaken) sends the run
-    back to that step, unasked: the bootloader installs a whole image on the
-    first start after it arrived, so one not installed then never will be.
-    Before a restart that says nothing: the device may not have restarted.
-    A switch off and on asked for is remembered in the run's record
-    (restart_asked), so a run that stopped to ask - an unattended one, or a
-    person who quit there - takes it as done when it is run again."""
-    restarted = bool(ctx.state.input("restart_asked"))
-    asked_back = None   # when the person said it was back on, to time its return
-    while True:
-        try:
-            found = look(restarted)
-        except NotTaken as exc:
-            ctx.state.set_input("restart_asked", None)
-            if sent_by is None:
-                raise Abort(advice) from exc
-            raise GoBack(sent_by, f"{what} was not installed: the device restarted on the firmware it had",
-                         "not installed") from exc
-        except NotBack as exc:
-            ctx.state.set_input("restart_asked", True)
-            if prompts.UNATTENDED:
-                raise Abort(advice) from exc
-        else:
-            ctx.state.set_input("restart_asked", None)
-            if asked_back is not None:
-                # For the report: the longest a device took to answer once back on.
-                took = round(time.monotonic() - asked_back)
-                ctx.state.set_input("back_after_power_cycle", max(took, ctx.state.input("back_after_power_cycle") or 0))
-            return found
-        output.transient_begin()
-        prompts.section(f"{what} has not answered yet", [
-            "The device installs its new firmware as it restarts, and has not come",
-            "back yet. Switch the device off and on - at the socket, off for a few",
-            "seconds - and it starts on its new firmware.",
-        ])
-        options = ["Look for it again - the device is back on"]
-        switch = os.environ.get(EMULATED_POWER)
-        if switch:
-            options.append("Power-cycle the emulated device, then look for it again")
-        chosen = prompts.ask_choice("Once it is back on, choose", options)
-        output.transient_end()
-        counted = dict(ctx.state.input("power_cycles") or {})
-        who = "by the tool" if chosen == 1 else "by hand"
-        counted[who] = counted.get(who, 0) + 1
-        ctx.state.set_input("power_cycles", counted)
-        if chosen == 1:
-            power_cycle_emulated(Path(switch))
-        restarted = True
-        asked_back = time.monotonic()
-
-
-def power_cycle_emulated(switch: Path) -> None:
-    """The emulated device switched off, then on, as at the socket."""
-    switch.write_text("off\n", encoding="utf-8")
-    time.sleep(EMULATED_OFF)
-    switch.write_text("on\n", encoding="utf-8")
-    output.say("    Power-cycled the emulated device.")
-
 
 def step_openbeken_check(ctx: Context, wait: float = ARRIVAL_WAIT, *, interim: bool = False) -> dict[str, Any]:
     """K1 - OpenBeken started from the image, and on the home Wi-Fi: it
@@ -361,8 +272,8 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
 
     until_back(ctx, look, "ESPHome", (
         "ESPHome has not answered on your Wi-Fi. The device installs it as it restarts, then reads its "
-        "Wi-Fi from the device's own store and joins; if it has not, switch the device off and on, then "
-        "run the same command again to check it"), sent_by=sent_by)
+        "Wi-Fi from the device's own store and joins; if it has not, "
+        "switch the device off and on, then run the same command again to check it"), sent_by=sent_by)
     seconds = round(time.monotonic() - started, 1)
     host = ctx.state.input("device_ip")
     if not kinds.of_run(ctx.state).has_meter:
@@ -373,44 +284,9 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
     return {"seconds": seconds, "calibration": calibration}
 
 
-def step_sonoff_check(ctx: Context, wait: float = CLOUD_WAIT) -> dict[str, Any]:
-    """K3 - Sonoff's firmware started, and the device back in eWeLink: the
-    account shows it online again, with its identity as before, and it
-    answers through eWeLink - so not online still from before it left."""
+def step_sonoff_check(ctx: Context, wait: float = arrival.SONOFF_WAIT) -> dict[str, Any]:
+    """K3 - Sonoff's firmware started, on the Wi-Fi and back in eWeLink, as
+    the Espressif route's R2 finds it (arrival.back_on_sonoff)."""
     if ctx.dry_run:
         return {"dry_run": True}
-    device_id = str(records.read_device(ctx.state.input("device_mac") or "").get("ewelink_id") or "")
-    host = ctx.state.input("device_ip")
-
-    def look(_restarted: bool) -> dict[str, Any]:
-        started = time.monotonic()
-        while time.monotonic() - started < wait:
-            if host and detect.identify(host, timeout=3.0) in ("openbeken", "interim", "esphome"):
-                output.progress(f"the device still runs the firmware it is leaving... {time.monotonic() - started:.0f}s")
-            else:
-                devices = ctx.account_devices() if device_id else None
-                if devices is None and not device_id:
-                    break
-                online = any(device.get("deviceid") == device_id and device.get("online") for device in devices or [])
-                if online and ewelink_relay.answers(account=ctx.ewelink, device_id=device_id):
-                    output.progress_clear()
-                    seconds = round(time.monotonic() - started, 1)
-                    output.say(f"    eWeLink shows the device online again, and it answers, after {seconds}s.")
-                    return {"seconds": seconds, "confirmed_by": "eWeLink"}
-                output.progress(f"waiting for eWeLink to show the device online"
-                                f"{', and for it to answer' if online else ''}... {time.monotonic() - started:.0f}s")
-            time.sleep(10)
-        output.progress_clear()
-        if host and detect.identify(host, timeout=3.0) in ("openbeken", "interim", "esphome"):
-            raise Abort("the device still answers as the firmware it was to leave: Sonoff's firmware was not "
-                        "installed. Run the same command again to send it again")
-        if not device_id:
-            output.tell("    The device no longer answers as the firmware it left. Its eWeLink device id is not "
-                        "known here, so whether it is back in the app is for the app to show.")
-            return {"seconds": round(time.monotonic() - started, 1), "confirmed_by": "nothing answering"}
-        raise NotBack
-
-    return until_back(ctx, look, "Sonoff's firmware", (
-        "eWeLink has not shown the device online again, answering there. Sonoff's firmware rejoins the Wi-Fi the device was "
-        "on and reports to eWeLink by itself; if the app still shows it offline, switch the device off "
-        "and on, then run the same command again to check it"))
+    return arrival.back_on_sonoff(ctx, leaving=("openbeken", "interim", "esphome"), wait=wait)

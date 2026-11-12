@@ -198,7 +198,8 @@ class PayloadTests(RouteTestCase):
     def test_what_is_asked_of_each_family(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60", wifi_typed=True, power_cycles=2)
         data = self.payload(ctx)
-        self.assertEqual((data["wifi_typed"], data["setup_network"], data["power_cycled"]), (True, False, None))
+        # Switched off and on, on either family (arrival.until_back).
+        self.assertEqual((data["wifi_typed"], data["setup_network"], data["power_cycled"]), (True, False, True))
         ctx = self.ctx(run="beken", firmware="openbeken", device_kind="sonoff-s61", wifi_typed=True, power_cycles=2)
         data = self.payload(ctx)
         self.assertEqual((data["wifi_typed"], data["setup_network"], data["power_cycled"]), (None, None, True))
