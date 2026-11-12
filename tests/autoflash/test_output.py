@@ -1,3 +1,4 @@
+import dataclasses
 import contextlib
 import io
 import os
@@ -1273,6 +1274,17 @@ class ReportTests(OutputTestCase):
                 mock.patch.object(report, "offer_report"), mock.patch.object(output, "show_links"):
             report.invite_report(ctx, 441, False)
         checked.assert_called_once_with(ctx)
+
+    def test_a_device_with_no_relay_has_no_check_nor_a_checks_line(self):
+        ctx = self.ctx(device_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="esphome")
+        no_relay = dataclasses.replace(report.kinds.SONOFF_S61, has_relay=False)
+        with mock.patch.object(report.kinds, "of_run", return_value=no_relay), \
+                mock.patch.object(report, "check_hardware", side_effect=AssertionError("nothing to switch")), \
+                mock.patch.object(report, "offer_report") as offered, \
+                mock.patch.object(report.report_upload, "send") as sent, mock.patch.object(output, "show_links"):
+            report.invite_report(ctx, 441, False)
+        self.assertNotIn("Checks", dict(offered.call_args.args[1]))
+        self.assertEqual(sent.call_args.args[4], {}, "the report sent says the check was not run")
 
     def test_a_conversion_is_numbered_on_this_computer_whether_its_report_is_sent_or_not(self):
         with tempfile.TemporaryDirectory() as devices, mock.patch.object(records, "DEVICES", Path(devices)), \

@@ -294,11 +294,13 @@ A run to OpenBeken ends there. For **ESPHome**:
 
 ## At the end
 
-Every run that converts a device, on either chip family, ends by switching its
-relay to the other state and back, reading the meter after each, through the
-firmware now on it: Tasmota, OpenBeken or ESPHome, or eWeLink for Sonoff's own.
-Whatever is plugged in is switched for a few seconds, and the device ends as
-it started. The report says whether the relay switched.
+On a device with a relay, every run that converts it, on either chip family,
+ends by switching the relay to the other state and back (the first relay, on
+a device with several), through the firmware now on it: Tasmota, OpenBeken or
+ESPHome, or eWeLink for Sonoff's own. On a device with a power meter, the meter
+is read after each switch. Whatever is plugged in is switched for a few
+seconds, and the device ends as it started. The report says whether the relay
+switched.
 
 A Beken device's bootloader checks each new firmware's checksum before it
 installs it, and the tool reads nothing back. On an Espressif device converted

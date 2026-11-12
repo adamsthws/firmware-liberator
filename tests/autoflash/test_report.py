@@ -5,11 +5,15 @@ import sys
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from tests.autoflash.routes.espressif.test_espressif import RouteTestCase
 from tools.autoflash import esphome, hostsys, output, prompts, report
 from tools.autoflash.state import DONE
+
+# A run's state, as the relay check reads its kind from: the S60's, with a meter.
+A_RUN = SimpleNamespace(input=lambda key: None)
 
 
 class EndingTests(RouteTestCase):
@@ -145,6 +149,16 @@ class EndingTests(RouteTestCase):
         # Each reading once the meter has settled after its switch.
         self.assertEqual(done, [False, report.METER_SETTLE, "read", True, report.METER_SETTLE, "read"])
 
+    def test_an_esphome_with_no_meter_has_its_relay_checked_alone(self):
+        with mock.patch.object(report.time, "sleep") as slept, \
+                mock.patch.object(esphome, "relay", return_value=True), \
+                mock.patch.object(esphome, "switch_relay", return_value=True), \
+                mock.patch.object(esphome, "meter", side_effect=AssertionError("no meter to read")), \
+                mock.patch.object(output, "say"):
+            result = report.check_esphome_hardware(self.ctx(firmware="esphome", device_kind="sonoff-th-elite"))
+        self.assertEqual(result, {"Relay": "switches"})
+        slept.assert_not_called()
+
     def test_a_device_that_does_not_answer_is_reported_not_raised(self):
         clock = iter(range(0, 1000, 5))
         with mock.patch.object(esphome, "relay", return_value=None), mock.patch.object(report.time, "sleep"), \
@@ -183,7 +197,6 @@ class ComputerDescriptionTests(unittest.TestCase):
     """Windows 11 is named so, on a Python before 3.12 that calls it "10"."""
 
     def describe(self, release, build, product_type=1):
-        from types import SimpleNamespace
         winver = SimpleNamespace(product_type=product_type)
         with mock.patch.object(hostsys, "IS_WINDOWS", True), \
                 mock.patch.object(platform, "release", return_value=release), \
@@ -297,8 +310,7 @@ class CheckHardwareTests(unittest.TestCase):
                 return {"StatusSNS": {"ENERGY": readings[state["power"]]}}
             raise AssertionError(text)
 
-        from types import SimpleNamespace
-        return SimpleNamespace(device=SimpleNamespace(command=command, wait_reachable=lambda timeout: 0.0)), sent, state
+        return SimpleNamespace(state=A_RUN, device=SimpleNamespace(command=command, wait_reachable=lambda timeout: 0.0)), sent, state
 
     def run_check(self, ctx):
         with mock.patch.object(time, "sleep"), mock.patch.object(output, "say"):
@@ -342,8 +354,7 @@ class CheckHardwareTests(unittest.TestCase):
         def sleep(seconds):
             clock["now"] += seconds
 
-        from types import SimpleNamespace
-        ctx = SimpleNamespace(device=SimpleNamespace(command=command, wait_reachable=lambda timeout: 0.0))
+        ctx = SimpleNamespace(state=A_RUN, device=SimpleNamespace(command=command, wait_reachable=lambda timeout: 0.0))
         with mock.patch.object(time, "sleep", side_effect=sleep), mock.patch.object(output, "say"):
             result = report.check_hardware(ctx)
         self.assertEqual(result["Relay"], "switches (meter confirms)")
@@ -358,8 +369,7 @@ class CheckHardwareTests(unittest.TestCase):
                 return {"POWER1": state["power"]}
             return {}
 
-        from types import SimpleNamespace
-        result = self.run_check(SimpleNamespace(device=SimpleNamespace(command=command, wait_reachable=lambda timeout: 0.0)))
+        result = self.run_check(SimpleNamespace(state=A_RUN, device=SimpleNamespace(command=command, wait_reachable=lambda timeout: 0.0)))
         self.assertEqual(result["Relay"], "switches (meter unchanged)")
         self.assertEqual(state["power"], "OFF")
 
@@ -377,8 +387,7 @@ class CheckHardwareTests(unittest.TestCase):
             self.run_check(ctx)
 
     def test_a_device_that_stops_answering_is_reported_not_raised(self):
-        from types import SimpleNamespace
-        ctx = SimpleNamespace(device=SimpleNamespace(command=mock.Mock(side_effect=OSError("refused")),
+        ctx = SimpleNamespace(state=A_RUN, device=SimpleNamespace(command=mock.Mock(side_effect=OSError("refused")),
                                                      wait_reachable=lambda timeout: 0.0))
         result = self.run_check(ctx)
         self.assertEqual(result["Relay"], "could not be checked")
@@ -387,14 +396,32 @@ class CheckHardwareTests(unittest.TestCase):
     def test_a_check_the_device_stopped_answering_still_says_what_it_found(self):
         # Seen in the classic fault suite: the screen gave no Relay line, so the
         # suite recorded "Relay: not said".
-        from types import SimpleNamespace
-        ctx = SimpleNamespace(device=SimpleNamespace(command=mock.Mock(side_effect=OSError("refused")),
+        ctx = SimpleNamespace(state=A_RUN, device=SimpleNamespace(command=mock.Mock(side_effect=OSError("refused")),
                                                      wait_reachable=lambda timeout: 0.0))
         with mock.patch.object(time, "sleep"), mock.patch.object(output, "say") as said:
             report.check_hardware(ctx)
         lines = [c.args[0] for c in said.call_args_list]
         self.assertIn("    Relay: Could not be checked", lines)
         self.assertIn("    Power meter: Could not be checked", lines)
+
+    def test_a_device_with_no_meter_has_its_relay_checked_alone(self):
+        # "Power meter: Not checked" would say it has one; its meter is not read either.
+        ctx, sent, _ = self.ctx({})
+        ctx.state = SimpleNamespace(input=lambda key: "sonoff-th-elite" if key == "device_kind" else None)
+        self.assertFalse(report.kinds.SONOFF_TH_ELITE.has_meter)
+        with mock.patch.object(time, "sleep") as slept, mock.patch.object(output, "say") as said:
+            result = report.check_hardware(ctx)
+        self.assertEqual(result, {"Relay": "switches"})
+        self.assertNotIn("Status 10", sent)
+        slept.assert_not_called()
+        lines = [c.args[0] for c in said.call_args_list]
+        self.assertIn("Checking the relay...", lines)
+        self.assertFalse([line for line in lines if "meter" in line.lower()], lines)
+        ctx.device.command = mock.Mock(side_effect=OSError("refused"))
+        with mock.patch.object(time, "sleep"), mock.patch.object(output, "say"):
+            self.assertEqual(report.check_hardware(ctx), {"Relay": "could not be checked"})
+        self.assertEqual(report.for_device({"Relay": "not checked", "Power meter": "not checked"}, False),
+                         {"Relay": "not checked"})
 
     def test_a_device_still_starting_as_the_run_ends_is_checked_once_it_answers(self):
         # Seen in the fault suite (update>tasmota:U6:deviceoff-5): switched off and
@@ -419,9 +446,8 @@ class CheckHardwareTests(unittest.TestCase):
         self.assertGreaterEqual(report.ANSWER_WAIT, 180 + 60)
 
     def test_a_device_that_never_answers_again_is_reported_not_raised(self):
-        from types import SimpleNamespace
         never = mock.Mock(side_effect=report.DeviceError("192.0.2.50 did not answer within 180s"))
-        ctx = SimpleNamespace(device=SimpleNamespace(command=mock.Mock(), wait_reachable=never))
+        ctx = SimpleNamespace(state=A_RUN, device=SimpleNamespace(command=mock.Mock(), wait_reachable=never))
         self.assertEqual(self.run_check(ctx)["Relay"], "could not be checked")
         ctx.device.command.assert_not_called()
 
