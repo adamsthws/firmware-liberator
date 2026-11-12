@@ -118,9 +118,12 @@ class SonoffFirmwareTests(unittest.TestCase):
             with self.assertRaisesRegex(sonoff_firmware.FirmwareError, "could not be fetched"):
                 sonoff_firmware.official_app(ctx, kinds.SONOFF_S60, IDENTITY, layout)
         with mock.patch.dict("os.environ", {"AUTOFLASH_EWELINK_API_BASE": ""}), \
-                mock.patch.object(sonoff_firmware, "public", return_value=self.wrapped()):
+                mock.patch.object(sonoff_firmware, "public", return_value=self.wrapped()), \
+                mock.patch.object(sonoff_firmware.output, "log_only") as logged:
             app, where = sonoff_firmware.official_app(ctx, kinds.SONOFF_S60, IDENTITY, layout)
         self.assertEqual((app, where), (SONOFF_APP, "the public copy of Sonoff's update file (FlashDumps)"))
+        # Why eWeLink's was passed over, though the next source gave it.
+        logged.assert_called_once_with("    Sonoff's firmware: the file eWeLink offers the device: there is none")
 
     def test_a_test_can_have_it_out_of_reach(self):
         # cli.py --simulate-no-sonoff-firmware: nothing asked of eWeLink or the public copy.

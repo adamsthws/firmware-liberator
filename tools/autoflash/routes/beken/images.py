@@ -280,6 +280,7 @@ def stock_rbl(kind: kinds.Kind, ctx: Context | None = None) -> tuple[bytes, str]
             found = official(kind)
         except NothingWritten as exc:
             raise Abort(str(exc)) from exc
+        output.log_only(f"    Sonoff's firmware {found.version}: from {PUBLIC_COPY}")
         return found.image, found.version
     try:
         url, digest = PUBLIC_DUMPS[kind.key]
@@ -298,6 +299,8 @@ def stock_rbl(kind: kinds.Kind, ctx: Context | None = None) -> tuple[bytes, str]
         DUMPS.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
     try:
-        return stock_app.stock_rbl(data)
+        image, version = stock_app.stock_rbl(data)
     except stock_app.DumpError as exc:
         raise Abort(f"the public dump holds no stock app this tool can use: {exc}") from exc
+    output.log_only(f"    Sonoff's firmware {version}: from the public dump of a {kind.name}")
+    return image, version

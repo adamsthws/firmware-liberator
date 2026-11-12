@@ -127,21 +127,20 @@ def official_app(ctx: Context, kind: kinds.Kind, identity: Identity, layout: Lay
     """Sonoff's firmware for the device, and where it came from."""
     if SIMULATE_NONE:
         raise FirmwareError("Sonoff's firmware for this device could not be fetched (simulated)")
-    problems = []
     sources = [("the file eWeLink offers the device", lambda: offered(ctx, identity))]
     # A run against a stand-in for eWeLink (the emulator's) reaches nothing else.
     if not os.environ.get("AUTOFLASH_EWELINK_API_BASE"):
         sources.append(("the public copy of Sonoff's update file (FlashDumps)", lambda: public(kind)))
+    # Each source passed over is logged as it is, as the Beken route's are
+    # (images.from_ewelink): the next one may still give it.
     for where, get in sources:
         try:
             data = get()
             if data is not None:
                 return checked_app(app_in_file(data, kind.wrapper_model), kind, layout.slot_size), where
-            problems.append(f"{where}: there is none")
+            output.log_only(f"    Sonoff's firmware: {where}: there is none")
         except (FirmwareError, OSError, ValueError) as exc:
-            problems.append(f"{where}: {exc}")
-    for problem in problems:
-        output.log_only(f"    Sonoff's firmware: {problem}")
+            output.log_only(f"    Sonoff's firmware: {where}: {exc}")
     raise FirmwareError("Sonoff's firmware for this device could not be fetched - from eWeLink, or "
                         "from the public copy of it")
 

@@ -81,9 +81,10 @@ class ImagesTests(unittest.TestCase):
                 mock.patch.dict(images.PUBLIC_DUMPS, {"sonoff-s61": ("http://example.test/dump.bin",
                                                                       hashlib.sha256(dump).hexdigest())}), \
                 mock.patch.object(images.hostsys, "urlopen", return_value=Reply()), \
-                mock.patch.object(images.output, "say"):
+                mock.patch.object(images.output, "say"), mock.patch.object(images.output, "log_only") as logged:
             packed, version = images.stock_rbl(S61)
             self.assertEqual((rbl.unpack(packed), version), (app, "1.0.2"))
+            logged.assert_called_once_with("    Sonoff's firmware 1.0.2: from the public dump of a Sonoff S61")
             tmp = images.DUMPS   # made on first use, and kept there under the dump's own name
             self.assertEqual([path.name for path in Path(tmp).iterdir()], ["dump.bin"])
             packed_again, _ = images.stock_rbl(S61)  # from the file kept, not fetched again
