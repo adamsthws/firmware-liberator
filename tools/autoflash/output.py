@@ -612,6 +612,14 @@ def _erase(rows: int) -> bool:
     the stage line above it, stranded."""
     if rows >= terminal_size((100, 24)).lines:
         return False
+    if _s.pending_prompt is not None:
+        # A question still waiting for its answer - the run stopped at it, by
+        # a signal that never let it be answered: its rows, the one the cursor
+        # is on and any it took above, go first, or the rows above it would be
+        # erased from under it and it left below their blank rows.
+        above = _rows(_s.pending_prompt + _s.pending_answer) - 1
+        sys.stdout.write("\r\x1b[2K" + "\x1b[1F\x1b[2K" * above)
+        _s.pending_prompt, _s.pending_answer = None, ""
     if _s.live:
         sys.stdout.write(_clear_notice() + "\r\x1b[K")  # a stage line drawn since, and its notice
         _s.live = 0

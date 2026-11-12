@@ -823,6 +823,34 @@ class ConciseTests(OutputTestCase):
         self.assertEqual(rows, ["Stage 5 - Sending interim firmware - Stopped", "Stopped with Ctrl-C."])
         self.assertIn("Before going on", log)   # the log keeps it
 
+    def test_a_run_stopped_at_a_question_leaves_neither_it_nor_blank_rows_under_the_stage(self):
+        # Seen: a readout stopped at "The device was not found on this
+        # network. Its address" - its help taken off, the question left at the
+        # bottom with five blank rows between it and the stage's Stopped line.
+        for stop in (KeyboardInterrupt, SystemExit):
+            def pressed(prompt):
+                screen.write(prompt)
+                raise stop
+
+            def body():
+                with mock.patch.object(output, "colour_ok", return_value=True), \
+                     mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
+                    output.show("A readout usually takes under 10 minutes.")
+                    output.stage_begin(2, "Locating the device on your network")
+                    output.transient_begin()
+                    with mock.patch("builtins.input", side_effect=pressed), self.assertRaises(stop):
+                        prompts.ask_ipv4("The device was not found on this network. Its address",
+                                         help_lines=["It answers no local discovery, so it was looked for",
+                                                     "by the hardware address eWeLink has for it."])
+                    output.stage_end("stopped")
+            with self.subTest(stop=stop.__name__):
+                screen = FakeTerminal()
+                text, _ = self.run_with(screen, False, body)
+                rows = rendered(text)
+                self.assertEqual(rows[-1], "Stage 2 - Locating the device on your network - Stopped", rows)
+                self.assertFalse([row for row in rows if "Its address" in row or "hardware address" in row], rows)
+                self.assertNotIn(("", ""), list(zip(rows, rows[1:])), rows)
+
     def test_a_ctrl_c_notice_outside_a_stage_goes_with_its_block(self):
         # Seen: Ctrl-C while the run looked for devices, before any stage,
         # left "! Are you sure?" on the screen for the rest of the run - the
