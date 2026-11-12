@@ -1197,6 +1197,15 @@ class FailureReasonTests(OutputTestCase):
 class ReportTests(OutputTestCase):
     """The end of a run asks for a report, filled in from the run and nothing private."""
 
+    def setUp(self):
+        super().setUp()
+        # The release and sensor checks ask a device, which these runs have
+        # none of: test_report.EndOfRunCheckTests has them.
+        for name in ("check_release", "check_sensors"):
+            patcher = mock.patch.object(report, name, return_value={})
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     def ctx(self, **inputs):
         from types import SimpleNamespace
         from tools.autoflash.state import RunState
@@ -1275,11 +1284,24 @@ class ReportTests(OutputTestCase):
             report.invite_report(ctx, 441, False)
         checked.assert_called_once_with(ctx)
 
-    def test_a_device_with_no_relay_has_no_check_nor_a_checks_line(self):
+    def test_a_device_with_no_relay_is_not_switched_but_its_release_is_checked(self):
         ctx = self.ctx(device_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="esphome")
         no_relay = dataclasses.replace(report.kinds.SONOFF_S61, has_relay=False)
         with mock.patch.object(report.kinds, "of_run", return_value=no_relay), \
                 mock.patch.object(report, "check_hardware", side_effect=AssertionError("nothing to switch")), \
+                mock.patch.object(report, "check_release", return_value={"Release": "1.18.320-1, as installed"}), \
+                mock.patch.object(report, "offer_report") as offered, \
+                mock.patch.object(report.report_upload, "send") as sent, mock.patch.object(output, "show_links"):
+            report.invite_report(ctx, 441, False)
+        self.assertEqual(dict(offered.call_args.args[1])["Checks"], "Pass")
+        self.assertEqual(sent.call_args.args[4], {"Release": "1.18.320-1, as installed"})
+
+    def test_a_device_with_nothing_to_check_has_no_checks_line(self):
+        # No relay, no sensors, and back on Sonoff's firmware, whose release is eWeLink's.
+        ctx = self.ctx(device_kind="sonoff-s61", product_model="S61STPF", firmware="sonoff", source="openbeken")
+        bare = dataclasses.replace(report.kinds.SONOFF_S61, has_relay=False, sensors=())
+        with mock.patch.object(report.kinds, "of_run", return_value=bare), \
+                mock.patch.object(report, "check_ewelink_hardware", side_effect=AssertionError("nothing to switch")), \
                 mock.patch.object(report, "offer_report") as offered, \
                 mock.patch.object(report.report_upload, "send") as sent, mock.patch.object(output, "show_links"):
             report.invite_report(ctx, 441, False)

@@ -18,6 +18,7 @@ from tools.autoflash import __version__, esphome, hostsys, kinds, output, record
 from tools.autoflash.device import DeviceError
 from tools.autoflash.runs import ROOT
 from tools.ewelink import relay as ewelink_relay
+from tools.autoflash.routes import update
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
@@ -214,8 +215,8 @@ def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
         # Whether the device had to be switched off and on to start its new
         # firmware: an emulated Beken device never restarts by itself; a real one may.
         *([("Power cycled", "true" if ctx.state.input("power_cycles") else "false")] if not espressif else []),
-        # Only on a device with a relay to switch, all the check does.
-        *([("Checks", checks_passed(hardware))] if kind.has_relay else []),
+        # Only where there is something to check (checks_apply).
+        *([("Checks", checks_passed(hardware))] if checks_apply(kind, firmware) else []),
         # Not how the meter's calibration went: a device's readings a few
         # percent out is no news to the person converting it. The report
         # sent holds it (report_data.meter_word), the log why.
@@ -226,13 +227,31 @@ def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
 SONOFF_IDENTITY = {"backup": "backup", "kept": "device", "account": "eWeLink account"}
 
 
+def check_passed(label: str, value: str) -> bool | None:
+    """Whether one end-of-run check passed, by its line: None for one that did
+    not run, or a line that is no check of its own (Power meter, which the
+    Relay line's answer takes in)."""
+    if label == "Relay":
+        return None if value in ("not checked", "motor mode") else value.startswith("switches")
+    if label == "Release":
+        return value.endswith(", as installed")
+    if label == "Sensor":
+        return None if value == NO_READING else not value.startswith(OUT_OF_RANGE)
+    return None
+
+
 def checks_passed(hardware: dict[str, str]) -> str:
-    """The end-of-run checks as one answer, whatever the device: for a device,
-    its relay switching off and on.  What each check found is in the log."""
-    relay = hardware.get("Relay", "not checked")
-    if relay in ("not checked", "motor mode"):
-        return "not run"
-    return "pass" if relay.startswith("switches") else "fail"
+    """The end-of-run checks as one answer, whatever the device: "fail" if any
+    failed, "pass" if any ran, else "not run".  What each found is in the log."""
+    found = [passed for label, value in hardware.items() if (passed := check_passed(label, value)) is not None]
+    return "fail" if False in found else "pass" if found else "not run"
+
+
+def checks_apply(kind: kinds.Kind, firmware: str | None) -> bool:
+    """Whether a run on `firmware` has an end-of-run check to make of a device
+    of `kind`, and its report a Checks line: a relay to switch, sensors to read,
+    or a firmware whose release the device can be asked."""
+    return kind.has_relay or bool(kind.sensors) or firmware in update.RELEASE
 
 
 def answer(value: str) -> str:
@@ -501,6 +520,105 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
                 metered)
 
 
+# How often, and how far apart, the device is asked its release: an ESPHome's
+# API may still be starting when the relay has been switched through its web
+# server (seconds).
+RELEASE_TRIES, RELEASE_PAUSE = 3, 5.0
+
+
+def check_release(ctx: Context) -> dict[str, str]:
+    """The Release line: whether the device runs the release of its firmware
+    this version installs, as this project built it (update.RELEASE says only
+    of a build it published). Nothing for Sonoff's firmware, whose release is
+    eWeLink's to choose, or an ESPHome the person gave (--esphome)."""
+    firmware = runs.run_firmware(ctx.state)
+    if firmware not in update.RELEASE or (firmware == "esphome" and ctx.esphome_firmware):
+        return {}
+    published = routes.family_of(ctx.state).published_version(kinds.of_run(ctx.state), firmware)
+    if not published:
+        return {}
+    running = None
+    for attempt in range(RELEASE_TRIES):
+        if attempt:
+            time.sleep(RELEASE_PAUSE)
+        try:
+            running = update.RELEASE[firmware](ctx)
+        except (DeviceError, OSError, ValueError):
+            running = None
+        if running is not None:
+            break
+    if running == published:
+        return {"Release": f"{published}, as installed"}
+    return {"Release": f"{running}, not {published}" if running else f"not this project's {published}"}
+
+
+# What each quantity a sensor measures may read and be believed (Kind.sensors):
+# a THS01's own range. A reading past it is the sensor failing, not the room.
+SENSOR_RANGES = {"temperature": (-40.0, 125.0), "humidity": (0.0, 100.0)}
+SENSOR_UNITS = {"temperature": "C", "humidity": "%"}
+NO_READING, OUT_OF_RANGE = "no reading", "out of range: "
+
+
+def describe_sensors(found: dict[str, float]) -> dict[str, str]:
+    """The Sensor line, from the readings `found`: none is no reading, as from
+    a device with nothing plugged into its socket - no failure."""
+    if not found:
+        return {"Sensor": NO_READING}
+    text = ", ".join(f"{value:g} {SENSOR_UNITS[quantity]}" for quantity, value in found.items())
+    believed = all(SENSOR_RANGES[quantity][0] <= value <= SENSOR_RANGES[quantity][1]
+                   for quantity, value in found.items())
+    return {"Sensor": text if believed else OUT_OF_RANGE + text}
+
+
+def tasmota_readings(ctx: Context, quantities: tuple[str, ...]) -> dict[str, float]:
+    """`quantities` as Tasmota's (or OpenBeken's) Status 10 gives them, in
+    whichever sensor's section ("SI7021": {"Temperature": 21.3}), in Celsius."""
+    status = ctx.device.command("Status 10")
+    sensors = status.get("StatusSNS", {}) if isinstance(status, dict) else {}
+    fahrenheit = isinstance(sensors, dict) and sensors.get("TempUnit") == "F"
+    found = {}
+    for section in (sensors.values() if isinstance(sensors, dict) else ()):
+        if not isinstance(section, dict):
+            continue
+        for quantity in quantities:
+            value = section.get(quantity.capitalize())
+            if quantity not in found and isinstance(value, (int, float)) and not isinstance(value, bool):
+                found[quantity] = (value - 32) / 1.8 if quantity == "temperature" and fahrenheit else float(value)
+    return {quantity: round(value, 1) for quantity, value in found.items()}
+
+
+def check_sensors(ctx: Context) -> dict[str, str]:
+    """The Sensor line, for a device with sensors (Kind.sensors): their readings
+    and whether they are believable. Not on Sonoff's firmware: what eWeLink
+    names its readings has not been seen here."""
+    quantities = kinds.of_run(ctx.state).sensors
+    firmware = runs.run_firmware(ctx.state)
+    if not quantities or firmware == "sonoff":
+        return {}
+    try:
+        found = (esphome.readings(ctx.state.input("device_ip"), quantities) if firmware == "esphome"
+                 else tasmota_readings(ctx, quantities))
+    except (DeviceError, OSError, ValueError):
+        found = {}
+    return describe_sensors(found)
+
+
+def end_of_run_checks(ctx: Context) -> dict[str, str]:
+    """Every end-of-run check the device has: its relay switched (each
+    firmware's own way), its release asked, its sensors read. The relay's
+    lines are said as they always are; the others only when they fail, being
+    in the log whatever they found."""
+    firmware = runs.run_firmware(ctx.state)
+    # OpenBeken takes Tasmota's commands (Power, Status 10): the same check.
+    relay = {"esphome": check_esphome_hardware, "tasmota": check_hardware, "openbeken": check_hardware,
+             "sonoff": check_ewelink_hardware}.get(firmware) if kinds.of_run(ctx.state).has_relay else None
+    found = relay(ctx) if relay else {}
+    for label, value in {**check_release(ctx), **check_sensors(ctx)}.items():
+        (output.say if check_passed(label, value) is False else output.log_only)(f"    {label}: {answer(value)}")
+        found[label] = value
+    return found
+
+
 def wait_until_online(ctx: Context, device_id: str) -> dict[str, Any] | None:
     """The device's record once eWeLink shows it online, with its relay's state
     in it (or that it drives a motor, with no relay), and it answers there,
@@ -531,17 +649,12 @@ def wait_until_online(ctx: Context, device_id: str) -> dict[str, Any] | None:
 
 def invite_report(ctx: Context, seconds: float, resumed: bool) -> None:
     """Ask for a report, with this run's details ready to paste."""
-    # OpenBeken takes Tasmota's commands (Power, Status 10): the same check.
-    # A device with no relay has nothing to switch, so no check.
-    check = {"esphome": check_esphome_hardware, "tasmota": check_hardware, "openbeken": check_hardware,
-             "sonoff": check_ewelink_hardware}.get(runs.run_firmware(ctx.state)) \
-        if kinds.of_run(ctx.state).has_relay else None
     from tools.autoflash import report_data   # it reads this module's words
     mac = ctx.state.input("device_mac")
     if mac and records.MAC_RE.match(mac) and report_data.converted_to_another(ctx):
         records.number_conversion(mac)   # whether a report is sent or not, so the count stays true
     with output.working("Generating your report..."):
-        hardware = check(ctx) if check else {}
+        hardware = end_of_run_checks(ctx)
         fields = report_fields(ctx, hardware, result=run_result(ctx, "converted"))
     report_upload.send(ctx, "converted", seconds, resumed, hardware)
     offer_report(ctx, fields)

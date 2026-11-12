@@ -182,6 +182,12 @@ as its screens do, since it converts much more than smart plugs now.
 - The end-of-run check always shows its Relay and Power meter answers. A device
   that stopped answering it on Tasmota or ESPHome, or a Dual R3 driving a
   motor, showed neither, or only one.
+- The end-of-run check also asks the device which release of Tasmota, ESPHome or
+  OpenBeken it runs, and reads a TH Elite's temperature probe, if one is plugged
+  in: the report's Checks fails if the release is not the one this version
+  installs, as this project built it, or a reading is one the sensor cannot give.
+  The report sent says the same: a device that did not answer the check is
+  "failed" there too, as on the screen.
 - A device on Tasmota, ESPHome or OpenBeken that loses power or its Wi-Fi as a run
   ends is waited for, up to four minutes, before its relay and meter are checked,
   rather than reported as not answering the check.

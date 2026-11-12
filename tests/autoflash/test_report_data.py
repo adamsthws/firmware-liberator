@@ -293,6 +293,6 @@ class WordTests(RouteTestCase):
 
     def test_the_relay_check_in_a_word(self):
         for relay, word in (("switches (meter confirms)", "passed"), ("switches (through eWeLink)", "passed"),
-                            ("did not switch", "failed"), ("could not be checked", "not-run"),
+                            ("did not switch", "failed"), ("could not be checked", "failed"),
                             ("motor mode", "not-run"), (None, "not-run")):
             self.assertEqual(report_data.checks_word({"Relay": relay} if relay else {}), word, relay)

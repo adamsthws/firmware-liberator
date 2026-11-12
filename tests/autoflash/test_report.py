@@ -452,6 +452,88 @@ class CheckHardwareTests(unittest.TestCase):
         self.assertEqual(self.run_check(ctx)["Relay"], "could not be checked")
         ctx.device.command.assert_not_called()
 
+class EndOfRunCheckTests(unittest.TestCase):
+    """The checks beyond the relay: the device's release and its sensors."""
+
+    def ctx(self, firmware="tasmota", kind="sonoff-th-elite", command=None, esphome_firmware=None):
+        inputs = {"firmware": firmware, "device_kind": kind, "device_ip": "192.0.2.50"}
+        state = SimpleNamespace(input=inputs.get)
+        return SimpleNamespace(state=state, esphome_firmware=esphome_firmware,
+                               device=SimpleNamespace(command=command or (lambda text: {})))
+
+    def release(self, ctx, said):
+        with mock.patch.dict(report.update.RELEASE, {"tasmota": mock.Mock(side_effect=said)}), \
+                mock.patch.object(report.runs, "run_firmware", return_value="tasmota"), \
+                mock.patch.object(report.routes.FAMILIES["espressif"], "published_version", return_value="16.0.0"), \
+                mock.patch.object(report.time, "sleep"):
+            return report.check_release(ctx)
+
+    def test_the_release_installed_passes(self):
+        self.assertEqual(self.release(self.ctx(), ["16.0.0"]), {"Release": "16.0.0, as installed"})
+
+    def test_another_release_fails(self):
+        result = self.release(self.ctx(), ["15.4.0"])
+        self.assertEqual(result, {"Release": "15.4.0, not 16.0.0"})
+        self.assertEqual(report.checks_passed({"Relay": "switches", **result}), "fail")
+
+    def test_a_build_not_this_projects_fails_after_a_few_asks(self):
+        result = self.release(self.ctx(), [None] * report.RELEASE_TRIES)
+        self.assertEqual(result, {"Release": "not this project's 16.0.0"})
+
+    def test_an_esphome_still_starting_is_asked_again(self):
+        self.assertEqual(self.release(self.ctx(), [OSError("refused"), "16.0.0"]), {"Release": "16.0.0, as installed"})
+
+    def test_no_release_check_on_sonoffs_firmware_or_an_esphome_the_person_gave(self):
+        with mock.patch.object(report.runs, "run_firmware", return_value="sonoff"):
+            self.assertEqual(report.check_release(self.ctx()), {})
+        with mock.patch.object(report.runs, "run_firmware", return_value="esphome"):
+            self.assertEqual(report.check_release(self.ctx(esphome_firmware=Path("own.bin"))), {})
+
+    def test_tasmotas_sensor_readings_are_read_from_any_section(self):
+        def command(text):
+            return {"StatusSNS": {"Time": "x", "SI7021": {"Temperature": 21.3, "Humidity": 45.0}, "TempUnit": "C"}}
+        with mock.patch.object(report.runs, "run_firmware", return_value="tasmota"):
+            result = report.check_sensors(self.ctx(command=command))
+        self.assertEqual(result, {"Sensor": "21.3 C, 45 %"})
+        self.assertEqual(report.checks_passed(result), "pass")
+
+    def test_fahrenheit_is_taken_as_celsius(self):
+        def command(text):
+            return {"StatusSNS": {"SI7021": {"Temperature": 212.0}, "TempUnit": "F"}}
+        self.assertEqual(report.tasmota_readings(self.ctx(command=command), ("temperature",)), {"temperature": 100.0})
+
+    def test_a_reading_past_the_sensors_range_fails(self):
+        result = report.describe_sensors({"temperature": 128.9})
+        self.assertEqual(result, {"Sensor": "out of range: 128.9 C"})
+        self.assertEqual(report.checks_passed({"Relay": "switches", **result}), "fail")
+
+    def test_a_socket_with_no_probe_is_no_failure(self):
+        with mock.patch.object(report.runs, "run_firmware", return_value="esphome"), \
+                mock.patch.object(report.esphome, "_state", return_value=float("nan")):
+            result = report.check_sensors(self.ctx(firmware="esphome"))
+        self.assertEqual(result, {"Sensor": "no reading"})
+        self.assertEqual(report.checks_passed({"Relay": "switches", **result}), "pass")
+        self.assertEqual(report.checks_passed(result), "not run")
+
+    def test_a_device_with_no_sensors_is_not_read(self):
+        command = mock.Mock()
+        with mock.patch.object(report.runs, "run_firmware", return_value="tasmota"):
+            self.assertEqual(report.check_sensors(self.ctx(kind="sonoff-s60", command=command)), {})
+        command.assert_not_called()
+
+    def test_only_a_failing_line_is_said(self):
+        ctx = self.ctx()
+        with mock.patch.object(report, "check_hardware", return_value={"Relay": "switches"}), \
+                mock.patch.object(report.runs, "run_firmware", return_value="tasmota"), \
+                mock.patch.object(report, "check_release", return_value={"Release": "15.4.0, not 16.0.0"}), \
+                mock.patch.object(report, "check_sensors", return_value={"Sensor": "21.3 C"}), \
+                mock.patch.object(report.output, "say") as say, mock.patch.object(report.output, "log_only") as log:
+            found = report.end_of_run_checks(ctx)
+        self.assertEqual(found, {"Relay": "switches", "Release": "15.4.0, not 16.0.0", "Sensor": "21.3 C"})
+        say.assert_called_once_with("    Release: 15.4.0, not 16.0.0")
+        log.assert_called_once_with("    Sensor: 21.3 C")
+
+
 class StoppedRunIssueTests(RouteTestCase):
     """A run that failed has the way to open an issue, and its log, where the
     links to support the project would be."""

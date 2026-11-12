@@ -299,8 +299,15 @@ ends by switching the relay to the other state and back (the first relay, on
 a device with several), through the firmware now on it: Tasmota, OpenBeken or
 ESPHome, or eWeLink for Sonoff's own. On a device with a power meter, the meter
 is read after each switch. Whatever is plugged in is switched for a few
-seconds, and the device ends as it started. The report says whether the relay
-switched.
+seconds, and the device ends as it started.
+
+On Tasmota, ESPHome or OpenBeken the tool then asks the device which release it
+runs, and checks it is the one this version installs, as this project built it.
+On a device with sensors, such as a TH Elite with a probe plugged in, it reads
+them and checks each reading is one the sensor can give. A device with no
+probe plugged in fails nothing. The report's Checks line says whether every
+check that ran passed. The screen shows the relay's answers, and the others
+only if they fail; the run's log has them all.
 
 A Beken device's bootloader checks each new firmware's checksum before it
 installs it, and the tool reads nothing back. On an Espressif device converted

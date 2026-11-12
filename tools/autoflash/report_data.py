@@ -143,8 +143,8 @@ def meter_word(captures: dict[str, Any], firmware: str | None) -> str:
 
 
 def checks_word(hardware: dict[str, str] | None) -> str:
-    relay = (hardware or {}).get("Relay", "")
-    return "passed" if relay.startswith("switches") else "failed" if relay == "did not switch" else "not-run"
+    """The report's Checks answer (report.checks_passed), as the API takes it."""
+    return {"pass": "passed", "fail": "failed"}.get(report.checks_passed(hardware or {}), "not-run")
 
 
 def plain(text: str, limit: int = TEXT_LIMIT) -> str:

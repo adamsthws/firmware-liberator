@@ -113,9 +113,9 @@ or [beken-research.md](beken-research.md).
 
 2. **Add the kind** to [kinds.py](../tools/autoflash/kinds.py): its chip,
    eWeLink product model, stock model, the firmware name its update wrapper
-   names, its Tasmota template, its partition layout, and whether it has a
-   relay and a power meter (`has_relay`, `has_meter`: every kind gives these
-   three). Set `product_model_decides` if another
+   names, its Tasmota template, its partition layout, whether it has a relay
+   and a power meter (`has_relay`, `has_meter`), and what its sensors measure
+   (`sensors`, `()` for none): every kind gives these four. Set `product_model_decides` if another
    device shares its stock model but is wired differently, so that it is never
    mistaken for that one. Give it a [status](#its-status): `not-supported`
    until its readout runs in the emulator, then `readout-wanted` until step 6
@@ -277,7 +277,8 @@ Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
 2. **Add the kind** to [kinds.py](../tools/autoflash/kinds.py): its chip,
    eWeLink product model, stock model, the firmware name its update wrapper
    names, its layout (`beken-4m`), whether it has a relay and a power meter
-   (`has_relay`, `has_meter`), and `uses_lan_control=False`. Give it the
+   (`has_relay`, `has_meter`), what its sensors measure (`sensors`), and
+   `uses_lan_control=False`. Give it the
    [status](#its-status) `testers-wanted`, as no real one has been converted.
 
 3. **Boot it in the emulator**, from that flash, and watch for it to come online

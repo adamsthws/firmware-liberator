@@ -539,3 +539,15 @@ def meter(host: str) -> dict[str, float]:
                 readings[key] = float(value)
                 break
     return readings
+
+
+def readings(host: str, quantities: tuple[str, ...]) -> dict[str, float]:
+    """Each of `quantities` ("temperature") a sensor of the device's measures, by
+    its name in the device's esphome.yaml ("Temperature"): only those with a
+    reading, so none from a sensor not plugged in, which reads NaN."""
+    found = {}
+    for quantity in quantities:
+        value = _state(host, "/sensor/" + urllib.parse.quote(quantity.capitalize()))
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+            found[quantity] = float(value)
+    return found

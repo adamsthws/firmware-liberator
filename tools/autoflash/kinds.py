@@ -121,7 +121,7 @@ class Kind:
     esphome_legacy_setup_prefix: str
     esphome_legacy_prefix: str
     # Its stock partition table, by key: tools/espressif/layouts.py's for an
-    # Espressif device, tools/beken/layouts.py's for a Beken one. These three
+    # Espressif device, tools/beken/layouts.py's for a Beken one. These four
     # have no default, so a new kind cannot take one meant for another.
     layout: str
     # Whether it has a power meter: the report says how its calibration went,
@@ -130,6 +130,9 @@ class Kind:
     # Whether it has a relay, which the end-of-run check switches: a device
     # without one has no such check, nor a Checks line in its report.
     has_relay: bool
+    # What its sensors measure (report.SENSOR_RANGES' keys), which the
+    # end-of-run check reads and finds plausible; () for a device with none.
+    sensors: tuple[str, ...]
     # Its ESPHome's friendly name in releases before its comment said the kind.
     esphome_legacy_friendly_name: str = ""
     # For a Beken device: the command its OpenBeken (built with this project's
@@ -248,6 +251,7 @@ SONOFF_S60 = Kind(
     layout="sonoff-dual-ota",
     has_meter=True,
     has_relay=True,
+    sensors=(),
     esphome_legacy_friendly_name="Sonoff S60",
     calibrated_as_s60=True,
     example_product_model="S60TPG",
@@ -273,6 +277,7 @@ SONOFF_S61 = Kind(
     layout="beken-4m",
     has_meter=True,
     has_relay=True,
+    sensors=(),
     openbeken_revert="AutoflashRevertToStock",
     uses_lan_control=False,
     example_product_model="S61STPF",
@@ -298,6 +303,7 @@ SONOFF_BASIC_1GS = Kind(
     layout="beken-4m",
     has_meter=False,
     has_relay=True,
+    sensors=(),
     openbeken_revert="AutoflashRevertToStock",
     uses_lan_control=False,
     example_product_model="BASIC-1GS",
@@ -326,6 +332,7 @@ SONOFF_POW_ELITE = Kind(
     layout="sonoff-dual-ota",
     has_meter=True,
     has_relay=True,
+    sensors=(),
     product_model_decides=True,
     example_product_model="POWR316D",
 )
@@ -355,6 +362,7 @@ SONOFF_POWCT = Kind(
     layout="sonoff-dual-ota",
     has_meter=True,
     has_relay=True,
+    sensors=(),
     example_product_model="POWCT",
 )
 
@@ -380,6 +388,9 @@ SONOFF_NSPANEL = Kind(
     layout="sonoff-nspanel",
     has_meter=False,
     has_relay=True,
+    # Not its room thermistor yet: its ESPHome does not read it, and in the
+    # emulator every classic-ESP32 ADC reads 0 (devices/sonoff-nspanel/research.md).
+    sensors=(),
     example_product_model="NSPANEL",
 )
 
@@ -406,6 +417,8 @@ SONOFF_TH_ELITE = Kind(
     layout="sonoff-th-elite",
     has_meter=False,
     has_relay=True,
+    # A THS01 on its sensor socket, if one is plugged in.
+    sensors=("temperature", "humidity"),
     product_model_decides=True,
     example_product_model="THR320D",
 )
@@ -439,6 +452,7 @@ SONOFF_BASICR4 = Kind(
     layout="sonoff-dual-ota",
     has_meter=False,
     has_relay=True,
+    sensors=(),
     product_model_decides=True,
     example_product_model="BASICR4",
     # Its stock firmware watches a thermistor on GPIO3 (ADC1 channel 3) and, read
@@ -470,6 +484,7 @@ SONOFF_MINIR4 = Kind(
     layout="sonoff-dual-ota",
     has_meter=False,
     has_relay=True,
+    sensors=(),
     product_model_decides=True,
     example_product_model="MINIR4",
 )
@@ -495,6 +510,7 @@ SONOFF_DUALR3 = Kind(
     layout="sonoff-th-elite",
     has_meter=True,
     has_relay=True,
+    sensors=(),
     product_model_decides=True,
     example_product_model="DUALR3",
 )
@@ -520,6 +536,7 @@ def _sonoff_m5(gang: int, gpio: tuple[int, ...]) -> Kind:
         layout="sonoff-dual-ota",
         has_meter=False,
         has_relay=True,
+        sensors=(),
         product_model_decides=True,
         example_product_model=f"M5-{gang}C-120",
     )
