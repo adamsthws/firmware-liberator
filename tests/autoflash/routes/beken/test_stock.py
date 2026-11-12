@@ -11,7 +11,7 @@ from unittest import mock
 from tests.autoflash.routes.beken.test_beken import a_context
 from tools.autoflash import detect, errors, kinds, records
 from tools.autoflash.routes.beken import images, stock
-from tools.beken import fota_wrap, interim_marker, rbl
+from tools.beken import fota_wrap, interim_marker, layouts, rbl
 from tools.ewelink import ota_push
 from tools.ewelink.get_device_key import EwelinkError
 
@@ -32,6 +32,11 @@ class FromStockTests(unittest.TestCase):
         offered = mock.patch.object(stock, "offered_latest", return_value={"offers": [{"binList": []}]})
         self.offered = offered.start()
         self.addCleanup(offered.stop)
+        # Its official update file, checked at B1 and again at B2 (images.official).
+        official = mock.patch.object(images, "official", return_value=images.Official(
+            b"image", S61.wrapper_model, "1.1.0", layouts.BEKEN_4M, (), images.PUBLIC_COPY))
+        self.official = official.start()
+        self.addCleanup(official.stop)
 
     def test_b1_takes_the_devices_identity_from_its_account_record(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -43,7 +48,9 @@ class FromStockTests(unittest.TestCase):
                 with mock.patch.object(stock.prompts, "section"):
                     result = stock.step_identify(ctx)
             self.assertEqual(result, {"stock_version": "1.0.2", "model": "SN-BK7238-S61-01", "product": "S61STPF",
-                                      "signal_dbm": None, "firmware_name": "FWSW-01-S61-BK7238"})
+                                      "signal_dbm": None, "firmware_name": "FWSW-01-S61-BK7238",
+                                      "official_name": S61.wrapper_model, "official_version": "1.1.0",
+                                      "layout": "beken-4m"})
             # The firmware name from eWeLink's offer, asked with the device's own id.
             self.noted.assert_called_once_with(S61, {"offers": [{"binList": []}]}, "1001234abc", "S61STPF",
                                                "SN-BK7238-S61-01")

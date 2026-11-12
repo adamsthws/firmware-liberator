@@ -860,7 +860,7 @@ on ([how it is read and filed](#reversion-to-stock-and-the-backup)). Stock
 firmware says nothing of its flash, so what a run learns of a device goes in its
 log (`tools/autoflash/routes/beken/`):
 
-- **At B1**, for a device with no public dump: its official update file's firmware
+- **At B1**: its official update file's firmware
   name and version, the version the device reports, and the file's whole partition
   table, with the flash size that table is for.
 - **At B4**: whether the device's own factory record was read at `0x3e0000`. On a

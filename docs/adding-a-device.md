@@ -115,7 +115,11 @@ or [beken-research.md](beken-research.md).
    eWeLink product model, stock model, the firmware name its update wrapper
    names, its Tasmota template, its partition layout, whether it has a relay
    and a power meter (`has_relay`, `has_meter`), and what its sensors measure
-   (`sensors`, `()` for none): every kind gives these four. Set `product_model_decides` if another
+   (`sensors`, `()` for none): every kind gives these four. Pin Sonoff's update
+   file for it, as FlashDumps publishes it, in `COPIES` in
+   [public_copies.py](../tools/autoflash/routes/public_copies.py), by name and
+   SHA-256: a device going back to Sonoff's firmware with no backup and nothing
+   from eWeLink takes it. Set `product_model_decides` if another
    device shares its stock model but is wired differently, so that it is never
    mistaken for that one. Give it a [status](#its-status): `not-supported`
    until its readout runs in the emulator, then `readout-wanted` until step 6
@@ -250,8 +254,8 @@ Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
 - **eWeLink's official update file for it**, from
   [FlashDumps](https://github.com/openshwprojects/FlashDumps), which publishes
   it. A run uses the file eWeLink offers the device first, as on the Espressif
-  route, and this copy, pinned by hash in `OFFICIAL_FILES`
-  ([images.py](../tools/autoflash/routes/beken/images.py)), where eWeLink
+  route, and this copy, pinned by hash in `COPIES`
+  ([public_copies.py](../tools/autoflash/routes/public_copies.py)), where eWeLink
   offers none that passes the same checks. A whole-flash dump of the device, where there is one, has its factory data
   too; without one, the file's app runs on the S61's bootloader and settings.
 - **A pin map you can trust**, such as an OpenBeken template its author checked
@@ -288,8 +292,8 @@ Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
    AUTOFLASH_BEKEN_EMU_FLASH=captures/device.bin tools/beken/emulator/beken-emu.sh --fresh device
    ```
 
-4. **Pin its official update file** in `OFFICIAL_FILES` in
-   [images.py](../tools/autoflash/routes/beken/images.py), by name and SHA-256.
+4. **Pin its official update file** in `COPIES` in
+   [public_copies.py](../tools/autoflash/routes/public_copies.py), by name and SHA-256.
    A run checks the file's partition table before it writes anything
    ([below](#what-the-tool-checks)), and sends the file when the device goes back
    to Sonoff's firmware.

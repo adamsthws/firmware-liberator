@@ -45,13 +45,11 @@ def account_record(ctx: Context) -> dict[str, Any]:
 
 
 def note_official_file(ctx: Context, kind: kinds.Kind, reported_version: str) -> dict[str, Any]:
-    """What a kind with no public dump is known by, checked and logged for the
-    next person: its official update file's partition table, firmware name and
-    version. Refused here (images.official), a run writes nothing. Stock firmware
-    says nothing of its flash, so this table is the only word on it until OpenBeken
-    has read the device's own data where the table has it (arrived._back_up)."""
-    if kind.key not in images.OFFICIAL_FILES:
-        return {}
+    """What the device is known by, checked and logged for the next person: its
+    official update file's partition table, firmware name and version. Refused
+    here (images.official), a run writes nothing. Stock firmware says nothing
+    of its flash, so this table is the only word on it until OpenBeken has read
+    the device's own data where the table has it (arrived._back_up)."""
     found = images.official(kind, ctx)
     output.log_only(f"    Official update file: {found.name}, version {found.version}, from {found.source}; "
                     f"the device reports {reported_version}")
@@ -157,8 +155,7 @@ def step_push(ctx: Context) -> dict[str, Any]:
     port = firewall.choose_port(ctx, "delivery_port", firewall.DELIVERY_PORTS, "the firmware")
     firewall.ensure_firewall(ctx)
     # Checked again here: nothing reaches the device but past this, a resumed run too.
-    if kind.key in images.OFFICIAL_FILES:
-        images.official(kind, ctx)
+    images.official(kind, ctx)
     if not getattr(ctx, "consented", False):  # once a run: not again when sent again (errors.GoBack)
         mac = ctx.state.input("device_mac")
         backup = records.find_backup(mac) if mac else None
