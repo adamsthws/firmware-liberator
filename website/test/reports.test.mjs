@@ -23,6 +23,15 @@ function proofFor(id, time = NOW.getTime() / 1000, bits = BITS) {
   }
 }
 
+// Work that does not check out for `id`: the first nonce falling short. A
+// fixed one would pass by chance, one time in 2 ** BITS, for a fresh id.
+function wrongProofFor(id, time = NOW.getTime() / 1000) {
+  for (let nonce = 0; ; nonce += 1) {
+    const hash = createHash("sha256").update(`${Math.floor(time)}:report-${id}:${nonce}`).digest();
+    if (hash.readUInt32BE(0) >>> (32 - BITS) !== 0) return `${Math.floor(time)}:${nonce}`;
+  }
+}
+
 // A report as the tool makes it, with a fresh id and its proof.
 function report(changes = {}, proofTime) {
   const id = changes.id ?? randomBytes(8).toString("hex");
@@ -94,7 +103,7 @@ test("each report is held to the schema and its own work; the rest of the reques
   const cases = [
     [report({ result: "exploded" }), /result: not one of the allowed words/],
     [{ ...report(), email: "me@example.com" }, /email: not allowed/],
-    [report({ proof: "1794000000:1" }), /proof of work/],
+    [report({ id: "0123456789abcdef", proof: wrongProofFor("0123456789abcdef") }), /proof of work/],
     [report({ proof: proofFor("f".repeat(32)) }), /proof of work/, "work for another report"],
     [report({ stopped: { step: "D4", error: "other", text: "x".repeat(9000) } }), /larger than|too long/],
     ["not a report", /not object/],
