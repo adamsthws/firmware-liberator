@@ -340,6 +340,31 @@ class LocateTests(unittest.TestCase):
         discover = mock.patch.object(readout.discover_ewelink, "discover", return_value={"packets": []})
         self.discover = discover.start()
         self.addCleanup(discover.stop)
+        self.clock = 0.0
+
+        def sleep(seconds):
+            self.clock += seconds
+        for patch in (mock.patch.object(readout.time, "monotonic", side_effect=lambda: self.clock),
+                      mock.patch.object(readout.time, "sleep", side_effect=sleep)):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_a_beken_device_missed_by_one_sweep_is_looked_for_again_before_asking(self):
+        # Seen: an emulated S61 beside another emulator, missed by one sweep,
+        # its address then asked for, which an unattended run cannot answer.
+        with mock.patch.object(hostsys, "find_by_mac", side_effect=[None, None, "192.0.2.77"]) as found, \
+                mock.patch.object(prompts, "ask_ipv4") as asked:
+            self.assertEqual(readout.locate(None, self.BEKEN), "192.0.2.77")
+        self.assertEqual(found.call_count, 3)
+        self.assertEqual(self.clock, 2 * readout.LOOK_AGAIN)
+        asked.assert_not_called()
+
+    def test_it_asks_once_it_has_looked_for_long_enough(self):
+        with mock.patch.object(hostsys, "find_by_mac", return_value=None) as found, \
+                mock.patch.object(prompts, "ask_ipv4", return_value="192.0.2.77") as asked:
+            self.assertEqual(readout.locate(None, self.BEKEN), "192.0.2.77")
+        self.assertEqual(found.call_count, int(readout.LOOK_FOR / readout.LOOK_AGAIN) + 1)
+        asked.assert_called_once()
 
     def test_a_beken_device_is_found_by_its_hardware_address_unasked(self):
         with mock.patch.object(hostsys, "find_by_mac", return_value="192.0.2.77") as found, \

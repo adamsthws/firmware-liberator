@@ -217,6 +217,15 @@ backup.
   whole conversions, an S60's emulator, its computer included, took about 0.6
   of a CPU and about 115 MB, peaking near 150 MB; a classic ESP32's runs two
   cores and peaked at 250 MB.
+- **A busy computer's emulated device can answer ARP late**: one sweep of
+  the network then misses it. A readout of a device that answers no local
+  discovery (an S61) looks for it by its hardware address again until
+  `readout.LOOK_FOR` is up, before asking for its address. To try that, delay
+  ARP alone to the device's container, on its link's host end (`eth0@ifN`
+  inside it is host link N): `tc qdisc add dev VETH root handle 1: prio`,
+  `tc qdisc add dev VETH parent 1:3 handle 30: netem delay 3000ms`, and
+  `tc filter add dev VETH parent 1:0 protocol arp prio 1 u32 match u32 0 0
+  flowid 1:3`. One sweep's 2.5 s then always misses it.
 - **Each emulator waits for room before it starts**: 250 MB of free memory
   for an ESP32-C3, 350 MB for a classic ESP32 or the S61 (each about 100 MB
   over the most one was measured to use with its computer;
