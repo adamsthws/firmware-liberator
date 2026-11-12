@@ -798,9 +798,11 @@ def copy_to_clipboard(text: str) -> bool:
     for command in candidates:
         if not shutil.which(command[0]):
             continue
+        # Nothing of its output is kept: xclip and xsel stay behind to hold the
+        # selection, and one kept would wait on their open end until the timeout.
         try:
-            completed = subprocess.run(command, input=text, text=True, timeout=5,
-                                       capture_output=True, check=False)
+            completed = subprocess.run(command, input=text, text=True, timeout=5, check=False,
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except (OSError, subprocess.SubprocessError):
             continue
         if completed.returncode == 0:
