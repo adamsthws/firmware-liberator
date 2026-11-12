@@ -1,5 +1,6 @@
 """The device on its new firmware: started, on the Wi-Fi, answering as what was
 installed, and backed up (B4)."""
+import dataclasses
 import hashlib
 import json
 import tempfile
@@ -10,7 +11,7 @@ from unittest import mock
 
 from tests.autoflash.test_openbeken import FakeOpenBeken
 from tests.autoflash.routes.beken.test_beken import a_context
-from tools.autoflash import detect, errors, openbeken, records, state
+from tools.autoflash import detect, errors, kinds, openbeken, records, state
 from tools.autoflash.routes.beken import arrived, images, onward
 
 
@@ -234,6 +235,33 @@ class ArrivedTests(unittest.TestCase):
                     mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(50_000, 150_000, 100))):
                 arrived.step_esphome_check(ctx, wait=1000)
             self.assertEqual(relay.call_count, 2)
+
+    def test_k2_of_a_device_with_no_relay_waits_for_esphome_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, firmware="esphome")
+            bare = dataclasses.replace(kinds.SONOFF_BASIC_1GS, has_relay=False)
+            with mock.patch.object(arrived.kinds, "of_run", return_value=bare), \
+                    mock.patch.object(arrived.esphome, "is_esphome", return_value=True), \
+                    mock.patch.object(arrived.esphome, "relay", return_value=None) as relay, \
+                    mock.patch.object(arrived.join.time, "sleep"), \
+                    mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(50_000, 150_000, 100))):
+                arrived.step_esphome_check(ctx, wait=1000)
+            relay.assert_not_called()
+
+    def test_k2_of_a_device_with_no_meter_says_nothing_of_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, firmware="esphome")
+            with mock.patch.object(arrived.kinds, "of_run", return_value=kinds.SONOFF_BASIC_1GS), \
+                    mock.patch.object(arrived.esphome, "is_esphome", return_value=True), \
+                    mock.patch.object(arrived.esphome, "relay", return_value=False), \
+                    mock.patch.object(arrived.esphome, "calibration_state") as calibration, \
+                    mock.patch.object(arrived.output, "say") as said, \
+                    mock.patch.object(arrived.join.time, "sleep"), \
+                    mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(50_000, 150_000, 100))):
+                result = arrived.step_esphome_check(ctx, wait=1000)
+            calibration.assert_not_called()
+            self.assertNotIn("calibration", result)
+            self.assertNotIn("meter", " ".join(str(call.args[0]) for call in said.call_args_list))
 
     def test_without_b2_a_device_on_sonoffs_firmware_is_only_waited_for(self):
         # Nothing this run sent to go back to: asked again, as before.
