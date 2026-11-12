@@ -290,7 +290,9 @@ A run to OpenBeken ends there. For **ESPHome**:
    download area. Just before the restart that installs ESPHome, it erases its
    own settings, so it leaves nothing of itself.
 9. **Check ESPHome is running** and has joined your Wi-Fi, which it reads, with
-   the calibration, from Sonoff's store every time it starts.
+   the calibration, from Sonoff's store every time it starts. If it cannot
+   join, it puts up its own network, as on an Espressif device, and the tool
+   gives it your Wi-Fi through that.
 
 A device that has not come back on its new firmware, whichever it is, is most
 often one that needs switching off and on. The tool asks you to, then looks
