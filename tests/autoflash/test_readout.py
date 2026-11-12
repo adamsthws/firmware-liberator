@@ -1234,13 +1234,13 @@ class ReportTests(unittest.TestCase):
             self.assertLessEqual(len(line), 80)
             self.assertRegex(line.rstrip(), r"(MODEL\d+ 1\.0\.0,?|Accepted:)$", "never inside a device's name")
 
-    def shown_by_end(self, done):
+    def shown_by_end(self, done, failed=False):
         shown = []
         with mock.patch.object(output, "tell", side_effect=lambda text="": shown.append(text)), \
                 mock.patch.object(output, "show", side_effect=lambda text, *_: shown.append(text)), \
-                mock.patch.object(output, "show_links"), \
+                mock.patch.object(output, "show_links"), mock.patch.object(output, "show_link"), \
                 mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
-            readout.end(SimpleNamespace(readouts=done), "")
+            readout.end(SimpleNamespace(readouts=done), "", failed=failed)
         return shown
 
     def test_the_result_is_beside_the_device_count_and_each_count_beside_a_row_of_the_left(self):
@@ -1252,6 +1252,14 @@ class ReportTests(unittest.TestCase):
                         for label in ("Result:", "Liberator:", "OS:", "Python:")]
                 self.assertEqual([line.split()[-2] for line in rows[:len(counts)]], counts, "\n".join(shown))
                 self.assertEqual(rows[0].index("Result:"), rows[1].index("Liberator:"))
+
+    def test_one_that_failed_has_the_way_to_open_an_issue_where_the_links_to_support_the_project_go(self):
+        failed = [readout.Became("'Hall'", "BASICR4", "", "1.1.0", True, readout.FAILED)]
+        shown = self.shown_by_end(failed, failed=True)
+        self.assertIn("If it should not have stopped, please open an issue here:", shown)
+        self.assertNotIn("You've reached the bit where I hold out my hat!", shown)
+        self.assertNotIn("Readout complete!", shown)
+        self.assertIn("Failed", next(line for line in shown if "Result:" in line))
 
     def test_it_ends_as_a_conversion_does(self):
         shown = []

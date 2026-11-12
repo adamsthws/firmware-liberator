@@ -310,7 +310,8 @@ check.
   time, for up to 30 days.
 - A run that failed ends with where to open an issue for it,
   firmwareliberator.com/issues, and where its log is, in place of the links to
-  support the project; one you stop yourself does not. A run that worked no
+  support the project; one you stop yourself does not. A readout that failed
+  does the same under its report, which says "Failed". A run that worked no
   longer says where its log is, a device wanting testers' included. The end of a run no longer asks for its report to be posted in
   Discussions, nor links to them when a run fails.
 - The tool's options and the names of what it keeps say "device", as its
