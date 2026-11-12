@@ -146,6 +146,12 @@ def step_push(ctx: Context) -> dict[str, Any]:
     device_ip, stock_version = ctx.state.require("device_ip", "stock_version")
     device = account_record(ctx)
     image, version = images.image(ctx, firmware)
+    chosen = runs.run_firmware(ctx.state)
+    if chosen != firmware:
+        # The firmware the interim one fetches (J2), checked now as the Espressif
+        # route's A5 checks every file it sends: refused after this, it would
+        # leave the device on the interim firmware.
+        images.image(ctx, chosen)
     container = fota_wrap.wrap(payload(ctx, firmware, image), name=kind.wrapper_model, version=images.FOTA_VERSION)
     listen_ip = ctx.listen_ip()
     port = firewall.choose_port(ctx, "delivery_port", firewall.DELIVERY_PORTS, "the firmware")
