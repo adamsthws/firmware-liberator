@@ -182,6 +182,9 @@ as its screens do, since it converts much more than smart plugs now.
 - The end-of-run check always shows its Relay and Power meter answers. A device
   that stopped answering it on Tasmota or ESPHome, or a Dual R3 driving a
   motor, showed neither, or only one.
+- `--dry-run` writes nothing on either chip family: it goes through the steps
+  that only read and stops before the first that writes. On an Espressif device
+  it went on to send the installer, replacing Sonoff's firmware.
 - The end-of-run check also asks the device which release of Tasmota, ESPHome or
   OpenBeken it runs, and reads a TH Elite's temperature probe, if one is plugged
   in: the report's Checks fails if the release is not the one this version

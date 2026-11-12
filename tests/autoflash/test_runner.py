@@ -232,12 +232,29 @@ class RunStepsTests(unittest.TestCase):
         stand_ins["invite_report"].assert_not_called()
 
     def test_a_dry_run_ends_saying_nothing_was_written_and_asks_for_no_report(self):
-        code, ran, stand_ins = self.run_steps(dry_run=True)
+        with mock.patch.object(routes.FAMILY, "READ_ONLY_STEPS", {"S1", "S2", "S3"}):
+            code, ran, stand_ins = self.run_steps(dry_run=True)
         self.assertEqual((code, ran), (0, ["S1", "S2", "S3"]))
         stand_ins["invite_report"].assert_not_called()
         shown = " ".join(str(call.args[0]) for call in stand_ins["output"].show.call_args_list)
         self.assertIn("Dry run complete: nothing was written", shown)
         self.assertNotIn("Conversion complete", shown)
+
+    def test_a_dry_run_stops_before_the_first_step_that_writes(self):
+        # Espressif's C2 sent the installer on a dry run: no step that writes is run at all.
+        for family in routes.FAMILIES.values():
+            with self.subTest(family=family.__name__), mock.patch.object(routes, "FAMILY", family), \
+                    mock.patch.object(family, "READ_ONLY_STEPS", {"S1"}):
+                code, ran, stand_ins = self.run_steps(dry_run=True)
+                self.assertEqual((code, ran), (0, ["S1"]))
+                said = " ".join(str(call.args[0]) for call in stand_ins["output"].say.call_args_list)
+                self.assertIn("[dry-run] stopping before S2", said)
+                stand_ins["invite_report"].assert_not_called()
+
+    def test_each_familys_dry_run_reads_only_the_steps_before_its_first_write(self):
+        for family in routes.FAMILIES.values():
+            self.assertNotIn(family.POINT_OF_NO_RETURN, family.READ_ONLY_STEPS)
+            self.assertFalse(family.READ_ONLY_STEPS & family.DESTRUCTIVE_STEPS, family.__name__)
 
     def test_a_device_put_back_ends_saying_so_not_converted(self):
         self.state.set_input("put_back", {"came_from": "esphome", "why": "no identity"})

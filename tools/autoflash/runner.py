@@ -507,6 +507,9 @@ def run_steps(ctx: Context) -> int:
                 break
             brought_up = True
         step, title, _ = routes.STEPS[index]
+        if ctx.dry_run and step not in routes.FAMILY.READ_ONLY_STEPS:
+            output.say(f"[dry-run] stopping before {step} ({title}), the first step that writes.")
+            break
         index += 1
         marks[step] = output.mark()
         if step in redone:
