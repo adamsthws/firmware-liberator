@@ -302,6 +302,188 @@ class AnswerTests(unittest.TestCase):
         self.assertNotIn("--unattended", unattended_run.tool_command("run", ["--new"], attended=True))
 
 
+# A conversion's report and its ending, as report.py draws them in a window
+# 100 wide, with output's margin of one.
+REPORT = """\
+ Conversion complete!
+
+     Liberator: 3.0.0                                 Firmware: Tasmota
+     OS:        Ubuntu 24.04.5 LTS                    From:     Sonoff 1.2.0
+     Python:    3.12.3 (venv)                         Model:    S60TPG
+     Retries:   None                                  Backup:   Completed
+     Checks:    Pass                                  Signal:   -23 dBm
+"""
+HAT = """
+ You've reached the bit where I hold out my hat!
+ Free software, not free biscuits... Throw your friendly neighbourhood dev a biscuit:
+     GitHub: https://github.com/sponsors/adamsthws
+     Ko-fi:  https://ko-fi.com/adamsthws
+     (Ctrl+click to open)
+"""
+ISSUE = """
+ If it should not have stopped, please open an issue here:
+     https://firmwareliberator.com/issues
+     Report ID: 0123456789abcdef
+     This report is on your clipboard, ready to paste.
+
+ This run's log:
+     /home/someone/autoflash/captures/devices/123456abcdef/runs/1/run.log
+"""
+COPIED = "Result: Stopped at stage 8\nLiberator: 3.0.0\nReport ID: 0123456789abcdef\n"
+
+
+class EndProblemsTests(unittest.TestCase):
+    def problems(self, screen, clipboard=None):
+        return unattended_run.end_problems(screen, clipboard)
+
+    def test_a_run_that_finished_or_failed_as_drawn_has_none(self):
+        self.assertEqual(self.problems(REPORT + HAT, ""), [])
+        self.assertEqual(self.problems(REPORT.replace("Conversion complete!", "FAILED: no answer") + ISSUE, COPIED), [])
+
+    def test_a_report_out_of_line_is_found(self):
+        left = REPORT.replace("     OS:        Ubuntu", "     OS:       Ubuntu")
+        self.assertIn("the report's values on the left start in 2 columns, not one", self.problems(left + HAT))
+        right = REPORT.replace("From:     Sonoff", "From:    Sonoff")
+        self.assertIn("the report's right-hand column does not line up", self.problems(right + HAT))
+
+    def test_a_conversions_columns_out_of_balance_are_found(self):
+        longer = REPORT.replace("     Checks:    Pass                                  Signal:   -23 dBm\n",
+                                "                                                      Signal:   -23 dBm\n")
+        self.assertIn("the report's right-hand column the longer: 5 rows to 4", self.problems(longer + HAT))
+        left = REPORT + "     Wi-Fi:     No\n     Setup:     No\n"
+        self.assertIn("the report's left-hand column 2 rows the longer", self.problems(left + HAT))
+
+    def test_a_readouts_counts_may_run_below_its_left_column(self):
+        # readout.report_screen(balance=False): the counts stay together.
+        readout = """\
+ Readout complete!
+
+     Liberator: 3.0.0                                 Devices:    2
+     OS:        Ubuntu 24.04.5 LTS                    Accepted:   1
+     Python:    3.12.3 (venv)                         Not needed: 0
+                                                      Not sent:   1
+     Accepted:  S61STPF 1.0.2
+"""
+        self.assertEqual(self.problems(readout + HAT, ""), [])
+
+    def test_a_report_with_no_ending_under_it_or_both_is_found(self):
+        self.assertIn("a report with neither the links to support the project nor the way to open an issue "
+                      "under it", self.problems(REPORT))
+        self.assertIn("both the links to support the project and the way to open an issue",
+                      self.problems(REPORT + ISSUE + HAT, COPIED))
+
+    def test_a_run_that_says_it_failed_and_is_complete_is_found(self):
+        said = " FAILED: the device did not answer\n\n" + REPORT.replace("Conversion", "Readout") + ISSUE
+        self.assertEqual(self.problems(said, COPIED), ["said it failed, and that it is complete"])
+
+    def test_a_report_id_or_the_clipboard_said_by_a_run_that_did_not_fail_is_found(self):
+        said = REPORT + "     Report ID: 0123456789abcdef\n" + HAT
+        self.assertIn("a report ID shown by a run that did not fail", self.problems(said))
+        self.assertIn("put a report on the clipboard, though no run failed", self.problems(REPORT + HAT, COPIED))
+
+    def test_the_issue_link_and_what_is_under_it_drawn_otherwise_is_found(self):
+        for wrong, problem in (
+                (ISSUE.replace("     Report ID", "  Report ID"), "'Report ID: 0123456789abcdef' not as far in"),
+                (ISSUE.replace("     https", " https"), "the issue link not on the row under"),
+                (ISSUE.replace("     Report ID: 0123456789abcdef\n     This report is on your clipboard, ready "
+                               "to paste.\n", "     This report is on your clipboard, ready to paste.\n"
+                               "     Report ID: 0123456789abcdef\n"), "not the report ID then the clipboard"),
+                (ISSUE.replace(" This run's log:\n", ""), "the run's log not under")):
+            with self.subTest(problem=problem):
+                found = self.problems(REPORT + wrong, COPIED)
+                self.assertTrue(any(problem in said for said in found), found)
+        self.assertIn("the way to open an issue above the report, not under it", self.problems(ISSUE + REPORT, COPIED))
+
+    def test_what_was_copied_must_be_what_the_screen_says(self):
+        failed = REPORT + ISSUE
+        self.assertIn("said its report is on the clipboard, and nothing was put there", self.problems(failed, ""))
+        quiet = failed.replace("     This report is on your clipboard, ready to paste.\n", "")
+        self.assertIn("put its report on the clipboard without saying so", self.problems(quiet, COPIED))
+        self.assertIn("the report on the clipboard has not the report ID the screen shows",
+                      self.problems(failed, COPIED.replace("0123", "4567")))
+        self.assertEqual(self.problems(failed), [])   # nothing known of the clipboard: not judged
+
+    def test_a_question_left_unanswered_above_what_came_after_is_found(self):
+        stranded = (" Stage  4 - Leaving Tasmota   - Underway\n\n Which firmware would you like (q to quit):\n"
+                    " Stage  4 - Leaving Tasmota   - Stopped\n")
+        self.assertEqual(self.problems(stranded), ["a question left unanswered above what came after it: "
+                                                   "'Which firmware would you like (q to quit):'"])
+        answered = " Which firmware would you like (q to quit): 2\n Stage  4 - Leaving Tasmota   - Stopped\n"
+        password = " Wi-Fi password (q to quit):\n >\n Stage  4 - Leaving Tasmota   - Complete\n"
+        waiting = " Stage  4 - Leaving Tasmota   - Underway\n Which firmware would you like (q to quit):\n"
+        for fine in (answered, password, waiting):   # a question waiting is the attended suite's to judge
+            self.assertEqual(self.problems(fine), [], fine)
+
+    def test_it_reads_a_report_run_as_a_script_too(self):
+        # As the emulators run it: tools/repo/unattended_run.py, its checkout not on the path.
+        import subprocess
+        code = (f"import runpy; found = runpy.run_path({str(ROOT / 'tools/repo/unattended_run.py')!r}); "
+                f"print(found['end_problems']({REPORT + HAT!r}, ''))")
+        done = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, cwd="/")
+        self.assertEqual((done.stdout.strip(), done.returncode), ("[]", 0), done.stderr)
+
+    def test_each_run_of_a_sitting_ends_on_its_own(self):
+        sitting = REPORT + HAT + "\n What next (q to quit): 1\n" + REPORT + ISSUE
+        self.assertEqual(self.problems(sitting, COPIED), [])
+
+
+@unittest.skipUnless(hasattr(os, "fork"), "a pseudo-terminal needs Linux or macOS")
+class StandInTests(unittest.TestCase):
+    def test_what_the_run_copies_is_kept_and_the_clipboard_left_alone(self):
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            kept = Path(directory, "it's kept", "clipboard.txt")
+            kept.parent.mkdir()
+            environment = unattended_run.clipboard_stand_in(Path(directory), kept)
+            found = subprocess.run(["sh", "-c", f"command -v {unattended_run.CLIPBOARD_TOOL}"], env=environment,
+                                   capture_output=True, text=True).stdout.strip()
+            self.assertEqual(found, str(Path(directory, unattended_run.CLIPBOARD_TOOL)))
+            subprocess.run([unattended_run.CLIPBOARD_TOOL], input="Report ID: 0123\n", text=True,
+                           env=environment, check=True)
+            self.assertEqual(kept.read_text(encoding="utf-8"), "Report ID: 0123\n")
+
+    def test_the_tool_copies_to_the_stand_in(self):
+        from tools.autoflash import hostsys
+        if hostsys.IS_WINDOWS or hostsys.IS_MAC:
+            self.skipTest("Linux's clipboard tools")
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            kept = Path(directory, "clipboard.txt")
+            environment = unattended_run.clipboard_stand_in(Path(directory), kept)
+            with mock.patch.dict(os.environ, environment), mock.patch.dict(os.environ, {"AUTOFLASH_NO_CLIPBOARD": ""}):
+                self.assertTrue(hostsys.copy_to_clipboard("Report ID: 0123\n"))
+            self.assertEqual(kept.read_text(encoding="utf-8"), "Report ID: 0123\n")
+
+    def test_an_answer_can_switch_the_device_or_signal_the_run(self):
+        import json
+        import tempfile
+        import time
+        script = textwrap.dedent("""
+            import signal, sys, time
+            signal.signal(signal.SIGTERM, lambda *_: (print("terminated"), sys.exit(143)))
+            print("Stage 1 - Underway", flush=True)
+            time.sleep(2)
+            print("Stage 2 - Underway", flush=True)
+            time.sleep(30)
+        """)
+        with tempfile.TemporaryDirectory() as directory:
+            power = Path(directory, "power")
+            power.write_text("on\n", encoding="utf-8")
+            answers = [unattended_run.Answer("Stage 1", power="off", anywhere=True),
+                       unattended_run.Answer("Stage 2", signal="TERM", anywhere=True)]
+            started = time.monotonic()
+            with mock.patch.dict(os.environ, {unattended_run.POWER_FILE: str(power)}):
+                code, written = unattended_run.record([sys.executable, "-c", script], (80, 24), live=False,
+                                                      timeout=60, answers=answers)
+            self.assertLess(time.monotonic() - started, 20, "signalled by its answer, not the timeout")
+            self.assertEqual(power.read_text(encoding="utf-8"), "off\n")
+        self.assertEqual(code, 143, written)
+        self.assertIn(b"terminated", written)
+        saved = [answer.saved() for answer in answers]
+        self.assertEqual((saved[0]["power"], saved[1]["signal"]), ("off", "TERM"))
+        json.dumps(saved)
+
 class CommandTests(unittest.TestCase):
     def test_a_conversion_unless_told_otherwise(self):
         self.assertEqual(unattended_run.tool_command("run", ["--new"])[2:], ["run", "--unattended", "--new"])

@@ -662,7 +662,8 @@ name each. The unit tests find most of these first, without the emulator:
 
 | Test | Checks |
 |---|---|
-| `tests/autoflash/test_route_screens.py` | every route through the run's own loop, at the shortest window it goes on in and at a wide one |
+| `tests/autoflash/test_route_screens.py` | every route through the run's own loop, to its report and the links under it, at the shortest window it goes on in and at a wide one |
+| `tests/autoflash/test_end_screens.py` | every way a run ends (a conversion finished, failed or crashed, in each chip family; a readout that read devices, none, or failed), at 60 to 160 columns, checked as the attended runs check it; each at 100 columns kept in `tests/autoflash/end_screens/`, so a change shows as a difference there |
 | `tests/autoflash/test_prompts.py` | every kind of question, asked on a real terminal and answered as a person would, wrongly first |
 | `tests/repo/test_screen_text.py` | each section of text keeps to half the shortest window |
 | `tests/repo/test_report_answers.py` | the longest report, read back with the suites' own patterns |
@@ -938,8 +939,14 @@ A scenario is a file in `tools/espressif/emulator/attended/` (an S60's) or
 what is done to it first (a Tasmota web password, an ESPHome with a web login
 and encrypted updates, sudo remembering no password), the run's options, the
 answers, and how the run should end, with a second run after one stopped
-part way (`again`), as you would start it again. Each runs on an emulator of
-its own, `--workers` at once; the S61's run after the S60's, one at a time.
+part way (`again`), as you would start it again. An answer can also switch
+the device off (`"power": "off"`), as if unplugged part way, or signal the
+run (`"signal": "TERM"`, or `"HUP"` for its window closed) as it waits at a
+question; a scenario can be a readout (`"command": "readout"`), and have the
+API beside the emulator hold enough of the device's product already
+(`"api_enough": true`), so its readout is not needed. Each runs on an
+emulator of its own, `--workers` at once; the S61's run after the S60's, one
+at a time.
 
 A run passes when it ends as the scenario says with every answer used;
 otherwise it is:
@@ -950,7 +957,7 @@ otherwise it is:
 | FAIL-UNANSWERED | it stopped at a question no answer covers: new, or reworded |
 | FAIL-UNUSED | an answer was never typed: its question is no longer asked |
 | FAIL-QUESTION | something was wrong as a question was answered: no "(q to quit)" on it, a row the terminal wrapped itself, or a question shown twice (an earlier try left on the screen) |
-| FAIL-SCREEN | the screen it ended on, as the fault suites' FAIL-SCREEN |
+| FAIL-SCREEN | the screen it ended on: as the fault suites' FAIL-SCREEN, and how it ended (`unattended_run.end_problems`) - the report's columns lined up and balanced, the links to support the project or the way to open an issue under it, the report ID and what was put on the clipboard as a failed run says them and nowhere else, no question left unanswered above what came after it - a row the terminal wrapped itself, or a line the scenario's `expect.shows` wants not there |
 | HARNESS | it could not be run - the device not prepared, say: its `harness.log` says why |
 
 Results and recordings go to `captures/emulation/attended/<time>/`.

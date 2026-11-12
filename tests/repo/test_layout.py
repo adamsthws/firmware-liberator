@@ -226,6 +226,9 @@ NOT_MIRRORED = {
     "tests/autoflash/test_route_screens.py": "every route's whole run, through runner.py's loop and "
                                              "output.py's drawing, read back with "
                                              "tools/repo/unattended_run.py",
+    "tests/autoflash/test_end_screens.py": "every way a run ends, drawn by report.py, readout.py and "
+                                           "output.py, read back and checked with "
+                                           "tools/repo/unattended_run.py",
 }
 
 

@@ -21,6 +21,9 @@ Saved, under captures/unattended/<time>/ unless --save says otherwise:
     screen.raw    every byte written, as written: `cat` replays it in a terminal
     result.txt    how the run ended, as its report has it in the run's log
                   (its Result): the screen says it above the report instead
+    clipboard.txt what the run put on the clipboard, if it put anything: a
+                  stand-in for the clipboard tool takes it, leaving this
+                  computer's clipboard alone
 
 Linux and macOS only (Windows has no pseudo-terminal of this kind); there,
 start.cmd run --unattended runs a conversion just as unattended, unrecorded.
@@ -35,14 +38,19 @@ import json
 import os
 import re
 import select
+import shlex
 import shutil
 import signal
+import tempfile
 import sys
 import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL = ROOT / "tools" / "autoflash" / "cli.py"
+# Run as a script, this reads the tool's own words (end_problems): from its checkout.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 # A control sequence (CSI), an operating-system command (OSC: links, titles),
 # any other escape, a control character, or a run of ordinary text.
@@ -274,6 +282,179 @@ def _run_problems(screen: str) -> list[str]:
     return problems
 
 
+# The end of a run, as report.py and readout.py draw it: the way to open an
+# issue under a run that failed (report.ask_for_an_issue), with the report's
+# ID and the clipboard said under its link; the links to support the project
+# under one that finished (report.hold_out_hat).
+ISSUE = "If it should not have stopped, please open an issue here:"
+REPORT_ID_ROW = re.compile(r"^Report ID: [0-9a-f]{16}$")
+CLIPBOARD_SAID = "This report is on your clipboard, ready to paste."
+LOG_SAID = "This run's log:"
+HAT = "You've reached the bit where I hold out my hat!"
+# How a run that finished says so above its report (runner.run_steps, readout.end).
+COMPLETE = ("Conversion complete!", "Update complete!", "Readout complete!")
+# A row of a report (report.report_screen): "Label: value", and on its right,
+# past a gap of three or more, another; or a value's next row, under it.
+# A label's words are one space apart: "Not needed", never a value and the
+# next label ("LTS   From").
+REPORT_CELL = re.compile(r"(?P<label>[A-Z][\w./()'-]*(?: [\w./()'-]+)*):(?P<gap> +)(?P<value>\S)")
+# What a question shows: "(q to quit)" on its prompt (output.question).
+QUIT_HINT = "(q to quit)"
+
+
+def end_problems(screen: str, clipboard: str | None = None) -> list[str]:
+    """What is wrong with how a run ended on `screen` (Screen.render, without
+    colours): [] for nothing. `clipboard`: what the run put on the clipboard,
+    as the recorder's stand-in kept it ("" for nothing) - None where that is
+    not known. It is a problem when
+
+    - a report's values on the left do not start in one column, nor its
+      right-hand labels and values in theirs;
+    - a conversion's report has its right-hand column the longer, or its left
+      more than one row longer (report.report_screen's balance);
+    - a report has neither the links to support the project nor the way to
+      open an issue under it, or has both;
+    - a run says it failed (FAILED:) and that it is complete;
+    - the way to open an issue is not as ask_for_an_issue draws it: its link
+      under it, then the report's ID and what was copied, each as far in as
+      the link, then the run's log;
+    - a run that did not fail shows a report ID or says its report was
+      copied, or one says it was copied and nothing was, or the other way;
+    - a question is left on the screen unanswered, with rows under it: a run
+      stopped as it waited, its question not taken off (output._erase).
+
+    Each run of a sitting is looked at on its own (NEXT_RUN)."""
+    problems: list[str] = []
+    failed = False
+    for run in NEXT_RUN.split(screen):
+        found, ended_failed = _end_problems(run.splitlines())
+        failed = failed or ended_failed
+        problems += [problem for problem in found if problem not in problems]
+    if clipboard is not None:
+        if failed and ISSUE in screen and CLIPBOARD_SAID in screen and not clipboard:
+            problems.append("said its report is on the clipboard, and nothing was put there")
+        if clipboard and not failed:
+            problems.append("put a report on the clipboard, though no run failed")
+        if clipboard and failed and CLIPBOARD_SAID not in screen:
+            problems.append("put its report on the clipboard without saying so")
+        shown = re.findall(r"Report ID: ([0-9a-f]{16})", screen)
+        if clipboard and shown and f"Report ID: {shown[-1]}" not in clipboard:
+            problems.append("the report on the clipboard has not the report ID the screen shows")
+    rows = [row.rstrip() for row in screen.splitlines()]
+    last = max((index for index, row in enumerate(rows) if row.strip()), default=-1)
+    for index, row in enumerate(rows[:last]):
+        # A password's answer is not shown: its field (prompts.FIELD) under it says it was asked.
+        if QUIT_HINT in row and _unanswered(row) and not rows[index + 1].lstrip().startswith(">"):
+            problems.append(f"a question left unanswered above what came after it: {row.strip()[:60]!r}")
+    return problems
+
+
+def _unanswered(row: str) -> bool:
+    """Whether a question's row shows no answer: its prompt ends it."""
+    return row.rstrip().endswith((":", QUIT_HINT))
+
+
+def _indent(row: str) -> int:
+    return len(row) - len(row.lstrip(" "))
+
+
+def _end_problems(rows: list[str]) -> tuple[list[str], bool]:
+    """end_problems() of one run's rows, and whether it ended failed."""
+    rows = [row.rstrip() for row in rows]
+    problems: list[str] = []
+    stripped = [row.strip() for row in rows]
+    issue = stripped.index(ISSUE) if ISSUE in stripped else None
+    hat = stripped.index(HAT) if HAT in stripped else None
+    reports = _reports(rows)
+    for report in reports:
+        problems += _report_problems(report)
+    if issue is not None and hat is not None:
+        problems.append("both the links to support the project and the way to open an issue")
+    if any(row.startswith("FAILED:") for row in stripped) and any(row in COMPLETE for row in stripped):
+        problems.append("said it failed, and that it is complete")
+    if reports and issue is None and hat is None:
+        problems.append("a report with neither the links to support the project nor the way to open an issue "
+                        "under it")
+    if issue is None:
+        if any(REPORT_ID_ROW.match(row) for row in stripped):
+            problems.append("a report ID shown by a run that did not fail")
+        if CLIPBOARD_SAID in stripped:
+            problems.append("said its report is on the clipboard, by a run that did not fail")
+        return problems, False
+    if reports and reports[-1][0][0] > issue:
+        problems.append("the way to open an issue above the report, not under it")
+    base = _indent(rows[issue])
+    under = rows[issue + 1:]
+    link = under[0] if under else ""
+    if not link.strip().startswith("http") or _indent(link) != base + 4:
+        problems.append(f"the issue link not on the row under {ISSUE!r}, four in")
+    said = []
+    for row in under[1:]:
+        if not row.strip():
+            break
+        said.append(row)
+        if _indent(row) != _indent(link):
+            problems.append(f"{row.strip()[:40]!r} not as far in as the issue link")
+    words = [row.strip() for row in said]
+    expected = [word for word in words if REPORT_ID_ROW.match(word)][:1] + \
+        [word for word in words if word == CLIPBOARD_SAID][:1]
+    if words != expected:
+        problems.append(f"under the issue link, not the report ID then the clipboard: {words}")
+    after = under[1 + len(said):]
+    tail = [row for row in after if row.strip()]
+    if not tail or tail[0].strip() != LOG_SAID or len(tail) < 2 or _indent(tail[1]) != _indent(tail[0]) + 4:
+        problems.append(f"the run's log not under the way to open an issue, as {LOG_SAID!r} and its path")
+    return problems, True
+
+
+def _reports(rows: list[str]) -> list[list[tuple[int, str]]]:
+    """Each report on the screen: its rows, by index - a block of rows each
+    a report's, two or more of them labelled, none of them links."""
+    blocks, block = [], []
+    for index, row in enumerate(rows + [""]):
+        if row.strip() and (REPORT_CELL.match(row.strip()) or (block and _indent(row) > _indent(block[0][1]))):
+            block.append((index, row))
+            continue
+        labelled = [row for _, row in block if REPORT_CELL.match(row.strip())]
+        if len(labelled) >= 2 and not any("://" in row for _, row in block) \
+                and not any(QUIT_HINT in row for _, row in block):
+            blocks.append(block)
+        block = []
+    return blocks
+
+
+def _report_problems(report: list[tuple[int, str]]) -> list[str]:
+    """What is wrong with one report's layout (_reports)."""
+    from tools.autoflash.report import RIGHT
+    problems = []
+    margin = _indent(report[0][1])
+    left_values, right_labels, right_values = set(), set(), set()
+    left_rows = right_rows = 0
+    conversion = False
+    for _, row in report:
+        cells = list(REPORT_CELL.finditer(row))
+        first = cells[0] if cells and cells[0].start() == margin else None
+        if first:
+            left_rows += 1
+            left_values.add(first.start("value"))
+        right = [cell for cell in cells if cell is not first
+                 and row[max(0, cell.start() - 3):cell.start()] == "   "]
+        if right:
+            right_rows += 1
+            right_labels.add(right[0].start())
+            right_values.add(right[0].start("value"))
+            conversion = conversion or right[0]["label"] in RIGHT
+    if len(left_values) > 1:
+        problems.append(f"the report's values on the left start in {len(left_values)} columns, not one")
+    if len(right_labels) > 1 or len(right_values) > 1:
+        problems.append("the report's right-hand column does not line up")
+    if conversion and right_rows > left_rows:
+        problems.append(f"the report's right-hand column the longer: {right_rows} rows to {left_rows}")
+    if conversion and right_rows and left_rows > right_rows + 1:
+        problems.append(f"the report's left-hand column {left_rows - right_rows} rows the longer")
+    return problems
+
+
 def parse_size(text: str) -> tuple[int, int]:
     match = re.fullmatch(r"(\d+)x(\d+)", text)
     if not match or int(match.group(1)) < 40 or int(match.group(2)) < 20:
@@ -289,16 +470,66 @@ class Answer:
     not the notes above it, which can say a question's words - seen, "your
     eWeLink account" in the firmware question's taken for the sign-in.
     `anywhere`: typed when `when` shows anywhere on the screen, a question
-    or not - a Ctrl-C ("\x03") as a stage shows, say."""
+    or not - a Ctrl-C ("\x03") as a stage shows, say.  In place of typing:
+    `power` "off" or "on" switches the emulated device (switch_power), as
+    a person switching it off at the wall; `signal` sends the run one ("TERM", "HUP" -
+    its window closed), as the computer would."""
 
-    def __init__(self, when: str, type: str, times: int = 1, anywhere: bool = False) -> None:
+    def __init__(self, when: str, type: str = "", times: int = 1, anywhere: bool = False,
+                 power: str | None = None, signal: str | None = None) -> None:
         self.when, self.type, self.left, self.anywhere = re.compile(when), type, times, anywhere
+        self.power, self.signal = power, signal
         self.typed_at: list[int] = []   # how many bytes the run had written each time it was typed
+
+    def act(self, pid: int, fd: int) -> None:
+        """What this answer does: types, switches the device, or signals the run."""
+        if self.power:
+            switch_power(self.power)
+        elif self.signal:
+            os.kill(pid, getattr(signal, f"SIG{self.signal}"))
+        else:
+            os.write(fd, self.type.encode("utf-8"))
+
+    def saved(self) -> dict:
+        """As answers.json keeps it."""
+        return {"when": self.when.pattern, "type": self.type, "typed_at": self.typed_at,
+                **({"anywhere": True} if self.anywhere else {}),
+                **({"power": self.power} if self.power else {}),
+                **({"signal": self.signal} if self.signal else {})}
 
     @classmethod
     def load(cls, path: Path) -> list["Answer"]:
         """A list of {"when": ..., "type": ..., "times": ...}, as JSON."""
         return [cls(**item) for item in json.loads(path.read_text(encoding="utf-8"))]
+
+
+# The emulated device's power switch: a Beken emulator's computer has it as
+# a file (beken-emu.sh), an Espressif emulator as a command (container/bin/device).
+POWER_FILE = "AUTOFLASH_EMULATOR_POWER"
+DEVICE_COMMAND = "/opt/autoflash-emu/bin/device"
+
+
+def switch_power(state: str) -> None:
+    """The emulated device switched "off" or "on", where this runs beside it."""
+    if os.environ.get(POWER_FILE):
+        Path(os.environ[POWER_FILE]).write_text(state + "\n", encoding="utf-8")
+    else:
+        import subprocess
+        subprocess.run([DEVICE_COMMAND, state], check=True, capture_output=True, timeout=60)
+
+
+# The clipboard tool the run finds first (hostsys.copy_to_clipboard), standing
+# in for this computer's: what the run copies is kept in the recording.
+CLIPBOARD_TOOL = "wl-copy"
+
+
+def clipboard_stand_in(folder: Path, kept: Path) -> dict[str, str]:
+    """The environment that has the run copy to `kept`, through a stand-in
+    for the clipboard tool written in `folder`."""
+    tool = folder / CLIPBOARD_TOOL
+    tool.write_text(f"#!/bin/sh\ncat > {shlex.quote(str(kept))}\n", encoding="utf-8")
+    tool.chmod(0o755)
+    return {"PATH": f"{folder}{os.pathsep}{os.environ.get('PATH', os.defpath)}"}
 
 
 def question(screen: "Screen") -> str:
@@ -329,15 +560,17 @@ CONTROL = re.compile(r"\x1b\[[0-9;?]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1
 
 
 def record(command: list[str], size: tuple[int, int], live: bool,
-           timeout: float | None, answers: list[Answer] = ()) -> tuple[int, bytes]:
+           timeout: float | None, answers: list[Answer] = (),
+           environment: dict[str, str] | None = None) -> tuple[int, bytes]:
     """Run `command` on a pseudo-terminal of `size`; its exit code and every
-    byte it wrote.  `answers`: typed as their questions show (Answer)."""
+    byte it wrote.  `answers`: typed as their questions show (Answer).
+    `environment`: set for the run, over this one's."""
     import fcntl
     import pty
     import struct
     import termios
 
-    environment = {**os.environ, "COLUMNS": str(size[0]), "LINES": str(size[1])}
+    environment = {**os.environ, **(environment or {}), "COLUMNS": str(size[0]), "LINES": str(size[1])}
     # The maintainer's own testing: its report, if one is sent (none is in the
     # emulator), is marked so and left out of the public figures.
     environment.setdefault("AUTOFLASH_REPORT_TAG", "dev")
@@ -397,7 +630,7 @@ def record(command: list[str], size: tuple[int, int], live: bool,
                     if answer.anywhere:
                         if answer.left and answer.when.search(screen.render(colour=False)):
                             time.sleep(0.5)
-                            os.write(fd, answer.type.encode("utf-8"))
+                            answer.act(pid, fd)
                             answer.typed_at.append(len(written))
                             answer.left -= 1
                             break
@@ -405,7 +638,7 @@ def record(command: list[str], size: tuple[int, int], live: bool,
                     if at_prompt and waiting(asked) and answered is None and answer.left \
                             and answer.when.search(asked):
                         time.sleep(0.5)   # as a person reads it
-                        os.write(fd, answer.type.encode("utf-8"))
+                        answer.act(pid, fd)
                         answer.typed_at.append(len(written))
                         answer.left -= 1
                         answered = (prompt_row, screen.wiped)
@@ -480,23 +713,25 @@ def main() -> int:
     command = tool_command(args.command, extra, attended=args.attended)
     answers = Answer.load(args.answers) if args.answers else []
 
+    save.mkdir(parents=True, exist_ok=True)
+    kept = save / "clipboard.txt"
+    kept.unlink(missing_ok=True)   # a recording saved over another's
     started = time.time()
-    code, written = record(command, size, live, args.timeout * 60 if args.timeout else None, answers)
+    with tempfile.TemporaryDirectory() as stand_in:
+        code, written = record(command, size, live, args.timeout * 60 if args.timeout else None, answers,
+                               clipboard_stand_in(Path(stand_in), kept))
     result = logged_result(started)
 
     screen = Screen(*size)
     screen.feed(codecs.decode(written, "utf-8", errors="replace"))
-    save.mkdir(parents=True, exist_ok=True)
     (save / "screen.raw").write_bytes(written)
     (save / "screen.ansi").write_text(screen.render(), encoding="utf-8")
     (save / "screen.txt").write_text(screen.render(colour=False), encoding="utf-8")
     if answers:
         # Where each answer was typed, in screen.raw's bytes: to see what each
         # question left on the screen once answered.
-        (save / "answers.json").write_text(json.dumps(
-            [{"when": answer.when.pattern, "type": answer.type, "typed_at": answer.typed_at,
-              **({"anywhere": True} if answer.anywhere else {})} for answer in answers],
-            indent=1), encoding="utf-8")
+        (save / "answers.json").write_text(json.dumps([answer.saved() for answer in answers], indent=1),
+                                           encoding="utf-8")
     if result:
         (save / "result.txt").write_text(result + "\n", encoding="utf-8")
 
@@ -516,7 +751,8 @@ def main() -> int:
     if result:
         print(f"Result: {result}")
     print(f"Exit code {code} - {outcome}")
-    for problem in stage_problems(screen.render(colour=False)):
+    copied = kept.read_text(encoding="utf-8") if kept.exists() else ""
+    for problem in stage_problems(screen.render(colour=False)) + end_problems(screen.render(colour=False), copied):
         print(f"SCREEN: {problem}")
     print(f"Kept in {shown}/: screen.ansi (cat it), screen.txt, screen.raw")
     return code

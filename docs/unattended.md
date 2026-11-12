@@ -90,8 +90,15 @@ finished, 130 for stopped at a question or by Ctrl-C, 143 for stopped by
 A line starting `SCREEN:` after the exit code says a stage left on screen
 what it should have taken away: a failed try still shown after a retry, what a
 passed stage showed while under way, or a stage left at "Underway" when the
-next began. The fault suites fail such a run (FAIL-SCREEN in
-[testing.md](testing.md)).
+next began; or that the run ended otherwise than it is drawn to - its report
+out of line, neither the links nor the way to open an issue under it, a
+report ID or the clipboard said by a run that did not fail, a question left
+unanswered above what came after it. The fault suites fail such a run
+(FAIL-SCREEN in [testing.md](testing.md)).
+
+What the run puts on the clipboard is kept beside the recording, as
+`clipboard.txt`: a stand-in for the clipboard tool, first on the run's
+`PATH`, takes it, and this computer's clipboard is left alone.
 
 ## As a person sits through it
 
@@ -111,7 +118,9 @@ it, for a password), not the notes above or the question answered before.
 `type` is typed once, or `times` times; `\r` is Enter. When several match,
 the first with times left is typed. `"anywhere": true` types it when `when`
 shows anywhere on the screen, such as a Ctrl-C (`"\u0003"`) while a stage
-shows.
+shows. In place of `type`, `"power": "off"` (or `"on"`) switches the
+emulated device, as if unplugged, and `"signal": "TERM"` (or `"HUP"`, its
+window closed) is sent to the run.
 
 The recording shows each question as asked and what it left once answered,
 and `answers.json` beside it says where in `screen.raw` each answer was

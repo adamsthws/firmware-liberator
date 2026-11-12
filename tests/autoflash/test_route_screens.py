@@ -4,7 +4,9 @@ terminal, each step standing in for what steps do - a note, a section, a
 question answered, a try that fails on the network, a later
 step finding an earlier one did not take - then read back as a terminal
 shows it (tools/repo/unattended_run.py).  Every stage must leave one line,
-and nothing it showed on the way."""
+and nothing it showed on the way; and the run ends as report.py draws it -
+its report, the links to support the project, nothing copied - as
+unattended_run.end_problems reads it."""
 
 import io
 import os
@@ -106,6 +108,7 @@ class RouteScreenTests(unittest.TestCase):
             routes.STEP_INDEX.update({step: (title, stand_in(step)) for step, (title, _) in routes.STEP_INDEX.items()})
 
         terminal = Terminal()
+        copied = self.copied = []
         with ExitStack() as patches:
             for owner, name, value in (
                     (safety_locks, "restore_left_locks", mock.Mock()), (unlock, "unlock_tasmota", mock.Mock()),
@@ -121,7 +124,10 @@ class RouteScreenTests(unittest.TestCase):
                     (runner.time, "sleep", mock.Mock()),
                     (firewall, "close_firewall_rules", mock.Mock()),
                     (report, "device_page_url", mock.Mock(return_value=None)),
-                    (report, "invite_report", mock.Mock()),
+                    # The end of the run as it is drawn: its checks and its send stood in for.
+                    (report, "end_of_run_checks", mock.Mock(return_value={})),
+                    (report.report_upload, "send", mock.Mock()),
+                    (report.hostsys, "copy_to_clipboard", mock.Mock(side_effect=copied.append)),
                     (runs, "run_source", mock.Mock(return_value=source)),
                     (runs, "run_firmware", mock.Mock(return_value=firmware)),
                     (update, "versions", mock.Mock(return_value=("1.0.0", "1.1.0"))),
@@ -153,7 +159,9 @@ class RouteScreenTests(unittest.TestCase):
                 routes_run += 1
                 self.assertEqual(code, 0, screen)
                 self.assertEqual(unattended_run.stage_problems(screen), [], screen)
+                self.assertEqual(unattended_run.end_problems(screen, "".join(self.copied)), [], screen)
                 self.assertEqual(self.wrapped, 0, screen)
+                self.assertIn("You've reached the bit where I hold out my hat!", screen)
                 lines = [row for row in screen.splitlines() if unattended_run.STAGE_ROW.match(row)]
                 self.assertEqual([row.rsplit(" - ", 1)[-1] for row in lines], ["Complete"] * len(steps), screen)
                 # Lined up, from the first stage to the last. Seen in the emulator:
@@ -214,6 +222,7 @@ class RouteScreenTests(unittest.TestCase):
                     self.assertEqual(code, 0, screen)
                     self.assertEqual(self.wrapped, 0, screen)
                     self.assertEqual(unattended_run.stage_problems(screen), [], screen)
+                    self.assertEqual(unattended_run.end_problems(screen, "".join(self.copied)), [], screen)
 
 
 if __name__ == "__main__":
