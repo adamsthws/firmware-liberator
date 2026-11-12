@@ -94,6 +94,32 @@ class WifiFallbackTests(unittest.TestCase):
             self.assertEqual(context.Context.wifi(ctx), ("Home-2G", "pw"))
         asked.assert_called_once()
 
+    def test_a_beken_devices_are_asked_for_with_no_bundle_or_tasmota(self):
+        # Its ESPHome, unable to join with its Sonoff store's details, waits on
+        # its own network: nothing on the home network to read, no bundle.
+        ctx = self.ctx(found=("Home-2G", "old"))
+        ctx.state.input = lambda key: "sonoff-s61" if key == "device_kind" else None
+        with mock.patch.object(context, "recovery_image") as image, \
+             mock.patch.object(context, "bundle_ssid") as bundled, \
+             mock.patch.object(wifi, "wifi_from_backup") as backup, \
+             mock.patch.object(prompts, "section"), \
+             mock.patch.object(context, "ask_credentials", return_value=("Home-2G", "new")) as asked:
+            self.assertEqual(context.Context.wifi(ctx, why=["ESPHome is waiting on its own network."]),
+                             ("Home-2G", "new"))
+        asked.assert_called_once()
+        wifi.read_wifi_from_device.assert_not_called()
+        for untouched in (image, bundled, backup):
+            untouched.assert_not_called()
+
+    def test_a_beken_devices_given_in_advance_are_taken_as_they_are(self):
+        ctx = self.ctx(found=None)
+        ctx.state.input = lambda key: "sonoff-s61" if key == "device_kind" else None
+        given = {"AUTOFLASH_WIFI_SSID": "Given-2G", "AUTOFLASH_WIFI_PASSWORD": "given"}
+        with mock.patch.object(context.credentials, "get", side_effect=given.get), \
+             mock.patch.object(context, "recovery_image") as image:
+            self.assertEqual(context.Context.wifi(ctx), ("Given-2G", "given"))
+        image.assert_not_called()
+
     def test_a_bundle_the_checkout_cannot_use_is_built_again(self):
         ctx = self.ctx(found=("Home-2G", "pw"))
         with mock.patch.object(context, "recovery_image", side_effect=prepare_imprinted_bundle.BundleError("x")), \
