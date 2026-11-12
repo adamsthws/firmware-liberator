@@ -28,6 +28,7 @@ from tools.autoflash import (
 from tools.autoflash.device import DeviceError
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes import update
+from tools.autoflash.routes.arrival import NotBack, until_back
 from tools.autoflash.routes.espressif import hub, identity
 from tools.espressif import nvs_image, sonoff_identity
 from tools.espressif.layouts import TEMPORARY_OTADATA
@@ -385,47 +386,51 @@ def wait_for_esphome(ctx: Context, wait: float) -> dict[str, Any]:
         output.say("[dry-run] would wait for ESPHome to answer")
         return {"dry_run": True}
     as_update = ctx.state.is_done("M1")  # through the mover, not written from the hub (I1)
-    output.say("Waiting for the device to start ESPHome and join your Wi-Fi...")
-    started = time.monotonic()
-    first_seen = None
-    resent = 0
-    while time.monotonic() - started < wait + ESPHOME_CONFIRMS_AFTER * as_update:
-        host = ctx.state.input("device_ip")
-        if esphome.is_esphome(host):
-            if first_seen is None:
-                first_seen = time.monotonic()
-                output.say(f"    ESPHome answered at {host} after {first_seen - started:.0f}s.")
-                if as_update:
-                    output.say("    Waiting a minute while it confirms itself, so a power cut now")
-                    output.say("    cannot take it back...")
-            if not as_update or time.monotonic() - first_seen >= ESPHOME_CONFIRMS_AFTER:
-                return {"seconds": round(first_seen - started, 1), "resent": resent}
-        elif as_update and esphome_ota.probe(host) is not None:
-            # Back on the mover: ESPHome restarted before it had confirmed itself.
-            first_seen = None
-            resent += 1
-            if resent > 2:
-                raise Abort("the device keeps going back to the mover instead of starting ESPHome")
-            output.say("    The device went back to the mover: ESPHome restarted before it had")
-            output.say("    confirmed itself. Sending ESPHome again...")
-            step_esphome_from_mover(ctx)
-            started = time.monotonic()
-            continue
-        else:
-            moved = ctx.finder.poll()
-            if moved and moved != host:
+
+    def look(_restarted: bool) -> dict[str, Any]:
+        output.say("Waiting for the device to start ESPHome and join your Wi-Fi...")
+        started = time.monotonic()
+        first_seen = None
+        resent = 0
+        while time.monotonic() - started < wait + ESPHOME_CONFIRMS_AFTER * as_update:
+            host = ctx.state.input("device_ip")
+            if esphome.is_esphome(host):
+                if first_seen is None:
+                    first_seen = time.monotonic()
+                    output.say(f"    ESPHome answered at {host} after {first_seen - started:.0f}s.")
+                    if as_update:
+                        output.say("    Waiting a minute while it confirms itself, so a power cut now")
+                        output.say("    cannot take it back...")
+                if not as_update or time.monotonic() - first_seen >= ESPHOME_CONFIRMS_AFTER:
+                    return {"seconds": round(first_seen - started, 1), "resent": resent}
+            elif as_update and esphome_ota.probe(host) is not None:
+                # Back on the mover: ESPHome restarted before it had confirmed itself.
+                first_seen = None
+                resent += 1
+                if resent > 2:
+                    raise Abort("the device keeps going back to the mover instead of starting ESPHome")
+                output.say("    The device went back to the mover: ESPHome restarted before it had")
+                output.say("    confirmed itself. Sending ESPHome again...")
+                step_esphome_from_mover(ctx)
+                started = time.monotonic()
                 continue
-        if join.on_a_device_network():
-            break  # this computer joined its own network already: on through that
-        output.progress(f"waiting for ESPHome... {time.monotonic() - started:.0f}s")
-        time.sleep(3)
-    output.progress_clear()
-    if join.set_up_through_own_network(ctx, "ESPHome", esphome.is_esphome, names.esphome_networks(ctx)):
-        return {"seconds": round(time.monotonic() - started, 1), "resent": resent,
-                "set_up_through": "its own network"}
-    raise Abort(
+            else:
+                moved = ctx.finder.poll()
+                if moved and moved != host:
+                    continue
+            if join.on_a_device_network():
+                break  # this computer joined its own network already: on through that
+            output.progress(f"waiting for ESPHome... {time.monotonic() - started:.0f}s")
+            time.sleep(3)
+        output.progress_clear()
+        if join.set_up_through_own_network(ctx, "ESPHome", esphome.is_esphome, names.esphome_networks(ctx)):
+            return {"seconds": round(time.monotonic() - started, 1), "resent": resent,
+                    "set_up_through": "its own network"}
+        raise NotBack
+
+    # Not back: the person asked to switch it off and on, as the Beken route's K2 does.
+    return until_back(ctx, look, "ESPHome", (
         "ESPHome was written and checked, but has not answered on your Wi-Fi within "
         "three minutes - most likely it cannot join it, and its own network "
         f"({names.esphome_network_hint(ctx)}) is not to be seen either. Switch the device off and "
-        "on, and run the same command again"
-    )
+        "on, and run the same command again"))

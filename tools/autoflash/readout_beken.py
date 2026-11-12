@@ -31,7 +31,8 @@ from typing import Any, TYPE_CHECKING
 
 from tools.autoflash import firewall, hostsys, openbeken, output, records, prompts, readout, runs, safety_locks
 from tools.autoflash.errors import Abort, NothingWritten
-from tools.autoflash.routes.beken import arrived, onward, stock
+from tools.autoflash.routes import arrival
+from tools.autoflash.routes.beken import onward, stock
 from tools.autoflash.runs import ROOT
 from tools.beken import fota_wrap, layouts, rbl, scrub
 from tools.ewelink import ota_push
@@ -124,7 +125,7 @@ def wait_for_openbeken(ctx: Context, wait: float = ARRIVE_WAIT) -> str:
     def look(host: str) -> str | None:
         return host if openbeken.info(host, timeout=3.0) else None
 
-    found = arrived.until_back(ctx, lambda restarted: _poll(ctx, look, wait),
+    found = arrival.until_back(ctx, lambda restarted: _poll(ctx, look, wait),
                                "The readout firmware", (
         "The readout firmware has not answered on your Wi-Fi. It installs as the device restarts, then reads "
         "the device's Wi-Fi from its stock store and joins; if it has not, switch the device off and on, then "
@@ -140,7 +141,7 @@ def _poll(ctx: Context, look, wait: float):
     try:
         return join.wait_for(ctx, look, "the readout firmware on your Wi-Fi", timeout=wait)
     except Abort as exc:
-        raise arrived.NotBack from exc
+        raise arrival.NotBack from exc
 
 
 def read_whole_flash(ctx: Context, host: str) -> bytes:

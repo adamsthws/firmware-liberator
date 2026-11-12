@@ -7,36 +7,17 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from tests.autoflash.test_openbeken import FakeOpenBeken
 from tests.autoflash.routes.beken.test_beken import a_context
 from tools.autoflash import detect, errors, kinds, openbeken, records, state
+from tools.autoflash.routes import arrival
 from tools.autoflash.routes.beken import arrived, images, onward
 
 
 MAC = "12:34:56:ab:cd:ef"
-
-
-class PowerCycleTimingTests(unittest.TestCase):
-    def test_how_long_a_device_took_to_answer_once_back_on_is_kept_the_longest(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            ctx = a_context(tmp, firmware="openbeken")
-            looks = iter([arrived.NotBack(), "found", arrived.NotBack(), "found"])
-
-            def look(_restarted):
-                found = next(looks)
-                if isinstance(found, Exception):
-                    raise found
-                return found
-            # Said back on at 100 s, found at 141; then at 200, found at 210.
-            clock = iter([100.0, 141.0, 200.0, 210.0])
-            with mock.patch.object(arrived.prompts, "section"), mock.patch.object(arrived.prompts, "ask_choice", return_value=0), \
-                    mock.patch.object(arrived.output, "transient_begin"), mock.patch.object(arrived.output, "transient_end"), \
-                    mock.patch.object(arrived.time, "monotonic", side_effect=lambda: next(clock)):
-                self.assertEqual(arrived.until_back(ctx, look, "OpenBeken", "advice"), "found")
-                self.assertEqual(arrived.until_back(ctx, look, "OpenBeken", "advice"), "found")
-            self.assertEqual(ctx.state.input("back_after_power_cycle"), 41)
 
 
 class ArrivedTests(unittest.TestCase):
@@ -65,7 +46,7 @@ class ArrivedTests(unittest.TestCase):
             self.assertEqual(result["calibration"], "stock store")
             with mock.patch.object(openbeken, "info", return_value=None), \
                     mock.patch.object(arrived.join.time, "sleep"), \
-                    mock.patch.object(arrived.prompts, "UNATTENDED", True), \
+                    mock.patch.object(arrival.prompts, "UNATTENDED", True), \
                     mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(0, 10000, 100))):
                 with self.assertRaisesRegex(errors.Abort, "has not answered.*switch the device off and on"):
                     arrived.step_openbeken_check(ctx, wait=10)
@@ -130,9 +111,9 @@ class ArrivedTests(unittest.TestCase):
                 mock.patch.object(detect, "identify", return_value="sonoff"), \
                 mock.patch.object(arrived.join.time, "sleep"), \
                 mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(0, 100000, 100))), \
-                mock.patch.object(arrived.prompts, "section"), mock.patch.object(arrived.output, "transient_begin"), \
+                mock.patch.object(arrival.prompts, "section"), mock.patch.object(arrived.output, "transient_begin"), \
                 mock.patch.object(arrived.output, "transient_end"), \
-                mock.patch.object(arrived.prompts, "ask_choice", side_effect=answers) as asked:
+                mock.patch.object(arrival.prompts, "ask_choice", side_effect=answers) as asked:
             try:
                 arrived.step_interim_check(ctx, wait=1000)
             finally:
@@ -157,7 +138,7 @@ class ArrivedTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp, firmware="esphome")
             ctx.state.mark("B2", state.DONE)
-            with mock.patch.object(arrived.prompts, "UNATTENDED", True), self.assertRaises(errors.Abort):
+            with mock.patch.object(arrival.prompts, "UNATTENDED", True), self.assertRaises(errors.Abort):
                 self.waiting_on_sonoff(ctx, [])
             self.assertTrue(ctx.state.input("restart_asked"))
             with self.assertRaises(errors.GoBack):
@@ -171,7 +152,7 @@ class ArrivedTests(unittest.TestCase):
                 mock.patch.object(openbeken, "info", return_value={"uptime_s": uptime}), \
                 mock.patch.object(arrived.join.time, "sleep"), \
                 mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(0, 100000, 100))), \
-                mock.patch.object(arrived.prompts, "UNATTENDED", True):
+                mock.patch.object(arrival.prompts, "UNATTENDED", True):
             arrived.step_esphome_check(ctx, wait=1000)
 
     def test_k2_after_j2_sends_the_run_back_when_openbeken_restarted_since_the_fetch(self):
@@ -220,7 +201,7 @@ class ArrivedTests(unittest.TestCase):
                     mock.patch.object(openbeken, "info", side_effect=[{"uptime_s": 90}, None, {"uptime_s": 60}]), \
                     mock.patch.object(arrived.join.time, "sleep"), \
                     mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(0, 100000, 100))), \
-                    mock.patch.object(arrived.prompts, "UNATTENDED", True):
+                    mock.patch.object(arrival.prompts, "UNATTENDED", True):
                 with self.assertRaises(errors.GoBack) as back:
                     arrived.step_esphome_check(ctx, wait=1000)
             self.assertEqual(back.exception.step, "O1")
@@ -284,7 +265,7 @@ class ArrivedTests(unittest.TestCase):
             self.assertIsNone(ctx.state.input("device_name"))
             with mock.patch.object(openbeken, "info", return_value=None), \
                     mock.patch.object(arrived.join.time, "sleep"), \
-                    mock.patch.object(arrived.prompts, "UNATTENDED", True), \
+                    mock.patch.object(arrival.prompts, "UNATTENDED", True), \
                     mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(0, 10000, 100))):
                 with self.assertRaisesRegex(errors.Abort, "^The interim firmware has not answered"):
                     arrived.step_interim_check(ctx, wait=10)
@@ -312,7 +293,7 @@ class ArrivedTests(unittest.TestCase):
             ctx = a_context(tmp, device_ip=self.server.host, firmware="esphome")
             with mock.patch.object(openbeken, "is_interim", return_value=None), \
                     mock.patch.object(arrived.join.time, "sleep"), \
-                    mock.patch.object(arrived.prompts, "UNATTENDED", True), \
+                    mock.patch.object(arrival.prompts, "UNATTENDED", True), \
                     mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(0, 10000, 100))):
                 with self.assertRaisesRegex(errors.Abort, "has not answered"):
                     arrived.step_interim_check(ctx, wait=10)
@@ -335,24 +316,24 @@ class ArrivedTests(unittest.TestCase):
             offered.append(list(options))
             answer = choices.pop(0)
             if answer == "q":
-                raise arrived.prompts.QuitRun("stopped at an operator prompt")
+                raise arrival.prompts.QuitRun("stopped at an operator prompt")
             return answer
 
-        env = {arrived.EMULATED_POWER: str(switch)} if switch else {}
+        env = {arrival.EMULATED_POWER: str(switch)} if switch else {}
         # K2's start, the first look's, when the person said it was back on, the
         # next look's, when that look found it, and when K2 had its answer.
         clock = iter([100.0, 110.0, 115.0, 120.0, 122.0, 125.04])
         with mock.patch.object(arrived.join, "wait_for", side_effect=look), \
                 mock.patch.object(arrived.time, "monotonic", side_effect=lambda: next(clock)), \
                 mock.patch.object(arrived.esphome, "calibration_state", return_value=None), \
-                mock.patch.object(arrived.prompts, "ask_choice", side_effect=choose), \
-                mock.patch.object(arrived.prompts, "section"), \
+                mock.patch.object(arrival.prompts, "ask_choice", side_effect=choose), \
+                mock.patch.object(arrival.prompts, "section"), \
                 mock.patch.object(arrived.output, "transient_begin"), mock.patch.object(arrived.output, "transient_end"), \
                 mock.patch.object(arrived.time, "sleep") as self.slept, \
-                mock.patch.dict(arrived.os.environ, env, clear=False), \
+                mock.patch.dict(arrival.os.environ, env, clear=False), \
                 mock.patch.object(records, "DEVICES", ctx.state.path.parent / "devices"):
             if not switch:
-                arrived.os.environ.pop(arrived.EMULATED_POWER, None)
+                arrival.os.environ.pop(arrival.EMULATED_POWER, None)
             self.result = arrived.step_esphome_check(ctx)
         return offered, len(looks)
 
@@ -385,14 +366,14 @@ class ArrivedTests(unittest.TestCase):
                 offered, looks = self.not_back_then_back(ctx, [1], switch=switch)
             self.assertEqual(len(offered[0]), 2)
             self.assertEqual((written, looks), (["off", "on"], 2))
-            self.slept.assert_called_once_with(arrived.EMULATED_OFF)  # off long enough to stop it
+            self.slept.assert_called_once_with(arrival.EMULATED_OFF)  # off long enough to stop it
             self.assertEqual(ctx.state.input("power_cycles"), {"by the tool": 1})
             self.assertEqual(switch.read_text(encoding="utf-8"), "on\n")
 
     def test_q_at_the_question_stops_the_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp, device_ip="192.0.2.50")
-            with self.assertRaises(arrived.prompts.QuitRun):
+            with self.assertRaises(arrival.prompts.QuitRun):
                 self.not_back_then_back(ctx, ["q"])
 
     def test_b4_backs_up_the_devices_own_data_with_sonoffs_firmware_beside_it(self):
@@ -533,7 +514,7 @@ class ArrivedTests(unittest.TestCase):
             ctx.account_devices = lambda: [{"deviceid": "1001234abc", "online": True}]
             with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), mock.patch.object(records, "CAPTURES", Path(tmp)), \
                     mock.patch.object(detect, "identify", return_value=None), \
-                    mock.patch.object(arrived.ewelink_relay, "answers", side_effect=[False, None, True]) as asked, \
+                    mock.patch.object(arrival.ewelink_relay, "answers", side_effect=[False, None, True]) as asked, \
                     mock.patch.object(arrived.time, "sleep") as slept, \
                     mock.patch.object(arrived.time, "monotonic", side_effect=iter(range(50_000, 60_000, 5))):
                 records.remember_device(MAC, ewelink_id="1001234abc")
@@ -550,7 +531,7 @@ class ArrivedTests(unittest.TestCase):
             ctx.account_devices = lambda: next(answers)
             with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), mock.patch.object(records, "CAPTURES", Path(tmp)), \
                     mock.patch.object(detect, "identify", return_value=None), \
-                    mock.patch.object(arrived.ewelink_relay, "answers", return_value=True), \
+                    mock.patch.object(arrival.ewelink_relay, "answers", return_value=True), \
                     mock.patch.object(arrived.time, "sleep"), \
                     mock.patch.object(arrived.time, "monotonic", side_effect=iter(range(50_000, 60_000, 5))):
                 records.remember_device(MAC, ewelink_id="1001234abc")
@@ -566,18 +547,18 @@ class ArrivedTests(unittest.TestCase):
             ctx.account_devices = lambda: [{"deviceid": "1001234abc", "online": False}]
             with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), mock.patch.object(records, "CAPTURES", Path(tmp)), \
                     mock.patch.object(detect, "identify", return_value=None), \
-                    mock.patch.object(arrived.time, "sleep"), mock.patch.object(arrived.prompts, "UNATTENDED", True), \
+                    mock.patch.object(arrived.time, "sleep"), mock.patch.object(arrival.prompts, "UNATTENDED", True), \
                     mock.patch.object(arrived.time, "monotonic", side_effect=iter(range(50_000, 60_000, 100))):
-                with self.assertRaisesRegex(errors.Abort, "has not shown.*switch the device off and on"):
+                with self.assertRaisesRegex(errors.Abort, "nor shown online in eWeLink.*switch the device off and on"):
                     arrived.step_sonoff_check(ctx, wait=50)
 
 
     def k3_waiting(self, ctx, tmp, wait=50):
         with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), \
                 mock.patch.object(detect, "identify", return_value=None), \
-                mock.patch.object(arrived.ewelink_relay, "answers", return_value=True), \
+                mock.patch.object(arrival.ewelink_relay, "answers", return_value=True), \
                 mock.patch.object(arrived.time, "sleep") as self.slept, \
-                mock.patch.object(arrived.prompts, "UNATTENDED", True), \
+                mock.patch.object(arrival.prompts, "UNATTENDED", True), \
                 mock.patch.object(arrived.time, "monotonic", side_effect=iter(range(50_000, 60_000, 5))):
             return arrived.step_sonoff_check(ctx, wait=wait)
 
@@ -588,7 +569,7 @@ class ArrivedTests(unittest.TestCase):
                                            {"deviceid": "1009999999", "online": True}]
             with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"):
                 records.remember_device(MAC, ewelink_id="1001234abc")
-            with self.assertRaisesRegex(errors.Abort, "has not shown"):
+            with self.assertRaisesRegex(errors.Abort, "nor shown online in eWeLink"):
                 self.k3_waiting(ctx, tmp)
 
     def test_k3_waits_through_an_account_that_does_not_answer(self):
@@ -600,11 +581,15 @@ class ArrivedTests(unittest.TestCase):
                 records.remember_device(MAC, ewelink_id="1001234abc")
             self.assertEqual(self.k3_waiting(ctx, tmp)["confirmed_by"], "eWeLink")
 
-    def test_k3_without_its_ewelink_id_does_not_wait_on_ewelink(self):
+    def test_k3_without_its_ewelink_id_takes_the_wifi_alone(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = self.k3_context(tmp)
-            with mock.patch.object(arrived.output, "tell"):
+            ctx.account_devices = mock.Mock(side_effect=AssertionError("eWeLink not asked"))
+            with mock.patch.object(arrival.output, "tell"):
                 self.assertEqual(self.k3_waiting(ctx, tmp)["confirmed_by"], "nothing answering")
+            # Answering at its hardware address, as nothing it ran: back, at once.
+            ctx.finder = SimpleNamespace(poll=lambda: "192.0.2.50")
+            self.assertEqual(self.k3_waiting(ctx, tmp)["confirmed_by"], "your Wi-Fi")
             self.slept.assert_not_called()
 
 

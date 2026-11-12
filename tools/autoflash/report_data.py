@@ -270,7 +270,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
     begun = state.input("begun_on")
     if not resumed or not isinstance(begun, str) or not TOOL_VERSION.fullmatch(begun) or begun == __version__:
         begun = None
-    # The longest a device took to answer once switched off and on (arrived.until_back).
+    # The longest a device took to answer once switched off and on (arrival.until_back).
     back = state.input("back_after_power_cycle")
     back = min(back, WAIT_LIMIT) if isinstance(back, int) and not isinstance(back, bool) and back >= 0 else None
     return {
@@ -300,7 +300,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         # Each only where its route has it, as report.report_fields shows them.
         "wifi_typed": bool(state.input("wifi_typed")) if espressif else None,
         "setup_network": joined if espressif else None,
-        "power_cycled": bool(state.input("power_cycles")) if not espressif else None,
+        "power_cycled": bool(state.input("power_cycles")),
         "checks": checks_word(hardware),
         "meter": meter_word(captures, firmware) if kinds.of_run(state).has_meter else None,
         "nth_device": nth,
