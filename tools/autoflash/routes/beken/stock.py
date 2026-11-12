@@ -10,7 +10,7 @@ import re
 import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import account, detect, firewall, join, kinds, output, records, prompts, runs, testers
+from tools.autoflash import account, detect, firewall, join, kinds, output, prompts, runs, testers
 from tools.autoflash.errors import Abort, NothingWritten, StoppedPartWay
 from tools.autoflash.routes.beken import images
 from tools.beken import fota_wrap, interim_marker
@@ -29,15 +29,9 @@ BUSY = re.compile(r"\berror 410\b")
 
 
 def account_record(ctx: Context) -> dict[str, Any]:
-    """The device's record in the owner's eWeLink account, found by the device
-    id A1 kept for it."""
-    device_id = ""
-    found = getattr(ctx, "account_device", None)
-    if found is not None:
-        device_id = found.device_id
-    if not device_id:
-        mac = ctx.state.input("device_mac")
-        device_id = str(records.read_device(mac).get("ewelink_id") or "") if mac else ""
+    """The device's record in the owner's eWeLink account, found by its id
+    (images.device_id: A1's, this computer's, or by its Wi-Fi MAC there)."""
+    device_id = images.device_id(ctx)
     if not device_id:
         raise Abort("the device's eWeLink device id is not known: start again with --new, so the device is found "
                     "in the account first")
@@ -75,8 +69,10 @@ def step_identify(ctx: Context) -> dict[str, Any]:
         identity = ota_identity(device)
     except EwelinkError as exc:
         raise Abort(str(exc)) from exc
-    kind = kinds.for_stock_model(identity["model"])
     product = str(device.get("productModel") or "").strip().upper()
+    # As A2 knows an Espressif device's: by its product model first, so a kind
+    # that shares its stock model with another (product_model_decides) is told apart.
+    kind = kinds.for_account(product, identity["model"])
     name = account.note_firmware_name(kind, offered_latest(ctx, identity), identity["deviceid"], product,
                                       identity["model"])
     if kind is None:
