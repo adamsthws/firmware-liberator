@@ -58,6 +58,10 @@ if TYPE_CHECKING:
 FIRMWARES = {"tasmota": "Tasmota", "esphome": "ESPHome", "sonoff": "Sonoff"}
 # After this step the device no longer runs its Sonoff firmware.
 POINT_OF_NO_RETURN = "C2"
+# The steps a dry run goes through (--dry-run): those that only read, before
+# the first that writes - the prerequisites. It stops there, as
+# every step after needs what that one would have written (runner.run).
+READ_ONLY_STEPS = {"A0", "A1", "A2", "A3", "A5"}
 
 
 def published_version(kind: kinds.Kind, firmware: str) -> str | None:
