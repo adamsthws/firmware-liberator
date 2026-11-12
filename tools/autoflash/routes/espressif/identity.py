@@ -75,8 +75,9 @@ def kept_in_sector(ctx: Context) -> Identity | None:
                                          min(length, sonoff_identity.SECTOR_SIZE - len(header)))
     identity = sonoff_identity.from_sector(sector)
     if identity is not None and device.sha_region(plans.TABLE_ADDRESS, plans.SECTOR) == OFFICIAL_TABLE_SHA256:
-        output.say("    The device's partition table no longer has the entry for the sector that keeps its")
-        output.say("    Sonoff identity (Tasmota written over it whole, say), but the sector itself is there.")
+        output.say("    The device's partition table no longer has the entry for the sector that")
+        output.say("    keeps its Sonoff identity (Tasmota written over it whole, say), but the")
+        output.say("    sector itself is there.")
     return identity
 
 
@@ -134,8 +135,9 @@ def step_keep_identity(ctx: Context) -> dict[str, Any]:
     hub.sonoff_layout_back(ctx)
     identity, where = for_tasmota(ctx, layout)
     if identity is None:
-        output.tell("    The device holds no Sonoff identity to keep, and this computer has no backup of it:")
-        output.tell("    going back to Sonoff's firmware later will need your eWeLink account.")
+        output.tell("    The device holds no Sonoff identity to keep, and this computer has no")
+        output.tell("    backup of it: going back to Sonoff's firmware later will need your")
+        output.tell("    eWeLink account.")
         return {"kept": False}
     output.say(f"Keeping the device's Sonoff identity, from {where}, in the last sector of its memory,")
     output.say("so that it can go back to Sonoff's firmware without its backup.")

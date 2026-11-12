@@ -935,8 +935,8 @@ def step_verify(ctx: Context) -> dict[str, Any]:
         if name == "table" and actual == OFFICIAL_TABLE_SHA256:
             # Committed by a version of the tool before the identity was kept.
             matched = True
-            output.say("  table: Tasmota's own, without the sector that keeps the device's Sonoff identity -")
-            output.say("  this conversion was begun by an earlier version")
+            output.say("  table: Tasmota's own, without the sector that keeps the device's Sonoff")
+            output.say("  identity - this conversion was begun by an earlier version")
         ok = ok and matched
         results[name] = {"expected": wanted, "actual": actual, "match": matched}
         report = output.tell if not matched else output.say
