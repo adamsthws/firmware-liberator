@@ -302,6 +302,9 @@ as its screens do, since it converts much more than smart plugs now.
 - The countdown after Ctrl-C counts down in an 80-column window too: its words fit
   one row ("Carrying on to the next stage in 20 s, or press Enter now"). On two,
   only the second was redrawn, and "in 20 s" stood still above it.
+- A run stopped by the computer as a question waits - shut down, or sent
+  SIGTERM - shows its stage stopped and takes the question off, as Ctrl-C does.
+  It left the stage under way and the question waiting.
 - A download the server turns away for now - GitHub's release downloads
   answering "504 Gateway Time-out" for minutes at a time, say - is tried again
   for a little over two minutes, waiting longer each time, rather than three
