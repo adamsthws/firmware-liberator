@@ -433,6 +433,9 @@ SONOFF_BASICR4 = Kind(
     tasmota_gpio=(0, 0, 0, 0, 224, 0, 544, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",
+    # A stand-in: its table is at 0xC000 and the rest of it is not known
+    # (devices/sonoff-basicr4/README.md). A readout of a real one decides its
+    # layout before it is converted; require_known_layout stops a run until then.
     layout="sonoff-dual-ota",
     has_meter=False,
     has_relay=True,
@@ -463,6 +466,7 @@ SONOFF_MINIR4 = Kind(
                   0, 0, 0, 0, 0, 0),
     esphome_legacy_setup_prefix="",
     esphome_legacy_prefix="",
+    # The S60's, by the table published from a real one (devices/sonoff-minir4/).
     layout="sonoff-dual-ota",
     has_meter=False,
     has_relay=True,
