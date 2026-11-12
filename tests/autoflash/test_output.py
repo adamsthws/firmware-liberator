@@ -1289,8 +1289,8 @@ class ReportTests(OutputTestCase):
         chosen = dict(report.report_fields(self.ctx(firmware="esphome")))
         self.assertEqual(chosen["Firmware"], "ESPHome")
 
-    def test_an_s61_report_says_whether_it_was_power_cycled(self):
-        self.assertNotIn("Power cycled", dict(report.report_fields(self.ctx())))  # an S60's
+    def test_a_report_says_whether_the_device_was_power_cycled(self):
+        self.assertEqual(dict(report.report_fields(self.ctx()))["Power cycled"], "False")  # an S60's too
         s61 = dict(device_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="sonoff")
         self.assertEqual(dict(report.report_fields(self.ctx(**s61)))["Power cycled"], "False")
         ctx = self.ctx(**s61, power_cycles={"by hand": 1})

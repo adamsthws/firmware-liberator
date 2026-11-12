@@ -4,11 +4,11 @@ this computer, from Sonoff's official firmware and the device's identity (R1, R2
 
 from __future__ import annotations
 
-import time
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import detect, join, kinds, output, plans, records, runs
+from tools.autoflash import kinds, output, plans, records, runs
 from tools.autoflash.errors import Abort, NothingWritten
+from tools.autoflash.routes import arrival
 from tools.autoflash.routes.espressif import hub, identity, sonoff_firmware
 from tools.espressif import sonoff_identity
 from tools.autoflash.routes.espressif import images
@@ -127,25 +127,9 @@ def out_of_sonoffs_slot(ctx: Context, backup: bytes, kind: kinds.Kind) -> int:
     return moved
 
 
-def sonoff_answers(address: str) -> bool:
-    return detect.identify(address, timeout=3.0) == "sonoff"
-
-
-def step_sonoff_check(ctx: Context, wait: float = 240.0) -> dict[str, Any]:
-    """R2 - Sonoff's firmware started and back on the Wi-Fi it had."""
+def step_sonoff_check(ctx: Context, wait: float = arrival.SONOFF_WAIT) -> dict[str, Any]:
+    """R2 - Sonoff's firmware started, on the Wi-Fi it had and back in eWeLink,
+    as the Beken route's K3 finds it (arrival.back_on_sonoff)."""
     if ctx.dry_run:
         return {"dry_run": True}
-    started = time.monotonic()
-    try:
-        join.wait_for(ctx, sonoff_answers, "Sonoff's firmware on your Wi-Fi", timeout=wait)
-    except Abort as exc:
-        raise Abort(
-            "Sonoff's firmware was written and checked, but has not answered on your Wi-Fi. "
-            "If the network dropped while it first started, it does not try again: switch "
-            "the device off and on, then run the same command again to check it. It rejoins the "
-            "network it was on when the backup was taken; if that has changed, add it again "
-            "in the eWeLink app"
-        ) from exc
-    seconds = round(time.monotonic() - started, 1)
-    output.say(f"    Sonoff's firmware answered after {seconds}s.")
-    return {"seconds": seconds}
+    return arrival.back_on_sonoff(ctx, wait=wait)

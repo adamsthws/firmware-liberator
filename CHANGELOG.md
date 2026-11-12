@@ -182,6 +182,15 @@ as its screens do, since it converts much more than smart plugs now.
 - The end-of-run check always shows its Relay and Power meter answers. A device
   that stopped answering it on Tasmota or ESPHome, or a Dual R3 driving a
   motor, showed neither, or only one.
+- Going back to Sonoff's firmware ends the same way on either chip family: the
+  tool waits for the device on your Wi-Fi and online in eWeLink. One on your
+  Wi-Fi that never reaches eWeLink is said to be kept off the internet, most
+  likely by a firewall or a guest-network or parental-control rule. An
+  Espressif device was looked for on the Wi-Fi alone, a Beken one in eWeLink
+  alone.
+- An Espressif device that has not come back on ESPHome or Sonoff's firmware
+  has you switch it off and on, then is looked for again, as a Beken device
+  is; the run stopped. The report says whether it had to be, on either family.
 - `--dry-run` writes nothing on either chip family: it goes through the steps
   that only read and stops before the first that writes. On an Espressif device
   it went on to send the installer, replacing Sonoff's firmware.

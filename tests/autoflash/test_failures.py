@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from tools.autoflash import failures, runner
+from tools.autoflash.routes import arrival
 
 ROOT = Path(__file__).resolve().parents[2]
 # What a step raises to stop the run, as the runner reports it.
@@ -86,8 +87,9 @@ class ClassifyTests(unittest.TestCase):
             "Tasmota 15.0.1 is on the device, but its template is gone: it lost its settings.": "settings-lost",
             "the device's memory could not be read (timeout). Switch it off and on": "unexpected-layout",
             "this device cannot go to OpenBeken: a S60TPG takes Tasmota or ESPHome": "bad-option",
-            # Passed to arrived.until_back, which stops the run with it: no raise to find.
-            "eWeLink has not shown the device online again, answering there.": "network-join",
+            # Passed to arrival.until_back, which stops the run with them: no raise to find.
+            arrival.NOT_BACK: "network-join",
+            arrival.ON_WIFI_ONLY: "ewelink-unreachable",
         }
         for message, expected in cases.items():
             self.assertEqual(failures.classify(message), expected, message)

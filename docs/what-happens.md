@@ -292,6 +292,10 @@ A run to OpenBeken ends there. For **ESPHome**:
 9. **Check ESPHome is running** and has joined your Wi-Fi, which it reads, with
    the calibration, from Sonoff's store every time it starts.
 
+A device that has not come back on its new firmware, whichever it is, is most
+often one that needs switching off and on. The tool asks you to, then looks
+for it again, and the report says whether you had to.
+
 ## At the end
 
 On a device with a relay, every run that converts it, on either chip family,
@@ -427,6 +431,11 @@ back on ESPHome or Tasmota, whichever it came from, and says so at the end.
 Sonoff's firmware then starts with its own settings: names, timers and energy
 history start afresh, and the meter's factory calibration comes back only
 with the backup.
+
+On either, the tool then waits for the device to answer on your Wi-Fi and to
+show online in eWeLink again, answering there. One that is on your Wi-Fi but
+never reaches eWeLink is most likely kept off the internet, by a firewall or a
+guest-network or parental-control rule, and the tool says so.
 
 On a Beken device there is nothing to find or put together: no conversion
 writes to the store Sonoff's firmware keeps its identity, Wi-Fi and meter
