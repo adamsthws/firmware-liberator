@@ -32,6 +32,7 @@ one `optional` need not be asked.
 The verdict, from the recording alone (judge):
     PASS              ended as expected, every answer typed, nothing wrong
     FAIL-RESULT       ended otherwise: its exit code, or its report's Result
+                      (the recorder's result.txt, from the run's log)
     FAIL-UNANSWERED   it ended at a question no answer covers: new, or reworded
     FAIL-UNUSED       an answer never typed: its question no longer asked
     FAIL-QUESTION     as a question was answered: no "(q to quit)" on it, a
@@ -77,7 +78,6 @@ SIZE = (100, 40)
 # The made-up key of the locked ESPHome builds (build_locked).
 LOCKED_KEY = base64.b64encode(bytes(range(32))).decode()
 LOCKED_LOGIN = ("admin", "test-login-1")
-RESULT = re.compile(r"Result:\s+(\S.*?)(?:\s{2,}|$)", re.M)
 QUIT_FIRST = [{"when": "Which device is this run for|Press any key", "type": "q\r"}]
 DEVICE = "192.168.60.50"
 
@@ -118,10 +118,10 @@ def question_problems(screen: unattended_run.Screen, wrapped_before: int) -> lis
 
 
 def judge(scenario: dict[str, Any], raw: bytes, answers: list[dict[str, Any]], code: int,
-          size: tuple[int, int] = SIZE) -> list[str]:
+          size: tuple[int, int] = SIZE, result: str | None = None) -> list[str]:
     """The verdicts of a run, from its recording (screen.raw), the answers as
-    the recorder kept them (answers.json, with typed_at) and its exit code:
-    empty for a PASS."""
+    the recorder kept them (answers.json, with typed_at), its exit code and
+    its report's Result (result.txt): empty for a PASS."""
     expect = scenario.get("expect", {})
     verdicts = []
     final = screen_at(raw, len(raw), size)
@@ -132,11 +132,8 @@ def judge(scenario: dict[str, Any], raw: bytes, answers: list[dict[str, Any]], c
         verdicts.append(f"FAIL-UNANSWERED: {waiting.strip()[:70]!r}")
     if code != expect.get("exit", 0):
         verdicts.append(f"FAIL-RESULT: exit {code}, not {expect.get('exit', 0)}")
-    if expect.get("result"):
-        found = RESULT.findall(text)
-        if not found or not found[-1].strip().startswith(expect["result"]):
-            verdicts.append(f"FAIL-RESULT: Result {found[-1].strip() if found else 'none'!r}, "
-                            f"not {expect['result']!r}")
+    if expect.get("result") and not (result or "").startswith(expect["result"]):
+        verdicts.append(f"FAIL-RESULT: Result {result or 'none'!r}, not {expect['result']!r}")
     given = {(item["when"], item["type"]): item for item in scenario["answers"]}
     for answer in answers:
         if not answer["typed_at"] and not given.get((answer["when"], answer["type"]), {}).get("optional"):
@@ -377,12 +374,14 @@ def judged(scenario: dict[str, Any], folder: Path, code: int, recording: Path | 
     """A run's verdicts, its recording kept in `folder` (names `prefix`ed)."""
     if recording is None or not (recording / "screen.raw").exists():
         return [f"HARNESS: no run to judge (exit {code}); see harness.log"]
-    for item in ("screen.raw", "screen.txt", "answers.json"):
+    for item in ("screen.raw", "screen.txt", "answers.json", "result.txt"):
         if (recording / item).exists():
             shutil.copyfile(recording / item, folder / f"{prefix}{item}")
     size = tuple(int(part) for part in scenario.get("size", "100x40").split("x"))
+    result = folder / f"{prefix}result.txt"
     return judge(scenario, (folder / f"{prefix}screen.raw").read_bytes(),
-                 json.loads((folder / f"{prefix}answers.json").read_text(encoding="utf-8")), code, size)
+                 json.loads((folder / f"{prefix}answers.json").read_text(encoding="utf-8")), code, size,
+                 result.read_text(encoding="utf-8").strip() if result.exists() else None)
 
 
 def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: Path, mac: str) -> str:

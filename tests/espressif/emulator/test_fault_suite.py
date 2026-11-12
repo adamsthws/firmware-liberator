@@ -577,20 +577,16 @@ class ScenarioTests(unittest.TestCase):
                            encoding="utf-8")
             self.assertEqual(fs.Scenario.screen_result(mock.Mock(log=log, state=Path(directory))), "Converted")
 
-    def test_a_stopped_runs_result_is_where_and_why_from_its_own_log(self):
-        # The screen says "Stopped" alone; the tool's log, in full.
+    def test_the_result_is_the_one_the_harness_says_from_the_runs_log(self):
+        # The screen says how it ended above the report, which has no Result;
+        # unattended_run says the log's, in full.
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "log"
-            log.write_text("--- run\n    Result:        Stopped                          Firmware: Tasmota\n",
-                           encoding="utf-8")
-            run = Path(directory) / "work/captures/devices/123456abcdef/runs/1/run.log"
-            run.parent.mkdir(parents=True)
-            run.write_text("    Result in full: Stopped at stage 6 of 15 (Installing Tasmota): it went quiet\n",
-                           encoding="utf-8")
+            log.write_text("--- run\n FAILED: it went quiet\n========\n"
+                           "Result: Stopped at stage 6 of 15 (Installing Tasmota): it went quiet\n"
+                           "Exit code 2 - failed\n", encoding="utf-8")
             self.assertEqual(fs.Scenario.screen_result(mock.Mock(log=log, state=Path(directory))),
                              "Stopped at stage 6 of 15 (Installing Tasmota): it went quiet")
-            run.unlink()
-            self.assertEqual(fs.Scenario.screen_result(mock.Mock(log=log, state=Path(directory))), "Stopped")
 
     def test_a_run_over_before_its_fault_waits_for_all_of_it(self):
         self.assertGreater(fs.fault_wait(180), 180)
