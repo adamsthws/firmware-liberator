@@ -140,11 +140,13 @@ dashboard or written down and not applied. It cannot check the database, the
 Workers' secrets, Access or Web Analytics, which its token is refused: the
 script run by hand, with the apply token, checks those.
 
-The domain's mail forwarding - which of its addresses, and to whom - is
-private, so it is written nowhere in the repository: Email Routing keeps it.
-`python3 tools/repo/cloudflare_settings.py email`, run in a terminal, asks
-for both and sets them, and the API's alerts address with them; every check
-holds the forwarding to its shape alone. Put the address in
+The domain's mail forwarding - to whom, and any addresses besides those the
+site publishes - is private, so it is written nowhere in the repository:
+Email Routing keeps it. The published ones are `FORWARDED` in
+`tools/repo/cloudflare_settings.py`, and `apply` forwards each one missing
+where the others go. `python3 tools/repo/cloudflare_settings.py email`, run
+in a terminal, asks to whom and for any others, and sets them, and the API's
+alerts address with them; every check holds the forwarding to its shape. Put the address in
 `tools/repo/leak-scan.local`, so the leak scan stops a commit that holds it.
 
 ### The admin view

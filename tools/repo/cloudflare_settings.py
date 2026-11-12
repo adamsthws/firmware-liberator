@@ -12,7 +12,8 @@
                                                        a new value for the API Worker's
                                                        secret NAME, one made here
     python3 tools/repo/cloudflare_settings.py email    the domain's mail forwarded: asks
-                                                       to whom, and which addresses
+                                                       to whom, and any addresses besides
+                                                       FORWARDED
 
 Each command is run with the token whose job it is, from the environment or
 .env.infra (as .env.infra.example shows; not .env, whose names are the
@@ -818,6 +819,10 @@ def sending_differences(zone: str) -> list[tuple[str, str, Any]]:
 
 
 FORWARD_NAME = re.compile(r"[a-z0-9][a-z0-9._+-]*")
+# The domain's addresses the site publishes (docs/privacy.md's, say), by the
+# part before the @: each forwarded to where the others are, which `apply`
+# sees to. Any others are set by `email`, and never written here.
+FORWARDED = ("contact", "privacy")
 
 
 def email_rules(destination: str, names: list[str]) -> list[dict[str, Any]]:
@@ -858,9 +863,10 @@ def destination(zone: str) -> str | None:
 
 def email_differences(zone: str, account: str) -> list[tuple[str, str, Any]]:
     """Email Routing: on, each rule forwarding one of the domain's addresses
-    to one destination, the same for all, which the account has verified, and
-    its catch-all as written. Which addresses, and to whom, `email` sets and
-    asks for; here only their shape is held, and no address is printed."""
+    to one destination, the same for all, which the account has verified,
+    each of FORWARDED among them, and its catch-all as written. To whom, and
+    any other addresses, `email` sets and asks for; here only their shape is
+    held, and no address but FORWARDED's is printed."""
     found: list[tuple[str, str, Any]] = []
     if not api(f"{zone}/email/routing").get("enabled"):
         found.append(("Email Routing", "is off", ("POST", f"{zone}/email/routing/enable", {})))
@@ -876,6 +882,14 @@ def email_differences(zone: str, account: str) -> list[tuple[str, str, Any]]:
     if len(to) > 1:
         found.append(("email rules", f"forward to {len(to)} addresses: there should be one",
                       "set the forwarding again: python3 tools/repo/cloudflare_settings.py email"))
+    named = {str(rule["matchers"][0].get("value", "")).lower().partition("@")[0] for rule in rules
+             if forwarded_to(rule) is not None}
+    for name in FORWARDED:
+        if rules and name not in named:
+            found.append((f"{name}@{ZONE}", "is not forwarded",
+                          ("POST", f"{zone}/email/routing/rules", email_rules(next(iter(to)), [name])[0])
+                          if len(to) == 1 else "set the forwarding again: python3 tools/repo/cloudflare_settings.py "
+                          "email"))
     fields = ("name", "matchers", "actions", "enabled")
     catch_all = api(f"{zone}/email/routing/rules/catch_all")
     if {field: catch_all.get(field) for field in fields} != EMAIL_CATCH_ALL:
@@ -899,16 +913,16 @@ def email_differences(zone: str, account: str) -> list[tuple[str, str, Any]]:
 
 def set_email() -> int:
     """`email`: the domain's mail forwarded - to whom, and which of its
-    addresses - as asked for at a hidden prompt, and kept by Email Routing
-    alone; the API's alerts address set to match."""
+    addresses besides FORWARDED - as asked for at a hidden prompt, and kept by
+    Email Routing alone; the API's alerts address set to match."""
     if not sys.stdin.isatty():
         print("cloudflare_settings: run email in a terminal, where it can ask", file=sys.stderr)
         return 2
     to = (ask("the address the domain's mail is forwarded to") or "").lower()
-    names = sorted({name.strip().lower() for name in (ask(
-        f"the addresses of {ZONE} forwarded there, by the part before the @, separated by commas") or "").split(",")
-        if name.strip()})
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", to) or not names \
+    names = sorted({*FORWARDED, *(name.strip().lower() for name in (ask(
+        f"any other addresses of {ZONE} forwarded there besides {', '.join(FORWARDED)}, by the part before the @, "
+        "separated by commas (Enter for none)") or "").split(",") if name.strip())})
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", to) \
             or not all(FORWARD_NAME.fullmatch(name) for name in names):
         print("cloudflare_settings: that is not an address and a list of names: nothing changed", file=sys.stderr)
         return 1
