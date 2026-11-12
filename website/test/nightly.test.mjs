@@ -15,7 +15,7 @@ const NIGHT = new Date("2026-11-10T03:17:00Z");
 
 // A report as /reports writes it, on `day`.
 async function kept(db, day, changes = {}, hash = changes.device_hash ?? null) {
-  const report = { ...structuredClone(FIXTURE), ...changes, id: randomBytes(16).toString("hex") };
+  const report = { ...structuredClone(FIXTURE), ...changes, id: randomBytes(8).toString("hex") };
   await db.batch(writes(db, report, hash, day));
   return report.id;
 }
@@ -367,7 +367,7 @@ test("the month before January is December of the year before", () => {
 test("a report held for review is in no total", async () => {
   const bindings = env();
   const db = bindings.DB;
-  const report = { ...structuredClone(FIXTURE), id: randomBytes(16).toString("hex") };
+  const report = { ...structuredClone(FIXTURE), id: randomBytes(8).toString("hex") };
   await db.batch(writes(db, report, null, "2026-11-09", "words no report would hold"));
   await night.nightly(bindings, NIGHT);
   assert.equal(rows(bindings, "SELECT * FROM daily_totals").length, 0);

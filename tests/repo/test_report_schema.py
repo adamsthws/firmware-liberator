@@ -69,7 +69,7 @@ class ReportSchemaTests(unittest.TestCase):
                               readout.ACCEPTED, "r-1", mac="12:34:56:ab:cd:ef")
         for outcome in report_data.READOUT_RESULTS:
             made.outcome, made.error = outcome, "other" if outcome == report_data.FAILED else None
-            sent = {**report_data.readout_payload("0" * 32, made, 75.0), "proof": "1794000000:198"}
+            sent = {**report_data.readout_payload("0" * 16, made, 75.0), "proof": "1794000000:198"}
             self.assertEqual(report_schema.validate(report_schema.current()["readout"], sent), [], outcome)
 
     def test_the_failure_patterns_are_the_tools_in_words_both_languages_read_alike(self):

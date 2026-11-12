@@ -11,7 +11,7 @@ from tests.autoflash.routes.espressif.test_espressif import RouteTestCase
 from tools.autoflash import report_data
 from tools.repo import report_schema
 
-REPORT_ID = "0123456789abcdef0123456789abcdef"
+REPORT_ID = "0123456789abcdef"
 MAC = "12:34:56:ab:cd:ef"
 
 
@@ -224,7 +224,7 @@ class ReadoutPayloadTests(unittest.TestCase):
 
     def payload(self, **changes):
         with mock.patch.object(report_data.records, "converted_here", return_value=4):
-            return report_data.readout_payload("a" * 32, self.became(**changes), 75.4)
+            return report_data.readout_payload("a" * 16, self.became(**changes), 75.4)
 
     def test_it_says_what_the_readout_was_and_nothing_of_whose(self):
         sent = self.payload()

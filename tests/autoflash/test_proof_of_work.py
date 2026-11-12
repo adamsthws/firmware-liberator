@@ -12,8 +12,8 @@ from tools.autoflash import proof_of_work
 
 # Made by solve and checked by website/test/proof-of-work.test.mjs, so the
 # tool and the Worker are held to the same work.
-REPORT_ID = "0123456789abcdef0123456789abcdef"
-VECTORS = [(proof_of_work.report_subject(REPORT_ID), "1794000000:198"),
+REPORT_ID = "0123456789abcdef"
+VECTORS = [(proof_of_work.report_subject(REPORT_ID), "1794000000:4905"),
            (proof_of_work.body_subject(b"readout"), "1794000000:2293")]
 
 

@@ -9,7 +9,7 @@ import { release as giveBack } from "../api/counters.js";
 import { AGREEMENT_SETTING, DAILY_BYTES, DAILY_COUNT, MIN_NETWORKS, NOTIFY_DAILY, PER_KEY, STAGES, TOTAL_BYTES }
   from "../api/index.js";
 import { PENDING } from "../api/pending.js";
-import { DEVICE_DAILY, REPORTS_DAILY } from "../api/reports.js";
+import { DEVICE_DAILY, ID, REPORTS_DAILY } from "../api/reports.js";
 import { verified } from "./access.js";
 import { bytes, columns, esc, FULL, lineChart, meter, number, STYLE, table, tile } from "./render.js";
 
@@ -124,7 +124,7 @@ async function held(request, env) {
   const form = await request.formData();
   const id = String(form.get("id") ?? "");
   const action = String(form.get("action") ?? "");
-  if (!/^[0-9a-f]{32}$/.test(id) || !["release", "delete"].includes(action)) {
+  if (!ID.test(id) || !["release", "delete"].includes(action)) {
     return reply(400, "Not a held report and an action.", { "Content-Type": "text/plain" });
   }
   await env.DB.batch(action === "release" ? release(env.DB, id) : remove(env.DB, id));

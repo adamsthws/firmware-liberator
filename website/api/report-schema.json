@@ -177,8 +177,8 @@
       },
       "id": {
         "type": "string",
-        "pattern": "^[0-9a-f]{32}$",
-        "maxLength": 32
+        "pattern": "^[0-9a-f]{16}$",
+        "maxLength": 16
       },
       "proof": {
         "type": "string",
@@ -428,8 +428,8 @@
     },
     "id": {
       "type": "string",
-      "pattern": "^[0-9a-f]{32}$",
-      "maxLength": 32
+      "pattern": "^[0-9a-f]{16}$",
+      "maxLength": 16
     },
     "proof": {
       "type": "string",

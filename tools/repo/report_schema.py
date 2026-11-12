@@ -29,7 +29,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import failures, kinds, records, report, report_data, routes  # noqa: E402
+from tools.autoflash import failures, kinds, records, report, report_data, report_upload, routes  # noqa: E402
 
 PATH = ROOT / "website" / "api" / "report-schema.json"
 MAX_BYTES = 8192
@@ -66,7 +66,7 @@ def schema() -> dict[str, Any]:
     step = "^[A-Z][0-9]{1,2}$"
     shared = {
         "format": {"type": "integer", "enum": [report_data.FORMAT]},
-        "id": string("^[0-9a-f]{32}$", 32),
+        "id": string(f"^[0-9a-f]{{{2 * report_upload.REPORT_ID_BYTES}}}$", 2 * report_upload.REPORT_ID_BYTES),
         "proof": string("^[0-9]{1,12}:[0-9]{1,20}$", 33),
         "tag": words("user", "dev"),
         "tool": string("^[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}$", 11),
