@@ -1,13 +1,17 @@
-"""How tall the tool's fixed text is on the screen: each section (a "-- "
-heading and its lines, prompts.section) and each warning box, read from the
-code and wrapped as output.py wraps it in an 80-column window.  A stage
-taller than the window cannot be taken off the screen again once it has
-passed (output._erase): the rows scrolled away are out of reach.  Seen in
-the fault suite, a stage 48 rows tall left all of itself behind."""
+"""How the tool's fixed text sits on the screen, read from the code and
+wrapped as output.py wraps it in an 80-column window.  How tall: each
+section (a "-- " heading and its lines, prompts.section) and each warning
+box - a stage taller than the window cannot be taken off the screen again
+once it has passed (output._erase): the rows scrolled away are out of reach;
+seen in the fault suite, a stage 48 rows tall left all of itself behind.
+And how a sentence broken over lines by hand fits: each line wider than a
+row wraps on its own, leaving a word or two on a row of their own - seen in
+the emulator, "at all -" and "and on:" under a note."""
 
 import ast
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools.autoflash import output, prompts
 
@@ -102,6 +106,44 @@ def rows(title: str, body: list[str]) -> int:
         len(output._wrap(prompts.BULLET + line, width)) for line in body)
 
 
+# Where a line ends its sentence: the next line starts afresh.
+ENDS = (".", "!", "?", ":", ")", "...")
+
+
+def broken_lines() -> list[tuple[str, str, str]]:
+    """(where, a line, the next) for every sentence the tool breaks over lines
+    by hand: a section's or warning box's lines, and the lines told one after
+    another (output.tell, say, show). Run-time parts count as empty: a line
+    that does not fit even so never does."""
+    found = []
+    with mock.patch.dict(globals(), {"FILLED": ""}):
+        for where, _, body in sections():
+            body = list(body or [])
+            found += [(where, prompts.BULLET + line, after) for line, after in zip(body, body[1:])]
+        for path in sorted((ROOT / "tools" / "autoflash").rglob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                for field in ("body", "orelse", "finalbody"):
+                    statements = getattr(node, field, None)
+                    if not isinstance(statements, list):
+                        continue   # a lambda's body, an expression
+                    run = [told(statement) for statement in statements]
+                    for (line, said), (_, after) in zip(run, run[1:]):
+                        if said is not None and after is not None:
+                            found.append((f"{path.relative_to(ROOT)}:{line}", said, after))
+    return found
+
+
+def told(statement: ast.stmt) -> tuple[int, str | None]:
+    """A statement's line and what it tells the screen, if it does (output.tell, say, show)."""
+    call = statement.value if isinstance(statement, ast.Expr) else None
+    if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+            and call.func.attr in ("tell", "say", "show") and isinstance(call.func.value, ast.Name)
+            and call.func.value.id == "output" and call.args
+            and isinstance(call.args[0], (ast.Constant, ast.JoinedStr))):
+        return statement.lineno, text(call.args[0])
+    return statement.lineno, None
+
+
 class SectionHeightTests(unittest.TestCase):
     def test_every_section_fits_half_the_shortest_window(self):
         measured = 0
@@ -118,6 +160,20 @@ class SectionHeightTests(unittest.TestCase):
 
     def test_a_section_is_measured_as_it_wraps(self):
         self.assertEqual(rows("A heading", ["A line.", "x " * 60]), 2 + 1 + 2)
+
+
+class BrokenLineTests(unittest.TestCase):
+    def test_a_sentence_broken_by_hand_fits_its_rows(self):
+        # Told as one line instead, output.py wraps it to any window.
+        width = COLUMNS - 1 - len(output.MARGIN)
+        found = broken_lines()
+        self.assertGreater(len(found), 100)   # the reading of the code still finds them
+        for where, line, after in found:
+            carries_on = not line.rstrip().endswith(ENDS) or after.lstrip()[:1].islower()
+            if carries_on:
+                with self.subTest(where=where, line=line.strip()[:40]):
+                    self.assertLessEqual(len(line), width, f"{where}: {len(line)} wide, broken by hand mid-"
+                                         f"sentence; at most {width} in {COLUMNS} columns, or one line")
 
 
 if __name__ == "__main__":

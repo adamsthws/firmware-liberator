@@ -24,9 +24,9 @@ def consent_to_leave(ctx: Context, what: str) -> None:
         return
     output.transient_begin()
     prompts.warning_box("Before going on", [
-        f"From here the device's {what} is replaced. DO NOT CUT ITS POWER during",
-        "the process: a power cut while its memory is rewritten could leave a device",
-        "that has to be opened to repair.",
+        f"From here the device's {what} is replaced. DO NOT CUT ITS",
+        "POWER during the process: a power cut while its memory is rewritten",
+        "could leave a device that has to be opened to repair.",
         "Only go ahead with a device you can afford to lose.",
         *testers.notice(kinds.of_run(ctx.state)),
     ])
@@ -39,8 +39,9 @@ def consent_to_leave(ctx: Context, what: str) -> None:
 def wait_out_lost_update() -> None:
     """Until ESPHome on the device has given up an update cut off part way,
     which holds its update service till then."""
-    output.tell("    The device's update service does not answer: it is most likely still waiting for")
-    output.tell("    the rest of an update that was cut off, and gives it up within two minutes.")
+    output.tell("    The device's update service does not answer: it is most likely still")
+    output.tell("    waiting for the rest of an update that was cut off, and gives it up")
+    output.tell("    within two minutes.")
     started = time.monotonic()
     while (waited := time.monotonic() - started) < esphome_ota.DEVICE_DATA_TIMEOUT + 15:
         output.progress(f"waiting for the device to give it up... {waited:.0f}s")

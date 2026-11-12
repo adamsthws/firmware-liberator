@@ -305,6 +305,8 @@ as its screens do, since it converts much more than smart plugs now.
 - A run stopped by the computer as a question waits - shut down, or sent
   SIGTERM - shows its stage stopped and takes the question off, as Ctrl-C does.
   It left the stage under way and the question waiting.
+- Notes broken over several lines fit an 80-column window. Some were wider, so
+  each line wrapped on its own and left a word or two on a row by itself.
 - A download the server turns away for now - GitHub's release downloads
   answering "504 Gateway Time-out" for minutes at a time, say - is tried again
   for a little over two minutes, waiting longer each time, rather than three
