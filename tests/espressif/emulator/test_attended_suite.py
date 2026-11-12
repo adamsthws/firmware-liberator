@@ -30,11 +30,11 @@ class JudgeTests(unittest.TestCase):
     SCENARIO = {"answers": [{"when": "Which firmware", "type": "1\r"}],
                 "expect": {"exit": 0, "result": "Converted"}}
 
-    def judge(self, raw, marks, code=0, scenario=None, answers=None, result="Converted"):
+    def judge(self, raw, marks, code=0, scenario=None, answers=None, result="Converted", clipboard=None):
         scenario = scenario or self.SCENARIO
         answers = answers or [{"when": item["when"], "type": item["type"], "typed_at": marks[i:i + 1]}
                               for i, item in enumerate(scenario["answers"])]
-        return attended_suite.judge(scenario, raw, answers, code, result=result)
+        return attended_suite.judge(scenario, raw, answers, code, result=result, clipboard=clipboard)
 
     def test_a_run_as_it_should_be_passes(self):
         raw, marks = recording(" Stage 1 - Choosing the firmware - Underway\n\n     1. Tasmota\n",
@@ -80,6 +80,58 @@ class JudgeTests(unittest.TestCase):
         answers = [{"when": "Stage 4", "type": "\x03", "typed_at": marks, "anywhere": True}]
         self.assertEqual(self.judge(raw, marks, scenario=scenario, answers=answers), [])
 
+    def test_an_answer_that_switches_the_device_or_signals_the_run_is_judged_too(self):
+        scenario = {"answers": [{"when": "Stage 8", "power": "off", "anywhere": True},
+                                {"when": "Which firmware", "signal": "TERM", "optional": True}], "expect": {}}
+        raw, marks = recording(" Stage 8 - Installing interim firmware - Underway\n", "|")
+        answers = [{"when": "Stage 8", "type": "", "typed_at": marks, "anywhere": True, "power": "off"},
+                   {"when": "Which firmware", "type": "", "typed_at": [], "signal": "TERM"}]
+        self.assertEqual(self.judge(raw, marks, scenario=scenario, answers=answers), [])
+        answers[0]["typed_at"] = []
+        self.assertEqual(self.judge(raw, marks, scenario=scenario, answers=answers), ["FAIL-UNUSED: 'Stage 8'"])
+
+    def test_how_the_run_ended_is_judged_with_what_it_copied(self):
+        # unattended_run.end_problems, on the screen it ended on.
+        scenario = {"answers": [], "expect": {}}
+        report = (" FAILED: the device did not answer\n\n     Liberator: 3.0.0\n     OS:        Ubuntu\n\n"
+                  " If it should not have stopped, please open an issue here:\n"
+                  "     https://firmwareliberator.com/issues\n     Report ID: 0123456789abcdef\n"
+                  "     This report is on your clipboard, ready to paste.\n\n This run's log:\n     run.log\n")
+        raw, _ = recording(report)
+        copied = "Liberator: 3.0.0\nReport ID: 0123456789abcdef\n"
+        self.assertEqual(self.judge(raw, [], scenario=scenario, clipboard=copied), [])
+        self.assertEqual(self.judge(raw, [], scenario=scenario, clipboard=""),
+                         ["FAIL-SCREEN: said its report is on the clipboard, and nothing was put there"])
+
+    def test_a_line_the_scenario_wants_shown_must_be_on_the_final_screen(self):
+        scenario = {"answers": [], "expect": {"shows": [r"^ *Not needed: +1$"]}}
+        raw, _ = recording(" Nothing was read out.\n")
+        self.assertEqual(self.judge(raw, [], scenario=scenario),
+                         ["FAIL-SCREEN: not shown: '^ *Not needed: +1$'"])
+
+    def test_a_row_the_terminal_wrapped_after_the_last_answer_is_a_screen_fault(self):
+        scenario = {"answers": [], "expect": {}}
+        raw, _ = recording(" " + "x" * 130 + "\n")
+        self.assertEqual(self.judge(raw, [], scenario=scenario),
+                         ["FAIL-SCREEN: a row the terminal wrapped itself, after the last answer"])
+
+
+class RunTests(unittest.TestCase):
+    def test_a_readout_scenario_runs_a_readout(self):
+        command = attended_suite.wrapper(61, {"command": "readout"}, "--", "--new", mac="12:34:56:ab:cd:ef")
+        self.assertIn("--readout", command[:command.index("--")])
+        self.assertNotIn("--readout", attended_suite.wrapper(61, {}, mac="12:34:56:ab:cd:ef"))
+
+    def test_the_api_has_enough_of_the_devices_product_where_the_scenario_says(self):
+        from unittest import mock
+        with mock.patch("tools.autoflash.records.read_device", return_value={"product_model": "s60tpg"}):
+            environment = attended_suite.run_environment({"api_enough": True}, "12:34:56:ab:cd:ef")
+            self.assertEqual(environment["AUTOFLASH_API_ENOUGH"], "S60TPG")
+            with mock.patch.dict("os.environ", {}, clear=False):
+                import os
+                os.environ.pop("AUTOFLASH_API_ENOUGH", None)
+                self.assertNotIn("AUTOFLASH_API_ENOUGH", attended_suite.run_environment({}, "12:34:56:ab:cd:ef"))
+
 
 def question_texts() -> list[str]:
     """Every text the tool can show, as it is written in its code: each
@@ -108,7 +160,12 @@ class ScenarioTests(unittest.TestCase):
         for name, (_, scenario) in found.items():
             for answer in scenario["answers"] + scenario.get("again", {}).get("answers", []):
                 with self.subTest(scenario=name, when=answer["when"]):
-                    self.assertLessEqual(set(answer), {"when", "type", "times", "optional", "anywhere"})
+                    self.assertLessEqual(set(answer), {"when", "type", "times", "optional", "anywhere", "power",
+                                                       "signal"})
+                    # Each does one thing: types, switches the device, or signals the run.
+                    self.assertEqual(sum(key in answer for key in ("type", "power", "signal")), 1, answer)
+                    self.assertIn(answer.get("power", "off"), ("off", "on"))
+                    self.assertIn(answer.get("signal", "TERM"), ("TERM", "HUP", "INT"))
                     pattern = re.compile(answer["when"])
                     if answer.get("optional") or answer.get("anywhere"):
                         continue
@@ -121,7 +178,11 @@ class ScenarioTests(unittest.TestCase):
                 self.assertTrue(scenario.get("about"))
                 self.assertIn("expect", scenario)
                 self.assertLessEqual(set(scenario), {"about", "start", "prep", "args", "size", "minutes",
-                                                     "answers", "expect", "command", "again"})
+                                                     "answers", "expect", "command", "again", "api_enough"})
+                for expect in (scenario["expect"], scenario.get("again", {}).get("expect", {})):
+                    self.assertLessEqual(set(expect), {"exit", "result", "screen", "shows"})
+                    for wanted in expect.get("shows", []):
+                        re.compile(wanted)
                 for action in scenario.get("prep", []):
                     self.assertIn(action if isinstance(action, str) else action[0],
                                   ("sudo forgets", "tasmota password", "locked esphome", "convert"))
