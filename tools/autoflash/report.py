@@ -182,8 +182,9 @@ def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
                if isinstance(captures.get(f"{step}.attempts"), int) and captures[f"{step}.attempts"] > 1}
     retried = [f"{number} ({count} {'retry' if count == 1 else 'retries'})"
                for number, count in retries.items()]
-    # The lowest of the run's readings: from Sonoff's advert at A2, from Tasmota
-    # at L1, D4, E1 or I1 - wherever the device's firmware could give one.
+    # The lowest of the run's readings (each step's signal_dbm): from Sonoff's
+    # advert at A2 or eWeLink's record at B1, then from whichever firmware the
+    # device runs as a step begins, where it gives one.
     readings = [value for key, value in captures.items() if key.endswith(".signal_dbm")
                 and isinstance(value, int) and not isinstance(value, bool)]
     signal = min(readings) if readings else None

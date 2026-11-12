@@ -297,6 +297,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         "resumed": bool(resumed),
         "stages": stages(ctx),
         "signal": max(-127, min(min(readings), 0)) if readings else None,
+        # Each only where its route has it, as report.report_fields shows them.
         "wifi_typed": bool(state.input("wifi_typed")) if espressif else None,
         "setup_network": joined if espressif else None,
         "power_cycled": bool(state.input("power_cycles")) if not espressif else None,

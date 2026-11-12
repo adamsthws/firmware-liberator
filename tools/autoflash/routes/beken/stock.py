@@ -192,6 +192,8 @@ def step_push(ctx: Context) -> dict[str, Any]:
     started = time.monotonic()
     delivered = ota_push.deliver(
         account=ctx.ewelink, device_id=device["deviceid"], firmware=container, version=images.FOTA_VERSION,
+        # One file, not the two an Espressif device is offered (one for each app
+        # slot): a Beken device has one app, which its bootloader replaces.
         listen_ip=listen_ip, listen_port=port, device_ip=device_ip, names=("user1.bin",),
         wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False)
     if not delivered.sent:
