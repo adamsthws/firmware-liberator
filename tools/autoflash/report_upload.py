@@ -266,6 +266,7 @@ def send_readout(ctx: Context, became: Any, seconds: float) -> threading.Thread 
     except Exception as error:  # noqa: BLE001 - a report is never worth spoiling a readout for
         output.log_only(f"The readout's report could not be kept: {type(error).__name__}: {error}")
         return None
+    became.report_id = report_id   # on its report on the screen, and in an issue's address
     work = getattr(ctx, "readout_report_work", None)
     return in_background(lambda: send_kept(dt.date.today(), {report_id: work}))
 
@@ -284,4 +285,5 @@ def send(ctx: Context, ending: str, seconds: float, resumed: bool,
     except Exception as error:  # noqa: BLE001 - a report is never worth spoiling a run's end for
         output.log_only(f"The run's report could not be kept: {type(error).__name__}: {error}")
         return None
+    ctx.last_report_id = report_id   # on its report on the screen, and in an issue's address
     return in_background(lambda: send_kept(dt.date.today(), {report_id: getattr(ctx, "report_work", None)}))

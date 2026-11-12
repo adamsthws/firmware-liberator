@@ -23,9 +23,14 @@ if TYPE_CHECKING:
     from tools.autoflash.context import Context
 
 # Where a run that failed is told to open an issue: the repository's issues,
-# by a short address of the website's, one line on the screen
+# by a short address of the website's, one line on the screen; with its
+# report's id after it, a new issue naming that report
 # (tools/repo/cloudflare_settings.py, ISSUES).
 ISSUES_URL = "https://firmwareliberator.com/issues"
+# The label of the report's id, under the rest of the report on the screen:
+# someone pasting the report into an issue names it, and it is in the issue's
+# address a failed run shows.
+REPORT_ID = "Report ID"
 # Shown once a run has succeeded, after the report, in this order.
 SPONSORS_URL = "https://github.com/sponsors/adamsthws"
 KOFI_URL = "https://ko-fi.com/adamsthws"
@@ -582,14 +587,20 @@ def invite_stopped_report(ctx: Context, ending: str) -> None:
     offer_report(ctx, fields, stopped=run_result(ctx, ending))
 
 
-def ask_for_an_issue() -> None:
+def issue_url(report_id: str | None) -> str:
+    """Where to open an issue for a run: naming its report, where one was sent."""
+    return f"{ISSUES_URL}/{report_id}" if report_id else ISSUES_URL
+
+
+def ask_for_an_issue(report_id: str | None = None) -> None:
     """Where the links to support the project would be, for a run that failed
-    or crashed - not one stopped by choice: the way to open an issue, and the
-    run's log, which one needs. The tool is meant to finish every run, so one
-    it could not is something to fix."""
+    or crashed - not one stopped by choice: the way to open an issue, naming
+    its report (`report_id`) where one was sent, and the run's log, which one
+    needs. The tool is meant to finish every run, so one it could not is
+    something to fix."""
     output.tell("")
     output.tell("If it should not have stopped, please open an issue here:")
-    output.show_link(ISSUES_URL)
+    output.show_link(issue_url(report_id))
     output.tell("")
     output.tell("This run's log:")
     output.tell(f"    {output.log_path() or testers.LOG_ELSEWHERE}")
@@ -609,8 +620,9 @@ def offer_report(ctx: Context, fields: list[tuple[str, str]], stopped: str | Non
     for label, value in fields:
         if label in LOG_ONLY:
             output.log_only(f"    {label}: {value}")
+    report_id = getattr(ctx, "last_report_id", None)
     for line in report_screen([(label, briefly(value) if label == "Result" else value) for label, value in fields
-                               if label not in LOG_ONLY]):
+                               if label not in LOG_ONLY], below=[(REPORT_ID, report_id)] if report_id else ()):
         output.tell(line)
     if stopped:
-        ask_for_an_issue()
+        ask_for_an_issue(report_id)

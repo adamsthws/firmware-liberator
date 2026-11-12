@@ -1253,6 +1253,12 @@ class ReportTests(unittest.TestCase):
                 self.assertEqual([line.split()[-2] for line in rows[:len(counts)]], counts, "\n".join(shown))
                 self.assertEqual(rows[0].index("Result:"), rows[1].index("Liberator:"))
 
+    def test_one_device_s_report_shows_its_id_as_a_conversion_s_does(self):
+        one = [readout.Became("'Hall'", "BASICR4", "", "1.1.0", True, readout.ACCEPTED, report_id="a" * 32)]
+        self.assertIn(f"Report ID:  {'a' * 32}", " ".join(self.shown_by_end(one)))
+        several = [*one, readout.Became("'Porch'", "MINIR4", "", "1.2.0", True, readout.UNNEEDED, report_id="b" * 32)]
+        self.assertFalse([line for line in self.shown_by_end(several) if "Report ID" in line], "one for each: none")
+
     def test_one_that_failed_has_the_way_to_open_an_issue_where_the_links_to_support_the_project_go(self):
         failed = [readout.Became("'Hall'", "BASICR4", "", "1.1.0", True, readout.FAILED)]
         shown = self.shown_by_end(failed, failed=True)

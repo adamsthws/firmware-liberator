@@ -1,5 +1,6 @@
 """The report of a run: what it says of the firmware and the identity, and
 the hardware check through ESPHome."""
+import os
 import platform
 import sys
 import time
@@ -475,11 +476,22 @@ class StoppedRunIssueTests(RouteTestCase):
         result = next(index for index, line in enumerate(text) if line.lstrip().startswith("Result:"))
         asked = text.index("If it should not have stopped, please open an issue here:")
         self.assertLess(result, asked, "the report first, then the way to open an issue")
-        self.assertIn(("link", report.ISSUES_URL), lines)
+        self.assertIn(("link", report.ISSUES_URL), lines)   # no report sent: none to name
         self.assertEqual(text[text.index("This run's log:") + 1], f"    {Path('/runs/run.log')}")
         self.assertFalse([line for line in lines if isinstance(line, tuple) and line[0] == "links"],
                          "no links to support the project after a failure")
         self.assertFalse([line for line in text if "192.0.2.50" in line or "How it went" in line])
+
+    def test_its_reports_id_is_under_the_report_and_in_the_issues_address(self):
+        ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
+        ctx.last_failure, ctx.last_failed_step = "the device did not answer within 30s", ""
+        ctx.run_started, ctx.run_resumed = time.monotonic(), False
+        ctx.last_report_id = "0123456789abcdef0123456789abcdef"
+        with mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))):
+            lines = self.ended(ctx, "failed")
+        self.assertIn(("link", f"{report.ISSUES_URL}/0123456789abcdef0123456789abcdef"), lines)
+        row = next(line for line in lines if isinstance(line, str) and "Report ID:" in line)
+        self.assertEqual(row.split(), ["Report", "ID:", "0123456789abcdef0123456789abcdef"])   # whole, on one row
 
     def test_a_run_that_worked_shows_no_log_even_of_a_kind_wanting_testers(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-powct")
