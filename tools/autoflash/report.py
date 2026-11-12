@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import __version__, esphome, hostsys, kinds, output, records, report_upload, routes, runs, testers
+from tools.autoflash import __version__, esphome, hostsys, join, kinds, output, records, report_upload, routes, runs, testers
 from tools.autoflash.device import DeviceError
 from tools.autoflash.runs import ROOT
 from tools.ewelink import relay as ewelink_relay
@@ -22,6 +22,7 @@ from tools.autoflash.routes import update
 
 if TYPE_CHECKING:
     from tools.autoflash.context import Context
+    from tools.autoflash.state import RunState
 
 # Where a run that failed is told to open an issue: the repository's issues,
 # by a short address of the website's, one line on the screen
@@ -151,6 +152,20 @@ def converted_from(ctx: Context, firmware: str | None, stock_version: str = "") 
     return (f"{routes.FIRMWARES[firmware]}, " if source == "outdated" and firmware else "") + CONVERTED_FROM[source]
 
 
+def own_network_joined(state: RunState) -> bool:
+    """Whether this computer joined a device's own network during the run, on
+    either family: the installer's bridge network at D1, or a network the
+    device raised for want of the home one (join.OWN_NETWORK) - Tasmota's
+    setup network, ESPHome's or the mover's.  The D1 and F4 captures say so
+    for runs begun before that was recorded."""
+    captures = state.data.get("captures", {})
+    return bool(state.input(join.OWN_NETWORK)
+                or captures.get("D1.upload_route") == "bridge network"
+                or captures.get("D1.resumed") is True
+                or (captures.get("D1.upload_route") == "home network" and captures.get("D1.wifi") != "preset")
+                or captures.get("F4.wifi_route") == "setup network")
+
+
 def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
                   result: str = "converted") -> list[tuple[str, str]]:
     """This run's answers for a Test reports post, as (label, value) - nothing private.
@@ -173,10 +188,6 @@ def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
     model = kind.product_of(product) or (kind.name if runs.run_source(ctx.state) != "sonoff" else "")
     stock_version = str(ctx.state.input("stock_version") or record.get("stock_version") or "")
     captures = ctx.state.data.get("captures", {})
-    joined = (captures.get("D1.upload_route") == "bridge network"
-              or captures.get("D1.resumed") is True
-              or (captures.get("D1.upload_route") == "home network" and captures.get("D1.wifi") != "preset")
-              or captures.get("F4.wifi_route") == "setup network")
     retries = {number: captures[f"{step}.attempts"] - 1 for number, (step, _, _) in enumerate(routes.STEPS, 1)
                if isinstance(captures.get(f"{step}.attempts"), int) and captures[f"{step}.attempts"] > 1}
     retried = [f"{number} ({count} {'retry' if count == 1 else 'retries'})"
@@ -208,10 +219,9 @@ def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
         # busy are not shown: the report sent carries them (report_data).
         ("Retries", ", ".join(retried) or "none"),
         ("Signal", f"{signal} dBm" if isinstance(signal, int) else "not recorded"),
-        # Only where the route has them: the Wi-Fi typed or a setup network
-        # joined are an Espressif route's.
-        *([("Wi-Fi typed", "yes" if ctx.state.input("wifi_typed") else "no"),
-           ("Setup network", "yes" if joined else "no")] if espressif else []),
+        # Only where the route has it: the Wi-Fi typed is an Espressif route's.
+        *([("Wi-Fi typed", "yes" if ctx.state.input("wifi_typed") else "no")] if espressif else []),
+        ("Setup network", "yes" if own_network_joined(ctx.state) else "no"),
         # Whether the device had to be switched off and on for its new firmware
         # to come back (arrival.until_back), on either family.
         ("Power cycled", "true" if ctx.state.input("power_cycles") else "false"),

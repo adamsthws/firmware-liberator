@@ -40,7 +40,7 @@ stages people choose to stop at, and which devices people want supported next: s
   often a stage was tried again, the device's Wi-Fi signal strength, and
   whether the run carried on an earlier one (and the tool's version that
   began it, if another), you typed your Wi-Fi details in (not the details
-  themselves), your computer joined the device's own setup network, the
+  themselves), your computer joined a network the device raised itself, the
   device had to be switched off and on (and how long it took to answer once
   back on), and whether the checks at the end passed (its relay, its
   firmware's release, its sensors' readings). Also how often

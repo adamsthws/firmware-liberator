@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from tests.autoflash.routes.espressif.test_espressif import RouteTestCase
-from tools.autoflash import esphome, hostsys, output, prompts, report
+from tools.autoflash import esphome, hostsys, join, output, prompts, report
 from tools.autoflash.state import DONE
 
 # A run's state, as the relay check reads its kind from: the S60's, with a meter.
@@ -37,6 +37,12 @@ class EndingTests(RouteTestCase):
                 ctx = self.ctx(run=f"run-{len(captures)}-{joined}-{sorted(captures)}", firmware="tasmota")
                 ctx.state.data["captures"] = captures
                 self.assertEqual(dict(report.report_fields(ctx))["Setup network"].lower(), joined.lower())
+
+    def test_a_beken_device_set_up_through_its_own_network_is_logged(self):
+        ctx = self.ctx(run="beken-own", firmware="esphome", device_kind="sonoff-s61")
+        ctx.state.set_input(join.OWN_NETWORK, True)
+        self.assertEqual(dict(report.report_fields(ctx))["Setup network"].lower(), "yes")
+        self.assertIn("Setup network", report.LOG_ONLY)   # in the log, not on the screen
 
     def test_a_run_that_never_found_its_device_does_not_say_it_was_on_sonoff(self):
         # Seen on a real device switched off: the report said "Converted from: Sonoff".

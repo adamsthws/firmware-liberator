@@ -8,7 +8,7 @@ import unittest
 from unittest import mock
 
 from tests.autoflash.routes.espressif.test_espressif import RouteTestCase
-from tools.autoflash import report_data
+from tools.autoflash import join, report_data
 from tools.repo import report_schema
 
 REPORT_ID = "0123456789abcdef"
@@ -195,6 +195,12 @@ class PayloadTests(RouteTestCase):
                     ctx.state.capture(key, value)
                 self.assertIs(self.payload(ctx)["setup_network"], joined)
 
+    def test_a_beken_device_set_up_through_its_own_network_says_so(self):
+        ctx = self.ctx(run="beken-own", firmware="esphome", device_kind="sonoff-s61")
+        self.assertIs(self.payload(ctx)["setup_network"], False)
+        ctx.state.set_input(join.OWN_NETWORK, True)
+        self.assertIs(self.payload(ctx)["setup_network"], True)
+
     def test_what_is_asked_of_each_family(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60", wifi_typed=True, power_cycles=2)
         data = self.payload(ctx)
@@ -202,7 +208,7 @@ class PayloadTests(RouteTestCase):
         self.assertEqual((data["wifi_typed"], data["setup_network"], data["power_cycled"]), (True, False, True))
         ctx = self.ctx(run="beken", firmware="openbeken", device_kind="sonoff-s61", wifi_typed=True, power_cycles=2)
         data = self.payload(ctx)
-        self.assertEqual((data["wifi_typed"], data["setup_network"], data["power_cycled"]), (None, None, True))
+        self.assertEqual((data["wifi_typed"], data["setup_network"], data["power_cycled"]), (None, False, True))
 
     def test_dev_runs_are_tagged(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")

@@ -240,6 +240,37 @@ class SendThroughOwnNetworkTests(unittest.TestCase):
         self.assertEqual(self.sent, 3)
 
 
+class OwnNetworkRecordedTests(SetupNetworkTestCase):
+    """Joining a device's own network is recorded for the report
+    (report.own_network_joined), whichever firmware raised it."""
+
+    def test_set_up_through_esphomes_own_network(self):
+        ctx = self.ctx()
+        ctx.wifi = lambda why=(): ("Home", "pw")
+        with mock.patch.object(prompts, "find_ssid", return_value="esphome-abcdef"), \
+                mock.patch.object(prompts, "section"), mock.patch.object(output, "tell"), \
+                mock.patch.object(join, "send_through_own_network"), mock.patch.object(join, "wait_for"):
+            self.assertEqual(join.set_up_through_own_network(ctx, "ESPHome", bool, ("esphome-abcdef",)),
+                             ("Home", "pw"))
+        self.assertIs(ctx.state.input(join.OWN_NETWORK), True)
+
+    def test_its_network_not_seen_is_not_recorded(self):
+        ctx = self.ctx()
+        with mock.patch.object(prompts, "find_ssid", return_value=None), \
+                mock.patch.object(join, "on_a_device_network", return_value=False):
+            self.assertIsNone(join.set_up_through_own_network(ctx, "ESPHome", bool, ("esphome-abcdef",)))
+        self.assertIsNone(ctx.state.input(join.OWN_NETWORK))
+
+    def test_tasmotas_setup_network_joined(self):
+        ctx = self.ctx()
+        ctx.wifi = lambda why=(): None
+        with mock.patch.object(prompts, "section"), mock.patch.object(hostsys, "wifi_menu_hint", return_value="x"), \
+                mock.patch.object(join, "wait_until_joined"), \
+                mock.patch.object(join, "locate_device", return_value="192.0.2.50"):
+            self.assertEqual(join.configure_device_wifi(ctx, "tasmota-ABCDEF-1234"), "192.0.2.50")
+        self.assertIs(ctx.state.input(join.OWN_NETWORK), True)
+
+
 class UserActionWaitTests(unittest.TestCase):
     """Waiting on a person has no time limit - unless nobody is coming."""
 

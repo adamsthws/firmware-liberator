@@ -1505,13 +1505,15 @@ class ReportTests(OutputTestCase):
         slept.assert_not_called()
 
     def test_a_report_gives_only_what_its_route_has(self):
-        # The Wi-Fi typed and a setup network joined are an Espressif route's.
-        espressif_only = ("Wi-Fi typed", "Setup network")
+        # The Wi-Fi typed is an Espressif route's; a device's own network
+        # joined, either family's.
         fields = dict(report.report_fields(self.ctx()))
-        self.assertTrue(all(label in fields for label in espressif_only))
+        self.assertIn("Wi-Fi typed", fields)
+        self.assertIn("Setup network", fields)
         s61 = self.ctx(device_kind="sonoff-s61", product_model="S61STPF", firmware="openbeken", source="sonoff")
         fields = dict(report.report_fields(s61))
-        self.assertFalse(any(label in fields for label in espressif_only))
+        self.assertNotIn("Wi-Fi typed", fields)
+        self.assertIn("Setup network", fields)
         self.assertEqual(fields["Model"], "S61STPF")
 
     def test_the_report_shows_retries_but_not_each_stages_time_or_how_long_the_device_was_busy(self):

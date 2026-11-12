@@ -257,9 +257,6 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
                    else failures.classify(reason if text.endswith("...") else text),
                    "text": text,
                    "where": site if isinstance(site, str) and CRASH_SITE.fullmatch(site) else None}
-    joined = (captures.get("D1.upload_route") == "bridge network" or captures.get("D1.resumed") is True
-              or (captures.get("D1.upload_route") == "home network" and captures.get("D1.wifi") != "preset")
-              or captures.get("F4.wifi_route") == "setup network")
     backup = state.input("backup_outcome") or ("existing" if routes.sonoff_backup_exists(ctx) else "not taken")
     # For a conversion, the device's number among those converted on this
     # computer (records.number_conversion): how many one computer converts.
@@ -299,7 +296,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         "signal": max(-127, min(min(readings), 0)) if readings else None,
         # Each only where its route has it, as report.report_fields shows them.
         "wifi_typed": bool(state.input("wifi_typed")) if espressif else None,
-        "setup_network": joined if espressif else None,
+        "setup_network": report.own_network_joined(state),
         "power_cycled": bool(state.input("power_cycles")),
         "checks": checks_word(hardware),
         "meter": meter_word(captures, firmware) if kinds.of_run(state).has_meter else None,
