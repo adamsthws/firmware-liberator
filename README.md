@@ -269,6 +269,7 @@ What is sent, once you agree:
 - **[upstream-contributions](docs/upstream-contributions.md)** - bugs
   found and fixed while building this project.
 - **[legal](docs/legal.md)** - how the project remains lawful, and what it asks of you.
+- **[privacy](docs/privacy.md)** - who keeps your email address, if you sign up, and your rights.
 
 <br>
 

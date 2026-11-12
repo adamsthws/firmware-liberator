@@ -169,3 +169,4 @@ next day if you have not. Nothing is kept unless you follow that link: an
 address never confirmed is deleted after 7 days. Once confirmed, it is stored
 privately, apart from reports and readouts, and used only for these emails.
 Every one has a link to remove your address, which asks you to confirm first.
+[Privacy](privacy.md) says who keeps it, and your rights.
