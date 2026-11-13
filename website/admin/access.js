@@ -31,10 +31,12 @@ async function keysOf(team, fetcher, now) {
   return keys;
 }
 
-// The signed-in user's claims, or null where the request is not Access's.
-export async function verified(request, env, now = Date.now(), fetcher = fetch) {
+// The signed-in user's claims, or null where the request is not Access's:
+// for the application whose audience tag is `audience` - the view's
+// (ACCESS_AUD) unless another is given, as emulator.js gives its own.
+export async function verified(request, env, now = Date.now(), fetcher = fetch, audience = env.ACCESS_AUD) {
   const token = request.headers.get("Cf-Access-Jwt-Assertion");
-  if (!token || !env.ACCESS_TEAM || !env.ACCESS_AUD) {
+  if (!token || !env.ACCESS_TEAM || !audience) {
     return null;
   }
   const parts = token.split(".");
@@ -63,7 +65,7 @@ export async function verified(request, env, now = Date.now(), fetcher = fetch) 
   }
   const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
   const seconds = now / 1000;
-  if (!audiences.includes(env.ACCESS_AUD) || claims.iss !== `https://${env.ACCESS_TEAM}.cloudflareaccess.com`
+  if (!audiences.includes(audience) || claims.iss !== `https://${env.ACCESS_TEAM}.cloudflareaccess.com`
       || !(claims.exp > seconds) || (claims.nbf !== undefined && claims.nbf > seconds + 60)) {
     return null;
   }

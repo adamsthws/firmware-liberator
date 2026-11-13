@@ -3,8 +3,9 @@
 // figures, a day old. Behind Cloudflare Access (access.js checks its token on
 // every request); the only changes it makes are a held report released or
 // deleted, readouts nearly agreeing approved, and the maintainer's switches
-// set, each a POST from this view itself. Nothing in it is cached, framed,
-// indexed or scripted.
+// set, each a POST from this view itself; and the suites' emulator runs, taken
+// under SCOPE with Access's service token alone (emulator.js). Nothing in it
+// is cached, framed, indexed or scripted.
 import { release as giveBack } from "../api/counters.js";
 import { AGREEMENT_SETTING, DAILY_BYTES, DAILY_COUNT, MIN_NETWORKS, NOTIFY_DAILY, PER_KEY, STAGES, TOTAL_BYTES }
   from "../api/index.js";
@@ -14,6 +15,7 @@ import { monthsTo, popularity, SERIES } from "../api/popularity.js";
 import { DEVICE_DAILY, ID, REPORTS_DAILY } from "../api/reports.js";
 import schema from "../api/report-schema.json" with { type: "json" };
 import { verified } from "./access.js";
+import { emulatorSections, gatherEmulator, RUNS_PATH, SCOPE, setCause, upload } from "./emulator.js";
 import { bytes, columns, esc, FULL, lineChart, meter, number, STYLE, table, tile, trends } from "./render.js";
 
 export const ORIGIN = "https://admin.firmwareliberator.com";
@@ -46,11 +48,14 @@ export default {
 // A request, its Access token checked first: `now` and `fetcher` as the
 // Worker has them, but in the tests.
 export async function handle(request, env, now = Date.now(), fetcher = fetch) {
+  const url = new URL(request.url);
+  if (url.pathname === SCOPE || url.pathname.startsWith(`${SCOPE}/`)) {
+    return suites(request, url, env, now, fetcher);
+  }
   const who = await verified(request, env, now, fetcher);
   if (!who) {
     return reply(403, "Forbidden: sign in through Cloudflare Access.", { "Content-Type": "text/plain" });
   }
-  const url = new URL(request.url);
   if (url.pathname === "/" && request.method === "GET") {
     return reply(200, await page(env, who, new Date(now), fetcher));
   }
@@ -63,7 +68,38 @@ export async function handle(request, env, now = Date.now(), fetcher = fetch) {
   if (url.pathname === "/approve" && request.method === "POST") {
     return approve(request, env);
   }
+  if (url.pathname === "/emulator-cause" && request.method === "POST") {
+    return cause(request, env);
+  }
   return reply(404, "Not found.", { "Content-Type": "text/plain" });
+}
+
+// What the suites send, under SCOPE: only with a JWT Access made for their
+// application (ACCESS_UPLOAD_AUD), whose one policy lets in the suites'
+// service token - which carries no one's address, as a person's sign-in does.
+async function suites(request, url, env, now, fetcher) {
+  const claims = await verified(request, env, now, fetcher, env.ACCESS_UPLOAD_AUD);
+  if (!claims || claims.email || typeof claims.common_name !== "string") {
+    return reply(403, "Forbidden: only the suites' service token.", { "Content-Type": "text/plain" });
+  }
+  if (url.pathname !== RUNS_PATH) {
+    return reply(404, "Not found.", { "Content-Type": "text/plain" });
+  }
+  if (request.method !== "POST") {
+    return reply(405, "POST runs.", { "Content-Type": "text/plain", Allow: "POST" });
+  }
+  return upload(request, env, now);
+}
+
+// A failure's cause marked: only from a form on this view.
+async function cause(request, env) {
+  if (!ownForm(request)) {
+    return notOwn();
+  }
+  if (!(await setCause(await request.formData(), env))) {
+    return reply(400, "Not a run and a cause.", { "Content-Type": "text/plain" });
+  }
+  return new Response(null, { status: 303, headers: { Location: "/#emulator-failures", "Cache-Control": "no-store" } });
 }
 
 // Whether a POST came from a form on this view itself.
@@ -233,6 +269,7 @@ export async function gather(env, now) {
       ORDER BY name`),
     popularity: await modelTrends(all, now),
     needed: await all(NEEDED, since(NEEDED_DAYS)),
+    emulator: await gatherEmulator(all, now),
   };
 }
 
@@ -379,6 +416,7 @@ export async function page(env, who, now, fetcher = fetch) {
       + columns(mailDays, ["sent", "failed"], "Emails a day")
       + table([["Failed with", "code"], ["Emails", "n", "number"]], codes, "No failures.")
       + `</section></div>`,
+    ...emulatorSections(data.emulator),
     `<section class="card" id="switches"><h2>Switches</h2><p class="sub">Emails sent to the maintainer's address
       (ALERTS_RECIPIENT_EMAIL), beside the nightly alert.</p>${switches}</section>`,
     `<section class="card"><h2>This month's use</h2><p class="sub">Against what Workers Paid includes (R2: its own free allowance); past it, it is billed.</p>`

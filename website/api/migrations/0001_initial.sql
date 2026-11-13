@@ -493,3 +493,41 @@ CREATE TABLE IF NOT EXISTS network_lists (
   previous INTEGER NOT NULL DEFAULT 0,
   added TEXT NOT NULL DEFAULT '[]'
 ) WITHOUT ROWID;
+
+-- The maintainer's own emulator runs (tools/repo/emulator_stats.py), one row a
+-- scenario a suite ran - fault or attended, of any chip family - taken by
+-- the admin view (admin/emulator.js) from the suites with Access's service
+-- token, never from the tool. No report and nothing of the machine: how the
+-- run went, against which version of the tool and of the firmware. Apart
+-- from `reports`, so no figure of people's runs counts them. `finished` is
+-- UTC to the second; `batch`, one suite run's random id; `revision`, the
+-- checkout's commit, `dirty` 1 where it had changes; `firmware`, a JSON
+-- object of the firmware the checkout installs on the device, by name;
+-- `cause`, set on a failure from the admin view (EMULATOR_CAUSES). Kept for
+-- good: a row is well under a kilobyte.
+CREATE TABLE IF NOT EXISTS emulator_runs (
+  id TEXT PRIMARY KEY,
+  finished TEXT NOT NULL,
+  batch TEXT NOT NULL,
+  suite TEXT NOT NULL,
+  family TEXT NOT NULL,
+  device TEXT NOT NULL,
+  scenario TEXT NOT NULL,
+  route TEXT,
+  step TEXT,
+  fault TEXT,
+  at INTEGER,
+  verdict TEXT NOT NULL,
+  tries INTEGER,
+  seconds INTEGER,
+  cloud TEXT NOT NULL,
+  tool TEXT NOT NULL,
+  revision TEXT,
+  dirty INTEGER NOT NULL,
+  firmware TEXT NOT NULL,
+  workers INTEGER,
+  cause TEXT
+) WITHOUT ROWID;
+
+CREATE INDEX IF NOT EXISTS emulator_runs_finished ON emulator_runs (finished);
+CREATE INDEX IF NOT EXISTS emulator_runs_scenario ON emulator_runs (scenario, finished);

@@ -966,6 +966,37 @@ Results and recordings go to `captures/emulation/attended/<time>/`.
 matches a question the tool asks, so a reworded question fails in the unit
 tests first.
 
+### Emulator stats
+
+Every suite, fault or attended and of every chip family, sends what each
+scenario's run came to to the admin view (`website/admin/emulator.js`): the
+device, the scenario, its verdict, how many runs of the tool it took and how
+long, the version of the tool and the commit it ran from, and the firmware the
+checkout installs on the device. No log, report or recording leaves the
+machine. The view shows runs a day, pass rates by commit and new failures
+(a scenario that passed on the commit before), each device and the firmware it
+was last run with, failures by step and fault, how many tries a conversion
+took, flaky scenarios, real-cloud failures by the hour into a batch, and the
+latest failures, each of which you mark with what it came from: "tool" counts
+as a bug found.
+
+`tools/repo/emulator_stats.py` keeps each run beside the suite's results and
+sends it as soon as it finishes, beside the suite, so the view fills as runs
+end and a machine thrown away part way through a batch has sent what it ran.
+The batch sends whatever is left as it ends; a run that could not be sent
+goes with the next, or with `emulator_stats.py send DIR`. Sending needs the
+suites' service token, in `~/.config/firmware-liberator/emulator.env` - one
+file a machine, which every checkout and worktree on it reads.
+`tools/repo/cloudflare_settings.py apply` writes it and copies it to each
+machine `EMULATOR_STATS_HOSTS` in `.env.infra` names (`website/README.md`,
+The admin view); `emulator_stats.py push HOST...` copies it to another, and
+`emulator_stats.py check` says whether a machine's runs are taken. Without
+it nothing is sent, and the batch says so as it ends.
+`AUTOFLASH_EMU_NO_STATS=1` keeps and sends none, as every unit test has it.
+A suite of a new chip family calls the same functions (`fault_run`,
+`attended_run`, `send`); `tests/repo/test_emulator_stats.py` checks that every
+`tools/*/emulator/fault_suite.py` does.
+
 ## Real devices
 
 The S60 is the only device tested for real, and the only one

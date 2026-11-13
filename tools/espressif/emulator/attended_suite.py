@@ -79,7 +79,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
-from tools.repo import unattended_run  # noqa: E402
+from tools.autoflash import kinds, records  # noqa: E402
+from tools.repo import emulator_stats, unattended_run  # noqa: E402
 
 SCENARIOS = {"espressif": ROOT / "tools/espressif/emulator/attended",
              "beken": ROOT / "tools/beken/emulator/attended"}
@@ -425,7 +426,16 @@ def judged(scenario: dict[str, Any], folder: Path, code: int, recording: Path | 
                  copied.read_text(encoding="utf-8") if copied.exists() else "")
 
 
-def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: Path, mac: str) -> str:
+def device_of(family: str, mac: str | None) -> kinds.Kind:
+    """The kind of device a family's scenarios run on: the S60 copy's, by its
+    record's product model, or the S61 the Beken emulator runs."""
+    if family == "beken":
+        return kinds.SONOFF_S61
+    return kinds.for_account((records.read_device(mac) if mac else {}).get("product_model"), None) or kinds.SONOFF_S60
+
+
+def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: Path, mac: str,
+            workers: int = 1) -> str:
     folder = results / name
     folder.mkdir(parents=True, exist_ok=True)
     run = run_beken if family == "beken" else run_espressif
@@ -446,7 +456,11 @@ def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: P
         verdicts = [f"{verdict.split(':')[0]}: again: {verdict.split(': ', 1)[1]}"
                     for verdict in judged(scenario["again"] | {"size": scenario.get("size", "100x40")},
                                           folder, code, recording, "again-")]
-    line = f"{'PASS' if not verdicts else verdicts[0].split(':')[0]:<16} {name:<28} {time.monotonic() - started:5.0f}s"
+    verdict = "PASS" if not verdicts else verdicts[0].split(":")[0]
+    # Kept beside every batch's folder, so one not sent goes with the next.
+    emulator_stats.attended_run(RESULTS, family=family, device=device_of(family, mac).key, name=name,
+                                verdict=verdict, seconds=round(time.monotonic() - started), workers=workers)
+    line = f"{verdict:<16} {name:<28} {time.monotonic() - started:5.0f}s"
     (folder / "verdict.txt").write_text("\n".join(verdicts or ["PASS"]) + "\n", encoding="utf-8")
     return line + "".join(f"\n    {verdict}" for verdict in verdicts)
 
@@ -477,12 +491,13 @@ def main() -> int:
     # beside three S60s a readout's device was not found in time.
     for family, workers in (("espressif", max(1, args.workers)), ("beken", 1)):
         with concurrent.futures.ThreadPoolExecutor(workers) as pool:
-            jobs = [pool.submit(run_one, FIRST_INSTANCE + index, name, *found[name], results, args.device)
+            jobs = [pool.submit(run_one, FIRST_INSTANCE + index, name, *found[name], results, args.device, workers)
                     for index, name in enumerate(chosen) if found[name][0] == family]
             for job in concurrent.futures.as_completed(jobs):
                 lines.append(job.result())
                 print(lines[-1], flush=True)
     (results / "results.txt").write_text("\n".join(sorted(lines)) + "\n", encoding="utf-8")
+    print(emulator_stats.send(RESULTS), flush=True)
     print(f"Results: {results.relative_to(ROOT)}/results.txt")
     return 0 if all(line.startswith("PASS") for line in lines) else 1
 
