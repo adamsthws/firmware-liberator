@@ -168,10 +168,129 @@ class DeviceNetRouterTests(unittest.TestCase):
         self.assertIn("-s 198.18.61.48/28 ! -d 198.18.61.0/24 -j DNAT --to-destination 198.18.61.1", calls)
         self.assertIn("--bind 198.18.61.1", calls)
 
+    def test_the_devices_own_network_is_bridged_into_the_tunnel_with_no_address(self):
+        done, calls = self.commands()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("ip link add own0 type vxlan id 42 group 239.255.42.1 dev br0 dstport 4789", calls)
+        self.assertIn("ip link set tap1 master br1", calls)
+        self.assertIn("ip link set own0 master br1", calls)
+        self.assertNotIn("dev br1", calls.replace("master br1", ""))
+        self.assertIn("--own-tap tap1", calls)
+
     def test_a_network_not_a_24_is_refused(self):
         done, calls = self.commands("10.0.0.5/16")
         self.assertNotEqual(done.returncode, 0)
         self.assertNotIn("br0", calls)
+
+
+@unittest.skipIf(shutil.which("bash") is None, "no bash")
+class ComputerWifiTests(unittest.TestCase):
+    """The computer's Wi-Fi stand-ins (computer/bin/): the networks on the air
+    as device.py writes them, and joining the device's own over the tunnel."""
+
+    BIN = ROOT / "tools" / "beken" / "emulator" / "computer" / "bin"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        self.air = self.tmp / "air"
+        self.air.mkdir()
+        (self.air / "home").write_text("HomeNet\n", encoding="utf-8")
+        (self.air / "station").write_text("02:00:00:00:00:02\n", encoding="utf-8")
+        self.calls = self.tmp / "calls"
+        record = '#!/bin/sh\necho "$(basename "$0") $*" >> %s\n' % self.calls
+        fakes = {"ip": record + "[ \"$*\" = '-4 route show default' ] && echo 'default via 198.18.61.254 dev eth0'\n"
+                       "exit 0\n",
+                 "iptables": record + "case \"$*\" in -D*) exit 1;; esac\n",
+                 # udhcpc's lease, as its script is given it.
+                 "busybox": record + 'for script; do :; done\n'
+                            'interface=own0 ip=192.168.4.2 mask=24 router=192.168.4.1 sh "$script" bound\n'}
+        for name, text in fakes.items():
+            (self.tmp / name).write_text(text, encoding="utf-8")
+            (self.tmp / name).chmod(0o755)
+        self.joins = self.tmp / "joins"
+        self.joins.write_text("", encoding="utf-8")
+        self.env = {**os.environ, "PATH": f"{self.tmp}:{os.environ['PATH']}",
+                    "AUTOFLASH_EMULATOR_AIR": str(self.air), "AUTOFLASH_WIFI_RUN": str(self.tmp / "run"),
+                    "AUTOFLASH_EMULATOR_JOINS": str(self.joins)}
+
+    def run_bin(self, *args):
+        return subprocess.run(["bash", str(self.BIN / args[0]), *args[1:]], capture_output=True, text=True,
+                              timeout=30, env=self.env)
+
+    def visible(self):
+        return self.run_bin("nmcli", "-t", "-f", "SSID", "device", "wifi", "list").stdout.split()
+
+    def test_the_scan_lists_both_networks_and_one_just_gone_for_a_minute(self):
+        (self.air / "network").write_text("esphome-abcdef\n", encoding="utf-8")
+        self.assertEqual(sorted(self.visible()), ["HomeNet", "esphome-abcdef"])
+        (self.air / "network").unlink()
+        self.assertIn("esphome-abcdef", self.visible(), "a scan remembers it, as a real one does")
+        (self.tmp / "run" / "scan-cache").write_text("0\n", encoding="utf-8")
+        self.assertEqual(self.visible(), ["HomeNet"])
+        self.assertNotEqual(self.run_bin("nmcli", "connection", "show").returncode, 0)
+
+    def test_only_the_network_on_the_air_is_joined(self):
+        done = self.run_bin("wifi", "join", "esphome-abcdef")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("No network 'esphome-abcdef' is on the air", done.stderr)
+        self.assertFalse(self.calls.exists(), "nothing changed")
+
+    def test_joined_through_the_tunnel_off_the_home_network_then_home_again(self):
+        (self.air / "network").write_text("esphome-abcdef\n", encoding="utf-8")
+        done = self.run_bin("wifi", "join")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("Joined esphome-abcdef; the device is at 192.168.4.1.", done.stdout)
+        self.assertRegex(self.joins.read_text(encoding="utf-8"), r"^join \d", "the station told to join afresh")
+        calls = self.calls.read_text(encoding="utf-8")
+        self.assertIn("ip link add own0 type vxlan id 42 group 239.255.42.1 dev eth0 dstport 4789", calls)
+        self.assertIn("ip link set own0 address 02:00:00:00:00:02", calls)
+        self.assertIn(f"iptables -I OUTPUT 1 -o eth0 -m owner --uid-owner {os.getuid()} -j DROP", calls)
+        self.assertIn("iptables -I OUTPUT 1 -o eth0 -p udp --dport 4789 -j ACCEPT", calls)
+        self.assertIn("ip address add 192.168.4.2/24 dev own0", calls)
+        self.assertIn("ip route replace default via 192.168.4.1 dev own0", calls)
+        self.assertIn("Joined:   esphome-abcdef", self.run_bin("wifi").stdout)
+        self.calls.unlink()
+        done = self.run_bin("wifi", "home")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        calls = self.calls.read_text(encoding="utf-8")
+        self.assertIn("ip link del own0", calls)
+        self.assertRegex(self.joins.read_text(encoding="utf-8"), r"^home \d", "the station told to leave")
+        self.assertIn(f"iptables -D OUTPUT -o eth0 -m owner --uid-owner {os.getuid()} -j DROP", calls)
+        self.assertIn("ip route replace default via 198.18.61.254 dev eth0", calls)
+        self.assertIn("Joined:   the home network", self.run_bin("wifi").stdout)
+
+
+@unittest.skipIf(shutil.which("bash") is None, "no bash")
+class ComputerHandOverTests(unittest.TestCase):
+    """computer.sh, started as root, runs everything as your user with the
+    right to move its own links and no more (setpriv's ambient capabilities)."""
+
+    COMPUTER = ROOT / "tools" / "beken" / "emulator" / "computer.sh"
+
+    def run_computer(self, **env):
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = Path(tmp, "calls")
+            for name, text in {"id": "#!/bin/sh\necho 0\n", "getent": "#!/bin/sh\necho 'you:x:1000:1000::/home/you:/bin/sh'\n",
+                               "setpriv": f'#!/bin/sh\necho "$*" >> {calls}\n'}.items():
+                Path(tmp, name).write_text(text, encoding="utf-8")
+                Path(tmp, name).chmod(0o755)
+            done = subprocess.run(["bash", str(self.COMPUTER), "tools/autoflash/cli.py", "run"], capture_output=True,
+                                  text=True, timeout=30, env={**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}", **env})
+            return done, calls.read_text(encoding="utf-8") if calls.exists() else ""
+
+    def test_root_hands_over_to_your_user_with_its_links_rights(self):
+        done, calls = self.run_computer(HOST_UID="1000", HOST_GID="1000")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(calls, "--reuid=1000 --regid=1000 --clear-groups --inh-caps +net_admin,+net_raw "
+                                "--ambient-caps +net_admin,+net_raw env HOME=/home/you "
+                                f"{self.COMPUTER} tools/autoflash/cli.py run\n")
+
+    def test_without_your_group_it_does_not_start(self):
+        done, calls = self.run_computer(HOST_UID="1000")
+        self.assertNotEqual(done.returncode, 0)
+        self.assertEqual(calls, "")
 
 
 @unittest.skipIf(shutil.which("bash") is None, "no bash")
@@ -243,7 +362,19 @@ class OptionTests(unittest.TestCase):
             done = subprocess.run(["bash", str(Path(tmp, SCRIPT.relative_to(ROOT))), *args], capture_output=True,
                                   text=True, timeout=60, env={**os.environ, "PATH": f"{tmp}/bin:{os.environ['PATH']}"})
             self.left = sorted(str(path.relative_to(tmp)) for path in Path(tmp, "captures").rglob("*"))
+            router = Path(tmp, "captures/emulation/beken/state/router")
+            self.router = router.read_text(encoding="utf-8") if router.exists() else None
             return done, calls.read_text(encoding="utf-8") if calls.exists() else ""
+
+    def test_the_router_switch_is_the_devices_state_file(self):
+        before = lambda tmp: Path(tmp, "captures/emulation/beken/state").mkdir(parents=True)
+        for args, written in ((("off",), "off\n"), (("on",), "on\n"), (("on", "new-pass-1"), "on new-pass-1\n")):
+            done, calls = self.run_script("router", *args, before=before)
+            self.assertEqual((done.returncode, self.router), (0, written), done.stderr)
+            self.assertEqual(calls, "", "nothing asked of Docker")
+        done, _ = self.run_script("router", "up", before=before)
+        self.assertEqual((done.returncode, self.router), (2, None))
+        self.assertIn("router off, or on [PASSWORD]", done.stderr)
 
     def test_an_instance_is_its_own_device(self):
         done, calls = self.run_script("--instance", "2", "ui")
@@ -353,6 +484,16 @@ class ComputerApiTests(unittest.TestCase):
         asked, computer = self.run_computer(api_running=True)
         self.assertFalse([line for line in asked if line.startswith("run -d")])
         self.assertIn("-e AUTOFLASH_READOUT_URL=http://192.0.2.7:8080/v1/readout", computer)
+
+    def test_the_computer_starts_as_root_with_the_air_the_router_and_its_rights(self):
+        _, computer = self.run_computer()
+        state = "captures/emulation/beken/state"
+        self.assertIn("--user 0:0", computer)
+        self.assertIn("--cap-add NET_ADMIN", computer)
+        self.assertRegex(computer, rf"-v \S+/{state}/joins:/device/joins")
+        self.assertIn(f"-e HOST_UID={os.getuid()} -e HOST_GID={os.getgid()}", computer)
+        self.assertRegex(computer, rf"-v \S+/{state}/air:/device/air:ro")
+        self.assertRegex(computer, rf"-v \S+/{state}/router:/device/router -e AUTOFLASH_EMULATOR_ROUTER=/device/router")
 
     def test_no_api_keeps_its_readouts_unsent(self):
         asked, computer = self.run_computer("--no-api")

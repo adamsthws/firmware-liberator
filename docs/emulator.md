@@ -653,6 +653,7 @@ tools/beken/emulator/beken-emu.sh test -k "Sonoff 4MB"    # upstream's self-test
 tools/beken/emulator/beken-emu.sh device                     # the S61s dump as a device, on a home Wi-Fi of its own
 tools/beken/emulator/beken-emu.sh computer tools/autoflash/cli.py run   # the tool, on that Wi-Fi
 tools/beken/emulator/beken-emu.sh power cycle              # the device switched off and on
+tools/beken/emulator/beken-emu.sh router on NEW-PASSWORD    # the home Wi-Fi's password changed
 tools/beken/emulator/beken-emu.sh --fresh device            # the device as new, on Sonoff's firmware again
 tools/beken/emulator/beken-emu.sh ui                       # OpenBeken's page, at http://127.0.0.1:8200/
 tools/beken/emulator/beken-emu.sh --rebuild device           # rebuild the image first
@@ -694,6 +695,19 @@ A device that does not come back is switched off and on with
 `beken-emu.sh power cycle`, as the tool then asks; an attended run offers to do
 it itself, as the device's power switch is passed to the computer
 (`AUTOFLASH_EMULATOR_POWER`).
+
+**Your Wi-Fi, and the device's own network.** `beken-emu.sh router off`
+switches the home Wi-Fi's access point off, and `router on` back on;
+`router on PASSWORD` gives it a new password, as when you change your
+router's, so a device with the old details can no longer join. A device on
+ESPHome that cannot join raises a network of its own, and the computer sees
+and joins it as from your desktop's Wi-Fi menu: in `beken-emu.sh computer`'s
+shell, `wifi` says what it can see, `wifi join` joins the device's network,
+and `wifi home` goes back - which, unlike a real computer, it does not do by
+itself when that network goes
+([how](../tools/beken/emulator/README.md#the-devices-own-network)). An
+attended run can do each as the run asks (`"router"` and `"wifi"` answers,
+in `tools/espressif/emulator/attended_suite.py`).
 
 **The device's web page goes through a proxy**: `beken-emu.sh ui` serves
 OpenBeken's or ESPHome's, telling which by the name the device gave its router.
