@@ -47,8 +47,8 @@
   // goes within the hour of its day being up.
   "triggers": { "crons": ["17 3 * * *", "47 * * * *"] },
   // The API's database (database.js): made, and brought up to date from
-  // migrations/, by tools/repo/cloudflare_settings.py apply, which says the
-  // id to put here once it has made it.
+  // migrations/, by tools/repo/cloudflare_settings.py apply, which writes its
+  // id here once it has made it, and commits it.
   "d1_databases": [
     { "binding": "DB", "database_name": "firmware-liberator-api", "migrations_dir": "migrations",
       "database_id": "4c2b6c15-fdaf-4457-aad2-5db90250be14" }

@@ -132,7 +132,13 @@ that can only read cannot, if it leaks, change the DNS or a bucket.
 2. Run `python3 tools/repo/cloudflare_settings.py` to see what differs, and
    `... apply` to set it, in a terminal. Each asks for the settings-apply
    token and says how to ready it: a short TTL and a roll in the dashboard,
-   so each value serves one run. `apply` says what is left to do by hand.
+   so each value serves one run. `apply` says what is left to do by hand,
+   and writes the values Cloudflare gives that the repository holds - the
+   database's id, the Access applications' audience tags, the Web Analytics
+   site token - into their files, the rest of each as it was, and commits
+   them as it ends, so none is left uncommitted: only those files, and only
+   one that had no changes before, as another session may be editing it - one
+   that had is written and left for you to commit with its changes.
 3. Push.
 
 The cloudflare-settings workflow then checks the settings daily, and on each
@@ -164,8 +170,9 @@ that is left to you. Two are always yours:
    new secret once, to make the sign-in, and keeps neither.
 
 The one address let in is `ACCESS_ADMIN_EMAIL` in `tools/repo/.env.infra`, or else the
-one the domain's mail is forwarded to. `apply` then says the values to put in
-`admin/wrangler.jsonc`; until they are there the Worker lets no one in. CI
+one the domain's mail is forwarded to. `apply` then writes the team, the
+application's audience tag and the account into `admin/wrangler.jsonc`, and
+commits them; until they are deployed the Worker lets no one in. CI
 does not check Access, and each deploy checks only that the view turns away a
 request that is not signed in.
 
@@ -178,8 +185,8 @@ the token and no one else. It writes the token's id and secret to
 once, sets it as the repository's secrets `EMULATOR_STATS_CLIENT_ID` and
 `EMULATOR_STATS_CLIENT_SECRET` (gh, signed in) for the final-firmware check on
 `main`, and copies that file over ssh to each machine named in
-`tools/repo/.env.infra` as `EMULATOR_STATS_HOSTS`. It then says the application's audience tag to put in
-`admin/wrangler.jsonc` as `ACCESS_UPLOAD_AUD`. Should the secret be seen,
+`tools/repo/.env.infra` as `EMULATOR_STATS_HOSTS`. It then writes the
+application's audience tag into `admin/wrangler.jsonc` as `ACCESS_UPLOAD_AUD`. Should the secret be seen,
 `python3 tools/repo/cloudflare_settings.py rotate emulator-stats` gives the
 token a new one, which stops the old at once, and writes and copies it the
 same way. A machine added later gets it with `python3
@@ -196,8 +203,9 @@ one is first uploaded from your computer:
 2. Check the name is free (dashboard, Workers & Pages): an upload under a
    taken name replaces that Worker.
 3. Run `apply` to make what the Worker binds to, as the upload fails on a
-   binding to something that is not there. For the database it says the id
-   to put in the Worker's `wrangler.jsonc`: commit that before the upload.
+   binding to something that is not there. For the database it writes the id
+   into each Worker's `wrangler.jsonc` and `tools/repo/leak-scan-allow`, and
+   commits them, before the upload.
 4. Upload it from `website/`: `npx wrangler deploy --config <its
    wrangler.jsonc>`. Or, to give the deploy token the Worker before it is
    ready, upload a placeholder under its name with the Workers API: a script

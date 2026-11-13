@@ -49,6 +49,7 @@ import json
 import os
 import secrets
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -983,6 +984,110 @@ def jsonc(path: Path) -> Any:
     return json.loads("\n".join(line for line in lines if not line.lstrip().startswith("//")))
 
 
+# The values of the project's own that live in its files and that Cloudflare
+# gives - the database's id, the Access applications' audience tags, the team,
+# the account, Web Analytics' site token - none of them a secret (each is
+# committed, and no use without a token for the account): `apply` writes each
+# into its file itself, the rest of the file as it was, and commits them as
+# the run ends (commit_written), so none is left uncommitted - but only a file
+# that had no changes before it was written, as another session may be
+# editing it in the same checkout: one that had is written and left to you.
+# The files written this run, as they are said: what was written in each, and
+# whether the file had no changes before.
+WRITTEN: dict[str, dict[str, Any]] = {}
+LEAK_ALLOW = ROOT / "tools" / "repo" / "leak-scan-allow"
+
+
+def unchanged(path: Path) -> bool:
+    """Whether git holds `path` as it is: no change to it, staged or not."""
+    try:
+        done = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain", "--", str(path)],
+                              capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0 and not done.stdout.strip()
+
+
+def writing(path: Path, what: str) -> None:
+    """`path` about to be written with `what`: noted, and whether it had no
+    changes before, the first time it is written this run."""
+    said = str(path.relative_to(ROOT))
+    if said not in WRITTEN:
+        WRITTEN[said] = {"what": [], "clean": unchanged(path)}
+    if what not in WRITTEN[said]["what"]:
+        WRITTEN[said]["what"].append(what)
+
+
+def commit_written() -> list[str]:
+    """The files written this run committed, those that had no changes before
+    alone (`git commit --only`, leaving whatever else is staged), signed and
+    through the hooks as any commit is: a line for each file left to commit
+    by hand, and why."""
+    clean = [said for said, written in WRITTEN.items() if written["clean"]]
+    dirty = [said for said, written in WRITTEN.items() if not written["clean"]]
+    left = []
+    if clean:
+        message = ("Cloudflare settings: the values apply was given, written where they are kept\n\n"
+                   + "".join(f"- {said}: {', '.join(WRITTEN[said]['what'])}\n" for said in clean))
+        try:
+            done = subprocess.run(["git", "-C", str(ROOT), "commit", "-q", "--only", "-F", "-", "--", *clean],
+                                  input=message, capture_output=True, text=True, timeout=300)
+            problem = None if done.returncode == 0 else (done.stderr.strip() or done.stdout.strip()).splitlines()[-1:]
+        except (OSError, subprocess.SubprocessError) as error:
+            problem = [str(error)]
+        if problem is None:
+            print(f"  Committed: {', '.join(clean)} - the website workflow deploys them once pushed")
+        else:
+            left.append(f"Written, not committed ({' '.join(problem) or 'git refused'}): {', '.join(clean)} - "
+                        "commit them")
+    if dirty:
+        left.append(f"Written, not committed, as each had changes already: {', '.join(dirty)} - commit the "
+                    "values with them")
+    WRITTEN.clear()
+    return left
+
+
+def rewrite(path: Path, pattern: str, value: str, what: str) -> None:
+    """The one value `pattern` (a regex whose one group is the value) finds in
+    `path` set to `value` - `what` it is - nothing else of the file changed."""
+    text = path.read_text(encoding="utf-8")
+    found = list(re.finditer(pattern, text))
+    if len(found) != 1:
+        raise SettingsError(f"{path.relative_to(ROOT)} should hold {pattern} once, to write it")
+    start, end = found[0].span(1)
+    if text[start:end] != value:
+        writing(path, what)
+        path.write_text(text[:start] + value + text[end:], encoding="utf-8")
+
+
+def set_admin_var(name: str, value: str) -> None:
+    """One of the admin Worker's vars in its wrangler.jsonc."""
+    rewrite(ADMIN_WRANGLER, rf'"{re.escape(name)}":\s*"([^"]*)"', value, name)
+
+
+def set_database_id(uuid: str) -> None:
+    """The API's database id, in both Workers' wrangler.jsonc and in the leak
+    scan's allow list (it takes any UUID for a device's): the old id there
+    replaced, else the new one added."""
+    old = {bound_database_id(config) for config in (API_WRANGLER, ADMIN_WRANGLER)}
+    for config in (API_WRANGLER, ADMIN_WRANGLER):
+        rewrite(config, r'"database_id":\s*"([^"]*)"', uuid, "the database's id")
+    lines = LEAK_ALLOW.read_text(encoding="utf-8").splitlines()
+    if uuid not in lines:
+        at = next((n for n, line in enumerate(lines) if line in old and line), None)
+        if at is None:
+            lines.append(uuid)
+        else:
+            lines[at] = uuid
+        writing(LEAK_ALLOW, "the database's id")
+        LEAK_ALLOW.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def set_beacon_token(token: str) -> None:
+    """Web Analytics' site token, in the pages' beacon tag."""
+    rewrite(ANALYTICS_PAGE, ANALYTICS_BEACON.pattern, token, "Web Analytics' site token")
+
+
 # Nothing of the project's is there unseen: a zone ruleset in a phase RULESETS
 # does not keep, a Worker route (the Workers answer on custom domains alone), a
 # custom domain no wrangler.jsonc names, or a Worker or bucket by the project's
@@ -1092,8 +1197,7 @@ def database_differences(account: str) -> list[tuple[str, str, Any]]:
         bound = bound_database_id(config)
         if bound != uuid:
             found.append((str(config.relative_to(ROOT)), f"binds the database {bound}, not {uuid}",
-                          f"set its database_id to {uuid}, add that id to tools/repo/leak-scan-allow (the leak "
-                          "scan takes any UUID for a device's), and commit both"))
+                          lambda: set_database_id(uuid) or []))
     query = f"{path}/{uuid}/query"
     applied, files = applied_migrations(query), migration_files()
     if applied != files[:len(applied)]:
@@ -1114,6 +1218,9 @@ def create_database(account: str) -> list[str]:
     api(f"/accounts/{account}/d1/database", "POST", {"name": D1_DATABASE})
     left = []
     for what, how, change in database_differences(account):
+        if callable(change):
+            left += change()
+            continue
         if not isinstance(change, tuple):
             left.append(f"{what}: {how}: {change or 'change it in the dashboard'}")
             continue
@@ -1164,7 +1271,8 @@ def analytics_differences(account: str, zone_id: str) -> list[tuple[str, str, An
     if not sites:
         def create() -> list[str]:
             made = api(path, "POST", {"zone_tag": zone_id, "auto_install": False})
-            return [f"{page}: set the beacon tag's token to {made['site_token']}, and commit it"]
+            set_beacon_token(made["site_token"])
+            return []
         return [("Web Analytics", f"has no site for {ZONE}", create)]
     if len(sites) > 1:
         return [("Web Analytics", f"has {len(sites)} sites for {ZONE}: it should have one", None)]
@@ -1172,8 +1280,7 @@ def analytics_differences(account: str, zone_id: str) -> list[tuple[str, str, An
     site, found = api(f"{path}/{sites[0]['site_tag']}"), []
     if site.get("site_token") != beacon_token():
         found.append((page, f"carries another site's token: Web Analytics' site for {ZONE} is "
-                      f"{site.get('site_token')}", f"set the beacon tag's token to {site.get('site_token')}, "
-                      "and commit it"))
+                      f"{site.get('site_token')}", lambda: set_beacon_token(site["site_token"]) or []))
     if site.get("auto_install"):
         found.append(("Web Analytics' automatic setup", "is on: the pages carry the tag, so it should be off",
                       ("PUT", f"{path}/{site['site_tag']}", {"auto_install": False, "zone_tag": zone_id})))
@@ -1382,8 +1489,9 @@ def access_differences(account: str, to: str | None = None) -> list[tuple[str, s
             new = api(f"/accounts/{account}/access/apps", "POST", admin_app_body(made["id"]))
             api(f"/accounts/{account}/access/apps/{new['id']}/policies", "POST",
                 admin_policy_body(made["id"], email))
-            return [f"Access application {ADMIN_HOST}: made; now set website/admin/wrangler.jsonc's vars "
-                    "to what the next check says, and commit"]
+            for name, value in (("ACCESS_TEAM", team), ("ACCESS_AUD", new.get("aud") or ""), ("ACCOUNT_ID", account)):
+                set_admin_var(name, value)
+            return []
         found.append((f"Access application {ADMIN_HOST}", "does not exist", make))
         return found
     if idp is not None:
@@ -1408,8 +1516,8 @@ def access_differences(account: str, to: str | None = None) -> list[tuple[str, s
     have_vars = admin_vars()
     for name, value in want_vars.items():
         if have_vars.get(name) != value:
-            found.append((f"{ADMIN_WRANGLER.relative_to(ROOT)} {name}", f"is {have_vars.get(name)!r}",
-                          f"set it to {value!r} and commit; the website workflow deploys it"))
+            found.append((f"{ADMIN_WRANGLER.relative_to(ROOT)} {name}", f"is {have_vars.get(name)!r}, not {value!r}",
+                          lambda name=name, value=value: set_admin_var(name, value) or []))
     return found
 
 
@@ -1507,8 +1615,8 @@ def emulator_differences(account: str) -> list[tuple[str, str, Any]]:
                 return [f"{where}: not made, as the service token is still missing"]
             new = api(f"/accounts/{account}/access/apps", "POST", UPLOAD_APP)
             api(f"/accounts/{account}/access/apps/{new['id']}/policies", "POST", upload_policy_body(made["id"]))
-            return [f"{where}: made; now set website/admin/wrangler.jsonc's ACCESS_UPLOAD_AUD to what the next "
-                    "check says, and commit"]
+            set_admin_var("ACCESS_UPLOAD_AUD", new.get("aud") or "")
+            return []
         found.append((where, "does not exist", make_app))
         return found
     off = sorted(key for key, value in UPLOAD_APP.items() if app.get(key) != value)
@@ -1529,8 +1637,8 @@ def emulator_differences(account: str) -> list[tuple[str, str, Any]]:
                           ("PUT", f"{path}/{policies[0]['id']}", policy)))
     have = admin_vars().get("ACCESS_UPLOAD_AUD")
     if have != (app.get("aud") or ""):
-        found.append((f"{ADMIN_WRANGLER.relative_to(ROOT)} ACCESS_UPLOAD_AUD", f"is {have!r}",
-                      f"set it to {app.get('aud')!r} and commit; the website workflow deploys it"))
+        found.append((f"{ADMIN_WRANGLER.relative_to(ROOT)} ACCESS_UPLOAD_AUD", f"is {have!r}, not {app.get('aud')!r}",
+                      lambda: set_admin_var("ACCESS_UPLOAD_AUD", app.get("aud") or "") or []))
     return found
 
 
@@ -1618,8 +1726,8 @@ def main(argv: list[str] | None = None) -> int:
     return run(args)
 
 
-def run(args: list[str]) -> int:
-    """main's work, with the token for `args` in use."""
+def checked(args: list[str]) -> int:
+    """What differs, and with apply each change made: run()'s work."""
     if len(args) == 2 and args[0] == "rotate":
         return rotate(args[1])
     if args == ["email"]:
@@ -1684,6 +1792,20 @@ def run(args: list[str]) -> int:
         print(f"cloudflare_settings: {error}", file=sys.stderr)
         return 1
     return left
+
+
+def run(args: list[str]) -> int:
+    """main's work, with the token for `args` in use: then whatever it wrote
+    into the repository's files committed (commit_written), however it ended."""
+    left: list[str] = []
+    try:
+        code = checked(args)
+    finally:
+        if WRITTEN:
+            left = commit_written()
+            for line in left:
+                print(f"  {line}")
+    return 1 if left else code
 
 
 if __name__ == "__main__":
