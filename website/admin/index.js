@@ -92,7 +92,8 @@ async function setting(request, env) {
 
 // Readouts alike, PER_KEY or more of a key and stage, waiting for review only
 // because they came from fewer than MIN_NETWORKS networks (api/index.js).
-export const NEARLY = `SELECT key, stage, fingerprint, count(*) AS n, count(DISTINCT network) AS networks,
+export const NEARLY = `SELECT key, stage, fingerprint, max(offered) AS offered, count(*) AS n,
+    count(DISTINCT network) AS networks,
     min(received) AS first, max(received) AS last
   FROM readouts LEFT JOIN readout_networks ON readout_networks.id = readouts.id
   WHERE review = 'pending' GROUP BY key, stage, fingerprint HAVING count(*) >= ${PER_KEY} ORDER BY last DESC`;
@@ -340,7 +341,8 @@ export async function page(env, who, now, fetcher = fetch) {
     `<section class="card" id="nearly"><h2>Nearly agreed</h2><p class="sub">${PER_KEY} or more readouts alike, waiting
       only because they came from fewer than ${MIN_NETWORKS} networks. Approve them to take them as right now, or leave them
       for a readout from another network.</p>`
-      + table([["Key", "key"], ["Stage", "stage"], ["Alike", "n", "number"], ["Networks", "networks", "number"],
+      + table([["Key", "key"], ["Stage", "stage"], ["Offered", (row) => (row.stage === "first" ? row.offered : "")],
+        ["Alike", "n", "number"], ["Networks", "networks", "number"],
         ["Last came", (row) => String(row.last).slice(0, 10)], ["", (row) => `<form class="inline" method="post" action="/approve">`
           + `<input type="hidden" name="key" value="${esc(row.key)}"><input type="hidden" name="stage" value="${esc(row.stage)}">`
           + `<input type="hidden" name="fingerprint" value="${esc(row.fingerprint)}"><button>Approve</button></form>`, "html"]],

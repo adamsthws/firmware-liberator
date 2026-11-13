@@ -186,7 +186,8 @@ test("readouts alike from too few networks are listed, and approved from the vie
   bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES ('readouts:pending', NULL, 4, 400)").run();
   const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
   assert.match(html, /Nearly agreed/);
-  assert.match(html, /NEWTHING\|SN-NEW-01\|1\.0\.0<\/td><td>whole<\/td><td class="number">3<\/td><td class="number">2<\/td>/);
+  assert.match(html, /NEWTHING\|SN-NEW-01\|1\.0\.0<\/td><td>whole<\/td><td><\/td><td class="number">3<\/td><td class="number">2<\/td>/,
+    "a whole readout's offer is not what it is agreed on");
   const approve = async (fields, headers = { Origin: admin.ORIGIN, "Sec-Fetch-Site": "same-origin" }) =>
     admin.handle(new Request("https://admin.firmwareliberator.com/approve", { method: "POST",
       body: new URLSearchParams(fields), headers: { "Cf-Access-Jwt-Assertion": await token(), ...headers } }),

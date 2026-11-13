@@ -43,8 +43,8 @@ project a short, anonymous report of how it went, without the readout itself:
 The tool first asks eWeLink what the device runs and which firmware it would
 be offered, then asks the website whether a readout would add anything. The
 website keeps three readouts of each model and firmware version, each from a
-different person, and now and then one more in full to check those were
-right. So a device like three already sent in is mostly not needed, nor a
+different person - three more each time eWeLink offers it a new release - and
+now and then one more in full to check those were right. So a device like three already sent in is mostly not needed, nor a
 second one from you, however many of that device you have. The tool stops
 there.
 
