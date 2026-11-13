@@ -545,7 +545,7 @@ def step_berry_tasmota(ctx: Context) -> dict[str, Any]:
     if address == setup_network.SETUP_HOST:
         if not ctx.state.input("tasmota_wifi_preset"):
             give_tasmota_the_wifi(ctx, address)  # its name, and the Wi-Fi if proven
-        upload_tasmota(image)
+        upload_tasmota(ctx, image)
         if ctx.state.input("tasmota_wifi_preset"):
             # An earlier try, cut off, had the bridge save Tasmota's settings
             # with your Wi-Fi: Tasmota joins it by itself, with no setup network
@@ -558,7 +558,7 @@ def step_berry_tasmota(ctx: Context) -> dict[str, Any]:
             return finish_tasmota_setup(ctx, route="bridge network", wait=240.0)
         return finish_tasmota_setup(ctx, route="bridge network")
     preset = give_tasmota_the_wifi(ctx, address)
-    upload_tasmota(image, host=address)
+    upload_tasmota(ctx, image, host=address)
     if preset:
         found = tasmota_on_home_network(ctx)
         if found:
@@ -854,11 +854,12 @@ def tasmota_at_home(ctx: Context) -> str | None:
     return address
 
 
-def upload_tasmota(image: Path, host: str = setup_network.SETUP_HOST) -> None:
-    output.say(f"    Sending Tasmota ({image.stat().st_size:,} bytes) - about a minute...")
+def upload_tasmota(ctx: Context, image: Path, host: str = setup_network.SETUP_HOST) -> None:
+    payload = images.as_sent(ctx, "D1", image.read_bytes())
+    output.say(f"    Sending Tasmota ({len(payload):,} bytes) - about a minute...")
     started = time.monotonic()
     try:
-        setup_network.upload_to_bridge(image, host=host)
+        setup_network.upload_to_bridge(payload, host=host)
     except setup_network.SetupError as exc:
         raise Abort(f"{exc}. The device still has the installer; run this again") from exc
     output.say(f"    Upload verified in {time.monotonic() - started:.0f}s; the device is restarting into Tasmota.")
