@@ -940,9 +940,13 @@ the device off (`"power": "off"`), as if unplugged part way, or signal the
 run (`"signal": "TERM"`, or `"HUP"` for its window closed) as it waits at a
 question; a scenario can be a readout (`"command": "readout"`), and have the
 API beside the emulator hold enough of the device's product already
-(`"api_enough": true`), so its readout is not needed. Each runs on an
-emulator of its own, `--workers` at once; the S61's run after the S60's, one
-at a time.
+(`"api_enough": true`), so its readout is not needed. A run is made to fail
+as a refused image fails it, for its failed ending to be seen, with the
+run's option `--simulate-bad-image STEP[:N]`: the image step STEP sends,
+spoilt the first N times - an S61's at B2, J2 or O1, refused by its
+bootloader; an S60's at D1, the Berry Tasmota, refused by the installer.
+Each runs on an emulator of its own, `--workers` at once; the S61's run after
+the S60's, one at a time.
 
 A run passes when it ends as the scenario says with every answer used;
 otherwise it is:
