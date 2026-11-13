@@ -5,9 +5,13 @@
 // A file of its own, loaded by the page: the site's policy takes no inline
 // script.
 export const NOTIFY_URL = "https://api.firmwareliberator.com/v1/notify";
-// As website/api/index.js's LIGHT_PROOF_BITS and FORMAT.
+// As website/api/index.js's LIGHT_PROOF_BITS, LIGHT_PROOF_AGE and FORMAT.
 export const LIGHT_PROOF_BITS = 20;
+export const LIGHT_PROOF_AGE = 60;
 export const FORMAT = 1;
+// Tries between pauses for the page to draw: a few hundredths of a second on
+// a slow phone, so it never looks stuck.
+export const TRIES_AT_ONCE = 20000;
 
 // SHA-256's round constants and starting state (FIPS 180-4).
 const K = new Uint32Array([
@@ -66,8 +70,9 @@ function compress(state, block, out, at = 0) {
 // The work for `subject`: "<time>:<nonce>" such that the SHA-256 of
 // "<time>:<subject>:<nonce>" starts with `bits` (at most 32) zero bits, as
 // proof-of-work.js's proven() checks it. The first 64 bytes never change, so
-// they are hashed once, and each try hashes one block more.
-export function solve(subject, bits, time) {
+// they are hashed once, and each try hashes one block more. Given `tries`,
+// it stops after that many from `from`, and gives null if none was it.
+export function solve(subject, bits, time, { from = 0, tries = Infinity } = {}) {
   const prefix = new TextEncoder().encode(`${time}:${subject}:`);
   if (prefix.length < 64 || prefix.length > 96 || bits > 32) {
     throw new RangeError("a subject this page never sends");
@@ -76,7 +81,7 @@ export function solve(subject, bits, time) {
   const rest = prefix.subarray(64);
   const block = new Uint8Array(64);
   const out = new Uint32Array(8);
-  for (let nonce = 0; ; nonce += 1) {
+  for (let nonce = from; nonce < from + tries; nonce += 1) {
     const digits = String(nonce);
     block.fill(0);
     block.set(rest);
@@ -91,6 +96,25 @@ export function solve(subject, bits, time) {
       return `${time}:${nonce}`;
     }
   }
+  return null;
+}
+
+// solve(), TRIES_AT_ONCE at a time, letting the page draw between: on an old
+// phone the work can take many seconds. Begun again with a later time should
+// it near LIGHT_PROOF_AGE, after which the Worker would turn it away.
+const drawn = () => new Promise((go) => setTimeout(go));
+
+export async function work(subject, bits, { now = () => Date.now(), pause = drawn } = {}) {
+  let time = Math.floor(now() / 1000);
+  for (let from = 0; ; from += TRIES_AT_ONCE) {
+    if (now() / 1000 - time > LIGHT_PROOF_AGE / 2) {
+      time = Math.floor(now() / 1000);
+      from = 0;
+    }
+    const proof = solve(subject, bits, time, { from, tries: TRIES_AT_ONCE });
+    if (proof) return proof;
+    await pause();
+  }
 }
 
 const hex = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -98,11 +122,11 @@ const hex = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padS
 // Sends `email` to be emailed as more devices are supported: what to show,
 // and whether it was taken. A random field of its own, as the tool's, so two
 // sign-ups alike in one second carry different work.
-export async function signUp(email, { send = fetch, now = Date.now() } = {}) {
+export async function signUp(email, { send = fetch, now = () => Date.now(), pause } = {}) {
   const nonce = hex(crypto.getRandomValues(new Uint8Array(8)));
   const body = JSON.stringify({ format: FORMAT, email: email.trim(), devices: [], nonce });
   const subject = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)));
-  const proof = solve(subject, LIGHT_PROOF_BITS, Math.floor(now / 1000));
+  const proof = await work(subject, LIGHT_PROOF_BITS, { now, pause });
   let response;
   try {
     response = await send(NOTIFY_URL, { method: "POST", body,
@@ -133,10 +157,10 @@ if (form) {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     button.disabled = true;
-    said.textContent = "Sending...";
-    // Let the line show before the work, which holds the page a moment.
-    await new Promise((shown) => setTimeout(shown, 50));
+    form.classList.add("working");
+    said.textContent = "Working… this can take a few seconds on an older device.";
     const answer = await signUp(form.elements.namedItem("email").value);
+    form.classList.remove("working");
     said.textContent = answer.said;
     button.disabled = answer.taken;
   });

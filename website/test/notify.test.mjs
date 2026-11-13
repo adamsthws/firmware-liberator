@@ -9,7 +9,8 @@ import worker, * as api from "../api/index.js";
 import { d1 } from "../api/local-d1.mjs";
 import { proven } from "../api/proof-of-work.js";
 import { EXTRA_PAGES } from "../src/site.mjs";
-import { FORMAT, LIGHT_PROOF_BITS, NOTIFY_URL, signUp, solve } from "../public/assets/notify.mjs";
+import { FORMAT, LIGHT_PROOF_AGE, LIGHT_PROOF_BITS, NOTIFY_URL, TRIES_AT_ONCE, signUp, solve, work }
+  from "../public/assets/notify.mjs";
 
 const source = readFileSync(new URL("../src/pages/notify.astro", import.meta.url), "utf8");
 const openapi = JSON.parse(readFileSync(new URL("../api/openapi.json", import.meta.url), "utf8"));
@@ -25,6 +26,7 @@ test("it asks /v1/notify, as the API describes it, with the Worker's own format 
   assert.equal(NOTIFY_URL, `${openapi.servers[0].url}/v1/notify`);
   assert.ok(openapi.paths["/v1/notify"].post && openapi.paths["/v1/notify"].options);
   assert.equal(LIGHT_PROOF_BITS, api.LIGHT_PROOF_BITS);
+  assert.equal(LIGHT_PROOF_AGE, api.LIGHT_PROOF_AGE);
   assert.equal(FORMAT, api.FORMAT);
 });
 
@@ -40,6 +42,35 @@ test("its work is what the Worker checks", async () => {
     }
   }
   assert.throws(() => solve("short", 12, time), RangeError);
+});
+
+test("solve() stops after the tries it is given", () => {
+  const subject = createHash("sha256").update("body").digest("hex");
+  const proof = solve(subject, 12, 1794000000);
+  const nonce = Number(proof.split(":")[1]);
+  assert.equal(solve(subject, 12, 1794000000, { tries: nonce }), null);
+  assert.equal(solve(subject, 12, 1794000000, { from: nonce, tries: 1 }), proof);
+});
+
+test("the work lets the page draw between tries, and takes a new time before the Worker would refuse it", async () => {
+  const subject = createHash("sha256").update("body").digest("hex");
+  let clock = 1794000000 * 1000;
+  let pauses = 0;
+  // Each pause a slow phone's: the first time grows too old long before 2^20 tries.
+  const proof = await work(subject, 20, { now: () => clock, pause: async () => { pauses += 1; clock += 5000; } });
+  const [time] = proof.split(":").map(Number);
+  assert.ok(pauses > 0);
+  assert.ok(time > 1794000000, "begun again later");
+  assert.ok(clock / 1000 - time <= LIGHT_PROOF_AGE / 2 + 5, "young enough for the Worker");
+  assert.ok(await proven(proof, subject, clock / 1000, 20, LIGHT_PROOF_AGE));
+  assert.ok(TRIES_AT_ONCE < 2 ** 20 / 10, "pauses many times in a sign-up's usual work");
+});
+
+test("the page shows that it is working", () => {
+  const script = readFileSync(new URL("../public/assets/notify.mjs", import.meta.url), "utf8");
+  assert.match(script, /classList\.add\("working"\)/);
+  assert.match(script, /Working…/);
+  assert.match(source, /\.working #said::before/);
 });
 
 function mailer() {

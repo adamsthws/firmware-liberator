@@ -31,4 +31,10 @@ const DESCRIPTION = "Get an email when more Sonoff devices can be converted to T
                   background: var(--bg); color: var(--fg); }
   input { width: 100%; max-width: 360px; box-sizing: border-box; }
   button { cursor: pointer; }
+  /* While the page's script works (notify.mjs), a turning ring beside what it says. */
+  .working #said::before { content: ""; display: inline-block; width: 0.8em; height: 0.8em; margin-right: 0.5em;
+                           vertical-align: -0.1em; border: 2px solid var(--line); border-top-color: var(--fg);
+                           border-radius: 50%; animation: turn 0.8s linear infinite; }
+  @keyframes turn { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .working #said::before { animation-duration: 3s; } }
 </style>
