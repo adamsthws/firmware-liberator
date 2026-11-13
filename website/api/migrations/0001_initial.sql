@@ -455,3 +455,15 @@ CREATE TABLE IF NOT EXISTS readout_reports (
 CREATE INDEX IF NOT EXISTS readout_reports_day ON readout_reports (day);
 CREATE INDEX IF NOT EXISTS readout_reports_device_day ON readout_reports (device_hash, day)
   WHERE device_hash IS NOT NULL;
+
+-- The lists of hosts' and VPNs' networks that count toward no agreement
+-- (networks.js), as the nightly cron last took each, by name: `asns`, a JSON
+-- list of numbers ([] while none was taken); `taken`, the day it last was (or
+-- first tried, while none was); `problem`, why the last try was not taken,
+-- null when it was.
+CREATE TABLE IF NOT EXISTS network_lists (
+  name TEXT PRIMARY KEY,
+  asns TEXT NOT NULL,
+  taken TEXT NOT NULL,
+  problem TEXT
+) WITHOUT ROWID;

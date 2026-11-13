@@ -118,11 +118,10 @@ export const STAGES = ["first", "whole"];
 // different sender: three, so one made up stands out against the two that
 // agree, and none is taken as right until that many do (readouts table).
 export const PER_KEY = 3;
-// And from three networks (Cloudflare's ASN for the request, a big cloud's
-// counting as none: sender.js), so that no one, nor two, rented servers'
-// networks, however many address blocks they have, are enough for readouts
-// to agree. A key's places past PER_KEY, up to
-// MAX_PLACES, go only to a readout from a network none of those held came
+// And from three networks (Cloudflare's ASN for the request, a host's or a
+// VPN's counting as none: networks.js), so that no one, nor two, rented
+// servers' networks, however many address blocks they have, are enough for
+// readouts to agree. A key's places past PER_KEY, up to MAX_PLACES, go only to a readout from a network none of those held came
 // from, until some agree: three made up on one network cannot keep out the
 // owners who would outvote them, and wait for review until they are deleted
 // (pending.js). Three alike from fewer networks wait for one more, or for
@@ -141,7 +140,8 @@ import { read, release, reserve } from "./counters.js";
 import { ready } from "./database.js";
 import { PENDING, SIGNUP_DAYS } from "./pending.js";
 import { SUPPRESSED, sendMail } from "./mail.js";
-import { networkAsn, senderAddress } from "./sender.js";
+import { countedNetwork, refreshNetworks } from "./networks.js";
+import { senderAddress } from "./sender.js";
 import { bodySubject, hex, proven, sha256, work } from "./proof-of-work.js";
 import { nightly } from "./nightly.js";
 import { countWanted, REPORTS_DAILY, reports } from "./reports.js";
@@ -169,8 +169,9 @@ export default {
     named.headers.set("API-Tree", env.API_TREE);
     return named;
   },
-  // The nightly job (nightly.js) then the reminders (remind), or, at the
-  // hourly cron, the reminders alone: at the times wrangler.jsonc's crons give.
+  // The lists of hosts' and VPNs' networks fetched (networks.js), the nightly
+  // job (nightly.js), then the reminders (remind), or, at the hourly cron, the
+  // reminders alone: at the times wrangler.jsonc's crons give.
   async scheduled(controller, env, context) {
     // The limits the maintainer is told were reached (alerts.js).
     const limits = { DAILY_COUNT, DAILY_BYTES, TOTAL_BYTES, NOTIFY_DAILY, REPORTS_DAILY, from: NOTIFY_FROM };
@@ -179,7 +180,8 @@ export default {
       context.waitUntil(remind(env, now).then((reminded) => ({ reminded })));
       return;
     }
-    context.waitUntil(nightly(env, now, limits).then(async (done) => ({ ...done, reminded: await remind(env, now) })));
+    context.waitUntil(refreshNetworks(env, now).then(async (networks) =>
+      ({ networks, ...(await nightly(env, now, limits)), reminded: await remind(env, now) })));
   },
 };
 
@@ -391,11 +393,11 @@ const addressOf = senderAddress;
 // nothing ties one sender's readouts of different keys together.
 const senderOf = (env, request, key) => keyedHash(env, `${key}|${addressOf(request)}`);
 // The network a readout of `key` came from, as readout_networks names it: a
-// keyed hash of its ASN and the key, or null where it counts as none (sender.js).
-export const networkOf = (env, request, key) => {
-  const asn = networkAsn(request);
+// keyed hash of its ASN and the key, or null where it counts as none (networks.js).
+export async function networkOf(env, request, key) {
+  const asn = await countedNetwork(env, request);
   return asn === null ? null : keyedHash(env, `${key}|network|${asn}`);
-};
+}
 
 // JSON with its keys in order, so the same fields always hash alike.
 const canonical = (value) => Array.isArray(value) ? `[${value.map(canonical).join(",")}]`

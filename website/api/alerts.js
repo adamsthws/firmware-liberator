@@ -7,9 +7,11 @@
 // by tools/repo/cloudflare_settings.py apply from the maintainer's Email
 // Routing destination; with either missing, nothing is sent. Yesterday's
 // emails that failed to send are a line too (mail.js), but for those to an
-// address on the suppression list, which are expected now and then.
+// address on the suppression list, which are expected now and then. And a
+// list of hosts' and VPNs' networks gone untaken a week (networks.js).
 import { read } from "./counters.js";
 import { SUPPRESSED, failedOn, sendMail } from "./mail.js";
+import { LIST_STALE_DAYS } from "./networks.js";
 
 export const STORE_WARN = 0.75;
 
@@ -49,6 +51,17 @@ export async function alertLines(db, today, limits) {
   if ((held[today] ?? 0) >= warn && !((held[yesterday] ?? 0) >= warn)) {
     lines.push(`The store of readouts holds ${megabytes(held[today])} of ${megabytes(limits.TOTAL_BYTES)}, `
       + `past ${Math.round(STORE_WARN * 100)}% (.github/readouts.md says how to make room).`);
+  }
+  // A list of hosts' and VPNs' networks (networks.js) not taken for
+  // LIST_STALE_DAYS, and each LIST_STALE_DAYS after: told weekly, not nightly.
+  const { results: lists } = await db.prepare("SELECT name, taken, problem FROM network_lists WHERE problem IS NOT NULL")
+    .all();
+  for (const list of lists) {
+    const days = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${list.taken}T00:00:00Z`)) / DAY);
+    if (days >= LIST_STALE_DAYS && days % LIST_STALE_DAYS === 0) {
+      lines.push(`The ${list.name} list of networks that count toward no agreement (website/api/networks.js) has `
+        + `not been taken since ${list.taken}: ${list.problem}.`);
+    }
   }
   return lines;
 }
