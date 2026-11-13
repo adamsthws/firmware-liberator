@@ -267,3 +267,22 @@ test("each model's devices month by month: asked to be read out, read out, conve
   assert.match(html, /<figcaption>NEWTHING<\/figcaption>/);
   assert.match(html, /<title>S60TPG, 2026-10: 2 converted<\/title>/);
 });
+
+test("the stages that needed the device's own network, and why, or a power cycle, out of the runs through them", async () => {
+  const bindings = env();
+  const stages = (d4) => ({ A1: { seconds: 12, busy: 0, tries: 1, wait: 0, setup_network: null, power_cycles: 0 },
+    D4: { seconds: 61, busy: 0, tries: 1, wait: 0, power_cycles: 0, setup_network: null, ...d4 } });
+  const run = (id, d4, changes = {}) => bindings.DB.batch(writes(bindings.DB,
+    { ...structuredClone(FIXTURE), id, stages: stages(d4), ...changes }, `device-${id}`, "2026-11-01"));
+  await run("r1", { setup_network: "not given", power_cycles: 2 });
+  await run("r2", { setup_network: "not joined" });
+  await run("r3", {});
+  await run("r4", { setup_network: "not given" }, { tag: "dev" });   // the maintainer's own: left out
+  const { needed } = await admin.gather(bindings, new Date(NOW));
+  const why = (reason) => `why${admin.REASONS.indexOf(reason)}`;
+  assert.deepEqual(needed.map((row) => [row.stage, row.runs, row.setup, row[why("not given")], row[why("not joined")],
+    row.cycled, row.cycles]), [["D4", 3, 2, 1, 1, 1, 2]], "A1 needed neither");
+  const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  assert.match(html, /Setup network and power cycles, by stage/);
+  assert.match(html, /<th class="number">- settings lost<\/th>/);
+});
