@@ -483,6 +483,11 @@ def run_all(chosen: list[str], found: dict[str, tuple[str, dict[str, Any]]], res
     # The S61's on their own, after the S60's: its emulator is slow, and run
     # beside three S60s a readout's device was not found in time.
     for family, at_once in (("espressif", max(1, workers)), ("beken", 1)):
+        planned = [name for name in chosen if found[name][0] == family]
+        if planned:
+            emulator_stats.began(RESULTS, family=family, suite="attended", device=device_of(family, mac).key,
+                                 total=sum(1 for each, _ in found.values() if each == family), planned=len(planned),
+                                 cloud="stub", workers=at_once)
         free: queue.SimpleQueue[int] = queue.SimpleQueue()
         for n in range(first, first + at_once):
             free.put(n)
