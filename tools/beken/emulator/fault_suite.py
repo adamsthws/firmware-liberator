@@ -39,8 +39,8 @@ that each run left one line a stage on its screen, none of a try that
 failed (FAIL-SCREEN if not), and that a device converted to OpenBeken or ESPHome
 runs this checkout's release of it (FAIL-NOT-LATEST if not).
 
-The faults: the device switched off for 1 or 30 s (deviceoff), this computer off
-the device's Wi-Fi for 30 s (outage), the tool killed and run again after 1 or
+The faults: the device switched off for 1 or 30 s (deviceoff), the network
+gone - the router off - for 30 s (outage), the tool killed and run again after 1 or
 180 s (crash), and Ctrl-C (ctrlc); at the steps that write, a power cut and
 another as the tool sends it again (double: in the same run, if it sends its
 command again itself), and the router giving the device
@@ -399,6 +399,10 @@ class Instance:
     def power(self, how: str) -> None:
         self.sh("power", how, timeout=60, check=True)
 
+    def router(self, how: str) -> None:
+        """The home Wi-Fi's router "off" or "on" (beken-emu.sh router)."""
+        self.sh("router", how, timeout=60, check=True)
+
     def tool(self, target: str, log: Path, new: bool = False, more: tuple[str, ...] = ()) -> subprocess.Popen:
         """A run of the tool to `target`, or a readout (target "readout"), on a
         terminal of its own as a person's (tools/repo/unattended_run.py): the
@@ -503,6 +507,8 @@ def inject(instance: Instance, fault: str, arg, notes: dict) -> None:
         if not cut_power(instance, arg):
             not_applied(notes, "the device switched off")
     elif fault == "outage":
+        # The network gone, as the Espressif suite's outage is, the router off:
+        # the device's access point off the air, and this computer off it too.
         address = subprocess.run(["docker", "inspect", "-f",
                                   "{{(index .NetworkSettings.Networks \"%s\").IPAddress}}" % instance.network,
                                   instance.computer], capture_output=True, text=True).stdout.strip()
@@ -510,8 +516,16 @@ def inject(instance: Instance, fault: str, arg, notes: dict) -> None:
         if not address:
             not_applied(notes, "the computer's address on the Wi-Fi")
             return
+        try:
+            instance.router("off")
+        except subprocess.CalledProcessError:
+            not_applied(notes, "the router switched off")
         must(notes, "docker", "network", "disconnect", instance.network, instance.computer)
         time.sleep(arg)
+        try:
+            instance.router("on")
+        except subprocess.CalledProcessError:
+            not_applied(notes, "the router switched on again")
         # A run may end while the computer is off the Wi-Fi: then there is no
         # computer to bring back, and the outage still happened.
         back = subprocess.run(["docker", "network", "connect", "--ip", address, instance.network, instance.computer],

@@ -468,8 +468,10 @@ class FaultAppliedTests(unittest.TestCase):
                 with serial.open("ab") as out:
                     out.write(fault_suite.SWITCHED_OFF + b"; its flash is kept\n")
         self.switched = []
+        self.order = []   # the router switched, and Docker asked, in turn
         return SimpleNamespace(state=Path(tmp), power=power, network="a-network", computer="a-computer",
-                               device="a-device", lease=lambda: "198.18.62.51")
+                               device="a-device", lease=lambda: "198.18.62.51",
+                               router=lambda how: self.order.append(f"router {how}"))
 
     def test_a_device_seen_to_stop_is_a_cut(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -531,6 +533,31 @@ class FaultAppliedTests(unittest.TestCase):
                 mock.patch.object(fault_suite.subprocess, "run", side_effect=answers):
             fault_suite.inject(self.instance(tmp), "outage", 0, notes)
         return notes
+
+    def test_an_outage_is_the_router_off_for_the_device_and_the_computer(self):
+        # As the Espressif suite's: the network gone, not only this computer off it.
+        from unittest import mock
+
+        def docker(command, **_):
+            self.order.append(" ".join(command[1:3]))
+            return SimpleNamespace(returncode=0, stdout="198.18.62.2\n")
+        notes = {}
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fault_suite.time, "sleep"), \
+                mock.patch.object(fault_suite.subprocess, "run", side_effect=docker):
+            fault_suite.inject(self.instance(tmp), "outage", 30, notes)
+        self.assertEqual(self.order, ["inspect -f", "router off", "network disconnect", "router on", "network connect"])
+        self.assertNotIn("not_applied", notes)
+
+    def test_a_router_that_would_not_switch_is_noted(self):
+        from unittest import mock
+        notes = {}
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fault_suite.time, "sleep"), \
+                mock.patch.object(fault_suite.subprocess, "run",
+                                  return_value=SimpleNamespace(returncode=0, stdout="198.18.62.2\n")):
+            instance = self.instance(tmp)
+            instance.router = mock.Mock(side_effect=fault_suite.subprocess.CalledProcessError(1, "router"))
+            fault_suite.inject(instance, "outage", 30, notes)
+        self.assertEqual(notes["not_applied"], ["the router switched off", "the router switched on again"])
 
     def test_an_outage_outlasting_the_run_still_happened(self):
         self.assertNotIn("not_applied", self.outage_ending(computer_running=False))
