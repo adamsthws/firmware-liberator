@@ -23,9 +23,10 @@ CREATE INDEX IF NOT EXISTS counters_day ON counters (day);
 -- in, as a UTC date: never the time, nor anything of the sender. `device_hash`
 -- is the keyed hash of the tool's hash of the device's MAC. `quarantined`: left
 -- out of every figure, set by hand for reports found to be made up. Each other
--- column is the report's field of that name, a nested one's flattened
--- (`os_arch` is os.arch, `flash_mb` chip.flash_mb, `crash_site` stopped.where);
--- a true/false one is 1/0.
+-- column is the report's field of that name, a nested one's flattened: by
+-- its whole path for os, python and chip (`os_arch` is os.arch,
+-- `chip_flash_mb` chip.flash_mb), by its own name for computer and stopped
+-- (`vpn` is computer.vpn, `step` stopped.step); a true/false one is 1/0.
 CREATE TABLE IF NOT EXISTS reports (
   id TEXT PRIMARY KEY,
   day TEXT NOT NULL,
@@ -60,8 +61,8 @@ CREATE TABLE IF NOT EXISTS reports (
   meter TEXT,
   crash_site TEXT,
   chip_revision TEXT,
-  flash_id TEXT,
-  flash_mb INTEGER,
+  chip_flash_id TEXT,
+  chip_flash_mb INTEGER,
   connection TEXT,
   vpn INTEGER,
   networks INTEGER NOT NULL,
