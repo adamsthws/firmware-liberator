@@ -170,7 +170,7 @@ windows. When the tool asks you to act on the device or your Wi-Fi:
 | Switch it off and on | `device restart` (or `device off`, `device on`) |
 | Restart your router, so the device's Wi-Fi goes | `device router off [SECS]`, `device router on` |
 | Power-cycle it quickly, N times | `device cycle N` (7 in a row is Tasmota's settings reset) |
-| Your desktop's Wi-Fi menu | `wifi`, `wifi join NAME`, `wifi home` |
+| Your desktop's Wi-Fi menu | `wifi`, `wifi join [NAME]` (the device's own network without NAME), `wifi home` |
 | Your home Wi-Fi's name and password | `PICSimLabWifi`, empty password |
 | Your computer's password, when sudo asks | `autoflash` |
 | The device's web page | http://localhost:8080 |
