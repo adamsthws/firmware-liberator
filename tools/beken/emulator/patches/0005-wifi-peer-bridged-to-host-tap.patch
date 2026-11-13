@@ -29,7 +29,7 @@ it, not ignored.
  create mode 100644 tests/tapnet.py
 
 diff --git a/src/emulator.py b/src/emulator.py
-index 360bd1d..011f08d 100644
+index 2c4244c..94b7bea 100644
 --- a/src/emulator.py
 +++ b/src/emulator.py
 @@ -1538,7 +1538,7 @@ class BekenEmulator:
