@@ -3,10 +3,15 @@
 
     python3 tools/repo/lint.py staged     the files a commit changes (the pre-commit hook)
     python3 tools/repo/lint.py all        every tracked file (the lint workflow)
+    python3 tools/repo/lint.py compile    every tracked Python file compiled, alone: run
+                                          by the oldest Python the tool supports in CI
     python3 tools/repo/lint.py FILE...    those files
 
 Each linter is handed the files of its kind:
 
+    compile       Python, compiled as Python itself would: what parses yet will
+                  not compile (more than 20 nested blocks, say, before 3.13),
+                  which ruff misses
     ruff          Python (.ruff.toml)
     shellcheck    shell scripts: *.sh, and files starting #!/bin/sh or bash
     actionlint    the workflows (with shellcheck on their scripts)
@@ -143,7 +148,15 @@ def adoption_example(path: Path) -> bool:
         path.name == "esphome.yaml" and path.parts[0] == "devices")
 
 
+# Each file named compiled in memory, nothing written: a SyntaxError the
+# compiler raises after parsing is one no parser-based linter sees.
+COMPILE = ("import sys\nfailed = 0\nfor name in sys.argv[1:]:\n    try:\n"
+           "        compile(open(name, 'rb').read(), name, 'exec')\n"
+           "    except SyntaxError as error:\n        print(f'{name}:{error.lineno}: {error.msg}')\n"
+           "        failed = 1\nsys.exit(failed)")
+
 LINTERS = [
+    Linter("compile", python, lambda files: [sys.executable, "-c", COMPILE, *files], sys.executable),
     Linter("ruff", python, lambda files: ["ruff", "check", "--quiet", "--force-exclude", *files], "ruff"),
     Linter("shellcheck", lambda path: shell(path) and CONTAINER not in path.parents,
            lambda files: ["shellcheck", *files], "shellcheck"),
@@ -178,12 +191,14 @@ def tracked() -> list[str]:
     return git("ls-files", "-z")
 
 
-def run(paths: list[str], strict: bool) -> int:
+def run(paths: list[str], strict: bool, only: str | None = None) -> int:
     tool_dirs = [*TOOL_DIRS, *shared_venv_dirs()]
     env = dict(os.environ, PATH=os.pathsep.join([*map(str, tool_dirs), os.environ.get("PATH", "")]))
     files = [Path(p) for p in paths if (ROOT / p).is_file()]
     failed = []
     for linter in LINTERS:
+        if only and linter.name != only:
+            continue
         mine = [str(p) for p in files if linter.wants(p)]
         if not mine:
             continue
@@ -211,6 +226,10 @@ def main(argv: list[str] | None = None) -> int:
         return run(staged(), strict=False)
     if args == ["all"]:
         return run(tracked(), strict=True)
+    if args == ["compile"]:
+        # What one Python compiles another may not (3.13 lifted the limit of
+        # 20 nested blocks), so CI runs this on the oldest the tool supports.
+        return run(tracked(), strict=True, only="compile")
     if not args or args[0].startswith("-"):
         print(__doc__.strip(), file=sys.stderr)
         return 2
