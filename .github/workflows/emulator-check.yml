@@ -92,6 +92,12 @@ jobs:
         id: python
         with:
           python-version: "3.10"
+      # Every Python file, test or not: compiled by 3.10, whose limits newer
+      # Pythons have lifted (tools/repo/lint.py).
+      - name: Compile
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        run: '"$PYTHON" tools/repo/lint.py compile'
       - name: Unit tests
         env:
           PYTHON: ${{ steps.python.outputs.python-path }}
