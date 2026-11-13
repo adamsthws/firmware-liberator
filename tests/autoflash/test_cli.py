@@ -212,6 +212,9 @@ class AnotherDeviceTests(unittest.TestCase):
             for patch in (
                     mock.patch("sys.argv", ["cli.py", command, "--device-ip", "192.0.2.50", *more]),
                     mock.patch("sys.stdout", io.StringIO()),
+                    # What the sitting draws between its runs left as it found it,
+                    # for the next test in this process (tests/run.py reuses them).
+                    mock.patch.multiple(cli.output._s, after_blank=False, after_stage=False, waited=False),
                     mock.patch.object(hostsys, "password_asker"), mock.patch.object(prompts, "UNATTENDED"),
                     mock.patch.object(installer, "SIMULATED_BACKUP_FAILURES"),
                     mock.patch.object(sonoff_firmware, "SIMULATE_NONE"),

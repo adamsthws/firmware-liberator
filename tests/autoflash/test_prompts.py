@@ -91,6 +91,7 @@ class SecretPromptTests(unittest.TestCase):
         with mock.patch.object(prompts, "UNATTENDED", False), \
              mock.patch.object(prompts, "_read_secret", side_effect=KeyboardInterrupt), \
              mock.patch.object(prompts.output, "after_secret") as shown, \
+             mock.patch.multiple(prompts.output._s, after_blank=False, after_stage=False, waited=False), \
              mock.patch("sys.stdout", io.StringIO()), self.assertRaises(KeyboardInterrupt):
             prompts._ask_secret("Password: ")
         self.assertNotIn("*", shown.call_args.args[0])
