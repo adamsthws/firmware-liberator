@@ -8,6 +8,7 @@
 import { release as giveBack } from "../api/counters.js";
 import { AGREEMENT_SETTING, DAILY_BYTES, DAILY_COUNT, MIN_NETWORKS, NOTIFY_DAILY, PER_KEY, STAGES, TOTAL_BYTES }
   from "../api/index.js";
+import { CLOUD_ASNS } from "../api/networks.js";
 import { PENDING } from "../api/pending.js";
 import { monthsTo, popularity, SERIES } from "../api/popularity.js";
 import { DEVICE_DAILY, ID, REPORTS_DAILY } from "../api/reports.js";
@@ -219,6 +220,7 @@ export async function gather(env, now) {
     signups: (await all("SELECT count(*) AS n FROM confirmations"))[0]?.n ?? 0,
     settings: Object.fromEntries((await all("SELECT name, value FROM settings")).map((row) => [row.name, row.value])),
     nearly: await all(NEARLY),
+    networks: await all("SELECT name, json_array_length(asns) AS asns, taken, problem FROM network_lists ORDER BY name"),
     popularity: await modelTrends(all, now),
     needed: await all(NEEDED, since(NEEDED_DAYS)),
   };
@@ -336,6 +338,12 @@ export async function page(env, who, now, fetcher = fetch) {
           + `<input type="hidden" name="key" value="${esc(row.key)}"><input type="hidden" name="stage" value="${esc(row.stage)}">`
           + `<input type="hidden" name="fingerprint" value="${esc(row.fingerprint)}"><button>Approve</button></form>`, "html"]],
       data.nearly, "None.")
+      + `</section>`,
+    `<section class="card" id="networks"><h2>Networks that count as none</h2><p class="sub">Hosts' and VPNs' networks,
+      which count toward no agreement of readouts or of models' names: ${number(CLOUD_ASNS.size)} kept in the code,
+      and these lists, fetched each night.</p>`
+      + table([["List", "name"], ["Networks", "asns", "number"], ["Taken", "taken"],
+        ["Last try", (row) => row.problem ?? "taken"]], data.networks, "Not fetched yet.")
       + `</section>`,
     `<div class="grid2"><section class="card"><h2>The store of readouts</h2><p class="sub">What it holds each night, against its limit.</p>`
       + meter("Held", ever.bytes, TOTAL_BYTES, `${bytes(ever.bytes)} of ${bytes(TOTAL_BYTES)} · ${number(ever.count)} readouts`)

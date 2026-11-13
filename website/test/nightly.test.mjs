@@ -10,6 +10,12 @@ import * as night from "../api/nightly.js";
 import { writes } from "../api/reports.js";
 import { SMALLEST } from "../api/snapshot.js";
 
+// Nothing here reaches the internet: the nightly cron's fetch of the lists of
+// networks (networks.js) fails, as it may, and is told so.
+globalThis.fetch = async () => {
+  throw new Error("no network in the tests");
+};
+
 const FIXTURE = JSON.parse(readFileSync(new URL("./fixtures/reports.json", import.meta.url), "utf8")).valid[0];
 const NIGHT = new Date("2026-11-10T03:17:00Z");
 
@@ -331,6 +337,8 @@ test("the nightly cron runs the nightly job; the hourly one the reminders alone"
     { waitUntil: (promise) => waited.push(promise) });
   assert.equal(waited.length, 1);
   assert.equal((await waited[0]).ran, true);
+  assert.deepEqual((await waited[0]).networks, { datacenter: "no network in the tests", vpn: "no network in the tests" },
+    "the lists of networks fetched first");
   await worker.scheduled({ cron: "47 * * * *", scheduledTime: NIGHT.getTime() }, env(),
     { waitUntil: (promise) => waited.push(promise) });
   assert.deepEqual(await waited[1], { reminded: 0 }, "no nightly job hourly");

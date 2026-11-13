@@ -2,8 +2,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { alert, alertLines, STORE_WARN } from "../api/alerts.js";
+import { LIST_STALE_DAYS } from "../api/networks.js";
 import worker from "../api/index.js";
 import { d1 } from "../api/local-d1.mjs";
+
+// Nothing here reaches the internet: the nightly cron's fetch of the lists of
+// networks (networks.js) fails, as it may, and is told so.
+globalThis.fetch = async () => {
+  throw new Error("no network in the tests");
+};
 
 const TODAY = "2026-11-10";
 const LIMITS = { DAILY_COUNT: 100, DAILY_BYTES: 1000, TOTAL_BYTES: 10_000, NOTIFY_DAILY: 50, REPORTS_DAILY: 1000,
@@ -98,4 +105,16 @@ test("the nightly job is given the API's own limits", async () => {
   assert.equal(done.alerted.sent, true, "1000 is the real limit of reports a day");
   assert.equal(bindings.sent[0].from, "updates@firmwareliberator.com");
   assert.equal(done.reminded, 0, "and sends the reminders after it");
+});
+
+test("a list of networks not taken is told once a week, never nightly", async () => {
+  const bindings = env();
+  const list = bindings.DB.db.prepare("INSERT INTO network_lists (name, asns, taken, problem) VALUES (?, '[]', ?, ?)");
+  list.run("vpn", "2026-11-03", "HTTP 404");
+  list.run("datacenter", "2026-11-09", "HTTP 404");
+  assert.equal(LIST_STALE_DAYS, 7);
+  assert.deepEqual(await alertLines(bindings.DB, TODAY, LIMITS), ["The vpn list of networks that count toward no "
+    + "agreement (website/api/networks.js) has not been taken since 2026-11-03: HTTP 404."]);
+  assert.deepEqual(await alertLines(bindings.DB, "2026-11-11", LIMITS), [], "not the next night");
+  assert.equal((await alertLines(bindings.DB, "2026-11-17", LIMITS)).length, 1, "but a week on");
 });
