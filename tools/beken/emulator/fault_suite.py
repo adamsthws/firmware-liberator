@@ -101,7 +101,7 @@ from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash import esphome, kinds, openbeken  # noqa: E402
 from tools.autoflash.routes import beken  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
-from tools.repo import cpu_load, fault_verdicts, scenario_times  # noqa: E402
+from tools.repo import cpu_load, emulator_stats, fault_verdicts, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import MemoryWatch  # noqa: E402
 
@@ -130,9 +130,11 @@ ROUTES = {
     "outdated>openbeken": {"U3": 14, "U4": 20},
     "outdated>esphome": {"U1": 7, "U2": 20},
 }
+# The kind of device the suite emulates: an S61, from its public dump.
+DEVICE = kinds.SONOFF_S61
 # The release of each firmware a converted device must end on: this checkout's
 # (FAIL-NOT-LATEST) - after an update from an earlier release's, too.
-LATEST = {firmware: beken.published_version(kinds.SONOFF_S61, firmware) for firmware in ("openbeken", "esphome")}
+LATEST = {firmware: beken.published_version(DEVICE, firmware) for firmware in ("openbeken", "esphome")}
 # The release whose firmware an update's device is on: any before this checkout's.
 EARLIER_RELEASE = "v2.3.0"
 # Where its tree keeps the dumps and the devices its prep saves.
@@ -948,6 +950,7 @@ def batch(ids_file: str | None = None) -> None:
                 except queue.Empty:
                     return
                 cpu_load.wait_for_room(lambda line: print(line, flush=True))
+                started = time.time()
                 try:
                     outcome = run_scenario(instance, sc)
                 except Exception as exc:  # noqa: BLE001 - one scenario's failure is recorded, not the batch's
@@ -957,6 +960,10 @@ def batch(ids_file: str | None = None) -> None:
                 with lock:
                     record(sc, outcome)
                     print(f"{outcome['result']:9} {sc['id']}{starved_label(outcome)}", flush=True)
+                # The device's eWeLink is always the local stub (ACCOUNT).
+                emulator_stats.fault_run(OUT, family=DEVICE.family, device=DEVICE.key, scenario=sc,
+                                         verdict=outcome["result"], tries=outcome.get("runs"),
+                                         seconds=round(time.time() - started), cloud="stub", workers=workers)
         finally:
             instance.stop()   # an emulator never left running
 
@@ -965,6 +972,7 @@ def batch(ids_file: str | None = None) -> None:
         thread.start()
     for thread in threads:
         thread.join()
+    print(emulator_stats.send(OUT), flush=True)
 
 
 def prep() -> None:

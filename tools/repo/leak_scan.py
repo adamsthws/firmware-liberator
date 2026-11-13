@@ -10,8 +10,9 @@
 
 Two kinds of finding:
 
-- **This computer's own**, by value: each value in .env, and in .env.infra
-  (the project's tokens, keys and private addresses); the eWeLink account
+- **This computer's own**, by value: each value in .env, in .env.infra
+  (the project's tokens, keys and private addresses) and in the emulator
+  suites' credentials (tools/repo/emulator_stats.py CREDENTIALS); the eWeLink account
   (captures/settings.json) and each device's record (captures/devices/*/device.json);
   each backed-up device's MAC, in any form, and the Sonoff settings in its backup
   (its eWeLink keys, the Wi-Fi it was set up on); the addresses real runs - not
@@ -136,6 +137,14 @@ def own_values() -> dict[str, str]:
         infra = {}
     for key, value in infra.items():
         add(value, f"a value in .env.infra ({key})")
+    # The emulator suites' service token, kept in this computer's home.
+    from tools.repo import emulator_stats
+    try:
+        emulator = credentials.parse(emulator_stats.CREDENTIALS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        emulator = {}
+    for key, value in emulator.items():
+        add(value, f"a value in the emulator suites' credentials ({key})")
     try:
         add(json.loads((CAPTURES / "settings.json").read_text())["ewelink_email"], "the eWeLink account")
     except (OSError, ValueError, KeyError):

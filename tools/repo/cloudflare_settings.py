@@ -11,6 +11,10 @@
     python3 tools/repo/cloudflare_settings.py rotate NAME
                                                        a new value for the API Worker's
                                                        secret NAME, one made here
+    python3 tools/repo/cloudflare_settings.py rotate emulator-stats
+                                                       a new secret for the emulator
+                                                       suites' service token, written here
+                                                       and copied to their machines
     python3 tools/repo/cloudflare_settings.py email    the domain's mail forwarded: asks
                                                        to whom, and any addresses besides
                                                        FORWARDED
@@ -59,6 +63,7 @@ sys.path.insert(0, str(ROOT))
 ENV_FILE = ROOT / ".env.infra"
 
 from tools.autoflash import credentials  # noqa: E402
+from tools.repo import emulator_stats  # noqa: E402
 
 ZONE = "firmwareliberator.com"
 API = "https://api.cloudflare.com/client/v4"
@@ -254,6 +259,25 @@ WORKER_SECRETS = {API_WORKER: API_SECRETS, ADMIN_WORKER: ADMIN_SECRETS}
 ACCESS_APP = {"name": "FirmwareLiberator admin", "domain": ADMIN_HOST, "type": "self_hosted",
               "session_duration": "24h", "auto_redirect_to_identity": True, "app_launcher_visible": False}
 
+# The emulator suites' service token (tools/repo/emulator_stats.py), with which
+# they send each run's outcome to the admin view, and nothing else: an
+# application of its own covers the suites' paths alone (UPLOAD_APP, more
+# specific than ACCESS_APP, so Access takes it there), and its one policy
+# lets in this token and no one; the view refuses the token everywhere else
+# (website/admin/emulator.js). Made by `apply` (emulator_differences), never
+# to expire - it can do nothing but add runs, and a token that lapsed would
+# stop every machine's figures at once - and given a new secret by `rotate
+# emulator-stats`, should one be seen. Either writes the id and secret to
+# emulator_stats.CREDENTIALS - Access shows a secret only as it makes one -
+# and copies it to each machine emulator_stats.HOSTS names; the old secret
+# stops working at once.
+EMULATOR_TOKEN = "emulator-stats"
+# Named as the API tokens are (TOKEN_PREFIX), though Access lists it apart from them.
+SERVICE_TOKEN_NAME = "firmware-liberator-" + EMULATOR_TOKEN
+SERVICE_TOKEN_DURATION = "forever"
+UPLOAD_APP = {"name": "FirmwareLiberator emulator runs", "domain": emulator_stats.SCOPE_URL.removeprefix("https://"),
+              "type": "self_hosted", "session_duration": "24h", "app_launcher_visible": False}
+
 # The website's visits are counted by Cloudflare Web Analytics, without
 # cookies: a site of the account's, for the zone, whose beacon tag every page
 # carries (website/src/layouts/Page.astro, the site's token in it - public,
@@ -359,6 +383,7 @@ TOKENS: dict[str, dict[str, Any]] = {
             "Access: Identity Providers Write": "access_differences: the admin view's GitHub sign-in",
             "Access: Groups Write": "access_differences: as Access asks of the two above",
             "Access: Apps and Policies Write": "access_differences: the admin view's application and its one policy",
+            "Access: Service Tokens Write": "emulator_differences: the emulator suites' service token, made and rotated",
             # Both: Web Analytics refuses a token with Write alone, as other
             # account settings do not.
             "Account Settings Read": "analytics_differences: the Web Analytics site",
@@ -1226,9 +1251,27 @@ def secret_differences(account: str, worker: str = API_WORKER, to: str | None = 
 
 
 def rotate(name: str) -> int:
-    """`rotate NAME`: a "made" secret replaced by a new value."""
+    """`rotate NAME`: a "made" secret replaced by a new value; or the emulator
+    suites' service token given a new secret (EMULATOR_TOKEN)."""
+    if name == EMULATOR_TOKEN:
+        try:
+            zones = api(f"/zones?name={ZONE}")
+            if not zones:
+                raise SettingsError(f"the token cannot see the zone {ZONE}")
+            token = service_token(zones[0]["account"]["id"])
+            if token is None:
+                print(f"cloudflare_settings: there is no {SERVICE_TOKEN_NAME} yet: apply makes it", file=sys.stderr)
+                return 1
+            left = rotated(zones[0]["account"]["id"], token)
+        except SettingsError as error:
+            print(f"cloudflare_settings: {error}", file=sys.stderr)
+            return 1
+        print(f"  {SERVICE_TOKEN_NAME}: rotated")
+        for line in left:
+            print(f"  {line}")
+        return 1 if left else 0
     if API_SECRETS.get(name) != "made":
-        made = [secret for secret, how in API_SECRETS.items() if how == "made"]
+        made = [secret for secret, how in API_SECRETS.items() if how == "made"] + [EMULATOR_TOKEN]
         print(f"cloudflare_settings: only a secret made here is rotated here: {', '.join(made)}"
               + (f" ({name} is kept, and must never change)" if name in API_SECRETS else ""), file=sys.stderr)
         return 2
@@ -1370,6 +1413,116 @@ def access_differences(account: str, to: str | None = None) -> list[tuple[str, s
     return found
 
 
+def service_token(account: str) -> dict[str, Any] | None:
+    """The emulator suites' service token, as Access lists it, if made."""
+    tokens = api(f"/accounts/{account}/access/service_tokens") or []
+    return next((token for token in tokens if token.get("name") == SERVICE_TOKEN_NAME), None)
+
+
+def keep_credentials(client_id: str, secret: str) -> list[str]:
+    """The service token's id and secret written to emulator_stats.CREDENTIALS
+    and copied to each machine emulator_stats.HOSTS names: a line for each
+    machine that did not take it, [] when all did."""
+    path = emulator_stats.write_credentials(client_id, secret)
+    print(f"  {path}: written")
+    machines = emulator_stats.hosts()
+    if not machines:
+        print("  Copy it to each machine that runs the emulator suites: python3 tools/repo/emulator_stats.py push "
+              f"HOST..., or name them in .env.infra as {emulator_stats.HOSTS} for this to copy it")
+        return []
+    failed = emulator_stats.push(machines)
+    copied = len(machines) - len(failed)
+    print(f"  {path.name}: copied to {copied} of {len(machines)} machines")
+    return [f"{path.name} not copied to {line}: python3 tools/repo/emulator_stats.py push copies it again"
+            for line in failed]
+
+
+def rotated(account: str, token: dict[str, Any]) -> list[str]:
+    """The service token given a new secret, written and copied as
+    keep_credentials() does; the old secret stops working at once."""
+    made = api(f"/accounts/{account}/access/service_tokens/{token['id']}/rotate", "POST", {})
+    return keep_credentials(made.get("client_id") or token["client_id"], made["client_secret"])
+
+
+def upload_policy_body(token_id: str) -> dict[str, Any]:
+    """Service auth: the emulator suites' token; no one else."""
+    return {"name": "The emulator suites' service token", "decision": "non_identity", "precedence": 1,
+            "include": [{"service_token": {"token_id": token_id}}], "require": [], "exclude": []}
+
+
+def emulator_differences(account: str) -> list[tuple[str, str, Any]]:
+    """The emulator suites' service token (EMULATOR_TOKEN): made, never to
+    expire, and the one in emulator_stats.CREDENTIALS here; its application
+    over the suites' paths alone (UPLOAD_APP) and its one policy, letting in
+    the token; and the admin Worker's wrangler.jsonc holding the
+    application's audience tag (ACCESS_UPLOAD_AUD), which its own check of
+    each upload needs."""
+    name = f"Access service token {SERVICE_TOKEN_NAME}"
+    try:
+        token = service_token(account)
+    except SettingsError as error:
+        if error.status not in (401, 403):
+            raise
+        return [(name, "cannot be checked: this token is not allowed Access service tokens",
+                 "remake the apply token, which TOKENS allows them: python3 tools/repo/cloudflare_tokens.py "
+                 "settings-apply, then run this again")]
+    found: list[tuple[str, str, Any]] = []
+    if token is None:
+        def make() -> list[str]:
+            made = api(f"/accounts/{account}/access/service_tokens", "POST",
+                       {"name": SERVICE_TOKEN_NAME, "duration": SERVICE_TOKEN_DURATION})
+            return keep_credentials(made["client_id"], made["client_secret"])
+        found.append((name, "does not exist", make))
+    else:
+        if token.get("duration") != SERVICE_TOKEN_DURATION:
+            def forever() -> list[str]:
+                path = f"/accounts/{account}/access/service_tokens/{token['id']}"
+                api(path, "PUT", {"name": SERVICE_TOKEN_NAME, "duration": SERVICE_TOKEN_DURATION})
+                api(f"{path}/refresh", "POST", {})   # its end moved by the duration now set
+                return []
+            found.append((name, f"expires ({str(token.get('expires_at'))[:10]}): it should never", forever))
+        kept = emulator_stats.client()
+        if kept is None or kept[0] != token.get("client_id"):
+            found.append((str(emulator_stats.CREDENTIALS), "missing" if kept is None else "another token's",
+                          f"python3 tools/repo/cloudflare_settings.py rotate {EMULATOR_TOKEN} writes it - Access "
+                          "shows a secret only as it makes one - and copies it to the suites' machines"))
+    apps = api(f"/accounts/{account}/access/apps") or []
+    app = next((app for app in apps if app.get("domain") == UPLOAD_APP["domain"]), None)
+    where = f"Access application {UPLOAD_APP['domain']}"
+    if app is None:
+        def make_app() -> list[str]:
+            made = service_token(account)
+            if made is None:
+                return [f"{where}: not made, as the service token is still missing"]
+            new = api(f"/accounts/{account}/access/apps", "POST", UPLOAD_APP)
+            api(f"/accounts/{account}/access/apps/{new['id']}/policies", "POST", upload_policy_body(made["id"]))
+            return [f"{where}: made; now set website/admin/wrangler.jsonc's ACCESS_UPLOAD_AUD to what the next "
+                    "check says, and commit"]
+        found.append((where, "does not exist", make_app))
+        return found
+    off = sorted(key for key, value in UPLOAD_APP.items() if app.get(key) != value)
+    if off:
+        found.append((where, f"differs in {', '.join(off)}",
+                      ("PUT", f"/accounts/{account}/access/apps/{app['id']}", UPLOAD_APP)))
+    if token is not None:
+        path = f"/accounts/{account}/access/apps/{app['id']}/policies"
+        policies = api(path) or []
+        policy = upload_policy_body(token["id"])
+        if not policies:
+            found.append((f"Access policy for {UPLOAD_APP['domain']}", "is not set", ("POST", path, policy)))
+        elif len(policies) > 1:
+            found.append((f"Access policies for {UPLOAD_APP['domain']}", f"are {len(policies)}: there should be "
+                          "one, the service token's alone", None))
+        elif not policy_matches(policies[0], policy):
+            found.append((f"Access policy for {UPLOAD_APP['domain']}", "lets in other than the service token",
+                          ("PUT", f"{path}/{policies[0]['id']}", policy)))
+    have = admin_vars().get("ACCESS_UPLOAD_AUD")
+    if have != (app.get("aud") or ""):
+        found.append((f"{ADMIN_WRANGLER.relative_to(ROOT)} ACCESS_UPLOAD_AUD", f"is {have!r}",
+                      f"set it to {app.get('aud')!r} and commit; the website workflow deploys it"))
+    return found
+
+
 def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
     """(what, how it differs, the change that makes it right, as main's apply
     takes it). With `ci`, what CI's token can see that it
@@ -1421,6 +1574,7 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
         found += secret_differences(zones[0]["account"]["id"], to=to)
         found += secret_differences(zones[0]["account"]["id"], ADMIN_WORKER)
         found += access_differences(zones[0]["account"]["id"], to)
+        found += emulator_differences(zones[0]["account"]["id"])
         found += analytics_differences(zones[0]["account"]["id"], zones[0]["id"])
     found += email_differences(zone, zones[0]["account"]["id"])
     found += sending_differences(zone)
@@ -1442,7 +1596,7 @@ def main(argv: list[str] | None = None) -> int:
     if not (len(args) == 2 and args[0] == "rotate") and args not in ([], ["apply"], ["ci"], ["deploy-token"], ["email"]):
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    if len(args) == 2 and args[0] == "rotate" and API_SECRETS.get(args[1]) != "made":
+    if len(args) == 2 and args[0] == "rotate" and API_SECRETS.get(args[1]) != "made" and args[1] != EMULATOR_TOKEN:
         return rotate(args[1])   # refused before a token is asked for
     if TOKENS[token_key()]["kept"] == "asked":
         value = asked_token()

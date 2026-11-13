@@ -52,8 +52,10 @@ def install() -> None:
     """Refuse every connection beyond loopback from here on, once; and have
     the tool send no report of a run (tools/autoflash/report_upload.py), nor
     start the work for one, nor put anything on the clipboard of whoever runs
-    the tests (hostsys.copy_to_clipboard), where a test runs it."""
+    the tests (hostsys.copy_to_clipboard), where a test runs it; nor keep or
+    send an emulator suite's runs (tools/repo/emulator_stats.py)."""
     os.environ["AUTOFLASH_NO_REPORT"] = "1"
+    os.environ["AUTOFLASH_EMU_NO_STATS"] = "1"
     os.environ["AUTOFLASH_NO_CLIPBOARD"] = "1"
     if getattr(socket.socket, "no_network", False):
         return

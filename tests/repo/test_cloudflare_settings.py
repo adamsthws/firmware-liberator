@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from tools.repo import cloudflare_settings as cs
+from tools.repo import emulator_stats
 
 ZONE = "/zones/z1"
 ENTRYPOINT = f"{ZONE}/rulesets/phases/{cs.REDIRECT_PHASE}/entrypoint"
@@ -40,6 +41,11 @@ SENDING_DNS = [{"type": "MX", "name": f"cf-bounce.{cs.ZONE}", "content": "route1
                 "ttl": 1},
                {"type": "TXT", "name": f"cf-bounce._domainkey.{cs.ZONE}", "content": "v=DKIM1; p=CCCCDDDD", "ttl": 1},
                {"type": "TXT", "name": f"_dmarc.{cs.ZONE}", "content": "v=DMARC1; p=reject;", "ttl": 1}]
+
+
+def in_days(days):
+    """A time `days` from now, as Access writes a service token's end."""
+    return (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
 
 
 class FakeCloudflare:
@@ -78,9 +84,18 @@ class FakeCloudflare:
         # Access, as apply leaves it: the team, GitHub sign-in, the admin application and its one policy.
         self.organisation = {"auth_domain": "team1.cloudflareaccess.com"}
         self.idps = [{"id": "g1", "name": "GitHub", "type": "github"}]
-        self.apps = [{"id": "app1", "aud": "aud1", **cs.admin_app_body("g1")}]
-        self.policies = {"app1": [{"id": "p1", **cs.admin_policy_body("g1", DESTINATION)}]}
-        self.admin_vars = {"ACCESS_TEAM": "team1", "ACCESS_AUD": "aud1", "ACCOUNT_ID": "a1"}
+        self.apps = [{"id": "app1", "aud": "aud1", **cs.admin_app_body("g1")},
+                     {"id": "appu", "aud": "audu", **cs.UPLOAD_APP}]
+        self.policies = {"app1": [{"id": "p1", **cs.admin_policy_body("g1", DESTINATION)}],
+                         "appu": [{"id": "pu", **cs.upload_policy_body("st1")}]}
+        self.admin_vars = {"ACCESS_TEAM": "team1", "ACCESS_AUD": "aud1", "ACCOUNT_ID": "a1", "ACCESS_UPLOAD_AUD": "audu"}
+        # The emulator suites' service token, never to expire, and its credentials here as apply
+        # wrote them (their text, or None for no file); the suites' machines named, those an ssh
+        # copy fails to, and what each was sent.
+        self.service_tokens = [{"id": "st1", "name": cs.SERVICE_TOKEN_NAME, "client_id": "cid1.access",
+                                "duration": "forever", "expires_at": "9999-12-31T23:59:59Z"}]
+        self.emulator_env = "EMULATOR_STATS_CLIENT_ID=cid1.access\nEMULATOR_STATS_CLIENT_SECRET=made-up-secret-1\n"
+        self.hosts, self.unreachable, self.pushed = [], set(), []
         self.sending = []   # the zone's domains onboarded for Email Service's sending
         # The account's Web Analytics sites: the zone's one, as the pages' beacon tag names it.
         # Each starts with the one rule Cloudflare makes, every host and path measured.
@@ -166,6 +181,21 @@ class FakeCloudflare:
             elif path == f"{ACCESS}/identity_providers":
                 self.idps.append({"id": f"g{next(self.ids)}", "name": body["name"], "type": body["type"],
                                   "config": copy.deepcopy(body["config"])})
+            elif path == f"{ACCESS}/service_tokens" and method == "POST":
+                made = {"id": f"st{next(self.ids)}", "name": body["name"], "client_id": f"cid{next(self.ids)}.access",
+                        "duration": body["duration"], "expires_at": "9999-12-31T23:59:59Z"}
+                self.service_tokens.append(made)
+                return {**copy.deepcopy(made), "client_secret": f"made-up-secret-{next(self.ids)}"}
+            elif re.fullmatch(f"{ACCESS}/service_tokens/[^/]+", path) and method == "PUT":
+                token = next(token for token in self.service_tokens if token["id"] == path.split("/")[-1])
+                token.update(copy.deepcopy(body))
+            elif re.fullmatch(f"{ACCESS}/service_tokens/[^/]+/refresh", path):
+                token = next(token for token in self.service_tokens if token["id"] == path.split("/")[-2])
+                token["expires_at"] = "9999-12-31T23:59:59Z" if token["duration"] == "forever" else in_days(365)
+                return copy.deepcopy(token)
+            elif re.fullmatch(f"{ACCESS}/service_tokens/[^/]+/rotate", path):
+                token = next(token for token in self.service_tokens if token["id"] == path.split("/")[-2])
+                return {**copy.deepcopy(token), "client_secret": f"made-up-secret-{next(self.ids)}"}
             elif path == f"{ACCESS}/apps" and method == "POST":
                 self.apps.append({"id": f"app{next(self.ids)}", "aud": f"aud{next(self.ids)}", **copy.deepcopy(body)})
                 self.policies[self.apps[-1]["id"]] = []
@@ -233,6 +263,10 @@ class FakeCloudflare:
             return copy.deepcopy(self.idps)
         if path == f"{ACCESS}/apps":
             return copy.deepcopy(self.apps)
+        if path == f"{ACCESS}/service_tokens":
+            if self.service_tokens == "forbidden":
+                raise cs.SettingsError(f"GET {path}: HTTP 403: Authentication error", 403)
+            return copy.deepcopy(self.service_tokens)
         if re.fullmatch(f"{ACCESS}/apps/[^/]+/policies", path):
             return copy.deepcopy(self.policies[path.split("/")[-2]])
         if path == f"{DATABASES}?name={cs.D1_DATABASE}":
@@ -292,14 +326,33 @@ def run(fake, *args, answers=None):
     stdin = io.StringIO()
     if answers is not None:
         stdin.isatty = lambda: True
+    # The suites' credentials in a folder of the test's own, as the fake has them, and read back
+    # after; their machines and an ssh copy to each, the fake's.
+    folder = tempfile.TemporaryDirectory()
+    emulator_env = Path(folder.name) / "firmware-liberator" / "emulator.env"
+    if getattr(fake, "emulator_env", None) is not None:
+        emulator_env.parent.mkdir()
+        emulator_env.write_text(fake.emulator_env, encoding="utf-8")
+    no_variables = {name: "" for name in (emulator_stats.CLIENT_ID, emulator_stats.CLIENT_SECRET)}
+
+    def push(machines):
+        fake.pushed += [(host, emulator_env.read_text(encoding="utf-8")) for host in machines]
+        return [f"{host}: ssh ended 255" for host in machines if host in fake.unreachable]
     # The apply token, as asked for and found to be as TOKENS has it (AskedTokenTests).
-    with mock.patch.object(cs, "api", fake), redirect_stdout(out), mock.patch("sys.stdin", stdin), \
+    with folder, mock.patch.object(emulator_stats, "CREDENTIALS", emulator_env), \
+            mock.patch.dict("os.environ", no_variables), \
+            mock.patch.object(emulator_stats, "hosts", lambda: list(getattr(fake, "hosts", []))), \
+            mock.patch.object(emulator_stats, "push", push), \
+            mock.patch.object(cs, "api", fake), redirect_stdout(out), mock.patch("sys.stdin", stdin), \
             mock.patch.object(cs, "asked_token", lambda: APPLY_VALUE), \
             mock.patch.object(cs.getpass, "getpass", side_effect=list(answers or [])), \
             mock.patch.object(cs, "bound_database_id", lambda config=None: fake.bound), \
             mock.patch.object(cs, "admin_vars", lambda: copy.deepcopy(getattr(fake, "admin_vars", {}))), \
             mock.patch.object(cs, "ENV_FILE", Path("/nonexistent/.env.infra")):
         code = cs.main(list(args))
+        if hasattr(fake, "emulator_env"):
+            fake.emulator_env = emulator_env.read_text(encoding="utf-8") if emulator_env.exists() else None
+            fake.emulator_env_mode = emulator_env.stat().st_mode & 0o777 if emulator_env.exists() else None
     return code, out.getvalue()
 
 
@@ -541,7 +594,7 @@ class CloudflareSettingsTests(unittest.TestCase):
         example = cs.credentials.parse((root / ".env.infra.example").read_text(encoding="utf-8"))
         tokens = {spec["variable"] for spec in cs.TOKENS.values() if spec["kept"] == "env"}
         # What a tool asks for at a hidden prompt has no place in it.
-        self.assertEqual(set(example), {"ACCESS_ADMIN_EMAIL", *tokens})
+        self.assertEqual(set(example), {"ACCESS_ADMIN_EMAIL", cs.emulator_stats.HOSTS, *tokens})
         self.assertFalse(set(example) & (set(cs.credentials.KEYS) | set(cs.credentials.RENAMED)))
         self.assertEqual(subprocess.run(["git", "check-ignore", "-q", ".env.infra"], cwd=root).returncode, 0)
 
@@ -1059,7 +1112,10 @@ class AdminAccessTests(unittest.TestCase):
         self.assertEqual(run(self.fake)[0], 0, "the fake starts with Access as apply leaves it")
 
     def fresh(self):
-        self.fake.idps, self.fake.apps, self.fake.policies = [], [], {}
+        """Access as it was before the admin view: the upload's application kept (EmulatorTokenTests)."""
+        self.fake.idps = []
+        self.fake.apps = [app for app in self.fake.apps if app["domain"] == cs.UPLOAD_APP["domain"]]
+        self.fake.policies = {app["id"]: self.fake.policies[app["id"]] for app in self.fake.apps}
 
     def test_with_no_organisation_it_says_to_make_one_and_nothing_else(self):
         self.fake.organisation = None
@@ -1093,13 +1149,13 @@ class AdminAccessTests(unittest.TestCase):
             self.assertNotIn(value, out)
         [idp] = self.fake.idps
         self.assertEqual(idp["config"], {"client_id": "made-up-id", "client_secret": "made-up-secret"})
-        [app] = self.fake.apps
+        [app] = [app for app in self.fake.apps if app["domain"] == cs.ADMIN_HOST]
         self.assertEqual((app["domain"], app["allowed_idps"], app["auto_redirect_to_identity"]),
                          (cs.ADMIN_HOST, [idp["id"]], True))
         [policy] = self.fake.policies[app["id"]]
         self.assertEqual((policy["decision"], policy["include"], policy["require"]),
                          ("allow", [{"email": {"email": DESTINATION}}], [{"login_method": {"id": idp["id"]}}]))
-        self.fake.admin_vars = {"ACCESS_TEAM": "team1", "ACCESS_AUD": app["aud"], "ACCOUNT_ID": "a1"}
+        self.fake.admin_vars["ACCESS_AUD"] = app["aud"]
         self.assertEqual(run(self.fake)[0], 0, "then nothing differs")
 
     def test_a_sign_in_not_given_is_left_and_the_rest_still_made(self):
@@ -1139,7 +1195,7 @@ class AdminAccessTests(unittest.TestCase):
         self.assertEqual(self.fake.apps[0]["allowed_idps"], ["g1"])
 
     def test_the_admin_workers_vars_are_said_to_set_by_hand(self):
-        self.fake.admin_vars = {"ACCESS_TEAM": "", "ACCESS_AUD": "", "ACCOUNT_ID": ""}
+        self.fake.admin_vars = {"ACCESS_TEAM": "", "ACCESS_AUD": "", "ACCOUNT_ID": "", "ACCESS_UPLOAD_AUD": "audu"}
         code, out = run(self.fake, "apply")
         self.assertEqual((code, self.fake.sent), (1, []))
         self.assertIn("website/admin/wrangler.jsonc ACCESS_AUD: left - set it to 'aud1' and commit", out)
@@ -1170,6 +1226,116 @@ class AdminAccessTests(unittest.TestCase):
         self.assertIn("https://admin.firmwareliberator.com/", job)
         self.assertIn("needs: [deploy, deploy-api, deploy-admin]", workflow)
         self.assertIn(cs.ADMIN_WORKER, cs.DEPLOY_WORKERS)
+
+
+class EmulatorTokenTests(unittest.TestCase):
+    """The emulator suites' service token, never to expire, its application
+    over the suites' paths alone, and its credentials, which apply writes and
+    copies to the suites' machines."""
+
+    def setUp(self):
+        self.fake = FakeCloudflare()
+        self.fake.addresses = [{"email": DESTINATION, "verified": "2026-11-09"}]
+        run(self.fake, "apply")
+        self.fake.sent.clear()
+        self.assertEqual(run(self.fake)[0], 0, "the fake starts with the token as apply leaves it")
+
+    def test_apply_makes_the_token_never_to_expire_its_application_and_policy_and_writes_its_credentials(self):
+        self.fake.service_tokens = []
+        self.fake.apps = [app for app in self.fake.apps if app["id"] == "app1"]
+        del self.fake.policies["appu"]
+        self.fake.emulator_env = None
+        code, out = run(self.fake, "apply")
+        self.assertEqual(code, 1, "it says what to put in the admin wrangler.jsonc")
+        [token] = self.fake.service_tokens
+        self.assertEqual((token["name"], token["duration"]), ("firmware-liberator-emulator-stats", "forever"))
+        self.assertIn(f"EMULATOR_STATS_CLIENT_ID={token['client_id']}\nEMULATOR_STATS_CLIENT_SECRET=made-up-secret-",
+                      self.fake.emulator_env)
+        self.assertEqual(self.fake.emulator_env_mode, 0o600)
+        self.assertNotIn("made-up-secret", out, "the secret is never shown")
+        self.assertIn("emulator.env: written", out)
+        self.assertIn("Copy it to each machine that runs the emulator suites: python3 tools/repo/emulator_stats.py "
+                      "push HOST..., or name them in .env.infra as EMULATOR_STATS_HOSTS", out)
+        [app] = [app for app in self.fake.apps if app["domain"] == "admin.firmwareliberator.com/v1/emulator"]
+        [policy] = self.fake.policies[app["id"]]
+        self.assertEqual((policy["decision"], policy["include"], policy["require"]),
+                         ("non_identity", [{"service_token": {"token_id": token["id"]}}], []))
+        self.assertIn("ACCESS_UPLOAD_AUD to what the next check says", out)
+        self.fake.admin_vars["ACCESS_UPLOAD_AUD"] = app["aud"]
+        self.assertEqual(run(self.fake)[0], 0, "then nothing differs")
+
+    def test_the_credentials_are_copied_to_each_machine_named_and_one_not_reached_is_said(self):
+        self.fake.hosts, self.fake.unreachable = ["first", "second"], {"second"}
+        code, out = run(self.fake, "rotate", "emulator-stats")
+        self.assertEqual(code, 1)
+        self.assertEqual([host for host, _ in self.fake.pushed], ["first", "second"])
+        self.assertEqual({text for _, text in self.fake.pushed}, {self.fake.emulator_env}, "the new secret")
+        self.assertIn("emulator.env: copied to 1 of 2 machines", out)
+        self.assertIn("emulator.env not copied to second: ssh ended 255: python3 tools/repo/emulator_stats.py push "
+                      "copies it again", out)
+        self.assertNotIn("made-up-secret", out)
+
+    def test_a_token_that_would_expire_is_made_never_to(self):
+        self.fake.service_tokens[0].update(duration="8760h", expires_at="2027-11-13T00:00:00Z")
+        code, out = run(self.fake)
+        self.assertEqual(code, 1)
+        self.assertIn("expires (2027-11-13): it should never", out)
+        before = self.fake.emulator_env
+        self.assertEqual(run(self.fake, "apply")[0], 0)
+        self.assertEqual(self.fake.service_tokens[0]["duration"], "forever")
+        self.assertEqual(self.fake.service_tokens[0]["expires_at"], "9999-12-31T23:59:59Z")
+        self.assertEqual(self.fake.emulator_env, before, "the same secret: nothing to copy again")
+
+    def test_rotate_gives_it_a_new_secret_written_here(self):
+        before = self.fake.emulator_env
+        code, out = run(self.fake, "rotate", "emulator-stats")
+        self.assertEqual(code, 0)
+        self.assertIn("firmware-liberator-emulator-stats: rotated", out)
+        self.assertNotEqual(self.fake.emulator_env, before)
+        self.assertIn("EMULATOR_STATS_CLIENT_ID=cid1.access\n", self.fake.emulator_env, "the same token, a new secret")
+        self.assertEqual(self.fake.emulator_env_mode, 0o600)
+
+    def test_rotate_before_apply_made_it_says_so(self):
+        self.fake.service_tokens = []
+        with mock.patch("sys.stderr", io.StringIO()) as err:
+            self.assertEqual(run(self.fake, "rotate", "emulator-stats")[0], 1)
+        self.assertIn("apply makes it", err.getvalue())
+
+    def test_credentials_missing_or_of_another_token_here_are_said_to_rotate(self):
+        for text, said in ((None, "missing"), ("EMULATOR_STATS_CLIENT_ID=old.access\nEMULATOR_STATS_CLIENT_SECRET=x\n",
+                                               "another token's")):
+            self.fake.emulator_env = text
+            code, out = run(self.fake, "apply")
+            self.assertEqual((code, self.fake.sent), (1, []))
+            self.assertIn("emulator.env: left - python3 tools/repo/cloudflare_settings.py rotate emulator-stats "
+                          "writes it", out)
+            self.assertIn(said, out)
+
+    def test_a_policy_letting_in_more_than_the_token_is_put_back(self):
+        self.fake.policies["appu"][0]["include"] = [{"everyone": {}}]
+        self.assertIn("lets in other than the service token", run(self.fake)[1])
+        run(self.fake, "apply")
+        self.assertEqual(self.fake.policies["appu"][0]["include"], [{"service_token": {"token_id": "st1"}}])
+
+    def test_the_upload_audience_is_said_to_set_by_hand(self):
+        self.fake.admin_vars["ACCESS_UPLOAD_AUD"] = ""
+        code, out = run(self.fake, "apply")
+        self.assertEqual(code, 1)
+        self.assertIn("website/admin/wrangler.jsonc ACCESS_UPLOAD_AUD: left - set it to 'audu' and commit", out)
+
+    def test_a_token_not_allowed_service_tokens_says_to_remake_it(self):
+        self.fake.service_tokens = "forbidden"
+        code, out = run(self.fake, "apply")
+        self.assertEqual(code, 1)
+        self.assertIn("cannot be checked: this token is not allowed Access service tokens", out)
+
+    def test_the_application_covers_the_suites_paths_alone_on_the_admin_host(self):
+        self.assertEqual(cs.UPLOAD_APP["domain"], f"{cs.ADMIN_HOST}/v1/emulator")
+        admin = (Path(__file__).resolve().parents[2] / "website/admin/emulator.js").read_text(encoding="utf-8")
+        self.assertIn('export const SCOPE = "/v1/emulator";', admin)
+        self.assertIn("export const RUNS_PATH = `${SCOPE}/runs`;", admin)
+        self.assertEqual(emulator_stats.UPLOAD_URL, f"https://{cs.ADMIN_HOST}/v1/emulator/runs")
+        self.assertIn("ACCESS_UPLOAD_AUD", cs.jsonc(cs.ADMIN_WRANGLER)["vars"])
 
 
 class WebAnalyticsTests(unittest.TestCase):

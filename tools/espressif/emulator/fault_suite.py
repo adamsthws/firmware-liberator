@@ -88,7 +88,7 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash import kinds, records  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.report import SONOFF_IDENTITY  # noqa: E402
-from tools.repo import cpu_load, fault_verdicts, scenario_times  # noqa: E402
+from tools.repo import cpu_load, emulator_stats, fault_verdicts, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
 from tools.espressif import layouts  # noqa: E402
@@ -2837,7 +2837,19 @@ def worker(n, todo, lock, cloud=False, room=None):
             sh("docker", "stop", name(n), timeout=120)
         with lock:
             print(f"{time.strftime('%T')} [{n}] {row['verdict']:16} {sc['id']}{starved_label(row)}", flush=True)
+        emulator_stats.fault_run(OUT, family=DEVICE.family, device=DEVICE.key, scenario=sc, verdict=row["verdict"],
+                                 tries=row.get("runs"), seconds=round(time.time() - started),
+                                 cloud=cloud_of(sc), workers=WORKERS)
         TUNER.finished(row, log, started)
+
+
+# How many emulators the batch runs scenarios on at most, for its emulator stats.
+WORKERS = None
+
+
+def cloud_of(sc):
+    """Whose eWeLink the scenario's runs met, for its emulator stats."""
+    return "stub" if STUB_CLOUD else "real" if needs_cloud(sc) else "none"
 
 
 def read_ids(path) -> list[str]:
@@ -2901,12 +2913,15 @@ def batch(ids_file=None):
     if not STUB_CLOUD and every > 0:
         threading.Thread(target=log_connections, args=(OUT / "connections.log", every, stop_log),
                          daemon=True).start()
+    global WORKERS
+    WORKERS = len(threads)
     for t in threads:
         t.start()
         time.sleep(20)  # staggered: start-ups are the busiest moment
     for t in threads:
         t.join()
     stop_log.set()
+    print(emulator_stats.send(OUT), flush=True)
     report()
 
 
