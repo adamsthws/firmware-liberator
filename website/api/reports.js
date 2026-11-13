@@ -315,18 +315,30 @@ export async function reports(request, env, now = new Date()) {
 
 // One of /wanted's questions, counted for the figures by its product model
 // and day (wanted_days): the devices people would read out for the tool to
-// learn. Only a model's shape is counted, none with a word no model has
-// (review.js), and WANTED_COUNTED a day, so a flood of made-up names cannot
-// grow the table without end; and its sender noted (namedBy), so a name is
-// shown only once several have asked of it.
-export async function countWanted(env, request, product, day) {
+// learn - each question, and each device once a day where the tool names it
+// (its hash, as a report's, keyed as one is), whose own record says when it
+// was first and last asked of and how often (wanted_devices). Only a model's
+// shape is counted, none with a word no model has (review.js), and
+// WANTED_COUNTED a day, so a flood of made-up names cannot grow the tables
+// without end; and its sender noted (namedBy), so a name is shown only once
+// several have asked of it.
+export async function countWanted(env, request, product, day, deviceHash = null) {
   const model = String(product).trim().toUpperCase();
   if (!MODEL.test(model) || holdsHeldWords(model)
       || !(await reserve(env.DB, `wanted:${day}`, day, { most: WANTED_COUNTED }))) {
     return;
   }
-  const statements = [env.DB.prepare(`INSERT INTO wanted_days (day, model, asked) VALUES (?, ?, 1)
+  const statements = [env.DB.prepare(`INSERT INTO wanted_days (day, model, asked, devices) VALUES (?, ?, 1, 0)
     ON CONFLICT (day, model) DO UPDATE SET asked = asked + 1`).bind(day, model)];
+  if (deviceHash && env.DEVICE_HASH_KEY_PERMANENT) {
+    const device = await keyed(env.DEVICE_HASH_KEY_PERMANENT, deviceHash);
+    // Counted once a day, before its record says it was asked of today.
+    statements.push(env.DB.prepare(`UPDATE wanted_days SET devices = devices + 1 WHERE day = ?1 AND model = ?2
+      AND NOT EXISTS (SELECT 1 FROM wanted_devices WHERE device_hash = ?3 AND last_day = ?1)`).bind(day, model, device),
+    env.DB.prepare(`INSERT INTO wanted_devices (device_hash, model, first_day, last_day, asks) VALUES (?3, ?2, ?1, ?1, 1)
+      ON CONFLICT (device_hash) DO UPDATE SET model = excluded.model, last_day = excluded.last_day,
+        asks = wanted_devices.asks + 1`).bind(day, model, device));
+  }
   if (env.SENDER_KEY) {
     statements.push(await naming(env, request, model, day));
   }
