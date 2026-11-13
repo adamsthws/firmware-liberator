@@ -18,7 +18,7 @@
    "anywhere": true
   },
   {
-   "when": "Nothing is answering at the device's address",
+   "when": "No answer from the device: switch it off and on",
    "power": "on",
    "anywhere": true
   },
