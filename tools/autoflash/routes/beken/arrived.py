@@ -171,8 +171,10 @@ def _back_up(ctx: Context, mac: str) -> str:
     """How the backup went, a records.BACKUP_OUTCOMES key: as the Espressif
     route's C3 (installer.backup_not_needed) asks, none wanted before one kept.
     Unlike C3, a failed read carries on without asking: C3's is the last before
-    Sonoff's firmware is written over, while the device keeps what B4 reads,
-    for the next run to back up."""
+    Sonoff's firmware is written over, while the device keeps what B4 reads.
+    Only a run whose route has B4 (steps_for) reads it again: one that
+    installs OpenBeken or starts from it, not one from ESPHome to Sonoff's
+    firmware."""
     if getattr(getattr(ctx, "args", None), "no_backup", False):
         output.say("    No backup of the device's own data (--no-backup).")
         return "not wanted"
@@ -187,7 +189,8 @@ def _back_up(ctx: Context, mac: str) -> str:
     except OSError as exc:
         output.progress_clear()
         output.tell(f"    The device's own data could not be read ({exc}); carrying on without a backup. "
-                    "The device keeps it, and the data read is checked next time.")
+                    "The device keeps it.")
+        output.say("    A later run that installs OpenBeken, or starts from it, tries the backup again.")
         return "failed"
     finally:
         output.progress_clear()
