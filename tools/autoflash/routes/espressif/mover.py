@@ -101,7 +101,7 @@ def step_leave_tasmota(ctx: Context) -> dict[str, Any]:
         plan = plans.leave_tasmota(images.mover_for(ssid, password, chip), images.leaving_table(kind),
                                    layout, tasmota_table=table, settings=settings)
     except (images.ImageError, imprint.ImprintError, plans.PlanError, OSError) as exc:
-        raise Abort(f"the mover cannot be used: {exc}") from exc
+        raise Abort(f"the startup firmware cannot be used: {exc}") from exc
     try:
         result = hub.run_plan(ctx, plan)
     except Abort:
@@ -165,12 +165,11 @@ def wait_for_mover(ctx: Context, what: str) -> bool:
     before = ctx._wifi
     joined = join.set_up_through_own_network(ctx, what, mover, names.mover_networks(ctx))
     if joined is None:
+        # Two minutes after it cannot join the Wi-Fi it raises its own network,
+        # which a run then sets it up through.
         raise Abort(
-            f"{what} did not answer on your Wi-Fi, and its own network "
-            f"({names.mover_network_hint(ctx)}) is not to be seen either. If your Wi-Fi is "
-            "on, switch the device off and on: two minutes after it cannot join your "
-            "Wi-Fi, it raises its own network, and running this again sets it up "
-            "through that")
+            f"{what} is not on your Wi-Fi, and its own network ({names.mover_network_hint(ctx)}) "
+            "is not showing: switch the device off and on, wait two minutes, then run this again")
     if joined != before:
         ctx.adopt_wifi(*joined)
         return True
@@ -216,8 +215,7 @@ def step_esphome_update(ctx: Context) -> dict[str, Any]:
     unlock.unlock_esphome(ctx)
     _, new = update.versions(ctx)
     ssid, password = ctx.wifi(why=[
-        "ESPHome cannot say what its Wi-Fi password is, and the update needs it",
-        "written in, as every ESPHome image this tool installs does.",
+        "ESPHome can't give its Wi-Fi password, and the update needs it.",
     ])
     try:
         image = images.image_for(ssid, password, kind=kinds.of_run(ctx.state))
@@ -260,8 +258,7 @@ def step_startup_from_esphome(ctx: Context, *, again: bool = False) -> dict[str,
         output.say("The device is already past this step.")
         return {"already": running}
     ssid, password = ctx.wifi(why=[
-        "ESPHome cannot say what its Wi-Fi password is, and the firmware that",
-        "goes on next needs it written in, to join your Wi-Fi by itself.",
+        "ESPHome can't give its Wi-Fi password, and the next firmware needs it.",
     ])
     try:
         image = startup_image(ssid, password, images.chip_of(kinds.of_run(ctx.state)))
@@ -290,8 +287,7 @@ def step_berry_from_startup(ctx: Context) -> dict[str, Any]:
         # The startup firmware confirms itself only once it has been used: a
         # device switched off and on before then starts the firmware it ran
         # before (seen in the fault suite, a power cut early in X2).
-        output.tell("    The device is back on the firmware it ran before - switched off and on")
-        output.tell("    before the startup firmware was settled in - so that is sent again.")
+        output.tell("    It went back to its earlier firmware: sending the startup firmware again.")
         step_startup_from_esphome(ctx, again=True)
     # Not restarted to clear an upload cut off: restarted before it has been
     # used, the startup firmware starts what the device ran before.
@@ -390,7 +386,8 @@ def wait_for_esphome(ctx: Context, wait: float) -> dict[str, Any]:
                 first_seen = None
                 resent += 1
                 if resent > 2:
-                    raise Abort("the device keeps going back to the mover instead of starting ESPHome")
+                    raise Abort("the device keeps going back to the startup firmware instead of starting "
+                                "ESPHome: switch it off and on, then run the same command again")
                 output.say("    The device went back to the mover: ESPHome restarted before it had")
                 output.say("    confirmed itself. Sending ESPHome again...")
                 step_esphome_from_mover(ctx)

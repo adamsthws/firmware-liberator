@@ -237,7 +237,7 @@ class TasmotaWebPasswordTests(FirmwareSearchCase):
             self.assertEqual(source.find_current_firmware(ctx), "tasmota")
         self.assertEqual(asked.call_count, 2)  # the wrong one refused on the device
         self.assertEqual(menu.call_args.args[1][0], "Type its web password")
-        self.assertIn("once you have removed it yourself", menu.call_args.args[1][1])
+        self.assertIn("I have removed it", menu.call_args.args[1][1])
         self.assertEqual(ctx.web_password, "s3cret-71")
         self.private.assert_any_call("s3cret-71", "tasmota-password")  # kept out of the log
 
@@ -627,8 +627,8 @@ class InstallerFoundTests(FirmwareSearchCase):
         self.restarted.assert_not_called()
 
     def test_one_that_will_not_restart_has_nothing_done(self):
-        with self.assertRaisesRegex(errors.Abort, "left by a readout stopped part way.*nothing was done. "
-                                                  "Switch it off and on"):
+        with self.assertRaisesRegex(errors.Abort, "left by a readout stopped part way, and would not restart: "
+                                                  "switch it off and on"):
             self.find("readout", restarts=False)
         source.adopt_device.assert_not_called()
 

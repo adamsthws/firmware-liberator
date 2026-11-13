@@ -108,7 +108,7 @@ class EsphomeUpdatePasswordTests(unittest.TestCase):
         self.assertEqual(asked.call_count, 2)  # the wrong one refused on the device
         self.assertEqual(ctx.esphome_password, "s3cret-71")
         self.assertEqual(menu.call_args.args[1], [  # no key to offer: it takes no encrypted updates
-            "Type its update password", "Try again without one - once you have removed it yourself"])
+            "Type its update password", "Try again - I have removed it"])
         self.private.assert_any_call("s3cret-71", "esphome-password")  # kept out of the log
         with mock.patch.object(esphome_ota, "upload") as upload:
             handover.send_as_esphome_update(ctx, b"image", "the startup firmware")

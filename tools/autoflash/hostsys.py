@@ -1115,10 +1115,8 @@ def firewall_advice(device_ip: str | None, ports: Sequence[int], *, after_failur
     """
     if IS_MAC:
         lines = [
-            "This Mac's firewall is set to block all incoming connections, which keeps the",
-            "device out whatever this tool allows. Turn off \"Block all incoming",
-            "connections\" in System Settings > Network > Firewall > Options while you",
-            "convert the device.",
+            "This Mac blocks all incoming connections: turn off \"Block all incoming",
+            "connections\" in System Settings > Network > Firewall > Options for now.",
         ] if mac_blocks_all() else []
         return lines + (mac_local_network_note() if after_failure else [])
     if not IS_WINDOWS:
@@ -1193,9 +1191,7 @@ def security_software_note() -> list[str]:
     if not others:
         return []
     security_note_shown = True
-    return [f"Security software besides Windows' own firewall is installed: {', '.join(others)}.",
-            "If the device is on and set up as above, it may be dropping the device's",
-            "answers - pausing it while you convert the device is the quickest test."]
+    return [f"{', '.join(others)} may be dropping the device's answers: try pausing it."]
 
 
 def active_firewall() -> str | None:

@@ -655,13 +655,11 @@ def wait_for_taller_window() -> None:
     if rows is None or rows >= output.GOOD_ROWS:
         return
     if rows >= output.MIN_ROWS:
-        output.show(f"Make this window taller (e.g. maximise it): at {output.GOOD_ROWS} rows the report "
-                    "at the end fits on the screen.", output.DIM)
+        output.show(f"Tip: at {output.GOOD_ROWS} rows or more, the report at the end fits on screen.", output.DIM)
         return
     output.transient_begin(before_start=True)
     warning_box("Make this window taller (e.g. maximise it)", [
         f"It is {rows} rows tall; make it at least {output.MIN_ROWS}, or {output.GOOD_ROWS} for the report at the end.",
-        "(Otherwise things wouldn't display properly for you)",
     ])
     wait_for_key("Or press any key to go on as it is",
                  until=lambda: output.short_window(before_start=True) is None)
@@ -777,8 +775,7 @@ def _ctrl_c_first() -> None:
     if UNATTENDED or not interrupt.pending() or not (sys.stdin.isatty() and sys.stdout.isatty()):
         return
     if not ask_after_ctrl_c([
-        "Nothing is under way, so stopping here is safe: running this again",
-        "picks up where it left off.",
+        "Nothing is under way, so stopping here is safe.",
     ], "Carrying on"):
         output.log_only("Stopped at a question, as asked after Ctrl-C.")
         raise KeyboardInterrupt
@@ -894,16 +891,13 @@ def ask_ipv4(
             address = ipaddress.ip_address(answer)
         except ValueError:
             return False, (
-                f"'{answer}' is not an address. It should be four numbers "
-                "separated by dots, like 192.168.99.50 - not a name and not an "
-                "interface like eth0."
+                f"'{answer}' is not an address: four numbers and dots, like 192.168.99.50."
             )
         if address.version != 4:
             return False, "This needs an IPv4 address, like 192.168.99.50."
         if not address.is_private:
             return False, (
-                f"{answer} is not a home-network address. Those normally start "
-                "192.168., 10., or 172.16-31."
+                f"{answer} is not a home-network address (192.168..., 10... or 172.16-31...)."
             )
         return True, ""
 
@@ -924,9 +918,7 @@ def ask_ipv4(
             with _echo_off():  # typing ahead meanwhile waits unseen
                 if not ping_ok(answer):
                     problem = [
-                        f"Nothing at {answer} answered a ping.",
-                        "That usually means the address is wrong, or the device is still",
-                        "starting up, or it is on a different network from this computer.",
+                        f"Nothing answered at {answer}: check the address, and that it is switched on.",
                     ]
                 else:
                     problem = check(answer) if check is not None else []
@@ -993,8 +985,7 @@ def wait_or_ask(
                 *([other[0]] if other else []),
             ],
             help_lines=help_lines or [
-                "It may still be starting up, or it may have been given a new",
-                "address. Your router's list of connected devices will show it.",
+                "It may be starting up, or on a new address (your router's list shows it).",
             ],
         )
         if choice == 0:

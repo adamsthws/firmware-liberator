@@ -72,8 +72,8 @@ class TasmotaUpdateTests(RouteTestCase):
     def test_an_earlier_release_is_offered_the_one_this_tool_installs(self):
         with mock.patch.object(prompts, "section") as shown:
             ctx, route, offered = self.settle("15.6.0")
-        # Said on its option alone: no line above the options on it.
-        self.assertEqual(shown.call_args.args[1], [])
+        # Said on its option alone: no line above the options on it, nor a heading.
+        shown.assert_not_called()
         self.assertEqual(offered, [f"Tasmota, update to {OFFICIAL_TASMOTA_VERSION}", "ESPHome",
                                    "Sonoff (eWeLink)"])
         self.assertEqual(route, ("tasmota", "outdated"))
@@ -444,7 +444,7 @@ class CommitEvidenceTests(unittest.TestCase):
              mock.patch.object(hub, "device_back_on_wifi", side_effect=lambda c: order.append("found")), \
              mock.patch.object(hub, "sonoff_layout_back"), \
              mock.patch.object(prompts, "section"), mock.patch.object(output, "say"):
-            with self.assertRaisesRegex(errors.Abort, "the bundle has changed.*Nothing was written"):
+            with self.assertRaisesRegex(errors.Abort, "the firmware files changed.*Nothing was written"):
                 tasmota.commit_once(ctx)
         self.assertEqual(order, ["found", "network"])   # the device found before it is asked anything
         runner.run.assert_not_called()
@@ -864,7 +864,7 @@ class BegunByAnEarlierVersionTests(unittest.TestCase):
     def test_h1_takes_no_table_but_this_runs_or_tasmotas_own(self):
         # Tasmota's own: committed by a version before the identity was kept.
         self.assertTrue(self.verified(kept=True, table=tasmota.OFFICIAL_TABLE_SHA256)["table"]["match"])
-        with self.assertRaisesRegex(errors.Abort, "does not match the pinned artifacts"):
+        with self.assertRaisesRegex(errors.Abort, "does not match the official firmware files"):
             self.verified(kept=True, table="dd")
 
     def test_h1_otherwise_wants_esphomes(self):
@@ -1108,7 +1108,7 @@ class OfficialTasmotaSeenTests(unittest.TestCase):
              mock.patch.object(output, "tell") as told:
             how, outcome = tasmota.install_official(object(), Path("tasmota32c3.bin"))
         self.assertEqual((up.call_count, outcome), (2, "rejoined the network"))
-        self.assertIn("did not take", " ".join(str(c.args[0]) for c in told.call_args_list))
+        self.assertIn("Still on the startup firmware", " ".join(str(c.args[0]) for c in told.call_args_list))
 
     def test_three_that_do_not_take_stop_with_the_reason(self):
         from unittest import mock
@@ -1178,7 +1178,7 @@ class BackAfterResetTests(unittest.TestCase):
 
     def test_nowhere_to_be_seen_says_to_switch_it_off_and_on(self):
         outcome, _, configured = self.back(False, None)
-        self.assertIn("Switch it off and on", outcome)
+        self.assertIn("switch it off and on", outcome)
         self.assertIsNone(configured)
 
 

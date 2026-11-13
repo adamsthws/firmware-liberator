@@ -229,7 +229,7 @@ ERASED_CHECK_STEPS = {"D4", "D5", "K1", "E1", "E2", "E3", "I1", "G1", "H1"}
 STAGE_NAMES = {
     "A5": "Validating local files",
     "A2": "Querying Sonoff firmware",
-    "C2": "Sending bridge firmware",
+    "C2": "Sending installer firmware",
     "C3": "Backing up Sonoff firmware",
     "D1": "Installing interim firmware",
     "D4": "Preparing memory layout",
@@ -268,7 +268,7 @@ TARGET_STAGE_NAMES = {
 PLAIN_DESCRIPTION = {
     "A5": "checks the files on this computer before anything is touched",
     "A2": "asks the device what firmware it is running",
-    "C2": "replaces the device's Sonoff firmware with our small installer firmware",
+    "C2": "replaces the device's Sonoff firmware with this tool's small installer",
     "C3": "keeps a backup of the device's Sonoff firmware on this computer",
     "D1": "puts a full Tasmota onto the device through the installer's own Wi-Fi",
     "D4": "moves Tasmota into the other half of the device's memory, out of the way",

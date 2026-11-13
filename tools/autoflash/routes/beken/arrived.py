@@ -188,7 +188,9 @@ def _back_up(ctx: Context, mac: str) -> str:
         region = _read_region_with_retries(ctx, host)
     except OSError as exc:
         output.progress_clear()
-        output.tell(f"    The device's own data could not be read ({exc}); carrying on without a backup. "
+        # Not asked about, as an Espressif backup that fails is: a Beken device
+        # keeps this data.
+        output.tell(f"    The device's data could not be read ({exc}); going on without a backup. "
                     "The device keeps it.")
         output.say("    A later run that installs OpenBeken, or starts from it, tries the backup again.")
         return "failed"
@@ -208,7 +210,7 @@ def _back_up(ctx: Context, mac: str) -> str:
     try:
         stock, stock_version = images.stock_rbl(kind, ctx)
     except Abort as exc:
-        output.tell(f"    {exc}: the device's data is kept, without Sonoff's firmware beside it.")
+        output.tell(f"    {exc}: its data is backed up without Sonoff's firmware.")
         stock, stock_version = None, str(ctx.state.input("stock_version") or "")
     directory, saved = records.save_beken_backup(mac, region, stock, stock_version, kind=kind.name)
     if not saved:

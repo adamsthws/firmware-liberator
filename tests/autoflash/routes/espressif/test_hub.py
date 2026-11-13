@@ -51,7 +51,7 @@ class PromoteTests(unittest.TestCase):
     def test_from_an_odd_start_a_second_upload_and_no_more(self):
         self.assertEqual(self.promote(False, slots=(0, 0, 1)).count("upload"), 2)
         self.assertEqual(self.result["uploads"], 2)
-        with self.assertRaisesRegex(hub.Abort, "still running from slot 0 after 2 uploads"):
+        with self.assertRaisesRegex(hub.Abort, "kept running its old firmware after 2 uploads"):
             self.promote(False, slots=(0, 0, 0, 0))
 
     def test_a_slot_not_known_yet_after_the_restart_is_waited_for(self):

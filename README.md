@@ -234,7 +234,7 @@ See how it has gone for others: **[Stats](https://firmwareliberator.com/stats)**
 
 **Got a Sonoff that isn't listed?** A firmware readout of it is the quickest way to get support for it added.
 
-Run the tool as usual. When it finds no supported device in your eWeLink account, it offers to **read-out your device to help add support for it**. If you have several devices, you can choose to read them all out at once.
+Run the tool as usual. When it finds no supported device in your eWeLink account, it offers to **read out your device, to help add support for it**. If you have several devices, you can choose to read them all out at once.
 > To read out a device that is already listed (another version of its firmware, say), run `sh start.sh readout`, or `start.cmd readout` on Windows, in the tool's folder.
 
 What a firmware readout does:

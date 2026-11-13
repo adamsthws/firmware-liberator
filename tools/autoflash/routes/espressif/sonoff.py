@@ -73,8 +73,9 @@ def put_back(ctx: Context, why: str) -> dict[str, Any]:
     ctx.state.set_input("firmware", firmware)
     ctx.state.set_input("source", "midway")
     routes.go_on_instead("R1", firmware, "midway")
-    output.tell(f"    Sonoff's firmware cannot be put back: {why}.")
-    output.tell(f"    So the device goes back to {routes.FIRMWARES[firmware]}, rather than being left part way.")
+    # Rather than being left part way; the run ends by saying so too (runner).
+    output.tell(f"    Sonoff's firmware cannot be put back ({why}): going back to {routes.FIRMWARES[firmware]} "
+                "instead.")
     return {"stage_outcome": "stopped", "put_back": firmware}
 
 

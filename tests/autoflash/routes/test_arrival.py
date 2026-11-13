@@ -109,7 +109,7 @@ class BackOnSonoffTests(unittest.TestCase):
             ctx = self.espressif(tmp)
             offline = [{"deviceid": "1001234abc", "online": False}]
             with mock.patch.object(arrival.prompts, "UNATTENDED", True), \
-                    self.assertRaisesRegex(errors.Abort, "on your Wi-Fi but has not reached eWeLink.*internet"):
+                    self.assertRaisesRegex(errors.Abort, "on your Wi-Fi but not in eWeLink.*internet"):
                 self.back(ctx, tmp, running="sonoff", devices=offline)
             with mock.patch.object(arrival.prompts, "section") as shown, \
                     mock.patch.object(arrival.prompts, "ask_choice", side_effect=arrival.prompts.QuitRun(130)), \

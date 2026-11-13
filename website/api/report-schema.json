@@ -32,7 +32,7 @@
     ],
     [
       "device-busy",
-      "still busy with an update"
+      "busy with an update"
     ],
     [
       "credentials",
@@ -40,7 +40,7 @@
     ],
     [
       "unsafe-state",
-      "refusing to start from an unsafe state|another run is converting this device|has no record of|is not set; pass|address is not known|device id is not known|bundle has changed since|already running our installer|is running Tasmota, not Sonoff's firmware|so the installer has to be sent again"
+      "refusing to start from an unsafe state|another run is converting this device|has no record of|is not set; pass|address is not known|device id is not known|firmware files changed since|is on this tool's installer from an earlier run|is running Tasmota, not Sonoff's firmware|so the installer has to be sent again"
     ],
     [
       "backup",
@@ -52,7 +52,7 @@
     ],
     [
       "integrity",
-      "checksums failed|does not match the pinned|hash differs|is not the file firmware\\.json pins|refusing to send it|rt_ota"
+      "checksums failed|do not check out|does not match the official firmware files|hash differs|is not the file firmware\\.json pins|refusing to send it|rt_ota"
     ],
     [
       "download",
@@ -60,7 +60,7 @@
     ],
     [
       "ewelink-unreachable",
-      "eWeLink could not be reached|has not reached eWeLink"
+      "eWeLink could not be reached|has not reached eWeLink|but not in eWeLink"
     ],
     [
       "ewelink-refused",
@@ -80,7 +80,7 @@
     ],
     [
       "network-join",
-      "did not join|cannot join it|has not answered on your Wi-Fi|did not answer on your Wi-Fi|neither rejoined|did not come back after its settings were reset|did not say which Wi-Fi network|but the bundle is set up for|has not shown the device online again"
+      "did not join|cannot join it|has not answered on your Wi-Fi|has not come back on your Wi-Fi|did not answer on your Wi-Fi|is not on your Wi-Fi|neither rejoined|did not come back after its settings were reset|did not say which Wi-Fi network|but the firmware to come would join|has not shown the device online again"
     ],
     [
       "settings-lost",
@@ -92,11 +92,11 @@
     ],
     [
       "not-taken",
-      "did not take|did not hold|still running from slot|keeps going back to the mover|still answers as the firmware it was to leave|has not been seen to run|did not come back after the upload|has not started ESPHome|did not switch to its safeboot|would not take its new name|went back to its Sonoff firmware before|still on its Sonoff firmware, so nothing was read|would not fetch Sonoff's firmware back|refused to fetch Sonoff's firmware|after it was sent \\d+ times"
+      "did not take|did not hold|still running from slot|kept running its old firmware|keeps going back to the startup firmware|still answers as the firmware it was to leave|was not seen running|did not come back after the upload|has not started ESPHome|did not switch to its safeboot|would not take its new name|went back to its Sonoff firmware before|still on its Sonoff firmware, so nothing was read|would not fetch Sonoff's firmware back|refused to fetch Sonoff's firmware|after it was sent \\d+ times"
     ],
     [
       "upload-cut",
-      "stopped part way|was not uploaded|to the device failed|could not be sent to the device|did not complete within|did not print|nothing was armed|delivery failed|the device fetched \\S+ of \\S+ bytes"
+      "stopped part way|was not uploaded|to the device failed|could not be sent to the device|did not complete within|did not print|nothing was armed|delivery failed|installer was not fully delivered|installer was not delivered|the device fetched \\S+ of \\S+ bytes"
     ],
     [
       "unexpected-firmware",

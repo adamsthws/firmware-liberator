@@ -42,7 +42,8 @@ def step_check(ctx: Context) -> dict[str, Any]:
 
     problems = hostsys.check_sha256sums(ROOT / "artifacts" / "SHA256SUMS")
     if problems:
-        raise Abort("artifact checksums failed: " + "; ".join(problems))
+        raise Abort("this project's firmware files do not check out (" + "; ".join(problems)
+                    + "): update the tool, or download it again")
     output.say("published artifact checksums: OK")
 
     safety_locks.restore_left_locks(ROOT)
@@ -73,7 +74,7 @@ def make_bundle(ctx: Context, problem: str | None) -> dict[str, Any]:
         build_bundle(output=ctx.manifest_path.parent, release=release_on_the_device(ctx),
                      chip=chips.of(kinds.of_run(ctx.state).chip))
     except BundleError as exc:
-        raise Abort(f"the bundle could not be prepared: {exc}") from exc
+        raise Abort(f"the startup firmware could not be prepared: {exc}") from exc
     output.say("Bundle ready.")
     return validate_bundle(ctx.manifest_path)
 
