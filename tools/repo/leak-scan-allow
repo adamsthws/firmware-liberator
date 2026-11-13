@@ -35,5 +35,5 @@ autoflash
 # Not made up, and not a secret: the API Worker's D1 database's id, which
 # website/api/wrangler.jsonc must name for the Worker to bind it, and which
 # is no use without a token for the account (cloudflare_settings.py apply
-# made it, and says to put it there).
+# made it, and writes its id here and there).
 8a286f99-a420-4a72-a2b6-97c623aac2ec
