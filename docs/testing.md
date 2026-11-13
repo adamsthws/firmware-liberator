@@ -940,7 +940,9 @@ part way (`again`), as you would start it again. An answer can also switch
 the device off (`"power": "off"`), as if unplugged part way, switch the home
 Wi-Fi's router (`"router": "off"`, or on an S61's `"on NEW-PASSWORD"`, its
 password changed), take the computer onto the device's own network and back
-as the run asks (`"wifi": "join"`, `"home"`), or signal the
+as the run asks (`"wifi": "join"`, `"home"`; `"after": SECONDS` waits that
+long once its text shows, as a person waits for a network to come up), or
+signal the
 run (`"signal": "TERM"`, or `"HUP"` for its window closed) as it waits at a
 question; a scenario can be a readout (`"command": "readout"`), and have the
 API beside the emulator hold enough of the device's product already

@@ -118,7 +118,8 @@ it, for a password), not the notes above or the question answered before.
 `type` is typed once, or `times` times; `\r` is Enter. When several match,
 the first with times left is typed. `"anywhere": true` types it when `when`
 shows anywhere on the screen, such as a Ctrl-C (`"\u0003"`) while a stage
-shows. In place of `type`, `"power": "off"` (or `"on"`) switches the
+shows - again only once the run shows it anew - and `"after": SECONDS` once
+it has shown that long. In place of `type`, `"power": "off"` (or `"on"`) switches the
 emulated device, as if unplugged; `"router": "off"` (or `"on"`, and in the
 Beken emulator `"on NEW-PASSWORD"`) its home Wi-Fi's router; `"wifi":
 "join"` (or `"home"`) moves the computer onto the device's own network, or
