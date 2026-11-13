@@ -105,8 +105,10 @@ report names, a scrambled code of your address and that model, which ties
 you to nothing else; it is deleted once enough people have named that model,
 or after a year. The server never stores the address itself.
 
-- **Each report** is deleted after a year, leaving only totals made from it,
-  such as "so many S60s converted in November".
+- **Each report**, a conversion's or a readout's, is kept for as long as the
+  project runs, so that how devices fare can be followed over the years.
+  Nothing in it says who you are; it is the totals made from reports, never a
+  report, that are published, such as "so many S60s converted in November".
 - **Each device's record**, so it is still counted once, is kept for as long
   as the project runs: when it was first seen, how its first run ended, how
   many times it has been converted, and that count from the computer that

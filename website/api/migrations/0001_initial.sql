@@ -14,13 +14,11 @@ CREATE TABLE IF NOT EXISTS counters (
 
 CREATE INDEX IF NOT EXISTS counters_day ON counters (day);
 
--- The reports the tool sends at the end of a run (reports.js), and what is
--- kept of them for good; the nightly job's totals by day, model and the rest
--- are further on.
+-- The reports the tool sends at the end of a run (reports.js), each kept for
+-- good; the nightly job's totals by day, model and the rest are further on.
 
--- One a report, as report-schema.json describes it, for a year (the nightly
--- job deletes older ones once their totals are kept). `day` is when it came
--- in, as a UTC date: never the time, nor anything of the sender. `device_hash`
+-- One a report, as report-schema.json describes it. `day` is when it came in,
+-- as a UTC date: never the time, nor anything of the sender. `device_hash`
 -- is the keyed hash of the tool's hash of the device's MAC. `quarantined`: left
 -- out of every figure, set by hand for reports found to be made up. Each other
 -- column is the report's field of that name, a nested one's flattened: by
@@ -403,8 +401,8 @@ CREATE TABLE IF NOT EXISTS settings (
 -- and how many devices the computers that make them have converted. As a
 -- run's report is kept: `day` is when it came in, as a UTC date, never the
 -- time nor anything of the sender; `device_hash` the keyed hash of the tool's
--- hash of the device's MAC; `quarantined`, one held for review. Deleted after
--- a year (nightly.js).
+-- hash of the device's MAC; `quarantined`, one held for review. Kept for
+-- good.
 CREATE TABLE IF NOT EXISTS readout_reports (
   id TEXT PRIMARY KEY,
   day TEXT NOT NULL,

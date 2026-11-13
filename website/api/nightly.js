@@ -4,8 +4,9 @@
 //   (folded); then every month with a day folded tonight, and the current and
 //   previous months, are made again: monthly_totals, and the figures a total
 //   cannot give (run and step times, computers, Sonoff firmware met).
-// - Reports RAW_DAYS old are deleted, once their day is folded; the day
-//   counts behind the limits (counters) COUNTER_DAYS old.
+// - Every report is kept for good, run's and readout's alike, so any question
+//   asked of them later can be answered from them; the day counts behind the
+//   limits (counters), tied to senders, are deleted COUNTER_DAYS old.
 // - The store of readouts' size is noted for the day (store_days), for the
 //   admin view's graph of how fast it fills; the emails sent and failed each
 //   day (mail.js's counts) copied to mail_days, kept after the counts go.
@@ -27,7 +28,6 @@ import { ready } from "./database.js";
 import { prunePending } from "./pending.js";
 import { snapshot } from "./snapshot.js";
 
-export const RAW_DAYS = 365;
 export const COUNTER_DAYS = 7;
 export const SNAPSHOT_KEY = "v1/stats.json";
 export const ARCHIVE_PREFIX = "v1/archive/";
@@ -121,9 +121,8 @@ function remaking(db, months, today) {
   ];
 }
 
-// The statements deleting what is kept no longer: reports RAW_DAYS old, but
-// only of a day already counted, whatever order the job runs in; and the
-// day counts behind the limits, COUNTER_DAYS old.
+// The statements deleting what is kept no longer: the day counts behind the
+// limits, COUNTER_DAYS old, once each day's emails are copied from them.
 export function pruning(db, today) {
   return [
     // Before the counts behind them can go: each day's emails, copied afresh.
@@ -132,12 +131,6 @@ export function pruning(db, today) {
         CASE WHEN name GLOB 'mail-failed:*' THEN substr(name, 13, length(name) - 12 - length(day) - 1) ELSE '' END,
         count
       FROM counters WHERE day < ?1 AND (name GLOB 'mail-sent:*' OR name GLOB 'mail-failed:*:*')`).bind(today),
-    // A report's stages first, while the report still says whose they are.
-    db.prepare(`DELETE FROM report_stages WHERE id IN
-      (SELECT id FROM reports WHERE day < ? AND day IN (SELECT day FROM folded))`).bind(daysBefore(today, RAW_DAYS)),
-    db.prepare("DELETE FROM reports WHERE day < ? AND day IN (SELECT day FROM folded)").bind(daysBefore(today, RAW_DAYS)),
-    // A readout's report as long, with no totals of its own to wait for.
-    db.prepare("DELETE FROM readout_reports WHERE day < ?").bind(daysBefore(today, RAW_DAYS)),
     db.prepare("DELETE FROM counters WHERE day IS NOT NULL AND day < ?").bind(daysBefore(today, COUNTER_DAYS)),
   ];
 }
@@ -153,7 +146,7 @@ export async function spikes(db, today) {
     return [];
   }
   const first = days.reduce((earliest, row) => (row.day < earliest ? row.day : earliest), days[0].day);
-  // From the reports themselves, kept a year, so days not yet folded count
+  // From the reports themselves, so days not yet folded count
   // towards the usual of a later one folded the same night.
   const { results: before } = await db.prepare(`SELECT day, model, count(*) AS n FROM reports
     WHERE tag = 'user' AND quarantined = 0 AND model IS NOT NULL AND day >= ?1 AND day < ?2
