@@ -154,6 +154,8 @@ def _read_answer(prompt: str) -> str:
         prompt = output.ANSI_RE.sub(lambda code: f"\001{code.group()}\002", prompt)
     with interrupt.asking(), _ctrl_c_unseen():
         try:
+            if editor is None and _plain_terminal():
+                return _read_line(prompt)
             return input(prompt)
         except KeyboardInterrupt:
             sys.stdout.write("\n")
@@ -171,7 +173,7 @@ def _line_editor():
     """readline, where input() then edits the answer with the arrow keys -
     without it the terminal echoes them, and the up arrow moves the cursor
     into what is already on the screen.  None without a terminal, or where
-    Python has no readline: Windows' console edits the line itself."""
+    Python has no readline, as on Windows: _read_line then."""
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return None
     try:
@@ -183,6 +185,150 @@ def _line_editor():
         # mark (_ctrl_c_unseen).
         readline.parse_and_bind("set echo-control-characters off")
     return readline
+
+
+def _plain_terminal() -> bool:
+    """A terminal where input() would let a stray key change the answer or
+    the screen: a POSIX one Python has no readline for, where the terminal
+    echoes an arrow key's code, which moves the cursor into the rows above,
+    and keeps the code in the answer; and Windows' console, whose own line
+    editing brings an earlier answer back with the up arrow or F3, F7 pops a
+    list of them up over the screen, and Esc clears what was typed."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return False
+    try:
+        if hostsys.IS_WINDOWS:
+            import msvcrt  # noqa: F401
+        else:
+            import termios  # noqa: F401
+            import tty  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _key_code(fd: int) -> str:
+    """The rest of a key's escape code, its Esc already read - an arrow's
+    "[A", F1's "OP", Page Up's "[5~" - and nothing typed after it. A lone Esc
+    sends nothing more; Alt and a key, Esc and that key, which goes too."""
+    def next_byte() -> bytes:
+        return os.read(fd, 1) if select.select([fd], [], [], 0.05)[0] else b""
+    code = next_byte()
+    if code == b"[":
+        while (byte := next_byte()):
+            code += byte
+            if 0x40 <= byte[0] <= 0x7E:   # the final byte, after any parameters
+                break
+    elif code == b"O":
+        code += next_byte()
+    return code.decode("ascii", errors="replace")
+
+
+# What _read_line does with the keys readline would: the cursor along the answer.
+LEFT, RIGHT, HOME, END, DELETE = ("[D", "OD"), ("[C", "OC"), ("[H", "OH", "[1~"), ("[F", "OF", "[4~"), ("[3~",)
+# Windows' console gives a key with no character - an arrow, F1 - as "\xe0"
+# or "\x00", then a code of its own: those _read_line edits with, as the
+# terminal's escape codes.
+CONSOLE_KEYS = {"K": "[D", "M": "[C", "G": "[H", "O": "[F", "S": "[3~"}
+
+
+def _console_key() -> str:
+    """The rest of a Windows console key with no character, its "\xe0" or
+    "\x00" already read: as _key_code() gives a terminal's, so a code of its
+    own - Page Down's "Q", F3's "=" - is never taken as a key typed."""
+    import msvcrt
+    code = msvcrt.getwch()
+    return CONSOLE_KEYS.get(code, f"console {ord(code)}")
+
+
+@contextlib.contextmanager
+def _single_keys():
+    """The keyboard read a key at a time, nothing echoed: each key as (its
+    escape code, "") where it has one, else (None, the text it types).
+    Ctrl-C still stops; on Windows' console it comes as a key, raised here."""
+    if hostsys.IS_WINDOWS:
+        import msvcrt
+
+        def console():
+            while True:
+                char = msvcrt.getwch()
+                if char == "\x03":
+                    raise KeyboardInterrupt
+                if char in ("\x00", "\xe0"):
+                    yield _console_key(), ""
+                elif char == "\x1b":
+                    yield "", ""   # Esc: a key with no code, dropped as a terminal's lone Esc is
+                else:
+                    yield None, char
+        yield console()
+        return
+    import termios
+    import tty
+    fd = sys.stdin.fileno()
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
+
+    def terminal():
+        while True:
+            byte = os.read(fd, 1)
+            if not byte:
+                raise EOFError
+            yield (_key_code(fd), "") if byte == b"\x1b" else (None, decoder.decode(byte))
+    saved = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)   # no echo, no line buffering; Ctrl-C still interrupts
+        yield terminal()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+
+
+def _read_line(prompt: str) -> str:
+    """input() where it would let a stray key in (_plain_terminal): the
+    answer echoed as typed and edited as readline edits it - the arrows, Home
+    and End move along it, Backspace and Delete take a character off - and
+    every other key with no character dropped, so none moves the cursor off
+    the answer, changes it or brings an earlier one back."""
+    out = sys.stdout
+    typed, at = "", 0
+
+    def redraw_from(start: int, erased: int = 0) -> None:
+        # The answer from `start` drawn again, then the cursor back to `at`.
+        out.write(typed[start:] + " " * erased + "\b" * (len(typed) - at + erased))
+
+    out.write(prompt)
+    out.flush()
+    with _single_keys() as keys:
+        while True:
+            key, text = next(keys)
+            if text in ("\x04", "\x1a") and not typed:   # Ctrl-D, or Windows' Ctrl-Z
+                raise EOFError
+            if key in LEFT and at:
+                at -= 1
+                out.write("\b")
+            elif key in RIGHT and at < len(typed):
+                out.write(typed[at])
+                at += 1
+            elif key in HOME:
+                out.write("\b" * at)
+                at = 0
+            elif key in END:
+                out.write(typed[at:])
+                at = len(typed)
+            elif key in DELETE and at < len(typed):
+                typed = typed[:at] + typed[at + 1:]
+                redraw_from(at, 1)
+            elif text in ("\x7f", "\x08"):
+                if at:
+                    typed, at = typed[:at - 1] + typed[at:], at - 1
+                    out.write("\b")
+                    redraw_from(at, 1)
+            elif text in ("\r", "\n"):
+                out.write(typed[at:] + "\n")
+                out.flush()
+                return typed
+            elif text and text.isprintable():
+                typed, at = typed[:at] + text + typed[at:], at + 1
+                redraw_from(at - 1)
+            out.flush()
 
 
 @contextlib.contextmanager
@@ -371,9 +517,9 @@ def _read_secret(prompt: str, reveal_seconds: float) -> str:
             if not byte or byte == b"\x04":
                 raise EOFError
             if byte == b"\x1b":
-                # Arrow and function keys arrive as escape sequences: discard.
-                while select.select([fd], [], [], 0.02)[0]:
-                    os.read(fd, 16)
+                # Arrow and function keys arrive as escape codes: dropped, and
+                # only them - what is typed straight after is the password's.
+                _key_code(fd)
                 continue
             text = decoder.decode(byte)
             if not text:
@@ -675,6 +821,9 @@ def countdown_carry_on(question: str, *, seconds: float = interrupt.CARRY_ON_AFT
                         char = msvcrt.getwch()
                         if char == "\x03":
                             raise KeyboardInterrupt
+                        if char in ("\x00", "\xe0"):
+                            _console_key()   # an arrow or F-key: Page Down's code is a Q
+                            continue
                         if char in ("\r", "\n"):
                             break
                         if char.lower() == "q":
@@ -693,6 +842,9 @@ def countdown_carry_on(question: str, *, seconds: float = interrupt.CARRY_ON_AFT
                         draw(deadline - time.monotonic())
                         if select.select([fd], [], [], 0.2)[0]:
                             key = os.read(fd, 1).decode("utf-8", "replace")
+                            if key == "\x1b":
+                                _key_code(fd)   # an arrow or F-key: F2's code ends in a Q
+                                continue
                             if key in ("\r", "\n"):
                                 break
                             if key.lower() == "q":

@@ -290,6 +290,13 @@ check.
 - The arrow keys move along a typed answer on Linux and macOS. The terminal used
   to echo them: the up arrow moved the cursor into the rows above, garbling the
   screen, and their codes became part of the answer.
+- On Windows, a key pressed by accident at a question no longer changes the
+  answer: the console's up arrow or F3 brought the last answer back, so a
+  stray one could answer the consent question with an earlier PROCEED, F7
+  opened a list of earlier answers over the screen, and Esc cleared what was
+  typed. The arrows, Home, End and Delete still edit the answer.
+- F2 no longer stops the countdown after a Ctrl-C: in many terminals its code
+  ends in a Q, which was taken as q.
 - A Ctrl-C pressed before the first stage, while the tool looks for devices, no
   longer leaves "! Are you sure?" on the screen for the rest of the run.
 - A Ctrl-C pressed while nothing is being asked is asked about before the next
