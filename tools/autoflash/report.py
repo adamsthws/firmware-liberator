@@ -739,7 +739,9 @@ def ask_for_an_issue(copy: str | None = None, report_id: str | None = None) -> N
         output.tell("    This report is on your clipboard, ready to paste.")
     output.tell("")
     output.tell("This run's log:")
-    output.tell(f"    {output.log_path() or testers.LOG_ELSEWHERE}")
+    # From the checkout: short enough for its row in a window 80 wide.
+    log = output.log_path()
+    output.tell(f"    {runs.display_path(log) if log else testers.LOG_ELSEWHERE}")
 
 
 def offer_report(ctx: Context, fields: list[tuple[str, str]], stopped: str | None = None) -> None:

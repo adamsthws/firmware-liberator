@@ -7,7 +7,7 @@ says nothing of it.
 
 from __future__ import annotations
 
-from tools.autoflash import kinds, output
+from tools.autoflash import kinds, output, runs
 
 # Where the log is, for a run with none open.
 LOG_ELSEWHERE = "run.log, in this run's folder under captures/"
@@ -26,5 +26,5 @@ def notice(kind: kinds.Kind) -> list[str]:
         "",
         "The conversion for this particular device has not been proven on a real",
         "one yet. This run's log:",
-        str(output.log_path() or LOG_ELSEWHERE),
+        runs.display_path(output.log_path()) if output.log_path() else LOG_ELSEWHERE,
     ]

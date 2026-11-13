@@ -7,7 +7,6 @@
 
  Fix the cause, then carry on with the same command again:
      sh start.sh
- What happened, in full: captures/devices/123456abcdef/runs/1/run.log
 
      Liberator: 3.0.0                                Firmware: Tasmota
      OS:        Ubuntu 24.04.5 LTS                   From:     Sonoff 1.2.0
