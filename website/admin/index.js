@@ -11,6 +11,7 @@ import { AGREEMENT_SETTING, DAILY_BYTES, DAILY_COUNT, MIN_NETWORKS, NOTIFY_DAILY
 import { PENDING } from "../api/pending.js";
 import { monthsTo, popularity, SERIES } from "../api/popularity.js";
 import { DEVICE_DAILY, ID, REPORTS_DAILY } from "../api/reports.js";
+import schema from "../api/report-schema.json" with { type: "json" };
 import { verified } from "./access.js";
 import { bytes, columns, esc, FULL, lineChart, meter, number, STYLE, table, tile, trends } from "./render.js";
 
@@ -219,8 +220,24 @@ export async function gather(env, now) {
     settings: Object.fromEntries((await all("SELECT name, value FROM settings")).map((row) => [row.name, row.value])),
     nearly: await all(NEARLY),
     popularity: await modelTrends(all, now),
+    needed: await all(NEEDED, since(NEEDED_DAYS)),
   };
 }
+
+// What a run should never need - the device's own network, why, and the device
+// switched off and on - by the stage that needed it, over the last NEEDED_DAYS:
+// a stage that keeps needing either is where to look. Of the stages runs went
+// through, the maintainer's own testing and quarantined reports left out.
+export const NEEDED_DAYS = 90;
+// The reasons a stage's setup network gives (report-schema.json), in its order.
+export const REASONS = schema.properties.stages.additionalProperties.properties.setup_network.enum.filter(Boolean);
+const NEEDED = `SELECT s.stage, count(*) AS runs, sum(s.setup_network IS NOT NULL) AS setup,
+    ${REASONS.map((why, at) => `sum(s.setup_network = '${why.replace(/'/g, "")}') AS why${at}`).join(", ")},
+    sum(s.power_cycles > 0) AS cycled, sum(s.power_cycles) AS cycles
+  FROM report_stages AS s JOIN reports AS r ON r.id = s.id
+  WHERE r.day >= ? AND r.tag = 'user' AND r.quarantined = 0
+  GROUP BY s.stage HAVING sum(s.setup_network IS NOT NULL) + sum(s.power_cycles > 0) > 0
+  ORDER BY sum(s.setup_network IS NOT NULL) + sum(s.power_cycles > 0) DESC, s.stage`;
 
 // How many months the popularity charts go back, and how many models they show.
 export const POPULAR_MONTHS = 24;
@@ -297,6 +314,13 @@ export async function page(env, who, now, fetcher = fetch) {
       ${POPULAR_MONTHS}: devices whose readout was first asked about, devices read out, and devices converted (again,
       too) - your own testing left out. The ${POPULAR_MODELS} models with the most, on one scale.</p>`
       + trends(data.popularity.models, data.popularity.months, Object.values(SERIES))
+      + `</section>`,
+    `<section class="card" id="needed"><h2>Setup network and power cycles, by stage</h2><p class="sub">The last
+      ${NEEDED_DAYS} days: the stages that needed this computer on the device's own network (and why), or the device
+      switched off and on, out of the runs that went through them. A run should need neither.</p>`
+      + table([["Stage", "stage"], ["Runs through it", "runs", "number"], ["Setup network", "setup", "number"],
+        ...REASONS.map((why, at) => [`- ${why}`, `why${at}`, "number"]),
+        ["Power cycled", "cycled", "number"], ["Power cycles", "cycles", "number"]], data.needed, "None needed either.")
       + `</section>`,
     `<section class="card" id="held"><h2>Held for review</h2><p class="sub">Reports no run of the tool's would write, or a day far
       above a model's usual. Release one to count it (its day is counted again tonight), or delete it.</p>`
