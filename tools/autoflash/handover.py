@@ -25,7 +25,7 @@ def consent_to_leave(ctx: Context, what: str) -> None:
     output.transient_begin()
     prompts.warning_box("Before going on", [
         f"From here the device's {what} is replaced.",
-        "DO NOT CUT ITS POWER: a power cut now could mean opening it to repair.",
+        prompts.DO_NOT_CUT_POWER,
         "Only go ahead with a device you can afford to lose.",
         *testers.notice(kinds.of_run(ctx.state)),
     ])

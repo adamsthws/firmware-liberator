@@ -68,13 +68,19 @@ class QuitTests(unittest.TestCase):
             firewall.say_quit(ctx)
         return lines
 
-    def test_quitting_ends_with_the_cleaned_up_line(self):
-        for rules in ([], [self.RULE]):
-            self.assertEqual(self.quit_screen(rules)[-1], "Cleaned up. Nothing was left half done. Exiting.")
+    QUIT = "Stopped as asked. Run this again to carry on."
 
-    def test_a_rule_left_behind_is_not_called_cleaned_up(self):
-        self.assertNotIn("Cleaned up. Nothing was left half done. Exiting.",
-                         self.quit_screen([self.RULE], removed=False))
+    def test_quitting_ends_with_how_to_carry_on(self):
+        for rules in ([], [self.RULE]):
+            self.assertEqual(self.quit_screen(rules)[-1], self.QUIT)
+
+    def test_quitting_claims_nothing_of_the_device(self):
+        # A quit can leave the device part way - on the installer, after its
+        # backup failed, say - so "nothing was left half done" was untrue.
+        self.assertNotIn("half done", " ".join(self.quit_screen([])))
+
+    def test_a_rule_left_behind_is_not_followed_by_the_quit_line(self):
+        self.assertNotIn(self.QUIT, self.quit_screen([self.RULE], removed=False))
 
 
 class EmulatorPasswordTests(unittest.TestCase):

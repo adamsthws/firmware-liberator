@@ -100,6 +100,13 @@ For a listed device, what the tool does depends on its chip:
 Whichever it is, the device keeps its Sonoff firmware, its settings and its
 eWeLink pairing.
 
+If a readout stops part way - Ctrl-C, say - the tool says how to get Sonoff's
+firmware back. On an ESP32 device, switch it off and on: the reading program
+sits beside Sonoff's firmware, which starts again. On a Beken device the
+program stands in its place, so switching it off and on starts the program
+again: run the readout again instead, and it finishes and puts Sonoff's
+firmware back.
+
 ## What is taken out
 
 The tool sends an anonymised copy, and keeps the original only on your

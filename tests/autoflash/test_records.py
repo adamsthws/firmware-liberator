@@ -334,6 +334,15 @@ class DeviceLockTests(unittest.TestCase):
             with self.assertRaisesRegex(errors.Abort, "another run is converting this device"):
                 runs.hold_device(SimpleNamespace(), MAC)
 
+    def test_the_run_refused_is_told_nothing_was_done_once(self):
+        # Its caller says so first: "Stopped before anything was done: ...".
+        from types import SimpleNamespace
+        with mock.patch.object(records, "hold", side_effect=records.DeviceBusy("run devices/x, process 7")):
+            with self.assertRaises(errors.Abort) as refused:
+                runs.hold_device(SimpleNamespace(), MAC)
+        self.assertNotIn("Nothing was done", str(refused.exception))
+        self.assertTrue(str(refused.exception).endswith("then run this again"))
+
     def test_busy_names_the_devices_others_hold(self):
         self.assertEqual(records.busy(), [])
         other = self.other_run("time.sleep(30)")

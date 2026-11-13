@@ -225,7 +225,9 @@ def release_firewall(ctx: Context) -> bool:
 
 def say_quit(ctx: Context) -> None:
     """The last word after the operator chose to quit, once everything is tidied:
-    the run's secrets are gone and the firewall rule is removed."""
+    the run's secrets are gone and the firewall rule is removed. Nothing more is
+    claimed: a quit can leave the device part way (on the installer, say), which
+    running again carries on from."""
     if release_firewall(ctx):
         output.tell("")
-        output.tell("Cleaned up. Nothing was left half done. Exiting.")
+        output.tell(f"{prompts.STOPPED_AS_ASKED} Run this again to carry on.")

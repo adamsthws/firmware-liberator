@@ -47,6 +47,11 @@ class NoOneToAnswer(QuitRun):
 UNATTENDED = False
 # Typed once, before the first write that cannot be undone, for the whole conversion.
 CONSENT_WORD = "proceed"
+# In every go-ahead before that write, worded alike: some later notes do ask
+# for the device to be switched off and on, when that is safe.
+DO_NOT_CUT_POWER = "DO NOT CUT ITS POWER unless this tool tells you to."
+# How a run stopped at the person's word begins its last line, wherever it stopped.
+STOPPED_AS_ASKED = "Stopped as asked."
 
 BULLET = "    "
 # A password field on a row of its own, below a prompt too long to share one.

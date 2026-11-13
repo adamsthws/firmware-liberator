@@ -406,9 +406,7 @@ def refused_for_another_run(command: str, ctx: Context) -> bool:
         try:
             records.hold(mac, runs.run_name(ctx.dir))
         except records.DeviceBusy as busy:
-            output.tell(f"Stopped before anything was done: another run is converting this device ({mac}) "
-                 f"right now{f' - {busy}' if str(busy) else ''}. Let it finish, or stop it first, "
-                 "then run this again.")
+            output.tell(f"Stopped before anything was done: {runs.busy_elsewhere(mac, busy)}.")
             return True
     if command == "cleanup":
         busy = records.busy()
@@ -712,12 +710,11 @@ def read_out(ctx: Context) -> int:
     try:
         return cmd_readout(ctx, ctx.args.send)
     except QuitRun:
-        output.tell("Stopped.")
+        output.tell(prompts.STOPPED_AS_ASKED)
         return 130
     except KeyboardInterrupt:
         signup.stopped()
-        output.tell("Stopped with Ctrl-C. If the device was being read, switch it off and on: it starts "
-                    "its Sonoff firmware again.")
+        output.tell(readout.stopped_by_ctrl_c(ctx))
         return 130
     except (Abort, OSError, ValueError) as exc:
         output.tell(f"FAILED: {exc}")
