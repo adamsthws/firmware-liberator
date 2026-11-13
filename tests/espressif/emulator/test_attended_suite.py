@@ -159,11 +159,18 @@ def question_texts() -> list[str]:
     return texts
 
 
+def shows_as_a_stage(pattern: re.Pattern[str], texts: list[str]) -> bool:
+    """Whether `pattern` finds a stage line, "Stage N - <name>  - Underway",
+    with one of the tool's texts as the name."""
+    return any(pattern.search(f"Stage {number} - {text}  - Underway")
+               for text in texts if "\n" not in text and len(text) < 60 for number in range(1, 21))
+
+
 class ScenarioTests(unittest.TestCase):
     def test_every_answer_still_answers_a_question_the_tool_asks(self):
         # A question reworded fails here, in a second, not as FAIL-UNANSWERED
-        # after an hour in the emulator. Optional answers, and keys typed
-        # anywhere, answer what may not be asked.
+        # after an hour in the emulator. Optional answers answer what may not
+        # be asked.
         texts = question_texts()
         found = attended_suite.scenarios()
         self.assertGreater(len(found), 8)
@@ -177,10 +184,14 @@ class ScenarioTests(unittest.TestCase):
                     self.assertIn(answer.get("power", "off"), ("off", "on"))
                     self.assertIn(answer.get("signal", "TERM"), ("TERM", "HUP", "INT"))
                     pattern = re.compile(answer["when"])
-                    if answer.get("optional") or answer.get("anywhere"):
+                    if answer.get("optional"):
                         continue
-                    self.assertTrue(any(pattern.search(text) for text in texts),
-                                    f"{name}: no question of the tool's says {answer['when']!r}")
+                    # A key typed, or the device switched, anywhere still waits
+                    # for a line the run must show: a note, or a stage line as
+                    # output draws it.
+                    self.assertTrue(any(pattern.search(text) for text in texts)
+                                    or answer.get("anywhere") and shows_as_a_stage(pattern, texts),
+                                    f"{name}: nothing the tool shows says {answer['when']!r}")
 
     def test_every_scenario_says_what_it_shows_and_how_it_ends(self):
         for name, (_, scenario) in attended_suite.scenarios().items():

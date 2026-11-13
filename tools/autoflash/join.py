@@ -494,9 +494,7 @@ def wait_while_device_busy(ctx: Context) -> None:
     device = ctx.device
     if device.answers(timeout=3.0) or not hostsys.ping_ok(host):
         return  # answering, or not on the network at all: the steps say which
-    output.tell("    The device is on the network but not answering yet. It is most likely")
-    output.tell("    still finishing the step that was stopped, and gives up within a minute")
-    output.tell("    or two.")
+    output.tell("    The device is still finishing the step that was stopped (a minute or two).")
     started = time.monotonic()
     while time.monotonic() - started < BUSY_DEVICE_WAIT:
         output.progress(f"waiting for the device to finish... {time.monotonic() - started:.0f}s")
@@ -506,6 +504,4 @@ def wait_while_device_busy(ctx: Context) -> None:
             return
         time.sleep(3.0)
     output.progress_clear()
-    output.tell("    It is still not answering. Switch it off and on - at this point that is")
-    output.tell("    safe - and run this again; it carries on. Carrying on now, and each step")
-    output.tell("    says what it finds.")
+    output.tell("    Still no answer. If a step fails, switch it off and on, then run again.")
