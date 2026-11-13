@@ -12,6 +12,7 @@ device's id is logged or kept. fetch() never raises: a readout goes on without.
 from __future__ import annotations
 
 import hashlib
+import re
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -75,6 +76,13 @@ def fetch(offers: list[dict[str, Any]], deviceid: str,
                 data = get(url, deviceid)
             except Exception as exc:  # whatever goes wrong: a readout needs none of it
                 problems.append(f"{name}: {type(exc).__name__}")
+                continue
+            # eWeLink's digest is the file's SHA-256: one not matching it is
+            # cut short or not the file offered, and would stand for an offer
+            # no other device sees.
+            digest = str(item.get("digest") or "").lower()
+            if data and re.fullmatch(r"[0-9a-f]{64}", digest) and hashlib.sha256(data).hexdigest() != digest:
+                problems.append(f"{name}: not the file its digest names")
                 continue
             if data and all(data != kept.data for kept in found):
                 found.append(Offered(name.rsplit("/", 1)[-1], str(offer.get("version") or ""), data))

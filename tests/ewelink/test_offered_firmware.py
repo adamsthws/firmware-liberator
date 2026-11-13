@@ -1,6 +1,7 @@
 """The firmware eWeLink offers a device, fetched whole as the device asks for
 it, for its readout: never more than an update file, never twice, never
 stopping the readout."""
+import hashlib
 import unittest
 
 from tools.ewelink import offered_firmware
@@ -24,6 +25,15 @@ class FetchTests(unittest.TestCase):
         self.assertEqual([(item.name, item.version) for item in found], [("user1.bin", "1.1.0"), ("user2.bin", "1.1.0")])
         self.assertEqual(problems, [])
         self.assertEqual(asked[0], "https://example.com/fw/user1.bin?x=1&deviceid=1000abcdef&ts=1&sign=0")
+
+    def test_a_file_not_matching_its_digest_is_left_out(self):
+        offers = [{"version": "1.1.0", "binList": [
+            {"name": "user1.bin", "downloadUrl": "https://example.com/1", "digest": hashlib.sha256(b"one").hexdigest()},
+            {"name": "user2.bin", "downloadUrl": "https://example.com/2", "digest": hashlib.sha256(b"two").hexdigest()},
+        ]}]
+        found, problems = offered_firmware.fetch(offers, "1000abcdef", lambda url, deviceid: b"one")
+        self.assertEqual([item.name for item in found], ["user1.bin"])
+        self.assertEqual(problems, ["user2.bin: not the file its digest names"])
 
     def test_the_same_bytes_twice_are_kept_once(self):
         found, _ = offered_firmware.fetch(OFFERS, "1000abcdef", lambda url, deviceid: b"same")
