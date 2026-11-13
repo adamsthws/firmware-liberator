@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { alert, alertLines, STORE_WARN } from "../api/alerts.js";
-import { LIST_STALE_DAYS } from "../api/networks.js";
+import { LIST_JUMP, LIST_STALE_DAYS } from "../api/networks.js";
 import worker from "../api/index.js";
 import { d1 } from "../api/local-d1.mjs";
 
@@ -117,4 +117,17 @@ test("a list of networks not taken is told once a week, never nightly", async ()
     + "agreement (website/api/networks.js) has not been taken since 2026-11-03: HTTP 404."]);
   assert.deepEqual(await alertLines(bindings.DB, "2026-11-11", LIMITS), [], "not the next night");
   assert.equal((await alertLines(bindings.DB, "2026-11-17", LIMITS)).length, 1, "but a week on");
+});
+
+test("a list of networks taken far longer than the one kept is told that night, with some it added", async () => {
+  const bindings = env();
+  const list = bindings.DB.db.prepare(`INSERT INTO network_lists (name, asns, taken, problem, previous, added)
+    VALUES (?, ?, ?, NULL, ?, ?)`);
+  assert.equal(LIST_JUMP, 0.5);
+  list.run("datacenter", JSON.stringify([1, 2, 3, 4, 5, 6, 7]), TODAY, 4, "[5,6,7]");
+  list.run("vpn", JSON.stringify([1, 2, 3, 4, 5, 6]), TODAY, 4, "[5,6]");   // half as many again: not past it
+  assert.deepEqual(await alertLines(bindings.DB, TODAY, LIMITS), ["The datacenter list of networks that count toward "
+    + "no agreement (website/api/networks.js) grew from 4 to 7 today. Among those added: AS5, AS6, AS7. A home "
+    + "internet provider among them would cost its customers their vote."]);
+  assert.deepEqual(await alertLines(bindings.DB, "2026-11-11", LIMITS), [], "that night only");
 });
