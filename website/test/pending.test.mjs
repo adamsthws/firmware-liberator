@@ -59,3 +59,13 @@ test("it names the store's count as index.js does", () => {
   const index = readFileSync(new URL("../api/index.js", import.meta.url), "utf8");
   assert.match(index, new RegExp(`^const READOUTS_EVER = "${READOUTS_EVER}";$`, "m"));
 });
+
+test("a readout disputing those taken as right is kept until it is settled", async () => {
+  const env = { DB: d1(), READOUTS: bucket() };
+  await kept(env, "old-dispute", "pending", "2026-05-01T10:00:00Z");
+  await kept(env, "old-settled", "rejected", "2026-05-01T10:00:00Z");
+  await env.DB.prepare("UPDATE readouts SET checked = 1").run();
+  assert.equal((await prunePending(env, "2026-11-09")).readouts, 1);
+  const left = (await env.DB.prepare("SELECT id FROM readouts").all()).results.map((row) => row.id);
+  assert.deepEqual(left, ["old-dispute"], "one rejected goes as any other");
+});

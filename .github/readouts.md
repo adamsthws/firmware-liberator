@@ -141,6 +141,7 @@ let past, and only a readout that adds something is kept:
   under Disputed, and you are emailed whatever the switch says; until you
   approve or reject it, readouts of the key from new networks are taken
   without waiting, and no other fingerprint is taken as right on its own.
+  It is kept until you do, never deleted with the other pending ones.
 - A kept readout is kept for good, in a private bucket that nothing serves:
   an old one may help with a device's later versions.
 - Anyone may ask to be emailed as more devices are supported: the tool asks
