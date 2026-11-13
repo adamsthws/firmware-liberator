@@ -251,9 +251,6 @@ def wait_for_update(ctx: Context, wait: float = 180.0, confirm: float = 0.0) -> 
     may have restarted (a power cut, say) before it had confirmed it: the time
     starts again once it answers, so done is never said of a device not seen to
     have kept it."""
-    if ctx.dry_run:
-        output.say("[dry-run] would wait for the updated firmware to answer")
-        return {"dry_run": True}
     old, new = versions(ctx)
     name = detect.NAMES[runs.run_firmware(ctx.state)]
     output.say(f"Waiting for the device to start {name} {new} and join your Wi-Fi...")

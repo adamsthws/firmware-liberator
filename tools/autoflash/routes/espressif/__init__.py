@@ -60,7 +60,7 @@ FIRMWARES = {"tasmota": "Tasmota", "esphome": "ESPHome", "sonoff": "Sonoff"}
 POINT_OF_NO_RETURN = "C2"
 # The steps a dry run goes through (--dry-run): those that only read, before
 # the first that writes - the prerequisites. It stops there, as
-# every step after needs what that one would have written (runner.run).
+# every step after needs what that one would have written (runner.run_steps, cli.cmd_step).
 READ_ONLY_STEPS = {"A0", "A1", "A2", "A3", "A5"}
 
 

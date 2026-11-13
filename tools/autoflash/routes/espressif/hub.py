@@ -154,10 +154,6 @@ def step_promote(ctx: Context) -> dict[str, Any]:
         device.command("SaveData 0")
         output.say("Already there. SaveData 0 - settings frozen so the migration's checks stay stable")
         return {"current_ota": slot, "uploads": 0}
-    if ctx.dry_run:
-        output.say("[dry-run] would upload the same image through Firmware Upgrade")
-        return {"current_ota": slot, "uploads": 0}
-
     # Tried again after an upload that was cut off (the Wi-Fi going part way).
     if ctx.state.status("D4") == FAILED:
         output.say("Restarting the device first, to clear the upload that was cut off...")
@@ -216,8 +212,6 @@ def sonoff_layout_back(ctx: Context) -> None:
     interim layout, its settings moved aside (safeboot_migration says why), and
     a device that left Tasmota may be on a temporary table (Layout.temporary_table).
     Every check and plan expects Sonoff's: put back first, then a restart."""
-    if ctx.dry_run:
-        return
     device = ctx.device
     try:
         table = device.sha_region(plans.TABLE_ADDRESS, plans.SECTOR, timeout=30)
@@ -246,9 +240,6 @@ UPLOAD_ATTEMPTS = 3
 
 def run_plan(ctx: Context, plan: plans.Plan) -> dict[str, Any]:
     """Have the device carry out `plan` (tools/autoflash/plans.py)."""
-    if ctx.dry_run:
-        output.say(f"[dry-run] would write {plan.title}: {plan.summary()}")
-        return {"dry_run": True, "plan": plan.name}
     code, captured = ctx.phase_runner().run("plan", plan=plan)
     if code != 0:
         raise phases.phase_failed(f"plan {plan.name}", code, captured)

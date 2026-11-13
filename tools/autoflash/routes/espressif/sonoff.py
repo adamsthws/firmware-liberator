@@ -89,9 +89,6 @@ def step_sonoff_restore(ctx: Context) -> dict[str, Any]:
     if mac and records.find_backup(mac):
         backup, source = sonoff_backup(ctx), "backup"
         ctx.state.capture("R1.identity", "backup")
-    elif ctx.dry_run:
-        output.say("[dry-run] would put Sonoff's firmware together, as there is no backup of it")
-        return {"dry_run": True}
     else:
         try:
             backup, source = rebuilt(ctx, kind)
@@ -110,8 +107,6 @@ def out_of_sonoffs_slot(ctx: Context, backup: bytes, kind: kinds.Kind) -> int:
     """The slot Tasmota runs from, once it is not the one Sonoff's firmware goes
     back in. A device that ran Sonoff's firmware from its second slot has it there
     in its backup, where the hub runs: Tasmota sent again goes in the other."""
-    if ctx.dry_run:
-        return 1 - plans.stock_slot(backup, images.layout_of(kind))
     device = ctx.device
     running = hub.running_slot(device)
     if running != plans.stock_slot(backup, images.layout_of(kind)):
@@ -130,6 +125,4 @@ def out_of_sonoffs_slot(ctx: Context, backup: bytes, kind: kinds.Kind) -> int:
 def step_sonoff_check(ctx: Context, wait: float = arrival.SONOFF_WAIT) -> dict[str, Any]:
     """R2 - Sonoff's firmware started, on the Wi-Fi it had and back in eWeLink,
     as the Beken route's K3 finds it (arrival.back_on_sonoff)."""
-    if ctx.dry_run:
-        return {"dry_run": True}
     return arrival.back_on_sonoff(ctx, wait=wait)

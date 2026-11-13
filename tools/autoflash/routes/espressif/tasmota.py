@@ -375,9 +375,6 @@ def step_canonical(ctx: Context) -> dict[str, Any]:
     waited = time.monotonic() - started
     device = ctx.device
     saved = startup_settings_report(device)
-    if ctx.dry_run:
-        output.say("[dry-run] would upload the official application")
-        return {"safeboot_seconds": round(waited, 1), "startup_settings": saved}
     how, outcome = install_official(ctx, app)
     return {"safeboot_seconds": round(waited, 1), "app_upload": how, "outcome": outcome,
             "startup_settings": saved}
@@ -400,9 +397,6 @@ def step_tasmota_back(ctx: Context) -> dict[str, Any]:
             "an upload through its page that failed part way, say - official Tasmota",
             "goes back on. Its settings stay as they were either way.",
         ])
-        if ctx.dry_run:
-            output.say("[dry-run] would start Tasmota again, or upload official Tasmota")
-            return {}
         if ctx.device.wants_password() is True:  # it keeps Tasmota's settings, and so its password
             unlock.ask_web_password(ctx, ctx.device.host)
         if tasmota_started_again(ctx):
@@ -438,9 +432,6 @@ def step_tasmota_update(ctx: Context) -> dict[str, Any]:
     on the safeboot by a try cut off, it uploads from there."""
     app = official_app(ctx)
     _, new = update.versions(ctx)
-    if ctx.dry_run:
-        output.say(f"[dry-run] would switch Tasmota to its safeboot and upload Tasmota {new}")
-        return {"dry_run": True}
     device = ctx.device
     if not device.is_safeboot():
         output.say("Switching Tasmota to its safeboot, the small firmware that takes its updates...")
@@ -465,8 +456,7 @@ def step_tasmota_updated(ctx: Context) -> dict[str, Any]:
     """U6 - the new release running, then the meter checked, as a device kept
     on Tasmota has it checked (runner.rerun_on_tasmota)."""
     result = update.wait_for_update(ctx, wait=120.0)
-    if not result.get("dry_run"):
-        result["meter"] = calibrate_tasmota_meter(ctx)
+    result["meter"] = calibrate_tasmota_meter(ctx)
     return result
 
 
