@@ -1980,6 +1980,61 @@ class WorkingTests(OutputTestCase):
         self.assertIn("Reading the device's memory", log)
 
 
+@unittest.skipUnless(hasattr(os, "fork"), "a pseudo-terminal needs Linux or macOS")
+class StrayKeyTests(unittest.TestCase):
+    """Keys pressed by accident while nothing is asked - letters, the arrows,
+    Enter, Backspace - on a real terminal: never echoed, so neither the
+    cursor nor a stage line moves (_hide_keys), and dropped before the next
+    question, which takes only what is typed at it (prompts.discard_typed_ahead)."""
+
+    STRAY = "zq\x1b[A\x1b[B\x1b[C\x1b[D\x1b[H\x1b[F\x1bOP\t\x1b[5~\x7f\r\n x\r"
+
+    def test_keys_pressed_while_nothing_is_asked_leave_no_mark_and_answer_nothing(self):
+        import codecs
+        import json
+        import textwrap
+        from tools.repo import unattended_run
+        root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory() as directory:
+            answer = Path(directory) / "answer.json"
+            script = textwrap.dedent(f"""
+                import json, sys, time
+                from pathlib import Path
+                sys.path.insert(0, {str(root)!r})
+                from tools.autoflash import output, prompts
+                output.start(Path({str(Path(directory) / "run.log")!r}), verbose=False)
+                output.set_stage_width(30, 15)
+                output.stage_begin(1, "Installing interim firmware")
+                output.tell("    A note under the stage: WHILE-A-NOTE")
+                time.sleep(1.5)
+                output.stage_end("complete")
+                output.tell("")
+                with output.working("Generating your report: WHILE-WORKING"):
+                    time.sleep(1.5)
+                output.tell("Between stages: BETWEEN")
+                time.sleep(1.5)
+                output.stage_begin(2, "Choosing the firmware")
+                chosen = prompts.ask_choice("Which firmware would you like", ["Tasmota", "ESPHome"])
+                output.stage_end("complete")
+                open({str(answer)!r}, "w").write(json.dumps(chosen))
+                output.finish()
+            """)
+            answers = [unattended_run.Answer(when, self.STRAY, anywhere=True)
+                       for when in ("WHILE-A-NOTE", "WHILE-WORKING", "BETWEEN")]
+            answers.append(unattended_run.Answer(r"would you like.*\(q to quit\)", "2\r"))
+            code, written = unattended_run.record([sys.executable, "-c", script], (80, 30), live=False,
+                                                  timeout=60, answers=answers)
+            chosen = json.loads(answer.read_text(encoding="utf-8")) if answer.exists() else None
+        self.assertEqual([bool(item.typed_at) for item in answers], [True] * 4, "every stray key typed")
+        self.assertEqual((code, chosen), (0, 1))   # what was typed at the question, not the Enters before it
+        screen = unattended_run.Screen(80, 30)
+        screen.feed(codecs.decode(written, "utf-8", errors="replace"))
+        rows = [" ".join(row.split()) for row in screen.render(colour=False).splitlines() if row.strip()]
+        self.assertEqual(rows, ["Stage 1 - Installing interim firmware - Complete", "Between stages: BETWEEN",
+                                "Stage 2 - Choosing the firmware - Complete"])
+        self.assertEqual(screen.wrapped, 0)
+
+
 class StageGapTests(OutputTestCase):
     """Whatever is shown under a stage's line - a message, a question, a
     helper's output - has one blank line between it and the stage line."""
