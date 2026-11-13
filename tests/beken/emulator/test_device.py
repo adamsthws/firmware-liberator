@@ -36,7 +36,7 @@ class DeviceTests(unittest.TestCase):
             device = self.device(tmp)
             with mock.patch.object(self.stock_points, "app_of_flash", return_value=bytes(0x1000)):
                 self.assertIsNone(device.stock_points(b"flash"))
-            self.assertIn("no help for this app", device.netlog[-1])
+            self.assertIn("no help for this app", (Path(tmp) / "net.log").read_text(encoding="utf-8"))
 
     def test_the_power_switch(self):
         with tempfile.TemporaryDirectory() as tmp:
