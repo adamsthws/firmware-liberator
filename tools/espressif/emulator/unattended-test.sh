@@ -15,6 +15,9 @@
 #                                                   of Sonoff's: offline, no account, no stub
 #   tools/espressif/emulator/unattended-test.sh --stub-cloud  convert against the local cloud stub, with
 #                                                   no eWeLink account and no .env (emu.sh --stub-cloud)
+#   tools/espressif/emulator/unattended-test.sh --no-lan-control  the device as with LAN Control off in the
+#                                                   app: its eWeLink discovery answers and port 8081
+#                                                   kept from the tool, for this run
 #   tools/espressif/emulator/unattended-test.sh --code=DIR    the tool in DIR - an earlier release
 #                                                   (fault_suite.legacy_tree) - over the same
 #                                                   captures, as updating a checkout would; it
@@ -53,12 +56,14 @@ DEVICE=192.168.60.50
 
 # emu.sh's own API would outlive this run: the run starts one of its own (below).
 emu_args=(--detach --no-api) keep=0 stub=0 run_args=() from="" save="" device_mac="" code="" driver_args=() answers_file="" api=1
+lan_control=1
 size=100x40
 while [ $# -gt 0 ]; do
     case "$1" in
     --fresh|--pcap|--rebuild|--no-firewall) emu_args+=("$1") ;;
     --device=*) emu_args+=("$1"); device_mac=$(echo "${1#--device=}" | tr 'A-F-' 'a-f:') ;;
     --stub-cloud) stub=1 ;;
+    --no-lan-control) lan_control=0 ;;
     --instance=[1-9]|--instance=[1-9][0-9])  # another emulator beside the first: see emu.sh
         n=${1#--instance=}; emu_args+=("$1")
         NAME=autoflash-emu-$n PORT=$((8080 + n)) STATE=$STATE-$n ;;
@@ -209,6 +214,16 @@ until docker exec "$NAME" ping -c1 -W1 "$DEVICE" >/dev/null 2>&1; do
         break
     fi
     sleep 2
+done
+# LAN Control off: the stock firmware's eWeLink discovery answers (mDNS from
+# port 5353) and its LAN API (port 8081) never reach the tool, as a device
+# that does neither. Taken off again first, so a run without it has them.
+for rule in "INPUT -s $DEVICE -p udp --sport 5353 -j DROP" \
+            "OUTPUT -d $DEVICE -p tcp --dport 8081 -j REJECT --reject-with tcp-reset"; do
+    # shellcheck disable=SC2086  # each rule's words are iptables' arguments
+    while docker exec "$NAME" iptables -D $rule 2>/dev/null; do :; done
+    # shellcheck disable=SC2086
+    [ "$lan_control" = 1 ] || docker exec "$NAME" iptables -I $rule
 done
 # Answers for an attended run, where the run reads them in the emulated computer.
 if [ -n "$answers_file" ]; then

@@ -1,6 +1,7 @@
-"""unattended-test.sh takes --instance=N as emu.sh does, 1-99; and sends readouts to
+"""unattended-test.sh takes --instance=N as emu.sh does, 1-99; sends readouts to
 the API Worker's own code, in a container of its own beside the emulator, unless
-told --no-api."""
+told --no-api; and runs the device as with LAN Control off if told
+--no-lan-control."""
 
 import re
 import shutil
@@ -80,6 +81,23 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(done.stdout.startswith("A whole conversion of the emulated device"), done.stdout)
         self.assertTrue(done.stdout.endswith("is a placeholder the stub ignores.\n"), done.stdout)
 
+
+class LanControlTests(unittest.TestCase):
+    """--no-lan-control: the device as with LAN Control off in the app, its
+    discovery answers and LAN port kept from the tool for that run alone."""
+    text = SCRIPT.read_text(encoding="utf-8")
+
+    def test_its_discovery_answers_and_lan_port_are_kept_from_the_tool(self):
+        self.assertIn("--no-lan-control) lan_control=0 ;;", self.text)
+        self.assertIn('"INPUT -s $DEVICE -p udp --sport 5353 -j DROP"', self.text)
+        self.assertIn('"OUTPUT -d $DEVICE -p tcp --dport 8081 -j REJECT --reject-with tcp-reset"', self.text)
+        # Taken off first, so a run without it, on an emulator kept running, has them.
+        self.assertIn('while docker exec "$NAME" iptables -D $rule', self.text)
+
+    @unittest.skipIf(shutil.which("bash") is None, "no bash")
+    def test_it_is_in_the_usage(self):
+        done = subprocess.run(["bash", str(SCRIPT), "--bogus"], capture_output=True, text=True, timeout=60)
+        self.assertIn("--no-lan-control", done.stdout)
 
 if __name__ == "__main__":
     unittest.main()

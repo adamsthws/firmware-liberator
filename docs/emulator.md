@@ -257,6 +257,7 @@ tools/espressif/emulator/unattended-test.sh --fresh    # from stock, as a new us
 tools/espressif/emulator/unattended-test.sh            # from where the last run left the device
 tools/espressif/emulator/unattended-test.sh --keep     # leave the emulator running afterwards
 tools/espressif/emulator/unattended-test.sh --stub-cloud   # against the local cloud stub: no account, no .env
+tools/espressif/emulator/unattended-test.sh --no-lan-control   # as with LAN Control off: no discovery answers, no port 8081
 tools/espressif/emulator/unattended-test.sh --save=NAME    # keep the device as the run left it, with its captures
 tools/espressif/emulator/unattended-test.sh --from=NAME    # start from a device kept with --save
 tools/espressif/emulator/unattended-test.sh -- --new   # anything after -- goes to the run itself
