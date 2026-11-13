@@ -112,6 +112,34 @@ export function columns(days, names, label = "", width = HALF) {
     + `<text class="tick" x="${W}" y="${H - 6}" text-anchor="end">${esc(days.at(-1).day)}</text></svg>`;
 }
 
+// One small chart a model, its series as lines over `months` (["2026-11", ...]),
+// all on one scale - the most any model's series reached - so the charts read
+// against each other: `models` [{model, series: {name: {month: n}}}], `names`
+// in the legend's order.
+export function trends(models, months, names) {
+  if (!models.length || months.length < 2) {
+    return '<p class="none">Nothing yet.</p>';
+  }
+  const [W, H, left, bottom, top] = [320, 120, 34, 22, 12];
+  const most = Math.max(1, ...models.flatMap(({ series }) => names.flatMap((name) => Object.values(series[name] ?? {}))));
+  const x = (index) => left + ((W - left - 6) * index) / (months.length - 1);
+  const y = (value) => top + (H - top - bottom) * (1 - value / most);
+  const chart = ({ model, series }) => `<figure class="trend"><figcaption>${esc(model)}</figcaption>`
+    + `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(model)}, month by month">`
+    + `<line class="grid" x1="${left}" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>`
+    + `<text class="tick" x="${left - 6}" y="${y(most) + 4}" text-anchor="end">${esc(number(most))}</text>`
+    + names.map((name, at) => {
+      const values = months.map((month) => series[name]?.[month] ?? 0);
+      return `<path class="line series-${at + 1}" d="${values.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(" ")}"/>`
+        + values.map((value, index) => (value ? `<circle class="hit" cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="6">`
+          + `<title>${esc(`${model}, ${months[index]}: ${number(value)} ${name}`)}</title></circle>` : "")).join("");
+    }).join("")
+    + `<text class="tick" x="${left}" y="${H - 6}">${esc(months[0])}</text>`
+    + `<text class="tick" x="${W}" y="${H - 6}" text-anchor="end">${esc(months.at(-1))}</text></svg></figure>`;
+  return `<ul class="legend">${names.map((name, at) => `<li><span class="swatch series-${at + 1}"></span>${esc(name)}</li>`).join("")}</ul>`
+    + `<div class="trends">${models.map(chart).join("")}</div>`;
+}
+
 export const STYLE = `
 :root { color-scheme: dark;
   --plane: #0d1117; --surface: #161b22; --ink: #e6edf3; --ink-2: #9198a1; --muted: #7d8590; --grid: #262c36;
@@ -146,6 +174,10 @@ svg { width: 100%; height: auto; display: block; overflow: visible; }
 .hit:hover { fill: var(--ring); }
 .mark.series-1, .swatch.series-1 { fill: var(--series-1); background: var(--series-1); }
 .mark.series-2, .swatch.series-2 { fill: var(--series-2); background: var(--series-2); }
+.mark.series-3, .swatch.series-3 { fill: var(--series-3); background: var(--series-3); }
+.line.series-2 { stroke: var(--series-2); } .line.series-3 { stroke: var(--series-3); }
+.trends { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px 20px; }
+.trend { margin: 0; } .trend figcaption { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
 .mark:hover { filter: brightness(1.15); }
 .legend { display: flex; gap: 14px; list-style: none; padding: 0; margin: 0 0 8px; font-size: 13px; color: var(--ink-2); }
 .legend li { display: flex; align-items: center; gap: 6px; } .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }

@@ -24,9 +24,12 @@
 //   apart, as does one the person stopped ("cancelled", with the stages
 //   people stop at); the device figures are of devices the tool converts.
 import { LATEST_MIGRATION } from "./database.js";
+import { monthsTo, popularity } from "./popularity.js";
 
 export const FORMAT = 1;
 export const SMALLEST = 5;
+// Months of each model's devices given (modelMonths), the latest last.
+export const TREND_MONTHS = 24;
 // Months of run times given, the latest first.
 export const TIME_MONTHS = 12;
 const NOT_FAILURES = "('declined', 'nothing-to-do', 'unsupported-device')";
@@ -82,8 +85,11 @@ export async function snapshot(db, now = new Date()) {
       sum(conversions > 0) AS converted, sum(first_result = 'converted') AS first_run
     FROM devices WHERE dev = 0 AND ${NOT_HELD} AND ${VOUCHED} GROUP BY model HAVING count(*) >= ?
     ORDER BY devices DESC, model`, SMALLEST);
-  const modelMonths = await all(`SELECT substr(first_day, 1, 7) AS month, model, count(*) AS devices FROM devices
-    WHERE dev = 0 AND ${NOT_HELD} AND ${VOUCHED} GROUP BY month, model HAVING count(*) >= ? ORDER BY month, model`, SMALLEST);
+  // Each model's devices month by month, as the admin view counts them.
+  const modelMonths = (await popularity(all, `${monthsTo(now, TREND_MONTHS)[0]}-01`, VOUCHED))
+    .map((row) => ({ month: row.month, model: row.model, asked: count(row.asked), readOut: count(row.readOut),
+      converted: count(row.converted) }))
+    .filter((row) => row.asked !== null || row.readOut !== null || row.converted !== null);
   const routes = await all(`SELECT source, firmware, ${OUTCOMES} FROM monthly_totals
     WHERE tag = 'user' AND firmware != '' GROUP BY source, firmware HAVING sum(n) >= ? ORDER BY runs DESC`, SMALLEST);
   const tools = await all(`SELECT tool, ${OUTCOMES} FROM monthly_totals WHERE tag = 'user'
@@ -95,14 +101,18 @@ export async function snapshot(db, now = new Date()) {
   const cancellations = await all(`SELECT step, sum(n) AS runs FROM monthly_totals
     WHERE tag = 'user' AND result = 'cancelled'
     GROUP BY step HAVING sum(n) >= ? ORDER BY runs DESC, step`, SMALLEST);
-  const unsupported = new Map((await all(`SELECT model, sum(n) AS n FROM monthly_totals
-    WHERE tag = 'user' AND error = 'unsupported-device' AND ${VOUCHED} GROUP BY model`))
-    .map((row) => [row.model, row.n]));
-  const asked = await all(`SELECT model, sum(asked) AS asked FROM wanted_days WHERE ${VOUCHED} GROUP BY model`);
-  const wanted = new Map(asked.map((row) => [row.model, { asked: row.asked, unsupported: 0 }]));
-  for (const [model, n] of unsupported) {
-    wanted.set(model, { asked: wanted.get(model)?.asked ?? 0, unsupported: n });
-  }
+  // The devices the tool does not convert yet, each once however often it was
+  // met: asked about for a readout (wanted_devices), or met by a run
+  // (unsupported-device) - one device both, once.
+  const wanted = await all(`SELECT model, count(*) AS devices, sum(asked) AS asked, sum(ran) AS ran FROM (
+      SELECT model, device_hash, max(asked) AS asked, max(ran) AS ran FROM (
+        SELECT model, device_hash, 1 AS asked, 0 AS ran FROM wanted_devices
+        UNION ALL
+        SELECT model, device_hash, 0, 1 FROM reports WHERE tag = 'user' AND quarantined = 0
+          AND error = 'unsupported-device' AND device_hash IS NOT NULL AND model IS NOT NULL)
+      WHERE ${VOUCHED} AND device_hash NOT IN (SELECT device_hash FROM devices WHERE dev = 1) AND ${NOT_HELD}
+      GROUP BY model, device_hash)
+    GROUP BY model HAVING count(*) >= ? ORDER BY devices DESC, model`, SMALLEST);
   const stock = await all(`SELECT model, stock_version, sum(runs) AS runs, sum(converted) AS converted FROM monthly_stock
     WHERE tag = 'user' AND ${VOUCHED} GROUP BY model, stock_version HAVING sum(runs) >= ? ORDER BY model, stock_version`, SMALLEST);
   const computers = await all(`SELECT os_family, python_source, sum(n) AS runs FROM monthly_environment
@@ -142,10 +152,8 @@ export async function snapshot(db, now = new Date()) {
       model: row.model, device: row.device || null, devices: row.devices, converted: count(row.converted),
       firstRun: rate(row.first_run, row.devices), eventually: rate(row.converted, row.devices),
     })),
-    modelMonths: modelMonths.map((row) => ({ month: row.month, model: row.model, newDevices: row.devices })),
-    wanted: [...wanted].filter(([, row]) => row.asked + row.unsupported >= SMALLEST)
-      .sort(([a, x], [b, y]) => (y.asked + y.unsupported) - (x.asked + x.unsupported) || a.localeCompare(b))
-      .map(([model, row]) => ({ model, asked: count(row.asked), unsupportedRuns: count(row.unsupported) })),
+    modelMonths,
+    wanted: wanted.map((row) => ({ model: row.model, devices: row.devices, asked: count(row.asked), ran: count(row.ran) })),
     routes: routes.map((row) => ({ source: row.source, firmware: row.firmware, ...outcomes(row) })),
     tools: tools.map((row) => ({ tool: row.tool, ...outcomes(row) })),
     failures: failures.map((row) => ({ step: row.step || null, error: row.error, runs: row.runs })),
