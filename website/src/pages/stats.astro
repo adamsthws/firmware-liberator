@@ -47,7 +47,7 @@ const view = figures && {
     tip: `${row.model}: met ${((row.asked ?? 0) + (row.unsupportedRuns ?? 0)).toLocaleString("en")} times`,
   })),
   routes: figures.routes.filter((row) => row.success !== null).map((row) => ({
-    label: `${FROM[row.from] ?? row.from} → ${FIRMWARE[row.firmware] ?? row.firmware}`, value: row.success,
+    label: `${FROM[row.source] ?? row.source} → ${FIRMWARE[row.firmware] ?? row.firmware}`, value: row.success,
     note: `${attempted(row).toLocaleString("en")} runs`, tip: `${row.success}% of ${attempted(row).toLocaleString("en")} runs converted`,
   })),
   tools: figures.tools.filter((row) => row.success !== null).map((row) => ({

@@ -65,9 +65,9 @@ class PayloadTests(RouteTestCase):
     def test_a_crash_says_where_in_the_tools_code_and_nothing_made_up(self):
         ctx = self.ctx(firmware="esphome", device_kind="sonoff-s60")
         ctx.crash_site = "KeyError at tools/autoflash/report.py:212"
-        self.assertEqual(self.payload(ctx, "crashed", failure="KeyError: x")["stopped"]["where"], ctx.crash_site)
+        self.assertEqual(self.payload(ctx, "crashed", failure="KeyError: x")["stopped"]["crash_site"], ctx.crash_site)
         ctx.crash_site = "KeyError at /home/someone/x.py:1"   # never sent: not the tool's own
-        self.assertIsNone(self.payload(ctx, "crashed", failure="KeyError: x")["stopped"]["where"])
+        self.assertIsNone(self.payload(ctx, "crashed", failure="KeyError: x")["stopped"]["crash_site"])
 
     def test_what_the_run_and_this_computer_say_of_themselves(self):
         from types import SimpleNamespace
@@ -125,7 +125,7 @@ class PayloadTests(RouteTestCase):
                 self.assertEqual(data["result"], "cancelled")
                 # The stage it stopped at: the first not done.
                 self.assertEqual(data["stopped"], {"step": report_data.stopped_step(ctx), "error": how, "text": "",
-                                                   "where": None})
+                                                   "crash_site": None})
                 self.assertIsNotNone(data["stopped"]["step"])
 
     def test_a_failure_is_classed_by_the_words_sent_but_for_words_cut_short(self):
@@ -145,7 +145,7 @@ class PayloadTests(RouteTestCase):
         ctx = self.ctx(firmware="esphome", source="midway", device_kind="sonoff-s60",
                        put_back={"came_from": "esphome", "why": "no identity"})
         data = self.payload(ctx)
-        self.assertEqual((data["result"], data["from"]), ("put-back", "esphome"))
+        self.assertEqual((data["result"], data["source"]), ("put-back", "esphome"))
 
     def test_an_unknown_device_is_named_by_its_model_alone(self):
         ctx = self.ctx(product_model="NEWTHING", stock_version="not a version")
@@ -177,8 +177,8 @@ class PayloadTests(RouteTestCase):
                            "G1.seconds": 43}.items():
             ctx.state.capture(key, value)
         self.assertEqual(self.payload(ctx)["stages"], {
-            "E2": {"s": 36, "busy": 34, "tries": 2, "wait": 0, "setup_network": None, "power_cycles": 0},
-            "G1": {"s": 43, "busy": 0, "tries": 1, "wait": 0, "setup_network": None, "power_cycles": 0}})
+            "E2": {"seconds": 36, "busy": 34, "tries": 2, "wait": 0, "setup_network": None, "power_cycles": 0},
+            "G1": {"seconds": 43, "busy": 0, "tries": 1, "wait": 0, "setup_network": None, "power_cycles": 0}})
 
     def test_each_stage_says_why_it_needed_the_setup_network_and_how_many_power_cycles(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
