@@ -148,8 +148,11 @@ class SetupNetworkTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             image = Path(directory) / "tasmota.bin"
             image.write_bytes(b"\xe9" * 1024)
-            with self.assertRaisesRegex(setup_network.SetupError, "not for this chip"):
+            with self.assertRaises(setup_network.SetupError) as refused:
                 setup_network.upload_to_bridge(image, host=device.host, timeout=10)
+        # Without the bridge's full stop, as the run's own sentence follows
+        # ("... selected.. The device still has the installer", it once said).
+        self.assertEqual(str(refused.exception), "the bridge refused the image: The image is not for this chip")
 
     def test_the_bridge_is_on_port_80_and_each_connection_is_closed(self):
         connection = mock.MagicMock()
