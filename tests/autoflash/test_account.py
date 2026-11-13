@@ -39,78 +39,143 @@ class AccountDeviceTests(unittest.TestCase):
 
 
 class MatchTests(unittest.TestCase):
+    """Each device in the account is found by the hardware address its record
+    gives, whatever its chip family: Sonoff's firmware need answer nothing on
+    the network, so LAN Control is never needed."""
     device = account.account_device(S60)
 
-    def test_matched_by_its_ewelink_id(self):
-        [seen] = account.match_devices([self.device], {"1001234abc": "192.0.2.50"}, {})
-        self.assertEqual((seen.ip, seen.answering), ("192.0.2.50", True))
+    def test_found_by_the_hardware_address_its_record_gives(self):
+        [seen] = account.match_devices([self.device], {"192.0.2.50": "aa:bb:cc:12:34:56"})
+        self.assertEqual(seen.ip, "192.0.2.50")
 
-    def test_another_device_answering_is_not_mistaken_for_it(self):
-        [seen] = account.match_devices([self.device], {"1000aaaaaa": "192.0.2.60"}, {})
-        self.assertEqual((seen.ip, seen.answering), (None, False))
+    def test_another_device_on_the_network_is_not_mistaken_for_it(self):
+        [seen] = account.match_devices([self.device], {"192.0.2.60": "aa:bb:cc:00:00:01"})
+        self.assertIsNone(seen.ip)
 
-    def test_seen_by_hardware_address_only_means_lan_control_is_off(self):
-        [seen] = account.match_devices([self.device], {}, {"192.0.2.50": "aa:bb:cc:12:34:56"})
-        self.assertEqual((seen.ip, seen.answering), ("192.0.2.50", False))
-        self.assertIn("turn on LAN Control", account.why_not_found(seen))
+    def test_every_kind_online_at_its_hardware_address_is_ready(self):
+        for record, address, mac in ((S60, "192.0.2.50", "aa:bb:cc:12:34:56"),
+                                     (S61, "192.0.2.51", "12:34:56:ab:cd:ef")):
+            with self.subTest(record["productModel"]):
+                [seen] = account.match_devices([account.account_device(record)], {address: mac})
+                self.assertTrue(account.ready(seen))
 
-    def test_an_s60_seen_by_hardware_address_alone_is_not_ready(self):
-        [seen] = account.match_devices([self.device], {}, {"192.0.2.50": "aa:bb:cc:12:34:56"})
-        self.assertFalse(account.ready(seen))
-
-    def test_an_s61_needs_no_lan_control(self):
-        # Its conversion goes through eWeLink alone: online there, and at the
-        # hardware address the account gives it, it is found.
-        [seen] = account.match_devices([account.account_device(S61)], {}, {"192.0.2.51": "12:34:56:ab:cd:ef"})
-        self.assertTrue(account.ready(seen))
-
-    def test_an_s61_offline_in_ewelink_is_not_ready(self):
-        [seen] = account.match_devices([account.account_device({**S61, "online": False})], {},
-                                     {"192.0.2.51": "12:34:56:ab:cd:ef"})
-        self.assertFalse(account.ready(seen))
+    def test_offline_in_ewelink_is_not_ready(self):
+        for record, address, mac in ((S60, "192.0.2.50", "aa:bb:cc:12:34:56"),
+                                     (S61, "192.0.2.51", "12:34:56:ab:cd:ef")):
+            with self.subTest(record["productModel"]):
+                [seen] = account.match_devices([account.account_device({**record, "online": False})],
+                                               {address: mac})
+                self.assertFalse(account.ready(seen))
 
     def test_offline_in_ewelink_says_so(self):
-        [seen] = account.match_devices([account.account_device({**S60, "online": False})], {}, {})
+        [seen] = account.match_devices([account.account_device({**S60, "online": False})], {})
         self.assertIn("offline", account.why_not_found(seen))
 
-    def test_answering_but_offline_in_ewelink_means_no_internet(self):
+    def test_here_but_offline_in_ewelink_means_no_internet(self):
         offline = account.account_device({**S60, "online": False})
-        [seen] = account.match_devices([offline], {"1001234abc": "192.0.2.50"}, {})
+        [seen] = account.match_devices([offline], {"192.0.2.50": "aa:bb:cc:12:34:56"})
         self.assertTrue(account.cut_off(seen))
         self.assertIn("allow it internet access", account.why_not_found(seen))
 
     def test_online_but_unseen_names_its_network(self):
-        [seen] = account.match_devices([self.device], {}, {})
+        [seen] = account.match_devices([self.device], {})
         self.assertIn("(it is on 'Home-2G')", account.why_not_found(seen))
+
+    def test_lan_control_is_never_asked_for(self):
+        for record, neighbours in ((S60, {}), ({**S60, "online": False}, {}),
+                                   ({**S60, "online": False}, {"192.0.2.50": "aa:bb:cc:12:34:56"})):
+            [seen] = account.match_devices([account.account_device(record)], neighbours)
+            self.assertNotIn("LAN Control", account.why_not_found(seen))
+
+
+class SightTests(unittest.TestCase):
+    """The account's devices are looked for by hardware address, never by
+    eWeLink's local discovery, which Sonoff's firmware answers only with LAN
+    Control on."""
+    device = account.account_device(S60)
+
+    def sight(self, table, pings=True, swept=None, lan=None):
+        with mock.patch.object(hostsys, "neighbour_table", return_value=table), \
+             mock.patch.object(hostsys, "ping_ok", return_value=pings), \
+             mock.patch.object(hostsys, "lan_networks", return_value=lan or {"192.0.2.10": 24}), \
+             mock.patch.object(hostsys, "sweep", return_value=swept or {}) as self.swept, \
+             mock.patch.object(discover_ewelink, "discover") as discovered:
+            sightings = account.sight_devices([self.device])
+        discovered.assert_not_called()
+        return sightings
+
+    def test_where_this_computer_last_saw_it_is_asked_first(self):
+        [seen] = self.sight({"192.0.2.50": "aa:bb:cc:12:34:56"})
+        self.assertEqual(seen.ip, "192.0.2.50")
+        self.swept.assert_not_called()
+
+    def test_one_not_seen_lately_is_swept_for_on_this_computers_networks(self):
+        [seen] = self.sight({}, swept={"192.0.2.1": "aa:bb:cc:00:00:01", "192.0.2.77": "aa:bb:cc:12:34:56"})
+        self.assertEqual(seen.ip, "192.0.2.77")
+        self.swept.assert_called_once_with(["192.0.2.10"])
+
+    def test_an_address_it_no_longer_answers_at_is_not_taken(self):
+        [seen] = self.sight({"192.0.2.50": "aa:bb:cc:12:34:56"}, pings=False,
+                            swept={"192.0.2.77": "aa:bb:cc:12:34:56"})
+        self.assertEqual(seen.ip, "192.0.2.77")
 
 
 class TypedAddressTests(unittest.TestCase):
-    """An address typed in is used only once the device answers eWeLink's discovery there."""
+    """An address typed in is used only once the hardware address answering
+    there is one the account gives its devices."""
 
-    def found(self, ids):
-        packets = [{"source": "192.0.2.50", "records": [{"type": "TXT", "value": [f"id={i}"]}]}
-                   for i in ids]
-        return mock.patch.object(discover_ewelink, "discover", return_value={"packets": packets})
+    def check(self, address, mac):
+        with mock.patch.object(hostsys, "mac_of", return_value=mac), mock.patch.object(output, "tell"):
+            return account.device_at({"aa:bb:cc:12:34:56"})(address)
 
-    def test_the_accounts_s60_answering_will_do(self):
-        with self.found(["1001234abc"]), mock.patch.object(output, "tell"):
-            self.assertEqual(account.device_at({"1001234abc"})("192.0.2.50"), [])
+    def test_the_accounts_device_will_do(self):
+        self.assertEqual(self.check("192.0.2.50", "AA-BB-CC-12-34-56"), [])
 
-    def test_something_that_only_answers_a_ping_is_probably_the_router(self):
-        with self.found([]), mock.patch.object(output, "tell"):
-            problem = account.device_at({"1001234abc"})("192.0.2.1")
-        self.assertIn("not as an eWeLink device", problem[0])
-        self.assertIn("such as your router", " ".join(problem))
+    def test_another_device_is_not_taken_for_it(self):
+        problem = self.check("192.0.2.1", "aa:bb:cc:00:00:01")
+        self.assertIn("192.0.2.1 is another device", problem[0])
 
-    def test_another_ewelink_device_is_not_taken_for_the_device(self):
-        with self.found(["1000aaaaaa"]), mock.patch.object(output, "tell"):
-            problem = account.device_at({"1001234abc"})("192.0.2.60")
-        self.assertEqual(problem, ["192.0.2.60 is a different eWeLink device, not one of this "
-                                   "account's supported devices."])
+    def test_nothing_answering_is_said(self):
+        self.assertIn("Nothing answered at 192.0.2.99", self.check("192.0.2.99", None)[0])
 
-    def test_without_an_account_any_ewelink_device_will_do(self):
-        with self.found(["1000aaaaaa"]), mock.patch.object(output, "tell"):
-            self.assertEqual(account.device_at(None)("192.0.2.60"), [])
+
+class AccountRecordTests(unittest.TestCase):
+    """The device's record in the account, for every family: by the id A1
+    found or this computer keeps, else by its Wi-Fi MAC there."""
+    MAC = "12:34:56:ab:cd:ef"
+
+    def ctx(self, tmp, devices):
+        state = RunState.open(Path(tmp))
+        state.set_input("device_mac", self.MAC)
+        return types.SimpleNamespace(state=state, account_device=None, account_devices=lambda: devices,
+                                     email=lambda: "owner@example.com")
+
+    def test_a_device_with_no_id_kept_is_found_in_the_account_by_its_mac(self):
+        found = {"deviceid": "1001234abc", "params": {"staMac": self.MAC.upper()}}
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), \
+                mock.patch.object(records, "CAPTURES", Path(tmp)):
+            ctx = self.ctx(tmp, [{"deviceid": "other", "params": {"staMac": "12:34:56:AB:CD:00"}}, found])
+            self.assertEqual(account.device_id(ctx), "1001234abc")
+            self.assertIs(account.account_record(ctx), found)
+            self.assertEqual(account.device_id(ctx, "12:34:56:ab:cd:00"), "other", "by the MAC given")
+            ctx.account_devices = lambda: None   # eWeLink not reached
+            self.assertEqual(account.device_id(ctx), "")
+            records.remember_device(self.MAC, ewelink_id="1001234def")
+            self.assertEqual(account.device_id(ctx), "1001234def", "the one this computer keeps")
+
+    def test_a_device_not_in_the_account_stops_the_step(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), \
+                mock.patch.object(records, "CAPTURES", Path(tmp)):
+            with self.assertRaisesRegex(errors.Abort, "device id is not known"):
+                account.account_record(self.ctx(tmp, []))
+
+    def test_the_signal_is_only_a_reading_a_radio_gives(self):
+        self.assertIsNone(account.account_signal({"params": {"rssi": "strong"}}))
+        # 0 is what a device says for none.
+        for rssi, kept in ((-1, -1), (-119, -119), (0, None), (-120, None), (True, None)):
+            self.assertEqual(account.account_signal({"params": {"rssi": rssi}}), kept, rssi)
 
 
 class DescribeTests(unittest.TestCase):
@@ -125,7 +190,7 @@ class FindAccountDeviceTests(unittest.TestCase):
                                      account_devices=mock.Mock(return_value=[S60]))
 
     def test_the_one_s60_answering_is_chosen_without_asking(self):
-        sighting = account.Sighting(account.account_device(S60), "192.0.2.50", True)
+        sighting = account.Sighting(account.account_device(S60), "192.0.2.50")
         with mock.patch.object(account, "sight_devices", return_value=[sighting]), \
              mock.patch.object(prompts, "ask_choice") as asked, \
              mock.patch.object(output, "tell") as shown, mock.patch.object(output, "say"):
@@ -137,8 +202,8 @@ class FindAccountDeviceTests(unittest.TestCase):
         # Just plugged in, or a busy Wi-Fi: it answers a moment later.
         device = account.account_device(S60)
         with mock.patch.object(account, "sight_devices", side_effect=[
-                [account.Sighting(device, "192.0.2.50", False)],
-                [account.Sighting(device, "192.0.2.50", True)]]), \
+                [account.Sighting(device, None)],
+                [account.Sighting(device, "192.0.2.50")]]), \
              mock.patch.object(prompts, "ask_choice") as asked, mock.patch.object(time, "sleep"), \
              mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
             self.assertEqual(account.find_account_device(self.ctx(), [S60]), "192.0.2.50")
@@ -146,15 +211,15 @@ class FindAccountDeviceTests(unittest.TestCase):
 
     def test_looking_again_finds_it_once_it_answers(self):
         device = account.account_device(S60)
-        unseen = [account.Sighting(device, "192.0.2.50", False)]
+        unseen = [account.Sighting(device, None)]
         with mock.patch.object(account, "sight_devices", side_effect=[unseen] * (account.LOOK_AGAIN + 1) + [
-                [account.Sighting(device, "192.0.2.50", True)]]), \
+                [account.Sighting(device, "192.0.2.50")]]), \
              mock.patch.object(prompts, "ask_choice", return_value=0) as asked, mock.patch.object(time, "sleep"), \
              mock.patch.object(prompts, "section") as shown, \
              mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
             self.assertEqual(account.find_account_device(self.ctx(), [S60]), "192.0.2.50")
         asked.assert_called_once()   # only once it had been looked for again by itself
-        self.assertIn("turn on LAN Control", shown.call_args.args[1][0])
+        self.assertIn("was not seen on this computer's network", shown.call_args.args[1][0])
 
     def clock(self):
         """A clock that moves on 10 s for every sleep, and no real waiting."""
@@ -169,7 +234,7 @@ class FindAccountDeviceTests(unittest.TestCase):
         ctx.account_devices = mock.Mock(side_effect=[[offline], [S60]])
         monotonic, sleep = self.clock()
         with mock.patch.object(account, "sight_devices",
-                               side_effect=lambda devices: [account.Sighting(p, "192.0.2.50", True) for p in devices]), \
+                               side_effect=lambda devices: [account.Sighting(p, "192.0.2.50") for p in devices]), \
              mock.patch.object(prompts, "ask_choice") as asked, monotonic, sleep, \
              mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
             self.assertEqual(account.find_account_device(ctx, [offline]), "192.0.2.50")
@@ -183,8 +248,8 @@ class FindAccountDeviceTests(unittest.TestCase):
         device = account.account_device(offline)
         monotonic, sleep = self.clock()
         with mock.patch.object(account, "sight_devices", side_effect=[
-                [account.Sighting(device, None, False)],
-                [account.Sighting(account.account_device(S60), "192.0.2.50", True)]]), \
+                [account.Sighting(device, None)],
+                [account.Sighting(account.account_device(S60), "192.0.2.50")]]), \
              mock.patch.object(prompts, "ask_choice") as asked, monotonic, sleep, \
              mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
             self.assertEqual(account.find_account_device(ctx, [offline]), "192.0.2.50")
@@ -196,7 +261,7 @@ class FindAccountDeviceTests(unittest.TestCase):
         ctx.account_devices = mock.Mock(return_value=[offline])
         monotonic, sleep = self.clock()
         with mock.patch.object(account, "sight_devices",
-                               side_effect=lambda devices: [account.Sighting(p, None, False) for p in devices]), \
+                               side_effect=lambda devices: [account.Sighting(p, None) for p in devices]), \
              mock.patch.object(prompts, "ask_choice", return_value=2), \
              mock.patch.object(prompts, "ask_ipv4", return_value="192.0.2.99"), \
              mock.patch.object(prompts, "section") as shown, monotonic, sleep, \
@@ -206,21 +271,18 @@ class FindAccountDeviceTests(unittest.TestCase):
         # Looked again every 10 s for the minute, then LOOK_AGAIN times more, before asking.
         self.assertEqual(ctx.account_devices.call_count, int(account.CLOUD_CATCH_UP // 10) + account.LOOK_AGAIN)
 
-    def test_without_ewelink_a_device_not_answering_is_looked_for_again_before_asking(self):
-        with mock.patch.object(account, "find_ewelink_devices", side_effect=[[], [], [("192.0.2.50", "S60")]]), \
-             mock.patch.object(prompts, "ask_choice") as asked, mock.patch.object(time, "sleep"), \
-             mock.patch.object(output, "say"):
-            self.assertEqual(account.find_any_device(), "192.0.2.50")
-        asked.assert_not_called()
-        with mock.patch.object(account, "find_ewelink_devices", side_effect=[[]] * (account.LOOK_AGAIN + 1)), \
-             mock.patch.object(prompts, "ask_choice", return_value=1) as asked, mock.patch.object(time, "sleep"), \
-             mock.patch.object(prompts, "ask_ipv4", return_value="192.0.2.99"), \
-             mock.patch.object(prompts, "section"), mock.patch.object(output, "say"):
-            self.assertEqual(account.find_any_device(), "192.0.2.99")
-        asked.assert_called_once()
+    def test_without_ewelink_the_run_stops_with_nothing_written(self):
+        # A device on Sonoff's firmware is found, and converted, through eWeLink.
+        ctx = self.ctx()
+        ctx.account_devices = mock.Mock(return_value=None)
+        with mock.patch.object(account, "sight_devices", return_value=[account.Sighting(account.account_device(S60), None)]), \
+             mock.patch.object(prompts, "ask_choice", return_value=0), mock.patch.object(time, "sleep"), \
+             mock.patch.object(prompts, "section"), mock.patch.object(output, "say"), \
+             self.assertRaisesRegex(errors.Abort, "eWeLink could not be reached.*Nothing was written"):
+            account.find_account_device(ctx, [S60])
 
     def test_a_device_without_internet_is_not_chosen(self):
-        sighting = account.Sighting(account.account_device({**S60, "online": False}), "192.0.2.50", True)
+        sighting = account.Sighting(account.account_device({**S60, "online": False}), "192.0.2.50")
         monotonic, sleep = self.clock()
         with mock.patch.object(account, "sight_devices", return_value=[sighting]), monotonic, sleep, \
              mock.patch.object(prompts, "ask_choice", return_value=2), \
@@ -234,7 +296,7 @@ class FindAccountDeviceTests(unittest.TestCase):
 
     def test_another_account_chosen_is_signed_in_to_and_its_devices_looked_at(self):
         ctx = self.ctx()
-        sighting = account.Sighting(account.account_device(S60), "192.0.2.50", True)
+        sighting = account.Sighting(account.account_device(S60), "192.0.2.50")
         with mock.patch.object(prompts, "ask_choice", side_effect=[1]), \
              mock.patch.object(account, "sight_devices", return_value=[sighting]), \
              mock.patch.object(prompts, "section"), mock.patch.object(output, "say"):
@@ -272,7 +334,9 @@ class ModelGuardTests(unittest.TestCase):
         state = self.state = RunState.open(root)
         state.set_input("device_ip", "10.0.0.63")
         ctx = SimpleNamespace(dir=root, state=state, email=lambda: "a@b.c",
-                              ewelink_env=lambda: {}, helper_env=lambda: {}, ewelink_region=lambda: "us")
+                              ewelink_env=lambda: {}, helper_env=lambda: {}, ewelink_region=lambda: "us",
+                              account_device=account.account_device(S60),
+                              account_devices=lambda: [SWITCH, {**S60, "params": {**S60["params"], "rssi": -61}}])
 
         def fake_tool(args, **_):
             if "tools/ewelink/query_ota.py" in args and self.written:
@@ -284,9 +348,12 @@ class ModelGuardTests(unittest.TestCase):
                 }))
             return 0
 
-        answered = {"packets": [{"source": "10.0.0.63", "records": []}]}
+        # Sonoff's firmware answers nothing on the network: no LAN Control.
         with mock.patch.object(hostsys, "run_tool", side_effect=fake_tool), \
-             mock.patch.object(discover_ewelink, "discover", return_value=answered), \
+             mock.patch.object(discover_ewelink, "discover") as self.discovered, \
+             mock.patch.object(setup_network, "page", return_value=None), \
+             mock.patch.object(esphome, "is_esphome", return_value=False), \
+             mock.patch.object(openbeken, "is_openbeken", return_value=False), \
              mock.patch.object(firmware_name, "learn", return_value=self.learned) as self.learn, \
              mock.patch.object(prompts, "section"), mock.patch.object(output, "say"):
             return account.step_discover(ctx)
@@ -297,13 +364,19 @@ class ModelGuardTests(unittest.TestCase):
         self.assertEqual(self.state.input("stock_version"), "1.2.0")
         self.assertEqual(self.state.input("product_model"), "")
 
-    def test_the_discovery_report_is_kept_and_the_ota_metadata_is_not(self):
+    def test_the_ota_metadata_is_not_kept(self):
         # Its download links may work as access tokens.
-        import json
         self.discover_with_model("SN-ESP32C3-S60-01")
-        kept = json.loads((self.root / "mdns.json").read_text(encoding="utf-8"))
-        self.assertEqual(kept["packets"][0]["source"], "10.0.0.63")
         self.assertFalse((self.root / "ota-metadata.json").exists())
+
+    def test_ewelink_is_asked_by_the_accounts_id_with_no_discovery(self):
+        self.discover_with_model("SN-ESP32C3-S60-01")
+        self.assertEqual(self.tool_args[self.tool_args.index("--device-id") + 1], "1001234abc")
+        self.assertNotIn("--mdns-capture", self.tool_args)
+        self.discovered.assert_not_called()
+
+    def test_the_signal_is_the_one_the_device_last_told_ewelink(self):
+        self.assertEqual(self.discover_with_model("SN-ESP32C3-S60-01")["signal_dbm"], -61)
 
     def test_metadata_the_query_did_not_write_stops_the_step_plainly(self):
         self.written = False
@@ -387,7 +460,8 @@ class FirmwareNameTests(unittest.TestCase):
 
 
 class AlreadyConvertingTests(unittest.TestCase):
-    """A device part way through a conversion is not a LAN Control problem."""
+    """A device part way through a conversion, or converted, is named before
+    eWeLink, whose record of it is out of date, is asked about it."""
 
     def silent_discover(self, page, running=None):
         """`running`: "esphome" or "openbeken", if that answers at the address."""
@@ -398,13 +472,15 @@ class AlreadyConvertingTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         state = RunState.open(Path(directory.name))
         state.set_input("device_ip", "10.0.0.63")
-        ctx = SimpleNamespace(dir=Path(directory.name), state=state)
-        with mock.patch.object(discover_ewelink, "discover", return_value={"packets": []}), \
-             mock.patch.object(setup_network, "page", return_value=page), \
+        ctx = SimpleNamespace(dir=Path(directory.name), state=state, account_device=account.account_device(S60),
+                              account_devices=lambda: [S60])
+        asked = account.Asked("1.2.0", "SN-ESP32C3-S60-01", "S60TPG", [], {}, "1001234abc")
+        with mock.patch.object(setup_network, "page", return_value=page), \
              mock.patch.object(esphome, "is_esphome", return_value=running == "esphome"), \
              mock.patch.object(openbeken, "is_openbeken", return_value=running == "openbeken"), \
-             mock.patch.object(hostsys, "security_software_note", return_value=None), \
-             mock.patch.object(prompts, "section"):
+             mock.patch.object(account, "_ask", return_value=asked) as self.asked, \
+             mock.patch.object(firmware_name, "learn", return_value=(None, [])), \
+             mock.patch.object(prompts, "section"), mock.patch.object(output, "say"):
             return account.step_discover(ctx)
 
     def test_the_bridge_is_named(self):
@@ -423,13 +499,16 @@ class AlreadyConvertingTests(unittest.TestCase):
             self.assertEqual(raised.exception.firmware, running)
             self.assertIn(f"running {name}, not Sonoff's firmware: it is converted already", str(raised.exception))
 
-    def test_another_page_keeps_the_lan_control_advice(self):
-        with self.assertRaisesRegex(errors.Abort, "LAN Control"):
-            self.silent_discover("<html></html>")
+    def test_sonoff_firmware_answering_nothing_known_is_asked_of_ewelink(self):
+        for page in ("<html></html>", None):
+            with self.subTest(page):
+                self.assertEqual(self.silent_discover(page)["model"], "SN-ESP32C3-S60-01")
+                self.asked.assert_called_once_with(mock.ANY, "--device-id", "1001234abc")
 
-    def test_no_page_keeps_the_lan_control_advice(self):
-        with self.assertRaisesRegex(errors.Abort, "LAN Control"):
-            self.silent_discover(None)
+    def test_a_converted_device_is_not_asked_of_ewelink(self):
+        with self.assertRaises(errors.Abort):
+            self.silent_discover("<title>Tasmota</title>")
+        self.asked.assert_not_called()
 
 
 class PairStepTests(unittest.TestCase):
@@ -445,20 +524,12 @@ class PairStepTests(unittest.TestCase):
                                manifest_path=(runs.ROOT / bundle.DEFAULT_MANIFEST).resolve(),
                                wifi=lambda: ("Home-2G", "password"))
 
-    def test_without_ewelink_no_device_found_offers_to_look_again(self):
-        from unittest import mock
+    def test_without_ewelink_the_run_stops(self):
         ctx = self.ctx()
         ctx.account_devices = lambda: None  # eWeLink could not be reached
-        # Filed under its MAC in a scratch folder, not this checkout's captures.
-        with mock.patch.object(records, "DEVICES", ctx.evidence.parent / "devices"), \
-             mock.patch.object(records, "hold"), \
-             mock.patch.object(account, "find_ewelink_devices",
-                               side_effect=[[], [("10.0.0.5", "eWeLink device abc")]]), \
-             mock.patch.object(prompts, "ask_choice", return_value=0), \
-             mock.patch.object(hostsys, "mac_of", return_value="aa:bb:cc:dd:ee:ff"), \
-             mock.patch.object(prompts, "section"), mock.patch.object(output, "say"):
-            result = account.step_pair(ctx)
-        self.assertEqual(result["device_ip"], "10.0.0.5")
+        with mock.patch.object(output, "say"), \
+             self.assertRaisesRegex(errors.Abort, "eWeLink could not be reached"):
+            account.step_pair(ctx)
 
     def test_the_account_devices_kind_is_kept_for_the_run(self):
         from unittest import mock
@@ -466,7 +537,7 @@ class PairStepTests(unittest.TestCase):
         ctx.account_devices = lambda: [{"deviceid": "1000000001", "productModel": "S60TPG",
                                         "name": "Sonoff S60", "online": True, "params": {}}]
         with mock.patch.object(account, "sight_devices",
-                               side_effect=lambda devices: [account.Sighting(p, "192.168.60.50", True)
+                               side_effect=lambda devices: [account.Sighting(p, "192.168.60.50")
                                                           for p in devices]), \
              mock.patch.object(hostsys, "mac_of", return_value=None), \
              mock.patch.object(output, "say"):
@@ -478,7 +549,7 @@ class PairStepTests(unittest.TestCase):
                             "online": True, "params": {"staMac": "12:34:56:AB:CD:EF"}}]
         ctx.account_devices = lambda: account_devices
         with mock.patch.object(account, "sight_devices",
-                               side_effect=lambda devices: [account.Sighting(p, "192.0.2.50", True)
+                               side_effect=lambda devices: [account.Sighting(p, "192.0.2.50")
                                                           for p in devices]), \
              mock.patch.object(hostsys, "mac_of", return_value=arp_mac), \
              mock.patch.object(runs, "file_device") as filed, mock.patch.object(output, "say"):
@@ -509,7 +580,7 @@ class PairStepTests(unittest.TestCase):
                                         "name": "Sonoff S60", "online": True, "params": {}}]
         screen = mock.Mock()
         with mock.patch.object(account, "sight_devices",
-                               side_effect=lambda devices: [account.Sighting(p, None, False) for p in devices]), \
+                               side_effect=lambda devices: [account.Sighting(p, None) for p in devices]), \
              mock.patch.object(prompts, "ask_choice", return_value=2), \
              mock.patch.object(prompts, "ask_ipv4", screen.ask_ipv4), \
              mock.patch.object(output, "transient_begin", screen.begin), \

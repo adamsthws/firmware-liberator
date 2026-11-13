@@ -566,7 +566,7 @@ class FoundOnTheNetworkTests(FirmwareSearchCase):
         with mock.patch.object(source, "last_run", return_value="readout"), \
                 mock.patch.object(installer, "restart_into_sonoff", return_value=True) as restarted:
             self.assertEqual(self.search(bridge, choice=0)[0], "sonoff")
-        restarted.assert_called_once_with("192.0.2.137")
+        restarted.assert_called_once_with(mock.ANY, "192.0.2.137")
         source.adopt_device.assert_not_called()
 
 
@@ -609,7 +609,7 @@ class InstallerFoundTests(FirmwareSearchCase):
 
     def test_left_by_a_readout_it_is_restarted_into_sonoff(self):
         self.assertEqual(self.find("readout"), "sonoff")
-        self.restarted.assert_called_once_with("192.0.2.137")
+        self.restarted.assert_called_once_with(mock.ANY, "192.0.2.137")
         self.assertEqual(self.asked.call_args.args[1], "12:34:56:ab:cd:ef")
 
     def test_left_by_a_conversion_here_it_carries_on(self):

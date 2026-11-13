@@ -218,9 +218,9 @@ backup.
   of a CPU and about 115 MB, peaking near 150 MB; a classic ESP32's runs two
   cores and peaked at 250 MB.
 - **A busy computer's emulated device can answer ARP late**: one sweep of
-  the network then misses it. A readout of a device that answers no local
-  discovery (an S61) looks for it by its hardware address again until
-  `readout.LOOK_FOR` is up, before asking for its address. To try that, delay
+  the network then misses it. A readout looks for the device by its hardware
+  address again until `readout.LOOK_FOR` is up, before asking for its
+  address. To try that, delay
   ARP alone to the device's container, on its link's host end (`eth0@ifN`
   inside it is host link N): `tc qdisc add dev VETH root handle 1: prio`,
   `tc qdisc add dev VETH parent 1:3 handle 30: netem delay 3000ms`, and

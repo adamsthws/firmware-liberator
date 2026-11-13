@@ -79,7 +79,8 @@ class ClassifyTests(unittest.TestCase):
             "the device is a BASICR4, which this tool does not convert yet. Nothing was written": "unsupported-device",
             "the device did not fetch the D1 instructions from this computer within 90s; nothing was written":
                 "computer-network",
-            "the device at 192.0.2.50 did not answer the eWeLink discovery; check it is switched on": "ewelink-account",
+            "eWeLink could not be reached, and a device on Sonoff's firmware is found and converted through it. "
+            "Nothing was written: check this computer's internet connection": "ewelink-unreachable",
             "nothing answers at 192.0.2.50: check the device is switched on and on your Wi-Fi": "device-not-found",
             "the device at 192.0.2.50 did not answer within 30s": "device-no-answer",
             "the public dump fetched is not the one this tool knows (its hash differs): refusing it": "integrity",

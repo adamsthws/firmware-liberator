@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from tools.autoflash import hostsys, kinds, output, records
+from tools.autoflash import account, kinds, output, records
 from tools.autoflash.errors import Abort, NothingWritten
 from tools.autoflash.routes import public_copies
 from tools.autoflash.runs import ROOT
@@ -94,26 +94,8 @@ def offered_file(ctx: Context) -> bytes | None:
     return ctx.offered_sonoff_file
 
 
-def device_id(ctx: Context) -> str:
-    """The device's eWeLink id: the one A1 found or this computer keeps for
-    it, else by its Wi-Fi MAC in the account's records, as the Espressif
-    route finds it (identity.account_record). "" where none is found."""
-    found = getattr(ctx, "account_device", None)
-    if found is not None and found.device_id:
-        return found.device_id
-    mac = hostsys.normalise_mac(str(ctx.state.input("device_mac") or ""))
-    kept = str(records.read_device(mac).get("ewelink_id") or "") if mac else ""
-    if kept or not mac:
-        return kept
-    for device in ctx.account_devices() or []:
-        sta_mac = (device.get("params") or {}).get("staMac")
-        if sta_mac and hostsys.normalise_mac(str(sta_mac)) == mac:
-            return str(device.get("deviceid") or "")
-    return ""
-
-
 def _offered_file(ctx: Context) -> bytes | None:
-    deviceid = device_id(ctx)
+    deviceid = account.device_id(ctx)
     if not deviceid:
         output.log_only(f"    Sonoff's firmware: {OFFERED}: the device is not found in the eWeLink account")
         return None

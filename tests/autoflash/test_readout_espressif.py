@@ -11,14 +11,14 @@ from tools.autoflash import account, errors, hostsys, kinds, records, prompts, r
 # A kind a whole readout is for (Readout wanted) that the tool does not convert:
 # the bridge has never run on a real one.
 BASICR4 = kinds.SONOFF_BASICR4
-AS_BASICR4 = account.Asked({"packets": []}, "1.1.0", BASICR4.stock_model, "BASICR4", [], {}, "1000abcdef")
+AS_BASICR4 = account.Asked("1.1.0", BASICR4.stock_model, "BASICR4", [], {}, "1000abcdef")
 DEVICE = record("BASICR4", BASICR4.stock_model)
 
 
 class BridgeTests(unittest.TestCase):
     def setUp(self):
         start_run(self)
-        asked = mock.patch.object(account, "ask_ewelink", return_value=AS_BASICR4)
+        asked = mock.patch.object(account, "ask_account", return_value=AS_BASICR4)
         asked.start()
         self.addCleanup(asked.stop)
 
@@ -64,6 +64,9 @@ class BridgeTests(unittest.TestCase):
         command = sent.call_args.args[0]
         self.assertEqual(command[1], "-u")  # each line of the sender's in the log as it comes
         self.assertEqual(command[command.index("--readout-model") + 1], BASICR4.wrapper_model)
+        # Sent to the account's device by its id, not by its eWeLink discovery advert.
+        self.assertEqual(command[command.index("--device-id") + 1], DEVICE["deviceid"])
+        self.assertNotIn("--mdns-capture", command)
         wrapped = Path(command[command.index("--firmware") + 1]).read_bytes()
         self.assertEqual(analyze_vendor_ota.analyze(wrapped)["wrapper"]["model"], BASICR4.wrapper_model)
         manifest, files = offered.call_args.args[1:3]
@@ -91,7 +94,8 @@ class BridgeTests(unittest.TestCase):
                                   return_value=(wifi_flash(), b"\0" * 124, {"size": 1, "sha256": "ab"})) as read, \
                 mock.patch.object(dump_stock_flash, "summary", return_value=[]), \
                 mock.patch.object(dump_stock_flash, "read_info", return_value=None):
-            readout_espressif.read_out(self.ctx, readout_espressif.chips.ESP32C3, "FWSW-E32NEW-NEW-ESP32C3", "1.0.0")
+            readout_espressif.read_out(self.ctx, readout_espressif.chips.ESP32C3, "FWSW-E32NEW-NEW-ESP32C3", "1.0.0",
+                                      "1000abcdef")
         sent.assert_not_called()
         waited.assert_not_called()
         # A firewall rule the stopped run left is taken over, to be removed as this run ends.
@@ -112,7 +116,7 @@ class BackOnSonoffTests(unittest.TestCase):
         with mock.patch.object(readout_espressif.installer, "restart_into_sonoff", return_value=True) as restarted, \
                 mock.patch.object(prompts, "wait_for_key") as asked:
             self.assertTrue(readout_espressif.back_on_sonoff(self.ctx))
-        restarted.assert_called_once_with("192.0.2.77")
+        restarted.assert_called_once_with(self.ctx, "192.0.2.77")
         asked.assert_not_called()
         self.assertEqual(self.ctx.state.input(readout.STATE_KEY), "read")
 

@@ -126,8 +126,9 @@ class PackageTests(unittest.TestCase):
 
 
 class DeviceAtTests(unittest.TestCase):
-    """--device-ip picks the account device at that address: by discovery, by its
-    hardware address (a Beken device does no discovery), or the one device there."""
+    """--device-ip picks the account device at that address: by its hardware
+    address, whatever its family; by discovery, for a record that gives none;
+    or the one device there."""
     S61 = {"deviceid": "1000abcdef", "params": {"staMac": "12:34:56:AB:CD:EF"}}
     OTHER = {"deviceid": "2000bbbbbb", "params": {"staMac": "aa:bb:cc:dd:ee:ff"}}
 
@@ -137,10 +138,11 @@ class DeviceAtTests(unittest.TestCase):
                 mock.patch.object(readout.hostsys, "mac_of", return_value=mac):
             return readout.device_at(address, devices)
 
-    def test_by_its_hardware_address_when_it_answers_no_discovery(self):
-        self.assertIs(self.device_at("192.0.2.60", [self.OTHER, self.S61], mac="12:34:56:ab:cd:ef"), self.S61)
+    def test_by_its_hardware_address_whatever_answers_discovery(self):
+        self.assertIs(self.device_at("192.0.2.60", [self.OTHER, self.S61], mac="12:34:56:ab:cd:ef",
+                                     answering={"2000bbbbbb": "192.0.2.60"}), self.S61)
 
-    def test_by_discovery_when_it_answers(self):
+    def test_by_discovery_where_no_hardware_address_tells(self):
         self.assertIs(self.device_at("192.0.2.60", [self.OTHER, self.S61],
                                      answering={"2000bbbbbb": "192.0.2.60"}), self.OTHER)
 
@@ -328,8 +330,8 @@ class RateLimitTests(unittest.TestCase):
 
 
 class LocateTests(unittest.TestCase):
-    """A device's address with none given: by discovery, or for a Beken device,
-    which does no LAN Control, by the hardware address its record gives."""
+    """A device's address with none given: by the hardware address its record
+    gives, whatever its family - by discovery only where it gives none."""
     BEKEN = {"deviceid": "1000abcdef", "productModel": "NEWBK", "extra": {"model": "SN-BK7238-NEW-01"},
              "params": {"staMac": "12:34:56:AB:CD:EF"}}
 
@@ -391,19 +393,19 @@ class LocateTests(unittest.TestCase):
     def test_a_beken_device_is_known_by_its_product_model_alone(self):
         # An account record with no firmware model in it: the product says the chip family.
         from tools.autoflash import kinds
-        self.assertTrue(readout.lan_free({"productModel": kinds.SONOFF_S61.example_product_model}))
-        self.assertFalse(readout.lan_free(DEVICE))
+        self.assertTrue(readout.is_beken({"productModel": kinds.SONOFF_S61.example_product_model}))
+        self.assertFalse(readout.is_beken(DEVICE))
 
-    def test_one_not_answering_discovery_is_found_by_its_hardware_address(self):
-        # An Espressif device on the reading program a readout stopped part way left on it.
+    def test_an_espressif_device_is_found_by_its_hardware_address_with_no_lan_control(self):
         device = {**DEVICE, "params": {"staMac": "12:34:56:AB:CD:EF"}}
         with mock.patch.object(hostsys, "find_by_mac", return_value="192.0.2.77") as found, \
                 mock.patch.object(prompts, "ask_ipv4") as asked:
             self.assertEqual(readout.locate(None, device), "192.0.2.77")
         self.assertEqual(found.call_args.args[0], "12:34:56:ab:cd:ef")
         asked.assert_not_called()
+        self.discover.assert_not_called()
 
-    def test_another_device_is_found_by_discovery(self):
+    def test_one_whose_record_gives_no_hardware_address_is_found_by_discovery(self):
         self.discover.return_value = {"packets": ["x"]}
         with mock.patch.object(readout, "answering_ids", return_value={"1000abcdef": "192.0.2.88"}), \
                 mock.patch.object(hostsys, "find_by_mac") as by_mac:
@@ -425,7 +427,7 @@ def start_run(test: unittest.TestCase) -> None:
     test.tmp = tempfile.TemporaryDirectory()
     test.addCleanup(test.tmp.cleanup)
     test.ctx = a_ctx(test.tmp.name)
-    asked = account.Asked({"packets": []}, "1.0.0", "SN-NEW-01", "NEWTHING", [], {}, "1000abcdef")
+    asked = account.Asked("1.0.0", "SN-NEW-01", "NEWTHING", [], {}, "1000abcdef")
     filed = mock.patch.object(runs, "file_device")
     test.filed = filed.start()
     test.addCleanup(filed.stop)
@@ -435,7 +437,6 @@ def start_run(test: unittest.TestCase) -> None:
                   # On Sonoff's firmware, not a readout's reading program left on it.
                   mock.patch.object(readout_espressif.installer, "bridge_answers", return_value=False),
                   mock.patch.object(hostsys, "mac_of", return_value="12:34:56:ab:cd:ef"),
-                  mock.patch.object(account, "ask_ewelink", return_value=asked),
                   mock.patch.object(account, "ask_account", return_value=asked),
                   mock.patch.object(records, "remember_device"),
                   # Wanted, as the website would say: never asked of it from a test.
@@ -450,7 +451,7 @@ def start_run(test: unittest.TestCase) -> None:
 def s60_asked() -> account.Asked:
     """What an S60 on Sonoff's firmware says, through eWeLink: a kind read in full."""
     from tools.autoflash import kinds
-    return account.Asked({"packets": []}, "1.2.0", kinds.SONOFF_S60.stock_model, "S60TPG", [], {}, "1000abcdef")
+    return account.Asked("1.2.0", kinds.SONOFF_S60.stock_model, "S60TPG", [], {}, "1000abcdef")
 
 
 S60_ASKED = s60_asked()
@@ -482,7 +483,7 @@ class RunTests(unittest.TestCase):
         from tools.autoflash import kinds
         s60 = record("S60TPG", kinds.SONOFF_S60.stock_model)
         converted = account.NotOnSonoff("esphome", "192.0.2.77 is running ESPHome, not Sonoff's firmware")
-        with mock.patch.object(account, "ask_ewelink", side_effect=converted), \
+        with mock.patch.object(account, "ask_account", side_effect=converted), \
                 mock.patch.object(runs, "hold_device"), mock.patch.object(readout, "ask_wanted") as wanted:
             self.assertEqual(readout.run(self.ctx, s60), "")   # nothing for the owner to do
             self.assertEqual(readout.run(self.ctx, s60, batch=readout.Batch()), "")
@@ -523,17 +524,14 @@ class RunTests(unittest.TestCase):
         asked.assert_not_called()
         self.assertIsNone(readout.readouts(self.ctx)[-1].mac)
 
-    def test_one_whose_mac_eWeLink_gives_or_that_answers_no_discovery_is_not_looked_for(self):
+    def test_one_whose_mac_eWeLink_gives_is_not_looked_for(self):
         given = {**DEVICE, "params": {**DEVICE["params"], "staMac": "12:34:56:AB:CD:01"}}
-        lan_free = {**DEVICE, "productModel": "NEWBK", "extra": {"model": "SN-BK7238-NEW-01"}}
-        for device in (given, lan_free):
-            self.stages.clear()
-            with self.subTest(device=device["productModel"]), learned("FWSW-01-NEW-BK7238", "BK7238"), \
-                    mock.patch.object(readout, "offer", return_value="done"), \
-                    mock.patch.object(readout, "answering_at") as looked:
-                readout.run(self.ctx, device)
-                looked.assert_not_called()
-                self.assertEqual(self.stages[:2], ["2 Locating the device on your network", "skipped"])
+        with learned("FWSW-01-NEW-BK7238", "BK7238"), \
+                mock.patch.object(readout, "offer", return_value="done"), \
+                mock.patch.object(readout, "answering_at") as looked:
+            readout.run(self.ctx, given)
+            looked.assert_not_called()
+            self.assertEqual(self.stages[:2], ["2 Locating the device on your network", "skipped"])
         self.assertEqual(readout.readouts(self.ctx)[0].mac, "12:34:56:ab:cd:01")
 
     def test_one_read_in_full_restores_its_firmware_in_a_stage_of_its_own(self):
@@ -544,7 +542,7 @@ class RunTests(unittest.TestCase):
             readout.restoring()   # as each chip's readout says, between the two
             return {}, True
         with mock.patch.object(firmware_name, "learn", return_value=(None, ["no offer"])), \
-                mock.patch.object(account, "ask_ewelink", return_value=S60_ASKED), \
+                mock.patch.object(account, "ask_account", return_value=S60_ASKED), \
                 mock.patch.object(runs, "hold_device"), \
                 mock.patch.object(readout_espressif, "read_and_anonymise", side_effect=read), \
                 mock.patch.object(readout, "offer", return_value="done"):
@@ -558,7 +556,7 @@ class RunTests(unittest.TestCase):
         from tools.autoflash import kinds
         s60 = record("S60TPG", kinds.SONOFF_S60.stock_model)
         with mock.patch.object(firmware_name, "learn", return_value=(None, ["no offer"])), \
-                mock.patch.object(account, "ask_ewelink", return_value=S60_ASKED), \
+                mock.patch.object(account, "ask_account", return_value=S60_ASKED), \
                 mock.patch.object(runs, "hold_device"):
             for batch, raised, ended in ((None, errors.NothingWritten("not confirmed"), "stopped"),
                                          (readout.Batch(), errors.NothingWritten("skipped as asked"), "skipped"),
@@ -607,7 +605,7 @@ class RunTests(unittest.TestCase):
                                       side_effect=lambda ctx, became, seconds: sent.append(
                                           (became.outcome, became.error, became.mac))), \
                     mock.patch.object(firmware_name, "learn", return_value=(None, ["no offer"])), \
-                    mock.patch.object(account, "ask_ewelink", return_value=S60_ASKED), \
+                    mock.patch.object(account, "ask_account", return_value=S60_ASKED), \
                     mock.patch.object(runs, "hold_device"), \
                     mock.patch.object(readout_espressif, "read_and_anonymise",
                                       side_effect=raised, return_value=({}, True)), \
@@ -623,15 +621,15 @@ class RunTests(unittest.TestCase):
     def test_a_device_converted_since_ends_its_stages_there(self):
         from tools.autoflash import kinds
         converted = account.NotOnSonoff("esphome", "192.0.2.77 is running ESPHome, not Sonoff's firmware")
-        with mock.patch.object(account, "ask_ewelink", side_effect=converted), mock.patch.object(runs, "hold_device"):
+        with mock.patch.object(account, "ask_account", side_effect=converted), mock.patch.object(runs, "hold_device"):
             readout.run(self.ctx, record("S60TPG", kinds.SONOFF_S60.stock_model))
         self.assertEqual(self.stages, ["2 Locating the device on your network", "complete",
                                        "3 Probing the device", "complete"])
 
     def test_a_kind_the_tool_knows_takes_its_own_name_when_ewelink_gives_none(self):
         from tools.autoflash import kinds
-        s60 = account.Asked({"packets": []}, "1.2.0", kinds.SONOFF_S60.stock_model, "S60TPG", [], {}, "1000abcdef")
-        with mock.patch.object(account, "ask_ewelink", return_value=s60), \
+        s60 = account.Asked("1.2.0", kinds.SONOFF_S60.stock_model, "S60TPG", [], {}, "1000abcdef")
+        with mock.patch.object(account, "ask_account", return_value=s60), \
                 mock.patch.object(firmware_name, "learn", return_value=(None, ["no offer"])), \
                 mock.patch.object(readout_espressif, "read_out", side_effect=errors.NothingWritten("stop")) as read:
             with self.assertRaises(errors.NothingWritten):
@@ -640,9 +638,8 @@ class RunTests(unittest.TestCase):
         self.assertTrue(read.call_args.kwargs["known"])
 
     def asked_as(self, product: str, model: str):
-        asked = account.Asked({"packets": []}, "1.0.0", model, product, [], {}, "1000abcdef")
-        return mock.patch.multiple(account, ask_ewelink=mock.Mock(return_value=asked),
-                                   ask_account=mock.Mock(return_value=asked))
+        asked = account.Asked("1.0.0", model, product, [], {}, "1000abcdef")
+        return mock.patch.multiple(account, ask_account=mock.Mock(return_value=asked))
 
     def read(self, product: str, model: str, name: str, chip: str):
         """What a readout of this device sent it (the reading program, or None),
@@ -661,6 +658,21 @@ class RunTests(unittest.TestCase):
         sent, manifest = self.read("NEWTHING", "SN-NEW-01", "FWSW-E32-NEW-ESP32C3", "ESP32C3")
         self.assertIsNone(sent)
         self.assertFalse(manifest["read"])
+
+    def test_what_answers_at_an_espressif_devices_address_is_checked_before_ewelink_is_asked(self):
+        # account.already_converting, as a conversion's A2 does; a Beken
+        # device's readout finds what it runs itself.
+        from tools.autoflash import kinds
+        for product, kind, chip, checked in (("BASICR4", kinds.SONOFF_BASICR4, "ESP32C3", "192.0.2.77"),
+                                             ("S61STPF", kinds.SONOFF_S61, "BK7238", None)):
+            asked = account.Asked("1.0.0", kind.stock_model, product, [], {}, "1000abcdef")
+            with self.subTest(kind.key), learned(kind.wrapper_model, chip), \
+                    mock.patch.object(account, "ask_account", return_value=asked) as ask, \
+                    mock.patch.object(readout_espressif, "read_and_anonymise", return_value=({}, True)), \
+                    mock.patch.object(readout_beken, "read_and_anonymise", return_value=({}, True)), \
+                    mock.patch.object(readout, "offer", return_value="done"):
+                readout.run(self.ctx, record(product, kind.stock_model))
+            self.assertEqual(ask.call_args.args[1:], ("1000abcdef", checked))
 
     def test_a_kind_wanting_a_readout_is_read_in_full(self):
         from tools.autoflash import kinds
@@ -686,21 +698,19 @@ class RunTests(unittest.TestCase):
         # The bridge answers no discovery, as Sonoff's firmware would.
         from tools.autoflash import kinds
         basicr4 = kinds.SONOFF_BASICR4
-        by_id = account.Asked({"packets": []}, "1.1.0", basicr4.stock_model, "BASICR4", [], {}, "1000abcdef")
+        by_id = account.Asked("1.1.0", basicr4.stock_model, "BASICR4", [], {}, "1000abcdef")
         with learned("FWSW-01-NEW-BK7238", "BK7238"), mock.patch.object(readout, "offer", return_value="done"), \
                 mock.patch.object(readout_espressif.installer, "bridge_answers", return_value=True), \
                 mock.patch.object(account, "ask_account", return_value=by_id) as asked:
             readout.run(self.ctx, record("BASICR4", basicr4.stock_model))
-        self.assertEqual(asked.call_args.args[1], "1000abcdef")
-        account.ask_ewelink.assert_not_called()
+        self.assertEqual(asked.call_args.args[1:], ("1000abcdef", None), "the bridge is not taken for a conversion's")
 
     def test_what_it_keeps_of_the_device_and_learns_its_name_from(self):
         from tools.autoflash import kinds
         basicr4 = kinds.SONOFF_BASICR4
         offers = {"offers": [{"version": "1.1.0", "binList": []}]}
-        asked = account.Asked({"packets": []}, "1.0.0", basicr4.stock_model, "BASICR4", [], offers, "1000abcdef")
-        with mock.patch.multiple(account, ask_ewelink=mock.Mock(return_value=asked),
-                                 ask_account=mock.Mock(return_value=asked)), \
+        asked = account.Asked("1.0.0", basicr4.stock_model, "BASICR4", [], offers, "1000abcdef")
+        with mock.patch.multiple(account, ask_account=mock.Mock(return_value=asked)), \
                 learned(basicr4.wrapper_model, "ESP32C3"), \
                 mock.patch.object(readout_espressif, "read_and_anonymise", return_value=({}, True)), \
                 mock.patch.object(readout, "offer", return_value="done"):
@@ -735,10 +745,9 @@ class NotWantedTests(unittest.TestCase):
     def run_basicr4(self, **extra):
         from tools.autoflash import kinds
         basicr4 = kinds.SONOFF_BASICR4
-        asked = account.Asked({"packets": []}, "1.1.0", basicr4.stock_model, "BASICR4", [], {}, "1000abcdef")
+        asked = account.Asked("1.1.0", basicr4.stock_model, "BASICR4", [], {}, "1000abcdef")
         with learned(basicr4.wrapper_model, "ESP32C3"), \
-                mock.patch.multiple(account, ask_ewelink=mock.Mock(return_value=asked),
-                                    ask_account=mock.Mock(return_value=asked)), \
+                mock.patch.multiple(account, ask_account=mock.Mock(return_value=asked)), \
                 mock.patch.object(readout_espressif, "read_and_anonymise") as read, \
                 mock.patch.object(readout, "offer") as offered:
             said = readout.run(self.ctx, {**record("BASICR4", basicr4.stock_model), **extra})
@@ -805,9 +814,9 @@ class HeldFirmwareTests(unittest.TestCase):
 
     def setUp(self):
         start_run(self)
-        asked = account.Asked({"packets": []}, "1.0.0", "SN-NEW-01", "NEWTHING", [], self.OFFERS, "1000abcdef")
+        asked = account.Asked("1.0.0", "SN-NEW-01", "NEWTHING", [], self.OFFERS, "1000abcdef")
         for patch in (mock.patch.object(account, "ask_account", return_value=asked),
-                      mock.patch.object(account, "ask_ewelink", return_value=asked)):
+                      mock.patch.object(account, "ask_account", return_value=asked)):
             patch.start()
             self.addCleanup(patch.stop)
         readout.ask_wanted.return_value = readout.Wanted(True, "", frozenset({"a" * 64}))
@@ -831,9 +840,8 @@ class HeldFirmwareTests(unittest.TestCase):
         held = offered_firmware.Offered("user1.bin", "1.1.0", b"held")
         readout.ask_wanted.return_value = readout.Wanted(True, "", frozenset({held.sha256}))
         offered_firmware.fetch.return_value = ([held], [])
-        asked = account.Asked({"packets": []}, "1.0.2", s61.stock_model, "S61STPF", [], self.OFFERS, "1000abcdef")
-        with mock.patch.multiple(account, ask_ewelink=mock.Mock(return_value=asked),
-                                 ask_account=mock.Mock(return_value=asked)):
+        asked = account.Asked("1.0.2", s61.stock_model, "S61STPF", [], self.OFFERS, "1000abcdef")
+        with mock.patch.multiple(account, ask_account=mock.Mock(return_value=asked)):
             with learned(s61.wrapper_model, "BK7238"), \
                     mock.patch.object(readout_beken, "stock_from_offered", return_value=mock.Mock()), \
                     mock.patch.object(readout_beken, "read_and_anonymise", return_value=({}, True)), \
@@ -944,12 +952,11 @@ class FirstStageTests(unittest.TestCase):
         with learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"), mock.patch.object(readout, "offer", return_value="done"):
             readout.run(self.ctx, DEVICE)
         readout.locate.assert_not_called()
-        account.ask_ewelink.assert_not_called()
         self.assertEqual(account.ask_account.call_args.args[1], "1000abcdef")
 
     def test_with_nothing_from_its_cloud_the_accounts_record_is_sent(self):
         failed = mock.Mock(side_effect=errors.Abort("no OTA model"))
-        with mock.patch.multiple(account, ask_account=failed, ask_ewelink=failed), \
+        with mock.patch.object(account, "ask_account", failed), \
                 mock.patch.object(firmware_name, "learn", return_value=(None, ["no offer"])), \
                 mock.patch.object(readout, "offer", return_value="done") as offered:
             self.assertEqual(readout.run(self.ctx, DEVICE), "done")
@@ -995,10 +1002,9 @@ class ChooseTests(unittest.TestCase):
         from tools.autoflash import kinds
         start_run(self)
         s60 = kinds.SONOFF_S60
-        asked = account.Asked({"packets": []}, "1.2.0", s60.stock_model, "S60TPG", [], {}, "1000abcdef")
+        asked = account.Asked("1.2.0", s60.stock_model, "S60TPG", [], {}, "1000abcdef")
         readout.ask_wanted.return_value = readout.Wanted(False, "held")
-        with mock.patch.multiple(account, ask_ewelink=mock.Mock(return_value=asked),
-                                 ask_account=mock.Mock(return_value=asked)), \
+        with mock.patch.multiple(account, ask_account=mock.Mock(return_value=asked)), \
                 learned(s60.wrapper_model, "ESP32C3"), \
                 mock.patch.object(readout_espressif, "read_and_anonymise") as read, \
                 mock.patch.object(readout, "upload_url", return_value="http://127.0.0.1:9/readout"), \
@@ -1044,8 +1050,11 @@ class RunAllTests(unittest.TestCase):
 
     def test_the_first_stage_ones_go_before_a_full_readout(self):
         from tools.autoflash import kinds
-        with mock.patch.object(account, "ask_ewelink", side_effect=lambda ctx, ip: account.Asked(
-                {"packets": []}, "1.1.0", kinds.SONOFF_BASICR4.stock_model, "BASICR4", [], {}, "1000000004")), \
+        def asked(ctx, deviceid, ip=None):
+            if deviceid != "1000000004":   # DEVICE, a kind the tool has not seen
+                return account.Asked("1.0.0", "SN-NEW-01", "NEWTHING", [], {}, deviceid)
+            return account.Asked("1.1.0", kinds.SONOFF_BASICR4.stock_model, "BASICR4", [], {}, deviceid)
+        with mock.patch.object(account, "ask_account", side_effect=asked), \
                 learned(kinds.SONOFF_BASICR4.wrapper_model, "ESP32C3"), \
                 mock.patch.object(readout, "send", side_effect=["r-1", "r-2"]) as sent, \
                 mock.patch.object(readout_espressif, "read_and_anonymise", return_value=(FILES, True)):
@@ -1103,8 +1112,8 @@ class RunAllTests(unittest.TestCase):
     def test_the_run_stays_where_it_is_and_a_device_written_to_is_held(self):
         from tools.autoflash import kinds
         device = {**self.basicr4, "params": {**DEVICE["params"], "staMac": "12:34:56:AB:CD:EF"}}
-        with mock.patch.object(account, "ask_ewelink", return_value=account.Asked(
-                {"packets": []}, "1.1.0", kinds.SONOFF_BASICR4.stock_model, "BASICR4", [], {}, "1000000004")), \
+        with mock.patch.object(account, "ask_account", return_value=account.Asked(
+                "1.1.0", kinds.SONOFF_BASICR4.stock_model, "BASICR4", [], {}, "1000000004")), \
                 learned(kinds.SONOFF_BASICR4.wrapper_model, "ESP32C3"), \
                 mock.patch.object(readout, "send", return_value="r-1"), \
                 mock.patch.object(readout_espressif, "read_and_anonymise", return_value=(FILES, True)):
@@ -1114,8 +1123,8 @@ class RunAllTests(unittest.TestCase):
 
     def test_a_full_readouts_question_may_pass_its_device_by(self):
         from tools.autoflash import kinds
-        with mock.patch.object(account, "ask_ewelink", return_value=account.Asked(
-                {"packets": []}, "1.1.0", kinds.SONOFF_BASICR4.stock_model, "BASICR4", [], {}, "1000000004")), \
+        with mock.patch.object(account, "ask_account", return_value=account.Asked(
+                "1.1.0", kinds.SONOFF_BASICR4.stock_model, "BASICR4", [], {}, "1000000004")), \
                 learned(kinds.SONOFF_BASICR4.wrapper_model, "ESP32C3"), \
                 mock.patch.object(readout_espressif, "read_and_anonymise",
                                   side_effect=errors.NothingWritten("skipped as asked, nothing was sent to it")) as read:
@@ -1157,7 +1166,7 @@ class RunAllTests(unittest.TestCase):
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         def asked(ctx, deviceid):
-            return account.Asked({"packets": []}, "1.0.0", "SN-NEW-01", f"NEW-{deviceid}", [], {}, deviceid)
+            return account.Asked("1.0.0", "SN-NEW-01", f"NEW-{deviceid}", [], {}, deviceid)
         with mock.patch.object(readout, "PROOF_BITS", 8), learned("FWSW-E32-NEW-ESP32C3", "ESP32C3"), \
                 mock.patch.object(readout, "ask_wanted", ASK_WANTED), \
                 mock.patch.object(account, "ask_account", side_effect=asked), \

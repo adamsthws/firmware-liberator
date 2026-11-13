@@ -72,7 +72,7 @@
     ],
     [
       "ewelink-account",
-      "eWeLink account|eWeLink query failed|did not answer the eWeLink discovery"
+      "eWeLink account|eWeLink query failed"
     ],
     [
       "computer-network",
@@ -116,7 +116,7 @@
     ]
   ],
   "failureClasses": {
-    "device-not-found": "nothing answered at the device's address, or discovery found nothing",
+    "device-not-found": "nothing answered at the device's address, or which device is there could not be told",
     "device-no-answer": "the device stopped answering within a wait",
     "device-lost": "the connection to the device was reset, cut off or timed out mid-request",
     "device-busy": "the device turned firmware down, busy with an update cut off",
