@@ -937,7 +937,10 @@ what is done to it first (a Tasmota web password, an ESPHome with a web login
 and encrypted updates, sudo remembering no password), the run's options, the
 answers, and how the run should end, with a second run after one stopped
 part way (`again`), as you would start it again. An answer can also switch
-the device off (`"power": "off"`), as if unplugged part way, or signal the
+the device off (`"power": "off"`), as if unplugged part way, switch the home
+Wi-Fi's router (`"router": "off"`, or on an S61's `"on NEW-PASSWORD"`, its
+password changed), take the computer onto the device's own network and back
+as the run asks (`"wifi": "join"`, `"home"`), or signal the
 run (`"signal": "TERM"`, or `"HUP"` for its window closed) as it waits at a
 question; a scenario can be a readout (`"command": "readout"`), and have the
 API beside the emulator hold enough of the device's product already

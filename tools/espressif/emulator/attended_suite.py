@@ -29,7 +29,10 @@ ESPHome with a web login, admin and "test-login-1", and the made-up API
 encryption key LOCKED_KEY; and with "updates", taking only encrypted
 updates). An answer is typed at its question only (unattended_run.Answer);
 one `optional` need not be asked. In place of `type`, an answer can switch
-the device ("power": "off") or signal the run ("signal": "TERM").
+the device ("power": "off") or its home Wi-Fi's router ("router": "off", or
+on the Beken emulator "on NEW-PASSWORD", the password changed), move the
+computer onto the device's own network or back ("wifi": "join", "home"), or
+signal the run ("signal": "TERM").
 `command`: "readout" for a readout, not a conversion; `api_enough`: true
 for the API beside the emulator to have enough readouts of the device's
 product already (AUTOFLASH_API_ENOUGH), so a readout of it is not needed.

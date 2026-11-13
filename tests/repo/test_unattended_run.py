@@ -484,6 +484,39 @@ class StandInTests(unittest.TestCase):
         self.assertEqual((saved[0]["power"], saved[1]["signal"]), ("off", "TERM"))
         json.dumps(saved)
 
+    def test_an_answer_can_switch_the_router_or_move_the_computers_wifi(self):
+        import tempfile
+        script = textwrap.dedent("""
+            import time
+            print("Stage 2 - ESPHome started and on the Wi-Fi", flush=True)
+            time.sleep(2)
+            print("Join the device's own network", flush=True)
+            time.sleep(3)
+        """)
+        with tempfile.TemporaryDirectory() as directory:
+            router, moved = Path(directory, "router"), Path(directory, "moved")
+            router.write_text("on\n", encoding="utf-8")
+            # The emulator's `wifi`, as the run's computer has it on its PATH.
+            wifi = Path(directory, "wifi")
+            wifi.write_text(f'#!/bin/sh\necho "$@" >> {moved}\n', encoding="utf-8")
+            wifi.chmod(0o755)
+            answers = [unattended_run.Answer("ESPHome started", router="on new-password-1", anywhere=True),
+                       unattended_run.Answer("own network", wifi="join", anywhere=True)]
+            with mock.patch.dict(os.environ, {unattended_run.ROUTER_FILE: str(router),
+                                              "PATH": f"{directory}{os.pathsep}{os.environ['PATH']}"}):
+                code, written = unattended_run.record([sys.executable, "-c", script], (80, 24), live=False,
+                                                      timeout=60, answers=answers)
+            self.assertEqual(router.read_text(encoding="utf-8"), "on new-password-1\n")
+            self.assertEqual(moved.read_text(encoding="utf-8"), "join\n")
+        self.assertEqual(code, 0, written)
+        self.assertEqual([answer.saved().get("router") or answer.saved().get("wifi") for answer in answers],
+                         ["on new-password-1", "join"])
+
+    def test_the_espressif_router_keeps_its_password(self):
+        with mock.patch.dict(os.environ, {unattended_run.ROUTER_FILE: ""}):
+            with self.assertRaises(ValueError):
+                unattended_run.switch_router("on new-password-1")
+
 class CommandTests(unittest.TestCase):
     def test_a_conversion_unless_told_otherwise(self):
         self.assertEqual(unattended_run.tool_command("run", ["--new"])[2:], ["run", "--unattended", "--new"])

@@ -472,19 +472,30 @@ class Answer:
     `anywhere`: typed when `when` shows anywhere on the screen, a question
     or not - a Ctrl-C ("\x03") as a stage shows, say.  In place of typing:
     `power` "off" or "on" switches the emulated device (switch_power), as
-    a person switching it off at the wall; `signal` sends the run one ("TERM", "HUP" -
-    its window closed), as the computer would."""
+    a person switching it off at the wall; `router` "off", "on" or "on
+    PASSWORD" the home Wi-Fi's router (switch_router); `wifi` "join" or
+    "home" moves this computer onto the device's own network or back
+    (the emulator's `wifi`), as a person does from the Wi-Fi menu; `signal`
+    sends the run one ("TERM", "HUP" - its window closed), as the computer
+    would."""
 
     def __init__(self, when: str, type: str = "", times: int = 1, anywhere: bool = False,
-                 power: str | None = None, signal: str | None = None) -> None:
+                 power: str | None = None, signal: str | None = None, router: str | None = None,
+                 wifi: str | None = None) -> None:
         self.when, self.type, self.left, self.anywhere = re.compile(when), type, times, anywhere
-        self.power, self.signal = power, signal
+        self.power, self.signal, self.router, self.wifi = power, signal, router, wifi
         self.typed_at: list[int] = []   # how many bytes the run had written each time it was typed
 
     def act(self, pid: int, fd: int) -> None:
-        """What this answer does: types, switches the device, or signals the run."""
+        """What this answer does: types, switches the device or the router,
+        moves this computer's Wi-Fi, or signals the run."""
         if self.power:
             switch_power(self.power)
+        elif self.router:
+            switch_router(self.router)
+        elif self.wifi:
+            import subprocess
+            subprocess.run(["wifi", *self.wifi.split()], check=True, capture_output=True, timeout=120)
         elif self.signal:
             os.kill(pid, getattr(signal, f"SIG{self.signal}"))
         else:
@@ -495,6 +506,8 @@ class Answer:
         return {"when": self.when.pattern, "type": self.type, "typed_at": self.typed_at,
                 **({"anywhere": True} if self.anywhere else {}),
                 **({"power": self.power} if self.power else {}),
+                **({"router": self.router} if self.router else {}),
+                **({"wifi": self.wifi} if self.wifi else {}),
                 **({"signal": self.signal} if self.signal else {})}
 
     @classmethod
@@ -507,6 +520,23 @@ class Answer:
 # a file (beken-emu.sh), an Espressif emulator as a command (container/bin/device).
 POWER_FILE = "AUTOFLASH_EMULATOR_POWER"
 DEVICE_COMMAND = "/opt/autoflash-emu/bin/device"
+
+
+# The home Wi-Fi's router: a Beken emulator's computer has it as a file too.
+ROUTER_FILE = "AUTOFLASH_EMULATOR_ROUTER"
+
+
+def switch_router(state: str) -> None:
+    """The emulated home Wi-Fi's router switched "off" or "on" - a Beken
+    emulator's "on PASSWORD" with its password changed - where this runs
+    beside it."""
+    if os.environ.get(ROUTER_FILE):
+        Path(os.environ[ROUTER_FILE]).write_text(state + "\n", encoding="utf-8")
+        return
+    if state not in ("off", "on"):
+        raise ValueError(f"router {state!r}: the Espressif emulator's router is only switched off or on")
+    import subprocess
+    subprocess.run([DEVICE_COMMAND, "router", state], check=True, capture_output=True, timeout=60)
 
 
 def switch_power(state: str) -> None:
