@@ -196,6 +196,10 @@ same command again - the one line above, or `start.cmd` / `sh start.sh` in the f
 > It remembers which device it was working on and what it had done. Where a step
 was interrupted, it checks the device to work out where to resume from.
 
+### Email updates
+
+To change the address you gave for email updates, or have your computer forget it, run `sh start.sh email` (`start.cmd email` on Windows) in the tool's folder ([how your address is kept](docs/what-the-tool-sends.md#your-email-address)).
+
 <br>
 
 ### What you end up with
@@ -242,7 +246,6 @@ What a firmware readout does:
 What is sent, once you agree:
 - **The device's firmware readout, anonymised.** It is kept privately, never published, and used only to add support for the device.
 - What the device and eWeLink said it is, and the tool's version.
-- If you choose to add it, your email address, so you can be told when support for your device changes. You confirm it first, from an email sent to it. You can leave it even when no readout of your device is needed: one like it may be in already.
 > A copy also stays on your computer, beside your other Sonoff backups.
 
 <br>
