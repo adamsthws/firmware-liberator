@@ -31,9 +31,25 @@ class FetchTests(unittest.TestCase):
             {"name": "user1.bin", "downloadUrl": "https://example.com/1", "digest": hashlib.sha256(b"one").hexdigest()},
             {"name": "user2.bin", "downloadUrl": "https://example.com/2", "digest": hashlib.sha256(b"two").hexdigest()},
         ]}]
-        found, problems = offered_firmware.fetch(offers, "1000abcdef", lambda url, deviceid: b"one")
+        found, problems = offered_firmware.fetch(offers, "1000abcdef", lambda url, deviceid: b"one",
+                                                 wait=lambda seconds: None)
         self.assertEqual([item.name for item in found], ["user1.bin"])
-        self.assertEqual(problems, ["user2.bin: not the file its digest names"])
+        self.assertEqual(problems, ["user2.bin: not the file its digest names, 3 tries"])
+
+    def test_a_file_that_does_not_come_whole_is_tried_again_after_a_pause(self):
+        tries, pauses = iter([OSError("reset"), b"cut", b"whole"]), []
+
+        def get(url, deviceid):
+            answer = next(tries)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+        offers = [{"version": "1.1.0", "binList": [{"name": "user1.bin", "downloadUrl": "https://example.com/1",
+                                                    "digest": hashlib.sha256(b"whole").hexdigest()}]}]
+        found, problems = offered_firmware.fetch(offers, "1000abcdef", get, wait=pauses.append)
+        self.assertEqual([item.data for item in found], [b"whole"])
+        self.assertEqual(problems, [])
+        self.assertEqual(pauses, [offered_firmware.RETRY_PAUSE] * 2)
 
     def test_the_same_bytes_twice_are_kept_once(self):
         found, _ = offered_firmware.fetch(OFFERS, "1000abcdef", lambda url, deviceid: b"same")
@@ -43,9 +59,9 @@ class FetchTests(unittest.TestCase):
         def get(url, deviceid):
             raise OSError(f"could not fetch {url}")
 
-        found, problems = offered_firmware.fetch(OFFERS, "1000abcdef", get)
+        found, problems = offered_firmware.fetch(OFFERS, "1000abcdef", get, wait=lambda seconds: None)
         self.assertEqual(found, [])
-        self.assertEqual(problems, ["user1.bin: OSError", "user2.bin: OSError"])
+        self.assertEqual(problems, ["user1.bin: OSError, 3 tries", "user2.bin: OSError, 3 tries"])
         self.assertNotIn("example.com", " ".join(problems))
 
     def test_a_file_held_already_is_not_fetched_by_the_digest_ewelink_gives(self):
