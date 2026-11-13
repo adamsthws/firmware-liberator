@@ -898,5 +898,27 @@ class ReadoutCommandTests(unittest.TestCase):
         self.assertIn("--all", shown)
 
 
+class EmailCommandTests(unittest.TestCase):
+    def test_it_changes_the_address_kept_and_starts_no_run(self):
+        with mock.patch("sys.argv", ["cli.py", "email"]), mock.patch.object(cli.signal, "signal"), \
+                mock.patch.object(interrupt, "install"), mock.patch.object(hostsys, "password_asker"), \
+                mock.patch.object(prompts, "UNATTENDED"), mock.patch.object(installer, "SIMULATED_BACKUP_FAILURES"), \
+                mock.patch.object(sonoff_firmware, "SIMULATE_NONE"), mock.patch.object(identity, "SIMULATE_NONE"), \
+                mock.patch.object(beken_images, "SPOIL_STEP"), mock.patch.object(beken_images, "SPOIL_TIMES"), \
+                mock.patch.object(beken_images, "UNKNOWN_TABLE"), \
+                mock.patch.object(cli.signup, "change", return_value=0) as change, \
+                mock.patch.object(credentials, "load") as load, mock.patch.object(cli, "Context") as context:
+            self.assertEqual(cli.main(), 0)
+        change.assert_called_once_with()
+        load.assert_not_called()
+        context.assert_not_called()
+
+    def test_it_is_a_command(self):
+        import subprocess
+        shown = subprocess.run([sys.executable, "-m", "tools.autoflash", "--help"], capture_output=True, text=True,
+                               cwd=Path(cli.__file__).resolve().parents[2], timeout=60).stdout
+        self.assertIn("email", shown)
+
+
 if __name__ == "__main__":
     unittest.main()

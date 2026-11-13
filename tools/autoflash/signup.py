@@ -13,7 +13,8 @@ Once an address is taken, it is kept in the settings (SETTING) and never
 asked for again on this computer: each later sitting sends its devices and
 readouts with it, unasked, and the website adds them to the address's if it
 was confirmed. One removed or never confirmed is not emailed again; its
-owner can sign up again on the website (SIGNUP_PAGE).
+owner can sign up again on the website (SIGNUP_PAGE). The `email` command
+(change) gives another address, or has this computer forget it.
 """
 from __future__ import annotations
 
@@ -82,10 +83,51 @@ def given() -> str:
     return str(runs.load_settings().get(SETTING) or "")
 
 
-def remember(email: str) -> None:
+def remember(email: str | None) -> None:
+    """Keeps `email` as the address given; None forgets it."""
     settings = runs.load_settings()
-    settings[SETTING] = email
+    if email is None:
+        settings.pop(SETTING, None)
+    else:
+        settings[SETTING] = email
     runs.save_settings(settings)
+
+
+def ask_address() -> str:
+    return prompts.ask_text("Your email address", private="email",
+                            validate=lambda text: (is_email(text), "That does not look like an email address."))
+
+
+def change() -> int:
+    """The `email` command: the address kept on this computer, changed or
+    forgotten. Removing it from the list is its emails' link alone: this
+    computer holds nothing that could."""
+    from tools.autoflash import readout   # readout imports this module
+    before = given()
+    if not before:
+        output.say("No email address is kept on this computer: the tool asks for one as it exits.")
+        return 0
+    try:
+        choice = prompts.ask_choice(f"News of more devices goes to {before}.",
+                                    ["Keep it", "Use a different address", "Forget it on this computer"])
+        if choice == 0:
+            return 0
+        if choice == 2:
+            remember(None)
+            output.say("Forgotten on this computer. To stop the emails, use the link in any of them.")
+            return 0
+        email = ask_address().strip()
+    except (prompts.QuitRun, KeyboardInterrupt):
+        return 0
+    if email.lower() == before.lower():
+        output.say("That is the address kept already.")
+        return 0
+    if not readout.notify(email, ()):
+        output.say(f"That could not be sent just now: try again later, or sign up at {SIGNUP_PAGE}.")
+        return 1
+    remember(email)
+    output.say(f"Check your inbox to confirm. To stop emails to {before}, use the link in any of them.")
+    return 0
 
 
 def ask_on_exit() -> None:
@@ -113,9 +155,7 @@ def ask_on_exit() -> None:
                                                "n": len(options) - 1, "no": len(options) - 1})
         if choice == len(options) - 1:
             return
-        email = address if choice == 0 and address else prompts.ask_text(
-            "Your email address", private="email",
-            validate=lambda text: (is_email(text), "That does not look like an email address."))
+        email = address if choice == 0 and address else ask_address()
     except (prompts.QuitRun, KeyboardInterrupt):
         return
     if readout.notify(email.strip(), SITTING.devices, SITTING.readouts):
