@@ -13,7 +13,7 @@ from unittest import mock
 from tests.autoflash.test_openbeken import FakeOpenBeken
 from tests.autoflash.routes.beken.test_beken import a_context
 from tools.autoflash import detect, errors, kinds, openbeken, records, state
-from tools.autoflash.routes import arrival
+from tools.autoflash.routes import arrival, beken
 from tools.autoflash.routes.beken import arrived, images, onward
 
 
@@ -451,10 +451,20 @@ class ArrivedTests(unittest.TestCase):
             self.assertEqual(ctx.state.data["captures"]["B4.attempts"], 3)
 
     def test_b4_goes_on_without_a_backup_after_three_tries(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(arrived.output, "tell") as told, \
+                mock.patch.object(arrived.output, "say") as said:
             result, reads, _, _ = self.b4_reading(tmp, OSError("short read of the device's flash"))
             self.assertEqual(result["outcome"], "failed")
             self.assertEqual(reads, 3)
+        # On screen, no promise of a next time: a run from ESPHome to Sonoff's firmware has no B4.
+        shown = told.call_args.args[0]
+        self.assertTrue(shown.endswith("carrying on without a backup. The device keeps it."), shown)
+        self.assertIn("A later run that installs OpenBeken, or starts from it, tries the backup again.",
+                      said.call_args.args[0])
+        for firmware, source in (("esphome", "openbeken"), ("sonoff", "openbeken"), ("openbeken", "sonoff"),
+                                 ("openbeken", "esphome")):
+            self.assertIn("B4", [step for step, _, _ in beken.steps_for(firmware, source)], (source, firmware))
+        self.assertNotIn("B4", [step for step, _, _ in beken.steps_for("sonoff", "esphome")])
 
     def test_b4_waits_for_the_device_to_answer_before_trying_again(self):
         with tempfile.TemporaryDirectory() as tmp:
