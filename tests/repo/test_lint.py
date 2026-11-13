@@ -84,10 +84,11 @@ class CompileTests(unittest.TestCase):
             return subprocess.run(linter.command([str(path)]), capture_output=True, text=True)
 
     def test_what_parses_yet_will_not_compile_is_found(self):
-        managers = ", ".join(f"open({n})" for n in range(21))
-        done = self.compiled(f"def f():\n    with {managers}:\n        pass\n")
+        # Not the 21 context managers in one `with` that led to this check:
+        # Python 3.13 compiles those, so on it the test would pass nothing.
+        done = self.compiled("def f():\n    x = 1\n    global x\n")
         self.assertEqual(done.returncode, 1)
-        self.assertIn("too many statically nested blocks", done.stdout)
+        self.assertIn("assigned to before global declaration", done.stdout)
 
     def test_compile_alone_runs_only_the_compile_check_on_every_tracked_file(self):
         with mock.patch.object(lint, "tracked", return_value=["a.py"]), \
