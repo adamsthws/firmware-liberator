@@ -480,22 +480,6 @@ class RetryTests(unittest.TestCase):
         self.assertEqual(state.data["captures"]["E1.read"], 7)
         self.assertEqual(state.data["captures"]["E1.attempts"], 1)
 
-    def test_a_dry_run_records_no_step_it_only_said_it_would_do(self):
-        # Carried on for real, the run must do them: nothing was written.
-        from types import SimpleNamespace
-        directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        state = RunState.open(Path(directory.name))
-        for step, result, expected in (("E3", {"dry_run": True}, "pending"), ("E1", {"read": 1}, "done")):
-            title, _ = routes.STEP_INDEX[step]
-            with mock.patch.dict(routes.STEP_INDEX, {step: (title, mock.Mock(return_value=dict(result)))}), \
-                    mock.patch.object(routes, "begin_stage"), mock.patch.object(output, "stage_end"), \
-                    mock.patch.object(output, "say"), \
-                    mock.patch.object(state, "mark", wraps=state.mark) as marked:
-                self.assertEqual(runner.execute(SimpleNamespace(state=state, dry_run=True), step), 0)
-            self.assertEqual(state.status(step), expected, step)
-            self.assertNotIn("attempted", [call.args[1] for call in marked.call_args_list], step)
-
     def test_a_phase_with_no_result_keeps_the_commit_attempted(self):
         from types import SimpleNamespace
         from unittest import mock

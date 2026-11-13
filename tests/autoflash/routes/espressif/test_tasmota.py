@@ -1330,10 +1330,11 @@ class StepCanonicalWaitTests(unittest.TestCase):
 
     def wait(self, seen):
         ctx = types.SimpleNamespace(state=types.SimpleNamespace(data={}, input=lambda key, default=None: None),
-                                    device=types.SimpleNamespace(), dry_run=True)
+                                    device=types.SimpleNamespace())
         with mock.patch.object(tasmota, "recovery_firmware_up", side_effect=seen), \
                 mock.patch.object(tasmota.runs, "run_source", return_value="sonoff"), \
                 mock.patch.object(tasmota, "startup_settings_report", return_value=None), \
+                mock.patch.object(tasmota, "install_official", return_value=("uploaded", "rejoined")), \
                 mock.patch.object(tasmota.prompts, "section"), mock.patch.object(time, "sleep"), \
                 mock.patch.object(tasmota.prompts, "ask_choice", return_value=0) as asked, \
                 mock.patch.object(output, "say"), mock.patch.object(output, "transient_begin"), \

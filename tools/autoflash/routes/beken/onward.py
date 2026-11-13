@@ -122,8 +122,6 @@ def step_interim_to_openbeken(ctx: Context) -> dict[str, Any]:
     the device's own (openbeken.leave_interim, named as OpenBeken names it) in
     place, nothing sent - then restarted, so its network knows it by its new
     name: OpenBeken asks for its address under it only as it starts."""
-    if ctx.dry_run:
-        return {"dry_run": True}
     return {"restarted": set_interim(ctx, False, "The device is set up on OpenBeken.")}
 
 
@@ -154,8 +152,6 @@ def _fetch_esphome(ctx: Context, step: str) -> dict[str, Any]:
     Its uptime before (uptime_before) and when it had all of it (fetched_at):
     an OpenBeken started since did not take it (arrived.step_esphome_check)."""
     image, version = images.image(ctx, "esphome")
-    if ctx.dry_run:
-        return {"dry_run": True, "version": version}
     host = ctx.state.input("device_ip")
     uptime = (openbeken.info(host) or {}).get("uptime_s")
     seconds = serve_to_device(ctx, images.as_sent(ctx, step, image), f"ESPHome {version}",
@@ -172,8 +168,6 @@ def step_openbeken_to_sonoff(ctx: Context, leaving: str = "OpenBeken") -> dict[s
     handover.consent_to_leave(ctx, leaving)
     kind = kinds.of_run(ctx.state)
     stock, version = images.stock_rbl(kind, ctx)
-    if ctx.dry_run:
-        return {"dry_run": True, "version": version}
     host = ctx.state.input("device_ip")
     command = kind.openbeken_revert or "ota_http"
 
@@ -204,8 +198,6 @@ def step_esphome_to_openbeken(ctx: Context) -> dict[str, Any]:
     handover.consent_to_leave(ctx, "ESPHome")
     kind = kinds.of_run(ctx.state)
     image, version = images.image(ctx, "openbeken")
-    if ctx.dry_run:
-        return {"dry_run": True, "version": version}
     data = uf2.write(image, name=f"openbeken-{kind.key}", version=version)
     seconds = handover.send_as_esphome_update(ctx, data, f"OpenBeken {version}", port=ESPHOME_OTA_PORT)
     return {"seconds": seconds, "version": version, "signal_dbm": signal}
@@ -217,8 +209,6 @@ def step_esphome_to_sonoff(ctx: Context) -> dict[str, Any]:
     handover.consent_to_leave(ctx, "ESPHome")
     kind = kinds.of_run(ctx.state)
     stock, version = images.stock_rbl(kind, ctx)
-    if ctx.dry_run:
-        return {"dry_run": True, "version": version}
     data = uf2.write(stock, name="sonoff-stock", version=version)
     seconds = handover.send_as_esphome_update(ctx, data, f"Sonoff's firmware {version}", port=ESPHOME_OTA_PORT)
     return {"seconds": seconds, "version": version, "signal_dbm": signal}
@@ -230,8 +220,6 @@ def step_esphome_update(ctx: Context) -> dict[str, Any]:
     left as it is, so the new one reads them as the old one did."""
     kind = kinds.of_run(ctx.state)
     image, version = images.image(ctx, "esphome")
-    if ctx.dry_run:
-        return {"dry_run": True, "version": version}
     data = uf2.write(image, name=f"esphome-{kind.key}", version=version)
     seconds = handover.send_as_esphome_update(ctx, data, f"ESPHome {version}", port=ESPHOME_OTA_PORT)
     return {"seconds": seconds, "version": version}
@@ -242,8 +230,6 @@ def step_openbeken_update(ctx: Context) -> dict[str, Any]:
     download slot as O1 has it fetch ESPHome: its settings are kept, and its
     driver, finding the Wi-Fi set, imports nothing from the store again."""
     image, version = images.image(ctx, "openbeken")
-    if ctx.dry_run:
-        return {"dry_run": True, "version": version}
     host = ctx.state.input("device_ip")
     seconds = serve_to_device(ctx, images.as_sent(ctx, "U3", image), f"OpenBeken {version}",
                             lambda url: openbeken.ota_http(host, url), unstick=lambda: openbeken.restart(host))

@@ -340,9 +340,6 @@ class FromTheInterimFirmwareTests(unittest.TestCase):
             self.assertEqual(self.server.commands, ["AutoflashInterim off", "reboot"])
             self.assertFalse(self.server.interim)
             self.assertIn("so your network knows it by its new name", said.call_args_list[-1].args[0])
-            ctx.dry_run = True
-            self.assertEqual(onward.step_interim_to_openbeken(ctx), {"dry_run": True})
-            self.assertEqual(len(self.server.commands), 2)
 
     def test_one_that_will_not_be_renamed_stops_the_run(self):
         self.server.kind = None   # a module without the command

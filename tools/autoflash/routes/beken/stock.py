@@ -175,9 +175,6 @@ def step_push(ctx: Context) -> dict[str, Any]:
             raise NothingWritten("not confirmed - nothing has been written to the device")
         output.transient_end()  # agreed: the note and the question have done their job
         ctx.consented = True
-    if ctx.dry_run:
-        output.say(f"[dry-run] would send {shown} {version} ({len(container):,} bytes wrapped) to {device_ip}")
-        return {"dry_run": True, "firmware": firmware, "version": version}
 
     def check(found: dict[str, Any], model: str) -> None:
         # Only the device A1 found, as it was at B1: another device on the

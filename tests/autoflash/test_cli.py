@@ -696,6 +696,28 @@ class StageNumberTests(unittest.TestCase):
                     self.assertTrue(said.endswith("Choosing the firmware"), said)
 
 
+class StepCommandTests(unittest.TestCase):
+    """`step` does one step of the run's route (cli.cmd_step)."""
+
+    def setUp(self):
+        self.addCleanup(routes.apply_target, "tasmota", "sonoff")
+
+    def test_a_dry_run_does_only_a_step_that_reads(self):
+        # As a run's dry run stops before the first step that writes
+        # (runner.run_steps): `step C2 --dry-run` sent the installer.
+        from types import SimpleNamespace
+        for name, family in routes.FAMILIES.items():
+            routes.apply_target("esphome", "sonoff", family)
+            for step, _, _ in routes.STEPS:
+                with self.subTest(family=name, step=step), mock.patch.object(cli.join, "wait_while_device_busy"), \
+                        mock.patch.object(output, "say") as said, \
+                        mock.patch.object(cli.runner, "execute_with_retries", return_value=0) as executed:
+                    self.assertEqual(cli.cmd_step(SimpleNamespace(dry_run=True), step), 0)
+                    self.assertEqual(executed.called, step in family.READ_ONLY_STEPS)
+                    if not executed.called:
+                        self.assertIn(f"[dry-run] not doing {step}", said.call_args.args[0])
+
+
 class RemoveRunTests(RunChoiceTests):
     """Unfinished runs can be removed from the menu, with care for half-converted devices."""
 
