@@ -930,15 +930,15 @@ class DeviceBackTests(unittest.TestCase):
         self.assertEqual(device.answers.call_count, 31)
         self.assertIn("answering again", told.call_args.args[0])
 
-    def test_a_long_wait_says_the_device_has_no_network_of_its_own_now(self):
+    def test_a_long_wait_says_it_is_waiting_for_the_device_to_rejoin_once(self):
         said = lambda told: " ".join(call.args[0] for call in told.call_args_list)
         device, told = self.wait([False] * 30 + [True], step="E2")
-        self.assertEqual(said(told).count("no setup network of its own"), 1)
+        self.assertEqual(said(told).count("Waiting for it to rejoin your Wi-Fi"), 1)
         device, told = self.wait([False] * 5 + [True], step="E2")
-        self.assertNotIn("no setup network", said(told))  # back before it was worth saying
+        self.assertNotIn("rejoin your Wi-Fi", said(told))  # back before it was worth saying
         # F4's official Tasmota may not have the Wi-Fi yet, so may have one.
         device, told = self.wait([False] * 30 + [True], step="F4")
-        self.assertNotIn("no setup network", said(told))
+        self.assertNotIn("rejoin your Wi-Fi", said(told))
 
     def test_one_that_never_answers_is_tried_anyway_after_five_minutes(self):
         device, told = self.wait([False] * 1000)

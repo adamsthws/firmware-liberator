@@ -170,12 +170,9 @@ def replace_own_build(ctx: Context, firmware: str, published: str | None) -> boo
 def replace_agreed(published: str) -> None:
     """replace_own_build's warning, and its owner's go-ahead; Abort if not given."""
     prompts.warning_box("Replacing your own build", [
-        f"This installs this project's ESPHome {published} over the build on",
-        "the device. You lose any changes in its config, and any API encryption",
-        "key. Home Assistant stops reaching it until you remove the device there",
-        "and add it again, and the ESPHome builder's config for it no longer",
-        "matches what it runs. If you renamed its relay, the relay goes back to",
-        "how it was before that, which may switch whatever it controls.",
+        f"This installs this project's ESPHome {published} over the device's build.",
+        "Your config changes and API encryption key are lost; remove and re-add",
+        "it in Home Assistant. A renamed relay reverts, which may switch it.",
     ])
     if not prompts.require_word(prompts.CONSENT_WORD):
         raise Abort("not confirmed")

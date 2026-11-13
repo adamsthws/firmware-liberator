@@ -135,9 +135,7 @@ def step_keep_identity(ctx: Context) -> dict[str, Any]:
     hub.sonoff_layout_back(ctx)
     identity, where = for_tasmota(ctx, layout)
     if identity is None:
-        output.tell("    The device holds no Sonoff identity to keep, and this computer has no")
-        output.tell("    backup of it: going back to Sonoff's firmware later will need your")
-        output.tell("    eWeLink account.")
+        output.tell("    No Sonoff identity or backup here: going back to Sonoff will need eWeLink.")
         return {"kept": False}
     output.say(f"Keeping the device's Sonoff identity, from {where}, in the last sector of its memory,")
     output.say("so that it can go back to Sonoff's firmware without its backup.")

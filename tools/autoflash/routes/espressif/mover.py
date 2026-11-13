@@ -146,8 +146,7 @@ def settings_to_carry(ctx: Context, layout: Layout) -> bytes | None:
     if kept is None:
         kept, where = identity.from_backup(ctx), "from its backup on this computer"
     if kept is None:
-        output.tell("    The device keeps no Sonoff identity, and this computer has no backup of")
-        output.tell("    it: going back to Sonoff's firmware later will need your eWeLink account.")
+        output.tell("    No Sonoff identity or backup here: going back to Sonoff will need eWeLink.")
         return None
     size = TEMPORARY_OTADATA - layout.nvs if layout.needs_temporary else identity.nvs_size(layout)
     output.say(f"    The device's Sonoff identity, {where}, goes into the settings of the next firmware.")

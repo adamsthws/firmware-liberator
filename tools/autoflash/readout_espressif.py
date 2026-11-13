@@ -219,8 +219,7 @@ def back_on_sonoff(ctx: Context) -> bool:
             time.sleep(3.0)
     if not answered:
         output.progress_clear()
-        output.tell("    It has not answered as Sonoff's firmware yet. Check the eWeLink app; if")
-        output.tell("    it is missing there, switch it off and on once more.")
+        output.tell("    If the eWeLink app doesn't show it yet, switch it off and on once more.")
         return False
     output.progress_clear()
     ctx.state.set_input(readout.STATE_KEY, "read")

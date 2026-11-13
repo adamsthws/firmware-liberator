@@ -317,8 +317,8 @@ class ESPHomeUpdateTests(RouteTestCase):
         self.assertEqual(update.versions(ctx), (update.OWN_BUILD, "1.6.0"))
         self.assertEqual([step for step, _, _ in routes.steps_of(ctx.state)], ["A0", "A3", "A5", "U1", "U2"])
         said = " ".join(warned.call_args.args[1])
-        self.assertIn("You lose any changes", said)
-        self.assertIn("If you renamed its relay", said)
+        self.assertIn("Your config changes and API encryption key are lost", said)
+        self.assertIn("A renamed relay reverts", said)
 
     def test_replacing_an_own_build_with_a_key_given(self):
         ctx, route, _ = self.replacing(self.ours("1.6.0", built=self.OWN, encrypted=True))
