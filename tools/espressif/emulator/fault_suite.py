@@ -2839,12 +2839,15 @@ def worker(n, todo, lock, cloud=False, room=None):
             print(f"{time.strftime('%T')} [{n}] {row['verdict']:16} {sc['id']}{starved_label(row)}", flush=True)
         emulator_stats.fault_run(OUT, family=DEVICE.family, device=DEVICE.key, scenario=sc, verdict=row["verdict"],
                                  tries=row.get("runs"), seconds=round(time.time() - started),
-                                 cloud=cloud_of(sc), workers=WORKERS)
+                                 cloud=cloud_of(sc), workers=WORKERS, rerun=sc["id"] in EARLIER)
         TUNER.finished(row, log, started)
 
 
-# How many emulators the batch runs scenarios on at most, for its emulator stats.
+# How many emulators the batch runs scenarios on at most, and the scenarios
+# that had run here before it began (a re-run's pass rate is apart), for its
+# emulator stats.
 WORKERS = None
+EARLIER: set = set()
 
 
 def cloud_of(sc):
@@ -2862,9 +2865,12 @@ def batch(ids_file=None):
     """The scenarios in ids_file (every one without) not yet passed here: the
     cloud ones on AUTOFLASH_EMU_CLOUD_WORKERS emulators from instance 1, the rest on
     AUTOFLASH_EMU_ANY_WORKERS after them."""
+    global WORKERS, EARLIER
     LOGS.mkdir(parents=True, exist_ok=True)
     known = {sc["id"]: sc for sc in scenarios()}
-    done = {i for i, row in latest().items() if row["verdict"] in ("PASS", "NO-TRAFFIC")}
+    earlier = latest()
+    EARLIER = set(earlier)
+    done = {i for i, row in earlier.items() if row["verdict"] in ("PASS", "NO-TRAFFIC")}
     cloud, anywhere = queue.Queue(), queue.Queue()
     ids = read_ids(ids_file) if ids_file else list(known)
     stale = stale_starts(known[i] for i in ids if i not in done)
@@ -2913,8 +2919,10 @@ def batch(ids_file=None):
     if not STUB_CLOUD and every > 0:
         threading.Thread(target=log_connections, args=(OUT / "connections.log", every, stop_log),
                          daemon=True).start()
-    global WORKERS
     WORKERS = len(threads)
+    emulator_stats.began(OUT, family=DEVICE.family, suite="fault", device=DEVICE.key, total=len(known),
+                         planned=cloud.qsize() + anywhere.qsize(), cloud="stub" if STUB_CLOUD else "real",
+                         workers=WORKERS)
     for t in threads:
         t.start()
         time.sleep(20)  # staggered: start-ups are the busiest moment

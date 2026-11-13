@@ -172,6 +172,14 @@ jobs:
             2*) echo "admin.firmwareliberator.com answered $status to a request not signed in"; exit 1 ;;
             *) echo "admin.firmwareliberator.com answered $status: closed" ;;
           esac
+          # And the emulator suites' path, without their service token: Access's
+          # application for it lets in nothing else (admin/emulator.js).
+          status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X POST \
+            -H 'Content-Type: application/json' -d '{"runs": []}' https://admin.firmwareliberator.com/v1/emulator/runs)
+          case "$status" in
+            2*|400|405) echo "/v1/emulator/runs answered $status to a request without the suites' token"; exit 1 ;;
+            *) echo "/v1/emulator/runs answered $status: closed" ;;
+          esac
 
   # What the deploy token can see, once the deploys are done, so a mistaken
   # expectation fails here without holding up the site: this zone and account,

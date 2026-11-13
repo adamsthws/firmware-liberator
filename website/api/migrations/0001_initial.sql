@@ -495,19 +495,25 @@ CREATE TABLE IF NOT EXISTS network_lists (
 ) WITHOUT ROWID;
 
 -- The maintainer's own emulator runs (tools/repo/emulator_stats.py), one row a
--- scenario a suite ran - fault or attended, of any chip family - taken by
--- the admin view (admin/emulator.js) from the suites with Access's service
--- token, never from the tool. No report and nothing of the machine: how the
--- run went, against which version of the tool and of the firmware. Apart
--- from `reports`, so no figure of people's runs counts them. `finished` is
--- UTC to the second; `batch`, one suite run's random id; `revision`, the
--- checkout's commit, `dirty` 1 where it had changes; `firmware`, a JSON
--- object of the firmware the checkout installs on the device, by name;
--- `cause`, set on a failure from the admin view (EMULATOR_CAUSES). Kept for
--- good: a row is well under a kilobyte.
+-- scenario a suite ran - fault, attended or the final-firmware check, of any
+-- chip family - taken by the admin view (admin/emulator.js) from the suites
+-- with Access's service token, never from the tool. No report and nothing of
+-- the machine: how the run went, against which version of the tool and of the
+-- firmware. Apart from `reports`, so no figure of people's runs counts them.
+-- `finished` is UTC to the second; `received`, when the view took it;
+-- `batch`, one suite run's random id; `rerun` 1 where the scenario had run in
+-- that suite's folder before, so a batch running only what had not passed
+-- yet is not taken for a worse pass rate; `outcome` pass, fail or
+-- inconclusive, the last a run the suite could not judge (../api/emulator.js
+-- INCONCLUSIVE); `revision`, the checkout's commit, `dirty` 1 where it had
+-- changes; `firmware`, a JSON object of the firmware the checkout installs on
+-- the device, by name; `cause` and `cause_ref`, set on a failure from the
+-- admin view (EMULATOR_CAUSES), the latter a commit or issue. Kept for good: a
+-- row is well under a kilobyte.
 CREATE TABLE IF NOT EXISTS emulator_runs (
   id TEXT PRIMARY KEY,
   finished TEXT NOT NULL,
+  received TEXT NOT NULL,
   batch TEXT NOT NULL,
   suite TEXT NOT NULL,
   family TEXT NOT NULL,
@@ -518,6 +524,8 @@ CREATE TABLE IF NOT EXISTS emulator_runs (
   fault TEXT,
   at INTEGER,
   verdict TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  rerun INTEGER NOT NULL,
   tries INTEGER,
   seconds INTEGER,
   cloud TEXT NOT NULL,
@@ -526,8 +534,61 @@ CREATE TABLE IF NOT EXISTS emulator_runs (
   dirty INTEGER NOT NULL,
   firmware TEXT NOT NULL,
   workers INTEGER,
-  cause TEXT
+  cause TEXT,
+  cause_ref TEXT
 ) WITHOUT ROWID;
 
 CREATE INDEX IF NOT EXISTS emulator_runs_finished ON emulator_runs (finished);
+CREATE INDEX IF NOT EXISTS emulator_runs_received ON emulator_runs (received);
 CREATE INDEX IF NOT EXISTS emulator_runs_scenario ON emulator_runs (scenario, finished);
+CREATE INDEX IF NOT EXISTS emulator_runs_not_passed ON emulator_runs (finished) WHERE outcome != 'pass';
+
+-- What each suite run set out to do, sent as it began (emulator_stats.py):
+-- how many scenarios its suite has for the device (`total`) and how many it
+-- runs (`planned`) - what the share of a device's scenarios passed on a
+-- version is of. One a batch, device and suite, as one attended batch runs
+-- each family's.
+CREATE TABLE IF NOT EXISTS emulator_batches (
+  batch TEXT NOT NULL,
+  family TEXT NOT NULL,
+  device TEXT NOT NULL,
+  suite TEXT NOT NULL,
+  started TEXT NOT NULL,
+  received TEXT NOT NULL,
+  total INTEGER NOT NULL,
+  planned INTEGER NOT NULL,
+  cloud TEXT NOT NULL,
+  tool TEXT NOT NULL,
+  revision TEXT,
+  dirty INTEGER NOT NULL,
+  workers INTEGER,
+  PRIMARY KEY (batch, family, device, suite)
+) WITHOUT ROWID;
+
+CREATE INDEX IF NOT EXISTS emulator_batches_received ON emulator_batches (received);
+
+-- Emulator runs by the day they finished, device and suite, folded each
+-- night (nightly.js, ../api/emulator.js): the admin view's long figures read
+-- these, not every run. A day is folded again whenever a run of it comes in
+-- late; `emulator_fold` holds the start of the day of the last fold, from
+-- which runs received are looked at.
+CREATE TABLE IF NOT EXISTS emulator_days (
+  day TEXT NOT NULL,
+  family TEXT NOT NULL,
+  device TEXT NOT NULL,
+  suite TEXT NOT NULL,
+  runs INTEGER NOT NULL,
+  passed INTEGER NOT NULL,
+  failed INTEGER NOT NULL,
+  inconclusive INTEGER NOT NULL,
+  bricked INTEGER NOT NULL,
+  first_judged INTEGER NOT NULL,
+  first_passed INTEGER NOT NULL,
+  seconds INTEGER NOT NULL,
+  PRIMARY KEY (day, family, device, suite)
+) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS emulator_fold (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  received TEXT NOT NULL
+);

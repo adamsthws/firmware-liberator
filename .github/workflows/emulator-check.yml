@@ -1,8 +1,11 @@
 # The tool's unit tests, then the firmware a conversion ends on, run on the
 # emulator for each device a change could affect (tools/repo/emulator_check.py):
 # each final firmware installed, then each device taken to the other. Nothing of
-# Sonoff's is kept here, no cloud and no secret: it runs on any runner, and a pull
-# request from a fork runs it as it is.
+# Sonoff's is kept here, and no cloud: it runs on any runner, and a pull request
+# from a fork runs it as it is. Its one secret, the emulator suites' service
+# token, is given only to a run on main, which sends each conversion to the
+# admin view's emulator figures (tools/repo/emulator_stats.py); without it the
+# check is the same and sends nothing.
 name: Final firmware on the emulator
 
 on:
@@ -193,6 +196,9 @@ jobs:
           done
           echo "Still not published after 20 minutes: the emulator builds it here."
       - name: Its final firmware
+        env:
+          EMULATOR_STATS_CLIENT_ID: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && secrets.EMULATOR_STATS_CLIENT_ID || '' }}
+          EMULATOR_STATS_CLIENT_SECRET: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && secrets.EMULATOR_STATS_CLIENT_SECRET || '' }}
         run: |
           set -o pipefail
           .venv/bin/python -I tools/repo/emulator_check.py "$DEVICE" | tee test.txt

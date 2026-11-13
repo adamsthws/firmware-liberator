@@ -1420,21 +1420,32 @@ def service_token(account: str) -> dict[str, Any] | None:
 
 
 def keep_credentials(client_id: str, secret: str) -> list[str]:
-    """The service token's id and secret written to emulator_stats.CREDENTIALS
-    and copied to each machine emulator_stats.HOSTS names: a line for each
-    machine that did not take it, [] when all did."""
+    """The service token's id and secret written to emulator_stats.CREDENTIALS,
+    set as the repository's secrets for the final-firmware check on main
+    (github_settings.REPOSITORY_SECRETS), and copied to each machine
+    emulator_stats.HOSTS names: a line for each place that did not take
+    them, [] when all did."""
+    from tools.repo import github_settings
     path = emulator_stats.write_credentials(client_id, secret)
     print(f"  {path}: written")
+    left = []
+    try:
+        for name, value in ((emulator_stats.CLIENT_ID, client_id), (emulator_stats.CLIENT_SECRET, secret)):
+            github_settings.set_secret(name, value, environment=False)
+        print(f"  GitHub repository secrets {emulator_stats.CLIENT_ID} and {emulator_stats.CLIENT_SECRET}: set")
+    except (OSError, github_settings.SettingsError) as error:
+        left.append(f"GitHub repository secrets {emulator_stats.CLIENT_ID} and {emulator_stats.CLIENT_SECRET}: "
+                    f"not set ({error}): sign gh in (gh auth login) and rotate emulator-stats again")
     machines = emulator_stats.hosts()
     if not machines:
         print("  Copy it to each machine that runs the emulator suites: python3 tools/repo/emulator_stats.py push "
               f"HOST..., or name them in .env.infra as {emulator_stats.HOSTS} for this to copy it")
-        return []
+        return left
     failed = emulator_stats.push(machines)
     copied = len(machines) - len(failed)
     print(f"  {path.name}: copied to {copied} of {len(machines)} machines")
-    return [f"{path.name} not copied to {line}: python3 tools/repo/emulator_stats.py push copies it again"
-            for line in failed]
+    return left + [f"{path.name} not copied to {line}: python3 tools/repo/emulator_stats.py push copies it again"
+                   for line in failed]
 
 
 def rotated(account: str, token: dict[str, Any]) -> list[str]:

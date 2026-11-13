@@ -15,7 +15,7 @@ import { monthsTo, popularity, SERIES } from "../api/popularity.js";
 import { DEVICE_DAILY, ID, REPORTS_DAILY } from "../api/reports.js";
 import schema from "../api/report-schema.json" with { type: "json" };
 import { verified } from "./access.js";
-import { emulatorSections, gatherEmulator, RUNS_PATH, SCOPE, setCause, upload } from "./emulator.js";
+import { emulatorSections, gatherEmulator, KINDS, SCOPE, setCause, upload } from "./emulator.js";
 import { bytes, columns, esc, FULL, lineChart, meter, number, STYLE, table, tile, trends } from "./render.js";
 
 export const ORIGIN = "https://admin.firmwareliberator.com";
@@ -57,7 +57,7 @@ export async function handle(request, env, now = Date.now(), fetcher = fetch) {
     return reply(403, "Forbidden: sign in through Cloudflare Access.", { "Content-Type": "text/plain" });
   }
   if (url.pathname === "/" && request.method === "GET") {
-    return reply(200, await page(env, who, new Date(now), fetcher));
+    return reply(200, await page(env, who, new Date(now), fetcher, url.searchParams.get("live") === "1"));
   }
   if (url.pathname === "/held" && request.method === "POST") {
     return held(request, env);
@@ -82,13 +82,13 @@ async function suites(request, url, env, now, fetcher) {
   if (!claims || claims.email || typeof claims.common_name !== "string") {
     return reply(403, "Forbidden: only the suites' service token.", { "Content-Type": "text/plain" });
   }
-  if (url.pathname !== RUNS_PATH) {
+  if (!Object.hasOwn(KINDS, url.pathname)) {
     return reply(404, "Not found.", { "Content-Type": "text/plain" });
   }
   if (request.method !== "POST") {
     return reply(405, "POST runs.", { "Content-Type": "text/plain", Allow: "POST" });
   }
-  return upload(request, env, now);
+  return upload(request, env, now, url.pathname);
 }
 
 // A failure's cause marked: only from a form on this view.
@@ -324,7 +324,11 @@ export function pace(store, now) {
   return { perDay, full };
 }
 
-export async function page(env, who, now, fetcher = fetch) {
+// How often the view loads itself again when it is asked to keep up (?live=1),
+// in seconds: emulator runs come in as they end.
+export const LIVE_SECONDS = 60;
+
+export async function page(env, who, now, fetcher = fetch, live = false) {
   const data = await gather(env, now);
   const used = await usage(env, now, fetcher);
   const count = (name) => data.counters[name]?.count ?? 0;
@@ -434,7 +438,10 @@ export async function page(env, who, now, fetcher = fetch) {
       + `</section>`,
   ];
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`
+    + (live ? `<meta http-equiv="refresh" content="${LIVE_SECONDS}">` : "")
     + `<meta name="robots" content="noindex, nofollow"><title>Admin · FirmwareLiberator</title><style>${STYLE}</style></head>`
     + `<body><main><div class="top"><h1>Admin</h1><span class="who">${esc(who.email ?? "")} · ${esc(data.today)} · `
-    + `<a href="https://firmwareliberator.com/stats">public figures</a></span></div>${sections.join("")}</main></body></html>`;
+    + `<a href="https://firmwareliberator.com/stats">public figures</a> · `
+    + (live ? `<a href="/">stop updating</a>` : `<a href="/?live=1">update every ${LIVE_SECONDS} s</a>`)
+    + `</span></div>${sections.join("")}</main></body></html>`;
 }

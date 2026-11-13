@@ -25,12 +25,14 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from tools.autoflash import kinds  # noqa: E402
+from tools.repo import emulator_stats  # noqa: E402
 
 # Each family's emulator: the image a device's job waits for, as its workflow
 # publishes it, and the variable that says where the tool pulls it from.
@@ -92,15 +94,24 @@ def check_public_dump(kind: kinds.Kind, instances: list[int]) -> int:
     dump = public_dump.DUMPS.get(kind.key) or public_dump.UPDATES[kind.key]
     stub = ("--stub-cloud", f"--device={dump.mac}")
 
+    folder = LOGS / kind.key
+    emulator_stats.began(folder, family=kind.family, suite="check", device=kind.key,
+                         total=sum(map(len, ESPRESSIF_WAYS)), planned=sum(map(len, ESPRESSIF_WAYS)), cloud="stub",
+                         workers=len(instances))
+
     def way(instance: int, firmwares: tuple[str, ...]) -> int:
         saved = None
         for firmware in firmwares:
             keep = f"check-{kind.key}-{instance}-{firmware}"
-            log = LOGS / kind.key / f"{instance}-{firmware}.log"
+            log = folder / f"{instance}-{firmware}.log"
+            began = time.time()
             converted, said = public_devices.run(instance, saved, firmware, keep, log,
                                                extra=(*stub, *(() if saved else ("--fresh",))))
             start = f"on {saved.rsplit('-', 1)[1]}" if saved else "from Sonoff's"
             print(f"{'PASS' if converted else 'FAIL'}  {kind.key} {start} to {firmware}: {said}", flush=True)
+            emulator_stats.check_run(folder, family=kind.family, device=kind.key,
+                                     route=f"{saved.rsplit('-', 1)[1] if saved else 'sonoff'}>{firmware}",
+                                     passed=converted, seconds=round(time.time() - began), cloud="stub")
             if not converted:
                 return 1
             saved = keep
@@ -110,6 +121,7 @@ def check_public_dump(kind: kinds.Kind, instances: list[int]) -> int:
         return sum(public_devices.side_by_side([lambda i=instance, w=firmwares: way(i, w) for firmwares, instance
                                               in zip(ESPRESSIF_WAYS, instances)]))
     finally:
+        print(emulator_stats.send(folder), flush=True)
         for instance in instances:
             for firmware in ("tasmota", "esphome"):
                 subprocess.run(["rm", "-rf", str(public_devices.SAVED / f"check-{kind.key}-{instance}-{firmware}")],
@@ -161,6 +173,7 @@ def check_beken(kind: kinds.Kind, instances: list[int]) -> int:
     env["AUTOFLASH_BEKEN_EMU_SUITE_DIR"] = str(LOGS / kind.key)
     if rebuilt(kind):
         env["AUTOFLASH_BEKEN_EMU_FLASH"] = str(rebuilt_flash(kind))
+        env["AUTOFLASH_BEKEN_EMU_FLASH_DEVICE"] = kind.key   # whose runs its emulator stats are
     return subprocess.call([str(ROOT / "tools/beken/emulator/fault_suite.py"), "check",
                             "--instances", ",".join(map(str, instances))], env=env)
 

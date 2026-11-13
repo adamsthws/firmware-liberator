@@ -175,13 +175,16 @@ token of their own, which can do nothing else. `apply` makes the token, never
 to expire, and a second Access application over that path alone that lets in
 the token and no one else. It writes the token's id and secret to
 `~/.config/firmware-liberator/emulator.env`, as Access shows a secret only
-once, and copies that file over ssh to each machine named in `.env.infra` as
+once, sets it as the repository's secrets `EMULATOR_STATS_CLIENT_ID` and
+`EMULATOR_STATS_CLIENT_SECRET` (gh, signed in) for the final-firmware check on
+`main`, and copies that file over ssh to each machine named in `.env.infra` as
 `EMULATOR_STATS_HOSTS`. It then says the application's audience tag to put in
 `admin/wrangler.jsonc` as `ACCESS_UPLOAD_AUD`. Should the secret be seen,
 `python3 tools/repo/cloudflare_settings.py rotate emulator-stats` gives the
 token a new one, which stops the old at once, and writes and copies it the
 same way. A machine added later gets it with `python3
-tools/repo/emulator_stats.py push HOST`.
+tools/repo/emulator_stats.py push HOST`. Each deploy of the view checks that the suites' path turns
+away a request without the token.
 
 ### Adding a Worker
 

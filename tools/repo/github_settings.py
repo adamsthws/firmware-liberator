@@ -82,6 +82,14 @@ ACTIONS = {
 REPOSITORY_SECRETS = {
     "AUTOFLASH_BACKUP_KEY": "the sealed stock-firmware backup's key, for the emulator: "
                             "python3 tools/repo/private_backup.py secret",
+    # The emulator suites' service token, with which the final-firmware check
+    # on main sends its runs to the admin view (tools/repo/emulator_stats.py):
+    # it can add emulator runs and nothing else. The workflow gives it only to
+    # a run on main, never a pull request's.
+    "EMULATOR_STATS_CLIENT_ID": "the emulator suites' service token's id: "
+                                "python3 tools/repo/cloudflare_settings.py rotate emulator-stats",
+    "EMULATOR_STATS_CLIENT_SECRET": "the emulator suites' service token's secret: "
+                                    "python3 tools/repo/cloudflare_settings.py rotate emulator-stats",
 }
 
 # Secret scanning refuses a push holding a known kind of token; Dependabot
@@ -272,10 +280,12 @@ def differences() -> list[tuple[str, str, Any]]:
     return found
 
 
-def set_secret(name: str, value: str) -> None:
-    """Through gh, which seals it with the environment's public key; the value
-    goes on stdin, never into a command line."""
-    result = subprocess.run(["gh", "secret", "set", name, "--env", ENVIRONMENT, "-R", REPOSITORY],
+def set_secret(name: str, value: str, environment: bool = True) -> None:
+    """Through gh, which seals it with the environment's public key - or the
+    repository's, for one of REPOSITORY_SECRETS; the value goes on stdin,
+    never into a command line."""
+    where = ["--env", ENVIRONMENT] if environment else []
+    result = subprocess.run(["gh", "secret", "set", name, *where, "-R", REPOSITORY],
                             input=value, capture_output=True, text=True)
     if result.returncode:
         raise SettingsError(f"gh secret set {name}: {result.stderr.strip() or result.stdout.strip()}")

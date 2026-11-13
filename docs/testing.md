@@ -970,17 +970,31 @@ tests first.
 
 ### Emulator stats
 
-Every suite, fault or attended and of every chip family, sends what each
-scenario's run came to to the admin view (`website/admin/emulator.js`): the
-device, the scenario, its verdict, how many runs of the tool it took and how
-long, the version of the tool and the commit it ran from, and the firmware the
-checkout installs on the device. No log, report or recording leaves the
-machine. The view shows runs a day, pass rates by commit and new failures
-(a scenario that passed on the commit before), each device and the firmware it
-was last run with, failures by step and fault, how many tries a conversion
-took, flaky scenarios, real-cloud failures by the hour into a batch, and the
-latest failures, each of which you mark with what it came from: "tool" counts
-as a bug found.
+Every suite - fault, attended and the final-firmware check, of every chip
+family - sends what each scenario's run came to to the admin view
+(`website/admin/emulator.js`): the device, the scenario, its verdict, whether
+it is a first try or a re-run, how many runs of the tool it took and how long,
+the version of the tool and the commit it ran from, and the firmware the
+checkout installs on the device. As a batch begins it sends how many
+scenarios its suite has for the device and how many it runs. No log, report or
+recording leaves the machine.
+
+The view takes each verdict as an outcome: a pass, a failure, or
+inconclusive - a run the suite could not judge, such as a fault that never
+landed or a device that did not start (`INCONCLUSIVE` in
+`website/api/emulator.js`). Pass rates are of first tries the suite could
+judge, as a batch runs only what has not passed yet and its re-runs would
+read as a worse rate. The view shows runs a day; pass rates and new failures
+(a scenario that passed on the commit before) by commit; each device, version by
+version of the tool, with the share of its suite's scenarios passed on that
+version - each version on its own, as a change may break what passed on the
+one before - and the firmware it ran; failures by step and fault; how many tries a conversion
+took; the test rig's own trouble (the inconclusive runs) apart from the
+tool's; flaky scenarios; real-cloud failures by the hour into a batch; and the
+latest runs that did not pass, each of which you mark with what it came from
+and the commit or issue that fixed it or follows it - "tool" counts as a bug
+found, once a commit or issue. Days before today are counted each night;
+`?live=1` has the view load itself again every minute.
 
 `tools/repo/emulator_stats.py` keeps each run beside the suite's results and
 sends it as soon as it finishes, beside the suite, so the view fills as runs
@@ -989,15 +1003,19 @@ The batch sends whatever is left as it ends; a run that could not be sent
 goes with the next, or with `emulator_stats.py send DIR`. Sending needs the
 suites' service token, in `~/.config/firmware-liberator/emulator.env` - one
 file a machine, which every checkout and worktree on it reads.
-`tools/repo/cloudflare_settings.py apply` writes it and copies it to each
-machine `EMULATOR_STATS_HOSTS` in `.env.infra` names (`website/README.md`,
-The admin view); `emulator_stats.py push HOST...` copies it to another, and
+`tools/repo/cloudflare_settings.py apply` writes it, sets it as the
+repository's secrets for the final-firmware check on `main` (a pull request's
+check sends nothing), and copies it to each machine `EMULATOR_STATS_HOSTS` in
+`.env.infra` names (`website/README.md`, The admin view);
+`emulator_stats.py push HOST...` copies it to another, and
 `emulator_stats.py check` says whether a machine's runs are taken. Without
-it nothing is sent, and the batch says so as it ends.
+it nothing is sent, and the batch says so as it ends. The view takes at most
+`DAILY_RUNS` runs a day, so a token that leaked could add only so many.
 `AUTOFLASH_EMU_NO_STATS=1` keeps and sends none, as every unit test has it.
-A suite of a new chip family calls the same functions (`fault_run`,
-`attended_run`, `send`); `tests/repo/test_emulator_stats.py` checks that every
-`tools/*/emulator/fault_suite.py` does.
+A suite of a new chip family calls the same functions (`began`, `fault_run`,
+`attended_run`, `check_run`, `send`); `tests/repo/test_emulator_stats.py`
+checks that every `tools/*/emulator/fault_suite.py`, and each family's
+final-firmware check, does.
 
 ## Real devices
 

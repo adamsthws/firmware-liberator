@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -198,6 +199,13 @@ class WorkflowTests(unittest.TestCase):
         from tools.repo import github_settings
         self.assertIn("emulator", github_settings.REQUIRED_CHECKS)
         self.assertRegex(self.workflow, r"(?m)^  emulator:$")
+
+    def test_only_a_run_on_main_is_given_the_emulator_stats_token(self):
+        from tools.repo import emulator_stats
+        for name in (emulator_stats.CLIENT_ID, emulator_stats.CLIENT_SECRET):
+            uses = re.findall(rf"{name}: (.*)", self.workflow)
+            self.assertEqual(uses, [f"${{{{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' "
+                                    f"&& secrets.{name} || '' }}}}"], name)
 
     def test_each_device_has_its_own_job(self):
         self.assertIn("emulator_check.py list", self.workflow)

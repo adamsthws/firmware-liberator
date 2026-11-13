@@ -130,8 +130,11 @@ ROUTES = {
     "outdated>openbeken": {"U3": 14, "U4": 20},
     "outdated>esphome": {"U1": 7, "U2": 20},
 }
-# The kind of device the suite emulates: an S61, from its public dump.
+# The kind of device the suite emulates: an S61, from its public dump. Another
+# Beken device's flash (AUTOFLASH_BEKEN_EMU_FLASH) is said by
+# AUTOFLASH_BEKEN_EMU_FLASH_DEVICE, its key, which its emulator stats are of.
 DEVICE = kinds.SONOFF_S61
+STATS_DEVICE = kinds.find(os.environ.get("AUTOFLASH_BEKEN_EMU_FLASH_DEVICE")) or DEVICE
 # The release of each firmware a converted device must end on: this checkout's
 # (FAIL-NOT-LATEST) - after an update from an earlier release's, too.
 LATEST = {firmware: beken.published_version(DEVICE, firmware) for firmware in ("openbeken", "esphome")}
@@ -933,7 +936,8 @@ def starved_label(outcome: dict) -> str:
 def batch(ids_file: str | None = None) -> None:
     every = {sc["id"]: sc for sc in scenarios()}
     wanted = (Path(ids_file).read_text(encoding="utf-8").split() if ids_file else list(every))
-    passed = {i for i, entry in latest().items() if entry.get("result") == "PASS"}
+    earlier = latest()   # those run here before: a re-run's pass rate is apart (emulator_stats)
+    passed = {i for i, entry in earlier.items() if entry.get("result") == "PASS"}
     todo: queue.Queue = queue.Queue()
     # The longest first, so the batch does not end on one started last (scenario_times).
     for sc in scenario_times.longest_first([every[i] for i in wanted if i in every and i not in passed],
@@ -962,12 +966,15 @@ def batch(ids_file: str | None = None) -> None:
                     record(sc, outcome)
                     print(f"{outcome['result']:9} {sc['id']}{starved_label(outcome)}", flush=True)
                 # The device's eWeLink is always the local stub (ACCOUNT).
-                emulator_stats.fault_run(OUT, family=DEVICE.family, device=DEVICE.key, scenario=sc,
+                emulator_stats.fault_run(OUT, family=STATS_DEVICE.family, device=STATS_DEVICE.key, scenario=sc,
                                          verdict=outcome["result"], tries=outcome.get("runs"),
-                                         seconds=round(time.time() - started), cloud="stub", workers=workers)
+                                         seconds=round(time.time() - started), cloud="stub", workers=workers,
+                                         rerun=sc["id"] in earlier)
         finally:
             instance.stop()   # an emulator never left running
 
+    emulator_stats.began(OUT, family=STATS_DEVICE.family, suite="fault", device=STATS_DEVICE.key, total=len(every),
+                         planned=todo.qsize(), cloud="stub", workers=workers)
     threads = [threading.Thread(target=work, args=(n,)) for n in range(1, workers + 1)]
     for thread in threads:
         thread.start()
@@ -1056,6 +1063,7 @@ def check_way(n: int, routes: tuple[str, ...]) -> int:
             print(f"FAIL  {routes[0]}: the device did not come online", flush=True)
             return 1
         for route in routes:
+            started = time.time()
             target = route.split(">")[1]
             log = OUT / f"check-{route.replace('>', '-')}.log"
             instance.before = {filed_as(path) for path in instance.all_runs()}
@@ -1072,6 +1080,8 @@ def check_way(n: int, routes: tuple[str, ...]) -> int:
             if checks:
                 problems.append(checks)
             print(f"{'FAIL' if problems else 'PASS'}  {route}{': ' + ', '.join(problems) if problems else ''}", flush=True)
+            emulator_stats.check_run(OUT, family=STATS_DEVICE.family, device=STATS_DEVICE.key, route=route, passed=not problems,
+                                     seconds=round(time.time() - started), cloud="stub")
             if problems:
                 return 1
             instance.stop()
@@ -1088,6 +1098,8 @@ def check(instances: tuple[int, ...] = (1, 2)) -> int:
     `instances`: no faults, no account. A way passes only by getting to its
     end: one whose thread raised has failed."""
     failed = [1] * len(CHECK_WAYS)
+    emulator_stats.began(OUT, family=STATS_DEVICE.family, suite="check", device=STATS_DEVICE.key,
+                         total=sum(map(len, CHECK_WAYS)), planned=sum(map(len, CHECK_WAYS)), cloud="stub", workers=2)
 
     def way(index: int) -> None:
         try:
@@ -1099,6 +1111,7 @@ def check(instances: tuple[int, ...] = (1, 2)) -> int:
         thread.start()
     for thread in threads:
         thread.join()
+    print(emulator_stats.send(OUT), flush=True)
     return 1 if any(failed) else 0
 
 
