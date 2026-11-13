@@ -47,7 +47,9 @@ as its screens do, since it converts much more than smart plugs now.
   --all`), each sent on its own as it is made, so the website can turn down one
   it has enough readouts of - those the tool converts too, as one may run new
   firmware. Before reading one, the tool asks the website whether it would add
-  anything: the website keeps three readouts of each model and firmware
+  anything, naming the device as a report does (a hash of its MAC, never the
+  MAC), so the website counts how many devices people would read out, not how
+  many times they asked: the website keeps three readouts of each model and firmware
   version, each from a different person, and 20 a day from one place, so one
   like them, or a second of a model from the same place, is neither read nor
   worked for,
@@ -368,7 +370,9 @@ as its screens do, since it converts much more than smart plugs now.
   you, your computer or your network. Each device read out sends one too, as its
   readout ends: how it ended (accepted by the website, not needed, kept, and
   so on), never the readout itself. Reports from everyone add up to the figures
-  on [firmwareliberator.com/stats](https://firmwareliberator.com/stats).
+  on [firmwareliberator.com/stats](https://firmwareliberator.com/stats), which
+  publishes only totals; the reports themselves are kept, so how devices fare can
+  be followed over the years.
   `--no-report`, or `AUTOFLASH_NO_REPORT=1` in `.env`, stops it, and the tool
   says so once, the first time it runs on a computer;
   [what the tool sends](docs/what-the-tool-sends.md) says what a report holds.
