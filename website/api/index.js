@@ -155,21 +155,18 @@ export const ROUTES = { "/v1/readout": readout, "/v1/wanted": wanted, "/v1/notif
   "/confirm": confirm, "/forget": forget };
 
 export default {
+  // Every answer names the code it came from (API-Tree): the git tree of
+  // website/api/ the website workflow deployed, which the release workflow
+  // waits to see before it releases a tool that talks to it
+  // (tools/repo/api_health.py deployed).
   async fetch(request, env) {
-    const route = ROUTES[new URL(request.url).pathname];
-    if (!route) {
-      return answer(404, { error: "no such path: the tool's are under /v1/" });
+    const answered = await handle(request, env);
+    if (!env.API_TREE) {
+      return answered;
     }
-    // The one switch for every path: "on" takes requests; anything else, as
-    // the website workflow can deploy with, answers 503 for the tool to try
-    // again later.
-    if (env.INGEST !== "on") {
-      return answer(503, { error: "not taking requests for now: try again later" }, { "Retry-After": "3600" });
-    }
-    if (!(await ready(env.DB))) {
-      return answer(503, { error: "the API is being updated: try again later" }, { "Retry-After": "300" });
-    }
-    return route(request, env);
+    const named = new Response(answered.body, answered);
+    named.headers.set("API-Tree", env.API_TREE);
+    return named;
   },
   // The nightly job (nightly.js) then the reminders (remind), or, at the
   // hourly cron, the reminders alone: at the times wrangler.jsonc's crons give.
@@ -185,6 +182,22 @@ export default {
   },
 };
 
+async function handle(request, env) {
+  const route = ROUTES[new URL(request.url).pathname];
+  if (!route) {
+    return answer(404, { error: "no such path: the tool's are under /v1/" });
+  }
+  // The one switch for every path: "on" takes requests; anything else, as
+  // the website workflow can deploy with, answers 503 for the tool to try
+  // again later.
+  if (env.INGEST !== "on") {
+    return answer(503, { error: "not taking requests for now: try again later" }, { "Retry-After": "3600" });
+  }
+  if (!(await ready(env.DB))) {
+    return answer(503, { error: "the API is being updated: try again later" }, { "Retry-After": "300" });
+  }
+  return route(request, env);
+}
 
 // The manifest a readout starts with, or null: the first file of its tar,
 // which is not compressed (the files after it are, each on its own).

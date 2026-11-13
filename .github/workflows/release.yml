@@ -4,7 +4,8 @@
 # change the number, merge.
 #
 # Only once the unit tests, the final firmware on the emulator, the lint and
-# the leak scan pass on that commit: on a push, the runs the push started
+# the leak scan pass on that commit, and the API it talks to is that
+# commit's, deployed: on a push, the runs the push started
 # rather than the same again; started any other way, it runs them. The
 # release carries the firmware files the tool installs and SHA256SUMS, and
 # what the README's one line fetches (liberate.sh, liberate.ps1); with
@@ -131,8 +132,25 @@ jobs:
       contents: read
     uses: ./.github/workflows/leak-scan.yml
 
+  # The API the tool talks to, deployed from this commit and answering: the
+  # website workflow deploys it on the same push. A tool never goes out
+  # ahead of an API it needs (tools/repo/api_health.py deployed).
+  api:
+    needs: version
+    if: needs.version.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The API answering is this commit's
+        run: python3 tools/repo/api_health.py deployed
+
   release:
-    needs: [version, pushed, tests, lint, leak-scan]
+    needs: [version, pushed, tests, lint, leak-scan, api]
     # Each gate passed or, on a push, left to the run the push started.
     if: >-
       !cancelled() && needs.version.outputs.tag != ''

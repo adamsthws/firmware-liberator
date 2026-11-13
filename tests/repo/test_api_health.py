@@ -309,3 +309,66 @@ class LiveTests(unittest.TestCase):
         job = workflow[workflow.index("\n  deploy-api:"):workflow.index("\n  deploy-token:")]
         self.assertLess(job.index("npx wrangler deploy --config api/wrangler.jsonc"),
                         job.index('run: python3 tools/repo/api_health.py live "$INGEST"'))
+
+
+class DeployedTests(unittest.TestCase):
+    """The release waits for the API its commit holds."""
+
+    def test_the_tree_is_this_commits_website_api(self):
+        import subprocess
+        self.assertEqual(health.tree_here(), subprocess.run(
+            ["git", "-C", str(health.ROOT), "rev-parse", "HEAD:website/api"], capture_output=True, text=True,
+            check=True).stdout.strip())
+
+    def test_the_tree_is_read_from_any_answer(self):
+        def urlopen(request, timeout):
+            self.assertEqual(request.full_url, health.API_URL + "/confirm?t=not-a-token")
+            raise health.urllib.error.HTTPError(request.full_url, 404, "", {"API-Tree": "a" * 40}, io.BytesIO(b""))
+        with mock.patch.object(health.urllib.request, "urlopen", side_effect=urlopen):
+            self.assertEqual(health.tree_deployed(), "a" * 40)
+        with mock.patch.object(health.urllib.request, "urlopen", side_effect=OSError("offline")):
+            self.assertEqual(health.tree_deployed(), "")
+
+    def test_another_tree_is_a_problem_and_this_one_is_held_to_live(self):
+        with mock.patch.object(health, "tree_deployed", return_value="b" * 40), \
+                mock.patch.object(health, "live_problems") as live:
+            problems = health.deployed_problems("a" * 40)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("b" * 40, problems[0])
+        live.assert_not_called()
+        with mock.patch.object(health, "tree_deployed", return_value="a" * 40), \
+                mock.patch.object(health, "live_problems", return_value=["not migrated"]) as live:
+            self.assertEqual(health.deployed_problems("a" * 40), ["not migrated"])
+        live.assert_called_once_with("on")
+
+    def test_it_waits_for_the_deploy(self):
+        results = iter([["old"], ["old"], []])
+        with mock.patch.object(health, "deployed_problems", side_effect=lambda tree: next(results)), \
+                mock.patch.object(health.time, "sleep") as slept:
+            self.assertEqual(health.deployed("a" * 40), [])
+        self.assertEqual(slept.call_count, 2)
+        with mock.patch.object(health, "deployed_problems", return_value=["old"]), \
+                mock.patch.object(health.time, "sleep"), \
+                mock.patch.object(health.time, "monotonic", side_effect=[0, 0, health.DEPLOYED_WAIT]):
+            self.assertEqual(health.deployed("a" * 40), ["old"])
+
+    def test_main_says_which_and_fails_on_a_problem(self):
+        with mock.patch.object(health, "tree_here", return_value="a" * 40), \
+                mock.patch.object(health, "deployed", return_value=[]), contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(health.main(["deployed"]), 0)
+        self.assertIn("a" * 40, out.getvalue())
+        with mock.patch.object(health, "tree_here", return_value="a" * 40), \
+                mock.patch.object(health, "deployed", return_value=["old"]), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(health.main(["deployed"]), 1)
+
+    def test_the_deploy_names_its_tree_and_the_release_waits_for_it(self):
+        root = Path(health.ROOT)
+        website = (root / ".github/workflows/website.yml").read_text(encoding="utf-8")
+        job = website[website.index("\n  deploy-api:"):website.index("\n  deploy-admin:")]
+        self.assertIn('--var "API_TREE:$(git rev-parse HEAD:website/api)"', job)
+        release = (root / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        api = release[release.index("\n  api:"):release.index("\n  release:")]
+        self.assertIn("run: python3 tools/repo/api_health.py deployed", api)
+        self.assertRegex(release[release.index("\n  release:"):], r"\n    needs: \[[^]]*\bapi\]")
+        self.assertIn('named.headers.set("API-Tree", env.API_TREE);',
+                      (root / "website/api/index.js").read_text(encoding="utf-8"))

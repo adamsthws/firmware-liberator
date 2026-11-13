@@ -5,6 +5,7 @@
     python3 tools/repo/api_health.py usage       the account is well within what its plan includes
     python3 tools/repo/api_health.py mail        the API's emails bounce rarely, and draw no complaint
     python3 tools/repo/api_health.py live [on|off]  the API just deployed answers as it should
+    python3 tools/repo/api_health.py deployed    the API answering is this commit's
 
 `snapshot` needs no token: it reads the public figures the API Worker writes
 each night (website/api/nightly.js), and fails if they are missing, older than
@@ -43,6 +44,13 @@ the proof checked and taken once in the database: 400). Nothing is counted
 or kept but that proof's mark. Deployed taking no requests (`off`), each is
 to answer 503. It tries for LIVE_WAIT, as a new version takes some seconds
 to be everywhere.
+
+`deployed` is the release workflow's: a tool is released only once the API
+it talks to is the one its commit holds, deployed and answering as `live`
+checks, so a tool never goes out ahead of an API it needs. Every answer the
+Worker gives names, in its API-Tree header, the git tree of website/api/ the
+website workflow deployed it from; the same push deploys it, so this waits
+for it up to DEPLOYED_WAIT, and needs no token.
 """
 
 from __future__ import annotations
@@ -51,6 +59,7 @@ import datetime as dt
 import json
 import re
 import secrets
+import subprocess
 import sys
 import time
 import urllib.error
@@ -74,6 +83,10 @@ INDEX_JS = ROOT / "website" / "api" / "index.js"
 API_URL = f"https://{cs.API_HOST}"
 LIVE_WAIT = 90
 LIVE_EVERY = 10
+# The website workflow's API deploy, started by the same push as the
+# release, done in minutes; this long allows for its runner's wait too.
+DEPLOYED_WAIT = 30 * 60
+DEPLOYED_EVERY = 30
 WARN_AT = 0.5
 GRAPHQL = f"{cs.API}/graphql"
 
@@ -165,6 +178,45 @@ def live(ingest: str, wait: float = LIVE_WAIT, every: float = LIVE_EVERY) -> lis
     started = time.monotonic()
     while True:
         problems = live_problems(ingest)
+        if not problems or time.monotonic() - started + every > wait:
+            return problems
+        time.sleep(every)
+
+
+def tree_here() -> str:
+    """The git tree of website/api/ in this commit, as the website workflow
+    names a deploy of it."""
+    return subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD:website/api"], capture_output=True, text=True,
+                          check=True).stdout.strip()
+
+
+def tree_deployed() -> str:
+    """The tree the API answering was deployed from: its API-Tree header."""
+    request = urllib.request.Request(API_URL + "/confirm?t=not-a-token",
+                                     headers={"User-Agent": "firmware-liberator-health"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.headers.get("API-Tree") or ""
+    except urllib.error.HTTPError as error:
+        return error.headers.get("API-Tree") or ""
+    except OSError:
+        return ""
+
+
+def deployed_problems(tree: str) -> list[str]:
+    """Why the API answering is not `tree`'s, deployed and well, if it is not."""
+    found = tree_deployed()
+    if found != tree:
+        return [f"the API answering was deployed from website/api/ {found or '(not named)'}, not this commit's "
+                f"{tree}: see the website workflow's deploy-api job for this commit"]
+    return live_problems("on")
+
+
+def deployed(tree: str, wait: float = DEPLOYED_WAIT, every: float = DEPLOYED_EVERY) -> list[str]:
+    """deployed_problems, asked again until none or `wait` seconds have passed."""
+    started = time.monotonic()
+    while True:
+        problems = deployed_problems(tree)
         if not problems or time.monotonic() - started + every > wait:
             return problems
         time.sleep(every)
@@ -348,7 +400,7 @@ def usage_problems(measures: dict[str, int]) -> list[str]:
 def main(argv: list[str] | None = None, now: dt.datetime | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     cs.TOKEN_VARIABLE = cs.TOKENS["settings-check-read-only"]["variable"]
-    if args not in (["snapshot"], ["usage"], ["mail"], ["live"], ["live", "on"], ["live", "off"]):
+    if args not in (["snapshot"], ["usage"], ["mail"], ["live"], ["live", "on"], ["live", "off"], ["deployed"]):
         print(__doc__.strip(), file=sys.stderr)
         return 2
     now = now or dt.datetime.now(dt.timezone.utc)
@@ -360,6 +412,10 @@ def main(argv: list[str] | None = None, now: dt.datetime | None = None) -> int:
             ingest = args[1] if len(args) > 1 else "on"
             problems = live(ingest)
             good = (f"{API_URL} answers as deployed, " + ("taking requests." if ingest == "on" else "taking none."))
+        elif args == ["deployed"]:
+            tree = tree_here()
+            problems = deployed(tree)
+            good = f"{API_URL} answers as deployed from this commit's website/api/ ({tree})."
         elif args == ["mail"]:
             measures = mail(now)
             print(f"  In {MAIL_DAYS} days: {measures['delivered']:,} emails delivered, {measures['bounced']:,} bounced")

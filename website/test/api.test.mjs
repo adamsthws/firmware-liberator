@@ -617,6 +617,26 @@ test("its pages cannot be put inside another site's, and no answer is read as ot
   assert.equal(json.headers.get("X-Content-Type-Options"), "nosniff");
 });
 
+test("every answer names the code deployed, as the release waits to see it", async () => {
+  const tree = "0123456789abcdef0123456789abcdef01234567";
+  const named = { ...env(), API_TREE: tree };
+  const answers = [
+    await worker.fetch(new Request("https://api.firmwareliberator.com/"), named),
+    await worker.fetch(new Request("https://api.firmwareliberator.com/confirm?t=not-a-token"), named),
+    await worker.fetch(new Request("https://api.firmwareliberator.com/v1/notify", { method: "OPTIONS",
+      headers: { Origin: readout.SITE_ORIGIN } }), named),
+    await worker.fetch(new Request("https://api.firmwareliberator.com/confirm?t=not-a-token"),
+      { ...named, INGEST: "off" }),
+  ];
+  assert.deepEqual(answers.map((answer) => [answer.status, answer.headers.get("API-Tree")]),
+    [[404, tree], [404, tree], [204, tree], [503, tree]]);
+  // Its other headers kept.
+  assert.equal(answers[1].headers.get("X-Content-Type-Options"), "nosniff");
+  assert.ok(answers[2].headers.get("Access-Control-Allow-Origin"));
+  assert.equal((await worker.fetch(new Request("https://api.firmwareliberator.com/"), env())).headers.get("API-Tree"),
+    null);
+});
+
 test("the Worker can send email from NOTIFY_FROM alone", () => {
   const config = readFileSync(new URL("../api/wrangler.jsonc", import.meta.url), "utf8");
   const binding = config.split("\n").find((line) => line.includes('"name": "EMAIL"'));
