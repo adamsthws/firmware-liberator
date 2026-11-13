@@ -173,7 +173,7 @@ def _line_editor():
     """readline, where input() then edits the answer with the arrow keys -
     without it the terminal echoes them, and the up arrow moves the cursor
     into what is already on the screen.  None without a terminal, or where
-    Python has no readline: Windows' console edits the line itself."""
+    Python has no readline, as on Windows: _read_line then."""
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return None
     try:
@@ -188,14 +188,20 @@ def _line_editor():
 
 
 def _plain_terminal() -> bool:
-    """A POSIX terminal Python has no readline for: there input() lets the
-    terminal echo an arrow key's code, which moves the cursor into the rows
-    above, and keeps the code in the answer."""
-    if hostsys.IS_WINDOWS or not (sys.stdin.isatty() and sys.stdout.isatty()):
+    """A terminal where input() would let a stray key change the answer or
+    the screen: a POSIX one Python has no readline for, where the terminal
+    echoes an arrow key's code, which moves the cursor into the rows above,
+    and keeps the code in the answer; and Windows' console, whose own line
+    editing brings an earlier answer back with the up arrow or F3, F7 pops a
+    list of them up over the screen, and Esc clears what was typed."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return False
     try:
-        import termios  # noqa: F401
-        import tty  # noqa: F401
+        if hostsys.IS_WINDOWS:
+            import msvcrt  # noqa: F401
+        else:
+            import termios  # noqa: F401
+            import tty  # noqa: F401
     except ImportError:
         return False
     return True
@@ -220,18 +226,68 @@ def _key_code(fd: int) -> str:
 
 # What _read_line does with the keys readline would: the cursor along the answer.
 LEFT, RIGHT, HOME, END, DELETE = ("[D", "OD"), ("[C", "OC"), ("[H", "OH", "[1~"), ("[F", "OF", "[4~"), ("[3~",)
+# Windows' console gives a key with no character - an arrow, F1 - as "\xe0"
+# or "\x00", then a code of its own: those _read_line edits with, as the
+# terminal's escape codes.
+CONSOLE_KEYS = {"K": "[D", "M": "[C", "G": "[H", "O": "[F", "S": "[3~"}
+
+
+def _console_key() -> str:
+    """The rest of a Windows console key with no character, its "\xe0" or
+    "\x00" already read: as _key_code() gives a terminal's, so a code of its
+    own - Page Down's "Q", F3's "=" - is never taken as a key typed."""
+    import msvcrt
+    code = msvcrt.getwch()
+    return CONSOLE_KEYS.get(code, f"console {ord(code)}")
+
+
+@contextlib.contextmanager
+def _single_keys():
+    """The keyboard read a key at a time, nothing echoed: each key as (its
+    escape code, "") where it has one, else (None, the text it types).
+    Ctrl-C still stops; on Windows' console it comes as a key, raised here."""
+    if hostsys.IS_WINDOWS:
+        import msvcrt
+
+        def console():
+            while True:
+                char = msvcrt.getwch()
+                if char == "\x03":
+                    raise KeyboardInterrupt
+                if char in ("\x00", "\xe0"):
+                    yield _console_key(), ""
+                elif char == "\x1b":
+                    yield "", ""   # Esc: a key with no code, dropped as a terminal's lone Esc is
+                else:
+                    yield None, char
+        yield console()
+        return
+    import termios
+    import tty
+    fd = sys.stdin.fileno()
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
+
+    def terminal():
+        while True:
+            byte = os.read(fd, 1)
+            if not byte:
+                raise EOFError
+            yield (_key_code(fd), "") if byte == b"\x1b" else (None, decoder.decode(byte))
+    saved = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)   # no echo, no line buffering; Ctrl-C still interrupts
+        yield terminal()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
 
 
 def _read_line(prompt: str) -> str:
-    """input() where Python has no readline (_plain_terminal): the answer
-    echoed as typed and edited as readline edits it - the arrows, Home and End
-    move along it, Backspace and Delete take a character off - and every other
-    key with an escape code dropped, so none moves the cursor off the answer
-    or ends up in it."""
-    import termios
-    import tty
-    fd, out = sys.stdin.fileno(), sys.stdout
-    decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
+    """input() where it would let a stray key in (_plain_terminal): the
+    answer echoed as typed and edited as readline edits it - the arrows, Home
+    and End move along it, Backspace and Delete take a character off - and
+    every other key with no character dropped, so none moves the cursor off
+    the answer, changes it or brings an earlier one back."""
+    out = sys.stdout
     typed, at = "", 0
 
     def redraw_from(start: int, erased: int = 0) -> None:
@@ -240,15 +296,11 @@ def _read_line(prompt: str) -> str:
 
     out.write(prompt)
     out.flush()
-    saved = termios.tcgetattr(fd)
-    try:
-        tty.setcbreak(fd)   # no echo, no line buffering; Ctrl-C still interrupts
+    with _single_keys() as keys:
         while True:
-            byte = os.read(fd, 1)
-            if not byte or (byte == b"\x04" and not typed):
+            key, text = next(keys)
+            if text in ("\x04", "\x1a") and not typed:   # Ctrl-D, or Windows' Ctrl-Z
                 raise EOFError
-            key = _key_code(fd) if byte == b"\x1b" else None
-            text = "" if key is not None else decoder.decode(byte)
             if key in LEFT and at:
                 at -= 1
                 out.write("\b")
@@ -264,7 +316,7 @@ def _read_line(prompt: str) -> str:
             elif key in DELETE and at < len(typed):
                 typed = typed[:at] + typed[at + 1:]
                 redraw_from(at, 1)
-            elif byte in (b"\x7f", b"\x08"):
+            elif text in ("\x7f", "\x08"):
                 if at:
                     typed, at = typed[:at - 1] + typed[at:], at - 1
                     out.write("\b")
@@ -277,8 +329,6 @@ def _read_line(prompt: str) -> str:
                 typed, at = typed[:at] + text + typed[at:], at + 1
                 redraw_from(at - 1)
             out.flush()
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
 
 
 @contextlib.contextmanager
@@ -771,6 +821,9 @@ def countdown_carry_on(question: str, *, seconds: float = interrupt.CARRY_ON_AFT
                         char = msvcrt.getwch()
                         if char == "\x03":
                             raise KeyboardInterrupt
+                        if char in ("\x00", "\xe0"):
+                            _console_key()   # an arrow or F-key: Page Down's code is a Q
+                            continue
                         if char in ("\r", "\n"):
                             break
                         if char.lower() == "q":

@@ -664,7 +664,7 @@ name each. The unit tests find most of these first, without the emulator:
 |---|---|
 | `tests/autoflash/test_route_screens.py` | every route through the run's own loop, to its report and the links under it, at the shortest window it goes on in and at a wide one |
 | `tests/autoflash/test_end_screens.py` | every way a run ends (a conversion finished, failed or crashed, in each chip family; a readout that read devices, none, or failed), at 60 to 160 columns, checked as the attended runs check it; each at 100 columns kept in `tests/autoflash/end_screens/`, so a change shows as a difference there |
-| `tests/autoflash/test_prompts.py` | every kind of question, asked on a real terminal and answered as a person would, wrongly first |
+| `tests/autoflash/test_prompts.py` | every kind of question, asked on a real terminal and answered as a person would, wrongly first, and with keys pressed by accident before it and while it is asked; the same on Windows' console through a stand-in for `msvcrt` (`FakeConsole`), its keys with no character as the console gives them |
 | `tests/repo/test_screen_text.py` | each section of text keeps to half the shortest window |
 | `tests/repo/test_report_answers.py` | the longest report, read back with the suites' own patterns |
 | `tests/autoflash/test_cli.py` | the run-again menu names the stage its line showed |

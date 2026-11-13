@@ -392,6 +392,167 @@ class CountdownKeyTests(unittest.TestCase):
         self.assertIn(b"\x1b[2m(q to quit)\x1b[0m", self.written)   # in grey, never a number
 
 
+class FakeConsole:
+    """Windows' console as the tool meets it, with a person at its keyboard:
+    msvcrt's reads a key at a time - a key with no character as "\xe0" or
+    "\x00", then its code - and input()'s own line editing, as far as the
+    keys here go: the up arrow and F3 bring the last line typed back, Esc
+    clears the line.  Its own writes go to the screen kept here; each answer
+    is typed a moment after its question shows, as unattended_run's are."""
+
+    def __init__(self, answers):
+        import threading
+        self.answers = list(answers)   # (pattern, keys), in order
+        self.keys: list[str] = []
+        self.history: list[str] = []
+        self.written = ""
+        self.since = 0   # where the screen was when the last answer was typed
+        self.ready = threading.Condition()
+        self.person = threading.Thread(target=self._type, daemon=True)
+
+    def press(self, keys):
+        with self.ready:
+            self.keys.extend(keys)
+            self.ready.notify_all()
+
+    def _type(self):
+        for pattern, keys in self.answers:
+            with self.ready:
+                self.ready.wait_for(lambda: re.search(pattern, output.ANSI_RE.sub("", self.written[self.since:])),
+                                    timeout=10)
+                self.since = len(self.written)
+            time.sleep(0.1)
+            self.press(keys)
+
+    # sys.stdout
+    def write(self, text):
+        with self.ready:
+            self.written += text
+            self.ready.notify_all()
+        return len(text)
+
+    def flush(self):
+        pass
+
+    def isatty(self):
+        return True
+
+    # msvcrt
+    def kbhit(self):
+        with self.ready:
+            return bool(self.keys)
+
+    def getwch(self):
+        with self.ready:
+            if not self.ready.wait_for(lambda: self.keys, timeout=10):
+                raise AssertionError(f"waited for a key nobody typed: {self.written[-200:]!r}")
+            return self.keys.pop(0)
+
+    # input(), the console's own line editing
+    def input(self, prompt=""):
+        self.write(prompt)
+        line = ""
+        while (char := self.getwch()) != "\r":
+            if char in ("\x00", "\xe0"):
+                if self.getwch() in ("H", "=") and self.history:   # up arrow, F3
+                    line = self.history[-1]
+            elif char == "\x1b":
+                line = ""
+            elif char == "\x08":
+                line = line[:-1]
+            else:
+                line += char
+        self.history.append(line)
+        self.write(line + "\n")
+        return line
+
+
+class WindowsConsoleKeyTests(unittest.TestCase):
+    """Keys pressed by accident on Windows - the arrows, Home and End, Page
+    Up and Down, Delete, F1, F3 and F7, Esc, Tab - while the tool works or
+    asks: none changes an answer, brings an earlier one back or stops the
+    run.  Windows' console was left to edit a typed answer itself, and its
+    up arrow and F3 brought the last answer back, F7 a list of them, and Esc
+    cleared what was typed; at the countdown, Page Down's code is a Q."""
+
+    STRAY = ["\xe0H", "\xe0P", "\xe0K", "\xe0M", "\xe0G", "\xe0O", "\xe0I", "\xe0Q", "\xe0S",
+             "\x00;", "\x00=", "\x00A", "\x1b", "\t"]
+
+    def ask(self, question, answers, *, while_working=()):
+        console = FakeConsole(answers)
+        fake_msvcrt = mock.Mock(kbhit=console.kbhit, getwch=console.getwch)
+        with mock.patch.dict(sys.modules, {"msvcrt": fake_msvcrt}), \
+             mock.patch.object(prompts.hostsys, "IS_WINDOWS", True), \
+             mock.patch.object(prompts, "UNATTENDED", False), \
+             mock.patch.object(prompts.sys.stdin, "isatty", return_value=True), \
+             mock.patch.dict(sys.modules, {"readline": None}), \
+             mock.patch("builtins.input", console.input), \
+             mock.patch.object(output, "colour_ok", return_value=False), \
+             mock.patch("sys.stdout", console):
+            console.press("".join(while_working))
+            console.person.start()
+            answer = question()
+        return answer, console
+
+    def test_keys_pressed_by_accident_at_every_question_change_nothing(self):
+        stray = "".join(self.STRAY)
+        questions = {
+            "choice": (lambda: prompts.ask_choice("Which firmware would you like", ["Tasmota", "ESPHome"]),
+                       [("would you like", stray + "2\r")], 1),
+            "yes or no": (lambda: prompts.ask_yes_no("Use it anyway", default=False),
+                          [("Use it anyway", stray + "y\r")], True),
+            "text": (lambda: prompts.ask_text("eWeLink account email"),
+                     [("account email", stray + "you@example.com\r")], "you@example.com"),
+            "address": (lambda: prompts.ask_ipv4("The device's address"),
+                        [("address", stray + "192.168.99.50\r")], "192.168.99.50"),
+            "password": (lambda: prompts.ask_secret("Wi-Fi password for 'Home': "),
+                         [("password", stray + "hunter22\r")], "hunter22"),
+            "key": (lambda: prompts.wait_for_key(), [("Press any key", "\xe0Q")], None),
+            "word": (lambda: prompts.require_word(prompts.CONSENT_WORD),
+                     [("Type PROCEED", stray + "PROCEED\r")], True),
+            "countdown": (lambda: prompts.countdown_carry_on("The run carries on", seconds=30),
+                          [("press Enter now", stray + "\r")], True),
+        }
+        for name, (question, answers, expected) in questions.items():
+            with self.subTest(question=name):
+                started = time.monotonic()
+                answer, console = self.ask(question, answers, while_working=self.STRAY)
+                self.assertEqual(answer, expected, console.written)
+                self.assertLess(time.monotonic() - started, 20)   # never the countdown's 30 s
+
+    def test_esc_in_the_middle_of_an_answer_keeps_what_was_typed(self):
+        answer, _ = self.ask(lambda: prompts.ask_text("eWeLink account email"),
+                             [("account email", "you@exa\x1bmple.com\r")])
+        self.assertEqual(answer, "you@example.com")
+
+    def test_an_answer_is_not_recalled_by_the_next_question(self):
+        # The consent word is typed, never brought back with the up arrow or F3.
+        for key in ("\xe0H", "\x00="):
+            with self.subTest(key=repr(key)):
+                answer, _ = self.ask(
+                    lambda: [prompts.ask_text("eWeLink account email"), prompts.require_word(prompts.CONSENT_WORD)],
+                    [("account email", "PROCEED\r"), ("Type PROCEED", key + "\r"), ("Only the TYPED word", "q\r")])
+                self.assertEqual(answer, ["PROCEED", False])
+
+    def test_the_answer_is_edited_with_the_arrows_home_end_and_delete(self):
+        for keys in ("you@exampl.com" + "\xe0K" * 4 + "e" + "\xe0H\xe0P\r",   # back four, then up and down
+                     "xyou@example.comz\xe0G\xe0S\xe0O\x08\r",                # Home, Delete; End, Backspace
+                     "you@example.co\x00;m\xe0I\r"):                            # F1 and Page Up dropped
+            with self.subTest(keys=keys):
+                answer, console = self.ask(lambda: prompts.ask_text("eWeLink account email"),
+                                           [("account email", keys)])
+                self.assertEqual(answer, "you@example.com")
+                from tools.repo import unattended_run
+                screen = unattended_run.Screen(80, 24)
+                screen.feed(console.written.replace("\n", "\r\n"))
+                rows = [row.strip() for row in screen.render(colour=False).splitlines() if row.strip()]
+                self.assertTrue(rows[-1].endswith(": you@example.com"), rows)   # on the question's row, as typed
+
+    def test_ctrl_c_at_a_question_stops_at_once(self):
+        with self.assertRaises(KeyboardInterrupt):
+            self.ask(lambda: prompts.ask_text("eWeLink account email"), [("account email", "you\x03")])
+
+
 class CtrlCFirstTests(unittest.TestCase):
     """A Ctrl-C pressed while nothing was asking is asked about before the
     next question, not after it.  Seen: pressed while the run looked for
