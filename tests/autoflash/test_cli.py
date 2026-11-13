@@ -23,21 +23,26 @@ class BeforeTheRunTests(unittest.TestCase):
         self.top and self.taller are the window's two calls."""
         screen = io.StringIO()
         self.top, self.taller = mock.Mock(), mock.Mock()
-        with mock.patch("sys.argv", ["cli.py", "run", *more]), mock.patch("sys.stdout", screen), \
-                mock.patch.object(hostsys, "password_asker"), mock.patch.object(prompts, "UNATTENDED"), \
-                mock.patch.object(installer, "SIMULATED_BACKUP_FAILURES"), \
-                mock.patch.object(sonoff_firmware, "SIMULATE_NONE"), \
-                mock.patch.object(identity, "SIMULATE_NONE"), \
-                mock.patch.object(beken_images, "SPOIL_STEP"), mock.patch.object(beken_images, "SPOIL_TIMES"), \
-                mock.patch.object(espressif_images, "SPOIL_STEP"), mock.patch.object(espressif_images, "SPOIL_TIMES"), \
-                mock.patch.object(beken_images, "UNKNOWN_TABLE"), \
-                mock.patch.object(cli.signal, "signal"), mock.patch.object(interrupt, "install"), \
-                mock.patch.object(credentials, "load", return_value={}), \
-                mock.patch.object(cli, "adopt_older_runs"), mock.patch.object(output, "start_at_top", self.top), \
-                mock.patch.object(records, "take_over_earlier_names", self.taken_over), \
-                mock.patch.object(prompts, "wait_for_taller_window", self.taller), \
-                mock.patch.object(cli, "resolve_run_name", side_effect=choosing), \
-                mock.patch.object(cli.signup, "ask_on_exit", self.exit_question):
+        # More patches than one `with` may nest (CPython allows 20 blocks).
+        with contextlib.ExitStack() as patched:
+            for patch in (
+                    mock.patch("sys.argv", ["cli.py", "run", *more]), mock.patch("sys.stdout", screen),
+                    mock.patch.object(hostsys, "password_asker"), mock.patch.object(prompts, "UNATTENDED"),
+                    mock.patch.object(installer, "SIMULATED_BACKUP_FAILURES"),
+                    mock.patch.object(sonoff_firmware, "SIMULATE_NONE"),
+                    mock.patch.object(identity, "SIMULATE_NONE"),
+                    mock.patch.object(beken_images, "SPOIL_STEP"), mock.patch.object(beken_images, "SPOIL_TIMES"),
+                    mock.patch.object(espressif_images, "SPOIL_STEP"), mock.patch.object(espressif_images, "SPOIL_TIMES"),
+                    mock.patch.object(beken_images, "UNKNOWN_TABLE"),
+                    mock.patch.object(cli.signal, "signal"), mock.patch.object(interrupt, "install"),
+                    mock.patch.object(credentials, "load", return_value={}),
+                    mock.patch.object(cli, "adopt_older_runs"), mock.patch.object(output, "start_at_top", self.top),
+                    mock.patch.object(records, "take_over_earlier_names", self.taken_over),
+                    mock.patch.object(prompts, "wait_for_taller_window", self.taller),
+                    mock.patch.object(cli, "resolve_run_name", side_effect=choosing),
+                    mock.patch.object(cli.signup, "ask_on_exit", self.exit_question),
+            ):
+                patched.enter_context(patch)
             return cli.main(), screen.getvalue()
 
     def setUp(self):
