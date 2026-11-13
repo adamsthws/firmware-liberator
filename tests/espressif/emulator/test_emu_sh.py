@@ -3,10 +3,12 @@ nothing on the computer uses yet - its routes, its other Docker networks - so
 that making it never takes another network's addresses; and takes --instance
 1-99."""
 
+import json
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -22,6 +24,37 @@ def pick(taken: str) -> str:
     if done.returncode:
         raise AssertionError(done.stderr)
     return done.stdout.strip()
+
+
+def product_seen(folder: Path, before: str = "") -> subprocess.CompletedProcess:
+    """emu.sh's product_seen, on the captures, saved devices and instance
+    states under `folder`, for device 12-34-56-ab-cd-ef; `before` runs first."""
+    program = re.search(r"product_seen\(\) \{\n.*?<<'EOF'\n(.*?)\nEOF\n", SCRIPT.read_text(encoding="utf-8"),
+                        re.S).group(1)
+    arguments = [str(folder / "captures"), str(folder / "saved"), str(folder / "emulation"), "12-34-56-ab-cd-ef"]
+    return subprocess.run([sys.executable, "-I", "-c", before + program, *arguments],
+                          capture_output=True, text=True, timeout=60)
+
+
+class ProductModelTests(unittest.TestCase):
+    def setUp(self):
+        self.folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.folder)
+        run = self.folder / "emulation/state-2/work/captures/devices/12-34-56-ab-cd-ef/runs/20261113-120000"
+        run.mkdir(parents=True)
+        (run / "autoflash-state.json").write_text(json.dumps({"inputs": {"product_model": "s60tpg"}}),
+                                                  encoding="utf-8")
+
+    def test_another_instances_run_is_where_the_model_is_found(self):
+        self.assertEqual(product_seen(self.folder).stdout.strip(), "S60TPG")
+
+    def test_a_run_deleted_while_it_is_read_breaks_nothing(self):
+        # Another instance's run removing its record just after it was opened,
+        # as asking for its path's time would then find.
+        gone = "import os.path\ndef gone(path): raise FileNotFoundError(path)\nos.path.getmtime = gone\n"
+        done = product_seen(self.folder, gone)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stdout.strip(), "S60TPG")
 
 
 class EmulatorNetworkTests(unittest.TestCase):
