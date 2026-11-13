@@ -582,20 +582,32 @@ class ConciseTests(OutputTestCase):
         self.assertEqual(self.drawn(body), ["Stage 3 - Discovering the device - Underway", "", "A note",
                                             "Stage 3 - Discovering the device - Stopped"])
 
+    def going_back(self):
+        output.stage_begin(3, "Discovering the device")
+        output.stage_end("complete")
+        mark = output.mark()
+        output.stage_begin(4, "Choosing the firmware")
+        output.transient_begin()
+        output.show("A question cut short")
+        self.assertTrue(output.rewind(mark))
+        self.assertEqual(output._s.blocks, [])
+        output.stage_begin(4, "Choosing the firmware")
+        output.stage_end("complete")
+
     def test_going_back_past_a_block_s_start_closes_it(self):
-        def body():
-            output.stage_begin(3, "Discovering the device")
-            output.stage_end("complete")
-            mark = output.mark()
-            output.stage_begin(4, "Choosing the firmware")
-            output.transient_begin()
-            output.show("A question cut short")
-            self.assertTrue(output.rewind(mark))
-            self.assertEqual(output._s.blocks, [])
-            output.stage_begin(4, "Choosing the firmware")
-            output.stage_end("complete")
-        self.assertEqual(self.drawn(body), ["Stage 3 - Discovering the device - Complete",
-                                            "Stage 4 - Choosing the firmware - Complete"])
+        self.assertEqual(self.drawn(self.going_back), ["Stage 3 - Discovering the device - Complete",
+                                                       "Stage 4 - Choosing the firmware - Complete"])
+
+    def test_a_question_an_earlier_run_left_waiting_is_not_erased_by_the_next(self):
+        # Seen in the tests, one run in a few: a run stopped at a question of
+        # two rows left it waiting, and the next run's first rewind erased two
+        # rows for it - its stage line among them.
+        with mock.patch("sys.stdout", FakeTerminal()):
+            output.start(self.log, verbose=False)
+            output.question("Which network?\n  1) Home  2) Other\nChoose", ": ")
+            output.finish()
+        self.assertEqual(self.drawn(self.going_back), ["Stage 3 - Discovering the device - Complete",
+                                                       "Stage 4 - Choosing the firmware - Complete"])
 
     def test_a_stage_that_ends_takes_off_every_block_still_open(self):
         def body():
@@ -1933,6 +1945,14 @@ class BlankRowTests(OutputTestCase):
 class WorkingTests(OutputTestCase):
     """A wait outside any stage shows what it is, with the stages' spinner,
     and goes again once it is over."""
+
+    def test_a_run_never_finished_leaves_no_spinner_for_the_next(self):
+        # Seen in the tests: a run begun on a terminal and never finished
+        # left its ticker, and the next run, on no terminal, drew a wait's
+        # spinner as if on one.
+        with mock.patch("sys.stdout", FakeTerminal()):
+            output.start(self.log, verbose=False)   # its ticker started; no finish()
+        self.test_nothing_is_drawn_where_the_screen_is_not_a_terminal()
 
     def test_the_report_being_put_together_is_shown_then_taken_away(self):
         def body():

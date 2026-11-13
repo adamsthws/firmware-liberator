@@ -166,8 +166,18 @@ def _public_ip(match: re.Match[str]) -> str:
 
 
 def start(log_path: Path | None, *, verbose: bool) -> None:
-    """Begin a run: open its log, and condense the terminal unless verbose."""
+    """Begin a run: open its log, and condense the terminal unless verbose.
+
+    Nothing of an earlier run in the same process carries over: a question
+    it left waiting (stopped at it), or its ticker, if it never finished.
+    Either would draw on this run's screen as if it were that one's - a
+    rewind erasing rows above it for a question long gone (seen in the
+    tests, a stage line erased), the spinner drawn on a screen that is no
+    terminal."""
+    _stop_ticker()
     with _lock:
+        _s.pending_prompt, _s.pending_answer = None, ""
+        _s.live, _s.live_is_stage, _s.notice_rows, _s.working = 0, False, 0, None
         if log_path is not None:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             _s.log = log_path.open("a", encoding="utf-8")
@@ -197,10 +207,7 @@ def finish() -> None:
     interrupt.shown_by(None)
     interrupt.logged_by(None)
     _s.draws_notice = False
-    _s.stop_ticker.set()
-    if _s.ticker is not None:
-        _s.ticker.join(2.0)
-        _s.ticker = None
+    _stop_ticker()
     # A run ended with a stage still under way - stopped by a signal no
     # handler ends it for, as SIGTERM's exit is - shows it stopped, its
     # question and notes taken off, as one stopped by Ctrl-C does.
@@ -220,6 +227,15 @@ def finish() -> None:
         _s.name_width = 0
         _s.after_stage = False
         _s.after_blank = False
+
+
+def _stop_ticker() -> None:
+    """The stage clock's thread ended, if one runs.  Not under the lock: a
+    tick waits for it, and would hold the join up."""
+    _s.stop_ticker.set()
+    if _s.ticker is not None:
+        _s.ticker.join(2.0)
+        _s.ticker = None
 
 
 def move_log(move: Callable[[], Path]) -> None:
