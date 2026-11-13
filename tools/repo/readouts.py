@@ -169,7 +169,7 @@ def settle(action: str, reference: str) -> int:
 # website/api/index.js's FORGET_URL (tests/repo/test_readouts.py holds them alike).
 FORGET_URL = "https://api.firmwareliberator.com/forget"
 # Each confirmed address, with its devices ("PRODUCT:model", by spaces) and
-# readouts, as website/api/migrations/0008_confirmations.sql keeps them.
+# readouts, as website/api/migrations/0001_initial.sql keeps them.
 SUBSCRIBERS = """SELECT who, email, token, since,
   (SELECT group_concat(product || ':' || model, ' ') FROM subscriber_devices d WHERE d.who = s.who) AS devices,
   (SELECT group_concat(readout, ' ') FROM subscriber_readouts r WHERE r.who = s.who) AS readouts
