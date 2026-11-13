@@ -206,24 +206,98 @@ test("a converted device keeps the number the first computer to convert it gave 
     "a conversion's alone, the first kept; going back to Sonoff's is none");
 });
 
-test("each field of a report is kept in a column of its own, a nested one's flattened", async () => {
+// Each report field is kept in a column of its own, so any of them can be
+// counted with plain SQL: a field the schema gains without one would be
+// taken, and thrown away. Where a field's column is not named for it - its
+// path, "." as "_", or a nested one's own name - or it is kept elsewhere,
+// these say so, and why.
+const SCHEMA = JSON.parse(readFileSync(new URL("../api/report-schema.json", import.meta.url), "utf8"));
+const SAMPLES = JSON.parse(readFileSync(new URL("./fixtures/reports.json", import.meta.url), "utf8"));
+const KEPT = {
+  run: {
+    table: "reports",
+    renamed: { from: "source", "stopped.where": "crash_site" },
+    elsewhere: {
+      format: "the schema's version, the same for every report kept",
+      proof: "checked as the report comes in, then of no use",
+      stages: "a row a stage, in report_stages",
+      nth_device: "the device's place, in devices, given once",
+    },
+    own: ["day", "quarantined"],   // the API's, from no field
+  },
+  readout: {
+    table: "readout_reports",
+    renamed: {},
+    elsewhere: {
+      format: "the schema's version, the same for every report kept",
+      proof: "checked as the report comes in, then of no use",
+      kind: "readout_reports holds readouts' alone",
+    },
+    own: ["day", "quarantined"],
+  },
+  stage: { table: "report_stages", renamed: { s: "seconds" }, elsewhere: {}, own: ["id", "stage"] },
+};
+
+// Each field `rule` has, by its path: a nested one's as "os.arch".
+const fields = (rule, path = []) => Object.entries(rule.properties).flatMap(([name, inner]) =>
+  (inner.properties ? fields(inner, [...path, name]) : [[...path, name].join(".")]));
+const valueAt = (report, field) => field.split(".").reduce((value, name) => value?.[name], report);
+const columnsOf = (bindings, table) => rows(bindings, `SELECT name FROM pragma_table_info('${table}')`)
+  .map((row) => row.name);
+
+// Each field `rule` keeps in `kept.table`, and its column there: the field's
+// column, or undefined where the table has none.
+function columnsFor(bindings, rule, kept) {
+  const columns = columnsOf(bindings, kept.table);
+  return new Map(fields(rule).filter((field) => !(field in kept.elsewhere)).map((field) => [field,
+    kept.renamed[field] ?? [field.replaceAll(".", "_"), field.split(".").at(-1)].find((name) => columns.includes(name))]));
+}
+
+test("each field of a report has a column of its own, and each column a field", () => {
   const bindings = env();
-  const crashed = report({ result: "crashed", stopped: { step: "K1", error: "crash", text: "",
-    where: "KeyError at tools/autoflash/report.py:212" } });
-  await send(bindings, [crashed]);
-  const [kept] = rows(bindings, `SELECT crash_site, os_arch, chip_revision, flash_id, flash_mb, connection, vpn,
-    networks, security_note, firewall, admin, ewelink_region, ctrl_c_carried_on, launcher, install, begun_on,
-    back_after_power_cycle, firmware_name, firmware_name_expected FROM reports WHERE id = ?`, crashed.id);
-  const { chip, computer } = FIXTURE;
-  const flag = (value) => (value === null ? null : Number(value));
-  assert.deepEqual(kept, {
-    crash_site: "KeyError at tools/autoflash/report.py:212", os_arch: "x86-64", chip_revision: chip.revision,
-    flash_id: chip.flash_id, flash_mb: chip.flash_mb, connection: computer.connection, vpn: flag(computer.vpn),
-    networks: computer.networks, security_note: Number(computer.security_note), firewall: computer.firewall,
-    admin: Number(computer.admin), ewelink_region: "eu", ctrl_c_carried_on: 0, launcher: "start.sh",
-    install: "download", begun_on: null, back_after_power_cycle: null, firmware_name: "FWSW-E32S60-S60-ESP32C3FN4",
-    firmware_name_expected: 1,
-  });
+  const rules = { run: SCHEMA, readout: SCHEMA.readout, stage: SCHEMA.properties.stages.additionalProperties };
+  for (const [what, rule] of Object.entries(rules)) {
+    const kept = KEPT[what];
+    const mapped = columnsFor(bindings, rule, kept);
+    for (const [field, column] of mapped) {
+      assert.ok(column, `a ${what} report's ${field} has no column in ${kept.table}: add one (website/api/migrations/), `
+        + "and fill it in api/reports.js");
+    }
+    const filled = new Set([...mapped.values(), ...kept.own]);
+    assert.deepEqual(columnsOf(bindings, kept.table).filter((column) => !filled.has(column)), [],
+      `${kept.table}: a column no ${what} report's field fills`);
+  }
+});
+
+test("each field of a report is kept, as the report gave it", async () => {
+  // Every sample report the schema takes, kept: each field must have a value
+  // in one of them, for this to see it is written.
+  const bindings = env();
+  // Each its own id, work and device.
+  const fresh = ({ id, proof, ...sample }, n) => ({ ...sample, device_hash: hashOf(100 + n) });
+  const sent = { run: SAMPLES.valid.map((sample, n) => report(fresh(sample, n))),
+    readout: SAMPLES.readoutValid.map((sample, n) => readoutReport(fresh(sample, 50 + n))) };
+  assert.equal((await send(bindings, [...sent.run, ...sent.readout])).accepted.length,
+    sent.run.length + sent.readout.length);
+  // As each is kept: true/false as 1/0, the device's hash keyed.
+  const stored = (field, value) => (field === "device_hash" ? keyed(value)
+    : typeof value === "boolean" ? Number(value) : value);
+  const check = (what, rule, reports, keptRow) => {
+    for (const [field, column] of columnsFor(bindings, rule, KEPT[what])) {
+      const given = reports.filter((made) => valueAt(made, field) != null);
+      assert.ok(given.length, `no sample ${what} report has a ${field}: give one a value (test/fixtures/reports.json)`);
+      for (const made of given) {
+        assert.equal(keptRow(made)[column], stored(field, valueAt(made, field)), `a ${what} report's ${field}, in ${column}`);
+      }
+    }
+  };
+  const byId = (table) => (made) => rows(bindings, `SELECT * FROM ${table} WHERE id = ?`, made.id)[0];
+  check("run", SCHEMA, sent.run, byId("reports"));
+  check("readout", SCHEMA.readout, sent.readout, byId("readout_reports"));
+  const stages = sent.run.flatMap((made) => Object.entries(made.stages)
+    .map(([stage, values]) => ({ ...values, id: made.id, stage })));
+  check("stage", SCHEMA.properties.stages.additionalProperties, stages,
+    (made) => rows(bindings, "SELECT * FROM report_stages WHERE id = ? AND stage = ?", made.id, made.stage)[0]);
 });
 
 test("a report with no device is kept, with no device record", async () => {

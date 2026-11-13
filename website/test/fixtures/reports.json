@@ -75,6 +75,25 @@
       "ewelink_region": "as", "ctrl_c_carried_on": 0, "launcher": "start.cmd", "install": "download",
       "firmware_name": "FWSW-01-S61-BK7238", "firmware_name_expected": true,
       "begun_on": null, "back_after_power_cycle": 41
+    },
+    {
+      "format": 1, "id": "eeeeeeeeeeeeeeee", "proof": "1794000000:12", "tag": "user",
+      "tool": "3.0.0", "kind": "run", "result": "converted", "stopped": null, "family": "espressif",
+      "device": "sonoff-s60", "model": "S60TPG", "stock": "1.2.0",
+      "device_hash": "e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2", "firmware": "sonoff",
+      "from": "tasmota", "backup": "existing", "identity": "backup",
+      "os": {"family": "macos", "version": "15.1", "arch": "arm64"},
+      "python": {"version": "3.12.4", "source": "venv"}, "seconds": 240, "resumed": false,
+      "stages": {"R1": {"s": 20, "busy": 0, "tries": 1, "wait": 0, "setup_network": null, "power_cycles": 0},
+                 "R2": {"s": 150, "busy": 0, "tries": 1, "wait": 0, "setup_network": null, "power_cycles": 0}},
+      "signal": -55, "wifi_typed": false, "setup_network": false, "power_cycled": false,
+      "checks": "passed", "meter": null, "nth_device": null,
+      "chip": {"revision": "0.4", "flash_id": "204016", "flash_mb": 4},
+      "computer": {"connection": "ethernet", "vpn": false, "networks": 1, "security_note": false, "firewall": "none",
+        "admin": false},
+      "ewelink_region": "eu", "ctrl_c_carried_on": 0, "launcher": "start.sh", "install": "git",
+      "firmware_name": "FWSW-E32S60-S60-ESP32C3FN4", "firmware_name_expected": true,
+      "begun_on": null, "back_after_power_cycle": null
     }
   ],
   "invalid": [
