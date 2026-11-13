@@ -100,6 +100,7 @@ class FakeCloudflare:
         self.sending = []   # the zone's domains onboarded for Email Service's sending
         # The account's Web Analytics sites: the zone's one, as the pages' beacon tag names it.
         # Each starts with the one rule Cloudflare makes, every host and path measured.
+        self.beacon = cs.beacon_token()   # the site token the pages' tag carries
         self.analytics = [{"site_tag": "t1", "site_token": cs.beacon_token(), "auto_install": False,
                            "rules": [copy.deepcopy(ALL_MEASURED)],
                            "ruleset": {"id": "rs1", "zone_tag": "z1", "zone_name": cs.ZONE, "enabled": False}}]
@@ -320,6 +321,23 @@ class FakeCloudflare:
         raise AssertionError(f"unexpected {method} {path}")
 
 
+def written(fake, what, name, value):
+    """What apply writes into the repository's files, written into `fake`'s
+    copy of them instead, and said as apply says it."""
+    if name is None:
+        setattr(fake, what, value)
+    else:
+        getattr(fake, what)[name] = value
+    cs.WRITTEN.setdefault(what, {"what": [], "clean": True})["what"].append(name or what)
+
+
+def committed(fake):
+    """commit_written, as the fake has it: what would be committed, noted."""
+    fake.committed = getattr(fake, "committed", []) + [sorted(cs.WRITTEN)]
+    cs.WRITTEN.clear()
+    return []
+
+
 def run(fake, *args, answers=None):
     """main against `fake`; with `answers`, in a terminal where each hidden
     prompt is given the next of them, and else with none to ask at."""
@@ -355,6 +373,12 @@ def run(fake, *args, answers=None):
             mock.patch.object(cs.getpass, "getpass", side_effect=list(answers or [])), \
             mock.patch.object(cs, "bound_database_id", lambda config=None: fake.bound), \
             mock.patch.object(cs, "admin_vars", lambda: copy.deepcopy(getattr(fake, "admin_vars", {}))), \
+            mock.patch.object(cs, "beacon_token", lambda: getattr(fake, "beacon", "")), \
+            mock.patch.object(cs, "rewrite", side_effect=AssertionError("a test wrote one of the repository's files")), \
+            mock.patch.object(cs, "set_admin_var", lambda name, value: written(fake, "admin_vars", name, value)), \
+            mock.patch.object(cs, "set_database_id", lambda uuid: written(fake, "bound", None, uuid)), \
+            mock.patch.object(cs, "set_beacon_token", lambda token: written(fake, "beacon", None, token)), \
+            mock.patch.object(cs, "commit_written", lambda: committed(fake)), \
             mock.patch.object(cs, "ENV_FILE", Path("/nonexistent/.env.infra")):
         code = cs.main(list(args))
         if hasattr(fake, "emulator_env"):
@@ -899,19 +923,23 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual((code, self.fake.sent), (1, []))
         self.assertIn("a migration was changed, removed or renamed after it was run", out)
 
-    def test_a_binding_to_another_database_says_which_id_to_put_there(self):
+    def test_a_binding_to_another_database_is_written_for_the_maintainer_to_commit(self):
         self.fake.bound = cs.D1_PLACEHOLDER
-        code, out = run(self.fake, "apply")
-        self.assertEqual((code, self.fake.sent), (1, []))
-        self.assertIn("left - set its database_id to u1, add that id to tools/repo/leak-scan-allow", out)
+        code, out = run(self.fake)
+        self.assertEqual(code, 1)
+        self.assertIn(f"binds the database {cs.D1_PLACEHOLDER}, not u1", out)
+        self.assertEqual((run(self.fake, "apply")[0], self.fake.sent), (0, []))
+        self.assertEqual(self.fake.bound, "u1")
+        self.assertEqual(run(self.fake)[0], 0, "then nothing differs")
 
-    def test_made_and_migrated_in_one_apply_which_says_the_id_to_bind(self):
+    def test_made_migrated_and_bound_in_one_apply(self):
         fake = FakeCloudflare()
         fake.bound = cs.D1_PLACEHOLDER
         code, out = run(fake, "apply")
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 0, out)
         self.assertEqual(fake.migrations, cs.migration_files())
-        self.assertIn("set its database_id to u1", out)
+        self.assertEqual(fake.bound, "u1")
+        self.assertEqual(fake.committed, [["bound"]], "and committed as the run ends")
 
     def test_ci_never_asks_for_the_database(self):
         fake = FakeCloudflare()
@@ -1151,7 +1179,7 @@ class AdminAccessTests(unittest.TestCase):
         self.fresh()
         # Asked for, a paste's wrapping taken off; never kept.
         code, out = run(self.fake, "apply", answers=["\x1b[200~made-up-id\x1b[201~", "made-up-secret\n"])
-        self.assertEqual(code, 1, "it says what to put in the admin wrangler.jsonc")
+        self.assertEqual(code, 0, out)
         for value in ("made-up-id", "made-up-secret", DESTINATION):
             self.assertNotIn(value, out)
         [idp] = self.fake.idps
@@ -1162,7 +1190,7 @@ class AdminAccessTests(unittest.TestCase):
         [policy] = self.fake.policies[app["id"]]
         self.assertEqual((policy["decision"], policy["include"], policy["require"]),
                          ("allow", [{"email": {"email": DESTINATION}}], [{"login_method": {"id": idp["id"]}}]))
-        self.fake.admin_vars["ACCESS_AUD"] = app["aud"]
+        self.assertEqual(self.fake.admin_vars["ACCESS_AUD"], app["aud"], "written for the maintainer to commit")
         self.assertEqual(run(self.fake)[0], 0, "then nothing differs")
 
     def test_a_sign_in_not_given_is_left_and_the_rest_still_made(self):
@@ -1201,11 +1229,14 @@ class AdminAccessTests(unittest.TestCase):
         self.assertIn(f"Access application {cs.ADMIN_HOST}: differs in allowed_idps", out)
         self.assertEqual(self.fake.apps[0]["allowed_idps"], ["g1"])
 
-    def test_the_admin_workers_vars_are_said_to_set_by_hand(self):
+    def test_the_admin_workers_vars_are_written_for_the_maintainer_to_commit(self):
         self.fake.admin_vars = {"ACCESS_TEAM": "", "ACCESS_AUD": "", "ACCOUNT_ID": "", "ACCESS_UPLOAD_AUD": "audu"}
+        self.assertIn("website/admin/wrangler.jsonc ACCESS_AUD: is '', not 'aud1'", run(self.fake)[1])
         code, out = run(self.fake, "apply")
-        self.assertEqual((code, self.fake.sent), (1, []))
-        self.assertIn("website/admin/wrangler.jsonc ACCESS_AUD: left - set it to 'aud1' and commit", out)
+        self.assertEqual((code, self.fake.sent), (0, []))
+        self.assertEqual(self.fake.admin_vars, {"ACCESS_TEAM": "team1", "ACCESS_AUD": "aud1", "ACCOUNT_ID": "a1",
+                                                "ACCESS_UPLOAD_AUD": "audu"})
+        self.assertEqual(self.fake.committed, [["admin_vars"]])
 
     def test_the_admin_workers_secret_is_a_token_kept_on_it_alone(self):
         self.fake.admin_secrets = []
@@ -1254,7 +1285,7 @@ class EmulatorTokenTests(unittest.TestCase):
         del self.fake.policies["appu"]
         self.fake.emulator_env = None
         code, out = run(self.fake, "apply")
-        self.assertEqual(code, 1, "it says what to put in the admin wrangler.jsonc")
+        self.assertEqual(code, 0, out)
         [token] = self.fake.service_tokens
         self.assertEqual((token["name"], token["duration"]), ("firmware-liberator-emulator-stats", "forever"))
         self.assertIn(f"EMULATOR_STATS_CLIENT_ID={token['client_id']}\nEMULATOR_STATS_CLIENT_SECRET=made-up-secret-",
@@ -1268,8 +1299,7 @@ class EmulatorTokenTests(unittest.TestCase):
         [policy] = self.fake.policies[app["id"]]
         self.assertEqual((policy["decision"], policy["include"], policy["require"]),
                          ("non_identity", [{"service_token": {"token_id": token["id"]}}], []))
-        self.assertIn("ACCESS_UPLOAD_AUD to what the next check says", out)
-        self.fake.admin_vars["ACCESS_UPLOAD_AUD"] = app["aud"]
+        self.assertEqual(self.fake.admin_vars["ACCESS_UPLOAD_AUD"], app["aud"], "written for the maintainer to commit")
         self.assertEqual(run(self.fake)[0], 0, "then nothing differs")
 
     def test_the_credentials_are_copied_to_each_machine_named_and_one_not_reached_is_said(self):
@@ -1338,11 +1368,11 @@ class EmulatorTokenTests(unittest.TestCase):
         run(self.fake, "apply")
         self.assertEqual(self.fake.policies["appu"][0]["include"], [{"service_token": {"token_id": "st1"}}])
 
-    def test_the_upload_audience_is_said_to_set_by_hand(self):
+    def test_the_upload_audience_is_written_for_the_maintainer_to_commit(self):
         self.fake.admin_vars["ACCESS_UPLOAD_AUD"] = ""
-        code, out = run(self.fake, "apply")
-        self.assertEqual(code, 1)
-        self.assertIn("website/admin/wrangler.jsonc ACCESS_UPLOAD_AUD: left - set it to 'audu' and commit", out)
+        self.assertIn("website/admin/wrangler.jsonc ACCESS_UPLOAD_AUD: is '', not 'audu'", run(self.fake)[1])
+        self.assertEqual(run(self.fake, "apply")[0], 0)
+        self.assertEqual(self.fake.admin_vars["ACCESS_UPLOAD_AUD"], "audu")
 
     def test_a_token_not_allowed_service_tokens_says_to_remake_it(self):
         self.fake.service_tokens = "forbidden"
@@ -1380,18 +1410,18 @@ class WebAnalyticsTests(unittest.TestCase):
         self.assertEqual(self.fake.sent, [("PUT", f"{ANALYTICS}/t1", {"auto_install": False, "zone_tag": "z1"})])
         self.assertEqual(run(self.fake)[0], 0)
 
-    def test_none_is_made_and_its_token_left_to_put_in_the_page(self):
+    def test_none_is_made_and_its_token_written_into_the_page(self):
         self.fake.analytics = []
         code, out = run(self.fake, "apply")
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 0, out)
         self.assertEqual(self.fake.sent, [("POST", ANALYTICS, {"zone_tag": "z1", "auto_install": False})])
-        self.assertIn(f"website/src/layouts/Page.astro: set the beacon tag's token to {'f' * 32}", out)
+        self.assertEqual(self.fake.beacon, "f" * 32)
 
-    def test_another_sites_token_in_the_page_is_left_to_the_maintainer(self):
+    def test_another_sites_token_in_the_page_is_written_over_with_the_zones(self):
         self.fake.analytics[0]["site_token"] = "e" * 32
-        code, out = run(self.fake, "apply")
-        self.assertEqual((code, self.fake.sent), (1, []))
-        self.assertIn(f"carries another site's token: Web Analytics' site for {cs.ZONE} is {'e' * 32}", out)
+        self.assertIn(f"carries another site's token: Web Analytics' site for {cs.ZONE} is {'e' * 32}", run(self.fake)[1])
+        self.assertEqual((run(self.fake, "apply")[0], self.fake.sent), (0, []))
+        self.assertEqual(self.fake.beacon, "e" * 32)
 
     def test_a_rule_or_a_second_site_is_left_to_the_dashboard(self):
         self.fake.analytics[0]["rules"].append({**ALL_MEASURED, "id": "ru2", "paths": ["/private*"],
@@ -1598,6 +1628,116 @@ class StoppingTheApiTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         self.assertIn('"INGEST": "on"', (root / "website/api/wrangler.jsonc").read_text(encoding="utf-8"))
         self.assertIn('if (env.INGEST !== "on") {', (root / "website/api/index.js").read_text(encoding="utf-8"))
+
+
+class WrittenFilesTests(unittest.TestCase):
+    """What apply writes into the repository's files: the one value, the rest
+    of each file - its comments too - as it was, on copies of them here."""
+
+    def setUp(self):
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        real = Path(__file__).resolve().parents[2]
+        for name in ("API_WRANGLER", "ADMIN_WRANGLER", "ANALYTICS_PAGE", "LEAK_ALLOW"):
+            original = getattr(cs, name)
+            copied = root / original.relative_to(real)
+            copied.parent.mkdir(parents=True, exist_ok=True)
+            copied.write_text(original.read_text(encoding="utf-8"), encoding="utf-8")
+            self.enterContext(mock.patch.object(cs, name, copied))
+        self.enterContext(mock.patch.object(cs, "ROOT", root))
+        self.enterContext(mock.patch.object(cs, "WRITTEN", {}))
+        self.root = root
+
+    def changed(self, path, before):
+        """The lines of `path` that differ from `before`'s."""
+        now = path.read_text(encoding="utf-8").splitlines()
+        return [(old, new) for old, new in zip(before.splitlines(), now) if old != new]
+
+    def test_an_admin_var_is_written_alone(self):
+        before = cs.ADMIN_WRANGLER.read_text(encoding="utf-8")
+        cs.set_admin_var("ACCESS_UPLOAD_AUD", "b" * 64)
+        [(old, new)] = self.changed(cs.ADMIN_WRANGLER, before)
+        self.assertEqual(new.strip(), f'"ACCESS_UPLOAD_AUD": "{"b" * 64}",')
+        self.assertEqual(cs.jsonc(cs.ADMIN_WRANGLER)["vars"]["ACCESS_UPLOAD_AUD"], "b" * 64)
+        self.assertEqual(list(cs.WRITTEN), ["website/admin/wrangler.jsonc"])
+        self.assertEqual(cs.WRITTEN["website/admin/wrangler.jsonc"]["what"], ["ACCESS_UPLOAD_AUD"])
+        cs.set_admin_var("ACCESS_UPLOAD_AUD", "b" * 64)
+        self.assertEqual(list(cs.WRITTEN), ["website/admin/wrangler.jsonc"], "once, however often it is written")
+
+    def test_the_database_id_is_written_into_both_workers_and_the_leak_scan_allow_list(self):
+        old = cs.bound_database_id()
+        new = cs.D1_PLACEHOLDER   # made up, as the leak scan allows: taken out of the copy, to be written
+        cs.LEAK_ALLOW.write_text("".join(line for line in cs.LEAK_ALLOW.read_text(encoding="utf-8")
+                                         .splitlines(keepends=True) if line.strip() != new), encoding="utf-8")
+        allow = cs.LEAK_ALLOW.read_text(encoding="utf-8")
+        cs.set_database_id(new)
+        self.assertEqual([cs.bound_database_id(config) for config in (cs.API_WRANGLER, cs.ADMIN_WRANGLER)], [new, new])
+        self.assertEqual(self.changed(cs.LEAK_ALLOW, allow), [(old, new)], "the old id's line, replaced")
+        self.assertEqual(sorted(cs.WRITTEN), ["tools/repo/leak-scan-allow", "website/admin/wrangler.jsonc",
+                                              "website/api/wrangler.jsonc"])
+        cs.set_database_id(new)
+        self.assertEqual(cs.LEAK_ALLOW.read_text(encoding="utf-8").count(new), 1)
+
+    def test_the_beacon_token_is_written_into_the_page(self):
+        cs.set_beacon_token("e" * 32)
+        self.assertEqual(cs.beacon_token(), "e" * 32)
+
+    def git(self, *args):
+        return subprocess.run(["git", "-C", str(self.root), *args], capture_output=True, text=True, check=True).stdout
+
+    def repository(self):
+        """The copies as a repository of their own, its every file committed."""
+        self.git("init", "-q")
+        for setting, value in (("user.name", "Test"), ("user.email", "test@example.com"), ("commit.gpgsign", "false"),
+                               ("core.hooksPath", "/dev/null")):
+            self.git("config", setting, value)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "as they are")
+
+    def test_what_was_written_is_committed_alone_with_what_it_is(self):
+        self.repository()
+        (self.root / "elsewhere.txt").write_text("another session's, staged\n", encoding="utf-8")
+        self.git("add", "elsewhere.txt")
+        cs.set_admin_var("ACCESS_UPLOAD_AUD", "b" * 64)
+        with redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(cs.commit_written(), [])
+        self.assertIn("Committed: website/admin/wrangler.jsonc", out.getvalue())
+        self.assertEqual(self.git("log", "-1", "--format=%B").strip().splitlines(),
+                         ["Cloudflare settings: the values apply was given, written where they are kept", "",
+                          "- website/admin/wrangler.jsonc: ACCESS_UPLOAD_AUD"])
+        self.assertEqual(self.git("show", "--name-only", "--format=", "HEAD").split(), ["website/admin/wrangler.jsonc"])
+        self.assertEqual(self.git("status", "--porcelain").strip(), "A  elsewhere.txt", "what else was staged, left")
+        self.assertEqual(cs.WRITTEN, {})
+
+    def test_a_file_with_changes_already_is_written_and_left_to_commit_by_hand(self):
+        self.repository()
+        with cs.ADMIN_WRANGLER.open("a", encoding="utf-8") as config:
+            config.write("// another session's edit\n")
+        cs.set_admin_var("ACCESS_UPLOAD_AUD", "b" * 64)
+        cs.set_beacon_token("e" * 32)
+        with redirect_stdout(io.StringIO()):
+            left = cs.commit_written()
+        self.assertEqual(left, ["Written, not committed, as each had changes already: website/admin/wrangler.jsonc - "
+                                "commit the values with them"])
+        self.assertIn("website/src/layouts/Page.astro", self.git("show", "--name-only", "--format=", "HEAD"))
+        self.assertIn("website/admin/wrangler.jsonc", self.git("status", "--porcelain"))
+
+    def test_a_commit_refused_says_so_and_leaves_the_files_written(self):
+        self.repository()
+        hook = self.root / "hooks" / "pre-commit"
+        hook.parent.mkdir()
+        hook.write_text("#!/bin/sh\necho refused by the hook >&2\nexit 1\n", encoding="utf-8")
+        hook.chmod(0o755)
+        self.git("config", "core.hooksPath", str(hook.parent))
+        cs.set_beacon_token("e" * 32)
+        with redirect_stdout(io.StringIO()):
+            [line] = cs.commit_written()
+        self.assertEqual(line, "Written, not committed (refused by the hook): website/src/layouts/Page.astro - commit them")
+        self.assertEqual(cs.beacon_token(), "e" * 32)
+
+    def test_a_value_not_there_once_is_never_guessed_at(self):
+        cs.ADMIN_WRANGLER.write_text('{"vars": {"ACCESS_AUD": "a", "ACCESS_AUD": "b"}}', encoding="utf-8")
+        with self.assertRaisesRegex(cs.SettingsError, "should hold .* once"):
+            cs.set_admin_var("ACCESS_AUD", "c")
 
 
 if __name__ == "__main__":
