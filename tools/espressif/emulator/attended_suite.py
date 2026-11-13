@@ -29,7 +29,10 @@ ESPHome with a web login, admin and "test-login-1", and the made-up API
 encryption key LOCKED_KEY; and with "updates", taking only encrypted
 updates). An answer is typed at its question only (unattended_run.Answer);
 one `optional` need not be asked. In place of `type`, an answer can switch
-the device ("power": "off") or signal the run ("signal": "TERM").
+the device ("power": "off") or its home Wi-Fi's router ("router": "off", or
+on the Beken emulator "on NEW-PASSWORD", the password changed), move the
+computer onto the device's own network or back ("wifi": "join", "home"), or
+signal the run ("signal": "TERM").
 `command`: "readout" for a readout, not a conversion; `api_enough`: true
 for the API beside the emulator to have enough readouts of the device's
 product already (AUTOFLASH_API_ENOUGH), so a readout of it is not needed.
@@ -40,6 +43,9 @@ The verdict, from the recording alone (judge):
                       (the recorder's result.txt, from the run's log)
     FAIL-UNANSWERED   it ended at a question no answer covers: new, or reworded
     FAIL-UNUSED       an answer never typed: its question no longer asked
+    FAIL-ANSWER       an answer that switches the device or the router, or
+                      moves the computer's Wi-Fi, failed to: the network not on
+                      the air to join, say
     FAIL-QUESTION     as a question was answered: no "(q to quit)" on it, a
                       row the terminal wrapped itself, or a question shown
                       twice - an earlier try left on the screen
@@ -156,6 +162,8 @@ def judge(scenario: dict[str, Any], raw: bytes, answers: list[dict[str, Any]], c
     for answer in answers:
         if not answer["typed_at"] and not given.get((answer["when"], answer.get("type", "")), {}).get("optional"):
             verdicts.append(f"FAIL-UNUSED: {answer['when']!r}")
+        for why in answer.get("failed", []):
+            verdicts.append(f"FAIL-ANSWER: {answer['when']!r}: {why}")
     wrapped = 0
     # A key typed anywhere (a Ctrl-C as a stage shows) answers no question.
     for at in sorted(at for answer in answers if not answer.get("anywhere") for at in answer["typed_at"]):

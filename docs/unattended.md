@@ -119,7 +119,10 @@ it, for a password), not the notes above or the question answered before.
 the first with times left is typed. `"anywhere": true` types it when `when`
 shows anywhere on the screen, such as a Ctrl-C (`"\u0003"`) while a stage
 shows. In place of `type`, `"power": "off"` (or `"on"`) switches the
-emulated device, as if unplugged, and `"signal": "TERM"` (or `"HUP"`, its
+emulated device, as if unplugged; `"router": "off"` (or `"on"`, and in the
+Beken emulator `"on NEW-PASSWORD"`) its home Wi-Fi's router; `"wifi":
+"join"` (or `"home"`) moves the computer onto the device's own network, or
+back, with the emulator's `wifi`; and `"signal": "TERM"` (or `"HUP"`, its
 window closed) is sent to the run.
 
 The recording shows each question as asked and what it left once answered,

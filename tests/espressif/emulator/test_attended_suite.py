@@ -95,6 +95,14 @@ class JudgeTests(unittest.TestCase):
         answers[0]["typed_at"] = []
         self.assertEqual(self.judge(raw, marks, scenario=scenario, answers=answers), ["FAIL-UNUSED: 'Stage 8'"])
 
+    def test_an_answer_that_failed_to_act_is_an_answer_fault(self):
+        scenario = {"answers": [{"when": "setup network", "wifi": "join", "anywhere": True}], "expect": {}}
+        raw, marks = recording(" Join the device's setup network\n", "|")
+        answers = [{"when": "setup network", "type": "", "typed_at": marks, "anywhere": True, "wifi": "join",
+                    "failed": ["wifi join: No network of the device's own is on the air."]}]
+        self.assertEqual(self.judge(raw, marks, scenario=scenario, answers=answers),
+                         ["FAIL-ANSWER: 'setup network': wifi join: No network of the device's own is on the air."])
+
     def test_how_the_run_ended_is_judged_with_what_it_copied(self):
         # unattended_run.end_problems, on the screen it ended on.
         scenario = {"answers": [], "expect": {}}
@@ -205,11 +213,15 @@ class ScenarioTests(unittest.TestCase):
             for answer in scenario["answers"] + scenario.get("again", {}).get("answers", []):
                 with self.subTest(scenario=name, when=answer["when"]):
                     self.assertLessEqual(set(answer), {"when", "type", "times", "optional", "anywhere", "power",
-                                                       "signal"})
-                    # Each does one thing: types, switches the device, or signals the run.
-                    self.assertEqual(sum(key in answer for key in ("type", "power", "signal")), 1, answer)
+                                                       "signal", "router", "wifi"})
+                    # Each does one thing: types, switches the device or the
+                    # router, moves the computer's Wi-Fi, or signals the run.
+                    self.assertEqual(sum(key in answer for key in ("type", "power", "signal", "router", "wifi")), 1,
+                                     answer)
                     self.assertIn(answer.get("power", "off"), ("off", "on"))
                     self.assertIn(answer.get("signal", "TERM"), ("TERM", "HUP", "INT"))
+                    self.assertRegex(answer.get("router", "off"), r"^(off|on( \S{8,63})?)$")
+                    self.assertRegex(answer.get("wifi", "home"), r"^(home|join( \S+)?)$")
                     pattern = re.compile(answer["when"])
                     if answer.get("optional"):
                         continue
