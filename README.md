@@ -17,7 +17,7 @@
 Your kind donation goes toward expansion, supporting many more devices - Thankyou!  
 
 
-[![GitHub](https://img.shields.io/badge/GitHub-Support-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/adamsthws) [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/adamsthws) [![PayPal](https://img.shields.io/badge/PayPal-Support-00457C?logo=paypal&logoColor=white)](https://www.paypal.me/adamsthws)  
+[![GitHub](https://img.shields.io/badge/GitHub-Support-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/adamsthws) [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/adamsthws) [![PayPal](https://img.shields.io/badge/PayPal-Support-blue?logo=paypal&logoColor=white)](https://www.paypal.me/adamsthws)  
 
 > Bonus: Sponsor through GitHub and you earn the coveted Sponsor achievement on your profile: <img src="docs/PublicSponsor.png" alt="Public Sponsor achievement" height="28" align="absmiddle">
 
