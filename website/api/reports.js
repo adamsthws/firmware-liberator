@@ -113,7 +113,7 @@ const COLUMNS = (report, hash, day, held) => {
   return {
     id: report.id, day, tag: report.tag, tool: report.tool, kind: report.kind, result: report.result,
     step: stopped.step ?? null, error: stopped.error ?? null, text: stopped.text ?? null, family: report.family,
-    device: report.device, model: report.model, stock: report.stock, device_hash: hash, firmware: report.firmware,
+    device: report.device, model: report.model, stock_version: report.stock_version, device_hash: hash, firmware: report.firmware,
     source: report.source, backup: report.backup, identity: report.identity, os_family: report.os.family,
     os_version: report.os.version, os_arch: report.os.arch, python_version: report.python.version,
     python_source: report.python.source, seconds: report.seconds, resumed: Number(report.resumed),
@@ -137,7 +137,7 @@ const STAGES = `INSERT OR IGNORE INTO report_stages (id, stage, seconds, busy, t
     json_extract(value, '$.wait'), json_extract(value, '$.setup_network'), json_extract(value, '$.power_cycles')
   FROM json_each(?2)`;
 const READOUT = `INSERT OR IGNORE INTO readout_reports (id, day, tag, tool, result, error, family, device, model,
-  stock_model, stock, whole, device_hash, os_family, os_version, os_arch, python_version, python_source, seconds,
+  stock_model, stock_version, whole, device_hash, os_family, os_version, os_arch, python_version, python_source, seconds,
   converted_here, quarantined)
   VALUES (${Array(21).fill("?").join(", ")})`;
 const HOLD = "INSERT OR IGNORE INTO held_reports (id, day, why) VALUES (?, ?, ?)";
@@ -148,7 +148,7 @@ const HOLD = "INSERT OR IGNORE INTO held_reports (id, day, why) VALUES (?, ?, ?)
 // device's number on the computer that first converted it: the first given
 // is kept.
 const DEVICE = `INSERT INTO devices (device_hash, model, device, first_day, last_day, first_result, converted_day, runs,
-    runs_to_convert, conversions, back_to_sonoff, firmware, stock, place, dev)
+    runs_to_convert, conversions, back_to_sonoff, firmware, stock_version, place, dev)
   SELECT ?1, ?2, ?3, ?4, ?4, ?5, CASE WHEN ?6 THEN ?4 END, 1, CASE WHEN ?6 THEN 1 END, ?6, ?7,
     CASE WHEN ?6 OR ?7 THEN ?8 END, ?9, CASE WHEN ?6 THEN ?11 END, ?10
   WHERE changes() = 1
@@ -162,7 +162,7 @@ const DEVICE = `INSERT INTO devices (device_hash, model, device, first_day, last
     conversions = devices.conversions + excluded.conversions,
     back_to_sonoff = devices.back_to_sonoff + excluded.back_to_sonoff,
     firmware = coalesce(excluded.firmware, devices.firmware),
-    stock = coalesce(devices.stock, excluded.stock),
+    stock_version = coalesce(devices.stock_version, excluded.stock_version),
     place = coalesce(devices.place, excluded.place),
     dev = max(devices.dev, excluded.dev)`;
 
@@ -173,7 +173,7 @@ export function writes(db, report, hash, day, held = null) {
     // A readout's report makes no device's record: those count runs.
     const statement = db.prepare(READOUT).bind(
       report.id, day, report.tag, report.tool, report.result, report.error, report.family, report.device,
-      report.model, report.stock_model, report.stock, flag(report.whole), hash, report.os.family, report.os.version,
+      report.model, report.stock_model, report.stock_version, flag(report.whole), hash, report.os.family, report.os.version,
       report.os.arch, report.python.version, report.python.source, report.seconds, report.converted_here,
       Number(held !== null));
     return held === null ? [statement] : [statement, db.prepare(HOLD).bind(report.id, day, held)];
@@ -187,7 +187,7 @@ export function writes(db, report, hash, day, held = null) {
     const backToSonoff = report.result === "converted" && report.firmware === "sonoff";
     // Just after the report's own INSERT: DEVICE reads its changes().
     statements.push(db.prepare(DEVICE).bind(hash, report.model, report.device, day, report.result, Number(converted),
-      Number(backToSonoff), report.firmware, report.stock, Number(report.tag === "dev"), report.nth_device));
+      Number(backToSonoff), report.firmware, report.stock_version, Number(report.tag === "dev"), report.nth_device));
   }
   statements.push(db.prepare(STAGES).bind(report.id, JSON.stringify(report.stages)));
   return held === null ? statements : [...statements, db.prepare(HOLD).bind(report.id, day, held)];

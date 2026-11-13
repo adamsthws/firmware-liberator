@@ -579,8 +579,8 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
         output.tell(f"    {said[0].upper()}{said[1:]}")
         return ""
     manifest = {
-        "format": FORMAT, "tool": __version__, "product": asked.product, "stock_model": asked.model,
-        "version": asked.version, "brand": str(device.get("brandName") or ""),
+        "format": FORMAT, "tool": __version__, "model": asked.product, "stock_model": asked.model,
+        "stock_version": asked.version, "brand": str(device.get("brandName") or ""),
         "uiid": (device.get("extra") or {}).get("uiid"),
         "firmware_name": learned.name if learned else "", "name_from": learned.source if learned else "",
         "chip": learned.chip if learned else "",
@@ -830,8 +830,8 @@ def ask_wanted(product: str, model: str, version: str, stage: str, firmware: lis
     if upload_url() is None or not product:
         return Wanted(True)
     try:
-        answer = light_post("/wanted", {"format": FORMAT, "product": product, "model": model or "-",
-                                        "version": version or "-", "stage": stage, "firmware": firmware})
+        answer = light_post("/wanted", {"format": FORMAT, "model": product, "stock_model": model or "-",
+                                        "stock_version": version or "-", "stage": stage, "firmware": firmware})
     except (OSError, ValueError) as exc:   # an HTTPError is an OSError
         output.log_only(f"    Whether a readout is wanted: not answered ({exc}); it goes ahead.")
         return Wanted(True)
@@ -847,7 +847,7 @@ def notify(email: str, devices: Iterable[tuple[str, str]], readouts: Iterable[st
     references of those they sent. `update`: a later sitting's, added only
     to an address confirmed already, never emailed if it is not. Whether it
     was taken; never raises."""
-    named = [{"product": product, "model": model or "-"} for product, model in dict.fromkeys(devices) if product]
+    named = [{"model": product, "stock_model": model or "-"} for product, model in dict.fromkeys(devices) if product]
     if upload_url() is None:
         return False
     try:

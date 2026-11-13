@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS reports (
   family TEXT,
   device TEXT,
   model TEXT,
-  stock TEXT,
+  stock_version TEXT,
   device_hash TEXT,
   firmware TEXT,
   source TEXT NOT NULL,
@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS devices (
   conversions INTEGER NOT NULL,
   back_to_sonoff INTEGER NOT NULL,
   firmware TEXT,
-  stock TEXT,
+  stock_version TEXT,
   place INTEGER,
   dev INTEGER NOT NULL
 ) WITHOUT ROWID;
@@ -229,10 +229,10 @@ CREATE TABLE IF NOT EXISTS monthly_stock (
   month TEXT NOT NULL,
   tag TEXT NOT NULL,
   model TEXT NOT NULL,
-  stock TEXT NOT NULL,
+  stock_version TEXT NOT NULL,
   runs INTEGER NOT NULL,
   converted INTEGER NOT NULL,
-  PRIMARY KEY (month, tag, model, stock)
+  PRIMARY KEY (month, tag, model, stock_version)
 ) WITHOUT ROWID;
 
 -- Each readout kept (index.js), so that each product, firmware model and
@@ -295,16 +295,16 @@ CREATE TABLE IF NOT EXISTS readout_firmware (
 -- notify and subscribe), each under `who`, the SHA-256 of the address in
 -- lower case:
 -- - confirmations: one given, waiting for its owner to follow the link
---   emailed to it (token), with the devices (a JSON list of {product, model},
+--   emailed to it (token), with the devices (a JSON list of {model, stock_model},
 --   [] for none) and readouts (a JSON list of their references) it named, and
 --   when the link was sent (sent), so remind() sends it once more
 --   REMIND_AFTER_DAYS after. Deleted when confirmed, or by the nightly job
 --   SIGNUP_DAYS after (pending.js).
 -- - subscribers: one confirmed, once an address, with the token of the
 --   removal link every email to it carries (/forget).
--- - subscriber_devices: every device its sign-ups named, one row a product
---   and firmware model, with when it was first and last named, so the owners
---   of one product are one query (tools/repo/readouts.py).
+-- - subscriber_devices: every device its sign-ups named, one row a model
+--   and stock model, with when it was first and last named, so the owners
+--   of one model are one query (tools/repo/readouts.py).
 -- - subscriber_readouts: the readouts its sign-ups named, so a readout's
 --   sender can be asked to try a build.
 CREATE TABLE IF NOT EXISTS confirmations (
@@ -329,14 +329,14 @@ CREATE TABLE IF NOT EXISTS subscribers (
 
 CREATE TABLE IF NOT EXISTS subscriber_devices (
   who TEXT NOT NULL,
-  product TEXT NOT NULL,
   model TEXT NOT NULL,
+  stock_model TEXT NOT NULL,
   first_seen TEXT NOT NULL,
   last_seen TEXT NOT NULL,
-  PRIMARY KEY (who, product, model)
+  PRIMARY KEY (who, model, stock_model)
 ) WITHOUT ROWID;
 
-CREATE INDEX IF NOT EXISTS subscriber_devices_product ON subscriber_devices (product);
+CREATE INDEX IF NOT EXISTS subscriber_devices_model ON subscriber_devices (model);
 
 CREATE TABLE IF NOT EXISTS subscriber_readouts (
   who TEXT NOT NULL,
@@ -416,7 +416,7 @@ CREATE TABLE IF NOT EXISTS readout_reports (
   device TEXT,
   model TEXT,
   stock_model TEXT,
-  stock TEXT,
+  stock_version TEXT,
   whole INTEGER,
   device_hash TEXT,
   os_family TEXT NOT NULL,

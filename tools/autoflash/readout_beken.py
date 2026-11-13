@@ -264,7 +264,7 @@ def read_and_anonymise(ctx: Context, manifest: dict[str, Any], name: str, versio
     manifest["read"] = True
     # What every genuine readout of it shares: its table, and the Sonoff
     # firmware it was put back on (the offered file's, by its hash).
-    manifest["firmware"] = {"layout": found.layout.key, "stock": found.version,
+    manifest["firmware"] = {"layout": found.layout.key, "stock_version": found.version,
                             "stock_sha256": hashlib.sha256(found.rbl).hexdigest()}
     manifest["flash"] = {"size": len(flash), "sha256": hashlib.sha256(flash).hexdigest()}
     manifest["device"] = info

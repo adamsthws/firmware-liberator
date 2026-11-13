@@ -305,7 +305,7 @@
         "pattern": "^[A-Z0-9][A-Z0-9-]{0,23}$",
         "maxLength": 24
       },
-      "stock": {
+      "stock_version": {
         "type": [
           "string",
           "null"
@@ -408,7 +408,7 @@
       "device",
       "model",
       "stock_model",
-      "stock",
+      "stock_version",
       "whole",
       "device_hash",
       "os",
@@ -579,7 +579,7 @@
       "pattern": "^[A-Z0-9][A-Z0-9-]{0,23}$",
       "maxLength": 24
     },
-    "stock": {
+    "stock_version": {
       "type": [
         "string",
         "null"
@@ -1003,7 +1003,7 @@
     "family",
     "device",
     "model",
-    "stock",
+    "stock_version",
     "device_hash",
     "firmware",
     "source",

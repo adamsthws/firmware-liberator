@@ -22,7 +22,7 @@ function tar(files) {
   return Buffer.concat([...blocks, Buffer.alloc(1024)]);
 }
 
-const MANIFEST = { format: 1, product: "NEWTHING", stock_model: "SN-NEW-01", version: "1.0.0", tool: "2.4.0",
+const MANIFEST = { format: 1, model: "NEWTHING", stock_model: "SN-NEW-01", stock_version: "1.0.0", tool: "2.4.0",
   read: true };
 // xz files, as the tool's lzma.compress writes them: of 1 MiB of zeros, a
 // flash chip's size, and of 3 MiB, no chip's.
@@ -114,7 +114,7 @@ test("a readout with its work done is kept, under a reference it is given back",
   const [key] = tars(bindings);
   const item = bindings.READOUTS.objects.get(key);
   assert.match(key, /^readouts\/2026-11-07\/[0-9a-f]{24}\.tar$/);
-  assert.equal(item.options.customMetadata.product, "NEWTHING");
+  assert.equal(item.options.customMetadata.model, "NEWTHING");
   assert.ok(!JSON.stringify(item.options).includes("192.0.2.9"), "the sender's address is kept");
 });
 
@@ -145,7 +145,7 @@ test("one proof keeps one readout: another device's needs work of its own", asyn
   const first = readoutOf();
   const proof = proofFor(first);
   assert.equal((await send(post(first, { "X-Proof": proof }), bindings)).status, 201);
-  const second = readoutOf({ ...MANIFEST, product: "OTHERTHING" });
+  const second = readoutOf({ ...MANIFEST, model: "OTHERTHING" });
   assert.equal((await send(post(second, { "X-Proof": proof }), bindings)).status, 403);
   assert.equal((await send(post(second), bindings)).status, 201);
   assert.equal(tars(bindings).length, 2);
@@ -157,7 +157,7 @@ test("anything but a readout the tool makes is turned away", async () => {
     [post(readoutOf(), { "Content-Type": "application/octet-stream" }), 415],
     [post(Buffer.from("not a tar")), 400],
     [post(tar({ "flash.bin.xz": "x" })), 400],
-    [post(readoutOf({ format: 2, product: "NEWTHING" })), 400],
+    [post(readoutOf({ format: 2, model: "NEWTHING" })), 400],
     [post(readoutOf(), { "Content-Length": String(readout.MAX_BYTES + 1) }), 413],
   ];
   for (const [request, status] of cases) {
@@ -193,7 +193,7 @@ test("the day's count is kept in the database as readouts are, not listed", asyn
   const bindings = { ...env(), READOUTS: { ...bucket(), list: async () => assert.fail("listed the day's readouts") } };
   let bytes = 0;
   for (const version of ["1.0.0", "1.0.1"]) {
-    const body = readoutOf({ ...MANIFEST, version });
+    const body = readoutOf({ ...MANIFEST, stock_version: version });
     bytes += body.byteLength;
     assert.equal((await send(post(body), bindings)).status, 201);
   }
@@ -263,7 +263,7 @@ test("three readouts of each model and version are kept, each from a different s
   }
   const fourth = await from(bindings, "192.0.2.4", first);
   assert.deepEqual([fourth.status, await fourth.json()], [200, { enough: true }], "a fourth adds nothing");
-  assert.equal((await from(bindings, "192.0.2.4", { ...first, version: "1.1.0" })).status, 201, "another version does");
+  assert.equal((await from(bindings, "192.0.2.4", { ...first, stock_version: "1.1.0" })).status, 201, "another version does");
   assert.equal((await from(bindings, "192.0.2.4", { ...first, stock_model: "SN-NEW-02" })).status, 201,
     "and another firmware model");
 });
@@ -401,7 +401,7 @@ test("three alike from too few networks send no email: the admin view lists them
 test("a readout's row names its sender by a keyed hash a key, never its address", async () => {
   const bindings = env();
   await from(bindings, "192.0.2.9", { read: false });
-  await from(bindings, "192.0.2.9", { read: false, version: "2.0.0" });
+  await from(bindings, "192.0.2.9", { read: false, stock_version: "2.0.0" });
   const kept = await rows(bindings);
   const one = kept.find((row) => row.key.endsWith("|1.0.0"));
   const two = kept.find((row) => row.key.endsWith("|2.0.0"));
@@ -464,7 +464,7 @@ from tools.autoflash import readout
 from tools.ewelink import offered_firmware
 item = offered_firmware.Offered("a-name-long-enough-that-a-ustar-header-splits-it-into-a-prefix-and-a-name-"
                                 "of-its-own-as-python-writes-one/user1.bin", "1.1.0", b"\\xe9offered app")
-manifest = {"format": 1, "product": "NEWTHING", "offered": [{"file": "offered/" + item.name, "sha256": item.sha256}]}
+manifest = {"format": 1, "model": "NEWTHING", "offered": [{"file": "offered/" + item.name, "sha256": item.sha256}]}
 sys.stdout.write(base64.b64encode(readout.package(manifest, {"flash.bin": b"flash"}, [item])).decode())
 `], { cwd: new URL("../../", import.meta.url).pathname, encoding: "utf8" });
   assert.equal(made.status, 0, made.stderr);
@@ -487,7 +487,7 @@ test("asked first, a readout that would add nothing is not wanted - nor one its 
   await from(bindings, "192.0.2.2", { read: false });
   await from(bindings, "192.0.2.3", { read: false });
   assert.deepEqual(await askFrom("192.0.2.4"), { wanted: false, why: "held", held: [] });
-  assert.equal((await askFrom("192.0.2.4", { ...ASKED, version: "2.0.0" })).wanted, true);
+  assert.equal((await askFrom("192.0.2.4", { ...ASKED, stock_version: "2.0.0" })).wanted, true);
   assert.equal((await askFrom("192.0.2.4", { ...ASKED, stage: "whole" })).wanted, true);
 });
 
@@ -514,10 +514,10 @@ test("two IPv6 addresses in one /48 are one sender", async () => {
 
 test("a readout naming its product with anything but a model's name is turned away, and its tool is cleaned", async () => {
   const bindings = env();
-  assert.equal((await from(bindings, "192.0.2.1", { product: "NEW\u001b[2JTHING" })).status, 400);
+  assert.equal((await from(bindings, "192.0.2.1", { model: "NEW\u001b[2JTHING" })).status, 400);
   // "|" joins a key's parts (keyOf): in a name, two devices could share one key.
-  assert.equal((await from(bindings, "192.0.2.1", { product: "NEW|THING" })).status, 400);
-  assert.equal((await from(bindings, "192.0.2.1", { product: "NEW THING" })).status, 400);
+  assert.equal((await from(bindings, "192.0.2.1", { model: "NEW|THING" })).status, 400);
+  assert.equal((await from(bindings, "192.0.2.1", { model: "NEW THING" })).status, 400);
   assert.equal((await from(bindings, "192.0.2.1", { tool: "2.4\u001b[2J" })).status, 201);
   const [key] = tars(bindings);
   assert.equal(bindings.READOUTS.objects.get(key).options.customMetadata.tool, "2.4[2J");
@@ -547,7 +547,7 @@ test("every readout kept counts towards the store's limit", async () => {
   const bindings = env();
   let bytes = 0;
   for (const version of ["1.0.0", "1.0.1"]) {
-    const body = readoutOf({ ...MANIFEST, version });
+    const body = readoutOf({ ...MANIFEST, stock_version: version });
     bytes += body.byteLength;
     await send(post(body), bindings);
   }
@@ -651,7 +651,7 @@ test("every other address is not found, and the site is not this Worker", async 
   assert.doesNotMatch(site, /readout|api\//i);
 });
 
-const ASKED = { format: 1, product: "NEWTHING", model: "SN-NEW-01", version: "1.0.0", stage: "first", firmware: [] };
+const ASKED = { format: 1, model: "NEWTHING", stock_model: "SN-NEW-01", stock_version: "1.0.0", stage: "first", firmware: [] };
 const ASKED_WHOLE = { ...ASKED, stage: "whole" };
 
 function question(asked = ASKED, headers = {}, body = Buffer.from(JSON.stringify(asked)), path = "/v1/wanted") {
@@ -677,8 +677,8 @@ const ask = async (question_, bindings, now = NOW, headers = {}) => {
 
 test("asked first, the question is counted by its model for the figures", async () => {
   const bindings = env();
-  await ask({ ...ASKED, product: "NewThing" }, bindings);
-  await ask({ ...ASKED, product: "NEWTHING", stage: "whole" }, bindings);
+  await ask({ ...ASKED, model: "NewThing" }, bindings);
+  await ask({ ...ASKED, model: "NEWTHING", stage: "whole" }, bindings);
   assert.deepEqual(bindings.DB.db.prepare("SELECT day, model, asked FROM wanted_days").all().map((row) => ({ ...row })),
     [{ day: "2026-11-07", model: "NEWTHING", asked: 2 }]);
 });
@@ -686,7 +686,7 @@ test("asked first, the question is counted by its model for the figures", async 
 test("asked first, a device enough readouts of are in is not wanted, any other is", async () => {
   const bindings = env({ enough: "S60TPG, basicr4" });
   for (const [product, wanted] of [["BASICR4", false], ["s60tpg", false], ["NEWTHING", true]]) {
-    const answer = await ask({ ...ASKED, product }, bindings);
+    const answer = await ask({ ...ASKED, model: product }, bindings);
     assert.equal(answer.wanted, wanted, product);
     if (!wanted) assert.equal(answer.why, "enough");
   }
@@ -696,7 +696,7 @@ test("asked first, a device enough readouts of are in is not wanted, any other i
 test("twenty readouts a day are kept from one sender, counted under a keyed hash", async () => {
   assert.equal(readout.SENDER_DAILY, 20);
   const bindings = env();
-  const from = (address, tool) => send(post(readoutOf({ ...MANIFEST, tool, version: tool }),
+  const from = (address, tool) => send(post(readoutOf({ ...MANIFEST, tool, stock_version: tool }),
     { "CF-Connecting-IP": address }), bindings);
   for (let n = 0; n < readout.SENDER_DAILY; n += 1) {
     assert.equal((await from("192.0.2.9", `1.0.${n}`)).status, 201, `readout ${n + 1}`);
@@ -705,9 +705,9 @@ test("twenty readouts a day are kept from one sender, counted under a keyed hash
   assert.equal(over.status, 503);
   assert.equal((await over.json()).limit, true);
   assert.equal((await from("192.0.2.10", "1.0.99")).status, 201, "another sender's are their own");
-  assert.equal((await ask({ ...ASKED, version: "3.0.0" }, bindings, NOW, { "CF-Connecting-IP": "192.0.2.9" })).why,
+  assert.equal((await ask({ ...ASKED, stock_version: "3.0.0" }, bindings, NOW, { "CF-Connecting-IP": "192.0.2.9" })).why,
     "limit", "asked from the sender at its limit");
-  assert.equal((await ask({ ...ASKED, version: "3.0.0" }, bindings, NOW, { "CF-Connecting-IP": "192.0.2.11" })).wanted,
+  assert.equal((await ask({ ...ASKED, stock_version: "3.0.0" }, bindings, NOW, { "CF-Connecting-IP": "192.0.2.11" })).wanted,
     true, "and from another");
   const names = (await bindings.DB.prepare("SELECT name FROM counters").all()).results.map((row) => row.name);
   assert.ok(names.some((name) => name.startsWith("sender:")));
@@ -719,7 +719,7 @@ test("a readout not kept gives its sender's place back", async () => {
   for (let n = 0; n < readout.SENDER_DAILY + 3; n += 1) {
     await send(post(readoutOf({ ...MANIFEST, tool: `${n}` })), bindings);   // after two, held: not kept
   }
-  assert.equal((await send(post(readoutOf({ ...MANIFEST, version: "4.0.0" })), bindings)).status, 201);
+  assert.equal((await send(post(readoutOf({ ...MANIFEST, stock_version: "4.0.0" })), bindings)).status, 201);
 });
 
 test("without its SENDER_KEY no readout is taken", async () => {
@@ -732,7 +732,7 @@ test("without its SENDER_KEY no readout is taken", async () => {
 test("asked first, the files held already are named, wanted or not", async () => {
   const bindings = env();
   const { offered, files } = offering("an app");
-  await send(post(readoutOf({ ...MANIFEST, product: "OTHERTHING", offered }, files)), bindings);
+  await send(post(readoutOf({ ...MANIFEST, model: "OTHERTHING", offered }, files)), bindings);
   const answer = await ask({ ...ASKED, firmware: [offered[0].sha256, "c".repeat(64)] }, bindings);
   assert.deepEqual(answer, { wanted: true, held: [offered[0].sha256] });
   bindings.READOUTS.objects.set(`readouts/firmware/${"c".repeat(64)}`, { size: 1 });
@@ -742,8 +742,8 @@ test("asked first, the files held already are named, wanted or not", async () =>
 test("asked first, a full store says so, whatever the day", async () => {
   const bindings = env();
   storeHolds(bindings, readout.TOTAL_BYTES);
-  assert.equal((await ask({ ...ASKED, product: "FULL2" }, bindings)).why, "store-full");
-  assert.equal((await ask({ ...ASKED, product: "FULL2" }, bindings, new Date("2026-12-07T12:00:00Z"))).why,
+  assert.equal((await ask({ ...ASKED, model: "FULL2" }, bindings)).why, "store-full");
+  assert.equal((await ask({ ...ASKED, model: "FULL2" }, bindings, new Date("2026-12-07T12:00:00Z"))).why,
     "store-full");
 });
 
@@ -752,14 +752,14 @@ test("asked first, a full day says so, by count or by bytes, and the next day do
   for (const [count, bytes] of [[readout.DAILY_COUNT, 1], [1, readout.DAILY_BYTES]]) {
     const bindings = env();
     dayCount(bindings, "2026-11-07", count, bytes);
-    assert.deepEqual(await ask({ ...ASKED, product: "FULL1" }, bindings, at), { wanted: false, why: "full", held: [] });
-    assert.equal((await ask({ ...ASKED, product: "FULL1" }, bindings, new Date("2026-11-08T00:00:01Z"))).wanted, true);
+    assert.deepEqual(await ask({ ...ASKED, model: "FULL1" }, bindings, at), { wanted: false, why: "full", held: [] });
+    assert.equal((await ask({ ...ASKED, model: "FULL1" }, bindings, new Date("2026-11-08T00:00:01Z"))).wanted, true);
   }
 });
 
 test("each question needs work of its own, lighter than a readout's and newer", async () => {
   const body = Buffer.from(JSON.stringify(ASKED));
-  const other = Buffer.from(JSON.stringify({ ...ASKED, product: "OTHERTHING" }));
+  const other = Buffer.from(JSON.stringify({ ...ASKED, model: "OTHERTHING" }));
   const minuteAgo = proofFor(body, BITS, NOW.getTime() / 1000 - readout.LIGHT_PROOF_AGE - 5);
   for (const proof of ["", "1:2:3", proofFor(other), minuteAgo]) {
     assert.equal((await readout.wanted(question(ASKED, { "X-Proof": proof }, body), env(), NOW)).status, 403, proof);
@@ -779,12 +779,12 @@ test("anything but the tool's question is turned away", async () => {
   const badly = [
     [new Request("https://api.firmwareliberator.com/v1/wanted"), 405],
     [question(ASKED, { "Content-Type": "text/plain" }), 415],
-    [question(ASKED, {}, json({ ...ASKED, product: "" })), 400],
-    [question(ASKED, {}, json({ ...ASKED, product: "NEW|THING" })), 400],
-    [question(ASKED, {}, json({ ...ASKED, model: "SN|NEW" })), 400],
-    [question(ASKED, {}, json({ ...ASKED, version: "1.0 beta" })), 400],
+    [question(ASKED, {}, json({ ...ASKED, model: "" })), 400],
+    [question(ASKED, {}, json({ ...ASKED, model: "NEW|THING" })), 400],
+    [question(ASKED, {}, json({ ...ASKED, stock_model: "SN|NEW" })), 400],
+    [question(ASKED, {}, json({ ...ASKED, stock_version: "1.0 beta" })), 400],
     [question(ASKED, {}, json({ ...ASKED, stage: "some" })), 400],
-    [question(ASKED, {}, json({ ...ASKED, version: undefined })), 400],
+    [question(ASKED, {}, json({ ...ASKED, stock_version: undefined })), 400],
     [question(ASKED, {}, json({ ...ASKED, firmware: ["not a hash"] })), 400],
     [question(ASKED, {}, json({ ...ASKED, firmware: Array(readout.MAX_FIRMWARE + 1).fill("a".repeat(64)) })), 400],
     [question(ASKED, {}, json({ ...ASKED, format: 2 })), 400],
@@ -797,7 +797,7 @@ test("anything but the tool's question is turned away", async () => {
 });
 
 test("the Worker sends each path to its own", async () => {
-  const signUp = { format: 1, email: "me@example.com", devices: [{ product: "NEWTHING", model: "SN-NEW-01" }] };
+  const signUp = { format: 1, email: "me@example.com", devices: [{ model: "NEWTHING", stock_model: "SN-NEW-01" }] };
   for (const [path, value, status] of [["/v1/wanted", ASKED, 200], ["/v1/notify", signUp, 202]]) {
     const body = Buffer.from(JSON.stringify(fresh(value)));
     const now = proofFor(body, BITS, Math.floor(Date.now() / 1000));   // fetch() checks it against the clock
@@ -833,8 +833,8 @@ test("a light proof is taken once: the same question sent again within its minut
 });
 
 const NOTIFY = { format: 1, email: " Me@Example.com ", devices: [
-  { product: "NEWTHING", model: "SN-NEW-01" }, { product: "newthing", model: "SN-NEW-02" },
-  { product: "BASICR4", model: "-" }], readouts: ["2026-11-07-0123456789ab"] };
+  { model: "NEWTHING", stock_model: "SN-NEW-01" }, { model: "newthing", stock_model: "SN-NEW-02" },
+  { model: "BASICR4", stock_model: "-" }], readouts: ["2026-11-07-0123456789ab"] };
 const tell = (value, bindings, now = NOW, headers = {}) => {
   const body = Buffer.from(JSON.stringify(fresh(value)));
   const proof = proofFor(body, BITS, Math.floor(now.getTime() / 1000));   // made as it is asked
@@ -888,7 +888,7 @@ test("confirmed, the address is kept once, with each of its devices and readouts
   const [{ who, email, token }] = subscribers;
   assert.deepEqual([email, who], ["Me@Example.com", createHash("sha256").update("me@example.com").digest("hex")]);
   assert.match(token, /^[0-9a-f]{32}$/);
-  assert.deepEqual(devices.map((row) => [row.product, row.model]),
+  assert.deepEqual(devices.map((row) => [row.model, row.stock_model]),
     [["BASICR4", "-"], ["NEWTHING", "SN-NEW-01"], ["NEWTHING", "SN-NEW-02"]]);
   assert.deepEqual(readouts.map((row) => row.readout), ["2026-11-07-0123456789ab"]);
   assert.equal(bindings.DB.db.prepare("SELECT count(*) AS n FROM confirmations").get().n, 0);
@@ -902,13 +902,13 @@ test("a confirmed address's later sign-ups add devices and readouts, never take 
     await signedUp(bindings);
     const sent = bindings.EMAIL.sent.length;
     const later = new Date("2026-11-08T12:00:00Z");
-    assert.equal((await tell({ ...NOTIFY, devices: [{ product: "NSPANEL", model: "E32-MSW-NX" },
-      { product: "BASICR4", model: "-" }], readouts: ["2026-11-08-ba9876543210"] }, bindings, later)).status, 202);
+    assert.equal((await tell({ ...NOTIFY, devices: [{ model: "NSPANEL", stock_model: "E32-MSW-NX" },
+      { model: "BASICR4", stock_model: "-" }], readouts: ["2026-11-08-ba9876543210"] }, bindings, later)).status, 202);
     assert.equal(bindings.EMAIL.sent.length, sent, "no second confirmation");
     const { subscribers, subscriber_devices: devices, subscriber_readouts: readouts } = kept(bindings);
     assert.equal(subscribers.length, 1, "still one address");
     // A device gone from the account was most likely converted, not given away.
-    assert.deepEqual(devices.map((row) => [row.product, row.first_seen, row.last_seen]), [
+    assert.deepEqual(devices.map((row) => [row.model, row.first_seen, row.last_seen]), [
       ["BASICR4", NOW.toISOString(), later.toISOString()], ["NEWTHING", NOW.toISOString(), NOW.toISOString()],
       ["NEWTHING", NOW.toISOString(), NOW.toISOString()], ["NSPANEL", later.toISOString(), later.toISOString()]]);
     assert.deepEqual(readouts.map((row) => row.readout), ["2026-11-07-0123456789ab", "2026-11-08-ba9876543210"]);
@@ -930,10 +930,10 @@ test("an update for a confirmed address adds to it, with no email", async () => 
   const bindings = env();
   await signedUp(bindings);
   const sent = bindings.EMAIL.sent.length;
-  await tell({ ...NOTIFY, devices: [{ product: "NSPANEL", model: "E32-MSW-NX" }], update: true }, bindings,
+  await tell({ ...NOTIFY, devices: [{ model: "NSPANEL", stock_model: "E32-MSW-NX" }], update: true }, bindings,
     new Date("2026-11-08T12:00:00Z"));
   assert.equal(bindings.EMAIL.sent.length, sent);
-  assert.ok(kept(bindings).subscriber_devices.some((row) => row.product === "NSPANEL"));
+  assert.ok(kept(bindings).subscriber_devices.some((row) => row.model === "NSPANEL"));
 });
 
 test("an address with no devices seen is taken: for news of any device", async () => {
@@ -1084,7 +1084,7 @@ test("the confirmation page shows what a sender named as text, never as markup",
   await tell(NOTIFY, bindings);
   const [link, token] = linkIn(bindings.EMAIL.sent[0]);
   bindings.DB.db.prepare("UPDATE confirmations SET devices = ? WHERE token = ?")
-    .run(JSON.stringify([{ product: "<IMG SRC=X ONERROR=ALERT(1)>", model: "-" }]), token);
+    .run(JSON.stringify([{ model: "<IMG SRC=X ONERROR=ALERT(1)>", stock_model: "-" }]), token);
   const html = await (await readout.confirm(new Request(link), bindings, NOW)).text();
   assert.ok(!html.includes("<IMG") && !html.includes("<img"), "escaped");
   assert.match(html, /&lt;IMG SRC=X ONERROR=ALERT\(1\)&gt;/);
@@ -1101,7 +1101,7 @@ test("each address has one removal link, the same every time it is given", async
   const link = forgetLinkOf(bindings);
   assert.match(link, /^https:\/\/api\.firmwareliberator\.com\/forget\?a=[0-9a-f]{64}&t=[0-9a-f]{32}$/);
   // Given again once confirmed: taken with no link to follow.
-  assert.equal((await tell({ ...NOTIFY, devices: [{ product: "NSPANEL", model: "E32-MSW-NX" }] }, bindings,
+  assert.equal((await tell({ ...NOTIFY, devices: [{ model: "NSPANEL", stock_model: "E32-MSW-NX" }] }, bindings,
     new Date("2026-11-08T12:00:00Z"))).status, 202);
   assert.equal(forgetLinkOf(bindings), link);
 });
@@ -1129,7 +1129,7 @@ test("confirmed, the address goes, with its devices and readouts", async () => {
   const bindings = env();
   await signedUp(bindings);
   // Given again once confirmed: taken with no link to follow.
-  assert.equal((await tell({ ...NOTIFY, devices: [{ product: "NSPANEL", model: "E32-MSW-NX" }] }, bindings,
+  assert.equal((await tell({ ...NOTIFY, devices: [{ model: "NSPANEL", stock_model: "E32-MSW-NX" }] }, bindings,
     new Date("2026-11-08T12:00:00Z"))).status, 202);
   const link = forgetLinkOf(bindings);
   assert.equal((await confirmed(link, bindings)).status, 200);
@@ -1185,14 +1185,14 @@ test("a day's addresses are limited too", async () => {
 test("anything but the tool's request to be told is turned away", async () => {
   assert.equal(readout.MAX_DEVICES, 20);
   for (const value of [{ ...NOTIFY, email: "not an email" }, { ...NOTIFY, email: "a\u001b[31m@example.com" },
-    { ...NOTIFY, devices: [{ model: "x" }] }, { ...NOTIFY, devices: undefined }, { ...NOTIFY, update: "yes" },
+    { ...NOTIFY, devices: [{ stock_model: "x" }] }, { ...NOTIFY, devices: undefined }, { ...NOTIFY, update: "yes" },
     { ...NOTIFY, readouts: ["not-a-reference"] }, { ...NOTIFY, readouts: "2026-11-07-0123456789ab" },
     { ...NOTIFY, readouts: Array(readout.MAX_READOUTS + 1).fill("2026-11-07-0123456789ab") },
-    { ...NOTIFY, devices: [{ product: "NEW\nTHING", model: "x" }] },
+    { ...NOTIFY, devices: [{ model: "NEW\nTHING", stock_model: "x" }] },
     // Nothing but a model's name: no sentence or link put into the email.
-    { ...NOTIFY, devices: [{ product: "URGENT-VERIFY-AT", model: "-" }, { product: "evil.example/login", model: "-" }] },
-    { ...NOTIFY, devices: [{ product: "Confirm your account", model: "-" }] },
-    { ...NOTIFY, devices: [{ product: "NEWTHING", model: "see https://evil.example" }] },
+    { ...NOTIFY, devices: [{ model: "URGENT-VERIFY-AT", stock_model: "-" }, { model: "evil.example/login", stock_model: "-" }] },
+    { ...NOTIFY, devices: [{ model: "Confirm your account", stock_model: "-" }] },
+    { ...NOTIFY, devices: [{ model: "NEWTHING", stock_model: "see https://evil.example" }] },
     { ...NOTIFY, devices: Array(readout.MAX_DEVICES + 1).fill(NOTIFY.devices[0]) }, { ...NOTIFY, format: 2 }]) {
     const bindings = env();
     assert.equal((await tell(value, bindings)).status, 400, JSON.stringify(value).slice(0, 80));
