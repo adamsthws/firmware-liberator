@@ -258,6 +258,15 @@ class ReviewTests(unittest.TestCase):
         self.assertTrue(lines[1].endswith("  DISAGREES"), lines[1])
         self.assertIn("checked", asked[0][2]["sql"])
 
+    def test_offers_agreed_are_listed_by_key(self):
+        rows = [{"key": "BASICR4|SN-ESP32C3-BASICR4-01|1.1.0", "offered": "1.2.0", "day": "2026-11-09"}]
+        code, lines, _, asked = self.run_with(["offers", "basicr4"], lambda body: rows)
+        self.assertEqual(code, 0)
+        self.assertEqual(lines, ["BASICR4|SN-ESP32C3-BASICR4-01|1.1.0  offered 1.2.0  since 2026-11-09",
+                                 "1 offers agreed"])
+        self.assertIn("FROM agreed_offers WHERE key LIKE ?1", asked[0][2]["sql"])
+        self.assertEqual(asked[0][2]["params"], ["BASICR4|%"])
+
     def test_one_product_alone(self):
         _, _, _, asked = self.run_with(["review", "basicr4"], lambda body: [])
         self.assertEqual(asked[0][2]["params"], ["BASICR4|%"])

@@ -11,6 +11,8 @@
     python3 tools/repo/readouts.py approve ID        one taken as right
     python3 tools/repo/readouts.py reject ID         one taken as wrong: its place
                                                     goes to another sender's
+    python3 tools/repo/readouts.py offers [PRODUCT]  what eWeLink offers each key, as
+                                                    readouts agreed on it
     python3 tools/repo/readouts.py rotated TIME      the keys taken as right with
                                                     readouts from both sides of
                                                     SENDER_KEY's rotation at TIME
@@ -30,7 +32,9 @@ eWeLink offered them), as each is agreed on apart. Each line is its
 reference, stage, when it came in, its object and fingerprint; one whose
 fingerprint differs from the rest of its key is marked ODD, and one that
 came to check those taken as right, and is not alike them, DISAGREES.
-`rotated` lists, the same way, each key taken as right from readouts sent
+`offers` lists, by key, each offer readouts agreed on - first stages or
+whole ones, from three networks - with the versions offered and the day it
+was. `rotated` lists, the same way, each key taken as right from readouts sent
 both before and after TIME (as `cloudflare_settings.py
 rotate SENDER_KEY` printed it): two of its three could be one sender's, as a
 new key makes every sender look new. The API's database is read with the
@@ -140,6 +144,16 @@ def review(product: str | None) -> int:
                   f"{shown(row['fingerprint'][:12])}" + ("  ODD" if odd else "")
                   + ("  DISAGREES" if row["checked"] else ""))
     print(f"{len(rows)} waiting for review")
+    return 0
+
+
+def offers(product: str | None) -> int:
+    """What eWeLink offers each key, as readouts agreed on it."""
+    rows = query("SELECT key, offered, day FROM agreed_offers" + (" WHERE key LIKE ?1" if product else "")
+                 + " ORDER BY key, day", [f"{product.upper()}|%"] if product else [])
+    for row in rows:
+        print(f"{shown(row['key'])}  offered {shown(row['offered'])}  since {shown(row['day'])}")
+    print(f"{len(rows)} offers agreed")
     return 0
 
 
@@ -299,13 +313,16 @@ def changes(ref: str | None) -> int:
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     cs.TOKEN_VARIABLE = cs.TOKENS["readouts-review"]["variable"]
-    if args[:1] in (["review"], ["approve"], ["reject"], ["rotated"]):
-        if (args[0] == "review" and len(args) > 2) or (args[0] != "review" and len(args) != 2):
+    if args[:1] in (["review"], ["offers"], ["approve"], ["reject"], ["rotated"]):
+        if (args[0] in ("review", "offers") and len(args) > 2) or (
+                args[0] not in ("review", "offers") and len(args) != 2):
             print(__doc__.strip(), file=sys.stderr)
             return 2
         try:
             if args[0] == "rotated":
                 return rotated(args[1])
+            if args[0] == "offers":
+                return offers(args[1] if len(args) == 2 else None)
             return review(args[1] if len(args) == 2 else None) if args[0] == "review" else settle(*args)
         except cs.SettingsError as error:
             print(f"readouts: {error}", file=sys.stderr)

@@ -105,6 +105,14 @@ test("the view lists the keys a later whole readout disagrees with, unsettled", 
   assert.match(await disputed(), /NEWTHING\|SN-NEW-01\|1\.0\.0<\/td><td>whole<\/td><td class="number">4<\/td><td class="number">1<\/td><td>2026-11-08<\/td>/);
 });
 
+test("the view lists the offers readouts agreed on", async () => {
+  const { bindings, db } = await held();
+  db.db.prepare("INSERT INTO agreed_offers (key, offer, offered, day) VALUES ('NEWTHING|SN-NEW-01|1.0.0', 'x', '1.2.0', '2026-11-09')")
+    .run();
+  const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  assert.match(html.split('id="offers">')[1], /^[^]*?<td>NEWTHING\|SN-NEW-01\|1\.0\.0<\/td><td>1\.2\.0<\/td><td>2026-11-09<\/td>/);
+});
+
 test("the view shows each list of networks that count as none: its size, when taken, and the last try", async () => {
   const { bindings, db } = await held();
   assert.match(await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys), /Not fetched yet\./);
