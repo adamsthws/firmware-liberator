@@ -188,13 +188,16 @@ except (OSError, ValueError):
 for runs in (f"{captures}/devices/{device}/runs", f"{saved}/*/captures/*s/{device}/runs",
              f"{states}/state*/work/captures/*s/{device}/runs"):
     for path in glob.glob(f"{runs}/*/autoflash-state.json"):
+        # Its time from the file as opened: another instance's run may
+        # delete it between this opening it and asking its path.
         try:
             with open(path) as f:
+                changed = os.fstat(f.fileno()).st_mtime
                 model = str((json.load(f).get("inputs") or {}).get("product_model") or "").strip().upper()
         except (OSError, ValueError, AttributeError):
             continue
         if model:
-            seen.append((os.path.getmtime(path), model))
+            seen.append((changed, model))
 print(max(seen)[1] if seen else "")
 EOF
 }
