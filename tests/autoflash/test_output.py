@@ -313,7 +313,7 @@ class ConciseTests(OutputTestCase):
         self.assertEqual(screen.count("Where to look."), 3)  # explained again each time
         tail = screen.rsplit("Where to look.", 1)[1]
         self.assertIn("\x1b[1F\x1b[2K", tail)                # the block went at the end
-        self.assertEqual(log.count("answered a ping"), 2)    # the log keeps every try
+        self.assertEqual(log.count("Nothing answered at"), 2)    # the log keeps every try
 
     def test_time_waiting_for_an_answer_is_left_out(self):
         now = [100.0]
@@ -417,7 +417,7 @@ class ConciseTests(OutputTestCase):
              mock.patch.object(prompts, "wait_for_key") as wait:
             prompts.wait_for_taller_window()
         wait.assert_not_called()
-        self.assertIn("Make this window taller (e.g. maximise it): at 40 rows", stdout.getvalue())
+        self.assertIn("Tip: at 40 rows or more", stdout.getvalue())
 
     def test_the_window_advice_changes_at_its_two_heights_exactly(self):
         # Waited for below MIN_ROWS, told in a line below GOOD_ROWS, else nothing.
@@ -430,7 +430,7 @@ class ConciseTests(OutputTestCase):
                      mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, rows))), \
                      mock.patch.object(prompts, "wait_for_key") as wait:
                     prompts.wait_for_taller_window()
-                shown = "waited" if wait.called else "line" if "Make this window taller" in stdout.getvalue() \
+                shown = "waited" if wait.called else "line" if "Tip: at" in stdout.getvalue() \
                     else "nothing" if stdout.getvalue() == "" else stdout.getvalue()
                 self.assertEqual(shown, expected)
 
@@ -449,7 +449,7 @@ class ConciseTests(OutputTestCase):
         self.assertEqual(len(asked), 3)                     # three addresses, nothing else
         self.assertNotIn("Use it anyway", "".join(asked))
         screen = stdout.getvalue()
-        self.assertIn("Nothing at 10.0.0.1 answered a ping.", screen)
+        self.assertIn("Nothing answered at 10.0.0.1: check the address", screen)
         self.assertIn("10.0.0.2 is not the device.", screen)
 
     def test_no_clock_under_an_address_while_it_is_pinged(self):
@@ -1146,7 +1146,7 @@ class FallbackScreenTests(OutputTestCase):
                 join.configure_device_wifi(ctx, "tasmota-5A3C1F-7340", join.NOT_GIVEN)
         screen, _ = self.run_with(io.StringIO(), False, body)
         for words in ("Join the device's setup network", "tasmota-5A3C1F-7340", "(open - no password)",
-                      "stay on its network for about 20 seconds",
+                      "stay on its network for about 20 s",
                       "The device connected to 'Home-2G' and is restarting onto it",
                       "Back to your usual Wi-Fi"):
             self.assertIn(words, screen)
@@ -1196,7 +1196,7 @@ class FallbackScreenTests(OutputTestCase):
         # waited a quarter of an hour for this computer to join a network gone.
         sent, screen = self.send([("unknown", None)], gone=True)
         self.assertEqual(sent, ["Home-2G"])
-        self.assertIn("its network has gone", screen)
+        self.assertIn("its network went", screen)
         self.assertNotIn("sending them again", screen)
         self.assertIn("Back to your usual Wi-Fi", screen)
 

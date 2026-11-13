@@ -70,24 +70,22 @@ class ConfirmSkipTests(unittest.TestCase):
 
 
 class WhatToExpectTests(unittest.TestCase):
-    """Above a run's first stage, a conversion's or a readout's: one note,
-    the kind of run the only difference."""
+    """Above a run's first stage, a conversion's or a readout's: one note."""
 
-    def said(self, run):
+    def said(self):
         rows = []
         with mock.patch.object(runner.output, "tell", side_effect=lambda text="": rows.append(text)):
-            runner.say_what_to_expect(run)
+            runner.say_what_to_expect()
         return rows
 
-    def test_the_same_note_for_a_conversion_and_a_readout(self):
-        conversion, readout = self.said("conversion"), self.said("readout")
-        self.assertTrue(" ".join(conversion).strip().startswith("A conversion usually takes under 10 minutes. "))
-        for rows in (conversion, readout):
-            self.assertEqual((rows[0], rows[-1]), ("", ""))   # a blank row above and below
-            self.assertTrue(" ".join(rows).strip().endswith("until the last stage says complete."))
-            # Fits an 80-column window with the margin, unwrapped by it.
-            self.assertLessEqual(max(len(row) for row in rows), 80 - len(runner.output.MARGIN))
-        self.assertEqual(" ".join(conversion).split(" minutes. ", 1)[1], " ".join(readout).split(" minutes. ", 1)[1])
+    def test_two_rows_between_blank_ones(self):
+        rows = self.said()
+        self.assertEqual((rows[0], rows[-1]), ("", ""))   # a blank row above and below
+        self.assertEqual(len(rows), 4)
+        self.assertTrue(rows[1].startswith("Usually under 10 minutes"))
+        self.assertTrue(rows[2].endswith("until the last stage completes."))
+        # Fits an 80-column window with the margin, unwrapped by it.
+        self.assertLess(max(len(row) for row in rows), 80 - len(runner.output.MARGIN))
 
 
 class RunStepsTests(unittest.TestCase):
@@ -633,7 +631,8 @@ class GoBackTests(unittest.TestCase):
         self.assertEqual((code, self.ctx.go_back), (0, "E1"))
         self.assertEqual((self.state.status("E1"), self.state.status("E2")), ("pending", "pending"))
         ended.assert_called_once_with("not installed")   # not "stopped": the run goes on
-        self.assertIn("Doing E1 again", told.call_args.args[0])
+        self.assertIn(f"doing stage {routes.stage_number('E1')} again", told.call_args.args[0])
+        self.assertNotIn("E1", told.call_args.args[0])   # a step's code means nothing to the person
 
     def test_up_to_the_limit_it_is_sent_again_without_a_restart(self):
         self.state.set_input("device_ip", "192.0.2.77")
@@ -672,7 +671,8 @@ class GoBackRestartTests(unittest.TestCase):
         self.assertEqual((code, self.ctx.go_back), (0, "E1"))
         self.assertEqual((self.state.status("E1"), self.state.status("E2")), ("pending", "pending"))
         self.assertEqual(self.state.data["captures"]["E1.sent_again"], 0)
-        self.assertIn("the device was restarted. Doing E1 again", told.call_args.args[0])
+        self.assertIn(f"restarted the device; doing stage {routes.stage_number('E1')} again",
+                      told.call_args.args[0])
 
     def test_once_only_then_the_run_stops(self):
         self.state.capture("E1.restarted", True)

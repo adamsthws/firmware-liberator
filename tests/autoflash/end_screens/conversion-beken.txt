@@ -1,7 +1,7 @@
  Stage 18 - Verifying conversion - Complete
 
  Conversion complete!
- The device is running OpenBeken...
+ The device is running OpenBeken.
 
      Liberator: 3.0.0                                Firmware: OpenBeken
      OS:        Ubuntu 24.04.5 LTS                   From:     Sonoff 1.0.2

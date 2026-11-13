@@ -577,13 +577,13 @@ class StoppedRunIssueTests(RouteTestCase):
             lines = self.ended(ctx, "failed")
         link = lines.index(("link", report.ISSUES_URL))   # the general address: the id is pasted in
         self.assertEqual(lines[link + 1:link + 3], ["    Report ID: 0123456789abcdef",
-                                                    "    This report is on your clipboard, ready to paste."])
+                                                    "    This report is on your clipboard."])
         self.assertFalse([line for line in lines[:link] if "Report ID" in str(line)], "not under the report")
         self.assertTrue(copied[0].startswith("Result: Stopped at stage"), copied[0])   # in full
         self.assertIn("\nLiberator:", copied[0])   # the report as shown, its margin taken off
         self.assertTrue(copied[0].rstrip().endswith("Report ID: 0123456789abcdef"), copied[0])
         with mock.patch.object(hostsys, "copy_to_clipboard", return_value=False):
-            self.assertNotIn("    This report is on your clipboard, ready to paste.", self.ended(ctx, "failed"))
+            self.assertNotIn("    This report is on your clipboard.", self.ended(ctx, "failed"))
 
     def test_a_run_failed_before_any_stage_has_the_issue_link_and_its_log_and_copies_nothing(self):
         # cli.issue_alone: no report to offer, so none to copy or to name.

@@ -353,7 +353,7 @@ class FromTheInterimFirmwareTests(unittest.TestCase):
                 mock.patch.object(routes.prompts, "ask_choice", return_value=1), \
                 mock.patch.object(routes.output, "transient_begin"), mock.patch.object(routes.output, "transient_end"):
             self.assertEqual(routes.ask_firmware("interim", ["openbeken", "esphome", "sonoff"]), "esphome")
-        self.assertIn("left part way through a conversion", " ".join(section.call_args.args[1]))
+        self.assertIn("Left part way through a conversion", " ".join(section.call_args.args[1]))
 
     def test_with_device_ip_it_is_found_with_its_kind(self):
         # As the search finds it: the device's kind is its import module's to say

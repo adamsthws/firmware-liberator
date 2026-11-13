@@ -956,7 +956,7 @@ class ProofProgressTests(unittest.TestCase):
                 mock.patch.object(readout.hostsys, "urlopen", side_effect=opened), \
                 mock.patch.object(readout.time, "sleep"):
             self.assertEqual(readout.send(b"data", "http://127.0.0.1:9/readout"), "r-1")
-        self.assertEqual([text.split(":")[0] for text in shown], ["Getting it ready to send",
+        self.assertEqual([text.split(":")[0] for text in shown], ["Preparing to send - a few seconds to a minute or two...",
                                                                  "The website takes two readouts a minute"])
 
 
@@ -1302,7 +1302,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(rows[-1], ["Report", "ID:", "b" * 32], copied[0])   # the one that failed
         self.assertFalse(copied[0].startswith(" "), "its margin taken off")
         at = shown.index(f"    Report ID: {'b' * 32}")
-        self.assertEqual(shown[at + 1], "    This report is on your clipboard, ready to paste.")
+        self.assertEqual(shown[at + 1], "    This report is on your clipboard.")
 
     def test_one_that_finished_leaves_the_clipboard_alone_and_shows_no_report_id(self):
         done = [readout.Became("'Kitchen'", "BASICR4", "", "1.1.0", True, readout.ACCEPTED, report_id="a" * 32)]
@@ -1384,7 +1384,7 @@ class OfferedAtA1Tests(unittest.TestCase):
                 mock.patch.object(readout, "from_run", side_effect=errors.Finished("read")) as read:
             with self.assertRaises(errors.Finished):
                 account.find_account_device(SimpleNamespace(email=lambda: "me@example.com"), [DEVICE])
-        self.assertIn("Read-out my device to help add support for it", asked.call_args.args[1])
+        self.assertIn("Read out my device, to help add support for it", asked.call_args.args[1])
         self.assertEqual(read.call_args.args[1], [DEVICE])
         self.assertIn("'Hall light' (NEWTHING)", " ".join(shown.call_args.args[1]))
 

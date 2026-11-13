@@ -124,7 +124,7 @@ class FamilyTests(unittest.TestCase):
             title, body = shown[0]
             self.assertEqual(title, "Before you start, you'll need:")
             self.assertIn(needed, body)
-            self.assertEqual(body[-1], "- This computer on the same network.")
+            self.assertEqual(body[-1], "- This computer on the same network as the device.")
             self.assertFalse(any("plug" in line for line in body))
             # The device is found through eWeLink, whatever its app settings.
             self.assertFalse(any("LAN Control" in line for line in body))

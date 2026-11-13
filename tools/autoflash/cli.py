@@ -230,18 +230,16 @@ def resolve_run_name(
         # shown again, not stacked under the old one.
         output.transient_begin(before_start=True)
         any_past = any(routes.past_the_point_of_no_return(RunState.open(d)) for d in unfinished)
-        keep = ("the unfinished one stays" if len(unfinished) == 1
-                else "the unfinished ones stay")
+        keep = "one" if len(unfinished) == 1 else "ones"
         options = [f"Continue {describe_run(d)}" for d in unfinished] + [
-            f"Start a new conversion - {keep} on record, to finish later",
+            f"Start a new conversion (keep the unfinished {keep} for later)",
             "Remove an unfinished run",
         ]
         chosen = prompts.ask_choice(
             "A conversion did not finish last time. What now",
             options,
             help_lines=(
-                ["A device past the point of no return no longer runs its Sonoff",
-                 "firmware - finish it before long; running this again offers it back."]
+                ["A device past the point of no return no longer runs Sonoff: finish it soon."]
                 if any_past else []
             ),
         )
@@ -271,10 +269,11 @@ def remove_run(directory: Path) -> bool:
     description = describe_run(directory)
     if routes.past_the_point_of_no_return(state):
         prompts.section("This device is part-converted", [
-            "It no longer runs its Sonoff firmware, so it will not show up as a",
-            "new device either. Once its record is removed, this tool cannot finish",
-            "it - finishing would mean doing the remaining steps by hand.",
+            "It no longer runs Sonoff's firmware; once its record is removed, this tool",
+            "cannot finish it.",
         ])
+        output.log_only("It will not show up as a new device either: finishing it would mean doing the "
+                        "remaining steps by hand.")
     if not prompts.ask_yes_no(f"Remove the record of {description}", default=False):
         return False
     rules = [FirewallRule.from_json(item) for item in state.input("firewall_rules") or []]
@@ -347,7 +346,7 @@ def cmd_readout(ctx: Context, saved: Path | None) -> int:
         return 0
     ctx.readouts = []
     report_upload.announce(ctx)   # each readout sends its report (readout.run)
-    runner.say_what_to_expect("readout")
+    runner.say_what_to_expect()
     output.say("Signing in to eWeLink to see which devices are in the account...")
     readout.lay_out_stages()
     readout.begin("account")
@@ -374,7 +373,7 @@ def forget_all_secrets() -> list[str]:
     """Delete every run's secret files, and the bundle's stored password."""
     removed = [item for directory in runs.run_directories() for item in runs.forget_run_secrets(directory)]
     if forget_stored_password((ROOT / bundle.DEFAULT_MANIFEST).resolve()):
-        removed.append("the Wi-Fi password in the bundle's recovery image")
+        removed.append("the Wi-Fi password in the startup firmware")
     return removed
 
 
@@ -774,8 +773,8 @@ def convert(ctx: Context, given: list[str]) -> int:
             output.log_only("The run's window was closed: stopped at once.")
         output.stage_end("stopped")
         output.tell("")
-        output.tell("Stopped with Ctrl-C. Run again to pick up where you left off, or to start again.")
-        output.tell("(Every step checks the device first, so running again is safe.)")
+        # Every step checks the device first.
+        output.tell("Stopped with Ctrl-C. Running again is safe: it picks up where it left off.")
         if runner.stopped_mid_send(ctx):
             output.tell("It was mid-update through eWeLink: wait about 3 minutes before running again.")
         ending = "cancelled"

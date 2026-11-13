@@ -159,6 +159,16 @@ ESPHOME_OTA_PORT = 3232
 MAX_RUNS = 4
 TOOL = "tools/autoflash/cli.py"
 HELPERS = ("serve_safeboot_migration.py", "serve_tasmota_ota.py")
+# What a run's log says as it gets to where a fault is brought (when_said), as
+# the tool words it: reworded there, a fault waiting on the old words never
+# comes (NOT-FIRED), so a unit test holds each to the tool's code.
+SAID = {"uploading": "Sending Tasmota (",
+        "uploaded": "the device is restarting into Tasmota",
+        "sending_wifi": "Sending the details for '",
+        "seven_times": "Switch the device off and on 7 times",
+        # Matched whatever its capitals: a release before 3.0.0 began it "Sending".
+        "installer_again": "sending the installer again",
+        "switch_now": "No answer from the device: switch it off and on - it is safe now"}
 
 # Each direction: the saved device it starts from, its target, and the steps that
 # write to or wait on the device, with how long each usually takes (emulator).
@@ -332,7 +342,7 @@ REPORT_RESULT = re.compile(r"Result:\s+(\S.*?)(?:\s{2,}|$)", re.M)
 REPORT_BACKUP = re.compile(r"(?:Sonoff backup|\bBackup):\s+(\S.*?)(?:\s{2,}|$)", re.M)
 REPORT_IDENTITY = re.compile(r"(?:Sonoff identity|\bIdentity):\s+(\S.*?)(?:\s{2,}|$)", re.M)
 REPORT_UNFINISHED = re.compile(r"(?:Converted from|From):\s+Unfinished (?:conversion|run)")
-READOUT_SWITCH = re.compile(r"Switch the device off, wait five seconds, and switch it on again")
+READOUT_SWITCH = re.compile(r"Switch it off for five seconds, then on")
 # Advice to switch it off and on, from a readout as from a conversion.
 SWITCH_ADVICE = re.compile(r"switch (the device|the device|it) off and on", re.IGNORECASE)
 
@@ -908,7 +918,7 @@ class Tuner:
     eWeLink saying the device is offline or the login gone, or a turn held to
     its limit for nothing."""
     WINDOW = 4
-    NOT_THE_CLOUD = re.compile(r"stopped part way|did not request every firmware byte")
+    NOT_THE_CLOUD = re.compile(r"stopped part way|was not fully delivered|did not request every firmware byte")
     TROUBLE = re.compile(r"offline in eWeLink|eWeLink shows it offline|access token|"
                          r"turn given up after 2[34]\ds")
     # A send the device never asked for: the command went down the last turn's
@@ -1003,7 +1013,7 @@ class Tuner:
 TUNER = Tuner()
 BOOTS = re.compile(r"(?P<sonoff>\[BUILD TIME\]|colinkTcp|tmp ip = )|(?P<bridge>autoflash_bridge)|"
                    r"(?P<tasmota>Project tasmota)|(?P<esphome>\[I\]\[app)")
-INTENT = re.compile(r"\] (?:A1|A2|C2)  |Sending the installer again")
+INTENT = re.compile(rf"\] (?:A1|A2|C2)  |(?i:{re.escape(SAID['installer_again'])})")
 HOLD_AT_MOST = 240.0
 # A step after C2 under way: its device has left Sonoff's firmware, so the turn is free.
 PAST_THE_CLOUD = re.compile(r"\] (?!A\d|C2\b)[A-Z]\d\w*  ")
@@ -1022,7 +1032,7 @@ DEVICE_BACK_AT_MOST = 60.0
 # been lost, and eWeLink does not pass one on again: the turn is of no more use
 # (seen: 3 minutes of one, with the device back on eWeLink after a power cut).
 TURN_IDLE = 60.0
-SENT = re.compile(r"\] C2  |Sending the installer again|upgrade command sent again")
+SENT = re.compile(rf"\] C2  |(?i:{re.escape(SAID['installer_again'])})|upgrade command sent again")
 # Where a run asks for a turn before it signs in (get_device_key.wait_for_turn).
 TURN_FILE = "captures/cloud-turn"
 
@@ -1296,7 +1306,8 @@ JOIN = re.compile(r"join:\s*\n\[[^\]]*\]\s+(?:network\s+)?(\S+)")
 BACK = "Back to your usual Wi-Fi"
 # Said while the run waits on, and carries on by itself once it is done.
 # (In the run's log each line has its time first.)
-SWITCH_NOW = re.compile(r"switch it off and on:\s+(?:\[[\d:]+\]\s+)?at this stage that is safe\. "
+SWITCH_NOW = re.compile(re.escape(SAID["switch_now"]) +   # before 3.0.0, said over two lines:
+                        r"|switch it off and on:\s+(?:\[[\d:]+\]\s+)?at this stage that is safe\. "
                         r"This carries on by itself")
 
 
@@ -1587,9 +1598,9 @@ class Scenario:
             # D1 through the installer's own network (the fallback, below);
             # and, on it, when the run gets that far: the run cut off just
             # after the upload, or this computer back on the home network.
-            words, act = {"cut": ("the device is restarting into Tasmota", self.cut_run),
-                          "dropupload": ("Sending Tasmota (", self.drop_join),
-                          "dropsetup": ("Sending the Wi-Fi details", self.drop_join)}[arg]
+            words, act = {"cut": (SAID["uploaded"], self.cut_run),
+                          "dropupload": (SAID["uploading"], self.drop_join),
+                          "dropsetup": (SAID["sending_wifi"], self.drop_join)}[arg]
             threading.Thread(target=self.when_said, args=(since, words, act), daemon=True).start()
             self.fault("fallback", 150, since, headers)
         elif fault == "lostanswer":
@@ -1613,11 +1624,11 @@ class Scenario:
             # Tasmota sent through the installer cannot join the home Wi-Fi
             # (gone from just after the upload), and the run advises the 7
             # power cycles: done, and the Wi-Fi back.
-            if not self.when_said(since, "the device is restarting into Tasmota", lambda: None):
+            if not self.when_said(since, SAID["uploaded"], lambda: None):
                 return
             self.router("off")
             self.say("FAULT: the home Wi-Fi gone after the upload")
-            if self.when_said(since, "Switch the device off and on 7 times", lambda: None, limit=900):
+            if self.when_said(since, SAID["seven_times"], lambda: None, limit=900):
                 time.sleep(10)  # a person reads it
                 self.say("PERSON: switching the device off and on 7 times")
                 self.must(DEVICE_CMD, "cycle", "7", timeout=300)
@@ -2753,7 +2764,7 @@ def key(scenario_id):
 
 # This computer, not its device, cut off from eWeLink: the name not found, the
 # network down. Seen on a test machine once in 75 scenarios, before the fault.
-COMPUTER_OFFLINE = re.compile(r"Could not reach eWeLink \(eWeLink connection failed: [^)]*?"
+COMPUTER_OFFLINE = re.compile(r"eWeLink is unreachable \(eWeLink connection failed: [^)]*?"
                               r"(?:Name or service not known|Temporary failure in name resolution|"
                               r"Network is unreachable)")
 

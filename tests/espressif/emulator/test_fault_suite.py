@@ -55,7 +55,7 @@ class NameProblemTests(unittest.TestCase):
 
 
 class TunerTests(unittest.TestCase):
-    PART_WAY = "FAILED: bridge delivery stopped part way\n"
+    PART_WAY = "FAILED: the installer was not fully delivered\n"
     NEVER_ASKED = "Device did not connect; no firmware bytes were transferred.\n"
 
     def finish(self, tuner, verdict, text=""):
@@ -451,6 +451,32 @@ class RunWordsTests(unittest.TestCase):
         self.assertRegex(source.read_text(encoding="utf-8"), re.compile(fs.STARTS["C3"][0]))
         self.assertRegex("Backing up the device's Sonoff firmware - about a minute...", fs.STARTS["C3"][0])  # legacy
 
+    def test_each_line_a_fault_waits_for_is_in_the_tools_code(self):
+        # ownnet-dropsetup went NOT-FIRED in a whole run once its line was
+        # shortened ("Sending the Wi-Fi details" no longer said).
+        code = "\n".join(path.read_text(encoding="utf-8") for path in
+                         (Path(__file__).resolve().parents[3] / "tools/autoflash").rglob("*.py"))
+        for name, words in fs.SAID.items():
+            with self.subTest(name):
+                self.assertIn(words, code)
+
+    def test_the_installer_sent_again_asks_for_a_turn_as_said_now_and_before_3_0_0(self):
+        # Against the real cloud, once the line began "sending" in lower case,
+        # no turn came for it: the device stayed shut off eWeLink, the send was
+        # refused as offline, and prep and every C2 scenario after it stopped.
+        for said in ("[14:47:27]     Back on its Sonoff firmware: sending the installer again (attempt 1 of 3).",
+                     "[11:31:39] Sending the installer again (attempt 1 of 3)"):
+            with self.subTest(said):
+                self.assertTrue(fs.INTENT.search(said))
+                self.assertTrue(fs.SENT.search(said))
+
+    def test_the_person_switches_the_device_off_and_on_when_told_as_said_now_and_before_3_0_0(self):
+        for said in ("[10:00:00]     No answer from the device: switch it off and on - it is safe now.",
+                     "[10:00:00]     after a Wi-Fi outage, Sonoff's firmware can stay off it - switch it off and on:\n"
+                     "[10:00:00]     at this stage that is safe. This carries on by itself."):
+            with self.subTest(said):
+                self.assertTrue(fs.SWITCH_NOW.search(said))
+
     def test_f4_without_the_driver_is_told_by_what_its_reset_says(self):
         from types import SimpleNamespace
         from tools.autoflash import output
@@ -518,8 +544,8 @@ class ScenarioTests(unittest.TestCase):
     def test_a_fault_this_computers_network_kept_from_happening_is_its_own_verdict(self):
         # Seen: outage-60 counted as NOT-FIRED twice, this computer's lookup of
         # eWeLink having failed before the fault, nothing of the device's.
-        offline = ("no report (stopped at stage 2, Discovering the device: Could not reach eWeLink (eWeLink "
-                   "connection failed: [Errno -2] Name or service not known), so every device that answers is listed.)")
+        offline = ("no report (stopped at stage 2, Discovering the device: eWeLink is unreachable (eWeLink "
+                   "connection failed: [Errno -2] Name or service not known): listing every device that answers.)")
         self.assertEqual(fs.no_internet("NOT-FIRED", ["no report", offline]), "NO-INTERNET")
         self.assertEqual(fs.no_internet("FAIL", [offline]), "FAIL")              # pcoff: cut off on purpose
         self.assertEqual(fs.no_internet("NOT-FIRED", ["no report (stopped at stage 3, Discovering the device: "
@@ -544,13 +570,13 @@ class ScenarioTests(unittest.TestCase):
         # once this computer's own way to eWeLink failing, not the device.
         self.assertEqual(self.no_report(
             " Stage  2 - Discovering the device       - Underway\n"
-            "     Could not reach eWeLink (eWeLink connection failed: [Errno -2] Name or service not known), so\n"
-            "     every device that answers is listed.\n"
+            "     eWeLink is unreachable (eWeLink connection failed: [Errno -2] Name or service not known):\n"
+            "     listing every device that answers.\n"
             " Stage  2 - Discovering the device       - Stopped\n"
-            " Cleaned up. Nothing was left half done. Exiting.\n"
+            " Stopped as asked. Run this again to carry on.\n"
             "Exit code 130 - stopped at a question, or by Ctrl-C\n"),
-            "no report (stopped at stage 2, Discovering the device: Could not reach eWeLink (eWeLink connection"
-            " failed: [Errno -2] Name or service not known), so every device that answers is listed.; exit 130)")
+            "no report (stopped at stage 2, Discovering the device: eWeLink is unreachable (eWeLink connection"
+            " failed: [Errno -2] Name or service not known): listing every device that answers.; exit 130)")
 
     def test_a_question_an_unattended_run_cannot_answer_is_named(self):
         self.assertEqual(self.no_report(
@@ -725,7 +751,7 @@ class ScenarioTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp, "scenario.log")
             log.write_text("--- --instance=4\n Stage 2 - Discovering the device - Stopped\n"
-                           " Cleaned up. Nothing was left half done. Exiting.\n", encoding="utf-8")
+                           " Stopped as asked. Run this again to carry on.\n", encoding="utf-8")
             runs = Path(tmp, "state/work/captures/devices/unidentified/runs/20261103-041854")
             runs.mkdir(parents=True)
             (runs / "run.log").write_text(
@@ -1489,7 +1515,7 @@ class ReadoutScenarioTests(unittest.TestCase):
         sc = self.scenario()
         stop = threading.Event()
         asked = "[10:00:00] Read. Now put it back on its Sonoff firmware\n" \
-                "[10:00:00]     Switch the device off, wait five seconds, and switch it on again (for a\n"
+                "[10:00:00]     Switch it off for five seconds, then on (a wall switch at its breaker).\n"
         looks = iter([[(1.0, Path("run.log"), "=== run started ===\n")], [(1.0, Path("run.log"), asked)]])
 
         def logs(state):
@@ -1508,7 +1534,7 @@ class ReadoutScenarioTests(unittest.TestCase):
         sc = self.scenario()
         sc.fired = 1.0   # the crash came while the read was under way
         # Killed, it said nothing; run again, it found the device on the bridge.
-        advice = ["the device is already running our installer firmware ... switch the device off and on", ""]
+        advice = ["the device is on this tool's installer from an earlier run ... switch the device off and on", ""]
         with mock.patch.object(fs.threading, "Thread"), mock.patch.object(fs.time, "sleep"), \
                 mock.patch.object(sc, "run_tool", side_effect=[137, 1, 0]) as runs, \
                 mock.patch.object(sc, "readout_result", return_value="no readout"), \
@@ -1758,7 +1784,7 @@ class ReadoutAllScenarioTests(unittest.TestCase):
     def test_run_again_until_a_run_finishes_as_the_run_advised(self):
         sc = self.scenario(step="read", fault="crash", arg=1, account="mixed")
         sc.fired = 1.0
-        advice = ["the device is already running our installer firmware ... switch the device off and on", "", ""]
+        advice = ["the device is on this tool's installer from an earlier run ... switch the device off and on", "", ""]
         with mock.patch.object(fs.threading, "Thread"), mock.patch.object(fs.time, "sleep"), \
                 mock.patch.object(sc, "run_readout_all", side_effect=[(137, ""), (1, ""), (0, "")]) as runs, \
                 mock.patch.object(sc, "last_said", side_effect=advice), \

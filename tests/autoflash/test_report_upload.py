@@ -98,7 +98,12 @@ class DocumentedTests(unittest.TestCase):
         page = upload.ROOT / "docs" / "what-the-tool-sends.md"
         self.assertTrue(page.exists())
         self.assertEqual(upload.WHAT_IS_SENT, "https://firmwareliberator.com/docs/what-the-tool-sends")
-        self.assertIn(upload.WHAT_IS_SENT, upload.NOTICE_TEXT)
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(upload, "NOTICE", Path(tmp) / "notice"), \
+                mock.patch.object(upload, "QUEUE", Path(tmp) / "queue"), mock.patch.object(upload.output, "tell"), \
+                mock.patch.object(upload, "enabled", return_value=True), mock.patch.object(upload, "in_background"), \
+                mock.patch.object(upload.output, "show_link") as linked:
+            upload.announce(SimpleNamespace(args=SimpleNamespace()))
+        linked.assert_called_once_with(upload.WHAT_IS_SENT, "What is sent")
 
     def test_the_page_says_how_to_stop_it_and_where_unsent_ones_wait_as_the_tool_does(self):
         text = (upload.ROOT / "docs" / "what-the-tool-sends.md").read_text(encoding="utf-8")

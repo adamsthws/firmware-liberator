@@ -85,11 +85,10 @@ def ensure_firewall(ctx: Context) -> None:
     if hostsys.local_rules_ignored(device_ip):
         ctx.state.set_input("firewall_outcome", "managed")
         prompts.section("This computer's firewall is managed by an organisation", [
-            "It is set (by Group Policy) to ignore rules added on the computer itself,",
-            "so the device cannot be let in from here. Ask whoever manages it, or use",
-            "another computer. Carrying on - if the device is blocked, the next step",
-            "stops and says so.",
+            "It ignores rules added here: ask whoever manages it, or use another one.",
+            "Carrying on: if the device is blocked, the next step says so.",
         ])
+        output.log_only("Group Policy has it ignore rules added on the computer itself.")
         return
     kind = hostsys.active_firewall()
     if kind is None:
@@ -97,23 +96,22 @@ def ensure_firewall(ctx: Context) -> None:
         return
     program = hostsys.python_program() if kind in ("windows", "macos") else None
     add, _ = hostsys.firewall_commands(kind, device_ip, ports, program)
-    prompt_note = [
-        "Windows will ask whether to allow the change - choose Yes. This window",
-        "does not need to be run as administrator; only this rule asks for it.",
-    ] if hostsys.IS_WINDOWS else ["You may be asked for this computer's password.",
-                                  *emulator_password_hint()]
-    what = ("lets Python accept incoming connections - the macOS firewall allows "
-            "programs, not ports" if kind == "macos"
-            else f"allows only {device_ip} in, to Python, on TCP ports {', '.join(map(str, ports))}"
+    prompt_note = ["Windows will ask whether to allow the change - choose Yes."] if hostsys.IS_WINDOWS else [
+        "You may be asked for this computer's password.", *emulator_password_hint()]
+    # The macOS firewall allows programs, not ports.
+    what = ("It lets Python accept incoming connections." if kind == "macos"
+            else f"It lets in only {device_ip}, to Python, on TCP ports {', '.join(map(str, ports))}."
             if kind == "windows"
-            else f"allows only {device_ip} in, on TCP ports {', '.join(map(str, ports))}")
+            else f"It lets in only {device_ip}, on TCP ports {', '.join(map(str, ports))}.")
     output.transient_begin()  # the note, and the system's password question
     prompts.section("Let the device through this computer's firewall", [
-        f"This computer's firewall ({kind}) would block the device from fetching its",
-        f"firmware. Adding one rule that {what}.",
-        "This temporary rule is always removed when this tool exits (no matter how it exits).",
+        f"This computer's firewall ({kind}) would block the device: adding a rule",
+        "that is removed when this tool exits, however it exits.",
+        what,
         *prompt_note,
     ])
+    if hostsys.IS_WINDOWS:
+        output.log_only("This window need not be run as administrator: only the rule asks for it.")
     try:
         with interrupt.deferred():  # added and recorded, or neither
             rule = hostsys.open_firewall(device_ip, ports)
@@ -124,15 +122,11 @@ def ensure_firewall(ctx: Context) -> None:
         ctx.state.set_input("firewall_outcome", "failed")
         output.transient_end()
         prompts.section("The firewall rule could not be added", [
-            "Add it yourself, in another window, with:",
+            "Add it yourself in another window, and remove it afterwards:",
             f"  {hostsys.display(add)}",
-            "and remove it after the conversion. Carrying on - if the device is still",
-            "blocked, the next step stops and says so.",
-            *([
-                "",
-                "Adding it needs administrator rights. On a work computer you may not be",
-                "allowed them: then ask whoever manages it, or use another computer.",
-            ] if hostsys.IS_WINDOWS else []),
+            "Carrying on: if the device is blocked, the next step says so.",
+            *(["It needs administrator rights; on a work computer, ask whoever manages it."]
+              if hostsys.IS_WINDOWS else []),
         ])
         return
     output.transient_end()
@@ -153,15 +147,15 @@ def firewall_hint(ctx: Context) -> list[str]:
     """What to say when the device never reached this computer."""
     device_ip = ctx.state.input("device_ip") or "DEVICE_IP"
     lines = [
-        "The device never connected to this computer. That is almost always this",
-        "computer's firewall, or this computer having changed address.",
+        "The device never reached this computer: most often this computer's",
+        "firewall, or a changed address.",
     ]
     kind = hostsys.active_firewall()
     ports = firewall_ports(ctx)
     if kind:
         program = hostsys.python_program() if kind in ("windows", "macos") else None
         add, _ = hostsys.firewall_commands(kind, device_ip, ports, program)
-        lines += ["", f"A {kind} firewall is on. This allows the device in:", f"  {hostsys.display(add)}"]
+        lines += [f"A {kind} firewall is on; this lets the device in:", f"  {hostsys.display(add)}"]
     advice = hostsys.firewall_advice(device_ip if device_ip != "DEVICE_IP" else None, ports, after_failure=True)
     if advice:
         lines += ["", *advice]
@@ -173,15 +167,10 @@ def close_firewall_rules(ctx: Context) -> None:
     rules = recorded_rules(ctx)
     if not rules:
         return
-    permission = (
-        "Windows will ask for permission again"
-        if hostsys.IS_WINDOWS else "you may be asked for this computer's password again"
-    )
     output.transient_begin()  # gone once the rule is
     output.tell("")
-    output.tell("Removing the temporary firewall rule added at the start, which let the")
-    output.tell("device connect to this computer. Changing the firewall needs admin/sudo")
-    output.tell(f"rights, so {permission}.")
+    output.tell("Removing the temporary firewall rule; Windows will ask again - choose Yes."
+                if hostsys.IS_WINDOWS else "Removing the temporary firewall rule; you may be asked for your password.")
     for line in emulator_password_hint():
         output.tell(line)
     left: list[FirewallRule] = []
@@ -215,8 +204,7 @@ def release_firewall(ctx: Context) -> bool:
         left = recorded_rules(ctx)
         output.tell("")
         output.tell("The temporary firewall rule was not removed"
-             + (" (stopped with Ctrl-C)." if isinstance(exc, KeyboardInterrupt) else f": {exc}."))
-        output.tell("Remove it yourself with:")
+             + (" (Ctrl-C)" if isinstance(exc, KeyboardInterrupt) else f" ({exc})") + "; remove it with:")
         for rule in left:
             for line in hostsys.undo_commands(rule):
                 output.tell("    " + line)

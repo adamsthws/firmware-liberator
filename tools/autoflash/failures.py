@@ -56,20 +56,21 @@ PATTERNS = [(name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
     ("device-lost", r"connection to the device was lost"),
     ("weak-signal", r"weak Wi-Fi signal"),
     ("unsupported-device", r"which this tool does not convert yet|not set up as a device this tool converts"),
-    ("device-busy", r"still busy with an update"),
+    ("device-busy", r"busy with an update"),
     ("credentials", r"encryption key|encryption: line|has a password|password|NeedsPassword"),
     ("unsafe-state", r"refusing to start from an unsafe state|another run is converting this device"
                      r"|has no record of|is not set; pass|address is not known|device id is not known"
-                     r"|bundle has changed since|already running our installer"
+                     r"|firmware files changed since|is on this tool's installer from an earlier run"
                      r"|is running Tasmota, not Sonoff's firmware|so the installer has to be sent again"),
     ("backup", r"backup cannot be written back|backup could not be read|no backup of|found neither with a backup"
                r"|cannot be put back without a backup|--simulate-backup-failure"),
     ("identity", r"identity cannot be kept"),
-    ("integrity", r"checksums failed|does not match the pinned|hash differs|is not the file firmware\.json pins"
+    ("integrity", r"checksums failed|do not check out|does not match the official firmware files|hash differs"
+                  r"|is not the file firmware\.json pins"
                   r"|refusing to send it|rt_ota"),
     ("download", r"could not be fetched|no public dump of|no \S+ image is published|image is missing"
                  r"|public dump holds no|the download was cut off"),
-    ("ewelink-unreachable", r"eWeLink could not be reached|has not reached eWeLink"),
+    ("ewelink-unreachable", r"eWeLink could not be reached|has not reached eWeLink|but not in eWeLink"),
     ("ewelink-refused", r"official update file for the .* was refused|firmware was not sent:"
                         r"|readout firmware was not sent"),
     ("bad-option", r"--replace-own-build|needs to be told which firmware|cannot go to |cannot switch to"
@@ -78,21 +79,25 @@ PATTERNS = [(name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
     ("computer-network", r"this computer reaches|this computer's address|are all in use on this computer"
                          r"|--listen-ip|readout could not be sent|did not fetch the \S+ instructions"
                          r"|without reaching this computer|firewall rule|^sudo |the website answered"),
-    ("network-join", r"did not join|cannot join it|has not answered on your Wi-Fi|did not answer on your Wi-Fi"
+    ("network-join", r"did not join|cannot join it|has not answered on your Wi-Fi|has not come back on your Wi-Fi"
+                     r"|did not answer on your Wi-Fi"
+                     r"|is not on your Wi-Fi"
                      r"|neither rejoined|did not come back after its settings were reset"
-                     r"|did not say which Wi-Fi network|but the bundle is set up for"
+                     r"|did not say which Wi-Fi network|but the firmware to come would join"
                      r"|has not shown the device online again"),
     ("settings-lost", r"lost its settings|did not keep its template"),
     ("unexpected-layout", r"not laid out as this tool expects|partition table|memory could not be read"
                           r"|short read of the device's flash|bytes were read"),
-    ("not-taken", r"did not take|did not hold|still running from slot|keeps going back to the mover"
-                  r"|still answers as the firmware it was to leave|has not been seen to run"
+    ("not-taken", r"did not take|did not hold|still running from slot|kept running its old firmware"
+                  r"|keeps going back to the startup firmware"
+                  r"|still answers as the firmware it was to leave|was not seen running"
                   r"|did not come back after the upload|has not started ESPHome|did not switch to its safeboot"
                   r"|would not take its new name|went back to its Sonoff firmware before"
                   r"|still on its Sonoff firmware, so nothing was read|would not fetch Sonoff's firmware back"
                   r"|refused to fetch Sonoff's firmware|after it was sent \d+ times"),
     ("upload-cut", r"stopped part way|was not uploaded|to the device failed|could not be sent to the device"
                    r"|did not complete within|did not print|nothing was armed|delivery failed"
+                   r"|installer was not fully delivered|installer was not delivered"
                    r"|the device fetched \S+ of \S+ bytes"),
     ("unexpected-firmware", r"did not answer as a device this tool converts|Berry|did not say twice alike"
                             r"|did not say which slot|it is not the one this tool installs"

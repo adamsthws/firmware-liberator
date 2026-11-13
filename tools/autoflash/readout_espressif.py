@@ -104,16 +104,15 @@ def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, device_id:
     wrapped = ctx.dir / "autoflash-bridge-readout.ota"
     wrapped.write_bytes(build_vendor_ota.build_wrapper(app, version=build_vendor_ota.app_version(app), model=name))
     output.transient_begin()
+    # No word against a power cut here, as the Beken readout has: the reader
+    # goes in the spare firmware slot, and the device starts Sonoff's again
+    # whenever it is switched off and on, part way or not.
     prompts.warning_box("Before going on", [
-        "This only reads the device: its Sonoff firmware, settings and eWeLink",
-        "pairing stay. A small program is put in its spare firmware slot to read",
-        "it; whatever was there, often the Sonoff version before its last update,",
-        "is lost. At the end you switch the device off and on, and it starts its",
-        "Sonoff firmware again.",
-        "",
-        *(["The same program starts every conversion of this kind of device."] if known else [
-            "This tool has never run on this kind of device. If the small program",
-            "could not start at all, the device may need a serial cable to recover.",
+        "Only reads the device; its Sonoff firmware, settings and pairing stay.",
+        "A small reader goes in its spare firmware slot, replacing what is there.",
+        "At the end you switch it off and on, and it starts its Sonoff firmware.",
+        *([] if known else [
+            "New to this tool: if the reader cannot start, it may need a serial cable.",
             "Only go ahead with a device you can afford to lose."]),
     ])
     if not prompts.require_word(prompts.CONSENT_WORD, skip=skippable):
@@ -127,7 +126,7 @@ def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, device_id:
     device_ip = ctx.state.input("device_ip")
     if device_ip and installer.bridge_answers(device_ip):
         # A readout stopped part way left it there: read through it.
-        output.say("The reading program is on the device already, from a readout stopped part way.")
+        output.say("The reader is on the device already, from a readout stopped part way.")
         ctx.state.set_input(readout.STATE_KEY, "sent")
         return read_through(ctx, device_ip)
     with safety_locks.lifted(ROOT, "RECOVERY_LOCK"):
@@ -180,11 +179,11 @@ def find_bridge(ctx: Context, *, sent: bool) -> str:
         return setup_network.SETUP_HOST
     if installer.back_on_sonoff(ctx):
         raise Abort("the device is still on its Sonoff firmware, so nothing was read: "
-                    + ("it took the program but did not start it. " if sent else
-                       "the program was not delivered. ")
+                    + ("it took the reader but did not start it. " if sent else
+                       "the reader was not delivered. ")
                     + "It works as before")
     network = prompts.find_ssid(names.bridge_networks(ctx)) or names.our_setup_network(ctx)
-    installer.ask_to_join_bridge(network)
+    installer.ask_to_join_bridge(network, what="reader")
     found = installer.wait_for_bridge(ctx, network.split()[0], gone_back=lambda: installer.back_on_sonoff(ctx))
     if found == installer.BACK_ON_SONOFF:
         raise Abort("the device went back to its Sonoff firmware before it could be read. It works as before")
@@ -203,9 +202,8 @@ def back_on_sonoff(ctx: Context) -> bool:
         return True
     output.transient_begin()
     prompts.section("Read. Now put it back on its Sonoff firmware", [
-        "Switch the device off, wait five seconds, and switch it on again (for a",
-        "wall switch, at its circuit breaker). If this computer joined the",
-        "device's own network, join your usual Wi-Fi again.",
+        "Switch it off for five seconds, then on (a wall switch at its breaker).",
+        "If this computer joined the device's network, rejoin your usual Wi-Fi.",
     ])
     prompts.wait_for_key("Press any key once it is switched back on")
     output.transient_end()

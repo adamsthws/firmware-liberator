@@ -24,7 +24,6 @@ def notice(kind: kinds.Kind) -> list[str]:
         return []
     return [
         "",
-        "The conversion for this particular device has not been proven on a real",
-        "one yet. This run's log:",
+        "Not yet proven on a real device of this kind. This run's log:",
         runs.display_path(output.log_path()) if output.log_path() else LOG_ELSEWHERE,
     ]

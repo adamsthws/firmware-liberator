@@ -29,9 +29,8 @@ T = TypeVar("T")
 
 # What until_back says of a device that has not come back, and asks.
 NOT_BACK_LINES = (
-    "The device installs its new firmware as it restarts, and has not come",
-    "back yet. Switch the device off and on - at the socket, off for a few",
-    "seconds - and it starts on its new firmware.",
+    "It has not come back on its new firmware yet. Switch it off for a few",
+    "seconds at the socket, then on: it then starts the new firmware.",
 )
 
 
@@ -132,30 +131,25 @@ SONOFF_WAIT = 240.0
 SONOFF_LOOK_EVERY = 10.0
 
 ON_WIFI_ONLY_LINES = (
-    "The device is back on your Wi-Fi on Sonoff's firmware, but has not",
-    "reached eWeLink. Check your network lets it out to the internet - a",
-    "firewall, or a guest-network or parental-control rule, can keep it",
-    "off - then switch the device off and on.",
+    "It is back on your Wi-Fi but not in eWeLink: check your network lets it",
+    "online (a firewall, guest or parental rule), then switch it off and on.",
 )
-ON_WIFI_ONLY = ("Sonoff's firmware is on your Wi-Fi but has not reached eWeLink: check your network lets the "
-                "device out to the internet (a firewall, or a guest-network or parental-control rule, can keep it "
-                "off), then switch the device off and on and look in the eWeLink app")
-NOT_BACK = ("Sonoff's firmware has not answered on your Wi-Fi, nor shown online in eWeLink. It rejoins the "
-            "network it was on and reports to eWeLink by itself; if the app still shows it offline, "
-            "switch the device off and on, then run the same command again to check it. If that network has "
-            "changed, add the device again in the eWeLink app")
+ON_WIFI_ONLY = ("Sonoff's firmware is on your Wi-Fi but not in eWeLink: let the device reach the internet, "
+                "switch it off and on, and check the eWeLink app")
+# It rejoins the network it was on and reports to eWeLink by itself.
+NOT_BACK = ("Sonoff's firmware has not come back on your Wi-Fi or in eWeLink: if the app still shows it "
+            "offline, switch it off and on and run the same command again (if its network changed, add it "
+            "again in the app)")
 
 
 # Asked of the person when a send is refused as the device being busy
 # (ota_push.busy): with an update cut off part way, until it restarts.
 BUSY_LINES = (
-    "The device turned the firmware down: it is still busy with an update that",
-    "was cut off part way. Switch it off and on - at the socket, off for a few",
-    "seconds - and it keeps its Sonoff firmware, ready for the send again.",
+    "The device turned it down, still busy with an update that was cut off.",
+    "Switch it off and on at the socket; it keeps its Sonoff firmware.",
 )
-BUSY = ("the device turned the new firmware down: it is still busy with an update that was cut off "
-        "part way. Switch the device off and on - it keeps its Sonoff firmware - then run the same "
-        "command again")
+BUSY = ("the device turned the firmware down, busy with an update cut off part way: switch it off and on "
+        "(it keeps its Sonoff firmware), then run the same command again")
 
 
 def online_in_ewelink(ctx: Context, device_id: str, wait: float = SONOFF_WAIT) -> bool:
@@ -247,14 +241,13 @@ def back_on_sonoff(ctx: Context, leaving: tuple[str, ...] = (), wait: float = SO
             raise Abort("the device still answers as the firmware it was to leave: Sonoff's firmware was not "
                         "installed. Run the same command again to send it again")
         if seen is not None and not reached:
-            output.tell("    eWeLink could not be reached from here, so whether the device is back in the "
-                        "app is for the app to show.")
+            output.tell("    eWeLink is unreachable from here: check the eWeLink app shows the device.")
             return {"seconds": round(seen - started, 1), "confirmed_by": "your Wi-Fi"}
         if seen is not None:
             raise NotBack(ON_WIFI_ONLY, ON_WIFI_ONLY_LINES)
         if not device_id:
-            output.tell("    The device no longer answers as the firmware it left. Its eWeLink device id is not "
-                        "known here, so whether it is back in the app is for the app to show.")
+            # Its eWeLink device id is not known here, to look for it there.
+            output.tell("    It has left its old firmware; check the eWeLink app shows it.")
             return {"seconds": round(time.monotonic() - started, 1), "confirmed_by": "nothing answering"}
         raise NotBack
 

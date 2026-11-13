@@ -85,12 +85,13 @@ def secret_or_retry(title: str, lines: list[str], secrets: list[Secret],
     is stopped.  Returns the secret and its value, or (None, None)."""
     output.transient_begin()
     prompts.section(title, lines)
+    output.log_only("    What is typed is held in memory for this run only, never written to disk.")
     # Each try taken off the screen before the next, as a wrong answer to any
     # question is (prompts._retry), only why it was not taken left: tries
     # would pile up under each other.
     mark = output.mark()
     options = [f"Type its {secret.kind}" for secret in secrets]
-    options.append(last or f"Try again without {'one' if secrets else 'it'} - once you have removed it yourself")
+    options.append(last or "Try again - I have removed it")
     while True:
         choice = prompts.ask_choice("What now", options)
         secret = secrets[choice] if choice < len(secrets) else None
@@ -130,11 +131,9 @@ def ask_web_password(ctx: Context, host: str) -> None:
         raise Abort(str(NeedsPassword(host, wrong)))
     ctx.web_password = password_or_retry("Tasmota's web password", [
         f"Tasmota on the device at {host} has a web password.",
-        *(["The one given (--web-password, or AUTOFLASH_TASMOTA_PASSWORD) is not it."] if wrong else []),
-        "Type it to go on (Tasmota's one user name, admin, is filled in); or clear it",
-        "in Tasmota yourself - Configuration > Other > Web Admin Password, emptied",
-        "and saved, or the console command WebPassword 0 - and try again without one.",
-        "A password typed is held in memory for this run only, never written to disk.",
+        *(["The one given is not it."] if wrong else []),
+        "Type it (user admin is filled in), or clear it - Configuration > Other >",
+        "Web Admin Password, or WebPassword 0 - and try again without one.",
     ], lambda password: device.Device(host, password=password).wants_password(),
         still="Tasmota there still has a web password.",
         kind="web password", prompt="Tasmota web password", label="tasmota-password")
@@ -192,14 +191,11 @@ def ask_esphome_password(ctx: Context, host: str) -> None:
     if keyed:
         secrets.append(esphome_key_secret(lambda key: esphome_update_check(host, None, key)))
     secret, value = secret_or_retry("ESPHome's update password", [
-        f"ESPHome on the device at {host} has an update password (set in Home",
-        "Assistant, say). The next firmware goes on as an ESPHome update, which needs",
-        "it. Type it to go on; or remove it from the device's ESPHome YAML config (the",
-        "'password:' line under 'ota:'), re-flash, then try again without one.",
-        *(["Its API encryption key does instead (key: under api: encryption: there):",
-           "with it, the update goes encrypted."] if keyed else []),
+        f"ESPHome on the device at {host} has an update password.",
         *(["The one given is not it."] if wrong else []),
-        "What you type is held in memory for this run only, never written to disk.",
+        "Type it, or remove 'password:' under 'ota:' in its YAML, re-flash, and",
+        "try again without one.",
+        *(["Its API encryption key (key: under api: encryption:) does instead."] if keyed else []),
     ], secrets, lambda: esphome_update_check(host, None, None),
         still="ESPHome there still has an update password.")
     if secret is not None and secret.kind == "API encryption key":
@@ -222,22 +218,16 @@ def ask_esphome_key(ctx: Context, host: str, *, wifi: bool = False) -> bool:
                     f"{ESPHOME_KEY_HINT}; or remove that encryption: line, re-flash, then run this again")
     if wifi:
         secret, value = secret_or_retry("ESPHome's API encryption key", [
-            f"ESPHome on the device at {host} gives its Wi-Fi details through its API (ours",
-            "does), but its API is encrypted (api: encryption: in its ESPHome",
-            "YAML config). Type its key - after key: there - and it gives them; or type",
-            "the Wi-Fi details yourself instead.",
-            "A key typed is held in memory for this run only, never written to disk.",
+            f"ESPHome on the device at {host} has an encrypted API: type its key",
+            "(key: under api: encryption: in its YAML) to read its Wi-Fi details.",
         ], [esphome_key_secret(lambda key: api_key_check(host, key))],
             lambda: False, still="", last="Type the Wi-Fi details instead")
     else:
         secret, value = secret_or_retry("ESPHome's encrypted updates", [
-            f"ESPHome on the device at {host} takes only encrypted updates: the ota:",
-            "section of its ESPHome YAML config has encryption:, which makes them with its",
-            "API encryption key (after key: under api: encryption: there). Type that key",
-            "to go on; or remove encryption: from under ota:, re-flash, then try again.",
-            *(["The one given (--esphome-api-key, or AUTOFLASH_ESPHOME_API_KEY) is not it."]
-              if wrong else []),
-            "A key typed is held in memory for this run only, never written to disk.",
+            f"ESPHome on the device at {host} takes only encrypted updates.",
+            *(["The key given is not it."] if wrong else []),
+            "Type its API key (key: under api: encryption:), or remove encryption:",
+            "under ota:, re-flash, and try again.",
         ], [esphome_key_secret(lambda key: esphome_update_check(host, ctx.esphome_password, key))],
             lambda: wants_key(host, ctx.esphome_password),
             still="ESPHome there still takes only encrypted updates.")
@@ -275,13 +265,10 @@ def ask_esphome_login(ctx: Context, host: str) -> None:
         return None if found is None else found == "login"
 
     _, ctx.esphome_login = secret_or_retry("ESPHome's web login", [
-        f"ESPHome on the device at {host} has a web login (auth: under web_server: in",
-        "its ESPHome YAML config). Type its user name and password to go on; or remove",
-        "auth: from there, re-flash, then try again without one.",
-        *(["The one given (--esphome-web-user and --esphome-web-password, or as",
-           "AUTOFLASH_ESPHOME_WEB_USER and AUTOFLASH_ESPHOME_WEB_PASSWORD) is not it."]
-          if wrong else []),
-        "A password typed is held in memory for this run only, never written to disk.",
+        f"ESPHome on the device at {host} has a web login.",
+        *(["The one given is not it."] if wrong else []),
+        "Type its user name and password, or remove auth: under web_server:,",
+        "re-flash, and try again without one.",
     ], [Secret("web login", ask, check)], lambda: check(None),
         still="ESPHome there still has a web login.")
 

@@ -8,7 +8,7 @@
    "type": "x"
   },
   {
-   "when": "Which firmware would you like",
+   "when": "Which firmware should the device have",
    "type": "\u001b[A\u001b[B\u001b[C\u001b[D\u001b[H\u001b[F\u001bOP\t\u001b[5~1\r"
   },
   {
