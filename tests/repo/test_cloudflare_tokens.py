@@ -228,27 +228,29 @@ class TokensTests(unittest.TestCase):
         self.assertEqual((code, self.fake.sent), (1, []))
         self.assertIn("run this with firmware-liberator-tokens-rotate alone", out)
 
-    def assert_deleted_as_wrongly_made(self, why):
+    def assert_left_as_wrongly_made(self, why, then="Edit it in the dashboard as this says, then run this again "
+                                                     "with the same value"):
         code, out = self.run_it()
-        self.assertEqual((code, self.fake.sent), (1, [("DELETE", f"{TOKENS}/own", None)]))
+        self.assertEqual((code, self.fake.sent), (1, []), "left as it is, to be put right")
         self.assertIn(why, out)
-        self.assertIn("It is deleted: make another as this says.", out)
+        self.assertIn(then, out)
 
-    def test_one_that_outlives_its_job_is_deleted(self):
+    def test_one_that_outlives_its_job_is_left_to_edit(self):
         for expires in (None, "2026-11-10T12:10:01Z", "2026-11-12T12:00:00Z"):
             with self.subTest(expires=expires):
                 self.setUp()
                 self.fake.own["expires_on"] = expires
-                self.assert_deleted_as_wrongly_made(f"not within {ct.ROTATE_MINUTES} minutes")
+                self.assert_left_as_wrongly_made(f"not within {ct.ROTATE_MINUTES} minutes")
 
-    def test_one_made_more_than_minutes_ago_is_deleted(self):
+    def test_one_made_more_than_minutes_ago_is_left_to_make_again(self):
         for issued in (None, "2026-11-10T11:49:59Z"):
             with self.subTest(issued=issued):
                 self.setUp()
                 self.fake.own["issued_on"] = issued
-                self.assert_deleted_as_wrongly_made(f"not in the last {ct.ROTATE_MINUTES} minutes")
+                self.assert_left_as_wrongly_made(f"not in the last {ct.ROTATE_MINUTES} minutes",
+                                                 "Delete it, and make another as this says.")
 
-    def test_one_allowed_more_is_deleted(self):
+    def test_one_allowed_more_is_left_to_edit(self):
         for extra in ({"effect": "allow", "permission_groups": [{"name": "DNS Write"}],
                        "resources": {"com.cloudflare.api.account.zone.z1": "*"}},
                       {"effect": "allow", "permission_groups": [{"name": "Account API Tokens Write"}],
@@ -256,14 +258,14 @@ class TokensTests(unittest.TestCase):
             with self.subTest(extra=extra):
                 self.setUp()
                 self.fake.own["policies"].append(extra)
-                self.assert_deleted_as_wrongly_made("it is allowed more than Account - Account API Tokens: Edit")
+                self.assert_left_as_wrongly_made("it is allowed more than Account - Account API Tokens: Edit")
 
-    def test_one_usable_from_more_than_this_address_is_deleted(self):
+    def test_one_usable_from_more_than_this_address_is_left_to_edit(self):
         for allowed in ([], ["192.0.2.0/24"], ["192.0.2.50/32", "198.51.100.7/32"]):
             with self.subTest(allowed=allowed):
                 self.setUp()
                 self.fake.own["condition"] = {"request_ip": {"in": allowed}} if allowed else None
-                self.assert_deleted_as_wrongly_made("not this computer's alone (which Cloudflare sees as 192.0.2.50/32)")
+                self.assert_left_as_wrongly_made("not this computer's alone (which Cloudflare sees as 192.0.2.50/32)")
         self.setUp()
         self.fake.own["condition"] = {"request_ip": {"in": ["192.0.2.50"]}}   # an address, as Cloudflare may keep it
         self.assertEqual(self.run_it("readouts-review")[0], 0)

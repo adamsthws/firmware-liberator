@@ -15,7 +15,8 @@ A token that can make tokens can make itself any other, so this is run with
 one you make by hand, and refuses any other: one named for this, made in
 the last ROTATE_MINUTES and expiring within as long, usable from this
 computer's address alone, and allowed nothing but the account's tokens;
-one so named but made otherwise it deletes.
+one so named but made otherwise it leaves, saying what to change in the
+dashboard.
 This says how to make it, then asks for it at a hidden prompt: it is taken
 from nowhere else, so it is never written down. What else this needs - the
 zone's id, the Workers' tags, the admin Worker's secret - it does with a
@@ -235,9 +236,10 @@ def wrongly_made(token: dict[str, Any], account: str, now: dt.datetime, address:
 
 def check_own(account: str, now: dt.datetime, address: str) -> str:
     """The id of the token this is run with, once it is the one it should
-    be: a SettingsError where it is not, and nothing changed - but for the
-    rotate token made other than it should be, which is deleted, so a token
-    able to make any other does not outlive the run that found it."""
+    be: a SettingsError where it is not, and nothing changed. The rotate
+    token made other than it should be is left, to be put right in the
+    dashboard rather than made again; but for one made too long ago, which
+    no edit makes fresh."""
     own = cs.api(f"/accounts/{account}/tokens/verify")
     token = cs.api(f"/accounts/{account}/tokens/{own['id']}")
     name = cs.TOKEN_PREFIX + ROTATE_KEY
@@ -246,9 +248,11 @@ def check_own(account: str, now: dt.datetime, address: str) -> str:
         raise cs.SettingsError(f"the token given is {token.get('name')!r}: run this with {name} alone")
     wrong = wrongly_made(token, account, now, address)
     if wrong:
-        gone = drop(account, own["id"], ROTATE_KEY)
+        stale = wrong.startswith("it was made")
         raise cs.SettingsError(f"{name} is not made as it should be: {wrong}. "
-                               + ("It is deleted: make another as this says.\n" if gone else "")
+                               + ("Delete it, and make another as this says.\n" if stale else
+                                  "Edit it in the dashboard as this says, then run this again with the same value "
+                                  "- or delete it.\n")
                                + how_to_make_mine())
     return own["id"]
 

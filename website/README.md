@@ -115,7 +115,8 @@ every token should one have been seen. A token that can make tokens could
 make itself any other, so the script runs only with one you make by hand,
 short-lived and usable from your computer alone, which it deletes when it is
 done. Run it and it says how to make that token, then asks for it, so it is
-never written down.
+never written down. One made otherwise it leaves untouched and says what to
+change, so you can edit it in the dashboard and run it again.
 
 CI never checks the tokens' permissions, as reading one token means reading
 every token in the account. It checks instead, on each run, that its own
