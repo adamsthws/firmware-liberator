@@ -126,7 +126,8 @@ def upload_to_bridge(image: Path, *, host: str = SETUP_HOST, timeout: float = UP
     finally:
         connection.close()
     if response.status != 200 or BRIDGE_SUCCESS not in body:
-        raise SetupError(f"the bridge refused the image: {body or response.status}")
+        # Its words without their full stop: the run adds its own sentence after.
+        raise SetupError(f"the bridge refused the image: {body.rstrip('.') or response.status}")
     return body
 
 
