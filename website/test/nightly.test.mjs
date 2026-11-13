@@ -79,50 +79,26 @@ test("run and step times are a month's median and 90th percentile", async () => 
     [{ tool: "2.4.0", step: "A1", n: 11, p50: 6, p90: 10 }], "1 to 10, and the failed run's 12: every run's steps count");
 });
 
-test("reports a year old go once counted; a limit's day counts go after a week, the lasting ones never", async () => {
+test("every report is kept, however old; a limit's day counts go after a week, the lasting ones never", async () => {
   const bindings = env();
-  await kept(bindings.DB, "2025-11-09");
+  await kept(bindings.DB, "2020-11-09");
   await kept(bindings.DB, "2025-11-11");
+  const insert = bindings.DB.db.prepare(`INSERT INTO readout_reports (id, day, tag, tool, result, os_family,
+    os_version, os_arch, python_version, python_source, seconds, converted_here) VALUES (?, ?, 'user', '3.0.0',
+    'accepted', 'linux', 'Ubuntu 24.04', 'x86-64', '3.12.3', 'venv', 60, 0)`);
+  insert.run("a".repeat(16), "2020-01-01");
   const counter = bindings.DB.db.prepare("INSERT INTO counters (name, day, count, bytes) VALUES (?, ?, 1, 0)");
   counter.run("reports:2026-11-02", "2026-11-02");
   counter.run("reports:2026-11-04", "2026-11-04");
   counter.run("readouts:all", null);
   await night.nightly(bindings, NIGHT);
-  assert.deepEqual(rows(bindings, "SELECT day FROM reports"), [{ day: "2025-11-11" }]);
-  assert.deepEqual(rows(bindings, "SELECT DISTINCT id FROM report_stages"), rows(bindings, "SELECT id FROM reports"),
-    "stages go with their report");
-  assert.equal(rows(bindings, "SELECT n FROM daily_totals WHERE day = '2025-11-09'")[0].n, 1, "its total stays");
+  assert.deepEqual(rows(bindings, "SELECT day FROM reports ORDER BY day"), [{ day: "2020-11-09" }, { day: "2025-11-11" }]);
+  assert.equal(rows(bindings, "SELECT DISTINCT id FROM report_stages").length, 2, "and their stages");
+  assert.deepEqual(rows(bindings, "SELECT id FROM readout_reports"), [{ id: "a".repeat(16) }], "a readout's too");
+  assert.equal(rows(bindings, "SELECT n FROM daily_totals WHERE day = '2020-11-09'")[0].n, 1, "counted all the same");
   assert.deepEqual(rows(bindings, "SELECT name FROM counters ORDER BY name"),
     [{ name: "readouts:all" }, { name: "reports:2026-11-04" }]);
 });
-
-test("pruning never deletes a report whose day is not yet counted, however old", async () => {
-  const bindings = env();
-  await kept(bindings.DB, "2024-01-01");
-  await bindings.DB.batch(night.pruning(bindings.DB, "2026-11-10"));
-  assert.equal(rows(bindings, "SELECT * FROM reports").length, 1);
-});
-
-test("a readout's report is deleted after a year, with no totals to wait for", async () => {
-  const bindings = env();
-  const insert = bindings.DB.db.prepare(`INSERT INTO readout_reports (id, day, tag, tool, result, os_family,
-    os_version, os_arch, python_version, python_source, seconds, converted_here) VALUES (?, ?, 'user', '3.0.0',
-    'accepted', 'linux', 'Ubuntu 24.04', 'x86-64', '3.12.3', 'venv', 60, 0)`);
-  insert.run("a".repeat(32), "2024-01-01");
-  insert.run("b".repeat(32), "2026-11-01");
-  await bindings.DB.batch(night.pruning(bindings.DB, "2026-11-10"));
-  assert.deepEqual(rows(bindings, "SELECT id FROM readout_reports"), [{ id: "b".repeat(32) }]);
-});
-
-test("a night counts an old report before it deletes it", async () => {
-  const bindings = env();
-  await kept(bindings.DB, "2024-01-01");
-  bindings.DB.db.prepare("INSERT INTO folded (day) VALUES ('2024-01-02')").run();
-  await night.nightly(bindings, NIGHT);
-  assert.equal(rows(bindings, "SELECT * FROM daily_totals WHERE day = '2024-01-01'").length, 1, "counted first");
-  assert.equal(rows(bindings, "SELECT * FROM reports").length, 0, "then gone");
-});
-
 test("the figures leave out the maintainer's testing, and anything under five", async () => {
   const bindings = env();
   const hashes = Array.from({ length: 6 }, (_, n) => `device-${n}`);
