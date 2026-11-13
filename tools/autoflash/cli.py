@@ -50,6 +50,7 @@ from tools.autoflash.hostsys import FirewallRule  # noqa: E402
 from tools.autoflash.prompts import QuitRun  # noqa: E402
 from tools.autoflash.routes.beken import images as beken_images  # noqa: E402
 from tools.autoflash.routes.espressif import bundle, identity, installer, sonoff_firmware  # noqa: E402
+from tools.autoflash.routes.espressif import images as espressif_images  # noqa: E402
 from tools.autoflash.state import FAILED, PENDING, RunState  # noqa: E402
 from tools.espressif.safeboot.prepare_imprinted_bundle import forget_stored_password  # noqa: E402
 
@@ -566,7 +567,7 @@ def _main() -> int:
     parser.add_argument("--simulate-no-identity", action="store_true",
                         help=argparse.SUPPRESS)  # testing: the device keeps no Sonoff identity, in no account
     parser.add_argument("--simulate-bad-image", nargs="?", const="B2", metavar="STEP",
-                        help=argparse.SUPPRESS)  # testing: the S61's image STEP sends is refused by its bootloader
+                        help=argparse.SUPPRESS)  # testing: the image STEP sends is refused by the device
     parser.add_argument("--simulate-unknown-table", action="store_true",
                         help=argparse.SUPPRESS)  # testing: a Beken official file's table is not one known
     parser.add_argument("--bridge", help=argparse.SUPPRESS)  # research: archive/docs/reference/automatic-wifi.md
@@ -578,7 +579,8 @@ def _main() -> int:
     sonoff_firmware.SIMULATE_NONE = args.simulate_no_sonoff_firmware
     identity.SIMULATE_NONE = args.simulate_no_identity
     spoil, _, times = (args.simulate_bad_image or "").partition(":")
-    beken_images.SPOIL_STEP, beken_images.SPOIL_TIMES = spoil or None, int(times or 1)
+    for family_images in (beken_images, espressif_images):
+        family_images.SPOIL_STEP, family_images.SPOIL_TIMES = spoil or None, int(times or 1)
     beken_images.UNKNOWN_TABLE = args.simulate_unknown_table
     if args.command == "email":
         return signup.change()

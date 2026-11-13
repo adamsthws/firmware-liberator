@@ -12,6 +12,7 @@ from unittest import mock
 from tools.autoflash import cli, credentials, hostsys, interrupt, output, prompts, records, routes, runs
 from tools.autoflash.routes.beken import images as beken_images
 from tools.autoflash.routes.espressif import identity, installer, sonoff_firmware
+from tools.autoflash.routes.espressif import images as espressif_images
 from tools.autoflash.state import DONE, RunState
 
 
@@ -28,6 +29,7 @@ class BeforeTheRunTests(unittest.TestCase):
                 mock.patch.object(sonoff_firmware, "SIMULATE_NONE"), \
                 mock.patch.object(identity, "SIMULATE_NONE"), \
                 mock.patch.object(beken_images, "SPOIL_STEP"), mock.patch.object(beken_images, "SPOIL_TIMES"), \
+                mock.patch.object(espressif_images, "SPOIL_STEP"), mock.patch.object(espressif_images, "SPOIL_TIMES"), \
                 mock.patch.object(beken_images, "UNKNOWN_TABLE"), \
                 mock.patch.object(cli.signal, "signal"), mock.patch.object(interrupt, "install"), \
                 mock.patch.object(credentials, "load", return_value={}), \
@@ -76,12 +78,14 @@ class BeforeTheRunTests(unittest.TestCase):
         seen = []
 
         def choosing(*_args, **_kwargs):
-            seen.append((beken_images.SPOIL_STEP, beken_images.SPOIL_TIMES))
+            seen.append((beken_images.SPOIL_STEP, beken_images.SPOIL_TIMES,
+                         espressif_images.SPOIL_STEP, espressif_images.SPOIL_TIMES))
             raise KeyboardInterrupt
         self.main(choosing=choosing, more=["--simulate-bad-image", "O1:3"])
-        self.main(choosing=choosing, more=["--simulate-bad-image", "J2"])
+        self.main(choosing=choosing, more=["--simulate-bad-image", "D1"])
         self.main(choosing=choosing)
-        self.assertEqual(seen, [("O1", 3), ("J2", 1), (None, 1)])
+        # Each family's: the step named is one family's or the other's.
+        self.assertEqual(seen, [("O1", 3, "O1", 3), ("D1", 1, "D1", 1), (None, 1, None, 1)])
 
     def test_a_test_can_have_sonoffs_firmware_out_of_reach(self):
         seen = []
@@ -220,6 +224,7 @@ class AnotherDeviceTests(unittest.TestCase):
                     mock.patch.object(sonoff_firmware, "SIMULATE_NONE"),
                     mock.patch.object(identity, "SIMULATE_NONE"),
                     mock.patch.object(beken_images, "SPOIL_STEP"), mock.patch.object(beken_images, "SPOIL_TIMES"),
+                    mock.patch.object(espressif_images, "SPOIL_STEP"), mock.patch.object(espressif_images, "SPOIL_TIMES"),
                     mock.patch.object(beken_images, "UNKNOWN_TABLE"),
                     mock.patch.object(cli.signal, "signal"), mock.patch.object(interrupt, "install"),
                     mock.patch.object(credentials, "load", return_value={}),
@@ -930,6 +935,7 @@ class EmailCommandTests(unittest.TestCase):
                 mock.patch.object(prompts, "UNATTENDED"), mock.patch.object(installer, "SIMULATED_BACKUP_FAILURES"), \
                 mock.patch.object(sonoff_firmware, "SIMULATE_NONE"), mock.patch.object(identity, "SIMULATE_NONE"), \
                 mock.patch.object(beken_images, "SPOIL_STEP"), mock.patch.object(beken_images, "SPOIL_TIMES"), \
+                mock.patch.object(espressif_images, "SPOIL_STEP"), mock.patch.object(espressif_images, "SPOIL_TIMES"), \
                 mock.patch.object(beken_images, "UNKNOWN_TABLE"), \
                 mock.patch.object(cli.signup, "change", return_value=0) as change, \
                 mock.patch.object(credentials, "load") as load, mock.patch.object(cli, "Context") as context:

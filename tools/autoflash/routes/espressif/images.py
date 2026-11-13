@@ -18,10 +18,14 @@ import hashlib
 import json
 import struct
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from tools.autoflash import imprint, kinds
+from tools.autoflash import imprint, kinds, output
 from tools.autoflash.runs import ROOT
 from tools.espressif import chips, layouts
+
+if TYPE_CHECKING:
+    from tools.autoflash.context import Context
 
 # What each is, as firmware.json pins it: tools/repo/update_firmware.py writes it,
 # docs/updating-firmware.md says when.
@@ -49,10 +53,30 @@ SLOT_SIZE = 0x1F0000
 # What makes a file an app rather than, say, a factory image (which starts with
 # the bootloader): the app description ESP-IDF puts first in every app.
 APP_DESC_MAGIC = 0xABCD5432
+# Testing only (run --simulate-bad-image STEP[:N]), as a Beken device's
+# (routes/beken/images.py): the step whose image is sent spoilt, the first N
+# times a run sends it (once, without N) - one byte in its middle changed, so
+# the device takes it whole but refuses it, its own check of the image failing.
+# Only D1 asks: the Berry Tasmota, which the installer checks before switching to it.
+SPOIL_STEP: str | None = None
+SPOIL_TIMES = 1
 
 
 class ImageError(ValueError):
     pass
+
+
+def as_sent(ctx: Context, step: str, image: bytes) -> bytes:
+    """`image` as `step` sends it: spoilt, where a test asked for that step's
+    (SPOIL_STEP) and this run has sent it spoilt fewer than SPOIL_TIMES times."""
+    spoilt_so_far = int(ctx.state.data.get("captures", {}).get(f"{step}.spoilt") or 0)
+    if step != SPOIL_STEP or spoilt_so_far >= SPOIL_TIMES:
+        return image
+    ctx.state.capture(f"{step}.spoilt", spoilt_so_far + 1)
+    spoilt = bytearray(image)
+    spoilt[len(image) // 2] ^= 0xFF
+    output.say(f"    The image is spoilt, as asked (--simulate-bad-image {step}): the device will refuse it.")
+    return bytes(spoilt)
 
 
 def check_app(image: bytes, label: str, chip: chips.Chip = chips.ESP32C3) -> None:

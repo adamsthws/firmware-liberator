@@ -1,10 +1,8 @@
 import http.server
-import tempfile
 import threading
 import time
 import unittest
 import urllib.parse
-from pathlib import Path
 from unittest import mock
 
 from tools.autoflash import setup_network
@@ -131,10 +129,7 @@ class SetupNetworkTests(unittest.TestCase):
 
     def test_the_bridge_receives_the_exact_image(self):
         device = self.start("bridge")
-        with tempfile.TemporaryDirectory() as directory:
-            image = Path(directory) / "tasmota.bin"
-            image.write_bytes(bytes(range(256)) * 300)
-            reply = setup_network.upload_to_bridge(image, host=device.host, timeout=10)
+        reply = setup_network.upload_to_bridge(bytes(range(256)) * 300, host=device.host, timeout=10)
         self.assertIn("Upload verified", reply)
         self.assertEqual(device.uploaded, bytes(range(256)) * 300)
         # As the documented curl command sends it.
@@ -145,11 +140,8 @@ class SetupNetworkTests(unittest.TestCase):
 
     def test_an_image_the_bridge_does_not_verify_is_refused(self):
         device = self.start("bridge-refuses")  # a 200, but not its word that it took it
-        with tempfile.TemporaryDirectory() as directory:
-            image = Path(directory) / "tasmota.bin"
-            image.write_bytes(b"\xe9" * 1024)
-            with self.assertRaises(setup_network.SetupError) as refused:
-                setup_network.upload_to_bridge(image, host=device.host, timeout=10)
+        with self.assertRaises(setup_network.SetupError) as refused:
+            setup_network.upload_to_bridge(b"\xe9" * 1024, host=device.host, timeout=10)
         # Without the bridge's full stop, as the run's own sentence follows
         # ("... selected.. The device still has the installer", it once said).
         self.assertEqual(str(refused.exception), "the bridge refused the image: The image is not for this chip")
@@ -158,11 +150,8 @@ class SetupNetworkTests(unittest.TestCase):
         connection = mock.MagicMock()
         connection.getresponse.return_value.status = 200
         connection.getresponse.return_value.read.return_value = b"Upload verified. Tasmota settings saved."
-        with tempfile.TemporaryDirectory() as directory, \
-             mock.patch.object(setup_network.http.client, "HTTPConnection", return_value=connection) as made:
-            image = Path(directory) / "tasmota.bin"
-            image.write_bytes(b"\xe9" * 16)
-            setup_network.upload_to_bridge(image, host="192.0.2.50")
+        with mock.patch.object(setup_network.http.client, "HTTPConnection", return_value=connection) as made:
+            setup_network.upload_to_bridge(b"\xe9" * 16, host="192.0.2.50")
             setup_network.send_tasmota_settings(b"T", host="192.0.2.50", layout={})
         self.assertEqual([call.args[:2] for call in made.call_args_list], [("192.0.2.50", 80)] * 2)
         self.assertEqual(connection.close.call_count, 2)
@@ -180,13 +169,10 @@ class SetupNetworkTests(unittest.TestCase):
         self.addCleanup(server.close)
         held = []
         threading.Thread(target=lambda: held.append(server.accept()), daemon=True).start()
-        with tempfile.TemporaryDirectory() as directory:
-            image = Path(directory) / "tasmota.bin"
-            image.write_bytes(b"\xe9" * 8_000_000)
-            started = time.monotonic()
-            with self.assertRaisesRegex(setup_network.SetupError, "did not complete"):
-                setup_network.upload_to_bridge(image, host=f"127.0.0.1:{server.getsockname()[1]}",
-                                               timeout=0.5)
+        started = time.monotonic()
+        with self.assertRaisesRegex(setup_network.SetupError, "did not complete"):
+            setup_network.upload_to_bridge(b"\xe9" * 8_000_000, host=f"127.0.0.1:{server.getsockname()[1]}",
+                                           timeout=0.5)
         self.assertLess(time.monotonic() - started, 10)
         for connection, _ in held:
             connection.close()

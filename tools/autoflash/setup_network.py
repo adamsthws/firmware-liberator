@@ -17,7 +17,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path
 from typing import Callable
 
 SETUP_HOST = "192.168.4.1"
@@ -102,13 +101,12 @@ def wait_for_page(
 UPLOAD_STALL = 120.0
 
 
-def upload_to_bridge(image: Path, *, host: str = SETUP_HOST, timeout: float = UPLOAD_STALL) -> str:
+def upload_to_bridge(payload: bytes, *, host: str = SETUP_HOST, timeout: float = UPLOAD_STALL) -> str:
     """POST the image to the bridge exactly as the documented curl command does.
 
     One raw body, HTTP/1.1, an explicit length and no `Expect: 100-continue` -
     the bridge's server does not answer that header.
     """
-    payload = image.read_bytes()
     hostname, _, port = host.partition(":")
     connection = http.client.HTTPConnection(hostname, int(port or 80), timeout=timeout)
     try:

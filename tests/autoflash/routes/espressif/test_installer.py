@@ -11,6 +11,7 @@ from tests.autoflash.test_records import efuse_with_mac
 from tools.autoflash import detect, device, errors, firewall, hostsys, join, names, output, records, prompts
 from tools.autoflash import safety_locks, setup_network, state
 from tools.autoflash.routes.espressif import installer
+from tools.autoflash.runs import ROOT
 from tools.autoflash.state import DONE, RunState
 from tools.espressif import dump_stock_flash
 
@@ -866,6 +867,41 @@ class StockBackupTests(unittest.TestCase):
         with self.assertRaises(QuitRun):
             self.back_up(self.failing(), answers=("quit",))
         self.assertNotIn("stock_backup", self.inputs)
+
+
+class SpoiltTasmotaTests(unittest.TestCase):
+    """D1 - --simulate-bad-image D1[:N]: Tasmota sent to the installer spoilt,
+    so the installer refuses it as it would one damaged on the way."""
+
+    IMAGE = ROOT / "artifacts" / "tasmota32c3-bluetooth.bin"
+
+    def test_spoilt_as_many_times_as_asked_then_sent_whole(self):
+        from types import SimpleNamespace
+        from tools.autoflash import imprint
+        from tools.autoflash.routes.espressif import images
+        sent = []
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(images, "SPOIL_STEP", "D1"), mock.patch.object(images, "SPOIL_TIMES", 2), \
+                mock.patch.object(setup_network, "upload_to_bridge",
+                                  side_effect=lambda payload, **_: sent.append(payload)), \
+                mock.patch.object(output, "say"):
+            ctx = SimpleNamespace(state=RunState.open(Path(directory)))
+            for _ in range(3):
+                installer.upload_tasmota(ctx, self.IMAGE)
+            self.assertEqual(ctx.state.data["captures"]["D1.spoilt"], 2)
+        whole = self.IMAGE.read_bytes()
+        self.assertEqual([payload == whole for payload in sent], [False, False, True])
+        # Whole, but failing the image's own checks, which the installer makes.
+        self.assertEqual(len(sent[0]), len(whole))
+        checked = imprint.parse_esp_image(sent[0])
+        self.assertFalse(checked["checksum_valid"] or checked["sha256_valid"])
+
+    def test_unasked_it_is_sent_as_it_is(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(setup_network, "upload_to_bridge") as uploaded, mock.patch.object(output, "say"):
+            installer.upload_tasmota(SimpleNamespace(state=RunState.open(Path(directory))), self.IMAGE)
+        uploaded.assert_called_once_with(self.IMAGE.read_bytes(), host=setup_network.SETUP_HOST)
 
 
 class StockLayoutTests(unittest.TestCase):
