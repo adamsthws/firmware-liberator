@@ -60,21 +60,29 @@ export const LIST_ADDED_SHOWN = 20;
 // How long a Worker uses the lists it read before reading them again.
 const LIST_CACHE_MS = 10 * 60 * 1000;
 
+// The share of a list's lines that may be unreadable, each passed over: so
+// one stray line upstream does not stop the list being taken, while a page
+// that is no list at all (an error page, say) is still refused.
+export const LIST_ODD_SHARE = 0.02;
+
 // The ASNs a list's text names, or null where it is not one.
 export function asnsOf(text) {
   const asns = new Set();
+  let odd = 0;
   for (const line of text.split("\n")) {
     const body = line.replace(/#.*/, "").trim();
     if (!body || body.startsWith("-")) {
       continue;
     }
     const found = /^AS(\d{1,10})$/i.exec(body);
-    if (!found) {
-      return null;
+    if (found) {
+      asns.add(Number(found[1]));
+    } else {
+      odd += 1;
     }
-    asns.add(Number(found[1]));
   }
-  return asns.size && asns.size <= LIST_MAX_ASNS ? [...asns].sort((a, b) => a - b) : null;
+  return asns.size && asns.size <= LIST_MAX_ASNS && odd <= LIST_ODD_SHARE * (asns.size + odd)
+    ? [...asns].sort((a, b) => a - b) : null;
 }
 
 // The lists' ASNs as the database keeps them, read once each LIST_CACHE_MS.

@@ -39,6 +39,9 @@ test("a list is ASNs a line, with comments, and those its build leaves out left 
   assert.deepEqual(asnsOf("AS64500 # a host, GB\n\n# a comment\nas64502\n-AS64501 # left out\nAS64500\n"),
     [64500, 64502]);
   assert.equal(asnsOf("AS64500\n<html>"), null, "a page, not a list");
+  const many = Array.from({ length: 99 }, (_, at) => `AS${64500 + at}`);
+  assert.equal(asnsOf([...many, "AS 1234, see issue 300"].join("\n")).length, 99, "one stray line is passed over");
+  assert.equal(asnsOf([...many, "x", "y", "z"].join("\n")), null, "more than LIST_ODD_SHARE are not");
   assert.equal(asnsOf("# nothing\n"), null, "none at all");
 });
 
