@@ -157,7 +157,11 @@ under them.
 - **`0004-timer-group-fires-each-period`** (`src/emulator.py`,
   `tests/self_test.py`): Timer 0-2 of the 26 MHz group fire at each channel's
   programmed period, as LibreTiny's FreeRTOS tick needs, leaving OpenBeken's
-  watchdog feed and the stock dump unchanged.
+  watchdog feed and the stock dump unchanged. Only on the BK7238: on the
+  BK7231T and U the same addresses are the old PWM block's, whose settings,
+  read as timer channels, raised an interrupt no handler acknowledged - 13 of
+  upstream's self-tests failed under it and the run took seven times as long
+  (found 13 November 2026). Every one passes now.
 - **`0005-wifi-peer-bridged-to-host-tap`** (`src/tapnet.py`, new,
   `src/emulator.py`, `src/main.py`, `tests/tapnet.py`): `--net-tap IFACE`
   bridges the Wi-Fi peer to a TAP device instead of the built-in network, which
