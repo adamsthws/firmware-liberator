@@ -52,12 +52,13 @@ The verdict, from the recording alone (judge):
                       echoed
 
     tools/espressif/emulator/attended_suite.py list
-    tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers N] --device MAC
+    tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers N] [--first-instance N] --device MAC
 
 Its results, and each run's recording, go to captures/emulation/attended/<time>/.
 Run on a computer with the emulators (docs/emulator.md); each scenario runs
-on an emulator of its own (instances 61 and on), --workers at once - the
-S61's after, one at a time.
+on an emulator of its own, --workers at once - the S61's after, one at a
+time - numbered from --first-instance (61) to one per worker, each started
+afresh: a run uses no more instance numbers than it has workers.
 """
 
 from __future__ import annotations
@@ -68,6 +69,7 @@ import codecs
 import concurrent.futures
 import datetime
 import json
+import queue
 import re
 import shutil
 import subprocess
@@ -465,11 +467,40 @@ def run_one(n: int, name: str, family: str, scenario: dict[str, Any], results: P
     return line + "".join(f"\n    {verdict}" for verdict in verdicts)
 
 
+def run_all(chosen: list[str], found: dict[str, tuple[str, dict[str, Any]]], results: Path, mac: str | None,
+            workers: int, first: int) -> list[str]:
+    """Each chosen scenario, `workers` at once (the S61's one at a time,
+    after), each on an emulator numbered from `first` that no scenario under
+    way is using: a result line for each, printed as it comes."""
+    def one(name: str, free: queue.SimpleQueue[int], at_once: int) -> str:
+        n = free.get()
+        try:
+            return run_one(n, name, *found[name], results, mac, at_once)
+        finally:
+            free.put(n)
+
+    lines = []
+    # The S61's on their own, after the S60's: its emulator is slow, and run
+    # beside three S60s a readout's device was not found in time.
+    for family, at_once in (("espressif", max(1, workers)), ("beken", 1)):
+        free: queue.SimpleQueue[int] = queue.SimpleQueue()
+        for n in range(first, first + at_once):
+            free.put(n)
+        with concurrent.futures.ThreadPoolExecutor(at_once) as pool:
+            jobs = [pool.submit(one, name, free, at_once) for name in chosen if found[name][0] == family]
+            for job in concurrent.futures.as_completed(jobs):
+                lines.append(job.result())
+                print(lines[-1], flush=True)
+    return lines
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=["list", "run"])
     parser.add_argument("names", nargs="*", help="the scenarios to run (default: all)")
     parser.add_argument("--workers", type=int, default=1, help="scenarios at once, each on an emulator of its own")
+    parser.add_argument("--first-instance", type=int, default=FIRST_INSTANCE,
+                        help="the first emulator instance it uses, one more for each worker")
     parser.add_argument("--device", help="the backed-up S60 the Espressif scenarios start from, its MAC "
                         "as emu.sh --device takes it")
     args = parser.parse_args()
@@ -486,16 +517,7 @@ def main() -> int:
         parser.error("an S60's scenarios need --device: the backed-up device the emulator runs a copy of")
     results = RESULTS / datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     results.mkdir(parents=True)
-    lines = []
-    # The S61's on their own, after the S60's: its emulator is slow, and run
-    # beside three S60s a readout's device was not found in time.
-    for family, workers in (("espressif", max(1, args.workers)), ("beken", 1)):
-        with concurrent.futures.ThreadPoolExecutor(workers) as pool:
-            jobs = [pool.submit(run_one, FIRST_INSTANCE + index, name, *found[name], results, args.device, workers)
-                    for index, name in enumerate(chosen) if found[name][0] == family]
-            for job in concurrent.futures.as_completed(jobs):
-                lines.append(job.result())
-                print(lines[-1], flush=True)
+    lines = run_all(chosen, found, results, args.device, args.workers, args.first_instance)
     (results / "results.txt").write_text("\n".join(sorted(lines)) + "\n", encoding="utf-8")
     print(emulator_stats.send(RESULTS), flush=True)
     print(f"Results: {results.relative_to(ROOT)}/results.txt")
