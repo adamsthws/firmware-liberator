@@ -194,17 +194,20 @@ class AnnouncedVersionTests(unittest.TestCase):
         exists = Path.exists
         argv = ["serve_tasmota_ota.py", "--listen-ip", "192.0.2.2", "--device-ip", "192.0.2.3",
                 "--firmware", str(bridge), "--email", "someone@example.com",
-                "--expected-current-version", "1.2.0", "--mdns-capture", "mdns.json", sender.SAFETY_FLAG]
+                "--expected-current-version", "1.2.0", "--device-id", "1000000001", sender.SAFETY_FLAG]
         with mock.patch.object(sys, "argv", argv), \
              mock.patch.object(Path, "exists", autospec=True,
                                side_effect=lambda path: path.name != "RECOVERY_LOCK" and exists(path)), \
              mock.patch.dict("os.environ", {"EWELINK_PASSWORD": "pw", "EWELINK_SESSION":
                              '{"region": "us", "at": "run-token", "user": {"apikey": "a"}}'}), \
-             mock.patch.object(sender, "target_id_from_mdns", return_value="1000000000"), \
+             mock.patch.object(sender, "target_id_from_mdns") as from_advert, \
              mock.patch.object(sender, "deliver", return_value=Delivery(sent=True, complete=True)) as deliver, \
              mock.patch("builtins.print"):
             self.assertEqual(sender.main(), 0)
         sent = deliver.call_args.kwargs
+        # The account's id for the device, as the run gives it: no discovery advert needed.
+        self.assertEqual(sent["device_id"], "1000000001")
+        from_advert.assert_not_called()
         # The run's sign-in, which it handed over: one of its own would end it.
         self.assertEqual(sent["account"].held, ("us", {"at": "run-token", "user": {"apikey": "a"}}))
         self.assertEqual(sent["version"], ANNOUNCED_VERSION)

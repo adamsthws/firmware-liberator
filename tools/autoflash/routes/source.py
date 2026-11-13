@@ -60,7 +60,7 @@ def find_current_firmware(ctx: Context) -> str:
         if running == "installer":
             left_by = installer_left_by(ctx, given, mac)
             if left_by:
-                running = installer_back(given, left_by)
+                running = installer_back(ctx, given, left_by)
         if running == "readout":
             # On no route: settle_route puts Sonoff's firmware back.
             adopt_device(ctx, detect.Found(given, running, mac))
@@ -68,9 +68,9 @@ def find_current_firmware(ctx: Context) -> str:
         if running is None and mac is None:
             # Nothing there at all, not even on the network, so not a device on
             # Sonoff's firmware to ask eWeLink about (seen on a real device switched
-            # off: the run went on to eWeLink's discovery, and its report said it
-            # was converting from Sonoff). An S61 on Sonoff's answers nothing
-            # here but is on the network, so is still asked of eWeLink.
+            # off: the run went on to ask eWeLink, and its report said it was
+            # converting from Sonoff). Sonoff's firmware may answer nothing here
+            # but is on the network, so is still asked of eWeLink.
             raise Abort(f"nothing answers at {given}: check the device is switched on and on your Wi-Fi, "
                         "then run the same command again")
         if running in ("tasmota", "esphome", "midway", "installer", "untemplated"):
@@ -146,7 +146,7 @@ def find_current_firmware(ctx: Context) -> str:
     if chosen.firmware == "installer":
         left_by = installer_left_by(ctx, chosen.host, chosen.mac)
         if left_by:
-            return installer_back(chosen.host, left_by)
+            return installer_back(ctx, chosen.host, left_by)
     adopt_device(ctx, chosen)
     if chosen.firmware == "midway" and chosen.name == "the mover":
         return espressif_source.past_the_commit(ctx, espressif_source.esphome_safe_mode(ctx, chosen.firmware))
@@ -204,7 +204,7 @@ def installer_left_by(ctx: Context, host: str, mac: str | None) -> str | None:
     return "no run of this computer's"
 
 
-def installer_back(host: str, left_by: str) -> str:
+def installer_back(ctx: Context, host: str, left_by: str) -> str:
     """This tool's installer at `host`, no conversion's, restarted into Sonoff's
     firmware (bridge 4.4.6): "sonoff", for the run to go on from there. Abort,
     with nothing done, where it would not restart: a person switches it off
@@ -212,7 +212,7 @@ def installer_back(host: str, left_by: str) -> str:
     from tools.autoflash.routes.espressif import installer
     output.say(f"    The device is on this tool's installer, left by {left_by}: restarting it into its Sonoff "
                "firmware.")
-    if not installer.restart_into_sonoff(host):
+    if not installer.restart_into_sonoff(ctx, host):
         raise Abort(INSTALLER_LEFT.format(who=left_by))
     output.say("    It is back on its Sonoff firmware.")
     return "sonoff"

@@ -147,12 +147,6 @@ class RunTests(unittest.TestCase):
 
 
 class ConversionTests(unittest.TestCase):
-    def test_only_a_beken_kind_is_converted_without_lan_control(self):
-        # The S61's and Basic 1GS's go through eWeLink alone; every Espressif
-        # kind's uses the LAN API, which answers only with LAN Control on.
-        for kind in kinds.EVERY:
-            self.assertEqual(kind.uses_lan_control, kind.family != "beken", kind.key)
-
     def test_only_the_s60s_meter_is_calibrated_as_the_s60s(self):
         self.assertEqual([kind for kind in kinds.EVERY if kind.calibrated_as_s60], [S60])
 

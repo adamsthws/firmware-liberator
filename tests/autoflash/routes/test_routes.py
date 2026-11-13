@@ -113,7 +113,7 @@ class FamilyTests(unittest.TestCase):
                         self.assertGreaterEqual(unchosen[1], len(routes.STEPS))
 
     def test_before_you_start_lists_what_is_needed_for_any_device(self):
-        for source, needed in (("sonoff", "- LAN Control turned on in the device's settings in the app."),
+        for source, needed in (("sonoff", "- Your device set up in the app and connected to Wi-Fi."),
                                ("tasmota", "- Your device connected to Wi-Fi, as it is now.")):
             shown = []
             ctx = SimpleNamespace(state=self.state(source=source))
@@ -126,6 +126,8 @@ class FamilyTests(unittest.TestCase):
             self.assertIn(needed, body)
             self.assertEqual(body[-1], "- This computer on the same network.")
             self.assertFalse(any("plug" in line for line in body))
+            # The device is found through eWeLink, whatever its app settings.
+            self.assertFalse(any("LAN Control" in line for line in body))
 
     def test_every_family_gives_the_runner_the_same_names(self):
         for name, family in routes.FAMILIES.items():

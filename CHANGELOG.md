@@ -41,6 +41,13 @@ as its screens do, since it converts much more than smart plugs now.
   are not converted yet, so the tool turns them down as it
   does a device it does not know: `devices/` says what holds each
   one up, and `docs/adding-a-device.md` how to add a device.
+- LAN Control no longer needs turning on in the eWeLink app, for a conversion or a
+  readout. Every device is found on your network by the hardware address your
+  eWeLink account gives it, and asked what it runs through eWeLink, as a Beken one
+  already was, so Sonoff's firmware need answer nothing on the network. The Wi-Fi
+  signal read before anything is written is the one the device last reported to
+  eWeLink. With eWeLink out of reach, a run from Sonoff's firmware stops with
+  nothing written, rather than listing whatever answered on the network.
 - A device the tool does not convert yet can be read out to help add it:
   offered when the eWeLink account holds no supported device, or run for any
   device with `readout`, or for every device in the account at once (`readout

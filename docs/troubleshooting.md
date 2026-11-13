@@ -146,22 +146,19 @@ already tells the project ([what the tool sends](what-the-tool-sends.md)).
 
 ## The device can't be found
 
-**"Your device did not answer on this network"**
+**"Your device was not found on this network"**
 
 The tool lists each device in your eWeLink account that it converts, with what
 it found:
 
 - **"eWeLink shows it offline"** - the device is switched off, or not on
   Wi-Fi. Switch it on and wait for the app to show it online.
-- **"answers at ..., but eWeLink shows it offline"** (under *"Your device is
+- **"is at ..., but eWeLink shows it offline"** (under *"Your device is
   on this network but cannot reach the internet"* when it is the only
   problem) - usually the router keeps the device LAN-only. The conversion is
   sent through eWeLink, so allow it internet access, wait for the app to show
   it online, then choose *Look again*. You can block it again once it is
   converted.
-- **"is at ... but does not answer on the network"** - LAN Control is off.
-  Turn it on in the device's settings in the eWeLink app, then choose *Look
-  again*.
 - **"is online in eWeLink but was not seen on this computer's network"** -
   your computer is on a different network from the device, such as the 5 GHz
   or guest Wi-Fi, a different router, or a VPN. The message names the network
@@ -175,9 +172,9 @@ eWeLink account*, or have the tool read your device out.
 
 **"Could not reach eWeLink"**
 
-The tool could not sign in, so it lists every Sonoff device that answers on
-the network instead. The next stage needs eWeLink to check the device you
-chose, so check your computer's internet connection first.
+The tool could not sign in. A device on Sonoff's firmware is found and
+converted through eWeLink, so the run stops with nothing written: check your
+computer's internet connection, then run it again.
 
 **"did not answer within 180s"**
 

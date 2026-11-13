@@ -78,15 +78,6 @@ class FromStockTests(unittest.TestCase):
                 stock.step_identify(ctx)
             self.assertEqual(ctx.state.input("device_kind"), "made-up-twin")
 
-    def test_b1_finds_the_device_by_its_wifi_mac_with_no_id_kept(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            ctx = a_context(tmp, device_kind=None)
-            ctx.account_devices = lambda: [{"deviceid": "other"},
-                                           dict(self.DEVICE, params={"fwVersion": "1.0.2", "staMac": MAC.upper()})]
-            with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), \
-                    mock.patch.object(records, "CAPTURES", Path(tmp)), mock.patch.object(stock.prompts, "section"):
-                self.assertEqual(stock.account_record(ctx)["deviceid"], "1001234abc")
-
     def test_b1_asks_ewelink_for_the_latest_offer_and_goes_on_without_it(self):
         identity = {"deviceid": "1001234abc", "model": "SN-BK7238-S61-01", "version": "1.0.2"}
         asked = []
@@ -127,10 +118,6 @@ class FromStockTests(unittest.TestCase):
                         else:
                             self.assertEqual(stock.step_identify(ctx)["signal_dbm"], rssi)
                 self.assertEqual(question.called, asked)
-        self.assertIsNone(stock.account_signal({"params": {"rssi": "strong"}}))
-        # Only a reading a radio gives: 0 is what a device says for none.
-        for rssi, kept in ((-1, -1), (-119, -119), (0, None), (-120, None), (True, None)):
-            self.assertEqual(stock.account_signal({"params": {"rssi": rssi}}), kept, rssi)
 
     def test_b2_wraps_the_image_and_sends_it_through_ewelink(self):
         with tempfile.TemporaryDirectory() as tmp:

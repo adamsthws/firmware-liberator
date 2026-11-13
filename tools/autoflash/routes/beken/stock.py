@@ -25,22 +25,6 @@ if TYPE_CHECKING:
 DELIVERY_WAIT = 300.0
 
 
-def account_record(ctx: Context) -> dict[str, Any]:
-    """The device's record in the owner's eWeLink account, found by its id
-    (images.device_id: A1's, this computer's, or by its Wi-Fi MAC there)."""
-    device_id = images.device_id(ctx)
-    if not device_id:
-        raise Abort("the device's eWeLink device id is not known: start again with --new, so the device is found "
-                    "in the account first")
-    devices = ctx.account_devices()
-    if devices is None:
-        raise Abort("eWeLink could not be reached, and the device's firmware can only be sent through it")
-    for device in devices:
-        if device.get("deviceid") == device_id:
-            return device
-    raise Abort(f"the device is no longer in the eWeLink account {ctx.email()}; add it again in the app")
-
-
 def note_official_file(ctx: Context, kind: kinds.Kind, reported_version: str) -> dict[str, Any]:
     """What the device is known by, checked and logged for the next person: its
     official update file's partition table, firmware name and version. Refused
@@ -59,7 +43,7 @@ def note_official_file(ctx: Context, kind: kinds.Kind, reported_version: str) ->
 def step_identify(ctx: Context) -> dict[str, Any]:
     """B1 - what the device reports of itself, through eWeLink: its model and
     firmware, which must be the kind's."""
-    device = account_record(ctx)
+    device = account.account_record(ctx)
     try:
         identity = ota_identity(device)
     except EwelinkError as exc:
@@ -85,8 +69,8 @@ def step_identify(ctx: Context) -> dict[str, Any]:
         "own updates come, and its bootloader installs it on the next start.",
     ])
     # Its Wi-Fi signal, as it last told eWeLink: read before anything is
-    # written, while moving it costs nothing (the S60 reads its LAN advert).
-    signal = account_signal(device)
+    # written, while moving it costs nothing, as A2 reads an Espressif device's.
+    signal = account.account_signal(device)
     join.note_signal(ctx, signal, [
         "Nothing has been written yet. After the conversion the device has to",
         "rejoin your Wi-Fi on its own; a weak signal makes that less certain."])
@@ -101,12 +85,6 @@ def offered_latest(ctx: Context, identity: dict[str, str]) -> dict[str, Any]:
         return ctx.ewelink.use(lambda region, session: latest_offer(region, session["at"], identity))
     except EwelinkError as exc:
         return {"problem": type(exc).__name__}
-
-
-def account_signal(device: dict[str, Any]) -> int | None:
-    """The Wi-Fi signal the device last reported to eWeLink (its rssi), in dBm."""
-    rssi = (device.get("params") or {}).get("rssi")
-    return rssi if isinstance(rssi, int) and not isinstance(rssi, bool) and -120 < rssi < 0 else None
 
 
 def first_firmware(ctx: Context) -> tuple[str, str]:
@@ -139,7 +117,7 @@ def step_push(ctx: Context) -> dict[str, Any]:
     kind = kinds.of_run(ctx.state)
     firmware, shown = first_firmware(ctx)
     device_ip, stock_version = ctx.state.require("device_ip", "stock_version")
-    device = account_record(ctx)
+    device = account.account_record(ctx)
     image, version = images.image(ctx, firmware)
     chosen = runs.run_firmware(ctx.state)
     if chosen != firmware:

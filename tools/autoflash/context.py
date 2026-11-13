@@ -293,7 +293,7 @@ class Context:
         try:
             devices = self.ewelink.use(lambda region, session: get_devices(region, session["at"]))
         except EwelinkError as exc:
-            output.tell(f"    Could not reach eWeLink ({exc}), so every device that answers is listed.")
+            output.tell(f"    Could not reach eWeLink ({exc}).")
             return None
         account.keep_account_private(devices)
         signup.saw_devices(devices)

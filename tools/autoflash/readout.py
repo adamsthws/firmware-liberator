@@ -307,34 +307,31 @@ def answering_ids(report: dict[str, Any]) -> dict[str, str]:
 
 
 def device_at(address: str, devices: list[dict[str, Any]]) -> dict[str, Any]:
-    """The account's device at `address` (--device-ip): the one answering eWeLink's
-    discovery there, else the one whose hardware address is there (a Beken device
-    does no LAN Control, so it answers no discovery - it is found by its MAC, as
-    the conversion finds it), else the one device the account holds."""
-    try:
-        here = answering_ids(discover_ewelink.discover(6.0, None, address))
-    except OSError:
-        here = {}
-    match = [device for device in devices if str(device.get("deviceid")) in here]
+    """The account's device at `address` (--device-ip): the one whose hardware
+    address, as its record gives it, answers there; else, for a record that
+    gives none, the one answering eWeLink's discovery there; else the one
+    device the account holds."""
+    mac = hostsys.mac_of(address)
+    at = hostsys.normalise_mac(mac) if mac else None
+    match = [device for device in devices if at and record_mac(device) == at]
     if not match:
-        mac = hostsys.mac_of(address)
-        if mac:
-            at = hostsys.normalise_mac(mac)
-            match = [device for device in devices
-                     if (device.get("params") or {}).get("staMac")
-                     and hostsys.normalise_mac(str((device["params"]["staMac"]))) == at]
+        try:
+            here = answering_ids(discover_ewelink.discover(6.0, None, address))
+        except OSError:
+            here = {}
+        match = [device for device in devices if str(device.get("deviceid")) in here]
     if not match and len(devices) == 1:
         match = list(devices)  # one device in the account: it is the one at this address
     if not match:
         raise Abort(f"could not tell which device in the eWeLink account is at {address}: "
-                    "it answered no discovery and its hardware address was not found there")
+                    "its hardware address is none the account gives, and it answered no discovery")
     return match[0]
 
 
-def lan_free(device: dict[str, Any]) -> bool:
-    """Whether the account's `device` does no LAN Control (a Beken device), so
-    answers no local discovery. The account record's model says the chip
-    family before anything is read."""
+def is_beken(device: dict[str, Any]) -> bool:
+    """Whether the account's record of `device` names a Beken chip, by its
+    model, before anything is read: its readout (readout_beken) finds what
+    the device runs itself."""
     model = str((device.get("extra") or {}).get("model") or device.get("productModel") or "")
     stock_chip = firmware_name.STOCK_MODEL.match(model)
     known = kinds.for_account(str(device.get("productModel") or ""), model)
@@ -383,53 +380,29 @@ def answering_at(device: dict[str, Any]) -> str | None:
 
 
 def locate(ctx: Context, device: dict[str, Any]) -> str:
-    """The device's address on this network: the one answering eWeLink's
-    discovery with its id, else typed by the person. A device that does no
-    LAN Control is looked for by its hardware address instead."""
-    if lan_free(device):
-        return locate_by_mac(device)
-    wanted = str(device.get("deviceid") or "")
-    found = answering_at(device)
-    if found:
-        return found
-    # Not answering as Sonoff's firmware - on the program a readout stopped
-    # part way left on it, say: where its hardware address is.
-    mac = record_mac(device)
-    found = found_by_mac(mac) if mac else None
-    if found:
-        return found
-    output.transient_begin()
-    address = prompts.ask_ipv4(
-        "The device did not answer here. Its address",
-        help_lines=["Check LAN Control is on for it in the eWeLink app. Its address is in your",
-                    "router's device list, or the app's device information."],
-        check=account.device_at({wanted}))
-    output.transient_end()
-    return address
-
-
-def locate_by_mac(device: dict[str, Any]) -> str:
-    """A LAN-free device's address: the one with the hardware address its
-    eWeLink record gives, found on this computer's networks, else typed by
-    the person and checked against it."""
+    """The device's address on this network: where the hardware address its
+    eWeLink record gives answers - or, for a record that gives none, where it
+    answers eWeLink's discovery with its id - else typed by the person, and
+    checked against that hardware address."""
     mac = record_mac(device)
     if mac:
         output.say("Looking for it on your network by its hardware address...")
         found = found_by_mac(mac)
-        if found:
-            return found
+    else:
+        found = answering_at(device)
+    if found:
+        return found
 
     def check(address: str) -> list[str]:
         seen = hostsys.mac_of(address)
-        if mac and seen and seen != mac:
+        if mac and seen and hostsys.normalise_mac(seen) != mac:
             return [f"{address} is another device: its hardware address is not the one eWeLink has for yours."]
         return []
     output.transient_begin()
     address = prompts.ask_ipv4(
         "The device was not found on this network. Its address",
-        help_lines=["It answers no local discovery, so it was looked for by the hardware address",
-                    "eWeLink has for it. Its address is in your router's device list, or the",
-                    "eWeLink app's device information."],
+        help_lines=["Its address is in your router's device list, or the eWeLink app's device",
+                    "information."],
         check=check)
     output.transient_end()
     return address
@@ -491,7 +464,7 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
     elif not first_only:
         begin("locate")
         ip = locate(ctx, device)
-    elif record_mac(device) is None and not lan_free(device):
+    elif record_mac(device) is None:
         # Its report names the device by its MAC, as a conversion's does, so
         # a readout and a later conversion of it are known as one: where
         # eWeLink's record gives none, looked for on the network - never
@@ -519,19 +492,18 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
         records.remember_device(mac, ewelink_name=str(device.get("name") or "").strip() or None,
                             ewelink_id=str(device.get("deviceid") or "") or None,
                             model=str(device.get("productModel") or "") or None)
-    # A device that does no LAN Control (a Beken device) is asked of eWeLink by
-    # its account id.
-    # So is one a readout stopped part way left on its reading program (the
-    # bridge), which answers no discovery either.
+    # Asked of eWeLink by its account id. What answers at its address is
+    # checked first (account.already_converting) - not on a Beken device, whose
+    # readout finds that itself, nor on one a readout stopped part way left on
+    # its reading program (the bridge).
     begin("probe")
-    on_bridge = ip is not None and not lan_free(device) and readout_espressif.installer.bridge_answers(ip)
+    on_bridge = ip is not None and not is_beken(device) and readout_espressif.installer.bridge_answers(ip)
     try:
         if first_only:
             asked = ask_first_stage(ctx, device)
-        elif lan_free(device) or on_bridge:
-            asked = account.ask_account(ctx, str(device.get("deviceid") or ""))
         else:
-            asked = account.ask_ewelink(ctx, ip)
+            asked = account.ask_account(ctx, str(device.get("deviceid") or ""),
+                                        None if is_beken(device) or on_bridge else ip)
     except account.NotOnSonoff as exc:
         # One the account still lists, converted since: nothing gone wrong,
         # and none of Sonoff's firmware left on it to read.
@@ -658,7 +630,7 @@ def ask_first_stage(ctx: Context, device: dict[str, Any]) -> account.Asked:
     except Abort as exc:
         output.say(f"    eWeLink could not say what it runs ({exc}): the account's record of it is sent.")
         params = device.get("params") or {}
-        return account.Asked({"packets": []}, str(params.get("fwVersion") or ""),
+        return account.Asked(str(params.get("fwVersion") or ""),
                              str((device.get("extra") or {}).get("model") or ""),
                              str(device.get("productModel") or ""), [], {}, deviceid)
 

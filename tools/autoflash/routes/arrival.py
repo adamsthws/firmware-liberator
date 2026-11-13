@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING, TypeVar
 
-from tools.autoflash import detect, kinds, output, prompts, records
+from tools.autoflash import account, detect, hostsys, output, prompts, records
 from tools.autoflash.errors import Abort, GoBack
 from tools.ewelink import relay as ewelink_relay
 
@@ -176,12 +176,30 @@ def online_in_ewelink(ctx: Context, device_id: str, wait: float = SONOFF_WAIT) -
 
 
 def on_wifi(ctx: Context, running: str | None) -> bool:
-    """Whether the device answers on the Wi-Fi as Sonoff's firmware: by
-    eWeLink's discovery where its firmware answers that (Kind.uses_lan_control),
-    else by its hardware address answering, as nothing else it ran."""
-    if kinds.of_run(ctx.state).uses_lan_control:
+    """Whether the device answers on the Wi-Fi as Sonoff's firmware (`running`,
+    as detect.identify has it): by eWeLink's LAN port, which it need not open
+    (LAN Control off in the app), else by its hardware address answering, as
+    nothing else it ran."""
+    return running == "sonoff" or (running is None and ctx.finder.poll() is not None)
+
+
+def sonoff_answers(ctx: Context, host: str) -> bool:
+    """Whether Sonoff's own firmware answers at `host`, for certain: by
+    eWeLink's LAN port, which it need not open (LAN Control off in the app) -
+    else, answering as nothing this tool knows, by the device at that hardware
+    address answering through eWeLink, as no other firmware it runs can. For a
+    wait that must not take a device starting another firmware for Sonoff's."""
+    running = detect.identify(host, timeout=3.0)
+    if running is not None:
         return running == "sonoff"
-    return running is None and ctx.finder.poll() is not None
+    seen = hostsys.mac_of(host)
+    wanted = ctx.state.input("device_mac")
+    if not seen or (wanted and hostsys.normalise_mac(seen) != wanted):
+        return False
+    device_id = account.device_id(ctx, hostsys.normalise_mac(seen))
+    online = any(found.get("deviceid") == device_id and found.get("online")
+                 for found in (ctx.account_devices() if device_id else None) or [])
+    return online and ewelink_relay.answers(account=ctx.ewelink, device_id=device_id) is True
 
 
 def back_on_sonoff(ctx: Context, leaving: tuple[str, ...] = (), wait: float = SONOFF_WAIT) -> dict[str, Any]:

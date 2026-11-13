@@ -1,6 +1,5 @@
 """arrival: a device looked for until it is back, and back on Sonoff's firmware."""
 
-import dataclasses
 import tempfile
 import unittest
 from pathlib import Path
@@ -130,25 +129,54 @@ class BackOnSonoffTests(unittest.TestCase):
             ctx = self.espressif(tmp)
             self.assertEqual(self.back(ctx, tmp, running="sonoff", devices=None)["confirmed_by"], "your Wi-Fi")
 
-    def test_a_device_with_no_lan_control_is_on_the_wifi_by_its_hardware_address(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            ctx = a_context(tmp, device_ip="192.0.2.50")   # an S61: no eWeLink discovery on the LAN
-            ctx.finder = SimpleNamespace(poll=lambda: "192.0.2.50")
-            self.assertFalse(kinds.of_run(ctx.state).uses_lan_control)
-            result = self.back(ctx, tmp, devices=None)
-            self.assertEqual(result["confirmed_by"], "your Wi-Fi")
-            # Still the firmware it was to leave: not Sonoff's on the Wi-Fi.
-            self.assertFalse(arrival.on_wifi(ctx, "openbeken"))
+    def test_every_family_answering_nothing_known_is_on_the_wifi_by_its_hardware_address(self):
+        # Sonoff's firmware opens eWeLink's LAN port only with LAN Control on.
+        for kind in (kinds.SONOFF_S60, kinds.SONOFF_S61):
+            with self.subTest(kind.key), tempfile.TemporaryDirectory() as tmp:
+                ctx = a_context(tmp, device_ip="192.0.2.50")
+                ctx.state.set_input("device_kind", kind.key)
+                ctx.finder = SimpleNamespace(poll=lambda: "192.0.2.50")
+                self.assertEqual(self.back(ctx, tmp, devices=None)["confirmed_by"], "your Wi-Fi")
+                self.assertTrue(arrival.on_wifi(ctx, None))
+                # Or by eWeLink's LAN port, with LAN Control on.
+                self.assertTrue(arrival.on_wifi(ctx, "sonoff"))
+                # Still the firmware it was to leave: not Sonoff's on the Wi-Fi.
+                self.assertFalse(arrival.on_wifi(ctx, "openbeken"))
+                ctx.finder = SimpleNamespace(poll=lambda: None)
+                self.assertFalse(arrival.on_wifi(ctx, None), "not on the Wi-Fi at all")
 
-    def test_an_espressif_device_on_the_wifi_answers_as_sonoff(self):
+
+class SonoffAnswersTests(unittest.TestCase):
+    """A wait that must not take another firmware starting for Sonoff's: its
+    LAN port, or the device at its hardware address answering through eWeLink."""
+
+    def answers(self, tmp, *, running=None, seen=MAC, online=True, relayed=True):
+        ctx = a_context(tmp, device_ip="192.0.2.50")
+        ctx.state.set_input("device_kind", kinds.SONOFF_S60.key)
+        ctx.account_devices = lambda: [{"deviceid": "1001234abc", "online": online}]
+        ctx.ewelink = mock.sentinel.account
+        with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), \
+                mock.patch.object(detect, "identify", return_value=running), \
+                mock.patch.object(arrival.hostsys, "mac_of", return_value=seen), \
+                mock.patch.object(arrival.ewelink_relay, "answers", return_value=relayed) as self.relay:
+            records.remember_device(MAC, ewelink_id="1001234abc")
+            return arrival.sonoff_answers(ctx, "192.0.2.50")
+
+    def test_its_lan_port_says_so(self):
         with tempfile.TemporaryDirectory() as tmp:
-            ctx = self.espressif(tmp)
-            ctx.finder = SimpleNamespace(poll=lambda: "192.0.2.50")
-            self.assertTrue(arrival.on_wifi(ctx, "sonoff"))
-            self.assertFalse(arrival.on_wifi(ctx, None))
-            lan = dataclasses.replace(kinds.SONOFF_S61, uses_lan_control=True)
-            with mock.patch.object(kinds, "of_run", return_value=lan):
-                self.assertFalse(arrival.on_wifi(ctx, None))
+            self.assertTrue(self.answers(tmp, running="sonoff", relayed=False))
+            self.relay.assert_not_called()
+
+    def test_with_no_lan_control_the_device_answering_through_ewelink_says_so(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(self.answers(tmp))
+            self.relay.assert_called_once_with(account=mock.sentinel.account, device_id="1001234abc")
+
+    def test_nothing_less_will_do(self):
+        for case in ({"running": "installer"}, {"seen": None}, {"seen": "12:34:56:ab:cd:00"},
+                     {"online": False}, {"relayed": False}, {"relayed": None}):
+            with self.subTest(case), tempfile.TemporaryDirectory() as tmp:
+                self.assertFalse(self.answers(tmp, **case))
 
 
 if __name__ == "__main__":

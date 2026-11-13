@@ -15,7 +15,7 @@ import re
 # Each class, and what it means. "declined" and "nothing-to-do" are no fault
 # of the tool's, and are counted apart from failures.
 CLASSES = {
-    "device-not-found": "nothing answered at the device's address, or discovery found nothing",
+    "device-not-found": "nothing answered at the device's address, or which device is there could not be told",
     "device-no-answer": "the device stopped answering within a wait",
     "device-lost": "the connection to the device was reset, cut off or timed out mid-request",
     "device-busy": "the device turned firmware down, busy with an update cut off",
@@ -74,7 +74,7 @@ PATTERNS = [(name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
                         r"|readout firmware was not sent"),
     ("bad-option", r"--replace-own-build|needs to be told which firmware|cannot go to |cannot switch to"
                    r"|not sent from a test run|^not from a test run|eWeLink account given"),
-    ("ewelink-account", r"eWeLink account|eWeLink query failed|did not answer the eWeLink discovery"),
+    ("ewelink-account", r"eWeLink account|eWeLink query failed"),
     ("computer-network", r"this computer reaches|this computer's address|are all in use on this computer"
                          r"|--listen-ip|readout could not be sent|did not fetch the \S+ instructions"
                          r"|without reaching this computer|firewall rule|^sudo |the website answered"),

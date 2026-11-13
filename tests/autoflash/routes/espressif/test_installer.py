@@ -1016,7 +1016,8 @@ class DeliveryPortTests(unittest.TestCase):
             state.set_input("stock_version", "1.2.0")
             ctx = SimpleNamespace(state=state, bridge=Path("bridge.ota"), dir=root,
                                   listen_ip=lambda: "192.0.2.141", email=lambda: "me@example.com",
-                                  ewelink_env=lambda: {}, helper_env=lambda: {}, ewelink_region=lambda: "eu")
+                                  ewelink_env=lambda: {}, helper_env=lambda: {}, ewelink_region=lambda: "eu",
+                                  account_device=SimpleNamespace(device_id="1001234abc"))
             opened = []
             # installer's own ROOT: the lock it lifts is this one, never the checkout's.
             with mock.patch.object(installer, "ROOT", root), \
@@ -1078,6 +1079,11 @@ class DeliveryPortTests(unittest.TestCase):
         self.assertEqual((port, recorded), ("8088", "8088"))
         self.assertTrue(0 <= self.result["seconds"] < 60, self.result)   # how long it took, for the report
         self.assertEqual(opened, [[8088, 8089]])
+
+    def test_the_sender_is_given_the_accounts_device_id_not_a_discovery_report(self):
+        self.run_bridge(busy=set())
+        self.assertEqual(self.command[self.command.index("--device-id") + 1], "1001234abc")
+        self.assertNotIn("--mdns-capture", self.command)
 
     def test_a_busy_8088_moves_to_8090_and_the_firewall_follows(self):
         # 8089 is the phase port, so it is never offered for the bridge.
@@ -1192,17 +1198,29 @@ class RestartBridgeTests(unittest.TestCase):
                 self.assertEqual(installer.has_fallback("192.0.2.77"), has)
 
     def test_restarted_it_is_waited_for_until_sonoff_answers(self):
+        ctx = mock.sentinel.ctx
         with mock.patch.object(installer, "restart_bridge", return_value=True), \
                 mock.patch.object(installer.time, "sleep"), mock.patch.object(output, "say"), \
-                mock.patch.object(detect, "identify", side_effect=[None, "installer", "sonoff"]) as asked:
-            self.assertTrue(installer.restart_into_sonoff("192.0.2.77"))
+                mock.patch.object(installer.arrival, "sonoff_answers", side_effect=[False, False, True]) as asked:
+            self.assertTrue(installer.restart_into_sonoff(ctx, "192.0.2.77"))
         self.assertEqual(asked.call_count, 3)
+        asked.assert_called_with(ctx, "192.0.2.77")
 
     def test_one_that_will_not_restart_is_not_waited_for(self):
         with mock.patch.object(installer, "restart_bridge", return_value=False), \
-                mock.patch.object(detect, "identify") as asked:
-            self.assertFalse(installer.restart_into_sonoff("192.0.2.77"))
+                mock.patch.object(installer.arrival, "sonoff_answers") as asked:
+            self.assertFalse(installer.restart_into_sonoff(mock.sentinel.ctx, "192.0.2.77"))
         asked.assert_not_called()
+
+    def test_back_on_sonoff_is_sonoffs_firmware_answering_for_certain(self):
+        from types import SimpleNamespace
+        # With LAN Control off it answers nothing here: eWeLink says (arrival.sonoff_answers).
+        ctx = SimpleNamespace(state=mock.Mock(input=lambda key: {"device_ip": "192.0.2.50"}.get(key)))
+        for answers in (True, False):
+            with self.subTest(answers), \
+                    mock.patch.object(installer.arrival, "sonoff_answers", return_value=answers) as asked:
+                self.assertEqual(installer.back_on_sonoff(ctx), answers)
+            asked.assert_called_once_with(ctx, "192.0.2.50")
 
 
 if __name__ == "__main__":

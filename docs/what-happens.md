@@ -142,17 +142,18 @@ step in the other family, as `K1` shows.
 ### The start, on every device
 
 1. **List what has to be in place first** - the eWeLink app and account, the
-   device added with LAN Control on - and wait for a key press.
+   device added in it - and wait for a key press.
 2. **Find the device on your network.** The tool signs in to your eWeLink
    account, asking once for the whole run for your email (or phone number, for
    an account made with one) and password. It looks on your network for the
-   devices in that account it can convert, matched by their eWeLink id, so no
-   other device can be mistaken for yours. It carries on by itself if it finds
-   one, and asks which if it finds several. A device that answers while
-   eWeLink still shows it offline (just switched on) gets up to a minute to
-   reach eWeLink before the tool asks anything. If yours does not answer, the
-   tool says why: offline in eWeLink, LAN Control off, or on a different
-   network.
+   devices in that account it can convert, by the hardware address your
+   account gives each, so no other device can be mistaken for yours. Sonoff's
+   firmware need answer nothing more, so the app's LAN Control setting does
+   not matter. The tool carries on by itself if it finds one, and asks which
+   if it finds several. A device on your network while eWeLink still shows it
+   offline (just switched on) gets up to a minute to reach eWeLink before the
+   tool asks anything. If yours is not found, the tool says why: offline in
+   eWeLink, or on a different network.
 3. **Ask which firmware you would like**: Tasmota or ESPHome for an Espressif
    device, OpenBeken or ESPHome for a Beken one. The choices depend on which
    device eWeLink says yours is (`--firmware` answers in advance).
@@ -164,12 +165,11 @@ choose.
 
 4. **Download the firmware it needs**, on the first run only, and check every
    file against a known fingerprint.
-5. **Ask the device what firmware it has** and where it downloads updates
-   from. The tool stops here, before anything is written, unless the device is
-   a kind it converts. It also reads the Wi-Fi signal from what Sonoff's
-   firmware announces on your network (encrypted with the device's own key,
-   which your eWeLink account holds): a weak device is best moved now, while
-   nothing has been written.
+5. **Ask eWeLink what firmware the device has** and where it downloads
+   updates from. The tool stops here, before anything is written, unless the
+   device is a kind it converts. It also reads the Wi-Fi signal the device
+   last reported to eWeLink: a weak device is best moved now, while nothing
+   has been written.
 6. **Replace the Sonoff firmware** with the tool's small installer. *This is
    the point of no return,* and the one place the tool asks you to confirm.
    After a short warning, which also says that the Sonoff firmware is backed
@@ -246,10 +246,7 @@ readout asks the same.
 
 ### A Beken device
 
-Sonoff's Beken firmware does no LAN Control, so step 2 finds the device by
-your account's record of it - online in eWeLink, and on your network at the
-hardware address the account gives - and everything up to the new firmware
-goes through eWeLink
+Everything up to the new firmware goes through eWeLink
 ([the route](../tools/autoflash/routes/beken/)). Steps 4-7 are the same
 whichever firmware you choose.
 

@@ -51,7 +51,8 @@ def read_and_anonymise(ctx: Context, manifest: dict[str, Any], chip: chips.Chip,
     its Sonoff backup, and anonymise it. The files to offer, and whether the
     device answered as Sonoff's firmware again. `skippable`: one device of
     several, which its question may pass by."""
-    flash, efuse, info, report = read_out(ctx, chip, name, version, known=known, skippable=skippable)
+    flash, efuse, info, report = read_out(ctx, chip, name, version, str(device.get("deviceid") or ""),
+                                          known=known, skippable=skippable)
     manifest["read"] = True
     manifest["firmware"] = firmware_of(flash)
     manifest["facts"] = device_facts.lines(flash, efuse, device_facts.parse_info(info) if info else None)
@@ -95,10 +96,10 @@ def firmware_of(flash: bytes) -> dict[str, Any]:
             "apps": sorted(apps, key=lambda app: app["elf_sha256"])}
 
 
-def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, *,
+def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, device_id: str, *,
              known: bool = False, skippable: bool = False) -> tuple[bytes, bytes, bytes | None, dict]:
-    """Send the bridge, wait for it, and read the whole flash through it.
-    `known`: a kind the tool converts, which the bridge has run on before."""
+    """Send the bridge to the account's device `device_id`, wait for it, and
+    read the whole flash through it. `known`: a kind the tool converts, which the bridge has run on before."""
     app = chip.bridge_app()
     wrapped = ctx.dir / "autoflash-bridge-readout.ota"
     wrapped.write_bytes(build_vendor_ota.build_wrapper(app, version=build_vendor_ota.app_version(app), model=name))
@@ -135,7 +136,7 @@ def read_out(ctx: Context, chip: chips.Chip, name: str, version: str, *,
             "--listen-ip", ctx.listen_ip(), "--listen-port", str(port),
             "--device-ip", ctx.state.input("device_ip"), "--firmware", str(wrapped),
             "--email", ctx.email(), "--region", ctx.ewelink_region(), "--expected-current-version", version,
-            "--mdns-capture", str(ctx.dir / "mdns.json"),
+            "--device-id", device_id,
             "--i-understand-stock-has-no-automatic-rollback", "--readout-model", name, unbuffered=True),
             interactive=True, env=ctx.helper_env())
     safety_locks.say_lock_back(ROOT, "RECOVERY_LOCK")
@@ -196,7 +197,7 @@ def back_on_sonoff(ctx: Context) -> bool:
     firmware answered."""
     host = ctx.state.input(BRIDGE_HOST)
     # On its own network, the person has their usual Wi-Fi to join again anyway.
-    if host and host != setup_network.SETUP_HOST and installer.restart_into_sonoff(host):
+    if host and host != setup_network.SETUP_HOST and installer.restart_into_sonoff(ctx, host):
         ctx.state.set_input(readout.STATE_KEY, "read")
         output.say("    It is back on its Sonoff firmware.")
         return True

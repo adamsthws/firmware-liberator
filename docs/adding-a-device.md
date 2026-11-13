@@ -281,9 +281,9 @@ Read `captures/emulation/state/logs/uart.log` (`state-N` with `--instance=N`).
 2. **Add the kind** to [kinds.py](../tools/autoflash/kinds.py): its chip,
    eWeLink product model, stock model, the firmware name its update wrapper
    names, its layout (`beken-4m`), whether it has a relay and a power meter
-   (`has_relay`, `has_meter`), what its sensors measure (`sensors`), and
-   `uses_lan_control=False`. Give it the
-   [status](#its-status) `testers-wanted`, as no real one has been converted.
+   (`has_relay`, `has_meter`) and what its sensors measure (`sensors`). Give
+   it the [status](#its-status) `testers-wanted`, as no real one has been
+   converted.
 
 3. **Boot it in the emulator**, from that flash, and watch for it to come online
    on the stub:

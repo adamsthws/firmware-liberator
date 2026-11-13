@@ -183,7 +183,7 @@ class PutBackTests(unittest.TestCase):
     def test_else_from_the_file_ewelink_offers_it(self):
         from tools.autoflash import account
         from tools.ewelink import offered_firmware
-        offered = account.Asked({"packets": []}, "1.0.2", "SN-BK7238-NEW-01", "NEWBK", [],
+        offered = account.Asked("1.0.2", "SN-BK7238-NEW-01", "NEWBK", [],
                                 {"offers": [{"x": 1}]}, "1000abcdef")
         with mock.patch.object(rb, "saved_stock", return_value=None), \
                 mock.patch.object(account, "ask_account", return_value=offered) as asked, \
@@ -205,7 +205,7 @@ class PutBackTests(unittest.TestCase):
     def test_a_device_with_no_record_is_found_in_the_account_by_its_address(self):
         from tools.autoflash import account
         from tools.ewelink import offered_firmware
-        offered = account.Asked({"packets": []}, "1.0.2", "SN-BK7238-NEW-01", "NEWBK", [],
+        offered = account.Asked("1.0.2", "SN-BK7238-NEW-01", "NEWBK", [],
                                 {"offers": [{"x": 1}]}, "1000abcdef")
         listed = [{"deviceid": "1000abcdef"}]
         self.ctx.account_devices = lambda: listed
