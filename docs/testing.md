@@ -176,7 +176,7 @@ every file.
 
 | Linter | On | Looks for |
 |---|---|---|
-| compile | Python | what parses yet will not compile, which no linter sees: more than 20 blocks nested in one function, say (CPython's limit) |
+| compile | Python | what parses yet will not compile, which no linter sees: more than 20 blocks nested in one function, say (CPython's limit before 3.13); CI also runs it alone on Python 3.10 (`lint.py compile`) |
 | [ruff](https://docs.astral.sh/ruff/) | Python (`.ruff.toml`) | undefined or unused names, likely bugs, a text file opened without `encoding=`, syntax newer than Python 3.10 |
 | [shellcheck](https://www.shellcheck.net/) | shell scripts | unquoted expansions, mistakes in tests and traps, what `sh` does not have |
 | [actionlint](https://github.com/rhysd/actionlint) | the workflows | wrong keys, expressions and types; shellcheck on each `run:` script |
