@@ -994,7 +994,10 @@ tool's; flaky scenarios; real-cloud failures by the hour into a batch; and the
 latest runs that did not pass, each of which you mark with what it came from
 and the commit or issue that fixed it or follows it - "tool" counts as a bug
 found, once a commit or issue. Days before today are counted each night;
-`?live=1` has the view load itself again every minute.
+`?live=1` has the view load itself again every minute. The public
+[figures](https://firmwareliberator.com/stats) show each device's share of
+scenarios passed on the newest version and on each before it, from checkouts
+with no changes alone: how far a device in testing has got.
 
 `tools/repo/emulator_stats.py` keeps each run beside the suite's results and
 sends it as soon as it finishes, beside the suite, so the view fills as runs
