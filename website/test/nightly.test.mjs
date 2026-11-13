@@ -337,7 +337,8 @@ test("the nightly cron runs the nightly job; the hourly one the reminders alone"
     { waitUntil: (promise) => waited.push(promise) });
   assert.equal(waited.length, 1);
   assert.equal((await waited[0]).ran, true);
-  assert.deepEqual((await waited[0]).networks, { datacenter: "no network in the tests", vpn: "no network in the tests" },
+  const none = "GitHub: no network in the tests; jsDelivr: no network in the tests";
+  assert.deepEqual((await waited[0]).networks, { datacenter: none, vpn: none },
     "the lists of networks fetched first");
   await worker.scheduled({ cron: "47 * * * *", scheduledTime: NIGHT.getTime() }, env(),
     { waitUntil: (promise) => waited.push(promise) });

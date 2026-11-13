@@ -17,8 +17,11 @@
 // - NETWORK_LISTS, X4BNet's lists of datacenter and VPN ASNs, kept up to date
 //   by others, fetched each night (refreshNetworks) and kept in the database
 //   (network_lists), so a new host or VPN counts as none with no change here.
-//   Fetched, never copied into this repository: they carry no licence. A list
-//   that does not come, or comes far shorter than the one kept, is not taken:
+//   Fetched, never copied into this repository: they carry no licence. Each
+//   from GitHub, or failing that from jsDelivr's copy of the same repository
+//   (LIST_SOURCES): GitHub may refuse Workers, which share their addresses,
+//   past its limit for unauthenticated downloads. A list that comes from
+//   neither, or comes far shorter than the one kept, is not taken:
 //   the one kept stays, the admin view shows its age, and the nightly alert
 //   says so each LIST_STALE_DAYS it goes untaken (alerts.js).
 import { ready } from "./database.js";
@@ -31,11 +34,16 @@ import { ready } from "./database.js";
 export const CLOUD_ASNS = new Set([16509, 14618, 15169, 396982, 8075, 14061, 24940, 16276, 63949, 20473, 31898,
   51167, 45102, 9009, 60068, 212238, 16265, 60781, 136787, 13335, 36183, 54113]);
 
-// Each list by the name network_lists keeps it under: one "AS<number>" a
-// line, "#" a comment, "-AS<number>" one the list's own build leaves out
-// (left out here too).
-const X4BNET = "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/input";
-export const NETWORK_LISTS = { datacenter: `${X4BNET}/datacenter/ASN.txt`, vpn: `${X4BNET}/vpn/ASN.txt` };
+// Each list by the name network_lists keeps it under, and its path in
+// X4BNet's repository: one "AS<number>" a line, "#" a comment, "-AS<number>"
+// one the list's own build leaves out (left out here too).
+export const NETWORK_LISTS = { datacenter: "input/datacenter/ASN.txt", vpn: "input/vpn/ASN.txt" };
+// Where each is fetched from, in turn until one gives it: by name, the base
+// its path is put after. jsDelivr serves a branch as it was up to a day ago.
+export const LIST_SOURCES = {
+  GitHub: "https://raw.githubusercontent.com/X4BNet/lists_vpn/main/",
+  jsDelivr: "https://cdn.jsdelivr.net/gh/X4BNet/lists_vpn@main/",
+};
 // A list larger than this, or with more ASNs, is not one of these.
 export const LIST_MAX_BYTES = 1024 * 1024;
 export const LIST_MAX_ASNS = 50_000;
@@ -86,28 +94,43 @@ export async function countedNetwork(env, request) {
   return asn;
 }
 
-// Each list fetched afresh and kept, if it is one and is not cut short: by
-// name, "taken" or why not. The nightly cron's (index.js scheduled).
+// One list from one source: its ASNs, or why not, held to the `before` kept.
+async function fetchList(url, before, fetcher) {
+  try {
+    const response = await fetcher(url);
+    const text = response.ok ? await response.text() : "";
+    const asns = response.ok && text.length <= LIST_MAX_BYTES ? asnsOf(text) : null;
+    const problem = !response.ok ? `HTTP ${response.status}` : !asns ? "not a list of ASNs"
+      : asns.length < LIST_SHRINK * before ? `${asns.length} ASNs, where ${before} were kept` : null;
+    return problem ? { problem } : { asns };
+  } catch (error) {
+    return { problem: String(error?.message ?? error).slice(0, 200) };
+  }
+}
+
+// Each list fetched afresh and kept, from the first source that gives it
+// whole and not cut short: by name, "taken" or why not (each source's why).
+// The nightly cron's (index.js scheduled).
 export async function refreshNetworks(env, now = new Date(), fetcher = fetch) {
   if (!(await ready(env.DB))) {
     return {};
   }
   const day = now.toISOString().slice(0, 10);
   const done = {};
-  for (const [name, url] of Object.entries(NETWORK_LISTS)) {
+  for (const [name, path] of Object.entries(NETWORK_LISTS)) {
     const kept = await env.DB.prepare("SELECT asns FROM network_lists WHERE name = ?").bind(name).first("asns");
     const before = kept ? JSON.parse(kept).length : 0;
-    let problem = null;
+    const problems = [];
     let asns = null;
-    try {
-      const response = await fetcher(url);
-      const text = response.ok ? await response.text() : "";
-      asns = response.ok && text.length <= LIST_MAX_BYTES ? asnsOf(text) : null;
-      problem = !response.ok ? `HTTP ${response.status}` : !asns ? "not a list of ASNs"
-        : asns.length < LIST_SHRINK * before ? `${asns.length} ASNs, where ${before} were kept` : null;
-    } catch (error) {
-      problem = String(error?.message ?? error).slice(0, 200);
+    for (const [source, base] of Object.entries(LIST_SOURCES)) {
+      const got = await fetchList(`${base}${path}`, before, fetcher);
+      if (got.asns) {
+        asns = got.asns;
+        break;
+      }
+      problems.push(`${source}: ${got.problem}`);
     }
+    const problem = asns ? null : problems.join("; ");
     // Taken: its ASNs, and today. Not: the ASNs and day kept stay (the first
     // try's day, while none was ever taken), with why.
     await (problem
