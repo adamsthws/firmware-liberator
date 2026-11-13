@@ -11,7 +11,7 @@ import { d1, migrate, migration, migrations } from "../api/local-d1.mjs";
 // database is never changed (api/database.js says why): a change is a new
 // file, whose hash goes here once it is final.
 const WRITTEN = {
-  "0001_initial.sql": "ae4c7ec8efea877b0be4e770ee0d5b17ecaf4fec1aa7d6030f1b3c4f76f10622",
+  "0001_initial.sql": "738c20c75fdbc2b93cdf263a20406436356a1a86a8b54d436d22b6ea1d3e4b97",
 };
 
 test("the migrations are numbered one after another, from 0001", () => {

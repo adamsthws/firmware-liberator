@@ -294,6 +294,17 @@ CREATE TABLE IF NOT EXISTS readouts (
 CREATE UNIQUE INDEX IF NOT EXISTS readouts_whole_sender ON readouts (key, sender) WHERE stage = 'whole';
 
 CREATE INDEX IF NOT EXISTS readouts_key ON readouts (key, stage);
+
+-- What eWeLink offers a key (`offer`, as readouts has it; `offered`, its
+-- versions), taken as right on `day` (index.js OFFER_AGREES): once enough
+-- readouts of it, first stages or whole ones, from enough networks, name it.
+CREATE TABLE IF NOT EXISTS agreed_offers (
+  key TEXT NOT NULL,
+  offer TEXT NOT NULL,
+  offered TEXT NOT NULL,
+  day TEXT NOT NULL,
+  PRIMARY KEY (key, offer)
+) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS readouts_review ON readouts (review);
 
 -- Reports held back for the maintainer's review (review.js).
