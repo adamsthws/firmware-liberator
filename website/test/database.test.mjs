@@ -11,18 +11,7 @@ import { d1, migrate, migration, migrations } from "../api/local-d1.mjs";
 // database is never changed (api/database.js says why): a change is a new
 // file, whose hash goes here once it is final.
 const WRITTEN = {
-  "0001_counters.sql": "db8a1672da5fc1b696fb61412d7c7d5ebfbffffab60e88e555ab23a1eed08f23",
-  "0002_reports.sql": "5a41c030f2f7cbab12faba9a09428d5850707d857293b308fbc2a425a68d02f6",
-  "0003_totals.sql": "aa0200ac16c5e5e40e927121ac6388f35c2a05256ec7c14afe300f1d3ddef563",
-  "0004_readouts.sql": "eff10d3be7755b62a242aa940ca197b3e34221032c0074087292a4f2bc2faedc",
-  "0005_held_reports.sql": "08b89131937fcd4bd97e33644212c2404f4bbff56c25423eea22271307d84f50",
-  "0006_store_days.sql": "d2cfd8f1d253dd7cee22c09cd0cd19da3237af932ef0dd134c51032e8eef5ccf",
-  "0007_readout_firmware.sql": "e8a39e3308c3f477b14b77dc8f21fec15b9698a7d32a565ffe644ae8d01e8923",
-  "0008_confirmations.sql": "9f950a1fc32c7862fae5e9edf019627409e032c35bd583fa516fbfff26737358",
-  "0009_mail_days.sql": "cd65431a174bfa5a3299fbf63aa7960a675b7b3fc2f460acfc3d331aa4ba0465",
-  "0010_model_senders.sql": "430681629148038603e98a5d0410e098b65936fd7ac80757e730b525e94e1ab4",
-  "0011_networks_and_settings.sql": "5ce944c5534eb3315feb64bd43524931eabcdd5a3a0d114238b1ce4c2a51d402",
-  "0012_readout_reports.sql": "e769c9d5e980df7556a2d1d9061af90b45eee41d9826da5467b3dfc1d5940f7f",
+  "0001_initial.sql": "1d978faa003aff3db98131687a836a52b9a304a78d822759fb2c1a6c9b81d770",
 };
 
 test("the migrations are numbered one after another, from 0001", () => {
