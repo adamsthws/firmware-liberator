@@ -4,7 +4,7 @@
 // runs each file in migrations/ it has not run yet, in the order of their
 // names, and records each in d1_migrations, as wrangler would.
 // - A migration, once committed, is never changed: a change is a new file,
-//   with the next number (0002_reports.sql, ...).
+//   with the next number (0002_..., ...).
 // - Each can be run again harmlessly (CREATE ... IF NOT EXISTS): running one
 //   over the API is not atomic, so one cut off part way is run again.
 // - Each only adds (a table, a column, an index): the Worker deployed before
@@ -12,7 +12,7 @@
 
 // The newest migration this code needs (test/database.test.mjs holds it to
 // the newest file in migrations/).
-export const LATEST_MIGRATION = "0012_readout_reports.sql";
+export const LATEST_MIGRATION = "0001_initial.sql";
 
 // Whether the database has every migration this code needs, asked at most
 // once a minute in a Worker: false until `apply` has run the newest, so a

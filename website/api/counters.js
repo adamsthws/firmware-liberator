@@ -1,5 +1,5 @@
 // The counts the API's limits are held to, in the database's counters table
-// (migrations/0001_counters.sql): one row a name, each changed in a single
+// (migrations/0001_initial.sql): one row a name, each changed in a single
 // statement, so two requests at once can never both pass a limit.
 
 // `by` more of `name` (one, by default), adding `bytes`, if that keeps it
