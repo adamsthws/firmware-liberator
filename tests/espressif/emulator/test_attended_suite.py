@@ -3,10 +3,15 @@ scenario's answers still answer questions the tool asks, and a run is judged
 from its recording as it should be - here with recordings made up, as a
 terminal would have them."""
 import ast
+import io
 import json
 import re
+import threading
+import time
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 from tools.espressif.emulator import attended_suite
 
@@ -164,6 +169,28 @@ def shows_as_a_stage(pattern: re.Pattern[str], texts: list[str]) -> bool:
     with one of the tool's texts as the name."""
     return any(pattern.search(f"Stage {number} - {text}  - Underway")
                for text in texts if "\n" not in text and len(text) < 60 for number in range(1, 21))
+
+
+class InstanceTests(unittest.TestCase):
+    def test_a_run_uses_one_instance_per_worker_never_two_scenarios_at_once(self):
+        found = {f"s60-{i}": ("espressif", {}) for i in range(7)} | {f"s61-{i}": ("beken", {}) for i in range(3)}
+        busy, used, lock = set(), [], threading.Lock()
+
+        def run_one(n, name, family, scenario, results, mac, workers):
+            with lock:
+                self.assertNotIn(n, busy, f"{name} on {n}, which another scenario is using")
+                busy.add(n)
+                used.append((family, n))
+            time.sleep(0.02)
+            with lock:
+                busy.discard(n)
+            return f"PASS {name}"
+
+        with mock.patch.object(attended_suite, "run_one", run_one), redirect_stdout(io.StringIO()):
+            lines = attended_suite.run_all(list(found), found, Path("results"), None, workers=3, first=81)
+        self.assertEqual(len(lines), 10)
+        self.assertEqual({n for family, n in used if family == "espressif"}, {81, 82, 83})
+        self.assertEqual({n for family, n in used if family == "beken"}, {81})
 
 
 class ScenarioTests(unittest.TestCase):
