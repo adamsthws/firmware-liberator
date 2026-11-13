@@ -156,7 +156,13 @@ under them.
 - **`0004-timer-group-fires-each-period`** (`src/emulator.py`,
   `tests/self_test.py`): Timer 0-2 of the 26 MHz group fire at each channel's
   programmed period, as LibreTiny's FreeRTOS tick needs, leaving OpenBeken's
-  watchdog feed and the stock dump unchanged.
+  watchdog feed and the stock dump unchanged. But 13 of upstream's 163
+  self-tests fail under it, and the whole run takes about seven times as long
+  (910 s against 125 s); with it reversed, every one passes (found 13
+  November 2026). They are BK7231T, N and U Tuya and Leedarson devices that
+  program this group - the CC8000 bulbs' channels 30 ms and 15 s apart, say -
+  most timing out on boot; the CC8000 bulbs' firmware counts `tick=15170` as
+  it starts where the test wants `172` or `173`. Why is not known yet.
 - **`0005-wifi-peer-bridged-to-host-tap`** (`src/tapnet.py`, new,
   `src/emulator.py`, `src/main.py`, `tests/tapnet.py`): `--net-tap IFACE`
   bridges the Wi-Fi peer to a TAP device instead of the built-in network, which
