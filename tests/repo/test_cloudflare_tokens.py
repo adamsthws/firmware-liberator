@@ -341,6 +341,17 @@ class TokensTests(unittest.TestCase):
             self.assertIn(shown, said)
         self.assertEqual(self.fake.sent, [])
 
+    def test_the_time_is_read_once_the_token_is_given(self):
+        """Making the token takes minutes: a time read before would have the
+        helper made already expired."""
+        order = []
+        with mock.patch.object(ct, "rotate_token", side_effect=lambda: order.append("asked") or "t" * 40), \
+                mock.patch.object(ct, "clock", side_effect=lambda: order.append("clock") or NOW), \
+                mock.patch.object(ct, "run", return_value=0) as run:
+            self.assertEqual(ct.main(["readouts-review"]), 0)
+        self.assertEqual(order, ["asked", "clock"])
+        self.assertEqual(run.call_args.args, (["readouts-review"], NOW))
+
     def test_an_unknown_key_changes_nothing(self):
         self.assertEqual(self.run_it("settings")[0], 2)
         self.assertEqual(self.fake.sent, [])

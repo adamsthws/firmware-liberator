@@ -73,6 +73,10 @@ def signed_in() -> None:
         raise cs.SettingsError("gh is not signed in (gh auth login): the GitHub secrets could not be set")
 
 
+def clock() -> dt.datetime:
+    return dt.datetime.now(dt.timezone.utc)
+
+
 def when(days: float, now: dt.datetime) -> str:
     return (now + dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -292,10 +296,12 @@ def main(argv: list[str] | None = None, now: dt.datetime | None = None) -> int:
         print(__doc__.strip() + "\n\nKEY is one of: " + ", ".join(cs.TOKENS), file=sys.stderr)
         return 2
     keys = keys or list(cs.TOKENS)
-    now = now or dt.datetime.now(dt.timezone.utc)
     mine = rotate_token()
     if not mine:
         return 1
+    # Read once the token is given, not before: making it in the dashboard
+    # takes minutes, longer than the helper's HELPER_SECONDS.
+    now = now or clock()
     with cs.using(mine):
         return run(keys, now)
 
