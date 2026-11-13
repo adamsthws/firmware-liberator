@@ -586,6 +586,70 @@ class QuestionScreenTests(unittest.TestCase):
                 self.assertTrue(rows[2].rstrip().endswith("- Stopped"), rows[2])
 
 
+    # Keys pressed by accident at a question, before its answer: the arrows,
+    # Home and End, F1, Tab, Page Up.
+    STRAY = "\x1b[A\x1b[B\x1b[C\x1b[D\x1b[H\x1b[F\x1bOP\t\x1b[5~"
+    # A Python with no readline (some builds have none): input() is the tool's own.
+    NO_READLINE = 'sys.modules.__setitem__("readline", None) or '
+
+    def test_keys_pressed_by_accident_at_every_question_change_nothing(self):
+        # Seen: an arrow key's code at the password swallowed what was typed
+        # straight after it, the password and its Enter too, and the run hung;
+        # and where Python has no readline, arrows moved the cursor into the
+        # rows above and stayed in the answer.
+        from concurrent.futures import ThreadPoolExecutor
+        import warnings
+        cases = {}
+        for name, (question, typed, expected) in self.QUESTIONS.items():
+            stray = [(typed[0][0], self.STRAY + typed[0][1], *typed[0][2:]), *typed[1:]]
+            cases[name] = (question, stray, expected)
+            setup = "[" + self.NO_READLINE.rstrip(" or") + "] and " if question.startswith("[") else self.NO_READLINE
+            cases[f"{name}, no readline"] = (setup + question, stray, expected)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", r"This process .* is multi-threaded, use of forkpty",
+                                    DeprecationWarning)
+            with ThreadPoolExecutor(len(cases)) as pool:
+                runs = {name: pool.submit(self.ask, question, typed) for name, (question, typed, _) in cases.items()}
+        for name, (_, _, expected) in cases.items():
+            with self.subTest(question=name):
+                code, answer, took, _, _, end = runs[name].result()
+                self.assertEqual((code, answer), (0, expected), end.render(colour=False))
+                self.assertLess(took, 20)
+                rows = [row for row in end.render(colour=False).splitlines() if row.strip()]
+                self.assertEqual(len(rows), 3, "\n".join(rows))   # the question taken off, nothing else left
+                self.assertEqual(end.wrapped, 0, "\n".join(rows))
+
+    def test_without_readline_the_answer_is_edited_as_readline_edits_it(self):
+        for keys in ("you@exampl.com" + "\x1b[D" * 4 + "e" + "\x1b[A\x1b[B\r",   # back four, then up and down
+                     "xyou@example.comz\x1b[H\x1b[3~\x1b[F\x7f\r",                # Home, Delete; End, Backspace
+                     "you@example.co\x1bOPm\x1b[5~\r"):                             # F1 and Page Up dropped
+            with self.subTest(keys=keys):
+                code, answer, *_ = self.ask(self.NO_READLINE + 'prompts.ask_text("eWeLink account email")',
+                                            [("account email", keys)])
+                self.assertEqual((code, answer), (0, "you@example.com"))
+
+    def test_without_readline_the_answer_shows_as_typed_on_its_row(self):
+        import codecs
+        import textwrap
+        from tools.repo import unattended_run
+        root = Path(__file__).resolve().parents[2]
+        script = textwrap.dedent(f"""
+            import sys
+            sys.path.insert(0, {str(root)!r})
+            sys.modules["readline"] = None
+            from tools.autoflash import prompts
+            print("Above the question.")
+            prompts._read_line("Email: ")
+            print("After it.")
+        """)
+        code, written = unattended_run.record(
+            [sys.executable, "-c", script], self.SIZE, live=False, timeout=30,
+            answers=[unattended_run.Answer("Email", "you@exampl.com\x1b[D\x1b[D\x1b[D\x1b[De\x1b[A\r")])
+        screen = Screen(*self.SIZE)
+        screen.feed(codecs.decode(written, "utf-8", errors="replace"))
+        rows = [row for row in screen.render(colour=False).splitlines() if row.strip()]
+        self.assertEqual((code, rows), (0, ["Above the question.", "Email: you@example.com", "After it."]))
+
     def test_a_wifi_password_typed_differently_is_asked_afresh(self):
         # Seen in an attended emulator run: the two tries, and why, stayed
         # under each other as it was asked again.
