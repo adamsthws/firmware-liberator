@@ -211,11 +211,11 @@ class ReviewTests(unittest.TestCase):
 
     ROWS = [
         {"id": "2026-11-09-aaaaaaaaaaaa", "key": "BASICR4|SN-ESP32C3-BASICR4-01|1.1.0", "stage": "whole",
-         "fingerprint": "1" * 64, "object": "readouts/2026-11-09/a.tar", "received": "2026-11-09T10:00:00Z"},
+         "fingerprint": "1" * 64, "object": "readouts/2026-11-09/a.tar", "received": "2026-11-09T10:00:00Z", "checked": 0},
         {"id": "2026-11-09-bbbbbbbbbbbb", "key": "BASICR4|SN-ESP32C3-BASICR4-01|1.1.0", "stage": "whole",
-         "fingerprint": "2" * 64, "object": "readouts/2026-11-09/b.tar", "received": "2026-11-09T11:00:00Z"},
+         "fingerprint": "2" * 64, "object": "readouts/2026-11-09/b.tar", "received": "2026-11-09T11:00:00Z", "checked": 0},
         {"id": "2026-11-09-cccccccccccc", "key": "BASICR4|SN-ESP32C3-BASICR4-01|1.1.0", "stage": "whole",
-         "fingerprint": "1" * 64, "object": "readouts/2026-11-09/c.tar", "received": "2026-11-09T12:00:00Z"},
+         "fingerprint": "1" * 64, "object": "readouts/2026-11-09/c.tar", "received": "2026-11-09T12:00:00Z", "checked": 0},
     ]
 
     def run_with(self, args, rows):
@@ -240,6 +240,12 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(lines[-1], "3 waiting for review")
         self.assertEqual(asked[0][0], "/accounts/a1/d1/database/u1/query")
         self.assertIn("review = 'pending'", asked[0][2]["sql"])
+
+    def test_one_checking_those_taken_as_right_and_not_alike_them_is_marked(self):
+        rows = [{**self.ROWS[0], "checked": 1}]
+        _, lines, _, asked = self.run_with(["review"], lambda body: rows)
+        self.assertTrue(lines[1].endswith("  DISAGREES"), lines[1])
+        self.assertIn("checked", asked[0][2]["sql"])
 
     def test_one_product_alone(self):
         _, _, _, asked = self.run_with(["review", "basicr4"], lambda body: [])
