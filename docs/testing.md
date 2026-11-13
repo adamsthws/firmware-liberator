@@ -928,7 +928,7 @@ end.
 
 ```sh
 tools/espressif/emulator/attended_suite.py list
-tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers 3] --device MAC
+tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers 3] [--first-instance 61] --device MAC
 ```
 
 A scenario is a file in `tools/espressif/emulator/attended/` (an S60's) or
@@ -947,7 +947,9 @@ run's option `--simulate-bad-image STEP[:N]`: the image step STEP sends,
 spoilt the first N times - an S61's at B2, J2 or O1, refused by its
 bootloader; an S60's at D1, the Berry Tasmota, refused by the installer.
 Each runs on an emulator of its own, `--workers` at once; the S61's run after
-the S60's, one at a time.
+the S60's, one at a time. Their instances are numbered from `--first-instance`
+(61), one per worker, and reused, each scenario starting its device afresh: a
+run keeps clear of the instances it was not given.
 
 A run passes when it ends as the scenario says with every answer used;
 otherwise it is:
