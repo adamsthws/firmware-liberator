@@ -166,9 +166,15 @@ eWeLink account has most likely been converted. Once you remove your address,
 or if you never confirmed it, nothing more is kept or sent to it; to sign up
 again, use the [notify page](https://firmwareliberator.com/notify).
 
+To give another address, or have your computer forget the one it keeps, run
+`sh start.sh email` (on Windows, `start.cmd email`). Forgetting it on your
+computer does not stop the emails: the link in any of them does that.
+
 You are sent an email with a link to confirm the address, and once more the
 next day if you have not. Nothing is kept unless you follow that link: an
 address never confirmed is deleted after 7 days. Once confirmed, it is stored
 privately, apart from reports and readouts, and used only for these emails.
 Every one has a link to remove your address, which asks you to confirm first.
+An address an email can no longer reach, or whose owner marked one as spam,
+is removed too.
 [Privacy](privacy.md) says who keeps it, and your rights.

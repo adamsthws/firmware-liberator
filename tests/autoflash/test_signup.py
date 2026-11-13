@@ -160,5 +160,76 @@ class ShortcutTests(unittest.TestCase):
                 self.assertEqual(prompts.ask_choice("Q", ["a", "b"], shortcuts={"y": 0, "n": 1}), chosen)
 
 
+
+class ChangeTests(unittest.TestCase):
+    """The `email` command: the address kept on this computer, changed or forgotten."""
+
+    def setUp(self):
+        self.settings = {signup.SETTING: "me@example.com", "other": 1}
+
+        def saved(settings):
+            self.settings = dict(settings)
+        for patch in (mock.patch.object(runs, "load_settings", side_effect=lambda: dict(self.settings)),
+                      mock.patch.object(runs, "save_settings", side_effect=saved)):
+            patch.start()
+        self.said = mock.patch.object(output, "say").start()
+        self.notify = mock.patch.object(readout, "notify", return_value=True).start()
+        self.addCleanup(mock.patch.stopall)
+
+    def run_with(self, choice, typed="you@example.com"):
+        with mock.patch.object(prompts, "ask_choice", side_effect=[choice]) as asked, \
+                mock.patch.object(prompts, "ask_text", return_value=typed):
+            code = signup.change()
+        self.options = asked.call_args.args[1] if asked.called else None
+        return code, [call.args[0] for call in self.said.call_args_list]
+
+    def test_kept_it_changes_nothing(self):
+        self.assertEqual(self.run_with(0), (0, []))
+        self.assertEqual(self.options, ["Keep it", "Use a different address", "Forget it on this computer"])
+        self.assertEqual(self.settings[signup.SETTING], "me@example.com")
+        self.notify.assert_not_called()
+
+    def test_forgotten_it_is_asked_for_again_as_the_tool_exits(self):
+        code, said = self.run_with(2)
+        self.assertEqual(code, 0)
+        self.assertEqual(self.settings, {"other": 1})
+        self.assertEqual(signup.given(), "")
+        self.assertEqual(said, ["Forgotten on this computer. To stop the emails, use the link in any of them."])
+        self.notify.assert_not_called()
+
+    def test_a_different_address_is_signed_up_and_kept(self):
+        code, said = self.run_with(1, " you@example.com ")
+        self.assertEqual(code, 0)
+        self.notify.assert_called_once_with("you@example.com", ())
+        self.assertEqual(self.settings[signup.SETTING], "you@example.com")
+        self.assertEqual(said, ["Check your inbox to confirm. To stop emails to me@example.com, use the link in "
+                                "any of them."])
+
+    def test_the_same_address_again_sends_nothing(self):
+        self.assertEqual(self.run_with(1, "Me@Example.com")[1], ["That is the address kept already."])
+        self.notify.assert_not_called()
+
+    def test_one_not_sent_is_not_kept(self):
+        self.notify.return_value = False
+        code, said = self.run_with(1)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.settings[signup.SETTING], "me@example.com")
+        self.assertIn(signup.SIGNUP_PAGE, said[0])
+
+    def test_q_or_ctrl_c_change_nothing(self):
+        for stop in (prompts.QuitRun("q"), KeyboardInterrupt()):
+            with mock.patch.object(prompts, "ask_choice", side_effect=stop):
+                self.assertEqual(signup.change(), 0)
+        self.assertEqual(self.settings[signup.SETTING], "me@example.com")
+
+    def test_with_none_kept_it_says_so(self):
+        self.settings = {}
+        with mock.patch.object(prompts, "ask_choice") as asked:
+            self.assertEqual(signup.change(), 0)
+        asked.assert_not_called()
+        self.said.assert_called_once_with("No email address is kept on this computer: the tool asks for one as it "
+                                          "exits.")
+
+
 if __name__ == "__main__":
     unittest.main()
