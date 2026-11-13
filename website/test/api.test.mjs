@@ -370,6 +370,20 @@ test("past three places, a readout without a network is not taken, nor one from 
   assert.equal((await (await asked(64503)).json()).why, "held");
 });
 
+test("three alike from three clouds are kept, but do not agree until an owner's network joins them", async () => {
+  const bindings = env();
+  for (const [address, asn] of [["198.51.100.1", 16509], ["198.51.100.2", 24940], ["198.51.100.3", 14061]]) {
+    assert.equal((await from(bindings, address, { firmware: FIRMWARE }, asn)).status, 201, address);
+  }
+  assert.deepEqual((await rows(bindings)).map((row) => row.review), Array(3).fill("pending"), "a cloud's is no network");
+  for (const [address, asn] of [["192.0.2.1", 64496], ["192.0.2.2", 64497]]) {
+    assert.equal((await from(bindings, address, { firmware: FIRMWARE }, asn)).status, 201, address);
+  }
+  assert.ok((await rows(bindings)).every((row) => row.review === "pending"), "two networks only");
+  assert.equal((await from(bindings, "192.0.2.3", { firmware: FIRMWARE }, 64498)).status, 201);
+  assert.deepEqual((await rows(bindings)).map((row) => row.review), Array(6).fill("quorum"));
+});
+
 test("the maintainer is emailed when readouts come to agree, unless the admin view's switch is off", async () => {
   const agree = async (bindings) => {
     for (const address of ["192.0.2.1", "192.0.2.2", "192.0.2.3"]) {
