@@ -436,6 +436,14 @@ test("who named a model is kept as a keyed hash of it and their address, once a 
   assert.ok(!JSON.stringify(rows(bindings, "SELECT * FROM model_senders")).includes("198.51.100"));
 });
 
+test("a model named from a big cloud's network is named from none", async () => {
+  const bindings = env();
+  const fromCloud = post({ reports: [report({ model: "MINIR4" })] }, {}, "198.51.100.23");
+  Object.defineProperty(fromCloud, "cf", { value: { asn: 16509 } });
+  await api.reports(fromCloud, bindings, NOW);
+  assert.deepEqual(rows(bindings, "SELECT network FROM model_senders"), [{ network: null }]);
+});
+
 test("a report held for review, or the maintainer's own, vouches for no model", async () => {
   const bindings = env();
   await send(bindings, [report({ model: "NEWDEV", tag: "dev" }),
