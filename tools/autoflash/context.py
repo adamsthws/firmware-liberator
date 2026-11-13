@@ -151,7 +151,7 @@ class Context:
         except (BundleError, OSError, ValueError):
             pass  # no bundle yet: its network is kept out of the log once known
 
-    def remember_wifi(self, ssid: str, password: str, image: bytes) -> None:
+    def remember_wifi(self, ssid: str, password: str, image: bytes | None) -> None:
         output.private(ssid, "wifi-name")
         output.private(password, "wifi-password")
         self._wifi, self._recovery = (ssid, password), image
@@ -171,23 +171,30 @@ class Context:
         that does not, they come from the device's Sonoff backup, when this
         computer has one and the device is on that network still.  Asking is the
         fallback, with `why` saying what it is for; `--wifi` forces it.
+
+        A Beken device's are only asked for (or given in advance): no Tasmota
+        runs on it to read them from, its startup firmware is not built with
+        them, and the only ones it holds - its Sonoff store's, which ESPHome
+        starts with - are what it could not join with when they are needed
+        (set_up_through_own_network).
         """
         forced = getattr(self.args, "wifi", False)
+        espressif = kinds.of_run(self.state).family == "espressif"
         # ESPHome, or the mover, says nothing of its Wi-Fi password: only a
         # Tasmota can be read.
-        readable = runs.device_runs_tasmota(self.state)
+        readable = espressif and runs.device_runs_tasmota(self.state)
         if self._wifi is None and not forced and readable:
             found = wifi.read_wifi_from_device(self)
             if found is not None:
                 self.adopt_wifi(*found)
                 # A run stopped at the question earlier must not report it as typed.
                 self.state.set_input("wifi_typed", False)
-        if self._wifi is None and not forced and not readable:
+        if self._wifi is None and not forced and espressif and not readable:
             found = wifi.wifi_from_esphome(self) or wifi.wifi_from_backup(self)
             if found is not None:
                 self.adopt_wifi(*found)
                 self.state.set_input("wifi_typed", False)
-        if self._wifi is None and not forced and self.esphome_api_locked and not prompts.UNATTENDED:
+        if self._wifi is None and not forced and espressif and self.esphome_api_locked and not prompts.UNATTENDED:
             # ESPHome gives them, its API unlocked: its key typed instead.
             found = unlock.ask_esphome_key(self, self.state.input("device_ip"), wifi=True) and wifi.wifi_from_esphome(self)
             if found:
@@ -211,7 +218,7 @@ class Context:
         output.log_only("The startup firmware rejoins the Wi-Fi by itself after the next stage, so it needs "
                         "them written in. The password is never written to disk, nor asked again in this run.")
         while self._wifi is None:
-            ssid = bundle_ssid(self.manifest_path)
+            ssid = bundle_ssid(self.manifest_path) if espressif else None
             if ssid is None:
                 self.adopt_wifi(*ask_credentials())
                 continue
@@ -232,7 +239,11 @@ class Context:
         return self._wifi
 
     def adopt_wifi(self, ssid: str, password: str) -> None:
-        """Use these details, setting the bundle up for them if it is not already."""
+        """Use these details, setting the bundle up for them if it is not
+        already: an Espressif device's, as a Beken device's route has none."""
+        if kinds.of_run(self.state).family != "espressif":
+            self.remember_wifi(ssid, password, None)
+            return
         try:
             image = recovery_image(self.manifest_path, ssid, password)
         except BundleError:
