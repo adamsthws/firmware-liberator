@@ -119,6 +119,11 @@ let past, and only a readout that adds something is kept:
   waits for review, in room set aside for it, and is deleted after half a
   year if it is never settled. So made-up readouts can neither fill the store
   nor hold a key's places for long.
+- First stages are kept and agree each offer apart: the firmware eWeLink
+  offers a device changes with each Sonoff release while the version it runs
+  does not, so each new offer has its own three places, which an owner who
+  sent the last one may fill too. `review` and the admin view name what each
+  was offered.
 - Until three agree, a key has three more places, each for a readout from a
   network none of those held came from: three made up on one rented server's
   network cannot keep out the owners who would outvote them.

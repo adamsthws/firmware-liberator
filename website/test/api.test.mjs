@@ -461,6 +461,45 @@ test("a check not alike waits for review, the maintainer is told, and new networ
     ["quorum", "quorum", "quorum", "pending", "pending", "pending"], "the maintainer settles it");
 });
 
+// A first stage offered `version`, its one file held already (by its SHA-256).
+const offeredAt = (version, sha) => ({ read: false, offered: [{ file: null, version, sha256: sha, held: true }] });
+const OFFER_A = offeredAt("1.2.0", "a".repeat(64));
+const OFFER_B = offeredAt("1.3.0", "b".repeat(64));
+
+test("first stages are held and agree each offer apart, as each release eWeLink offers is new", async () => {
+  const bindings = { ...env(), ALERTS_RECIPIENT_EMAIL: "maintainer@example.com" };
+  for (const address of ["192.0.2.1", "192.0.2.2", "192.0.2.3"]) {
+    assert.equal((await from(bindings, address, OFFER_A)).status, 201, address);
+  }
+  assert.equal((await from(bindings, "192.0.2.4", OFFER_A)).status, 200, "that offer has its three");
+  assert.deepEqual(bindings.EMAIL.sent.map((message) => message.subject),
+    ["Readouts agree: NEWTHING|SN-NEW-01|1.0.0 (first, offered 1.2.0)"]);
+  const asked = (firmware) => readout.wanted(onNetwork(question(fresh({ ...ASKED, firmware })), 64505), bindings, NOW);
+  assert.equal((await (await asked(["a".repeat(64)])).json()).why, "held");
+  assert.equal((await (await asked(["b".repeat(64)])).json()).wanted, true, "asked first, a new offer is wanted");
+  // A new release offered: the same owners may send it too.
+  for (const address of ["192.0.2.1", "192.0.2.2", "192.0.2.3"]) {
+    assert.equal((await from(bindings, address, OFFER_B)).status, 201, address);
+  }
+  assert.equal((await from(bindings, "192.0.2.1", OFFER_B)).status, 200, "but each offer once");
+  const kept = await rows(bindings);
+  assert.deepEqual(kept.map((row) => [row.offered, row.review]).sort(), [...Array(3).fill(["1.2.0", "quorum"]),
+    ...Array(3).fill(["1.3.0", "quorum"])], "each agreed on its own");
+  assert.equal(bindings.EMAIL.sent.at(-1).subject, "Readouts agree: NEWTHING|SN-NEW-01|1.0.0 (first, offered 1.3.0)");
+});
+
+test("a whole readout takes its own offer's first stage place, and one sender sends one whole whatever its offer",
+  async () => {
+    const bindings = env();
+    const whole = (offer) => ({ ...offer, read: true });
+    for (const address of ["192.0.2.1", "192.0.2.2", "192.0.2.3"]) {
+      assert.equal((await from(bindings, address, whole(OFFER_A))).status, 201, address);
+    }
+    assert.equal((await from(bindings, "192.0.2.4", OFFER_A, 64499)).status, 200, "offer A's places are full");
+    assert.equal((await from(bindings, "192.0.2.4", OFFER_B)).status, 201, "offer B's are not");
+    assert.equal((await from(bindings, "192.0.2.1", whole(OFFER_B), 64510)).status, 200, "nor a second whole one");
+  });
+
 test("the maintainer is emailed when readouts come to agree, unless the admin view's switch is off", async () => {
   const agree = async (bindings) => {
     for (const address of ["192.0.2.1", "192.0.2.2", "192.0.2.3"]) {

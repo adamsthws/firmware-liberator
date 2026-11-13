@@ -211,11 +211,14 @@ class ReviewTests(unittest.TestCase):
 
     ROWS = [
         {"id": "2026-11-09-aaaaaaaaaaaa", "key": "BASICR4|SN-ESP32C3-BASICR4-01|1.1.0", "stage": "whole",
-         "fingerprint": "1" * 64, "object": "readouts/2026-11-09/a.tar", "received": "2026-11-09T10:00:00Z", "checked": 0},
+         "fingerprint": "1" * 64, "object": "readouts/2026-11-09/a.tar", "received": "2026-11-09T10:00:00Z", "checked": 0,
+         "offer": "", "offered": "-"},
         {"id": "2026-11-09-bbbbbbbbbbbb", "key": "BASICR4|SN-ESP32C3-BASICR4-01|1.1.0", "stage": "whole",
-         "fingerprint": "2" * 64, "object": "readouts/2026-11-09/b.tar", "received": "2026-11-09T11:00:00Z", "checked": 0},
+         "fingerprint": "2" * 64, "object": "readouts/2026-11-09/b.tar", "received": "2026-11-09T11:00:00Z", "checked": 0,
+         "offer": "", "offered": "-"},
         {"id": "2026-11-09-cccccccccccc", "key": "BASICR4|SN-ESP32C3-BASICR4-01|1.1.0", "stage": "whole",
-         "fingerprint": "1" * 64, "object": "readouts/2026-11-09/c.tar", "received": "2026-11-09T12:00:00Z", "checked": 0},
+         "fingerprint": "1" * 64, "object": "readouts/2026-11-09/c.tar", "received": "2026-11-09T12:00:00Z", "checked": 0,
+         "offer": "", "offered": "-"},
     ]
 
     def run_with(self, args, rows):
@@ -240,6 +243,14 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(lines[-1], "3 waiting for review")
         self.assertEqual(asked[0][0], "/accounts/a1/d1/database/u1/query")
         self.assertIn("review = 'pending'", asked[0][2]["sql"])
+
+    def test_first_stages_are_listed_each_offer_apart_none_odd(self):
+        rows = [{**self.ROWS[0], "stage": "first", "fingerprint": "1" * 64, "offer": "1" * 64, "offered": "1.2.0"},
+                {**self.ROWS[1], "stage": "first", "fingerprint": "2" * 64, "offer": "2" * 64, "offered": "1.3.0"}]
+        _, lines, _, _ = self.run_with(["review"], lambda body: rows)
+        self.assertEqual(lines[0], "BASICR4|SN-ESP32C3-BASICR4-01|1.1.0 (first, offered 1.2.0): 1 waiting")
+        self.assertEqual(lines[2], "BASICR4|SN-ESP32C3-BASICR4-01|1.1.0 (first, offered 1.3.0): 1 waiting")
+        self.assertFalse(any(line.endswith("ODD") for line in lines))
 
     def test_one_checking_those_taken_as_right_and_not_alike_them_is_marked(self):
         rows = [{**self.ROWS[0], "checked": 1}]

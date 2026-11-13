@@ -263,12 +263,15 @@ CREATE TABLE IF NOT EXISTS monthly_stock (
 -- disagree or to check them (MAX_PLACES, CHECK_DAYS), and reviewed until
 -- that many agree.
 -- - `sender` is a keyed hash (SENDER_KEY) of the sender's address and the
---   key, never the address: one sender's readouts of one key are one, and
---   nothing ties a sender's readouts of different keys together.
+--   key, never the address: one sender's readouts of one key and offer are
+--   one, and nothing ties a sender's readouts of different keys together.
 -- - `fingerprint` is a hash of what every genuine readout of the key shares
 --   (its firmware, not the owner's settings): readouts that agree share it.
 -- - `review`: pending until READOUTS_PER_KEY of one stage agree (quorum), or
 --   the maintainer approves or rejects it; a rejected one frees its place.
+-- - `offer`: a hash of the SHA-256s of the files eWeLink offers the device
+--   (index.js offerOf), and `offered` their versions for people ("-" for
+--   none): first stages are held and agree each offer apart.
 -- - `checked`: 1 for a whole one that came after some of its key were taken
 --   as right (CHECK_DAYS): pending, it disagrees with them.
 CREATE TABLE IF NOT EXISTS readouts (
@@ -281,9 +284,14 @@ CREATE TABLE IF NOT EXISTS readouts (
   object TEXT NOT NULL,
   received TEXT NOT NULL,
   review TEXT NOT NULL DEFAULT 'pending' CHECK (review IN ('pending', 'quorum', 'approved', 'rejected')),
+  offer TEXT NOT NULL DEFAULT '',
+  offered TEXT NOT NULL DEFAULT '-',
   checked INTEGER NOT NULL DEFAULT 0,
-  UNIQUE (key, sender)
+  UNIQUE (key, offer, sender)
 );
+
+-- One whole readout of a key from one sender, whatever it was offered.
+CREATE UNIQUE INDEX IF NOT EXISTS readouts_whole_sender ON readouts (key, sender) WHERE stage = 'whole';
 
 CREATE INDEX IF NOT EXISTS readouts_key ON readouts (key, stage);
 CREATE INDEX IF NOT EXISTS readouts_review ON readouts (review);

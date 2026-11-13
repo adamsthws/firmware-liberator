@@ -361,38 +361,47 @@ const isHeld = async (env, key) => (await env.READOUTS.head(key)) !== null;
 // A readout's key: its product, firmware model and version.
 const keyOf = (product, model, version) => `${product.toUpperCase()}|${model}|${version}`;
 
-// The readouts table's rows that hold a place: all but those rejected. A
-// whole one takes a first stage's place too, as it holds all one does.
-const HOLDING = "review != 'rejected' AND (?2 = 'first' OR stage = 'whole')";
+// The readouts table's rows that hold a place of key ?1 at stage ?2, offered
+// ?o: all but those rejected. First stages are held each offer apart, as
+// each new release eWeLink offers is a first stage of its own to agree on;
+// a whole one takes its offer's first stage's place too, as it holds all one
+// does.
+const HOLDING = (o) => `review != 'rejected' AND (stage = 'whole' OR ?2 = 'first') AND (?2 = 'whole' OR offer = ?${o})`;
 
-// Whether any of key ?1's held rows at stage ?2 are taken as right.
-const AGREED = `EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND ${HOLDING} AND review IN ('quorum', 'approved'))`;
+// Whether any of key ?1's held rows at stage ?2, offered ?o, are taken as right.
+const AGREED = (o) => `EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND ${HOLDING(o)}
+  AND review IN ('quorum', 'approved'))`;
 // Whether a whole readout of key ?1 checking those taken as right disagrees
 // with them, unsettled.
 const DISPUTED = "EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND stage = 'whole' AND checked = 1 AND review = 'pending')";
 
-// Whether a place of key ?1 at stage ?2 is left for a readout from the
-// network ?n, it being ?c (CHECK_DAYS ago): fewer than PER_KEY are held; or
-// fewer than MAX_PLACES are, none came from that network, and none agree -
-// or, of a whole one, the newest held came CHECK_DAYS ago or a check
+// Whether a place of key ?1 at stage ?2, offered ?o, is left for a readout
+// from the network ?n, it being ?c (CHECK_DAYS ago): fewer than PER_KEY are
+// held; or fewer than MAX_PLACES are, none came from that network, and none
+// agree - or, of a whole one, the newest held came CHECK_DAYS ago or a check
 // disagrees (CHECK_DAYS).
-const PLACE_LEFT = (n, c) => `((SELECT count(*) FROM readouts WHERE key = ?1 AND ${HOLDING}) < ${PER_KEY}
-  OR (?${n} IS NOT NULL AND (SELECT count(*) FROM readouts WHERE key = ?1 AND ${HOLDING}) < ${MAX_PLACES}
+const PLACE_LEFT = (n, c, o) => `((SELECT count(*) FROM readouts WHERE key = ?1 AND ${HOLDING(o)}) < ${PER_KEY}
+  OR (?${n} IS NOT NULL AND (SELECT count(*) FROM readouts WHERE key = ?1 AND ${HOLDING(o)}) < ${MAX_PLACES}
     AND NOT EXISTS (SELECT 1 FROM readouts JOIN readout_networks ON readout_networks.id = readouts.id
-      WHERE readouts.key = ?1 AND ${HOLDING} AND readout_networks.network = ?${n})
-    AND (NOT ${AGREED} OR (?2 = 'whole' AND (${DISPUTED}
-      OR (SELECT max(received) FROM readouts WHERE key = ?1 AND ${HOLDING}) <= ?${c})))))`;
+      WHERE readouts.key = ?1 AND ${HOLDING(o)} AND readout_networks.network = ?${n})
+    AND (NOT ${AGREED(o)} OR (?2 = 'whole' AND (${DISPUTED}
+      OR (SELECT max(received) FROM readouts WHERE key = ?1 AND ${HOLDING(o)}) <= ?${c})))))`;
 const checkSince = (now) => new Date(now.getTime() - CHECK_DAYS * 86_400_000).toISOString();
 
-// Whether a readout at `stage` would add anything for `sender`, from
-// `network`, at `now`: a place is left for it, and that sender has none of
-// the key already - so a sender with many of one device sends one, and three
-// agreeing come from three senders.
-async function adds(env, key, stage, sender, network, now) {
-  const row = await env.DB.prepare(
-    `SELECT ${PLACE_LEFT(4, 5)} AS room, (SELECT count(*) FROM readouts WHERE key = ?1 AND sender = ?3) AS theirs`,
-  ).bind(key, stage, sender ?? "", network, checkSince(now)).first();
-  return Boolean(row.room) && row.theirs === 0;
+// Whether `sender` (?3) has a readout of key ?1 a readout at stage ?2,
+// offered ?o, would repeat: one of that offer, or a whole one if it is whole.
+// So a sender with many of one device sends one, three agreeing come from
+// three senders, and an owner may send a first stage again for a new offer.
+const THEIRS = (o) => `EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND sender = ?3
+  AND (offer = ?${o} OR (?2 = 'whole' AND stage = 'whole')))`;
+
+// Whether a readout at `stage`, offered `offer`, would add anything for
+// `sender`, from `network`, at `now`: a place is left for it, and that sender
+// has sent none it would repeat.
+async function adds(env, key, stage, sender, network, now, offer) {
+  const row = await env.DB.prepare(`SELECT ${PLACE_LEFT(4, 5, 6)} AS room, ${THEIRS(6)} AS theirs`)
+    .bind(key, stage, sender ?? "", network, checkSince(now), offer).first();
+  return Boolean(row.room) && !row.theirs;
 }
 
 // A keyed hash (SENDER_KEY) of `what`, 32 hex: null where the Worker has none.
@@ -427,20 +436,32 @@ const canonical = (value) => Array.isArray(value) ? `[${value.map(canonical).joi
     ? `{${Object.keys(value).sort().map((name) => `${JSON.stringify(name)}:${canonical(value[name])}`).join(",")}}`
     : JSON.stringify(value ?? null);
 
+const hashed = async (value) => hex(await sha256(new TextEncoder().encode(canonical(value))));
+
+// The offer a readout holds, hashed: the SHA-256s of the files eWeLink
+// offers the device, as /wanted is asked with them (its "firmware") and a
+// readout's manifest lists them. The same for every device of a key until
+// Sonoff releases another version, so first stages are held and agree each
+// offer apart (HOLDING).
+export const offerOf = (shas) => hashed({ offered: shas.map(String).filter((sha) => /^[0-9a-f]{64}$/.test(sha)).sort() });
+const offeredShas = (manifest) => (Array.isArray(manifest.offered) ? manifest.offered : [])
+  .map((item) => item?.sha256 ?? "");
+
+// The versions a readout says it is offered, for people to read: "-" for none.
+const OFFERED_MOST = 4;
+const offeredVersions = (manifest) => [...new Set((Array.isArray(manifest.offered) ? manifest.offered : [])
+  .map((item) => item?.version).filter((version) => fits(version, STOCK_VERSION) && version !== "-"))]
+  .sort().slice(0, OFFERED_MOST).join(",") || "-";
+
 // What every genuine readout of a key at its stage shares, hashed: for a
 // whole one, its firmware as the tool read it before anything was taken out
 // (manifest.firmware: the partition table, each app's build); for a first
-// stage, the files eWeLink offers it. Not the owner's settings, which differ.
-async function fingerprintOf(manifest, stage) {
-  const offered = (Array.isArray(manifest.offered) ? manifest.offered : [])
-    .map((item) => String(item?.sha256 ?? "")).filter((sha) => /^[0-9a-f]{64}$/.test(sha)).sort();
-  const shared = stage === "whole" ? { firmware: manifest.firmware ?? null, layout: manifest.layout ?? null }
-    : { offered };
-  return hex(await sha256(new TextEncoder().encode(canonical(shared))));
-}
+// stage, its offer. Not the owner's settings, which differ.
+const fingerprintOf = (manifest, stage) => (stage === "whole"
+  ? hashed({ firmware: manifest.firmware ?? null, layout: manifest.layout ?? null }) : offerOf(offeredShas(manifest)));
 
-// A readout's row, if a place is left for it and its sender has none of the
-// key: in one statement, so two sent at once cannot both take the last place;
+// A readout's row, if a place is left for it and its sender has none it
+// would repeat (THEIRS): in one statement, so two sent at once cannot both take the last place;
 // marked checked if it is a whole one coming after some agreed; then its
 // network. Then every pending row of its key and stage marked agreed (quorum)
 // once PER_KEY of them, from MIN_NETWORKS networks, hold the same fingerprint,
@@ -448,12 +469,12 @@ async function fingerprintOf(manifest, stage) {
 // maintainer told. A check that agrees with none taken as right is a dispute.
 async function hold(env, row, now) {
   const taken = await env.DB.prepare(
-    `INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, checked)
-     SELECT ?4, ?1, ?2, ?3, ?5, ?6, ?7, ?8, ?2 = 'whole' AND ${AGREED}
-     WHERE ${PLACE_LEFT(9, 10)}
-     ON CONFLICT (key, sender) DO NOTHING RETURNING id, checked`,
+    `INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, offer, offered, checked)
+     SELECT ?4, ?1, ?2, ?3, ?5, ?6, ?7, ?8, ?11, ?12, ?2 = 'whole' AND ${AGREED(11)}
+     WHERE ${PLACE_LEFT(9, 10, 11)} AND NOT ${THEIRS(11)}
+     ON CONFLICT DO NOTHING RETURNING id, checked`,
   ).bind(row.key, row.stage, row.sender, row.id, row.fingerprint, row.bytes, row.object, row.received, row.network,
-    checkSince(now)).first();
+    checkSince(now), row.offer, row.offered).first();
   if (!taken) {
     return false;
   }
@@ -464,8 +485,8 @@ async function hold(env, row, now) {
   const agreed = (await env.DB.prepare(
     `UPDATE readouts SET review = 'quorum' WHERE key = ?1 AND stage = ?2 AND review = 'pending'
      AND fingerprint = ?3
-     AND NOT EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND stage = ?2 AND fingerprint != ?3
-       AND review IN ('quorum', 'approved'))
+     AND (?2 = 'first' OR NOT EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND stage = ?2 AND fingerprint != ?3
+       AND review IN ('quorum', 'approved')))
      AND (EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND stage = ?2 AND fingerprint = ?3
        AND review IN ('quorum', 'approved'))
      OR ((SELECT count(*) FROM readouts WHERE key = ?1 AND stage = ?2
@@ -502,15 +523,18 @@ async function tellAgreed(env, row, newly, checked = false) {
   await sendMail(env, {
     to: env.ALERTS_RECIPIENT_EMAIL,
     from: NOTIFY_FROM,
-    subject: `Readouts ${checked ? "confirmed" : "agree"}: ${row.key} (${row.stage})`,
+    subject: `Readouts ${checked ? "confirmed" : "agree"}: ${row.key} (${stageOf(row)})`,
     text: [checked
       ? `A later readout of ${row.key}, at the ${row.stage} stage, is alike those taken as right, so it is taken `
         + "as right too."
-      : `Readouts of ${row.key}, at the ${row.stage} stage, now agree: ${PER_KEY} or more alike, from `
+      : `Readouts of ${row.key}, at the ${stageOf(row)} stage, now agree: ${PER_KEY} or more alike, from `
         + `${MIN_NETWORKS} or more networks, so they are taken as right (${newly} newly).`, "",
       "python3 tools/repo/readouts.py review lists them. The admin view's switch turns these emails off."].join("\n"),
   }, row.received.slice(0, 10));
 }
+
+// A readout's stage as an email names it: a first stage with what it is offered.
+const stageOf = (row) => (row.stage === "first" ? `first, offered ${row.offered}` : row.stage);
 
 // The maintainer's email that a later readout disagrees with those of its key
 // taken as right: whatever the switch, as one of them may be wrong.
@@ -622,7 +646,8 @@ export async function wanted(request, env, now = new Date()) {
     return no("enough");
   }
   const key = keyOf(asked.model, asked.stock_model, asked.stock_version);
-  if (!(await adds(env, key, asked.stage, await senderOf(env, request, key), await networkOf(env, request, key), now))) {
+  if (!(await adds(env, key, asked.stage, await senderOf(env, request, key), await networkOf(env, request, key), now,
+    await offerOf(firmware)))) {
     return no("held");
   }
   const day = now.toISOString().slice(0, 10);
@@ -712,7 +737,8 @@ export async function readout(request, env, now = new Date()) {
   const readoutKey = keyOf(manifest.model, model, version);
   const from = await senderOf(env, request, readoutKey);
   const network = await networkOf(env, request, readoutKey);
-  if (!(await adds(env, readoutKey, stage, from, network, now))) {
+  const offer = await offerOf(offeredShas(manifest));
+  if (!(await adds(env, readoutKey, stage, from, network, now, offer))) {
     return answer(200, { enough: true });
   }
   if (!(await take(sender, day, { most: SENDER_DAILY }))) {
@@ -736,7 +762,7 @@ export async function readout(request, env, now = new Date()) {
       { "Retry-After": "604800" });
   }
   const row = { key: readoutKey, stage, sender: from, network, id, fingerprint: await fingerprintOf(manifest, stage),
-    bytes: body.byteLength, object: key, received: now.toISOString() };
+    bytes: body.byteLength, object: key, received: now.toISOString(), offer, offered: offeredVersions(manifest) };
   if (!(await hold(env, row, now))) {
     await giveBack();   // its place taken meanwhile, by another sent at once
     return answer(200, { enough: true });
