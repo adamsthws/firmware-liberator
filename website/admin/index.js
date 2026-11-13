@@ -97,6 +97,12 @@ export const NEARLY = `SELECT key, stage, fingerprint, count(*) AS n, count(DIST
   FROM readouts LEFT JOIN readout_networks ON readout_networks.id = readouts.id
   WHERE review = 'pending' GROUP BY key, stage, fingerprint HAVING count(*) >= ${PER_KEY} ORDER BY last DESC`;
 
+// Keys whose whole readouts taken as right a later one disagrees with,
+// unsettled (api/index.js CHECK_DAYS).
+export const DISPUTED = `SELECT key, stage, sum(review IN ('quorum', 'approved')) AS agreed,
+    sum(checked = 1 AND review = 'pending') AS disagree, max(received) AS last
+  FROM readouts WHERE stage = 'whole' GROUP BY key, stage HAVING disagree > 0 ORDER BY last DESC`;
+
 // Readouts nearly agreeing approved, as readouts.py approve does each: taken
 // as right, and no longer held to the room for those waiting for review.
 // Only from a form on this view.
@@ -220,6 +226,7 @@ export async function gather(env, now) {
     signups: (await all("SELECT count(*) AS n FROM confirmations"))[0]?.n ?? 0,
     settings: Object.fromEntries((await all("SELECT name, value FROM settings")).map((row) => [row.name, row.value])),
     nearly: await all(NEARLY),
+    disputed: await all(DISPUTED),
     networks: await all("SELECT name, json_array_length(asns) AS asns, taken, problem FROM network_lists ORDER BY name"),
     popularity: await modelTrends(all, now),
     needed: await all(NEEDED, since(NEEDED_DAYS)),
@@ -338,6 +345,13 @@ export async function page(env, who, now, fetcher = fetch) {
           + `<input type="hidden" name="key" value="${esc(row.key)}"><input type="hidden" name="stage" value="${esc(row.stage)}">`
           + `<input type="hidden" name="fingerprint" value="${esc(row.fingerprint)}"><button>Approve</button></form>`, "html"]],
       data.nearly, "None.")
+      + `</section>`,
+    `<section class="card" id="disputed"><h2>Disputed</h2><p class="sub">Keys whose whole readouts were taken as
+      right, and a later one checking them is not alike. One of them may be wrong: look at them, and approve or reject
+      each with readouts.py (review marks the later ones DISAGREES).</p>`
+      + table([["Key", "key"], ["Stage", "stage"], ["Taken as right", "agreed", "number"],
+        ["Disagreeing", "disagree", "number"], ["Last came", (row) => String(row.last).slice(0, 10)]],
+      data.disputed, "None.")
       + `</section>`,
     `<section class="card" id="networks"><h2>Networks that count as none</h2><p class="sub">Hosts' and VPNs' networks,
       which count toward no agreement of readouts or of models' names: ${number(CLOUD_ASNS.size)} kept in the code,

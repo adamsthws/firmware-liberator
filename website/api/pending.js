@@ -3,7 +3,10 @@
 // - Readouts not taken as right - pending, with no three agreeing and no
 //   approval, or rejected - are deleted PENDING_DAYS after they came in, with
 //   the marks of the offered files they held, giving back their bytes and
-//   places, so made-up readouts cannot fill the store or a key's places.
+//   places, so made-up readouts cannot fill the store or a key's places. But
+//   for one disputing readouts taken as right (checked, index.js CHECK_DAYS):
+//   kept until the maintainer settles it, so a dispute never goes unseen. A
+//   key holds MAX_PLACES at most, so these cannot fill the store either.
 // - Addresses given to /v1/notify and never confirmed are deleted
 //   SIGNUP_DAYS after they were given.
 import { release } from "./counters.js";
@@ -28,7 +31,7 @@ const dayBefore = (today, days) => new Date(Date.parse(`${today}T00:00:00Z`) - d
 export async function prunePending(env, today) {
   const old = (await env.DB.prepare(
     `SELECT id, object, bytes, review FROM readouts WHERE review IN ('pending', 'rejected') AND received < ?1
-     ORDER BY received LIMIT ?2`,
+     AND NOT (review = 'pending' AND checked = 1) ORDER BY received LIMIT ?2`,
   ).bind(dayBefore(today, PENDING_DAYS), PRUNE_EACH_NIGHT).all()).results;
   for (const row of old) {
     const marks = (await env.DB.prepare("SELECT sha FROM readout_firmware WHERE readout = ?").bind(row.id).all())
