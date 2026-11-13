@@ -496,6 +496,82 @@ class StandInTests(unittest.TestCase):
         self.assertEqual((saved[0]["power"], saved[1]["signal"]), ("off", "TERM"))
         json.dumps(saved)
 
+    def test_an_answer_can_switch_the_router_or_move_the_computers_wifi(self):
+        import tempfile
+        script = textwrap.dedent("""
+            import time
+            print("Stage 2 - ESPHome started and on the Wi-Fi", flush=True)
+            time.sleep(2)
+            print("Join the device's own network", flush=True)
+            time.sleep(3)
+        """)
+        with tempfile.TemporaryDirectory() as directory:
+            router, moved = Path(directory, "router"), Path(directory, "moved")
+            router.write_text("on\n", encoding="utf-8")
+            # The emulator's `wifi`, as the run's computer has it on its PATH.
+            wifi = Path(directory, "wifi")
+            wifi.write_text(f'#!/bin/sh\necho "$@" >> {moved}\n', encoding="utf-8")
+            wifi.chmod(0o755)
+            answers = [unattended_run.Answer("ESPHome started", router="on new-password-1", anywhere=True),
+                       unattended_run.Answer("own network", wifi="join", anywhere=True)]
+            with mock.patch.dict(os.environ, {unattended_run.ROUTER_FILE: str(router),
+                                              "PATH": f"{directory}{os.pathsep}{os.environ['PATH']}"}):
+                code, written = unattended_run.record([sys.executable, "-c", script], (80, 24), live=False,
+                                                      timeout=60, answers=answers)
+            self.assertEqual(router.read_text(encoding="utf-8"), "on new-password-1\n")
+            self.assertEqual(moved.read_text(encoding="utf-8"), "join\n")
+        self.assertEqual(code, 0, written)
+        self.assertEqual([answer.saved().get("router") or answer.saved().get("wifi") for answer in answers],
+                         ["on new-password-1", "join"])
+
+    def test_an_answer_shown_anywhere_acts_again_only_once_shown_anew(self):
+        import tempfile
+        # As the tool's own-network step: its notes still on the screen while
+        # it waits, then shown again for a second try.
+        script = textwrap.dedent("""
+            import time
+            print("Join the device's setup network", flush=True)
+            for _ in range(6):
+                time.sleep(0.5)
+                print("waiting...", flush=True)
+            print("Join the device's setup network", flush=True)
+            time.sleep(3)
+        """)
+        with tempfile.TemporaryDirectory() as directory:
+            moved = Path(directory, "moved")
+            wifi = Path(directory, "wifi")
+            wifi.write_text(f'#!/bin/sh\necho "$@" >> {moved}\n', encoding="utf-8")
+            wifi.chmod(0o755)
+            answers = [unattended_run.Answer("setup network", wifi="join", anywhere=True, times=3)]
+            with mock.patch.dict(os.environ, {"PATH": f"{directory}{os.pathsep}{os.environ['PATH']}"}):
+                code, written = unattended_run.record([sys.executable, "-c", script], (80, 24), live=False,
+                                                      timeout=60, answers=answers)
+            self.assertEqual(moved.read_text(encoding="utf-8"), "join\njoin\n", "once a showing, not each redraw")
+        self.assertEqual(code, 0, written)
+        second = written.index(b"setup network", written.index(b"setup network") + 1)
+        self.assertGreater(answers[0].typed_at[1], second)
+
+    def test_an_answer_that_fails_is_kept_with_why_and_the_run_goes_on(self):
+        import tempfile
+        script = 'import time\nprint("Join the device\'s setup network", flush=True)\ntime.sleep(2)\nprint("done")\n'
+        with tempfile.TemporaryDirectory() as directory:
+            wifi = Path(directory, "wifi")
+            wifi.write_text("#!/bin/sh\necho \"No network of the device's own is on the air.\" >&2\nexit 1\n",
+                            encoding="utf-8")
+            wifi.chmod(0o755)
+            answers = [unattended_run.Answer("setup network", wifi="join", anywhere=True)]
+            with mock.patch.dict(os.environ, {"PATH": f"{directory}{os.pathsep}{os.environ['PATH']}"}):
+                code, written = unattended_run.record([sys.executable, "-c", script], (80, 24), live=False,
+                                                      timeout=60, answers=answers)
+        self.assertEqual(code, 0, written)
+        self.assertIn(b"done", written)
+        self.assertEqual(answers[0].saved()["failed"], ["wifi join: No network of the device's own is on the air."])
+
+    def test_the_espressif_router_keeps_its_password(self):
+        with mock.patch.dict(os.environ, {unattended_run.ROUTER_FILE: ""}):
+            with self.assertRaises(ValueError):
+                unattended_run.switch_router("on new-password-1")
+
 class CommandTests(unittest.TestCase):
     def test_a_conversion_unless_told_otherwise(self):
         self.assertEqual(unattended_run.tool_command("run", ["--new"])[2:], ["run", "--unattended", "--new"])

@@ -63,6 +63,13 @@ TOKEN = re.compile(
 )
 
 
+def plain(data: bytes) -> str:
+    """What `data` writes, its text only: no colours or other sequences, a
+    carriage return or line feed a line's end."""
+    return "".join(found.group("text") or ("\n" if found.group("control") in ("\r", "\n") else "")
+                   for found in TOKEN.finditer(data.decode("utf-8", errors="replace")))
+
+
 class Screen:
     """Just enough of a terminal to rebuild what one shows from what was
     written to it: the sequences the conversion's output uses - colours,
@@ -479,22 +486,46 @@ class Answer:
     not the notes above it, which can say a question's words - seen, "your
     eWeLink account" in the firmware question's taken for the sign-in.
     `anywhere`: typed when `when` shows anywhere on the screen, a question
-    or not - a Ctrl-C ("\x03") as a stage shows, say.  In place of typing:
+    or not - a Ctrl-C ("\x03") as a stage shows, say - and again only once
+    the run has written it anew, not while it is still on the screen.  In
+    place of typing:
     `power` "off" or "on" switches the emulated device (switch_power), as
-    a person switching it off at the wall; `signal` sends the run one ("TERM", "HUP" -
-    its window closed), as the computer would."""
+    a person switching it off at the wall; `router` "off", "on" or "on
+    PASSWORD" the home Wi-Fi's router (switch_router); `wifi` "join" or
+    "home" moves this computer onto the device's own network or back
+    (the emulator's `wifi`), as a person does from the Wi-Fi menu; `signal`
+    sends the run one ("TERM", "HUP" - its window closed), as the computer
+    would.  One of those that fails is kept, with why (`failed`), for the
+    run to be judged by, and the run goes on as it would for a person whose
+    switch or Wi-Fi menu did not do it."""
 
     def __init__(self, when: str, type: str = "", times: int = 1, anywhere: bool = False,
-                 power: str | None = None, signal: str | None = None) -> None:
+                 power: str | None = None, signal: str | None = None, router: str | None = None,
+                 wifi: str | None = None) -> None:
         self.when, self.type, self.left, self.anywhere = re.compile(when), type, times, anywhere
-        self.power, self.signal = power, signal
+        self.power, self.signal, self.router, self.wifi = power, signal, router, wifi
         self.typed_at: list[int] = []   # how many bytes the run had written each time it was typed
+        self.failed: list[str] = []     # each time what it does failed, and why
 
     def act(self, pid: int, fd: int) -> None:
-        """What this answer does: types, switches the device, or signals the run."""
-        if self.power:
-            switch_power(self.power)
-        elif self.signal:
+        """What this answer does: types, switches the device or the router,
+        moves this computer's Wi-Fi, or signals the run."""
+        import subprocess
+        try:
+            if self.power:
+                switch_power(self.power)
+            elif self.router:
+                switch_router(self.router)
+            elif self.wifi:
+                subprocess.run(["wifi", *self.wifi.split()], check=True, capture_output=True, text=True,
+                               timeout=120)
+        except subprocess.CalledProcessError as exc:
+            self.failed.append(f"{' '.join(exc.cmd)}: {(exc.stderr or exc.stdout or '').strip() or exc}")
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            self.failed.append(str(exc))
+        if self.power or self.router or self.wifi:
+            return
+        if self.signal:
             os.kill(pid, getattr(signal, f"SIG{self.signal}"))
         else:
             os.write(fd, self.type.encode("utf-8"))
@@ -504,7 +535,10 @@ class Answer:
         return {"when": self.when.pattern, "type": self.type, "typed_at": self.typed_at,
                 **({"anywhere": True} if self.anywhere else {}),
                 **({"power": self.power} if self.power else {}),
-                **({"signal": self.signal} if self.signal else {})}
+                **({"router": self.router} if self.router else {}),
+                **({"wifi": self.wifi} if self.wifi else {}),
+                **({"signal": self.signal} if self.signal else {}),
+                **({"failed": self.failed} if self.failed else {})}
 
     @classmethod
     def load(cls, path: Path) -> list["Answer"]:
@@ -516,6 +550,23 @@ class Answer:
 # a file (beken-emu.sh), an Espressif emulator as a command (container/bin/device).
 POWER_FILE = "AUTOFLASH_EMULATOR_POWER"
 DEVICE_COMMAND = "/opt/autoflash-emu/bin/device"
+
+
+# The home Wi-Fi's router: a Beken emulator's computer has it as a file too.
+ROUTER_FILE = "AUTOFLASH_EMULATOR_ROUTER"
+
+
+def switch_router(state: str) -> None:
+    """The emulated home Wi-Fi's router switched "off" or "on" - a Beken
+    emulator's "on PASSWORD" with its password changed - where this runs
+    beside it."""
+    if os.environ.get(ROUTER_FILE):
+        Path(os.environ[ROUTER_FILE]).write_text(state + "\n", encoding="utf-8")
+        return
+    if state not in ("off", "on"):
+        raise ValueError(f"router {state!r}: the Espressif emulator's router is only switched off or on")
+    import subprocess
+    subprocess.run([DEVICE_COMMAND, "router", state], check=True, capture_output=True, timeout=60)
 
 
 def switch_power(state: str) -> None:
@@ -637,7 +688,10 @@ def record(command: list[str], size: tuple[int, int], live: bool,
                     answered = None
                 for answer in answers:
                     if answer.anywhere:
-                        if answer.left and answer.when.search(screen.render(colour=False)):
+                        # Typed again only once written anew since: still on the
+                        # screen, it was seen already.
+                        if answer.left and answer.when.search(screen.render(colour=False)) and (
+                                not answer.typed_at or answer.when.search(plain(written[answer.typed_at[-1]:]))):
                             time.sleep(0.5)
                             answer.act(pid, fd)
                             answer.typed_at.append(len(written))
