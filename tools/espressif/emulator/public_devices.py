@@ -46,6 +46,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
+from tools.autoflash import kinds  # noqa: E402
+from tools.repo import emulator_stats  # noqa: E402
+
 SAVED = ROOT / "captures/emulation/saved"
 # The public devices as published: one xz-compressed tar of the two, named by
 # its hash, in the release below. Made again only with what runs before the
@@ -172,10 +175,19 @@ def command_test(args: argparse.Namespace) -> int:
             return 1
     started = time.time()
     said_lock = threading.Lock()
+    # The public devices are an S60's; past the stage that needs eWeLink, so none is met.
+    device = kinds.SONOFF_S60
+    emulator_stats.began(LOGS, family=device.family, suite="check", device=device.key,
+                         total=sum(map(len, WAYS)), planned=sum(map(len, WAYS)), cloud="none", workers=len(WAYS))
 
     def way(instance: int, runs: list) -> int:
         for n, (source, firmware, keep) in enumerate(runs):
+            began = time.time()
             ok, said = run(instance, source, firmware, keep, LOGS / f"test-{source}-to-{firmware}.log")
+            # From part way to its final firmware, as the run from Sonoff's it stands for, or from that firmware.
+            start = "sonoff" if source.startswith("public-pre-final") else source.rsplit("-", 1)[1]
+            emulator_stats.check_run(LOGS, family=device.family, device=device.key, route=f"{start}>{firmware}",
+                                     passed=ok, seconds=round(time.time() - began), cloud="none")
             with said_lock:
                 print(f"{'PASS' if ok else 'FAIL'}  {source} to {firmware}: {said}", flush=True)
                 if not ok:
@@ -187,6 +199,7 @@ def command_test(args: argparse.Namespace) -> int:
 
     failed = sum(side_by_side([lambda i=instance, w=runs: way(i, w)
                                for runs, instance in zip(WAYS, args.instances)]))
+    print(emulator_stats.send(LOGS), flush=True)
     print(f"{'All passed' if not failed else f'{failed} failed'} in {int(time.time() - started)} s; logs in {LOGS}")
     return 1 if failed else 0
 

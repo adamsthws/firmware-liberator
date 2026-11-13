@@ -14,6 +14,8 @@ from tools.repo import emulator_stats
 
 ROOT = Path(__file__).resolve().parents[2]
 ADMIN = (ROOT / "website/admin/emulator.js").read_text(encoding="utf-8")
+# The fields runs and batches both carry, which the admin view spreads into each.
+COMMON = re.findall(r"^  (\w+):", re.search(r"const COMMON = \{\n(.*?)\n\};", ADMIN, re.S).group(1), re.M)
 
 
 def run_args(**more):
@@ -28,17 +30,22 @@ class Admin(http.server.BaseHTTPRequestHandler):
     answer = 200
     refuse: set = set()
     seen: list = []
+    batches: list = []
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        type(self).seen.append((self.headers, body))
+        key = {"/v1/emulator/runs": "runs", "/v1/emulator/batches": "batches"}[self.path]
+        if key == "runs":
+            type(self).seen.append((self.headers, body))
+        else:
+            type(self).batches.append(body)
         if self.answer != 200:
             self.send_response(self.answer)
             self.end_headers()
             return
-        runs = body["runs"]
-        said = json.dumps({"taken": [run["id"] for run in runs if run["id"] not in self.refuse],
-                           "refused": [{"id": run["id"], "why": "made up"} for run in runs if run["id"] in self.refuse]})
+        ids = [emulator_stats._id(key, item) for item in body[key]]
+        said = json.dumps({"taken": [one for one in ids if one not in self.refuse],
+                           "refused": [{"id": one, "why": "made up"} for one in ids if one in self.refuse]})
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -55,14 +62,14 @@ class EmulatorStatsTests(unittest.TestCase):
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
-        Admin.answer, Admin.refuse, Admin.seen = 200, set(), []
+        Admin.answer, Admin.refuse, Admin.seen, Admin.batches = 200, set(), [], []
         self.env_file = self.folder / "home" / "emulator.env"
         self.env_file.parent.mkdir()
         self.env_file.write_text("EMULATOR_STATS_CLIENT_ID=cid.access\nEMULATOR_STATS_CLIENT_SECRET=made-up\n",
                                  encoding="utf-8")
         self.enterContext(mock.patch.object(emulator_stats, "CREDENTIALS", self.env_file))
         self.enterContext(mock.patch.dict("os.environ", {
-            "AUTOFLASH_EMU_STATS_URL": f"http://127.0.0.1:{server.server_address[1]}/v1/emulator/runs",
+            "AUTOFLASH_EMU_STATS_URL": f"http://127.0.0.1:{server.server_address[1]}/v1/emulator",
             "EMULATOR_STATS_CLIENT_ID": "", "EMULATOR_STATS_CLIENT_SECRET": "", "AUTOFLASH_EMU_NO_STATS": ""}))
 
     def settled(self):
@@ -80,8 +87,9 @@ class EmulatorStatsTests(unittest.TestCase):
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
 
     def test_a_run_has_every_field_the_admin_view_takes_and_no_other(self):
-        fields = re.search(r"const FIELDS = \{\n(.*?)\n\};", ADMIN, re.S).group(1)
-        self.assertEqual(sorted(emulator_stats.run_row(**run_args())), sorted(re.findall(r"^  (\w+):", fields, re.M)))
+        fields = re.search(r"const RUN_FIELDS = \{\n(.*?)\n\};", ADMIN, re.S).group(1)
+        self.assertEqual(sorted(emulator_stats.run_row(**run_args())),
+                         sorted(re.findall(r"^  (\w+):", fields, re.M) + list(COMMON)))
 
     def test_as_many_a_request_as_the_admin_view_takes(self):
         self.assertIn(f"export const MAX_RUNS = {emulator_stats.CHUNK};", ADMIN)
@@ -180,6 +188,31 @@ class EmulatorStatsTests(unittest.TestCase):
         self.assertEqual((len(self.kept()), Admin.seen), (1, []))
         emulator_stats._waiting.discard(self.folder)
 
+    def test_a_batch_says_what_it_set_out_to_run_and_is_sent_before_its_runs(self):
+        with emulator_stats._sending:
+            emulator_stats.began(self.folder, family="beken", suite="fault", device="sonoff-s61", total=40, planned=12,
+                                 cloud="stub", workers=2)
+            emulator_stats.record(self.folder, **run_args(rerun=True))
+        self.assertEqual(emulator_stats.send(self.folder), "Emulator stats: 1 sent, 1 batches")
+        [body] = Admin.batches
+        [sent] = body["batches"]
+        self.assertEqual({key: sent[key] for key in ("batch", "family", "device", "suite", "total", "planned")},
+                         {"batch": emulator_stats.BATCH, "family": "beken", "device": "sonoff-s61", "suite": "fault",
+                          "total": 40, "planned": 12})
+        self.assertEqual(sorted(sent), sorted(re.findall(r"^  (\w+):", re.search(
+            r"const BATCH_FIELDS = \{\n(.*?)\n\};", ADMIN, re.S).group(1), re.M) + list(COMMON)))
+        self.assertIs(Admin.seen[0][1]["runs"][0]["rerun"], True)
+        self.assertFalse((self.folder / emulator_stats.UNSENT_BATCHES).exists())
+
+    def test_a_check_run_is_said_as_every_familys_is(self):
+        with emulator_stats._sending:
+            emulator_stats.check_run(self.folder, family="espressif", device="sonoff-s60", route="sonoff>tasmota",
+                                     passed=False, seconds=90, cloud="stub")
+        [row] = self.kept()
+        self.assertEqual((row["suite"], row["scenario"], row["route"], row["verdict"], row["step"]),
+                         ("check", "check:sonoff>tasmota", "sonoff>tasmota", "FAIL", None))
+        emulator_stats._waiting.discard(self.folder)
+
     def test_the_credentials_are_written_for_their_owner_alone(self):
         with mock.patch.object(emulator_stats, "CREDENTIALS", self.folder / "new" / "emulator.env"):
             path = emulator_stats.write_credentials("cid2.access", "made-up-2")
@@ -216,21 +249,35 @@ class EmulatorStatsTests(unittest.TestCase):
 
 class EveryFamilyTests(unittest.TestCase):
     """Every chip family's suites send their runs alike: each fault suite, a
-    family's to come too, and the attended suite for each family it runs."""
+    family's to come too, the attended suite for each family it runs, and the
+    final-firmware check on each family's way of running it."""
 
-    def test_every_fault_suite_records_each_run_and_sends_as_its_batch_ends(self):
+    def test_every_fault_suite_says_its_batch_records_each_run_and_sends_as_its_batch_ends(self):
         suites = sorted(ROOT.glob("tools/*/emulator/fault_suite.py"))
         self.assertGreaterEqual(len(suites), 2)
         for suite in suites:
             source = suite.read_text(encoding="utf-8")
-            self.assertIn("emulator_stats.fault_run(OUT, family=DEVICE.family, device=DEVICE.key, scenario=sc,",
-                          source, suite)
-            self.assertIn("print(emulator_stats.send(OUT), flush=True)", source, suite)
+            for call in ("emulator_stats.began(OUT,", "emulator_stats.fault_run(OUT,", "rerun=sc[\"id\"] in ",
+                         "print(emulator_stats.send(OUT), flush=True)"):
+                self.assertIn(call, source, f"{suite}: {call}")
+
+    def test_every_familys_final_firmware_check_records_each_conversion(self):
+        from tools.repo import emulator_check
+        where = {"espressif": ["tools/repo/emulator_check.py", "tools/espressif/emulator/public_devices.py"],
+                 "beken": ["tools/beken/emulator/fault_suite.py"]}
+        self.assertEqual(set(where), set(emulator_check.EMULATORS), "a new family's check records its runs too")
+        for files in where.values():
+            for name in files:
+                source = (ROOT / name).read_text(encoding="utf-8")
+                self.assertIn("emulator_stats.check_run(", source, name)
+                self.assertIn("emulator_stats.began(", source, name)
+                self.assertIn("emulator_stats.send(", source, name)
 
     def test_the_attended_suite_records_each_family_it_runs_as_that_familys_device(self):
         from tools.espressif.emulator import attended_suite
         source = (ROOT / "tools/espressif/emulator/attended_suite.py").read_text(encoding="utf-8")
         self.assertIn("emulator_stats.attended_run(", source)
+        self.assertIn("emulator_stats.began(RESULTS,", source)
         self.assertIn("print(emulator_stats.send(RESULTS), flush=True)", source)
         for family in attended_suite.SCENARIOS:
             self.assertEqual(attended_suite.device_of(family, None).family, family)

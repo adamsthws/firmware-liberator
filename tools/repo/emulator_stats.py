@@ -10,11 +10,17 @@ machine that ran it.
     emulator_stats.py push [HOST...] this computer's credentials copied to each
                                      HOST (ssh), else to EMULATOR_STATS_HOSTS's
 
-Every suite of every chip family - fault and attended alike - calls record()
-for each scenario's run as it writes its own result: the run is kept in UNSENT
-in the suite's results folder and sent at once, beside the suite, so the
-figures fill as runs end and a machine thrown away loses none sent. send()
-as the batch ends sends whatever is left. A run that could not be sent (no
+Every suite of every chip family - fault, attended and the final-firmware
+check alike - calls began() as a batch begins, with how many scenarios its
+suite has for the device and how many it runs (what the view's share of a
+device's scenarios passed is of), and record() (fault_run, attended_run,
+check_run) for each scenario's run as it writes its own result, saying
+whether the scenario had run in that folder before (`rerun`): a batch runs
+what has not passed yet, and its re-runs would read as a worse pass rate.
+Each is kept in the suite's results folder (UNSENT, UNSENT_BATCHES) and sent
+at once, beside the suite, so the figures fill as runs end and a machine
+thrown away loses none sent. send() as the batch ends sends whatever is
+left. A run that could not be sent (no
 network, no credentials) goes with the next one, or by `send`, up to the admin
 view's OLDEST_DAYS. AUTOFLASH_EMU_NO_STATS=1 keeps and sends none, as in the
 tests (tests/no_network.py).
@@ -56,6 +62,8 @@ from tools.autoflash import __version__, credentials, kinds  # noqa: E402
 # UPLOAD_APP): every path the suites use, the runs' and any to come.
 SCOPE_URL = "https://admin.firmwareliberator.com/v1/emulator"
 UPLOAD_URL = SCOPE_URL + "/runs"
+# Each kind sent: its file of those kept, its path under the scope, its body's key.
+KINDS = (("emulator-stats-unsent.jsonl", "/runs", "runs"), ("emulator-stats-batches-unsent.jsonl", "/batches", "batches"))
 # The credentials, one file a computer, readable by its owner alone; where
 # push writes them on another machine, under the same name in its home.
 CREDENTIALS_PATH = ".config/firmware-liberator/emulator.env"
@@ -66,8 +74,8 @@ CLIENT_SECRET = "EMULATOR_STATS_CLIENT_SECRET"
 # space-separated, from the environment or .env.infra.
 HOSTS = "EMULATOR_STATS_HOSTS"
 INFRA_FILE = ROOT / ".env.infra"
-# The runs kept to send, in each suite's results folder.
-UNSENT = "emulator-stats-unsent.jsonl"
+# The runs and batches kept to send, in each suite's results folder.
+UNSENT, UNSENT_BATCHES = KINDS[0][0], KINDS[1][0]
 # Runs a request at most: the admin view's MAX_RUNS (a test holds them alike).
 CHUNK = 500
 TIMEOUT = 30.0
@@ -88,9 +96,10 @@ def off() -> bool:
     return os.environ.get("AUTOFLASH_EMU_NO_STATS", "").strip().lower() in ("1", "yes", "true", "on")
 
 
-def upload_url() -> str:
-    """Where runs go: the admin view, but for a local one a test gives."""
-    return os.environ.get("AUTOFLASH_EMU_STATS_URL") or UPLOAD_URL
+def scope_url() -> str:
+    """Where runs and batches go: under the admin view's SCOPE_URL, or a
+    local one a test gives."""
+    return os.environ.get("AUTOFLASH_EMU_STATS_URL") or SCOPE_URL
 
 
 def _parsed(path: Path) -> dict[str, str]:
@@ -212,7 +221,7 @@ def _whole(value: Any, low: int, high: int) -> int | None:
 
 def run_row(*, family: str, suite: str, device: str, scenario: str, verdict: str, cloud: str,
             route: str | None = None, step: str | None = None, fault: Any = None, at: Any = None,
-            tries: Any = None, seconds: Any = None, workers: Any = None,
+            tries: Any = None, seconds: Any = None, workers: Any = None, rerun: bool = False,
             finished: dt.datetime | None = None) -> dict[str, Any]:
     """One run, as the admin view takes it (emulator.js FIELDS)."""
     head, dirty = revision()
@@ -221,22 +230,38 @@ def run_row(*, family: str, suite: str, device: str, scenario: str, verdict: str
         "id": secrets.token_hex(16), "finished": when.strftime("%Y-%m-%dT%H:%M:%SZ"), "batch": BATCH,
         "suite": suite, "family": family, "device": device, "scenario": _short(scenario, 200) or "?",
         "route": _short(route), "step": _short(step), "fault": _short(fault), "at": _whole(at, 0, 100),
-        "verdict": verdict_of(verdict), "tries": _whole(tries, 0, 99), "seconds": _whole(seconds, 0, 172_800),
+        "verdict": verdict_of(verdict), "rerun": bool(rerun), "tries": _whole(tries, 0, 99), "seconds": _whole(seconds, 0, 172_800),
         "cloud": cloud, "tool": __version__, "revision": head, "dirty": dirty, "firmware": firmware(device),
         "workers": _whole(workers, 1, 256),
     }
 
 
+def _keep(folder: Path, name: str, row: dict[str, Any]) -> None:
+    """`row` kept in `folder`'s file `name`, and sent at once, beside the suite."""
+    folder.mkdir(parents=True, exist_ok=True)
+    with _kept, open(folder / name, "a", encoding="utf-8") as kept:
+        kept.write(json.dumps(row) + "\n")
+    threading.Thread(target=_in_background, args=(folder,), daemon=True).start()
+
+
 def record(folder: Path, **run: Any) -> None:
     """A scenario's run kept in `folder` (its suite's results) and sent at
     once, beside the suite: run_row()'s arguments."""
+    if not off():
+        _keep(folder, UNSENT, run_row(**run))
+
+
+def began(folder: Path, *, family: str, suite: str, device: str, total: int, planned: int, cloud: str,
+          workers: Any = None) -> None:
+    """A batch begun, kept in `folder` and sent: its suite's scenarios for the
+    device (`total`) and how many it runs (`planned`)."""
     if off():
         return
-    row = run_row(**run)
-    folder.mkdir(parents=True, exist_ok=True)
-    with _kept, open(folder / UNSENT, "a", encoding="utf-8") as kept:
-        kept.write(json.dumps(row) + "\n")
-    threading.Thread(target=_in_background, args=(folder,), daemon=True).start()
+    head, dirty = revision()
+    _keep(folder, UNSENT_BATCHES, {
+        "batch": BATCH, "started": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "family": family, "device": device, "suite": suite, "total": max(1, int(total)), "planned": int(planned),
+        "cloud": cloud, "tool": __version__, "revision": head, "dirty": dirty, "workers": _whole(workers, 1, 256)})
 
 
 def _in_background(folder: Path) -> None:
@@ -254,23 +279,33 @@ def _in_background(folder: Path) -> None:
 
 
 def fault_run(folder: Path, *, family: str, device: str, scenario: dict[str, Any], verdict: str, tries: Any,
-              seconds: Any, cloud: str, workers: Any) -> None:
+              seconds: Any, cloud: str, workers: Any, rerun: bool) -> None:
     """A fault suite's scenario run, kept: `scenario` as its suite's scenarios()
     yields it (id, route, step, fault, at), as every family's does."""
     record(folder, family=family, suite="fault", device=device, scenario=scenario["id"],
            route=scenario.get("route"), step=scenario.get("step"), fault=scenario.get("fault"),
-           at=scenario.get("at"), verdict=verdict, tries=tries, seconds=seconds, cloud=cloud, workers=workers)
+           at=scenario.get("at"), verdict=verdict, tries=tries, seconds=seconds, cloud=cloud, workers=workers,
+           rerun=rerun)
 
 
 def attended_run(folder: Path, *, family: str, device: str, name: str, verdict: str, seconds: Any,
                  workers: Any) -> None:
-    """An attended run, kept: always on the stub (attended_suite.py)."""
+    """An attended run, kept: always on the stub (attended_suite.py), and each
+    a first try, as the suite runs every scenario it is given."""
     record(folder, family=family, suite="attended", device=device, scenario=name, verdict=verdict,
            seconds=seconds, cloud="stub", workers=workers)
 
 
-def _post(rows: list[dict[str, Any]], token: tuple[str, str]) -> dict[str, Any]:
-    request = urllib.request.Request(upload_url(), data=json.dumps({"runs": rows}).encode(), method="POST", headers={
+def check_run(folder: Path, *, family: str, device: str, route: str, passed: bool, seconds: Any,
+              cloud: str) -> None:
+    """One conversion of the final-firmware check (tools/repo/emulator_check.py),
+    kept: `route` as "start>firmware", the same for every family."""
+    record(folder, family=family, suite="check", device=device, scenario=f"check:{route}", route=route,
+           verdict="PASS" if passed else "FAIL", seconds=seconds, cloud=cloud, workers=2)
+
+
+def _post(path: str, key: str, rows: list[dict[str, Any]], token: tuple[str, str]) -> dict[str, Any]:
+    request = urllib.request.Request(scope_url() + path, data=json.dumps({key: rows}).encode(), method="POST", headers={
         "Content-Type": "application/json", "CF-Access-Client-Id": token[0], "CF-Access-Client-Secret": token[1]})
     with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
         return json.loads(response.read())
@@ -300,47 +335,66 @@ def send(folder: Path) -> str:
         return _send(folder)
 
 
+def _id(key: str, row: dict[str, Any]) -> str:
+    """How the admin view names a run or batch in its answer."""
+    if key == "runs":
+        return str(row.get("id"))
+    return "/".join(str(row.get(name)) for name in ("batch", "family", "device", "suite"))
+
+
 def _send(folder: Path) -> str:
-    """send()'s work, with _sending held. Those taken, and those the admin
-    view refuses (which it always would), are no longer kept; the rest are,
-    for next time. The file is replaced whole, so a process cut off part way
-    loses none; runs kept while this one sends stay for the next."""
-    path = folder / UNSENT
-    with _kept:
-        rows = _read(path)
-    if not rows:
-        return "Emulator stats: none to send"
-    token = client()
-    if token is None:
-        return (f"Emulator stats: {len(rows)} kept, not sent - no {CLIENT_ID} and {CLIENT_SECRET} "
-                f"({CREDENTIALS}: tools/repo/cloudflare_settings.py writes it)")
-    done: set[str] = set()
+    """send()'s work, with _sending held: the batches kept, then the runs.
+    Those taken, and those the admin view refuses (which it always would),
+    are no longer kept; the rest are, for next time. Each file is replaced
+    whole, so a process cut off part way loses none; those kept while this
+    one sends stay for the next."""
+    sent: dict[str, int] = {}
     refused: list[str] = []
+    left = 0
     problem = None
-    for start in range(0, len(rows), CHUNK):
-        try:
-            answer = _post(rows[start:start + CHUNK], token)
-        except (OSError, ValueError) as error:
-            problem = (f"the admin view answered {error.code}" if isinstance(error, urllib.error.HTTPError)
-                       else str(error))
-            break
-        done.update(answer.get("taken") or [])
-        for one in answer.get("refused") or []:
-            done.add(one.get("id"))
-            refused.append(f"{one.get('id')}: {one.get('why')}")
-    with _kept:
-        left = [row for row in _read(path) if row.get("id") not in done]
-        if left:
-            new = path.with_name(path.name + ".new")
-            new.write_text("".join(json.dumps(row) + "\n" for row in left), encoding="utf-8")
-            os.replace(new, path)
-        else:
-            path.unlink(missing_ok=True)
-    said = f"Emulator stats: {len(done) - len(refused)} sent"
+    token = client()
+    for name, path_under, key in reversed(KINDS):
+        path = folder / name
+        with _kept:
+            rows = _read(path)
+        if not rows:
+            continue
+        if token is None:
+            left += len(rows)
+            continue
+        done: set[str] = set()
+        for start in range(0, len(rows), CHUNK):
+            try:
+                answer = _post(path_under, key, rows[start:start + CHUNK], token)
+            except (OSError, ValueError) as error:
+                problem = (f"the admin view answered {error.code}" if isinstance(error, urllib.error.HTTPError)
+                           else str(error))
+                break
+            taken = set(answer.get("taken") or [])
+            done |= taken
+            sent[key] = sent.get(key, 0) + len(taken)
+            for one in answer.get("refused") or []:
+                done.add(one.get("id"))
+                refused.append(f"{one.get('id')}: {one.get('why')}")
+        with _kept:
+            kept = [row for row in _read(path) if _id(key, row) not in done]
+            if kept:
+                new = path.with_name(path.name + ".new")
+                new.write_text("".join(json.dumps(row) + "\n" for row in kept), encoding="utf-8")
+                os.replace(new, path)
+            else:
+                path.unlink(missing_ok=True)
+        left += len(kept)
+    if token is None and left:
+        return (f"Emulator stats: {left} kept, not sent - no {CLIENT_ID} and {CLIENT_SECRET} "
+                f"({CREDENTIALS}: tools/repo/cloudflare_settings.py writes it)")
+    if not sent and not refused and not left:
+        return "Emulator stats: none to send"
+    said = f"Emulator stats: {sent.get('runs', 0)} sent" + (f", {sent['batches']} batches" if sent.get("batches") else "")
     if refused:
         said += f", {len(refused)} refused ({'; '.join(refused[:3])})"
     if left:
-        said += f", {len(left)} kept to send later" + (f" ({problem})" if problem else "")
+        said += f", {left} kept to send later" + (f" ({problem})" if problem else "")
     return said
 
 
@@ -365,7 +419,7 @@ def main(argv: list[str]) -> int:
             print(f"No {CLIENT_ID} and {CLIENT_SECRET}, in the environment or {CREDENTIALS}: "
                   "python3 tools/repo/cloudflare_settings.py apply writes them, and push copies them here")
             return 1
-        request = urllib.request.Request(upload_url(), method="GET", headers={
+        request = urllib.request.Request(scope_url() + "/runs", method="GET", headers={
             "CF-Access-Client-Id": token[0], "CF-Access-Client-Secret": token[1]})
         try:
             urllib.request.urlopen(request, timeout=TIMEOUT)

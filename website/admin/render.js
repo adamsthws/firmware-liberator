@@ -79,8 +79,9 @@ export function lineChart(points, { limit = null, say = number, label = "", widt
     + `<text class="tick" x="${W}" y="${H - 6}" text-anchor="end">${esc(last.day)}</text></svg>`;
 }
 
-// Stacked columns a day: `days` [{day, parts: {name: n}}], `names` in stack order.
-export function columns(days, names, label = "", width = HALF) {
+// Stacked columns a day: `days` [{day, parts: {name: n}}], `names` in stack
+// order, each drawn in its series' colour, or in the class `kinds` gives it.
+export function columns(days, names, label = "", width = HALF, kinds = names.map((_, at) => `series-${at + 1}`)) {
   if (!days.length) {
     return '<p class="none">Nothing yet.</p>';
   }
@@ -99,11 +100,11 @@ export function columns(days, names, label = "", width = HALF) {
       const from = y(base);
       base += value;
       const height = Math.max(1, from - y(base) - (base > value ? 2 : 0));
-      return `<rect class="mark series-${at + 1}" x="${x}" y="${y(base)}" width="${bar}" height="${height}" rx="2">`
+      return `<rect class="mark ${kinds[at]}" x="${x}" y="${y(base)}" width="${bar}" height="${height}" rx="2">`
         + `<title>${esc(`${day.day}: ${number(value)} ${name}`)}</title></rect>`;
     }).join("");
   }).join("");
-  return `<ul class="legend">${names.map((name, at) => `<li><span class="swatch series-${at + 1}"></span>${esc(name)}</li>`).join("")}</ul>`
+  return `<ul class="legend">${names.map((name, at) => `<li><span class="swatch ${kinds[at]}"></span>${esc(name)}</li>`).join("")}</ul>`
     + `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">`
     + `<line class="grid" x1="${left}" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>`
     + `<text class="tick" x="${left - 6}" y="${y(most) + 4}" text-anchor="end">${esc(number(most))}</text>`
@@ -199,6 +200,8 @@ svg { width: 100%; height: auto; display: block; overflow: visible; }
 .mark.series-1, .swatch.series-1 { fill: var(--series-1); background: var(--series-1); }
 .mark.series-2, .swatch.series-2 { fill: var(--series-2); background: var(--series-2); }
 .mark.series-3, .swatch.series-3 { fill: var(--series-3); background: var(--series-3); }
+.mark.muted, .swatch.muted { fill: var(--muted); background: var(--muted); }
+.mark.critical, .swatch.critical { fill: var(--critical); background: var(--critical); }
 .line.series-2 { stroke: var(--series-2); } .line.series-3 { stroke: var(--series-3); }
 .trends { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px 20px; }
 .trend { margin: 0; } .trend figcaption { font-size: 13px; font-weight: 600; margin-bottom: 2px; }

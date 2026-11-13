@@ -16,6 +16,8 @@
 //   the maintainer's own testing and quarantined reports left out, no figure
 //   for fewer than SMALLEST reports or devices, and no model's name before
 //   enough senders gave it over enough days (vouching; snapshot.js).
+// - The maintainer's emulator runs are folded by day too (emulator_days,
+//   emulator.js), each day a run came in for since the last night.
 // - Before a day is folded, a model's reports that day far above its usual
 //   (SPIKE_SMALLEST or more, and over SPIKE_TIMES its daily average over the
 //   SPIKE_DAYS before) are held for review (held_reports): a flood of
@@ -25,6 +27,7 @@
 // free plan's 10 ms and 50 queries a run would be enough).
 import { alert } from "./alerts.js";
 import { ready } from "./database.js";
+import { emulatorFolding } from "./emulator.js";
 import { prunePending } from "./pending.js";
 import { snapshot } from "./snapshot.js";
 
@@ -195,7 +198,7 @@ export async function nightly(env, now = new Date(), limits = null) {
   // Readouts never taken as right, and addresses never confirmed, gone after
   // their days (pending.js) - before the store's size is noted below.
   const pruned = await prunePending(env, today);
-  await env.DB.batch([...pruning(env.DB, today), ...vouching(env.DB, today),
+  await env.DB.batch([...pruning(env.DB, today), ...vouching(env.DB, today), ...emulatorFolding(env.DB, today),
     env.DB.prepare(`INSERT INTO store_days (day, readouts, bytes)
       SELECT ?1, coalesce(max(count), 0), coalesce(max(bytes), 0) FROM counters WHERE name = ?2
       ON CONFLICT (day) DO UPDATE SET readouts = excluded.readouts, bytes = excluded.bytes`).bind(today, READOUTS_EVER)]);

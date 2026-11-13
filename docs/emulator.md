@@ -717,7 +717,9 @@ this checkout for a new device to start from, such as one `rebuild_dump.py`
 made for another model
 ([adding a Beken device](adding-a-device.md#what-the-emulator-does-for-you-beken)).
 The emulator check does so for the Sonoff Basic Gen5
-(`tools/repo/emulator_check.py sonoff-basic-1gs`). The emulated board stays
+(`tools/repo/emulator_check.py sonoff-basic-1gs`), and names the device in
+`AUTOFLASH_BEKEN_EMU_FLASH_DEVICE` (its key), which the runs' emulator stats
+are counted for ([testing](testing.md#emulator-stats)). The emulated board stays
 the S61's whatever the flash; the check holds a device with no meter only to
 its relay switching, not to a meter seeing it.
 

@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from tools.repo import cloudflare_settings as cs
-from tools.repo import emulator_stats
+from tools.repo import emulator_stats, github_settings
 
 ZONE = "/zones/z1"
 ENTRYPOINT = f"{ZONE}/rulesets/phases/{cs.REDIRECT_PHASE}/entrypoint"
@@ -96,6 +96,7 @@ class FakeCloudflare:
                                 "duration": "forever", "expires_at": "9999-12-31T23:59:59Z"}]
         self.emulator_env = "EMULATOR_STATS_CLIENT_ID=cid1.access\nEMULATOR_STATS_CLIENT_SECRET=made-up-secret-1\n"
         self.hosts, self.unreachable, self.pushed = [], set(), []
+        self.github_secrets, self.github_signed_in = {}, True   # the repository's, as gh sets them
         self.sending = []   # the zone's domains onboarded for Email Service's sending
         # The account's Web Analytics sites: the zone's one, as the pages' beacon tag names it.
         # Each starts with the one rule Cloudflare makes, every host and path measured.
@@ -335,6 +336,11 @@ def run(fake, *args, answers=None):
         emulator_env.write_text(fake.emulator_env, encoding="utf-8")
     no_variables = {name: "" for name in (emulator_stats.CLIENT_ID, emulator_stats.CLIENT_SECRET)}
 
+    def set_secret(name, value, environment=True):
+        if not fake.github_signed_in:
+            raise github_settings.SettingsError(f"gh secret set {name}: not logged in")
+        fake.github_secrets[(name, environment)] = value
+
     def push(machines):
         fake.pushed += [(host, emulator_env.read_text(encoding="utf-8")) for host in machines]
         return [f"{host}: ssh ended 255" for host in machines if host in fake.unreachable]
@@ -343,6 +349,7 @@ def run(fake, *args, answers=None):
             mock.patch.dict("os.environ", no_variables), \
             mock.patch.object(emulator_stats, "hosts", lambda: list(getattr(fake, "hosts", []))), \
             mock.patch.object(emulator_stats, "push", push), \
+            mock.patch.object(github_settings, "set_secret", set_secret), \
             mock.patch.object(cs, "api", fake), redirect_stdout(out), mock.patch("sys.stdin", stdin), \
             mock.patch.object(cs, "asked_token", lambda: APPLY_VALUE), \
             mock.patch.object(cs.getpass, "getpass", side_effect=list(answers or [])), \
@@ -1224,6 +1231,7 @@ class AdminAccessTests(unittest.TestCase):
         self.assertIn("npx wrangler deploy --config admin/wrangler.jsonc", job)
         self.assertIn("github.event_name != 'schedule'", job)
         self.assertIn("https://admin.firmwareliberator.com/", job)
+        self.assertIn("https://admin.firmwareliberator.com/v1/emulator/runs", job, "and the suites' path is closed too")
         self.assertIn("needs: [deploy, deploy-api, deploy-admin]", workflow)
         self.assertIn(cs.ADMIN_WORKER, cs.DEPLOY_WORKERS)
 
@@ -1274,6 +1282,19 @@ class EmulatorTokenTests(unittest.TestCase):
         self.assertIn("emulator.env not copied to second: ssh ended 255: python3 tools/repo/emulator_stats.py push "
                       "copies it again", out)
         self.assertNotIn("made-up-secret", out)
+
+    def test_the_credentials_are_the_repositorys_secrets_too_for_the_check_on_main(self):
+        self.assertEqual(run(self.fake, "rotate", "emulator-stats")[0], 0)
+        secret = re.search(r"EMULATOR_STATS_CLIENT_SECRET=(\S+)", self.fake.emulator_env).group(1)
+        self.assertEqual(self.fake.github_secrets, {("EMULATOR_STATS_CLIENT_ID", False): "cid1.access",
+                                                    ("EMULATOR_STATS_CLIENT_SECRET", False): secret})
+        self.assertEqual(set(github_settings.REPOSITORY_SECRETS) & {"EMULATOR_STATS_CLIENT_ID", "EMULATOR_STATS_CLIENT_SECRET"},
+                         {"EMULATOR_STATS_CLIENT_ID", "EMULATOR_STATS_CLIENT_SECRET"})
+        self.fake.github_signed_in = False
+        code, out = run(self.fake, "rotate", "emulator-stats")
+        self.assertEqual(code, 1)
+        self.assertIn("not set (gh secret set EMULATOR_STATS_CLIENT_ID: not logged in): sign gh in", out)
+        self.assertIn("emulator.env: written", out, "the rest is still done")
 
     def test_a_token_that_would_expire_is_made_never_to(self):
         self.fake.service_tokens[0].update(duration="8760h", expires_at="2027-11-13T00:00:00Z")
