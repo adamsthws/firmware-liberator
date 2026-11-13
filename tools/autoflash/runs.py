@@ -80,17 +80,21 @@ def save_settings(settings: dict[str, Any]) -> None:
                              encoding="utf-8")
 
 
+def busy_elsewhere(mac: str, busy: records.DeviceBusy) -> str:
+    """Why a run cannot go on with a device another run holds. Each caller's own
+    words say nothing was done ("Stopped before anything was done: ...")."""
+    return (f"another run is converting this device ({mac}) right now"
+            + (f" - {busy}" if str(busy) else "")
+            + ". Let it finish, or stop it first, then run this again")
+
+
 def hold_device(ctx: Context, mac: str) -> None:
     """One run on a device at a time: two at once would each write over what the
     other is doing."""
     try:
         records.hold(mac, run_name(ctx.dir) if hasattr(ctx, "dir") else "")
     except records.DeviceBusy as busy:
-        raise Abort(
-            f"another run is converting this device ({mac}) right now"
-            + (f" - {busy}" if str(busy) else "")
-            + ". Let it finish, or stop it first, then run this again. Nothing was done"
-        ) from None
+        raise Abort(busy_elsewhere(mac, busy)) from None
 
 
 def file_device(ctx: Context, mac: str, account: AccountDevice | None) -> None:

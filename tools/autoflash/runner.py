@@ -406,7 +406,7 @@ def stop_here_after_ctrl_c(step: str) -> bool:
         # Said on the screen too, as a Ctrl-C at any other moment is: the
         # person is told how to carry on, not only that it was tidied up.
         output.tell("")
-        output.tell("Stopped here, as asked. Run this again to carry on from the next stage.")
+        output.tell(f"{prompts.STOPPED_AS_ASKED} Run this again to carry on from the next stage.")
         return True
     output.say(f"Carrying on after {step}: Ctrl-C was not confirmed.")
     return False

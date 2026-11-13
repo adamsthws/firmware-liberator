@@ -947,6 +947,20 @@ class CtrlCCarriedOnTests(unittest.TestCase):
                 prompts.ask_after_ctrl_c(["safe"], "Carrying on")
         self.assertEqual(interrupt.carried_on(), 2)
 
+
+class PowerWarningTests(unittest.TestCase):
+    """Every go-ahead before a write warns against cutting the device's power
+    in the same words, which leave room for the later notes that ask for it
+    to be switched off and on: "during the process" contradicted them."""
+
+    def test_every_warning_is_the_one_line(self):
+        self.assertIn("unless this tool tells you to", prompts.DO_NOT_CUT_POWER)
+        root = Path(__file__).resolve().parents[2] / "tools" / "autoflash"
+        written = [path.relative_to(root).as_posix() for path in root.rglob("*.py")
+                   if "DO NOT CUT" in path.read_text(encoding="utf-8")]
+        self.assertEqual(written, ["prompts.py"])
+
+
 if __name__ == "__main__":
     unittest.main()
 
