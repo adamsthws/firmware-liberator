@@ -146,7 +146,7 @@ export async function snapshot(db, now = new Date()) {
     wanted: [...wanted].filter(([, row]) => row.asked + row.unsupported >= SMALLEST)
       .sort(([a, x], [b, y]) => (y.asked + y.unsupported) - (x.asked + x.unsupported) || a.localeCompare(b))
       .map(([model, row]) => ({ model, asked: count(row.asked), unsupportedRuns: count(row.unsupported) })),
-    routes: routes.map((row) => ({ from: row.source, firmware: row.firmware, ...outcomes(row) })),
+    routes: routes.map((row) => ({ source: row.source, firmware: row.firmware, ...outcomes(row) })),
     tools: tools.map((row) => ({ tool: row.tool, ...outcomes(row) })),
     failures: failures.map((row) => ({ step: row.step || null, error: row.error, runs: row.runs })),
     cancellations: cancellations.map((row) => ({ step: row.step || null, runs: row.runs })),
@@ -155,6 +155,6 @@ export async function snapshot(db, now = new Date()) {
       success: rate(row.converted, row.runs) })),
     computers: computers.map((row) => ({ os: row.os_family, python: row.python_source, runs: row.runs })),
     times: times.map((row) => ({ month: row.month, device: row.device || null, firmware: row.firmware || null,
-      from: row.source, runs: row.n, median: row.p50, p90: row.p90 })),
+      source: row.source, runs: row.n, median: row.p50, p90: row.p90 })),
   };
 }

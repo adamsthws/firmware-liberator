@@ -74,8 +74,8 @@ test("a report the tool makes is kept, on the day it came in, and nothing of whe
   const stages = rows(bindings, `SELECT stage, seconds, busy, tries, wait, setup_network, power_cycles
     FROM report_stages WHERE id = ? ORDER BY stage`, sent.id);
   assert.deepEqual(stages, Object.entries(sent.stages).sort()
-    .map(([stage, { s, busy, tries, wait, setup_network, power_cycles }]) =>
-      ({ stage, seconds: s, busy, tries, wait, setup_network, power_cycles })), "a row a stage");
+    .map(([stage, { seconds, busy, tries, wait, setup_network, power_cycles }]) =>
+      ({ stage, seconds, busy, tries, wait, setup_network, power_cycles })), "a row a stage");
   assert.ok(!Object.values(kept).some((value) => String(value).includes("15:30")), "no time of day");
 });
 
@@ -153,12 +153,12 @@ test("a device's record: its first run, the runs to its first conversion, and wh
   const bindings = env();
   const hash = hashOf(4);
   const failed = { device_hash: hash, result: "failed", firmware: "tasmota",
-    stopped: { step: "D4", error: "upload-cut", text: "the delivery stopped part way", where: null } };
+    stopped: { step: "D4", error: "upload-cut", text: "the delivery stopped part way", crash_site: null } };
   await send(bindings, [report(failed), report({ ...failed, resumed: true })]);
   await send(bindings, [report({ device_hash: hash })]);   // converted, to Tasmota
   const later = new Date("2026-11-12T09:00:00Z");
-  await send(bindings, [report({ device_hash: hash, firmware: "esphome", from: "tasmota" }, later.getTime() / 1000)], later);
-  await send(bindings, [report({ device_hash: hash, firmware: "sonoff", from: "esphome" }, later.getTime() / 1000)], later);
+  await send(bindings, [report({ device_hash: hash, firmware: "esphome", source: "tasmota" }, later.getTime() / 1000)], later);
+  await send(bindings, [report({ device_hash: hash, firmware: "sonoff", source: "esphome" }, later.getTime() / 1000)], later);
   const [record] = rows(bindings, "SELECT * FROM devices");
   assert.deepEqual(record, {
     device_hash: keyed(hash), model: "S60TPG", device: "sonoff-s60", first_day: "2026-11-09", last_day: "2026-11-12",
@@ -172,8 +172,8 @@ test("a device's record follows it across days, back to Sonoff's firmware too", 
   const hash = hashOf(5);
   const later = new Date("2026-11-20T09:00:00Z");
   await send(bindings, [report({ device_hash: hash })]);
-  await send(bindings, [report({ device_hash: hash, firmware: "sonoff", from: "tasmota" }, later.getTime() / 1000)], later);
-  await send(bindings, [report({ device_hash: hash, tag: "dev", firmware: "esphome", from: "sonoff" }, later.getTime() / 1000)],
+  await send(bindings, [report({ device_hash: hash, firmware: "sonoff", source: "tasmota" }, later.getTime() / 1000)], later);
+  await send(bindings, [report({ device_hash: hash, tag: "dev", firmware: "esphome", source: "sonoff" }, later.getTime() / 1000)],
     later);
   const [record] = rows(bindings, "SELECT first_day, last_day, first_result, runs, runs_to_convert, conversions, "
     + "back_to_sonoff, firmware, dev FROM devices");
@@ -185,7 +185,7 @@ test("a run the person stopped is kept, but makes no device's record", async () 
   // Those count the runs that ran to an end: how many to convert one, how its first ended.
   const bindings = env();
   const hash = hashOf(6);
-  await send(bindings, [report({ device_hash: hash, result: "cancelled", stopped: { step: "D1", error: "quit", text: "", where: null } })]);
+  await send(bindings, [report({ device_hash: hash, result: "cancelled", stopped: { step: "D1", error: "quit", text: "", crash_site: null } })]);
   assert.deepEqual(rows(bindings, "SELECT result, step, error, text FROM reports"),
     [{ result: "cancelled", step: "D1", error: "quit", text: "" }]);
   assert.equal(rows(bindings, "SELECT * FROM devices").length, 0);
@@ -196,11 +196,11 @@ test("a run the person stopped is kept, but makes no device's record", async () 
 
 test("a converted device keeps the number the first computer to convert it gave it", async () => {
   const bindings = env();
-  const failed = { result: "failed", nth_device: null, stopped: { step: "D4", error: "upload-cut", text: "", where: null } };
+  const failed = { result: "failed", nth_device: null, stopped: { step: "D4", error: "upload-cut", text: "", crash_site: null } };
   await send(bindings, [report({ device_hash: hashOf(7), ...failed })]);
   await send(bindings, [report({ device_hash: hashOf(7), nth_device: 3 })]);
-  await send(bindings, [report({ device_hash: hashOf(7), nth_device: 1, firmware: "esphome", from: "tasmota" })]);
-  await send(bindings, [report({ device_hash: hashOf(8), nth_device: 2, firmware: "sonoff", from: "tasmota" })]);
+  await send(bindings, [report({ device_hash: hashOf(7), nth_device: 1, firmware: "esphome", source: "tasmota" })]);
+  await send(bindings, [report({ device_hash: hashOf(8), nth_device: 2, firmware: "sonoff", source: "tasmota" })]);
   assert.deepEqual(rows(bindings, "SELECT device_hash, place FROM devices ORDER BY place"),
     [{ device_hash: keyed(hashOf(8)), place: null }, { device_hash: keyed(hashOf(7)), place: 3 }],
     "a conversion's alone, the first kept; going back to Sonoff's is none");
@@ -208,15 +208,14 @@ test("a converted device keeps the number the first computer to convert it gave 
 
 // Each report field is kept in a column of its own, so any of them can be
 // counted with plain SQL: a field the schema gains without one would be
-// taken, and thrown away. Where a field's column is not named for it - its
-// path, "." as "_", or a nested one's own name - or it is kept elsewhere,
-// these say so, and why.
+// taken, and thrown away. A field's column is named for it - its path, "."
+// as "_", or a nested one's own name - and where it is kept elsewhere, these
+// say so, and why.
 const SCHEMA = JSON.parse(readFileSync(new URL("../api/report-schema.json", import.meta.url), "utf8"));
 const SAMPLES = JSON.parse(readFileSync(new URL("./fixtures/reports.json", import.meta.url), "utf8"));
 const KEPT = {
   run: {
     table: "reports",
-    renamed: { from: "source", "stopped.where": "crash_site" },
     elsewhere: {
       format: "the schema's version, the same for every report kept",
       proof: "checked as the report comes in, then of no use",
@@ -227,7 +226,6 @@ const KEPT = {
   },
   readout: {
     table: "readout_reports",
-    renamed: {},
     elsewhere: {
       format: "the schema's version, the same for every report kept",
       proof: "checked as the report comes in, then of no use",
@@ -235,7 +233,7 @@ const KEPT = {
     },
     own: ["day", "quarantined"],
   },
-  stage: { table: "report_stages", renamed: { s: "seconds" }, elsewhere: {}, own: ["id", "stage"] },
+  stage: { table: "report_stages", elsewhere: {}, own: ["id", "stage"] },
 };
 
 // Each field `rule` has, by its path: a nested one's as "os.arch".
@@ -250,7 +248,7 @@ const columnsOf = (bindings, table) => rows(bindings, `SELECT name FROM pragma_t
 function columnsFor(bindings, rule, kept) {
   const columns = columnsOf(bindings, kept.table);
   return new Map(fields(rule).filter((field) => !(field in kept.elsewhere)).map((field) => [field,
-    kept.renamed[field] ?? [field.replaceAll(".", "_"), field.split(".").at(-1)].find((name) => columns.includes(name))]));
+    [field.replaceAll(".", "_"), field.split(".").at(-1)].find((name) => columns.includes(name))]));
 }
 
 test("each field of a report has a column of its own, and each column a field", () => {
@@ -441,14 +439,14 @@ test("who named a model is kept as a keyed hash of it and their address, once a 
 test("a report held for review, or the maintainer's own, vouches for no model", async () => {
   const bindings = env();
   await send(bindings, [report({ model: "NEWDEV", tag: "dev" }),
-    report({ model: "NEWDEV", result: "failed", stopped: { step: "D4", error: "upload-cut", text: "buy cheap watches", where: null } })]);
+    report({ model: "NEWDEV", result: "failed", stopped: { step: "D4", error: "upload-cut", text: "buy cheap watches", crash_site: null } })]);
   assert.deepEqual(rows(bindings, "SELECT * FROM model_senders"), []);
 });
 
 test("a report no run would write is answered as accepted, held for review, and counted nowhere", async () => {
   const bindings = env();
   const junk = report({ device_hash: hashOf(9), result: "failed",
-    stopped: { step: "D4", error: "upload-cut", text: "buy cheap watches at example dot com", where: null } });
+    stopped: { step: "D4", error: "upload-cut", text: "buy cheap watches at example dot com", crash_site: null } });
   const answer = await send(bindings, [junk]);
   assert.deepEqual(answer.accepted, [junk.id], "its sender learns nothing");
   assert.deepEqual(rows(bindings, "SELECT quarantined FROM reports"), [{ quarantined: 1 }]);
@@ -460,7 +458,7 @@ test("a report no run would write is answered as accepted, held for review, and 
 test("a report the tool writes is never held", async () => {
   const bindings = env();
   await send(bindings, [report({ device_hash: hashOf(10) }), report({ result: "failed",
-    stopped: { step: "D4", error: "upload-cut", text: "the delivery stopped part way: the device fetched 1 of 2", where: null } })]);
+    stopped: { step: "D4", error: "upload-cut", text: "the delivery stopped part way: the device fetched 1 of 2", crash_site: null } })]);
   assert.deepEqual(rows(bindings, "SELECT quarantined FROM reports"), [{ quarantined: 0 }, { quarantined: 0 }]);
   assert.equal(rows(bindings, "SELECT * FROM held_reports").length, 0);
 });

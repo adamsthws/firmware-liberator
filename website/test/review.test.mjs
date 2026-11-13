@@ -58,7 +58,7 @@ test("a word of the list held, wherever a person could write one", () => {
   const word = WORDS.words.find((each) => /^[a-z]+$/.test(each));
   const report = structuredClone(FIXTURES.valid[0]);
   for (const changed of [{ model: word.toUpperCase() }, { os: { ...report.os, version: `Linux ${word}` } },
-    { stopped: { step: "D4", error: "other", text: `oh ${word}`, where: null } }]) {
+    { stopped: { step: "D4", error: "other", text: `oh ${word}`, crash_site: null } }]) {
     assert.equal(heldFor({ ...report, ...changed }), "words no report would hold", JSON.stringify(changed));
   }
 });
@@ -87,7 +87,7 @@ test("a run the person stopped is taken only as the tool writes one", () => {
   assert.equal(heldFor(stopped("cancelled", "device-lost")), held, "a failure's class");
   assert.equal(heldFor(stopped("failed", "quit")), held, "a way of stopping on a failure");
   const placed = { ...stopped("cancelled", "quit"), stopped: { step: "D1", error: "quit", text: "",
-    where: "KeyError at tools/autoflash/report.py:1" } };
+    crash_site: "KeyError at tools/autoflash/report.py:1" } };
   assert.equal(heldFor(placed), held, "a place in the code: nothing went wrong");
 });
 

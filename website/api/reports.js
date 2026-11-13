@@ -114,13 +114,13 @@ const COLUMNS = (report, hash, day, held) => {
     id: report.id, day, tag: report.tag, tool: report.tool, kind: report.kind, result: report.result,
     step: stopped.step ?? null, error: stopped.error ?? null, text: stopped.text ?? null, family: report.family,
     device: report.device, model: report.model, stock: report.stock, device_hash: hash, firmware: report.firmware,
-    source: report.from, backup: report.backup, identity: report.identity, os_family: report.os.family,
+    source: report.source, backup: report.backup, identity: report.identity, os_family: report.os.family,
     os_version: report.os.version, os_arch: report.os.arch, python_version: report.python.version,
     python_source: report.python.source, seconds: report.seconds, resumed: Number(report.resumed),
     signal: report.signal, wifi_typed: flag(report.wifi_typed), setup_network: flag(report.setup_network),
     power_cycled: flag(report.power_cycled), checks: report.checks, meter: report.meter,
-    crash_site: stopped.where ?? null, chip_revision: report.chip.revision, flash_id: report.chip.flash_id,
-    flash_mb: report.chip.flash_mb, connection: report.computer.connection, vpn: flag(report.computer.vpn),
+    crash_site: stopped.crash_site ?? null, chip_revision: report.chip.revision,
+    chip_flash_id: report.chip.flash_id, chip_flash_mb: report.chip.flash_mb, connection: report.computer.connection, vpn: flag(report.computer.vpn),
     networks: report.computer.networks, security_note: Number(report.computer.security_note),
     firewall: report.computer.firewall, admin: Number(report.computer.admin), ewelink_region: report.ewelink_region,
     ctrl_c_carried_on: report.ctrl_c_carried_on, launcher: report.launcher, install: report.install,
@@ -133,7 +133,7 @@ const NAMES = Object.keys(COLUMNS({ os: {}, python: {}, chip: {}, computer: {} }
 const INSERT = `INSERT OR IGNORE INTO reports (${NAMES.join(", ")}) VALUES (${NAMES.map(() => "?").join(", ")})`;
 // The report's stages, one row each, from its `stages` as JSON.
 const STAGES = `INSERT OR IGNORE INTO report_stages (id, stage, seconds, busy, tries, wait, setup_network, power_cycles)
-  SELECT ?1, key, json_extract(value, '$.s'), json_extract(value, '$.busy'), json_extract(value, '$.tries'),
+  SELECT ?1, key, json_extract(value, '$.seconds'), json_extract(value, '$.busy'), json_extract(value, '$.tries'),
     json_extract(value, '$.wait'), json_extract(value, '$.setup_network'), json_extract(value, '$.power_cycles')
   FROM json_each(?2)`;
 const READOUT = `INSERT OR IGNORE INTO readout_reports (id, day, tag, tool, result, error, family, device, model,

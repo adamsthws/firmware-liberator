@@ -177,7 +177,7 @@ def stages(ctx: Context) -> dict[str, dict[str, int]]:
         tries = captures.get(f"{step}.attempts")
         waited = captures.get(f"{step}.waited")
         cycles = captures.get(f"{step}.power_cycles")
-        found[step] = {"s": min(int(seconds), 86400),
+        found[step] = {"seconds": min(int(seconds), 86400),
                        "busy": min(int(busy), 86400) if isinstance(busy, (int, float)) else 0,
                        "tries": min(tries, 99) if isinstance(tries, int) and tries > 0 else 1,
                        # How long the person took over its questions.
@@ -250,7 +250,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         # Where people stop, and how: no words, as nothing went wrong.
         result = ending
         stopped = {"step": stopped_step(ctx), "error": getattr(ctx, "stopped_by", None) or "quit", "text": "",
-                   "where": None}
+                   "crash_site": None}
     else:
         reason = ctx.last_failure or ""
         text = plain(reason)
@@ -262,7 +262,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
                    "error": "crash" if ending == "crashed"
                    else failures.classify(reason if text.endswith("...") else text),
                    "text": text,
-                   "where": site if isinstance(site, str) and CRASH_SITE.fullmatch(site) else None}
+                   "crash_site": site if isinstance(site, str) and CRASH_SITE.fullmatch(site) else None}
     backup = state.input("backup_outcome") or ("existing" if routes.sonoff_backup_exists(ctx) else "not taken")
     # For a conversion, the device's number among those converted on this
     # computer (records.number_conversion): how many one computer converts.
@@ -290,7 +290,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
         "stock": stock if VERSION.fullmatch(stock) else None,
         "device_hash": device_hash(state.input("device_mac")),
         "firmware": firmware,
-        "from": put_back.get("came_from") or source,
+        "source": put_back.get("came_from") or source,
         "backup": backup,
         "identity": captures.get("R1.identity") if captures.get("R1.identity") in ("backup", "kept", "account")
         else None,
