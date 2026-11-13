@@ -1,3 +1,4 @@
+import hashlib
 import io
 import unittest
 import urllib.parse
@@ -40,7 +41,16 @@ def run(fake, *args):
     return code, out.getvalue()
 
 
+def nothing_suppressed(case):
+    patcher = mock.patch.object(readouts, "suppressed", return_value=set())
+    patcher.start()
+    case.addCleanup(patcher.stop)
+
+
 class ReadoutsTests(unittest.TestCase):
+    def setUp(self):
+        nothing_suppressed(self)
+
     def test_every_page_is_listed(self):
         keys = [f"readouts/2026-11-07/{n:024x}.tar" for n in range(5)] + ["other/thing.json"]
         fake = FakeBucket(keys)
@@ -94,8 +104,76 @@ class ReadoutsTests(unittest.TestCase):
         self.assertIn("readouts: GET /zones: HTTP 403", err.getvalue())
 
 
+class BouncedTests(unittest.TestCase):
+    """Addresses gone for good are taken off the list."""
+
+    ROWS = [{"who": "a" * 64, "email": "Gone@Example.com", "token": "0" * 32, "since": "2026-11-07T10:00:00Z",
+             "devices": "S60TPF:-", "readouts": None},
+            {"who": "b" * 64, "email": "me@example.com", "token": "1" * 32, "since": "2026-11-08T10:00:00Z",
+             "devices": "S60TPF:-", "readouts": None}]
+
+    def test_the_suppression_list_gives_the_addresses_gone_for_good_from_every_page(self):
+        def entry(email, reason):
+            return {"id": "x", "email": email, "reason": reason, "created_at": "2026-11-01T00:00:00Z"}
+        pages = iter([[entry("Gone@Example.com", "hard_bounce")] * readouts.SUPPRESSIONS_PAGE,
+                      [entry("spam@example.com", "complaint"), entry("full@example.com", "soft_bounce"),
+                       entry("hand@example.com", "manual")]])
+        asked = []
+
+        def fake(path, method="GET", body=None, **kwargs):
+            asked.append(path)
+            return [{"account": {"id": "a1"}}] if path.startswith("/zones") else next(pages)
+        with mock.patch.object(cs, "api", fake):
+            self.assertEqual(readouts.suppressed(), {"gone@example.com", "spam@example.com"})
+        self.assertEqual(asked[1:], [f"/accounts/a1/email/sending/suppressions?per_page={readouts.SUPPRESSIONS_PAGE}"
+                                     f"&page={n}" for n in (1, 2)])
+
+    def test_notify_takes_them_off_and_lists_the_rest(self):
+        asked = []
+
+        def query(sql, params=None):
+            asked.append((sql, params))
+            return self.ROWS if sql.startswith("SELECT") else []
+        out = io.StringIO()
+        with mock.patch.object(readouts, "suppressed", return_value={"gone@example.com"}), \
+                mock.patch.object(readouts, "query", query), redirect_stdout(out):
+            self.assertEqual(readouts.main(["notify"]), 0)
+        lines = out.getvalue().splitlines()
+        self.assertEqual(lines[0], "Removed 1 that bounced for good or marked an email as spam.")
+        self.assertTrue(lines[1].startswith("me@example.com  "))
+        self.assertEqual(lines[-1], "1 addresses")
+        self.assertEqual([(sql, params) for sql, params in asked if sql.startswith("DELETE")],
+                         [(f"DELETE FROM {table} WHERE who = ?1", ["a" * 64])
+                          for table in ("subscriber_devices", "subscriber_readouts", "subscribers")])
+
+    def test_forget_takes_one_address_off_by_its_key(self):
+        who = hashlib.sha256(b"me@example.com").hexdigest()
+        self.assertEqual(readouts.who_of(" Me@Example.com "), who)
+        for kept, said in (([{"who": who}], "Removed."), ([], "Not on the list.")):
+            asked = []
+
+            def query(sql, params=None, kept=kept):
+                asked.append((sql, params))
+                return kept if sql.startswith("SELECT") else []
+            out = io.StringIO()
+            with mock.patch.object(readouts, "query", query), redirect_stdout(out):
+                self.assertEqual(readouts.main(["forget", "Me@Example.com"]), 0)
+            self.assertEqual(out.getvalue().strip(), said)
+            self.assertEqual(asked[0], ("SELECT who FROM subscribers WHERE who = ?1", [who]))
+            self.assertEqual(len(asked), 4 if kept else 1)
+
+    def test_its_key_is_the_workers(self):
+        from pathlib import Path
+        worker = (Path(readouts.__file__).resolve().parents[2] / "website/api/index.js").read_text(encoding="utf-8")
+        self.assertIn("hex(await sha256(new TextEncoder().encode(email.toLowerCase())))", worker)
+        self.assertIn("const email = typeof asked.email === \"string\" ? asked.email.trim() : \"\";", worker)
+
+
 class ChangesTests(unittest.TestCase):
     """The devices whose status changed since a release, and whom to tell."""
+
+    def setUp(self):
+        nothing_suppressed(self)
 
     def changes(self, before, now, given):
         rows = [{"who": f"{n:064x}", "email": email, "token": "0" * 32, "since": "2026-11-09T10:00:00Z",

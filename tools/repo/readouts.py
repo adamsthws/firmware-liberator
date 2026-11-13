@@ -5,6 +5,8 @@
     python3 tools/repo/readouts.py notify [PRODUCT]  who asked to be emailed as
                                                     more devices are supported
                                                     (of a product: its owners)
+    python3 tools/repo/readouts.py forget ADDRESS  take one off that list (one that
+                                                    bounced, say)
     python3 tools/repo/readouts.py review [PRODUCT]  the readouts waiting for review
     python3 tools/repo/readouts.py approve ID        one taken as right
     python3 tools/repo/readouts.py reject ID         one taken as wrong: its place
@@ -35,8 +37,11 @@ maintainer's CLOUDFLARE_READOUTS_REVIEW_TOKEN (D1 is refused to CI's).
 devices (eWeLink's product model and the firmware model, as the tool last
 saw the owner's account), the readouts it sent, when it was confirmed, and
 the link each email to it carries for its owner to remove it. Given a
-product, only that product's owners. Everyone listed is emailed when a new
-device is supported (.github/readouts.md). `changes` lists each device whose
+product, only that product's owners. Any address on Email Service's
+suppression list for a hard bounce or a spam complaint is taken off the list
+first, and how many said. `forget` takes off one address, as its own link
+would: one an email sent by hand bounced from. Everyone listed is emailed
+when a new device is supported (.github/readouts.md). `changes` lists each device whose
 status in devices/status.json differs from REF's, with its owners: run it
 when a release changes one. Never from CI, whose logs are public.
 Fetch one with `npx wrangler r2 object get <bucket>/<key> --remote --file
@@ -47,6 +52,7 @@ allows it; tools/repo/cloudflare_tokens.py makes it.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -91,12 +97,17 @@ def shown(value: Any) -> str:
                    for c in str(value))
 
 
-def query(sql: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
-    """The rows `sql` gives in the API's database."""
+def account() -> str:
+    """The id of the account the zone is in."""
     zones = cs.api(f"/zones?name={cs.ZONE}")
     if not zones:
         raise cs.SettingsError(f"the token cannot see the zone {cs.ZONE}")
-    path = f"/accounts/{zones[0]['account']['id']}/d1/database/{cs.bound_database_id()}/query"
+    return str(zones[0]["account"]["id"])
+
+
+def query(sql: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
+    """The rows `sql` gives in the API's database."""
+    path = f"/accounts/{account()}/d1/database/{cs.bound_database_id()}/query"
     answer = cs.api(path, "POST", {"sql": sql, "params": params or []})
     return list((answer or [{}])[0].get("results") or [])
 
@@ -182,12 +193,55 @@ def subscriber(row: dict[str, Any]) -> str:
                                               f"{FORGET_URL}?a={row.get('who')}&t={row.get('token')}"])
 
 
+# Why Email Service puts an address on the account's suppression list for
+# good: its mail bounced as no such mailbox, or its owner marked one as spam.
+# Either way it is never to be written to again (.github/readouts.md).
+GONE = {"hard_bounce", "complaint"}
+SUPPRESSIONS_PAGE = 1000
+
+
+def suppressed() -> set[str]:
+    """The addresses on the account's suppression list for a GONE reason,
+    in lower case."""
+    found: set[str] = set()
+    ident = account()
+    for page in range(1, 101):
+        rows = cs.api(f"/accounts/{ident}/email/sending/suppressions?per_page={SUPPRESSIONS_PAGE}&page={page}") or []
+        found |= {str(row.get("email") or "").lower() for row in rows if row.get("reason") in GONE}
+        if len(rows) < SUPPRESSIONS_PAGE:
+            break
+    return found - {""}
+
+
+def forget(who: str) -> None:
+    """Takes an address off the list, as its own /forget link does."""
+    for table in ("subscriber_devices", "subscriber_readouts", "subscribers"):
+        query(f"DELETE FROM {table} WHERE who = ?1", [who])
+
+
+def who_of(email: str) -> str:
+    """An address's key in the database, as website/api/index.js makes it."""
+    return hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()
+
+
 def subscribers(product: str | None = None) -> list[dict[str, Any]]:
-    """Each confirmed address, or only `product`'s owners."""
+    """Each confirmed address, or only `product`'s owners; any that bounced
+    for good or drew a complaint taken off the list first."""
+    gone = suppressed()
     if product:
-        return query(f"{SUBSCRIBERS} WHERE who IN (SELECT who FROM subscriber_devices WHERE product = ?1) "
+        rows = query(f"{SUBSCRIBERS} WHERE who IN (SELECT who FROM subscriber_devices WHERE product = ?1) "
                      "ORDER BY since", [product.upper()])
-    return query(f"{SUBSCRIBERS} ORDER BY since")
+    else:
+        rows = query(f"{SUBSCRIBERS} ORDER BY since")
+    kept = []
+    for row in rows:
+        if str(row.get("email") or "").lower() in gone:
+            forget(str(row["who"]))
+        else:
+            kept.append(row)
+    if len(kept) < len(rows):
+        print(f"Removed {len(rows) - len(kept)} that bounced for good or marked an email as spam.")
+    return kept
 
 
 def products_of(row: dict[str, Any]) -> list[str]:
@@ -258,6 +312,19 @@ def main(argv: list[str] | None = None) -> int:
         except cs.SettingsError as error:
             print(f"readouts: {error}", file=sys.stderr)
             return 1
+    if args[:1] == ["forget"]:
+        if len(args) != 2:
+            print(__doc__.strip(), file=sys.stderr)
+            return 2
+        try:
+            known = query("SELECT who FROM subscribers WHERE who = ?1", [who_of(args[1])])
+            if known:
+                forget(who_of(args[1]))
+        except cs.SettingsError as error:
+            print(f"readouts: {error}", file=sys.stderr)
+            return 1
+        print("Removed." if known else "Not on the list.")
+        return 0
     if args[:1] == ["notify"]:
         if len(args) > 2:
             print(__doc__.strip(), file=sys.stderr)

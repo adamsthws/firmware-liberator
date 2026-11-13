@@ -149,10 +149,14 @@ When it fails:
    prints counts only, as CI's log is public.
 2. Many bounces at once from mistyped or made-up addresses mean someone is
    giving them: lower `NOTIFY_SENDER_DAILY` or `NOTIFY_DAILY` until it stops.
-3. After a complaint, remove that address from the list (its `/forget` link,
-   or by hand: its rows in `subscribers`, `subscriber_devices` and
-   `subscriber_readouts`). Leave it suppressed, so it is never written
-   to again, unless its owner asks to be told once more.
+3. Nothing more for an address that bounced for good or complained:
+   `readouts.py notify` and `changes` take every such address on the
+   suppression list off the list before they show it. Leave it suppressed,
+   so it is never written to again, unless its owner asks to be told once
+   more.
+
+An email you send yourself bounces to your own mailbox instead: take that
+address off with `readouts.py forget <address>`.
 
 ## Rotating SENDER_KEY
 
@@ -183,7 +187,7 @@ npx wrangler r2 object get firmware-liberator-readouts/readouts/2026-11-07/0a1b2
 
 `readouts.py` reads `CLOUDFLARE_READOUTS_REVIEW_TOKEN` from the environment or
 `.env.infra`: the readouts token, allowed the API's database and to read the
-buckets, which `tools/repo/cloudflare_tokens.py readouts-review` makes.
+buckets and the suppression list, which `tools/repo/cloudflare_tokens.py readouts-review` makes.
 wrangler reads its own name, `CLOUDFLARE_API_TOKEN`: set it to the same
 token. Putting or deleting an object needs one that can edit the bucket.
 `readouts.py --help` lists its other commands.
