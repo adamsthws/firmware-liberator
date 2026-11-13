@@ -27,7 +27,8 @@ beside them; a prefix given lists everything under it.
 API has not taken as right: fewer than three of them, from three senders,
 agree (.github/readouts.md). Each line is its reference, stage, when it came
 in, its object and fingerprint; one whose fingerprint differs from the rest
-of its key is marked ODD. `rotated` lists, the same way, each key taken as
+of its key is marked ODD, and one that came to check those taken as right,
+and is not alike them, DISAGREES. `rotated` lists, the same way, each key taken as
 right from readouts sent both before and after TIME (as `cloudflare_settings.py
 rotate SENDER_KEY` printed it): two of its three could be one sender's, as a
 new key makes every sender look new. The API's database is read with the
@@ -119,7 +120,7 @@ PENDING = "readouts:pending"
 
 def review(product: str | None) -> int:
     """The readouts waiting for review, by key: each odd one marked."""
-    rows = query("SELECT id, key, stage, fingerprint, object, received FROM readouts WHERE review = 'pending'"
+    rows = query("SELECT id, key, stage, fingerprint, object, received, checked FROM readouts WHERE review = 'pending'"
                  + (" AND key LIKE ?1" if product else "") + " ORDER BY key, stage, received",
                  [f"{product.upper()}|%"] if product else [])
     keys: dict[tuple[str, str], list[dict[str, Any]]] = {}
@@ -131,7 +132,8 @@ def review(product: str | None) -> int:
         for row in held:
             odd = len(held) > 1 and prints.count(row["fingerprint"]) == 1 and len(set(prints)) > 1
             print(f"    {shown(row['id'])}  {shown(row['received'])}  {shown(row['object'])}  "
-                  f"{shown(row['fingerprint'][:12])}" + ("  ODD" if odd else ""))
+                  f"{shown(row['fingerprint'][:12])}" + ("  ODD" if odd else "")
+                  + ("  DISAGREES" if row["checked"] else ""))
     print(f"{len(rows)} waiting for review")
     return 0
 

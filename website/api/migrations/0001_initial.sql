@@ -259,8 +259,9 @@ CREATE TABLE IF NOT EXISTS monthly_stock (
 ) WITHOUT ROWID;
 
 -- Each readout kept (index.js), so that each product, firmware model and
--- version (`key`) is kept from READOUTS_PER_KEY different senders at most,
--- and reviewed until that many agree.
+-- version (`key`) is kept from PER_KEY different senders, more while they
+-- disagree or to check them (MAX_PLACES, CHECK_DAYS), and reviewed until
+-- that many agree.
 -- - `sender` is a keyed hash (SENDER_KEY) of the sender's address and the
 --   key, never the address: one sender's readouts of one key are one, and
 --   nothing ties a sender's readouts of different keys together.
@@ -268,6 +269,8 @@ CREATE TABLE IF NOT EXISTS monthly_stock (
 --   (its firmware, not the owner's settings): readouts that agree share it.
 -- - `review`: pending until READOUTS_PER_KEY of one stage agree (quorum), or
 --   the maintainer approves or rejects it; a rejected one frees its place.
+-- - `checked`: 1 for a whole one that came after some of its key were taken
+--   as right (CHECK_DAYS): pending, it disagrees with them.
 CREATE TABLE IF NOT EXISTS readouts (
   id TEXT PRIMARY KEY,
   key TEXT NOT NULL,
@@ -278,6 +281,7 @@ CREATE TABLE IF NOT EXISTS readouts (
   object TEXT NOT NULL,
   received TEXT NOT NULL,
   review TEXT NOT NULL DEFAULT 'pending' CHECK (review IN ('pending', 'quorum', 'approved', 'rejected')),
+  checked INTEGER NOT NULL DEFAULT 0,
   UNIQUE (key, sender)
 );
 

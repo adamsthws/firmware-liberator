@@ -384,6 +384,83 @@ test("three alike from three clouds are kept, but do not agree until an owner's 
   assert.deepEqual((await rows(bindings)).map((row) => row.review), Array(6).fill("quorum"));
 });
 
+// Every readout held made to have come `days` before NOW.
+const aged = (bindings, days) => bindings.DB.db.prepare("UPDATE readouts SET received = ?")
+  .run(new Date(NOW.getTime() - days * 86_400_000).toISOString());
+const MADE_UP = { ...FIRMWARE, apps: [{ ...FIRMWARE.apps[0], elf_sha256: "9".repeat(64) }] };
+// Three whole readouts that agree, from three networks.
+async function agreed(bindings) {
+  for (const address of ["192.0.2.1", "192.0.2.2", "192.0.2.3"]) {
+    assert.equal((await from(bindings, address, { firmware: FIRMWARE })).status, 201, address);
+  }
+  assert.ok((await rows(bindings)).every((row) => row.review === "quorum"));
+}
+
+test("once whole readouts agree, one more checks them each CHECK_DAYS, from a new network", async () => {
+  assert.equal(readout.CHECK_DAYS, 30);
+  const bindings = { ...env(), ALERTS_RECIPIENT_EMAIL: "maintainer@example.com" };
+  await agreed(bindings);
+  assert.equal((await from(bindings, "192.0.2.4", { firmware: FIRMWARE })).status, 200, "not before CHECK_DAYS");
+  aged(bindings, 29);
+  assert.equal((await from(bindings, "192.0.2.4", { firmware: FIRMWARE })).status, 200, "nor a day short");
+  aged(bindings, 30);
+  assert.equal((await from(bindings, "192.0.2.4", { firmware: FIRMWARE }, 16509)).status, 200,
+    "nor from a network that counts as none");
+  assert.equal((await from(bindings, "192.0.2.5", { firmware: FIRMWARE }, networkOf("192.0.2.1"))).status, 200,
+    "nor from one held");
+  const asked = (asn) => readout.wanted(onNetwork(question(fresh(ASKED_WHOLE)), asn), bindings, NOW);
+  assert.equal((await (await asked(64505)).json()).wanted, true, "asked first, it is wanted");
+  assert.equal((await from(bindings, "192.0.2.6", { firmware: FIRMWARE })).status, 201);
+  const check = (await rows(bindings)).at(-1);
+  assert.deepEqual([check.review, check.checked], ["quorum", 1], "alike: taken as right too");
+  assert.equal(bindings.EMAIL.sent.at(-1).subject, "Readouts confirmed: NEWTHING|SN-NEW-01|1.0.0 (whole)");
+  assert.equal((await from(bindings, "192.0.2.7", { firmware: FIRMWARE })).status, 200, "the next CHECK_DAYS on");
+  assert.equal((await from(bindings, "192.0.2.7", { read: false })).status, 200, "and a first stage is not checked");
+});
+
+test("a check alike readouts approved from too few networks is taken as right too", async () => {
+  const bindings = env();
+  for (const address of ["192.0.2.1", "192.0.2.2", "192.0.2.3"]) {
+    await from(bindings, address, { firmware: FIRMWARE }, 64500);
+  }
+  bindings.DB.db.prepare("UPDATE readouts SET review = 'approved'").run();
+  aged(bindings, 30);
+  assert.equal((await from(bindings, "192.0.2.4", { firmware: FIRMWARE }, 64501)).status, 201);
+  assert.equal((await rows(bindings)).at(-1).review, "quorum", "two networks, but alike those approved");
+});
+
+test("checks stop at MAX_PLACES in all", async () => {
+  const bindings = env();
+  await agreed(bindings);
+  for (const address of ["192.0.2.4", "192.0.2.5", "192.0.2.6"]) {
+    aged(bindings, 30);
+    assert.equal((await from(bindings, address, { firmware: FIRMWARE })).status, 201, address);
+  }
+  aged(bindings, 30);
+  assert.equal((await from(bindings, "192.0.2.7", { firmware: FIRMWARE })).status, 200);
+  assert.equal((await rows(bindings)).length, readout.MAX_PLACES);
+});
+
+test("a check not alike waits for review, the maintainer is told, and new networks are taken at once", async () => {
+  const bindings = { ...env(), ALERTS_RECIPIENT_EMAIL: "maintainer@example.com" };
+  bindings.DB.db.prepare("INSERT INTO settings (name, value) VALUES (?, 'off')").run(readout.AGREEMENT_SETTING);
+  await agreed(bindings);
+  aged(bindings, 30);
+  assert.equal((await from(bindings, "192.0.2.4", { firmware: MADE_UP })).status, 201);
+  const check = (await rows(bindings)).at(-1);
+  assert.deepEqual([check.review, check.checked], ["pending", 1]);
+  assert.deepEqual(bindings.EMAIL.sent.map((message) => message.subject),
+    ["Readouts disagree: NEWTHING|SN-NEW-01|1.0.0 (whole)"], "whatever the switch says");
+  assert.match(bindings.EMAIL.sent[0].text, /readouts\.py review NEWTHING lists it \(DISAGREES\)/);
+  // Disputed: two more not alike, from new networks, at once - three from
+  // three networks, yet not taken as right while another fingerprint is.
+  for (const address of ["192.0.2.5", "192.0.2.6"]) {
+    assert.equal((await from(bindings, address, { firmware: MADE_UP })).status, 201, address);
+  }
+  assert.deepEqual((await rows(bindings)).map((row) => row.review),
+    ["quorum", "quorum", "quorum", "pending", "pending", "pending"], "the maintainer settles it");
+});
+
 test("the maintainer is emailed when readouts come to agree, unless the admin view's switch is off", async () => {
   const agree = async (bindings) => {
     for (const address of ["192.0.2.1", "192.0.2.2", "192.0.2.3"]) {

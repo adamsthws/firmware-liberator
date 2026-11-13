@@ -90,6 +90,21 @@ test("the view shows what the database holds, as text, never markup, and is kept
   assert.match(await response.text(), /<h1>Admin<\/h1>/);
 });
 
+test("the view lists the keys a later whole readout disagrees with, unsettled", async () => {
+  const { bindings, db } = await held();
+  const add = db.db.prepare(`INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, review,
+    checked) VALUES (?, 'NEWTHING|SN-NEW-01|1.0.0', 'whole', ?, ?, 100, 'readouts/x.tar', ?, ?, ?)`);
+  for (const n of [1, 2, 3]) {
+    add.run(`r${n}`, `s${n}`, "f".repeat(64), "2026-10-01T10:00:00Z", "quorum", 0);
+  }
+  add.run("r4", "s4", "f".repeat(64), "2026-11-01T10:00:00Z", "quorum", 1);   // a check alike
+  const disputed = async () => (await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys))
+    .split('id="disputed">')[1].split("</section>")[0];
+  assert.match(await disputed(), /<p class="none">None\.<\/p>/, "a check alike is no dispute");
+  add.run("r5", "s5", "e".repeat(64), "2026-11-08T10:00:00Z", "pending", 1);
+  assert.match(await disputed(), /NEWTHING\|SN-NEW-01\|1\.0\.0<\/td><td>whole<\/td><td class="number">4<\/td><td class="number">1<\/td><td>2026-11-08<\/td>/);
+});
+
 test("the view shows each list of networks that count as none: its size, when taken, and the last try", async () => {
   const { bindings, db } = await held();
   assert.match(await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys), /Not fetched yet\./);

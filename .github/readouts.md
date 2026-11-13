@@ -122,6 +122,15 @@ let past, and only a readout that adds something is kept:
 - Until three agree, a key has three more places, each for a readout from a
   network none of those held came from: three made up on one rented server's
   network cannot keep out the owners who would outvote them.
+- Once a key's whole readouts agree (or you approve them), those places are
+  still given, one each `CHECK_DAYS` (`website/api/index.js`), to check them:
+  one made up from owners' networks, or approved by mistake, is found by a
+  later owner's. One alike is taken as right too (emailed as "Readouts
+  confirmed", under the same switch). One not alike waits for review,
+  `readouts.py review` marks it DISAGREES, the admin view lists its key
+  under Disputed, and you are emailed whatever the switch says; until you
+  approve or reject it, readouts of the key from new networks are taken
+  without waiting, and no other fingerprint is taken as right on its own.
 - A kept readout is kept for good, in a private bucket that nothing serves:
   an old one may help with a device's later versions.
 - Anyone may ask to be emailed as more devices are supported: the tool asks

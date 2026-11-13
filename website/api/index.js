@@ -13,8 +13,9 @@
 //   those files are held already, so they are left out.
 // - /v1/readout: a readout, made with its owner's consent. Kept only if it adds
 //   something: fewer than PER_KEY readouts of that model and version at that
-//   stage are held (a whole one taking a first stage's place too), and its
-//   sender has had fewer than SENDER_DAILY kept today.
+//   stage are held (a whole one taking a first stage's place too), or it
+//   checks those taken as right (CHECK_DAYS), and its sender has had fewer
+//   than SENDER_DAILY kept today.
 // - /v1/notify: an owner's email address, to be emailed as more devices are
 //   supported, with their devices' models and the readouts they sent, so
 //   their own devices' news can be sent them too. The website's sign-up page
@@ -128,6 +129,17 @@ export const PER_KEY = 3;
 // the maintainer to approve them (the admin view, or readouts.py approve).
 export const MIN_NETWORKS = 3;
 export const MAX_PLACES = 2 * PER_KEY;
+// Once a key's whole readouts agree, or are approved, one more is still
+// wanted each CHECK_DAYS, from a network none of those held came from, up to
+// MAX_PLACES in all: so one wrongly taken as right - made up from owners'
+// networks, or approved by mistake - is found by a later owner's. One alike
+// is taken as right too. One not alike waits for review, its row marked
+// (checked), the maintainer is emailed (tellDisputed), and until it is
+// settled readouts from new networks are taken without waiting. No second
+// fingerprint is taken as right while one is: the maintainer settles it.
+// Whole readouts only: a first stage holds what eWeLink offers the device,
+// which changes with each release while the version it runs stays the same.
+export const CHECK_DAYS = 30;
 // The maintainer is emailed when readouts come to agree, unless the admin
 // view's switch, this setting, is "off" (settings table).
 export const AGREEMENT_SETTING = "email_on_agreement";
@@ -353,23 +365,33 @@ const keyOf = (product, model, version) => `${product.toUpperCase()}|${model}|${
 // whole one takes a first stage's place too, as it holds all one does.
 const HOLDING = "review != 'rejected' AND (?2 = 'first' OR stage = 'whole')";
 
+// Whether any of key ?1's held rows at stage ?2 are taken as right.
+const AGREED = `EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND ${HOLDING} AND review IN ('quorum', 'approved'))`;
+// Whether a whole readout of key ?1 checking those taken as right disagrees
+// with them, unsettled.
+const DISPUTED = "EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND stage = 'whole' AND checked = 1 AND review = 'pending')";
+
 // Whether a place of key ?1 at stage ?2 is left for a readout from the
-// network ?n: fewer than PER_KEY are held; or, while none of them agree,
-// fewer than MAX_PLACES are and none came from that network.
-const PLACE_LEFT = (n) => `((SELECT count(*) FROM readouts WHERE key = ?1 AND ${HOLDING}) < ${PER_KEY}
+// network ?n, it being ?c (CHECK_DAYS ago): fewer than PER_KEY are held; or
+// fewer than MAX_PLACES are, none came from that network, and none agree -
+// or, of a whole one, the newest held came CHECK_DAYS ago or a check
+// disagrees (CHECK_DAYS).
+const PLACE_LEFT = (n, c) => `((SELECT count(*) FROM readouts WHERE key = ?1 AND ${HOLDING}) < ${PER_KEY}
   OR (?${n} IS NOT NULL AND (SELECT count(*) FROM readouts WHERE key = ?1 AND ${HOLDING}) < ${MAX_PLACES}
-    AND NOT EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND ${HOLDING} AND review IN ('quorum', 'approved'))
     AND NOT EXISTS (SELECT 1 FROM readouts JOIN readout_networks ON readout_networks.id = readouts.id
-      WHERE readouts.key = ?1 AND ${HOLDING} AND readout_networks.network = ?${n})))`;
+      WHERE readouts.key = ?1 AND ${HOLDING} AND readout_networks.network = ?${n})
+    AND (NOT ${AGREED} OR (?2 = 'whole' AND (${DISPUTED}
+      OR (SELECT max(received) FROM readouts WHERE key = ?1 AND ${HOLDING}) <= ?${c})))))`;
+const checkSince = (now) => new Date(now.getTime() - CHECK_DAYS * 86_400_000).toISOString();
 
 // Whether a readout at `stage` would add anything for `sender`, from
-// `network`: a place is left for it, and that sender has none of the key
-// already - so a sender with many of one device sends one, and three
+// `network`, at `now`: a place is left for it, and that sender has none of
+// the key already - so a sender with many of one device sends one, and three
 // agreeing come from three senders.
-async function adds(env, key, stage, sender, network) {
+async function adds(env, key, stage, sender, network, now) {
   const row = await env.DB.prepare(
-    `SELECT ${PLACE_LEFT(4)} AS room, (SELECT count(*) FROM readouts WHERE key = ?1 AND sender = ?3) AS theirs`,
-  ).bind(key, stage, sender ?? "", network).first();
+    `SELECT ${PLACE_LEFT(4, 5)} AS room, (SELECT count(*) FROM readouts WHERE key = ?1 AND sender = ?3) AS theirs`,
+  ).bind(key, stage, sender ?? "", network, checkSince(now)).first();
   return Boolean(row.room) && row.theirs === 0;
 }
 
@@ -419,17 +441,19 @@ async function fingerprintOf(manifest, stage) {
 
 // A readout's row, if a place is left for it and its sender has none of the
 // key: in one statement, so two sent at once cannot both take the last place;
-// then its network. Then every pending row of its key and stage marked
-// agreed (quorum) once PER_KEY of them, from MIN_NETWORKS networks, hold the
-// same fingerprint - and the maintainer told.
-async function hold(env, row) {
+// marked checked if it is a whole one coming after some agreed; then its
+// network. Then every pending row of its key and stage marked agreed (quorum)
+// once PER_KEY of them, from MIN_NETWORKS networks, hold the same fingerprint,
+// or that fingerprint is taken as right already, and no other is - and the
+// maintainer told. A check that agrees with none taken as right is a dispute.
+async function hold(env, row, now) {
   const taken = await env.DB.prepare(
-    `INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received)
-     SELECT ?4, ?1, ?2, ?3, ?5, ?6, ?7, ?8
-     WHERE ${PLACE_LEFT(9)}
-     ON CONFLICT (key, sender) DO NOTHING RETURNING id`,
-  ).bind(row.key, row.stage, row.sender, row.id, row.fingerprint, row.bytes, row.object, row.received, row.network)
-    .first();
+    `INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, checked)
+     SELECT ?4, ?1, ?2, ?3, ?5, ?6, ?7, ?8, ?2 = 'whole' AND ${AGREED}
+     WHERE ${PLACE_LEFT(9, 10)}
+     ON CONFLICT (key, sender) DO NOTHING RETURNING id, checked`,
+  ).bind(row.key, row.stage, row.sender, row.id, row.fingerprint, row.bytes, row.object, row.received, row.network,
+    checkSince(now)).first();
   if (!taken) {
     return false;
   }
@@ -439,11 +463,16 @@ async function hold(env, row) {
   }
   const agreed = (await env.DB.prepare(
     `UPDATE readouts SET review = 'quorum' WHERE key = ?1 AND stage = ?2 AND review = 'pending'
-     AND fingerprint = ?3 AND (SELECT count(*) FROM readouts WHERE key = ?1 AND stage = ?2
+     AND fingerprint = ?3
+     AND NOT EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND stage = ?2 AND fingerprint != ?3
+       AND review IN ('quorum', 'approved'))
+     AND (EXISTS (SELECT 1 FROM readouts WHERE key = ?1 AND stage = ?2 AND fingerprint = ?3
+       AND review IN ('quorum', 'approved'))
+     OR ((SELECT count(*) FROM readouts WHERE key = ?1 AND stage = ?2
        AND fingerprint = ?3 AND review != 'rejected') >= ?4
      AND (SELECT count(DISTINCT readout_networks.network) FROM readouts
        JOIN readout_networks ON readout_networks.id = readouts.id WHERE readouts.key = ?1 AND readouts.stage = ?2
-       AND readouts.fingerprint = ?3 AND readouts.review != 'rejected') >= ?5 RETURNING bytes`,
+       AND readouts.fingerprint = ?3 AND readouts.review != 'rejected') >= ?5)) RETURNING bytes`,
   ).bind(row.key, row.stage, row.fingerprint, PER_KEY, MIN_NETWORKS).all()).results;
   // Taken as right: no longer held to the pending readouts' room.
   const bytes = agreed.reduce((total, each) => total + each.bytes, 0);
@@ -451,7 +480,9 @@ async function hold(env, row) {
     await release(env.DB, PENDING, bytes, agreed.length);
   }
   if (agreed.length) {
-    await tellAgreed(env, row, agreed.length);
+    await tellAgreed(env, row, agreed.length, Boolean(taken.checked));
+  } else if (taken.checked) {
+    await tellDisputed(env, row);
   }
   return true;
 }
@@ -459,7 +490,8 @@ async function hold(env, row) {
 // The maintainer's email that readouts of a key have come to agree: unless
 // the admin view's switch is off, or there is nowhere to send it. Those alike
 // from too few networks send none: the admin view lists them (Nearly agreed).
-async function tellAgreed(env, row, newly) {
+// `checked`: a later readout's, agreeing with those taken as right already.
+async function tellAgreed(env, row, newly, checked = false) {
   if (!env.EMAIL || !env.ALERTS_RECIPIENT_EMAIL) {
     return;
   }
@@ -470,10 +502,31 @@ async function tellAgreed(env, row, newly) {
   await sendMail(env, {
     to: env.ALERTS_RECIPIENT_EMAIL,
     from: NOTIFY_FROM,
-    subject: `Readouts agree: ${row.key} (${row.stage})`,
-    text: [`Readouts of ${row.key}, at the ${row.stage} stage, now agree: ${PER_KEY} or more alike, from `
-      + `${MIN_NETWORKS} or more networks, so they are taken as right (${newly} newly).`, "",
+    subject: `Readouts ${checked ? "confirmed" : "agree"}: ${row.key} (${row.stage})`,
+    text: [checked
+      ? `A later readout of ${row.key}, at the ${row.stage} stage, is alike those taken as right, so it is taken `
+        + "as right too."
+      : `Readouts of ${row.key}, at the ${row.stage} stage, now agree: ${PER_KEY} or more alike, from `
+        + `${MIN_NETWORKS} or more networks, so they are taken as right (${newly} newly).`, "",
       "python3 tools/repo/readouts.py review lists them. The admin view's switch turns these emails off."].join("\n"),
+  }, row.received.slice(0, 10));
+}
+
+// The maintainer's email that a later readout disagrees with those of its key
+// taken as right: whatever the switch, as one of them may be wrong.
+async function tellDisputed(env, row) {
+  if (!env.EMAIL || !env.ALERTS_RECIPIENT_EMAIL) {
+    return;
+  }
+  await sendMail(env, {
+    to: env.ALERTS_RECIPIENT_EMAIL,
+    from: NOTIFY_FROM,
+    subject: `Readouts disagree: ${row.key} (${row.stage})`,
+    text: [`A later readout of ${row.key}, at the ${row.stage} stage (${row.id}), is not alike those taken as `
+      + "right. One of them may be wrong. It waits for review, and until it is settled readouts of the key from "
+      + "other networks are taken without waiting.", "",
+      `python3 tools/repo/readouts.py review ${row.key.split("|")[0]} lists it (DISAGREES); the admin view's `
+      + "Disputed list has the key. Approve or reject each with readouts.py."].join("\n"),
   }, row.received.slice(0, 10));
 }
 
@@ -569,7 +622,7 @@ export async function wanted(request, env, now = new Date()) {
     return no("enough");
   }
   const key = keyOf(asked.model, asked.stock_model, asked.stock_version);
-  if (!(await adds(env, key, asked.stage, await senderOf(env, request, key), await networkOf(env, request, key)))) {
+  if (!(await adds(env, key, asked.stage, await senderOf(env, request, key), await networkOf(env, request, key), now))) {
     return no("held");
   }
   const day = now.toISOString().slice(0, 10);
@@ -659,7 +712,7 @@ export async function readout(request, env, now = new Date()) {
   const readoutKey = keyOf(manifest.model, model, version);
   const from = await senderOf(env, request, readoutKey);
   const network = await networkOf(env, request, readoutKey);
-  if (!(await adds(env, readoutKey, stage, from, network))) {
+  if (!(await adds(env, readoutKey, stage, from, network, now))) {
     return answer(200, { enough: true });
   }
   if (!(await take(sender, day, { most: SENDER_DAILY }))) {
@@ -684,7 +737,7 @@ export async function readout(request, env, now = new Date()) {
   }
   const row = { key: readoutKey, stage, sender: from, network, id, fingerprint: await fingerprintOf(manifest, stage),
     bytes: body.byteLength, object: key, received: now.toISOString() };
-  if (!(await hold(env, row))) {
+  if (!(await hold(env, row, now))) {
     await giveBack();   // its place taken meanwhile, by another sent at once
     return answer(200, { enough: true });
   }
