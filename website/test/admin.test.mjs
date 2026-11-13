@@ -236,7 +236,7 @@ test("every answer is uncached, unframed, unindexed and runs no script", async (
   assert.equal(response.headers.get("X-Robots-Tag"), "noindex, nofollow");
 });
 
-test("each model's devices month by month: asked to be read out, read out, first converted", async () => {
+test("each model's devices month by month: asked to be read out, read out, converted", async () => {
   const bindings = env();
   const db = bindings.DB.db;
   const wanted = db.prepare("INSERT INTO wanted_devices (device_hash, model, first_day, last_day, asks) VALUES (?, ?, ?, ?, 1)");
@@ -250,17 +250,20 @@ test("each model's devices month by month: asked to be read out, read out, first
   readOut.run("2", "2026-11-05", "user", "a", 0);   // the same device again that month: one
   readOut.run("3", "2026-11-05", "dev", "d", 0);   // the maintainer's own testing
   readOut.run("4", "2026-11-05", "user", "e", 1);   // quarantined
-  const device = db.prepare(`INSERT INTO devices (device_hash, model, first_day, last_day, first_result, converted_day,
-    runs, conversions, back_to_sonoff, dev) VALUES (?, ?, ?, ?, 'converted', ?, 1, 1, 0, ?)`);
-  device.run("f", "S60TPG", "2026-10-01", "2026-10-01", "2026-10-01", 0);
-  device.run("g", "S60TPG", "2026-10-02", "2026-10-02", "2026-10-02", 0);
-  device.run("h", "S60TPG", "2026-10-03", "2026-10-03", "2026-10-03", 1);   // the maintainer's own
+  const run = (id, hash, day, changes = {}) => bindings.DB.batch(writes(bindings.DB,
+    { ...structuredClone(FIXTURE), id, model: "S60TPG", ...changes }, hash, day));
+  await run("r1", "f", "2026-10-01");
+  await run("r2", "g", "2026-10-02");
+  await run("r3", "g", "2026-10-20", { firmware: "esphome", source: "tasmota" });   // converted again: one that month
+  await run("r4", "g", "2026-11-02", { firmware: "esphome", source: "tasmota" });   // and again the next
+  await run("r5", "h", "2026-10-03", { firmware: "sonoff", source: "tasmota" });   // back to Sonoff's: no conversion
+  await run("r6", "i", "2026-10-04", { tag: "dev" });   // the maintainer's own
   const { months, models } = await admin.gather(bindings, new Date(NOW)).then((data) => data.popularity);
   assert.deepEqual([months.length, months[0], months.at(-1)], [admin.POPULAR_MONTHS, "2024-12", "2026-11"]);
   assert.deepEqual(models.map(({ model, series }) => [model, series]), [
     ["NEWTHING", { "asked to be read out": { "2026-09": 1, "2026-11": 1 }, "read out": { "2026-11": 1 } }],
-    ["S60TPG", { "first converted": { "2026-10": 2 } }]]);
+    ["S60TPG", { converted: { "2026-10": 2, "2026-11": 1 } }]]);
   const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
   assert.match(html, /<figcaption>NEWTHING<\/figcaption>/);
-  assert.match(html, /<title>S60TPG, 2026-10: 2 first converted<\/title>/);
+  assert.match(html, /<title>S60TPG, 2026-10: 2 converted<\/title>/);
 });

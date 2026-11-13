@@ -5,11 +5,14 @@
 // validated chart palette (both themes), set as the roles below.
 import Page from "../layouts/Page.astro";
 import DataTable from "../components/stats/DataTable.astro";
+import ModelTrends from "../components/stats/ModelTrends.astro";
 import MonthColumns from "../components/stats/MonthColumns.astro";
 import RankedBars from "../components/stats/RankedBars.astro";
 import Segmented from "../components/stats/Segmented.astro";
 import Tile from "../components/stats/Tile.astro";
 import schema from "../../api/report-schema.json" with { type: "json" };
+import { monthsTo } from "../../api/popularity.js";
+import { TREND_MONTHS } from "../../api/snapshot.js";
 import { loadStats, STATS_URL } from "../stats.mjs";
 
 const { figures, why } = await loadStats();
@@ -41,10 +44,10 @@ const view = figures && {
     tip: `${row.model}: ${row.devices.toLocaleString("en")} devices, ${row.converted ?? "fewer than 5"} converted`,
   })),
   wanted: figures.wanted.map((row) => ({
-    label: row.model, value: (row.asked ?? 0) + (row.unsupportedRuns ?? 0) || null,
-    note: [row.unsupportedRuns && `${row.unsupportedRuns} runs found one`, row.asked && `${row.asked} readouts offered`]
+    label: row.model, value: row.devices,
+    note: [row.ran && `${row.ran} met by a run`, row.asked && `${row.asked} asked about for a readout`]
       .filter(Boolean).join(" · "),
-    tip: `${row.model}: met ${((row.asked ?? 0) + (row.unsupportedRuns ?? 0)).toLocaleString("en")} times`,
+    tip: `${row.model}: ${row.devices.toLocaleString("en")} devices`,
   })),
   routes: figures.routes.filter((row) => row.success !== null).map((row) => ({
     label: `${FROM[row.source] ?? row.source} → ${FIRMWARE[row.firmware] ?? row.firmware}`, value: row.success,
@@ -132,9 +135,21 @@ const view = figures && {
 
       <section class="card">
         <h2>Most wanted</h2>
-        <p class="sub">Devices the tool does not convert yet, by how often runs found one or a readout of one was offered.
-          A <a href="/docs/readouts">readout</a> is how support for one is added.</p>
-        {view.wanted.length ? <RankedBars rows={view.wanted} label="Devices wanted, by times met" /> : <p class="none">None yet.</p>}
+        <p class="sub">Devices the tool does not convert yet, by how many were met - by a run, or asked about for a
+          readout - each counted once, however often. A <a href="/docs/readouts">readout</a> is how support for one is added.</p>
+        {view.wanted.length ? <RankedBars rows={view.wanted} label="Devices wanted, by devices met" /> : <p class="none">None yet.</p>}
+      </section>
+
+      <section class="card">
+        <h2>Model by model</h2>
+        <p class="sub">Each model's devices month by month: asked about for a readout, read out, and converted (a device
+          converted again counts again), on one scale. A month under {figures.smallest} devices shows none.</p>
+        {figures.modelMonths.length
+          ? <ModelTrends rows={figures.modelMonths} months={monthsTo(new Date(`${figures.through}T00:00:00Z`), TREND_MONTHS)} />
+          : <p class="none">Not enough devices yet.</p>}
+        <DataTable caption="The figures, as a table" rows={figures.modelMonths}
+          columns={[["Month", "month"], ["Model", "model"], ["Asked to be read out", "asked", true], ["Read out", "readOut", true],
+            ["Converted", "converted", true]]} />
       </section>
 
       <div class="pair">
@@ -262,6 +277,14 @@ const view = figures && {
   .stats .mark.series-1 { fill: var(--series-1); } .stats .mark.series-2 { fill: var(--series-2); }
   .stats .mark.series-3 { fill: var(--series-3); }
   .stats .mark:hover, .stats .mark:focus-visible { filter: brightness(1.18); outline: none; }
+  .stats .trends { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px 20px; }
+  .stats .trend { margin: 0; } .stats .trend figcaption { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+  .stats .trend-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .stats .trend-line.series-1 { stroke: var(--series-1); } .stats .trend-line.series-2 { stroke: var(--series-2); }
+  .stats .trend-line.series-3 { stroke: var(--series-3); }
+  .stats .trend-dot.series-1 { fill: var(--series-1); } .stats .trend-dot.series-2 { fill: var(--series-2); }
+  .stats .trend-dot.series-3 { fill: var(--series-3); }
+  .stats .trend-dot:hover, .stats .trend-dot:focus-visible { r: 5; outline: none; }
 
   .stats .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; list-style: none; padding: 0; margin: 0 0 10px;
     font-size: 13px; color: var(--ink-2); }

@@ -70,17 +70,27 @@ export async function sampleDatabase(now = new Date("2026-12-01T03:17:00Z"), rep
     const report = {
       ...structuredClone(FIXTURE), id: Math.floor(next() * 2 ** 52).toString(16).padStart(32, "0").slice(-32),
       tag: next() < 0.03 ? "dev" : "user", model, device, family, firmware,
-      stock: family === "beken" ? "1.17.1" : next() < 0.7 ? "1.2.0" : "1.1.0",
+      stock_version: family === "beken" ? "1.17.1" : next() < 0.7 ? "1.2.0" : "1.1.0",
       result: ok ? "converted" : cancelled ? "cancelled" : "failed", stopped: ok ? null : { step, error, text: "" },
       // One to four devices a computer, as real ones would be numbered (fewer 2s than 1s, and so on), by the run's number.
       nth_device: ok && firmware ? [1, 1, 1, 1, 2, 2, 2, 3, 3, 4][n % 10] : null,
-      seconds: Math.round(240 + next() * 420), os: { family: osFamily, version: osVersion },
+      seconds: Math.round(240 + next() * 420), os: { ...FIXTURE.os, family: osFamily, version: osVersion },
       python: { version: "3.12.4", source: next() < 0.6 ? "portable" : "system" },
     };
     await db.batch(writes(db, report, unit, day));
   }
-  for (const [model, asked] of [["NSPANEL", 41], ["MINIR4", 27], ["M5-2C", 12], ["BASICR4", 9]]) {
-    db.db.prepare("INSERT INTO wanted_days (day, model, asked) VALUES (?, ?, ?)").run(dayOf(now), model, asked);
+  // Devices asked about for a readout, each on a day of the last few months.
+  const asked = db.db.prepare(`INSERT INTO wanted_devices (device_hash, model, first_day, last_day, asks)
+    VALUES (?, ?, ?, ?, 1)`);
+  for (const [model, devices] of [["NSPANEL", 41], ["MINIR4", 27], ["M5-2C", 12], ["BASICR4", 9]]) {
+    for (let n = 0; n < devices; n += 1) {
+      const day = dayOf(new Date(now.getTime() - Math.floor(next() * 120) * 86_400_000));
+      asked.run(`${model}-asked-${n}`, model, day, day);
+    }
+  }
+  // Every model in them vouched for, as enough senders over enough days would make it (nightly.js).
+  for (const model of new Set([...DEVICES.map(([name]) => name), "NSPANEL", "MINIR4", "M5-2C", "BASICR4"])) {
+    db.db.prepare("INSERT OR IGNORE INTO vouched_models (model, day) VALUES (?, ?)").run(model, dayOf(now));
   }
   const kept = new Map();
   const STATS = { head: async (key) => (kept.has(key) ? {} : null), put: async (key, text) => kept.set(key, text) };
