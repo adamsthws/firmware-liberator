@@ -23,7 +23,8 @@
 //   past its limit for unauthenticated downloads. A list that comes from
 //   neither, or comes far shorter than the one kept, is not taken:
 //   the one kept stays, the admin view shows its age, and the nightly alert
-//   says so each LIST_STALE_DAYS it goes untaken (alerts.js).
+//   says so each LIST_STALE_DAYS it goes untaken (alerts.js). One taken far
+//   longer than the one kept is told too (LIST_JUMP).
 import { ready } from "./database.js";
 
 // Amazon (16509, 14618), Google (15169, 396982), Microsoft (8075),
@@ -51,6 +52,11 @@ export const LIST_MAX_ASNS = 50_000;
 // cut short, not as that many hosts gone.
 export const LIST_SHRINK = 0.5;
 export const LIST_STALE_DAYS = 7;
+// A list taken with this share more ASNs than the one kept is told the same
+// night (alerts.js), with up to LIST_ADDED_SHOWN of those it added: one
+// mistaken entry for a big home provider would cost its customers their vote.
+export const LIST_JUMP = 0.5;
+export const LIST_ADDED_SHOWN = 20;
 // How long a Worker uses the lists it read before reading them again.
 const LIST_CACHE_MS = 10 * 60 * 1000;
 
@@ -118,8 +124,9 @@ export async function refreshNetworks(env, now = new Date(), fetcher = fetch) {
   const day = now.toISOString().slice(0, 10);
   const done = {};
   for (const [name, path] of Object.entries(NETWORK_LISTS)) {
-    const kept = await env.DB.prepare("SELECT asns FROM network_lists WHERE name = ?").bind(name).first("asns");
-    const before = kept ? JSON.parse(kept).length : 0;
+    const kept = JSON.parse(await env.DB.prepare("SELECT asns FROM network_lists WHERE name = ?").bind(name)
+      .first("asns") ?? "[]");
+    const before = kept.length;
     const problems = [];
     let asns = null;
     for (const [source, base] of Object.entries(LIST_SOURCES)) {
@@ -131,13 +138,17 @@ export async function refreshNetworks(env, now = new Date(), fetcher = fetch) {
       problems.push(`${source}: ${got.problem}`);
     }
     const problem = asns ? null : problems.join("; ");
-    // Taken: its ASNs, and today. Not: the ASNs and day kept stay (the first
-    // try's day, while none was ever taken), with why.
+    // Taken: its ASNs, today, and how many were kept before it and which it
+    // added. Not: the ASNs and day kept stay (the first try's day, while none
+    // was ever taken), with why.
+    const added = asns ? asns.filter((asn) => !kept.includes(asn)).slice(0, LIST_ADDED_SHOWN) : [];
     await (problem
       ? env.DB.prepare(`INSERT INTO network_lists (name, asns, taken, problem) VALUES (?1, '[]', ?2, ?3)
          ON CONFLICT (name) DO UPDATE SET problem = ?3`).bind(name, day, problem)
-      : env.DB.prepare(`INSERT INTO network_lists (name, asns, taken, problem) VALUES (?1, ?2, ?3, NULL)
-         ON CONFLICT (name) DO UPDATE SET asns = ?2, taken = ?3, problem = NULL`).bind(name, JSON.stringify(asns), day))
+      : env.DB.prepare(`INSERT INTO network_lists (name, asns, taken, problem, previous, added)
+         VALUES (?1, ?2, ?3, NULL, ?4, ?5)
+         ON CONFLICT (name) DO UPDATE SET asns = ?2, taken = ?3, problem = NULL, previous = ?4, added = ?5`)
+        .bind(name, JSON.stringify(asns), day, before, JSON.stringify(added)))
       .run();
     done[name] = problem ?? "taken";
   }

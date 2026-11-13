@@ -108,10 +108,10 @@ test("the view lists the keys a later whole readout disagrees with, unsettled", 
 test("the view shows each list of networks that count as none: its size, when taken, and the last try", async () => {
   const { bindings, db } = await held();
   assert.match(await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys), /Not fetched yet\./);
-  db.db.prepare("INSERT INTO network_lists (name, asns, taken, problem) VALUES ('vpn', '[64500,64501]', '2026-11-02', 'HTTP 404')")
-    .run();
+  db.db.prepare(`INSERT INTO network_lists (name, asns, taken, problem, previous)
+    VALUES ('vpn', '[64500,64501]', '2026-11-02', 'HTTP 404', 1)`).run();
   const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
-  assert.match(html, /<td>vpn<\/td><td class="number">2<\/td><td>2026-11-02<\/td><td>HTTP 404<\/td>/);
+  assert.match(html, /<td>vpn<\/td><td class="number">2<\/td><td class="number">1<\/td><td>2026-11-02<\/td><td>HTTP 404<\/td>/);
 });
 
 test("a held report released is counted again: its day folded afresh tonight", async () => {

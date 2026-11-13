@@ -48,8 +48,8 @@ test("the lists fetched each night are kept, and count from then on", async () =
   assert.deepEqual(await refreshNetworks(bindings, NOW, lists({ datacenter: "AS64500\nAS64501\n", vpn: "AS64510\n" })),
     { datacenter: "taken", vpn: "taken" });
   assert.deepEqual(kept(bindings), [
-    { name: "datacenter", asns: [64500, 64501], taken: "2026-11-13", problem: null },
-    { name: "vpn", asns: [64510], taken: "2026-11-13", problem: null }]);
+    { name: "datacenter", asns: [64500, 64501], taken: "2026-11-13", problem: null, previous: 0, added: "[64500,64501]" },
+    { name: "vpn", asns: [64510], taken: "2026-11-13", problem: null, previous: 0, added: "[64510]" }]);
   assert.equal(await countedNetwork(bindings, on(64500)), null, "read afresh once the lists are taken");
   assert.equal(await countedNetwork(bindings, on(64510)), null);
   assert.equal(await countedNetwork(bindings, on(64520)), 64520);
@@ -78,7 +78,8 @@ test("a list never taken is kept as none, from the day it was first tried", asyn
   const bindings = { DB: d1() };
   await refreshNetworks(bindings, NOW, lists({ datacenter: 500, vpn: 500 }));
   await refreshNetworks(bindings, new Date("2026-11-20T03:17:00Z"), lists({ datacenter: 500, vpn: 500 }));
-  assert.deepEqual(kept(bindings)[0], { name: "datacenter", asns: [], taken: "2026-11-13", problem: "GitHub: HTTP 500; jsDelivr: HTTP 500" });
+  assert.deepEqual(kept(bindings)[0], { name: "datacenter", asns: [], taken: "2026-11-13",
+    problem: "GitHub: HTTP 500; jsDelivr: HTTP 500", previous: 0, added: "[]" });
 });
 
 test("a list GitHub refuses is fetched from jsDelivr's copy instead", async () => {
@@ -91,4 +92,13 @@ test("a list GitHub refuses is fetched from jsDelivr's copy instead", async () =
     `${LIST_SOURCES.jsDelivr}${NETWORK_LISTS.datacenter}`, `${LIST_SOURCES.GitHub}${NETWORK_LISTS.vpn}`],
   "jsDelivr only when GitHub fails");
   assert.deepEqual(kept(bindings).map((row) => row.asns), [[64500], [64510]]);
+});
+
+test("a list taken keeps how many were kept before it, and those it added", async () => {
+  const bindings = { DB: d1() };
+  await refreshNetworks(bindings, NOW, lists({ datacenter: "AS64500\nAS64501", vpn: "AS64510" }));
+  await refreshNetworks(bindings, NOW, lists({ datacenter: "AS64500\nAS64502\nAS64503", vpn: "AS64510" }));
+  const [datacenter, vpn] = bindings.DB.db.prepare("SELECT previous, added FROM network_lists ORDER BY name").all();
+  assert.deepEqual([datacenter.previous, JSON.parse(datacenter.added)], [2, [64502, 64503]]);
+  assert.deepEqual([vpn.previous, JSON.parse(vpn.added)], [1, []]);
 });

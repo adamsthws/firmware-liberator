@@ -8,10 +8,11 @@
 // Routing destination; with either missing, nothing is sent. Yesterday's
 // emails that failed to send are a line too (mail.js), but for those to an
 // address on the suppression list, which are expected now and then. And a
-// list of hosts' and VPNs' networks gone untaken a week (networks.js).
+// list of hosts' and VPNs' networks gone untaken a week, or taken far longer
+// than the one kept (networks.js).
 import { read } from "./counters.js";
 import { SUPPRESSED, failedOn, sendMail } from "./mail.js";
-import { LIST_STALE_DAYS } from "./networks.js";
+import { LIST_JUMP, LIST_STALE_DAYS } from "./networks.js";
 
 export const STORE_WARN = 0.75;
 
@@ -62,6 +63,14 @@ export async function alertLines(db, today, limits) {
       lines.push(`The ${list.name} list of networks that count toward no agreement (website/api/networks.js) has `
         + `not been taken since ${list.taken}: ${list.problem}.`);
     }
+  }
+  const { results: grown } = await db.prepare(`SELECT name, previous, json_array_length(asns) AS now, added
+    FROM network_lists WHERE taken = ?1 AND problem IS NULL AND previous > 0
+    AND json_array_length(asns) > ?2 * previous`).bind(today, 1 + LIST_JUMP).all();
+  for (const list of grown) {
+    lines.push(`The ${list.name} list of networks that count toward no agreement (website/api/networks.js) grew `
+      + `from ${list.previous} to ${list.now} today. Among those added: ${JSON.parse(list.added).map((asn) => `AS${asn}`)
+        .join(", ")}. A home internet provider among them would cost its customers their vote.`);
   }
   return lines;
 }
