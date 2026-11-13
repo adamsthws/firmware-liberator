@@ -120,9 +120,15 @@ is known of it:
     (`tools/espressif/emulator/container/bin/`), on both networks, with the
     right to move its own interfaces (`NET_ADMIN`), to leave the home network
     and take an address from the device.
-- **Untried:** the device's own network and its station on the home network at
-  once on the MAC model, and how long ESPHome takes to raise its network on
-  the emulator's clock, against the tool's waits.
+- **The firmware keeps both up at once on the MAC model.** ESPHome's S61
+  image, staged with home-network details the network refuses (a wrong
+  password, or no such network) and the frames it sent counted: about two
+  minutes after boot on the emulator's clock, some 40 seconds on the wall's,
+  it raises its own open network (`esphome-` and the end of its MAC, at
+  192.168.4.1) and beacons it steadily, about nine times a second, while it
+  goes on probing for, authenticating with and associating to the home
+  network between restarts of its adapter, for the 25 minutes watched. So
+  only the peer's side is missing.
 - **A stand-in page** answering at the device's address instead, outside the
   radio, would run only the tool's half of the step, which the unit tests
   hold already, not the firmware's.
