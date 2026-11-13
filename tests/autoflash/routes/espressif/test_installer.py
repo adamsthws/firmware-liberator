@@ -363,7 +363,7 @@ class WaitForBridgeTests(unittest.TestCase):
         with self.assertRaises(errors.Abort):
             self.wait([None] * 500, {}, timeout=400.0, answering=False, told=told)
         self.assertIn("switch it off and on", " ".join(told))
-        self.assertEqual(sum("Nothing is answering" in line for line in told), 1)   # once, not each look
+        self.assertEqual(sum("No answer from the device" in line for line in told), 1)   # once, not each look
         told = []
         with self.assertRaises(errors.Abort):
             self.wait([None] * 500, {}, timeout=400.0, answering=True, told=told)

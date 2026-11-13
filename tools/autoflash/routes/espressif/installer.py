@@ -736,9 +736,7 @@ def _wait_for_bridge(ctx: Context, network: str, *, timeout: float | None = None
         elif not hinted and time.monotonic() - heard >= NOTHING_THERE_HINT_AFTER:
             hinted = True
             output.progress_clear()
-            output.tell("    Nothing is answering at the device's address. If it is not on your Wi-Fi at all - "
-                        "after a Wi-Fi outage, Sonoff's firmware can stay off it - switch it off and on: at "
-                        "this stage that is safe. This carries on by itself.")
+            output.tell("    No answer from the device: switch it off and on - it is safe now.")
         if gone_back is not None and time.monotonic() - looked >= GONE_BACK_EVERY:
             looked = time.monotonic()
             if gone_back():
