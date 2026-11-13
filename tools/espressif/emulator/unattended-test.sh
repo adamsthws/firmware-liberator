@@ -72,7 +72,7 @@ while [ $# -gt 0 ]; do
     --size=*) size=${1#--size=} ;;
     --answers=*) answers_file=$(cd "$(dirname "${1#--answers=}")" && pwd)/$(basename "${1#--answers=}") ;;
     --) shift; run_args=("$@"); break ;;
-    *) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    *) sed -n '2,/^set -euo/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
     esac
     shift
 done

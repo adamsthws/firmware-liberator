@@ -69,7 +69,7 @@ for arg in "$@"; do
     --fresh) fresh=1; emu_flags+=("$arg") ;;
     --cloud|--stub-cloud|--no-firewall|--pcap) emu_flags+=("$arg") ;;
     --rebuild) rebuild=1; emu_flags+=("$arg") ;;
-    *) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    *) sed -n '2,/^set -euo/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
     esac
 done
 

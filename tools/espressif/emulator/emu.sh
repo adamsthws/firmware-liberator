@@ -69,7 +69,7 @@ while [ $# -gt 0 ]; do
     --no-firewall) firewall=0 ;;
     --windows) windows=1 ;;
     --no-api) api=0 ;;
-    *) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    *) sed -n '2,/^set -euo/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
     esac
     shift
 done

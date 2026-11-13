@@ -88,6 +88,11 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(done.returncode, 2)
         self.assertIn("--no-api", done.stdout)
 
+    @unittest.skipIf(shutil.which("bash") is None, "no bash")
+    def test_its_usage_is_its_whole_header(self):
+        done = subprocess.run(["bash", str(SCRIPT), "--bogus"], capture_output=True, text=True, timeout=60)
+        self.assertTrue(done.stdout.endswith("each device's flash is kept there between runs.\n"), done.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
