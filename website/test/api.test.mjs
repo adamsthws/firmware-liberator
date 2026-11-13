@@ -683,6 +683,26 @@ test("asked first, the question is counted by its model for the figures", async 
     [{ day: "2026-11-07", model: "NEWTHING", asked: 2 }]);
 });
 
+test("asked first, each device is counted once a day, and kept as a keyed hash with its first and last day", async () => {
+  const bindings = { ...env(), DEVICE_HASH_KEY_PERMANENT: "a device key for the tests" };
+  const [one, two] = ["a", "b"].map((digit) => digit.repeat(64));
+  const later = new Date("2026-11-09T12:00:00Z");
+  await ask({ ...ASKED, device_hash: one }, bindings);
+  await ask({ ...ASKED, device_hash: one, stage: "whole" }, bindings);   // the same device again: one
+  await ask({ ...ASKED, device_hash: two }, bindings);
+  await ask({ ...ASKED }, bindings);   // an earlier tool's, naming none: a question, no device
+  await ask({ ...ASKED, device_hash: one }, bindings, later);
+  const rows = (sql) => bindings.DB.db.prepare(sql).all().map((row) => ({ ...row }));
+  assert.deepEqual(rows("SELECT day, asked, devices FROM wanted_days ORDER BY day"),
+    [{ day: "2026-11-07", asked: 4, devices: 2 }, { day: "2026-11-09", asked: 1, devices: 1 }]);
+  const kept = rows("SELECT * FROM wanted_devices ORDER BY first_day, asks DESC");
+  assert.deepEqual(kept.map(({ model, first_day, last_day, asks }) => [model, first_day, last_day, asks]),
+    [["NEWTHING", "2026-11-07", "2026-11-09", 3], ["NEWTHING", "2026-11-07", "2026-11-07", 1]]);
+  assert.ok(kept.every((row) => /^[0-9a-f]{64}$/.test(row.device_hash) && ![one, two].includes(row.device_hash)),
+    "kept keyed, never as sent");
+  assert.equal((await ask({ ...ASKED, device_hash: "not a hash" }, bindings)).error, "that is not a question this tool asks");
+});
+
 test("asked first, a device enough readouts of are in is not wanted, any other is", async () => {
   const bindings = env({ enough: "S60TPG, basicr4" });
   for (const [product, wanted] of [["BASICR4", false], ["s60tpg", false], ["NEWTHING", true]]) {

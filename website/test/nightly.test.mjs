@@ -206,7 +206,7 @@ test("with reports missing, the computers counted are never more than there are"
 
 test("the devices wanted: /wanted's questions and the runs stopped for want of support", async () => {
   const bindings = env();
-  const ask = bindings.DB.db.prepare("INSERT INTO wanted_days (day, model, asked) VALUES (?, ?, ?)");
+  const ask = bindings.DB.db.prepare("INSERT INTO wanted_days (day, model, asked, devices) VALUES (?, ?, ?, 0)");
   ask.run("2026-11-01", "NSPANEL", 3);
   ask.run("2026-11-02", "NSPANEL", 3);
   ask.run("2026-11-02", "FEW", 2);

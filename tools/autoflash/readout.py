@@ -43,7 +43,7 @@ from tools.autoflash.errors import Abort, Finished, NothingWritten
 # each readout ends (report_upload.send_readout), and on the screen's at the end.
 from tools.autoflash.report_data import (
     ACCEPTED, CANCELLED, CONVERTED_SINCE, CRASHED, FAILED, KEPT, NOT_NEEDED as UNNEEDED, NOT_READ, SKIPPED,
-    WEBSITE_FULL)
+    WEBSITE_FULL, device_hash)
 from tools.ewelink import discover_ewelink, firmware_name, offered_firmware
 
 if TYPE_CHECKING:
@@ -567,7 +567,7 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
     offers = asked.latest.get("offers") or []
     with output.working("Asking the website whether a readout of it is wanted..."):
         answer = ask_wanted(asked.product, asked.model, asked.version, "whole" if whole else "first",
-                            offered_digests(offers))
+                            offered_digests(offers), device_hash(ctx.readout.mac))
     if not answer.wanted:
         full = {"full": FULL_TODAY, "store-full": STORE_FULL, "limit": LIMIT_TODAY}.get(answer.why)
         ctx.readout.outcome, ctx.readout.detail = (WEBSITE_FULL, full) if full else (UNNEEDED, "")
@@ -822,16 +822,20 @@ def light_post(path: str, value: dict[str, Any], timeout: float = 15.0) -> dict[
         return json.loads(response.read().decode("utf-8"))
 
 
-def ask_wanted(product: str, model: str, version: str, stage: str, firmware: list[str]) -> Wanted:
+def ask_wanted(product: str, model: str, version: str, stage: str, firmware: list[str],
+               device: str | None = None) -> Wanted:
     """Whether the website wants this readout: one of a product, firmware model
     and version, at `stage` ("first" or "whole"), that it has none like. Where
     it cannot say - unreachable, or an earlier website - the readout goes
-    ahead, and the website decides once it is sent."""
+    ahead, and the website decides once it is sent. `device`: its hash, as a
+    report's (report_data.device_hash), so the website counts devices asked
+    of, not questions."""
     if upload_url() is None or not product:
         return Wanted(True)
     try:
         answer = light_post("/wanted", {"format": FORMAT, "model": product, "stock_model": model or "-",
-                                        "stock_version": version or "-", "stage": stage, "firmware": firmware})
+                                        "stock_version": version or "-", "stage": stage, "firmware": firmware,
+                                        "device_hash": device})
     except (OSError, ValueError) as exc:   # an HTTPError is an OSError
         output.log_only(f"    Whether a readout is wanted: not answered ({exc}); it goes ahead.")
         return Wanted(True)

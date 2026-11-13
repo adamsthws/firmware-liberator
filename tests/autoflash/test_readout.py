@@ -18,7 +18,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from tools.autoflash import account, errors, hostsys, output, records, prompts, readout, readout_beken
-from tools.autoflash import readout_espressif, report, runner, runs
+from tools.autoflash import readout_espressif, report, report_data, runner, runs
 from tools.autoflash.state import RunState
 from tools.espressif import chips
 from tools.ewelink import firmware_name, offered_firmware
@@ -239,7 +239,8 @@ class StillWantedTests(unittest.TestCase):
         given = f"http://127.0.0.1:{server.server_address[1]}/readout" if url == "set" else url
         try:
             with mock.patch.object(readout, "upload_url", return_value=given), mock.patch.object(output, "log_only"):
-                wanted = readout.ask_wanted("BASICR4", "SN-BASICR4-01", "1.1.0", "whole", ["a" * 64, "b" * 64])
+                wanted = readout.ask_wanted("BASICR4", "SN-BASICR4-01", "1.1.0", "whole", ["a" * 64, "b" * 64],
+                                              report_data.device_hash("12:34:56:ab:cd:ef"))
         finally:
             server.shutdown()
             server.server_close()
@@ -254,7 +255,8 @@ class StillWantedTests(unittest.TestCase):
         # A random field of its own, so two alike questions never share a proof.
         self.assertRegex(asked.pop("nonce"), r"^[0-9a-f]{16}$")
         self.assertEqual(asked, {"format": 1, "model": "BASICR4", "stock_model": "SN-BASICR4-01",
-                                 "stock_version": "1.1.0", "stage": "whole", "firmware": ["a" * 64, "b" * 64]})
+                                 "stock_version": "1.1.0", "stage": "whole", "firmware": ["a" * 64, "b" * 64],
+                                 "device_hash": report_data.device_hash("12:34:56:ab:cd:ef")})
         stamp, nonce = got["proof"].split(":")
         work = hashlib.sha256(f"{stamp}:{hashlib.sha256(got['body']).hexdigest()}:{nonce}".encode()).digest()
         self.assertLess(int.from_bytes(work, "big"), 1 << (256 - readout.LIGHT_PROOF_BITS))
@@ -730,7 +732,7 @@ class NotWantedTests(unittest.TestCase):
             patch.start()
             self.addCleanup(patch.stop)
 
-    def run_basicr4(self):
+    def run_basicr4(self, **extra):
         from tools.autoflash import kinds
         basicr4 = kinds.SONOFF_BASICR4
         asked = account.Asked({"packets": []}, "1.1.0", basicr4.stock_model, "BASICR4", [], {}, "1000abcdef")
@@ -739,17 +741,19 @@ class NotWantedTests(unittest.TestCase):
                                     ask_account=mock.Mock(return_value=asked)), \
                 mock.patch.object(readout_espressif, "read_and_anonymise") as read, \
                 mock.patch.object(readout, "offer") as offered:
-            said = readout.run(self.ctx, record("BASICR4", basicr4.stock_model))
+            said = readout.run(self.ctx, {**record("BASICR4", basicr4.stock_model), **extra})
         read.assert_not_called()
         offered.assert_not_called()
         offered_firmware.fetch.assert_not_called()
         return said
 
     def test_nothing_is_fetched_sent_to_it_or_sent_in_and_it_asks_as_a_whole_readout(self):
-        said = self.run_basicr4()
+        said = self.run_basicr4(params={"fwVersion": "1.1.0", "staMac": "12:34:56:AB:CD:EF"})
         self.assertEqual((said, ended(self.ctx)[-1][1]), ("", readout.UNNEEDED))   # the report says so
-        product, model, version, stage, _ = readout.ask_wanted.call_args.args
+        product, model, version, stage, _, device = readout.ask_wanted.call_args.args
         self.assertEqual((product, version, stage), ("BASICR4", "1.1.0", "whole"))
+        # The device, as its report names it, so the website counts devices, not questions.
+        self.assertEqual(device, report_data.device_hash("12:34:56:ab:cd:ef"))
 
     def test_why_is_shown_and_nothing_asked(self):
         # On the screen, not the log alone; the email question waits for the
