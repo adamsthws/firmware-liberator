@@ -38,7 +38,7 @@
 //   /notify ask lighter work (LIGHT_PROOF_BITS, a second or two) good for a
 //   minute (LIGHT_PROOF_AGE), and taken once: each request is worked for
 //   afresh. A device's names are taken only as a model's name is written
-//   (PRODUCT, FIRMWARE_MODEL, VERSION), other text only as printable ASCII.
+//   (MODEL, STOCK_MODEL, STOCK_VERSION), other text only as printable ASCII.
 // - It must be a readout: a tar of at most MAX_BYTES, its first file a
 //   manifest.json of the format the tool writes.
 // - At most two readouts a minute from one address (READOUT_LIMIT, held by the
@@ -211,7 +211,7 @@ export function manifestOf(body) {
       return null;
     }
     const manifest = JSON.parse(text(512, 512 + size));
-    if (manifest?.format !== FORMAT || typeof manifest.product !== "string") {
+    if (manifest?.format !== FORMAT || typeof manifest.model !== "string") {
       return null;
     }
     return manifest;
@@ -331,9 +331,9 @@ const text = (value, most = 64) => typeof value === "string" && value.length > 0
 // space, "|", ":" or "/" in any, so none can carry a sentence or a link into
 // an email or the figures, and keyOf's "|" is never part of one. openapi.json
 // gives the same (test/openapi.test.mjs holds them alike).
-export const PRODUCT = /^[A-Za-z0-9][A-Za-z0-9-]{0,23}$/;
-export const FIRMWARE_MODEL = /^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,63})$/;
-export const VERSION = /^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,31})$/;
+export const MODEL = /^[A-Za-z0-9][A-Za-z0-9-]{0,23}$/;
+export const STOCK_MODEL = /^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,63})$/;
+export const STOCK_VERSION = /^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,31})$/;
 const fits = (value, pattern) => typeof value === "string" && pattern.test(value);
 
 // Where an offered file a readout holds is marked.
@@ -533,7 +533,7 @@ async function question(request, env, now, what) {
 }
 
 // Whether a readout of a device would add anything, asked before it is made:
-// {"format": 1, "product", "model", "version", "stage": "first"|"whole",
+// {"format": 1, "model", "stock_model", "stock_version", "stage": "first"|"whole",
 //  "firmware": [<SHA-256 of each file eWeLink offers it>]}. Answers
 // {"wanted": bool, "why": "enough"|"held"|"full"|"store-full"|"limit" when not,
 // "held": [<those of the files kept already>]}.
@@ -543,13 +543,13 @@ export async function wanted(request, env, now = new Date()) {
     return asked;
   }
   const firmware = asked.firmware ?? [];
-  if (!fits(asked.product, PRODUCT) || !fits(asked.model, FIRMWARE_MODEL) || !fits(asked.version, VERSION)
+  if (!fits(asked.model, MODEL) || !fits(asked.stock_model, STOCK_MODEL) || !fits(asked.stock_version, STOCK_VERSION)
       || !STAGES.includes(asked.stage)
       || !Array.isArray(firmware) || firmware.length > MAX_FIRMWARE
       || !firmware.every((sha) => typeof sha === "string" && /^[0-9a-f]{64}$/.test(sha))) {
     return answer(400, { error: "that is not a question this tool asks" });
   }
-  await countWanted(env, request, asked.product, now.toISOString().slice(0, 10));
+  await countWanted(env, request, asked.model, now.toISOString().slice(0, 10));
   const held = [];
   for (const sha of firmware) {
     if (await isHeld(env, firmwareKey(sha))) {
@@ -557,10 +557,10 @@ export async function wanted(request, env, now = new Date()) {
     }
   }
   const no = (why) => answer(200, { wanted: false, why, held });
-  if (enoughOf(env).includes(asked.product.toUpperCase())) {
+  if (enoughOf(env).includes(asked.model.toUpperCase())) {
     return no("enough");
   }
-  const key = keyOf(asked.product, asked.model, asked.version);
+  const key = keyOf(asked.model, asked.stock_model, asked.stock_version);
   if (!(await adds(env, key, asked.stage, await senderOf(env, request, key), await networkOf(env, request, key)))) {
     return no("held");
   }
@@ -604,7 +604,7 @@ export async function readout(request, env, now = new Date()) {
     return answer(403, { error: "the readout's proof of work does not check out" });
   }
   const manifest = manifestOf(body);
-  if (!manifest || !fits(manifest.product, PRODUCT)) {
+  if (!manifest || !fits(manifest.model, MODEL)) {
     return answer(400, { error: "that is not a readout this tool makes" });
   }
   const files = filesOf(body);
@@ -622,12 +622,12 @@ export async function readout(request, env, now = new Date()) {
   if (await env.READOUTS.head(key)) {
     return answer(200, { id });
   }
-  if (enoughOf(env).includes(manifest.product.toUpperCase())) {
+  if (enoughOf(env).includes(manifest.model.toUpperCase())) {
     return answer(200, { enough: true });
   }
   const stage = manifest.read === true ? "whole" : "first";
-  const model = fits(manifest.stock_model, FIRMWARE_MODEL) ? manifest.stock_model : "-";
-  const version = fits(manifest.version, VERSION) ? manifest.version : "-";
+  const model = fits(manifest.stock_model, STOCK_MODEL) ? manifest.stock_model : "-";
+  const version = fits(manifest.stock_version, STOCK_VERSION) ? manifest.stock_version : "-";
   const sender = await senderOn(env, request, day);
   if (!sender) {
     return answer(503, { error: "the API is being set up: try again later" }, { "Retry-After": "3600" });
@@ -648,7 +648,7 @@ export async function readout(request, env, now = new Date()) {
   };
   // A readout of a key its sender has sent already, or with no place left,
   // is thanked and not kept - before it takes any of its sender's day.
-  const readoutKey = keyOf(manifest.product, model, version);
+  const readoutKey = keyOf(manifest.model, model, version);
   const from = await senderOf(env, request, readoutKey);
   const network = await networkOf(env, request, readoutKey);
   if (!(await adds(env, readoutKey, stage, from, network))) {
@@ -705,7 +705,7 @@ async function keep(env, key, body, manifest, id, offered) {
     httpMetadata: { contentType: "application/x-tar" },
     customMetadata: {
       tool: String(manifest.tool || "").replace(/[^\x20-\x7e]/g, "").slice(0, 16),
-      product: manifest.product.slice(0, 40),
+      model: manifest.model.slice(0, 40),
       read: String(manifest.read === true),
     },
   });
@@ -734,7 +734,7 @@ const CORS = { "Access-Control-Allow-Origin": SITE_ORIGIN };
 // The website's sign-up page, for one who removed their address and wants
 // it back.
 export const SIGNUP_PAGE = `${SITE_ORIGIN}/notify`;
-// A sign-up: {"format": 1, "email", "devices": [{"product", "model"}],
+// A sign-up: {"format": 1, "email", "devices": [{"model", "stock_model"}],
 // "readouts": [<reference>], "update": true|false} - from the tool, the
 // devices in the owner's eWeLink account, supported or not, [] where none was
 // seen, and the readouts the owner sent that sitting; from the website's page,
@@ -763,14 +763,14 @@ async function signUpAsked(request, env, now) {
   const { devices, readouts = [], update = false } = asked;
   const email = typeof asked.email === "string" ? asked.email.trim() : "";
   if (!isAddress(email) || typeof update !== "boolean" || !Array.isArray(devices) || devices.length > MAX_DEVICES
-      || !devices.every((device) => fits(device?.product, PRODUCT) && fits(device?.model ?? "-", FIRMWARE_MODEL))
+      || !devices.every((device) => fits(device?.model, MODEL) && fits(device?.stock_model ?? "-", STOCK_MODEL))
       || !Array.isArray(readouts) || readouts.length > MAX_READOUTS
       || !readouts.every((id) => typeof id === "string" && READOUT_ID.test(id))) {
     return answer(400, { error: "that is not a request this tool makes" });
   }
   const named = [...new Map(devices.map((device) => {
-    const each = { product: device.product.toUpperCase(), model: device.model ?? "-" };
-    return [`${each.product}|${each.model}`, each];
+    const each = { model: device.model.toUpperCase(), stock_model: device.stock_model ?? "-" };
+    return [`${each.model}|${each.stock_model}`, each];
   })).values()];
   const taken = await signUp(env, request, now, email, named, [...new Set(readouts)], update);
   return taken.error ? answer(taken.status, { error: taken.error }, taken.headers)
@@ -838,13 +838,13 @@ async function signUp(env, request, now, email, devices, readouts, update = fals
   return { status: 202 };
 }
 
-const productsOf = (devices) => [...new Set(devices.map((device) => device.product))];
+const modelsOf = (devices) => [...new Set(devices.map((device) => device.model))];
 
 // The email asking an address's owner to confirm it, or, given the day it was
 // asked for, asking once more.
 function confirmation(email, devices, token, given = null) {
   const reminder = given !== null;
-  const products = productsOf(devices);
+  const products = modelsOf(devices);
   return {
     to: email,
     from: NOTIFY_FROM,
@@ -925,7 +925,7 @@ export async function confirm(request, env, now = new Date()) {
     return page(404, "Nothing to confirm",
       `<p>This link is not one we know, or it has been used, or more than ${SIGNUP_DAYS} days have passed.</p>`);
   }
-  const products = productsOf(JSON.parse(signup.devices));
+  const products = modelsOf(JSON.parse(signup.devices));
   if (request.method === "GET") {
     return page(200, "Be emailed as more devices are supported?",
       `<p>Firmware Liberator will email you as more devices are supported${products.length
@@ -951,9 +951,9 @@ async function keepAddress(env, { who, email, devices, readouts }, now, also = n
     env.DB.prepare(`INSERT INTO subscribers (who, email, token, since, updated) VALUES (?1, ?2, ?3, ?4, ?4)
       ON CONFLICT (who) DO UPDATE SET email = excluded.email, updated = excluded.updated`)
       .bind(who, email, hex(crypto.getRandomValues(new Uint8Array(16))), at),
-    ...devices.map((device) => env.DB.prepare(`INSERT INTO subscriber_devices (who, product, model, first_seen,
-      last_seen) VALUES (?1, ?2, ?3, ?4, ?4) ON CONFLICT (who, product, model) DO UPDATE SET last_seen = excluded.last_seen`)
-      .bind(who, device.product, device.model, at)),
+    ...devices.map((device) => env.DB.prepare(`INSERT INTO subscriber_devices (who, model, stock_model, first_seen,
+      last_seen) VALUES (?1, ?2, ?3, ?4, ?4) ON CONFLICT (who, model, stock_model) DO UPDATE SET last_seen = excluded.last_seen`)
+      .bind(who, device.model, device.stock_model, at)),
     ...readouts.map((id) => env.DB.prepare("INSERT OR IGNORE INTO subscriber_readouts (who, readout) VALUES (?1, ?2)")
       .bind(who, id)),
     ...(also ? [also] : []),

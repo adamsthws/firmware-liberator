@@ -103,8 +103,8 @@ export async function snapshot(db, now = new Date()) {
   for (const [model, n] of unsupported) {
     wanted.set(model, { asked: wanted.get(model)?.asked ?? 0, unsupported: n });
   }
-  const stock = await all(`SELECT model, stock, sum(runs) AS runs, sum(converted) AS converted FROM monthly_stock
-    WHERE tag = 'user' AND ${VOUCHED} GROUP BY model, stock HAVING sum(runs) >= ? ORDER BY model, stock`, SMALLEST);
+  const stock = await all(`SELECT model, stock_version, sum(runs) AS runs, sum(converted) AS converted FROM monthly_stock
+    WHERE tag = 'user' AND ${VOUCHED} GROUP BY model, stock_version HAVING sum(runs) >= ? ORDER BY model, stock_version`, SMALLEST);
   const computers = await all(`SELECT os_family, python_source, sum(n) AS runs FROM monthly_environment
     WHERE tag = 'user' GROUP BY os_family, python_source HAVING sum(n) >= ? ORDER BY runs DESC`, SMALLEST);
   const times = await all(`SELECT month, device, firmware, source, n, p50, p90 FROM monthly_times
@@ -151,7 +151,7 @@ export async function snapshot(db, now = new Date()) {
     failures: failures.map((row) => ({ step: row.step || null, error: row.error, runs: row.runs })),
     cancellations: cancellations.map((row) => ({ step: row.step || null, runs: row.runs })),
     perComputer: { computers: count(atLeast(1)), rows: counted },
-    stock: stock.map((row) => ({ model: row.model, stock: row.stock, runs: row.runs, converted: count(row.converted),
+    stock: stock.map((row) => ({ model: row.model, stock_version: row.stock_version, runs: row.runs, converted: count(row.converted),
       success: rate(row.converted, row.runs) })),
     computers: computers.map((row) => ({ os: row.os_family, python: row.python_source, runs: row.runs })),
     times: times.map((row) => ({ month: row.month, device: row.device || null, firmware: row.firmware || null,

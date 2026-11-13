@@ -163,7 +163,7 @@ test("a device's record: its first run, the runs to its first conversion, and wh
   assert.deepEqual(record, {
     device_hash: keyed(hash), model: "S60TPG", device: "sonoff-s60", first_day: "2026-11-09", last_day: "2026-11-12",
     first_result: "failed", converted_day: "2026-11-09", runs: 5, runs_to_convert: 3, conversions: 2,
-    back_to_sonoff: 1, firmware: "sonoff", stock: "1.2.0", place: 1, dev: 0,
+    back_to_sonoff: 1, firmware: "sonoff", stock_version: "1.2.0", place: 1, dev: 0,
   });
 });
 

@@ -114,10 +114,10 @@ function remaking(db, months, today) {
     of(`INSERT INTO monthly_environment (month, tag, os_family, python_source, n)
       SELECT substr(day, 1, 7), tag, os_family, python_source, count(*) FROM ${reports}
       GROUP BY substr(day, 1, 7), tag, os_family, python_source`),
-    of(`INSERT INTO monthly_stock (month, tag, model, stock, runs, converted)
-      SELECT substr(day, 1, 7), tag, model, stock, count(*), sum(result = 'converted') FROM ${reports}
-        AND model IS NOT NULL AND stock IS NOT NULL
-      GROUP BY substr(day, 1, 7), tag, model, stock`),
+    of(`INSERT INTO monthly_stock (month, tag, model, stock_version, runs, converted)
+      SELECT substr(day, 1, 7), tag, model, stock_version, count(*), sum(result = 'converted') FROM ${reports}
+        AND model IS NOT NULL AND stock_version IS NOT NULL
+      GROUP BY substr(day, 1, 7), tag, model, stock_version`),
   ];
 }
 

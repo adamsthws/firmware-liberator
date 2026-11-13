@@ -29,9 +29,9 @@
               },
               "example": {
                 "format": 1,
-                "product": "NEWTHING",
-                "model": "SN-NEW-01",
-                "version": "1.0.0",
+                "model": "NEWTHING",
+                "stock_model": "SN-NEW-01",
+                "stock_version": "1.0.0",
                 "stage": "first",
                 "firmware": [],
                 "nonce": "0123456789abcdef"
@@ -257,8 +257,8 @@
                 "email": "me@example.com",
                 "devices": [
                   {
-                    "product": "NEWTHING",
-                    "model": "SN-NEW-01"
+                    "model": "NEWTHING",
+                    "stock_model": "SN-NEW-01"
                   }
                 ],
                 "nonce": "0123456789abcdef",
@@ -809,42 +809,27 @@
         "type": "string",
         "pattern": "^[0-9a-f]{64}$"
       },
-      "Product": {
-        "type": "string",
-        "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,23}$",
-        "description": "eWeLink's product model, as a report's model is written, in either case"
-      },
-      "FirmwareModel": {
-        "type": "string",
-        "pattern": "^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,63})$",
-        "description": "The firmware model eWeLink gives, or - for none"
-      },
-      "Version": {
-        "type": "string",
-        "pattern": "^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,31})$",
-        "description": "The firmware version the device runs, or - for none"
-      },
       "Question": {
         "type": "object",
         "required": [
           "format",
-          "product",
           "model",
-          "version",
+          "stock_model",
+          "stock_version",
           "stage"
         ],
         "properties": {
           "format": {
             "const": 1
           },
-          "product": {
-            "$ref": "#/components/schemas/Product"
-          },
           "model": {
-            "$ref": "#/components/schemas/FirmwareModel"
+            "$ref": "#/components/schemas/Model"
           },
-          "version": {
-            "$ref": "#/components/schemas/Version"
+          "stock_model": {
+            "$ref": "#/components/schemas/StockModel"
+          },
+          "stock_version": {
+            "$ref": "#/components/schemas/StockVersion"
           },
           "stage": {
             "enum": [
@@ -916,14 +901,14 @@
             "items": {
               "type": "object",
               "required": [
-                "product"
+                "model"
               ],
               "properties": {
-                "product": {
-                  "$ref": "#/components/schemas/Product"
-                },
                 "model": {
-                  "$ref": "#/components/schemas/FirmwareModel"
+                  "$ref": "#/components/schemas/Model"
+                },
+                "stock_model": {
+                  "$ref": "#/components/schemas/StockModel"
                 }
               }
             },
@@ -1019,6 +1004,21 @@
             }
           }
         }
+      },
+      "Model": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,23}$",
+        "description": "eWeLink's product model, the model on the box, as a report's model is written, in either case"
+      },
+      "StockModel": {
+        "type": "string",
+        "pattern": "^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,63})$",
+        "description": "The stock model eWeLink gives (its firmware model), or - for none"
+      },
+      "StockVersion": {
+        "type": "string",
+        "pattern": "^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,31})$",
+        "description": "The Sonoff firmware version the device runs, or - for none"
       }
     }
   }

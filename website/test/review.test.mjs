@@ -96,7 +96,7 @@ test("a readout's report the tool writes is never held; one with words no report
     assert.equal(heldFor(report), null, report.id);
   }
   const word = WORDS.words.find((each) => /^[a-z]{4,}$/.test(each)).toUpperCase();
-  for (const field of ["model", "stock_model", "stock"]) {
+  for (const field of ["model", "stock_model", "stock_version"]) {
     assert.equal(heldFor({ ...FIXTURES.readoutValid[0], [field]: word }), "words no report would hold", field);
   }
 });

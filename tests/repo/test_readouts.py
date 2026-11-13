@@ -30,7 +30,7 @@ class FakeBucket:
         page = chosen[start:start + 2]
         more = start + 2 < len(chosen)
         return {"result": [{"key": key, "size": 10, "last_modified": "2026-11-07T10:00:00Z",
-                            "custom_metadata": {"product": "S60TPF", "read": "true"}} for key in page],
+                            "custom_metadata": {"model": "S60TPF", "read": "true"}} for key in page],
                 "result_info": {"is_truncated": more, "cursor": str(start + 2) if more else ""}}
 
 
@@ -57,7 +57,7 @@ class ReadoutsTests(unittest.TestCase):
         code, out = run(fake)
         self.assertEqual(code, 0)
         self.assertEqual([line.split()[0] for line in out.splitlines()[:-1]], keys[:5])
-        self.assertIn("product=S60TPF", out)
+        self.assertIn("model=S60TPF", out)
         self.assertEqual(out.splitlines()[-1], f"5 in {cs.READOUTS_BUCKET}")
         self.assertEqual([query.get("cursor") for query in fake.asked], [None, "2", "4"])
 
@@ -81,7 +81,7 @@ class ReadoutsTests(unittest.TestCase):
         self.assertEqual(out.getvalue().splitlines(), [
             "me@example.com  NSPANEL:E32-MSW-NX BASICR4:-  -  2026-11-07T10:00:00Z  "
             f"https://api.firmwareliberator.com/forget?a={'b' * 64}&t={'0' * 32}", "1 addresses"])
-        self.assertIn("WHERE who IN (SELECT who FROM subscriber_devices WHERE product = ?1)", asked[0][0])
+        self.assertIn("WHERE who IN (SELECT who FROM subscriber_devices WHERE model = ?1)", asked[0][0])
         self.assertEqual(asked[0][1], ["NSPANEL"])
         with mock.patch.object(readouts, "query", query), redirect_stdout(io.StringIO()):
             readouts.main(["notify"])
