@@ -65,12 +65,6 @@ class CheckStepTests(RouteTestCase):
             mover.step_esphome_check(self.ctx(firmware="esphome"), wait=600)
         slept.assert_not_called()  # straight on, not three minutes first
 
-    def test_a_dry_run_does_not_wait(self):
-        ctx = self.ctx(firmware="esphome")
-        ctx.dry_run = True
-        with mock.patch.object(esphome, "is_esphome", side_effect=AssertionError("waited")):
-            self.assertEqual(mover.step_esphome_check(ctx), {"dry_run": True})
-
 
 class SignalBeforeLeavingESPHomeTests(RouteTestCase):
     """X1 reads the signal before anything is written, where ESPHome gives it."""

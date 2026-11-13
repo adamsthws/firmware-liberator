@@ -319,6 +319,10 @@ def cmd_step(ctx: Context, step: str) -> int:
     if step not in routes.STEP_INDEX:
         output.say(f"unknown step {step}; known: {', '.join(s for s, _, _ in routes.STEPS)}")
         return 2
+    if ctx.dry_run and step not in routes.FAMILY.READ_ONLY_STEPS:
+        # As a run's dry run stops before it (runner.run_steps).
+        output.say(f"[dry-run] not doing {step} ({routes.STEP_INDEX[step][0]}): it writes.")
+        return 0
     join.wait_while_device_busy(ctx)
     return runner.execute_with_retries(ctx, step)
 

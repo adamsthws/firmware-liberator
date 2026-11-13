@@ -46,8 +46,6 @@ def step_openbeken_check(ctx: Context, wait: float = ARRIVAL_WAIT, *, interim: b
     restarted, so the name it keeps follows; the interim firmware (the
     marker B2 sends after it cut off, say) not restarted, so it is never
     named wrongly on the network, only not renamed for its few minutes."""
-    if ctx.dry_run:
-        return {"dry_run": True}
     shown = images.INTERIM_NAME if interim else "OpenBeken"
     kind = kinds.of_run(ctx.state)
     started = time.monotonic()
@@ -123,8 +121,8 @@ def step_backup(ctx: Context) -> dict[str, Any]:
     Kept on this computer, never overwritten; the device keeps its own.
     """
     mac = ctx.state.input("device_mac")
-    if ctx.dry_run or not mac:
-        return {"dry_run": True} if ctx.dry_run else {"outcome": "not taken", "stage_outcome": "skipped"}
+    if not mac:
+        return {"outcome": "not taken", "stage_outcome": "skipped"}
     outcome = _back_up(ctx, mac)
     ctx.state.set_input("backup_outcome", outcome)
     return {"outcome": outcome, "stage_outcome": records.BACKUP_OUTCOMES[outcome][0]}
@@ -233,8 +231,6 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
     goes from a device only just up, so its uptime before is small, and the
     emulated device's soon outgrows that too (seen in the fault suite: the
     second refusal in a row waited out, and a switch off and on asked for)."""
-    if ctx.dry_run:
-        return {"dry_run": True}
     started = time.monotonic()
     captures = ctx.state.data.get("captures", {})
     sent_by = next((step for step in ("J2", "O1")
@@ -293,6 +289,4 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
 def step_sonoff_check(ctx: Context, wait: float = arrival.SONOFF_WAIT) -> dict[str, Any]:
     """K3 - Sonoff's firmware started, on the Wi-Fi and back in eWeLink, as
     the Espressif route's R2 finds it (arrival.back_on_sonoff)."""
-    if ctx.dry_run:
-        return {"dry_run": True}
     return arrival.back_on_sonoff(ctx, leaving=("openbeken", "interim", "esphome"), wait=wait)

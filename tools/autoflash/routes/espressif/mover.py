@@ -69,9 +69,6 @@ def step_esphome_install(ctx: Context) -> dict[str, Any]:
         "and checked against the image; only then does the device switch to it and",
         "restart. Its memory layout stays as Sonoff made it.",
     ])
-    if ctx.dry_run:
-        output.say(f"[dry-run] would install {name}")
-        return {"dry_run": True, "image": name}
     return hub.run_plan(ctx, plans.esphome(image, images.layout_of(kinds.of_run(ctx.state)))) | {"image": name, "size": len(image),
                                                    "signal_dbm": signal}
 
@@ -98,7 +95,7 @@ def step_leave_tasmota(ctx: Context) -> dict[str, Any]:
     handover.consent_to_leave(ctx, "Tasmota")
     kind = kinds.of_run(ctx.state)
     layout = images.layout_of(kind)
-    table, settings = (None, None) if ctx.dry_run else what_tasmota_has(ctx, layout)
+    table, settings = what_tasmota_has(ctx, layout)
     try:
         chip = images.chip_of(kind)
         plan = plans.leave_tasmota(images.mover_for(ssid, password, chip), images.leaving_table(kind),
@@ -118,9 +115,8 @@ def step_leave_tasmota(ctx: Context) -> dict[str, Any]:
         output.say("    Everything was written before the plan stopped; restarting the device into the mover.")
         ctx.device.command("Restart 99")
         result = {"plan": plan.name, "restarted_after": "a stopped report"}
-    if not ctx.dry_run:
-        wait_for_mover(ctx, "the device to start the mover")
-        output.say("    The device is running the mover, on Sonoff's memory layout.")
+    wait_for_mover(ctx, "the device to start the mover")
+    output.say("    The device is running the mover, on Sonoff's memory layout.")
     return result | {"signal_dbm": signal}
 
 
@@ -200,8 +196,6 @@ def step_esphome_from_mover(ctx: Context) -> dict[str, Any]:
         image = images.image_for(ssid, password, own=ctx.esphome_firmware, kind=kinds.of_run(ctx.state))
     except (images.ImageError, imprint.ImprintError, OSError) as exc:
         raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
-    if ctx.dry_run:
-        return {"dry_run": True}
     if wait_for_mover(ctx, "the mover"):
         # Given new Wi-Fi details on its own network: ESPHome gets those too.
         ssid, password = ctx.wifi()
@@ -229,8 +223,6 @@ def step_esphome_update(ctx: Context) -> dict[str, Any]:
         image = images.image_for(ssid, password, kind=kinds.of_run(ctx.state))
     except (images.ImageError, imprint.ImprintError, OSError) as exc:
         raise Abort(f"the ESPHome image cannot be used: {exc}") from exc
-    if ctx.dry_run:
-        return {"dry_run": True}
     seconds = handover.send_as_esphome_update(ctx, image, f"ESPHome {new}")
     output.say(f"    ESPHome {new} sent in {seconds}s; the device restarts into it.")
     return {"seconds": seconds, "size": len(image)}
@@ -241,8 +233,7 @@ def step_esphome_updated(ctx: Context) -> dict[str, Any]:
     device's factory calibration, as I2 does, which its first builds did
     not take."""
     result = update.wait_for_update(ctx, confirm=ESPHOME_CONFIRMS_AFTER)
-    if not result.get("dry_run"):
-        result["meter"] = calibrate_esphome_meter(ctx)
+    result["meter"] = calibrate_esphome_meter(ctx)
     return result
 
 
@@ -276,8 +267,6 @@ def step_startup_from_esphome(ctx: Context, *, again: bool = False) -> dict[str,
         image = startup_image(ssid, password, images.chip_of(kinds.of_run(ctx.state)))
     except BundleError as exc:
         raise Abort(f"the startup firmware cannot be prepared: {exc}") from exc
-    if ctx.dry_run:
-        return {"dry_run": True}
     try:
         join.wait_for(ctx, lambda address: esphome_ota.probe(address), "ESPHome's update service")
     except Abort as exc:
@@ -293,8 +282,6 @@ def step_berry_from_startup(ctx: Context) -> dict[str, Any]:
     """X2 - the Berry Tasmota, uploaded to the startup firmware, which writes it
     into the other slot; it starts with the Wi-Fi the startup firmware saved."""
     image = images.interim_of(kinds.of_run(ctx.state))
-    if ctx.dry_run:
-        return {"dry_run": True}
     running = unlock.identify(ctx, ctx.device.host)
     if running == "hub":
         output.say("The device already runs Tasmota.")
@@ -334,8 +321,7 @@ def step_esphome_check(ctx: Context, wait: float = 180.0) -> dict[str, Any]:
     """I2 - ESPHome started from what was written, and joined the home Wi-Fi;
     then given the device's factory calibration, where its backup has it."""
     result = wait_for_esphome(ctx, wait)
-    if not result.get("dry_run"):
-        result["meter"] = calibrate_esphome_meter(ctx)
+    result["meter"] = calibrate_esphome_meter(ctx)
     return result
 
 
@@ -381,9 +367,6 @@ def wait_for_esphome(ctx: Context, wait: float) -> dict[str, Any]:
     host = ctx.state.input("device_ip")
     if not host:
         raise Abort("the device's address is not known")
-    if ctx.dry_run:
-        output.say("[dry-run] would wait for ESPHome to answer")
-        return {"dry_run": True}
     as_update = ctx.state.is_done("M1")  # through the mover, not written from the hub (I1)
 
     def look(_restarted: bool) -> dict[str, Any]:
