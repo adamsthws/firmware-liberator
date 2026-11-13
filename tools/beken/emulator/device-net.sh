@@ -13,6 +13,12 @@
 # network is sent to. Nothing reaches the internet. The tool, on a computer
 # on the same network (beken-emu.sh computer), finds the device as on a home
 # Wi-Fi, and the stub's account API at the router.
+#
+# The device's own network, when it raises one (ESPHome's, when it cannot join
+# the home one): a station on the air joins it (device.py --own-tap), its
+# traffic on tap1, bridged into a VXLAN tunnel to the computers on the Docker
+# network (computer/own-network.sh), where `wifi join` takes a computer onto
+# it. Nothing here has an address there: the device is that network's router.
 set -euo pipefail
 
 : "${HOST_UID:?}" "${HOST_GID:?}"
@@ -33,6 +39,14 @@ ip link set tap0 master br0
 ip link set tap0 up
 ip link set br0 up
 ip address add "$router/24" dev br0
+# shellcheck source=/dev/null
+. "$(dirname "$0")/computer/own-network.sh"
+ip tuntap add dev tap1 mode tap user "$HOST_UID" group "$HOST_GID"
+ip link add br1 type bridge mcast_snooping 0
+ip link add own0 type vxlan id "$OWN_VNI" group "$OWN_GROUP" dev br0 dstport "$OWN_PORT"
+ip link set tap1 master br1
+ip link set own0 master br1
+for link in tap1 own0 br1; do ip link set "$link" up; done
 # The device's connections off the network: to the stub, whatever address it dialled.
 iptables -t nat -A PREROUTING -i br0 -s "$net.48/28" ! -d "$net.0/24" -j DNAT --to-destination "$router"
 
@@ -65,4 +79,4 @@ chown "$HOST_UID:$HOST_GID" "$STATE"/ca.crt "$STATE"/leaf.* "$STATE/stub.log" "$
 echo "The device's router, and its eWeLink, is $router." >&2
 
 exec setpriv --reuid="$HOST_UID" --regid="$HOST_GID" --clear-groups \
-    env HOME=/tmp python /work/tools/beken/emulator/device.py --state "$STATE" >> "$STATE/serial.log" 2>&1
+    env HOME=/tmp python /work/tools/beken/emulator/device.py --state "$STATE" --own-tap tap1 >> "$STATE/serial.log" 2>&1

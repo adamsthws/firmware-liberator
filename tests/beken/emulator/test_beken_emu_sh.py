@@ -168,10 +168,93 @@ class DeviceNetRouterTests(unittest.TestCase):
         self.assertIn("-s 198.18.61.48/28 ! -d 198.18.61.0/24 -j DNAT --to-destination 198.18.61.1", calls)
         self.assertIn("--bind 198.18.61.1", calls)
 
+    def test_the_devices_own_network_is_bridged_into_the_tunnel_with_no_address(self):
+        done, calls = self.commands()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("ip link add own0 type vxlan id 42 group 239.255.42.1 dev br0 dstport 4789", calls)
+        self.assertIn("ip link set tap1 master br1", calls)
+        self.assertIn("ip link set own0 master br1", calls)
+        self.assertNotIn("dev br1", calls.replace("master br1", ""))
+        self.assertIn("--own-tap tap1", calls)
+
     def test_a_network_not_a_24_is_refused(self):
         done, calls = self.commands("10.0.0.5/16")
         self.assertNotEqual(done.returncode, 0)
         self.assertNotIn("br0", calls)
+
+
+@unittest.skipIf(shutil.which("bash") is None, "no bash")
+class ComputerWifiTests(unittest.TestCase):
+    """The computer's Wi-Fi stand-ins (computer/bin/): the networks on the air
+    as device.py writes them, and joining the device's own over the tunnel."""
+
+    BIN = ROOT / "tools" / "beken" / "emulator" / "computer" / "bin"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        self.air = self.tmp / "air"
+        self.air.mkdir()
+        (self.air / "home").write_text("HomeNet\n", encoding="utf-8")
+        (self.air / "station").write_text("02:00:00:00:00:02\n", encoding="utf-8")
+        self.calls = self.tmp / "calls"
+        record = '#!/bin/sh\necho "$(basename "$0") $*" >> %s\n' % self.calls
+        fakes = {"ip": record + "[ \"$*\" = '-4 route show default' ] && echo 'default via 198.18.61.254 dev eth0'\n"
+                       "exit 0\n",
+                 "iptables": record + "case \"$*\" in -D*) exit 1;; esac\n",
+                 # udhcpc's lease, as its script is given it.
+                 "busybox": record + 'for script; do :; done\n'
+                            'interface=own0 ip=192.168.4.2 mask=24 router=192.168.4.1 sh "$script" bound\n'}
+        for name, text in fakes.items():
+            (self.tmp / name).write_text(text, encoding="utf-8")
+            (self.tmp / name).chmod(0o755)
+        self.env = {**os.environ, "PATH": f"{self.tmp}:{os.environ['PATH']}",
+                    "AUTOFLASH_EMULATOR_AIR": str(self.air), "AUTOFLASH_WIFI_RUN": str(self.tmp / "run")}
+
+    def run_bin(self, *args):
+        return subprocess.run(["bash", str(self.BIN / args[0]), *args[1:]], capture_output=True, text=True,
+                              timeout=30, env=self.env)
+
+    def visible(self):
+        return self.run_bin("nmcli", "-t", "-f", "SSID", "device", "wifi", "list").stdout.split()
+
+    def test_the_scan_lists_both_networks_and_one_just_gone_for_a_minute(self):
+        (self.air / "network").write_text("esphome-abcdef\n", encoding="utf-8")
+        self.assertEqual(sorted(self.visible()), ["HomeNet", "esphome-abcdef"])
+        (self.air / "network").unlink()
+        self.assertIn("esphome-abcdef", self.visible(), "a scan remembers it, as a real one does")
+        (self.tmp / "run" / "scan-cache").write_text("0\n", encoding="utf-8")
+        self.assertEqual(self.visible(), ["HomeNet"])
+        self.assertNotEqual(self.run_bin("nmcli", "connection", "show").returncode, 0)
+
+    def test_only_the_network_on_the_air_is_joined(self):
+        done = self.run_bin("wifi", "join", "esphome-abcdef")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("No network 'esphome-abcdef' is on the air", done.stderr)
+        self.assertFalse(self.calls.exists(), "nothing changed")
+
+    def test_joined_through_the_tunnel_off_the_home_network_then_home_again(self):
+        (self.air / "network").write_text("esphome-abcdef\n", encoding="utf-8")
+        done = self.run_bin("wifi", "join")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("Joined esphome-abcdef; the device is at 192.168.4.1.", done.stdout)
+        calls = self.calls.read_text(encoding="utf-8")
+        self.assertIn("ip link add own0 type vxlan id 42 group 239.255.42.1 dev eth0 dstport 4789", calls)
+        self.assertIn("ip link set own0 address 02:00:00:00:00:02", calls)
+        self.assertIn(f"iptables -I OUTPUT 1 -o eth0 -m owner --uid-owner {os.getuid()} -j DROP", calls)
+        self.assertIn("iptables -I OUTPUT 1 -o eth0 -p udp --dport 4789 -j ACCEPT", calls)
+        self.assertIn("ip address add 192.168.4.2/24 dev own0", calls)
+        self.assertIn("ip route replace default via 192.168.4.1 dev own0", calls)
+        self.assertIn("Joined:   esphome-abcdef", self.run_bin("wifi").stdout)
+        self.calls.unlink()
+        done = self.run_bin("wifi", "home")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        calls = self.calls.read_text(encoding="utf-8")
+        self.assertIn("ip link del own0", calls)
+        self.assertIn(f"iptables -D OUTPUT -o eth0 -m owner --uid-owner {os.getuid()} -j DROP", calls)
+        self.assertIn("ip route replace default via 198.18.61.254 dev eth0", calls)
+        self.assertIn("Joined:   the home network", self.run_bin("wifi").stdout)
 
 
 @unittest.skipIf(shutil.which("bash") is None, "no bash")

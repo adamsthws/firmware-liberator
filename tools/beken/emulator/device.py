@@ -2,7 +2,7 @@
 """The emulated Beken device: on until switched off, through every firmware it
 is converted to and back, as beken-emu.sh device runs it (device-net.sh).
 
-    python device.py --state DIR [--tap tap0]
+    python device.py --state DIR [--tap tap0] [--own-tap tap1]
 
 Its flash is DIR/flash.bin: the public dump the first time, with the home
 Wi-Fi's details added to its store, as a device provisioned in the app has
@@ -22,9 +22,19 @@ the relay is on.
 DEVICE_TRACE=ADDR,ADDR (hex) logs each call there to the serial output.
 
 The power switch is DIR/power: "off" stops the device and keeps its flash,
-"on" starts it again (beken-emu.sh power). The serial output is DIR/serial.log,
-and what the emulator's Wi-Fi and network did - the device joining, a lease,
-a frame refused - DIR/net.log.
+"on" starts it again (beken-emu.sh power). The home Wi-Fi's access point is
+switched by DIR/router, read as the device runs (beken-emu.sh router): "off"
+takes it off the air, "on" brings it back, "on PASSWORD" with another
+password, as a router given a new one - a device on the old one cannot join.
+
+With --own-tap, a station is on the air too, joining the network the device
+raises of its own (ESPHome's when it cannot join the home one), its traffic
+on that TAP device: the computer's Wi-Fi there (computer/bin/wifi). What the
+station sees is written to DIR/air/: `network`, the name of the device's own
+network while it is on the air, and `station`, the MAC the computer takes
+there; and `home`, the home Wi-Fi's name while its access point is on. The
+serial output is DIR/serial.log, and what the emulator's Wi-Fi and network
+did - each peer joining, a lease, a frame refused - DIR/net.log.
 """
 from __future__ import annotations
 
@@ -50,6 +60,9 @@ SSID, PASSWORD = cloud_online.SSID, cloud_online.PW
 APP_ENTRY = stock_points.APP_BASE
 KIND = "sonoff-s61"   # whose board it is: the dump's
 PEER_MAC = b"\x02\x00\x00\x00\x00\x01"
+# The computer's Wi-Fi on the device's own network: the station's MAC, which the
+# computer's end of that network takes (DIR/air/station).
+STATION_MAC = b"\x02\x00\x00\x00\x00\x02"
 
 
 def trace(mu, address: int) -> None:
@@ -79,11 +92,22 @@ class NetLog:
         self.file.write("%s %s\n" % (time.strftime("%H:%M:%S"), line))
 
 
+def write(path: Path, text: str) -> None:
+    """`path` holding `text`, whole for any reader at any moment."""
+    part = path.with_suffix(".part")
+    part.write_text(text, encoding="utf-8")
+    os.replace(part, path)
+
+
 class Device:
-    def __init__(self, state: Path, tap: str):
-        self.state, self.tap = state, tap
+    def __init__(self, state: Path, tap: str, own_tap: str | None = None):
+        self.state, self.tap, self.own_tap = state, tap, own_tap
         self.flash_path = state / "flash.bin"
         self.power_path = state / "power"
+        self.router_path = state / "router"
+        self.air = state / "air"
+        self.home = self.station = None   # the access point, and the station on the device's own network
+        self.router_was: tuple[bool, str] | None = None
         self.stopping = False
         self.netlog = NetLog(state / "net.log")
 
@@ -102,6 +126,48 @@ class Device:
             return self.power_path.read_text(encoding="utf-8").strip() != "off"
         except OSError:
             return True
+
+    def router(self) -> tuple[bool, str]:
+        """Whether the home Wi-Fi's access point is on, and its password."""
+        try:
+            words = self.router_path.read_text(encoding="utf-8").split(maxsplit=1)
+        except OSError:
+            words = []
+        on = not words or words[0] != "off"
+        return on, (words[1].strip() if on and len(words) > 1 else PASSWORD.decode())
+
+    def follow_router(self) -> None:
+        """The access point as DIR/router has it: off the air, or on with its
+        password. A new password restarts it, as a router's does: every
+        device joined to it has to join again."""
+        now = self.router()
+        if now == self.router_was or self.home is None:
+            return
+        on, password = now
+        if self.router_was is not None:
+            print("[device] the home Wi-Fi is %s" % (("on, its password " + repr(password)) if on else "off"),
+                  flush=True)
+        if self.router_was is not None and on and password != self.router_was[1]:
+            self.home.set_on_air(False)
+        self.home.passphrase = password
+        self.home.set_on_air(on)
+        if on:
+            write(self.air / "home", SSID.decode() + "\n")
+        else:
+            (self.air / "home").unlink(missing_ok=True)
+        self.router_was = now
+
+    def follow_air(self) -> None:
+        """DIR/air/network: the device's own network's name while the station
+        hears it, and gone when it does not."""
+        if self.station is None:
+            return
+        bss = self.station.bss
+        network = self.air / "network"
+        if bss is not None:
+            write(network, bss["ssid"] + "\n")
+        else:
+            network.unlink(missing_ok=True)
 
     def save(self, emu) -> None:
         flash = bytes(emu.physical_flash if emu.physical_flash is not None else emu.raw_flash)
@@ -125,8 +191,14 @@ class Device:
         emu.setup()
         board.attach(emu, KIND)
         emu.net_sink = self.netlog.append
-        emu.attach_wifi_peer(role="ap", ssid=SSID.decode(), passphrase=PASSWORD.decode(), channel=1,
-                             peer_mac=PEER_MAC, tap=self.tap)
+        self.home = emu.attach_wifi_peer(role="ap", ssid=SSID.decode(), passphrase=PASSWORD.decode(), channel=1,
+                                         peer_mac=PEER_MAC, tap=self.tap)
+        self.router_was = None
+        self.air.mkdir(exist_ok=True)
+        self.follow_router()
+        if self.own_tap:
+            self.station = emu.attach_wifi_peer(role="sta", channel=1, peer_mac=STATION_MAC, tap=self.own_tap)
+            write(self.air / "station", ":".join("%02x" % b for b in STATION_MAC) + "\n")
         ca = (self.state / "ca.crt").read_bytes()
         hooks = cloud_online.StockHooks(emu, SSID, PASSWORD, ca, cloud_online.FORCE_AT, self.netlog)
         hooks.active = False
@@ -154,6 +226,8 @@ class Device:
         why = None
         while why is None:
             time.sleep(0.5)
+            self.follow_router()
+            self.follow_air()
             if self.stopping:
                 why = "stopped"
             elif not self.powered():
@@ -166,6 +240,8 @@ class Device:
         thread.join(10)
         self.save(emu)
         emu.close_network()
+        self.home = self.station = None
+        (self.air / "network").unlink(missing_ok=True)
         print("[device] %s; its flash is kept" % why, flush=True)
         if why == "halted":
             time.sleep(5)   # not round again at once, should it halt at every boot
@@ -183,9 +259,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--tap", default="tap0")
+    parser.add_argument("--own-tap", help="a station on the device's own network, its traffic on this TAP device")
     parser.add_argument("--prepare", action="store_true", help="only make the flash, the first time")
     args = parser.parse_args(argv)
-    device = Device(args.state, args.tap)
+    device = Device(args.state, args.tap, args.own_tap)
     if args.prepare:
         device.prepare()
         return 0

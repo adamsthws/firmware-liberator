@@ -12,6 +12,10 @@ for working on it. How to use it is in
   `device-net.sh` bridges with the container's interface; the container is the
   router, `.1`: DHCP (the device at `.50`-`.59`) and DNS (every name the
   router).
+- **The device's own network**, when it raises one, is carried to the
+  computers on that Docker network in a VXLAN tunnel, Ethernet in UDP: a
+  [station on the air](#the-devices-own-network) joins it, and a computer's
+  `wifi join` takes it there.
 - **eWeLink** is the local stub (`cloud_stub.py`): every connection leaving
   the network reaches it, not the internet.
 - **The API** the tool's readouts go to is the project's own code
@@ -84,54 +88,47 @@ Always pass `--only-uart`: without it the emulator logs every MMIO access
 
 ### The device's own network
 
-Not emulated yet, so a device raising its own network for the tool to join
-([the gap](../../../docs/emulator.md#known-gaps-beken)) is not run here. What
-is known of it:
+A device that cannot join the home network raises one of its own (ESPHome's
+`ap:` fallback), where the tool sends it the details
+([`set_up_through_own_network`](../../autoflash/join.py)). It runs here as on
+a real network, the firmware's half and the tool's:
 
-- **The radio can carry it.** Upstream's Wi-Fi peer (`src/wifipeer.py`) takes
-  either role: the access point a device joins, or a station joining the
-  device's own network. Its self-test `OpenBK7238 Wi-Fi AP` has the peer find
-  OpenBeken's network, join it, take an address from the device and fetch a
-  page; it passes under this project's patches, in seconds
-  (`beken-emu.sh test -k "OpenBK7238 Wi-Fi AP"`).
-- **One peer, one role.** The emulator holds one peer (`attach_wifi_peer` in
-  `src/emulator.py`; the MAC model's `on_tx` is one callback), and `device.py`
-  makes it the home network's access point (`role="ap"`). A device that cannot
-  join that network goes on trying it while its own network is up (ESPHome's
-  `ap:` fallback), so both are needed at once. Upstream's `role="auto"`
-  instead switches the one peer to whichever role the device last took, which
-  leaves the home network.
-- **What it would take**, a few hundred lines and a new image:
-  - a patch to the fork: several peers on the one radio, each frame the device
-    sends given to each, and each ticked, reset and closed with the device
-    (`src/emulator.py`); a station peer taking only its own network's data
-    frames, by BSSID (`_on_data` in `src/wifipeer.py`); and a self-test. It
-    could go upstream.
-  - `device.py`: a second peer, `role="sta"`, on a second TAP device with a
-    MAC of its own, writing the name of the network it finds into the state
-    for the computer; and a way to make the home network fail, switched
-    through a state file as the power is: the Espressif emulator's
-    `device router off`, or a new password (the access point peer's
-    `passphrase`).
-  - `device-net.sh` and `beken-emu.sh`: that TAP device bridged onto a second
-    Docker network on which the device is the router, so the network's own
-    bridge holds no address there (ESPHome's is `setup_network.SETUP_HOST`).
-  - the computer: `nmcli` and `wifi` stand-ins, as the Espressif emulator's
-    (`tools/espressif/emulator/container/bin/`), on both networks, with the
-    right to move its own interfaces (`NET_ADMIN`), to leave the home network
-    and take an address from the device.
-- **The firmware keeps both up at once on the MAC model.** ESPHome's S61
-  image, staged with home-network details the network refuses (a wrong
-  password, or no such network) and the frames it sent counted: about two
-  minutes after boot on the emulator's clock, some 40 seconds on the wall's,
-  it raises its own open network (`esphome-` and the end of its MAC, at
-  192.168.4.1) and beacons it steadily, about nine times a second, while it
-  goes on probing for, authenticating with and associating to the home
-  network between restarts of its adapter, for the 25 minutes watched. So
-  only the peer's side is missing.
-- **A stand-in page** answering at the device's address instead, outside the
-  radio, would run only the tool's half of the step, which the unit tests
-  hold already, not the firmware's.
+- **Two peers on the air** (patch 0006): `device.py` puts the home network's
+  access point on the device's radio, and with `--own-tap` a station
+  (`role="sta"`, MAC `STATION_MAC`) that joins whatever network the device
+  raises, by its beacons, and takes it as gone 3 s after the last
+  (`BEACON_LOSS_US`). ESPHome keeps its own network up while it goes on
+  trying the home one, both on the one radio.
+- **The station's traffic is on `tap1`**, which `device-net.sh` bridges into
+  a VXLAN tunnel (`computer/own-network.sh`: its id, multicast group and
+  port) over the Docker network, so it reaches the computers there and
+  nothing else. Nothing in the device's container has an address on it: the
+  device is that network's router, ESPHome's at 192.168.4.1.
+- **What is on the air** is written to the state's `air/`: `home`, the home
+  network's name while its access point is on; `network`, the device's own
+  network's while the station hears it; and `station`, the station's MAC.
+  The computer reads it from `/device/air`.
+- **The computer's Wi-Fi** is `computer/bin/`, first on its PATH: `nmcli`,
+  answering the tool's scan from `air/` and remembering a network for a
+  minute after it goes, as a real computer's list does; and `wifi`. `wifi
+  join` makes the tunnel's end (`own0`) with the station's MAC, takes an
+  address from the device by busybox's udhcpc (`computer/udhcpc.script`) and
+  stops your own traffic on the home network, but for the tunnel's packets,
+  which are yours too; `wifi home` undoes it. The computer starts as root and
+  runs as your user with the right to change its own links (`NET_ADMIN`,
+  `NET_RAW`), handed over by `computer.sh`.
+- **The router switch** is the state's `router`, read as the device runs:
+  `beken-emu.sh router off` takes the access point off the air (patch 0006's
+  `set_on_air`), `router on PASSWORD` gives it a new password, every device on
+  it made to join again, as a router's restart does.
+- **What happened on the air** - each peer joining, a handshake refused, a
+  network lost - is in the state's `net.log`.
+
+The attended scenario `s61-to-esphome-own-network` runs the whole step: the
+password changed as ESPHome starts, the details it has refused, its own
+network joined and the new ones sent there. ESPHome raised its network about
+40 seconds after it started: two minutes on its own clock, which runs ahead
+of the wall's in the emulator while the firmware waits.
 
 ## What is changed, and why
 
@@ -171,6 +168,13 @@ under them.
   and reachable by every protocol: how it gets [its own Docker
   network](#how-it-fits-together). The built-in network's options are refused
   beside it.
+- **`0006-wifi-several-peers-at-once`** (`src/emulator.py`,
+  `src/wifipeer.py`, `tests/wifi_peers.py`): `attach_wifi_peer` called again
+  puts another peer on the air, each hearing every frame the device sends:
+  the home network's access point and a station on the device's own network
+  at once. A station takes only its own network's frames, by BSSID, and
+  takes a network silent for 3 s as gone; `set_on_air(False)` takes a peer
+  off the air, as a router switched off. It could go upstream.
 
 To change the fork, extract the archive (`captures/emulation/cache/`), apply
 the patches in order, commit the change, and `git format-patch` it into

@@ -38,6 +38,43 @@ class DeviceTests(unittest.TestCase):
                 self.assertIsNone(device.stock_points(b"flash"))
             self.assertIn("no help for this app", (Path(tmp) / "net.log").read_text(encoding="utf-8"))
 
+    def test_the_router_switch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            device = self.device(tmp)
+            self.assertEqual(device.router(), (True, "password"))   # no switch yet: on, as provisioned
+            for written, read in (("off\n", (False, "password")), ("on\n", (True, "password")),
+                                  ("on new-pass-1\n", (True, "new-pass-1"))):
+                (Path(tmp) / "router").write_text(written, encoding="utf-8")
+                self.assertEqual(device.router(), read)
+
+    def test_the_access_point_follows_the_router_switch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            device = self.device(tmp)
+            device.air.mkdir()
+            switched = []
+            device.home = SimpleNamespace(passphrase="password", set_on_air=switched.append)
+            device.follow_router()
+            self.assertEqual((switched, (device.air / "home").read_text(encoding="utf-8")), ([True], "net\n"))
+            # A new password restarts it: every device on it joins again.
+            (Path(tmp) / "router").write_text("on new-pass-1\n", encoding="utf-8")
+            device.follow_router()
+            self.assertEqual((switched[1:], device.home.passphrase), ([False, True], "new-pass-1"))
+            (Path(tmp) / "router").write_text("off\n", encoding="utf-8")
+            device.follow_router()
+            self.assertEqual(switched[-1], False)
+            self.assertFalse((device.air / "home").exists())
+
+    def test_the_devices_own_network_is_on_the_air_while_the_station_hears_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            device = self.device(tmp)
+            device.air.mkdir()
+            device.station = SimpleNamespace(bss={"ssid": "esphome-abcdef"})
+            device.follow_air()
+            self.assertEqual((device.air / "network").read_text(encoding="utf-8"), "esphome-abcdef\n")
+            device.station.bss = None
+            device.follow_air()
+            self.assertFalse((device.air / "network").exists())
+
     def test_the_power_switch(self):
         with tempfile.TemporaryDirectory() as tmp:
             device = self.device(tmp)

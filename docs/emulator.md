@@ -653,6 +653,7 @@ tools/beken/emulator/beken-emu.sh test -k "Sonoff 4MB"    # upstream's self-test
 tools/beken/emulator/beken-emu.sh device                     # the S61s dump as a device, on a home Wi-Fi of its own
 tools/beken/emulator/beken-emu.sh computer tools/autoflash/cli.py run   # the tool, on that Wi-Fi
 tools/beken/emulator/beken-emu.sh power cycle              # the device switched off and on
+tools/beken/emulator/beken-emu.sh router on NEW-PASSWORD    # the home Wi-Fi's password changed
 tools/beken/emulator/beken-emu.sh --fresh device            # the device as new, on Sonoff's firmware again
 tools/beken/emulator/beken-emu.sh ui                       # OpenBeken's page, at http://127.0.0.1:8200/
 tools/beken/emulator/beken-emu.sh --rebuild device           # rebuild the image first
@@ -694,6 +695,19 @@ A device that does not come back is switched off and on with
 `beken-emu.sh power cycle`, as the tool then asks; an attended run offers to do
 it itself, as the device's power switch is passed to the computer
 (`AUTOFLASH_EMULATOR_POWER`).
+
+**Your Wi-Fi, and the device's own network.** `beken-emu.sh router off`
+switches the home Wi-Fi's access point off, and `router on` back on;
+`router on PASSWORD` gives it a new password, as when you change your
+router's, so a device with the old details can no longer join. A device on
+ESPHome that cannot join raises a network of its own, and the computer sees
+and joins it as from your desktop's Wi-Fi menu: in `beken-emu.sh computer`'s
+shell, `wifi` says what it can see, `wifi join` joins the device's network,
+and `wifi home` goes back - which, unlike a real computer, it does not do by
+itself when that network goes
+([how](../tools/beken/emulator/README.md#the-devices-own-network)). An
+attended run can do each as the run asks (`"router"` and `"wifi"` answers,
+in `tools/espressif/emulator/attended_suite.py`).
 
 **The device's web page goes through a proxy**: `beken-emu.sh ui` serves
 OpenBeken's or ESPHome's, telling which by the name the device gave its router.
@@ -740,11 +754,3 @@ its relay switching, not to a meter seeing it.
   device's.
 - **A Linux computer only.** `beken-emu.sh computer` is a Linux container; the
   Espressif emulator's [Windows](#on-windows) set-up has no Beken counterpart yet.
-- **No device's own network.** A device on ESPHome that cannot join your Wi-Fi
-  raises its own network, and the tool sends it the details through that
-  (`set_up_through_own_network` in `tools/autoflash/join.py`, from K2). The
-  emulated device cannot be taken there: its Wi-Fi is only the home network's
-  access point, and the computer has no Wi-Fi to see or join another, where the
-  Espressif emulator's has (`wifi join NAME`). So that step is held by unit
-  tests alone. What an emulator run of it would take is in
-  [the emulator's internals](../tools/beken/emulator/README.md#the-devices-own-network).

@@ -33,6 +33,10 @@
 #                             (why, in ui_proxy.py)
 #   tools/beken/emulator/beken-emu.sh power off|on|cycle
 #                             the device's power switch: its flash kept, as a device unplugged
+#   tools/beken/emulator/beken-emu.sh router off|on [PASSWORD]
+#                             the home Wi-Fi's access point switched off, or on again - with
+#                             PASSWORD, its password changed, as a router's: the device's
+#                             details no longer join it. `router on` alone is as it began
 #   tools/beken/emulator/beken-emu.sh computer [COMMAND...]
 #                             a computer on the device's Wi-Fi: python COMMAND (a shell without
 #                             one) in the image, as python does, there, with eWeLink the
@@ -41,6 +45,9 @@
 #                             its own copy of this checkout (the device's state directory's
 #                             work/), so its runs' captures are its own:
 #                             tools/beken/emulator/beken-emu.sh computer tools/autoflash/cli.py run
+#                             Its Wi-Fi is emulated: `wifi` says what it can see, and `wifi join`
+#                             takes it onto the device's own network, when the device raises one
+#                             (computer/bin/wifi)
 #                             Its readouts go to the API's own code (website/api/local.mjs) in a
 #                             container beside the device (autoflash-beken-emu-api, or
 #                             autoflash-beken-emu-N-api), started with the first computer and gone
@@ -115,7 +122,7 @@ fi
 NETWORK=${AUTOFLASH_BEKEN_EMU_NETWORK:-$NETWORK}
 DEVICE_STATE=$EMU/beken/$STATE
 # An earlier checkout's folders, named after the S61, moved to these once.
-case "${1:-}" in dump|python|run|device|ui|power|computer|test) python3 -I "$HERE/folders.py" migrate ;; esac
+case "${1:-}" in dump|python|run|device|ui|power|router|computer|test) python3 -I "$HERE/folders.py" migrate ;; esac
 
 # A tool's settings: the NAME=VALUE arguments python and run are given before
 # anything else, as env takes them, each passed into the container (-e
@@ -185,7 +192,9 @@ container() {
     # which passes it to the container; a child docker would run on, holding the
     # image lock, with the container to be stopped by hand.
     # CONTAINER_OPTIONS: what a caller adds (computer's network and settings).
-    exec docker run --rm -i "${tty[@]}" ${CONTAINER_OPTIONS[@]+"${CONTAINER_OPTIONS[@]}"} --user "$(id -u):$(id -g)" \
+    # CONTAINER_USER: another user to start as (the computer's root, which hands over to yours).
+    exec docker run --rm -i "${tty[@]}" ${CONTAINER_OPTIONS[@]+"${CONTAINER_OPTIONS[@]}"} \
+        --user "${CONTAINER_USER:-$(id -u):$(id -g)}" \
         -v "${WORK:-$ROOT}:/work" -v "$FIRMWARES:/opt/beken-emulator/firmwares:ro" \
         -e AUTOFLASH_BEKEN_EMU_DUMP="/opt/beken-emulator/firmwares/$PUBLIC_DUMP" \
         ${TOOL_SETTINGS[@]+"${TOOL_SETTINGS[@]}"} -w "$workdir" "$IMAGE" "$@"
@@ -270,7 +279,7 @@ case "${1:-}" in
             echo "$DEVICE is new: its state is gone; it starts again from the dump." >&2
         fi
         ensure; dump; network
-        mkdir -p "$DEVICE_STATE"
+        mkdir -p "$DEVICE_STATE/air"
         starts_from=$(device_dump)
         # Measured: the device 152 MB and its computer 97, plus 100.
         wait_for_room 350
@@ -309,6 +318,12 @@ case "${1:-}" in
             cycle) echo off > "$DEVICE_STATE/power"; sleep 2; echo on > "$DEVICE_STATE/power" ;;
             *) echo "power off, on or cycle" >&2; exit 2 ;;
         esac ;;
+    router)
+        case "${2:-}" in
+            off) echo off > "$DEVICE_STATE/router" ;;
+            on) echo "on${3:+ $3}" > "$DEVICE_STATE/router" ;;
+            *) echo "router off, or on [PASSWORD]" >&2; exit 2 ;;
+        esac ;;
     computer)
         shift; ensure; network
         [ -f "$DEVICE_STATE/ca.crt" ] || { echo "No device yet: start it first (beken-emu.sh device)" >&2; exit 1; }
@@ -321,6 +336,8 @@ case "${1:-}" in
         # The device's power switch too, so a run can offer to switch it off and on;
         # and which terminal it is shown in (VS Code's: output.start_at_top).
         [ -f "$DEVICE_STATE/power" ] || echo on > "$DEVICE_STATE/power"
+        [ -f "$DEVICE_STATE/router" ] || echo on > "$DEVICE_STATE/router"
+        mkdir -p "$DEVICE_STATE/air"
         # The API's own code for its readouts (emulator-room.sh), one a device,
         # kept as long as the device runs, so a second computer's readout finds
         # the first's; none with --no-api, the readouts kept unsent.
@@ -337,9 +354,12 @@ case "${1:-}" in
         CONTAINER_OPTIONS=(${AUTOFLASH_BEKEN_EMU_COMPUTER:+--name "$AUTOFLASH_BEKEN_EMU_COMPUTER"}
                            --network "$NETWORK" -v "$DEVICE_STATE/ca.crt:/device/ca.crt:ro"
                            -v "$DEVICE_STATE/power:/device/power" -e AUTOFLASH_EMULATOR_POWER=/device/power
+                           -v "$DEVICE_STATE/router:/device/router" -e AUTOFLASH_EMULATOR_ROUTER=/device/router
+                           -v "$DEVICE_STATE/air:/device/air:ro" --cap-add NET_ADMIN
+                           -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)"
                            -e TERM_PROGRAM -e AUTOFLASH_READOUT_URL="$readout_url"
                            -e AUTOFLASH_EWELINK_API_BASE="https://$(subnet).1" --entrypoint bash)
-        container /work/tools/beken/emulator/computer.sh "$@" ;;
+        CONTAINER_USER=0:0 container /work/tools/beken/emulator/computer.sh "$@" ;;
     test) shift; ensure; firmwares; container /opt/beken-emulator/tests/self_test.py "$@" ;;
     *) usage ;;
 esac
