@@ -9,7 +9,7 @@
 
 [![Runs on Linux, macOS and Windows](https://img.shields.io/badge/Runs%20on-Linux%20%7C%20macOS%20%7C%20Windows-EA4AAA)](#what-you-need)
 
-[![Release](https://img.shields.io/github/v/release/adamsthws/firmware-liberator?label=Release&color=brightgreen)](https://github.com/adamsthws/firmware-liberator/releases/latest) [![Tests](https://img.shields.io/github/actions/workflow/status/adamsthws/firmware-liberator/emulator-check.yml?branch=main&label=Tests)](https://github.com/adamsthws/firmware-liberator/actions/workflows/emulator-check.yml) [![License: GPL-3.0](https://img.shields.io/github/license/adamsthws/firmware-liberator?label=License)](LICENSE) [![Downloads](https://img.shields.io/github/downloads/adamsthws/firmware-liberator/total?label=Downloads&color=blue)](https://github.com/adamsthws/firmware-liberator/releases)
+[![Release](https://img.shields.io/github/v/release/adamsthws/firmware-liberator?label=Release&color=brightgreen)](https://github.com/adamsthws/firmware-liberator/releases/latest) [![License: GPL-3.0](https://img.shields.io/github/license/adamsthws/firmware-liberator?label=License)](LICENSE) [![Downloads](https://img.shields.io/github/downloads/adamsthws/firmware-liberator/total?label=Downloads&color=blue)](https://github.com/adamsthws/firmware-liberator/releases)
 
 <br>
 
