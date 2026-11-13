@@ -1,7 +1,7 @@
 // api/sender.js: who sent a request, as the API's limits count senders.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { prefixOf, senderAddress } from "../api/sender.js";
+import { CLOUD_ASNS, networkAsn, prefixOf, senderAddress } from "../api/sender.js";
 
 test("an IPv6 sender is its /48, however the address is written", () => {
   const one = prefixOf("2001:db8:1:2:aaaa:bbbb:cccc:dddd");
@@ -27,4 +27,15 @@ test("from Cloudflare's header", () => {
     { headers: address ? { "CF-Connecting-IP": address } : {} });
   assert.equal(senderAddress(request("2001:db8:1:2::77")), "2001:0db8:0001::/48");
   assert.equal(senderAddress(request(null)), "unknown");
+});
+
+test("a big cloud's network counts as none, as does a request Cloudflare names none for", () => {
+  const on = (asn) => Object.defineProperty(new Request("https://api.firmwareliberator.com/readout"), "cf",
+    { value: asn === undefined ? undefined : { asn } });
+  assert.equal(networkAsn(on(64500)), 64500);
+  assert.ok(CLOUD_ASNS.has(16509));
+  assert.equal(networkAsn(on(16509)), null, "Amazon's");
+  assert.equal(networkAsn(on(undefined)), null);
+  assert.equal(networkAsn(on("64500")), null, "only a number");
+  assert.ok(!CLOUD_ASNS.has(13335), "Cloudflare's own, which WARP's users at home come from, still counts");
 });

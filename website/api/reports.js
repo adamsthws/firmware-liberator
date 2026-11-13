@@ -40,7 +40,7 @@ import { hex, proven, reportSubject, work } from "./proof-of-work.js";
 import schema from "./report-schema.json" with { type: "json" };
 import { validate } from "./report-schema.js";
 import { heldFor, holdsHeldWords } from "./review.js";
-import { senderAddress } from "./sender.js";
+import { networkAsn, senderAddress } from "./sender.js";
 
 export const MAX_BODY = 1024 * 1024;
 export const MAX_REPORTS = 99;
@@ -60,14 +60,14 @@ export const ID = new RegExp(schema.properties.id.pattern);
 // Who named `model`, as model_senders keeps it: a keyed hash (SENDER_KEY) of
 // the model and the sender's address, one a model, so nothing ties one
 // sender's names together; and of the model and the network it came from
-// (Cloudflare's ASN), null where none is given. A model's name is shown in the
-// figures only once several have given it, from several networks, over
-// several days (nightly.js).
+// (Cloudflare's ASN), null where none is given or it is a big cloud's
+// (sender.js). A model's name is shown in the figures only once several have
+// given it, from several networks, over several days (nightly.js).
 export async function namedBy(env, request, model) {
-  const asn = request.cf?.asn;
+  const asn = networkAsn(request);
   return {
     sender: (await keyed(env.SENDER_KEY, `model|${model}|${senderAddress(request)}`)).slice(0, 32),
-    network: Number.isInteger(asn) ? (await keyed(env.SENDER_KEY, `model|${model}|network|${asn}`)).slice(0, 32) : null,
+    network: asn !== null ? (await keyed(env.SENDER_KEY, `model|${model}|network|${asn}`)).slice(0, 32) : null,
   };
 }
 const NAMED = "INSERT OR IGNORE INTO model_senders (model, sender, network, day) VALUES (?, ?, ?, ?)";
