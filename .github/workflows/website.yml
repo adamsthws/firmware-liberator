@@ -129,7 +129,9 @@ jobs:
             on|off) ;;
             *) echo "ingest is on or off, not $INGEST"; exit 1 ;;
           esac
-          npx wrangler deploy --config api/wrangler.jsonc --var "INGEST:$INGEST"
+          # Named by its code, for the release workflow (tools/repo/api_health.py deployed).
+          npx wrangler deploy --config api/wrangler.jsonc --var "INGEST:$INGEST" \
+            --var "API_TREE:$(git rev-parse HEAD:website/api)"
       # That it answers as deployed: migrated, with its database, through the
       # firewall (tools/repo/api_health.py live).
       - name: The API answers
