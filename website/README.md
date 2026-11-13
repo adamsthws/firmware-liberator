@@ -169,6 +169,20 @@ one the domain's mail is forwarded to. `apply` then says the values to put in
 does not check Access, and each deploy checks only that the view turns away a
 request that is not signed in.
 
+The emulator suites send their runs under the view's `/v1/emulator`
+(`admin/emulator.js`, `docs/testing.md` Emulator stats) with an Access service
+token of their own, which can do nothing else. `apply` makes the token, never
+to expire, and a second Access application over that path alone that lets in
+the token and no one else. It writes the token's id and secret to
+`~/.config/firmware-liberator/emulator.env`, as Access shows a secret only
+once, and copies that file over ssh to each machine named in `.env.infra` as
+`EMULATOR_STATS_HOSTS`. It then says the application's audience tag to put in
+`admin/wrangler.jsonc` as `ACCESS_UPLOAD_AUD`. Should the secret be seen,
+`python3 tools/repo/cloudflare_settings.py rotate emulator-stats` gives the
+token a new one, which stops the old at once, and writes and copies it the
+same way. A machine added later gets it with `python3
+tools/repo/emulator_stats.py push HOST`.
+
 ### Adding a Worker
 
 The deploy token can only be given a Worker that already exists, so a new

@@ -140,6 +140,30 @@ export function trends(models, months, names) {
     + `<div class="trends">${models.map(chart).join("")}</div>`;
 }
 
+// A table whose cells are shaded by a share, 0 to 1: `rows` and `cols` its
+// labels, `cell(row, col)` {share, text} or null for none, `corner` the first
+// header. The share is said in each cell's text too, so the shade only helps.
+export function heat(rows, cols, cell, corner = "", empty = "None.") {
+  if (!rows.length || !cols.length) {
+    return `<p class="none">${esc(empty)}</p>`;
+  }
+  const td = (row, col) => {
+    const value = cell(row, col);
+    if (!value) {
+      return "<td></td>";
+    }
+    const share = Math.max(0, Math.min(1, value.share));
+    // A failure at all shows: the lightest shade is a tenth.
+    const shade = share ? Math.round(10 + 70 * share) : 0;
+    return `<td class="number heat" style="background: color-mix(in srgb, var(--critical) ${shade}%, transparent)">`
+      + `${esc(value.text)}</td>`;
+  };
+  return `<div class="scroll"><table><thead><tr><th>${esc(corner)}</th>`
+    + cols.map((col) => `<th class="number">${esc(col)}</th>`).join("") + "</tr></thead><tbody>"
+    + rows.map((row) => `<tr><th>${esc(row)}</th>${cols.map((col) => td(row, col)).join("")}</tr>`).join("")
+    + "</tbody></table></div>";
+}
+
 export const STYLE = `
 :root { color-scheme: dark;
   --plane: #0d1117; --surface: #161b22; --ink: #e6edf3; --ink-2: #9198a1; --muted: #7d8590; --grid: #262c36;
@@ -185,7 +209,8 @@ svg { width: 100%; height: auto; display: block; overflow: visible; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
 th { color: var(--ink-2); font-weight: 500; } .number { text-align: right; font-variant-numeric: tabular-nums; }
 td.text { max-width: 360px; overflow-wrap: anywhere; color: var(--ink-2); }
-.none { color: var(--muted); }
+.none { color: var(--muted); } td.heat { white-space: nowrap; }
+select { font: inherit; font-size: 12px; background: var(--plane); color: var(--ink); border: 1px solid var(--ring); border-radius: 6px; }
 form.inline { display: inline; }
 button { font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--ring);
   background: var(--plane); color: var(--ink); cursor: pointer; } button.danger { color: var(--critical); }
