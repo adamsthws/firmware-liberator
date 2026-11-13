@@ -9,9 +9,10 @@ import { release as giveBack } from "../api/counters.js";
 import { AGREEMENT_SETTING, DAILY_BYTES, DAILY_COUNT, MIN_NETWORKS, NOTIFY_DAILY, PER_KEY, STAGES, TOTAL_BYTES }
   from "../api/index.js";
 import { PENDING } from "../api/pending.js";
+import { monthsTo, popularity, SERIES } from "../api/popularity.js";
 import { DEVICE_DAILY, ID, REPORTS_DAILY } from "../api/reports.js";
 import { verified } from "./access.js";
-import { bytes, columns, esc, FULL, lineChart, meter, number, STYLE, table, tile } from "./render.js";
+import { bytes, columns, esc, FULL, lineChart, meter, number, STYLE, table, tile, trends } from "./render.js";
 
 export const ORIGIN = "https://admin.firmwareliberator.com";
 // What Workers Paid includes a month, and R2 free (tools/repo/api_health.py's
@@ -217,7 +218,31 @@ export async function gather(env, now) {
     signups: (await all("SELECT count(*) AS n FROM confirmations"))[0]?.n ?? 0,
     settings: Object.fromEntries((await all("SELECT name, value FROM settings")).map((row) => [row.name, row.value])),
     nearly: await all(NEARLY),
+    popularity: await modelTrends(all, now),
   };
+}
+
+// How many months the popularity charts go back, and how many models they show.
+export const POPULAR_MONTHS = 24;
+export const POPULAR_MODELS = 24;
+
+// Each model's devices, month by month, the last POPULAR_MONTHS (popularity.js):
+// the POPULAR_MODELS models with the most, most first, each as trends() draws it.
+export async function modelTrends(all, now) {
+  const months = monthsTo(now, POPULAR_MONTHS);
+  const models = new Map();
+  for (const row of await popularity(all, `${months[0]}-01`)) {
+    const model = models.get(row.model) ?? { model: row.model, series: {}, total: 0 };
+    for (const [key, name] of Object.entries(SERIES)) {
+      if (row[key]) {
+        (model.series[name] ??= {})[row.month] = row[key];
+        model.total += row[key];
+      }
+    }
+    models.set(row.model, model);
+  }
+  return { months, models: [...models.values()].sort((a, b) => b.total - a.total || a.model.localeCompare(b.model))
+    .slice(0, POPULAR_MODELS) };
 }
 
 // How fast the store fills: bytes a day over its last 30 days, and the day it
@@ -267,6 +292,11 @@ export async function page(env, who, now, fetcher = fetch) {
     `<section class="card"><h2>Reports, the last fortnight</h2><p class="sub">Every report that came in, by day; held ones are in no figure.</p>`
       + columns(data.week.map((row) => ({ day: row.day, parts: { converted: row.converted, other: row.runs - row.converted } })),
         ["converted", "other"], "Reports a day", FULL)
+      + `</section>`,
+    `<section class="card" id="popularity"><h2>Devices, model by model</h2><p class="sub">Each month of the last
+      ${POPULAR_MONTHS}: devices whose readout was first asked about, devices read out, and devices converted (again,
+      too) - your own testing left out. The ${POPULAR_MODELS} models with the most, on one scale.</p>`
+      + trends(data.popularity.models, data.popularity.months, Object.values(SERIES))
       + `</section>`,
     `<section class="card" id="held"><h2>Held for review</h2><p class="sub">Reports no run of the tool's would write, or a day far
       above a model's usual. Release one to count it (its day is counted again tonight), or delete it.</p>`

@@ -204,22 +204,41 @@ test("with reports missing, the computers counted are never more than there are"
   assert.deepEqual(perComputer.rows, [{ devices: 20, computers: 5 }]);
 });
 
-test("the devices wanted: /wanted's questions and the runs stopped for want of support", async () => {
+test("the devices wanted: each device once, asked about for a readout or met by a run, however often", async () => {
   const bindings = env();
-  const ask = bindings.DB.db.prepare("INSERT INTO wanted_days (day, model, asked, devices) VALUES (?, ?, ?, 0)");
-  ask.run("2026-11-01", "NSPANEL", 3);
-  ask.run("2026-11-02", "NSPANEL", 3);
-  ask.run("2026-11-02", "FEW", 2);
+  const ask = bindings.DB.db.prepare(`INSERT INTO wanted_devices (device_hash, model, first_day, last_day, asks)
+    VALUES (?, ?, '2026-11-01', '2026-11-02', ?)`);
   for (let n = 0; n < 5; n += 1) {
-    await kept(bindings.DB, "2026-11-05", { model: "BASICR4", device: null, result: "failed",
-      stopped: { step: "A2", error: "unsupported-device", text: "" } });
+    ask.run(`nspanel-${n}`, "NSPANEL", 3);   // asked three times each: five devices
   }
+  ask.run("few-1", "FEW", 9);   // however often, one device
+  for (let n = 0; n < 5; n += 1) {
+    await kept(bindings.DB, "2026-11-05", { model: "BASICR4", device: null, result: "failed", device_hash: `basicr4-${n}`,
+      stopped: { step: "A2", error: "unsupported-device", text: "", crash_site: null } });
+  }
+  await kept(bindings.DB, "2026-11-05", { model: "NSPANEL", device: null, result: "failed", device_hash: "nspanel-0",
+    stopped: { step: "A2", error: "unsupported-device", text: "", crash_site: null } });   // asked about and met: once
   vouched(bindings, "NSPANEL", "FEW", "BASICR4");
   await night.nightly(bindings, NIGHT);
   assert.deepEqual(figures(bindings).wanted, [
-    { model: "NSPANEL", asked: 6, unsupportedRuns: null },
-    { model: "BASICR4", asked: null, unsupportedRuns: 5 },
+    { model: "BASICR4", devices: 5, asked: null, ran: 5 },
+    { model: "NSPANEL", devices: 5, asked: 5, ran: null },
   ]);
+});
+
+test("each model's devices month by month, as the admin view counts them, nothing under five", async () => {
+  const bindings = env();
+  for (let n = 0; n < 6; n += 1) {
+    await kept(bindings.DB, "2026-10-05", { model: "S60TPG", device_hash: `s60-${n}` });
+  }
+  await kept(bindings.DB, "2026-11-05", { model: "S60TPG", device_hash: "s60-0" });   // one in November: too few
+  for (let n = 0; n < 5; n += 1) {
+    await kept(bindings.DB, "2026-10-05", { model: "UNVOUCHED", device_hash: `u-${n}` });
+  }
+  vouched(bindings, "S60TPG");
+  await night.nightly(bindings, NIGHT);
+  assert.deepEqual(figures(bindings).modelMonths,
+    [{ month: "2026-10", model: "S60TPG", asked: null, readOut: null, converted: 6 }]);
 });
 
 test("a model's name is shown once three senders from two networks have given it, on three days, and who gave it then forgotten", async () => {
