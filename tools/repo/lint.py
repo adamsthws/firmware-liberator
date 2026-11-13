@@ -7,6 +7,8 @@
 
 Each linter is handed the files of its kind:
 
+    compile       Python, compiled as Python itself would: what parses yet will
+                  not compile (more than 20 nested blocks, say), which ruff misses
     ruff          Python (.ruff.toml)
     shellcheck    shell scripts: *.sh, and files starting #!/bin/sh or bash
     actionlint    the workflows (with shellcheck on their scripts)
@@ -143,7 +145,15 @@ def adoption_example(path: Path) -> bool:
         path.name == "esphome.yaml" and path.parts[0] == "devices")
 
 
+# Each file named compiled in memory, nothing written: a SyntaxError the
+# compiler raises after parsing is one no parser-based linter sees.
+COMPILE = ("import sys\nfailed = 0\nfor name in sys.argv[1:]:\n    try:\n"
+           "        compile(open(name, 'rb').read(), name, 'exec')\n"
+           "    except SyntaxError as error:\n        print(f'{name}:{error.lineno}: {error.msg}')\n"
+           "        failed = 1\nsys.exit(failed)")
+
 LINTERS = [
+    Linter("compile", python, lambda files: [sys.executable, "-c", COMPILE, *files], sys.executable),
     Linter("ruff", python, lambda files: ["ruff", "check", "--quiet", "--force-exclude", *files], "ruff"),
     Linter("shellcheck", lambda path: shell(path) and CONTAINER not in path.parents,
            lambda files: ["shellcheck", *files], "shellcheck"),

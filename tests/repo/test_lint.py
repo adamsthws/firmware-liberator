@@ -72,3 +72,26 @@ class WorktreeVenvTests(unittest.TestCase):
         python = self.main / ".venv" / "Scripts" / "python.exe"
         self.fake_python(python)
         self.assertEqual(self.hook("pre-push", self.worktree), [str(python)])
+
+
+class CompileTests(unittest.TestCase):
+    def compiled(self, source):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder, "module.py")
+            path.write_text(source, encoding="utf-8")
+            linter = next(each for each in lint.LINTERS if each.name == "compile")
+            return subprocess.run(linter.command([str(path)]), capture_output=True, text=True)
+
+    def test_what_parses_yet_will_not_compile_is_found(self):
+        managers = ", ".join(f"open({n})" for n in range(21))
+        done = self.compiled(f"def f():\n    with {managers}:\n        pass\n")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("too many statically nested blocks", done.stdout)
+
+    def test_what_compiles_passes_and_nothing_is_written(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder, "module.py")
+            path.write_text("x = 1\n", encoding="utf-8")
+            linter = next(each for each in lint.LINTERS if each.name == "compile")
+            self.assertEqual(subprocess.run(linter.command([str(path)])).returncode, 0)
+            self.assertEqual(sorted(p.name for p in Path(folder).iterdir()), ["module.py"])
