@@ -11,7 +11,7 @@ import { AGREEMENT_SETTING, DAILY_BYTES, DAILY_COUNT, MIN_NETWORKS, NOTIFY_DAILY
 import { PENDING } from "../api/pending.js";
 import { DEVICE_DAILY, ID, REPORTS_DAILY } from "../api/reports.js";
 import { verified } from "./access.js";
-import { bytes, columns, esc, FULL, lineChart, meter, number, STYLE, table, tile } from "./render.js";
+import { bytes, columns, esc, FULL, lineChart, meter, number, STYLE, table, tile, trends } from "./render.js";
 
 export const ORIGIN = "https://admin.firmwareliberator.com";
 // What Workers Paid includes a month, and R2 free (tools/repo/api_health.py's
@@ -217,7 +217,45 @@ export async function gather(env, now) {
     signups: (await all("SELECT count(*) AS n FROM confirmations"))[0]?.n ?? 0,
     settings: Object.fromEntries((await all("SELECT name, value FROM settings")).map((row) => [row.name, row.value])),
     nearly: await all(NEARLY),
+    popularity: await popularity(all, now),
   };
+}
+
+// How many months the popularity charts go back, and how many models they show.
+export const POPULAR_MONTHS = 24;
+export const POPULAR_MODELS = 24;
+export const POPULAR = ["asked to be read out", "read out", "first converted"];
+
+// Each model's devices, month by month, the last POPULAR_MONTHS: those whose
+// readout was first asked about (wanted_devices), those read out (the readout
+// reports, a device once a month), and those first converted (devices) - the
+// maintainer's own testing and quarantined reports left out where a row says
+// so. The POPULAR_MODELS models with the most, most first.
+export async function popularity(all, now) {
+  const months = Array.from({ length: POPULAR_MONTHS }, (_, back) => {
+    const at = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (POPULAR_MONTHS - 1 - back), 1));
+    return at.toISOString().slice(0, 7);
+  });
+  const from = `${months[0]}-01`;
+  const [asked, read, converted] = await Promise.all([
+    all(`SELECT model, substr(first_day, 1, 7) AS month, count(*) AS n FROM wanted_devices
+      WHERE first_day >= ? GROUP BY model, month`, from),
+    all(`SELECT model, substr(day, 1, 7) AS month, count(DISTINCT coalesce(device_hash, id)) AS n FROM readout_reports
+      WHERE day >= ? AND tag = 'user' AND quarantined = 0 AND model IS NOT NULL GROUP BY model, month`, from),
+    all(`SELECT model, substr(converted_day, 1, 7) AS month, count(*) AS n FROM devices
+      WHERE converted_day >= ? AND dev = 0 AND model IS NOT NULL GROUP BY model, month`, from),
+  ]);
+  const models = new Map();
+  [asked, read, converted].forEach((rows, at) => {
+    for (const row of rows) {
+      const model = models.get(row.model) ?? { model: row.model, series: {}, total: 0 };
+      (model.series[POPULAR[at]] ??= {})[row.month] = row.n;
+      model.total += row.n;
+      models.set(row.model, model);
+    }
+  });
+  return { months, models: [...models.values()].sort((a, b) => b.total - a.total || a.model.localeCompare(b.model))
+    .slice(0, POPULAR_MODELS) };
 }
 
 // How fast the store fills: bytes a day over its last 30 days, and the day it
@@ -267,6 +305,11 @@ export async function page(env, who, now, fetcher = fetch) {
     `<section class="card"><h2>Reports, the last fortnight</h2><p class="sub">Every report that came in, by day; held ones are in no figure.</p>`
       + columns(data.week.map((row) => ({ day: row.day, parts: { converted: row.converted, other: row.runs - row.converted } })),
         ["converted", "other"], "Reports a day", FULL)
+      + `</section>`,
+    `<section class="card" id="popularity"><h2>Devices, model by model</h2><p class="sub">Each month of the last
+      ${POPULAR_MONTHS}: devices whose readout was first asked about, devices read out, and devices first converted
+      - your own testing left out. The ${POPULAR_MODELS} models with the most, on one scale.</p>`
+      + trends(data.popularity.models, data.popularity.months, POPULAR)
       + `</section>`,
     `<section class="card" id="held"><h2>Held for review</h2><p class="sub">Reports no run of the tool's would write, or a day far
       above a model's usual. Release one to count it (its day is counted again tonight), or delete it.</p>`
