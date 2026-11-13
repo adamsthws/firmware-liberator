@@ -22,7 +22,9 @@ the relay is on.
 DEVICE_TRACE=ADDR,ADDR (hex) logs each call there to the serial output.
 
 The power switch is DIR/power: "off" stops the device and keeps its flash,
-"on" starts it again (beken-emu.sh power). The serial output is DIR/serial.log.
+"on" starts it again (beken-emu.sh power). The serial output is DIR/serial.log,
+and what the emulator's Wi-Fi and network did - the device joining, a lease,
+a frame refused - DIR/net.log.
 """
 from __future__ import annotations
 
@@ -66,13 +68,24 @@ def trace(mu, address: int) -> None:
     mu.hook_add(UC_HOOK_CODE, called, None, address, address)
 
 
+class NetLog:
+    """The emulator's Wi-Fi and network lines, to a file as they come, each
+    timed: kept in memory, a long run's grew without end."""
+
+    def __init__(self, path: Path):
+        self.file = open(path, "a", encoding="utf-8", buffering=1)
+
+    def append(self, line: object) -> None:
+        self.file.write("%s %s\n" % (time.strftime("%H:%M:%S"), line))
+
+
 class Device:
     def __init__(self, state: Path, tap: str):
         self.state, self.tap = state, tap
         self.flash_path = state / "flash.bin"
         self.power_path = state / "power"
         self.stopping = False
-        self.netlog: list[str] = []
+        self.netlog = NetLog(state / "net.log")
 
     def prepare(self) -> None:
         """The flash, the first time: the dump with the Wi-Fi in its store."""
