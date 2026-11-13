@@ -202,14 +202,14 @@ To change the address you gave for email updates, or have your computer forget i
 
 ### What you end up with
 
-**Official:**  
-[![ESPHome](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fartifacts%2Ffirmware.json&query=%24.espressif%5B%22sonoff-s60%22%5D.esphome.esphome&label=ESPHome&color=7C3AED)](https://github.com/esphome/esphome) [![Tasmota](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fartifacts%2Ffirmware.json&query=%24.espressif.esp32c3.tasmota.version&label=Tasmota&color=7C3AED)](https://github.com/arendst/tasmota) [![OpenBeken](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fartifacts%2Ffirmware.json&query=%24.beken%5B%22sonoff-s61%22%5D.openbeken.release&label=OpenBeken&color=7C3AED)](https://github.com/openshwprojects/OpenBK7231T_App)
+**Firmware installed:**  
+[![ESPHome](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fartifacts%2Ffirmware.json&query=%24.espressif%5B%22sonoff-s60%22%5D.esphome.esphome&label=ESPHome&color=7C3AED)](https://github.com/esphome/esphome) - or - [![Tasmota](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fartifacts%2Ffirmware.json&query=%24.espressif.esp32c3.tasmota.version&label=Tasmota&color=7C3AED)](https://github.com/arendst/tasmota) - or - [![OpenBeken](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fartifacts%2Ffirmware.json&query=%24.beken%5B%22sonoff-s61%22%5D.openbeken.release&label=OpenBeken&color=7C3AED)](https://github.com/openshwprojects/OpenBK7231T_App)
   
 \- and -
 
 - A full backup of the device's Sonoff firmware to restore later.
 
-- Once flashed, ESPHome, Tasmota and OpenBeken recieve thier updates as normal.
+- Once flashed, your device will receive its firmware updates as normal.
 
 - Converted devices are identical to ones flashed over USB.
 > The final automated checks verify this by hashing at the end of the conversion. (Every block and every byte is verified).
