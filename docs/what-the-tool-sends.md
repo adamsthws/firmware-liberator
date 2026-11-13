@@ -42,7 +42,9 @@ stages people choose to stop at, and which devices people want supported next: s
   began it, if another), you typed your Wi-Fi details in (not the details
   themselves), your computer joined a network the device raised itself, the
   device had to be switched off and on (and how long it took to answer once
-  back on) - each also by stage, as neither should be needed - and whether the checks at the end passed (its relay, its
+  back on) - each also by stage, as neither should be needed, and for the
+  device's own network why: it was never given your Wi-Fi details, was given
+  them but did not join, or had lost its settings - and whether the checks at the end passed (its relay, its
   firmware's release, its sensors' readings). Also how often
   you pressed Ctrl-C and then carried on.
 - **The tool and your computer:** the tool's version, how you started it

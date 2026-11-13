@@ -202,8 +202,9 @@ as its screens do, since it converts much more than smart plugs now.
   raised itself on either family, and now also when ESPHome or the mover was
   set up through its own network; it said so only for an Espressif device's
   installer or Tasmota. Each stage in it also says whether that was needed
-  there, and how many times the device was switched off and on during it, so
-  a stage that keeps needing either shows.
+  there and why - the device never given your Wi-Fi details, given them but
+  not joining, or its settings lost - and how many times the device was
+  switched off and on during it, so a stage that keeps needing either shows.
 - A device that turns the first firmware down while an update cut off part way
   still holds it (eWeLink's error 410), or that has left eWeLink since, has you
   switch it off and on, then is sent it again once eWeLink shows it online, on

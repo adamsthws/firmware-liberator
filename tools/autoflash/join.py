@@ -80,7 +80,7 @@ def locate_device(ctx: Context, *, timeout: float = 300.0, setup: bool = False) 
     other = None
     if setup:
         other = (f"It is showing its own Wi-Fi network ({names.setup_network_hint(ctx)})",
-                 lambda: configure_device_wifi(ctx, None))
+                 lambda: configure_device_wifi(ctx, None, NOT_JOINED))
     found = prompts.wait_or_ask(ctx.state.input("device_ip"), what="the device", timeout=60.0, other=other)
     ctx.set_device_ip(found)
     return found
@@ -118,20 +118,28 @@ def wait_until_joined(network: str, marker: str | None = None) -> None:
     output.say(f"    Connected to {network}.")
 
 
-# How many times this computer was sent to a device's own network - Tasmota's
-# setup network, or ESPHome's or the mover's - kept in the run's record for the
-# report (report.own_network_joined), and by step (runner.execute).
-OWN_NETWORK = "own_network_joins"
+# Why this computer was sent to a device's own network, as the report gives it
+# for each stage (report_data.stages): the firmware raising it was never given
+# the home Wi-Fi's details - the tool's own gap; was given them but did not
+# join with them - the details, the hand-over or the home network; or lost its
+# settings - a power cut, or switched off and on 7 times.
+NOT_GIVEN, NOT_JOINED, SETTINGS_LOST = "not given", "not joined", "settings lost"
+OWN_NETWORK_REASONS = (NOT_GIVEN, NOT_JOINED, SETTINGS_LOST)
+# The run's record of each time, its reason, in turn: for the report
+# (report.own_network_joined), and by step (runner.execute).
+OWN_NETWORK = "own_networks"
 
 
-def note_own_network(ctx: Context) -> None:
-    """Counted, for the report: this computer sent to a device's own network."""
+def note_own_network(ctx: Context, why: str) -> None:
+    """Recorded, for the report: this computer sent to a device's own network,
+    and why (OWN_NETWORK_REASONS)."""
     joins = ctx.state.input(OWN_NETWORK)
-    ctx.state.set_input(OWN_NETWORK, joins + 1 if isinstance(joins, int) else 1)
+    ctx.state.set_input(OWN_NETWORK, [*(joins if isinstance(joins, list) else []), why])
 
 
-def configure_device_wifi(ctx: Context, network: str | None) -> str:
-    """Give Tasmota, waiting on its setup network, the bundle's Wi-Fi details.
+def configure_device_wifi(ctx: Context, network: str | None, why: str) -> str:
+    """Give Tasmota, waiting on its setup network, the bundle's Wi-Fi details;
+    `why` it is there, for the report (OWN_NETWORK_REASONS).
 
     The operator joins the setup network; the details are sent from here.  Tasmota
     saves them only after it has connected with them, so a failure leaves the
@@ -157,7 +165,7 @@ def configure_device_wifi(ctx: Context, network: str | None) -> str:
             "it, join it again.",
         ])
         wait_until_joined(network)
-        note_own_network(ctx)
+        note_own_network(ctx, why)
         outcome = "manual"
         if credentials is not None:
             name_with_the_wifi(ctx)
@@ -436,7 +444,7 @@ def set_up_through_own_network(ctx: Context, what: str, check: Callable[[str], A
         network = networks[0]  # joined already: carried on through it
     if not network:
         return None
-    note_own_network(ctx)
+    note_own_network(ctx, NOT_JOINED)
     output.tell(f"    {what} cannot join your Wi-Fi, so it has raised its own network, {network}.")
     ssid, password = ctx.wifi(why=[
         f"{what} cannot join your Wi-Fi, and is waiting on its own network for its",

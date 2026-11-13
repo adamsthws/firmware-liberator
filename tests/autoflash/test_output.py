@@ -1131,7 +1131,7 @@ class FallbackScreenTests(OutputTestCase):
                  mock.patch.object(setup_network, "send_wifi", return_value=("saved", "192.0.2.77")), \
                  mock.patch.object(join, "name_with_the_wifi"), \
                  mock.patch.object(time, "sleep"):
-                join.configure_device_wifi(ctx, "tasmota-5A3C1F-7340")
+                join.configure_device_wifi(ctx, "tasmota-5A3C1F-7340", join.NOT_GIVEN)
         screen, _ = self.run_with(io.StringIO(), False, body)
         for words in ("Join the device's setup network", "tasmota-5A3C1F-7340", "(open - no password)",
                       "stay on its network for about 20 seconds",
@@ -1165,7 +1165,7 @@ class FallbackScreenTests(OutputTestCase):
                  mock.patch.object(join, "name_with_the_wifi"), \
                  mock.patch.object(join, "setup_network_gone", return_value=gone), \
                  mock.patch.object(time, "sleep"):
-                join.configure_device_wifi(ctx, "tasmota-5A3C1F-7340")
+                join.configure_device_wifi(ctx, "tasmota-5A3C1F-7340", join.NOT_GIVEN)
                 self.asked = asked.called
         screen, _ = self.run_with(io.StringIO(), False, body)
         return sent, screen
@@ -1708,7 +1708,7 @@ class ReportTests(OutputTestCase):
 
     def test_fallbacks_and_unknown_models_are_reported_as_such(self):
         ctx = self.ctx(product_model="", wifi_typed=True)
-        ctx.state.capture("F4.wifi_route", "setup network")
+        ctx.state.set_input(join.OWN_NETWORK, [join.NOT_JOINED])
         fields = dict(report.report_fields(ctx))
         self.assertEqual(fields["Model"], "__")
         self.assertEqual(fields["Wi-Fi typed"], "Yes")

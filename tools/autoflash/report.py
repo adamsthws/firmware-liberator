@@ -152,26 +152,18 @@ def converted_from(ctx: Context, firmware: str | None, stock_version: str = "") 
     return (f"{routes.FIRMWARES[firmware]}, " if source == "outdated" and firmware else "") + CONVERTED_FROM[source]
 
 
-def own_network_at(state: RunState, step: str) -> bool:
-    """Whether this computer joined a device's own network during `step`, on
-    either family: a network the device raised for want of the home one
-    (join.note_own_network, counted by step in runner.execute) - Tasmota's
-    setup network, ESPHome's or the mover's - or, at D1, the installer's
-    bridge network, as D1's own captures say.  F4's says so for runs begun
-    before that was recorded."""
-    captures = state.data.get("captures", {})
-    if captures.get(f"{step}.{join.OWN_NETWORK}"):
-        return True
-    if step == "D1":
-        return (captures.get("D1.upload_route") == "bridge network" or captures.get("D1.resumed") is True
-                or (captures.get("D1.upload_route") == "home network" and captures.get("D1.wifi") != "preset"))
-    return step == "F4" and captures.get("F4.wifi_route") == "setup network"
+def own_network_at(state: RunState, step: str) -> str | None:
+    """Why this computer first joined a device's own network during `step`
+    (join.OWN_NETWORK_REASONS), on either family - the installer's bridge
+    network, Tasmota's setup network, ESPHome's or the mover's - as
+    runner.execute keeps it; None where it joined none."""
+    why = state.data.get("captures", {}).get(f"{step}.{join.OWN_NETWORK}")
+    return why if why in join.OWN_NETWORK_REASONS else None
 
 
 def own_network_joined(state: RunState) -> bool:
-    """Whether this computer joined a device's own network during the run, at
-    any step (own_network_at) or outside one."""
-    return bool(state.input(join.OWN_NETWORK)) or any(own_network_at(state, step) for step, _, _ in routes.STEPS)
+    """Whether this computer joined a device's own network during the run."""
+    return bool(state.input(join.OWN_NETWORK))
 
 
 def report_fields(ctx: Context, hardware: dict[str, str] | None = None,

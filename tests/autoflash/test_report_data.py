@@ -177,39 +177,23 @@ class PayloadTests(RouteTestCase):
                            "G1.seconds": 43}.items():
             ctx.state.capture(key, value)
         self.assertEqual(self.payload(ctx)["stages"], {
-            "E2": {"s": 36, "busy": 34, "tries": 2, "wait": 0, "setup_network": False, "power_cycles": 0},
-            "G1": {"s": 43, "busy": 0, "tries": 1, "wait": 0, "setup_network": False, "power_cycles": 0}})
+            "E2": {"s": 36, "busy": 34, "tries": 2, "wait": 0, "setup_network": None, "power_cycles": 0},
+            "G1": {"s": 43, "busy": 0, "tries": 1, "wait": 0, "setup_network": None, "power_cycles": 0}})
 
-    def test_each_stage_says_whether_it_needed_the_setup_network_or_a_power_cycle(self):
+    def test_each_stage_says_why_it_needed_the_setup_network_and_how_many_power_cycles(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
-        for key, value in {"D1.seconds": 90, "D1.upload_route": "bridge network", "E3.seconds": 50,
-                           "E3.power_cycles": 2, "F4.seconds": 70, f"F4.{join.OWN_NETWORK}": 1,
-                           "G1.seconds": 43}.items():
+        for key, value in {"C3.seconds": 90, f"C3.{join.OWN_NETWORK}": join.NOT_JOINED, "E3.seconds": 50,
+                           "E3.power_cycles": 2, "F4.seconds": 70, f"F4.{join.OWN_NETWORK}": join.SETTINGS_LOST,
+                           "G1.seconds": 43, f"G1.{join.OWN_NETWORK}": "a word it never sends"}.items():
             ctx.state.capture(key, value)
         stages = self.payload(ctx)["stages"]
         self.assertEqual({step: (stage["setup_network"], stage["power_cycles"]) for step, stage in stages.items()},
-                         {"D1": (True, 0), "E3": (False, 2), "F4": (True, 0), "G1": (False, 0)})
-
-    def test_whether_the_setup_network_was_joined(self):
-        for captures, joined in (({}, False),
-                                 ({"D1.upload_route": "bridge network"}, True),
-                                 ({"D1.resumed": True}, True),
-                                 ({"D1.resumed": "yes"}, False),
-                                 ({"D1.upload_route": "home network", "D1.wifi": "preset"}, False),
-                                 ({"D1.upload_route": "home network", "D1.wifi": "typed"}, True),
-                                 ({"F4.wifi_route": "setup network"}, True),
-                                 ({"F4.wifi_route": "home network"}, False)):
-            with self.subTest(captures=captures):
-                ctx = self.ctx(run=str(len(captures)) + str(joined) + str(captures), firmware="tasmota",
-                               device_kind="sonoff-s60")
-                for key, value in captures.items():
-                    ctx.state.capture(key, value)
-                self.assertIs(self.payload(ctx)["setup_network"], joined)
+                         {"C3": ("not joined", 0), "E3": (None, 2), "F4": ("settings lost", 0), "G1": (None, 0)})
 
     def test_a_beken_device_set_up_through_its_own_network_says_so(self):
         ctx = self.ctx(run="beken-own", firmware="esphome", device_kind="sonoff-s61")
         self.assertIs(self.payload(ctx)["setup_network"], False)
-        ctx.state.set_input(join.OWN_NETWORK, 1)
+        ctx.state.set_input(join.OWN_NETWORK, [join.NOT_JOINED])
         self.assertIs(self.payload(ctx)["setup_network"], True)
 
     def test_what_is_asked_of_each_family(self):

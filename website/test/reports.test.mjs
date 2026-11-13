@@ -75,7 +75,7 @@ test("a report the tool makes is kept, on the day it came in, and nothing of whe
     FROM report_stages WHERE id = ? ORDER BY stage`, sent.id);
   assert.deepEqual(stages, Object.entries(sent.stages).sort()
     .map(([stage, { s, busy, tries, wait, setup_network, power_cycles }]) =>
-      ({ stage, seconds: s, busy, tries, wait, setup_network: Number(setup_network), power_cycles })), "a row a stage");
+      ({ stage, seconds: s, busy, tries, wait, setup_network, power_cycles })), "a row a stage");
   assert.ok(!Object.values(kept).some((value) => String(value).includes("15:30")), "no time of day");
 });
 

@@ -265,7 +265,7 @@ class BridgeScreenTests(unittest.TestCase):
              mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((100, 40))), \
              mock.patch.object(installer, "_wait_for_tasmota", return_value=found), \
              mock.patch.object(installer.join, "configure_device_wifi",
-                               side_effect=lambda ctx, network: output.tell("-- Join the device's setup network")):
+                               side_effect=lambda ctx, network, why: output.tell("-- Join the device's setup network")):
             output.start(Path(directory.name) / "run.log", verbose=False)
             output.stage_begin(8, "Installing interim firmware")
             installer.finish_tasmota_setup(ctx, route="home network", wait=900.0,
@@ -499,7 +499,7 @@ class TasmotaWifiPresetTests(unittest.TestCase):
         self.assertEqual(order[0], "gone")
         self.assertEqual(order[1][0], "autoflash-recovery-CDEF")
         self.assertEqual(order[1][1:], names.setup_networks(ctx))  # and Tasmota's own, after a reset
-        by_hand.assert_called_once_with(ctx, "autoflash-recovery-CDEF")
+        by_hand.assert_called_once_with(ctx, "autoflash-recovery-CDEF", join.NOT_GIVEN)
         self.assertEqual(result["device_ip"], "192.0.2.52")
         self.assertIsNone(result["device_name"])  # the run's name for it is not its own
 
@@ -538,7 +538,7 @@ class TasmotaWifiPresetTests(unittest.TestCase):
              mock.patch.object(output, "say"):
             result = installer.step_berry_tasmota(ctx)
         uploaded.assert_not_called()
-        by_hand.assert_called_once_with(ctx, "autoflash-recovery-CDEF")
+        by_hand.assert_called_once_with(ctx, "autoflash-recovery-CDEF", join.NOT_GIVEN)
         self.assertEqual((result["device_ip"], result["resumed"]), ("192.0.2.52", True))
 
     def test_tasmota_already_at_home_when_run_again_is_carried_on_with(self):
@@ -561,6 +561,25 @@ class TasmotaWifiPresetTests(unittest.TestCase):
         uploaded.assert_not_called()
         asked.assert_not_called()
         self.assertEqual((result["device_ip"], result["wifi"]), ("192.0.2.51", "preset"))
+
+    def test_tasmota_on_its_own_network_says_why_for_the_report(self):
+        from types import SimpleNamespace
+        ctx = SimpleNamespace(state=self.ctx.state)
+        self.assertEqual(installer.tasmota_why(ctx), join.NOT_GIVEN)   # never given the Wi-Fi
+        self.inputs["tasmota_wifi_preset"] = True
+        self.assertEqual(installer.tasmota_why(ctx), join.NOT_JOINED)   # given it, and did not join
+
+    def test_the_bridges_own_network_asked_for_is_recorded_as_the_installer_not_joining(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        ctx = SimpleNamespace(state=self.ctx.state)
+        with mock.patch.object(installer, "resend_if_back_on_sonoff", return_value=None), \
+             mock.patch.object(prompts, "find_ssid", return_value="autoflash-recovery-CDEF"), \
+             mock.patch.object(installer, "ask_to_join_bridge"), \
+             mock.patch.object(installer, "wait_for_bridge", return_value=setup_network.SETUP_HOST), \
+             mock.patch.object(output, "mark"):
+            self.assertEqual(installer.join_bridge(ctx), setup_network.SETUP_HOST)
+        self.assertEqual(self.inputs[join.OWN_NETWORK], [join.NOT_JOINED])
 
     def test_the_installer_is_waited_for_until_it_has_restarted(self):
         from unittest import mock

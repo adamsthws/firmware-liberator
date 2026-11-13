@@ -639,7 +639,7 @@ class CommitEvidenceTests(unittest.TestCase):
             self.assertEqual(configure.called, expected == "configure", (on_wifi, setup))
             self.assertEqual(locate.called, expected == "locate", (on_wifi, setup))
             if expected == "configure":
-                configure.assert_called_once_with(ctx, setup)
+                configure.assert_called_once_with(ctx, setup, join.SETTINGS_LOST)
             # On the network is not answering yet: switched back on, the device
             # answers ping before its web server is up.
             ctx.device.wait_reachable.assert_called_once()

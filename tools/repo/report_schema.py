@@ -29,7 +29,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.autoflash import failures, kinds, records, report, report_data, report_upload, routes  # noqa: E402
+from tools.autoflash import failures, join, kinds, records, report, report_data, report_upload, routes  # noqa: E402
 
 PATH = ROOT / "website" / "api" / "report-schema.json"
 MAX_BYTES = 8192
@@ -140,7 +140,7 @@ def schema() -> dict[str, Any]:
                        "additionalProperties": record({"s": integer(0, 86400), "busy": integer(0, 86400),
                                                        "tries": integer(1, 99),
                                                        "wait": integer(0, report_data.WAIT_LIMIT),
-                                                       "setup_network": {"type": "boolean"},
+                                                       "setup_network": nullable(words(*join.OWN_NETWORK_REASONS)),
                                                        "power_cycles": integer(0, 99)})},
             "signal": nullable(integer(-127, 0)),
             "wifi_typed": {"type": ["boolean", "null"]},

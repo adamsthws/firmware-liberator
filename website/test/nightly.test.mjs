@@ -69,7 +69,7 @@ test("a day unfolded after a report of it is quarantined is counted again withou
 test("run and step times are a month's median and 90th percentile", async () => {
   const bindings = env();
   for (let n = 1; n <= 10; n += 1) {
-    await kept(bindings.DB, "2026-11-03", { seconds: n * 100, stages: { A1: { s: n, busy: 0, tries: 1, wait: 0, setup_network: false, power_cycles: 0 } } });
+    await kept(bindings.DB, "2026-11-03", { seconds: n * 100, stages: { A1: { s: n, busy: 0, tries: 1, wait: 0, setup_network: null, power_cycles: 0 } } });
   }
   await kept(bindings.DB, "2026-11-03", { seconds: 99999, result: "failed",
     stopped: { step: "D4", error: "other", text: "" } });   // not a conversion: not a run's time

@@ -528,15 +528,17 @@ class StageTimingTests(unittest.TestCase):
             runner.execute(SimpleNamespace(state=state), "E1")
         self.assertEqual(state.data["captures"]["E1.waited"], 45)
 
-    def test_a_setup_network_joined_or_a_power_cycle_is_counted_against_its_stage_over_its_tries(self):
+    def test_a_setup_network_joined_or_a_power_cycle_is_kept_against_its_stage_over_its_tries(self):
         from types import SimpleNamespace
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         state = RunState.open(Path(directory.name))
         state.set_input("power_cycles", {"by hand": 1})   # an earlier stage's
+        state.set_input(join.OWN_NETWORK, [join.NOT_GIVEN])
+        reasons = iter([join.SETTINGS_LOST, join.NOT_JOINED])
 
         def joins_and_cycles(ctx, _step):
-            join.note_own_network(ctx)
+            join.note_own_network(ctx, next(reasons))
             ctx.state.set_input("power_cycles", {"by hand": ctx.state.input("power_cycles")["by hand"] + 1})
             return 0
 
@@ -547,7 +549,8 @@ class StageTimingTests(unittest.TestCase):
         with mock.patch.object(runner, "_execute", return_value=0):
             runner.execute(ctx, "G1")   # neither
         captures = state.data["captures"]
-        self.assertEqual((captures[f"F4.{join.OWN_NETWORK}"], captures["F4.power_cycles"]), (2, 2))
+        # The first reason in the stage: what brought it to the setup network.
+        self.assertEqual((captures[f"F4.{join.OWN_NETWORK}"], captures["F4.power_cycles"]), (join.SETTINGS_LOST, 2))
         self.assertNotIn("G1.power_cycles", captures)
         self.assertNotIn(f"G1.{join.OWN_NETWORK}", captures)
 

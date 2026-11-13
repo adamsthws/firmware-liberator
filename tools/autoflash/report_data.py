@@ -163,8 +163,8 @@ def stopped_step(ctx: Context) -> str | None:
 
 def stages(ctx: Context) -> dict[str, dict[str, int]]:
     """Each step the run timed: its seconds, how long it kept the device busy,
-    how many times it was tried, how long it waited on the person, whether
-    this computer joined a device's own network in it, and how many times the
+    how many times it was tried, how long it waited on the person, why this
+    computer joined a device's own network in it, if it did, and how many times the
     person was asked to switch the device off and on: where the setup network
     and power cycles, which a run should never need, keep being needed."""
     captures = ctx.state.data.get("captures", {})

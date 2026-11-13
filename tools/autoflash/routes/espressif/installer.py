@@ -336,6 +336,7 @@ def join_bridge(ctx: Context, *, tasmota: bool = False) -> str:
             return address
         bridge = prompts.find_ssid(names.bridge_networks(ctx)) or names.our_setup_network(ctx)
         if not asked:
+            join.note_own_network(ctx, join.NOT_JOINED)   # it could not join the home network
             asked_at = output.mark()
             ask_to_join_bridge(bridge, tasmota=tasmota and bool(ctx.state.input("tasmota_named_alone")))
             asked = True
@@ -525,7 +526,7 @@ def step_berry_tasmota(ctx: Context) -> dict[str, Any]:
         # Resuming after the upload: Tasmota is already installed and waiting.
         output.say(f"    Tasmota is already installed and waiting on {setup}.")
         names.note_setup_network(ctx, setup)
-        ip = join.configure_device_wifi(ctx, setup)
+        ip = join.configure_device_wifi(ctx, setup, tasmota_why(ctx))
         return {"device_ip": ip, "device_name": setup, "resumed": True}
 
     address = reach_bridge(ctx, tasmota=True)
@@ -538,7 +539,7 @@ def step_berry_tasmota(ctx: Context) -> dict[str, Any]:
         # the one the installer had, by the same name, when it was named so.
         network = names.our_setup_network(ctx) if ctx.state.input("tasmota_named_alone") else None
         output.say(f"    Tasmota is already installed and waiting on {network or 'its own network'}.")
-        ip = join.configure_device_wifi(ctx, network)
+        ip = join.configure_device_wifi(ctx, network, tasmota_why(ctx))
         return {"device_ip": ip, "device_name": ctx.state.input("device_name"), "resumed": True}
     if address == setup_network.SETUP_HOST:
         if not ctx.state.input("tasmota_wifi_preset"):
@@ -885,6 +886,12 @@ def tasmota_or_its_network(ctx: Context, *, timeout: float,
     return None
 
 
+def tasmota_why(ctx: Context) -> str:
+    """Why Tasmota, sent by the installer, waits on its own network, for the
+    report: it was never given the Wi-Fi, or did not join with it."""
+    return join.NOT_JOINED if ctx.state.input("tasmota_wifi_preset") else join.NOT_GIVEN
+
+
 def finish_tasmota_setup(ctx: Context, *, route: str, wait: float = 120.0,
                          advice: tuple[str, list[str]] | None = None) -> dict[str, Any]:
     """Tasmota found on the home network, or set up through its own.
@@ -912,7 +919,7 @@ def finish_tasmota_setup(ctx: Context, *, route: str, wait: float = 120.0,
     if network and network.startswith(names.TASMOTA_AP_PREFIX):
         names.note_setup_network(ctx, network)
         output.say(f"    This device is {network} - the same name shows in your router.")
-    ip = join.configure_device_wifi(ctx, network)
+    ip = join.configure_device_wifi(ctx, network, tasmota_why(ctx))
     named = network if network != names.our_setup_network(ctx) else ctx.state.input("device_name")
     return {"device_ip": ip, "device_name": named, "upload_route": route}
 

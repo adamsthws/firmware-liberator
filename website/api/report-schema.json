@@ -745,7 +745,16 @@
             "maximum": 604800
           },
           "setup_network": {
-            "type": "boolean"
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "not given",
+              "not joined",
+              "settings lost",
+              null
+            ]
           },
           "power_cycles": {
             "type": "integer",
