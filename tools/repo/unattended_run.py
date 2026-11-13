@@ -487,8 +487,9 @@ class Answer:
     eWeLink account" in the firmware question's taken for the sign-in.
     `anywhere`: typed when `when` shows anywhere on the screen, a question
     or not - a Ctrl-C ("\x03") as a stage shows, say - and again only once
-    the run has written it anew, not while it is still on the screen.  In
-    place of typing:
+    the run has written it anew, not while it is still on the screen;
+    `after` that many seconds of it showing, as a person waits for something
+    to come up first.  In place of typing:
     `power` "off" or "on" switches the emulated device (switch_power), as
     a person switching it off at the wall; `router` "off", "on" or "on
     PASSWORD" the home Wi-Fi's router (switch_router); `wifi` "join" or
@@ -501,11 +502,12 @@ class Answer:
 
     def __init__(self, when: str, type: str = "", times: int = 1, anywhere: bool = False,
                  power: str | None = None, signal: str | None = None, router: str | None = None,
-                 wifi: str | None = None) -> None:
+                 wifi: str | None = None, after: float = 0) -> None:
         self.when, self.type, self.left, self.anywhere = re.compile(when), type, times, anywhere
         self.power, self.signal, self.router, self.wifi = power, signal, router, wifi
         self.typed_at: list[int] = []   # how many bytes the run had written each time it was typed
         self.failed: list[str] = []     # each time what it does failed, and why
+        self.after, self.shown_since = after, None   # how long it must show first, and since when it has
 
     def act(self, pid: int, fd: int) -> None:
         """What this answer does: types, switches the device or the router,
@@ -534,6 +536,7 @@ class Answer:
         """As answers.json keeps it."""
         return {"when": self.when.pattern, "type": self.type, "typed_at": self.typed_at,
                 **({"anywhere": True} if self.anywhere else {}),
+                **({"after": self.after} if self.after else {}),
                 **({"power": self.power} if self.power else {}),
                 **({"router": self.router} if self.router else {}),
                 **({"wifi": self.wifi} if self.wifi else {}),
@@ -690,8 +693,12 @@ def record(command: list[str], size: tuple[int, int], live: bool,
                     if answer.anywhere:
                         # Typed again only once written anew since: still on the
                         # screen, it was seen already.
-                        if answer.left and answer.when.search(screen.render(colour=False)) and (
-                                not answer.typed_at or answer.when.search(plain(written[answer.typed_at[-1]:]))):
+                        shows = answer.left and answer.when.search(screen.render(colour=False)) and (
+                            not answer.typed_at or answer.when.search(plain(written[answer.typed_at[-1]:])))
+                        if shows and answer.shown_since is None:
+                            answer.shown_since = time.monotonic()
+                        if shows and time.monotonic() - answer.shown_since >= answer.after:
+                            answer.shown_since = None
                             time.sleep(0.5)
                             answer.act(pid, fd)
                             answer.typed_at.append(len(written))

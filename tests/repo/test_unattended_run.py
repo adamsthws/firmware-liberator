@@ -551,6 +551,29 @@ class StandInTests(unittest.TestCase):
         second = written.index(b"setup network", written.index(b"setup network") + 1)
         self.assertGreater(answers[0].typed_at[1], second)
 
+    def test_an_answer_shown_anywhere_waits_its_after(self):
+        import tempfile
+        script = textwrap.dedent("""
+            import time
+            print("Stage 9 - Checking ESPHome", flush=True)
+            for n in range(10):
+                time.sleep(0.5)
+                print(f"waiting {n}", flush=True)
+        """)
+        with tempfile.TemporaryDirectory() as directory:
+            wifi = Path(directory, "wifi")
+            wifi.write_text("#!/bin/sh\n", encoding="utf-8")
+            wifi.chmod(0o755)
+            answers = [unattended_run.Answer("Checking ESPHome", wifi="join", anywhere=True, after=2)]
+            with mock.patch.dict(os.environ, {"PATH": f"{directory}{os.pathsep}{os.environ['PATH']}"}):
+                code, written = unattended_run.record([sys.executable, "-c", script], (80, 24), live=False,
+                                                      timeout=60, answers=answers)
+        self.assertEqual(code, 0, written)
+        self.assertEqual(len(answers[0].typed_at), 1)
+        acted = written[:answers[0].typed_at[0]]
+        self.assertIn(b"waiting 3", acted, "not before two seconds of it showing")
+        self.assertEqual(answers[0].saved()["after"], 2)
+
     def test_an_answer_that_fails_is_kept_with_why_and_the_run_goes_on(self):
         import tempfile
         script = 'import time\nprint("Join the device\'s setup network", flush=True)\ntime.sleep(2)\nprint("done")\n'
