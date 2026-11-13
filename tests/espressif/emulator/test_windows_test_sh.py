@@ -29,5 +29,14 @@ class LayerHashTests(unittest.TestCase):
                 self.assertRegex(done.stdout.strip(), r"^[0-9a-f]{16}$")
 
 
+
+@unittest.skipIf(shutil.which("bash") is None, "no bash")
+class UsageTests(unittest.TestCase):
+    def test_its_usage_is_its_whole_header(self):
+        done = subprocess.run(["bash", str(SCRIPT), "--bogus"], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 2)
+        self.assertTrue(done.stdout.endswith("tools/espressif/emulator/windows-ssh.sh. See docs/emulator.md.\n"),
+                        done.stdout)
+
 if __name__ == "__main__":
     unittest.main()
