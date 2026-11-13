@@ -4,9 +4,10 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { read } from "../api/counters.js";
+import { read, release } from "../api/counters.js";
 import worker, * as readout from "../api/index.js";
 import { d1 } from "../api/local-d1.mjs";
+import { PENDING } from "../api/pending.js";
 
 const NOW = new Date("2026-11-07T12:00:00Z");
 
@@ -1384,5 +1385,85 @@ test("anything but the tool's request to be told is turned away", async () => {
     const bindings = env();
     assert.equal((await tell(value, bindings)).status, 400, JSON.stringify(value).slice(0, 80));
     assert.equal(bindings.EMAIL.sent.length, 0);
+  }
+});
+
+// Numbers in [0, 1) from `seed`, the same each time (mulberry32): a failure
+// names its seed and step, and runs again alike.
+function seeded(seed) {
+  let state = seed;
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// What must hold of one key's readouts however they came.
+function holds(bindings, at) {
+  const one = (sql, ...values) => bindings.DB.db.prepare(sql).get(...values);
+  const none = (sql, why) => assert.equal(one(`SELECT count(*) AS n FROM (${sql})`).n, 0, `${at}: ${why}`);
+  assert.ok(one(`SELECT count(DISTINCT fingerprint) AS n FROM readouts WHERE stage = 'whole'
+    AND review IN ('quorum', 'approved')`).n <= 1, `${at}: one whole fingerprint taken as right at most`);
+  assert.ok(one("SELECT count(*) AS n FROM readouts WHERE stage = 'whole' AND review != 'rejected'").n
+    <= readout.MAX_PLACES, `${at}: MAX_PLACES whole ones at most`);
+  none(`SELECT offer FROM readouts WHERE stage = 'first' AND review != 'rejected' GROUP BY offer
+    HAVING count(*) > ${readout.MAX_PLACES}`, "MAX_PLACES first stages of an offer at most");
+  none("SELECT sender FROM readouts WHERE stage = 'whole' GROUP BY sender HAVING count(*) > 1",
+    "one whole readout from a sender");
+  none("SELECT sender FROM readouts GROUP BY sender, offer HAVING count(*) > 1", "one readout of an offer from a sender");
+  none(`SELECT id FROM readouts r WHERE stage = 'first' AND review = 'quorum'
+    AND NOT EXISTS (SELECT 1 FROM agreed_offers a WHERE a.key = r.key AND a.offer = r.offer)`,
+  "a first stage agreed only with its offer");
+  none(`SELECT id FROM readouts r WHERE review = 'pending' AND stage = 'first'
+    AND EXISTS (SELECT 1 FROM agreed_offers a WHERE a.key = r.key AND a.offer = r.offer)`,
+  "none waits whose offer is agreed");
+  none(`SELECT id FROM readouts r WHERE review = 'pending' AND stage = 'whole' AND EXISTS (SELECT 1 FROM readouts t
+    WHERE t.key = r.key AND t.stage = 'whole' AND t.fingerprint = r.fingerprint AND t.review IN ('quorum', 'approved'))`,
+  "none waits alike whole ones taken as right");
+  none(`SELECT a.offer FROM agreed_offers a JOIN readouts r ON r.key = a.key AND r.offer = a.offer
+    LEFT JOIN readout_networks n ON n.id = r.id GROUP BY a.offer
+    HAVING count(*) < ${readout.PER_KEY} OR count(DISTINCT n.network) < ${readout.MIN_NETWORKS}`,
+  "an offer agreed from PER_KEY readouts and MIN_NETWORKS networks");
+  const waiting = one("SELECT count(*) AS count, coalesce(sum(bytes), 0) AS bytes FROM readouts WHERE review = 'pending'");
+  const counted = one("SELECT count, bytes FROM counters WHERE name = ?", PENDING) ?? { count: 0, bytes: 0 };
+  assert.deepEqual([counted.count, counted.bytes], [waiting.count, waiting.bytes], `${at}: the room for those waiting`);
+}
+
+test("whatever readouts come, in whatever order, the rules of places and agreement hold", async () => {
+  const offers = [OFFER_A, OFFER_B, offeredAt("1.4.0", "c".repeat(64))];
+  const firmware = [FIRMWARE, MADE_UP];
+  // Ten networks, Amazon's (counting as none), and none named.
+  const networks = [...Array.from({ length: 10 }, (_, at) => 64500 + at), 16509, null];
+  for (const seed of [1, 2, 3, 4, 5, 6]) {
+    const random = seeded(seed);
+    const pick = (list) => list[Math.floor(random() * list.length)];
+    const bindings = env();
+    for (let step = 0; step < 300; step += 1) {
+      const at = `seed ${seed} step ${step}`;
+      const roll = random();
+      if (roll < 0.75) {
+        const offer = pick(offers);
+        const manifest = random() < 0.4 ? offer : { ...offer, read: true, firmware: pick(firmware) };
+        const sent = await from(bindings, `192.0.2.${1 + Math.floor(random() * 40)}`, manifest, pick(networks));
+        assert.ok([200, 201].includes(sent.status), `${at}: ${sent.status}`);
+      } else if (roll < 0.93) {
+        // Time passes: everything held came that many days earlier.
+        bindings.DB.db.prepare("UPDATE readouts SET received = strftime('%Y-%m-%dT%H:%M:%fZ', received, ?)")
+          .run(`-${1 + Math.floor(random() * 20)} days`);
+      } else {
+        // The maintainer rejects one waiting, as readouts.py reject does.
+        const waiting = bindings.DB.db.prepare("SELECT id, bytes FROM readouts WHERE review = 'pending'").all();
+        if (waiting.length) {
+          const row = pick(waiting);
+          bindings.DB.db.prepare("UPDATE readouts SET review = 'rejected' WHERE id = ?").run(row.id);
+          await release(bindings.DB, PENDING, row.bytes);
+        }
+      }
+      holds(bindings, at);
+    }
+    const kept = bindings.DB.db.prepare("SELECT review, count(*) AS n FROM readouts GROUP BY review").all();
+    assert.ok(kept.some((row) => row.review === "quorum"), `seed ${seed}: some came to agree (${JSON.stringify(kept)})`);
   }
 });
