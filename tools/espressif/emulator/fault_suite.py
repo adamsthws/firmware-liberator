@@ -332,7 +332,7 @@ REPORT_RESULT = re.compile(r"Result:\s+(\S.*?)(?:\s{2,}|$)", re.M)
 REPORT_BACKUP = re.compile(r"(?:Sonoff backup|\bBackup):\s+(\S.*?)(?:\s{2,}|$)", re.M)
 REPORT_IDENTITY = re.compile(r"(?:Sonoff identity|\bIdentity):\s+(\S.*?)(?:\s{2,}|$)", re.M)
 REPORT_UNFINISHED = re.compile(r"(?:Converted from|From):\s+Unfinished (?:conversion|run)")
-READOUT_SWITCH = re.compile(r"Switch the device off, wait five seconds, and switch it on again")
+READOUT_SWITCH = re.compile(r"Switch it off for five seconds, then on")
 # Advice to switch it off and on, from a readout as from a conversion.
 SWITCH_ADVICE = re.compile(r"switch (the device|the device|it) off and on", re.IGNORECASE)
 
@@ -908,7 +908,7 @@ class Tuner:
     eWeLink saying the device is offline or the login gone, or a turn held to
     its limit for nothing."""
     WINDOW = 4
-    NOT_THE_CLOUD = re.compile(r"stopped part way|did not request every firmware byte")
+    NOT_THE_CLOUD = re.compile(r"stopped part way|was not fully delivered|did not request every firmware byte")
     TROUBLE = re.compile(r"offline in eWeLink|eWeLink shows it offline|access token|"
                          r"turn given up after 2[34]\ds")
     # A send the device never asked for: the command went down the last turn's
@@ -2753,7 +2753,7 @@ def key(scenario_id):
 
 # This computer, not its device, cut off from eWeLink: the name not found, the
 # network down. Seen on a test machine once in 75 scenarios, before the fault.
-COMPUTER_OFFLINE = re.compile(r"Could not reach eWeLink \(eWeLink connection failed: [^)]*?"
+COMPUTER_OFFLINE = re.compile(r"eWeLink is unreachable \(eWeLink connection failed: [^)]*?"
                               r"(?:Name or service not known|Temporary failure in name resolution|"
                               r"Network is unreachable)")
 

@@ -14,7 +14,7 @@
    "times": 3
   },
   {
-   "when": "Which firmware would you like",
+   "when": "Which firmware should the device have",
    "type": "2\r"
   },
   {
@@ -77,7 +77,7 @@
   "shows": [
    "^ *FAILED: ESPHome was not installed",
    "^ *If it should not have stopped, please open an issue here:$",
-   "^ *This report is on your clipboard, ready to paste\\.$",
+   "^ *This report is on your clipboard\\.$",
    "^ *This run's log:$"
   ]
  }

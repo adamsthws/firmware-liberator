@@ -324,7 +324,7 @@ ISSUE = """
  If it should not have stopped, please open an issue here:
      https://firmwareliberator.com/issues
      Report ID: 0123456789abcdef
-     This report is on your clipboard, ready to paste.
+     This report is on your clipboard.
 
  This run's log:
      /home/someone/autoflash/captures/devices/123456abcdef/runs/1/run.log
@@ -385,8 +385,8 @@ class EndProblemsTests(unittest.TestCase):
         for wrong, problem in (
                 (ISSUE.replace("     Report ID", "  Report ID"), "'Report ID: 0123456789abcdef' not as far in"),
                 (ISSUE.replace("     https", " https"), "the issue link not on the row under"),
-                (ISSUE.replace("     Report ID: 0123456789abcdef\n     This report is on your clipboard, ready "
-                               "to paste.\n", "     This report is on your clipboard, ready to paste.\n"
+                (ISSUE.replace("     Report ID: 0123456789abcdef\n     This report is on your clipboard.\n",
+                               "     This report is on your clipboard.\n"
                                "     Report ID: 0123456789abcdef\n"), "not the report ID then the clipboard"),
                 (ISSUE.replace(" This run's log:\n", ""), "the run's log not under")):
             with self.subTest(problem=problem):
@@ -397,7 +397,7 @@ class EndProblemsTests(unittest.TestCase):
     def test_what_was_copied_must_be_what_the_screen_says(self):
         failed = REPORT + ISSUE
         self.assertIn("said its report is on the clipboard, and nothing was put there", self.problems(failed, ""))
-        quiet = failed.replace("     This report is on your clipboard, ready to paste.\n", "")
+        quiet = failed.replace("     This report is on your clipboard.\n", "")
         self.assertIn("put its report on the clipboard without saying so", self.problems(quiet, COPIED))
         self.assertIn("the report on the clipboard has not the report ID the screen shows",
                       self.problems(failed, COPIED.replace("0123", "4567")))

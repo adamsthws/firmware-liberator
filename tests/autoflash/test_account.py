@@ -75,7 +75,7 @@ class MatchTests(unittest.TestCase):
         offline = account.account_device({**S60, "online": False})
         [seen] = account.match_devices([offline], {"192.0.2.50": "aa:bb:cc:12:34:56"})
         self.assertTrue(account.cut_off(seen))
-        self.assertIn("allow it internet access", account.why_not_found(seen))
+        self.assertIn("let it reach the internet", account.why_not_found(seen))
 
     def test_online_but_unseen_names_its_network(self):
         [seen] = account.match_devices([self.device], {})
@@ -219,7 +219,7 @@ class FindAccountDeviceTests(unittest.TestCase):
              mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
             self.assertEqual(account.find_account_device(self.ctx(), [S60]), "192.0.2.50")
         asked.assert_called_once()   # only once it had been looked for again by itself
-        self.assertIn("was not seen on this computer's network", shown.call_args.args[1][0])
+        self.assertIn("not seen here", shown.call_args.args[1][0])
 
     def clock(self):
         """A clock that moves on 10 s for every sleep, and no real waiting."""
@@ -267,7 +267,7 @@ class FindAccountDeviceTests(unittest.TestCase):
              mock.patch.object(prompts, "section") as shown, monotonic, sleep, \
              mock.patch.object(output, "tell"), mock.patch.object(output, "say"):
             self.assertEqual(account.find_account_device(ctx, [offline]), "192.0.2.99")
-        self.assertIn("eWeLink shows it offline", shown.call_args.args[1][0])
+        self.assertIn("is offline in eWeLink", shown.call_args.args[1][0])
         # Looked again every 10 s for the minute, then LOOK_AGAIN times more, before asking.
         self.assertEqual(ctx.account_devices.call_count, int(account.CLOUD_CATCH_UP // 10) + account.LOOK_AGAIN)
 
@@ -292,7 +292,7 @@ class FindAccountDeviceTests(unittest.TestCase):
             self.assertEqual(account.find_account_device(self.ctx(), [S60]), "192.0.2.99")
         self.assertEqual("Your device is on this network but cannot reach the internet",
                          shown.call_args.args[0])
-        self.assertIn("cannot reach the internet", shown.call_args.args[1][0])
+        self.assertIn("let it reach the internet", shown.call_args.args[1][0])
 
     def test_another_account_chosen_is_signed_in_to_and_its_devices_looked_at(self):
         ctx = self.ctx()
@@ -438,12 +438,14 @@ class FirmwareNameTests(unittest.TestCase):
         self.assertIn(wrapper, logged[0])
         self.assertIn("ESP32C3", logged[0])
 
-    def test_a_name_that_differs_is_said_plainly(self):
-        name, _, told = self.note(kinds.SONOFF_S60, "FWSW-E32S60B-S60-ESP32C3FN4")
+    def test_a_name_that_differs_is_logged_for_the_report_not_shown(self):
+        # Nothing to ask of anyone, and the run's report carries it.
+        name, logged, told = self.note(kinds.SONOFF_S60, "FWSW-E32S60B-S60-ESP32C3FN4")
         self.assertEqual(name, "FWSW-E32S60B-S60-ESP32C3FN4")
-        self.assertIn("FWSW-E32S60B-S60-ESP32C3FN4", told[0])
-        self.assertIn(kinds.SONOFF_S60.wrapper_model, told[0])
-        self.assertNotIn("report", told[0].lower(), "the run's report carries it: nothing asked")
+        self.assertEqual(told, [])
+        said = " ".join(logged)
+        self.assertIn("FWSW-E32S60B-S60-ESP32C3FN4", said)
+        self.assertIn(kinds.SONOFF_S60.wrapper_model, said)
 
     def test_an_unknown_device_has_no_name_to_differ_from(self):
         name, logged, told = self.note(None, "FWSW-E32R9-NEW-ESP32C3")
@@ -484,7 +486,7 @@ class AlreadyConvertingTests(unittest.TestCase):
             return account.step_discover(ctx)
 
     def test_the_bridge_is_named(self):
-        with self.assertRaisesRegex(errors.Abort, "already running our installer firmware"):
+        with self.assertRaisesRegex(errors.Abort, "is on this tool.s installer from an earlier run"):
             self.silent_discover("<title>Autoflash bridge</title>")
 
     def test_tasmota_is_named(self):

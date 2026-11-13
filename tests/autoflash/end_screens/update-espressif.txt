@@ -1,7 +1,7 @@
  Stage 18 - Verifying conversion - Complete
 
  Update complete!
- The device is running Tasmota...
+ The device is running Tasmota.
 
      Liberator: 3.0.0                                Firmware: Tasmota
      OS:        Ubuntu 24.04.5 LTS                   From:     Tasmota 14.5.0, outdated

@@ -145,7 +145,8 @@ CORE = [("deviceoff", 1), ("deviceoff", 30), ("outage", 30), ("crash", 1), ("cra
 TIMING = [("deviceoff", 1), ("crash", 1)]
 RUN_LIMIT = 1500       # seconds one run of the tool may take
 RECOVERY_RUNS = 4      # runs after the fault before a scenario fails
-POWER_CYCLE = re.compile(r"switch the (plug|device) off and on", re.IGNORECASE)
+# "Switch it off and on", or "Switch it off for a few seconds at the socket, then on".
+POWER_CYCLE = re.compile(r"switch (the (plug|device)|it) off( and| for [^.]*?then) on", re.IGNORECASE)
 # The steps whose image the stock bootloader installs, and the tool can send
 # spoilt (--simulate-bad-image STEP): Sonoff's firmware's, and OpenBeken's
 # fetch of ESPHome.
@@ -157,7 +158,7 @@ BAD_IMAGE_STEPS = {"B2", "J2", "O1"}
 RESTART_IMAGE_STEPS = {"J2", "O1"}
 SPOILT_PAST_LIMIT = 3
 # What a run says as it restarts a device that would not take an image.
-RESTARTED = re.compile(r"the device was restarted\. Doing \S+ again")
+RESTARTED = re.compile(r"restarted the device; doing stage \d+ again")
 # The interim firmware's settings, which it erases before the firmware it
 # fetched starts (tools/beken/openbeken/README.md#the-interim-firmware): its
 # own sector, and the flash variables its Wi-Fi keeps.

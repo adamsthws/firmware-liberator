@@ -146,23 +146,17 @@ def configure_device_wifi(ctx: Context, network: str | None, why: str) -> str:
     """
     network = network or names.setup_network_hint(ctx)
     credentials = ctx.wifi(why=[
-        "Tasmota could not be given them automatically, so it is waiting on its",
-        "own setup network for them. Type them here and this sends them to the",
-        "device for you once you have joined that network.",
+        "Tasmota is waiting on its own network for them; this sends them for you.",
     ])
     with output.until_done():   # the instructions, and the sending, go once it has the details
         prompts.section("Join the device's setup network", [
             f"In {hostsys.wifi_menu_hint()}, join:",
             f"    {network}      (open - no password)",
-            "",
-            "If a setup page opens by itself, close it: while that page is open the",
-            "device keeps scanning for networks, which can drop this computer off its",
-            "network.",
-            "",
-            "The network can vanish for a few seconds every three minutes, as the",
-            "device restarts to try your Wi-Fi again: if this computer is dropped off",
-            "it, join it again.",
+            "Close any setup page that opens: it can drop this computer off.",
+            "It restarts every three minutes to retry your Wi-Fi; if dropped, rejoin.",
         ])
+        # The page keeps the device scanning for networks, which can drop this
+        # computer off; its network vanishes for a few seconds as it restarts.
         wait_until_joined(network)
         note_own_network(ctx, why)
         outcome = "manual"
@@ -170,8 +164,7 @@ def configure_device_wifi(ctx: Context, network: str | None, why: str) -> str:
             name_with_the_wifi(ctx)
             ssid, password = credentials
             for attempt in range(1, SETUP_SEND_ATTEMPTS + 1):
-                output.tell(f"    Sending the Wi-Fi details for '{ssid}'. The device tests them first -")
-                output.tell("    stay on its network for about 20 seconds...")
+                output.tell(f"    Sending the details for '{ssid}'; stay on its network for about 20 s...")
                 try:
                     outcome, address = setup_network.send_wifi(ssid, password)
                 except setup_network.SetupError as exc:
@@ -182,8 +175,7 @@ def configure_device_wifi(ctx: Context, network: str | None, why: str) -> str:
                 if outcome == "rejected":
                     if prompts.UNATTENDED:
                         break  # nobody to type others: on to the device's page, below
-                    output.tell(f"    The device could not connect to '{ssid}' with those details. Type them")
-                    output.tell("    again - the network's name exactly as it appears, and its password:")
+                    output.tell(f"    Could not connect to '{ssid}' with those - type them again, name exactly:")
                     ssid, password = ask_credentials()
                 elif setup_network_gone(ctx, network):
                     # No word, as it took them: tested, saved and restarted onto the
@@ -204,23 +196,18 @@ def configure_device_wifi(ctx: Context, network: str | None, why: str) -> str:
             if address:
                 ctx.set_device_ip(address)
         elif outcome == "rejected":
-            output.tell(f"    The device could not connect to '{ssid}' with the bundle's details.")
+            output.tell(f"    The device could not connect to '{ssid}' with those details.")
         elif outcome == "gone":
-            output.tell("    No word from the device, but its network has gone: it has most likely")
-            output.tell(f"    joined '{ssid}' with them. It is looked for there.")
+            output.tell(f"    No word, but its network went: looking for it on '{ssid}'.")
         else:
-            output.tell("    The device did not say whether it connected. If it does not turn up")
-            output.tell("    on your Wi-Fi, it is still waiting on its setup network: run this")
-            output.tell("    again to retry.")
+            output.tell("    No word from the device. If it doesn't show on your Wi-Fi, run this again.")
     if outcome in ("rejected", "manual"):
         prompts.section("Set the Wi-Fi up on the device's page instead", [
-            "Stay on the device's network for this.",
-            f"Browse to http://{setup_network.SETUP_HOST}, choose your home Wi-Fi,",
-            "type its password and save. When it says the connection worked:",
+            f"Staying on its network, browse to http://{setup_network.SETUP_HOST}, choose your Wi-Fi,",
+            "type its password and save. When it says it connected:",
         ])
     prompts.section("Back to your usual Wi-Fi", [
-        "Your computer should rejoin your usual Wi-Fi by itself; if it doesn't,",
-        "join it now.",
+        "Rejoin it now if this computer hasn't by itself.",
     ])
     return locate_device(ctx, timeout=600.0)
 
@@ -294,23 +281,18 @@ def check_device_network(ctx: Context) -> dict[str, Any]:
     output.private(connected, "wifi-name")
     if not connected:
         raise Abort(
-            "the device did not say which Wi-Fi network it is on, so the bundle's "
-            "network cannot be checked. Nothing was written"
+            "the device did not say which Wi-Fi network it is on, so the network the firmware "
+            "to come joins cannot be checked. Nothing was written"
         )
     output.transient_begin()
     while connected != wanted:
-        prompts.section("The bundle is set up for a different Wi-Fi network", [
-            f"The device is connected to        '{connected}'",
-            f"The bundle's firmware will join '{wanted}'",
-            "",
-            "Later the device has to rejoin Wi-Fi using only the bundle's details.",
-            "With these it would never come back. Nothing has been written.",
-            "",
-            f"Give the password for '{connected}' and the startup firmware is set",
-            "up for that network instead.",
+        prompts.section("The firmware to come is set up for another Wi-Fi network", [
+            f"The device is on '{connected}', but the firmware to come would join",
+            f"'{wanted}' and never come back. Nothing has been written.",
         ])
-        if not prompts.ask_yes_no(f"Enter the password for '{connected}' now", default=True):
-            raise Abort(f"the device is on '{connected}' but the bundle is set up for '{wanted}'")
+        output.log_only("Later the device rejoins the Wi-Fi with only the startup firmware's details.")
+        if not prompts.ask_yes_no(f"Set it up for '{connected}' instead, with its password", default=True):
+            raise Abort(f"the device is on '{connected}' but the firmware to come would join '{wanted}'")
         ctx.adopt_wifi(connected, ask_password(connected))
         wanted = bundle_ssid(ctx.manifest_path)
     output.transient_end()
@@ -352,9 +334,9 @@ def warn_if_weak_signal(ctx: Context, signal: Any, then: list[str]) -> None:
         return
     output.transient_begin()
     prompts.section("The device's Wi-Fi signal is weak", [
-        f"It reports {signal} dBm. {then[0]}", *then[1:],
-        "Moving the device nearer the access point first is worth it.",
+        f"It reports {signal} dBm. Move it nearer the access point if you can.",
     ])
+    output.log_only(" ".join(then))
     if not prompts.ask_yes_no("Carry on anyway", default=False):
         raise Abort("stopped for a weak Wi-Fi signal; nothing was written")
     ctx.state.set_input("weak_signal_agreed", True)
@@ -394,10 +376,9 @@ def on_a_device_network() -> bool:
 def send_through_own_network(network: str, ssid: str, password: str) -> None:
     """ESPHome's (or the mover's) page given the details, up to
     SETUP_SEND_ATTEMPTS times, once this computer has joined its network."""
-    prompts.section("Join the device's own network", [
+    prompts.section("Join the device's setup network", [
         f"In {hostsys.wifi_menu_hint()}, join:",
         f"    {network}      (open - no password)",
-        "",
         "If a page opens by itself, close it: this sends the details for you.",
     ])
     for attempt in range(1, SETUP_SEND_ATTEMPTS + 1):
@@ -431,14 +412,12 @@ def set_up_through_own_network(ctx: Context, what: str, check: Callable[[str], A
     note_own_network(ctx, NOT_JOINED)
     output.tell(f"    {what} cannot join your Wi-Fi, so it has raised its own network, {network}.")
     ssid, password = ctx.wifi(why=[
-        f"{what} cannot join your Wi-Fi, and is waiting on its own network for its",
-        "details. Type them here and this sends them to the device for you.",
+        f"{what} can't join your Wi-Fi; this sends it them through its network.",
     ])
     for round_ in (1, 2):
         send_through_own_network(network, ssid, password)
         prompts.section("Back to your usual Wi-Fi", [
-            "Your computer should rejoin your usual Wi-Fi by itself; if it doesn't,",
-            "join it now.",
+            "Rejoin it now if this computer hasn't by itself.",
         ])
         try:
             wait_for(ctx, check, what, timeout=300.0)
@@ -447,12 +426,10 @@ def set_up_through_own_network(ctx: Context, what: str, check: Callable[[str], A
             if round_ == 2 or prompts.UNATTENDED:
                 raise Abort(f"{what} did not join '{ssid}' with the details sent through its own "
                             "network. Check the network's name and password, then run this again") from None
-        output.tell(f"    {what} did not join '{ssid}' with those details: most likely your Wi-Fi's name")
-        output.tell("    or password changed since the device last joined it.")
+        output.tell(f"    {what} did not join '{ssid}' with those details: check its name and password.")
         output.transient_begin()
         prompts.section("The Wi-Fi details the device should use", [
-            "Type the name and password of the 2.4 GHz network the device should be on",
-            "now. They are sent to the device through its own network.",
+            "The 2.4 GHz network the device should be on, sent through its own network:",
         ])
         ssid, password = ask_credentials()
         output.transient_end()

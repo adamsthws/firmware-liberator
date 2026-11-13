@@ -288,7 +288,7 @@ class FromStockTests(unittest.TestCase):
             with mock.patch.object(stock.prompts, "require_word", return_value=True), \
                     mock.patch.object(stock.prompts, "UNATTENDED", True), \
                     mock.patch.object(ota_push, "deliver", return_value=refused):
-                with self.assertRaisesRegex(errors.Abort, "Switch the device off and on"):
+                with self.assertRaisesRegex(errors.Abort, "switch it off and on"):
                     stock.step_push(ctx)
             # Attended, the person switches it off and on, it is counted, and it is
             # sent again once eWeLink shows it online - as C2 does.

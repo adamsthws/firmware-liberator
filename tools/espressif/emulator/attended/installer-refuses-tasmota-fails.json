@@ -13,7 +13,7 @@
    "type": "x"
   },
   {
-   "when": "Which firmware would you like",
+   "when": "Which firmware should the device have",
    "type": "1\r"
   },
   {
@@ -71,7 +71,7 @@
   "shows": [
    "^ *FAILED: the bridge refused the image",
    "^ *If it should not have stopped, please open an issue here:$",
-   "^ *This report is on your clipboard, ready to paste\\.$",
+   "^ *This report is on your clipboard\\.$",
    "^ *This run's log:$"
   ],
   "never": [

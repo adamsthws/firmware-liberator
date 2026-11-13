@@ -104,7 +104,7 @@ def wifi_from_backup(ctx: "Context") -> tuple[str, str] | None:
         try:
             recovery_image(ctx.manifest_path, ssid, password)
         except BundleError:
-            output.tell(f"    The device's Sonoff backup has an older password for '{ssid}' than the bundle's.")
+            output.tell(f"    The backup's password for '{ssid}' is older than the one in use.")
             return None
         output.say(f"    The Wi-Fi in the device's Sonoff backup, '{ssid}', is the bundle's - none to type.")
         return found

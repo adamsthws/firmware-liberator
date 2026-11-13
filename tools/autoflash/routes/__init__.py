@@ -64,13 +64,12 @@ def step_prerequisites(ctx: Context) -> dict[str, Any]:
     output.transient_begin()
     if runs.run_source(ctx.state) == "sonoff":
         needed = [
-            "- The eWeLink app on your phone, signed in to an eWeLink account",
-            "  (A throwaway account is fine).",
+            "- The eWeLink app on your phone, signed in (a throwaway account is fine).",
             "- Your device set up in the app and connected to Wi-Fi.",
         ]
     else:
         needed = ["- Your device connected to Wi-Fi, as it is now."]
-    prompts.section("Before you start, you'll need:", needed + ["- This computer on the same network."])
+    prompts.section("Before you start, you'll need:", needed + ["- This computer on the same network as the device."])
     prompts.wait_for_key()
     output.transient_end()  # read: the list leaves the screen, the stage line stays
     return {"shown": True}
@@ -381,14 +380,15 @@ def ask_firmware(source: str, choices: list[str], outdated: tuple[str, str, str]
     the ESPHome, OpenBeken or Tasmota this tool installs (`outdated`: which,
     the release it runs and this one), that firmware's option is its update."""
     output.transient_begin()
-    body = (["This device was left part way through a conversion; it can go on to any",
-             "of these from where it is."] if source in ("midway", "committed", "installer", "interim") else
-            ["Its Tasmota goes back on first, with its settings; choosing Tasmota",
-             "stops there. Or it can go on to either of the others."] if source == "safeboot" else
-            ["It runs Tasmota without the device's template, so it switches nothing;",
-             "choosing Tasmota gives it the template, keeping its other settings."]
+    body = (["Left part way through a conversion, it can go on to any of these."]
+            if source in ("midway", "committed", "installer", "interim") else
+            ["Its Tasmota goes back on first, settings kept; or it goes on to another."]
+            if source == "safeboot" else
+            ["Its Tasmota has no template, so switches nothing; Tasmota here adds it."]
             if source == "untemplated" else [])
-    prompts.section("Choose the device's new firmware", body)
+    # With nothing particular to say, the question alone: a heading would repeat it.
+    if body:
+        prompts.section("Choose the device's new firmware", body)
     labels = {"tasmota": "Tasmota" if source != "tasmota" else "Tasmota, as it is (its meter calibrated, if it is not)",
               "openbeken": "OpenBeken", "esphome": "ESPHome",
               "sonoff": "Sonoff (eWeLink)"}
@@ -396,7 +396,7 @@ def ask_firmware(source: str, choices: list[str], outdated: tuple[str, str, str]
         # An update says so on its option alone, keeping the settings as one does.
         labels[outdated[0]] = f"{FIRMWARES[outdated[0]]}, update to {outdated[2]}"
     try:
-        choice = prompts.ask_choice("Which firmware would you like", [labels[name] for name in choices])
+        choice = prompts.ask_choice("Which firmware should the device have", [labels[name] for name in choices])
     except prompts.NoOneToAnswer:
         output.transient_end()
         raise Abort("an unattended run needs to be told which firmware: "
@@ -458,7 +458,13 @@ def plain_description(step: str, title: str) -> str:
     return PLAIN_DESCRIPTION.get(step) or FAMILY.PLAIN_DESCRIPTION.get(step, title.lower())
 
 
+def stage_number(step: str) -> int:
+    """The number a step's stage line shows: the screen names a stage by it,
+    never by the step's code (C2), which the person cannot map to one."""
+    return next(index for index, (name, _, _) in enumerate(STEPS, 1) if name == step)
+
+
 def begin_stage(step: str) -> None:
-    number = next(index for index, (name, _, _) in enumerate(STEPS, 1) if name == step)
+    number = stage_number(step)
     output.set_stage_width(*stage_layout())
     output.stage_begin(number, stage_name(step))

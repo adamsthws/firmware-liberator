@@ -176,5 +176,29 @@ class BrokenLineTests(unittest.TestCase):
                                          f"sentence; at most {width} in {COLUMNS} columns, or one line")
 
 
+def working_texts() -> list[tuple[str, str]]:
+    """(where, its text) for every wait shown on a row of its own (output.working)."""
+    found = []
+    with mock.patch.dict(globals(), {"FILLED": "xx"}):   # a count of seconds, say
+        for path in sorted((ROOT / "tools" / "autoflash").rglob("*.py")):
+            for call in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                        and call.func.attr == "working" and call.args):
+                    found.append((f"{path.relative_to(ROOT)}:{call.lineno}", text(call.args[0])))
+    return found
+
+
+class WorkingRowTests(unittest.TestCase):
+    def test_a_wait_fits_its_row_with_the_spinner(self):
+        # A row redrawn in place is cut short, not wrapped (output._clip): seen,
+        # the readout's "Getting it ready to send: a puzzle..." lost its end.
+        width = COLUMNS - 1 - len(output.MARGIN) - len(" | ")
+        found = working_texts()
+        self.assertGreater(len(found), 5)
+        for where, said in found:
+            with self.subTest(where=where):
+                self.assertLessEqual(len(said), width, f"{where}: '{said}' is {len(said)} wide; at most {width}")
+
+
 if __name__ == "__main__":
     unittest.main()

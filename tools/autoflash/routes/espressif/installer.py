@@ -205,7 +205,7 @@ def step_bridge(ctx: Context) -> dict[str, Any]:
             *(["The sender reported:", *(f"  {line}" for line in reported), ""] if reported else []),
             *advice,
         ])
-        raise Abort("bridge delivery stopped part way" if begun else "bridge delivery failed")
+        raise Abort("the installer was not fully delivered" if begun else "the installer was not delivered")
 
 
 def needs_power_cycle(ctx: Context) -> bool:
@@ -355,8 +355,7 @@ def join_bridge(ctx: Context, *, tasmota: bool = False) -> str:
         output.rewind(asked_at)
         asked = False
         if not said_back:   # once: each time after says nothing new
-            output.tell("    While waiting, the device went back to Sonoff's own firmware (switched off")
-            output.tell("    and on, say).")
+            output.tell("    While waiting, the device went back to its Sonoff firmware.")
             said_back = True
         else:
             output.say("    While waiting, the device went back to Sonoff's own firmware again.")
@@ -378,9 +377,9 @@ def resend_if_back_on_sonoff(ctx: Context) -> str | None:
                         "be sent again through eWeLink: run this again with --new")
         sends += 1
         ctx.bridge_sends = sends
-        output.tell("    The device is running Sonoff's own firmware again: it goes back to it when")
-        output.tell("    switched off and on before the installer has done its work, so nothing")
-        output.tell(f"    is lost. Sending the installer again (attempt {sends} of {BRIDGE_SENDS}).")
+        output.tell(f"    Back on its Sonoff firmware: sending the installer again (attempt {sends} of {BRIDGE_SENDS}).")
+        output.log_only("    It goes back to it when switched off and on before the installer has done its "
+                        "work, so nothing is lost.")
         ctx.state.mark("C2", FAILED, error="redo: the device went back to Sonoff's firmware")
         try:
             ctx.state.mark("C2", DONE, result=step_bridge(ctx))
@@ -399,31 +398,28 @@ def resend_if_back_on_sonoff(ctx: Context) -> str | None:
     return None
 
 
-def ask_to_join_bridge(bridge: str, *, tasmota: bool = False) -> None:
+def ask_to_join_bridge(bridge: str, *, tasmota: bool = False, what: str = "installer") -> None:
+    """Have the person join the network the bridge has made: `what` the bridge
+    is to them - the installer, or a readout's reader."""
     if bridge.startswith(names.LEGACY_BRIDGE_PREFIX):
         # An earlier release's installer: its network has a password.
         copied = hostsys.copy_to_clipboard(names.LEGACY_BRIDGE_PASSWORD)
         joining = [f"    network   {bridge}",
                    f"    password  {names.LEGACY_BRIDGE_PASSWORD}"
-                   + ("      (already copied - just paste it)" if copied else "")]
+                   + ("      (on your clipboard)" if copied else "")]
     else:
         joining = [f"    {bridge}      (open - no password)"]
-    prompts.section("Join the bridge's Wi-Fi network", [
-        *(["The device is running our small installer - or Tasmota, if the installer",
-           "had sent it before the run stopped: either has made its own Wi-Fi network,",
-           f"by the same name. In {hostsys.wifi_menu_hint()}, join:"] if tasmota else
-          ["The device is running our small installer, which has made its own Wi-Fi",
-           f"network. In {hostsys.wifi_menu_hint()}, join:"]),
+    prompts.section(f"Join the {what}'s Wi-Fi network", [
+        f"In {hostsys.wifi_menu_hint()}, join:",
         *joining,
-        "",
-        "Your Wi-Fi internet drops while joined - expected. A wired connection,",
-        "if this computer has one, can stay connected. This carries on by itself.",
-        "",
-        "If that network is not there, wait: the installer may still be joining",
-        "your own Wi-Fi, and this carries on by itself when it does. Until",
-        "someone joins it, it goes for up to 20 seconds every three minutes, to",
-        "try your Wi-Fi again.",
+        *(["Tasmota, if it was sent, shows the same network name."] if tasmota else []),
+        "Your internet drops while joined; this carries on by itself.",
+        f"Not listed yet? Wait: the {what} may join your Wi-Fi instead.",
+        "Until joined, the network goes for up to 20 seconds every three minutes.",
     ])
+    # A wired connection, if this computer has one, stays connected; the
+    # network goes as the bridge tries the home Wi-Fi again.
+    output.log_only("    A wired connection can stay connected meanwhile.")
 
 
 # The steps after the backup: once any has started, the installer it reads
@@ -483,7 +479,7 @@ def require_known_layout(ctx: Context) -> None:
         else:
             table = dump_stock_flash.read_table(reach_bridge(ctx))
     except OSError as exc:
-        output.tell(f"    The device's memory layout could not be read here ({exc}); its checks later still stand.")
+        output.log_only(f"    The device's memory layout could not be read here ({exc}); its checks later still stand.")
         return
     known = hashlib.sha256(table).hexdigest() == layouts.of(kinds.of_run(ctx.state).layout).table_sha256
     info = bridge_info(ctx)
@@ -552,8 +548,7 @@ def step_berry_tasmota(ctx: Context) -> dict[str, Any]:
             # of its own, even sent through the bridge's.
             output.say("    Tasmota will start with your Wi-Fi details, so it joins by itself.")
             prompts.section("Back to your usual Wi-Fi", [
-                "Your computer should rejoin your usual Wi-Fi by itself; if it doesn't,",
-                "join it now.",
+                "Rejoin it now if this computer hasn't by itself.",
             ])
             return finish_tasmota_setup(ctx, route="bridge network", wait=240.0)
         return finish_tasmota_setup(ctx, route="bridge network")
@@ -609,16 +604,15 @@ def backup_failed(problem: str) -> int:
     output.transient_begin()
     prompts.section("The Sonoff firmware could not be backed up", [
         f"Reading the device's memory failed {2 * BACKUP_ROUNDS} times: {problem}.",
-        "",
-        "The conversion can be performed without a backup, though that's not recommended.",
+        "Carrying on without one is possible, but not recommended.",
     ])
     if prompts.UNATTENDED:
         prompts.answered_unattended("What now", options[BACKUP_WITHOUT])
         choice = BACKUP_WITHOUT
     else:
         choice = prompts.ask_choice("What now", options, help_lines=[
-            "Quitting leaves the device on the installer: run this again to carry on",
-            "from here, or switch the device off and on to go back to Sonoff.",
+            "q leaves the device on the installer: run this again to carry on from",
+            "here, or switch the device off and on to go back to Sonoff.",
         ])
     output.transient_end()
     return choice
@@ -687,8 +681,7 @@ def back_up_stock(ctx: Context, host: str) -> str:
     output.say(f"    Saved in {runs.display_path(out)}, under the device's MAC (private: it holds the")
     output.say("    Wi-Fi password).")
     if not dump_stock_flash.is_good(report):
-        output.tell("    It did not check out as a whole, bootable flash, so it may not restore;")
-        output.tell("    its report.json says what was wrong. Carrying on.")
+        output.tell("    The backup may not restore (not a whole, bootable flash): see report.json.")
     return "saved"
 
 

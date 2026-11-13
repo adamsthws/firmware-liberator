@@ -681,6 +681,7 @@ class RecoveryTests(unittest.TestCase):
                 if "off and on" in line and ("plug" in line or "device" in line):
                     self.assertRegex(line, fault_suite.POWER_CYCLE)
         self.assertRegex("Switch the device off and on - it keeps", fault_suite.POWER_CYCLE)
+        self.assertRegex("Switch it off for a few seconds at the socket, then on", fault_suite.POWER_CYCLE)
 
 
 class SavingTests(unittest.TestCase):
@@ -869,8 +870,8 @@ class RestartImageTests(unittest.TestCase):
                                "sonoff>esphome:J2:badimage-restart"})
 
     def test_what_the_run_says_as_it_restarts_the_device_is_seen(self):
-        said = ("O2 was not installed: the device restarted on the firmware it had, after it was sent 2 times: "
-                "the device was restarted. Doing O1 again.")
+        said = ("O2 was not installed: the device restarted on the firmware it had: restarted the device; "
+                "doing stage 9 again.")
         self.assertRegex(said, fault_suite.RESTARTED)
 
 if __name__ == "__main__":

@@ -59,8 +59,8 @@ SEND_TIMEOUT = 30.0
 # one not sent is sent at the next start.
 EXIT_WAIT = 5.0
 WHAT_IS_SENT = "https://firmwareliberator.com/docs/what-the-tool-sends"
-NOTICE_TEXT = (f"Each run sends an anonymous report of how it went, to help the tool improve "
-               f"(what is sent: {WHAT_IS_SENT}). --no-report stops it.")
+# Said the first time on a computer, with WHAT_IS_SENT linked under it.
+NOTICE_TEXT = "Anonymous reports of each run help improve the tool; --no-report stops them."
 
 
 def upload_url() -> str:
@@ -235,6 +235,7 @@ def announce(ctx: Context) -> None:
         return
     if not NOTICE.exists():
         output.tell(NOTICE_TEXT)
+        output.show_link(WHAT_IS_SENT, "What is sent")
         try:
             QUEUE.mkdir(parents=True, exist_ok=True)
             NOTICE.write_text(f"{dt.date.today().isoformat()}\n", encoding="utf-8")

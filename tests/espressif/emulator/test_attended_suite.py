@@ -101,7 +101,7 @@ class JudgeTests(unittest.TestCase):
         report = (" FAILED: the device did not answer\n\n     Liberator: 3.0.0\n     OS:        Ubuntu\n\n"
                   " If it should not have stopped, please open an issue here:\n"
                   "     https://firmwareliberator.com/issues\n     Report ID: 0123456789abcdef\n"
-                  "     This report is on your clipboard, ready to paste.\n\n This run's log:\n     run.log\n")
+                  "     This report is on your clipboard.\n\n This run's log:\n     run.log\n")
         raw, _ = recording(report)
         copied = "Liberator: 3.0.0\nReport ID: 0123456789abcdef\n"
         self.assertEqual(self.judge(raw, [], scenario=scenario, clipboard=copied), [])

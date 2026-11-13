@@ -348,6 +348,15 @@ as its screens do, since it converts much more than smart plugs now.
   write says "DO NOT CUT ITS POWER unless this tool tells you to", in the same
   words: "during the process" contradicted the later notes that ask for the
   device to be switched off and on.
+- What the tool prints is shorter: most notes, questions' help and warnings
+  take half the rows or fewer, and what explained rather than asked anything of
+  you - why the startup firmware needs your Wi-Fi, what a check found, the
+  hashes of a region that differs - is in the run's log alone. A stage is named
+  by its number, never a step's code ("doing stage 9 again", not "Doing B2
+  again"). Each thing has one name on the screen: the installer (its stage is
+  "Sending installer firmware"), the startup firmware and the device's setup
+  network; words such as bundle, pinned artifacts and app0 are gone. The
+  readout's "Preparing to send" fits an 80-column window: it was cut short.
 - A download the server turns away for now - GitHub's release downloads
   answering "504 Gateway Time-out" for minutes at a time, say - is tried again
   for a little over two minutes, waiting longer each time, rather than three

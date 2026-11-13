@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import errno
 import re
-import textwrap
 import time
 import traceback
 from pathlib import Path
@@ -110,8 +109,9 @@ def _execute(ctx: Context, step: str) -> int:
             ctx.state.mark(step, PENDING)
             ctx.state.mark(back.step, PENDING, note=back.reason)
             output.stage_end(back.outcome)
-            output.tell(f"{back.reason}, after it was sent {times - 1} times: the device was restarted. "
-                        f"Doing {back.step} again.")
+            output.log_only(f"{back.step} was sent {times - 1} times: the device is restarted, and "
+                            f"{back.step} done again.")
+            output.tell(f"{back.reason}: restarted the device; doing stage {routes.stage_number(back.step)} again.")
             ctx.go_back = back.step
             return 0
         if times > GO_BACK_LIMIT:
@@ -126,7 +126,8 @@ def _execute(ctx: Context, step: str) -> int:
         ctx.state.mark(step, PENDING)
         ctx.state.mark(back.step, PENDING, note=back.reason)
         output.stage_end(back.outcome)
-        output.tell(f"{back.reason}. Doing {back.step} again.")
+        output.log_only(f"Doing {back.step} again.")
+        output.tell(f"{back.reason}: doing stage {routes.stage_number(back.step)} again.")
         ctx.go_back = back.step
         return 0
     except errors.Finished as done:
@@ -140,7 +141,7 @@ def _execute(ctx: Context, step: str) -> int:
     except DeviceNeverConnected as exc:
         ctx.state.mark(step, FAILED, error=str(exc))
         output.stage_end("stopped")
-        prompts.section(f"{step} could not start", firewall.firewall_hint(ctx))
+        prompts.section(f"Stage {routes.stage_number(step)} could not start", firewall.firewall_hint(ctx))
         ctx.last_failure = str(exc)
         ctx.last_failed_step = step
         output.tell(f"FAILED: {exc}")
@@ -273,7 +274,7 @@ def set_up_if_erased(ctx: Context, step: str) -> bool:
         device.wait_reachable(timeout=120)
         template = kinds.of_run(ctx.state).tasmota_template()
         if not tasmota.template_in_place(device, template, names.final_name(ctx, "tasmota")):
-            output.tell("    Its template went with its settings: Tasmota is set up again (F4).")
+            output.tell("    Its template went with its settings: Tasmota is set up again.")
             ctx.state.capture("F4.again_after_erase", True)
             tasmota.step_configure(ctx)
     return True
@@ -294,7 +295,7 @@ def wait_for_device_back(ctx: Context, step: str | None = None) -> None:
 
     if back():
         return
-    output.tell("    The device is not answering yet - waiting for it (a router restarting, say).")
+    output.tell("    The device is not answering yet - waiting for it.")
     started = time.monotonic()
     looked = started
     hinted = False
@@ -354,8 +355,11 @@ def stopped_mid_send(ctx: Context) -> bool:
 
 def tell_how_to_carry_on() -> None:
     output.tell("")
-    output.tell("Fix the cause, then carry on with the same command again:")
-    output.tell("    start.cmd (double-click it, or .\\start.cmd in a terminal)" if hostsys.IS_WINDOWS else "    sh start.sh")
+    if hostsys.IS_WINDOWS:
+        output.tell("Fix the cause, then carry on with the same command again:")
+        output.tell("    start.cmd (double-click it, or .\\start.cmd in a terminal)")
+    else:
+        output.tell("Fix the cause, then run the same command again: sh start.sh")
     # The run's log is named once, under the way to open an issue that follows
     # (report.ask_for_an_issue).
 
@@ -399,8 +403,7 @@ def stop_here_after_ctrl_c(step: str) -> bool:
     if not interrupt.pending():
         return False
     if not prompts.ask_after_ctrl_c([
-        "The stage that was under way is done, and everything is recorded, so",
-        "stopping here is safe: running this again picks up where it left off.",
+        "Stopping here is safe: this stage is done and recorded.",
     ], "Carrying on to the next stage"):
         output.log_only(f"Stopped after {step}, as asked after Ctrl-C.")
         # Said on the screen too, as a Ctrl-C at any other moment is: the
@@ -456,19 +459,16 @@ def bring_up_to_date(ctx: Context) -> bool:
     return True
 
 
-# Wide enough for an 80-column window, past the margin, and the same in a wider one.
-WHAT_TO_EXPECT_WIDTH = 76
+# Two rows, each within an 80-column window past the margin.
+WHAT_TO_EXPECT = ("Usually under 10 minutes; some stages show little for a minute or two.",
+                  "Keep the device powered and this computer on until the last stage completes.")
 
 
-def say_what_to_expect(run: str) -> None:
-    """Above a run's first stage: how long `run` - "conversion", "readout"
-    (cli.cmd_readout) - takes, what its stages are like and what to leave
-    alone meanwhile."""
+def say_what_to_expect() -> None:
+    """Above a run's first stage, a conversion's or a readout's (cli.cmd_readout):
+    how long it takes, what its stages are like and what to leave alone meanwhile."""
     output.tell("")
-    for row in textwrap.wrap(f"A {run} usually takes under 10 minutes. Some stages take a minute or two "
-                             "with little to see - that's "
-                             "normal. Keep the device powered, and this computer on, until the last stage "
-                             "says complete.", WHAT_TO_EXPECT_WIDTH):
+    for row in WHAT_TO_EXPECT:
         output.tell(row)
     output.tell("")
 
@@ -476,7 +476,7 @@ def say_what_to_expect(run: str) -> None:
 def run_steps(ctx: Context) -> int:
     started = time.monotonic()
     safety_locks.restore_left_locks(ROOT)  # a resumed run skips A5, which looks too
-    say_what_to_expect("conversion")
+    say_what_to_expect()
     try:
         if ctx.state.input("device_mac"):
             runs.hold_device(ctx, ctx.state.input("device_mac"))  # a run carried on: its device is known
@@ -536,7 +536,8 @@ def run_steps(ctx: Context) -> int:
             routes.begin_stage(step)
             output.transient_begin()
             output.say("")
-            output.tell(f"{step} was interrupted last time - checking whether it finished...")
+            output.log_only(f"{step} was interrupted last time.")
+            output.tell("Interrupted last time - checking whether it finished...")
             finished, reason = None, ""
             check = routes.FAMILY.ATTEMPTED_EVIDENCE.get(step)
             if check is not None:
@@ -544,7 +545,10 @@ def run_steps(ctx: Context) -> int:
                     finished, reason = check(ctx)
                 except (DeviceError, Abort, OSError, ValueError) as exc:
                     finished, reason = None, f"The check itself could not run: {exc}"
-                output.tell(f"    {reason}")
+                # The verdict is the stage's to act on ("already done", or done
+                # again); only a check that could not run is the person's to read.
+                (output.tell if finished is None and reason.startswith("The check itself")
+                 else output.log_only)(f"    {reason}")
             if finished is True:
                 # The device itself shows the step completed: nothing to decide.
                 output.transient_end()
@@ -611,17 +615,14 @@ def run_steps(ctx: Context) -> int:
                     f"{routes.FIRMWARES[firmware]}.", output.YELLOW)
     else:
         output.show("Update complete!" if updated else "Conversion complete!", output.GREEN)
-    if updated:
-        output.tell(f"The device is running {routes.FIRMWARES[firmware]} {update.versions(ctx)[1]}...")
-        url = report.device_page_url(ctx.state.input("device_ip"))
-        if url:
-            output.show_link(url, "Your device")
-    elif firmware == "sonoff":
-        output.tell("The device is running its own Sonoff firmware again, with the settings it")
-        output.tell("had: it is back in the eWeLink app.")
+    if firmware == "sonoff" and not updated:
+        output.tell("It runs its own Sonoff firmware again, settings kept, back in the eWeLink app.")
     else:
-        output.tell(f"The device is running {'official ' if firmware == 'tasmota' else ''}{routes.FIRMWARES[firmware]}...")
+        running = (f"{routes.FIRMWARES[firmware]} {update.versions(ctx)[1]}" if updated else
+                   f"{'official ' if firmware == 'tasmota' else ''}{routes.FIRMWARES[firmware]}")
         url = report.device_page_url(ctx.state.input("device_ip"))
+        # A colon leads into its link below; "..." read as still under way.
+        output.tell(f"The device is running {running}{':' if url else '.'}")
         if url:
             output.show_link(url, "Your device")
     report.invite_report(ctx, time.monotonic() - started - output.waited(), resumed)

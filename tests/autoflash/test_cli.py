@@ -885,8 +885,8 @@ class ReadoutCommandTests(unittest.TestCase):
         self.read()
         at = self.happened.index("Stage 1 - Querying eWeLink for devices")
         said = " ".join(item.removeprefix("told: ") for item in self.happened[:at])
-        self.assertIn("A readout usually takes under 10 minutes.", said)
-        self.assertIn("until the last stage says complete", said)
+        self.assertIn("Usually under 10 minutes", said)
+        self.assertIn("until the last stage completes", said)
 
     def test_it_ends_with_the_report(self):
         self.read()

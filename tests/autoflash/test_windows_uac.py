@@ -194,8 +194,7 @@ class ToolTests(unittest.TestCase):
 
     def test_it_says_windows_will_ask_before_asking(self):
         def prompt(device_ip, ports):
-            self.assertIn("Windows will ask whether to allow the change - choose Yes. This window",
-                          self.screen)
+            self.assertIn("Windows will ask whether to allow the change - choose Yes.", self.screen)
             return self.RULE
 
         with mock.patch.object(hostsys, "open_firewall", side_effect=prompt):
@@ -209,7 +208,7 @@ class ToolTests(unittest.TestCase):
         screen = "\n".join(self.screen)
         self.assertIn("The firewall rule could not be added", screen)
         self.assertIn('netsh advfirewall firewall add rule "name=Autoflash 192.0.2.50"', screen)
-        self.assertIn("Adding it needs administrator rights", screen)
+        self.assertIn("It needs administrator rights", screen)
         self.assertEqual(firewall.recorded_rules(ctx), [])
 
     def test_no_on_the_way_out_says_how_to_remove_it(self):
@@ -217,7 +216,7 @@ class ToolTests(unittest.TestCase):
         with mock.patch.object(hostsys, "close_firewall", return_value=False):
             firewall.close_firewall_rules(ctx)
         screen = "\n".join(self.screen)
-        self.assertIn("Windows will ask for permission again", screen)
+        self.assertIn("Windows will ask again - choose Yes", screen)
         self.assertIn("Remove the temporary firewall rules yourself", screen)
         self.assertIn('netsh advfirewall firewall delete rule "name=Autoflash 192.0.2.50"', screen)
         self.assertEqual(firewall.recorded_rules(ctx), [self.RULE])  # kept, to try again next time

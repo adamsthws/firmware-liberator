@@ -46,7 +46,7 @@ class ReleaseFirewallTests(unittest.TestCase):
              mock.patch.object(output, "tell", side_effect=lines.append):
             self.assertFalse(firewall.release_firewall(ctx))  # does not raise; a rule is left
         screen = "\n".join(lines)
-        self.assertIn("was not removed (stopped with Ctrl-C)", screen)
+        self.assertIn("was not removed (Ctrl-C); remove it with:", screen)
         self.assertIn("192.0.2.50", screen)
         self.assertEqual(firewall.recorded_rules(ctx), [self.RULE])  # still recorded for cleanup
 

@@ -9,7 +9,7 @@
    "type": "x"
   },
   {
-   "when": "Which firmware would you like",
+   "when": "Which firmware should the device have",
    "type": "1\r"
   },
   {

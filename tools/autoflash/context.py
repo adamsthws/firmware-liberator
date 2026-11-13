@@ -204,15 +204,12 @@ class Context:
         output.transient_begin()  # until they are accepted, however many tries
         prompts.section("Your Wi-Fi details are needed", [
             *(["You chose to type them (--wifi)."] if forced else why or [
-                "They could not be read off the device (the reason is above).",
-                "The startup firmware has to rejoin your Wi-Fi by itself after the",
-                "next stage, so it needs them written in.",
+                "They could not be read off the device (see above).",
             ]),
-            "",
-            "Use the 2.4 GHz network the device should stay on. The password is held",
-            "in memory for this run only, never written to disk, and you are not",
-            "asked again later in the run.",
+            "Use the 2.4 GHz network the device stays on; kept in memory for this run.",
         ])
+        output.log_only("The startup firmware rejoins the Wi-Fi by itself after the next stage, so it needs "
+                        "them written in. The password is never written to disk, nor asked again in this run.")
         while self._wifi is None:
             ssid = bundle_ssid(self.manifest_path)
             if ssid is None:
@@ -249,7 +246,7 @@ class Context:
                     _, image = build_bundle(ssid, password, self.manifest_path.parent, chip=chips.of(kinds.of_run(self.state).chip),
                                             release=bundle.release_on_the_device(self))
                 except BundleError as exc:
-                    raise Abort(f"the bundle could not be prepared: {exc}") from exc
+                    raise Abort(f"the startup firmware could not be prepared: {exc}") from exc
         self.remember_wifi(ssid, password, image)
 
     def recovery_bytes(self) -> bytes:
@@ -293,7 +290,7 @@ class Context:
         try:
             devices = self.ewelink.use(lambda region, session: get_devices(region, session["at"]))
         except EwelinkError as exc:
-            output.tell(f"    Could not reach eWeLink ({exc}).")
+            output.tell(f"    eWeLink is unreachable ({exc}).")
             return None
         account.keep_account_private(devices)
         signup.saw_devices(devices)

@@ -736,7 +736,7 @@ def ask_for_an_issue(copy: str | None = None, report_id: str | None = None) -> N
     if report_id:
         output.tell(f"    {REPORT_ID}: {report_id}")
     if copy and hostsys.copy_to_clipboard(copy):
-        output.tell("    This report is on your clipboard, ready to paste.")
+        output.tell("    This report is on your clipboard.")
     output.tell("")
     output.tell("This run's log:")
     # From the checkout: short enough for its row in a window 80 wide.

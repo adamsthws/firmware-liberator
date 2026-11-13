@@ -30,7 +30,7 @@ class BridgeTests(unittest.TestCase):
                 readout.run(self.ctx, DEVICE)
         sent.assert_not_called()
         warned = " ".join(prompts.warning_box.call_args.args[1])
-        self.assertIn("never run on this kind of device", warned)
+        self.assertIn("New to this tool", warned)
 
     def test_proceed_sends_the_bridge_wrapped_as_its_firmware_name(self):
         from tools.autoflash import firewall

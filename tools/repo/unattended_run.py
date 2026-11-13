@@ -288,7 +288,7 @@ def _run_problems(screen: str) -> list[str]:
 # under one that finished (report.hold_out_hat).
 ISSUE = "If it should not have stopped, please open an issue here:"
 REPORT_ID_ROW = re.compile(r"^Report ID: [0-9a-f]{16}$")
-CLIPBOARD_SAID = "This report is on your clipboard, ready to paste."
+CLIPBOARD_SAID = "This report is on your clipboard."
 LOG_SAID = "This run's log:"
 HAT = "You've reached the bit where I hold out my hat!"
 # How a run that finished says so above its report (runner.run_steps, readout.end).

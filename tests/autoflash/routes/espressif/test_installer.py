@@ -98,7 +98,7 @@ class BackOnSonoffTests(unittest.TestCase):
         self.assertEqual((sent, waited), (1, 1))
 
     def test_a_send_cut_off_is_tried_again_three_times_in_all(self):
-        failed = errors.Abort("bridge delivery stopped part way")
+        failed = errors.Abort("the installer was not fully delivered")
         # Two cut off, the third gets there.
         address, sent, _, _ = self.reach("sonoff", sends=(failed, failed, None),
                                          found=(None, "192.0.2.51"))
@@ -288,10 +288,10 @@ class BridgeScreenTests(unittest.TestCase):
 
     def test_the_instructions_and_the_waits_go_once_the_bridge_is_reached(self):
         screen, log = self.screen([installer.BACK_ON_SONOFF, installer.BACK_ON_SONOFF, setup_network.SETUP_HOST])
-        self.assertNotIn("Join the bridge's Wi-Fi network", screen)
+        self.assertNotIn("Join the installer's Wi-Fi network", screen)
         self.assertNotIn("While waiting", screen)
-        self.assertIn("Join the bridge's Wi-Fi network", log)        # the log keeps them
-        self.assertEqual(log.count("(switched off"), 1)              # said once, then
+        self.assertIn("Join the installer's Wi-Fi network", log)        # the log keeps them
+        self.assertEqual(log.count("went back to its Sonoff firmware."), 1)   # said once, then
         self.assertIn("went back to Sonoff's own firmware again", log)  # only noted
 
     def test_back_on_sonoff_the_instructions_go_until_the_bridge_is_back(self):
@@ -304,7 +304,7 @@ class BridgeScreenTests(unittest.TestCase):
         def joins_shown():
             screen = unattended_run.Screen(100, 40)
             screen.feed(sys.stdout.getvalue().replace("\n", "\r\n"))
-            return screen.render(colour=False).count("Join the bridge's Wi-Fi network")
+            return screen.render(colour=False).count("Join the installer's Wi-Fi network")
         sending, waiting = [], []
 
         def resend(ctx):
@@ -320,7 +320,7 @@ class BridgeScreenTests(unittest.TestCase):
 
     def test_they_stay_when_the_wait_stops_the_stage(self):
         screen, _ = self.screen([errors.Abort("the bridge never appeared")])
-        self.assertIn("Join the bridge's Wi-Fi network", screen)
+        self.assertIn("Join the installer's Wi-Fi network", screen)
 
 
 class WaitForBridgeTests(unittest.TestCase):
@@ -1094,7 +1094,7 @@ class DeliveryPortTests(unittest.TestCase):
                 mock.patch.object(installer, "needs_power_cycle", return_value=True), \
                 mock.patch.object(prompts, "UNATTENDED", True), mock.patch.object(prompts, "section"), \
                 mock.patch.object(installer.arrival, "power_cycle") as asked:
-            self.assertEqual(self.run_bridge(busy=set(), codes=(1,))[3], "bridge delivery failed")
+            self.assertEqual(self.run_bridge(busy=set(), codes=(1,))[3], "the installer was not delivered")
         asked.assert_not_called()   # unattended: it stops, saying to
 
     def test_sent_again_in_the_same_run_the_go_ahead_is_not_asked_again(self):

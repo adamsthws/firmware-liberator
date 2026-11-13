@@ -215,8 +215,8 @@ def commit_once(ctx: Context) -> dict[str, Any]:
         join.check_device_network(ctx)  # may rebuild the bundle
         if not of_this_bundle(ctx, "stage-report.json"):
             raise Abort(
-                "the bundle has changed since the checks and staging were done, so "
-                "they need to run again - run the same command. Nothing was written"
+                "the firmware files changed since they were checked: run the same command "
+                "again. Nothing was written"
             )
     except Abort:
         for step in ("E1", "E2"):
@@ -283,7 +283,7 @@ def upload_to_startup_firmware(ctx: Context, app: Path) -> str:
             device.upload_firmware(app, timeout=UPLOAD_STALL)
         except Exception as exc:  # noqa: BLE001 - tried again, then the person
             if attempt == hub.UPLOAD_ATTEMPTS:
-                return hub.upload_or_prompt_by_hand(ctx, app, "Official Tasmota (app0)", exc)
+                return hub.upload_or_prompt_by_hand(ctx, app, "Official Tasmota", exc)
             what_happened = (f"The device refused the upload ({exc.reason})" if isinstance(exc, UploadRefused)
                              else f"The upload stopped ({exc})")
             output.tell(f"    {what_happened}; restarting the device and trying again "
@@ -291,8 +291,8 @@ def upload_to_startup_firmware(ctx: Context, app: Path) -> str:
             try:
                 device.command("Restart 1", timeout=10)
             except (DeviceError, OSError):
-                output.tell("    The device is not answering: switch it off and on - at this stage that is")
-                output.tell("    safe, it starts the startup firmware again - and this carries on.")
+                # Safe at this stage: it starts the startup firmware again.
+                output.tell("    The device is not answering: switch it off and on - it is safe now.")
             restart = time.monotonic()
             # Gone first: the restart comes some seconds after its answer, and
             # the old start still answering is no sign of the new one (seen in
@@ -359,14 +359,13 @@ def step_canonical(ctx: Context) -> dict[str, Any]:
         # Five minutes and no sign of it: keep waiting, or look elsewhere.
         output.transient_begin()
         choice = prompts.ask_choice(
-            "The recovery firmware has not appeared. What now",
+            "The startup firmware has not appeared. What now",
             [
                 "Keep waiting",
                 "It is on a different address - let me type it",
             ],
             help_lines=[
-                "It should restart into a small recovery firmware whose version",
-                "contains the word safeboot, on your Wi-Fi.",
+                "It should restart on your Wi-Fi, its version containing 'safeboot'.",
             ],
         )
         if choice == 1:
@@ -447,8 +446,8 @@ def step_tasmota_update(ctx: Context) -> dict[str, Any]:
             time.sleep(3)
     how, outcome = install_official(ctx, app)
     if not outcome.startswith("rejoined"):
-        raise Abort(f"Tasmota {new} is on the device, but {outcome}: it lost its settings. Set it up there - "
-                    "its Wi-Fi, and the device's template - then run this again")
+        raise Abort(f"Tasmota {new} is back on the device, but {outcome}: it lost its settings. Set it up "
+                    "there - its Wi-Fi, and the device's template - then run this again")
     return {"app_upload": how, "outcome": outcome}
 
 
@@ -504,8 +503,8 @@ def install_official(ctx: Context, app: Path) -> tuple[str, str]:
         if outcome != "startup firmware":
             return how, outcome
         if attempt < hub.UPLOAD_ATTEMPTS:
-            output.tell("    The device came back on the startup firmware: the upload did not take. "
-                 f"Sending it again (attempt {attempt + 1} of {hub.UPLOAD_ATTEMPTS}).")
+            output.tell("    Still on the startup firmware: sending official Tasmota again "
+                        f"({attempt + 1} of {hub.UPLOAD_ATTEMPTS}).")
     raise Abort("official Tasmota did not take: the device came back on its startup firmware "
                 f"after {hub.UPLOAD_ATTEMPTS} uploads")
 
@@ -626,8 +625,7 @@ def configure_tasmota(ctx: Context) -> dict[str, Any]:
         setup = prompts.find_ssid(names.setup_networks(ctx), timeout=15)
         if setup:
             route = "setup network"
-            output.tell("    Official Tasmota did not join your Wi-Fi by itself, so it is set up")
-            output.tell("    through its own network instead.")
+            output.tell("    Official Tasmota didn't join your Wi-Fi: setting it up via its network.")
             join.configure_device_wifi(ctx, setup, join.NOT_JOINED)
         else:
             route = "located"
@@ -724,11 +722,10 @@ def back_after_reset(ctx: Context, booted: str | None, uptime: int | None) -> No
     setup = prompts.find_ssid(names.setup_networks(ctx), timeout=30)
     if not setup:
         raise Abort(
-            "the device did not come back after its settings were reset, and its own "
-            f"network ({names.setup_network_hint(ctx)}) is not to be seen either. Switch it "
-            "off and on, then run this again")
-    output.tell("    The device restarted without its Wi-Fi details - cut off just after the")
-    output.tell("    reset, say - and raised its own network, so it is set up through that.")
+            "the device did not come back after its settings were reset, nor its network "
+            f"({names.setup_network_hint(ctx)}): switch it off and on, then run this again")
+    # Cut off just after the reset, say: its own network raised.
+    output.tell("    It restarted without its Wi-Fi details: setting it up via its network.")
     join.configure_device_wifi(ctx, setup, join.SETTINGS_LOST)
     ctx.device.wait_reachable(timeout=300)
 
@@ -812,11 +809,11 @@ def conversion_wifi(ctx: Context) -> None:
         output.transient_begin()  # until details that match are given
         prompts.section("The Wi-Fi details the device was converted with are needed", [
             *(["The device is on different Wi-Fi details now."] if on_device else []),
-            "Its temporary startup firmware was built with the Wi-Fi details",
-            "used during the conversion, and only those rebuild it exactly, so",
-            "it can be swapped for the official one. They are checked against",
-            "the device's record before anything is used.",
+            "Only those rebuild its startup firmware exactly; they are checked first.",
         ])
+        output.log_only("The startup firmware holds the Wi-Fi details used in the conversion: rebuilt "
+                        "exactly, it can be swapped for the official one. They are checked against the "
+                        "device's record before anything is used.")
         while image is None:
             ssid = prompts.ask_text("Wi-Fi network name used during the conversion", private="wifi-name")
             password = prompts.ask_secret(f"Wi-Fi password for '{ssid}' at the time: ")
@@ -834,7 +831,7 @@ def conversion_wifi(ctx: Context) -> None:
         try:
             pin_wifi(ctx.manifest_path, ssid, password)
         except BundleError as exc:
-            raise Abort(f"the bundle could not be set up for '{ssid}': {exc}") from exc
+            raise Abort(f"the startup firmware could not be set up for '{ssid}': {exc}") from exc
     ctx.remember_wifi(ssid, password, image)
 
 
@@ -884,8 +881,8 @@ def step_restore(ctx: Context) -> dict[str, Any]:
         if matches:
             output.say("  Checked first: the device is running the official Tasmota, unmodified.")
             return True
-        output.tell(f"    Stopping: {problem}. Swapping the startup firmware is only safe")
-        output.tell("    under the official Tasmota, so nothing was written.")
+        output.tell(f"    Stopping, nothing written: {problem}.")
+        output.log_only("    Swapping the startup firmware is only safe under the official Tasmota.")
         return False
 
     code, captured = runner.run(
@@ -932,10 +929,10 @@ def step_verify(ctx: Context) -> dict[str, Any]:
         report = output.tell if not matched else output.say
         report(f"  {name:<9} 0x{address:06X} {length:>9,}  {'MATCH' if matched else 'DIFFERS'}")
         if not matched:
-            output.tell(f"    expected {wanted}")
-            output.tell(f"    actual   {actual}")
+            output.log_only(f"    expected {wanted}")
+            output.log_only(f"    actual   {actual}")
     if not ok:
-        raise Abort("device does not match the pinned artifacts")
+        raise Abort("the device's memory does not match the official firmware files (see above)")
     output.say("")
     output.say(f"All {'four' if len(expected) == 4 else 'three'} regions match the pinned artifacts.")
     template = kinds.of_run(ctx.state).tasmota_template()
@@ -949,7 +946,7 @@ def step_verify(ctx: Context) -> dict[str, Any]:
             ctx.state.capture("H1.fallback_set", True)
         else:
             # A run is not complete on a device that switches nothing.
-            output.tell("    The device's template is not in place: it is put in again, its other settings kept.")
+            output.tell("    Its template was missing: putting it back, other settings kept.")
             ctx.state.capture("H1.template_again", True)
             give_template(device, template, hostname)
     earlier = earlier_release(manifest) if manifest.get("official_release") != official_release() else None

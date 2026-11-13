@@ -66,7 +66,7 @@ class WarningTests(unittest.TestCase):
                 self.box.reset_mock()
                 self.assertEqual(self.bridge(kind, lambda word: True), (["proceed"], True))
                 self.assertEqual(self.box.call_count, 1)
-                self.assertIn("The conversion for this particular device has not been proven on a real", self.said())
+                self.assertIn("Not yet proven on a real device of this kind", self.said())
                 self.assertNotIn("report", self.said().lower())   # the run's report is sent by itself
 
     def test_the_words_are_the_same_for_every_kind(self):
@@ -93,7 +93,7 @@ class WarningTests(unittest.TestCase):
             handover.consent_to_leave(ctx, "Tasmota")
             handover.consent_to_leave(ctx, "Tasmota")
         self.assertEqual([call.args[0] for call in asked.call_args_list], ["proceed"])
-        self.assertIn("The conversion for this particular device has not been proven on a real", self.said())
+        self.assertIn("Not yet proven on a real device of this kind", self.said())
 
 
 class LogTests(unittest.TestCase):

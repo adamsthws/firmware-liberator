@@ -125,30 +125,22 @@ def cut_off(sighting: Sighting) -> bool:
     return bool(sighting.ip) and sighting.device.online is False
 
 
-# An update cut off part way - this computer stopped while it was being sent -
-# can leave the device on Sonoff's firmware but away from eWeLink until it restarts.
-AFTER_A_CUT_OFF_SEND = ("switch the device off and on: after an update cut off part way "
-                        "it can stay away from eWeLink until it restarts.")
-
 
 def why_not_found(sighting: Sighting) -> str:
     """What to do about an account device that is not on this network, or that
     is but cannot be converted from here."""
     device = sighting.device
     if cut_off(sighting):
-        return (f"{describe_device(device)} is at {sighting.ip}, but eWeLink shows it "
-                "offline - it cannot reach the internet. The conversion is sent to the "
-                "device through eWeLink, so allow it internet access for this run (you can "
-                "block it again once it runs Tasmota, which needs no cloud). If it has "
-                f"that already, {AFTER_A_CUT_OFF_SEND}")
+        # The conversion goes through eWeLink; once converted it needs no cloud.
+        return (f"{describe_device(device)} is at {sighting.ip} but is offline in eWeLink: "
+                "let it reach the internet for this run. If it can already, switch it off and on.")
     if device.online is False:
-        return (f"{describe_device(device)}: eWeLink shows it offline - check it is switched "
-                "on at the wall, on your Wi-Fi, and allowed to reach the internet. If "
-                f"it is, {AFTER_A_CUT_OFF_SEND}")
+        # After an update cut off part way it can stay away from eWeLink until it restarts.
+        return (f"{describe_device(device)} is offline in eWeLink: check it is on, on your Wi-Fi and "
+                "allowed online; then switch it off and on.")
     network = f" (it is on '{device.ssid}')" if device.ssid else ""
-    return (f"{describe_device(device)} is online in eWeLink but was not seen on this "
-            f"computer's network{network} - this computer must be on the same Wi-Fi "
-            "network, on the same router.")
+    return (f"{describe_device(device)} is online in eWeLink but not seen here{network}: join this "
+            "computer to the same network.")
 
 
 def sight_devices(devices: list[AccountDevice]) -> list[Sighting]:
@@ -216,14 +208,12 @@ def find_account_device(ctx: Context, devices: list[dict[str, Any]]) -> str:
                 *(["It has:", *others] if others else ["It has no devices."]),
                 "",
                 "Add the device in the eWeLink app, or use the account it is in.",
-                *(["", "Or help add support for yours: it can be read out, only read, and sent in."]
-                  if devices else []),
             ])
             choice = prompts.ask_choice("What now", [
                 "Look again",
                 "Use a different eWeLink account",
                 "Type the device's address myself",
-                *(["Read-out my device to help add support for it"] if devices else []),
+                *(["Read out my device, to help add support for it"] if devices else []),
             ])
             output.transient_end()
             if choice == 3:
@@ -286,7 +276,7 @@ def find_account_device(ctx: Context, devices: list[dict[str, Any]]) -> str:
             output.transient_begin()  # gone once answered, as the menu was
             ip = prompts.ask_ipv4(
                 "The device's address",
-                help_lines=["Find your device's IP address in your router's device list, or eWeLink's device information."],
+                help_lines=["Its address is in your router's device list, or the eWeLink app's device info."],
                 check=device_at({device.mac for device in supported if device.mac}),
             )
             output.transient_end()
@@ -355,17 +345,14 @@ def already_converting(device_ip: str) -> None:
         return
     if setup_network.is_bridge_page(body):
         raise Abort(
-            f"the device at {device_ip} is already running our installer firmware, from "
-            "an earlier conversion. Run this again and choose to continue that "
-            "conversion. If none is offered, switch the device off and on: it goes "
-            "back to its Sonoff firmware, and a new conversion can start"
+            f"the device at {device_ip} is on this tool's installer from an earlier run: run this "
+            "again and continue it, or switch the device off and on to go back to Sonoff"
         )
     if "tasmota" in body.lower():
         raise NotOnSonoff(
             "tasmota",
-            f"{device_ip} is running Tasmota, not Sonoff's firmware. If that is this "
-            "device, part way through an earlier conversion, run this again and "
-            "choose to continue that conversion"
+            f"{device_ip} is running Tasmota, not Sonoff's firmware: if it is part way through "
+            "a conversion, run this again and continue it"
         )
     for firmware, answers in (("esphome", esphome.is_esphome), ("openbeken", openbeken.is_openbeken)):
         if answers(device_ip, 3.0):
@@ -392,7 +379,7 @@ def note_firmware_name(kind: kinds.Kind | None, latest: dict[str, Any], deviceid
                     f"its chip: {learned.chip or 'not named'}")
     if kind is not None and learned.name != kind.wrapper_model:
         # The run's report says so (report_data.firmware_name_info): nothing to ask of anyone.
-        output.tell(f"    Firmware name: {learned.source} says {learned.name}, but this tool wraps "
+        output.log_only(f"    Firmware name: {learned.source} says {learned.name}, but this tool wraps "
                     f"firmware for this device as {kind.wrapper_model}. The conversion goes on: if "
                     "the device turns the update down, its firmware stays as it is.")
     return learned.name

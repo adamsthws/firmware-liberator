@@ -143,7 +143,7 @@ def set_interim(ctx: Context, interim: bool, why: str, *, restart: bool = True) 
     output.say(f"    {why} Restarting it, so your network knows it by its new name...")
     restarted = openbeken.restart(host)
     if not restarted:
-        output.tell("    It has not answered again yet; it keeps its new name either way.")
+        output.log_only("    It has not answered again yet; it keeps its new name either way.")
     return restarted
 
 

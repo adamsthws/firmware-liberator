@@ -44,7 +44,7 @@ def upload_or_prompt(ctx: "Context", path: Path, what: str, restart_to_retry: bo
             if attempt == UPLOAD_ATTEMPTS:
                 return upload_or_prompt_by_hand(ctx, path, what, exc)
             output.tell(f"    The device refused the upload ({exc.reason}); sending it again "
-                 f"(attempt {attempt + 1} of {UPLOAD_ATTEMPTS}).")
+                        f"({attempt + 1} of {UPLOAD_ATTEMPTS}).")
             time.sleep(5)
         except errors.NETWORK_ERRORS as exc:
             # Cut off on the way - the Wi-Fi going, say.  Sent again only once
@@ -57,15 +57,15 @@ def upload_or_prompt(ctx: "Context", path: Path, what: str, restart_to_retry: bo
             if took is None or attempt == UPLOAD_ATTEMPTS:
                 return upload_or_prompt_by_hand(ctx, path, what, exc)
             if restart_to_retry:
-                output.tell(f"    The upload was cut off ({exc}); restarting the device to clear it, "
-                            f"then sending it again (attempt {attempt + 1} of {UPLOAD_ATTEMPTS}).")
+                output.tell(f"    The upload was cut off ({exc}): restarting the device, then sending again "
+                            f"({attempt + 1} of {UPLOAD_ATTEMPTS}).")
                 try:
                     clear_cut_off_upload(device)
                 except (DeviceError, OSError) as restart_failed:
                     return upload_or_prompt_by_hand(ctx, path, what, restart_failed)
             else:
                 output.tell(f"    The upload was cut off ({exc}); sending it again "
-                            f"(attempt {attempt + 1} of {UPLOAD_ATTEMPTS}).")
+                            f"({attempt + 1} of {UPLOAD_ATTEMPTS}).")
         except Exception as exc:  # noqa: BLE001 - any failure falls back to the operator
             return upload_or_prompt_by_hand(ctx, path, what, exc)
     raise AssertionError("unreachable")
@@ -107,12 +107,10 @@ def upload_or_prompt_by_hand(ctx: "Context", path: Path, what: str, exc: Excepti
     """The upload left to the operator's browser, after it failed with `exc`."""
     device = ctx.device
     output.transient_begin()
-    output.tell(f"    Automatic upload failed: {exc}")
-    output.say("")
-    output.tell("    Upload it by hand instead - the file is identical:")
-    output.tell(f"        open http://{device.host}/  ->  Firmware Upgrade  ->  choose file")
+    output.tell(f"    Automatic upload failed ({exc}): upload this file by hand instead:")
+    output.tell(f"        http://{device.host}/ -> Firmware Upgrade -> choose file:")
     output.tell(f"        {path}")
-    if not prompts.confirm(f"{what} uploaded through the web UI?"):
+    if not prompts.confirm("Uploaded through its web page"):
         raise Abort(f"{what} was not uploaded")
     output.transient_end()
     return "manual"
@@ -178,10 +176,11 @@ def step_promote(ctx: Context) -> dict[str, Any]:
             output.say("it back where it started. Doing it once more to land on slot 1.")
     after = slot
     if after != 1:
+        # Each upload should switch which slot it runs from: something stops
+        # the new one being started.
         raise Abort(
-            f"the device is still running from slot {after} after {uploads} uploads; "
-            "it should alternate on every upload, so something is stopping the new "
-            "image being selected"
+            f"the device kept running its old firmware after {uploads} uploads: switch it off "
+            "and on, then run the same command again"
         )
     device.command("SaveData 0")
     output.say("SaveData 0 - settings frozen so the migration's checks stay stable")
@@ -199,8 +198,7 @@ def device_back_on_wifi(ctx: Context) -> None:
     if not ctx.finder.poll():
         setup = prompts.find_ssid(names.setup_networks(ctx), timeout=15)
         if setup:
-            output.tell(f"    The device is not on your Wi-Fi: it is asking to be set up on {setup},")
-            output.tell("    as Tasmota does when it has lost its settings - after a power cut, say.")
+            output.tell(f"    Not on your Wi-Fi: it lost its settings and asks to be set up on {setup}.")
             join.configure_device_wifi(ctx, setup, join.SETTINGS_LOST)
         else:
             join.locate_device(ctx, setup=True)
@@ -223,8 +221,7 @@ def sonoff_layout_back(ctx: Context) -> None:
         output.say("    The device is on the temporary layout it left Tasmota through; writing its own.")
         plan = plans.own_table_from_temporary(images.sonoff_table(kind), layout)
     elif table == layout.interim_sha256:
-        output.tell("    The last commit stopped part way, with the device's settings moved aside;")
-        output.tell("    putting them back first.")
+        output.tell("    The last layout rewrite stopped part way: putting its settings back first.")
         plan = plans.sonoff_layout_back(images.sonoff_table(kind), layout)
     else:
         return

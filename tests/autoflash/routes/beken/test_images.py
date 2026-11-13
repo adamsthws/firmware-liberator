@@ -173,7 +173,7 @@ class UntestedKindTests(unittest.TestCase):
         sent.assert_not_called()
         asked.assert_called_once_with("proceed")
         said = " ".join(self.box.call_args.args[1])
-        self.assertIn("The conversion for this particular device has not been proven on a real", said)
+        self.assertIn("Not yet proven on a real device of this kind", said)
         # The same words as for every kind, with nothing of its own.
         for words in ("serial cable", "flash size", "go wrong"):
             self.assertNotIn(words, said)

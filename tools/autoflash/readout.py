@@ -416,8 +416,7 @@ def locate(ctx: Context, device: dict[str, Any]) -> str:
     output.transient_begin()
     address = prompts.ask_ipv4(
         "The device was not found on this network. Its address",
-        help_lines=["Its address is in your router's device list, or the eWeLink app's device",
-                    "information."],
+        help_lines=["Its address is in your router's device list, or the eWeLink app's device info."],
         check=check)
     output.transient_end()
     return address
@@ -541,12 +540,13 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
     ctx.state.set_input("stock_version", asked.version)
     ctx.state.set_input("product_model", asked.product)
     whole = whole_readout(listed, learned)
+    # Logged, as a conversion's is (account.py): the chooser named the device.
     prompts.section("What the device reported", [
         f"Model            {asked.model or 'not given'}",
         f"Product          {asked.product or 'not given'}",
         f"Firmware now     {asked.version}",
         f"Firmware name    {learned.name if learned else 'not learned'}",
-    ])
+    ], quiet=True)
     begin("fetch")
     # Before the firmware eWeLink offers it is fetched, anything is sent to it,
     # or the readout's own work is done: whether it would add anything at all,
@@ -856,8 +856,8 @@ def send(data: bytes, url: str = UPLOAD_URL, timeout: float = 120.0) -> str:
     readout of every device reaches - is sent again every 15 seconds, for up
     to a minute and a half, with the same work, good for 15 minutes."""
     started = time.monotonic()
-    with output.working("Getting it ready to send: a puzzle that keeps floods away, a few seconds to a "
-                        "minute or two..."):
+    # The puzzle (proof) keeps floods of readouts away from the website.
+    with output.working("Preparing to send - a few seconds to a minute or two..."):
         work = proof(data, tick=lambda: output.progress(f"working on it... {time.monotonic() - started:.0f}s"))
     output.progress_clear()
     request = urllib.request.Request(url, data=data, method="POST", headers={

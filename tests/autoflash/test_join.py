@@ -39,7 +39,7 @@ class NetworkCheckTests(unittest.TestCase):
 
     def test_a_different_network_stops_when_not_rebuilt(self):
         with mock.patch.object(prompts, "ask_yes_no", return_value=False):
-            with self.assertRaisesRegex(errors.Abort, "'Guest' but the bundle is set up for 'Home-2G'"):
+            with self.assertRaisesRegex(errors.Abort, "'Guest' but the firmware to come would join 'Home-2G'"):
                 join.check_device_network(self.ctx("Guest"))
 
     def test_a_different_network_can_be_fixed_with_its_password(self):

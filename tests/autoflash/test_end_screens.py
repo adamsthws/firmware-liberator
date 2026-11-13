@@ -117,7 +117,7 @@ class EndScreenTests(unittest.TestCase):
             output.stage_end("complete")
             output.tell("")
             output.show(headline, output.GREEN)
-            output.tell(f"The device is running {dict(fields).get('Firmware', 'Tasmota')}...")
+            output.tell(f"The device is running {dict(fields).get('Firmware', 'Tasmota')}.")
             with mock.patch.object(report, "report_fields", return_value=fields):
                 report.invite_report(ctx, 0.0, False)
         return draw

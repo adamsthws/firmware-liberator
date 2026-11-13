@@ -164,8 +164,8 @@ def identify_once_restarted(ctx: Context, host: str) -> str | None:
     mac = hostsys.mac_of(host)
     if not (hostsys.normalise_mac(mac) in known_macs() if mac else converted_here(ctx)):
         return None
-    output.tell("    It did not answer, and this computer converted it, so it may be restarting: looking "
-                f"again for up to {RESTART_GRACE:.0f} seconds...")
+    # This computer converted it, so it may be restarting.
+    output.tell(f"    No answer; it may be restarting - looking again for up to {RESTART_GRACE:.0f} s...")
     started = time.monotonic()
     while running is None and time.monotonic() - started < RESTART_GRACE:
         time.sleep(5)
@@ -179,9 +179,8 @@ RESTART_GRACE = 45.0
 # conversion's to carry on: a readout's, whose bridge is the same program, or
 # one no run of this computer's left. The bridge chose Sonoff's firmware for
 # the next start as it started, so switching it off and on puts it back.
-INSTALLER_LEFT = ("the device is on this tool's installer, left by {who}, and it would not restart, so nothing "
-                  "was done. Switch it off and on: it starts its Sonoff firmware again, its settings and pairing "
-                  "kept. Then run this again")
+INSTALLER_LEFT = ("the device is on this tool's installer, left by {who}, and would not restart: switch it off "
+                  "and on to go back to Sonoff (settings kept), then run this again")
 
 
 def installer_left_by(ctx: Context, host: str, mac: str | None) -> str | None:

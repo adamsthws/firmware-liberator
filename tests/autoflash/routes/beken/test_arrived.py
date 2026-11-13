@@ -458,7 +458,7 @@ class ArrivedTests(unittest.TestCase):
             self.assertEqual(reads, 3)
         # On screen, no promise of a next time: a run from ESPHome to Sonoff's firmware has no B4.
         shown = told.call_args.args[0]
-        self.assertTrue(shown.endswith("carrying on without a backup. The device keeps it."), shown)
+        self.assertTrue(shown.endswith("going on without a backup. The device keeps it."), shown)
         self.assertIn("A later run that installs OpenBeken, or starts from it, tries the backup again.",
                       said.call_args.args[0])
         for firmware, source in (("esphome", "openbeken"), ("sonoff", "openbeken"), ("openbeken", "sonoff"),
@@ -572,7 +572,7 @@ class ArrivedTests(unittest.TestCase):
                     mock.patch.object(detect, "identify", return_value=None), \
                     mock.patch.object(arrived.time, "sleep"), mock.patch.object(arrival.prompts, "UNATTENDED", True), \
                     mock.patch.object(arrived.time, "monotonic", side_effect=iter(range(50_000, 60_000, 100))):
-                with self.assertRaisesRegex(errors.Abort, "nor shown online in eWeLink.*switch the device off and on"):
+                with self.assertRaisesRegex(errors.Abort, "has not come back on your Wi-Fi or in eWeLink.*switch it off and on"):
                     arrived.step_sonoff_check(ctx, wait=50)
 
 
@@ -592,7 +592,7 @@ class ArrivedTests(unittest.TestCase):
                                            {"deviceid": "1009999999", "online": True}]
             with mock.patch.object(records, "DEVICES", Path(tmp) / "devices"):
                 records.remember_device(MAC, ewelink_id="1001234abc")
-            with self.assertRaisesRegex(errors.Abort, "nor shown online in eWeLink"):
+            with self.assertRaisesRegex(errors.Abort, "has not come back on your Wi-Fi or in eWeLink"):
                 self.k3_waiting(ctx, tmp)
 
     def test_k3_waits_through_an_account_that_does_not_answer(self):

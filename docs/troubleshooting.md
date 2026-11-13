@@ -151,15 +151,15 @@ already tells the project ([what the tool sends](what-the-tool-sends.md)).
 The tool lists each device in your eWeLink account that it converts, with what
 it found:
 
-- **"eWeLink shows it offline"** - the device is switched off, or not on
+- **"is offline in eWeLink"** - the device is switched off, or not on
   Wi-Fi. Switch it on and wait for the app to show it online.
-- **"is at ..., but eWeLink shows it offline"** (under *"Your device is
+- **"is at ... but is offline in eWeLink"** (under *"Your device is
   on this network but cannot reach the internet"* when it is the only
   problem) - usually the router keeps the device LAN-only. The conversion is
   sent through eWeLink, so allow it internet access, wait for the app to show
   it online, then choose *Look again*. You can block it again once it is
   converted.
-- **"is online in eWeLink but was not seen on this computer's network"** -
+- **"is online in eWeLink but not seen here"** -
   your computer is on a different network from the device, such as the 5 GHz
   or guest Wi-Fi, a different router, or a VPN. The message names the network
   the device is on.
@@ -170,7 +170,7 @@ The device is in a different eWeLink account, or is one the tool does not
 convert. The message lists what the account does have; choose *Use a different
 eWeLink account*, or have the tool read your device out.
 
-**"Could not reach eWeLink"**
+**"eWeLink is unreachable"**
 
 The tool could not sign in. A device on Sonoff's firmware is found and
 converted through eWeLink, so the run stops with nothing written: check your
@@ -329,11 +329,12 @@ then carries on.
 
 ## Slots and restarts
 
-**"the device is still running from slot 0 after 2 uploads"**
+**"the device kept running its old firmware after 2 uploads"**
 
 Each upload writes the *other* half of memory and restarts into it, so the
 slot alternates. The tool handles one swap-back itself; this message means
-uploads are not being committed at all (see "suspiciously fast" above).
+uploads are not being committed at all (see "suspiciously fast" above). Switch
+the device off and on, then run the same command again.
 
 **A step says it was interrupted**
 

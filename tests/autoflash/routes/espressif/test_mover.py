@@ -146,7 +146,7 @@ class ConfirmedOnlyAfterAMinuteTests(RouteTestCase):
         self.assertGreaterEqual(self.answered_at[-1] - self.answered_at[0], mover.ESPHOME_CONFIRMS_AFTER)
 
     def test_one_that_keeps_going_back_to_the_mover_is_sent_esphome_twice_then_stops(self):
-        with self.assertRaisesRegex(errors.Abort, "keeps going back to the mover"):
+        with self.assertRaisesRegex(errors.Abort, "keeps going back to the startup firmware"):
             self.check("tasmota", [False] * 10, probes=[object()] * 10)
         self.assertEqual(self.resent.call_count, 2)
 
@@ -422,7 +422,7 @@ class ESPHomeUpdateTests(RouteTestCase):
 
     def test_one_not_answering_during_its_minute_is_not_taken_to_have_kept_it(self):
         # Only a device seen to run the new release a whole minute on end has kept it.
-        with self.assertRaisesRegex(errors.Abort, "not been seen to run for a minute"):
+        with self.assertRaisesRegex(errors.Abort, "was not seen running for a minute"):
             self.check(["1.6.0"] * 6 + [None], confirm=60.0)
 
     def test_the_minute_starts_again_once_a_device_that_stopped_answering_is_back(self):
@@ -434,7 +434,7 @@ class ESPHomeUpdateTests(RouteTestCase):
         self.assertTrue(any("stopped answering" in c.args[0] for c in said.call_args_list))
 
     def test_one_that_keeps_restarting_is_not_waited_on_for_ever(self):
-        with self.assertRaisesRegex(errors.Abort, "not been seen to run for a minute"):
+        with self.assertRaisesRegex(errors.Abort, "was not seen running for a minute"):
             self.check(["1.6.0"] + ["1.6.0", None] * 200, confirm=60.0)
 
     def test_a_send_cut_off_is_judged_by_the_release_it_runs(self):
