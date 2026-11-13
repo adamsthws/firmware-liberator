@@ -80,6 +80,8 @@ CREATE TABLE IF NOT EXISTS reports (
 
 CREATE INDEX IF NOT EXISTS reports_day ON reports (day);
 CREATE INDEX IF NOT EXISTS reports_device_day ON reports (device_hash, day) WHERE device_hash IS NOT NULL;
+-- The runs that met a device the tool does not convert yet: the public figures' devices wanted.
+CREATE INDEX IF NOT EXISTS reports_unsupported ON reports (model) WHERE error = 'unsupported-device';
 
 -- A report's stages, one row each, as its `stages` gives them: the stage's
 -- ID, its time and the device's busy time in seconds, its tries, the seconds
@@ -99,6 +101,10 @@ CREATE TABLE IF NOT EXISTS report_stages (
   power_cycles INTEGER NOT NULL,
   PRIMARY KEY (id, stage)
 ) WITHOUT ROWID;
+
+-- The stages that needed either: the admin view's table of them, without the rest.
+CREATE INDEX IF NOT EXISTS report_stages_needed ON report_stages (stage)
+  WHERE setup_network IS NOT NULL OR power_cycles > 0;
 
 -- One a device, kept for good, so a second run on it is known as the same
 -- device: when it was first and last seen, how its first run ended, how many
@@ -126,6 +132,9 @@ CREATE TABLE IF NOT EXISTS devices (
   dev INTEGER NOT NULL
 ) WITHOUT ROWID;
 
+-- The maintainer's own devices, left out of every figure.
+CREATE INDEX IF NOT EXISTS devices_dev ON devices (device_hash) WHERE dev = 1;
+
 -- How many times a day /wanted was asked of each product model, and by how
 -- many devices: the devices people would read out for the tool to learn.
 -- Kept for good.
@@ -147,6 +156,9 @@ CREATE TABLE IF NOT EXISTS wanted_devices (
   last_day TEXT NOT NULL,
   asks INTEGER NOT NULL
 ) WITHOUT ROWID;
+
+-- By the day each was first asked of: the popularity charts, month by month.
+CREATE INDEX IF NOT EXISTS wanted_devices_first_day ON wanted_devices (first_day);
 
 -- What the nightly job (nightly.js) keeps of the reports for good: their
 -- totals by day, and by month the figures a total cannot give (run times,
