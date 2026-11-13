@@ -1009,7 +1009,7 @@ file a machine, which every checkout and worktree on it reads.
 `tools/repo/cloudflare_settings.py apply` writes it, sets it as the
 repository's secrets for the final-firmware check on `main` (a pull request's
 check sends nothing), and copies it to each machine `EMULATOR_STATS_HOSTS` in
-`.env.infra` names (`website/README.md`, The admin view);
+`tools/repo/.env.infra` names (`website/README.md`, The admin view);
 `emulator_stats.py push HOST...` copies it to another, and
 `emulator_stats.py check` says whether a machine's runs are taken. Without
 it nothing is sent, and the batch says so as it ends. The view takes at most

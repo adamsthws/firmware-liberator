@@ -489,7 +489,7 @@ it goes, so a commit made with `--no-verify` is still caught on its way out.
 It finds two kinds of thing, which the script's own notes list in full:
 
 - **Your own, by value**, which only your computer knows: every value in
-  `.env`, and in `.env.infra` and the emulator suites' credentials
+  `.env`, and in `tools/repo/.env.infra` and the emulator suites' credentials
   (`~/.config/firmware-liberator/emulator.env`) if you keep the project's
   services (its tokens, keys and private addresses), the eWeLink account, and what `captures/devices/` holds of each
   device: its MAC in any form, its eWeLink id and name, and the Sonoff

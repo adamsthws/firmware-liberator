@@ -163,7 +163,7 @@ that is left to you. Two are always yours:
    `apply` names. `apply`, run in a terminal, asks for its client ID and a
    new secret once, to make the sign-in, and keeps neither.
 
-The one address let in is `ACCESS_ADMIN_EMAIL` in `.env.infra`, or else the
+The one address let in is `ACCESS_ADMIN_EMAIL` in `tools/repo/.env.infra`, or else the
 one the domain's mail is forwarded to. `apply` then says the values to put in
 `admin/wrangler.jsonc`; until they are there the Worker lets no one in. CI
 does not check Access, and each deploy checks only that the view turns away a
@@ -177,8 +177,8 @@ the token and no one else. It writes the token's id and secret to
 `~/.config/firmware-liberator/emulator.env`, as Access shows a secret only
 once, sets it as the repository's secrets `EMULATOR_STATS_CLIENT_ID` and
 `EMULATOR_STATS_CLIENT_SECRET` (gh, signed in) for the final-firmware check on
-`main`, and copies that file over ssh to each machine named in `.env.infra` as
-`EMULATOR_STATS_HOSTS`. It then says the application's audience tag to put in
+`main`, and copies that file over ssh to each machine named in
+`tools/repo/.env.infra` as `EMULATOR_STATS_HOSTS`. It then says the application's audience tag to put in
 `admin/wrangler.jsonc` as `ACCESS_UPLOAD_AUD`. Should the secret be seen,
 `python3 tools/repo/cloudflare_settings.py rotate emulator-stats` gives the
 token a new one, which stops the old at once, and writes and copies it the
