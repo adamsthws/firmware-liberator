@@ -6,10 +6,11 @@
 # No firmware is in the image: dumps are fetched at run time (beken-emu.sh dump)
 # and mounted in at /opt/beken-emulator/firmwares. iproute2, iptables and
 # dnsmasq are the device's home router on its Docker network (beken-emu.sh device);
-# ping, the sweep a computer on it makes for the device (beken-emu.sh computer).
+# ping, the sweep a computer on it makes for the device (beken-emu.sh computer);
+# busybox, its udhcpc, the address it takes on the device's own network (wifi join).
 FROM ubuntu:24.04
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        python3 python3-venv patch xz-utils openssl ca-certificates iproute2 iptables dnsmasq iputils-ping \
+        python3 python3-venv patch xz-utils openssl ca-certificates iproute2 iptables dnsmasq iputils-ping busybox \
     && rm -rf /var/lib/apt/lists/*
 # The archive's hash, as UPSTREAM pins it; image.sh passes it.
 ARG SOURCE_SHA256
