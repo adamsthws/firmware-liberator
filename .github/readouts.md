@@ -125,7 +125,8 @@ let past, and only a readout that adds something is kept:
   sent the last one may fill too. A whole readout names its offer as well,
   and takes one of those places: an offer is taken as right once three
   readouts naming it, first stages or whole ones, come from three networks,
-  and you are emailed (none for a device offered nothing). A whole readout
+  and you are emailed (none for a device offered nothing); `readouts.py
+  offers` and the admin view's Offers agreed list them. A whole readout
   taken as right on its firmware does not close its offer until then.
   `review` and the admin view name what each was offered.
 - Until three agree, a key has three more places, each for a readout from a

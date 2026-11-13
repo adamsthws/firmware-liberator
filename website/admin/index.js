@@ -228,6 +228,7 @@ export async function gather(env, now) {
     settings: Object.fromEntries((await all("SELECT name, value FROM settings")).map((row) => [row.name, row.value])),
     nearly: await all(NEARLY),
     disputed: await all(DISPUTED),
+    offers: await all("SELECT key, offered, day FROM agreed_offers ORDER BY day DESC, key LIMIT 200"),
     networks: await all(`SELECT name, json_array_length(asns) AS asns, previous, taken, problem FROM network_lists
       ORDER BY name`),
     popularity: await modelTrends(all, now),
@@ -355,6 +356,11 @@ export async function page(env, who, now, fetcher = fetch) {
       + table([["Key", "key"], ["Stage", "stage"], ["Taken as right", "agreed", "number"],
         ["Disagreeing", "disagree", "number"], ["Last came", (row) => String(row.last).slice(0, 10)]],
       data.disputed, "None.")
+      + `</section>`,
+    `<section class="card" id="offers"><h2>Offers agreed</h2><p class="sub">What eWeLink offers each device, as
+      ${PER_KEY} or more readouts - first stages or whole ones - from ${MIN_NETWORKS} networks agreed on it, newest
+      first.</p>`
+      + table([["Key", "key"], ["Offered", "offered"], ["Since", "day"]], data.offers, "None yet.")
       + `</section>`,
     `<section class="card" id="networks"><h2>Networks that count as none</h2><p class="sub">Hosts' and VPNs' networks,
       which count toward no agreement of readouts or of models' names: ${number(CLOUD_ASNS.size)} kept in the code,
