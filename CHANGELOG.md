@@ -337,6 +337,17 @@ as its screens do, since it converts much more than smart plugs now.
   It left the stage under way and the question waiting.
 - Notes broken over several lines fit an 80-column window. Some were wider, so
   each line wrapped on its own and left a word or two on a row by itself.
+- What the tool says on the screen is true where it was not. A readout of a
+  Beken device stopped with Ctrl-C says to run the readout again, which puts
+  Sonoff's firmware back: it said to switch the device off and on, which there
+  starts the reading program again, as it stands in Sonoff's firmware's place.
+  Quitting at a question says "Stopped as asked. Run this again to carry on."
+  in place of "Nothing was left half done", untrue after a quit that leaves the
+  device on the installer. A run turned away because another run holds the
+  device says nothing was done once, not twice. Every go-ahead before the first
+  write says "DO NOT CUT ITS POWER unless this tool tells you to", in the same
+  words: "during the process" contradicted the later notes that ask for the
+  device to be switched off and on.
 - A download the server turns away for now - GitHub's release downloads
   answering "504 Gateway Time-out" for minutes at a time, say - is tried again
   for a little over two minutes, waiting longer each time, rather than three

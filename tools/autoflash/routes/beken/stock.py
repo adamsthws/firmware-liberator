@@ -143,8 +143,8 @@ def step_push(ctx: Context) -> dict[str, Any]:
             kept = "Its own data is backed up to this computer once the new firmware runs."
         output.transient_begin()
         prompts.warning_box("Before going on", [
-            "From here the device's Sonoff firmware is replaced, so the eWeLink app",
-            "will no longer control it. DO NOT CUT ITS POWER during the process.",
+            "Its Sonoff firmware is replaced: the eWeLink app no longer controls it.",
+            prompts.DO_NOT_CUT_POWER,
             kept,
             "Only go ahead with a device you can afford to lose.",
             *testers.notice(kind),

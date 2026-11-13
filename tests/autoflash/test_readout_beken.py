@@ -111,6 +111,26 @@ class RoundTripTests(unittest.TestCase):
         self.assertEqual(order, ["deliver", "wait", "read", "restoring stage", "revert", "sonoff"])
         self.assertEqual((len(flash), info, back), (rb.WHOLE_FLASH, {"openbeken": "obk", "chipset": "BK7238"}, True))
 
+    def test_the_record_says_the_reader_stands_in_for_sonoff_until_it_is_fetched_back(self):
+        # So a Ctrl-C meanwhile ends by saying to run the readout again: on a
+        # Beken device, switching it off and on starts the reader, not Sonoff.
+        seen = {}
+        key = rb.readout.STATE_KEY
+        with mock.patch.object(rb.prompts, "warning_box"), \
+                mock.patch.object(rb.prompts, "require_word", return_value=True), \
+                mock.patch.object(rb, "deliver_readout", side_effect=lambda *a: seen.setdefault(
+                    "delivering", self.ctx.state.input(key))), \
+                mock.patch.object(rb, "wait_for_openbeken", return_value="192.0.2.60"), \
+                mock.patch.object(rb.openbeken, "info", return_value={}), \
+                mock.patch.object(rb, "read_whole_flash", return_value=b"\xff" * rb.WHOLE_FLASH), \
+                mock.patch.object(rb.records, "save_beken_backup", return_value=(None, False)), \
+                mock.patch.object(rb, "revert_to_sonoff", side_effect=lambda *a: seen.setdefault(
+                    "reverting", self.ctx.state.input(key))), \
+                mock.patch.object(rb, "wait_for_sonoff", return_value=True):
+            rb.read_out(self.ctx, "FWSW-01-S61-BK7238", "1.0.2", self.device, self.found)
+        self.assertEqual(seen, {"delivering": rb.readout.REPLACED, "reverting": rb.readout.REPLACED})
+        self.assertEqual(self.ctx.state.input(key), "read")
+
     def test_the_devices_own_data_is_kept_from_the_whole_flash_read(self):
         flash = bytes(range(256)) * (rb.WHOLE_FLASH // 256)
         with mock.patch.object(rb.prompts, "warning_box"), \

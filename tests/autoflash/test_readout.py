@@ -92,6 +92,26 @@ FILES = {"flash.bin": b"flash bytes", "efuse.bin": b"\0" * 124, "info.txt": b"br
          "report.json": b"{}"}
 
 
+class StoppedByCtrlCTests(unittest.TestCase):
+    """What a readout stopped by Ctrl-C ends by saying, by where it was: a Beken
+    device's reader stands in place of Sonoff's firmware, so switching it off
+    and on would only start the reader again."""
+
+    def said(self, reached):
+        state = SimpleNamespace(input=lambda key: reached if key == readout.STATE_KEY else None)
+        return readout.stopped_by_ctrl_c(SimpleNamespace(state=state))
+
+    def test_a_beken_device_on_its_reader_is_put_back_by_the_readout_run_again(self):
+        said = self.said(readout.REPLACED)
+        self.assertIn("Run the readout again", said)
+        self.assertNotIn("switch it off and on", said)
+
+    def test_anywhere_else_switching_it_off_and_on_starts_sonoff_again(self):
+        for reached in (None, "started", "sent", "read"):
+            with self.subTest(reached):
+                self.assertIn("switch it off and on to go back to Sonoff", self.said(reached))
+
+
 class PackageTests(unittest.TestCase):
     def test_the_prepared_files_go_in_as_they_are(self):
         files = unpacked(readout.package(MANIFEST, FILES))

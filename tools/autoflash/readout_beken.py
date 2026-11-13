@@ -179,8 +179,8 @@ def revert_to_sonoff(ctx: Context, host: str, found: Stock) -> None:
         try:
             openbeken.command(host, f"AutoflashRevertToStock {url}")
         except openbeken.CommandError as exc:
-            raise Abort(f"the readout firmware would not fetch Sonoff's firmware back: {exc}. The device's own "
-                        "data is read; switch it off and on and send its Sonoff firmware again") from exc
+            raise Abort(f"the readout firmware would not fetch Sonoff's firmware back: {exc}. Its data is "
+                        "read; run the readout again to put Sonoff's firmware back") from exc
 
     onward.serve_to_device(ctx, found.rbl, f"Sonoff's firmware {found.version}", fetch,
                          unstick=lambda: openbeken.restart(host))
@@ -217,20 +217,20 @@ def read_out(ctx: Context, name: str, version: str, device: dict[str, Any],
     The whole flash, what OpenBeken said of itself, and whether Sonoff answered."""
     output.transient_begin()
     prompts.warning_box("Before going on", [
-        "This reads the whole memory of a device this tool has never run on. To",
-        "read it, the device's Sonoff firmware is replaced for a few minutes with",
-        "a small program that only reads; then the tool puts the device's own",
-        "Sonoff firmware back, and its settings and eWeLink pairing are kept.",
-        "",
-        "DO NOT CUT ITS POWER during the process. If the small program could not",
-        "start at all, the device may need a serial cable to recover. Only go ahead",
-        "with a device you can afford to lose.",
+        "Its Sonoff firmware is swapped for a small reader for a few minutes, then",
+        "put back, its settings and eWeLink pairing kept.",
+        prompts.DO_NOT_CUT_POWER,
+        "A reader that can't start may need a serial cable.",
+        "Only go ahead with a device you can afford to lose.",
     ])
     if not prompts.require_word(prompts.CONSENT_WORD, skip=skippable):
         raise NothingWritten("skipped as asked, nothing was sent to it" if skippable else
                              "not confirmed - nothing has been sent to the device")
     output.transient_end()
     device_ip = ctx.state.require("device_ip")[0]
+    # From here until Sonoff's firmware is fetched back, the reader may stand
+    # in its place: what a Ctrl-C ends by saying (readout.stopped_by_ctrl_c).
+    ctx.state.set_input(readout.STATE_KEY, readout.REPLACED)
     if openbeken.is_readout(device_ip):
         # A readout stopped part way left it there: eWeLink cannot reach the
         # device on it, and has no need to.
@@ -249,6 +249,7 @@ def read_out(ctx: Context, name: str, version: str, device: dict[str, Any],
             output.say(f"    The device's own data is kept on this computer, in {runs.display_path(directory)}.")
     readout.restoring()
     revert_to_sonoff(ctx, host, found)
+    ctx.state.set_input(readout.STATE_KEY, "read")
     back = wait_for_sonoff(ctx, device["deviceid"])
     return flash, {"openbeken": str(info.get("build") or ""), "chipset": str(info.get("chipset") or "")}, back
 

@@ -70,8 +70,12 @@ STORE_FULL = "not read out: the website cannot take more readouts for now. Try a
 LIMIT_TODAY = "not read out: the website takes 20 readouts a day from one place. Try again tomorrow."
 # What send() gives for a readout the website has enough of already.
 ENOUGH = "none needed: enough readouts of this device are in already"
-# What the run's record keeps, so a readout is never offered back as a conversion to finish.
+# What the run's record keeps, so a readout is never offered back as a conversion to finish:
+# how far it got - "started", "sent" once an Espressif device has its reader, "read" once
+# the device is back on Sonoff's firmware - and REPLACED while a Beken device's reader
+# stands in place of Sonoff's firmware.
 STATE_KEY = "readout"
+REPLACED = "replaced"
 # What the run's record keeps of the one device being read out, with
 # readout_espressif.BRIDGE_HOST: cleared before the next, when every device is
 # read out in one run.
@@ -118,6 +122,17 @@ def skip(key: str) -> None:
     """The readout's stage `key` passed over: nothing for it to do."""
     begin(key)
     output.stage_end("skipped")
+
+
+def stopped_by_ctrl_c(ctx: Context) -> str:
+    """What a readout stopped by Ctrl-C ends by saying. An Espressif device's
+    reader sits beside Sonoff's firmware, which switching the device off and on
+    starts again; a Beken device's stands in its place, and only the readout
+    run again (readout_beken.read_out) - or a conversion (readout_beken.put_back)
+    - puts Sonoff's firmware back."""
+    if ctx.state.input(STATE_KEY) == REPLACED:
+        return "Stopped with Ctrl-C. Run the readout again: it puts Sonoff's firmware back."
+    return "Stopped with Ctrl-C. If it was being read, switch it off and on to go back to Sonoff."
 
 
 def restoring() -> None:
