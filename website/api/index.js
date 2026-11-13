@@ -334,6 +334,8 @@ const text = (value, most = 64) => typeof value === "string" && value.length > 0
 export const MODEL = /^[A-Za-z0-9][A-Za-z0-9-]{0,23}$/;
 export const STOCK_MODEL = /^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,63})$/;
 export const STOCK_VERSION = /^(?:-|[A-Za-z0-9][A-Za-z0-9._-]{0,31})$/;
+// The device, as a report names it (report-schema.json's device_hash).
+export const DEVICE_HASH = /^[0-9a-f]{64}$/;
 const fits = (value, pattern) => typeof value === "string" && pattern.test(value);
 
 // Where an offered file a readout holds is marked.
@@ -534,7 +536,7 @@ async function question(request, env, now, what) {
 
 // Whether a readout of a device would add anything, asked before it is made:
 // {"format": 1, "model", "stock_model", "stock_version", "stage": "first"|"whole",
-//  "firmware": [<SHA-256 of each file eWeLink offers it>]}. Answers
+//  "firmware": [<SHA-256 of each file eWeLink offers it>], "device_hash"}. Answers
 // {"wanted": bool, "why": "enough"|"held"|"full"|"store-full"|"limit" when not,
 // "held": [<those of the files kept already>]}.
 export async function wanted(request, env, now = new Date()) {
@@ -545,11 +547,12 @@ export async function wanted(request, env, now = new Date()) {
   const firmware = asked.firmware ?? [];
   if (!fits(asked.model, MODEL) || !fits(asked.stock_model, STOCK_MODEL) || !fits(asked.stock_version, STOCK_VERSION)
       || !STAGES.includes(asked.stage)
+      || !(asked.device_hash == null || (typeof asked.device_hash === "string" && DEVICE_HASH.test(asked.device_hash)))
       || !Array.isArray(firmware) || firmware.length > MAX_FIRMWARE
       || !firmware.every((sha) => typeof sha === "string" && /^[0-9a-f]{64}$/.test(sha))) {
     return answer(400, { error: "that is not a question this tool asks" });
   }
-  await countWanted(env, request, asked.model, now.toISOString().slice(0, 10));
+  await countWanted(env, request, asked.model, now.toISOString().slice(0, 10), asked.device_hash ?? null);
   const held = [];
   for (const sha of firmware) {
     if (await isHeld(env, firmwareKey(sha))) {

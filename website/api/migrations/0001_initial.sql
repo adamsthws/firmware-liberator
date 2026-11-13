@@ -126,13 +126,26 @@ CREATE TABLE IF NOT EXISTS devices (
   dev INTEGER NOT NULL
 ) WITHOUT ROWID;
 
--- How many times a day /wanted was asked of each product model: the
--- devices people would read out for the tool to learn. Kept for good.
+-- How many times a day /wanted was asked of each product model, and by how
+-- many devices: the devices people would read out for the tool to learn.
+-- Kept for good.
 CREATE TABLE IF NOT EXISTS wanted_days (
   day TEXT NOT NULL,
   model TEXT NOT NULL,
   asked INTEGER NOT NULL,
+  devices INTEGER NOT NULL,
   PRIMARY KEY (day, model)
+) WITHOUT ROWID;
+
+-- Each device /wanted was asked of, kept for good as `devices` is for runs:
+-- its keyed hash, as a report's is kept; its model; the first and last day
+-- it was asked of, and how many times.
+CREATE TABLE IF NOT EXISTS wanted_devices (
+  device_hash TEXT PRIMARY KEY,
+  model TEXT NOT NULL,
+  first_day TEXT NOT NULL,
+  last_day TEXT NOT NULL,
+  asks INTEGER NOT NULL
 ) WITHOUT ROWID;
 
 -- What the nightly job (nightly.js) keeps of the reports for good: their

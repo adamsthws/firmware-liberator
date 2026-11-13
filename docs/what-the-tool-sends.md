@@ -35,6 +35,10 @@ stages people choose to stop at, and which devices people want supported next: s
   the kind of problem - the device's kind, its model and the name and version
   of its Sonoff firmware, whether its whole memory was read, and how long it
   took. Never the readout itself, nor its reference.
+- **Before a readout, the question whether one is wanted:** the device's
+  model and the name and version of its Sonoff firmware, and the device as a
+  report names it, so the website counts how many devices of each model
+  people would read out, not how many times they asked.
 - **How the run went:** how long it and each stage took, how long each stage
   waited for your answers, how long each stage kept the device busy, how
   often a stage was tried again, the device's Wi-Fi signal strength, and
