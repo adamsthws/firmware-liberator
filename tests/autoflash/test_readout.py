@@ -25,7 +25,7 @@ from tools.ewelink import firmware_name, offered_firmware
 
 # The website asked, where start_run says it wants every readout.
 ASK_WANTED = readout.ask_wanted
-MANIFEST = {"format": 1, "product": "NEWTHING", "stock_model": "SN-ESP32C3-NEW-01", "version": "1.0.0"}
+MANIFEST = {"format": 1, "model": "NEWTHING", "stock_model": "SN-ESP32C3-NEW-01", "stock_version": "1.0.0"}
 DEVICE = {"deviceid": "1000abcdef", "name": "Hall light", "productModel": "NEWTHING",
           "extra": {"model": "SN-ESP32C3-NEW-01", "uiid": 77}, "params": {"fwVersion": "1.0.0"}}
 
@@ -253,8 +253,8 @@ class StillWantedTests(unittest.TestCase):
         asked = json.loads(got["body"])
         # A random field of its own, so two alike questions never share a proof.
         self.assertRegex(asked.pop("nonce"), r"^[0-9a-f]{16}$")
-        self.assertEqual(asked, {"format": 1, "product": "BASICR4", "model": "SN-BASICR4-01",
-                                 "version": "1.1.0", "stage": "whole", "firmware": ["a" * 64, "b" * 64]})
+        self.assertEqual(asked, {"format": 1, "model": "BASICR4", "stock_model": "SN-BASICR4-01",
+                                 "stock_version": "1.1.0", "stage": "whole", "firmware": ["a" * 64, "b" * 64]})
         stamp, nonce = got["proof"].split(":")
         work = hashlib.sha256(f"{stamp}:{hashlib.sha256(got['body']).hexdigest()}:{nonce}".encode()).digest()
         self.assertLess(int.from_bytes(work, "big"), 1 << (256 - readout.LIGHT_PROOF_BITS))
@@ -854,8 +854,8 @@ class NotifyTests(unittest.TestCase):
             path, value = posted.call_args.args
             readout.notify("me@example.com", [], update=True)
         self.assertEqual((path, value["email"]), ("/notify", "me@example.com"))
-        self.assertEqual(value["devices"], [{"product": "NSPanel", "model": "E32-MSW-NX"},
-                                            {"product": "NEWTHING", "model": "-"}])
+        self.assertEqual(value["devices"], [{"model": "NSPanel", "stock_model": "E32-MSW-NX"},
+                                            {"model": "NEWTHING", "stock_model": "-"}])
         self.assertEqual(value["readouts"], ["2026-11-07-0123456789ab"])
         self.assertIs(value["update"], False)   # a sign-up: confirmed by email if it is not yet
         self.assertIs(posted.call_args.args[1]["update"], True)
@@ -950,7 +950,7 @@ class FirstStageTests(unittest.TestCase):
                 mock.patch.object(readout, "offer", return_value="done") as offered:
             self.assertEqual(readout.run(self.ctx, DEVICE), "done")
         manifest = offered.call_args.args[1]
-        self.assertEqual((manifest["product"], manifest["stock_model"], manifest["version"], manifest["read"]),
+        self.assertEqual((manifest["model"], manifest["stock_model"], manifest["stock_version"], manifest["read"]),
                          ("NEWTHING", "SN-ESP32C3-NEW-01", "1.0.0", False))
 
 
@@ -1324,7 +1324,7 @@ class OfferTests(unittest.TestCase):
         sent, said, kept = self.offer()
         self.assertEqual(self.asked, [])
         self.assertFalse(kept)  # sent: no copy is left behind
-        self.assertEqual(json.loads(sent["manifest.json"])["product"], MANIFEST["product"])
+        self.assertEqual(json.loads(sent["manifest.json"])["model"], MANIFEST["model"])
         self.assertEqual((said, self.became.outcome, self.became.detail), ("", readout.ACCEPTED, "r-1"))
 
     def test_from_a_test_run_it_is_kept_unsent(self):

@@ -36,7 +36,7 @@ test("it answers as the Worker does and keeps what it is given in its folder", a
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), "autoflash-api-"));
   const { child, port } = await started(folder, "NSPANEL");
   try {
-    const body = Buffer.from(JSON.stringify({ format: 1, product: "NSPanel", model: "E32-MSW-NX", version: "1.5.0",
+    const body = Buffer.from(JSON.stringify({ format: 1, model: "NSPanel", stock_model: "E32-MSW-NX", stock_version: "1.5.0",
       stage: "first", firmware: [] }));
     const answer = await fetch(`http://127.0.0.1:${port}/v1/wanted`, { method: "POST", body,
       headers: { "Content-Type": "application/json", "X-Proof": proofFor(body, 20) } });

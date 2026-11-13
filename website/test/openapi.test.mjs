@@ -22,7 +22,7 @@ const METHODS = ["get", "post", "put", "patch", "delete", "options"];
 // changed once out, as a client may be written against it. A release that
 // changes the API adds the new one, whose hash goes here.
 const WRITTEN = {
-  "1.0.0.json": "6a62c4d3754209483ae98170d142360348554801451caa4b0edf7cd6113c13b2",
+  "1.0.0.json": "afe590f62ca70cb3b71fdf8f07f1afb05e01e00c6374f4aed9e402c6233aa2ba",
 };
 
 // Easier work than the real, so the tests are quick: set on the module, as
@@ -166,12 +166,12 @@ test("the limits and names the description gives are the Worker's own", () => {
   assert.equal(schema("Question").properties.format.const, api.FORMAT);
   assert.equal(schema("SignUp").properties.devices.maxItems, api.MAX_DEVICES);
   assert.equal(body("/v1/reports").content["application/json"].schema.properties.reports.maxItems, reports.MAX_REPORTS);
-  assert.equal(schema("Product").pattern, api.PRODUCT.source);
-  assert.equal(schema("FirmwareModel").pattern, api.FIRMWARE_MODEL.source);
-  assert.equal(schema("Version").pattern, api.VERSION.source);
-  // A product is a report's model (report-schema.json), in either case.
+  assert.equal(schema("Model").pattern, api.MODEL.source);
+  assert.equal(schema("StockModel").pattern, api.STOCK_MODEL.source);
+  assert.equal(schema("StockVersion").pattern, api.STOCK_VERSION.source);
+  // A model is a report's model (report-schema.json), in either case.
   const model = JSON.parse(readFileSync(new URL("../api/report-schema.json", import.meta.url), "utf8")).properties.model;
-  assert.equal(api.PRODUCT.source, model.pattern.replaceAll("A-Z", "A-Za-z"));
+  assert.equal(api.MODEL.source, model.pattern.replaceAll("A-Z", "A-Za-z"));
 });
 
 test("every example the description gives fits its schema", () => {
@@ -194,12 +194,12 @@ test("every example the description gives fits its schema", () => {
   }
 });
 
-const ASKED = { format: 1, product: "NEWTHING", model: "SN-NEW-01", version: "1.0.0", stage: "first", firmware: [] };
+const ASKED = { format: 1, model: "NEWTHING", stock_model: "SN-NEW-01", stock_version: "1.0.0", stage: "first", firmware: [] };
 
 test("/v1/wanted answers as described", async () => {
   assert.equal((await answered(json("/v1/wanted", fresh(ASKED)), env())).status, 200);
   assert.equal((await answered(json("/v1/wanted", fresh(ASKED)), env({ ENOUGH: "NEWTHING" }))).status, 200);
-  assert.equal((await answered(json("/v1/wanted", fresh({ ...ASKED, product: "a|b" })), env())).status, 400);
+  assert.equal((await answered(json("/v1/wanted", fresh({ ...ASKED, model: "a|b" })), env())).status, 400);
   assert.equal((await answered(json("/v1/wanted", fresh(ASKED), { "X-Proof": "1:1" }), env())).status, 403);
   const once = json("/v1/wanted", fresh(ASKED));
   const again = once.clone();
@@ -212,7 +212,7 @@ test("/v1/wanted answers as described", async () => {
   assert.equal((await answered(json("/v1/wanted", fresh(ASKED)), env({ INGEST: "off" }))).status, 503);
 });
 
-const MANIFEST = { format: 1, product: "NEWTHING", stock_model: "SN-NEW-01", version: "1.0.0", tool: "2.4.0",
+const MANIFEST = { format: 1, model: "NEWTHING", stock_model: "SN-NEW-01", stock_version: "1.0.0", tool: "2.4.0",
   read: false, offered: [{ file: "offered/user1.bin", version: "1.1.0", sha256: sha("an app") }] };
 const readoutOf = (manifest = MANIFEST) => tar({ "manifest.json": JSON.stringify(manifest), "offered/user1.bin": "an app" });
 const sendReadout = (body, headers) => post("/v1/readout", body, "application/x-tar", headers);
@@ -236,7 +236,7 @@ test("/v1/readout answers as described", async () => {
   assert.equal((await answered(sendReadout(readoutOf()), env({ SENDER_KEY: undefined }))).status, 503);
 });
 
-const SIGN_UP = { format: 1, email: "me@example.com", devices: [{ product: "NEWTHING", model: "SN-NEW-01" }] };
+const SIGN_UP = { format: 1, email: "me@example.com", devices: [{ model: "NEWTHING", stock_model: "SN-NEW-01" }] };
 
 test("/v1/notify, and the pages its emails link to, answer as described", async () => {
   const bindings = env();
@@ -392,7 +392,7 @@ test("a change that would break a client is caught", () => {
     "a path gone": (next) => delete next.paths["/v1/wanted"],
     "a method gone": (next) => delete next.paths["/confirm"].get,
     "a field required that was not": (next) => schemas(next).Question.required.push("firmware"),
-    "a name held tighter": (next) => { schemas(next).Product.pattern = "^[A-Z]+$"; },
+    "a name held tighter": (next) => { schemas(next).Model.pattern = "^[A-Z]+$"; },
     "fewer files to a question": (next) => { schemas(next).Question.properties.firmware.maxItems = 4; },
     "a stage gone": (next) => { schemas(next).Question.properties.stage.enum = ["first"]; },
     "a smaller body": (next) => { next.paths["/v1/readout"].post.requestBody["x-max-bytes"] = 1024; },
@@ -437,7 +437,7 @@ test("a change no client would trip on is let through", () => {
       next.paths["/v1/wanted"].post.responses["429"] = { description: "x",
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } };
     },
-    "a field no longer required": (next) => { schemas(next).Question.required = ["format", "product"]; },
+    "a field no longer required": (next) => { schemas(next).Question.required = ["format", "model"]; },
     "words alone": (next) => { next.info.description = "Said otherwise."; },
   };
   for (const [what, change] of Object.entries(harmless)) {

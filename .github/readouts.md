@@ -95,8 +95,8 @@ files are those
 [docs/readouts.md](../docs/readouts.md#what-is-in-one) lists, and
 `readout.package` and the two `read_and_anonymise` functions write them.
 
-The API relies on this much of the manifest: its `format`, its `product`,
-`stock_model` and `version` (together the readout's key), whether the memory
+The API relies on this much of the manifest: its `format`, its `model`,
+`stock_model` and `stock_version` (together the readout's key), whether the memory
 was `read`, and what every genuine readout of that key shares - `firmware`
 and `layout` for a whole one, the SHA-256 of each `offered` file for a first
 stage - and each `offered` file's `file`, where it is in the tar. A change to any of these is a change to both sides.

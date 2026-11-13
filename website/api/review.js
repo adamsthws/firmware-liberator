@@ -47,11 +47,11 @@ export function holdsHeldWords(text) {
 export function heldFor(report) {
   if (report.kind === "readout") {
     // No words of its own but the names the device and computer gave.
-    const written = [report.model, report.stock_model, report.stock, report.os.version, report.python.version];
+    const written = [report.model, report.stock_model, report.stock_version, report.os.version, report.python.version];
     return written.some(holdsHeldWords) ? "words no report would hold" : null;
   }
   const stopped = report.stopped;
-  const written = [report.model, report.stock, report.os.version, report.python.version, stopped?.text, stopped?.crash_site,
+  const written = [report.model, report.stock_version, report.os.version, report.python.version, stopped?.text, stopped?.crash_site,
     report.firmware_name];
   if (written.some(holdsHeldWords)) {
     return "words no report would hold";

@@ -30,7 +30,7 @@ class PayloadTests(RouteTestCase):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
         data = self.payload(ctx, hardware={"Relay": "switches (meter confirms)"})
         self.assertEqual((data["result"], data["stopped"], data["checks"]), ("converted", None, "passed"))
-        self.assertEqual((data["device"], data["model"], data["stock"]), ("sonoff-s60", "S60TPF", "1.2.0"))
+        self.assertEqual((data["device"], data["model"], data["stock_version"]), ("sonoff-s60", "S60TPF", "1.2.0"))
         self.assertEqual(data["seconds"], 512)
 
     def test_nothing_private_goes_in_it(self):
@@ -150,7 +150,7 @@ class PayloadTests(RouteTestCase):
     def test_an_unknown_device_is_named_by_its_model_alone(self):
         ctx = self.ctx(product_model="NEWTHING", stock_version="not a version")
         data = self.payload(ctx, "failed", failure="the device is a NEWTHING, which this tool does not convert yet")
-        self.assertEqual((data["device"], data["family"], data["model"], data["stock"]),
+        self.assertEqual((data["device"], data["family"], data["model"], data["stock_version"]),
                          (None, None, "NEWTHING", None))
         self.assertEqual(data["stopped"]["error"], "unsupported-device")
 
@@ -161,7 +161,7 @@ class PayloadTests(RouteTestCase):
                                return_value={"model": "s60tpf", "stock_version": "1.2.0"}) as read:
             data = self.payload(ctx)
         read.assert_called_once_with(MAC)
-        self.assertEqual((data["model"], data["stock"]), ("S60TPF", "1.2.0"))
+        self.assertEqual((data["model"], data["stock_version"]), ("S60TPF", "1.2.0"))
 
     def test_the_signal_is_the_weakest_reading_of_any_step(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
@@ -231,10 +231,10 @@ class ReadoutPayloadTests(unittest.TestCase):
     def test_it_says_what_the_readout_was_and_nothing_of_whose(self):
         sent = self.payload()
         self.assertEqual({key: sent[key] for key in ("kind", "result", "error", "family", "device", "model",
-                                                     "stock_model", "stock", "whole", "seconds", "converted_here")},
+                                                     "stock_model", "stock_version", "whole", "seconds", "converted_here")},
                          {"kind": "readout", "result": "accepted", "error": None, "family": "espressif",
                           "device": "sonoff-basicr4", "model": "BASICR4", "stock_model": "SN-ESP32C3-BASICR4-01",
-                          "stock": "1.1.0", "whole": True, "seconds": 75, "converted_here": 4})
+                          "stock_version": "1.1.0", "whole": True, "seconds": 75, "converted_here": 4})
         self.assertEqual(sent["device_hash"], report_data.device_hash("12:34:56:ab:cd:ef"))
         shown = json.dumps(sent)
         for private in ("Kitchen", "r-1", "12:34:56"):
@@ -249,7 +249,7 @@ class ReadoutPayloadTests(unittest.TestCase):
 
     def test_what_is_not_as_the_tool_writes_it_is_sent_as_not_known(self):
         sent = self.payload(product="a product", model="", version="v1", mac=None, whole=None)
-        self.assertEqual([sent[key] for key in ("model", "stock_model", "stock", "device_hash", "whole", "device")],
+        self.assertEqual([sent[key] for key in ("model", "stock_model", "stock_version", "device_hash", "whole", "device")],
                          [None] * 6)
 
 

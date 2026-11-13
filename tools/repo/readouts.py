@@ -19,7 +19,7 @@
                                                     tag), and whom to tell of each
 
 Each line is a readout's key, size, when it came in and what the Worker noted
-of it: the tool, the product, and whether it holds a whole read.
+of it: the tool, the model, and whether it holds a whole read.
 Under readouts/ only the readouts are listed, not the marks of what is held
 beside them; a prefix given lists everything under it.
 
@@ -86,7 +86,7 @@ def objects(prefix: str) -> Iterator[dict[str, Any]]:
 def describe(item: dict[str, Any]) -> str:
     noted = item.get("custom_metadata") or {}
     return "  ".join(shown(part) for part in [item["key"], f"{item.get('size', 0):>10}", item.get("last_modified", ""),
-                     *(f"{key}={noted[key]}" for key in ("tool", "product", "read") if key in noted)])
+                     *(f"{key}={noted[key]}" for key in ("tool", "model", "read") if key in noted)])
 
 
 def shown(value: Any) -> str:
@@ -179,10 +179,10 @@ def settle(action: str, reference: str) -> int:
 # The link each email to an address carries for its owner to remove it, as
 # website/api/index.js's FORGET_URL (tests/repo/test_readouts.py holds them alike).
 FORGET_URL = "https://api.firmwareliberator.com/forget"
-# Each confirmed address, with its devices ("PRODUCT:model", by spaces) and
+# Each confirmed address, with its devices ("MODEL:stock_model", by spaces) and
 # readouts, as website/api/migrations/0001_initial.sql keeps them.
 SUBSCRIBERS = """SELECT who, email, token, since,
-  (SELECT group_concat(product || ':' || model, ' ') FROM subscriber_devices d WHERE d.who = s.who) AS devices,
+  (SELECT group_concat(model || ':' || stock_model, ' ') FROM subscriber_devices d WHERE d.who = s.who) AS devices,
   (SELECT group_concat(readout, ' ') FROM subscriber_readouts r WHERE r.who = s.who) AS readouts
   FROM subscribers s"""
 
@@ -229,7 +229,7 @@ def subscribers(product: str | None = None) -> list[dict[str, Any]]:
     for good or drew a complaint taken off the list first."""
     gone = suppressed()
     if product:
-        rows = query(f"{SUBSCRIBERS} WHERE who IN (SELECT who FROM subscriber_devices WHERE product = ?1) "
+        rows = query(f"{SUBSCRIBERS} WHERE who IN (SELECT who FROM subscriber_devices WHERE model = ?1) "
                      "ORDER BY since", [product.upper()])
     else:
         rows = query(f"{SUBSCRIBERS} ORDER BY since")

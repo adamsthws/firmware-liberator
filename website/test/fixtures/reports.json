@@ -4,7 +4,7 @@
     {
       "format": 1, "id": "0123456789abcdef", "proof": "1794000000:198", "tag": "user",
       "tool": "2.4.0", "kind": "run", "result": "converted", "stopped": null, "family": "espressif",
-      "device": "sonoff-s60", "model": "S60TPG", "stock": "1.2.0",
+      "device": "sonoff-s60", "model": "S60TPG", "stock_version": "1.2.0",
       "device_hash": "a5b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1", "firmware": "tasmota",
       "source": "sonoff", "backup": "saved", "identity": null,
       "os": {"family": "linux", "version": "Ubuntu 24.04.1 LTS", "arch": "x86-64"},
@@ -24,7 +24,7 @@
       "format": 1, "id": "fedcba9876543210", "proof": "1794000000:2293", "tag": "dev",
       "tool": "2.4.0", "kind": "run", "result": "failed",
       "stopped": {"step": "B2", "error": "unsupported-device", "text": "the device is a NEWTHING, which this tool does not convert yet. Nothing was written", "crash_site": null},
-      "family": null, "device": null, "model": "NEWTHING", "stock": null, "device_hash": null, "firmware": null,
+      "family": null, "device": null, "model": "NEWTHING", "stock_version": null, "device_hash": null, "firmware": null,
       "source": "sonoff", "backup": "not taken", "identity": null,
       "os": {"family": "windows", "version": "11 (build 10.0.22631)", "arch": "arm64"},
       "python": {"version": "unknown", "source": "other"}, "seconds": 0, "resumed": true, "stages": {},
@@ -41,7 +41,7 @@
       "format": 1, "id": "cccccccccccccccc", "proof": "1794000000:41", "tag": "user",
       "tool": "3.0.0", "kind": "run", "result": "cancelled",
       "stopped": {"step": "D1", "error": "quit", "text": "", "crash_site": null}, "family": "espressif",
-      "device": "sonoff-s60", "model": "S60TPF", "stock": "1.2.0",
+      "device": "sonoff-s60", "model": "S60TPF", "stock_version": "1.2.0",
       "device_hash": "b6c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2", "firmware": "esphome",
       "source": "sonoff", "backup": "saved", "identity": null,
       "os": {"family": "macos", "version": "15.1", "arch": "arm64"},
@@ -61,7 +61,7 @@
       "tool": "3.0.0", "kind": "run", "result": "crashed",
       "stopped": {"step": "K1", "error": "crash", "text": "something unexpected went wrong: KeyError: 'model'",
         "crash_site": "KeyError at tools/autoflash/routes/beken/arrived.py:212"},
-      "family": "beken", "device": "sonoff-s61", "model": "S61STPF", "stock": "1.0.2",
+      "family": "beken", "device": "sonoff-s61", "model": "S61STPF", "stock_version": "1.0.2",
       "device_hash": "c7d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3", "firmware": "openbeken",
       "source": "sonoff", "backup": "saved", "identity": null,
       "os": {"family": "windows", "version": "11 (build 10.0.26100)", "arch": "x86-64"},
@@ -79,7 +79,7 @@
     {
       "format": 1, "id": "eeeeeeeeeeeeeeee", "proof": "1794000000:12", "tag": "user",
       "tool": "3.0.0", "kind": "run", "result": "converted", "stopped": null, "family": "espressif",
-      "device": "sonoff-s60", "model": "S60TPG", "stock": "1.2.0",
+      "device": "sonoff-s60", "model": "S60TPG", "stock_version": "1.2.0",
       "device_hash": "e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2", "firmware": "sonoff",
       "source": "tasmota", "backup": "existing", "identity": "backup",
       "os": {"family": "macos", "version": "15.1", "arch": "arm64"},
@@ -138,7 +138,7 @@
     {
       "format": 1, "id": "1123456789abcdef", "proof": "1794000000:198", "tag": "user",
       "tool": "3.0.0", "kind": "readout", "result": "accepted", "error": null, "family": "espressif",
-      "device": "sonoff-basicr4", "model": "BASICR4", "stock_model": "SN-ESP32C3-BASICR4-01", "stock": "1.1.0",
+      "device": "sonoff-basicr4", "model": "BASICR4", "stock_model": "SN-ESP32C3-BASICR4-01", "stock_version": "1.1.0",
       "whole": true,
       "device_hash": "b5b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1",
       "os": {"family": "linux", "version": "Ubuntu 24.04.5 LTS", "arch": "x86-64"},
@@ -148,7 +148,7 @@
     {
       "format": 1, "id": "2123456789abcdef", "proof": "1794000000:198", "tag": "dev",
       "tool": "3.0.0", "kind": "readout", "result": "failed", "error": "other", "family": null,
-      "device": null, "model": null, "stock_model": null, "stock": null, "whole": null, "device_hash": null,
+      "device": null, "model": null, "stock_model": null, "stock_version": null, "whole": null, "device_hash": null,
       "os": {"family": "windows", "version": "11 (build 26100)", "arch": "arm64"},
       "python": {"version": "unknown", "source": "other"},
       "seconds": 0, "converted_here": 0

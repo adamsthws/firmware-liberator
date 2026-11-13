@@ -190,7 +190,7 @@ const view = figures && {
         {figures.stock.some((row) => supported.has(row.model)) ? (
           <table class="compact">
             <thead><tr><th>Model</th><th>Sonoff firmware</th><th class="number">Runs</th><th class="number">Converted</th></tr></thead>
-            <tbody>{figures.stock.filter((row) => supported.has(row.model)).map((row) => <tr><td>{row.model}</td><td>{row.stock}</td><td class="number">{row.runs.toLocaleString("en")}</td><td class="number">{row.success === null ? "" : `${row.success}%`}</td></tr>)}</tbody>
+            <tbody>{figures.stock.filter((row) => supported.has(row.model)).map((row) => <tr><td>{row.model}</td><td>{row.stock_version}</td><td class="number">{row.runs.toLocaleString("en")}</td><td class="number">{row.success === null ? "" : `${row.success}%`}</td></tr>)}</tbody>
           </table>
         ) : <p class="none">Not enough runs yet.</p>}
       </section>
