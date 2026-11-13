@@ -228,7 +228,8 @@ export async function gather(env, now) {
     settings: Object.fromEntries((await all("SELECT name, value FROM settings")).map((row) => [row.name, row.value])),
     nearly: await all(NEARLY),
     disputed: await all(DISPUTED),
-    networks: await all("SELECT name, json_array_length(asns) AS asns, taken, problem FROM network_lists ORDER BY name"),
+    networks: await all(`SELECT name, json_array_length(asns) AS asns, previous, taken, problem FROM network_lists
+      ORDER BY name`),
     popularity: await modelTrends(all, now),
     needed: await all(NEEDED, since(NEEDED_DAYS)),
   };
@@ -358,7 +359,7 @@ export async function page(env, who, now, fetcher = fetch) {
     `<section class="card" id="networks"><h2>Networks that count as none</h2><p class="sub">Hosts' and VPNs' networks,
       which count toward no agreement of readouts or of models' names: ${number(CLOUD_ASNS.size)} kept in the code,
       and these lists, fetched each night.</p>`
-      + table([["List", "name"], ["Networks", "asns", "number"], ["Taken", "taken"],
+      + table([["List", "name"], ["Networks", "asns", "number"], ["Before", "previous", "number"], ["Taken", "taken"],
         ["Last try", (row) => row.problem ?? "taken"]], data.networks, "Not fetched yet.")
       + `</section>`,
     `<div class="grid2"><section class="card"><h2>The store of readouts</h2><p class="sub">What it holds each night, against its limit.</p>`

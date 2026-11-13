@@ -483,10 +483,13 @@ CREATE INDEX IF NOT EXISTS readout_reports_device_day ON readout_reports (device
 -- (networks.js), as the nightly cron last took each, by name: `asns`, a JSON
 -- list of numbers ([] while none was taken); `taken`, the day it last was (or
 -- first tried, while none was); `problem`, why the last try was not taken,
--- null when it was.
+-- null when it was; `previous`, how many ASNs were kept before it was last
+-- taken, and `added`, a JSON list of some it added then (LIST_JUMP).
 CREATE TABLE IF NOT EXISTS network_lists (
   name TEXT PRIMARY KEY,
   asns TEXT NOT NULL,
   taken TEXT NOT NULL,
-  problem TEXT
+  problem TEXT,
+  previous INTEGER NOT NULL DEFAULT 0,
+  added TEXT NOT NULL DEFAULT '[]'
 ) WITHOUT ROWID;
