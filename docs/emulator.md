@@ -737,3 +737,11 @@ its relay switching, not to a meter seeing it.
   device's.
 - **A Linux computer only.** `beken-emu.sh computer` is a Linux container; the
   Espressif emulator's [Windows](#on-windows) set-up has no Beken counterpart yet.
+- **No device's own network.** A device on ESPHome that cannot join your Wi-Fi
+  raises its own network, and the tool sends it the details through that
+  (`set_up_through_own_network` in `tools/autoflash/join.py`, from K2). The
+  emulated device cannot be taken there: its Wi-Fi is only the home network's
+  access point, and the computer has no Wi-Fi to see or join another, where the
+  Espressif emulator's has (`wifi join NAME`). So that step is held by unit
+  tests alone. What an emulator run of it would take is in
+  [the emulator's internals](../tools/beken/emulator/README.md#the-devices-own-network).

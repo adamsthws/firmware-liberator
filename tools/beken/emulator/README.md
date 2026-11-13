@@ -82,6 +82,51 @@ python /opt/beken-emulator/src/main.py <S61 dump>.bin --with-boot -chip BK7238 -
 Always pass `--only-uart`: without it the emulator logs every MMIO access
 (300k+ lines) and runs too slowly to get past init.
 
+### The device's own network
+
+Not emulated yet, so a device raising its own network for the tool to join
+([the gap](../../../docs/emulator.md#known-gaps-beken)) is not run here. What
+is known of it:
+
+- **The radio can carry it.** Upstream's Wi-Fi peer (`src/wifipeer.py`) takes
+  either role: the access point a device joins, or a station joining the
+  device's own network. Its self-test `OpenBK7238 Wi-Fi AP` has the peer find
+  OpenBeken's network, join it, take an address from the device and fetch a
+  page; it passes under this project's patches, in seconds
+  (`beken-emu.sh test -k "OpenBK7238 Wi-Fi AP"`).
+- **One peer, one role.** The emulator holds one peer (`attach_wifi_peer` in
+  `src/emulator.py`; the MAC model's `on_tx` is one callback), and `device.py`
+  makes it the home network's access point (`role="ap"`). A device that cannot
+  join that network goes on trying it while its own network is up (ESPHome's
+  `ap:` fallback), so both are needed at once. Upstream's `role="auto"`
+  instead switches the one peer to whichever role the device last took, which
+  leaves the home network.
+- **What it would take**, a few hundred lines and a new image:
+  - a patch to the fork: several peers on the one radio, each frame the device
+    sends given to each, and each ticked, reset and closed with the device
+    (`src/emulator.py`); a station peer taking only its own network's data
+    frames, by BSSID (`_on_data` in `src/wifipeer.py`); and a self-test. It
+    could go upstream.
+  - `device.py`: a second peer, `role="sta"`, on a second TAP device with a
+    MAC of its own, writing the name of the network it finds into the state
+    for the computer; and a way to make the home network fail, switched
+    through a state file as the power is: the Espressif emulator's
+    `device router off`, or a new password (the access point peer's
+    `passphrase`).
+  - `device-net.sh` and `beken-emu.sh`: that TAP device bridged onto a second
+    Docker network on which the device is the router, so the network's own
+    bridge holds no address there (ESPHome's is `setup_network.SETUP_HOST`).
+  - the computer: `nmcli` and `wifi` stand-ins, as the Espressif emulator's
+    (`tools/espressif/emulator/container/bin/`), on both networks, with the
+    right to move its own interfaces (`NET_ADMIN`), to leave the home network
+    and take an address from the device.
+- **Untried:** the device's own network and its station on the home network at
+  once on the MAC model, and how long ESPHome takes to raise its network on
+  the emulator's clock, against the tool's waits.
+- **A stand-in page** answering at the device's address instead, outside the
+  radio, would run only the tool's half of the step, which the unit tests
+  hold already, not the firmware's.
+
 ## What is changed, and why
 
 ### The fork (`patches/*.patch`)
