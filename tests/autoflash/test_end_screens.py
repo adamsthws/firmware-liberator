@@ -199,6 +199,8 @@ class EndScreenTests(unittest.TestCase):
                     else:
                         self.assertIn(unattended_run.ISSUE, screen)
                         self.assertNotIn(unattended_run.HAT, screen)
+                        # Named once, under the way to open an issue.
+                        self.assertEqual(screen.count(runs.display_path(LOG)), 1, screen)
 
     def test_a_report_missing_any_one_of_its_fields_is_still_lined_up_and_balanced(self):
         # Which fields a report has depends on the run (a Beken device's, an

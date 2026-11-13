@@ -599,7 +599,7 @@ class StoppedRunIssueTests(RouteTestCase):
         self.assertFalse([line for line in lines if "Report ID" in line or "clipboard" in line], lines)
 
     def test_a_failed_runs_log_in_the_checkout_is_named_from_there(self):
-        # As "What happened, in full" names it: absolute, it ran past an 80-wide window.
+        # Absolute, it ran past an 80-wide window.
         lines = []
         log = report.ROOT / "captures/devices/123456abcdef/runs/1/run.log"
         with mock.patch.object(output, "tell", side_effect=lambda text="": lines.append(text)), \

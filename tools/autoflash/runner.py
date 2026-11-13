@@ -365,8 +365,8 @@ def tell_how_to_carry_on() -> None:
     output.tell("")
     output.tell("Fix the cause, then carry on with the same command again:")
     output.tell("    start.cmd (double-click it, or .\\start.cmd in a terminal)" if hostsys.IS_WINDOWS else "    sh start.sh")
-    if output.log_path():
-        output.tell(f"What happened, in full: {runs.display_path(output.log_path())}")
+    # The run's log is named once, under the way to open an issue that follows
+    # (report.ask_for_an_issue).
 
 
 def connection_lost(exc: BaseException) -> str:
