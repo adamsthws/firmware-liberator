@@ -957,7 +957,7 @@ otherwise it is:
 | FAIL-UNANSWERED | it stopped at a question no answer covers: new, or reworded |
 | FAIL-UNUSED | an answer was never typed: its question is no longer asked |
 | FAIL-QUESTION | something was wrong as a question was answered: no "(q to quit)" on it, a row the terminal wrapped itself, or a question shown twice (an earlier try left on the screen) |
-| FAIL-SCREEN | the screen it ended on: as the fault suites' FAIL-SCREEN, and how it ended (`unattended_run.end_problems`) - the report's columns lined up and balanced, the links to support the project or the way to open an issue under it, the report ID and what was put on the clipboard as a failed run says them and nowhere else, no question left unanswered above what came after it - a row the terminal wrapped itself, or a line the scenario's `expect.shows` wants not there |
+| FAIL-SCREEN | the screen it ended on: as the fault suites' FAIL-SCREEN, and how it ended (`unattended_run.end_problems`) - the report's columns lined up and balanced, the links to support the project or the way to open an issue under it, the report ID and what was put on the clipboard as a failed run says them and nowhere else, no question left unanswered above what came after it - a row the terminal wrapped itself, or a line the scenario's `expect.shows` wants not there, or one its `expect.never` wants nowhere (at any answer or at the end: a key pressed by accident, echoed) |
 | HARNESS | it could not be run - the device not prepared, say: its `harness.log` says why |
 
 Results and recordings go to `captures/emulation/attended/<time>/`.

@@ -109,6 +109,16 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(self.judge(raw, [], scenario=scenario),
                          ["FAIL-SCREEN: not shown: '^ *Not needed: +1$'"])
 
+    def test_a_line_the_scenario_never_wants_is_found_at_an_answer_or_at_the_end(self):
+        scenario = {"answers": [{"when": "Stage 3", "type": "zq", "anywhere": True}], "expect": {"never": ["zq"]}}
+        for shown, verdicts in ((" Stage 3 - Choosing the firmware - Underway zq\n", ["FAIL-SCREEN: shown: 'zq'"]),
+                                (" Stage 3 - Choosing the firmware - Underway\n", [])):
+            with self.subTest(shown=shown):
+                # Echoed at one answer, then taken off by the end: found all the same.
+                raw, marks = recording(shown, "|", "\x1b[1F\x1b[2K Stage 3 - Choosing the firmware - Complete\n")
+                answers = [{"when": "Stage 3", "type": "zq", "typed_at": marks, "anywhere": True}]
+                self.assertEqual(self.judge(raw, marks, scenario=scenario, answers=answers), verdicts)
+
     def test_a_row_the_terminal_wrapped_after_the_last_answer_is_a_screen_fault(self):
         scenario = {"answers": [], "expect": {}}
         raw, _ = recording(" " + "x" * 130 + "\n")
@@ -180,8 +190,8 @@ class ScenarioTests(unittest.TestCase):
                 self.assertLessEqual(set(scenario), {"about", "start", "prep", "args", "size", "minutes",
                                                      "answers", "expect", "command", "again", "api_enough"})
                 for expect in (scenario["expect"], scenario.get("again", {}).get("expect", {})):
-                    self.assertLessEqual(set(expect), {"exit", "result", "screen", "shows"})
-                    for wanted in expect.get("shows", []):
+                    self.assertLessEqual(set(expect), {"exit", "result", "screen", "shows", "never"})
+                    for wanted in expect.get("shows", []) + expect.get("never", []):
                         re.compile(wanted)
                 for action in scenario.get("prep", []):
                     self.assertIn(action if isinstance(action, str) else action[0],

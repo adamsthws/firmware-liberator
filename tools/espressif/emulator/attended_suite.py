@@ -12,7 +12,8 @@ in the Espressif emulator) or tools/beken/emulator/attended/ (an S61's):
      "start": "fresh" | a saved device (unattended-test.sh --from),
      "prep": [...], "args": [...], "size": "100x40", "minutes": 30,
      "answers": [{"when": regex, "type": keys, "times": n, "optional": bool}, ...],
-     "expect": {"exit": 0, "result": "Converted", "screen": true, "shows": [regex, ...]},
+     "expect": {"exit": 0, "result": "Converted", "screen": true, "shows": [regex, ...],
+                "never": [regex, ...]},
      "again": {"answers": [...], "args": [...], "expect": {...}}}
 
 `again`: the tool run once more on the device as the first run left it, with
@@ -45,7 +46,10 @@ The verdict, from the recording alone (judge):
     FAIL-SCREEN       the screen it ended on: its stages (unattended_run.stage_problems),
                       its report and how it ended (end_problems, with what the
                       run put on the clipboard), a row the terminal wrapped
-                      itself, or a line `expect`'s `shows` wants not on it
+                      itself, or a line `expect`'s `shows` wants not on it, or
+                      one its `never` wants nowhere: on the screen at any
+                      answer, or at the end - a key pressed by accident,
+                      echoed
 
     tools/espressif/emulator/attended_suite.py list
     tools/espressif/emulator/attended_suite.py run [NAME ...] [--workers N] --device MAC
@@ -164,6 +168,10 @@ def judge(scenario: dict[str, Any], raw: bytes, answers: list[dict[str, Any]], c
         verdicts += [f"FAIL-SCREEN: {problem}" for problem in unattended_run.end_problems(text, clipboard)]
         if final.wrapped > wrapped:
             verdicts.append("FAIL-SCREEN: a row the terminal wrapped itself, after the last answer")
+    for unwanted in expect.get("never", []):
+        seen = [screen_at(raw, at, size).render(colour=False) for answer in answers for at in answer["typed_at"]]
+        if any(re.search(unwanted, shown, re.M) for shown in [*seen, text]):
+            verdicts.append(f"FAIL-SCREEN: shown: {unwanted!r}")
     for wanted in expect.get("shows", []):
         if not re.search(wanted, text, re.M):
             verdicts.append(f"FAIL-SCREEN: not shown: {wanted!r}")
