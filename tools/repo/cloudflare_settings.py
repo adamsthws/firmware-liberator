@@ -417,6 +417,7 @@ TOKENS: dict[str, dict[str, Any]] = {
         "account": {
             "D1 Write": "review, approve and reject: the readouts table",
             "Workers R2 Storage Read": "list, changes and notify: the readouts bucket",
+            "Email Sending Read": "changes and notify: the suppression list, to remove addresses gone for good",
         },
     },
 }
