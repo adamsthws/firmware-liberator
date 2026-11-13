@@ -188,7 +188,7 @@ def deliver(key: str, value: str, account: str, helper: str) -> str:
             cs.put_secret(account, secret, value, worker)
         return f"{worker}'s secret {secret}"
     write_env(spec["variable"], value)
-    return f".env.infra {spec['variable']}"
+    return f"tools/repo/.env.infra {spec['variable']}"
 
 
 def make(key: str, account: str, made: dict[str, Any], tokens: list[dict[str, Any]]) -> str:

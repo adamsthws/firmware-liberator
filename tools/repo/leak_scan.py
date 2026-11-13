@@ -56,7 +56,7 @@ LOCAL_FILE = Path(__file__).resolve().parent / "leak-scan.local"
 CAPTURES = ROOT / "captures"
 # The maintainer's tokens, keys and private addresses for the project's
 # services (.env.infra.example).
-INFRA_FILE = ROOT / ".env.infra"
+INFRA_FILE = ROOT / "tools" / "repo" / ".env.infra"
 # The emulator's own network and the computer itself: not anyone's real address.
 EMULATOR_NETWORKS = [ipaddress.ip_network(n) for n in ("192.168.60.0/24", "127.0.0.0/8", "0.0.0.0/32")]
 SHORTEST = 4  # values shorter than this match too much to mean anything

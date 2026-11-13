@@ -207,7 +207,7 @@ npx wrangler r2 object get firmware-liberator-readouts/readouts/2026-11-07/0a1b2
 ```
 
 `readouts.py` reads `CLOUDFLARE_READOUTS_REVIEW_TOKEN` from the environment or
-`.env.infra`: the readouts token, allowed the API's database and to read the
+`tools/repo/.env.infra`: the readouts token, allowed the API's database and to read the
 buckets and the suppression list, which `tools/repo/cloudflare_tokens.py readouts-review` makes.
 wrangler reads its own name, `CLOUDFLARE_API_TOKEN`: set it to the same
 token. Putting or deleting an object needs one that can edit the bucket.

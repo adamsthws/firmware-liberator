@@ -73,7 +73,7 @@ CLIENT_SECRET = "EMULATOR_STATS_CLIENT_SECRET"
 # The machines push copies the credentials to: ssh's names for them,
 # space-separated, from the environment or .env.infra.
 HOSTS = "EMULATOR_STATS_HOSTS"
-INFRA_FILE = ROOT / ".env.infra"
+INFRA_FILE = ROOT / "tools" / "repo" / ".env.infra"
 # The runs and batches kept to send, in each suite's results folder.
 UNSENT, UNSENT_BATCHES = KINDS[0][0], KINDS[1][0]
 # Runs a request at most: the admin view's MAX_RUNS (a test holds them alike).
@@ -406,7 +406,7 @@ def main(argv: list[str]) -> int:
     if argv[:1] == ["push"]:
         to = argv[1:] or hosts()
         if not to:
-            print(f"No machines named: give them, or set {HOSTS} in .env.infra", file=sys.stderr)
+            print(f"No machines named: give them, or set {HOSTS} in tools/repo/.env.infra", file=sys.stderr)
             return 2
         failed = push(to)
         for line in failed:

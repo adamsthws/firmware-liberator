@@ -61,7 +61,7 @@ __pycache__/
 
 # Answers for unattended runs: the eWeLink password, perhaps sudo's (see .env.example).
 .env
-# The maintainer's tokens and private settings (see .env.infra.example).
+# The maintainer's tokens and private settings (see tools/repo/.env.infra.example).
 .env.infra
 .env_cf
 

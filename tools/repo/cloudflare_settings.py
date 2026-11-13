@@ -20,9 +20,9 @@
                                                        FORWARDED
 
 Each command is run with the token whose job it is, from the environment or
-.env.infra (as .env.infra.example shows; not .env, whose names are the
-tool's): `ci` CLOUDFLARE_SETTINGS_CHECK_TOKEN, CI's, which reads; `deploy-token`
-CLOUDFLARE_WORKERS_DEPLOY_TOKEN, the website workflow's; the rest
+tools/repo/.env.infra (as .env.infra.example beside it shows; not .env, whose
+names are the tool's): `ci` CLOUDFLARE_SETTINGS_CHECK_TOKEN, CI's, which reads;
+`deploy-token` CLOUDFLARE_WORKERS_DEPLOY_TOKEN, the website workflow's; the rest
 CLOUDFLARE_SETTINGS_APPLY_TOKEN, the maintainer's, which edits. TOKENS lists
 what each is allowed, and tools/repo/cloudflare_tokens.py makes them; `apply`
 checks each. `apply` changes only what differs. The Workers, and the domains pointing at them, are
@@ -60,7 +60,7 @@ sys.path.insert(0, str(ROOT))
 # The maintainer's tokens and private settings for the project's services,
 # apart from .env, which the tool reads and which refuses a name it does not
 # know.
-ENV_FILE = ROOT / ".env.infra"
+ENV_FILE = ROOT / "tools" / "repo" / ".env.infra"
 
 from tools.autoflash import credentials  # noqa: E402
 from tools.repo import emulator_stats  # noqa: E402
@@ -473,7 +473,7 @@ def variable(name: str) -> str:
         env_file = {}
     value = env_file.get(name)
     if not value:
-        raise SettingsError(f"no {name}: in the environment or .env.infra")
+        raise SettingsError(f"no {name}: in the environment or tools/repo/.env.infra")
     return value
 
 
@@ -1371,7 +1371,7 @@ def access_differences(account: str, to: str | None = None) -> list[tuple[str, s
     except SettingsError:
         return found + [(f"Access for {ADMIN_HOST}", "cannot be made: no address to let in",
                          "set the domain's mail forwarding (python3 tools/repo/cloudflare_settings.py email), "
-                         "or put the address in .env.infra as ACCESS_ADMIN_EMAIL, and run apply again")]
+                         "or put the address in tools/repo/.env.infra as ACCESS_ADMIN_EMAIL, and run apply again")]
     apps = api(f"/accounts/{account}/access/apps") or []
     app = next((app for app in apps if app.get("domain") == ADMIN_HOST), None)
     if app is None:
@@ -1439,7 +1439,7 @@ def keep_credentials(client_id: str, secret: str) -> list[str]:
     machines = emulator_stats.hosts()
     if not machines:
         print("  Copy it to each machine that runs the emulator suites: python3 tools/repo/emulator_stats.py push "
-              f"HOST..., or name them in .env.infra as {emulator_stats.HOSTS} for this to copy it")
+              f"HOST..., or name them in tools/repo/.env.infra as {emulator_stats.HOSTS} for this to copy it")
         return left
     failed = emulator_stats.push(machines)
     copied = len(machines) - len(failed)

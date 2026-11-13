@@ -448,7 +448,7 @@ class CloudflareSettingsTests(unittest.TestCase):
                     mock.patch.object(cs, "TOKEN_VARIABLE", "CLOUDFLARE_SETTINGS_APPLY_TOKEN"), \
                     mock.patch.dict("os.environ", {"CLOUDFLARE_SETTINGS_APPLY_TOKEN": ""}):
                 with self.assertRaisesRegex(cs.SettingsError,
-                                            "no CLOUDFLARE_SETTINGS_APPLY_TOKEN: in the environment or .env.infra"):
+                                            "no CLOUDFLARE_SETTINGS_APPLY_TOKEN: in the environment or tools/repo/.env.infra"):
                     cs.token()
                 env_file.write_text("CLOUDFLARE_SETTINGS_APPLY_TOKEN=from-the-file\n", encoding="utf-8")
                 self.assertEqual(cs.token(), "from-the-file")
@@ -597,13 +597,13 @@ class CloudflareSettingsTests(unittest.TestCase):
         # The tool refuses a .env holding a name it does not know, so these live in .env.infra,
         # which git ignores, so no emulator's copy of the checkout takes the token.
         root = Path(__file__).resolve().parents[2]
-        self.assertEqual(cs.ENV_FILE, root / ".env.infra")
-        example = cs.credentials.parse((root / ".env.infra.example").read_text(encoding="utf-8"))
+        self.assertEqual(cs.ENV_FILE, root / "tools" / "repo" / ".env.infra")
+        example = cs.credentials.parse((root / "tools" / "repo" / ".env.infra.example").read_text(encoding="utf-8"))
         tokens = {spec["variable"] for spec in cs.TOKENS.values() if spec["kept"] == "env"}
         # What a tool asks for at a hidden prompt has no place in it.
         self.assertEqual(set(example), {"ACCESS_ADMIN_EMAIL", cs.emulator_stats.HOSTS, *tokens})
         self.assertFalse(set(example) & (set(cs.credentials.KEYS) | set(cs.credentials.RENAMED)))
-        self.assertEqual(subprocess.run(["git", "check-ignore", "-q", ".env.infra"], cwd=root).returncode, 0)
+        self.assertEqual(subprocess.run(["git", "check-ignore", "-q", "tools/repo/.env.infra"], cwd=root).returncode, 0)
 
     def test_dnssec_is_turned_on_and_pending_is_waited_for(self):
         fake = FakeCloudflare()
@@ -1263,7 +1263,7 @@ class EmulatorTokenTests(unittest.TestCase):
         self.assertNotIn("made-up-secret", out, "the secret is never shown")
         self.assertIn("emulator.env: written", out)
         self.assertIn("Copy it to each machine that runs the emulator suites: python3 tools/repo/emulator_stats.py "
-                      "push HOST..., or name them in .env.infra as EMULATOR_STATS_HOSTS", out)
+                      "push HOST..., or name them in tools/repo/.env.infra as EMULATOR_STATS_HOSTS", out)
         [app] = [app for app in self.fake.apps if app["domain"] == "admin.firmwareliberator.com/v1/emulator"]
         [policy] = self.fake.policies[app["id"]]
         self.assertEqual((policy["decision"], policy["include"], policy["require"]),

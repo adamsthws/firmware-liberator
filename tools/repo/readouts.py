@@ -54,8 +54,9 @@ when a release changes one. Never from CI, whose logs are public.
 Fetch one with `npx wrangler r2 object get <bucket>/<key> --remote --file
 readout.tar`, from website/, with CLOUDFLARE_API_TOKEN, as wrangler names it,
 set to the same token. It is CLOUDFLARE_READOUTS_REVIEW_TOKEN, in the
-environment or .env.infra, as TOKENS in tools/repo/cloudflare_settings.py
-allows it; tools/repo/cloudflare_tokens.py makes it.
+environment or tools/repo/.env.infra, as TOKENS in
+tools/repo/cloudflare_settings.py allows it; tools/repo/cloudflare_tokens.py
+makes it.
 """
 from __future__ import annotations
 
