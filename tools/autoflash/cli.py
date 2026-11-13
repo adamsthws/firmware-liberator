@@ -501,7 +501,7 @@ def _main() -> int:
     handle_signals()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", action="version", version=f"Autoflash {__version__}")
-    parser.add_argument("command", choices=["run", "status", "step", "list", "cleanup", "readout"])
+    parser.add_argument("command", choices=["run", "status", "step", "list", "cleanup", "readout", "email"])
     parser.add_argument("step_id", nargs="?")
     parser.add_argument("--run", help=argparse.SUPPRESS)  # power-user escape hatch; never needed normally
     parser.add_argument("--new", action="store_true", help="start a fresh run, never resume")
@@ -576,6 +576,8 @@ def _main() -> int:
     spoil, _, times = (args.simulate_bad_image or "").partition(":")
     beken_images.SPOIL_STEP, beken_images.SPOIL_TIMES = spoil or None, int(times or 1)
     beken_images.UNKNOWN_TABLE = args.simulate_unknown_table
+    if args.command == "email":
+        return signup.change()
 
     try:
         given = credentials.load(args.env_file)

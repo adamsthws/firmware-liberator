@@ -52,9 +52,7 @@ as its screens do, since it converts much more than smart plugs now.
   like them, or a second of a model from the same place, is neither read nor
   worked for,
   and a file of the firmware eWeLink offers that it holds already is not sent.
-  Whether or not a readout is needed, you can leave your email address, kept
-  with your device's model, to be told when its support changes, once you
-  confirm it from an email sent to it (and reminded once, the next day); every such email has a link to remove it. Its first stage only reads: what the device and
+  Its first stage only reads: what the device and
   eWeLink say it is, and the firmware eWeLink offers it; nothing is sent to the
   device, and a device the tool has not seen gets that alone. One the account
   still lists but that runs Tasmota, ESPHome or OpenBeken now is not read: the
@@ -71,6 +69,14 @@ as its screens do, since it converts much more than smart plugs now.
   taken out and its eWeLink identity made up, goes to a private store behind
   api.firmwareliberator.com; the firmware eWeLink offers the device goes with
   it, as a second version to test. See `docs/readouts.md`.
+- As it exits, the tool asks once whether you would like an email as more
+  devices are supported, offering your eWeLink account's address; the
+  website's notify page asks the same. The tool's sign-up names the models of
+  the devices in your eWeLink account and the readouts you sent, so you also
+  hear of your own devices. Nothing is kept until you confirm from an email
+  (sent again once, the next day), and every email has a link to remove your
+  address. The tool keeps the address so as not to ask again; `email` changes
+  it, or has your computer forget it.
 - A run logs what a backup says about the device - its chip, secure boot and
   flash encryption, flash size, partition table and each app's version - and
   shows it where the table is not one the tool knows: none of it is secret, and

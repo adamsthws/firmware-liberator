@@ -13,9 +13,11 @@ email **privacy@firmwareliberator.com**.
   your devices and the references of readouts you sent. It is used only to
   email you as more devices are supported, and about your own devices. It is
   kept because you agreed, by following the link in the confirmation email,
-  and until you remove it with the link in any email from the project. An
-  address never confirmed is deleted after a few days
-  ([details](what-the-tool-sends.md#your-email-address)).
+  until you remove it with the link in any email from the project, or an
+  email to it bounces for good. An address never confirmed is deleted after
+  a few days ([details](what-the-tool-sends.md#your-email-address)). The
+  tool also keeps it on your computer, so as not to ask again, until you
+  have it forget it (`start.sh email`).
 - **Reports and readouts** hold nothing that names you
   ([what the tool sends](what-the-tool-sends.md), [readouts](readouts.md)).
 
