@@ -307,6 +307,8 @@ as its screens do, since it converts much more than smart plugs now.
   stray one could answer the consent question with an earlier PROCEED, F7
   opened a list of earlier answers over the screen, and Esc cleared what was
   typed. The arrows, Home, End and Delete still edit the answer.
+- F2 no longer stops the countdown after a Ctrl-C: in many terminals its code
+  ends in a Q, which was taken as q.
 - A Ctrl-C pressed before the first stage, while the tool looks for devices, no
   longer leaves "! Are you sure?" on the screen for the rest of the run.
 - A Ctrl-C pressed while nothing is being asked is asked about before the next

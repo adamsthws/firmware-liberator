@@ -366,6 +366,11 @@ class CountdownKeyTests(unittest.TestCase):
         self.assertEqual((code, rows[-1].strip()), (0, "carry on False"))
         self.assertLess(time.monotonic() - started, 10)   # not the countdown's 20 s
 
+    def test_a_key_whose_code_has_a_q_does_not_stop(self):
+        # F2's code in many terminals is Esc O Q: its Q was taken as q.
+        code, rows = self.ask("\x1bOQ\x1b[A\r")
+        self.assertEqual((code, rows[-1].strip()), (0, "carry on True"))
+
     def test_enter_carries_on_at_once_leaving_no_row(self):
         for typed, said in (("\r", "carry on True"), ("q\r", "carry on False")):
             with self.subTest(typed=typed):

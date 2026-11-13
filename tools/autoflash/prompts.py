@@ -842,6 +842,9 @@ def countdown_carry_on(question: str, *, seconds: float = interrupt.CARRY_ON_AFT
                         draw(deadline - time.monotonic())
                         if select.select([fd], [], [], 0.2)[0]:
                             key = os.read(fd, 1).decode("utf-8", "replace")
+                            if key == "\x1b":
+                                _key_code(fd)   # an arrow or F-key: F2's code ends in a Q
+                                continue
                             if key in ("\r", "\n"):
                                 break
                             if key.lower() == "q":
