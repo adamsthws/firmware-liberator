@@ -79,6 +79,19 @@ build the page without the live figures, make some up:
     node scripts/sample-stats.mjs > /tmp/stats.json
     STATS_FILE=/tmp/stats.json npm run build
 
+## Seeing it before a deploy
+
+With Docker, and nothing else installed, from the checkout:
+
+    website/scripts/preview.sh
+
+It builds the site in a container from your checkout as it is now,
+uncommitted changes included, with `/stats` from made-up figures, and
+serves it beside the admin view, which shows a made-up database
+(`scripts/admin-preview.mjs`: the page only, without Access or its
+buttons). It prints both addresses, reachable from your computer alone;
+Ctrl-C stops it.
+
 ## Building it
 
 Node 22 or newer:
