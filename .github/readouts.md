@@ -110,8 +110,8 @@ let past, and only a readout that adds something is kept:
 
 - A readout is kept only while fewer than three of its key are held, each
   from a different sender. Three that agree, from three networks
-  (Cloudflare's ASN for each request; a big cloud's, `CLOUD_ASNS` in
-  `website/api/sender.js`, counts as none), are taken as right, and you are
+  (Cloudflare's ASN for each request; a host's or a VPN's counts as none:
+  `website/api/networks.js`), are taken as right, and you are
   emailed when they are (the admin view's switch turns that off). Three alike
   from fewer networks wait for one more, with no email: the admin view lists
   them under Nearly agreed, with a button to approve them (or

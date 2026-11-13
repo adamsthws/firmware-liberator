@@ -41,12 +41,12 @@ export const SPIKE_WHY = "a day far above usual for its model";
 // test holds the two alike).
 export const READOUTS_EVER = "readouts:all";
 // A model's name is shown in the figures once VOUCH_SENDERS senders have
-// given it, from VOUCH_NETWORKS networks (a big cloud's counting as none:
-// sender.js), on VOUCH_DAYS days (model_senders, reports.js): so no one
-// sender, nor a few in one evening or on rented servers, can put a made-up
-// name on the public page. Who
-// gave one is kept VOUCH_KEEP_DAYS at most, a year, as a rare model's owners
-// may come months apart, and not past its vouching.
+// given it, from VOUCH_NETWORKS networks (a host's or a VPN's counting as
+// none: networks.js), on VOUCH_DAYS days (model_senders, reports.js): so no
+// one sender, nor a few in one evening or on rented servers, can put a
+// made-up name on the public page. Who gave one is kept VOUCH_KEEP_DAYS at
+// most, a year, as a rare model's owners may come months apart, and not past
+// its vouching.
 export const VOUCH_SENDERS = 3;
 export const VOUCH_DAYS = 3;
 export const VOUCH_NETWORKS = 2;
