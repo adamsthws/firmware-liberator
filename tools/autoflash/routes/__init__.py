@@ -67,7 +67,6 @@ def step_prerequisites(ctx: Context) -> dict[str, Any]:
             "- The eWeLink app on your phone, signed in to an eWeLink account",
             "  (A throwaway account is fine).",
             "- Your device set up in the app and connected to Wi-Fi.",
-            "- LAN Control turned on in the device's settings in the app.",
         ]
     else:
         needed = ["- Your device connected to Wi-Fi, as it is now."]

@@ -92,33 +92,6 @@ class NetworkCheckTests(unittest.TestCase):
                 join.warn_if_weak_signal(self.ctx("Home-2G"), -82, ["then"])
 
 
-class AdvertSignalTests(unittest.TestCase):
-    """From Sonoff's firmware the signal is read at A2, before anything is
-    written, from the device's own eWeLink advert, opened with its LAN key."""
-
-    def report(self, source="192.0.2.50"):
-        from tests.autoflash.test_ewelink_lan import ADVERT
-        return {"packets": [{"source": source, "records": [
-            {"type": "TXT", "value": [f"{k}={v}" for k, v in ADVERT.items()]}]}]}
-
-    def ctx(self, devices):
-        from types import SimpleNamespace
-        return SimpleNamespace(account_devices=lambda: devices)
-
-    def test_the_devices_own_advert_gives_its_signal(self):
-        from tests.autoflash.test_ewelink_lan import ADVERT, KEY
-        ctx = self.ctx([{"deviceid": "1000ffffff", "devicekey": "other"},
-                        {"deviceid": ADVERT["id"], "devicekey": KEY}])
-        self.assertEqual(join.advert_signal(ctx, self.report(), "192.0.2.50"), -61)
-
-    def test_another_devices_advert_or_no_key_gives_nothing(self):
-        from tests.autoflash.test_ewelink_lan import ADVERT, KEY
-        key = [{"deviceid": ADVERT["id"], "devicekey": KEY}]
-        self.assertIsNone(join.advert_signal(self.ctx(key), self.report("192.0.2.7"), "192.0.2.50"))
-        self.assertIsNone(join.advert_signal(self.ctx([]), self.report(), "192.0.2.50"))
-        self.assertIsNone(join.advert_signal(self.ctx(None), self.report(), "192.0.2.50"))
-
-
 class DeviceFinderTests(unittest.TestCase):
     """The device is found at its address, or by its hardware address if it moved."""
 

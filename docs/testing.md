@@ -715,9 +715,6 @@ scenario's longest.
 - **A download of the installer that stalls.** Twice, after a short outage
   in the first send to ESPHome, every later download of the installer stalled
   part way. Both passed when run again; it is unexplained.
-- **Discovery right after A1.** Twice in about 70 fresh devices, one found in
-  eWeLink at A1 did not answer the LAN discovery at A2 for half a minute; both
-  passed when run again.
 - **More than one emulator per core** slows the emulated device enough to
   fail with nothing wrong, once losing the tool until it restarted. It
   happened once at one per core too, on a virtual machine whose host was
@@ -816,8 +813,7 @@ there from its first request and never OpenBeken's own name, and if, once
 ESPHome is on it, the interim's settings are gone from its flash.
 
 **Readouts** (`sonoff>readout`, `openbeken>readout`): the Espressif suite's,
-for a Beken device, found by its hardware address as it answers no
-discovery.
+for a Beken device, found by its hardware address as every device is.
 
 - A device fresh from Sonoff's firmware read out unattended; also with the
   device switched off for a second or this computer off its Wi-Fi for 30 s,

@@ -485,6 +485,12 @@ with its stripes removed; no code was read for it.
   `/zeroconf/*`, announced as `eWeLink_%s` on `_ewelink`), with which the eWeLink
   app or an iHost switches the device once it is online. It has no update route
   and no restart route.
+  In the emulator, the public S61 dump on Sonoff's firmware, online on the
+  stub, has port 8081 open, so the tool's `detect.identify` takes it for
+  Sonoff's firmware as it does an S60's. No answer to eWeLink's discovery came
+  back from it there; whether that is the firmware or the emulated network is
+  not known. The tool needs neither: every device is found by the hardware
+  address its eWeLink record gives.
 - `bk_reboot(%d)` is only the log line inside the restart function itself.
 
 ## The update path

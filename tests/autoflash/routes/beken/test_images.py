@@ -294,20 +294,6 @@ class UntestedKindTests(unittest.TestCase):
                 with self.assertRaisesRegex(errors.Abort, "could not be fetched from eWeLink"):
                     images.stock_rbl(S61, ctx)
 
-    def test_a_device_with_no_id_kept_is_found_in_the_account_by_its_mac(self):
-        with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch.object(records, "DEVICES", Path(tmp) / "devices"), \
-                mock.patch.object(records, "CAPTURES", Path(tmp)):
-            ctx = self.context(tmp, device_mac=MAC)
-            ctx.account_device = None
-            ctx.account_devices = lambda: [{"deviceid": "other", "params": {"staMac": "12:34:56:AB:CD:00"}},
-                                           {"deviceid": "1001234abc", "params": {"staMac": MAC.upper()}}]
-            self.assertEqual(images.device_id(ctx), "1001234abc")
-            ctx.account_devices = lambda: None   # eWeLink not reached
-            self.assertEqual(images.device_id(ctx), "")
-            records.remember_device(MAC, ewelink_id="1001234def")
-            self.assertEqual(images.device_id(ctx), "1001234def", "the one this computer keeps")
-
     def test_the_backup_logs_whether_the_flash_matched(self):
         for matched, words in ((True, "was read at 0x3e0000: it matches"), (False, "was not read at 0x3e0000")):
             with tempfile.TemporaryDirectory() as tmp:

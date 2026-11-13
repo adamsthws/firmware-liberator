@@ -226,7 +226,9 @@ state is in there encrypted: AES-128-CBC, keyed with the MD5 of the LAN key,
 the IV in `iv`, the ciphertext in base64 split over `data1` to `data4`.
 Opened, it holds `configure`, `current`, `fwVersion`, `power`, `pulses`,
 `rssi`, `sledOnline`, `staMac`, `switches`, `triggerType` and `voltage`. The
-tool reads the Wi-Fi signal from it before anything is written. The same
+tool does not read it, as the firmware advertises only with LAN Control on in
+the app: it takes the Wi-Fi signal from the device's eWeLink record
+(`params.rssi`) instead, which the S60 reports to the stub too. The same
 `rssi` key sits with `fwVersion`, `staMac` and the meter readings among the
 app's strings for its full state report, which never came in a stub session
 (each lasted under a minute before the installer went). The app's serial
@@ -324,8 +326,7 @@ the instance's network.
 
 - `extra.model` is the firmware's own model (`SN-ESP32C3-S60-01`), by which,
   or by the product model, the tool knows what kind of device it is.
-- `devicekey` is the LAN key (`get_device_key.py` fails without one): at A2
-  the tool opens the device's advert with it.
+- `devicekey` is the LAN key (`get_device_key.py` fails without one).
 - `online` is true only while the device's WebSocket is held. The tool waits
   on it before sending the installer, and by it tells a device cut off from
   the internet (`why_not_found`).
@@ -333,10 +334,10 @@ the instance's network.
   its `update`s (`fwVersion`, `ssid`, `bssid`, `only_device`), as eWeLink
   keeps them. `params.ssid` names its network in "not seen on this computer's
   network". The tool needs `params.fwVersion`, as `query_ota.py` does.
-- `params.staMac` lets the tool ask the device's last address first, and say
-  "is at … but does not answer". The device never reports its MAC on this
-  channel, so it is the MAC `emu.sh` runs the device with (`DEVICE_MAC`,
-  `--sta-mac`).
+- `params.staMac` is how the tool finds the device on the network, as
+  Sonoff's firmware need answer nothing there. The device never reports its
+  MAC on this channel, so it is the MAC `emu.sh` runs the device with
+  (`DEVICE_MAC`, `--sta-mac`).
 - `params.switches` is the relay off until the device reports it; from then
   on only what the device reported, in its own shape.
 - `productModel` (`S60TPG` UK, `S60TPF` Europe) names the region in the

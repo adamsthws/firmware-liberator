@@ -140,11 +140,6 @@ class Kind:
     # firmware again, checking the slot it goes to first; "" for a kind that
     # has none.
     openbeken_revert: str = ""
-    # Whether its conversion uses eWeLink's LAN API, so the device must answer
-    # eWeLink's discovery on the network (LAN Control on in the app). The S61's
-    # goes through eWeLink alone, and the account's record of its hardware
-    # address finds it on the network.
-    uses_lan_control: bool = True
     # Whether another device's stock firmware calls itself the same, with other
     # wiring (the POW Elite's 16 A and 20 A): only eWeLink's product model then
     # says it is this kind, and a device it does not name is not converted.
@@ -279,7 +274,6 @@ SONOFF_S61 = Kind(
     has_relay=True,
     sensors=(),
     openbeken_revert="AutoflashRevertToStock",
-    uses_lan_control=False,
     example_product_model="S61STPF",
 )
 
@@ -305,7 +299,6 @@ SONOFF_BASIC_1GS = Kind(
     has_relay=True,
     sensors=(),
     openbeken_revert="AutoflashRevertToStock",
-    uses_lan_control=False,
     example_product_model="BASIC-1GS",
     # docs/adding-a-device.md#a-beken-device
 )

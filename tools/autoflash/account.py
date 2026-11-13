@@ -27,8 +27,7 @@ def step_pair(ctx: Context) -> dict[str, Any]:
     ip = ctx.state.input("device_ip")
     if not ip:
         output.say("Signing in to eWeLink to see which supported devices are in the account...")
-        devices = ctx.account_devices()
-        ip = find_any_device() if devices is None else find_account_device(ctx, devices)
+        ip = find_account_device(ctx, reached(ctx.account_devices()))
     ctx.state.set_input("device_ip", ip)
     account = getattr(ctx, "account_device", None)
     if account:
@@ -55,11 +54,10 @@ class AccountDevice:
 
 @dataclass(frozen=True)
 class Sighting:
-    """Where an account's device was seen: answering eWeLink's local discovery
-    at `ip`, or only by its hardware address there (LAN Control off)."""
+    """Where an account's device was seen on this network: `ip`, the address
+    its hardware address answers at, or None where it was not seen."""
     device: AccountDevice
     ip: str | None
-    answering: bool
 
 
 def keep_account_private(devices: list[dict[str, Any]]) -> None:
@@ -99,23 +97,12 @@ def account_device(device: dict[str, Any]) -> AccountDevice | None:
     )
 
 
-def match_devices(devices: list[AccountDevice], answers: dict[str, str],
-                neighbours: dict[str, str]) -> list[Sighting]:
-    """Each account device against the network.
-
-    `answers` is {device id: address} from eWeLink's local discovery - the id
-    in each answer is the account's, so nothing else can be mistaken for the
-    device.  `neighbours` is {address: hardware address}, which finds a device
-    that is on the network but not answering.
-    """
+def match_devices(devices: list[AccountDevice], neighbours: dict[str, str]) -> list[Sighting]:
+    """Each account device against the network: `neighbours` is {address:
+    hardware address}, and a device is where the hardware address its record
+    gives answers - the account's own, so nothing else can be mistaken for it."""
     by_mac = {mac: address for address, mac in neighbours.items()}
-    sightings = []
-    for device in devices:
-        if device.device_id in answers:
-            sightings.append(Sighting(device, answers[device.device_id], True))
-        else:
-            sightings.append(Sighting(device, by_mac.get(device.mac or ""), False))
-    return sightings
+    return [Sighting(device, by_mac.get(device.mac or "")) for device in devices]
 
 
 def describe_device(device: AccountDevice) -> str:
@@ -126,21 +113,16 @@ def describe_device(device: AccountDevice) -> str:
 
 
 def ready(sighting: Sighting) -> bool:
-    """Found, and ready to convert from here: answering eWeLink's discovery
-    and online in eWeLink - or, for a kind whose conversion needs no LAN
-    Control, online and at the hardware address the account gives it."""
-    if sighting.answering:
-        return not cut_off(sighting)
-    kind = kinds.by_key(sighting.device.kind)
-    return (bool(sighting.ip) and sighting.device.online is True
-            and kind is not None and not kind.uses_lan_control)
+    """Found, and ready to convert from here: on this network and online in
+    eWeLink, through which the conversion is sent."""
+    return bool(sighting.ip) and sighting.device.online is True
 
 
 def cut_off(sighting: Sighting) -> bool:
-    """Answering here while eWeLink shows it offline: the device is on the
-    network but cannot reach the internet, so the upgrade command, which only
-    reaches it through eWeLink, would never arrive."""
-    return sighting.answering and sighting.device.online is False
+    """On this network while eWeLink shows it offline: the device cannot reach
+    the internet, so the upgrade command, which only reaches it through
+    eWeLink, would never arrive."""
+    return bool(sighting.ip) and sighting.device.online is False
 
 
 # An update cut off part way - this computer stopped while it was being sent -
@@ -150,11 +132,11 @@ AFTER_A_CUT_OFF_SEND = ("switch the device off and on: after an update cut off p
 
 
 def why_not_found(sighting: Sighting) -> str:
-    """What to do about an account device that is not answering here, or that
-    is answering but cannot be converted from here."""
+    """What to do about an account device that is not on this network, or that
+    is but cannot be converted from here."""
     device = sighting.device
     if cut_off(sighting):
-        return (f"{describe_device(device)} answers at {sighting.ip}, but eWeLink shows it "
+        return (f"{describe_device(device)} is at {sighting.ip}, but eWeLink shows it "
                 "offline - it cannot reach the internet. The conversion is sent to the "
                 "device through eWeLink, so allow it internet access for this run (you can "
                 "block it again once it runs Tasmota, which needs no cloud). If it has "
@@ -163,9 +145,6 @@ def why_not_found(sighting: Sighting) -> str:
         return (f"{describe_device(device)}: eWeLink shows it offline - check it is switched "
                 "on at the wall, on your Wi-Fi, and allowed to reach the internet. If "
                 f"it is, {AFTER_A_CUT_OFF_SEND}")
-    if sighting.ip:
-        return (f"{describe_device(device)} is at {sighting.ip} but does not answer on the "
-                "network - turn on LAN Control in its settings in the eWeLink app.")
     network = f" (it is on '{device.ssid}')" if device.ssid else ""
     return (f"{describe_device(device)} is online in eWeLink but was not seen on this "
             f"computer's network{network} - this computer must be on the same Wi-Fi "
@@ -173,24 +152,21 @@ def why_not_found(sighting: Sighting) -> str:
 
 
 def sight_devices(devices: list[AccountDevice]) -> list[Sighting]:
-    """Look for the account's devices on this network."""
+    """Look for the account's devices on this network by the hardware address
+    each one's record gives: where this computer last saw it, if it still
+    answers there, else by a sweep of this computer's networks. Sonoff's
+    firmware need answer nothing more - eWeLink's local discovery only with
+    LAN Control on in the app."""
     macs = {device.mac for device in devices if device.mac}
-    # Where this computer has already seen them: asked straight away.
-    hints = [address for address, mac in hostsys.neighbour_table().items() if mac in macs]
-    try:
-        report = discover_ewelink.discover(6.0, hints=hints, wanted={device.device_id for device in devices
-                                                    if device.online is not False})
-    except OSError:
-        report = {"packets": []}
-    answers: dict[str, str] = {}
-    for packet in report.get("packets", []):
-        for record in packet.get("records", []):
-            if record.get("type") == "TXT":
-                for value in record.get("value") or []:
-                    if str(value).startswith("id="):
-                        answers.setdefault(str(value)[3:], packet["source"])
-    # Asking every address filled the neighbour table: read it again.
-    return match_devices(devices, answers, hostsys.neighbour_table())
+    seen = {address: mac for address, mac in hostsys.neighbour_table().items()
+            if mac in macs and hostsys.ping_ok(address)}
+    if macs - set(seen.values()):
+        try:
+            near = list(hostsys.lan_networks()) or [hostsys.local_ip_towards("192.0.2.1")]
+            seen.update({address: mac for address, mac in hostsys.sweep(near).items() if mac in macs})
+        except OSError:
+            pass  # no network at all: nothing seen
+    return match_devices(devices, seen)
 
 
 # A device that has just started shows offline in eWeLink for a while, answering
@@ -215,8 +191,19 @@ def looking_again(looked: int) -> bool:
     return True
 
 
+def reached(devices: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """The account's devices, as ctx.account_devices gives them; Abort where
+    eWeLink could not be reached, as every step from Sonoff's firmware goes
+    through it."""
+    if devices is None:
+        raise Abort("eWeLink could not be reached, and a device on Sonoff's firmware is found and converted "
+                    "through it. Nothing was written: check this computer's internet connection, then run the "
+                    "same command again")
+    return devices
+
+
 def find_account_device(ctx: Context, devices: list[dict[str, Any]]) -> str:
-    """The address of the device to convert, from the account's that answer here."""
+    """The address of the device to convert, from the account's on this network."""
     started = time.monotonic()
     looked = 0
     while True:
@@ -254,7 +241,7 @@ def find_account_device(ctx: Context, devices: list[dict[str, Any]]) -> str:
             if found:
                 output.transient_begin()
                 choice = prompts.ask_choice(
-                    "More than one device in the account answered. Which one is this run for",
+                    "More than one device in the account is on this network. Which one is this run for",
                     [f"{describe_device(sighting.device)} at {sighting.ip}" for sighting in found],
                 )
                 output.transient_end()
@@ -266,30 +253,24 @@ def find_account_device(ctx: Context, devices: list[dict[str, Any]]) -> str:
                 # plugged in as the run began - and is seconds from joining the
                 # Wi-Fi and the cloud. Answering here already, or not yet.
                 if all(map(cut_off, sightings)):
-                    output.say(f"    It answers here but eWeLink shows it offline; checking again ({waited:.0f}s)...")
+                    output.say(f"    It is on this network but eWeLink shows it offline; checking again ({waited:.0f}s)...")
                 else:
                     output.say(f"    eWeLink shows it offline - just switched on, perhaps; checking again ({waited:.0f}s)...")
                 output.progress(f"waiting for eWeLink to see the device online... {waited:.0f}s")
                 time.sleep(10.0)
                 output.progress_clear()
-                refreshed = ctx.account_devices()
-                if refreshed is None:
-                    return find_any_device()
-                devices = refreshed
+                devices = reached(ctx.account_devices())
                 continue
             if looking_again(looked):
                 looked += 1
-                refreshed = ctx.account_devices()
-                if refreshed is None:
-                    return find_any_device()
-                devices = refreshed
+                devices = reached(ctx.account_devices())
                 continue
             output.transient_begin()
             if all(map(cut_off, sightings)):
                 # Found here: only its own internet access is in the way.
                 title, note = "Your device is on this network but cannot reach the internet", []
             else:
-                title, note = ("Your device did not answer on this network",
+                title, note = ("Your device was not found on this network",
                                hostsys.security_software_note())
             prompts.section(title, [
                 *(f"- {why_not_found(sighting)}" for sighting in sightings),
@@ -306,89 +287,29 @@ def find_account_device(ctx: Context, devices: list[dict[str, Any]]) -> str:
             ip = prompts.ask_ipv4(
                 "The device's address",
                 help_lines=["Find your device's IP address in your router's device list, or eWeLink's device information."],
-                check=device_at({device.device_id for device in supported}),
+                check=device_at({device.mac for device in supported if device.mac}),
             )
             output.transient_end()
             return ip
         if choice == 1:
             ctx.forget_account()
-        refreshed = ctx.account_devices()  # its online status may have changed
-        if refreshed is None:
-            return find_any_device()
-        devices = refreshed
+        devices = reached(ctx.account_devices())  # its online status may have changed
 
 
-def find_any_device() -> str:
-    """Without eWeLink: any device answering on the network, asking only when
-    it is ambiguous."""
-    ip = None
-    looked = 0
-    while not ip:
-        output.say("Looking for supported devices on your network...")
-        devices = find_ewelink_devices()
-        if len(devices) == 1:
-            ip, name = devices[0]
-            output.say(f"Found {name} at {ip}.")
-        elif devices:
-            output.transient_begin()
-            choice = prompts.ask_choice(
-                "More than one device answered. Which one is this run for",
-                [f"{name} at {address}" for address, name in devices],
-            )
-            output.transient_end()
-            ip = devices[choice][0]
-        elif looking_again(looked):
-            looked += 1
-        else:
-            # Taken off the screen once answered, so looking again does not
-            # stack another copy under the stage line.
-            output.transient_begin()
-            note = hostsys.security_software_note()
-            prompts.section("No supported device answered on this network", [
-                "Check, in the eWeLink app:",
-                "- the device is added, on the same 2.4 GHz Wi-Fi network as this",
-                "  computer - the device cannot use 5 GHz",
-                "- LAN Control is turned on in the device's settings",
-                "- the device is switched on at the wall",
-                *([""] + note if note else []),
-            ])
-            choice = prompts.ask_choice(
-                "What now",
-                ["Look again", "Type the device's address myself"],
-            )
-            if choice == 1:
-                ip = prompts.ask_ipv4(
-                    "The device's address",
-                    help_lines=["Find your device's IP address in your router's device list, or eWeLink's device information."],
-                    check=device_at(None),
-                )
-            output.transient_end()
-    return ip
-
-
-def device_at(wanted: set[str] | None) -> Callable[[str], list[str]]:
-    """For a typed address: what is wrong with it, unless a device in the
-    account (`wanted`'s ids; None: any eWeLink device) answers eWeLink's
-    discovery there.  The next stage asks it there, and needs the answer to
-    go on: an address that only answers a ping - the router, say - would
-    stop the run then, with nothing to show what was wrong."""
-    what = "a supported device" if wanted is None else "your device"
-
+def device_at(macs: set[str]) -> Callable[[str], list[str]]:
+    """For a typed address: what is wrong with it, unless the hardware address
+    answering there is one of `macs`, those the account gives its devices. An
+    address that only answers a ping - the router, say - would stop the run
+    further on, with nothing to show what was wrong."""
     def check(address: str) -> list[str]:
-        output.tell(f"    Checking that {address} is {what}...")
-        try:
-            found = discover_ewelink.answered_ids(discover_ewelink.discover(6.0, None, address)["packets"])
-        except OSError:
-            found = set()
-        if found and (wanted is None or found & wanted):
+        output.tell(f"    Checking that {address} is your device...")
+        mac = hostsys.mac_of(address)
+        if mac and hostsys.normalise_mac(mac) in macs:
             return []
-        if found:
-            return [f"{address} is a different eWeLink device, not one of this account's supported devices."]
-        return [
-            f"{address} answered, but not as an eWeLink device - it is probably something",
-            "else, such as your router. If it is the device, turn on LAN Control in its",
-            "settings in the eWeLink app.",
-        ]
+        if mac:
+            return [f"{address} is another device: its hardware address is not one eWeLink has for "
+                    "this account's supported devices."]
+        return [f"Nothing answered at {address}: check the device is switched on, and the address."]
     return check
 
 
@@ -426,8 +347,8 @@ def already_converting(device_ip: str) -> None:
     """Stop with the real reason when the device no longer runs Sonoff's firmware.
 
     eWeLink shows a device part way through a conversion, or converted, as
-    offline, and it does not answer eWeLink discovery; "check LAN Control"
-    would send its owner the wrong way.
+    offline, and eWeLink's record of Sonoff's firmware on it is out of date;
+    asking eWeLink about it would send its owner the wrong way.
     """
     body = setup_network.page(device_ip, timeout=3.0)
     if body is None:
@@ -479,10 +400,9 @@ def note_firmware_name(kind: kinds.Kind | None, latest: dict[str, Any], deviceid
 
 @dataclass(frozen=True)
 class Asked:
-    """What the device says through eWeLink: its discovery report (kept as
-    mdns.json in the run), its firmware's version and model, eWeLink's product
-    model, any update offered, and the latest firmware eWeLink would give it."""
-    report: dict[str, Any]
+    """What eWeLink says of the device: its firmware's version and model,
+    eWeLink's product model, any update offered, and the latest firmware
+    eWeLink would give it."""
     version: str
     model: str
     product: str
@@ -491,31 +411,18 @@ class Asked:
     deviceid: str
 
 
-def ask_ewelink(ctx: Context, device_ip: str) -> Asked:
-    """Ask the device at `device_ip` and eWeLink what it is and runs; nothing is sent to it."""
-    mdns = ctx.dir / "mdns.json"
-    # The same report the discovery tool writes, without its console output.
-    report = discover_ewelink.discover(8.0, None, device_ip)
-    if not report["packets"]:
+def ask_account(ctx: Context, device_id: str, device_ip: str | None = None) -> Asked:
+    """Ask eWeLink what a device is and runs, by its id in the account.
+    Nothing is sent to the device. With its address, what answers there is
+    checked first (already_converting): eWeLink's record of a device that has
+    left Sonoff's firmware is out of date."""
+    if device_ip:
         already_converting(device_ip)
-        note = hostsys.security_software_note()
-        if note:
-            prompts.section("Something on this computer may be in the way", note)
-        raise Abort(f"the device at {device_ip} did not answer the eWeLink discovery; check "
-                    "it is switched on and LAN Control is on in the eWeLink app")
-    mdns.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return _ask(ctx, report, "--mdns-capture", str(mdns))
+    return _ask(ctx, "--device-id", device_id)
 
 
-def ask_account(ctx: Context, device_id: str) -> Asked:
-    """Ask eWeLink what a device is and runs, by its id alone - no discovery on
-    the network: for a device that does no LAN Control (a Beken device), found in
-    the account, not by a local advert. Nothing is sent to the device."""
-    return _ask(ctx, {"packets": []}, "--device-id", device_id)
-
-
-def _ask(ctx: Context, report: dict[str, Any], *query_args: str) -> Asked:
-    """Run query_ota (by mDNS capture or by device id) and read what it wrote."""
+def _ask(ctx: Context, *query_args: str) -> Asked:
+    """Run query_ota and read what it wrote."""
     meta = ctx.dir / "ota-metadata.json"
     if hostsys.run_tool(hostsys.python_script("tools/ewelink/query_ota.py", *query_args,
                                       "--email", ctx.email(), "--region", ctx.ewelink_region(),
@@ -536,14 +443,63 @@ def _ask(ctx: Context, report: dict[str, Any], *query_args: str) -> Asked:
     finally:
         # Its download links may work as access tokens; what is needed is now read.
         meta.unlink(missing_ok=True)
-    return Asked(report, version, model, product, endpoints, latest, deviceid)
+    return Asked(version, model, product, endpoints, latest, deviceid)
+
+
+def device_id(ctx: Context, mac: str | None = None) -> str:
+    """The device's eWeLink id: the one A1 found or this computer keeps for
+    it, else by its Wi-Fi MAC (`mac`, else the run's) in the account's
+    records. "" where none is found."""
+    found = getattr(ctx, "account_device", None)
+    if found is not None and found.device_id:
+        return found.device_id
+    mac = hostsys.normalise_mac(str(mac or ctx.state.input("device_mac") or ""))
+    kept = str(records.read_device(mac).get("ewelink_id") or "") if mac else ""
+    if kept or not mac:
+        return kept
+    for device in ctx.account_devices() or []:
+        sta_mac = (device.get("params") or {}).get("staMac")
+        if sta_mac and hostsys.normalise_mac(str(sta_mac)) == mac:
+            return str(device.get("deviceid") or "")
+    return ""
+
+
+def known_device_id(ctx: Context) -> str:
+    """device_id, which a step that reaches the device through eWeLink needs:
+    Abort where none is found."""
+    found_id = device_id(ctx)
+    if not found_id:
+        raise Abort("the device's eWeLink device id is not known: start again with --new, so the device is found "
+                    "in the account first")
+    return found_id
+
+
+def account_record(ctx: Context) -> dict[str, Any]:
+    """The device's record in the owner's eWeLink account, found by its id
+    (device_id: A1's, this computer's, or by its Wi-Fi MAC there)."""
+    found_id = known_device_id(ctx)
+    devices = ctx.account_devices()
+    if devices is None:
+        raise Abort("eWeLink could not be reached, and the device's firmware can only be sent through it")
+    for device in devices:
+        if device.get("deviceid") == found_id:
+            return device
+    raise Abort(f"the device is no longer in the eWeLink account {ctx.email()}; add it again in the app")
+
+
+def account_signal(device: dict[str, Any]) -> int | None:
+    """The Wi-Fi signal the device last reported to eWeLink (its rssi), in dBm."""
+    rssi = (device.get("params") or {}).get("rssi")
+    return rssi if isinstance(rssi, int) and not isinstance(rssi, bool) and -120 < rssi < 0 else None
 
 
 def step_discover(ctx: Context) -> dict[str, Any]:
-    """A2/A3/A4 - identify the device and read its OTA metadata."""
+    """A2/A3/A4 - identify the device and read its OTA metadata, through
+    eWeLink: Sonoff's firmware need answer nothing on the network."""
     device_ip = ctx.state.require("device_ip")[0]
-    asked = ask_ewelink(ctx, device_ip)
-    report, version, model, product = asked.report, asked.version, asked.model, asked.product
+    record = account_record(ctx)
+    asked = ask_account(ctx, str(record.get("deviceid") or ""), device_ip)
+    version, model, product = asked.version, asked.model, asked.product
     endpoints = asked.endpoints
     kind = kinds.for_account(product, model)
     name = note_firmware_name(kind, asked.latest, asked.deviceid, product, model)
@@ -572,15 +528,14 @@ def step_discover(ctx: Context) -> dict[str, Any]:
         f"Model            {model}",
         f"Product          {product or 'not given'}",
         f"Firmware now     {version}",
-        # Only an Espressif device's own report says this (its LAN API's).
         f"Update offered   {offered}",
         "",
         "The device fetches its new firmware straight from this computer, so no",
         "router rule is needed.",
     ])
-    # The earliest reading of a run from Sonoff's firmware: before anything is
-    # written, while moving the device costs nothing.
-    signal = join.note_signal(ctx, join.advert_signal(ctx, report, device_ip), [
+    # The earliest reading of a run from Sonoff's firmware, as it last told
+    # eWeLink: before anything is written, while moving the device costs nothing.
+    signal = join.note_signal(ctx, account_signal(record), [
         "Nothing has been written yet. The conversion restarts the device",
         "several times, and each time it has to rejoin your Wi-Fi on its own;",
         "a weak signal makes that less certain."])

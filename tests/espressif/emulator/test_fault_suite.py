@@ -1442,7 +1442,7 @@ class ReadoutScenarioTests(unittest.TestCase):
                     (installer, "back_on_sonoff", {"return_value": True}),
                     (installer, "bridge_answers", {"return_value": False}),
                     (installer, "restart_bridge", {"return_value": restarts}),
-                    (installer.detect, "identify", {"return_value": "sonoff"}),
+                    (installer.arrival, "sonoff_answers", {"return_value": True}),
                     (installer.time, "sleep", {}),
                     (dump, "read_dump", {"return_value": (b"", b"", {})}),
                     (dump, "summary", {"return_value": []}),
@@ -1460,7 +1460,7 @@ class ReadoutScenarioTests(unittest.TestCase):
             ctx.state.set_input.side_effect = inputs.__setitem__
             ctx.state.input.side_effect = inputs.get
             chip = mock.Mock(bridge_app=mock.Mock(return_value=b"app"))
-            readout_espressif.read_out(ctx, chip, "FWSW-E32S60-S60-ESP32C3FN4", "1.2.0")
+            readout_espressif.read_out(ctx, chip, "FWSW-E32S60-S60-ESP32C3FN4", "1.2.0", "1000abcdef")
             readout_espressif.back_on_sonoff(ctx)
         return "\n".join(f"[10:00:00] {line}" for line in said)
 

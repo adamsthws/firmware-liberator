@@ -15,7 +15,7 @@ from typing import Any, Callable, TYPE_CHECKING
 
 from tools.espressif import build_vendor_ota, chips, device_facts, dump_stock_flash, layouts
 from tools.autoflash import (
-    detect,
+    account,
     device,
     firewall,
     hostsys,
@@ -133,6 +133,7 @@ def step_bridge(ctx: Context) -> dict[str, Any]:
     device_ip, version = ctx.state.require("device_ip", "stock_version")
     listen_ip = ctx.listen_ip()
     email = ctx.email()
+    device_id = account.known_device_id(ctx)
     port = firewall.choose_port(ctx, "delivery_port", firewall.DELIVERY_PORTS, "the firmware")
     firewall.ensure_firewall(ctx)
     env = ctx.helper_env()
@@ -169,7 +170,7 @@ def step_bridge(ctx: Context) -> dict[str, Any]:
                     "--device-ip", device_ip,
                     "--firmware", str(bridge_file(ctx)),
                     "--email", email, "--region", ctx.ewelink_region(), "--expected-current-version", version,
-                    "--mdns-capture", str(ctx.dir / "mdns.json"),
+                    "--device-id", device_id,
                     "--i-understand-stock-has-no-automatic-rollback",
                     # Each line as it comes, so the run's log has when eWeLink said what.
                     unbuffered=True),
@@ -245,9 +246,9 @@ BRIDGE_SENDS = 3
 
 
 def back_on_sonoff(ctx: Context) -> bool:
-    """Whether the device answers as Sonoff's own firmware."""
+    """Whether the device answers as Sonoff's own firmware (arrival.sonoff_answers)."""
     host = ctx.state.input("device_ip") or ctx.finder.poll()
-    return bool(host) and detect.identify(host) == "sonoff"
+    return bool(host) and arrival.sonoff_answers(ctx, host)
 
 
 def bridge_answers(host: str) -> bool:
@@ -279,7 +280,7 @@ def restart_bridge(host: str) -> bool:
         return False
 
 
-def restart_into_sonoff(host: str, wait: float = 120.0) -> bool:
+def restart_into_sonoff(ctx: Context, host: str, wait: float = 120.0) -> bool:
     """The bridge at `host` restarted into Sonoff's firmware, waited for: whether
     Sonoff's firmware answered there in `wait` seconds. False at once where the
     bridge would not restart."""
@@ -289,7 +290,7 @@ def restart_into_sonoff(host: str, wait: float = 120.0) -> bool:
     started = time.monotonic()
     while time.monotonic() - started < wait:
         time.sleep(3.0)
-        if detect.identify(host) == "sonoff":
+        if arrival.sonoff_answers(ctx, host):
             return True
     return False
 

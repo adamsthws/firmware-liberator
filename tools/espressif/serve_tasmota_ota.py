@@ -58,7 +58,9 @@ def main():
     parser.add_argument("--country-code", default="+44")
     parser.add_argument("--region", default="eu")
     parser.add_argument("--expected-current-version", required=True)
-    parser.add_argument("--mdns-capture", type=Path, required=True)
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("--device-id", help="the device's eWeLink id")
+    target.add_argument("--mdns-capture", type=Path, help="an eWeLink discovery report naming the device")
     parser.add_argument("--wait", type=float, default=120.0)
     parser.add_argument(SAFETY_FLAG, action="store_true")
     parser.add_argument("--readout-model", metavar="NAME",
@@ -150,7 +152,7 @@ def main():
             password = ""
 
     # The run's own sign-in where it handed one over, else one of this tool's.
-    delivered = deliver(account=Account(sign_in, held=given_session()), device_id=target_id_from_mdns(args.mdns_capture), firmware=firmware,
+    delivered = deliver(account=Account(sign_in, held=given_session()), device_id=args.device_id or target_id_from_mdns(args.mdns_capture), firmware=firmware,
                         version=ANNOUNCED_VERSION, listen_ip=args.listen_ip, listen_port=args.listen_port,
                         device_ip=args.device_ip, wait=args.wait, check_device=check)
     if delivered.error and not delivered.interrupted:

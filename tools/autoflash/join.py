@@ -11,7 +11,6 @@ from typing import Any, Callable, TYPE_CHECKING
 
 from tools.autoflash import (
     device,
-    ewelink_lan,
     hostsys,
     interrupt,
     names,
@@ -332,21 +331,6 @@ def device_signal(device: device.Device) -> int | None:
     wifi = status.get("StatusSTS", {}).get("Wifi", {}) if isinstance(status, dict) else {}
     signal = wifi.get("Signal")
     return signal if isinstance(signal, int) else None
-
-
-def advert_signal(ctx: Context, report: dict[str, Any], device_ip: str) -> int | None:
-    """The Wi-Fi signal Sonoff's own firmware gives in its eWeLink advert, which
-    is encrypted with the device's LAN key: opened with the key the account holds
-    for it.  None when it cannot be read."""
-    ids = {str(value)[3:] for packet in report.get("packets", []) if packet.get("source") == device_ip
-           for record in packet.get("records", []) if record.get("type") == "TXT"
-           for value in record.get("value") or [] if str(value).startswith("id=")}
-    fields = ewelink_lan.advert_fields(report, next(iter(ids))) if len(ids) == 1 else None
-    if not fields:
-        return None
-    key = next((device.get("devicekey") for device in ctx.account_devices() or []
-                if device.get("deviceid") == fields.get("id")), None)
-    return ewelink_lan.signal(ewelink_lan.advert_state(fields, key)) if key else None
 
 
 def note_signal(ctx: Context, signal: int | None, then: list[str]) -> int | None:
