@@ -312,7 +312,7 @@ class BekenPinTests(unittest.TestCase):
         self.assertEqual(rbl.header((ROOT / pin["file"]).read_bytes()).version, pin["version"])
         self.assertTrue(pin["file"].endswith(f"-{pin['version']}.rbl"), pin["file"])
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("query=%24.beken%5B%22sonoff-s61%22%5D.openbeken.release&label=Installs%20OpenBeken", readme)
+        self.assertIn("query=%24.beken%5B%22sonoff-s61%22%5D.openbeken.release&label=OpenBeken", readme)
 
     def test_a_version_counts_this_projects_builds_on_a_release(self):
         self.assertEqual(uf.build_version("1.18.320", {}), "1.18.320-1")

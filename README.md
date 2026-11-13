@@ -5,13 +5,11 @@
 
 <br>
 
-[![Runs on Linux, macOS and Windows](https://img.shields.io/badge/Runs%20on-Linux%20%7C%20macOS%20%7C%20Windows-7C3AED)](#what-you-need)
+[![Installs ESPHome, Tasmota or OpenBeken](https://img.shields.io/badge/Installs-ESPHome%20%7C%20Tasmota%20%7C%20OpenBeken-7C3AED)](#what-you-end-up-with)
 
-[![Installs ESPHome](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fartifacts%2Ffirmware.json&query=%24.espressif%5B%22sonoff-s60%22%5D.esphome.esphome&label=Installs%20ESPHome&color=7C3AED)](#what-you-end-up-with) [![Installs Tasmota](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fartifacts%2Ffirmware.json&query=%24.espressif.esp32c3.tasmota.version&label=Installs%20Tasmota&color=7C3AED)](#what-you-end-up-with) [![Installs OpenBeken](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fartifacts%2Ffirmware.json&query=%24.beken%5B%22sonoff-s61%22%5D.openbeken.release&label=Installs%20OpenBeken&color=7C3AED)](#what-you-end-up-with)
+[![Runs on Linux, macOS and Windows](https://img.shields.io/badge/Runs%20on-Linux%20%7C%20macOS%20%7C%20Windows-EA4AAA)](#what-you-need)
 
-[![Release](https://img.shields.io/github/v/release/adamsthws/firmware-liberator?label=Release&color=brightgreen)](https://github.com/adamsthws/firmware-liberator/releases/latest) [![Tests](https://img.shields.io/github/actions/workflow/status/adamsthws/firmware-liberator/emulator-check.yml?branch=main&label=Tests)](https://github.com/adamsthws/firmware-liberator/actions/workflows/emulator-check.yml) [![License: GPL-3.0](https://img.shields.io/github/license/adamsthws/firmware-liberator?label=License)](LICENSE)
-
-[![Discussions](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fimg.shields.io%2Fgithub%2Fdiscussions%2Fadamsthws%2Ffirmware-liberator.json&search=(%5Cd%2B)%20total&replace=%241&label=Discussions&color=blue)](https://github.com/adamsthws/firmware-liberator/discussions) [![Issues](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fimg.shields.io%2Fgithub%2Fissues%2Fadamsthws%2Ffirmware-liberator.json&search=(%5Cd%2B)%20open&replace=%241&label=Issues&color=blue)](https://github.com/adamsthws/firmware-liberator/issues) [![Pull Requests](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fimg.shields.io%2Fgithub%2Fissues-pr%2Fadamsthws%2Ffirmware-liberator.json&search=(%5Cd%2B)%20open&replace=%241&label=Pull%20Requests&color=blue)](https://github.com/adamsthws/firmware-liberator/pulls) [![Downloads](https://img.shields.io/github/downloads/adamsthws/firmware-liberator/total?label=Downloads&color=blue)](https://github.com/adamsthws/firmware-liberator/releases)
+[![Release](https://img.shields.io/github/v/release/adamsthws/firmware-liberator?label=Release&color=brightgreen)](https://github.com/adamsthws/firmware-liberator/releases/latest) [![License: GPL-3.0](https://img.shields.io/github/license/adamsthws/firmware-liberator?label=License)](LICENSE) [![Downloads](https://img.shields.io/github/downloads/adamsthws/firmware-liberator/total?label=Downloads&color=blue)](https://github.com/adamsthws/firmware-liberator/releases)
 
 <br>
 
@@ -19,7 +17,7 @@
 Your kind donation goes toward expansion, supporting many more devices - Thankyou!  
 
 
-[![GitHub](https://img.shields.io/badge/GitHub-Support-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/adamsthws) [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/adamsthws) [![PayPal](https://img.shields.io/badge/PayPal-Support-00457C?logo=paypal&logoColor=white)](https://www.paypal.me/adamsthws)  
+[![GitHub](https://img.shields.io/badge/GitHub-Support-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/adamsthws) [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/adamsthws) [![PayPal](https://img.shields.io/badge/PayPal-Support-blue?logo=paypal&logoColor=white)](https://www.paypal.me/adamsthws)  
 
 > Bonus: Sponsor through GitHub and you earn the coveted Sponsor achievement on your profile: <img src="docs/PublicSponsor.png" alt="Public Sponsor achievement" height="28" align="absmiddle">
 
@@ -204,14 +202,14 @@ To change the address you gave for email updates, or have your computer forget i
 
 ### What you end up with
 
-**Official:**  
-[ESPHome](https://github.com/esphome/esphome) - or - [Tasmota](https://github.com/arendst/tasmota) - or - [OpenBeken](https://github.com/openshwprojects/OpenBK7231T_App)  - (Your choice)
+**Firmware installed:**  
+<a href="https://github.com/esphome/esphome"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fartifacts%2Ffirmware.json&query=%24.espressif%5B%22sonoff-s60%22%5D.esphome.esphome&label=ESPHome&color=7C3AED" alt="ESPHome" align="absmiddle"></a> - or - <a href="https://github.com/arendst/tasmota"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fartifacts%2Ffirmware.json&query=%24.espressif.esp32c3.tasmota.version&label=Tasmota&color=7C3AED" alt="Tasmota" align="absmiddle"></a> - or - <a href="https://github.com/openshwprojects/OpenBK7231T_App"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fadamsthws%2Ffirmware-liberator%2Fmain%2Fartifacts%2Ffirmware.json&query=%24.beken%5B%22sonoff-s61%22%5D.openbeken.release&label=OpenBeken&color=7C3AED" alt="OpenBeken" align="absmiddle"></a>
   
 \- and -
 
 - A full backup of the device's Sonoff firmware to restore later.
 
-- Once flashed, ESPHome, Tasmota and OpenBeken recieve thier updates as normal.
+- Once flashed, your device will receive its firmware updates as normal.
 
 - Converted devices are identical to ones flashed over USB.
 > The final automated checks verify this by hashing at the end of the conversion. (Every block and every byte is verified).
