@@ -23,7 +23,16 @@
 //   does not convert yet (counted as "unsupported", and in "wanted"), counts
 //   apart, as does one the person stopped ("cancelled", with the stages
 //   people stop at); the device figures are of devices the tool converts.
+// - How far each device's testing on the emulators has got (`testing`): the
+//   maintainer's own runs, never a person's, so nothing in them is anyone's
+//   to keep back - but only from checkouts with no changes beside their
+//   commit: version by version of the tool, newest first (`versions`), the
+//   share of its suites' scenarios passed on that version, of its first
+//   tries, the day it was last tested and the firmware it ran; and the same
+//   of its newest version at the top. A device in testing shows here before
+//   anyone has converted one.
 import { LATEST_MIGRATION } from "./database.js";
+import { deviceTesting, newerFirst } from "./emulator.js";
 import { monthsTo, popularity } from "./popularity.js";
 
 export const FORMAT = 1;
@@ -130,6 +139,32 @@ export async function snapshot(db, now = new Date()) {
     reached.set(place, most);
   }
   const atLeast = (k) => [...reached].filter(([place]) => place >= k).reduce((top, [, n]) => Math.max(top, n), 0);
+  // Each device's versions, its suites summed in each: newest first.
+  const testing = new Map();
+  for (const row of await deviceTesting(all, true)) {
+    const device = testing.get(row.device) ?? { device: row.device, family: row.family, suites: new Set(),
+      versions: new Map() };
+    const version = device.versions.get(row.tool) ?? { tool: row.tool, last: "", firmware: {}, scenarios: 0,
+      passed: 0, judged: 0, firstPassed: 0 };
+    if (row.total) {
+      version.scenarios += row.total;
+      version.passed += row.covered;
+    }
+    version.judged += row.judged ?? 0;
+    version.firstPassed += row.passed ?? 0;
+    if (row.last > version.last) {
+      version.last = row.last;
+      version.firmware = JSON.parse(row.firmware ?? "{}");
+    }
+    device.suites.add(row.suite);
+    device.versions.set(row.tool, version);
+    testing.set(row.device, device);
+  }
+  const testedOn = (row) => ({
+    tool: row.tool, lastDay: row.last.slice(0, 10), firmware: row.firmware, scenarios: row.scenarios || null,
+    passed: row.passed, coverage: row.scenarios ? Math.round((1000 * row.passed) / row.scenarios) / 10 : null,
+    firstTry: rate(row.firstPassed, row.judged),
+  });
   const counted = [...reached.keys()].sort((a, b) => a - b)
     .map((place) => ({ devices: place, computers: reached.get(place) - atLeast(place + 1) }))
     .filter((row) => row.computers >= SMALLEST);
@@ -164,5 +199,9 @@ export async function snapshot(db, now = new Date()) {
     computers: computers.map((row) => ({ os: row.os_family, python: row.python_source, runs: row.runs })),
     times: times.map((row) => ({ month: row.month, device: row.device || null, firmware: row.firmware || null,
       source: row.source, runs: row.n, median: row.p50, p90: row.p90 })),
+    testing: [...testing.values()].map((row) => {
+      const versions = [...row.versions.values()].sort((a, b) => newerFirst(a.tool, b.tool)).map(testedOn);
+      return { device: row.device, family: row.family, suites: [...row.suites].sort(), ...versions[0], versions };
+    }).sort((a, b) => a.device.localeCompare(b.device)),
   };
 }

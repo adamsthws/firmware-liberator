@@ -29,6 +29,14 @@ const percent = (value) => (value === null || value === undefined ? null : value
 const minutes = (seconds) => `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
 const date = (day) => new Date(`${day}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 const deviceHref = (key) => (key ? `/devices/${key}` : undefined);
+// A device's status in its badge's words (devices/status/, tools/repo/device_status.py).
+const badges = import.meta.glob("../../../devices/status/*.json", { eager: true, import: "default" });
+const statusOf = (key) => badges[`../../../devices/status/${key}.json`]?.message ?? "";
+// A device's earlier versions' shares, the three newest: "" for none.
+const earlier = (row) => (row.versions ?? []).slice(1).filter((each) => each.coverage !== null).slice(0, 3)
+  .map((each) => `${each.coverage}% on ${each.tool}`).join(", ");
+const firmwareSaid = (firmware) => Object.entries(firmware ?? {})
+  .filter(([name]) => FIRMWARE[name]).map(([name, version]) => `${FIRMWARE[name]} ${version}`).join(", ");
 // The runs a share of conversions is of: those that converted, failed or
 // crashed - not one declined, with nothing to do, or that met a device the
 // tool does not convert yet (snapshot.js).
@@ -74,6 +82,19 @@ const view = figures && {
   })),
   computers: Object.entries(figures.computers.reduce((sum, row) => ({ ...sum, [row.os]: (sum[row.os] ?? 0) + row.runs }), {}))
     .sort(([, a], [, b]) => b - a).map(([os, runs]) => ({ label: OS[os] ?? os, value: runs })),
+  // Figures from before the emulator runs were counted have none.
+  testing: (figures.testing ?? []).filter((row) => row.coverage !== null).map((row) => ({
+    label: `${names[row.device] ?? row.device}${statusOf(row.device) ? ` · ${statusOf(row.device)}` : ""}`,
+    href: deviceHref(names[row.device] ? row.device : null), value: row.coverage,
+    note: [`${row.passed.toLocaleString("en")} of ${row.scenarios.toLocaleString("en")} scenarios passed on version ${row.tool}`,
+      row.firstTry !== null && `${row.firstTry}% of first tries passed`, `last tested ${date(row.lastDay)}`,
+      firmwareSaid(row.firmware),
+      // Figures from before each version was given have only the newest.
+      earlier(row) && `before: ${earlier(row)}`].filter(Boolean).join(" · "),
+    tip: `${names[row.device] ?? row.device}: ${row.coverage}% of its emulator scenarios passed on version ${row.tool}`,
+  })).sort((a, b) => b.value - a.value),
+  testingVersions: (figures.testing ?? []).flatMap((row) => (row.versions ?? [row])
+    .map((each) => ({ ...each, device: names[row.device] ?? row.device }))),
   times: figures.times.filter((row) => row.month === figures.times[0]?.month).map((row) => ({
     ...row, device: names[row.device] ?? row.device ?? "", firmware: FIRMWARE[row.firmware] ?? row.firmware ?? "",
     median: minutes(row.median), p90: minutes(row.p90),
@@ -150,6 +171,21 @@ const view = figures && {
         <DataTable caption="The figures, as a table" rows={figures.modelMonths}
           columns={[["Month", "month"], ["Model", "model"], ["Asked to be read out", "asked", true], ["Read out", "readOut", true],
             ["Converted", "converted", true]]} />
+      </section>
+
+      <section class="card">
+        <h2>Tested on the emulators</h2>
+        <p class="sub">How far each device's testing on emulated devices has got, before and after anyone converts one:
+          the share of its test scenarios - every step of every conversion, with a fault such as a power cut at each -
+          that have passed on the tool's newest version, and how often a scenario passed at its first try; and the
+          same for each version before it, each on its own, as a change may break what passed. The
+          maintainer's own testing, never a person's run.</p>
+        {view.testing.length ? <RankedBars rows={view.testing} max={100} unit="%" label="Emulator scenarios passed, by device" />
+          : <p class="none">No emulator testing counted yet.</p>}
+        <DataTable caption="Every version, as a table" rows={view.testingVersions}
+          columns={[["Device", "device"], ["Tool version", "tool"], ["Scenarios", "scenarios", true],
+            ["Passed", "passed", true], ["Passed (%)", "coverage", true], ["First tries passed (%)", "firstTry", true],
+            ["Last tested", "lastDay"]]} />
       </section>
 
       <div class="pair">

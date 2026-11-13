@@ -92,6 +92,31 @@ export async function sampleDatabase(now = new Date("2026-12-01T03:17:00Z"), rep
   for (const model of new Set([...DEVICES.map(([name]) => name), "NSPANEL", "MINIR4", "M5-2C", "BASICR4"])) {
     db.db.prepare("INSERT OR IGNORE INTO vouched_models (model, day) VALUES (?, ?)").run(model, dayOf(now));
   }
+  // The maintainer's emulator runs of three devices, each suite's batch saying
+  // how many scenarios it has (api/emulator.js): one device nearly through, one
+  // part way, one begun.
+  const run = db.db.prepare(`INSERT INTO emulator_runs (id, finished, received, batch, suite, family, device,
+    scenario, verdict, outcome, rerun, cloud, tool, dirty, firmware) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'stub',
+    ?, 0, ?)`);
+  const batch = db.db.prepare(`INSERT INTO emulator_batches (batch, family, device, suite, started, received, total,
+    planned, cloud, tool, dirty) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'stub', ?, 0)`);
+  for (const [device, family, total, share, firmware] of [
+    ["sonoff-s60", "espressif", 1500, 0.97, { tasmota: "16.0.0", esphome: "2026.10.0-2" }],
+    ["sonoff-s61", "beken", 290, 0.8, { openbeken: "1.18.320-2", esphome: "2026.10.0-3" }],
+    ["sonoff-basic-1gs", "beken", 290, 0.25, { openbeken: "1.18.320-1", esphome: "2026.10.0-2" }]]) {
+    // The version before too, a week earlier and not as far on.
+    for (const [tool, ago, part] of [["2.9.0", 10, 0.7], ["3.0.0", 3, 1]]) {
+      const started = new Date(now.getTime() - ago * 86_400_000).toISOString().slice(0, 19) + "Z";
+      const id = `${tool.replace(/\./g, "")}${device}`.replace(/[^0-9a-f]/g, "").padEnd(16, "0").slice(0, 16);
+      batch.run(id, family, device, "fault", started, started, total, total, tool);
+      for (let n = 0; n < Math.round(total * share * part); n += 1) {
+        const passed = next() < 0.96;
+        run.run(Math.floor(next() * 2 ** 52).toString(16).padStart(32, "0").slice(-32), started, started, id, "fault",
+          family, device, `scenario-${n}`, passed ? "PASS" : "FAIL", passed ? "pass" : "fail", tool,
+          JSON.stringify(firmware));
+      }
+    }
+  }
   const kept = new Map();
   const STATS = { head: async (key) => (kept.has(key) ? {} : null), put: async (key, text) => kept.set(key, text) };
   await nightly({ DB: db, STATS }, now);

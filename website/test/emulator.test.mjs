@@ -321,3 +321,25 @@ test("a device's figures: version by version, each on its own, clean checkouts a
     [["3.0.0", 1], ["2.10.0", 0], ["2.9.0", 2]]);
   assert.deepEqual(["2.9.0", "3.0.0", "2.10.0", "3.0.1"].sort(newerFirst), ["3.0.1", "3.0.0", "2.10.0", "2.9.0"]);
 });
+
+test("the public figures give each device's testing, from checkouts with no changes alone", async () => {
+  const { snapshot } = await import("../api/snapshot.js");
+  const bindings = env();
+  await send(await service(), { runs: [
+    run({ scenario: "a", finished: "2026-11-12T10:00:00Z" }),
+    run({ scenario: "b", finished: "2026-11-12T11:00:00Z" }),
+    run({ scenario: "c", finished: "2026-11-12T12:00:00Z", dirty: true }),
+    run({ scenario: "d", finished: "2026-11-12T13:00:00Z", verdict: "FAIL" }),
+  ] }, { bindings });
+  await send(await service(), { runs: [run({ tool: "2.9.0", scenario: "a", finished: "2026-11-01T10:00:00Z" })] },
+    { bindings });
+  await send(await service(), { batches: [batch({ total: 8 }), batch({ batch: "fedcba9876543210", tool: "2.9.0", total: 4 })] },
+    { bindings, path: BATCHES_PATH });
+  const { testing } = await snapshot(bindings.DB, new Date(NOW));
+  const newest = { tool: "3.0.0", lastDay: "2026-11-12", firmware: { tasmota: "16.0.0" }, scenarios: 8, passed: 2,
+    coverage: 25, firstTry: null };
+  assert.deepEqual(testing, [{ device: "sonoff-s60", family: "espressif", suites: ["fault"], ...newest,
+    versions: [newest, { tool: "2.9.0", lastDay: "2026-11-01", firmware: { tasmota: "16.0.0" }, scenarios: 4, passed: 1,
+      coverage: 25, firstTry: null }] }],
+  "the newest version at the top, then each; under five first tries judged, no share of them is given");
+});
