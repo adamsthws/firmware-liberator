@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from tools.autoflash import output, records
+from tools.autoflash import kinds, output, records
 from tools.autoflash.errors import Abort
 from tools.autoflash.state import RunState
 
@@ -104,8 +104,9 @@ def file_device(ctx: Context, mac: str, account: AccountDevice | None) -> None:
     if hasattr(ctx, "file_under_device"):
         ctx.file_under_device(mac)
     if account:
+        # Only a product model eWeLink gave: AccountDevice.model, shown, falls back to the kind's name.
         records.remember_device(mac, ewelink_name=account.name, ewelink_id=account.device_id,
-                            model=account.model)
+                            model=kinds.by_key(account.kind).product_of(account.model) or None)
     backup = records.find_backup(mac)
     if backup:
         output.say(f"    Its Sonoff firmware is backed up already{f' ({backup.taken})' if backup.taken else ''},"

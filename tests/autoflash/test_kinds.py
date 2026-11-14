@@ -24,6 +24,16 @@ class KnownByTests(unittest.TestCase):
         self.assertIsNone(kinds.for_account("MINIR4M", "SN-ESP32-MINIR4M"))
         self.assertIsNone(kinds.for_account("S60ZBTPF", ""))  # the Zigbee S60
 
+    def test_a_kind_with_one_product_model_gives_it_and_one_with_several_does_not(self):
+        self.assertEqual(kinds.SONOFF_POW_ELITE.only_product, "POWR316D")
+        self.assertEqual(kinds.SONOFF_BASIC_1GS.only_product, "BASIC-1GS")
+        for several in (S60, *(kind for kind in kinds.EVERY if kind.product.pattern.startswith(("NSPANEL", "DUALR3",
+                                                                                                "M5-")))):
+            self.assertEqual(several.only_product, "", several.key)
+        for kind in kinds.EVERY:
+            if kind.only_product:
+                self.assertIs(kinds.for_account(kind.only_product, None, among=kinds.EVERY), kind)
+
     def test_a_stock_firmware_more_than_one_device_calls_itself_is_not_enough(self):
         # The POWR320D's relay is a latching one on other pins, and the Matter
         # M5's firmware is locked: neither is to be taken for its neighbour.

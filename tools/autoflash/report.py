@@ -166,6 +166,36 @@ def own_network_joined(state: RunState) -> bool:
     return bool(state.input(join.OWN_NETWORK))
 
 
+def run_model(ctx: Context) -> str:
+    """The device's product model as eWeLink names it (S60TPG), for the report
+    shown and the one sent alike; "" where nothing says. What the run asked
+    eWeLink comes first; then what the device's record kept from an earlier
+    run, as a run from a converted device asks neither Sonoff's firmware nor
+    eWeLink; then its kind's, where the kind has only one; last the account's
+    record of it, found by its MAC, only where the run is signed in already,
+    as a report asks no password. What the account says is kept in the
+    device's record, for the next run on this computer."""
+    state = ctx.state
+    asked = str(state.input("product_model") or "").strip().upper()
+    kind = kinds.by_key(state.input("device_kind"))
+    if asked or kind is None:
+        return asked
+    mac = state.input("device_mac") or ""
+    # A record's model only if one of the kind's: an earlier version kept the
+    # kind's short name (S60) where eWeLink gave none.
+    found = kind.product_of(records.read_device(mac).get("model")) or kind.only_product
+    if found or not mac or not getattr(getattr(ctx, "ewelink", None), "held", None):
+        return found
+    for device in ctx.account_devices() or []:
+        sta_mac = (device.get("params") or {}).get("staMac")
+        if sta_mac and hostsys.normalise_mac(str(sta_mac)) == hostsys.normalise_mac(mac):
+            found = kind.product_of(str(device.get("productModel") or ""))
+            if found:
+                records.remember_device(mac, model=found)
+            return found
+    return ""
+
+
 def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
                   result: str = "converted") -> list[tuple[str, str]]:
     """This run's answers for a Test reports post, as (label, value) - nothing private.
@@ -183,9 +213,8 @@ def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
     # eWeLink: what the device's record kept from its first conversion - the
     # model, and the Sonoff firmware its backup holds - stands in.
     record = records.read_device(ctx.state.input("device_mac") or "")
-    product = str(ctx.state.input("product_model") or record.get("model") or "")
     # A converted device with no record here says its kind, if not its exact model.
-    model = kind.product_of(product) or (kind.name if runs.run_source(ctx.state) != "sonoff" else "")
+    model = run_model(ctx) or (kind.name if runs.run_source(ctx.state) != "sonoff" else "")
     stock_version = str(ctx.state.input("stock_version") or record.get("stock_version") or "")
     captures = ctx.state.data.get("captures", {})
     retries = {number: captures[f"{step}.attempts"] - 1 for number, (step, _, _) in enumerate(routes.STEPS, 1)
