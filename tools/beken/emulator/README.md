@@ -180,6 +180,18 @@ under them.
   hear a network without joining it, as a computer not on it, so the device
   has a client on its own network only while the computer has joined it. It
   could go upstream.
+- **`0007-wifi-unheard-frames-go-unacknowledged`** (`src/wifimac.py`,
+  `src/emulator.py`, `src/wifipeer.py`, `tests/wifi_peers.py`): a unicast
+  frame no peer on the air has the receiver's address of completes
+  unacknowledged (`RETRY_LIMIT_REACHED`), as the hardware reports it. The
+  firmware counts beacons lost since its last acknowledged frame, so with
+  every frame acknowledged it never saw its access point go: now it does,
+  while the router is still off. It could go upstream, with one of upstream's
+  self-tests changed: the firmware's timing moved a little, so in "BK7238
+  Tuya GBDQA protection switch" two of its tasks' lines now print into each
+  other, and its `initial BLE...` comes out cut ("data is NULLdata al
+  BLE..."), though the device goes on as before, to its MQTT exchange; the
+  other 162 pass.
 
 To change the fork, extract the archive (`captures/emulation/cache/`), apply
 the patches in order, commit the change, and `git format-patch` it into

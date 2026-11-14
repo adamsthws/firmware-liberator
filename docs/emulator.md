@@ -699,7 +699,9 @@ it itself, as the device's power switch is passed to the computer
 **Your Wi-Fi, and the device's own network.** `beken-emu.sh router off`
 switches the home Wi-Fi's access point off, and `router on` back on;
 `router on PASSWORD` gives it a new password, as when you change your
-router's, so a device with the old details can no longer join. A device on
+router's, so a device with the old details can no longer join. With the
+access point off, the device's frames to it go unanswered, and its firmware
+gives it up as a real one does, and looks for it again. A device on
 ESPHome that cannot join raises a network of its own, and the computer sees
 and joins it as from your desktop's Wi-Fi menu: in `beken-emu.sh computer`'s
 shell, `wifi` says what it can see, `wifi join` joins the device's network,

@@ -179,13 +179,29 @@ any check the device makes. None has been tried on a real S61 yet.
    again: `Calibration: stock store`, joined, the API answering
    `autoflash_wifi` with the stock network.
 
+5. **Its own network, and a Wi-Fi that goes.** Refused by the home network (a
+   changed password, or none there), ESPHome raises its own open network,
+   `esphome-xxxxxx` at 192.168.4.1, about 40 seconds after it starts, and goes
+   on trying the home one; given details there it joins with them. Its router
+   off, it notices within seconds and looks for it; off for a minute and a half
+   or more, it raises its own network meanwhile, and rejoins the home one once
+   the router is back. Then, in some runs, it drops the home network for a
+   moment as it takes its own network down, joins again within the second -
+   and releases the address it goes on using (`DHCPACK`, then `DHCPRELEASE`,
+   in the emulated router's log), so a router may give it to another device.
+   The release is lwIP's: LibreTiny's link going down stops DHCP, and in the
+   lwIP the Beken SDK builds that releases the lease, the packet waiting for
+   the router's ARP answer until the link is back. Whether a real device drops
+   its link as it takes its network down is not known
+   ([open question](../../docs/beken-research.md#questions-still-open)).
+
 As with OpenBeken, the emulator does not run the applied app in the same
 process after a firmware-initiated reboot; the flash it saved is what counts.
 It needed one change, in the fork: LibreTiny keeps its FreeRTOS tick on
 hardware Timer 0 (the 26 MHz group), where OpenBeken and the stock firmware
 use Timer 3, and the emulator raised only Timer 3, so every delay waited for
-ever. It now models the 26 MHz group too, each enabled channel firing at its
-own period
+ever. It now models the 26 MHz group too on the BK7238, each enabled channel
+firing at its own period
 ([why the period matters](../../docs/beken-research.md#the-esphome-route-libretiny)).
 
 The tool's own route runs end to end in the emulator
