@@ -652,6 +652,12 @@ def _erase(rows: int) -> bool:
     sys.stdout.write("\x1b[1F\x1b[2K" * rows)
     sys.stdout.flush()
     _s.rows -= rows
+    if _s.underway_row is not None and _s.rows <= _s.underway_row:
+        # The stage's line left above what it showed is gone with it: drawn
+        # live again (_draw_stage), with nothing under it for a note to stand
+        # apart from - else what comes after the stage's outcome gets two blank
+        # rows, its own and _gap's.
+        _s.underway_row, _s.waited = None, False
     return True
 
 
