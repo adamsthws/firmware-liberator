@@ -361,13 +361,16 @@ class SavedDeviceTests(unittest.TestCase):
             ids = Path(directory) / "all.txt"
             ids.write_text("a any\nb any\n", encoding="utf-8")
             rows = [{"id": "a"}, {"id": "b"}]
-            with mock.patch.object(fs, "scenarios", return_value=rows), \
+            emulation = Path(directory, "emulation")
+            Path(emulation, "kept", "second").mkdir(parents=True)
+            with mock.patch.object(fs, "scenarios", return_value=rows), mock.patch.object(fs, "EMU", emulation), \
                     mock.patch.object(fs.scenario_times, "times", return_value={"a": 60, "b": 60}) as took, \
                     mock.patch.object(fs.sys, "argv", ["fault_suite.py", "share", str(ids), "1", "1",
                                                        "--times-from", "elsewhere"]), \
                     mock.patch("builtins.print"):
                 fs.main()
-            self.assertEqual(took.call_args.args, (fs.EMU, Path("elsewhere")))
+            # Its own folders, those kept from another machine, and those given.
+            self.assertEqual(took.call_args.args, (emulation, emulation / "kept" / "second", Path("elsewhere")))
             self.assertEqual([Path(f"{ids}.{n}").read_text(encoding="utf-8") for n in (1, 2)], ["a\n", "b\n"])
 
     def test_a_scenario_waits_for_room_before_it_starts(self):
@@ -406,10 +409,11 @@ class SavedDeviceTests(unittest.TestCase):
                 mock.patch.dict(fs.os.environ, {"AUTOFLASH_EMU_STUB_WORKERS": "1"}), \
                 mock.patch.object(fs.time, "sleep"), mock.patch.object(fs, "report"), \
                 mock.patch.object(fs.scenario_times, "times", return_value={"a": 60, "b": 1800, "c": 300}) as took, \
+                mock.patch.object(fs, "suite_roots", return_value=[Path("here"), Path("kept")]), \
                 mock.patch("builtins.print"):
             fs.batch()
         self.assertEqual(ran, ["b", "c", "a"])
-        self.assertEqual(took.call_args.args, (fs.EMU,))
+        self.assertEqual(took.call_args.args, (Path("here"), Path("kept")))
 
     def test_runs_that_start_from_no_converted_device_ask_nothing_of_it(self):
         self.assertEqual(self.stale('{"version": "1"}', [{"route": "sonoff>esphome", "fault": "crash"},
@@ -641,6 +645,20 @@ class ScenarioTests(unittest.TestCase):
         self.assertIn("sonoff>esphome:C2:outage-180", quick)
         # Not the step faults' outages: those at 10% and 90%, and the readout's.
         self.assertTrue([i for i in quick if "@" in i and i.endswith(":outage-30")])
+
+    def test_found_says_what_each_fault_found_here_and_kept(self):
+        with tempfile.TemporaryDirectory() as directory:
+            emulation = Path(directory)
+            for folder, row in ((emulation / "suite-stub", {"id": "a>b:C3:outage-15", "verdict": "FAIL-CHECKS"}),
+                                (emulation / "kept" / "second" / "suite-stub",
+                                 {"id": "a>b:C3:outage-180", "verdict": "PASS"})):
+                folder.mkdir(parents=True)
+                (folder / "results.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+            with mock.patch.object(fs, "EMU", emulation), mock.patch.object(fs.sys, "argv", ["fault_suite.py", "found"]), \
+                    mock.patch("builtins.print") as said:
+                fs.main()
+        self.assertEqual([call.args[0].split()[:4] for call in said.call_args_list],
+                         [["outage-15", "1", "run", "1"], ["outage-180", "1", "run", "0"]])
 
     def test_each_length_only_where_it_leads_somewhere_of_its_own(self):
         ids = {sc["id"] for sc in fs.scenarios()}

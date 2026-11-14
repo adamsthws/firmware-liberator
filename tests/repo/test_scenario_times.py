@@ -41,6 +41,14 @@ class TimesTests(unittest.TestCase):
                 {"id": "b", "instance": 1, "finished": "2026-11-08 09:00:00"})
         self.assertEqual(scenario_times.times(self.root), {})
 
+    def test_copies_kept_from_other_machines_are_read_where_each_family_keeps_its_own(self):
+        results(self.root / "kept" / "second" / "suite-stub", {"id": "a", "at": "2026-11-08T10:00:00", "seconds": 100})
+        results(self.root / "kept" / "second" / "beken" / "suite", {"id": "b", "at": "2026-11-08T10:00:00", "seconds": 200})
+        self.assertEqual(scenario_times.kept(self.root), [self.root / "kept" / "second"])
+        self.assertEqual(scenario_times.times(*scenario_times.kept(self.root)), {"a": 100.0})
+        self.assertEqual(scenario_times.times(*scenario_times.kept(self.root, "beken")), {"b": 200.0})
+        self.assertEqual(scenario_times.kept(self.root / "none"), [])
+
     def test_each_family_reads_its_own_suites_only(self):
         # The Beken suite's are in beken/, a level down from the Espressif suite's.
         results(self.root / "suite", {"id": "a", "at": "2026-11-08T10:00:00", "seconds": 100})

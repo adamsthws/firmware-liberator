@@ -38,6 +38,17 @@ def when(row: dict[str, Any]) -> dt.datetime | None:
         return None
 
 
+# Where results copied back from other machines are kept, one folder a copy,
+# laid out as captures/emulation is (docs/testing.md#the-fault-suites).
+KEPT = "kept"
+
+
+def kept(emulation: Path, family: str = "") -> list[Path]:
+    """The copies kept below `emulation`, each where `family`'s suite folders
+    are in it ("beken" for the Beken suite's, a level further down)."""
+    return [copy / family if family else copy for copy in sorted(Path(emulation, KEPT).glob("*/"))]
+
+
 def times(*roots: Path) -> dict[str, float]:
     """Each scenario id in the suites' folders in `roots`, and how long it took
     the last time it ran."""

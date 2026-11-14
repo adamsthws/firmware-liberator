@@ -10,6 +10,8 @@ device, every fault - on emulators side by side, on one machine or several
                                           the scenarios in FILE (one id a line; every
                                           scenario without), skipping those passed
     fault_suite.py report                 the latest result of each
+    fault_suite.py found                  what each fault and length has found, in the
+                                          results here and kept (tools/repo/fault_yield.py)
 
 Add --stub-cloud to prep/batch to run against a local eWeLink stub per emulator
 (emu.sh --stub-cloud): fully offline, no cloud lock, every scenario in parallel
@@ -89,7 +91,7 @@ sys.path.insert(0, str(REPO))
 from tools.autoflash import kinds, records  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.report import SONOFF_IDENTITY  # noqa: E402
-from tools.repo import cpu_load, emulator_stats, fault_verdicts, scenario_times  # noqa: E402
+from tools.repo import cpu_load, emulator_stats, fault_verdicts, fault_yield, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import LOW_MEMORY_KB, MemoryWatch, memory_now  # noqa: E402
 from tools.espressif import layouts  # noqa: E402
@@ -2922,7 +2924,7 @@ def batch(ids_file=None):
                          "Run prep (prep-update for an -earlier one).")
     stub_only = 0
     # The longest first, so the batch does not end on one started last (scenario_times).
-    took = scenario_times.times(EMU)
+    took = scenario_times.times(*suite_roots())
     for sc in scenario_times.longest_first([known[i] for i in ids], took):
         i = sc["id"]
         if i in done:
@@ -3159,6 +3161,16 @@ def starved_label(row):
     return "  (memory-starved)" if starved else ""
 
 
+def suite_roots():
+    """This suite's folders here, and those kept from other machines."""
+    return [EMU, *scenario_times.kept(EMU)]
+
+
+def found():
+    for line in fault_yield.found(fault_yield.rows(*suite_roots())):
+        print(line)
+
+
 def report():
     from collections import Counter
     rows = latest()
@@ -3185,7 +3197,7 @@ def main():
     parser.add_argument("--stub-cloud", action="store_true",
                         help="each emulator serves its own local eWeLink stub (offline, fully "
                              "parallel, no cloud lock); the default uses the real cloud")
-    parser.add_argument("command", choices=["prep", "prep-update", "list", "batch", "report", "share"])
+    parser.add_argument("command", choices=["prep", "prep-update", "list", "batch", "report", "found", "share"])
     parser.add_argument("file", nargs="?", help="batch: the scenario ids to run (else all); share: those to "
                         "share out; list: quick, for a routine run's")
     parser.add_argument("workers", nargs="*", type=int,
@@ -3198,7 +3210,7 @@ def main():
             parser.error("share needs the ids file and each machine's emulators: share all.txt 4 4 6")
         try:
             for line in scenario_times.write_shares(args.file, args.workers, scenarios(),
-                                                    scenario_times.times(EMU, *args.times_from)):
+                                                    scenario_times.times(*suite_roots(), *args.times_from)):
                 print(line)
         except ValueError as exc:
             parser.error(str(exc))
@@ -3220,7 +3232,7 @@ def main():
         RESULTS, LOGS = OUT / "results.jsonl", OUT / "logs"
     if args.command == "list" and args.file not in (None, "quick"):
         parser.error("list takes only quick")
-    {"prep": prep, "prep-update": prep_update, "list": lambda: listing(args.file == "quick"), "report": report,
+    {"prep": prep, "prep-update": prep_update, "list": lambda: listing(args.file == "quick"), "report": report, "found": found,
      "batch": lambda: batch(args.file)}[args.command]()
 
 
