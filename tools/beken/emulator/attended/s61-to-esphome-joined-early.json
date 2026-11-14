@@ -15,7 +15,8 @@
   {
    "when": "Stage +\\d+ - Checking ESPHome",
    "router": "on changed-wifi-pass",
-   "anywhere": true
+   "anywhere": true,
+   "after": 20
   },
   {
    "when": "Stage +\\d+ - Checking ESPHome",
