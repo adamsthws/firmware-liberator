@@ -1375,6 +1375,20 @@ with `00 00 10 00 80 80 02 29`, then zeros.
 - **Where each received credential is written.** BLE's `recv_ssid` and the
   `pairingMode` command (`0x492ae`) are the decoders left, AirKiss's being a stub;
   the write of `wifi-ssid` and `wifi-pass` has not been traced from either.
+- **Whether ESPHome on a real Beken device releases its lease as it takes its
+  own network down.** In the emulator, rejoined after a router outage long
+  enough for it to raise its own network, it sometimes drops the home network
+  as it takes its own down, joins again within the second, and releases the
+  address it goes on using
+  ([what was seen](../devices/sonoff-s61/esphome.md#what-the-emulator-has-shown)).
+  The release is the Beken SDK's lwIP 2.2, where `dhcp_stop()` is
+  `dhcp_release_and_stop()` (LibreTiny 1.13.0's `WiFi.disconnect()`, then
+  `sta_ip_down()`); the drop, whether the SDK's `bk_wlan_stop(BK_SOFT_AP)`
+  takes the station's link down with it on hardware too, or only as the
+  emulated MAC sees it. The same code runs on any BK7231N or BK7231T on
+  LibreTiny's ESPHome, so any of them would say: its router off for two
+  minutes, then on, and the router's log read for a `DHCPRELEASE` just after
+  its `DHCPACK`.
 - **Whether the pairing soft-AP serves DHCP on a real device,** and its
   passphrase, without which (or an open build) the emulator's peer cannot
   complete an association.
