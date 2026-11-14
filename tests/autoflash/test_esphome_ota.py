@@ -67,7 +67,8 @@ class FakeESPHome:
         self.port = self.server.getsockname()[1]
         self.received: list[tuple[int, bytes]] = []
         self.features: list[int] = []  # what the client offered, each session
-        threading.Thread(target=self.serve, daemon=True).start()
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+        self.thread.start()
 
     def recv(self, conn, count):
         data = b""
@@ -161,7 +162,15 @@ class FakeESPHome:
             self.acknowledged.set()
 
     def close(self):
+        # Shut down first: closing alone leaves serve() blocked in accept(),
+        # still listening, and later tests in the process found their own
+        # servers' connections reset (Errno 104).
+        try:
+            self.server.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         self.server.close()
+        self.thread.join(5)
 
 
 class WireTests(unittest.TestCase):
@@ -202,6 +211,15 @@ class ProtocolTests(unittest.TestCase):
         fake = FakeESPHome(**kwargs)
         self.addCleanup(fake.close)
         return fake
+
+    def test_a_fake_closed_leaves_nothing_listening(self):
+        # Left listening, it took other tests' connections in the same process
+        # (test_emulator_stats: Errno 104), so tests run side by side failed.
+        fake = FakeESPHome()
+        fake.close()
+        self.assertFalse(fake.thread.is_alive())
+        with self.assertRaises(ConnectionRefusedError):
+            socket.create_connection(("127.0.0.1", fake.port), timeout=2).close()
 
     def test_an_app_arrives_whole_compressed_or_not(self):
         image = bytes(range(256)) * 300
