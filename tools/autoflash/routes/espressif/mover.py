@@ -158,7 +158,7 @@ def wait_for_mover(ctx: Context, what: str) -> bool:
 
     if not join.on_a_device_network():
         try:
-            join.wait_for(ctx, mover, what)
+            join.wait_for(ctx, mover, what, own_network=names.mover_networks(ctx))
             return False
         except Abort:
             pass
@@ -370,6 +370,7 @@ def wait_for_esphome(ctx: Context, wait: float) -> dict[str, Any]:
         started = time.monotonic()
         first_seen = None
         resent = 0
+        own_network = join.OwnNetworkWatch(names.esphome_networks(ctx))
         while time.monotonic() - started < wait + ESPHOME_CONFIRMS_AFTER * as_update:
             host = ctx.state.input("device_ip")
             if esphome.is_esphome(host):
@@ -397,9 +398,10 @@ def wait_for_esphome(ctx: Context, wait: float) -> dict[str, Any]:
                 moved = ctx.finder.poll()
                 if moved and moved != host:
                     continue
-            if join.on_a_device_network():
-                break  # this computer joined its own network already: on through that
-            output.progress(f"waiting for ESPHome... {time.monotonic() - started:.0f}s")
+            elapsed = time.monotonic() - started
+            if join.on_a_device_network() or own_network.up(elapsed):
+                break  # its own network up, or this computer joined it already: on through that
+            output.progress(f"waiting for ESPHome... {elapsed:.0f}s")
             time.sleep(3)
         output.progress_clear()
         if join.set_up_through_own_network(ctx, "ESPHome", esphome.is_esphome, names.esphome_networks(ctx)):

@@ -343,11 +343,45 @@ def warn_if_weak_signal(ctx: Context, signal: Any, then: list[str]) -> None:
     output.transient_end()
 
 
-def wait_for(ctx: Context, check: Callable[[str], Any], what: str, timeout: float = 240.0) -> Any:
+# While a device is waited for on the home network, its own network - raised once
+# it has failed to join for a minute or two - is looked for this often: up, the
+# device cannot join, and waiting the rest of the time out gains nothing.
+OWN_NETWORK_LOOK_EVERY = 30.0
+
+
+class OwnNetworkUp(Abort):
+    """A device waited for raised its own network instead: it cannot join."""
+
+    def __init__(self, what: str, network: str) -> None:
+        super().__init__(f"{what} did not join your Wi-Fi and has raised its own network, {network}")
+        self.network = network
+
+
+class OwnNetworkWatch:
+    """Whether the device's own network, one of `networks`, has come up: looked
+    for at most every OWN_NETWORK_LOOK_EVERY seconds of the wait, the first a
+    period in - the wait's own clock, `elapsed`, so it reads none of its own."""
+
+    def __init__(self, networks: tuple[str, ...]) -> None:
+        self.networks = networks
+        self.next_look = OWN_NETWORK_LOOK_EVERY
+
+    def up(self, elapsed: float) -> str | None:
+        if elapsed < self.next_look:
+            return None
+        self.next_look = elapsed + OWN_NETWORK_LOOK_EVERY
+        return prompts.find_ssid(self.networks, timeout=10)
+
+
+def wait_for(ctx: Context, check: Callable[[str], Any], what: str, timeout: float = 240.0,
+             own_network: tuple[str, ...] = ()) -> Any:
     """Wait for `check(address)` to answer, finding the device again by its
-    hardware address if it came back on a new address."""
+    hardware address if it came back on a new address.  With `own_network`,
+    the names the device's own network can have: that coming up ends the
+    wait at once (OwnNetworkUp, an Abort)."""
     started = time.monotonic()
-    while time.monotonic() - started < timeout:
+    watch = OwnNetworkWatch(own_network) if own_network else None
+    while (elapsed := time.monotonic() - started) < timeout:
         host = ctx.state.input("device_ip")
         found = host and check(host)
         if found:
@@ -356,7 +390,11 @@ def wait_for(ctx: Context, check: Callable[[str], Any], what: str, timeout: floa
         moved = ctx.finder.poll()
         if moved and moved != host:
             continue
-        output.progress(f"waiting for {what}... {time.monotonic() - started:.0f}s")
+        network = watch.up(elapsed) if watch else None
+        if network:
+            output.progress_clear()
+            raise OwnNetworkUp(what, network)
+        output.progress(f"waiting for {what}... {elapsed:.0f}s")
         time.sleep(3)
     output.progress_clear()
     raise Abort(f"{what} did not answer within {timeout / 60:.0f} minutes")

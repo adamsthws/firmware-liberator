@@ -382,5 +382,43 @@ class LocateTests(SetupNetworkTestCase):
         self.assertEqual(len(offered), 2)
 
 
+
+class OwnNetworkWatchTests(unittest.TestCase):
+    """A device that cannot join raises its own network after a minute or two:
+    the wait for it on the home network ends then, not when its time is out."""
+
+    def waited(self, scans, own_network=("esphome-abcdef",), timeout=180.0):
+        clock = [0.0]
+        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda key: "192.0.2.50"),
+                              finder=SimpleNamespace(poll=lambda: None))
+        with mock.patch.object(join.time, "monotonic", side_effect=lambda: clock[0]), \
+                mock.patch.object(join.time, "sleep", side_effect=lambda s: clock.__setitem__(0, clock[0] + s)), \
+                mock.patch.object(join.prompts, "find_ssid", side_effect=scans) as scanned, \
+                mock.patch.object(join.output, "progress"), mock.patch.object(join.output, "progress_clear"):
+            try:
+                join.wait_for(ctx, lambda host: None, "ESPHome on your Wi-Fi", timeout=timeout,
+                              own_network=own_network)
+            except errors.Abort as exc:
+                return exc, clock[0], scanned.call_count
+        raise AssertionError("the wait ended with the device answering")
+
+    def test_the_wait_ends_once_the_devices_own_network_is_up(self):
+        stopped, at, scans = self.waited([None, None, "esphome-abcdef"])
+        self.assertIsInstance(stopped, join.OwnNetworkUp)
+        self.assertEqual(stopped.network, "esphome-abcdef")
+        self.assertEqual(scans, 3, "every OWN_NETWORK_LOOK_EVERY seconds, not each look at the device")
+        self.assertLess(at, 3 * join.OWN_NETWORK_LOOK_EVERY + 10)
+
+    def test_with_none_up_the_wait_runs_its_time_out(self):
+        stopped, at, _ = self.waited(lambda *a, **k: None)
+        self.assertNotIsInstance(stopped, join.OwnNetworkUp)
+        self.assertGreaterEqual(at, 180.0)
+
+    def test_without_its_names_nothing_is_looked_for(self):
+        stopped, _, scans = self.waited(AssertionError("scanned"), own_network=())
+        self.assertNotIsInstance(stopped, join.OwnNetworkUp)
+        self.assertEqual(scans, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

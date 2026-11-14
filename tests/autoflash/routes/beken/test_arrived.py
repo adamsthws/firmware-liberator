@@ -203,6 +203,7 @@ class ArrivedTests(unittest.TestCase):
                     mock.patch.object(openbeken, "info", side_effect=[{"uptime_s": 90}, None, {"uptime_s": 60}]), \
                     mock.patch.object(arrived.join.time, "sleep"), \
                     mock.patch.object(arrived.join.time, "monotonic", side_effect=iter(range(0, 100000, 100))), \
+                    mock.patch.object(arrived.join.prompts, "find_ssid", return_value=None), \
                     mock.patch.object(arrival.prompts, "UNATTENDED", True):
                 with self.assertRaises(errors.GoBack) as back:
                     arrived.step_esphome_check(ctx, wait=1000)

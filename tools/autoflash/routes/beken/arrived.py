@@ -267,7 +267,7 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
         nonlocal started
         started = time.monotonic()
         try:
-            join.wait_for(ctx, check, "ESPHome on your Wi-Fi", timeout=wait)
+            join.wait_for(ctx, check, "ESPHome on your Wi-Fi", timeout=wait, own_network=names.esphome_networks(ctx))
             return {}
         except Abort as exc:
             # As the Espressif route's I2: one that cannot join your Wi-Fi raises

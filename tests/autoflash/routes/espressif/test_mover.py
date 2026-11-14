@@ -163,6 +163,24 @@ class ConfirmedOnlyAfterAMinuteTests(RouteTestCase):
         resent.assert_called_once()
         self.assertEqual(result["resent"], 1)
 
+    def test_its_own_network_up_ends_the_wait_without_the_rest_of_it(self):
+        ctx = self.ctx(source="tasmota", firmware="esphome")
+        self.clock = 1000.0
+
+        def tick():
+            self.clock += 3
+            return self.clock
+        scans = iter([None, "esphome-abcdef"])
+        with mock.patch.object(time, "monotonic", side_effect=tick), mock.patch.object(time, "sleep"), \
+                mock.patch.object(esphome, "is_esphome", return_value=False), \
+                mock.patch.object(esphome_ota, "probe", return_value=None), \
+                mock.patch.object(join.prompts, "find_ssid", side_effect=lambda *a, **k: next(scans)), \
+                mock.patch.object(join, "set_up_through_own_network", return_value=("Home-2G", "pw")) as own:
+            result = mover.step_esphome_check(ctx)
+        own.assert_called_once()
+        self.assertEqual(result["set_up_through"], "its own network")
+        self.assertLess(result["seconds"], 2 * join.OWN_NETWORK_LOOK_EVERY + 20, "not the three minutes")
+
     def test_the_device_is_followed_to_a_new_address(self):
         ctx = self.ctx(source="tasmota", firmware="esphome")
 
@@ -654,7 +672,7 @@ class BerryFromStartupTests(unittest.TestCase):
         answers = iter(versions)
         seen = []
 
-        def wait_for(ctx_, check, what, timeout=240.0):
+        def wait_for(ctx_, check, what, timeout=240.0, own_network=()):
             seen.append(check("192.168.60.50"))
 
         with mock.patch.object(detect, "identify", return_value=running), \
@@ -708,7 +726,7 @@ class MoverOwnNetworkTests(unittest.TestCase):
         tries = iter(answers)
         outcomes = iter(sends)
 
-        def wait_for(ctx, check, what, timeout=240.0):
+        def wait_for(ctx, check, what, timeout=240.0, own_network=()):
             if not next(tries):
                 raise errors.Abort(f"{what} did not answer within 4 minutes")
 

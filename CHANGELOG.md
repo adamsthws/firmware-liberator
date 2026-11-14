@@ -207,6 +207,9 @@ check.
   is; the run stopped. The report says whether it had to be, on either family.
 - A Beken device whose ESPHome cannot join your Wi-Fi is given it through
   ESPHome's own network, as an Espressif device is.
+- A device whose new firmware cannot join your Wi-Fi - ESPHome, or the mover
+  on the way to it - is set up through its own network as soon as that network
+  is up, a minute or two in, where the run waited three minutes first.
 - The report sent says whether your computer joined a network the device
   raised itself on either family, and now also when ESPHome or the mover was
   set up through its own network; it said so only for an Espressif device's
