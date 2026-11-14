@@ -40,8 +40,11 @@ failed (FAIL-SCREEN if not), and that a device converted to OpenBeken or ESPHome
 runs this checkout's release of it (FAIL-NOT-LATEST if not).
 
 The faults: the device switched off for 1 or 30 s (deviceoff), the network
-gone - the router off - for 30 s (outage), the tool killed and run again after 1 or
-180 s (crash), and Ctrl-C (ctrlc); at the steps that write, a power cut and
+gone - the router off - for 5, 15, 30, 60, 120 or 180 s (outage), as the
+Espressif suite's, the tool killed and run again after 1 or 180 s (crash), and
+Ctrl-C (ctrlc); where ESPHome raises its own network (K2), the router alone off
+for 150 s (fallback), the person joining that network as the run says to
+(Person); at the steps that write, a power cut and
 another as the tool sends it again (double: in the same run, if it sends its
 command again itself), and the router giving the device
 a new address once the step is done (readdress); and at each route's
@@ -110,7 +113,11 @@ SAVED = folders.SAVED
 OUT = Path(os.environ.get("AUTOFLASH_BEKEN_EMU_SUITE_DIR", folders.SUITE))
 RESULTS = OUT / "results.jsonl"
 # A made-up eWeLink account: the device's eWeLink is the local stub, which takes any.
-ACCOUNT = "EWELINK_EMAIL=someone@example.invalid\nEWELINK_PASSWORD=made-up-password\n"
+# And the emulated home Wi-Fi's details (cloud_online's), for a run sending
+# them to ESPHome through its own network: given in advance, as for a run nobody
+# sits through.
+ACCOUNT = ("EWELINK_EMAIL=someone@example.invalid\nEWELINK_PASSWORD=made-up-password\n"
+           "AUTOFLASH_WIFI_SSID=AutoflashNet\nAUTOFLASH_WIFI_PASSWORD=autoflash1234\n")
 
 # Each direction's steps that write to or wait on the device, with how long each
 # took in passing runs, in seconds: a fault lands at a share of it.
@@ -143,7 +150,15 @@ EARLIER_RELEASE = "v2.3.0"
 # Where its tree keeps the dumps and the devices its prep saves.
 EARLIER_FIRMWARES = "captures/emulation/beken-firmwares"
 EARLIER_SAVED = "captures/emulation/s61/saved"
-CORE = [("deviceoff", 1), ("deviceoff", 30), ("outage", 30), ("crash", 1), ("crash", 180), ("ctrlc", "once")]
+# The outages as the Espressif suite's, each length where it can lead somewhere
+# the others do not: within the tool's shortest timeouts, past them, and long
+# enough for ESPHome to raise its own network (a minute or two).
+CORE = ([("deviceoff", 1), ("deviceoff", 30)] + [("outage", s) for s in (5, 15, 30, 60, 120, 180)]
+        + [("crash", 1), ("crash", 180), ("ctrlc", "once")])
+# Where a firmware raises its own network when it cannot join the home one:
+# ESPHome, at K2. There the router stays off 150 s (fallback), the run sets it up
+# through its own network, the person joining it when the run says to.
+FALLBACK_STEPS = {"K2"}
 # At the steps that write, the riskiest moments too: just begun, nearly done.
 TIMING = [("deviceoff", 1), ("crash", 1)]
 RUN_LIMIT = 1500       # seconds one run of the tool may take
@@ -215,6 +230,9 @@ def scenarios() -> list[dict]:
                 for fault, arg in (("double", "deviceoff-1"), ("readdress", "new")):
                     found.append(dict(id=sid(route, step, fault, arg), route=route, step=step,
                                       fault=fault, arg=arg, at=40))
+            if step in FALLBACK_STEPS:
+                found.append(dict(id=sid(route, step, "fallback", 150), route=route, step=step,
+                                  fault="fallback", arg=150, at=40))
         # An image the bootloader refuses, sent again.
         for step in set(steps) & BAD_IMAGE_STEPS:
             found.append(dict(id=sid(route, step, "badimage", "once"), route=route, step=step,
@@ -541,6 +559,14 @@ def inject(instance: Instance, fault: str, arg, notes: dict) -> None:
                               capture_output=True, text=True)
         if back.returncode and running(instance.computer):
             not_applied(notes, "docker network connect")
+    elif fault == "fallback":
+        # The router alone off, long enough for ESPHome to raise its own network.
+        try:
+            instance.router("off")
+            time.sleep(arg)
+            instance.router("on")
+        except subprocess.CalledProcessError:
+            not_applied(notes, "the router switched off and on")
     elif fault == "crash":
         must(notes, "docker", "kill", instance.computer)
     elif fault == "ctrlc":
@@ -613,6 +639,7 @@ def readdress(instance: Instance, notes: dict) -> None:
 def not_fired(fault: str, notes: dict) -> bool:
     """A device converted though its fault never happened proves nothing."""
     return bool(notes.get("not_applied")
+                or (fault == "fallback" and not notes.get("joined_own_network"))
                 or (fault == "double" and not notes.get("second_cut"))
                 or (fault == "readdress" and not (notes.get("moved_from") and notes.get("moved_to")
                                                   and notes["moved_from"] != notes["moved_to"]))
@@ -641,6 +668,66 @@ def start_of(route: str) -> str:
     return f"outdated-{target}" if source == "outdated" else source
 
 
+# What a run says when the person is to join the device's own network, and to
+# go back to the home one (join.send_through_own_network).
+JOIN_ASKED = "Join the device's setup network"
+CONNECTED = "Connected to "
+BACK_HOME = "Back to your usual Wi-Fi"
+JOIN_AGAIN_EVERY = 15.0   # seconds between tries of a join that has not taken, while the run asks
+
+
+class Person(threading.Thread):
+    """As a person at the computer: joins the device's own network when a run
+    says to - again while the run still waits, should a try not take - and goes
+    back to the home network when it says that, from the computer's Wi-Fi
+    menu (computer/bin/wifi). What it did goes in `notes`."""
+
+    def __init__(self, instance: Instance, notes: dict):
+        super().__init__(daemon=True)
+        self.instance, self.notes = instance, notes
+        self.done = threading.Event()
+        self.acted: dict[Path, tuple[int, int]] = {}   # each run's joins asked and homes told, done
+        self.tried = -JOIN_AGAIN_EVERY                  # when a join was last tried
+
+    def wifi(self, *args: str) -> bool:
+        """`wifi ARGS` on the computer, as your user with its Wi-Fi's rights."""
+        script = ('exec setpriv --reuid="$HOST_UID" --regid="$HOST_GID" --clear-groups '
+                  '--inh-caps +net_admin,+net_raw --ambient-caps +net_admin,+net_raw '
+                  '/work/tools/beken/emulator/computer/bin/wifi "$@"')
+        try:
+            done = subprocess.run(["docker", "exec", self.instance.computer, "sh", "-c", script, "wifi", *args],
+                                  capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            return False
+        return done.returncode == 0
+
+    def run(self) -> None:
+        while not self.done.wait(2):
+            self.look()
+
+    def look(self) -> None:
+        """One look at the screen - the run's log - and what it asks, done."""
+        logs = self.instance.runs()
+        if not logs:
+            return
+        try:
+            text = logs[-1].read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return
+        asked, told = text.count(JOIN_ASKED), text.count(BACK_HOME)
+        joined, homed = self.acted.get(logs[-1], (0, 0))
+        if told > homed:
+            self.wifi("home")
+            self.acted[logs[-1]] = (asked, told)
+        elif asked > joined:
+            if CONNECTED in text[text.rfind(JOIN_ASKED):]:
+                self.acted[logs[-1]] = (asked, homed)
+            elif time.monotonic() - self.tried >= JOIN_AGAIN_EVERY:
+                self.tried = time.monotonic()
+                if self.wifi("join"):
+                    self.notes["joined_own_network"] = self.notes.get("joined_own_network", 0) + 1
+
+
 def run_scenario(instance: Instance, sc: dict) -> dict:
     source, target = sc["route"].split(">")
     folder = OUT / "logs" / sc["id"].replace(":", "_").replace(">", "-")
@@ -655,6 +742,8 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
     if not instance.start(source):
         notes["memory"] = memory.note()
         return dict(result="NOT-READY", notes=notes)
+    person = Person(instance, notes)
+    person.start()
     if target == "readout":
         outcome = readout_scenario(instance, sc, log, notes)
     elif sc["step"] == "apply":
@@ -663,6 +752,8 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         outcome = bad_image_scenario(instance, sc, target, log, notes)
     else:
         outcome = step_scenario(instance, sc, target, log, notes)
+    person.done.set()
+    person.join(10)
     # Asked while it runs: a route through J2 stops it below, for its flash.
     release = release_of(instance, target) if outcome["result"] == "PASS" and target in LATEST else None
     if outcome["result"] == "PASS" and target != "readout":

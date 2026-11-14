@@ -24,6 +24,18 @@ class ScenarioTests(unittest.TestCase):
         self.assertIn("openbeken>sonoff:O2@90:crash-1", ids)
         self.assertNotIn("sonoff>openbeken:K1@10:deviceoff-1", ids)   # a check step: 40% only
 
+    def test_outages_are_as_long_as_the_espressif_suites(self):
+        from tools.espressif.emulator import fault_suite as espressif
+        lengths = lambda core: sorted(arg for fault, arg in core if fault == "outage")
+        self.assertEqual(lengths(fault_suite.CORE), lengths(espressif.CORE))
+        ids = {sc["id"] for sc in fault_suite.scenarios()}
+        self.assertIn("sonoff>esphome:J1:outage-180", ids)
+
+    def test_where_esphome_raises_its_own_network_the_router_stays_off_for_it(self):
+        found = [sc["id"] for sc in fault_suite.scenarios() if sc["fault"] == "fallback"]
+        self.assertEqual(sorted(found), ["interim>esphome:K2:fallback-150", "openbeken>esphome:K2:fallback-150",
+                                         "sonoff>esphome:K2:fallback-150"])
+
     def test_each_step_faulted_is_one_its_route_takes(self):
         for route, steps in fault_suite.ROUTES.items():
             self.assertLessEqual(set(steps), set(fault_suite.route_steps(route)), route)
@@ -393,6 +405,42 @@ class DoubleCutTests(unittest.TestCase):
         injected.assert_not_called()
 
 
+class PersonTests(unittest.TestCase):
+    """The person at the computer joins the device's own network when the run
+    says to, again while it still waits, and goes home when told."""
+
+    def watch(self, log_texts, joins_take=True):
+        """What the person did, looking once at each of `log_texts` in turn, 20 s apart."""
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp, "run.log")
+            notes, did, clock = {}, [], [100.0]
+            person = fault_suite.Person(SimpleNamespace(runs=lambda: [log], computer="a-computer"), notes)
+            person.wifi = lambda *args: did.append(" ".join(args)) or joins_take or args[0] != "join"
+            with mock.patch.object(fault_suite.time, "monotonic", side_effect=lambda: clock[0]):
+                for text in log_texts:
+                    log.write_text(text, encoding="utf-8")
+                    person.look()
+                    clock[0] += 20
+            return did, notes
+
+    def test_joined_when_asked_and_home_when_told(self):
+        asked = "-- Join the device's setup network\n"
+        did, notes = self.watch([asked, asked + "    Connected to esphome-abcdef.\n",
+                                 asked + "    Connected to esphome-abcdef.\n-- Back to your usual Wi-Fi\n"])
+        self.assertEqual(did, ["join", "home"])
+        self.assertEqual(notes, {"joined_own_network": 1})
+
+    def test_a_join_that_did_not_take_is_tried_again_while_the_run_asks(self):
+        asked = "-- Join the device's setup network\n"
+        did, notes = self.watch([asked, asked, asked + "    Connected to esphome-abcdef.\n"], joins_take=False)
+        self.assertEqual(did, ["join", "join"])
+        self.assertNotIn("joined_own_network", notes)
+
+    def test_nothing_is_done_unasked(self):
+        did, _ = self.watch(["Stage 9 - Checking ESPHome\n"])
+        self.assertEqual(did, [])
+
+
 class NewScenarioTests(unittest.TestCase):
     def test_every_route_that_writes_has_its_apply_cut_and_the_writing_steps_their_double_and_readdress(self):
         ids = {sc["id"] for sc in fault_suite.scenarios()}
@@ -575,6 +623,21 @@ class FaultAppliedTests(unittest.TestCase):
             fault_suite.inject(self.instance(tmp), "outage", 0, notes)
         self.assertEqual(run.call_count, 1)
         self.assertTrue(notes["not_applied"])
+
+    def test_a_fallback_is_the_router_alone_off_long_enough(self):
+        from unittest import mock
+        notes = {}
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(fault_suite.time, "sleep") as slept, \
+                mock.patch.object(fault_suite.subprocess, "run") as docker:
+            fault_suite.inject(self.instance(tmp), "fallback", 150, notes)
+        self.assertEqual(self.order, ["router off", "router on"])
+        slept.assert_called_once_with(150)
+        docker.assert_not_called()   # the computer stays on the network
+        self.assertNotIn("not_applied", notes)
+
+    def test_a_fallback_the_person_never_joined_for_proves_nothing(self):
+        self.assertTrue(fault_suite.not_fired("fallback", {}))
+        self.assertFalse(fault_suite.not_fired("fallback", {"joined_own_network": 1}))
 
     def test_what_never_happened_proves_nothing(self):
         self.assertFalse(fault_suite.not_fired("deviceoff", {}))
