@@ -155,6 +155,17 @@ class RunTests(unittest.TestCase):
                 os.environ.pop("AUTOFLASH_API_ENOUGH", None)
                 self.assertNotIn("AUTOFLASH_API_ENOUGH", attended_suite.run_environment({}, "12:34:56:ab:cd:ef"))
 
+    def test_the_stub_lists_the_device_under_its_product_on_a_checkout_with_no_runs(self):
+        # Seen on a fresh checkout: the stub listed no product, and the readout
+        # of readout-then-not-needed was refused by the API (400) for no model.
+        from unittest import mock
+        with mock.patch("tools.autoflash.records.read_device", return_value={}), \
+                mock.patch.dict("os.environ", {}, clear=False):
+            import os
+            os.environ.pop("AUTOFLASH_EMU_STUB_PRODUCT_MODEL", None)
+            environment = attended_suite.run_environment({}, "12:34:56:ab:cd:ef")
+        self.assertEqual(environment["AUTOFLASH_EMU_STUB_PRODUCT_MODEL"], "S60TPG")
+
 
 def question_texts() -> list[str]:
     """Every text the tool can show, as it is written in its code: each
