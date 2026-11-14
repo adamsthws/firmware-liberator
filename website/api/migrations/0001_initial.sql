@@ -336,6 +336,15 @@ CREATE TABLE IF NOT EXISTS download_days (
   downloads INTEGER NOT NULL
 ) WITHOUT ROWID;
 
+-- Each night GitHub did not give the downloads, under the day it would have
+-- kept: why, and whether that was GitHub's rate limit (downloads.js), for the
+-- nightly alert (alerts.js) and the admin view. Kept for good: a row a night.
+CREATE TABLE IF NOT EXISTS download_misses (
+  day TEXT PRIMARY KEY,
+  problem TEXT NOT NULL,
+  rate_limited INTEGER NOT NULL
+) WITHOUT ROWID;
+
 -- readout_firmware: each offered file a readout holds, marked under
 -- readouts/firmware/ (index.js), so a readout deleted takes its marks with it
 -- and the next readout of the device sends the file again.

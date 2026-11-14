@@ -9,8 +9,11 @@
 // emails that failed to send are a line too (mail.js), but for those to an
 // address on the suppression list, which are expected now and then. And a
 // list of hosts' and VPNs' networks gone untaken a week, or taken far longer
-// than the one kept (networks.js).
+// than the one kept (networks.js). And the tool's downloads gone unread from
+// GitHub for DOWNLOADS_STALE_NIGHTS nights in a row, with why each night
+// (downloads.js) - and the token recommended only where its rate limit was why.
 import { read } from "./counters.js";
+import { DOWNLOADS_STALE_NIGHTS, TOKEN_FIX } from "./downloads.js";
 import { SUPPRESSED, failedOn, sendMail } from "./mail.js";
 import { LIST_JUMP, LIST_STALE_DAYS } from "./networks.js";
 
@@ -71,6 +74,29 @@ export async function alertLines(db, today, limits) {
     lines.push(`The ${list.name} list of networks that count toward no agreement (website/api/networks.js) grew `
       + `from ${list.previous} to ${list.now} today. Among those added: ${JSON.parse(list.added).map((asn) => `AS${asn}`)
         .join(", ")}. A home internet provider among them would cost its customers their vote.`);
+  }
+  // The tool's downloads not read for DOWNLOADS_STALE_NIGHTS nights, and each
+  // DOWNLOADS_STALE_NIGHTS after: a night read keeps yesterday (downloads.js),
+  // so the nights missed are counted from the last day kept - or, never read,
+  // as if read the night before the first the job ran (store_days, written
+  // each night before this).
+  const { results: [downloads] } = await db.prepare(`SELECT (SELECT max(day) FROM download_days) AS last,
+    (SELECT min(day) FROM store_days) AS first`).all();
+  const since = downloads.last ?? (downloads.first && dayBefore(dayBefore(downloads.first)));
+  const missed = since ? Math.round((Date.parse(`${yesterday}T00:00:00Z`) - Date.parse(`${since}T00:00:00Z`)) / DAY) : 0;
+  if (missed >= DOWNLOADS_STALE_NIGHTS && missed % DOWNLOADS_STALE_NIGHTS === 0) {
+    const { results: reasons } = await db.prepare(`SELECT problem, max(rate_limited) AS limited, count(*) AS n
+      FROM download_misses WHERE day > ? AND day <= ? GROUP BY problem ORDER BY n DESC, problem`).bind(since, yesterday).all();
+    const nights = (n) => `${n} ${n === 1 ? "night" : "nights"}`;
+    const told = reasons.reduce((sum, row) => sum + row.n, 0);
+    const why = [...reasons.map((row) => `${row.problem} (${nights(row.n)})`),
+      // A night the job stopped before keeping why: its log may say.
+      ...(told < missed ? [`no reason kept (${nights(missed - told)}; the Worker's logs may say)`] : [])].join("; ");
+    lines.push((`GitHub has not given the tool's downloads for ${missed} nights in a row`
+      + `${downloads.last ? `, the last kept for ${downloads.last}` : ", none ever"} (website/api/downloads.js). Why: ${why}. `
+      + (reasons.some((row) => row.limited)
+        ? `GitHub's rate limit for a request with no token is shared by every Worker on the same addresses. ${TOKEN_FIX}`
+        : reasons.length ? "None was GitHub's rate limit, so a token would not help: look at what it said." : "")).trim());
   }
   return lines;
 }
