@@ -1,5 +1,6 @@
 """The Beken fault suite: its scenarios, and how it tells a device converted."""
 
+import io
 import tempfile
 import threading
 import time
@@ -30,6 +31,25 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(lengths(fault_suite.CORE), lengths(espressif.CORE))
         ids = {sc["id"] for sc in fault_suite.scenarios()}
         self.assertIn("sonoff>esphome:J1:outage-180", ids)
+
+    def test_a_routine_run_has_the_outages_only_at_their_shortest_and_longest(self):
+        from tools.espressif.emulator import fault_suite as espressif
+        self.assertEqual(fault_suite.QUICK_OUTAGES, espressif.QUICK_OUTAGES)
+        every = {sc["id"] for sc in fault_suite.scenarios()}
+        quick = {sc["id"] for sc in fault_suite.scenarios(quick=True)}
+        self.assertEqual(every - quick, {i for i in every if any(i.endswith(f":outage-{s}") for s in (15, 30, 120))
+                                         and ">readout:" not in i})
+        self.assertIn("sonoff>esphome:J1:outage-5", quick)
+        self.assertIn("sonoff>esphome:K2:fallback-150", quick)
+        self.assertIn("sonoff>readout:read:outage-30", quick)
+
+    def test_list_takes_only_what_it_lists(self):
+        with mock.patch.object(fault_suite.folders, "migrate", return_value=[]):
+            with mock.patch("sys.stdout", io.StringIO()) as out:
+                self.assertEqual(fault_suite.main(["list", "quick"]), 0)
+            self.assertEqual(out.getvalue().split(), [sc["id"] for sc in fault_suite.scenarios(quick=True)])
+            with mock.patch("sys.stderr", io.StringIO()):
+                self.assertEqual(fault_suite.main(["list", "quik"]), 2)
 
     def test_where_esphome_raises_its_own_network_the_router_stays_off_for_it(self):
         found = [sc["id"] for sc in fault_suite.scenarios() if sc["fault"] == "fallback"]

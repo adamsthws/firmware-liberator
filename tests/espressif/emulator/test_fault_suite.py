@@ -630,6 +630,18 @@ class ScenarioTests(unittest.TestCase):
                        "sonoff>tasmota:F4:nohook-run", "esphome>tasmota:F4rs@90:deviceoff-1"):
             self.assertIn(wanted, ids)
 
+    def test_a_routine_run_has_the_outages_only_at_their_shortest_and_longest(self):
+        every = {sc["id"] for sc in fs.scenarios()}
+        quick = {sc["id"] for sc in fs.scenarios(quick=True)}
+        self.assertFalse([i for i in every if i.endswith(":outage-60")])
+        self.assertEqual({i for i in every - quick},
+                         {i for i in every if any(i.endswith(f":outage-{s}") for s in (15, 30, 120))
+                          and "@" not in i and ">readout:" not in i})
+        self.assertIn("tasmota>sonoff:D4:outage-5", quick)
+        self.assertIn("sonoff>esphome:C2:outage-180", quick)
+        # Not the step faults' outages: those at 10% and 90%, and the readout's.
+        self.assertTrue([i for i in quick if "@" in i and i.endswith(":outage-30")])
+
     def test_each_length_only_where_it_leads_somewhere_of_its_own(self):
         ids = {sc["id"] for sc in fs.scenarios()}
         self.assertFalse([i for i in ids if i.endswith(":outage-1")])
