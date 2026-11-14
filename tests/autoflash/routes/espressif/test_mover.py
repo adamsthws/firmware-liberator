@@ -57,6 +57,21 @@ class CheckStepTests(RouteTestCase):
         self.assertEqual(result["set_up_through"], "its own network")
         self.assertEqual(own.call_args.args[1], "ESPHome")
 
+    def test_back_on_your_wifi_by_itself_it_carries_on(self):
+        with mock.patch.object(esphome, "is_esphome", return_value=False), \
+                mock.patch.object(time, "sleep"), mock.patch.object(mover, "calibrate_esphome_meter", return_value={}), \
+                mock.patch.object(join, "set_up_through_own_network", side_effect=join.BackByItself):
+            result = mover.step_esphome_check(self.ctx(firmware="esphome"), wait=0.05)
+        self.assertNotIn("set_up_through", result)
+
+    def test_a_mover_back_on_your_wifi_by_itself_is_not_set_up(self):
+        ctx = self.ctx(firmware="esphome")
+        ctx._wifi = ("Home", "pw")
+        with mock.patch.object(join, "on_a_device_network", return_value=False), \
+                mock.patch.object(join, "wait_for", side_effect=errors.Abort("not on your Wi-Fi")), \
+                mock.patch.object(join, "set_up_through_own_network", side_effect=join.BackByItself):
+            self.assertFalse(mover.wait_for_mover(ctx, "The mover"))
+
     def test_joined_already_it_stops_waiting_on_the_home_wifi(self):
         with mock.patch.object(esphome, "is_esphome", return_value=False), \
                 mock.patch.object(join, "on_a_device_network", return_value=True), \

@@ -244,6 +244,47 @@ class OwnNetworkRecordedTests(SetupNetworkTestCase):
         self.assertEqual(ctx.state.input(join.OWN_NETWORK), [join.SETTINGS_LOST])
 
 
+class BackByItselfTests(SetupNetworkTestCase):
+    """A device that raised its own network while its router was off, back on
+    the home network by itself before this computer has joined that: nothing
+    to set up, and the run carries on (a router restart while a run waits)."""
+
+    def test_the_wait_to_be_joined_ends_once_the_device_is_back(self):
+        looks = []
+
+        def wait_for_port(timeout, tick):
+            for elapsed in (5.0, 16.0, 31.0):
+                tick(elapsed)
+            return False
+        with mock.patch.object(setup_network, "wait_for_port", side_effect=wait_for_port), \
+                mock.patch.object(output, "progress"), mock.patch.object(output, "progress_clear"):
+            with self.assertRaises(join.BackByItself):
+                join.wait_until_joined("esphome-abcdef", back=lambda: looks.append(1) or len(looks) == 2)
+        self.assertEqual(len(looks), 2, "looked at every BACK_LOOK_EVERY, not every tick")
+
+    def test_nothing_is_set_up_and_no_join_is_recorded(self):
+        ctx = self.ctx()
+        ctx.wifi = lambda why=(): ("Home", "pw")
+        ctx.state.set_input("device_ip", "192.0.2.50")
+        ctx.finder = mock.Mock(poll=mock.Mock(return_value=None))
+        checked = []
+
+        def send(network, ssid, password, back=None):
+            if back():
+                raise join.BackByItself
+        with mock.patch.object(prompts, "find_ssid", return_value="esphome-abcdef"), \
+                mock.patch.object(output, "tell") as told, \
+                mock.patch.object(join, "send_through_own_network", side_effect=send), \
+                mock.patch.object(join, "wait_for") as waited:
+            with self.assertRaises(join.BackByItself):
+                join.set_up_through_own_network(ctx, "ESPHome", lambda host: checked.append(host) or True,
+                                                ("esphome-abcdef",))
+        self.assertEqual(checked, ["192.0.2.50"])
+        waited.assert_not_called()
+        self.assertEqual(ctx.state.input(join.OWN_NETWORK), [])
+        self.assertIn("back on your Wi-Fi by itself", told.call_args.args[0])
+
+
 class UserActionWaitTests(unittest.TestCase):
     """Waiting on a person has no time limit - unless nobody is coming."""
 

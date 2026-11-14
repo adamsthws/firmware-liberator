@@ -231,6 +231,17 @@ class ArrivedTests(unittest.TestCase):
             self.assertEqual(result["set_up_through"], "its own network")
             self.assertEqual(own.call_args.args[1], "ESPHome")
 
+    def test_k2_carries_on_when_esphome_is_back_on_your_wifi_by_itself(self):
+        # Its own network raised while the router was off, it rejoined once the
+        # router was back, before this computer joined that network.
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = a_context(tmp, firmware="esphome")
+            with mock.patch.object(arrived.join, "wait_for", side_effect=errors.Abort("not on your Wi-Fi")), \
+                    mock.patch.object(arrived.join, "set_up_through_own_network", side_effect=arrived.join.BackByItself), \
+                    mock.patch.object(arrived.esphome, "calibration_state", return_value=None):
+                result = arrived.step_esphome_check(ctx, wait=1000)
+            self.assertNotIn("set_up_through", result)
+
     def test_k2_of_a_device_with_no_relay_waits_for_esphome_alone(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctx = a_context(tmp, firmware="esphome")

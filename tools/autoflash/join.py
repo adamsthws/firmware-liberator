@@ -96,14 +96,34 @@ def user_action_limit() -> float:
     return UNATTENDED_ACTION_LIMIT if prompts.UNATTENDED else float("inf")
 
 
-def wait_until_joined(network: str, marker: str | None = None) -> None:
+# While this computer waits to be joined to a device's own network, whether the
+# device has come back on the home network by itself - its router back after
+# an outage, which it raised its network during - is looked at this often.
+BACK_LOOK_EVERY = 15.0
+
+
+class BackByItself(Exception):
+    """The device came back on the home network by itself while this computer
+    waited to be joined to its own network: there is nothing to set up."""
+
+
+def wait_until_joined(network: str, marker: str | None = None, back: Callable[[], Any] | None = None) -> None:
     """Block until this computer has joined the device's network.
 
     With `marker`, the page must mention it (the bridge).  Without, only the web
     port is touched: Tasmota scans for networks on every page request in setup
-    mode, which drops this computer off its network.
+    mode, which drops this computer off its network.  With `back`, whether the
+    device is on the home network again: once it is, BackByItself.
     """
+    next_look = BACK_LOOK_EVERY
+
     def tick(elapsed: float) -> None:
+        nonlocal next_look
+        if back is not None and elapsed >= next_look:
+            next_look = elapsed + BACK_LOOK_EVERY
+            if back():
+                output.progress_clear()
+                raise BackByItself
         output.progress(f"waiting for this computer to join {network}... {elapsed:.0f}s")
 
     limit = user_action_limit()
@@ -134,6 +154,13 @@ def note_own_network(ctx: Context, why: str) -> None:
     and why (OWN_NETWORK_REASONS)."""
     joins = ctx.state.input(OWN_NETWORK)
     ctx.state.set_input(OWN_NETWORK, [*(joins if isinstance(joins, list) else []), why])
+
+
+def forget_own_network(ctx: Context) -> None:
+    """The last note_own_network taken back: this computer was never sent there."""
+    joins = ctx.state.input(OWN_NETWORK)
+    if isinstance(joins, list) and joins:
+        ctx.state.set_input(OWN_NETWORK, joins[:-1])
 
 
 def configure_device_wifi(ctx: Context, network: str | None, why: str) -> str:
@@ -411,16 +438,18 @@ def on_a_device_network() -> bool:
     return setup_network.page(setup_network.SETUP_HOST, "/", timeout=2.0) is not None
 
 
-def send_through_own_network(network: str, ssid: str, password: str) -> None:
+def send_through_own_network(network: str, ssid: str, password: str,
+                             back: Callable[[], Any] | None = None) -> None:
     """ESPHome's (or the mover's) page given the details, up to
-    SETUP_SEND_ATTEMPTS times, once this computer has joined its network."""
+    SETUP_SEND_ATTEMPTS times, once this computer has joined its network;
+    BackByItself if `back` finds the device on the home network first."""
     prompts.section("Join the device's setup network", [
         f"In {hostsys.wifi_menu_hint()}, join:",
         f"    {network}      (open - no password)",
         "If a page opens by itself, close it: this sends the details for you.",
     ])
     for attempt in range(1, SETUP_SEND_ATTEMPTS + 1):
-        wait_until_joined(network)
+        wait_until_joined(network, back=back)
         try:
             setup_network.send_esphome_wifi(ssid, password)
         except setup_network.SetupError as exc:
@@ -441,7 +470,9 @@ def set_up_through_own_network(ctx: Context, what: str, check: Callable[[str], A
     after a router outage, say - and new ones are asked for only if the device
     does not join with them. `networks`: what its network can be called, its
     name now first. The details it joined with, or None when its network is
-    not to be seen."""
+    not to be seen; BackByItself when, before this computer has joined its
+    network, the device is back on the home one with the details it has: it
+    raised its network while the router was off, say."""
     network = prompts.find_ssid(networks, timeout=30)
     if not network and on_a_device_network():
         network = networks[0]  # joined already: carried on through it
@@ -452,8 +483,22 @@ def set_up_through_own_network(ctx: Context, what: str, check: Callable[[str], A
     ssid, password = ctx.wifi(why=[
         f"{what} can't join your Wi-Fi; this sends it them through its network.",
     ])
+    def back() -> bool:
+        host = ctx.state.input("device_ip")
+        if host and check(host):
+            return True
+        moved = ctx.finder.poll()
+        return bool(moved and moved != host and check(moved))
+
+    try:
+        send_through_own_network(network, ssid, password, back=back)
+    except BackByItself:
+        forget_own_network(ctx)
+        output.tell(f"    {what} is back on your Wi-Fi by itself: its network is not needed.")
+        raise
     for round_ in (1, 2):
-        send_through_own_network(network, ssid, password)
+        if round_ == 2:
+            send_through_own_network(network, ssid, password)
         prompts.section("Back to your usual Wi-Fi", [
             "Rejoin it now if this computer hasn't by itself.",
         ])
