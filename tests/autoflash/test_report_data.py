@@ -160,8 +160,44 @@ class PayloadTests(RouteTestCase):
         with mock.patch.object(report_data.records, "read_device",
                                return_value={"model": "s60tpf", "stock_version": "1.2.0"}) as read:
             data = self.payload(ctx)
-        read.assert_called_once_with(MAC)
+        read.assert_called_with(MAC)
         self.assertEqual((data["model"], data["stock_version"]), ("S60TPF", "1.2.0"))
+
+    def test_a_kind_with_one_model_gives_it_where_nothing_else_does(self):
+        # A converted POW Elite on a computer with no record of it.
+        ctx = self.ctx(firmware="esphome", source="tasmota", device_kind="sonoff-pow-elite", device_mac=MAC,
+                       product_model="")
+        with mock.patch.object(report_data.records, "read_device", return_value={}):
+            self.assertEqual(self.payload(ctx)["model"], "POWR316D")
+        # An S60's region only eWeLink says: none, rather than a guess.
+        ctx = self.ctx(firmware="esphome", source="tasmota", device_kind="sonoff-s60", device_mac=MAC,
+                       product_model="", run="s60")
+        with mock.patch.object(report_data.records, "read_device", return_value={"model": "S60"}):
+            self.assertIsNone(self.payload(ctx)["model"], "the kind's short name an earlier version kept")
+
+    def test_a_run_signed_in_already_takes_the_model_from_the_account_and_keeps_it(self):
+        ctx = self.ctx(firmware="sonoff", source="esphome", device_kind="sonoff-s60", device_mac=MAC,
+                       product_model="")
+        listed = [{"productModel": "S60TPB", "params": {"staMac": "12:34:56:00:00:01"}},
+                  {"productModel": "S60TPG", "params": {"staMac": MAC.upper()}}]
+        ctx.ewelink, ctx.account_devices = mock.Mock(held=None), mock.Mock(return_value=listed)
+        with mock.patch.object(report_data.records, "read_device", return_value={}), \
+                mock.patch.object(report_data.records, "remember_device") as remember:
+            self.assertIsNone(self.payload(ctx)["model"])
+            ctx.account_devices.assert_not_called()   # no sign-in, and no password asked, for a report
+            ctx.ewelink.held = ("eu", {"at": "token"})
+            self.assertEqual(self.payload(ctx)["model"], "S60TPG")
+        remember.assert_called_with(MAC, model="S60TPG")
+
+    def test_the_report_shown_and_the_report_sent_give_the_same_model(self):
+        from tools.autoflash import report
+        for inputs, record in (({"product_model": "S60TPG"}, {}), ({"product_model": ""}, {"model": "S60TPF"}),
+                               ({"product_model": "", "device_kind": "sonoff-pow-elite"}, {})):
+            ctx = self.ctx(firmware="tasmota", device_mac=MAC, **{"device_kind": "sonoff-s60", **inputs},
+                           run=str(inputs))
+            with mock.patch.object(report_data.records, "read_device", return_value=record), \
+                    mock.patch.object(report, "check_release", return_value={}):
+                self.assertEqual(report.run_model(ctx), self.payload(ctx)["model"], inputs)
 
     def test_the_signal_is_the_weakest_reading_of_any_step(self):
         ctx = self.ctx(firmware="tasmota", device_kind="sonoff-s60")
@@ -239,6 +275,13 @@ class ReadoutPayloadTests(unittest.TestCase):
         shown = json.dumps(sent)
         for private in ("Kitchen", "r-1", "12:34:56"):
             self.assertNotIn(private, shown)
+
+    def test_a_device_ewelink_names_no_product_of_is_named_by_its_kind_where_it_has_one_model(self):
+        from tools.autoflash import kinds
+        powct = kinds.SONOFF_POWCT.stock_model
+        self.assertEqual(self.payload(product="", model=powct)["model"], "POWCT")
+        # A BASICR4 only its product model tells from its neighbours: no kind, so no model.
+        self.assertIsNone(self.payload(product="")["model"])
 
     def test_every_result_fits_the_schema(self):
         schema = report_schema.current()["readout"]

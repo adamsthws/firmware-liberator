@@ -177,6 +177,14 @@ class Kind:
         return product if self.product.fullmatch(product) else ""
 
     @property
+    def only_product(self) -> str:
+        """Its product model where it has only one (POWR316D), so knowing the
+        kind is knowing the model; "" where it has several (S60TPG and S60TPF,
+        by region), which only eWeLink tells apart."""
+        pattern = self.product.pattern
+        return pattern if re.fullmatch(r"[A-Z0-9-]+", pattern) else ""
+
+    @property
     def esphome_project(self) -> str:
         """The project its ESPHome is built as (devices/<kind>/esphome.yaml),
         which the device says through its API, with the project's version."""

@@ -204,6 +204,8 @@ def readout_payload(report_id: str, became: Became, seconds: float) -> dict[str,
     converted (records.converted_here)."""
     kind = kinds.for_account(became.product, became.model, among=kinds.EVERY)
     product, stock_model = became.product.strip().upper(), became.model.strip().upper()
+    # Where eWeLink gave no product model, a kind with only one says it (report.run_model).
+    product = product or (kind.only_product if kind else "")
     return {
         "format": FORMAT,
         "id": report_id,
@@ -238,7 +240,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
     record = records.read_device(state.input("device_mac") or "")
     captures = state.data.get("captures", {})
     source = runs.run_source(state)
-    product = str(state.input("product_model") or record.get("model") or "").strip().upper()
+    product = report.run_model(ctx)
     stock = str(state.input("stock_version") or record.get("stock_version") or "")
     readings = [value for key, value in captures.items() if key.endswith(".signal_dbm")
                 and isinstance(value, int) and not isinstance(value, bool)]

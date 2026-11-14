@@ -176,5 +176,20 @@ class RunSecretsTests(unittest.TestCase):
                 self.assertTrue(path.exists(), path.name)
 
 
+class FileDeviceTests(unittest.TestCase):
+    def test_the_record_keeps_only_a_product_model_ewelink_gave(self):
+        # Where it gave none, AccountDevice.model is the kind's short name, for
+        # the screen: kept, it would be sent as the device's model.
+        from tools.autoflash.account import AccountDevice
+        mac = "12:34:56:ab:cd:ef"
+        ctx = mock.Mock(spec=[])
+        for model, kept in (("S60", None), ("S60TPG", "S60TPG")):
+            device = AccountDevice("1001234abc", "Kitchen", model, True, mac, None, "sonoff-s60")
+            with mock.patch.object(runs, "hold_device"), mock.patch.object(records, "find_backup", return_value=None), \
+                    mock.patch.object(records, "remember_device") as remember:
+                runs.file_device(ctx, mac, device)
+            self.assertEqual(remember.call_args.kwargs["model"], kept)
+
+
 if __name__ == "__main__":
     unittest.main()
