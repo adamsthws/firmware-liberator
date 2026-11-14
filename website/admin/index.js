@@ -239,6 +239,22 @@ export async function usage(env, now, fetcher = fetch) {
   }
 }
 
+// Your users' runs, devices seen and devices converted, in all and by the
+// system they ran the tool on (the reports' os.family; downloads cannot say,
+// as someone on a Mac may download the zip): your own devices and held
+// reports left out. A device is seen as the devices table and /stats count
+// it, so not where its every run was stopped by the person; one run from two
+// systems is in each, once in all.
+const COUNTED = `SELECT count(*) AS runs,
+    count(DISTINCT CASE WHEN device_hash IN (SELECT device_hash FROM devices) THEN device_hash END) AS seen,
+    count(DISTINCT CASE WHEN result = 'converted' THEN device_hash END) AS converted
+  FROM reports WHERE tag = 'user' AND quarantined = 0
+    AND (device_hash IS NULL OR device_hash NOT IN (SELECT device_hash FROM devices WHERE dev = 1))`;
+export const SYSTEMS = `SELECT * FROM (SELECT 'all' AS os, * FROM (${COUNTED})
+    UNION ALL SELECT * FROM (${COUNTED.replace("SELECT", "SELECT os_family AS os,")} GROUP BY os_family))
+  ORDER BY os = 'all' DESC, runs DESC, os`;
+export const SYSTEM_NAMES = { all: "All systems", windows: "Windows", macos: "macOS", linux: "Linux" };
+
 // Everything the view shows, in a fixed few queries.
 export async function gather(env, now) {
   const all = async (sql, ...values) => (await env.DB.prepare(sql).bind(...values).all()).results;
@@ -273,6 +289,7 @@ export async function gather(env, now) {
     emulator: await gatherEmulator(all, now),
     // Every night GitHub was read, beside your users' devices converted by then.
     downloads: await downloadDays(all, "", "dev = 0"),
+    systems: await all(SYSTEMS),
   };
 }
 
@@ -361,6 +378,8 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
       + tile("Emails today", number(count(`mail-sent:${data.today}`)), `${number(count(`notify:${data.today}`))} sign-ups of ${number(NOTIFY_DAILY)}`)
       + tile("Devices", number(data.devices?.seen), `${number(data.devices?.converted)} converted · ${number(data.devices?.dev)} yours`)
       + tile("Downloads", number(read?.downloads), read ? `to ${read.day}` : "GitHub not read yet")
+      + tile("Devices seen, by system", number(data.systems[0]?.seen), data.systems.slice(1)
+        .map((row) => `${SYSTEM_NAMES[row.os] ?? row.os} ${number(row.seen)}`).join(" · ") || "no runs yet")
       + tile("Held for review", number(data.held.length))
       + tile("Last night's job counted to", data.lastFolded ?? "not yet run")
       + `</div></section>`,
@@ -373,6 +392,11 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
       converted, your own left out: all time to each day.</p>`
       + lines(data.downloads.map((row) => ({ day: row.day, values: { downloads: row.downloads, "devices converted": row.converted } })),
         ["downloads", "devices converted"], "Downloads and devices converted by day")
+      + `<h3>By system</h3><p class="sub">Who ran the tool, by the system each report says it ran on: a device run from
+      two is in each, once in all.</p>`
+      + table([["System", (row) => SYSTEM_NAMES[row.os] ?? row.os], ["Runs", "runs", "number"],
+        ["Devices seen", "seen", "number"], ["Devices converted", "converted", "number"]],
+      data.systems[0]?.runs ? data.systems : [], "No runs yet.")
       + `</section>`,
     `<section class="card" id="popularity"><h2>Devices, model by model</h2><p class="sub">Each month of the last
       ${POPULAR_MONTHS}: devices whose readout was first asked about, devices read out, and devices converted (again,

@@ -202,7 +202,7 @@ export const STYLE = `
 body { margin: 0; background: var(--plane); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 1120px; margin: 0 auto; padding: 28px 20px 60px; }
 a { color: var(--link); }
-h1 { font-size: 26px; margin: 0; } h2 { font-size: 17px; margin: 0 0 4px; }
+h1 { font-size: 26px; margin: 0; } h2 { font-size: 17px; margin: 0 0 4px; } h3 { font-size: 15px; margin: 18px 0 4px; }
 .top { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
 .who { color: var(--muted); font-size: 13px; }
 .sub { color: var(--ink-2); font-size: 13px; margin: 0 0 14px; }

@@ -138,6 +138,37 @@ test("the view shows the tool's downloads, one total beside the devices converte
   assert.match(chart, /<title>2026-11-09: \d+ devices converted<\/title>/);
 });
 
+test("the view counts your users' runs and devices in all and by system, your own and held reports left out", async () => {
+  const bindings = env();
+  const db = bindings.DB;
+  const run = async (hash, os, result = "converted", tag = "user") => db.batch(writes(db,
+    { ...structuredClone(FIXTURE), id: randomBytes(8).toString("hex"), tag, result, os: { ...FIXTURE.os, family: os },
+      stopped: result === "converted" ? null : { step: "D4", error: "upload-cut", text: "" } }, hash, "2026-11-09"));
+  const view = async () => admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  assert.match((await view()).split('id="downloads">')[1].split("</section>")[0], /No runs yet\./);
+  await run("device-1", "windows", "failed");
+  await run("device-6", "macos", "cancelled");   // stopped by the person: a run, no device seen
+  await run("device-1", "windows");
+  await run("device-2", "macos", "failed");
+  await run("device-2", "linux");   // the same device, from a second system
+  await run("device-3", "linux");
+  await run("device-4", "linux", "converted", "dev");
+  db.db.prepare("UPDATE devices SET dev = 1 WHERE device_hash = 'device-4'").run();
+  await run("device-4", "linux");   // the maintainer's device, though tagged as a user's
+  await run(null, "windows", "failed");   // a run that met no device
+  const held = { ...structuredClone(FIXTURE), id: randomBytes(8).toString("hex"), os: { ...FIXTURE.os, family: "macos" } };
+  await db.batch(writes(db, held, "device-5", "2026-11-09"));
+  db.db.prepare("UPDATE reports SET quarantined = 1 WHERE id = ?").run(held.id);
+  const html = await view();
+  const row = (name, runs, seen, converted) => `<tr><td>${name}</td><td class="number">${runs}</td>`
+    + `<td class="number">${seen}</td><td class="number">${converted}</td></tr>`;
+  const section = html.split('id="downloads">')[1].split("</section>")[0];
+  assert.ok(section.includes(row("All systems", 7, 3, 3) + row("Windows", 3, 1, 1) + row("Linux", 2, 2, 2)
+    + row("macOS", 2, 1, 0)), section);
+  assert.ok(html.includes('<div class="tile-label">Devices seen, by system</div><div class="tile-value">3</div>'
+    + '<div class="tile-note">Windows 1 · Linux 2 · macOS 1</div>'), "macOS's ties Linux's runs, so after it");
+});
+
 test("a held report released is counted again: its day folded afresh tonight", async () => {
   const { db, junk } = await held();
   await db.batch(admin.release(db, junk.id));
