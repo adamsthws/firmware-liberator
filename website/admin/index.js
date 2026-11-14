@@ -290,6 +290,8 @@ export async function gather(env, now) {
     // Every night GitHub was read, beside your users' devices converted by then.
     downloads: await downloadDays(all, "", "dev = 0"),
     systems: await all(SYSTEMS),
+    // The last night GitHub refused the downloads, and why (downloads.js).
+    downloadMiss: (await all("SELECT day, problem FROM download_misses ORDER BY day DESC LIMIT 1"))[0] ?? null,
   };
 }
 
@@ -377,7 +379,10 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
       + tile("Readouts today", number(count(`readouts:${data.today}`)), `of ${number(DAILY_COUNT)}`)
       + tile("Emails today", number(count(`mail-sent:${data.today}`)), `${number(count(`notify:${data.today}`))} sign-ups of ${number(NOTIFY_DAILY)}`)
       + tile("Devices", number(data.devices?.seen), `${number(data.devices?.converted)} converted · ${number(data.devices?.dev)} yours`)
-      + tile("Downloads", number(read?.downloads), read ? `to ${read.day}` : "GitHub not read yet")
+      + tile("Downloads", number(read?.downloads), [read ? `to ${read.day}` : "GitHub not read yet",
+        // Refused since the last read: why, the latest night.
+        data.downloadMiss && data.downloadMiss.day > (read?.day ?? "") && `refused for ${data.downloadMiss.day}: ${data.downloadMiss.problem}`]
+        .filter(Boolean).join(" · "))
       + tile("Devices seen, by system", number(data.systems[0]?.seen), data.systems.slice(1)
         .map((row) => `${SYSTEM_NAMES[row.os] ?? row.os} ${number(row.seen)}`).join(" · ") || "no runs yet")
       + tile("Held for review", number(data.held.length))

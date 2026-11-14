@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { alert, alertLines, STORE_WARN } from "../api/alerts.js";
+import { DOWNLOADS_STALE_NIGHTS, TOKEN_FIX } from "../api/downloads.js";
 import { LIST_JUMP, LIST_STALE_DAYS } from "../api/networks.js";
 import worker from "../api/index.js";
 import { d1 } from "../api/local-d1.mjs";
@@ -56,6 +57,7 @@ test("the store is told of the night it passes its mark, not each night after", 
   stored(bindings, TODAY, mark);
   assert.match((await alertLines(bindings.DB, TODAY, LIMITS))[0], /past 75%/);
   stored(bindings, "2026-11-11", mark + 10);
+  bindings.DB.db.prepare("INSERT INTO download_days (day, downloads) VALUES ('2026-11-10', 5)").run();   // read too
   assert.deepEqual(await alertLines(bindings.DB, "2026-11-11", LIMITS), []);
 });
 
@@ -130,4 +132,56 @@ test("a list of networks taken far longer than the one kept is told that night, 
     + "no agreement (website/api/networks.js) grew from 4 to 7 today. Among those added: AS5, AS6, AS7. A home "
     + "internet provider among them would cost its customers their vote."]);
   assert.deepEqual(await alertLines(bindings.DB, "2026-11-11", LIMITS), [], "that night only");
+});
+
+test("the downloads gone unread from GitHub are told after three nights, then each three, never the night after", async () => {
+  const bindings = env();
+  assert.equal(DOWNLOADS_STALE_NIGHTS, 3);
+  const read = (day) => bindings.DB.db.prepare("INSERT INTO download_days (day, downloads) VALUES (?, 5)").run(day);
+  const lines = async (today) => (await alertLines(bindings.DB, today, LIMITS)).filter((line) => line.includes("downloads"));
+  read("2026-11-09");   // read last night
+  assert.deepEqual(await lines(TODAY), []);
+  assert.deepEqual(await lines("2026-11-11"), [], "one night missed");
+  assert.deepEqual(await lines("2026-11-13"), ["GitHub has not given the tool's downloads for 3 nights in a row, the last "
+    + "kept for 2026-11-09 (website/api/downloads.js). Why: no reason kept (3 nights; the Worker's logs may say)."],
+  "no reason kept: no fix guessed");
+  assert.deepEqual(await lines("2026-11-14"), [], "not the next night");
+  assert.equal((await lines("2026-11-16")).length, 1, "but three on");
+});
+
+const miss = (bindings, day, problem, limited) => bindings.DB.db
+  .prepare("INSERT INTO download_misses (day, problem, rate_limited) VALUES (?, ?, ?)").run(day, problem, limited ? 1 : 0);
+
+test("each night's why is told, and the token recommended where GitHub's rate limit was one", async () => {
+  const bindings = env();
+  bindings.DB.db.prepare("INSERT INTO download_days (day, downloads) VALUES ('2026-11-09', 5)").run();
+  const limit = "GitHub's rate limit reached (HTTP 403, 60 requests an hour)";
+  miss(bindings, "2026-11-08", "HTTP 500", false);   // before the last read: no part of it
+  miss(bindings, "2026-11-10", limit, true);
+  miss(bindings, "2026-11-11", "timed out", false);
+  miss(bindings, "2026-11-12", limit, true);
+  assert.deepEqual(await alertLines(bindings.DB, "2026-11-13", LIMITS), ["GitHub has not given the tool's downloads for "
+    + "3 nights in a row, the last kept for 2026-11-09 (website/api/downloads.js). Why: GitHub's rate limit reached "
+    + "(HTTP 403, 60 requests an hour) (2 nights); timed out (1 night). GitHub's rate limit for a request with no "
+    + `token is shared by every Worker on the same addresses. ${TOKEN_FIX}`]);
+  assert.match(TOKEN_FIX, /never expires.*read-only access to public repositories.*cloudflare_settings\.py apply/);
+});
+
+test("no token is recommended where none of the nights was GitHub's rate limit", async () => {
+  const bindings = env();
+  bindings.DB.db.prepare("INSERT INTO download_days (day, downloads) VALUES ('2026-11-09', 5)").run();
+  miss(bindings, "2026-11-10", "HTTP 404", false);
+  miss(bindings, "2026-11-12", "HTTP 404", false);   // the night between kept no reason
+  const [line] = await alertLines(bindings.DB, "2026-11-13", LIMITS);
+  assert.match(line, /Why: HTTP 404 \(2 nights\); no reason kept \(1 night; the Worker's logs may say\)\. None was GitHub's rate limit, so a token would not help: look at what it said\.$/);
+  assert.ok(!line.includes(TOKEN_FIX));
+});
+
+test("downloads never read are counted from the first night the job ran", async () => {
+  const bindings = env();
+  const lines = async (today) => (await alertLines(bindings.DB, today, LIMITS)).filter((line) => line.includes("downloads"));
+  assert.deepEqual(await lines(TODAY), [], "the job never ran: nothing to count from");
+  stored(bindings, "2026-11-07", 0);   // the first night, unread
+  assert.deepEqual(await lines("2026-11-08"), [], "two nights");
+  assert.match((await lines("2026-11-09"))[0], /for 3 nights in a row, none ever/);
 });

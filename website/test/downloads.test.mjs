@@ -9,7 +9,7 @@ const NOW = new Date("2026-11-14T03:17:00Z");
 const release = (tag, counts, more = {}) => ({ tag_name: tag, draft: false, ...more,
   assets: Object.entries(counts).map(([name, download_count]) => ({ name, download_count })) });
 // A fetch answering GitHub's releases a page at a time, `pages` in turn: a
-// list, an HTTP status, or an Error thrown.
+// list, an HTTP status, a Response, or an Error thrown.
 const github = (...pages) => {
   const asked = [];
   const fetcher = async (url, init) => {
@@ -19,7 +19,8 @@ const github = (...pages) => {
     if (answer instanceof Error) {
       throw answer;
     }
-    return typeof answer === "number" ? new Response("", { status: answer }) : Response.json(answer);
+    return answer instanceof Response ? answer
+      : typeof answer === "number" ? new Response("", { status: answer }) : Response.json(answer);
   };
   return Object.assign(fetcher, { asked });
 };
@@ -45,15 +46,43 @@ test("every page of releases is read, up to RELEASE_PAGES", async () => {
   assert.deepEqual(await readDownloads(github(full, [release("v0.9.0", { "autoflash.tar.gz": 2 })])),
     { downloads: 102 });
   assert.deepEqual(await readDownloads(github(...Array(RELEASE_PAGES).fill(full))),
-    { problem: `more than ${RELEASE_PAGES} pages of releases` });
+    { problem: `more than ${RELEASE_PAGES} pages of releases`, rateLimited: false });
 });
 
-test("a night GitHub is not read keeps nothing, and says why", async () => {
+const missed = (bindings) => bindings.DB.db.prepare("SELECT day, problem, rate_limited FROM download_misses ORDER BY day")
+  .all().map((row) => ({ ...row }));
+
+test("GitHub's rate limit is named as such, primary or secondary; any other refusal by its status", async () => {
+  const refused = (status, headers = {}, body = "") => readDownloads(github(new Response(body, { status, headers })));
+  assert.deepEqual(await refused(403, { "x-ratelimit-remaining": "0", "x-ratelimit-limit": "60" },
+    '{"message":"API rate limit exceeded for 192.0.2.50."}'),
+  { problem: "GitHub's rate limit reached (HTTP 403, 60 requests an hour)", rateLimited: true });
+  assert.deepEqual(await refused(429, { "retry-after": "60" }),
+    { problem: "GitHub's rate limit reached (HTTP 429)", rateLimited: true }, "the secondary: a wait asked for");
+  assert.deepEqual(await refused(403, {}, '{"message":"You have exceeded a secondary rate limit."}'),
+    { problem: "GitHub's rate limit reached (HTTP 403)", rateLimited: true }, "or said in its message");
+  assert.deepEqual(await refused(403, { "x-ratelimit-remaining": "41" }, '{"message":"Forbidden"}'),
+    { problem: "HTTP 403", rateLimited: false }, "a 403 with requests left is no rate limit");
+  assert.deepEqual(await refused(404, { "x-ratelimit-remaining": "0" }), { problem: "HTTP 404", rateLimited: false });
+  assert.deepEqual(await refused(503), { problem: "HTTP 503", rateLimited: false });
+});
+
+test("a night GitHub is not read keeps no count, but why, for the day it would have kept", async () => {
   const bindings = { DB: d1() };
-  assert.equal(await refreshDownloads(bindings, NOW, github(403)), "HTTP 403");
-  assert.equal(await refreshDownloads(bindings, NOW, github({ message: "Not Found" })), "not a list of releases");
-  assert.equal(await refreshDownloads(bindings, NOW, github(new Error("timed out"))), "timed out");
+  const later = new Date("2026-11-15T03:17:00Z");
+  const limited = new Response("", { status: 403, headers: { "x-ratelimit-remaining": "0", "x-ratelimit-limit": "60" } });
+  assert.equal(await refreshDownloads(bindings, NOW, github(limited)),
+    "GitHub's rate limit reached (HTTP 403, 60 requests an hour)");
+  assert.equal(await refreshDownloads(bindings, later, github({ message: "Not Found" })), "not a list of releases");
   assert.deepEqual(kept(bindings), []);
+  assert.deepEqual(missed(bindings), [
+    { day: "2026-11-13", problem: "GitHub's rate limit reached (HTTP 403, 60 requests an hour)", rate_limited: 1 },
+    { day: "2026-11-14", problem: "not a list of releases", rate_limited: 0 }]);
+  assert.equal(await refreshDownloads(bindings, later, github(new Error("timed out"))), "timed out");
+  assert.deepEqual(missed(bindings).at(-1), { day: "2026-11-14", problem: "timed out", rate_limited: 0 },
+    "the night's latest why");
+  assert.equal(await refreshDownloads(bindings, later, github([release("v1.0.0", { "autoflash.zip": 5 })])), "taken");
+  assert.deepEqual(missed(bindings).map((row) => row.day), ["2026-11-13"], "read after all: not missed");
 });
 
 test("each night's counts are kept for the day just ended, read again the same night replacing them", async () => {

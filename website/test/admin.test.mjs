@@ -133,6 +133,11 @@ test("the view shows the tool's downloads, one total beside the devices converte
   const html = await view();
   assert.ok(html.includes('<div class="tile-label">Downloads</div><div class="tile-value">1,312</div>'
     + '<div class="tile-note">to 2026-11-09</div>'));
+  db.db.prepare("INSERT INTO download_misses (day, problem, rate_limited) VALUES ('2026-11-08', 'HTTP 500', 0)").run();
+  assert.ok((await view()).includes('<div class="tile-note">to 2026-11-09</div>'), "a night refused before the last read is past");
+  db.db.prepare("INSERT INTO download_misses (day, problem, rate_limited) VALUES ('2026-11-10', 'GitHub''s rate limit reached (HTTP 403)', 1)").run();
+  assert.ok((await view()).includes('<div class="tile-note">to 2026-11-09 · refused for 2026-11-10: '
+    + 'GitHub&#39;s rate limit reached (HTTP 403)</div>'));
   const chart = html.split('id="downloads">')[1].split("</section>")[0];
   assert.match(chart, /<title>2026-11-09: 1,312 downloads<\/title>/);
   assert.match(chart, /<title>2026-11-09: \d+ devices converted<\/title>/);
