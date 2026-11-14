@@ -1694,11 +1694,27 @@ class ReadoutAllScenarioTests(unittest.TestCase):
             self.assertNotIn("--all", args)
             self.assertNotIn("AUTOFLASH_API_ENOUGH", options["env"])
             self.assertNotIn("AUTOFLASH_EMU_STUB_OTHERS", options["env"])
+            self.assertNotIn("AUTOFLASH_LOCAL_READOUT_LIMIT", env)   # the website's own limit
         script = (fs.REPO / "tools/espressif/emulator/unattended-test.sh").read_text(encoding="utf-8")
         self.assertIn("--no-api) api=0", script)
         self.assertIn('"${AUTOFLASH_API_ENOUGH:-}"', script)
         self.assertIn('cp "$AUTOFLASH_EMU_STUB_OTHERS"',
                       (fs.REPO / "tools/espressif/emulator/emu.sh").read_text(encoding="utf-8"))
+
+    def test_the_many_account_meets_the_apis_limit_however_slowly_its_readouts_come(self):
+        # Its readouts came 10 to 75 s apart, never three in one minute: the 429
+        # it is there for never came (NOT-FIRED) at the website's two a minute.
+        with tempfile.TemporaryDirectory() as tmp:
+            sc = self.scenario(account="many")
+            sc.log = str(Path(tmp, "scenario.log"))
+            with mock.patch.object(fs.subprocess, "call", return_value=0) as call, \
+                    mock.patch.object(fs, "device_product", return_value=self.DEVICE):
+                sc.run_tool("readout", fresh=True)
+            self.assertEqual(call.call_args.kwargs["env"]["AUTOFLASH_LOCAL_READOUT_LIMIT"], "1")
+        self.assertIn("-e AUTOFLASH_LOCAL_READOUT_LIMIT",
+                      (fs.REPO / "tools/repo/emulator-room.sh").read_text(encoding="utf-8"))
+        self.assertIn("process.env.AUTOFLASH_LOCAL_READOUT_LIMIT",
+                      (fs.REPO / "website/api/local.mjs").read_text(encoding="utf-8"))
 
     def problems(self, requests, run=RUN, finished=True, stored=(), whole=(), kept=()):
         """readout_all_problems' verdicts of one run, the API's store holding

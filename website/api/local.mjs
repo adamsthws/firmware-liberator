@@ -6,7 +6,9 @@
 // minute from one address, in a fixed minute's window. Never deployed.
 //   node website/api/local.mjs ADDRESS PORT FOLDER [ENOUGH]
 // AUTOFLASH_LOCAL_PROOF_BITS, for a test, lowers the work every path asks
-// (proof-of-work.js's work.bits), so a test's tool need not do the full work.
+// (proof-of-work.js's work.bits), so a test's tool need not do the full work;
+// AUTOFLASH_LOCAL_READOUT_LIMIT, the readouts a minute it takes, so a test can
+// reach the limit however slowly its readouts come.
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -58,7 +60,7 @@ function limiter(most) {
     },
   };
 }
-const READOUT_LIMIT = limiter(2);
+const READOUT_LIMIT = limiter(Number(process.env.AUTOFLASH_LOCAL_READOUT_LIMIT) || 2);
 const REPORT_LIMIT = limiter(3);
 // Brought up to date at each start, as `apply` brings the real one.
 const DB = d1({ file: path.join(folder, "api.sqlite") });

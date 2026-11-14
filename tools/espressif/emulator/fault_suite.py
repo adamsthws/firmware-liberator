@@ -1364,12 +1364,17 @@ class Scenario:
         env = dict(os.environ)
         # The account's other devices, and the API's ENOUGH, are a readout of
         # every device's own: any other scenario's account is the device alone.
-        for setting in ("AUTOFLASH_EMU_STUB_OTHERS", "AUTOFLASH_API_ENOUGH"):
+        for setting in ("AUTOFLASH_EMU_STUB_OTHERS", "AUTOFLASH_API_ENOUGH", "AUTOFLASH_LOCAL_READOUT_LIMIT"):
             env.pop(setting, None)
         if every:
             env["AUTOFLASH_EMU_STUB_OTHERS"] = str(self.others_file())
             env["AUTOFLASH_EMU_STUB_PRODUCT_MODEL"] = device_product()
             env["AUTOFLASH_API_ENOUGH"] = ",".join(self.enough())
+        if every and self.sc.get("account") == "many":
+            # One a minute, not the website's two: its eight readouts, 10 to 75 s
+            # apart, came three in no one minute, and the 429 never came (NOT-FIRED);
+            # over the four or five minutes they take, two now share a minute.
+            env["AUTOFLASH_LOCAL_READOUT_LIMIT"] = "1"
         if not STUB_CLOUD and not NO_CLOUD:
             env["AUTOFLASH_EMULATOR_CLOUD_TURN"] = f"/work/{TURN_FILE}"
         if (self.sc["fault"], self.sc["arg"]) == ("ctrlc", "countdown"):

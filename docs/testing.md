@@ -453,7 +453,7 @@ computer, such as its Node or firewall, comes into it. The accounts:
 | `mixed` | two other devices | the plain case; also the device switched off for a second, or the computer crashing, at 40% of the device's read, which comes last, stopping the run there; it is run again, as a person would, until one finishes |
 | `alike` | three alike in product, firmware model and version, and one not | the API keeps one of the three from one sender |
 | `enough` | two others, with the device's product and one other's in the API's `ENOUGH` | those are thanked and not kept |
-| `many` | seven | quick first stages enough to reach the API's two readouts a minute (NOT-FIRED if no run was answered 429) |
+| `many` | seven | enough first stages to reach the API's limit, lowered to one readout a minute however slowly they come (NOT-FIRED if no run was answered 429) |
 
 Each run is judged by what the API answered and kept, never by its rules,
 from its `requests.log` and store, copied beside the scenario's log
