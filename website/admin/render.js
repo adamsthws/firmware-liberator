@@ -79,6 +79,31 @@ export function lineChart(points, { limit = null, say = number, label = "", widt
     + `<text class="tick" x="${W}" y="${H - 6}" text-anchor="end">${esc(last.day)}</text></svg>`;
 }
 
+// Lines over days on one scale, one a series: `days` [{day, values: {name: n}}],
+// `names` in the legend's order, each in its series' colour.
+export function lines(days, names, label = "", width = FULL) {
+  if (days.length < 2) {
+    return '<p class="none">Not enough days yet.</p>';
+  }
+  const [W, H, left, bottom, top] = [width, 220, 64, 26, 14];
+  const most = Math.max(1, ...days.flatMap((day) => names.map((name) => day.values[name] ?? 0)));
+  const x = (index) => left + ((W - left - 8) * index) / (days.length - 1);
+  const y = (value) => top + (H - top - bottom) * (1 - value / most);
+  return `<ul class="legend">${names.map((name, at) => `<li><span class="swatch series-${at + 1}"></span>${esc(name)}</li>`).join("")}</ul>`
+    + `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">`
+    + [0, most / 2, most].map((tick) => `<line class="grid" x1="${left}" x2="${W}" y1="${y(tick)}" y2="${y(tick)}"/>`
+      + `<text class="tick" x="${left - 8}" y="${y(tick) + 4}" text-anchor="end">${esc(number(Math.round(tick)))}</text>`).join("")
+    + names.map((name, at) => {
+      const values = days.map((day) => day.values[name] ?? 0);
+      return `<path class="line series-${at + 1}" d="${values.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(" ")}"/>`
+        + values.map((value, index) => `<circle class="hit" cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="6">`
+          + `<title>${esc(`${days[index].day}: ${number(value)} ${name}`)}</title></circle>`).join("")
+        + `<circle class="dot series-${at + 1}" cx="${x(days.length - 1)}" cy="${y(values.at(-1))}" r="4"/>`;
+    }).join("")
+    + `<text class="tick" x="${left}" y="${H - 6}">${esc(days[0].day)}</text>`
+    + `<text class="tick" x="${W}" y="${H - 6}" text-anchor="end">${esc(days.at(-1).day)}</text></svg>`;
+}
+
 // Stacked columns a day: `days` [{day, parts: {name: n}}], `names` in stack
 // order, each drawn in its series' colour, or in the class `kinds` gives it.
 export function columns(days, names, label = "", width = HALF, kinds = names.map((_, at) => `series-${at + 1}`)) {
@@ -203,6 +228,7 @@ svg { width: 100%; height: auto; display: block; overflow: visible; }
 .mark.muted, .swatch.muted { fill: var(--muted); background: var(--muted); }
 .mark.critical, .swatch.critical { fill: var(--critical); background: var(--critical); }
 .line.series-2 { stroke: var(--series-2); } .line.series-3 { stroke: var(--series-3); }
+.dot.series-2 { fill: var(--series-2); } .dot.series-3 { fill: var(--series-3); }
 .trends { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px 20px; }
 .trend { margin: 0; } .trend figcaption { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
 .mark:hover { filter: brightness(1.15); }

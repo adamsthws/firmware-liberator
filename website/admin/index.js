@@ -7,6 +7,7 @@
 // under SCOPE with Access's service token alone (emulator.js). Nothing in it
 // is cached, framed, indexed or scripted.
 import { release as giveBack } from "../api/counters.js";
+import { downloadDays, DOWNLOADS } from "../api/downloads.js";
 import { AGREEMENT_SETTING, DAILY_BYTES, DAILY_COUNT, MIN_NETWORKS, NOTIFY_DAILY, PER_KEY, STAGES, TOTAL_BYTES }
   from "../api/index.js";
 import { CLOUD_ASNS } from "../api/networks.js";
@@ -16,7 +17,7 @@ import { DEVICE_DAILY, ID, REPORTS_DAILY } from "../api/reports.js";
 import schema from "../api/report-schema.json" with { type: "json" };
 import { verified } from "./access.js";
 import { emulatorSections, gatherEmulator, KINDS, SCOPE, setCause, upload } from "./emulator.js";
-import { bytes, columns, esc, FULL, lineChart, meter, number, STYLE, table, tile, trends } from "./render.js";
+import { bytes, columns, esc, FULL, lineChart, lines, meter, number, STYLE, table, tile, trends } from "./render.js";
 
 export const ORIGIN = "https://admin.firmwareliberator.com";
 // What Workers Paid includes a month, and R2 free (tools/repo/api_health.py's
@@ -270,6 +271,8 @@ export async function gather(env, now) {
     popularity: await modelTrends(all, now),
     needed: await all(NEEDED, since(NEEDED_DAYS)),
     emulator: await gatherEmulator(all, now),
+    // Every night GitHub was read, beside your users' devices converted by then.
+    downloads: await downloadDays(all, "", "dev = 0"),
   };
 }
 
@@ -334,6 +337,7 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
   const count = (name) => data.counters[name]?.count ?? 0;
   const ever = data.counters["readouts:all"] ?? { count: 0, bytes: 0 };
   const filling = pace(data.store, now);
+  const read = data.downloads.at(-1);
   const mailDays = Object.values(data.mail.reduce((days, row) => {
     days[row.day] ??= { day: row.day, parts: {} };
     days[row.day].parts[row.outcome] = (days[row.day].parts[row.outcome] ?? 0) + row.n;
@@ -356,12 +360,19 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
       + tile("Readouts today", number(count(`readouts:${data.today}`)), `of ${number(DAILY_COUNT)}`)
       + tile("Emails today", number(count(`mail-sent:${data.today}`)), `${number(count(`notify:${data.today}`))} sign-ups of ${number(NOTIFY_DAILY)}`)
       + tile("Devices", number(data.devices?.seen), `${number(data.devices?.converted)} converted · ${number(data.devices?.dev)} yours`)
+      + tile("Downloads", number(read?.downloads), read ? `to ${read.day}` : "GitHub not read yet")
       + tile("Held for review", number(data.held.length))
       + tile("Last night's job counted to", data.lastFolded ?? "not yet run")
       + `</div></section>`,
     `<section class="card"><h2>Reports, the last fortnight</h2><p class="sub">Every report that came in, by day; held ones are in no figure.</p>`
       + columns(data.week.map((row) => ({ day: row.day, parts: { converted: row.converted, other: row.runs - row.converted } })),
         ["converted", "other"], "Reports a day", FULL)
+      + `</section>`,
+    `<section class="card" id="downloads"><h2>Downloads and devices converted</h2><p class="sub">The tool downloaded, as
+      GitHub counts it each night (${DOWNLOADS.join(" and ")} of every release), beside the devices
+      converted, your own left out: all time to each day.</p>`
+      + lines(data.downloads.map((row) => ({ day: row.day, values: { downloads: row.downloads, "devices converted": row.converted } })),
+        ["downloads", "devices converted"], "Downloads and devices converted by day")
       + `</section>`,
     `<section class="card" id="popularity"><h2>Devices, model by model</h2><p class="sub">Each month of the last
       ${POPULAR_MONTHS}: devices whose readout was first asked about, devices read out, and devices converted (again,

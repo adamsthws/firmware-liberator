@@ -31,7 +31,11 @@
 //   tries, the day it was last tested and the firmware it ran; and the same
 //   of its newest version at the top. A device in testing shows here before
 //   anyone has converted one.
+// - The tool's downloads (`downloads`), as GitHub counted them each night it
+//   was read (downloads.js), beside the devices converted by that day: the
+//   downloads whole, as GitHub shows them to anyone, the devices as above.
 import { LATEST_MIGRATION } from "./database.js";
+import { downloadDays } from "./downloads.js";
 import { deviceTesting, newerFirst } from "./emulator.js";
 import { monthsTo, popularity } from "./popularity.js";
 
@@ -165,6 +169,9 @@ export async function snapshot(db, now = new Date()) {
     passed: row.passed, coverage: row.scenarios ? Math.round((1000 * row.passed) / row.scenarios) / 10 : null,
     firstTry: rate(row.firstPassed, row.judged),
   });
+  // The tool's downloads, each night GitHub was read, beside the devices
+  // converted by then: GitHub shows anyone the downloads, so they are whole.
+  const downloads = await downloadDays(all, "", `dev = 0 AND ${NOT_HELD} AND device IS NOT NULL`);
   const counted = [...reached.keys()].sort((a, b) => a - b)
     .map((place) => ({ devices: place, computers: reached.get(place) - atLeast(place + 1) }))
     .filter((row) => row.computers >= SMALLEST);
@@ -194,6 +201,10 @@ export async function snapshot(db, now = new Date()) {
     failures: failures.map((row) => ({ step: row.step || null, error: row.error, runs: row.runs })),
     cancellations: cancellations.map((row) => ({ step: row.step || null, runs: row.runs })),
     perComputer: { computers: count(atLeast(1)), rows: counted },
+    downloads: {
+      total: downloads.at(-1)?.downloads ?? null, day: downloads.at(-1)?.day ?? null,
+      days: downloads.map((row) => ({ day: row.day, downloads: row.downloads, converted: count(row.converted) })),
+    },
     stock: stock.map((row) => ({ model: row.model, stock_version: row.stock_version, runs: row.runs, converted: count(row.converted),
       success: rate(row.converted, row.runs) })),
     computers: computers.map((row) => ({ os: row.os_family, python: row.python_source, runs: row.runs })),

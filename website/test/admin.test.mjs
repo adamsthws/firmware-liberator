@@ -122,6 +122,22 @@ test("the view shows each list of networks that count as none: its size, when ta
   assert.match(html, /<td>vpn<\/td><td class="number">2<\/td><td class="number">1<\/td><td>2026-11-02<\/td><td>HTTP 404<\/td>/);
 });
 
+test("the view shows the tool's downloads, one total beside the devices converted, each night GitHub was read", async () => {
+  const { bindings, db } = await held();
+  const view = async () => admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  assert.match(await view(), /GitHub not read yet/);
+  assert.match((await view()).split('id="downloads">')[1].split("</section>")[0], /Not enough days yet\./);
+  const read = db.db.prepare("INSERT INTO download_days (day, downloads) VALUES (?, ?)");
+  read.run("2026-11-08", 1210);
+  read.run("2026-11-09", 1312);
+  const html = await view();
+  assert.ok(html.includes('<div class="tile-label">Downloads</div><div class="tile-value">1,312</div>'
+    + '<div class="tile-note">to 2026-11-09</div>'));
+  const chart = html.split('id="downloads">')[1].split("</section>")[0];
+  assert.match(chart, /<title>2026-11-09: 1,312 downloads<\/title>/);
+  assert.match(chart, /<title>2026-11-09: \d+ devices converted<\/title>/);
+});
+
 test("a held report released is counted again: its day folded afresh tonight", async () => {
   const { db, junk } = await held();
   await db.batch(admin.release(db, junk.id));

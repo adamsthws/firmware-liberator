@@ -5,6 +5,7 @@
 // validated chart palette (both themes), set as the roles below.
 import Page from "../layouts/Page.astro";
 import DataTable from "../components/stats/DataTable.astro";
+import DownloadsLine from "../components/stats/DownloadsLine.astro";
 import ModelTrends from "../components/stats/ModelTrends.astro";
 import MonthColumns from "../components/stats/MonthColumns.astro";
 import RankedBars from "../components/stats/RankedBars.astro";
@@ -127,8 +128,23 @@ const view = figures && {
           <Tile label="Converted in the end" value={percent(figures.devices.eventually)} unit="%" />
           <Tile label="Runs that converted" value={percent(figures.runs.success)} unit="%"
             note={figures.runs.success === null ? "" : `of ${attempted(figures.runs).toLocaleString("en")} conversion runs`} />
+          {/* Figures from before downloads were read have none. */}
+          {figures.downloads?.total != null && <Tile label="Downloads of the tool" value={figures.downloads.total}
+            note={figures.downloads.day === figures.through ? "as GitHub counts them" : `as GitHub counted them on ${date(figures.downloads.day)}`} />}
         </div>
       </section>
+
+      {figures.downloads?.days.length > 1 && (
+        <section class="card">
+          <h2>Downloads and devices converted</h2>
+          <p class="sub">The tool downloaded, as GitHub counts it - each new version a computer installs is a download -
+            beside the devices converted, all time to each day. A day the devices were under {figures.smallest} shows
+            none of theirs.</p>
+          <DownloadsLine days={figures.downloads.days} />
+          <DataTable caption="The figures, as a table" rows={figures.downloads.days}
+            columns={[["Day", "day"], ["Downloads", "downloads", true], ["Devices converted", "converted", true]]} />
+        </section>
+      )}
 
       <section class="card">
         <h2>Runs each month</h2>
