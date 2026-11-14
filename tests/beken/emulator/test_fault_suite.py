@@ -1,5 +1,6 @@
 """The Beken fault suite: its scenarios, and how it tells a device converted."""
 
+import json
 import io
 import tempfile
 import threading
@@ -42,6 +43,22 @@ class ScenarioTests(unittest.TestCase):
         self.assertIn("sonoff>esphome:J1:outage-5", quick)
         self.assertIn("sonoff>esphome:K2:fallback-150", quick)
         self.assertIn("sonoff>readout:read:outage-30", quick)
+
+    def test_found_says_what_each_fault_found_here_and_kept(self):
+        with tempfile.TemporaryDirectory() as directory:
+            emulation = Path(directory)
+            for folder, row in ((emulation / "beken" / "suite", {"id": "a>b:K2:outage-120", "result": "FAIL"}),
+                                (emulation / "kept" / "second" / "beken" / "suite",
+                                 {"id": "a>b:K2:outage-5", "result": "PASS"})):
+                folder.mkdir(parents=True)
+                (folder / "results.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+            with mock.patch.object(fault_suite.folders, "migrate", return_value=[]), \
+                    mock.patch.object(fault_suite.folders, "EMU", emulation), \
+                    mock.patch.object(fault_suite.folders, "BEKEN", emulation / "beken"), \
+                    mock.patch("sys.stdout", io.StringIO()) as out:
+                self.assertEqual(fault_suite.main(["found"]), 0)
+        self.assertEqual([line.split()[:4] for line in out.getvalue().splitlines()],
+                         [["outage-5", "1", "run", "0"], ["outage-120", "1", "run", "1"]])
 
     def test_list_takes_only_what_it_lists(self):
         with mock.patch.object(fault_suite.folders, "migrate", return_value=[]):
@@ -192,12 +209,17 @@ class BatchResultTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             ids = Path(directory) / "beken.txt"
             ids.write_text("a\nb\n", encoding="utf-8")
+            emulation = Path(directory, "emulation")
+            Path(emulation, "kept", "second").mkdir(parents=True)
             with mock.patch.object(fault_suite, "scenarios", return_value=[{"id": "a"}, {"id": "b"}]), \
                     mock.patch.object(fault_suite.folders, "migrate", return_value=[]), \
+                    mock.patch.object(fault_suite.folders, "EMU", emulation), \
+                    mock.patch.object(fault_suite.folders, "BEKEN", emulation / "beken"), \
                     mock.patch.object(fault_suite.scenario_times, "times", return_value={}) as took, \
                     mock.patch("builtins.print"):
                 self.assertEqual(fault_suite.main(["share", str(ids), "1", "1"]), 0)
-            self.assertEqual(took.call_args.args, (fault_suite.folders.BEKEN,))
+            # Its own folders, and those kept from another machine.
+            self.assertEqual(took.call_args.args, (emulation / "beken", emulation / "kept" / "second" / "beken"))
             self.assertEqual([Path(f"{ids}.{n}").read_text(encoding="utf-8") for n in (1, 2)], ["a\n", "b\n"])
 
     def test_a_batch_starts_the_longest_first(self):
@@ -215,10 +237,11 @@ class BatchResultTests(unittest.TestCase):
                 mock.patch.dict(fault_suite.os.environ, {"AUTOFLASH_BEKEN_EMU_WORKERS": "1"}), \
                 mock.patch.object(fault_suite.scenario_times, "times", return_value={"a": 60, "b": 1800, "c": 300}) as took, \
                 mock.patch.object(fault_suite.cpu_load, "wait_for_room"), \
+                mock.patch.object(fault_suite, "suite_roots", return_value=[Path("here"), Path("kept")]), \
                 mock.patch("builtins.print"):
             fault_suite.batch()
         self.assertEqual(ran, ["b", "c", "a"])
-        self.assertEqual(took.call_args.args, (fault_suite.folders.BEKEN,))
+        self.assertEqual(took.call_args.args, (Path("here"), Path("kept")))
 
     def test_a_scenario_waits_for_room_before_it_starts(self):
         from unittest import mock

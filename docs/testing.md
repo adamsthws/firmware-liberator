@@ -253,9 +253,9 @@ Both suites run a batch the same way:
   ```
 
 - `batch` runs what has not passed yet, longest first so as not to end on a
-  long one started last, by how long each last took on this computer (from
-  the suite's results in `captures/emulation/*/`); one never run counts as a
-  typical one plus its fault's length.
+  long one started last, by how long each last took (from the suite's
+  results in `captures/emulation/*/`, and those kept from other machines);
+  one never run counts as a typical one plus its fault's length.
 - `share` splits a list between machines by the same times, so that they end
   together. After the list it takes each machine's number of emulators, and
   `--times-from` for each other machine's suite folders copied here (each
@@ -266,6 +266,22 @@ Both suites run a batch the same way:
   tools/espressif/emulator/fault_suite.py share all.txt 4 4 6 --times-from second/ --times-from third/
   tools/beken/emulator/fault_suite.py share beken.txt 2 2 2
   ```
+
+- Before a machine that ran a batch is wiped, copy its results back to
+  `captures/emulation/kept/NAME/` (`scenario_times.KEPT`), one folder a
+  machine, laid out as its `captures/emulation/` is. `batch` and `share` take
+  their times from it too, and `found` what it found:
+
+  ```sh
+  mkdir -p captures/emulation/kept
+  rsync -a --prune-empty-dirs --exclude=/kept/ --include='*/' --include=results.jsonl --exclude='*' \
+      HOST:REPO/captures/emulation/ captures/emulation/kept/NAME/
+  ```
+
+- `found` says, for each fault and length, how many scenarios have run it
+  here and in what is kept, and which of them ever failed with the fault
+  landed (`tools/repo/fault_yield.py`): a length that never finds what the
+  others do not can go, as the 60 s outage did.
 
 - The next scenario waits, up to half an hour, while this computer's load is
   over 1.5 a core (`tools/repo/cpu_load.py`), and says so: unit tests run
@@ -278,7 +294,7 @@ Both suites run a batch the same way:
 
 ### The Espressif fault suite
 
-`tools/espressif/emulator/fault_suite.py` has 1,616 scenarios on an S60.
+`tools/espressif/emulator/fault_suite.py` has 1,559 scenarios on an S60.
 
 #### What it covers (Espressif)
 
@@ -489,7 +505,7 @@ from the copy's record and its results in a folder of their own
 table, Tasmota to ESPHome goes through the hub, as the tool takes it, with
 `D5ot` added and the device's own step lengths. On any device but the S60,
 the runs of earlier releases and `update>esphome` are left out. The TH Elite
-has 1,681 scenarios.
+has 1,621 scenarios.
 
 #### Running it (Espressif)
 
@@ -703,7 +719,7 @@ moment as Tasmota names its own.
 
 #### What whole runs have shown (Espressif)
 
-The current code passes the whole suite: the 1,541 scenarios on the stub, and
+The current code passes the whole suite, as it was before its 60 s outages went: the 1,541 scenarios on the stub, and
 the 75 cloud ones against the real eWeLink, where two NOT-FIRED, eWeLink
 having dropped the device's sessions, passed when run again after an hour's
 pause ([one real-cloud run a day](#running-it-espressif)). Run across several
@@ -788,7 +804,7 @@ emulated ones started from the public S61s dump
 (`beken-emu.sh --instance N device`,
 [its README](../tools/beken/emulator/README.md)), each on a home Wi-Fi of its
 own with the local eWeLink stub, so nothing reaches the internet and every
-scenario can run side by side. It has 291 scenarios.
+scenario can run side by side. It has 414 scenarios.
 
 #### What it covers (Beken)
 
@@ -905,8 +921,9 @@ for the interim firmware, above) and none of these applies:
 
 #### What whole runs have shown (Beken)
 
-The current code passes all 291 scenarios, every direction end to end in the
-emulator, faults and all, from the public dump of a real S61.
+The current code passes every scenario, every direction end to end in the
+emulator, faults and all, from the public dump of a real S61: a whole run of
+the 291 it had, and the longer outages and K2's fallback added since.
 
 #### Still open (Beken)
 

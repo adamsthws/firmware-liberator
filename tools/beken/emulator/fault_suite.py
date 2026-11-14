@@ -21,6 +21,8 @@ does for the Espressif devices.
     fault_suite.py batch [FILE]         the scenarios in FILE (one id a line; every
                                         scenario without), skipping those passed
     fault_suite.py report               the latest result of each
+    fault_suite.py found                what each fault and length has found, in the
+                                        results here and kept (tools/repo/fault_yield.py)
     fault_suite.py share FILE N...      FILE's scenarios shared out between machines
                                         running N emulators each, to end together:
                                         FILE.1, FILE.2, ... (--times-from DIR: another
@@ -105,7 +107,7 @@ from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash import esphome, kinds, openbeken  # noqa: E402
 from tools.autoflash.routes import beken  # noqa: E402
 from tools.beken.emulator import folders  # noqa: E402
-from tools.repo import cpu_load, emulator_stats, fault_verdicts, scenario_times  # noqa: E402
+from tools.repo import cpu_load, emulator_stats, fault_verdicts, fault_yield, scenario_times  # noqa: E402
 from tools.repo.earlier_attempts import keep_earlier  # noqa: E402
 from tools.repo.memory_pressure import MemoryWatch  # noqa: E402
 
@@ -1081,7 +1083,7 @@ def batch(ids_file: str | None = None) -> None:
     todo: queue.Queue = queue.Queue()
     # The longest first, so the batch does not end on one started last (scenario_times).
     for sc in scenario_times.longest_first([every[i] for i in wanted if i in every and i not in passed],
-                                           scenario_times.times(folders.BEKEN)):
+                                           scenario_times.times(*suite_roots())):
         todo.put(sc)
     workers = int(os.environ.get("AUTOFLASH_BEKEN_EMU_WORKERS", "2"))
     lock = threading.Lock()
@@ -1266,6 +1268,11 @@ def keep_for_saving(folder: str, names: list[str]) -> list[str]:
             or name in ("power", "certs.part", "certs-for", "ca.crt", "leaf.crt", "leaf.key", "sonoff-backup")]
 
 
+def suite_roots() -> list[Path]:
+    """This suite's folders here, and those kept from other machines."""
+    return [folders.BEKEN, *scenario_times.kept(folders.EMU, folders.BEKEN.name)]
+
+
 def report() -> None:
     found = latest()
     for sc in scenarios():
@@ -1301,6 +1308,9 @@ def main(argv: list[str]) -> int:
         return 0 if all_passed(argv[1] if len(argv) > 1 else None) else 1
     elif command == "report":
         report()
+    elif command == "found":
+        for line in fault_yield.found(fault_yield.rows(*suite_roots())):
+            print(line)
     elif command == "share":
         # share IDS WORKERS... [--times-from DIR]..., as the Espressif suite's
         import argparse
@@ -1311,7 +1321,7 @@ def main(argv: list[str]) -> int:
         args = parser.parse_args(argv[1:])
         try:
             for line in scenario_times.write_shares(args.file, args.workers, scenarios(),
-                                                    scenario_times.times(folders.BEKEN, *args.times_from)):
+                                                    scenario_times.times(*suite_roots(), *args.times_from)):
                 print(line)
         except ValueError as exc:
             parser.error(str(exc))
