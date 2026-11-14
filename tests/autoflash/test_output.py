@@ -360,6 +360,27 @@ class ConciseTests(OutputTestCase):
                 output.stage_end("complete")
         self.run_with(FakeTerminal(), False, body)
 
+    def test_a_stage_stopped_after_its_notes_were_taken_off_has_one_blank_row_above_why(self):
+        # Seen in the fault suite: a note in a block, its clock drawn above it
+        # once an inner block went, then the note taken off and the stage
+        # stopped - "FAILED: ..." came two blank rows under the stage line.
+        def body():
+            with mock.patch.object(output, "colour_ok", return_value=True), \
+                 mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((80, 24))):
+                output.stage_begin(7, "Backing up Sonoff firmware")
+                output.transient_begin()
+                output.tell("Back on its Sonoff firmware: sending the installer again.")
+                output.transient_begin()
+                output.tell("-- Let the device through this computer's firewall")
+                output.transient_end()   # the clock drawn above the note
+                output.transient_end()
+                output._tick()
+                output.stage_end("stopped")
+                output.tell("FAILED: the connection to the device was lost")
+        screen, _ = self.run_with(FakeTerminal(), False, body)
+        self.assertEqual(rendered(screen), ["Stage 7 - Backing up Sonoff firmware - Stopped", "",
+                                            "FAILED: the connection to the device was lost"])
+
     def test_a_short_window_is_noticed(self):
         found = {}
         def body():
