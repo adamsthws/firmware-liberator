@@ -90,6 +90,15 @@ test("the view shows what the database holds, as text, never markup, and is kept
   assert.match(await response.text(), /<h1>Admin<\/h1>/);
 });
 
+test("a held report and a recent one say the device kind as well as the model", async () => {
+  const { bindings } = await held();
+  const html = await admin.page(bindings, { email: "owner@example.com" }, new Date(NOW), keys);
+  const section = (id) => html.split(`id="${id}">`)[1].split("</section>")[0];
+  assert.match(section("held"), /<th>Device<\/th><th>Model<\/th>/);
+  assert.match(section("held"), /<td>Sonoff S60<\/td><td>S60TPG<\/td>/);
+  assert.match(html.split("The latest reports")[1], /<td>Sonoff S60<\/td><td>S60TPG<\/td>/);
+});
+
 test("the view lists the keys a later whole readout disagrees with, unsettled", async () => {
   const { bindings, db } = await held();
   const add = db.db.prepare(`INSERT INTO readouts (id, key, stage, sender, fingerprint, bytes, object, received, review,

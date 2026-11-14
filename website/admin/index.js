@@ -255,6 +255,9 @@ export const SYSTEMS = `SELECT * FROM (SELECT 'all' AS os, * FROM (${COUNTED})
   ORDER BY os = 'all' DESC, runs DESC, os`;
 export const SYSTEM_NAMES = { all: "All systems", windows: "Windows", macos: "macOS", linux: "Linux" };
 
+// A report's device kind, as a person calls it (report-schema.json); "" for none.
+const deviceName = (row) => schema.deviceNames[row.device] ?? row.device ?? "";
+
 // Everything the view shows, in a fixed few queries.
 export async function gather(env, now) {
   const all = async (sql, ...values) => (await env.DB.prepare(sql).bind(...values).all()).results;
@@ -267,9 +270,9 @@ export async function gather(env, now) {
   const [folded] = await all("SELECT max(day) AS day FROM folded");
   return {
     today, counters, devices, lastFolded: folded?.day ?? null,
-    held: await all(`SELECT held_reports.id, held_reports.day, why, model, tool, result, step, error, text, tag
+    held: await all(`SELECT held_reports.id, held_reports.day, why, device, model, tool, result, step, error, text, tag
       FROM held_reports JOIN reports ON reports.id = held_reports.id ORDER BY held_reports.day DESC LIMIT 100`),
-    recent: await all(`SELECT day, tag, tool, result, step, error, text, model, firmware, source, os_family, seconds, quarantined,
+    recent: await all(`SELECT day, tag, tool, result, step, error, text, device, model, firmware, source, os_family, seconds, quarantined,
         crash_site, firmware_name, firmware_name_expected AS name_expected
       FROM reports ORDER BY day DESC LIMIT 40`),
     week: await all(`SELECT day, count(*) AS runs, sum(result = 'converted') AS converted, sum(quarantined) AS held
@@ -416,8 +419,8 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
         ["Power cycled", "cycled", "number"], ["Power cycles", "cycles", "number"]], data.needed, "None needed either.")
       + `</section>`,
     `<section class="card" id="held"><h2>Held for review</h2><p class="sub">Reports no run of the tool's would write, or a day far
-      above a model's usual. Release one to count it (its day is counted again tonight), or delete it.</p>`
-      + table([["Day", "day"], ["Why", "why"], ["Model", "model"], ["Result", "result"], ["Stopped", (row) => [row.step, row.error].filter(Boolean).join(" ")],
+      above a device's usual. Release one to count it (its day is counted again tonight), or delete it.</p>`
+      + table([["Day", "day"], ["Why", "why"], ["Device", deviceName], ["Model", "model"], ["Result", "result"], ["Stopped", (row) => [row.step, row.error].filter(Boolean).join(" ")],
         ["Words", "text", "text"], ["", (row) => action(row.id, "release", "Release") + " " + action(row.id, "delete", "Delete", true), "html"]],
       data.held, "Nothing held.")
       + `</section>`,
@@ -470,7 +473,7 @@ export async function page(env, who, now, fetcher = fetch, live = false) {
       + `</section>`,
     `<section class="card"><h2>The latest reports</h2><p class="sub">The newest 40, held ones marked. At most ${number(DEVICE_DAILY)} a day of one device are taken.</p>`
       + table([["Day", "day"], ["Tag", "tag"], ["Tool", "tool"], ["Result", (row) => row.result + (row.quarantined ? " (held)" : "")],
-        ["Stopped", (row) => [row.step, row.error].filter(Boolean).join(" ")], ["Model", "model"], ["To", "firmware"], ["From", "source"],
+        ["Stopped", (row) => [row.step, row.error].filter(Boolean).join(" ")], ["Device", deviceName], ["Model", "model"], ["To", "firmware"], ["From", "source"],
         ["System", "os_family"], ["Seconds", "seconds", "number"], ["Words", "text", "text"], ["Went wrong at", "crash_site", "text"],
         // The name the device's updater checks; one not the tool's may turn its update down.
         ["Firmware name", (row) => (row.firmware_name ?? "") + (row.name_expected === 0 ? " (not the tool's)" : "")]],

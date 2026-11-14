@@ -10,8 +10,7 @@ const FIGURES = {
   format: 1, through: "2026-11-09", licence: "CC BY 4.0",
   devices: { seen: 526, converted: 390, firstRun: 72.8, eventually: 74.1 },
   runs: { runs: 615, success: 75.4 },
-  models: [{ model: "BASICR4", device: null }, { model: "S60TPG", device: "sonoff-s60" },
-    { model: "S60TPF", device: "sonoff-s60" }],
+  kinds: [{ device: "sonoff-s60" }, { device: "sonoff-retired" }, { device: "sonoff-pow-elite" }],
 };
 
 async function loaded(text) {
@@ -47,17 +46,17 @@ test("figures are fresh for three days after the night that made them, then not"
   assert.equal(isFresh(FIGURES, new Date("2026-11-13T04:30:00Z")), false, "three nights missed");
 });
 
-test("llms.txt's section gives the headline, how fresh it is, and the models the tool converts", () => {
+test("llms.txt's section gives the headline, how fresh it is, and the devices the tool converts", () => {
   const section = llmsFigures({ figures: FIGURES, fresh: true });
   assert.match(section, /^## Figures\n\nAs of 2026-11-09 \(UTC\); rebuilt daily/);
   assert.match(section, /- 390 devices converted, of 526 seen\./);
-  assert.match(section, /- Most converted: S60TPG, S60TPF\./, "BASICR4, which it does not convert, left out");
+  assert.match(section, /- Most converted: Sonoff S60, Sonoff POW Elite 16A\./, "by name, one the tool no longer knows left out");
   assert.equal(llmsFigures({ figures: FIGURES, fresh: false }), "", "never a stale figure");
   assert.equal(llmsFigures({ figures: null, fresh: false }), "");
 });
 
 test("figures all under five give no section at all", () => {
   const none = { ...FIGURES, devices: { seen: null, converted: null, firstRun: null, eventually: null },
-    runs: { runs: null, success: null }, models: [] };
+    runs: { runs: null, success: null }, kinds: [] };
   assert.equal(llmsFigures({ figures: none, fresh: true }), "");
 });

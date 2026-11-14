@@ -246,16 +246,16 @@ CREATE TABLE IF NOT EXISTS monthly_environment (
   PRIMARY KEY (month, tag, os_family, python_source)
 ) WITHOUT ROWID;
 
--- The Sonoff firmware versions met, by model, and how many of those runs
--- converted: an early sign of an update that closes a way in.
+-- The Sonoff firmware versions met, by device kind, and how many of those
+-- runs converted: an early sign of an update that closes a way in.
 CREATE TABLE IF NOT EXISTS monthly_stock (
   month TEXT NOT NULL,
   tag TEXT NOT NULL,
-  model TEXT NOT NULL,
+  device TEXT NOT NULL,
   stock_version TEXT NOT NULL,
   runs INTEGER NOT NULL,
   converted INTEGER NOT NULL,
-  PRIMARY KEY (month, tag, model, stock_version)
+  PRIMARY KEY (month, tag, device, stock_version)
 ) WITHOUT ROWID;
 
 -- Each readout kept (index.js), so that each product, firmware model and

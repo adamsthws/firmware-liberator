@@ -3,9 +3,15 @@
 // - The maintainer's own testing (tag "dev", and devices it has seen),
 //   quarantined reports, and devices with a report held for review are left out.
 // - No figure stands for fewer than SMALLEST: a count below it is null, a
-//   rate is given only over SMALLEST or more, and a row of a list (a model,
-//   a Sonoff version, a tool version) under it is left out, so no one report
-//   or device can be picked out.
+//   rate is given only over SMALLEST or more, and a row of a list (a device,
+//   a model, a Sonoff version, a tool version) under it is left out, so no one
+//   report or device can be picked out.
+// - The devices the tool converts are counted by their kind (the reports'
+//   `device`, one of the tool's own keys), so every one is counted, whether
+//   eWeLink named its model or not: how its conversions go is the kind's, and
+//   its model (an S60's region) is only a breakdown within it. The devices it
+//   does not convert yet have no kind, and are counted by model ("wanted", and
+//   each model's months).
 // - Devices a computer converted (perComputer): from each converted device's
 //   number on the computer that first converted it (devices.place), the
 //   computers that converted at least k devices are the devices numbered k -
@@ -94,10 +100,24 @@ export async function snapshot(db, now = new Date()) {
     GROUP BY month ORDER BY month`);
   const newDevices = new Map((await all(`SELECT substr(first_day, 1, 7) AS month, count(*) AS n FROM devices
     WHERE dev = 0 AND ${NOT_HELD} GROUP BY month`)).map((row) => [row.month, row.n]));
-  const models = await all(`SELECT model, max(device) AS device, count(*) AS devices,
+  // Each kind's devices, from its models' in one query: a model named within
+  // it once vouched for and of SMALLEST or more.
+  const byKind = new Map();
+  for (const row of await all(`SELECT device, model, ${VOUCHED} AS vouched, count(*) AS devices,
       sum(conversions > 0) AS converted, sum(first_result = 'converted') AS first_run
-    FROM devices WHERE dev = 0 AND ${NOT_HELD} AND ${VOUCHED} GROUP BY model HAVING count(*) >= ?
-    ORDER BY devices DESC, model`, SMALLEST);
+    FROM devices WHERE dev = 0 AND ${NOT_HELD} AND device IS NOT NULL GROUP BY device, model
+    ORDER BY devices DESC, model`)) {
+    const kind = byKind.get(row.device) ?? { device: row.device, devices: 0, converted: 0, first_run: 0, models: [] };
+    kind.devices += row.devices;
+    kind.converted += row.converted;
+    kind.first_run += row.first_run;
+    if (row.vouched && row.devices >= SMALLEST) {
+      kind.models.push({ model: row.model, devices: row.devices });
+    }
+    byKind.set(row.device, kind);
+  }
+  const kinds = [...byKind.values()].filter((row) => row.devices >= SMALLEST)
+    .sort((a, b) => b.devices - a.devices || a.device.localeCompare(b.device));
   // Each model's devices month by month, as the admin view counts them.
   const modelMonths = (await popularity(all, `${monthsTo(now, TREND_MONTHS)[0]}-01`, VOUCHED))
     .map((row) => ({ month: row.month, model: row.model, asked: count(row.asked), readOut: count(row.readOut),
@@ -126,8 +146,8 @@ export async function snapshot(db, now = new Date()) {
       WHERE ${VOUCHED} AND device_hash NOT IN (SELECT device_hash FROM devices WHERE dev = 1) AND ${NOT_HELD}
       GROUP BY model, device_hash)
     GROUP BY model HAVING count(*) >= ? ORDER BY devices DESC, model`, SMALLEST);
-  const stock = await all(`SELECT model, stock_version, sum(runs) AS runs, sum(converted) AS converted FROM monthly_stock
-    WHERE tag = 'user' AND ${VOUCHED} GROUP BY model, stock_version HAVING sum(runs) >= ? ORDER BY model, stock_version`, SMALLEST);
+  const stock = await all(`SELECT device, stock_version, sum(runs) AS runs, sum(converted) AS converted FROM monthly_stock
+    WHERE tag = 'user' GROUP BY device, stock_version HAVING sum(runs) >= ? ORDER BY device, stock_version`, SMALLEST);
   const computers = await all(`SELECT os_family, python_source, sum(n) AS runs FROM monthly_environment
     WHERE tag = 'user' GROUP BY os_family, python_source HAVING sum(n) >= ? ORDER BY runs DESC`, SMALLEST);
   const times = await all(`SELECT month, device, firmware, source, n, p50, p90 FROM monthly_times
@@ -190,9 +210,10 @@ export async function snapshot(db, now = new Date()) {
     },
     runs: outcomes(runs),
     months: months.map((row) => ({ month: row.month, newDevices: count(newDevices.get(row.month)), ...outcomes(row) })),
-    models: models.map((row) => ({
-      model: row.model, device: row.device || null, devices: row.devices, converted: count(row.converted),
+    kinds: kinds.map((row) => ({
+      device: row.device, devices: row.devices, converted: count(row.converted),
       firstRun: rate(row.first_run, row.devices), eventually: rate(row.converted, row.devices),
+      models: row.models,
     })),
     modelMonths,
     wanted: wanted.map((row) => ({ model: row.model, devices: row.devices, asked: count(row.asked), ran: count(row.ran) })),
@@ -205,7 +226,7 @@ export async function snapshot(db, now = new Date()) {
       total: downloads.at(-1)?.downloads ?? null, day: downloads.at(-1)?.day ?? null,
       days: downloads.map((row) => ({ day: row.day, downloads: row.downloads, converted: count(row.converted) })),
     },
-    stock: stock.map((row) => ({ model: row.model, stock_version: row.stock_version, runs: row.runs, converted: count(row.converted),
+    stock: stock.map((row) => ({ device: row.device, stock_version: row.stock_version, runs: row.runs, converted: count(row.converted),
       success: rate(row.converted, row.runs) })),
     computers: computers.map((row) => ({ os: row.os_family, python: row.python_source, runs: row.runs })),
     times: times.map((row) => ({ month: row.month, device: row.device || null, firmware: row.firmware || null,

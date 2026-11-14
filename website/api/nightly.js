@@ -18,10 +18,12 @@
 //   enough senders gave it over enough days (vouching; snapshot.js).
 // - The maintainer's emulator runs are folded by day too (emulator_days,
 //   emulator.js), each day a run came in for since the last night.
-// - Before a day is folded, a model's reports that day far above its usual
+// - Before a day is folded, a device's reports that day far above its usual
 //   (SPIKE_SMALLEST or more, and over SPIKE_TIMES its daily average over the
 //   SPIKE_DAYS before) are held for review (held_reports): a flood of
-//   made-up reports of one model, or a real rush the maintainer releases.
+//   made-up reports of one device, or a real rush the maintainer releases. A
+//   device is its kind (NAMED), so a flood naming no model, or a new one in
+//   each report, is one; one of no kind, by its model.
 // The work is done in SQL, on the database's side, in a fixed few queries:
 // so a night's Worker time and queries stay small whatever the plan (the
 // free plan's 10 ms and 50 queries a run would be enough).
@@ -37,9 +39,11 @@ export const ARCHIVE_PREFIX = "v1/archive/";
 export const SPIKE_DAYS = 28;
 export const SPIKE_TIMES = 5;
 export const SPIKE_SMALLEST = 25;
-// At most this many models' days held a night, so a night's queries stay few.
+// At most this many devices' days held a night, so a night's queries stay few.
 export const SPIKE_MOST = 10;
-export const SPIKE_WHY = "a day far above usual for its model";
+export const SPIKE_WHY = "a day far above usual for its device";
+// What a spike is counted by: a report's kind, else its model.
+const NAMED = "coalesce(device, model)";
 // The count of every readout kept, as index.js names it (READOUTS_EVER; a
 // test holds the two alike).
 export const READOUTS_EVER = "readouts:all";
@@ -118,10 +122,10 @@ function remaking(db, months, today) {
     of(`INSERT INTO monthly_environment (month, tag, os_family, python_source, n)
       SELECT substr(day, 1, 7), tag, os_family, python_source, count(*) FROM ${reports}
       GROUP BY substr(day, 1, 7), tag, os_family, python_source`),
-    of(`INSERT INTO monthly_stock (month, tag, model, stock_version, runs, converted)
-      SELECT substr(day, 1, 7), tag, model, stock_version, count(*), sum(result = 'converted') FROM ${reports}
-        AND model IS NOT NULL AND stock_version IS NOT NULL
-      GROUP BY substr(day, 1, 7), tag, model, stock_version`),
+    of(`INSERT INTO monthly_stock (month, tag, device, stock_version, runs, converted)
+      SELECT substr(day, 1, 7), tag, device, stock_version, count(*), sum(result = 'converted') FROM ${reports}
+        AND device IS NOT NULL AND stock_version IS NOT NULL
+      GROUP BY substr(day, 1, 7), tag, device, stock_version`),
   ];
 }
 
@@ -139,34 +143,34 @@ export function pruning(db, today) {
   ];
 }
 
-// The (day, model) pairs of the days about to be folded whose reports are far
-// above that model's usual over the SPIKE_DAYS before: two queries, whatever
-// the number of days.
+// The (day, named) pairs of the days about to be folded whose reports are far
+// above that device's usual over the SPIKE_DAYS before (`named`: its kind,
+// else its model; NAMED): two queries, whatever the number of days.
 export async function spikes(db, today) {
-  const { results: days } = await db.prepare(`SELECT day, model, count(*) AS n FROM reports
-    WHERE day IN (${UNFOLDED}) AND tag = 'user' AND quarantined = 0 AND model IS NOT NULL
-    GROUP BY day, model HAVING count(*) >= ?2`).bind(today, SPIKE_SMALLEST).all();
+  const { results: days } = await db.prepare(`SELECT day, ${NAMED} AS named, count(*) AS n FROM reports
+    WHERE day IN (${UNFOLDED}) AND tag = 'user' AND quarantined = 0 AND ${NAMED} IS NOT NULL
+    GROUP BY day, named HAVING count(*) >= ?2`).bind(today, SPIKE_SMALLEST).all();
   if (!days.length) {
     return [];
   }
   const first = days.reduce((earliest, row) => (row.day < earliest ? row.day : earliest), days[0].day);
   // From the reports themselves, so days not yet folded count
   // towards the usual of a later one folded the same night.
-  const { results: before } = await db.prepare(`SELECT day, model, count(*) AS n FROM reports
-    WHERE tag = 'user' AND quarantined = 0 AND model IS NOT NULL AND day >= ?1 AND day < ?2
-    GROUP BY day, model`).bind(daysBefore(first, SPIKE_DAYS), today).all();
-  const usual = (row) => before.filter((other) => other.model === row.model && other.day < row.day
+  const { results: before } = await db.prepare(`SELECT day, ${NAMED} AS named, count(*) AS n FROM reports
+    WHERE tag = 'user' AND quarantined = 0 AND ${NAMED} IS NOT NULL AND day >= ?1 AND day < ?2
+    GROUP BY day, named`).bind(daysBefore(first, SPIKE_DAYS), today).all();
+  const usual = (row) => before.filter((other) => other.named === row.named && other.day < row.day
     && other.day >= daysBefore(row.day, SPIKE_DAYS)).reduce((sum, other) => sum + other.n, 0) / SPIKE_DAYS;
   return days.filter((row) => row.n > SPIKE_TIMES * Math.max(usual(row), 1)).slice(0, SPIKE_MOST)
-    .map((row) => ({ day: row.day, model: row.model, n: row.n }));
+    .map((row) => ({ day: row.day, named: row.named, n: row.n }));
 }
 
 // The statements holding each spike's reports for review.
 function holding(db, found) {
-  const which = "FROM reports WHERE day = ?1 AND model = ?2 AND tag = 'user' AND quarantined = 0";
-  return found.flatMap(({ day, model }) => [
-    db.prepare(`INSERT OR IGNORE INTO held_reports (id, day, why) SELECT id, day, ?3 ${which}`).bind(day, model, SPIKE_WHY),
-    db.prepare(`UPDATE reports SET quarantined = 1 WHERE id IN (SELECT id ${which})`).bind(day, model),
+  const which = `FROM reports WHERE day = ?1 AND ${NAMED} = ?2 AND tag = 'user' AND quarantined = 0`;
+  return found.flatMap(({ day, named }) => [
+    db.prepare(`INSERT OR IGNORE INTO held_reports (id, day, why) SELECT id, day, ?3 ${which}`).bind(day, named, SPIKE_WHY),
+    db.prepare(`UPDATE reports SET quarantined = 1 WHERE id IN (SELECT id ${which})`).bind(day, named),
   ]);
 }
 

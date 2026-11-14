@@ -120,8 +120,9 @@ test("the figures leave out the maintainer's testing, and anything under five", 
   const stats = figures(bindings);
   assert.equal(stats.devices.seen, 6, "the dev device left out, and RARE1's, of no device kind the tool knows");
   assert.equal(stats.runs.runs, 10);
-  assert.deepEqual(stats.models.map((row) => [row.model, row.devices]), [["S60TPG", 6]], "RARE1 has four");
-  assert.equal(stats.models[0].firstRun, 100);
+  assert.deepEqual(stats.kinds.map((row) => [row.device, row.devices, row.models]),
+    [["sonoff-s60", 6, [{ model: "S60TPG", devices: 6 }]]], "RARE1's four of no kind");
+  assert.equal(stats.kinds[0].firstRun, 100);
   assert.ok(!JSON.stringify(stats).includes("RARE1"));
   assert.ok(!JSON.stringify(stats).includes("device-"), "no device's id");
 });
@@ -271,7 +272,7 @@ test("a model's name is shown once three senders from two networks have given it
   }
   await night.nightly(bindings, NIGHT);
   assert.deepEqual(rows(bindings, "SELECT model, day FROM vouched_models"), [{ model: "TRUSTED1", day: "2026-11-10" }]);
-  assert.deepEqual(figures(bindings).models.map((row) => row.model), ["TRUSTED1"]);
+  assert.deepEqual(figures(bindings).kinds.flatMap((row) => row.models.map((each) => each.model)), ["TRUSTED1"]);
   assert.ok(!JSON.stringify(figures(bindings)).includes("ONESENDER"));
   assert.ok(!JSON.stringify(figures(bindings)).includes("ONEEVENING"));
   assert.ok(!JSON.stringify(figures(bindings)).includes("ONENETWORK"));
@@ -417,13 +418,40 @@ test("a day far above a model's usual is held for review, and in no figure", asy
   await night.nightly(bindings, new Date("2026-10-21T03:17:00Z"));   // its usual, counted
   await many(bindings.DB, "2026-11-09", 30);
   const ran = await night.nightly(bindings, NIGHT);
-  assert.deepEqual(ran.held, [{ day: "2026-11-09", model: "S60TPG", n: 30 }]);
+  assert.deepEqual(ran.held, [{ day: "2026-11-09", named: "sonoff-s60", n: 30 }]);
   assert.equal(rows(bindings, "SELECT count(*) AS n FROM held_reports WHERE why = ?", night.SPIKE_WHY)[0].n, 30);
   assert.equal(rows(bindings, "SELECT count(*) AS n FROM reports WHERE quarantined = 1")[0].n, 30);
   assert.equal(rows(bindings, "SELECT * FROM daily_totals WHERE day = '2026-11-09'").length, 0);
   const stats = figures(bindings);
   assert.equal(stats.devices.seen, null, "the two of 2026-10-20 alone: under five");
-  assert.deepEqual(stats.models, [], "the held devices are in no list");
+  assert.deepEqual(stats.kinds, [], "the held devices are in no list");
+});
+
+test("a flood of a device's reports is held whatever models they name, or none", async () => {
+  const bindings = env();
+  for (let n = 0; n < 30; n += 1) {
+    await kept(bindings.DB, "2026-11-09", { model: n % 2 ? null : `MADEUP${n}`, device_hash: `flood-${n}` });
+  }
+  const ran = await night.nightly(bindings, NIGHT);
+  assert.deepEqual(ran.held, [{ day: "2026-11-09", named: "sonoff-s60", n: 30 }]);
+  assert.equal(rows(bindings, "SELECT count(*) AS n FROM reports WHERE quarantined = 1")[0].n, 30);
+});
+
+test("the devices the tool converts are counted by kind, whether their model was named or not", async () => {
+  const bindings = env();
+  for (let n = 0; n < 9; n += 1) {
+    // Six named S60TPG (vouched), one S60TPF (too few to name), two none.
+    const model = n < 6 ? "S60TPG" : n === 6 ? "S60TPF" : null;
+    await kept(bindings.DB, "2026-11-05", { model, device_hash: `s60-${n}`, stock_version: n < 5 ? "1.2.0" : "1.3.0" });
+  }
+  vouched(bindings, "S60TPG", "S60TPF");
+  await night.nightly(bindings, NIGHT);
+  const stats = figures(bindings);
+  assert.deepEqual(stats.kinds.map((row) => [row.device, row.devices, row.converted, row.models]),
+    [["sonoff-s60", 9, 9, [{ model: "S60TPG", devices: 6 }]]]);
+  assert.deepEqual(stats.stock.map((row) => [row.device, row.stock_version, row.runs]),
+    [["sonoff-s60", "1.2.0", 5]], "1.3.0's four under five");
+  assert.ok(!JSON.stringify(stats).includes("S60TPF"), "a model with too few devices is not named");
 });
 
 test("a busy model at its usual pace is not held, and five times it is", async () => {
@@ -436,15 +464,15 @@ test("a busy model at its usual pace is not held, and five times it is", async (
   assert.deepEqual((await night.nightly(bindings, NIGHT)).held, [], "30 against 10 a day, all folded tonight");
   await many(bindings.DB, "2026-11-10", 60);
   assert.deepEqual((await night.nightly(bindings, new Date("2026-11-11T03:17:00Z"))).held,
-    [{ day: "2026-11-10", model: "S60TPG", n: 60 }]);
+    [{ day: "2026-11-10", named: "sonoff-s60", n: 60 }]);
 });
 
 test("a new model's first day is held only past the smallest a spike can be", async () => {
   const bindings = env();
-  await many(bindings.DB, "2026-11-09", night.SPIKE_SMALLEST - 1, "NEWONE");
+  await many(bindings.DB, "2026-11-09", night.SPIKE_SMALLEST - 1, "NEWONE", { device: null });
   assert.deepEqual((await night.nightly(bindings, NIGHT)).held, []);
   const other = env();
-  await many(other.DB, "2026-11-09", night.SPIKE_SMALLEST, "NEWTWO");
+  await many(other.DB, "2026-11-09", night.SPIKE_SMALLEST, "NEWTWO", { device: null });
   assert.equal((await night.nightly(other, NIGHT)).held.length, 1);
 });
 
@@ -460,7 +488,7 @@ test("the maintainer's own testing never makes a spike, and a day counted is nev
 test("no more than a fixed few spikes are held a night", async () => {
   const bindings = env();
   for (let n = 0; n < night.SPIKE_MOST + 3; n += 1) {
-    await many(bindings.DB, "2026-11-09", night.SPIKE_SMALLEST, `FLOOD${n}`);
+    await many(bindings.DB, "2026-11-09", night.SPIKE_SMALLEST, `FLOOD${n}`, { device: null });
   }
   assert.equal((await night.nightly(bindings, NIGHT)).held.length, night.SPIKE_MOST);
 });
