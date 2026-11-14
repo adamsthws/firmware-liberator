@@ -302,6 +302,10 @@ case "${1:-}" in
         # The device's address as its router gave it last (its firmware may have
         # changed, and with it its lease).
         read -r _ _ lease named _ < <(docker exec "$DEVICE" sh -c 'sort -n /run/autoflash-beken-emu/leases | tail -1' 2>/dev/null)
+        # Released while still in use (ESPHome, rejoining after its network went):
+        # the last its router acknowledged.
+        [ -n "${lease:-}" ] || read -r lease named < <(docker exec "$DEVICE" sh -c \
+            'sed -n "s/.*DHCPACK([^)]*) \([^ ]*\) [^ ]* \([^ ]*\).*/\1 \2/p" /run/autoflash-beken-emu/dnsmasq.log | tail -1' 2>/dev/null)
         [ -n "${lease:-}" ] || { echo "No device on its Wi-Fi yet: start it (beken-emu.sh device) and give it a minute" >&2; exit 1; }
         # Which firmware, by the name it gave its router: esphome-abcdef, or
         # openbeken-abcdef (OpenBK7238_ABCDEF before its first start's naming;
