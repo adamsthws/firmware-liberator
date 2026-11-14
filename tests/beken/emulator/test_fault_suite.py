@@ -6,6 +6,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from tools.beken.emulator import fault_suite
 
@@ -751,6 +752,21 @@ class EarlierRecordsTests(unittest.TestCase):
             new.mkdir(parents=True)
             (new / "run.log").write_text("updated\n", encoding="utf-8")
             self.assertEqual(instance.runs(), [new / "run.log"])
+
+    def test_a_run_filed_away_as_its_runs_are_listed_is_left_out(self):
+        # Seen in a whole run (ERROR): the tool moved a run from unidentified/
+        # to its device's folder between the listing and the look at its time.
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = fault_suite.Instance(3)
+            instance.state = Path(tmp)
+            kept = instance.state / "work/captures/devices/12-34-56-ab-cd-ef/runs/20261114-094916/run.log"
+            kept.parent.mkdir(parents=True)
+            kept.write_text("converting\n", encoding="utf-8")
+            moved = instance.state / "work/captures/devices/unidentified/runs/20261114-094916/run.log"
+            with mock.patch.object(Path, "glob", return_value=iter([moved, kept])):
+                self.assertEqual(instance.all_runs(), [kept])
+            with mock.patch.object(fault_suite.Instance, "runs", return_value=[moved]):
+                self.assertEqual(instance.last_log(), "")
 
 
 class ReadoutScenarioTests(unittest.TestCase):

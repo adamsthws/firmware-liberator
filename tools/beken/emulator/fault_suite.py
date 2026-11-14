@@ -424,7 +424,13 @@ class Instance:
         captures = self.state / "work/captures"
         earlier = captures / "plugs"
         records = earlier if earlier.is_dir() and not (captures / "devices").is_dir() else captures / "devices"
-        return sorted(records.glob("*/runs/*/run.log"), key=lambda path: path.stat().st_mtime)
+        found = []
+        for log in records.glob("*/runs/*/run.log"):
+            try:  # the tool files a run under its device once it knows the device
+                found.append((log.stat().st_mtime, log))
+            except FileNotFoundError:
+                pass
+        return [log for _, log in sorted(found)]
 
     def runs(self) -> list[Path]:
         """This scenario's runs, oldest first."""
@@ -439,7 +445,10 @@ class Instance:
 
     def last_log(self) -> str:
         logs = self.runs()
-        return logs[-1].read_text(encoding="utf-8", errors="replace") if logs else ""
+        try:
+            return logs[-1].read_text(encoding="utf-8", errors="replace") if logs else ""
+        except FileNotFoundError:
+            return ""   # filed away just now: looked at again next time
 
 
 # Often enough that a fault timed from a step's start lands where it should: an
