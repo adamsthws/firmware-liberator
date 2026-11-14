@@ -1,7 +1,10 @@
 """The upgrade command sent again when a device has lost it."""
 
+import io
 import socket
+import struct
 import threading
+import time
 import unittest
 import urllib.request
 from unittest import mock
@@ -71,6 +74,30 @@ class LastAskedTests(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{server.server_address[1]}/user1.bin", timeout=5) as answer:
             answer.read()
         self.assertGreater(server.last_asked, 0.0)
+
+
+class DroppedRequestTests(unittest.TestCase):
+    def test_a_request_the_device_drops_is_one_line_not_a_traceback_on_the_screen(self):
+        # Seen in the Beken fault suite: the device's Wi-Fi gone a moment as it
+        # downloads, its connection reset part way through a request.
+        said = []
+        server = ota_push.FirmwareServer(("127.0.0.1", 0), b"x" * 64, "127.0.0.1", say=said.append, live=False)
+        self.addCleanup(server.server_close)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        screen = io.StringIO()
+        with mock.patch("sys.stderr", screen):
+            client = socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=5)
+            client.sendall(b"GET /user1.bin HTTP/1.1\r\nRange: bytes=0-")
+            client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))   # a reset, not a close
+            client.close()
+            for _ in range(50):
+                if said:
+                    break
+                time.sleep(0.05)
+        self.assertEqual(screen.getvalue(), "")
+        self.assertEqual(len(said), 1)
+        self.assertRegex(said[0], r"^  \[127\.0\.0\.1\] request dropped: ConnectionResetError")
 
 
 class FakeCloud:

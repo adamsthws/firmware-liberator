@@ -144,6 +144,13 @@ class FirmwareServer(http.server.ThreadingHTTPServer):
         self.live = sys.stdout.isatty() if live is None else live
         self.progress_shown = False
 
+    def handle_error(self, request, client_address) -> None:
+        # One line, to `say`, not socketserver's traceback on the screen: a
+        # request the device abandoned - its Wi-Fi gone a moment as it
+        # downloads, say - is expected, and it asks again for what it lacks.
+        error = sys.exc_info()[1]
+        self.say(f"  [{client_address[0]}] request dropped: {type(error).__name__}: {error}")
+
     def end_progress(self) -> None:
         if self.progress_shown:
             sys.stdout.write("\n")
