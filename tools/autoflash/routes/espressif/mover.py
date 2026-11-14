@@ -163,7 +163,10 @@ def wait_for_mover(ctx: Context, what: str) -> bool:
         except Abort:
             pass
     before = ctx._wifi
-    joined = join.set_up_through_own_network(ctx, what, mover, names.mover_networks(ctx))
+    try:
+        joined = join.set_up_through_own_network(ctx, what, mover, names.mover_networks(ctx))
+    except join.BackByItself:
+        return False
     if joined is None:
         # Two minutes after it cannot join the Wi-Fi it raises its own network,
         # which a run then sets it up through.
@@ -404,9 +407,12 @@ def wait_for_esphome(ctx: Context, wait: float) -> dict[str, Any]:
             output.progress(f"waiting for ESPHome... {elapsed:.0f}s")
             time.sleep(3)
         output.progress_clear()
-        if join.set_up_through_own_network(ctx, "ESPHome", esphome.is_esphome, names.esphome_networks(ctx)):
-            return {"seconds": round(time.monotonic() - started, 1), "resent": resent,
-                    "set_up_through": "its own network"}
+        try:
+            if join.set_up_through_own_network(ctx, "ESPHome", esphome.is_esphome, names.esphome_networks(ctx)):
+                return {"seconds": round(time.monotonic() - started, 1), "resent": resent,
+                        "set_up_through": "its own network"}
+        except join.BackByItself:
+            return {"seconds": round(time.monotonic() - started, 1), "resent": resent}
         raise NotBack
 
     # Not back: the person asked to switch it off and on, as the Beken route's K2 does.

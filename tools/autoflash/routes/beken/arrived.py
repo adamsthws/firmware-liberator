@@ -272,8 +272,11 @@ def step_esphome_check(ctx: Context, wait: float = ARRIVAL_WAIT) -> dict[str, An
         except Abort as exc:
             # As the Espressif route's I2: one that cannot join your Wi-Fi raises
             # its own network after a while, where it takes the details.
-            if join.set_up_through_own_network(ctx, "ESPHome", esphome.is_esphome, names.esphome_networks(ctx)):
-                return {"set_up_through": "its own network"}
+            try:
+                if join.set_up_through_own_network(ctx, "ESPHome", esphome.is_esphome, names.esphome_networks(ctx)):
+                    return {"set_up_through": "its own network"}
+            except join.BackByItself:
+                return {}
             raise NotBack from exc
 
     found = until_back(ctx, look, "ESPHome", (
