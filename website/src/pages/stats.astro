@@ -43,14 +43,15 @@ const firmwareSaid = (firmware) => Object.entries(firmware ?? {})
 // tool does not convert yet (snapshot.js).
 const attempted = (row) => (row.converted ?? 0) + (row.failed ?? 0) + (row.crashed ?? 0);
 
-// The models the tool converts, by the device kind they were seen as: one it
+// The devices the tool converts, by kind, with the models seen of each: one it
 // does not convert yet is in "Most wanted", not here.
-const supported = new Set((figures?.models ?? []).filter((row) => names[row.device]).map((row) => row.model));
+const modelsOf = (row) => (row.models ?? []).map((each) => `${each.model} ${each.devices.toLocaleString("en")}`).join(", ");
 const view = figures && {
-  models: figures.models.filter((row) => supported.has(row.model)).map((row) => ({
-    label: names[row.device] ? `${names[row.device]} (${row.model})` : row.model, href: deviceHref(row.device),
-    value: row.devices, note: row.firstRun === null ? "" : `${row.firstRun}% first run · ${row.eventually}% in the end`,
-    tip: `${row.model}: ${row.devices.toLocaleString("en")} devices, ${row.converted ?? "fewer than 5"} converted`,
+  kinds: figures.kinds.filter((row) => names[row.device]).map((row) => ({
+    label: names[row.device], href: deviceHref(row.device), value: row.devices,
+    note: [row.firstRun === null ? "" : `${row.firstRun}% first run · ${row.eventually}% in the end`, modelsOf(row)]
+      .filter(Boolean).join(" · "),
+    tip: `${names[row.device]}: ${row.devices.toLocaleString("en")} devices, ${row.converted ?? "fewer than 5"} converted`,
   })),
   wanted: figures.wanted.map((row) => ({
     label: row.model, value: row.devices,
@@ -159,8 +160,9 @@ const view = figures && {
 
       <section class="card">
         <h2>Devices</h2>
-        <p class="sub">Devices seen, by model, with how many converted on their first run and in the end.</p>
-        {view.models.length ? <RankedBars rows={view.models} label="Devices seen, by model" /> : <p class="none">Not enough devices yet.</p>}
+        <p class="sub">Devices seen, by device, with how many converted on their first run and in the end, and the
+          models seen of each.</p>
+        {view.kinds.length ? <RankedBars rows={view.kinds} label="Devices seen, by device" /> : <p class="none">Not enough devices yet.</p>}
       </section>
 
       <section class="card">
@@ -254,10 +256,10 @@ const view = figures && {
         <h2>Sonoff firmware met</h2>
         <p class="sub">The versions of Sonoff's own firmware devices had, and how many of those runs converted: a new version
           that stops conversions shows here first.</p>
-        {figures.stock.some((row) => supported.has(row.model)) ? (
+        {figures.stock.some((row) => names[row.device]) ? (
           <table class="compact">
-            <thead><tr><th>Model</th><th>Sonoff firmware</th><th class="number">Runs</th><th class="number">Converted</th></tr></thead>
-            <tbody>{figures.stock.filter((row) => supported.has(row.model)).map((row) => <tr><td>{row.model}</td><td>{row.stock_version}</td><td class="number">{row.runs.toLocaleString("en")}</td><td class="number">{row.success === null ? "" : `${row.success}%`}</td></tr>)}</tbody>
+            <thead><tr><th>Device</th><th>Sonoff firmware</th><th class="number">Runs</th><th class="number">Converted</th></tr></thead>
+            <tbody>{figures.stock.filter((row) => names[row.device]).map((row) => <tr><td>{names[row.device]}</td><td>{row.stock_version}</td><td class="number">{row.runs.toLocaleString("en")}</td><td class="number">{row.success === null ? "" : `${row.success}%`}</td></tr>)}</tbody>
           </table>
         ) : <p class="none">Not enough runs yet.</p>}
       </section>

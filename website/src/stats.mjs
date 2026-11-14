@@ -5,11 +5,13 @@
 // their date; llms.txt carries the headline only while they are FRESH_DAYS old
 // or less, so a figure an AI tool repeats is never a stale one without its date.
 import { readFileSync } from "node:fs";
+import schema from "../api/report-schema.json" with { type: "json" };
 
 export const STATS_URL = "https://stats.firmwareliberator.com/v1/stats.json";
 export const FRESH_DAYS = 3;
 
 const DAY = 86_400_000;
+const names = schema.deviceNames;
 let loaded = null;
 
 // {figures, fresh, why}: the figures, or null with why there are none.
@@ -49,13 +51,13 @@ export function llmsFigures({ figures, fresh }) {
     return "";
   }
   const { devices, runs } = figures;
-  const converted = figures.models.filter((row) => row.device);
+  const converted = figures.kinds.filter((row) => names[row.device]);
   const lines = [
     devices.converted !== null && `- ${devices.converted.toLocaleString("en")} devices converted, of ${devices.seen.toLocaleString("en")} seen.`,
     devices.firstRun !== null && `- ${devices.firstRun}% of devices converted on their first run; ${devices.eventually}% eventually.`,
     runs.success !== null && `- ${runs.success}% of conversion runs succeeded (${runs.runs.toLocaleString("en")} runs).`,
-    // The models the tool converts: one it does not yet is in "wanted", not here.
-    converted.length && `- Most converted: ${converted.slice(0, 3).map((row) => row.model).join(", ")}.`,
+    // The devices the tool converts, by kind: one it does not yet is in "wanted", not here.
+    converted.length && `- Most converted: ${converted.slice(0, 3).map((row) => names[row.device]).join(", ")}.`,
   ].filter(Boolean);
   if (!lines.length) {
     return "";
