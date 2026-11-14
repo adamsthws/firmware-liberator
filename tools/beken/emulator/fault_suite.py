@@ -183,6 +183,8 @@ RESTARTED = re.compile(r"restarted the device; doing stage \d+ again")
 INTERIM_SETTINGS = ((0x3E1000, 0x1000), (0x1E5000, 0x8000))
 # The name a device asks its router's DHCP for, by its firmware.
 DHCP_NAME = re.compile(r"DHCPACK\(\S+\) \S+ \S+ (\S+)")
+# The address its router gave it, each time.
+DHCP_ADDRESS = re.compile(r"DHCPACK\(\S+\) (\S+) ")
 NAME_PREFIX = {"interim": "autoflash-recovery-", "openbeken": "openbeken-", "esphome": "esphome-"}
 # A new OpenBeken build's check: each thing this project's driver and patches
 # do on it, once - its Wi-Fi and settings taken from Sonoff's (B4 after B2),
@@ -369,17 +371,25 @@ class Instance:
         (self.state / "work/captures/tool.env").write_text(ACCOUNT, encoding="utf-8")
         self.before = {filed_as(path) for path in self.all_runs()}
 
+    def dhcp_log(self) -> str:
+        return subprocess.run(["docker", "exec", self.device, "cat", "/run/autoflash-beken-emu/dnsmasq.log"],
+                              capture_output=True, text=True).stdout
+
     def dhcp_names(self) -> list[str]:
         """The names the device asked its router's DHCP for, in order."""
-        log = subprocess.run(["docker", "exec", self.device, "cat", "/run/autoflash-beken-emu/dnsmasq.log"],
-                             capture_output=True, text=True).stdout
-        return [found.group(1) for found in DHCP_NAME.finditer(log)]
+        return [found.group(1) for found in DHCP_NAME.finditer(self.dhcp_log())]
 
     def lease(self) -> str | None:
+        """The device's address: its lease, or - released while it goes on
+        using the address, as ESPHome does on rejoining after its network was
+        gone - the last its router gave it."""
         found = subprocess.run(["docker", "exec", self.device, "sh", "-c",
                                 "sort -n /run/autoflash-beken-emu/leases | tail -1"],
                                capture_output=True, text=True).stdout.split()
-        return found[2] if len(found) > 2 else None
+        if len(found) > 2:
+            return found[2]
+        given = DHCP_ADDRESS.findall(self.dhcp_log())
+        return given[-1] if given else None
 
     def answering(self) -> bool:
         address = self.lease()

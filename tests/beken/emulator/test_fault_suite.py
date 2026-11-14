@@ -405,6 +405,29 @@ class DoubleCutTests(unittest.TestCase):
         injected.assert_not_called()
 
 
+class LeaseTests(unittest.TestCase):
+    """Where the device is: its router's lease, or - released while it goes on
+    using the address, as ESPHome does on rejoining after its network went -
+    the last address the router gave it."""
+
+    def lease(self, leases, log):
+        instance = fault_suite.Instance.__new__(fault_suite.Instance)
+        instance.device = "a-device"
+        answers = {"sh": SimpleNamespace(stdout=leases), "cat": SimpleNamespace(stdout=log)}
+        with mock.patch.object(fault_suite.subprocess, "run", side_effect=lambda cmd, **_: answers[cmd[3]]):
+            return instance.lease()
+
+    def test_the_lease_where_there_is_one(self):
+        self.assertEqual(self.lease("1 12:34:56:ab:cd:ef 198.18.61.52 esphome-abcdef *\n", ""), "198.18.61.52")
+
+    def test_the_last_address_given_where_it_was_released(self):
+        log = ("dnsmasq-dhcp[33]: 1 DHCPACK(br0) 198.18.61.50 12:34:56:ab:cd:ef openbeken-abcdef\n"
+               "dnsmasq-dhcp[33]: 2 DHCPACK(br0) 198.18.61.51 12:34:56:ab:cd:ef esphome-abcdef\n"
+               "dnsmasq-dhcp[33]: 3 DHCPRELEASE(br0) 198.18.61.51 12:34:56:ab:cd:ef\n")
+        self.assertEqual(self.lease("", log), "198.18.61.51")
+        self.assertIsNone(self.lease("", ""))
+
+
 class PersonTests(unittest.TestCase):
     """The person at the computer joins the device's own network when the run
     says to, again while it still waits, and goes home when told."""
