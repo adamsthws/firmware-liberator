@@ -103,6 +103,33 @@ def readout_problems(data: bytes, family: str) -> list[str]:
     return problems
 
 
+def first_stage_problems(data: bytes, runs: str) -> list[str]:
+    """What a readout.tar lacks of the first stage alone of a device that runs
+    `runs` now (detect.NAMES' key) - the firmware eWeLink offers it, its
+    memory not read - unsent from an unattended run: [] for none."""
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+            files = {member.name: tar.extractfile(member).read() for member in tar.getmembers() if member.isfile()}
+    except (tarfile.TarError, OSError) as exc:
+        return [f"not a tar: {exc}"]
+    if list(files)[:1] != ["manifest.json"]:
+        return ["manifest.json is not first"]
+    problems = [] if any(name.startswith("offered/") for name in files) else ["no offered firmware"]
+    problems += [f"{name} in it, from a device not on Sonoff's firmware" for name in files
+                 if name != "manifest.json" and not name.startswith("offered/")]
+    try:
+        manifest = json.loads(files["manifest.json"])
+    except ValueError:
+        return problems + ["manifest.json is not JSON"]
+    if manifest.get("read") is not False:
+        problems.append("the manifest does not say the memory was not read")
+    if manifest.get("runs") != runs:
+        problems.append(f"the manifest says it runs {manifest.get('runs')}, not {runs}")
+    if "contact" in manifest:
+        problems.append("a contact in it, from an unattended run")
+    return problems
+
+
 # As tools/repo/unattended_run.py prints the screen a run ended on, in the
 # output the fault suites keep of each run.
 SCREEN = re.compile(r"^The screen at the end of the run \(\d+x\d+\):\n=+\n(?P<screen>.*?)^=+$", re.M | re.S)

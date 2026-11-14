@@ -1417,7 +1417,7 @@ class EndChecksTests(unittest.TestCase):
 
 class ReadoutScenarioTests(unittest.TestCase):
     """Readouts (cli.py readout): of a stock device, faulted where it matters
-    most, and of a converted device, which must be refused."""
+    most, and of a converted device, which must read its first stage alone."""
 
     def scenario(self, route="sonoff>readout", step="read", fault="crash", arg=1):
         sc = fs.Scenario(24, {"id": fs.sid(route, step, fault, arg), "route": route, "step": step,
@@ -1432,10 +1432,10 @@ class ReadoutScenarioTests(unittest.TestCase):
             "sonoff>readout:read:crash-1", "sonoff>readout:back:deviceoff-1", "sonoff>readout:back:outage-30",
             "sonoff>readout:read:crash-1-then-sonoff", "sonoff>readout:read:crash-1-then-readout",
             "sonoff>readout:read:crash-1-then-sonoff-elsewhere",
-            "tasmota>readout:start:none-refused"])
+            "tasmota>readout:start:none-first-stage"])
         self.assertEqual({fs.kind_of(sc) for sc in readouts}, {"stub"})   # signed in, and the bridge sent, there
 
-    def test_a_readout_is_run_as_one_and_a_refused_one_given_the_devices_address(self):
+    def test_a_readout_is_run_as_one_and_one_of_a_converted_device_given_the_devices_address(self):
         sc = self.scenario()
         with mock.patch.object(fs.subprocess, "call", return_value=0) as call:
             sc.run_tool("readout", fresh=True)
@@ -1581,23 +1581,26 @@ class ReadoutScenarioTests(unittest.TestCase):
         self.assertEqual(self.verdict(mistimed=True), "MISTIMED")
         self.assertEqual(self.verdict(left=["firewall rule"]), "LEFTOVER")
 
-    def refused(self, code, sent=False, template=True):
-        sc = self.scenario(route="tasmota>readout", step="start", fault="none", arg="refused")
+    def converted(self, code, sent=False, template=True, kept=()):
+        sc = self.scenario(route="tasmota>readout", step="start", fault="none", arg="first-stage")
         logs = [(1.0, Path("run.log"), "$ python tools/espressif/serve_tasmota_ota.py" if sent else "FAILED: no")]
         with mock.patch.object(sc, "run_tool", return_value=code) as run, \
-                mock.patch.object(sc, "readout_result", return_value="Stopped"), \
+                mock.patch.object(sc, "readout_result", return_value="Not sent"), \
+                mock.patch.object(sc, "first_stage_kept", return_value=None if kept is None else list(kept)), \
                 mock.patch.object(fs, "run_logs", return_value=logs), \
                 mock.patch.object(sc, "template_ok", return_value=template), \
                 mock.patch.object(sc, "finish_readout", side_effect=lambda results, special: special) as finish:
-            verdict = sc.go_readout_refused()
+            verdict = sc.go_readout_converted()
         self.assertEqual(run.call_args.args[:2], ("readout", ["--device-ip", fs.DEVICE_IP]))
         return verdict, finish
 
-    def test_a_readout_of_a_converted_device_must_be_refused_leaving_it_as_it_was(self):
-        self.assertEqual(self.refused(1)[0], None)   # judged as any: names, leftovers
-        self.assertEqual(self.refused(0)[0], "FAIL-NOT-REFUSED")
-        self.assertEqual(self.refused(1, sent=True)[0], "FAIL-NOT-REFUSED")
-        self.assertEqual(self.refused(1, template=False)[0], "FAIL-DISTURBED")
+    def test_a_readout_of_a_converted_device_reads_its_first_stage_alone_leaving_it_as_it_was(self):
+        self.assertEqual(self.converted(0)[0], None)   # judged as any: names, leftovers
+        self.assertEqual(self.converted(1)[0], "FAIL-EXIT")
+        self.assertEqual(self.converted(0, kept=None)[0], "FAIL-READOUT")   # none kept
+        self.assertEqual(self.converted(0, kept=["flash.bin.xz in it"])[0], "FAIL-READOUT")
+        self.assertEqual(self.converted(0, sent=True)[0], "FAIL-SENT")
+        self.assertEqual(self.converted(0, template=False)[0], "FAIL-DISTURBED")
 
     def test_how_a_readout_ended(self):
         with tempfile.TemporaryDirectory() as tmp:

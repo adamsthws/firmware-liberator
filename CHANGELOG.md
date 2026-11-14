@@ -57,9 +57,9 @@ check.
   and a file of the firmware eWeLink offers that it holds already is not sent.
   Its first stage only reads: what the device and
   eWeLink say it is, and the firmware eWeLink offers it; nothing is sent to the
-  device, and a device the tool has not seen gets that alone. One the account
-  still lists but that runs Tasmota, ESPHome or OpenBeken now is not read: the
-  tool says what it runs. A readout's second stage
+  device, and a device the tool has not seen gets that alone - as does one the
+  account still lists but that runs Tasmota, ESPHome or OpenBeken now,
+  converted by the tool or by hand: the tool says what it runs. A readout's second stage
   reads the whole memory, and is only for a device the tool lists as Supported,
   Testers wanted or Readout wanted, under that kind's own firmware name. On an
   ESP32-C3 or classic ESP32 that is through the bridge, kept in the spare slot only
