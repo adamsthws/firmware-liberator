@@ -29,7 +29,7 @@ none of a try that failed (FAIL-SCREEN if not).
 And readouts (readout_scenarios, go_readout): of a device fresh from Sonoff's
 firmware, faulted in the read and as Sonoff's firmware is put back, until a
 whole readout.tar is kept and the device is back on Sonoff's; of a device on
-Tasmota, which must be refused; and of every device in an account
+Tasmota, which must read its first stage alone; and of every device in an account
 (readout_all_scenarios, go_readout_all), on the stub, each sent to the API's
 own code (in a container beside the emulator) and judged by what it
 answered and kept.
@@ -535,7 +535,7 @@ def composite_scenarios():
 def readout_scenarios():
     """A readout of a device fresh from Sonoff's firmware, unattended (go_readout);
     the same with a fault in each phase where it matters most (READOUT_FAULTS);
-    and one started on a device on Tasmota, which must be refused."""
+    and one started on a device on Tasmota, which must read its first stage alone."""
     yield dict(id=sid("sonoff>readout", "start", "none", "unattended"), route="sonoff>readout", step="start",
                fault="none", arg="unattended", at=40)
     for step, fault, arg in READOUT_FAULTS:
@@ -544,8 +544,8 @@ def readout_scenarios():
     for then in READOUT_THEN:
         yield dict(id=sid("sonoff>readout", "read", "crash", 1) + f"-then-{then}", route="sonoff>readout",
                    step="read", fault="crash", arg=1, at=40, then=then)
-    yield dict(id=sid("tasmota>readout", "start", "none", "refused"), route="tasmota>readout", step="start",
-               fault="none", arg="refused", at=40)
+    yield dict(id=sid("tasmota>readout", "start", "none", "first-stage"), route="tasmota>readout", step="start",
+               fault="none", arg="first-stage", at=40)
 
 
 def readout_all_scenarios():
@@ -2163,10 +2163,10 @@ class Scenario:
         person would, switching the device off and on where the run says to,
         until a whole readout is kept and the device is back on Sonoff's
         firmware, or MAX_RUNS runs. Or (tasmota>readout) a readout of a device
-        on Tasmota, at its address: refused, the device left as it was."""
+        on Tasmota, at its address: its first stage alone, the device left as it was."""
         sc = self.sc
         if sc["route"].split(">")[0] != "sonoff":
-            return self.go_readout_refused()
+            return self.go_readout_converted()
         self.target = "sonoff"   # what the device must end on, by name too
         fault, arg = sc["fault"], sc["arg"]
         stop = threading.Event()
@@ -2210,16 +2210,23 @@ class Scenario:
             results[-1] = (results[-1][0], self.readout_result())
         return self.finish_readout(results, None)
 
-    def go_readout_refused(self):
-        """A readout of a device converted to Tasmota, at its address: it must
-        stop before anything is sent to the device (FAIL-NOT-REFUSED), which
-        keeps its Tasmota and template (FAIL-DISTURBED)."""
+    def go_readout_converted(self):
+        """A readout of a device converted to Tasmota, at its address: its
+        first stage alone (FAIL-READOUT, judged by first_stage_kept), ending
+        with no failure (FAIL-EXIT), the device sent nothing (FAIL-SENT) and
+        keeping its Tasmota and template (FAIL-DISTURBED)."""
         self.target = "tasmota"
         results = [(self.run_tool("readout", ["--device-ip", DEVICE_IP], source=ROUTES["tasmota>sonoff"][0]), None)]
         results[-1] = (results[-1][0], self.readout_result())
         sent = any("serve_tasmota_ota.py" in t for m, _, t in run_logs(self.state) if m >= self.started)
-        if results[-1][0] == 0 or sent:
-            return self.finish_readout(results, "FAIL-NOT-REFUSED")
+        problems = self.first_stage_kept()
+        self.notes["readout"] = problems if problems is not None else ["none kept"]
+        if sent:
+            return self.finish_readout(results, "FAIL-SENT")
+        if results[-1][0] != 0:
+            return self.finish_readout(results, "FAIL-EXIT")
+        if self.notes["readout"]:
+            return self.finish_readout(results, "FAIL-READOUT")
         return self.finish_readout(results, None if self.template_ok() else "FAIL-DISTURBED")
 
     def go_readout_all(self):
@@ -2355,6 +2362,15 @@ class Scenario:
         kept = [path for written, path in kept if written >= self.started]
         return fault_verdicts.readout_problems(kept[-1].read_bytes(), "espressif") if kept else None
 
+    def first_stage_kept(self):
+        """What the newest readout.tar this scenario's runs kept lacks of the
+        first stage alone of a device on Tasmota (fault_verdicts.first_stage_problems),
+        or None when none kept one."""
+        kept = sorted((path.stat().st_mtime, path) for path in
+                      records_under(self.state / "work").glob(f"*/runs/*/{READOUT}"))
+        kept = [path for written, path in kept if written >= self.started]
+        return fault_verdicts.first_stage_problems(kept[-1].read_bytes(), "tasmota") if kept else None
+
     def firmware_now(self, wait=0):
         """What the device answers as, as the tool tells (detect.identify), looked
         at until it is Sonoff's firmware or `wait` seconds are up."""
@@ -2374,15 +2390,15 @@ class Scenario:
 
     def finish_readout(self, results, special):
         """A readout scenario's verdict: a whole readout kept and the device on
-        working Sonoff firmware, or for one refused, the device as it was."""
+        working Sonoff firmware, or for one of a converted device, the device as it was."""
         self.ended = True
         left = self.leftovers()
         names, networks = self.names_seen()
         self.notes["names"], self.notes["networks"] = names, networks
         unknown, final = name_problems(names, networks, self.target)
         self.notes["memory"] = self.memory.note()
-        refused = self.sc["route"] != "sonoff>readout"
-        if not refused:
+        converted = self.sc["route"] != "sonoff>readout"
+        if not converted:
             problems = self.readout_kept()
             self.notes["readout"] = problems if problems is not None else ["none kept"]
             self.notes["firmware"] = self.firmware_now()
@@ -2393,9 +2409,9 @@ class Scenario:
                 special = "NOT-FIRED"
             elif any(UNEXPECTED in t for m, _, t in run_logs(self.state) if m >= self.started):
                 special = "FAIL-UNEXPECTED"
-            elif not refused and self.notes["readout"]:
+            elif not converted and self.notes["readout"]:
                 special = "FAIL-READOUT"  # no whole readout kept
-            elif not refused and self.notes["firmware"] != "sonoff":
+            elif not converted and self.notes["firmware"] != "sonoff":
                 special = "BRICK" if self.bricked() else "FAIL-NOT-SONOFF"
             elif unknown or final:
                 special = "BAD-NAME"

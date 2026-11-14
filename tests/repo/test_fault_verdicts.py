@@ -119,6 +119,31 @@ class ReadoutTests(unittest.TestCase):
         self.assertTrue(fault_verdicts.readout_problems(b"not a tar", "beken")[0].startswith("not a tar"))
 
 
+class FirstStageTests(unittest.TestCase):
+    """A readout of a device on another firmware: its first stage alone."""
+
+    def first(self, files=None, updates=OFFERED, **manifest):
+        return readout.package({"format": 1, "read": False, "runs": "tasmota", **manifest}, files, updates)
+
+    def test_the_offered_firmware_alone_lacks_nothing(self):
+        self.assertEqual(fault_verdicts.first_stage_problems(self.first(), "tasmota"), [])
+
+    def test_a_memory_read_or_another_firmware_named_is_wrong(self):
+        self.assertEqual(fault_verdicts.first_stage_problems(kept("espressif", runs="tasmota"), "tasmota"), [
+            "flash.bin.xz in it, from a device not on Sonoff's firmware",
+            "efuse.bin.xz in it, from a device not on Sonoff's firmware",
+            "info.txt in it, from a device not on Sonoff's firmware",
+            "report.json in it, from a device not on Sonoff's firmware",
+            "the manifest does not say the memory was not read"])
+        self.assertEqual(fault_verdicts.first_stage_problems(self.first(runs="esphome"), "tasmota"),
+                         ["the manifest says it runs esphome, not tasmota"])
+        self.assertEqual(fault_verdicts.first_stage_problems(self.first(updates=()), "tasmota"),
+                         ["no offered firmware"])
+
+    def test_something_not_a_readout_says_so(self):
+        self.assertTrue(fault_verdicts.first_stage_problems(b"not a tar", "tasmota")[0].startswith("not a tar"))
+
+
 class ScreenTests(unittest.TestCase):
     """Each run's screen, as the fault suites keep it, is looked at."""
 

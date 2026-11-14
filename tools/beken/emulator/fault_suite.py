@@ -57,7 +57,7 @@ it again by itself and the device is converted.
 And readouts (readout_scenarios): of a device fresh from Sonoff's firmware,
 with a fault in the read and as Sonoff's firmware is put back, then what a
 person does until a whole readout.tar is kept and the device works on Sonoff's
-firmware; and of a device on OpenBeken, which must be refused.
+firmware; and of a device on OpenBeken, which must read its first stage alone.
 
 The routes from the interim firmware start from a device a run to ESPHome left
 there, found by a new run. A device converted through the interim firmware is
@@ -233,12 +233,12 @@ def scenarios() -> list[dict]:
 def readout_scenarios() -> list[dict]:
     """A readout of a device fresh from Sonoff's firmware, unattended; the same
     with a fault in each phase where it matters most (READOUT_FAULTS); and one
-    started on a device on OpenBeken, which must be refused."""
+    started on a device on OpenBeken, which must read its first stage alone."""
     def one(route: str, step: str, fault: str, arg, at: int = 40) -> dict:
         return dict(id=sid(route, step, fault, arg, at), route=route, step=step, fault=fault, arg=arg, at=at)
     return [one("sonoff>readout", "start", "none", "unattended"),
             *(one("sonoff>readout", step, fault, arg, at) for step, fault, arg, at in READOUT_FAULTS),
-            one("openbeken>readout", "start", "none", "refused")]
+            one("openbeken>readout", "start", "none", "first-stage")]
 
 
 def route_steps(route: str) -> list[str]:
@@ -880,7 +880,7 @@ def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> di
     device was left on OpenBeken, else read it out again - until a whole readout
     is kept. It passes when one is, and the device works on Sonoff's firmware."""
     if sc["route"].split(">")[0] != "sonoff":
-        return refused_readout(instance, log, notes)
+        return converted_readout(instance, log, notes)
     run = instance.tool("readout", log)
     if sc["fault"] != "none":
         begins, ends, length = READOUT_PHASES[sc["step"]]
@@ -915,15 +915,23 @@ def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> di
     return dict(result="PASS" if sonoff_works(instance) else "FAIL-NOT-SONOFF", runs=runs)
 
 
-def refused_readout(instance: Instance, log: Path, notes: dict) -> dict:
-    """A readout started on a device on OpenBeken: it must be refused, nothing
-    served to the device, which is left answering on its firmware."""
+def converted_readout(instance: Instance, log: Path, notes: dict) -> dict:
+    """A readout started on a device on OpenBeken: its first stage alone
+    (FAIL-READOUT), ending with no failure (FAIL-EXIT), nothing served to the
+    device (FAIL-SENT), which is left answering on its firmware (FAIL-DISTURBED)."""
     run = instance.tool("readout", log)
     finish(run, instance)
     said = instance.last_log()
     notes["said"] = (re.findall(r"FAILED: (.*)", said) or ["nothing"])[-1]
-    if run.returncode == 0 or SERVED.search(said):
-        return dict(result="FAIL-NOT-REFUSED", runs=1)
+    kept = [path.parent / READOUT for path in instance.runs() if (path.parent / READOUT).is_file()]
+    problems = fault_verdicts.first_stage_problems(kept[-1].read_bytes(), "openbeken") if kept else None
+    notes["readout"] = problems if problems is not None else ["none kept"]
+    if SERVED.search(said):
+        return dict(result="FAIL-SENT", runs=1)
+    if run.returncode != 0:
+        return dict(result="FAIL-EXIT", runs=1)
+    if notes["readout"]:
+        return dict(result="FAIL-READOUT", runs=1)
     return dict(result="PASS" if instance.answering() else "FAIL-DISTURBED", runs=1)
 
 

@@ -4,9 +4,9 @@ does not convert yet, sent with its owner's consent to firmwareliberator.com.
 Nothing is converted. A readout comes in two stages. The first is only ever
 read: what the device and eWeLink say it is, and the firmware eWeLink offers
 it, fetched as Sonoff's own updater would fetch it; nothing is sent to the
-device. A device the tool has not seen gets that alone. The second reads its
-whole memory, and only on a listed kind whose status says it is proven not to
-leave the device unable to start (kinds.Status.reads_out), under the firmware
+device. A device the tool has not seen, or one on another firmware now,
+gets that alone. The second reads its whole memory, and only on a listed kind
+whose status says it is proven not to leave the device unable to start (kinds.Status.reads_out), under the firmware
 name that kind's own firmware has: an Espressif device through the bridge,
 which leaves Sonoff's firmware where it is (readout_espressif.py); a Beken
 device through a readout OpenBeken, which puts Sonoff's firmware back
@@ -37,12 +37,12 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, TYPE_CHECKING
 
 from tools.autoflash import __version__, account, detect, hostsys, kinds, output, records, prompts, runs
-from tools.autoflash import failures, proof_of_work, readout_beken, readout_espressif, report, report_upload, signup
+from tools.autoflash import failures, openbeken, proof_of_work, readout_beken, readout_espressif, report, report_upload, signup
 from tools.autoflash.errors import Abort, Finished, NothingWritten
 # How a device's readout ended (Became.outcome): its report's result, sent as
 # each readout ends (report_upload.send_readout), and on the screen's at the end.
 from tools.autoflash.report_data import (
-    ACCEPTED, CANCELLED, CONVERTED_SINCE, CRASHED, FAILED, KEPT, NOT_NEEDED as UNNEEDED, NOT_READ, SKIPPED,
+    ACCEPTED, CANCELLED, CRASHED, FAILED, KEPT, NOT_NEEDED as UNNEEDED, NOT_READ, SKIPPED,
     WEBSITE_FULL, device_hash)
 from tools.ewelink import discover_ewelink, firmware_name, offered_firmware
 
@@ -191,7 +191,7 @@ class Became:
 
 # Each outcome as the report on the screen says it (report_fields), in this order.
 SAID = {ACCEPTED: "Accepted", UNNEEDED: "Not needed", KEPT: "Not sent", WEBSITE_FULL: "Website full",
-        CONVERTED_SINCE: "Converted since", SKIPPED: "Skipped", NOT_READ: "Not read out", CANCELLED: "Stopped",
+        SKIPPED: "Skipped", NOT_READ: "Not read out", CANCELLED: "Stopped",
         FAILED: "Failed", CRASHED: "Crashed"}
 # The report's right-hand column (report.report_screen).
 REPORT_RIGHT = ("Devices", "Accepted", "Not needed", "Not sent")
@@ -506,23 +506,17 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
         records.remember_device(mac, ewelink_name=str(device.get("name") or "").strip() or None,
                             ewelink_id=str(device.get("deviceid") or "") or None,
                             model=str(device.get("productModel") or "") or None)
-    # Asked of eWeLink by its account id. What answers at its address is
-    # checked first (account.already_converting) - not on a Beken device, whose
-    # readout finds that itself, nor on one a readout stopped part way left on
-    # its reading program (the bridge).
+    # Asked of eWeLink by its account id, once what answers at its address is
+    # known to be Sonoff's firmware (runs_now). One on another firmware -
+    # converted by this tool or by hand - has none of Sonoff's left to read,
+    # but eWeLink's record of it and the firmware eWeLink offers it are still
+    # its first stage.
     begin("probe")
-    on_bridge = ip is not None and not is_beken(device) and readout_espressif.installer.bridge_answers(ip)
-    try:
-        if first_only:
-            asked = ask_first_stage(ctx, device)
-        else:
-            asked = account.ask_account(ctx, str(device.get("deviceid") or ""),
-                                        None if is_beken(device) or on_bridge else ip)
-    except account.NotOnSonoff as exc:
-        # One the account still lists, converted since: nothing gone wrong,
-        # and none of Sonoff's firmware left on it to read.
-        ctx.readout.outcome, ctx.readout.detail = CONVERTED_SINCE, detect.NAMES[exc.firmware]
-        return ""
+    converted = runs_now(device, ip) if ip else None
+    if first_only or converted:
+        asked = ask_first_stage(ctx, device)
+    else:
+        asked = account.ask_account(ctx, str(device.get("deviceid") or ""))
     ctx.readout.product = asked.product or ctx.readout.product
     ctx.readout.model = asked.model or ctx.readout.model
     ctx.readout.version = asked.version
@@ -539,7 +533,7 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
                                         "this tool's list of devices")
     ctx.state.set_input("stock_version", asked.version)
     ctx.state.set_input("product_model", asked.product)
-    whole = whole_readout(listed, learned)
+    whole = not converted and whole_readout(listed, learned)
     # Logged, as a conversion's is (account.py): the chooser named the device.
     prompts.section("What the device reported", [
         f"Model            {asked.model or 'not given'}",
@@ -571,6 +565,9 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
         "uiid": (device.get("extra") or {}).get("uiid"),
         "firmware_name": learned.name if learned else "", "name_from": learned.source if learned else "",
         "chip": learned.chip if learned else "",
+        # What it runs now, where that is not Sonoff's: eWeLink's record of
+        # its version is then of the last Sonoff firmware it ran.
+        **({"runs": converted} if converted else {}),
     }
     # The firmware eWeLink offers it as well: often another version than the
     # one it runs, so two to test against. Nothing is sent to the device for it.
@@ -608,7 +605,9 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
         files, back = readout_beken.read_and_anonymise(ctx, manifest, learned.name, asked.version, device,
                                                        beken_stock, skippable=batch is not None)
     else:
-        if learned is None:
+        if converted:
+            why = f"it runs {detect.NAMES[converted]} now, not Sonoff's firmware"
+        elif learned is None:
             why = "its firmware name could not be learned"
         elif not whole:
             why = ("this tool has not proven a full readout safe on this device yet, so nothing is "
@@ -624,6 +623,21 @@ def _run(ctx: Context, device: dict[str, Any], address: str | None, batch: Batch
     ctx.readout.whole, ctx.readout.back = True, back
     begin("save")
     return offer(ctx, manifest, files, sent, back=back, batch=batch, device=device)
+
+
+def runs_now(device: dict[str, Any], ip: str) -> str | None:
+    """The firmware other than Sonoff's that `device` answers at `ip` with, as
+    detect.NAMES has it (account.already_converting), or None for Sonoff's.
+    Not asked of a reading program a readout stopped part way left on it -
+    the bridge, or a Beken device's readout OpenBeken - whose readout
+    carries on (readout_espressif, readout_beken)."""
+    if (openbeken.is_readout(ip) if is_beken(device) else readout_espressif.installer.bridge_answers(ip)):
+        return None
+    try:
+        account.already_converting(ip)
+    except account.NotOnSonoff as exc:
+        return exc.firmware
+    return None
 
 
 def reads_out(device: dict[str, Any]) -> bool:

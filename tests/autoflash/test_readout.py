@@ -17,7 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from tools.autoflash import account, errors, hostsys, output, records, prompts, readout, readout_beken
+from tools.autoflash import account, errors, hostsys, openbeken, output, records, prompts, readout, readout_beken
 from tools.autoflash import readout_espressif, report, report_data, runner, runs
 from tools.autoflash.state import RunState
 from tools.espressif import chips
@@ -456,6 +456,8 @@ def start_run(test: unittest.TestCase) -> None:
                   mock.patch.object(readout, "answering_at", return_value=None),
                   # On Sonoff's firmware, not a readout's reading program left on it.
                   mock.patch.object(readout_espressif.installer, "bridge_answers", return_value=False),
+                  mock.patch.object(openbeken, "is_readout", return_value=False),
+                  mock.patch.object(account, "already_converting", return_value=None),
                   mock.patch.object(hostsys, "mac_of", return_value="12:34:56:ab:cd:ef"),
                   mock.patch.object(account, "ask_account", return_value=asked),
                   mock.patch.object(records, "remember_device"),
@@ -498,18 +500,33 @@ class RunTests(unittest.TestCase):
         self.assertEqual(manifest["offered"][0]["version"], "1.1.0")
         self.assertNotIn("1000abcdef", json.dumps(manifest))
 
-    def test_a_device_converted_since_is_not_read_out_and_that_is_no_failure(self):
-        # Still in the eWeLink account, on ESPHome now: answered, not raised.
+    def test_a_device_on_another_firmware_has_its_first_stage_read_out_and_nothing_sent_to_it(self):
+        # Still in the eWeLink account, converted - by this tool or by hand: its
+        # record and the firmware eWeLink offers it are still worth having.
         from tools.autoflash import kinds
-        s60 = record("S60TPG", kinds.SONOFF_S60.stock_model)
-        converted = account.NotOnSonoff("esphome", "192.0.2.77 is running ESPHome, not Sonoff's firmware")
-        with mock.patch.object(account, "ask_account", side_effect=converted), \
-                mock.patch.object(runs, "hold_device"), mock.patch.object(readout, "ask_wanted") as wanted:
-            self.assertEqual(readout.run(self.ctx, s60), "")   # nothing for the owner to do
-            self.assertEqual(readout.run(self.ctx, s60, batch=readout.Batch()), "")
-        wanted.assert_not_called()
-        self.assertEqual([outcome for _, outcome, _ in ended(self.ctx)], [readout.CONVERTED_SINCE] * 2)
-        self.assertEqual(readout.readouts(self.ctx)[0].detail, "ESPHome")
+        for product, kind, chip, firmware in (("S60TPG", kinds.SONOFF_S60, "ESP32C3", "esphome"),
+                                              ("S61STPF", kinds.SONOFF_S61, "BK7238", "openbeken")):
+            converted = account.NotOnSonoff(firmware, f"192.0.2.77 is running {firmware}, not Sonoff's firmware")
+            # As eWeLink knows it: a kind read in full on Sonoff's firmware.
+            asked = account.Asked("1.2.0", kind.stock_model, product, [], {}, "1000abcdef")
+            for batch in (None, readout.Batch()):
+                with self.subTest(kind.key, batch=batch), learned(kind.wrapper_model, chip), \
+                        mock.patch.object(account, "ask_account", return_value=asked) as ask, \
+                        mock.patch.object(account, "already_converting", side_effect=converted) as checked, \
+                        mock.patch.object(runs, "hold_device"), mock.patch.object(readout, "ask_wanted",
+                                                                                  return_value=readout.Wanted(True)) as wanted, \
+                        mock.patch.object(readout_espressif, "read_and_anonymise") as espressif, \
+                        mock.patch.object(readout_beken, "read_and_anonymise") as beken, \
+                        mock.patch.object(readout, "offer", return_value="") as offered:
+                    self.assertEqual(readout.run(self.ctx, record(product, kind.stock_model), batch=batch), "")
+                checked.assert_called_once_with("192.0.2.77")
+                espressif.assert_not_called()
+                beken.assert_not_called()
+                self.assertEqual(ask.call_args.args[1:], ("1000abcdef",))
+                self.assertEqual(wanted.call_args.args[3], "first")
+                manifest, files = offered.call_args.args[1:3]
+                self.assertEqual((manifest["read"], manifest["runs"], files), (False, firmware, None))
+                self.assertEqual([item.name for item in offered.call_args.args[3]], ["user1.bin"])
 
     def test_each_wait_is_a_stage_of_its_own(self):
         # Seen in attended emulator runs: with no stage line, the window stayed
@@ -638,13 +655,20 @@ class RunTests(unittest.TestCase):
                 classified = readout.failures.classify("the device stopped answering") if classed else None
                 self.assertEqual(sent, ["begun", (outcome, classified, "12:34:56:ab:cd:ef")])
 
-    def test_a_device_converted_since_ends_its_stages_there(self):
+    def test_a_device_on_another_firmware_passes_its_reads_by(self):
         from tools.autoflash import kinds
         converted = account.NotOnSonoff("esphome", "192.0.2.77 is running ESPHome, not Sonoff's firmware")
-        with mock.patch.object(account, "ask_account", side_effect=converted), mock.patch.object(runs, "hold_device"):
+        with learned(kinds.SONOFF_S60.wrapper_model, "ESP32C3"), \
+                mock.patch.object(account, "ask_account", return_value=S60_ASKED), \
+                mock.patch.object(account, "already_converting", side_effect=converted), \
+                mock.patch.object(readout_espressif, "read_and_anonymise", return_value=({}, True)), \
+                mock.patch.object(runs, "hold_device"), mock.patch.object(readout, "offer", return_value=""):
             readout.run(self.ctx, record("S60TPG", kinds.SONOFF_S60.stock_model))
-        self.assertEqual(self.stages, ["2 Locating the device on your network", "complete",
-                                       "3 Probing the device", "complete"])
+        self.assertEqual(self.stages, [
+            "2 Locating the device on your network", "complete", "3 Probing the device", "complete",
+            "4 Fetching the eWeLink firmware", "complete",
+            "5 Reading the device's memory", "skipped", "6 Restoring Sonoff's firmware", "skipped",
+            "7 Saving the readout", "complete"])
 
     def test_a_kind_the_tool_knows_takes_its_own_name_when_ewelink_gives_none(self):
         from tools.autoflash import kinds
@@ -679,20 +703,27 @@ class RunTests(unittest.TestCase):
         self.assertIsNone(sent)
         self.assertFalse(manifest["read"])
 
-    def test_what_answers_at_an_espressif_devices_address_is_checked_before_ewelink_is_asked(self):
-        # account.already_converting, as a conversion's A2 does; a Beken
-        # device's readout finds what it runs itself.
+    def test_what_answers_at_a_devices_address_is_checked_before_ewelink_is_asked(self):
+        # account.already_converting, as a conversion's A2 does - but not on a
+        # reading program a readout stopped part way left there, whose readout
+        # carries on: the bridge (which answers no discovery, as Sonoff's
+        # firmware would), or a Beken device's readout OpenBeken.
         from tools.autoflash import kinds
-        for product, kind, chip, checked in (("BASICR4", kinds.SONOFF_BASICR4, "ESP32C3", "192.0.2.77"),
-                                             ("S61STPF", kinds.SONOFF_S61, "BK7238", None)):
+        for product, kind, chip, left_on in (("BASICR4", kinds.SONOFF_BASICR4, "ESP32C3",
+                                              (readout_espressif.installer, "bridge_answers")),
+                                             ("S61STPF", kinds.SONOFF_S61, "BK7238", (openbeken, "is_readout"))):
             asked = account.Asked("1.0.0", kind.stock_model, product, [], {}, "1000abcdef")
-            with self.subTest(kind.key), learned(kind.wrapper_model, chip), \
-                    mock.patch.object(account, "ask_account", return_value=asked) as ask, \
-                    mock.patch.object(readout_espressif, "read_and_anonymise", return_value=({}, True)), \
-                    mock.patch.object(readout_beken, "read_and_anonymise", return_value=({}, True)), \
-                    mock.patch.object(readout, "offer", return_value="done"):
-                readout.run(self.ctx, record(product, kind.stock_model))
-            self.assertEqual(ask.call_args.args[1:], ("1000abcdef", checked))
+            for reading in (False, True):
+                with self.subTest(kind.key, reading=reading), learned(kind.wrapper_model, chip), \
+                        mock.patch.object(*left_on, return_value=reading), \
+                        mock.patch.object(account, "already_converting") as checked, \
+                        mock.patch.object(account, "ask_account", return_value=asked) as ask, \
+                        mock.patch.object(readout_espressif, "read_and_anonymise", return_value=({}, True)), \
+                        mock.patch.object(readout_beken, "read_and_anonymise", return_value=({}, True)), \
+                        mock.patch.object(readout, "offer", return_value="done"):
+                    readout.run(self.ctx, record(product, kind.stock_model))
+                self.assertEqual(checked.call_args_list, [] if reading else [mock.call("192.0.2.77")])
+                self.assertEqual(ask.call_args.args[1:], ("1000abcdef",))
 
     def test_a_kind_wanting_a_readout_is_read_in_full(self):
         from tools.autoflash import kinds
@@ -713,17 +744,6 @@ class RunTests(unittest.TestCase):
         self.assertIs(nspanel.status, kinds.Status.NOT_SUPPORTED)
         sent, _ = self.read("NSPANEL", nspanel.stock_model, nspanel.wrapper_model, "ESP32D0WD")
         self.assertIsNone(sent)
-
-    def test_on_the_reading_program_already_it_is_asked_of_ewelink_by_its_id(self):
-        # The bridge answers no discovery, as Sonoff's firmware would.
-        from tools.autoflash import kinds
-        basicr4 = kinds.SONOFF_BASICR4
-        by_id = account.Asked("1.1.0", basicr4.stock_model, "BASICR4", [], {}, "1000abcdef")
-        with learned("FWSW-01-NEW-BK7238", "BK7238"), mock.patch.object(readout, "offer", return_value="done"), \
-                mock.patch.object(readout_espressif.installer, "bridge_answers", return_value=True), \
-                mock.patch.object(account, "ask_account", return_value=by_id) as asked:
-            readout.run(self.ctx, record("BASICR4", basicr4.stock_model))
-        self.assertEqual(asked.call_args.args[1:], ("1000abcdef", None), "the bridge is not taken for a conversion's")
 
     def test_what_it_keeps_of_the_device_and_learns_its_name_from(self):
         from tools.autoflash import kinds

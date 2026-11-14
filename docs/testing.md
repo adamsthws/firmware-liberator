@@ -434,9 +434,11 @@ says, as it takes no step of the tool's:
   the whole flash matching its own hash check (FAIL-READOUT), and the device
   ends answering as Sonoff's firmware (FAIL-NOT-SONOFF, or BRICK if its serial
   output ends as a device that cannot start does).
-- A readout of a device on Tasmota, given its address, must stop before
-  sending the device anything (FAIL-NOT-REFUSED), keeping its Tasmota and
-  template (FAIL-DISTURBED).
+- A readout of a device on Tasmota, given its address, must keep its first
+  stage alone - the firmware eWeLink offers, its manifest naming Tasmota and
+  its memory not read (FAIL-READOUT) - end with no failure (FAIL-EXIT), send
+  the device nothing (FAIL-SENT), and leave its Tasmota and template as they
+  were (FAIL-DISTURBED).
 
 **A readout of every device** (`sonoff>readout-all`, on the stub only):
 `readout --all` unattended on a device fresh from Sonoff's firmware, among
@@ -830,8 +832,9 @@ for a Beken device, found by its hardware address as every device is.
   for a Beken device and the whole 4 MB flash (FAIL-READOUT), and the device,
   switched off and on, starts Sonoff's firmware and is back in eWeLink
   (FAIL-NOT-SONOFF).
-- A readout of a device on OpenBeken must fail without serving it anything
-  (FAIL-NOT-REFUSED), and the device must still answer on OpenBeken
+- A readout of a device on OpenBeken must keep its first stage alone, as the
+  Espressif suite's of a device on Tasmota (FAIL-READOUT, FAIL-EXIT), serving
+  the device nothing (FAIL-SENT), which must still answer on OpenBeken
   (FAIL-DISTURBED).
 
 #### Running it (Beken)

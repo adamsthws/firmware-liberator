@@ -76,20 +76,18 @@ METER_WORDS = ("sonoff", "carried", "carried-factory", "skipped", "stock-nvs", "
                "stock-store", "changed", "reported", "not-checked")
 # How a device's readout ended (readout.Became), as its report says it: the
 # website took it; it was kept unsent; the website had readouts like it, or
-# could take no more; the device runs another firmware now; it was passed by
-# (one of several), the person stopped it, or it failed or crashed.
+# could take no more; it was passed by (one of several), the person stopped
+# it, or it failed or crashed.
 ACCEPTED = "accepted"
 KEPT = "kept"
 NOT_NEEDED = "not-needed"
 WEBSITE_FULL = "website-full"
-CONVERTED_SINCE = "converted-since"
 SKIPPED = "skipped"
 NOT_READ = "not-read"
 CANCELLED = "cancelled"
 FAILED = "failed"
 CRASHED = "crashed"
-READOUT_RESULTS = (ACCEPTED, KEPT, NOT_NEEDED, WEBSITE_FULL, CONVERTED_SINCE, SKIPPED, NOT_READ, CANCELLED,
-                   FAILED, CRASHED)
+READOUT_RESULTS = (ACCEPTED, KEPT, NOT_NEEDED, WEBSITE_FULL, SKIPPED, NOT_READ, CANCELLED, FAILED, CRASHED)
 TEXT_LIMIT = 200
 MODEL = re.compile(r"[A-Z0-9][A-Z0-9-]{0,23}")
 VERSION = re.compile(r"\d{1,4}(\.\d{1,4}){1,3}")
