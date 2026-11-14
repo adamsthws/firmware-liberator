@@ -789,8 +789,12 @@ each (`interim>...`); and an earlier release's OpenBeken and ESPHome updated
 
 **Faults.** At 40% of each step that writes to or waits on the device: the
 device switched off for 1 or 30 s (`deviceoff`), the network gone - the
-router off, as in the Espressif suite - for 30 s (`outage`), the tool killed and run again after 1 or
-180 s (`crash`), and Ctrl-C (`ctrlc`). At the steps that write, also a power
+router off - for 5, 15, 30, 60, 120 or 180 s, as in the Espressif suite
+(`outage`), the tool killed and run again after 1 or 180 s (`crash`), and
+Ctrl-C (`ctrlc`). Where ESPHome raises its own network when it cannot join
+(K2), the router alone off for 150 s (`fallback`): the run sends ESPHome the
+Wi-Fi details through that network, a stand-in person joining it as the run
+says to and going back after, as the Espressif suite's does. At the steps that write, also a power
 cut and a kill at 10% and at 90%, a power cut and another as the tool sends
 the step again (`double`), and the router giving the device a new address
 once the step is done (`readdress`).
