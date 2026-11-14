@@ -90,7 +90,7 @@ local_api_start() {
     docker rm -f "$name" >/dev/null 2>&1 || true
     mkdir -p "$folder"
     docker run -d --name "$name" --network "$network" --user "$(id -u):$(id -g)" \
-        -v "$ROOT/website:/website:ro" -v "$folder:/api" -e AUTOFLASH_LOCAL_PROOF_BITS \
+        -v "$ROOT/website:/website:ro" -v "$folder:/api" -e AUTOFLASH_LOCAL_PROOF_BITS -e AUTOFLASH_LOCAL_READOUT_LIMIT \
         "$LOCAL_API_IMAGE" node /website/api/local.mjs 0.0.0.0 8080 /api "$enough" >/dev/null
     until docker logs "$name" 2>&1 | grep -q '^API on'; do
         [ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null)" = true ] && [ $((waited += 1)) -le 60 ] || {
