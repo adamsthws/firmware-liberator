@@ -210,6 +210,10 @@ check.
 - A device whose new firmware cannot join your Wi-Fi - ESPHome, or the mover
   on the way to it - is set up through its own network as soon as that network
   is up, a minute or two in, where the run waited three minutes first.
+- A device whose Wi-Fi drops for a moment as it downloads its new firmware no
+  longer leaves a Python traceback ("Exception occurred during processing of
+  request", ConnectionResetError) across the run's screen: the dropped request
+  goes in the run's log, and the device asks again for what it lacks.
 - The report sent says whether your computer joined a network the device
   raised itself on either family, and now also when ESPHome or the mover was
   set up through its own network; it said so only for an Espressif device's
