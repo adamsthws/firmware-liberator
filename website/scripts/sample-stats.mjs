@@ -117,6 +117,16 @@ export async function sampleDatabase(now = new Date("2026-12-01T03:17:00Z"), rep
       }
     }
   }
+  // The tool's downloads as each night of the last 60 would have read them
+  // (api/downloads.js), more each day; a few nights GitHub was not read.
+  const read = db.db.prepare("INSERT INTO download_days (day, downloads) VALUES (?, ?)");
+  let downloaded = 480;
+  for (let ago = 60; ago >= 1; ago -= 1) {
+    downloaded += Math.floor(next() * 26);
+    if (ago % 17 !== 5) {
+      read.run(dayOf(new Date(now.getTime() - ago * 86_400_000)), downloaded);
+    }
+  }
   const kept = new Map();
   const STATS = { head: async (key) => (kept.has(key) ? {} : null), put: async (key, text) => kept.set(key, text) };
   await nightly({ DB: db, STATS }, now);

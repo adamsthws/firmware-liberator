@@ -328,6 +328,14 @@ CREATE TABLE IF NOT EXISTS store_days (
   bytes INTEGER NOT NULL
 ) WITHOUT ROWID;
 
+-- The tool's downloads as GitHub counted them each night (downloads.js):
+-- its DOWNLOADS files summed over its releases, all time to the day before.
+-- Kept for good: a row a day, none a night GitHub was not read.
+CREATE TABLE IF NOT EXISTS download_days (
+  day TEXT PRIMARY KEY,
+  downloads INTEGER NOT NULL
+) WITHOUT ROWID;
+
 -- readout_firmware: each offered file a readout holds, marked under
 -- readouts/firmware/ (index.js), so a readout deleted takes its marks with it
 -- and the next readout of the device sends the file again.

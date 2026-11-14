@@ -45,6 +45,10 @@ class SiteTests(unittest.TestCase):
         site = (ROOT / "website/src/site.mjs").read_text(encoding="utf-8")
         self.assertIn(f'export const REPOSITORY = "{REPOSITORY}";', site)
 
+    def test_the_api_reads_this_repositorys_downloads(self):
+        downloads = (ROOT / "website/api/downloads.js").read_text(encoding="utf-8")
+        self.assertIn(f'export const REPOSITORY = "{REPOSITORY}";', downloads)
+
     def test_the_site_is_at_the_address_the_repository_gives_it(self):
         site = (ROOT / "website/src/site.mjs").read_text(encoding="utf-8")
         self.assertIn(f'export const SITE = "{WEBSITE.rstrip("/")}";', site)

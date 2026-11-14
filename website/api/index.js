@@ -150,6 +150,7 @@ export const SENDER_DAILY = 20;
 import { answer } from "./answer.js";
 import { read, release, reserve } from "./counters.js";
 import { ready } from "./database.js";
+import { refreshDownloads } from "./downloads.js";
 import { PENDING, SIGNUP_DAYS } from "./pending.js";
 import { SUPPRESSED, sendMail } from "./mail.js";
 import { countedNetwork, refreshNetworks } from "./networks.js";
@@ -181,9 +182,10 @@ export default {
     named.headers.set("API-Tree", env.API_TREE);
     return named;
   },
-  // The lists of hosts' and VPNs' networks fetched (networks.js), the nightly
-  // job (nightly.js), then the reminders (remind), or, at the hourly cron, the
-  // reminders alone: at the times wrangler.jsonc's crons give.
+  // The lists of hosts' and VPNs' networks fetched (networks.js), the tool's
+  // downloads read (downloads.js), the nightly job (nightly.js), then the
+  // reminders (remind), or, at the hourly cron, the reminders alone: at the
+  // times wrangler.jsonc's crons give.
   async scheduled(controller, env, context) {
     // The limits the maintainer is told were reached (alerts.js).
     const limits = { DAILY_COUNT, DAILY_BYTES, TOTAL_BYTES, NOTIFY_DAILY, REPORTS_DAILY, from: NOTIFY_FROM };
@@ -192,8 +194,8 @@ export default {
       context.waitUntil(remind(env, now).then((reminded) => ({ reminded })));
       return;
     }
-    context.waitUntil(refreshNetworks(env, now).then(async (networks) =>
-      ({ networks, ...(await nightly(env, now, limits)), reminded: await remind(env, now) })));
+    context.waitUntil(refreshNetworks(env, now).then(async (networks) => ({ networks,
+      downloads: await refreshDownloads(env, now), ...(await nightly(env, now, limits)), reminded: await remind(env, now) })));
   },
 };
 

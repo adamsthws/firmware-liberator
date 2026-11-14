@@ -340,6 +340,7 @@ test("the nightly cron runs the nightly job; the hourly one the reminders alone"
   const none = "GitHub: no network in the tests; jsDelivr: no network in the tests";
   assert.deepEqual((await waited[0]).networks, { datacenter: none, vpn: none },
     "the lists of networks fetched first");
+  assert.equal((await waited[0]).downloads, "no network in the tests", "and the downloads read, before the figures");
   await worker.scheduled({ cron: "47 * * * *", scheduledTime: NIGHT.getTime() }, env(),
     { waitUntil: (promise) => waited.push(promise) });
   assert.deepEqual(await waited[1], { reminded: 0 }, "no nightly job hourly");
@@ -462,4 +463,29 @@ test("no more than a fixed few spikes are held a night", async () => {
     await many(bindings.DB, "2026-11-09", night.SPIKE_SMALLEST, `FLOOD${n}`);
   }
   assert.equal((await night.nightly(bindings, NIGHT)).held.length, night.SPIKE_MOST);
+});
+
+test("the figures give the tool's downloads each day read, beside the devices converted then, from five", async () => {
+  const bindings = env();
+  const read = bindings.DB.db.prepare("INSERT INTO download_days (day, downloads) VALUES (?, ?)");
+  read.run("2026-11-08", 3);
+  read.run("2026-11-09", 9);
+  const device = bindings.DB.db.prepare(`INSERT INTO devices (device_hash, device, first_day, last_day, first_result,
+    converted_day, runs, conversions, back_to_sonoff, dev) VALUES (?, 'sonoff-s60', ?, ?, 'converted', ?, 1, 1, 0, 0)`);
+  for (const [n, day] of [[1, "2026-11-08"], [SMALLEST, "2026-11-09"]]) {
+    for (let at = 0; at < n; at += 1) {
+      device.run(`${day}-${at}`, day, day, day);
+    }
+  }
+  await night.nightly(bindings, NIGHT);
+  assert.deepEqual(figures(bindings).downloads, {
+    total: 9, day: "2026-11-09",
+    days: [{ day: "2026-11-08", downloads: 3, converted: null }, { day: "2026-11-09", downloads: 9, converted: SMALLEST + 1 }],
+  });
+});
+
+test("with no day read, the figures say no downloads", async () => {
+  const bindings = env();
+  await night.nightly(bindings, NIGHT);
+  assert.deepEqual(figures(bindings).downloads, { total: null, day: null, days: [] });
 });
