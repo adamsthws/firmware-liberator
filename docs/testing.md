@@ -242,6 +242,16 @@ runs have failed. A fault that never happened is NOT-FIRED, never a pass.
 
 Both suites run a batch the same way:
 
+- `list` writes every scenario's id, for `batch` or `share`; `list quick` a
+  routine run's, with outages only of the shortest and longest length
+  (`QUICK_OUTAGES`). The other lengths have found bugs these did not, so run
+  them all before a release:
+
+  ```sh
+  tools/espressif/emulator/fault_suite.py list quick > quick.txt
+  tools/beken/emulator/fault_suite.py list quick > beken-quick.txt
+  ```
+
 - `batch` runs what has not passed yet, longest first so as not to end on a
   long one started last, by how long each last took on this computer (from
   the suite's results in `captures/emulation/*/`); one never run counts as a
@@ -289,7 +299,7 @@ a unit test.
 
 | Fault | What happens |
 |---|---|
-| `outage` | the network gone (the router off) for 5, 15, 30, 60, 120 or 180 s |
+| `outage` | the network gone (the router off) for 5, 15, 30, 120 or 180 s |
 | `weak` | a weak network: one packet in ten lost for a minute |
 | `deviceoff` | the device's power off for 1, 5, 30 or 180 s |
 | `crash` | the tool and what it serves killed outright, as in a crash, and started again 1 or 180 s later; also 60 s at C2 and where the device raises a network of its own |
@@ -789,7 +799,7 @@ each (`interim>...`); and an earlier release's OpenBeken and ESPHome updated
 
 **Faults.** At 40% of each step that writes to or waits on the device: the
 device switched off for 1 or 30 s (`deviceoff`), the network gone - the
-router off - for 5, 15, 30, 60, 120 or 180 s, as in the Espressif suite
+router off - for 5, 15, 30, 120 or 180 s, as in the Espressif suite
 (`outage`), the tool killed and run again after 1 or 180 s (`crash`), and
 Ctrl-C (`ctrlc`). Where ESPHome raises its own network when it cannot join
 (K2), the router alone off for 150 s (`fallback`): the run sends ESPHome the

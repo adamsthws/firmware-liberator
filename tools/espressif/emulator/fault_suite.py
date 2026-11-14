@@ -5,6 +5,7 @@ device, every fault - on emulators side by side, on one machine or several
 
     fault_suite.py --device MAC prep        the starting devices (needs the cloud)
     fault_suite.py list                   every scenario, and whether it needs the cloud
+    fault_suite.py list quick             those of a routine run (QUICK_OUTAGES)
     fault_suite.py --device MAC batch [FILE]
                                           the scenarios in FILE (one id a line; every
                                           scenario without), skipping those passed
@@ -349,10 +350,15 @@ SWITCH_ADVICE = re.compile(r"switch (the device|the device|it) off and on", re.I
 # Each length where it can lead somewhere the others do not: an
 # outage of 5 s is within every timeout of the tool's (8 s and up) and takes
 # the device off the Wi-Fi, so it covers 1 s; 15 s outlasts the 8-10 s ones but
-# not the 15-20 s ones. A crash's rerun after 1 s finds the step still going,
+# not the 15-20 s ones; 30 s and 120 s each found bugs of their own, 60 s none
+# that 30 s or 120 s did not. A crash's rerun after 1 s finds the step still going,
 # after 180 s finished and any fallback network up; after 60 s - finished, no
 # fallback yet - is a place of its own only where there is one (FALLBACK_STEPS).
-CORE = ([("outage", s) for s in (5, 15, 30, 60, 120, 180)]
+OUTAGES = (5, 15, 30, 120, 180)
+# A routine run's outages (list quick): the shortest and the longest. The
+# others found bugs these did not, so the run before a release has them all.
+QUICK_OUTAGES = (OUTAGES[0], OUTAGES[-1])
+CORE = ([("outage", s) for s in OUTAGES]
         + [("deviceoff", s) for s in (1, 5, 30, 180)]
         + [("crash", s) for s in (1, 180)]
         + [("cancel", "continue"), ("cancel", "new"), ("ctrlc", "once")])
@@ -392,9 +398,10 @@ def sid(route, step, fault, arg, at=40):
     return f"{route}:{step}{'' if at == 40 else f'@{at}'}:{fault}-{arg}"
 
 
-def step_faults(step):
-    """The one-moment faults tried at `step` (40% of the way through)."""
-    faults = list(CORE)
+def step_faults(step, quick=False):
+    """The one-moment faults tried at `step` (40% of the way through); `quick`,
+    a routine run's, the outages only at QUICK_OUTAGES."""
+    faults = [f for f in CORE if not (quick and f[0] == "outage" and f[1] not in QUICK_OUTAGES)]
     if STEP_OF.get(step, step) in FALLBACK_STEPS or step == "C2":
         faults += [("crash", 60)]
     if step == "C3fb":
@@ -407,10 +414,11 @@ def step_faults(step):
     return faults
 
 
-def scenarios():
+def scenarios(quick=False):
+    """Every scenario; `quick`, a routine run's (step_faults)."""
     for route, (_, target, steps) in ROUTES.items():
         for step in steps:
-            faults = step_faults(step) + ([("cancel", "switch")] if target in OTHER and step != "C3fb" else [])
+            faults = step_faults(step, quick) + ([("cancel", "switch")] if target in OTHER and step != "C3fb" else [])
             for fault, arg in faults:
                 yield dict(id=sid(route, step, fault, arg), route=route, step=step, fault=fault, arg=arg, at=40)
             if step in CRITICAL:
@@ -427,7 +435,7 @@ def scenarios():
                 yield dict(id=sid(route, step, "fallback", 150), route=route, step=step,
                            fault="fallback", arg=150, at=40)
     for route in C2_ROUTES:
-        for fault, arg in step_faults("C2") + [("cancel", "switch"), ("token", "login")]:
+        for fault, arg in step_faults("C2", quick) + [("cancel", "switch"), ("token", "login")]:
             yield dict(id=sid(route, "C2", fault, arg), route=route, step="C2", fault=fault, arg=arg, at=40)
     yield from composite_scenarios()
 
@@ -3141,8 +3149,8 @@ def prep_update():
                ["--fresh", f"--code={legacy_tree(EARLIER_RELEASE)}", "--", "--firmware", "esphome"])
 
 
-def listing():
-    for sc in scenarios():
+def listing(quick=False):
+    for sc in scenarios(quick):
         print(sc["id"], kind_of(sc))
 
 
@@ -3178,7 +3186,8 @@ def main():
                         help="each emulator serves its own local eWeLink stub (offline, fully "
                              "parallel, no cloud lock); the default uses the real cloud")
     parser.add_argument("command", choices=["prep", "prep-update", "list", "batch", "report", "share"])
-    parser.add_argument("file", nargs="?", help="batch: the scenario ids to run (else all); share: those to share out")
+    parser.add_argument("file", nargs="?", help="batch: the scenario ids to run (else all); share: those to "
+                        "share out; list: quick, for a routine run's")
     parser.add_argument("workers", nargs="*", type=int,
                         help="share: how many emulators each machine runs, one number a machine")
     parser.add_argument("--times-from", action="append", default=[], type=Path, metavar="DIR",
@@ -3209,7 +3218,9 @@ def main():
         # Its scenarios share the S60's names, not their passes.
         OUT = OUT.with_name(f"{OUT.name}-{DEVICE.key}")
         RESULTS, LOGS = OUT / "results.jsonl", OUT / "logs"
-    {"prep": prep, "prep-update": prep_update, "list": listing, "report": report,
+    if args.command == "list" and args.file not in (None, "quick"):
+        parser.error("list takes only quick")
+    {"prep": prep, "prep-update": prep_update, "list": lambda: listing(args.file == "quick"), "report": report,
      "batch": lambda: batch(args.file)}[args.command]()
 
 

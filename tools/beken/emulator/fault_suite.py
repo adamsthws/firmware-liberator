@@ -15,6 +15,7 @@ does for the Espressif devices.
                                         on the two emulators numbered
                                         (tools/repo/emulator_check.py)
     fault_suite.py list                 every scenario
+    fault_suite.py list quick           those of a routine run (QUICK_OUTAGES)
     fault_suite.py list openbeken       those a new OpenBeken build is checked with
                                         (docs/updating-firmware.md)
     fault_suite.py batch [FILE]         the scenarios in FILE (one id a line; every
@@ -40,7 +41,7 @@ failed (FAIL-SCREEN if not), and that a device converted to OpenBeken or ESPHome
 runs this checkout's release of it (FAIL-NOT-LATEST if not).
 
 The faults: the device switched off for 1 or 30 s (deviceoff), the network
-gone - the router off - for 5, 15, 30, 60, 120 or 180 s (outage), as the
+gone - the router off - for 5, 15, 30, 120 or 180 s (outage), as the
 Espressif suite's, the tool killed and run again after 1 or 180 s (crash), and
 Ctrl-C (ctrlc); where ESPHome raises its own network (K2), the router alone off
 for 150 s (fallback), the person joining that network as the run says to
@@ -153,7 +154,11 @@ EARLIER_SAVED = "captures/emulation/s61/saved"
 # The outages as the Espressif suite's, each length where it can lead somewhere
 # the others do not: within the tool's shortest timeouts, past them, and long
 # enough for ESPHome to raise its own network (a minute or two).
-CORE = ([("deviceoff", 1), ("deviceoff", 30)] + [("outage", s) for s in (5, 15, 30, 60, 120, 180)]
+OUTAGES = (5, 15, 30, 120, 180)
+# A routine run's outages (list quick), as the Espressif suite's: the shortest
+# and the longest.
+QUICK_OUTAGES = (OUTAGES[0], OUTAGES[-1])
+CORE = ([("deviceoff", 1), ("deviceoff", 30)] + [("outage", s) for s in OUTAGES]
         + [("crash", 1), ("crash", 180), ("ctrlc", "once")])
 # Where a firmware raises its own network when it cannot join the home one:
 # ESPHome, at K2. There the router stays off 150 s (fallback), the run sets it up
@@ -215,11 +220,14 @@ def sid(route: str, step: str, fault: str, arg, at: int = 40) -> str:
     return f"{route}:{step}{'' if at == 40 else f'@{at}'}:{fault}-{arg}"
 
 
-def scenarios() -> list[dict]:
+def scenarios(quick: bool = False) -> list[dict]:
+    """Every scenario; `quick`, a routine run's: the outages only at QUICK_OUTAGES."""
     found = []
     for route, steps in ROUTES.items():
         for step in steps:
             for fault, arg in CORE:
+                if quick and fault == "outage" and arg not in QUICK_OUTAGES:
+                    continue
                 found.append(dict(id=sid(route, step, fault, arg), route=route, step=step,
                                   fault=fault, arg=arg, at=40))
             if step in beken.DESTRUCTIVE_STEPS:
@@ -1282,7 +1290,11 @@ def main(argv: list[str]) -> int:
             parser.error(f"--instances needs {len(CHECK_WAYS)} numbers, such as 3,4")
         return check(tuple(map(int, numbers)))
     elif command == "list":
-        for i in (OPENBEKEN_CHECK if argv[1:] == ["openbeken"] else [sc["id"] for sc in scenarios()]):
+        if argv[1:] not in ([], ["openbeken"], ["quick"]):
+            print("list takes openbeken or quick", file=sys.stderr)
+            return 2
+        for i in (OPENBEKEN_CHECK if argv[1:] == ["openbeken"] else
+                  [sc["id"] for sc in scenarios(quick=argv[1:] == ["quick"])]):
             print(i)
     elif command == "batch":
         batch(argv[1] if len(argv) > 1 else None)
