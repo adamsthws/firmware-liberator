@@ -267,14 +267,20 @@ def _entries(node: Any):
 
 
 def run_environment(scenario: dict[str, Any], mac: str) -> dict[str, str]:
-    """The environment the scenario's run goes on in: the API told it has
-    enough of the device's product (`api_enough`), as fault_suite.enough."""
+    """The environment the scenario's run goes on in: the stub lists the
+    device under its product model, as fault_suite.device_product() gives it,
+    and the API is told it has enough of that product where the scenario says
+    (`api_enough`), as fault_suite.enough. Without the first, the stub takes
+    the product from this checkout's earlier runs (emu.sh), and on one with
+    none lists no product: a readout then sent no model, which the API
+    refused (400)."""
     import os
     from tools.autoflash import kinds, records
     environment = dict(os.environ)
+    product = (records.read_device(mac).get("product_model") or kinds.SONOFF_S60.example_product_model).upper()
+    environment.setdefault("AUTOFLASH_EMU_STUB_PRODUCT_MODEL", product)
     if scenario.get("api_enough"):
-        environment["AUTOFLASH_API_ENOUGH"] = (records.read_device(mac).get("product_model")
-                                               or kinds.SONOFF_S60.example_product_model).upper()
+        environment["AUTOFLASH_API_ENOUGH"] = product
     return environment
 
 
