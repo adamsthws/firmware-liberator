@@ -210,6 +210,12 @@ check.
 - A device whose new firmware cannot join your Wi-Fi - ESPHome, or the mover
   on the way to it - is set up through its own network as soon as that network
   is up, a minute or two in, where the run waited three minutes first.
+- A Beken device that loses power or Wi-Fi while OpenBeken fetches its next
+  firmware - ESPHome, or Sonoff's back - stops the run with what to do (switch
+  it off and on, then run the same command again), as a cut-off send from
+  Sonoff's firmware does: it said "something unexpected went wrong" with an
+  error behind it, and a readout putting Sonoff's firmware back was recorded
+  as having crashed.
 - A device that raised its own network while your router restarted, then
   rejoined your Wi-Fi by itself once the router was back, is carried on with:
   the run had you join the device's network regardless, and stopped after 15

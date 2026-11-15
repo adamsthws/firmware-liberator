@@ -15,7 +15,7 @@ import time
 from typing import Any, Callable, TYPE_CHECKING
 
 from tools.autoflash import esphome, firewall, handover, join, kinds, openbeken, output, runs
-from tools.autoflash.errors import Abort
+from tools.autoflash.errors import Abort, NothingWritten, StoppedPartWay
 from tools.autoflash.routes.beken import images
 from tools.beken import uf2
 from tools.ewelink import ota_push
@@ -40,7 +40,10 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
                   unstick: Callable[[], bool] | None = None) -> float:
     """Serve `image` to the device's address alone and have the device fetch it
     (`fetch(url)`), until it has every byte.  How long that took.  If it asks
-    for nothing in FIRST_BYTE_WAIT, `unstick()` - a restart - and ask once more."""
+    for nothing in FIRST_BYTE_WAIT, `unstick()` - a restart - and ask once more.
+    A fetch that stops part way - a power cut, the Wi-Fi gone - is a stop the
+    person can act on (StoppedPartWay, as stock.py's delivery's), not an error
+    nobody foresaw: the device keeps the firmware it runs."""
     device_ip = ctx.state.input("device_ip")
     listen_ip = ctx.listen_ip()
     port = firewall.choose_port(ctx, "delivery_port", firewall.DELIVERY_PORTS, what)
@@ -64,16 +67,19 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
                 output.progress_clear()
                 output.say(f"    The device has not asked for {what} yet - restarting it, then asking again.")
                 if not unstick():
-                    raise OSError(f"the device asked for nothing of {what}, and did not answer again after "
-                                  "being restarted")
+                    raise NothingWritten(f"the device asked for nothing of {what}, and did not answer again "
+                                         "after being restarted: switch it off and on, then run the same command "
+                                         "again")
                 unstick = None
                 fetch(url)
                 started = asked = time.monotonic()
             output.progress(f"the device is fetching {what}: {100 * served // len(image)}%")
             time.sleep(2)
         else:
-            raise OSError(f"the device fetched {server.unique_bytes_served():,} of {len(image):,} bytes of {what} "
-                          f"in {FETCH_WAIT:.0f}s")
+            raise StoppedPartWay(
+                f"the delivery stopped part way: the device fetched {server.unique_bytes_served():,} of "
+                f"{len(image):,} bytes of {what} in {FETCH_WAIT:.0f}s. It keeps the firmware it runs: switch it "
+                "off and on, then run the same command again")
     finally:
         output.progress_clear()
         server.shutdown()

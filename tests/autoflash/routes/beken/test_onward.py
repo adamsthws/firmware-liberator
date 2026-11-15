@@ -11,7 +11,7 @@ from unittest import mock
 
 from tests.autoflash.test_openbeken import FakeOpenBeken
 from tests.autoflash.routes.beken.test_beken import a_context
-from tools.autoflash import detect, errors, handover, openbeken, report, routes, state
+from tools.autoflash import detect, errors, failures, handover, openbeken, report, routes, state
 from tools.autoflash.routes import beken, update
 from tools.autoflash.routes.beken import evidence, images, onward
 from tools.beken import uf2
@@ -253,13 +253,27 @@ class ServeToDeviceTests(unittest.TestCase):
         self.unstick.assert_not_called()
 
     def test_restarted_once_at_most_then_given_the_whole_wait_again(self):
-        with self.assertRaisesRegex(OSError, "fetched 0 of 5 bytes"):
+        with self.assertRaisesRegex(errors.StoppedPartWay, "fetched 0 of 5 bytes"):
             self.serve([0])
         self.unstick.assert_called_once()
         self.assertEqual(len(self.fetches), 2)
         self.assertGreaterEqual(self.clock - self.fetches[1], onward.FETCH_WAIT)
         self.assertEqual(self.closed, ["shutdown", "close"])
 
+
+    def test_a_fetch_cut_part_way_is_a_stop_to_act_on_not_an_unexpected_error(self):
+        # Seen in the Beken fault suite: the device switched off for 30 s as
+        # OpenBeken fetched (J2, J4) stopped the run with "something unexpected
+        # went wrong: OSError: the device fetched 278,528 of 951,664 bytes".
+        with self.assertRaises(errors.StoppedPartWay) as stopped:
+            self.serve([2])
+        self.assertIn("switch it off and on, then run the same command again", str(stopped.exception))
+        self.assertEqual(failures.classify(str(stopped.exception)), "upload-cut")
+
+    def test_a_device_that_asks_for_nothing_even_restarted_wrote_nothing(self):
+        with self.assertRaises(errors.NothingWritten) as stopped:
+            self.serve([0], unstick=False)
+        self.assertEqual(failures.classify(str(stopped.exception)), "device-no-answer")
 
 class FromTheInterimFirmwareTests(unittest.TestCase):
     """A device left on the interim firmware, found by a run with no record of
