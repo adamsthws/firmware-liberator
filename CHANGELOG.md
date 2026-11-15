@@ -214,6 +214,9 @@ check.
   meter, again when its answer is lost: a device whose Wi-Fi blinked as it
   was checked - ESPHome taking its own network down once back on yours - was
   reported as a relay that did not switch, its meter showing it had.
+- A command to OpenBeken that it answers "No command entered" - its web
+  server reads only what has arrived as a request starts, so the words can
+  miss it - is sent again; the run stopped there.
 - A Beken device that had to be restarted before it fetched ESPHome is no
   longer taken for one that refused the image: the run sent ESPHome again into
   a device restarting to install it, and could end stopped there.

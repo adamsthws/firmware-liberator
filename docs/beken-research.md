@@ -719,6 +719,31 @@ stayed at the bootloader's banner, but the flash it had written verifies (the ap
 matches the RBL header's FNV-1a) and starts s61v6 when loaded afresh: that was the
 emulator's state after a watchdog restart OpenBeken asked for, not the image.
 
+### OpenBeken's serial log, and its web server's reads
+
+Two things in OpenBeken's BK7238 build (the pinned commit, `app_commit` in
+`artifacts/firmware.json`), found in the emulator and read in its source:
+
+- **Its serial log loses a byte when busy.** `logging.c` undefines
+  `PLATFORM_BEKEN` on a `PLATFORM_BEKEN_NEW` build, so the BK7238 sends its log
+  in 127-byte chunks (`getData` into `seriallogbuf[128]`) through the SDK's
+  `bk_printf`, which prints at most 126 (`vsnprintf(string, sizeof(string) - 1,
+  ...)` into 128 bytes). The 127th byte of every full chunk is lost - a chunk
+  is full when 127 or more are waiting, so a busy log loses one about every
+  127 bytes, a quiet one none - and with `logtype direct` a line over 126
+  characters loses its end. The words a command was given are whole (read
+  back, a setting is as sent), and so is the log over HTTP (`/lograw`), from
+  the same ring: read that where a character matters. Seen as
+  `ota_http .../irmware.rbl` in an emulated device's serial log, its fetch
+  asking for `firmware.rbl` all the same.
+- **Its web server takes the first read for the whole request.**
+  `new_tcp_server.c` stops reading once a `recv` returns less than its buffer
+  holds, so a body that arrives a moment after the headers is never read: the
+  command runs empty and answers "No command entered", having done nothing.
+  The tool sends such a command again (`openbeken.command`, `EMPTY_TRIES`).
+
+Neither is reported upstream yet.
+
 ### Carrying Wi-Fi across the conversion: the OpenBeken config
 
 The new firmware should rejoin your network with nothing typed, as on the
