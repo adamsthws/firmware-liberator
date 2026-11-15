@@ -100,6 +100,16 @@ def kept(family, flash=FLASH, files=None, updates=OFFERED, matches=True, **manif
                            whole if files is None else files, updates)
 
 
+class UnexpectedTests(unittest.TestCase):
+    def test_an_error_nobody_foresaw_by_its_words_or_its_runs_own_outcome(self):
+        said = "[10:00:00] FAILED: something unexpected went wrong: KeyError: 'safeboot'\n"
+        self.assertTrue(fault_verdicts.unexpected([said], []))
+        self.assertTrue(fault_verdicts.unexpected(["reworded"], [{"stopped": {"step": "K2", "error": "crash"}}]))
+        self.assertFalse(fault_verdicts.unexpected(["[10:00:00] FAILED: the delivery stopped part way"],
+                                                   [{"stopped": {"step": "J2", "error": "upload-cut"}},
+                                                    {"stopped": None}]))
+
+
 class RunOutcomesTests(unittest.TestCase):
     def test_each_runs_outcome_since_the_scenario_began_oldest_first(self):
         with tempfile.TemporaryDirectory() as tmp:

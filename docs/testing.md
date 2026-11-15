@@ -660,7 +660,7 @@ above):
 | FAIL | the device was not converted after four runs |
 | BRICK | not converted, and its serial output ends as a device that cannot start does |
 | NEEDS-JOIN | not converted, the run asking for the device's own network to be joined: right only where the device really is on it, so each is looked at |
-| FAIL-UNEXPECTED | a run stopped with "something unexpected went wrong", an error the tool did not foresee and so a bug whatever the fault, even if the next run converts the device |
+| FAIL-UNEXPECTED | a run stopped with "something unexpected went wrong", or whose own outcome classes its stop a crash: an error the tool did not foresee and so a bug whatever the fault, even if the next run converts the device |
 | FAIL-CHECKS | the converting run's report says its end-of-run checks failed (below) |
 | BAD-TEMPLATE | a device converted to Tasmota lacks its template, so switches nothing |
 | BAD-NAME | the device went by a name it never should ([made from its MAC](device-names.md)), at home or as a network of its own, or did not end under its converted name; every name it had is kept with the result |
@@ -908,6 +908,7 @@ for the interim firmware, above) and none of these applies:
 | FAIL-CHECKS | the report's end-of-run checks did not pass, as on the Espressif suite. On OpenBeken and ESPHome, whose relay pin drives the emulated meter's load, the check of a device with a meter (the S61) must also say the meter confirms the switch, and one of a device without (the Basic Gen5) only that the relay switched, as its kind in the run's record says; back on Sonoff's firmware the relay is switched through the stub's eWeLink |
 | FAIL-SCREEN | as on the Espressif suite, each run recorded through `tools/repo/unattended_run.py` |
 | FAIL-NOT-LATEST | a device converted to OpenBeken or ESPHome, updated from an earlier release's or not, does not run your checkout's release of it |
+| FAIL-UNEXPECTED | as on the Espressif suite: a run stopped by an error the tool did not see coming, even if the next run converts the device - by its words, or by the run's own outcome classing its stop a crash (`tools/repo/fault_verdicts.py`, both suites') |
 | MISTIMED, NOT-FIRED | as on the Espressif suite |
 | NOT-READY | the emulated device could not be started for the scenario |
 

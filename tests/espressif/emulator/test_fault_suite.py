@@ -1297,15 +1297,15 @@ class ScenarioTests(unittest.TestCase):
         # this checkout's run carried on in the same run log and converted.
         sc = fs.Scenario(24, {"id": "x", "route": "sonoff>tasmota", "step": "G1", "fault": "legacy",
                               "arg": "v1.2.0", "at": 40}, "/dev/null")
-        old = f"=== run started, tool version 1.2.0 ===\nFAILED: {fs.UNEXPECTED}: TimeoutError\n"
+        old = f"=== run started, tool version 1.2.0 ===\nFAILED: {fs.fault_verdicts.UNEXPECTED}: TimeoutError\n"
         # Where that release kept it, and where this checkout's tool, renaming
         # its records' folder as it carries the run on, has it now.
         earlier = Path("work/captures/plugs/12-34-56-ab-cd-ef/runs/20261013-031500/run.log")
         log = Path("work/captures/devices/12-34-56-ab-cd-ef/runs/20261013-031500/run.log")
         sc.earlier_release_wrote = {fs.filed_as(earlier): len(old)}
-        self.assertNotIn(fs.UNEXPECTED, sc.ours(log, old + "=== run started ===\nConverted\n"))
-        self.assertIn(fs.UNEXPECTED, sc.ours(log, old + f"FAILED: {fs.UNEXPECTED}: KeyError\n"))
-        self.assertIn(fs.UNEXPECTED, sc.ours(log.parents[1] / "20261013-040000/run.log", old))
+        self.assertNotIn(fs.fault_verdicts.UNEXPECTED, sc.ours(log, old + "=== run started ===\nConverted\n"))
+        self.assertIn(fs.fault_verdicts.UNEXPECTED, sc.ours(log, old + f"FAILED: {fs.fault_verdicts.UNEXPECTED}: KeyError\n"))
+        self.assertIn(fs.fault_verdicts.UNEXPECTED, sc.ours(log.parents[1] / "20261013-040000/run.log", old))
 
     def test_an_earlier_releases_records_are_read_where_it_keeps_them(self):
         """captures/plugs/, as releases before 2.4.0 name it, until this

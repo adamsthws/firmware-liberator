@@ -12,6 +12,7 @@ import lzma
 import re
 import shutil
 import tarfile
+from collections.abc import Iterable
 from pathlib import Path
 
 from tools.autoflash import report_upload
@@ -61,6 +62,21 @@ PASSING = {"tasmota": PASSED, "esphome": PASSED, "openbeken": PASSED, "sonoff": 
 def last_run(log: str) -> str:
     """The last run in a run log: one log holds every run carried on in it."""
     return log[log.rfind("=== run started"):] if "=== run started" in log else log
+
+
+# What a run says of an error the tool did not see coming (runner.unexpected).
+UNEXPECTED = "something unexpected went wrong"
+
+
+def unexpected(logs: Iterable[str], outcomes: Iterable[dict]) -> bool:
+    """Whether a run of this checkout's tool met an error it did not see
+    coming - a bug, whatever the fault, though the next run may convert the
+    device (FAIL-UNEXPECTED): said in its log (`logs`, the words of this
+    checkout's runs), or its own outcome classing its stop a crash, as a run
+    does whatever its words (fault_verdicts.run_outcomes). A run the suite
+    killed, as its crash fault does, says neither."""
+    return (any(UNEXPECTED in text for text in logs)
+            or any((said.get("stopped") or {}).get("error") == "crash" for said in outcomes))
 
 
 # The report's Checks answer as each run's outcome has it (report_data.checks_word),

@@ -81,7 +81,7 @@ class ScenarioTests(unittest.TestCase):
 class EndChecksTests(unittest.TestCase):
     """A converted device passes only if the report's end-of-run checks did."""
 
-    def result(self, checks, screen=None, release=None, relay=None, kind=None, outcome=None):
+    def result(self, checks, screen=None, release=None, relay=None, kind=None, outcome=None, said=""):
         from unittest import mock
         sc = {"id": "sonoff>openbeken:B2:deviceoff-1", "route": "sonoff>openbeken", "step": "B2",
               "fault": "deviceoff", "arg": 1, "at": 40}
@@ -96,7 +96,7 @@ class EndChecksTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             device = SimpleNamespace(reset=lambda start: None, start=lambda firmware: True, runs=list,
                                    dhcp_names=lambda: ["openbeken-cdef"], last_log=lambda: log, state=Path(tmp),
-                                   last_outcome=lambda since: outcome,
+                                   last_outcome=lambda since: outcome, run_texts=lambda: [said + log],
                                    last_state=lambda: {"inputs": {"device_kind": kind}} if kind else {})
             latest = fault_suite.LATEST["openbeken"]
             with mock.patch.object(fault_suite, "OUT", Path(tmp)), mock.patch.object(fault_suite, "MemoryWatch"), \
@@ -117,6 +117,18 @@ class EndChecksTests(unittest.TestCase):
         confirmed = {**said, "checks": {"answer": "passed", "relay": "switches (meter confirms)",
                                         "meter_confirms": True}}
         self.assertEqual(self.result("False", outcome=confirmed)["result"], "PASS")
+
+    def test_a_run_that_met_an_error_nobody_foresaw_fails_though_the_next_converts(self):
+        unforeseen = "[09:59:00] FAILED: something unexpected went wrong: OSError: the device fetched 1 of 2 bytes\n"
+        self.assertEqual(self.result("True", said=unforeseen)["result"], "FAIL-UNEXPECTED")
+        # Its own outcome says it too, whatever its words.
+        from unittest import mock
+        crashed = [{"at": 1.0, "result": "failed", "stopped": {"step": "J2", "error": "crash"}}]
+        with mock.patch.object(fault_suite.fault_verdicts, "run_outcomes", return_value=crashed):
+            self.assertEqual(self.result("True")["result"], "FAIL-UNEXPECTED")
+        stopped = [{"at": 1.0, "result": "failed", "stopped": {"step": "J2", "error": "upload-cut"}}]
+        with mock.patch.object(fault_suite.fault_verdicts, "run_outcomes", return_value=stopped):
+            self.assertEqual(self.result("True")["result"], "PASS", "a stop to act on is no bug")
 
     def test_a_converted_device_whose_relay_switched_passes(self):
         self.assertEqual(self.result("True")["result"], "PASS")
