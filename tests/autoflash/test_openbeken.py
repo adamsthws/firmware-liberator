@@ -28,6 +28,7 @@ class FakeOpenBeken(http.server.ThreadingHTTPServer):
         self.calibration = "stock"
         self.short_name = "openbeken-abcdef"
         self.version = "1.0.0"   # the release its build string gives
+        self.bodies_lost = 0   # the first this many commands come without their words, as OpenBeken's server can
 
     @property
     def host(self):
@@ -68,6 +69,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(int(self.headers.get("Content-Length", 0))).decode()
         if self.path != "/api/cmnd":
             self._send(404, b"{}")
+            return
+        if self.server.bodies_lost:
+            # Its first read held only the headers: it ran nothing.
+            self.server.bodies_lost -= 1
+            self._send(400, json.dumps({"error": 400, "msg": "No command entered", "res": ""}).encode())
             return
         self.server.commands.append(body)
         name = body.split()[0]
@@ -194,6 +200,17 @@ class OpenBekenTests(unittest.TestCase):
             openbeken.command(self.server.host, "AutoflashKind other")
         self.assertFalse(refused.exception.unknown)
         self.assertFalse(openbeken.CommandError("refused").unknown)
+
+    def test_a_command_whose_words_did_not_reach_it_is_sent_again(self):
+        self.server.bodies_lost = 1
+        with mock.patch.object(openbeken.time, "sleep"):
+            self.assertEqual(openbeken.ota_http(self.server.host, "http://192.0.2.2:8088/firmware.rbl"), "ota_http done")
+        self.assertEqual(self.server.commands, ["ota_http http://192.0.2.2:8088/firmware.rbl"], "run once")
+        self.server.bodies_lost = openbeken.EMPTY_TRIES
+        with mock.patch.object(openbeken.time, "sleep"), \
+                self.assertRaisesRegex(openbeken.CommandError, "No command entered") as stopped:
+            openbeken.command(self.server.host, "reboot")
+        self.assertTrue(stopped.exception.empty)
 
     def test_ota_http_sends_the_url_as_one_argument(self):
         openbeken.ota_http(self.server.host, "http://192.0.2.2:8088/esphome.rbl")

@@ -30,9 +30,10 @@ FLASH_TRIES = 4
 class CommandError(RuntimeError):
     """OpenBeken refused a command, or did not know it (`unknown`)."""
 
-    def __init__(self, message: str, unknown: bool = False):
+    def __init__(self, message: str, unknown: bool = False, empty: bool = False):
         super().__init__(message)
         self.unknown = unknown
+        self.empty = empty   # its words did not reach it: nothing was run (EMPTY)
 
 
 def _url(host: str, path: str) -> str:
@@ -136,8 +137,30 @@ def version(found: dict[str, Any]) -> str:
     return build.rsplit("version ", 1)[1].strip() if "version " in build else build
 
 
+# What OpenBeken answers a command that came empty (CMD_GetResultString's
+# CMD_RES_EMPTY_STRING): its web server takes the first read of a request for
+# all of it, so a body that arrives a moment after the headers is never read
+# and nothing is run (new_tcp_server.c; seen in the Beken emulator, a second
+# ota_http). The tool sends no empty command, so it sends this one again,
+# up to EMPTY_TRIES times in all, a moment apart.
+EMPTY = "No command entered"
+EMPTY_TRIES, EMPTY_PAUSE = 3, 1.0
+
+
 def command(host: str, text: str, timeout: float = 10.0) -> str:
-    """Run a console command, and give what it answered (the envelope's `msg`)."""
+    """Run a console command, and give what it answered (the envelope's
+    `msg`): sent again where its words did not reach the command (EMPTY)."""
+    for attempt in range(1, EMPTY_TRIES + 1):
+        try:
+            return _command(host, text, timeout)
+        except CommandError as exc:
+            if not exc.empty or attempt == EMPTY_TRIES:
+                raise
+        time.sleep(EMPTY_PAUSE)
+    raise AssertionError("unreachable")
+
+
+def _command(host: str, text: str, timeout: float) -> str:
     request = urllib.request.Request(_url(host, "/api/cmnd"), data=text.encode("utf-8"), method="POST",
                                      headers={"Content-Type": "text/plain"})
     try:
@@ -154,7 +177,8 @@ def command(host: str, text: str, timeout: float = 10.0) -> str:
     if "error" in envelope:
         unknown = envelope["error"] == 501
         raise CommandError(f"{text.split()[0]}: {envelope.get('msg') or envelope['error']}"
-                           + (" (not a command this OpenBeken knows)" if unknown else ""), unknown)
+                           + (" (not a command this OpenBeken knows)" if unknown else ""), unknown,
+                           empty=envelope.get("msg") == EMPTY)
     return str(envelope.get("msg", ""))
 
 
