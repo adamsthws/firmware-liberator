@@ -172,6 +172,7 @@ def step_bridge(ctx: Context) -> dict[str, Any]:
                     "--email", email, "--region", ctx.ewelink_region(), "--expected-current-version", version,
                     "--device-id", device_id,
                     "--i-understand-stock-has-no-automatic-rollback",
+                    *(["--events", str(output.events_path())] if output.events_path() else []),
                     # Each line as it comes, so the run's log has when eWeLink said what.
                     unbuffered=True),
                 interactive=True,
@@ -286,6 +287,7 @@ def restart_into_sonoff(ctx: Context, host: str, wait: float = 120.0) -> bool:
     bridge would not restart."""
     if not restart_bridge(host):
         return False
+    output.event("phase", phase="back")
     output.say("    Restarting it into its Sonoff firmware...")
     started = time.monotonic()
     while time.monotonic() - started < wait:
@@ -409,6 +411,7 @@ def ask_to_join_bridge(bridge: str, *, tasmota: bool = False, what: str = "insta
                    + ("      (on your clipboard)" if copied else "")]
     else:
         joining = [f"    {bridge}      (open - no password)"]
+    output.event("join", network=bridge)
     prompts.section(f"Join the {what}'s Wi-Fi network", [
         f"In {hostsys.wifi_menu_hint()}, join:",
         *joining,
@@ -547,6 +550,7 @@ def step_berry_tasmota(ctx: Context) -> dict[str, Any]:
             # with your Wi-Fi: Tasmota joins it by itself, with no setup network
             # of its own, even sent through the bridge's.
             output.say("    Tasmota will start with your Wi-Fi details, so it joins by itself.")
+            output.event("home")
             prompts.section("Back to your usual Wi-Fi", [
                 "Rejoin it now if this computer hasn't by itself.",
             ])
@@ -627,6 +631,7 @@ def back_up_stock(ctx: Context, host: str) -> str:
     The caller, step_backup, has already asked backup_not_needed.
     """
     known = ctx.state.input("device_mac")
+    output.event("phase", phase="backup")
     output.say("Backing up the device's Sonoff firmware - about a minute...")
     first = True
     rounds = reads = 0
@@ -730,7 +735,8 @@ def _wait_for_bridge(ctx: Context, network: str, *, timeout: float | None = None
         elif not hinted and time.monotonic() - heard >= NOTHING_THERE_HINT_AFTER:
             hinted = True
             output.progress_clear()
-            output.tell("    No answer from the device: switch it off and on - it is safe now.")
+            with output.asking_to_switch_now():
+                output.tell("    No answer from the device: switch it off and on - it is safe now.")
         if gone_back is not None and time.monotonic() - looked >= GONE_BACK_EVERY:
             looked = time.monotonic()
             if gone_back():
@@ -742,6 +748,7 @@ def _wait_for_bridge(ctx: Context, network: str, *, timeout: float | None = None
         body = setup_network.page(setup_network.SETUP_HOST, timeout=2.0)
         if setup_network.is_bridge_page(body):
             output.progress_clear()
+            output.event("joined", network=network)
             output.say(f"    Connected to {network}.")
             return None
         address = ctx.finder.poll()

@@ -213,6 +213,7 @@ def installer_back(ctx: Context, host: str, left_by: str) -> str:
                "firmware.")
     if not installer.restart_into_sonoff(ctx, host):
         raise Abort(INSTALLER_LEFT.format(who=left_by))
+    output.event("phase", phase="back-done")
     output.say("    It is back on its Sonoff firmware.")
     return "sonoff"
 

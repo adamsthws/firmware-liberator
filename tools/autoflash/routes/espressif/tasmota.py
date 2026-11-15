@@ -292,7 +292,8 @@ def upload_to_startup_firmware(ctx: Context, app: Path) -> str:
                 device.command("Restart 1", timeout=10)
             except (DeviceError, OSError):
                 # Safe at this stage: it starts the startup firmware again.
-                output.tell("    The device is not answering: switch it off and on - it is safe now.")
+                with output.asking_to_switch_now():
+                    output.tell("    The device is not answering: switch it off and on - it is safe now.")
             restart = time.monotonic()
             # Gone first: the restart comes some seconds after its answer, and
             # the old start still answering is no sign of the new one (seen in
@@ -665,11 +666,13 @@ def configure_tasmota(ctx: Context) -> dict[str, Any]:
                                      timeout=SLOW_COMMAND)
         booted, uptime = device.started_at(), device.uptime_seconds()
         device.command("Reset 4", timeout=SLOW_COMMAND)
+        output.event("phase", phase="settings-reset")
         output.say("Settings reset to Tasmota's defaults, keeping the Wi-Fi"
             + (", with the device's template and name" if hooked else "") + "; the device restarts")
         back_after_reset(ctx, booted, uptime)
         device = ctx.device
         if hooked and template_in_place(device, template, hostname):
+            output.event("phase", phase="template")
             output.say(f"Template applied as {json.loads(template)['NAME']}"
                 + (f", and named {hostname}" if hostname else ""))
             return {"template": "applied", "wifi_route": route, "restarts": 1}
@@ -696,6 +699,7 @@ def give_template(device: device.Device, template: str, hostname: str | None, *,
     names = (f"Hostname {hostname}; " + (f"DeviceName {hostname}; " if named else "")) if hostname else ""
     device.command(f"Backlog {names}Module2 0; Module 0",
                    timeout=SLOW_COMMAND)
+    output.event("phase", phase="template")
     output.say(f"Template applied as {json.loads(template)['NAME']}"
         + (f", and named {hostname}" if hostname else "") + "; the device restarts")
     device.wait_for_reboot(timeout=180, started_at=booted, before=uptime)

@@ -10,7 +10,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from tools.autoflash import output
 from tools.beken.emulator import fault_suite
+
+
+def happened(*items):
+    """A run's events (output.EVENTS) as the tool writes them: (name, fields)."""
+    return [{"at": 0.0, "event": name, **fields} for name, fields in items]
+
+
+def write_events(run_dir, *items):
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / output.EVENTS).write_text("".join(json.dumps(item) + "\n" for item in happened(*items)),
+                                         encoding="utf-8")
 
 
 class ScenarioTests(unittest.TestCase):
@@ -81,7 +93,8 @@ class ScenarioTests(unittest.TestCase):
 class EndChecksTests(unittest.TestCase):
     """A converted device passes only if the report's end-of-run checks did."""
 
-    def result(self, checks, screen=None, release=None, relay=None, kind=None, outcome=None, said=""):
+    def result(self, checks, screen=None, release=None, relay=None, kind=None, outcome=None, said="", kept=None):
+        """The scenario's outcome; `kept`, a list given, gets what its folder kept."""
         from unittest import mock
         sc = {"id": "sonoff>openbeken:B2:deviceoff-1", "route": "sonoff>openbeken", "step": "B2",
               "fault": "deviceoff", "arg": 1, "at": 40}
@@ -94,15 +107,31 @@ class EndChecksTests(unittest.TestCase):
                 tool_log.write_text(screen, encoding="utf-8")   # what the run printed
             return {"result": "PASS", "runs": 1}
         with tempfile.TemporaryDirectory() as tmp:
-            device = SimpleNamespace(reset=lambda start: None, start=lambda firmware: True, runs=list,
+            run = Path(tmp, "work/runs/1/run.log")
+            write_events(run.parent, ("run", {}), ("began", {"step": "B2"}))
+            run.write_text(log, encoding="utf-8")
+            device = SimpleNamespace(reset=lambda start: None, start=lambda firmware: True, runs=lambda: [run],
                                    dhcp_names=lambda: ["openbeken-cdef"], last_log=lambda: log, state=Path(tmp),
+                                   dhcp_log=lambda: "DHCPACK(br0) 198.18.62.51 12:34:56:ab:cd:ef openbeken-cdef\n",
                                    last_outcome=lambda since: outcome, run_texts=lambda: [said + log],
                                    last_state=lambda: {"inputs": {"device_kind": kind}} if kind else {})
             latest = fault_suite.LATEST["openbeken"]
             with mock.patch.object(fault_suite, "OUT", Path(tmp)), mock.patch.object(fault_suite, "MemoryWatch"), \
                     mock.patch.object(fault_suite, "step_scenario", side_effect=step_scenario), \
                     mock.patch.object(fault_suite, "release_of", return_value=release or latest):
-                return fault_suite.run_scenario(device, sc)
+                outcome = fault_suite.run_scenario(device, sc)
+            if kept is not None:
+                folder = Path(tmp, "logs/sonoff-openbeken_B2_deviceoff-1")
+                kept.extend(sorted((path.name, path.read_text(encoding="utf-8")) for path in folder.iterdir()
+                                   if path.name.startswith(("run-", "dhcp"))))
+            return outcome
+
+    def test_each_runs_log_and_events_and_the_routers_dhcp_log_are_kept(self):
+        kept = []
+        self.result("True", kept=kept)
+        self.assertEqual([name for name, _ in kept], ["dhcp.log", "run-1.events.jsonl", "run-1.log"])
+        self.assertIn("DHCPACK", kept[0][1])
+        self.assertIn('"began"', kept[1][1])
 
     def test_the_checks_are_read_from_the_runs_own_outcome_where_it_kept_one(self):
         # Its words in the log do not decide: the run judged its checks itself.
@@ -422,37 +451,41 @@ class BadImageScenarioTests(unittest.TestCase):
                                  "sonoff>esphome:J2:badimage-once", "openbeken>esphome:O1:badimage-once",
                                  "interim>esphome:J2:badimage-once"})
 
-    def test_it_hears_the_run_send_the_image_again(self):
-        # Matched against what the run says as it goes back (arrival.until_back).
-        from unittest import mock
-        from tools.autoflash import errors
-        from tools.autoflash.routes import arrival
+    def outcome(self, arg, *events):
+        sc = {"id": "x", "route": "sonoff>openbeken", "step": "B2", "fault": "badimage", "arg": arg, "at": 40}
+        instance = SimpleNamespace(tool=lambda *a, **k: None, last_state=dict, all_events=lambda: happened(*events))
+        with mock.patch.object(fault_suite, "finish"), mock.patch.object(fault_suite, "converted", return_value=True):
+            return fault_suite.bad_image_scenario(instance, sc, "openbeken", Path("tool.log"), {})["result"]
 
-        def look(restarted):
-            raise arrival.NotTaken
-        ctx = SimpleNamespace(state=SimpleNamespace(input=lambda key: None, set_input=lambda key, value: None))
-        with mock.patch.object(arrival.prompts, "UNATTENDED", True), self.assertRaises(errors.GoBack) as back:
-            arrival.until_back(ctx, look, "OpenBeken", "advice", sent_by="B2")
-        self.assertRegex(back.exception.reason, fault_suite.SENT_AGAIN)
+    def test_it_hears_the_run_send_the_image_again(self):
+        # The run's own word that it went back to the step (runner.execute, output.EVENTS).
+        self.assertEqual(self.outcome("once", ("began", {"step": "B2"})), "FAIL")
+        self.assertEqual(self.outcome("once", ("again", {"step": "B4", "restarted": False})), "FAIL")
+        self.assertEqual(self.outcome("once", ("again", {"step": "B2", "restarted": False})), "PASS")
+        # Restarted by the run itself, where that is what is tested.
+        self.assertEqual(self.outcome("restart", ("again", {"step": "B2", "restarted": False})), "FAIL")
+        self.assertEqual(self.outcome("restart", ("again", {"step": "B2", "restarted": False}),
+                                      ("again", {"step": "B2", "restarted": True})), "PASS")
 
 
 class DoubleCutTests(unittest.TestCase):
     """A double's second cut as the run under way sends its command again."""
 
-    def cut(self, logs, ended_after=None):
+    def cut(self, looks_at, ended_after=None):
+        """`looks_at`: the run's events at each look, as (name, fields) lists."""
         from unittest import mock
-        texts = iter(logs)
-        last = [""]
+        seen = iter(looks_at)
+        last = [[]]
 
-        def last_log():
-            last[0] = next(texts, last[0])
-            return last[0]
+        def last_events():
+            last[0] = next(seen, last[0])
+            return happened(*last[0])
         looks = [0]
 
         def poll():
             looks[0] += 1
             return 0 if ended_after is not None and looks[0] > ended_after else None
-        instance = SimpleNamespace(last_log=last_log)
+        instance = SimpleNamespace(last_events=last_events)
         notes = {}
         sc = {"route": "sonoff>openbeken", "step": "B2", "at": 40}
         with mock.patch.object(fault_suite, "inject") as injected, mock.patch.object(fault_suite.time, "sleep"):
@@ -462,15 +495,15 @@ class DoubleCutTests(unittest.TestCase):
     def test_the_second_cut_comes_as_the_same_run_sends_again(self):
         # Seen: once the sender sent a lost command again itself, the first run
         # converted, no run again came, and every double was NOT-FIRED.
-        sent = "] B2  Sending\n  Upgrade command sent with owner-controlled private-LAN URLs.\n"
-        again = sent + "  The device has not asked for the file: upgrade command sent again (attempt 2 of 3).\n"
+        sent = [("began", {"step": "B2"}), ("phase", {"phase": "serving"})]
+        again = sent + [("resent", {"attempt": 2})]
         done, notes, injected = self.cut([sent, sent, again])
         self.assertTrue(done)
         self.assertTrue(notes["second_cut"])
         injected.assert_called_once()
 
     def test_a_run_that_ends_without_sending_again_leaves_it_to_the_next(self):
-        done, notes, injected = self.cut(["] B2  Sending\n"], ended_after=3)
+        done, notes, injected = self.cut([[("began", {"step": "B2"})]], ended_after=3)
         self.assertFalse(done)
         self.assertNotIn("second_cut", notes)
         injected.assert_not_called()
@@ -503,35 +536,40 @@ class PersonTests(unittest.TestCase):
     """The person at the computer joins the device's own network when the run
     says to, again while it still waits, and goes home when told."""
 
-    def watch(self, log_texts, joins_take=True):
-        """What the person did, looking once at each of `log_texts` in turn, 20 s apart."""
+    def watch(self, looks_at, joins_take=True):
+        """What the person did, looking once at the run's events as each of
+        `looks_at` has them, 20 s apart."""
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp, "run.log")
             notes, did, clock = {}, [], [100.0]
             person = fault_suite.Person(SimpleNamespace(runs=lambda: [log], computer="a-computer"), notes)
             person.wifi = lambda *args: did.append(" ".join(args)) or joins_take or args[0] != "join"
             with mock.patch.object(fault_suite.time, "monotonic", side_effect=lambda: clock[0]):
-                for text in log_texts:
-                    log.write_text(text, encoding="utf-8")
+                for events in looks_at:
+                    write_events(log.parent, *events)
                     person.look()
                     clock[0] += 20
             return did, notes
 
+    ASKED = [("run", {}), ("join", {"network": "esphome-abcdef"})]
+    JOINED = ASKED + [("joined", {"network": "esphome-abcdef"})]
+
     def test_joined_when_asked_and_home_when_told(self):
-        asked = "-- Join the device's setup network\n"
-        did, notes = self.watch([asked, asked + "    Connected to esphome-abcdef.\n",
-                                 asked + "    Connected to esphome-abcdef.\n-- Back to your usual Wi-Fi\n"])
+        did, notes = self.watch([self.ASKED, self.JOINED, self.JOINED + [("home", {})]])
         self.assertEqual(did, ["join", "home"])
         self.assertEqual(notes, {"joined_own_network": 1})
 
     def test_a_join_that_did_not_take_is_tried_again_while_the_run_asks(self):
-        asked = "-- Join the device's setup network\n"
-        did, notes = self.watch([asked, asked, asked + "    Connected to esphome-abcdef.\n"], joins_take=False)
+        did, notes = self.watch([self.ASKED, self.ASKED, self.JOINED], joins_take=False)
         self.assertEqual(did, ["join", "join"])
         self.assertNotIn("joined_own_network", notes)
 
+    def test_asked_again_after_a_join_it_is_joined_again(self):
+        did, _ = self.watch([self.JOINED, self.JOINED + self.ASKED[1:]])
+        self.assertEqual(did, ["join"])
+
     def test_nothing_is_done_unasked(self):
-        did, _ = self.watch(["Stage 9 - Checking ESPHome\n"])
+        did, _ = self.watch([[("run", {}), ("began", {"step": "K2"})]])
         self.assertEqual(did, [])
 
 
@@ -755,7 +793,7 @@ class FaultAppliedTests(unittest.TestCase):
         from unittest import mock
         sc = next(sc for sc in fault_suite.scenarios() if sc["fault"] == "ctrlc")
         instance = SimpleNamespace(tool=lambda *a, **k: None, last_state=lambda: {}, last_log=lambda: "",
-                                   runs=lambda: [])
+                                   runs=lambda: [], last_events=list)
         with mock.patch.object(fault_suite, "wait_for_step", return_value=True), \
                 mock.patch.object(fault_suite, "inject"), mock.patch.object(fault_suite, "finish"), \
                 mock.patch.object(fault_suite, "recover"), mock.patch.object(fault_suite.time, "sleep"), \
@@ -776,23 +814,37 @@ class FaultAppliedTests(unittest.TestCase):
 
 class RecoverTests(unittest.TestCase):
     def test_the_device_is_switched_off_and_on_only_where_the_run_said_to(self):
-        for said, cycles in (("[..] FAILED: ... switch the device off and on, then run", 1),
-                             ("[..] FAILED: eWeLink could not be reached", 0)):
+        # As it stopped: advice in a step the run went on from is not for the person now.
+        for events, cycles in (([("began", {"step": "B2"}), ("switch", {})], 1),
+                               ([("began", {"step": "B2"})], 0),
+                               ([("switch", {}), ("began", {"step": "B4"})], 0),
+                               ([("began", {"step": "B4"}), ("switch", {"now": True})], 0)):
             powered = []
-            instance = SimpleNamespace(last_log=lambda said=said: said, power=powered.append,
+            instance = SimpleNamespace(last_events=lambda events=events: happened(*events), power=powered.append,
                                        ready=lambda firmware, wait=0: True)
             notes = {}
             fault_suite.recover(instance, "esphome", notes)
-            self.assertEqual((powered, notes.get("power_cycles", 0)), (["cycle"] * cycles, cycles))
+            self.assertEqual((powered, notes.get("power_cycles", 0)), (["cycle"] * cycles, cycles), events)
 
-    def test_a_step_is_seen_starting_from_the_runs_own_line(self):
-        log = ["[05:36:49] [skip] O1 ESPHome, fetched by OpenBeken (recorded as done)\n"]
-        instance = SimpleNamespace(last_log=lambda: "".join(log))
+    def test_a_step_is_seen_starting_from_the_runs_own_event(self):
+        events = [("began", {"step": "O3"})]
+        instance = SimpleNamespace(last_events=lambda: happened(*events))
         run = SimpleNamespace(poll=lambda: None)
-        threading.Timer(0.3, lambda: log.append("[05:36:50] O1  ESPHome, fetched by OpenBeken\n")).start()
+        threading.Timer(0.3, lambda: events.append(("began", {"step": "O1"}))).start()
         self.assertTrue(fault_suite.wait_for_step(instance, "O1", run, limit=5))
-        self.assertFalse(fault_suite.wait_for_step(SimpleNamespace(last_log=lambda: log[0]), "O1",
+        self.assertFalse(fault_suite.wait_for_step(SimpleNamespace(last_events=lambda: happened(events[0])), "O1",
                                                    SimpleNamespace(poll=lambda: None), limit=0.6))
+
+    def test_the_newest_runs_events_are_from_its_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            instance = fault_suite.Instance(3)
+            older, newer = Path(tmp, "1/run.log"), Path(tmp, "2/run.log")
+            write_events(older.parent, ("run", {}), ("began", {"step": "B2"}))
+            write_events(newer.parent, ("run", {}), ("began", {"step": "B2"}), ("ended", {}), ("run", {}),
+                         ("began", {"step": "B4"}))
+            with mock.patch.object(fault_suite.Instance, "runs", return_value=[older, newer]):
+                self.assertEqual([e.get("step") for e in instance.last_events()], [None, "B4"])
+                self.assertEqual(len(instance.all_events()), 7)
 
 
 class InterimTests(unittest.TestCase):
@@ -854,19 +906,6 @@ class ConvertedTests(unittest.TestCase):
         self.assertFalse(fault_suite.converted(self.state(B1="done", B2="done", K1="failed"),
                                                "sonoff>openbeken"))
         self.assertFalse(fault_suite.converted({}, "esphome>sonoff"))
-
-
-class RecoveryTests(unittest.TestCase):
-    def test_the_tools_every_ask_to_switch_the_device_off_and_on_is_heard(self):
-        from tools.autoflash.routes import arrival
-        from tools.autoflash.routes.beken import arrived, stock
-        import inspect
-        for module in (arrival, arrived, stock):
-            for line in inspect.getsource(module).splitlines():
-                if "off and on" in line and ("plug" in line or "device" in line):
-                    self.assertRegex(line, fault_suite.POWER_CYCLE)
-        self.assertRegex("Switch the device off and on - it keeps", fault_suite.POWER_CYCLE)
-        self.assertRegex("Switch it off for a few seconds at the socket, then on", fault_suite.POWER_CYCLE)
 
 
 class SavingTests(unittest.TestCase):
@@ -951,12 +990,12 @@ class ReadoutScenarioTests(unittest.TestCase):
         self.assertEqual(conversion[2:4] + conversion[-3:],
                          ["tools/repo/unattended_run.py", "--", "--firmware", "sonoff", "--new"])
 
-    def test_each_phase_is_timed_from_what_the_readout_says(self):
-        import re
+    def test_each_phase_is_timed_from_what_the_readout_does(self):
         from unittest import mock
-        from tools.autoflash import output, readout_beken
+        from tools.autoflash import readout_beken
         said = []
-        with mock.patch.object(output, "say", side_effect=said.append), mock.patch.object(output, "progress"), \
+        with mock.patch.object(output, "event", side_effect=lambda name, **f: said.append(f.get("phase"))), \
+                mock.patch.object(output, "say"), mock.patch.object(output, "progress"), \
                 mock.patch.object(output, "progress_clear"), \
                 mock.patch.object(readout_beken.openbeken, "read_flash", return_value=b"\xff" * readout_beken.WHOLE_FLASH), \
                 mock.patch.object(readout_beken.onward, "serve_to_device"), \
@@ -966,9 +1005,9 @@ class ReadoutScenarioTests(unittest.TestCase):
             ctx = mock.Mock(account_devices=lambda: [{"deviceid": "1000abcdef", "online": True}],
                             ewelink_env=lambda: {"EWELINK_PASSWORD": "made-up"})
             readout_beken.wait_for_sonoff(ctx, "1000abcdef")
-        log = "\n".join(f"[10:00:00] {line}" for line in said)
         for phase, (begins, ends, _) in fault_suite.READOUT_PHASES.items():
-            self.assertLess(re.search(begins, log).start(), re.search(ends, log).start(), phase)
+            self.assertLess(said.index(begins), said.index(ends), phase)
+            self.assertLessEqual({begins, ends}, output.PHASES)
 
     def instance(self, tmp, kept=None, answering=False):
         """A device whose runs kept `kept` (a readout.tar's bytes, or None)."""
@@ -978,7 +1017,8 @@ class ReadoutScenarioTests(unittest.TestCase):
         if kept is not None:
             (run.parent / fault_suite.READOUT).write_bytes(kept)
         return SimpleNamespace(runs=lambda: [run], answering=lambda: answering, last_log=lambda: "",
-                               stub_said=lambda: b"", tool=lambda target, log, **options: SimpleNamespace(target=target))
+                               last_events=list, stub_said=lambda: b"",
+                               tool=lambda target, log, **options: SimpleNamespace(target=target))
 
     def outcome(self, sc, instance, kept_after=None, works=True):
         from unittest import mock
@@ -1028,10 +1068,10 @@ class ReadoutScenarioTests(unittest.TestCase):
     def test_a_fault_after_its_phase_is_mistimed(self):
         with tempfile.TemporaryDirectory() as tmp:
             instance = self.instance(tmp)
-            instance.last_log = lambda: "[10:00:00]     Read 4,194,304 bytes.\n"
+            instance.last_events = lambda: happened(("phase", {"phase": "read-done"}))
             self.assertEqual(self.outcome(self.SC, instance, kept_after=1)[0]["result"], "MISTIMED")
 
-    def converted(self, code, said="", answering=True, kept=b"tar"):
+    def converted(self, code, said="", answering=True, kept=b"tar", events=()):
         from unittest import mock
         sc = {"id": "x", "route": "openbeken>readout", "step": "start", "fault": "none", "arg": "first-stage", "at": 40}
         with tempfile.TemporaryDirectory() as tmp:
@@ -1040,7 +1080,8 @@ class ReadoutScenarioTests(unittest.TestCase):
             if kept is not None:
                 (log.parent / fault_suite.READOUT).write_bytes(kept)
             instance = SimpleNamespace(tool=lambda target, log, **options: SimpleNamespace(returncode=code),
-                                       last_log=lambda: said, answering=lambda: answering, runs=lambda: [log])
+                                       last_log=lambda: said, answering=lambda: answering, runs=lambda: [log],
+                                       last_events=lambda: happened(*events))
             with mock.patch.object(fault_suite, "finish"), \
                     mock.patch.object(fault_suite.fault_verdicts, "first_stage_problems",
                                       side_effect=lambda data, runs: [] if (data, runs) == (b"tar", "openbeken")
@@ -1052,8 +1093,7 @@ class ReadoutScenarioTests(unittest.TestCase):
         self.assertEqual(self.converted(1, "[10:00:00] FAILED: Device is offline in eWeLink"), "FAIL-EXIT")
         self.assertEqual(self.converted(0, kept=None), "FAIL-READOUT")
         self.assertEqual(self.converted(0, kept=b"a whole one"), "FAIL-READOUT")
-        self.assertEqual(self.converted(0, "[10:00:00] Serving only 192.0.2.50 at http://192.0.2.10:8088/user1.bin"),
-                         "FAIL-SENT")
+        self.assertEqual(self.converted(0, events=[("phase", {"phase": "serving"})]), "FAIL-SENT")
         self.assertEqual(self.converted(0, answering=False), "FAIL-DISTURBED")
 
     def test_sonoff_online_is_told_from_the_stub_since_a_moment(self):
@@ -1079,10 +1119,6 @@ class RestartImageTests(unittest.TestCase):
         self.assertEqual(ids, {"openbeken>esphome:O1:badimage-restart", "interim>esphome:J2:badimage-restart",
                                "sonoff>esphome:J2:badimage-restart"})
 
-    def test_what_the_run_says_as_it_restarts_the_device_is_seen(self):
-        said = ("O2 was not installed: the device restarted on the firmware it had: restarted the device; "
-                "doing stage 9 again.")
-        self.assertRegex(said, fault_suite.RESTARTED)
 
 if __name__ == "__main__":
     unittest.main()

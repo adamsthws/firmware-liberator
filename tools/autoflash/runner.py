@@ -90,6 +90,7 @@ def _execute(ctx: Context, step: str) -> int:
     routes.begin_stage(step)
     ctx.stage_begun = True   # a report is worth asking for (cli.main)
     output.say(f"{step}  {title}")
+    output.event("began", step=step)
     try:
         # Its errors are the step's: seen in the fault suite, an Abort from
         # it crashed the run.
@@ -116,6 +117,7 @@ def _execute(ctx: Context, step: str) -> int:
             output.log_only(f"{back.step} was sent {times - 1} times: the device is restarted, and "
                             f"{back.step} done again.")
             output.tell(f"{back.reason}: restarted the device; doing stage {routes.stage_number(back.step)} again.")
+            output.event("again", step=back.step, restarted=True)
             ctx.go_back = back.step
             return 0
         if times > GO_BACK_LIMIT:
@@ -133,6 +135,7 @@ def _execute(ctx: Context, step: str) -> int:
         output.stage_end(back.outcome)
         output.log_only(f"Doing {back.step} again.")
         output.tell(f"{back.reason}: doing stage {routes.stage_number(back.step)} again.")
+        output.event("again", step=back.step, restarted=False)
         ctx.go_back = back.step
         return 0
     except errors.Finished as done:
@@ -188,6 +191,7 @@ def _execute(ctx: Context, step: str) -> int:
         ctx.state.capture(f"{step}.{key}", value)
     output.stage_end(outcome)
     output.say(f"{step} done")
+    output.event("done", step=step)
     return 0
 
 

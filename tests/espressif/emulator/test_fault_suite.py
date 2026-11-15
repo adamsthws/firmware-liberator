@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tools.autoflash import kinds, records, readout
+from tools.autoflash import kinds, output, records, readout
 from tools.autoflash.routes import espressif
 from tools.espressif.emulator import fault_suite as fs
 from tools.ewelink.stub_cloud import stub_server
@@ -496,6 +496,70 @@ class RunWordsTests(unittest.TestCase):
         with mock.patch.object(output, "say") as said:
             tasmota.step_configure(ctx)
         self.assertRegex(" ".join(str(c.args[0]) for c in said.call_args_list), fs.NOHOOK_RESET)
+
+
+class EventFollowingTests(unittest.TestCase):
+    """A run of this checkout's tool followed by its events (output.EVENTS), not
+    its words; an earlier release's, which writes none, by its words."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.log = Path(directory.name, "runs/1/run.log")
+        self.log.parent.mkdir(parents=True)
+        self.sc = fs.Scenario(24, {"id": "x", "route": "sonoff>tasmota", "step": "C3", "fault": "outage",
+                                   "arg": 30, "at": 40}, "/dev/null")
+
+    def write(self, *items):
+        (self.log.parent / output.EVENTS).write_text(
+            "".join(json.dumps({"at": 0, "event": name, **fields}) + "\n" for name, fields in items), encoding="utf-8")
+
+    def logs(self, text):
+        return mock.patch.object(fs, "run_logs", return_value=[(1.0, self.log, text)])
+
+    def test_a_step_or_point_is_reached_by_the_runs_events(self):
+        self.write(("run", {}), ("began", {"step": "C3"}), ("phase", {"phase": "backup"}))
+        with self.logs("=== run started\n[1] words the tool no longer says\n"):
+            self.assertTrue(self.sc.reached(0, None, ("began", "C3"), r"\] C3  "))
+            self.assertTrue(self.sc.reached(0, None, fs.STARTS_AT["C3"], fs.STARTS["C3"][0]))
+            self.assertFalse(self.sc.reached(0, None, ("done", "C3"), r"words"))   # its words do not count
+
+    def test_only_the_runs_own_events_count_once_another_has_begun(self):
+        self.write(("run", {}), ("began", {"step": "C3"}), ("done", {"step": "C3"}), ("ended", {}),
+                   ("run", {}), ("began", {"step": "C3"}))
+        with self.logs("=== run started\n=== run started\n"):
+            self.assertFalse(self.sc.reached(0, None, ("done", "C3"), r"\] C3 done"))
+
+    def test_an_earlier_releases_run_is_reached_by_its_words(self):
+        with self.logs("=== run started\n[1] C3  Backing up\n"):
+            self.assertTrue(self.sc.reached(0, None, ("began", "C3"), r"\] C3  "))
+            self.assertFalse(self.sc.reached(0, None, ("done", "C3"), r"\] C3 done"))
+
+    def test_what_a_run_asks_of_the_person(self):
+        self.write(("run", {}), ("join", {"network": "tasmota-ABCDEF-1234"}),
+                   ("switch", {"now": True}), ("switch", {"now": True, "key": True}), ("home", {}), ("ended", {}))
+        self.assertEqual(fs.run_asks(self.log, "words"),
+                         {"from": "events", "joins": ["tasmota-ABCDEF-1234"], "backs": 1, "switch_now": 1,
+                          "readout_switch": 1, "ended": True})
+        (self.log.parent / output.EVENTS).unlink()
+        said = ("[1] In the menu, join:\n[1]     tasmota-ABCDEF-1234      (open - no password)\n"
+                "[1] -- Back to your usual Wi-Fi\n[1] === run ended ===\n")
+        self.assertEqual(fs.run_asks(self.log, said),
+                         {"from": "words", "joins": ["tasmota-ABCDEF-1234"], "backs": 1, "switch_now": 0,
+                          "readout_switch": 0, "ended": True})
+
+    def test_advice_to_switch_the_device_off_and_on_by_the_runs_events_or_its_words(self):
+        for events, advised in (([("run", {}), ("began", {"step": "D1"}), ("switch", {})], True),
+                                ([("run", {}), ("switch", {}), ("began", {"step": "D1"})], False),
+                                ([("run", {}), ("began", {"step": "D1"}), ("switch", {"now": True})], False)):
+            with self.subTest(events=events):
+                self.write(*events)
+                with self.logs("switch the device off and on"), \
+                        mock.patch.object(self.sc, "last_said", return_value="switch the device off and on"):
+                    self.assertEqual(self.sc.advised_to_switch(), advised)
+        (self.log.parent / output.EVENTS).unlink()
+        with self.logs(""), mock.patch.object(self.sc, "last_said", return_value="... switch it off and on, then"):
+            self.assertTrue(self.sc.advised_to_switch())
 
 
 class ScaledBatchTests(unittest.TestCase):
@@ -1483,11 +1547,12 @@ class ReadoutScenarioTests(unittest.TestCase):
         firmware: restarted by its bridge, or (`restarts` False) by the person."""
         from contextlib import ExitStack, nullcontext
         from tools.autoflash import output, prompts, readout_espressif
-        said = []
+        said, self.events = [], []
         installer, dump = readout_espressif.installer, readout_espressif.dump_stock_flash
         with ExitStack() as stack:
             for owner, name, kwargs in (
                     (output, "say", {"side_effect": said.append}),
+                    (output, "event", {"side_effect": lambda name, **fields: self.events.append((name, fields))}),
                     # On a terminal a wait is shown, not logged.
                     (output, "log_only", {"side_effect": said.append}),
                     (output, "working", {"side_effect": lambda text: nullcontext()}),
@@ -1533,12 +1598,48 @@ class ReadoutScenarioTests(unittest.TestCase):
                 # Where the bridge will not restart it, the person is asked to, as the run waits.
                 self.assertEqual(bool(fs.READOUT_SWITCH.search(said)), not restarts)
 
+    def test_each_phase_is_timed_from_the_readouts_events(self):
+        for restarts in (True, False):
+            with self.subTest(restarts=restarts):
+                self.readout_says(restarts)
+                phases = [fields["phase"] for name, fields in self.events if name == "phase"]
+                for phase in ("read", "back"):
+                    self.assertLess(phases.index(fs.STARTS_AT[phase][1]), phases.index(fs.ENDS_AT[phase][1]), phase)
+
     def test_a_fault_putting_sonoff_back_lands_as_its_firmware_starts(self):
         # In the emulator the phase lasts 4 s: the bridge's restart 1.5 s in,
         # Sonoff's firmware answering by 4 s. At 18 s, 40% fell after its end (NOT-FIRED).
         at = fs.STARTS["back"][1] * 40 / 100
         self.assertGreater(at, 1.5)
         self.assertLess(at, 4)
+
+    def test_the_person_switches_the_device_off_and_on_where_the_readout_asks_by_its_events(self):
+        import threading
+        sc = self.scenario()
+        stop = threading.Event()
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp, "run.log")
+            events = Path(tmp, output.EVENTS)
+
+            def write(*items):
+                events.write_text("".join(json.dumps({"at": 0, "event": e, **f}) + "\n" for e, f in items),
+                                  encoding="utf-8")
+            started = [("run", {}), ("phase", {"phase": "read"})]
+            looks = iter([lambda: write(*started),
+                          lambda: write(*started, ("switch", {"now": True, "key": True}))])
+
+            def logs(state):
+                step = next(looks, None)
+                if step is None:
+                    stop.set()
+                    return []
+                step()
+                return [(1.0, log, "words that say nothing")]
+            with mock.patch.object(sc, "ex", return_value=mock.Mock(stdout="", returncode=0)) as ex, \
+                    mock.patch.object(fs, "run_logs", side_effect=logs), mock.patch.object(stop, "wait"):
+                sc.person(stop)
+        self.assertIn(mock.call(fs.DEVICE_CMD, "restart"), ex.call_args_list)
+        self.assertEqual(sc.notes["switched"], 1)
 
     def test_the_person_switches_the_device_off_and_on_where_the_readout_asks(self):
         import threading

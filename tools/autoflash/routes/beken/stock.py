@@ -171,7 +171,8 @@ def step_push(ctx: Context) -> dict[str, Any]:
             # One file, not the two an Espressif device is offered (one for each app
             # slot): a Beken device has one app, which its bootloader replaces.
             listen_ip=listen_ip, listen_port=port, device_ip=device_ip, names=("user1.bin",),
-            wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False)
+            wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False,
+            event=output.event)
         if not delivered.sent:
             raise Abort(f"the firmware was not sent: {delivered.error or 'eWeLink did not take the command'}. "
                         f"{ota_push.NOT_SENT}")

@@ -1104,6 +1104,17 @@ class DeliveryPortTests(unittest.TestCase):
         self.run_bridge(busy=set(), sends=2)
         self.assertEqual(self.asked, 1)
 
+    def test_the_sender_adds_its_events_to_the_runs(self):
+        # Its sending again, for the fault suites to follow (output.EVENTS).
+        from unittest import mock
+        events = Path("/run-folder") / output.EVENTS
+        with mock.patch.object(output, "events_path", return_value=events):
+            self.run_bridge(busy=set())
+        self.assertEqual(self.command[self.command.index("--events") + 1], str(events))
+        with mock.patch.object(output, "events_path", return_value=None):
+            self.run_bridge(busy=set())
+        self.assertNotIn("--events", self.command)
+
     def test_the_sender_says_each_line_as_it_comes(self):
         # Seen: its lines reached the run's log all at once as it ended, each
         # stamped then, so when eWeLink said the device was back could not be told.

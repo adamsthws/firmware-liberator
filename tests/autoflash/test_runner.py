@@ -472,9 +472,11 @@ class RetryTests(unittest.TestCase):
         title, _ = routes.STEP_INDEX["E1"]
         with mock.patch.dict(routes.STEP_INDEX, {"E1": (title, mock.Mock(return_value={"read": 7}))}), \
                 mock.patch.object(routes, "begin_stage"), mock.patch.object(output, "stage_end"), \
-                mock.patch.object(output, "say"):
+                mock.patch.object(output, "say"), mock.patch.object(output, "event") as event:
             self.assertEqual(runner.execute_with_retries(ctx, "E1"), 0)
         self.assertTrue(ctx.stage_begun)   # a report is worth asking for (cli.main)
+        # As the fault suites follow it (output.EVENTS).
+        self.assertEqual(event.call_args_list, [mock.call("began", step="E1"), mock.call("done", step="E1")])
         self.assertEqual(state.data["captures"]["E1.read"], 7)
         self.assertEqual(state.data["captures"]["E1.attempts"], 1)
 
@@ -622,8 +624,12 @@ class GoBackTests(unittest.TestCase):
         title, _ = routes.STEP_INDEX["E2"]
         with mock.patch.dict(routes.STEP_INDEX, {"E2": (title, stage)}), \
              mock.patch.object(routes, "begin_stage"), mock.patch.object(output, "stage_end") as ended, \
-             mock.patch.object(output, "tell") as told, mock.patch.object(output, "say"):
+             mock.patch.object(output, "tell") as told, mock.patch.object(output, "say"), \
+             mock.patch.object(output, "event") as self.event:
             return runner.execute(self.ctx, "E2"), ended, told
+
+    def events(self):
+        return [(c.args[0], c.kwargs) for c in self.event.call_args_list]
 
     def test_the_run_goes_back_to_the_step_not_taken(self):
         self.state.mark("E1", DONE)
@@ -633,6 +639,8 @@ class GoBackTests(unittest.TestCase):
         ended.assert_called_once_with("not installed")   # not "stopped": the run goes on
         self.assertIn(f"doing stage {routes.stage_number('E1')} again", told.call_args.args[0])
         self.assertNotIn("E1", told.call_args.args[0])   # a step's code means nothing to the person
+        # As the fault suites follow it (output.EVENTS).
+        self.assertEqual(self.events(), [("began", {"step": "E2"}), ("again", {"step": "E1", "restarted": False})])
 
     def test_up_to_the_limit_it_is_sent_again_without_a_restart(self):
         self.state.set_input("device_ip", "192.0.2.77")
@@ -656,7 +664,7 @@ class GoBackRestartTests(unittest.TestCase):
     """A step sent again and again without taking: before the run stops, the
     device - answering, but not taking it - is restarted, once, and the step
     sent afresh."""
-    execute = GoBackTests.execute
+    execute, events = GoBackTests.execute, GoBackTests.events
 
     def setUp(self):
         GoBackTests.setUp(self)
@@ -673,6 +681,7 @@ class GoBackRestartTests(unittest.TestCase):
         self.assertEqual(self.state.data["captures"]["E1.sent_again"], 0)
         self.assertIn(f"restarted the device; doing stage {routes.stage_number('E1')} again",
                       told.call_args.args[0])
+        self.assertEqual(self.events()[-1], ("again", {"step": "E1", "restarted": True}))
 
     def test_once_only_then_the_run_stops(self):
         self.state.capture("E1.restarted", True)

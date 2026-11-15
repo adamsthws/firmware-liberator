@@ -134,6 +134,7 @@ def wait_until_joined(network: str, marker: str | None = None, back: Callable[[]
         output.progress_clear()
         raise Abort(f"this computer did not join {network} within {limit / 60:.0f} minutes")
     output.progress_clear()
+    output.event("joined", network=network)
     output.say(f"    Connected to {network}.")
 
 
@@ -176,6 +177,7 @@ def configure_device_wifi(ctx: Context, network: str | None, why: str) -> str:
         "Tasmota is waiting on its own network for them; this sends them for you.",
     ])
     with output.until_done():   # the instructions, and the sending, go once it has the details
+        output.event("join", network=network)
         prompts.section("Join the device's setup network", [
             f"In {hostsys.wifi_menu_hint()}, join:",
             f"    {network}      (open - no password)",
@@ -233,6 +235,7 @@ def configure_device_wifi(ctx: Context, network: str | None, why: str) -> str:
             f"Staying on its network, browse to http://{setup_network.SETUP_HOST}, choose your Wi-Fi,",
             "type its password and save. When it says it connected:",
         ])
+    output.event("home")
     prompts.section("Back to your usual Wi-Fi", [
         "Rejoin it now if this computer hasn't by itself.",
     ])
@@ -443,6 +446,7 @@ def send_through_own_network(network: str, ssid: str, password: str,
     """ESPHome's (or the mover's) page given the details, up to
     SETUP_SEND_ATTEMPTS times, once this computer has joined its network;
     BackByItself if `back` finds the device on the home network first."""
+    output.event("join", network=network)
     prompts.section("Join the device's setup network", [
         f"In {hostsys.wifi_menu_hint()}, join:",
         f"    {network}      (open - no password)",
@@ -499,6 +503,7 @@ def set_up_through_own_network(ctx: Context, what: str, check: Callable[[str], A
     for round_ in (1, 2):
         if round_ == 2:
             send_through_own_network(network, ssid, password)
+        output.event("home")
         prompts.section("Back to your usual Wi-Fi", [
             "Rejoin it now if this computer hasn't by itself.",
         ])

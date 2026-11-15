@@ -63,6 +63,7 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
     started = time.monotonic()
     try:
         url = f"http://{listen_ip}:{port}/{IMAGE_NAME}"
+        output.event("phase", phase="serving")
         output.say(f"Serving {what} to {device_ip} at {url}")
         if unstick and getattr(ctx, "running_step", None) in getattr(ctx, "redoing_interrupted", ()):
             output.say("    The fetch the last run began may still be under way in OpenBeken: restarting it first.")

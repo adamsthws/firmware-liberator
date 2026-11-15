@@ -306,11 +306,14 @@ def deliver(*, account: Account, device_id: str,
             firmware: bytes, version: str, listen_ip: str, listen_port: int, device_ip: str,
             names: tuple[str, ...] = ("user1.bin", "user2.bin"), wait: float = 120.0,
             check_device: Callable[[dict[str, Any], str], None] | None = None,
-            say: Callable[[str], None] = print, live: bool | None = None) -> Delivery:
+            say: Callable[[str], None] = print, live: bool | None = None,
+            event: Callable[..., None] | None = None) -> Delivery:
     """Send `firmware` to the device `device_id` through eWeLink, as `version` of
     its model.  `check_device(device, model)` may refuse the device (EwelinkError)
     once eWeLink says what it is; nothing is sent before it has passed.
-    `live`: the progress line on the terminal (FirmwareServer).
+    `live`: the progress line on the terminal (FirmwareServer). `event(name,
+    **fields)`: told as it starts serving ("phase", phase="serving") and as it
+    sends the command again ("resent", attempt=N) - autoflash's output.event.
     Failures before the command goes out leave `sent` False: the device was
     never asked for anything.  Ctrl-C after every byte was served is a
     delivery completed; before, one interrupted."""
@@ -346,6 +349,8 @@ def deliver(*, account: Account, device_id: str,
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         base_url = f"http://{listen_ip}:{listen_port}"
+        if event is not None:
+            event("phase", phase="serving")
         say(f"Serving only {device_ip} at {' and '.join(f'{base_url}/{name}' for name in names)}")
         say(f"SHA-256 (complete file): {digest}")
         entries = [{"name": name, "downloadUrl": f"{base_url}/{name}", "digest": digest} for name in names]
@@ -411,6 +416,8 @@ def deliver(*, account: Account, device_id: str,
                 server.end_progress()
                 say(f"  The device has not asked for the file: upgrade command sent again "
                     f"(attempt {sends} of {COMMAND_SENDS}).")
+                if event is not None:
+                    event("resent", attempt=sends)
                 seq = send_command(ws)
                 resending = Resending(now)
                 deadline = max(deadline, now + RESEND_WAIT)

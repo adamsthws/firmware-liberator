@@ -64,6 +64,20 @@ def last_run(log: str) -> str:
     return log[log.rfind("=== run started"):] if "=== run started" in log else log
 
 
+def last_run_events(events: list[dict]) -> list[dict]:
+    """The last run's events (output.EVENTS) of a run folder's: from its start."""
+    starts = [at for at, item in enumerate(events) if item["event"] == "run"]
+    return events[starts[-1]:] if starts else events
+
+
+def advised_to_switch(events: list[dict]) -> bool:
+    """Whether a run's events (output.EVENTS) end with advice to switch the
+    device off and on: since its last step began - as it stopped, not in a step
+    it went on from - and not an ask to do it then, which it waited on."""
+    began = max((at for at, item in enumerate(events) if item["event"] == "began"), default=-1)
+    return any(item["event"] == "switch" and not item.get("now") for item in events[began + 1:])
+
+
 # What a run says of an error the tool did not see coming (runner.unexpected).
 UNEXPECTED = "something unexpected went wrong"
 

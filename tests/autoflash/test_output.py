@@ -2211,6 +2211,77 @@ class MarginTests(OutputTestCase):
         self.assertEqual(screen.strip("\n"), " " + text.strip())
 
 
+class EventTests(OutputTestCase):
+    """What a run did, beside its log (output.EVENTS), for the fault suites to
+    follow it by in place of its words."""
+
+    def events(self):
+        return [{k: v for k, v in e.items() if k != "at"} for e in output.events(self.log.parent)]
+
+    def test_a_run_writes_its_events_beside_its_log(self):
+        def body():
+            output.event("began", step="B2")
+            output.say("B2 done")
+            output.event("done", step="B2")
+        self.run_with(io.StringIO(), True, body)
+        from tools.autoflash import __version__
+        self.assertEqual(self.events(), [{"event": "run", "version": __version__}, {"event": "began", "step": "B2"},
+                                         {"event": "done", "step": "B2"}, {"event": "ended"}])
+        self.assertTrue(all(isinstance(e["at"], float) for e in output.events(self.log.parent)))
+
+    def test_no_events_outside_a_run(self):
+        output.event("began", step="B2")
+        self.assertIsNone(output.events_path())
+        self.assertFalse((self.log.parent / output.EVENTS).exists())
+
+    def test_advice_to_switch_the_device_off_and_on_is_an_event_however_wrapped(self):
+        def body():
+            output.tell("Nothing to see here.")
+            output.tell("FAILED: the device did not answer. Switch the device off and on, then run this again")
+            for line in ("It has not come back on its new firmware yet. Switch it off for a few",
+                         "seconds at the socket, then on: it then starts the new firmware."):
+                output.tell(f"    {line}")
+            with output.asking_to_switch_now():
+                output.tell("    No answer from the device: switch it off and on - it is safe now.")
+            with output.asking_to_switch_now(key=True):
+                output.tell("    Switch it off for five seconds, then on (a wall switch at its breaker).")
+            output.tell("Switch the device off and on once more.")
+        self.run_with(io.StringIO(), True, body)
+        self.assertEqual([e for e in self.events() if e["event"] == "switch"],
+                         [{"event": "switch"}, {"event": "switch"}, {"event": "switch", "now": True},
+                          {"event": "switch", "now": True, "key": True}, {"event": "switch"}])
+
+    def test_a_cut_line_or_another_kind_of_file_is_passed_over(self):
+        (self.log.parent / output.EVENTS).write_text('{"event": "began", "step": "C2"}\n[1]\n{"event": "do',
+                                                    encoding="utf-8")
+        self.assertEqual(self.events(), [{"event": "began", "step": "C2"}])
+        self.assertEqual(output.events(self.log.parent / "nowhere"), [])
+
+    def test_every_word_of_the_tool_to_switch_the_device_off_and_on_is_matched(self):
+        """Each string in the tool asking the person to switch the device off,
+        with the line after it where it is wrapped by hand, matches
+        SWITCH_OFF_AND_ON - reworded otherwise, the fault suites would no longer
+        see the advice and switch it for them."""
+        import ast
+        asked = re.compile(r"\bswitch (the device|it) off\b", re.IGNORECASE)
+        # Not advice to switch it off and on: off and left off, and phases.py's
+        # pattern for a helper's lines worth showing.
+        not_advice = ("switch the device off first", "|switch it off|")
+        for path in sorted((Path(__file__).parents[2] / "tools/autoflash").rglob("*.py")):
+            texts = []
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                for value in getattr(node, "elts", None) or [node]:
+                    if isinstance(value, ast.JoinedStr):
+                        texts.append("".join(v.value if isinstance(v, ast.Constant) else "{}" for v in value.values))
+                    elif isinstance(value, ast.Constant) and isinstance(value.value, str):
+                        texts.append(value.value)
+            for at, text in enumerate(texts):
+                if asked.search(text) and not any(words in text for words in not_advice):
+                    with self.subTest(path=path.name, text=text):
+                        wrapped = " ".join(f"{text} {texts[at + 1] if at + 1 < len(texts) else ''}".split())
+                        self.assertRegex(wrapped, output.SWITCH_OFF_AND_ON)
+
+
 class ToolSaidTests(unittest.TestCase):
     """What a helper tool said decides the advice: a part-served download is
     the device's Wi-Fi going, not the firewall."""

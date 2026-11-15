@@ -88,7 +88,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
-from tools.autoflash import kinds, records  # noqa: E402
+from tools.autoflash import kinds, output, records  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash.report import SONOFF_IDENTITY  # noqa: E402
 from tools.repo import cpu_load, emulator_stats, fault_verdicts, fault_yield, scenario_times  # noqa: E402
@@ -278,6 +278,11 @@ STARTS = {"C3": (r"Backing up the (?:plug|device)'s Sonoff firmware", 12), "C3fb
 # F4's reset without the Berry driver: the name and template not put in.
 NOHOOK_RESET = re.compile(r"Settings reset to Tasmota's defaults, keeping the Wi-Fi; the (?:plug|device)")
 STEP_OF = {"C3fb": "C3", "F4rs": "F4", "F4tp": "F4", "D5ot": "D5"}  # the tool's own name for a step
+# Where each of STARTS is, and of ENDS, in a run's events (output.EVENTS) -
+# (event, its step or phase) - by which a run of this checkout's tool is timed;
+# an earlier release's, which wrote none, by its words in STARTS and ENDS.
+STARTS_AT = {"C3": ("phase", "backup"), "C3fb": ("began", "C3"), "F4rs": ("phase", "settings-reset"),
+             "F4tp": ("phase", "template"), "D5ot": ("phase", "own-layout")}
 
 # Readouts (cli.py readout, unattended, docs/readouts.md) of a device fresh from
 # Sonoff's firmware. Their phases are no steps of the tool's: each starts and
@@ -293,6 +298,8 @@ STEP_OF = {"C3fb": "C3", "F4rs": "F4", "F4tp": "F4", "D5ot": "D5"}  # the tool's
 BACK = r"Restarting it into its Sonoff firmware|Read\. Now put it back on its Sonoff firmware"
 STARTS.update({"read": (r"Reading the device's memory", 12), "back": (BACK, 5)})
 ENDS = {"read": BACK, "back": r"It is back on its Sonoff firmware"}
+STARTS_AT.update({"read": ("phase", "read"), "back": ("phase", "back")})
+ENDS_AT = {"read": ("phase", "back"), "back": ("phase", "back-done")}
 READOUT_FAULTS = [("read", "deviceoff", 1), ("read", "outage", 30), ("read", "crash", 1),
                   ("back", "deviceoff", 1), ("back", "outage", 30)]
 # A readout cut off mid-read, the bridge still running, and the tool run again
@@ -345,8 +352,10 @@ REPORT_RESULT = re.compile(r"Result:\s+(\S.*?)(?:\s{2,}|$)", re.M)
 REPORT_BACKUP = re.compile(r"(?:Sonoff backup|\bBackup):\s+(\S.*?)(?:\s{2,}|$)", re.M)
 REPORT_IDENTITY = re.compile(r"(?:Sonoff identity|\bIdentity):\s+(\S.*?)(?:\s{2,}|$)", re.M)
 REPORT_UNFINISHED = re.compile(r"(?:Converted from|From):\s+Unfinished (?:conversion|run)")
+# A readout's ask to switch it off and on now, and advice to, from a readout as
+# from a conversion: in the log of a release that writes no events (run_asks,
+# advised_to_switch).
 READOUT_SWITCH = re.compile(r"Switch it off for five seconds, then on")
-# Advice to switch it off and on, from a readout as from a conversion.
 SWITCH_ADVICE = re.compile(r"switch (the device|the device|it) off and on", re.IGNORECASE)
 
 # Each length where it can lead somewhere the others do not: an
@@ -1073,6 +1082,24 @@ def run_logs(state):
     return sorted(found, key=lambda f: f[0])
 
 
+def run_asks(log, text):
+    """What a run log's runs asked of the person: the networks to join, in
+    turn; how many times to go back to the home one; to switch the device off
+    and on as the run waits, during a conversion and a readout; and whether its
+    last run has ended. From the runs' events (output.EVENTS); a release that
+    writes none, from its words (`text`) - "from" says which."""
+    events = output.events(log.parent)
+    if events:
+        def count(**fields):
+            return sum(all(item.get(k) == v for k, v in fields.items()) for item in events)
+        return {"from": "events", "joins": [item.get("network") for item in events if item["event"] == "join"],
+                "backs": count(event="home"), "switch_now": count(event="switch", now=True) - count(key=True),
+                "readout_switch": count(event="switch", now=True, key=True), "ended": events[-1]["event"] == "ended"}
+    return {"from": "words", "joins": [name.rstrip(",") for name in JOIN.findall(text)], "backs": text.count(BACK),
+            "switch_now": len(SWITCH_NOW.findall(text)), "readout_switch": len(READOUT_SWITCH.findall(text)),
+            "ended": text.rstrip().endswith("=== run ended ===")}
+
+
 class DeviceMonitor:
     """The device's way to the cloud, for one scenario: shut, but for a turn each
     time the tool is about to need it."""
@@ -1310,11 +1337,12 @@ def corrupt_filter(value, mask, every=20):
 # device is used again - never while a run is using it.
 STRANDED = re.compile(r"did not fetch the \w+ instructions|returned HTTP -1")
 
-# What the run tells the person to join, and to go back from (the run's log).
+# What the run tells the person to join, and to go back from, in the log of a
+# release that writes no events (run_asks).
 JOIN = re.compile(r"join:\s*\n\[[^\]]*\]\s+(?:network\s+)?(\S+)")
 BACK = "Back to your usual Wi-Fi"
-# Said while the run waits on, and carries on by itself once it is done.
-# (In the run's log each line has its time first.)
+# Said while the run waits on, and carries on by itself once it is done, by a
+# release that writes no events. (In the run's log each line has its time first.)
 SWITCH_NOW = re.compile(re.escape(SAID["switch_now"]) +   # before 3.0.0, said over two lines:
                         r"|switch it off and on:\s+(?:\[[\d:]+\]\s+)?at this stage that is safe\. "
                         r"This carries on by itself")
@@ -1418,16 +1446,33 @@ class Scenario:
             return None
         return text[text.rfind("=== run started"):]
 
+    def current_events(self, since, headers):
+        """The events (output.EVENTS) of the run current_run gives: None where
+        its log has none - an earlier release's, which wrote none."""
+        logs = [(m, p, t) for m, p, t in run_logs(self.state) if m >= since]
+        if not logs or (headers is not None and logs[-1][2].count("=== run started") <= headers):
+            return None
+        found = output.events(logs[-1][1].parent)
+        return fault_verdicts.last_run_events(found) if found else None
+
+    def reached(self, since, headers, at, words):
+        """Whether the current run is at `at` - (event, its step or phase) in its
+        events - or, for one that writes none, has said `words`."""
+        events = self.current_events(since, headers)
+        if events is not None:
+            name, value = at
+            return any(item["event"] == name and value in (item.get("step"), item.get("phase")) for item in events)
+        return bool(re.search(words, self.current_run(since, headers) or ""))
+
     def headers_now(self):
         logs = run_logs(self.state)
         return logs[-1][2].count("=== run started") if logs else 0
 
     def wait_for_step(self, since, headers, stop, step=None):
         step = step or self.sc["step"]
-        pattern = re.compile(STARTS.get(step, (rf"\] {step}  ",))[0])
+        at, words = STARTS_AT.get(step, ("began", step)), STARTS.get(step, (rf"\] {step}  ",))[0]
         while not stop.is_set():
-            text = self.current_run(since, headers)
-            if text and pattern.search(text):
+            if self.reached(since, headers, at, words):
                 return True
             time.sleep(0.3)
         return False
@@ -1441,8 +1486,7 @@ class Scenario:
         if stop.is_set():
             return
         step = STEP_OF.get(at, at)
-        text = self.current_run(since, headers) or ""
-        if re.search(ENDS.get(at, rf"\] {step} done"), text):
+        if self.reached(since, headers, ENDS_AT.get(at, ("done", step)), ENDS.get(at, rf"\] {step} done")):
             self.notes["mistimed"] = True  # the step was over before the fault
         if first:
             self.fired = time.time()
@@ -1757,14 +1801,18 @@ class Scenario:
             for written, log, text in run_logs(self.state):
                 if written < self.started:
                     continue
-                joins, backs = JOIN.findall(text), text.count(BACK)
-                if log not in seen:
-                    seen[log] = (len(joins), backs)  # history from before this scenario
-                    told[log] = len(READOUT_SWITCH.findall(text))
+                asks = run_asks(log, text)
+                joins, backs = asks["joins"], asks["backs"]
+                if seen.get(log, (None,))[0] != asks["from"]:
+                    # History from before this scenario - or before its events
+                    # began, the log carried on by this checkout's tool.
+                    seen[log] = (asks["from"], len(joins), backs)
+                    told[log] = asks["readout_switch"]
+                    switched[log] = asks["switch_now"]
                     continue
-                done_joins, done_backs = seen[log]
+                _, done_joins, done_backs = seen[log]
                 if len(joins) > done_joins:
-                    wanted = (log, joins[-1].rstrip(","))
+                    wanted = (log, joins[-1])
                     stop.wait(8)  # a person takes a moment
                 if backs > done_backs:
                     wanted = None
@@ -1772,8 +1820,8 @@ class Scenario:
                         self.ex("/opt/autoflash-emu/bin/wifi-root", "home", timeout=60)
                         self.say("PERSON: back on the home network")
                         joined = self.joined = None
-                seen[log] = (len(joins), backs)
-                asked = len(SWITCH_NOW.findall(text))
+                seen[log] = (asks["from"], len(joins), backs)
+                asked = asks["switch_now"]
                 if asked > switched.setdefault(log, asked):
                     switched[log] = asked
                     stop.wait(30)  # a person reads it, and gets up
@@ -1782,7 +1830,7 @@ class Scenario:
                         self.say("PERSON: switched the device off and on, as the run said")
                         self.notes.setdefault("switched", 0)
                         self.notes["switched"] += 1
-                asked = len(READOUT_SWITCH.findall(text))
+                asked = asks["readout_switch"]
                 if asked > told[log]:
                     told[log] = asked
                     stop.wait(5)  # it says what to do, and waits until it is done
@@ -1790,7 +1838,7 @@ class Scenario:
                         self.ex(DEVICE_CMD, "restart")
                         self.say("PERSON: switched the device off and on, as the readout said")
                         self.notes["switched"] = self.notes.get("switched", 0) + 1
-                if wanted and wanted[0] == log and text.rstrip().endswith("=== run ended ==="):
+                if wanted and wanted[0] == log and asks["ended"]:
                     wanted = None  # the run that asked is over
             if wanted and not joined:
                 # The network picked from the list once it shows: the run may
@@ -2222,7 +2270,7 @@ class Scenario:
                     r"Stage \d+ - (Installing interim firmware|Updating the bootloader|Making room)", self.last_said()):
                 return self.finish_readout(results, "FAIL-TAKEN-FOR-CONVERSION")
         while not self.readout_done() and len(results) < MAX_RUNS:
-            if SWITCH_ADVICE.search(self.last_said()):
+            if self.advised_to_switch():
                 self.say("following the run's advice: the device switched off and on")
                 self.ex(DEVICE_CMD, "restart")
                 time.sleep(5)
@@ -2278,12 +2326,12 @@ class Scenario:
             if fault == "crash":
                 time.sleep(arg)
         while results[-1][0] != 0 and len(results) < MAX_RUNS:
-            if SWITCH_ADVICE.search(self.last_said()):
+            if self.advised_to_switch():
                 self.say("following the run's advice: the device switched off and on")
                 self.ex(DEVICE_CMD, "restart")
                 time.sleep(5)
             results.append(self.run_readout_all(judged))
-        if SWITCH_ADVICE.search(self.last_said()) and self.firmware_now(wait=120) != "sonoff":
+        if self.advised_to_switch() and self.firmware_now(wait=120) != "sonoff":
             self.say("following the run's advice: the device switched off and on")
             self.ex(DEVICE_CMD, "restart")
         return self.finish_readout_all(results, judged, None)
@@ -2477,6 +2525,16 @@ class Scenario:
         own = logs[-1][2].split("=== run started")[-1] if logs else ""
         return re.sub(r"\s+", " ", screen + "\n" + own)
 
+    def advised_to_switch(self):
+        """Whether the last run ended saying to switch the device off and on: by
+        its events (fault_verdicts.advised_to_switch), or, a release's that writes
+        none, by its words (last_said)."""
+        logs = run_logs(self.state)
+        events = output.events(logs[-1][1].parent) if logs else []
+        if events:
+            return fault_verdicts.advised_to_switch(fault_verdicts.last_run_events(events))
+        return bool(SWITCH_ADVICE.search(self.last_said()))
+
     def again(self, results, target, extra, delay=None, first_fault=None, code=None, later=None):
         """The tool run again, as a person would - switching the device off and
         on, or joining its own network, where the run says to - until the device
@@ -2488,7 +2546,7 @@ class Scenario:
         first = len(results)
         while "Converted" not in results[-1][1] and len(results) < MAX_RUNS:
             said = self.last_said()
-            if re.search(r"switch (the device|the device|it) off and on", said):
+            if self.advised_to_switch():
                 self.say("following the run's advice: the device switched off and on")
                 self.ex(DEVICE_CMD, "restart")
                 time.sleep(5)

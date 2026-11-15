@@ -14,6 +14,7 @@ tool prints. `--verbose` shows the same detail as it happens. The run's record
 is in `autoflash-state.json` in the same directory, with the phase evidence
 beside it, and `outcomes.jsonl` has a line for each run that worked in that
 directory: how it ended, and where it stopped and why, in a word.
+`events.jsonl` lists what each run did, step by step, for the test suites.
 
 **A problem not listed here may be new.** Please open an
 [issue](https://github.com/adamsthws/firmware-liberator/issues/new?template=bug-report.yml)

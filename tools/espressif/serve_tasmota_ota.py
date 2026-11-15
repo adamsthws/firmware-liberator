@@ -9,6 +9,7 @@ acknowledgement.  Building or validating an image never invokes this tool.
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import ipaddress
 import os
@@ -19,7 +20,7 @@ from typing import Any
 if __package__ in (None, ""):  # run as a script: the repository root, for `tools.`
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools.autoflash import kinds  # noqa: E402
+from tools.autoflash import kinds, output  # noqa: E402
 from tools.autoflash.prompts import ask_secret
 from tools.espressif.analyze_vendor_ota import WRAPPER_SIZE, analyze
 from tools.espressif import chips
@@ -62,6 +63,8 @@ def main():
     target.add_argument("--device-id", help="the device's eWeLink id")
     target.add_argument("--mdns-capture", type=Path, help="an eWeLink discovery report naming the device")
     parser.add_argument("--wait", type=float, default=120.0)
+    parser.add_argument("--events", type=Path, metavar="FILE",
+                        help="the run's events file, for what the send does (autoflash output.EVENTS)")
     parser.add_argument(SAFETY_FLAG, action="store_true")
     parser.add_argument("--readout-model", metavar="NAME",
                         help="send the bridge, wrapped as NAME, to a device of a kind this tool does not "
@@ -154,7 +157,8 @@ def main():
     # The run's own sign-in where it handed one over, else one of this tool's.
     delivered = deliver(account=Account(sign_in, held=given_session()), device_id=args.device_id or target_id_from_mdns(args.mdns_capture), firmware=firmware,
                         version=ANNOUNCED_VERSION, listen_ip=args.listen_ip, listen_port=args.listen_port,
-                        device_ip=args.device_ip, wait=args.wait, check_device=check)
+                        device_ip=args.device_ip, wait=args.wait, check_device=check,
+                        event=functools.partial(output.write_event, args.events) if args.events else None)
     if delivered.error and not delivered.interrupted:
         report_failure(EwelinkError(delivered.error), delivered.sent)
     elif delivered.interrupted:

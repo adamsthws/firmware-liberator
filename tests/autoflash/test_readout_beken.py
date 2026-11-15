@@ -290,24 +290,24 @@ class ReadWholeFlashTests(unittest.TestCase):
                 rb.deliver_readout(ctx, "name", "1.0.2", {"deviceid": "1000abcdef"})
         self.assertEqual(failures.classify(str(stopped.exception)), "upload-cut")
 
-    def test_the_reads_start_is_in_the_runs_log(self):
-        # On a terminal the wait is shown, not logged: the Beken fault suite
-        # times a fault in the read from the log (READOUT_PHASES).
+    def test_the_reads_start_and_end_are_events_and_its_start_is_in_the_runs_log(self):
+        # The Beken fault suite times a fault in the read from its events
+        # (READOUT_PHASES); on a terminal the wait is shown, not logged.
         import contextlib
-        import re
         from tools.autoflash import output
         from tools.beken.emulator import fault_suite
         logged = []
         with mock.patch.object(output, "working", side_effect=lambda text: contextlib.nullcontext()), \
                 mock.patch.object(output, "log_only", side_effect=logged.append), \
                 mock.patch.object(output, "say", side_effect=logged.append), \
+                mock.patch.object(output, "event", side_effect=lambda name, **f: logged.append((name, f))), \
                 mock.patch.object(output, "progress_clear"), \
                 mock.patch.object(rb.openbeken, "read_flash", return_value=b"\xff" * rb.WHOLE_FLASH) as read:
             self.assertEqual(rb.read_whole_flash(a_ctx(), "192.0.2.60"), b"\xff" * rb.WHOLE_FLASH)
         self.assertEqual(read.call_args.args, ("192.0.2.60", 0, rb.WHOLE_FLASH))   # all of it, from the start
         start, end, _ = fault_suite.READOUT_PHASES["read"]
-        log = "\n".join(f"[10:00:00] {line}" for line in logged)
-        self.assertLess(re.search(start, log).start(), re.search(end, log).start())
+        self.assertLess(logged.index(("phase", {"phase": start})), logged.index(("phase", {"phase": end})))
+        self.assertIn("Reading the device's memory...", logged)
 
 
 if __name__ == "__main__":

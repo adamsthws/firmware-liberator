@@ -20,6 +20,7 @@ import collections
 import contextlib
 import datetime
 import ipaddress
+import json
 import os
 import platform
 import re
@@ -45,6 +46,29 @@ MAGENTA = "\x1b[35m"        # the same where only the basic colours are: rounded
 _lock = threading.RLock()
 # What the run log says as a Ctrl-C arrives; the fault suites look for it.
 CTRL_C_LOGGED = "Ctrl-C pressed"
+# What the run did, beside its log, one JSON object a line - {"at": seconds since
+# the epoch, "event": ..., and the event's own fields} - for a program (the fault
+# suites) to follow it by, not by its words, which change:
+#   run      a run began (version); ended: it ended
+#   began    a step began (step); done: it ended done; again: a later step found it
+#            had not taken, and it is done again (step, restarted: the device first)
+#   phase    a point within a step or readout that has no step of its own (phase:
+#            PHASES)
+#   resent   the upgrade command sent again, the device not having asked for its
+#            firmware (attempt; tools/ewelink/ota_push.py)
+#   join     the person was asked to join a device's network (network); joined:
+#            this computer has; home: asked to go back to their own Wi-Fi
+#   switch   the person was asked to switch the device off and on: now, while the
+#            run waits (now: true, asking_to_switch_now; key: true where it waits
+#            for a key once it is done), or once it has stopped (any other line it
+#            logs that SWITCH_OFF_AND_ON matches)
+EVENTS = "events.jsonl"
+PHASES = frozenset({"backup", "settings-reset", "template", "own-layout", "read", "read-done", "back",
+                    "back-done", "serving"})
+# Advice to switch the device off and on, however worded: each message saying it
+# matches, though wrapped over two lines (tests/autoflash/test_output.py holds
+# them to it).
+SWITCH_OFF_AND_ON = re.compile(r"switch (the device|it) off( and| for [^.]*?then) on", re.IGNORECASE)
 
 # Colour and hyperlink sequences, which take no room on screen.
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b\]8;;[^\x1b]*\x1b\\")
@@ -93,6 +117,8 @@ class _State:
     cursor_hidden = False
     tool_tail: collections.deque = collections.deque(maxlen=40)  # the last helper's last lines
     stop_ticker = threading.Event()
+    switching_now: dict | None = None  # what is logged asks for it now: the event's fields (asking_to_switch_now)
+    last_logged = ""                  # the last line logged, whitespace collapsed (_note_switch_advice)
 
 
 _s = _State()
@@ -182,7 +208,9 @@ def start(log_path: Path | None, *, verbose: bool) -> None:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             _s.log = log_path.open("a", encoding="utf-8")
             _s.log_path = log_path
+            _s.last_logged = ""
             _write_log(f"=== run started, tool version {__version__}{' (verbose)' if verbose else ''} ===")
+            event("run", version=__version__)
         _s.concise = not verbose
         _s.paused = False
         _s.rows, _s.blocks, _s.stage_mark = 0, [], None
@@ -217,6 +245,7 @@ def finish() -> None:
         _show_keys()
         if _s.log is not None:
             _write_log("=== run ended ===")
+            event("ended")
             _s.log.close()
         _s.log = _s.log_path = None
         _s.concise = False
@@ -254,6 +283,48 @@ def move_log(move: Callable[[], Path]) -> None:
 
 def log_path() -> Path | None:
     return _s.log_path
+
+
+def event(name: str, **fields: object) -> None:
+    """One of EVENTS's events, beside the run's log; nothing outside a run."""
+    with _lock:
+        path = events_path()
+        if path is not None:
+            write_event(path, name, **fields)
+
+
+def events_path() -> Path | None:
+    """The run's events file (EVENTS): for a helper it runs to add its own."""
+    return _s.log_path.parent / EVENTS if _s.log_path is not None else None
+
+
+def write_event(path: Path, name: str, **fields: object) -> None:
+    """One event (EVENTS) appended to the events file `path`: a whole line in one
+    write, so a helper's and the run's never split each other."""
+    line = json.dumps({"at": round(time.time(), 3), "event": name, **fields}) + "\n"
+    try:
+        with path.open("a", encoding="utf-8") as events:
+            events.write(line)
+    except OSError:
+        pass  # the run goes on without it, as without a log line
+
+
+def events(run_dir: Path) -> list[dict]:
+    """The events (EVENTS) of the runs whose log is in `run_dir`, oldest first:
+    none from a release before they were written, or a line cut off."""
+    try:
+        lines = (run_dir / EVENTS).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    found = []
+    for line in lines:
+        try:
+            item = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(item, dict) and isinstance(item.get("event"), str):
+            found.append(item)
+    return found
 
 
 def concise() -> bool:
@@ -392,6 +463,19 @@ on_screen = show  # for say(), whose `show` is its flag
 def log_only(text: str) -> None:
     with _lock:
         _write_log(text)
+
+
+@contextlib.contextmanager
+def asking_to_switch_now(*, key: bool = False):
+    """What is said within asks the person to switch the device off and on while
+    the run waits on - for a key once it is done, with `key`: its "switch"
+    event says "now" (and "key")."""
+    with _lock:
+        _s.switching_now = {"now": True, **({"key": True} if key else {})}
+        try:
+            yield
+        finally:
+            _s.switching_now = None
 
 
 def before_input(prompt: str = "") -> None:
@@ -1356,4 +1440,16 @@ def _write_log(text: str) -> None:
     stamp = datetime.datetime.now().strftime("%H:%M:%S")
     for line in scrub(str(text)).split("\n"):
         _s.log.write(f"[{stamp}] {line}\n")
+        _note_switch_advice(line)
     _s.log.flush()
+
+
+def _note_switch_advice(line: str) -> None:
+    """A "switch" event for advice to switch the device off and on in `line`, or
+    begun in the line before: a message wrapped by hand breaks it over two
+    (arrival.NOT_BACK_LINES)."""
+    line = " ".join(line.split())
+    before = _s.last_logged
+    _s.last_logged = line
+    if any(found.end() > len(before) for found in SWITCH_OFF_AND_ON.finditer(f"{before} {line}")):
+        event("switch", **(_s.switching_now or {}))
