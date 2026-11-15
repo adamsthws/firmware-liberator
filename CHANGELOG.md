@@ -214,6 +214,10 @@ check.
   meter, again when its answer is lost: a device whose Wi-Fi blinked as it
   was checked - ESPHome taking its own network down once back on yours - was
   reported as a relay that did not switch, its meter showing it had.
+- A Beken run carried on after one cut off while OpenBeken fetched its next
+  firmware restarts OpenBeken before asking it to fetch: the fetch the last
+  run began could still be waiting inside it, and OpenBeken turned the new one
+  down while saying it had started it, so the run waited half a minute first.
 - A command to OpenBeken that it answers "No command entered" - its web
   server reads only what has arrived as a request starts, so the words can
   miss it - is sent again; the run stopped there.
