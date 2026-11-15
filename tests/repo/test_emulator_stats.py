@@ -123,6 +123,14 @@ class EmulatorStatsTests(unittest.TestCase):
         self.assertEqual(row["error"], "FileNotFoundError", "the class alone, never the message's paths")
         self.assertIsNone(emulator_stats.error_of("not an exception"))
 
+    def test_a_batch_says_which_list_it_ran(self):
+        every, quick = ["a", "b", "c"], ["a", "c"]
+        self.assertEqual(emulator_stats.tier(every, every, quick), "full")
+        self.assertEqual(emulator_stats.tier(["c", "a"], every, quick), "quick")
+        self.assertEqual(emulator_stats.tier(["a"], every, quick), "subset")
+        fields = re.search(r"const BATCH_FIELDS = \{\n(.*?)\n\};", ADMIN, re.S).group(1)
+        self.assertIn('tier: (v) => ' + " || ".join(f'v === "{name}"' for name in emulator_stats.TIERS), fields)
+
     def test_a_run_names_its_familys_emulator_image_as_image_sh_tags_it(self):
         for family in ("espressif", "beken"):
             tag = subprocess.run([str(ROOT / "tools" / family / "emulator" / "image.sh"), "tag"], capture_output=True,

@@ -98,6 +98,8 @@ const BATCH_FIELDS = {
   ...COMMON,
   total: (v) => Number.isInteger(v) && v >= 1 && v <= 100_000,
   planned: (v) => Number.isInteger(v) && v >= 0 && v <= 100_000,
+  // Which list it ran (emulator_stats.py TIERS): every scenario, a routine run's, or part of it.
+  tier: (v) => v === "full" || v === "quick" || v === "subset",
 };
 
 // Why `item` cannot be taken as `fields` say, or null.
@@ -274,6 +276,8 @@ export async function gatherEmulator(all, now) {
         count(DISTINCT scenario) AS scenarios, max(finished) AS last
       FROM ordered WHERE finished >= ? GROUP BY revision ORDER BY last DESC LIMIT ${REVISIONS}`, since),
     devices: await deviceTesting(all),
+    batches: await all(`SELECT started, family, device, suite, tier, planned, total, revision, dirty
+      FROM emulator_batches WHERE started >= ? ORDER BY started DESC LIMIT ${REVISIONS}`, since),
     verdicts: await all(`SELECT verdict, outcome, count(*) AS n FROM emulator_runs WHERE finished >= ?
       AND outcome != 'pass' GROUP BY verdict ORDER BY n DESC`, since),
     // The test rig's own trouble, by family and day: what the suites could not judge.
@@ -389,6 +393,14 @@ export function emulatorSections(data) {
         ["First tries passed", (row) => `${share(row.passed, row.judged)} of ${number(row.judged)}`],
         ["Inconclusive", "inconclusive", "number"], ["Last", (row) => String(row.last).slice(0, 10)],
         ["Firmware", (row) => firmwareSaid(row.firmware)]], data.devices, "No runs yet.")
+      + `</section>`,
+    `<section class="card" id="emulator-batches"><h2>Batches</h2><p class="sub">The newest ${REVISIONS} batches
+      of the last ${EMULATOR_DAYS} days, and which list each ran: every scenario (full), a routine run's (quick:
+      the shortest and longest outage alone), or part of one. A device's scenarios passed are of its whole suite,
+      so a routine run's leave the lengths it skips unpassed.</p>`
+      + table([["Started", (row) => String(row.started).slice(0, 16)], ["Device", "device"], ["Suite", "suite"],
+        ["List", "tier"], ["Planned", "planned", "number"], ["Of", "total", "number"],
+        ["Revision", (row) => (row.revision ?? "none") + (row.dirty ? " (changed)" : "")]], data.batches, "None yet.")
       + `</section>`,
     `<section class="card" id="emulator-faults"><h2>Fault by step</h2><p class="sub">The last ${EMULATOR_DAYS} days'
       fault-suite runs: those failed of those judged, at each step and fault. The darker, the more failed.</p>`

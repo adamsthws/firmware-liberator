@@ -1127,7 +1127,8 @@ def batch(ids_file: str | None = None) -> None:
             instance.stop()   # an emulator never left running
 
     emulator_stats.began(OUT, family=STATS_DEVICE.family, suite="fault", device=STATS_DEVICE.key, total=len(every),
-                         planned=todo.qsize(), cloud="stub", workers=workers)
+                         planned=todo.qsize(), cloud="stub", workers=workers,
+                         tier=emulator_stats.tier(wanted, every, (sc["id"] for sc in scenarios(quick=True))))
     threads = [threading.Thread(target=work, args=(n,)) for n in range(1, workers + 1)]
     for thread in threads:
         thread.start()

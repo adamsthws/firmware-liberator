@@ -572,8 +572,8 @@ CREATE INDEX IF NOT EXISTS emulator_runs_not_passed ON emulator_runs (finished) 
 -- What each suite run set out to do, sent as it began (emulator_stats.py):
 -- how many scenarios its suite has for the device (`total`) and how many it
 -- runs (`planned`) - what the share of a device's scenarios passed on a
--- version is of. One a batch, device and suite, as one attended batch runs
--- each family's.
+-- version is of - and which list it ran (`tier`: full, quick or subset). One
+-- a batch, device and suite, as one attended batch runs each family's.
 CREATE TABLE IF NOT EXISTS emulator_batches (
   batch TEXT NOT NULL,
   family TEXT NOT NULL,
@@ -588,6 +588,7 @@ CREATE TABLE IF NOT EXISTS emulator_batches (
   revision TEXT,
   dirty INTEGER NOT NULL,
   workers INTEGER,
+  tier TEXT NOT NULL DEFAULT 'full',
   PRIMARY KEY (batch, family, device, suite)
 ) WITHOUT ROWID;
 
