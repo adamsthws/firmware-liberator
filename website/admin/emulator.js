@@ -43,6 +43,8 @@ const REPOSITORY = "https://github.com/adamsthws/firmware-liberator";
 const CAUSE_REF = /^(?:[0-9a-f]{7,40}|#\d{1,7}|https:\/\/github\.com\/adamsthws\/firmware-liberator\/(?:issues|pull)\/\d{1,7}|https:\/\/github\.com\/adamsthws\/firmware-liberator\/commit\/[0-9a-f]{7,40})$/;
 
 const SHORT = /^[\x20-\x7e]{1,64}$/;
+// At most this many of a run's runs say why they stopped (emulator_stats.py STOPPED_MOST).
+export const STOPPED_MOST = 16;
 const finishedAt = (v) => typeof v === "string" && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(v) && !Number.isNaN(Date.parse(v));
 const word = (v) => typeof v === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(v);
 // A chip family or device by key: any, so a new one needs no change here.
@@ -67,6 +69,8 @@ const RUN_FIELDS = {
   route: (v) => v === null || (typeof v === "string" && SHORT.test(v)),
   step: (v) => v === null || (typeof v === "string" && SHORT.test(v)),
   fault: (v) => v === null || (typeof v === "string" && SHORT.test(v)),
+  // The fault's argument: an outage's length in seconds, "once", ...
+  arg: (v) => v === null || (typeof v === "string" && SHORT.test(v)),
   at: (v) => v === null || (Number.isInteger(v) && v >= 0 && v <= 100),
   verdict: (v) => typeof v === "string" && /^[A-Z][A-Z0-9-]{0,39}$/.test(v),
   rerun: (v) => typeof v === "boolean",
@@ -75,6 +79,16 @@ const RUN_FIELDS = {
   firmware: (v) => v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length <= 16
     && Object.entries(v).every(([name, version]) => /^[a-z][a-z0-9-]{0,23}$/.test(name)
       && typeof version === "string" && /^[\x20-\x7e]{1,40}$/.test(version)),
+  // Why each of the scenario's runs that stopped did, in order, as the tool
+  // classes it (tools/autoflash/failures.py): a pass after a second run says
+  // why the first stopped.
+  stopped_by: (v) => Array.isArray(v) && v.length <= STOPPED_MOST && v.every(word),
+  // The suite's own error, by exception class alone, on a run it could not judge.
+  error: (v) => v === null || (typeof v === "string" && /^[A-Za-z_][A-Za-z0-9_.]{0,63}$/.test(v)),
+  // Whether the computer was short of memory: a failure then may be no fault of the tool's.
+  starved: (v) => typeof v === "boolean",
+  // The emulator image the run had, by its tag (image.sh tag).
+  image: (v) => v === null || (typeof v === "string" && /^[0-9a-f]{8,64}$/.test(v)),
 };
 // What a batch set out to do as it began: its suite's scenarios for the
 // device, and how many it runs.
@@ -112,7 +126,7 @@ export const refusedBatch = (batch, now) => refusedBy(BATCH_FIELDS, batch, "star
 // Each kind of thing the suites send: its path's body key, fields, the
 // column it is dated by, its daily bound, and its row as stored - a run with
 // its outcome, as INCONCLUSIVE has it.
-const STORED = { firmware: (value) => JSON.stringify(value) };
+const STORED = { firmware: (value) => JSON.stringify(value), stopped_by: (value) => JSON.stringify(value) };
 export const KINDS = {
   [RUNS_PATH]: { key: "runs", table: "emulator_runs", fields: RUN_FIELDS, when: "finished", daily: DAILY_RUNS,
     id: (run) => run.id, extra: (run) => ({ outcome: outcomeOf(run.verdict) }) },
@@ -263,8 +277,30 @@ export async function gatherEmulator(all, now) {
     verdicts: await all(`SELECT verdict, outcome, count(*) AS n FROM emulator_runs WHERE finished >= ?
       AND outcome != 'pass' GROUP BY verdict ORDER BY n DESC`, since),
     // The test rig's own trouble, by family and day: what the suites could not judge.
-    rig: await all(`SELECT family, verdict, count(*) AS n, max(finished) AS last FROM emulator_runs
-      WHERE finished >= ? AND outcome = 'inconclusive' GROUP BY family, verdict ORDER BY n DESC`, since),
+    rig: await all(`SELECT family, verdict, error, count(*) AS n, max(finished) AS last FROM emulator_runs
+      WHERE finished >= ? AND outcome = 'inconclusive' GROUP BY family, verdict, error ORDER BY n DESC`, since),
+    // Each fault at each length: what it has found - a failure, or a pass that
+    // took a run again after one stopped - so a length that finds nothing the
+    // others do not can go.
+    faultLengths: await all(`SELECT fault, arg, sum(outcome != 'inconclusive') AS runs, sum(outcome = 'fail') AS failed,
+        sum(outcome = 'pass' AND stopped_by != '[]') AS stopped_then_passed,
+        count(DISTINCT CASE WHEN outcome = 'fail' OR (outcome = 'pass' AND stopped_by != '[]') THEN scenario END)
+          AS scenarios
+      FROM emulator_runs WHERE suite = 'fault' AND fault IS NOT NULL AND finished >= ?
+      GROUP BY fault, arg HAVING runs > 0 ORDER BY fault, CAST(arg AS INTEGER), arg`, since),
+    // Why runs stopped, by step: of passes after a second run, the first's
+    // reason; of failures, every run's.
+    stopped: await all(`SELECT step, stop.value AS why, sum(outcome = 'pass') AS passed, sum(outcome = 'fail') AS failed,
+        count(DISTINCT scenario) AS scenarios
+      FROM emulator_runs, json_each(emulator_runs.stopped_by) AS stop
+      WHERE suite = 'fault' AND outcome != 'inconclusive' AND finished >= ?
+      GROUP BY step, why ORDER BY passed + failed DESC LIMIT 40`, since),
+    // First tries by emulator image: a change to the emulator moves these, not
+    // the tool.
+    images: await all(`SELECT family, image, count(*) AS runs, sum(rerun = 0 AND outcome != 'inconclusive') AS judged,
+        sum(rerun = 0 AND outcome = 'pass') AS passed, sum(outcome = 'inconclusive') AS inconclusive,
+        max(finished) AS last
+      FROM emulator_runs WHERE finished >= ? GROUP BY family, image ORDER BY last DESC LIMIT ${REVISIONS}`, since),
     stepFault: await all(`SELECT step, fault, sum(outcome != 'inconclusive') AS runs, sum(outcome = 'fail') AS failed
       FROM emulator_runs WHERE suite = 'fault' AND step IS NOT NULL AND fault IS NOT NULL AND finished >= ?
       GROUP BY step, fault HAVING runs > 0`, since),
@@ -287,6 +323,7 @@ export async function gatherEmulator(all, now) {
       WHERE outcome != 'pass' GROUP BY outcome, cause ORDER BY outcome DESC, n DESC`),
     failures: await all(`${withBefore(before)}
       SELECT id, finished, family, device, suite, scenario, verdict, outcome, tries, revision, tool, cause, cause_ref,
+        starved,
         ${NEW_FAILURE} AS new_failure
       FROM ordered WHERE outcome != 'pass' AND finished >= ? ORDER BY finished DESC LIMIT 60`, since),
   };
@@ -360,6 +397,29 @@ export function emulatorSections(data) {
         return row ? { share: row.failed / row.runs, text: `${row.failed}/${row.runs}` } : null;
       }, "Step", "None run yet.")
       + `</section>`,
+    `<section class="card" id="emulator-lengths"><h2>Fault by length</h2><p class="sub">The last ${EMULATOR_DAYS}
+      days' fault-suite runs judged, by fault and its length or argument: what each has found - a failure, or a pass
+      that needed a run again after one stopped. A length that finds nothing the others do not is a candidate to
+      drop; a routine run (fault_suite.py list quick) runs only the shortest and longest outage.</p>`
+      + table([["Fault", "fault"], ["Length", (row) => row.arg ?? ""], ["Judged", "runs", "number"],
+        ["Failed", "failed", "number"], ["Passed after a stop", "stopped_then_passed", "number"],
+        ["Scenarios", "scenarios", "number"]], data.faultLengths, "None run yet.")
+      + `</section>`,
+    `<div class="grid2"><section class="card" id="emulator-stopped"><h2>Why runs stopped</h2><p class="sub">The
+      last ${EMULATOR_DAYS} days' fault-suite runs, by step and the class of what a run stopped with
+      (tools/autoflash/failures.py): of a pass after more than one run, why the earlier ones stopped; of a failure,
+      every run's. Many at one step and class is a bug a pass hides.</p>`
+      + table([["Step", "step"], ["Stopped with", "why"], ["In passes", "passed", "number"],
+        ["In failures", "failed", "number"], ["Scenarios", "scenarios", "number"]], data.stopped, "None stopped.")
+      + `</section>`,
+    `<section class="card" id="emulator-images"><h2>By emulator image</h2><p class="sub">First tries by the
+      emulator image they ran on (image.sh tag), the newest ${REVISIONS} of the last ${EMULATOR_DAYS} days: a
+      change to an emulator moves these, the tool's code staying as it was.</p>`
+      + table([["Family", "family"], ["Image", (row) => row.image ?? "none"], ["Runs", "runs", "number"],
+        ["First tries passed", (row) => `${share(row.passed, row.judged)} of ${number(row.judged)}`],
+        ["Inconclusive", "inconclusive", "number"], ["Last", (row) => String(row.last).slice(0, 10)]],
+      data.images, "None yet.")
+      + `</section></div>`,
     `<div class="grid2"><section class="card" id="emulator-tries"><h2>Tries to convert</h2><p class="sub">Passing
       fault-suite runs by step: how many runs of the tool the device took to convert after its fault, and how long,
       the last ${EMULATOR_DAYS} days. More than one works, but is more for a person to sit through.</p>`
@@ -374,8 +434,9 @@ export function emulatorSections(data) {
     `<div class="grid2"><section class="card" id="emulator-rig"><h2>The test rig</h2><p class="sub">Runs the suites
       could not judge, the last ${EMULATOR_DAYS} days, by family: the emulators', the suites' and the network's
       trouble, kept apart from the tool's.</p>`
-      + table([["Family", "family"], ["Verdict", "verdict"], ["Runs", "n", "number"],
-        ["Last", (row) => String(row.last).slice(0, 10)]], data.rig, "None: every run was judged.")
+      + table([["Family", "family"], ["Verdict", "verdict"], ["Error", (row) => row.error ?? ""],
+        ["Runs", "n", "number"], ["Last", (row) => String(row.last).slice(0, 10)]], data.rig,
+      "None: every run was judged.")
       + `</section>`,
     `<section class="card" id="emulator-flaky"><h2>Flaky</h2><p class="sub">Scenarios that both passed and failed
       on one revision, the last ${EMULATOR_DAYS} days.</p>`
@@ -392,7 +453,8 @@ export function emulatorSections(data) {
       inconclusive runs of the last ${EMULATOR_DAYS} days. Mark what each came from, with the commit or issue
       that fixed it or follows it: "tool" counts as a bug found, once for each commit or issue.</p>`
       + table([["Finished", (row) => String(row.finished).slice(0, 16)], ["Device", "device"], ["Suite", "suite"],
-        ["Scenario", "scenario", "text"], ["Verdict", (row) => row.verdict + (row.new_failure ? " (new)" : "")],
+        ["Scenario", "scenario", "text"], ["Verdict", (row) => row.verdict + (row.new_failure ? " (new)" : "")
+          + (row.starved ? " (memory-starved)" : "")],
         ["Outcome", "outcome"], ["Tries", "tries", "number"], ["Revision", "revision"], ["Cause", causeForm, "html"]],
       data.failures, "None.")
       + `</section>`,

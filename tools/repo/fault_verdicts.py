@@ -14,7 +14,29 @@ import shutil
 import tarfile
 from pathlib import Path
 
+from tools.autoflash import report_upload
 from tools.repo import unattended_run
+
+
+def run_outcomes(captures: Path, since: float) -> list[dict]:
+    """How each run of the tool under `captures` (an emulator's captures/)
+    ended since `since` (seconds, the epoch's), oldest first: each run's line in
+    its folder's report_upload.OUTCOMES, which the run itself wrote as it
+    ended. A run killed outright wrote none."""
+    found = []
+    for path in Path(captures).glob(f"*/*/runs/*/{report_upload.OUTCOMES}"):
+        try:
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            try:
+                said = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(said, dict) and isinstance(said.get("at"), (int, float)) and said["at"] >= since:
+                found.append(said)
+    return sorted(found, key=lambda said: said["at"])
 
 # As the run's log has them: the report's answer (tools/autoflash/report.py,
 # checks_passed), up to the gap after it, in either column; and the line its

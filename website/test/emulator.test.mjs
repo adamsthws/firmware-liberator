@@ -40,7 +40,8 @@ export function run(more = {}) {
     suite: "fault", family: "espressif", device: "sonoff-s60", scenario: "sonoff>tasmota:D4:deviceoff-1",
     route: "sonoff>tasmota", step: "D4", fault: "deviceoff", at: 40, verdict: "PASS", rerun: false, tries: 2,
     seconds: 312, cloud: "stub", tool: "3.0.0", revision: "fd341cb23abc", dirty: false,
-    firmware: { tasmota: "16.0.0" }, workers: 6, ...more,
+    firmware: { tasmota: "16.0.0" }, workers: 6, arg: "1", stopped_by: [], error: null, starved: false,
+    image: "49b92eac78699485", ...more,
   };
 }
 
@@ -231,11 +232,54 @@ test("the view shows the runs: totals, by revision, by device with its coverage,
   assert.match(devices, /<td>beken<\/td><td>sonoff-s61<\/td><td>fault<\/td>[^]*openbeken 1\.18\.320-2/);
   assert.match(section(html, "emulator-faults"), /<th>D4<\/th><td class="number heat"[^>]*>1\/3<\/td>/,
     "the inconclusive run is not judged");
-  assert.match(section(html, "emulator-rig"), /<td>espressif<\/td><td>MISTIMED<\/td><td class="number">1<\/td>/);
+  assert.match(section(html, "emulator-rig"), /<td>espressif<\/td><td>MISTIMED<\/td><td><\/td><td class="number">1<\/td>/);
   assert.match(section(html, "emulator-flaky"), /sonoff&gt;tasmota:D4:deviceoff-1/);
   const failures = section(html, "emulator-failures");
   assert.match(failures, /FAIL \(new\)/);
   assert.equal((failures.match(/<select name="cause"/g) ?? []).length, 4);
+});
+
+test("the view shows what each fault and length found, why runs stopped, and runs by emulator image", async () => {
+  const bindings = env();
+  const outage = (arg, more) => run({ scenario: `sonoff>esphome:K2:outage-${arg}`, step: "K2", fault: "outage", arg,
+    ...more });
+  const runs = [
+    outage("5"),
+    outage("120", { tries: 2, stopped_by: ["network-join"] }),
+    outage("180", { tries: 2, stopped_by: ["network-join"], image: "2a93935ce9c93ff6" }),
+    outage("180", { verdict: "FAIL", tries: 4, stopped_by: ["network-join", "device-lost"], starved: true }),
+    run({ scenario: "outdated>esphome:U1:crash-1", step: "U1", fault: "crash", verdict: "ERROR",
+      error: "FileNotFoundError" }),
+  ];
+  const answer = await send(await service(), { runs }, { bindings });
+  assert.equal((await answer.json()).taken.length, runs.length);
+  assert.deepEqual(JSON.parse(rows(bindings).find((row) => row.verdict === "FAIL").stopped_by),
+    ["network-join", "device-lost"]);
+  const html = await view(bindings);
+  const lengths = section(html, "emulator-lengths");
+  assert.match(lengths, /<td>outage<\/td><td>5<\/td><td class="number">1<\/td><td class="number">0<\/td><td class="number">0<\/td>/);
+  assert.match(lengths, /<td>outage<\/td><td>120<\/td><td class="number">1<\/td><td class="number">0<\/td><td class="number">1<\/td>/,
+    "a pass that needed a run again counts as found");
+  assert.match(lengths, /<td>outage<\/td><td>180<\/td><td class="number">2<\/td><td class="number">1<\/td><td class="number">1<\/td>/);
+  assert.ok(lengths.indexOf("<td>120</td>") < lengths.indexOf("<td>180</td>"), "by length as numbers");
+  const stopped = section(html, "emulator-stopped");
+  assert.match(stopped, /<td>K2<\/td><td>network-join<\/td><td class="number">2<\/td><td class="number">1<\/td>/);
+  assert.match(stopped, /<td>K2<\/td><td>device-lost<\/td><td class="number">0<\/td><td class="number">1<\/td>/);
+  const images = section(html, "emulator-images");
+  assert.match(images, /<td>espressif<\/td><td>49b92eac78699485<\/td><td class="number">4<\/td>/);
+  assert.match(images, /<td>espressif<\/td><td>2a93935ce9c93ff6<\/td><td class="number">1<\/td>/);
+  assert.match(section(html, "emulator-rig"), /<td>ERROR<\/td><td>FileNotFoundError<\/td>/);
+  assert.match(section(html, "emulator-failures"), /FAIL \(memory-starved\)/);
+});
+
+test("a run's new fields are held to what they may be", () => {
+  const now = NOW;
+  for (const [field, value] of [["stopped_by", ["Network Join"]], ["stopped_by", Array(17).fill("other")],
+    ["stopped_by", null], ["error", "Not an error: it has spaces"], ["starved", 1], ["image", "XYZ"],
+    ["arg", "x".repeat(65)]]) {
+    assert.match(refused(run({ [field]: value }), now), new RegExp(field), `${field}: ${JSON.stringify(value)}`);
+  }
+  assert.equal(refused(run(), now), null);
 });
 
 test("the nightly fold counts each day once, again when a run of it comes late, and the view reads it", async () => {

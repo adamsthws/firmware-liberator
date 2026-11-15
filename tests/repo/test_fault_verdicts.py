@@ -3,9 +3,11 @@ end-of-run checks, and the readout a readout keeps."""
 
 import io
 import tarfile
+import tempfile
 import unittest
+from pathlib import Path
 
-from tools.autoflash import readout, report
+from tools.autoflash import readout, report, report_upload
 from tools.ewelink.offered_firmware import Offered
 from tools.repo import fault_verdicts
 
@@ -79,6 +81,23 @@ def kept(family, flash=FLASH, files=None, updates=OFFERED, matches=True, **manif
     flash_entry = {"size": len(flash), "sha256": "ab"} | ({"matches_device": matches} if family == "espressif" else {})
     return readout.package({"format": 1, "read": True, "flash": flash_entry, **manifest},
                            whole if files is None else files, updates)
+
+
+class RunOutcomesTests(unittest.TestCase):
+    def test_each_runs_outcome_since_the_scenario_began_oldest_first(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            captures = Path(tmp)
+            for folder, lines in (("devices/12-34-56-ab-cd-ef/runs/20261114-180016",
+                                   ['{"at": 50.0, "result": "converted", "stopped": null}',
+                                    '{"at": 100.0, "result": "failed", "stopped": {"step": "K2", "error": "network-join"}}',
+                                    "not json", '{"at": 300.0, "result": "converted", "stopped": null}']),
+                                  ("devices/unidentified/runs/20261114-181000",
+                                   ['{"at": 200.0, "result": "crashed", "stopped": {"step": "K2", "error": "crash"}}'])):
+                (captures / folder).mkdir(parents=True)
+                (captures / folder / report_upload.OUTCOMES).write_text("\n".join(lines) + "\n", encoding="utf-8")
+            self.assertEqual([said["result"] for said in fault_verdicts.run_outcomes(captures, since=60.0)],
+                             ["failed", "crashed", "converted"], "the saved device's own run, before it, left out")
+            self.assertEqual(fault_verdicts.run_outcomes(captures / "none", since=0), [])
 
 
 class ReadoutTests(unittest.TestCase):

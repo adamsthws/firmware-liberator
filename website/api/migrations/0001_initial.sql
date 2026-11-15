@@ -524,7 +524,11 @@ CREATE TABLE IF NOT EXISTS network_lists (
 -- inconclusive, the last a run the suite could not judge (../api/emulator.js
 -- INCONCLUSIVE); `revision`, the checkout's commit, `dirty` 1 where it had
 -- changes; `firmware`, a JSON object of the firmware the checkout installs on
--- the device, by name; `cause` and `cause_ref`, set on a failure from the
+-- the device, by name; `arg`, the fault's argument (an outage's length);
+-- `stopped_by`, a JSON array of why each of its runs that stopped did, as
+-- the tool classes it (tools/autoflash/failures.py); `error`, the suite's own
+-- error by exception class; `starved` 1 where the computer was short of
+-- memory; `image`, the emulator image's tag; `cause` and `cause_ref`, set on a failure from the
 -- admin view (EMULATOR_CAUSES), the latter a commit or issue. Kept for good: a
 -- row is well under a kilobyte.
 CREATE TABLE IF NOT EXISTS emulator_runs (
@@ -539,6 +543,7 @@ CREATE TABLE IF NOT EXISTS emulator_runs (
   route TEXT,
   step TEXT,
   fault TEXT,
+  arg TEXT,
   at INTEGER,
   verdict TEXT NOT NULL,
   outcome TEXT NOT NULL,
@@ -551,6 +556,10 @@ CREATE TABLE IF NOT EXISTS emulator_runs (
   dirty INTEGER NOT NULL,
   firmware TEXT NOT NULL,
   workers INTEGER,
+  stopped_by TEXT NOT NULL DEFAULT '[]',
+  error TEXT,
+  starved INTEGER NOT NULL DEFAULT 0,
+  image TEXT,
   cause TEXT,
   cause_ref TEXT
 ) WITHOUT ROWID;

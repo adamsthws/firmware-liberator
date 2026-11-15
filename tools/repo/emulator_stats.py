@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Each emulator run's outcome, for the admin view's emulator figures
 (website/admin/emulator.js): how many runs, of which device and firmware, how
-many passed, and what failed - never a run's report or log, which stay on the
-machine that ran it.
+many passed, and what failed - each fault with its length, why each run that
+stopped did by the tool's own classes, the emulator image's tag - never a
+run's report or log, which stay on the machine that ran it.
 
     emulator_stats.py send DIR...    send what the suites in DIR kept unsent
     emulator_stats.py check          whether this computer can send: its
@@ -197,6 +198,45 @@ def firmware(device: str) -> dict[str, str]:
     return found
 
 
+@functools.cache
+def image(family: str) -> str | None:
+    """The tag of `family`'s emulator image as this checkout builds it
+    (tools/<family>/emulator/image.sh tag, a hash of what it is built from):
+    so runs before and after a change to the emulator can be told apart."""
+    try:
+        tag = subprocess.run([str(ROOT / "tools" / family / "emulator" / "image.sh"), "tag"], capture_output=True,
+                             text=True, timeout=30, check=True).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return tag if re.fullmatch(r"[0-9a-f]{8,64}", tag) else None
+
+
+# At most this many stopped runs a scenario's run says why of (the admin view's
+# STOPPED_MOST): a fault suite's scenario gives up after a few.
+STOPPED_MOST = 16
+
+
+def stopped_by(outcomes: Any) -> list[str]:
+    """Why each of a scenario's runs that stopped did, in order, as the run
+    itself classed it (its report's stopped error, failures.classify): from
+    the outcomes each run kept (fault_verdicts.run_outcomes). A scenario that
+    passed on its second run says why the first stopped; a run the person
+    stopped (a scenario's Ctrl-C) did not stop of itself, and is left out."""
+    said = [outcome["stopped"]["error"] for outcome in outcomes or ()
+            if isinstance(outcome, dict) and outcome.get("result") != "cancelled"
+            and isinstance(outcome.get("stopped"), dict)
+            and re.fullmatch(r"[a-z][a-z0-9-]{0,31}", str(outcome["stopped"].get("error")))]
+    return said[:STOPPED_MOST]
+
+
+def error_of(said: Any) -> str | None:
+    """The exception a suite's own error was, by class alone - never its
+    message, which can name the machine's paths: "FileNotFoundError(2, ...)"
+    is FileNotFoundError."""
+    found = re.match(r"([A-Za-z_][A-Za-z0-9_.]{0,63})\(", str(said or ""))
+    return found.group(1) if found else None
+
+
 def _short(text: Any, most: int = 64) -> str | None:
     """`text` as the admin view takes it: printable ASCII, at most `most`."""
     if text is None or text == "":
@@ -220,19 +260,26 @@ def _whole(value: Any, low: int, high: int) -> int | None:
 
 
 def run_row(*, family: str, suite: str, device: str, scenario: str, verdict: str, cloud: str,
-            route: str | None = None, step: str | None = None, fault: Any = None, at: Any = None,
-            tries: Any = None, seconds: Any = None, workers: Any = None, rerun: bool = False,
+            route: str | None = None, step: str | None = None, fault: Any = None, arg: Any = None,
+            at: Any = None, tries: Any = None, seconds: Any = None, workers: Any = None, rerun: bool = False,
+            outcomes: Any = None, error: Any = None, starved: Any = False,
             finished: dt.datetime | None = None) -> dict[str, Any]:
-    """One run, as the admin view takes it (emulator.js FIELDS)."""
+    """One run, as the admin view takes it (emulator.js RUN_FIELDS): with the
+    fault's argument (`arg`, an outage's length), why each of its runs that
+    stopped did (stopped_by, from `outcomes`), the suite's own error by class
+    (error_of), whether the computer was starved of memory, and the
+    emulator image's tag."""
     head, dirty = revision()
     when = (finished or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc)
     return {
         "id": secrets.token_hex(16), "finished": when.strftime("%Y-%m-%dT%H:%M:%SZ"), "batch": BATCH,
         "suite": suite, "family": family, "device": device, "scenario": _short(scenario, 200) or "?",
-        "route": _short(route), "step": _short(step), "fault": _short(fault), "at": _whole(at, 0, 100),
+        "route": _short(route), "step": _short(step), "fault": _short(fault), "arg": _short(arg),
+        "at": _whole(at, 0, 100),
         "verdict": verdict_of(verdict), "rerun": bool(rerun), "tries": _whole(tries, 0, 99), "seconds": _whole(seconds, 0, 172_800),
         "cloud": cloud, "tool": __version__, "revision": head, "dirty": dirty, "firmware": firmware(device),
-        "workers": _whole(workers, 1, 256),
+        "workers": _whole(workers, 1, 256), "stopped_by": stopped_by(outcomes), "error": error_of(error),
+        "starved": bool(starved), "image": image(family),
     }
 
 
@@ -279,13 +326,16 @@ def _in_background(folder: Path) -> None:
 
 
 def fault_run(folder: Path, *, family: str, device: str, scenario: dict[str, Any], verdict: str, tries: Any,
-              seconds: Any, cloud: str, workers: Any, rerun: bool) -> None:
+              seconds: Any, cloud: str, workers: Any, rerun: bool, outcomes: Any = None, error: Any = None,
+              starved: Any = False) -> None:
     """A fault suite's scenario run, kept: `scenario` as its suite's scenarios()
-    yields it (id, route, step, fault, at), as every family's does."""
+    yields it (id, route, step, fault, arg, at), as every family's does; how
+    each of its runs ended (fault_verdicts.run_outcomes), the suite's own error
+    and whether it was starved of memory, as its result row has them."""
     record(folder, family=family, suite="fault", device=device, scenario=scenario["id"],
            route=scenario.get("route"), step=scenario.get("step"), fault=scenario.get("fault"),
-           at=scenario.get("at"), verdict=verdict, tries=tries, seconds=seconds, cloud=cloud, workers=workers,
-           rerun=rerun)
+           arg=scenario.get("arg"), at=scenario.get("at"), verdict=verdict, tries=tries, seconds=seconds,
+           cloud=cloud, workers=workers, rerun=rerun, outcomes=outcomes, error=error, starved=starved)
 
 
 def attended_run(folder: Path, *, family: str, device: str, name: str, verdict: str, seconds: Any,

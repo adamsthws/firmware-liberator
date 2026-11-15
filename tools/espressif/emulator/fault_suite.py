@@ -2881,7 +2881,11 @@ def worker(n, todo, lock, cloud=False, room=None):
             print(f"{time.strftime('%T')} [{n}] {row['verdict']:16} {sc['id']}{starved_label(row)}", flush=True)
         emulator_stats.fault_run(OUT, family=DEVICE.family, device=DEVICE.key, scenario=sc, verdict=row["verdict"],
                                  tries=row.get("runs"), seconds=round(time.time() - started),
-                                 cloud=cloud_of(sc), workers=WORKERS, rerun=sc["id"] in EARLIER)
+                                 cloud=cloud_of(sc), workers=WORKERS, rerun=sc["id"] in EARLIER,
+                                 outcomes=fault_verdicts.run_outcomes(EMU / f"state-{n}" / "work/captures",
+                                                                      started),
+                                 error=row.get("error"),
+                                 starved=row.get("notes", {}).get("memory", {}).get("starved"))
         TUNER.finished(row, log, started)
 
 

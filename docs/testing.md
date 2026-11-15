@@ -1012,10 +1012,16 @@ tests first.
 
 Every suite - fault, attended and the final-firmware check, of every chip
 family - sends what each scenario's run came to to the admin view
-(`website/admin/emulator.js`): the device, the scenario, its verdict, whether
-it is a first try or a re-run, how many runs of the tool it took and how long,
-the version of the tool and the commit it ran from, and the firmware the
-checkout installs on the device. As a batch begins it sends how many
+(`website/admin/emulator.js`): the device, the scenario, its fault and the
+fault's length or argument, its verdict, whether it is a first try or a
+re-run, how many runs of the tool it took and how long, why each run that
+stopped did, as the run itself classed it in its report (the
+`outcomes.jsonl` each run adds a line to in its folder,
+`tools/repo/fault_verdicts.py` `run_outcomes`), the
+version of the tool, the commit it ran from and the emulator image's tag, the
+firmware the checkout installs on the device, whether the computer was short
+of memory, and, on a run the suite could not judge, its own error by
+exception class alone. As a batch begins it sends how many
 scenarios its suite has for the device and how many it runs. No log, report or
 recording leaves the machine.
 
@@ -1028,8 +1034,12 @@ read as a worse rate. The view shows runs a day; pass rates and new failures
 (a scenario that passed on the commit before) by commit; each device, version by
 version of the tool, with the share of its suite's scenarios passed on that
 version - each version on its own, as a change may break what passed on the
-one before - and the firmware it ran; failures by step and fault; how many tries a conversion
-took; the test rig's own trouble (the inconclusive runs) apart from the
+one before - and the firmware it ran; failures by step and fault; what each
+fault found at each length (a failure, or a pass that needed a run again after
+one stopped: what `fault_suite.py found` says of one machine's results, for
+every machine's); why runs stopped, by step - a bug a pass hides shows there;
+first tries by emulator image; how many tries a conversion took; the test
+rig's own trouble (the inconclusive runs) apart from the
 tool's; flaky scenarios; real-cloud failures by the hour into a batch; and the
 latest runs that did not pass, each of which you mark with what it came from
 and the commit or issue that fixed it or follows it - "tool" counts as a bug
