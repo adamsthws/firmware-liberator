@@ -218,6 +218,7 @@ def sonoff_layout_back(ctx: Context) -> None:
     kind = kinds.of_run(ctx.state)
     layout = images.layout_of(kind)
     if table == layout.temporary_sha256:
+        output.event("phase", phase="own-layout")
         output.say("    The device is on the temporary layout it left Tasmota through; writing its own.")
         plan = plans.own_table_from_temporary(images.sonoff_table(kind), layout)
     elif table == layout.interim_sha256:

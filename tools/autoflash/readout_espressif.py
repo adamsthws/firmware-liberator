@@ -147,8 +147,9 @@ def read_through(ctx: Context, host: str) -> tuple[bytes, bytes, bytes | None, d
     """The whole flash, efuses and what the bridge at `host` says of the chip."""
     ctx.state.set_input(BRIDGE_HOST, host)   # where it is restarted from, once read
     problem = ""
-    # In the run's log too, which a wait on screen is not: the fault suite
-    # times a fault in the read from it.
+    # Its start an event, which the fault suites time a fault in the read
+    # from, and in the run's log, which a wait on screen is not.
+    output.event("phase", phase="read")
     output.log_only("Reading the device's memory...")
     with output.working("Reading the device's memory - about a minute..."):
         for _ in range(READ_TRIES):
@@ -198,13 +199,16 @@ def back_on_sonoff(ctx: Context) -> bool:
     # On its own network, the person has their usual Wi-Fi to join again anyway.
     if host and host != setup_network.SETUP_HOST and installer.restart_into_sonoff(ctx, host):
         ctx.state.set_input(readout.STATE_KEY, "read")
+        output.event("phase", phase="back-done")
         output.say("    It is back on its Sonoff firmware.")
         return True
     output.transient_begin()
-    prompts.section("Read. Now put it back on its Sonoff firmware", [
-        "Switch it off for five seconds, then on (a wall switch at its breaker).",
-        "If this computer joined the device's network, rejoin your usual Wi-Fi.",
-    ])
+    output.event("phase", phase="back")
+    with output.asking_to_switch_now(key=True):
+        prompts.section("Read. Now put it back on its Sonoff firmware", [
+            "Switch it off for five seconds, then on (a wall switch at its breaker).",
+            "If this computer joined the device's network, rejoin your usual Wi-Fi.",
+        ])
     prompts.wait_for_key("Press any key once it is switched back on")
     output.transient_end()
     started = time.monotonic()
@@ -222,5 +226,6 @@ def back_on_sonoff(ctx: Context) -> bool:
         return False
     output.progress_clear()
     ctx.state.set_input(readout.STATE_KEY, "read")
+    output.event("phase", phase="back-done")
     output.say("    It is back on its Sonoff firmware.")
     return True

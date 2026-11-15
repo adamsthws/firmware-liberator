@@ -103,7 +103,8 @@ def deliver_readout(ctx: Context, name: str, version: str, device: dict[str, Any
             delivered = ota_push.deliver(
                 account=ctx.ewelink, device_id=device["deviceid"], firmware=container,
                 version=fota_wrap.ANNOUNCED_VERSION, listen_ip=ctx.listen_ip(), listen_port=port, device_ip=device_ip,
-                names=("user1.bin",), wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False)
+                names=("user1.bin",), wait=DELIVERY_WAIT, check_device=check, say=output.say, live=False,
+                event=output.event)
         safety_locks.say_lock_back(ROOT, "RECOVERY_LOCK")
         if not delivered.sent:
             raise NothingWritten(f"the readout firmware was not sent: {delivered.error or 'eWeLink did not take it'}. "
@@ -165,8 +166,9 @@ def read_whole_flash(ctx: Context, host: str) -> bytes:
     again = ("It is still on the readout firmware: switch it off and on, then run the readout again to read it "
              "and put Sonoff's firmware back")
     try:
-        # In the run's log too, which a wait on screen is not: the fault
-        # suite times a fault in the read from it.
+        # Its start an event, which the fault suites time a fault in the read
+        # from, and in the run's log, which a wait on screen is not.
+        output.event("phase", phase="read")
         output.log_only("Reading the device's memory...")
         with output.working("Reading the device's memory - a few minutes..."):
             flash = openbeken.read_flash(host, 0, WHOLE_FLASH, progress=progress)
@@ -178,6 +180,7 @@ def read_whole_flash(ctx: Context, host: str) -> bytes:
     if len(flash) != WHOLE_FLASH:
         raise Abort(f"the connection to the device was lost as its memory was read: only {len(flash):,} of "
                     f"{WHOLE_FLASH:,} bytes were read. {again}", failure="device-lost")
+    output.event("phase", phase="read-done")
     output.say(f"    Read {len(flash):,} bytes.")
     return flash
 
@@ -186,6 +189,7 @@ def revert_to_sonoff(ctx: Context, host: str, found: Stock) -> None:
     """Have OpenBeken fetch the device's own Sonoff firmware back into the
     stock download slot - its AutoflashRevertToStock checks the slot first -
     and the bootloader applies it on the restart that follows."""
+    output.event("phase", phase="back")
     output.say("Putting the device's Sonoff firmware back...")
 
     def fetch(url: str) -> None:
@@ -216,6 +220,7 @@ def wait_for_sonoff(ctx: Context, device_id: str, wait: float = SONOFF_WAIT) -> 
             online = False
     if online:
         output.progress_clear()
+        output.event("phase", phase="back-done")
         output.say(f"    eWeLink shows the device online again after {round(time.monotonic() - started)}s.")
         return True
     output.progress_clear()

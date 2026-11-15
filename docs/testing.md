@@ -235,10 +235,18 @@ Each emulator has a fault suite, which puts every fault in the way of every
 step, in every direction. The two work alike, and are laid out alike.
 
 A scenario converts a saved device and brings its fault while the step under
-test is under way, as the run's own log shows (MISTIMED if not). The tool is
+test is under way, as the run's own events show (MISTIMED if not). The tool is
 then run again as a person would, switching the device off and on or joining
 its own network where the run says to, until the device is converted or four
 runs have failed. A fault that never happened is NOT-FIRED, never a pass.
+
+A run is followed by its events, not its words: `events.jsonl` beside its
+`run.log`, a line as each step begins and ends, at points inside a step a
+fault is timed from, and as the person is asked to join a network, go back to
+their own Wi-Fi, or switch the device off and on (`EVENTS` in
+`tools/autoflash/output.py` lists them). Rewording a message cannot move a
+fault or leave the stand-in person waiting. A run of an earlier release,
+which writes none, is followed by its words.
 
 Both suites run a batch the same way:
 
@@ -439,8 +447,8 @@ the suite reads either.
 - `legacy-v1.2.0+U5off`, `legacy-v2.0.2+U5off`: each release killed at F4,
   then the device switched off part way through the update's upload.
 
-**Readouts** (`sonoff>readout`, `tasmota>readout`), timed from what `readout`
-says, as it takes no step of the tool's:
+**Readouts** (`sonoff>readout`, `tasmota>readout`), timed from the points in
+`readout`'s events, as it takes no step of the tool's:
 
 - A device fresh from Sonoff's firmware read out unattended, found as for a
   person who does not know its address; also with the device switched off for

@@ -195,7 +195,7 @@ class SendThroughOwnNetworkTests(unittest.TestCase):
     def send(self, failures):
         with mock.patch.object(prompts, "section"), mock.patch.object(hostsys, "wifi_menu_hint", return_value="x"), \
                 mock.patch.object(join, "wait_until_joined"), mock.patch.object(time, "sleep"), \
-                mock.patch.object(output, "tell"), \
+                mock.patch.object(output, "tell"), mock.patch.object(output, "event") as self.event, \
                 mock.patch.object(setup_network, "send_esphome_wifi", side_effect=[
                     *(setup_network.SetupError("no answer") for _ in range(failures)), None]) as sent:
             try:
@@ -206,6 +206,14 @@ class SendThroughOwnNetworkTests(unittest.TestCase):
     def test_a_third_try_that_works_is_enough(self):
         self.send(2)
         self.assertEqual(self.sent, 3)
+        # Asked once, as the fault suites' stand-in person sees it (output.EVENTS).
+        self.assertEqual(self.event.call_args_list, [mock.call("join", network="ESP_ABCDF0")])
+
+    def test_a_join_made_is_an_event(self):
+        with mock.patch.object(setup_network, "wait_for_port", return_value=True), \
+                mock.patch.object(output, "event") as event, mock.patch.object(output, "say"):
+            join.wait_until_joined("ESP_ABCDF0")
+        event.assert_called_once_with("joined", network="ESP_ABCDF0")
 
     def test_three_tries_that_fail_stop_the_run(self):
         with self.assertRaisesRegex(errors.Abort, "could not be sent"):
@@ -222,10 +230,12 @@ class OwnNetworkRecordedTests(SetupNetworkTestCase):
         ctx.wifi = lambda why=(): ("Home", "pw")
         with mock.patch.object(prompts, "find_ssid", return_value="esphome-abcdef"), \
                 mock.patch.object(prompts, "section"), mock.patch.object(output, "tell"), \
-                mock.patch.object(join, "send_through_own_network"), mock.patch.object(join, "wait_for"):
+                mock.patch.object(join, "send_through_own_network"), mock.patch.object(join, "wait_for"), \
+                mock.patch.object(output, "event") as event:
             self.assertEqual(join.set_up_through_own_network(ctx, "ESPHome", bool, ("esphome-abcdef",)),
                              ("Home", "pw"))
         self.assertEqual(ctx.state.input(join.OWN_NETWORK), [join.NOT_JOINED])
+        event.assert_called_once_with("home")   # told to go back (output.EVENTS)
 
     def test_its_network_not_seen_is_not_recorded(self):
         ctx = self.ctx()

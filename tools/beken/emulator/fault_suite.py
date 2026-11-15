@@ -105,6 +105,7 @@ from typing import Callable
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
+from tools.autoflash import output  # noqa: E402
 from tools.autoflash.output import CTRL_C_LOGGED  # noqa: E402
 from tools.autoflash import esphome, kinds, openbeken  # noqa: E402
 from tools.autoflash.routes import beken  # noqa: E402
@@ -172,8 +173,6 @@ FALLBACK_STEPS = {"K2"}
 TIMING = [("deviceoff", 1), ("crash", 1)]
 RUN_LIMIT = 1500       # seconds one run of the tool may take
 RECOVERY_RUNS = 4      # runs after the fault before a scenario fails
-# "Switch it off and on", or "Switch it off for a few seconds at the socket, then on".
-POWER_CYCLE = re.compile(r"switch (the (plug|device)|it) off( and| for [^.]*?then) on", re.IGNORECASE)
 # The steps whose image the stock bootloader installs, and the tool can send
 # spoilt (--simulate-bad-image STEP): Sonoff's firmware's, and OpenBeken's
 # fetch of ESPHome.
@@ -184,8 +183,6 @@ BAD_IMAGE_STEPS = {"B2", "J2", "O1"}
 # switching it off and on would - and sends it afresh (badimage-restart).
 RESTART_IMAGE_STEPS = {"J2", "O1"}
 SPOILT_PAST_LIMIT = 3
-# What a run says as it restarts a device that would not take an image.
-RESTARTED = re.compile(r"restarted the device; doing stage \d+ again")
 # The interim firmware's settings, which it erases before the firmware it
 # fetched starts (tools/beken/openbeken/README.md#the-interim-firmware): its
 # own sector, and the flash variables its Wi-Fi keeps.
@@ -204,20 +201,18 @@ OPENBEKEN_CHECK = ["sonoff>openbeken:B4:crash-1", "sonoff>esphome:J2:badimage-on
                    "interim>sonoff:J4:crash-1", "openbeken>sonoff:O2:crash-1", "esphome>openbeken:K1:crash-1"]
 
 # Readouts (cli.py readout, unattended, docs/readouts.md) of a device fresh from
-# Sonoff's firmware: each phase where the fault matters most, where it starts
-# and ends in the run's log, and how long it lasts in the emulator (seconds).
+# Sonoff's firmware: each phase where the fault matters most, the run's events
+# (output.PHASES) as it starts and ends, and how long it lasts in the emulator
+# (seconds).
 # The read is 256 paced chunks of 16 KB - B4 reads 8 of them in 12 s. Putting
 # Sonoff's firmware back is the readout OpenBeken fetching it (O2's 24 s), then
 # the bootloader writing it in and Sonoff's firmware starting (K3's 75 s): its
 # faults land at 10%, in the fetch, the part only the readout has - the
 # bootloader's write is the conversions' own, cut in their apply scenarios.
-READOUT_PHASES = {"read": (r"Reading the device's memory", r"\] +Read [\d,]+ bytes\.", 400),
-                  "back": (r"Putting the device's Sonoff firmware back", r"eWeLink shows the device online again", 100)}
+READOUT_PHASES = {"read": ("read", "read-done", 400), "back": ("back", "back-done", 100)}
 READOUT_FAULTS = [("read", "deviceoff", 1, 40), ("read", "outage", 30, 40), ("read", "crash", 1, 40),
                   ("back", "deviceoff", 1, 10), ("back", "outage", 30, 10)]
 READOUT = "readout.tar"
-# Something served to the device: the readout firmware, or Sonoff's (ota_push, onward).
-SERVED = re.compile(r"\] +Serving ")
 
 
 def sid(route: str, step: str, fault: str, arg, at: int = 40) -> str:
@@ -499,6 +494,15 @@ class Instance:
         except (IndexError, OSError, ValueError):
             return {}
 
+    def last_events(self) -> list[dict]:
+        """What the newest run did (output.EVENTS), from its start."""
+        logs = self.runs()
+        return fault_verdicts.last_run_events(output.events(logs[-1].parent) if logs else [])
+
+    def all_events(self) -> list[dict]:
+        """What each of this scenario's runs did, oldest first."""
+        return [item for path in self.runs() for item in output.events(path.parent)]
+
     def last_log(self) -> str:
         logs = self.runs()
         try:
@@ -512,15 +516,26 @@ class Instance:
 STEP_POLL = 0.1
 
 
+def happened(instance: Instance, event: str, **fields) -> bool:
+    """Whether the newest run has had `event`, with `fields` (output.EVENTS)."""
+    return any(item["event"] == event and all(item.get(k) == v for k, v in fields.items())
+               for item in instance.last_events())
+
+
 def wait_for_step(instance: Instance, step: str, run: subprocess.Popen, limit: float = RUN_LIMIT) -> bool:
     """Until the run starts `step`; False if it ends, or takes too long, first."""
     deadline = time.monotonic() + limit
-    begun = re.compile(rf"\] {re.escape(step)}  ")
     while time.monotonic() < deadline and run.poll() is None:
-        if begun.search(instance.last_log()):
+        if happened(instance, "began", step=step):
             return True
         time.sleep(STEP_POLL)
     return False
+
+
+def asked_to_switch(instance: Instance) -> bool:
+    """Whether the newest run's last words told the person to switch the device
+    off and on (fault_verdicts.advised_to_switch)."""
+    return fault_verdicts.advised_to_switch(instance.last_events())
 
 
 def not_applied(notes: dict, what: str) -> None:
@@ -614,7 +629,7 @@ def inject(instance: Instance, fault: str, arg, notes: dict) -> None:
 def recover(instance: Instance, target: str, notes: dict) -> None:
     """What a person does before running the tool again: switch the device off
     and on, where the last run said to."""
-    if POWER_CYCLE.search(instance.last_log()[-3000:]):
+    if asked_to_switch(instance):
         instance.power("cycle")
         instance.ready(target, wait=300)
         notes["power_cycles"] = notes.get("power_cycles", 0) + 1
@@ -706,11 +721,6 @@ def start_of(route: str) -> str:
     return f"outdated-{target}" if source == "outdated" else source
 
 
-# What a run says when the person is to join the device's own network, and to
-# go back to the home one (join.send_through_own_network).
-JOIN_ASKED = "Join the device's setup network"
-CONNECTED = "Connected to "
-BACK_HOME = "Back to your usual Wi-Fi"
 JOIN_AGAIN_EVERY = 15.0   # seconds between tries of a join that has not taken, while the run asks
 
 
@@ -718,7 +728,8 @@ class Person(threading.Thread):
     """As a person at the computer: joins the device's own network when a run
     says to - again while the run still waits, should a try not take - and goes
     back to the home network when it says that, from the computer's Wi-Fi
-    menu (computer/bin/wifi). What it did goes in `notes`."""
+    menu (computer/bin/wifi). What it did goes in `notes`. What the run asks it
+    reads from the run's events (output.EVENTS: join, joined, home)."""
 
     def __init__(self, instance: Instance, notes: dict):
         super().__init__(daemon=True)
@@ -744,21 +755,18 @@ class Person(threading.Thread):
             self.look()
 
     def look(self) -> None:
-        """One look at the screen - the run's log - and what it asks, done."""
+        """One look at what the newest run asks, done."""
         logs = self.instance.runs()
         if not logs:
             return
-        try:
-            text = logs[-1].read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return
-        asked, told = text.count(JOIN_ASKED), text.count(BACK_HOME)
+        found = [item["event"] for item in output.events(logs[-1].parent)]
+        asked, told = found.count("join"), found.count("home")
         joined, homed = self.acted.get(logs[-1], (0, 0))
         if told > homed:
             self.wifi("home")
             self.acted[logs[-1]] = (asked, told)
         elif asked > joined:
-            if CONNECTED in text[text.rfind(JOIN_ASKED):]:
+            if "joined" in found[len(found) - found[::-1].index("join"):]:
                 self.acted[logs[-1]] = (asked, homed)
             elif time.monotonic() - self.tried >= JOIN_AGAIN_EVERY:
                 self.tried = time.monotonic()
@@ -827,6 +835,10 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
             notes["screen"] = screen
     for index, path in enumerate(instance.runs()):
         shutil.copy(path, folder / f"run-{index + 1}.log")
+        if (path.parent / output.EVENTS).exists():
+            shutil.copy(path.parent / output.EVENTS, folder / f"run-{index + 1}.{output.EVENTS}")
+    # Every address the router gave the device, and any it gave back (lease).
+    (folder / "dhcp.log").write_text(instance.dhcp_log(), encoding="utf-8")
     if log.exists():   # every run's recording: what each stage showed on the way
         fault_verdicts.keep_recordings(log.read_text(encoding="utf-8", errors="replace"),
                                        instance.state / "work", folder)
@@ -878,10 +890,6 @@ def apply_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: 
     return dict(result="PASS" if converted(instance.last_state(), sc["route"]) else "FAIL", runs=runs)
 
 
-# What a run says as it goes back to send an image again (errors.GoBack).
-SENT_AGAIN = re.compile(r"was not installed: the device restarted on the firmware it had")
-
-
 def bad_image_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: dict) -> dict:
     """The step's image sent spoilt, once - each run is asked, as a route may
     reach the step only after a restart, and the tool spoils it once a run's
@@ -896,26 +904,24 @@ def bad_image_scenario(instance: Instance, sc: dict, target: str, log: Path, not
         recover(instance, target, notes)
         finish(instance.tool(target, log, more=spoil), instance)
         runs += 1
-    notes["sent_again"] = any(SENT_AGAIN.search(path.read_text(encoding="utf-8", errors="replace"))
-                              for path in instance.runs())
+    # The image found not installed, and sent again (errors.GoBack, output.EVENTS).
+    again = [item for item in instance.all_events() if item["event"] == "again" and item.get("step") == sc["step"]]
+    notes["sent_again"] = bool(again)
     ok = converted(instance.last_state(), sc["route"]) and notes["sent_again"]
     if sc["arg"] == "restart":
         # Converted by the run that restarted the device, not by a person's run after.
-        notes["restarted"] = any(RESTARTED.search(path.read_text(encoding="utf-8", errors="replace"))
-                                 for path in instance.runs())
+        notes["restarted"] = any(item.get("restarted") for item in again)
         ok = ok and notes["restarted"] and runs == 1
     return dict(result="PASS" if ok else "FAIL", runs=runs)
-
-
-# What the sender says as it sends again a command its device lost (tools/ewelink/ota_push).
-RESENT = re.compile(r"upgrade command sent again")
 
 
 def cut_as_sent_again(instance: Instance, run: subprocess.Popen, sc: dict, notes: dict) -> bool:
     """A double's second cut, as the run under way sends its command again: one
     that does converts by itself, and no run again would get the cut."""
-    before = len(RESENT.findall(instance.last_log()))
-    if not wait_for(run, lambda: len(RESENT.findall(instance.last_log())) > before):
+    def resent() -> int:   # the command sent again (tools/ewelink/ota_push, output.EVENTS)
+        return sum(item["event"] == "resent" for item in instance.last_events())
+    before = resent()
+    if not wait_for(run, lambda: resent() > before):
         return False
     time.sleep(ROUTES[sc["route"]][sc["step"]] * sc["at"] / 100)
     inject(instance, "deviceoff", 1, notes)
@@ -935,14 +941,13 @@ def step_scenario(instance: Instance, sc: dict, target: str, log: Path, notes: d
             return dict(result="NO-STEP")
         recover(instance, target, notes)
         run = instance.tool(target, log)
-    step = re.escape(sc["step"])
     if sc["fault"] == "readdress":
-        if not wait_for(run, lambda: re.search(rf"\] {step} done", instance.last_log())):
+        if not wait_for(run, lambda: happened(instance, "done", step=sc["step"])):
             notes["mistimed"] = True
         readdress(instance, notes)
     else:
         time.sleep(ROUTES[sc["route"]][sc["step"]] * sc["at"] / 100)
-        if re.search(rf"\] {step} done", instance.last_log()):
+        if happened(instance, "done", step=sc["step"]):
             notes["mistimed"] = True
         fault, arg = ("deviceoff", 1) if sc["fault"] == "double" else (sc["fault"], sc["arg"])
         inject(instance, fault, arg, notes)
@@ -1019,11 +1024,11 @@ def readout_scenario(instance: Instance, sc: dict, log: Path, notes: dict) -> di
     run = instance.tool("readout", log)
     if sc["fault"] != "none":
         begins, ends, length = READOUT_PHASES[sc["step"]]
-        if not wait_for(run, lambda: re.search(begins, instance.last_log())):
+        if not wait_for(run, lambda: happened(instance, "phase", phase=begins)):
             finish(run, instance)
             return dict(result="NO-STEP", runs=1)
         time.sleep(length * sc["at"] / 100)
-        if re.search(ends, instance.last_log()):
+        if happened(instance, "phase", phase=ends):
             notes["mistimed"] = True
         inject(instance, sc["fault"], sc["arg"], notes)
         if sc["fault"] == "crash":
@@ -1061,7 +1066,7 @@ def converted_readout(instance: Instance, log: Path, notes: dict) -> dict:
     kept = [path.parent / READOUT for path in instance.runs() if (path.parent / READOUT).is_file()]
     problems = fault_verdicts.first_stage_problems(kept[-1].read_bytes(), "openbeken") if kept else None
     notes["readout"] = problems if problems is not None else ["none kept"]
-    if SERVED.search(said):
+    if happened(instance, "phase", phase="serving"):   # the readout firmware, or Sonoff's
         return dict(result="FAIL-SENT", runs=1)
     if run.returncode != 0:
         return dict(result="FAIL-EXIT", runs=1)
@@ -1180,7 +1185,7 @@ def prep() -> None:
                 instance.tool(target, log, new=attempt == 0).wait(timeout=RUN_LIMIT)
                 if converted(instance.last_state(), route):
                     break
-                if POWER_CYCLE.search(instance.last_log()[-3000:]):
+                if asked_to_switch(instance):
                     instance.power("cycle")
                     instance.ready(target)
             else:
@@ -1242,7 +1247,7 @@ def check_way(n: int, routes: tuple[str, ...]) -> int:
                 instance.tool(target, log, new=attempt == 0).wait(timeout=RUN_LIMIT)
                 if converted(instance.last_state(), route):
                     break
-                if POWER_CYCLE.search(instance.last_log()[-3000:]):
+                if asked_to_switch(instance):
                     instance.power("cycle")
                     instance.ready(target)
             problems = [] if converted(instance.last_state(), route) else ["not converted"]

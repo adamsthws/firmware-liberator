@@ -182,19 +182,43 @@ class AnnouncedVersionTests(unittest.TestCase):
     def test_the_bridge_is_sent_as_the_announced_version(self):
         # Its own version (4.4.4) stays in the published file; the device's
         # updater is told the fixed one, in the command and the wrapper.
+        from tools.autoflash.runs import ROOT
+        from tools.espressif.analyze_vendor_ota import analyze
+        from tools.espressif.build_vendor_ota import ANNOUNCED_VERSION
+        sent, from_advert = self.send()
+        # The account's id for the device, as the run gives it: no discovery advert needed.
+        self.assertEqual(sent["device_id"], "1000000001")
+        from_advert.assert_not_called()
+        # The run's sign-in, which it handed over: one of its own would end it.
+        self.assertEqual(sent["account"].held, ("us", {"at": "run-token", "user": {"apikey": "a"}}))
+        self.assertEqual(sent["version"], ANNOUNCED_VERSION)
+        self.assertEqual(analyze(sent["firmware"])["wrapper"]["header_version"], ANNOUNCED_VERSION)
+        self.assertEqual(sent["firmware"][100:], (ROOT / installer.BRIDGE_OTA).read_bytes()[100:])
+        self.assertIsNone(sent["event"])   # no run's events file given
+
+    def test_what_the_send_does_goes_into_the_runs_events(self):
+        import tempfile
+        from pathlib import Path
+        from tools.autoflash import output
+        with tempfile.TemporaryDirectory() as directory:
+            sent, _ = self.send("--events", str(Path(directory) / output.EVENTS))
+            sent["event"]("resent", attempt=2)
+            self.assertEqual([(e["event"], e["attempt"]) for e in output.events(Path(directory))], [("resent", 2)])
+
+    def send(self, *more):
+        """main() run as installer.step_bridge runs it, `more` added: what it
+        gave deliver(), and the discovery-advert lookup."""
         import sys
         from pathlib import Path
         from unittest import mock
         import tools.espressif.serve_tasmota_ota as sender
         from tools.autoflash.runs import ROOT
-        from tools.espressif.analyze_vendor_ota import analyze
-        from tools.espressif.build_vendor_ota import ANNOUNCED_VERSION
         from tools.ewelink.ota_push import Delivery
         bridge = ROOT / installer.BRIDGE_OTA
         exists = Path.exists
         argv = ["serve_tasmota_ota.py", "--listen-ip", "192.0.2.2", "--device-ip", "192.0.2.3",
                 "--firmware", str(bridge), "--email", "someone@example.com",
-                "--expected-current-version", "1.2.0", "--device-id", "1000000001", sender.SAFETY_FLAG]
+                "--expected-current-version", "1.2.0", "--device-id", "1000000001", sender.SAFETY_FLAG, *more]
         with mock.patch.object(sys, "argv", argv), \
              mock.patch.object(Path, "exists", autospec=True,
                                side_effect=lambda path: path.name != "RECOVERY_LOCK" and exists(path)), \
@@ -204,15 +228,7 @@ class AnnouncedVersionTests(unittest.TestCase):
              mock.patch.object(sender, "deliver", return_value=Delivery(sent=True, complete=True)) as deliver, \
              mock.patch("builtins.print"):
             self.assertEqual(sender.main(), 0)
-        sent = deliver.call_args.kwargs
-        # The account's id for the device, as the run gives it: no discovery advert needed.
-        self.assertEqual(sent["device_id"], "1000000001")
-        from_advert.assert_not_called()
-        # The run's sign-in, which it handed over: one of its own would end it.
-        self.assertEqual(sent["account"].held, ("us", {"at": "run-token", "user": {"apikey": "a"}}))
-        self.assertEqual(sent["version"], ANNOUNCED_VERSION)
-        self.assertEqual(analyze(sent["firmware"])["wrapper"]["header_version"], ANNOUNCED_VERSION)
-        self.assertEqual(sent["firmware"][100:], bridge.read_bytes()[100:])
+        return deliver.call_args.kwargs, from_advert
 
 
 class ReadoutTests(unittest.TestCase):

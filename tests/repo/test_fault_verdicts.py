@@ -100,6 +100,27 @@ def kept(family, flash=FLASH, files=None, updates=OFFERED, matches=True, **manif
                            whole if files is None else files, updates)
 
 
+class RunEventsTests(unittest.TestCase):
+    """A run followed by its events (output.EVENTS), as both suites follow it."""
+
+    @staticmethod
+    def events(*names):
+        """Events by name; "switch-now" an ask to switch the device off and on then."""
+        return [{"event": "switch", "now": True} if name == "switch-now" else {"event": name} for name in names]
+
+    def test_the_last_runs_events_are_from_its_start(self):
+        found = self.events("run", "began", "ended", "run", "began")
+        self.assertEqual(fault_verdicts.last_run_events(found), found[3:])
+        self.assertEqual(fault_verdicts.last_run_events(found[1:2]), found[1:2])   # its start not kept
+        self.assertEqual(fault_verdicts.last_run_events([]), [])
+
+    def test_advice_to_switch_counts_as_the_run_stopped_and_not_asked_for_then(self):
+        self.assertTrue(fault_verdicts.advised_to_switch(self.events("run", "began", "switch", "ended")))
+        self.assertTrue(fault_verdicts.advised_to_switch(self.events("run", "switch")))   # a readout: no steps
+        self.assertFalse(fault_verdicts.advised_to_switch(self.events("run", "switch", "began", "ended")))
+        self.assertFalse(fault_verdicts.advised_to_switch(self.events("run", "began", "switch-now")))
+
+
 class UnexpectedTests(unittest.TestCase):
     def test_an_error_nobody_foresaw_by_its_words_or_its_runs_own_outcome(self):
         said = "[10:00:00] FAILED: something unexpected went wrong: KeyError: 'safeboot'\n"

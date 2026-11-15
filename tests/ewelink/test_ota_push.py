@@ -123,7 +123,7 @@ class FakeCloud:
 class SendingAgainTests(unittest.TestCase):
     def send(self, script, firmware=b"x" * 64, **limits):
         cloud = FakeCloud(script)
-        said = []
+        said, self.events = [], []
         device = {"deviceid": "1000000000", "apikey": "a", "online": True, "params": {"fwVersion": "1.2.0"},
                   "extra": {"model": "M"}}
         settings = {"RESEND_SETTLE": 0.0, "RESEND_QUIET": 3600.0, "RESEND_WAIT": 0.3} | limits
@@ -134,7 +134,8 @@ class SendingAgainTests(unittest.TestCase):
             delivered = ota_push.deliver(
                 account=ota_push.Account(lambda: ("eu", {"at": "t"})), device_id="1000000000",
                 firmware=firmware, version="9", listen_ip="127.0.0.1", listen_port=0, device_ip="127.0.0.1",
-                wait=0.6, say=said.append, live=False)
+                wait=0.6, say=said.append, live=False,
+                event=lambda name, **fields: self.events.append((name, fields)))
         return delivered, cloud, said
 
     def test_a_device_back_gets_the_command_again_up_to_the_limit(self):
@@ -142,6 +143,9 @@ class SendingAgainTests(unittest.TestCase):
         self.assertEqual(len(cloud.sent), ota_push.COMMAND_SENDS)
         self.assertEqual({message["action"] for message in cloud.sent}, {"upgrade"})
         self.assertIn("upgrade command sent again (attempt 2 of 3).", " ".join(said))
+        # As the fault suites follow it (autoflash output.EVENTS).
+        self.assertEqual(self.events, [("phase", {"phase": "serving"}), ("resent", {"attempt": 2}),
+                                       ("resent", {"attempt": 3})])
 
     def test_a_device_that_stays_away_is_sent_it_once(self):
         _, cloud, _ = self.send([AWAY])
