@@ -452,7 +452,7 @@ def run(ctx: Context, device: dict[str, Any], address: str | None = None, batch:
         output.stage_end("stopped")
         raise
     except Abort as exc:
-        this.outcome, this.error = FAILED, failures.classify(str(exc))
+        this.outcome, this.error = FAILED, failures.class_of(exc)
         output.stage_end("stopped")
         raise
     except BaseException:

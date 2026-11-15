@@ -249,6 +249,25 @@ class PayloadTests(RouteTestCase):
             self.assertEqual(self.payload(ctx)["tag"], "user")
 
 
+class OutcomeTests(unittest.TestCase):
+    def ctx(self, **more):
+        from types import SimpleNamespace
+        return SimpleNamespace(**{"last_failure": "words of no class", "last_failure_class": None,
+                                  "last_failed_step": "J2", "crash_site": None, **more})
+
+    def test_a_stop_that_said_its_class_is_sent_as_it_said_it(self):
+        self.assertEqual(report_data.outcome(self.ctx(last_failure_class="upload-cut"), "failed")[1]["error"],
+                         "upload-cut")
+        self.assertEqual(report_data.outcome(self.ctx(), "failed")[1]["error"], "other", "else by its words")
+        self.assertEqual(report_data.outcome(self.ctx(last_failure_class="not-a-class"), "failed")[1]["error"],
+                         "other")
+
+    def test_a_crash_outside_any_step_is_filed_under_none(self):
+        # Not the first step left to do: it never began.
+        self.assertIsNone(report_data.outcome(self.ctx(last_failed_step=""), "crashed")[1]["step"])
+        self.assertEqual(report_data.outcome(self.ctx(last_failed_step="K2"), "crashed")[1]["step"], "K2")
+
+
 class CalibrationWordsTests(unittest.TestCase):
     """The meter's word in a report is read from the words the firmware
     says: every word our ESPHome configs and OpenBeken's driver can say has a

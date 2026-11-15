@@ -109,6 +109,13 @@ PATTERNS = [(name, re.compile(pattern, re.IGNORECASE)) for name, pattern in (
 )]
 
 
+def class_of(exc: BaseException) -> str:
+    """The class of what stopped a run: the one it says (errors.Abort's
+    failure), else its words'."""
+    said = getattr(exc, "failure", None)
+    return said if said in CLASSES else classify(str(exc))
+
+
 def classify(reason: str) -> str:
     """The class of the words a run stopped with: "other" when none fits."""
     return next((name for name, pattern in PATTERNS if pattern.search(reason or "")), "other")

@@ -9,12 +9,23 @@ import urllib.error
 
 
 class Abort(RuntimeError):
-    pass
+    """What stops a run, saying what to do. `failure`, where given (or a
+    subclass's own), is its class (failures.CLASSES), which its report sends
+    as it is; without one its words are classed (failures.classify).
+    tests/autoflash/test_failures.py holds each one's words to its class, as
+    the API checks a report's words against the class it claims."""
+    failure: str | None = None
+
+    def __init__(self, *args: object, failure: str | None = None) -> None:
+        super().__init__(*args)
+        if failure is not None:
+            self.failure = failure
 
 
 class StoppedPartWay(Abort):
     """A send that stopped part way: what it got as far as writing is for the
     device to say (ATTEMPTED_EVIDENCE), so the step stays attempted."""
+    failure = "upload-cut"
 
 
 class NothingWritten(Abort):

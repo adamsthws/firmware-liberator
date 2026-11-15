@@ -55,8 +55,12 @@ def execute(ctx: Context, step: str) -> int:
     ctx.last_runner = None
     started, waited = time.monotonic(), output.waited()
     joined, cycled = asked_of_the_run(ctx.state)
+    # The step under way, for a crash that escapes it to say where it was.
+    ctx.running_step = step
     try:
-        return _execute(ctx, step)
+        code = _execute(ctx, step)
+        ctx.running_step = None   # done with it: an error after it is none of its
+        return code
     finally:
         # Each kept against the step it happened in, over all its tries:
         # where they keep being needed (report_data.stages). Of the own
@@ -120,6 +124,7 @@ def _execute(ctx: Context, step: str) -> int:
             message = (f"{back.reason}, after it was sent {times} times. Switch the device off and on, "
                        "then run the same command again")
             ctx.last_failure, ctx.last_failed_step = message, step
+            ctx.last_failure_class = None
             output.tell(f"FAILED: {message}")
             return 1
         ctx.state.capture(f"{back.step}.sent_again", times)
@@ -143,6 +148,7 @@ def _execute(ctx: Context, step: str) -> int:
         output.stage_end("stopped")
         prompts.section(f"Stage {routes.stage_number(step)} could not start", firewall.firewall_hint(ctx))
         ctx.last_failure = str(exc)
+        ctx.last_failure_class = None
         ctx.last_failed_step = step
         output.tell(f"FAILED: {exc}")
         return 1
@@ -155,6 +161,7 @@ def _execute(ctx: Context, step: str) -> int:
                            **({"nothing_written": True} if isinstance(exc, NothingWritten) else {}))
         output.stage_end("stopped")
         ctx.last_failure = str(exc)
+        ctx.last_failure_class = getattr(exc, "failure", None)
         ctx.last_failed_step = step
         ctx.crash_site = None
         output.tell(f"FAILED: {exc}")
@@ -168,6 +175,7 @@ def _execute(ctx: Context, step: str) -> int:
             ctx.state.mark(step, FAILED, error=message)
         output.stage_end("stopped")
         ctx.last_failure = message
+        ctx.last_failure_class = None
         ctx.last_failed_step = step
         # Where in the tool's code, for its report: no surprise from the network.
         ctx.crash_site = None if isinstance(exc, errors.NETWORK_ERRORS) else crash_site(exc)
