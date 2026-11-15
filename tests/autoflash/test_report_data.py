@@ -249,6 +249,26 @@ class PayloadTests(RouteTestCase):
             self.assertEqual(self.payload(ctx)["tag"], "user")
 
 
+class CalibrationWordsTests(unittest.TestCase):
+    """The meter's word in a report is read from the words the firmware
+    says: every word our ESPHome configs and OpenBeken's driver can say has a
+    word of its own (report_data.CALIBRATION_WORDS), never "reported"."""
+
+    def test_every_word_the_firmware_says_has_its_own_word(self):
+        import re
+        from pathlib import Path
+        from tools.autoflash import openbeken
+        root = Path(__file__).resolve().parents[2]
+        said = set(openbeken.CALIBRATION_STATES.values()) | {openbeken.CALIBRATION_CHANGED}
+        for config in root.glob("devices/*/esphome.yaml"):
+            said.update(re.findall(r'(?:\bsource|calibration_status\)) = (?:std::string\()?"([^"]+)"',
+                                   config.read_text(encoding="utf-8")))
+        self.assertGreaterEqual(len(said), 5)   # the configs' words were found
+        words = {word: report_data.meter_word({"K2.calibration": word}, "esphome") for word in said}
+        self.assertEqual({word: got for word, got in words.items() if got == "reported"}, {},
+                         "add how it begins to report_data.CALIBRATION_WORDS")
+
+
 class ReadoutPayloadTests(unittest.TestCase):
     """A readout's report, one for each device's readout: nothing of its name
     in the account nor its reference, how many devices this computer has

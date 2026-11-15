@@ -652,5 +652,40 @@ class StoppedRunIssueTests(RouteTestCase):
         self.assertEqual(report.public_text("x" * 241), "x" * 237 + "...")
 
 
+class CheckLinesTests(unittest.TestCase):
+    """Whether a check passed is read from what each of its lines says
+    (report.RELAY_LINES), never how its words begin: a line reworded or new
+    that the table lacks fails here, not in every report."""
+
+    def test_every_line_the_relays_check_says_is_judged_by_the_table(self):
+        import ast
+        tree = ast.parse(Path(report.__file__).read_text(encoding="utf-8"))
+
+        def said(node):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                return [node.value]
+            if isinstance(node, ast.Name) and isinstance(getattr(report, node.id, None), str):
+                return [getattr(report, node.id)]
+            if isinstance(node, ast.IfExp):
+                return said(node.body) + said(node.orelse)
+            return []
+        lines = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Dict):
+                lines.update(line for key, value in zip(node.keys, node.values)
+                             if isinstance(key, ast.Constant) and key.value == "Relay" for line in said(value))
+            elif isinstance(node, ast.Assign) and any(getattr(target, "id", "") == "relay" for target in node.targets):
+                lines.update(said(node.value))
+        self.assertGreaterEqual(len(lines), 6)   # the walk found them
+        self.assertEqual(sorted(lines - set(report.RELAY_LINES)), [], "add it to report.RELAY_LINES")
+
+    def test_each_line_says_what_it_says_of_the_check(self):
+        self.assertIs(report.check_passed("Relay", report.METER_CONFIRMS), True)
+        self.assertIs(report.check_passed("Relay", report.DID_NOT_SWITCH), False)
+        self.assertIsNone(report.check_passed("Relay", report.MOTOR_MODE))
+        self.assertIs(report.check_passed("Relay", "switches, but reworded"), False, "never taken for a pass")
+        self.assertIs(report.check_passed("Release", f"2026.10.0{report.AS_INSTALLED}"), True)
+
+
 if __name__ == "__main__":
     unittest.main()
