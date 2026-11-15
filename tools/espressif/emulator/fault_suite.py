@@ -2970,7 +2970,7 @@ def batch(ids_file=None):
     WORKERS = len(threads)
     emulator_stats.began(OUT, family=DEVICE.family, suite="fault", device=DEVICE.key, total=len(known),
                          planned=cloud.qsize() + anywhere.qsize(), cloud="stub" if STUB_CLOUD else "real",
-                         workers=WORKERS)
+                         workers=WORKERS, tier=emulator_stats.tier(ids, known, (sc["id"] for sc in scenarios(quick=True))))
     for t in threads:
         t.start()
         time.sleep(20)  # staggered: start-ups are the busiest moment

@@ -49,7 +49,7 @@ export function batch(more = {}) {
   return {
     batch: "0123456789abcdef", started: "2026-11-13T07:00:00Z", family: "espressif", device: "sonoff-s60",
     suite: "fault", total: 4, planned: 4, cloud: "stub", tool: "3.0.0", revision: "fd341cb23abc", dirty: false,
-    workers: 6, ...more,
+    workers: 6, tier: "full", ...more,
   };
 }
 
@@ -270,6 +270,14 @@ test("the view shows what each fault and length found, why runs stopped, and run
   assert.match(images, /<td>espressif<\/td><td>2a93935ce9c93ff6<\/td><td class="number">1<\/td>/);
   assert.match(section(html, "emulator-rig"), /<td>ERROR<\/td><td>FileNotFoundError<\/td>/);
   assert.match(section(html, "emulator-failures"), /FAIL \(memory-starved\)/);
+});
+
+test("a batch says which list it ran, and the view shows it", async () => {
+  const bindings = env();
+  assert.match(refusedBatch(batch({ tier: "most" }), NOW), /tier/);
+  await send(await service(), { batches: [batch({ tier: "quick", planned: 3 })] }, { bindings, path: BATCHES_PATH });
+  assert.match(section(await view(bindings), "emulator-batches"),
+    /<td>sonoff-s60<\/td><td>fault<\/td><td>quick<\/td><td class="number">3<\/td><td class="number">4<\/td>/);
 });
 
 test("a run's new fields are held to what they may be", () => {

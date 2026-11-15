@@ -298,17 +298,31 @@ def record(folder: Path, **run: Any) -> None:
         _keep(folder, UNSENT, run_row(**run))
 
 
+# Which list a batch ran: every scenario of its suite, a routine run's
+# (fault_suite.py list quick), or some other part of it.
+TIERS = ("full", "quick", "subset")
+
+
+def tier(listed: Any, every: Any, quick: Any) -> str:
+    """Which of TIERS a batch's list of scenario ids is, of its suite's every
+    and quick ones."""
+    listed = set(listed)
+    return "full" if listed >= set(every) else "quick" if listed == set(quick) else "subset"
+
+
 def began(folder: Path, *, family: str, suite: str, device: str, total: int, planned: int, cloud: str,
-          workers: Any = None) -> None:
+          workers: Any = None, tier: str = "full") -> None:
     """A batch begun, kept in `folder` and sent: its suite's scenarios for the
-    device (`total`) and how many it runs (`planned`)."""
+    device (`total`), how many it runs (`planned`), and which list it ran
+    (`tier`, one of TIERS): a routine run's coverage is not a gap."""
     if off():
         return
     head, dirty = revision()
     _keep(folder, UNSENT_BATCHES, {
         "batch": BATCH, "started": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "family": family, "device": device, "suite": suite, "total": max(1, int(total)), "planned": int(planned),
-        "cloud": cloud, "tool": __version__, "revision": head, "dirty": dirty, "workers": _whole(workers, 1, 256)})
+        "cloud": cloud, "tool": __version__, "revision": head, "dirty": dirty, "workers": _whole(workers, 1, 256),
+        "tier": tier if tier in TIERS else "subset"})
 
 
 def _in_background(folder: Path) -> None:
