@@ -63,14 +63,33 @@ def last_run(log: str) -> str:
     return log[log.rfind("=== run started"):] if "=== run started" in log else log
 
 
-def checks_problem(log: str, firmware: str, metered: bool = False) -> str | None:
+# The report's Checks answer as each run's outcome has it (report_data.checks_word),
+# and as the run log's report says it.
+SAID = {"passed": "Pass", "failed": "Fail", "not-run": "Not run"}
+
+
+def checks_problem(log: str, firmware: str, metered: bool = False, outcome: dict | None = None) -> str | None:
     """What the end-of-run checks of the last run in `log` said, when they did
-    not pass for a device on `firmware`: "Checks passed: False; Relay: Did not
+    not pass for a device on `firmware`: "Checks passed: Fail; Relay: did not
     switch". None when they passed, or the run gave no report (a device already
     on the firmware asked for has nothing to check). `metered`: the emulated
     device's meter measures a load while its relay is on, so where the check
-    reads the meter (all but Sonoff's firmware) it must confirm the switch."""
+    reads the meter (all but Sonoff's firmware) it must confirm the switch.
+
+    Read from the run's own outcome (`outcome`, its last line of
+    fault_verdicts.run_outcomes, which a run that reported wrote as it did),
+    as the run judged its checks; from the report's words in the log only for
+    a run that kept no checks there - an earlier release's."""
     run = last_run(log)
+    checks = (outcome or {}).get("checks")
+    if isinstance(checks, dict) and unattended_run.LOGGED_RESULT.search(run):
+        answer = SAID.get(checks.get("answer"), str(checks.get("answer")))
+        said = f"Relay: {checks.get('relay') or 'not said'}"
+        if answer not in PASSING.get(firmware, {*PASSED, "Not run"}):
+            return f"Checks passed: {answer}; {said}"
+        if metered and firmware != "sonoff" and not checks.get("meter_confirms"):
+            return f"the meter did not confirm the switch; {said}"
+        return None
     answers = CHECKS_PASSED.findall(run)
     relay = RELAY.findall(run)
     said = f"Relay: {relay[-1] if relay else 'not said'}"

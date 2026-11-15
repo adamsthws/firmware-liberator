@@ -2608,7 +2608,9 @@ class Scenario:
         identity = ((REPORT_IDENTITY.findall(fault_verdicts.last_run(logs[-1][2])) if logs else [])
                     or REPORT_IDENTITY.findall(last_run)
                     if "nothing to convert" not in results[-1][1] else None)
-        checks = fault_verdicts.checks_problem(logs[-1][2], target_final) if converted and logs else None
+        outcomes = fault_verdicts.run_outcomes(self.state / "work/captures", self.started)
+        checks = (fault_verdicts.checks_problem(logs[-1][2], target_final, outcome=outcomes[-1] if outcomes else None)
+                  if converted and logs else None)
         if checks:
             self.notes["checks"] = checks
         if not special:

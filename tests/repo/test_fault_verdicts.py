@@ -52,6 +52,23 @@ class EndChecksTests(unittest.TestCase):
         through = run_log("    Relay: Switches (through eWeLink)", "    Checks passed: True")
         self.assertIsNone(fault_verdicts.checks_problem(through, "sonoff", metered=True))
 
+    def test_a_run_that_kept_its_checks_is_judged_by_them_not_its_words(self):
+        reported = run_log("    Relay: Switches (meter confirms)", "    Checks passed: Pass",
+                           "    Result: Converted")
+        def outcome(answer, relay="switches (meter confirms)", confirms=True):
+            return {"result": "converted", "checks": {"answer": answer, "relay": relay, "meter_confirms": confirms}}
+        self.assertEqual(fault_verdicts.checks_problem(reported, "esphome", outcome=outcome("failed", "did not switch")),
+                         "Checks passed: Fail; Relay: did not switch")
+        self.assertIsNone(fault_verdicts.checks_problem(reported, "sonoff", outcome=outcome("not-run", None, None)),
+                          "back on Sonoff's with no device id kept, as by the words")
+        self.assertEqual(fault_verdicts.checks_problem(reported, "openbeken", metered=True,
+                                                       outcome=outcome("passed", "switches (meter unchanged)", False)),
+                         "the meter did not confirm the switch; Relay: switches (meter unchanged)")
+        self.assertIsNone(fault_verdicts.checks_problem(reported, "openbeken", metered=True, outcome=outcome("passed")))
+        # A run that made no report wrote no outcome of its own: an earlier one's is not it.
+        self.assertIsNone(fault_verdicts.checks_problem(run_log("    Stage 9 - Checking ESPHome"), "esphome",
+                                                        outcome=outcome("failed")))
+
     def test_only_the_last_run_counts(self):
         earlier = run_log("    Relay: Did not switch", "    Checks passed: False")
         self.assertIsNone(fault_verdicts.checks_problem(

@@ -474,6 +474,12 @@ class Instance:
         """This scenario's runs, oldest first."""
         return [path for path in self.all_runs() if filed_as(path) not in self.before]
 
+    def last_outcome(self, since: float) -> dict | None:
+        """How the newest run since `since` ended, as it said itself
+        (fault_verdicts.run_outcomes): None for none."""
+        found = fault_verdicts.run_outcomes(self.state / "work/captures", since)
+        return found[-1] if found else None
+
     def last_state(self) -> dict:
         logs = self.runs()
         try:
@@ -754,7 +760,7 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
     keep_earlier(folder)
     folder.mkdir(parents=True)
     log = folder / "tool.log"
-    started = time.monotonic()
+    started, began = time.monotonic(), time.time()
     notes: dict = {}
     memory = MemoryWatch()
     memory.start()
@@ -787,7 +793,8 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         if problems:
             outcome = dict(outcome, result="FAIL")
             notes["interim"] = problems
-        checks = fault_verdicts.checks_problem(instance.last_log(), target, metered(instance.last_state()))
+        checks = fault_verdicts.checks_problem(instance.last_log(), target, metered(instance.last_state()),
+                                               instance.last_outcome(began))
         if checks and not problems:
             outcome = dict(outcome, result="FAIL-CHECKS")
             notes["checks"] = checks
@@ -1222,7 +1229,8 @@ def check_way(n: int, routes: tuple[str, ...]) -> int:
                     instance.ready(target)
             problems = [] if converted(instance.last_state(), route) else ["not converted"]
             problems += interim_problems(route, instance.dhcp_names(), None)
-            checks = fault_verdicts.checks_problem(instance.last_log(), target, metered(instance.last_state()))
+            checks = fault_verdicts.checks_problem(instance.last_log(), target, metered(instance.last_state()),
+                                                   instance.last_outcome(started))
             if checks:
                 problems.append(checks)
             print(f"{'FAIL' if problems else 'PASS'}  {route}{': ' + ', '.join(problems) if problems else ''}", flush=True)

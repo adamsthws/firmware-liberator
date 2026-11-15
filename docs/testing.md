@@ -679,7 +679,10 @@ firmware, so `Checks: Not run` fails there too. Back on Sonoff's firmware the
 relay is switched, and the meter read, through eWeLink by the device id the
 device's record keeps, so `Not run`, for a device with none kept, is no
 failure. A run with no report, of a device already on the firmware asked for,
-has nothing to judge (`tools/repo/fault_verdicts.py`).
+has nothing to judge (`tools/repo/fault_verdicts.py`). Each is read from the
+run's own outcome, its line in the run folder's `outcomes.jsonl`, as the run
+judged its checks; from the report's words in its log only for a run that
+kept none there, an earlier release's.
 
 **FAIL-SCREEN.** Each run is recorded on a terminal of its own, and the
 screen it ended on is read back. A stage that passed should leave one line,
