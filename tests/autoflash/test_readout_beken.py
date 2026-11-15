@@ -259,6 +259,37 @@ class ReadWholeFlashTests(unittest.TestCase):
     def test_the_whole_flash_is_the_4_mb_of_the_table_it_reads(self):
         self.assertEqual(rb.WHOLE_FLASH, layouts.BEKEN_4M.flash_size)
 
+    def test_a_read_cut_off_is_a_stop_to_act_on_not_a_crash(self):
+        # A raw OSError here was recorded as the readout having crashed.
+        import contextlib
+        from tools.autoflash import errors, failures, output
+        for read in (mock.Mock(side_effect=OSError("short read of the device's flash at 0x1000: 0 of 4096 bytes")),
+                     mock.Mock(return_value=b"\xff" * 100)):
+            with mock.patch.object(output, "working", side_effect=lambda text: contextlib.nullcontext()), \
+                    mock.patch.object(output, "log_only"), mock.patch.object(output, "say"), \
+                    mock.patch.object(output, "progress_clear"), mock.patch.object(rb.openbeken, "read_flash", read):
+                with self.assertRaises(errors.Abort) as stopped:
+                    rb.read_whole_flash(a_ctx(), "192.0.2.60")
+            self.assertIn("run the readout again", str(stopped.exception))
+            self.assertEqual(failures.classify(str(stopped.exception)), "device-lost")
+
+    def test_a_delivery_cut_part_way_is_a_stop_to_act_on_not_a_crash(self):
+        from types import SimpleNamespace
+        from tools.autoflash import errors, failures
+        cut = SimpleNamespace(sent=True, complete=False, bytes_served=1024, error=None)
+        ctx = a_ctx()
+        ctx.state.set_input("device_ip", "192.0.2.60")
+        ctx.listen_ip = lambda: "192.0.2.10"
+        with mock.patch.object(rb, "readout_image", return_value=b"image"), \
+                mock.patch.object(rb.fota_wrap, "wrap", return_value=b"wrapped"), \
+                mock.patch.object(rb.firewall, "choose_port", return_value=8088), \
+                mock.patch.object(rb.firewall, "ensure_firewall"), mock.patch.object(rb.output, "say"), \
+                mock.patch.object(rb.safety_locks, "say_lock_back"), \
+                mock.patch.object(rb.ota_push, "deliver", return_value=cut):
+            with self.assertRaises(errors.StoppedPartWay) as stopped:
+                rb.deliver_readout(ctx, "name", "1.0.2", {"deviceid": "1000abcdef"})
+        self.assertEqual(failures.classify(str(stopped.exception)), "upload-cut")
+
     def test_the_reads_start_is_in_the_runs_log(self):
         # On a terminal the wait is shown, not logged: the Beken fault suite
         # times a fault in the read from the log (READOUT_PHASES).
