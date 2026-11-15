@@ -741,8 +741,19 @@ Two things in OpenBeken's BK7238 build (the pinned commit, `app_commit` in
   holds, so a body that arrives a moment after the headers is never read: the
   command runs empty and answers "No command entered", having done nothing.
   The tool sends such a command again (`openbeken.command`, `EMPTY_TRIES`).
+- **`ota_http` answers "OK" to a fetch it does not start.** A fetch already
+  under way - its server gone quiet, waiting out its read - is turned down
+  only in the log ("http in progress, not starting another"), so a run
+  carried on after one cut off asked for its firmware and got nothing until it
+  restarted the device. And the check misses a fetch still connecting: it
+  tests `request->state == 1`, set only once data comes, so a second
+  `ota_http` then resets the request the first fetch's thread is using (its
+  connect fails, "getaddrinfo error") and starts a second thread on it. The
+  tool restarts OpenBeken before a fetch where the last run was cut off in
+  one, and does so too where `ota_http` answers an error
+  (`onward.serve_to_device`).
 
-Both have a fix offered upstream: [#2309](https://github.com/openshwprojects/OpenBK7231T_App/pull/2309) and
+The first two have a fix offered upstream: [#2309](https://github.com/openshwprojects/OpenBK7231T_App/pull/2309) and
 [#2310](https://github.com/openshwprojects/OpenBK7231T_App/pull/2310), each tested in the emulator on OpenBeken's
 `main` with and without it.
 

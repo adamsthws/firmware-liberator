@@ -43,7 +43,14 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
     for nothing in FIRST_BYTE_WAIT, `unstick()` - a restart - and ask once more.
     A fetch that stops part way - a power cut, the Wi-Fi gone - is a stop the
     person can act on (StoppedPartWay, as stock.py's delivery's), not an error
-    nobody foresaw: the device keeps the firmware it runs."""
+    nobody foresaw: the device keeps the firmware it runs.
+
+    Redoing a step a run before was cut off in, OpenBeken is restarted first:
+    the fetch that run began may still be waiting, inside it, on a server gone
+    with the run, and OpenBeken refuses another while one is under way - saying
+    "OK" all the same - so the device would ask for nothing until restarted
+    (seen in the Beken fault suite, J2:crash-1, after FIRST_BYTE_WAIT). One
+    whose ota_http says it would not start the fetch is restarted too."""
     device_ip = ctx.state.input("device_ip")
     listen_ip = ctx.listen_ip()
     port = firewall.choose_port(ctx, "delivery_port", firewall.DELIVERY_PORTS, what)
@@ -57,7 +64,23 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
     try:
         url = f"http://{listen_ip}:{port}/{IMAGE_NAME}"
         output.say(f"Serving {what} to {device_ip} at {url}")
-        fetch(url)
+        if unstick and getattr(ctx, "running_step", None) in getattr(ctx, "redoing_interrupted", ()):
+            output.say("    The fetch the last run began may still be under way in OpenBeken: restarting it first.")
+            if unstick():
+                unstick = None
+        try:
+            fetch(url)
+        except openbeken.CommandError as refused:
+            # OpenBeken that refuses a fetch while one is under way says so.
+            if not unstick or refused.unknown:
+                raise
+            output.say(f"    OpenBeken would not start the fetch ({refused}): restarting it, then asking again.")
+            if not unstick():
+                raise NothingWritten(f"OpenBeken would not fetch {what}, and did not answer again after being "
+                                     "restarted: switch it off and on, then run the same command again",
+                                     failure="device-no-answer") from refused
+            unstick = None
+            fetch(url)
         asked = time.monotonic()
         while time.monotonic() - started < FETCH_WAIT:
             served = server.unique_bytes_served()

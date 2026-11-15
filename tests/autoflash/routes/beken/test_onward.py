@@ -193,7 +193,7 @@ class ServeToDeviceTests(unittest.TestCase):
     """The image served to the device: how long it is given to ask for it, to
     fetch it, and when it is restarted to ask again."""
 
-    def serve(self, served, *, unstick=True):
+    def serve(self, served, *, unstick=True, redoing=False, refusals=0):
         """serve_to_device with the device having fetched `served` bytes at
         each look (the last for every look after), on a clock moved on only by
         its pauses: what it returned, and when it asked the device to fetch."""
@@ -235,8 +235,28 @@ class ServeToDeviceTests(unittest.TestCase):
                 mock.patch.object(onward.time, "monotonic", side_effect=monotonic), \
                 mock.patch.object(onward.time, "sleep", side_effect=sleep):
             ctx = a_context(tmp, device_ip="192.0.2.50", firmware="esphome", source="openbeken")
-            return onward.serve_to_device(ctx, b"image", "ESPHome", lambda url: self.fetches.append(self.clock),
-                                          unstick=self.unstick)
+            ctx.running_step, ctx.redoing_interrupted = "J2", {"J2"} if redoing else set()
+            refused = [refusals]
+
+            def fetch(url):
+                self.fetches.append(self.clock)
+                if refused[0]:
+                    refused[0] -= 1
+                    raise onward.openbeken.CommandError("ota_http: Command found but returned error")
+            return onward.serve_to_device(ctx, b"image", "ESPHome", fetch, unstick=self.unstick)
+
+    def test_redoing_an_interrupted_fetch_restarts_openbeken_first(self):
+        # The fetch the run before began may still be waiting inside it.
+        self.serve([5], redoing=True)
+        self.unstick.assert_called_once()
+        self.assertEqual(len(self.fetches), 1)
+
+    def test_a_fetch_openbeken_would_not_start_restarts_it_and_asks_again(self):
+        self.serve([5], refusals=1)
+        self.unstick.assert_called_once()
+        self.assertEqual(len(self.fetches), 2)
+        with self.assertRaises(errors.NothingWritten):
+            self.serve([5], refusals=1, unstick=False)
 
     def test_it_is_served_through_the_firewall_and_the_server_closed_after(self):
         self.serve([5])

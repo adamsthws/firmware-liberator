@@ -570,6 +570,8 @@ def run_steps(ctx: Context) -> int:
             # firmware never sent.
             output.say(f"    Doing {step} again: the device does not show it finished.")
             output.transient_end()
+            # What it left on the device may still be under way (onward.serve_to_device).
+            ctx.redoing_interrupted = {*getattr(ctx, "redoing_interrupted", ()), step}
         code = execute_with_retries(ctx, step)
         if code == 0 and getattr(ctx, "finished", False):
             firewall.close_firewall_rules(ctx)
