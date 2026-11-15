@@ -12,7 +12,8 @@ anything.
 in the run's log, `captures/devices/<MAC>/runs/<date>/run.log`, whose path the
 tool prints. `--verbose` shows the same detail as it happens. The run's record
 is in `autoflash-state.json` in the same directory, with the phase evidence
-beside it.
+beside it, and `outcomes.jsonl` has a line for each run that worked in that
+directory: how it ended, and where it stopped and why, in a word.
 
 **A problem not listed here may be new.** Please open an
 [issue](https://github.com/adamsthws/firmware-liberator/issues/new?template=bug-report.yml)

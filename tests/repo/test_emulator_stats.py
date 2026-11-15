@@ -106,6 +106,40 @@ class EmulatorStatsTests(unittest.TestCase):
         self.assertEqual(emulator_stats.verdict_of("pass"), "PASS")
         self.assertEqual(emulator_stats.verdict_of("???"), "ERROR")
 
+    def test_a_run_says_why_its_runs_stopped_as_each_run_classed_it(self):
+        outcomes = [{"at": 1.0, "result": "failed", "stopped": {"step": "K2", "error": "network-join"}},
+                    {"at": 2.0, "result": "cancelled", "stopped": {"step": "K2", "error": "ctrl-c"}},
+                    {"at": 3.0, "result": "crashed", "stopped": {"step": "K2", "error": "crash"}},
+                    {"at": 4.0, "result": "converted", "stopped": None}]
+        self.assertEqual(emulator_stats.stopped_by(outcomes), ["network-join", "crash"],
+                         "a run the person stopped did not stop of itself")
+        self.assertEqual(emulator_stats.stopped_by(None), [])
+        self.assertEqual(emulator_stats.stopped_by([{"result": "failed", "stopped": {"error": "Not A Class"}}]), [])
+        self.assertEqual(len(emulator_stats.stopped_by(outcomes[:1] * 40)), emulator_stats.STOPPED_MOST)
+        self.assertIn(f"export const STOPPED_MOST = {emulator_stats.STOPPED_MOST};", ADMIN)
+        row = emulator_stats.run_row(**run_args(outcomes=outcomes, arg=120, starved=True,
+                                                error="FileNotFoundError(2, 'No such file: /home/x/y')"))
+        self.assertEqual((row["stopped_by"], row["arg"], row["starved"]), (["network-join", "crash"], "120", True))
+        self.assertEqual(row["error"], "FileNotFoundError", "the class alone, never the message's paths")
+        self.assertIsNone(emulator_stats.error_of("not an exception"))
+
+    def test_a_run_names_its_familys_emulator_image_as_image_sh_tags_it(self):
+        for family in ("espressif", "beken"):
+            tag = subprocess.run([str(ROOT / "tools" / family / "emulator" / "image.sh"), "tag"], capture_output=True,
+                                 text=True, check=True).stdout.strip()
+            self.assertEqual(emulator_stats.run_row(**run_args(family=family))["image"], tag)
+        self.assertIsNone(emulator_stats.image("no-such-family"))
+
+    def test_a_fault_run_carries_its_faults_argument_and_its_runs_results(self):
+        with mock.patch.object(emulator_stats, "record") as kept:
+            emulator_stats.fault_run(self.folder, family="beken", device="sonoff-s61",
+                                     scenario={"id": "a>b:K2:outage-120", "route": "a>b", "step": "K2",
+                                               "fault": "outage", "arg": 120, "at": 40},
+                                     verdict="PASS", tries=2, seconds=600, cloud="stub", workers=7, rerun=False,
+                                     outcomes=[{"result": "converted"}], error=None, starved=False)
+        self.assertEqual({k: kept.call_args.kwargs[k] for k in ("fault", "arg", "outcomes")},
+                         {"fault": "outage", "arg": 120, "outcomes": [{"result": "converted"}]})
+
     def test_each_device_has_the_firmware_the_checkout_installs_on_it(self):
         for kind in kinds.EVERY:
             firmware = emulator_stats.firmware(kind.key)

@@ -226,6 +226,30 @@ def readout_payload(report_id: str, became: Became, seconds: float) -> dict[str,
     }
 
 
+def outcome(ctx: Context, ending: str) -> tuple[str, dict[str, Any] | None]:
+    """How the run ended, as its report says it: its result, and where it
+    stopped and why (None for one that converted) - the class of what it
+    stopped with (failures.classify), or how the person stopped it."""
+    if ending == "converted":
+        put_back = ctx.state.input("put_back") or {}
+        return ("put-back" if put_back else "updated" if runs.run_source(ctx.state) == "outdated"
+                else "converted"), None
+    if ending == "cancelled":
+        # Where people stop, and how: no words, as nothing went wrong.
+        return ending, {"step": stopped_step(ctx), "error": getattr(ctx, "stopped_by", None) or "quit", "text": "",
+                        "crash_site": None}
+    reason = ctx.last_failure or ""
+    text = plain(reason)
+    # Classed by the words sent, as the API checks them (website/api/review.js),
+    # but for words cut short, where the whole reason says more.
+    site = getattr(ctx, "crash_site", None)
+    return ending, {"step": stopped_step(ctx),
+                    "error": "crash" if ending == "crashed"
+                    else failures.classify(reason if text.endswith("...") else text),
+                    "text": text,
+                    "crash_site": site if isinstance(site, str) and CRASH_SITE.fullmatch(site) else None}
+
+
 def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending: str,
             hardware: dict[str, str] | None = None) -> dict[str, Any]:
     """The run's report as the API takes it, but its proof. `ending`:
@@ -243,26 +267,7 @@ def payload(ctx: Context, report_id: str, seconds: float, resumed: bool, ending:
     readings = [value for key, value in captures.items() if key.endswith(".signal_dbm")
                 and isinstance(value, int) and not isinstance(value, bool)]
     put_back = state.input("put_back") or {}
-    if ending == "converted":
-        result = "put-back" if put_back else "updated" if source == "outdated" else "converted"
-        stopped = None
-    elif ending == "cancelled":
-        # Where people stop, and how: no words, as nothing went wrong.
-        result = ending
-        stopped = {"step": stopped_step(ctx), "error": getattr(ctx, "stopped_by", None) or "quit", "text": "",
-                   "crash_site": None}
-    else:
-        reason = ctx.last_failure or ""
-        text = plain(reason)
-        result = ending
-        # Classed by the words sent, as the API checks them (website/api/review.js),
-        # but for words cut short, where the whole reason says more.
-        site = getattr(ctx, "crash_site", None)
-        stopped = {"step": stopped_step(ctx),
-                   "error": "crash" if ending == "crashed"
-                   else failures.classify(reason if text.endswith("...") else text),
-                   "text": text,
-                   "crash_site": site if isinstance(site, str) and CRASH_SITE.fullmatch(site) else None}
+    result, stopped = outcome(ctx, ending)
     backup = state.input("backup_outcome") or ("existing" if routes.sonoff_backup_exists(ctx) else "not taken")
     # For a conversion, the device's number among those converted on this
     # computer (records.number_conversion): how many one computer converts.

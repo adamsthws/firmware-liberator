@@ -1111,7 +1111,11 @@ def batch(ids_file: str | None = None) -> None:
                 emulator_stats.fault_run(OUT, family=STATS_DEVICE.family, device=STATS_DEVICE.key, scenario=sc,
                                          verdict=outcome["result"], tries=outcome.get("runs"),
                                          seconds=round(time.time() - started), cloud="stub", workers=workers,
-                                         rerun=sc["id"] in earlier)
+                                         rerun=sc["id"] in earlier,
+                                         outcomes=fault_verdicts.run_outcomes(instance.state / "work/captures",
+                                                                              started),
+                                         error=outcome.get("notes", {}).get("error"),
+                                         starved=outcome.get("notes", {}).get("memory", {}).get("starved"))
         finally:
             instance.stop()   # an emulator never left running
 

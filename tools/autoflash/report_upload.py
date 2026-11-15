@@ -277,10 +277,35 @@ def send_readout(ctx: Context, became: Any, seconds: float) -> threading.Thread 
     return in_background(lambda: send_kept(dt.date.today(), {report_id: work}))
 
 
+# Each run's outcome, a line a run that ended with a report, in its folder:
+# what the emulators' fault suites read of why each run stopped, as the run
+# itself classed it (report_data.outcome), whether reports are sent or not.
+# A line a run, as a run carried on by the next writes in the same folder.
+OUTCOMES = "outcomes.jsonl"
+
+
+def keep_outcome(ctx: Context, ending: str) -> None:
+    """The run's outcome added to its folder's OUTCOMES: when, its result, and
+    where it stopped and with what class (the words stay in run.log)."""
+    state = getattr(ctx, "state", None)
+    if state is None:
+        return   # a run that never began one
+    try:
+        result, stopped = report_data.outcome(ctx, ending)
+        line = {"at": round(dt.datetime.now(dt.timezone.utc).timestamp(), 3), "result": result,
+                "stopped": {"step": stopped["step"], "error": stopped["error"]} if stopped else None}
+        with open(state.path.parent / OUTCOMES, "a", encoding="utf-8") as kept:
+            kept.write(json.dumps(line) + "\n")
+    except Exception as error:  # noqa: BLE001 - as the report, never worth spoiling a run's end for
+        output.log_only(f"The run's outcome could not be kept: {type(error).__name__}: {error}")
+
+
 def send(ctx: Context, ending: str, seconds: float, resumed: bool,
          hardware: dict[str, str] | None = None) -> threading.Thread | None:
-    """At a run's end: its report kept, then sent beside the run, with any
-    kept from before. `ending`: "converted", "failed" or "crashed"."""
+    """At a run's end: its outcome kept (keep_outcome), and its report kept,
+    then sent beside the run, with any kept from before. `ending`:
+    "converted", "failed", "crashed" or "cancelled"."""
+    keep_outcome(ctx, ending)
     report_id = getattr(ctx, "report_id", None)
     if not report_id or not enabled(ctx):
         return None

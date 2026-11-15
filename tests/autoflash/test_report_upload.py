@@ -214,6 +214,36 @@ class SendTests(Case):
         post.assert_not_called()
 
 
+class OutcomeTests(Case):
+    """Each run's outcome, a line in its folder whether its report is sent or
+    not: what the emulators' fault suites read of why a run stopped."""
+
+    def test_each_run_adds_its_outcome_a_run_carried_on_in_the_same_folder_too(self):
+        folder = self.queue.parent / "devices" / "12-34-56-ab-cd-ef" / "runs" / "20261114-180016"
+        folder.mkdir(parents=True)
+        ctx = SimpleNamespace(args=SimpleNamespace(), state=SimpleNamespace(path=folder / "autoflash-state.json"))
+        endings = iter([("failed", {"step": "K2", "error": "network-join", "text": "words", "crash_site": None}),
+                        ("converted", None)])
+        with mock.patch.object(upload.report_data, "outcome", side_effect=lambda ctx, ending: next(endings)), \
+                mock.patch.object(upload, "post") as post:
+            upload.send(ctx, "failed", 300, False)
+            upload.send(ctx, "converted", 300, True)
+        post.assert_not_called()   # no report this run: its outcome is kept all the same
+        lines = [json.loads(line) for line in (folder / upload.OUTCOMES).read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([(line["result"], line["stopped"]) for line in lines],
+                         [("failed", {"step": "K2", "error": "network-join"}), ("converted", None)],
+                         "the class, never the words, which stay in run.log")
+        self.assertLessEqual(lines[0]["at"], lines[1]["at"])
+
+    def test_an_outcome_that_cannot_be_kept_never_spoils_the_runs_end(self):
+        logged = []
+        ctx = SimpleNamespace(args=SimpleNamespace(), state=SimpleNamespace(path=Path("/nonexistent/x/state.json")))
+        with mock.patch.object(upload.report_data, "outcome", return_value=("converted", None)), \
+                mock.patch.object(upload.output, "log_only", logged.append):
+            upload.send(ctx, "converted", 300, False)
+        self.assertIn("outcome could not be kept", logged[0])
+
+
 class ReadoutTests(Case):
     """A readout's report: one for each device's readout, begun as it starts and
     sent as it ends, through the same queue as a run's."""
