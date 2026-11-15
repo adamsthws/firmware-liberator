@@ -11,10 +11,28 @@ from tools.autoflash import failures, runner
 from tools.autoflash.routes import arrival
 
 ROOT = Path(__file__).resolve().parents[2]
-# What a step raises to stop the run, as the runner reports it.
-# An OSError too: the runner reports a step's as it does an Abort.
-STOPPING = {"Abort", "NothingWritten", "StoppedPartWay", "DeviceError", "PhaseError", "DeviceNeverConnected",
-            "OSError"}
+# What a step raises to stop the run, as the runner reports it. Not an
+# OSError: one the network does not raise is "something unexpected went
+# wrong" (runner.unexpected), recorded as a crash - each the tool raises
+# itself is caught short of the runner (CAUGHT).
+STOPPING = {"Abort", "NothingWritten", "StoppedPartWay", "DeviceError", "PhaseError", "DeviceNeverConnected"}
+# Each OSError the tool raises with words of its own, by its file and how
+# its words begin, and what catches it before the runner or a readout would
+# take it for an error nobody foresaw. One not here that a step can reach is
+# a stop to act on: an Abort (StoppedPartWay where a send stopped part way).
+CAUGHT = {
+    ("openbeken.py", "short read of the device's flash"): "arrived._back_up; readout_beken.read_whole_flash",
+    ("readout.py", "not from a test run"): "readout.light_post's callers (OSError, ValueError)",
+    ("readout.py", "the website answered"): "readout.send's callers (OSError, ValueError)",
+    ("hostsys.py", "the download was cut off"): "public_copies.fetch, sonoff_firmware's sources",
+    ("hostsys.py", "GetAdaptersAddresses failed"): "hostsys.lan_networks",
+    ("hostsys.py", "sudo could not be run"): "firewall.ensure_firewall, as the rule not added",
+    ("hostsys.py", "sudo refused"): "firewall.ensure_firewall, as the rule not added (or sudo's own words)",
+    ("hostsys.py", "could not add the firewall rule"): "firewall.ensure_firewall",
+    ("cli.py", "sudo needs this computer's password"): "firewall.ensure_firewall, as the rule not added",
+    ("prompts.py", "this computer's password was not accepted"): "firewall.ensure_firewall, as the rule not added",
+    ("installer.py", "simulated failure"): "installer's backup read (--simulate-backup-failure)",
+}
 
 
 def literals(node: ast.AST) -> list[str]:
@@ -56,6 +74,22 @@ class ClassifyTests(unittest.TestCase):
         unclassed = [f"{where}: {message[:80]}" for where, message in own
                      if failures.classify(message) == "other"]
         self.assertEqual(unclassed, [], "add a pattern to failures.PATTERNS")
+
+    def test_every_oserror_the_tool_raises_itself_is_caught_short_of_the_runner(self) -> None:
+        found = set()
+        for path in sorted((ROOT / "tools/autoflash").rglob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if (isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call) and node.exc.args
+                        and getattr(node.exc.func, "id", "") == "OSError"):
+                    # Its words, wherever among its arguments: OSError(errno, "words") too.
+                    said = next((words for arg in node.exc.args if (words := literals(arg))), ["{}"])
+                    for message in said:
+                        begins = next((start for where, start in CAUGHT if where == path.name
+                                       and message.startswith(start)), message[:40])
+                        found.add((path.name, begins))
+        self.assertEqual(sorted(found - set(CAUGHT)), [],
+                         "raise a stop to act on (an Abort), or say in CAUGHT what catches it")
+        self.assertEqual(sorted(set(CAUGHT) - found), [], "in CAUGHT, but raised no more")
 
     def test_each_pattern_names_a_class(self) -> None:
         self.assertLessEqual({name for name, _ in failures.PATTERNS}, set(failures.CLASSES))

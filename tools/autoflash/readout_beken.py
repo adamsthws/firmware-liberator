@@ -30,7 +30,7 @@ import time
 from typing import Any, TYPE_CHECKING
 
 from tools.autoflash import firewall, hostsys, openbeken, output, records, prompts, readout, runs, safety_locks
-from tools.autoflash.errors import Abort, NothingWritten
+from tools.autoflash.errors import Abort, NothingWritten, StoppedPartWay
 from tools.autoflash.routes import arrival
 from tools.autoflash.routes.beken import images, onward
 from tools.autoflash.runs import ROOT
@@ -117,8 +117,12 @@ def deliver_readout(ctx: Context, name: str, version: str, device: dict[str, Any
         if not arrival.online_in_ewelink(ctx, device["deviceid"]):
             raise Abort(arrival.BUSY)
     if not delivered.complete:
-        raise OSError(f"the device fetched {delivered.bytes_served:,} of {len(container):,} bytes before the "
-                      f"delivery stopped ({delivered.error or 'it stopped asking'})")
+        # A power cut or the Wi-Fi going part way, as a conversion's B2
+        # (stock.py): the device keeps Sonoff's firmware.
+        raise StoppedPartWay(
+            f"the delivery stopped part way: the device fetched {delivered.bytes_served:,} of "
+            f"{len(container):,} bytes ({delivered.error or 'it stopped asking'}). It keeps its Sonoff firmware: "
+            "switch it off and on, wait until it shows online in the eWeLink app, then run the readout again")
     ctx.state.set_input("readout_sent", True)
     output.say("    The device has the whole image; its bootloader installs it as it restarts.")
 
@@ -155,16 +159,24 @@ def read_whole_flash(ctx: Context, host: str) -> bytes:
     def progress(done: int, total: int) -> None:
         output.progress(f"reading the device's memory: {100 * done // total}%")
 
+    # A read cut off - the device switched off, the Wi-Fi gone - leaves it on
+    # the readout firmware, which a readout run again finds and reads from
+    # (read_out): a stop to act on, not an error nobody foresaw.
+    again = ("It is still on the readout firmware: switch it off and on, then run the readout again to read it "
+             "and put Sonoff's firmware back")
     try:
         # In the run's log too, which a wait on screen is not: the fault
         # suite times a fault in the read from it.
         output.log_only("Reading the device's memory...")
         with output.working("Reading the device's memory - a few minutes..."):
             flash = openbeken.read_flash(host, 0, WHOLE_FLASH, progress=progress)
+    except OSError as exc:
+        raise Abort(f"the connection to the device was lost as its memory was read: {exc}. {again}") from exc
     finally:
         output.progress_clear()
     if len(flash) != WHOLE_FLASH:
-        raise OSError(f"only {len(flash):,} of {WHOLE_FLASH:,} bytes were read")
+        raise Abort(f"the connection to the device was lost as its memory was read: only {len(flash):,} of "
+                    f"{WHOLE_FLASH:,} bytes were read. {again}")
     output.say(f"    Read {len(flash):,} bytes.")
     return flash
 
