@@ -159,11 +159,20 @@ def _fetch_esphome(ctx: Context, step: str) -> dict[str, Any]:
     an OpenBeken started since did not take it (arrived.step_esphome_check)."""
     image, version = images.image(ctx, "esphome")
     host = ctx.state.input("device_ip")
-    uptime = (openbeken.info(host) or {}).get("uptime_s")
+    uptime = [(openbeken.info(host) or {}).get("uptime_s")]
+
+    def unstick() -> bool:
+        # Restarted to fetch it afresh: its uptime before is from then, or the
+        # check after (arrived.step_esphome_check) takes this restart for its
+        # bootloader refusing the image, and sends it again into a device
+        # restarting to install it (seen in the Beken fault suite, J2:crash-1).
+        restarted = openbeken.restart(host)
+        uptime[0] = (openbeken.info(host) or {}).get("uptime_s") if restarted else None
+        return restarted
     seconds = serve_to_device(ctx, images.as_sent(ctx, step, image), f"ESPHome {version}",
-                            lambda url: openbeken.ota_http(host, url), unstick=lambda: openbeken.restart(host))
+                            lambda url: openbeken.ota_http(host, url), unstick=unstick)
     return {"seconds": seconds, "version": version, "fetched_at": round(time.time()),
-            **({"uptime_before": uptime} if isinstance(uptime, int) else {})}
+            **({"uptime_before": uptime[0]} if isinstance(uptime[0], int) else {})}
 
 
 def step_openbeken_to_sonoff(ctx: Context, leaving: str = "OpenBeken") -> dict[str, Any]:

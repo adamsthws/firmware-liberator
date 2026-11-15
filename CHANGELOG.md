@@ -214,6 +214,9 @@ check.
   meter, again when its answer is lost: a device whose Wi-Fi blinked as it
   was checked - ESPHome taking its own network down once back on yours - was
   reported as a relay that did not switch, its meter showing it had.
+- A Beken device that had to be restarted before it fetched ESPHome is no
+  longer taken for one that refused the image: the run sent ESPHome again into
+  a device restarting to install it, and could end stopped there.
 - A Beken device that loses power or Wi-Fi while OpenBeken fetches its next
   firmware - ESPHome, or Sonoff's back - stops the run with what to do (switch
   it off and on, then run the same command again), as a cut-off send from

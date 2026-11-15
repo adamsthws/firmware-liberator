@@ -275,6 +275,33 @@ class ServeToDeviceTests(unittest.TestCase):
             self.serve([0], unstick=False)
         self.assertEqual(failures.classify(str(stopped.exception)), "device-no-answer")
 
+
+class UptimeBeforeTests(unittest.TestCase):
+    """The device's uptime as ESPHome is fetched, which the check after takes
+    an OpenBeken that started since for one whose bootloader refused it by."""
+
+    def fetch(self, restarts):
+        from types import SimpleNamespace
+        ctx = SimpleNamespace(state=mock.Mock(input=mock.Mock(return_value="192.0.2.50")))
+
+        def serve(ctx, image, what, fetch, unstick=None):
+            for _ in range(restarts):
+                unstick()
+            return 12.0
+        with mock.patch.object(onward.images, "image", return_value=(b"image", "2026.10.0-3")), \
+                mock.patch.object(onward.images, "as_sent", return_value=b"image"), \
+                mock.patch.object(onward.openbeken, "info", side_effect=[{"uptime_s": 500}, {"uptime_s": 3}]), \
+                mock.patch.object(onward.openbeken, "restart", return_value=True), \
+                mock.patch.object(onward, "serve_to_device", side_effect=serve):
+            return onward._fetch_esphome(ctx, "J2")
+
+    def test_its_uptime_before_the_fetch(self):
+        self.assertEqual(self.fetch(0)["uptime_before"], 500)
+
+    def test_restarted_to_fetch_it_afresh_its_uptime_is_from_then(self):
+        # Not 500: the check after would take the fetch's own restart for a refusal.
+        self.assertEqual(self.fetch(1)["uptime_before"], 3)
+
 class FromTheInterimFirmwareTests(unittest.TestCase):
     """A device left on the interim firmware, found by a run with no record of
     the one that left it there."""
