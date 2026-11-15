@@ -687,5 +687,58 @@ class CheckLinesTests(unittest.TestCase):
         self.assertIs(report.check_passed("Release", f"2026.10.0{report.AS_INSTALLED}"), True)
 
 
+class SwitchTriedAgainTests(unittest.TestCase):
+    """A switch whose reply was lost - the Wi-Fi blinking as the check runs -
+    is tried again before the relay is said not to switch."""
+
+    def test_a_reply_lost_once_is_tried_again(self):
+        tries = iter([False, True])
+        with mock.patch.object(report.time, "sleep") as slept:
+            self.assertTrue(report.switched_to(lambda: next(tries)))
+        slept.assert_called_once_with(report.SWITCH_PAUSE)
+
+    def test_a_relay_that_never_reads_as_asked_did_not_switch(self):
+        tried = []
+        with mock.patch.object(report.time, "sleep"):
+            self.assertFalse(report.switched_to(lambda: tried.append(1) or False))
+        self.assertEqual(len(tried), report.SWITCH_TRIES)
+
+    def test_a_device_gone_for_every_try_is_one_the_check_could_not_reach(self):
+        def gone():
+            raise OSError("connection reset")
+        with mock.patch.object(report.time, "sleep"), self.assertRaises(OSError):
+            report.switched_to(gone)
+
+    def test_a_meter_reading_lost_once_is_read_again(self):
+        readings = iter([None, {"Power": 0.0}])
+        with mock.patch.object(report.time, "sleep"):
+            self.assertEqual(report.read_again(lambda: next(readings)), {"Power": 0.0})
+        with mock.patch.object(report.time, "sleep"):
+            self.assertIsNone(report.read_again(lambda: None))
+
+    def test_esphomes_check_says_the_meter_confirms_after_a_lost_reading(self):
+        # Seen in the Beken fault suite: "Power meter: On: 245 V, 106 W; off: no reading".
+        from types import SimpleNamespace
+        ctx = SimpleNamespace(state=mock.Mock(input=mock.Mock(return_value="192.0.2.50")))
+        with mock.patch.object(report, "has_meter", return_value=True), mock.patch.object(report.output, "say"), \
+                mock.patch.object(report.esphome, "relay", return_value=False), \
+                mock.patch.object(report.esphome, "switch_relay", return_value=True), \
+                mock.patch.object(report.esphome, "meter", side_effect=[{"Voltage": 245.3, "Power": 106.1}, None,
+                                                                        {"Voltage": 246.5, "Power": 0.0}]), \
+                mock.patch.object(report.time, "sleep"):
+            self.assertEqual(report.check_esphome_hardware(ctx)["Relay"], report.METER_CONFIRMS)
+
+    def test_esphomes_check_says_the_relay_switched_after_a_lost_reply(self):
+        from types import SimpleNamespace
+        ctx = SimpleNamespace(state=mock.Mock(input=mock.Mock(return_value="192.0.2.50")))
+        switches = iter([False, True, True])   # the first reply lost
+        with mock.patch.object(report, "has_meter", return_value=True), mock.patch.object(report.output, "say"), \
+                mock.patch.object(report.esphome, "relay", return_value=False), \
+                mock.patch.object(report.esphome, "switch_relay", side_effect=lambda host, on: next(switches)), \
+                mock.patch.object(report.esphome, "meter", side_effect=[{"Voltage": 244.5, "Power": 106.8},
+                                                                        {"Voltage": 246.5, "Power": 0.0}]), \
+                mock.patch.object(report.time, "sleep"):
+            self.assertEqual(report.check_esphome_hardware(ctx)["Relay"], report.METER_CONFIRMS)
+
 if __name__ == "__main__":
     unittest.main()

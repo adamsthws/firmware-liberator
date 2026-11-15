@@ -210,6 +210,10 @@ check.
 - A device whose new firmware cannot join your Wi-Fi - ESPHome, or the mover
   on the way to it - is set up through its own network as soon as that network
   is up, a minute or two in, where the run waited three minutes first.
+- The end-of-run check of the relay tries a switch, or a reading of the
+  meter, again when its answer is lost: a device whose Wi-Fi blinked as it
+  was checked - ESPHome taking its own network down once back on yours - was
+  reported as a relay that did not switch, its meter showing it had.
 - A Beken device that loses power or Wi-Fi while OpenBeken fetches its next
   firmware - ESPHome, or Sonoff's back - stops the run with what to do (switch
   it off and on, then run the same command again), as a cut-off send from
