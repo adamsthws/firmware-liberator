@@ -6,7 +6,7 @@ for every device the tool converts, so a new one has it by being added.
         as JSON, the devices to check and the emulator image each needs: those a
         change since COMMIT could affect, or every one that has something to run
         from (NOTHING_TO_RUN names those that have not)
-    python -I tools/repo/emulator_check.py DEVICE [--instances 1,2]
+    .venv/bin/python -I tools/repo/emulator_check.py DEVICE [--instances 1,2]
         its check: each final firmware installed, then each device taken to the
         other, two ways side by side (a way goes on as soon as its own run is
         done), on the two emulators numbered: two devices checked at once on one
@@ -204,7 +204,32 @@ def main(argv: list[str] | None = None) -> int:
     kind = next((kind for kind in kinds.READY if kind.key == args.device and kind.key not in NOTHING_TO_RUN), None)
     if kind is None:
         parser.error(f"no such device: {args.device}; list says which there are")
+    missing = missing_packages(kind)
+    if missing:
+        print(missing, file=sys.stderr)
+        return 2
     return check_device(kind, [int(n) for n in args.instances.split(",")][:2])
+
+
+# What an Espressif device's check needs beyond the standard library: ESP-IDF's
+# NVS generator, which its public dump is made with (public_dump, through
+# rewrite_nvs and sanitise_device) and emu.sh asks for too. In requirements/ci.txt.
+ESPRESSIF_PACKAGES = ("esp_idf_nvs_partition_gen",)
+
+
+def missing_packages(kind: kinds.Kind) -> str | None:
+    """What to install for `kind`'s check, said before anything is made: a
+    package missing stopped one part way through making its public dump, a
+    traceback for an answer. None where nothing is missing."""
+    import importlib.util
+    lacking = [name for name in ESPRESSIF_PACKAGES if family_of(kind) == "espressif"
+               and importlib.util.find_spec(name) is None]
+    if not lacking:
+        return None
+    return (f"The {kind.key} check needs {', '.join(lacking)}, which {sys.executable} lacks. Run it with the "
+            f"checkout's .venv, made as CI makes it:\n    python3 -m venv .venv && .venv/bin/pip install "
+            "--require-hashes --no-deps -r requirements/ci.txt\n    .venv/bin/python -I tools/repo/emulator_check.py "
+            f"{kind.key}")
 
 
 if __name__ == "__main__":

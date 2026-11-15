@@ -23,6 +23,23 @@ class WhichDevicesTests(unittest.TestCase):
     ALL = {kind.key for kind in kinds.READY} - check.NOTHING_TO_RUN
     ESPRESSIF = {key for key in ALL if check.family_of(kinds.find(key)) == "espressif"}
 
+    def test_a_check_missing_a_package_says_what_to_install_before_it_starts(self):
+        # Seen on a machine run with a Python without the NVS generator: the POW
+        # Elite's check stopped part way through making its public dump, a traceback.
+        pow_elite = next(kind for kind in kinds.READY if kind.key == "sonoff-pow-elite")
+        with mock.patch("importlib.util.find_spec", return_value=None), \
+                mock.patch.object(check, "check_device") as checked, \
+                mock.patch("sys.stderr") as said:
+            self.assertEqual(check.main(["sonoff-pow-elite"]), 2)
+            self.assertIn("esp_idf_nvs_partition_gen", check.missing_packages(pow_elite))
+        checked.assert_not_called()
+        told = "".join(call.args[0] for call in said.write.call_args_list)
+        self.assertIn("esp_idf_nvs_partition_gen", told)
+        self.assertIn("requirements/ci.txt", told)
+        s61 = next(kind for kind in kinds.READY if kind.key == "sonoff-s61")
+        with mock.patch("importlib.util.find_spec", return_value=None):
+            self.assertIsNone(check.missing_packages(s61), "a Beken device's check needs none of them")
+
     def test_every_device_with_no_change_named(self):
         self.assertEqual(keys(None), self.ALL)
 
