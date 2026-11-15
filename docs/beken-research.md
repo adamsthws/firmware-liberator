@@ -742,7 +742,9 @@ Two things in OpenBeken's BK7238 build (the pinned commit, `app_commit` in
   command runs empty and answers "No command entered", having done nothing.
   The tool sends such a command again (`openbeken.command`, `EMPTY_TRIES`).
 
-Neither is reported upstream yet.
+Both have a fix offered upstream: [#2309](https://github.com/openshwprojects/OpenBK7231T_App/pull/2309) and
+[#2310](https://github.com/openshwprojects/OpenBK7231T_App/pull/2310), each tested in the emulator on OpenBeken's
+`main` with and without it.
 
 ### Carrying Wi-Fi across the conversion: the OpenBeken config
 
