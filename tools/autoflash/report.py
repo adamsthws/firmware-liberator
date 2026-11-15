@@ -12,7 +12,7 @@ import sys
 import textwrap
 import time
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import Any, Callable, TYPE_CHECKING
 
 from tools.autoflash import __version__, esphome, hostsys, join, kinds, output, records, report_upload, routes, runs, testers
 from tools.autoflash.device import DeviceError
@@ -386,6 +386,45 @@ def report_screen(fields: list[tuple[str, str]], columns: int | None = None,
 # reading. With every relay off Tasmota keeps its last reading until its energy
 # watchdog zeroes it, after 4 s without one, on a 1 s tick: 5 s.
 METER_SETTLE = 6.0
+# Each switch of the check is tried this often, this many seconds apart, until
+# the relay reads as asked: a reply lost as the device's Wi-Fi blinks - ESPHome
+# taking its own network down once it has joined yours - is not a relay that
+# did not switch (seen in the Beken fault suite: "did not switch", its meter
+# reading 107 W on and 0 W off). Switching to where it is already is harmless.
+SWITCH_TRIES, SWITCH_PAUSE = 3, 3.0
+
+
+def switched_to(switch: Callable[[], bool]) -> bool:
+    """Whether `switch()` - one try at switching the relay, true once it
+    reads as asked - got there in SWITCH_TRIES, a lost reply tried again."""
+    for attempt in range(1, SWITCH_TRIES + 1):
+        try:
+            if switch():
+                return True
+        except (DeviceError, OSError, ValueError):
+            if attempt == SWITCH_TRIES:
+                raise
+        if attempt < SWITCH_TRIES:
+            time.sleep(SWITCH_PAUSE)
+    return False
+
+
+def read_again(read: Callable[[], dict[str, Any] | None]) -> dict[str, Any] | None:
+    """The meter's reading, `read()` tried again as a switch is
+    (switched_to) where its answer was lost: none, or an error the network
+    gave. None where every try was lost."""
+    for attempt in range(1, SWITCH_TRIES + 1):
+        try:
+            found = read()
+        except (DeviceError, OSError, ValueError):
+            if attempt == SWITCH_TRIES:
+                raise
+            found = None
+        if found is not None:
+            return found
+        if attempt < SWITCH_TRIES:
+            time.sleep(SWITCH_PAUSE)
+    return None
 # How long a device back on Sonoff's firmware may take to reach eWeLink once the
 # run has seen it on the network: an Espressif run's last step sees it there,
 # seconds before its firmware has dialled eWeLink (seconds). Looked for every 10 s.
@@ -475,13 +514,16 @@ def check_hardware(ctx: Context) -> dict[str, str]:
 
     metered = has_meter(ctx)
 
+    def energy() -> dict[str, Any] | None:
+        status = device.command("Status 10")
+        found = status.get("StatusSNS", {}).get("ENERGY") if isinstance(status, dict) else None
+        return found if isinstance(found, dict) else None
+
     def meter() -> dict[str, Any] | None:
         if not metered:
             return None
         time.sleep(METER_SETTLE)
-        status = device.command("Status 10")
-        energy = status.get("StatusSNS", {}).get("ENERGY") if isinstance(status, dict) else None
-        return energy if isinstance(energy, dict) else None
+        return read_again(energy)
 
     output.say(checking(metered))
     try:
@@ -489,9 +531,9 @@ def check_hardware(ctx: Context) -> dict[str, str]:
         if waited >= 1:
             output.say(f"    The device answered again after {waited:.0f}s.")
         was_on = state(device.command("Power")) == "ON"
-        switched = switch(not was_on)
+        switched = switched_to(lambda: switch(not was_on))
         first = meter()
-        restored = switch(was_on)
+        restored = switched_to(lambda: switch(was_on))
         second = meter()
     except (DeviceError, OSError, ValueError) as exc:
         output.say(f"    The device did not answer the check: {exc}")
@@ -537,10 +579,10 @@ def check_esphome_hardware(ctx: Context) -> dict[str, str]:
         if not metered:
             return None
         time.sleep(METER_SETTLE)
-        return esphome.meter(host) or None
-    switched = esphome.switch_relay(host, not was_on)
+        return read_again(lambda: esphome.meter(host) or None)
+    switched = switched_to(lambda: esphome.switch_relay(host, not was_on))
     first = meter()
-    restored = esphome.switch_relay(host, was_on)
+    restored = switched_to(lambda: esphome.switch_relay(host, was_on))
     second = meter()
     on, off = (second, first) if was_on else (first, second)
     return said(describe_hardware(switched, restored, on, off, metered))
