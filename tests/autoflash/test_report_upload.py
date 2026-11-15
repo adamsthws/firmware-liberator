@@ -235,6 +235,21 @@ class OutcomeTests(Case):
                          "the class, never the words, which stay in run.log")
         self.assertLessEqual(lines[0]["at"], lines[1]["at"])
 
+    def test_a_run_that_converted_keeps_its_checks_as_it_judged_them(self):
+        from tools.autoflash import report
+        folder = self.queue.parent / "devices" / "12-34-56-ab-cd-ef" / "runs" / "20261115-100000"
+        folder.mkdir(parents=True)
+        ctx = SimpleNamespace(args=SimpleNamespace(), state=SimpleNamespace(path=folder / "autoflash-state.json"))
+        with mock.patch.object(upload.report_data, "outcome", return_value=("converted", None)), \
+                mock.patch.object(upload, "post"):
+            upload.send(ctx, "converted", 300, False, {"Relay": report.METER_CONFIRMS, "Power meter": "on: 230 V"})
+            upload.send(ctx, "converted", 300, False, {"Relay": report.RELAY_SWITCHES})
+        lines = [json.loads(line) for line in (folder / upload.OUTCOMES).read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([line["checks"] for line in lines],
+                         [{"answer": "passed", "relay": report.METER_CONFIRMS, "meter_confirms": True},
+                          {"answer": "passed", "relay": report.RELAY_SWITCHES, "meter_confirms": None}],
+                         "a device with no meter has nothing for it to confirm")
+
     def test_an_outcome_that_cannot_be_kept_never_spoils_the_runs_end(self):
         logged = []
         ctx = SimpleNamespace(args=SimpleNamespace(), state=SimpleNamespace(path=Path("/nonexistent/x/state.json")))

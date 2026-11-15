@@ -284,9 +284,11 @@ def send_readout(ctx: Context, became: Any, seconds: float) -> threading.Thread 
 OUTCOMES = "outcomes.jsonl"
 
 
-def keep_outcome(ctx: Context, ending: str) -> None:
-    """The run's outcome added to its folder's OUTCOMES: when, its result, and
-    where it stopped and with what class (the words stay in run.log)."""
+def keep_outcome(ctx: Context, ending: str, hardware: dict[str, str] | None = None) -> None:
+    """The run's outcome added to its folder's OUTCOMES: when, its result,
+    where it stopped and with what class (the words stay in run.log), and,
+    for one that converted, its end-of-run checks: the report's answer, and
+    whether the meter confirmed the relay switched (None where it has none)."""
     state = getattr(ctx, "state", None)
     if state is None:
         return   # a run that never began one
@@ -294,6 +296,11 @@ def keep_outcome(ctx: Context, ending: str) -> None:
         result, stopped = report_data.outcome(ctx, ending)
         line = {"at": round(dt.datetime.now(dt.timezone.utc).timestamp(), 3), "result": result,
                 "stopped": {"step": stopped["step"], "error": stopped["error"]} if stopped else None}
+        if hardware is not None:
+            from tools.autoflash import report   # which sends through this module
+            relay = hardware.get("Relay")
+            line["checks"] = {"answer": report_data.checks_word(hardware), "relay": relay,
+                              "meter_confirms": relay == report.METER_CONFIRMS if "Power meter" in hardware else None}
         with open(state.path.parent / OUTCOMES, "a", encoding="utf-8") as kept:
             kept.write(json.dumps(line) + "\n")
     except Exception as error:  # noqa: BLE001 - as the report, never worth spoiling a run's end for
@@ -305,7 +312,7 @@ def send(ctx: Context, ending: str, seconds: float, resumed: bool,
     """At a run's end: its outcome kept (keep_outcome), and its report kept,
     then sent beside the run, with any kept from before. `ending`:
     "converted", "failed", "crashed" or "cancelled"."""
-    keep_outcome(ctx, ending)
+    keep_outcome(ctx, ending, hardware)
     report_id = getattr(ctx, "report_id", None)
     if not report_id or not enabled(ctx):
         return None

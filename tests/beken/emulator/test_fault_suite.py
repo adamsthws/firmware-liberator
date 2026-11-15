@@ -81,13 +81,14 @@ class ScenarioTests(unittest.TestCase):
 class EndChecksTests(unittest.TestCase):
     """A converted device passes only if the report's end-of-run checks did."""
 
-    def result(self, checks, screen=None, release=None, relay=None, kind=None):
+    def result(self, checks, screen=None, release=None, relay=None, kind=None, outcome=None):
         from unittest import mock
         sc = {"id": "sonoff>openbeken:B2:deviceoff-1", "route": "sonoff>openbeken", "step": "B2",
               "fault": "deviceoff", "arg": 1, "at": 40}
         relay = relay or ("Switches (meter confirms)" if checks == "True" else "Did not switch")
         log = (f"[10:00:00] === run started, tool version 2.3.0 ===\n[10:00:01]     Relay: {relay}\n"
-               f"[10:00:02]     Checks passed: {checks}\n[10:00:03] === run ended ===\n")
+               f"[10:00:02]     Checks passed: {checks}\n[10:00:02]     Result: Converted\n"
+               f"[10:00:03] === run ended ===\n")
         def step_scenario(instance, sc, target, tool_log, notes):
             if screen is not None:
                 tool_log.write_text(screen, encoding="utf-8")   # what the run printed
@@ -95,12 +96,27 @@ class EndChecksTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             device = SimpleNamespace(reset=lambda start: None, start=lambda firmware: True, runs=list,
                                    dhcp_names=lambda: ["openbeken-cdef"], last_log=lambda: log, state=Path(tmp),
+                                   last_outcome=lambda since: outcome,
                                    last_state=lambda: {"inputs": {"device_kind": kind}} if kind else {})
             latest = fault_suite.LATEST["openbeken"]
             with mock.patch.object(fault_suite, "OUT", Path(tmp)), mock.patch.object(fault_suite, "MemoryWatch"), \
                     mock.patch.object(fault_suite, "step_scenario", side_effect=step_scenario), \
                     mock.patch.object(fault_suite, "release_of", return_value=release or latest):
                 return fault_suite.run_scenario(device, sc)
+
+    def test_the_checks_are_read_from_the_runs_own_outcome_where_it_kept_one(self):
+        # Its words in the log do not decide: the run judged its checks itself.
+        said = {"result": "converted", "stopped": None,
+                "checks": {"answer": "failed", "relay": "did not switch", "meter_confirms": False}}
+        outcome = self.result("True", outcome=said)
+        self.assertEqual((outcome["result"], outcome["notes"]["checks"]),
+                         ("FAIL-CHECKS", "Checks passed: Fail; Relay: did not switch"))
+        unconfirmed = {**said, "checks": {"answer": "passed", "relay": "switches (meter unchanged)",
+                                          "meter_confirms": False}}
+        self.assertEqual(self.result("True", outcome=unconfirmed)["result"], "FAIL-CHECKS")
+        confirmed = {**said, "checks": {"answer": "passed", "relay": "switches (meter confirms)",
+                                        "meter_confirms": True}}
+        self.assertEqual(self.result("False", outcome=confirmed)["result"], "PASS")
 
     def test_a_converted_device_whose_relay_switched_passes(self):
         self.assertEqual(self.result("True")["result"], "PASS")
