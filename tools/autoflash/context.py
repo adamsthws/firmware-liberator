@@ -135,6 +135,8 @@ class Context:
         # A converted device's firmware, chosen at A3 (routes.settle_route).
         self.firmware_choice: routes.FirmwareChoice | None = None
         self.last_failure = ""  # what the last stage to fail said, for the report
+        self.last_failure_class: str | None = None  # its class, where what stopped it said one (errors.Abort)
+        self.running_step: str | None = None  # the step under way (runner.execute)
         # How the person stopped the run, for its report (report_data.STOPPED_BY).
         self.stopped_by: str | None = None
         # Where in the tool's code the last stage to fail went wrong, for an

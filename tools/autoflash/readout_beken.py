@@ -171,12 +171,13 @@ def read_whole_flash(ctx: Context, host: str) -> bytes:
         with output.working("Reading the device's memory - a few minutes..."):
             flash = openbeken.read_flash(host, 0, WHOLE_FLASH, progress=progress)
     except OSError as exc:
-        raise Abort(f"the connection to the device was lost as its memory was read: {exc}. {again}") from exc
+        raise Abort(f"the connection to the device was lost as its memory was read: {exc}. {again}",
+                    failure="device-lost") from exc
     finally:
         output.progress_clear()
     if len(flash) != WHOLE_FLASH:
         raise Abort(f"the connection to the device was lost as its memory was read: only {len(flash):,} of "
-                    f"{WHOLE_FLASH:,} bytes were read. {again}")
+                    f"{WHOLE_FLASH:,} bytes were read. {again}", failure="device-lost")
     output.say(f"    Read {len(flash):,} bytes.")
     return flash
 

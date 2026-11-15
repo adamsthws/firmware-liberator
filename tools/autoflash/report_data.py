@@ -246,11 +246,16 @@ def outcome(ctx: Context, ending: str) -> tuple[str, dict[str, Any] | None]:
                         "crash_site": None}
     reason = ctx.last_failure or ""
     text = plain(reason)
-    # Classed by the words sent, as the API checks them (website/api/review.js),
-    # but for words cut short, where the whole reason says more.
+    # The class what stopped it said (errors.Abort's failure), else classed by
+    # the words sent, as the API checks them (website/api/review.js), but for
+    # words cut short, where the whole reason says more.
     site = getattr(ctx, "crash_site", None)
-    return ending, {"step": stopped_step(ctx),
+    said = getattr(ctx, "last_failure_class", None)
+    # A crash escaped the runner: in the step under way, or in none (cli.py).
+    step = (getattr(ctx, "last_failed_step", "") or None) if ending == "crashed" else stopped_step(ctx)
+    return ending, {"step": step,
                     "error": "crash" if ending == "crashed"
+                    else said if said in failures.CLASSES
                     else failures.classify(reason if text.endswith("...") else text),
                     "text": text,
                     "crash_site": site if isinstance(site, str) and CRASH_SITE.fullmatch(site) else None}

@@ -69,7 +69,7 @@ def serve_to_device(ctx: Context, image: bytes, what: str, fetch: Callable[[str]
                 if not unstick():
                     raise NothingWritten(f"the device asked for nothing of {what}, and did not answer again "
                                          "after being restarted: switch it off and on, then run the same command "
-                                         "again")
+                                         "again", failure="device-no-answer")
                 unstick = None
                 fetch(url)
                 started = asked = time.monotonic()

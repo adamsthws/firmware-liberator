@@ -1161,5 +1161,30 @@ class ErasedTasmotaTests(unittest.TestCase):
             looked.assert_not_called()
 
 
+class RunningStepTests(unittest.TestCase):
+    """The step under way, for a crash that escapes it to say where it was
+    (cli.py, report_data.outcome): none once it is done."""
+
+    def ctx(self):
+        from types import SimpleNamespace
+        state = mock.Mock(data={"captures": {}}, input=mock.Mock(return_value=None))
+        return SimpleNamespace(state=state, last_runner=None, running_step=None)
+
+    def test_a_step_done_leaves_none_under_way(self):
+        ctx = self.ctx()
+        with mock.patch.object(runner, "_execute", return_value=0), \
+                mock.patch.object(runner, "asked_of_the_run", return_value=([], 0)):
+            self.assertEqual(runner.execute(ctx, "K2"), 0)
+        self.assertIsNone(ctx.running_step)
+
+    def test_an_error_that_escapes_a_step_leaves_it_under_way(self):
+        ctx = self.ctx()
+        with mock.patch.object(runner, "_execute", side_effect=RuntimeError("escaped")), \
+                mock.patch.object(runner, "asked_of_the_run", return_value=([], 0)):
+            with self.assertRaises(RuntimeError):
+                runner.execute(ctx, "K2")
+        self.assertEqual(ctx.running_step, "K2")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -75,6 +75,31 @@ class ClassifyTests(unittest.TestCase):
                      if failures.classify(message) == "other"]
         self.assertEqual(unclassed, [], "add a pattern to failures.PATTERNS")
 
+    def test_a_stop_that_says_its_class_has_words_of_that_class(self) -> None:
+        """Its class is sent as it is, and the API holds back a report whose
+        words read as none of the tool's messages: so its words must read as
+        its class, which is what this checks - the right class, not just one."""
+        from tools.autoflash import errors
+        own = {name: cls.failure for name, cls in vars(errors).items()
+               if isinstance(cls, type) and issubclass(cls, errors.Abort) and cls.failure}
+        said = []
+        for path in sorted((ROOT / "tools/autoflash").rglob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if not (isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call) and node.exc.args):
+                    continue
+                func = node.exc.func
+                name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+                given = next((kw.value.value for kw in node.exc.keywords if kw.arg == "failure"
+                              and isinstance(kw.value, ast.Constant)), own.get(name))
+                if given:
+                    said += [(f"{path.relative_to(ROOT)}:{node.lineno}", given, message)
+                             for message in literals(node.exc.args[0]) if not message.startswith("{}")]
+        self.assertGreaterEqual(len(said), 5)   # the walk found them
+        self.assertEqual([f"{where}: {given}, not {failures.classify(message)}: {message[:60]}"
+                          for where, given, message in said if failures.classify(message) != given], [])
+        self.assertEqual(failures.class_of(errors.StoppedPartWay("words of no class")), "upload-cut")
+        self.assertEqual(failures.class_of(errors.Abort("nothing answers at 192.0.2.50")), "device-not-found")
+
     def test_every_oserror_the_tool_raises_itself_is_caught_short_of_the_runner(self) -> None:
         found = set()
         for path in sorted((ROOT / "tools/autoflash").rglob("*.py")):
