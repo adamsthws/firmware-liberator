@@ -266,14 +266,30 @@ def report_fields(ctx: Context, hardware: dict[str, str] | None = None,
 SONOFF_IDENTITY = {"backup": "backup", "kept": "device", "account": "eWeLink account"}
 
 
+# Every line the relay's check says, and what it says of the check: passed,
+# failed, or not run (None). The report's Checks answer, the API's and the
+# fault suites' read this, never how the words begin: a line not here fails
+# tests/autoflash/test_report.py, and is taken for a failure meanwhile.
+RELAY_SWITCHES = "switches"
+METER_CONFIRMS = "switches (meter confirms)"
+SWITCHES_THROUGH_EWELINK = "switches (through eWeLink)"
+DID_NOT_SWITCH, RELAY_UNCHECKED, RELAY_NOT_CHECKED, MOTOR_MODE = (
+    "did not switch", "could not be checked", "not checked", "motor mode")
+RELAY_LINES = {RELAY_SWITCHES: True, METER_CONFIRMS: True, "switches (meter unchanged)": True,
+               SWITCHES_THROUGH_EWELINK: True, DID_NOT_SWITCH: False, RELAY_UNCHECKED: False,
+               RELAY_NOT_CHECKED: None, MOTOR_MODE: None}
+# How the release check's line ends where the device runs the release installed.
+AS_INSTALLED = ", as installed"
+
+
 def check_passed(label: str, value: str) -> bool | None:
     """Whether one end-of-run check passed, by its line: None for one that did
     not run, or a line that is no check of its own (Power meter, which the
     Relay line's answer takes in)."""
     if label == "Relay":
-        return None if value in ("not checked", "motor mode") else value.startswith("switches")
+        return RELAY_LINES.get(value, False)
     if label == "Release":
-        return value.endswith(", as installed")
+        return value.endswith(AS_INSTALLED)
     if label == "Sensor":
         return None if value == NO_READING else not value.startswith(OUT_OF_RANGE)
     return None
@@ -414,11 +430,11 @@ def describe_hardware(switched: bool, restored: bool,
     seen = ((v_on is not None and v_off is not None and v_on >= MAINS_VOLTS and v_off < DEAD_VOLTS)
             or (p_on is not None and p_off is not None and p_on >= LOAD_WATTS and p_off < IDLE_WATTS))
     if not (switched and restored):
-        relay = "did not switch"
+        relay = DID_NOT_SWITCH
     elif not metered:
-        return {"Relay": "switches"}
+        return {"Relay": RELAY_SWITCHES}
     elif seen:
-        relay = "switches (meter confirms)"
+        relay = METER_CONFIRMS
     else:
         relay = "switches (meter unchanged)"
     if not metered:
@@ -491,7 +507,7 @@ def for_device(result: dict[str, str], metered: bool) -> dict[str, str]:
 
 
 # What a check the device did not answer found.
-UNCHECKED = {"Relay": "could not be checked", "Power meter": "could not be checked"}
+UNCHECKED = {"Relay": RELAY_UNCHECKED, "Power meter": "could not be checked"}
 
 
 def said(result: dict[str, str], metered: bool = True) -> dict[str, str]:
@@ -538,11 +554,11 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
     metered = has_meter(ctx)
     device_id = str(records.read_device(ctx.state.input("device_mac") or "").get("ewelink_id") or "")
     if not device_id:
-        return for_device({"Relay": "not checked", "Power meter": "not checked"}, metered)
+        return for_device({"Relay": RELAY_NOT_CHECKED, "Power meter": "not checked"}, metered)
     output.say("Checking the relay through eWeLink...")
     record = wait_until_online(ctx, device_id)
     if record is not None and ewelink_relay.motor_mode(record.get("params") or {}):
-        return said({"Relay": "motor mode", "Power meter": "not checked"}, metered)
+        return said({"Relay": MOTOR_MODE, "Power meter": "not checked"}, metered)
     if record is not None:
         checked = ewelink_relay.check_relay(
             account=ctx.ewelink, device_id=device_id, say=output.say)
@@ -551,9 +567,9 @@ def check_ewelink_hardware(ctx: Context) -> dict[str, str]:
                    "could not be switched there. Check the eWeLink app.")
         checked = None
     if checked is None:
-        return said({"Relay": "could not be checked", "Power meter": "not checked"}, metered)
+        return said({"Relay": RELAY_UNCHECKED, "Power meter": "not checked"}, metered)
     if checked.on is None and checked.off is None:
-        relay = "switches (through eWeLink)" if checked.switched and checked.restored else "did not switch"
+        relay = SWITCHES_THROUGH_EWELINK if checked.switched and checked.restored else DID_NOT_SWITCH
         return said({"Relay": relay, "Power meter": "not checked"}, metered)
     return said(describe_hardware(checked.switched, checked.restored, checked.on, checked.off, metered),
                 metered)
@@ -587,7 +603,7 @@ def check_release(ctx: Context) -> dict[str, str]:
         if running is not None:
             break
     if running == published:
-        return {"Release": f"{published}, as installed"}
+        return {"Release": f"{published}{AS_INSTALLED}"}
     return {"Release": f"{running}, not {published}" if running else f"not this project's {published}"}
 
 

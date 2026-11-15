@@ -119,6 +119,15 @@ def python_info() -> dict[str, str]:
             "source": PYTHON_SOURCES.get(source.rstrip(")"), "other")}
 
 
+# How a calibration's words begin, as the firmware says them, and the
+# report's word for each: our ESPHome's Calibration sensor (devices/*/
+# esphome.yaml, its `source`), and OpenBeken's driver (openbeken.
+# CALIBRATION_STATES, CALIBRATION_CHANGED). tests/autoflash/test_report_data.py
+# holds every word those say to one of these, so none is sent as "reported".
+CALIBRATION_WORDS = (("stock NVS", "stock-nvs"), ("from backup", "from-backup"), ("missing", "missing"),
+                     (openbeken.CALIBRATION_STATES["stock"], "stock-store"), (openbeken.CALIBRATION_CHANGED, "changed"))
+
+
 def meter_word(captures: dict[str, Any], firmware: str | None) -> str:
     """How the run left the meter's calibration: one of METER_WORDS."""
     if firmware == "sonoff":
@@ -133,10 +142,7 @@ def meter_word(captures: dict[str, Any], firmware: str | None) -> str:
         return "carried-factory" if found.get("factory") else "carried"
     said = found.get("calibration") if isinstance(found, dict) else found
     if isinstance(said, str) and said:
-        return next((word for start, word in (("stock NVS", "stock-nvs"), ("from backup", "from-backup"),
-                                              ("missing", "missing"), ("stock store", "stock-store"),
-                                              (openbeken.CALIBRATION_CHANGED, "changed"))
-                     if said.startswith(start)), "reported")
+        return next((word for start, word in CALIBRATION_WORDS if said.startswith(start)), "reported")
     return "not-checked"
 
 
