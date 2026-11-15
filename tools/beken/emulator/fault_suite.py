@@ -39,8 +39,10 @@ end-of-run checks passed, on a device with a meter (the S61) the emulated
 meter confirming the relay switched (FAIL-CHECKS if not:
 tools/repo/fault_verdicts.py),
 that each run left one line a stage on its screen, none of a try that
-failed (FAIL-SCREEN if not), and that a device converted to OpenBeken or ESPHome
-runs this checkout's release of it (FAIL-NOT-LATEST if not).
+failed (FAIL-SCREEN if not), that a device converted to OpenBeken or ESPHome
+runs this checkout's release of it (FAIL-NOT-LATEST if not), and that no run
+met an error the tool did not see coming, though the next converted
+(FAIL-UNEXPECTED if one did, as the Espressif suite has it).
 
 The faults: the device switched off for 1 or 30 s (deviceoff), the network
 gone - the router off - for 5, 15, 30, 120 or 180 s (outage), as the
@@ -474,6 +476,16 @@ class Instance:
         """This scenario's runs, oldest first."""
         return [path for path in self.all_runs() if filed_as(path) not in self.before]
 
+    def run_texts(self) -> list[str]:
+        """The words of each of this scenario's runs, oldest first."""
+        found = []
+        for path in self.runs():
+            try:
+                found.append(path.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                pass   # filed away as it was read
+        return found
+
     def last_outcome(self, since: float) -> dict | None:
         """How the newest run since `since` ended, as it said itself
         (fault_verdicts.run_outcomes): None for none."""
@@ -780,6 +792,11 @@ def run_scenario(instance: Instance, sc: dict) -> dict:
         outcome = step_scenario(instance, sc, target, log, notes)
     person.done.set()
     person.join(10)
+    if outcome["result"] in ("PASS", "FAIL") and fault_verdicts.unexpected(
+            instance.run_texts(), fault_verdicts.run_outcomes(instance.state / "work/captures", began)):
+        # As the Espressif suite: a run stopped by an error the tool did not see
+        # coming is a bug, whatever the fault, though the next run converts.
+        outcome = dict(outcome, result="FAIL-UNEXPECTED")
     # Asked while it runs: a route through J2 stops it below, for its flash.
     release = release_of(instance, target) if outcome["result"] == "PASS" and target in LATEST else None
     if outcome["result"] == "PASS" and target != "readout":

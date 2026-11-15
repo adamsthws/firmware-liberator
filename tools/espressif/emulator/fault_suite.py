@@ -694,7 +694,6 @@ LEGACY = EMU / "legacy"
 LEGACY_TOOL = "tools/s60_autoflash.py"  # its name until 2.0.0
 LEGACY_TOOLS = (LEGACY_TOOL, "tools/autoflash_cli.py")  # and until the reorganisation
 # What a run says when an error it did not expect stops it (tools.autoflash.cli._main).
-UNEXPECTED = "something unexpected went wrong"
 LEGACY_NAMED = {"G1", "H1"}  # killed past its F4: the device keeps the name that release gave it
 _legacy_lock = threading.Lock()
 
@@ -1331,6 +1330,14 @@ class Scenario:
         self.notes = {}
         self.step_length = 60  # the step under test's usual length (go_watched)
         self.earlier_release_wrote = {}  # each run log, as far as a legacy run left it
+
+    def unexpected(self):
+        """Whether this checkout's runs in the scenario met an error the tool did
+        not see coming (fault_verdicts.unexpected): not an earlier release's,
+        which is out already (1.2.0's TimeoutError as G1 starts)."""
+        return fault_verdicts.unexpected(
+            (self.ours(p, t) for m, p, t in run_logs(self.state) if m >= self.started),
+            fault_verdicts.run_outcomes(self.state / "work/captures", self.started))
 
     def ours(self, log, text):
         """What this checkout's runs wrote to a run log: past what an earlier
@@ -2340,7 +2347,7 @@ class Scenario:
                 special = "MISTIMED"
             elif self.notes.get("not_applied"):
                 special = "NOT-FIRED"
-            elif any(UNEXPECTED in t for m, _, t in run_logs(self.state) if m >= self.started):
+            elif self.unexpected():
                 special = "FAIL-UNEXPECTED"
             elif problems:
                 special = problems[0][0]
@@ -2422,7 +2429,7 @@ class Scenario:
                 special = "MISTIMED"
             elif self.notes.get("not_applied"):
                 special = "NOT-FIRED"
-            elif any(UNEXPECTED in t for m, _, t in run_logs(self.state) if m >= self.started):
+            elif self.unexpected():
                 special = "FAIL-UNEXPECTED"
             elif not converted and self.notes["readout"]:
                 special = "FAIL-READOUT"  # no whole readout kept
@@ -2616,7 +2623,7 @@ class Scenario:
         if not special:
             if self.notes.get("mistimed"):
                 special = "MISTIMED"
-            elif any(UNEXPECTED in self.ours(p, t) for m, p, t in run_logs(self.state) if m >= self.started):
+            elif self.unexpected():
                 # A run stopped by an error the tool did not see coming - a bug,
                 # whatever the fault - though the next run may convert the device
                 # (seen: a report that could not be made, KeyError: 'safeboot').
