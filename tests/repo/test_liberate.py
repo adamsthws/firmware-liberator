@@ -28,7 +28,19 @@ POWERSHELL = shutil.which("pwsh") or (shutil.which("powershell") if os.name == "
 # windows-python.ps1 that gives it this Python. What the tool is started with
 # is written down, by the release's start.sh or its cli.py.
 START_SH = 'echo "$*" > "$(dirname "$0")/started"\n'
-START_PS1 = (ROOT / "tools" / "windows-start.ps1").read_text(encoding="utf-8")
+# Elsewhere the real one cannot run: it splits its arguments off the command
+# line with Windows' own CommandLineToArgvW. A stand-in takes them as
+# liberate.ps1 passed them - after the command's closing "#" - and writes
+# down what the real one would start the tool with.
+START_PS1_ELSEWHERE = r"""
+$all = [Environment]::GetCommandLineArgs()
+$at = [Array]::FindLastIndex($all, [Predicate[string]] { param($one) $one.EndsWith('#') })
+$given = @(if ($at -ge 0 -and $at -lt $all.Count - 1) { $all[($at + 1)..($all.Count - 1)] })
+$arguments = @(if ($given.Count) { $given } else { "run" })
+Set-Content (Join-Path (Split-Path (Split-Path $env:AUTOFLASH_START)) "started") ($arguments -join " ")
+"""
+START_PS1 = ((ROOT / "tools" / "windows-start.ps1").read_text(encoding="utf-8") if os.name == "nt"
+             else START_PS1_ELSEWHERE)
 PYTHON_PS1 = ("function Get-ToolPython { '%s' }\nfunction Request-PythonRemoval { }\n"
               % sys.executable.replace("'", "''"))
 CLI_PY = ("import pathlib, sys\n"
