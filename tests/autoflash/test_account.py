@@ -48,6 +48,12 @@ class MatchTests(unittest.TestCase):
         [seen] = account.match_devices([self.device], {"192.0.2.50": "aa:bb:cc:12:34:56"})
         self.assertEqual(seen.ip, "192.0.2.50")
 
+    def test_found_by_a_hardware_address_given_without_separators(self):
+        # The DualR3's firmware reports its staMac so, and eWeLink keeps it.
+        device = account.account_device({**S60, "params": {"staMac": "AABBCC123456"}})
+        [seen] = account.match_devices([device], {"192.0.2.50": "aa:bb:cc:12:34:56"})
+        self.assertEqual(seen.ip, "192.0.2.50")
+
     def test_another_device_on_the_network_is_not_mistaken_for_it(self):
         [seen] = account.match_devices([self.device], {"192.0.2.60": "aa:bb:cc:00:00:01"})
         self.assertIsNone(seen.ip)

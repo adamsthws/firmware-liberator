@@ -484,6 +484,8 @@ class SystemCommandTests(unittest.TestCase):
     def test_mac_addresses_are_normalised(self):
         self.assertEqual(hostsys.normalise_mac("AA-BB-CC-7E-81-9F"), "aa:bb:cc:7e:81:9f")
         self.assertEqual(hostsys.normalise_mac("2:b1:c2:d:3e:4f"), "02:b1:c2:0d:3e:4f")
+        # As the DualR3's firmware reports it to eWeLink.
+        self.assertEqual(hostsys.normalise_mac("123456E32D07"), "12:34:56:e3:2d:07")
 
     def test_checksum_listing_is_verified_without_sha256sum(self):
         with tempfile.TemporaryDirectory() as directory:

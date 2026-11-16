@@ -263,8 +263,14 @@ def download(request: urllib.request.Request | str, timeout: float = 60.0,
 
 
 def normalise_mac(text: str) -> str:
-    """aa:bb:cc:dd:ee:ff, whatever separators and padding the system used."""
-    parts = re.split(r"[:-]", text.strip())
+    """aa:bb:cc:dd:ee:ff, whatever separators and padding the system used -
+    or none, as some of Sonoff's firmware (the DualR3's) gives eWeLink its own:
+    12 hex digits."""
+    text = text.strip()
+    if re.fullmatch(r"[0-9A-Fa-f]{12}", text):
+        parts = [text[at:at + 2] for at in range(0, 12, 2)]
+    else:
+        parts = re.split(r"[:-]", text)
     return ":".join(part.zfill(2).lower() for part in parts)
 
 

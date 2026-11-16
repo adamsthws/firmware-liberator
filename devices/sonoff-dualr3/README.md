@@ -12,6 +12,9 @@ settings in relay mode
 ([its work mode](../../docs/espressif-research.md#the-dual-r3s-work-mode)). The
 emulator has none of its hardware but its CSE7761 meter, which ESPHome reads, so
 the rest of its wiring below is what its sources say, not what was seen.
+Its firmware (1.6.1) reports its Wi-Fi MAC to the cloud (`staMac`) as 12 hex
+digits with no separators, as the emulator's stand-in for eWeLink saw: the
+tool finds the device on your network by that MAC, written either way.
 
 **Worth checking:** whether both relays, the wall switches, the button and the
 LED work, and which meter chip yours has.
