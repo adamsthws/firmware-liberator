@@ -214,6 +214,28 @@ asked for one, and it is GPL-3.0 since 7 November 2026. The same day it was
 rewritten from Python into C++, so this project's fixes no longer apply to it
 as they are: they will be ported once the rewrite has settled.
 
+## A Beken device on ESPHome giving up an address it still uses
+
+After a router outage long enough for it to raise its own network, the S61 on
+ESPHome sometimes rejoined and then released its DHCP lease, which the router
+was free to give another device. Traced in the emulator, two bugs together make
+it: on Beken chips LibreTiny never reported a scan that found nothing as done,
+so ESPHome sat out its scan timeout while the SDK joined the router by itself;
+and ESPHome, with its own network up, kept a stale error past its cooldown,
+reported that connection, dropped it at once, and tore it down - the SDK's
+release reaching the router after the device had the address again.
+
+| Project | Pull request | Status | What it fixes |
+|---|---|---|---|
+| LibreTiny | [#446](https://github.com/libretiny-eu/libretiny/pull/446) | ![state](https://img.shields.io/github/pulls/detail/state/libretiny-eu/libretiny/446?label=) | On Beken chips a scan that found no networks never sent its scan-done event, so a caller waited out its own timeout - ESPHome up to 31 s a scan while the router was off |
+| ESPHome | [#22797](https://github.com/esphome/esphome/pull/22797) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/esphome/22797?label=) | With a portal up, the skipped adapter restart left the last error set, so a connection made during the cooldown was reported, then dropped at once |
+
+Proven in the BekenEmulator, 48 router outages of two minutes each way: with
+neither fix, the connection made in the cooldown torn down and the address
+released; with LibreTiny's alone, still dropped five times; with both, never.
+[docs/beken-research.md](beken-research.md#esphome-releasing-the-address-it-keeps)
+has the trace.
+
 ## A security fix, reported privately
 
 A weakness in Tasmota's web server was reported to its maintainers privately on
