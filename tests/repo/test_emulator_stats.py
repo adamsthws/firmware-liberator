@@ -264,6 +264,11 @@ class EmulatorStatsTests(unittest.TestCase):
         self.assertTrue((self.folder / emulator_stats.UNSENT_BATCHES).exists())
         emulator_stats._waiting.discard(self.folder)
 
+    def test_push_with_no_token_here_says_how_to_have_it_again(self):
+        self.env_file.unlink()
+        [said] = emulator_stats.push(["host-a"])
+        self.assertIn("cloudflare_settings.py rotate emulator-stats", said)
+
     def test_a_batch_begun_with_credentials_says_nothing_of_them(self):
         self.enterContext(mock.patch.object(emulator_stats, "_told_unsent", False))
         err = io.StringIO()

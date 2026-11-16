@@ -151,7 +151,7 @@ def push(to: list[str]) -> list[str]:
     try:
         text = CREDENTIALS.read_text(encoding="utf-8")
     except OSError:
-        return [f"no {CREDENTIALS} here to copy: tools/repo/cloudflare_settings.py apply writes it"]
+        return [f"no {CREDENTIALS} here to copy: {ROTATE}"]
     # The secret goes on ssh's input, never on a command line.
     script = (f"umask 077 && mkdir -p \"$HOME/{Path(CREDENTIALS_PATH).parent}\" && "
               f"cat > \"$HOME/{CREDENTIALS_PATH}.new\" && mv -f \"$HOME/{CREDENTIALS_PATH}.new\" \"$HOME/{CREDENTIALS_PATH}\"")
