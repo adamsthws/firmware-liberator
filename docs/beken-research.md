@@ -758,6 +758,49 @@ Each has a fix offered upstream: [#2309](https://github.com/openshwprojects/Open
 [#2311](https://github.com/openshwprojects/OpenBK7231T_App/pull/2311), each tested in the emulator on OpenBeken's
 `main` with and without it.
 
+### ESPHome releasing the address it keeps
+
+In the fault suite's long router outages an emulated S61 on ESPHome
+(2026.10.0, LibreTiny 1.13.0) sometimes released the address it went on
+using: `DHCPACK`, a second `DHCPACK` of the same address, then `DHCPRELEASE`,
+in the router's log. Traced with a build of the same config with LibreTiny's
+Wi-Fi debugging on and the SDK's own output, the SDK's calls logged as they
+came (`DEVICE_TRACE`), and the serial log timed beside the router's, router
+outages of two minutes on eight emulated devices:
+
+1. **An empty scan never ends** (LibreTiny, Beken only). With the router off,
+   ESPHome's scans find nothing; `scanHandler` takes room for no entries as an
+   allocation failure ("scan->ap alloc failed") and never sends
+   `ARDUINO_EVENT_WIFI_SCAN_DONE`, so ESPHome waits out its scan timeout (up
+   to 31 s, "Scan timeout") each time: 22 to 28 times in six outages.
+2. **The SDK joins by itself meanwhile.** ESPHome's `WiFi.disconnect()` after
+   each "Probe Request Unsuccessful" does nothing to a station not yet
+   associated ("ignore connection loss event"), so the SDK's supplicant goes
+   on scanning and joins the router once it is back, DHCP and all, while
+   ESPHome is still waiting.
+3. **A stale error drops that connection** (ESPHome). With its own network up,
+   ESPHome's `RESTARTING_ADAPTER` phase skips `restart_adapter()` and only
+   disconnects, leaving `error_from_callback_` set from the last failure.
+   After the cooldown `check_connecting_finished()` reports the SDK's
+   connection ("Connected", then "Disabling AP"), and `is_connected_()`, reading
+   the stale flag, calls it lost at once ("Connection lost; reconnecting").
+4. **Reconnecting releases the lease.** Each attempt begins by tearing down a
+   live session (`WiFi.disconnect()`, then the SDK's `sta_ip_down`,
+   `dhcp_stop`, `dhcp_release_and_stop`). The release waits for the router's
+   ARP answer, and goes out once the device has joined again and been given
+   the same address - so the router frees an address still in use.
+
+Taking ESPHome's own network down (`bk_wlan_stop(BK_SOFT_AP)`) comes just
+before the drop in step 3, but plays no part. With LibreTiny's empty scans
+reported done, steps 1 and 2's long waits went (no scan timeouts in 48
+outages) but step 3 still dropped a connection five times; with ESPHome's
+flag cleared as `restart_adapter()` clears it, none of the 48 did, and no
+address was released. Both fixes are offered upstream
+([upstream-contributions.md](upstream-contributions.md#a-beken-device-on-esphome-giving-up-an-address-it-still-uses)). Separately, LibreTiny
+drops the SDK's `RW_EVT_STA_DEAUTH` and `RW_EVT_STA_ACTIVE_DISCONNECTED`
+(`WiFiEvents.cpp`), so a joined station's deauthentication reaches ESPHome as
+nothing.
+
 ### Carrying Wi-Fi across the conversion: the OpenBeken config
 
 The new firmware should rejoin your network with nothing typed, as on the
@@ -1414,18 +1457,13 @@ with `00 00 10 00 80 80 02 29`, then zeros.
 - **Where each received credential is written.** BLE's `recv_ssid` and the
   `pairingMode` command (`0x492ae`) are the decoders left, AirKiss's being a stub;
   the write of `wifi-ssid` and `wifi-pass` has not been traced from either.
-- **Whether ESPHome on a real Beken device releases its lease as it takes its
-  own network down.** In the emulator, rejoined after a router outage long
-  enough for it to raise its own network, it sometimes drops the home network
-  as it takes its own down, joins again within the second, and releases the
-  address it goes on using
-  ([what was seen](../devices/sonoff-s61/esphome.md#what-the-emulator-has-shown)).
-  The release is the Beken SDK's lwIP 2.2, where `dhcp_stop()` is
-  `dhcp_release_and_stop()` (LibreTiny 1.13.0's `WiFi.disconnect()`, then
-  `sta_ip_down()`); the drop, whether the SDK's `bk_wlan_stop(BK_SOFT_AP)`
-  takes the station's link down with it on hardware too, or only as the
-  emulated MAC sees it. The same code runs on any BK7231N or BK7231T on
-  LibreTiny's ESPHome, so any of them would say: its router off for two
+- **Whether a real Beken device on ESPHome releases its lease as it rejoins
+  after a long router outage.** The emulator does, now and then, and why is
+  known ([below](#esphome-releasing-the-address-it-keeps)); the code at fault
+  is LibreTiny's and ESPHome's, not the emulator's, but two steps come from the
+  Beken SDK - its supplicant joining by itself after LibreTiny's `disconnect()`,
+  and the release waiting for an ARP answer until after the next lease - and
+  only a device can say whether they happen on hardware: its router off for two
   minutes, then on, and the router's log read for a `DHCPRELEASE` just after
   its `DHCPACK`.
 - **Whether the pairing soft-AP serves DHCP on a real device,** and its

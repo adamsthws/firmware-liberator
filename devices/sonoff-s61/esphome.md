@@ -185,14 +185,12 @@ any check the device makes. None has been tried on a real S61 yet.
    on trying the home one; given details there it joins with them. Its router
    off, it notices within seconds and looks for it; off for a minute and a half
    or more, it raises its own network meanwhile, and rejoins the home one once
-   the router is back. Then, in some runs, it drops the home network for a
-   moment as it takes its own network down, joins again within the second -
-   and releases the address it goes on using (`DHCPACK`, then `DHCPRELEASE`,
-   in the emulated router's log), so a router may give it to another device.
-   The release is lwIP's: LibreTiny's link going down stops DHCP, and in the
-   lwIP the Beken SDK builds that releases the lease, the packet waiting for
-   the router's ARP answer until the link is back. Whether a real device drops
-   its link as it takes its network down is not known
+   the router is back. Then, in some runs, it releases the address it goes on
+   using (`DHCPACK`, a second `DHCPACK` of the same address, then
+   `DHCPRELEASE`, in the emulated router's log), so a router may give it to
+   another device. Two bugs upstream, LibreTiny's and ESPHome's, make it
+   ([traced](../../docs/beken-research.md#esphome-releasing-the-address-it-keeps));
+   whether a real device does the same is not known
    ([open question](../../docs/beken-research.md#questions-still-open)).
 
 As with OpenBeken, the emulator does not run the applied app in the same
