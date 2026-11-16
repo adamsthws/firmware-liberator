@@ -228,5 +228,13 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("emulator_check.py list", self.workflow)
         self.assertIn('emulator_check.py "$DEVICE"', self.workflow)
 
+    def test_every_familys_runs_are_kept_for_reading(self):
+        # Each family's emulator keeps a device's computer's runs under its own state folders.
+        from tools.beken.emulator import folders as beken_folders
+        beken = beken_folders.state(1).parent.relative_to(ROOT).as_posix()
+        for family in ("captures/emulation", beken):
+            with self.subTest(family):
+                self.assertIn(f"            {family}/state-*/work/captures/devices/*/runs/*/run.log\n", self.workflow)
+
     def test_a_release_checks_every_device(self):
         self.assertIn("every_device", self.workflow)
