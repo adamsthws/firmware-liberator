@@ -314,6 +314,15 @@ class TokensTests(unittest.TestCase):
         self.assertIn("Client IP Address Filtering, Is in, 192.0.2.77 alone", out)
         self.assertNotIn("check its TTL", out)
 
+    def test_two_of_one_name_are_left_to_be_deleted_and_nothing_is_made(self):
+        self.fake.tokens.append({"id": "old-check-2", "name": cs.TOKEN_PREFIX + "settings-check-read-only",
+                                 "status": "active", "policies": []})
+        code, out = self.run_it()
+        self.assertEqual(code, 1)
+        self.assertIn(f"more than one token is named {cs.TOKEN_PREFIX}settings-check-read-only: delete every one",
+                      out)
+        self.assertEqual(self.fake.sent, [("DELETE", f"{TOKENS}/own", None)], "made nothing, deleted itself")
+
     def test_a_step_that_fails_still_deletes_it(self):
         self.fake.fail = {f"{TOKENS}/old-check/value"}
         code, out = self.run_it()

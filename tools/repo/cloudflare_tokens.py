@@ -342,6 +342,13 @@ def run(keys: list[str], now: dt.datetime) -> int:
     try:
         if any(cs.TOKENS[key]["kept"] == "github" for key in keys):
             signed_in()
+        tokens = cs.every_page(f"/accounts/{account}/tokens") or []
+        # make() remakes the first of a name, and would leave the rest usable.
+        twice = sorted({name for key in keys if sum(token.get("name") == (name := cs.TOKEN_PREFIX + key)
+                                                    for token in tokens) > 1})
+        if twice:
+            raise cs.SettingsError(f"more than one token is named {', '.join(twice)}: delete every one so named "
+                                   "in the dashboard, and run this again to make it afresh")
         groups = {(group["name"], scope): group["id"]
                   for group in cs.api(f"/accounts/{account}/tokens/permission_groups")
                   for scope in group.get("scopes") or []}
@@ -353,7 +360,6 @@ def run(keys: list[str], now: dt.datetime) -> int:
                 raise cs.SettingsError(f"the helper token cannot see the zone {cs.ZONE}")
             tags = {script["id"]: script["tag"] for script in cs.api(f"/accounts/{account}/workers/scripts") or []}
         zone_id = zones[0]["id"]
-        tokens = cs.every_page(f"/accounts/{account}/tokens") or []
         for key in keys:
             if alive and cs.TOKENS[key]["kept"] != "worker":
                 alive = False

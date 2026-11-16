@@ -689,8 +689,14 @@ def token_differences(account: str, zone_id: str) -> list[tuple[str, str, Any]]:
     found: list[tuple[str, str, Any]] = []
     for key, spec in TOKENS.items():
         name, remake = TOKEN_PREFIX + key, f"run python3 tools/repo/cloudflare_tokens.py {key}"
-        have = [token for token in tokens if token.get("name") == name and token.get("status") == "active"]
-        if not have:
+        named = [token for token in tokens if token.get("name") == name]
+        have = [token for token in named if token.get("status") == "active"]
+        # Only the first of a name would be checked, and remade, the rest left
+        # as they are, still usable.
+        if len(named) > 1:
+            found.append((name, f"is {len(named)} tokens of one name",
+                          f"delete every one in the dashboard, then {remake}"))
+        elif not have:
             found.append((name, "does not exist", remake))
         elif (policies := live_policies(have[0], zone_id, workers)) != written_policies(spec):
             found.append((name, f"allows {say(policies)}, should allow {say(written_policies(spec))}", remake))

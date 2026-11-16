@@ -765,6 +765,14 @@ class TokenTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("Client IP Address Filtering, Is in, 192.0.2.77 alone", err.getvalue())
 
+    def test_two_of_one_name_are_to_be_deleted_and_made_afresh(self):
+        # The second as written, so only the count shows it: the first alone was checked.
+        self.fake.tokens.append(listed("settings-apply"))
+        code, out = run(self.fake, "apply")
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn(f"{cs.TOKEN_PREFIX}settings-apply: left - delete every one in the dashboard, then run "
+                      "python3 tools/repo/cloudflare_tokens.py settings-apply", out)
+
     def test_every_page_of_tokens_is_read(self):
         self.fake.tokens_page = 2
         self.assertEqual(run(self.fake)[0], 0)
