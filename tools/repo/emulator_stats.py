@@ -35,7 +35,8 @@ A file of its own: not .env, the tool's, nor .env.infra, the maintainer's
 tokens that change the project's services, which stays on the maintainer's
 computer. The environment's EMULATOR_STATS_CLIENT_ID and
 EMULATOR_STATS_CLIENT_SECRET win over it. Without either nothing is sent,
-said as the batch ends.
+said as the first batch begins, so that a machine is not thrown away with
+its runs unsent, and again as each ends.
 """
 
 from __future__ import annotations
@@ -71,6 +72,10 @@ CREDENTIALS_PATH = ".config/firmware-liberator/emulator.env"
 CREDENTIALS = Path.home() / CREDENTIALS_PATH
 CLIENT_ID = "EMULATOR_STATS_CLIENT_ID"
 CLIENT_SECRET = "EMULATOR_STATS_CLIENT_SECRET"
+# How a token no computer has is had again: Access shows a secret only as it
+# makes one, so it is given a new one, and the old stops.
+ROTATE = ("python3 tools/repo/cloudflare_settings.py rotate emulator-stats (a new secret, written on the "
+          "computer it runs on and copied to EMULATOR_STATS_HOSTS)")
 # The machines push copies the credentials to: ssh's names for them,
 # space-separated, from the environment or .env.infra.
 HOSTS = "EMULATOR_STATS_HOSTS"
@@ -310,13 +315,25 @@ def tier(listed: Any, every: Any, quick: Any) -> str:
     return "full" if listed >= set(every) else "quick" if listed == set(quick) else "subset"
 
 
+# Whether this process has said it has no credentials: a suite may begin a
+# batch for each device.
+_told_unsent = False
+
+
 def began(folder: Path, *, family: str, suite: str, device: str, total: int, planned: int, cloud: str,
           workers: Any = None, tier: str = "full") -> None:
     """A batch begun, kept in `folder` and sent: its suite's scenarios for the
     device (`total`), how many it runs (`planned`), and which list it ran
     (`tier`, one of TIERS): a routine run's coverage is not a gap."""
+    global _told_unsent
     if off():
         return
+    if not _told_unsent and client() is None:
+        _told_unsent = True
+        print(f"Emulator stats: not sent - this computer has no emulator-stats token ({CREDENTIALS} missing). "
+              f"Runs are kept in {folder}.\n"
+              f"  To add it: {ROTATE}\n"
+              f"  Then here: python3 tools/repo/emulator_stats.py send {folder}", file=sys.stderr, flush=True)
     head, dirty = revision()
     _keep(folder, UNSENT_BATCHES, {
         "batch": BATCH, "started": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

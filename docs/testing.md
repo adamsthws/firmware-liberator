@@ -1074,7 +1074,8 @@ check sends nothing), and copies it to each machine `EMULATOR_STATS_HOSTS` in
 `tools/repo/.env.infra` names (`website/README.md`, The admin view);
 `emulator_stats.py push HOST...` copies it to another, and
 `emulator_stats.py check` says whether a machine's runs are taken. Without
-it nothing is sent, and the batch says so as it ends. The view takes at most
+it nothing is sent: the first batch says so as it begins, so that you copy it
+there before the machine is thrown away, and each batch again as it ends. The view takes at most
 `DAILY_RUNS` runs a day, so a token that leaked could add only so many.
 `AUTOFLASH_EMU_NO_STATS=1` keeps and sends none, as every unit test has it.
 A suite of a new chip family calls the same functions (`began`, `fault_run`,

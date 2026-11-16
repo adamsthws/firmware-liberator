@@ -1,4 +1,5 @@
 import http.server
+import io
 import json
 import re
 import subprocess
@@ -245,6 +246,32 @@ class EmulatorStatsTests(unittest.TestCase):
             r"const BATCH_FIELDS = \{\n(.*?)\n\};", ADMIN, re.S).group(1), re.M) + list(COMMON)))
         self.assertIs(Admin.seen[0][1]["runs"][0]["rerun"], True)
         self.assertFalse((self.folder / emulator_stats.UNSENT_BATCHES).exists())
+
+    def test_a_batch_begun_without_credentials_says_so_once_and_keeps_its_runs(self):
+        self.env_file.unlink()
+        self.enterContext(mock.patch.object(emulator_stats, "_told_unsent", False))
+        err = io.StringIO()
+        with emulator_stats._sending, mock.patch("sys.stderr", err):
+            for device in ("sonoff-s61", "sonoff-s60tpf"):   # a suite begins a batch for each device
+                emulator_stats.began(self.folder, family="beken", suite="fault", device=device, total=40,
+                                     planned=12, cloud="stub", workers=2)
+        said = err.getvalue()
+        self.assertEqual(said.count("Emulator stats: not sent - this computer has no emulator-stats token"), 1, said)
+        self.assertIn(f"({self.env_file} missing). Runs are kept in {self.folder}.", said)
+        self.assertIn("  To add it: python3 tools/repo/cloudflare_settings.py rotate emulator-stats (a new secret", said)
+        self.assertNotIn("push", said)
+        self.assertIn(f"Then here: python3 tools/repo/emulator_stats.py send {self.folder}", said)
+        self.assertTrue((self.folder / emulator_stats.UNSENT_BATCHES).exists())
+        emulator_stats._waiting.discard(self.folder)
+
+    def test_a_batch_begun_with_credentials_says_nothing_of_them(self):
+        self.enterContext(mock.patch.object(emulator_stats, "_told_unsent", False))
+        err = io.StringIO()
+        with emulator_stats._sending, mock.patch("sys.stderr", err):
+            emulator_stats.began(self.folder, family="beken", suite="fault", device="sonoff-s61", total=40,
+                                 planned=12, cloud="stub", workers=2)
+        self.assertEqual(err.getvalue(), "")
+        emulator_stats._waiting.discard(self.folder)
 
     def test_a_check_run_is_said_as_every_familys_is(self):
         with emulator_stats._sending:
