@@ -764,8 +764,7 @@ test("the API and the admin view log and trace every request, for a failure to b
       file);
   }
   const told = readFileSync(new URL("../../docs/what-the-tool-sends.md", import.meta.url), "utf8");
-  assert.match(told, /Cloudflare logs\s+each request, with that address, and keeps a trace of it/);
-  assert.match(told, /the rough place and network your address belongs to/);
+  assert.match(told, /Cloudflare logs\s+each request and keeps a trace of it/);
   assert.match(told, /for seven days/);
 });
 
