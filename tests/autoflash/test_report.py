@@ -728,6 +728,26 @@ class SwitchTriedAgainTests(unittest.TestCase):
                 mock.patch.object(report.time, "sleep"):
             self.assertEqual(report.check_esphome_hardware(ctx)["Relay"], report.METER_CONFIRMS)
 
+    def test_esphomes_check_reads_an_off_reading_still_holding_a_pulse_again(self):
+        # Seen in the Beken fault suite: "On: 244.614 V, 106.098 W; off: 245.255 V,
+        # 3.3364 W" - one BL0937 pulse from before the switch, in ESPHome's 2 s window.
+        from types import SimpleNamespace
+        ctx = SimpleNamespace(state=mock.Mock(input=mock.Mock(return_value="192.0.2.50")))
+        with mock.patch.object(report, "has_meter", return_value=True), mock.patch.object(report.output, "say"), \
+                mock.patch.object(report.esphome, "relay", return_value=False), \
+                mock.patch.object(report.esphome, "switch_relay", return_value=True), \
+                mock.patch.object(report.esphome, "meter", side_effect=[{"Voltage": 244.6, "Power": 106.1},
+                                                                        {"Voltage": 245.3, "Power": 3.3364},
+                                                                        {"Voltage": 245.3, "Power": 0.0}]), \
+                mock.patch.object(report.time, "sleep"):
+            self.assertEqual(report.check_esphome_hardware(ctx)["Relay"], report.METER_CONFIRMS)
+
+    def test_a_meter_that_never_drops_is_not_read_for_ever(self):
+        readings = []
+        with mock.patch.object(report.time, "sleep"):
+            found = report.settled_off(lambda: readings.append(1) or {"Power": 100.0})
+        self.assertEqual((found, len(readings)), ({"Power": 100.0}, 1 + report.OFF_TRIES))
+
     def test_esphomes_check_says_the_relay_switched_after_a_lost_reply(self):
         from types import SimpleNamespace
         ctx = SimpleNamespace(state=mock.Mock(input=mock.Mock(return_value="192.0.2.50")))

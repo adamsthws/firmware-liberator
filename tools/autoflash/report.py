@@ -436,6 +436,35 @@ ONLINE_WAIT = 180.0
 ANSWER_WAIT = 240.0
 MAINS_VOLTS, DEAD_VOLTS = 90.0, 20.0     # clearly live / clearly switched off
 LOAD_WATTS, IDLE_WATTS = 1.0, 0.5
+# A reading as the relay has just gone off may still count the last pulse from
+# before: 3.3 W, one BL0937 pulse at 106 W in ESPHome's 2 s window, the next
+# reading 0 W (seen in the Beken fault suite). Not idle, it is read this often
+# more, this far apart (one window and more), before it is the meter's answer.
+OFF_TRIES, OFF_PAUSE = 2, 3.0
+
+
+def meter_number(reading: dict[str, Any] | None, key: str) -> float | None:
+    value = (reading or {}).get(key)
+    # Tasmota gives a device with two channels each as a list (the Dual
+    # R3's Power): the first is Relay 1's, the one switched.
+    if isinstance(value, list) and value:
+        value = value[0]
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def settled_off(read: Callable[[], dict[str, Any] | None]) -> dict[str, Any] | None:
+    """The meter's reading with the relay off: `read()`, taken again
+    (OFF_TRIES) while it still shows a load, as a pulse from before the
+    switch may be counted in the first; a meter that never drops is still
+    the meter's answer."""
+    found = read()
+    for _ in range(OFF_TRIES):
+        watts = meter_number(found, "Power")
+        if watts is None or watts < IDLE_WATTS:
+            break
+        time.sleep(OFF_PAUSE)
+        found = read() or found
+    return found
 
 
 def describe_hardware(switched: bool, restored: bool,
@@ -448,24 +477,16 @@ def describe_hardware(switched: bool, restored: bool,
     that drops when it is off - the voltage, where the meter is on the switched
     side, or the power of whatever is plugged in - proves it really switches.
     """
-    def number(reading: dict[str, Any] | None, key: str) -> float | None:
-        value = (reading or {}).get(key)
-        # Tasmota gives a device with two channels each as a list (the Dual
-        # R3's Power): the first is Relay 1's, the one switched.
-        if isinstance(value, list) and value:
-            value = value[0]
-        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
-
     def reading(values: dict[str, Any] | None) -> str:
-        volts, watts = number(values, "Voltage"), number(values, "Power")
+        volts, watts = meter_number(values, "Voltage"), meter_number(values, "Power")
         if volts is None and watts is None:
             return "no reading"
         return ", ".join(part for part in (
             f"{volts:g} V" if volts is not None else "",
             f"{watts:g} W" if watts is not None else "") if part)
 
-    v_on, v_off = number(on, "Voltage"), number(off, "Voltage")
-    p_on, p_off = number(on, "Power"), number(off, "Power")
+    v_on, v_off = meter_number(on, "Voltage"), meter_number(off, "Voltage")
+    p_on, p_off = meter_number(on, "Power"), meter_number(off, "Power")
     seen = ((v_on is not None and v_off is not None and v_on >= MAINS_VOLTS and v_off < DEAD_VOLTS)
             or (p_on is not None and p_off is not None and p_on >= LOAD_WATTS and p_off < IDLE_WATTS))
     if not (switched and restored):
@@ -519,11 +540,11 @@ def check_hardware(ctx: Context) -> dict[str, str]:
         found = status.get("StatusSNS", {}).get("ENERGY") if isinstance(status, dict) else None
         return found if isinstance(found, dict) else None
 
-    def meter() -> dict[str, Any] | None:
+    def meter(off: bool) -> dict[str, Any] | None:
         if not metered:
             return None
         time.sleep(METER_SETTLE)
-        return read_again(energy)
+        return settled_off(lambda: read_again(energy)) if off else read_again(energy)
 
     output.say(checking(metered))
     try:
@@ -532,9 +553,9 @@ def check_hardware(ctx: Context) -> dict[str, str]:
             output.say(f"    The device answered again after {waited:.0f}s.")
         was_on = state(device.command("Power")) == "ON"
         switched = switched_to(lambda: switch(not was_on))
-        first = meter()
+        first = meter(off=was_on)
         restored = switched_to(lambda: switch(was_on))
-        second = meter()
+        second = meter(off=not was_on)
     except (DeviceError, OSError, ValueError) as exc:
         output.say(f"    The device did not answer the check: {exc}")
         return said(UNCHECKED, metered)
@@ -575,15 +596,16 @@ def check_esphome_hardware(ctx: Context) -> dict[str, str]:
         output.say(f"    The device did not answer the check within {ANSWER_WAIT:.0f}s.")
         return said(UNCHECKED, metered)
 
-    def meter() -> dict[str, Any] | None:
+    def meter(off: bool) -> dict[str, Any] | None:
         if not metered:
             return None
         time.sleep(METER_SETTLE)
-        return read_again(lambda: esphome.meter(host) or None)
+        read = lambda: read_again(lambda: esphome.meter(host) or None)   # noqa: E731
+        return settled_off(read) if off else read()
     switched = switched_to(lambda: esphome.switch_relay(host, not was_on))
-    first = meter()
+    first = meter(off=was_on)
     restored = switched_to(lambda: esphome.switch_relay(host, was_on))
-    second = meter()
+    second = meter(off=not was_on)
     on, off = (second, first) if was_on else (first, second)
     return said(describe_hardware(switched, restored, on, off, metered))
 
