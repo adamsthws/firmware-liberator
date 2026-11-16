@@ -36,6 +36,7 @@ class FakeCloudflare:
         self.fail = set()
         self.helper_value = None
         self.slow = 0   # how many requests a new helper is refused, as Cloudflare can for a moment
+        self.seen_from = None   # an address the tokens' IP filtering does not hold, every request refused
 
     def groups(self):
         names = {name for spec in cs.TOKENS.values() for scope in ("zone", "account", "workers")
@@ -57,6 +58,9 @@ class FakeCloudflare:
     def __call__(self, path, method="GET", body=None, ok_missing=False, ok_forbidden=False, whole=False):
         # The rotate token is allowed the account's tokens alone; the rest needs the helper.
         used = cs.token()
+        if self.seen_from:
+            raise cs.SettingsError(f"{method} {path}: HTTP 403: Cannot use the access token from location: "
+                                   f"{self.seen_from}", 403)
         helper = path.startswith(("/zones", "/accounts/a1/workers/"))
         if used != (self.helper_value if helper else ROTATE):
             raise cs.SettingsError(f"{method} {path}: HTTP 403: Invalid access token", 403)
@@ -302,6 +306,13 @@ class TokensTests(unittest.TestCase):
         self.assertIn("Cloudflare does not take that token", out)
         self.assertIn("check its TTL in the dashboard - start and end dates both today", out)
         self.assertNotIn("made-up-but-token-shaped", out)
+
+    def test_a_token_used_from_an_address_it_is_not_allowed_is_said_to_need_that_address(self):
+        self.fake.seen_from = "192.0.2.77"
+        code, out = self.run_it()
+        self.assertEqual((code, self.fake.sent), (1, []))
+        self.assertIn("Client IP Address Filtering, Is in, 192.0.2.77 alone", out)
+        self.assertNotIn("check its TTL", out)
 
     def test_a_step_that_fails_still_deletes_it(self):
         self.fake.fail = {f"{TOKENS}/old-check/value"}

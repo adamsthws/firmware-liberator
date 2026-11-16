@@ -755,6 +755,16 @@ class TokenTests(unittest.TestCase):
         self.assertIn("the settings-apply token lasts 10 minutes, from the address it was made from: in the "
                       "dashboard, give it a new TTL and Roll it", err.getvalue())
 
+    def test_an_apply_token_used_from_another_address_says_which_to_allow(self):
+        def refused(path, *args, **kwargs):
+            raise cs.SettingsError(f"GET {path}: HTTP 403: Cannot use the access token from location: 192.0.2.77",
+                                   403)
+        err = io.StringIO()
+        with mock.patch("sys.stderr", err):
+            code, _ = run(refused, "apply")
+        self.assertEqual(code, 1)
+        self.assertIn("Client IP Address Filtering, Is in, 192.0.2.77 alone", err.getvalue())
+
     def test_every_page_of_tokens_is_read(self):
         self.fake.tokens_page = 2
         self.assertEqual(run(self.fake)[0], 0)
@@ -1590,6 +1600,16 @@ class AskedTokenTests(unittest.TestCase):
         self.assertIsNone(value)
         self.assertIn("Cloudflare does not take that token", said)
         self.assertIn("check its TTL", said)
+
+    def test_one_used_from_an_address_it_is_not_allowed_is_said_to_need_that_address(self):
+        def refused(path, method="GET", body=None, **kwargs):
+            raise cs.SettingsError(f"{method} {path}: HTTP 403: Cannot use the access token from location: "
+                                   "192.0.2.77", 403)
+        self.api = refused
+        value, said = self.ask()
+        self.assertIsNone(value)
+        self.assertIn("Client IP Address Filtering, Is in, 192.0.2.77 alone", said)
+        self.assertNotIn("check its TTL", said)
 
     def test_with_no_terminal_none_is_asked_for(self):
         value, said = self.ask(tty=False)

@@ -319,10 +319,12 @@ def run(keys: list[str], now: dt.datetime) -> int:
             if error.status not in (401, 403):
                 raise
             # Cloudflare answers alike for a value that is no token's and for a
-            # token outside its TTL, as one whose start date was set wrong.
-            raise cs.SettingsError(f"Cloudflare does not take that token ({error}): check its TTL in the "
-                                   "dashboard - start and end dates both today, the end within "
-                                   f"{ROTATE_MINUTES} minutes - and that its value, not its id, was pasted") from None
+            # token outside its TTL, as one whose start date was set wrong; only
+            # a token used from an address it is not allowed is told apart.
+            raise cs.refused_address(error) or cs.SettingsError(
+                f"Cloudflare does not take that token ({error}): check its TTL in the "
+                "dashboard - start and end dates both today, the end within "
+                f"{ROTATE_MINUTES} minutes - and that its value, not its id, was pasted") from None
         if len(accounts) != 1:
             raise cs.SettingsError(f"the token sees {len(accounts)} accounts: give it this project's alone")
         account = accounts[0]["id"]

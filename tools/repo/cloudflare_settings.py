@@ -496,6 +496,23 @@ def ask(what: str) -> str | None:
 
 TRACE = "https://api.cloudflare.com/cdn-cgi/trace"
 
+# How Cloudflare refuses a token used from an address its Client IP Address
+# Filtering does not hold, naming the address it saw.
+REFUSED_ADDRESS = re.compile(r"Cannot use the access token from location: (\S+)")
+
+
+def refused_address(error: SettingsError) -> SettingsError | None:
+    """What to put right, where Cloudflare refused a token for the address it
+    was used from rather than for its TTL or value: None for any other
+    refusal."""
+    seen = REFUSED_ADDRESS.search(str(error))
+    if not seen:
+        return None
+    return SettingsError(f"Cloudflare does not take that token from this computer's address, {seen[1]}: in the "
+                         f"dashboard, give it Client IP Address Filtering, Is in, {seen[1]} alone, and run this "
+                         "again. On a mobile connection the address can change from one run to the next.",
+                         error.status)
+
 
 def own_address() -> str:
     """The address this computer's requests reach Cloudflare's API from, as
@@ -528,9 +545,10 @@ def asked_token(now: dt.datetime | None = None) -> str | None:
             except SettingsError as error:
                 if error.status not in (401, 403):
                     raise
-                raise SettingsError(f"Cloudflare does not take that token ({error}): check its TTL - start and end "
-                                    f"today, the end within {spec['minutes']} minutes - and that its value was "
-                                    "pasted, as Roll shows it") from None
+                raise refused_address(error) or SettingsError(
+                    f"Cloudflare does not take that token ({error}): check its TTL - start and end "
+                    f"today, the end within {spec['minutes']} minutes - and that its value was "
+                    "pasted, as Roll shows it") from None
             account = zones[0]["account"]["id"]
             token = api(f"/accounts/{account}/tokens/" + api(f"/accounts/{account}/tokens/verify")["id"])
             expires = token.get("expires_on")
@@ -1653,7 +1671,7 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
         if error.status not in (401, 403) or not spec.get("minutes"):
             raise
         # Cloudflare answers so for a token past its time, or used from elsewhere.
-        raise SettingsError(f"{error}: the {token_key()} token lasts {spec['minutes']} minutes, from the address it "
+        raise refused_address(error) or SettingsError(f"{error}: the {token_key()} token lasts {spec['minutes']} minutes, from the address it "
                             "was made from: in the dashboard, give it a new TTL and Roll it", error.status) from None
     if not zones:
         raise SettingsError(f"the token cannot see the zone {ZONE}")
