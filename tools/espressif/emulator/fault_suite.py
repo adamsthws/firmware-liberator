@@ -1411,9 +1411,13 @@ class Scenario:
         # every device's own: any other scenario's account is the device alone.
         for setting in ("AUTOFLASH_EMU_STUB_OTHERS", "AUTOFLASH_API_ENOUGH", "AUTOFLASH_LOCAL_READOUT_LIMIT"):
             env.pop(setting, None)
+        if STUB_CLOUD:
+            # The device's product, as eWeLink lists it, on every run: else the stub
+            # takes it from this checkout's earlier runs (emu.sh), and on one with
+            # none lists no product, as eWeLink never does.
+            env["AUTOFLASH_EMU_STUB_PRODUCT_MODEL"] = device_product()
         if every:
             env["AUTOFLASH_EMU_STUB_OTHERS"] = str(self.others_file())
-            env["AUTOFLASH_EMU_STUB_PRODUCT_MODEL"] = device_product()
             env["AUTOFLASH_API_ENOUGH"] = ",".join(self.enough())
         if every and self.sc.get("account") == "many":
             # One a minute, not the website's two: its eight readouts, 10 to 75 s
@@ -3152,8 +3156,10 @@ def make_start(save, args, stop_after=None):
     stub = ["--stub-cloud"] if STUB_CLOUD else []
     with open(log, "w", encoding="utf-8") as out:
         # A conversion: no readout to send, so no API beside it (--no-api).
+        # The device's product as every scenario's run has it (Scenario.run_tool).
+        env = dict(os.environ, AUTOFLASH_EMU_STUB_PRODUCT_MODEL=device_product()) if STUB_CLOUD else None
         subprocess.call([unattended, f"--instance={n}", f"--device={MAC}", f"--save={saved(save)}", "--no-api",
-                         *stub, *args], stdout=out, stderr=subprocess.STDOUT)
+                         *stub, *args], stdout=out, stderr=subprocess.STDOUT, env=env)
     monitor.stop.set()
     device_internet(n, False)
     CLOUD.release(n)

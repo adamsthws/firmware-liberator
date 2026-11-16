@@ -1805,6 +1805,7 @@ class ReadoutAllScenarioTests(unittest.TestCase):
             sc.log = str(log)
             with mock.patch.object(fs.subprocess, "call", return_value=0) as call, \
                     mock.patch.object(fs, "device_product", return_value=self.DEVICE), \
+                    mock.patch.object(fs, "STUB_CLOUD", True), \
                     mock.patch.dict(os.environ, {"AUTOFLASH_API_ENOUGH": "X"}):
                 sc.run_tool("readout", fresh=True)
                 other = fs.Scenario(26, {"id": "x", "route": "sonoff>readout", "step": "start", "fault": "none",
@@ -1831,6 +1832,18 @@ class ReadoutAllScenarioTests(unittest.TestCase):
         self.assertIn('"${AUTOFLASH_API_ENOUGH:-}"', script)
         self.assertIn('cp "$AUTOFLASH_EMU_STUB_OTHERS"',
                       (fs.REPO / "tools/espressif/emulator/emu.sh").read_text(encoding="utf-8"))
+
+    def test_every_run_on_the_stub_has_the_devices_product_as_ewelink_lists_it(self):
+        # On a checkout with no earlier runs the stub listed no product, as eWeLink
+        # never does: a readout of a converted device then found nothing to read.
+        with tempfile.TemporaryDirectory() as tmp:
+            sc = fs.Scenario(26, {"id": "x", "route": "tasmota>readout", "step": "start", "fault": "none",
+                                  "arg": "first-stage"}, str(Path(tmp, "scenario.log")))
+            with mock.patch.object(fs.subprocess, "call", return_value=0) as call, \
+                    mock.patch.object(fs, "device_product", return_value=self.DEVICE), \
+                    mock.patch.object(fs, "STUB_CLOUD", True):
+                sc.run_tool("readout")
+            self.assertEqual(call.call_args.kwargs["env"]["AUTOFLASH_EMU_STUB_PRODUCT_MODEL"], self.DEVICE)
 
     def test_the_many_account_meets_the_apis_limit_however_slowly_its_readouts_come(self):
         # Its readouts came 10 to 75 s apart, never three in one minute: the 429

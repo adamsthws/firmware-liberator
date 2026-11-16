@@ -169,6 +169,21 @@ class AccountDeviceTests(unittest.TestCase):
         self.assertEqual(item["params"]["fwVersion"], "1.0.2")
         self.assertEqual(stub.account_login()["data"]["user"]["apikey"], "made-up-apikey")
 
+    def test_a_device_converted_since_is_listed_with_what_it_last_reported(self):
+        # As eWeLink keeps its record: a readout of a device on Tasmota, which
+        # never speaks to the cloud again, found no firmware version on a fresh
+        # stub, and so no firmware offered (the fault suite's none-first-stage).
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            kept = Path(folder, "stub-reported.json")
+            device = {"deviceid": "1000abcdef", "devicekey": "k"}
+            stub_server.Stub("192.0.2.1", 443, 10, device, reported_file=kept).heard(
+                {"action": "update", "deviceid": "1000abcdef", "params": {"fwVersion": "1.2.0"}})
+            again = stub_server.Stub("192.0.2.1", 443, 10, device, reported_file=kept)
+            self.assertEqual(again.device_thing()["data"]["thingList"][0]["itemData"]["params"]["fwVersion"], "1.2.0")
+            kept.write_text("not json", encoding="utf-8")   # spoilt: none kept, nothing assumed
+            self.assertEqual(stub_server.Stub("192.0.2.1", 443, 10, device, reported_file=kept).reported, {})
+
     def test_the_relay_is_off_until_the_device_reports_it(self):
         # The POW Elite's and POWCT's firmware reports its relay only when it changes.
         stub = self.stub({"deviceid": "1000abcdef", "devicekey": "k"})
