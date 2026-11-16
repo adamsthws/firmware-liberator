@@ -221,7 +221,7 @@ ensure=(ensure "$IMAGE")
 
 # -- the device's flash and eFuses ---------------------------------------------
 if [ "$fresh" = 1 ]; then
-    rm -rf "$STATE/flash.bin" "$STATE/work/captures" "$STATE/.flash-mode"
+    rm -rf "$STATE/flash.bin" "$STATE/work/captures" "$STATE/.flash-mode" "$STATE/stub-reported.json"
     echo "The device is back to its Sonoff backup; the previous run and eWeLink account are forgotten."
 fi
 if [ "$stub" = 1 ]; then

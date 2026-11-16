@@ -109,8 +109,8 @@ else
 fi
 
 # Devices kept with --save: the flash, the mode it was built for (a stub run's
-# flash differs from a cloud run's - see emu.sh), and the captures of the runs
-# that made it. A device kept before modes were recorded is a cloud one.
+# flash differs from a cloud run's - see emu.sh), the captures of the runs that
+# made it, and on the stub what the device told it. A device kept before modes were recorded is a cloud one.
 mode=plain; [ "$stub" = 1 ] && mode=stub; [ "$public" = 1 ] && mode=public
 if [ -n "$from" ]; then
     [ -f "$SAVED/$from/flash.bin" ] || { echo "No device kept as '$from' (--save=$from)" >&2; exit 1; }
@@ -125,6 +125,9 @@ if [ -n "$from" ]; then
     cp "$SAVED/$from/flash.bin" "$STATE/flash.bin"
     echo "$kept_for" > "$STATE/.flash-mode"
     rm -rf "$STATE/work/captures" && cp -a "$SAVED/$from/captures" "$STATE/work/captures"
+    # The stub's record of the device, as eWeLink would still have it (stub_server.py).
+    rm -f "$STATE/stub-reported.json"
+    [ ! -f "$SAVED/$from/stub-reported.json" ] || cp "$SAVED/$from/stub-reported.json" "$STATE/stub-reported.json"
     # The kept flash is the asked-for device's now: emu.sh, seeing another device
     # than ran here last, would put it by as the last one's and bring back
     # that device's own - the run would not start from the kept device at all.
@@ -169,6 +172,7 @@ keep_device() {
     [ "$public" = 0 ] || cp "$STATE/efuse.bin" "$SAVED/$save/efuse.bin"
     cp -a "$STATE/work/captures" "$SAVED/$save/captures"
     rm -rf "$SAVED/$save/captures/unattended"
+    [ ! -f "$STATE/stub-reported.json" ] || cp "$STATE/stub-reported.json" "$SAVED/$save/stub-reported.json"
     echo "Kept as '$save' (--from=$save)."
 }
 [ "$keep" = 1 ] || trap 'stop_api; keep_device; docker stop "$NAME" >/dev/null 2>&1 || true' EXIT

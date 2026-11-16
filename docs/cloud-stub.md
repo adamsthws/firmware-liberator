@@ -333,7 +333,11 @@ the instance's network.
 - `params` are what the device itself reported in dispatch, `register` and
   its `update`s (`fwVersion`, `ssid`, `bssid`, `only_device`), as eWeLink
   keeps them. `params.ssid` names its network in "not seen on this computer's
-  network". The tool needs `params.fwVersion`, as `query_ota.py` does.
+  network". The tool needs `params.fwVersion`, as `query_ota.py` does. They
+  are kept in the instance's `stub-reported.json`, and saved and restored with
+  a device (`unattended-test.sh --save`, `--from`; `--fresh` forgets them), so
+  a device converted since, which never speaks to the cloud again, is listed
+  with the version it last ran, as eWeLink lists it.
 - `params.staMac` is how the tool finds the device on the network, as
   Sonoff's firmware need answer nothing there. The device never reports its
   MAC on this channel, so it is the MAC `emu.sh` runs the device with

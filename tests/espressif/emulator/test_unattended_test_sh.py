@@ -82,6 +82,18 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(done.stdout.endswith("is a placeholder the stub ignores.\n"), done.stdout)
 
 
+class SavedDeviceTests(unittest.TestCase):
+    text = SCRIPT.read_text(encoding="utf-8")
+
+    def test_the_stubs_record_of_the_device_goes_with_it(self):
+        # eWeLink keeps its record of a device however it is started again.
+        self.assertIn('cp "$STATE/stub-reported.json" "$SAVED/$save/stub-reported.json"', self.text)
+        self.assertIn('cp "$SAVED/$from/stub-reported.json" "$STATE/stub-reported.json"', self.text)
+        self.assertIn('rm -f "$STATE/stub-reported.json"', self.text)   # not the last device's, if it has none
+        emu = (SCRIPT.parent / "emu.sh").read_text(encoding="utf-8")
+        self.assertIn('"$STATE/.flash-mode" "$STATE/stub-reported.json"', emu)   # --fresh: newly paired
+
+
 class LanControlTests(unittest.TestCase):
     """--no-lan-control: the device as with LAN Control off in the app, its
     discovery answers and LAN port kept from the tool for that run alone."""

@@ -223,7 +223,8 @@ def _timestamp(when: dt.datetime) -> str:
 
 class Stub:
     def __init__(self, iot_host: str, iot_port: int, hb_interval: int, device: dict | None = None,
-                 update=None, iot_domain: str = "", others: list[dict] | None = None):
+                 update=None, iot_domain: str = "", others: list[dict] | None = None,
+                 reported_file: Path | None = None):
         self.iot_host = iot_host
         self.iot_domain = iot_domain or iot_host
         self.update = update  # firmware.Update the OTA query offers, or None
@@ -238,6 +239,16 @@ class Stub:
         # account API reports that, as the real cloud does, rather than
         # anything assumed about the dump.
         self.reported: dict[str, dict] = {}
+        # Kept in `reported_file` as eWeLink keeps its record of a device: a
+        # device converted since, which never speaks to the cloud again, is still
+        # listed with the firmware version and params it last gave.
+        self.reported_file = reported_file
+        self._reported_lock = threading.Lock()
+        if reported_file is not None and reported_file.is_file():
+            try:
+                self.reported = json.loads(reported_file.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                self.reported = {}
         self.access_token: str | None = None  # the last sign-in's, which ended the one before
 
     def silence_limit(self) -> float:
@@ -261,6 +272,18 @@ class Stub:
             seen["model"] = msg["model"]
         if msg.get("action") == "register" and msg.get("apikey"):
             seen["apikey"] = msg["apikey"]
+        self._keep_reported()
+
+    def _keep_reported(self) -> None:
+        if self.reported_file is None:
+            return
+        with self._reported_lock:
+            temporary = self.reported_file.with_name(f".{self.reported_file.name}.tmp")
+            try:
+                temporary.write_text(json.dumps(self.reported, sort_keys=True), encoding="utf-8")
+                temporary.replace(self.reported_file)
+            except OSError as exc:  # the stub serves on without it
+                log("what the device reported could not be kept:", exc)
 
     def dispatch_response(self) -> dict:
         # The device connects to this host by numeric IP without DNS (it
@@ -670,6 +693,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--others-json", type=Path, default=Path("/state/stub-others.json"),
                         help="the account's other devices, none emulated, as emu.sh copies them from "
                              "AUTOFLASH_EMU_STUB_OTHERS: a JSON list (Stub.other_item); none if missing")
+    parser.add_argument("--reported-json", type=Path, default=Path("/state/stub-reported.json"),
+                        help="what each device has reported, kept as eWeLink keeps its record of it "
+                             "(unattended-test.sh keeps it with a device it saves)")
     args = parser.parse_args(argv)
 
     device = json.loads(args.device_json.read_text()) if args.device_json else None
@@ -684,7 +710,8 @@ def main(argv: list[str] | None = None) -> int:
         update = None
     log(f"offering the device's own firmware, {update.version}, to a query with an older version" if update
         else "no firmware to offer")
-    Handler.stub = Stub(args.iot_host, args.iot_port, args.hb_interval, device, update, args.iot_domain, others)
+    Handler.stub = Stub(args.iot_host, args.iot_port, args.hb_interval, device, update, args.iot_domain, others,
+                        args.reported_json)
     if args.plain:
         server = PlainServer((args.bind, args.port), Handler)
         scheme = "plaintext"
