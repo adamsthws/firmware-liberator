@@ -136,6 +136,17 @@ def python_script(script: str | Path, *args: str, unbuffered: bool = False) -> l
     return [sys.executable, *(["-u"] if unbuffered else []), "-c", _RUN_SCRIPT, str(script), *map(str, args)]
 
 
+def parent_gone() -> Callable[[], bool]:
+    """For a script python_script() runs: a check of whether the program that
+    started it has since gone. The tool killed outright leaves a server it
+    started serving on with no one to answer to, holding its port - seen in the
+    fault suite, its next run moving to another. Gone, its parent's id changes
+    as the script is handed to another (Linux, macOS); on Windows a process
+    keeps its parent's id, so there it is never true."""
+    parent = os.getppid()
+    return lambda: os.getppid() != parent
+
+
 # -- trusted certificates ---------------------------------------------------------
 # Windows ships with a few root certificates and fetches the rest from Windows
 # Update the first time one of its own components meets a site that needs it.

@@ -24,7 +24,7 @@ import sys
 import time
 import urllib.parse
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 if __package__ in (None, ""):  # run as a script: the repository root, for `tools.`
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
@@ -55,6 +55,7 @@ from tools.espressif.safeboot.safeboot_migration import (  # noqa: E402
     sha256_bytes,
     verify_manifest_files,
 )
+from tools.autoflash import hostsys  # noqa: E402
 from tools.autoflash.plans import Plan, PlanError
 
 
@@ -822,13 +823,17 @@ def berry_loader(base_url: str, phase: str) -> str:
     return prefix + f"return autoflash_urlbeload('{url}')"
 
 
-def wait_for_result(server: Any, state: MigrationState, wait: float, idle: float) -> str:
+def wait_for_result(server: Any, state: MigrationState, wait: float, idle: float,
+                    abandoned: Callable[[], bool] = lambda: False) -> str:
     """Serve the device until its result: "complete", or "silent" once it has
-    sent nothing for `idle` seconds, or "timeout" after `wait` in all."""
+    sent nothing for `idle` seconds, "timeout" after `wait` in all, or
+    "abandoned" once the tool that started this has gone (hostsys.parent_gone)."""
     deadline = time.monotonic() + wait
     state.last_heard = time.monotonic()
     while not state.complete:
         now = time.monotonic()
+        if abandoned():
+            return "abandoned"
         if now - state.last_heard > idle:
             return "silent"
         if now >= deadline:
@@ -838,6 +843,7 @@ def wait_for_result(server: Any, state: MigrationState, wait: float, idle: float
 
 
 def main() -> int:
+    abandoned = hostsys.parent_gone()   # as it starts: its parent may go before it serves
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("phase", choices=PHASES)
     parser.add_argument("--manifest", type=Path, default=Path("captures/safeboot-migration/manifest.json"))
@@ -959,13 +965,17 @@ def main() -> int:
         print(f'{function_name}("{state.arm_token}")')
 
     try:
-        outcome = wait_for_result(server, state, args.wait, args.idle)
+        outcome = wait_for_result(server, state, args.wait, args.idle, abandoned)
     except KeyboardInterrupt:
         print("\nStopped; no phase result was recorded.")
         return 130
     finally:
         server.server_close()
 
+    if outcome == "abandoned":
+        print("STOPPED: the tool that started this server has gone; nothing more is served.",
+              file=sys.stderr)
+        return 3
     if outcome != "complete":
         if outcome == "silent":
             print(f"TIMEOUT: the device has sent nothing for {args.idle // 60} minutes, and "

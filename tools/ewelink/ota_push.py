@@ -307,13 +307,16 @@ def deliver(*, account: Account, device_id: str,
             names: tuple[str, ...] = ("user1.bin", "user2.bin"), wait: float = 120.0,
             check_device: Callable[[dict[str, Any], str], None] | None = None,
             say: Callable[[str], None] = print, live: bool | None = None,
-            event: Callable[..., None] | None = None) -> Delivery:
+            event: Callable[..., None] | None = None,
+            abandoned: Callable[[], bool] = lambda: False) -> Delivery:
     """Send `firmware` to the device `device_id` through eWeLink, as `version` of
     its model.  `check_device(device, model)` may refuse the device (EwelinkError)
     once eWeLink says what it is; nothing is sent before it has passed.
     `live`: the progress line on the terminal (FirmwareServer). `event(name,
     **fields)`: told as it starts serving ("phase", phase="serving") and as it
     sends the command again ("resent", attempt=N) - autoflash's output.event.
+    `abandoned()`: true once there is no one left to serve for - the tool that
+    started serve_tasmota_ota.py gone (hostsys.parent_gone); serving stops.
     Failures before the command goes out leave `sent` False: the device was
     never asked for anything.  Ctrl-C after every byte was served is a
     delivery completed; before, one interrupted."""
@@ -375,6 +378,10 @@ def deliver(*, account: Account, device_id: str,
         deadline = time.monotonic() + wait
         complete_at: float | None = None
         while time.monotonic() < deadline:
+            if abandoned():
+                server.end_progress()
+                say("  The tool that started this has gone: stopped serving.")
+                break
             # Delivery is checked first.  A quiet cloud socket must never delay
             # the exit: every byte may already be on the device.
             if server.unique_bytes_served() == len(firmware):

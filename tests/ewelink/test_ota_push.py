@@ -121,7 +121,7 @@ class FakeCloud:
 
 
 class SendingAgainTests(unittest.TestCase):
-    def send(self, script, firmware=b"x" * 64, **limits):
+    def send(self, script, firmware=b"x" * 64, abandoned=lambda: False, **limits):
         cloud = FakeCloud(script)
         said, self.events = [], []
         device = {"deviceid": "1000000000", "apikey": "a", "online": True, "params": {"fwVersion": "1.2.0"},
@@ -135,7 +135,7 @@ class SendingAgainTests(unittest.TestCase):
                 account=ota_push.Account(lambda: ("eu", {"at": "t"})), device_id="1000000000",
                 firmware=firmware, version="9", listen_ip="127.0.0.1", listen_port=0, device_ip="127.0.0.1",
                 wait=0.6, say=said.append, live=False,
-                event=lambda name, **fields: self.events.append((name, fields)))
+                event=lambda name, **fields: self.events.append((name, fields)), abandoned=abandoned)
         return delivered, cloud, said
 
     def test_a_device_back_gets_the_command_again_up_to_the_limit(self):
@@ -146,6 +146,14 @@ class SendingAgainTests(unittest.TestCase):
         # As the fault suites follow it (autoflash output.EVENTS).
         self.assertEqual(self.events, [("phase", {"phase": "serving"}), ("resent", {"attempt": 2}),
                                        ("resent", {"attempt": 3})])
+
+    def test_serving_stops_once_the_tool_that_started_it_has_gone(self):
+        # Seen in the fault suite: the tool killed as it started its server, the
+        # server went on alone, holding its port, with no one to answer to.
+        delivered, cloud, said = self.send([AWAY, BACK, None, AWAY, BACK], abandoned=lambda: True)
+        self.assertIn("The tool that started this has gone: stopped serving.", " ".join(said))
+        self.assertEqual(len(cloud.sent), 1)   # never sent again
+        self.assertEqual(delivered.bytes_served, 0)
 
     def test_a_device_that_stays_away_is_sent_it_once(self):
         _, cloud, _ = self.send([AWAY])
