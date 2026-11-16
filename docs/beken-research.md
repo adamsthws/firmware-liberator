@@ -753,8 +753,9 @@ Two things in OpenBeken's BK7238 build (the pinned commit, `app_commit` in
   one, and does so too where `ota_http` answers an error
   (`onward.serve_to_device`).
 
-The first two have a fix offered upstream: [#2309](https://github.com/openshwprojects/OpenBK7231T_App/pull/2309) and
-[#2310](https://github.com/openshwprojects/OpenBK7231T_App/pull/2310), each tested in the emulator on OpenBeken's
+Each has a fix offered upstream: [#2309](https://github.com/openshwprojects/OpenBK7231T_App/pull/2309),
+[#2310](https://github.com/openshwprojects/OpenBK7231T_App/pull/2310) and
+[#2311](https://github.com/openshwprojects/OpenBK7231T_App/pull/2311), each tested in the emulator on OpenBeken's
 `main` with and without it.
 
 ### Carrying Wi-Fi across the conversion: the OpenBeken config
