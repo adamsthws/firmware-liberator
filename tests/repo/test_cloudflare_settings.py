@@ -1284,6 +1284,45 @@ class AdminAccessTests(unittest.TestCase):
         self.assertIn("needs: [deploy, deploy-api, deploy-admin]", workflow)
         self.assertIn(cs.ADMIN_WORKER, cs.DEPLOY_WORKERS)
 
+    def admin_check(self, resolves_after, answer="302"):
+        """The admin view's check as the website workflow runs it, with a
+        hostname that resolves once `resolves_after` waits have passed, and
+        curl, which cannot reach it before, answering `answer`."""
+        import os
+        import textwrap
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/website.yml").read_text(encoding="utf-8")
+        step = workflow[workflow.index("      - name: The admin view is closed\n"):]
+        script = textwrap.dedent(step[step.index("run: |\n") + len("run: |\n"):step.index("\n\n")])
+        bin_dir = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        waited = bin_dir / "waited"
+        waited.write_text("0", encoding="utf-8")
+        fakes = {
+            "sleep": f'echo $(( $(cat "{waited}") + 1 )) > "{waited}"',
+            "getent": f'[ "$(cat "{waited}")" -ge {resolves_after} ]',
+            "curl": f'[ "$(cat "{waited}")" -ge {resolves_after} ] || exit 6; '
+                    f'case "$*" in *-X\\ POST*) printf 403 ;; *) printf {answer} ;; esac',
+        }
+        for name, body in fakes.items():
+            (bin_dir / name).write_text(f"#!/bin/bash\n{body}\n", encoding="utf-8")
+            (bin_dir / name).chmod(0o755)
+        done = subprocess.run(["bash", "-e", "-c", script], capture_output=True, text=True, timeout=30,
+                              env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"})
+        return done.returncode, done.stdout + done.stderr
+
+    def test_the_admin_check_waits_for_a_hostname_just_made(self):
+        code, out = self.admin_check(resolves_after=3)
+        self.assertEqual(code, 0, out)
+        self.assertIn("admin.firmwareliberator.com answered 302: closed", out)
+        self.assertIn("/v1/emulator/runs answered 403: closed", out)
+
+    def test_the_admin_check_still_fails_an_open_view_or_a_name_that_never_resolves(self):
+        code, out = self.admin_check(resolves_after=0, answer="200")
+        self.assertEqual(code, 1, out)
+        self.assertIn("answered 200 to a request not signed in", out)
+        code, out = self.admin_check(resolves_after=99)
+        self.assertEqual(code, 1, out)
+        self.assertIn("does not resolve after 5 minutes", out)
+
 
 class EmulatorTokenTests(unittest.TestCase):
     """The emulator suites' service token, never to expire, its application
