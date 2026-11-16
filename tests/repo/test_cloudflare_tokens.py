@@ -333,21 +333,27 @@ class TokensTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn(f"more than one token is named {cs.TOKEN_PREFIX}settings-check-read-only: delete every one",
                       out)
-        self.assertEqual(self.fake.sent, [("DELETE", f"{TOKENS}/own", None)], "made nothing, deleted itself")
+        self.assertEqual(self.fake.sent, [], "made nothing, kept itself to run again")
 
-    def test_a_step_that_fails_still_deletes_it(self):
+    def test_a_step_that_fails_keeps_it_to_run_again_and_deletes_the_helper(self):
         self.fake.fail = {f"{TOKENS}/old-check/value"}
         code, out = self.run_it()
         self.assertEqual(code, 1)
         self.assertIn("made-up failure", out)
+        self.assertNotIn(("DELETE", f"{TOKENS}/own", None), self.fake.sent)
+        self.assertIn(f"{cs.TOKEN_PREFIX}{ct.ROTATE_KEY}: kept, to run this again with the same value", out)
+        self.assertNotIn(cs.TOKEN_PREFIX + ct.HELPER_KEY, {token["name"] for token in self.fake.tokens})
+        self.fake.fail = set()
+        code, out = self.run_it()
+        self.assertEqual(code, 0, out)
         self.assertIn(("DELETE", f"{TOKENS}/own", None), self.fake.sent)
 
-    def test_a_worker_not_there_yet_is_said_and_it_still_deletes_itself(self):
+    def test_a_worker_not_there_yet_is_said_and_it_keeps_itself(self):
         self.fake.workers.remove("firmware-liberator-admin")
         code, out = self.run_it("workers-deploy")
         self.assertEqual(code, 1)
         self.assertIn("no Worker firmware-liberator-admin yet", out)
-        self.assertIn(("DELETE", f"{TOKENS}/own", None), self.fake.sent)
+        self.assertNotIn(("DELETE", f"{TOKENS}/own", None), self.fake.sent)
 
     def test_without_gh_signed_in_no_github_token_is_remade(self):
         code, out = self.run_it("settings-check-read-only", signed_in=False)

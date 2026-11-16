@@ -24,8 +24,9 @@ from nowhere else, so it is never written down. What else this needs - the
 zone's id, the Workers' tags, the admin Worker's secret - it does with a
 helper token it makes for itself (HELPER), held in memory alone, from where
 its own token is allowed and for HELPER_SECONDS, and deletes the moment it
-is done with it. It deletes its own token once done, even when a step
-failed.
+is done with it. It deletes its own token once done; should a step fail,
+it keeps it, so that it can be run again with the same value until the
+token expires, minutes later.
 """
 
 from __future__ import annotations
@@ -342,7 +343,7 @@ def run(keys: list[str], now: dt.datetime) -> int:
     except cs.SettingsError as error:
         print(f"cloudflare_tokens: {error}", file=sys.stderr)
         return 1
-    left, helper, alive = False, None, False
+    left, helper, alive, failed = False, None, False, False
     # Those needing the helper first, so it is deleted as soon as can be.
     keys = sorted(keys, key=lambda key: cs.TOKENS[key]["kept"] != "worker")
     try:
@@ -381,11 +382,16 @@ def run(keys: list[str], now: dt.datetime) -> int:
                 left = True
     except FAILED as error:
         print(f"cloudflare_tokens: {error}", file=sys.stderr)
-        left = True
+        left = failed = True
     finally:
         if alive:
             left |= not drop(account, helper["id"], HELPER_KEY)
-        left |= not drop(account, own, ROTATE_KEY)
+        if not failed:
+            left |= not drop(account, own, ROTATE_KEY)
+    if failed:
+        # It lasts minutes, from this computer's network alone, as check_own held it to.
+        print(f"  {cs.TOKEN_PREFIX}{ROTATE_KEY}: kept, to run this again with the same value until it expires, "
+              f"within {ROTATE_MINUTES} minutes of being made")
     return int(left)
 
 
