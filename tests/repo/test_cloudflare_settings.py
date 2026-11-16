@@ -753,7 +753,7 @@ class TokenTests(unittest.TestCase):
             code, _ = run(refused, "apply")
         self.assertEqual(code, 1)
         self.assertIn("the settings-apply token lasts 10 minutes, from the address it was made from: in the "
-                      "dashboard, give it a new TTL and Roll it", err.getvalue())
+                      "dashboard, Roll it, then give it a TTL ending within 10 minutes", err.getvalue())
 
     def test_an_apply_token_used_from_another_address_says_which_to_allow(self):
         def refused(path, *args, **kwargs):
@@ -1586,7 +1586,8 @@ class AskedTokenTests(unittest.TestCase):
     def test_one_rolled_for_this_run_from_here_is_taken_and_never_written_down(self):
         value, said = self.ask(f"\x1b[200~{APPLY_VALUE}\x1b[201~")
         self.assertEqual(value, APPLY_VALUE)
-        self.assertIn("give it a TTL ending within 10 minutes and Roll it", said)
+        self.assertIn("Roll it, then give it a TTL ending within 10 minutes (an expired token's TTL cannot be "
+                      "changed until it is rolled)", said)
         self.assertNotIn(APPLY_VALUE, said)
 
     def test_one_otherwise_is_refused_saying_why(self):

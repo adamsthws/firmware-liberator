@@ -149,8 +149,9 @@ that can only read cannot, if it leaks, change the DNS or a bucket.
    a difference that `apply` removes, so write it down there instead.
 2. Run `python3 tools/repo/cloudflare_settings.py` to see what differs, and
    `... apply` to set it, in a terminal. Each asks for the settings-apply
-   token and says how to ready it: a short TTL and a roll in the dashboard,
-   so each value serves one run. `apply` says what is left to do by hand,
+   token and says how to ready it in the dashboard: Roll it, then give it a
+   short TTL - in that order, as an expired token's TTL cannot be changed
+   until it is rolled - so each value serves one run. `apply` says what is left to do by hand,
    and writes the values Cloudflare gives that the repository holds - the
    database's id, the Access applications' audience tags, the Web Analytics
    site token - into their files, the rest of each as it was, and commits

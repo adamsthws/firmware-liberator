@@ -286,6 +286,13 @@ class TokensTests(unittest.TestCase):
         for body in made:
             self.assertEqual(body["condition"], {"request_ip": {"in": ["192.0.2.32/27"]}}, body["name"])
 
+    def test_the_apply_token_is_said_to_be_rolled_before_its_ttl_is_set(self):
+        # Cloudflare will not change an expired token's TTL until it is rolled.
+        code, out = self.run_it("settings-apply")
+        self.assertEqual(code, 0, out)
+        self.assertIn(f"{cs.TOKEN_PREFIX}settings-apply: made, its value put in nowhere: before each run of what "
+                      "uses it, in the dashboard, Roll it, then give it a TTL ending within 10 minutes", out)
+
     def test_its_token_is_asked_for_a_paste_unwrapped_and_never_written_down(self):
         before = self.env.read_text(encoding="utf-8")
         code, out = self.run_it("readouts-review", pasted=f"\x1b[200~{ROTATE}\x1b[201~\n")

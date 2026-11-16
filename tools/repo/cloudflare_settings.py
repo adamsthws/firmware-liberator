@@ -349,9 +349,9 @@ TOKEN_PREFIX = "firmware-liberator-"
 DEPLOY_WORKERS = {"firmware-liberator", "firmware-liberator-api", "firmware-liberator-admin"}
 TOKENS: dict[str, dict[str, Any]] = {
     # The maintainer's, for `apply` and this script's other commands, and
-    # kept nowhere: before each run you give it, in the dashboard, a TTL
-    # ending within `minutes` and Roll it, and paste the value when this asks
-    # (asked_token), as a change is applied as soon as it is made. Usable from
+    # kept nowhere: before each run you Roll it in the dashboard and give it a
+    # TTL ending within `minutes` (ready_by_hand), and paste the value when
+    # this asks (asked_token), as a change is applied as soon as it is made. Usable from
     # the address it was made from alone, or the network that address changes
     # within ("from_here"), and allowed no tokens' making, so it never can make
     # itself more. It edits what the check token
@@ -557,6 +557,15 @@ def own_address() -> str:
     return str(ipaddress.ip_network(ipaddress.ip_address(lines["ip"])))
 
 
+def ready_by_hand(minutes: int) -> str:
+    """How a token kept nowhere is readied for a run, in the dashboard (Manage
+    Account, Account API Tokens). Roll comes first: Cloudflare will not
+    change an expired token's TTL, answering as if it did not exist, until
+    it is rolled."""
+    return (f"Roll it, then give it a TTL ending within {minutes} minutes (an expired token's TTL cannot be "
+            "changed until it is rolled), and paste the value Roll showed")
+
+
 def asked_token(now: dt.datetime | None = None) -> str | None:
     """The settings-apply token, asked for, so it is never written down, and
     taken only as TOKENS has it: rolled for this run, with a TTL ending
@@ -566,8 +575,8 @@ def asked_token(now: dt.datetime | None = None) -> str | None:
     as it does a value that is no token's."""
     key = "settings-apply"
     spec, name = TOKENS[key], TOKEN_PREFIX + key
-    print(f"Give the {name} token: in Cloudflare's dashboard (Manage Account, Account API Tokens), give it a TTL "
-          f"ending within {spec['minutes']} minutes and Roll it, then paste the value it shows.", file=sys.stderr)
+    print(f"Give the {name} token: in Cloudflare's dashboard (Manage Account, Account API Tokens), "
+          f"{ready_by_hand(spec['minutes'])}.", file=sys.stderr)
     value = ask(name)
     if not value:
         if not sys.stdin.isatty():
@@ -1722,7 +1731,7 @@ def differences(ci: bool = False) -> list[tuple[str, str, Any]]:
             raise
         # Cloudflare answers so for a token past its time, or used from elsewhere.
         raise refused_address(error) or SettingsError(f"{error}: the {token_key()} token lasts {spec['minutes']} minutes, from the address it "
-                            "was made from: in the dashboard, give it a new TTL and Roll it", error.status) from None
+                            f"was made from: in the dashboard, {ready_by_hand(spec['minutes'])}", error.status) from None
     if not zones:
         raise SettingsError(f"the token cannot see the zone {ZONE}")
     zone = f"/zones/{zones[0]['id']}"

@@ -183,8 +183,7 @@ def deliver(key: str, value: str, account: str, helper: str) -> str:
         return f"the GitHub environment '{github_settings.ENVIRONMENT}' secret {spec['variable']}"
     if spec["kept"] == "asked":
         write_env(spec["variable"], None)   # a copy left from when it was kept, now refused
-        return ("nowhere: before each run of what uses it, give it in the dashboard a TTL ending within "
-                f"{spec['minutes']} minutes and Roll it, then paste the value it shows when asked")
+        return f"nowhere: before each run of what uses it, in the dashboard, {cs.ready_by_hand(spec['minutes'])}"
     if spec["kept"] == "worker":
         worker, secret = spec["worker_secret"]
         with cs.using(helper):
