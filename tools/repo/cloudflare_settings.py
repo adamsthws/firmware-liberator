@@ -351,8 +351,9 @@ TOKENS: dict[str, dict[str, Any]] = {
     # kept nowhere: before each run you give it, in the dashboard, a TTL
     # ending within `minutes` and Roll it, and paste the value when this asks
     # (asked_token), as a change is applied as soon as it is made. Usable from
-    # the address it was made from alone ("from_here"), and allowed no tokens'
-    # making, so it never can make itself more. It edits what the check token
+    # the address it was made from alone, or the network that address changes
+    # within ("from_here"), and allowed no tokens' making, so it never can make
+    # itself more. It edits what the check token
     # reads, and reaches what CI's is refused because each reaches the whole
     # account: its API tokens (reading one means reading every one, other
     # sites' too), every D1 database, the Workers' settings, Access, and the
@@ -509,9 +510,42 @@ def refused_address(error: SettingsError) -> SettingsError | None:
     if not seen:
         return None
     return SettingsError(f"Cloudflare does not take that token from this computer's address, {seen[1]}: in the "
-                         f"dashboard, give it Client IP Address Filtering, Is in, {seen[1]} alone, and run this "
-                         "again. On a mobile connection the address can change from one run to the next.",
-                         error.status)
+                         f"dashboard, give it {filter_how(seen[1])}, and run this again.", error.status)
+
+
+# How wide a network a token used by hand may be allowed from, by IP version:
+# this computer's address alone where it holds still, or else a network
+# around it no wider than this, as a mobile connection hands out one address
+# after another from its provider's pool, sometimes between two requests of
+# one run. A value seen by someone else is then of use only from there, and
+# only for the token's minutes.
+WIDEST_FILTER = {4: 24, 6: 64}
+
+
+def filter_how(address: str) -> str:
+    """The Client IP Address Filtering to give a token used from `address`."""
+    here = ipaddress.ip_network(address, strict=False)
+    return (f"Client IP Address Filtering, Is in, {here.network_address} alone - or, where the address changes "
+            "from one request to the next, as on a mobile connection, the network it changes within, no wider "
+            f"than /{WIDEST_FILTER[here.version]}")
+
+
+def from_here(token: dict[str, Any], address: str) -> str | None:
+    """The one network a token's Client IP Address Filtering allows it from,
+    where that holds `address` and is no wider than WIDEST_FILTER: None
+    where it allows more, or elsewhere."""
+    allowed = ((token.get("condition") or {}).get("request_ip") or {}).get("in") or []
+    if len(allowed) != 1:
+        return None
+    try:
+        network = ipaddress.ip_network(allowed[0], strict=False)
+    except ValueError:
+        return None
+    here = ipaddress.ip_network(address, strict=False)
+    if here.version != network.version or not here.subnet_of(network) \
+            or network.prefixlen < WIDEST_FILTER[network.version]:
+        return None
+    return str(network)
 
 
 def own_address() -> str:
@@ -525,7 +559,8 @@ def own_address() -> str:
 def asked_token(now: dt.datetime | None = None) -> str | None:
     """The settings-apply token, asked for, so it is never written down, and
     taken only as TOKENS has it: rolled for this run, with a TTL ending
-    within its minutes, usable from this computer's address alone. None,
+    within its minutes, usable from this computer's address alone or the
+    network it changes within (from_here). None,
     said why, where it is not; a token outside its TTL Cloudflare refuses
     as it does a value that is no token's."""
     key = "settings-apply"
@@ -552,7 +587,6 @@ def asked_token(now: dt.datetime | None = None) -> str | None:
             account = zones[0]["account"]["id"]
             token = api(f"/accounts/{account}/tokens/" + api(f"/accounts/{account}/tokens/verify")["id"])
             expires = token.get("expires_on")
-            allowed = ((token.get("condition") or {}).get("request_ip") or {}).get("in") or []
             if token.get("name") != name:
                 raise SettingsError(f"the token given is {token.get('name')!r}: give {name}")
             if not expires or dt.datetime.fromisoformat(expires.replace("Z", "+00:00")) \
@@ -560,9 +594,9 @@ def asked_token(now: dt.datetime | None = None) -> str | None:
                 raise SettingsError(f"{name} expires {expires or 'never'}: give it a TTL ending within "
                                     f"{spec['minutes']} minutes")
             address = own_address()
-            if [str(ipaddress.ip_network(entry, strict=False)) for entry in allowed] != [address]:
-                raise SettingsError(f"{name} is usable from more than this computer's address: in the dashboard, "
-                                    f"give it Client IP Address Filtering, Is in, {address} alone")
+            if not from_here(token, address):
+                raise SettingsError(f"{name} is usable from more than this computer's address, or not from it: "
+                                    f"in the dashboard, give it {filter_how(address)}")
         except (SettingsError, OSError, KeyError, IndexError, ValueError) as error:
             print(f"cloudflare_settings: {error}", file=sys.stderr)
             return None

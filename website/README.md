@@ -127,7 +127,10 @@ kept, never on the screen. Run it after changing `TOKENS`, and to replace
 every token should one have been seen. A token that can make tokens could
 make itself any other, so the script runs only with one you make by hand,
 short-lived and usable from your computer alone, which it deletes when it is
-done. Run it and it says how to make that token, then asks for it, so it is
+done. Where your address changes from one request to the next, as on a
+mobile connection, give each such token the network it changes within
+instead, no wider than `WIDEST_FILTER` in `cloudflare_settings.py` allows.
+Run it and it says how to make that token, then asks for it, so it is
 never written down. One made otherwise it leaves untouched and says what to
 change, so you can edit it in the dashboard and run it again.
 

@@ -265,14 +265,26 @@ class TokensTests(unittest.TestCase):
                 self.assert_left_as_wrongly_made("it is allowed more than Account - Account API Tokens: Edit")
 
     def test_one_usable_from_more_than_this_address_is_left_to_edit(self):
-        for allowed in ([], ["192.0.2.0/24"], ["192.0.2.50/32", "198.51.100.7/32"]):
+        for allowed in ([], ["192.0.2.0/23"], ["198.51.100.0/24"], ["192.0.2.50/32", "198.51.100.7/32"]):
             with self.subTest(allowed=allowed):
                 self.setUp()
                 self.fake.own["condition"] = {"request_ip": {"in": allowed}} if allowed else None
-                self.assert_left_as_wrongly_made("not this computer's alone (which Cloudflare sees as 192.0.2.50/32)")
+                self.assert_left_as_wrongly_made("not this computer's address (which Cloudflare sees as "
+                                                 "192.0.2.50/32) alone, nor a network around it no wider than /24")
         self.setUp()
         self.fake.own["condition"] = {"request_ip": {"in": ["192.0.2.50"]}}   # an address, as Cloudflare may keep it
         self.assertEqual(self.run_it("readouts-review")[0], 0)
+
+    def test_one_usable_from_the_network_its_address_changes_within_gives_that_to_what_it_makes(self):
+        # A mobile connection's address changes from one request to the next.
+        self.fake.own["condition"] = {"request_ip": {"in": ["192.0.2.32/27"]}}
+        code, out = self.run_it("settings-apply")
+        self.assertEqual(code, 0, out)
+        made = [body for method, path, body in self.fake.sent if method == "POST" and path == TOKENS]
+        self.assertEqual([body["name"] for body in made],
+                         [cs.TOKEN_PREFIX + ct.HELPER_KEY, cs.TOKEN_PREFIX + "settings-apply"])
+        for body in made:
+            self.assertEqual(body["condition"], {"request_ip": {"in": ["192.0.2.32/27"]}}, body["name"])
 
     def test_its_token_is_asked_for_a_paste_unwrapped_and_never_written_down(self):
         before = self.env.read_text(encoding="utf-8")

@@ -1594,13 +1594,28 @@ class AskedTokenTests(unittest.TestCase):
                             ({"expires_on": None}, "expires never: give it a TTL ending within 10 minutes"),
                             ({"expires_on": "2026-11-10T12:10:01Z"}, "give it a TTL ending within 10 minutes"),
                             ({"condition": None}, "usable from more than this computer's address"),
-                            ({"condition": {"request_ip": {"in": ["192.0.2.0/24"]}}}, "more than this computer's")):
+                            ({"condition": {"request_ip": {"in": ["192.0.2.0/23"]}}}, "more than this computer's"),
+                            ({"condition": {"request_ip": {"in": ["198.51.100.0/24"]}}}, "or not from it"),
+                            ({"condition": {"request_ip": {"in": ["2001:db8::/64"]}}}, "or not from it")):
             with self.subTest(change=change):
                 self.setUp()
                 self.token.update(change)
                 value, said = self.ask()
                 self.assertIsNone(value)
                 self.assertIn(why, said)
+
+    def test_one_from_the_network_its_address_changes_within_is_taken(self):
+        for allowed in ("192.0.2.50", "192.0.2.32/27", "192.0.2.0/24"):
+            with self.subTest(allowed=allowed):
+                self.token["condition"] = {"request_ip": {"in": [allowed]}}
+                self.assertEqual(self.ask()[0], APPLY_VALUE)
+
+    def test_an_ipv6_network_is_held_to_its_own_width(self):
+        self.assertEqual(cs.from_here({"condition": {"request_ip": {"in": ["2001:db8:0:1::/64"]}}},
+                                      "2001:db8:0:1::7/128"), "2001:db8:0:1::/64")
+        self.assertIsNone(cs.from_here({"condition": {"request_ip": {"in": ["2001:db8::/63"]}}},
+                                       "2001:db8::7/128"))
+        self.assertIn("no wider than /64", cs.filter_how("2001:db8::7"))
 
     def test_one_cloudflare_will_not_take_is_said_to_check_its_ttl(self):
         self.refuse = True

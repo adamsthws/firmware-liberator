@@ -14,14 +14,16 @@ you use from your computer, .env.infra.
 A token that can make tokens can make itself any other, so this is run with
 one you make by hand, and refuses any other: one named for this, made in
 the last ROTATE_MINUTES and expiring within as long, usable from this
-computer's address alone, and allowed nothing but the account's tokens;
+computer's address alone (or the network it changes within, as
+cloudflare_settings.from_here allows), and allowed nothing but the account's
+tokens;
 one so named but made otherwise it leaves, saying what to change in the
 dashboard.
 This says how to make it, then asks for it at a hidden prompt: it is taken
 from nowhere else, so it is never written down. What else this needs - the
 zone's id, the Workers' tags, the admin Worker's secret - it does with a
-helper token it makes for itself (HELPER), held in memory alone, from this
-computer's address alone and for HELPER_SECONDS, and deletes the moment it
+helper token it makes for itself (HELPER), held in memory alone, from where
+its own token is allowed and for HELPER_SECONDS, and deletes the moment it
 is done with it. It deletes its own token once done, even when a step
 failed.
 """
@@ -86,9 +88,9 @@ own_address = cs.own_address
 TRACE = cs.TRACE
 
 
-def helper_body(account: str, groups: dict[tuple[str, str], str], address: str,
+def helper_body(account: str, groups: dict[tuple[str, str], str], network: str,
                 now: dt.datetime) -> dict[str, Any]:
-    """The helper token HELPER says, for HELPER_SECONDS, from `address` alone."""
+    """The helper token HELPER says, for HELPER_SECONDS, from `network` alone."""
     zones = {f"com.cloudflare.api.account.{account}": {"com.cloudflare.api.account.zone.*": "*"}}
     policies = [{"effect": "allow", "resources": zones,
                  "permission_groups": [{"id": groups[(name, "com.cloudflare.api.account.zone")]}
@@ -98,7 +100,7 @@ def helper_body(account: str, groups: dict[tuple[str, str], str], address: str,
                                        for name in HELPER["account"]]}]
     return {"name": cs.TOKEN_PREFIX + HELPER_KEY, "policies": policies,
             "expires_on": when(HELPER_SECONDS / 86400, now),
-            "condition": {"request_ip": {"in": [address]}}}
+            "condition": {"request_ip": {"in": [network]}}}
 
 
 def first_answer(path: str) -> Any:
@@ -114,7 +116,7 @@ def first_answer(path: str) -> Any:
 
 
 def body(key: str, account: str, zone_id: str, tags: dict[str, str], groups: dict[tuple[str, str], str],
-         now: dt.datetime, address: str) -> dict[str, Any]:
+         now: dt.datetime, network: str) -> dict[str, Any]:
     """What makes the token TOKENS[key] says: its policies in the API's
     form, each permission by its id for the scope it is given on."""
     spec = cs.TOKENS[key]
@@ -141,7 +143,7 @@ def body(key: str, account: str, zone_id: str, tags: dict[str, str], groups: dic
     if spec.get("minutes"):
         made["expires_on"] = when(spec["minutes"] / (24 * 60), now)
     if spec.get("from_here"):
-        made["condition"] = {"request_ip": {"in": [address]}}
+        made["condition"] = {"request_ip": {"in": [network]}}
     return made
 
 
@@ -207,7 +209,9 @@ def how_to_make_mine() -> str:
     lines = ["Make the token this runs with, in Cloudflare's dashboard (Manage Account, Account API Tokens):",
              f"  name: {cs.TOKEN_PREFIX}{ROTATE_KEY}", f"  TTL: ending within {ROTATE_MINUTES} minutes, a time set",
              *(f"  {shown}  ({why})" for shown, why in ROTATE_PERMISSIONS.values()),
-             "  Client IP Address Filtering: Is in, this computer's address alone",
+             f"  Client IP Address Filtering: Is in, this computer's address alone - or, where it changes from one "
+             "request to the next, as on a mobile connection, the network it changes within, no wider than "
+             f"/{cs.WIDEST_FILTER[4]} (IPv6: /{cs.WIDEST_FILTER[6]})",
              f"then, within {ROTATE_MINUTES} minutes of making it, paste its value (shown once, when made) here."]
     return "\n".join(lines)
 
@@ -223,10 +227,11 @@ def wrongly_made(token: dict[str, Any], account: str, now: dt.datetime, address:
     if not expires or expires > now + dt.timedelta(minutes=ROTATE_MINUTES):
         return f"it expires {token.get('expires_on') or 'never'}, not within {ROTATE_MINUTES} minutes"
     # Usable from one address, this computer's: a copy of it is no use elsewhere.
-    allowed = ((token.get("condition") or {}).get("request_ip") or {}).get("in") or []
-    if [str(ipaddress.ip_network(entry, strict=False)) for entry in allowed] != [address]:
-        return (f"it is usable from {len(allowed) or 'any'} address{'' if len(allowed) == 1 else 'es'}, not "
-                f"this computer's alone (which Cloudflare sees as {address})")
+    if not cs.from_here(token, address):
+        allowed = ((token.get("condition") or {}).get("request_ip") or {}).get("in") or []
+        return (f"it is usable from {', '.join(allowed) or 'any address'}, not this computer's address "
+                f"(which Cloudflare sees as {address}) alone, nor a network around it no wider than "
+                f"/{cs.WIDEST_FILTER[ipaddress.ip_network(address, strict=False).version]}")
     given = [(sorted(str(group.get("name")) for group in policy.get("permission_groups") or []),
               policy.get("resources")) for policy in token.get("policies") or [] if policy.get("effect") == "allow"]
     if given != [(sorted(ROTATE_PERMISSIONS), {f"com.cloudflare.api.account.{account}": "*"})]:
@@ -234,8 +239,9 @@ def wrongly_made(token: dict[str, Any], account: str, now: dt.datetime, address:
     return None
 
 
-def check_own(account: str, now: dt.datetime, address: str) -> str:
-    """The id of the token this is run with, once it is the one it should
+def check_own(account: str, now: dt.datetime, address: str) -> tuple[str, str]:
+    """The id of the token this is run with, and the network it is allowed
+    from, which the tokens made are given too, once it is the one it should
     be: a SettingsError where it is not, and nothing changed. The rotate
     token made other than it should be is left, to be put right in the
     dashboard rather than made again; but for one made too long ago, which
@@ -254,7 +260,7 @@ def check_own(account: str, now: dt.datetime, address: str) -> str:
                                   "Edit it in the dashboard as this says, then run this again with the same value "
                                   "- or delete it.\n")
                                + how_to_make_mine())
-    return own["id"]
+    return own["id"], cs.from_here(token, address)
 
 
 def drop(account: str, token_id: str, key: str) -> bool:
@@ -332,7 +338,7 @@ def run(keys: list[str], now: dt.datetime) -> int:
             address = own_address()
         except (OSError, KeyError, ValueError) as error:
             raise cs.SettingsError(f"this computer's address, from {TRACE}: {error}") from None
-        own = check_own(account, now, address)
+        own, network = check_own(account, now, address)
     except cs.SettingsError as error:
         print(f"cloudflare_tokens: {error}", file=sys.stderr)
         return 1
@@ -352,7 +358,7 @@ def run(keys: list[str], now: dt.datetime) -> int:
         groups = {(group["name"], scope): group["id"]
                   for group in cs.api(f"/accounts/{account}/tokens/permission_groups")
                   for scope in group.get("scopes") or []}
-        helper = cs.api(f"/accounts/{account}/tokens", "POST", helper_body(account, groups, address, now))
+        helper = cs.api(f"/accounts/{account}/tokens", "POST", helper_body(account, groups, network, now))
         alive = True
         with cs.using(helper["value"]):
             zones = first_answer(f"/zones?name={cs.ZONE}")
@@ -364,7 +370,7 @@ def run(keys: list[str], now: dt.datetime) -> int:
             if alive and cs.TOKENS[key]["kept"] != "worker":
                 alive = False
                 left |= not drop(account, helper["id"], HELPER_KEY)
-            value = make(key, account, body(key, account, zone_id, tags, groups, now, address), tokens)
+            value = make(key, account, body(key, account, zone_id, tags, groups, now, network), tokens)
             print(f"  {cs.TOKEN_PREFIX}{key}: made, its value put in {deliver(key, value, account, helper['value'])}")
         for token in tokens:
             name = str(token.get("name"))
