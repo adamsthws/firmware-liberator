@@ -740,6 +740,12 @@ class ScenarioTests(unittest.TestCase):
         at = fs.ROUTES["nobackup>sonoff"][2]["R1"] * 90 / 100
         self.assertLess(at, 53 - 3)
 
+    def test_a_fault_at_90_percent_of_u5_comes_inside_it(self):
+        # U5 took 37 s in the emulator (2026-11-16); estimated at 44 s, its fault
+        # at 90% came 3 s after it had ended (MISTIMED), on every computer.
+        at = fs.ROUTES["update>tasmota"][2]["U5"] * 90 / 100
+        self.assertLess(at, 37 - 2)
+
     def test_a_packet_is_changed_only_where_a_step_sends_one(self):
         # R2 only sees Sonoff's LAN port take a connection: no packet there
         # carries data, and corrupt-once was always NO-TRAFFIC.
@@ -1240,6 +1246,24 @@ class ScenarioTests(unittest.TestCase):
         for args in limits:
             self.assertEqual(args[2:4], ("-u", f"{os.getuid()}:{os.getgid()}"))
         self.assertNotIn("not_applied", sc.notes)
+
+    def test_a_packet_changed_in_a_short_step_is_not_taken_for_one_changed_after_it(self):
+        # U6 lasts 2 s: its packet was counted at the next look, the step said done
+        # by then, and corrupt-once went MISTIMED with its fault inside U6.
+        sc = self.scenario("corrupt", "once")
+        sc.sc["step"] = "U6"
+        sc.step_length = 2
+        said = iter(["[12:10:18] U6  Tasmota updated and on the Wi-Fi\n",
+                     "[12:10:18] U6  Tasmota updated and on the Wi-Fi\n[12:10:19] U6 done\n"])
+        counted = "action order 1: pedit\n Sent 1514 bytes 1 pkt"
+
+        def ex(*args, **_):
+            return mock.Mock(returncode=0, stdout=counted if "-s" in " ".join(args) else "")
+        with mock.patch.object(sc, "ex", side_effect=ex), mock.patch.object(fs.time, "sleep"), \
+                mock.patch.object(sc, "current_run", side_effect=lambda *a: next(said, "")):
+            sc.fault("corrupt", "once", 0, None)
+        self.assertEqual(sc.notes["corrupted_packets"], 1)
+        self.assertNotIn("mistimed", sc.notes)
 
     def test_a_signal_reaching_any_of_the_run_is_enough(self):
         sc = self.scenario("crash", "1")
