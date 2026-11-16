@@ -1,26 +1,14 @@
 # Fixes sent upstream
 
 Building this converter pushed ESP32 and Beken firmware, HTTP clients and OTA
-code harder than most projects do: firmware downloaded in pieces, over Wi-Fi
-that may drop at any moment, by a device that has to survive it. Where the
-cause of a failure lay in another project, it was fixed there and the fix sent
-back. This page lists those fixes by topic, and how each was proven.
+code harder than most projects: firmware downloaded in pieces, over Wi-Fi that
+may drop at any moment, by a device that has to survive it. Where a bug lay in
+another project, it was chased upstream and fixed there. This page lists those
+fixes.
 
-## How it started
+<br>
 
-The conversion runs a Berry script on the device that downloads firmware in
-blocks with Tasmota's `webclient`. In testing, a network drop at the wrong
-moment left a device answering nothing, not even its web page, until it was
-switched off and on. The cause was not the script: Tasmota's HTTP client
-waited for the rest of a response body for as long as the connection looked
-open, with no time limit, and a server that goes quiet without closing the
-connection (its computer sleeps, a cable is pulled, a router restarts) leaves
-it looking open for ever.
-
-The same unbounded wait had been copied, over the years, into several other
-HTTP clients, and following it led to a few more bugs nearby.
-
-## What was sent, by topic
+## Contents
 
 - [HTTP clients that waited for ever](#http-clients-that-waited-for-ever) -
   Tasmota, arduino-esp32, ESPEasy, LibreTiny
@@ -32,6 +20,8 @@ HTTP clients, and following it led to a few more bugs nearby.
 - [The emulator's classic ESP32](#the-emulators-classic-esp32) - QEMU (lcgamboa's fork, Espressif)
 - [OpenBeken on a 4 MB BK7238](#openbeken-on-a-4-mb-bk7238) - OpenBeken,
   beken_freertos_sdk
+- [A Beken device on ESPHome giving up an address it still uses](#a-beken-device-on-esphome-giving-up-an-address-it-still-uses) -
+  LibreTiny, ESPHome
 - [A security fix, reported privately](#a-security-fix-reported-privately) -
   Tasmota
 - [Smaller fixes found along the way](#smaller-fixes-found-along-the-way) -
@@ -40,14 +30,17 @@ HTTP clients, and following it led to a few more bugs nearby.
 - [Other people's reports, reproduced on the emulator](#other-peoples-reports-reproduced-on-the-emulator) -
   Tasmota
 
+<br>
+
 ## HTTP clients that waited for ever
 
-Tasmota's `HttpClientLight` is a copy of arduino-esp32's `HTTPClient`, and so
-are ESPEasy's `HttpClientLight` (copied from Tasmota's) and LibreTiny's
-`HTTPClient`. All of them read a body in a loop that only stopped when the
-connection closed or the body was complete. The fix is the same idea in each:
-give up once no data has arrived for the client's timeout, as they already did
-for the headers. A body that keeps arriving, however slowly, still completes.
+The conversion downloads firmware with Tasmota's `webclient`, and a network
+drop at the wrong moment left a device answering nothing until it was switched
+off and on. Tasmota's HTTP client waited for the rest of a body for as long as
+the connection looked open, and a server that goes quiet without closing it
+looks open for ever. The same loop came from arduino-esp32's `HTTPClient` and
+was copied into ESPEasy and LibreTiny. Each now gives up once no data has
+arrived for the client's timeout, as it already did for the headers.
 
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|
@@ -59,48 +52,16 @@ for the headers. A body that keeps arriving, however slowly, still completes.
 | LibreTiny | [#420](https://github.com/libretiny-eu/libretiny/pull/420) | ![state](https://img.shields.io/github/pulls/detail/state/libretiny-eu/libretiny/420?label=) | Its `HTTPClient` had the same unbounded wait |
 | Tasmota | [#25180](https://github.com/arendst/Tasmota/pull/25180) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25180?label=) | A read timeout over 65.5 s wrapped round: `webclient.set_timeouts(80000)` gave up after 14.5 s |
 
-The details differed enough that each needed its own work:
+**Related:** Berry's `webclient` gained the `connected()` method it had but
+never exposed, in Tasmota's maintainer's
+[#25145](https://github.com/arendst/Tasmota/pull/25145).
 
-- **arduino-esp32** reads a body of known length with a blocking `readBytes()`,
-  so the Tasmota fix would not have worked there unchanged. Its review then
-  turned up busy polling over TLS, which the fix also cures.
-- **Tasmota's async client** has its own socket code, which never noticed a
-  server closing the connection, and its own chunked reader, which failed at
-  the end of every chunked body. Both are fixed, along with the async path
-  and a race the maintainer spotted in review.
-- **ESPEasy and LibreTiny** carry the original loop, so the fix carried over
-  almost as it was.
-- **ESPEasy's review** found its timeout kept in 16 bits, so one longer than
-  65.5 s wrapped round. Tasmota's clients had the same, fixed in #25180.
-
-**Related:** Berry's `webclient` had a `connected()` method that was written
-but never exposed to scripts, which came up while fixing #25141; Tasmota's
-maintainer exposed it in [#25145](https://github.com/arendst/Tasmota/pull/25145).
+<br>
 
 ## Firmware updates that never gave up
 
-With the HTTP clients done, the next thing to check was the other ways ESP32
-firmware commonly downloads an update:
-
-- **arduino-esp32's `HTTPUpdate`** did give up, but only after 300 empty reads,
-  each waiting the 8 s connection timeout first: about 40 minutes of a frozen
-  sketch. Measured at 331 s with a 1 s timeout and 631 s with 2 s, exactly as
-  predicted; with the fix, 33.8 s.
-- **ESP-IDF's `esp_https_ota()`** retried a stalled download for ever: still
-  retrying after 35 minutes. ESP-IDF retries timeouts on purpose, so the fix
-  changes only the one-call wrapper, leaving step-by-step callers free to
-  retry.
-- **Tasmota's own OTA** (`Upgrade`) uses its copy of arduino-esp32's updater,
-  with the same miscount: a stalled attempt blocked for 40 min 31 s on the
-  emulator, and Tasmota tries 4 times, so about 2 h 40 min in safeboot. With
-  the fix, each attempt gives up after about 33 s.
-
-Testing that led to one more ESP-IDF bug: telling `esp_https_ota()` to write
-into the same partition it downloads to crashed it on a NULL pointer. And
-testing Tasmota's OTA showed its web server stuck for minutes after a long
-download: requests that had given up while the device was busy were then
-answered one by one, each piece of the page waiting 10 s on a client that no
-longer answered. The cause was in arduino-esp32's `NetworkClient`.
+The usual ways ESP32 firmware downloads an update stalled too, and testing them
+found two more bugs:
 
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|
@@ -114,15 +75,12 @@ longer answered. The cause was in arduino-esp32's `NetworkClient`.
 [#6364](https://github.com/espressif/esp-idf/issues/6364), which was closed
 without it being fixed.
 
+<br>
+
 ## A build failure, followed to its root
 
-Testing the LibreTiny fix on its own toolchain found two more problems: sketches
-using its `HTTPClient` did not link (a missing `extern "C"`), and with the
-newest PlatformIO no LibreTiny build worked at all. The second came from SCons:
-a change in 4.11 made every build script inherit SCons's own
-`from __future__ import annotations`, which breaks `dataclasses` `InitVar`
-fields. LibreTiny got a workaround and SCons got the root-cause fix, with a
-test.
+Testing the LibreTiny fix on its own toolchain found two build failures, the
+second rooted in SCons; LibreTiny got a workaround and SCons the fix:
 
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|
@@ -130,13 +88,13 @@ test.
 | LibreTiny | [#422](https://github.com/libretiny-eu/libretiny/pull/422) | ![state](https://img.shields.io/github/pulls/detail/state/libretiny-eu/libretiny/422?label=) | Every build failed with PlatformIO 6.2.0 |
 | SCons | [#4924](https://github.com/SCons/scons/pull/4924) | ![state](https://img.shields.io/github/pulls/detail/state/SCons/scons/4924?label=) | Build scripts were compiled with SCons's own `from __future__ import annotations`, the root cause of LibreTiny's build failure |
 
+<br>
+
 ## The emulator's Wi-Fi
 
 The [emulator](emulator.md) runs on [lcgamboa's QEMU fork](https://github.com/lcgamboa/qemu),
-the one QEMU that emulates the ESP32-C3's Wi-Fi. Making an emulated device
-behave on its network as a real one does took four changes to that Wi-Fi
-emulation and one to its pins, each found because something went wrong on the
-emulator where it would not on a device. The emulator runs on all five:
+the one QEMU that emulates the ESP32-C3's Wi-Fi. Each fix came from something
+going wrong on the emulator that would not on a device:
 
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|
@@ -145,104 +103,89 @@ emulator where it would not on a device. The emulator runs on all five:
 | QEMU (lcgamboa) | [#15](https://github.com/lcgamboa/qemu/pull/15) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/15?label=) | The host could not join a network the guest raised itself - Tasmota's or ESPHome's setup network - nor could the guest stay a station while it did |
 | QEMU (lcgamboa) | [#16](https://github.com/lcgamboa/qemu/pull/16) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/16?label=) | The signal strength reached the firmware 96 too high: Tasmota reported its Wi-Fi at +71 to +78 dBm |
 | QEMU (lcgamboa) | [#17](https://github.com/lcgamboa/qemu/pull/17) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/17?label=) | Run on its own, every input pin read low, so Tasmota saw its button held and reset itself; the levels can now be set |
+| QEMU (lcgamboa) | [#18](https://github.com/lcgamboa/qemu/pull/18) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/18?label=) | `-monitor` bound its socket and never answered |
+| QEMU (lcgamboa) | [#19](https://github.com/lcgamboa/qemu/pull/19) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/19?label=) | A guest's Wi-Fi could not be taken away, so reconnect and fallback code could not be tested: a property now switches the emulated access points off |
 
-Two more were merged on 7 November 2026. The emulator carries each as a
-patch (`0001`, `0002`) until its pin moves to a commit that has them:
+The emulator carries #18 and #19 as patches `0001` and `0002` until its pin
+moves past them.
 
-| Project | Pull request | Status | What it fixes |
-|---|---|---|---|
-| QEMU (lcgamboa) | [#18](https://github.com/lcgamboa/qemu/pull/18) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/18?label=) | `-monitor` bound its socket and never answered, on any machine: the fork's main loop iterates a context of its own, and the monitor registered with GLib's default. |
-| QEMU (lcgamboa) | [#19](https://github.com/lcgamboa/qemu/pull/19) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/19?label=) | A guest's Wi-Fi could not be taken away from it, so firmware's reconnect and fallback code could not be tested: a property switches the emulated access points off, as a router restarting does. |
-
-#15 let the emulator test what a person does when a device falls back to its
-own setup network: join it, and let the conversion carry on through it.
+<br>
 
 ## The emulator's classic ESP32
 
-Devices with a classic ESP32 run on the same fork, whose ESP32 cache emulation
-comes from Espressif's QEMU. Each flash operation made it throw away and
-retranslate the code of a whole 4 MB cache window, so Tasmota took about 10 s to
-boot and over 40 s for 2,000 small flash reads:
+Devices with a classic ESP32 run on the same fork, whose cache emulation comes
+from Espressif's QEMU. Each flash operation retranslated a whole 4 MB cache
+window, so Tasmota took about 10 s to boot:
 
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|
 | QEMU (lcgamboa) | [#20](https://github.com/lcgamboa/qemu/pull/20) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/20?label=) | After a flash operation, only the cache pages whose bytes changed are refreshed: Tasmota boots in about 7 s, and the reads take 14-18 s |
-| QEMU (Espressif) | [#211](https://github.com/espressif/qemu/pull/211) | ![state](https://img.shields.io/github/pulls/detail/state/espressif/qemu/211?label=) | The same change where the code came from, checked with ESP-IDF's own flash and panic test apps: the same results, the cache-disabled fault unchanged, and its flash tests 10-35% faster |
+| QEMU (Espressif) | [#211](https://github.com/espressif/qemu/pull/211) | ![state](https://img.shields.io/github/pulls/detail/state/espressif/qemu/211?label=) | The same change where the code came from; ESP-IDF's flash tests 10-35% faster |
 
-The emulator carries #20 as its patch `0003`, until its pin moves past the
-merge. Its own `0004` also leaves a window mapped once it is on, which makes
-it two to ten times faster again: quick enough that Tasmota no longer outlasts
-its 5-second task watchdog while it reads flash a lot, which is what made it
-panic on QEMU. But `0004` gives up QEMU's fault for reading flash with the
-cache off, so it is not offered upstream.
+The emulator carries #20 as its patch `0003` until its pin moves past the
+merge. Its own `0004`, faster again, gives up QEMU's fault for reading flash
+with the cache off, so it is not offered upstream
+([more](../tools/espressif/emulator/README.md#what-is-changed-and-why)).
 
-The emulated device's power meter answers over a UART, and Tasmota found none
-on a classic ESP32: the UART held each answer 18 ms, where Tasmota waits 6.
-The emulator carries the first fix as its patch `0006`:
+On a classic ESP32 Tasmota also found no power meter: the UART it answers on
+held each answer 18 ms, where Tasmota waits 6. The emulator carries #21 as its
+patch `0006`:
 
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|
-| QEMU (lcgamboa) | [#21](https://github.com/lcgamboa/qemu/pull/21) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/21?label=) | A UART on REF_TICK, as Arduino-ESP32 runs it, held received bytes 64 times its RX timeout (18 ms instead of 0.3 at 38400 baud 8E1), so Tasmota found no CSE7761: the timeout now counts in REF_TICK's unit, as ESP-IDF writes it |
-| QEMU (Espressif) | [#212](https://github.com/espressif/qemu/pull/212) | ![state](https://img.shields.io/github/pulls/detail/state/espressif/qemu/212?label=) | The same, and the baud rate of a UART on REF_TICK, taken from 40 MHz so it ran 40 times too fast and hid the timeout error; ESP-IDF's UART test app gives the same results before and after |
+| QEMU (lcgamboa) | [#21](https://github.com/lcgamboa/qemu/pull/21) | ![state](https://img.shields.io/github/pulls/detail/state/lcgamboa/qemu/21?label=) | A UART on REF_TICK, as Arduino-ESP32 runs it, held received bytes 64 times its RX timeout |
+| QEMU (Espressif) | [#212](https://github.com/espressif/qemu/pull/212) | ![state](https://img.shields.io/github/pulls/detail/state/espressif/qemu/212?label=) | The same, and a UART on REF_TICK running 40 times too fast, which hid it |
+
+<br>
 
 ## OpenBeken on a 4 MB BK7238
 
 The Sonoff S61 is a Beken BK7238 with 4 MB of flash. OpenBeken's BK7238 build
-assumed the SDK's 2 MB partition table, which on a 4 MB device puts its OTA
-slot and its config inside the stock app partition, where the stock bootloader
-never looks, and the SDK's packager could not produce a 4 MB image at all.
-Two changes make the build follow the chip: a `FLASH_SIZE=4M` switch, with the
-OTA slot and the flash size read from the partition table the firmware was
-built with, and a packager that names its outputs by flash size, sizes the
-4 MB app to its partition and packs the image with a 4 MB bootloader - which
-turned out to be, byte for byte, the S61's factory bootloader.
+assumed the SDK's 2 MB partition table, which on 4 MB puts its OTA slot and
+config inside the stock app partition, and the SDK could not pack a 4 MB image.
+The fixes make the build follow the chip; the 4 MB bootloader it now ships is,
+byte for byte, the S61's factory one.
 
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|
-| beken_freertos_sdk (NonPIayerCharacter) | [#13](https://github.com/NonPIayerCharacter/beken_freertos_sdk/pull/13) | ![state](https://img.shields.io/github/pulls/detail/state/NonPIayerCharacter/beken_freertos_sdk/13?label=) | Packing a 4 MB BK7238 image failed on a `_2M` filename, the 4 MB app profile overran the OTA partition, and no 4 MB bootloader was shipped |
-| OpenBeken (OpenBK7231T_App) | [#2290](https://github.com/openshwprojects/OpenBK7231T_App/pull/2290) | ![state](https://img.shields.io/github/pulls/detail/state/openshwprojects/OpenBK7231T_App/2290?label=) | No way to build for a 4 MB flash; the REST/web-UI OTA slot, the flash-read and flash-write bounds and LittleFS's bounds were 2 MB constants whatever table the firmware used (on 4 MB, LittleFS inside the app partition) |
+| beken_freertos_sdk (NonPIayerCharacter) | [#13](https://github.com/NonPIayerCharacter/beken_freertos_sdk/pull/13) | ![state](https://img.shields.io/github/pulls/detail/state/NonPIayerCharacter/beken_freertos_sdk/13?label=) | No 4 MB BK7238 image could be packed |
+| OpenBeken (OpenBK7231T_App) | [#2290](https://github.com/openshwprojects/OpenBK7231T_App/pull/2290) | ![state](https://img.shields.io/github/pulls/detail/state/openshwprojects/OpenBK7231T_App/2290?label=) | No way to build for a 4 MB flash: the OTA slot, flash bounds and LittleFS were fixed to 2 MB |
 
-Proven in the BekenEmulator on a dump of the owner's own S61: the default
-2 MB build unchanged, and the 4 MB build saving its config at `0x3e1000`,
-serving flash reads at the top of the chip, and `ota_http` downloading to
-`0x286000`, where the bootloader applies it.
-[docs/beken-research.md](beken-research.md) has the detail.
+Proven in the BekenEmulator on a dump of a real S61
+([docs/beken-research.md](beken-research.md)).
 
-**Related:** the BekenEmulator had no licence, so nobody could tell on what terms
-a fix to it would be taken. [Issue #2](https://github.com/openshwprojects/BekenEmulator/issues/2) ![state](https://img.shields.io/github/issues/detail/state/openshwprojects/BekenEmulator/2?label=)
-asked for one, and it is GPL-3.0 since 7 November 2026. The same day it was
-rewritten from Python into C++, so this project's fixes no longer apply to it
-as they are: they will be ported once the rewrite has settled.
+**Related:** the BekenEmulator had no licence;
+[issue #2](https://github.com/openshwprojects/BekenEmulator/issues/2) ![state](https://img.shields.io/github/issues/detail/state/openshwprojects/BekenEmulator/2?label=)
+asked for one, and it is GPL-3.0 since 7 November 2026. It was rewritten in C++
+the same day, so this project's fixes to it will be ported once that settles.
+
+<br>
 
 ## A Beken device on ESPHome giving up an address it still uses
 
 After a router outage long enough for it to raise its own network, the S61 on
-ESPHome sometimes rejoined and then released its DHCP lease, which the router
-was free to give another device. Traced in the emulator, two bugs together make
-it: on Beken chips LibreTiny never reported a scan that found nothing as done,
-so ESPHome sat out its scan timeout while the SDK joined the router by itself;
-and ESPHome, with its own network up, kept a stale error past its cooldown,
-reported that connection, dropped it at once, and tore it down - the SDK's
-release reaching the router after the device had the address again.
+ESPHome sometimes rejoined and then released its DHCP lease, leaving the router
+free to give the address away. Two bugs together cause it:
 
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|
 | LibreTiny | [#446](https://github.com/libretiny-eu/libretiny/pull/446) | ![state](https://img.shields.io/github/pulls/detail/state/libretiny-eu/libretiny/446?label=) | On Beken chips a scan that found no networks never sent its scan-done event, so a caller waited out its own timeout - ESPHome up to 31 s a scan while the router was off |
 | ESPHome | [#22797](https://github.com/esphome/esphome/pull/22797) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/esphome/22797?label=) | With a portal up, the skipped adapter restart left the last error set, so a connection made during the cooldown was reported, then dropped at once |
 
-Proven in the BekenEmulator, 48 router outages of two minutes each way: with
-neither fix, the connection made in the cooldown torn down and the address
-released; with LibreTiny's alone, still dropped five times; with both, never.
-[docs/beken-research.md](beken-research.md#esphome-releasing-the-address-it-keeps)
-has the trace.
+Proven over 48 router outages in the BekenEmulator: with both fixes the
+address was never released
+([the trace](beken-research.md#esphome-releasing-the-address-it-keeps)).
+
+<br>
 
 ## A security fix, reported privately
 
 A weakness in Tasmota's web server was reported to its maintainers privately on
 2 November 2026, with a fix offered. Tasmota fixed it on 4 November, in
 [39146bb](https://github.com/arendst/Tasmota/commit/39146bb7b789b2394f22ba2dfb9b17ddd09b9f0e),
-and the fix reaches users in its next release. This page says more once that
-release is out.
+and the fix reaches users in its next release.
+
+<br>
 
 ## Smaller fixes found along the way
 
@@ -250,96 +193,56 @@ release is out.
 |---|---|---|---|
 | Tasmota | [#25163](https://github.com/arendst/Tasmota/pull/25163) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25163?label=) | Berry's `webclient` logged a connection timeout's error code as its time: "Connection timeout after -1 ms" |
 | Tasmota | [#25169](https://github.com/arendst/Tasmota/pull/25169) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25169?label=) | Its setup network went out under the chip's default name (`ESP_` and its MAC) for its first tenth of a second, which phones and computers then list beside the real one |
-| Tasmota | [#25241](https://github.com/arendst/Tasmota/pull/25241) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25241?label=) | The Partition Wizard's "Resize FS to max" and safeboot migration deleted any data partition after the file system, so the device's Sonoff identity kept there was dropped and then written over; now such a partition is listed and deleted only when the user confirms (`coredump` still goes), and the free-space row shows the right offset |
+| Tasmota | [#25241](https://github.com/arendst/Tasmota/pull/25241) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25241?label=) | The Partition Wizard deleted any data partition after the file system, losing the Sonoff identity kept there; now it asks first |
 | Tasmota | [Tasmota-Extensions #7](https://github.com/tasmota/Tasmota-Extensions/pull/7) | ![state](https://img.shields.io/github/pulls/detail/state/tasmota/Tasmota-Extensions/7?label=) | #25241's fix, ported to the Partition Wizard in the extension catalog that devices install it from |
-| ESPHome | [#21672](https://github.com/esphome/esphome/pull/21672) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/esphome/21672?label=) | An `api` action with an array variable that also responds did not compile; this project's calibration action, which takes a list of floats, had to go without an answer |
-| ESPHome | [#22163](https://github.com/esphome/esphome/pull/22163) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/esphome/22163?label=) | A friendly name always joined the MAC suffix with a space: an option to choose, so this project's can read `esphome-abcdef` as the hostname does |
+| ESPHome | [#21672](https://github.com/esphome/esphome/pull/21672) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/esphome/21672?label=) | An `api` action with an array variable that also responds did not compile |
+| ESPHome | [#22163](https://github.com/esphome/esphome/pull/22163) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/esphome/22163?label=) | A friendly name always joined the MAC suffix with a space; now the separator can be chosen |
 | ESPHome | [esphome.io #8011](https://github.com/esphome/esphome.io/pull/8011) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/esphome.io/8011?label=) | The documentation for #22163's option, and what `name_add_mac_suffix` does to the friendly name |
-| ESPHome | [#22224](https://github.com/esphome/esphome/pull/22224) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/esphome/22224?label=) | The CSE7766 logged a clamped power factor and impossible reactive power at DEBUG on nearly every frame of a resistive load; at VERBOSE, as its other expected noise is. Measured on a real S60, before and after |
-| OpenBeken | [#2293](https://github.com/openshwprojects/OpenBK7231T_App/pull/2293) | ![state](https://img.shields.io/github/pulls/detail/state/openshwprojects/OpenBK7231T_App/2293?label=) | No way for a driver to act before an HTTP OTA restarts the device: a weak `HAL_OTA_BeforeReboot(ok)` hook, by which the S61's interim firmware erases its own settings so the firmware it fetched starts clean |
-| OpenBeken | [#2309](https://github.com/openshwprojects/OpenBK7231T_App/pull/2309) | ![state](https://img.shields.io/github/pulls/detail/state/openshwprojects/OpenBK7231T_App/2309?label=) | On the BK7238 (and the other `beken_freertos_sdk` chips) a busy serial log lost a byte in every 127, and `logtype direct` cut each line after 126 characters: the SDK's `bk_printf` prints at most 126, and was handed 127. Found in the emulator as a fetch's URL short a letter in the log, the fetch itself whole |
-| OpenBeken | [#2310](https://github.com/openshwprojects/OpenBK7231T_App/pull/2310) | ![state](https://img.shields.io/github/pulls/detail/state/openshwprojects/OpenBK7231T_App/2310?label=) | Its web server took the first short read for the whole request, so a body arriving after its headers was never read: `POST /api/cmnd` ran nothing and answered "No command entered". The tool sends such a command again meanwhile (`openbeken.command`) |
-| OpenBeken | [#2311](https://github.com/openshwprojects/OpenBK7231T_App/pull/2311) | ![state](https://img.shields.io/github/pulls/detail/state/openshwprojects/OpenBK7231T_App/2311?label=) | `ota_http` answered "OK" to a download it did not start, and its check for one under way missed a download still connecting, so a second reset the first under its thread. The tool restarts OpenBeken before a fetch after a run cut off in one, and where `ota_http` refuses (`onward.serve_to_device`) |
+| ESPHome | [#22224](https://github.com/esphome/esphome/pull/22224) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/esphome/22224?label=) | The CSE7766 logged expected noise at DEBUG on nearly every frame of a resistive load; now at VERBOSE |
+| OpenBeken | [#2293](https://github.com/openshwprojects/OpenBK7231T_App/pull/2293) | ![state](https://img.shields.io/github/pulls/detail/state/openshwprojects/OpenBK7231T_App/2293?label=) | No way for a driver to act before an HTTP OTA restarts the device; the S61's interim firmware uses the new hook to erase its settings |
+| OpenBeken | [#2309](https://github.com/openshwprojects/OpenBK7231T_App/pull/2309) | ![state](https://img.shields.io/github/pulls/detail/state/openshwprojects/OpenBK7231T_App/2309?label=) | On `beken_freertos_sdk` chips a busy serial log lost a byte in every 127, and `logtype direct` cut lines at 126 characters |
+| OpenBeken | [#2310](https://github.com/openshwprojects/OpenBK7231T_App/pull/2310) | ![state](https://img.shields.io/github/pulls/detail/state/openshwprojects/OpenBK7231T_App/2310?label=) | A request body arriving after its headers was never read: `POST /api/cmnd` ran nothing. The tool sends such a command again meanwhile (`openbeken.command`) |
+| OpenBeken | [#2311](https://github.com/openshwprojects/OpenBK7231T_App/pull/2311) | ![state](https://img.shields.io/github/pulls/detail/state/openshwprojects/OpenBK7231T_App/2311?label=) | `ota_http` answered "OK" to a download it did not start, and a second download could reset the first. The tool restarts OpenBeken where this bites (`onward.serve_to_device`) |
+
+<br>
 
 ## The POWCT's status LED
 
-Sonoff's own POWCT firmware lights its status LED, on GPIO13, by driving the
-pin high with the relay; Tasmota's two copies of its template disagreed on it,
-and ESPHome's page for the device has it inverted. Found from the firmware and
-the emulator, not a POWCT in hand
+Sonoff's POWCT firmware drives its status LED (GPIO13) high with the relay;
+one of Tasmota's two templates and ESPHome's page had it inverted
 ([devices/sonoff-powct](../devices/sonoff-powct/README.md#the-status-leds-polarity)):
 
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|
-| Tasmota | [#25243](https://github.com/arendst/Tasmota/pull/25243) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25243?label=) | The POWCT template in the TM1621 display driver's comment had the LED inverted (Led_i, 320); the copy in the CSE7761 driver's was made Led1 (288) in 2024 and this one missed |
-| ESPHome | [devices.esphome.io #1976](https://github.com/esphome/devices.esphome.io/pull/1976) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/devices.esphome.io/1976?label=) | ESPHome's page for the POWCT had the LED lit when low and its config inverted; with the fix the page moves to the site's `config.yaml` form, as any changed page must, its extras (energy total, power factor) in files of their own |
+| Tasmota | [#25243](https://github.com/arendst/Tasmota/pull/25243) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25243?label=) | The POWCT template in the TM1621 driver's comment had the LED inverted; the CSE7761 driver's copy was fixed in 2024 |
+| ESPHome | [devices.esphome.io #1976](https://github.com/esphome/devices.esphome.io/pull/1976) | ![state](https://img.shields.io/github/pulls/detail/state/esphome/devices.esphome.io/1976?label=) | ESPHome's page for the POWCT had the LED inverted |
+
+<br>
 
 ## Other people's reports, reproduced on the emulator
 
-With the emulator built, Tasmota's open reports were searched for problems it
-could reproduce that the owner of a converted device could meet. Two came from
-one person changing an ESP32-C3 device's Wi-Fi (discussions
-[#24591](https://github.com/arendst/Tasmota/discussions/24591) and
-[#24585](https://github.com/arendst/Tasmota/discussions/24585)), as someone
-might after converting a device. Both were in Tasmota's own setup and settings
-pages, beside [#25169](https://github.com/arendst/Tasmota/pull/25169) above.
+Tasmota's open reports were searched for problems the emulator could reproduce
+that the owner of a converted device could meet:
 
 | Project | Pull request | Status | What it fixes |
 |---|---|---|---|
-| Tasmota | [#25183](https://github.com/arendst/Tasmota/pull/25183) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25183?label=) | On ESP32, `WifiConfig 2` gave a setup network whose page was the normal main page within a second: no captive portal, and Wi-Fi details sent to it were not taken |
-| Tasmota | [#25184](https://github.com/arendst/Tasmota/pull/25184) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25184?label=) | A Wi-Fi, web or MQTT password with a `;` saved from a settings page was cut there and the rest run as a command; an unpaired `{` took in the rest of the page |
-| Tasmota | [#25185](https://github.com/arendst/Tasmota/pull/25185) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25185?label=) | Matter could not encode a string longer than 255 bytes (a typo another user spotted in issue [#24624](https://github.com/arendst/Tasmota/issues/24624)) |
+| Tasmota | [#25183](https://github.com/arendst/Tasmota/pull/25183) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25183?label=) | On ESP32, `WifiConfig 2` gave a setup network with no captive portal, which took no Wi-Fi details |
+| Tasmota | [#25184](https://github.com/arendst/Tasmota/pull/25184) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25184?label=) | A password with a `;` saved from a settings page was cut there and the rest run as a command |
+| Tasmota | [#25185](https://github.com/arendst/Tasmota/pull/25185) | ![state](https://img.shields.io/github/pulls/detail/state/arendst/Tasmota/25185?label=) | Matter could not encode a string longer than 255 bytes |
+
+<br>
 
 ## How each fix was proven
 
-Every fix was tested before and after the change, on the same cases, and the
-results are in each pull request. "It compiles" was never enough.
+Every fix was tested before and after, on the same cases, with the results in
+its pull request. Most testing ran on this project's [emulator](emulator.md):
+unmodified firmware on a real S60's flash, behind an emulated router that can
+restart, fed by a test server that sends bodies whole, chunked, slowly or
+stopping part way, several devices side by side. The Tasmota and arduino-esp32
+fixes ran again on a real S60, power-cycled by a second smart plug: every hang
+the emulator showed, the device showed too, and every fix behaved alike.
 
-### The emulator
-
-Most of the testing ran on this project's [emulator](emulator.md): a real
-Sonoff S60 flash dump, booted in QEMU with emulated Wi-Fi, behind an emulated
-home router. It was built so the converter could be tested end to end without
-risking a device, and it turned out to be just as good a test bed for other
-people's code:
-
-- **Firmware runs unmodified.** Tasmota builds, plain Arduino sketches and
-  ESP-IDF code all run on it as they would on the device, so a test exercises
-  the code that ships.
-- **The network can misbehave on purpose.** A small test server sends whole
-  bodies, bodies of unknown length, chunked bodies, bodies in pieces seconds
-  apart, and bodies that stop part way with the connection left open, over
-  plain HTTP or TLS. The emulated router can be restarted under the device.
-- **Several devices side by side.** Before and after builds ran in parallel on
-  separate emulated devices, and a fix could be repeated on two at once.
-- **A hang is cheap.** A test that freezes an emulated device costs a restart,
-  not a walk to switch a real one off and on.
-
-It took several fixes to the QEMU fork to get here (see
-[What is changed, and why](../tools/espressif/emulator/README.md#what-is-changed-and-why)): real MAC
-addresses on the wire, a button that is not held down, a router that can be
-restarted, and Wi-Fi frames written only where the hardware would put them -
-those that belong upstream are [offered back](#the-emulators-wi-fi).
-
-### Real hardware
-
-The Tasmota and arduino-esp32 fixes ran again on a real S60, with a second
-smart plug switching its power so that a hung S60 could be power-cycled
-without a hand on it. Every hang the emulator showed, the real device showed
-too, and every fix behaved the same on both.
-
-### Measuring, not guessing
-
-- **CPU use.** A lowest-priority task counting while it got the CPU showed the
-  TLS busy polling in arduino-esp32 (34 counts before the fix, 15,266 after)
-  where a watchdog showed nothing.
-- **Memory.** Thirty timeouts in a row were checked against thirty normal
-  downloads for leaks.
-- **Timing.** Expected times were worked out from the code first, then
-  measured, so a result that disagreed showed a misunderstanding.
-- **This project's own mistakes.** When a test turned out to be wrong (an
-  image that was never flashed, a fix that had leaked into a "before" build),
-  it was re-run, and the pull requests report only the re-runs.
+<br>
 
 ## Related
 
