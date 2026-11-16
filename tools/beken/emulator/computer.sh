@@ -10,6 +10,13 @@
 set -euo pipefail
 if [ "$(id -u)" = 0 ] && [ -n "${HOST_UID:-}" ]; then
     : "${HOST_GID:?}"
+    # Your user, made here where the image has none of your id - a CI runner's
+    # is 1001, the image's own user 1000 - as the Espressif emulator's
+    # entrypoint does: getent failing would end this script unsaid (set -e).
+    if ! getent passwd "$HOST_UID" > /dev/null; then
+        getent group "$HOST_GID" > /dev/null || groupadd -g "$HOST_GID" you
+        useradd -m -u "$HOST_UID" -g "$HOST_GID" -s /bin/bash you
+    fi
     home=$(getent passwd "$HOST_UID" | cut -d: -f6)
     exec setpriv --reuid="$HOST_UID" --regid="$HOST_GID" --clear-groups \
         --inh-caps +net_admin,+net_raw --ambient-caps +net_admin,+net_raw \

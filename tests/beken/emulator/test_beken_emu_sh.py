@@ -269,10 +269,18 @@ class ComputerHandOverTests(unittest.TestCase):
 
     COMPUTER = ROOT / "tools" / "beken" / "emulator" / "computer.sh"
 
-    def run_computer(self, **env):
+    def run_computer(self, known=True, **env):
+        """computer.sh run with stand-ins: `known` whether the image has a user
+        of your id already, else useradd makes one."""
         with tempfile.TemporaryDirectory() as tmp:
-            calls = Path(tmp, "calls")
-            for name, text in {"id": "#!/bin/sh\necho 0\n", "getent": "#!/bin/sh\necho 'you:x:1000:1000::/home/you:/bin/sh'\n",
+            calls, made = Path(tmp, "calls"), Path(tmp, "made")
+            if known:
+                made.touch()
+            getent = (f'#!/bin/sh\n[ "$1" = group ] && exit 2\n[ -f {made} ] || exit 2\n'
+                      "echo 'you:x:1001:1001::/home/you:/bin/sh'\n")
+            for name, text in {"id": "#!/bin/sh\necho 0\n", "getent": getent,
+                               "groupadd": f'#!/bin/sh\necho "groupadd $*" >> {calls}\n',
+                               "useradd": f'#!/bin/sh\necho "useradd $*" >> {calls}\ntouch {made}\n',
                                "setpriv": f'#!/bin/sh\necho "$*" >> {calls}\n'}.items():
                 Path(tmp, name).write_text(text, encoding="utf-8")
                 Path(tmp, name).chmod(0o755)
@@ -286,6 +294,14 @@ class ComputerHandOverTests(unittest.TestCase):
         self.assertEqual(calls, "--reuid=1000 --regid=1000 --clear-groups --inh-caps +net_admin,+net_raw "
                                 "--ambient-caps +net_admin,+net_raw env HOME=/home/you "
                                 f"{self.COMPUTER} tools/autoflash/cli.py run\n")
+
+    def test_your_user_is_made_where_the_image_has_none_of_your_id(self):
+        # A CI runner's user is 1001; the image has only its own 1000.
+        done, calls = self.run_computer(known=False, HOST_UID="1001", HOST_GID="1001")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(calls.splitlines()[:2], ["groupadd -g 1001 you", "useradd -m -u 1001 -g 1001 -s /bin/bash you"])
+        self.assertIn("--reuid=1001 --regid=1001", calls)
+        self.assertIn("env HOME=/home/you", calls)
 
     def test_without_your_group_it_does_not_start(self):
         done, calls = self.run_computer(HOST_UID="1000")
