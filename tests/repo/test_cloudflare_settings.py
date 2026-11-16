@@ -1293,7 +1293,9 @@ class AdminAccessTests(unittest.TestCase):
         workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/website.yml").read_text(encoding="utf-8")
         step = workflow[workflow.index("      - name: The admin view is closed\n"):]
         script = textwrap.dedent(step[step.index("run: |\n") + len("run: |\n"):step.index("\n\n")])
-        bin_dir = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        bin_dir = Path(tmp.name)
         waited = bin_dir / "waited"
         waited.write_text("0", encoding="utf-8")
         fakes = {
@@ -1749,16 +1751,21 @@ class WrittenFilesTests(unittest.TestCase):
     of each file - its comments too - as it was, on copies of them here."""
 
     def setUp(self):
-        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
         real = Path(__file__).resolve().parents[2]
+        patches = []
         for name in ("API_WRANGLER", "ADMIN_WRANGLER", "ANALYTICS_PAGE", "LEAK_ALLOW"):
             original = getattr(cs, name)
             copied = root / original.relative_to(real)
             copied.parent.mkdir(parents=True, exist_ok=True)
             copied.write_text(original.read_text(encoding="utf-8"), encoding="utf-8")
-            self.enterContext(mock.patch.object(cs, name, copied))
-        self.enterContext(mock.patch.object(cs, "ROOT", root))
-        self.enterContext(mock.patch.object(cs, "WRITTEN", {}))
+            patches.append(mock.patch.object(cs, name, copied))
+        patches += [mock.patch.object(cs, "ROOT", root), mock.patch.object(cs, "WRITTEN", {})]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
         self.root = root
 
     def changed(self, path, before):

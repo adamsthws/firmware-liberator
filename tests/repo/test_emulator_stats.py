@@ -58,7 +58,9 @@ class Admin(http.server.BaseHTTPRequestHandler):
 
 class EmulatorStatsTests(unittest.TestCase):
     def setUp(self):
-        self.folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.folder = Path(tmp.name)
         server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Admin)   # a port of its own
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(server.server_close)
@@ -68,10 +70,11 @@ class EmulatorStatsTests(unittest.TestCase):
         self.env_file.parent.mkdir()
         self.env_file.write_text("EMULATOR_STATS_CLIENT_ID=cid.access\nEMULATOR_STATS_CLIENT_SECRET=made-up\n",
                                  encoding="utf-8")
-        self.enterContext(mock.patch.object(emulator_stats, "CREDENTIALS", self.env_file))
-        self.enterContext(mock.patch.dict("os.environ", {
-            "AUTOFLASH_EMU_STATS_URL": f"http://127.0.0.1:{server.server_address[1]}/v1/emulator",
-            "EMULATOR_STATS_CLIENT_ID": "", "EMULATOR_STATS_CLIENT_SECRET": "", "AUTOFLASH_EMU_NO_STATS": ""}))
+        for patch in (mock.patch.object(emulator_stats, "CREDENTIALS", self.env_file), mock.patch.dict("os.environ", {
+                "AUTOFLASH_EMU_STATS_URL": f"http://127.0.0.1:{server.server_address[1]}/v1/emulator",
+                "EMULATOR_STATS_CLIENT_ID": "", "EMULATOR_STATS_CLIENT_SECRET": "", "AUTOFLASH_EMU_NO_STATS": ""})):
+            patch.start()
+            self.addCleanup(patch.stop)
 
     def settled(self):
         """Once every background send is done: the runs a test kept, sent or not."""
@@ -249,7 +252,8 @@ class EmulatorStatsTests(unittest.TestCase):
 
     def test_a_batch_begun_without_credentials_says_so_once_and_keeps_its_runs(self):
         self.env_file.unlink()
-        self.enterContext(mock.patch.object(emulator_stats, "_told_unsent", False))
+        self.addCleanup(setattr, emulator_stats, "_told_unsent", emulator_stats._told_unsent)
+        emulator_stats._told_unsent = False
         err = io.StringIO()
         with emulator_stats._sending, mock.patch("sys.stderr", err):
             for device in ("sonoff-s61", "sonoff-s60tpf"):   # a suite begins a batch for each device
@@ -270,7 +274,8 @@ class EmulatorStatsTests(unittest.TestCase):
         self.assertIn("cloudflare_settings.py rotate emulator-stats", said)
 
     def test_a_batch_begun_with_credentials_says_nothing_of_them(self):
-        self.enterContext(mock.patch.object(emulator_stats, "_told_unsent", False))
+        self.addCleanup(setattr, emulator_stats, "_told_unsent", emulator_stats._told_unsent)
+        emulator_stats._told_unsent = False
         err = io.StringIO()
         with emulator_stats._sending, mock.patch("sys.stderr", err):
             emulator_stats.began(self.folder, family="beken", suite="fault", device="sonoff-s61", total=40,
