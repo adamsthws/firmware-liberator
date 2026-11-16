@@ -1645,6 +1645,37 @@ class AskedTokenTests(unittest.TestCase):
             self.assertEqual(cs.main(["apply"]), 1, "no token given: nothing done")
 
 
+class ApiRequestTests(unittest.TestCase):
+    """api(): a read whose connection is lost is sent again, a change is not."""
+
+    def send(self, method, *failures):
+        import http.client
+        answer = mock.MagicMock()
+        answer.__enter__.return_value = io.BytesIO(b'{"result": {"id": "z1"}}')
+        lost = [http.client.RemoteDisconnected("Remote end closed connection without response")] * failures[0]
+        opened = mock.Mock(side_effect=[*lost, answer])
+        waits = []
+        with mock.patch.object(cs.urllib.request, "urlopen", opened), \
+                mock.patch.object(cs.time, "sleep", waits.append), mock.patch.object(cs, "token", lambda: "t"):
+            try:
+                return cs.api("/zones/z1", method), opened.call_count, waits
+            except cs.SettingsError as error:
+                return str(error), opened.call_count, waits
+
+    def test_a_read_whose_connection_drops_is_sent_again(self):
+        self.assertEqual(self.send("GET", 2), ({"id": "z1"}, 3, list(cs.READ_RETRY_WAITS)))
+
+    def test_a_read_that_keeps_dropping_fails_saying_so(self):
+        said, sent, _ = self.send("GET", 3)
+        self.assertEqual(sent, 3)
+        self.assertIn("GET /zones/z1: Remote end closed connection without response", said)
+
+    def test_a_change_is_sent_once(self):
+        said, sent, waits = self.send("POST", 1)
+        self.assertEqual((sent, waits), (1, []))
+        self.assertIn("POST /zones/z1: Remote end closed", said)
+
+
 class StoppingTheApiTests(unittest.TestCase):
     """The website workflow, run by hand, can deploy the API taking nothing."""
 

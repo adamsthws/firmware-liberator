@@ -51,6 +51,7 @@ import secrets
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -628,6 +629,12 @@ def token() -> str:
     return _IN_USE or variable(TOKEN_VARIABLE)
 
 
+# A read whose connection is lost - dropped or timed out, as a mobile one can
+# be - is sent again after each of these waits, in seconds. A change is sent
+# once: it may have been made before its answer was lost.
+READ_RETRY_WAITS = (1, 3)
+
+
 def api(path: str, method: str = "GET", body: Any = None, ok_missing: bool = False, whole: bool = False,
         ok_forbidden: bool = False) -> Any:
     """The answer's result, or with `whole` all of it, its result_info too;
@@ -636,21 +643,24 @@ def api(path: str, method: str = "GET", body: Any = None, ok_missing: bool = Fal
     request = urllib.request.Request(
         API + path, method=method, data=None if body is None else json.dumps(body).encode(),
         headers={"Authorization": f"Bearer {token()}", "Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            answer = json.load(response)
-            return answer if whole else answer["result"]
-    except urllib.error.HTTPError as error:
-        if (ok_missing and error.code == 404) or (ok_forbidden and error.code in (401, 403)):
-            return None
-        detail = error.read().decode("utf-8", "replace")
+    for wait in (*READ_RETRY_WAITS, None) if method == "GET" else (None,):
         try:
-            detail = "; ".join(e.get("message", "") for e in json.loads(detail)["errors"]) or detail
-        except (ValueError, KeyError, TypeError):
-            pass
-        raise SettingsError(f"{method} {path}: HTTP {error.code}: {detail}", error.code) from None
-    except OSError as error:
-        raise SettingsError(f"{method} {path}: {error}") from None
+            with urllib.request.urlopen(request, timeout=30) as response:
+                answer = json.load(response)
+                return answer if whole else answer["result"]
+        except urllib.error.HTTPError as error:
+            if (ok_missing and error.code == 404) or (ok_forbidden and error.code in (401, 403)):
+                return None
+            detail = error.read().decode("utf-8", "replace")
+            try:
+                detail = "; ".join(e.get("message", "") for e in json.loads(detail)["errors"]) or detail
+            except (ValueError, KeyError, TypeError):
+                pass
+            raise SettingsError(f"{method} {path}: HTTP {error.code}: {detail}", error.code) from None
+        except OSError as error:
+            if wait is None:
+                raise SettingsError(f"{method} {path}: {error}") from None
+            time.sleep(wait)
 
 
 def every_page(path: str, ok_forbidden: bool = False) -> list[Any] | None:
