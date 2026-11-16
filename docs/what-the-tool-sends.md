@@ -9,6 +9,15 @@ Together, reports show which devices convert well, which fail and where, the
 stages people choose to stop at, and which devices people want supported next: see the
 **[stats page](https://firmwareliberator.com/stats)**.
 
+## What a report NEVER holds
+
+- Your name, email address or eWeLink account.
+- Your Wi-Fi network's name or password, or any other password.
+- Any address: your computer's, your router's, or the device's own or its
+  hardware (MAC) address.
+- The name you gave the device, your computer's name, or where you are.
+- The time of day of the run: only the date the report arrived is kept.
+
 ## What a report holds
 
 - **How the run ended:** converted, updated, put back on the firmware the
@@ -72,15 +81,6 @@ stages people choose to stop at, and which devices people want supported next: s
   issue names its report. An issue is public: one that names a report lets
   anyone see that report's details beside it.
 
-## What a report never holds
-
-- Your name, email address or eWeLink account.
-- Your Wi-Fi network's name or password, or any other password.
-- Any address: your computer's, your router's, or the device's own or its
-  hardware (MAC) address.
-- The name you gave the device, your computer's name, or where you are.
-- The time of day of the run: only the date the report arrived is kept.
-
 ## How your device is recognised
 
 So that a device converted twice counts as one, and a readout of it and its
@@ -97,8 +97,8 @@ nothing about you.
 
 The report goes to the project's server, `api.firmwareliberator.com`, on
 Cloudflare. Like any website, it sees your internet address. Cloudflare logs
-each request, with that address, and keeps a trace of it - where it was
-handled, the rough place and network your address belongs to, and how long
+each request and keeps a trace of it - where it was
+handled, and how long
 each step took - for seven days, so that the maintainer can look into a
 failure; neither is used for anything else. The server
 itself uses your address only to limit how many reports one computer can
@@ -120,7 +120,7 @@ or after a year. The server never stores the address itself.
 
 ## What it is used for
 
-- **The stats page**, which shows totals only, never a figure standing for
+- **The public stats page**, which shows totals only, never a figure standing for
   fewer than five reports or devices, so no one report can be picked out. The
   figures are published under
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), free for anyone to
@@ -156,31 +156,17 @@ when you choose one; [its own page](readouts.md#what-is-in-one) says what it
 holds. The short report of how a readout went, above, is not the
 readout: it is sent as a conversion's report is, and turned off the same way.
 
-## Your email address
+## Providing your email address (optional)
 
-As it exits, the tool asks whether you would like an email as more devices
-are supported, offering your eWeLink account's address if it is one. You can
+As it exits, the tool asks whether you would like to receive a notification as more devices
+are supported. You can
 also sign up on the website's [notify page](https://firmwareliberator.com/notify).
 
-Given in the tool, your address goes with the models of the devices in your
-eWeLink account, and the references of any readouts you sent then, so you
-can also hear when one of your own devices' support changes, and be asked to
-try a test version of it. Once you have given it, the tool does not ask again
-on that computer: each later run adds the devices and readouts it saw to your
-address, without asking. A device is never taken off, as one gone from your
-eWeLink account has most likely been converted. Once you remove your address,
+You are sent an email with a link to confirm your email address. An
+address never confirmed is deleted after 7 days. Once confirmed, it is used only for notification emails. [Privacy](privacy.md) says who keeps it, and your rights.
+
+**Unsubscribing**  
+Once you remove your address,
 or if you never confirmed it, nothing more is kept or sent to it; to sign up
 again, use the [notify page](https://firmwareliberator.com/notify).
 
-To give another address, or have your computer forget the one it keeps, run
-`sh start.sh email` (on Windows, `start.cmd email`). Forgetting it on your
-computer does not stop the emails: the link in any of them does that.
-
-You are sent an email with a link to confirm the address, and once more the
-next day if you have not. Nothing is kept unless you follow that link: an
-address never confirmed is deleted after 7 days. Once confirmed, it is stored
-privately, apart from reports and readouts, and used only for these emails.
-Every one has a link to remove your address, which asks you to confirm first.
-An address an email can no longer reach, or whose owner marked one as spam,
-is removed too.
-[Privacy](privacy.md) says who keeps it, and your rights.

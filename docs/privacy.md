@@ -15,7 +15,7 @@ email **privacy@firmwareliberator.com**.
   kept because you agreed, by following the link in the confirmation email,
   until you remove it with the link in any email from the project, or an
   email to it bounces for good. An address never confirmed is deleted after
-  a few days ([details](what-the-tool-sends.md#your-email-address)). The
+  a few days ([details](what-the-tool-sends.md#providing-your-email-address-optional)). The
   tool also keeps it on your computer, so as not to ask again, until you
   have it forget it (`start.sh email`).
 - **Reports and readouts** hold nothing that names you

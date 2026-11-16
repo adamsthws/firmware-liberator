@@ -68,12 +68,12 @@ Until now, the established way to flash a device was to open it, perform some so
 > Linux, macOS or Windows, with Wi-Fi.
 
 - **Admin rights**
-> Needed to add one temporary firewall rule.  
-> (Done automatically and removed when the tool finishes).
+> Admin elevation is needed to add one temporary firewall rule.  
+> (Performed automatically and removed when the tool finishes).
 
 - **A supported device**
-> More coming soon: **[get an email as more devices are supported](https://firmwareliberator.com/notify)**.  
-> **[How you can help](#how-you-can-help)**: if your Sonoff isn't listed, the tool can read it out and send it in, so support for it can be added.
+> **[Get an email as more devices are supported](https://firmwareliberator.com/notify)**  
+> **[How you can help](#if-your-device-isnt-supported-yet)**: if your Sonoff isn't listed, the tool can read it out and send it in, so support for it can be added.
 
 | Status | Device | Models |
 |---|---|---|
@@ -196,7 +196,7 @@ was interrupted, it checks the device to work out where to resume from.
 
 ### Email updates
 
-To change the address you gave for email updates, or have your computer forget it, run `sh start.sh email` (`start.cmd email` on Windows) in the tool's folder ([how your address is kept](docs/what-the-tool-sends.md#your-email-address)).
+To change the address you gave for email updates, or have your computer forget it, run `sh start.sh email` (`start.cmd email` on Windows) in the tool's folder ([how your address is kept](docs/what-the-tool-sends.md#providing-your-email-address-optional)).
 
 <br>
 
@@ -230,23 +230,25 @@ See how it has gone for others: **[Stats](https://firmwareliberator.com/stats)**
 
 <br>
 
-### How you can help
+## Roadmap
 
-**Got a Sonoff that isn't listed?** A firmware readout of it is the quickest way to get support for it added.
+This project has big ambitions: To support a broad range of devices and firmwares. Endeavouring to grow an ever expanding list of devices.
 
-Run the tool as usual. When it finds no supported device in your eWeLink account, it offers to **read out your device, to help add support for it**. If you have several devices, you can choose to read them all out at once.
-> To read out a device that is already listed (another version of its firmware, say), run `sh start.sh readout`, or `start.cmd readout` on Windows, in the tool's folder.
-
-What a firmware readout does:
-- To read the whole memory, it may install a small program in place of the device's firmware for a few minutes, then put the device's own Sonoff firmware, settings and eWeLink pairing back. On some devices it sends nothing at all, and the readout is only what the device reports.
-- The tool has never run on your kind of device. If the small program could not start at all, the device may need a serial cable to recover. Only go ahead with a device you can afford to lose.
-
-What is sent, once you agree:
-- **The device's firmware readout, anonymised.** It is kept privately, never published, and used only to add support for the device.
-- What the device and eWeLink said it is, and the tool's version.
-> A copy also stays on your computer, beside your other Sonoff backups.
+> Being considered: support for **Supla** firmware, **Zamel** modules and **Tuya** devices.
 
 <br>
+
+### If your device isn't supported yet
+
+**How you can help:** Submitting a firmware readout is the quickest way to get support for it added... Run the tool as usual, choose to **read out your device to help add support for it**. If you have several devices, you can choose to read them all out at once.
+
+> What a readout does
+> - On some devices the readout is only what eWeLink and the device reports (Read-only). 
+> - On other devices a readout installs a small, temporary program in place of the device's firmware for a few minutes, saves the device's whole memory, then puts the device's own firmware back.
+> - Then, the device's (anonymised) firmware readout, is submitted for analysis. It is used only to add support for the device.
+
+<br>
+
 
 ## Documentation
 
@@ -271,15 +273,6 @@ What is sent, once you agree:
   found and fixed while building this project.
 - **[legal](docs/legal.md)** - how the project remains lawful, and what it asks of you.
 - **[privacy](docs/privacy.md)** - who keeps your email address, if you sign up, and your rights.
-
-<br>
-
-## Roadmap
-
-This project has big ambitions to support a broad range of devices and firmwares. The difficult groundwork has been laid down
-to support devices built on both **Espressif** and **Beken** chips. Next is expanding the list of supported devices.
-
-> Also being considered: support for **Supla** firmware, **Zamel** modules and **Tuya** devices.
 
 <br>
 
@@ -317,7 +310,7 @@ Thankyou for making such excellent devices. Please keep this update method open.
 
 <br>
 
-## At your own risk
+## Disclaimer
 
 You use this tool at your own risk. Changing a device's firmware can go wrong for reasons nobody controls - a power cut, a weak Wi-Fi signal, a device that differs from the ones it was tried on - and can leave a device that has to be opened and repaired with a serial cable, or one that cannot be repaired at all. Changing its firmware may also end its maker's warranty.
 
