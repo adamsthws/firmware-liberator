@@ -200,9 +200,10 @@ ROUTES = {
     # would put a fault at 90% a second after it).
     "nobackup>sonoff": ("suite-tasmota-nobackup", "sonoff", {"R1": 53, "R2": 2}),
     # A device on the Tasmota release before this one, updated (prep_update):
-    # U5 43-46 s in the emulator, and U6 2 s, as U5 now waits for Tasmota's
-    # boot (12 s would put every fault at 40% and 90% after U6).
-    "update>tasmota": ("suite-tasmota-earlier", "tasmota", {"U5": 44, "U6": 2}),
+    # U5 37 s in the emulator, and U6 2 s, as U5 now waits for Tasmota's boot
+    # (12 s would put every fault at 40% and 90% after U6). U5 took 43-46 s
+    # before; at 44 the fault at 90% came 3 s after U5 had ended (MISTIMED).
+    "update>tasmota": ("suite-tasmota-earlier", "tasmota", {"U5": 38, "U6": 2}),
     # A device on this project's ESPHome of an earlier release of the tool, updated (prep_update).
     "update>esphome": ("suite-esphome-earlier", "esphome", {"U1": 6, "U2": 72}),
 }
@@ -1623,10 +1624,15 @@ class Scenario:
             # On until a packet has been changed: a step sending little (the
             # bootloader, a plan) may not pass 20 large packets in seconds.
             # Looked at often, so a changed packet or two is all there is.
-            edited, deadline = 0, time.time() + 60
-            while not edited and time.time() < deadline and \
-                    "=== run ended ===" not in (self.current_run(since, headers) or ""):
+            edited, deadline, said = 0, time.time() + 60, ""
+            while not edited and time.time() < deadline:
                 time.sleep(0.2)
+                # Read before the counters, and judged by below: a packet counted
+                # with the step not yet said done was changed while it ran. Read
+                # again after, a 2 s step (U6) had always ended (MISTIMED).
+                said = self.current_run(since, headers) or ""
+                if "=== run ended ===" in said:
+                    break
                 edited = sum(int(n) for n in re.findall(r"pedit.*?Sent \d+ bytes (\d+) pkt", self.ex(
                     "sh", "-c", "tc -s filter show dev tap0 egress; tc -s filter show dev tap0 ingress").stdout,
                     re.S))
@@ -1634,7 +1640,7 @@ class Scenario:
                                           for way, pref, _, _ in filters))
             self.notes["corrupted_packets"] = edited
             step = STEP_OF.get(self.sc["step"], self.sc["step"])
-            if edited and re.search(rf"\] {step} done", self.current_run(since, headers) or ""):
+            if edited and re.search(rf"\] {step} done", said):
                 self.notes["mistimed"] = True  # changed only once the step was over
         elif fault == "second":
             # A second window, same command, while this one works.
