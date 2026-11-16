@@ -1,6 +1,7 @@
 import base64
 import http.client
 import json
+import os
 import ssl
 import subprocess
 import sys
@@ -406,6 +407,30 @@ class PythonScriptTests(unittest.TestCase):
         completed = self.run_isolated(hostsys.python_script(self.script, "--email", "a b", unbuffered=True))
         self.assertEqual(completed.stdout, "found --email a b\n", completed.stderr)
         self.assertEqual(completed.returncode, 3)
+
+
+@unittest.skipUnless(hasattr(os, "fork"), "a process is handed to another as its parent goes on Linux and macOS")
+class ParentGoneTests(unittest.TestCase):
+    def test_a_script_is_told_once_the_program_that_started_it_has_gone(self):
+        self.assertFalse(hostsys.parent_gone()())   # this test's own parent is still here
+        with tempfile.TemporaryDirectory() as folder:
+            said = Path(folder, "said")
+            child = ("import sys, time; sys.path.insert(0, sys.argv[1]); from tools.autoflash import hostsys; "
+                     "gone = hostsys.parent_gone(); open(sys.argv[2], 'w').write('started'); "
+                     "deadline = time.monotonic() + 20\n"
+                     "while not gone() and time.monotonic() < deadline: time.sleep(0.05)\n"
+                     "open(sys.argv[2], 'w').write('gone' if gone() else 'still there')")
+            # A parent that starts the child and exits at once, as the tool killed would.
+            parent = ("import subprocess, sys, time; subprocess.Popen([sys.executable, '-c', sys.argv[1], *sys.argv[2:]]); "
+                      "deadline = time.monotonic() + 20\n"
+                      "import os\n"
+                      "while not os.path.exists(sys.argv[3]) and time.monotonic() < deadline: time.sleep(0.05)")
+            subprocess.run([sys.executable, "-c", parent, child, str(Path(hostsys.__file__).resolve().parents[2]),
+                            str(said)], check=True, timeout=30)
+            deadline = time.monotonic() + 20
+            while said.read_text(encoding="utf-8") != "gone" and time.monotonic() < deadline:
+                time.sleep(0.05)
+            self.assertEqual(said.read_text(encoding="utf-8"), "gone")
 
 
 class WindowsElevationTests(unittest.TestCase):

@@ -20,7 +20,7 @@ from typing import Any
 if __package__ in (None, ""):  # run as a script: the repository root, for `tools.`
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tools.autoflash import kinds, output  # noqa: E402
+from tools.autoflash import hostsys, kinds, output  # noqa: E402
 from tools.autoflash.prompts import ask_secret
 from tools.espressif.analyze_vendor_ota import WRAPPER_SIZE, analyze
 from tools.espressif import chips
@@ -49,6 +49,7 @@ def report_failure(exc: BaseException, sent: bool) -> None:
 
 
 def main():
+    abandoned = hostsys.parent_gone()   # as it starts: its parent may go before it serves
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--listen-ip", required=True)
     parser.add_argument("--listen-port", type=int, default=8088)
@@ -158,7 +159,8 @@ def main():
     delivered = deliver(account=Account(sign_in, held=given_session()), device_id=args.device_id or target_id_from_mdns(args.mdns_capture), firmware=firmware,
                         version=ANNOUNCED_VERSION, listen_ip=args.listen_ip, listen_port=args.listen_port,
                         device_ip=args.device_ip, wait=args.wait, check_device=check,
-                        event=functools.partial(output.write_event, args.events) if args.events else None)
+                        event=functools.partial(output.write_event, args.events) if args.events else None,
+                        abandoned=abandoned)
     if delivered.error and not delivered.interrupted:
         report_failure(EwelinkError(delivered.error), delivered.sent)
     elif delivered.interrupted:

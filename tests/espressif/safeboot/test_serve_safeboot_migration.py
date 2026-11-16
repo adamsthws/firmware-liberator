@@ -637,6 +637,16 @@ class MigrationValidationTests(unittest.TestCase):
                 server = mock.Mock()
                 self.assertEqual(server_module.wait_for_result(server, state, 900, 360), "silent")
 
+    def test_waiting_stops_once_the_tool_that_started_it_has_gone(self):
+        # Seen in the fault suite: the tool killed as it started this server,
+        # which went on alone holding its port; the next run moved to another.
+        import tools.espressif.safeboot.serve_safeboot_migration as server_module
+        with tempfile.TemporaryDirectory() as directory:
+            _, state = self.staging(directory)
+            server = mock.Mock()
+            self.assertEqual(server_module.wait_for_result(server, state, 900, 360, lambda: True), "abandoned")
+            server.handle_request.assert_not_called()
+
     def test_a_device_still_talking_is_given_the_whole_wait(self):
         import tools.espressif.safeboot.serve_safeboot_migration as server_module
         with tempfile.TemporaryDirectory() as directory:
