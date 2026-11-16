@@ -9,6 +9,9 @@ is not legal advice.
 
 - The backup is of **your device**, is kept **on your computer**, and is only
   ever written back to **the same device**.
+- A **readout**, sent only if you choose, is the one copy that leaves your
+  computer: anonymised, kept privately, used only to add support for the
+  device ([Readouts](#readouts)).
 - The project **never distributes Sonoff's firmware**, in whole or in part.
 - The tool updates through the device's **ordinary update mechanism**, started
   from **your own eWeLink account**. It breaks no encryption, signature or other
@@ -28,8 +31,9 @@ copy of it, and study how it works so that other software can work with it:
   archival copy. Firmware that comes with a device you bought is generally
   treated as a copy you own.
 
-None of these rights cover giving the copy to anyone else, and that is where
-the line is drawn below.
+The backup right does not cover giving the copy to anyone else, and that is
+where the line is drawn below. The study and interoperability rights are what
+the project relies on for a published dump or a readout.
 
 Right-to-repair laws mostly require manufacturers to provide parts, tools and
 information. They are **background support** for what this project does, not
@@ -120,6 +124,18 @@ device the project adds.
 - Any exchange with the vendor's cloud uses the owner's own account and
   device; the published tooling points at a local stub by default.
 
+### Readouts
+
+A readout ([readouts.md](readouts.md)) sends the project an anonymised copy
+of a device's memory, Sonoff's firmware included, so that support for the
+device can be built: the observing and studying for interoperability the
+exceptions above allow.
+
+- It is sent only when you agree to it, with your Wi-Fi details and the
+  device's eWeLink identity taken out first.
+- It is stored privately on the project's server and never published or
+  passed on; the docs describe what it shows as for any dump.
+
 ### Signing in to eWeLink
 
 - The tool signs in to eWeLink as you, with your own account, to talk to your
@@ -137,7 +153,8 @@ independent and not an official installer ([NOTICES.md](../NOTICES.md)).
 ## What this project asks of you
 
 - **Do not share your backup.** It is Sonoff's firmware, and it also holds
-  your Wi-Fi password and your device's eWeLink keys in plain text.
+  your Wi-Fi password and your device's eWeLink keys in plain text. A readout
+  is the way to send the project a device's firmware: the tool anonymises it.
 - **Do not attach a Sonoff backup, or any part of one, to an issue or pull
   request.** Describe what you see instead, such as the offsets, sizes, Sonoff
   version and log lines. A pull request that adds Sonoff firmware or code
