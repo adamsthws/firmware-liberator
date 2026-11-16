@@ -21,7 +21,7 @@ Two kinds of finding:
 - **Anyone's**, by their shape: a MAC address that could be a real device's -
   not locally administered, and not one of the made-up ones tools/repo/leak-scan-allow
   lists; a UUID that could be a device's apikey or id (same allow-list); a
-  private key; a GitHub, AWS, Google or Slack token; disassembly or decompiler
+  private key; a Cloudflare, GitHub, AWS, Google or Slack token; disassembly or decompiler
   output (the S61 research tools make it - commit the tool, not its dump); and
   a packet capture (.pcap/.pcapng), whose frames carry a network's credentials.
 
@@ -64,6 +64,10 @@ SHORTEST = 4  # values shorter than this match too much to mean anything
 MAC_TEXT = re.compile(r"(?<![0-9A-Fa-f:-])([0-9A-Fa-f]{2})([:-])([0-9A-Fa-f]{2})(?:\2[0-9A-Fa-f]{2}){4}(?![0-9A-Fa-f:-])")
 TOKENS = {
     "a private key": re.compile(r"-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----"),
+    # An account's (cfat_) or a user's (cfut_) API token. One made before
+    # Cloudflare gave them a prefix has no shape to find: only its value, as
+    # .env.infra holds it (own values, below).
+    "a Cloudflare API token": re.compile(r"\bcf[au]t_[A-Za-z0-9_-]{20,}"),
     "a GitHub token": re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{60,})"),
     "an AWS access key": re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
     "a Google API key": re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),

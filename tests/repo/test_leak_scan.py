@@ -60,8 +60,14 @@ class ShapeTests(unittest.TestCase):
         for text, what in (("-----BEGIN " + key, "a private key"),
                            ("-----BEGIN OPENSSH " + key, "a private key"),
                            ("ghp_" + "a" * 36, "a GitHub token"),
-                           ("AKIA" + "ABCDEFGHIJKLMNOP", "an AWS access key")):
+                           ("AKIA" + "ABCDEFGHIJKLMNOP", "an AWS access key"),
+                           ("token = cfat" + "_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0", "a Cloudflare API token"),
+                           ("cfut" + "_" + "Z9y8X7w6V5u4T3s2R1q0-p_o9n8m7", "a Cloudflare API token")):
             self.assertIn(what, self.found(text), text)
+
+    def test_cloudflare_tokens_prefix_alone_is_not_a_token(self):
+        for text in ("tokens begin cfat" + "_ or cfut" + "_", "cfat" + "_short", "xcfat" + "_" + "a" * 30):
+            self.assertEqual(self.found(text), [], text)
 
 
 class OwnValueTests(unittest.TestCase):
