@@ -56,8 +56,9 @@ The verdict, from the recording alone (judge):
     FAIL-QUESTION     as a question was answered: no "(q to quit)" on it, a
                       row the terminal wrapped itself, or a question shown
                       twice - an earlier try left on the screen
-    FAIL-SCREEN       the screen it ended on: its stages (unattended_run.stage_problems),
-                      its report and how it ended (end_problems, with what the
+    FAIL-SCREEN       the screen it ended on, as every suite judges one
+                      (unattended_run.screen_problems): its stages, a row said
+                      twice, its report and how it ended (with what the
                       run put on the clipboard), a row the terminal wrapped
                       itself, or a line `expect`'s `shows` wants not on it, or
                       one its `never` wants nowhere: on the screen at any
@@ -204,11 +205,7 @@ def judge(scenario: dict[str, Any], raw: bytes, answers: list[dict[str, Any]], c
             verdicts.append(f"FAIL-QUESTION: {problem}")
         wrapped = screen.wrapped
     if expect.get("screen", True):
-        # The window as it was left, not its scrollback: a run gone on to
-        # another device scrolls the last one up into it, with blank rows.
-        window = "\n".join(text.rstrip("\n").split("\n")[-size[1]:])
-        verdicts += [f"FAIL-SCREEN: {problem}" for problem in unattended_run.stage_problems(window)]
-        verdicts += [f"FAIL-SCREEN: {problem}" for problem in unattended_run.end_problems(text, clipboard)]
+        verdicts += [f"FAIL-SCREEN: {problem}" for problem in unattended_run.screen_problems(text, clipboard, size[1])]
         if final.wrapped > wrapped:
             verdicts.append("FAIL-SCREEN: a row the terminal wrapped itself, after the last answer")
     for unwanted in expect.get("never", []):

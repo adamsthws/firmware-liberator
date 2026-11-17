@@ -242,6 +242,34 @@ UNDER_WAY = ("Underway", "Retrying")
 PASSED = ("Complete", "Already done", "Skipped")
 
 
+def screen_problems(screen: str, clipboard: str | None = None, rows: int | None = None) -> list[str]:
+    """Everything wrong with how a run left `screen` (Screen.render, without
+    colours): [] for nothing. The one judge of a screen every suite uses -
+    the attended suite, both fault suites, and a run of this script - so a
+    rule added here holds for every chip family, conversion and readout
+    alike (tests/repo/test_screen_judges.py holds them to it). `clipboard`:
+    as end_problems takes it; `rows`: the window's height, its stages judged
+    in the window alone, not the scrollback a run gone on to another device
+    scrolls up into it with blank rows."""
+    window = screen if rows is None else "\n".join(screen.rstrip("\n").split("\n")[-rows:])
+    found = stage_problems(window) + repeated_rows(window) + end_problems(screen, clipboard)
+    return [problem for index, problem in enumerate(found) if problem not in found[:index]]
+
+
+def repeated_rows(screen: str) -> list[str]:
+    """The same row twice, one under the other: a line said twice - a note,
+    a FAILED line, a stage's line drawn again under itself. Blank rows and
+    rules (===, ---) are left to stage_problems."""
+    problems = []
+    rows = [row.rstrip() for row in screen.splitlines()]
+    for above, row in zip(rows, rows[1:]):
+        if row.strip() and row == above and set(row.strip()) - set("=-"):
+            problem = f"the same row twice, one under the other: {row.strip()[:60]!r}"
+            if problem not in problems:
+                problems.append(problem)
+    return problems
+
+
 def stage_problems(screen: str) -> list[str]:
     """What a run left on `screen` (Screen.render) that it should have taken
     away as it moved on: [] for nothing.  A stage that passed leaves one
@@ -431,12 +459,21 @@ def _end_problems(rows: list[str]) -> tuple[list[str], bool]:
     return problems, True
 
 
+# How far in a report's rows are set on the screen, at the least: the margin
+# and four more (report.report_screen).
+REPORT_INDENT = 4
+
+
 def _reports(rows: list[str]) -> list[list[tuple[int, str]]]:
     """Each report on the screen: its rows, by index - a block of rows each
     a report's, two or more of them labelled, none of them links."""
     blocks, block = [], []
     for index, row in enumerate(rows + [""]):
-        if row.strip() and (REPORT_CELL.match(row.strip()) or (block and _indent(row) > _indent(block[0][1]))):
+        # A report's rows are set in from the margin (report.report_screen); a
+        # line that only reads as one - "FAILED: ...", then its next row
+        # "Switch it off and on: it ..." - is not.
+        if row.strip() and ((REPORT_CELL.match(row.strip()) and _indent(row) >= REPORT_INDENT)
+                            or (block and _indent(row) > _indent(block[0][1]))):
             block.append((index, row))
             continue
         labelled = [row for _, row in block if REPORT_CELL.match(row.strip())]
@@ -476,6 +513,45 @@ def _report_problems(report: list[tuple[int, str]]) -> list[str]:
         problems.append(f"the report's right-hand column the longer: {right_rows} rows to {left_rows}")
     if conversion and right_rows and left_rows > right_rows + 1:
         problems.append(f"the report's left-hand column {left_rows - right_rows} rows the longer")
+    return problems + _readout_count_problems(report)
+
+
+def _cell_value(row: str, cell: re.Match) -> str:
+    """A report cell's whole value: up to the gap before the next cell."""
+    return re.split(r" {3,}", row[cell.start("value"):], maxsplit=1)[0].strip()
+
+
+def _readout_count_problems(report: list[tuple[int, str]]) -> list[str]:
+    """A readout's report (readout.report_fields, report_devices): its counts
+    - how many devices, and how many accepted, not needed and not sent -
+    agreeing with each other and with the devices listed under each outcome.
+    [] for a conversion's report, which counts no devices."""
+    from tools.autoflash import readout
+    counts: dict[str, int] = {}
+    listed: set[str] = set()
+    for _, row in report:
+        for cell in REPORT_CELL.finditer(row):
+            label, value = cell["label"], _cell_value(row, cell)
+            if label in readout.REPORT_RIGHT and value.isdigit():
+                counts[label] = int(value)
+            elif label in readout.SAID.values():
+                listed.add(label)
+    if "Devices" not in counts:
+        return []
+    problems = []
+    devices = counts["Devices"]
+    outcomes = sum(count for label, count in counts.items() if label != "Devices")
+    if outcomes > devices:
+        problems.append(f"the readout's report counts {outcomes} outcomes of {devices} devices")
+    if devices and not listed:
+        problems.append(f"the readout's report counts {devices} devices and lists none")
+    if not devices and listed:
+        problems.append("the readout's report counts no devices and lists some")
+    for label in readout.REPORT_RIGHT[1:]:
+        if counts.get(label, 0) and label not in listed:
+            problems.append(f"the readout's report counts {counts[label]} {label.lower()} and lists none")
+        if label in listed and not counts.get(label, 0):
+            problems.append(f"the readout's report lists devices {label.lower()} and counts none")
     return problems
 
 
@@ -837,7 +913,7 @@ def main() -> int:
         print(f"Result: {result}")
     print(f"Exit code {code} - {outcome}")
     copied = kept.read_text(encoding="utf-8") if kept.exists() else ""
-    for problem in stage_problems(screen.render(colour=False)) + end_problems(screen.render(colour=False), copied):
+    for problem in screen_problems(screen.render(colour=False), copied, size[1]):
         print(f"SCREEN: {problem}")
     print(f"Kept in {shown}/: screen.ansi (cat it), screen.txt, screen.raw")
     return code

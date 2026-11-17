@@ -303,12 +303,16 @@ SCREEN = re.compile(r"^The screen at the end of the run \(\d+x\d+\):\n=+\n(?P<sc
 
 
 def screen_problems(output: str) -> list[str]:
-    """What each run in `output` - every recorded run of a scenario, as its
-    log keeps them - left of a stage on its screen that it should have taken
-    away (unattended_run.stage_problems): [] for nothing, or no screen."""
+    """What is wrong with the screen each run in `output` - every recorded
+    run of a scenario, as its log keeps them - ended on, as every suite
+    judges a screen (unattended_run.screen_problems): [] for nothing, or no
+    screen. What a run put on the clipboard is not in its log: not judged."""
     plain = re.sub(r"\x1b\[[0-9;]*m", "", output)  # printed in colour unless NO_COLOR is set
-    return [problem for found in SCREEN.finditer(plain)
-            for problem in unattended_run.stage_problems(found["screen"])]
+    problems: list[str] = []
+    for found in SCREEN.finditer(plain):
+        problems += [problem for problem in unattended_run.screen_problems(found["screen"])
+                     if problem not in problems]
+    return problems
 
 
 # As tools/repo/unattended_run.py says where it kept a run's recording.

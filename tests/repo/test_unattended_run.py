@@ -40,6 +40,26 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual(self.render(text, width=40), "\x1b[0m\x1b[32mComplete!\x1b[0m http://x/\n")
 
 
+class RepeatedRowsTests(unittest.TestCase):
+    """A line said twice, one under the other, is found wherever it is."""
+
+    def test_the_same_row_twice_is_found_once(self):
+        screen = " FAILED: the readout could not be sent\n FAILED: the readout could not be sent\n" * 2
+        self.assertEqual(unattended_run.repeated_rows(screen),
+                         ["the same row twice, one under the other: 'FAILED: the readout could not be sent'"])
+
+    def test_blank_rows_rules_and_rows_apart_are_not(self):
+        self.assertEqual(unattended_run.repeated_rows("\n\n" + "=" * 72 + "\n" + "=" * 72 + "\n"
+                                                      " note\n other\n note\n"), [])
+
+    def test_a_run_of_this_script_and_every_suite_judge_a_screen_alike(self):
+        # As a run in 2.3.0 left it, retrying (the tool says it no longer).
+        screen = ("Stage 3 - Probing the device - Stopped\n\n"
+                  "[192.0.2.50] Request timed out\n[192.0.2.50] Request timed out\n")
+        self.assertIn("the same row twice, one under the other: '[192.0.2.50] Request timed out'",
+                      unattended_run.screen_problems(screen))
+
+
 class StageProblemsTests(unittest.TestCase):
     """A stage that passed leaves one line; one that stopped, what it showed."""
 
@@ -402,8 +422,49 @@ class EndProblemsTests(unittest.TestCase):
      Python:    3.12.3 (venv)                         Not needed: 0
                                                       Not sent:   1
      Accepted:  S61STPF 1.0.2
+     Not sent:  S60TPG 1.2.0
 """
         self.assertEqual(self.problems(readout + HAT, ""), [])
+
+    READOUT = """\
+ Readout complete!
+
+     Liberator:  3.0.0                                Devices:    {devices}
+     OS:         Ubuntu 24.04.5 LTS                   Accepted:   {accepted}
+     Python:     3.12.3 (venv)                        Not needed: {unneeded}
+{listed}"""
+
+    def readout(self, devices, accepted, unneeded, *listed):
+        return self.READOUT.format(devices=devices, accepted=accepted, unneeded=unneeded,
+                                   listed="".join(f"     {label:<12}{value}\n" for label, value in listed)) + HAT
+
+    def test_a_readouts_counts_agree_with_each_other_and_the_devices_listed(self):
+        self.assertEqual(self.problems(self.readout(2, 1, 1, ("Accepted:", "S61STPF 1.0.2"),
+                                                    ("Not needed:", "S60TPG 1.2.0")), ""), [])
+        self.assertEqual(self.problems(self.readout(1, 0, 0, ("Failed:", "POWR316D 1.0.0")), ""), [])
+        self.assertIn("the readout's report counts 2 outcomes of 1 devices",
+                      self.problems(self.readout(1, 1, 1, ("Accepted:", "S61STPF 1.0.2"),
+                                                 ("Not needed:", "S60TPG 1.2.0")), ""))
+        self.assertIn("the readout's report counts 1 accepted and lists none",
+                      self.problems(self.readout(1, 1, 0, ("Failed:", "POWR316D 1.0.0")), ""))
+        self.assertIn("the readout's report lists devices not needed and counts none",
+                      self.problems(self.readout(1, 0, 0, ("Not needed:", "S60TPG 1.2.0")), ""))
+        self.assertIn("the readout's report counts 1 devices and lists none", self.problems(self.readout(1, 0, 0), ""))
+        self.assertIn("the readout's report counts no devices and lists some",
+                      self.problems(self.readout(0, 0, 0, ("Failed:", "POWR316D 1.0.0")), ""))
+
+    def test_a_failed_line_that_wraps_into_label_and_value_is_no_report(self):
+        # As a readout whose read failed left it: the FAILED line's next row
+        # reads "Switch it off and on: it ...", and the two were taken for a
+        # report out of line.
+        said = (" FAILED: the device's memory could not be read (<urlopen error [Errno 113] No route to host>).\n"
+                " Switch it off and on: it starts its Sonoff firmware again\n\n")
+        self.assertEqual(self.problems(said + self.readout(1, 0, 0, ("Failed:", "S60TPG 1.2.0")).replace(HAT, "")
+                                       .replace(" Readout complete!\n", "") + ISSUE, COPIED), [])
+
+    def test_a_conversions_report_counts_no_devices(self):
+        self.assertEqual(unattended_run._readout_count_problems(
+            [(0, "     Liberator: 3.0.0      Firmware: Tasmota")]), [])
 
     def test_a_report_with_no_ending_under_it_or_both_is_found(self):
         self.assertIn("a report with neither the links to support the project nor the way to open an issue "

@@ -718,10 +718,17 @@ kept none there, an earlier release's.
 **FAIL-SCREEN.** Each run is recorded on a terminal of its own, and the
 screen it ended on is read back. A stage that passed should leave one line,
 its outcome, with only what it kept under it; a stage that stopped should
-leave what it showed above its line, as that says why. A run fails on what
+leave what it showed above its line, as that says why. Every suite - this
+one, the Beken one and the attended runs - judges a screen with the one
+judge, `unattended_run.screen_problems`, so a rule added there holds for
+both chip families, conversions and readouts alike
+(`tests/repo/test_screen_judges.py` keeps each suite to it). A run fails on what
 [unattended.md](unattended.md#the-recording) lists (an outcome shown twice,
-an "Underway" line left), and on two blank rows in a row; the result's notes
-name each. The unit tests find most of these first, without the emulator:
+an "Underway" line left), on two blank rows in a row, on the same row twice,
+one under the other, on how it ended (its report lined up, a readout's
+counts agreeing with the devices it lists, the way to open an issue or the
+links to support the project under it); the result's notes name each. The
+unit tests find most of these first, without the emulator:
 
 | Test | Checks |
 |---|---|
@@ -1045,7 +1052,7 @@ otherwise it is:
 | FAIL-UNUSED | an answer was never typed: its question is no longer asked |
 | FAIL-ANSWER | an answer that switches the device or the router, or moves the computer's Wi-Fi, failed to: the network not on the air to join, say |
 | FAIL-QUESTION | something was wrong as a question was answered: no "(q to quit)" on it, a row the terminal wrapped itself, or a question shown twice (an earlier try left on the screen) |
-| FAIL-SCREEN | the screen it ended on: as the fault suites' FAIL-SCREEN, and how it ended (`unattended_run.end_problems`) - the report's columns lined up and balanced, the links to support the project or the way to open an issue under it, the report ID and what was put on the clipboard as a failed run says them and nowhere else, no question left unanswered above what came after it - a row the terminal wrapped itself, or a line the scenario's `expect.shows` wants not there, or one its `expect.never` wants nowhere (at any answer or at the end: a key pressed by accident, echoed); or, as an answer was typed, a line its `shows` wants not on the screen, or one its `never` does not want on it |
+| FAIL-SCREEN | the screen it ended on, as the fault suites' FAIL-SCREEN (`unattended_run.screen_problems`), and what the run put on the clipboard: the report ID and what was copied as a failed run says them and nowhere else, no question left unanswered above what came after it - a row the terminal wrapped itself, or a line the scenario's `expect.shows` wants not there, or one its `expect.never` wants nowhere (at any answer or at the end: a key pressed by accident, echoed); or, as an answer was typed, a line its `shows` wants not on the screen, or one its `never` does not want on it |
 | FAIL-NOT-ASKED, FAIL-NOT-SENT, FAIL-SENT-UNWANTED, FAIL-NOT-STORED, FAIL-READOUT, FAIL-KEPT-UNSENT | a readout's other side: what the API beside the emulator was asked and kept, as the fault suites judge a readout sent to it (`fault_verdicts.readout_api_problems`), copied into the scenario's results (`api/`, `again-api/`); an `api_down` scenario's FAIL-READOUT: the readout kept for later is not whole, or none was kept |
 | HARNESS | it could not be run - the device not prepared, say: its `harness.log` says why |
 

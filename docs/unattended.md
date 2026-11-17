@@ -90,10 +90,12 @@ finished, 130 for stopped at a question or by Ctrl-C, 143 for stopped by
 A line starting `SCREEN:` after the exit code says a stage left on screen
 what it should have taken away: a failed try still shown after a retry, what a
 passed stage showed while under way, or a stage left at "Underway" when the
-next began; or that the run ended otherwise than it is drawn to - its report
-out of line, neither the links nor the way to open an issue under it, a
-report ID or the clipboard said by a run that did not fail, a question left
-unanswered above what came after it. The fault suites fail such a run
+next began; the same row twice, one under the other; or that the run ended
+otherwise than it is drawn to - its report out of line, a readout's counts
+not agreeing with the devices it lists, neither the links nor the way to
+open an issue under it, a report ID or the clipboard said by a run that did
+not fail, a question left unanswered above what came after it. Every suite
+judges a screen so (`unattended_run.screen_problems`), and fails such a run
 (FAIL-SCREEN in [testing.md](testing.md)).
 
 What the run puts on the clipboard is kept beside the recording, as
