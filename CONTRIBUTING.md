@@ -61,6 +61,7 @@ the workflows run them all.
 ```sh
 python3 tests/run.py          # the unit tests, about 11 s
 python3 tools/repo/lint.py all     # every linter on every file
+python3 tools/repo/oldest_python.py  # before a push: the unit tests on the oldest Python (Docker)
 ```
 
 Every fix comes with a test that fails without it. The tests run side by

@@ -82,7 +82,8 @@ and devices' identities.
 - **Take the idiomatic design**: the usual way of the language and the code
   around it, over a clever one.
 - **Before a commit**: `python3 tests/run.py` and `python3 tools/repo/lint.py`
-  on what changed. [docs/testing.md](docs/testing.md)
+  on what changed; before a push, `python3 tools/repo/oldest_python.py`.
+  [docs/testing.md](docs/testing.md)
 - **Every fix has a test that fails without it.** A failing test or hook is
   fixed at its cause, never skipped, loosened or deleted.
 - **A test of one module mirrors its path**: `tools/a/b.py`'s tests are

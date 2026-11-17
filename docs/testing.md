@@ -35,6 +35,18 @@ the start scripts install and most conversions run on, and on 3.10, the
 oldest the tool runs on: a Mac's own Python may be older than 3.12, as may one
 already installed where the portable one cannot be had.
 
+A newer Python passes code the oldest cannot run, and CI's run on the oldest
+says so only after a push. Before one, run them on it yourself:
+
+```sh
+python3 tools/repo/oldest_python.py
+```
+
+It tests what `HEAD` holds, in a clone of its own, in the official image of
+the oldest Python with the packages CI installs, so it needs Docker. The tests
+run side by side there too: about a minute in all, once the image is pulled.
+The `newer python` linter finds the commonest of it at each commit.
+
 ### Where a test goes
 
 `tests/` mirrors `tools/`: a module's tests sit where it would be, named for
@@ -177,6 +189,7 @@ every file.
 | Linter | On | Looks for |
 |---|---|---|
 | compile | Python | what parses yet will not compile, which no linter sees: more than 20 blocks nested in one function, say (CPython's limit before 3.13); CI also runs it alone on Python 3.10 (`lint.py compile`) |
+| newer python | Python | what came in a Python newer than the oldest the tool runs on and is easy to use out of habit - `TestCase.enterContext`, `tomllib`, `typing.Self`, `except*` - which a newer Python runs without a word; the list is in `tools/repo/newer_python.py` |
 | [ruff](https://docs.astral.sh/ruff/) | Python (`.ruff.toml`) | undefined or unused names, likely bugs, a text file opened without `encoding=`, syntax newer than Python 3.10 |
 | [shellcheck](https://www.shellcheck.net/) | shell scripts | unquoted expansions, mistakes in tests and traps, what `sh` does not have |
 | [actionlint](https://github.com/rhysd/actionlint) | the workflows | wrong keys, expressions and types; shellcheck on each `run:` script |
@@ -184,7 +197,8 @@ every file.
 | [PSScriptAnalyzer](https://learn.microsoft.com/powershell/utility-modules/psscriptanalyzer/overview) | PowerShell (`PSScriptAnalyzerSettings.psd1`) | syntax Windows PowerShell 5.1 does not have, which every Windows runs `tools/windows-start.ps1` with; likely mistakes |
 | `esphome config` | the ESPHome configs `firmware.json` builds, and the examples in [home-assistant-adoption.md](home-assistant-adoption.md) | what ESPHome would refuse to build, checked by the ESPHome image the next build uses (Docker) |
 
-The first four come from `requirements/lint.txt`, pinned with their hashes.
+`compile` and `newer python` need only Python; ruff, shellcheck, actionlint and
+zizmor come from `requirements/lint.txt`, pinned with their hashes.
 The other two are installed apart ([setting up](../CONTRIBUTING.md#setting-up)):
 PSScriptAnalyzer with
 `pwsh -Command Install-Module PSScriptAnalyzer -Scope CurrentUser`, and
