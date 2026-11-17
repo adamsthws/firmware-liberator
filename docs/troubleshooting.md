@@ -336,7 +336,8 @@ then carries on.
 Each upload writes the *other* half of memory and restarts into it, so the
 slot alternates. The tool handles one swap-back itself; this message means
 uploads are not being committed at all (see "suspiciously fast" above). Switch
-the device off and on, then run the same command again.
+the device off and on, then choose to try it again where the tool asks what
+next, or run the same command again.
 
 **A step says it was interrupted**
 

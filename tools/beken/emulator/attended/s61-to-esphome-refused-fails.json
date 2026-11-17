@@ -56,8 +56,7 @@
   },
   {
    "when": "What next",
-   "type": "q\r",
-   "optional": true
+   "type": "q\r"
   },
   {
    "when": "\\[[Yy]/n\\]",

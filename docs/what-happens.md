@@ -241,10 +241,12 @@ The tool then switches the relay off and on through ESPHome to check it, and
 gives you the device's ESPHome page.
 
 Either way, the tool then asks what next: convert another device or read one
-out, looking for it afresh with your eWeLink sign-in kept, or `q` to end. A
-readout asks the same however it ends, even one that failed, unless you stopped
-it with `q` or Ctrl-C. Typing `q` where the tool asks you to type PROCEED
-stops it as `q` at any question does: nothing has been written to the device.
+out, looking for it afresh with your eWeLink sign-in kept, or `q` to end. It
+asks however the run ends, a readout's too, unless you stopped it with `q` or
+Ctrl-C; after a conversion that failed, it first offers to try that device
+again, carrying on from where it stopped. Typing `q` where the tool asks you
+to type PROCEED stops it as `q` at any question does: nothing has been written
+to the device.
 
 ### A Beken device
 

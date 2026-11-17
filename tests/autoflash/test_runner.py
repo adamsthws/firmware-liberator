@@ -404,6 +404,15 @@ class CarryOnTests(unittest.TestCase):
         link.assert_not_called()
         self.assertNotIn("discussion", " ".join(str(c.args) for c in told.call_args_list).lower())
 
+    def test_attended_it_points_to_trying_again_below_unattended_to_the_command(self):
+        # Attended, What next offers the device again (cli.what_next); unattended
+        # nothing is asked, so the command to run is said.
+        for unattended, said in ((False, "try this device again below"), (True, "the same command again")):
+            with self.subTest(unattended=unattended), mock.patch.object(prompts, "UNATTENDED", unattended), \
+                    mock.patch.object(output, "tell") as told:
+                runner.tell_how_to_carry_on()
+            self.assertIn(said, " ".join(str(c.args[0]) for c in told.call_args_list))
+
 
 class RetryTests(unittest.TestCase):
     """Safe steps that failed for a reason that may pass are run again."""

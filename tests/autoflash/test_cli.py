@@ -197,7 +197,7 @@ class AnotherDeviceTests(unittest.TestCase):
     sitting: a new run, found afresh, the eWeLink sign-in kept.  Not after
     one that stopped, nor in an unattended one."""
 
-    def main(self, *, codes, answers, command="run", more=()):
+    def main(self, *, codes, answers, command="run", more=(), became_readouts=()):
         from types import SimpleNamespace
         made, names = [], iter(f"run-{number}" for number in range(2, 9))
 
@@ -211,6 +211,8 @@ class AnotherDeviceTests(unittest.TestCase):
         def running(kind):
             def ran(ctx, *_):
                 commands.append(ctx.args.command)
+                if len(self.ran) in became_readouts:
+                    ctx.readouts = []   # a conversion that became a readout at A1 (readout.from_run)
                 self.ran.append(kind)
                 return next(codes)
             return ran
@@ -298,12 +300,38 @@ class AnotherDeviceTests(unittest.TestCase):
         self.assertEqual(asked.call_args_list[1].args[1], ["Convert a device", "Read out another device"])
         made[1].keep_sign_in.assert_called_once_with(made[0])
 
-    def test_not_after_one_that_stopped(self):
-        for command, code in (("run", 1), ("run", 2), ("run", 130), ("readout", 130)):
-            with self.subTest(command=command, code=code):
-                ended, made, asked, _ = self.main(codes=[code], answers=[], command=command)
-                self.assertEqual((ended, len(made)), (code, 1))
+    def test_not_after_one_stopped_with_q_or_ctrl_c(self):
+        for command in ("run", "readout"):
+            with self.subTest(command=command):
+                ended, made, asked, _ = self.main(codes=[130], answers=[], command=command)
+                self.assertEqual((ended, len(made)), (130, 1))
                 asked.assert_not_called()
+
+    AGAIN = 0   # the first option after a conversion that failed
+
+    def test_after_a_conversion_that_failed_it_can_be_tried_again(self):
+        # Seen: a conversion that failed ended the sitting, to be started
+        # again by hand, with the eWeLink sign-in typed again.
+        for code in (1, 2):
+            with self.subTest(code=code):
+                ended, made, asked, _ = self.main(codes=[code, 0], answers=[self.AGAIN, prompts.QuitRun("q")])
+                self.assertEqual(asked.call_args_list[0].args,
+                                 ("What next", ["Try this device again", "Convert another device", "Read out a device"]))
+                # Its own run carried on, not a new one found afresh.
+                self.assertEqual([ctx.run for ctx in made], ["run-1", "run-1"])
+                self.assertEqual((made[1].device_ip, made[1].args.new), (None, False))
+                made[1].keep_sign_in.assert_called_once_with(made[0])
+                self.assertEqual((ended, self.commands), (0, ["run", "run"]))
+                # Finished then: nothing to try again.
+                self.assertEqual(asked.call_args_list[1].args[1], ["Convert another device", "Read out a device"])
+
+    def test_after_one_that_failed_the_others_are_offered_too(self):
+        _, made, _, _ = self.main(codes=[1, 0], answers=[self.AGAIN + 1, prompts.QuitRun("q")])
+        self.assertEqual([ctx.run for ctx in made], ["run-1", "run-2"])
+        _, _, asked, _ = self.main(codes=[1, 0], answers=[self.AGAIN + 2, prompts.QuitRun("q")])
+        self.assertEqual(self.ran, ["convert", "read_out"])
+        # A readout is never tried again by itself: another is read out.
+        self.assertEqual(asked.call_args_list[1].args[1], ["Convert a device", "Read out another device"])
 
     def test_after_a_readout_that_failed_or_was_not_confirmed(self):
         # Seen: a readout that did not go ahead ended the sitting at the email
@@ -314,8 +342,17 @@ class AnotherDeviceTests(unittest.TestCase):
         self.assertEqual(asked.call_args.args, ("What next", ["Convert a device", "Read out another device"]))
         made[1].keep_sign_in.assert_called_once_with(made[0])
 
+    def test_after_a_conversion_that_became_a_readout_it_is_a_readout_s_what_next(self):
+        # It converted nothing: no "Try this device again", which would only
+        # find no supported device again, nor "Convert another device".
+        for code in (0, 1):
+            with self.subTest(code=code):
+                _, _, asked, _ = self.main(codes=[code], answers=[prompts.QuitRun("q")], became_readouts={0})
+                self.assertEqual(asked.call_args.args, ("What next", ["Convert a device", "Read out another device"]))
+
     def test_the_email_question_comes_once_as_the_sitting_ends_however_it_ends(self):
-        for codes, answers in (([0, 0], [self.CONVERT, prompts.QuitRun("q")]), ([1], []), ([130], [])):
+        for codes, answers in (([0, 0], [self.CONVERT, prompts.QuitRun("q")]), ([1], [prompts.QuitRun("q")]),
+                               ([130], [])):
             with self.subTest(codes=codes):
                 self.main(codes=codes, answers=answers)
                 self.exit_question.assert_called_once_with()

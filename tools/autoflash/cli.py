@@ -658,46 +658,63 @@ def _main() -> int:
                 firewall.release_firewall(ctx)
             output.finish()
     code = read_out(ctx) if args.command == "readout" else convert(ctx, given)
-    while goes_on(args.command, code) and not args.send:
-        command = what_next(args.command)
+    # Whatever it ended in, but q or Ctrl-C (130): those were the way out.
+    while code != 130 and not args.send:
+        command = what_next(ended_as(args.command, ctx), failed=code != 0)
         if command is None:
             break
-        args.command = command
-        ctx = next_device(args, ctx)
+        ctx = same_device(args, ctx) if command == AGAIN else next_device(args, ctx)
+        args.command = "run" if command == AGAIN else command
         # Either at the top of the window: a readout under the last device's
         # left its "Readout saved in" above the next one's.
         output.start_at_top()
-        code = read_out(ctx) if command == "readout" else convert(ctx, given)
+        code = read_out(ctx) if args.command == "readout" else convert(ctx, given)
     signup.ask_on_exit()
     return code
 
 
-def goes_on(command: str, code: int) -> bool:
-    """Whether the sitting offers what next after `command` ended with `code`:
-    a conversion that finished, or a readout however it ended but by q or
-    Ctrl-C. One that failed leaves its device's Sonoff firmware in place, so
-    another can be read out or converted; a conversion that failed may leave
-    its device needing seeing to first."""
-    return code == 0 or (command == "readout" and code == 1)
+AGAIN = "again"   # what_next's answer for the conversion that failed, tried again
 
 
-def what_next(last: str) -> str | None:
-    """After a conversion that finished, or a readout (goes_on), what is next, in the
+def ended_as(command: str, ctx: Context) -> str:
+    """What the run was, for what next: "readout" for one that became a
+    readout at A1 (readout.from_run), which converted nothing, so there is no
+    conversion to try again, nor "another" device to convert."""
+    return "readout" if getattr(ctx, "readouts", None) is not None else command
+
+
+def what_next(last: str, failed: bool = False) -> str | None:
+    """After a conversion or a readout, however it ended, what is next, in the
     same sitting: another device converted, or one read out - "run" or
-    "readout" - with no command to type again.  None for nothing: q, or
-    Ctrl-C.  Asked only of someone at the keyboard."""
+    "readout" - with no command to type again; after a conversion that
+    `failed`, first that device tried again (AGAIN), from where it stopped.
+    None for nothing: q, or Ctrl-C.  Asked only of someone at the keyboard."""
     if prompts.UNATTENDED:
         return None
     output.tell("")
-    options = (["Convert another device", "Read out a device"] if last == "run"
-               else ["Convert a device", "Read out another device"])
+    if last != "run":
+        choices = [("Convert a device", "run"), ("Read out another device", "readout")]
+    else:
+        choices = [*([("Try this device again", AGAIN)] if failed else []),
+                   ("Convert another device", "run"), ("Read out a device", "readout")]
     try:
-        return ("run", "readout")[prompts.ask_choice("What next", options)]
+        return choices[prompts.ask_choice("What next", [label for label, _ in choices])][1]
     except QuitRun:
         return None
     except KeyboardInterrupt:
         signup.stopped()
         return None
+
+
+def same_device(args: argparse.Namespace, previous: Context) -> Context:
+    """The conversion that failed, carried on: its own run again, as running
+    the same command would, with the eWeLink account it signed in to."""
+    args.run, args.device_ip, args.new = previous.run, None, False
+    ctx = Context(args)
+    ctx.keep_sign_in(previous)
+    routes.apply_target(routes.recorded_firmware(ctx.state), routes.route_source(ctx.state),
+                        routes.family_of(ctx.state))
+    return ctx
 
 
 def next_device(args: argparse.Namespace, previous: Context) -> Context:

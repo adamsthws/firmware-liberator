@@ -5,7 +5,7 @@
 
  FAILED: the device did not answer within 30s
 
- Fix the cause, then run the same command again: sh start.sh
+ Fix the cause, then choose to try this device again below.
 
      Liberator: 3.0.0                                Firmware: Tasmota
      OS:        Ubuntu 24.04.5 LTS                   From:     Sonoff 1.2.0

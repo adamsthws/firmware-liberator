@@ -371,7 +371,10 @@ def stopped_mid_send(ctx: Context) -> bool:
 
 def tell_how_to_carry_on() -> None:
     output.tell("")
-    if hostsys.IS_WINDOWS:
+    if not prompts.UNATTENDED:
+        # What next, at the end, offers it (cli.what_next).
+        output.tell("Fix the cause, then choose to try this device again below.")
+    elif hostsys.IS_WINDOWS:
         output.tell("Fix the cause, then carry on with the same command again:")
         output.tell("    start.cmd (double-click it, or .\\start.cmd in a terminal)")
     else:
