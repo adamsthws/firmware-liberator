@@ -267,6 +267,18 @@ class ReadoutApiTests(unittest.TestCase):
         self.assertEqual(self.problems(requests, stored=(self.A, self.B), kept=["readout-1000000002.tar"])[0],
                          ["FAIL-KEPT-UNSENT"])
 
+    def test_a_converted_devices_readout_is_judged_as_its_first_stage_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            api = Path(tmp)
+            (api / "requests.log").write_text(f"{self.WANTED}\n{self.taken(self.A)}\n", encoding="utf-8")
+            (api / f"readouts__2026-11-09__{self.A[:24]}.tar").write_bytes(b"tar")
+            with mock.patch.object(fault_verdicts, "readout_problems", return_value=["not whole"]), \
+                    mock.patch.object(fault_verdicts, "first_stage_problems", return_value=[]) as first:
+                problems, _ = fault_verdicts.readout_api_problems("", True, api, 1, self.DEVICE, "espressif",
+                                                                  runs="tasmota")
+        self.assertEqual(problems, [])
+        self.assertEqual(first.call_args.args, (b"tar", "tasmota"))
+
     def test_a_readout_of_the_device_alone_is_judged_as_the_one_device(self):
         # The attended suite's, and each fault suite's readout sent to the API:
         # no "Reading out" line names it, and the device is the one judged whole.

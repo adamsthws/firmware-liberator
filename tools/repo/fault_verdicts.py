@@ -209,15 +209,17 @@ def api_asks(requests: str) -> tuple[list[list], list[tuple[int, str]]]:
 
 
 def readout_api_problems(run: str, finished: bool, api: Path, account: int, device: str, family: str,
-                         kept: Iterable[str] = ()) -> tuple[list[tuple[str, str]], dict]:
+                         kept: Iterable[str] = (), runs: str | None = None) -> tuple[list[tuple[str, str]], dict]:
     """What one run of a readout sent to the API beside the emulator did
     wrong, from its log (`run`), whether it finished, and what the API was
     asked and kept (`api`, its folder): [(verdict, why)], [] for nothing; and
     a summary. A readout of every device (readout --all) says each device's
     name as it starts on it; one of the device alone does not. `account` is
-    how many devices the account holds, `device` the emulated device's
+    how many devices the account holds - or, of the device alone, how many
+    times it was read out in the sitting ("What next": read out another), `device` the emulated device's
     product model, of chip family `family`; `kept` the readouts the run kept
-    unsent. Judged by the API's own answers, never its rules: every device
+    unsent; `runs`, for a device on another firmware than Sonoff's (detect.NAMES'
+    key), whose readout is its first stage alone (first_stage_problems). Judged by the API's own answers, never its rules: every device
     asked /wanted once, all of them in a finished run (FAIL-NOT-ASKED); every
     one wanted sent until taken - 201, after nothing but 429s - but the one a
     stopped run stopped on (FAIL-NOT-SENT); none not wanted sent
@@ -228,7 +230,7 @@ def readout_api_problems(run: str, finished: bool, api: Path, account: int, devi
     devices = [(who, int(total)) for who, _, total in READING_OUT.findall(run)]
     every = bool(devices)
     if not every:
-        devices = [(f"the device ({device})", account)]
+        devices = [(f"the device ({device})", account)] * account
     requests = api / "requests.log"
     asks, unasked = api_asks(requests.read_text(encoding="utf-8", errors="replace") if requests.exists() else "")
     if finished and (len(devices) != account or any(total != account for _, total in devices)):
@@ -259,7 +261,8 @@ def readout_api_problems(run: str, finished: bool, api: Path, account: int, devi
             problems.append(("FAIL-NOT-STORED", f"{who}: taken as {sent[-1][1]!r}, not in the API's store"))
         elif not every or who.endswith(f"({device})"):
             whole = True
-            missing = readout_problems((api / kept_as[0]).read_bytes(), family)
+            data = (api / kept_as[0]).read_bytes()
+            missing = first_stage_problems(data, runs) if runs else readout_problems(data, family)
             if missing:
                 problems.append(("FAIL-READOUT", f"{who}: {'; '.join(missing)}"))
     if unasked:
