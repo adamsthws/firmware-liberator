@@ -891,6 +891,13 @@ def stage_end(outcome: str) -> None:
                 _s.live = 0
                 _s.after_stage = True
                 _s.after_blank = False
+            elif _rows_up_to_stage_line() == 1 and "\n" not in _fit(text):
+                # Left above a wait that showed nothing (until_done): its
+                # outcome goes on that line, not on a second one under it.
+                sys.stdout.write(_clear_notice() + "\x1b[1A\r" + _fit(text) + "\x1b[K\n")
+                sys.stdout.flush()
+                # As _print leaves a stage line: its clock's turning is over.
+                _s.waited, _s.after_stage, _s.after_blank = False, True, False
             else:
                 _print(text, stage=True)
         _s.stage, _s.stage_mark, _s.underway_row = None, None, None

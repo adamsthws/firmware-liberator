@@ -783,6 +783,29 @@ class ConciseTests(OutputTestCase):
         self.assertIn("The installer joined your network.", joined)
         self.assertIn("-- Join the bridge's Wi-Fi network", self.drawn(lambda: body(True)))
 
+    def test_a_wait_that_showed_nothing_and_stopped_the_stage_leaves_one_line(self):
+        # Seen in a readout whose sending failed (readout.sent): the stage's
+        # "Underway" line, left above the wait, and its "Stopped" right under it;
+        # then, the wait long enough for its clock to turn, two blank rows
+        # above why it stopped.
+        def body(turned):
+            output.stage_begin(7, "Saving the readout")
+            try:
+                with output.until_done():
+                    if turned:
+                        output.tick()
+                    raise OSError("no route to host")
+            except OSError:
+                output.stage_end("stopped")
+            output.tell("FAILED: the readout could not be sent")
+        for turned in (False, True):
+            with self.subTest(turned=turned):
+                rows = self.drawn(lambda: body(turned))
+                start = rows.index("Stage 7 - Saving the readout - Stopped")
+                self.assertEqual(rows[start:start + 3], ["Stage 7 - Saving the readout - Stopped", "",
+                                                         "FAILED: the readout could not be sent"])
+                self.assertFalse([row for row in rows if "Underway" in row], "\n".join(rows))
+
     def test_a_stage_that_stopped_leaves_what_it_showed(self):
         def body():
             output.stage_begin(8, "Installing interim firmware")
